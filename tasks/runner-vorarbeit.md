@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit für Stufe 7 (R-0080, R-0077) — Task-Ledger
-Status: geplant · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: freigegeben · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Freigabe: Kevin, 2026-10-02 (Design-Gate, „Runner-Vorarbeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit.md (Roadmap R-0080, R-0077)
 Heavy: none — nur Skripte (run.sh-Sperre, runner-setup.sh, Red Team) und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis über zwei echte Nutzer liefern Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec, „Kevins Handarbeit“).
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
