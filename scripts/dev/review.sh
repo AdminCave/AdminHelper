@@ -16,6 +16,8 @@
 #   bash scripts/dev/review.sh docs-pairs [--staged]    a docs page in one language
 #   bash scripts/dev/review.sh contracts [--staged] [--list]
 #                                                       the checks a changed path pulls in
+#   bash scripts/dev/review.sh pr-body <ledger> [--verdicts <dir>]
+#                                                       the PR text out of the ledger
 #
 # Deterministic, model-free, and called by task-close.sh before it commits. They
 # answer three questions a reviewer would otherwise have to ask every time:
@@ -64,6 +66,12 @@
 #              a pair of files that must carry the same value. --list names
 #              them without running them. Prints `contracts: <n> ok` or
 #              `contracts: none`.
+#   pr-body    Markdown for the PR: the ledger head (spec, roadmap ids, heavy
+#              line), each task with its box, Evidenz: and Review: lines and —
+#              with --verdicts <dir> — the verdict in <dir>/<id>.json; [~] and
+#              [?] tasks apart. A task without evidence reads "unverifiziert",
+#              never approve. Addresses, host names and VMIDs are cut out of
+#              every ledger line it copies: this text goes to a public repo.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
@@ -118,11 +126,14 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" LIST_ONLY=0
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" LIST_ONLY=0 VERDICTS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
     --list) LIST_ONLY=1 ;;
+    --verdicts)
+      [ $# -ge 2 ] || die "--verdicts needs <dir>"
+      VERDICTS="$2"; shift ;;
     --tree)
       [ $# -ge 2 ] || die "--tree needs <hash>"
       TREE_ARG="$2"; shift ;;
@@ -911,6 +922,133 @@ PY
     fi
     [ "${#UNRUN[@]}" -eq 0 ] || exit 74
     echo "contracts: $OK ok"
+    ;;
+
+  pr-body)
+    LEDGER="${ARGS[0]-}"
+    [ -n "$LEDGER" ] && [ "${#ARGS[@]}" -eq 1 ] || die "pr-body needs <ledger> (and at most --verdicts <dir>)"
+    case "$LEDGER" in /*) ;; *) LEDGER="$CALLER_PWD/$LEDGER" ;; esac
+    [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
+    case "$VERDICTS" in ""|/*) ;; *) VERDICTS="$CALLER_PWD/$VERDICTS" ;; esac
+    [ -z "$VERDICTS" ] || [ -d "$VERDICTS" ] || die "no such verdict directory: $VERDICTS"
+    command -v python3 >/dev/null 2>&1 || die "pr-body needs python3"
+    python3 - "$LEDGER" "$VERDICTS" <<'PY' || die "could not read $LEDGER"
+import ipaddress, json, os, re, sys
+
+ledger, vdir = sys.argv[1], sys.argv[2]
+# This text goes to a public repo (CLAUDE.md: no homelab names): addresses, host
+# names of a private network and VM ids come out of every line it copies.
+# Loopback stays, a file name like settings.local.json stays. A bare host name
+# without a private suffix cannot be told from a word — that is a limit.
+VM = re.compile(r"\b(?:vmids?|vms?|templates?|tpl|destroy|clone)[\s=:#*-]*\d{3,5}\b", re.I)
+HOST = re.compile(r"\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:lan|local|home|internal|intra|corp|localdomain)\b"
+                  r"(?![\w-]|\.\w)", re.I)
+ADDR = re.compile(r"\[?[0-9A-Fa-f:.]*[:.][0-9A-Fa-f:.]*[0-9A-Fa-f](?:%\w+)?\]?(?::\d+)?")
+
+
+def addr(m):
+    text, start = m.group(0), 0
+    while True:
+        cand = text[start:]
+        core = re.sub(r"^\[|\](?::\d+)?$", "", cand)
+        if "]" not in cand and core.count(".") == 3:
+            core = re.sub(r":\d+$", "", core)   # 10.0.0.1:22
+        try:
+            ip = ipaddress.ip_address(core.split("%")[0])
+            return text if ip.is_loopback else text[:start] + "<addr>"
+        except ValueError:
+            pass
+        # A word and a colon in front (`IP:10.0.0.1`, `dns:2001:db8::1`) are no
+        # part of the address: try again behind the first single colon.
+        k = re.search(r"(?<!:):(?!:)", cand)
+        if not k:
+            return text
+        start += k.end()
+
+
+def clean(text):
+    text = ADDR.sub(addr, text)
+    text = HOST.sub("<host>", text)
+    return VM.sub("<vm>", text).strip()
+
+
+lines = open(ledger, encoding="utf-8").read().split("\n")
+title = next((l[2:] for l in lines if l.startswith("# ")), os.path.basename(ledger))
+title = re.sub(r"\s+—\s+Task-Ledger\s*$", "", title)
+head, tasks, cur = {}, [], None
+# A task heading carries its id, a dash, the title and a box; whatever follows
+# the box is the note (ledger.sh writes "(…)", hands wrote more).
+TASK = re.compile(r"^###\s+([A-Z]+\d+[a-z]?)\s+—\s+(.*)$")
+BOX = re.compile(r"\s+\[([ x~?])\]\s*(.*)$")
+for l in lines:
+    if l.startswith("## ") or re.match(r"^###\s", l):
+        # Every heading ends the task above it, as for ledger.sh lint: an
+        # Evidenz: line under "### Ergebnis" belongs to no task.
+        cur = None
+        m = TASK.match(l)
+        if m:
+            b = BOX.search(m.group(2))
+            cur = {"id": m.group(1), "title": m.group(2)[:b.start()] if b else m.group(2),
+                   "box": b.group(1) if b else "!", "note": b.group(2).strip() if b else ""}
+            if cur["note"].startswith("(") and cur["note"].endswith(")"):
+                cur["note"] = cur["note"][1:-1]
+            tasks.append(cur)
+        continue
+    key = l.split(":", 1)[0]
+    if cur is None and not tasks and key in ("Spec", "Roadmap", "Heavy") and key not in head:
+        head[key] = l.split(":", 1)[1]
+    elif cur is not None and key in ("Evidenz", "Review") and key not in cur:
+        cur[key] = l.split(":", 1)[1]
+
+out = ["## " + clean(title), ""]
+for key in ("Spec", "Roadmap", "Heavy"):
+    if key in head:
+        out.append("- **%s:** %s" % (key, clean(head[key])))
+out += ["", "### Tasks", ""]
+
+
+def verdict(tid):
+    if not vdir:
+        return None
+    path = os.path.join(vdir, tid + ".json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        d = json.load(open(path))
+        r = d.get("reviewer") or {}
+        if (d.get("task") or {}).get("id") != tid:
+            return "fremd (die Datei gehört zu einer anderen Task)"
+        return clean("%s (%s/%s)" % (d["verdict"], r.get("model", "?"), r.get("effort", "?")))
+    except Exception:
+        return "unlesbar"
+
+
+for t in tasks:
+    if t["box"] in "~?":
+        continue
+    if t["box"] == "!":
+        out.append("- **%s — %s** — **unlesbar** (Kopfzeile ohne Haken)" % (t["id"], clean(t["title"])))
+        continue
+    line = "- [%s] **%s — %s**" % ("x" if t["box"] == "x" else " ", t["id"], clean(t["title"]))
+    if "Evidenz" not in t:
+        # No evidence, no claim: whatever a review or a verdict file says.
+        out.append(line + " — **unverifiziert** (keine Evidenz)")
+        continue
+    out.append(line)
+    out.append("  - Evidenz: " + clean(t["Evidenz"]))
+    if "Review" in t:
+        out.append("  - Review: " + clean(t["Review"]))
+    v = verdict(t["id"])
+    if v:
+        out.append("  - Verdict: " + v)
+for box, heading in (("~", "Übersprungen"), ("?", "Offene Fragen")):
+    some = [t for t in tasks if t["box"] == box]
+    if some:
+        out += ["", "### " + heading, ""]
+        out += ["- [%s] **%s — %s** — %s" % (box, t["id"], clean(t["title"]), clean(t["note"]) or "siehe Ledger")
+                for t in some]
+print("\n".join(out))
+PY
     ;;
 
   -h|--help) usage ;;

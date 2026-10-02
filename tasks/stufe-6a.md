@@ -97,8 +97,10 @@ Zusatzbeleg (nicht hermetisch, in die Evidenz): Seed `53e76924` auf Basis `53e76
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
-### T6 — `review.sh pr-body <ledger>`: Checkliste mit Evidenz als PR-Text  [ ]
+### T6 — `review.sh pr-body <ledger>`: Checkliste mit Evidenz als PR-Text  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ef4328bb 2026-10-02T18:01:08+02:00
+Review: approve with two rounds spent (opus): round 1 request_changes on task bounds and scrub gaps, fixed; round 2 request_changes on two new scrub gaps (an address behind word:, a host at a sentence end), fixed with the reviewer cases as tests, no third round by the rule
 Änderung: `review.sh pr-body <ledger>` erzeugt Markdown: Kopf (Spec, Roadmap-IDs, Heavy-Zeile), je Task Titel,
 Status-Haken, `Evidenz:`, `Review:` und vorhandene Verdict-Datei (Urteil, Modell); Tasks mit `[~]`/`[?]` gesondert;
 eine Task ohne Evidenz erscheint als „unverifiziert“, nie als approve. Keine Hostnamen, IPs oder VMIDs im Text (sie

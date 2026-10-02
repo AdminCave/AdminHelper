@@ -1674,6 +1674,74 @@ PY
 grep -qxF 'scripts/dev/review-contracts.txt' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
   && ok "the contract list is a harness path" || bad "review-contracts.txt is missing from harness-paths.txt"
 
+# ══ pr-body (stage 6a) ════════════════════════════════════════════════════════
+echo "── pr-body ──"
+reset_index
+cat > "$WORK/pr.md" <<'MD'
+# Fixture-Vorhaben — Task-Ledger
+Status: bereit · Branch: harness/fixture · Review: pro Task
+Spec: docs/features/fixture.md (Roadmap R-0999)
+Heavy: none — nur Skripte
+### T1 — die erste Aufgabe  [x]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @abc1234 2026-10-02T10:00:00+02:00 on 192.168.10.20
+Review: approve (opus) — probe on pve1.lan, VMID 3012
+Änderung: irgendwas
+### T2 — die zweite Aufgabe  [x]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Review: approve (sonnet)
+### T3 — die dritte Aufgabe  [?] (soll das so bleiben?)
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+### T4 — die vierte Aufgabe  [~] (schon erledigt in T1)
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+### T5 — die fünfte Aufgabe  [x]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Evidenz: run.sh[quick] scripts: 7 passed, 0 failed, 11 skipped @def5678 2026-10-02T11:00:00+02:00
+Review: approve (opus)
+### T6 — die sechste Aufgabe  [x] **verifiziert** (auf der Box)
+Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**
+Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902
+### T7 — die siebte Aufgabe
+### Ergebnis des Laufs
+Evidenz: run.sh[quick] scripts: 99 passed, 0 failed, 0 skipped
+MD
+mkdir -p "$WORK/verdicts"
+printf '{"schema_version":1,"task":{"ledger":"x","id":"T5"},"tree_hash":"%040d","reviewer":{"model":"opus","effort":"high"},"verdict":"approve","findings":[]}\n' 0 \
+  > "$WORK/verdicts/T5.json"
+printf '{"verdict":"approve","reviewer":{"model":"opus","effort":"high"}}\n' > "$WORK/verdicts/T2.json"
+r pr-body "$WORK/pr.md" --verdicts "$WORK/verdicts"
+[ $rc -eq 0 ] && ok "pr-body -> 0" || bad "pr-body: rc=$rc out=$OUT"
+grep -q 'docs/features/fixture.md' <<<"$OUT" && grep -q 'R-0999' <<<"$OUT" && grep -qF '**Heavy:** none' <<<"$OUT" \
+  && ok "the head: spec, roadmap id, heavy line" || bad "head: $OUT"
+grep -q 'T1 — die erste Aufgabe' <<<"$OUT" && grep -q 'run.sh\[quick\] scripts: 6 passed' <<<"$OUT" \
+  && ok "a task with its evidence line" || bad "evidence: $OUT"
+t2="$(grep 'T2 — ' <<<"$OUT")"
+grep -q 'unverifiziert' <<<"$t2" && ! grep -qi 'approve' <<<"$(sed -n '/T2 — /,/T[3-9] — /p' <<<"$OUT")" \
+  && ok "a task without evidence reads unverifiziert, never approve (not even with a verdict file)" || bad "T2: $OUT"
+grep -q 'Verdict: approve (opus/high)' <<<"$OUT" && ok "a verdict file adds its verdict and model" || bad "verdict: $OUT"
+grep -q '^### Offene Fragen' <<<"$OUT" && grep -q 'T3 — die dritte Aufgabe.*soll das so bleiben' <<<"$OUT" \
+  && ok "a [?] task stands in its own section, with the question" || bad "[?]: $OUT"
+grep -q '^### Übersprungen' <<<"$OUT" && grep -q 'T4 — die vierte Aufgabe.*schon erledigt' <<<"$OUT" \
+  && ok "a [~] task stands in its own section, with the reason" || bad "[~]: $OUT"
+! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902' <<<"$OUT" \
+  && ok "no address (v4, v6 compressed or bracketed, behind a word:), host name (also at a sentence end) or VMID" \
+  || bad "leak: $OUT"
+grep -qF '.claude/settings.local.json on 127.0.0.1' <<<"$OUT" \
+  && ok "a file name with .local and the loopback address stay" || bad "over-scrub: $OUT"
+t6="$(sed -n '/T6 — /,/^- /p' <<<"$OUT")"
+grep -q '9 passed' <<<"$t6" && ! grep -q '99 passed' <<<"$OUT" && ! grep -q '9 passed' <<<"$(sed -n '/T5 — /,/T6 — /p' <<<"$OUT" | sed '$d')" \
+  && ok "every ### heading ends a task: a note after the box is read, a section's lines belong to none" || bad "sections: $OUT"
+grep -q 'T7 — die siebte Aufgabe.*unlesbar' <<<"$OUT" && ok "a task heading without a box reads unlesbar" || bad "no box: $OUT"
+printf '{"schema_version":1,"task":{"ledger":"x","id":"T9"},"reviewer":{"model":"opus","effort":"high"},"verdict":"approve","findings":[]}\n' \
+  > "$WORK/verdicts/T1.json"
+r pr-body "$WORK/pr.md" --verdicts "$WORK/verdicts"
+grep -q 'Verdict: fremd' <<<"$(sed -n '/T1 — /,/T2 — /p' <<<"$OUT")" \
+  && ok "a verdict file of another task reads fremd" || bad "foreign verdict: $OUT"
+r pr-body "$WORK/nosuch.md"
+[ $rc -eq 2 ] && ok "a missing ledger -> 2" || bad "missing ledger: rc=$rc out=$OUT"
+r pr-body
+[ $rc -eq 2 ] && grep -q 'pr-body needs' <<<"$OUT" && ok "no ledger -> 2" || bad "no ledger: rc=$rc out=$OUT"
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
