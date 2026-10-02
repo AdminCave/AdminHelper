@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz nachziehen 2 (R-0125, R-0127, R-0133, R-0134, R-0130, R-0132) — Task-Ledger
-Status: bereit · Branch: harness/schutz-nachziehen-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: erledigt · Branch: harness/schutz-nachziehen-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („Schutz 2 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/schutz-nachziehen-2.md (Roadmap R-0125, R-0127, R-0133, R-0134, R-0130, R-0132)
 Heavy: none — nur der PreToolUse-Wächter, review.sh und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles über verify.sh scripts.
