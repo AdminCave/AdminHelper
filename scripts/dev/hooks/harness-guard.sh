@@ -68,7 +68,8 @@
 # The command is tokenized before it is split into segments, so a `|` or `&&`
 # inside a quoted string (a commit message, say) is text and not a pipeline; a
 # newline only ends a command when it is neither inside a quote nor inside a
-# here-doc body, for the same reason. The flip side of skipping here-doc bodies
+# here-doc body, for the same reason (a here-string `<<<` and a shift inside
+# `$((…))` start none, R-0126/R-0133). The flip side of skipping here-doc bodies
 # is a known gap: `bash <<EOF … EOF` hides its commands from this guard.
 # `cd` is followed within a command, and `bash -c "…"` is scanned recursively,
 # because Claude Code does not strip it before matching its own rules either.
@@ -557,6 +558,7 @@ def logical_lines(cmd):
     esc = False
     heredocs = []        # delimiters whose bodies are still to come
     skip_to = None       # delimiter of the body currently being skipped
+    arith = 0            # open parentheses of a `((…))` / `$((…))`
     for line in cmd.split("\n"):
         if skip_to is not None:
             if line.strip() == skip_to:
@@ -577,6 +579,14 @@ def logical_lines(cmd):
                     quote = None
             elif ch in "\"'":
                 quote = ch
+            elif arith:
+                # Inside `((…))` / `$((…))` a `<<` or `<<=` is a shift, not a
+                # here-doc (R-0133): read as one, it hid every line after it.
+                arith += {"(": 1, ")": -1}.get(ch, 0)
+            elif line[i:i + 2] == "((":
+                arith = 2
+                i += 2
+                continue
             elif ch == "<" and line[i:i + 3] == "<<<":
                 # A here-string: its word is data on THIS line, and no body
                 # follows — read as `<<` it took `<` for a delimiter and hid

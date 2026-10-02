@@ -53,8 +53,10 @@ Grenzen: `git clean`, Löschen aus Python/anderen Interpretern.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md Harness-Schutz (Vorfahr-Regel, ihr Radius); CHANGELOG (Changed)
 
-### T3 — Wächter: arithmetisches `<<` beginnt kein Here-Doc  [ ]
+### T3 — Wächter: arithmetisches `<<` beginnt kein Here-Doc  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4e89bc92 2026-10-02T11:56:28+02:00
+Review: approve (opus), one round
 Änderung: `logical_lines` (`:479–537`) zählt `((` und `$((` bis zum passenden `))` mit; darin sind `<<` und `<<=`
 Operatoren, kein Here-Doc-Beginn (`:518`). Echte Here-Docs (`<<EOF`, `<<-EOF`, `<<'EOF'`) und der Here-String
 (`:512`, R-0126) bleiben wie sie sind.
