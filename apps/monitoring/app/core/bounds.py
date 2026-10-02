@@ -27,6 +27,14 @@ from pydantic_core import InitErrorDetails
 # empty page, so a wider one buys nothing.
 Offset = Annotated[int, Field(ge=0, le=2147483647)]
 
+# A value stored in a plain Column(Integer) that is not a key — the signed INTEGER
+# range, as in the server's bounds.py (R-0052). Without it the published schema had
+# no upper bound, and a value past the column failed only in the database driver.
+IntColumn = Annotated[int, Field(ge=-2147483648, le=2147483647)]
+
+# A day of the week, 0 = Monday — the domain of a weekly maintenance window.
+Weekday = Annotated[int, Field(ge=0, le=6)]
+
 
 def _find_nul(data: dict) -> tuple[tuple, str] | None:
     """Location and value of a string in `data` that carries a NUL, if any.

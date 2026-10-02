@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from pydantic import Field, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
-from app.core.bounds import RequestModel
+from app.core.bounds import IntColumn, RequestModel, Weekday
 
 
 class CheckCreate(RequestModel):
@@ -24,7 +25,7 @@ class CheckCreate(RequestModel):
     enabled: bool = True
     interval: str = "5m"
     severity: str = "critical"
-    consecutive_fails: int = 3
+    consecutive_fails: IntColumn = 3
 
     # Per-type config validation (T4): a typo'd key or out-of-range threshold
     # must fail here, not surface as a permanently-unknown check at runtime.
@@ -44,7 +45,7 @@ class CheckUpdate(RequestModel):
     enabled: bool | None = None
     interval: str | None = None
     severity: str | None = None
-    consecutive_fails: int | None = None
+    consecutive_fails: IntColumn | None = None
 
 
 class AlertRuleCreate(RequestModel):
@@ -53,7 +54,7 @@ class AlertRuleCreate(RequestModel):
     match_server_id: str | None = None
     channel: str  # webhook, email
     channel_config: dict = {}
-    cooldown_minutes: int = Field(30, ge=0)
+    cooldown_minutes: Annotated[IntColumn, Field(ge=0)] = 30
     enabled: bool = True
 
 
@@ -63,7 +64,7 @@ class AlertRuleUpdate(RequestModel):
     match_server_id: str | None = None
     channel: str | None = None
     channel_config: dict | None = None
-    cooldown_minutes: int | None = Field(None, ge=0)
+    cooldown_minutes: Annotated[IntColumn, Field(ge=0)] | None = None
     enabled: bool | None = None
 
 
@@ -75,7 +76,7 @@ class TemplateCheckDef(RequestModel):
     enabled: bool = True
     interval: str = "5m"
     severity: str = "critical"
-    consecutive_fails: int = 3
+    consecutive_fails: IntColumn = 3
     description: str | None = None
 
     # Same boundary the /checks router enforces for CheckCreate — so a template
@@ -117,7 +118,7 @@ class TemplateAlertDef(RequestModel):
     match_severity: str | None = None
     channel: str
     channel_config: dict = {}
-    cooldown_minutes: int = Field(30, ge=0)
+    cooldown_minutes: Annotated[IntColumn, Field(ge=0)] = 30
     enabled: bool = True
 
     # Previously missing: an invalid channel in a template alert def only failed
@@ -180,9 +181,9 @@ class MaintenanceInput(RequestModel):
     kind: str
     starts_at: datetime | None = None
     ends_at: datetime | None = None
-    weekdays: list[int] = []
+    weekdays: list[Weekday] = []
     start_time: str | None = None
-    duration_minutes: int | None = None
+    duration_minutes: IntColumn | None = None
     timezone: str = "UTC"
     enabled: bool = True
 

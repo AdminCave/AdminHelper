@@ -54,8 +54,10 @@ Zusatzbeleg: bash scripts/tests/schemathesis_determinism.sh --only server monito
 Doku: keine (T5)
 Abhängt von: T1
 
-### T3 — Lint „jeder Integer-Eingang hat ein `maximum`“, Monitoring-Schranken  [ ]
-Komponente: monitoring · Dateien: apps/server/tests/test_openapi_integer_bounds.py, apps/monitoring/tests/test_openapi_integer_bounds.py, apps/ca-issuer/tests/test_openapi_integer_bounds.py, apps/monitoring/app/schemas.py, apps/monitoring/app/core/bounds.py, CHANGELOG.md
+### T3 — Lint „jeder Integer-Eingang hat ein `maximum`“, Monitoring-Schranken  [x]
+Komponente: monitoring · Dateien: apps/server/tests/test_openapi_integer_bounds.py, apps/monitoring/tests/test_openapi_integer_bounds.py, apps/ca-issuer/tests/test_openapi_integer_bounds.py, apps/monitoring/app/schemas.py, apps/monitoring/app/core/bounds.py, CHANGELOG.md, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] server monitoring ca-issuer: 6 passed, 0 failed, 12 skipped @1f916266 2026-10-02T12:12:06+02:00
+Review: approve (sonnet), nit Selbsttest miterledigt
 Änderung: Je Dienst ein neuer Test (SPDX) über `app.openapi()`: jedes `integer` auf der Request-Seite
 (Parameter und Request-Bodies, `$ref` aufgelöst, auch in `anyOf` und `items`) hat `maximum` oder
 `exclusiveMaximum`; FastAPIs eigene `ValidationError`/`HTTPValidationError` zählen nicht; die Meldung nennt

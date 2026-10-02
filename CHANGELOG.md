@@ -266,6 +266,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Obergrenzen fuer ganzzahlige Eingaben (R-0063):** `cooldown_minutes` (Alert-Regeln und
+  Vorlagen), `consecutive_fails` (Checks und Vorlagen) und `duration_minutes` (Wartungsfenster) enden
+  bei der INTEGER-Grenze `2147483647`, `weekdays` traegt 0–6 jetzt auch im Schema. Groessere Werte
+  beantwortet der Dienst mit `422`, statt sie an die Datenbank zu geben. Je Dienst prueft ein Test, dass
+  jeder Integer-Eingang des veroeffentlichten Schemas ein `maximum` hat.
 - **Verify-Zeile, wie sie dasteht (R-0104):** `scripts/dev/verify.sh` nimmt mehrere Komponenten
   und faehrt sie als einen Lauf `run.sh quick --only <a> <b>` (Argumente nach `--` nur fuer eine
   Komponente, `all` nur allein). `scripts/dev/task-close.sh` liest die Komponenten aus einer
