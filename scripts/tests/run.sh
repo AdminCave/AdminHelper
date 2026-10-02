@@ -559,7 +559,7 @@ restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test task_close_test runner_setup_test redteam_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
-multibox_test lane_test skill_consistency_test"
+multibox_test lane_test skill_consistency_test schemathesis_determinism_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
@@ -635,8 +635,9 @@ layer_unit() {
   # of its own rather than part of the pytest ones: its own SKIP/FAIL verdict, its
   # own budget, and the three pytest steps deselect the marker — without that the
   # fuzz suite runs twice per layer, once at each step's example count.
-  # own budget (AH_SCHEMATHESIS_EXAMPLES: 5 here and in the PR CI, 100 on the weekly
-  # box), and under --strict it is mandatory like every other suite.
+  # Its budget (AH_SCHEMATHESIS_EXAMPLES: 0 here and in the PR CI = only the explicit
+  # phase, the same cases for the same tree; 100 on the weekly box = every phase), and
+  # under --strict it is mandatory like every other suite.
   # Only the services --only asked for: the three suites land one task at a time, and
   # a run for one service must not fail over another's file that does not exist yet.
   # pytest's exit 5 ("no tests collected") is turned into 75 = self-SKIP, never into a
@@ -649,7 +650,7 @@ layer_unit() {
   if [ ${#sth[@]} -eq 0 ]; then skip schemathesis "schemathesis" "AH_ONLY"
   elif have python3 && python3 -c 'import schemathesis' 2>/dev/null; then
     run_py_step schemathesis "schemathesis" -- bash -c '
-      export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-5}"
+      export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-0}"
       rc=0
       for d in "$@"; do
         (

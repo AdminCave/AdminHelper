@@ -97,9 +97,27 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   der pytest-Schritte — die wählen den Marker mit `-m "not schemathesis"` ab,
   sonst liefe die Suite zweimal). Im PR-CI fährt ihn ein **eigener Job**
   (`Schema fuzzing`, alle drei Dienste, eigener Postgres-Service) über denselben
-  `run.sh`-Aufruf. Beispiele je Operation über `AH_SCHEMATHESIS_EXAMPLES`: **5**
-  lokal **und** im PR-CI — was lokal grün ist, ist es dort auch —, **100** im
-  Wochenlauf (`heavy.sh` setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter).
+  `run.sh`-Aufruf. Der Knopf heißt `AH_SCHEMATHESIS_EXAMPLES`: **0** lokal **und** im
+  PR-CI fährt nur die explizite Phase (die Beispiele des Schemas und die Coverage-Fälle
+  von Schemathesis). Sie schickt für denselben Baum dieselben Fälle, ein roter Lauf
+  liegt also am Diff und ist lokal nachstellbar. Eine Zahl **> 0** fährt alle Phasen
+  mit so vielen erzeugten Beispielen je Operation: **100** im Wochenlauf (`heavy.sh`
+  setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter). Die Phase `generate`
+  ist nicht wiederholbar (siehe Hypothesis unten); ihre Funde kommen deshalb aus dem
+  Wochenlauf und gehen als Zeile in die Roadmap.
+- **Integer-Lint** statt Glück: `apps/<dienst>/tests/test_openapi_integer_bounds.py`
+  verlangt für jeden Integer-Eingang des veröffentlichten Schemas ein `maximum`.
+  Das ist die Fehlerklasse, die die Phase `generate` bisher zufällig fand (`2**63`
+  in einer `OFFSET`- oder INTEGER-Spalte).
+- **Versionen gepinnt:** `hypothesis` und `schemathesis` stehen in den drei
+  `requirements-dev.txt` exakt (`==`); ein neues Release ändert die Fälle erst mit
+  einem Commit. Das gilt im CI-Job und in jedem `run.sh`-Lauf, dessen pytest-Schritte
+  die `requirements-dev.txt` installieren; ein Lauf nur mit `--step schemathesis` nimmt
+  das venv, wie es ist. Prüfwerkzeug: `bash scripts/tests/schemathesis_determinism.sh
+  [--only <dienst…>]` fährt den Gate-Schritt je Dienst zweimal und vergleicht die
+  Fälle je Test als `curl`-Protokoll (`<dienst>: N cases, M differing lines`, Exit 0
+  nur bei 0 Abweichungen). Für den Server nur fahren, wenn keine andere Server-Suite
+  auf derselben Test-DB läuft.
 - **Ausschlüsse** stehen als Eintrag mit Grund und Wiedervorlage in
   `apps/<dienst>/tests/schemathesis_exclude.toml` — nie als Flag im Skript. Der
   Test prüft jede `operation_id` gegen das Schema: ein Tippfehler dort schließt
@@ -108,12 +126,14 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   VictoriaMetrics-Line-Protocol und den SSRF-Guard. Gepinnte Fälle stehen als
   `@example` im Test und werden mitcommittet; die Beispieldatenbank `.hypothesis/`
   ist lokaler Cache und gitignored. Die Suiten laufen `derandomize` (Profil `gate`
-  in der jeweiligen `conftest.py`) — ein Gate, das je Lauf andere Daten zieht, ist
-  grün oder rot nach Glück. Das heißt **reproduzierbar bei gleichem Baum**, nicht
-  „jeder Lauf gleich": Hypothesis speist zusätzlich die Literale der geladenen
-  Quelldateien in die Generierung ein (Cache je Datei unter `.hypothesis/constants/`).
-  Ein Fund, der nach einer unbeteiligten Änderung auftaucht, ist deshalb eine neue
-  Suche — keine Flakiness.
+  in der jeweiligen `conftest.py`) und ziehen damit keinen neuen Seed je Lauf.
+  **Wiederholbar ist die Generierung damit nicht:** Zwei Läufe desselben Baums zogen
+  im Schemathesis-Gate andere Daten (Monitoring mit allen Phasen: rund 930 von 4000
+  `curl`-Zeilen verschieden, R-0063). Ein bekannter Eingang sind die Literale der
+  geladenen Quelldateien, die Hypothesis in die Generierung einspeist (Cache je Datei
+  unter `.hypothesis/constants/`, kein Schalter dagegen); der Rest der Ursache ist nicht
+  bestimmt. Ein Fund aus einer erzeugten Phase ist deshalb eine Suche, kein Beweis, dass
+  der Diff ihn verursacht hat.
 - **Postgres-gegattert:** Der Concurrency-Test (`with_for_update` in
   `check_engine`) und die pytest-alembic-Ketten brauchen ein echtes Postgres und
   skippen, solange `DATABASE_URL` nicht auf ein Postgres zeigt — auf der Dev-Box
