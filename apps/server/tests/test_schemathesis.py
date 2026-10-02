@@ -30,6 +30,7 @@ import os
 import tomllib
 from pathlib import Path
 
+import httpx
 import pytest
 import schemathesis
 from hypothesis import HealthCheck, Phase, settings
@@ -195,6 +196,26 @@ def api_db(db_session, monkeypatch):
     app.dependency_overrides.pop(get_db, None)
 
 
+@pytest.fixture()
+def monitoring_stub(monkeypatch):
+    """A stand-in for the monitoring service behind the server's proxy routes.
+
+    The proxy forwards through one process-wide httpx client that the app lifespan
+    closes, and the schemathesis transport runs that lifespan once per process: every
+    proxy call after it died in the transport (`client has been closed`) before a
+    check saw a response. What the fuzzer tests is the server's own handling, not the
+    proxy's contract, so a fresh client per test answers every forward with a fixed
+    200 JSON body; monkeypatch puts the original back.
+    """
+    from app.modules.monitoring_proxy import router as monitoring_proxy_mod
+
+    stub = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    )
+    monkeypatch.setattr(monitoring_proxy_mod, "_client", stub)
+    return stub
+
+
 def _api_key(db, *, permission: str, server_id: str | None, name: str) -> str:
     raw = f"ah_schemathesis_{name}"
     db.add(
@@ -263,7 +284,7 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
     # rollback is the reason it is safe, not the suppression.
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-def test_api_under_every_auth_context(case, context, auth_headers, api_db):
+def test_api_under_every_auth_context(case, context, auth_headers, api_db, monitoring_stub):
     try:
         case.call_and_validate(
             # A copy per example: the transport writes its own defaults (user-agent,

@@ -73,8 +73,10 @@ kein ERR; `bash scripts/dev/openapi-breaking.sh monitoring` bleibt Exit 0 (Zusat
 Verify: bash scripts/tests/run.sh quick --strict --only server monitoring ca-issuer
 Doku: CHANGELOG [Unreleased] „Changed“ (Monitoring lehnt Werte über den neuen Schranken mit 422 ab); docs/ keine (die Felder sind dort ohne Grenzen beschrieben, prüfen)
 
-### T4 — Stub für den Proxy-Client des Servers, die fünf `raises`-Ausschlüsse fallen  [ ]
+### T4 — Stub für den Proxy-Client des Servers, die fünf `raises`-Ausschlüsse fallen  [x]
 Komponente: server · Dateien: apps/server/tests/test_schemathesis.py, apps/server/tests/schemathesis_exclude.toml
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @d7f4e27f 2026-10-02T12:35:24+02:00
+Review: approve (sonnet)
 Änderung: Eine Fixture ersetzt für die Schemathesis-Suite `monitoring_proxy_mod._client`
 (`app/modules/monitoring_proxy/router.py:42`, geschlossen in `app/main.py:230`) durch einen
 `httpx.AsyncClient` mit `httpx.MockTransport` je Test (eine feste 200-JSON-Antwort genügt; der Vertrag des
