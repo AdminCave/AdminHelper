@@ -285,6 +285,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **diff-scan: weitere Skip-Muster und Rueckgaben mit Wert (R-0132):** `review.sh diff-scan`
+  meldet jetzt auch `fit(`, `fdescribe(`, `.runIf(`, `.fails(`, `test.fail(`, `.fixme(` (also <!-- review: ok nennt die Muster -->
+  `test.describe.fixme(`), `self.skipTest(` und `pytest.importorskip(` in einer hinzugefuegten Zeile <!-- review: ok nennt die Muster -->
+  sowie `return None`, `return undefined;` und `return Ok(());` in einem Test — bisher nur ein
+  nacktes `return`, und in einer Datei mit CRLF-Zeilen nicht einmal das. `assert.fail(`,
+  `sys.exit(` und `profit(` bleiben frei, ebenso ein `return` in einer im Test verschachtelten
+  Funktion (Stub, Callback) und eines, nach dem kein Code des Tests mehr folgt; die Meldung heisst
+  `early return in a test`.
+
+- **diff-scan: entfernte Assertions zaehlen nur, wo Tests stehen (R-0130):** Eine geloeschte Zeile
+  mit `assert`, `assert_…!`, `expect(` oder Go-`t.Fatal…` ist nur noch ein Fund in einer
+  Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`) oder in
+  der Spanne eines Tests (inline `#[test]` unter `src/`); eine Import-Zeile nie. Bisher meldete
+  diff-scan auch ein entferntes `.expect("…")` im Rust-Produktivcode, einen entfernten Import
+  `use pretty_assertions::assert_eq;` und `review.sh` selbst, ohne Ausweg (eine geloeschte Zeile
+  kann kein `review: ok` tragen).
+
+- **Waechter: wer ein Verzeichnis mit Harness-Pfaden wegnimmt, nimmt sie mit (R-0127):**
+  `scripts/dev/hooks/harness-guard.sh` verweigert im autonomen Lauf auch `rm -rf .claude`,
+  `rm -rf scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, `mv scripts/dev /tmp/x`, einen
+  Glob, der Harness-Pfade im Baum trifft (`rm -rf scripts/dev/*`; `rm -f *.log` bleibt frei), die
+  Repo-Wurzel (`rm -rf ./*`) und ein
+  loeschendes `find` von dort aus — bisher zaehlte nur der Harness-Pfad selbst. Die Regel gilt
+  nur fuer wegnehmende Kommandos (`rm`, `rmdir`, `shred`, `unlink`, `chmod`/`chown`/`chgrp`,
+  `mv`-Quelle, `find … -delete`); interaktiv bleibt es eine Warnung. Dazu erkennt der Waechter
+  `[^x]`, Klammer-Listen (`/{tmp,x}/…`) und `cd` in einen Glob mit woertlichem Operand
+  (R-0125), und ein Kommentar verdeckt keine Folgezeilen mehr (`# … <<X`, ein Apostroph im
+  Kommentar; R-0139). Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
+
 - **Schema-Fuzzing im PR deterministisch (R-0063):** Der Schritt `schemathesis` (lokal `run.sh` und der
   CI-Job „Schema fuzzing") faehrt mit `AH_SCHEMATHESIS_EXAMPLES=0` nur noch die explizite Phase
   (Schema-Beispiele und Coverage-Faelle): fuer denselben Baum dieselben Faelle, ein roter Lauf ist
