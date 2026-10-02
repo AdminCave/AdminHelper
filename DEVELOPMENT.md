@@ -582,9 +582,17 @@ bestimmt (`CLAUDE.md`, `AUTONOMOUS.md`, `.claude/**`, die Gate-Skripte unter
 `scripts/dev/hooks/harness-guard.sh` ermittelt vor jedem `Edit`/`Write`/`MultiEdit`/
 `Bash`, welche Datei der Aufruf schreiben wuerde — inklusive `sed -i`, `tee`,
 `>`-Umleitung, `cp`/`mv` und `bash -c` — und verweigert ihn, wenn sie auf der Liste
-steht. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
-python/perl heraus, ein zur Laufzeit gebauter Pfad oder ein `find … -exec sed -i`
-kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
+steht. Was ein wegnehmendes Kommando erreicht (`rm`, `rmdir`, `shred`, `unlink`,
+`chmod`/`chown`/`chgrp`, die Quelle von `mv`, der Startpfad eines loeschenden `find`),
+trifft auch, wenn Harness-Pfade **darunter** liegen: `rm -rf .claude`, `rm -rf
+scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, ein Glob ueber sein Verzeichnis
+(`rm -rf scripts/dev/*`) und die Repo-Wurzel samt allem darueber, die alles enthaelt
+(`rm -rf ./*`, `rm -rf ..`; R-0127). Das trifft im autonomen Lauf auch harmlos wirkende
+Aufraeumer, die in der Wurzel ansetzen (`find . -name '*.pyc' -delete`, `rm -f *.log`): sie
+starten im Unterverzeichnis (`find apps -name '*.pyc' -delete`). Alle anderen Schreibformen
+pruefen nur den Pfad selbst. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
+python/perl heraus, ein zur Laufzeit gebauter Pfad, ein `find … -exec sed -i`,
+`git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
 auch hier die Deny-Liste, der Hook ist die zweite Schicht:
 
 ```bash

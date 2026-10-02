@@ -33,8 +33,10 @@ Grenzen (Kopf + DEVELOPMENT.md): `{1..3}`-Sequenzen und Klammern in Variablen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md Harness-Schutz (erkannte Formen, Grenzen)
 
-### T2 — Wächter: Wegnehmen eines Vorfahren von Harness-Pfaden  [ ]
+### T2 — Wächter: Wegnehmen eines Vorfahren von Harness-Pfaden  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @56d0cb06 2026-10-02T11:40:23+02:00
+Review: request_changes -> fixed -> approve (opus, 2 rounds), nits applied
 Änderung: Die Wegnehm-Verben (`rm`, `rmdir`, `shred`, `unlink`; `chmod`/`chown`/`chgrp`; die Quelle von `mv`) und
 die Startpfade eines löschenden `find` (`find_delete`, `:276–308`) melden ihre Pfade auf eigenem Weg an die
 Shell-Seite; dort trifft ein solcher Pfad auch, wenn er Vorfahr eines Musters aus `harness-paths.txt` ist (ein

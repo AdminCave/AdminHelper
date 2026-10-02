@@ -59,6 +59,12 @@
 # of=`), and the ones that change what it is (`chmod`, `chown`, `chgrp`) — are
 # inspected, and only when they are the segment's COMMAND, so reading a
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
+# What a take-away verb (`rm`, `rmdir`, `shred`, `unlink`, `chmod`/`chown`/
+# `chgrp`, the source of `mv`, the start of a deleting `find`) reaches also
+# hits when harness paths lie BELOW it — `rm -rf .claude`, `rm -rf
+# scripts/dev/*` through its directory, `rm -rf ./*` through the checkout root
+# (R-0127). Not seen: `git clean`, `git rm`, a delete from python or another
+# interpreter.
 # The command is tokenized before it is split into segments, so a `|` or `&&`
 # inside a quoted string (a commit message, say) is text and not a pipeline; a
 # newline only ends a command when it is neither inside a quote nor inside a
@@ -108,9 +114,11 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 0
 fi
 
-# Reads the hook JSON on stdin, prints one finding per line: `H <path>` for each
-# repo-relative file this call would write, `T <operand>` for each glob delete
-# in a shared temp directory. Prints nothing for a call that does neither.
+# Reads the hook JSON on stdin, prints one finding per line: `T <operand>` for
+# each glob delete in a shared temp directory, `B <words>` for a way past the
+# pre-commit hook, `H <path>` for each repo-relative file this call would write,
+# `A <path>` for each checkout path it takes away ("." is the root). Prints
+# nothing for a call that does none of these.
 # The program is handed over with -c, not on stdin: `python3 -` would eat the
 # very JSON this hook has to read.
 PARSE=$(cat <<'PY'
@@ -169,9 +177,25 @@ TMPDIR_TEXT = re.compile(r"^\$(?:TMPDIR\b|\{TMPDIR(?::?[-=?+][^}]*)?\})")
 UNRESOLVED = "/<unresolved>"
 
 out = []        # repo-relative paths this call writes
+taken = []      # repo-relative paths it takes away (deletes, moves, chmods): "." is the root
 tmp_hits = []   # glob deletes in a shared temp directory
 bypasses = []   # ways past the pre-commit hook
 deletes = []    # every delete seen, nested `bash -c` included: a loop counts them
+
+
+def taken_away(word, base):
+    """The checkout path a take-away verb reaches with this operand (R-0127):
+    the path itself, a glob through its literal directory (`rm -rf ./*` -> the
+    root, `rm -rf scripts/dev/*` -> scripts/dev); "." for the root, None outside
+    the checkout or behind a variable."""
+    p = glob_dir(word, base) if has_glob(word) else resolve(word, base)
+    if p == UNRESOLVED:
+        return None
+    p = os.path.realpath(p)
+    # The root, and every directory above it, holds the whole checkout.
+    if p == root or root.startswith(p.rstrip(os.sep) + os.sep):
+        return "."
+    return os.path.relpath(p, root) if p.startswith(root + os.sep) else None
 
 
 def rel(p, base):
@@ -711,6 +735,7 @@ def run_segment(tok, cwd, depth, state, sep):
             deletes.append(verb)
             if selects is not None:
                 tmp_hits.append(selects)
+            taken.extend(taken_away(e, cwd) for w in starts for e in brace_expand(w) if e)
     elif verb in ("for", "select"):
         globs = [w for w in args[args.index("in") + 1:] if tmp_glob(w, cwd)] if "in" in args else []
         state["loops"].append((globs[0] if globs else None, len(deletes)))
@@ -752,9 +777,11 @@ def run_segment(tok, cwd, depth, state, sep):
         out.extend(rel(w, cwd) for w in words[1:])   # words[0] is sed's script
     elif verb == "tee":
         out.extend(rel(w, cwd) for w in words)
-    elif verb in ("rm", "shred", "truncate", "unlink"):
+    elif verb in ("rm", "rmdir", "shred", "truncate", "unlink"):
         # Taking a harness file away is the most complete edit there is.
         out.extend(rel(w, cwd) for w in words)
+        if verb != "truncate":
+            taken.extend(taken_away(w, cwd) for w in words)
     elif verb == "ln":
         # `ln -sf x CLAUDE.md` replaces the file with a link to something else.
         out.extend(rel(w, cwd) for w in words[1:] if len(words) > 1)
@@ -777,6 +804,7 @@ def run_segment(tok, cwd, depth, state, sep):
         elif ops and (verb != "chmod" or CHMOD_MODE.match(ops[0])):
             ops = ops[1:]
         out.extend(rel(w, cwd) for w in ops)
+        taken.extend(taken_away(w, cwd) for w in ops)
     elif verb in ("cp", "mv", "install"):
         # An explicit -t/--target-directory, or the last word, is the target.
         target = None
@@ -785,7 +813,9 @@ def run_segment(tok, cwd, depth, state, sep):
                 target = args[j + 1]
             elif a.startswith("--target-directory="):
                 target = a.split("=", 1)[1]
-        sources = words
+        sources = list(words)
+        if target is not None and target in sources:
+            sources.remove(target)    # `-t dir` is no source (`mv -t scripts/dev x`)
         if target is None and len(words) > 1:
             target, sources = words[-1], words[:-1]
         if target is not None:
@@ -799,6 +829,7 @@ def run_segment(tok, cwd, depth, state, sep):
         # `mv CLAUDE.md /tmp/x` takes the harness file AWAY — the source counts.
         if verb == "mv":
             out.extend(rel(w, cwd) for w in sources)
+            taken.extend(taken_away(w, cwd) for w in sources)
     return cwd
 
 
@@ -828,6 +859,8 @@ for w in dict.fromkeys(bypasses):
     print("B " + printable(w))
 for p in dict.fromkeys(p for p in out if p):
     print("H " + p)
+for p in dict.fromkeys(p for p in taken if p):
+    print("A " + printable(p))
 PY
 )
 targets() { python3 -c "$PARSE" "$ROOT"; }
@@ -857,12 +890,32 @@ deny() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$esc"
 }
 
+# A path that is taken away — deleted, moved, chmod'ed, a deleting find's start
+# — takes everything below it along: it hits when a pattern lies below it
+# (`rm -rf scripts/dev/hooks`, `rm -rf .claude`, R-0127). The checkout root
+# holds them all. Only for these verbs; every other write is the path itself.
+holds_harness() {
+  local path="$1" pattern
+  [ -f "$PATHS" ] || return 1
+  while IFS= read -r pattern; do
+    case "$pattern" in ''|'#'*) continue ;; esac
+    [ "$path" = "." ] && return 0
+    case "$pattern" in "$path"/*) return 0 ;; esac
+  done < "$PATHS"
+  return 1
+}
+
 TMP_HIT="" BYPASS="" HIT=""
 while IFS= read -r line; do
   case "$line" in
     "T "*) [ -n "$TMP_HIT" ] || TMP_HIT="${line#T }" ;;
     "B "*) [ -n "$BYPASS" ] || BYPASS="${line#B }" ;;
     "H "*) if [ -z "$HIT" ] && match "${line#H }"; then HIT="${line#H }"; fi ;;
+    "A "*)
+      # A taken path is a harness path itself (`find .claude/skills -delete`)
+      # or holds them.
+      if [ -z "$HIT" ] && match "${line#A }"; then HIT="${line#A }"
+      elif [ -z "$HIT" ] && holds_harness "${line#A }"; then HIT="${line#A } (holds harness paths)"; fi ;;
   esac
 done < <(targets)
 

@@ -759,6 +759,52 @@ guard auto Bash "$(cmdjson 'chmod +x apps/web/x.sh')"
 guard auto Bash "$(cmdjson 'chmod --reference CLAUDE.md apps/web/x.sh')"
 [ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: the --reference file is only read" || bad "chmod --reference: $OUT$ERR"
 
+# R-0127: taking away a directory that holds harness paths takes them along —
+# deleting it, moving it, chmod/chown -R on it, a glob in it, a deleting find
+# from it. The checkout root holds them all. Autonomous: denied; interactive: a
+# warning, like every harness path.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+rm -rf .claude
+rm -rf scripts/dev/hooks
+rmdir scripts/dev/hooks
+chmod -R -x scripts/dev/hooks
+chown -R x .claude
+rm -rf scripts/dev/*
+rm -rf ./*
+rm -rf scripts
+find scripts -delete
+find . -name '*.sh' -exec rm {} +
+mv scripts/dev /tmp/x
+find .claude/skills -delete
+find CLAUDE.md -delete
+rm -rf ..
+rm -rf ../*
+mv -t /tmp/x scripts/dev
+find {.claude,x} -delete
+CMDS
+guard inter Bash "$(cmdjson 'rm -rf scripts/dev/hooks')"
+[ -z "$OUT" ] && grep -q 'harness path' <<<"$ERR" \
+  && ok "interactive: taking away a harness directory only warns" || bad "interactive ancestor: out=$OUT err=$ERR"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "autonomous, free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+rm -f apps/web/dist/*.js
+chmod -R +x apps/web/scripts
+rm -rf apps/web/node_modules
+cp CLAUDE.md /tmp/x
+rm -rf /tmp/scratch
+mv apps/web/a apps/web/b
+rm -f scripts/tests/x_test.sh
+rm -rf scripts/dev/hook
+mv -t scripts/dev foo.sh
+CMDS
+
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.
 while IFS= read -r cmd; do

@@ -266,6 +266,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Waechter: wer ein Verzeichnis mit Harness-Pfaden wegnimmt, nimmt sie mit (R-0127):**
+  `scripts/dev/hooks/harness-guard.sh` verweigert im autonomen Lauf auch `rm -rf .claude`,
+  `rm -rf scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, `mv scripts/dev /tmp/x`, einen
+  Glob ueber sein Verzeichnis (`rm -rf scripts/dev/*`), die Repo-Wurzel (`rm -rf ./*`) und ein
+  loeschendes `find` von dort aus — bisher zaehlte nur der Harness-Pfad selbst. Die Regel gilt
+  nur fuer wegnehmende Kommandos (`rm`, `rmdir`, `shred`, `unlink`, `chmod`/`chown`/`chgrp`,
+  `mv`-Quelle, `find … -delete`); interaktiv bleibt es eine Warnung. Dazu erkennt der Waechter
+  `[^x]`, Klammer-Listen (`/{tmp,x}/…`) und `cd` in einen Glob mit woertlichem Operand
+  (R-0125). Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
+
 - **Verify-Zeile, wie sie dasteht (R-0104):** `scripts/dev/verify.sh` nimmt mehrere Komponenten
   und faehrt sie als einen Lauf `run.sh quick --only <a> <b>` (Argumente nach `--` nur fuer eine
   Komponente, `all` nur allein). `scripts/dev/task-close.sh` liest die Komponenten aus einer
