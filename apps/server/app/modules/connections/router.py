@@ -52,6 +52,17 @@ def _scope_connections(query, auth):
     return query
 
 
+def _require_key_server(auth, server_id: str | None) -> None:
+    """A server-bound API key writes only connections of its own server: any other
+    serverId, and none at all, is refused. Checked before the server's existence,
+    so the answer is the same for a server that exists and one that does not."""
+    _user, api_key = auth
+    if api_key is not None and api_key.server_id and server_id != api_key.server_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Kein Zugriff auf diesen Server"
+        )
+
+
 def _reject_unknown_server(db: Session, server_id: str | None) -> None:
     """A serverId no row matches used to reach the INSERT and come back as an
     uncaught ForeignKeyViolation — HTTP 500 before any response existed.
@@ -59,7 +70,7 @@ def _reject_unknown_server(db: Session, server_id: str | None) -> None:
     Checked here rather than in the schema because a Pydantic validator has no
     session. RequestValidationError (not HTTPException) so the body stays the
     HTTPValidationError shape the OpenAPI schema declares for 422; the import
-    route has its own per-entry shape and reports it there instead.
+    route reports the same shape per entry, under ("body", "connections", index).
 
     A server deleted between this check and the commit still violates the
     constraint. That race is the old behaviour, not a new one, and closing it
@@ -102,6 +113,7 @@ def create_connection(
     db: Session = Depends(get_db),
     _auth=Depends(write_dep),
 ):
+    _require_key_server(_auth, connection.serverId)
     _reject_unknown_server(db, connection.serverId)
     data = connection.model_dump()
     data["id"] = str(uuid.uuid4())
@@ -138,6 +150,8 @@ def update_connection(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden"
         )
+    if "serverId" in connection.model_fields_set:
+        _require_key_server(_auth, connection.serverId)
     _reject_unknown_server(db, connection.serverId)
     conn.update_from_dict(connection.model_dump(exclude_unset=True))
     db.commit()
@@ -232,18 +246,12 @@ def import_connections(
     # all-or-nothing — otherwise a "replace" import with bad input would wipe
     # every existing connection and import nothing (data loss).
     validated: list[tuple[int, dict]] = []
-    errors: list[dict] = []
+    errors: list[tuple[int, dict]] = []
     for idx, conn_data in enumerate(req.connections):
         try:
             payload = ConnectionCreate(**conn_data).model_dump()
         except ValidationError as exc:
-            errors.append(
-                {
-                    "index": idx,
-                    "name": conn_data.get("name") if isinstance(conn_data, dict) else None,
-                    "errors": exc.errors(include_url=False),
-                }
-            )
+            errors.extend((idx, err) for err in exc.errors(include_url=False))
             continue
         validated.append((idx, payload))
 
@@ -257,25 +265,23 @@ def import_connections(
     for idx, payload in validated:
         if payload.get("serverId") is not None and payload["serverId"] not in known:
             errors.append(
-                {
-                    "index": idx,
-                    "name": payload.get("name"),
-                    "errors": [
-                        {
-                            "type": "value_error",
-                            "loc": ["serverId"],
-                            "msg": "server not found",
-                            "input": payload["serverId"],
-                        }
-                    ],
-                }
+                (
+                    idx,
+                    {
+                        "type": "value_error",
+                        "loc": ("serverId",),
+                        "msg": "server not found",
+                        "input": payload["serverId"],
+                    },
+                )
             )
 
     if errors:
-        errors.sort(key=lambda e: e["index"])
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={"message": "Import enthält ungültige Einträge", "rejected": errors},
+        # The 422 the schema declares (HTTPValidationError), one item per error, each
+        # located at its entry; sorted so the entries read in import order.
+        errors.sort(key=lambda e: e[0])
+        raise RequestValidationError(
+            [{**err, "loc": ("body", "connections", idx, *err["loc"])} for idx, err in errors]
         )
 
     if req.mode == "replace":
