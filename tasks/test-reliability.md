@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Test-Zuverlässigkeit: install_test-Stub liest stdin, Desktop-E2E hält node_modules frisch (R-0131, R-0142) — Task-Ledger
-Status: geplant · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Kevin, 2026-10-02 (Design-Gate, „Test-Zuverlässigkeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0131, R-0142
 Heavy: linux-full — `run.sh e2e --strict --step desktop_e2e_crud` auf frischer Template-Box ohne händisches `npm ci` (erwartet: `npm ci` im Log, 6 Specs grün). Vorher die Template-Tags gegen die Lockfile-Änderungen prüfen (junit-Reporter 7bc9f6d0 vom 2026-09-27, letzte Lockfile-Änderung heute 0ecdc3ca vom 2026-09-30): ist das Template jünger, beweist der Lauf nur „keine Regression“, den Fix beweist dann der hermetische Test aus T2.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, keine Doku, SPDX bei neuen Dateien).
