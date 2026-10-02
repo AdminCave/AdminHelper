@@ -269,3 +269,28 @@ def test_an_explicitly_sent_taken_port_stays_409(test_client, db_session, admin_
         "/api/frp/tunnels/t-old", json={"tunnel_type": "stcp", "visitor_port": 6000}, headers=h
     )
     assert r.status_code == 409, r.text
+
+
+def test_put_to_https_with_a_taken_port_is_not_a_409(test_client, db_session, admin_user):
+    # The port check applies only to a tunnel that ends up stcp: for https the field is
+    # dropped anyway, so a port another stcp tunnel holds is no conflict.
+    _seed(db_session)
+    db_session.add(
+        FrpTunnel(
+            id="t-b",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="b-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="s" * 32,
+            visitor_port=6001,
+            enabled=True,
+        )
+    )
+    db_session.commit()
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-a", json={**_HTTPS, "visitor_port": 6001}, headers=h)
+    assert r.status_code == 200, r.text
+    assert _stored(db_session, "t-a").visitor_port is None

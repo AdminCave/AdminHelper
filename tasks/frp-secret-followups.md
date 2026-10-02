@@ -92,3 +92,13 @@ Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (
 https-Tunnel trägt weder Secret noch Visitor-Port, der Wechsel auf HTTPS löscht beide, der Wechsel zurück auf STCP
 vergibt bei belegtem Port einen freien) · docs/admin/frp-tunnel.html:93 + docs/en/admin/frp-tunnel.html:57 (ein
 Halbsatz: der Wechsel auf HTTPS löscht das Secret; zurück auf STCP gibt es ein neues) · CHANGELOG (Fixed)
+
+### T3 — Nachtrag aus dem Review: Test für den https-PUT mit belegtem Port  [x]
+Komponente: server · Dateien: apps/server/tests/test_frp_tunnels.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @a528fa76 2026-10-02T16:02:29+02:00
+Review: Nachtrag aus dem Gesamt-Review (approve, sonnet)
+Herkunft: Gesamt-Review (Sonnet, 2026-10-02), einziger gebauter Zweig ohne Test
+Änderung: Test: Ein PUT auf https mit einem `visitor_port`, den ein anderer stcp-Tunnel belegt, antwortet 200 (die
+Port-Prüfung greift nur, wenn der Tunnel danach stcp ist) und speichert keinen Port. Kein Code.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py
+Doku: keine (Test)
