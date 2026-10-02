@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fuzz-Gate deterministisch (R-0063) — Task-Ledger
-Status: freigegeben · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/fuzz-gate-determinism.md (Roadmap R-0063)
 Heavy: none — nur Test-Konfiguration, Test-Stubs, ein Lint und Request-Schranken im Monitoring-Schema; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Tiefe (alle Phasen, 100 Beispiele) bleibt im Wochenlauf; ein grüner Wochenlauf nach dem Merge ist die Evidenz dafür.
@@ -16,8 +16,10 @@ Geplant 2026-09-30 von der Aufsicht (adminhelper-ac) auf Kevins Wort (Entscheidu
 und Proxy-Stub, ein Ledger mit fünf Tasks). Branch `harness/`, weil `scripts/tests/run.sh` und
 `.github/workflows/ci.yml` Harness-Pfade sind: Bau interaktiv, keine Lane. Server-Suiten nur mit eigener Test-DB.
 
-### T1 — Beweis-Instrument: zwei gleiche Läufe, ein `curl`-Diff  [ ]
+### T1 — Beweis-Instrument: zwei gleiche Läufe, ein `curl`-Diff  [x]
 Komponente: scripts · Dateien: scripts/tests/schemathesis_determinism.sh, scripts/tests/schemathesis_curl_log.py, scripts/tests/schemathesis_determinism_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3b2a5696 2026-10-02T10:54:19+02:00
+Review: approve nach 2 Runden (opus): Sanitization aus, compare fail-closed (unlesbar, ohne Newline, NUL)
 Änderung: Neues Skript (SPDX) `schemathesis_determinism.sh [--only <dienste…>]`: fährt je Dienst den
 Schemathesis-Lauf (`pytest -q -m schemathesis` wie `run.sh:651–683`) zweimal mit einem pytest-Plugin
 `schemathesis_curl_log.py` (SPDX; per `-p` geladen, patcht `Case.call_and_validate` und schreibt je Fall
