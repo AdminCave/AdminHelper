@@ -124,6 +124,56 @@ else:
 ' "$1" "$2"
 }
 
+# The python lock Kevin and the runner share (R-0080), its own step for the same
+# reason — the hermetic test fares it against temp files:
+#   bash scripts/dev/runner-redteam.sh --py-lock <absolute path>
+# This user must be able to take the lock and must not be able to remove or
+# replace it: a new inode while a run holds the old one splits the lock in two.
+# The owner it expects is an argument: the normal run passes 0 itself, because
+# runner-env.sh has sourced the runner's own ~/.devenv.sh by then and nothing
+# from the environment may move the target. AH_REDTEAM_LOCK_UID is read only by
+# --py-lock, for the test.
+redteam_py_lock() {
+  local f="$1" want="$2" d rc
+  d="$(dirname "$f")"
+  if [ ! -e "$f" ] && [ ! -L "$f" ]; then
+    fail "the shared python lock $f is missing — run sudo bash scripts/dev/runner-setup.sh"
+    return
+  fi
+  if [ -L "$f" ] || [ ! -f "$f" ]; then
+    fail "the shared python lock $f is not a regular file"
+    return
+  fi
+  if [ -w "$d" ]; then
+    fail "$d is writable for $(id -un) — it could remove or replace the shared python lock"
+  else
+    ok "$d is not writable for $(id -un)"
+  fi
+  if [ "$(stat -c '%u' "$f")" = "$want" ] && [ "$(stat -c '%u' "$d")" = "$want" ]; then
+    ok "the shared python lock and its directory belong to uid $want"
+  else
+    fail "the shared python lock belongs to uid $(stat -c '%u' "$f"), its directory to uid $(stat -c '%u' "$d") — expected $want"
+  fi
+  flock -n -E 75 "$f" true 2>/dev/null; rc=$?
+  case "$rc" in
+    0)  ok "$(id -un) can take the shared python lock" ;;
+    75) info "the shared python lock is held right now — taking it was not tested" ;;
+    *)  fail "$(id -un) cannot take the shared python lock $f (flock exit $rc)" ;;
+  esac
+}
+
+OKS=0 FAILS=0 INFOS=0
+ok()   { printf 'ok    %s\n' "$*"; OKS=$((OKS + 1)); }
+fail() { printf 'FAIL  %s\n' "$*"; FAILS=$((FAILS + 1)); }
+info() { printf 'info  %s\n' "$*"; INFOS=$((INFOS + 1)); }
+
+if [ "${1:-}" = "--py-lock" ]; then
+  [ -n "${2:-}" ] || { echo "runner-redteam: --py-lock needs a path" >&2; exit 2; }
+  case "$2" in /*) ;; *) echo "runner-redteam: --py-lock needs an absolute path" >&2; exit 2 ;; esac
+  redteam_py_lock "$2" "${AH_REDTEAM_LOCK_UID:-0}"
+  [ "$FAILS" -eq 0 ]; exit
+fi
+
 if [ "${1:-}" = "--pin" ]; then
   [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "runner-redteam: --pin needs <model> <version>" >&2; exit 2; }
   redteam_pin "$2" "$3"
@@ -135,11 +185,6 @@ if [ "${1:-}" = "--verdict" ]; then
   redteam_verdict "$2"
   exit 0
 fi
-
-OKS=0 FAILS=0 INFOS=0
-ok()   { printf 'ok    %s\n' "$*"; OKS=$((OKS + 1)); }
-fail() { printf 'FAIL  %s\n' "$*"; FAILS=$((FAILS + 1)); }
-info() { printf 'info  %s\n' "$*"; INFOS=$((INFOS + 1)); }
 
 echo "── red team as $(id -un) (uid $(id -u)), repo $REPO"
 echo ""
@@ -165,6 +210,9 @@ else
   fail "runner-env.sh refused (see its message above) — this user is not provisioned yet"
   ENV_OK=0
 fi
+
+# ── 0b. the python lock Kevin and the runner share ───────────────────────────
+redteam_py_lock /var/lib/adminhelper-dev/py.lock 0
 
 # ── 1. other people's secrets ────────────────────────────────────────────────
 if [ -z "$OWNER_HOME" ] || [ ! -e "$OWNER_HOME" ]; then

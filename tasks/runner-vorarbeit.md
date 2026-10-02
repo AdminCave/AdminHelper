@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit für Stufe 7 (R-0080, R-0077) — Task-Ledger
-Status: aktiv · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „Runner-Vorarbeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit.md (Roadmap R-0080, R-0077)
 Heavy: none — nur Skripte (run.sh-Sperre, runner-setup.sh, Red Team) und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis über zwei echte Nutzer liefern Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec, „Kevins Handarbeit“).
@@ -79,8 +79,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, CHANGELOG.md
 Abhängt von: T1, T2, T3
 
-### T5 — Red Team prüft die geteilte Sperre  [ ]
+### T5 — Red Team prüft die geteilte Sperre  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8998897b 2026-10-02T17:18:03+02:00
+Review: approve (opus, Runde 2): Runde 1 wichtig Soll-UID als Argument statt aus der Umgebung und Test fuer nicht oeffenbare Sperre behoben, Nits Verzeichnis-Fall, absoluter Pfad, root-Hinweis
 Änderung: Eigener Schritt wie `--verdict`: `runner-redteam.sh --py-lock <pfad>` gibt `ok`/`FAIL`/`info`-Zeilen
 aus; der normale Lauf ruft ihn mit `/var/lib/adminhelper-dev/py.lock` auf (neuer Abschnitt nach „0. the
 environment“, `runner-redteam.sh:147`). Geprüft: Datei existiert (sonst `FAIL`, Abhilfe `runner-setup.sh`),
