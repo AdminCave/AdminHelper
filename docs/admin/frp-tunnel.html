@@ -90,7 +90,7 @@
               <tr><td><code>stcp</code></td><td>Secure-TCP, braucht Visitor auf Client-Seite – Desktop-Client löst das automatisch.</td></tr>
             </tbody>
           </table>
-          <p>Das Feld <strong>Secret-Key</strong> eines STCP-Tunnels: leer beim Anlegen erzeugt der Server ein Secret; leer beim Bearbeiten bleibt das gespeicherte unverändert (der Server liefert es nie zurück, das Feld startet deshalb leer). Zum Rotieren einen neuen Wert eintragen (mindestens 16 Zeichen) und danach den Tunnel im Desktop neu starten.</p>
+          <p>Das Feld <strong>Secret-Key</strong> eines STCP-Tunnels: leer beim Anlegen erzeugt der Server ein Secret; leer beim Bearbeiten bleibt das gespeicherte unverändert (der Server liefert es nie zurück, das Feld startet deshalb leer). Zum Rotieren einen neuen Wert eintragen (mindestens 16 Zeichen) und danach den Tunnel im Desktop neu starten. Der Wechsel auf HTTPS löscht das Secret; zurück auf STCP gibt es ein neues.</p>
 
           <h2>Visitor-Ports</h2>
           <p>STCP-Tunnel brauchen lokal einen freien Port für den Visitor. Der Desktop-Client wählt zufällig aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
