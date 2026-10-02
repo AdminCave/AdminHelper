@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Nachzügler: Wächter nach dem Filtern, stcp-Felder nur an stcp-Tunneln — Task-Ledger
-Status: geplant · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Kevin, 2026-10-02 (Design-Gate, „FRP-Nachzügler“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0128, R-0129
 Heavy: none — kein Datenpfad eines nutzbaren Tunnels ändert sich: T1 betrifft nur stcp-Tunnel ohne Secret (über die API seit #61 nicht mehr erzeugbar), T2 nur das Speichern beim Typwechsel; pytest deckt Generate-Routen, POST und PUT ab, das Szenario `--tunnel` lief für #61 grün.
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -25,9 +26,9 @@ Entscheidungen (Kevin bzw. Aufsicht, 2026-10-02):
 - B: Der Wechsel auf https leert Secret **und** `visitor_port`; ein https-POST verwirft mitgeschickte stcp-Felder (Kevin).
 - C: Keine Datenmigration. Wechselt ein Tunnel auf stcp und ist der gespeicherte Port belegt, vergibt der Server einen
   freien Port; ist keiner gespeichert, vergibt er ihn wie bisher (Kevin, „Heilen beim Wechsel“).
-
-Offene Frage am Gate: `docs/` beschreibt den 404 der Visitor-Routen bisher nirgends; die Absicht steht nur im
-Code-Kommentar (3.33). T1 trägt ihn in die API-Referenz ein (DE + EN). Ist das die gewollte Stelle?
+- D: Wechselt ein Tunnel von einem anderen Typ auf stcp und schickt kein `secret_key` mit, erzeugt der Server immer
+  ein neues Secret, auch wenn eine Altzeile noch eines trägt (Kevin am Gate, „Immer neues Secret“).
+- Doku-Stelle des 404: die API-Referenz (DE + EN); `docs/` beschrieb ihn bisher nirgends (Aufsicht am Gate).
 
 ### T1 — Generate-Routen prüfen auf Tunnel erst nach dem Weglassen der Tunnel ohne Secret  [ ]
 Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_frp_permissions.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
@@ -64,13 +65,14 @@ Tunnel, der danach nicht stcp ist, `secret_key` und `visitor_port` auf `None` (E
 (`:71–77`). Ist der Tunnel nach dem Update stcp und trägt einen `visitor_port`, der in diesem PUT nicht mitgeschickt
 wurde und schon einem anderen stcp-Tunnel gehört, vergibt der Server `next_visitor_port(db, exclude_tunnel_id=…)`
 (Entscheidung C, heilt Altzeilen ohne Migration); ein ausdrücklich mitgeschickter, belegter Port bleibt 409 wie
-heute. Ein Secret, das eine Altzeile noch trägt, bleibt beim Zurückwechseln stehen (gültiger 256-Bit-Wert); ohne
-Secret erzeugt der Server eins wie bisher (`:201–202`). Tests (`tests/test_frp_tunnels.py`, Muster `_seed`/`_body`):
+heute. Wechselt der Tunnel in diesem PUT von einem anderen Typ auf stcp und schickt kein `secret_key` mit, erzeugt der
+Server immer ein neues Secret, auch wenn eine Altzeile noch eines trägt (Entscheidung D); bleibt er stcp, gilt wie
+bisher „leer = unverändert“ (`:201–202`). Tests (`tests/test_frp_tunnels.py`, Muster `_seed`/`_body`):
 PUT stcp→https leert `secret_key` und `visitor_port` in der DB; ein https-POST mit `secret_key` und `visitor_port`
 speichert beides nicht; Hin- und Rückwechsel, während ein anderer stcp-Tunnel den alten Port bekommen hat, gibt 200 mit
 neuem Secret und freiem Port; eine Altzeile (https mit Secret und Port 6000, direkt in der DB) plus ein anderer stcp
-auf 6000 ⇒ PUT `{"tunnel_type": "stcp"}` gibt 200 mit einem freien Port; ein mitgeschickter belegter Port bleibt 409.
-Vor dem Fix rot: die ersten vier.
+auf 6000 ⇒ PUT `{"tunnel_type": "stcp"}` gibt 200 mit einem freien Port und einem neuen Secret (≠ dem alten); ein
+mitgeschickter belegter Port bleibt 409. Vor dem Fix rot: die ersten vier.
 Beweis: origin/main@927134b3, Wegwerf-Test im eigenen Worktree (Aufsicht 2026-10-02): PUT `/api/frp/tunnels/t-a`
 `{"tunnel_type":"https","protocol":"web","custom_domains":"a.example.test"}` ⇒ 200, danach in der DB
 `type=https secret='existing-secret' visitor_port=6000`; POST eines neuen stcp-Tunnels ⇒ 201 mit `visitorPort` 6000;
