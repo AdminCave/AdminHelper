@@ -124,6 +124,37 @@ ports_of() {
   && ok "docker-compose.yml publishes neither" \
   || bad "production publishes: $(ports_of "$REPO_ROOT/docker-compose.yml" postgres) $(ports_of "$REPO_ROOT/docker-compose.yml" redis)"
 
+# ── e2e_npm_ready ────────────────────────────────────────────────────────────
+# node_modules from the template outlived a lockfile change (R-0131): the suites
+# checked only `[ -d node_modules ]`. npm is a stub that logs where it ran.
+cat > "$SHIM/npm" <<'EOF'
+#!/usr/bin/env bash
+printf '%s %s\n' "$PWD" "$*" >> "$STUB_LOG/npm.args"
+[ "${STUB_NPM_FAIL:-0}" = 0 ]
+EOF
+chmod +x "$SHIM/npm"
+NPM="$WORK/npm"
+mkdir -p "$NPM/missing" "$NPM/stale/node_modules" "$NPM/fresh/node_modules"
+for d in missing stale fresh; do : > "$NPM/$d/package-lock.json"; done
+touch -d '2026-01-01' "$NPM/stale/node_modules" "$NPM/fresh/package-lock.json"
+touch -d '2026-02-01' "$NPM/stale/package-lock.json" "$NPM/fresh/node_modules"
+npm_ready() {  # npm_ready <dir>... — e2e_npm_ready in a shell of its own, like a suite
+  PATH="$SHIM:$PATH" bash -c '. "$1/scripts/tests/lib_e2e_stack.sh"; shift; e2e_npm_ready "$@"' \
+    _ "$REPO_ROOT" "$@" > "$WORK/npm.out" 2>&1
+}
+npm_ready "$NPM/missing" "$NPM/stale" "$NPM/fresh"; rc=$?
+[ "$rc" = 0 ] && ok "e2e_npm_ready runs against the npm stub" || bad "e2e_npm_ready: rc=$rc $(cat "$WORK/npm.out")"
+grep -qx "$NPM/missing ci --no-audit --no-fund" "$STUB_LOG/npm.args" 2>/dev/null \
+  && ok "node_modules missing: npm ci" || bad "missing: $(cat "$STUB_LOG/npm.args" 2>/dev/null)"
+grep -qx "$NPM/stale ci --no-audit --no-fund" "$STUB_LOG/npm.args" 2>/dev/null \
+  && ok "package-lock.json newer than node_modules: npm ci" || bad "stale: $(cat "$STUB_LOG/npm.args" 2>/dev/null)"
+! grep -q "^$NPM/fresh " "$STUB_LOG/npm.args" 2>/dev/null \
+  && ok "node_modules newer than the lockfile: no npm call" || bad "fresh: $(cat "$STUB_LOG/npm.args")"
+STUB_NPM_FAIL=1 npm_ready "$NPM/missing"; rc=$?
+[ "$rc" != 0 ] && ok "a failing npm ci is a non-zero exit (rc=$rc)" || bad "a failing npm ci returned 0"
+npm_ready "$NPM/nowhere"; rc=$?
+[ "$rc" != 0 ] && ok "a directory that is not there is a non-zero exit" || bad "a missing directory returned 0"
+
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

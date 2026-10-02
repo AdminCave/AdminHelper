@@ -4,6 +4,7 @@
 # integration + E2E tests. Source it, then:
 #
 #   e2e_require [extra-bins...]      # preconditions; SKIPs (exit 75) when missing
+#   e2e_npm_ready <dir...>           # npm ci where node_modules is missing or stale
 #   e2e_init <true|false>            # MTLS_ENFORCE; sets up env + EXIT teardown
 #   e2e_up <service...>              # build + start services, wait for the gateway
 #   token=$(e2e_admin_token)         # admin JWT through the gateway
@@ -56,6 +57,21 @@ e2e_require() {
     done
     docker compose version >/dev/null 2>&1 || { echo "SKIP: docker compose v2 missing"; exit 75; }
     docker info >/dev/null 2>&1 || { echo "SKIP: docker daemon not reachable"; exit 75; }
+}
+
+# e2e_npm_ready <dir>... — `npm ci` in each dir whose node_modules is missing or older
+# than its package-lock.json, the rule of run.sh's npm_ci_if_stale (5.26). A suite run
+# with --step skips the desktop-e2e-smoke step that applies it, and node_modules from
+# the template then lacks every package the lockfile gained since.
+e2e_npm_ready() {
+    local d
+    for d in "$@"; do
+        ( cd "$d" || exit 1
+          if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then
+              echo "  npm ci in $d (node_modules missing or older than package-lock.json)"
+              npm ci --no-audit --no-fund
+          fi ) || return 1
+    done
 }
 
 e2e_dc() {

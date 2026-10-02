@@ -47,8 +47,10 @@ Semantik: `docs/admin/troubleshooting.html:60`: „Sicherer (Passwort nicht im P
 ist gewollt, der Stub muss es abnehmen. Dazu `.claude/rules/testing.md:37`: „Ein erst roter, dann grüner Test ist
 `flaky`, kein PASS.“
 
-### T2 — lib_e2e_stack: e2e_npm_ready installiert, wenn node_modules fehlt oder älter ist als das Lockfile  [ ]
+### T2 — lib_e2e_stack: e2e_npm_ready installiert, wenn node_modules fehlt oder älter ist als das Lockfile  [x]
 Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @712d3d5e 2026-10-02T18:37:46+02:00
+Review: Review am Ende (Kurz-Ledger); Mutation alte Regel [ -d node_modules ]: 0 npm-Aufrufe bei neuerem Lockfile, mit e2e_npm_ready 1
 Roadmap: R-0131
 Befund: `desktop_e2e_crud.sh:33–34` und `desktop_e2e_misc.sh:61–62` prüfen nur `[ -d node_modules ] || npm ci`; auf
 einer Box mit node_modules aus dem Template fehlt danach jedes später ins Lockfile gekommene Paket. Frisch hält
