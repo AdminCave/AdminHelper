@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Nachzügler: Wächter nach dem Filtern, stcp-Felder nur an stcp-Tunneln — Task-Ledger
-Status: bereit · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „FRP-Nachzügler“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0128, R-0129
 Heavy: none — kein Datenpfad eines nutzbaren Tunnels ändert sich: T1 betrifft nur stcp-Tunnel ohne Secret (über die API seit #61 nicht mehr erzeugbar), T2 nur das Speichern beim Typwechsel; pytest deckt Generate-Routen, POST und PUT ab, das Szenario `--tunnel` lief für #61 grün.
@@ -102,3 +102,14 @@ Herkunft: Gesamt-Review (Sonnet, 2026-10-02), einziger gebauter Zweig ohne Test
 Port-Prüfung greift nur, wenn der Tunnel danach stcp ist) und speichert keinen Port. Kein Code.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py
 Doku: keine (Test)
+
+Abschluss-Evidenz (2026-10-02):
+- T1 f235a89d: vier neue Tests vor dem Fix rot (visitor-bundle, visitor-toml, frpc-toml 404; bulk-zip ohne visitors/<user>.toml),
+  die Kontrollzeile „ein nutzbarer Tunnel genügt“ grün. T2 a528fa76: vier neue Tests vor dem Fix rot, der 409-Test schon vorher
+  grün. T3 6acd7ed7 (aus dem Gesamt-Review): Test für die Port-Prüfung, die nur bei einem Tunnel greift, der stcp wird; ohne
+  diese Bedingung rot.
+- Volle `verify.sh server --strict` nach T2: `817 passed, 2 skipped` (Redis lokal), Schemathesis `308 passed`.
+  `run.sh quick --strict` @a528fa76: `18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns`.
+- Gesamt-Review (Kurz-Ledger, Sonnet): approve, nur Nits. Der fehlende Test wurde T3; die übrigen gingen zur Einordnung an die
+  Aufsicht.
+- origin/main (8713567b) ist enthalten. Heavy: none.
