@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Verbindungen: nur bekannte API-Felder gehen in Spalten, extra_data bleibt Beiwerk — Task-Ledger
-Status: geplant · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Kevin, 2026-10-02 („R-0136 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0136
 Heavy: none — nur das Mapping im Modell und das Lesen von extra_data; Antwort-Schema, Routen und Clients bleiben gleich, pytest deckt Create, Update, Import und Lesen ab.
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
