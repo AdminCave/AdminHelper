@@ -19,7 +19,9 @@
 #              test, the t.Fatal/t.Error calls; only where tests are — a test
 #              file or the span of a test, never an import line, R-0130; a
 #              helper in `#[cfg(test)] mod tests` without `#[test]` is outside)
-#              or a bare `return` inside a test changes what "passed" means.
+#              or a `return` inside a test, bare or with the value a test
+#              returns anyway (None, undefined, Ok(())), changes what "passed"
+#              means. Other return values and a generic `.fail(` stay out.
 #              Two things are deliberately not findings: a
 #              line that carries `# review: ok <reason>` (and says why), and a
 #              pattern that only appears behind a comment marker, because a
@@ -55,8 +57,10 @@ die() { echo "review.sh: $*" >&2; exit 2; }
 # with the language it comes from: pytest, vitest/jest/Playwright, Rust, Go,
 # shell. One line per group, so each can carry the marker that exempts it.
 SKIP_PATTERNS='@pytest.mark.skip\x1fpytest.skip(\x1f@pytest.mark.xfail\x1fpytest.xfail(\x1f'        # review: ok this IS the list
-SKIP_PATTERNS+='it.skip(\x1ftest.skip(\x1fdescribe.skip(\x1f.skipIf(\x1f.todo(\x1ftest.fixme(\x1f'  # review: ok this IS the list
-SKIP_PATTERNS+='xit(\x1fxtest(\x1fxdescribe(\x1fit.only(\x1ftest.only(\x1fdescribe.only(\x1f'     # review: ok this IS the list
+SKIP_PATTERNS+='.skipTest(\x1fpytest.importorskip(\x1f'                                             # review: ok this IS the list
+SKIP_PATTERNS+='it.skip(\x1ftest.skip(\x1fdescribe.skip(\x1f.skipIf(\x1f.todo(\x1f.fixme(\x1f'      # review: ok this IS the list
+SKIP_PATTERNS+='fit(\x1ffdescribe(\x1f.runIf(\x1f.fails(\x1ftest.fail(\x1f'                         # review: ok this IS the list
+SKIP_PATTERNS+='xit(\x1fxtest(\x1fxdescribe(\x1fit.only(\x1ftest.only(\x1fdescribe.only(\x1f'       # review: ok this IS the list
 SKIP_PATTERNS+='#[ignore\x1ft.Skip(\x1ft.Skipf(\x1ft.SkipNow(\x1f|| true\x1f--no-verify\x1fset +e'  # review: ok this IS the list
 
 # Which test files a component owns. The scope check allows them even when the
@@ -193,6 +197,7 @@ case "$VERB" in
                       }
       /^\+/           {
                         line = substr($0, 2)
+                        sub(/\r$/, "", line)
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
                           cnt = split(PAT, pat, "\x1f")
@@ -211,10 +216,11 @@ case "$VERB" in
                               break
                             }
                           }
-                          # A line that is only a return: inside a test it ends
-                          # the test before its checks. Whether it is inside one
-                          # is decided below, against the new file.
-                          if (line ~ /^[ \t]*return;?[ \t]*((#|\/\/).*)?$/)
+                          # A line that is only a return, bare or with the value a
+                          # test returns anyway: inside a test it ends the test
+                          # before its checks. Whether it is inside one is decided
+                          # below, against the new file.
+                          if (line ~ /^[ \t]*return( None| undefined| Ok\(\(\)\))?;?[ \t]*((#|\/\/).*)?$/)
                             printf "AR\t%s\t%d\t%s\n", file, newno, trim(line)
                         }
                         newno++; next
@@ -363,8 +369,9 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
         else:
             entries[(path, name)] = (a, b)
 
-# A bare return counts inside the span of a test in the NEW file only; a
-# helper next to the tests may return early.
+# A return that ends a test early (bare, or with None, undefined, Ok(()))
+# counts inside the span of a test in the NEW file only; a helper next to the
+# tests may return early.
 spans = {}
 for path, newno, ln in ars:
     if path not in spans:

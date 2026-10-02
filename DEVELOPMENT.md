@@ -431,14 +431,16 @@ dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sei
 --strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
 `verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
 Prosa-Zeile faehrt die Komponente der Task, mit Hinweis); (3) `review.sh diff-scan`
-(abgeschaltete Tests im Diff: Skip-, xfail-, todo- und only-Muster von pytest, vitest/jest,
-Playwright, Rust und Go, `|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
+(abgeschaltete Tests im Diff: Skip-, xfail-, todo-, fixme- und only-Muster von pytest, unittest,
+vitest/jest, Playwright, Rust und Go, auch `fit(`, `.fails(`, `.runIf(` und `pytest.importorskip(`, <!-- review: ok nennt die Muster -->
+`|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
 Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`, gezaehlt nur, wo Tests stehen:
 in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`)
 oder in der Spanne eines Tests, etwa einem inline `#[test]` unter `src/`, auch nach einer
 Umbenennung; eine Import-Zeile nie (R-0130); Helfer in `#[cfg(test)] mod tests` ohne `#[test]`
-bleiben eine Grenze — und ein nacktes `return` in
-einem Test; eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
+bleiben eine Grenze — und ein `return` in einem Test, nackt oder mit dem Wert, den ein Test
+ohnehin liefert (`None`, `undefined`, `Ok(())`), auch in einer Datei mit CRLF-Zeilen (R-0132; andere
+Rueckgabewerte und ein generisches `.fail(` bleiben frei); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh

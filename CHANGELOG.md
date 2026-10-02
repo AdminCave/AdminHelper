@@ -266,6 +266,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **diff-scan: weitere Skip-Muster und Rueckgaben mit Wert (R-0132):** `review.sh diff-scan`
+  meldet jetzt auch `fit(`, `fdescribe(`, `.runIf(`, `.fails(`, `test.fail(`, `.fixme(` (also <!-- review: ok nennt die Muster -->
+  `test.describe.fixme(`), `self.skipTest(` und `pytest.importorskip(` in einer hinzugefuegten Zeile <!-- review: ok nennt die Muster -->
+  sowie `return None`, `return undefined;` und `return Ok(());` in einem Test — bisher nur ein
+  nacktes `return`, und in einer Datei mit CRLF-Zeilen nicht einmal das. `assert.fail(`,
+  `sys.exit(` und `profit(` bleiben frei.
+
 - **diff-scan: entfernte Assertions zaehlen nur, wo Tests stehen (R-0130):** Eine geloeschte Zeile
   mit `assert`, `assert_…!`, `expect(` oder Go-`t.Fatal…` ist nur noch ein Fund in einer
   Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`) oder in

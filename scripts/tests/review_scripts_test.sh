@@ -65,6 +65,8 @@ printf '# changelog\n' > "$FIX/CHANGELOG.md"
 git -C "$FIX" init -q
 git -C "$FIX" config user.email test@example.invalid
 git -C "$FIX" config user.name "Fixture"
+# A global core.autocrlf would strip the CRLF case before diff-scan sees it.
+git -C "$FIX" config core.autocrlf false
 git -C "$FIX" add -A
 git -C "$FIX" commit -qm "fixture"
 
@@ -120,7 +122,15 @@ NEW_PATTERNS=(
   '.todo(|it.todo("later")'                              # review: ok fixture pattern
   'xdescribe(|xdescribe("x", () => {})'                  # review: ok fixture pattern
   'xtest(|xtest("x", () => {})'                          # review: ok fixture pattern
-  'test.fixme(|test.fixme("x", async () => {})'          # review: ok fixture pattern
+  '.fixme(|test.fixme("x", async () => {})'             # review: ok fixture pattern
+  '.fixme(|test.describe.fixme("x", () => {})'          # review: ok fixture pattern
+  'fit(|fit("x", () => {})'                             # review: ok fixture pattern
+  'fdescribe(|fdescribe("x", () => {})'                 # review: ok fixture pattern
+  '.runIf(|it.runIf(ci)("x", () => {})'                 # review: ok fixture pattern
+  '.fails(|it.fails("x", () => {})'                     # review: ok fixture pattern
+  'test.fail(|test.fail()'                              # review: ok fixture pattern
+  '.skipTest(|        self.skipTest("x")'               # review: ok fixture pattern
+  'pytest.importorskip(|pytest.importorskip("x")'       # review: ok fixture pattern
   'it.only(|it.only("x", () => {})'                      # review: ok fixture pattern
   'test.only(|test.only("x", () => {})'                  # review: ok fixture pattern
   'describe.only(|describe.only("x", () => {})'          # review: ok fixture pattern
@@ -137,6 +147,15 @@ for entry in "${NEW_PATTERNS[@]}"; do
   r diff-scan --staged
   [ $rc -eq 3 ] && grep -qF -- "  $want: " <<<"$OUT" \
     && ok "caught by $want: $line" || bad "missed or misnamed: $line (want $want; rc=$rc out=$OUT)"
+done
+# What only looks like it: an assertion that fails on purpose, and a word that
+# merely ends in a pattern (the boundary in front keeps `fit(` out of `profit(`).
+for line in 'assert.fail("unreachable")' 'sys.exit(1)' 'profit(1)' 'outfit(x)'; do
+  reset_index
+  printf '%s\n' "$line" >> "$FIX/scripts/dev/tool.sh"
+  stage scripts/dev/tool.sh
+  r diff-scan --staged
+  [ $rc -eq 0 ] && ok "free: $line" || bad "false positive: $line (rc=$rc out=$OUT)"
 done
 
 reset_index
@@ -872,6 +891,47 @@ it("r", () => {
   expect(1).toBe(1);
 });
 ' 3 "TS: a bare return; in a test is a finding"
+# R-0132: a return with the value the test function returns anyway, and the same
+# line with a CRLF ending, stop a test just as well.
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return None
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: return None in a test is a finding"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    assert x == 1
+
+
+def helper():
+    return None
+    x = 2
+    return x
+' 0 "Python: return None in a helper is free"
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  return undefined;
+  expect(1).toBe(1);
+});
+' 3 "TS: return undefined; in a test is a finding"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    return Ok(());
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+' 3 "Rust: return Ok(()); in a test is a finding"
+ret_case apps/server/tests/test_crlf.py "$(printf 'def test_c():\r\n    x = 1\r\n    assert x\r\n')" \
+  "$(printf 'def test_c():\r\n    x = 1\r\n    return\r\n    assert x\r\n')" 3 "CRLF: a bare return in a test is a finding"
 
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \

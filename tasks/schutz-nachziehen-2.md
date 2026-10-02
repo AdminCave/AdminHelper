@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz nachziehen 2 (R-0125, R-0127, R-0133, R-0134, R-0130, R-0132) — Task-Ledger
-Status: aktiv · Branch: harness/schutz-nachziehen-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/schutz-nachziehen-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („Schutz 2 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/schutz-nachziehen-2.md (Roadmap R-0125, R-0127, R-0133, R-0134, R-0130, R-0132)
 Heavy: none — nur der PreToolUse-Wächter, review.sh und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles über verify.sh scripts.
@@ -98,8 +98,10 @@ Grenze: Helfer in `#[cfg(test)] mod tests` ohne `#[test]`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (diff-scan: wo entfernte Assertions zählen); CHANGELOG (Changed)
 
-### T6 — diff-scan: weitere Skip-Muster, Rückgaben mit Wert, CRLF  [ ]
+### T6 — diff-scan: weitere Skip-Muster, Rückgaben mit Wert, CRLF  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a713b7fb 2026-10-02T13:25:31+02:00
+Review: approve (opus, one round; nits on wording, limits and core.autocrlf taken in)
 Änderung: `SKIP_PATTERNS` (`:54–57`) bekommt `fit(`, `fdescribe(`, `.runIf(`, `.fails(`, `test.fail(`,
 `.skipTest(`, `pytest.importorskip(`; `test.fixme(` wird zu `.fixme(`, damit auch `test.describe.fixme(` trifft. Die
 AR-Regel (`:212–216`) schneidet `\r` vor dem Abgleich ab und nimmt zusätzlich `return None`, `return undefined;`
