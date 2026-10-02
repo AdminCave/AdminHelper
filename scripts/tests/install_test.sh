@@ -37,6 +37,10 @@ command -v minisign >/dev/null 2>&1 \
 TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 
 # docker stub: readiness probe healthy, mint-enroll-token emits a token, all else ok.
+# create-admin takes the password on stdin, like the real `docker compose exec -T`:
+# a stub that exits without reading kills install.sh's printf with SIGPIPE now and
+# then (exit 141 under pipefail). Only that branch reads — in the default branch
+# `cat` would hang on an inherited stdin.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -44,11 +48,12 @@ case "$*" in
   *create_connection*) exit 0 ;;
   *mint-enroll-token*) echo "TESTENROLLTOKEN"; exit 0 ;;
   *logs*) exit 0 ;;
+  *create-admin*) cat > "$STUB_ADMIN_STDIN"; exit 0 ;;
   *) exit 0 ;;
 esac
 EOF
 chmod +x "$BIN/docker"
-export PATH="$BIN:$PATH"
+export PATH="$BIN:$PATH" STUB_ADMIN_STDIN="$WORK/admin.stdin"
 
 # install.sh copy pinned to the test key, used as the runner.
 INSTALL="$WORK/install.sh"
@@ -100,6 +105,8 @@ echo "$out" | sed 's/^/    │ /'
 [ -f "$INST/docker-compose.yml" ] && ok "runtime files extracted" || bad "no compose extracted"
 grep -q '^DOMAIN=test.example' "$INST/.env" && ok "DOMAIN written to .env" || bad "DOMAIN not in .env"
 grep -q 'server:0.34.0' "$INST/.env" && ok "images pinned to ref" || bad "images not pinned to ref"
+[ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = sikrit123 ] \
+  && ok "admin password reached create-admin on stdin" || bad "create-admin got no password on stdin"
 
 # ── 2. fail-closed: a release tag with no bundle asset must abort, not raw-fetch
 INST="$WORK/inst2"

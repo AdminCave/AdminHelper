@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Test-Zuverlässigkeit: install_test-Stub liest stdin, Desktop-E2E hält node_modules frisch (R-0131, R-0142) — Task-Ledger
-Status: freigegeben · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „Test-Zuverlässigkeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0131, R-0142
 Heavy: linux-full — `run.sh e2e --strict --step desktop_e2e_crud` auf frischer Template-Box ohne händisches `npm ci` (erwartet: `npm ci` im Log, 6 Specs grün). Vorher die Template-Tags gegen die Lockfile-Änderungen prüfen (junit-Reporter 7bc9f6d0 vom 2026-09-27, letzte Lockfile-Änderung heute 0ecdc3ca vom 2026-09-30): ist das Template jünger, beweist der Lauf nur „keine Regression“, den Fix beweist dann der hermetische Test aus T2.
@@ -17,8 +17,10 @@ Test-Stub (install.sh bleibt), R-0142 gilt als BUG (latent seit 2026-07-06), Rev
 (keine Datei steht in `scripts/dev/harness-paths.txt`). `run.sh` und `AH_SCRIPT_TESTS_DEFAULT` bleiben unberührt:
 die neuen Prüfungen gehen in schon eingetragene Tests (`run.sh:557–562`).
 
-### T1 — install_test: der Docker-Stub liest bei create-admin stdin  [ ]
+### T1 — install_test: der Docker-Stub liest bei create-admin stdin  [x]
 Komponente: scripts · Dateien: scripts/tests/install_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eee155ee 2026-10-02T18:32:03+02:00
+Review: Review am Ende (Kurz-Ledger); Gegenprobe ohne Stub-Zweig: install_test 7 passed, 1 failed; isolierte Pipe hier 0/1000 auch mit altem Stub (Rennen selten, Aufsicht 16/1000)
 Roadmap: R-0142
 Befund: `scripts/install.sh:287` reicht das Admin-Passwort per `printf '%s\n' "$ADMIN_PASSWORD" | docker compose exec
 -T server … create-admin --password-stdin` weiter, unter `set -euo pipefail` (`:28`). Der Docker-Stub in
