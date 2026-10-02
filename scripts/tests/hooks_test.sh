@@ -819,6 +819,46 @@ rm -rf scripts/dev/hook
 mv -t scripts/dev foo.sh
 CMDS
 
+# R-0134: an input redirection leaves the segment with its word, like an output
+# one. Left in, `<` in front of the verb hid it, and behind cp/mv it moved the
+# destination.
+guard inter Bash "$(cmdjson '< /dev/null rm -rf /tmp/tmp.*')"
+denied "$OUT" && ok "denied: < in front of the verb" || bad "< before rm: $OUT$ERR"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+<<< x tee CLAUDE.md
+cp /etc/hosts CLAUDE.md < /dev/null
+cp /etc/hosts CLAUDE.md <<< x
+0< /dev/null tee CLAUDE.md
+exec 3<> CLAUDE.md
+2>/dev/null tee CLAUDE.md
+CMDS
+guard inter Bash "$(cmdjson '2>/dev/null rm -rf /tmp/tmp.*')"
+denied "$OUT" && ok "denied: 2>/dev/null in front of the verb (as before)" || bad "2> before rm: $OUT$ERR"
+# shlex drops the quotes, so a quoted "<" arrives as the bare operator. It is a
+# word unless the line holds an unquoted `<`, and never right before another
+# operator — read as a redirection it swallowed the next word.
+guard inter Bash "$(cmdjson 'rm -rf "<" /tmp/tmp.*')"
+denied "$OUT" && ok "denied: a quoted \"<\" next to a temp glob stays a word" || bad "quoted < before glob: $OUT$ERR"
+guard inter Bash "$(cmdjson "git commit -m '<' --no-""verify")"
+denied "$OUT" && ok "denied: a quoted '<' as the message does not hide the bypass" || bad "quoted < message: $OUT$ERR"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+echo "<" > CLAUDE.md
+echo '<<<' >> CLAUDE.md
+tee "<" CLAUDE.md
+< /dev/null echo "<" > CLAUDE.md
+wc -l < x; bash -c 'tee "<" CLAUDE.md'
+CMDS
+guard auto Bash "$(cmdjson 'wc -l < CLAUDE.md')"
+[ -z "$OUT" ] && ok "autonomous, free: reading a harness file through <" || bad "false positive: wc -l < CLAUDE.md -> $OUT"
+
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.
 while IFS= read -r cmd; do

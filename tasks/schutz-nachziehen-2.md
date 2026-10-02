@@ -67,8 +67,10 @@ Grenze: ein unquotiertes `let x<<=1` ist auch für bash ein Here-Doc.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kopfkommentar)
 
-### T4 — Wächter: Eingabe-Umleitungen verlassen das Segment  [ ]
+### T4 — Wächter: Eingabe-Umleitungen verlassen das Segment  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b3acf470 2026-10-02T12:30:47+02:00
+Review: request_changes (regression) -> fixed -> approve (opus, 2 rounds)
 Änderung: `is_redirect` (`:475–476`) erkennt jedes Operator-Token mit `<` als Umleitung. Bei `<`, `<&` und `<<<`
 fällt das nächste Wort weg und wird nicht als geschrieben gemeldet; `<>` schreibt (heute schon über `>`). Die
 Schleife in `run_segment` (`:594–604`) behandelt beide Richtungen.

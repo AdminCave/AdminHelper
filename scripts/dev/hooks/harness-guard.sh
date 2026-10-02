@@ -77,11 +77,13 @@
 # Known gaps, checked and accepted: a file written or deleted from inside
 # python/perl or an interactive editor, a path built at runtime
 # (`$VAR/CLAUDE.md`, `rm -rf "$D"/*` — the hook cannot resolve a variable other
-# than $TMPDIR), `find … -exec sh -c 'rm …'`, a loop fed by a process substitution
-# (`done < <(ls /tmp/x*)`),
-# `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), a
-# quoted string of operator characters only (`-m ");"`, read as the operators
-# once shlex has dropped the quotes), and the
+# than $TMPDIR), `find … -exec sh -c 'rm …'`, a process substitution `<(…)` (as
+# an operand or feeding a loop, `done < <(ls /tmp/x*)`), `find … -exec sed -i`,
+# a here-doc fed to a shell (`bash <<EOF … EOF`), a quoted string of operator
+# characters only (`-m ");"`, read as the operators once shlex has dropped the
+# quotes; a quoted `"<"` stays a word unless its line also holds an unquoted
+# `<` — a redirection, `<(…)`, `$((a<b))`, even one in a comment; R-0134),
+# `<<- EOF` with a space before the delimiter, and the
 # three git ways of restoring content over a file — `git apply <patch>`,
 # `git checkout <rev> -- <pfad>`, `git restore --source=<rev> -- <pfad>`. For the
 # runner the settings cover those (checkout/restore/stash are denied outright,
@@ -541,8 +543,28 @@ def split_operators(tokens):
     return out
 
 
+def unquoted_has(text, ch):
+    """Whether ch stands in text outside quotes (a backslash escapes it)."""
+    quote, esc = None, False
+    for c in text:
+        if esc:
+            esc = False
+        elif c == "\\" and quote != "'":
+            esc = True
+        elif quote:
+            if c == quote:
+                quote = None
+        elif c in "\"'":
+            quote = c
+        elif c == ch:
+            return True
+    return False
+
+
 def is_redirect(tok):
-    return ">" in tok and all(c in "<>|&" for c in tok)
+    # Input as well as output (R-0134): left in the segment, a `<` in front of
+    # the verb hid it, and behind cp/mv `< /dev/null` became the destination.
+    return ("<" in tok or ">" in tok) and all(c in "<>|&" for c in tok)
 
 
 def logical_lines(cmd):
@@ -644,6 +666,9 @@ def scan(cmd, base, depth=0):
     # the temp glob a pipe carries into the next segment.
     state = {"case": False, "arm": False, "loops": [], "pipe": None}
     for line in logical_lines(cmd):
+        # shlex drops quotes: a `"<"` arrives as the bare operator. Only a line
+        # with an unquoted `<` has input redirections at all.
+        state["lt"] = unquoted_has(line, "<")
         segment = []
         for tok in tokenize(line) + [";"]:
             if tok in SEPARATORS:
@@ -668,11 +693,20 @@ def run_segment(tok, cwd, depth, state, sep):
     if not tok:
         return cwd
 
-    # Redirections first, and they leave the token list: `cp a b > /dev/null`
-    # must not mistake /dev/null for the copy's destination.
+    # Redirections first, and they leave the token list with their word:
+    # `cp a b > /dev/null` must not mistake /dev/null for the copy's destination.
+    # Only `>` writes; `<`, `<&` and `<<<` read (`<>` does both, so it counts).
     clean, i = [], 0
     while i < len(tok):
         t = tok[i]
+        # An input operator is a quoted word, not a redirection, on a line
+        # without an unquoted `<`, or right before another operator — bash
+        # takes no operator as a redirection's word (`echo "<" > CLAUDE.md`).
+        if is_redirect(t) and ">" not in t and (
+                not state.get("lt") or i + 1 < len(tok) and is_redirect(tok[i + 1])):
+            clean.append(t)
+            i += 1
+            continue
         if is_redirect(t):
             if ">" in t and i + 1 < len(tok):
                 out.append(rel(tok[i + 1], cwd))

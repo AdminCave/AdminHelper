@@ -582,7 +582,10 @@ bestimmt (`CLAUDE.md`, `AUTONOMOUS.md`, `.claude/**`, die Gate-Skripte unter
 `scripts/dev/hooks/harness-guard.sh` ermittelt vor jedem `Edit`/`Write`/`MultiEdit`/
 `Bash`, welche Datei der Aufruf schreiben wuerde — inklusive `sed -i`, `tee`,
 `>`-Umleitung, `cp`/`mv` und `bash -c` — und verweigert ihn, wenn sie auf der Liste
-steht. Was ein wegnehmendes Kommando erreicht (`rm`, `rmdir`, `shred`, `unlink`,
+steht. Eine Eingabe-Umleitung (`<`, `<<<`, `<&`) verdeckt dabei weder das Kommando noch das
+Ziel von `cp`/`mv` (R-0134); Grenzen bleiben eine Prozess-Substitution `<(…)`, `<<- EOF` mit
+Leerzeichen und ein gequotetes `"<"` in einer Zeile, die zugleich ein ungequotetes `<` hat
+(Umleitung, `<(…)`, `$((a<b))`, auch im Kommentar). Was ein wegnehmendes Kommando erreicht (`rm`, `rmdir`, `shred`, `unlink`,
 `chmod`/`chown`/`chgrp`, die Quelle von `mv`, der Startpfad eines loeschenden `find`),
 trifft auch, wenn Harness-Pfade **darunter** liegen: `rm -rf .claude`, `rm -rf
 scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, ein Glob ueber sein Verzeichnis
