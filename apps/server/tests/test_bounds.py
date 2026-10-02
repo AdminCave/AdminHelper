@@ -40,3 +40,40 @@ def test_bound_rejects_the_first_value_past_each_edge(bound, too_low, too_high):
     for value in (too_low, too_high):
         with pytest.raises(ValidationError):
             adapter.validate_python(value)
+
+
+_BOUND_KEYS = ("maximum", "minimum", "exclusiveMaximum", "exclusiveMinimum")
+
+
+def _bounds(node, path="$"):
+    """Every (path, value) of a numeric bound anywhere in an OpenAPI schema."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _BOUND_KEYS and isinstance(value, (int, float)):
+                yield f"{path}.{key}", value
+            else:
+                yield from _bounds(value, f"{path}.{key}")
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            yield from _bounds(item, f"{path}[{i}]")
+
+
+def test_no_bound_past_2_53_is_published_as_a_float():
+    # Past 2**53 a float no longer holds every integer, and FastAPI types the bounds
+    # of a request body as float: BIGINT_MAX came out as 9.223372036854776e+18.
+    from app.main import app
+
+    floats = [(p, v) for p, v in _bounds(app.openapi()) if isinstance(v, float) and abs(v) >= 2**53]
+    assert floats == []
+
+
+def test_the_bigint_bound_is_published_exactly():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    exact = [p for p, v in _bounds(app.openapi()) if v == BIGINT_MAX and isinstance(v, int)]
+    assert exact, "no bound in the schema is the BIGINT maximum"
+    text = TestClient(app).get(app.openapi_url).text
+    assert "9223372036854775807" in text
+    assert "9.223372036854776e+18" not in text

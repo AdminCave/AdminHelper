@@ -143,22 +143,15 @@ until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 operation_id = "list_api_keys_api_api_keys_get"
 checks = ["response_schema_conformance"]
 # GET /api/api-keys
-reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
+reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
 operation_id = "create_api_key_api_api_keys_post"
 checks = ["response_schema_conformance"]
 # POST /api/api-keys
-reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
+reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
-
-[[exclude]]
-operation_id = "import_connections_api_connections_import_post"
-checks = ["response_schema_conformance"]
-# POST /api/connections/import
-reason = "response_schema_conformance — die Route antwortet im Fehlerfall mit einem EIGENEN Body (Felder message + rejected), waehrend das Schema fuer 422 FastAPIs HTTPValidationError mit detail:array deklariert. Echter Vertragsbruch (ein Client, der dem Schema folgt, parst falsch)"
-until = "Roadmap: 422-Vertrag der Import-Route"
 
 [[exclude]]
 operation_id = "mint_self_enrollment_token_api_enrollment_token_post"
@@ -178,7 +171,7 @@ until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 operation_id = "create_hook_api_hooks_post"
 checks = ["response_schema_conformance"]
 # POST /api/hooks
-reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
+reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]

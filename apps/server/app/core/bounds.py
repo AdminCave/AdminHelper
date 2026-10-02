@@ -27,13 +27,13 @@ from pydantic_core import InitErrorDetails
 IntPk = Annotated[int, Field(ge=1, le=2147483647)]
 
 # Primary key of a table declared as Column(BigInteger) — Postgres BIGINT.
-# Careful when reading the generated schema: FastAPI types `maximum` as a float
-# (fastapi.openapi.models.Schema), so in a REQUEST BODY this bound is published
-# as 9.223372036854776e+18 — one more than it is. Validation is unaffected
-# (pydantic keeps the int), the published contract is off by one at the very top
-# of the range. Path and query parameters take a different code path and stay
-# exact.
-BigIntPk = Annotated[int, Field(ge=1, le=9223372036854775807)]
+# FastAPI types `maximum` as a float (fastapi.openapi.models.Schema), so in a
+# REQUEST BODY this bound would be published as 9.223372036854776e+18, above the
+# real limit; app/core/openapi.py writes the exact int back into the schema.
+# Validation is unaffected either way (pydantic keeps the int). Path and query
+# parameters take a different code path and stay exact.
+BIGINT_MAX = 9223372036854775807
+BigIntPk = Annotated[int, Field(ge=1, le=BIGINT_MAX)]
 
 # A value stored in a plain Column(Integer) that is not a key — the signed
 # INTEGER range, and nothing narrower. A port is 1-65535 and a limit is rarely

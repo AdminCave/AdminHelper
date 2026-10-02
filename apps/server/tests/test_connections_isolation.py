@@ -135,23 +135,6 @@ def test_update_with_unknown_server_is_422_not_500(test_client, db_session, admi
     assert r.json()["detail"][0]["loc"] == ["body", "serverId"]
 
 
-def test_import_with_unknown_server_is_rejected_per_entry(test_client, db_session, admin_user):
-    """The import route reports per entry and validates all-or-nothing, so the
-    unknown server belongs in its `rejected` list, not in a second error shape."""
-    headers = _admin_headers(test_client)
-    r = test_client.post(
-        "/api/connections/import",
-        json={"mode": "merge", "connections": [{"name": "i1", "kind": "ssh", "serverId": "nope"}]},
-        headers=headers,
-    )
-    assert r.status_code == 422, r.text
-    rejected = r.json()["detail"]["rejected"]
-    assert rejected[0]["index"] == 0
-    assert rejected[0]["errors"][0]["loc"] == ["serverId"]
-    # all-or-nothing: nothing was written
-    assert test_client.get("/api/connections", headers=headers).json() == []
-
-
 def test_create_with_a_known_server_still_works(test_client, db_session, admin_user):
     """The check must not cost the legitimate case."""
     db_session.add(Server(id="srv-real", name="real", hostname="real.example"))
@@ -164,3 +147,22 @@ def test_create_with_a_known_server_still_works(test_client, db_session, admin_u
     )
     assert r.status_code == 201, r.text
     assert r.json()["serverId"] == "srv-real"
+
+
+def test_import_with_unknown_server_is_a_validation_error_of_its_entry(
+    test_client, db_session, admin_user
+):
+    """The import validates all-or-nothing and reports the unknown server in the 422 form
+    the schema declares, located at the entry that names it."""
+    headers = _admin_headers(test_client)
+    r = test_client.post(
+        "/api/connections/import",
+        json={"mode": "merge", "connections": [{"name": "i1", "kind": "ssh", "serverId": "nope"}]},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert [e["loc"] for e in detail] == [["body", "connections", 0, "serverId"]]
+    assert detail[0]["msg"] == "server not found"
+    # all-or-nothing: nothing was written
+    assert test_client.get("/api/connections", headers=headers).json() == []

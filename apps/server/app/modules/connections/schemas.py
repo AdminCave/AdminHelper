@@ -4,9 +4,37 @@
 
 from typing import Any, Literal, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
+from pydantic_core import InitErrorDetails
 
 from app.core.bounds import RequestModel
+from app.modules.connections.models import _CAMEL_TO_SNAKE
+
+# Connection.from_dict/update_from_dict write any key that names a column straight
+# into it. Only the camelCase spelling of a mapped field is accepted, so the column
+# is set only through its API name and the checks on it (serverId against a key's
+# server binding, the known server); extra=allow stays for the rest.
+_SNAKE_SPELLINGS = {snake: camel for camel, snake in _CAMEL_TO_SNAKE.items()}
+
+
+def _reject_snake_spellings(model: str, data: Any) -> Any:
+    if not isinstance(data, dict):
+        return data
+    found = sorted(key for key in data if key in _SNAKE_SPELLINGS)
+    if not found:
+        return data
+    raise ValidationError.from_exception_data(
+        model,
+        [
+            InitErrorDetails(
+                type="value_error",
+                loc=(key,),
+                input=data[key],
+                ctx={"error": ValueError(f"unknown field, use {_SNAKE_SPELLINGS[key]}")},
+            )
+            for key in found
+        ],
+    )
 
 
 class ConnectionCreate(RequestModel):
@@ -27,6 +55,11 @@ class ConnectionCreate(RequestModel):
     serverId: Optional[str] = None
 
     model_config = {"extra": "allow"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _camel_case_only(cls, data: Any) -> Any:
+        return _reject_snake_spellings(cls.__name__, data)
 
     @field_validator("name")
     @classmethod
@@ -55,6 +88,11 @@ class ConnectionUpdate(RequestModel):
     serverId: Optional[str] = None
 
     model_config = {"extra": "allow"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _camel_case_only(cls, data: Any) -> Any:
+        return _reject_snake_spellings(cls.__name__, data)
 
     @field_validator("name")
     @classmethod
