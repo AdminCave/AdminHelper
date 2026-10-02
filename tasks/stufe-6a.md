@@ -110,8 +110,10 @@ Evidenz) ⇒ „unverifiziert“, `[?]`-Abschnitt, keine Adresse im Text; heute 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7, T8)
 
-### T7 — Doku: Review-Prüfer und Verdict  [ ]
+### T7 — Doku: Review-Prüfer und Verdict  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, AUTONOMOUS.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @c1075151 2026-10-02T18:23:17+02:00
+Review: approve (opus, two rounds: round 1 request_changes on two claims in cicd.html, who calls which check and what pr-body cuts out, corrected; round 2 approve, nits taken in)
 Änderung: DEVELOPMENT.md „Task schliessen“ (`:411ff.`): die neuen Schritte in task-close (docs-pairs, contracts,
 check-verdict) und die Verben `risk`, `probe`, `pr-body`. AUTONOMOUS.md (`:65`): vor den Review-Ebenen steht Ebene 0,
 die deterministischen Prüfer. cicd.html DE+EN: Abschnitt „Review-Prüfer und Verdict“. CHANGELOG (Added).
