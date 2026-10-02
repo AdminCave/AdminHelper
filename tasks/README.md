@@ -81,8 +81,9 @@ Pfade dagegen.
 
 ## `Test-Löschung:` — ein ganzer Test geht mit
 
-`task-close.sh` lässt `review.sh diff-scan` über den Diff laufen, und der wertet jede
-gelöschte Assertion als „der Diff kauft sich sein Grün". Den einen Fall, in dem ein Test
+`task-close.sh` lässt `review.sh diff-scan` über den Diff laufen, und der wertet eine
+gelöschte Assertion dort, wo Tests stehen (eine Testdatei oder die Spanne eines Tests, nie eine
+Import-Zeile; R-0130), als „der Diff kauft sich sein Grün". Den einen Fall, in dem ein Test
 zu Recht verschwindet, kündigt die Task an:
 
 ```

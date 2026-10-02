@@ -451,10 +451,17 @@ dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sei
 --strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
 `verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
 Prosa-Zeile faehrt die Komponente der Task, mit Hinweis); (3) `review.sh diff-scan`
-(abgeschaltete Tests im Diff: Skip-, xfail-, todo- und only-Muster von pytest, vitest/jest,
-Playwright, Rust und Go, `|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
-Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…` — und ein nacktes `return` in
-einem Test; eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
+(abgeschaltete Tests im Diff: Skip-, xfail-, todo-, fixme- und only-Muster von pytest, unittest,
+vitest/jest, Playwright, Rust und Go, auch `fit(`, `.fails(`, `.runIf(` und `pytest.importorskip(`, <!-- review: ok nennt die Muster -->
+`|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
+Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`, gezaehlt nur, wo Tests stehen:
+in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`)
+oder in der Spanne eines Tests, etwa einem inline `#[test]` unter `src/`, auch nach einer
+Umbenennung; eine Import-Zeile nie (R-0130); Helfer in `#[cfg(test)] mod tests` ohne `#[test]`
+bleiben eine Grenze — und ein `return` in einem Test, nackt oder mit dem Wert, den ein Test
+ohnehin liefert (`None`, `undefined`, `Ok(())`), auch in einer Datei mit CRLF-Zeilen (R-0132; andere
+Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Tests folgt und es
+nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
@@ -602,9 +609,22 @@ bestimmt (`CLAUDE.md`, `AUTONOMOUS.md`, `.claude/**`, die Gate-Skripte unter
 `scripts/dev/hooks/harness-guard.sh` ermittelt vor jedem `Edit`/`Write`/`MultiEdit`/
 `Bash`, welche Datei der Aufruf schreiben wuerde — inklusive `sed -i`, `tee`,
 `>`-Umleitung, `cp`/`mv` und `bash -c` — und verweigert ihn, wenn sie auf der Liste
-steht. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
-python/perl heraus, ein zur Laufzeit gebauter Pfad oder ein `find … -exec sed -i`
-kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
+steht. Eine Eingabe-Umleitung (`<`, `<<<`, `<&`) verdeckt dabei weder das Kommando noch das
+Ziel von `cp`/`mv` (R-0134), ein gequotetes `"<"` bleibt ein Wort; Grenzen bleiben eine
+Prozess-Substitution `<(…)` und `<<- EOF` mit Leerzeichen. Ein Kommentar (`#` am Wortanfang)
+oeffnet nichts, kein `((`, kein Here-Doc, keine Quote; ein `#` mitten im Wort liest shlex dagegen
+als Kommentarbeginn (Grenze, R-0145). Was ein wegnehmendes Kommando erreicht (`rm`, `rmdir`, `shred`, `unlink`,
+`chmod`/`chown`/`chgrp`, die Quelle von `mv`, der Startpfad eines loeschenden `find`),
+trifft auch, wenn Harness-Pfade **darunter** liegen: `rm -rf .claude`, `rm -rf
+scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, ein Glob mit dem, was er im Baum trifft
+(`rm -rf scripts/dev/*`, auch nach einem `cd` in einen Glob; hinter einer Variablen zaehlt sein
+Verzeichnis), und die Repo-Wurzel samt allem darueber, die alles enthaelt (`rm -rf ./*`,
+`rm -rf ..`; R-0127). Das trifft im autonomen Lauf auch einen harmlos wirkenden Aufraeumer, der
+in der Wurzel startet (`find . -name '*.pyc' -delete`): er startet im Unterverzeichnis
+(`find apps -name '*.pyc' -delete`); `rm -f *.log` bleibt frei, der Glob trifft nur die Logs. Alle anderen Schreibformen
+pruefen nur den Pfad selbst. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
+python/perl heraus, ein zur Laufzeit gebauter Pfad, ein `find … -exec sed -i`,
+`git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
 auch hier die Deny-Liste, der Hook ist die zweite Schicht:
 
 ```bash
@@ -647,11 +667,15 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
   Scratchpads. Erkannt werden auch ein Operand nach `--`
   (`cd /tmp/claude-<uid> && rm -rf -- -home-x*`), `|&` als Pipe,
   `for d in $(ls -d /tmp/tmp.*); do …`, `… | xargs sh -c 'rm …'` und `grep -l`/`-L` als Lister
-  (R-0109). Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'`, eine
+  (R-0109), dazu `[^x]` wie `[!x]`, Klammer-Listen (`/{tmp,x}/tmp.*`, auch verschachtelt) und ein
+  woertlicher Operand nach `cd` in einen Glob (`cd /t* && rm -rf claude-1000`, R-0125). Nicht
+  erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'`, eine
   Schleife, die ihre Liste per Prozess-Substitution oder `mapfile`/`readarray` bekommt
   (`done < <(ls …)`), eine Liste ohne Glob mit einem erst zur Laufzeit gebauten Pfad
   (`ls /tmp | while read d; do rm -rf /tmp/$d`), eine Liste, die ohne xargs in eine Shell geht
-  (`… | sh -c 'xargs rm'`), und `cat … | xargs rm` (Dateiinhalt statt Namen). Die Regel dazu
+  (`… | sh -c 'xargs rm'`), `cat … | xargs rm` (Dateiinhalt statt Namen), Klammer-Sequenzen
+  (`{1..3}`), eine Variable in einer Klammer-Liste (`/{$X,y}/…`) und die Expansionen nach der
+  32. einer Klammer-Liste. Die Regel dazu
   fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
   geloescht wird nur der eigene Pfad, nie per Glob.
 - **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden
