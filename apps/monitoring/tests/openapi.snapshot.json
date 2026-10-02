@@ -15,6 +15,7 @@
           },
           "cooldown_minutes": {
             "default": 30,
+            "maximum": 2147483647.0,
             "minimum": 0.0,
             "title": "Cooldown Minutes",
             "type": "integer"
@@ -86,6 +87,7 @@
           "cooldown_minutes": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -157,6 +159,8 @@
           },
           "consecutive_fails": {
             "default": 3,
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Consecutive Fails",
             "type": "integer"
           },
@@ -237,6 +241,8 @@
           "consecutive_fails": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -334,6 +340,8 @@
           "duration_minutes": {
             "anyOf": [
               {
+                "maximum": 1440.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -416,6 +424,8 @@
           "weekdays": {
             "default": [],
             "items": {
+              "maximum": 6.0,
+              "minimum": 0.0,
               "type": "integer"
             },
             "title": "Weekdays",
@@ -442,6 +452,7 @@
           },
           "cooldown_minutes": {
             "default": 30,
+            "maximum": 2147483647.0,
             "minimum": 0.0,
             "title": "Cooldown Minutes",
             "type": "integer"
@@ -522,6 +533,8 @@
           },
           "consecutive_fails": {
             "default": 3,
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Consecutive Fails",
             "type": "integer"
           },
