@@ -136,3 +136,25 @@ Rot vorher: ein neuer Fall in skill_consistency_test verlangt in Schritt 4 `revi
 rot.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (der Skill ist die Anleitung)
+
+### T9 — Nachbesserungen aus /code-review: Schluss-Review-Modell, Risiko- und Vertragslisten, Probe-Diff, pr-body-Scrub  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, scripts/dev/review.sh, scripts/dev/review-probe.sh, scripts/dev/review-risk.txt, scripts/dev/review-contracts.txt, scripts/dev/harness-paths.txt, scripts/tests/review_scripts_test.sh, scripts/tests/review_probe_test.sh, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @28b22c8a 2026-10-02T19:23:44+02:00
+Review: approve (opus, two rounds: round 1 request_changes, a partial address before a full stop stayed in pr-body, fixed with the reviewer case; round 2 approve, nits taken in)
+Herkunft: `/code-review` über den Branch-Diff (2026-10-02), nur Fehler dieses Branches; der Rest ging als
+Roadmap-Kandidat an die Aufsicht (Probe sieht nur den Index, Rust-Tests inline, probe optional, Refactor, Probe-Präzision,
+pr-body ohne check-verdict).
+Änderung: (1) feature-build Abschluss-Schritt 4: das Modell des Schluss-Reviews aus `review.sh risk --range main...HEAD`
+(ohne Flag ist nach den Commits nichts mehr offen). (2) `review-risk.txt`: Cert-Pinning und SSRF, die die alte Prosa
+zählte — `apps/agent/internal/httpclient/httpclient.go`, `apps/desktop/src-tauri/src/http_client.rs`,
+`apps/server/app/modules/hooks/script_worker.py`, `apps/server/app/modules/provisioning/helpers.py`,
+`apps/server/app/modules/servers/router.py`. (3) `review-probe.sh` baut seine Patches mit den gehärteten Diff-Flags
+von review.sh (sonst mit `diff.noprefix`/`color.diff` immer `apply-failed`). (4) `pr-body` entfernt auch
+`.home.arpa`, `fritz.box`, private Teiladressen (`192.168.1.x`, `10.0.0.*`), `VM-ID` und die weiteren IDs einer Liste.
+(5) `review-contracts.txt`: der Push-only-Vertrag auch an `apps/desktop/ui/src/lib/models/monitoring.ts`.
+(6) `scripts/tests/review_probe_test.sh` nach `harness-paths.txt`. (7) `review-probe.sh`: `git worktree prune` nur,
+wenn das eigene `remove` scheitert. (8) feature-build Schritt 5: die Exit-Codes nennen docs-pairs, Verträge und den
+Vertragstest, der nicht laufen konnte. (9) `risk`/`contracts`: ein Eintrag mit `/` am Ende ist ein Verzeichnispräfix.
+Rot vorher: die Fälle je Punkt in review_scripts_test, review_probe_test und skill_consistency_test.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Kopfkommentare; DEVELOPMENT.md beschreibt die Listen schon ohne Einzelpfade)

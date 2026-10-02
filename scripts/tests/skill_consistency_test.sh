@@ -245,6 +245,13 @@ grep -qF 'bash scripts/dev/review.sh risk' <<<"$step4" && grep -q 'Eine Runde' <
   || bad "feature-build step 4 lacks review.sh risk or the one-round rule"
 ! grep -q 'Release-Workflows (`.github/workflows/release' <<<"$step4" \
   && ok "and no longer carries its own list of risk paths" || bad "step 4 still lists risk paths in prose"
+close4=$(section .claude/skills/feature-build/SKILL.md '4. **Review über den Branch-Diff**' '5. **Erledigt')
+grep -qF 'review.sh risk --range main...HEAD' <<<"$close4" \
+  && ok "the closing review takes its model from the branch range (nothing is uncommitted by then)" \
+  || bad "close step 4 lacks review.sh risk --range main...HEAD"
+step5=$(section .claude/skills/feature-build/SKILL.md '5. **Schließen' '## Abschluss')
+grep -q 'docs-pairs' <<<"$step5" && grep -q 'Vertrag' <<<"$step5" && grep -q 'Vertragstest konnte' <<<"$step5" \
+  && ok "step 5's exit codes name docs-pairs and the contracts" || bad "step 5's exit codes miss docs-pairs/contracts"
 close5=$(section .claude/skills/feature-build/SKILL.md '5. **Erledigt, Push + Draft-PR**' '6. **Mit dem PR:**')
 grep -qF 'review.sh pr-body' <<<"$close5" && grep -qF -- '--body-file' <<<"$close5" \
   && ok "the PR step takes its text from review.sh pr-body as --body-file" || bad "PR step without pr-body/--body-file"

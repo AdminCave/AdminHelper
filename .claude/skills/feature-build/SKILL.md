@@ -196,14 +196,17 @@ Stufe 7).
      stagen (`git add -- <pfade>`) und erneut schließen.
    - **3** — die Suite ist rot, oder der Diff-Scan hat einen stummgeschalteten Test gefunden
      (`|| true`, `set +e`, `skip`, gelöschte Assertion): beheben, erneut schließen. Ist die <!-- review: ok Musterliste in der Anleitung -->
-     Zeile bewusst so, trägt sie `# review: ok <grund>`.
+     Zeile bewusst so, trägt sie `# review: ok <grund>`. Ebenso 3: `docs-pairs` (eine Doku-Seite
+     ohne ihre andere Sprache — die zweite mitliefern), ein roter Vertrag aus
+     `scripts/dev/review-contracts.txt` (den genannten Test bzw. das Wertpaar in Ordnung
+     bringen) oder ein Verdict ohne brauchbares approve.
    - **4** — blockiert: ein Pfad außerhalb der Task (`ledger.sh set-files` oder Datei aus dem
      Commit nehmen) oder etwas, das nie in dieses öffentliche Repo darf.
-   - **74** — Infrastruktur: die Suite konnte gar nicht laufen → **STOPP** und berichten. Zwei
-     Sonderfälle sind kein Stopp: eine Task **ohne `Komponente:`** (Handarbeit, z. B. „Kevins
-     Handgriffe") wird gar nicht über `task-close.sh` geschlossen — offen lassen und im
-     Abschluss berichten; und ein gescheitertes `git commit` (Recovery unten: einfach erneut
-     schließen, der Aufruf ist wiederholbar).
+   - **74** — Infrastruktur: die Suite oder ein Vertragstest konnte gar nicht laufen → **STOPP**
+     und berichten. Zwei Sonderfälle sind kein Stopp: eine Task **ohne `Komponente:`**
+     (Handarbeit, z. B. „Kevins Handgriffe") wird gar nicht über `task-close.sh` geschlossen —
+     offen lassen und im Abschluss berichten; und ein gescheitertes `git commit` (Recovery
+     unten: einfach erneut schließen, der Aufruf ist wiederholbar).
 
    **Granularität:** `task-close.sh` schließt **eine** Task und macht **einen** Commit. Damit
    wandert auch der Review auf **pro Task** — ein Commit, der vor seinem Review fällt, ist
@@ -252,7 +255,9 @@ Stufe 7).
    - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
      ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4 der Iteration) — und **kein**
      `/code-review` hinterher: der eine Reviewer hat genau diesen Diff schon gesehen, der
-     zweite Durchgang kostet nur Zeit.
+     zweite Durchgang kostet nur Zeit. Das Modell kommt hier aus
+     `bash scripts/dev/review.sh risk --range main...HEAD`: ohne Flag ist nach den Commits nichts
+     mehr offen, `risk` hieße immer `standard`.
    - **`Review: pro Task`** (Default für große Ledger): die Einheiten sind einzeln reviewt,
      aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
    Echte neue Bugs als Tasks in den Ledger: Kopf zurück auf `aktiv` (Roadmap ebenso), fixen,

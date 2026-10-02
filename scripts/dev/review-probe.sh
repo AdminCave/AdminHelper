@@ -108,12 +108,21 @@ fi
 git rev-parse --verify -q "$BASE^{commit}" >/dev/null || die "no such base: $BASE"
 
 answer() { python3 -c 'import json, sys; print(json.dumps(json.loads(sys.argv[1])))' "$1"; exit 0; }
+# The patches have to apply whatever the git config says about diffs: no
+# external driver, no textconv, no colour, the a/ b/ prefixes git apply expects.
+GIT_DIFF=(git -c core.quotePath=false diff --no-ext-diff --no-textconv --no-color --src-prefix=a/ --dst-prefix=b/)
 
 PROBE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ah-probe.XXXXXXXX")" || infra "mktemp failed"
 WT="$PROBE_DIR/wt"
+WT_MADE=0
 cleanup() {
-  git worktree remove --force "$WT" >/dev/null 2>&1
-  git worktree prune >/dev/null 2>&1
+  # Its own worktree only: a blanket prune would also drop the record of a
+  # worktree of somebody else whose directory is away for the moment.
+  if [ "$WT_MADE" = 1 ] && ! git worktree remove --force "$WT" >/dev/null 2>&1; then
+    # remove failed: once the directory is gone, prune finds the orphaned record.
+    rm -rf "$PROBE_DIR"
+    git worktree prune >/dev/null 2>&1
+  fi
   rm -rf "$PROBE_DIR"
 }
 trap cleanup EXIT
@@ -123,8 +132,9 @@ if [ -n "$MUT_AT" ]; then
   # The whole change: the commit itself, or HEAD with everything staged on it.
   if [ "$MODE" = commit ]; then START="$REV"; else START=HEAD; fi
   git worktree add -q --detach "$WT" "$START" >/dev/null 2>&1 || infra "git worktree add failed"
+  WT_MADE=1
   if [ "$MODE" = staged ]; then
-    git diff --staged --binary > "$PROBE_DIR/change.patch" || infra "could not read the staged diff"
+    "${GIT_DIFF[@]}" --staged --binary > "$PROBE_DIR/change.patch" || infra "could not read the staged diff"
     if [ -s "$PROBE_DIR/change.patch" ]; then
       git -C "$WT" apply "$PROBE_DIR/change.patch" 2>/dev/null || answer '{"mutant": "unknown", "reason": "apply-failed"}'
     fi
@@ -150,13 +160,14 @@ open(path, "w", encoding="utf-8").write("\n".join(lines))
 PY
 else
   if [ "$MODE" = commit ]; then
-    git diff --binary "$REV^" "$REV" -- "${PATHSPEC[@]}" > "$PROBE_DIR/tests.patch" || infra "could not read the diff of $REV"
+    "${GIT_DIFF[@]}" --binary "$REV^" "$REV" -- "${PATHSPEC[@]}" > "$PROBE_DIR/tests.patch" || infra "could not read the diff of $REV"
   else
-    git diff --staged --binary -- "${PATHSPEC[@]}" > "$PROBE_DIR/tests.patch" || infra "could not read the staged diff"
+    "${GIT_DIFF[@]}" --staged --binary -- "${PATHSPEC[@]}" > "$PROBE_DIR/tests.patch" || infra "could not read the staged diff"
   fi
   [ -s "$PROBE_DIR/tests.patch" ] \
     || answer '{"applicable": false, "reason": "no-test-change", "red_without_change": null}'
   git worktree add -q --detach "$WT" "$BASE" >/dev/null 2>&1 || infra "git worktree add failed"
+  WT_MADE=1
   git -C "$WT" apply "$PROBE_DIR/tests.patch" 2>/dev/null \
     || answer '{"applicable": false, "reason": "apply-failed", "red_without_change": null}'
 fi

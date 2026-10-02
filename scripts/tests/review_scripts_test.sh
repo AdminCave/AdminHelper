@@ -1466,6 +1466,13 @@ rreset; put "docs/a b.html" apps/server/alembic/versions/0042_x.py; r risk --sta
   && ! grep -q 'a b' <<<"$OUT" && ok "a path with a space breaks nothing" || bad "space: rc=$rc out=$OUT"
 rreset; put "docs/a b.html"; r risk --staged
 [ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "a path with a space alone -> standard" || bad "space alone: rc=$rc out=$OUT"
+rreset; put apps/agent/internal/httpclient/httpclient.go; r risk --staged
+[ $rc -eq 0 ] && grep -qx '  apps/agent/internal/httpclient/httpclient.go' <<<"$OUT" \
+  && ok "the agent's cert pinning is a risk path" || bad "httpclient: rc=$rc out=$OUT"
+rreset; echo 'apps/agent/internal/newdir/' >> "$FIX/scripts/dev/review-risk.txt"; put apps/agent/internal/newdir/x.go
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  apps/agent/internal/newdir/x.go' <<<"$OUT" \
+  && ok "an entry ending in / is a directory prefix" || bad "dir entry: rc=$rc out=$OUT"
 rreset; put apps/server/app/modules/hosts/schemas.py apps/server/app/modules/hosts/router.py; r risk --staged
 [ $rc -eq 0 ] && [ "$(sed -n '2,$p' <<<"$OUT")" = '  apps/server/app/modules/hosts/schemas.py' ] \
   && ok "only the risky one of two paths is named" || bad "two paths: rc=$rc out=$OUT"
@@ -1653,6 +1660,13 @@ printf 'MINISIGN_PUBKEY="RWC"\n' > "$FIX/scripts/update.sh"; r contracts --stage
 [ $rc -eq 0 ] && ok "--staged compares what is staged, not the worktree" || bad "pair staged: rc=$rc out=$OUT"
 creset; printf 'MINISIGN_PUBKEY="RWA"\n' > "$FIX/scripts/install.sh"; stage scripts/install.sh; r contracts --staged
 [ $rc -eq 3 ] && grep -q 'scripts/update.sh' <<<"$OUT" && ok "a pair whose other file is gone -> 3" || bad "pair missing: rc=$rc out=$OUT"
+creset; put apps/desktop/ui/src/lib/models/monitoring.ts; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'test_push_only_ui_sync.py' <<<"$OUT" \
+  && ok "the UI copy of the push-only list pulls in the sync test too" || bad "ui side: rc=$rc out=$OUT"
+creset; echo 'apps/desktop/ui/src/lib/newdir/ test monitoring tests/test_new.py' >> "$FIX/scripts/dev/review-contracts.txt"
+put apps/desktop/ui/src/lib/newdir/y.ts; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'tests/test_new.py' <<<"$OUT" && ok "a contract glob ending in / is a directory prefix" \
+  || bad "contract dir: rc=$rc out=$OUT"
 creset; put apps/web/src/x.ts; : > "$CONTRACT_CALLS"; r contracts --staged
 [ $rc -eq 0 ] && [ "$OUT" = "contracts: none" ] && [ ! -s "$CONTRACT_CALLS" ] \
   && ok "nothing hit -> 0, nothing run" || bad "none: rc=$rc out=$OUT"
@@ -1718,7 +1732,7 @@ Komponente: scripts · Dateien: scripts/dev/tool.sh
 Evidenz: run.sh[quick] scripts: 7 passed, 0 failed, 11 skipped @def5678 2026-10-02T11:00:00+02:00
 Review: approve (opus)
 ### T6 — die sechste Aufgabe  [x] **verifiziert** (auf der Box)
-Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**
+Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**, pve.home.arpa, nas.fritz.box, net 192.168.1.x and 10.0.0.*, VM-ID 3013, Template 3904 und 3905, net 172.16.x.x.
 Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902
 ### T7 — die siebte Aufgabe
 ### Ergebnis des Laufs
@@ -1742,7 +1756,7 @@ grep -q '^### Offene Fragen' <<<"$OUT" && grep -q 'T3 — die dritte Aufgabe.*so
   && ok "a [?] task stands in its own section, with the question" || bad "[?]: $OUT"
 grep -q '^### Übersprungen' <<<"$OUT" && grep -q 'T4 — die vierte Aufgabe.*schon erledigt' <<<"$OUT" \
   && ok "a [~] task stands in its own section, with the reason" || bad "[~]: $OUT"
-! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902' <<<"$OUT" \
+! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902|home\.arpa|fritz\.box|10\.0\.0|3013|3904|3905|172\.16' <<<"$OUT" \
   && ok "no address (v4, v6 compressed or bracketed, behind a word:), host name (also at a sentence end) or VMID" \
   || bad "leak: $OUT"
 grep -qF '.claude/settings.local.json on 127.0.0.1' <<<"$OUT" \

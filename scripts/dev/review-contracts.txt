@@ -5,14 +5,16 @@
 #   <glob> test <component> <test file>   verify.sh <component> --strict -- <test file>
 #   <glob> pair <regex> <file> <file>     the first capture of <regex> is the same in both
 #
-# <glob> is a shell `case` pattern (`*` crosses `/`). <regex> is python and one
-# word, so a blank inside a line is [^\S\n] (\s would cross a line break); it is
-# searched over the whole file with ^ and $ per line. A pair touches both of its
-# files, so it stands once for each. review_scripts_test.sh holds every line to
-# the tree: the test file exists, the pair agrees today.
+# <glob> is a shell `case` pattern (`*` crosses `/`; one ending in `/` is a
+# directory). <regex> is python and one word, so a blank inside a line is
+# [^\S\n] (\s would cross a line break); it is searched over the whole file
+# with ^ and $ per line. A pair touches both of its files, so it stands once for
+# each. review_scripts_test.sh holds every line to the tree: the test file
+# exists, the pair agrees today.
 
 # The push-only check types: the UI's copy of the list and the engine's set.
 apps/monitoring/app/check_types.py test monitoring tests/test_push_only_ui_sync.py
+apps/desktop/ui/src/lib/models/monitoring.ts test monitoring tests/test_push_only_ui_sync.py
 
 # The FRP pins move in lockstep (ci.yml frp-consistency, Audit C7): the version in
 # both workflows, the VM bootstrap and the frps image; the artifact SHAs.

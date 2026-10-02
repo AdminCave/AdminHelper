@@ -102,6 +102,12 @@ grep -qx "devenv: $FIX/.devenv.sh" "$FIXTURE_CALLS" \
 [ "$(git -C "$FIX" worktree list | wc -l)" -eq 1 ] && ok "git worktree list has one line afterwards" \
   || bad "worktree left: $(git -C "$FIX" worktree list)"
 
+# A git config that changes what `git diff` prints must not change the patch.
+git -C "$FIX" config diff.noprefix true; git -C "$FIX" config color.diff always
+FIXTURE_KIND=pytest-failure p monitoring --staged
+[ $rc -eq 0 ] && [ "$(field red_without_change)" = true ] \
+  && ok "diff.noprefix and color.diff=always do not break the patch" || bad "git config: rc=$rc out=$OUT err=$ERR"
+git -C "$FIX" config --unset diff.noprefix; git -C "$FIX" config --unset color.diff
 FIXTURE_KIND=green p monitoring --staged
 [ $rc -eq 0 ] && [ "$(field applicable)" = true ] && [ "$(field red_without_change)" = false ] \
   && ok "green without the change -> red_without_change: false" || bad "green: rc=$rc out=$OUT err=$ERR"
@@ -182,6 +188,15 @@ for args in "" "nosuch --staged" "monitoring --staged --commit HEAD" "monitoring
   [ $rc -eq 2 ] && ok "usage error -> 2: '$args'" || bad "usage '$args': rc=$rc out=$OUT err=$ERR"
 done
 
+# The probe takes away its own worktree, not the record of somebody else's: a
+# worktree whose directory is gone for the moment stays listed.
+git -C "$FIX" worktree add -q --detach "$WORK/other" HEAD
+rm -rf "$WORK/other"
+FIXTURE_KIND=green p monitoring --staged
+git -C "$FIX" worktree list --porcelain | grep -qF "$WORK/other" \
+  && ok "another worktree's record survives the probe (no blanket prune)" || bad "foreign worktree pruned"
+git -C "$FIX" worktree prune
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 # The test paths per component are review.sh's: two copies that drift would let
@@ -192,6 +207,8 @@ lists() { sed -n '/^component_tests() {/,/^}/p' "$1" | grep -E '^[[:space:]]+[a-
   && ok "component_tests is the same in review.sh and review-probe.sh" || bad "component_tests drifted"
 grep -qxF 'scripts/dev/review-probe.sh' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
   && ok "review-probe.sh is a harness path" || bad "review-probe.sh is missing from harness-paths.txt"
+grep -qxF 'scripts/tests/review_probe_test.sh' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
+  && ok "and so is its test" || bad "review_probe_test.sh is missing from harness-paths.txt"
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'review_probe_test' \
   && ok "review_probe_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 if command -v shellcheck >/dev/null 2>&1; then

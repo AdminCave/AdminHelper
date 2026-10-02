@@ -784,6 +784,8 @@ PY
     while IFS= read -r p; do
       [ -n "$p" ] || continue
       while IFS= read -r pat; do
+        # An entry ending in / is a directory, as in scope's lists.
+        case "$pat" in */) pat="$pat*" ;; esac
         # shellcheck disable=SC2254  # the list IS patterns
         case "$p" in $pat) HITS+=("$p"); break ;; esac
       done <<< "$PATTERNS"
@@ -865,6 +867,7 @@ PY
     while read -r glob kind rest; do
       case "$glob" in ''|'#'*) continue ;; esac
       case "$kind" in test|pair) ;; *) die "unknown contract kind in $F: $kind" ;; esac
+      case "$glob" in */) glob="$glob*" ;; esac
       while IFS= read -r p; do
         [ -n "$p" ] || continue
         # shellcheck disable=SC2254  # the list IS patterns
@@ -952,9 +955,15 @@ ledger, vdir = sys.argv[1], sys.argv[2]
 # names of a private network and VM ids come out of every line it copies.
 # Loopback stays, a file name like settings.local.json stays. A bare host name
 # without a private suffix cannot be told from a word — that is a limit.
-VM = re.compile(r"\b(?:vmids?|vms?|templates?|tpl|destroy|clone)[\s=:#*-]*\d{3,5}\b", re.I)
-HOST = re.compile(r"\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:lan|local|home|internal|intra|corp|localdomain)\b"
+# A VM id after its keyword, and the ids of a list after it ("3901 und 3902").
+VM = re.compile(r"\b(?:vm-?ids?|vms?|templates?|tpl|destroy|clone)[\s=:#*-]*\d{3,5}\b"
+                r"(?:\s*(?:,|/|und|and|bis|to|–|-)\s*\d{3,5}\b)*", re.I)
+HOST = re.compile(r"\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*"
+                  r"\.(?:lan|local|home\.arpa|home|internal|intra|corp|localdomain|fritz\.box)\b"
                   r"(?![\w-]|\.\w)", re.I)
+# A private network with a wildcard in it: 192.168.1.x, 10.0.0.*.
+PARTIAL = re.compile(r"(?<![\w.])(?:10(?:\.(?:\d{1,3}|[xX*])){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.(?:\d{1,3}|[xX*])){2}"
+                     r"|192\.168(?:\.(?:\d{1,3}|[xX*])){2})(?!\w|\.\w)")
 ADDR = re.compile(r"\[?[0-9A-Fa-f:.]*[:.][0-9A-Fa-f:.]*[0-9A-Fa-f](?:%\w+)?\]?(?::\d+)?")
 
 
@@ -979,6 +988,7 @@ def addr(m):
 
 
 def clean(text):
+    text = PARTIAL.sub(lambda m: "<addr>" if re.search(r"[xX*]", m.group(0)) else m.group(0), text)
     text = ADDR.sub(addr, text)
     text = HOST.sub("<host>", text)
     return VM.sub("<vm>", text).strip()
