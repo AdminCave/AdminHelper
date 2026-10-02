@@ -177,3 +177,120 @@ def test_stcp_create_generates_secret_and_port_and_masks_the_secret(
     assert stored.secret_key and len(stored.secret_key) >= 32
     assert stored.visitor_port and stored.visitor_port != 6000
     assert data["visitorPort"] == stored.visitor_port
+
+
+# secret_key and visitor_port belong to stcp tunnels only: an https tunnel keeps neither, a switch
+# back to stcp gets a fresh secret, and a stored port that another stcp tunnel took meanwhile is
+# replaced by a free one. A port the client sends explicitly is still checked (409).
+
+_HTTPS = {"tunnel_type": "https", "protocol": "web", "custom_domains": "a.example.test"}
+
+
+def _stored(db, tunnel_id: str) -> FrpTunnel:
+    db.expire_all()
+    return db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).one()
+
+
+def test_put_to_https_clears_secret_and_visitor_port(test_client, db_session, admin_user):
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-a", json=_HTTPS, headers=h)
+    assert r.status_code == 200, r.text
+    row = _stored(db_session, "t-a")
+    assert (row.secret_key, row.visitor_port) == (None, None)
+
+
+def test_https_post_stores_no_stcp_fields(test_client, db_session, admin_user):
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    body = _body(name="web", local_port=443, secret_key="s" * 32, visitor_port=6010, **_HTTPS)
+    r = test_client.post("/api/frp/tunnels", json=body, headers=h)
+    assert r.status_code == 201, r.text
+    row = _stored(db_session, r.json()["id"])
+    assert (row.secret_key, row.visitor_port) == (None, None)
+
+
+def test_switch_back_to_stcp_gets_a_new_secret_and_a_free_port(test_client, db_session, admin_user):
+    _seed(db_session)
+    h = _login(test_client, "admin", "adminpass")
+    assert test_client.put("/api/frp/tunnels/t-a", json=_HTTPS, headers=h).status_code == 200
+    taken = test_client.post("/api/frp/tunnels", json=_body(name="other"), headers=h)
+    assert taken.status_code == 201, taken.text
+    assert _stored(db_session, taken.json()["id"]).visitor_port == 6000  # the freed port
+    r = test_client.put("/api/frp/tunnels/t-a", json={"tunnel_type": "stcp"}, headers=h)
+    assert r.status_code == 200, r.text
+    row = _stored(db_session, "t-a")
+    assert row.visitor_port not in (None, 6000)
+    assert row.secret_key and row.secret_key != "existing-secret"
+
+
+def test_old_https_row_with_stcp_fields_heals_on_switch(test_client, db_session, admin_user):
+    _seed(db_session)  # t-a: stcp on 6000
+    db_session.add(
+        FrpTunnel(
+            id="t-old",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="old-web",
+            tunnel_type="https",
+            protocol="web",
+            local_port=443,
+            secret_key="an-old-secret-from-before-0123",
+            visitor_port=6000,
+            enabled=True,
+        )
+    )
+    db_session.commit()
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-old", json={"tunnel_type": "stcp"}, headers=h)
+    assert r.status_code == 200, r.text
+    row = _stored(db_session, "t-old")
+    assert row.visitor_port not in (None, 6000)
+    assert row.secret_key and row.secret_key != "an-old-secret-from-before-0123"
+
+
+def test_an_explicitly_sent_taken_port_stays_409(test_client, db_session, admin_user):
+    _seed(db_session)
+    db_session.add(
+        FrpTunnel(
+            id="t-old",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="old-web",
+            tunnel_type="https",
+            protocol="web",
+            local_port=443,
+            enabled=True,
+        )
+    )
+    db_session.commit()
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put(
+        "/api/frp/tunnels/t-old", json={"tunnel_type": "stcp", "visitor_port": 6000}, headers=h
+    )
+    assert r.status_code == 409, r.text
+
+
+def test_put_to_https_with_a_taken_port_is_not_a_409(test_client, db_session, admin_user):
+    # The port check applies only to a tunnel that ends up stcp: for https the field is
+    # dropped anyway, so a port another stcp tunnel holds is no conflict.
+    _seed(db_session)
+    db_session.add(
+        FrpTunnel(
+            id="t-b",
+            server_id="srv-a",
+            frp_config_id="cfg-1",
+            name="b-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="s" * 32,
+            visitor_port=6001,
+            enabled=True,
+        )
+    )
+    db_session.commit()
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.put("/api/frp/tunnels/t-a", json={**_HTTPS, "visitor_port": 6001}, headers=h)
+    assert r.status_code == 200, r.text
+    assert _stored(db_session, "t-a").visitor_port is None

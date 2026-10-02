@@ -32,7 +32,7 @@ _AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
 _VISITOR_IDENTITY_DIR = "{{IDENTITY_DIR}}"
 
 
-def _without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """Leave out stcp tunnels that have no secret.
 
     Proxy and visitor must carry the same secretKey; writing one without it would
@@ -177,7 +177,7 @@ def generate_frpc_toml(
 
     lines.extend(_tls_agent_block())
 
-    active_tunnels = _without_secretless_stcp([t for t in tunnels if t.enabled])
+    active_tunnels = without_secretless_stcp([t for t in tunnels if t.enabled])
 
     for tunnel in active_tunnels:
         lines.append("")
@@ -236,7 +236,7 @@ def generate_visitor_toml(
 
     lines.extend(_tls_client_block())
 
-    stcp_tunnels = _without_secretless_stcp(
+    stcp_tunnels = without_secretless_stcp(
         [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
     )
     stcp_tunnels.sort(key=lambda t: t.visitor_port or 0)

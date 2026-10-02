@@ -127,16 +127,16 @@
 
           <h2>FRP &ndash; Tunnels</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels</code><p>Query: <code>?server_id</code>, <code>?frp_config_id</code>. Tunnel responses carry <code>secretKey</code> as <code>null</code> &ndash; here, in <code>/api/frp/status</code>, <code>/api/frp/server-config/{id}</code> and <code>/api/servers</code> (<code>frpTunnels</code>). The secret is only in the generated TOML files (<code>/api/frp/generate/*</code>) and in provisioning (<code>/api/frp/provision/{server_id}/config</code>).</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/tunnels</code><p>STCP (with <code>secret_key</code>, <code>visitor_port</code>) or HTTPS (<code>custom_domains</code>). <code>auto_create_connection=true</code> also creates a matching connection.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/tunnels</code><p>STCP (with <code>secret_key</code>, <code>visitor_port</code>) or HTTPS (<code>custom_domains</code>); an HTTPS tunnel stores neither secret nor visitor port, values sent along are dropped. <code>auto_create_connection=true</code> also creates a matching connection.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels/{id}</code></div>
-          <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/tunnels/{id}</code><p>A <code>secret_key</code> of <code>null</code> or <code>""</code> keeps the stored secret; if the tunnel becomes STCP without a secret, the server generates one.</p></div>
+          <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/tunnels/{id}</code><p>A <code>secret_key</code> of <code>null</code> or <code>""</code> keeps the stored secret; if the tunnel becomes STCP without a secret, the server generates one. Switching to HTTPS deletes secret and visitor port; switching back to STCP generates a new secret (unless one is sent) and assigns a free port if the stored one has been taken meanwhile. A taken port sent explicitly stays <code>409</code>.</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/frp/tunnels/{id}</code></div>
 
           <h2>FRP &ndash; Generate (TOML/ZIP)</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/frps-toml?config_id=&hellip;</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/frpc-toml/{server_id}</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-toml?config_id=&hellip;&amp;user_id=&hellip;</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-bundle?config_id=&hellip;</code><p>Returns <code>{ toml, pki }</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/frpc-toml/{server_id}</code><p><code>404</code> if the server has no active, usable tunnel; an STCP tunnel without a secret does not count.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-toml?config_id=&hellip;&amp;user_id=&hellip;</code><p><code>404</code> if no usable STCP tunnel is visible, also when the visible ones have no secret: no tunnel, no <code>auth.token</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-bundle?config_id=&hellip;</code><p>Returns <code>{ toml, pki }</code>; <code>404</code> as for <code>visitor-toml</code>.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/bulk-zip?config_id=&hellip;</code><p>ZIP with <code>frps.toml</code> + <code>clients/*.toml</code> + <code>visitors/*.toml</code>.</p></div>
 
           <h2>Server provisioning (FRP-independent, since v0.23.2)</h2>
