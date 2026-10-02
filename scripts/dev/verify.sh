@@ -5,14 +5,15 @@
 #
 # verify.sh — the one way a task's Verify: line runs a component's fast suite.
 #
-#   bash scripts/dev/verify.sh <component> [--strict] [--tree <path>] [-- <args>]
+#   bash scripts/dev/verify.sh <component> [<component> …] [--strict] [--tree <path>] [-- <args>]
 #
 #     <component>  server monitoring ca-issuer agent desktop desktop-rs
 #                  desktop-ui desktop-e2e web scripts — or `all` for every
-#                  component. Runs that component's lint AND unit steps.
+#                  component (alone). Runs the lint AND unit steps of all the
+#                  components named, in one run.
 #     --strict     a SKIP of a required step fails the run (see run.sh)
 #     --tree       run against another checkout (a worktree), not this one
-#     -- <args>    extra arguments for the suite itself, e.g.
+#     -- <args>    extra arguments for the suite itself — one component only, e.g.
 #                  `verify.sh server --strict -- tests/test_auth.py -k lifecycle`
 #                  (word-split by the suite's shell — a single argument cannot
 #                  contain spaces, so `-k "foo or bar"` arrives as three)
@@ -37,7 +38,7 @@ set -uo pipefail
 usage() { sed -n '/^#   bash scripts\/dev\/verify.sh/,/^# Why this exists/p' "$0" \
   | sed '$d; s/^# \{0,1\}//'; }
 
-COMPONENT="" STRICT=0 TREE="" ARGS=()
+COMPONENTS=() STRICT=0 TREE="" ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --strict) STRICT=1; shift ;;
@@ -47,12 +48,18 @@ while [ $# -gt 0 ]; do
     --) shift; ARGS=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     --*) echo "unknown flag: $1"; usage; exit 2 ;;
-    *)
-      [ -z "$COMPONENT" ] || { echo "unexpected argument: $1 (component is already '$COMPONENT')"; exit 2; }
-      COMPONENT="$1"; shift ;;
+    *) COMPONENTS+=("$1"); shift ;;
   esac
 done
-[ -n "$COMPONENT" ] || { echo "verify.sh needs a component"; usage; exit 2; }
+[ "${#COMPONENTS[@]}" -gt 0 ] || { echo "verify.sh needs a component"; usage; exit 2; }
+# Several components are one run (R-0104): a Verify: line in the run.sh form,
+# `--only web desktop-e2e`, has to run both, not its first key.
+COMPONENT="${COMPONENTS[*]}"
+if [ "${#COMPONENTS[@]}" -gt 1 ]; then
+  case " $COMPONENT " in *" all "*) echo "'all' stands alone — it already runs every component"; exit 2 ;; esac
+  [ "${#ARGS[@]}" -eq 0 ] || {
+    echo "extra arguments need a single component — whose suite would get '${ARGS[*]}' of $COMPONENT?"; exit 2; }
+fi
 
 SELF_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TREE="${TREE:-$SELF_ROOT}"
@@ -109,7 +116,7 @@ export TMPDIR="$RUN_TMP"
 if [ "$COMPONENT" = "all" ]; then
   CMD=(bash "$RUN" quick)
 else
-  CMD=(bash "$RUN" quick --only "$COMPONENT")
+  CMD=(bash "$RUN" quick --only "${COMPONENTS[@]}")
 fi
 [ "$STRICT" = 1 ] && CMD+=(--strict)
 

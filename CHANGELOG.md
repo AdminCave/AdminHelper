@@ -266,6 +266,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Verify-Zeile, wie sie dasteht (R-0104):** `scripts/dev/verify.sh` nimmt mehrere Komponenten
+  und faehrt sie als einen Lauf `run.sh quick --only <a> <b>` (Argumente nach `--` nur fuer eine
+  Komponente, `all` nur allein). `scripts/dev/task-close.sh` liest die Komponenten aus einer
+  `Verify:`-Zeile in der Form `verify.sh <a> [<b> …] --strict` oder `run.sh <layer> --strict
+  --only <a> [<b> …]` und faehrt genau diese — bisher lief fuer `--only web desktop-e2e` nur
+  `web`. Fehlt die `Komponente:` der Task in der Liste, ist das Exit 2. Die `Evidenz:`-Zeile nennt
+  die gelaufenen Komponenten (`run.sh[quick] web desktop-e2e: …`).
+
 - **diff-scan erkennt mehr stummgeschaltete Tests (R-0082):** `scripts/dev/review.sh diff-scan`
   wertet jetzt auch geloeschte Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`
   als entfernte Assertion (ausserhalb einer `*_test.go` bleibt `err.Error()` frei), kennt die
