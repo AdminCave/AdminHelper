@@ -11,6 +11,8 @@
 #   bash scripts/dev/review.sh sec [--staged]           what must never be committed
 #   bash scripts/dev/review.sh check-verdict <file> --tree <hash>
 #                                                       a reviewer's verdict JSON
+#   bash scripts/dev/review.sh risk [--staged | --range <a>..<b>]
+#                                                       which reviewer a diff gets
 #
 # Deterministic, model-free, and called by task-close.sh before it commits. They
 # answer three questions a reviewer would otherwise have to ask every time:
@@ -46,6 +48,9 @@
 #              that found the new test green without the change. A blocker
 #              without evidence counts as a nit. Prints the review line that
 #              task-close.sh writes into the ledger.
+#   risk       does the diff touch a risk path (scripts/dev/review-risk.txt and
+#              the harness paths)? Prints `xhigh` and the paths it hit, or
+#              `standard`; both exit 0. The reviewer model follows from it.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
@@ -99,13 +104,17 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
     --tree)
       [ $# -ge 2 ] || die "--tree needs <hash>"
       TREE_ARG="$2"; shift ;;
+    --range)
+      [ $# -ge 2 ] || die "--range needs <a>..<b>"
+      case "$2" in -*|'') die "not a range: $2" ;; *..*) ;; *) die "not a range (<a>..<b>): $2" ;; esac
+      RANGE="$2"; shift ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
@@ -126,6 +135,12 @@ task_field() {
 }
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
+if [ -n "$RANGE" ]; then
+  # The other verbs judge what is about to be committed; a range is history.
+  [ "$VERB" = risk ] || die "--range is for risk alone"
+  [ "$STAGED" = 0 ] || die "--staged or --range, not both"
+  DIFF_ARGS+=("$RANGE")
+fi
 # Every verb reads the diff through this, never through a bare `git diff`: a
 # committed `.gitattributes` with `-diff` turned a test file into "Binary files
 # differ" and all three checks went blind (adversarial review, 2026-09-25); a
@@ -707,6 +722,40 @@ if probe.get("applicable") and probe.get("red_without_change") is not True:
 noted = ", ".join("%d %s" % (n, k) for k, n in counts.items() if n)
 print("approve (%s/%s%s)" % (d["reviewer"]["model"], d["reviewer"]["effort"], "; " + noted if noted else ""))
 PY
+    ;;
+
+  risk)
+    [ "${#ARGS[@]}" -eq 0 ] || die "risk takes no operand (only --staged or --range <a>..<b>)"
+    # Both lists as HEAD, the index and the worktree have them, all together —
+    # and for a range as its start has them: a diff that strikes a line (or the
+    # whole harness list) must not judge itself by the version it brings along.
+    PATTERNS=""
+    for f in scripts/dev/review-risk.txt scripts/dev/harness-paths.txt; do
+      LIST="$(git show "HEAD:$f" 2>/dev/null; git show ":$f" 2>/dev/null; cat "$ROOT/$f" 2>/dev/null
+              [ -z "$RANGE" ] || git show "${RANGE%%..*}:$f" 2>/dev/null)"
+      [ -n "$LIST" ] || die "no $f in HEAD, the index or the worktree"
+      PATTERNS+="$LIST"$'\n'
+    done
+    PATTERNS="$(grep -v '^[[:space:]]*#' <<<"$PATTERNS" | grep -v '^[[:space:]]*$' | sort -u)"
+    # --no-renames: a moved file counts by where it came from as well, or a
+    # refactor that carries auth code out of its directory reads as standard.
+    # -z: a name git would quote (`"`, `\`, a control character) stays a name.
+    CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+      || die "could not read the diff"
+    HITS=()
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      while IFS= read -r pat; do
+        # shellcheck disable=SC2254  # the list IS patterns
+        case "$p" in $pat) HITS+=("$p"); break ;; esac
+      done <<< "$PATTERNS"
+    done <<< "$CHANGED"
+    if [ "${#HITS[@]}" -gt 0 ]; then
+      echo xhigh
+      printf '  %s\n' "${HITS[@]}"
+    else
+      echo standard
+    fi
     ;;
 
   -h|--help) usage ;;

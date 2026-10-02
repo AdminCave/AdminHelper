@@ -32,8 +32,10 @@ als `nit` gezählt, approve bleibt gültig; fremder `tree_hash` ⇒ 4; fehlendes
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
-### T2 — `review-risk.txt` und `review.sh risk`  [ ]
+### T2 — `review-risk.txt` und `review.sh risk`  [x]
 Komponente: scripts · Dateien: scripts/dev/review-risk.txt, scripts/dev/review.sh, scripts/dev/harness-paths.txt, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2f047871 2026-10-02T15:20:12+02:00
+Review: approve (opus, two rounds: round 1 request_changes on renames and on lists read from the worktree only, fixed; round 2 approve, two nits taken in)
 Änderung: `review-risk.txt` (ein Glob je Zeile, Kommentar je Block: PKI/mTLS, Auth/AuthZ, SSRF-Guards, Alembic,
 Release-Workflows, Harness-Pfade aus `harness-paths.txt`, dazu `apps/monitoring/app/alerter.py` und die übrigen
 Startpfade aus Roadmap-Dokument §10.3, die es alle gibt). `review.sh risk [--staged | --range <a>..<b>]` druckt

@@ -1447,6 +1447,100 @@ python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$REPO_ROOT/scripts/
 grep -qxF 'scripts/dev/review-verdict.schema.json' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
   && ok "the schema is a harness path" || bad "the schema is missing from harness-paths.txt"
 
+# ══ risk (stage 6a) ═══════════════════════════════════════════════════════════
+echo "── risk ──"
+# reset_index cleans untracked files, the copied list among them.
+rreset() { reset_index; cp "$REPO_ROOT/scripts/dev/review-risk.txt" "$FIX/scripts/dev/review-risk.txt"; }
+# put <path>… — a changed file at each path, staged.
+put() { local f; for f in "$@"; do mkdir -p "$(dirname "$FIX/$f")"; echo "x $RANDOM" >> "$FIX/$f"; stage "$f"; done; }
+rreset; put apps/monitoring/app/alerter.py; r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/monitoring/app/alerter.py' <<<"$OUT" \
+  && ok "alerter.py -> xhigh, the path named" || bad "alerter: rc=$rc out=$OUT"
+rreset; put docs/admin/benutzer.html; r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "a docs page alone -> standard" || bad "docs: rc=$rc out=$OUT"
+rreset; put scripts/dev/task-close.sh; r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "a harness path -> xhigh (harness-paths.txt counts)" || bad "harness path: rc=$rc out=$OUT"
+rreset; put "docs/a b.html" apps/server/alembic/versions/0042_x.py; r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/server/alembic/versions/0042_x.py' <<<"$OUT" \
+  && ! grep -q 'a b' <<<"$OUT" && ok "a path with a space breaks nothing" || bad "space: rc=$rc out=$OUT"
+rreset; put "docs/a b.html"; r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "a path with a space alone -> standard" || bad "space alone: rc=$rc out=$OUT"
+rreset; put apps/server/app/modules/hosts/schemas.py apps/server/app/modules/hosts/router.py; r risk --staged
+[ $rc -eq 0 ] && [ "$(sed -n '2,$p' <<<"$OUT")" = '  apps/server/app/modules/hosts/schemas.py' ] \
+  && ok "only the risky one of two paths is named" || bad "two paths: rc=$rc out=$OUT"
+rreset; put apps/monitoring/app/alerter.py; r risk
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "without --staged the worktree diff (a staged risk path is not in it) -> standard" \
+  || bad "unstaged: rc=$rc out=$OUT"
+# A move out of a risk path counts by where it came from.
+rreset; put apps/server/app/core/auth.py; git -C "$FIX" commit -qm "auth" >/dev/null
+mkdir -p "$FIX/apps/server/app/hosts"
+git -C "$FIX" mv apps/server/app/core/auth.py apps/server/app/hosts/login.py
+echo "edit" >> "$FIX/apps/server/app/hosts/login.py"; stage apps/server/app/hosts/login.py
+r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/server/app/core/auth.py' <<<"$OUT" \
+  && ok "a move out of a risk path -> xhigh, the old path named" || bad "rename: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+# The lists are judged as HEAD has them too: a diff that strikes its own line
+# from them, or the whole harness list, does not judge itself by that.
+rreset; put scripts/dev/task-close.sh
+grep -vxF 'scripts/dev/task-close.sh' "$FIX/scripts/dev/harness-paths.txt" > "$WORK/hp" \
+  && cat "$WORK/hp" > "$FIX/scripts/dev/harness-paths.txt"; stage scripts/dev/harness-paths.txt
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "a line struck in the same diff still counts" || bad "struck line: rc=$rc out=$OUT"
+rreset; put scripts/dev/task-close.sh; git -C "$FIX" rm -q scripts/dev/harness-paths.txt
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "the harness list removed in the same diff still counts" || bad "removed list: rc=$rc out=$OUT"
+rreset; put scripts/dev/task-close.sh
+grep -vxF 'scripts/dev/task-close.sh' "$FIX/scripts/dev/harness-paths.txt" > "$WORK/hp" \
+  && cat "$WORK/hp" > "$FIX/scripts/dev/harness-paths.txt"
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "an unstaged edit of the list does not take a line away" || bad "unstaged list edit: rc=$rc out=$OUT"
+# A name git would quote is still a name.
+rreset; put 'apps/server/alembic/versions/0042_"x".py'; r risk --staged
+[ $rc -eq 0 ] && grep -qxF '  apps/server/alembic/versions/0042_"x".py' <<<"$OUT" \
+  && ok "a name git quotes is matched as it is" || bad "quoted name: rc=$rc out=$OUT"
+rreset; put apps/gateway/nginx.conf; git -C "$FIX" commit -qm "gateway" >/dev/null
+r risk --range HEAD~1..HEAD
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && ok "--range reads a commit range" || bad "range: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+rreset
+# A range judges by the lists its start had: a commit that strikes its own line
+# from harness-paths.txt does not read as standard.
+rreset; put scripts/dev/task-close.sh
+grep -vxF 'scripts/dev/task-close.sh' "$FIX/scripts/dev/harness-paths.txt" > "$WORK/hp" \
+  && cat "$WORK/hp" > "$FIX/scripts/dev/harness-paths.txt"; stage scripts/dev/harness-paths.txt
+git -C "$FIX" commit -qm "strike" >/dev/null
+r risk --range HEAD~1..HEAD
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "a range judges by the lists of its start" || bad "range list: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+rreset
+r risk --range HEAD
+[ $rc -eq 2 ] && ok "a range without .. -> 2" || bad "range without ..: rc=$rc out=$OUT"
+r risk --range nosuch..HEAD
+[ $rc -eq 2 ] && ok "a range git cannot read -> 2" || bad "bad range: rc=$rc out=$OUT"
+r risk --staged --range HEAD~1..HEAD
+[ $rc -eq 2 ] && ok "--staged and --range together -> 2" || bad "staged+range: rc=$rc out=$OUT"
+r risk --range --staged
+[ $rc -eq 2 ] && ok "a range that is a flag -> 2" || bad "flag as range: rc=$rc out=$OUT"
+r risk extra
+[ $rc -eq 2 ] && ok "risk takes no operand -> 2" || bad "operand: rc=$rc out=$OUT"
+r diff-scan --range HEAD~1..HEAD
+[ $rc -eq 2 ] && ok "--range belongs to risk alone -> 2" || bad "range on diff-scan: rc=$rc out=$OUT"
+# The list in the real repo: every line matches something that exists, so a
+# rename cannot quietly drop a risk path out of it.
+while IFS= read -r pat; do
+  case "$pat" in ''|'#'*) continue ;; esac
+  # shellcheck disable=SC2086  # the pattern IS a glob
+  compgen -G "$REPO_ROOT/$pat" >/dev/null && ok "risk path exists: $pat" || bad "risk path matches nothing: $pat"
+done < "$REPO_ROOT/scripts/dev/review-risk.txt"
+grep -qxF 'scripts/dev/review-risk.txt' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
+  && ok "the risk list is a harness path" || bad "review-risk.txt is missing from harness-paths.txt"
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
