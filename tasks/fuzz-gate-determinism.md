@@ -34,8 +34,10 @@ Beweis: origin/main@8224e84c · `bash scripts/tests/schemathesis_determinism.sh 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T5)
 
-### T2 — PR-Gate nur `Phase.explicit`, Versionen exakt gepinnt  [ ]
-Komponente: scripts · Dateien: apps/server/tests/test_schemathesis.py, apps/monitoring/tests/test_schemathesis.py, apps/ca-issuer/tests/test_schemathesis.py, scripts/tests/run.sh, .github/workflows/ci.yml, apps/server/requirements-dev.txt, apps/monitoring/requirements-dev.txt, apps/ca-issuer/requirements-dev.txt
+### T2 — PR-Gate nur `Phase.explicit`, Versionen exakt gepinnt  [x]
+Komponente: scripts · Dateien: apps/server/tests/test_schemathesis.py, apps/monitoring/tests/test_schemathesis.py, apps/ca-issuer/tests/test_schemathesis.py, scripts/tests/run.sh, .github/workflows/ci.yml, apps/server/requirements-dev.txt, apps/monitoring/requirements-dev.txt, apps/ca-issuer/requirements-dev.txt, scripts/tests/schemathesis_determinism.sh, scripts/tests/schemathesis_determinism_test.sh
+Evidenz: run.sh[quick] scripts server monitoring ca-issuer: 12 passed, 0 failed, 6 skipped @84e043b7 2026-10-02T11:55:56+02:00
+Review: request_changes (opus) → W1/W2 behoben, W1 per Test + Gegenprobe belegt; nits miterledigt
 Änderung: In den drei `test_schemathesis.py` (`MAX_EXAMPLES` bei server :139, monitoring :140, ca-issuer
 :133; `@settings` bei :242–263, :205–210, :188–193): `AH_SCHEMATHESIS_EXAMPLES=0` heißt
 `phases=[Phase.explicit]` (dann `max_examples=1`, falls Hypothesis 0 ablehnt); jede Zahl > 0 wie bisher alle

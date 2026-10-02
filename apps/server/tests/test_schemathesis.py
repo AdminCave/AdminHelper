@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 import schemathesis
-from hypothesis import HealthCheck, settings
+from hypothesis import HealthCheck, Phase, settings
 
 # not_a_server_error is the only check with a home in the public namespace; in
 # 4.27 the OpenAPI-specific ones exist solely under specs.openapi.
@@ -133,10 +133,14 @@ CHECKS = [
     ensure_resource_availability,
 ]
 
-# 5 locally and in the PR CI — a different budget searches different data, so a
-# CI failure would be one nobody can reproduce on their box. 100 on the weekly
-# run; scripts/tests/run.sh and heavy.sh set it, the suite only reads it.
-MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "5"))
+# 0 in the PR gate (scripts/tests/run.sh and the CI job): only Hypothesis' explicit
+# phase — the schema examples and schemathesis' coverage cases, the same cases for the
+# same tree (scripts/tests/schemathesis_determinism.sh measures it). Any number > 0 runs
+# every phase with that many generated examples; the weekly run (heavy.sh) sets 100.
+# Hypothesis refuses max_examples=0, and under phases=[Phase.explicit] the count has no
+# effect, so 0 becomes 1 there (a negative number still meets Hypothesis' own error).
+MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "0"))
+_PHASES = [Phase.explicit] if MAX_EXAMPLES == 0 else list(Phase)
 
 # ignored_auth repeats each call with the credentials stripped and expects a
 # rejection — but it only counts security parameters the SCHEMA declares. All three
@@ -240,18 +244,16 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
 )
 @schema.parametrize()
 @settings(
-    max_examples=MAX_EXAMPLES,
+    max_examples=MAX_EXAMPLES or 1,
+    phases=_PHASES,
     deadline=None,
-    # Without this the suite is a different suite on every run: Hypothesis draws a
-    # fresh seed each time, so one run is green and the next red on an operation
-    # nobody touched (observed: `6 failed, 299 passed` right after a `305 passed`)
-    # — a gate that flickers proves nothing. Depth comes from
-    # AH_SCHEMATHESIS_EXAMPLES in the weekly run, not from luck.
-    # The determinism reaches as far as the tree, not further: Hypothesis also feeds
-    # the literals of every loaded source file into generation (its per-file cache
-    # under .hypothesis/constants/), so an edited tree searches new ground rather
-    # than replaying the old run. A finding that appears "out of nowhere" after an
-    # unrelated edit is that, not flakiness.
+    # derandomize does not make the generate phase repeatable: two runs of the same
+    # tree drew different data (scripts/tests/schemathesis_determinism.sh, monitoring
+    # with all phases: ~930 of ~4000 curl lines apart). One known input is the literals
+    # of the loaded source files, fed into generation with no switch against it; the
+    # rest of the cause is not pinned down. That is why the PR gate runs the explicit
+    # phase only (_PHASES above); derandomize still keeps the weekly run from drawing
+    # a fresh seed.
     derandomize=True,
     # The database fixture is function-scoped and shared by every example of one
     # test, which is exactly what this health check exists to warn about. The
@@ -281,5 +283,5 @@ def test_api_under_every_auth_context(case, context, auth_headers, api_db):
         # then fails on "current transaction is aborted" instead of on its own
         # merits, and whether a run is green then depends on which example ran
         # first. Rolling back to the savepoint after each example is what makes
-        # them independent — derandomize fixes the DATA, not the database state.
+        # them independent — the fixed cases fix the DATA, not the database state.
         api_db.rollback()

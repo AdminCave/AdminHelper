@@ -49,6 +49,19 @@ expect 1 "the second run logged no case" "an empty second protocol is red" -- ba
 expect 1 "no second run to compare" "a single protocol is red" -- bash "$TOOL" --compare svc "$A"
 expect 1 "no second run to compare" "a missing second file is red" -- bash "$TOOL" --compare svc "$A" "$WORK/missing.log"
 expect 1 "the runs logged 2 and 3 cases" "different case counts are red" -- bash "$TOOL" --compare svc "$A" "$D"
+# pytest-randomly shuffles the tests; the same cases per test in another test order are
+# the same run, the same cases in another order WITHIN a test are not.
+printf '%s\n' '["t1", "curl a"]' '["t1", "curl b"]' '["t2", "curl c"]' > "$WORK/order.a"
+printf '%s\n' '["t2", "curl c"]' '["t1", "curl a"]' '["t1", "curl b"]' > "$WORK/order.b"
+printf '%s\n' '["t2", "curl c"]' '["t1", "curl b"]' '["t1", "curl a"]' > "$WORK/order.c"
+expect 0 "svc: 3 cases, 0 differing lines" "another test order with the same cases per test is green" \
+  -- bash "$TOOL" --compare svc "$WORK/order.a" "$WORK/order.b"
+expect 1 "svc: 3 cases, 2 differing lines" "another case order within a test is red" \
+  -- bash "$TOOL" --compare svc "$WORK/order.a" "$WORK/order.c"
+# A sort that fails must not leave two empty, "equal" streams behind.
+mkdir -p "$WORK/badsort"; printf '#!/bin/sh\nexit 2\n' > "$WORK/badsort/sort"; chmod +x "$WORK/badsort/sort"
+expect 1 "a protocol cannot be sorted" "a failing sort is red, not 0 differing lines" \
+  -- env PATH="$WORK/badsort:$PATH" bash "$TOOL" --compare svc "$A" "$C"
 expect 1 "a protocol cannot be read" "an unreadable protocol is red, not 0 cases" -- bash "$TOOL" --compare svc "$A" "$WORK"
 printf '%s' '["t1", "curl -X GET http://x/a"]' > "$WORK/nonl.a"; cp "$WORK/nonl.a" "$WORK/nonl.b"
 expect 0 "svc: 1 cases, 0 differing lines" "an unterminated last line still counts as a case" \

@@ -16,6 +16,10 @@
 # line. A red gate run is only worth something if it lies in the diff and can be
 # replayed: the same tree has to send the same cases.
 #
+# The comparison is per test: pytest-randomly shuffles the order of the tests on every
+# run, by design, and what has to repeat is the sequence of cases within each test. Both
+# protocols are stably sorted by test id first, which keeps that sequence.
+#
 # Prints `<service>: N cases, M differing lines` and exits 0 only if every service ran
 # twice, both runs logged the same number of cases > 0 and no line differs. A run that
 # failed or did not start, an empty protocol or a missing second run is exit 1 — the
@@ -34,6 +38,11 @@ RUN_SH="${AH_DETERMINISM_RUN_SH:-$ROOT/scripts/tests/run.sh}"
 
 usage() { sed -n '/^#   bash/,/^#       only the evaluation/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
+# by_test <log> — the protocol stably sorted by test id, the first JSON string of a line
+# (`["<test id>", "<curl>"]`, so the second "-separated field); the cases of one test
+# keep their order. LC_ALL=C: the same grouping on every machine.
+by_test() { LC_ALL=C sort -s -t '"' -k2,2 "$1"; }
+
 # compare <label> <log-a> [<log-b>] — the verdict over two protocols.
 compare() {
   local label="$1" a="$2" b="${3-}" na nb diffs
@@ -46,18 +55,27 @@ compare() {
   if ! na=$(grep -ac '' "$a" 2>&1) || ! nb=$(grep -ac '' "$b" 2>&1); then
     echo "$label: a protocol cannot be read"; return 1
   fi
+  # Sorted into files, not through a process substitution: a sort that fails there would
+  # hand diff two empty streams, and two empty streams do not differ.
+  local sa="$WORK/$label.a.sorted" sb="$WORK/$label.b.sorted"
+  if ! by_test "$a" > "$sa" || ! by_test "$b" > "$sb"; then
+    echo "$label: a protocol cannot be sorted"; return 1
+  fi
   # -a: a byte that makes diff call the files binary would otherwise hide every line.
   local drc=0
-  diff -q -a "$a" "$b" > /dev/null 2>&1 || drc=$?
+  diff -q -a "$sa" "$sb" > /dev/null 2>&1 || drc=$?
   if [ "$drc" -gt 1 ]; then echo "$label: the protocols cannot be compared (diff exit $drc)"; return 1; fi
   # tr: a NUL byte must not reach the command substitution, which would drop it with a
   # warning. grep -c prints 0 and exits 1 when nothing differs; only the count is used.
-  diffs=$(diff -a "$a" "$b" | tr -d '\000' | grep -c '^[<>]')
+  diffs=$(diff -a "$sa" "$sb" | tr -d '\000' | grep -c '^[<>]')
   echo "$label: $na cases, $diffs differing lines"
   if [ "$na" -ne "$nb" ]; then echo "$label: the runs logged $na and $nb cases"; return 1; fi
   # diff's own verdict decides as well: files it calls different are never green.
   [ "$diffs" -eq 0 ] && [ "$drc" -eq 0 ]
 }
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/ah-sth-determinism.XXXXXXXX") || { echo "mktemp failed" >&2; exit 2; }
+trap 'rm -rf "$WORK"' EXIT
 
 if [ "${1-}" = "--compare" ]; then
   if [ $# -lt 3 ] || [ $# -gt 4 ]; then usage; fi
@@ -82,9 +100,6 @@ if [ -f "$DEVENV" ]; then
   . "$DEVENV" || echo "  (warning: $DEVENV could not be sourced)" >&2
   set +e -u   # review: ok a devenv's own set -e must not decide how the runs below are judged
 fi
-
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/ah-sth-determinism.XXXXXXXX") || { echo "mktemp failed" >&2; exit 2; }
-trap 'rm -rf "$WORK"' EXIT
 
 rc=0
 for svc in "${SERVICES[@]}"; do
