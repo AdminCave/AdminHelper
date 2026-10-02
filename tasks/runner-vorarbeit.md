@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit für Stufe 7 (R-0080, R-0077) — Task-Ledger
-Status: aktiv · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „Runner-Vorarbeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit.md (Roadmap R-0080, R-0077)
 Heavy: none — nur Skripte (run.sh-Sperre, runner-setup.sh, Red Team) und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis über zwei echte Nutzer liefern Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec, „Kevins Handarbeit“).
@@ -109,8 +109,10 @@ im Aufruf von `runner-redteam.sh` stehen im Lockstep mit `LOCK_DIR` aus `runner-
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
 
-### T7 — Klon-Schritt: Dry-Run ohne Sicht auf .git, gleiches Dateisystem vor mv -T (aus /code-review)  [ ]
+### T7 — Klon-Schritt: Dry-Run ohne Sicht auf .git, gleiches Dateisystem vor mv -T (aus /code-review)  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @00942939 2026-10-02T18:04:44+02:00
+Review: request_changes (opus): wichtig gleiches st_dev ist kein einzelnes rename (Bind-Mount, EXDEV) -> mv --no-copy -T, st_dev-Pruefung bleibt als fruehe Meldung; Nits unsichtbares SRV, root-Hinweis, trap chmod, Umbruch in derselben Runde; Dateisystem-Abbruch ist nur ein root-Pfad, hermetisch nicht testbar
 Änderung: `runner-setup.sh` Schritt 2: (a) ein `--dry-run` ohne root, der `$SRV/repo` nicht durchsuchen darf,
 bricht nicht ab, sondern sagt, dass erst der echte Lauf entscheidet (seit T1 brach er ab); (b) der echte Lauf
 bricht vor dem Klon ab, wenn `$SRV` auf einem anderen Dateisystem liegt als sein Elternverzeichnis (`stat -c

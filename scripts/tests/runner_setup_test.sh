@@ -26,7 +26,7 @@ ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'chmod -R u+rwx "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 SHIM="$WORK/shim"; mkdir -p "$SHIM"
 CALLED="$WORK/called.txt"; : > "$CALLED"
 for cmd in useradd userdel su psql createdb install chown chmod rm ln mkdir; do
@@ -181,7 +181,7 @@ RUN_LOCK="$(sed -n 's/^AH_PY_LOCK_SHARED="\${AH_PY_LOCK_SHARED:-\(.*\)}"$/\1/p' 
   || bad "the lock path differs: setup '$SETUP_LOCK', run.sh '$RUN_LOCK', red team: $(grep '^redteam_py_lock ' "$REPO_ROOT/scripts/dev/runner-redteam.sh")"
 
 # The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
-# root-owned directory, then moved into place with one `mv -T`. Anything already at
+# root-owned directory, then moved into place with one `mv --no-copy -T`. Anything already at
 # $SRV/repo without a .git — a directory or a file — stops the run, dry or not.
 echo "── the clone goes only into a path that does not exist ──"
 for kind in dir file; do
@@ -194,12 +194,34 @@ for kind in dir file; do
   ! grep -qE '^[[:space:]]*\$ git clone' <<<"$PLAN" \
     && ok "and no clone is planned into it" || bad "a clone is planned into an occupied $kind"
 done
+# The runner owns $SRV and may close $SRV/repo to everybody else; a plan made
+# without root then cannot see the .git, and that is no reason to stop.
+if [ "$(id -u)" != 0 ]; then
+  CLOSED="$WORK/srv-closed"; mkdir -p "$CLOSED/repo/.git"; chmod 000 "$CLOSED/repo"
+  PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$CLOSED" bash "$SETUP" --dry-run 2>&1); rc=$?
+  chmod 755 "$CLOSED/repo"
+  [ $rc -eq 0 ] && grep -qF -- "$CLOSED/repo is not searchable without root — the real run decides" <<<"$PLAN" \
+    && ! grep -q 'is no git clone' <<<"$PLAN" && ! grep -qE '^[[:space:]]*\$ git clone' <<<"$PLAN" \
+    && ok "a dry run without root that cannot look into \$SRV/repo says so and goes on" \
+    || bad "an unsearchable \$SRV/repo: rc=$rc, plan: $(grep -F "$CLOSED" <<<"$PLAN" | tail -3)"
+  SHUT="$WORK/srv-shut"; mkdir -p "$SHUT/repo/.git"; chmod 000 "$SHUT"
+  PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$SHUT" bash "$SETUP" --dry-run 2>&1); rc=$?
+  chmod 755 "$SHUT"
+  [ $rc -eq 0 ] && grep -qF -- "$SHUT/repo is not searchable without root — the real run decides" <<<"$PLAN" \
+    && ! grep -qE '^[[:space:]]*\$ (git clone|mv )' <<<"$PLAN" \
+    && ok "so does one that cannot look into \$SRV, and it plans no clone" \
+    || bad "an unsearchable \$SRV: rc=$rc, plan: $(grep -F "$SHUT" <<<"$PLAN" | tail -3)"
+else
+  echo "  (as root: the two cases of a dry run without root are not run)"
+fi
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$FRESH" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "the real run checks first: $WORK belongs to root, is writable by nobody else and shares a filesystem with $FRESH" <<<"$PLAN" \
+  && ok "the plan names the checks the real run makes before the clone" || bad "the plan does not name the parent and filesystem checks"
 MK_AT="$(grep -nF -- "mktemp -d -p $WORK .ah-clone.XXXXXX" <<<"$PLAN" | head -1 | cut -d: -f1)"
 CL_AT="$(grep -nF -- "git clone --no-hardlinks -b main $REPO_ROOT $WORK/.ah-clone.XXXXXX/repo" <<<"$PLAN" | head -1 | cut -d: -f1)"
-MV_AT="$(grep -nF -- "mv -T $WORK/.ah-clone.XXXXXX/repo $FRESH/repo" <<<"$PLAN" | head -1 | cut -d: -f1)"
+MV_AT="$(grep -nF -- "mv --no-copy -T $WORK/.ah-clone.XXXXXX/repo $FRESH/repo" <<<"$PLAN" | head -1 | cut -d: -f1)"
 [ -n "$MK_AT" ] && [ -n "$CL_AT" ] && [ -n "$MV_AT" ] && [ "$MK_AT" -lt "$CL_AT" ] && [ "$CL_AT" -lt "$MV_AT" ] \
-  && ok "absent \$SRV/repo: mktemp beside it, clone into the temp dir, then mv -T into place" \
+  && ok "absent \$SRV/repo: mktemp beside it, clone into the temp dir, then mv --no-copy -T into place" \
   || bad "clone plan out of order or missing (mktemp ${MK_AT:-?}, clone ${CL_AT:-?}, mv ${MV_AT:-?})"
 ! grep -qF -- "git clone --no-hardlinks -b main $REPO_ROOT $FRESH/repo" <<<"$PLAN" \
   && ok "and never straight into \$SRV/repo" || bad "the plan still clones straight into \$SRV/repo"
@@ -214,6 +236,8 @@ awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | gre
   && ok "the overrides sit inside the --dry-run guard" || bad "AH_RUNNER_DRY_USER is not guarded by DRY=1"
 awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_SRV' \
   && ok "the SRV override sits inside the same guard" || bad "AH_RUNNER_DRY_SRV is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_LOCKDIR' \
+  && ok "the lock directory override too (--remove deletes it as root)" || bad "AH_RUNNER_DRY_LOCKDIR is not guarded by DRY=1"
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); prc=$?
 [ $prc -eq 2 ] && ! grep -q 'nobody-at-all' <<<"$PLAN" \
   && ok "a real run without --dry-run still demands root and names no override" \

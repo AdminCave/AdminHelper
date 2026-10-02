@@ -750,12 +750,13 @@ scripts/dev/hooks`, damit der pre-commit-Hook auch dort vor jedem Commit
 `sudo bash scripts/dev/runner-setup.sh`. Geklont wird nur in einen Pfad, den es noch nicht
 gibt: steht unter `/srv/ah/repo` schon etwas ohne `.git`, bricht das Skript mit einem Satz ab,
 statt hineinzuklonen; sonst klont es in ein Temp-Verzeichnis in `/srv` (neben `/srv/ah`) und
-benennt danach um (`/srv` muss root gehoeren und darf fuer Gruppe und andere nicht schreibbar
-sein). Ausserdem legt es die geteilte Python-Sperre `/var/lib/adminhelper-dev/py.lock` an
-(root, `0666`, im Verzeichnis `0755` von root; Abschnitt „Die schweren Python-Schritte laufen
-nacheinander"), `--remove --yes` nimmt sie mit; ein bestehender Runner bekommt sie mit einem
-erneuten `sudo bash scripts/dev/runner-setup.sh`. Danach bleiben **drei Handgriffe** fuer Kevin, die
-der Runner nicht selbst tun kann:
+benennt danach mit einem einzigen rename um (`mv --no-copy -T`): `/srv` muss root gehoeren und
+darf fuer Gruppe und andere nicht schreibbar sein; liegt `/srv/ah` auf einem anderen Dateisystem
+oder Mount, bricht es ab, statt zu kopieren. Ausserdem legt es die geteilte Python-Sperre
+`/var/lib/adminhelper-dev/py.lock` an (root, `0666`, im Verzeichnis `0755` von root; Abschnitt
+„Die schweren Python-Schritte laufen nacheinander"), `--remove --yes` nimmt sie mit; ein
+bestehender Runner bekommt sie mit einem erneuten `sudo bash scripts/dev/runner-setup.sh`.
+Danach bleiben **drei Handgriffe** fuer Kevin, die der Runner nicht selbst tun kann:
 
 1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
    `~adminhelper-runner/.config/adminhelper/oauth.env` (Abo-Token, kein API-Key:
