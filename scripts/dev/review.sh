@@ -20,8 +20,10 @@
 #              file or the span of a test, never an import line, R-0130; a
 #              helper in `#[cfg(test)] mod tests` without `#[test]` is outside)
 #              or a `return` inside a test, bare or with the value a test
-#              returns anyway (None, undefined, Ok(())), changes what "passed"
-#              means. Other return values and a generic `.fail(` stay out.
+#              returns anyway (None, undefined, Ok(())), with code of the test
+#              after it and not in a function nested in the test, changes
+#              what "passed" means. Other return values and a generic `.fail(`
+#              stay out.
 #              Two things are deliberately not findings: a
 #              line that carries `# review: ok <reason>` (and says why), and a
 #              pattern that only appears behind a comment marker, because a
@@ -371,14 +373,65 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
 
 # A return that ends a test early (bare, or with None, undefined, Ok(()))
 # counts inside the span of a test in the NEW file only; a helper next to the
-# tests may return early.
+# tests may return early. So may a function nested in the test (a stub, a
+# callback): its return ends that function, not the test. A Go subtest (t.Run)
+# is no such function, a return there ends the subtest. And a return with no
+# code of the test after it ends nothing.
+# Per language: a string "function", a vi.fn( or a Rust match arm `=> {` is no
+# function of its own.
+NESTED = {
+    "py": re.compile(r"^\s*(async\s+)?def\s"),
+    "js": re.compile(r"\bfunction\s*\*?\s*[\w$]*\s*\(|=>\s*\{\s*$"),
+    "rs": re.compile(r"\bfn\s+\w|\|[^|]*\|\s*(->\s*[^{]*)?\{\s*$"),
+    "go": re.compile(r"\bfunc\b"),
+}
+SUBTEST = re.compile(r"\bt\.Run\(")
+
+
+def lang(path):
+    if path.endswith(".py"):
+        return "py"
+    if path.endswith(".go"):
+        return "go"
+    if path.endswith(".rs"):
+        return "rs"
+    return "js" if re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path) else None
+
+
+def code(s):
+    t = s.strip()
+    return bool(t) and not t.startswith(("#", "//")) and bool(t.strip(")]};,"))
+
+
+def depth(s):
+    return len(s) - len(s.lstrip(" \t"))
+
+
+def ends_test_early(src, a, b, n, nested):
+    # Walk the openers above the return, each one less indented than the last,
+    # up to the head of the test; a closer line (`) -> None:`, `} else {`)
+    # opens nothing of its own.
+    cur = depth(src[n - 1])
+    for k in range(n - 1, a, -1):
+        s = src[k - 1]
+        if not code(s) or s.lstrip().startswith((")", "]", "}")):
+            continue
+        if depth(s) < cur:
+            if nested and nested.search(s) and not SUBTEST.search(s):
+                return False
+            cur = depth(s)
+    return any(code(src[k - 1]) for k in range(n + 1, b + 1))
+
+
 spans = {}
 for path, newno, ln in ars:
     if path not in spans:
-        spans[path] = heads(path, new_text(path))
+        src = new_text(path)
+        spans[path] = (src.split("\n"), heads(path, src))
+    lines, found = spans[path]
     n = int(newno)
-    if any(a < n <= b for _, a, b, _ in spans[path]):
-        out.append(f"{path}:{newno}  bare return in a test: {ln}")
+    if any(a < n <= b and ends_test_early(lines, a, b, n, NESTED.get(lang(path))) for _, a, b, _ in found):
+        out.append(f"{path}:{newno}  early return in a test: {ln}")
 
 # R-0130: a removed assertion counts where tests are — in a test file, or in
 # the span of a test in the OLD file (Rust keeps tests inline under src/) —

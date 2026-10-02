@@ -858,6 +858,82 @@ wc -l < x; bash -c 'tee "<" CLAUDE.md'
 CMDS
 guard auto Bash "$(cmdjson 'wc -l < CLAUDE.md')"
 [ -z "$OUT" ] && ok "autonomous, free: reading a harness file through <" || bad "false positive: wc -l < CLAUDE.md -> $OUT"
+# T7 (/code-review of this branch): a word made only of quoted or escaped
+# operator characters stays a word, also on a line that holds a real `<` — read
+# as a redirection, it swallowed the bypass or the glob next to it.
+NOV="--no-""verify"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  cmd="${cmd//NOV/$NOV}"
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+wc -l < notes.txt; git commit -m "<" NOV
+sort < in.txt; rm -rf "<" /tmp/tmp.*
+echo $((1<2)); git commit -m '<' -n
+diff <(ls) x; rm -rf '<' /tmp/tmp.*
+wc -l < notes.txt; rm -rf \< /tmp/tmp.*
+cat < x; git commit -m ">" NOV
+CMDS
+guard auto Bash "$(cmdjson 'wc -l < x; echo "<" > CLAUDE.md')"
+denied "$OUT" && ok "autonomous, denied: a quoted \"<\" before a real > CLAUDE.md" || bad "quoted < then >: $OUT$ERR"
+guard auto Bash "$(cmdjson 'sort < CLAUDE.md > /dev/null')"
+[ -z "$OUT" ] && ok "autonomous, free: a real < still takes its word" || bad "false positive: sort < CLAUDE.md -> $OUT"
+
+# T7: a glob operand of a take-away verb counts through what it matches in the
+# real tree, not through its directory — `rm -f *.log` in the root takes the
+# logs, not the checkout. A `cd` into a glob puts the glob in front of the
+# operand. Behind a variable the directory still counts.
+mkdir -p "$TREE/scripts/tests"
+: > "$TREE/build.log"; : > "$TREE/scripts/tests/run.sh"; : > "$TREE/scripts/tests/a.tmp"
+: > "$TREE/.claude/x.md"   # in an empty directory `rm -rf *` takes nothing away
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "autonomous, free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+rm -f *.log
+rm -f scripts/tests/*.tmp
+rm -f ../*.log
+rm -f scripts/tests/*.none
+CMDS
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+rm -f scripts/tests/*.sh
+rm -rf scripts/d*
+rm -rf scripts/$X/*
+rm -rf scripts/[[:lower:]]ev
+cd scripts/d* && rm -rf hooks
+cd .cl?ude && rm -rf *
+cd s*/dev && chmod -R -x hooks
+cd sc* && mv dev /tmp/x
+find scripts/d* -delete
+CMDS
+rm -f "$TREE/build.log" "$TREE/scripts/tests/run.sh" "$TREE/scripts/tests/a.tmp" "$TREE/.claude/x.md"
+rmdir "$TREE/scripts/tests"
+# Past GLOB_LIMIT matches the glob counts through its literal directory again:
+# 1001 harmless files under scripts/dev, which holds harness paths.
+mkdir -p "$TREE/scripts/dev/many"
+for i in $(seq 0 1000); do : > "$TREE/scripts/dev/many/x$i"; done
+guard auto Bash "$(cmdjson 'rm -f scripts/dev/m*/x*')"
+denied "$OUT" && ok "autonomous, denied: a glob past the match limit counts through its directory" \
+  || bad "glob limit: $OUT$ERR"
+rm -rf "$TREE/scripts/dev/many"
+
+# T7: a comment is no code — a `((` or a `<<X` in it opens nothing, and a quote
+# in it opens no string that hides the next line. Only a `#` at the start of a
+# word starts one.
+guard inter Bash "$(cmdjson "$(printf 'echo hi # see ((a\ncat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
+[ -z "$OUT" ] && ok "free: a here-doc after a comment that holds ((" || bad "comment with ((: $OUT"
+guard inter Bash "$(cmdjson "$(printf '# cat <<X\nrm -rf /tmp/tmp.*')")"
+denied "$OUT" && ok "denied: a delete after a comment that holds <<X" || bad "comment with <<X: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf "echo x # it's\nrm -rf /tmp/tmp.*")")"
+denied "$OUT" && ok "denied: a delete after a comment that holds a quote" || bad "comment with a quote: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf 'echo a#b; cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
+[ -z "$OUT" ] && ok "free: a # inside a word starts no comment, the here-doc stays one" || bad "# in a word: $OUT"
 
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.

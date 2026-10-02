@@ -460,7 +460,8 @@ oder in der Spanne eines Tests, etwa einem inline `#[test]` unter `src/`, auch n
 Umbenennung; eine Import-Zeile nie (R-0130); Helfer in `#[cfg(test)] mod tests` ohne `#[test]`
 bleiben eine Grenze — und ein `return` in einem Test, nackt oder mit dem Wert, den ein Test
 ohnehin liefert (`None`, `undefined`, `Ok(())`), auch in einer Datei mit CRLF-Zeilen (R-0132; andere
-Rueckgabewerte und ein generisches `.fail(` bleiben frei); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
+Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Tests folgt und es
+nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
@@ -609,16 +610,18 @@ bestimmt (`CLAUDE.md`, `AUTONOMOUS.md`, `.claude/**`, die Gate-Skripte unter
 `Bash`, welche Datei der Aufruf schreiben wuerde — inklusive `sed -i`, `tee`,
 `>`-Umleitung, `cp`/`mv` und `bash -c` — und verweigert ihn, wenn sie auf der Liste
 steht. Eine Eingabe-Umleitung (`<`, `<<<`, `<&`) verdeckt dabei weder das Kommando noch das
-Ziel von `cp`/`mv` (R-0134); Grenzen bleiben eine Prozess-Substitution `<(…)`, `<<- EOF` mit
-Leerzeichen und ein gequotetes `"<"` in einer Zeile, die zugleich ein ungequotetes `<` hat
-(Umleitung, `<(…)`, `$((a<b))`, auch im Kommentar). Was ein wegnehmendes Kommando erreicht (`rm`, `rmdir`, `shred`, `unlink`,
+Ziel von `cp`/`mv` (R-0134), ein gequotetes `"<"` bleibt ein Wort; Grenzen bleiben eine
+Prozess-Substitution `<(…)` und `<<- EOF` mit Leerzeichen. Ein Kommentar (`#` am Wortanfang)
+oeffnet nichts, kein `((`, kein Here-Doc, keine Quote; ein `#` mitten im Wort liest shlex dagegen
+als Kommentarbeginn (Grenze, R-0145). Was ein wegnehmendes Kommando erreicht (`rm`, `rmdir`, `shred`, `unlink`,
 `chmod`/`chown`/`chgrp`, die Quelle von `mv`, der Startpfad eines loeschenden `find`),
 trifft auch, wenn Harness-Pfade **darunter** liegen: `rm -rf .claude`, `rm -rf
-scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, ein Glob ueber sein Verzeichnis
-(`rm -rf scripts/dev/*`) und die Repo-Wurzel samt allem darueber, die alles enthaelt
-(`rm -rf ./*`, `rm -rf ..`; R-0127). Das trifft im autonomen Lauf auch harmlos wirkende
-Aufraeumer, die in der Wurzel ansetzen (`find . -name '*.pyc' -delete`, `rm -f *.log`): sie
-starten im Unterverzeichnis (`find apps -name '*.pyc' -delete`). Alle anderen Schreibformen
+scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, ein Glob mit dem, was er im Baum trifft
+(`rm -rf scripts/dev/*`, auch nach einem `cd` in einen Glob; hinter einer Variablen zaehlt sein
+Verzeichnis), und die Repo-Wurzel samt allem darueber, die alles enthaelt (`rm -rf ./*`,
+`rm -rf ..`; R-0127). Das trifft im autonomen Lauf auch einen harmlos wirkenden Aufraeumer, der
+in der Wurzel startet (`find . -name '*.pyc' -delete`): er startet im Unterverzeichnis
+(`find apps -name '*.pyc' -delete`); `rm -f *.log` bleibt frei, der Glob trifft nur die Logs. Alle anderen Schreibformen
 pruefen nur den Pfad selbst. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
 python/perl heraus, ein zur Laufzeit gebauter Pfad, ein `find … -exec sed -i`,
 `git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist

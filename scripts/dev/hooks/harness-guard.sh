@@ -61,15 +61,16 @@
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
 # What a take-away verb (`rm`, `rmdir`, `shred`, `unlink`, `chmod`/`chown`/
 # `chgrp`, the source of `mv`, the start of a deleting `find`) reaches also
-# hits when harness paths lie BELOW it — `rm -rf .claude`, `rm -rf
-# scripts/dev/*` through its directory, `rm -rf ./*` through the checkout root
-# (R-0127). Not seen: `git clean`, `git rm`, a delete from python or another
+# hits when harness paths lie BELOW it — `rm -rf .claude`, and a glob through
+# what it matches in the tree: `rm -rf scripts/dev/*`, `rm -rf ./*`, while
+# `rm -f *.log` takes the logs only; behind a variable a glob reaches its
+# directory (R-0127). Not seen: `git clean`, `git rm`, a delete from python or another
 # interpreter.
 # The command is tokenized before it is split into segments, so a `|` or `&&`
 # inside a quoted string (a commit message, say) is text and not a pipeline; a
 # newline only ends a command when it is neither inside a quote nor inside a
-# here-doc body, for the same reason (a here-string `<<<` and a shift inside
-# `$((…))` start none, R-0126/R-0133). The flip side of skipping here-doc bodies
+# here-doc body, for the same reason (a here-string `<<<`, a shift inside
+# `$((…))` and anything in a comment start none, R-0126/R-0133). The flip side of skipping here-doc bodies
 # is a known gap: `bash <<EOF … EOF` hides its commands from this guard.
 # `cd` is followed within a command, and `bash -c "…"` is scanned recursively,
 # because Claude Code does not strip it before matching its own rules either.
@@ -81,8 +82,8 @@
 # an operand or feeding a loop, `done < <(ls /tmp/x*)`), `find … -exec sed -i`,
 # a here-doc fed to a shell (`bash <<EOF … EOF`), a quoted string of operator
 # characters only (`-m ");"`, read as the operators once shlex has dropped the
-# quotes; a quoted `"<"` stays a word unless its line also holds an unquoted
-# `<` — a redirection, `<(…)`, `$((a<b))`, even one in a comment; R-0134),
+# quotes; one with a `<` or `>` in it stays a word, R-0134), a `#` inside a word
+# (`a#b`), which shlex reads as the start of a comment (R-0145),
 # `<<- EOF` with a space before the delimiter, and the
 # three git ways of restoring content over a file — `git apply <patch>`,
 # `git checkout <rev> -- <pfad>`, `git restore --source=<rev> -- <pfad>`. For the
@@ -125,7 +126,7 @@ fi
 # The program is handed over with -c, not on stdin: `python3 -` would eat the
 # very JSON this hook has to read.
 PARSE=$(cat <<'PY'
-import fnmatch, json, os, re, shlex, sys
+import fnmatch, glob, itertools, json, os, re, shlex, sys
 
 root = os.path.realpath(sys.argv[1])
 
@@ -186,19 +187,40 @@ bypasses = []   # ways past the pre-commit hook
 deletes = []    # every delete seen, nested `bash -c` included: a loop counts them
 
 
+GLOB_LIMIT = 1000   # matches of one glob operand; past that, its directory counts
+
+
 def taken_away(word, base):
-    """The checkout path a take-away verb reaches with this operand (R-0127):
-    the path itself, a glob through its literal directory (`rm -rf ./*` -> the
-    root, `rm -rf scripts/dev/*` -> scripts/dev); "." for the root, None outside
-    the checkout or behind a variable."""
-    p = glob_dir(word, base) if has_glob(word) else resolve(word, base)
-    if p == UNRESOLVED:
-        return None
-    p = os.path.realpath(p)
-    # The root, and every directory above it, holds the whole checkout.
-    if p == root or root.startswith(p.rstrip(os.sep) + os.sep):
-        return "."
-    return os.path.relpath(p, root) if p.startswith(root + os.sep) else None
+    """The checkout paths a take-away verb reaches with this operand (R-0127):
+    the path itself; for a glob, also one a `cd` into a glob put in front of
+    it, what it matches in the real tree (`rm -rf ./*` -> every entry of the
+    root, `rm -f *.log` -> the logs, not the root); "." for the root and every
+    directory above it. A glob behind a variable cannot be matched and reaches
+    its literal directory (`scripts/$X/*` -> scripts). Nothing outside the
+    checkout, nothing for an operand that is a variable."""
+    full = resolve(word, base)
+    if full == UNRESOLVED:
+        return []
+    if not has_glob(full):
+        found = [full]
+    elif "$" in full or "`" in full or "[:" in full:
+        # A variable, or a POSIX class (`[[:lower:]]`) Python does not know.
+        found = [glob_dir(full, "/")]
+    else:
+        found = list(itertools.islice(glob.iglob(full.replace("[^", "[!")), GLOB_LIMIT + 1))
+        if len(found) > GLOB_LIMIT:
+            found = [glob_dir(full, "/")]
+    hits = []
+    for p in found:
+        if p == UNRESOLVED:
+            continue
+        p = os.path.realpath(p)
+        # The root, and every directory above it, holds the whole checkout.
+        if p == root or root.startswith(p.rstrip(os.sep) + os.sep):
+            hits.append(".")
+        elif p.startswith(root + os.sep):
+            hits.append(os.path.relpath(p, root))
+    return hits
 
 
 def rel(p, base):
@@ -543,22 +565,44 @@ def split_operators(tokens):
     return out
 
 
-def unquoted_has(text, ch):
-    """Whether ch stands in text outside quotes (a backslash escapes it)."""
+def quoted_ops(line):
+    """The line with every word made only of quoted or escaped redirection
+    characters (`"<"`, `'>'`, `\\<`) turned into a plain word: shlex drops the
+    quotes, and such a word arrived as the bare operator. Read as a redirection
+    it swallowed the word next to it (`git commit -m "<" -n`)."""
+    out, start, content = [], 0, []
     quote, esc = None, False
-    for c in text:
+
+    def close(end):
+        chars = "".join(c for c, _ in content)
+        if content and all(q for _, q in content) and all(c in "<>|&" for c in chars) \
+                and any(c in "<>" for c in chars):
+            out.append("'\x1e" + chars + "'")
+        else:
+            out.append(line[start:end])
+        content.clear()
+
+    for i, c in enumerate(line):
         if esc:
+            content.append((c, True))
             esc = False
         elif c == "\\" and quote != "'":
             esc = True
         elif quote:
             if c == quote:
                 quote = None
+            else:
+                content.append((c, True))
         elif c in "\"'":
             quote = c
-        elif c == ch:
-            return True
-    return False
+        elif c.isspace() or c in ";&|()<>":
+            close(i)
+            out.append(c)
+            start = i + 1
+        else:
+            content.append((c, False))
+    close(len(line))
+    return "".join(out)
 
 
 def is_redirect(tok):
@@ -605,6 +649,11 @@ def logical_lines(cmd):
                 # Inside `((…))` / `$((…))` a `<<` or `<<=` is a shift, not a
                 # here-doc (R-0133): read as one, it hid every line after it.
                 arith += {"(": 1, ")": -1}.get(ch, 0)
+            elif ch == "#" and (i == 0 or line[i - 1] in " \t;&|()<>"):
+                # A comment, as bash reads one: a `#` at the start of a word.
+                # A `((`, a `<<X` or a quote in it opens nothing; read as code,
+                # they hid the lines below or flagged a here-doc body.
+                break
             elif line[i:i + 2] == "((":
                 arith = 2
                 i += 2
@@ -666,11 +715,8 @@ def scan(cmd, base, depth=0):
     # the temp glob a pipe carries into the next segment.
     state = {"case": False, "arm": False, "loops": [], "pipe": None}
     for line in logical_lines(cmd):
-        # shlex drops quotes: a `"<"` arrives as the bare operator. Only a line
-        # with an unquoted `<` has input redirections at all.
-        state["lt"] = unquoted_has(line, "<")
         segment = []
-        for tok in tokenize(line) + [";"]:
+        for tok in tokenize(quoted_ops(line)) + [";"]:
             if tok in SEPARATORS:
                 # An empty segment (the `;` a line ends with) changes nothing.
                 if segment:
@@ -699,11 +745,10 @@ def run_segment(tok, cwd, depth, state, sep):
     clean, i = [], 0
     while i < len(tok):
         t = tok[i]
-        # An input operator is a quoted word, not a redirection, on a line
-        # without an unquoted `<`, or right before another operator — bash
-        # takes no operator as a redirection's word (`echo "<" > CLAUDE.md`).
-        if is_redirect(t) and ">" not in t and (
-                not state.get("lt") or i + 1 < len(tok) and is_redirect(tok[i + 1])):
+        # An input operator right before another operator is no redirection:
+        # bash takes no operator as a redirection's word. A quoted `"<"` is a
+        # word already (quoted_ops).
+        if is_redirect(t) and ">" not in t and i + 1 < len(tok) and is_redirect(tok[i + 1]):
             clean.append(t)
             i += 1
             continue
@@ -779,7 +824,7 @@ def run_segment(tok, cwd, depth, state, sep):
             deletes.append(verb)
             if selects is not None:
                 tmp_hits.append(selects)
-            taken.extend(taken_away(e, cwd) for w in starts for e in brace_expand(w) if e)
+            taken.extend(p for w in starts for e in brace_expand(w) if e for p in taken_away(e, cwd))
     elif verb in ("for", "select"):
         globs = [w for w in args[args.index("in") + 1:] if tmp_glob(w, cwd)] if "in" in args else []
         state["loops"].append((globs[0] if globs else None, len(deletes)))
@@ -825,7 +870,7 @@ def run_segment(tok, cwd, depth, state, sep):
         # Taking a harness file away is the most complete edit there is.
         out.extend(rel(w, cwd) for w in words)
         if verb != "truncate":
-            taken.extend(taken_away(w, cwd) for w in words)
+            taken.extend(p for w in words for p in taken_away(w, cwd))
     elif verb == "ln":
         # `ln -sf x CLAUDE.md` replaces the file with a link to something else.
         out.extend(rel(w, cwd) for w in words[1:] if len(words) > 1)
@@ -848,7 +893,7 @@ def run_segment(tok, cwd, depth, state, sep):
         elif ops and (verb != "chmod" or CHMOD_MODE.match(ops[0])):
             ops = ops[1:]
         out.extend(rel(w, cwd) for w in ops)
-        taken.extend(taken_away(w, cwd) for w in ops)
+        taken.extend(p for w in ops for p in taken_away(w, cwd))
     elif verb in ("cp", "mv", "install"):
         # An explicit -t/--target-directory, or the last word, is the target.
         target = None
@@ -873,7 +918,7 @@ def run_segment(tok, cwd, depth, state, sep):
         # `mv CLAUDE.md /tmp/x` takes the harness file AWAY — the source counts.
         if verb == "mv":
             out.extend(rel(w, cwd) for w in sources)
-            taken.extend(taken_away(w, cwd) for w in sources)
+            taken.extend(p for w in sources for p in taken_away(w, cwd))
     return cwd
 
 

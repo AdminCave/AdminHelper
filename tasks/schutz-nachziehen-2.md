@@ -113,3 +113,28 @@ einem Test. Gegenproben: `assert.fail(` bleibt frei, `sys.exit(` und `profit(` b
 Grenzen: kein generisches `.fail(`; andere Rückgabewerte.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (diff-scan-Muster); CHANGELOG (Changed)
+
+### T7 — Nachbesserungen aus /code-review: gequotete Operatoren, Glob-Operanden, ((, verschachteltes return  [x]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/dev/review.sh, scripts/tests/hooks_test.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, CHANGELOG.md, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a611cee5 2026-10-02T14:33:11+02:00
+Review: approve (opus, two rounds: round 1 request_changes on the nested-function matcher, fixed per language; round 2 approve)
+Herkunft: `/code-review` über den Branch-Diff (2026-10-02); nur Regressionen und Fehlalarme, die dieser Branch
+selbst eingeführt hat. Neue Umgehungen gingen als Roadmap-Kandidaten an die Aufsicht.
+Änderung: (1) Wächter (T4-Regression, immer-an-Regeln): ein Wort, das nur aus gequoteten oder escapten
+Operatorzeichen besteht (`"<"`, `'>'`, `\<`), wird vor shlex markiert und bleibt ein Wort; das Zeilen-Merkmal
+`lt` und `unquoted_has` entfallen. (2) Wächter (T2): ein Glob-Operand eines wegnehmenden Verbs — auch einer, der
+erst über ein `cd` in einen Glob entsteht — wird gegen den echten Baum aufgelöst, jeder Treffer zählt; mit
+Variable bleibt der Rückfall über das Verzeichnis. (3) Wächter (T3): ein Kommentar (`#` am Wortanfang) zählt nicht — kein `((`, kein Here-Doc, keine
+Quote darin öffnet etwas.
+(4) diff-scan (T6): ein `return` in einer verschachtelten Funktion im Test oder ohne folgenden Code zählt nicht;
+der Meldetext heißt `early return in a test`. (5) `tasks/README.md` „Test-Löschung“: diff-scan wertet gelöschte
+Assertions nur, wo Tests stehen (R-0130).
+Rot vorher: `wc -l < notes.txt; git commit -m "<" -n`, `sort < in.txt; rm -rf "<" /tmp/tmp.*` und
+`diff <(ls) x; rm -rf '<' /tmp/tmp.*` frei; autonom `rm -f *.log` und `rm -f scripts/tests/*.tmp` verweigert,
+`cd scripts/d* && rm -rf hooks` frei; `# see ((a` vor einem Here-Doc mit `rm -rf /tmp/tmp.*` verweigert, `# cat <<X` bzw.
+`# it's` vor `rm -rf /tmp/tmp.*` frei;
+`return None` in einem verschachtelten Stub und ein letztes `return Ok(());` gemeldet.
+Gegenproben: `rm -rf scripts/d*`, `rm -rf ./*`, `rm -rf scripts/$X/*` (autonom) bleiben verweigert;
+`if cond:` + `return` mitten im Test bleibt ein Fund; `echo "<" > CLAUDE.md` schreibt weiter CLAUDE.md.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Harness-Schutz, diff-scan); CHANGELOG (Changed); tasks/README.md

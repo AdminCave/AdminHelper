@@ -774,7 +774,7 @@ ret_case() {  # ret_case <path> <content> <added-content> <want-rc> <label>
   base "$1" "$2"; printf '%s' "$3" > "$FIX/$1"; stage "$1"
   r diff-scan --staged
   if [ "$4" = 3 ]; then
-    [ $rc -eq 3 ] && grep -q "$1:.*bare return in a test" <<<"$OUT" && ok "$5" || bad "$5: rc=$rc out=$OUT"
+    [ $rc -eq 3 ] && grep -q "$1:.*early return in a test" <<<"$OUT" && ok "$5" || bad "$5: rc=$rc out=$OUT"
   else
     [ $rc -eq 0 ] && ok "$5" || bad "$5: rc=$rc out=$OUT"
   fi
@@ -932,6 +932,116 @@ fn f() -> bool {
 ' 3 "Rust: return Ok(()); in a test is a finding"
 ret_case apps/server/tests/test_crlf.py "$(printf 'def test_c():\r\n    x = 1\r\n    assert x\r\n')" \
   "$(printf 'def test_c():\r\n    x = 1\r\n    return\r\n    assert x\r\n')" 3 "CRLF: a bare return in a test is a finding"
+# T7: a return in a function nested in the test (a stub, a callback) ends only
+# that function, and a return with nothing of the test after it ends nothing.
+# A return in a branch of the test itself, or in a Go subtest, still counts.
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r(monkeypatch):
+    async def _noop(*_a, **_k):
+        return None
+
+    x = 1
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 0 "Python: return None in a stub nested in the test is free"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r(monkeypatch):
+    async def _noop(
+        *_a,
+        **_k,
+    ):
+        return None
+
+    x = 1
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 0 "Python: the same stub with a signature over several lines is free"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r(cond):
+    x = 1
+    if cond:
+        return
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: a return in a branch of the test is a finding"
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  const stub = () => {
+    return undefined;
+  };
+  stub();
+  expect(1).toBe(1);
+});
+' 0 "TS: return undefined; in a callback nested in the test is free"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() -> Result<(), String> {
+    assert!(f());
+    return Ok(());
+}
+
+fn f() -> bool {
+    true
+}
+' 0 "Rust: a last return Ok(()); after the checks is free"
+GO_SUB='package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	t.Run("sub", func(t *testing.T) {
+		if f() != 1 {
+			t.Fatal("x")
+		}
+	})
+}
+'
+ret_case apps/agent/r_test.go "$GO_SUB" 'package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	t.Run("sub", func(t *testing.T) {
+		return
+		if f() != 1 {
+			t.Fatal("x")
+		}
+	})
+}
+' 3 "Go: a return in a t.Run subtest is a finding"
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  if (typeof globalThis.structuredClone !== "function") {
+    return;
+  }
+  expect(1).toBe(1);
+});
+' 3 "TS: a string \"function\" opens no nested function"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    match f() {
+        true => {
+            return;
+        }
+        false => {}
+    }
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+' 3 "Rust: a match arm => { opens no nested function"
 
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
