@@ -1469,9 +1469,28 @@ rreset; put "docs/a b.html"; r risk --staged
 rreset; put apps/server/app/modules/hosts/schemas.py apps/server/app/modules/hosts/router.py; r risk --staged
 [ $rc -eq 0 ] && [ "$(sed -n '2,$p' <<<"$OUT")" = '  apps/server/app/modules/hosts/schemas.py' ] \
   && ok "only the risky one of two paths is named" || bad "two paths: rc=$rc out=$OUT"
+# Without a flag, risk sees everything not committed yet: staged, unstaged and
+# untracked — at the review step nothing is staged, and a new migration is a
+# risk path before anyone stages it. --staged sees the index alone.
+# The fixture's copied review-risk.txt is itself an untracked harness path, so
+# xhigh alone proves nothing here: the staged path has to be named.
 rreset; put apps/monitoring/app/alerter.py; r risk
-[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "without --staged the worktree diff (a staged risk path is not in it) -> standard" \
-  || bad "unstaged: rc=$rc out=$OUT"
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/monitoring/app/alerter.py' <<<"$OUT" \
+  && ok "without a flag a staged risk path counts" \
+  || bad "staged, no flag: rc=$rc out=$OUT"
+rreset; mkdir -p "$FIX/apps/server/alembic/versions"; echo "rev" > "$FIX/apps/server/alembic/versions/0099_new.py"
+r risk
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/server/alembic/versions/0099_new.py' <<<"$OUT" \
+  && ok "without a flag an untracked file under a risk path -> xhigh" || bad "untracked: rc=$rc out=$OUT"
+r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "--staged does not see the untracked file" || bad "untracked staged: rc=$rc out=$OUT"
+rreset; put apps/monitoring/app/alerter.py; git -C "$FIX" commit -qm "alerter" >/dev/null
+echo "edit" >> "$FIX/apps/monitoring/app/alerter.py"; r risk
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/monitoring/app/alerter.py' <<<"$OUT" \
+  && ok "without a flag an unstaged edit of a tracked risk file -> xhigh" || bad "unstaged edit: rc=$rc out=$OUT"
+r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "--staged does not see the unstaged edit" || bad "unstaged staged: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
 # A move out of a risk path counts by where it came from.
 rreset; put apps/server/app/core/auth.py; git -C "$FIX" commit -qm "auth" >/dev/null
 mkdir -p "$FIX/apps/server/app/hosts"

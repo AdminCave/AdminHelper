@@ -57,10 +57,11 @@ Kevin.
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
 Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer** ist
-die Ausnahme: er läuft auf **Sonnet** und nur bei einem Risikopfad im Diff (PKI/mTLS, Auth,
-SSRF, Migrationen, Release-Workflows) auf Opus — mit Opus lief er regelmäßig eine halbe Stunde
-ohne Urteil, mit Sonnet urteilt er in Minuten (`.claude/skills/feature-build/SKILL.md`,
-Schritt 4).
+die Ausnahme: er läuft auf **Sonnet** und nur dann auf Opus, wenn `review.sh risk` einen
+Risikopfad im Diff meldet (`scripts/dev/review-risk.txt` plus die Harness-Pfade) — mit Opus lief
+er regelmäßig eine halbe Stunde ohne Urteil, mit Sonnet urteilt er in Minuten
+(`.claude/skills/feature-build/SKILL.md`, Schritt 4). Eine Review-Runde ist die Regel, eine
+zweite nur bei einem `blocker` oder einem belegten `wichtig`.
 
 **Ebene 0: deterministische Prüfer.** Vor jedem Modell beantworten Skripte, was sich ohne
 Urteil entscheiden lässt (Stufe 6a): `review.sh risk` (Risikopfad im Diff, danach das

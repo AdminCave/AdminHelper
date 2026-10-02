@@ -238,6 +238,16 @@ step4=$(section .claude/skills/feature-build/SKILL.md '4. **Frischer-Kontext-Rev
   || bad "feature-build step 4 lacks the cleanup rule (mktemp -d -p, vollem Pfad, nie per Glob)"
 ! grep -q '/tmp/claude-' <<<"$step4" \
   && ok "and names no fixed /tmp/claude-<uid> path (the runner has another uid)" || bad "step 4 names /tmp/claude-…"
+# Stage 6a: the reviewer's model comes from review.sh risk, not from a prose list,
+# and one review round is the rule (Kevin, 2026-10-02).
+grep -qF 'bash scripts/dev/review.sh risk' <<<"$step4" && grep -q 'Eine Runde' <<<"$step4" \
+  && ok "feature-build step 4 takes the model from review.sh risk, one round as the rule" \
+  || bad "feature-build step 4 lacks review.sh risk or the one-round rule"
+! grep -q 'Release-Workflows (`.github/workflows/release' <<<"$step4" \
+  && ok "and no longer carries its own list of risk paths" || bad "step 4 still lists risk paths in prose"
+close5=$(section .claude/skills/feature-build/SKILL.md '5. **Erledigt, Push + Draft-PR**' '6. **Mit dem PR:**')
+grep -qF 'review.sh pr-body' <<<"$close5" && grep -qF -- '--body-file' <<<"$close5" \
+  && ok "the PR step takes its text from review.sh pr-body as --body-file" || bad "PR step without pr-body/--body-file"
 [ "$(cleanup_rule "$(section .claude/skills/feature-review/SKILL.md '## Proben und Aufräumen' '## ')")" = ok ] \
   && ok "feature-review's 'Proben und Aufräumen' carries the cleanup rule" \
   || bad "feature-review has no '## Proben und Aufräumen' with the cleanup rule"

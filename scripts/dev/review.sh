@@ -56,6 +56,8 @@
 #   risk       does the diff touch a risk path (scripts/dev/review-risk.txt and
 #              the harness paths)? Prints `xhigh` and the paths it hit, or
 #              `standard`; both exit 0. The reviewer model follows from it.
+#              Without a flag it judges everything not committed yet — staged,
+#              unstaged and untracked: at the review step nothing is staged.
 #   docs-pairs does every changed docs page bring its other language along?
 #              The other page is the one the page's lang-switch links to (not
 #              a name rule: admin/benutzer.html is en/admin/users.html); pages
@@ -766,8 +768,18 @@ PY
     # --no-renames: a moved file counts by where it came from as well, or a
     # refactor that carries auth code out of its directory reads as standard.
     # -z: a name git would quote (`"`, `\`, a control character) stays a name.
-    CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
-      || die "could not read the diff"
+    if [ "$STAGED" = 1 ] || [ -n "$RANGE" ]; then
+      CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+        || die "could not read the diff"
+    else
+      # Everything not committed yet: the review step comes before anything is
+      # staged, and a new file (a migration, a script) is a path before git
+      # knows it. An untracked scratch file read as xhigh is the safe side.
+      CHANGED="$("${GIT_DIFF[@]}" HEAD --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+        || die "could not read the diff"
+      CHANGED+=$'\n'"$(git ls-files --others --exclude-standard -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+        || die "could not list the untracked files"
+    fi
     HITS=()
     while IFS= read -r p; do
       [ -n "$p" ] || continue

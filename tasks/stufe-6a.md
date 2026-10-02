@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 6a — deterministische Review-Prüfer — Task-Ledger
-Status: aktiv · Branch: harness/stufe-6a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/stufe-6a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („6a freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-6a.md (Roadmap R-0009, Teil 6a)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, ein Skill und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Seed-Probe in T5 läuft lokal über verify.sh (monitoring, sqlite).
@@ -120,9 +120,13 @@ die deterministischen Prüfer. cicd.html DE+EN: Abschnitt „Review-Prüfer und 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Task ist die Doku
 
-### T8 — feature-build: Modellwahl über `review.sh risk`, Review-Disziplin, PR-Text aus `pr-body`  [ ]
-Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, scripts/tests/skill_consistency_test.sh
-Änderung: Schritt 4 (`:135–170`): Das Modell des Reviewers kommt aus `review.sh risk --staged` (`standard` ⇒ Sonnet,
+### T8 — feature-build: Modellwahl über `review.sh risk`, Review-Disziplin, PR-Text aus `pr-body`  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, scripts/tests/skill_consistency_test.sh, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, .claude/skills/feature-review/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ca3700ec 2026-10-02T18:48:15+02:00
+Review: approve (opus, two rounds: round 1 request_changes, the staged-no-flag test proved nothing, now names the path and kills the reviewer mutant; round 2 approve, nits taken in)
+Korrektur (Aufsicht, 2026-10-02): in Schritt 4 ist noch nichts gestaged, `risk --staged` sähe nichts. `risk` ohne Flag
+misst deshalb alles noch nicht Committete (`git diff HEAD` plus untrackte Dateien), der Skill nennt es ohne Flag.
+Änderung: Schritt 4 (`:135–170`): Das Modell des Reviewers kommt aus `review.sh risk` (`standard` ⇒ Sonnet,
 `xhigh` ⇒ Opus) statt aus der Prosa-Liste (`:149–151`). Review-Disziplin (Kevin 2026-10-02): **eine** Runde ist die
 Regel, eine zweite nur bei einem `blocker` oder einem belegten `wichtig`; `nit` blockiert nie (in derselben Runde ohne
 Re-Review miterledigen oder liegen lassen); kein neuer Umfang mitten im Bau außer bei einer Sicherheitslücke — Funde

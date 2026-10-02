@@ -519,7 +519,7 @@ Bevor ein Modell einen Diff ansieht, beantworten Skripte die Fragen, die sonst j
 raten muesste (Stufe 6a; Uebersicht in `docs/developer/cicd.html`, „Review-Pruefer und Verdict"):
 
 ```bash
-bash scripts/dev/review.sh risk --staged                  # xhigh + Pfade | standard: welches Reviewer-Modell
+bash scripts/dev/review.sh risk                           # xhigh + Pfade | standard: welches Reviewer-Modell
 bash scripts/dev/review.sh docs-pairs --staged            # Doku-Seite ohne ihre andere Sprache -> Exit 3
 bash scripts/dev/review.sh contracts --staged [--list]    # die Pruefungen der geaenderten Pfade
 bash scripts/dev/review.sh check-verdict <datei> --tree <hash>   # 0 | 2 | 3 | 4
@@ -528,10 +528,12 @@ bash scripts/dev/review-probe.sh <komponente> --commit <rev> --mutate <datei>:<z
 bash scripts/dev/review.sh pr-body tasks/<slug>.md [--verdicts <dir>]
 ```
 
-- **`risk`** liest `scripts/dev/review-risk.txt` (PKI/mTLS, Auth, SSRF, FRP, Wire-Vertraege,
-  Alembic, CI/Release/Install) und `harness-paths.txt`, jeweils so, wie HEAD, Index und
-  Worktree sie haben: ein Diff, der eine Zeile streicht, wird nicht an seiner eigenen Liste
-  gemessen. Eine Verschiebung zaehlt auch mit ihrem alten Pfad.
+- **`risk`** misst ohne Flag alles noch nicht Committete (gestaged, ungestaged, untrackt —
+  feature-build fragt es in Schritt 4, bevor etwas gestaged ist), mit `--staged` nur den Index,
+  mit `--range <a>..<b>` einen Bereich. Es liest `scripts/dev/review-risk.txt` (PKI/mTLS, Auth,
+  SSRF, FRP, Wire-Vertraege, Alembic, CI/Release/Install) und `harness-paths.txt`, jeweils so,
+  wie HEAD, Index und Worktree sie haben: ein Diff, der eine Zeile streicht, wird nicht an
+  seiner eigenen Liste gemessen. Eine Verschiebung zaehlt auch mit ihrem alten Pfad.
 - **`contracts`** liest `scripts/dev/review-contracts.txt`: `<glob> test <komponente> <testdatei>`
   (laeuft als `verify.sh <komponente> --strict -- <testdatei>`, mit eigenem `AH_OUT_DIR`) oder
   `<glob> pair <regex> <datei> <datei>` (der erste Capture ist in beiden gleich). Die Liste gilt
