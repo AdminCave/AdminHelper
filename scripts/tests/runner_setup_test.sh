@@ -57,6 +57,9 @@ system_state() {
     stat -c '%n %Y %a' /srv/ah /srv/ah/repo /srv/ah/lanes 2>/dev/null
     stat -c '%n %Y %a' /home/adminhelper-runner/.devenv.sh 2>/dev/null
     stat -c '%n %Y %a' /home/adminhelper-runner/.config/adminhelper/oauth.env 2>/dev/null
+    # The inode, not the mtime: every run.sh that takes the shared lock rewrites the holder
+    # line, and the inode is what "never recreated" promises.
+    stat -c '%n %i %a %U' /var/lib/adminhelper-dev /var/lib/adminhelper-dev/py.lock 2>/dev/null
   } 2>/dev/null
 }
 STATE_BEFORE="$(system_state)"
@@ -137,6 +140,36 @@ grep -q 'exists — git clone would be skipped' <<<"$PLAN" \
   && ok "existing clone: the plan says the clone is skipped" || bad "existing clone: the plan is silent about skipping it"
 grep -qF -- 'useradd -m -s /bin/bash' <<<"$PLAN" \
   && bad "existing user: useradd is still in the plan" || ok "existing user: useradd appears nowhere in the plan"
+
+# The python lock Kevin's checkouts and the runner share: a root-owned 0755
+# directory, a 0666 file in it — created only when missing; an existing file only
+# gets owner and mode back (a new inode would split a lock that is being held).
+echo "── the shared python lock ──"
+LOCKS_FRESH="$WORK/lock-fresh"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_FRESH" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -d -o root -g root -m 755 $LOCKS_FRESH" <<<"$PLAN" \
+  && ok "the lock directory is root:root 0755" || bad "no root:root 0755 install of the lock directory"
+grep -qF -- "install -o root -g root -m 666 /dev/null $LOCKS_FRESH/py.lock" <<<"$PLAN" \
+  && ok "a missing lock file is created root:root 0666" || bad "no root:root 0666 install of py.lock"
+LOCKS_PRESENT="$WORK/lock-present"; mkdir -p "$LOCKS_PRESENT"; : > "$LOCKS_PRESENT/py.lock"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_PRESENT" bash "$SETUP" --dry-run 2>&1)
+! grep -qF -- "/dev/null $LOCKS_PRESENT/py.lock" <<<"$PLAN" \
+  && grep -qF -- "chown root:root $LOCKS_PRESENT/py.lock" <<<"$PLAN" \
+  && grep -qF -- "chmod 666 $LOCKS_PRESENT/py.lock" <<<"$PLAN" \
+  && ok "an existing lock file only gets owner and mode, it is not recreated" \
+  || bad "existing lock file: $(grep -F "$LOCKS_PRESENT" <<<"$PLAN")"
+grep -qF -- "/var/lib/adminhelper-dev/py.lock" <<<"$OUT" \
+  && ok "without the override the plan uses /var/lib/adminhelper-dev/py.lock" || bad "the default lock path is not in the plan"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_PRESENT" bash "$SETUP" --dry-run --remove 2>&1)
+grep -qF -- "rm -rf $LOCKS_PRESENT" <<<"$PLAN" \
+  && ok "--remove takes the lock directory and its file away" || bad "--remove leaves the lock in place"
+[ -f "$LOCKS_PRESENT/py.lock" ] && ok "and the dry run left the file where it was" || bad "the dry run removed the lock file"
+LOCKS_ODD="$WORK/lock-odd"; mkdir -p "$LOCKS_ODD/py.lock"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_ODD" bash "$SETUP" --dry-run 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -qF -- "$LOCKS_ODD/py.lock exists but is no regular file" <<<"$PLAN" \
+  && ! grep -qF -- "chmod 666 $LOCKS_ODD/py.lock" <<<"$PLAN" \
+  && ok "a py.lock that is no regular file stops the run, nothing is chmod-ed" \
+  || bad "a directory at py.lock: rc=$rc $(grep -F "$LOCKS_ODD" <<<"$PLAN")"
 
 # The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
 # root-owned directory, then moved into place with one `mv -T`. Anything already at

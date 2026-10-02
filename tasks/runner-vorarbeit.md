@@ -33,8 +33,10 @@ runs no git inside the runner's clone“ (`runner_setup_test.sh:99–100`) bleib
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T4)
 
-### T2 — runner-setup.sh legt die geteilte Python-Sperre an  [ ]
+### T2 — runner-setup.sh legt die geteilte Python-Sperre an  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7a89a840 2026-10-02T16:31:30+02:00
+Review: request_changes (opus) → behoben: Inode statt mtime im Dry-Run-Fingerabdruck; nits miterledigt
 Änderung: Neuer Schritt nach Schritt 2: `/var/lib/adminhelper-dev` als `root:root 0755` (`no_symlink_in`, dann
 `install -d`), darin `py.lock` als `root:root 0666` — anlegen nur, wenn die Datei fehlt; eine vorhandene nur auf
 Besitzer und Modus ziehen (`chown`/`chmod`), nie neu anlegen, weil ein neues Inode eine gehaltene Sperre teilte.

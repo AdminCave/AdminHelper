@@ -47,6 +47,10 @@ set -uo pipefail
 
 RUNNER="adminhelper-runner"
 SRV="/srv/ah"
+# The python lock Kevin's checkouts and the runner share (scripts/tests/run.sh takes
+# it when it exists). Not under /srv/ah, which the runner owns, nor under
+# /etc/adminhelper, which the agent package removes on purge.
+LOCK_DIR="/var/lib/adminhelper-dev"
 DB_ROLE="ah_runner"
 DB_NAME="ah_runner_test"
 # ruff pinned to the release CI runs (toolchain-lockstep.sh holds the five places
@@ -68,7 +72,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# Two names the TEST has to be able to move, honoured ONLY under --dry-run: the
+# Names the TEST has to be able to move, honoured ONLY under --dry-run: the
 # plan legitimately omits `useradd` once the user exists and `git clone` once the
 # clone is there, so runner_setup_test cannot assert either against a box that has
 # already been provisioned — from 2026-09-21 on it was red for exactly that reason
@@ -77,6 +81,7 @@ done
 if [ "$DRY" = 1 ]; then
   RUNNER="${AH_RUNNER_DRY_USER:-$RUNNER}"
   SRV="${AH_RUNNER_DRY_SRV:-$SRV}"
+  LOCK_DIR="${AH_RUNNER_DRY_LOCKDIR:-$LOCK_DIR}"
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
@@ -164,7 +169,7 @@ fi
 
 if [ "$REMOVE" = 1 ]; then
   if [ "$YES" != 1 ] && [ "$DRY" = 0 ]; then
-    echo "runner-setup: --remove deletes $HOME_DIR, $SRV and the $DB_NAME database — add --yes" >&2
+    echo "runner-setup: --remove deletes $HOME_DIR, $SRV, $LOCK_DIR and the $DB_NAME database — add --yes" >&2
     exit 2
   fi
   # Repeatable on purpose: every step tolerates the thing already being gone, so
@@ -181,8 +186,11 @@ if [ "$REMOVE" = 1 ]; then
   fi
   step "remove the clone and the lanes"
   run rm -rf "$SRV"
+  step "remove the shared python lock"
+  no_symlink_in "$LOCK_DIR"
+  run rm -rf "$LOCK_DIR"
   echo ""
-  echo "── removed: $RUNNER, $SRV, $DB_NAME"
+  echo "── removed: $RUNNER, $SRV, $LOCK_DIR, $DB_NAME"
   exit 0
 fi
 
@@ -290,6 +298,30 @@ run su - "$RUNNER" -c "git -C $SRV/repo config remote.origin.pushurl /dev/null"
 # review.sh sec before every commit the runner makes, not only inside
 # task-close.sh (R-0102). Relative: each lane worktree runs its branch's hook.
 run su - "$RUNNER" -c "git -C $SRV/repo config core.hooksPath scripts/dev/hooks"
+
+# ── 2b. the python lock Kevin and the runner share ──────────────────────────
+# run.sh serialises the two heavy python steps on one lock file; a per-user file
+# under $HOME never meets the runner's. The directory is root's alone (only root
+# can create, remove or replace the file), the file is 0666 so both can open it
+# for append and leave the holder line. An existing file only gets owner and mode
+# back, never a new inode: a run holding the lock on the old one would no longer
+# meet the next run on the new one.
+step "shared python lock $LOCK_DIR/py.lock (root:root 0755 dir, 0666 file)"
+no_symlink_in "$LOCK_DIR"
+run install -d -o root -g root -m 755 "$LOCK_DIR"
+# Checked after the directory is root's alone, so nothing can be swapped in between.
+no_symlink_in "$LOCK_DIR/py.lock"
+if [ -e "$LOCK_DIR/py.lock" ] && [ ! -f "$LOCK_DIR/py.lock" ]; then
+  echo "runner-setup: $LOCK_DIR/py.lock exists but is no regular file — refusing to change it" >&2
+  echo "  (look at what is there, remove it as root, and run again)" >&2
+  exit 1
+elif [ -f "$LOCK_DIR/py.lock" ]; then
+  note "exists — only owner and mode are set, the file is not recreated"
+  run chown root:root "$LOCK_DIR/py.lock"
+  run chmod 666 "$LOCK_DIR/py.lock"
+else
+  run install -o root -g root -m 666 /dev/null "$LOCK_DIR/py.lock"
+fi
 
 # ── 3. its own database, and the devenv that carries the password ────────────
 # Both or neither: a rotated password without the matching devenv file leaves a
