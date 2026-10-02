@@ -33,8 +33,9 @@
 #                              committed at all?).
 #   4. the review verdict      today: `--review none`, the in-session reviewer of
 #                              feature-build. Stage 6 hands in a verdict JSON,
-#                              which is checked against THIS tree hash — a
-#                              verdict for another tree is no verdict.
+#                              which review.sh check-verdict holds against
+#                              review-verdict.schema.json and THIS tree hash —
+#                              a verdict for another tree is no verdict.
 #   5. ledger + commit         ledger.sh mark-done with the run's summary line as
 #                              evidence, then one commit carrying code and ledger.
 #                              The last open task also moves an `aktiv` head to
@@ -293,21 +294,10 @@ case "$REVIEW" in
     VJSON="${REVIEW#verdict:}"
     [ -f "$VJSON" ] || die "no such verdict file: $VJSON"
     command -v python3 >/dev/null 2>&1 || infra "a verdict can only be checked with python3"
-    REVIEW_TEXT="$(python3 - "$VJSON" "$TREE_HASH" <<'PY'
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception as e:
-    print("unreadable verdict: %s" % e, file=sys.stderr); sys.exit(2)
-# 3 = the reviewer said no; 4 = the verdict is not about this tree at all.
-if d.get("verdict") != "approve":
-    print("verdict is %r, not approve" % d.get("verdict"), file=sys.stderr); sys.exit(3)
-if d.get("tree_hash") != sys.argv[2]:
-    print("verdict is for tree %s, staged is %s" % (d.get("tree_hash"), sys.argv[2]), file=sys.stderr)
-    sys.exit(4)
-print("approve (%s)" % (d.get("reviewer") or "verdict file"))
-PY
-)" || { rc=$?; echo "task-close: no usable approve verdict for this tree" >&2; exit "$rc"; }
+    # The schema, the tree and the rules live in one place (stage 6a): exit 2
+    # outside the schema, 3 no usable approve, 4 another tree.
+    REVIEW_TEXT="$(bash scripts/dev/review.sh check-verdict "$VJSON" --tree "$TREE_HASH")" \
+      || { rc=$?; echo "task-close: no usable approve verdict for this tree" >&2; exit "$rc"; }
     ;;
   *) die "--review takes 'none' or 'verdict:<file>'" ;;
 esac

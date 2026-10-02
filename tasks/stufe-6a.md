@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 6a — deterministische Review-Prüfer — Task-Ledger
-Status: freigegeben · Branch: harness/stufe-6a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-6a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („6a freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-6a.md (Roadmap R-0009, Teil 6a)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, ein Skill und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Seed-Probe in T5 läuft lokal über verify.sh (monitoring, sqlite).
@@ -16,8 +16,10 @@ Bau: Worker B in ../AdminHelper-harness-b (eigene Test-DB adminhelper_test_harne
 **erst nach dem Merge von harness/schutz-nachziehen-2** — beide ändern `review.sh` und `review_scripts_test.sh`.
 Jede neue Datei unter `scripts/dev/` kommt in derselben Task nach `scripts/dev/harness-paths.txt`.
 
-### T1 — Verdict-Schema und `review.sh check-verdict`; task-close delegiert  [ ]
+### T1 — Verdict-Schema und `review.sh check-verdict`; task-close delegiert  [x]
 Komponente: scripts · Dateien: scripts/dev/review-verdict.schema.json, scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/dev/harness-paths.txt, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bf1ca555 2026-10-02T14:55:04+02:00
+Review: approve (opus, one round; nits on schema load, pattern anchor and test cp taken in)
 Änderung: Neues Schema (Felder und Regeln wie Spec „Datenmodell“, ohne `coverage`). Neues Verb
 `review.sh check-verdict <datei> --tree <hash>` mit python3-Bordmitteln (Pflichtfelder, Enums, Regeln). Exit 0 gültig ·
 2 unlesbar/schemawidrig · 3 Urteil kein approve oder unzulässiges approve · 4 fremder Tree; ein `blocker` ohne

@@ -20,6 +20,7 @@ scripts/dev/harness.sh
 scripts/dev/harness-paths.txt
 scripts/dev/ledger.sh
 scripts/dev/review.sh
+scripts/dev/review-verdict.schema.json
 # The WIP caps and the status transitions: the status hook reads trigger 3 from it.
 scripts/dev/roadmap.py
 scripts/dev/runner-env.sh

@@ -9,6 +9,8 @@
 #                                                       ways to make a suite lie
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
 #   bash scripts/dev/review.sh sec [--staged]           what must never be committed
+#   bash scripts/dev/review.sh check-verdict <file> --tree <hash>
+#                                                       a reviewer's verdict JSON
 #
 # Deterministic, model-free, and called by task-close.sh before it commits. They
 # answer three questions a reviewer would otherwise have to ask every time:
@@ -38,16 +40,25 @@
 #   sec        is something staged that this public repo must never hold — the
 #              private roadmap, a security ledger, a finding's dedup key, or one
 #              of the two gitignored files that carry credentials.
+#   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
+#              scripts/dev/review-verdict.schema.json, be about the tree --tree
+#              names, and say approve without a blocker and without a probe
+#              that found the new test green without the change. A blocker
+#              without evidence counts as a nit. Prints the review line that
+#              task-close.sh writes into the ledger.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
 # git diff does not — so the answer for a brand-new file exists only once it is
 # staged, which is the state task-close.sh works on anyway.
 #
-# Exit: 0 clean · 2 usage · 3 findings (diff-scan, scope) · 4 blocked (sec)
+# Exit: 0 clean · 2 usage (check-verdict: unreadable or outside the schema) ·
+# 3 findings (diff-scan, scope; check-verdict: no usable approve) · 4 blocked
+# (sec; check-verdict: a verdict for another tree)
 
 set -uo pipefail
 
+CALLER_PWD="$PWD"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
 cd "$ROOT" || exit 2
 
@@ -88,10 +99,13 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
+    --tree)
+      [ $# -ge 2 ] || die "--tree needs <hash>"
+      TREE_ARG="$2"; shift ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
@@ -588,6 +602,111 @@ $IMPLICIT"
       exit 4
     fi
     echo "sec: clean"
+    ;;
+
+  check-verdict)
+    FILE="${ARGS[0]-}"
+    [ -n "$FILE" ] && [ -n "$TREE_ARG" ] || die "check-verdict needs <file> --tree <hash>"
+    case "$FILE" in /*) ;; *) FILE="$CALLER_PWD/$FILE" ;; esac
+    [ -f "$FILE" ] || die "no such verdict file: $FILE"
+    SCHEMA="$ROOT/scripts/dev/review-verdict.schema.json"
+    [ -f "$SCHEMA" ] || die "no verdict schema: $SCHEMA"
+    command -v python3 >/dev/null 2>&1 || die "check-verdict needs python3"
+    python3 - "$FILE" "$SCHEMA" "$TREE_ARG" <<'PY'
+import json, re, sys
+
+# The keywords the schema uses, checked with python3 alone: the runner has no
+# jsonschema package, and a verdict is too small to need one.
+TYPES = {"object": dict, "array": list, "string": str, "integer": int,
+         "number": (int, float), "boolean": bool, "null": type(None)}
+
+
+def is_type(v, t):
+    # bool is an int to python, not to JSON.
+    if t in ("integer", "number") and isinstance(v, bool):
+        return False
+    return isinstance(v, TYPES[t])
+
+
+def check(v, s, where, errs):
+    if "type" in s:
+        ts = s["type"] if isinstance(s["type"], list) else [s["type"]]
+        if not any(is_type(v, t) for t in ts):
+            errs.append("%s: not %s" % (where, " or ".join(ts)))
+            return
+    if "enum" in s and v not in s["enum"]:
+        errs.append("%s: %r is none of %s" % (where, v, ", ".join(s["enum"])))
+    if "const" in s and v != s["const"]:
+        errs.append("%s: %r, not %r" % (where, v, s["const"]))
+    if isinstance(v, str):
+        if len(v) < s.get("minLength", 0):
+            errs.append("%s: empty" % where)
+        # ECMA `$` ends the string; python lets it match before a final newline.
+        if "pattern" in s and (not re.search(s["pattern"], v)
+                               or s["pattern"].endswith("$") and v.endswith("\n")):
+            errs.append("%s: %r does not match %s" % (where, v, s["pattern"]))
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and v < s.get("minimum", v):
+        errs.append("%s: below %s" % (where, s["minimum"]))
+    if isinstance(v, dict):
+        props = s.get("properties", {})
+        for k in s.get("required", []):
+            if k not in v:
+                errs.append("%s.%s: missing" % (where, k))
+        for k, x in v.items():
+            if k in props:
+                check(x, props[k], "%s.%s" % (where, k), errs)
+            elif s.get("additionalProperties") is False:
+                errs.append("%s.%s: not in the schema" % (where, k))
+    if isinstance(v, list) and "items" in s:
+        for i, x in enumerate(v):
+            check(x, s["items"], "%s[%d]" % (where, i), errs)
+
+
+path, schema_path, tree = sys.argv[1:4]
+try:
+    d = json.load(open(path))
+except Exception as e:
+    print("check-verdict: unreadable verdict: %s" % e, file=sys.stderr)
+    sys.exit(2)
+try:
+    schema = json.load(open(schema_path))
+except Exception as e:
+    print("check-verdict: unreadable schema %s: %s" % (schema_path, e), file=sys.stderr)
+    sys.exit(2)
+errs = []
+check(d, schema, "verdict", errs)
+if errs:
+    print("check-verdict: outside review-verdict.schema.json:", file=sys.stderr)
+    for e in errs:
+        print("  " + e, file=sys.stderr)
+    sys.exit(2)
+# A verdict about another tree says nothing about this one.
+if d["tree_hash"] != tree:
+    print("check-verdict: the verdict is for tree %s, the staged tree is %s" % (d["tree_hash"], tree),
+          file=sys.stderr)
+    sys.exit(4)
+counts = {"blocker": 0, "wichtig": 0, "nit": 0}
+for f in d["findings"]:
+    sev = f["severity"]
+    if sev == "blocker" and not f.get("evidence", "").strip():
+        print("check-verdict: a blocker without evidence counted as nit: %s:%s %s"
+              % (f["file"], f.get("line") or "", f["claim"]), file=sys.stderr)
+        sev = "nit"
+    counts[sev] += 1
+if d["verdict"] != "approve":
+    print("check-verdict: the verdict is %s, not approve" % d["verdict"], file=sys.stderr)
+    sys.exit(3)
+if counts["blocker"]:
+    print("check-verdict: an approve with %d blocker(s) is no approve" % counts["blocker"], file=sys.stderr)
+    sys.exit(3)
+probe = d.get("probe") or {}
+if probe.get("applicable") and probe.get("red_without_change") is not True:
+    print("check-verdict: an approve although the probe found the new test green without the change",
+          file=sys.stderr)
+    sys.exit(3)
+noted = ", ".join("%d %s" % (n, k) for k, n in counts.items() if n)
+print("approve (%s/%s%s)" % (d["reviewer"]["model"], d["reviewer"]["effort"], "; " + noted if noted else ""))
+PY
     ;;
 
   -h|--help) usage ;;

@@ -1386,10 +1386,73 @@ for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
   fi
 done
 
+# ══ check-verdict (stage 6a) ══════════════════════════════════════════════════
+echo "── check-verdict ──"
+cp "$REPO_ROOT/scripts/dev/review-verdict.schema.json" "$FIX/scripts/dev/review-verdict.schema.json"
+VT=0123456789abcdef0123456789abcdef01234567
+# vjson '<python statement on d>' — a valid approve verdict for tree $VT, changed
+# by the statement, written to $WORK/v.json.
+vjson() {
+  python3 - "$WORK/v.json" "$VT" "${1:-pass}" <<'PY'
+import json, sys
+d = {"schema_version": 1, "task": {"ledger": "tasks/fix.md", "id": "T1"}, "tree_hash": sys.argv[2],
+     "reviewer": {"model": "opus", "effort": "high"}, "verdict": "approve", "findings": [],
+     "probe": {"applicable": True, "reason": "", "red_without_change": True}}
+exec(sys.argv[3])
+json.dump(d, open(sys.argv[1], "w"))
+PY
+}
+cv() { r check-verdict "$WORK/v.json" --tree "$VT"; }
+BLOCKER='{"severity": "blocker", "file": "a.py", "line": 3, "claim": "breaks", "evidence": "x=1 gives 2"}'
+
+vjson; cv
+[ $rc -eq 0 ] && grep -q '^approve (opus' <<<"$OUT" && ok "a valid approve -> 0, names the reviewer" \
+  || bad "valid approve: rc=$rc out=$OUT"
+vjson 'd["probe"]["red_without_change"] = False'; cv
+[ $rc -eq 3 ] && ok "approve although the test is green without the change -> 3" || bad "probe green: rc=$rc out=$OUT"
+vjson 'd["probe"] = {"applicable": False, "reason": "toolchain", "red_without_change": None}'; cv
+[ $rc -eq 0 ] && ok "approve with a probe that did not apply -> 0" || bad "probe n/a: rc=$rc out=$OUT"
+vjson "d['findings'] = [$BLOCKER]"; cv
+[ $rc -eq 3 ] && ok "approve with a blocker -> 3" || bad "approve+blocker: rc=$rc out=$OUT"
+vjson "d['findings'] = [$BLOCKER]; d['findings'][0]['evidence'] = ' '"; cv
+[ $rc -eq 0 ] && grep -q 'counted as nit' <<<"$OUT" && grep -q '1 nit' <<<"$OUT" \
+  && ok "a blocker without evidence counts as a nit, the approve stands" || bad "blocker w/o evidence: rc=$rc out=$OUT"
+vjson "d['findings'] = [$BLOCKER]; del d['findings'][0]['evidence']"; cv
+[ $rc -eq 0 ] && grep -q 'counted as nit' <<<"$OUT" \
+  && ok "the same with no evidence field at all" || bad "blocker no evidence field: rc=$rc out=$OUT"
+vjson 'd["tree_hash"] = "f" * 40'; cv
+[ $rc -eq 4 ] && ok "a verdict for another tree -> 4" || bad "foreign tree: rc=$rc out=$OUT"
+vjson 'd["verdict"] = "request_changes"'; cv
+[ $rc -eq 3 ] && ok "request_changes -> 3" || bad "request_changes: rc=$rc out=$OUT"
+vjson 'd["verdict"] = "needs_decision"'; cv
+[ $rc -eq 3 ] && ok "needs_decision -> 3" || bad "needs_decision: rc=$rc out=$OUT"
+for change in 'del d["task"]' 'del d["reviewer"]["effort"]' 'd["verdict"] = "fine"' \
+    "d['findings'] = [$BLOCKER]; d['findings'][0]['severity'] = 'major'" \
+    "d['findings'] = [$BLOCKER]; d['findings'][0]['evidance'] = 'typo'" \
+    'd["schema_version"] = 2' 'd["tree_hash"] = "HEAD"' 'd["probe"]["applicable"] = "yes"' \
+    'd["task"]["id"] = "T1\n"'; do
+  vjson "$change"; cv
+  [ $rc -eq 2 ] && ok "schema violation -> 2: $change" || bad "schema violation not caught ($change): rc=$rc out=$OUT"
+done
+printf 'not json\n' > "$WORK/v.json"; cv
+[ $rc -eq 2 ] && ok "an unreadable verdict -> 2" || bad "unreadable: rc=$rc out=$OUT"
+vjson; r check-verdict "$WORK/v.json"
+[ $rc -eq 2 ] && ok "no --tree -> 2" || bad "missing --tree: rc=$rc out=$OUT"
+r check-verdict "$WORK/nosuch.json" --tree "$VT"
+[ $rc -eq 2 ] && ok "a missing file -> 2" || bad "missing file: rc=$rc out=$OUT"
+vjson; OUT=$(cd "$WORK" && bash "$REVIEW" check-verdict v.json --tree "$VT" 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "a relative path is read from the caller's directory" || bad "relative path: rc=$rc out=$OUT"
+python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$REPO_ROOT/scripts/dev/review-verdict.schema.json" 2>/dev/null \
+  && ok "the schema is valid JSON" || bad "the schema does not parse"
+grep -qxF 'scripts/dev/review-verdict.schema.json' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
+  && ok "the schema is a harness path" || bad "the schema is missing from harness-paths.txt"
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
   && ok "task-close.sh hands diff-scan the task" || bad "task-close.sh calls diff-scan without --task"
+grep -qF 'review.sh check-verdict "$VJSON" --tree "$TREE_HASH"' "$REPO_ROOT/scripts/dev/task-close.sh" \
+  && ok "task-close.sh delegates the verdict to check-verdict" || bad "task-close.sh checks the verdict itself"
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'review_scripts_test' \
   && ok "review_scripts_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 

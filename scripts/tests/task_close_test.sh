@@ -42,7 +42,7 @@ CLOSE="$FIX/scripts/dev/task-close.sh"
 SKELETON=(scripts/dev scripts/tests apps/server/app apps/server/tests docs tasks/private .ah-out)
 mkskel() { local d; for d in "${SKELETON[@]}"; do mkdir -p "$FIX/$d"; done; }
 mkskel
-for f in task-close.sh ledger.sh review.sh tree-hash.sh; do
+for f in task-close.sh ledger.sh review.sh tree-hash.sh review-verdict.schema.json; do
   cp "$REPO_ROOT/scripts/dev/$f" "$FIX/scripts/dev/$f"
 done
 
@@ -549,25 +549,45 @@ reset_repo
 
 # ══ the verdict interface (stage 6) ═══════════════════════════════════════════
 echo "── --review verdict ──"
+# verdict <file> <tree> <verdict> [<findings json>] — a verdict in the schema of
+# scripts/dev/review-verdict.schema.json.
+verdict() {
+  printf '{"schema_version":1,"task":{"ledger":"tasks/fix.md","id":"T1"},"tree_hash":"%s",' "$2" > "$1"
+  printf '"reviewer":{"model":"sonnet","effort":"standard"},"verdict":"%s","findings":%s}\n' "$3" "${4:-[]}" >> "$1"
+}
 touch_tool
 TREE="$(cd "$FIX" && bash scripts/dev/tree-hash.sh)"
-printf '{"verdict":"approve","tree_hash":"%s","reviewer":"sonnet"}\n' "$TREE" > "$WORK/verdict.json"
+verdict "$WORK/verdict.json" "$TREE" approve
 c fix T1 -m "feat: something" --review "verdict:$WORK/verdict.json"
-[ $rc -eq 0 ] && grep -q '^Review: approve (sonnet)' "$FIX/tasks/fix.md" \
+[ $rc -eq 0 ] && grep -q '^Review: approve (sonnet' "$FIX/tasks/fix.md" \
   && ok "an approve verdict for THIS tree closes the task" || bad "verdict ok: rc=$rc out=$OUT"
 reset_repo
 
 touch_tool
-printf '{"verdict":"approve","tree_hash":"0000000000000000000000000000000000000000"}\n' > "$WORK/stale.json"
+verdict "$WORK/stale.json" 0000000000000000000000000000000000000000 approve
 c fix T1 -m "feat: something" --review "verdict:$WORK/stale.json"
 [ $rc -eq 4 ] && ok "a verdict for another tree -> exit 4 (it is not about this diff)" || bad "stale verdict: rc=$rc out=$OUT"
 reset_repo
 
 touch_tool
-printf '{"verdict":"request_changes","tree_hash":"%s"}\n' "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" > "$WORK/no.json"
+verdict "$WORK/no.json" "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" request_changes
 c fix T1 -m "feat: something" --review "verdict:$WORK/no.json"
 [ $rc -eq 3 ] && ok "a request_changes verdict -> exit 3" || bad "negative verdict: rc=$rc out=$OUT"
 [ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite request_changes"
+reset_repo
+
+touch_tool
+verdict "$WORK/blocker.json" "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" approve \
+  '[{"severity":"blocker","file":"scripts/dev/tool.sh","line":1,"claim":"breaks","evidence":"rc 1"}]'
+c fix T1 -m "feat: something" --review "verdict:$WORK/blocker.json"
+[ $rc -eq 3 ] && ok "an approve with a blocker -> exit 3" || bad "approve with blocker: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite a blocker"
+reset_repo
+
+touch_tool
+printf '{"verdict":"approve","tree_hash":"%s"}\n' "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" > "$WORK/bare.json"
+c fix T1 -m "feat: something" --review "verdict:$WORK/bare.json"
+[ $rc -eq 2 ] && ok "a verdict outside the schema -> exit 2" || bad "schema-less verdict: rc=$rc out=$OUT"
 reset_repo
 
 touch_tool
