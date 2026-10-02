@@ -136,3 +136,34 @@ def test_import_keeps_column_names_out_of_their_columns(test_client, db_session,
     row = db_session.query(Connection).filter(Connection.name == "i").one()
     assert row.host == "h" and row.created_at.year != 2000
     assert json.loads(row.extra_data) == _COLUMN_NAMES
+
+
+# Reading: extra entries never override a known field, and extra_data that cannot be read
+# as a JSON object (rows written before only API names mapped to columns) is left out.
+
+
+def test_known_fields_win_over_extra_entries():
+    extra = '{"host": "x", "serverId": "y", "id": "z", "custom": 1}'
+    bound = Connection(
+        id="c1", name="a", kind="ssh", host="real", server_id="srv", extra_data=extra
+    )
+    d = bound.to_dict()
+    assert (d["id"], d["host"], d["serverId"], d["custom"]) == ("c1", "real", "srv", 1)
+    unbound = Connection(id="c2", name="a", kind="ssh", host="real", extra_data=extra)
+    d = unbound.to_dict()
+    assert "serverId" not in d
+    assert (d["id"], d["host"], d["custom"]) == ("c2", "real", 1)
+
+
+def test_unreadable_extra_data_is_left_out_with_a_warning(caplog):
+    import logging
+
+    for raw in ("{not json", "[1, 2]"):
+        conn = Connection(id="c-bad", name="a", kind="ssh", host="h", extra_data=raw)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            d = conn.to_dict()
+        assert d["host"] == "h" and d["name"] == "a"
+        assert any("c-bad" in r.getMessage() for r in caplog.records), raw
+        conn.update_from_dict({"custom": 2})
+        assert conn.to_dict()["custom"] == 2

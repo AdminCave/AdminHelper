@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Verbindungen: nur bekannte API-Felder gehen in Spalten, extra_data bleibt Beiwerk — Task-Ledger
-Status: aktiv · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („R-0136 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0136
 Heavy: none — nur das Mapping im Modell und das Lesen von extra_data; Antwort-Schema, Routen und Clients bleiben gleich, pytest deckt Create, Update, Import und Lesen ab.
@@ -40,8 +40,10 @@ Semantik: keine Stelle in docs/ — gesucht nach „extra“ und „unbekannte F
 Absicht steht im Modell selbst: `extra_data = Column(String, nullable=True)  # JSON for unknown extra fields`
 (`models.py:57`) und `_KNOWN_FIELDS` „All known fields (API-side, camelCase)“ (`:22–23`).
 
-### T2 — Lesen: bekannte Felder gewinnen gegen extra_data, unlesbares extra_data bricht nichts  [ ]
-Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/tests/test_connections_storage.py, apps/server/tests/test_connections_isolation.py
+### T2 — Lesen: bekannte Felder gewinnen gegen extra_data, unlesbares extra_data bricht nichts  [x]
+Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/tests/test_connections_storage.py, apps/server/tests/test_connections_isolation.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @981c9352 2026-10-02T14:07:58+02:00
+Review: am Ende (Kurz-Ledger, Gesamt-Review folgt)
 Änderung: `to_dict` mischt aus `extra_data` nur Schlüssel, die nicht schon im Ergebnis stehen (bekannte Felder
 gewinnen immer, auch `serverId` und `id`), und behandelt ein nicht lesbares `extra_data` (kein JSON oder kein Objekt)
 als leer, mit `logger.warning` samt Verbindungs-ID. Das betrifft Zeilen, die vor T1 geschrieben wurden. Tests: eine
