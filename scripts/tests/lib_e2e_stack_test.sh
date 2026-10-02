@@ -155,6 +155,23 @@ STUB_NPM_FAIL=1 npm_ready "$NPM/missing"; rc=$?
 npm_ready "$NPM/nowhere"; rc=$?
 [ "$rc" != 0 ] && ok "a directory that is not there is a non-zero exit" || bad "a missing directory returned 0"
 
+# Every desktop suite keeps ui/ and e2e/ node_modules as the lockfile says — after
+# its tauri-cli check, so desktop_e2e_skip_test.sh (which ends there with 75) runs
+# without npm. The skip test itself is no suite.
+SUITES=0; WRONG=""
+for f in "$REPO_ROOT"/scripts/tests/desktop_e2e_*.sh; do
+  [ "${f##*/}" = desktop_e2e_skip_test.sh ] && continue
+  SUITES=$((SUITES + 1))
+  call="$(grep -n '^e2e_npm_ready "\$E2E_REPO_ROOT/apps/desktop/ui" "\$E2E_DIR" || exit 1$' "$f" | head -1 | cut -d: -f1)"
+  tauri="$(grep -n 'SKIP: tauri-cli' "$f" | head -1 | cut -d: -f1)"
+  [ -n "$call" ] && [ -n "$tauri" ] && [ "$call" -gt "$tauri" ] \
+    || WRONG+=" ${f##*/}(call ${call:-?}, tauri ${tauri:-?})"
+  ! grep -q '\[ -d node_modules \]' "$f" || WRONG+=" ${f##*/}([ -d node_modules ])"
+done
+[ "$SUITES" = 8 ] && [ -z "$WRONG" ] \
+  && ok "all 8 desktop suites call e2e_npm_ready after the tauri-cli check, none by [ -d node_modules ]" \
+  || bad "desktop suites ($SUITES of 8 expected):$WRONG"
+
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

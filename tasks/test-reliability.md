@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Test-Zuverlässigkeit: install_test-Stub liest stdin, Desktop-E2E hält node_modules frisch (R-0131, R-0142) — Task-Ledger
-Status: aktiv · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „Test-Zuverlässigkeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0131, R-0142
 Heavy: linux-full — `run.sh e2e --strict --step desktop_e2e_crud` auf frischer Template-Box ohne händisches `npm ci` (erwartet: `npm ci` im Log, 6 Specs grün). Vorher die Template-Tags gegen die Lockfile-Änderungen prüfen (junit-Reporter 7bc9f6d0 vom 2026-09-27, letzte Lockfile-Änderung heute 0ecdc3ca vom 2026-09-30): ist das Template jünger, beweist der Lauf nur „keine Regression“, den Fix beweist dann der hermetische Test aus T2.
@@ -77,8 +77,10 @@ Semantik: keine Stelle in docs/ — gesucht nach `node_modules` und `npm ci` in 
 `docs/developer/index.html:92–95`). Die Absicht steht in `scripts/tests/run.sh:473–475`: „Install only when the
 lockfile is newer or node_modules is missing — deterministic when it matters, fast otherwise (5.26).“
 
-### T3 — alle acht Desktop-Suiten rufen e2e_npm_ready für ui und e2e  [ ]
-Komponente: scripts · Dateien: scripts/tests/desktop_e2e_{connect,connect_tunnel,crud,live,misc,monitoring,sse_push,tunnel}.sh, scripts/tests/lib_e2e_stack_test.sh
+### T3 — alle acht Desktop-Suiten rufen e2e_npm_ready für ui und e2e  [x]
+Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack_test.sh, scripts/tests/desktop_e2e_connect.sh, scripts/tests/desktop_e2e_connect_tunnel.sh, scripts/tests/desktop_e2e_crud.sh, scripts/tests/desktop_e2e_live.sh, scripts/tests/desktop_e2e_misc.sh, scripts/tests/desktop_e2e_monitoring.sh, scripts/tests/desktop_e2e_sse_push.sh, scripts/tests/desktop_e2e_tunnel.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6ba4d0a3 2026-10-02T18:44:13+02:00
+Review: Review am Ende (Kurz-Ledger); statische Pruefung gegen die Suiten aus HEAD rot (8 ohne Aufruf, 2 mit [ -d node_modules ]); Dateien: Brace-Liste per set-files ausgeschrieben
 Roadmap: R-0131
 Abhängt von: T2
 Änderung: Jede der acht Suiten ruft direkt nach ihrer tauri-cli-Prüfung (`|| { echo "SKIP: tauri-cli …"; exit 75; }`,

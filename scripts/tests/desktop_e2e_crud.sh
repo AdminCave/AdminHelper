@@ -29,9 +29,9 @@ e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-ke
 # Standalone-run self-sufficiency (fresh box, no prior run.sh layer): without the
 # local node_modules, `npx wdio` fetches the interactive `wdio` WIZARD package from
 # the registry instead of the local @wdio/cli, and the tauri beforeBuildCommand
-# dies on `svelte-check: not found` in ui/.
-( cd "$E2E_REPO_ROOT/apps/desktop/ui" && { [ -d node_modules ] || npm ci; } ) || exit 1
-( cd "$E2E_DIR" && { [ -d node_modules ] || npm ci; } ) || exit 1
+# dies on `svelte-check: not found` in ui/. Older than the lockfile counts as
+# missing: template node_modules lacked the junit reporter (R-0131).
+e2e_npm_ready "$E2E_REPO_ROOT/apps/desktop/ui" "$E2E_DIR" || exit 1
 
 e2e_init false
 e2e_up gateway && ok "gateway live on :$E2E_HTTPS_PORT" || { bad "gateway never came up"; exit 1; }
