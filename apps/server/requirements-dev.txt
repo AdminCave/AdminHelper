@@ -19,6 +19,6 @@ ruff==0.15.20
 
 # Generatoren (Harness 8b): schema-getriebene API-Tests gegen die eigene
 # OpenAPI, Property-based Tests und die vier eingebauten Alembic-Tests.
-hypothesis>=6.168
-schemathesis>=4.27
+hypothesis==6.168.3
+schemathesis==4.29.0
 pytest-alembic>=0.12

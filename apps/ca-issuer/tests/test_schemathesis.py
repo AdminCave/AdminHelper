@@ -30,7 +30,7 @@ import schemathesis
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
-from hypothesis import HealthCheck, settings
+from hypothesis import HealthCheck, Phase, settings
 from schemathesis.checks import not_a_server_error
 from schemathesis.specs.openapi.checks import (
     ensure_resource_availability,
@@ -130,7 +130,14 @@ _WAIVED_BY_OPERATION, _DROPPED_OPERATIONS = _read_exclusions(
 if _DROPPED_OPERATIONS:
     schema = schema.exclude(operation_id=_DROPPED_OPERATIONS)
 
-MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "5"))
+# 0 in the PR gate (scripts/tests/run.sh and the CI job): only Hypothesis' explicit
+# phase — the schema examples and schemathesis' coverage cases, the same cases for the
+# same tree (scripts/tests/schemathesis_determinism.sh measures it). Any number > 0 runs
+# every phase with that many generated examples; the weekly run (heavy.sh) sets 100.
+# Hypothesis refuses max_examples=0, and under phases=[Phase.explicit] the count has no
+# effect, so 0 becomes 1 there (a negative number still meets Hypothesis' own error).
+MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "0"))
+_PHASES = [Phase.explicit] if MAX_EXAMPLES == 0 else list(Phase)
 
 
 def _client_cert_pem() -> str:
@@ -186,7 +193,8 @@ def auth_headers():
 @pytest.mark.parametrize("context", ["anonymous", "verified_without_cert", "verified_with_cert"])
 @schema.parametrize()
 @settings(
-    max_examples=MAX_EXAMPLES,
+    max_examples=MAX_EXAMPLES or 1,
+    phases=_PHASES,
     deadline=None,
     derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],

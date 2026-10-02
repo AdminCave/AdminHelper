@@ -27,12 +27,18 @@
 #                 Exception, bevor eine Response entsteht. Dann kann kein Check
 #                 greifen, und nur hier ist ein Ausschluss der GANZEN Operation
 #                 ehrlich. Meist ist das ein echter Produktfehler; die Ausnahmen
-#                 sind Eigenschaften der In-Process-Fixture (die Proxy-Routen mit
-#                 ihrem geschlossenen Client, der SSE-Stream ohne Ende), und ihre
-#                 reason sagt das.
+#                 sind Eigenschaften der In-Process-Fixture (der SSE-Stream ohne
+#                 Ende), und ihre reason sagt das.
 #   reason        warum diese Checks hier heute nichts beitragen
 #   until         woran die Wiedervorlage haengt
 
+#
+# PROXY-STUB (2026-10-02, R-0063): Die fuenf raises-Eintraege der Proxy-Routen
+# (proxy_to_monitoring GET/PUT/POST/DELETE, proxy_agent_report) sind gefallen. Ihr
+# Grund war der prozessweite httpx-Client, den der Lifespan schliesst; die Fixture
+# monitoring_stub in tests/test_schemathesis.py ersetzt ihn je Test durch einen
+# httpx.MockTransport mit fester 200-Antwort. Ohne Stub und ohne die Eintraege:
+# `4 failed, 304 passed` (proxy_agent_report in allen vier Kontexten).
 #
 # RANDVALIDIERUNG (2026-09-22/23, Vorhaben input-boundary-validation). Bilanz, gegen
 # `git show main:` nachgezaehlt: 27 Eintraege vorher, 29 nachher — zwei entfernt, acht
@@ -167,41 +173,6 @@ checks = ["response_schema_conformance"]
 # POST /api/hooks
 reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
-
-[[exclude]]
-operation_id = "proxy_to_monitoring_api_monitoring__path__get"
-raises = true
-# GET /api/monitoring/{path}
-reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
-until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
-
-[[exclude]]
-operation_id = "proxy_to_monitoring_api_monitoring__path__put"
-raises = true
-# PUT /api/monitoring/{path}
-reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
-until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
-
-[[exclude]]
-operation_id = "proxy_to_monitoring_api_monitoring__path__post"
-raises = true
-# POST /api/monitoring/{path}
-reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
-until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
-
-[[exclude]]
-operation_id = "proxy_to_monitoring_api_monitoring__path__delete"
-raises = true
-# DELETE /api/monitoring/{path}
-reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
-until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
-
-[[exclude]]
-operation_id = "proxy_agent_report_api_monitoring_agent__server_id__report_post"
-raises = true
-# POST /api/monitoring/agent/{server_id}/report
-reason = "Proxy-Route: leitet an den Monitoring-Dienst weiter, ueber einen prozessweiten httpx-Client, den der Lifespan-Shutdown schliesst (main.py: _client.aclose()). Sobald ein Lauf den Lifespan beendet hat, stirbt jeder weitere Aufruf im Transport mit `Cannot send a request, as the client has been closed` — kein Check kommt an eine Antwort. In-process nicht fuzzbar, wie /templates/tag-sync auf der Monitoring-Seite"
-until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
 
 [[exclude]]
 operation_id = "notification_stream_api_notifications_stream_get"

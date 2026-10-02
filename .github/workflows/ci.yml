@@ -315,9 +315,10 @@ jobs:
       SECRET_KEY: ci-test-secret-key
       ADMIN_PASSWORD: ciadmin
       MTLS_ENFORCE: "false"
-      # The same number a developer runs locally, so "green here" and "green on my
-      # machine" mean the same thing. Depth is the weekly run's job, which sets 100.
-      AH_SCHEMATHESIS_EXAMPLES: "5"
+      # The same value a developer runs locally, so "green here" and "green on my
+      # machine" mean the same thing: 0 = only the explicit phase, the same cases for
+      # the same tree. Depth is the weekly run's job, which sets 100 (every phase).
+      AH_SCHEMATHESIS_EXAMPLES: "0"
       # run.sh installs into this venv; it is filled below so the step's
       # `import schemathesis` gate finds the package.
       AH_VENV: /tmp/ci-venv

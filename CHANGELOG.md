@@ -285,6 +285,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Schema-Fuzzing im PR deterministisch (R-0063):** Der Schritt `schemathesis` (lokal `run.sh` und der
+  CI-Job „Schema fuzzing") faehrt mit `AH_SCHEMATHESIS_EXAMPLES=0` nur noch die explizite Phase
+  (Schema-Beispiele und Coverage-Faelle): fuer denselben Baum dieselben Faelle, ein roter Lauf ist
+  lokal nachstellbar. Der Wochenlauf behaelt alle Phasen mit 100 Beispielen. `hypothesis==6.168.3`
+  und `schemathesis==4.29.0` sind exakt gepinnt. `scripts/tests/schemathesis_determinism.sh` prueft,
+  ob zwei Laeufe je Test dieselben Faelle schicken. Die Server-Suite ersetzt den Proxy-Client zum
+  Monitoring durch einen Stub; die fuenf Ausschluesse der Proxy-Routen sind entfallen. Doku:
+  `DEVELOPMENT.md` „Generatoren", `docs/developer/cicd.html`.
+- **Monitoring: Obergrenzen fuer ganzzahlige Eingaben (R-0063):** `cooldown_minutes` (Alert-Regeln und
+  Vorlagen) und `consecutive_fails` (Checks und Vorlagen) enden bei der INTEGER-Grenze `2147483647`;
+  `duration_minutes` (1–1440) und `weekdays` (0–6) der Wartungsfenster tragen ihre Grenzen jetzt auch
+  im Schema, bisher galten sie nur im Validator (ein `once`-Fenster, das `duration_minutes` bisher
+  ignorierte, darf damit keinen Wert ausserhalb 1–1440 mehr senden). Groessere Werte beantwortet der
+  Dienst mit `422`, statt sie an die Datenbank zu geben. Je Dienst prueft ein Test, dass
+  jeder Integer-Eingang des veroeffentlichten Schemas ein `maximum` hat.
 - **Import-422 in der deklarierten Form (Server):** `POST /api/connections/import` meldet abgelehnte
   Eintraege jetzt wie jede andere 422 der API: `detail` ist eine Liste mit einem Eintrag je Fehler,
   `loc` = `["body", "connections", <index>, <feld>]`, in Import-Reihenfolge. Bisher stand dort
