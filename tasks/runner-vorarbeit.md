@@ -66,8 +66,10 @@ Escape-Sequenz ⇒ Ausgabe ohne Steuerzeichen. Die bestehenden Fälle (`lane_tes
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T4)
 
-### T4 — Doku: geteilte Sperre und Setup  [ ]
+### T4 — Doku: geteilte Sperre und Setup  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c8af7a2a 2026-10-02T17:04:47+02:00
+Review: request_changes (sonnet): wichtig Lage des Temp-Klons (/srv statt neben dem Ziel) korrigiert, Nits Umbruch und CHANGELOG erledigt
 Änderung: DEVELOPMENT.md, Absatz „Die schweren Python-Schritte laufen je Nutzer nacheinander“
 (`DEVELOPMENT.md:216–226`): die geteilte Datei, die Reihenfolge der Wahl, der Rückfall, `AH_PY_LOCK_FILE`/
 `AH_PY_LOCK_SHARED`. Runner-Abschnitt (`DEVELOPMENT.md:704ff`): das Setup legt die Sperre an und klont nur in

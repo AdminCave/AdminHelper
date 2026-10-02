@@ -213,17 +213,22 @@ weil `dropdb` scheitert), bleibt die Marke, und `new <slug>` verweigert den Slug
 Ausweg: `done <slug>` erneut aufrufen, sobald die Ursache weg ist, oder die DB von Hand löschen und
 die Marke entfernen.
 
-**Die schweren Python-Schritte laufen je Nutzer nacheinander.** `server-pytest` und
-`schemathesis` holen in `run.sh` vor dem Start eine Sperre (`flock` auf
-`~/.cache/adminhelper-py.lock`), gleich aus welchem seiner Checkouts: zwei Server-Suiten auf
-einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM-Killer. Die
-Sperre gilt **je Unix-Nutzer**, über alle seine Checkouts; Läufe eines anderen Nutzers — ab
-Stufe 7 der Runner — teilen sie nicht, dafür braucht es noch eine nutzerübergreifende Sperre.
-Ist die Sperre belegt, sagt der Schritt einmal, wer sie hält, und **wartet** — bis
-`AH_PY_LOCK_WAIT` Sekunden (Default 3600). Danach gibt er als SKIP mit Grund auf, unter
-`--strict` also `strict-failed`: nicht gelaufen, kein Befund über den Code. Alle anderen Schritte
-laufen weiter parallel. `AH_PY_LOCK=0` schaltet die Sperre ab, gedacht für eine Box, auf der
-ohnehin nur ein Lauf existiert.
+**Die schweren Python-Schritte laufen nacheinander.** `server-pytest` und `schemathesis` holen
+in `run.sh` vor dem Start eine Sperre (`flock`), gleich aus welchem Checkout: zwei Server-Suiten
+auf einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM-Killer. Die
+Sperrdatei wählt `run.sh` in dieser Reihenfolge: `AH_PY_LOCK_FILE`, wenn gesetzt; sonst die
+**geteilte** Datei `/var/lib/adminhelper-dev/py.lock` (Pfad über `AH_PY_LOCK_SHARED`), wenn es
+sie gibt; sonst je Nutzer `~/.cache/adminhelper-py.lock`. Die geteilte Datei legt
+`runner-setup.sh` an (Abschnitt „Runner-User"): über sie warten Kevins Läufe und die des Runners
+aufeinander. Ohne sie gilt die Sperre nur **je Unix-Nutzer**, über alle seine Checkouts. Darf
+ein Nutzer die geteilte Datei nur lesen, sperrt der Schritt trotzdem, nur ohne Halter-Zeile;
+lässt sie sich gar nicht öffnen, ist der Schritt ein SKIP mit Grund und Abhilfe — kein Rückfall
+auf die Datei je Nutzer, denn dort träfe er die Läufe der anderen nicht.
+Ist die Sperre belegt, sagt der Schritt einmal, wer sie hält (nur druckbare Zeichen), und
+**wartet** — bis `AH_PY_LOCK_WAIT` Sekunden (Default 3600). Danach gibt er als SKIP mit Grund
+auf, unter `--strict` also `strict-failed`: nicht gelaufen, kein Befund über den Code. Alle
+anderen Schritte laufen weiter parallel. `AH_PY_LOCK=0` schaltet die Sperre ab, gedacht für
+eine Box, auf der ohnehin nur ein Lauf existiert.
 
 Wer `pytest` von Hand startet statt über `run.sh`/`verify.sh`, läuft an der Sperre vorbei. Dann
 gilt weiter: **ein `server`-Lauf zur Zeit** je Test-DB. Zwei gleichzeitige Läufe räumen einander
@@ -741,7 +746,14 @@ und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
 Klon und Datenbank wieder weg. Im Klon setzt es als Runner `core.hooksPath
 scripts/dev/hooks`, damit der pre-commit-Hook auch dort vor jedem Commit
 `review.sh sec` faehrt (R-0102); ein Klon von vorher bekommt es mit einem erneuten
-`sudo bash scripts/dev/runner-setup.sh`. Danach bleiben **drei Handgriffe** fuer Kevin, die
+`sudo bash scripts/dev/runner-setup.sh`. Geklont wird nur in einen Pfad, den es noch nicht
+gibt: steht unter `/srv/ah/repo` schon etwas ohne `.git`, bricht das Skript mit einem Satz ab,
+statt hineinzuklonen; sonst klont es in ein Temp-Verzeichnis in `/srv` (neben `/srv/ah`) und
+benennt danach um (`/srv` muss root gehoeren und darf fuer Gruppe und andere nicht schreibbar
+sein). Ausserdem legt es die geteilte Python-Sperre `/var/lib/adminhelper-dev/py.lock` an
+(root, `0666`, im Verzeichnis `0755` von root; Abschnitt „Die schweren Python-Schritte laufen
+nacheinander"), `--remove --yes` nimmt sie mit; ein bestehender Runner bekommt sie mit einem
+erneuten `sudo bash scripts/dev/runner-setup.sh`. Danach bleiben **drei Handgriffe** fuer Kevin, die
 der Runner nicht selbst tun kann:
 
 1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
