@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Nachzügler: Wächter nach dem Filtern, stcp-Felder nur an stcp-Tunneln — Task-Ledger
-Status: freigegeben · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „FRP-Nachzügler“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0128, R-0129
 Heavy: none — kein Datenpfad eines nutzbaren Tunnels ändert sich: T1 betrifft nur stcp-Tunnel ohne Secret (über die API seit #61 nicht mehr erzeugbar), T2 nur das Speichern beim Typwechsel; pytest deckt Generate-Routen, POST und PUT ab, das Szenario `--tunnel` lief für #61 grün.
@@ -30,8 +30,10 @@ Entscheidungen (Kevin bzw. Aufsicht, 2026-10-02):
   ein neues Secret, auch wenn eine Altzeile noch eines trägt (Kevin am Gate, „Immer neues Secret“).
 - Doku-Stelle des 404: die API-Referenz (DE + EN); `docs/` beschrieb ihn bisher nirgends (Aufsicht am Gate).
 
-### T1 — Generate-Routen prüfen auf Tunnel erst nach dem Weglassen der Tunnel ohne Secret  [ ]
+### T1 — Generate-Routen prüfen auf Tunnel erst nach dem Weglassen der Tunnel ohne Secret  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_frp_permissions.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @4a670177 2026-10-02T15:16:16+02:00
+Review: am Ende (Kurz-Ledger, Gesamt-Review nach T2)
 Änderung: `gen_visitor_toml` (`generate_router.py:121`), `gen_visitor_bundle` (`:145`) und `gen_frpc_toml` (`:87`)
 lassen stcp-Tunnel ohne Secret weg, **bevor** sie auf eine leere Liste prüfen; die Antwort ist dann derselbe 404 wie
 ohne Tunnel (Entscheidung A). `gen_bulk_zip` filtert `u_tunnels` vor `if u_tunnels:` (`:197–198`), sodass kein

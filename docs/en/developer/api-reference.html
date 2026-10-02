@@ -134,9 +134,9 @@
 
           <h2>FRP &ndash; Generate (TOML/ZIP)</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/frps-toml?config_id=&hellip;</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/frpc-toml/{server_id}</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-toml?config_id=&hellip;&amp;user_id=&hellip;</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-bundle?config_id=&hellip;</code><p>Returns <code>{ toml, pki }</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/frpc-toml/{server_id}</code><p><code>404</code> if the server has no active, usable tunnel; an STCP tunnel without a secret does not count.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-toml?config_id=&hellip;&amp;user_id=&hellip;</code><p><code>404</code> if no usable STCP tunnel is visible, also when the visible ones have no secret: no tunnel, no <code>auth.token</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/visitor-bundle?config_id=&hellip;</code><p>Returns <code>{ toml, pki }</code>; <code>404</code> as for <code>visitor-toml</code>.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/generate/bulk-zip?config_id=&hellip;</code><p>ZIP with <code>frps.toml</code> + <code>clients/*.toml</code> + <code>visitors/*.toml</code>.</p></div>
 
           <h2>Server provisioning (FRP-independent, since v0.23.2)</h2>

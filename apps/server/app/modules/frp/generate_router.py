@@ -18,6 +18,7 @@ from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
     generate_visitor_toml,
+    without_secretless_stcp,
 )
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
@@ -76,7 +77,9 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    tunnels = (
+    # Left out before the check: a server whose tunnels all lack a usable secret has no
+    # tunnel to configure, and its frpc.toml would carry the frps auth token for nothing.
+    tunnels = without_secretless_stcp(
         db.query(FrpTunnel)
         .filter(
             FrpTunnel.server_id == server_id,
@@ -114,10 +117,11 @@ def gen_visitor_toml(
         if not user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    tunnels = _visible_stcp_tunnels(db, config, user)
+    tunnels = without_secretless_stcp(_visible_stcp_tunnels(db, config, user))
     # The visitor TOML embeds the shared frps auth token; without visible STCP
     # tunnels the user has no legitimate reason for it, so refuse rather than hand
     # the global secret to any authenticated (non-admin, server-less) user (3.33).
+    # Tunnels without a secret count as none: the generator would leave them out.
     if not tunnels:
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
 
@@ -139,9 +143,9 @@ def gen_visitor_bundle(
     empty for backward compatibility with the desktop's response shape."""
     config = _resolve_config(db, config_id)
 
-    tunnels = _visible_stcp_tunnels(db, config, current_user)
+    tunnels = without_secretless_stcp(_visible_stcp_tunnels(db, config, current_user))
     # See gen_visitor_toml: don't hand the shared frps auth token to a user with no
-    # visible STCP tunnels (3.33).
+    # visible, usable STCP tunnels (3.33).
     if not tunnels:
         raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
     toml = generate_visitor_toml(config, tunnels, current_user.username)
@@ -194,7 +198,9 @@ def gen_bulk_zip(
         if users_with_servers:
             for user in users_with_servers:
                 u_server_ids = {s.id for s in user.servers}
-                u_tunnels = [t for t in stcp_tunnels if t.server_id in u_server_ids]
+                u_tunnels = without_secretless_stcp(
+                    [t for t in stcp_tunnels if t.server_id in u_server_ids]
+                )
                 if u_tunnels:
                     zf.writestr(
                         f"visitors/{user.username}.toml",

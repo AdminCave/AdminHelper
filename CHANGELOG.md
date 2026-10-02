@@ -166,6 +166,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: Generate-Routen nur mit nutzbaren Tunneln (Server, R-0128):** `visitor-toml`, `visitor-bundle` und
+  `frpc-toml` lassen STCP-Tunnel ohne Secret weg, bevor sie pruefen, ob ein Tunnel da ist. Bleibt keiner uebrig,
+  antworten sie mit demselben `404` wie ohne Tunnel, und `bulk-zip` schreibt fuer einen solchen Nutzer keine
+  `visitors/<user>.toml`. Das `auth.token` von frps steht damit nur in einer Datei, die auch einen Tunnel
+  enthaelt. Doku: `docs/developer/api-reference.html`.
 - **Verbindungen: nur bekannte Felder gehen in Spalten (Server, R-0136):** Beim Anlegen, Aendern und
   Importieren uebernimmt der Server nur die Felder der API (`name`, `kind`, `host`, …, in camelCase) in
   die Spalten einer Verbindung. Alles andere bleibt Zusatzinformation in `extra_data`, auch ein
