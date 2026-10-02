@@ -74,8 +74,10 @@ Rot vorher: `check_types.py` gestaged ⇒ `--list` nennt `test_push_only_ui_sync
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
-### T5 — `review-probe.sh`: wäre der Test ohne den Fix rot, und `--mutate`  [ ]
-Komponente: scripts · Dateien: scripts/dev/review-probe.sh, scripts/dev/harness-paths.txt, scripts/tests/review_probe_test.sh
+### T5 — `review-probe.sh`: wäre der Test ohne den Fix rot, und `--mutate`  [x]
+Komponente: scripts · Dateien: scripts/dev/review-probe.sh, scripts/dev/harness-paths.txt, scripts/tests/review_probe_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @18aa0145 2026-10-02T17:24:14+02:00
+Review: approve (opus, two rounds: round 1 request_changes, --mutate could write outside its worktree, confined with a realpath check and tests; round 2 approve, nits taken in). Seed 53e76924: red_without_change true, mutant at checks.py:298 killed
 Änderung: Neues Skript (SPDX). `review-probe.sh <komponente> [--base <rev>] [--staged | --commit <rev>] [-- <test>]`:
 eigene Worktree (`git worktree add --detach` unter einem `mktemp -d -p` des Aufrufers, `trap` entfernt sie samt
 `git worktree prune`), nur die Hunks unter den Testpfaden der Komponente (Liste wie `review.sh component_tests`,
