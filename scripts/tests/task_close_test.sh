@@ -547,6 +547,19 @@ c fix T1 -m "feat: on master"
 git -C "$FIX" branch -m fixture-branch
 reset_repo
 
+# ══ docs-pairs (stage 6a) ═════════════════════════════════════════════════════
+echo "── docs-pairs ──"
+touch_tool
+mkdir -p "$FIX/docs/admin"
+printf '<div class="lang-switch"><a href="./benutzer.html" class="is-active">DE</a><a href="../en/admin/users.html">EN</a></div>\n' \
+  > "$FIX/docs/admin/benutzer.html"
+git -C "$FIX" add -- docs/admin/benutzer.html
+c fix T1 -m "feat: something"
+[ $rc -eq 3 ] && grep -q 'docs/en/admin/users.html' <<<"$OUT" \
+  && ok "a close with one language of a docs page -> exit 3" || bad "one-sided docs: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite one-sided docs"
+reset_repo
+
 # ══ the verdict interface (stage 6) ═══════════════════════════════════════════
 echo "── --review verdict ──"
 # verdict <file> <tree> <verdict> [<findings json>] — a verdict in the schema of

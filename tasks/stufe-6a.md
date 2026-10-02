@@ -46,8 +46,10 @@ Rot vorher: `apps/monitoring/app/alerter.py` gestaged ⇒ `xhigh`; nur `docs/adm
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7, T8)
 
-### T3 — `review.sh docs-pairs`: Doku-Seite ohne Gegenstück ist ein Fund  [ ]
-Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh
+### T3 — `review.sh docs-pairs`: Doku-Seite ohne Gegenstück ist ein Fund  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @04e9c2d2 2026-10-02T15:58:35+02:00
+Review: approve (opus, one round: code approve-ready; the one wichtig was a missing Dateien entry, declared with set-files and held by scope; nits taken in)
 Änderung: `review.sh docs-pairs [--staged]`: für jede geänderte `docs/**/*.html` das Gegenstück aus dem
 `lang-switch`-Link der Seite lesen (etwa `docs/admin/benutzer.html:33` → `../en/admin/users.html`); fehlt das
 Gegenstück im Diff ⇒ Fund (Exit 3, Pfadpaar genannt). Seiten ohne `lang-switch` und Nicht-HTML unter `docs/`

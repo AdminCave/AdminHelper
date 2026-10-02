@@ -13,6 +13,7 @@
 #                                                       a reviewer's verdict JSON
 #   bash scripts/dev/review.sh risk [--staged | --range <a>..<b>]
 #                                                       which reviewer a diff gets
+#   bash scripts/dev/review.sh docs-pairs [--staged]    a docs page in one language
 #
 # Deterministic, model-free, and called by task-close.sh before it commits. They
 # answer three questions a reviewer would otherwise have to ask every time:
@@ -51,6 +52,10 @@
 #   risk       does the diff touch a risk path (scripts/dev/review-risk.txt and
 #              the harness paths)? Prints `xhigh` and the paths it hit, or
 #              `standard`; both exit 0. The reviewer model follows from it.
+#   docs-pairs does every changed docs page bring its other language along?
+#              The other page is the one the page's lang-switch links to (not
+#              a name rule: admin/benutzer.html is en/admin/users.html); pages
+#              without a switch and everything that is no html are outside.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
@@ -58,7 +63,7 @@
 # staged, which is the state task-close.sh works on anyway.
 #
 # Exit: 0 clean · 2 usage (check-verdict: unreadable or outside the schema) ·
-# 3 findings (diff-scan, scope; check-verdict: no usable approve) · 4 blocked
+# 3 findings (diff-scan, scope, docs-pairs; check-verdict: no usable approve) · 4 blocked
 # (sec; check-verdict: a verdict for another tree)
 
 set -uo pipefail
@@ -756,6 +761,62 @@ PY
     else
       echo standard
     fi
+    ;;
+
+  docs-pairs)
+    [ "${#ARGS[@]}" -eq 0 ] || die "docs-pairs takes no operand (only --staged)"
+    CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+      || die "could not read the diff"
+    PAGES=()
+    while IFS= read -r p; do
+      case "$p" in docs/*.html) PAGES+=("$p") ;; esac
+    done <<< "$CHANGED"
+    [ "${#PAGES[@]}" -gt 0 ] || { echo "docs-pairs: clean"; exit 0; }
+    command -v python3 >/dev/null 2>&1 || die "docs-pairs needs python3"
+    MISSING="$(python3 - "$STAGED" "${PAGES[@]}" <<'PY'
+import os, re, subprocess, sys
+
+staged = sys.argv[1] == "1"
+pages = sys.argv[2:]
+SWITCH = re.compile(r'<div class="lang-switch"[^>]*>(.*?)</div>', re.S)
+LINK = re.compile(r"<a\b([^>]*)>")
+
+
+def content(path):
+    # The side the diff arrives at; for a deleted page the side it leaves.
+    for src in ([] if staged else [None]) + [":" + path, "HEAD:" + path]:
+        if src is None:
+            try:
+                return open(path, encoding="utf-8", errors="replace").read()
+            except OSError:
+                continue
+        r = subprocess.run(["git", "show", src], capture_output=True)
+        if r.returncode == 0:
+            return r.stdout.decode("utf-8", "replace")
+    return ""
+
+
+for page in pages:
+    m = SWITCH.search(content(page))
+    if not m:
+        continue
+    for attrs in LINK.findall(m.group(1)):
+        href = re.search(r'href="([^"#?]*)', attrs)
+        # The page itself (the active link) is no other page; a misplaced
+        # is-active must not hide the real other language.
+        if not href or not href.group(1) or "://" in href.group(1):
+            continue
+        other = os.path.normpath(os.path.join(os.path.dirname(page), href.group(1)))
+        if other != page and other not in pages:
+            print("%s -> %s" % (page, other))
+PY
+)" || die "docs-pairs could not read the pages"
+    if [ -n "$MISSING" ]; then
+      echo "review.sh docs-pairs: a docs page changes without its other language (.claude/rules/docs.md):" >&2
+      sed 's/^/  /' <<<"$MISSING" >&2
+      exit 3
+    fi
+    echo "docs-pairs: clean"
     ;;
 
   -h|--help) usage ;;

@@ -29,7 +29,8 @@
 #   2. verify.sh <components>  the task's Verify: line as it stands, --strict, for
 #                              real (a prose line: the task's own component).
 #   3. review.sh               diff-scan (did the diff buy its green?), scope
-#                              (did it stay inside the task?), sec (may this be
+#                              (did it stay inside the task?), docs-pairs (both
+#                              languages of a docs page?), sec (may this be
 #                              committed at all?).
 #   4. the review verdict      today: `--review none`, the in-session reviewer of
 #                              feature-build. Stage 6 hands in a verdict JSON,
@@ -42,8 +43,9 @@
 #                              `bereit`, in that same commit.
 #
 # Exit: 0 committed · 2 usage, nothing staged, or the tree changed under the run
-#       · 3 verify red or a diff-scan finding · 4 blocked (sec or scope) · 74 the
-#       suite could not run at all, or its result cannot be tied to this tree.
+#       · 3 verify red, a diff-scan finding or a docs page in one language · 4
+#       blocked (sec or scope) · 74 the suite could not run at all, or its
+#       result cannot be tied to this tree.
 
 set -uo pipefail
 
@@ -280,6 +282,12 @@ bash scripts/dev/review.sh scope "$LEDGER" "$ID" --staged || {
   # A usage error is not a blocked commit; only a real scope violation is.
   [ "$rc" = 2 ] && die "review.sh scope could not run"
   echo "task-close: blocked — the diff leaves the task's scope" >&2; exit 4
+}
+# Both languages of a docs page in the same commit (.claude/rules/docs.md).
+bash scripts/dev/review.sh docs-pairs --staged || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh docs-pairs could not run"
+  exit 3
 }
 bash scripts/dev/review.sh sec --staged || { rc=$?; [ "$rc" = 2 ] && die "review.sh sec could not run"; exit 4; }
 

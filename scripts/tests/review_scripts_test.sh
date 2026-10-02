@@ -1541,10 +1541,58 @@ done < "$REPO_ROOT/scripts/dev/review-risk.txt"
 grep -qxF 'scripts/dev/review-risk.txt' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
   && ok "the risk list is a harness path" || bad "review-risk.txt is missing from harness-paths.txt"
 
+# ══ docs-pairs (stage 6a) ═════════════════════════════════════════════════════
+echo "── docs-pairs ──"
+# page <path> <active href> <other href> — a docs page with the lang-switch of the real ones.
+page() {
+  mkdir -p "$(dirname "$FIX/$1")"
+  printf '<html><body>\n<div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="%s" class="is-active">A</a><a href="%s">B</a></div></div>\n<p>%s</p>\n</body></html>\n' \
+    "$2" "$3" "$RANDOM" > "$FIX/$1"
+}
+reset_index
+page docs/admin/benutzer.html ./benutzer.html ../en/admin/users.html
+page docs/en/admin/users.html ./users.html ../../admin/benutzer.html
+printf '<html><body><p>no switch</p></body></html>\n' > "$FIX/docs/plain.html"
+mkdir -p "$FIX/docs/features"; printf '# x\n' > "$FIX/docs/features/x.md"
+git -C "$FIX" add -A docs && git -C "$FIX" commit -qm "docs pair" >/dev/null
+echo "<p>more</p>" >> "$FIX/docs/admin/benutzer.html"; stage docs/admin/benutzer.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/admin/benutzer.html -> docs/en/admin/users.html' <<<"$OUT" \
+  && ok "a German page without its English one -> 3, the pair named" || bad "one-sided de: rc=$rc out=$OUT"
+echo "<p>more</p>" >> "$FIX/docs/en/admin/users.html"; stage docs/en/admin/users.html
+r docs-pairs --staged
+[ $rc -eq 0 ] && ok "the pair together -> 0" || bad "pair: rc=$rc out=$OUT"
+reset_index; echo "<p>more</p>" >> "$FIX/docs/en/admin/users.html"; stage docs/en/admin/users.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/en/admin/users.html -> docs/admin/benutzer.html' <<<"$OUT" \
+  && ok "the English side alone -> 3" || bad "one-sided en: rc=$rc out=$OUT"
+reset_index; echo more >> "$FIX/docs/features/x.md"; stage docs/features/x.md
+r docs-pairs --staged
+[ $rc -eq 0 ] && ok "a feature spec (no html) -> 0" || bad "features md: rc=$rc out=$OUT"
+reset_index; echo "<p>more</p>" >> "$FIX/docs/plain.html"; stage docs/plain.html
+r docs-pairs --staged
+[ $rc -eq 0 ] && ok "a page without a lang-switch -> 0" || bad "plain page: rc=$rc out=$OUT"
+reset_index; git -C "$FIX" rm -q docs/admin/benutzer.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/admin/benutzer.html -> docs/en/admin/users.html' <<<"$OUT" \
+  && ok "a page deleted alone -> 3 (its switch read from HEAD)" || bad "deleted page: rc=$rc out=$OUT"
+reset_index; page docs/new.html ./new.html en/new.html; stage docs/new.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/new.html -> docs/en/new.html' <<<"$OUT" \
+  && ok "a new page without its other language -> 3" || bad "new page: rc=$rc out=$OUT"
+reset_index; echo "<p>more</p>" >> "$FIX/docs/admin/benutzer.html"
+r docs-pairs
+[ $rc -eq 3 ] && ok "without --staged the worktree diff counts" || bad "unstaged: rc=$rc out=$OUT"
+reset_index; r docs-pairs extra
+[ $rc -eq 2 ] && grep -q 'takes no operand' <<<"$OUT" && ok "docs-pairs takes no operand -> 2" || bad "operand: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1; reset_index
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
   && ok "task-close.sh hands diff-scan the task" || bad "task-close.sh calls diff-scan without --task"
+grep -qF 'review.sh docs-pairs --staged' "$REPO_ROOT/scripts/dev/task-close.sh" \
+  && ok "task-close.sh runs docs-pairs" || bad "task-close.sh does not run docs-pairs"
 grep -qF 'review.sh check-verdict "$VJSON" --tree "$TREE_HASH"' "$REPO_ROOT/scripts/dev/task-close.sh" \
   && ok "task-close.sh delegates the verdict to check-verdict" || bad "task-close.sh checks the verdict itself"
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'review_scripts_test' \
