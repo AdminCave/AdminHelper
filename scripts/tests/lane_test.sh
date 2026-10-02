@@ -406,10 +406,10 @@ AH_PY_LOCK=0 AH_PY_LOCK_WAIT=1 run_step_alone off "server pytest" --only server 
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
 
 grep -q "server pytest pid" "$LOCKF" \
-  && ok "without the shared file each user keeps its own lock under \$HOME" || bad "per-user lock: $(cat "$LOCKF")"
+  && ok "without the shared directory each user keeps its own lock under \$HOME" || bad "per-user lock: $(cat "$LOCKF")"
 
 # ── run.sh: the lock Kevin and the runner share (R-0080) ────────────────────
-echo "── run.sh: once the shared lock file exists, every run meets there ──"
+echo "── run.sh: once the shared lock directory exists, every run meets there ──"
 SHARED="$WORK/shared/py.lock"; mkdir -p "$(dirname "$SHARED")"; : > "$SHARED"; chmod 666 "$SHARED"
 : > "$STEP_LOG"; rm -f "$WORK/release-s1"
 SHARED_LOCK="$SHARED" STUB_HOLD="$WORK/release-s1" run_step_alone s1 "server pytest" --only server & p1=$!
@@ -466,6 +466,20 @@ if [ "$(id -u)" != 0 ]; then
   [ "$rc" != 0 ] && grep -q "strict-failed: server pytest" "$WORK/run-no-strict.log" \
     && ok "under --strict that is red" || bad "unopenable strict: rc=$rc $(tail -8 "$WORK/run-no-strict.log")"
   chmod 600 "$SHARED"
+
+  echo "── run.sh: the shared directory decides, not whether this user can see the file ──"
+  EMPTY="$WORK/shared-empty"; mkdir "$EMPTY"; chmod 555 "$EMPTY"; : > "$LOCKF"
+  SHARED_LOCK="$EMPTY/py.lock" run_step_alone empty "server pytest" --only server
+  grep -q "cannot open the python lock $EMPTY/py.lock" "$WORK/run-empty.log" \
+    && grep -q "runner-setup.sh again" "$WORK/run-empty.log" && grep -q "SKIP  server pytest" "$WORK/run-empty.log" \
+    && [ ! -s "$LOCKF" ] \
+    && ok "a shared directory without the file is a SKIP that names the fix" || bad "empty dir: $(tail -8 "$WORK/run-empty.log")"
+  CLOSED="$WORK/shared-closed"; mkdir "$CLOSED"; : > "$CLOSED/py.lock"; chmod 000 "$CLOSED"; : > "$LOCKF"
+  SHARED_LOCK="$CLOSED/py.lock" run_step_alone closed "server pytest" --only server
+  chmod 755 "$CLOSED"
+  grep -q "cannot open the python lock $CLOSED/py.lock" "$WORK/run-closed.log" && grep -q "SKIP  server pytest" "$WORK/run-closed.log" \
+    && [ ! -s "$LOCKF" ] \
+    && ok "a shared directory this user cannot search is a SKIP, not the per-user lock" || bad "closed dir: $(tail -8 "$WORK/run-closed.log"); per-user: $(cat "$LOCKF")"
 fi
 
 echo

@@ -239,8 +239,11 @@ run_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # checkout queue up instead; every other step stays parallel (Kevin, gate
 # 2026-09-23). Which file, in this order: AH_PY_LOCK_FILE from the environment;
 # the file Kevin and the runner share (AH_PY_LOCK_SHARED, created by
-# scripts/dev/runner-setup.sh) once it exists — from then on a run never falls
-# back to a file of its own, that would split the lock again; otherwise a fixed
+# scripts/dev/runner-setup.sh) once its directory exists — decided by the
+# directory, not the file, because a file this user cannot see (directory not
+# searchable, file not there yet) must not read as "no shared lock": from then
+# on a run never falls back to a file of its own, that would split the lock
+# again, and py_lock skips with the reason instead; otherwise a fixed
 # path under $HOME, for a box without the runner setup (VMs, CI). Fixed, because
 # XDG_RUNTIME_DIR is set in one shell and not in the next, and two runs must never
 # lock two different files. Without HOME (an `env -i` shell) the home comes from
@@ -250,7 +253,7 @@ AH_PY_LOCK="${AH_PY_LOCK:-1}"
 AH_PY_LOCK_WAIT="${AH_PY_LOCK_WAIT:-3600}"
 AH_PY_LOCK_SHARED="${AH_PY_LOCK_SHARED:-/var/lib/adminhelper-dev/py.lock}"
 if [ -z "${AH_PY_LOCK_FILE:-}" ]; then
-  if [ -e "$AH_PY_LOCK_SHARED" ]; then
+  if [ -d "$(dirname "$AH_PY_LOCK_SHARED")" ]; then
     AH_PY_LOCK_FILE="$AH_PY_LOCK_SHARED"
   else
     AH_PY_LOCK_FILE="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/adminhelper-py.lock"

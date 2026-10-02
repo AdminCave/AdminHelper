@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit für Stufe 7 (R-0080, R-0077) — Task-Ledger
-Status: bereit · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „Runner-Vorarbeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit.md (Roadmap R-0080, R-0077)
 Heavy: none — nur Skripte (run.sh-Sperre, runner-setup.sh, Red Team) und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis über zwei echte Nutzer liefern Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec, „Kevins Handarbeit“).
@@ -93,3 +93,30 @@ belegt, alles in Ordnung). DEVELOPMENT.md: ein Satz im Runner-Abschnitt, was das
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Runner-Abschnitt, ein Satz)
 Abhängt von: T2
+
+### T6 — Geteilte Sperre nach ihrem Verzeichnis wählen, Pfad im Lockstep (aus /code-review)  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh, scripts/tests/runner_setup_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @14bd2895 2026-10-02T17:52:32+02:00
+Review: approve (opus); Nits dirname, Doku-Praezisierung, LOCKF vor closed, Ueberschriften in derselben Runde erledigt
+Änderung: `run.sh` nimmt die geteilte Datei, sobald ihr **Verzeichnis** existiert (`[ -d "${AH_PY_LOCK_SHARED%/*}" ]`
+statt `[ -e "$AH_PY_LOCK_SHARED" ]`): ein Verzeichnis, das der Nutzer nicht durchsuchen darf, oder eine fehlende
+Datei darin wird ein SKIP mit Grund und Abhilfe, kein stiller Rückfall auf die Datei je Nutzer. `lane_test.sh`:
+Verzeichnis da, Datei fehlt ⇒ SKIP mit Hinweis auf `runner-setup.sh`; Verzeichnis nicht durchsuchbar (`000`,
+nur ohne root) ⇒ SKIP. `runner_setup_test.sh`: der Default von `AH_PY_LOCK_SHARED` in `run.sh` und der Pfad
+im Aufruf von `runner-redteam.sh` stehen im Lockstep mit `LOCK_DIR` aus `runner-setup.sh`. Doku: DEVELOPMENT.md
+(„sobald ihr Verzeichnis existiert“), AUTONOMOUS.md (der Satz „eine nutzerübergreifende steht noch aus“ ist
+überholt), CHANGELOG (Verzeichnis-Regel und die Red-Team-Prüfung `--py-lock` aus T5).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+
+### T7 — Klon-Schritt: Dry-Run ohne Sicht auf .git, gleiches Dateisystem vor mv -T (aus /code-review)  [ ]
+Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh, DEVELOPMENT.md
+Änderung: `runner-setup.sh` Schritt 2: (a) ein `--dry-run` ohne root, der `$SRV/repo` nicht durchsuchen darf,
+bricht nicht ab, sondern sagt, dass erst der echte Lauf entscheidet (seit T1 brach er ab); (b) der echte Lauf
+bricht vor dem Klon ab, wenn `$SRV` auf einem anderen Dateisystem liegt als sein Elternverzeichnis (`stat -c
+%d`): `mv -T` wäre dann kein einzelnes rename, sondern eine Kopie; der Dry-Plan nennt die Prüfung; (c) der tote
+Zweig `|| [ -L "$SRV/repo" ]` geht (den Symlink fängt `no_symlink_in` vorher). `runner_setup_test.sh`: Fall
+für (a); `AH_RUNNER_DRY_LOCKDIR` ist wie die beiden anderen Overrides im `--dry-run`-Guard verankert.
+DEVELOPMENT.md: ein Halbsatz zum gleichen Dateisystem.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Runner-Abschnitt, Halbsatz)

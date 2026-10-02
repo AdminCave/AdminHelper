@@ -217,13 +217,14 @@ die Marke entfernen.
 in `run.sh` vor dem Start eine Sperre (`flock`), gleich aus welchem Checkout: zwei Server-Suiten
 auf einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM-Killer. Die
 Sperrdatei wählt `run.sh` in dieser Reihenfolge: `AH_PY_LOCK_FILE`, wenn gesetzt; sonst die
-**geteilte** Datei `/var/lib/adminhelper-dev/py.lock` (Pfad über `AH_PY_LOCK_SHARED`), wenn es
-sie gibt; sonst je Nutzer `~/.cache/adminhelper-py.lock`. Die geteilte Datei legt
-`runner-setup.sh` an (Abschnitt „Runner-User"): über sie warten Kevins Läufe und die des Runners
-aufeinander. Ohne sie gilt die Sperre nur **je Unix-Nutzer**, über alle seine Checkouts. Darf
-ein Nutzer die geteilte Datei nur lesen, sperrt der Schritt trotzdem, nur ohne Halter-Zeile;
-lässt sie sich gar nicht öffnen, ist der Schritt ein SKIP mit Grund und Abhilfe — kein Rückfall
-auf die Datei je Nutzer, denn dort träfe er die Läufe der anderen nicht.
+**geteilte** Datei `/var/lib/adminhelper-dev/py.lock` (Pfad über `AH_PY_LOCK_SHARED`), sobald
+ihr Verzeichnis existiert; sonst je Nutzer `~/.cache/adminhelper-py.lock`. Verzeichnis und Datei
+legt `runner-setup.sh` an (Abschnitt „Runner-User"): über sie warten Kevins Läufe und die des
+Runners aufeinander. Ohne das Verzeichnis gilt die Sperre nur **je Unix-Nutzer**, über alle seine
+Checkouts. Darf ein Nutzer die geteilte Datei nur lesen, sperrt der Schritt trotzdem, nur ohne
+Halter-Zeile; lässt sie sich gar nicht öffnen (fehlt sie und darf er sie nicht anlegen, oder ist
+das Verzeichnis für ihn nicht durchsuchbar), ist der Schritt ein SKIP mit Grund und Abhilfe — kein Rückfall auf die Datei je
+Nutzer, denn dort träfe er die Läufe der anderen nicht.
 Ist die Sperre belegt, sagt der Schritt einmal, wer sie hält (nur druckbare Zeichen), und
 **wartet** — bis `AH_PY_LOCK_WAIT` Sekunden (Default 3600). Danach gibt er als SKIP mit Grund
 auf, unter `--strict` also `strict-failed`: nicht gelaufen, kein Befund über den Code. Alle

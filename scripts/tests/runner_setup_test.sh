@@ -170,6 +170,15 @@ PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_ODD" bash "$SETUP" --dry
   && ! grep -qF -- "chmod 666 $LOCKS_ODD/py.lock" <<<"$PLAN" \
   && ok "a py.lock that is no regular file stops the run, nothing is chmod-ed" \
   || bad "a directory at py.lock: rc=$rc $(grep -F "$LOCKS_ODD" <<<"$PLAN")"
+# Three scripts name the shared lock: this one creates it, run.sh takes it, the red
+# team checks it. A path changed in one of them alone would split the lock again
+# without a single red test (lane_test always passes its own AH_PY_LOCK_SHARED).
+SETUP_LOCK="$(sed -n 's/^LOCK_DIR="\(.*\)"$/\1/p' "$SETUP")/py.lock"
+RUN_LOCK="$(sed -n 's/^AH_PY_LOCK_SHARED="\${AH_PY_LOCK_SHARED:-\(.*\)}"$/\1/p' "$REPO_ROOT/scripts/tests/run.sh")"
+[ "$SETUP_LOCK" = /var/lib/adminhelper-dev/py.lock ] && [ "$RUN_LOCK" = "$SETUP_LOCK" ] \
+  && grep -qx "redteam_py_lock $SETUP_LOCK 0" "$REPO_ROOT/scripts/dev/runner-redteam.sh" \
+  && ok "runner-setup.sh, run.sh and the red team name the same lock" \
+  || bad "the lock path differs: setup '$SETUP_LOCK', run.sh '$RUN_LOCK', red team: $(grep '^redteam_py_lock ' "$REPO_ROOT/scripts/dev/runner-redteam.sh")"
 
 # The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
 # root-owned directory, then moved into place with one `mv -T`. Anything already at
