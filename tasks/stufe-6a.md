@@ -59,8 +59,10 @@ nur `docs/features/x.md` ⇒ 0; task_close_test: ein Close mit einseitiger Doku 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
-### T4 — `review-contracts.txt` und `review.sh contracts` als Ebene 0 in task-close  [ ]
+### T4 — `review-contracts.txt` und `review.sh contracts` als Ebene 0 in task-close  [x]
 Komponente: scripts · Dateien: scripts/dev/review-contracts.txt, scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/dev/harness-paths.txt, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a0d4b046 2026-10-02T16:31:59+02:00
+Review: approve (opus, two rounds: round 1 request_changes on the FRP pins of the VM bootstrap and the frps image the CI holds, added; round 2 approve, nits taken in)
 Änderung: `review-contracts.txt`: Glob → Prüfung, entweder `test <komponente> <testdatei>` (läuft als
 `verify.sh <komponente> --strict -- <testdatei>`) oder `pair <regex> <datei> <datei>` (gleicher Wert in beiden; etwa
 `FRP_VERSION`, `MINISIGN_PUBKEY`, die Versions-Stellen von tauri/Cargo/CHANGELOG). Start: `apps/monitoring/app/check_types.py`

@@ -1,0 +1,46 @@
+# Contracts: a changed path pulls in the checks that hold what it promises
+# somewhere else. task-close.sh runs them before every commit (review.sh
+# contracts --staged); a red one stops the close.
+#
+#   <glob> test <component> <test file>   verify.sh <component> --strict -- <test file>
+#   <glob> pair <regex> <file> <file>     the first capture of <regex> is the same in both
+#
+# <glob> is a shell `case` pattern (`*` crosses `/`). <regex> is python and one
+# word, so a blank inside a line is [^\S\n] (\s would cross a line break); it is
+# searched over the whole file with ^ and $ per line. A pair touches both of its
+# files, so it stands once for each. review_scripts_test.sh holds every line to
+# the tree: the test file exists, the pair agrees today.
+
+# The push-only check types: the UI's copy of the list and the engine's set.
+apps/monitoring/app/check_types.py test monitoring tests/test_push_only_ui_sync.py
+
+# The FRP pins move in lockstep (ci.yml frp-consistency, Audit C7): the version in
+# both workflows, the VM bootstrap and the frps image; the artifact SHAs.
+.github/workflows/ci.yml pair ^[^\S\n]*(?:FRP_VERSION:[^\S\n]*"|FRP_VERSION="\$\{AH_FRP_VERSION:-|image:[^\S\n]*snowdreamtech/frps:)([0-9][0-9.]*) .github/workflows/ci.yml .github/workflows/release.yml
+.github/workflows/release.yml pair ^[^\S\n]*(?:FRP_VERSION:[^\S\n]*"|FRP_VERSION="\$\{AH_FRP_VERSION:-|image:[^\S\n]*snowdreamtech/frps:)([0-9][0-9.]*) .github/workflows/ci.yml .github/workflows/release.yml
+.github/workflows/ci.yml pair ^[^\S\n]*(?:FRP_VERSION:[^\S\n]*"|FRP_VERSION="\$\{AH_FRP_VERSION:-|image:[^\S\n]*snowdreamtech/frps:)([0-9][0-9.]*) .github/workflows/ci.yml scripts/vm/bootstrap_linux.sh
+scripts/vm/bootstrap_linux.sh pair ^[^\S\n]*(?:FRP_VERSION:[^\S\n]*"|FRP_VERSION="\$\{AH_FRP_VERSION:-|image:[^\S\n]*snowdreamtech/frps:)([0-9][0-9.]*) .github/workflows/ci.yml scripts/vm/bootstrap_linux.sh
+.github/workflows/ci.yml pair ^[^\S\n]*(?:FRP_VERSION:[^\S\n]*"|FRP_VERSION="\$\{AH_FRP_VERSION:-|image:[^\S\n]*snowdreamtech/frps:)([0-9][0-9.]*) .github/workflows/ci.yml docker-compose.yml
+docker-compose.yml pair ^[^\S\n]*(?:FRP_VERSION:[^\S\n]*"|FRP_VERSION="\$\{AH_FRP_VERSION:-|image:[^\S\n]*snowdreamtech/frps:)([0-9][0-9.]*) .github/workflows/ci.yml docker-compose.yml
+.github/workflows/ci.yml pair ^[^\S\n]*FRP_SHA256_LINUX_AMD64(?::[^\S\n]*|=)"([0-9a-f]+)" .github/workflows/ci.yml .github/workflows/release.yml
+.github/workflows/release.yml pair ^[^\S\n]*FRP_SHA256_LINUX_AMD64(?::[^\S\n]*|=)"([0-9a-f]+)" .github/workflows/ci.yml .github/workflows/release.yml
+.github/workflows/ci.yml pair ^[^\S\n]*FRP_SHA256_LINUX_AMD64(?::[^\S\n]*|=)"([0-9a-f]+)" .github/workflows/ci.yml scripts/vm/bootstrap_linux.sh
+scripts/vm/bootstrap_linux.sh pair ^[^\S\n]*FRP_SHA256_LINUX_AMD64(?::[^\S\n]*|=)"([0-9a-f]+)" .github/workflows/ci.yml scripts/vm/bootstrap_linux.sh
+.github/workflows/ci.yml pair ^[^\S\n]*FRP_SHA256_WINDOWS_AMD64:[^\S\n]*"([0-9a-f]+)" .github/workflows/ci.yml .github/workflows/release.yml
+.github/workflows/release.yml pair ^[^\S\n]*FRP_SHA256_WINDOWS_AMD64:[^\S\n]*"([0-9a-f]+)" .github/workflows/ci.yml .github/workflows/release.yml
+
+# The tauri-cli pin of the two workflows.
+.github/workflows/ci.yml pair cargo[^\S\n]+install[^\S\n]+tauri-cli[^\S\n].*--version[^\S\n]+"([^"]+)" .github/workflows/ci.yml .github/workflows/release.yml
+.github/workflows/release.yml pair cargo[^\S\n]+install[^\S\n]+tauri-cli[^\S\n].*--version[^\S\n]+"([^"]+)" .github/workflows/ci.yml .github/workflows/release.yml
+
+# The signing key every update is verified against (ci.yml, MINISIGN_PUBKEY in lockstep).
+scripts/install.sh pair ^MINISIGN_PUBKEY="([^"]+)" scripts/install.sh scripts/update.sh
+scripts/update.sh pair ^MINISIGN_PUBKEY="([^"]+)" scripts/install.sh scripts/update.sh
+
+# The app version: tauri.conf.json is the release gate, Cargo.toml and the newest
+# CHANGELOG release move with it (scripts/release/check-versions.sh). One regex
+# per pair, so it carries both spellings.
+apps/desktop/src-tauri/tauri.conf.json pair ^(?:[^\S\n]*"version":[^\S\n]*"|version[^\S\n]*=[^\S\n]*")([^"]+)" apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml
+apps/desktop/src-tauri/Cargo.toml pair ^(?:[^\S\n]*"version":[^\S\n]*"|version[^\S\n]*=[^\S\n]*")([^"]+)" apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml
+apps/desktop/src-tauri/tauri.conf.json pair ^(?:[^\S\n]*"version":[^\S\n]*"|##[^\S\n]*\[)([0-9][^"\]]*) apps/desktop/src-tauri/tauri.conf.json CHANGELOG.md
+CHANGELOG.md pair ^(?:[^\S\n]*"version":[^\S\n]*"|##[^\S\n]*\[)([0-9][^"\]]*) apps/desktop/src-tauri/tauri.conf.json CHANGELOG.md

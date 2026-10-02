@@ -14,6 +14,8 @@
 #   bash scripts/dev/review.sh risk [--staged | --range <a>..<b>]
 #                                                       which reviewer a diff gets
 #   bash scripts/dev/review.sh docs-pairs [--staged]    a docs page in one language
+#   bash scripts/dev/review.sh contracts [--staged] [--list]
+#                                                       the checks a changed path pulls in
 #
 # Deterministic, model-free, and called by task-close.sh before it commits. They
 # answer three questions a reviewer would otherwise have to ask every time:
@@ -56,6 +58,12 @@
 #              The other page is the one the page's lang-switch links to (not
 #              a name rule: admin/benutzer.html is en/admin/users.html); pages
 #              without a switch and everything that is no html are outside.
+#   contracts  the checks scripts/dev/review-contracts.txt ties to the changed
+#              paths: a test of a component (through verify.sh, with an
+#              AH_OUT_DIR of its own so the builder's last-verify.json stays) or
+#              a pair of files that must carry the same value. --list names
+#              them without running them. Prints `contracts: <n> ok` or
+#              `contracts: none`.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
@@ -63,8 +71,9 @@
 # staged, which is the state task-close.sh works on anyway.
 #
 # Exit: 0 clean · 2 usage (check-verdict: unreadable or outside the schema) ·
-# 3 findings (diff-scan, scope, docs-pairs; check-verdict: no usable approve) · 4 blocked
-# (sec; check-verdict: a verdict for another tree)
+# 3 findings (diff-scan, scope, docs-pairs, contracts; check-verdict: no usable approve) · 4 blocked
+# (sec; check-verdict: a verdict for another tree) · 74 a contract test that
+# could not run
 
 set -uo pipefail
 
@@ -109,10 +118,11 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" LIST_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
+    --list) LIST_ONLY=1 ;;
     --tree)
       [ $# -ge 2 ] || die "--tree needs <hash>"
       TREE_ARG="$2"; shift ;;
@@ -817,6 +827,90 @@ PY
       exit 3
     fi
     echo "docs-pairs: clean"
+    ;;
+
+  contracts)
+    [ "${#ARGS[@]}" -eq 0 ] || die "contracts takes no operand (only --staged and --list)"
+    F=scripts/dev/review-contracts.txt
+    # As HEAD, the index and the worktree have the list (see risk): a diff that
+    # strikes its own contract is still held to it.
+    CLIST="$(git show "HEAD:$F" 2>/dev/null; git show ":$F" 2>/dev/null; cat "$ROOT/$F" 2>/dev/null)"
+    [ -n "$CLIST" ] || die "no $F in HEAD, the index or the worktree"
+    CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+      || die "could not read the diff"
+    CHECKS=()
+    while read -r glob kind rest; do
+      case "$glob" in ''|'#'*) continue ;; esac
+      case "$kind" in test|pair) ;; *) die "unknown contract kind in $F: $kind" ;; esac
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        # shellcheck disable=SC2254  # the list IS patterns
+        case "$p" in $glob) CHECKS+=("$kind $rest"); break ;; esac
+      done <<< "$CHANGED"
+    done <<< "$CLIST"
+    # Each check once: a pair stands in the list for both of its files.
+    mapfile -t CHECKS < <(printf '%s\n' "${CHECKS[@]+"${CHECKS[@]}"}" | awk 'NF && !seen[$0]++')
+    [ "${#CHECKS[@]}" -gt 0 ] || { echo "contracts: none"; exit 0; }
+    if [ "$LIST_ONLY" = 1 ]; then printf '%s\n' "${CHECKS[@]}"; exit 0; fi
+    OK=0 RED=() UNRUN=()
+    for c in "${CHECKS[@]}"; do
+      read -r kind a1 a2 a3 <<< "$c"
+      case "$kind" in
+        test)
+          D="$(mktemp -d "${TMPDIR:-/tmp}/ah-contract.XXXXXXXX")" || die "mktemp failed"
+          AH_OUT_DIR="$D" bash "$ROOT/scripts/dev/verify.sh" "$a1" --strict -- "$a2" > "$D/run.log" 2>&1
+          vrc=$?
+          case "$vrc" in
+            0) OK=$((OK + 1)) ;;
+            # A run that never got going (a broken list line, an unknown
+            # component) is no verdict on the code — but never a green one.
+            2|74) UNRUN+=("$c (verify.sh exit $vrc)"); tail -n 15 "$D/run.log" >&2 ;;
+            *) RED+=("$c (verify.sh exit $vrc)"); tail -n 15 "$D/run.log" >&2 ;;
+          esac
+          rm -rf "$D" ;;
+        pair)
+          if why="$(python3 - "$STAGED" "$a1" "$a2" "$a3" <<'PY'
+import re, subprocess, sys
+
+staged, rx, files = sys.argv[1] == "1", sys.argv[2], sys.argv[3:5]
+vals = []
+for f in files:
+    # What is about to be committed, with --staged; else the worktree.
+    if staged:
+        r = subprocess.run(["git", "show", ":" + f], capture_output=True)
+        text = r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+    else:
+        try:
+            text = open(f, encoding="utf-8", errors="replace").read()
+        except OSError:
+            text = None
+    if text is None:
+        print("%s is missing" % f)
+        sys.exit(1)
+    try:
+        m = re.search(rx, text, re.M)
+    except re.error as e:
+        print("bad regex: %s" % e)
+        sys.exit(1)
+    vals.append(m.group(1) if m else None)
+if None in vals or vals[0] != vals[1]:
+    print(" vs ".join("%s=%s" % (f, "(no match)" if v is None else v) for f, v in zip(files, vals)))
+    sys.exit(1)
+PY
+)"; then OK=$((OK + 1)); else RED+=("$c: $why"); fi ;;
+      esac
+    done
+    if [ "${#UNRUN[@]}" -gt 0 ]; then
+      echo "review.sh contracts: could not run:" >&2
+      printf '  %s\n' "${UNRUN[@]}" >&2
+    fi
+    if [ "${#RED[@]}" -gt 0 ]; then
+      echo "review.sh contracts: red (scripts/dev/review-contracts.txt):" >&2
+      printf '  %s\n' "${RED[@]}" >&2
+      exit 3
+    fi
+    [ "${#UNRUN[@]}" -eq 0 ] || exit 74
+    echo "contracts: $OK ok"
     ;;
 
   -h|--help) usage ;;

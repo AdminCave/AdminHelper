@@ -1587,10 +1587,99 @@ reset_index; r docs-pairs extra
 [ $rc -eq 2 ] && grep -q 'takes no operand' <<<"$OUT" && ok "docs-pairs takes no operand -> 2" || bad "operand: rc=$rc out=$OUT"
 git -C "$FIX" reset -q --hard HEAD~1; reset_index
 
+# ══ contracts (stage 6a) ══════════════════════════════════════════════════════
+echo "── contracts ──"
+# reset_index cleans untracked files: the list and the fake verify.sh come back each time.
+creset() {
+  reset_index
+  cp "$REPO_ROOT/scripts/dev/review-contracts.txt" "$FIX/scripts/dev/review-contracts.txt"
+  # A fake verify.sh: records how it was called and where its artifact would go,
+  # exits with FIXTURE_CONTRACT_RC.
+  cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
+#!/usr/bin/env bash
+echo "$* | ${AH_OUT_DIR:-unset}" >> "${CONTRACT_CALLS:?}"
+exit "${FIXTURE_CONTRACT_RC:-0}"
+FAKE
+}
+export CONTRACT_CALLS="$WORK/contract-calls"
+creset; put apps/monitoring/app/check_types.py; : > "$CONTRACT_CALLS"; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'test monitoring tests/test_push_only_ui_sync.py' <<<"$OUT" && [ ! -s "$CONTRACT_CALLS" ] \
+  && ok "check_types.py -> --list names test_push_only_ui_sync.py, runs nothing" || bad "list: rc=$rc out=$OUT"
+: > "$CONTRACT_CALLS"; r contracts --staged
+[ $rc -eq 0 ] && grep -qF 'monitoring --strict -- tests/test_push_only_ui_sync.py' "$CONTRACT_CALLS" \
+  && grep -q 'contracts: 1 ok' <<<"$OUT" && ok "the test runs through verify.sh <component> --strict -- <test>" \
+  || bad "run: rc=$rc out=$OUT calls=$(cat "$CONTRACT_CALLS")"
+dir="$(sed 's/.* | //' "$CONTRACT_CALLS")"
+[ -n "$dir" ] && [ "$dir" != unset ] && [ "$dir" != "$FIX/.ah-out" ] && [ ! -e "$dir" ] \
+  && ok "with an AH_OUT_DIR of its own, gone afterwards (the builder's last-verify.json stays)" || bad "out dir: $dir"
+FIXTURE_CONTRACT_RC=1 r contracts --staged
+[ $rc -eq 3 ] && grep -qF 'test_push_only_ui_sync.py' <<<"$OUT" && ok "a red contract test -> 3" || bad "red test: rc=$rc out=$OUT"
+FIXTURE_CONTRACT_RC=74 r contracts --staged
+[ $rc -eq 74 ] && grep -q 'could not run' <<<"$OUT" && ok "a contract test that could not run -> 74, never green" \
+  || bad "unrun test: rc=$rc out=$OUT"
+# The FRP pin of the VM bootstrap is held to ci.yml, in its own spelling.
+creset; mkdir -p "$FIX/.github/workflows" "$FIX/scripts/vm"
+printf 'env:\n  FRP_VERSION: "0.69.1"\n' > "$FIX/.github/workflows/ci.yml"
+printf 'FRP_VERSION="${AH_FRP_VERSION:-0.70.0}"\n' > "$FIX/scripts/vm/bootstrap_linux.sh"
+stage .github/workflows/ci.yml scripts/vm/bootstrap_linux.sh; r contracts --staged
+[ $rc -eq 3 ] && grep -q '0.70.0' <<<"$OUT" && ok "an FRP pin drifting in the VM bootstrap -> 3" || bad "frp bootstrap: rc=$rc out=$OUT"
+creset; mkdir -p "$FIX/scripts"
+printf 'MINISIGN_PUBKEY="RWA"\n' > "$FIX/scripts/install.sh"; printf 'MINISIGN_PUBKEY="RWB"\n' > "$FIX/scripts/update.sh"
+stage scripts/install.sh scripts/update.sh; : > "$CONTRACT_CALLS"; r contracts --staged
+[ $rc -eq 3 ] && grep -q 'RWA' <<<"$OUT" && grep -q 'RWB' <<<"$OUT" && [ ! -s "$CONTRACT_CALLS" ] \
+  && ok "a pair with two values -> 3, both named, no suite" || bad "pair drift: rc=$rc out=$OUT"
+printf 'MINISIGN_PUBKEY="RWA"\n' > "$FIX/scripts/update.sh"; stage scripts/update.sh; r contracts --staged
+[ $rc -eq 0 ] && ok "the same pair in step -> 0" || bad "pair ok: rc=$rc out=$OUT"
+printf 'MINISIGN_PUBKEY="RWC"\n' > "$FIX/scripts/update.sh"; r contracts --staged
+[ $rc -eq 0 ] && ok "--staged compares what is staged, not the worktree" || bad "pair staged: rc=$rc out=$OUT"
+creset; printf 'MINISIGN_PUBKEY="RWA"\n' > "$FIX/scripts/install.sh"; stage scripts/install.sh; r contracts --staged
+[ $rc -eq 3 ] && grep -q 'scripts/update.sh' <<<"$OUT" && ok "a pair whose other file is gone -> 3" || bad "pair missing: rc=$rc out=$OUT"
+creset; put apps/web/src/x.ts; : > "$CONTRACT_CALLS"; r contracts --staged
+[ $rc -eq 0 ] && [ "$OUT" = "contracts: none" ] && [ ! -s "$CONTRACT_CALLS" ] \
+  && ok "nothing hit -> 0, nothing run" || bad "none: rc=$rc out=$OUT"
+# A diff that strikes its own contract line is still held to it.
+creset; git -C "$FIX" add scripts/dev/review-contracts.txt && git -C "$FIX" commit -qm "list" >/dev/null
+grep -v 'check_types' "$FIX/scripts/dev/review-contracts.txt" > "$WORK/rc" && cat "$WORK/rc" > "$FIX/scripts/dev/review-contracts.txt"
+stage scripts/dev/review-contracts.txt; put apps/monitoring/app/check_types.py; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'test_push_only_ui_sync.py' <<<"$OUT" && ok "a contract struck in the same diff still holds" \
+  || bad "struck contract: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+creset; r contracts extra
+[ $rc -eq 2 ] && grep -q 'takes no operand' <<<"$OUT" && ok "contracts takes no operand -> 2" || bad "operand: rc=$rc out=$OUT"
+reset_index; rm -f "$FIX/scripts/dev/verify.sh"
+# The list in the real repo: every test file exists, and every pair holds today.
+python3 - "$REPO_ROOT" <<'PY' && ok "every contract of the real list exists and holds" || bad "the real contract list is stale"
+import os, re, sys
+root = sys.argv[1]
+bad = 0
+for line in open(os.path.join(root, "scripts/dev/review-contracts.txt")):
+    w = line.split()
+    if not w or w[0].startswith("#"):
+        continue
+    if w[1] == "test":
+        p = os.path.join(root, "apps", w[2], w[3])
+        if not os.path.isfile(p):
+            print("  no such test: " + p); bad = 1
+    elif w[1] == "pair":
+        vals = []
+        for f in w[3:5]:
+            m = re.search(w[2], open(os.path.join(root, f)).read(), re.M)
+            vals.append(m.group(1) if m else None)
+        if None in vals or vals[0] != vals[1]:
+            print("  pair does not hold: %s %s" % (line.strip(), vals)); bad = 1
+    else:
+        print("  unknown kind: " + line.strip()); bad = 1
+sys.exit(bad)
+PY
+grep -qxF 'scripts/dev/review-contracts.txt' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
+  && ok "the contract list is a harness path" || bad "review-contracts.txt is missing from harness-paths.txt"
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
   && ok "task-close.sh hands diff-scan the task" || bad "task-close.sh calls diff-scan without --task"
+grep -qF 'review.sh contracts --staged' "$REPO_ROOT/scripts/dev/task-close.sh" \
+  && ok "task-close.sh runs the contracts" || bad "task-close.sh does not run the contracts"
 grep -qF 'review.sh docs-pairs --staged' "$REPO_ROOT/scripts/dev/task-close.sh" \
   && ok "task-close.sh runs docs-pairs" || bad "task-close.sh does not run docs-pairs"
 grep -qF 'review.sh check-verdict "$VJSON" --tree "$TREE_HASH"' "$REPO_ROOT/scripts/dev/task-close.sh" \

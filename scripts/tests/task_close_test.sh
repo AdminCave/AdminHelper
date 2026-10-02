@@ -42,7 +42,7 @@ CLOSE="$FIX/scripts/dev/task-close.sh"
 SKELETON=(scripts/dev scripts/tests apps/server/app apps/server/tests docs tasks/private .ah-out)
 mkskel() { local d; for d in "${SKELETON[@]}"; do mkdir -p "$FIX/$d"; done; }
 mkskel
-for f in task-close.sh ledger.sh review.sh tree-hash.sh review-verdict.schema.json; do
+for f in task-close.sh ledger.sh review.sh tree-hash.sh review-verdict.schema.json review-contracts.txt; do
   cp "$REPO_ROOT/scripts/dev/$f" "$FIX/scripts/dev/$f"
 done
 
@@ -51,14 +51,18 @@ done
 cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
 #!/usr/bin/env bash
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-mkdir -p "$root/.ah-out"
-echo "$*" > "$root/.ah-out/verify-called.txt"
+# A contract run (review.sh contracts) is the one call with an AH_OUT_DIR of its
+# own — the closer's run has none here; FIXTURE_CONTRACT_RC decides it.
+[ -z "${AH_OUT_DIR:-}" ] || exit "${FIXTURE_CONTRACT_RC:-0}"
+out="$root/.ah-out"
+mkdir -p "$out"
+echo "$*" > "$out/verify-called.txt"
 # FIXTURE_INJECT: text the "suite" writes into the ledger while it runs — the
 # builder's test code between the closer's first look and its commit.
 [ -z "${FIXTURE_INJECT:-}" ] || printf '%s\n' "$FIXTURE_INJECT" >> "$root/tasks/fix.md"
 # Like the real one: a run that does not finish leaves NO artifact behind, so a
 # stale file from an earlier run can never be read as this run's evidence.
-rm -f "$root/.ah-out/last-verify.json"
+rm -f "$out/last-verify.json"
 if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
   # The real run.sh records the tree it measured; the closer checks that against
   # its own reading, so the fake has to answer that question too.
@@ -66,7 +70,7 @@ if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
   [ "${FIXTURE_NO_TREE_HASH:-0}" = 1 ] && th=""
   # The components are what verify.sh got before --strict, as the real one records them.
   comp="$(printf '%s' "$*" | sed 's/ --strict.*//')"
-  cat > "$root/.ah-out/last-verify.json" <<JSON
+  cat > "$out/last-verify.json" <<JSON
 {
   "layer": "quick",
   "passed": ${FIXTURE_PASSED:-7},
@@ -118,7 +122,7 @@ c() { OUT=$(cd "$FIX" && bash "$CLOSE" "$@" 2>&1); rc=$?; }
 # move HEAD, and the next case has to start from the same state as the first.
 reset_repo() {
   git -C "$FIX" reset -q --hard "$BASE"; git -C "$FIX" clean -qfd; mkskel
-  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH FIXTURE_INJECT
+  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH FIXTURE_INJECT FIXTURE_CONTRACT_RC
 }
 head_count() { git -C "$FIX" rev-list --count HEAD; }
 touch_tool() { printf 'echo more\n' >> "$FIX/scripts/dev/tool.sh"; git -C "$FIX" add -- scripts/dev/tool.sh; }
@@ -558,6 +562,30 @@ c fix T1 -m "feat: something"
 [ $rc -eq 3 ] && grep -q 'docs/en/admin/users.html' <<<"$OUT" \
   && ok "a close with one language of a docs page -> exit 3" || bad "one-sided docs: rc=$rc out=$OUT"
 [ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite one-sided docs"
+reset_repo
+
+# ══ contracts (stage 6a) ══════════════════════════════════════════════════════
+echo "── contracts ──"
+# A contract on the task's own file, in the worktree copy of the list: the list is
+# read as HEAD, the index and the worktree have it.
+printf 'scripts/dev/tool.sh test monitoring tests/test_contract.py\n' >> "$FIX/scripts/dev/review-contracts.txt"
+touch_tool
+FIXTURE_CONTRACT_RC=1 c fix T1 -m "feat: something"
+[ $rc -eq 3 ] && grep -q 'test_contract.py' <<<"$OUT" && ok "a red contract check -> exit 3" || bad "red contract: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite a red contract"
+reset_repo
+printf 'scripts/dev/tool.sh test monitoring tests/test_contract.py\n' >> "$FIX/scripts/dev/review-contracts.txt"
+touch_tool
+FIXTURE_CONTRACT_RC=74 c fix T1 -m "feat: something"
+[ $rc -eq 74 ] && [ "$(head_count)" = "$BEFORE" ] \
+  && ok "a contract test that could not run -> exit 74, nothing committed" || bad "unrun contract: rc=$rc out=$OUT"
+reset_repo
+printf 'scripts/dev/tool.sh test monitoring tests/test_contract.py\n' >> "$FIX/scripts/dev/review-contracts.txt"
+touch_tool
+c fix T1 -m "feat: something"
+[ $rc -eq 0 ] && grep -q '^Evidenz: run.sh\[quick\] scripts: .*· contracts: 1 ok' "$FIX/tasks/fix.md" \
+  && ok "a green contract closes, the evidence names it — and the suite's own summary, not the contract run's" \
+  || bad "green contract: rc=$rc out=$OUT evidence=$(grep '^Evidenz:' "$FIX/tasks/fix.md")"
 reset_repo
 
 # ══ the verdict interface (stage 6) ═══════════════════════════════════════════

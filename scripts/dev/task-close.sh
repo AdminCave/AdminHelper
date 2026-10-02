@@ -30,8 +30,9 @@
 #                              real (a prose line: the task's own component).
 #   3. review.sh               diff-scan (did the diff buy its green?), scope
 #                              (did it stay inside the task?), docs-pairs (both
-#                              languages of a docs page?), sec (may this be
-#                              committed at all?).
+#                              languages of a docs page?), contracts (the
+#                              checks a changed path pulls in), sec (may this
+#                              be committed at all?).
 #   4. the review verdict      today: `--review none`, the in-session reviewer of
 #                              feature-build. Stage 6 hands in a verdict JSON,
 #                              which review.sh check-verdict holds against
@@ -43,9 +44,9 @@
 #                              `bereit`, in that same commit.
 #
 # Exit: 0 committed · 2 usage, nothing staged, or the tree changed under the run
-#       · 3 verify red, a diff-scan finding or a docs page in one language · 4
-#       blocked (sec or scope) · 74 the suite could not run at all, or its
-#       result cannot be tied to this tree.
+#       · 3 verify red, a diff-scan finding, a docs page in one language or a
+#       red contract · 4 blocked (sec or scope) · 74 the suite could not run at
+#       all, or its result cannot be tied to this tree.
 
 set -uo pipefail
 
@@ -289,6 +290,14 @@ bash scripts/dev/review.sh docs-pairs --staged || {
   [ "$rc" = 2 ] && die "review.sh docs-pairs could not run"
   exit 3
 }
+# The checks review-contracts.txt ties to the changed paths; what ran goes into
+# the evidence.
+CONTRACTS="$(bash scripts/dev/review.sh contracts --staged)" || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh contracts could not run"
+  [ "$rc" = 74 ] && infra "a contract test could not run"
+  exit 3
+}
 bash scripts/dev/review.sh sec --staged || { rc=$?; [ "$rc" = 2 ] && die "review.sh sec could not run"; exit 4; }
 
 # ── 4. the review verdict ────────────────────────────────────────────────────
@@ -322,7 +331,9 @@ print("run.sh[%s]%s: %d passed, %d failed, %d skipped"
 PY
 )"
 [ -n "$SUMMARY" ] || infra "could not read the summary line out of $ARTIFACT"
-EVIDENCE="$SUMMARY @$(git rev-parse --short HEAD) $(date -Is)"
+EVIDENCE="$SUMMARY"
+[ "$CONTRACTS" = "contracts: none" ] || EVIDENCE+=" · $CONTRACTS"
+EVIDENCE+=" @$(git rev-parse --short HEAD) $(date -Is)"
 # Both go into a line of the ledger, and a ledger line is a line: a newline in a
 # review note or in a verdict's reviewer field would write free text — a forged
 # heading, a forged evidence line — into the file that IS the progress truth.
