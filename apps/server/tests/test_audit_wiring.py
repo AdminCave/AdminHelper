@@ -6,8 +6,9 @@
 land the expected audit_log rows with the right actor (user vs API key)."""
 
 import secrets
+from datetime import timedelta
 
-from app.core.auth import hash_api_key
+from app.core.auth import create_access_token, hash_api_key
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit.models import AuditLog
 
@@ -99,6 +100,71 @@ def test_failed_login_is_audited(test_client, db_session, admin_user):
 def test_successful_login_is_audited(test_client, db_session, admin_user):
     _login(test_client, "admin", "adminpass")
     rows = _rows(db_session, "auth.login")
+    assert len(rows) == 1
+    assert rows[0].actor_label == "admin"
+    assert rows[0].actor_type == "user"
+
+
+def _logout(client, **kw):
+    r = client.post("/api/auth/logout", **kw)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"detail": "Abgemeldet"}
+    set_cookie = r.headers.get("set-cookie", "").lower()
+    assert "refresh_token=" in set_cookie and "max-age=0" in set_cookie
+    return r
+
+
+def test_logout_without_a_token_is_not_audited(test_client, db_session):
+    _logout(test_client)
+    assert _rows(db_session, "auth.logout") == []
+
+
+def test_logout_with_an_invalid_bearer_is_not_audited(test_client, db_session):
+    _logout(test_client, headers={"Authorization": "Bearer garbage"})
+    assert _rows(db_session, "auth.logout") == []
+
+
+def test_repeated_logouts_without_a_token_write_nothing(test_client, db_session):
+    for _ in range(50):
+        _logout(test_client)
+    assert _rows(db_session, "auth.logout") == []
+
+
+def test_logout_with_only_an_expired_access_token_is_not_audited(
+    test_client, db_session, admin_user
+):
+    expired = create_access_token({"sub": "admin"}, expires_delta=timedelta(minutes=-5))
+    _logout(test_client, headers={"Authorization": f"Bearer {expired}"})
+    assert _rows(db_session, "auth.logout") == []
+
+
+def test_logout_twice_with_the_same_tokens_is_audited_once(test_client, db_session, admin_user):
+    login = test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    access, refresh = login.json()["access_token"], login.json()["refresh_token"]
+    kw = {"headers": {"Authorization": f"Bearer {access}"}, "json": {"refresh_token": refresh}}
+    _logout(test_client, **kw)
+    _logout(test_client, **kw)
+    assert len(_rows(db_session, "auth.logout")) == 1
+
+
+def test_logout_with_only_the_cookie_names_the_user(test_client, db_session, admin_user):
+    test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert test_client.cookies.get("refresh_token")
+    _logout(test_client)  # no Authorization header, no body: only the cookie
+    rows = _rows(db_session, "auth.logout")
+    assert len(rows) == 1
+    assert rows[0].object_label == "admin"
+
+
+def test_logout_with_bearer_and_body_is_audited_once(test_client, db_session, admin_user):
+    login = test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    access, refresh = login.json()["access_token"], login.json()["refresh_token"]
+    _logout(
+        test_client,
+        headers={"Authorization": f"Bearer {access}"},
+        json={"refresh_token": refresh},
+    )
+    rows = _rows(db_session, "auth.logout")
     assert len(rows) == 1
     assert rows[0].actor_label == "admin"
     assert rows[0].actor_type == "user"

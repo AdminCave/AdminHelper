@@ -650,9 +650,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression $step ($DATE) — Task-Ledger
-Status: geplant · Branch: fix/$1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: geplant · Branch: feature/$1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Roadmap: $rid · Quelle: Wochenlauf $STAMP
-Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (\`/test\`)
+Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (\`/test\`: \`bash scripts/tests/run.sh all --strict --step "$step"\`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
@@ -661,7 +661,7 @@ Komponente: (aus dem Schritt ableiten)
 Änderung: erst den Fehler reproduzieren, dann die Ursache beheben — kein Workaround, der den Schritt nur wieder grün färbt.
 Beweis: $BRANCH@$COMMIT · \`bash scripts/tests/run.sh all --strict --step "$step"\` → rot mit \`$marker\` (erste Box 3x, frische Zweit-VM), grün auf \`$base\`
 Dedup-Key: reg:$slug
-${head_line}Verify: \`bash scripts/tests/run.sh all --strict --step "$step"\` auf einer Box (über \`/test\`), danach \`bash scripts/tests/run.sh quick\`
+${head_line}Verify: bash scripts/dev/verify.sh <komponente> --strict
 
 ## Beweis (heavy.sh, $STAMP)
 - Schritt \`$step\` war auf der ersten Box 3x rot, jedes Mal mit demselben Marker: \`$marker\`

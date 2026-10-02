@@ -21,19 +21,28 @@
 # not lift it (Kevin, 2026-09-27): on 2026-09-25 a reviewer cleaned up with
 # `rm -rf /tmp/tmp.*` and took the fixtures of every other session along. That
 # covers a loop over such a glob that deletes in its body (`for d in /tmp/x*`,
-# `… | while read d`) and `… | xargs rm` behind it. One level deeper is somebody's
-# own directory (a scratchpad, an mktemp dir) and stays free: "anywhere below
-# /tmp" hit 13 legitimate scratchpad cleanups in 34 513 real commands.
+# `for d in $(ls /tmp/x*)`, `… | while read d`), `… | xargs rm` behind it (also
+# `|&`, `xargs sh -c 'rm …'`, a `grep -l` as the lister), an operand after `--`,
+# and a glob ABOVE the root at any depth (`/t*/claude-1000/*`, R-0109). One
+# level deeper is somebody's own directory (a scratchpad, an mktemp dir) and
+# stays free: "anywhere below /tmp" hit 13 legitimate scratchpad cleanups in
+# 34 513 real commands. Not seen: a list read by `mapfile`/`readarray` or a
+# process substitution, a list without a glob whose paths are built at runtime
+# (`ls /tmp | while read d; do rm -rf /tmp/$d`), a list piped into a shell
+# without xargs (`… | sh -c 'xargs rm'`, `… | sed 's/^/rm /' | sh`), and
+# `cat … | xargs rm` (the file's content, not names).
 #
 # The same holds for the ways past the pre-commit hook (R-0102, Kevin
-# 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git -c
+# 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git am -n`
+# and its long form (pre-applypatch is the one hook git am runs), `git -c
 # core.hooksPath=…` (and its GIT_CONFIG_* twins), and `git config … core.hooksPath`
 # unless it only reads, or dropping the whole `core` section. Kevin's own shell is
 # untouched: the hook sees only what the model runs. Not seen, like the write
-# gaps below: a git alias for `commit -n`, `.git/config` written directly (it is
+# gaps below: a git alias for `commit -n` or `am -n`, `.git/config` written directly (it is
 # no harness path), a hooksPath brought in through `include.path`, `git config
 # --edit`, `eval` or a command substitution, git-commit called by its exec path,
-# plumbing (`commit-tree`, `update-ref`) and `chmod -x` on the hook.
+# and plumbing (`commit-tree`, `update-ref`). `chmod -x` on a hook is a write to
+# a harness path (below), so the harness rule, not this one, covers it.
 #
 # Always exits 0: exit 2 would block every call whatever the JSON says, and any
 # other non-zero exit blocks nothing — the call goes on through the normal
@@ -42,8 +51,9 @@
 #
 # Bash commands are BEST EFFORT and deliberately narrow: only the shapes that
 # actually write — a `>`/`>>` redirection, `sed -i`, `tee`, `cp`/`mv`/`install`,
-# and the ones that take a file away entirely (`rm`, `truncate`, `ln -sf`, `dd
-# of=`) — are inspected, and only when they are the segment's COMMAND, so reading a
+# the ones that take a file away entirely (`rm`, `truncate`, `ln -sf`, `dd
+# of=`), and the ones that change what it is (`chmod`, `chown`, `chgrp`) — are
+# inspected, and only when they are the segment's COMMAND, so reading a
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
 # The command is tokenized before it is split into segments, so a `|` or `&&`
 # inside a quoted string (a commit message, say) is text and not a pipeline; a
@@ -58,7 +68,9 @@
 # (`$VAR/CLAUDE.md`, `rm -rf "$D"/*` — the hook cannot resolve a variable other
 # than $TMPDIR), `find … -exec sh -c 'rm …'`, a loop fed by a process substitution
 # (`done < <(ls /tmp/x*)`),
-# `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), and the
+# `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), a
+# quoted string of operator characters only (`-m ");"`, read as the operators
+# once shlex has dropped the quotes), and the
 # three git ways of restoring content over a file — `git apply <patch>`,
 # `git checkout <rev> -- <pfad>`, `git restore --source=<rev> -- <pfad>`. For the
 # runner the settings cover those (checkout/restore/stash are denied outright,
@@ -128,8 +140,17 @@ WRAPPERS = {
 KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!"}
 # timeout's duration (`10`, `10s`, `1.5m`, `.5`) is no command word either.
 DURATION = re.compile(r"^([0-9]+\.?[0-9]*|\.[0-9]+)[smhd]?$")
-SEPARATORS = {"|", "||", "&&", ";", "&", ";;", ";&", ";;&"}
+SEPARATORS = {"|", "|&", "||", "&&", ";", "&", ";;", ";&", ";;&"}
+# Pipes hand what the left side lists on to the right side; `|&` is `2>&1 |`.
+PIPES = {"|", "|&"}
+# The shell operators, longest first: shlex hands a run of punctuation over as
+# ONE token (`$(ls /tmp/x*); do` ends in `);`), and each has to be split back
+# into the operators it is made of.
+OPERATORS = sorted(SEPARATORS | {"(", ")", "<", ">", ">>", "<<", "<<<", ">&", "<&", "&>", "&>>",
+                                 ">|", "<>"}, key=len, reverse=True)
 DELETERS = {"rm", "rmdir", "unlink", "shred"}
+# A chmod mode word: octal, or symbolic (`+x`, `u=rw,go-w`).
+CHMOD_MODE = re.compile(r"^([0-7]+|[ugoa]*[-+=].*)$")
 
 # The temp roots. `$TMPDIR` as TEXT stands for itself (a placeholder root no
 # real path has), its current VALUE is a root as well.
@@ -216,21 +237,26 @@ def glob_dir(word, base):
 
 
 def reaches_root(pattern):
-    """The glob, with its glob character above a temp root, can match that root
-    itself or an entry right in it: `/tmp*`, `/t*`, `/*/tmp.*`, and `tmp*`
-    after `cd /` all take /tmp along. Deeper matches are somebody's own."""
+    """The glob can match a temp root itself or an entry right in it: `/tmp*`,
+    `/t*`, `/*/tmp.*`, and `tmp*` after `cd /` all take /tmp along. With its
+    glob character ABOVE the root it reaches every depth: `/t*/claude-1000/*`
+    and `cd /t* && rm -rf claude-1000/*` walk into every session's directories
+    (R-0109). A glob that only starts below the root, in a path that names the
+    root literally, matches deeper entries only — somebody's own."""
     comps = pattern.strip("/").split("/")
     for r in TMP_ROOTS:
         rc = r.strip("/").split("/")
-        if r != TMPDIR_ROOT and len(comps) in (len(rc), len(rc) + 1) and all(
+        if r == TMPDIR_ROOT or len(comps) < len(rc) or not all(
                 fnmatch.fnmatchcase(c, p) for c, p in zip(rc, comps)):
+            continue
+        if len(comps) <= len(rc) + 1 or any(has_glob(p) for p in comps[:len(rc)]):
             return True
     return False
 
 
 def tmp_glob(word, base):
     """A glob whose literal directory is a shared temp directory, or one that
-    can match a temp root itself; or a shared directory itself (`rm -rf /tmp`
+    reaches a temp root (see reaches_root); or a shared directory itself (`rm -rf /tmp`
     takes the same as `rm -rf /tmp/*`). A bare `$TMPDIR` is left to the
     variable rule: `rm -rf "$TMPDIR"` after `export TMPDIR=$(mktemp -d …)` is
     cleanup."""
@@ -296,8 +322,9 @@ def commit_skips_hook(rest):
             # git takes any unambiguous prefix of a long option.
             if len(name) >= len("--no-veri") and "--no-verify".startswith(name):  # review: ok the flag this guard refuses
                 return a
-            # ... value options included: `--mess "-n x"` is a message.
-            if "=" not in a and len(name) > 3 and any(o.startswith(name) for o in COMMIT_LONG_VALUE):
+            # ... value options included: `--mess "-n x"` is a message, and git
+            # takes a prefix down to one letter (`--m -- -n` skips the hook).
+            if "=" not in a and len(name) > 2 and any(o.startswith(name) for o in COMMIT_LONG_VALUE):
                 j += 1
         elif a.startswith("-") and len(a) > 1:
             for k, c in enumerate(a[1:]):
@@ -306,6 +333,42 @@ def commit_skips_hook(rest):
                 if c in COMMIT_SHORT_VALUE or c in "Su":
                     # The rest of the cluster is the value; at its end, the next word.
                     if c in COMMIT_SHORT_VALUE and k == len(a) - 2:
+                        j += 1
+                    break
+        j += 1
+    return None
+
+
+# `git am` options whose value may be the NEXT word: skipped, so that
+# `--resolvemsg -- -n` is read as git reads it — `--` is the message, -n a flag.
+AM_LONG_VALUE = {"--resolvemsg", "--directory", "--exclude", "--include", "--whitespace",
+                 "--patch-format", "--quoted-cr", "--empty"}
+
+
+def am_skips_hook(rest):
+    """`git am -n` (and its long form) skips pre-applypatch, the one hook git am
+    runs (R-0110 T8). In a cluster, -C and -p take the rest as their value, or
+    the next word at its end (`-C1`, `-C 1`); -S takes only an attached key id."""
+    j = 0
+    while j < len(rest):
+        a = rest[j]
+        if a == "--":
+            break
+        if a.startswith("--"):
+            name = a.split("=", 1)[0]
+            # git am has no other long option under --no-v, so every prefix from
+            # there on is the flag (commit needs more: --no-verbose).
+            if len(name) >= len("--no-v") and "--no-verify".startswith(name):  # review: ok the flag this guard refuses
+                return a
+            # git takes any unambiguous prefix, down to one letter (`--d`).
+            if "=" not in a and len(name) > 2 and any(o.startswith(name) for o in AM_LONG_VALUE):
+                j += 1
+        elif a.startswith("-") and len(a) > 1:
+            for k, c in enumerate(a[1:]):
+                if c == "n":
+                    return a
+                if c in "CpS":
+                    if c in "Cp" and k == len(a) - 2:
                         j += 1
                     break
         j += 1
@@ -356,9 +419,29 @@ def git_skips_hook(args):
     if sub == "commit":
         hit = commit_skips_hook(rest)
         return "git commit " + hit if hit else None
+    if sub == "am":
+        hit = am_skips_hook(rest)
+        return "git am " + hit if hit else None
     if sub == "config" and config_sets_hooks(rest):
         return "git config " + " ".join(rest)
     return None
+
+
+def grep_lists(args):
+    """grep prints file NAMES with -l/-L (also in a cluster like -rl), read
+    like getopt: in `-el` the l is -e's pattern, not a flag."""
+    for a in args:
+        if a in ("--files-with-matches", "--files-without-match"):
+            return True
+        if a == "--":
+            break
+        if a.startswith("-") and not a.startswith("--"):
+            for c in a[1:]:
+                if c in "lL":
+                    return True
+                if c in "efmABCdDX":
+                    break
+    return False
 
 
 def tokenize(cmd):
@@ -368,9 +451,25 @@ def tokenize(cmd):
     lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     try:
-        return list(lex)
+        return split_operators(list(lex))
     except ValueError:
         return cmd.split()
+
+
+def split_operators(tokens):
+    """A token of punctuation only that is no single operator — `);`, `));`,
+    `)|` — becomes the operators it is made of, longest match first; without
+    that, the body of `for d in $(ls /tmp/x*); do rm …` never became a segment."""
+    out = []
+    for t in tokens:
+        if t in OPERATORS or not t or any(c not in "();<>|&" for c in t):
+            out.append(t)
+            continue
+        while t:
+            op = next((o for o in OPERATORS if t.startswith(o)), t[0])
+            out.append(op)
+            t = t[len(op):]
+    return out
 
 
 def is_redirect(tok):
@@ -410,6 +509,12 @@ def logical_lines(cmd):
                     quote = None
             elif ch in "\"'":
                 quote = ch
+            elif ch == "<" and line[i:i + 3] == "<<<":
+                # A here-string: its word is data on THIS line, and no body
+                # follows — read as `<<` it took `<` for a delimiter and hid
+                # every line after it (R-0126).
+                i += 3
+                continue
             elif ch == "<" and line[i:i + 2] == "<<":
                 # `<<EOF`, `<<-'EOF'`, `<< "EOF"` — the body is data, not commands.
                 rest = line[i + 2:].lstrip("-").lstrip()
@@ -532,7 +637,9 @@ def run_segment(tok, cwd, depth, state, sep):
     bypasses.extend(w for w in env_words if GIT_CONFIG_ENV.match(w) and "hookspath" in w.lower())
     if not verb:
         return cwd
-    words = [a for a in args if not a.startswith("-")]
+    # After `--` every word is an operand: `rm -rf -- -home-x*` deletes -home-x*.
+    end = args.index("--") if "--" in args else len(args)
+    words = [a for a in args[:end] if not a.startswith("-")] + args[end + 1:]
 
     if verb == "git":
         hit = git_skips_hook(args)
@@ -568,10 +675,10 @@ def run_segment(tok, cwd, depth, state, sep):
         selects = glob
     if any(t in ("while", "until") for t in clean[:i]) and verb != "read":
         state["loops"].append((None, len(deletes)))   # a loop over nothing; `done` pops it
-    if sep == "|":
+    if sep in PIPES:
         # Only a lister hands a glob on: `cat /tmp/*.list | xargs rm` reads them.
         listed = next((w for w in words if has_glob(w) and tmp_glob(w, cwd)), None) \
-            if verb in ("ls", "echo", "printf") else None
+            if verb in ("ls", "echo", "printf") or verb == "grep" and grep_lists(args) else None
         state["pipe"] = piped or selects or listed
 
     if verb == "cd":
@@ -580,12 +687,17 @@ def run_segment(tok, cwd, depth, state, sep):
     if verb in ("bash", "sh", "dash", "zsh"):
         # -c, but also -lc and friends: any flag carrying a c takes the next word
         # as a command string.
+        seen = len(deletes)
         for j, a in enumerate(args):
             if a.startswith("-") and "c" in a:
                 rest = [w for w in args[j + 1:] if not w.startswith("-")]
                 if rest:
                     scan(rest[0], cwd, depth + 1)
                 break
+        # `… | xargs sh -c 'rm -rf "$@"' _` deletes what the pipe carries, like
+        # `… | xargs rm`.
+        if piped and len(deletes) > seen and "xargs" in (os.path.basename(t) for t in clean[:i]):
+            tmp_hits.append(piped)
     elif verb == "sed" and any(
         a == "-i" or a.startswith("-i.") or a.startswith("--in-place") for a in args
     ):
@@ -602,6 +714,21 @@ def run_segment(tok, cwd, depth, state, sep):
         for a in args:
             if a.startswith("of="):
                 out.append(rel(a[3:], cwd))
+    elif verb in ("chmod", "chown", "chgrp"):
+        # `chmod -x scripts/dev/hooks/pre-commit` disarms the hook as surely as
+        # deleting it (R-0110). The mode, owner or group comes first unless
+        # --reference names a file for it; a `-x` mode already left `words`.
+        # getopt takes any unambiguous prefix of --reference (`--ref=`).
+        ops = list(words)
+        refs = [k for k, a in enumerate(args)
+                if len(a.split("=", 1)[0]) >= 5 and "--reference".startswith(a.split("=", 1)[0])]
+        if refs:
+            k = refs[0]
+            if "=" not in args[k] and k + 1 < len(args) and args[k + 1] in ops:
+                ops.remove(args[k + 1])   # the reference file is only read
+        elif ops and (verb != "chmod" or CHMOD_MODE.match(ops[0])):
+            ops = ops[1:]
+        out.extend(rel(w, cwd) for w in ops)
     elif verb in ("cp", "mv", "install"):
         # An explicit -t/--target-directory, or the last word, is the target.
         target = None

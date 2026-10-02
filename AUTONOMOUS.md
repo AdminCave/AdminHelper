@@ -249,9 +249,11 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   und der ganze VM-Weg (`python3 scripts/vm/vm.py <verb>`, `scripts/vm/*.sh`,
   `scripts/tests/multibox.sh`, `scripts/tests/heavy.sh`) laufen **ohne Nachfrage** —
   innerhalb des Pools sind Klonen, Baken und Zerstören freigegeben (CLAUDE.md §2,
-  2026-09-08). Seit Stufe 4 in `permissions.ask`: **`git add`, `git commit`, `git checkout`,
-  `git restore`, `git stash`** — der Weg zum Commit führt über `task-close.sh`, und die drei
-  Recovery-Verben löschen im Zweifel ungestagte Arbeit. Ebenfalls nicht freigegeben
+  2026-09-08). **`git add`, `git commit`, `git checkout`, `git restore`, `git stash`** sind in
+  den Runner-Settings hart verboten und in Kevins Sessions frei — eine Abfrage, die immer
+  bestätigt wird, hielt nur den Bau auf; committet wird über `task-close.sh`, und die drei
+  Recovery-Verben löschen im Zweifel ungestagte Arbeit. Unter `permissions.ask` stehen nur
+  `bootstrap_linux.sh`, `harness.sh off` und `ledger.sh mark-done`. Nicht freigegeben
   (der eine bewusste Endstopp): `git push`, `gh pr create`, alles unter `rm`/`reset --hard`,
   `harness.sh off` und `ledger.sh mark-done` (der Kill-Switch des Wächters und der Haken
   ohne Lauf sind Kevins Handgriffe, nicht die des Modells) und `scripts/vm/bootstrap_linux.sh` — das einzige Skript, das die Maschine
@@ -268,9 +270,12 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   `harness.sh off` — den **Kevin** setzt: ein Modell, das seinen eigenen Wächter abschalten
   darf, hat keinen. Zwei Regeln gelten dagegen **in jedem Modus**, auch interaktiv und auch
   mit gesetztem Kill-Switch: kein Löschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`,
-  `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>/…` bis zur Session; R-0098), und keine Umgehung des pre-commit-Hooks (R-0102). Der Hook
-  `scripts/dev/hooks/pre-commit` fährt vor jedem Commit `review.sh sec --staged`; scharf wird
-  er je Klon mit `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt es.
+  `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>/…` bis zur Session; R-0098), und keine Umgehung des pre-commit-Hooks (R-0102). Vier Git-Hooks
+  fahren `review.sh sec --staged`: `scripts/dev/hooks/pre-commit` vor jedem Commit,
+  `prepare-commit-msg` bei cherry-pick, revert, rebase (Standard-Backend) und Merge-Commit,
+  `pre-merge-commit` vor einem Merge-Commit, `pre-applypatch` bei `git am` und
+  `rebase --apply` (R-0110); scharf werden sie je Klon mit
+  `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt es.
   Einzelheiten: DEVELOPMENT.md „Harness-Schutz und Kill-Switch".
 - **Kein Auto-Format-Hook.** (Ein früherer PostToolUse-Formatter wurde entfernt: er
   reformatierte ganze Dateien → gegen die Surgical-Regel und die Doku-Commits, und brach

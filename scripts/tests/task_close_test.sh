@@ -64,6 +64,8 @@ if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
   # its own reading, so the fake has to answer that question too.
   th="$(bash "$root/scripts/dev/tree-hash.sh" 2>/dev/null)"
   [ "${FIXTURE_NO_TREE_HASH:-0}" = 1 ] && th=""
+  # The components are what verify.sh got before --strict, as the real one records them.
+  comp="$(printf '%s' "$*" | sed 's/ --strict.*//')"
   cat > "$root/.ah-out/last-verify.json" <<JSON
 {
   "layer": "quick",
@@ -71,7 +73,7 @@ if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
   "failed": 0,
   "skipped": 2,
   "tree_hash": "$th",
-  "component": "scripts"
+  "component": "$comp"
 }
 JSON
 fi
@@ -176,8 +178,8 @@ reset_repo
 
 # ══ --stage ══════════════════════════════════════════════════════════════════
 echo "── --stage ──"
-# From stage 4 on `git add` prompts, so the session cannot stage by hand any
-# more — the closer stages what the task declared, and nothing else.
+# The runner may not run `git add` at all (its settings deny it), so the closer
+# stages what the task declared, and nothing else.
 reset_repo
 printf 'echo staged by the closer\n' >> "$FIX/scripts/dev/tool.sh"
 printf 'unrelated\n' > "$FIX/docs/unrelated.md"
@@ -292,8 +294,8 @@ git -C "$FIX" log -1 --stat | grep -q 'scripts/dev/tool.sh' \
   && git -C "$FIX" log -1 --stat | grep -q 'tasks/fix.md' \
   && ok "the commit carries code AND ledger" || bad "commit content: $(git -C "$FIX" log -1 --stat)"
 grep -q '^### T1 .*\[x\]' "$FIX/tasks/fix.md" && ok "the box is ticked" || bad "box: $(grep '^### T1' "$FIX/tasks/fix.md")"
-grep -q '^Evidenz: run.sh\[quick\]: 7 passed, 0 failed, 2 skipped @' "$FIX/tasks/fix.md" \
-  && ok "the evidence line carries the run's own summary" || bad "evidence: $(grep '^Evidenz:' "$FIX/tasks/fix.md")"
+grep -q '^Evidenz: run.sh\[quick\] scripts: 7 passed, 0 failed, 2 skipped @' "$FIX/tasks/fix.md" \
+  && ok "the evidence line carries the run's own summary and what ran" || bad "evidence: $(grep '^Evidenz:' "$FIX/tasks/fix.md")"
 grep -q '^Review: in-session' "$FIX/tasks/fix.md" && ok "the review line defaults to in-session" || bad "review line"
 reset_repo
 
@@ -344,6 +346,72 @@ c fix T1 -m "feat: prose in the verify line"
   && ok "prose in the Verify: line reaches the suite as no arguments at all" \
   || bad "verify args from prose: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt")"
 grep -q "not a verify.sh call" <<<"$OUT" && ok "and the closer says which check it ran instead" || bad "no note about the verify form"
+reset_repo
+
+# R-0104: the run.sh form of a Verify: line runs what it names, all of it — the
+# close of 5c T2 (`--only web desktop-e2e`) ran web alone and said so nowhere.
+verify_line() {  # verify_line <component> <verify line> — rewrite T1 of the fixture ledger
+  python3 - "$FIX/tasks/fix.md" "$1" "$2" <<'PY'
+import sys
+p, comp, line = sys.argv[1:4]
+s = open(p).read()
+s = s.replace("Komponente: scripts · Dateien: scripts/dev/tool.sh", "Komponente: %s · Dateien: scripts/dev/tool.sh" % comp, 1)
+s = s.replace("Verify: bash scripts/dev/verify.sh scripts --strict", "Verify: " + line, 1)
+open(p, "w").write(s)
+PY
+}
+verify_line web "bash scripts/tests/run.sh quick --strict --only web desktop-e2e"
+touch_tool
+c fix T1 -m "feat: two components"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "web desktop-e2e --strict" ] \
+  && ok "run.sh --only web desktop-e2e -> verify.sh web desktop-e2e --strict" \
+  || bad "run.sh form: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt") out=$OUT"
+grep -q '^Evidenz: run.sh\[quick\] web desktop-e2e: 7 passed' "$FIX/tasks/fix.md" \
+  && ok "the evidence names both components" || bad "evidence: $(grep '^Evidenz:' "$FIX/tasks/fix.md")"
+reset_repo
+verify_line web "bash scripts/dev/verify.sh web desktop-e2e --strict"
+touch_tool
+c fix T1 -m "feat: two components, verify.sh form"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "web desktop-e2e --strict" ] \
+  && ok "verify.sh web desktop-e2e --strict is run as it stands" \
+  || bad "verify.sh list: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt") out=$OUT"
+reset_repo
+verify_line web "bash scripts/tests/run.sh quick --strict --only scripts"
+touch_tool
+rm -f "$FIX/.ah-out/verify-called.txt"
+c fix T1 -m "feat: a list without the task's component"
+[ $rc -eq 2 ] && grep -q "does not name the task's component 'web'" <<<"$OUT" && [ ! -f "$FIX/.ah-out/verify-called.txt" ] \
+  && ok "a Verify: list without the task's component -> exit 2, nothing run" || bad "foreign list: rc=$rc out=$OUT"
+reset_repo
+# Arguments only where the flags end in ` -- `: prose after --strict that holds a
+# ` -- ` of its own is no argument list (the old sed demanded `--strict --`).
+verify_line scripts "bash scripts/dev/verify.sh scripts --strict und danach cargo clippy -- -D warnings"
+touch_tool
+c fix T1 -m "feat: prose after the flags"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "scripts --strict" ] \
+  && ok "a -- in prose after the flags reaches the suite as no arguments" \
+  || bad "prose after flags: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt")"
+reset_repo
+verify_line web "bash scripts/dev/verify.sh all web --strict"
+touch_tool
+rm -f "$FIX/.ah-out/verify-called.txt"
+c fix T1 -m "feat: all next to a component"
+[ $rc -eq 2 ] && grep -q "'all' stands alone" <<<"$OUT" && [ ! -f "$FIX/.ah-out/verify-called.txt" ] \
+  && ok "'all' next to a component -> exit 2 before anything runs" || bad "all plus web: rc=$rc out=$OUT"
+reset_repo
+verify_line scripts "bash scripts/tests/run.sh quick --strict"
+touch_tool
+c fix T1 -m "feat: run.sh without --only"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "scripts --strict" ] && grep -q "run.sh call without --only" <<<"$OUT" \
+  && ok "run.sh without --only: the task's component, and the note says why" \
+  || bad "run.sh without --only: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt") out=$OUT"
+reset_repo
+verify_line web "bash scripts/dev/verify.sh web desktop-e2e --strict -- tests/x.test.ts"
+touch_tool
+rm -f "$FIX/.ah-out/verify-called.txt"
+c fix T1 -m "feat: a list with args"
+[ $rc -eq 2 ] && grep -q "extra arguments need a single component" <<<"$OUT" && [ ! -f "$FIX/.ah-out/verify-called.txt" ] \
+  && ok "a Verify: list with -- args -> exit 2, nothing run" || bad "list plus args: rc=$rc out=$OUT"
 reset_repo
 
 # A Verify: line may name a SECOND command after the first — real ledgers do

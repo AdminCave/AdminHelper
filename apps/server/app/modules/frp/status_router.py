@@ -102,7 +102,7 @@ def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)
                 proxies.extend(_collect_proxies(resp, proxy_type))
 
     tunnels = db.query(FrpTunnel).all()
-    tunnel_map = {t.name: t.to_dict() for t in tunnels}
+    tunnel_map = {t.name: t.to_dict(mask_secrets=True) for t in tunnels}
 
     result = []
     for p in proxies:

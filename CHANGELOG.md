@@ -116,6 +116,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Security
 
+- **npm-Abhaengigkeiten (dev) ohne Audit-Befund (R-0038):** `vitest` und die `@vitest/*`-Pakete
+  stehen in `apps/web` und `apps/desktop/ui` auf 4.1.11 (GHSA-82fw-gwwq-j7x9; Ranges `^4.1.11`).
+  Die Lockfiles dort und in `apps/desktop/e2e` heben `brace-expansion` (GHSA-qhr7-859c-m2p7,
+  GHSA-6j4f-fj2g-mc7p; high), `undici` (GHSA-rfgv-xxqx-mfg5, GHSA-w293-vg96-wgc3; high),
+  `devalue` (GHSA-9rgm-9g3h-6x36) und in e2e `ip-address` (GHSA-j6r3-76f7-8jcv,
+  GHSA-h3mg-xc3c-68pw) auf gefixte Versionen, alles `dev`-Abhaengigkeiten. Vorher meldete
+  `npm audit --audit-level=high`, mit dem der woechentliche Dependency Audit gated, in allen drei
+  Verzeichnissen zwei high-Funde; jetzt ist `--audit-level=moderate` ueberall ohne Befund. Die
+  Lockfiles von web und desktop-ui schreibt einmalig `npx -y npm@11 … --package-lock-only`, weil
+  npm 10.9.8 dabei in arborist abbricht; `npm ci` laeuft mit npm 10 unveraendert.
+
 - **SSRF-Guard (Server und Monitoring):** Die DNS-Aufloesung des Guards lief ueber einen
   geteilten Vier-Worker-Pool. Vier haengende Aufloesungen belegten ihn vollstaendig, jeder
   weitere `is_private_url`-Aufruf lief in seine 5-Sekunden-Frist und meldete fail-closed
@@ -140,8 +151,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   seit der `.in`-Aenderung (gleiche Version, gleiche Hashes). `pytest` gegen die exakten neuen
   Locks unter Python 3.12 gruen — server 968, monitoring 599, ca-issuer 74 —, `pip-audit` ohne Befund.
 
+- **pyjwt 2.13.0 → 2.14.0** im Server (gehashte Lock neu generiert, Untergrenze in `requirements.in`
+  auf `>=2.14.0`): behebt CVE-2026-101917, CVE-2026-102265 bis -102269 und CVE-2026-102271 bis -102274.
+  Vom Dependency-Audit (`pip-audit`) erkannt. Der Changelog 2.13.0 → 2.14.0 enthaelt keine inkompatible Aenderung; `pytest`
+  gegen den exakten neuen Lock unter Python 3.12 gruen (server 682), `pip-audit` ohne Befund.
+
 ### Fixed
 
+- **FRP: U+007F in Konfigurationswerten (Server):** Die Felder, die der Server in die erzeugten
+  FRP-TOML-Dateien schreibt (FRP-Server-Config, Tunnel, Servername), lehnen neben den anderen
+  Steuerzeichen jetzt auch U+007F (DEL) mit 422 ab. TOML verbietet das Zeichen in einem
+  String; eine `frps.toml` damit konnte frps nicht lesen.
 - **Web-Panel: F5 waehrend eine Liste laedt (R-0107):** `apps/web/src/lib/api/client.ts` gibt
   bei einem 2xx, dessen Body sich nicht lesen laesst (Reload bricht die Uebertragung ab, oder
   kein JSON), nicht mehr still `null` zurueck, sondern wirft `ApiError(status, 'Invalid response
@@ -245,6 +265,73 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Eintraege mit.
 
 ### Changed
+
+- **Verify-Zeile, wie sie dasteht (R-0104):** `scripts/dev/verify.sh` nimmt mehrere Komponenten
+  und faehrt sie als einen Lauf `run.sh quick --only <a> <b>` (Argumente nach `--` nur fuer eine
+  Komponente, `all` nur allein). `scripts/dev/task-close.sh` liest die Komponenten aus einer
+  `Verify:`-Zeile in der Form `verify.sh <a> [<b> …] --strict` oder `run.sh <layer> --strict
+  --only <a> [<b> …]` und faehrt genau diese — bisher lief fuer `--only web desktop-e2e` nur
+  `web`. Fehlt die `Komponente:` der Task in der Liste, ist das Exit 2. Die `Evidenz:`-Zeile nennt
+  die gelaufenen Komponenten (`run.sh[quick] web desktop-e2e: …`).
+
+- **diff-scan erkennt mehr stummgeschaltete Tests (R-0082):** `scripts/dev/review.sh diff-scan`
+  wertet jetzt auch geloeschte Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`
+  als entfernte Assertion (ausserhalb einer `*_test.go` bleibt `err.Error()` frei), kennt die
+  Skip-, xfail-, todo- und only-Muster von vitest/jest, Playwright, pytest, Rust (auch
+  `#[ignore = "…"]`) und Go (`t.SkipNow()`), und meldet ein hinzugefuegtes nacktes `return` <!-- review: ok nennt die Muster -->
+  innerhalb eines Tests (Python, Go, Rust, TS/JS). Der Ausweg bleibt `review: ok <grund>` auf
+  der Zeile. Anleitung: `DEVELOPMENT.md` „Task schliessen".
+
+- **Commit-Hooks auch bei merge, cherry-pick, revert, rebase und git am (R-0110):** Neben
+  `scripts/dev/hooks/pre-commit` fahren jetzt `prepare-commit-msg` (cherry-pick, revert, jeder
+  Commit eines rebase mit dem Standard-Backend, Merge-Commit), `pre-merge-commit` (vor einem
+  Merge-Commit) und `pre-applypatch` (`git am`, `git rebase --apply`)
+  `review.sh sec --staged` — bisher kam eine private Datei aus einem anderen Branch ueber diese
+  Wege ungeprueft in den Verlauf. Dass der Sequencer `prepare-commit-msg` ruft, ist nicht
+  dokumentiert, aber mit git 2.47.3 gemessen und im Test festgehalten. `harness.sh status`
+  prueft alle vier Hooks und nennt einen fehlenden; der Waechter verweigert `git am -n` wie
+  `git commit -n`; `chmod`, `chown` und `chgrp` auf einen
+  Harness-Pfad zaehlen fuer den Waechter als Schreiben. Wirksam je Worktree mit dem Branch,
+  der die Hooks traegt. Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
+
+- **Temp-Waechter erkennt mehr Formen (R-0109):** `scripts/dev/hooks/harness-guard.sh`
+  verweigert jetzt auch einen Glob **ueber** einer Temp-Wurzel in jeder Tiefe
+  (`/t*/claude-1000/*`, `cd /t* && rm -rf claude-1000/*`) — bisher zaehlte nur ein Treffer auf
+  der Wurzel oder direkt darin, so dass ein solcher Glob die Verzeichnisse aller Sessions
+  erreichte. Dazu erkennt der Parser einen Operanden nach `--`, `|&` als Pipe, `);` als zwei
+  Operatoren (`for d in $(ls -d /tmp/tmp.*); do rm …`), `xargs sh -c 'rm …'` wie `xargs rm`
+  und `grep -l`/`-L` als Lister. Frei bleiben die Aufraeumer im eigenen Verzeichnis; die
+  verbleibenden Grenzen (Prozess-Substitution, `mapfile`, Laufzeit-Pfade ohne Glob,
+  `cat … | xargs rm`) stehen in `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
+- **Audit: Logout nur, wenn eine Sitzung endet (Server, R-0105):** `POST /api/auth/logout` schreibt
+  `auth.logout` nur noch, wenn der Aufruf einen Token gesperrt hat (Bearer oder Refresh-Token aus Body
+  oder Cookie). Ein Logout ohne Token, mit ungueltigem oder abgelaufenem Token oder mit denselben
+  Tokens ein zweites Mal hinterlaesst keinen Eintrag; Antwort (`200`) und Cookie-Loeschung bleiben
+  gleich. Ein Logout nur mit Cookie traegt jetzt den Benutzernamen. Doku:
+  `docs/developer/api-reference.html`, `docs/admin/betrieb.html`.
+- **FRP: leere STCP-Secrets werden gefuellt (Server):** Eine Datenmigration gibt jedem
+  stcp-Tunnel, dessen Secret leer ist, ein eigenes zufaelliges Secret; der Generator laesst
+  einen stcp-Tunnel ohne Secret aus der frpc- und Visitor-Konfiguration weg. Der Agent holt die
+  neue Konfiguration von selbst (Provision-Hash); ein laufender Desktop-Visitor eines solchen
+  Tunnels braucht einen Tunnel-Neustart.
+- **FRP: Tunnel-Antworten ohne Secret (Server):** Die JSON-Antworten von `/api/frp/tunnels`,
+  `/api/frp/status`, `/api/frp/server-config/{id}` und `/api/servers` liefern `secretKey` als
+  `null`; das Feld bleibt, das Schema aendert sich nicht. Das Secret steht nur noch in den
+  erzeugten TOML-Dateien und im Provisioning. Ein `PUT /api/frp/tunnels/{id}` mit `secret_key`
+  `null` oder `""` laesst das gespeicherte Secret unveraendert; wird ein Tunnel per `PUT` zu STCP
+  und hat kein Secret, erzeugt der Server eins. Doku: `docs/developer/api-reference.html`.
+- **Ein ruff ueberall (R-0074):** `apps/server/requirements-dev.txt` pinnt `ruff==0.15.20`
+  statt des Bodens `ruff>=0.15`, und `scripts/dev/toolchain-lockstep.sh` verlangt Gleichheit
+  mit `ci.yml` und `scripts/vm/bootstrap_linux.sh` statt nur „nicht darueber". Mit dem Boden
+  blieb ein vorhandenes ruff 0.16.x im `AH_VENV` liegen und meldete ueber die vier Lint-Pfade
+  841 Treffer, die CI mit 0.15.20 nie sah. Der Schritt `server-pytest` zieht das `AH_VENV`
+  beim naechsten Lauf auf 0.15.20 zurueck. Dazu verlangt `ruff.toml` per
+  `required-version = "==0.15.20"` genau diese Version, und der Lockstep prueft auch diese
+  Stelle: ein anderes ruff im `PATH` bricht mit Exit 2 ab, statt still andere Regeln
+  anzuwenden (der Format-Hook `scripts/dev/format-file.sh` formatiert dann still nicht).
+  Auch das Tool-Venv des Runners (`VENV_PKGS` in `scripts/dev/runner-setup.sh`, das erste
+  ruff in seinem `PATH`) installiert `ruff==0.15.20`, als fuenfte Stelle im Lockstep; auf
+  einem bestehenden Runner wirkt das nach erneutem `sudo bash scripts/dev/runner-setup.sh`.
 
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen

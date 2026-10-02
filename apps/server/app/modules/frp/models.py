@@ -61,7 +61,7 @@ class FrpServerConfig(Base):
             "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
         }
         if include_tunnels:
-            result["tunnels"] = [t.to_dict() for t in self.tunnels]
+            result["tunnels"] = [t.to_dict(mask_secrets=mask_secrets) for t in self.tunnels]
         return result
 
 
@@ -108,7 +108,9 @@ class FrpTunnel(Base):
     def generate_secret() -> str:
         return secrets.token_urlsafe(32)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, mask_secrets: bool = False) -> dict[str, Any]:
+        # mask_secrets: JSON responses carry secretKey as None; the secret is only
+        # needed in the generated TOML and the provisioning, which read the attribute.
         return {
             "id": self.id,
             "serverId": self.server_id,
@@ -118,7 +120,7 @@ class FrpTunnel(Base):
             "protocol": self.protocol,
             "localIp": self.local_ip,
             "localPort": self.local_port,
-            "secretKey": self.secret_key,
+            "secretKey": None if mask_secrets else self.secret_key,
             "customDomains": self.custom_domains,
             "visitorPort": self.visitor_port,
             "connectionId": self.connection_id,

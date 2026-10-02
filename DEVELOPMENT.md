@@ -141,7 +141,15 @@ ruff format apps/server apps/monitoring apps/ca-issuer scripts   # Formatieren
 `ruff`, ganz `scripts/` im Schritt `ruff-vm` (Key `scripts`; die Id stammt aus der
 Zeit, als er nur `scripts/vm` abdeckte) — und findet ruff auch dann, wenn es nicht
 im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job `python-lint`
-prueft genau diese vier Pfade mit dem gepinnten ruff.
+prueft genau diese vier Pfade mit dem gepinnten ruff. `apps/server/requirements-dev.txt`
+pinnt mit `ruff==` dieselbe Version wie `ci.yml` und `scripts/vm/bootstrap_linux.sh`
+(kein Boden), ebenso `VENV_PKGS` in `scripts/dev/runner-setup.sh` fuer das Tool-Venv des
+Runners; `scripts/dev/toolchain-lockstep.sh` prueft die Gleichheit. Ein anderes
+ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf diese
+Version zurueck. `ruff.toml` verlangt sie zusaetzlich per `required-version`: jedes
+andere ruff bricht in diesem Baum mit Exit 2 ab, statt still andere Regeln anzuwenden —
+auch im Format-Hook `scripts/dev/format-file.sh`, der dann still gar nicht formatiert
+(sein Exit bleibt 0).
 
 ### Python-Tests lokal (ohne Docker)
 
@@ -209,18 +217,21 @@ Komponenten-Suite startet. Es sourct `.devenv.sh` (bzw. `$AH_DEVENV`), loest
 `AH_TEST_DB` auf und delegiert an `scripts/tests/run.sh`:
 
 ```bash
-bash scripts/dev/verify.sh <komponente> [--strict] [--tree <pfad>] [-- <args>]
+bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--tree <pfad>] [-- <args>]
 
 bash scripts/dev/verify.sh monitoring --strict           # eine Komponente
+bash scripts/dev/verify.sh web desktop-e2e --strict      # mehrere, in einem Lauf
 bash scripts/dev/verify.sh server -- tests/test_auth.py  # gezielt eine Datei
 bash scripts/dev/verify.sh all --strict                  # der ganze quick-Layer
 bash scripts/dev/verify.sh web --tree ../lane-b          # ein anderer Worktree
 ```
 
 Komponenten: `server monitoring ca-issuer agent desktop desktop-rs desktop-ui
-desktop-e2e web scripts` und `all`. Ein Lauf, der die Suite erreicht, hinterlaesst
-`.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component`,
-`args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
+desktop-e2e web scripts` und `all` (nur allein). Mehrere Komponenten werden ein Lauf
+`run.sh quick --only <a> <b>`; Argumente nach `--` gibt es nur fuer eine Komponente, sonst
+Exit 2. Ein Lauf, der die Suite erreicht, hinterlaesst
+`.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component` — bei mehreren die
+Liste —, `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und
 loescht eine aeltere: veraltete Evidenz ist schlechter als fehlende.
 
@@ -410,17 +421,25 @@ bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage --review-note "approve
 
 `--stage` stagt die Pfade aus der `Dateien:`-Zeile der Task (nur die, nie `git add -A`;
 Verzeichnisse werden abgelehnt, Loeschungen mitgenommen).
-Das ist kein Komfort, sondern die Folge derselben Stufe: `git add` steht seit Stufe 4 unter
-`ask`, ein Lauf, der von Hand stagen will, bleibt im Permission-Prompt stehen.
+Das ist kein Komfort: beim Runner ist `git add` hart verboten, ein autonomer Lauf, der von
+Hand stagen will, kommt nicht weiter; in Kevins Sessions ist es frei.
 
 `task-close.sh` laeuft **ausserhalb** der Modell-Session und macht fuenf Dinge in
 dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
 (halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash merken; (2) das
-`Verify:` der Task als `verify.sh <komponente> --strict`; (3) `review.sh diff-scan`
-(abgeschaltete Tests im Diff; ein ganzer Test darf gehen, wenn die Task ihn schon committet
+`Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
+--strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
+`verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
+Prosa-Zeile faehrt die Komponente der Task, mit Hinweis); (3) `review.sh diff-scan`
+(abgeschaltete Tests im Diff: Skip-, xfail-, todo- und only-Muster von pytest, vitest/jest,
+Playwright, Rust und Go, `|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
+Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…` — und ein nacktes `return` in
+einem Test; eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
+die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
-mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` und **ein** Commit
+mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` (sie nennt die gelaufenen
+Komponenten, etwa `run.sh[quick] web desktop-e2e: 2 passed, 0 failed, 16 skipped`) und **ein** Commit
 mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
 `aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
 `ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
@@ -446,9 +465,14 @@ Artefakt des Laufs erzeugt, den es selbst gefahren hat. Deshalb steht `mark-done
 Settings unter `ask` und beim Runner im Deny. Eine Zeile mit `# review: ok <grund>`
 nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
 
-`git add`, `git commit`, `git checkout`, `git restore` und `git stash` stehen in
-`.claude/settings.json` seit Stufe 4 unter `ask`: der Weg zum Commit fuehrt ueber
-`task-close.sh`, und die drei Recovery-Verben loeschen im Zweifel ungestagte Arbeit.
+`git add`, `git commit`, `git checkout`, `git restore` und `git stash` sind in den
+Runner-Settings (`scripts/dev/runner-settings.json`) hart verboten und in Kevins Sessions
+frei — eine Abfrage, die immer bestaetigt wird, hielt nur den Bau auf (zwei Worker verloren
+daran je 45 Minuten). Unter `permissions.ask` in `.claude/settings.json` stehen nur
+`bootstrap_linux.sh`, `harness.sh off` und `ledger.sh mark-done`, und
+`scripts/tests/hooks_test.sh` haelt fest, dass die Git-Verben dort nicht zurueckkehren. Der Weg
+zum Commit fuehrt ueber `task-close.sh`; die drei Recovery-Verben loeschen im Zweifel
+ungestagte Arbeit.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
 `## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**
@@ -593,23 +617,34 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
   bzw. `-exec rm`, eine Schleife ueber so einen Glob, in deren Rumpf geloescht wird (`for d in
   /tmp/tmp.*; do …`, `… | while read d; do …`, auch ueber `cd "$d"` oder `bash -c`), und `… |
   xargs rm` hinter einem Lister (`ls`, `echo`, `printf`, `find`) oder hinter einer solchen
-  Schleife. Frei bleibt alles eine Ebene tiefer, also im eigenen Verzeichnis
-  (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis `/tmp/foo.XXXX/*`), dazu Pfade hinter einer
-  Variablen (`rm -rf "$W"/*` — der Hook kann sie nicht aufloesen), Globs im eigenen Checkout
-  und derselbe Text in einer Commit-Message oder einem Here-Doc. Die Grenze ist gemessen:
+  Schleife. Ein Glob **ueber** der Wurzel zaehlt in jeder Tiefe (`/t*/claude-1000/*`,
+  `cd /t* && rm -rf claude-1000/*`, R-0109). Frei bleibt ein Glob, der erst eine Ebene
+  tiefer beginnt, also im eigenen Verzeichnis (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis
+  `/tmp/foo.XXXX/*`), dazu Pfade hinter einer Variablen (`rm -rf "$W"/*` — der Hook kann sie
+  nicht aufloesen), Globs im eigenen Checkout und derselbe Text in einer Commit-Message oder
+  einem Here-Doc. Die Grenze ist gemessen:
   „irgendwo unter `/tmp`" traf in 34 513 echten Befehlen 13 legitime Aufraeumer in
-  Scratchpads. Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'` und eine
-  Schleife, die ihre Liste per Prozess-Substitution bekommt (`done < <(ls …)`). Die Regel dazu
+  Scratchpads. Erkannt werden auch ein Operand nach `--`
+  (`cd /tmp/claude-<uid> && rm -rf -- -home-x*`), `|&` als Pipe,
+  `for d in $(ls -d /tmp/tmp.*); do …`, `… | xargs sh -c 'rm …'` und `grep -l`/`-L` als Lister
+  (R-0109). Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'`, eine
+  Schleife, die ihre Liste per Prozess-Substitution oder `mapfile`/`readarray` bekommt
+  (`done < <(ls …)`), eine Liste ohne Glob mit einem erst zur Laufzeit gebauten Pfad
+  (`ls /tmp | while read d; do rm -rf /tmp/$d`), eine Liste, die ohne xargs in eine Shell geht
+  (`… | sh -c 'xargs rm'`), und `cat … | xargs rm` (Dateiinhalt statt Namen). Die Regel dazu
   fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
   geloescht wird nur der eigene Pfad, nie per Glob.
 - **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden
-  `git commit --no-verify` und `-n` (auch in `-qn`), `git -c core.hooksPath=…` (auch ueber <!-- review: ok nennt die verweigerte Umgehung -->
+  `git commit --no-verify` und `-n` (auch in `-qn`), `git am -n` und `--no-verify` (fuer <!-- review: ok nennt die verweigerte Umgehung -->
+  `git am` laeuft nur `pre-applypatch`), `git -c core.hooksPath=…` (auch ueber
   `GIT_CONFIG_*`) und `git config … core.hooksPath`, ausser lesend (`--get`), ebenso das
   Entfernen der ganzen `core`-Sektion. Kevins eigene Shell bleibt frei: der Hook sieht nur,
-  was das Modell ausfuehrt. Nicht erfasst: ein git-Alias auf `commit -n`, ein direktes
+  was das Modell ausfuehrt. Nicht erfasst: ein git-Alias auf `commit -n` oder `am -n`, ein direktes
   Schreiben von `.git/config` (Edit, `sed -i`, `>>`), ein `core.hooksPath` ueber
-  `include.path`, `git config --edit`, `eval` oder eine Kommando-Substitution, Plumbing
-  (`commit-tree`) und `chmod -x` auf den Hook.
+  `include.path`, `git config --edit`, `eval` oder eine Kommando-Substitution und Plumbing
+  (`commit-tree`, `update-ref`). `chmod -x` auf einen Hook zaehlt seit R-0110 als Schreiben
+  eines Harness-Pfads wie `sed -i` (ebenso `chown`, `chgrp`): im autonomen Lauf verweigert,
+  interaktiv gewarnt.
 
 **pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
 `review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
@@ -622,14 +657,29 @@ git config core.hooksPath scripts/dev/hooks   # einmal im Haupt-Checkout; die La
 bash scripts/dev/harness.sh status            # pre-commit: armed (core.hooksPath=scripts/dev/hooks)
 ```
 
-Der Pfad ist relativ: jeder Worktree faehrt den Hook **seines** Branches, ein Branch ohne
-die Datei hat keinen (und dessen aelteres `harness.sh` sagt dazu nichts). Fehlt die Datei im
-Checkout oder ist sie nicht ausfuehrbar, meldet `harness.sh status` `NOT armed`. Der Hook
-sperrt fail-closed — ein kaputtes `review.sh` blockiert
-jeden Commit; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
-Nur `git commit` faehrt ihn: `git cherry-pick`, `git revert` (festgehalten in
-`scripts/tests/review_scripts_test.sh`), ein Merge mit automatischem Commit und `rebase`
-(von Hand geprueft mit git 2.47) laufen am pre-commit-Hook vorbei.
+Der Pfad ist relativ: jeder Worktree faehrt die Hooks **seines** Branches, ein Branch ohne
+die Dateien hat keine (und dessen aelteres `harness.sh` sagt dazu nichts). Seit R-0110 liegen
+dort vier Hooks, alle mit demselben `review.sh sec --staged`: `pre-commit` fuer `git commit`,
+`prepare-commit-msg` fuer `git cherry-pick`, `git revert`, jeden Commit, den ein `rebase`
+mit dem Standard-Backend nachspielt, und den Merge-Commit, `pre-merge-commit` fuer
+`git merge` mit eigenem Commit (githooks(5): bricht ab, bevor der Commit entsteht) und
+`pre-applypatch` fuer `git am` und `git rebase --apply` (auch ueber `rebase.backend=apply`),
+die keinen der drei anderen rufen. Dass der Sequencer `prepare-commit-msg`
+ruft, dokumentiert git nicht; gemessen ist es mit git 2.47.3, und
+`scripts/tests/review_scripts_test.sh` haelt es fest — ein git, das damit aufhoert, macht
+diese Faelle rot. `git commit -n` ueberspringt nur `pre-commit`, nicht `prepare-commit-msg`;
+ein gewoehnlicher Commit faehrt `sec` deshalb zweimal (~20 ms je Lauf). Fehlt einer der vier
+im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status` `NOT armed` und nennt
+ihn. Nach einer Weigerung geht es mit `--abort` zurueck (`git cherry-pick`, `merge`, `rebase`,
+`am`, `git revert` einer Serie); ein verweigertes `git revert` eines einzelnen Commits
+hinterlaesst dagegen keinen `REVERT_HEAD` und seine Aenderung gestaged, dort hilft
+`git reset --merge`. Die Hooks sperren
+fail-closed — ein kaputtes `review.sh` blockiert jeden Commit, jeden Merge, cherry-pick,
+rebase und `git am`; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
+Nicht abgedeckt: ein Fast-Forward-Merge (er erzeugt keinen Commit), Plumbing (`commit-tree`,
+`update-ref`) und die Wege am Hook vorbei, die der Waechter nicht sieht (oben). Eine Runner-Regel `Edit(./.git/**)` gibt es bewusst nicht: unter
+`dontAsk` ohne passende Allow-Regel wird so ein Edit schon heute verweigert, und die
+Bash-Schreibwege deckt eine Edit-Regel nicht ab.
 
 ### Runner-User `adminhelper-runner`
 
