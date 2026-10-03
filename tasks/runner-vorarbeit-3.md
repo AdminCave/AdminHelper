@@ -114,8 +114,10 @@ mit `-q` als erstem Argument (curl(1): „If used as the first parameter … the
 `--noproxy '*'` — sonst läse es die `~/.curlrc` des Runners (Review: `insecure`/`connect-to` darin lenkten die Probe auf
 eine Fake-API); mit einer Fake-curlrc gegengeprüft.
 
-### T4 — Wächter: Schreibwege von git über Ausgabe-Optionen zählen als Schreibzugriff  [ ]
+### T4 — Wächter: Schreibwege von git über Ausgabe-Optionen zählen als Schreibzugriff  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @55aafbe4 2026-10-03T14:11:10+02:00
+Review: Opus zwei Runden: R1 sechs wichtig (Cluster, Praefixe, -- als Wert, format-patch --output getrennt, bundle --version, schreibender Pager) -> getopt-Lesen; R2 mittel Pfadangaben-Regel (Verzeichnis/Glob/Magic) -> behoben und getestet; Gegenprobe HEAD-Waechter: 64 Treffer rot, freie gruen
 Änderung: Im git-Zweig (`harness-guard.sh:805`) zählen als Schreibziel, wenn es ein Harness-Pfad ist:
 `--output[=]<f>` bei diff/log/show/range-diff; `-o`/`--output[=]` bei archive; `-o`/`--output-directory` bei
 format-patch (Verzeichnis-Ziel wie bei `cp`, `:897`–`:920`); `bundle create <f>`. Der Befehl hinter `grep -O<cmd>`
@@ -133,6 +135,12 @@ Semantik: `DEVELOPMENT.md:657`–`:660`: „Der `PreToolUse`-Hook `scripts/dev/h
 `>`-Umleitung, `cp`/`mv` und `bash -c` — und verweigert ihn, wenn sie auf der Liste steht.“
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T5)
+Notiz: Gelesen wie git liest (Review, zwei Runden, jede Umgehung mit git 2.47.3 real belegt): Kurz-Cluster links nach
+rechts (`-ko DIR`, `-iO…`), eindeutige Präfixe (`--open=`, `--vers 3`), `--` beendet die Optionen nur bei diff ohne
+`--no-index`, log und show; `format-patch --output <f>` getrennt. Ein Pager hinter `-O` wird mit den Dateien gescannt,
+die er bekommt: eine Pfadangabe zählt nur als existierende Datei ohne Glob/Magic, sonst steht `CLAUDE.md` stellvertretend.
+Bekannte Lücken im Kopfkommentar: `--output` anderer Unterbefehle, Pager/Alias über `-c`/GIT_PAGER, `archive --exec`,
+`git diff` außerhalb eines Repos (liest hinter `--` weiter).
 
 ### T5 — Runner-Hook fail-closed; Doku des Pakets  [ ]
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/tests/hooks_test.sh, DEVELOPMENT.md, CHANGELOG.md

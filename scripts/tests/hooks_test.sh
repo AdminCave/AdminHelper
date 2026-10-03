@@ -1070,6 +1070,77 @@ git log -n 3
 echo GIT_CONFIG_KEY_0=core.hooksPath
 CMDS
 
+# git writes files through its output options (R-0159): --output of diff, log, show
+# and range-diff, -o/--output of archive, the directory of format-patch, the file of
+# bundle create — and grep -O runs a command. Each onto a harness path: denied in an
+# autonomous run, a warning otherwise; relative to -C, past -c. The same options
+# elsewhere, and the plain forms, stay free. A pathspec that names an existing file
+# (notes.txt, in the fixture tree) is all a pager behind -O is handed.
+: > "$TREE/notes.txt"
+gbody() { python3 -c 'import json, sys; print(json.dumps({"command": sys.argv[1]}))' "$1"; }
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(gbody "$cmd")"
+  denied "$OUT" && ok "git output onto a harness path is denied: $cmd" || bad "not denied: $cmd => $OUT"
+  guard inter Bash "$(gbody "$cmd")"
+  [ -z "$OUT" ] && grep -q 'harness path' <<<"$ERR" && ok "and only warned interactively: $cmd" \
+    || bad "interactive: $cmd => out=$OUT err=$ERR"
+done <<'CMDS'
+git diff --output=CLAUDE.md
+git log --output CLAUDE.md
+git show --output=scripts/dev/review.sh HEAD
+git range-diff --output=CLAUDE.md main...HEAD
+git -C scripts diff --output=dev/review.sh
+git -c core.pager=cat diff --output=CLAUDE.md
+git archive -o CLAUDE.md HEAD
+git archive -o.claude/x.tar HEAD
+git archive --output=.claude/x.tar HEAD
+git format-patch -o scripts/dev/hooks HEAD~1
+git format-patch --output-directory=.claude HEAD~1
+git bundle create CLAUDE.md HEAD
+git grep -O"tee CLAUDE.md" needle
+git grep --open-files-in-pager="sh -c 'echo x > CLAUDE.md'" needle
+git grep -iO"tee x" needle -- CLAUDE.md
+git grep --open="sed -i s/a/b/" needle
+git grep --op=tee needle
+git grep -e -- -O"tee CLAUDE.md" needle
+git grep -Otee -e . -- CLAUDE.md
+git format-patch --output CLAUDE.md HEAD~1
+git format-patch --subject-prefix -- -o .claude HEAD~1
+git format-patch --subject-prefix -- --output=CLAUDE.md HEAD~1
+git format-patch -ko .claude HEAD~1
+git format-patch -no .claude HEAD~1
+git range-diff -S -- --output=CLAUDE.md HEAD~1...HEAD
+git diff --no-index -S -- --output=CLAUDE.md a b
+git bundle create --version 3 CLAUDE.md HEAD
+git bundle create --vers 3 CLAUDE.md HEAD
+git grep -O"sed -i s/a/b/" needle -- .
+git grep -O"sed -i s/a/b/" needle -- scripts/dev
+git grep -O"sed -i s/a/b/" needle -- '*.md'
+git grep -O"sed -i s/a/b/" needle -- ':(top)'
+CMDS
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(gbody "$cmd")"
+  [ -z "$OUT" ] && ! grep -q 'harness path' <<<"$ERR" && ok "free: $cmd" || bad "flagged: $cmd => out=$OUT err=$ERR"
+done <<'CMDS'
+git diff --stat
+git diff --output=/tmp/x.diff
+git archive -o /tmp/x.tar HEAD
+git format-patch -o /tmp/patches HEAD~1
+git bundle create /tmp/x.bundle HEAD
+git grep -Oless needle
+git diff -- --output=CLAUDE.md
+git log --oneline -3
+git grep -O needle
+git grep -Ocat -- CLAUDE.md
+git log --grep -- --output=CLAUDE.md
+git diff --stat --output-indicator-new=+
+git bundle create --version 3 /tmp/x.bundle HEAD
+git grep -O"tee /tmp/x" needle -- notes.txt
+git grep -Oless needle -- .
+CMDS
+
 fi   # GUARD_SKIPPED
 
 # ══ runner-env.sh — the shell the runner user works in ═══════════════════════

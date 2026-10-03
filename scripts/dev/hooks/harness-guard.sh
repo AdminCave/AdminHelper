@@ -59,6 +59,13 @@
 # of=`), and the ones that change what it is (`chmod`, `chown`, `chgrp`) — are
 # inspected, and only when they are the segment's COMMAND, so reading a
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
+# git writes through its output options too (R-0159): `--output` of diff, log,
+# show, range-diff and format-patch, `-o`/`--output` of archive, the directory of
+# format-patch, the file of `bundle create`, and `grep -O<cmd>` runs a command on
+# its matches. Not seen there: `--output` of other subcommands (rev-list,
+# diff-tree, whatchanged, …), a pager or alias set through `-c`/GIT_PAGER,
+# `archive --exec`, and `git diff` outside a repository, which reads past `--`
+# like `--no-index` without saying so.
 # What a take-away verb (`rm`, `rmdir`, `shred`, `unlink`, `chmod`/`chown`/
 # `chgrp`, the source of `mv`, the start of a deleting `find`) reaches also
 # hits when harness paths lie BELOW it — `rm -rf .claude`, and a glob through
@@ -520,6 +527,120 @@ def git_skips_hook(args):
     return None
 
 
+def git_writes(args, cwd):
+    """Where a git call writes through its output options (R-0159): files
+    (`--output` of diff/log/show/range-diff/format-patch, `-o`/`--output` of
+    archive, the file of `bundle create`), directories (`-o`/`--output-directory`
+    of format-patch) and the commands `grep -O`/`--open-files-in-pager` runs, with
+    the paths its matches can come from. Read like git reads them: short clusters
+    left to right (`-ko DIR`), unique prefixes of a long option (`--open=`), `--`
+    ending the options only where the revision parser takes it first (diff without
+    --no-index, log, show) — elsewhere a value option can swallow it. Relative
+    paths count from `-C`, as git takes them."""
+    i, gcwd = 0, cwd
+    while i < len(args) and args[i].startswith("-"):
+        a = args[i]
+        if a == "-C" and i + 1 < len(args):
+            gcwd = resolve(args[i + 1], gcwd)
+            i += 2
+            continue
+        i += 2 if a in ("-c", "--config-env", "--git-dir", "--work-tree", "--namespace", "--attr-source") else 1
+    files, dirs, cmds = [], [], []
+    if i >= len(args):
+        return files, dirs, cmds, gcwd
+    sub, rest = args[i], args[i + 1:]
+
+    def long_opt(a, name, least):
+        """The value of `--name[=v]` or a unique prefix of it; "" without a value."""
+        key = a.split("=", 1)[0]
+        if len(key) >= least and name.startswith(key):
+            return a.split("=", 1)[1] if "=" in a else ""
+        return None
+
+    if sub == "bundle" and rest[:1] == ["create"]:
+        j, ops = 1, []
+        while j < len(rest):
+            a = rest[j]
+            if long_opt(a, "--version", 3) == "" and "=" not in a:
+                j += 2
+                continue
+            if not a.startswith("-"):
+                ops.append(a)
+            j += 1
+        return ops[:1], dirs, cmds, gcwd
+
+    revisions_first = sub in ("log", "show") or (sub == "diff" and "--no-index" not in rest)
+    # Short options of these commands that take a value: required ones take the
+    # rest of the cluster or the next word, optional ones only the rest.
+    takes = {"grep": ("efmABC", ""), "format-patch": ("ov", "USGOMCBlX"),
+             "archive": ("o", "")}.get(sub, ("", ""))
+    pathspecs, pager_cmds = [], []
+    j, seen_dashes = 0, False
+    while j < len(rest):
+        a, nxt = rest[j], rest[j + 1] if j + 1 < len(rest) else None
+        if a == "--":
+            if revisions_first:
+                break
+            seen_dashes = True
+            j += 1
+            continue
+        if seen_dashes and sub == "grep":
+            pathspecs.append(a)
+        if a.startswith("--"):
+            out_v = long_opt(a, "--output", 8)
+            dir_v = long_opt(a, "--output-directory", 10) if sub == "format-patch" else None
+            pager_v = long_opt(a, "--open-files-in-pager", 4) if sub == "grep" else None
+            if sub in ("diff", "log", "show", "range-diff", "archive", "format-patch") and out_v is not None:
+                if out_v:
+                    files.append(out_v)
+                elif "=" not in a and nxt is not None:
+                    files.append(nxt)
+                    j += 1
+            elif dir_v is not None:
+                if dir_v:
+                    dirs.append(dir_v)
+                elif "=" not in a and nxt is not None:
+                    dirs.append(nxt)
+                    j += 1
+            elif pager_v:
+                pager_cmds.append(pager_v)
+        elif a.startswith("-") and len(a) > 1:
+            required, optional = takes
+            k = 1
+            while k < len(a):
+                c, tail = a[k], a[k + 1:]
+                if sub == "grep" and c == "O":
+                    if tail:
+                        pager_cmds.append(tail)
+                    break
+                if c in required:
+                    value = tail or nxt
+                    if not tail:
+                        j += 1
+                    if c == "o" and value is not None:
+                        (dirs if sub == "format-patch" else files).append(value)
+                    break
+                if c in optional:
+                    break
+                k += 1
+        j += 1
+    if pager_cmds:
+        # The pager gets the matching files appended. A pathspec that names an
+        # existing file is where its matches come from; anything else — no
+        # pathspec, a directory, a glob, `:(magic)` — can match any tracked file,
+        # so a harness file stands in: a writing pager (`sed -i`, `tee`) is seen,
+        # a reading one (`less`) is not.
+        def plain(p):
+            return not re.search(r"[*?\[]", p) and not p.startswith(":") \
+                and os.path.isfile(p if os.path.isabs(p) else os.path.join(gcwd, p))
+        files_named = [p for p in pathspecs if plain(p)]
+        if not pathspecs or len(files_named) < len(pathspecs):
+            files_named.append(os.path.join(root, "CLAUDE.md"))
+        tail = " ".join(shlex.quote(p) for p in files_named)
+        cmds.extend(c + " " + tail for c in pager_cmds)
+    return files, dirs, cmds, gcwd
+
+
 def grep_lists(args):
     """grep prints file NAMES with -l/-L (also in a cluster like -rl), read
     like getopt: in `-el` the l is -e's pattern, not a flag."""
@@ -806,6 +927,13 @@ def run_segment(tok, cwd, depth, state, sep):
         hit = git_skips_hook(args)
         if hit:
             bypasses.append(hit)
+        files, dirs, cmds, gcwd = git_writes(args, cwd)
+        out.extend(rel(f, gcwd) for f in files)
+        # format-patch writes NNNN-<subject>.patch into the directory, like `cp x dir/`.
+        out.extend(rel(os.path.join(d, "0001-format-patch.patch"), gcwd) for d in dirs)
+        # A pager command is scanned like `bash -c`, with the files it is handed.
+        for c in cmds:
+            scan(c, gcwd, depth + 1)
 
     # A temp glob reaches a delete by name; through a loop over it that deletes
     # in its body, however the body gets there (`rm "$d"`, `cd "$d" && rm ./*`,
