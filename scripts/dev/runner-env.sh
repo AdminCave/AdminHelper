@@ -11,7 +11,9 @@
 # What it establishes, and why each line is there (autonomy stage 4):
 #
 #   ~/.devenv.sh        PATH and AH_TEST_DB of this user — the runner has its own
-#                       Postgres role, never Kevin's.
+#                       Postgres role, never Kevin's. Left out with
+#                       AH_RUNNER_ENV_NO_DEVENV=1: the red team measures this user
+#                       and runs no file the user can write (R-0152).
 #   GH_TOKEN=""         there is no GitHub credential for this user. Empty rather
 #   GITHUB_TOKEN=""     than unset, and a throwaway config dir, so a `gh` that is
 #   GH_CONFIG_DIR=…     somehow reachable finds no login instead of inheriting
@@ -51,8 +53,10 @@ ah_runner_env() {
   local devenv="$HOME/.devenv.sh" oauth="$cfg/oauth.env" pve="$cfg/pve.env"
   local perm token line key value
 
-  # shellcheck disable=SC1090  # per-host file, gitignored by design
-  [ -f "$devenv" ] && . "$devenv"
+  if [ "${AH_RUNNER_ENV_NO_DEVENV:-0}" != 1 ]; then
+    # shellcheck disable=SC1090  # per-host file, gitignored by design
+    [ -f "$devenv" ] && . "$devenv"
+  fi
 
   # The unsets come FIRST, before anything that can fail: this file is sourced,
   # a caller usually ignores its return code, and an early `return 1` used to
