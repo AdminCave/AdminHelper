@@ -108,8 +108,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 Abhängt von: T1
 
-### T3 — Verdict-Bindung: Schema v2 und `check-verdict` gegen Ledger und Task  [ ]
+### T3 — Verdict-Bindung: Schema v2 und `check-verdict` gegen Ledger und Task  [x]
 Komponente: scripts · Dateien: scripts/dev/review-verdict.schema.json, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b52ee5b2 2026-10-03T12:30:20+02:00
+Review: approve after one round (opus): round 1 request_changes on round: true passing the enum (python's True == 1), fixed in check() with type-strict enum/const and the reviewer's case as a test; nits done: --task with an empty id binds, exit head names another task
 Änderung: Schema `schema_version` 1 oder 2; v2 bekommt `round` (1|2), `num_turns`, `duration_s`, optional `mutants[]`
 und macht `probe` Pflicht (R-0147b; `applicable: false` braucht `reason`). `check-verdict <datei> --tree <hash>
 [--task <ledger> <id>]` (`review.sh:650`): mit `--task` muss `task.ledger`/`task.id` passen, sonst Exit 4 (R-0147a).
@@ -122,6 +124,9 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
 ### T4 — `review-run.sh`: Prompt bauen, Prozess starten, Verdict schreiben  [ ]
+Entscheidung Kevin (2026-10-03, über die Aufsicht): die Reviewer-Definition zieht nach `scripts/dev/review-agent.md`
+(kein Subagent unter `.claude/agents/` mehr, nur Quelle für review-run.sh); die Verschiebung kommt in diese Task —
+Pfad in `harness-paths.txt`, Spec-Satz, Test.
 Komponente: scripts · Dateien: scripts/dev/review-run.sh, scripts/tests/review_run_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh
 Änderung: `review-run.sh <ledger> <id> --tree <hash> --round <n> --probe <json> --contracts <json> [--prior
 <verdict>]` (nur von task-close gerufen): Modell und Effort aus `review.sh risk --staged`; Prompt aus Task-Text, Spec-

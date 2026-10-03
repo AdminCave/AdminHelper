@@ -2,12 +2,15 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "review-verdict.schema.json",
   "title": "AdminHelper review verdict",
-  "description": "What a task reviewer hands to task-close.sh (--review verdict:<file>). Checked by review.sh check-verdict with python3 alone: type, required, properties, additionalProperties, items, enum, const, pattern, minLength, minimum.",
+  "description": "What a task reviewer hands to task-close.sh (--review verdict:<file>). Version 1 from stage 6a; version 2 is what review-run.sh writes for the reviewer process (stage 6b): the round, turns and duration, and the probe always. Checked by review.sh check-verdict with python3 alone: type, required, properties, additionalProperties, items, enum, const, pattern, minLength, minimum, if/then, allOf.",
   "type": "object",
   "required": ["schema_version", "task", "tree_hash", "reviewer", "verdict", "findings"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "type": "integer", "const": 1 },
+    "schema_version": { "type": "integer", "enum": [1, 2] },
+    "round": { "description": "1 or 2; there is no third round", "enum": [1, 2] },
+    "num_turns": { "type": "integer", "minimum": 0 },
+    "duration_s": { "type": "number", "minimum": 0 },
     "task": {
       "type": "object",
       "required": ["ledger", "id"],
@@ -50,8 +53,23 @@
         }
       }
     },
+    "mutants": {
+      "description": "at most two review-probe.sh --mutate runs; a survived one is named in the review line",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "replacement", "result"],
+        "additionalProperties": false,
+        "properties": {
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": "integer" },
+          "replacement": { "type": "string" },
+          "result": { "enum": ["killed", "survived"] }
+        }
+      }
+    },
     "probe": {
-      "description": "scripts/dev/review-probe.sh: is the new test red without the change?",
+      "description": "scripts/dev/review-probe.sh: is the new test red without the change? A probe that did not apply says why.",
       "type": "object",
       "required": ["applicable"],
       "additionalProperties": false,
@@ -59,10 +77,18 @@
         "applicable": { "type": "boolean" },
         "reason": { "type": "string" },
         "red_without_change": { "type": ["boolean", "null"] }
-      }
+      },
+      "if": { "properties": { "applicable": { "const": false } } },
+      "then": { "required": ["reason"], "properties": { "reason": { "type": "string", "minLength": 1 } } }
     },
     "verify": { "description": "filled by the runner from .ah-out/last-verify.json", "type": "object" },
     "contracts": { "description": "filled by the runner from review.sh contracts", "type": ["object", "array"] },
     "cost_usd": { "description": "filled by the runner", "type": "number", "minimum": 0 }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "schema_version": { "const": 2 } } },
+      "then": { "required": ["round", "num_turns", "duration_s", "probe"] }
+    }
+  ]
 }

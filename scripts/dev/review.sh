@@ -9,7 +9,7 @@
 #                                                       ways to make a suite lie
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
 #   bash scripts/dev/review.sh sec [--staged]           what must never be committed
-#   bash scripts/dev/review.sh check-verdict <file> --tree <hash>
+#   bash scripts/dev/review.sh check-verdict <file> --tree <hash> [--task <ledger> <id>]
 #                                                       a reviewer's verdict JSON
 #   bash scripts/dev/review.sh risk [--staged | --range <a>..<b>]
 #                                                       which reviewer a diff gets
@@ -50,9 +50,11 @@
 #   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
 #              scripts/dev/review-verdict.schema.json, be about the tree --tree
 #              names, and say approve without a blocker and without a probe
-#              that found the new test green without the change. A blocker
-#              without evidence counts as a nit. Prints the review line that
-#              task-close.sh writes into the ledger.
+#              that found the new test green without the change; with --task,
+#              also be about that task (another one exits 4). A blocker without
+#              evidence counts as a nit; a probe that did not apply (no test
+#              changed: a refactor) is no obstacle; a surviving mutant is named.
+#              Prints the review line that task-close.sh writes into the ledger.
 #   risk       does the diff touch a risk path (scripts/dev/review-risk.txt and
 #              the harness paths)? Prints `xhigh` and the paths it hit, or
 #              `standard`; both exit 0. The reviewer model follows from it.
@@ -82,7 +84,7 @@
 #
 # Exit: 0 clean · 2 usage (check-verdict: unreadable or outside the schema) ·
 # 3 findings (diff-scan, scope, docs-pairs, contracts; check-verdict: no usable approve) · 4 blocked
-# (sec; check-verdict: a verdict for another tree) · 74 a contract test that
+# (sec; check-verdict: a verdict for another tree or another task) · 74 a contract test that
 # could not run
 
 set -uo pipefail
@@ -655,8 +657,8 @@ $IMPLICIT"
     SCHEMA="$ROOT/scripts/dev/review-verdict.schema.json"
     [ -f "$SCHEMA" ] || die "no verdict schema: $SCHEMA"
     command -v python3 >/dev/null 2>&1 || die "check-verdict needs python3"
-    python3 - "$FILE" "$SCHEMA" "$TREE_ARG" <<'PY'
-import json, re, sys
+    python3 - "$FILE" "$SCHEMA" "$TREE_ARG" "$TASK_LEDGER" "$TASK_ID" <<'PY'
+import json, os, re, sys
 
 # The keywords the schema uses, checked with python3 alone: the runner has no
 # jsonschema package, and a verdict is too small to need one.
@@ -671,15 +673,20 @@ def is_type(v, t):
     return isinstance(v, TYPES[t])
 
 
+def same(a, b):
+    # The same for enum and const: true is not 1, false is not 0.
+    return a == b and isinstance(a, bool) == isinstance(b, bool)
+
+
 def check(v, s, where, errs):
     if "type" in s:
         ts = s["type"] if isinstance(s["type"], list) else [s["type"]]
         if not any(is_type(v, t) for t in ts):
             errs.append("%s: not %s" % (where, " or ".join(ts)))
             return
-    if "enum" in s and v not in s["enum"]:
-        errs.append("%s: %r is none of %s" % (where, v, ", ".join(s["enum"])))
-    if "const" in s and v != s["const"]:
+    if "enum" in s and not any(same(v, e) for e in s["enum"]):
+        errs.append("%s: %r is none of %s" % (where, v, ", ".join(map(str, s["enum"]))))
+    if "const" in s and not same(v, s["const"]):
         errs.append("%s: %r, not %r" % (where, v, s["const"]))
     if isinstance(v, str):
         if len(v) < s.get("minLength", 0):
@@ -703,9 +710,18 @@ def check(v, s, where, errs):
     if isinstance(v, list) and "items" in s:
         for i, x in enumerate(v):
             check(x, s["items"], "%s[%d]" % (where, i), errs)
+    # Conditional parts: version 2 asks for more, a probe that did not apply
+    # for its reason.
+    for sub in s.get("allOf", []):
+        check(v, sub, where, errs)
+    if "if" in s:
+        probe = []
+        check(v, s["if"], where, probe)
+        if not probe and "then" in s:
+            check(v, s["then"], where, errs)
 
 
-path, schema_path, tree = sys.argv[1:4]
+path, schema_path, tree, task_ledger, task_id = sys.argv[1:6]
 try:
     d = json.load(open(path))
 except Exception as e:
@@ -723,6 +739,13 @@ if errs:
     for e in errs:
         print("  " + e, file=sys.stderr)
     sys.exit(2)
+# A verdict about another task says nothing about this one, even for the same
+# tree (tree-hash.sh leaves tasks/ out).
+if (task_ledger or task_id) and (os.path.normpath(d["task"]["ledger"]) != os.path.normpath(task_ledger)
+                or d["task"]["id"] != task_id):
+    print("check-verdict: the verdict is for %s %s, not for %s %s"
+          % (d["task"]["ledger"], d["task"]["id"], task_ledger, task_id), file=sys.stderr)
+    sys.exit(4)
 # A verdict about another tree says nothing about this one.
 if d["tree_hash"] != tree:
     print("check-verdict: the verdict is for tree %s, the staged tree is %s" % (d["tree_hash"], tree),
@@ -747,8 +770,9 @@ if probe.get("applicable") and probe.get("red_without_change") is not True:
     print("check-verdict: an approve although the probe found the new test green without the change",
           file=sys.stderr)
     sys.exit(3)
-noted = ", ".join("%d %s" % (n, k) for k, n in counts.items() if n)
-print("approve (%s/%s%s)" % (d["reviewer"]["model"], d["reviewer"]["effort"], "; " + noted if noted else ""))
+noted = ["%d %s" % (n, k) for k, n in counts.items() if n]
+noted += ["mutant survived: %s:%s" % (m["file"], m["line"]) for m in d.get("mutants", []) if m["result"] == "survived"]
+print("approve (%s/%s%s)" % (d["reviewer"]["model"], d["reviewer"]["effort"], "; " + ", ".join(noted) if noted else ""))
 PY
     ;;
 

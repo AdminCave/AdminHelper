@@ -1442,6 +1442,34 @@ r check-verdict "$WORK/nosuch.json" --tree "$VT"
 [ $rc -eq 2 ] && ok "a missing file -> 2" || bad "missing file: rc=$rc out=$OUT"
 vjson; OUT=$(cd "$WORK" && bash "$REVIEW" check-verdict v.json --tree "$VT" 2>&1); rc=$?
 [ $rc -eq 0 ] && ok "a relative path is read from the caller's directory" || bad "relative path: rc=$rc out=$OUT"
+# Stage 6b: schema version 2 (the reviewer process) and the binding to the task.
+V2='d.update(schema_version=2, round=1, num_turns=12, duration_s=95.5)'
+vjson "$V2"; r check-verdict "$WORK/v.json" --tree "$VT" --task tasks/fix.md T1
+[ $rc -eq 0 ] && ok "a v2 verdict for this task -> 0" || bad "v2 ok: rc=$rc out=$OUT"
+vjson "$V2"; r check-verdict "$WORK/v.json" --tree "$VT" --task tasks/fix.md T2
+[ $rc -eq 4 ] && grep -q 'T2' <<<"$OUT" && ok "a verdict for T1 offered for T2 -> 4" || bad "other task: rc=$rc out=$OUT"
+vjson "$V2"; r check-verdict "$WORK/v.json" --tree "$VT" --task tasks/other.md T1
+[ $rc -eq 4 ] && ok "a verdict of another ledger -> 4" || bad "other ledger: rc=$rc out=$OUT"
+vjson "$V2"; r check-verdict "$WORK/v.json" --tree "$VT" --task tasks/other.md ""
+[ $rc -eq 4 ] && ok "--task with an empty id still binds -> 4" || bad "empty task id: rc=$rc out=$OUT"
+vjson "$V2"; r check-verdict "$WORK/v.json" --tree "$VT" --task ./tasks/fix.md T1
+[ $rc -eq 0 ] && ok "./tasks/fix.md is tasks/fix.md" || bad "normalized ledger: rc=$rc out=$OUT"
+for change in 'del d["probe"]' 'd["round"] = 3' 'd["round"] = True' 'del d["num_turns"]' 'del d["duration_s"]' 'd["duration_s"] = -1' \
+    'd["mutants"] = [{"file": "a.py", "line": 3, "replacement": "x", "result": "maybe"}]'; do
+  vjson "$V2; $change"; r check-verdict "$WORK/v.json" --tree "$VT"
+  [ $rc -eq 2 ] && ok "v2 outside the schema -> 2: $change" || bad "v2 schema ($change): rc=$rc out=$OUT"
+done
+vjson 'd["probe"] = {"applicable": False, "red_without_change": None}'; r check-verdict "$WORK/v.json" --tree "$VT"
+[ $rc -eq 2 ] && ok "a probe that did not apply needs a reason -> 2" || bad "probe without reason: rc=$rc out=$OUT"
+vjson "$V2; d['probe'] = {'applicable': False, 'reason': 'no-test-change', 'red_without_change': None}"
+r check-verdict "$WORK/v.json" --tree "$VT"
+[ $rc -eq 0 ] && ok "a refactor (probe: no-test-change) is no obstacle to approve" || bad "no-test-change: rc=$rc out=$OUT"
+vjson "$V2; d['mutants'] = [{'file': 'apps/x.py', 'line': 7, 'replacement': 'return 1', 'result': 'survived'}]"
+r check-verdict "$WORK/v.json" --tree "$VT"
+[ $rc -eq 0 ] && grep -q '^approve (.*mutant survived: apps/x.py:7' <<<"$OUT" \
+  && ok "a surviving mutant keeps the approve and is named in the review line" || bad "mutant survived: rc=$rc out=$OUT"
+vjson 'd["round"] = 1'; r check-verdict "$WORK/v.json" --tree "$VT"
+[ $rc -eq 0 ] && ok "a v1 verdict stays readable" || bad "v1: rc=$rc out=$OUT"
 python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$REPO_ROOT/scripts/dev/review-verdict.schema.json" 2>/dev/null \
   && ok "the schema is valid JSON" || bad "the schema does not parse"
 grep -qxF 'scripts/dev/review-verdict.schema.json' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
