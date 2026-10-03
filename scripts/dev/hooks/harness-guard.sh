@@ -59,7 +59,7 @@
 # of=`), and the ones that change what it is (`chmod`, `chown`, `chgrp`) — are
 # inspected, and only when they are the segment's COMMAND, so reading a
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
-# git writes through its output options too (R-0159): `--output` of diff, log,
+# git writes through its output options too (R-0158): `--output` of diff, log,
 # show, range-diff and format-patch, `-o`/`--output` of archive, the directory of
 # format-patch, the file of `bundle create`, and `grep -O<cmd>` runs a command on
 # its matches. Not seen there: `--output` of other subcommands (rev-list,
@@ -528,7 +528,7 @@ def git_skips_hook(args):
 
 
 def git_writes(args, cwd):
-    """Where a git call writes through its output options (R-0159): files
+    """Where a git call writes through its output options (R-0158): files
     (`--output` of diff/log/show/range-diff/format-patch, `-o`/`--output` of
     archive, the file of `bundle create`), directories (`-o`/`--output-directory`
     of format-patch) and the commands `grep -O`/`--open-files-in-pager` runs, with

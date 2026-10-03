@@ -1070,7 +1070,7 @@ git log -n 3
 echo GIT_CONFIG_KEY_0=core.hooksPath
 CMDS
 
-# git writes files through its output options (R-0159): --output of diff, log, show
+# git writes files through its output options (R-0158): --output of diff, log, show
 # and range-diff, -o/--output of archive, the directory of format-patch, the file of
 # bundle create — and grep -O runs a command. Each onto a harness path: denied in an
 # autonomous run, a warning otherwise; relative to -C, past -c. The same options
@@ -1413,6 +1413,50 @@ for e in pre:
         sys.exit(0 if {"Edit", "Write", "MultiEdit", "Bash"} <= set(e.get("matcher", "").split("|")) else 1)
 sys.exit(1)
 PY
+
+# Fail-closed in the runner (R-0159). Claude Code lets a call through when a command
+# hook cannot start (exit 127) or times out; only exit 2 blocks. So the runner's hook
+# command checks the guard, runs it under an inner time limit and turns any failure
+# into exit 2 — which only works because the guard itself ends with 0 whatever it
+# was handed (its decision travels in the JSON on stdout).
+if [ "$GUARD_SKIPPED" = 0 ]; then
+  ZERO=""
+  for input in '' 'not json' '[]' '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
+               "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$TREE/CLAUDE.md\"}}"; do
+    printf '%s' "$input" | AH_AUTONOMOUS=1 bash "$GUARD" >/dev/null 2>&1 || ZERO+=" [$input]"
+  done
+  [ -z "$ZERO" ] && ok "the guard ends with 0 for any input, a deny included" || bad "the guard did not end with 0 for:$ZERO"
+  HOOKCMD="$(python3 -c 'import json, sys
+print(json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0]["command"])' "$RS")"
+  HOOKT="$(python3 -c 'import json, sys
+print(json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0].get("timeout", ""))' "$RS")"
+  INNER="$(sed -n 's/.*timeout -k \([0-9][0-9]*\) \([0-9][0-9]*\) bash.*/\1 \2/p' <<<"$HOOKCMD" | awk '{print $1 + $2}')"
+  [ -n "$INNER" ] && [ -n "$HOOKT" ] && [ "$HOOKT" -gt "$INNER" ] \
+    && ok "the hook's timeout ($HOOKT s) is longer than the guard's inner limit and its kill grace ($INNER s)" \
+    || bad "hook timeout '$HOOKT' vs inner limit '$INNER'"
+  mkdir -p "$WORK/noguard" "$WORK/hang/scripts/dev/hooks"
+  # It ignores TERM, so only the kill after the grace period ends it — inside the
+  # hook's own limit, where a timed-out hook would decide nothing.
+  printf "trap '' TERM; exec sleep 60\n" > "$WORK/hang/scripts/dev/hooks/harness-guard.sh"
+  for sh in sh bash; do
+    printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
+      | CLAUDE_PROJECT_DIR="$TREE" AH_AUTONOMOUS=1 "$sh" -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+    [ "$rc" = 0 ] && [ ! -s "$WORK/hook.out" ] && ok "$sh: a harmless call passes the runner hook" \
+      || bad "$sh harmless: rc=$rc out=$(cat "$WORK/hook.out") err=$(cat "$WORK/hook.err")"
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/CLAUDE.md"}}' "$TREE" \
+      | CLAUDE_PROJECT_DIR="$TREE" AH_AUTONOMOUS=1 "$sh" -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+    [ "$rc" = 0 ] && denied "$(cat "$WORK/hook.out")" && ok "$sh: the guard's deny comes through the runner hook" \
+      || bad "$sh deny: rc=$rc out=$(cat "$WORK/hook.out")"
+    printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
+      | CLAUDE_PROJECT_DIR="$WORK/noguard" "$sh" -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+    [ "$rc" = 2 ] && grep -q "harness guard not readable" "$WORK/hook.err" \
+      && ok "$sh: without the guard the runner hook blocks (exit 2)" || bad "$sh missing guard: rc=$rc err=$(cat "$WORK/hook.err")"
+  done
+  printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
+    | CLAUDE_PROJECT_DIR="$WORK/hang" timeout 60 sh -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+  [ "$rc" = 2 ] && grep -q "harness guard failed (exit 137)" "$WORK/hook.err" \
+    && ok "a guard that ignores TERM is killed and blocks inside the hook's limit (exit 2)" || bad "hanging guard: rc=$rc err=$(cat "$WORK/hook.err")"
+fi
 
 # ══ .gitattributes ═══════════════════════════════════════════════════════════
 echo "── .gitattributes ──"

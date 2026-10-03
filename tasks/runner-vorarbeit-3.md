@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 3: Messinstrument und Grenzen unabhängig vom geprüften Nutzer — Task-Ledger
-Status: aktiv · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 3, „Freigeben“; T3: Proxmox-Ziel root-eigen beim Setup), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit-3.md (Roadmap R-0156, R-0158, R-0159, R-0160, R-0161, R-0162, R-0163)
 Heavy: none — nur Harness-Skripte (runner-redteam.sh, runner-setup.sh, harness-guard.sh, runner-settings.json) und ihre hermetischen Tests mit Fake-Klon, Stub-Binärdateien (curl, busctl) und JSON auf stdin; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec „Kevins Handarbeit“).
@@ -142,8 +142,10 @@ die er bekommt: eine Pfadangabe zählt nur als existierende Datei ohne Glob/Magi
 Bekannte Lücken im Kopfkommentar: `--output` anderer Unterbefehle, Pager/Alias über `-c`/GIT_PAGER, `archive --exec`,
 `git diff` außerhalb eines Repos (liest hinter `--` weiter).
 
-### T5 — Runner-Hook fail-closed; Doku des Pakets  [ ]
-Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/tests/hooks_test.sh, DEVELOPMENT.md, CHANGELOG.md
+### T5 — Runner-Hook fail-closed; Doku des Pakets  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/tests/hooks_test.sh, DEVELOPMENT.md, CHANGELOG.md, scripts/dev/hooks/harness-guard.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @867aa062 2026-10-03T14:45:39+02:00
+Review: request_changes (opus): wichtig R-0158/R-0159 vertauscht (auch Kommentare aus T4) -> korrigiert, Waechter und redteam_test per set-files; Nits Tippfehler, timeout -k 2 mit TERM-ignorierendem Test, /config-Aussage belegt, Schritt-Formulierung; Gegenprobe: HEAD-Hook endet ohne Waechter mit 127
 Änderung: Der `PreToolUse`-Hook in `runner-settings.json:114` prüft, dass der Wächter lesbar ist, ruft ihn mit innerer
 Zeitgrenze (`timeout`) auf und endet mit Exit 2, wenn das Skript fehlt, nicht startet oder die Zeit überschreitet;
 dazu ein `timeout`-Feld am Hook, größer als die innere Grenze. Vorher belegen (Code und Test), dass `harness-guard.sh`

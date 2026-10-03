@@ -18,7 +18,7 @@
 # probes are steps of their own for the same reason and run here against temp
 # files, stubs and fake clones: --pin, --py-lock, --claude-sum, --dbus, --git,
 # --changed, --pve, --settings, --self-check and --env-check; an unknown argument
-# must end before any of them (R-0152, R-0156, R-0158 to R-0163).
+# must end before any of them (R-0152, R-0156, R-0160 to R-0163).
 #
 # Run: bash scripts/tests/redteam_test.sh
 

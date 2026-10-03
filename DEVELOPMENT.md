@@ -674,8 +674,16 @@ in der Wurzel startet (`find . -name '*.pyc' -delete`): er startet im Unterverze
 (`find apps -name '*.pyc' -delete`); `rm -f *.log` bleibt frei, der Glob trifft nur die Logs. Alle anderen Schreibformen
 pruefen nur den Pfad selbst. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
 python/perl heraus, ein zur Laufzeit gebauter Pfad, ein `find … -exec sed -i`,
-`git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
-auch hier die Deny-Liste, der Hook ist die zweite Schicht:
+`git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Auch git schreibt
+ueber Ausgabe-Optionen: `--output` von diff/log/show/range-diff/format-patch, `-o`/`--output` von
+archive, das Verzeichnis von `format-patch -o`, die Datei von `bundle create` zaehlen als Ziel, und der
+Befehl hinter `git grep -O` wird mit den Dateien geprueft, die er bekommt (R-0158). Im Runner ist der
+Hook **fail-closed** (R-0159): Claude Code laesst einen Aufruf durch, wenn ein command-Hook nicht
+startet (Exit 127) oder in seine Zeitgrenze laeuft; nur Exit 2 sperrt. Der Hook-Befehl in
+`scripts/dev/runner-settings.json` prueft deshalb, dass der Waechter lesbar ist, ruft ihn mit
+`timeout -k 2 10` auf und macht aus jedem Fehler Exit 2 (Feld `timeout` 15 s); der Waechter selbst endet
+immer mit 0 und traegt seine Entscheidung im JSON. Interaktiv bleibt der Hook, wie er ist. Die tragende
+Grenze ist auch hier die Deny-Liste, der Hook ist die zweite Schicht:
 
 ```bash
 bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung, pre-commit
@@ -945,7 +953,24 @@ Jede Probe druckt `ok`, `FAIL` oder `info`; die letzte Zeile ist `N ok, M FAIL`.
 Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,
 `gh`-Login, D-Bus/Keyring, der eigene Proxmox-Token gegen eine VM **ausserhalb**
 des Pools, und zwei `claude -p`-Laeufe, die ausdruecklich nach einem `git push`
-bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`). Dazu die
+bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`).
+Nichts davon fuehrt Code oder ausfuehrbare Konfiguration des Runners aus (R-0156, R-0160 bis
+R-0163): die Push-Proben pushen aus einem eigenen Repository ohne Hooks, ohne git-Konfiguration
+des Nutzers und ohne Credential-Helper an die URLs, die der Klon nennt, und lesen seine
+Konfiguration auf Helper, Extra-Header und URL-Umschreibungen (nur Namen, URLs geschwaerzt); ob eine
+Modellprobe den Klon geaendert hat, zeigt die ctime seiner Dateien, nicht `git status`. Der
+Proxmox-Token wird direkt an der API gemessen (`curl -q` ohne die curlrc des Nutzers, Token ueber
+stdin): `GET /pools?poolid=<pool>` muss den Pool zeigen, der Status einer VM ausserhalb des Pools
+muss abgelehnt werden. Das Ziel (URL, Node, Pool, CA) liest das Red Team aus `pve-target.env`, die
+`runner-setup.sh` root-eigen neben das Red Team schreibt (aus der Umgebung des Aufrufs, sonst aus
+`.claude/settings.local.json` des Checkouts, ohne Token; die CA als Kopie) — ohne sie meldet Probe 4
+`info`. Die D-Bus-Probe sucht den Socket in `/run/user/<uid>` und fragt ihn mit gesetztem
+`XDG_RUNTIME_DIR`; das Runtime-Verzeichnis des Besitzers darf der Runner nicht betreten.
+`~/.claude/settings.json` des Runners muss byte-genau der geprueften `runner-settings.json`
+entsprechen; Claude Code schreibt diese Datei selbst, wenn in einer Session `/config` oder `/model`
+eine Wahl speichert (Claude-Code-Doku, Settings), dann hilft ein erneutes `runner-setup.sh`. Ein
+unbekanntes Argument endet mit Exit 2, bevor eine Probe laeuft; die Proben ohne Netz und Budget gibt
+es einzeln als Schritt (die Liste nennt die Meldung bei einem unbekannten Argument). Dazu die
 geteilte Python-Sperre `/var/lib/adminhelper-dev/py.lock`: sie existiert, Datei und
 Verzeichnis gehoeren root, der Runner darf das Verzeichnis nicht schreiben und kann die
 Sperre nehmen (ist sie gerade belegt, ein `info`); einzeln mit
