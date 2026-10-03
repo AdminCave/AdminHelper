@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 2: das Red Team als root-eigenes Messinstrument (R-0152) — Task-Ledger
-Status: aktiv · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 2, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0152
 Heavy: none — nur Skripte (runner-env.sh, runner-redteam.sh, runner-setup.sh) und ihre hermetischen Tests mit Fake-HOME und Stub-Binärdateien; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Absatz unten).
@@ -85,8 +85,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T3)
 Abhängt von: T1
 
-### T3 — Doku: neuer Red-Team-Aufruf und Setup-Schritt  [ ]
+### T3 — Doku: neuer Red-Team-Aufruf und Setup-Schritt  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @1e5567eb 2026-10-03T11:30:54+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: DEVELOPMENT.md — der Red-Team-Aufruf an beiden Stellen (`:865`, `:925`) wird
 `sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh`, mit einem Satz zum Warum (das
 Messinstrument liegt außerhalb dessen, was der geprüfte Nutzer schreiben kann; feste Umgebung; Prüfsumme der CLI);

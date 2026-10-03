@@ -308,6 +308,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Red Team root-eigen, in fester Umgebung (R-0152):** `scripts/dev/runner-setup.sh` installiert
+  `runner-redteam.sh` mit `runner-env.sh`, `runner-settings.json` und `runner-claude.version` nach
+  `/usr/local/lib/adminhelper-dev/` (root) und haelt die sha256 der Runner-CLI in
+  `/var/lib/adminhelper-dev/runner-claude.sha256` fest; `--remove` nimmt beides mit. Das Red Team
+  laeuft von dort (`sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh`),
+  startet sich unter `env -i` mit festem `PATH` neu, liest keine Datei des Runners
+  (`AH_RUNNER_ENV_NO_DEVENV=1` in `runner-env.sh`), nimmt das Soll des Pin-Checks aus seinem eigenen
+  Verzeichnis und meldet `FAIL`, wenn es von woanders laeuft, wenn `runner-env.sh` es veraendert
+  oder wenn die CLI nicht die festgehaltene ist. Nach einem CLI-Wechsel braucht es deshalb erneut
+  `sudo bash scripts/dev/runner-setup.sh`. Anleitung: `DEVELOPMENT.md` „Runner-User".
+
 - **Python-Sperre ueber Nutzergrenzen, Runner-Setup klont nur neu (R-0080, R-0077):**
   `scripts/tests/run.sh` nimmt fuer `server-pytest` und `schemathesis` die geteilte Sperre
   `/var/lib/adminhelper-dev/py.lock`, sobald ihr Verzeichnis existiert (`AH_PY_LOCK_FILE` geht
