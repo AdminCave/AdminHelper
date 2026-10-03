@@ -554,7 +554,7 @@ bash scripts/dev/review.sh log [--ledger tasks/<slug>.md]          # jede Review
   Verdict auch diese Task meinen (sonst Exit 4). Schema-Version 2 (der Reviewer-Prozess) verlangt
   Runde, Turns, Dauer und den `probe`-Block; eine Probe mit `applicable: false` (etwa
   `no-test-change`, ein Refactor) ist kein Hindernis, ein ueberlebender Mutant steht in der
-  Review-Zeile.
+  Review-Zeile, ebenso eine Probe, die nicht lief (`probe not run: toolchain|other-failure|…`).
 - **`review-probe.sh`** legt eine eigene Worktree unter dem `TMPDIR` des Aufrufers an, setzt nur
   die Test-Hunks auf die Basis und faehrt `verify.sh --tree`; die Antwort ist der `probe`-Block
   des Schemas (`red_without_change`, oder `applicable: false` mit `new-symbol`, `toolchain`,
@@ -613,7 +613,8 @@ Nach den billigen Pruefern, der Suite und den Vertraegen:
    STOPP; einen Rueckfall auf den Sub-Agent-Review gibt es nicht.
 
 Der Reviewer darf lesen, `git diff|show|log|status` und hoechstens zwei
-`review-probe.sh --mutate`; Edit, Write, Netz, `verify.sh` und `run.sh` sind gesperrt. Der
+`review-probe.sh --mutate`, je mit dem Test der `Verify:`-Zeile (nennt sie keinen, setzt er keinen
+Mutanten: die ganze Suite je Mutant sprengte das Zeitbudget); Edit, Write, Netz, `verify.sh` und `run.sh` sind gesperrt. Der
 harness-guard laeuft als PreToolUse-Hook und ist fail-closed: fehlt er, scheitert oder haengt
 er, blockiert der Hook (R-0159). Die Projekt-Settings wirken nicht hinein. Die Aufrufform hat
 `scripts/dev/review-cli-probe.sh` gemessen (CLI 2.1.285); gegen eine neue CLI-Version laesst

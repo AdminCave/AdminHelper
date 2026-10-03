@@ -32,7 +32,8 @@
 # whose path it prints.
 #
 # Environment: CLAUDE_BIN (default claude; the tests pass a stub),
-# AH_REVIEW_TIMEOUT (seconds, default 1200).
+# AH_REVIEW_TIMEOUT (seconds, default 1200), AH_OUT_DIR (where task-close's suite
+# wrote last-verify.json, as for verify.sh; default .ah-out).
 #
 # Exit: 0 a verdict is written, whatever it says · 2 usage · 74 the reviewer
 # gave no usable verdict: the CLI did not start, timed out, ended with an
@@ -82,7 +83,19 @@ cd "$ROOT" || exit 2
 # task.ledger is held against that.
 case "$LEDGER" in */*) ;; *) LEDGER="tasks/$LEDGER" ;; esac
 case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
-case "$LEDGER" in tasks/private/*) die "a ledger of tasks/private/ never goes to a reviewer: $LEDGER" ;; esac
+# Judged by how it is spelled AND by where it lies: ./tasks/private/…, an absolute
+# path, and tasks/private/ as a symlink to the private clone all count. A ledger
+# outside this checkout (another checkout's private ledgers) is refused as well.
+# The spelling is read from ROOT as it is spelled too (a checkout reached through a
+# symlinked path would otherwise put every ledger "outside"); outside is judged by
+# where the file lies.
+case "$LEDGER" in /*) ABS="$LEDGER" ;; *) ABS="$ROOT/$LEDGER" ;; esac
+SPELLED="$(realpath -m -s --relative-to="$ROOT" "$ABS")" RESOLVED="$(realpath -m --relative-to="$ROOT" "$LEDGER")"
+[ -n "$SPELLED" ] && [ -n "$RESOLVED" ] || die "cannot resolve the ledger path: $LEDGER"
+for p in "$SPELLED" "$RESOLVED"; do
+  case "$p" in tasks/private/*) die "a ledger of tasks/private/ never goes to a reviewer: $LEDGER" ;; esac
+done
+case "$RESOLVED" in ../*) die "a ledger outside this checkout never goes to a reviewer: $LEDGER" ;; esac
 [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
 case "$ID" in *[!A-Za-z0-9._-]*) die "not a task id: $ID" ;; esac
 grep -qE "^###[[:space:]]+$ID([[:space:]]|\$)" "$LEDGER" || die "no task $ID in $LEDGER"
@@ -122,13 +135,18 @@ GIT_DIFF=(git -c core.quotePath=false diff --staged --text --no-ext-diff --no-te
 # tasks/private/ is a repository of its own and never goes to a reviewer.
 NOT_PRIVATE=(-- . ':(exclude)tasks/private')
 NEW_FILES="$("${GIT_DIFF[@]}" --name-only --diff-filter=A "${NOT_PRIVATE[@]}")" || die "cannot read the staged diff"
-python3 - "$LEDGER" "$ID" "$TREE" "$ROUND" "$PROBE" "$CONTRACTS" "$PRIOR" "$NEW_FILES" > "$PROMPT" <<'PY' \
+# Where task-close's own suite wrote its evidence (verify.sh honours AH_OUT_DIR).
+VERIFY_JSON="${AH_OUT_DIR:-$ROOT/.ah-out}/last-verify.json"
+python3 - "$LEDGER" "$ID" "$TREE" "$ROUND" "$PROBE" "$CONTRACTS" "$PRIOR" "$NEW_FILES" "$VERIFY_JSON" > "$PROMPT" <<'PY' \
   || die "cannot build the prompt"
 import json, re, sys
 
-ledger, tid, tree, rnd, probe, contracts, prior, new_files = sys.argv[1:9]
+ledger, tid, tree, rnd, probe, contracts, prior, new_files, verify_json = sys.argv[1:10]
 lines = open(ledger, encoding="utf-8").read().splitlines()
-spec = next((m.group(1) for m in (re.match(r"Spec:\s*(\S+)", l) for l in lines) if m), "(none in the ledger head)")
+head = next((m.group(1).strip() for m in (re.match(r"Spec:\s*(.*)", l) for l in lines) if m), "")
+# A short ledger names only roadmap ids ("Spec: Roadmap R-0152"): then there is no file to read.
+word = head.split()[0].strip("`,;") if head else ""
+spec = word if word.endswith(".md") or "/" in word else "(the ledger head names no spec file: %s)" % (head or "no Spec: line")
 task, inside = [], False
 for l in lines:
     if re.match(r"#{2,3}\s", l):
@@ -136,11 +154,11 @@ for l in lines:
     if inside:
         task.append(l)
 try:
-    v = json.load(open(".ah-out/last-verify.json"))
+    v = json.load(open(verify_json))
     verify = "%s passed, %s failed, %s skipped (layer %s, only %s, tree %s)" % (
         v.get("passed"), v.get("failed"), v.get("skipped"), v.get("layer"), v.get("only") or "all", v.get("tree_hash"))
 except (OSError, ValueError):
-    verify = "no .ah-out/last-verify.json"
+    verify = "no %s" % verify_json
 out = ["# Review of %s %s, round %s" % (ledger, tid, rnd), "",
        "Ledger: %s · Task: %s · Spec: %s" % (ledger, tid, spec),
        "Staged tree (scripts/dev/tree-hash.sh): %s" % tree, "",
@@ -160,6 +178,8 @@ PY
 SCHEMA="$(cat "$ROOT/scripts/dev/review-output.schema.json")" || die "no scripts/dev/review-output.schema.json"
 
 RAW="$BASE.raw.json"
+# An earlier attempt of this round must not speak for this one (review.sh log --failed reads it).
+rm -f "$RAW" "$BASE.err"
 command -v "$CLAUDE_BIN" >/dev/null 2>&1 || fail "no CLI: $CLAUDE_BIN"
 STARTED=$(date +%s)
 timeout -k 30 "$TIMEOUT" "$CLAUDE_BIN" -p \
@@ -176,10 +196,10 @@ case "$RC" in 124|137) fail "the reviewer timed out after $TIMEOUT s (raw: $RAW)
 
 TMP="$BASE.verdict.tmp"
 python3 - "$RAW" "$RC" "$LEDGER" "$ID" "$TREE" "$ROUND" "$MODEL" "$EFFORT" "$PROBE" "$CONTRACTS" \
-  "$(( $(date +%s) - STARTED ))" > "$TMP" <<'PY' || { rm -f "$TMP"; exit 74; }
+  "$(( $(date +%s) - STARTED ))" "$VERIFY_JSON" > "$TMP" <<'PY' || { rm -f "$TMP"; exit 74; }
 import json, sys
 
-raw, rc, ledger, tid, tree, rnd, model, effort, probe, contracts, wall = sys.argv[1:12]
+raw, rc, ledger, tid, tree, rnd, model, effort, probe, contracts, wall, verify_json = sys.argv[1:13]
 def stop(why):
     print("review-run.sh: %s (CLI exit %s, raw: %s)" % (why, rc, raw), file=sys.stderr)
     sys.exit(74)
@@ -189,12 +209,13 @@ except (OSError, ValueError):
     stop("the CLI gave no JSON")
 if not isinstance(r, dict):
     stop("the CLI's answer is no JSON object")
-# The measured CLI ends a success with 0; anything else is no clean run.
-if rc != "0":
-    stop("the CLI exited %s" % rc)
+# The kind of error first: the pilot tunes the caps by it.
 if r.get("subtype") != "success" or r.get("is_error") is not False:
     why = "; ".join(map(str, r.get("errors") or [])) or str(r.get("result", ""))[:200]
     stop("the run ended with %s, is_error %s: %s" % (r.get("subtype"), r.get("is_error"), why))
+# The measured CLI ends a success with 0; anything else is no clean run.
+if rc != "0":
+    stop("the CLI exited %s" % rc)
 so = r.get("structured_output")
 if not isinstance(so, dict):
     stop("no structured_output")
@@ -206,7 +227,7 @@ d = {"schema_version": 2, "task": {"ledger": ledger, "id": tid}, "tree_hash": tr
 d.update(so)
 d["probe"] = json.loads(probe)
 try:
-    v = json.load(open(".ah-out/last-verify.json"))
+    v = json.load(open(verify_json))
     d["verify"] = {k: v[k] for k in ("layer", "only", "strict", "passed", "failed", "skipped", "reruns",
                                      "tree_hash", "finished") if k in v}
 except (OSError, ValueError):

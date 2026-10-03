@@ -802,6 +802,9 @@ if probe.get("applicable") and probe.get("red_without_change") is not True:
     sys.exit(3)
 noted = ["%d %s" % (n, k) for k, n in counts.items() if n]
 noted += ["mutant survived: %s:%s" % (m["file"], m["line"]) for m in d.get("mutants", []) if m["result"] == "survived"]
+# A probe that could not run proves nothing: the approve stands, but says so.
+if probe and not probe.get("applicable") and probe.get("reason") not in ("no-test-change", "only-test-change"):
+    noted.append("probe not run: %s" % probe.get("reason"))
 print("approve (%s/%s%s)" % (d["reviewer"]["model"], d["reviewer"]["effort"], "; " + ", ".join(noted) if noted else ""))
 PY
     ;;

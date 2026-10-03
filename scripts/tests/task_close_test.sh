@@ -705,7 +705,7 @@ mk_auto() {
     printf '### T3 — offen  [ ]\nÄnderung: bleibt offen\n'
   } > "$FIX/tasks/auto.md"
   git -C "$FIX" add -A && git -C "$FIX" commit -qm "auto ledger"
-  rm -rf "$VD" "$FIX/.ah-out/aux-calls.txt" "$FIX/.ah-out/review/review-log.jsonl"; rm -f "$STUB_DIR"/*
+  rm -rf "$VD" "$FIX/.ah-out/aux-calls.txt" "$FIX/.ah-out/review/review-log.jsonl"; rm -f "$STUB_DIR/stdin" "$STUB_DIR/calls"
   N0=$(head_count)
 }
 calls() { [ -f "$STUB_DIR/calls" ] && wc -l < "$STUB_DIR/calls" || echo 0; }

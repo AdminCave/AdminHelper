@@ -81,7 +81,7 @@
       "if": { "properties": { "applicable": { "const": false } } },
       "then": { "required": ["reason"], "properties": { "reason": { "type": "string", "minLength": 1 } } }
     },
-    "verify": { "description": "filled by the runner from .ah-out/last-verify.json", "type": "object" },
+    "verify": { "description": "filled by the runner from last-verify.json (under AH_OUT_DIR, default .ah-out)", "type": "object" },
     "contracts": { "description": "filled by the runner from review.sh contracts", "type": ["object", "array"] },
     "cost_usd": { "description": "filled by the runner", "type": "number", "minimum": 0 }
   },

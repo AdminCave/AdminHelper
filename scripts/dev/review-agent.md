@@ -17,7 +17,10 @@ Ausführungspflichten:
 - Verify-Summary, Probe-Ergebnis (`probe`) und Contracts stehen im Prompt. Fahre keine Suite nach — `verify.sh` und
   `run.sh` sind gesperrt, und eine zweite Server-Suite auf derselben Test-DB zerstört die erste.
 - Höchstens zwei Mutanten: `bash scripts/dev/review-probe.sh <komponente> --staged --mutate <datei>:<zeile>
-  '<ersatz>'`, je ein Mutant, der Ersatz lint-sauber. Das Ergebnis (`killed` oder `survived`) gehört nach `mutants`.
+  '<ersatz>' -- <test>`, je ein Mutant, der Ersatz lint-sauber, `<test>` der Test aus der `Verify:`-Zeile der Task
+  (`… --strict -- <test>`), der Bash-Aufruf mit Timeout 600000. Nennt die `Verify:`-Zeile keinen Test, setze keinen
+  Mutanten: die ganze Suite je Mutant sprengt das Zeitbudget des Laufs. Das Ergebnis (`killed` oder `survived`) gehört
+  nach `mutants`.
 - Jeder `blocker` und jedes `wichtig` braucht `evidence`: die konkrete Eingabe und das falsche Ergebnis. Ohne Beleg ist
   es ein `nit`.
 - Du änderst nichts. Edit und Write gibt es nicht; git nur lesend (`git diff`, `git show`, `git log`, `git status`).

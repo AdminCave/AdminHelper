@@ -210,3 +210,19 @@ Rot vorher: skill_consistency_test — der Skill nennt `--review auto` und `revi
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md · AUTONOMOUS.md · docs/developer/cicd.html + docs/en/developer/cicd.html · CHANGELOG
 Abhängt von: T6
+
+### T8 — Nachbesserungen aus /code-review: Mutanten-Test, Probe-Lücke, privater Ledger, AH_OUT_DIR, Fehlerart, Spec-Pfad, raw.json, Aufräumen  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4f678957 2026-10-03T16:40:01+02:00
+Review: approve with two rounds spent (opus): round 1 request_changes on realpath resolving a symlinked tasks/private past the refusal, fixed; round 2 request_changes on a checkout reached through a symlinked path refusing its own ledger, fixed with the reviewer's case as a test, no third round
+Herkunft: `/code-review` über den Branch-Diff (2026-10-03), nur Fehler dieses Branches; die übrigen Funde gingen als
+Roadmap-Kandidaten an die Aufsicht, die Frage nach `--setting-sources` ebenso.
+Komponente: scripts · Dateien: scripts/dev/review-agent.md, scripts/dev/review-run.sh, scripts/dev/review.sh, scripts/tests/review_run_test.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, DEVELOPMENT.md, scripts/dev/review-verdict.schema.json
+Änderung: (1) `review-agent.md`: Mutanten nur mit dem Test der `Verify:`-Zeile (`-- <test>`), sonst läuft je Mutant die
+ganze Komponenten-Suite in die 1200 s. (2) `check-verdict`: eine Probe, die nicht lief (`applicable: false` außer
+`no-test-change`/`only-test-change`), steht in der Review-Zeile. (3) `review-run.sh`: ein Ledger unter `tasks/private/`
+wird auch über `./…` oder einen absoluten Pfad abgewiesen; `last-verify.json` über `AH_OUT_DIR`; die Fehlerart
+(`subtype`, `errors`) vor dem Exit-Code; der Spec-Pfad nur, wenn der Kopf einen nennt; `raw.json` und `err` eines
+früheren Versuchs fallen vor dem Lauf weg. (4) Die neuen Tests räumen ohne Glob auf.
+Rot vorher: je Punkt ein Fall in review_run_test bzw. review_scripts_test.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Mutanten mit dem Verify-Test, Probe-Lücke in der Review-Zeile)

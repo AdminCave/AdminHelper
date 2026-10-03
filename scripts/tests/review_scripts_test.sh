@@ -1461,13 +1461,20 @@ for change in 'del d["probe"]' 'd["round"] = 3' 'd["round"] = True' 'del d["num_
 done
 vjson 'd["probe"] = {"applicable": False, "red_without_change": None}'; r check-verdict "$WORK/v.json" --tree "$VT"
 [ $rc -eq 2 ] && ok "a probe that did not apply needs a reason -> 2" || bad "probe without reason: rc=$rc out=$OUT"
-vjson "$V2; d['probe'] = {'applicable': False, 'reason': 'no-test-change', 'red_without_change': None}"
-r check-verdict "$WORK/v.json" --tree "$VT"
-[ $rc -eq 0 ] && ok "a refactor (probe: no-test-change) is no obstacle to approve" || bad "no-test-change: rc=$rc out=$OUT"
+for reason in no-test-change only-test-change; do
+  vjson "$V2; d['probe'] = {'applicable': False, 'reason': '$reason', 'red_without_change': None}"
+  r check-verdict "$WORK/v.json" --tree "$VT"
+  [ $rc -eq 0 ] && ! grep -q 'probe not run' <<<"$OUT" \
+    && ok "$reason is no obstacle to approve and no probe gap" || bad "$reason: rc=$rc out=$OUT"
+done
 vjson "$V2; d['mutants'] = [{'file': 'apps/x.py', 'line': 7, 'replacement': 'return 1', 'result': 'survived'}]"
 r check-verdict "$WORK/v.json" --tree "$VT"
 [ $rc -eq 0 ] && grep -q '^approve (.*mutant survived: apps/x.py:7' <<<"$OUT" \
   && ok "a surviving mutant keeps the approve and is named in the review line" || bad "mutant survived: rc=$rc out=$OUT"
+vjson "$V2; d['probe'] = {'applicable': False, 'reason': 'other-failure', 'red_without_change': None}"
+r check-verdict "$WORK/v.json" --tree "$VT"
+[ $rc -eq 0 ] && grep -q '^approve (.*probe not run: other-failure' <<<"$OUT" \
+  && ok "a probe that could not run is named in the review line" || bad "probe not run: rc=$rc out=$OUT"
 vjson 'd["round"] = 1'; r check-verdict "$WORK/v.json" --tree "$VT"
 [ $rc -eq 0 ] && ok "a v1 verdict stays readable" || bad "v1: rc=$rc out=$OUT"
 python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$REPO_ROOT/scripts/dev/review-verdict.schema.json" 2>/dev/null \

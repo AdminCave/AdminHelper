@@ -23,6 +23,9 @@ ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 command -v git >/dev/null 2>&1 || { echo "SKIP: git not available"; exit 75; }
 command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not available"; exit 75; }
+# The suite runs this file from inside run.sh, which exports these for its own run;
+# review-run.sh reads its verify summary from AH_OUT_DIR when it is set.
+unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 export TMPDIR="$WORK/tmp"; mkdir -p "$TMPDIR"
@@ -108,7 +111,7 @@ VDIR="$FIX/.ah-out/review/fix"
 # run [args…] — review-run.sh from outside the repository, as task-close's
 # callers might; the arguments default to round 1 of T1.
 run() {
-  rm -f "$STUB_DIR"/*
+  rm -f "$STUB_DIR/stdin" "$STUB_DIR/pwd" "$STUB_DIR/argv.json"
   OUT=$(cd "$WORK" && bash "$RUN" "$@" 2>"$WORK/err"); rc=$?
   ERR=$(cat "$WORK/err")
 }
@@ -163,6 +166,13 @@ STUB=sleep AH_REVIEW_TIMEOUT=2 r1
   && ok "a reviewer past the timeout -> 74, no verdict file" || bad "timeout: rc=$rc err=$ERR"
 STUB=approve CLAUDE_BIN="$WORK/nosuch" r1
 [ $rc -eq 74 ] && nofile && ok "no CLI -> 74" || bad "no CLI: rc=$rc err=$ERR"
+STUB=budget r1
+grep -q 'error_max_budget_usd' <<<"$ERR" && ok "an error_* result exiting 1 is named by its kind, not by the exit" || bad "error kind: $ERR"
+# The raw answer of an earlier attempt must not stay as this one's.
+rm -rf "$VDIR"; mkdir -p "$VDIR"; printf '{"total_cost_usd": 5.01}\n' > "$VDIR/T1.r1.raw.json"; echo old > "$VDIR/T1.r1.err"
+STUB=approve CLAUDE_BIN="$WORK/nosuch" run tasks/fix.md T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS"
+[ $rc -eq 74 ] && [ ! -e "$VDIR/T1.r1.raw.json" ] && [ ! -e "$VDIR/T1.r1.err" ] \
+  && ok "an earlier attempt's raw.json and err are gone before the run" || bad "stale raw: rc=$rc"
 
 echo "── the call ──"
 STUB=approve r1
@@ -214,6 +224,23 @@ STUB=approve r1
   && grep -q '"model": "opus"' "$VDIR/T1.r1.verdict.json" \
   && ok "an xhigh diff -> --model opus --effort xhigh --max-turns 80 --max-budget-usd 15" || bad "xhigh: $(arg --model) $(arg --effort) $(arg --max-turns)"
 git -C "$FIX" reset -q -- CLAUDE.md; printf '# rules\n' > "$FIX/CLAUDE.md"
+# task-close's suite writes to AH_OUT_DIR when it is set; the reviewer is shown that run.
+mkdir -p "$WORK/out"
+printf '{"layer": "quick", "only": "scripts", "passed": 99, "failed": 0, "skipped": 1, "tree_hash": "%s"}\n' "$TREE" > "$WORK/out/last-verify.json"
+AH_OUT_DIR="$WORK/out" STUB=approve r1
+grep -q '99 passed, 0 failed, 1 skipped' "$STUB_DIR/stdin" && grep -q '"passed": 99' "$VDIR/T1.r1.verdict.json" \
+  && ok "the verify summary comes from AH_OUT_DIR when it is set" || bad "AH_OUT_DIR: $(grep -i verify "$STUB_DIR/stdin")"
+# A short ledger names roadmap ids, no spec file.
+printf '# Short\nStatus: aktiv\nSpec: Roadmap R-0152\n\n### T1 — kurz  [ ]\nKomponente: scripts\n' > "$FIX/tasks/short.md"
+rm -rf "$FIX/.ah-out/review/short"
+STUB=approve run tasks/short.md T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS"
+grep -q 'Spec: (the ledger head names no spec file: Roadmap R-0152)' "$STUB_DIR/stdin" \
+  && ok "a head without a spec file says so instead of naming the word Roadmap" || bad "spec path: $(grep 'Spec:' "$STUB_DIR/stdin")"
+printf '# Short\nStatus: aktiv\nSpec: docs/features/x.md, Abschnitt 3\n\n### T1 — kurz  [ ]\nKomponente: scripts\n' > "$FIX/tasks/short.md"
+rm -rf "$FIX/.ah-out/review/short"
+STUB=approve run tasks/short.md T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS"
+grep -q 'Spec: docs/features/x.md$' "$STUB_DIR/stdin" && ok "a spec path loses the comma behind it" || bad "spec comma: $(grep 'Spec:' "$STUB_DIR/stdin")"
+rm -f "$FIX/tasks/short.md"
 
 echo "── rounds ──"
 STUB=request_changes r1
@@ -235,7 +262,37 @@ usage_case "no tree hash" tasks/fix.md T1 --tree nohash --round 1 --probe "$PROB
 usage_case "a probe that is no JSON object" tasks/fix.md T1 --tree "$TREE" --round 1 --probe '[1]' --contracts "$CONTRACTS"
 usage_case "a probe without applicable" tasks/fix.md T1 --tree "$TREE" --round 1 --probe '{"foo": 1}' --contracts "$CONTRACTS"
 printf '### T1 — private\n' > "$FIX/tasks/private/p.md"
-usage_case "a ledger of tasks/private/" tasks/private/p.md T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS"
+# Refused for where it lies, however it is spelled — and for that reason, not another.
+for spelled in tasks/private/p.md ./tasks/private/p.md "$FIX/tasks/private/p.md"; do
+  rm -rf "$FIX/.ah-out/review/p"; run "$spelled" T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS"
+  [ $rc -eq 2 ] && grep -q 'never goes to a reviewer' <<<"$ERR" && [ ! -e "$STUB_DIR/argv.json" ] \
+    && ok "a ledger of tasks/private/ ($spelled) -> 2, no run" || bad "private ledger $spelled: rc=$rc err=$ERR"
+done
+# tasks/private/ as a symlink to the private clone outside, and another checkout's
+# private ledger by its absolute path.
+mkdir -p "$WORK/privclone" "$WORK/other/tasks/private"
+printf '### T1 — PRIVATE-SECURITY-FINDING\n' > "$WORK/privclone/sec.md"
+cp "$WORK/privclone/sec.md" "$WORK/other/tasks/private/sec.md"
+mv "$FIX/tasks/private" "$WORK/private.real"; ln -s "$WORK/privclone" "$FIX/tasks/private"
+for spelled in tasks/private/sec.md "$WORK/other/tasks/private/sec.md"; do
+  rm -rf "$FIX/.ah-out/review/sec"; run "$spelled" T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS"
+  [ $rc -eq 2 ] && grep -q 'never goes to a reviewer' <<<"$ERR" && [ ! -e "$STUB_DIR/argv.json" ] \
+    && ok "refused too: $spelled (symlinked private dir, another checkout)" || bad "private $spelled: rc=$rc err=$ERR"
+done
+rm "$FIX/tasks/private"; mv "$WORK/private.real" "$FIX/tasks/private"
+# A checkout reached through a symlinked path: its own ledger is no ledger "outside",
+# a private one stays refused.
+ln -s "$FIX" "$WORK/repolink"
+rm -rf "$VDIR"; rm -f "$STUB_DIR/stdin" "$STUB_DIR/pwd" "$STUB_DIR/argv.json"
+OUT=$(cd "$WORK" && STUB=approve bash "$WORK/repolink/scripts/dev/review-run.sh" tasks/fix.md T1 --tree "$TREE" --round 1 \
+  --probe "$PROBE" --contracts "$CONTRACTS" 2>"$WORK/err"); rc=$?
+[ $rc -eq 0 ] && [ -f "$VDIR/T1.r1.verdict.json" ] && ok "through a symlinked checkout path its own ledger is reviewed" \
+  || bad "symlinked checkout: rc=$rc err=$(cat "$WORK/err")"
+OUT=$(cd "$WORK" && STUB=approve bash "$WORK/repolink/scripts/dev/review-run.sh" tasks/private/p.md T1 --tree "$TREE" --round 1 \
+  --probe "$PROBE" --contracts "$CONTRACTS" 2>"$WORK/err"); rc=$?
+[ $rc -eq 2 ] && grep -q 'never goes to a reviewer' "$WORK/err" && ok "and a private ledger through it stays refused" \
+  || bad "symlinked checkout, private: rc=$rc err=$(cat "$WORK/err")"
+rm "$WORK/repolink"
 usage_case "contracts that are no JSON" tasks/fix.md T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts 'x'
 usage_case "an unknown task" tasks/fix.md T9 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS"
 usage_case "an unknown option" tasks/fix.md T1 --tree "$TREE" --round 1 --probe "$PROBE" --contracts "$CONTRACTS" --fast
@@ -248,6 +305,9 @@ echo "── repo wiring ──"
 # subagent of the project.
 [ ! -e "$REPO_ROOT/.claude/agents/review-task.md" ] && [ -f "$REPO_ROOT/scripts/dev/review-agent.md" ] \
   && ok "the reviewer lives in scripts/dev/review-agent.md, not in .claude/agents" || bad "agent file location"
+# Each mutant runs the suite: only with the Verify: line's test, or the run's time is gone.
+grep -qF "'<ersatz>' -- <test>" "$REPO_ROOT/scripts/dev/review-agent.md" && grep -q 'setze keinen' "$REPO_ROOT/scripts/dev/review-agent.md" \
+  && ok "the reviewer mutates only with the Verify: line's test" || bad "review-agent.md: mutants without a test"
 for p in scripts/dev/review-run.sh scripts/dev/review-agent.md scripts/tests/review_run_test.sh; do
   grep -qxF "$p" "$REPO_ROOT/scripts/dev/harness-paths.txt" && ok "$p is a harness path" || bad "$p is missing from harness-paths.txt"
 done
