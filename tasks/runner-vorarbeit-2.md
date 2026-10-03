@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 2: das Red Team als root-eigenes Messinstrument (R-0152) — Task-Ledger
-Status: geplant · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: freigegeben · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 2, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0152
 Heavy: none — nur Skripte (runner-env.sh, runner-redteam.sh, runner-setup.sh) und ihre hermetischen Tests mit Fake-HOME und Stub-Binärdateien; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Absatz unten).
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
