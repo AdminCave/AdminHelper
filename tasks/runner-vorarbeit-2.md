@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 2: das Red Team als root-eigenes Messinstrument (R-0152) — Task-Ledger
-Status: freigegeben · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 2, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0152
 Heavy: none — nur Skripte (runner-env.sh, runner-redteam.sh, runner-setup.sh) und ihre hermetischen Tests mit Fake-HOME und Stub-Binärdateien; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Absatz unten).
@@ -29,8 +29,10 @@ Entscheidungen (Kevin, 2026-10-03): A — root-eigenes Messinstrument (T1 + T2) 
 beim Setup festhalten, FAIL bei Abweichung · C — R-0108 (Allow-Liste für Temp-Pfade) gehört in den Stufe-7-Plan,
 nicht in dieses Ledger.
 
-### T1 — Red Team startet in fester Umgebung und sourct keine Datei des Runners  [ ]
+### T1 — Red Team startet in fester Umgebung und sourct keine Datei des Runners  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-env.sh, scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0ec9b238 2026-10-03T11:14:30+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenproben: altes runner-env.sh => devenv gesourct und Integritaets-FAIL, ohne Neustart => Fake-gh sichtbar
 Änderung: `runner-env.sh` lässt das Sourcen von `~/.devenv.sh` (`:55`) aus, wenn `AH_RUNNER_ENV_NO_DEVENV=1`
 gesetzt ist; sonst bleibt alles wie heute (die Arbeits-Sessions des Runners brauchen PATH und AH_TEST_DB). Das Red
 Team startet sich im normalen Lauf einmal neu unter `env -i` mit festem `PATH=/usr/local/bin:/usr/bin:/bin`, `HOME`

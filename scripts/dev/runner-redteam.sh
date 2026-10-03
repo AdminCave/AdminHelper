@@ -32,9 +32,13 @@
 #   AH_REDTEAM_FOREIGN_VMID a VMID OUTSIDE the adminhelper-ci pool (default 100)
 #   AH_REDTEAM_NO_CLAUDE=1  skip the `claude -p` probes and the pin read-back
 #                           (offline, no budget)
+#
+# The run restarts itself once under `env -i` with a fixed PATH and HOME from
+# passwd; only the three variables above and TMPDIR are carried over (R-0152).
 
 set -uo pipefail
 
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" || exit 2
 REPO="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
 # sudo -u does not change the working directory: without this the model probes
 # would start in Kevin's checkout (unreadable for this user) instead of the clone.
@@ -186,30 +190,79 @@ if [ "${1:-}" = "--verdict" ]; then
   exit 0
 fi
 
-echo "── red team as $(id -un) (uid $(id -u)), repo $REPO"
-echo ""
-
-# ── 0. the environment ───────────────────────────────────────────────────────
-# $HOME decides where half the probes look. sudo can be configured to keep the
-# caller's HOME, and then this whole run would measure Kevin's home instead.
-REAL_HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
-if [ -n "$REAL_HOME" ] && [ "$REAL_HOME" != "${HOME:-}" ]; then
-  fail "HOME is $HOME but this user's home is $REAL_HOME — run with sudo -u ... (no env_keep HOME)"
-  HOME="$REAL_HOME"
+# ── a fixed environment for the measurement ──────────────────────────────────
+# The red team measures this user, so nothing the user can put into its
+# environment may reach the probes: no PATH of its own (a `gh` or `git` from a
+# directory it fills), no exported functions, no BASH_ENV. The steps above read
+# only their arguments; the normal run and --env-check restart once under env -i.
+# The marker is this process id, which exec keeps — an inherited one never matches.
+if [ "${AH_REDTEAM_CLEAN:-}" != "$$" ]; then
+  exec /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 AH_REDTEAM_CLEAN="$$" \
+    AH_REDTEAM_CALLER_HOME="${HOME:-}" ${TMPDIR+"TMPDIR=$TMPDIR"} \
+    ${AH_OWNER_HOME+"AH_OWNER_HOME=$AH_OWNER_HOME"} \
+    ${AH_REDTEAM_FOREIGN_VMID+"AH_REDTEAM_FOREIGN_VMID=$AH_REDTEAM_FOREIGN_VMID"} \
+    ${AH_REDTEAM_NO_CLAUDE+"AH_REDTEAM_NO_CLAUDE=$AH_REDTEAM_NO_CLAUDE"} \
+    /bin/bash "$SELF" "$@"
 fi
 
 # Sourced once, up front: it is what sets AH_AUTONOMOUS=1 (without which the
 # harness guard only warns) and what removes an inherited ANTHROPIC_API_KEY
 # (with which the model probes would bill an API account instead of the
-# subscription). Its exit code is part of the report.
-# shellcheck source=scripts/dev/runner-env.sh
-if . "$REPO/scripts/dev/runner-env.sh"; then
-  ok "runner-env.sh: own token, no inherited credentials, AH_AUTONOMOUS=$AH_AUTONOMOUS"
-  ENV_OK=1
-else
-  fail "runner-env.sh refused (see its message above) — this user is not provisioned yet"
-  ENV_OK=0
+# subscription). Without the user's ~/.devenv.sh, and checked afterwards: the
+# same functions with the same bodies (its own two taken out again), aliases,
+# traps, options, PATH and counters as before. A difference ends the run —
+# results counted by a changed instrument are not results.
+redteam_source_env() {
+  local before after
+  before="$(declare -f; alias -p; trap -p; shopt -p; set +o; printf '%s\n' "$PATH" "$OKS $FAILS $INFOS")"
+  # shellcheck disable=SC2034  # read by runner-env.sh, sourced right below
+  AH_RUNNER_ENV_NO_DEVENV=1
+  # shellcheck source=scripts/dev/runner-env.sh
+  if . "$REPO/scripts/dev/runner-env.sh"; then ENV_OK=1; else ENV_OK=0; fi
+  unset AH_RUNNER_ENV_NO_DEVENV
+  unset -f ah_runner_env ah_secure_file
+  after="$(declare -f; alias -p; trap -p; shopt -p; set +o; printf '%s\n' "$PATH" "$OKS $FAILS $INFOS")"
+  if [ "$before" != "$after" ]; then
+    printf 'FAIL  %s\n' "runner-env.sh changed the red team itself (functions, aliases, traps, options, PATH or counters) — the run stops here"
+    exit 1
+  fi
+}
+report_env() {
+  if [ "$ENV_OK" = 1 ]; then
+    ok "runner-env.sh: own token, no inherited credentials, AH_AUTONOMOUS=$AH_AUTONOMOUS"
+  else
+    fail "runner-env.sh refused (see its message above) — this user is not provisioned yet"
+  fi
+}
+
+# The environment step alone, for the hermetic test: the restart above, then
+# runner-env.sh with <home> as HOME, and which gh the probes would meet.
+#   bash scripts/dev/runner-redteam.sh --env-check <home>
+if [ "${1:-}" = "--env-check" ]; then
+  case "${2:-}" in /*) ;; *) echo "runner-redteam: --env-check needs an absolute home" >&2; exit 2 ;; esac
+  HOME="$2"
+  redteam_source_env
+  report_env
+  echo "gh: $(command -v gh || echo none)"
+  echo "$OKS ok, $FAILS FAIL, $INFOS info"
+  [ "$FAILS" -eq 0 ]; exit
 fi
+
+echo "── red team as $(id -un) (uid $(id -u)), repo $REPO"
+echo ""
+
+# ── 0. the environment ───────────────────────────────────────────────────────
+# $HOME decides where half the probes look. It comes from passwd; a caller whose
+# HOME was something else (sudo can be configured to keep it) is still reported.
+REAL_HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
+HOME="${REAL_HOME:-/nonexistent}"
+export HOME
+if [ "${AH_REDTEAM_CALLER_HOME:-}" != "$HOME" ]; then
+  fail "HOME was ${AH_REDTEAM_CALLER_HOME:-<unset>} but this user's home is $HOME — run with sudo -u ... (no env_keep HOME)"
+fi
+
+redteam_source_env
+report_env
 
 # ── 0b. the python lock Kevin and the runner share ───────────────────────────
 redteam_py_lock /var/lib/adminhelper-dev/py.lock 0
@@ -336,6 +389,9 @@ else
 fi
 
 # ── 5. what the model session may do ─────────────────────────────────────────
+# The runner's CLI by its path (the official installer's place), not from PATH:
+# ~/.local/bin is the runner's own and stays out of the probes' PATH.
+CLAUDE="$HOME/.local/bin/claude"
 # The settings are the boundary here, not the filesystem: `dontAsk` plus the
 # deny list. Asking the model to do the forbidden thing is the only honest way
 # to find out whether that list holds.
@@ -346,7 +402,7 @@ claude_probe() {  # claude_probe <name> <prompt> <needle> [workdir]
   # without it ("requires --verbose") and exits before the first request. Until
   # 2026-09-22 it was missing, and every run reported the resulting start error
   # in the same line as an empty finding — both probes had never run once.
-  out="$(cd "$wd" && timeout 300 claude -p "$prompt" --permission-mode dontAsk --permission-prompts none \
+  out="$(cd "$wd" && timeout 300 "$CLAUDE" -p "$prompt" --permission-mode dontAsk --permission-prompts none \
         --output-format stream-json --verbose --max-budget-usd 1 2>&1)"
   rc=$?
   PROBE_OUT="$out"   # read back by the pin check below, so it costs no extra model call
@@ -368,10 +424,10 @@ claude_probe() {  # claude_probe <name> <prompt> <needle> [workdir]
 
 if [ "${AH_REDTEAM_NO_CLAUDE:-0}" = 1 ]; then
   info "AH_REDTEAM_NO_CLAUDE=1 — the model probes and the pin read-back were skipped"
-elif ! command -v claude >/dev/null 2>&1; then
+elif [ ! -x "$CLAUDE" ]; then
   # The CLI is pinned (runner-claude.version); a runner without it cannot work, and
   # without it neither the deny mechanism nor the pin can be measured.
-  fail "claude is not installed for this user — no model probe, no pin read-back (runner-setup.sh names the install)"
+  fail "no claude CLI at $CLAUDE for this user — no model probe, no pin read-back (runner-setup.sh names the install)"
 else
   # The deny rule itself, without a model: it lives in this user's
   # ~/.claude/settings.json, and whether it is THERE is a fact, not an opinion.
