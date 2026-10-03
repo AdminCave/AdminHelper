@@ -86,6 +86,7 @@ if [ "$DRY" = 1 ]; then
   SRV="${AH_RUNNER_DRY_SRV:-$SRV}"
   LOCK_DIR="${AH_RUNNER_DRY_LOCKDIR:-$LOCK_DIR}"
   LIB_DIR="${AH_RUNNER_DRY_LIBDIR:-$LIB_DIR}"
+  PVE_SRC_DRY="${AH_RUNNER_DRY_PVE_SRC:-}"
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
@@ -358,6 +359,35 @@ for f in runner-redteam.sh runner-env.sh runner-settings.json runner-claude.vers
   case "$f" in runner-redteam.sh) mode=755 ;; *) mode=644 ;; esac   # runner-env.sh is sourced
   run install -o root -g root -m "$mode" "$ROOT/scripts/dev/$f" "$LIB_DIR/$f"
 done
+
+# The hypervisor the red team's probe 4 asks (R-0156): URL, node, pool and CA —
+# never the token, which is the runner's own and what the probe measures. Root's,
+# like the red team, so the runner cannot point the probe somewhere else. Taken
+# from the environment of this call, else from this checkout's
+# .claude/settings.local.json; the CA is copied, Kevin's file is not the runner's
+# to read. Without a complete target there is no file, and probe 4 says info.
+step "Proxmox target of the red team in $LIB_DIR/pve-target.env (root 0644, no token)"
+PVE_SRC="${PVE_SRC_DRY:-$ROOT/.claude/settings.local.json}"
+pve_value() {  # pve_value <AH_PVE_ key> — from the environment, else from $PVE_SRC
+  local v="${!1:-}"
+  if [ -z "$v" ] && [ -r "$PVE_SRC" ]; then
+    v="$(python3 -c 'import json, sys
+print((json.load(open(sys.argv[1])).get("env") or {}).get(sys.argv[2], ""))' "$PVE_SRC" "$1" 2>/dev/null)"
+  fi
+  printf '%s' "$v"
+}
+PVE_URL="$(pve_value AH_PVE_URL)"; PVE_NODE="$(pve_value AH_PVE_NODE)"
+PVE_POOL="$(pve_value AH_PVE_POOL)"; PVE_CA="$(pve_value AH_PVE_CA)"
+PVE_CA="${PVE_CA/#\~/$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)}"
+if [[ "$PVE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] && [[ "$PVE_NODE" =~ ^[A-Za-z0-9._-]+$ ]] \
+   && [[ "$PVE_POOL" =~ ^[A-Za-z0-9._-]+$ ]] && [ -f "$PVE_CA" ]; then
+  no_symlink_in "$LIB_DIR/pve-ca.pem"
+  no_symlink_in "$LIB_DIR/pve-target.env"
+  run install -o root -g root -m 644 "$PVE_CA" "$LIB_DIR/pve-ca.pem"
+  run_sh "set -o pipefail; install -o root -g root -m 644 /dev/null $(printf '%q' "$LIB_DIR/pve-target.env.new") && printf '%s\n' $(printf '%q' "AH_PVE_URL=${PVE_URL%/}") $(printf '%q' "AH_PVE_NODE=$PVE_NODE") $(printf '%q' "AH_PVE_POOL=$PVE_POOL") $(printf '%q' "AH_PVE_CA=$LIB_DIR/pve-ca.pem") > $(printf '%q' "$LIB_DIR/pve-target.env.new") && mv -f $(printf '%q' "$LIB_DIR/pve-target.env.new") $(printf '%q' "$LIB_DIR/pve-target.env")"
+else
+  note "no complete Proxmox target (AH_PVE_URL, _NODE, _POOL, _CA in the environment or $PVE_SRC) — nothing written; an earlier $LIB_DIR/pve-target.env stays as it is, without one probe 4 says info"
+fi
 
 # ── 3. its own database, and the devenv that carries the password ────────────
 # Both or neither: a rotated password without the matching devenv file leaves a
