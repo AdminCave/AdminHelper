@@ -429,6 +429,21 @@ FC5="$G/clone5"; gitq init -q --template= "$FC5"; printf '[broken\n' >> "$FC5/.g
 probe_git "$FC5"; rc=$?
 [ "$rc" = 1 ] && grep -q "^FAIL  the git configuration the clone sees cannot be read" "$LT/out" \
   && ok "an unreadable git configuration is a FAIL, not 'no credential'" || bad "broken config: rc=$rc $(cat "$LT/out")"
+# More ways a git configuration carries a credential — names only; a push URL with an
+# @ in its password or a token in its query is redacted all the same.
+FC6="$G/clone6"; gitq clone -q --template= "$FC" "$FC6" 2>/dev/null
+gitq -C "$FC6" config --unset credential.helper; gitq -C "$FC6" config --unset-all http.https://example.invalid/.extraheader
+for k in http.sslCert http.https://x.invalid/.sslKey http.cookieFile core.askPass core.sshCommand; do
+  gitq -C "$FC6" config "$k" "SECRETV-$k"
+done
+gitq -C "$FC6" config remote.origin.pushurl "https://user:p@ss@127.0.0.1:9/x.git"
+gitq -C "$FC6" config --add remote.origin.pushurl "https://127.0.0.1:9/y.git?access_token=TOKQ"
+probe_git "$FC6"; rc=$?
+[ "$rc" = 1 ] && grep -qF "names a credential or a URL rewrite: core.askpass core.sshcommand http.cookiefile http.https://x.invalid/.sslkey http.sslcert" "$LT/out" \
+  && ok "client certificates, cookie files, askpass and ssh commands count too" || bad "more keys: rc=$rc $(cat "$LT/out")"
+! grep -qE 'SECRETV|ss@127|TOKQ' "$LT/out" && grep -qF "https://<userinfo>@127.0.0.1:9/x.git" "$LT/out" \
+  && grep -qF "access_token=<redacted>" "$LT/out" \
+  && ok "an @ in a password and a token in a query are redacted" || bad "redaction: $(grep -E 'SECRETV|ss@|TOKQ|127.0.0.1' "$LT/out")"
 # What a session may change, seen without git: the change time against a moment of
 # this process. A short pause first — the kernel stamps times on a coarse clock.
 changed() { bash "$RT" --changed "$FC" "$T0" > "$LT/out2" 2>&1; }
@@ -442,6 +457,21 @@ mark_now; rm "$FC/sub/f"; changed; rc=$?
 mark_now; printf 'm\n' >> "$FC/x.lock"; changed; rc=$?
 [ "$rc" = 1 ] && grep -qx "changed: $FC/x.lock" "$LT/out2" \
   && ok "and a *.lock outside .git" || bad "--changed x.lock: rc=$rc $(cat "$LT/out2")"
+# The runner owns the clone's parent and may put a symlink in its place.
+ln -s "$FC" "$G/link"
+mark_now; touch "$FC/README"
+bash "$RT" --changed "$G/link" "$T0" > "$LT/out2" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -qx "changed: $G/link/README" "$LT/out2" \
+  && ok "a clone behind a symlink is looked into" || bad "--changed symlink: rc=$rc $(cat "$LT/out2")"
+# A symlink put in the clone's place during the probe, to an old tree, is a change.
+mark_now; ln -s "$FC" "$G/link2"
+bash "$RT" --changed "$G/link2" "$T0" > "$LT/out2" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -qx "changed: $G/link2" "$LT/out2" \
+  && ok "and a symlink swapped in during the probe is a change itself" || bad "--changed new link: rc=$rc $(cat "$LT/out2")"
+mark_now
+bash "$RT" --changed "$FC/" "$T0" > "$LT/out2" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -qx "unchanged" "$LT/out2" \
+  && ok "a trailing slash changes nothing" || bad "--changed trailing slash: rc=$rc $(cat "$LT/out2")"
 mark_now; touch "$FC/.git/index"; : > "$FC/.git/index.lock"; rm "$FC/.git/index.lock"; changed; rc=$?
 [ "$rc" = 0 ] && grep -qx "unchanged" "$LT/out2" \
   && ok "the index and git's lock files alone are no change" || bad "--changed index only: rc=$rc $(cat "$LT/out2")"

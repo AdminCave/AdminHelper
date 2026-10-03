@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 3: Messinstrument und Grenzen unabhängig vom geprüften Nutzer — Task-Ledger
-Status: bereit · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 3, „Freigeben“; T3: Proxmox-Ziel root-eigen beim Setup), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit-3.md (Roadmap R-0156, R-0158, R-0159, R-0160, R-0161, R-0162, R-0163)
 Heavy: none — nur Harness-Skripte (runner-redteam.sh, runner-setup.sh, harness-guard.sh, runner-settings.json) und ihre hermetischen Tests mit Fake-Klon, Stub-Binärdateien (curl, busctl) und JSON auf stdin; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec „Kevins Handarbeit“).
@@ -186,3 +186,29 @@ Semantik: wie T1 (`docs/features/harness-stufe-4.md:33–34`).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: in T5 (Red-Team-Abschnitt), sonst keine
 Abhängt von: T1
+
+### T7 — Red Team: Befunde aus /code-review (Symlink-Klon, Zugangs-Schlüssel, Schwärzung)  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ea29b161 2026-10-03T15:21:31+02:00
+Review: request_changes (opus): wichtig find -H sah einen waehrend der Probe eingesetzten Symlink nicht -> Startpfad erst ohne Folgen, dann -H, mit Test; Nits Kommentar und ok-Text; Gegenprobe HEAD: 97/3
+Änderung: `redteam_changed` ruft `find -H` (ein Klon, den der Runner gegen einen Symlink tauscht, blieb sonst stets
+„unchanged“); der Konfigurations-Scan nennt zusätzlich `http.*.sslcert`, `http.*.sslkey`, `http.*.cookiefile`,
+`core.askpass` und `core.sshcommand` (nur Namen); `redact()` schwärzt die Userinfo bis zum letzten `@` vor dem Host
+und Token-Parameter in Query-Strings; der Kommentar über den Schritten sagt, dass `--git` mit URL und `--pve` ins Netz
+gehen und ohne Neustart laufen. Tests: Symlink-Klon mit Änderung ⇒ „changed“; je neuer Schlüssel ⇒ FAIL ohne Wert;
+`user:p@ss@host` und `?access_token=` ⇒ geschwärzt.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (T8)
+
+### T8 — Wächter: --output bei jedem git-Aufruf; Test-Hygiene und Doku (aus /code-review)  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, scripts/tests/runner_setup_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Änderung: `git_writes` wertet `--output[=]<f>` bei jedem git-Unterbefehl als Schreibziel und liest dafür auch hinter
+`--` weiter (`git log --decorate-refs -- --output=…` schrieb real); die freien Testfälle `git diff -- --output=…` und
+`git log --grep -- --output=…` werden bewusst Treffer (seltener Fehlalarm statt Umgehung), die Lücke „`--output`
+anderer Unterbefehle“ entfällt im Kopfkommentar. `hooks_test.sh` nutzt `cmdjson` statt eines zweiten Helfers.
+`runner_setup_test.sh` setzt `AH_RUNNER_DRY_PVE_SRC` global auf einen nicht vorhandenen Pfad (kein Dry-Run liest die
+echte `settings.local.json`). Doku: DEVELOPMENT.md/CHANGELOG sagen, dass die Modellproben bewusst die CLI des Runners
+starten (Prüfsumme und Settings vorher geprüft, Entscheidung C), dass `--git` mit URL und `--pve` ins Netz gehen, und
+dass ein interner Fehler des Wächters ihn weiter ohne Entscheidung enden lässt (offen, R-0166).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, CHANGELOG.md

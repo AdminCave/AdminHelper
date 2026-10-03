@@ -238,7 +238,12 @@ git_url_is_local() {  # git's own rule: a scheme other than file://, or host:pat
   return 0
 }
 # Whatever reaches the terminal goes without the userinfo of a URL: it can be a token.
-redact() { sed -E 's#(://)[^/@[:space:]]*@#\1<userinfo>@#g'; }
+# The userinfo runs to the last @ before the host (a password may hold one); a token can
+# also ride in a query parameter.
+redact() {
+  sed -E -e 's#(://)[^/[:space:]]*@#\1<userinfo>@#g' \
+        -e 's#([?&][A-Za-z0-9_.-]*(token|key|secret|password|auth)[A-Za-z0-9_.-]*=)[^&#[:space:]]*#\1<redacted>#Ig'
+}
 redteam_git() {  # redteam_git <clone> [network url]
   local clone="$1" net="${2:-}" pushurls keys url t pushed=0
   # Reading has a time limit too: an include.path can point at a FIFO.
@@ -254,7 +259,7 @@ redteam_git() {  # redteam_git <clone> [network url]
   # `ls-remote --get-url` shows below.
   local cfg rc key value
   cfg="$(timeout 10 git -C "$clone" config --get-regexp \
-           '^(credential(\..*)?\.helper|http(\..*)?\.extraheader|url\..*\.(pushinsteadof|insteadof))$' 2>/dev/null)"; rc=$?
+           '^(credential(\..*)?\.helper|http(\..*)?\.(extraheader|sslcert|sslkey|cookiefile)|core\.(askpass|sshcommand)|url\..*\.(pushinsteadof|insteadof))$' 2>/dev/null)"; rc=$?
   keys=""
   if [ "$rc" -gt 1 ]; then
     fail "the git configuration the clone sees cannot be read (git config exit $rc)"
@@ -268,7 +273,7 @@ redteam_git() {  # redteam_git <clone> [network url]
     if [ -n "${keys// /}" ]; then
       fail "the clone's git configuration names a credential or a URL rewrite: ${keys% }"
     else
-      ok "no credential helper, extra header or URL rewrite in the git configuration the clone sees"
+      ok "no credential helper, extra header, client certificate, cookie file, askpass, ssh command or URL rewrite in the git configuration the clone sees"
     fi
   fi
   if ! t="$(mktemp -d)" || [ -z "$t" ]; then
@@ -334,7 +339,13 @@ redteam_git() {  # redteam_git <clone> [network url]
 # and its lock files aside, which a read-only git call of a session may touch. A find
 # that fails is not "unchanged": it returns non-zero.
 redteam_changed() {  # redteam_changed <clone> <epoch>
-  find "$1" -newerct "@$2" ! -path "$1/.git" ! -path "$1/.git/index" ! -path "$1/.git/*.lock" -print -quit
+  # The runner owns the clone's parent: the clone may be a symlink. The path itself
+  # first, not followed — a symlink put there during the probe is a change — then
+  # the tree behind it (-H).
+  local c="${1%/}" hit
+  hit="$(find -P "$c" -maxdepth 0 -newerct "@$2" -print)" || return
+  if [ -n "$hit" ]; then printf '%s\n' "$hit"; return 0; fi
+  find -H "$c" -newerct "@$2" ! -path "$c/.git" ! -path "$c/.git/index" ! -path "$c/.git/*.lock" -print -quit
 }
 
 # Probe 4 at the Proxmox API itself (R-0156), not through vm.py from the runner's
@@ -495,8 +506,10 @@ fi
 # ── a fixed environment for the measurement ──────────────────────────────────
 # The red team measures this user, so nothing the user can put into its
 # environment may reach the probes: no PATH of its own (a `gh` or `git` from a
-# directory it fills), no exported functions, no BASH_ENV. The steps above read
-# only their arguments; the normal run, --self-check and --env-check restart once
+# directory it fills), no exported functions, no BASH_ENV. The steps above run
+# without this restart, in the caller's environment — and --pve, and --git (to each
+# push URL of the clone that is not local, and to a URL given) reach the network;
+# the normal run, --self-check and --env-check restart once
 # under env -i. SHELL is set, not inherited: the CLI's tools run in it.
 # The marker is this process id, which exec keeps — an inherited one never matches.
 if [ "${AH_REDTEAM_CLEAN:-}" != "$$" ]; then
