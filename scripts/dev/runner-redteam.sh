@@ -39,7 +39,6 @@
 #   AH_REDTEAM_FOREIGN_VMID a VMID OUTSIDE the adminhelper-ci pool (default 100)
 #   AH_REDTEAM_NO_CLAUDE=1  skip the `claude -p` probes and the pin read-back
 #                           (offline, no budget)
-#   AH_REDTEAM_REPO         the clone the probes aim at (default /srv/ah/repo)
 #
 # The run restarts itself once under `env -i` with a fixed PATH and HOME from
 # passwd; only the variables above and TMPDIR are carried over (R-0152).
@@ -50,7 +49,7 @@ set -uo pipefail
 # through a symlink.
 SELF_DIR="$(cd "$(dirname "$0")" && pwd -P)" || exit 2
 SELF="$SELF_DIR/$(basename "$0")"
-REPO="${AH_REDTEAM_REPO:-/srv/ah/repo}"
+REPO=/srv/ah/repo
 
 OWNER_HOME="${AH_OWNER_HOME:-$(getent passwd 1000 2>/dev/null | cut -d: -f6)}"
 FOREIGN_VMID="${AH_REDTEAM_FOREIGN_VMID:-100}"
@@ -231,15 +230,15 @@ fi
 # The red team measures this user, so nothing the user can put into its
 # environment may reach the probes: no PATH of its own (a `gh` or `git` from a
 # directory it fills), no exported functions, no BASH_ENV. The steps above read
-# only their arguments; the normal run and --env-check restart once under env -i.
+# only their arguments; the normal run, --self-check and --env-check restart once
+# under env -i. SHELL is set, not inherited: the CLI's tools run in it.
 # The marker is this process id, which exec keeps — an inherited one never matches.
 if [ "${AH_REDTEAM_CLEAN:-}" != "$$" ]; then
-  exec /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 AH_REDTEAM_CLEAN="$$" \
+  exec /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 SHELL=/bin/bash AH_REDTEAM_CLEAN="$$" \
     AH_REDTEAM_CALLER_HOME="${HOME:-}" ${TMPDIR+"TMPDIR=$TMPDIR"} \
     ${AH_OWNER_HOME+"AH_OWNER_HOME=$AH_OWNER_HOME"} \
     ${AH_REDTEAM_FOREIGN_VMID+"AH_REDTEAM_FOREIGN_VMID=$AH_REDTEAM_FOREIGN_VMID"} \
     ${AH_REDTEAM_NO_CLAUDE+"AH_REDTEAM_NO_CLAUDE=$AH_REDTEAM_NO_CLAUDE"} \
-    ${AH_REDTEAM_REPO+"AH_REDTEAM_REPO=$AH_REDTEAM_REPO"} \
     /bin/bash "$SELF" "$@"
 fi
 
@@ -320,12 +319,19 @@ cd "$REPO" || { echo "runner-redteam: cannot enter $REPO" >&2; exit 2; }
 # HOME was something else (sudo can be configured to keep it) is still reported.
 REAL_HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
 HOME="${REAL_HOME:-/nonexistent}"
-export HOME
+USER="$(id -un)"; LOGNAME="$USER"
+export HOME USER LOGNAME
 if [ "${AH_REDTEAM_CALLER_HOME:-}" != "$HOME" ]; then
   fail "HOME was ${AH_REDTEAM_CALLER_HOME:-<unset>} but this user's home is $HOME — run with sudo -u ... (no env_keep HOME)"
 fi
 
+# From anywhere else every later line could be the runner's own work, and the
+# model probes would spend budget on it: one FAIL with the right call, then stop.
+FAILS_BEFORE_SELF=$FAILS
 redteam_self_check
+if [ "$FAILS" -gt "$FAILS_BEFORE_SELF" ]; then
+  echo ""; echo "$OKS ok, $FAILS FAIL, $INFOS info"; exit 1
+fi
 redteam_source_env
 report_env
 

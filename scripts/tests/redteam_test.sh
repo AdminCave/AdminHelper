@@ -282,7 +282,8 @@ bash "$RT" --self-check > "$LT/out" 2>&1; rc=$?
   && ok "so is the checkout's own copy" || bad "self-check repo: rc=$rc $(cat "$LT/out")"
 
 echo "── the normal run measures against its own directory"
-grep -qx 'redteam_self_check' "$RT" && ok "the normal run checks where it runs from" || bad "the normal run does not call redteam_self_check"
+grep -A1 -x 'redteam_self_check' "$RT" | grep -qxF 'if [ "$FAILS" -gt "$FAILS_BEFORE_SELF" ]; then' \
+  && ok "the normal run checks where it runs from and stops there on a FAIL" || bad "the normal run does not stop after redteam_self_check"
 grep -qF '"$SELF_DIR/runner-settings.json"' "$RT" && grep -qF '"$SELF_DIR/runner-claude.version"' "$RT" \
   && ! grep -qF '$REPO/scripts/dev/' "$RT" \
   && ok "the pin and runner-env.sh come from beside the red team, nothing from the clone's scripts/dev" \

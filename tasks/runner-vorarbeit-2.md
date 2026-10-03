@@ -104,3 +104,18 @@ Abhängt von: T2
 2. `sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only`.
 3. Red Team mit dem neuen Aufruf: `sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh`;
    Ergebnis in den Ledger-Anhang. Erwartet: die neuen Proben (Ort, Prüfsumme) `ok`, keine neue FAIL-Zeile.
+
+### T4 — Befunde aus dem Gesamt-Review: Abschlusstext, Prüfsumme als Runner  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/dev/runner-redteam.sh, scripts/tests/runner_setup_test.sh, scripts/tests/redteam_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @68bf8415 2026-10-03T11:56:55+02:00
+Review: Gesamt-Review Opus: Runde 1 request_changes (wichtig Abschlusstext, Pruefsumme als root), Runde 2 Befunde behoben, neu wichtig Test closing steps unter .../repo -> nur Handover-Teil geprueft, Nit --zero; Gegenprobe HEAD-Setup 96/2
+Änderung: (1) Der Abschlusstext von `runner-setup.sh` nennt den neuen Aufruf aus `$LIB_DIR` statt aus dem Klon, ohne
+den Satz „the red team runs from that worktree“; der Dry-Run-Test hält das fest. (2) Die sha256 der Runner-CLI bildet
+`runuser -u "$RUNNER" -- timeout 120 sha256sum -- <pfad>` — root öffnet keinen Pfad, den der Runner wählen kann (die
+Prüfsumme ist ohnehin „trust on first use“ beim Setup); Plan und Test ziehen nach. (3) Nits: veralteter Kommentar zum
+Soll im Klon (`runner-setup.sh`, Claude-Schritt), Kommentar zum Neustart nennt `--self-check`, Doku „sourct keine
+Datei des Runners“ statt „liest keine“, der normale Lauf endet nach einem FAIL der Ortsprüfung, `SHELL=/bin/bash`
+beim Neustart und `USER`/`LOGNAME` neben `HOME` (die CLI nach `env -i`), `AH_REDTEAM_REPO` entfällt (kein Test
+nutzt es; YAGNI an einem Messinstrument).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, CHANGELOG.md (Wortlaut)

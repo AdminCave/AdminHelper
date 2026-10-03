@@ -193,10 +193,16 @@ for f in runner-redteam.sh:755 runner-env.sh:644 runner-settings.json:644 runner
 done
 [ -z "$MISSING" ] && ok "the red team, runner-env.sh and the pin go there from this checkout, root's (0755 / 0644)" \
   || bad "not installed as planned:$MISSING"
-grep -qF -- "sha256sum <" <<<"$PLAN" && grep -qF -- "mv -f $LOCKS_RT/runner-claude.sha256.new $LOCKS_RT/runner-claude.sha256" <<<"$PLAN" \
+grep -qE -- "runuser -u [^ ]+ -- timeout 120 sha256sum --zero -- .* </dev/null" <<<"$PLAN" && grep -qF -- "mv -f $LOCKS_RT/runner-claude.sha256.new $LOCKS_RT/runner-claude.sha256" <<<"$PLAN" \
   && grep -qF -- "install -o root -g root -m 644 /dev/null $LOCKS_RT/runner-claude.sha256.new" <<<"$PLAN" \
-  && ok "the sha256 of the runner's claude goes to $LOCKS_RT/runner-claude.sha256, root:root 0644" \
+  && ok "the sha256 of the runner's claude, read as the runner, goes to $LOCKS_RT/runner-claude.sha256, root:root 0644" \
   || bad "checksum step: $(grep -F 'runner-claude.sha256' <<<"$PLAN" | head -3)"
+# Only the closing steps: the install lines above name this checkout's copy, and a
+# checkout under .../repo (the runner's own clone) must not read as the old call.
+DONE="$(sed -n '/^── done/,$p' <<<"$PLAN")"
+grep -qF -- "bash $LIBS/runner-redteam.sh" <<<"$DONE" && ! grep -qF -- "scripts/dev/runner-redteam.sh" <<<"$DONE" \
+  && ok "the closing steps name the installed red team, not the clone's" \
+  || bad "closing steps: $(grep -F 'runner-redteam.sh' <<<"$DONE" | tail -2)"
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_LOCKDIR="$LOCKS_RT" bash "$SETUP" --dry-run --remove 2>&1)
 grep -qF -- "rm -rf $LIBS" <<<"$PLAN" && grep -qF -- "rm -rf $LOCKS_RT" <<<"$PLAN" \
   && ok "--remove takes the red team and the checksum (with the lock directory) away" \

@@ -936,10 +936,10 @@ sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh
 
 Das Messgeraet liegt ausserhalb dessen, was der gepruefte Nutzer schreiben kann: die
 root-eigene Kopie, die `runner-setup.sh` installiert. Es startet sich einmal unter `env -i` mit
-festem `PATH` neu, liest keine Datei des Runners (`runner-env.sh` laesst dort `~/.devenv.sh`
+festem `PATH` neu, sourct keine Datei des Runners (`runner-env.sh` laesst dort `~/.devenv.sh`
 aus) und bricht ab, wenn `runner-env.sh` seine Funktionen, Zaehler oder seinen `PATH`
 veraendert. Laeuft es von woanders, etwa aus dem Klon, ist das ein `FAIL`, der den richtigen
-Aufruf nennt.
+Aufruf nennt, und der Lauf endet dort.
 
 Jede Probe druckt `ok`, `FAIL` oder `info`; die letzte Zeile ist `N ok, M FAIL`.
 Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,

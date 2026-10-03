@@ -313,7 +313,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `/usr/local/lib/adminhelper-dev/` (root) und haelt die sha256 der Runner-CLI in
   `/var/lib/adminhelper-dev/runner-claude.sha256` fest; `--remove` nimmt beides mit. Das Red Team
   laeuft von dort (`sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh`),
-  startet sich unter `env -i` mit festem `PATH` neu, liest keine Datei des Runners
+  startet sich unter `env -i` mit festem `PATH` neu, sourct keine Datei des Runners
   (`AH_RUNNER_ENV_NO_DEVENV=1` in `runner-env.sh`), nimmt das Soll des Pin-Checks aus seinem eigenen
   Verzeichnis und meldet `FAIL`, wenn es von woanders laeuft, wenn `runner-env.sh` es veraendert
   oder wenn die CLI nicht die festgehaltene ist. Nach einem CLI-Wechsel braucht es deshalb erneut

@@ -453,9 +453,8 @@ fi
 # The CLI is pinned like every other toolchain in this repo (frp, oasdiff, Go, ruff):
 # an unattended run must not change its substrate because an updater ran overnight.
 # The version lives in ONE file, scripts/dev/runner-claude.version (read and checked in
-# the preflight). This script reads it from THIS checkout, runner-redteam.sh reads it
-# back from the runner's clone — both have to stand on the same main, or the red team
-# reports a version the setup never installed (DEVELOPMENT.md, Anheben). 2.1.280
+# the preflight). This script reads it from THIS checkout and installs it beside the
+# red team (step 2c), which measures against that copy (DEVELOPMENT.md, Anheben). 2.1.280
 # is the first version whose model catalog knows claude-opus-5-5 — the 2.1.278 binary
 # has no entry for it (measured 2026-09-23: 0 hits in the binary, 15 in 2.1.280).
 # The auto-updater is off through runner-env.sh (DISABLE_AUTOUPDATER) — not through
@@ -472,15 +471,17 @@ fi
 # root, lets the red team tell the installed binary from a changed one. A CLI change
 # (runner-claude.version) needs this run again, or the red team reports a mismatch.
 step "sha256 of $RUNNER's claude CLI to $LOCK_DIR/runner-claude.sha256 (root:root 0644)"
-# The link is the runner's, so root hashes only a regular file the runner owns —
-# anything else (a link to a file only root may read, a FIFO) is no CLI of its.
+# The path is the runner's to choose, so the runner reads it (runuser, no login
+# shell): root opens nothing the runner points at. What is recorded is what the
+# runner has at this moment — the check is against changes after the setup.
+# --zero: no escaping of an odd file name, the same hex the red team reads off stdin.
 CLAUDE_REAL="$(readlink -f "$HOME_DIR/.local/bin/claude" 2>/dev/null)"
 SUMF="$LOCK_DIR/runner-claude.sha256"
 if [ "$DRY" = 1 ] || { [ -n "$CLAUDE_REAL" ] && [ -f "$CLAUDE_REAL" ] \
                        && [ "$(stat -c %U "$CLAUDE_REAL" 2>/dev/null)" = "$RUNNER" ]; }; then
   no_symlink_in "$SUMF"
   # Written to a new file and renamed: a reader never sees half a checksum.
-  run_sh "set -o pipefail; install -o root -g root -m 644 /dev/null $(printf '%q' "$SUMF.new") && timeout 120 sha256sum < $(printf '%q' "${CLAUDE_REAL:-$HOME_DIR/.local/bin/claude}") | cut -d' ' -f1 > $(printf '%q' "$SUMF.new") && mv -f $(printf '%q' "$SUMF.new") $(printf '%q' "$SUMF")"
+  run_sh "set -o pipefail; install -o root -g root -m 644 /dev/null $(printf '%q' "$SUMF.new") && runuser -u $(printf '%q' "$RUNNER") -- timeout 120 sha256sum --zero -- $(printf '%q' "${CLAUDE_REAL:-$HOME_DIR/.local/bin/claude}") </dev/null | cut -d' ' -f1 > $(printf '%q' "$SUMF.new") && mv -f $(printf '%q' "$SUMF.new") $(printf '%q' "$SUMF")"
 else
   note "no claude CLI of $RUNNER at $HOME_DIR/.local/bin/claude — no checksum recorded; run this again after the install"
 fi
@@ -529,7 +530,6 @@ cat <<HANDOVER
      put host, node, token id and secret into $HOME_DIR/.config/adminhelper/pve.env
 
   3. sudo -u $RUNNER git -C $SRV/repo pull --ff-only
-     (not just fetch: the red team runs from that worktree and reads the pin there)
-     then prove the boundary holds:
-     sudo -u $RUNNER bash $SRV/repo/scripts/dev/runner-redteam.sh
+     then prove the boundary holds, with the red team installed above (root's copy):
+     sudo -u $RUNNER bash $LIB_DIR/runner-redteam.sh
 HANDOVER
