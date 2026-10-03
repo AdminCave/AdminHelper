@@ -80,8 +80,10 @@ der alte Push aus dem Klon an die lokale pushurl `/dev/null` startete `remote.or
 `-c`-Optionen des Plans nicht abdecken. Der Fake-Hook im Test liegt in `.git/hooks` (der Wächter weist
 `git config core.hooksPath` in jedem Modus ab, auch für einen Fake-Klon).
 
-### T3 — Red Team: Probe 4 misst die Rechte des Proxmox-Tokens direkt an der API  [ ]
+### T3 — Red Team: Probe 4 misst die Rechte des Proxmox-Tokens direkt an der API  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/dev/runner-setup.sh, scripts/tests/redteam_test.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @65b1dbb5 2026-10-03T13:35:55+02:00
+Review: request_changes (opus): Blocker curl las ~/.curlrc des Runners -> curl -q als erstes Argument und --noproxy, mit Fake-curlrc belegt; Nits curl-Exit in info, Hinweis zum alten Ziel, vm.py-Reste weg, weitere Testfaelle; keine zweite Runde (ein Flag, Test und Verhaltensprobe)
 Änderung: Probe 4 (`:446`/`:450`) ruft kein `vm.py` mehr auf. Sie fragt die Proxmox-API mit `curl`: das Token geht als
 Kopfzeile `Authorization: PVEAPIToken=…` über stdin (`curl --config -`), nie in die argv. Gegenprobe
 `GET /pools/<pool>` ⇒ 200 (Token wirkt), sonst `FAIL`; Probe `GET /nodes/<node>/qemu/<fremde-vmid>/status/current`
@@ -101,6 +103,16 @@ Semantik: wie T1 (`docs/features/harness-stufe-4.md:33–34`).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T5)
 Abhängt von: T1
+Notiz: Gegenprobe `GET /pools?poolid=<pool>` statt `GET /pools/<pool>` — das offizielle API-Schema
+(pve-docs/api-viewer/apidoc.js, gelesen 2026-10-03) nennt `/pools/{poolid}` „deprecated, no support for nested pools,
+use 'GET /pools/?poolid={poolid}'“; die Listenform antwortet jedem gültigen Token mit 200 und nennt nur Pools mit
+`Pool.Audit`, also prüft die Probe, dass der Pool in der Antwort steht. `status/current` verlangt laut Schema `VM.Audit`
+auf `/vms/{vmid}`; dass der fehlende Recht als 403 kommt, ist nicht verifiziert (Kevins Lauf). Die CA kopiert das Setup
+root-eigen nach `pve-ca.pem` (Kevins Datei liegt unter seinem Home, der Runner kann sie nicht lesen); Code `000`
+(API antwortet nicht) ist `info`, mit dem curl-Exit. Beide Testskripte entfernen geerbte `AH_PVE_*` am Anfang. curl läuft
+mit `-q` als erstem Argument (curl(1): „If used as the first parameter … the curlrc config file is not read“) und
+`--noproxy '*'` — sonst läse es die `~/.curlrc` des Runners (Review: `insecure`/`connect-to` darin lenkten die Probe auf
+eine Fake-API); mit einer Fake-curlrc gegengeprüft.
 
 ### T4 — Wächter: Schreibwege von git über Ausgabe-Optionen zählen als Schreibzugriff  [ ]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh

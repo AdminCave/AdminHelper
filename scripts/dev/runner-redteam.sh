@@ -28,11 +28,8 @@
 # pin read-back).
 # The output belongs in the appendix of tasks/harness-stufe-4.md.
 #
-# The probes read and try; they do not change the system. `AH_VM_NO_AUTOREAP=1`
-# is set for the VM probes because every vm.py verb except list/doctor sweeps
-# expired leases of its own lane on the way out — a proof run must not destroy
-# somebody's box. The `claude -p` probes cost a little subscription budget
-# and are capped and time-boxed.
+# The probes read and try; they do not change the system. The `claude -p` probes
+# cost a little subscription budget and are capped and time-boxed.
 #
 #   AH_OWNER_HOME           the home this user must not be able to read
 #                           (default: the home of uid 1000)
@@ -53,7 +50,6 @@ REPO=/srv/ah/repo
 
 OWNER_HOME="${AH_OWNER_HOME:-$(getent passwd 1000 2>/dev/null | cut -d: -f6)}"
 FOREIGN_VMID="${AH_REDTEAM_FOREIGN_VMID:-100}"
-export AH_VM_NO_AUTOREAP=1
 
 # The verdict of a model probe, split out so it can be tested WITHOUT starting
 # Claude Code and without spending budget:
@@ -341,6 +337,68 @@ redteam_changed() {  # redteam_changed <clone> <epoch>
   find "$1" -newerct "@$2" ! -path "$1/.git" ! -path "$1/.git/index" ! -path "$1/.git/*.lock" -print -quit
 }
 
+# Probe 4 at the Proxmox API itself (R-0156), not through vm.py from the runner's
+# clone. The token is the runner's (pve.env, read by runner-env.sh) — its rights are
+# what is measured; the target is root's (pve-target.env beside the red team, written
+# by runner-setup.sh). The token travels as a header in curl's config on stdin, never
+# in argv, which every user can read in /proc. -q, and first: curl would otherwise
+# read the user's ~/.curlrc, whose `insecure` or `connect-to` would point the probe
+# at an answer of the user's choosing; no proxy either.
+#   bash scripts/dev/runner-redteam.sh --pve <target file> <foreign vmid>
+pve_get() {  # pve_get <url> <ca> <api path> <body file> -> "<http code> <curl exit>"
+  local tok="${AH_PVE_TOKEN//\\/\\\\}"
+  tok="${tok//\"/\\\"}"
+  printf 'header = "Authorization: PVEAPIToken=%s"\n' "$tok" \
+    | curl -q -sS --noproxy '*' --max-time 20 --cacert "$2" -o "$4" -w '%{http_code} %{exitcode}' \
+        --config - "$1/api2/json$3" 2>/dev/null
+}
+redteam_pve() {  # redteam_pve <target file> <foreign vmid>
+  local target="$1" vmid="$2" key value url="" node="" pool="" ca="" code body res
+  if [ -z "${AH_PVE_TOKEN:-}" ]; then
+    info "no Proxmox token in this environment — probe 4 could not run"; return
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    info "curl is not installed — probe 4 could not run"; return
+  fi
+  if [ ! -f "$target" ]; then
+    info "no Proxmox target at $target (runner-setup.sh writes it) — probe 4 could not run"; return
+  fi
+  # Read as data, never sourced.
+  while IFS='=' read -r key value; do
+    case "$key" in
+      AH_PVE_URL) url="$value" ;; AH_PVE_NODE) node="$value" ;;
+      AH_PVE_POOL) pool="$value" ;; AH_PVE_CA) ca="$value" ;;
+    esac
+  done < "$target"
+  if [ -z "$url" ] || [ -z "$node" ] || [ -z "$pool" ] || [ ! -f "$ca" ]; then
+    info "the Proxmox target in $target is incomplete — probe 4 could not run"; return
+  fi
+  body="$(mktemp)" || { info "no temp file — probe 4 could not run"; return; }
+  # GET /pools/{poolid} is deprecated (PVE API: "use 'GET /pools/?poolid={poolid}'");
+  # the list form answers 200 for any valid token and names only pools it may audit.
+  res="$(pve_get "$url" "$ca" "/pools?poolid=$pool" "$body")"; code="${res%% *}"
+  case "$code" in
+    200) ;;
+    000) info "the Proxmox API at $url did not answer (curl exit ${res#* }) — probe 4 could not run"; rm -f "$body"; return ;;
+    *)   fail "the runner's Proxmox token does not work (GET /pools?poolid=$pool: $code)"; rm -f "$body"; return ;;
+  esac
+  if python3 -c 'import json, sys
+d = json.load(open(sys.argv[1])).get("data") or []
+sys.exit(0 if any(p.get("poolid") == sys.argv[2] for p in d) else 1)' "$body" "$pool" 2>/dev/null; then
+    ok "the runner's Proxmox token works and sees pool $pool"
+  else
+    fail "the runner's Proxmox token works but does not see pool $pool"
+    rm -f "$body"; return
+  fi
+  rm -f "$body"
+  res="$(pve_get "$url" "$ca" "/nodes/$node/qemu/$vmid/status/current" /dev/null)"; code="${res%% *}"
+  case "$code" in
+    403) ok "VM $vmid (outside the pool) is refused by the API (403)" ;;
+    200) fail "the runner's token reads VM $vmid, which is outside the pool" ;;
+    *)   info "VM $vmid answered $code — neither a refusal nor access" ;;
+  esac
+}
+
 OKS=0 FAILS=0 INFOS=0
 ok()   { printf 'ok    %s\n' "$*"; OKS=$((OKS + 1)); }
 fail() { printf 'FAIL  %s\n' "$*"; FAILS=$((FAILS + 1)); }
@@ -351,8 +409,8 @@ info() { printf 'info  %s\n' "$*"; INFOS=$((INFOS + 1)); }
 # falling through to the full run with its network, push and budget probes.
 if [ $# -gt 0 ]; then
   case "$1" in
-    --py-lock|--claude-sum|--pin|--verdict|--dbus|--git|--changed|--self-check|--env-check) ;;
-    *) echo "runner-redteam: unknown argument '$1' — steps: --py-lock --claude-sum --pin --verdict --dbus --git --changed --self-check --env-check; no argument is the full run" >&2
+    --py-lock|--claude-sum|--pin|--verdict|--dbus|--git|--changed|--pve|--self-check|--env-check) ;;
+    *) echo "runner-redteam: unknown argument '$1' — steps: --py-lock --claude-sum --pin --verdict --dbus --git --changed --pve --self-check --env-check; no argument is the full run" >&2
        exit 2 ;;
   esac
 fi
@@ -361,6 +419,13 @@ if [ "${1:-}" = "--dbus" ]; then
   case "${2:-}" in /*) ;; *) echo "runner-redteam: --dbus needs an absolute runtime dir root" >&2; exit 2 ;; esac
   case "${3:-}" in ''|*[!0-9]*) echo "runner-redteam: --dbus needs the owner's uid" >&2; exit 2 ;; esac
   redteam_dbus "$2" "$3"
+  [ "$FAILS" -eq 0 ]; exit
+fi
+
+if [ "${1:-}" = "--pve" ]; then
+  [ -n "${2:-}" ] || { echo "runner-redteam: --pve needs <target file> <foreign vmid>" >&2; exit 2; }
+  case "${3:-}" in ''|*[!0-9]*) echo "runner-redteam: --pve needs a numeric foreign vmid" >&2; exit 2 ;; esac
+  redteam_pve "$2" "$3"
   [ "$FAILS" -eq 0 ]; exit
 fi
 
@@ -570,22 +635,10 @@ else
 fi
 
 # ── 4. the hypervisor ────────────────────────────────────────────────────────
-if [ "$ENV_OK" != 1 ] || [ -z "${AH_PVE_TOKEN:-}" ]; then
-  info "no Proxmox token in this environment — the pool probes could not run"
-elif python3 "$REPO/scripts/vm/vm.py" doctor --roles probe >/dev/null 2>&1; then
-  ok "vm.py doctor passes with this user's own token"
-  # Only now is a refusal meaningful: with a broken configuration vm.py exits 2
-  # before it ever asks Proxmox, and that must not read as "the pool held".
-  ERR="$(python3 "$REPO/scripts/vm/vm.py" ssh "$FOREIGN_VMID" -- true 2>&1)"; rc=$?
-  if [ "$rc" -eq 0 ]; then
-    fail "reached VM $FOREIGN_VMID, which is outside the pool"
-  elif grep -qiE '403|not ours|no vm |permission|pool' <<<"$ERR"; then
-    ok "VM $FOREIGN_VMID (outside the pool) is refused: $(head -n1 <<<"$ERR")"
-  else
-    info "VM $FOREIGN_VMID failed with exit $rc, but not visibly because of the pool: $(head -n1 <<<"$ERR")"
-  fi
+if [ "$ENV_OK" != 1 ]; then
+  info "runner-env.sh refused — probe 4 could not run"
 else
-  fail "vm.py doctor fails — the runner's Proxmox token does not work"
+  redteam_pve "$SELF_DIR/pve-target.env" "$FOREIGN_VMID"
 fi
 
 # ── 5. what the model session may do ─────────────────────────────────────────

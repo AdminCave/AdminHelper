@@ -22,6 +22,9 @@
 # `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
 set -uo pipefail
+# The caller's Proxmox settings (a session may carry them, token included) never
+# reach these tests: each case sets what it needs.
+unset "${!AH_PVE_@}"
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -449,6 +452,77 @@ grep -qx 'redteam_git "$REPO" https://github.com/AdminCave/AdminHelper.git' "$RT
   && ! grep -qE 'git -C "\$REPO" (status|diff|push)' "$RT" \
   && ok "the normal run pushes through redteam_git, and nothing runs git status/diff/push in the clone" \
   || bad "the normal run still runs git in the clone: $(grep -nE 'git -C "\$REPO" (status|diff|push)' "$RT")"
+
+echo "── probe 4 asks the Proxmox API itself (--pve)"
+# curl as a stub: it logs its arguments and, apart, what it read on stdin, and answers
+# by path. The token must reach the stdin log and never the argument log.
+PV="$LT/pve"; mkdir -p "$PV/bin"; : > "$PV/ca.pem"
+cat > "$PV/bin/curl" <<'EOF'
+#!/bin/sh
+echo "$*" >> "$STUB_LOG/curl.args"
+cat >> "$STUB_LOG/curl.stdin"
+out=""; url=""
+while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift ;; https://*) url="$1" ;; esac; shift; done
+case "$url" in
+  *"/pools?poolid="*) code="$STUB_POOL"; [ -n "$out" ] && printf '%s' "$STUB_POOL_BODY" > "$out" ;;
+  */status/current) code="$STUB_VM" ;;
+  *) code=000 ;;
+esac
+printf '%s %s' "$code" "$([ "$code" = 000 ] && echo 7 || echo 0)"
+EOF
+chmod +x "$PV/bin/curl"
+printf 'AH_PVE_URL=https://pve.test.invalid:8006\nAH_PVE_NODE=n1\nAH_PVE_POOL=ci\nAH_PVE_CA=%s\n' "$PV/ca.pem" > "$PV/target.env"
+SEES='{"data":[{"poolid":"ci"}]}'
+pve() {  # pve <pool code> <pool body> <vm code> [target] — the step with the stub and a probe token
+  : > "$PV/curl.args"; : > "$PV/curl.stdin"
+  STUB_LOG="$PV" STUB_POOL="$1" STUB_POOL_BODY="$2" STUB_VM="$3" AH_PVE_TOKEN='ah@pve!probe=TOKEN-0123' \
+    PATH="$PV/bin:$PATH" bash "$RT" --pve "${4:-$PV/target.env}" 100 > "$LT/out" 2>&1
+}
+pve 200 "$SEES" 403; rc=$?
+[ "$rc" = 0 ] && grep -q "^ok    the runner's Proxmox token works and sees pool ci" "$LT/out" \
+  && grep -q "^ok    VM 100 (outside the pool) is refused by the API (403)" "$LT/out" \
+  && ok "token works, foreign VM refused: ok" || bad "200/403: rc=$rc $(cat "$LT/out")"
+grep -q "pools?poolid=ci" "$PV/curl.args" && grep -q "/nodes/n1/qemu/100/status/current" "$PV/curl.args" \
+  && grep -q -- "--cacert $PV/ca.pem" "$PV/curl.args" && grep -q -- "--config -" "$PV/curl.args" \
+  && ! grep -qv '^-q ' "$PV/curl.args" && grep -q -- "--noproxy \*" "$PV/curl.args" \
+  && ok "the target, node, pool and CA come from the target file; -q first, no proxy" || bad "curl args: $(cat "$PV/curl.args")"
+! grep -q 'TOKEN-0123' "$PV/curl.args" && grep -qF 'header = "Authorization: PVEAPIToken=ah@pve!probe=TOKEN-0123"' "$PV/curl.stdin" \
+  && ok "the token goes over stdin, never into curl's arguments" || bad "token placement: args $(grep -c TOKEN "$PV/curl.args"), stdin $(grep -c TOKEN "$PV/curl.stdin")"
+pve 200 "$SEES" 200; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the runner's token reads VM 100, which is outside the pool" "$LT/out" \
+  && ok "a foreign VM the token can read is a FAIL" || bad "200/200: rc=$rc $(cat "$LT/out")"
+pve 401 "" 403; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the runner's Proxmox token does not work (GET /pools?poolid=ci: 401)" "$LT/out" \
+  && ! grep -q "status/current" "$PV/curl.args" \
+  && ok "a token that does not work is a FAIL, and the VM probe is not made" || bad "401: rc=$rc $(cat "$LT/out")"
+pve 200 '{"data":[]}' 403; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the runner's Proxmox token works but does not see pool ci" "$LT/out" \
+  && ok "a token that does not see the pool is a FAIL" || bad "pool not seen: rc=$rc $(cat "$LT/out")"
+pve 000 "" 403; rc=$?
+[ "$rc" = 0 ] && grep -q "^info  the Proxmox API at https://pve.test.invalid:8006 did not answer (curl exit 7)" "$LT/out" \
+  && ok "an API that does not answer is info" || bad "000: rc=$rc $(cat "$LT/out")"
+pve 200 "$SEES" 500; rc=$?
+[ "$rc" = 0 ] && grep -q "^info  VM 100 answered 500" "$LT/out" \
+  && ok "any other answer for the foreign VM is info" || bad "500: rc=$rc $(cat "$LT/out")"
+pve 200 "$SEES" 403 "$PV/missing.env"; rc=$?
+[ "$rc" = 0 ] && grep -q "^info  no Proxmox target at $PV/missing.env (runner-setup.sh writes it)" "$LT/out" \
+  && ok "no target file is info" || bad "no target: rc=$rc $(cat "$LT/out")"
+STUB_LOG="$PV" PATH="$PV/bin:$PATH" bash "$RT" --pve "$PV/target.env" 100 > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -q "^info  no Proxmox token in this environment" "$LT/out" \
+  && ok "no token is info" || bad "no token: rc=$rc $(cat "$LT/out")"
+head -2 "$PV/target.env" > "$PV/half.env"
+pve 200 "$SEES" 403 "$PV/half.env"; rc=$?
+[ "$rc" = 0 ] && grep -q "^info  the Proxmox target in $PV/half.env is incomplete" "$LT/out" \
+  && ok "an incomplete target is info" || bad "half target: rc=$rc $(cat "$LT/out")"
+mkdir -p "$PV/nocurl"
+for b in bash dirname basename getent cut id; do ln -sf "$(command -v "$b")" "$PV/nocurl/$b"; done
+AH_PVE_TOKEN=t PATH="$PV/nocurl" "$PV/nocurl/bash" "$RT" --pve "$PV/target.env" 100 > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -q "^info  curl is not installed" "$LT/out" \
+  && ok "no curl is info" || bad "no curl: rc=$rc $(cat "$LT/out")"
+bash "$RT" --pve "$PV/target.env" abc </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--pve with a non-numeric vmid is a usage error (exit 2)" || bad "--pve with a non-numeric vmid did not exit 2"
+grep -qx '  redteam_pve "$SELF_DIR/pve-target.env" "$FOREIGN_VMID"' "$RT" && ! grep -q 'vm/vm.py' "$RT" \
+  && ok "the normal run asks the API through redteam_pve, vm.py is gone" || bad "probe 4 still runs vm.py: $(grep -n 'vm/vm.py' "$RT")"
 
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"

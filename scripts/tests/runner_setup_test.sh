@@ -16,6 +16,9 @@
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
 set -uo pipefail
+# The caller's Proxmox settings (a session may carry them, token included) never
+# reach these tests: each case sets what it needs.
+unset "${!AH_PVE_@}"
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -275,6 +278,36 @@ awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | gre
   && ok "the lock directory override too (--remove deletes it as root)" || bad "AH_RUNNER_DRY_LOCKDIR is not guarded by DRY=1"
 awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_LIBDIR' \
   && ok "and the red team's directory override (root installs into it)" || bad "AH_RUNNER_DRY_LIBDIR is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_PVE_SRC' \
+  && ok "and the Proxmox target source override" || bad "AH_RUNNER_DRY_PVE_SRC is not guarded by DRY=1"
+
+# The target of the red team's probe 4: root's, beside the red team, never the token.
+echo "── the Proxmox target of the red team ──"
+PT="$WORK/pve-src"; mkdir -p "$PT"; printf 'ca\n' > "$PT/ca.pem"
+printf '{"env": {"AH_PVE_URL": "https://pve.test.invalid:8006", "AH_PVE_NODE": "n1", "AH_PVE_POOL": "ci", "AH_PVE_CA": "%s", "AH_PVE_TOKEN": "SETUP-TOKEN-MUST-NOT-APPEAR"}}\n' "$PT/ca.pem" > "$PT/settings.json"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/settings.json" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -o root -g root -m 644 $PT/ca.pem $LIBS/pve-ca.pem" <<<"$PLAN" \
+  && grep -qF -- "install -o root -g root -m 644 /dev/null $LIBS/pve-target.env.new" <<<"$PLAN" \
+  && grep -qF -- "AH_PVE_URL=https://pve.test.invalid:8006 AH_PVE_NODE=n1 AH_PVE_POOL=ci AH_PVE_CA=$LIBS/pve-ca.pem" <<<"$PLAN" \
+  && grep -qF -- "mv -f $LIBS/pve-target.env.new $LIBS/pve-target.env" <<<"$PLAN" \
+  && ok "URL, node, pool and a root-owned copy of the CA go to $LIBS/pve-target.env, root 0644" \
+  || bad "target plan: $(grep -F 'pve-' <<<"$PLAN" | head -4)"
+! grep -q 'SETUP-TOKEN-MUST-NOT-APPEAR' <<<"$PLAN" && ok "the token from the same settings never reaches the plan" \
+  || bad "the token reached the plan"
+# The environment of the call comes first; an http URL or a pool with a slash is
+# no target.
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/settings.json" AH_PVE_POOL=other bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "AH_PVE_POOL=other" <<<"$PLAN" && ok "a value in the environment wins over the settings file" \
+  || bad "env precedence: $(grep -F 'AH_PVE_POOL' <<<"$PLAN" | head -2)"
+for bad_env in "AH_PVE_URL=http://pve.test.invalid:8006" "AH_PVE_POOL=a/b"; do
+  PLAN=$(env "$bad_env" PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/settings.json" bash "$SETUP" --dry-run 2>&1)
+  grep -q "no complete Proxmox target" <<<"$PLAN" && ! grep -qF -- "$LIBS/pve-target.env.new" <<<"$PLAN" \
+    && ok "$bad_env is no target" || bad "$bad_env was taken: $(grep -F 'pve-target' <<<"$PLAN" | head -2)"
+done
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/none.json" bash "$SETUP" --dry-run 2>&1)
+grep -q "no complete Proxmox target" <<<"$PLAN" && ! grep -qF -- "$LIBS/pve-target.env.new" <<<"$PLAN" \
+  && ! grep -qF -- "$LIBS/pve-ca.pem" <<<"$PLAN" \
+  && ok "without a source no target file, and a note" || bad "no source: $(grep -F 'Proxmox' <<<"$PLAN" | head -3)"
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); prc=$?
 [ $prc -eq 2 ] && ! grep -q 'nobody-at-all' <<<"$PLAN" \
   && ok "a real run without --dry-run still demands root and names no override" \
