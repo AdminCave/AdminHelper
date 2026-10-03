@@ -143,11 +143,11 @@ FIXTURE=success p
   && ok "the default shape agents-json: (9) has no agent file to tell" || bad "agents-json: rc=$rc out=$OUT"
 grep -q 'claude-sonnet' <<<"$(line 3)" && ok "(3) names the model that ran" || bad "model line: $(line 3)"
 grep -q 'subtype' <<<"$(line 7)" && ok "(7) names the field of the error kind" || bad "field line: $(line 7)"
-python3 - "$STUB_ARGS" <<'PY' && ok "the default: agents-json, sources user, StructuredOutput in both tool lists" || bad "default flags: $(head -1 "$STUB_ARGS")"
+python3 - "$STUB_ARGS" <<'PY' && ok "the default: agents-json, no setting source, StructuredOutput in both tool lists" || bad "default flags: $(head -1 "$STUB_ARGS")"
 import json, sys
 a = json.loads(open(sys.argv[1]).readline())
 j = json.loads(a[a.index("--agents") + 1])
-sys.exit(0 if a[a.index("--agent") + 1] in j and a[a.index("--setting-sources") + 1] == "user"
+sys.exit(0 if a[a.index("--agent") + 1] in j and a[a.index("--setting-sources") + 1] == ""
          and j["review-cli-probe"]["tools"] == ["Read", "Grep", "Glob", "Bash", "StructuredOutput"]
          and a[a.index("--tools") + 1] == "Read,Grep,Glob,Bash,StructuredOutput" else 1)
 PY

@@ -27,7 +27,7 @@
       }
     },
     "mutants": {
-      "description": "at most two review-probe.sh --mutate runs",
+      "description": "review-probe.sh --mutate runs; the reviewer sets none in the pilot (stage 6b T9)",
       "type": "array",
       "items": {
         "type": "object",

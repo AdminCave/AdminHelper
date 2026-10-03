@@ -5,8 +5,7 @@
       "Bash(git diff *)",
       "Bash(git show *)",
       "Bash(git log *)",
-      "Bash(git status *)",
-      "Bash(bash scripts/dev/review-probe.sh * --mutate *)"
+      "Bash(git status *)"
     ],
     "deny": [
       "Edit",
@@ -21,7 +20,8 @@
       "Bash(git *--no-index*)",
       "Bash(git * /*)",
       "Bash(git *../*)",
-      "Bash(git * ~*)"
+      "Bash(git * ~*)",
+      "Read(~/.config/adminhelper/**)"
     ]
   },
   "hooks": {

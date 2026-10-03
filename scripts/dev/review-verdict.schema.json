@@ -54,7 +54,7 @@
       }
     },
     "mutants": {
-      "description": "at most two review-probe.sh --mutate runs; a survived one is named in the review line",
+      "description": "review-probe.sh --mutate runs (none from the pilot's reviewer, stage 6b T9); a survived one is named in the review line",
       "type": "array",
       "items": {
         "type": "object",

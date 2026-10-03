@@ -15,7 +15,8 @@
 #                              project's settings load (measured, 2.1.285)
 #     --claude   the CLI to probe (default: claude on PATH; the tests pass a stub)
 #     --budget   dollars for the whole probe (default 0.5); the second run gets 0.01
-#     --sources  the --setting-sources value under test (default: user)
+#     --sources  the --setting-sources value under test (default: none at all,
+#                as review-run.sh calls it)
 #     --keep     a directory of the caller's to copy the raw answers into
 #     --toolset  how the tools are narrowed (default allowlist+so):
 #                allowlist+so  --tools and the agent's tools name Read, Grep, Glob,
@@ -62,7 +63,7 @@ usage() { sed -n '/^#   bash scripts\/dev\/review-cli-probe.sh/,/^# The reviewer
   | sed '$d; s/^# \{0,1\}//'; }
 die() { echo "review-cli-probe.sh: $*" >&2; exit 2; }
 
-CLAUDE_BIN="claude" BUDGET="0.5" SOURCES="user" SHAPE="agents-json" KEEP="" TOOLSET="allowlist+so"
+CLAUDE_BIN="claude" BUDGET="0.5" SOURCES="" SHAPE="agents-json" KEEP="" TOOLSET="allowlist+so"
 while [ $# -gt 0 ]; do
   case "$1" in
     --shape) [ $# -ge 2 ] || die "--shape needs <s>"; SHAPE="$2"; shift ;;

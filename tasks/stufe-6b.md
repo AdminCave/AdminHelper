@@ -226,3 +226,25 @@ früheren Versuchs fallen vor dem Lauf weg. (4) Die neuen Tests räumen ohne Glo
 Rot vorher: je Punkt ein Fall in review_run_test bzw. review_scripts_test.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Mutanten mit dem Verify-Test, Probe-Lücke in der Review-Zeile)
+
+### T9 — Reviewer ohne User-Settings und im Pilot ohne Mutanten: --setting-sources "", kein --mutate  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @b94e4531 2026-10-03T20:10:51+02:00
+Review: approve (opus, one round; nits done: both schemas describe mutants as none in the pilot, the runner's token directory is denied to Read, a test label, a spec line wrapped)
+Herkunft: `/code-review` über den Branch (2026-10-03): `--setting-sources user` lädt die `~/.claude/settings.json` des
+Aufrufers in den Reviewer, deren Allow-Regeln `review-settings.json` nicht deckelt; `--mutate` ist Codeausführung mit
+Benutzerrechten. Entscheidung über die Aufsicht (2026-10-03): `--setting-sources ""` messen und, wenn es hält, als
+Aufrufform; Kevin: der Pilot läuft ohne `--mutate`, der Reviewer ist rein lesend; Mutanten kommen zurück, sobald es feste
+Operatoren oder eine Sandbox gibt (Roadmap). Sicherheitskorrektur am eigenen Code.
+Messung (2026-10-03, CLI 2.1.285): `review-cli-probe.sh --sources ""` ⇒ `review-cli-probe: 9 ok, 0 fail, 1 unknown` —
+(1) `is_error False`, (2) `structured_output` `{"verdict": "approve", "findings": []}`, (5) `git switch` (vom Projekt
+erlaubt) verweigert, (6) `error_max_budget_usd`, (10) der Guard verweigert; `total_cost_usd` 0.0612784 + 0.0245238.
+Ob User-Regeln draußen bleiben, ist hier nicht beobachtbar (Kevins `~/.claude/settings.json` hat keine Allow-Regel);
+`""` lädt laut cli-reference keine Quelle und ist eine Teilmenge von `user`.
+Komponente: scripts · Dateien: scripts/dev/review-run.sh, scripts/dev/review-settings.json, scripts/dev/review-agent.md, scripts/dev/review-cli-probe.sh, scripts/tests/review_run_test.sh, scripts/tests/review_cli_probe_test.sh, scripts/tests/hooks_test.sh, docs/features/stufe-6b.md, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md, scripts/dev/review-output.schema.json, scripts/dev/review-verdict.schema.json
+Änderung: `review-run.sh` ruft `claude -p` mit `--setting-sources ""`, `review-cli-probe.sh` misst das als Default; die
+Allow-Regel `review-probe.sh * --mutate *` fällt aus `review-settings.json`, die Mutanten-Zeile aus `review-agent.md`;
+`--mutate` bleibt im Skript für den Handgebrauch. Spec und Doku nennen beides und den Satz zur Rückkehr der Mutanten.
+Rot vorher: review_run_test — der Aufruf trägt `--setting-sources ""` und der Reviewer-Prompt kein `--mutate`;
+hooks_test — die Reviewer-Settings erlauben kein `review-probe.sh … --mutate …` mehr.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/features/stufe-6b.md, DEVELOPMENT.md, cicd.html DE + EN, CHANGELOG

@@ -177,7 +177,7 @@ STUB=approve CLAUDE_BIN="$WORK/nosuch" run tasks/fix.md T1 --tree "$TREE" --roun
 echo "── the call ──"
 STUB=approve r1
 [ "$(cat "$STUB_DIR/pwd")" = "$FIX" ] && ok "claude starts from the repository root" || bad "cwd: $(cat "$STUB_DIR/pwd")"
-python3 - "$STUB_DIR/argv.json" "$FIX" <<'PY' && ok "the measured call shape: agents JSON, user settings only, dontAsk, schema, caps" || bad "call shape"
+python3 - "$STUB_DIR/argv.json" "$FIX" <<'PY' && ok "the measured call shape: agents JSON, no setting source, dontAsk, schema, caps" || bad "call shape"
 import json, sys
 a, fix = json.load(open(sys.argv[1])), sys.argv[2]
 def val(flag):
@@ -190,9 +190,10 @@ checks = {
     "--agent": val("--agent") == "review-task",
     "agent tools": ag.get("tools") == ["Read", "Grep", "Glob", "Bash", "StructuredOutput"],
     "agent deny": "Edit" in ag.get("disallowedTools", []) and "Write" in ag.get("disallowedTools", []),
-    "agent prompt": ag.get("prompt") == body and body.startswith("Du bist"),
+    "agent prompt": ag.get("prompt") == body and body.startswith("Du bist") and "--mutate" not in body,
     "standard model": (val("--model"), val("--effort"), val("--max-turns"), val("--max-budget-usd")) == ("sonnet", "high", "60", "5"),
-    "sources": val("--setting-sources") == "user",
+    # No setting source: neither the project's nor the calling user's allow rules.
+    "sources": val("--setting-sources") == "",
     "settings": val("--settings") == fix + "/scripts/dev/review-settings.json",
     "tools": val("--tools") == "Read,Grep,Glob,Bash,StructuredOutput",
     "deny": val("--disallowedTools").endswith(",mcp__*") and "WebFetch" in val("--disallowedTools"),
@@ -305,9 +306,10 @@ echo "── repo wiring ──"
 # subagent of the project.
 [ ! -e "$REPO_ROOT/.claude/agents/review-task.md" ] && [ -f "$REPO_ROOT/scripts/dev/review-agent.md" ] \
   && ok "the reviewer lives in scripts/dev/review-agent.md, not in .claude/agents" || bad "agent file location"
-# Each mutant runs the suite: only with the Verify: line's test, or the run's time is gone.
-grep -qF "'<ersatz>' -- <test>" "$REPO_ROOT/scripts/dev/review-agent.md" && grep -q 'setze keinen' "$REPO_ROOT/scripts/dev/review-agent.md" \
-  && ok "the reviewer mutates only with the Verify: line's test" || bad "review-agent.md: mutants without a test"
+# Kevin, 2026-10-03: the pilot's reviewer is read-only — no mutants until there are
+# fixed operators or a sandbox (a mutant runs as code with the user's rights).
+! grep -q -- '--mutate' "$REPO_ROOT/scripts/dev/review-agent.md" \
+  && ok "the reviewer's instructions set no mutants" || bad "review-agent.md still asks for --mutate"
 for p in scripts/dev/review-run.sh scripts/dev/review-agent.md scripts/tests/review_run_test.sh; do
   grep -qxF "$p" "$REPO_ROOT/scripts/dev/harness-paths.txt" && ok "$p is a harness path" || bad "$p is missing from harness-paths.txt"
 done

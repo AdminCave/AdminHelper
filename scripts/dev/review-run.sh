@@ -18,9 +18,11 @@
 # `review.sh risk --staged`: standard is sonnet/high (60 turns, 5 $), xhigh is
 # opus/xhigh (80 turns, 15 $).
 #
-# The call shape is the one review-cli-probe.sh measured (CLI 2.1.285): the
-# agent goes in as --agents JSON, because a file under .claude/agents is not
-# found with --setting-sources user and the project's settings must stay out;
+# The call shape is the one review-cli-probe.sh measured (CLI 2.1.285): no
+# setting source at all (--setting-sources ""), so neither the project's allow
+# rules nor the calling user's (the runner's settings are its user settings)
+# reach the reviewer — only review-settings.json; the agent goes in as --agents
+# JSON, because a file under .claude/agents is not found without the project;
 # StructuredOutput stands in --tools and in the agent's tools, or the answer
 # comes without structured_output. The prompt goes in on stdin (`cat file |
 # claude -p "query"`, cli-reference), so a large diff meets no argument limit.
@@ -184,7 +186,7 @@ command -v "$CLAUDE_BIN" >/dev/null 2>&1 || fail "no CLI: $CLAUDE_BIN"
 STARTED=$(date +%s)
 timeout -k 30 "$TIMEOUT" "$CLAUDE_BIN" -p \
   --agents "$AGENTS_JSON" --agent "$AGENT_NAME" --model "$MODEL" --effort "$EFFORT" \
-  --setting-sources user --settings "$ROOT/scripts/dev/review-settings.json" \
+  --setting-sources "" --settings "$ROOT/scripts/dev/review-settings.json" \
   --tools "$TOOLS" --disallowedTools "$DENY,mcp__*" \
   --permission-mode dontAsk --permission-prompts none \
   --json-schema "$SCHEMA" --output-format json \

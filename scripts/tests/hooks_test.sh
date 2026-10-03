@@ -1090,8 +1090,8 @@ rs_guard 'sed -i s/a/b/ CLAUDE.md'
 denied "$OUT" && [ $RC -eq 0 ] && ok "the reviewer's hook refuses sed -i on a harness file" || bad "sed -i: rc=$RC $OUT"
 rs_guard 'rm -rf /tmp/tmp.*'
 denied "$OUT" && [ $RC -eq 0 ] && ok "the reviewer's hook refuses a temp glob delete" || bad "temp glob: rc=$RC $OUT"
-rs_guard "bash scripts/dev/review-probe.sh monitoring --staged --mutate apps/monitoring/app/x.py:2 'return 1'"
-[ -z "$OUT" ] && [ $RC -eq 0 ] && ok "the reviewer's hook lets a --mutate probe through" || bad "mutate probe: rc=$RC $OUT"
+rs_guard "git diff --staged -- scripts/dev/review.sh"
+[ -z "$OUT" ] && [ $RC -eq 0 ] && ok "the reviewer's hook lets a read-only git diff through" || bad "git diff: rc=$RC $OUT"
 # Fail-closed (R-0159): a hook that cannot start exits 127 and a timed-out hook is
 # cancelled, and neither blocks the call (hooks doc); only exit 2 does. So the
 # hook ends with 2 when the guard is missing or fails, and its own timeout runs
@@ -1115,20 +1115,23 @@ PY
 python3 - "$RS" <<'PY' && ok "review-settings.json: dontAsk, the read-only allow list, the deny list" || bad "review-settings.json permissions"
 import json, sys
 p = json.load(open(sys.argv[1]))["permissions"]
-allow = {"Bash(git diff *)", "Bash(git show *)", "Bash(git log *)", "Bash(git status *)",
-         "Bash(bash scripts/dev/review-probe.sh * --mutate *)"}
+# Read-only (Kevin, 2026-10-03): no --mutate probe for the pilot's reviewer.
+allow = {"Bash(git diff *)", "Bash(git show *)", "Bash(git log *)", "Bash(git status *)"}
 # git diff/show/log write with --output=<file> and read outside the repo with
 # --no-index: both are denied, deny wins over allow.
 deny = {"Edit", "Write", "Bash(bash scripts/dev/verify.sh *)", "Bash(bash scripts/tests/run.sh *)",
         "Bash(git add *)", "Bash(git commit *)", "Bash(curl *)", "Bash(wget *)",
-        "Bash(git *--output*)", "Bash(git *--no-index*)", "Bash(git * /*)", "Bash(git *../*)", "Bash(git * ~*)"}
+        "Bash(git *--output*)", "Bash(git *--no-index*)", "Bash(git * /*)", "Bash(git *../*)", "Bash(git * ~*)",
+        # The runner's tokens (oauth.env, pve.env): its own settings deny them, and
+        # since T9 the reviewer loads no settings but these.
+        "Read(~/.config/adminhelper/**)"}
 sys.exit(0 if p.get("defaultMode") == "dontAsk" and set(p.get("allow", [])) == allow
          and deny <= set(p.get("deny", [])) else 1)
 PY
 # The rules as Claude Code reads them — `*` for any text, deny before allow —
 # against the ways out (git diff reads a file outside the worktree without
 # --no-index when one path lies outside) and the commands a review needs.
-python3 - "$RS" <<'PY' && ok "the reviewer's git rules: outside paths and --output denied, review commands allowed" || bad "reviewer git rules"
+python3 - "$RS" <<'PY' && ok "the reviewer's rules: outside paths, --output and a --mutate probe denied, review commands allowed" || bad "reviewer git rules"
 import fnmatch, json, sys
 p = json.load(open(sys.argv[1]))["permissions"]
 def rules(kind):
@@ -1139,10 +1142,10 @@ def allowed(cmd):
     return any(fnmatch.fnmatchcase(cmd, r) or (r.endswith(" *") and cmd == r[:-2]) for r in rules("allow"))
 out = ["git diff /dev/null /home/x/.ssh/id_ed25519", "git diff -- /dev/null /etc/passwd", "git diff ../other/repo/x",
        "git show HEAD:a ~/.netrc", "git diff --output=CLAUDE.md", "git log --output=x -1", "git diff --no-index a b",
-       "git commit -m x", "bash scripts/dev/verify.sh scripts --strict", "bash scripts/dev/review-probe.sh monitoring --staged"]
+       "git commit -m x", "bash scripts/dev/verify.sh scripts --strict", "bash scripts/dev/review-probe.sh monitoring --staged",
+       "bash scripts/dev/review-probe.sh monitoring --staged --mutate apps/x.py:2 'return 1'"]
 inside = ["git diff --staged", "git diff HEAD~1..HEAD -- scripts/dev/review.sh", "git show HEAD:scripts/dev/review.sh",
-          "git log --oneline -5", "git status --short", "git diff main...harness/x",
-          "bash scripts/dev/review-probe.sh monitoring --staged --mutate apps/x.py:2 'return 1'"]
+          "git log --oneline -5", "git status --short", "git diff main...harness/x"]
 bad = [c for c in out if allowed(c)] + [c for c in inside if not allowed(c)]
 print("\n".join("  wrong: " + c for c in bad))
 sys.exit(1 if bad else 0)

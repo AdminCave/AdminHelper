@@ -12,8 +12,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Der Reviewer als eigener Prozess (Stufe 6b, R-0155, R-0147, R-0150):**
   `task-close.sh --review auto` startet den Task-Reviewer selbst: der Runner faehrt die Probe
   (`review-probe.sh`), `scripts/dev/review-run.sh` startet `claude -p` mit dem Reviewer aus
-  `scripts/dev/review-agent.md`, eigenen Settings (`scripts/dev/review-settings.json`, der
-  harness-guard als Hook, fail-closed) und dem Schema `scripts/dev/review-output.schema.json`,
+  `scripts/dev/review-agent.md`, ohne Projekt- und Benutzer-Settings, nur mit eigenen Settings
+  (`scripts/dev/review-settings.json`: lesend, im Pilot ohne Mutanten, der harness-guard als
+  Hook, fail-closed) und dem Schema `scripts/dev/review-output.schema.json`,
   Modell und Deckel nach `review.sh risk`. Das Verdict (Schema-Version 2) liegt unter
   `.ah-out/review/<slug>/` und wird ueber `check-verdict --task` an Task und Tree gebunden;
   hoechstens zwei Runden, ein Prozess ohne Verdict ist Exit 74 ohne Rueckfall. Neu sind

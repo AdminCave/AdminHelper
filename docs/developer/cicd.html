@@ -294,10 +294,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <li><strong>Probe:</strong> der Runner f&auml;hrt <code>review-probe.sh</code> mit dem Test aus der
             <code>Verify:</code>-Zeile; ohne Test&auml;nderung oder nur mit Tests ist sie nicht anwendbar.</li>
             <li><strong>Reviewer:</strong> <code>scripts/dev/review-run.sh</code> startet <code>claude -p</code> mit
-            dem Reviewer aus <code>scripts/dev/review-agent.md</code>, nur den Benutzer-Settings plus
-            <code>scripts/dev/review-settings.json</code> (lesen, <code>git diff|show|log|status</code>,
-            <code>review-probe.sh --mutate</code>; der Harness-Guard als Hook, fail-closed; laut seinem Auftrag
-            h&ouml;chstens zwei Mutanten) und dem Schema
+            dem Reviewer aus <code>scripts/dev/review-agent.md</code>, ohne Projekt- und Benutzer-Settings, nur mit
+            <code>scripts/dev/review-settings.json</code> (lesen und <code>git diff|show|log|status</code>; der
+            Harness-Guard als Hook, fail-closed; im Pilot keine Mutanten &ndash; sie kommen zur&uuml;ck, sobald es feste
+            Operatoren oder eine Sandbox gibt) und dem Schema
             <code>scripts/dev/review-output.schema.json</code>; Sonnet/high mit 60 Turns oder bei einem Risikopfad
             Opus/xhigh mit 80, Timeout 20&nbsp;Minuten.</li>
             <li><strong>Verdict:</strong> <code>&lt;id&gt;.r&lt;n&gt;.verdict.json</code> (Schema-Version&nbsp;2) mit

@@ -289,10 +289,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <li><strong>Probe:</strong> the runner runs <code>review-probe.sh</code> with the test of the
             <code>Verify:</code> line; without a test change, or with tests alone, it does not apply.</li>
             <li><strong>Reviewer:</strong> <code>scripts/dev/review-run.sh</code> starts <code>claude -p</code> with the
-            reviewer of <code>scripts/dev/review-agent.md</code>, the user settings only plus
-            <code>scripts/dev/review-settings.json</code> (read, <code>git diff|show|log|status</code>,
-            <code>review-probe.sh --mutate</code>; the harness guard as a hook, fail-closed; at most two mutants by
-            its instructions) and the schema
+            reviewer of <code>scripts/dev/review-agent.md</code>, without the project's or the user's settings, only
+            with <code>scripts/dev/review-settings.json</code> (read and <code>git diff|show|log|status</code>; the
+            harness guard as a hook, fail-closed; no mutants in the pilot &ndash; they come back once there are fixed
+            operators or a sandbox) and the schema
             <code>scripts/dev/review-output.schema.json</code>; Sonnet/high with 60 turns, or Opus/xhigh with 80 on a
             risk path, timeout 20&nbsp;minutes.</li>
             <li><strong>Verdict:</strong> <code>&lt;id&gt;.r&lt;n&gt;.verdict.json</code> (schema version&nbsp;2) with

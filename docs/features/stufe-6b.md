@@ -27,8 +27,8 @@ Ziel:
 - **CLI-Probe** `scripts/dev/review-cli-probe.sh`: misst, was die Claude-Code-CLI für diesen Aufruf wirklich tut
   (Anmeldung, `structured_output`, Modell, Werkzeug-Sperren, Budget-Deckel). Beweis-Instrument vor allem anderen.
 - **Agent-Datei** `scripts/dev/review-agent.md` und eigene Settings `scripts/dev/review-settings.json`: der Reviewer
-  liest, darf `git diff|show|log` und höchstens zwei `review-probe.sh --mutate`; kein Edit/Write, kein Netz, kein
-  `verify.sh`.
+  liest und darf `git diff|show|log|status`, im Pilot rein lesend ohne `review-probe.sh --mutate` (T9); kein
+  Edit/Write, kein Netz, kein `verify.sh`.
 - **`scripts/dev/review-run.sh`**: baut den Prompt, startet den Prozess mit den Deckeln, wertet das JSON aus, schreibt
   das Verdict unter `.ah-out/review/<slug>/<id>.r<n>.verdict.json`.
 - **`task-close.sh --review auto`** (Opt-in): billige Prüfer zuerst, dann Verify, Contracts, Probe durch den Runner,
@@ -71,7 +71,7 @@ Nicht-Ziele:
    ```
    timeout 1200 claude -p --agents '<json aus scripts/dev/review-agent.md>' --agent review-task \
      --model <m> --effort <e> \
-     --setting-sources user --settings scripts/dev/review-settings.json \
+     --setting-sources "" --settings scripts/dev/review-settings.json \
      --tools "Read,Grep,Glob,Bash,StructuredOutput" \
      --disallowedTools "Edit,Write,NotebookEdit,WebFetch,WebSearch,mcp__*" \
      --permission-mode dontAsk --permission-prompts none \
@@ -86,6 +86,10 @@ Nicht-Ziele:
    kein Subagent des Projekts unter `.claude/agents/`, nur die Quelle des JSON.
    Der Prompt geht über stdin (`cat datei | claude -p "query"`, cli-reference), damit ein großer Diff an keine
    Argumentgrenze stößt; das Argument ist eine feste Anweisung.
+   **Entscheidung nach T9 (Messung 2026-10-03, CLI 2.1.285):** `--setting-sources ""` statt `user` — mit `user` kämen
+   die Allow-Regeln des aufrufenden Benutzers in den Reviewer (beim Runner dessen Settings: pytest, `ledger.sh`,
+   `vm.py`), die `review-settings.json` nicht deckelt. Gemessen: `review-cli-probe.sh --sources ""` ⇒ 9 ok, 0 fail,
+   1 unknown; die Anmeldung hält, die Projekt-Regeln bleiben draußen (Ledger T9, `Messung:`).
    Fester Prompt: Task-Text, Spec-Pfad, `git diff --staged`, Liste der neuen Dateien, Tree-Hash, Probe- und
    Contracts-Ergebnis, Summary-Zeile des Verify; in Runde 2 der Pfad des Verdicts der Runde 1.
 6. **Verdict:** `review-run.sh` nimmt `structured_output` (Teilschema `review-output.schema.json`: `verdict`,
@@ -102,8 +106,10 @@ Nicht-Ziele:
 Verdict-Datei mit approve. Die Session versucht es einmal neu; scheitert auch das, STOPP mit Meldung. Kein Rückfall auf
 den Subagent-Review: SKIP ist nicht grün.
 
-**Was der Reviewer darf (Entscheidung C):** lesen (`Read`, `Grep`, `Glob`), `git diff|show|log|status`, höchstens zwei
-`bash scripts/dev/review-probe.sh <k> --staged --mutate …` (in deren eigener Worktree, 6a T5); kein `Edit`/`Write`,
+**Was der Reviewer darf (Entscheidung C):** lesen (`Read`, `Grep`, `Glob`) und `git diff|show|log|status`. Im Pilot
+setzt er keine Mutanten (Kevin, 2026-10-03, T9): ein `review-probe.sh --mutate` läuft als Code mit den Rechten des
+Benutzers; Mutanten kommen zurück, sobald es feste Operatoren oder eine Sandbox gibt (Roadmap). `--mutate`
+bleibt im Skript für den Handgebrauch. Kein `Edit`/`Write`,
 kein Netz, kein `verify.sh` (lief schon in Schritt 3, und eine zweite Server-Suite auf derselben DB zerstört die
 erste — `pg_engine`). Die Allow-Regeln stehen in `review-settings.json`, der harness-guard läuft dort als
 PreToolUse-Hook, fail-closed (R-0159, Kevin 2026-10-03): fehlt der Guard, startet er nicht, endet er nicht mit 0
@@ -111,7 +117,8 @@ oder läuft sein eigenes `timeout 30` ab, endet der Hook mit Exit 2 — ein Exit
 Aufruf laut Doku durch. Was der Guard selbst als Fehler schluckt (er endet absichtlich immer mit 0, etwa bei einer
 unlesbaren Eingabe), bleibt offen; die Grenze dahinter ist die Allow-Liste unter `dontAsk`.
 Die Projekt-Settings (`.claude/settings.json`) dürfen nicht hineinwirken: sie erlauben `vm.py`,
-`heavy.sh`, `task-close.sh` und `git switch` — T1 misst, wie das mit `--setting-sources` sicher geht.
+`heavy.sh`, `task-close.sh` und `git switch` — T1 misst, wie das mit `--setting-sources` sicher geht; seit T9 lädt
+der Reviewer gar keine Quelle, auch die User-Settings nicht.
 
 **Deckel (Entscheidung E, großzügiges Netz):** hart sind `timeout 1200` (20 min) und `--max-turns` 60 (Sonnet) bzw.
 80 (Opus); locker `--max-budget-usd` 5 $ bzw. 15 $ als zusätzliches Netz, falls der Deckel mit Abo-Anmeldung greift
@@ -173,7 +180,7 @@ CLI-JSON (`subtype` oder `error_type`).
   Regeln. Schlimmster Fall ist ein falsches approve wie heute oder ein falsches request_changes, das die 2-Runden-
   Grenze auffängt.
 - **Ein Reviewer, der Dateien ändert:** Edit/Write fehlen, Umleitungsziele prüft Claude Code gegen Edit-Regeln,
-  `--mutate` schreibt nur in seiner Worktree. Belegt erst durch die Gegenprobe in T1.
+  der Reviewer setzt keine Mutanten (T9). Belegt erst durch die Gegenprobe in T1.
 - **Dauer:** Verify + Probe + Reviewer kann über 10 Minuten gehen — länger als ein Bash-Aufruf einer interaktiven
   Session. Der Skill fährt `task-close --review auto` deshalb im Hintergrund mit Wächter (T7).
 - **Rollback:** `--review auto` ist Opt-in; ohne das Flag läuft task-close wie nach 6a. Revert je Task.

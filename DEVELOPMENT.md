@@ -595,7 +595,8 @@ Nach den billigen Pruefern, der Suite und den Vertraegen:
 3. **Reviewer:** `scripts/dev/review-run.sh` baut den Prompt (Task-Text, Spec-Pfad, gestagter
    Diff ohne `tasks/private/`, neue Dateien, Tree-Hash, Probe, Vertraege, Verify-Summary; in
    Runde 2 der Pfad der Runde 1) und startet aus dem Repo-Wurzelverzeichnis `claude -p` mit dem
-   Reviewer aus `scripts/dev/review-agent.md` (als `--agents`-JSON), `--setting-sources user`,
+   Reviewer aus `scripts/dev/review-agent.md` (als `--agents`-JSON), `--setting-sources ""` (weder
+   Projekt- noch User-Settings: deren Allow-Regeln deckelt `review-settings.json` nicht),
    den Settings `scripts/dev/review-settings.json` und dem Schema
    `scripts/dev/review-output.schema.json`. Das Modell folgt `review.sh risk --staged`:
    `standard` ist Sonnet/high mit 60 Turns und 5 $, `xhigh` Opus/xhigh mit 80 Turns und 15 $;
@@ -612,9 +613,10 @@ Nach den billigen Pruefern, der Suite und den Vertraegen:
    im Log steht die Runde als `failed` mit Grund. Die Session versucht es einmal neu, danach
    STOPP; einen Rueckfall auf den Sub-Agent-Review gibt es nicht.
 
-Der Reviewer darf lesen, `git diff|show|log|status` und hoechstens zwei
-`review-probe.sh --mutate`, je mit dem Test der `Verify:`-Zeile (nennt sie keinen, setzt er keinen
-Mutanten: die ganze Suite je Mutant sprengte das Zeitbudget); Edit, Write, Netz, `verify.sh` und `run.sh` sind gesperrt. Der
+Der Reviewer darf lesen und `git diff|show|log|status`; im Pilot setzt er keine Mutanten (Kevin,
+2026-10-03): ein `review-probe.sh --mutate` laeuft als Code mit den Rechten des Benutzers. Mutanten
+kommen zurueck, sobald es feste Operatoren oder eine Sandbox gibt (Roadmap); von Hand bleibt
+`--mutate` nutzbar. Edit, Write, Netz, `verify.sh` und `run.sh` sind gesperrt. Der
 harness-guard laeuft als PreToolUse-Hook und ist fail-closed: fehlt er, scheitert oder haengt
 er, blockiert der Hook (R-0159). Die Projekt-Settings wirken nicht hinein. Die Aufrufform hat
 `scripts/dev/review-cli-probe.sh` gemessen (CLI 2.1.285); gegen eine neue CLI-Version laesst
