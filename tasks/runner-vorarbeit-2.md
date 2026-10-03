@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 2: das Red Team als root-eigenes Messinstrument (R-0152) — Task-Ledger
-Status: bereit · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: erledigt · Branch: harness/runner-vorarbeit-2 · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 2, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0152
 Heavy: none — nur Skripte (runner-env.sh, runner-redteam.sh, runner-setup.sh) und ihre hermetischen Tests mit Fake-HOME und Stub-Binärdateien; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Absatz unten).
@@ -119,3 +119,16 @@ beim Neustart und `USER`/`LOGNAME` neben `HOME` (die CLI nach `env -i`), `AH_RED
 nutzt es; YAGNI an einem Messinstrument).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, CHANGELOG.md (Wortlaut)
+
+Abschluss-Evidenz (2026-10-03):
+- Gesamt-Schnellcheck @d4ea2012: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns`
+  (`run.sh quick --strict`); origin/main@2508f092 war schon enthalten, seitdem nichts Neues auf main.
+- Review am Ende (Opus): Runde 1 `request_changes` mit zwei `wichtig` (Abschlusstext des Setups nannte den alten Aufruf;
+  die Prüfsumme der CLI las root über einen Pfad des Runners) und Nits → T4; Runde 2: alles behoben, dazu ein `wichtig`
+  im Test (Negativ-Check traf einen Checkout unter `…/repo`) und ein Nit (`--zero`), in T4 behoben.
+- Gegenproben: T1 das neue Red Team neben dem `runner-env.sh` aus main ⇒ devenv gesourct und Integritäts-FAIL, ohne
+  Neustart ⇒ Fake-`gh` sichtbar; T2 `runner_setup_test` gegen das Setup aus main 91 passed, 6 failed, statische
+  Red-Team-Checks rot; T4 96 passed, 2 failed. Die alte Fassung des Red Teams lief nie mit einem neuen Schritt.
+- Bewusst nicht hier: Probe 4 führt `vm.py` aus dem Klon aus (eigene Roadmap-Zeile, Aufsicht 2026-10-03).
+- Heavy: none (wie geplant). Den Beweis als echter Runner liefern Kevins Handgriffe unten.
+
