@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 3: Messinstrument und Grenzen unabhängig vom geprüften Nutzer — Task-Ledger
-Status: bereit · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: erledigt · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 3, „Freigeben“; T3: Proxmox-Ziel root-eigen beim Setup), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit-3.md (Roadmap R-0156, R-0158, R-0159, R-0160, R-0161, R-0162, R-0163)
 Heavy: none — nur Harness-Skripte (runner-redteam.sh, runner-setup.sh, harness-guard.sh, runner-settings.json) und ihre hermetischen Tests mit Fake-Klon, Stub-Binärdateien (curl, busctl) und JSON auf stdin; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec „Kevins Handarbeit“).
@@ -214,3 +214,15 @@ starten (Prüfsumme und Settings vorher geprüft, Entscheidung C), dass `--git` 
 dass ein interner Fehler des Wächters ihn weiter ohne Entscheidung enden lässt (offen, R-0166).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, CHANGELOG.md
+
+Abschluss-Evidenz (2026-10-03):
+- Gesamt-Schnellcheck @e5ff988e: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns`
+  (`run.sh quick --strict`); origin/main@2508f092 enthalten, seitdem nichts Neues auf main.
+- Review je Task (Opus, eine Runde; bei belegten `wichtig` eine zweite) und `/code-review` über den Branch-Diff: 15 Punkte,
+  die Fehler im eigenen Code wurden T7/T8, der Rest ging als Roadmap-Kandidaten an die Aufsicht.
+- Gegenproben je Task gegen die Fassung davor rot (Zahlen in den Review-Notizen); die alte Red-Team-Fassung lief nie
+  mit einem Schritt, den sie nicht kennt, und nie im vollen Lauf.
+- Heavy: none (wie geplant). Den Beweis als echter Runner liefern Kevins Handgriffe unten; nicht verifiziert bis dahin:
+  dass Proxmox fehlende Rechte als 403 meldet und dass curl Kevins CA ohne keyUsage annimmt.
+- Hinweis: die Commit-Message von 9765c865 nennt R-0159, gemeint ist R-0158 (Kommentare und Doku korrigiert in ea29b161).
+
