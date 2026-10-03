@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 6b — der Reviewer als eigener Prozess — Task-Ledger
-Status: freigegeben · Branch: harness/stufe-6b · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-6b · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe 6b, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-6b.md (Roadmap R-0155, R-0147, R-0150, dazu Teile von R-0151 und R-0154)
 Heavy: none — nur Harness-Skripte unter scripts/dev, eine Agent-Datei, ihre hermetischen Tests (claude-Stub), ein Skill und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Der echte CLI-Kleinstlauf in T1 ist Evidenz in Kevins Session, der Pilot nach dem Merge Handarbeit.
@@ -16,8 +16,10 @@ Zeilenangaben main@8a45c893. Bau interaktiv (Harness-Pfade). Jede neue Datei unt
 Task nach `scripts/dev/harness-paths.txt`; jeder neue Test in `AH_SCRIPT_TESTS_DEFAULT` (`scripts/tests/run.sh:586`).
 Kein Test ruft die echte CLI: alle hermetischen Tests nehmen einen `claude`-Stub auf PATH.
 
-### T1 — CLI-Probe als Beweis-Instrument: was `claude -p` für den Reviewer wirklich tut  [ ]
+### T1 — CLI-Probe als Beweis-Instrument: was `claude -p` für den Reviewer wirklich tut  [x]
 Komponente: scripts · Dateien: scripts/dev/review-cli-probe.sh, scripts/tests/review_cli_probe_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3c69006b 2026-10-03T11:41:12+02:00
+Review: approve (opus, two rounds: round 1 request_changes, ok without proof in (4)/(5)/(10) and untested traces, sharpened and re-measured; round 2 approve, one surviving mutant covered). Real probe: 9 ok, 0 fail, 1 unknown
 Änderung: `review-cli-probe.sh [--claude <bin>] [--budget <usd>]` fährt einen Kleinstlauf gegen einen Fixture-Diff
 (eine Zeile in einer Wegwerf-Worktree, `mktemp -d` im TMPDIR des Aufrufers, `trap` räumt auf) mit den Flags aus Spec
 „Design“ Schritt 5 und wertet das JSON aus. Es prüft und druckt je Punkt `ok|fail|unknown` plus eine Summary-Zeile
@@ -43,6 +45,34 @@ einmal echt; die Summary-Zeile und das Ergebnis jedes Punkts aus der Spec-Liste 
 Frontmatter-Hooks ohne Workspace-Trust, `--setting-sources`, Budget mit Abo, verschachteltes `claude -p` aus einer
 Claude-Session, Feldname) stehen danach als `Messung:`-Zeilen unter dieser Task. Ein `fail` in (4) oder (5) ist ein
 STOPP für T2–T7 und geht an Kevin.
+Abweichung: statt `bash scripts/vm/iter.sh --help` (4) und `bash scripts/tests/heavy.sh --help` (5) nimmt die Probe
+Befehle, die bei einem `fail` nichts anrichten (`iter.sh` kennt kein `--help` und hätte VM-Schritte gestartet):
+`python3 -c` mit einer Marke im Probe-Verzeichnis und `git switch -c` (vom Projekt erlaubt) in der Wegwerf-Worktree.
+Messung: CLI 2.1.285 (Runner-Pin 2.1.280), aus Kevins laufender Claude-Session (verschachteltes `claude -p` startet);
+sechs echte Läufe zusammen ≈ 0,47 $ (je Lauf 0,04–0,13 $, Budget-Lauf 0,02–0,05 $).
+Messung: eine Agent-Datei unter `.claude/agents/` findet `claude -p --agent` mit `--setting-sources user` nicht
+(Startfehler „--agent … not found“); Projekt-Agenten hängen an der Quelle `project`, die draußen bleiben muss.
+`--agents '<json>' --agent <name>` trägt.
+Messung: `--tools` bzw. die `tools` des Agenten ohne `StructuredOutput` ⇒ `subtype: success`, aber kein
+`structured_output` (das JSON steht nur als Text in `result`); mit `StructuredOutput` in beiden Listen (oder ohne
+Allowlist) ist es da.
+Messung: `--model sonnet` übersteuert das `model: haiku` des Agenten (gelaufen: claude-sonnet-5-5).
+Messung: Schreib-Gegenprobe ok — Umleitung, `git commit`, `python3 -c` verweigert, keine Spur; Projekt-Regeln draußen —
+`git switch -c` (vom Projekt erlaubt) verweigert, beides bei `--setting-sources user`.
+Messung: PreToolUse-Hooks aus `--settings` feuern im Print-Modus ohne Workspace-Trust; der harness-guard als solcher
+Hook (AH_AUTONOMOUS=1) verweigert `cp` auf CLAUDE.md — seine eigene Ausgabe im Hook-Log: `harness path: CLAUDE.md
+(autonomous run; bash scripts/dev/harness.sh off lifts this)` —, die Kontroll-Kopie lief; Hook-Verweigerungen stehen in
+`permission_denials`. Frontmatter-Hooks: nicht gemessen (die Form agent-file startet nicht) — für den Guard ohne Belang.
+Messung: `--max-budget-usd 0.01` greift mit Abo-Anmeldung (`error_max_budget_usd` nach dem ersten Turn, ≈ 0,02 $ —
+der Deckel stoppt nach, nicht vor einer Anfrage); die Fehlerart steht im Feld `subtype`.
+Messung: `review-cli-probe: 9 ok, 0 fail, 1 unknown` (Form agents-json, Werkzeuge allowlist+so, letzter Lauf mit dem
+geschärften Instrument: (4)/(5) „ok“ nur bei Eintrag in `permission_denials`, (10) nur mit dem Deny des Guards selbst;
+unknown = (9), keine Agent-Datei in dieser Form).
+Messung (Feldnamen wörtlich aus der CLI-JSON, 2.1.285): `type` = `"result"`; `subtype` = `"success"` bzw.
+`"error_max_budget_usd"`; `is_error`; `terminal_reason` = `"completed"` bzw. `"budget_exhausted"`; `stop_reason`;
+`structured_output`; `result`; `errors` (Budget-Lauf: `["Reached maximum budget ($0.01)"]`); `permission_denials[]` mit
+`tool_name`, `tool_use_id`, `tool_input.command`; `modelUsage` (Schlüssel = Modell-ID, etwa `claude-sonnet-5-5`, je
+Eintrag `costUSD`); `total_cost_usd`; `num_turns`; `duration_ms`; `api_error_status`; `session_id`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
