@@ -59,13 +59,12 @@
 # of=`), and the ones that change what it is (`chmod`, `chown`, `chgrp`) — are
 # inspected, and only when they are the segment's COMMAND, so reading a
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
-# git writes through its output options too (R-0158): `--output` of diff, log,
-# show, range-diff and format-patch, `-o`/`--output` of archive, the directory of
-# format-patch, the file of `bundle create`, and `grep -O<cmd>` runs a command on
-# its matches. Not seen there: `--output` of other subcommands (rev-list,
-# diff-tree, whatchanged, …), a pager or alias set through `-c`/GIT_PAGER,
-# `archive --exec`, and `git diff` outside a repository, which reads past `--`
-# like `--no-index` without saying so.
+# git writes through its output options too (R-0158): `--output` of any git
+# call — past a `--` as well, where an option value can swallow it — `-o` of
+# archive, the directory of format-patch, the file of `bundle create`, and
+# `grep -O<cmd>` runs a command on its matches. The price is a rare false alarm
+# for an argument named `--output…`, a path or another option's value. Not seen there: a pager or alias set
+# through `-c`/GIT_PAGER, and `archive --exec`.
 # What a take-away verb (`rm`, `rmdir`, `shred`, `unlink`, `chmod`/`chown`/
 # `chgrp`, the source of `mv`, the start of a deleting `find`) reaches also
 # hits when harness paths lie BELOW it — `rm -rf .claude`, and a glob through
@@ -529,14 +528,13 @@ def git_skips_hook(args):
 
 def git_writes(args, cwd):
     """Where a git call writes through its output options (R-0158): files
-    (`--output` of diff/log/show/range-diff/format-patch, `-o`/`--output` of
-    archive, the file of `bundle create`), directories (`-o`/`--output-directory`
-    of format-patch) and the commands `grep -O`/`--open-files-in-pager` runs, with
-    the paths its matches can come from. Read like git reads them: short clusters
-    left to right (`-ko DIR`), unique prefixes of a long option (`--open=`), `--`
-    ending the options only where the revision parser takes it first (diff without
-    --no-index, log, show) — elsewhere a value option can swallow it. Relative
-    paths count from `-C`, as git takes them."""
+    (`--output` of any subcommand, `-o` of archive, the file of `bundle
+    create`), directories (`-o`/`--output-directory` of format-patch) and the
+    commands `grep -O`/`--open-files-in-pager` runs, with the paths its matches
+    can come from. Read like git reads them — short clusters left to right
+    (`-ko DIR`), unique prefixes of a long option (`--open=`) — and past `--`:
+    `git log --decorate-refs -- --output=f` still writes f, because a value
+    option took the `--`. Relative paths count from `-C`, as git takes them."""
     i, gcwd = 0, cwd
     while i < len(args) and args[i].startswith("-"):
         a = args[i]
@@ -569,7 +567,6 @@ def git_writes(args, cwd):
             j += 1
         return ops[:1], dirs, cmds, gcwd
 
-    revisions_first = sub in ("log", "show") or (sub == "diff" and "--no-index" not in rest)
     # Short options of these commands that take a value: required ones take the
     # rest of the cluster or the next word, optional ones only the rest.
     takes = {"grep": ("efmABC", ""), "format-patch": ("ov", "USGOMCBlX"),
@@ -579,8 +576,6 @@ def git_writes(args, cwd):
     while j < len(rest):
         a, nxt = rest[j], rest[j + 1] if j + 1 < len(rest) else None
         if a == "--":
-            if revisions_first:
-                break
             seen_dashes = True
             j += 1
             continue
@@ -590,7 +585,7 @@ def git_writes(args, cwd):
             out_v = long_opt(a, "--output", 8)
             dir_v = long_opt(a, "--output-directory", 10) if sub == "format-patch" else None
             pager_v = long_opt(a, "--open-files-in-pager", 4) if sub == "grep" else None
-            if sub in ("diff", "log", "show", "range-diff", "archive", "format-patch") and out_v is not None:
+            if out_v is not None:
                 if out_v:
                     files.append(out_v)
                 elif "=" not in a and nxt is not None:

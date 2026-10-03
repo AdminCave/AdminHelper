@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 3: Messinstrument und Grenzen unabhängig vom geprüften Nutzer — Task-Ledger
-Status: aktiv · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 3, „Freigeben“; T3: Proxmox-Ziel root-eigen beim Setup), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit-3.md (Roadmap R-0156, R-0158, R-0159, R-0160, R-0161, R-0162, R-0163)
 Heavy: none — nur Harness-Skripte (runner-redteam.sh, runner-setup.sh, harness-guard.sh, runner-settings.json) und ihre hermetischen Tests mit Fake-Klon, Stub-Binärdateien (curl, busctl) und JSON auf stdin; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec „Kevins Handarbeit“).
@@ -200,8 +200,10 @@ gehen und ohne Neustart laufen. Tests: Symlink-Klon mit Änderung ⇒ „changed
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T8)
 
-### T8 — Wächter: --output bei jedem git-Aufruf; Test-Hygiene und Doku (aus /code-review)  [ ]
+### T8 — Wächter: --output bei jedem git-Aufruf; Test-Hygiene und Doku (aus /code-review)  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, scripts/tests/runner_setup_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @95a42c2a 2026-10-03T15:37:58+02:00
+Review: approve (opus); Nits Formulierung (FAIL haelt Modellproben nicht auf, Fehlalarm fuer jedes Argument --output) in derselben Runde; Gegenprobe HEAD-Waechter: 620/18
 Änderung: `git_writes` wertet `--output[=]<f>` bei jedem git-Unterbefehl als Schreibziel und liest dafür auch hinter
 `--` weiter (`git log --decorate-refs -- --output=…` schrieb real); die freien Testfälle `git diff -- --output=…` und
 `git log --grep -- --output=…` werden bewusst Treffer (seltener Fehlalarm statt Umgehung), die Lücke „`--output`

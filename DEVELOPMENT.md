@@ -675,14 +675,17 @@ in der Wurzel startet (`find . -name '*.pyc' -delete`): er startet im Unterverze
 pruefen nur den Pfad selbst. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
 python/perl heraus, ein zur Laufzeit gebauter Pfad, ein `find … -exec sed -i`,
 `git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Auch git schreibt
-ueber Ausgabe-Optionen: `--output` von diff/log/show/range-diff/format-patch, `-o`/`--output` von
-archive, das Verzeichnis von `format-patch -o`, die Datei von `bundle create` zaehlen als Ziel, und der
-Befehl hinter `git grep -O` wird mit den Dateien geprueft, die er bekommt (R-0158). Im Runner ist der
+ueber Ausgabe-Optionen: `--output` jedes git-Aufrufs (auch hinter `--`, das ein Optionswert schlucken
+kann; ein Argument namens `--output…`, Pfad oder Optionswert, ist dafuer ein Fehlalarm), `-o` von archive, das Verzeichnis von
+`format-patch -o`, die Datei von `bundle create` zaehlen als Ziel, und der Befehl hinter `git grep -O`
+wird mit den Dateien geprueft, die er bekommt (R-0158). Im Runner ist der
 Hook **fail-closed** (R-0159): Claude Code laesst einen Aufruf durch, wenn ein command-Hook nicht
 startet (Exit 127) oder in seine Zeitgrenze laeuft; nur Exit 2 sperrt. Der Hook-Befehl in
 `scripts/dev/runner-settings.json` prueft deshalb, dass der Waechter lesbar ist, ruft ihn mit
 `timeout -k 2 10` auf und macht aus jedem Fehler Exit 2 (Feld `timeout` 15 s); der Waechter selbst endet
-immer mit 0 und traegt seine Entscheidung im JSON. Interaktiv bleibt der Hook, wie er ist. Die tragende
+immer mit 0 und traegt seine Entscheidung im JSON. Ein Fehler **im** Waechter (kein `python3`, eine
+Ausnahme im Parser) laesst ihn dagegen weiter ohne Entscheidung enden (offen, R-0166). Interaktiv
+bleibt der Hook, wie er ist. Die tragende
 Grenze ist auch hier die Deny-Liste, der Hook ist die zweite Schicht:
 
 ```bash
@@ -954,8 +957,11 @@ Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,
 `gh`-Login, D-Bus/Keyring, der eigene Proxmox-Token gegen eine VM **ausserhalb**
 des Pools, und zwei `claude -p`-Laeufe, die ausdruecklich nach einem `git push`
 bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`).
-Nichts davon fuehrt Code oder ausfuehrbare Konfiguration des Runners aus (R-0156, R-0160 bis
-R-0163): die Push-Proben pushen aus einem eigenen Repository ohne Hooks, ohne git-Konfiguration
+Die Proben auf git, Proxmox, D-Bus und Settings fuehren keinen Code und keine ausfuehrbare
+Konfiguration des Runners aus (R-0156, R-0160 bis R-0163); die Modellproben starten bewusst die
+CLI des Runners, nachdem Pruefsumme und Settings geprueft sind — ein FAIL dort haelt sie nicht auf
+(ihr Verhindern regelt Stufe 7a).
+Die Push-Proben pushen aus einem eigenen Repository ohne Hooks, ohne git-Konfiguration
 des Nutzers und ohne Credential-Helper an die URLs, die der Klon nennt, und lesen seine
 Konfiguration auf Helper, Extra-Header und URL-Umschreibungen (nur Namen, URLs geschwaerzt); ob eine
 Modellprobe den Klon geaendert hat, zeigt die ctime seiner Dateien, nicht `git status`. Der
@@ -969,8 +975,10 @@ muss abgelehnt werden. Das Ziel (URL, Node, Pool, CA) liest das Red Team aus `pv
 `~/.claude/settings.json` des Runners muss byte-genau der geprueften `runner-settings.json`
 entsprechen; Claude Code schreibt diese Datei selbst, wenn in einer Session `/config` oder `/model`
 eine Wahl speichert (Claude-Code-Doku, Settings), dann hilft ein erneutes `runner-setup.sh`. Ein
-unbekanntes Argument endet mit Exit 2, bevor eine Probe laeuft; die Proben ohne Netz und Budget gibt
-es einzeln als Schritt (die Liste nennt die Meldung bei einem unbekannten Argument). Dazu die
+unbekanntes Argument endet mit Exit 2, bevor eine Probe laeuft; viele Proben gibt es einzeln als
+Schritt ohne den Neustart (die Liste nennt die Meldung bei einem unbekannten Argument) — `--pve` und
+`--git` (zu jeder nicht-lokalen Push-URL des Klons und zu einer angegebenen URL) gehen dabei ins
+Netz. Dazu die
 geteilte Python-Sperre `/var/lib/adminhelper-dev/py.lock`: sie existiert, Datei und
 Verzeichnis gehoeren root, der Runner darf das Verzeichnis nicht schreiben und kann die
 Sperre nehmen (ist sie gerade belegt, ein `info`); einzeln mit

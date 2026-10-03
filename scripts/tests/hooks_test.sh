@@ -1070,19 +1070,18 @@ git log -n 3
 echo GIT_CONFIG_KEY_0=core.hooksPath
 CMDS
 
-# git writes files through its output options (R-0158): --output of diff, log, show
-# and range-diff, -o/--output of archive, the directory of format-patch, the file of
-# bundle create — and grep -O runs a command. Each onto a harness path: denied in an
-# autonomous run, a warning otherwise; relative to -C, past -c. The same options
-# elsewhere, and the plain forms, stay free. A pathspec that names an existing file
+# git writes files through its output options (R-0158): --output of any git call,
+# also past a -- (a value option can take the --), -o of archive, the directory of
+# format-patch, the file of bundle create — and grep -O runs a command. Each onto a
+# harness path: denied in an autonomous run, a warning otherwise; relative to -C,
+# past -c. The same options elsewhere, and the plain forms, stay free. A pathspec that names an existing file
 # (notes.txt, in the fixture tree) is all a pager behind -O is handed.
 : > "$TREE/notes.txt"
-gbody() { python3 -c 'import json, sys; print(json.dumps({"command": sys.argv[1]}))' "$1"; }
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  guard auto Bash "$(gbody "$cmd")"
+  guard auto Bash "$(cmdjson "$cmd")"
   denied "$OUT" && ok "git output onto a harness path is denied: $cmd" || bad "not denied: $cmd => $OUT"
-  guard inter Bash "$(gbody "$cmd")"
+  guard inter Bash "$(cmdjson "$cmd")"
   [ -z "$OUT" ] && grep -q 'harness path' <<<"$ERR" && ok "and only warned interactively: $cmd" \
     || bad "interactive: $cmd => out=$OUT err=$ERR"
 done <<'CMDS'
@@ -1114,6 +1113,15 @@ git range-diff -S -- --output=CLAUDE.md HEAD~1...HEAD
 git diff --no-index -S -- --output=CLAUDE.md a b
 git bundle create --version 3 CLAUDE.md HEAD
 git bundle create --vers 3 CLAUDE.md HEAD
+git log --decorate-refs -- --output=CLAUDE.md
+git show --decorate-refs-exclude -- --output=scripts/dev/review.sh
+git log -L -- --output=CLAUDE.md
+git diff -- --output=CLAUDE.md
+git log --grep -- --output=CLAUDE.md
+git stash show --output=CLAUDE.md
+git diff-tree --output=CLAUDE.md HEAD
+git rev-list --output=CLAUDE.md HEAD
+git whatchanged --output=CLAUDE.md
 git grep -O"sed -i s/a/b/" needle -- .
 git grep -O"sed -i s/a/b/" needle -- scripts/dev
 git grep -O"sed -i s/a/b/" needle -- '*.md'
@@ -1121,7 +1129,7 @@ git grep -O"sed -i s/a/b/" needle -- ':(top)'
 CMDS
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  guard auto Bash "$(gbody "$cmd")"
+  guard auto Bash "$(cmdjson "$cmd")"
   [ -z "$OUT" ] && ! grep -q 'harness path' <<<"$ERR" && ok "free: $cmd" || bad "flagged: $cmd => out=$OUT err=$ERR"
 done <<'CMDS'
 git diff --stat
@@ -1130,11 +1138,9 @@ git archive -o /tmp/x.tar HEAD
 git format-patch -o /tmp/patches HEAD~1
 git bundle create /tmp/x.bundle HEAD
 git grep -Oless needle
-git diff -- --output=CLAUDE.md
 git log --oneline -3
 git grep -O needle
 git grep -Ocat -- CLAUDE.md
-git log --grep -- --output=CLAUDE.md
 git diff --stat --output-indicator-new=+
 git bundle create --version 3 /tmp/x.bundle HEAD
 git grep -O"tee /tmp/x" needle -- notes.txt

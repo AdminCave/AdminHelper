@@ -19,6 +19,9 @@ set -uo pipefail
 # The caller's Proxmox settings (a session may carry them, token included) never
 # reach these tests: each case sets what it needs.
 unset "${!AH_PVE_@}"
+# Nor does the checkout's own settings file: a dry run reads its Proxmox target from
+# there unless told otherwise, and the cases below that want one say so.
+export AH_RUNNER_DRY_PVE_SRC=/nonexistent/settings.local.json
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
