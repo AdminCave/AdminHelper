@@ -250,6 +250,24 @@ grep -qF 'review.sh risk --range main...HEAD' <<<"$close4" \
   && ok "the closing review takes its model from the branch range (nothing is uncommitted by then)" \
   || bad "close step 4 lacks review.sh risk --range main...HEAD"
 step5=$(section .claude/skills/feature-build/SKILL.md '5. **Schließen' '## Abschluss')
+# Stage 6b: with `Review: auto` in the ledger head the reviewer is task-close's own
+# process — no subagent in step 4, --review auto in step 5, the log for the pilot.
+grep -qF 'Review: auto' <<<"$step4" && grep -qF 'kein Sub-Agent' <<<"$step4" \
+  && grep -qF 'gelten ebenso für die Funde seines Verdicts' <<<"$step4" \
+  && ok "feature-build step 4 has the Review: auto branch without a subagent" || bad "step 4 lacks the Review: auto branch"
+grep -qF -- '--review auto' <<<"$step5" && grep -qF 'review.sh log' <<<"$step5" \
+  && grep -qF '**einmal** neu' <<<"$step5" && grep -qF 'kein Rückfall auf den Sub-Agent-Review' <<<"$step5" \
+  && ok "feature-build step 5 closes with --review auto, retries a 74 once, names review.sh log" \
+  || bad "step 5 lacks --review auto, the one retry or review.sh log"
+# Every review.sh verb the skill names exists — a renamed verb would leave the
+# build calling nothing.
+missing="" n=0
+for v in $(grep -oE 'review\.sh [a-z][a-z-]+' .claude/skills/feature-build/SKILL.md | awk '{print $2}' | sort -u); do
+  n=$((n + 1))
+  grep -qE "^  $v\)" scripts/dev/review.sh || missing="$missing $v"
+done
+# At least risk, pr-body and log: a check that reads nothing is green and worthless.
+[ -z "$missing" ] && [ "$n" -ge 3 ] && ok "every review.sh verb the skill names exists ($n)" || bad "review.sh has no verb:$missing (read $n)"
 grep -q 'docs-pairs' <<<"$step5" && grep -q 'Vertrag' <<<"$step5" && grep -q 'Vertragstest konnte' <<<"$step5" \
   && ok "step 5's exit codes name docs-pairs and the contracts" || bad "step 5's exit codes miss docs-pairs/contracts"
 close5=$(section .claude/skills/feature-build/SKILL.md '5. **Erledigt, Push + Draft-PR**' '6. **Mit dem PR:**')

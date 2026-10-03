@@ -32,7 +32,9 @@ Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe), `Commit-Granular
 (pro Task | pro Komponente | pro Abschnitt), `Review:` (**pro Task** | **am Ende** — wann der
 Frischer-Kontext-Review läuft: je Commit-Einheit, oder einmal über den ganzen Branch-Diff.
 `am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks; dann entfällt auch der abschließende
-`/code-review`, weil derselbe Diff sonst zweimal geprüft würde), `Modell:`, `Heavy:`,
+`/code-review`, weil derselbe Diff sonst zweimal geprüft würde; **auto**, Pilot der Stufe 6b: je
+Task startet `task-close.sh --review auto` den Reviewer als eigenen Prozess, `DEVELOPMENT.md`
+„Reviewer als Prozess"), `Modell:`, `Heavy:`,
 DoD-Verweis auf `CLAUDE.md`.
 
 **`Heavy: none | linux-full | scenario <flags> | windows`** sagt, welche schwere Suite der

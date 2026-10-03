@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Der Reviewer als eigener Prozess (Stufe 6b, R-0155, R-0147, R-0150):**
+  `task-close.sh --review auto` startet den Task-Reviewer selbst: der Runner faehrt die Probe
+  (`review-probe.sh`), `scripts/dev/review-run.sh` startet `claude -p` mit dem Reviewer aus
+  `scripts/dev/review-agent.md`, eigenen Settings (`scripts/dev/review-settings.json`, der
+  harness-guard als Hook, fail-closed) und dem Schema `scripts/dev/review-output.schema.json`,
+  Modell und Deckel nach `review.sh risk`. Das Verdict (Schema-Version 2) liegt unter
+  `.ah-out/review/<slug>/` und wird ueber `check-verdict --task` an Task und Tree gebunden;
+  hoechstens zwei Runden, ein Prozess ohne Verdict ist Exit 74 ohne Rueckfall. Neu sind
+  `review.sh log` (jede Runde mit Kosten, Turns und Dauer, als Tabelle mit Summe) und
+  `scripts/dev/review-cli-probe.sh` (misst die Aufrufform gegen die CLI). Opt-in fuer den Pilot
+  per Ledger-Kopf `Review: auto`; Anleitung: `DEVELOPMENT.md`, „Reviewer als Prozess".
+
 - **Review-Pruefer ohne Modell (Stufe 6a, R-0009):** `scripts/dev/review.sh` kann jetzt
   `risk` (Risikopfad im Diff nach `scripts/dev/review-risk.txt`, daraus das Reviewer-Modell),
   `docs-pairs` (eine Doku-Seite ohne ihre andere Sprache), `contracts` (Pruefungen je
@@ -307,6 +319,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Eintraege mit.
 
 ### Changed
+
+- **`task-close.sh` prueft billig zuerst (Stufe 6b, R-0150):** `diff-scan`, `scope`,
+  `docs-pairs` und `sec` laufen vor der Suite, `contracts` danach; ein einseitiger Doku-Abschluss
+  kostet keinen Suite-Lauf mehr. Aendert sich der Index waehrend des Laufs, bricht der Abschluss
+  mit Exit 2 ab. `pr-body` prueft Verdict-Dateien ueber `check-verdict` (schemawidrig heisst
+  „ungueltig").
 
 - **Python-Sperre ueber Nutzergrenzen, Runner-Setup klont nur neu (R-0080, R-0077):**
   `scripts/tests/run.sh` nimmt fuer `server-pytest` und `schemathesis` die geteilte Sperre

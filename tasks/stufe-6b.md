@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 6b — der Reviewer als eigener Prozess — Task-Ledger
-Status: aktiv · Branch: harness/stufe-6b · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/stufe-6b · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe 6b, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-6b.md (Roadmap R-0155, R-0147, R-0150, dazu Teile von R-0151 und R-0154)
 Heavy: none — nur Harness-Skripte unter scripts/dev, eine Agent-Datei, ihre hermetischen Tests (claude-Stub), ein Skill und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Der echte CLI-Kleinstlauf in T1 ist Evidenz in Kevins Session, der Pilot nach dem Merge Handarbeit.
@@ -194,8 +194,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 Abhängt von: T5
 
-### T7 — Doku und Skill: `--review auto`, Ablage, Log, Pilot  [ ]
-Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, scripts/tests/skill_consistency_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+### T7 — Doku und Skill: `--review auto`, Ablage, Log, Pilot  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, scripts/tests/skill_consistency_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @75e053fe 2026-10-03T14:54:15+02:00
+Review: approve with two rounds spent (opus): round 1 request_changes on the consistency test not proving the one retry, a wrong pair of probe answers in DEVELOPMENT.md and the auto branch switching off the rules for findings, all fixed with the reviewer's mutant as the counter-check; round 2 approve, nits done
 Änderung: feature-build Schritt 4 (`:135`) bekommt den Zweig „Ledger-Kopf `Review: auto`“ (Opt-in für den Pilot): kein
 Subagent, Schritt 5 (`:179`) wird `task-close.sh … --stage --review auto` im Hintergrund mit Wächter (die Dauer kann
 über 10 Minuten liegen), Exit 74 ⇒ einmal neu, dann STOPP mit Meldung, kein Rückfall auf den Subagent-Review; ohne
