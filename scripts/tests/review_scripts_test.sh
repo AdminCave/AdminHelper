@@ -1807,8 +1807,9 @@ r pr-body
 echo "── reviewer agent and output schema (stage 6b) ──"
 # The agent file is the reviewer's definition; review-run.sh hands it to the CLI
 # as --agents JSON (measured in T1: a file under .claude/agents is not found with
-# --setting-sources user). StructuredOutput has to stand in its tool list.
-AGENT="$REPO_ROOT/.claude/agents/review-task.md"
+# --setting-sources user), so it lives beside review-run.sh (Kevin, 2026-10-03).
+# StructuredOutput has to stand in its tool list.
+AGENT="$REPO_ROOT/scripts/dev/review-agent.md"
 grep -qx 'tools: Read, Grep, Glob, Bash, StructuredOutput' "$AGENT" \
   && grep -qx 'disallowedTools: Edit, Write, NotebookEdit, WebFetch, WebSearch' "$AGENT" \
   && ok "review-task.md: exactly the reviewer's tools, StructuredOutput included" || bad "review-task.md tool lines"

@@ -31,7 +31,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AH_AUTONOMOUS=1 bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\""
+            "command": "g=\"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\"; [ -r \"$g\" ] || { echo \"harness-guard missing: $g\" >&2; exit 2; }; AH_AUTONOMOUS=1 timeout 30 bash \"$g\" || { echo \"harness-guard failed or timed out\" >&2; exit 2; }",
+            "timeout": 60
           }
         ]
       }

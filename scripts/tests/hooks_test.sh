@@ -1073,8 +1073,8 @@ CMDS
 # ══ review-settings.json — the reviewer process runs the guard as its hook ═══
 echo "── review-settings.json ──"
 # The hook command exactly as the settings file holds it, run the way Claude Code
-# runs it: project dir set, the event on stdin, and no AH_AUTONOMOUS from outside —
-# the file itself has to make the reviewer autonomous.
+# runs it: `sh -c` (hooks doc), project dir set, the event on stdin, and no
+# AH_AUTONOMOUS from outside — the file itself has to make the reviewer autonomous.
 RS="$REPO_ROOT/scripts/dev/review-settings.json"
 RS_HOOK="$(python3 -c '
 import json, sys
@@ -1082,16 +1082,36 @@ d = json.load(open(sys.argv[1]))
 print(d["hooks"]["PreToolUse"][0]["hooks"][0]["command"])' "$RS" 2>/dev/null)"
 [ -n "$RS_HOOK" ] && grep -q 'harness-guard.sh' <<<"$RS_HOOK" \
   && ok "review-settings.json runs the harness guard as its PreToolUse hook" || bad "no guard hook in $RS: $RS_HOOK"
-rs_guard() {
+rs_guard() {  # rs_guard <command> [<project dir>]
   OUT=$(printf '{"tool_name":"Bash","tool_input":%s}' "$(cmdjson "$1")" \
-    | env -u AH_AUTONOMOUS CLAUDE_PROJECT_DIR="$TREE" bash -c "$RS_HOOK" 2>/dev/null)
+    | env -u AH_AUTONOMOUS CLAUDE_PROJECT_DIR="${2:-$TREE}" sh -c "$RS_HOOK" 2>"$WORK/rs.err"); RC=$?
 }
 rs_guard 'sed -i s/a/b/ CLAUDE.md'
-denied "$OUT" && ok "the reviewer's hook refuses sed -i on a harness file" || bad "sed -i: $OUT"
+denied "$OUT" && [ $RC -eq 0 ] && ok "the reviewer's hook refuses sed -i on a harness file" || bad "sed -i: rc=$RC $OUT"
 rs_guard 'rm -rf /tmp/tmp.*'
-denied "$OUT" && ok "the reviewer's hook refuses a temp glob delete" || bad "temp glob: $OUT"
+denied "$OUT" && [ $RC -eq 0 ] && ok "the reviewer's hook refuses a temp glob delete" || bad "temp glob: rc=$RC $OUT"
 rs_guard "bash scripts/dev/review-probe.sh monitoring --staged --mutate apps/monitoring/app/x.py:2 'return 1'"
-[ -z "$OUT" ] && ok "the reviewer's hook lets a --mutate probe through" || bad "mutate probe: $OUT"
+[ -z "$OUT" ] && [ $RC -eq 0 ] && ok "the reviewer's hook lets a --mutate probe through" || bad "mutate probe: rc=$RC $OUT"
+# Fail-closed (R-0159): a hook that cannot start exits 127 and a timed-out hook is
+# cancelled, and neither blocks the call (hooks doc); only exit 2 does. So the
+# hook ends with 2 when the guard is missing or fails, and its own timeout runs
+# out before the hook's.
+mkdir -p "$WORK/rs-none" "$WORK/rs-broken/scripts/dev/hooks"
+rs_guard 'git log -1' "$WORK/rs-none"
+[ $RC -eq 2 ] && grep -q 'harness-guard missing' "$WORK/rs.err" \
+  && ok "the reviewer's hook blocks when the guard is missing" || bad "guard missing: rc=$RC $(cat "$WORK/rs.err")"
+printf 'exit 1\n' > "$WORK/rs-broken/scripts/dev/hooks/harness-guard.sh"
+rs_guard 'git log -1' "$WORK/rs-broken"
+[ $RC -eq 2 ] && grep -q 'harness-guard failed' "$WORK/rs.err" \
+  && ok "the reviewer's hook blocks when the guard fails" || bad "guard fails: rc=$RC $(cat "$WORK/rs.err")"
+python3 - "$RS" <<'PY' && ok "the reviewer's hook: exit 2 on a missing or failing guard, guard timeout under the hook's" || bad "reviewer hook not fail-closed"
+import json, re, sys
+h = json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0]
+c = h["command"]
+m = re.search(r'AH_AUTONOMOUS=1 timeout (\d+) bash "\$g" \|\| \{ [^}]*exit 2; \}$', c)
+sys.exit(0 if m and re.search(r'\[ -r "\$g" \] \|\| \{ [^}]*exit 2; \}', c)
+         and int(m.group(1)) < h.get("timeout", 600) else 1)
+PY
 python3 - "$RS" <<'PY' && ok "review-settings.json: dontAsk, the read-only allow list, the deny list" || bad "review-settings.json permissions"
 import json, sys
 p = json.load(open(sys.argv[1]))["permissions"]

@@ -27,6 +27,8 @@ scripts/dev/review-probe.sh
 scripts/dev/review-cli-probe.sh
 scripts/dev/review-settings.json
 scripts/dev/review-output.schema.json
+scripts/dev/review-agent.md
+scripts/dev/review-run.sh
 # The WIP caps and the status transitions: the status hook reads trigger 3 from it.
 scripts/dev/roadmap.py
 scripts/dev/runner-env.sh
@@ -56,6 +58,7 @@ scripts/tests/skill_consistency_test.sh
 scripts/tests/review_scripts_test.sh
 scripts/tests/review_probe_test.sh
 scripts/tests/review_cli_probe_test.sh
+scripts/tests/review_run_test.sh
 scripts/tests/task_close_test.sh
 scripts/tests/runner_setup_test.sh
 scripts/tests/verify_test.sh

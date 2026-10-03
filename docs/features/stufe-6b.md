@@ -26,7 +26,7 @@ das schemagebundene Urteil entgegen, ergänzt die Felder, die es selbst gemessen
 Ziel:
 - **CLI-Probe** `scripts/dev/review-cli-probe.sh`: misst, was die Claude-Code-CLI für diesen Aufruf wirklich tut
   (Anmeldung, `structured_output`, Modell, Werkzeug-Sperren, Budget-Deckel). Beweis-Instrument vor allem anderen.
-- **Agent-Datei** `.claude/agents/review-task.md` und eigene Settings `scripts/dev/review-settings.json`: der Reviewer
+- **Agent-Datei** `scripts/dev/review-agent.md` und eigene Settings `scripts/dev/review-settings.json`: der Reviewer
   liest, darf `git diff|show|log` und höchstens zwei `review-probe.sh --mutate`; kein Edit/Write, kein Netz, kein
   `verify.sh`.
 - **`scripts/dev/review-run.sh`**: baut den Prompt, startet den Prozess mit den Deckeln, wertet das JSON aus, schreibt
@@ -45,7 +45,7 @@ Nicht-Ziele:
 ## Betroffene Komponenten & Dateien
 
 - Neu: `scripts/dev/review-cli-probe.sh`, `scripts/dev/review-run.sh`, `scripts/dev/review-settings.json`,
-  `scripts/dev/review-output.schema.json`, `.claude/agents/review-task.md`; Tests `scripts/tests/review_cli_probe_test.sh`,
+  `scripts/dev/review-output.schema.json`, `scripts/dev/review-agent.md`; Tests `scripts/tests/review_cli_probe_test.sh`,
   `scripts/tests/review_run_test.sh` (beide in `AH_SCRIPT_TESTS_DEFAULT`, `scripts/tests/run.sh:586`).
 - Geändert: `scripts/dev/review-verdict.schema.json`, `scripts/dev/review.sh` (`check-verdict` `:650`, `pr-body` `:942`,
   neues Verb `log`), `scripts/dev/task-close.sh` (Schritt 3 `:273–301`, Schritt 4 `:303–320`, Kopf `:46`),
@@ -69,25 +69,29 @@ Nicht-Ziele:
 5. **Reviewer:** `review-run.sh` mit Modell und Effort aus `review.sh risk --staged` (`standard` ⇒ sonnet/high,
    `xhigh` ⇒ opus/xhigh). Aufruf (Flags in T1 verifiziert; was T1 widerlegt, ändert T4):
    ```
-   timeout 1200 claude -p --agents '<json aus .claude/agents/review-task.md>' --agent review-task \
+   timeout 1200 claude -p --agents '<json aus scripts/dev/review-agent.md>' --agent review-task \
      --model <m> --effort <e> \
      --setting-sources user --settings scripts/dev/review-settings.json \
      --tools "Read,Grep,Glob,Bash,StructuredOutput" \
      --disallowedTools "Edit,Write,NotebookEdit,WebFetch,WebSearch,mcp__*" \
      --permission-mode dontAsk --permission-prompts none \
      --json-schema "$(cat scripts/dev/review-output.schema.json)" --output-format json \
-     --max-turns <60|80> --max-budget-usd <5|15> --no-session-persistence "<fester Prompt>"
+     --max-turns <60|80> --max-budget-usd <5|15> --no-session-persistence "<feste Anweisung>" < <prompt>
    ```
    **Entscheidung nach T1 (Messung 2026-10-03, CLI 2.1.285):** Der Reviewer wird mit `--agents '<json>' --agent
    review-task` definiert, nicht als Datei unter `.claude/agents/` — die findet `claude -p` mit `--setting-sources user`
    nicht, und die Quelle `project` muss draußen bleiben; das JSON baut review-run.sh aus der Agent-Datei, und `--tools`
    wie die `tools` des Agenten nennen `StructuredOutput` mit, sonst fehlt `structured_output` (Ledger T1, `Messung:`).
+   **Entscheidung Kevin (2026-10-03):** die Agent-Datei liegt als `scripts/dev/review-agent.md` neben review-run.sh —
+   kein Subagent des Projekts unter `.claude/agents/`, nur die Quelle des JSON.
+   Der Prompt geht über stdin (`cat datei | claude -p "query"`, cli-reference), damit ein großer Diff an keine
+   Argumentgrenze stößt; das Argument ist eine feste Anweisung.
    Fester Prompt: Task-Text, Spec-Pfad, `git diff --staged`, Liste der neuen Dateien, Tree-Hash, Probe- und
    Contracts-Ergebnis, Summary-Zeile des Verify; in Runde 2 der Pfad des Verdicts der Runde 1.
 6. **Verdict:** `review-run.sh` nimmt `structured_output` (Teilschema `review-output.schema.json`: `verdict`,
    `findings`, optional `mutants`) und ergänzt `schema_version`, `task{ledger,id}`, `tree_hash`, `reviewer{model,
    effort}`, `probe`, `verify` (aus `last-verify.json`), `contracts`, `cost_usd`, `num_turns`, `duration_s`. Ablage
-   `.ah-out/review/<slug>/<id>.r<n>.verdict.json` plus die rohe CLI-Antwort `<id>.r<n>.raw.json` (gitignored,
+   `.ah-out/review/<slug>/<id>.r<n>.verdict.json` plus der Prompt `<id>.r<n>.prompt.md` und die rohe CLI-Antwort `<id>.r<n>.raw.json` (gitignored,
    `.ah-out/`). `check-verdict` prüft zusätzlich, dass `task.ledger`/`task.id` die zu schließende Task sind (R-0147a).
 7. **Ergebnis:** approve ⇒ Commit mit der Review-Zeile aus `check-verdict`; request_changes ⇒ Exit 3, die Session
    behebt und ruft erneut (Runde 2 = zweite Verdict-Datei); eine dritte Runde gibt es nicht: Runde 2 nicht approve ⇒
@@ -102,7 +106,11 @@ den Subagent-Review: SKIP ist nicht grün.
 `bash scripts/dev/review-probe.sh <k> --staged --mutate …` (in deren eigener Worktree, 6a T5); kein `Edit`/`Write`,
 kein Netz, kein `verify.sh` (lief schon in Schritt 3, und eine zweite Server-Suite auf derselben DB zerstört die
 erste — `pg_engine`). Die Allow-Regeln stehen in `review-settings.json`, der harness-guard läuft dort als
-PreToolUse-Hook. Die Projekt-Settings (`.claude/settings.json`) dürfen nicht hineinwirken: sie erlauben `vm.py`,
+PreToolUse-Hook, fail-closed (R-0159, Kevin 2026-10-03): fehlt der Guard, startet er nicht, endet er nicht mit 0
+oder läuft sein eigenes `timeout 30` ab, endet der Hook mit Exit 2 — ein Exit 127 oder ein Hook-Timeout ließe den
+Aufruf laut Doku durch. Was der Guard selbst als Fehler schluckt (er endet absichtlich immer mit 0, etwa bei einer
+unlesbaren Eingabe), bleibt offen; die Grenze dahinter ist die Allow-Liste unter `dontAsk`.
+Die Projekt-Settings (`.claude/settings.json`) dürfen nicht hineinwirken: sie erlauben `vm.py`,
 `heavy.sh`, `task-close.sh` und `git switch` — T1 misst, wie das mit `--setting-sources` sicher geht.
 
 **Deckel (Entscheidung E, großzügiges Netz):** hart sind `timeout 1200` (20 min) und `--max-turns` 60 (Sonnet) bzw.

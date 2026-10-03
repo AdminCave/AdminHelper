@@ -123,11 +123,16 @@ v2 mit `round: 3` ⇒ 2; ein v1-Verdict wie in den 6a-Tests bleibt gültig.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
-### T4 — `review-run.sh`: Prompt bauen, Prozess starten, Verdict schreiben  [ ]
+### T4 — `review-run.sh`: Prompt bauen, Prozess starten, Verdict schreiben  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dd387ad6 2026-10-03T13:06:15+02:00
+Review: approve (opus, one round; nits done: a non-zero CLI exit is 74, --probe needs applicable, a tasks/private ledger and a timeout of 0 are refused, the spec names what the guard itself still swallows, the maxTurns deviation is in the ledger)
 Entscheidung Kevin (2026-10-03, über die Aufsicht): die Reviewer-Definition zieht nach `scripts/dev/review-agent.md`
 (kein Subagent unter `.claude/agents/` mehr, nur Quelle für review-run.sh); die Verschiebung kommt in diese Task —
 Pfad in `harness-paths.txt`, Spec-Satz, Test.
-Komponente: scripts · Dateien: scripts/dev/review-run.sh, scripts/tests/review_run_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh
+Entscheidung Kevin (2026-10-03, über die Aufsicht, R-0159): der Guard-Hook in `review-settings.json` wird fail-closed —
+fehlt der Guard, scheitert oder hängt er, endet der Hook mit Exit 2 (Exit 127 und ein Hook-Timeout blockieren laut
+Doku nicht); Regel-Test auf den Befehlstext und der Fall „Guard fehlt ⇒ blockiert“ in `hooks_test.sh`.
+Komponente: scripts · Dateien: scripts/dev/review-run.sh, scripts/tests/review_run_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh, scripts/dev/review-agent.md, .claude/agents/review-task.md, scripts/tests/review_scripts_test.sh, docs/features/stufe-6b.md, scripts/dev/review-settings.json, scripts/tests/hooks_test.sh
 Änderung: `review-run.sh <ledger> <id> --tree <hash> --round <n> --probe <json> --contracts <json> [--prior
 <verdict>]` (nur von task-close gerufen): Modell und Effort aus `review.sh risk --staged`; Prompt aus Task-Text, Spec-
 Pfad, `git diff --staged`, neuen Dateien, Tree-Hash, Probe, Contracts, Verify-Summary, bei Runde 2 dem Pfad der
@@ -145,6 +150,11 @@ Timeout ⇒ 74; `error_max_budget_usd` ⇒ 74; Exit 2 mit `unknown option` ⇒ 7
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 Abhängt von: T2, T3
+Messung (2026-10-03, CLI 2.1.285): der Prompt über stdin plus eine Anweisung als Argument kommt mit `--agents`/`--agent`
+und `--json-schema` an — Kleinstlauf (haiku) mit dem Codewort nur im stdin: `subtype: success`, `is_error: false`,
+`structured_output: {"word": "PELICAN-7"}`, `num_turns: 2`, `total_cost_usd: 0.003077`.
+Abweichung: `maxTurns` fällt aus `review-agent.md` (T2 hatte es verlangt) — review-run.sh gibt es nicht weiter,
+`--max-turns` 60/80 deckelt; `--effort high`/`xhigh` sind dokumentiert, gemessen ist nur `low` (T1).
 
 ### T5 — `task-close.sh --review auto`: billige Prüfer zuerst, Probe durch den Runner, Runden  [ ]
 Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh
