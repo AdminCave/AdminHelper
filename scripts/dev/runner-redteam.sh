@@ -196,10 +196,54 @@ redteam_claude_sum() {  # redteam_claude_sum <sum file> <binary>
   fi
 }
 
+# The session bus is a socket in the user's runtime directory. busctl --user finds it
+# through XDG_RUNTIME_DIR, which the restart does not carry — asked without it, it
+# fails whether or not a bus is there. So the socket first, and only then busctl:
+#   bash scripts/dev/runner-redteam.sh --dbus <runtime dir root> <owner uid>
+# The owner's runtime directory holds the owner's bus; this user must not enter it.
+redteam_dbus() {  # redteam_dbus <runtime dir root> <owner uid>
+  local root="$1" own="$2" mine
+  mine="$root/$(id -u)"
+  if [ ! -S "$mine/bus" ]; then
+    ok "no session bus socket at $mine/bus"
+  elif ! command -v busctl >/dev/null 2>&1; then
+    info "a session bus socket exists at $mine/bus, and busctl is missing to ask it"
+  elif XDG_RUNTIME_DIR="$mine" busctl --user status >/dev/null 2>&1; then
+    fail "this user has a d-bus session at $mine/bus (a desktop keyring may be reachable through it)"
+  else
+    ok "a socket at $mine/bus, but no session bus answers on it"
+  fi
+  if [ ! -e "$root/$own" ]; then
+    info "no runtime directory $root/$own of the owner — nothing to probe"
+  elif ( cd "$root/$own" ) 2>/dev/null; then
+    fail "this user can enter $root/$own, the owner's runtime directory with its session bus"
+  else
+    ok "cannot enter $root/$own (the owner's session bus)"
+  fi
+}
+
 OKS=0 FAILS=0 INFOS=0
 ok()   { printf 'ok    %s\n' "$*"; OKS=$((OKS + 1)); }
 fail() { printf 'FAIL  %s\n' "$*"; FAILS=$((FAILS + 1)); }
 info() { printf 'info  %s\n' "$*"; INFOS=$((INFOS + 1)); }
+
+# The steps this script knows; without an argument it is the full run. Anything
+# else — a typo, or an older copy handed a newer step — stops here instead of
+# falling through to the full run with its network, push and budget probes.
+if [ $# -gt 0 ]; then
+  case "$1" in
+    --py-lock|--claude-sum|--pin|--verdict|--dbus|--self-check|--env-check) ;;
+    *) echo "runner-redteam: unknown argument '$1' — steps: --py-lock --claude-sum --pin --verdict --dbus --self-check --env-check; no argument is the full run" >&2
+       exit 2 ;;
+  esac
+fi
+
+if [ "${1:-}" = "--dbus" ]; then
+  case "${2:-}" in /*) ;; *) echo "runner-redteam: --dbus needs an absolute runtime dir root" >&2; exit 2 ;; esac
+  case "${3:-}" in ''|*[!0-9]*) echo "runner-redteam: --dbus needs the owner's uid" >&2; exit 2 ;; esac
+  redteam_dbus "$2" "$3"
+  [ "$FAILS" -eq 0 ]; exit
+fi
 
 if [ "${1:-}" = "--py-lock" ]; then
   [ -n "${2:-}" ] || { echo "runner-redteam: --py-lock needs a path" >&2; exit 2; }
@@ -425,15 +469,10 @@ else
   ok "gh has no login"
 fi
 
-if ! command -v busctl >/dev/null 2>&1; then
-  info "busctl not installed — nothing to probe"
-elif busctl --user status >/dev/null 2>&1; then
-  fail "this user has a d-bus session (a desktop keyring is reachable)"
-else
-  ok "no d-bus session bus"
-fi
+# The owner is whoever owns the owner home (uid 1000 by default, like that home).
+redteam_dbus /run/user "$(stat -c %u "$OWNER_HOME" 2>/dev/null || echo 1000)"
 # secret-tool returns 1 both for "no keyring" and for "keyring says no match",
-# so this one can only ever be an indication; the busctl probe carries the claim.
+# so this one can only ever be an indication; the d-bus probe above carries the claim.
 if command -v secret-tool >/dev/null 2>&1; then
   info "secret-tool exists; its exit code cannot tell 'no keyring' from 'no match'"
 else

@@ -289,6 +289,65 @@ grep -qF '"$SELF_DIR/runner-settings.json"' "$RT" && grep -qF '"$SELF_DIR/runner
   && ok "the pin and runner-env.sh come from beside the red team, nothing from the clone's scripts/dev" \
   || bad "the red team still reads from the clone: $(grep -nF '$REPO/scripts/dev/' "$RT")"
 
+echo "── an unknown argument ends before any probe"
+# A copy whose full run stops at its first line: should the check ever slip, this
+# test reaches that line instead of the network, push and budget probes.
+UA="$LT/unknown"; mkdir -p "$UA"
+sed 's/^echo "── red team as .*/echo REACHED-FULL-RUN; exit 3/' "$RT" > "$UA/runner-redteam.sh"
+grep -q '^echo REACHED-FULL-RUN; exit 3$' "$UA/runner-redteam.sh" || bad "the full-run line to stop at was not found"
+for arg in --self-chek --foo ""; do
+  bash "$UA/runner-redteam.sh" "$arg" > "$LT/out" 2>&1; rc=$?
+  [ "$rc" = 2 ] && grep -q "unknown argument '$arg'" "$LT/out" \
+    && ! grep -qE '^(ok|FAIL|info) |REACHED-FULL-RUN' "$LT/out" \
+    && ok "'$arg' is a usage error (exit 2) and runs nothing" || bad "'$arg': rc=$rc $(cat "$LT/out")"
+done
+
+echo "── the d-bus probe looks for the socket, then asks it (--dbus)"
+# busctl as a stub that answers only where a bus socket really is — what the real
+# one does, and why asking it without XDG_RUNTIME_DIR always read as "no bus".
+DB="$LT/dbus"; RUNROOT="$DB/run"; ME="$(id -u)"; OWN=$((ME + 1))
+mkdir -p "$DB/bin" "$RUNROOT/$ME"
+printf '#!/bin/sh\necho "XDG=${XDG_RUNTIME_DIR:-}" >> "%s/busctl.log"\n[ ! -e "%s/silent" ] && [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]\n' "$DB" "$DB" > "$DB/bin/busctl"
+chmod +x "$DB/bin/busctl"
+dbus() { PATH="$DB/bin:$PATH" bash "$RT" --dbus "$RUNROOT" "$OWN" > "$LT/out" 2>&1; }
+dbus; rc=$?
+[ "$rc" = 0 ] && grep -q "^ok    no session bus socket at $RUNROOT/$ME/bus" "$LT/out" \
+  && grep -q "^info  no runtime directory $RUNROOT/$OWN" "$LT/out" \
+  && ok "no socket: ok, and a missing owner directory is info" || bad "no socket: rc=$rc $(cat "$LT/out")"
+# A unix socket path is short-limited; bound relative to its directory it always fits.
+( cd "$RUNROOT/$ME" && python3 -c 'import socket; socket.socket(socket.AF_UNIX).bind("bus")' )
+dbus; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  this user has a d-bus session at $RUNROOT/$ME/bus" "$LT/out" \
+  && grep -qx "XDG=$RUNROOT/$ME" "$DB/busctl.log" \
+  && ok "a socket that answers is a FAIL, asked with XDG_RUNTIME_DIR set" || bad "socket: rc=$rc $(cat "$LT/out")"
+: > "$DB/silent"; dbus; rc=$?; rm -f "$DB/silent"
+[ "$rc" = 0 ] && grep -q "^ok    a socket at $RUNROOT/$ME/bus, but no session bus answers" "$LT/out" \
+  && ok "a socket nobody answers on: ok" || bad "silent socket: rc=$rc $(cat "$LT/out")"
+# Without busctl the socket cannot be asked: info, never ok. PATH holds only what
+# the script needs to start.
+mkdir -p "$DB/nobus"
+for b in bash dirname basename getent cut id; do ln -sf "$(command -v "$b")" "$DB/nobus/$b"; done
+PATH="$DB/nobus" "$DB/nobus/bash" "$RT" --dbus "$RUNROOT" "$OWN" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -q "^info  a session bus socket exists at $RUNROOT/$ME/bus, and busctl is missing" "$LT/out" \
+  && ok "a socket without busctl to ask it: info" || bad "no busctl: rc=$rc $(cat "$LT/out")"
+rm -f "$RUNROOT/$ME/bus"
+if [ "$ME" != 0 ]; then
+  mkdir -p "$RUNROOT/$OWN"; chmod 000 "$RUNROOT/$OWN"
+  dbus; rc=$?
+  [ "$rc" = 0 ] && grep -q "^ok    cannot enter $RUNROOT/$OWN" "$LT/out" \
+    && ok "the owner's runtime directory closed to this user: ok" || bad "closed owner dir: rc=$rc $(cat "$LT/out")"
+  chmod 755 "$RUNROOT/$OWN"
+  dbus; rc=$?
+  [ "$rc" = 1 ] && grep -q "^FAIL  this user can enter $RUNROOT/$OWN" "$LT/out" \
+    && ok "one this user can enter is a FAIL" || bad "open owner dir: rc=$rc $(cat "$LT/out")"
+else
+  echo "  (as root: the owner-directory cases need a user without root rights — not run)"
+fi
+bash "$RT" --dbus relative 1 </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--dbus with a relative root is a usage error (exit 2)" || bad "--dbus with a relative root did not exit 2"
+grep -qx 'redteam_dbus /run/user "$(stat -c %u "$OWNER_HOME" 2>/dev/null || echo 1000)"' "$RT" \
+  && ok "the normal run probes /run/user for this user and the owner" || bad "the normal run does not call redteam_dbus on /run/user"
+
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

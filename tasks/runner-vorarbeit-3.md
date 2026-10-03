@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 3: Messinstrument und Grenzen unabhängig vom geprüften Nutzer — Task-Ledger
-Status: freigegeben · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 3, „Freigeben“; T3: Proxmox-Ziel root-eigen beim Setup), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit-3.md (Roadmap R-0156, R-0158, R-0159, R-0160, R-0161, R-0162, R-0163)
 Heavy: none — nur Harness-Skripte (runner-redteam.sh, runner-setup.sh, harness-guard.sh, runner-settings.json) und ihre hermetischen Tests mit Fake-Klon, Stub-Binärdateien (curl, busctl) und JSON auf stdin; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec „Kevins Handarbeit“).
@@ -26,8 +26,10 @@ Entscheidungen (Kevin bzw. Aufsicht, 2026-10-03):
 Parallelität: `scripts/tests/hooks_test.sh` teilen sich Stufe 6b und dieses Ledger — wer als Zweiter merged, holt
 `origin/main` vorher herein.
 
-### T1 — Red Team: unbekannte Argumente enden sofort, die D-Bus-Probe misst den echten Socket  [ ]
+### T1 — Red Team: unbekannte Argumente enden sofort, die D-Bus-Probe misst den echten Socket  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fa865623 2026-10-03T12:48:06+02:00
+Review: approve (opus); Nits (zwei weitere D-Bus-Faelle, Notiz, Meldung) in derselben Runde; Gegenproben: HEAD-Kopie mit --foo erreicht den vollen Lauf, Mutante ohne XDG_RUNTIME_DIR meldet ok
 Änderung: Die erlaubten Argumente (`--py-lock`, `--claude-sum`, `--pin`, `--verdict`, `--self-check`, `--env-check`,
 kein Argument) stehen als Liste vor der ersten Weiche (`runner-redteam.sh:204`); jedes andere endet mit Exit 2 und einer
 Zeile, bevor der Neustart (`:236`) oder eine Probe läuft. Die D-Bus-Probe (`:430`) prüft zuerst, ob
@@ -44,6 +46,10 @@ Semantik: `docs/features/harness-stufe-4.md:33–34`: „Ein Red-Team-Skript bew
 fremde Secrets lesen noch den Harness ändern kann.“ Eine Probe, deren `ok` unabhängig vom Zustand kommt, trägt das nicht.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T5)
+Notiz: Die D-Bus-Probe ist ein eigener Schritt `--dbus <runtime-wurzel> <owner-uid>` wie `--py-lock` statt einer
+Test-Variable — gleiche Wirkung (verschiebbar nur im Test, der normale Lauf ruft `/run/user`), ohne Umweg am Neustart vorbei.
+Die Owner-uid ist der Besitzer von `$OWNER_HOME` (ersatzweise 1000, wie dessen Default); ein leeres Argument `""` gilt
+als unbekannt.
 
 ### T2 — Red Team: die git-Proben führen keinen Code und keine ausführbare Konfiguration aus dem Klon aus  [ ]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
