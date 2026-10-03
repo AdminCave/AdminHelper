@@ -156,8 +156,10 @@ und `--json-schema` an — Kleinstlauf (haiku) mit dem Codewort nur im stdin: `s
 Abweichung: `maxTurns` fällt aus `review-agent.md` (T2 hatte es verlangt) — review-run.sh gibt es nicht weiter,
 `--max-turns` 60/80 deckelt; `--effort high`/`xhigh` sind dokumentiert, gemessen ist nur `low` (T1).
 
-### T5 — `task-close.sh --review auto`: billige Prüfer zuerst, Probe durch den Runner, Runden  [ ]
-Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh
+### T5 — `task-close.sh --review auto`: billige Prüfer zuerst, Probe durch den Runner, Runden  [x]
+Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh, scripts/dev/review-probe.sh, scripts/tests/review_probe_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ca3cbf08 2026-10-03T13:45:26+02:00
+Review: approve with two rounds spent (opus): round 1 request_changes on a failed commit spending round 2 and a file staged during the suite passing the earlier scope check, both fixed; round 2 request_changes on the reused approve not bound to the staged diff, fixed with the reviewer's case as a test, no third round
 Änderung: Schritt 3 (`:273–301`) teilt sich: `diff-scan`, `scope`, `docs-pairs`, `sec` laufen vor dem Verify (Schritt
 2, `:182`), `contracts` danach (R-0150). Neuer Wert `--review auto` (Schritt 4, `:303–320`): Probe
 (`review-probe.sh <komponente> --staged [-- <test aus Verify:>]`, R-0154.2) nur bei Test- und Nicht-Test-Dateien im
@@ -172,6 +174,10 @@ Commit; reine Refactor-Task ⇒ Probe-Block `no-test-change`, approve ⇒ Commit
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 Abhängt von: T4
+Abweichung: ob der Diff Test- und Nicht-Test-Dateien hat, entscheidet `review-probe.sh` selbst (die Liste der
+Testpfade steht nur dort und in `review.sh`): ohne Testdatei wie bisher `no-test-change`, nur Tests neu
+`only-test-change`, beides ohne Suite-Lauf; task-close ruft die Probe deshalb bei `--review auto` immer. Die
+Review-Zeile trägt die Runde (`approve (sonnet/high) · round 1`).
 
 ### T6 — `review.sh log` und `pr-body` aus dem Log  [ ]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh
