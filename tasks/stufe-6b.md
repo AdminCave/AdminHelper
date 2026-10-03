@@ -76,8 +76,10 @@ Eintrag `costUSD`); `total_cost_usd`; `num_turns`; `duration_ms`; `api_error_sta
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T7)
 
-### T2 — Agent-Datei, Review-Settings und Ausgabe-Schema  [ ]
-Komponente: scripts · Dateien: .claude/agents/review-task.md, scripts/dev/review-settings.json, scripts/dev/review-output.schema.json, scripts/dev/harness-paths.txt, scripts/tests/hooks_test.sh, scripts/tests/review_scripts_test.sh
+### T2 — Agent-Datei, Review-Settings und Ausgabe-Schema  [x]
+Komponente: scripts · Dateien: .claude/agents/review-task.md, scripts/dev/review-settings.json, scripts/dev/review-output.schema.json, scripts/dev/harness-paths.txt, scripts/tests/hooks_test.sh, scripts/tests/review_scripts_test.sh, docs/features/stufe-6b.md, scripts/dev/review-cli-probe.sh, scripts/tests/review_cli_probe_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1dd0ce7e 2026-10-03T12:08:16+02:00
+Review: approve with two rounds spent (opus): round 1 request_changes on the hook not setting AH_AUTONOMOUS, git --output/--no-index and the mutants shape, fixed; round 2 request_changes on git diff reading a path outside without --no-index, fixed with the reviewer cases as a rule test, no third round
 Änderung: `.claude/agents/review-task.md` mit `name`, `description`, `tools: Read, Grep, Glob, Bash`,
 `disallowedTools: Edit, Write, NotebookEdit, WebFetch, WebSearch`, `model: sonnet`, `maxTurns: 80`, ohne `memory`;
 der Text sind die 7 Kriterien aus `.claude/skills/feature-review/SKILL.md` (Verweis, keine Kopie) plus die
@@ -90,6 +92,13 @@ Ausführungspflichten: Probe- und Contracts-Ergebnis stehen im Prompt und werden
 `--model` und Frontmatter-Hooks gemessen hat, entscheidet: eine Datei mit Modell per Flag, sonst zwei
 (`review-task.md`, `review-task-xhigh.md`). `review-output.schema.json`: `verdict` (Enum wie 6a), `findings[]` (wie 6a),
 optional `mutants[]` `{file, line, replacement, result}`; `additionalProperties: false`.
+Abweichung (T1-Messung, Spec „Design“ Schritt 5): `tools` nennt zusätzlich `StructuredOutput`; der Reviewer kommt
+als `--agents`-JSON, die Agent-Datei bleibt die Quelle. Aus dem Review: der Hook setzt selbst `AH_AUTONOMOUS=1`, Deny
+auch `Bash(git *--output*)`, `Bash(git *--no-index*)` und Pfade außerhalb (`Bash(git * /*)`, `Bash(git *../*)`,
+`Bash(git * ~*)`), Allow für review-probe.sh nur mit `--mutate`; die CLI-Probe
+nimmt ab hier das echte Ausgabe-Schema.
+Messung: `claude -p --json-schema` (2.1.285) nimmt das echte `review-output.schema.json` an — CLI-Probe mit diesem
+Schema `9 ok, 0 fail, 1 unknown`, ≈ 0,08 $ (T1 und T2 zusammen ≈ 0,55 $).
 Rot vorher: hooks_test — mit `review-settings.json` als Settings verweigert der Guard `sed -i` auf eine Repo-Datei und
 `rm -rf /tmp/tmp.*` (wie in jeder Session), `bash scripts/dev/review-probe.sh … --mutate …` geht durch;
 review_scripts_test — das Ausgabe-Schema ist gültiges draft-07, eine Musterantwort passt, eine mit `tree_hash` (Feld des

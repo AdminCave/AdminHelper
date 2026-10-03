@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git log *)",
+      "Bash(git status *)",
+      "Bash(bash scripts/dev/review-probe.sh * --mutate *)"
+    ],
+    "deny": [
+      "Edit",
+      "Write",
+      "Bash(bash scripts/dev/verify.sh *)",
+      "Bash(bash scripts/tests/run.sh *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(git *--output*)",
+      "Bash(git *--no-index*)",
+      "Bash(git * /*)",
+      "Bash(git *../*)",
+      "Bash(git * ~*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AH_AUTONOMOUS=1 bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

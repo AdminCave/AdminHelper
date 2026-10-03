@@ -1776,6 +1776,67 @@ r pr-body
 [ $rc -eq 2 ] && grep -q 'pr-body needs' <<<"$OUT" && ok "no ledger -> 2" || bad "no ledger: rc=$rc out=$OUT"
 
 # ══ the real repo ═════════════════════════════════════════════════════════════
+echo "── reviewer agent and output schema (stage 6b) ──"
+# The agent file is the reviewer's definition; review-run.sh hands it to the CLI
+# as --agents JSON (measured in T1: a file under .claude/agents is not found with
+# --setting-sources user). StructuredOutput has to stand in its tool list.
+AGENT="$REPO_ROOT/.claude/agents/review-task.md"
+grep -qx 'tools: Read, Grep, Glob, Bash, StructuredOutput' "$AGENT" \
+  && grep -qx 'disallowedTools: Edit, Write, NotebookEdit, WebFetch, WebSearch' "$AGENT" \
+  && ok "review-task.md: exactly the reviewer's tools, StructuredOutput included" || bad "review-task.md tool lines"
+grep -qx 'name: review-task' "$AGENT" && grep -qx 'model: sonnet' "$AGENT" && ! grep -q '^memory:' "$AGENT" \
+  && grep -qF '.claude/skills/feature-review/SKILL.md' "$AGENT" \
+  && ok "review-task.md: name, model, no memory, points at feature-review's criteria" || bad "review-task.md head/body"
+python3 - "$REPO_ROOT/scripts/dev/review-output.schema.json" <<'PY' && ok "review-output.schema.json: draft-07, an answer fits, runner fields do not" || bad "review-output.schema.json"
+import json, sys
+s = json.load(open(sys.argv[1]))
+
+def ok(v, sch):
+    t = sch.get("type")
+    types = {"object": dict, "array": list, "string": str, "integer": int, "boolean": bool, "null": type(None)}
+    if t and not any(isinstance(v, types[x]) and not (x == "integer" and isinstance(v, bool))
+                     for x in (t if isinstance(t, list) else [t])):
+        return False
+    if "enum" in sch and v not in sch["enum"]:
+        return False
+    if isinstance(v, str) and len(v) < sch.get("minLength", 0):
+        return False
+    if isinstance(v, dict):
+        props = sch.get("properties", {})
+        if any(k not in v for k in sch.get("required", [])):
+            return False
+        if sch.get("additionalProperties") is False and any(k not in props for k in v):
+            return False
+        return all(ok(x, props[k]) for k, x in v.items() if k in props)
+    if isinstance(v, list) and "items" in sch:
+        return all(ok(x, sch["items"]) for x in v)
+    return True
+
+finding = {"severity": "wichtig", "file": "a.py", "line": 3, "claim": "breaks", "evidence": "x=1 gives 2"}
+good = {"verdict": "approve", "findings": [finding],
+        "mutants": [{"file": "a.py", "line": 3, "replacement": "return 0", "result": "killed"}]}
+cases = [
+    (good, True),
+    ({"verdict": "request_changes", "findings": []}, True),
+    (dict(good, tree_hash="0" * 40), False),             # a runner field: never from the model
+    ({"verdict": "approve"}, False),
+    ({"verdict": "fine", "findings": []}, False),
+    (dict(good, mutants=[{"file": "a.py", "line": 3, "replacement": "x", "result": "maybe"}]), False),
+    (dict(good, findings=[dict(finding, severity="major")]), False),
+]
+sys.exit(0 if "draft-07" in s.get("$schema", "") and all(ok(v, s) == want for v, want in cases) else 1)
+PY
+python3 - "$REPO_ROOT/scripts/dev" <<'PY' && ok "the output schema's findings are the verdict schema's (review-run adds runner fields only)" || bad "findings drifted between the two schemas"
+import json, os, sys
+d = sys.argv[1]
+out = json.load(open(os.path.join(d, "review-output.schema.json")))["properties"]
+ver = json.load(open(os.path.join(d, "review-verdict.schema.json")))["properties"]
+sys.exit(0 if out["findings"] == ver["findings"] and out["verdict"] == ver["verdict"] else 1)
+PY
+for f in scripts/dev/review-settings.json scripts/dev/review-output.schema.json; do
+  grep -qxF "$f" "$REPO_ROOT/scripts/dev/harness-paths.txt" && ok "$f is a harness path" || bad "$f is missing from harness-paths.txt"
+done
+
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
   && ok "task-close.sh hands diff-scan the task" || bad "task-close.sh calls diff-scan without --task"

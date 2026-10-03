@@ -69,13 +69,19 @@ Nicht-Ziele:
 5. **Reviewer:** `review-run.sh` mit Modell und Effort aus `review.sh risk --staged` (`standard` ⇒ sonnet/high,
    `xhigh` ⇒ opus/xhigh). Aufruf (Flags in T1 verifiziert; was T1 widerlegt, ändert T4):
    ```
-   timeout 1200 claude -p --agent review-task --model <m> --effort <e> \
-     --setting-sources <nur eigene> --settings scripts/dev/review-settings.json \
-     --tools "Read,Grep,Glob,Bash" --disallowedTools "Edit,Write,NotebookEdit,WebFetch,WebSearch,mcp__*" \
+   timeout 1200 claude -p --agents '<json aus .claude/agents/review-task.md>' --agent review-task \
+     --model <m> --effort <e> \
+     --setting-sources user --settings scripts/dev/review-settings.json \
+     --tools "Read,Grep,Glob,Bash,StructuredOutput" \
+     --disallowedTools "Edit,Write,NotebookEdit,WebFetch,WebSearch,mcp__*" \
      --permission-mode dontAsk --permission-prompts none \
      --json-schema "$(cat scripts/dev/review-output.schema.json)" --output-format json \
      --max-turns <60|80> --max-budget-usd <5|15> --no-session-persistence "<fester Prompt>"
    ```
+   **Entscheidung nach T1 (Messung 2026-10-03, CLI 2.1.285):** Der Reviewer wird mit `--agents '<json>' --agent
+   review-task` definiert, nicht als Datei unter `.claude/agents/` — die findet `claude -p` mit `--setting-sources user`
+   nicht, und die Quelle `project` muss draußen bleiben; das JSON baut review-run.sh aus der Agent-Datei, und `--tools`
+   wie die `tools` des Agenten nennen `StructuredOutput` mit, sonst fehlt `structured_output` (Ledger T1, `Messung:`).
    Fester Prompt: Task-Text, Spec-Pfad, `git diff --staged`, Liste der neuen Dateien, Tree-Hash, Probe- und
    Contracts-Ergebnis, Summary-Zeile des Verify; in Runde 2 der Pfad des Verdicts der Runde 1.
 6. **Verdict:** `review-run.sh` nimmt `structured_output` (Teilschema `review-output.schema.json`: `verdict`,
@@ -112,7 +118,8 @@ dieselbe Prüflogik wie `check-verdict` (R-0151.6). Grundlage der Metrik in Stuf
 ## Datenmodell / API / Migrationen
 
 Keine App-Änderung. Schema: `review-verdict.schema.json` bekommt `schema_version: 2`, `round`, `num_turns`,
-`duration_s` und optional `mutants[]` (`{file, line, result}`); Version 1 bleibt lesbar (6a-Verdicts gibt es keine).
+`duration_s` und optional `mutants[]` (`{file, line, replacement, result}`, wie in `review-output.schema.json`);
+Version 1 bleibt lesbar (6a-Verdicts gibt es keine).
 Neues Teilschema `review-output.schema.json` für `--json-schema` (nur, was das Modell liefert).
 
 ## Externe Integrationen

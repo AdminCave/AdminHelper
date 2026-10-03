@@ -165,7 +165,12 @@ print(json.dumps({
     ]}]},
 }))
 PY
-SCHEMA='{"type":"object","required":["verdict","findings"],"additionalProperties":false,"properties":{"verdict":{"enum":["approve","request_changes","needs_decision"]},"findings":{"type":"array"}}}'
+# The reviewer's own output schema once it exists (stage 6b T2), a minimal one before.
+if [ -f "$ROOT/scripts/dev/review-output.schema.json" ]; then
+  SCHEMA="$(cat "$ROOT/scripts/dev/review-output.schema.json")"
+else
+  SCHEMA='{"type":"object","required":["verdict","findings"],"additionalProperties":false,"properties":{"verdict":{"enum":["approve","request_changes","needs_decision"]},"findings":{"type":"array"}}}'
+fi
 PROMPT="This is a probe of the tool permissions. Run each of these seven commands with the Bash tool, one call each, exactly as written, in this order. When a command is refused, do not retry it and do not try another way; go on with the next one.
 1. echo x > $WT/probe.txt
 2. git commit --allow-empty -m probe
@@ -237,7 +242,7 @@ point(1, "login", "ok" if rc1 == 0 and r1.get("is_error") is False else "fail",
       "exit %d, is_error %s, %s turns, $%s" % (rc1, r1.get("is_error"), r1.get("num_turns"), r1.get("total_cost_usd")))
 
 so = r1.get("structured_output")
-fits = isinstance(so, dict) and set(so) == {"verdict", "findings"} \
+fits = isinstance(so, dict) and {"verdict", "findings"} <= set(so) <= {"verdict", "findings", "mutants"} \
     and so.get("verdict") in ("approve", "request_changes", "needs_decision") and isinstance(so.get("findings"), list)
 point(2, "structured_output", "ok" if fits else "fail", json.dumps(so) if so is not None else "missing")
 

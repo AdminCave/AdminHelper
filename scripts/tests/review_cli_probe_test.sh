@@ -231,6 +231,14 @@ FIXTURE=unknown-option p
   || bad "unknown option: rc=$rc out=$OUT"
 FIXTURE=empty p
 [ $rc -eq 1 ] && grep -qi 'no json\|empty' <<<"$OUT" && ok "an empty answer -> exit 1, never green" || bad "empty: rc=$rc out=$OUT"
+cp "$REPO_ROOT/scripts/dev/review-output.schema.json" "$FIX/scripts/dev/review-output.schema.json"
+FIXTURE=success p
+python3 - "$STUB_ARGS" <<'PY' && ok "with the reviewer's output schema in the tree, the probe hands that one to --json-schema" || bad "schema: $(head -1 "$STUB_ARGS" | cut -c1-200)"
+import json, sys
+a = json.loads(open(sys.argv[1]).readline())
+sys.exit(0 if json.loads(a[a.index("--json-schema") + 1]).get("$id") == "review-output.schema.json" else 1)
+PY
+rm -f "$FIX/scripts/dev/review-output.schema.json"
 OUT=$(cd "$FIX" && bash "$PROBE" --budget abc 2>&1); rc=$?
 [ $rc -eq 2 ] && ok "a budget that is no number -> 2" || bad "bad budget: rc=$rc out=$OUT"
 OUT=$(cd "$FIX" && bash "$PROBE" --frob 2>&1); rc=$?

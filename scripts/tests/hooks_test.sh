@@ -1070,6 +1070,64 @@ git log -n 3
 echo GIT_CONFIG_KEY_0=core.hooksPath
 CMDS
 
+# ══ review-settings.json — the reviewer process runs the guard as its hook ═══
+echo "── review-settings.json ──"
+# The hook command exactly as the settings file holds it, run the way Claude Code
+# runs it: project dir set, the event on stdin, and no AH_AUTONOMOUS from outside —
+# the file itself has to make the reviewer autonomous.
+RS="$REPO_ROOT/scripts/dev/review-settings.json"
+RS_HOOK="$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(d["hooks"]["PreToolUse"][0]["hooks"][0]["command"])' "$RS" 2>/dev/null)"
+[ -n "$RS_HOOK" ] && grep -q 'harness-guard.sh' <<<"$RS_HOOK" \
+  && ok "review-settings.json runs the harness guard as its PreToolUse hook" || bad "no guard hook in $RS: $RS_HOOK"
+rs_guard() {
+  OUT=$(printf '{"tool_name":"Bash","tool_input":%s}' "$(cmdjson "$1")" \
+    | env -u AH_AUTONOMOUS CLAUDE_PROJECT_DIR="$TREE" bash -c "$RS_HOOK" 2>/dev/null)
+}
+rs_guard 'sed -i s/a/b/ CLAUDE.md'
+denied "$OUT" && ok "the reviewer's hook refuses sed -i on a harness file" || bad "sed -i: $OUT"
+rs_guard 'rm -rf /tmp/tmp.*'
+denied "$OUT" && ok "the reviewer's hook refuses a temp glob delete" || bad "temp glob: $OUT"
+rs_guard "bash scripts/dev/review-probe.sh monitoring --staged --mutate apps/monitoring/app/x.py:2 'return 1'"
+[ -z "$OUT" ] && ok "the reviewer's hook lets a --mutate probe through" || bad "mutate probe: $OUT"
+python3 - "$RS" <<'PY' && ok "review-settings.json: dontAsk, the read-only allow list, the deny list" || bad "review-settings.json permissions"
+import json, sys
+p = json.load(open(sys.argv[1]))["permissions"]
+allow = {"Bash(git diff *)", "Bash(git show *)", "Bash(git log *)", "Bash(git status *)",
+         "Bash(bash scripts/dev/review-probe.sh * --mutate *)"}
+# git diff/show/log write with --output=<file> and read outside the repo with
+# --no-index: both are denied, deny wins over allow.
+deny = {"Edit", "Write", "Bash(bash scripts/dev/verify.sh *)", "Bash(bash scripts/tests/run.sh *)",
+        "Bash(git add *)", "Bash(git commit *)", "Bash(curl *)", "Bash(wget *)",
+        "Bash(git *--output*)", "Bash(git *--no-index*)", "Bash(git * /*)", "Bash(git *../*)", "Bash(git * ~*)"}
+sys.exit(0 if p.get("defaultMode") == "dontAsk" and set(p.get("allow", [])) == allow
+         and deny <= set(p.get("deny", [])) else 1)
+PY
+# The rules as Claude Code reads them — `*` for any text, deny before allow —
+# against the ways out (git diff reads a file outside the worktree without
+# --no-index when one path lies outside) and the commands a review needs.
+python3 - "$RS" <<'PY' && ok "the reviewer's git rules: outside paths and --output denied, review commands allowed" || bad "reviewer git rules"
+import fnmatch, json, sys
+p = json.load(open(sys.argv[1]))["permissions"]
+def rules(kind):
+    return [r[5:-1] for r in p[kind] if r.startswith("Bash(")]
+def allowed(cmd):
+    if any(fnmatch.fnmatchcase(cmd, r) for r in rules("deny")):
+        return False
+    return any(fnmatch.fnmatchcase(cmd, r) or (r.endswith(" *") and cmd == r[:-2]) for r in rules("allow"))
+out = ["git diff /dev/null /home/x/.ssh/id_ed25519", "git diff -- /dev/null /etc/passwd", "git diff ../other/repo/x",
+       "git show HEAD:a ~/.netrc", "git diff --output=CLAUDE.md", "git log --output=x -1", "git diff --no-index a b",
+       "git commit -m x", "bash scripts/dev/verify.sh scripts --strict", "bash scripts/dev/review-probe.sh monitoring --staged"]
+inside = ["git diff --staged", "git diff HEAD~1..HEAD -- scripts/dev/review.sh", "git show HEAD:scripts/dev/review.sh",
+          "git log --oneline -5", "git status --short", "git diff main...harness/x",
+          "bash scripts/dev/review-probe.sh monitoring --staged --mutate apps/x.py:2 'return 1'"]
+bad = [c for c in out if allowed(c)] + [c for c in inside if not allowed(c)]
+print("\n".join("  wrong: " + c for c in bad))
+sys.exit(1 if bad else 0)
+PY
+
 fi   # GUARD_SKIPPED
 
 # ══ runner-env.sh — the shell the runner user works in ═══════════════════════
