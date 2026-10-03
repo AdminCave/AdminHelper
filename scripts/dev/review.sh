@@ -9,6 +9,15 @@
 #                                                       ways to make a suite lie
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
 #   bash scripts/dev/review.sh sec [--staged]           what must never be committed
+#   bash scripts/dev/review.sh check-verdict <file> --tree <hash>
+#                                                       a reviewer's verdict JSON
+#   bash scripts/dev/review.sh risk [--staged | --range <a>..<b>]
+#                                                       which reviewer a diff gets
+#   bash scripts/dev/review.sh docs-pairs [--staged]    a docs page in one language
+#   bash scripts/dev/review.sh contracts [--staged] [--list]
+#                                                       the checks a changed path pulls in
+#   bash scripts/dev/review.sh pr-body <ledger> [--verdicts <dir>]
+#                                                       the PR text out of the ledger
 #
 # Deterministic, model-free, and called by task-close.sh before it commits. They
 # answer three questions a reviewer would otherwise have to ask every time:
@@ -38,16 +47,47 @@
 #   sec        is something staged that this public repo must never hold — the
 #              private roadmap, a security ledger, a finding's dedup key, or one
 #              of the two gitignored files that carry credentials.
+#   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
+#              scripts/dev/review-verdict.schema.json, be about the tree --tree
+#              names, and say approve without a blocker and without a probe
+#              that found the new test green without the change. A blocker
+#              without evidence counts as a nit. Prints the review line that
+#              task-close.sh writes into the ledger.
+#   risk       does the diff touch a risk path (scripts/dev/review-risk.txt and
+#              the harness paths)? Prints `xhigh` and the paths it hit, or
+#              `standard`; both exit 0. The reviewer model follows from it.
+#              Without a flag it judges everything not committed yet — staged,
+#              unstaged and untracked: at the review step nothing is staged.
+#   docs-pairs does every changed docs page bring its other language along?
+#              The other page is the one the page's lang-switch links to (not
+#              a name rule: admin/benutzer.html is en/admin/users.html); pages
+#              without a switch and everything that is no html are outside.
+#   contracts  the checks scripts/dev/review-contracts.txt ties to the changed
+#              paths: a test of a component (through verify.sh, with an
+#              AH_OUT_DIR of its own so the builder's last-verify.json stays) or
+#              a pair of files that must carry the same value. --list names
+#              them without running them. Prints `contracts: <n> ok` or
+#              `contracts: none`.
+#   pr-body    Markdown for the PR: the ledger head (spec, roadmap ids, heavy
+#              line), each task with its box, Evidenz: and Review: lines and —
+#              with --verdicts <dir> — the verdict in <dir>/<id>.json; [~] and
+#              [?] tasks apart. A task without evidence reads "unverifiziert",
+#              never approve. Addresses, host names and VMIDs are cut out of
+#              every ledger line it copies: this text goes to a public repo.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
 # git diff does not — so the answer for a brand-new file exists only once it is
 # staged, which is the state task-close.sh works on anyway.
 #
-# Exit: 0 clean · 2 usage · 3 findings (diff-scan, scope) · 4 blocked (sec)
+# Exit: 0 clean · 2 usage (check-verdict: unreadable or outside the schema) ·
+# 3 findings (diff-scan, scope, docs-pairs, contracts; check-verdict: no usable approve) · 4 blocked
+# (sec; check-verdict: a verdict for another tree) · 74 a contract test that
+# could not run
 
 set -uo pipefail
 
+CALLER_PWD="$PWD"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
 cd "$ROOT" || exit 2
 
@@ -88,10 +128,21 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" LIST_ONLY=0 VERDICTS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
+    --list) LIST_ONLY=1 ;;
+    --verdicts)
+      [ $# -ge 2 ] || die "--verdicts needs <dir>"
+      VERDICTS="$2"; shift ;;
+    --tree)
+      [ $# -ge 2 ] || die "--tree needs <hash>"
+      TREE_ARG="$2"; shift ;;
+    --range)
+      [ $# -ge 2 ] || die "--range needs <a>..<b>"
+      case "$2" in -*|'') die "not a range: $2" ;; *..*) ;; *) die "not a range (<a>..<b>): $2" ;; esac
+      RANGE="$2"; shift ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
@@ -112,6 +163,12 @@ task_field() {
 }
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
+if [ -n "$RANGE" ]; then
+  # The other verbs judge what is about to be committed; a range is history.
+  [ "$VERB" = risk ] || die "--range is for risk alone"
+  [ "$STAGED" = 0 ] || die "--staged or --range, not both"
+  DIFF_ARGS+=("$RANGE")
+fi
 # Every verb reads the diff through this, never through a bare `git diff`: a
 # committed `.gitattributes` with `-diff` turned a test file into "Binary files
 # differ" and all three checks went blind (adversarial review, 2026-09-25); a
@@ -588,6 +645,432 @@ $IMPLICIT"
       exit 4
     fi
     echo "sec: clean"
+    ;;
+
+  check-verdict)
+    FILE="${ARGS[0]-}"
+    [ -n "$FILE" ] && [ -n "$TREE_ARG" ] || die "check-verdict needs <file> --tree <hash>"
+    case "$FILE" in /*) ;; *) FILE="$CALLER_PWD/$FILE" ;; esac
+    [ -f "$FILE" ] || die "no such verdict file: $FILE"
+    SCHEMA="$ROOT/scripts/dev/review-verdict.schema.json"
+    [ -f "$SCHEMA" ] || die "no verdict schema: $SCHEMA"
+    command -v python3 >/dev/null 2>&1 || die "check-verdict needs python3"
+    python3 - "$FILE" "$SCHEMA" "$TREE_ARG" <<'PY'
+import json, re, sys
+
+# The keywords the schema uses, checked with python3 alone: the runner has no
+# jsonschema package, and a verdict is too small to need one.
+TYPES = {"object": dict, "array": list, "string": str, "integer": int,
+         "number": (int, float), "boolean": bool, "null": type(None)}
+
+
+def is_type(v, t):
+    # bool is an int to python, not to JSON.
+    if t in ("integer", "number") and isinstance(v, bool):
+        return False
+    return isinstance(v, TYPES[t])
+
+
+def check(v, s, where, errs):
+    if "type" in s:
+        ts = s["type"] if isinstance(s["type"], list) else [s["type"]]
+        if not any(is_type(v, t) for t in ts):
+            errs.append("%s: not %s" % (where, " or ".join(ts)))
+            return
+    if "enum" in s and v not in s["enum"]:
+        errs.append("%s: %r is none of %s" % (where, v, ", ".join(s["enum"])))
+    if "const" in s and v != s["const"]:
+        errs.append("%s: %r, not %r" % (where, v, s["const"]))
+    if isinstance(v, str):
+        if len(v) < s.get("minLength", 0):
+            errs.append("%s: empty" % where)
+        # ECMA `$` ends the string; python lets it match before a final newline.
+        if "pattern" in s and (not re.search(s["pattern"], v)
+                               or s["pattern"].endswith("$") and v.endswith("\n")):
+            errs.append("%s: %r does not match %s" % (where, v, s["pattern"]))
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and v < s.get("minimum", v):
+        errs.append("%s: below %s" % (where, s["minimum"]))
+    if isinstance(v, dict):
+        props = s.get("properties", {})
+        for k in s.get("required", []):
+            if k not in v:
+                errs.append("%s.%s: missing" % (where, k))
+        for k, x in v.items():
+            if k in props:
+                check(x, props[k], "%s.%s" % (where, k), errs)
+            elif s.get("additionalProperties") is False:
+                errs.append("%s.%s: not in the schema" % (where, k))
+    if isinstance(v, list) and "items" in s:
+        for i, x in enumerate(v):
+            check(x, s["items"], "%s[%d]" % (where, i), errs)
+
+
+path, schema_path, tree = sys.argv[1:4]
+try:
+    d = json.load(open(path))
+except Exception as e:
+    print("check-verdict: unreadable verdict: %s" % e, file=sys.stderr)
+    sys.exit(2)
+try:
+    schema = json.load(open(schema_path))
+except Exception as e:
+    print("check-verdict: unreadable schema %s: %s" % (schema_path, e), file=sys.stderr)
+    sys.exit(2)
+errs = []
+check(d, schema, "verdict", errs)
+if errs:
+    print("check-verdict: outside review-verdict.schema.json:", file=sys.stderr)
+    for e in errs:
+        print("  " + e, file=sys.stderr)
+    sys.exit(2)
+# A verdict about another tree says nothing about this one.
+if d["tree_hash"] != tree:
+    print("check-verdict: the verdict is for tree %s, the staged tree is %s" % (d["tree_hash"], tree),
+          file=sys.stderr)
+    sys.exit(4)
+counts = {"blocker": 0, "wichtig": 0, "nit": 0}
+for f in d["findings"]:
+    sev = f["severity"]
+    if sev == "blocker" and not f.get("evidence", "").strip():
+        print("check-verdict: a blocker without evidence counted as nit: %s:%s %s"
+              % (f["file"], f.get("line") or "", f["claim"]), file=sys.stderr)
+        sev = "nit"
+    counts[sev] += 1
+if d["verdict"] != "approve":
+    print("check-verdict: the verdict is %s, not approve" % d["verdict"], file=sys.stderr)
+    sys.exit(3)
+if counts["blocker"]:
+    print("check-verdict: an approve with %d blocker(s) is no approve" % counts["blocker"], file=sys.stderr)
+    sys.exit(3)
+probe = d.get("probe") or {}
+if probe.get("applicable") and probe.get("red_without_change") is not True:
+    print("check-verdict: an approve although the probe found the new test green without the change",
+          file=sys.stderr)
+    sys.exit(3)
+noted = ", ".join("%d %s" % (n, k) for k, n in counts.items() if n)
+print("approve (%s/%s%s)" % (d["reviewer"]["model"], d["reviewer"]["effort"], "; " + noted if noted else ""))
+PY
+    ;;
+
+  risk)
+    [ "${#ARGS[@]}" -eq 0 ] || die "risk takes no operand (only --staged or --range <a>..<b>)"
+    # Both lists as HEAD, the index and the worktree have them, all together —
+    # and for a range as its start has them: a diff that strikes a line (or the
+    # whole harness list) must not judge itself by the version it brings along.
+    PATTERNS=""
+    for f in scripts/dev/review-risk.txt scripts/dev/harness-paths.txt; do
+      LIST="$(git show "HEAD:$f" 2>/dev/null; git show ":$f" 2>/dev/null; cat "$ROOT/$f" 2>/dev/null
+              [ -z "$RANGE" ] || git show "${RANGE%%..*}:$f" 2>/dev/null)"
+      [ -n "$LIST" ] || die "no $f in HEAD, the index or the worktree"
+      PATTERNS+="$LIST"$'\n'
+    done
+    PATTERNS="$(grep -v '^[[:space:]]*#' <<<"$PATTERNS" | grep -v '^[[:space:]]*$' | sort -u)"
+    # --no-renames: a moved file counts by where it came from as well, or a
+    # refactor that carries auth code out of its directory reads as standard.
+    # -z: a name git would quote (`"`, `\`, a control character) stays a name.
+    if [ "$STAGED" = 1 ] || [ -n "$RANGE" ]; then
+      CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+        || die "could not read the diff"
+    else
+      # Everything not committed yet: the review step comes before anything is
+      # staged, and a new file (a migration, a script) is a path before git
+      # knows it. An untracked scratch file read as xhigh is the safe side.
+      CHANGED="$("${GIT_DIFF[@]}" HEAD --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+        || die "could not read the diff"
+      CHANGED+=$'\n'"$(git ls-files --others --exclude-standard -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+        || die "could not list the untracked files"
+    fi
+    HITS=()
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      while IFS= read -r pat; do
+        # An entry ending in / is a directory, as in scope's lists.
+        case "$pat" in */) pat="$pat*" ;; esac
+        # shellcheck disable=SC2254  # the list IS patterns
+        case "$p" in $pat) HITS+=("$p"); break ;; esac
+      done <<< "$PATTERNS"
+    done <<< "$CHANGED"
+    if [ "${#HITS[@]}" -gt 0 ]; then
+      echo xhigh
+      printf '  %s\n' "${HITS[@]}"
+    else
+      echo standard
+    fi
+    ;;
+
+  docs-pairs)
+    [ "${#ARGS[@]}" -eq 0 ] || die "docs-pairs takes no operand (only --staged)"
+    CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+      || die "could not read the diff"
+    PAGES=()
+    while IFS= read -r p; do
+      case "$p" in docs/*.html) PAGES+=("$p") ;; esac
+    done <<< "$CHANGED"
+    [ "${#PAGES[@]}" -gt 0 ] || { echo "docs-pairs: clean"; exit 0; }
+    command -v python3 >/dev/null 2>&1 || die "docs-pairs needs python3"
+    MISSING="$(python3 - "$STAGED" "${PAGES[@]}" <<'PY'
+import os, re, subprocess, sys
+
+staged = sys.argv[1] == "1"
+pages = sys.argv[2:]
+SWITCH = re.compile(r'<div class="lang-switch"[^>]*>(.*?)</div>', re.S)
+LINK = re.compile(r"<a\b([^>]*)>")
+
+
+def content(path):
+    # The side the diff arrives at; for a deleted page the side it leaves.
+    for src in ([] if staged else [None]) + [":" + path, "HEAD:" + path]:
+        if src is None:
+            try:
+                return open(path, encoding="utf-8", errors="replace").read()
+            except OSError:
+                continue
+        r = subprocess.run(["git", "show", src], capture_output=True)
+        if r.returncode == 0:
+            return r.stdout.decode("utf-8", "replace")
+    return ""
+
+
+for page in pages:
+    m = SWITCH.search(content(page))
+    if not m:
+        continue
+    for attrs in LINK.findall(m.group(1)):
+        href = re.search(r'href="([^"#?]*)', attrs)
+        # The page itself (the active link) is no other page; a misplaced
+        # is-active must not hide the real other language.
+        if not href or not href.group(1) or "://" in href.group(1):
+            continue
+        other = os.path.normpath(os.path.join(os.path.dirname(page), href.group(1)))
+        if other != page and other not in pages:
+            print("%s -> %s" % (page, other))
+PY
+)" || die "docs-pairs could not read the pages"
+    if [ -n "$MISSING" ]; then
+      echo "review.sh docs-pairs: a docs page changes without its other language (.claude/rules/docs.md):" >&2
+      sed 's/^/  /' <<<"$MISSING" >&2
+      exit 3
+    fi
+    echo "docs-pairs: clean"
+    ;;
+
+  contracts)
+    [ "${#ARGS[@]}" -eq 0 ] || die "contracts takes no operand (only --staged and --list)"
+    F=scripts/dev/review-contracts.txt
+    # As HEAD, the index and the worktree have the list (see risk): a diff that
+    # strikes its own contract is still held to it.
+    CLIST="$(git show "HEAD:$F" 2>/dev/null; git show ":$F" 2>/dev/null; cat "$ROOT/$F" 2>/dev/null)"
+    [ -n "$CLIST" ] || die "no $F in HEAD, the index or the worktree"
+    CHANGED="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only --no-renames -z | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" \
+      || die "could not read the diff"
+    CHECKS=()
+    while read -r glob kind rest; do
+      case "$glob" in ''|'#'*) continue ;; esac
+      case "$kind" in test|pair) ;; *) die "unknown contract kind in $F: $kind" ;; esac
+      case "$glob" in */) glob="$glob*" ;; esac
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        # shellcheck disable=SC2254  # the list IS patterns
+        case "$p" in $glob) CHECKS+=("$kind $rest"); break ;; esac
+      done <<< "$CHANGED"
+    done <<< "$CLIST"
+    # Each check once: a pair stands in the list for both of its files.
+    mapfile -t CHECKS < <(printf '%s\n' "${CHECKS[@]+"${CHECKS[@]}"}" | awk 'NF && !seen[$0]++')
+    [ "${#CHECKS[@]}" -gt 0 ] || { echo "contracts: none"; exit 0; }
+    if [ "$LIST_ONLY" = 1 ]; then printf '%s\n' "${CHECKS[@]}"; exit 0; fi
+    OK=0 RED=() UNRUN=()
+    for c in "${CHECKS[@]}"; do
+      read -r kind a1 a2 a3 <<< "$c"
+      case "$kind" in
+        test)
+          D="$(mktemp -d "${TMPDIR:-/tmp}/ah-contract.XXXXXXXX")" || die "mktemp failed"
+          AH_OUT_DIR="$D" bash "$ROOT/scripts/dev/verify.sh" "$a1" --strict -- "$a2" > "$D/run.log" 2>&1
+          vrc=$?
+          case "$vrc" in
+            0) OK=$((OK + 1)) ;;
+            # A run that never got going (a broken list line, an unknown
+            # component) is no verdict on the code — but never a green one.
+            2|74) UNRUN+=("$c (verify.sh exit $vrc)"); tail -n 15 "$D/run.log" >&2 ;;
+            *) RED+=("$c (verify.sh exit $vrc)"); tail -n 15 "$D/run.log" >&2 ;;
+          esac
+          rm -rf "$D" ;;
+        pair)
+          if why="$(python3 - "$STAGED" "$a1" "$a2" "$a3" <<'PY'
+import re, subprocess, sys
+
+staged, rx, files = sys.argv[1] == "1", sys.argv[2], sys.argv[3:5]
+vals = []
+for f in files:
+    # What is about to be committed, with --staged; else the worktree.
+    if staged:
+        r = subprocess.run(["git", "show", ":" + f], capture_output=True)
+        text = r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
+    else:
+        try:
+            text = open(f, encoding="utf-8", errors="replace").read()
+        except OSError:
+            text = None
+    if text is None:
+        print("%s is missing" % f)
+        sys.exit(1)
+    try:
+        m = re.search(rx, text, re.M)
+    except re.error as e:
+        print("bad regex: %s" % e)
+        sys.exit(1)
+    vals.append(m.group(1) if m else None)
+if None in vals or vals[0] != vals[1]:
+    print(" vs ".join("%s=%s" % (f, "(no match)" if v is None else v) for f, v in zip(files, vals)))
+    sys.exit(1)
+PY
+)"; then OK=$((OK + 1)); else RED+=("$c: $why"); fi ;;
+      esac
+    done
+    if [ "${#UNRUN[@]}" -gt 0 ]; then
+      echo "review.sh contracts: could not run:" >&2
+      printf '  %s\n' "${UNRUN[@]}" >&2
+    fi
+    if [ "${#RED[@]}" -gt 0 ]; then
+      echo "review.sh contracts: red (scripts/dev/review-contracts.txt):" >&2
+      printf '  %s\n' "${RED[@]}" >&2
+      exit 3
+    fi
+    [ "${#UNRUN[@]}" -eq 0 ] || exit 74
+    echo "contracts: $OK ok"
+    ;;
+
+  pr-body)
+    LEDGER="${ARGS[0]-}"
+    [ -n "$LEDGER" ] && [ "${#ARGS[@]}" -eq 1 ] || die "pr-body needs <ledger> (and at most --verdicts <dir>)"
+    case "$LEDGER" in /*) ;; *) LEDGER="$CALLER_PWD/$LEDGER" ;; esac
+    [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
+    case "$VERDICTS" in ""|/*) ;; *) VERDICTS="$CALLER_PWD/$VERDICTS" ;; esac
+    [ -z "$VERDICTS" ] || [ -d "$VERDICTS" ] || die "no such verdict directory: $VERDICTS"
+    command -v python3 >/dev/null 2>&1 || die "pr-body needs python3"
+    python3 - "$LEDGER" "$VERDICTS" <<'PY' || die "could not read $LEDGER"
+import ipaddress, json, os, re, sys
+
+ledger, vdir = sys.argv[1], sys.argv[2]
+# This text goes to a public repo (CLAUDE.md: no homelab names): addresses, host
+# names of a private network and VM ids come out of every line it copies.
+# Loopback stays, a file name like settings.local.json stays. A bare host name
+# without a private suffix cannot be told from a word — that is a limit.
+# A VM id after its keyword, and the ids of a list after it ("3901 und 3902").
+VM = re.compile(r"\b(?:vm-?ids?|vms?|templates?|tpl|destroy|clone)[\s=:#*-]*\d{3,5}\b"
+                r"(?:\s*(?:,|/|und|and|bis|to|–|-)\s*\d{3,5}\b)*", re.I)
+HOST = re.compile(r"\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*"
+                  r"\.(?:lan|local|home\.arpa|home|internal|intra|corp|localdomain|fritz\.box)\b"
+                  r"(?![\w-]|\.\w)", re.I)
+# A private network with a wildcard in it: 192.168.1.x, 10.0.0.*.
+PARTIAL = re.compile(r"(?<![\w.])(?:10(?:\.(?:\d{1,3}|[xX*])){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.(?:\d{1,3}|[xX*])){2}"
+                     r"|192\.168(?:\.(?:\d{1,3}|[xX*])){2})(?!\w|\.\w)")
+ADDR = re.compile(r"\[?[0-9A-Fa-f:.]*[:.][0-9A-Fa-f:.]*[0-9A-Fa-f](?:%\w+)?\]?(?::\d+)?")
+
+
+def addr(m):
+    text, start = m.group(0), 0
+    while True:
+        cand = text[start:]
+        core = re.sub(r"^\[|\](?::\d+)?$", "", cand)
+        if "]" not in cand and core.count(".") == 3:
+            core = re.sub(r":\d+$", "", core)   # 10.0.0.1:22
+        try:
+            ip = ipaddress.ip_address(core.split("%")[0])
+            return text if ip.is_loopback else text[:start] + "<addr>"
+        except ValueError:
+            pass
+        # A word and a colon in front (`IP:10.0.0.1`, `dns:2001:db8::1`) are no
+        # part of the address: try again behind the first single colon.
+        k = re.search(r"(?<!:):(?!:)", cand)
+        if not k:
+            return text
+        start += k.end()
+
+
+def clean(text):
+    text = PARTIAL.sub(lambda m: "<addr>" if re.search(r"[xX*]", m.group(0)) else m.group(0), text)
+    text = ADDR.sub(addr, text)
+    text = HOST.sub("<host>", text)
+    return VM.sub("<vm>", text).strip()
+
+
+lines = open(ledger, encoding="utf-8").read().split("\n")
+title = next((l[2:] for l in lines if l.startswith("# ")), os.path.basename(ledger))
+title = re.sub(r"\s+—\s+Task-Ledger\s*$", "", title)
+head, tasks, cur = {}, [], None
+# A task heading carries its id, a dash, the title and a box; whatever follows
+# the box is the note (ledger.sh writes "(…)", hands wrote more).
+TASK = re.compile(r"^###\s+([A-Z]+\d+[a-z]?)\s+—\s+(.*)$")
+BOX = re.compile(r"\s+\[([ x~?])\]\s*(.*)$")
+for l in lines:
+    if l.startswith("## ") or re.match(r"^###\s", l):
+        # Every heading ends the task above it, as for ledger.sh lint: an
+        # Evidenz: line under "### Ergebnis" belongs to no task.
+        cur = None
+        m = TASK.match(l)
+        if m:
+            b = BOX.search(m.group(2))
+            cur = {"id": m.group(1), "title": m.group(2)[:b.start()] if b else m.group(2),
+                   "box": b.group(1) if b else "!", "note": b.group(2).strip() if b else ""}
+            if cur["note"].startswith("(") and cur["note"].endswith(")"):
+                cur["note"] = cur["note"][1:-1]
+            tasks.append(cur)
+        continue
+    key = l.split(":", 1)[0]
+    if cur is None and not tasks and key in ("Spec", "Roadmap", "Heavy") and key not in head:
+        head[key] = l.split(":", 1)[1]
+    elif cur is not None and key in ("Evidenz", "Review") and key not in cur:
+        cur[key] = l.split(":", 1)[1]
+
+out = ["## " + clean(title), ""]
+for key in ("Spec", "Roadmap", "Heavy"):
+    if key in head:
+        out.append("- **%s:** %s" % (key, clean(head[key])))
+out += ["", "### Tasks", ""]
+
+
+def verdict(tid):
+    if not vdir:
+        return None
+    path = os.path.join(vdir, tid + ".json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        d = json.load(open(path))
+        r = d.get("reviewer") or {}
+        if (d.get("task") or {}).get("id") != tid:
+            return "fremd (die Datei gehört zu einer anderen Task)"
+        return clean("%s (%s/%s)" % (d["verdict"], r.get("model", "?"), r.get("effort", "?")))
+    except Exception:
+        return "unlesbar"
+
+
+for t in tasks:
+    if t["box"] in "~?":
+        continue
+    if t["box"] == "!":
+        out.append("- **%s — %s** — **unlesbar** (Kopfzeile ohne Haken)" % (t["id"], clean(t["title"])))
+        continue
+    line = "- [%s] **%s — %s**" % ("x" if t["box"] == "x" else " ", t["id"], clean(t["title"]))
+    if "Evidenz" not in t:
+        # No evidence, no claim: whatever a review or a verdict file says.
+        out.append(line + " — **unverifiziert** (keine Evidenz)")
+        continue
+    out.append(line)
+    out.append("  - Evidenz: " + clean(t["Evidenz"]))
+    if "Review" in t:
+        out.append("  - Review: " + clean(t["Review"]))
+    v = verdict(t["id"])
+    if v:
+        out.append("  - Verdict: " + v)
+for box, heading in (("~", "Übersprungen"), ("?", "Offene Fragen")):
+    some = [t for t in tasks if t["box"] == box]
+    if some:
+        out += ["", "### " + heading, ""]
+        out += ["- [%s] **%s — %s** — %s" % (box, t["id"], clean(t["title"]), clean(t["note"]) or "siehe Ledger")
+                for t in some]
+print("\n".join(out))
+PY
     ;;
 
   -h|--help) usage ;;

@@ -57,10 +57,19 @@ Kevin.
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
 Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer** ist
-die Ausnahme: er läuft auf **Sonnet** und nur bei einem Risikopfad im Diff (PKI/mTLS, Auth,
-SSRF, Migrationen, Release-Workflows) auf Opus — mit Opus lief er regelmäßig eine halbe Stunde
-ohne Urteil, mit Sonnet urteilt er in Minuten (`.claude/skills/feature-build/SKILL.md`,
-Schritt 4).
+die Ausnahme: er läuft auf **Sonnet** und nur dann auf Opus, wenn `review.sh risk` einen
+Risikopfad im Diff meldet (`scripts/dev/review-risk.txt` plus die Harness-Pfade) — mit Opus lief
+er regelmäßig eine halbe Stunde ohne Urteil, mit Sonnet urteilt er in Minuten
+(`.claude/skills/feature-build/SKILL.md`, Schritt 4). Eine Review-Runde ist die Regel, eine
+zweite nur bei einem `blocker` oder einem belegten `wichtig`.
+
+**Ebene 0: deterministische Prüfer.** Vor jedem Modell beantworten Skripte, was sich ohne
+Urteil entscheiden lässt (Stufe 6a): `review.sh risk` (Risikopfad im Diff, danach das
+Reviewer-Modell), `docs-pairs` (beide Sprachen einer Doku-Seite), `contracts` (die Prüfungen,
+die an den geänderten Pfaden hängen), `check-verdict` (ein Urteil passt zu Schema und Baum),
+`scripts/dev/review-probe.sh` (wäre der neue Test ohne den Fix rot) und `pr-body` (der PR-Text
+aus dem Ledger). `task-close.sh` fährt `docs-pairs` und `contracts` bei jedem Abschluss; Details
+in `DEVELOPMENT.md`, „Review-Pruefer (Ebene 0)".
 
 **Zwei Review-Ebenen (dein Reviewer-„dazwischen").** Der Code wird nie ungeprüft committet:
 (1) **pro Commit-Einheit** ein **frischer Sub-Agent** (`feature-review`), der nur den Diff +
@@ -156,13 +165,13 @@ Mechanik dahinter:
   (`scripts/vm/rsync-exclude.txt` schließt `.git` nicht aus, aber nichts auf der Box verlässt
   sich darauf). Die Box braucht kein Repo (Kevin, 2026-09-25): Kopf und Tree-Hash gibt
   `iter.sh` vom Client mit, und `run.sh` nimmt sie, wenn das `git` der Box nichts antwortet.
-- **Die schweren Python-Schritte stehen je Nutzer Schlange.** `server-pytest` und
-  `schemathesis` holen in `run.sh` eine Sperre, die alle Checkouts desselben Unix-Nutzers
-  teilen: laufen eine Lane und der Haupt-Checkout gleichzeitig, fährt der zweite Server-Lauf
-  sichtbar nach dem ersten, statt ihm Speicher und Tabellen zu nehmen. Der Runner-Nutzer (ab
-  Stufe 7) hat seine eigene Sperre; eine nutzerübergreifende steht noch aus. Das ersetzt die
-  Absprache „nur ein server-Lauf zur Zeit"; Wartezeit und Abschalter stehen in
-  `DEVELOPMENT.md` („Python-Tests lokal").
+- **Die schweren Python-Schritte stehen Schlange.** `server-pytest` und `schemathesis` holen
+  in `run.sh` eine Sperre, die alle Checkouts teilen: laufen eine Lane und der Haupt-Checkout
+  gleichzeitig, fährt der zweite Server-Lauf sichtbar nach dem ersten, statt ihm Speicher und
+  Tabellen zu nehmen. Hat `runner-setup.sh` die geteilte Sperre `/var/lib/adminhelper-dev/py.lock`
+  angelegt, warten auch Kevin und der Runner-Nutzer (ab Stufe 7) aufeinander; ohne ihr Verzeichnis
+  gilt die Sperre je Unix-Nutzer. Das ersetzt die Absprache „nur ein server-Lauf zur Zeit";
+  Wartezeit und Abschalter stehen in `DEVELOPMENT.md` („Python-Tests lokal").
 - **`Heavy:` im Ledger-Kopf** (`none | linux-full | scenario <flags> | windows`) sagt, welche
   schwere Suite der Abschluss braucht; es ersetzt für neue Ledger die beiden älteren Felder
   unten, die `feature-build` bei älteren Ledgern weiter liest. Dass eine Lane ihre

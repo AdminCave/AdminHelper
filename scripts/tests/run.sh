@@ -237,15 +237,28 @@ run_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # (2026-09-18, -21, -22), and two Schemathesis runs set off the OOM killer. They
 # take a lock that all of this user's checkouts share, so a lane and the main
 # checkout queue up instead; every other step stays parallel (Kevin, gate
-# 2026-09-23). A fixed path under $HOME: XDG_RUNTIME_DIR is set in one shell and
-# not in the next, and two runs must never lock two different files. Another
-# Unix user — the runner, from stage 7 — has a lock of its own; one across users
-# is still to come. AH_PY_LOCK=0 switches it off for a box that only ever runs
-# one suite. Without HOME (an `env -i` shell) the home comes from passwd — the
-# same directory, so still the same lock, and no `set -u` abort for every run.
+# 2026-09-23). Which file, in this order: AH_PY_LOCK_FILE from the environment;
+# the file Kevin and the runner share (AH_PY_LOCK_SHARED, created by
+# scripts/dev/runner-setup.sh) once its directory exists — decided by the
+# directory, not the file, because a file this user cannot see (directory not
+# searchable, file not there yet) must not read as "no shared lock": from then
+# on a run never falls back to a file of its own, that would split the lock
+# again, and py_lock skips with the reason instead; otherwise a fixed
+# path under $HOME, for a box without the runner setup (VMs, CI). Fixed, because
+# XDG_RUNTIME_DIR is set in one shell and not in the next, and two runs must never
+# lock two different files. Without HOME (an `env -i` shell) the home comes from
+# passwd — the same directory, so still the same lock, and no `set -u` abort.
+# AH_PY_LOCK=0 switches it off for a box that only ever runs one suite.
 AH_PY_LOCK="${AH_PY_LOCK:-1}"
 AH_PY_LOCK_WAIT="${AH_PY_LOCK_WAIT:-3600}"
-AH_PY_LOCK_FILE="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/adminhelper-py.lock"
+AH_PY_LOCK_SHARED="${AH_PY_LOCK_SHARED:-/var/lib/adminhelper-dev/py.lock}"
+if [ -z "${AH_PY_LOCK_FILE:-}" ]; then
+  if [ -d "$(dirname "$AH_PY_LOCK_SHARED")" ]; then
+    AH_PY_LOCK_FILE="$AH_PY_LOCK_SHARED"
+  else
+    AH_PY_LOCK_FILE="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/adminhelper-py.lock"
+  fi
+fi
 py_step_locked() { case "$1" in server-pytest|schemathesis) [ "$AH_PY_LOCK" != 0 ] ;; *) return 1 ;; esac; }
 
 # py_lock <name> — take the lock on fd 9 of the CALLING subshell, so it is held
@@ -253,22 +266,38 @@ py_step_locked() { case "$1" in server-pytest|schemathesis) [ "$AH_PY_LOCK" != 0
 # said so once, naming who holds it; giving up after AH_PY_LOCK_WAIT is a self-SKIP
 # (75) — "not run", which --strict turns red, never a verdict on the code.
 py_lock() {
-  mkdir -p "$(dirname "$AH_PY_LOCK_FILE")" 2>/dev/null
+  [ "$AH_PY_LOCK_FILE" = "$AH_PY_LOCK_SHARED" ] || mkdir -p "$(dirname "$AH_PY_LOCK_FILE")" 2>/dev/null
   if ! have flock; then
     echo "  (flock not installed — $1 runs WITHOUT the shared python lock)"
     return 0
   fi
-  # Append, never truncate: the file names the holder, and a waiter reads it.
-  exec 9>>"$AH_PY_LOCK_FILE" || return 75
+  # Append, never truncate: the file names the holder, and a waiter reads it. A
+  # file this user may not write still locks — flock works whatever the open mode —
+  # only the holder line is left out; one it may not open at all is a SKIP, never
+  # a quiet fall back to a lock of its own.
+  local writable=1
+  if ! { exec 9>>"$AH_PY_LOCK_FILE"; } 2>/dev/null; then
+    writable=0
+    if ! { exec 9<"$AH_PY_LOCK_FILE"; } 2>/dev/null; then
+      echo "  cannot open the python lock $AH_PY_LOCK_FILE — $1 NOT run"
+      if [ "$AH_PY_LOCK_FILE" = "$AH_PY_LOCK_SHARED" ]; then
+        echo "  (run sudo bash scripts/dev/runner-setup.sh again, or set AH_PY_LOCK=0)"
+      else
+        echo "  (make it readable for $(id -un), or set AH_PY_LOCK=0)"
+      fi
+      return 75
+    fi
+  fi
   if ! flock -n 9; then
-    local holder; holder="$(cat "$AH_PY_LOCK_FILE" 2>/dev/null)"
+    # Another user may have written the holder line: printable ASCII only, short.
+    local holder; holder="$(head -c 200 "$AH_PY_LOCK_FILE" 2>/dev/null | LC_ALL=C tr -cd '[:print:]')"
     echo "  waiting for the shared python lock ($AH_PY_LOCK_FILE), up to ${AH_PY_LOCK_WAIT}s — held by: ${holder:-unknown}"
     flock -w "$AH_PY_LOCK_WAIT" 9 || {
       echo "  gave up after ${AH_PY_LOCK_WAIT}s waiting for the shared python lock — $1 NOT run"
       return 75
     }
   fi
-  printf '%s pid %s in %s\n' "$1" "$$" "$PWD" > "$AH_PY_LOCK_FILE"
+  [ "$writable" = 0 ] || printf '%s pid %s in %s\n' "$1" "$$" "$PWD" > "$AH_PY_LOCK_FILE"
 }
 
 # run_py_step — run_step for the python suites, keeping the output so pytest's
@@ -556,7 +585,7 @@ layer_lint() {
 # list is a mistake worth reporting, not a silent full run.
 AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
 restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
-session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test task_close_test runner_setup_test redteam_test
+session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test review_probe_test task_close_test runner_setup_test redteam_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
 multibox_test lane_test skill_consistency_test schemathesis_determinism_test"

@@ -138,17 +138,19 @@ Stufe 7).
    Diff-Quelle **und** nenne ihm die neuen Dateien ausdrücklich: untrackte Dateien stehen in
    keinem `git diff`, er muss sie direkt lesen (`git status --porcelain -uall -- <pfade>`
    zeigt sie). Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`,
-   `model: sonnet`) mit einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst
+   Modell wie unten) mit einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst
    `.claude/skills/feature-review/SKILL.md`** und prüfe streng gegen dessen 7 Kriterien (er
-   lädt den Skill NICHT von selbst); (b) der zu prüfende Diff ist `git diff --staged`; (c) die
+   lädt den Skill NICHT von selbst); (b) der zu prüfende Diff ist `git diff HEAD -- <pfade>` plus
+   die genannten neuen Dateien (gestaged ist noch nichts); (c) die
    Soll-Vorgabe ist die Task + die Spec/Report-Stelle (Pfad aus dem `Spec:`-Feld des
    Ledger-Kopfs); (d) **die Suiten sind bereits gelaufen** — er fährt sie NICHT nach, sondern
    prüft die im Auftrag zitierte Summary-Zeile gegen den Diff und macht höchstens gezielte
    Mutations-Proben (einen einzelnen Test lesen oder ausführen, um zu sehen, ob er ohne den
    Fix rot würde). Er sieht **nur** das — nicht deinen Bau-Verlauf.
-   - **Modell:** `model: sonnet` ist der Default. `opus` **nur**, wenn der Diff einen
-     **Risikopfad** berührt: PKI/mTLS, Auth/AuthZ, SSRF-Guards, DB-Migrationen (Alembic),
-     Release-Workflows (`.github/workflows/release*`, `scripts/install.sh`/`update.sh`).
+   - **Modell:** `bash scripts/dev/review.sh risk` entscheidet (ohne Flag: alles noch nicht
+     Committete, untrackte Dateien eingeschlossen — gestaged ist hier noch nichts).
+     `standard` ⇒ `model: sonnet`, `xhigh` ⇒ `model: opus`. Welche Pfade riskant sind, steht in
+     `scripts/dev/review-risk.txt` plus den Harness-Pfaden, nicht in diesem Text.
    - **Eigenes Verzeichnis:** je Reviewer `mktemp -d -p <Scratchpad der Session>` anlegen und
      im Prompt nennen, samt der Regel aus feature-review „Proben und Aufräumen": Proben nur
      mit `mktemp -d -p <sein Verzeichnis>`, nur eigene Pfade mit vollem Pfad löschen, nie per
@@ -158,13 +160,19 @@ Stufe 7).
      Dateien und die Kriterien 1–4 nennen). Bleibt auch der ohne Urteil → selbst gegen dieselben
      Kriterien reviewen und mit dem Urteil schließen:
      `bash scripts/dev/task-close.sh <ledger> <id> --review-note "selbst — Sub-Agent ohne Urteil" -m "…"`.
-   Urteil:
+   Urteil — **Eine Runde ist die Regel** (Kevin, 2026-10-02):
    - `approve` → weiter zum Commit.
-   - `request_changes` mit `blocker`/`wichtig` → Punkte beheben, betroffene Schnelltests
-     erneut, **einmal** re-reviewen. Danach gelöst → schließen; braucht Entscheidung →
+   - `request_changes` mit einem `blocker` oder einem **belegten** `wichtig` (konkrete Eingabe →
+     falsches Ergebnis) → Punkte beheben, betroffene Schnelltests erneut, **einmal**
+     re-reviewen. Danach gelöst → schließen; braucht Entscheidung →
      `bash scripts/dev/ledger.sh mark-question <ledger> <id> "<frage>"` (nicht raten).
-     Max. 2 Runden, dann Commit des Sauberen oder STOPP.
-   - `nit`-Punkte optional miterledigen, nie blockierend.
+     Max. 2 Runden: belegte Funde der zweiten Runde mit den Fällen des Reviewers als Tests
+     beheben und schließen, keine dritte Runde; sonst Commit des Sauberen oder STOPP.
+   - `nit`-Punkte blockieren nie: in derselben Runde ohne Re-Review miterledigen oder liegen
+     lassen.
+   - **Kein neuer Umfang mitten im Bau** außer bei einer Sicherheitslücke: neue Funde
+     außerhalb der Task (eine Umgehung, ein Fehlalarm anderer Herkunft) gehen über die
+     Aufsicht als Roadmap-Kandidaten in die Roadmap, nicht als Task in dieses Ledger.
    (Review-Granularität = Commit-Granularität. Ein **Kurz-Ledger** (≤ 3 Tasks) trägt im Kopf
    `Review: am Ende` — dann entfällt dieser Schritt pro Task und es gibt genau **einen**
    Gesamt-Review im Abschluss.)
@@ -188,14 +196,17 @@ Stufe 7).
      stagen (`git add -- <pfade>`) und erneut schließen.
    - **3** — die Suite ist rot, oder der Diff-Scan hat einen stummgeschalteten Test gefunden
      (`|| true`, `set +e`, `skip`, gelöschte Assertion): beheben, erneut schließen. Ist die <!-- review: ok Musterliste in der Anleitung -->
-     Zeile bewusst so, trägt sie `# review: ok <grund>`.
+     Zeile bewusst so, trägt sie `# review: ok <grund>`. Ebenso 3: `docs-pairs` (eine Doku-Seite
+     ohne ihre andere Sprache — die zweite mitliefern), ein roter Vertrag aus
+     `scripts/dev/review-contracts.txt` (den genannten Test bzw. das Wertpaar in Ordnung
+     bringen) oder ein Verdict ohne brauchbares approve.
    - **4** — blockiert: ein Pfad außerhalb der Task (`ledger.sh set-files` oder Datei aus dem
      Commit nehmen) oder etwas, das nie in dieses öffentliche Repo darf.
-   - **74** — Infrastruktur: die Suite konnte gar nicht laufen → **STOPP** und berichten. Zwei
-     Sonderfälle sind kein Stopp: eine Task **ohne `Komponente:`** (Handarbeit, z. B. „Kevins
-     Handgriffe") wird gar nicht über `task-close.sh` geschlossen — offen lassen und im
-     Abschluss berichten; und ein gescheitertes `git commit` (Recovery unten: einfach erneut
-     schließen, der Aufruf ist wiederholbar).
+   - **74** — Infrastruktur: die Suite oder ein Vertragstest konnte gar nicht laufen → **STOPP**
+     und berichten. Zwei Sonderfälle sind kein Stopp: eine Task **ohne `Komponente:`**
+     (Handarbeit, z. B. „Kevins Handgriffe") wird gar nicht über `task-close.sh` geschlossen —
+     offen lassen und im Abschluss berichten; und ein gescheitertes `git commit` (Recovery
+     unten: einfach erneut schließen, der Aufruf ist wiederholbar).
 
    **Granularität:** `task-close.sh` schließt **eine** Task und macht **einen** Commit. Damit
    wandert auch der Review auf **pro Task** — ein Commit, der vor seinem Review fällt, ist
@@ -244,7 +255,9 @@ Stufe 7).
    - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
      ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4 der Iteration) — und **kein**
      `/code-review` hinterher: der eine Reviewer hat genau diesen Diff schon gesehen, der
-     zweite Durchgang kostet nur Zeit.
+     zweite Durchgang kostet nur Zeit. Das Modell kommt hier aus
+     `bash scripts/dev/review.sh risk --range main...HEAD`: ohne Flag ist nach den Commits nichts
+     mehr offen, `risk` hieße immer `standard`.
    - **`Review: pro Task`** (Default für große Ledger): die Einheiten sind einzeln reviewt,
      aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
    Echte neue Bugs als Tasks in den Ledger: Kopf zurück auf `aktiv` (Roadmap ebenso), fixen,
@@ -253,10 +266,12 @@ Stufe 7).
    wirkend): **zuerst** den Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn
    `[?]`-Punkte offen bleiben; ein `chore(ledger)`-Commit) — vor dem Push, sonst kommt er nie
    in den PR und steht nach dem Merge auf `main` für immer auf `bereit`. Dann
-   `git push -u origin <branch>`, dann `gh pr create --draft --title "<type>: <feature>"
-   --body "…"` mit Link auf die **Spec** (Pfad aus dem `Spec:`-Ledgerfeld), Task-Zusammenfassung
-   (fertig / übersprungen / offene `[?]`) und VM-Ergebnis. (Beide prompten, solange nicht
-   allowlisted — das ist Absicht.)
+   `git push -u origin <branch>`; den PR-Text schreibt
+   `bash scripts/dev/review.sh pr-body <ledger> > <Scratchpad>/pr-body.md` (Spec, Roadmap-IDs,
+   Heavy-Zeile, je Task Haken mit Evidenz und Review, `[~]`/`[?]` gesondert; eine Task ohne
+   Evidenz heißt „unverifiziert"), das VM-Ergebnis kommt von Hand dazu; dann
+   `gh pr create --draft --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`.
+   (Push und PR prompten, solange nicht allowlisted — das ist Absicht.)
 6. **Mit dem PR:** die Roadmap-Zeile wie unter „Roadmap mitziehen" (`pr --pr "#<n>"`, ein
    Teil-Ledger `aktiv --pr`) — dafür braucht es die PR-Nummer. Schluss-Zusammenfassung im Chat;
    die `[?]`-Punkte klar auflisten — die entscheidet der Mensch.

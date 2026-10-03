@@ -14,7 +14,8 @@
 #
 # So the evaluation is its own step now (`runner-redteam.sh --verdict <needle>`,
 # stdin is a stream-json transcript) and this test fares it against the four
-# transcripts it must tell apart. No Claude Code, no network, no budget.
+# transcripts it must tell apart. No Claude Code, no network, no budget. The check
+# of the shared python lock (`--py-lock <path>`) runs here against temp files.
 #
 # Run: bash scripts/tests/redteam_test.sh
 
@@ -136,6 +137,64 @@ echo "── the probe really passes --verbose (the defect of 2026-09-22)"
 awk '/timeout [0-9]+ claude -p/{f=1} f{print} f&&/2>&1\)"/{exit}' "$RT" | grep -q -- '--verbose' \
   && ok "the probe invocation carries --verbose" \
   || bad "stream-json without --verbose — the probe cannot start"
+
+echo "── the shared python lock (--py-lock)"
+# Temp files stand in for /var/lib/adminhelper-dev; the expected owner is this
+# user, since a test cannot make root own anything.
+LT="$(mktemp -d)" || exit 2
+trap 'chmod -R u+w "$LT" 2>/dev/null; rm -rf "$LT"' EXIT
+pylock() { AH_REDTEAM_LOCK_UID="${LOCK_UID:-$(id -u)}" bash "$RT" --py-lock "$1" > "$LT/out" 2>&1; }
+
+pylock "$LT/missing/py.lock"; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL .*is missing — run sudo bash scripts/dev/runner-setup.sh" "$LT/out" \
+  && ok "a missing lock is a FAIL that names the fix" || bad "missing: rc=$rc $(cat "$LT/out")"
+
+mkdir "$LT/link"; : > "$LT/target"; ln -s "$LT/target" "$LT/link/py.lock"; chmod 555 "$LT/link"
+pylock "$LT/link/py.lock"; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL .*not a regular file" "$LT/out" \
+  && ok "a symlink in its place is a FAIL" || bad "symlink: rc=$rc $(cat "$LT/out")"
+
+mkdir -p "$LT/dir/py.lock"; chmod 555 "$LT/dir"
+pylock "$LT/dir/py.lock"; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL .*not a regular file" "$LT/out" \
+  && ok "a directory in its place is a FAIL" || bad "directory: rc=$rc $(cat "$LT/out")"
+
+mkdir "$LT/open"; : > "$LT/open/py.lock"
+pylock "$LT/open/py.lock"; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL .*is writable for" "$LT/out" \
+  && ok "a directory this user may write is a FAIL" || bad "writable dir: rc=$rc $(cat "$LT/out")"
+
+if [ "$(id -u)" != 0 ]; then
+  mkdir "$LT/ro"; : > "$LT/ro/py.lock"; chmod 555 "$LT/ro"
+  LOCK_UID=$(( $(id -u) + 1 )) pylock "$LT/ro/py.lock"; rc=$?
+  [ "$rc" = 1 ] && grep -q "^FAIL .*expected $(( $(id -u) + 1 ))" "$LT/out" \
+    && ok "a lock owned by somebody else is a FAIL" || bad "owner: rc=$rc $(cat "$LT/out")"
+
+  pylock "$LT/ro/py.lock"; rc=$?
+  [ "$rc" = 0 ] && [ "$(grep -c '^ok ' "$LT/out")" = 3 ] && ! grep -qv '^ok ' "$LT/out" \
+    && ok "a lock as runner-setup.sh leaves it: three ok lines" || bad "all ok: rc=$rc $(cat "$LT/out")"
+
+  ( exec 9<"$LT/ro/py.lock"; flock 9; exec sleep 60 ) & holder=$!
+  for _ in $(seq 1 50); do flock -n "$LT/ro/py.lock" true 2>/dev/null || break; sleep 0.1; done
+  pylock "$LT/ro/py.lock"; rc=$?
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  [ "$rc" = 0 ] && grep -q "^info .*held right now" "$LT/out" && ! grep -q "^FAIL" "$LT/out" \
+    && ok "a lock held right now is info, not FAIL" || bad "busy: rc=$rc $(cat "$LT/out")"
+
+  mkdir "$LT/closed"; : > "$LT/closed/py.lock"; chmod 000 "$LT/closed/py.lock"; chmod 555 "$LT/closed"
+  pylock "$LT/closed/py.lock"; rc=$?
+  [ "$rc" = 1 ] && grep -q "^FAIL .*cannot take the shared python lock" "$LT/out" \
+    && ok "a lock this user cannot open is a FAIL" || bad "unopenable: rc=$rc $(cat "$LT/out")"
+else
+  echo "  (as root: the owner, ok, busy and unopenable cases need a user without root rights — not run)"
+fi
+
+bash "$RT" --py-lock </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--py-lock without a path is a usage error (exit 2)" || bad "--py-lock without a path did not exit 2"
+bash "$RT" --py-lock relative/py.lock </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--py-lock with a relative path is a usage error (exit 2)" || bad "a relative path did not exit 2"
+grep -qx 'redteam_py_lock /var/lib/adminhelper-dev/py.lock 0' "$RT" \
+  && ok "the normal run checks the real lock, owned by root" || bad "the normal run does not call redteam_py_lock on the real path with uid 0"
 
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"

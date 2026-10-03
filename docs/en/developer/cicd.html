@@ -236,6 +236,46 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           path and PR number in their roadmap columns (<code>status --ledger</code>, <code>--pr</code>) rather than
           in the note.</p>
 
+          <h2>Review checks and verdict</h2>
+          <p>Before a model looks at a diff, deterministic checks run &ndash; level&nbsp;0, no model, no tokens.
+          <code>task-close.sh</code> runs <code>docs-pairs</code> and <code>contracts</code> on every close next to
+          <code>diff-scan</code>, <code>scope</code> and <code>sec</code>; the build (feature-build) calls
+          <code>risk</code> and <code>pr-body</code>, the close runs <code>check-verdict</code> on
+          <code>--review verdict:</code>, <code>review-probe.sh</code> runs by hand.</p>
+          <table>
+            <thead><tr><th>Check</th><th>Question</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td><code>review.sh risk</code></td><td>Does the diff touch a risk path
+              (<code>scripts/dev/review-risk.txt</code> plus the harness paths)?</td><td><code>xhigh</code> with the paths
+              it hit, or <code>standard</code>; the reviewer's model follows from it (Opus or Sonnet)</td></tr>
+              <tr><td><code>review.sh docs-pairs</code></td><td>Does every changed page under <code>docs/</code> bring its
+              other language along? The other page is the target of the <code>lang-switch</code> link, not a matching
+              file name.</td><td>exit&nbsp;3 with the pair of paths; on a close, no commit</td></tr>
+              <tr><td><code>review.sh contracts</code></td><td>Which checks hang on the changed paths
+              (<code>scripts/dev/review-contracts.txt</code>: a component test, or a pair of values like the FRP pins,
+              the signing key, the app version)?</td><td>exit&nbsp;3 when red, 74 when a test could not run; what ran
+              goes into the evidence (<code>&middot; contracts: 1 ok</code>)</td></tr>
+              <tr><td><code>review.sh check-verdict</code></td><td>Is a reviewer's verdict usable for this tree
+              (<code>scripts/dev/review-verdict.schema.json</code>)?</td><td>0 approve, 2 unreadable or outside the
+              schema, 3 no usable approve, 4 another tree</td></tr>
+              <tr><td><code>scripts/dev/review-probe.sh</code></td><td>Would the new test be red without the change? Does
+              a mutant of the change survive the tests (<code>--mutate</code>)?</td><td>the <code>probe</code> block of
+              the schema, or <code>killed</code>/<code>survived</code>; in a worktree of its own, the checkout stays
+              untouched</td></tr>
+              <tr><td><code>review.sh pr-body</code></td><td>What goes into the PR?</td><td>the checklist out of the ledger
+              with evidence and review; without evidence &ldquo;unverifiziert&rdquo;; addresses, host names of a
+              private network (<code>.lan</code>, <code>.local</code>, &hellip;) and VM ids after <code>vm</code>,
+              <code>template</code>, &hellip; cut out</td></tr>
+            </tbody>
+          </table>
+          <p>A verdict is JSON following the schema: task, tree hash, reviewer (model, effort), verdict
+          (<code>approve</code>, <code>request_changes</code>, <code>needs_decision</code>), findings with a severity
+          (<code>blocker</code>, <code>wichtig</code>, <code>nit</code>) and evidence, and the <code>probe</code> block.
+          No approve is an approve with a <code>blocker</code>, or one although the probe found the new test green
+          without the change; a <code>blocker</code> without evidence counts as a <code>nit</code>.
+          <code>task-close.sh --review verdict:&lt;file&gt;</code> has the file checked by
+          <code>check-verdict</code>.</p>
+
           <h2>Parity and contract gates</h2>
           <p>Two classes of defect need no VM to be found: &ldquo;the copy drifts&rdquo; (the same truth lives in
           two places, one of them changes) and &ldquo;the contract breaks silently&rdquo; (a field, a header, a

@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Review-Pruefer ohne Modell (Stufe 6a, R-0009):** `scripts/dev/review.sh` kann jetzt
+  `risk` (Risikopfad im Diff nach `scripts/dev/review-risk.txt`, daraus das Reviewer-Modell),
+  `docs-pairs` (eine Doku-Seite ohne ihre andere Sprache), `contracts` (Pruefungen je
+  geaendertem Pfad nach `scripts/dev/review-contracts.txt`: ein Komponenten-Test oder ein
+  Wertpaar wie die FRP-Pins), `check-verdict` (ein Reviewer-Urteil gegen
+  `scripts/dev/review-verdict.schema.json` und den Tree-Hash) und `pr-body` (der PR-Text als
+  Checkliste aus dem Ledger). Neu ist `scripts/dev/review-probe.sh`: in einer eigenen Worktree
+  prueft es, ob der neue Test ohne die Aenderung rot waere, und mit `--mutate`, ob ein Mutant die
+  Tests uebersteht. `task-close.sh` faehrt `docs-pairs` und `contracts` bei jedem Abschluss und
+  prueft ein Verdict ueber `check-verdict`. Anleitung: `DEVELOPMENT.md`, „Review-Pruefer
+  (Ebene 0)".
+
 - **AH-STATUS nennt die geplanten Workflows (R-0120):** Der SessionStart-Hook
   `scripts/dev/hooks/session-status.sh` druckt je Workflow mit `schedule:` eine Zeile
   `Geplant: <name> <Tag> (<n> d): <conclusion>` fuer den neuesten abgeschlossenen Lauf auf `main`
@@ -295,6 +307,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Eintraege mit.
 
 ### Changed
+
+- **Python-Sperre ueber Nutzergrenzen, Runner-Setup klont nur neu (R-0080, R-0077):**
+  `scripts/tests/run.sh` nimmt fuer `server-pytest` und `schemathesis` die geteilte Sperre
+  `/var/lib/adminhelper-dev/py.lock`, sobald ihr Verzeichnis existiert (`AH_PY_LOCK_FILE` geht
+  vor, der Pfad ist ueber `AH_PY_LOCK_SHARED` aenderbar); ohne es bleibt es bei
+  `~/.cache/adminhelper-py.lock` je Nutzer. So warten Kevins Laeufe und die des Runners
+  aufeinander. Eine nur lesbare Sperrdatei sperrt weiter, eine fehlende oder nicht oeffenbare ist
+  ein SKIP mit Grund (unter `--strict` rot), und die Halter-Zeile erscheint nur mit druckbaren
+  Zeichen. `scripts/dev/runner-setup.sh` legt die Datei
+  an (`--remove` nimmt sie mit) und klont nur noch in einen Pfad, den es nicht gibt: ein
+  vorhandenes Verzeichnis ohne `.git` bricht mit einem Satz ab, der Klon entsteht in einem
+  Temp-Verzeichnis in `/srv` und wird danach umbenannt. Ein bestehender Runner bekommt die Sperre mit einem erneuten
+  `sudo bash scripts/dev/runner-setup.sh`. Das Red Team prueft die Sperre mit
+  (`runner-redteam.sh --py-lock <pfad>`: vorhanden, root gehoerend, Verzeichnis fuer den Runner
+  nicht schreibbar, nehmbar) und meldet `FAIL`, solange das Setup nicht erneut lief. Anleitung:
+  `DEVELOPMENT.md` „Runner-User".
 
 - **diff-scan: weitere Skip-Muster und Rueckgaben mit Wert (R-0132):** `review.sh diff-scan`
   meldet jetzt auch `fit(`, `fdescribe(`, `.runIf(`, `.fails(`, `test.fail(`, `.fixme(` (also <!-- review: ok nennt die Muster -->

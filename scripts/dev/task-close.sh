@@ -29,20 +29,24 @@
 #   2. verify.sh <components>  the task's Verify: line as it stands, --strict, for
 #                              real (a prose line: the task's own component).
 #   3. review.sh               diff-scan (did the diff buy its green?), scope
-#                              (did it stay inside the task?), sec (may this be
-#                              committed at all?).
+#                              (did it stay inside the task?), docs-pairs (both
+#                              languages of a docs page?), contracts (the
+#                              checks a changed path pulls in), sec (may this
+#                              be committed at all?).
 #   4. the review verdict      today: `--review none`, the in-session reviewer of
 #                              feature-build. Stage 6 hands in a verdict JSON,
-#                              which is checked against THIS tree hash — a
-#                              verdict for another tree is no verdict.
+#                              which review.sh check-verdict holds against
+#                              review-verdict.schema.json and THIS tree hash —
+#                              a verdict for another tree is no verdict.
 #   5. ledger + commit         ledger.sh mark-done with the run's summary line as
 #                              evidence, then one commit carrying code and ledger.
 #                              The last open task also moves an `aktiv` head to
 #                              `bereit`, in that same commit.
 #
 # Exit: 0 committed · 2 usage, nothing staged, or the tree changed under the run
-#       · 3 verify red or a diff-scan finding · 4 blocked (sec or scope) · 74 the
-#       suite could not run at all, or its result cannot be tied to this tree.
+#       · 3 verify red, a diff-scan finding, a docs page in one language or a
+#       red contract · 4 blocked (sec or scope) · 74 the suite could not run at
+#       all, or its result cannot be tied to this tree.
 
 set -uo pipefail
 
@@ -280,6 +284,20 @@ bash scripts/dev/review.sh scope "$LEDGER" "$ID" --staged || {
   [ "$rc" = 2 ] && die "review.sh scope could not run"
   echo "task-close: blocked — the diff leaves the task's scope" >&2; exit 4
 }
+# Both languages of a docs page in the same commit (.claude/rules/docs.md).
+bash scripts/dev/review.sh docs-pairs --staged || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh docs-pairs could not run"
+  exit 3
+}
+# The checks review-contracts.txt ties to the changed paths; what ran goes into
+# the evidence.
+CONTRACTS="$(bash scripts/dev/review.sh contracts --staged)" || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh contracts could not run"
+  [ "$rc" = 74 ] && infra "a contract test could not run"
+  exit 3
+}
 bash scripts/dev/review.sh sec --staged || { rc=$?; [ "$rc" = 2 ] && die "review.sh sec could not run"; exit 4; }
 
 # ── 4. the review verdict ────────────────────────────────────────────────────
@@ -293,21 +311,10 @@ case "$REVIEW" in
     VJSON="${REVIEW#verdict:}"
     [ -f "$VJSON" ] || die "no such verdict file: $VJSON"
     command -v python3 >/dev/null 2>&1 || infra "a verdict can only be checked with python3"
-    REVIEW_TEXT="$(python3 - "$VJSON" "$TREE_HASH" <<'PY'
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception as e:
-    print("unreadable verdict: %s" % e, file=sys.stderr); sys.exit(2)
-# 3 = the reviewer said no; 4 = the verdict is not about this tree at all.
-if d.get("verdict") != "approve":
-    print("verdict is %r, not approve" % d.get("verdict"), file=sys.stderr); sys.exit(3)
-if d.get("tree_hash") != sys.argv[2]:
-    print("verdict is for tree %s, staged is %s" % (d.get("tree_hash"), sys.argv[2]), file=sys.stderr)
-    sys.exit(4)
-print("approve (%s)" % (d.get("reviewer") or "verdict file"))
-PY
-)" || { rc=$?; echo "task-close: no usable approve verdict for this tree" >&2; exit "$rc"; }
+    # The schema, the tree and the rules live in one place (stage 6a): exit 2
+    # outside the schema, 3 no usable approve, 4 another tree.
+    REVIEW_TEXT="$(bash scripts/dev/review.sh check-verdict "$VJSON" --tree "$TREE_HASH")" \
+      || { rc=$?; echo "task-close: no usable approve verdict for this tree" >&2; exit "$rc"; }
     ;;
   *) die "--review takes 'none' or 'verdict:<file>'" ;;
 esac
@@ -324,7 +331,9 @@ print("run.sh[%s]%s: %d passed, %d failed, %d skipped"
 PY
 )"
 [ -n "$SUMMARY" ] || infra "could not read the summary line out of $ARTIFACT"
-EVIDENCE="$SUMMARY @$(git rev-parse --short HEAD) $(date -Is)"
+EVIDENCE="$SUMMARY"
+[ "$CONTRACTS" = "contracts: none" ] || EVIDENCE+=" · $CONTRACTS"
+EVIDENCE+=" @$(git rev-parse --short HEAD) $(date -Is)"
 # Both go into a line of the ledger, and a ledger line is a line: a newline in a
 # review note or in a verdict's reviewer field would write free text — a forged
 # heading, a forged evidence line — into the file that IS the progress truth.
