@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 7a — der Worker: `ledger-loop.sh`, `/build-task`, Bau-Session-Grenzen — Task-Ledger
-Status: geplant · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: freigegeben · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe 7a, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-7a.md (Roadmap R-0010, R-0108)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ein Skill, ihre hermetischen Tests (claude-Stub, kein echter Modell-Aufruf, keine VM) und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Lauf liefert der Pilot nach dem Merge (Spec, „Kevins Handarbeit“).
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
