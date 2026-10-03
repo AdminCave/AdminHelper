@@ -171,5 +171,3 @@ Keine.
    `.claude/settings.local.json` und schreibt sie nach `/usr/local/lib/adminhelper-dev/pve-target.env` (root, 0644).
    Fehlen sie, legt es keine Datei an und Probe 4 meldet `info`. Am Gate änderbar.
 2. **`GIT_SSH_COMMAND` gegen `core.sshCommand` (T2).** Nicht verifiziert; der Builder liest es nach.
-</content>
-</invoke>

@@ -149,7 +149,3 @@ Semantik: wie T1 (`docs/features/harness-stufe-4.md:33–34`).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: in T5 (Red-Team-Abschnitt), sonst keine
 Abhängt von: T1
-</content>
-</invoke>
-<invoke name="Bash">
-<parameter name="command">cd $HOME/.cache/ah-plan-rv3 && sed -n 655,662p DEVELOPMENT.md; sed -n 803,808p scripts/dev/hooks/harness-guard.sh; sed -n 895,900p scripts/dev/hooks/harness-guard.sh
