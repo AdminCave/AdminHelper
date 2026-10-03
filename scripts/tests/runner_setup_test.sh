@@ -210,6 +210,13 @@ PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_LOCKDIR="$L
 grep -qF -- "rm -rf $LIBS" <<<"$PLAN" && grep -qF -- "rm -rf $LOCKS_RT" <<<"$PLAN" \
   && ok "--remove takes the red team and the checksum (with the lock directory) away" \
   || bad "--remove plan: $(tail -6 <<<"$PLAN")"
+# Both copies of the runner settings come from the same file — the one the red
+# team compares the runner's ~/.claude/settings.json with byte for byte (R-0163).
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -o root -g root -m 644 $REPO_ROOT/scripts/dev/runner-settings.json $LIBS/runner-settings.json" <<<"$PLAN" \
+  && grep -qE -- "install -o [^ ]+ -g [^ ]+ -m 600 $REPO_ROOT/scripts/dev/runner-settings.json [^ ]+/\.claude/settings\.json" <<<"$PLAN" \
+  && ok "the runner's settings and the red team's copy come from the same file" \
+  || bad "settings sources: $(grep -F 'runner-settings.json' <<<"$PLAN" | head -3)"
 SETUP_LIB="$(sed -n 's/^LIB_DIR="\(.*\)"$/\1/p' "$SETUP")"
 SETUP_LOCKDIR="$(sed -n 's/^LOCK_DIR="\(.*\)"$/\1/p' "$SETUP")"
 [ "$SETUP_LIB" = /usr/local/lib/adminhelper-dev ] \

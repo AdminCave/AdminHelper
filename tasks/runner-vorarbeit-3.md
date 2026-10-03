@@ -164,8 +164,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Red Team, Hook) · CHANGELOG (Fixed)
 Abhängt von: T1, T2, T3, T4
 
-### T6 — Red Team: die Runner-Settings gleichen byte-genau der root-eigenen Kopie  [ ]
+### T6 — Red Team: die Runner-Settings gleichen byte-genau der root-eigenen Kopie  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh, scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9765c865 2026-10-03T14:23:56+02:00
+Review: approve (opus); Nits unlesbare Datei, grep -F, Testkopf in derselben Runde; runner-setup.sh unveraendert (Dry-Run-Test belegt dieselbe Quelle); Gegenprobe: alte Deny-Pruefung gibt bei einer veraenderten Datei ok
 Änderung: `runner-setup.sh` installiert `runner-settings.json` schon root-eigen neben das Red Team
 (`runner-setup.sh:356`) und als `~/.claude/settings.json` des Runners (`:413`), beide aus derselben Quelle. Das Red
 Team vergleicht `~/.claude/settings.json` byte-genau mit `$SELF_DIR/runner-settings.json`: gleich ⇒ `ok`; abweichend

@@ -399,6 +399,24 @@ sys.exit(0 if any(p.get("poolid") == sys.argv[2] for p in d) else 1)' "$body" "$
   esac
 }
 
+# The runner's settings are its permission boundary. runner-setup.sh installs them
+# as ~/.claude/settings.json from the same file it puts beside the red team; byte for
+# byte the same, or the boundary in force is not the one reviewed (R-0163).
+#   bash scripts/dev/runner-redteam.sh --settings <expected> <actual>
+redteam_settings() {  # redteam_settings <expected> <actual>
+  if [ ! -f "$1" ]; then
+    fail "no reviewed settings at $1 to compare with — run sudo bash scripts/dev/runner-setup.sh"
+  elif [ ! -f "$2" ]; then
+    fail "no settings at $2 — run sudo bash scripts/dev/runner-setup.sh"
+  elif [ ! -r "$2" ]; then
+    fail "$2 cannot be read by $(id -un) — run sudo bash scripts/dev/runner-setup.sh again"
+  elif cmp -s "$1" "$2"; then
+    ok "$2 is byte for byte the reviewed $(basename "$1")"
+  else
+    fail "$2 differs from the reviewed $1 — run sudo bash scripts/dev/runner-setup.sh again"
+  fi
+}
+
 OKS=0 FAILS=0 INFOS=0
 ok()   { printf 'ok    %s\n' "$*"; OKS=$((OKS + 1)); }
 fail() { printf 'FAIL  %s\n' "$*"; FAILS=$((FAILS + 1)); }
@@ -409,8 +427,8 @@ info() { printf 'info  %s\n' "$*"; INFOS=$((INFOS + 1)); }
 # falling through to the full run with its network, push and budget probes.
 if [ $# -gt 0 ]; then
   case "$1" in
-    --py-lock|--claude-sum|--pin|--verdict|--dbus|--git|--changed|--pve|--self-check|--env-check) ;;
-    *) echo "runner-redteam: unknown argument '$1' — steps: --py-lock --claude-sum --pin --verdict --dbus --git --changed --pve --self-check --env-check; no argument is the full run" >&2
+    --py-lock|--claude-sum|--pin|--verdict|--dbus|--git|--changed|--pve|--settings|--self-check|--env-check) ;;
+    *) echo "runner-redteam: unknown argument '$1' — steps: --py-lock --claude-sum --pin --verdict --dbus --git --changed --pve --settings --self-check --env-check; no argument is the full run" >&2
        exit 2 ;;
   esac
 fi
@@ -419,6 +437,12 @@ if [ "${1:-}" = "--dbus" ]; then
   case "${2:-}" in /*) ;; *) echo "runner-redteam: --dbus needs an absolute runtime dir root" >&2; exit 2 ;; esac
   case "${3:-}" in ''|*[!0-9]*) echo "runner-redteam: --dbus needs the owner's uid" >&2; exit 2 ;; esac
   redteam_dbus "$2" "$3"
+  [ "$FAILS" -eq 0 ]; exit
+fi
+
+if [ "${1:-}" = "--settings" ]; then
+  [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "runner-redteam: --settings needs <expected> <actual>" >&2; exit 2; }
+  redteam_settings "$2" "$3"
   [ "$FAILS" -eq 0 ]; exit
 fi
 
@@ -645,6 +669,7 @@ fi
 # The runner's CLI by its path (the official installer's place), not from PATH:
 # ~/.local/bin is the runner's own and stays out of the probes' PATH.
 CLAUDE="$HOME/.local/bin/claude"
+redteam_settings "$SELF_DIR/runner-settings.json" "$HOME/.claude/settings.json"
 if [ -x "$CLAUDE" ]; then
   redteam_claude_sum /var/lib/adminhelper-dev/runner-claude.sha256 "$CLAUDE"
 fi

@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# redteam_test.sh — hermetic test for the verdict step of scripts/dev/runner-redteam.sh.
+# redteam_test.sh — hermetic test for the steps of scripts/dev/runner-redteam.sh.
 #
 # The model probes of the red team cost budget and need a provisioned runner, so
 # they cannot run in a test. Their EVALUATION can, and that is where the defect of
@@ -14,8 +14,11 @@
 #
 # So the evaluation is its own step now (`runner-redteam.sh --verdict <needle>`,
 # stdin is a stream-json transcript) and this test fares it against the four
-# transcripts it must tell apart. No Claude Code, no network, no budget. The check
-# of the shared python lock (`--py-lock <path>`) runs here against temp files.
+# transcripts it must tell apart. No Claude Code, no network, no budget. The other
+# probes are steps of their own for the same reason and run here against temp
+# files, stubs and fake clones: --pin, --py-lock, --claude-sum, --dbus, --git,
+# --changed, --pve, --settings, --self-check and --env-check; an unknown argument
+# must end before any of them (R-0152, R-0156, R-0158 to R-0163).
 #
 # Run: bash scripts/tests/redteam_test.sh
 
@@ -523,6 +526,32 @@ bash "$RT" --pve "$PV/target.env" abc </dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "--pve with a non-numeric vmid is a usage error (exit 2)" || bad "--pve with a non-numeric vmid did not exit 2"
 grep -qx '  redteam_pve "$SELF_DIR/pve-target.env" "$FOREIGN_VMID"' "$RT" && ! grep -q 'vm/vm.py' "$RT" \
   && ok "the normal run asks the API through redteam_pve, vm.py is gone" || bad "probe 4 still runs vm.py: $(grep -n 'vm/vm.py' "$RT")"
+
+echo "── the runner's settings are the reviewed file, byte for byte (--settings)"
+ST="$LT/settings"; mkdir -p "$ST"
+cp "$REPO_ROOT/scripts/dev/runner-settings.json" "$ST/expected.json"
+cp "$ST/expected.json" "$ST/same.json"
+# One byte more — a space — still parses, still carries the deny rule for git push.
+{ cat "$ST/expected.json"; printf ' '; } > "$ST/other.json"
+bash "$RT" --settings "$ST/expected.json" "$ST/same.json" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -qF "ok    $ST/same.json is byte for byte the reviewed expected.json" "$LT/out" \
+  && ok "the same file: ok" || bad "same: rc=$rc $(cat "$LT/out")"
+bash "$RT" --settings "$ST/expected.json" "$ST/other.json" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -qF "FAIL  $ST/other.json differs from the reviewed" "$LT/out" && grep -qF "runner-setup.sh again" "$LT/out" \
+  && ok "one byte more is a FAIL that names the fix" || bad "other: rc=$rc $(cat "$LT/out")"
+bash "$RT" --settings "$ST/expected.json" "$ST/none.json" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -qF "FAIL  no settings at $ST/none.json" "$LT/out" \
+  && ok "missing settings are a FAIL" || bad "missing: rc=$rc $(cat "$LT/out")"
+if [ "$(id -u)" != 0 ]; then
+  cp "$ST/expected.json" "$ST/closed.json"; chmod 000 "$ST/closed.json"
+  bash "$RT" --settings "$ST/expected.json" "$ST/closed.json" > "$LT/out" 2>&1; rc=$?
+  chmod 600 "$ST/closed.json"
+  [ "$rc" = 1 ] && grep -qF "FAIL  $ST/closed.json cannot be read" "$LT/out" \
+    && ok "unreadable settings are a FAIL that says so" || bad "unreadable: rc=$rc $(cat "$LT/out")"
+fi
+grep -qx 'redteam_settings "$SELF_DIR/runner-settings.json" "$HOME/.claude/settings.json"' "$RT" \
+  && ok "the normal run compares the runner's settings with the copy beside the red team" \
+  || bad "the normal run does not call redteam_settings"
 
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"
