@@ -51,8 +51,10 @@ Test-Variable — gleiche Wirkung (verschiebbar nur im Test, der normale Lauf ru
 Die Owner-uid ist der Besitzer von `$OWNER_HOME` (ersatzweise 1000, wie dessen Default); ein leeres Argument `""` gilt
 als unbekannt.
 
-### T2 — Red Team: die git-Proben führen keinen Code und keine ausführbare Konfiguration aus dem Klon aus  [ ]
+### T2 — Red Team: die git-Proben führen keinen Code und keine ausführbare Konfiguration aus dem Klon aus  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e3293f9e 2026-10-03T13:19:58+02:00
+Review: Opus zwei Runden: R1 wichtig Netz-Probe blind fuer git-Credentials, *.lock zu breit; R2 wichtig pushInsteadOf, mittel Token in Ausgabe -> behoben (Regex inkl. URL-Rewrites, Schwaerzung, Schema-Regel, leerer helper); Gegenprobe: alter Push aus dem Klon startete receivepack, status/diff fsmonitor und filter
 Änderung: Grundsatz „Konfiguration lesen ja, ausführen nie“. Die Push-Proben (`:389`, `:396`) bekommen `--no-verify`,
 `-c credential.helper=` und `-c core.fsmonitor=false`; die Bare-Probe (`:408`/`:409`) läuft aus einem frischen
 Temp-Repo (`git init --template=`) mit `GIT_CONFIG_GLOBAL=/dev/null` und `GIT_CONFIG_NOSYSTEM=1`, nicht aus dem Klon.
@@ -72,6 +74,11 @@ HEAD: 587f3c7b
 Semantik: wie T1 (`docs/features/harness-stufe-4.md:33–34`).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T5)
+Notiz: Nachgelesen (git-config(1), git 2.47.3): `core.sshCommand` „is overridden when the environment variable is set“ —
+`GIT_SSH_COMMAND` übersteuert ihn also. Trotzdem laufen alle Push-Proben aus dem Temp-Repo: Gegenprobe im Scratchpad,
+der alte Push aus dem Klon an die lokale pushurl `/dev/null` startete `remote.origin.receivepack` des Klons, das die
+`-c`-Optionen des Plans nicht abdecken. Der Fake-Hook im Test liegt in `.git/hooks` (der Wächter weist
+`git config core.hooksPath` in jedem Modus ab, auch für einen Fake-Klon).
 
 ### T3 — Red Team: Probe 4 misst die Rechte des Proxmox-Tokens direkt an der API  [ ]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/dev/runner-setup.sh, scripts/tests/redteam_test.sh, scripts/tests/runner_setup_test.sh

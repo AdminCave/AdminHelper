@@ -348,6 +348,108 @@ bash "$RT" --dbus relative 1 </dev/null >/dev/null 2>&1
 grep -qx 'redteam_dbus /run/user "$(stat -c %u "$OWNER_HOME" 2>/dev/null || echo 1000)"' "$RT" \
   && ok "the normal run probes /run/user for this user and the owner" || bad "the normal run does not call redteam_dbus on /run/user"
 
+echo "── the git probes run nothing from the clone (--git, --changed)"
+# A clone whose configuration would run code at every turn: a pre-push hook, an
+# fsmonitor, a clean filter, a credential helper and a receive-pack — each leaves a
+# mark. git is wrapped to log what the probes run; the caller's own git
+# configuration stays out (GIT_CONFIG_GLOBAL), it is not the runner's.
+G="$LT/git"; FC="$G/clone"; M="$G/marks"; mkdir -p "$M" "$G/hooks" "$G/bin"
+gitq() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git "$@"; }
+for h in pre-push fsmonitor filter cred receivepack altrefs; do
+  printf '#!/bin/sh\n: > "%s/%s"\ncat 2>/dev/null\nexit 0\n' "$M" "$h" > "$G/hooks/$h"; chmod +x "$G/hooks/$h"
+done
+printf '#!/bin/sh\necho "$*" >> "%s/git.log"\nexec %s "$@"\n' "$G" "$(command -v git)" > "$G/bin/git"; chmod +x "$G/bin/git"
+gitq init -q --template= "$FC"
+mkdir -p "$FC/sub"; printf 'readme\n' > "$FC/README"; printf 'f\n' > "$FC/sub/f"; printf 'l\n' > "$FC/x.lock"
+printf '* filter=evil\n' > "$FC/.gitattributes"
+gitq -C "$FC" add README sub/f x.lock .gitattributes
+gitq -C "$FC" -c user.name=t -c user.email=t@invalid commit -q -m init
+mkdir -p "$FC/.git/hooks"; cp "$G/hooks/pre-push" "$FC/.git/hooks/pre-push"
+gitq -C "$FC" config remote.origin.url https://example.invalid/x.git
+gitq -C "$FC" config remote.origin.pushurl /dev/null
+gitq -C "$FC" config remote.origin.receivepack "$G/hooks/receivepack"
+gitq -C "$FC" config core.fsmonitor "$G/hooks/fsmonitor"
+gitq -C "$FC" config filter.evil.clean "$G/hooks/filter"
+gitq -C "$FC" config credential.helper "!$G/hooks/cred"
+gitq -C "$FC" config http.https://example.invalid/.extraheader "AUTHORIZATION: bearer SECRETVALUE"
+probe_git() {  # probe_git <clone> [url] — the --git step with the wrapper and no caller config
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 PATH="$G/bin:$PATH" bash "$RT" --git "$@" > "$LT/out" 2>&1
+}
+probe_git "$FC"; rc=$?
+[ "$rc" = 1 ] && grep -q "^ok    remote.origin.pushurl is /dev/null" "$LT/out" \
+  && grep -q "^ok    git push to origin (/dev/null) fails" "$LT/out" \
+  && grep -q "^info  a push into a self-made bare repo works" "$LT/out" \
+  && ok "the push probes still judge right" || bad "--git: rc=$rc $(cat "$LT/out")"
+grep -q "^FAIL  the clone's git configuration names a credential or a URL rewrite: credential.helper http.https://example.invalid/.extraheader$" "$LT/out" \
+  && ! grep -q SECRETVALUE "$LT/out" \
+  && ok "a credential in the clone's git configuration is a FAIL, named but not shown" || bad "credential: $(cat "$LT/out")"
+PUSHED="push --no-verify --dry-run /dev/null HEAD:refs/heads/redteam-probe"  # review: ok the probe's own push, logged by the git wrapper
+grep -qF -- "$PUSHED" "$G/git.log" \
+  && ok "the push to origin really runs (under timeout, from the probe's own repository)" || bad "no push in the git log: $(cat "$G/git.log")"
+# Pushed to a local repository, its own configuration would run: not pushed to.
+gitq init -q --bare --template= "$G/target.git"
+gitq -C "$G/target.git" config core.alternateRefsCommand "$G/hooks/altrefs"
+FC2="$G/clone2"; gitq clone -q --template= "$FC" "$FC2" 2>/dev/null
+gitq -C "$FC2" config --unset credential.helper; gitq -C "$FC2" config --unset-all http.https://example.invalid/.extraheader
+gitq -C "$FC2" config remote.origin.pushurl "$G/target.git"
+gitq -C "$FC2" config --add remote.origin.pushurl http://127.0.0.1:9/x.git
+gitq -C "$FC2" config url."$G/target.git".insteadOf https://example.invalid/net.git
+probe_git "$FC2" https://example.invalid/net.git; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  remote.origin push URLs are '$G/target.git http://127.0.0.1:9/x.git', not just /dev/null" "$LT/out" \
+  && ok "every push URL counts, not just the first" || bad "pushurls: rc=$rc $(cat "$LT/out")"
+grep -q "^info  origin pushes to the local path $G/target.git — not pushed to" "$LT/out" \
+  && grep -q "^ok    git push to origin (http://127.0.0.1:9/x.git) fails" "$LT/out" \
+  && ok "a local push URL is not pushed to, a network one is" || bad "local/network: $(cat "$LT/out")"
+grep -q "^FAIL  the clone rewrites https://example.invalid/net.git to $G/target.git" "$LT/out" \
+  && grep -q "^info  https://example.invalid/net.git leads to the local path $G/target.git — not pushed to" "$LT/out" \
+  && ok "the network URL is read the way the clone rewrites it" || bad "insteadOf: $(cat "$LT/out")"
+# A rewrite that only a push applies, with a token in the URL: a FAIL, and the token
+# never on the terminal — nor one in a push URL. An empty credential.helper only
+# resets the list. A local path with :// further on is still a local path.
+FC3="$G/clone3"; gitq clone -q --template= "$FC" "$FC3" 2>/dev/null
+gitq -C "$FC3" config --unset credential.helper; gitq -C "$FC3" config --unset-all http.https://example.invalid/.extraheader
+gitq -C "$FC3" config --add credential.helper ""
+gitq -C "$FC3" config url."http://user:TOKENX@127.0.0.1:9/".pushInsteadOf https://github.com/
+gitq -C "$FC3" config remote.origin.pushurl "http://user:TOKENY@127.0.0.1:9/y.git"
+gitq -C "$FC3" config --add remote.origin.pushurl "$G/a://b.git"
+probe_git "$FC3"; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the clone's git configuration names a credential or a URL rewrite: url.http://<userinfo>@127.0.0.1:9/.pushinsteadof$" "$LT/out" \
+  && ok "a pushInsteadOf rewrite is a FAIL, an empty credential.helper is none" || bad "pushInsteadOf: rc=$rc $(cat "$LT/out")"
+! grep -qE 'TOKENX|TOKENY' "$LT/out" && grep -q "http://<userinfo>@127.0.0.1:9/y.git" "$LT/out" \
+  && ok "no token from a URL reaches the output" || bad "a token was printed: $(grep -E 'TOKEN' "$LT/out")"
+grep -q "^info  origin pushes to the local path $G/a://b.git — not pushed to" "$LT/out" \
+  && ok "a local path with :// in it is not pushed to" || bad "local path with ://: $(cat "$LT/out")"
+FC5="$G/clone5"; gitq init -q --template= "$FC5"; printf '[broken\n' >> "$FC5/.git/config"
+probe_git "$FC5"; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the git configuration the clone sees cannot be read" "$LT/out" \
+  && ok "an unreadable git configuration is a FAIL, not 'no credential'" || bad "broken config: rc=$rc $(cat "$LT/out")"
+# What a session may change, seen without git: the change time against a moment of
+# this process. A short pause first — the kernel stamps times on a coarse clock.
+changed() { bash "$RT" --changed "$FC" "$T0" > "$LT/out2" 2>&1; }
+mark_now() { sleep 0.05; T0="$(date +%s.%N)"; sleep 0.05; }
+mark_now; touch -d '2001-01-01' "$FC/README"; changed; rc=$?
+[ "$rc" = 1 ] && grep -qx "changed: $FC/README" "$LT/out2" \
+  && ok "an edit is a change, even with its time set back" || bad "--changed README: rc=$rc $(cat "$LT/out2")"
+mark_now; rm "$FC/sub/f"; changed; rc=$?
+[ "$rc" = 1 ] && grep -qx "changed: $FC/sub" "$LT/out2" \
+  && ok "so is a file removed in a subdirectory" || bad "--changed delete: rc=$rc $(cat "$LT/out2")"
+mark_now; printf 'm\n' >> "$FC/x.lock"; changed; rc=$?
+[ "$rc" = 1 ] && grep -qx "changed: $FC/x.lock" "$LT/out2" \
+  && ok "and a *.lock outside .git" || bad "--changed x.lock: rc=$rc $(cat "$LT/out2")"
+mark_now; touch "$FC/.git/index"; : > "$FC/.git/index.lock"; rm "$FC/.git/index.lock"; changed; rc=$?
+[ "$rc" = 0 ] && grep -qx "unchanged" "$LT/out2" \
+  && ok "the index and git's lock files alone are no change" || bad "--changed index only: rc=$rc $(cat "$LT/out2")"
+bash "$RT" --changed "$G/nowhere" "$T0" > "$LT/out2" 2>&1; rc=$?
+[ "$rc" = 2 ] && ok "a clone that cannot be looked at is an error, not 'unchanged'" || bad "--changed missing: rc=$rc $(cat "$LT/out2")"
+[ -z "$(ls -A "$M")" ] && ok "no hook, fsmonitor, filter, helper, receive-pack or target configuration ran" \
+  || bad "configuration from the clone ran: $(ls "$M")"
+bash "$RT" --git relative </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--git with a relative path is a usage error (exit 2)" || bad "--git with a relative path did not exit 2"
+grep -qx 'redteam_git "$REPO" https://github.com/AdminCave/AdminHelper.git' "$RT" \
+  && ! grep -qE 'git -C "\$REPO" (status|diff|push)' "$RT" \
+  && ok "the normal run pushes through redteam_git, and nothing runs git status/diff/push in the clone" \
+  || bad "the normal run still runs git in the clone: $(grep -nE 'git -C "\$REPO" (status|diff|push)' "$RT")"
+
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
