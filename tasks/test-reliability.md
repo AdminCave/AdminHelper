@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Test-Zuverlässigkeit: install_test-Stub liest stdin, Desktop-E2E hält node_modules frisch (R-0131, R-0142) — Task-Ledger
-Status: bereit · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/test-reliability · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „Test-Zuverlässigkeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0131, R-0142
 Heavy: linux-full — `run.sh e2e --strict --step desktop_e2e_crud` auf frischer Template-Box ohne händisches `npm ci` (erwartet: `npm ci` im Log, 6 Specs grün). Vorher die Template-Tags gegen die Lockfile-Änderungen prüfen (junit-Reporter 7bc9f6d0 vom 2026-09-27, letzte Lockfile-Änderung heute 0ecdc3ca vom 2026-09-30): ist das Template jünger, beweist der Lauf nur „keine Regression“, den Fix beweist dann der hermetische Test aus T2.
@@ -21,6 +21,7 @@ die neuen Prüfungen gehen in schon eingetragene Tests (`run.sh:557–562`).
 Komponente: scripts · Dateien: scripts/tests/install_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eee155ee 2026-10-02T18:32:03+02:00
 Review: Review am Ende (Kurz-Ledger); Gegenprobe ohne Stub-Zweig: install_test 7 passed, 1 failed; isolierte Pipe hier 0/1000 auch mit altem Stub (Rennen selten, Aufsicht 16/1000)
+Notiz: Der Stub schreibt nach `$STUB_ADMIN_STDIN` (exportiert, gleich `$WORK/admin.stdin`), nicht nach `$WORK/admin.stdin`: er steht in einem gequoteten Heredoc, und `WORK` ist nicht exportiert.
 Roadmap: R-0142
 Befund: `scripts/install.sh:287` reicht das Admin-Passwort per `printf '%s\n' "$ADMIN_PASSWORD" | docker compose exec
 -T server … create-admin --password-stdin` weiter, unter `set -euo pipefail` (`:28`). Der Docker-Stub in
@@ -96,3 +97,17 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Dedup-Key: bug:scripts:desktop_e2e_crud.sh:stale-node-modules · HEAD: 9fa298ed
 Semantik: wie T2 (`scripts/tests/run.sh:473–475`); keine Stelle in docs/.
+
+Abschluss-Evidenz (2026-10-03):
+- Gesamt-Schnellcheck @5ae51aab: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns` (`run.sh quick --strict`).
+- Review am Ende (Sonnet, eine Runde) über `git diff origin/main...HEAD`: approve; zwei Nits ohne Handlungsbedarf (die mtime-Regel
+  wie `npm_ci_if_stale`, so entschieden; die STUB_ADMIN_STDIN-Abweichung steht als Notiz an T1).
+- Template-Prüfung (`vm.py doctor`): linux-full vom 20260918, älter als die Lockfile-Änderungen 7bc9f6d0 (2026-09-27) und 0ecdc3ca
+  (2026-09-30) — der Lauf beweist also den Fix, nicht nur „keine Regression“.
+- Heavy (`warm.sh desktop`, `iter.sh e2e --strict --step desktop_e2e_crud`, danach `reap.sh`; gestartet von der Aufsicht auf Kevins
+  Freigabe) @5ae51aab auf einer frischen linux-full-Box ohne händisches `npm ci`: im Log „npm ci in …/apps/desktop/ui (node_modules
+  missing or older than package-lock.json)“ und dasselbe für `…/apps/desktop/e2e`, `Spec Files 6 passed, 6 total`,
+  `desktop_e2e_crud: 6 passed, 0 failed`, `run.sh[e2e]: 1 passed, 0 failed, 0 skipped`, exit 0. Adresse und VMID der Pool-VM hier
+  ausgelassen. VM abgeräumt, `vm.py list`: 0 eigene VMs.
+- Nach dem Merge von origin/main (8a45c893, #70 und #71): `verify.sh scripts --strict` → `run.sh[quick]: 6 passed, 0 failed,
+  12 skipped, 0 test-skips, 0 reruns` (install_test 8/0, lib_e2e_stack_test 20/0).
