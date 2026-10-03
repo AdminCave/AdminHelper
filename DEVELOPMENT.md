@@ -862,6 +862,11 @@ oder Mount, bricht es ab, statt zu kopieren. Ausserdem legt es die geteilte Pyth
 `/var/lib/adminhelper-dev/py.lock` an (root, `0666`, im Verzeichnis `0755` von root; Abschnitt
 „Die schweren Python-Schritte laufen nacheinander"), `--remove --yes` nimmt sie mit; ein
 bestehender Runner bekommt sie mit einem erneuten `sudo bash scripts/dev/runner-setup.sh`.
+Ebenso installiert es das Red Team root-eigen (R-0152): `runner-redteam.sh`, `runner-env.sh`,
+`runner-settings.json` und `runner-claude.version` aus dem Checkout, aus dem es laeuft, nach
+`/usr/local/lib/adminhelper-dev/` (root, Verzeichnis und Skript `0755`, der Rest `0644`), und es
+haelt die sha256 der Runner-CLI in `/var/lib/adminhelper-dev/runner-claude.sha256` fest
+(`0644`); `--remove --yes` nimmt beides mit.
 Danach bleiben **drei Handgriffe** fuer Kevin, die der Runner nicht selbst tun kann:
 
 1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
@@ -871,8 +876,8 @@ Danach bleiben **drei Handgriffe** fuer Kevin, die der Runner nicht selbst tun k
    ACL-Pfade der Rolle `AdminHelperVM`, die Kevins eigener Token hat (Abschnitt
    „VMs mit vm.py") → Werte nach `~adminhelper-runner/.config/adminhelper/pve.env`.
 3. `sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only`, dann der
-   Red-Team-Lauf (unten). `pull`, nicht nur `fetch`: das Red Team laeuft aus diesem
-   Arbeitsbaum und liest das Soll von dort.
+   Red-Team-Lauf (unten). Das Red Team laeuft nicht aus diesem Klon, sondern aus seiner
+   root-eigenen Kopie; der Klon ist nur das Ziel seiner Proben.
 
 **`-iu`, nicht `-u`, bei allem, was die CLI des Runners braucht:** ohne `-i` behaelt
 sudo den PATH des Aufrufers, und die CLI in `~adminhelper-runner/.local/bin` ist dann
@@ -907,15 +912,19 @@ darf nicht davon abhaengen, was die CLI gerade als Standard mitbringt:
 **Das Red Team liest zurueck, was wirklich lief.** Aus dem `system/init`-Ereignis einer
 Modellprobe nimmt es das tatsaechliche Modell und die tatsaechliche CLI-Version, aus
 `result.modelUsage` das Modell, das wirklich geantwortet hat, und vergleicht alles mit dem
-Soll aus seinem Klon. Abweichung, fehlendes Ereignis, eine Probe ohne Ergebnis oder eine
+Soll, das `runner-setup.sh` neben das Red Team installiert hat — nicht mit dem Klon, den der
+Runner aendern kann. Die CLI selbst gehoert dem Runner; dass sie die installierte ist, belegt
+ihre sha256 gegen die festgehaltene (`runner-redteam.sh --claude-sum <datei> <claude>`).
+Abweichung, fehlendes Ereignis, eine Probe ohne Ergebnis oder eine
 fehlende CLI ist ein `FAIL`, kein Hinweis — ein Messgeraet, das nichts misst, darf nicht
 wie ein Ergebnis aussehen. Den Effort liest es **nicht** zurueck: kein Ereignis des
 Protokolls traegt ihn; ihn sichern die Settings und das Leeren von
 `CLAUDE_CODE_EFFORT_LEVEL`.
 
-**Anheben** ist ein bewusster Schritt, kein Nebeneffekt. Das Soll steht an zwei Orten:
-`runner-setup.sh` liest es aus dem Checkout, aus dem es laeuft, das Red Team aus dem Klon
-des Runners. Beide muessen auf demselben `main` stehen:
+**Anheben** ist ein bewusster Schritt, kein Nebeneffekt. Das Soll steht im Repo;
+`runner-setup.sh` liest es aus dem Checkout, aus dem es laeuft, und installiert es mit dem
+Red Team. Nach jedem CLI- oder Modellwechsel laeuft deshalb zuerst `runner-setup.sh`: sonst
+misst das Red Team gegen das alte Soll, und die Pruefsumme der neuen CLI meldet es als `FAIL`:
 
 ```
 # 1. auf einem Branch: neue Version eintragen und pruefen, dass sie das Modell kennt
@@ -924,7 +933,7 @@ echo 2.1.XXX > scripts/dev/runner-claude.version
 # 3. PR, Merge; dann aus einem Checkout auf dem neuen main einrichten und beweisen
 sudo bash scripts/dev/runner-setup.sh
 sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only
-sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh
+sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh
 ```
 
 **Getrusteter Workspace — bewusst abgeschaltet.** Claude Code ignoriert die
@@ -984,8 +993,15 @@ eigene DB, eigener Proxmox-Token nur fuer den Pool.
 **Red Team.** Der Beweis, dass das haelt, ist ein Lauf als dieser User:
 
 ```bash
-sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh
+sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh
 ```
+
+Das Messgeraet liegt ausserhalb dessen, was der gepruefte Nutzer schreiben kann: die
+root-eigene Kopie, die `runner-setup.sh` installiert. Es startet sich einmal unter `env -i` mit
+festem `PATH` neu, sourct keine Datei des Runners (`runner-env.sh` laesst dort `~/.devenv.sh`
+aus) und bricht ab, wenn `runner-env.sh` seine Funktionen, Zaehler oder seinen `PATH`
+veraendert. Laeuft es von woanders, etwa aus dem Klon, ist das ein `FAIL`, der den richtigen
+Aufruf nennt, und der Lauf endet dort.
 
 Jede Probe druckt `ok`, `FAIL` oder `info`; die letzte Zeile ist `N ok, M FAIL`.
 Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,
@@ -995,7 +1011,8 @@ bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`). Dazu d
 geteilte Python-Sperre `/var/lib/adminhelper-dev/py.lock`: sie existiert, Datei und
 Verzeichnis gehoeren root, der Runner darf das Verzeichnis nicht schreiben und kann die
 Sperre nehmen (ist sie gerade belegt, ein `info`); einzeln mit
-`runner-redteam.sh --py-lock <absoluter-pfad>`.
+`runner-redteam.sh --py-lock <absoluter-pfad>`. Und die Runner-CLI gegen ihre festgehaltene
+sha256 (`--claude-sum`).
 Stufe 4 gilt erst mit `0 FAIL` als abgeschlossen; das Ergebnis gehoert in den
 Anhang von `tasks/harness-stufe-4.md`.
 

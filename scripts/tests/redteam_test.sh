@@ -134,7 +134,7 @@ bash "$RT" --pin "$M" </dev/null >/dev/null 2>&1
 
 echo "── the probe really passes --verbose (the defect of 2026-09-22)"
 # Order-independent: what matters is that the invocation carries both flags.
-awk '/timeout [0-9]+ claude -p/{f=1} f{print} f&&/2>&1\)"/{exit}' "$RT" | grep -q -- '--verbose' \
+awk '/timeout [0-9]+ "\$CLAUDE" -p/{f=1} f{print} f&&/2>&1\)"/{exit}' "$RT" | grep -q -- '--verbose' \
   && ok "the probe invocation carries --verbose" \
   || bad "stream-json without --verbose — the probe cannot start"
 
@@ -195,6 +195,99 @@ bash "$RT" --py-lock relative/py.lock </dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "--py-lock with a relative path is a usage error (exit 2)" || bad "a relative path did not exit 2"
 grep -qx 'redteam_py_lock /var/lib/adminhelper-dev/py.lock 0' "$RT" \
   && ok "the normal run checks the real lock, owned by root" || bad "the normal run does not call redteam_py_lock on the real path with uid 0"
+
+echo "── the environment the probes run in (--env-check)"
+# The red team measures the runner, so nothing the runner can write may run inside
+# it (R-0152). A home whose .devenv.sh bends PATH, replaces fail() and leaves a mark,
+# a fake gh first in the caller's PATH and an exported fail() of the caller's: none
+# of it may reach the step, and the FAIL of the unprovisioned home stays counted.
+# TMPDIR goes through the restart: runner-env.sh makes an empty GH_CONFIG_DIR per run.
+export TMPDIR="$LT/tmp"
+FH="$LT/home"; FAKE="$LT/fake"; mkdir -p "$FH" "$FAKE" "$TMPDIR"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/gh"; chmod +x "$FAKE/gh"
+cat > "$FH/.devenv.sh" <<EOF
+export PATH="$FAKE:\$PATH"
+fail() { :; }
+: > "$FH/devenv-was-sourced"
+EOF
+env PATH="$FAKE:$PATH" 'BASH_FUNC_fail%%=() { :; }' bash "$RT" --env-check "$FH" > "$LT/out" 2>&1; rc=$?
+[ ! -e "$FH/devenv-was-sourced" ] && ok "the user's .devenv.sh is not sourced" || bad "the red team sourced $FH/.devenv.sh"
+grep -q "^gh: $FAKE/" "$LT/out" && bad "the probes would meet the fake gh: $(grep '^gh:' "$LT/out")" \
+  || ok "a gh first in the caller's PATH is not the one the probes meet ($(grep '^gh:' "$LT/out"))"
+[ "$rc" = 1 ] && grep -q "^FAIL  runner-env.sh refused" "$LT/out" && grep -q "^0 ok, 1 FAIL, 0 info$" "$LT/out" \
+  && ok "the FAIL of an unprovisioned home stays counted" || bad "env-check: rc=$rc $(cat "$LT/out")"
+
+echo "── runner-env.sh reads the devenv unless the red team says not to"
+rm -f "$FH/devenv-was-sourced"
+( HOME="$FH"; . "$REPO_ROOT/scripts/dev/runner-env.sh" ) >/dev/null 2>&1
+[ -e "$FH/devenv-was-sourced" ] && ok "without the switch the runner's sessions still get their devenv" \
+  || bad "runner-env.sh no longer sources ~/.devenv.sh"
+rm -f "$FH/devenv-was-sourced"
+( HOME="$FH"; export AH_RUNNER_ENV_NO_DEVENV=1; . "$REPO_ROOT/scripts/dev/runner-env.sh" ) >/dev/null 2>&1
+[ ! -e "$FH/devenv-was-sourced" ] && ok "with AH_RUNNER_ENV_NO_DEVENV=1 it does not" || bad "the switch did not stop the devenv"
+
+echo "── a runner-env.sh that changes the instrument ends the run"
+# A copy of the red team beside a runner-env.sh that redefines ok() — or only adds a
+# function in front of a command the probes use.
+for kind in ok git; do
+  CP="$LT/copy-$kind"; mkdir -p "$CP/scripts/dev"; cp "$RT" "$CP/scripts/dev/runner-redteam.sh"
+  if [ "$kind" = ok ]; then echo 'ok() { :; }' > "$CP/scripts/dev/runner-env.sh"
+  else echo 'git() { :; }' > "$CP/scripts/dev/runner-env.sh"; fi
+  bash "$CP/scripts/dev/runner-redteam.sh" --env-check "$FH" > "$LT/out" 2>&1; rc=$?
+  [ "$rc" = 1 ] && grep -q "^FAIL  runner-env.sh changed the red team itself" "$LT/out" && ! grep -q "^gh:" "$LT/out" \
+    && ok "a runner-env.sh defining $kind() stops the run" || bad "$kind(): rc=$rc $(cat "$LT/out")"
+done
+
+echo "── a provisioned home passes the check unchanged"
+PH="$LT/prov"; mkdir -p "$PH/.config/adminhelper"; chmod 700 "$PH/.config/adminhelper"
+printf 'CLAUDE_CODE_OAUTH_TOKEN=probe\n' > "$PH/.config/adminhelper/oauth.env"; chmod 600 "$PH/.config/adminhelper/oauth.env"
+bash "$RT" --env-check "$PH" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -q "^ok    runner-env.sh: own token" "$LT/out" && grep -q "^1 ok, 0 FAIL, 0 info$" "$LT/out" \
+  && ok "the real runner-env.sh leaves the instrument as it was" || bad "provisioned: rc=$rc $(cat "$LT/out")"
+bash "$RT" --env-check relative </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--env-check with a relative home is a usage error (exit 2)" || bad "--env-check with a relative home did not exit 2"
+grep -qx 'redteam_source_env' "$RT" && ok "the normal run sources runner-env.sh through the checked step" \
+  || bad "the normal run does not call redteam_source_env"
+
+echo "── the claude CLI against its recorded checksum (--claude-sum)"
+# The runner's CLI is a link into its home; the checksum runner-setup.sh records is
+# of the file the link resolves to.
+CS="$LT/cs"; mkdir -p "$CS/share"; printf 'cli v1\n' > "$CS/share/claude-bin"; ln -s "$CS/share/claude-bin" "$CS/claude"
+sha256sum < "$CS/share/claude-bin" | cut -d' ' -f1 > "$CS/good.sha256"
+printf '%064d\n' 0 > "$CS/other.sha256"
+bash "$RT" --claude-sum "$CS/good.sha256" "$CS/claude" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -q "^ok    the claude CLI ($CS/share/claude-bin) is the one runner-setup.sh recorded" "$LT/out" \
+  && ok "the recorded checksum of the resolved binary: ok" || bad "equal: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/other.sha256" "$CS/claude" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the claude CLI .* differs .*/runner-setup.sh again" "$LT/out" \
+  && ok "a different binary is a FAIL that names the fix" || bad "differs: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/none.sha256" "$CS/claude" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  no recorded checksum .*/runner-setup.sh" "$LT/out" \
+  && ok "no recorded checksum is a FAIL, not a pass" || bad "no sum file: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/good.sha256" "$CS/missing" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  no claude CLI at $CS/missing" "$LT/out" \
+  && ok "no binary to compare is a FAIL" || bad "no binary: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/good.sha256" </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--claude-sum without a binary is a usage error (exit 2)" || bad "--claude-sum without a binary did not exit 2"
+
+echo "── the red team checks where it runs from (--self-check)"
+# Only root's /usr/local/lib/adminhelper-dev counts; a copy anywhere else — here in
+# a directory of this user — is a FAIL that names the right call.
+SC="$LT/selfcopy"; mkdir -p "$SC"; cp "$RT" "$SC/runner-redteam.sh"
+bash "$SC/runner-redteam.sh" --self-check > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the red team runs from $SC .* run: sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh" "$LT/out" \
+  && ok "a copy outside root's directory is a FAIL with the right call" || bad "self-check copy: rc=$rc $(cat "$LT/out")"
+bash "$RT" --self-check > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the red team runs from $REPO_ROOT/scripts/dev " "$LT/out" \
+  && ok "so is the checkout's own copy" || bad "self-check repo: rc=$rc $(cat "$LT/out")"
+
+echo "── the normal run measures against its own directory"
+grep -A1 -x 'redteam_self_check' "$RT" | grep -qxF 'if [ "$FAILS" -gt "$FAILS_BEFORE_SELF" ]; then' \
+  && ok "the normal run checks where it runs from and stops there on a FAIL" || bad "the normal run does not stop after redteam_self_check"
+grep -qF '"$SELF_DIR/runner-settings.json"' "$RT" && grep -qF '"$SELF_DIR/runner-claude.version"' "$RT" \
+  && ! grep -qF '$REPO/scripts/dev/' "$RT" \
+  && ok "the pin and runner-env.sh come from beside the red team, nothing from the clone's scripts/dev" \
+  || bad "the red team still reads from the clone: $(grep -nF '$REPO/scripts/dev/' "$RT")"
 
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"
