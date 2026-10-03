@@ -51,6 +51,9 @@ SRV="/srv/ah"
 # it when it exists). Not under /srv/ah, which the runner owns, nor under
 # /etc/adminhelper, which the agent package removes on purge.
 LOCK_DIR="/var/lib/adminhelper-dev"
+# The red team and what it measures against, root's: the runner owns its clone, and
+# an instrument the measured user can change measures nothing (R-0152).
+LIB_DIR="/usr/local/lib/adminhelper-dev"
 DB_ROLE="ah_runner"
 DB_NAME="ah_runner_test"
 # ruff pinned to the release CI runs (toolchain-lockstep.sh holds the five places
@@ -82,6 +85,7 @@ if [ "$DRY" = 1 ]; then
   RUNNER="${AH_RUNNER_DRY_USER:-$RUNNER}"
   SRV="${AH_RUNNER_DRY_SRV:-$SRV}"
   LOCK_DIR="${AH_RUNNER_DRY_LOCKDIR:-$LOCK_DIR}"
+  LIB_DIR="${AH_RUNNER_DRY_LIBDIR:-$LIB_DIR}"
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
@@ -169,7 +173,7 @@ fi
 
 if [ "$REMOVE" = 1 ]; then
   if [ "$YES" != 1 ] && [ "$DRY" = 0 ]; then
-    echo "runner-setup: --remove deletes $HOME_DIR, $SRV, $LOCK_DIR and the $DB_NAME database — add --yes" >&2
+    echo "runner-setup: --remove deletes $HOME_DIR, $SRV, $LOCK_DIR, $LIB_DIR and the $DB_NAME database — add --yes" >&2
     exit 2
   fi
   # Repeatable on purpose: every step tolerates the thing already being gone, so
@@ -186,11 +190,14 @@ if [ "$REMOVE" = 1 ]; then
   fi
   step "remove the clone and the lanes"
   run rm -rf "$SRV"
-  step "remove the shared python lock"
+  step "remove the shared python lock and the recorded CLI checksum"
   no_symlink_in "$LOCK_DIR"
   run rm -rf "$LOCK_DIR"
+  step "remove the red team"
+  no_symlink_in "$LIB_DIR"
+  run rm -rf "$LIB_DIR"
   echo ""
-  echo "── removed: $RUNNER, $SRV, $LOCK_DIR, $DB_NAME"
+  echo "── removed: $RUNNER, $SRV, $LOCK_DIR, $LIB_DIR, $DB_NAME"
   exit 0
 fi
 
@@ -337,6 +344,21 @@ else
   run install -o root -g root -m 666 /dev/null "$LOCK_DIR/py.lock"
 fi
 
+# ── 2c. the red team, out of the runner's reach ─────────────────────────────
+# runner-redteam.sh measures this user, so it must not live where the user can
+# change it — the clone is the runner's (chown -R above). Copied from THIS
+# checkout together with what it measures against: runner-env.sh, the pinned model
+# (runner-settings.json) and CLI version (runner-claude.version). The red team reads
+# all of it from its own directory, never from the clone (R-0152).
+step "red team in $LIB_DIR (root:root 0755; runner-redteam.sh 0755, the rest 0644)"
+no_symlink_in "$LIB_DIR"
+run install -d -o root -g root -m 755 "$LIB_DIR"
+for f in runner-redteam.sh runner-env.sh runner-settings.json runner-claude.version; do
+  no_symlink_in "$LIB_DIR/$f"
+  case "$f" in runner-redteam.sh) mode=755 ;; *) mode=644 ;; esac   # runner-env.sh is sourced
+  run install -o root -g root -m "$mode" "$ROOT/scripts/dev/$f" "$LIB_DIR/$f"
+done
+
 # ── 3. its own database, and the devenv that carries the password ────────────
 # Both or neither: a rotated password without the matching devenv file leaves a
 # runner whose AH_TEST_DB no longer works.
@@ -444,6 +466,23 @@ if [ "$DRY" = 1 ] || su - "$RUNNER" -c 'command -v claude' >/dev/null 2>&1; then
 else
   note "no claude CLI for $RUNNER yet — install exactly this version, then run this again:"
   printf '     %s\n' "sudo -iu $RUNNER bash -c 'curl -fsSL https://claude.ai/install.sh | bash -s $CLAUDE_VERSION'"
+fi
+# The CLI is the runner's own file (~/.local/bin/claude, a link into its home), and
+# the red team reads its version from the binary itself. Its sha256, taken here as
+# root, lets the red team tell the installed binary from a changed one. A CLI change
+# (runner-claude.version) needs this run again, or the red team reports a mismatch.
+step "sha256 of $RUNNER's claude CLI to $LOCK_DIR/runner-claude.sha256 (root:root 0644)"
+# The link is the runner's, so root hashes only a regular file the runner owns —
+# anything else (a link to a file only root may read, a FIFO) is no CLI of its.
+CLAUDE_REAL="$(readlink -f "$HOME_DIR/.local/bin/claude" 2>/dev/null)"
+SUMF="$LOCK_DIR/runner-claude.sha256"
+if [ "$DRY" = 1 ] || { [ -n "$CLAUDE_REAL" ] && [ -f "$CLAUDE_REAL" ] \
+                       && [ "$(stat -c %U "$CLAUDE_REAL" 2>/dev/null)" = "$RUNNER" ]; }; then
+  no_symlink_in "$SUMF"
+  # Written to a new file and renamed: a reader never sees half a checksum.
+  run_sh "set -o pipefail; install -o root -g root -m 644 /dev/null $(printf '%q' "$SUMF.new") && timeout 120 sha256sum < $(printf '%q' "${CLAUDE_REAL:-$HOME_DIR/.local/bin/claude}") | cut -d' ' -f1 > $(printf '%q' "$SUMF.new") && mv -f $(printf '%q' "$SUMF.new") $(printf '%q' "$SUMF")"
+else
+  note "no claude CLI of $RUNNER at $HOME_DIR/.local/bin/claude — no checksum recorded; run this again after the install"
 fi
 
 # ── 6. the two token files ───────────────────────────────────────────────────

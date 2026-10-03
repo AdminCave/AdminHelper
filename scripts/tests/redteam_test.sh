@@ -249,6 +249,45 @@ bash "$RT" --env-check relative </dev/null >/dev/null 2>&1
 grep -qx 'redteam_source_env' "$RT" && ok "the normal run sources runner-env.sh through the checked step" \
   || bad "the normal run does not call redteam_source_env"
 
+echo "── the claude CLI against its recorded checksum (--claude-sum)"
+# The runner's CLI is a link into its home; the checksum runner-setup.sh records is
+# of the file the link resolves to.
+CS="$LT/cs"; mkdir -p "$CS/share"; printf 'cli v1\n' > "$CS/share/claude-bin"; ln -s "$CS/share/claude-bin" "$CS/claude"
+sha256sum < "$CS/share/claude-bin" | cut -d' ' -f1 > "$CS/good.sha256"
+printf '%064d\n' 0 > "$CS/other.sha256"
+bash "$RT" --claude-sum "$CS/good.sha256" "$CS/claude" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 0 ] && grep -q "^ok    the claude CLI ($CS/share/claude-bin) is the one runner-setup.sh recorded" "$LT/out" \
+  && ok "the recorded checksum of the resolved binary: ok" || bad "equal: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/other.sha256" "$CS/claude" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the claude CLI .* differs .*/runner-setup.sh again" "$LT/out" \
+  && ok "a different binary is a FAIL that names the fix" || bad "differs: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/none.sha256" "$CS/claude" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  no recorded checksum .*/runner-setup.sh" "$LT/out" \
+  && ok "no recorded checksum is a FAIL, not a pass" || bad "no sum file: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/good.sha256" "$CS/missing" > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  no claude CLI at $CS/missing" "$LT/out" \
+  && ok "no binary to compare is a FAIL" || bad "no binary: rc=$rc $(cat "$LT/out")"
+bash "$RT" --claude-sum "$CS/good.sha256" </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--claude-sum without a binary is a usage error (exit 2)" || bad "--claude-sum without a binary did not exit 2"
+
+echo "── the red team checks where it runs from (--self-check)"
+# Only root's /usr/local/lib/adminhelper-dev counts; a copy anywhere else — here in
+# a directory of this user — is a FAIL that names the right call.
+SC="$LT/selfcopy"; mkdir -p "$SC"; cp "$RT" "$SC/runner-redteam.sh"
+bash "$SC/runner-redteam.sh" --self-check > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the red team runs from $SC .* run: sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh" "$LT/out" \
+  && ok "a copy outside root's directory is a FAIL with the right call" || bad "self-check copy: rc=$rc $(cat "$LT/out")"
+bash "$RT" --self-check > "$LT/out" 2>&1; rc=$?
+[ "$rc" = 1 ] && grep -q "^FAIL  the red team runs from $REPO_ROOT/scripts/dev " "$LT/out" \
+  && ok "so is the checkout's own copy" || bad "self-check repo: rc=$rc $(cat "$LT/out")"
+
+echo "── the normal run measures against its own directory"
+grep -qx 'redteam_self_check' "$RT" && ok "the normal run checks where it runs from" || bad "the normal run does not call redteam_self_check"
+grep -qF '"$SELF_DIR/runner-settings.json"' "$RT" && grep -qF '"$SELF_DIR/runner-claude.version"' "$RT" \
+  && ! grep -qF '$REPO/scripts/dev/' "$RT" \
+  && ok "the pin and runner-env.sh come from beside the red team, nothing from the clone's scripts/dev" \
+  || bad "the red team still reads from the clone: $(grep -nF '$REPO/scripts/dev/' "$RT")"
+
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

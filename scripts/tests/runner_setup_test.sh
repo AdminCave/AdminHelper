@@ -180,6 +180,35 @@ RUN_LOCK="$(sed -n 's/^AH_PY_LOCK_SHARED="\${AH_PY_LOCK_SHARED:-\(.*\)}"$/\1/p' 
   && ok "runner-setup.sh, run.sh and the red team name the same lock" \
   || bad "the lock path differs: setup '$SETUP_LOCK', run.sh '$RUN_LOCK', red team: $(grep '^redteam_py_lock ' "$REPO_ROOT/scripts/dev/runner-redteam.sh")"
 
+# The red team, root's (R-0152): runner-setup.sh installs it with what it measures
+# against, records the CLI checksum beside the lock, and --remove takes both away.
+echo "── the red team out of the runner's reach ──"
+LIBS="$WORK/lib"; LOCKS_RT="$WORK/lock-rt"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_LOCKDIR="$LOCKS_RT" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -d -o root -g root -m 755 $LIBS" <<<"$PLAN" \
+  && ok "the red team's directory is root:root 0755" || bad "no root:root 0755 install -d of $LIBS"
+MISSING=""
+for f in runner-redteam.sh:755 runner-env.sh:644 runner-settings.json:644 runner-claude.version:644; do
+  grep -qF -- "install -o root -g root -m ${f#*:} $REPO_ROOT/scripts/dev/${f%%:*} $LIBS/${f%%:*}" <<<"$PLAN" || MISSING+=" $f"
+done
+[ -z "$MISSING" ] && ok "the red team, runner-env.sh and the pin go there from this checkout, root's (0755 / 0644)" \
+  || bad "not installed as planned:$MISSING"
+grep -qF -- "sha256sum <" <<<"$PLAN" && grep -qF -- "mv -f $LOCKS_RT/runner-claude.sha256.new $LOCKS_RT/runner-claude.sha256" <<<"$PLAN" \
+  && grep -qF -- "install -o root -g root -m 644 /dev/null $LOCKS_RT/runner-claude.sha256.new" <<<"$PLAN" \
+  && ok "the sha256 of the runner's claude goes to $LOCKS_RT/runner-claude.sha256, root:root 0644" \
+  || bad "checksum step: $(grep -F 'runner-claude.sha256' <<<"$PLAN" | head -3)"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_LOCKDIR="$LOCKS_RT" bash "$SETUP" --dry-run --remove 2>&1)
+grep -qF -- "rm -rf $LIBS" <<<"$PLAN" && grep -qF -- "rm -rf $LOCKS_RT" <<<"$PLAN" \
+  && ok "--remove takes the red team and the checksum (with the lock directory) away" \
+  || bad "--remove plan: $(tail -6 <<<"$PLAN")"
+SETUP_LIB="$(sed -n 's/^LIB_DIR="\(.*\)"$/\1/p' "$SETUP")"
+SETUP_LOCKDIR="$(sed -n 's/^LOCK_DIR="\(.*\)"$/\1/p' "$SETUP")"
+[ "$SETUP_LIB" = /usr/local/lib/adminhelper-dev ] \
+  && grep -qx "REDTEAM_LIB=$SETUP_LIB" "$REPO_ROOT/scripts/dev/runner-redteam.sh" \
+  && grep -qx "  redteam_claude_sum $SETUP_LOCKDIR/runner-claude.sha256 \"\$CLAUDE\"" "$REPO_ROOT/scripts/dev/runner-redteam.sh" \
+  && ok "runner-setup.sh and the red team name the same directory and checksum file" \
+  || bad "red team paths differ from setup: lib '$SETUP_LIB', lock dir '$SETUP_LOCKDIR'"
+
 # The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
 # root-owned directory, then moved into place with one `mv --no-copy -T`. Anything already at
 # $SRV/repo without a .git — a directory or a file — stops the run, dry or not.
@@ -238,6 +267,8 @@ awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | gre
   && ok "the SRV override sits inside the same guard" || bad "AH_RUNNER_DRY_SRV is not guarded by DRY=1"
 awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_LOCKDIR' \
   && ok "the lock directory override too (--remove deletes it as root)" || bad "AH_RUNNER_DRY_LOCKDIR is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_LIBDIR' \
+  && ok "and the red team's directory override (root installs into it)" || bad "AH_RUNNER_DRY_LIBDIR is not guarded by DRY=1"
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); prc=$?
 [ $prc -eq 2 ] && ! grep -q 'nobody-at-all' <<<"$PLAN" \
   && ok "a real run without --dry-run still demands root and names no override" \

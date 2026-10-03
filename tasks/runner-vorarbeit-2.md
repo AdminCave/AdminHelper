@@ -54,8 +54,10 @@ trägt diese Aussage nicht.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Aufruf ändert sich erst mit T2, Doku in T3)
 
-### T2 — runner-setup.sh installiert das Messinstrument root-eigen und hält die sha256 der Runner-`claude` fest  [ ]
+### T2 — runner-setup.sh installiert das Messinstrument root-eigen und hält die sha256 der Runner-`claude` fest  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/dev/runner-redteam.sh, scripts/tests/runner_setup_test.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9dda705d 2026-10-03T11:24:29+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenproben gegen HEAD: runner_setup_test 91/6, statische Red-Team-Checks rot; alte Fassung nie mit neuen Schritten aufgerufen
 Änderung: Ein neuer Setup-Schritt nach dem Klon (`runner-setup.sh:304`) installiert `runner-redteam.sh` und
 `runner-env.sh` aus Kevins Checkout nach `/usr/local/lib/adminhelper-dev/` (Verzeichnis `root:root 0755`, Dateien
 `0755` bzw. `0644`, per `install`, ohne Symlink im Pfad — `no_symlink_in` wie beim Lock-Verzeichnis `:318–338`).
@@ -67,7 +69,10 @@ wie `AH_RUNNER_DRY_LOCKDIR`, `:84`). Das Red Team erkennt seinen Ort: Läuft es 
 richtigen Aufruf; `REPO` (`runner-redteam.sh:38`) wird zu `/srv/ah/repo` (über `AH_REDTEAM_REPO` nur im Test
 verschiebbar) und ist nur noch Ziel der Proben. Neue Probe: sha256 der aufgelösten `claude` gleich der festgehaltenen
 ⇒ ok; abweichend ⇒ FAIL; keine festgehaltene ⇒ FAIL mit Hinweis auf `runner-setup.sh`. Die Prüfung ist ein eigener
-Schritt (`--claude-sum <datei> <binär>`) wie `--py-lock`, damit der hermetische Test sie ohne root fährt. Tests:
+Schritt (`--claude-sum <datei> <binär>`) wie `--py-lock`, damit der hermetische Test sie ohne root fährt.
+Dazu (Aufsicht 2026-10-03, „Messinstrument root-eigen“ zu Ende gedacht): das Soll des Pin-Checks — `model` aus
+`runner-settings.json` und `runner-claude.version` — installiert der Setup-Schritt mit nach
+`/usr/local/lib/adminhelper-dev/` (root, `0644`); das Red Team liest es nur von dort, nicht mehr aus dem Runner-Klon. Tests:
 `runner_setup_test.sh` (Dry-Run nennt Ziel, Besitzer, Modus beider Dateien und die Prüfsumme; `--remove` nennt beide),
 `redteam_test.sh` (`--claude-sum` gleich/abweichend/fehlend; Ortsprüfung mit einer Kopie in einem nicht root-eigenen
 Verzeichnis ⇒ FAIL). Vor dem Fix rot: die neuen Fälle.
