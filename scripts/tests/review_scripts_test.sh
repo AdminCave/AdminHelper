@@ -1738,6 +1738,8 @@ grep -qxF 'scripts/dev/review-contracts.txt' "$REPO_ROOT/scripts/dev/harness-pat
 # ══ pr-body (stage 6a) ════════════════════════════════════════════════════════
 echo "── pr-body ──"
 reset_index
+# pr-body holds each verdict through check-verdict, which reads the schema.
+cp "$REPO_ROOT/scripts/dev/review-verdict.schema.json" "$FIX/scripts/dev/review-verdict.schema.json"
 cat > "$WORK/pr.md" <<'MD'
 # Fixture-Vorhaben — Task-Ledger
 Status: bereit · Branch: harness/fixture · Review: pro Task
@@ -1798,10 +1800,81 @@ printf '{"schema_version":1,"task":{"ledger":"x","id":"T9"},"reviewer":{"model":
 r pr-body "$WORK/pr.md" --verdicts "$WORK/verdicts"
 grep -q 'Verdict: fremd' <<<"$(sed -n '/T1 — /,/T2 — /p' <<<"$OUT")" \
   && ok "a verdict file of another task reads fremd" || bad "foreign verdict: $OUT"
+# Stage 6b: the reviewer process writes <id>.r<n>.verdict.json, and pr-body holds
+# each through check-verdict itself (R-0151.6).
+mkdir -p "$WORK/verdicts2"
+vjson "$V2; d['task']['id'] = 'T5'; d['round'] = 1; d['verdict'] = 'request_changes'"; cp "$WORK/v.json" "$WORK/verdicts2/T5.r1.verdict.json"
+vjson "$V2; d['task']['id'] = 'T5'; d['round'] = 2; d['mutants'] = [{'file': 'a.py', 'line': 2, 'replacement': 'x', 'result': 'killed'}]"
+cp "$WORK/v.json" "$WORK/verdicts2/T5.r2.verdict.json"
+vjson "$V2; d['task']['id'] = 'T1'; del d['findings']"; cp "$WORK/v.json" "$WORK/verdicts2/T1.r1.verdict.json"
+vjson "$V2; d['task']['id'] = 'T6'; d['findings'] = [$BLOCKER]"; cp "$WORK/v.json" "$WORK/verdicts2/T6.r1.verdict.json"
+r pr-body "$WORK/pr.md" --verdicts "$WORK/verdicts2"
+grep -q 'Verdict: approve (opus/high) · Runde 2 · Mutanten 1 gesetzt, 1 gekillt' <<<"$(sed -n '/T5 — /,/T6 — /p' <<<"$OUT")" \
+  && ok "the last round's verdict, with model, round and mutants" || bad "round verdict: $OUT"
+grep -q 'Verdict: ungültig (.*findings' <<<"$(sed -n '/T1 — /,/T2 — /p' <<<"$OUT")" \
+  && ok "a verdict outside the schema reads ungültig, not its approve" || bad "invalid verdict: $OUT"
+grep -q 'Verdict: approve (opus/high) — kein brauchbares approve: an approve with 1 blocker' <<<"$(sed -n '/T6 — /,/T7 — /p' <<<"$OUT")" \
+  && ok "an approve with a blocker says it is no usable approve, and why" || bad "blocker verdict: $OUT"
+vjson "$V2; d['task']['id'] = 'T6'; d['findings'] = [{'severity': 'blocker', 'file': 'a.py', 'claim': 'x'}]; d['probe'] = {'applicable': True, 'red_without_change': False}"
+cp "$WORK/v.json" "$WORK/verdicts2/T6.r1.verdict.json"
+r pr-body "$WORK/pr.md" --verdicts "$WORK/verdicts2"
+grep -q 'kein brauchbares approve: .*probe found the new test green' <<<"$(sed -n '/T6 — /,/T7 — /p' <<<"$OUT")" \
+  && ok "the reason is the refusal, not a warning before it" || bad "reason line: $OUT"
 r pr-body "$WORK/nosuch.md"
 [ $rc -eq 2 ] && ok "a missing ledger -> 2" || bad "missing ledger: rc=$rc out=$OUT"
 r pr-body
 [ $rc -eq 2 ] && grep -q 'pr-body needs' <<<"$OUT" && ok "no ledger -> 2" || bad "no ledger: rc=$rc out=$OUT"
+
+# ══ log (stage 6b) ════════════════════════════════════════════════════════════
+echo "── log ──"
+LOGF="$FIX/.ah-out/review/review-log.jsonl"
+rm -f "$LOGF"
+r log
+[ $rc -eq 0 ] && grep -q '^0 runs, 0 approve, 0 request_changes, 0 failed, \$0.00, 0 turns, 0 s$' <<<"$OUT" \
+  && ok "no log yet -> a zero sum" || bad "empty log: rc=$rc out=$OUT"
+vjson "$V2; d['cost_usd'] = 0.42; d['mutants'] = [{'file': 'a.py', 'line': 2, 'replacement': 'x', 'result': 'killed'}]"
+r log --append "$WORK/v.json"
+[ $rc -eq 0 ] && ok "--append an approve -> 0" || bad "append: rc=$rc out=$OUT"
+vjson "$V2; d['round'] = 2; d['cost_usd'] = 1.08; d['num_turns'] = 30; d['duration_s'] = 200; d['verdict'] = 'request_changes'; d['findings'] = [$BLOCKER]"
+r log --append "$WORK/v.json"
+[ "$(wc -l < "$LOGF")" -eq 2 ] && ok "two --append -> two lines" || bad "lines: $(cat "$LOGF")"
+python3 - "$LOGF" "$VT" <<'PY' && ok "a line carries the spec's fields" || bad "log fields: $(head -n 1 "$LOGF")"
+import json, sys
+d = json.loads(open(sys.argv[1]).readline())
+want = {"ledger": "tasks/fix.md", "task": "T1", "round": 1, "model": "opus", "effort": "high", "verdict": "approve",
+        "blocker": 0, "wichtig": 0, "nit": 0, "probe": "red", "mutants_set": 1, "mutants_killed": 1,
+        "cost_usd": 0.42, "num_turns": 12, "duration_s": 95.5, "tree": sys.argv[2]}
+bad = {k: d.get(k) for k in want if d.get(k) != want[k]}
+sys.exit(1 if bad or not d.get("date") else 0)
+PY
+mkdir -p "$FIX/.ah-out/review/fix"
+printf '{"type": "result", "subtype": "error_max_budget_usd", "is_error": true, "total_cost_usd": 5.01, "num_turns": 40, "duration_ms": 300000}\n' \
+  > "$FIX/.ah-out/review/fix/T2.r1.raw.json"
+r log --failed "review-run.sh: the run ended with error_max_budget_usd" --task tasks/fix.md T2 --round 1 --tree "$VT"
+[ $rc -eq 0 ] && tail -n 1 "$LOGF" | grep -q '"verdict": "failed", "reason": "review-run.sh: the run ended with error_max_budget_usd"' \
+  && tail -n 1 "$LOGF" | grep -q '"cost_usd": 5.01' \
+  && ok "--failed: verdict failed with its reason, the cost out of the raw answer" || bad "failed: rc=$rc $(tail -n 1 "$LOGF")"
+printf 'not json\n' >> "$LOGF"
+r log
+grep -q '^3 runs, 1 approve, 1 request_changes, 1 failed, \$6.51, 82 turns, 596 s$' <<<"$OUT" \
+  && grep -q 'line 4 .*left out' <<<"$OUT" && grep -q 'failed: review-run.sh: the run ended' <<<"$OUT" \
+  && ok "the table with a sum line; a failed run counts; a broken line is named, not counted" || bad "sum: $OUT"
+r log --ledger other
+grep -q '^0 runs,' <<<"$OUT" && ok "--ledger narrows to one ledger" || bad "--ledger other: $OUT"
+r log --ledger fix
+grep -q '^3 runs,' <<<"$OUT" && ok "--ledger fix is tasks/fix.md" || bad "--ledger fix: $OUT"
+vjson "$V2; del d['probe']"
+N_LINES=$(wc -l < "$LOGF")
+r log --append "$WORK/v.json"
+[ $rc -eq 2 ] && [ "$(wc -l < "$LOGF")" -eq "$N_LINES" ] && ok "--append of a verdict outside the schema -> 2, no line" || bad "bad append: rc=$rc out=$OUT"
+r log --failed "x" --round 1
+[ $rc -eq 2 ] && ok "--failed without --task -> 2" || bad "failed no task: rc=$rc out=$OUT"
+r log --failed "x" --task tasks/fix.md T1 --round 3
+[ $rc -eq 2 ] && ok "--failed with round 3 -> 2" || bad "failed round 3: rc=$rc out=$OUT"
+r log --failed "" --task tasks/fix.md T1 --round 1
+[ $rc -eq 2 ] && [ "$(wc -l < "$LOGF")" -eq "$N_LINES" ] && ok "--failed with an empty reason -> 2, no line" || bad "empty reason: rc=$rc out=$OUT"
+r log --failed "abs" --task "$FIX/tasks/fix.md" T1 --round 1
+tail -n 1 "$LOGF" | grep -q '"ledger": "tasks/fix.md"' && ok "an absolute ledger path is logged repo-relative" || bad "abs ledger: $(tail -n 1 "$LOGF")"
 
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── reviewer agent and output schema (stage 6b) ──"

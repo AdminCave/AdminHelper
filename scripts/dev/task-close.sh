@@ -376,9 +376,23 @@ case "$REVIEW" in
         *) infra "the probe could not run (review-probe.sh exit $rc)" ;;
       esac
       CJSON="$(python3 -c 'import json, sys; print(json.dumps({"summary": sys.argv[1]}))' "$CONTRACTS")"
+      # Beside the round's other files, where an interrupted run leaves it too.
+      mkdir -p "$VDIR" || infra "cannot create $VDIR"
+      RUN_ERR="$VDIR/$ID.r$ROUND.run.err"
       VJSON="$(bash scripts/dev/review-run.sh "$LEDGER" "$ID" --tree "$TREE_HASH" --round "$ROUND" \
-        --probe "$PROBE" --contracts "$CJSON" "${PRIOR[@]+"${PRIOR[@]}"}")"
+        --probe "$PROBE" --contracts "$CJSON" "${PRIOR[@]+"${PRIOR[@]}"}" 2>"$RUN_ERR")"
       rc=$?
+      cat "$RUN_ERR" >&2
+      # Every round goes into the review log, a failed one with its reason: the
+      # pilot's cost, turns and duration are read from there. The log is a
+      # measurement, not a gate — a log that cannot be written stops nothing.
+      if [ "$rc" = 0 ]; then
+        bash scripts/dev/review.sh log --append "$VJSON" || echo "task-close: the review log was not written" >&2
+      elif [ "$rc" != 2 ]; then
+        WHY="$(grep -v '^[[:space:]]*$' "$RUN_ERR" | tail -n 1)"
+        bash scripts/dev/review.sh log --failed "${WHY:-review-run.sh exit $rc without a message}" \
+          --task "$LEDGER" "$ID" --round "$ROUND" --tree "$TREE_HASH" || echo "task-close: the review log was not written" >&2
+      fi
       case "$rc" in
         0) ;;
         2) die "review-run.sh could not run" ;;

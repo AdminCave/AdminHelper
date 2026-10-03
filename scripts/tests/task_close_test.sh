@@ -705,7 +705,7 @@ mk_auto() {
     printf '### T3 — offen  [ ]\nÄnderung: bleibt offen\n'
   } > "$FIX/tasks/auto.md"
   git -C "$FIX" add -A && git -C "$FIX" commit -qm "auto ledger"
-  rm -rf "$VD" "$FIX/.ah-out/aux-calls.txt"; rm -f "$STUB_DIR"/*
+  rm -rf "$VD" "$FIX/.ah-out/aux-calls.txt" "$FIX/.ah-out/review/review-log.jsonl"; rm -f "$STUB_DIR"/*
   N0=$(head_count)
 }
 calls() { [ -f "$STUB_DIR/calls" ] && wc -l < "$STUB_DIR/calls" || echo 0; }
@@ -720,6 +720,9 @@ python3 -c 'import json, sys; p = json.load(open(sys.argv[1]))["probe"]; sys.exi
   && ok "the probe block is the runner's: no-test-change" || bad "probe block: $(cat "$VD/T1.r1.verdict.json" 2>&1)"
 grep -qF "$(cd "$FIX" && git show HEAD:scripts/dev/tool.sh | tail -n 1)" "$STUB_DIR/stdin" \
   && ok "the reviewer got the staged diff" || bad "no diff in the reviewer's prompt"
+[ "$(wc -l < "$FIX/.ah-out/review/review-log.jsonl")" -eq 1 ] \
+  && grep -q '"task": "T1", "round": 1, .*"verdict": "approve"' "$FIX/.ah-out/review/review-log.jsonl" \
+  && ok "the round is in the review log" || bad "log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
 reset_repo
 
 mk_auto; touch_tool
@@ -780,6 +783,8 @@ mk_auto; touch_tool
 STUB=fail c auto T1 -m "refactor: tool" --review auto
 [ $rc -eq 74 ] && [ "$(head_count)" = "$N0" ] && [ ! -e "$VD/T1.r1.verdict.json" ] \
   && ok "a reviewer that does not start -> exit 74, nothing committed, no verdict" || bad "auto fail: rc=$rc out=$OUT"
+grep -q '"verdict": "failed", "reason": "review-run.sh: the CLI gave no JSON' "$FIX/.ah-out/review/review-log.jsonl" 2>/dev/null \
+  && ok "and the failed round is in the log with its reason" || bad "failed log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
 reset_repo
 
 # Code and its test: the runner probes the change with the Verify: line's test.

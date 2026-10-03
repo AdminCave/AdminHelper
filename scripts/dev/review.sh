@@ -18,6 +18,10 @@
 #                                                       the checks a changed path pulls in
 #   bash scripts/dev/review.sh pr-body <ledger> [--verdicts <dir>]
 #                                                       the PR text out of the ledger
+#   bash scripts/dev/review.sh log [--ledger <ledger>]  the reviewer runs, with a sum
+#   bash scripts/dev/review.sh log --append <verdict>
+#   bash scripts/dev/review.sh log --failed "<reason>" --task <ledger> <id> --round <n> [--tree <hash>]
+#                                                       one run into the log (task-close.sh)
 #
 # Deterministic, model-free, and called by task-close.sh before it commits. They
 # answer three questions a reviewer would otherwise have to ask every time:
@@ -73,9 +77,23 @@
 #   pr-body    Markdown for the PR: the ledger head (spec, roadmap ids, heavy
 #              line), each task with its box, Evidenz: and Review: lines and —
 #              with --verdicts <dir> — the verdict in <dir>/<id>.json; [~] and
-#              [?] tasks apart. A task without evidence reads "unverifiziert",
-#              never approve. Addresses, host names and VMIDs are cut out of
-#              every ledger line it copies: this text goes to a public repo.
+#              [?] tasks apart; in <dir> a task's verdict is <id>.json or, from
+#              the reviewer process, its last <id>.r<n>.verdict.json, held by
+#              check-verdict itself (to its own tree and task): one outside
+#              the schema reads "ungültig", one without a usable approve says
+#              so. A task without evidence reads "unverifiziert", never
+#              approve. Addresses, host names and VMIDs are cut out of every
+#              ledger line it copies: this text goes to a public repo.
+#
+#   log        one JSONL line per reviewer run in .ah-out/review/review-log.jsonl
+#              (date, ledger, task, round, model, effort, verdict, blocker,
+#              wichtig, nit, probe, mutants set and killed, cost_usd, num_turns,
+#              duration_s, tree): --append takes a verdict check-verdict
+#              accepts, --failed a run that gave none (verdict "failed", the
+#              reason, and cost, turns and duration out of its raw answer when
+#              there is one). Without either it prints the runs as a table and
+#              a sum line `N runs, A approve, R request_changes, F failed, $X,
+#              T turns, S s`, with --ledger only that ledger's.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against the index. Neither form sees UNTRACKED files —
@@ -130,7 +148,7 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" LIST_ONLY=0 VERDICTS=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
@@ -138,6 +156,18 @@ while [ $# -gt 0 ]; do
     --verdicts)
       [ $# -ge 2 ] || die "--verdicts needs <dir>"
       VERDICTS="$2"; shift ;;
+    --append)
+      [ $# -ge 2 ] || die "--append needs <verdict>"
+      APPEND="$2"; shift ;;
+    --failed)
+      [ $# -ge 2 ] || die "--failed needs <reason>"
+      FAILED="$2"; FAILED_SET=1; shift ;;
+    --round)
+      [ $# -ge 2 ] || die "--round needs <n>"
+      ROUND_ARG="$2"; shift ;;
+    --ledger)
+      [ $# -ge 2 ] || die "--ledger needs <ledger>"
+      LOG_LEDGER="$2"; shift ;;
     --tree)
       [ $# -ge 2 ] || die "--tree needs <hash>"
       TREE_ARG="$2"; shift ;;
@@ -963,6 +993,117 @@ PY
     echo "contracts: $OK ok"
     ;;
 
+  log)
+    [ "${#ARGS[@]}" -eq 0 ] || die "log takes no operand"
+    command -v python3 >/dev/null 2>&1 || die "log needs python3"
+    LOG="$ROOT/.ah-out/review/review-log.jsonl"
+    if [ -n "$APPEND" ] || [ "$FAILED_SET" = 1 ]; then
+      [ -z "$APPEND" ] || [ "$FAILED_SET" = 0 ] || die "--append or --failed, not both"
+      if [ -n "$APPEND" ]; then
+        case "$APPEND" in /*) ;; *) APPEND="$CALLER_PWD/$APPEND" ;; esac
+        [ -f "$APPEND" ] || die "no such verdict: $APPEND"
+        # Only a verdict check-verdict reads (to its own tree and task): 0 or 3.
+        VTREE="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("tree_hash", ""))' "$APPEND" 2>/dev/null)"
+        VTASK="$(python3 -c 'import json, sys; t = json.load(open(sys.argv[1])).get("task") or {}; print(t.get("ledger", ""), t.get("id", ""))' "$APPEND" 2>/dev/null)"
+        read -r VL VI <<< "$VTASK"
+        bash "$ROOT/scripts/dev/review.sh" check-verdict "$APPEND" --tree "${VTREE:-none}" --task "${VL:-none}" "${VI:-none}" >/dev/null 2>&1
+        case $? in 0|3) ;; *) die "not a verdict check-verdict reads: $APPEND" ;; esac
+      else
+        [ -n "$FAILED" ] || die "--failed needs a reason"
+        [ -n "$TASK_LEDGER" ] && [ -n "$TASK_ID" ] || die "--failed needs --task <ledger> <id>"
+        case "$ROUND_ARG" in 1|2) ;; *) die "--failed needs --round 1 or 2" ;; esac
+      fi
+      mkdir -p "$(dirname "$LOG")" || die "cannot create $(dirname "$LOG")"
+      python3 - "$LOG" "$APPEND" "$FAILED" "$TASK_LEDGER" "$TASK_ID" "$ROUND_ARG" "$TREE_ARG" "$ROOT" <<'PY' || die "could not write $LOG"
+import datetime, json, os, sys
+
+log, verdict, failed, ledger, tid, rnd, tree, root = sys.argv[1:9]
+now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+if verdict:
+    d = json.load(open(verdict))
+    counts = {k: sum(1 for f in d["findings"] if f["severity"] == k) for k in ("blocker", "wichtig", "nit")}
+    p = d.get("probe") or {}
+    if not p:
+        probe = "none"
+    elif p.get("applicable"):
+        probe = "red" if p.get("red_without_change") is True else "green"
+    else:
+        probe = "n/a: %s" % p.get("reason", "")
+    mutants = d.get("mutants", [])
+    row = {"date": now, "ledger": d["task"]["ledger"], "task": d["task"]["id"], "round": d.get("round"),
+           "model": d["reviewer"]["model"], "effort": d["reviewer"]["effort"], "verdict": d["verdict"],
+           **counts, "probe": probe, "mutants_set": len(mutants),
+           "mutants_killed": sum(1 for m in mutants if m["result"] == "killed"),
+           "cost_usd": d.get("cost_usd"), "num_turns": d.get("num_turns"), "duration_s": d.get("duration_s"),
+           "tree": d["tree_hash"]}
+else:
+    # A failed run: what it cost stands in its raw answer, when there is one.
+    raw = os.path.join(os.path.dirname(log), os.path.basename(ledger)[:-3] if ledger.endswith(".md")
+                       else os.path.basename(ledger), "%s.r%s.raw.json" % (tid, rnd))
+    try:
+        r = json.load(open(raw))
+        r = r if isinstance(r, dict) else {}
+    except (OSError, ValueError):
+        r = {}
+    ms = r.get("duration_ms")
+    row = {"date": now, "ledger": ledger, "task": tid, "round": int(rnd), "model": None, "effort": None,
+           "verdict": "failed", "reason": " ".join(failed.split()), "blocker": 0, "wichtig": 0, "nit": 0,
+           "probe": None, "mutants_set": 0, "mutants_killed": 0, "cost_usd": r.get("total_cost_usd"),
+           "num_turns": r.get("num_turns"),
+           "duration_s": round(ms / 1000, 1) if type(ms) in (int, float) else None, "tree": tree or None}
+# One spelling per ledger, whatever path the close was called with: --ledger
+# filters on it.
+if os.path.isabs(row["ledger"]):
+    row["ledger"] = os.path.relpath(row["ledger"], root)
+with open(log, "a", encoding="utf-8") as f:
+    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+PY
+      exit 0
+    fi
+    if [ -n "$LOG_LEDGER" ]; then
+      case "$LOG_LEDGER" in */*) ;; *) LOG_LEDGER="tasks/$LOG_LEDGER" ;; esac
+      case "$LOG_LEDGER" in *.md) ;; *) LOG_LEDGER="$LOG_LEDGER.md" ;; esac
+    fi
+    python3 - "$LOG" "$LOG_LEDGER" <<'PY'
+import json, os, sys
+
+log, only = sys.argv[1], sys.argv[2]
+rows = []
+try:
+    lines = open(log, encoding="utf-8").read().splitlines()
+except OSError:
+    lines = []
+for n, l in enumerate(lines, 1):
+    try:
+        d = json.loads(l)
+        if not isinstance(d, dict):
+            raise ValueError
+    except ValueError:
+        print("review.sh log: line %d of %s is no JSON object, left out" % (n, log), file=sys.stderr)
+        continue
+    if only and os.path.normpath(str(d.get("ledger"))) != os.path.normpath(only):
+        continue
+    rows.append(d)
+num = lambda v: v if type(v) in (int, float) else 0
+fmt = "%-16s %-22s %-5s %2s %-14s %-15s %-6s %-22s %-5s %7s %5s %6s"
+if rows:
+    print(fmt % ("date", "ledger", "task", "rd", "model/effort", "verdict", "b/w/n", "probe", "mut", "$", "turns", "s"))
+for d in rows:
+    me = "%s/%s" % (d.get("model"), d.get("effort")) if d.get("model") else "-"
+    print(fmt % (str(d.get("date", ""))[:16].replace("T", " "), os.path.basename(str(d.get("ledger")))[:22],
+                 d.get("task"), d.get("round"), me, d.get("verdict"),
+                 "%s/%s/%s" % (d.get("blocker", 0), d.get("wichtig", 0), d.get("nit", 0)), str(d.get("probe") or "-")[:22],
+                 "%s/%s" % (d.get("mutants_killed", 0), d.get("mutants_set", 0)), "%.2f" % num(d.get("cost_usd")),
+                 num(d.get("num_turns")), "%.0f" % num(d.get("duration_s"))))
+    if d.get("verdict") == "failed" and d.get("reason"):
+        print("    failed: %s" % d["reason"])
+by = lambda v: sum(1 for d in rows if d.get("verdict") == v)
+print("%d runs, %d approve, %d request_changes, %d failed, $%.2f, %d turns, %.0f s"
+      % (len(rows), by("approve"), by("request_changes"), by("failed"), sum(num(d.get("cost_usd")) for d in rows),
+         sum(num(d.get("num_turns")) for d in rows), sum(num(d.get("duration_s")) for d in rows)))
+PY
+    ;;
+
   pr-body)
     LEDGER="${ARGS[0]-}"
     [ -n "$LEDGER" ] && [ "${#ARGS[@]}" -eq 1 ] || die "pr-body needs <ledger> (and at most --verdicts <dir>)"
@@ -971,10 +1112,10 @@ PY
     case "$VERDICTS" in ""|/*) ;; *) VERDICTS="$CALLER_PWD/$VERDICTS" ;; esac
     [ -z "$VERDICTS" ] || [ -d "$VERDICTS" ] || die "no such verdict directory: $VERDICTS"
     command -v python3 >/dev/null 2>&1 || die "pr-body needs python3"
-    python3 - "$LEDGER" "$VERDICTS" <<'PY' || die "could not read $LEDGER"
-import ipaddress, json, os, re, sys
+    python3 - "$LEDGER" "$VERDICTS" "$ROOT" <<'PY' || die "could not read $LEDGER"
+import glob, ipaddress, json, os, re, subprocess, sys
 
-ledger, vdir = sys.argv[1], sys.argv[2]
+ledger, vdir, root = sys.argv[1], sys.argv[2], sys.argv[3]
 # This text goes to a public repo (CLAUDE.md: no homelab names): addresses, host
 # names of a private network and VM ids come out of every line it copies.
 # Loopback stays, a file name like settings.local.json stays. A bare host name
@@ -1056,7 +1197,9 @@ out += ["", "### Tasks", ""]
 def verdict(tid):
     if not vdir:
         return None
-    path = os.path.join(vdir, tid + ".json")
+    # The reviewer process writes one file per round; the last round counts.
+    rounds = sorted(glob.glob(os.path.join(glob.escape(vdir), glob.escape(tid) + ".r[0-9].verdict.json")))
+    path = rounds[-1] if rounds else os.path.join(vdir, tid + ".json")
     if not os.path.isfile(path):
         return None
     try:
@@ -1064,9 +1207,33 @@ def verdict(tid):
         r = d.get("reviewer") or {}
         if (d.get("task") or {}).get("id") != tid:
             return "fremd (die Datei gehört zu einer anderen Task)"
-        return clean("%s (%s/%s)" % (d["verdict"], r.get("model", "?"), r.get("effort", "?")))
     except Exception:
         return "unlesbar"
+    # The same check as task-close.sh (R-0151.6), held to the verdict's own tree
+    # and task: a file outside the schema is no verdict, whatever it says.
+    task = d.get("task") or {}
+    cv = subprocess.run(["bash", os.path.join(root, "scripts/dev/review.sh"), "check-verdict", path,
+                         "--tree", str(d.get("tree_hash") or "none"), "--task", str(task.get("ledger") or "none"), tid],
+                        capture_output=True, text=True, cwd=root)
+    err = [l.strip() for l in cv.stderr.strip().splitlines()] or [""]
+    # Exit 2: a head line that ends in a colon has its first detail below it.
+    # Exit 3: the reason is the last line; a blocker counted as nit warns first.
+    why = err[-1] if cv.returncode == 3 else err[0] + (" " + err[1] if err[0].endswith(":") and len(err) > 1 else "")
+    why = why.replace("check-verdict: ", "")
+    if cv.returncode == 2:
+        return clean("ungültig (%s)" % why)
+    if cv.returncode == 0:
+        text = cv.stdout.strip()
+    elif cv.returncode == 3:
+        text = "%s (%s/%s) — kein brauchbares approve: %s" % (d.get("verdict"), r.get("model", "?"), r.get("effort", "?"), why)
+    else:
+        return clean("fremd (%s)" % why)
+    if d.get("round"):
+        text += " · Runde %s" % d["round"]
+    m = d.get("mutants") or []
+    if m:
+        text += " · Mutanten %d gesetzt, %d gekillt" % (len(m), sum(1 for x in m if x.get("result") == "killed"))
+    return clean(text)
 
 
 for t in tasks:

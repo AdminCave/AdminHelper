@@ -179,8 +179,10 @@ Testpfade steht nur dort und in `review.sh`): ohne Testdatei wie bisher `no-test
 `only-test-change`, beides ohne Suite-Lauf; task-close ruft die Probe deshalb bei `--review auto` immer. Die
 Review-Zeile trägt die Runde (`approve (sonnet/high) · round 1`).
 
-### T6 — `review.sh log` und `pr-body` aus dem Log  [ ]
-Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh
+### T6 — `review.sh log` und `pr-body` aus dem Log  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @774c72a9 2026-10-03T14:15:54+02:00
+Review: approve (opus, one round; nits done: an empty --failed reason is refused, pr-body names the refusal rather than a warning, an absolute ledger path is logged repo-relative, review-run's stderr is kept beside the round's files, a header line reflowed)
 Änderung: `review.sh log --append <verdict>` hängt eine JSONL-Zeile an `.ah-out/review/review-log.jsonl` (Felder Spec
 „Design“); `review.sh log [--ledger <l>]` druckt eine Tabelle und eine Summenzeile (`N runs, A approve, R
 request_changes, F failed, $X, T turns, S s`). task-close ruft `--append` nach jeder Runde, auch bei Exit 74 (dann
