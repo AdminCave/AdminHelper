@@ -469,15 +469,21 @@ ohnehin liefert (`None`, `undefined`, `Ok(())`), auch in einer Datei mit CRLF-Ze
 Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Tests folgt und es
 nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
-als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
-(was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
+als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade),
+`review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache), `review.sh contracts` (die Pruefungen, die an
+den geaenderten Pfaden haengen) und `review.sh sec` (was nie ins oeffentliche Repo darf); (4) das Review-Urteil:
+`--review-note "<text>"` oder `--review verdict:<datei>`, die `review.sh check-verdict` gegen Schema und Tree-Hash
+prueft; (5) `ledger.sh
 mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` (sie nennt die gelaufenen
-Komponenten, etwa `run.sh[quick] web desktop-e2e: 2 passed, 0 failed, 16 skipped`) und **ein** Commit
+Komponenten, etwa `run.sh[quick] web desktop-e2e: 2 passed, 0 failed, 16 skipped`, und liefen Vertraege,
+` · contracts: 1 ok`) und **ein** Commit
 mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
 `aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
 `ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
-Eingabefehler, `3` Suite rot oder Diff-Scan-Fund, `4` blockiert (Scope/Sec),
-`74` die Suite konnte gar nicht laufen.
+Eingabefehler (auch ein unlesbares oder schemawidriges Verdict), `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite
+in nur einer Sprache, ein roter Vertrag oder kein brauchbares approve, `4` blockiert (Scope/Sec) oder ein Verdict
+fuer einen anderen Baum,
+`74` die Suite oder ein Vertrags-Test konnte gar nicht laufen.
 
 `ledger.sh start` schreibt dabei `.vm/active-task` — heute reine **Anzeige** (wer arbeitet
 gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, gelesen wird die
@@ -512,6 +518,44 @@ ungestagte Arbeit.
 Seiten. Das dedupliziert aber nichts: legen beide dieselbe Versions-Ueberschrift an, steht
 sie hinterher doppelt im File, ohne Konflikt-Marker. Vor einem Release lohnt der Blick in
 den `Unreleased`-Block (`.claude/rules/release.md`).
+
+### Review-Pruefer (Ebene 0)
+
+Bevor ein Modell einen Diff ansieht, beantworten Skripte die Fragen, die sonst jeder Reviewer
+raten muesste (Stufe 6a; Uebersicht in `docs/developer/cicd.html`, „Review-Pruefer und Verdict"):
+
+```bash
+bash scripts/dev/review.sh risk                           # xhigh + Pfade | standard: welches Reviewer-Modell
+bash scripts/dev/review.sh docs-pairs --staged            # Doku-Seite ohne ihre andere Sprache -> Exit 3
+bash scripts/dev/review.sh contracts --staged [--list]    # die Pruefungen der geaenderten Pfade
+bash scripts/dev/review.sh check-verdict <datei> --tree <hash>   # 0 | 2 | 3 | 4
+bash scripts/dev/review-probe.sh <komponente> [--staged | --commit <rev>] [-- <test>]
+bash scripts/dev/review-probe.sh <komponente> --commit <rev> --mutate <datei>:<zeile> '<ersatz>'
+bash scripts/dev/review.sh pr-body tasks/<slug>.md [--verdicts <dir>]
+```
+
+- **`risk`** misst ohne Flag alles noch nicht Committete (gestaged, ungestaged, untrackt —
+  feature-build fragt es in Schritt 4, bevor etwas gestaged ist), mit `--staged` nur den Index,
+  mit `--range <a>..<b>` einen Bereich. Es liest `scripts/dev/review-risk.txt` (PKI/mTLS, Auth,
+  SSRF, FRP, Wire-Vertraege, Alembic, CI/Release/Install) und `harness-paths.txt`, jeweils so,
+  wie HEAD, Index und Worktree sie haben: ein Diff, der eine Zeile streicht, wird nicht an
+  seiner eigenen Liste gemessen. Eine Verschiebung zaehlt auch mit ihrem alten Pfad.
+- **`contracts`** liest `scripts/dev/review-contracts.txt`: `<glob> test <komponente> <testdatei>`
+  (laeuft als `verify.sh <komponente> --strict -- <testdatei>`, mit eigenem `AH_OUT_DIR`) oder
+  `<glob> pair <regex> <datei> <datei>` (der erste Capture ist in beiden gleich). Die Liste gilt
+  ebenfalls aus HEAD, Index und Worktree. Wer das Format einer Paar-Stelle aendert, geht deshalb
+  in zwei Schritten: erst ein Regex, der beide Schreibweisen nimmt, dann das neue Format.
+- **`check-verdict`** prueft ein Reviewer-Urteil gegen `scripts/dev/review-verdict.schema.json`
+  (nur mit python3): kein approve mit einem `blocker`, keins, wenn die Probe den neuen Test ohne
+  die Aenderung gruen fand; ein `blocker` ohne Beleg zaehlt als `nit`.
+- **`review-probe.sh`** legt eine eigene Worktree unter dem `TMPDIR` des Aufrufers an, setzt nur
+  die Test-Hunks auf die Basis und faehrt `verify.sh --tree`; die Antwort ist der `probe`-Block
+  des Schemas (`red_without_change`, oder `applicable: false` mit `new-symbol`, `toolchain`,
+  `no-test-change`, `apply-failed`, `other-failure`). `--mutate` setzt genau einen Mutanten in die
+  ganze Aenderung (eine Datei der Worktree, sonst Exit 2); der Ersatz muss lint-sauber sein.
+- **`pr-body`** schreibt den PR-Text aus dem Ledger; eine Task ohne Evidenz heisst
+  „unverifiziert", Adressen, Hostnamen privater Netze und VMIDs fallen heraus. Wo Verdict-Dateien
+  liegen, legt Stufe 6b fest, bis dahin `--verdicts <dir>`.
 
 ### Die Roadmap als Skript: `roadmap.py`
 

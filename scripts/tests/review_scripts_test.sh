@@ -1386,10 +1386,405 @@ for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
   fi
 done
 
+# ══ check-verdict (stage 6a) ══════════════════════════════════════════════════
+echo "── check-verdict ──"
+cp "$REPO_ROOT/scripts/dev/review-verdict.schema.json" "$FIX/scripts/dev/review-verdict.schema.json"
+VT=0123456789abcdef0123456789abcdef01234567
+# vjson '<python statement on d>' — a valid approve verdict for tree $VT, changed
+# by the statement, written to $WORK/v.json.
+vjson() {
+  python3 - "$WORK/v.json" "$VT" "${1:-pass}" <<'PY'
+import json, sys
+d = {"schema_version": 1, "task": {"ledger": "tasks/fix.md", "id": "T1"}, "tree_hash": sys.argv[2],
+     "reviewer": {"model": "opus", "effort": "high"}, "verdict": "approve", "findings": [],
+     "probe": {"applicable": True, "reason": "", "red_without_change": True}}
+exec(sys.argv[3])
+json.dump(d, open(sys.argv[1], "w"))
+PY
+}
+cv() { r check-verdict "$WORK/v.json" --tree "$VT"; }
+BLOCKER='{"severity": "blocker", "file": "a.py", "line": 3, "claim": "breaks", "evidence": "x=1 gives 2"}'
+
+vjson; cv
+[ $rc -eq 0 ] && grep -q '^approve (opus' <<<"$OUT" && ok "a valid approve -> 0, names the reviewer" \
+  || bad "valid approve: rc=$rc out=$OUT"
+vjson 'd["probe"]["red_without_change"] = False'; cv
+[ $rc -eq 3 ] && ok "approve although the test is green without the change -> 3" || bad "probe green: rc=$rc out=$OUT"
+vjson 'd["probe"] = {"applicable": False, "reason": "toolchain", "red_without_change": None}'; cv
+[ $rc -eq 0 ] && ok "approve with a probe that did not apply -> 0" || bad "probe n/a: rc=$rc out=$OUT"
+vjson "d['findings'] = [$BLOCKER]"; cv
+[ $rc -eq 3 ] && ok "approve with a blocker -> 3" || bad "approve+blocker: rc=$rc out=$OUT"
+vjson "d['findings'] = [$BLOCKER]; d['findings'][0]['evidence'] = ' '"; cv
+[ $rc -eq 0 ] && grep -q 'counted as nit' <<<"$OUT" && grep -q '1 nit' <<<"$OUT" \
+  && ok "a blocker without evidence counts as a nit, the approve stands" || bad "blocker w/o evidence: rc=$rc out=$OUT"
+vjson "d['findings'] = [$BLOCKER]; del d['findings'][0]['evidence']"; cv
+[ $rc -eq 0 ] && grep -q 'counted as nit' <<<"$OUT" \
+  && ok "the same with no evidence field at all" || bad "blocker no evidence field: rc=$rc out=$OUT"
+vjson 'd["tree_hash"] = "f" * 40'; cv
+[ $rc -eq 4 ] && ok "a verdict for another tree -> 4" || bad "foreign tree: rc=$rc out=$OUT"
+vjson 'd["verdict"] = "request_changes"'; cv
+[ $rc -eq 3 ] && ok "request_changes -> 3" || bad "request_changes: rc=$rc out=$OUT"
+vjson 'd["verdict"] = "needs_decision"'; cv
+[ $rc -eq 3 ] && ok "needs_decision -> 3" || bad "needs_decision: rc=$rc out=$OUT"
+for change in 'del d["task"]' 'del d["reviewer"]["effort"]' 'd["verdict"] = "fine"' \
+    "d['findings'] = [$BLOCKER]; d['findings'][0]['severity'] = 'major'" \
+    "d['findings'] = [$BLOCKER]; d['findings'][0]['evidance'] = 'typo'" \
+    'd["schema_version"] = 2' 'd["tree_hash"] = "HEAD"' 'd["probe"]["applicable"] = "yes"' \
+    'd["task"]["id"] = "T1\n"'; do
+  vjson "$change"; cv
+  [ $rc -eq 2 ] && ok "schema violation -> 2: $change" || bad "schema violation not caught ($change): rc=$rc out=$OUT"
+done
+printf 'not json\n' > "$WORK/v.json"; cv
+[ $rc -eq 2 ] && ok "an unreadable verdict -> 2" || bad "unreadable: rc=$rc out=$OUT"
+vjson; r check-verdict "$WORK/v.json"
+[ $rc -eq 2 ] && ok "no --tree -> 2" || bad "missing --tree: rc=$rc out=$OUT"
+r check-verdict "$WORK/nosuch.json" --tree "$VT"
+[ $rc -eq 2 ] && ok "a missing file -> 2" || bad "missing file: rc=$rc out=$OUT"
+vjson; OUT=$(cd "$WORK" && bash "$REVIEW" check-verdict v.json --tree "$VT" 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "a relative path is read from the caller's directory" || bad "relative path: rc=$rc out=$OUT"
+python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$REPO_ROOT/scripts/dev/review-verdict.schema.json" 2>/dev/null \
+  && ok "the schema is valid JSON" || bad "the schema does not parse"
+grep -qxF 'scripts/dev/review-verdict.schema.json' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
+  && ok "the schema is a harness path" || bad "the schema is missing from harness-paths.txt"
+
+# ══ risk (stage 6a) ═══════════════════════════════════════════════════════════
+echo "── risk ──"
+# reset_index cleans untracked files, the copied list among them.
+rreset() { reset_index; cp "$REPO_ROOT/scripts/dev/review-risk.txt" "$FIX/scripts/dev/review-risk.txt"; }
+# put <path>… — a changed file at each path, staged.
+put() { local f; for f in "$@"; do mkdir -p "$(dirname "$FIX/$f")"; echo "x $RANDOM" >> "$FIX/$f"; stage "$f"; done; }
+rreset; put apps/monitoring/app/alerter.py; r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/monitoring/app/alerter.py' <<<"$OUT" \
+  && ok "alerter.py -> xhigh, the path named" || bad "alerter: rc=$rc out=$OUT"
+rreset; put docs/admin/benutzer.html; r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "a docs page alone -> standard" || bad "docs: rc=$rc out=$OUT"
+rreset; put scripts/dev/task-close.sh; r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "a harness path -> xhigh (harness-paths.txt counts)" || bad "harness path: rc=$rc out=$OUT"
+rreset; put "docs/a b.html" apps/server/alembic/versions/0042_x.py; r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/server/alembic/versions/0042_x.py' <<<"$OUT" \
+  && ! grep -q 'a b' <<<"$OUT" && ok "a path with a space breaks nothing" || bad "space: rc=$rc out=$OUT"
+rreset; put "docs/a b.html"; r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "a path with a space alone -> standard" || bad "space alone: rc=$rc out=$OUT"
+rreset; put apps/agent/internal/httpclient/httpclient.go; r risk --staged
+[ $rc -eq 0 ] && grep -qx '  apps/agent/internal/httpclient/httpclient.go' <<<"$OUT" \
+  && ok "the agent's cert pinning is a risk path" || bad "httpclient: rc=$rc out=$OUT"
+rreset; echo 'apps/agent/internal/newdir/' >> "$FIX/scripts/dev/review-risk.txt"; put apps/agent/internal/newdir/x.go
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  apps/agent/internal/newdir/x.go' <<<"$OUT" \
+  && ok "an entry ending in / is a directory prefix" || bad "dir entry: rc=$rc out=$OUT"
+rreset; put apps/server/app/modules/hosts/schemas.py apps/server/app/modules/hosts/router.py; r risk --staged
+[ $rc -eq 0 ] && [ "$(sed -n '2,$p' <<<"$OUT")" = '  apps/server/app/modules/hosts/schemas.py' ] \
+  && ok "only the risky one of two paths is named" || bad "two paths: rc=$rc out=$OUT"
+# Without a flag, risk sees everything not committed yet: staged, unstaged and
+# untracked — at the review step nothing is staged, and a new migration is a
+# risk path before anyone stages it. --staged sees the index alone.
+# The fixture's copied review-risk.txt is itself an untracked harness path, so
+# xhigh alone proves nothing here: the staged path has to be named.
+rreset; put apps/monitoring/app/alerter.py; r risk
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/monitoring/app/alerter.py' <<<"$OUT" \
+  && ok "without a flag a staged risk path counts" \
+  || bad "staged, no flag: rc=$rc out=$OUT"
+rreset; mkdir -p "$FIX/apps/server/alembic/versions"; echo "rev" > "$FIX/apps/server/alembic/versions/0099_new.py"
+r risk
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/server/alembic/versions/0099_new.py' <<<"$OUT" \
+  && ok "without a flag an untracked file under a risk path -> xhigh" || bad "untracked: rc=$rc out=$OUT"
+r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "--staged does not see the untracked file" || bad "untracked staged: rc=$rc out=$OUT"
+rreset; put apps/monitoring/app/alerter.py; git -C "$FIX" commit -qm "alerter" >/dev/null
+echo "edit" >> "$FIX/apps/monitoring/app/alerter.py"; r risk
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/monitoring/app/alerter.py' <<<"$OUT" \
+  && ok "without a flag an unstaged edit of a tracked risk file -> xhigh" || bad "unstaged edit: rc=$rc out=$OUT"
+r risk --staged
+[ $rc -eq 0 ] && [ "$OUT" = standard ] && ok "--staged does not see the unstaged edit" || bad "unstaged staged: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+# A move out of a risk path counts by where it came from.
+rreset; put apps/server/app/core/auth.py; git -C "$FIX" commit -qm "auth" >/dev/null
+mkdir -p "$FIX/apps/server/app/hosts"
+git -C "$FIX" mv apps/server/app/core/auth.py apps/server/app/hosts/login.py
+echo "edit" >> "$FIX/apps/server/app/hosts/login.py"; stage apps/server/app/hosts/login.py
+r risk --staged
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && grep -qx '  apps/server/app/core/auth.py' <<<"$OUT" \
+  && ok "a move out of a risk path -> xhigh, the old path named" || bad "rename: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+# The lists are judged as HEAD has them too: a diff that strikes its own line
+# from them, or the whole harness list, does not judge itself by that.
+rreset; put scripts/dev/task-close.sh
+grep -vxF 'scripts/dev/task-close.sh' "$FIX/scripts/dev/harness-paths.txt" > "$WORK/hp" \
+  && cat "$WORK/hp" > "$FIX/scripts/dev/harness-paths.txt"; stage scripts/dev/harness-paths.txt
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "a line struck in the same diff still counts" || bad "struck line: rc=$rc out=$OUT"
+rreset; put scripts/dev/task-close.sh; git -C "$FIX" rm -q scripts/dev/harness-paths.txt
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "the harness list removed in the same diff still counts" || bad "removed list: rc=$rc out=$OUT"
+rreset; put scripts/dev/task-close.sh
+grep -vxF 'scripts/dev/task-close.sh' "$FIX/scripts/dev/harness-paths.txt" > "$WORK/hp" \
+  && cat "$WORK/hp" > "$FIX/scripts/dev/harness-paths.txt"
+r risk --staged
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "an unstaged edit of the list does not take a line away" || bad "unstaged list edit: rc=$rc out=$OUT"
+# A name git would quote is still a name.
+rreset; put 'apps/server/alembic/versions/0042_"x".py'; r risk --staged
+[ $rc -eq 0 ] && grep -qxF '  apps/server/alembic/versions/0042_"x".py' <<<"$OUT" \
+  && ok "a name git quotes is matched as it is" || bad "quoted name: rc=$rc out=$OUT"
+rreset; put apps/gateway/nginx.conf; git -C "$FIX" commit -qm "gateway" >/dev/null
+r risk --range HEAD~1..HEAD
+[ $rc -eq 0 ] && [ "$(head -1 <<<"$OUT")" = xhigh ] && ok "--range reads a commit range" || bad "range: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+rreset
+# A range judges by the lists its start had: a commit that strikes its own line
+# from harness-paths.txt does not read as standard.
+rreset; put scripts/dev/task-close.sh
+grep -vxF 'scripts/dev/task-close.sh' "$FIX/scripts/dev/harness-paths.txt" > "$WORK/hp" \
+  && cat "$WORK/hp" > "$FIX/scripts/dev/harness-paths.txt"; stage scripts/dev/harness-paths.txt
+git -C "$FIX" commit -qm "strike" >/dev/null
+r risk --range HEAD~1..HEAD
+[ $rc -eq 0 ] && grep -qx '  scripts/dev/task-close.sh' <<<"$OUT" \
+  && ok "a range judges by the lists of its start" || bad "range list: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+rreset
+r risk --range HEAD
+[ $rc -eq 2 ] && ok "a range without .. -> 2" || bad "range without ..: rc=$rc out=$OUT"
+r risk --range nosuch..HEAD
+[ $rc -eq 2 ] && ok "a range git cannot read -> 2" || bad "bad range: rc=$rc out=$OUT"
+r risk --staged --range HEAD~1..HEAD
+[ $rc -eq 2 ] && ok "--staged and --range together -> 2" || bad "staged+range: rc=$rc out=$OUT"
+r risk --range --staged
+[ $rc -eq 2 ] && ok "a range that is a flag -> 2" || bad "flag as range: rc=$rc out=$OUT"
+r risk extra
+[ $rc -eq 2 ] && ok "risk takes no operand -> 2" || bad "operand: rc=$rc out=$OUT"
+r diff-scan --range HEAD~1..HEAD
+[ $rc -eq 2 ] && ok "--range belongs to risk alone -> 2" || bad "range on diff-scan: rc=$rc out=$OUT"
+# The list in the real repo: every line matches something that exists, so a
+# rename cannot quietly drop a risk path out of it.
+while IFS= read -r pat; do
+  case "$pat" in ''|'#'*) continue ;; esac
+  # shellcheck disable=SC2086  # the pattern IS a glob
+  compgen -G "$REPO_ROOT/$pat" >/dev/null && ok "risk path exists: $pat" || bad "risk path matches nothing: $pat"
+done < "$REPO_ROOT/scripts/dev/review-risk.txt"
+grep -qxF 'scripts/dev/review-risk.txt' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
+  && ok "the risk list is a harness path" || bad "review-risk.txt is missing from harness-paths.txt"
+
+# ══ docs-pairs (stage 6a) ═════════════════════════════════════════════════════
+echo "── docs-pairs ──"
+# page <path> <active href> <other href> — a docs page with the lang-switch of the real ones.
+page() {
+  mkdir -p "$(dirname "$FIX/$1")"
+  printf '<html><body>\n<div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="%s" class="is-active">A</a><a href="%s">B</a></div></div>\n<p>%s</p>\n</body></html>\n' \
+    "$2" "$3" "$RANDOM" > "$FIX/$1"
+}
+reset_index
+page docs/admin/benutzer.html ./benutzer.html ../en/admin/users.html
+page docs/en/admin/users.html ./users.html ../../admin/benutzer.html
+printf '<html><body><p>no switch</p></body></html>\n' > "$FIX/docs/plain.html"
+mkdir -p "$FIX/docs/features"; printf '# x\n' > "$FIX/docs/features/x.md"
+git -C "$FIX" add -A docs && git -C "$FIX" commit -qm "docs pair" >/dev/null
+echo "<p>more</p>" >> "$FIX/docs/admin/benutzer.html"; stage docs/admin/benutzer.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/admin/benutzer.html -> docs/en/admin/users.html' <<<"$OUT" \
+  && ok "a German page without its English one -> 3, the pair named" || bad "one-sided de: rc=$rc out=$OUT"
+echo "<p>more</p>" >> "$FIX/docs/en/admin/users.html"; stage docs/en/admin/users.html
+r docs-pairs --staged
+[ $rc -eq 0 ] && ok "the pair together -> 0" || bad "pair: rc=$rc out=$OUT"
+reset_index; echo "<p>more</p>" >> "$FIX/docs/en/admin/users.html"; stage docs/en/admin/users.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/en/admin/users.html -> docs/admin/benutzer.html' <<<"$OUT" \
+  && ok "the English side alone -> 3" || bad "one-sided en: rc=$rc out=$OUT"
+reset_index; echo more >> "$FIX/docs/features/x.md"; stage docs/features/x.md
+r docs-pairs --staged
+[ $rc -eq 0 ] && ok "a feature spec (no html) -> 0" || bad "features md: rc=$rc out=$OUT"
+reset_index; echo "<p>more</p>" >> "$FIX/docs/plain.html"; stage docs/plain.html
+r docs-pairs --staged
+[ $rc -eq 0 ] && ok "a page without a lang-switch -> 0" || bad "plain page: rc=$rc out=$OUT"
+reset_index; git -C "$FIX" rm -q docs/admin/benutzer.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/admin/benutzer.html -> docs/en/admin/users.html' <<<"$OUT" \
+  && ok "a page deleted alone -> 3 (its switch read from HEAD)" || bad "deleted page: rc=$rc out=$OUT"
+reset_index; page docs/new.html ./new.html en/new.html; stage docs/new.html
+r docs-pairs --staged
+[ $rc -eq 3 ] && grep -qF 'docs/new.html -> docs/en/new.html' <<<"$OUT" \
+  && ok "a new page without its other language -> 3" || bad "new page: rc=$rc out=$OUT"
+reset_index; echo "<p>more</p>" >> "$FIX/docs/admin/benutzer.html"
+r docs-pairs
+[ $rc -eq 3 ] && ok "without --staged the worktree diff counts" || bad "unstaged: rc=$rc out=$OUT"
+reset_index; r docs-pairs extra
+[ $rc -eq 2 ] && grep -q 'takes no operand' <<<"$OUT" && ok "docs-pairs takes no operand -> 2" || bad "operand: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1; reset_index
+
+# ══ contracts (stage 6a) ══════════════════════════════════════════════════════
+echo "── contracts ──"
+# reset_index cleans untracked files: the list and the fake verify.sh come back each time.
+creset() {
+  reset_index
+  cp "$REPO_ROOT/scripts/dev/review-contracts.txt" "$FIX/scripts/dev/review-contracts.txt"
+  # A fake verify.sh: records how it was called and where its artifact would go,
+  # exits with FIXTURE_CONTRACT_RC.
+  cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
+#!/usr/bin/env bash
+echo "$* | ${AH_OUT_DIR:-unset}" >> "${CONTRACT_CALLS:?}"
+exit "${FIXTURE_CONTRACT_RC:-0}"
+FAKE
+}
+export CONTRACT_CALLS="$WORK/contract-calls"
+creset; put apps/monitoring/app/check_types.py; : > "$CONTRACT_CALLS"; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'test monitoring tests/test_push_only_ui_sync.py' <<<"$OUT" && [ ! -s "$CONTRACT_CALLS" ] \
+  && ok "check_types.py -> --list names test_push_only_ui_sync.py, runs nothing" || bad "list: rc=$rc out=$OUT"
+: > "$CONTRACT_CALLS"; r contracts --staged
+[ $rc -eq 0 ] && grep -qF 'monitoring --strict -- tests/test_push_only_ui_sync.py' "$CONTRACT_CALLS" \
+  && grep -q 'contracts: 1 ok' <<<"$OUT" && ok "the test runs through verify.sh <component> --strict -- <test>" \
+  || bad "run: rc=$rc out=$OUT calls=$(cat "$CONTRACT_CALLS")"
+dir="$(sed 's/.* | //' "$CONTRACT_CALLS")"
+[ -n "$dir" ] && [ "$dir" != unset ] && [ "$dir" != "$FIX/.ah-out" ] && [ ! -e "$dir" ] \
+  && ok "with an AH_OUT_DIR of its own, gone afterwards (the builder's last-verify.json stays)" || bad "out dir: $dir"
+FIXTURE_CONTRACT_RC=1 r contracts --staged
+[ $rc -eq 3 ] && grep -qF 'test_push_only_ui_sync.py' <<<"$OUT" && ok "a red contract test -> 3" || bad "red test: rc=$rc out=$OUT"
+FIXTURE_CONTRACT_RC=74 r contracts --staged
+[ $rc -eq 74 ] && grep -q 'could not run' <<<"$OUT" && ok "a contract test that could not run -> 74, never green" \
+  || bad "unrun test: rc=$rc out=$OUT"
+# The FRP pin of the VM bootstrap is held to ci.yml, in its own spelling.
+creset; mkdir -p "$FIX/.github/workflows" "$FIX/scripts/vm"
+printf 'env:\n  FRP_VERSION: "0.69.1"\n' > "$FIX/.github/workflows/ci.yml"
+printf 'FRP_VERSION="${AH_FRP_VERSION:-0.70.0}"\n' > "$FIX/scripts/vm/bootstrap_linux.sh"
+stage .github/workflows/ci.yml scripts/vm/bootstrap_linux.sh; r contracts --staged
+[ $rc -eq 3 ] && grep -q '0.70.0' <<<"$OUT" && ok "an FRP pin drifting in the VM bootstrap -> 3" || bad "frp bootstrap: rc=$rc out=$OUT"
+creset; mkdir -p "$FIX/scripts"
+printf 'MINISIGN_PUBKEY="RWA"\n' > "$FIX/scripts/install.sh"; printf 'MINISIGN_PUBKEY="RWB"\n' > "$FIX/scripts/update.sh"
+stage scripts/install.sh scripts/update.sh; : > "$CONTRACT_CALLS"; r contracts --staged
+[ $rc -eq 3 ] && grep -q 'RWA' <<<"$OUT" && grep -q 'RWB' <<<"$OUT" && [ ! -s "$CONTRACT_CALLS" ] \
+  && ok "a pair with two values -> 3, both named, no suite" || bad "pair drift: rc=$rc out=$OUT"
+printf 'MINISIGN_PUBKEY="RWA"\n' > "$FIX/scripts/update.sh"; stage scripts/update.sh; r contracts --staged
+[ $rc -eq 0 ] && ok "the same pair in step -> 0" || bad "pair ok: rc=$rc out=$OUT"
+printf 'MINISIGN_PUBKEY="RWC"\n' > "$FIX/scripts/update.sh"; r contracts --staged
+[ $rc -eq 0 ] && ok "--staged compares what is staged, not the worktree" || bad "pair staged: rc=$rc out=$OUT"
+creset; printf 'MINISIGN_PUBKEY="RWA"\n' > "$FIX/scripts/install.sh"; stage scripts/install.sh; r contracts --staged
+[ $rc -eq 3 ] && grep -q 'scripts/update.sh' <<<"$OUT" && ok "a pair whose other file is gone -> 3" || bad "pair missing: rc=$rc out=$OUT"
+creset; put apps/desktop/ui/src/lib/models/monitoring.ts; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'test_push_only_ui_sync.py' <<<"$OUT" \
+  && ok "the UI copy of the push-only list pulls in the sync test too" || bad "ui side: rc=$rc out=$OUT"
+creset; echo 'apps/desktop/ui/src/lib/newdir/ test monitoring tests/test_new.py' >> "$FIX/scripts/dev/review-contracts.txt"
+put apps/desktop/ui/src/lib/newdir/y.ts; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'tests/test_new.py' <<<"$OUT" && ok "a contract glob ending in / is a directory prefix" \
+  || bad "contract dir: rc=$rc out=$OUT"
+creset; put apps/web/src/x.ts; : > "$CONTRACT_CALLS"; r contracts --staged
+[ $rc -eq 0 ] && [ "$OUT" = "contracts: none" ] && [ ! -s "$CONTRACT_CALLS" ] \
+  && ok "nothing hit -> 0, nothing run" || bad "none: rc=$rc out=$OUT"
+# A diff that strikes its own contract line is still held to it.
+creset; git -C "$FIX" add scripts/dev/review-contracts.txt && git -C "$FIX" commit -qm "list" >/dev/null
+grep -v 'check_types' "$FIX/scripts/dev/review-contracts.txt" > "$WORK/rc" && cat "$WORK/rc" > "$FIX/scripts/dev/review-contracts.txt"
+stage scripts/dev/review-contracts.txt; put apps/monitoring/app/check_types.py; r contracts --staged --list
+[ $rc -eq 0 ] && grep -qF 'test_push_only_ui_sync.py' <<<"$OUT" && ok "a contract struck in the same diff still holds" \
+  || bad "struck contract: rc=$rc out=$OUT"
+git -C "$FIX" reset -q --hard HEAD~1
+creset; r contracts extra
+[ $rc -eq 2 ] && grep -q 'takes no operand' <<<"$OUT" && ok "contracts takes no operand -> 2" || bad "operand: rc=$rc out=$OUT"
+reset_index; rm -f "$FIX/scripts/dev/verify.sh"
+# The list in the real repo: every test file exists, and every pair holds today.
+python3 - "$REPO_ROOT" <<'PY' && ok "every contract of the real list exists and holds" || bad "the real contract list is stale"
+import os, re, sys
+root = sys.argv[1]
+bad = 0
+for line in open(os.path.join(root, "scripts/dev/review-contracts.txt")):
+    w = line.split()
+    if not w or w[0].startswith("#"):
+        continue
+    if w[1] == "test":
+        p = os.path.join(root, "apps", w[2], w[3])
+        if not os.path.isfile(p):
+            print("  no such test: " + p); bad = 1
+    elif w[1] == "pair":
+        vals = []
+        for f in w[3:5]:
+            m = re.search(w[2], open(os.path.join(root, f)).read(), re.M)
+            vals.append(m.group(1) if m else None)
+        if None in vals or vals[0] != vals[1]:
+            print("  pair does not hold: %s %s" % (line.strip(), vals)); bad = 1
+    else:
+        print("  unknown kind: " + line.strip()); bad = 1
+sys.exit(bad)
+PY
+grep -qxF 'scripts/dev/review-contracts.txt' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
+  && ok "the contract list is a harness path" || bad "review-contracts.txt is missing from harness-paths.txt"
+
+# ══ pr-body (stage 6a) ════════════════════════════════════════════════════════
+echo "── pr-body ──"
+reset_index
+cat > "$WORK/pr.md" <<'MD'
+# Fixture-Vorhaben — Task-Ledger
+Status: bereit · Branch: harness/fixture · Review: pro Task
+Spec: docs/features/fixture.md (Roadmap R-0999)
+Heavy: none — nur Skripte
+### T1 — die erste Aufgabe  [x]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @abc1234 2026-10-02T10:00:00+02:00 on 192.168.10.20
+Review: approve (opus) — probe on pve1.lan, VMID 3012
+Änderung: irgendwas
+### T2 — die zweite Aufgabe  [x]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Review: approve (sonnet)
+### T3 — die dritte Aufgabe  [?] (soll das so bleiben?)
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+### T4 — die vierte Aufgabe  [~] (schon erledigt in T1)
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+### T5 — die fünfte Aufgabe  [x]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Evidenz: run.sh[quick] scripts: 7 passed, 0 failed, 11 skipped @def5678 2026-10-02T11:00:00+02:00
+Review: approve (opus)
+### T6 — die sechste Aufgabe  [x] **verifiziert** (auf der Box)
+Evidenz: run.sh[quick] scripts: 9 passed, 0 failed, 0 skipped via fd12:3456:789a::10 and [fe80::1]:22, Template **3901**, pve.home.arpa, nas.fritz.box, net 192.168.1.x and 10.0.0.*, VM-ID 3013, Template 3904 und 3905, net 172.16.x.x.
+Review: approve (sonnet) — reads .claude/settings.local.json on 127.0.0.1, IP:10.250.0.12, dns:2001:db8::1, auf box.lan. VMs 3902
+### T7 — die siebte Aufgabe
+### Ergebnis des Laufs
+Evidenz: run.sh[quick] scripts: 99 passed, 0 failed, 0 skipped
+MD
+mkdir -p "$WORK/verdicts"
+printf '{"schema_version":1,"task":{"ledger":"x","id":"T5"},"tree_hash":"%040d","reviewer":{"model":"opus","effort":"high"},"verdict":"approve","findings":[]}\n' 0 \
+  > "$WORK/verdicts/T5.json"
+printf '{"verdict":"approve","reviewer":{"model":"opus","effort":"high"}}\n' > "$WORK/verdicts/T2.json"
+r pr-body "$WORK/pr.md" --verdicts "$WORK/verdicts"
+[ $rc -eq 0 ] && ok "pr-body -> 0" || bad "pr-body: rc=$rc out=$OUT"
+grep -q 'docs/features/fixture.md' <<<"$OUT" && grep -q 'R-0999' <<<"$OUT" && grep -qF '**Heavy:** none' <<<"$OUT" \
+  && ok "the head: spec, roadmap id, heavy line" || bad "head: $OUT"
+grep -q 'T1 — die erste Aufgabe' <<<"$OUT" && grep -q 'run.sh\[quick\] scripts: 6 passed' <<<"$OUT" \
+  && ok "a task with its evidence line" || bad "evidence: $OUT"
+t2="$(grep 'T2 — ' <<<"$OUT")"
+grep -q 'unverifiziert' <<<"$t2" && ! grep -qi 'approve' <<<"$(sed -n '/T2 — /,/T[3-9] — /p' <<<"$OUT")" \
+  && ok "a task without evidence reads unverifiziert, never approve (not even with a verdict file)" || bad "T2: $OUT"
+grep -q 'Verdict: approve (opus/high)' <<<"$OUT" && ok "a verdict file adds its verdict and model" || bad "verdict: $OUT"
+grep -q '^### Offene Fragen' <<<"$OUT" && grep -q 'T3 — die dritte Aufgabe.*soll das so bleiben' <<<"$OUT" \
+  && ok "a [?] task stands in its own section, with the question" || bad "[?]: $OUT"
+grep -q '^### Übersprungen' <<<"$OUT" && grep -q 'T4 — die vierte Aufgabe.*schon erledigt' <<<"$OUT" \
+  && ok "a [~] task stands in its own section, with the reason" || bad "[~]: $OUT"
+! grep -qE '192\.168|pve1\.lan|3012|fd12:|fe80|3901|10\.250|2001:db8|box\.lan|3902|home\.arpa|fritz\.box|10\.0\.0|3013|3904|3905|172\.16' <<<"$OUT" \
+  && ok "no address (v4, v6 compressed or bracketed, behind a word:), host name (also at a sentence end) or VMID" \
+  || bad "leak: $OUT"
+grep -qF '.claude/settings.local.json on 127.0.0.1' <<<"$OUT" \
+  && ok "a file name with .local and the loopback address stay" || bad "over-scrub: $OUT"
+t6="$(sed -n '/T6 — /,/^- /p' <<<"$OUT")"
+grep -q '9 passed' <<<"$t6" && ! grep -q '99 passed' <<<"$OUT" && ! grep -q '9 passed' <<<"$(sed -n '/T5 — /,/T6 — /p' <<<"$OUT" | sed '$d')" \
+  && ok "every ### heading ends a task: a note after the box is read, a section's lines belong to none" || bad "sections: $OUT"
+grep -q 'T7 — die siebte Aufgabe.*unlesbar' <<<"$OUT" && ok "a task heading without a box reads unlesbar" || bad "no box: $OUT"
+printf '{"schema_version":1,"task":{"ledger":"x","id":"T9"},"reviewer":{"model":"opus","effort":"high"},"verdict":"approve","findings":[]}\n' \
+  > "$WORK/verdicts/T1.json"
+r pr-body "$WORK/pr.md" --verdicts "$WORK/verdicts"
+grep -q 'Verdict: fremd' <<<"$(sed -n '/T1 — /,/T2 — /p' <<<"$OUT")" \
+  && ok "a verdict file of another task reads fremd" || bad "foreign verdict: $OUT"
+r pr-body "$WORK/nosuch.md"
+[ $rc -eq 2 ] && ok "a missing ledger -> 2" || bad "missing ledger: rc=$rc out=$OUT"
+r pr-body
+[ $rc -eq 2 ] && grep -q 'pr-body needs' <<<"$OUT" && ok "no ledger -> 2" || bad "no ledger: rc=$rc out=$OUT"
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
   && ok "task-close.sh hands diff-scan the task" || bad "task-close.sh calls diff-scan without --task"
+grep -qF 'review.sh contracts --staged' "$REPO_ROOT/scripts/dev/task-close.sh" \
+  && ok "task-close.sh runs the contracts" || bad "task-close.sh does not run the contracts"
+grep -qF 'review.sh docs-pairs --staged' "$REPO_ROOT/scripts/dev/task-close.sh" \
+  && ok "task-close.sh runs docs-pairs" || bad "task-close.sh does not run docs-pairs"
+grep -qF 'review.sh check-verdict "$VJSON" --tree "$TREE_HASH"' "$REPO_ROOT/scripts/dev/task-close.sh" \
+  && ok "task-close.sh delegates the verdict to check-verdict" || bad "task-close.sh checks the verdict itself"
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'review_scripts_test' \
   && ok "review_scripts_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 

@@ -92,7 +92,10 @@ Gib strukturiert zurück:
 - Nach grünen Schnelltests, **vor** dem Commit einer Einheit: Reviewer (frischer Kontext)
   laufen lassen.
 - `approve` → committen.
-- `request_changes` mit `blocker`/`wichtig` → Punkte beheben, betroffene Schnelltests erneut,
-  **einmal** re-reviewen; danach: gelöst → committen; braucht Entscheidung → `[?]` in den
-  Ledger, nicht raten. Max. 2 Review-Runden pro Einheit, dann committen oder STOPP.
-- `nit`-Punkte optional gleich miterledigen, aber nie blockierend.
+- **Eine Runde ist die Regel** (Kevin, 2026-10-02; die Fassung in feature-build Schritt 4 gilt).
+- `request_changes` mit einem `blocker` oder einem **belegten** `wichtig` → Punkte beheben,
+  betroffene Schnelltests erneut, **einmal** re-reviewen; danach: gelöst → committen; braucht
+  Entscheidung → `[?]` in den Ledger, nicht raten. Max. 2 Review-Runden pro Einheit: belegte
+  Funde der zweiten Runde mit den Fällen des Reviewers als Tests beheben, keine dritte Runde;
+  sonst committen oder STOPP.
+- `nit`-Punkte blockieren nie: in derselben Runde ohne Re-Review miterledigen oder liegen lassen.

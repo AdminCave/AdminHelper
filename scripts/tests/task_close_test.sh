@@ -42,7 +42,7 @@ CLOSE="$FIX/scripts/dev/task-close.sh"
 SKELETON=(scripts/dev scripts/tests apps/server/app apps/server/tests docs tasks/private .ah-out)
 mkskel() { local d; for d in "${SKELETON[@]}"; do mkdir -p "$FIX/$d"; done; }
 mkskel
-for f in task-close.sh ledger.sh review.sh tree-hash.sh; do
+for f in task-close.sh ledger.sh review.sh tree-hash.sh review-verdict.schema.json review-contracts.txt; do
   cp "$REPO_ROOT/scripts/dev/$f" "$FIX/scripts/dev/$f"
 done
 
@@ -51,14 +51,18 @@ done
 cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
 #!/usr/bin/env bash
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-mkdir -p "$root/.ah-out"
-echo "$*" > "$root/.ah-out/verify-called.txt"
+# A contract run (review.sh contracts) is the one call with an AH_OUT_DIR of its
+# own — the closer's run has none here; FIXTURE_CONTRACT_RC decides it.
+[ -z "${AH_OUT_DIR:-}" ] || exit "${FIXTURE_CONTRACT_RC:-0}"
+out="$root/.ah-out"
+mkdir -p "$out"
+echo "$*" > "$out/verify-called.txt"
 # FIXTURE_INJECT: text the "suite" writes into the ledger while it runs — the
 # builder's test code between the closer's first look and its commit.
 [ -z "${FIXTURE_INJECT:-}" ] || printf '%s\n' "$FIXTURE_INJECT" >> "$root/tasks/fix.md"
 # Like the real one: a run that does not finish leaves NO artifact behind, so a
 # stale file from an earlier run can never be read as this run's evidence.
-rm -f "$root/.ah-out/last-verify.json"
+rm -f "$out/last-verify.json"
 if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
   # The real run.sh records the tree it measured; the closer checks that against
   # its own reading, so the fake has to answer that question too.
@@ -66,7 +70,7 @@ if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
   [ "${FIXTURE_NO_TREE_HASH:-0}" = 1 ] && th=""
   # The components are what verify.sh got before --strict, as the real one records them.
   comp="$(printf '%s' "$*" | sed 's/ --strict.*//')"
-  cat > "$root/.ah-out/last-verify.json" <<JSON
+  cat > "$out/last-verify.json" <<JSON
 {
   "layer": "quick",
   "passed": ${FIXTURE_PASSED:-7},
@@ -118,7 +122,7 @@ c() { OUT=$(cd "$FIX" && bash "$CLOSE" "$@" 2>&1); rc=$?; }
 # move HEAD, and the next case has to start from the same state as the first.
 reset_repo() {
   git -C "$FIX" reset -q --hard "$BASE"; git -C "$FIX" clean -qfd; mkskel
-  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH FIXTURE_INJECT
+  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH FIXTURE_INJECT FIXTURE_CONTRACT_RC
 }
 head_count() { git -C "$FIX" rev-list --count HEAD; }
 touch_tool() { printf 'echo more\n' >> "$FIX/scripts/dev/tool.sh"; git -C "$FIX" add -- scripts/dev/tool.sh; }
@@ -547,27 +551,84 @@ c fix T1 -m "feat: on master"
 git -C "$FIX" branch -m fixture-branch
 reset_repo
 
+# ══ docs-pairs (stage 6a) ═════════════════════════════════════════════════════
+echo "── docs-pairs ──"
+touch_tool
+mkdir -p "$FIX/docs/admin"
+printf '<div class="lang-switch"><a href="./benutzer.html" class="is-active">DE</a><a href="../en/admin/users.html">EN</a></div>\n' \
+  > "$FIX/docs/admin/benutzer.html"
+git -C "$FIX" add -- docs/admin/benutzer.html
+c fix T1 -m "feat: something"
+[ $rc -eq 3 ] && grep -q 'docs/en/admin/users.html' <<<"$OUT" \
+  && ok "a close with one language of a docs page -> exit 3" || bad "one-sided docs: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite one-sided docs"
+reset_repo
+
+# ══ contracts (stage 6a) ══════════════════════════════════════════════════════
+echo "── contracts ──"
+# A contract on the task's own file, in the worktree copy of the list: the list is
+# read as HEAD, the index and the worktree have it.
+printf 'scripts/dev/tool.sh test monitoring tests/test_contract.py\n' >> "$FIX/scripts/dev/review-contracts.txt"
+touch_tool
+FIXTURE_CONTRACT_RC=1 c fix T1 -m "feat: something"
+[ $rc -eq 3 ] && grep -q 'test_contract.py' <<<"$OUT" && ok "a red contract check -> exit 3" || bad "red contract: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite a red contract"
+reset_repo
+printf 'scripts/dev/tool.sh test monitoring tests/test_contract.py\n' >> "$FIX/scripts/dev/review-contracts.txt"
+touch_tool
+FIXTURE_CONTRACT_RC=74 c fix T1 -m "feat: something"
+[ $rc -eq 74 ] && [ "$(head_count)" = "$BEFORE" ] \
+  && ok "a contract test that could not run -> exit 74, nothing committed" || bad "unrun contract: rc=$rc out=$OUT"
+reset_repo
+printf 'scripts/dev/tool.sh test monitoring tests/test_contract.py\n' >> "$FIX/scripts/dev/review-contracts.txt"
+touch_tool
+c fix T1 -m "feat: something"
+[ $rc -eq 0 ] && grep -q '^Evidenz: run.sh\[quick\] scripts: .*· contracts: 1 ok' "$FIX/tasks/fix.md" \
+  && ok "a green contract closes, the evidence names it — and the suite's own summary, not the contract run's" \
+  || bad "green contract: rc=$rc out=$OUT evidence=$(grep '^Evidenz:' "$FIX/tasks/fix.md")"
+reset_repo
+
 # ══ the verdict interface (stage 6) ═══════════════════════════════════════════
 echo "── --review verdict ──"
+# verdict <file> <tree> <verdict> [<findings json>] — a verdict in the schema of
+# scripts/dev/review-verdict.schema.json.
+verdict() {
+  printf '{"schema_version":1,"task":{"ledger":"tasks/fix.md","id":"T1"},"tree_hash":"%s",' "$2" > "$1"
+  printf '"reviewer":{"model":"sonnet","effort":"standard"},"verdict":"%s","findings":%s}\n' "$3" "${4:-[]}" >> "$1"
+}
 touch_tool
 TREE="$(cd "$FIX" && bash scripts/dev/tree-hash.sh)"
-printf '{"verdict":"approve","tree_hash":"%s","reviewer":"sonnet"}\n' "$TREE" > "$WORK/verdict.json"
+verdict "$WORK/verdict.json" "$TREE" approve
 c fix T1 -m "feat: something" --review "verdict:$WORK/verdict.json"
-[ $rc -eq 0 ] && grep -q '^Review: approve (sonnet)' "$FIX/tasks/fix.md" \
+[ $rc -eq 0 ] && grep -q '^Review: approve (sonnet' "$FIX/tasks/fix.md" \
   && ok "an approve verdict for THIS tree closes the task" || bad "verdict ok: rc=$rc out=$OUT"
 reset_repo
 
 touch_tool
-printf '{"verdict":"approve","tree_hash":"0000000000000000000000000000000000000000"}\n' > "$WORK/stale.json"
+verdict "$WORK/stale.json" 0000000000000000000000000000000000000000 approve
 c fix T1 -m "feat: something" --review "verdict:$WORK/stale.json"
 [ $rc -eq 4 ] && ok "a verdict for another tree -> exit 4 (it is not about this diff)" || bad "stale verdict: rc=$rc out=$OUT"
 reset_repo
 
 touch_tool
-printf '{"verdict":"request_changes","tree_hash":"%s"}\n' "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" > "$WORK/no.json"
+verdict "$WORK/no.json" "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" request_changes
 c fix T1 -m "feat: something" --review "verdict:$WORK/no.json"
 [ $rc -eq 3 ] && ok "a request_changes verdict -> exit 3" || bad "negative verdict: rc=$rc out=$OUT"
 [ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite request_changes"
+reset_repo
+
+touch_tool
+verdict "$WORK/blocker.json" "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" approve \
+  '[{"severity":"blocker","file":"scripts/dev/tool.sh","line":1,"claim":"breaks","evidence":"rc 1"}]'
+c fix T1 -m "feat: something" --review "verdict:$WORK/blocker.json"
+[ $rc -eq 3 ] && ok "an approve with a blocker -> exit 3" || bad "approve with blocker: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite a blocker"
+reset_repo
+
+touch_tool
+printf '{"verdict":"approve","tree_hash":"%s"}\n' "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" > "$WORK/bare.json"
+c fix T1 -m "feat: something" --review "verdict:$WORK/bare.json"
+[ $rc -eq 2 ] && ok "a verdict outside the schema -> exit 2" || bad "schema-less verdict: rc=$rc out=$OUT"
 reset_repo
 
 touch_tool

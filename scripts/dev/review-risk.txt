@@ -1,0 +1,65 @@
+# Risk paths. A diff that touches one of them gets the xhigh reviewer (Opus),
+# every other diff the standard one (Sonnet). Read by `review.sh risk` together
+# with scripts/dev/harness-paths.txt, whose paths are risk paths as well.
+# Shell `case` patterns, one per line: `*` crosses `/`, an entry ending in `/` is
+# a directory. Every line has to match something in the tree
+# (review_scripts_test.sh checks it), so a rename cannot drop a path out of this
+# list unnoticed.
+
+# PKI / mTLS
+apps/ca-issuer/*
+apps/gateway/*
+apps/server/app/modules/enrollment/*
+apps/agent/internal/enroll/*
+apps/desktop/src-tauri/src/enrollment.rs
+apps/desktop/src-tauri/src/tofu.rs
+# Cert pinning outside the enrollment paths: the agent's client checks the CA
+# fingerprint itself, the desktop pins its CA chain.
+apps/agent/internal/httpclient/httpclient.go
+apps/desktop/src-tauri/src/http_client.rs
+
+# Auth / AuthZ
+apps/server/app/core/auth.py
+apps/server/app/core/identity.py
+apps/server/app/core/rate_limit.py
+apps/server/app/modules/api_keys/*
+apps/server/app/modules/users/*
+apps/monitoring/app/core/auth.py
+apps/monitoring/app/routers/agent.py
+apps/desktop/src-tauri/src/auth.rs
+apps/desktop/src-tauri/src/keyring_store.rs
+
+# SSRF guards and what sends requests on a user's behalf
+apps/server/app/core/ssrf.py
+apps/monitoring/app/core/ssrf.py
+apps/server/app/modules/notifications/*
+apps/server/app/modules/monitoring_proxy/*
+apps/monitoring/app/alerter.py
+apps/monitoring/app/check_engine.py
+apps/server/app/modules/hooks/script_worker.py
+apps/server/app/modules/provisioning/helpers.py
+apps/server/app/modules/servers/router.py
+
+# FRP tunnels
+apps/server/app/modules/frp/*
+apps/agent/internal/frpc/*
+apps/agent/internal/provision/*
+apps/desktop/src-tauri/src/frpc.rs
+apps/desktop/src-tauri/src/tunnel.rs
+
+# Wire contracts: the schemas and the types on both sides of a boundary
+apps/server/app/modules/*/schemas.py
+apps/monitoring/app/schemas.py
+apps/desktop/src-tauri/src/models.rs
+apps/desktop/ui/src/lib/bridge/types.ts
+apps/desktop/ui/src/lib/api/types.ts
+
+# Database migrations (Alembic)
+apps/server/alembic/versions/*
+apps/monitoring/alembic/versions/*
+
+# CI, release and install
+.github/workflows/*
+scripts/install.sh
+scripts/update.sh
+docker-compose*.yml

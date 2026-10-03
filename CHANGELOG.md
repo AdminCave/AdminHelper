@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Review-Pruefer ohne Modell (Stufe 6a, R-0009):** `scripts/dev/review.sh` kann jetzt
+  `risk` (Risikopfad im Diff nach `scripts/dev/review-risk.txt`, daraus das Reviewer-Modell),
+  `docs-pairs` (eine Doku-Seite ohne ihre andere Sprache), `contracts` (Pruefungen je
+  geaendertem Pfad nach `scripts/dev/review-contracts.txt`: ein Komponenten-Test oder ein
+  Wertpaar wie die FRP-Pins), `check-verdict` (ein Reviewer-Urteil gegen
+  `scripts/dev/review-verdict.schema.json` und den Tree-Hash) und `pr-body` (der PR-Text als
+  Checkliste aus dem Ledger). Neu ist `scripts/dev/review-probe.sh`: in einer eigenen Worktree
+  prueft es, ob der neue Test ohne die Aenderung rot waere, und mit `--mutate`, ob ein Mutant die
+  Tests uebersteht. `task-close.sh` faehrt `docs-pairs` und `contracts` bei jedem Abschluss und
+  prueft ein Verdict ueber `check-verdict`. Anleitung: `DEVELOPMENT.md`, „Review-Pruefer
+  (Ebene 0)".
+
 - **AH-STATUS nennt die geplanten Workflows (R-0120):** Der SessionStart-Hook
   `scripts/dev/hooks/session-status.sh` druckt je Workflow mit `schedule:` eine Zeile
   `Geplant: <name> <Tag> (<n> d): <conclusion>` fuer den neuesten abgeschlossenen Lauf auf `main`
