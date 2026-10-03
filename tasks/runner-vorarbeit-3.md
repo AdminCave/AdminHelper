@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit 3: Messinstrument und Grenzen unabhängig vom geprüften Nutzer — Task-Ledger
-Status: geplant · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: freigegeben · Branch: harness/runner-vorarbeit-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe-7-Vorarbeit 3, „Freigeben“; T3: Proxmox-Ziel root-eigen beim Setup), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit-3.md (Roadmap R-0156, R-0158, R-0159, R-0160, R-0161, R-0162, R-0163)
 Heavy: none — nur Harness-Skripte (runner-redteam.sh, runner-setup.sh, harness-guard.sh, runner-settings.json) und ihre hermetischen Tests mit Fake-Klon, Stub-Binärdateien (curl, busctl) und JSON auf stdin; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis als echter Runner liefert Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec „Kevins Handarbeit“).
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
