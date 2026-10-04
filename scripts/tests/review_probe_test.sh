@@ -181,6 +181,20 @@ FIXTURE_KIND=green p monitoring --staged
 [ $rc -eq 0 ] && [ "$(field applicable)" = false ] && [ "$(field reason)" = '"no-test-change"' ] && [ ! -s "$FIXTURE_CALLS" ] \
   && ok "no test hunk -> applicable: false, reason: no-test-change, no run" || bad "no test: rc=$rc out=$OUT err=$ERR"
 git -C "$FIX" reset -q --hard HEAD
+# Only the tests changed: there is no change to take away.
+printf '\n\ndef test_more():\n    assert True\n' >> "$FIX/apps/monitoring/tests/test_x.py"; git -C "$FIX" add -A
+FIXTURE_KIND=green p monitoring --staged
+[ $rc -eq 0 ] && [ "$(field applicable)" = false ] && [ "$(field reason)" = '"only-test-change"' ] && [ ! -s "$FIXTURE_CALLS" ] \
+  && ok "only test hunks -> applicable: false, reason: only-test-change, no run" || bad "only tests: rc=$rc out=$OUT err=$ERR"
+printf '# changelog\n' > "$FIX/CHANGELOG.md"; git -C "$FIX" add -A
+FIXTURE_KIND=green p monitoring --staged
+[ $rc -eq 0 ] && [ "$(field reason)" = '"only-test-change"' ] && [ ! -s "$FIXTURE_CALLS" ] \
+  && ok "tests plus CHANGELOG (what every task may touch) -> still only-test-change" || bad "tests+changelog: rc=$rc out=$OUT err=$ERR"
+git -C "$FIX" commit -qm "more tests"
+FIXTURE_KIND=green p monitoring --commit HEAD
+[ $rc -eq 0 ] && [ "$(field reason)" = '"only-test-change"' ] && [ ! -s "$FIXTURE_CALLS" ] \
+  && ok "the same for --commit" || bad "only tests, commit: rc=$rc out=$OUT err=$ERR"
+git -C "$FIX" reset -q --hard HEAD~1
 
 for args in "" "nosuch --staged" "monitoring --staged --commit HEAD" "monitoring --frob" "monitoring --mutate x"; do
   # shellcheck disable=SC2086  # the words ARE the arguments

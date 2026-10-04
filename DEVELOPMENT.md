@@ -452,11 +452,8 @@ Hand stagen will, kommt nicht weiter; in Kevins Sessions ist es frei.
 
 `task-close.sh` laeuft **ausserhalb** der Modell-Session und macht fuenf Dinge in
 dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
-(halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash merken; (2) das
-`Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
---strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
-`verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
-Prosa-Zeile faehrt die Komponente der Task, mit Hinweis); (3) `review.sh diff-scan`
+(halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash und Index merken (aendert sich
+der Index bis zum Commit, Exit 2); (2) die billigen Pruefer, vor der Suite (R-0150): `review.sh diff-scan`
 (abgeschaltete Tests im Diff: Skip-, xfail-, todo-, fixme- und only-Muster von pytest, unittest,
 vitest/jest, Playwright, Rust und Go, auch `fit(`, `.fails(`, `.runIf(` und `pytest.importorskip(`, <!-- review: ok nennt die Muster -->
 `|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
@@ -470,20 +467,25 @@ Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Te
 nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade),
-`review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache), `review.sh contracts` (die Pruefungen, die an
-den geaenderten Pfaden haengen) und `review.sh sec` (was nie ins oeffentliche Repo darf); (4) das Review-Urteil:
-`--review-note "<text>"` oder `--review verdict:<datei>`, die `review.sh check-verdict` gegen Schema und Tree-Hash
-prueft; (5) `ledger.sh
+`review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache) und `review.sh sec` (was nie ins
+oeffentliche Repo darf); (3) das
+`Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
+--strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
+`verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
+Prosa-Zeile faehrt die Komponente der Task, mit Hinweis), danach `review.sh contracts` (die
+Pruefungen, die an den geaenderten Pfaden haengen); (4) das Review-Urteil:
+`--review-note "<text>"`, `--review verdict:<datei>`, die `review.sh check-verdict` gegen Schema und Tree-Hash
+prueft, oder `--review auto`, der Reviewer als eigener Prozess (Stufe 6b, „Reviewer als Prozess"); (5) `ledger.sh
 mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` (sie nennt die gelaufenen
 Komponenten, etwa `run.sh[quick] web desktop-e2e: 2 passed, 0 failed, 16 skipped`, und liefen Vertraege,
 ` · contracts: 1 ok`) und **ein** Commit
 mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
 `aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
 `ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
-Eingabefehler (auch ein unlesbares oder schemawidriges Verdict), `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite
-in nur einer Sprache, ein roter Vertrag oder kein brauchbares approve, `4` blockiert (Scope/Sec) oder ein Verdict
-fuer einen anderen Baum,
-`74` die Suite oder ein Vertrags-Test konnte gar nicht laufen.
+Eingabefehler (auch ein unlesbares oder schemawidriges Verdict) oder der Index aenderte sich waehrend des
+Laufs, `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite in nur einer Sprache, ein roter Vertrag, kein brauchbares
+approve oder eine dritte Review-Runde, `4` blockiert (Scope/Sec) oder ein Verdict fuer einen anderen Baum oder eine
+andere Task, `74` die Suite, ein Vertrags-Test, die Probe oder der Reviewer-Prozess konnte gar nicht laufen.
 
 `ledger.sh start` schreibt dabei `.vm/active-task` — heute reine **Anzeige** (wer arbeitet
 gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, gelesen wird die
@@ -528,10 +530,11 @@ raten muesste (Stufe 6a; Uebersicht in `docs/developer/cicd.html`, „Review-Pru
 bash scripts/dev/review.sh risk                           # xhigh + Pfade | standard: welches Reviewer-Modell
 bash scripts/dev/review.sh docs-pairs --staged            # Doku-Seite ohne ihre andere Sprache -> Exit 3
 bash scripts/dev/review.sh contracts --staged [--list]    # die Pruefungen der geaenderten Pfade
-bash scripts/dev/review.sh check-verdict <datei> --tree <hash>   # 0 | 2 | 3 | 4
+bash scripts/dev/review.sh check-verdict <datei> --tree <hash> [--task <ledger> <id>]   # 0 | 2 | 3 | 4
 bash scripts/dev/review-probe.sh <komponente> [--staged | --commit <rev>] [-- <test>]
 bash scripts/dev/review-probe.sh <komponente> --commit <rev> --mutate <datei>:<zeile> '<ersatz>'
 bash scripts/dev/review.sh pr-body tasks/<slug>.md [--verdicts <dir>]
+bash scripts/dev/review.sh log [--ledger tasks/<slug>.md]          # jede Reviewer-Runde, mit Summe
 ```
 
 - **`risk`** misst ohne Flag alles noch nicht Committete (gestaged, ungestaged, untrackt —
@@ -547,15 +550,77 @@ bash scripts/dev/review.sh pr-body tasks/<slug>.md [--verdicts <dir>]
   in zwei Schritten: erst ein Regex, der beide Schreibweisen nimmt, dann das neue Format.
 - **`check-verdict`** prueft ein Reviewer-Urteil gegen `scripts/dev/review-verdict.schema.json`
   (nur mit python3): kein approve mit einem `blocker`, keins, wenn die Probe den neuen Test ohne
-  die Aenderung gruen fand; ein `blocker` ohne Beleg zaehlt als `nit`.
+  die Aenderung gruen fand; ein `blocker` ohne Beleg zaehlt als `nit`. Mit `--task` muss das
+  Verdict auch diese Task meinen (sonst Exit 4). Schema-Version 2 (der Reviewer-Prozess) verlangt
+  Runde, Turns, Dauer und den `probe`-Block; eine Probe mit `applicable: false` (etwa
+  `no-test-change`, ein Refactor) ist kein Hindernis, ein ueberlebender Mutant steht in der
+  Review-Zeile, ebenso eine Probe, die nicht lief (`probe not run: toolchain|other-failure|…`).
 - **`review-probe.sh`** legt eine eigene Worktree unter dem `TMPDIR` des Aufrufers an, setzt nur
   die Test-Hunks auf die Basis und faehrt `verify.sh --tree`; die Antwort ist der `probe`-Block
   des Schemas (`red_without_change`, oder `applicable: false` mit `new-symbol`, `toolchain`,
-  `no-test-change`, `apply-failed`, `other-failure`). `--mutate` setzt genau einen Mutanten in die
+  `no-test-change`, `only-test-change`, `apply-failed`, `other-failure`; `no-test-change` und
+  `only-test-change` ohne Suite-Lauf). `--mutate` setzt genau einen Mutanten in die
   ganze Aenderung (eine Datei der Worktree, sonst Exit 2); der Ersatz muss lint-sauber sein.
 - **`pr-body`** schreibt den PR-Text aus dem Ledger; eine Task ohne Evidenz heisst
-  „unverifiziert", Adressen, Hostnamen privater Netze und VMIDs fallen heraus. Wo Verdict-Dateien
-  liegen, legt Stufe 6b fest, bis dahin `--verdicts <dir>`.
+  „unverifiziert", Adressen, Hostnamen privater Netze und VMIDs fallen heraus. Mit
+  `--verdicts .ah-out/review/<slug>` nimmt es je Task die letzte Runde `<id>.r<n>.verdict.json`
+  (oder `<id>.json`) und prueft sie ueber `check-verdict` selbst: ein schemawidriges Verdict heisst
+  „ungueltig", eines ohne brauchbares approve sagt warum; die Zeile nennt Modell, Runde und
+  Mutanten.
+- **`log`** liest `.ah-out/review/review-log.jsonl`, eine Zeile je Reviewer-Runde (Datum, Ledger,
+  Task, Runde, Modell, Effort, Urteil, Funde, Probe, Mutanten, `cost_usd`, `num_turns`,
+  `duration_s`, Tree), und druckt sie als Tabelle mit der Summe
+  `N runs, A approve, R request_changes, F failed, $X, T turns, S s`. Die Zeilen schreibt
+  `task-close.sh --review auto` (`log --append <verdict>`, eine gescheiterte Runde mit
+  `log --failed "<grund>"`).
+
+### Reviewer als Prozess: `--review auto` (Stufe 6b)
+
+Im Pilot (Ledger-Kopf `Review: auto`) startet `task-close.sh` den Task-Reviewer selbst, statt
+dass die Bau-Session einen Sub-Agent fragt; Prompt und Urteil gehen nicht durch die Session:
+
+```bash
+bash scripts/dev/task-close.sh tasks/<slug>.md T3 --stage --review auto -m "feat(...): ..."
+bash scripts/dev/review.sh log --ledger tasks/<slug>.md      # Runden, Urteile, $, Turns, Sekunden
+```
+
+Nach den billigen Pruefern, der Suite und den Vertraegen:
+
+1. **Runde:** gezaehlt aus den Dateien unter `.ah-out/review/<slug>/`. Liegt fuer genau diesen
+   gestagten Diff, Baum und diese Task schon ein approve (ein Abschluss brach danach ab, etwa am
+   Commit), wird es uebernommen. Eine dritte Runde gibt es nicht (Exit 3 mit Hinweis auf
+   `ledger.sh mark-question`).
+2. **Probe durch den Runner:** `review-probe.sh <komponente> --staged [-- <test aus Verify:>]`;
+   ohne Testdatei oder nur mit Tests antwortet sie `applicable: false`, ohne Suite-Lauf.
+3. **Reviewer:** `scripts/dev/review-run.sh` baut den Prompt (Task-Text, Spec-Pfad, gestagter
+   Diff ohne `tasks/private/`, neue Dateien, Tree-Hash, Probe, Vertraege, Verify-Summary; in
+   Runde 2 der Pfad der Runde 1) und startet aus dem Repo-Wurzelverzeichnis `claude -p` mit dem
+   Reviewer aus `scripts/dev/review-agent.md` (als `--agents`-JSON), `--setting-sources ""` (weder
+   Projekt- noch User-Settings: deren Allow-Regeln deckelt `review-settings.json` nicht),
+   den Settings `scripts/dev/review-settings.json` und dem Schema
+   `scripts/dev/review-output.schema.json`. Das Modell folgt `review.sh risk --staged`:
+   `standard` ist Sonnet/high mit 60 Turns und 5 $, `xhigh` Opus/xhigh mit 80 Turns und 15 $;
+   Timeout 1200 s. Die Deckel werden nach dem Pilot aus den Werten von `review.sh log`
+   nachgestellt.
+4. **Verdict:** aus `structured_output` plus den Feldern des Runners (Task, Tree-Hash, Probe,
+   Verify, Vertraege, Kosten, Turns, Dauer) wird `<id>.r<n>.verdict.json` (Schema-Version 2),
+   daneben liegen `prompt.md`, `raw.json`, `err` (stderr der CLI), `run.err` (stderr von
+   review-run.sh) und `staged` (der Hash des gestagten Diffs, an dem die Uebernahme eines approve
+   haengt) der Runde, alles unter `.ah-out/`, gitignored. `check-verdict --tree --task` entscheidet, ob committet wird; jede Runde geht als
+   Zeile ins Review-Log.
+5. **Scheitern:** kein Start, Timeout, ein `error_*`-Ergebnis, ein Exit ungleich 0 oder ein
+   fehlendes oder schemawidriges `structured_output` sind Exit 74, ohne Verdict und ohne Commit;
+   im Log steht die Runde als `failed` mit Grund. Die Session versucht es einmal neu, danach
+   STOPP; einen Rueckfall auf den Sub-Agent-Review gibt es nicht.
+
+Der Reviewer darf lesen und `git diff|show|log|status`; im Pilot setzt er keine Mutanten (Kevin,
+2026-10-03): ein `review-probe.sh --mutate` laeuft als Code mit den Rechten des Benutzers. Mutanten
+kommen zurueck, sobald es feste Operatoren oder eine Sandbox gibt (Roadmap); von Hand bleibt
+`--mutate` nutzbar. Edit, Write, Netz, `verify.sh` und `run.sh` sind gesperrt. Der
+harness-guard laeuft als PreToolUse-Hook und ist fail-closed: fehlt er, scheitert oder haengt
+er, blockiert der Hook (R-0159). Die Projekt-Settings wirken nicht hinein. Die Aufrufform hat
+`scripts/dev/review-cli-probe.sh` gemessen (CLI 2.1.285); gegen eine neue CLI-Version laesst
+sie sich mit demselben Skript erneut messen.
 
 ### Die Roadmap als Skript: `roadmap.py`
 
