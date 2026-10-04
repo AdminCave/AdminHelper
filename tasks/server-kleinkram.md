@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinkram: bulk-zip nur mit nutzbaren Tunneln, Redis-Hub wartet auf sein Abo — Task-Ledger
-Status: aktiv · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
+Status: bereit · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
 Freigabe: Kevin, 2026-10-04 (Design-Gate kleines Paket, „server-kleinkram“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0148, R-0149
 Heavy: none — T1 ändert nur, welche Dateien der Admin-ZIP enthält (kein Datenpfad eines nutzbaren Tunnels), T2 nur den Start der Redis-Subscription im Server-Prozess; pytest deckt bulk-zip ab, die Redis-Tests laufen in der PR-CI gegen ihren Redis-Service.
@@ -58,8 +58,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions
 Doku: CHANGELOG (Fixed). `docs/developer/api-reference.html:140` + `docs/en/developer/api-reference.html:140`: ein
 Halbsatz „nur Server bzw. Nutzer mit nutzbarem Tunnel“.
 
-### T2 — Redis-Hub kehrt aus `start()` erst nach der Abo-Bestätigung zurück  [ ]
+### T2 — Redis-Hub kehrt aus `start()` erst nach der Abo-Bestätigung zurück  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/stream_hub.py, apps/server/tests/test_stream_reconnect.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @80766bfd 2026-10-04T20:55:11+02:00
+Review: Review am Ende (Kurz-Ledger, Sonnet); Gegenprobe im Worktree gegen HEAD: 2 failed (Bestaetigung vor dem Reader, Warnung ohne Bestaetigung); test_stream_redis lokal 2 skipped (kein Redis auf 6380), laeuft in der PR-CI
 Änderung: `start()` (`stream_hub.py:98`) wartet nach `await pubsub.subscribe(CHANNEL)` (`:108`) auf die
 Abo-Bestätigung von Redis, bevor es den Reader startet (`:109`) und „subscribed“ loggt (`:110`):
 `get_message(ignore_subscribe_messages=False, timeout=…)` in einer Schleife bis `type == "subscribe"`, mit einer Frist

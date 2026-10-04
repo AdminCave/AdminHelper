@@ -211,6 +211,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   enthaelt der ZIP nur `frps.toml`. Das ist dieselbe Regel wie der `404` der Einzelrouten. Je Tunnel ohne Secret
   steht eine Warnung im Log statt einer je Server, Nutzer und Generator-Aufruf. Doku:
   `docs/developer/api-reference.html`.
+- **SSE: ein Worker verpasste kurz nach dem Start ein Refresh-Signal (Server, R-0149):** `subscribe()` schickt
+  das Abo an Redis nur ab; ein `publish` vor der Bestaetigung ging verloren, Pub/Sub puffert nicht.
+  `stream_hub.start()` liest jetzt die Bestaetigung (hoechstens 5 s), bevor es den Reader startet und
+  „subscribed" meldet. Bleibt sie aus, warnt es und startet den Reader trotzdem; die Clients fallen wie bisher
+  auf Polling zurueck. Das behebt auch den sporadisch roten `test_redis_fanout_only_to_targeted_user`.
 - **Verbindungen: nur bekannte Felder gehen in Spalten (Server, R-0136):** Beim Anlegen, Aendern und
   Importieren uebernimmt der Server nur die Felder der API (`name`, `kind`, `host`, …, in camelCase) in
   die Spalten einer Verbindung. Alles andere bleibt Zusatzinformation in `extra_data`, auch ein
