@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinkram: bulk-zip nur mit nutzbaren Tunneln, Redis-Hub wartet auf sein Abo — Task-Ledger
-Status: geplant · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
+Status: freigegeben · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
+Freigabe: Kevin, 2026-10-04 (Design-Gate kleines Paket, „server-kleinkram“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0148, R-0149
 Heavy: none — T1 ändert nur, welche Dateien der Admin-ZIP enthält (kein Datenpfad eines nutzbaren Tunnels), T2 nur den Start der Redis-Subscription im Server-Prozess; pytest deckt bulk-zip ab, die Redis-Tests laufen in der PR-CI gegen ihren Redis-Service.
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
