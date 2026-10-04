@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 7a — der Worker: `ledger-loop.sh`, `/build-task`, Bau-Session-Grenzen — Task-Ledger
-Status: freigegeben · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: aktiv · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe 7a, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Pilot: Stufe 6b — `Review: auto` (Reviewer als eigener Prozess über `task-close.sh --review auto`, im tmux mit Wächter); Kevin 2026-10-04, „7a selbst als Pilot“. Zweimal Exit 74 in einer Task ⇒ STOPP und Meldung. Kosten je Runde: `bash scripts/dev/review.sh log --ledger tasks/stufe-7a.md`.
 Spec: docs/features/stufe-7a.md (Roadmap R-0010, R-0108)
@@ -20,8 +20,10 @@ Bau interaktiv (Harness-Pfade), keine Lane. Jede neue Datei unter `scripts/dev/`
 die echte CLI: der `claude`-Stub folgt dem Muster aus 6b (`review_run_test.sh`). Fehlerfeld und Limit-Text der CLI-JSON
 nimmt T4 aus den `Messung:`-Zeilen von 6b T1. Nie `sudo`, nie ein Lauf als `adminhelper-runner` im Bau.
 
-### T1 — `/build-task`: genau eine Task, ohne Commit, ohne Haken  [ ]
+### T1 — `/build-task`: genau eine Task, ohne Commit, ohne Haken  [x]
 Komponente: scripts · Dateien: .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ccd26100 2026-10-04T21:10:43+02:00
+Review: approve (opus/xhigh; 3 nit) · round 1
 Änderung: Neuer Skill (SPDX-Kommentar wie `.claude/skills/roadmap/SKILL.md`, Frontmatter ohne
 `disable-model-invocation`), aufgerufen als `/build-task tasks/<slug>.md <id> [--fix <close-log> [<verdict>]]`. Inhalt:
 Ledger-Kopf lesen — nicht `aktiv` oder keine `Freigabe:`-Zeile ⇒ sofort enden, nichts ändern; Task, Spec-Stelle und
@@ -36,6 +38,9 @@ der verbotenen Befehle als Anweisung und jeden `bash scripts/…`-Befehl, den er
 `scripts/dev/runner-settings.json`. Rot vorher: der Skill fehlt.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
+Abweichung: der Skill nennt den Scratch-Wrapper in T1 nur als Grenze, ohne Befehl; die Zeilen
+`bash scripts/dev/scratch.sh new|rm` kommen mit T2 in den Skill, im selben Commit wie ihre Allow-Regeln (die Prüfung
+„jeder angewiesene `bash scripts/…`-Befehl hat eine Allow-Regel“ wäre sonst bis T2 rot).
 
 ### T2 — Bau-Session-Grenzen: Deny auf `tasks/**`, Scratch über `scratch.sh` (R-0108)  [ ]
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/dev/scratch.sh, scripts/tests/scratch_test.sh, scripts/tests/hooks_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh
