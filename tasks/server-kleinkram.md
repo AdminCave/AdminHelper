@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinkram: bulk-zip nur mit nutzbaren Tunneln, Redis-Hub wartet auf sein Abo — Task-Ledger
-Status: bereit · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
+Status: erledigt · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
 Freigabe: Kevin, 2026-10-04 (Design-Gate kleines Paket, „server-kleinkram“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0148, R-0149
 Heavy: none — T1 ändert nur, welche Dateien der Admin-ZIP enthält (kein Datenpfad eines nutzbaren Tunnels), T2 nur den Start der Redis-Subscription im Server-Prozess; pytest deckt bulk-zip ab, die Redis-Tests laufen in der PR-CI gegen ihren Redis-Service.
@@ -97,3 +97,14 @@ Redis-Subscription und stellt das Signal seinen lokal verbundenen Streams der be
 „subscribed“ meldet, muss das Signal auch bekommen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_stream_reconnect.py tests/test_stream.py tests/test_stream_redis.py
 Doku: CHANGELOG (Fixed: ein Worker verpasste kurz nach dem Start ein Refresh-Signal). Sonst keine (intern).
+
+Abschluss-Evidenz (2026-10-04):
+- Nach dem Merge von origin/main (f4133203, #75 Stufe 6b) in a31f1c36: `run.sh[quick]: 18 passed, 0 failed, 0 skipped,
+  12 test-skips, 0 reruns` (`run.sh quick --strict`).
+- Review am Ende (Sonnet, eine Runde) über 80766bfd und b33d1e63: approve; drei Nits ohne Handlungsbedarf.
+- Gegenproben in einem Wegwerf-Worktree gegen die Fassung davor: T1 3 failed (Server ohne Tunnel, nur `frps.toml`,
+  Warnungszahl) wie vorhergesagt, T2 beide neuen Tests failed.
+- Nicht lokal verifiziert: `tests/test_stream_redis.py` (2 skipped, kein Redis auf 6380); die PR-CI fährt sie gegen
+  ihren Redis-Service.
+- Heavy: none (wie geplant).
+
