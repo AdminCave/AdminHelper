@@ -191,6 +191,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
+  Die Proben von `scripts/dev/runner-redteam.sh` auf git, Proxmox, D-Bus und Settings fuehren
+  keinen Code und keine ausfuehrbare Konfiguration des Runners mehr aus (die Modellproben starten
+  bewusst seine CLI, nach Pruefsumme und Settings, die sie bei einem FAIL nicht aufhalten). Die Push-Proben pushen aus einem eigenen Repository ohne Hooks und ohne
+  git-Konfiguration des Nutzers an die URLs des Klons und lesen seine Konfiguration auf
+  Credential-Helper, Extra-Header und URL-Umschreibungen; Aenderungen am Klon zeigt die ctime statt
+  `git status`. Probe 4 misst den Proxmox-Token direkt an der API (`curl -q`, Token ueber stdin)
+  gegen ein Ziel, das `runner-setup.sh` root-eigen als `pve-target.env` ablegt, statt `vm.py` aus dem
+  Klon zu starten. Die D-Bus-Probe prueft den Socket statt ein `busctl` ohne `XDG_RUNTIME_DIR`, die
+  Runner-Settings werden byte-genau mit der geprueften Kopie verglichen, und ein unbekanntes
+  Argument endet mit Exit 2 statt im vollen Lauf. `scripts/dev/hooks/harness-guard.sh` zaehlt die
+  Ausgabe-Optionen von git als Schreibziel (`--output` jedes Aufrufs, `archive -o`,
+  `format-patch -o`, `bundle create`, `grep -O`), und der Runner-Hook ist fail-closed: fehlt der
+  Waechter oder haengt er, sperrt der Hook mit Exit 2. Anleitung: `DEVELOPMENT.md` „Runner-User" (Red Team) und
+  „Harness-Schutz und Kill-Switch".
+
 - **FRP: Secret und Visitor-Port nur an STCP-Tunneln (Server, R-0129):** Ein HTTPS-Tunnel speichert weder
   `secret_key` noch `visitor_port`; `POST` verwirft mitgeschickte Werte, und der Wechsel per `PUT` auf HTTPS
   loescht beide. Der Wechsel zurueck auf STCP erzeugt ein neues Secret und vergibt einen freien Port, wenn der

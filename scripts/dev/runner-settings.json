@@ -111,7 +111,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\""
+            "command": "g=\"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\"; [ -r \"$g\" ] || { echo \"harness guard not readable: $g - call blocked\" >&2; exit 2; }; timeout -k 2 10 bash \"$g\"; rc=$?; [ \"$rc\" -eq 0 ] || { echo \"harness guard failed (exit $rc) - call blocked\" >&2; exit 2; }",
+            "timeout": 15
           }
         ]
       }
