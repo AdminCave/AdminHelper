@@ -177,6 +177,10 @@ def gen_bulk_zip(
             )
             .all()
         )
+        # Once, up here: a server left with no usable tunnel gets no frpc.toml (the
+        # single routes answer 404 for it), and each secretless stcp tunnel is
+        # warned about once, not per server, user and generator call.
+        all_tunnels = without_secretless_stcp(all_tunnels)
 
         by_server = {}
         for t in all_tunnels:
@@ -198,15 +202,13 @@ def gen_bulk_zip(
         if users_with_servers:
             for user in users_with_servers:
                 u_server_ids = {s.id for s in user.servers}
-                u_tunnels = without_secretless_stcp(
-                    [t for t in stcp_tunnels if t.server_id in u_server_ids]
-                )
+                u_tunnels = [t for t in stcp_tunnels if t.server_id in u_server_ids]
                 if u_tunnels:
                     zf.writestr(
                         f"visitors/{user.username}.toml",
                         generate_visitor_toml(config, u_tunnels, user.username),
                     )
-        else:
+        elif stcp_tunnels:
             zf.writestr("visitor.toml", generate_visitor_toml(config, stcp_tunnels))
 
     buf.seek(0)

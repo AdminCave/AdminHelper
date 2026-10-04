@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinkram: bulk-zip nur mit nutzbaren Tunneln, Redis-Hub wartet auf sein Abo — Task-Ledger
-Status: freigegeben · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
+Status: aktiv · Branch: feature/server-kleinkram · Commit-Granularität: pro Task · Review: am Ende (feature-review, Sonnet) · Modell: Opus
 Freigabe: Kevin, 2026-10-04 (Design-Gate kleines Paket, „server-kleinkram“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0148, R-0149
 Heavy: none — T1 ändert nur, welche Dateien der Admin-ZIP enthält (kein Datenpfad eines nutzbaren Tunnels), T2 nur den Start der Redis-Subscription im Server-Prozess; pytest deckt bulk-zip ab, die Redis-Tests laufen in der PR-CI gegen ihren Redis-Service.
@@ -19,8 +19,10 @@ Entscheidungen:
 - D (R-0148): Der ZIP lässt Server ohne nutzbaren Tunnel weg; im Extremfall enthält er nur `frps.toml`. Das ist dieselbe
   Regel wie der 404 der Einzelrouten, eine Hinweisdatei gibt es nicht (Kevin).
 
-### T1 — bulk-zip enthält nur Konfigurationen mit nutzbaren Tunneln  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_permissions.py, CHANGELOG.md
+### T1 — bulk-zip enthält nur Konfigurationen mit nutzbaren Tunneln  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_frp_permissions.py, CHANGELOG.md, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @987323c0 2026-10-04T20:43:12+02:00
+Review: Review am Ende (Kurz-Ledger, Sonnet); Gegenprobe im Worktree gegen HEAD: 3 failed (Server ohne Tunnel, nur frps.toml, Warnungszahl) wie im Ledger
 Änderung: `gen_bulk_zip` filtert die Tunnel **einmal** oben, nach dem Laden von `all_tunnels`
 (`generate_router.py:181` ff.), mit `without_secretless_stcp`; danach arbeiten alle Zweige auf dieser Liste.
 - Die Schleife je Server (`:193–194`) schreibt `clients/<server>/frpc.toml` nur, wenn der Server danach noch einen

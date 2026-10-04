@@ -9,6 +9,8 @@ that a non-admin user WITHOUT a server assignment got *all* tunnels including
 secret_key (instead of none). A classic privilege-escalation trap.
 """
 
+import logging
+
 import pytest
 from fastapi import HTTPException
 
@@ -270,6 +272,70 @@ class TestTunnelsWithoutSecret:
         names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
         assert f"visitors/{normal_user.username}.toml" not in names, names
         assert "clients/serverB/frpc.toml" in names, names
+
+    @staticmethod
+    def _zip_names(test_client) -> list[str]:
+        import io
+        import zipfile
+
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=_login(test_client))
+        assert r.status_code == 200, r.text
+        return zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+
+    def test_bulk_zip_leaves_out_a_server_without_usable_tunnel(
+        self, test_client, db_session, admin_user, two_servers_with_tunnels
+    ):
+        # R-0148: the single route answers 404 for such a server; the ZIP follows the
+        # same rule instead of shipping an frpc.toml with auth.token and no proxy.
+        self._without_secret(db_session, "t-a")
+        names = self._zip_names(test_client)
+        assert "clients/serverA/frpc.toml" not in names, names
+        assert "clients/serverB/frpc.toml" in names, names
+
+    def test_bulk_zip_without_any_usable_tunnel_is_frps_only(
+        self, test_client, db_session, admin_user, two_servers_with_tunnels
+    ):
+        # No user has servers assigned, so the shared visitor.toml path runs.
+        self._without_secret(db_session, "t-a")
+        self._without_secret(db_session, "t-b")
+        assert self._zip_names(test_client) == ["frps.toml"]
+
+    def test_bulk_zip_keeps_the_usable_tunnel_next_to_a_secretless_one(
+        self, test_client, db_session, admin_user, two_servers_with_tunnels
+    ):
+        import io
+        import zipfile
+
+        _make_tunnel(
+            db_session,
+            tid="t-a2",
+            server_id="srv-a",
+            config_id=two_servers_with_tunnels.id,
+            name="a2-ssh",
+            visitor_port=6002,
+        )
+        self._without_secret(db_session, "t-a")
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=_login(test_client))
+        assert r.status_code == 200, r.text
+        frpc = zipfile.ZipFile(io.BytesIO(r.content)).read("clients/serverA/frpc.toml").decode()
+        assert frpc.count("[[proxies]]") == 1, frpc
+        assert '"a2-ssh"' in frpc and '"a-ssh"' not in frpc, frpc
+
+    def test_bulk_zip_warns_once_per_secretless_tunnel(
+        self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels, caplog
+    ):
+        # Filtered once at the top: one warning per tunnel, not one per server, user and
+        # generator call.
+        self._without_secret(db_session, "t-a")
+        self._assign(db_session, normal_user, "srv-a", "srv-b")
+        with caplog.at_level(logging.WARNING, logger="app.modules.frp.config_generator"):
+            self._zip_names(test_client)
+        hits = [
+            r
+            for r in caplog.records
+            if "a-ssh" in r.getMessage() and "without a secret" in r.getMessage()
+        ]
+        assert len(hits) == 1, [r.getMessage() for r in hits]
 
     def test_one_usable_tunnel_is_enough(self, db_session, normal_user, two_servers_with_tunnels):
         self._without_secret(db_session, "t-a")
