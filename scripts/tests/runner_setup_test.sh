@@ -16,6 +16,12 @@
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
 set -uo pipefail
+# The caller's Proxmox settings (a session may carry them, token included) never
+# reach these tests: each case sets what it needs.
+unset "${!AH_PVE_@}"
+# Nor does the checkout's own settings file: a dry run reads its Proxmox target from
+# there unless told otherwise, and the cases below that want one say so.
+export AH_RUNNER_DRY_PVE_SRC=/nonexistent/settings.local.json
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -180,6 +186,48 @@ RUN_LOCK="$(sed -n 's/^AH_PY_LOCK_SHARED="\${AH_PY_LOCK_SHARED:-\(.*\)}"$/\1/p' 
   && ok "runner-setup.sh, run.sh and the red team name the same lock" \
   || bad "the lock path differs: setup '$SETUP_LOCK', run.sh '$RUN_LOCK', red team: $(grep '^redteam_py_lock ' "$REPO_ROOT/scripts/dev/runner-redteam.sh")"
 
+# The red team, root's (R-0152): runner-setup.sh installs it with what it measures
+# against, records the CLI checksum beside the lock, and --remove takes both away.
+echo "── the red team out of the runner's reach ──"
+LIBS="$WORK/lib"; LOCKS_RT="$WORK/lock-rt"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_LOCKDIR="$LOCKS_RT" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -d -o root -g root -m 755 $LIBS" <<<"$PLAN" \
+  && ok "the red team's directory is root:root 0755" || bad "no root:root 0755 install -d of $LIBS"
+MISSING=""
+for f in runner-redteam.sh:755 runner-env.sh:644 runner-settings.json:644 runner-claude.version:644; do
+  grep -qF -- "install -o root -g root -m ${f#*:} $REPO_ROOT/scripts/dev/${f%%:*} $LIBS/${f%%:*}" <<<"$PLAN" || MISSING+=" $f"
+done
+[ -z "$MISSING" ] && ok "the red team, runner-env.sh and the pin go there from this checkout, root's (0755 / 0644)" \
+  || bad "not installed as planned:$MISSING"
+grep -qE -- "runuser -u [^ ]+ -- timeout 120 sha256sum --zero -- .* </dev/null" <<<"$PLAN" && grep -qF -- "mv -f $LOCKS_RT/runner-claude.sha256.new $LOCKS_RT/runner-claude.sha256" <<<"$PLAN" \
+  && grep -qF -- "install -o root -g root -m 644 /dev/null $LOCKS_RT/runner-claude.sha256.new" <<<"$PLAN" \
+  && ok "the sha256 of the runner's claude, read as the runner, goes to $LOCKS_RT/runner-claude.sha256, root:root 0644" \
+  || bad "checksum step: $(grep -F 'runner-claude.sha256' <<<"$PLAN" | head -3)"
+# Only the closing steps: the install lines above name this checkout's copy, and a
+# checkout under .../repo (the runner's own clone) must not read as the old call.
+DONE="$(sed -n '/^── done/,$p' <<<"$PLAN")"
+grep -qF -- "bash $LIBS/runner-redteam.sh" <<<"$DONE" && ! grep -qF -- "scripts/dev/runner-redteam.sh" <<<"$DONE" \
+  && ok "the closing steps name the installed red team, not the clone's" \
+  || bad "closing steps: $(grep -F 'runner-redteam.sh' <<<"$DONE" | tail -2)"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_LOCKDIR="$LOCKS_RT" bash "$SETUP" --dry-run --remove 2>&1)
+grep -qF -- "rm -rf $LIBS" <<<"$PLAN" && grep -qF -- "rm -rf $LOCKS_RT" <<<"$PLAN" \
+  && ok "--remove takes the red team and the checksum (with the lock directory) away" \
+  || bad "--remove plan: $(tail -6 <<<"$PLAN")"
+# Both copies of the runner settings come from the same file — the one the red
+# team compares the runner's ~/.claude/settings.json with byte for byte (R-0163).
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -o root -g root -m 644 $REPO_ROOT/scripts/dev/runner-settings.json $LIBS/runner-settings.json" <<<"$PLAN" \
+  && grep -qE -- "install -o [^ ]+ -g [^ ]+ -m 600 $REPO_ROOT/scripts/dev/runner-settings.json [^ ]+/\.claude/settings\.json" <<<"$PLAN" \
+  && ok "the runner's settings and the red team's copy come from the same file" \
+  || bad "settings sources: $(grep -F 'runner-settings.json' <<<"$PLAN" | head -3)"
+SETUP_LIB="$(sed -n 's/^LIB_DIR="\(.*\)"$/\1/p' "$SETUP")"
+SETUP_LOCKDIR="$(sed -n 's/^LOCK_DIR="\(.*\)"$/\1/p' "$SETUP")"
+[ "$SETUP_LIB" = /usr/local/lib/adminhelper-dev ] \
+  && grep -qx "REDTEAM_LIB=$SETUP_LIB" "$REPO_ROOT/scripts/dev/runner-redteam.sh" \
+  && grep -qx "  redteam_claude_sum $SETUP_LOCKDIR/runner-claude.sha256 \"\$CLAUDE\"" "$REPO_ROOT/scripts/dev/runner-redteam.sh" \
+  && ok "runner-setup.sh and the red team name the same directory and checksum file" \
+  || bad "red team paths differ from setup: lib '$SETUP_LIB', lock dir '$SETUP_LOCKDIR'"
+
 # The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
 # root-owned directory, then moved into place with one `mv --no-copy -T`. Anything already at
 # $SRV/repo without a .git — a directory or a file — stops the run, dry or not.
@@ -238,6 +286,38 @@ awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | gre
   && ok "the SRV override sits inside the same guard" || bad "AH_RUNNER_DRY_SRV is not guarded by DRY=1"
 awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_LOCKDIR' \
   && ok "the lock directory override too (--remove deletes it as root)" || bad "AH_RUNNER_DRY_LOCKDIR is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_LIBDIR' \
+  && ok "and the red team's directory override (root installs into it)" || bad "AH_RUNNER_DRY_LIBDIR is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_PVE_SRC' \
+  && ok "and the Proxmox target source override" || bad "AH_RUNNER_DRY_PVE_SRC is not guarded by DRY=1"
+
+# The target of the red team's probe 4: root's, beside the red team, never the token.
+echo "── the Proxmox target of the red team ──"
+PT="$WORK/pve-src"; mkdir -p "$PT"; printf 'ca\n' > "$PT/ca.pem"
+printf '{"env": {"AH_PVE_URL": "https://pve.test.invalid:8006", "AH_PVE_NODE": "n1", "AH_PVE_POOL": "ci", "AH_PVE_CA": "%s", "AH_PVE_TOKEN": "SETUP-TOKEN-MUST-NOT-APPEAR"}}\n' "$PT/ca.pem" > "$PT/settings.json"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/settings.json" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -o root -g root -m 644 $PT/ca.pem $LIBS/pve-ca.pem" <<<"$PLAN" \
+  && grep -qF -- "install -o root -g root -m 644 /dev/null $LIBS/pve-target.env.new" <<<"$PLAN" \
+  && grep -qF -- "AH_PVE_URL=https://pve.test.invalid:8006 AH_PVE_NODE=n1 AH_PVE_POOL=ci AH_PVE_CA=$LIBS/pve-ca.pem" <<<"$PLAN" \
+  && grep -qF -- "mv -f $LIBS/pve-target.env.new $LIBS/pve-target.env" <<<"$PLAN" \
+  && ok "URL, node, pool and a root-owned copy of the CA go to $LIBS/pve-target.env, root 0644" \
+  || bad "target plan: $(grep -F 'pve-' <<<"$PLAN" | head -4)"
+! grep -q 'SETUP-TOKEN-MUST-NOT-APPEAR' <<<"$PLAN" && ok "the token from the same settings never reaches the plan" \
+  || bad "the token reached the plan"
+# The environment of the call comes first; an http URL or a pool with a slash is
+# no target.
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/settings.json" AH_PVE_POOL=other bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "AH_PVE_POOL=other" <<<"$PLAN" && ok "a value in the environment wins over the settings file" \
+  || bad "env precedence: $(grep -F 'AH_PVE_POOL' <<<"$PLAN" | head -2)"
+for bad_env in "AH_PVE_URL=http://pve.test.invalid:8006" "AH_PVE_POOL=a/b"; do
+  PLAN=$(env "$bad_env" PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/settings.json" bash "$SETUP" --dry-run 2>&1)
+  grep -q "no complete Proxmox target" <<<"$PLAN" && ! grep -qF -- "$LIBS/pve-target.env.new" <<<"$PLAN" \
+    && ok "$bad_env is no target" || bad "$bad_env was taken: $(grep -F 'pve-target' <<<"$PLAN" | head -2)"
+done
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LIBDIR="$LIBS" AH_RUNNER_DRY_PVE_SRC="$PT/none.json" bash "$SETUP" --dry-run 2>&1)
+grep -q "no complete Proxmox target" <<<"$PLAN" && ! grep -qF -- "$LIBS/pve-target.env.new" <<<"$PLAN" \
+  && ! grep -qF -- "$LIBS/pve-ca.pem" <<<"$PLAN" \
+  && ok "without a source no target file, and a note" || bad "no source: $(grep -F 'Proxmox' <<<"$PLAN" | head -3)"
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); prc=$?
 [ $prc -eq 2 ] && ! grep -q 'nobody-at-all' <<<"$PLAN" \
   && ok "a real run without --dry-run still demands root and names no override" \

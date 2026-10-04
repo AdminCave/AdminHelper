@@ -132,10 +132,17 @@ Stufe 7).
      an anderen Tasks.
    - **Rot strukturell / unabhängig von dir** → **STOPP**: im Ledger vermerken, Lauf beenden,
      berichten. Nicht auf rotem Fundament weiterbauen.
-4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): der Reviewer braucht einen
-   Diff. Seit Stufe 4 stagt nicht mehr die Session, sondern `task-close.sh --stage` in
-   Schritt 5 (`git add` prompt) — gib dem Reviewer deshalb `git diff HEAD -- <pfade>` als
-   Diff-Quelle **und** nenne ihm die neuen Dateien ausdrücklich: untrackte Dateien stehen in
+4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit).
+   **Ledger-Kopf `Review: auto`** (Opt-in, Pilot der Stufe 6b): **kein Sub-Agent** — den
+   Reviewer startet `task-close.sh --review auto` in Schritt 5 selbst, als eigenen
+   `claude -p`-Prozess (`scripts/dev/review-run.sh`, Modell aus `review.sh risk --staged`), und
+   die Probe fährt der Runner; Prompt und Urteil gehen nicht durch die Bau-Session. Weiter mit
+   Schritt 5 — die Regeln unter „Urteil“ unten (eine Runde als Regel, `nit` blockiert nie, kein
+   neuer Umfang mitten im Bau) gelten ebenso für die Funde seines Verdicts; committet wird aber
+   nur ein approve, ein `request_changes` ist Exit 3, auch mit nur `nit`s. Ohne `Review: auto`
+   im Kopf gilt der ganze Schritt: der Reviewer braucht einen Diff. Seit Stufe 4 stagt nicht mehr
+   die Session, sondern `task-close.sh --stage` in Schritt 5 (`git add` prompt) — gib dem
+   Reviewer deshalb `git diff HEAD -- <pfade>` als Diff-Quelle **und** nenne ihm die neuen Dateien ausdrücklich: untrackte Dateien stehen in
    keinem `git diff`, er muss sie direkt lesen (`git status --porcelain -uall -- <pfade>`
    zeigt sie). Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`,
    Modell wie unten) mit einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst
@@ -184,6 +191,17 @@ Stufe 7).
    ```bash
    bash scripts/dev/task-close.sh <ledger> <id> --stage --review-note "approve (sonnet)" -m "<msg>"
    ```
+   Mit **`Review: auto`** im Ledger-Kopf statt `--review-note`:
+   `bash scripts/dev/task-close.sh <ledger> <id> --stage --review auto -m "<msg>"` — im tmux mit
+   Wächter (CLAUDE.md § 2), denn der Reviewer-Lauf kann über 10 Minuten dauern; Ausgabe und Exit
+   in Dateien sichern (`> <Scratchpad>/<id>.close.log 2>&1; echo $? > <Scratchpad>/<id>.close.rc`),
+   die Verzweigungen unten hängen am Exit. Exit 3 nach
+   Runde 1: die Funde aus `.ah-out/review/<slug>/<id>.r1.verdict.json` beheben und erneut
+   schließen, das ist Runde 2; eine dritte gibt es nicht (Exit 3 mit Hinweis auf
+   `ledger.sh mark-question`). Exit 74 (der Reviewer gab kein Verdict): **einmal** neu
+   schließen, scheitert auch das, STOPP mit Meldung — kein Rückfall auf den Sub-Agent-Review,
+   SKIP ist nicht grün. Was jede Runde gekostet hat (Modell, Urteil, `$`, Turns, Sekunden):
+   `bash scripts/dev/review.sh log --ledger <ledger>`.
    `--stage` stagt die Pfade aus `Dateien:` der Task (nur die, keine Verzeichnisse, auch
    Löschungen) — **nutze es**: `git add` prompt seit Stufe 4, ein Bau, der von Hand stagen
    will, bleibt im Prompt stehen.
@@ -203,8 +221,9 @@ Stufe 7).
    - **4** — blockiert: ein Pfad außerhalb der Task (`ledger.sh set-files` oder Datei aus dem
      Commit nehmen) oder etwas, das nie in dieses öffentliche Repo darf.
    - **74** — Infrastruktur: die Suite oder ein Vertragstest konnte gar nicht laufen → **STOPP**
-     und berichten. Zwei Sonderfälle sind kein Stopp: eine Task **ohne `Komponente:`**
-     (Handarbeit, z. B. „Kevins Handgriffe") wird gar nicht über `task-close.sh` geschlossen —
+     und berichten. Unter `--review auto` mit der Meldung `the reviewer gave no usable verdict`:
+     **einmal** neu schließen (oben), erst dann STOPP. Zwei Sonderfälle sind kein Stopp: eine
+     Task **ohne `Komponente:`** (Handarbeit, z. B. „Kevins Handgriffe") wird gar nicht über `task-close.sh` geschlossen —
      offen lassen und im Abschluss berichten; und ein gescheitertes `git commit` (Recovery
      unten: einfach erneut schließen, der Aufruf ist wiederholbar).
 
@@ -267,7 +286,8 @@ Stufe 7).
    `[?]`-Punkte offen bleiben; ein `chore(ledger)`-Commit) — vor dem Push, sonst kommt er nie
    in den PR und steht nach dem Merge auf `main` für immer auf `bereit`. Dann
    `git push -u origin <branch>`; den PR-Text schreibt
-   `bash scripts/dev/review.sh pr-body <ledger> > <Scratchpad>/pr-body.md` (Spec, Roadmap-IDs,
+   `bash scripts/dev/review.sh pr-body <ledger> > <Scratchpad>/pr-body.md` (mit `Review: auto`
+   dazu `--verdicts .ah-out/review/<slug>`: je Task Modell, Runde und Mutanten; Spec, Roadmap-IDs,
    Heavy-Zeile, je Task Haken mit Evidenz und Review, `[~]`/`[?]` gesondert; eine Task ohne
    Evidenz heißt „unverifiziert"), das VM-Ergebnis kommt von Hand dazu; dann
    `gh pr create --draft --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`.

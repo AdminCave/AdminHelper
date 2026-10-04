@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "review-output.schema.json",
+  "title": "AdminHelper reviewer output",
+  "description": "What the reviewer process hands back through --json-schema: only what the model decides. scripts/dev/review-run.sh adds the runner's fields (task, tree hash, reviewer, probe, verify, contracts, cost) to make a review-verdict.schema.json verdict.",
+  "type": "object",
+  "required": ["verdict", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": { "enum": ["approve", "request_changes", "needs_decision"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "file", "claim"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": { "enum": ["blocker", "wichtig", "nit"] },
+          "file": { "type": "string" },
+          "line": { "type": ["integer", "null"] },
+          "claim": { "type": "string", "minLength": 1 },
+          "evidence": {
+            "description": "the concrete input and the wrong result; a blocker without it counts as a nit",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "mutants": {
+      "description": "review-probe.sh --mutate runs; the reviewer sets none in the pilot (stage 6b T9)",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "replacement", "result"],
+        "additionalProperties": false,
+        "properties": {
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": "integer" },
+          "replacement": { "type": "string" },
+          "result": { "enum": ["killed", "survived"] }
+        }
+      }
+    }
+  }
+}

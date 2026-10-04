@@ -9,6 +9,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Der Reviewer als eigener Prozess (Stufe 6b, R-0155, R-0147, R-0150):**
+  `task-close.sh --review auto` startet den Task-Reviewer selbst: der Runner faehrt die Probe
+  (`review-probe.sh`), `scripts/dev/review-run.sh` startet `claude -p` mit dem Reviewer aus
+  `scripts/dev/review-agent.md`, ohne Projekt- und Benutzer-Settings, nur mit eigenen Settings
+  (`scripts/dev/review-settings.json`: lesend, im Pilot ohne Mutanten, der harness-guard als
+  Hook, fail-closed) und dem Schema `scripts/dev/review-output.schema.json`,
+  Modell und Deckel nach `review.sh risk`. Das Verdict (Schema-Version 2) liegt unter
+  `.ah-out/review/<slug>/` und wird ueber `check-verdict --task` an Task und Tree gebunden;
+  hoechstens zwei Runden, ein Prozess ohne Verdict ist Exit 74 ohne Rueckfall. Neu sind
+  `review.sh log` (jede Runde mit Kosten, Turns und Dauer, als Tabelle mit Summe) und
+  `scripts/dev/review-cli-probe.sh` (misst die Aufrufform gegen die CLI). Opt-in fuer den Pilot
+  per Ledger-Kopf `Review: auto`; Anleitung: `DEVELOPMENT.md`, „Reviewer als Prozess".
+
 - **Review-Pruefer ohne Modell (Stufe 6a, R-0009):** `scripts/dev/review.sh` kann jetzt
   `risk` (Risikopfad im Diff nach `scripts/dev/review-risk.txt`, daraus das Reviewer-Modell),
   `docs-pairs` (eine Doku-Seite ohne ihre andere Sprache), `contracts` (Pruefungen je
@@ -178,6 +191,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
+  Die Proben von `scripts/dev/runner-redteam.sh` auf git, Proxmox, D-Bus und Settings fuehren
+  keinen Code und keine ausfuehrbare Konfiguration des Runners mehr aus (die Modellproben starten
+  bewusst seine CLI, nach Pruefsumme und Settings, die sie bei einem FAIL nicht aufhalten). Die Push-Proben pushen aus einem eigenen Repository ohne Hooks und ohne
+  git-Konfiguration des Nutzers an die URLs des Klons und lesen seine Konfiguration auf
+  Credential-Helper, Extra-Header und URL-Umschreibungen; Aenderungen am Klon zeigt die ctime statt
+  `git status`. Probe 4 misst den Proxmox-Token direkt an der API (`curl -q`, Token ueber stdin)
+  gegen ein Ziel, das `runner-setup.sh` root-eigen als `pve-target.env` ablegt, statt `vm.py` aus dem
+  Klon zu starten. Die D-Bus-Probe prueft den Socket statt ein `busctl` ohne `XDG_RUNTIME_DIR`, die
+  Runner-Settings werden byte-genau mit der geprueften Kopie verglichen, und ein unbekanntes
+  Argument endet mit Exit 2 statt im vollen Lauf. `scripts/dev/hooks/harness-guard.sh` zaehlt die
+  Ausgabe-Optionen von git als Schreibziel (`--output` jedes Aufrufs, `archive -o`,
+  `format-patch -o`, `bundle create`, `grep -O`), und der Runner-Hook ist fail-closed: fehlt der
+  Waechter oder haengt er, sperrt der Hook mit Exit 2. Anleitung: `DEVELOPMENT.md` „Runner-User" (Red Team) und
+  „Harness-Schutz und Kill-Switch".
+
 - **FRP: Secret und Visitor-Port nur an STCP-Tunneln (Server, R-0129):** Ein HTTPS-Tunnel speichert weder
   `secret_key` noch `visitor_port`; `POST` verwirft mitgeschickte Werte, und der Wechsel per `PUT` auf HTTPS
   loescht beide. Der Wechsel zurueck auf STCP erzeugt ein neues Secret und vergibt einen freien Port, wenn der
@@ -307,6 +336,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Eintraege mit.
 
 ### Changed
+
+- **`task-close.sh` prueft billig zuerst (Stufe 6b, R-0150):** `diff-scan`, `scope`,
+  `docs-pairs` und `sec` laufen vor der Suite, `contracts` danach; ein einseitiger Doku-Abschluss
+  kostet keinen Suite-Lauf mehr. Aendert sich der Index waehrend des Laufs, bricht der Abschluss
+  mit Exit 2 ab. `pr-body` prueft Verdict-Dateien ueber `check-verdict` (schemawidrig heisst
+  „ungueltig").
+- **Red Team root-eigen, in fester Umgebung (R-0152):** `scripts/dev/runner-setup.sh` installiert
+  `runner-redteam.sh` mit `runner-env.sh`, `runner-settings.json` und `runner-claude.version` nach
+  `/usr/local/lib/adminhelper-dev/` (root) und haelt die sha256 der Runner-CLI in
+  `/var/lib/adminhelper-dev/runner-claude.sha256` fest; `--remove` nimmt beides mit. Das Red Team
+  laeuft von dort (`sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh`),
+  startet sich unter `env -i` mit festem `PATH` neu, sourct keine Datei des Runners
+  (`AH_RUNNER_ENV_NO_DEVENV=1` in `runner-env.sh`), nimmt das Soll des Pin-Checks aus seinem eigenen
+  Verzeichnis und meldet `FAIL`, wenn es von woanders laeuft, wenn `runner-env.sh` es veraendert
+  oder wenn die CLI nicht die festgehaltene ist. Nach einem CLI-Wechsel braucht es deshalb erneut
+  `sudo bash scripts/dev/runner-setup.sh`. Anleitung: `DEVELOPMENT.md` „Runner-User".
 
 - **Python-Sperre ueber Nutzergrenzen, Runner-Setup klont nur neu (R-0080, R-0077):**
   `scripts/tests/run.sh` nimmt fuer `server-pytest` und `schemathesis` die geteilte Sperre

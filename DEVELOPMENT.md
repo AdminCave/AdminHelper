@@ -452,11 +452,8 @@ Hand stagen will, kommt nicht weiter; in Kevins Sessions ist es frei.
 
 `task-close.sh` laeuft **ausserhalb** der Modell-Session und macht fuenf Dinge in
 dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
-(halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash merken; (2) das
-`Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
---strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
-`verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
-Prosa-Zeile faehrt die Komponente der Task, mit Hinweis); (3) `review.sh diff-scan`
+(halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash und Index merken (aendert sich
+der Index bis zum Commit, Exit 2); (2) die billigen Pruefer, vor der Suite (R-0150): `review.sh diff-scan`
 (abgeschaltete Tests im Diff: Skip-, xfail-, todo-, fixme- und only-Muster von pytest, unittest,
 vitest/jest, Playwright, Rust und Go, auch `fit(`, `.fails(`, `.runIf(` und `pytest.importorskip(`, <!-- review: ok nennt die Muster -->
 `|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
@@ -470,20 +467,25 @@ Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Te
 nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade),
-`review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache), `review.sh contracts` (die Pruefungen, die an
-den geaenderten Pfaden haengen) und `review.sh sec` (was nie ins oeffentliche Repo darf); (4) das Review-Urteil:
-`--review-note "<text>"` oder `--review verdict:<datei>`, die `review.sh check-verdict` gegen Schema und Tree-Hash
-prueft; (5) `ledger.sh
+`review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache) und `review.sh sec` (was nie ins
+oeffentliche Repo darf); (3) das
+`Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
+--strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
+`verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
+Prosa-Zeile faehrt die Komponente der Task, mit Hinweis), danach `review.sh contracts` (die
+Pruefungen, die an den geaenderten Pfaden haengen); (4) das Review-Urteil:
+`--review-note "<text>"`, `--review verdict:<datei>`, die `review.sh check-verdict` gegen Schema und Tree-Hash
+prueft, oder `--review auto`, der Reviewer als eigener Prozess (Stufe 6b, „Reviewer als Prozess"); (5) `ledger.sh
 mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` (sie nennt die gelaufenen
 Komponenten, etwa `run.sh[quick] web desktop-e2e: 2 passed, 0 failed, 16 skipped`, und liefen Vertraege,
 ` · contracts: 1 ok`) und **ein** Commit
 mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
 `aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
 `ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
-Eingabefehler (auch ein unlesbares oder schemawidriges Verdict), `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite
-in nur einer Sprache, ein roter Vertrag oder kein brauchbares approve, `4` blockiert (Scope/Sec) oder ein Verdict
-fuer einen anderen Baum,
-`74` die Suite oder ein Vertrags-Test konnte gar nicht laufen.
+Eingabefehler (auch ein unlesbares oder schemawidriges Verdict) oder der Index aenderte sich waehrend des
+Laufs, `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite in nur einer Sprache, ein roter Vertrag, kein brauchbares
+approve oder eine dritte Review-Runde, `4` blockiert (Scope/Sec) oder ein Verdict fuer einen anderen Baum oder eine
+andere Task, `74` die Suite, ein Vertrags-Test, die Probe oder der Reviewer-Prozess konnte gar nicht laufen.
 
 `ledger.sh start` schreibt dabei `.vm/active-task` — heute reine **Anzeige** (wer arbeitet
 gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, gelesen wird die
@@ -528,10 +530,11 @@ raten muesste (Stufe 6a; Uebersicht in `docs/developer/cicd.html`, „Review-Pru
 bash scripts/dev/review.sh risk                           # xhigh + Pfade | standard: welches Reviewer-Modell
 bash scripts/dev/review.sh docs-pairs --staged            # Doku-Seite ohne ihre andere Sprache -> Exit 3
 bash scripts/dev/review.sh contracts --staged [--list]    # die Pruefungen der geaenderten Pfade
-bash scripts/dev/review.sh check-verdict <datei> --tree <hash>   # 0 | 2 | 3 | 4
+bash scripts/dev/review.sh check-verdict <datei> --tree <hash> [--task <ledger> <id>]   # 0 | 2 | 3 | 4
 bash scripts/dev/review-probe.sh <komponente> [--staged | --commit <rev>] [-- <test>]
 bash scripts/dev/review-probe.sh <komponente> --commit <rev> --mutate <datei>:<zeile> '<ersatz>'
 bash scripts/dev/review.sh pr-body tasks/<slug>.md [--verdicts <dir>]
+bash scripts/dev/review.sh log [--ledger tasks/<slug>.md]          # jede Reviewer-Runde, mit Summe
 ```
 
 - **`risk`** misst ohne Flag alles noch nicht Committete (gestaged, ungestaged, untrackt —
@@ -547,15 +550,77 @@ bash scripts/dev/review.sh pr-body tasks/<slug>.md [--verdicts <dir>]
   in zwei Schritten: erst ein Regex, der beide Schreibweisen nimmt, dann das neue Format.
 - **`check-verdict`** prueft ein Reviewer-Urteil gegen `scripts/dev/review-verdict.schema.json`
   (nur mit python3): kein approve mit einem `blocker`, keins, wenn die Probe den neuen Test ohne
-  die Aenderung gruen fand; ein `blocker` ohne Beleg zaehlt als `nit`.
+  die Aenderung gruen fand; ein `blocker` ohne Beleg zaehlt als `nit`. Mit `--task` muss das
+  Verdict auch diese Task meinen (sonst Exit 4). Schema-Version 2 (der Reviewer-Prozess) verlangt
+  Runde, Turns, Dauer und den `probe`-Block; eine Probe mit `applicable: false` (etwa
+  `no-test-change`, ein Refactor) ist kein Hindernis, ein ueberlebender Mutant steht in der
+  Review-Zeile, ebenso eine Probe, die nicht lief (`probe not run: toolchain|other-failure|…`).
 - **`review-probe.sh`** legt eine eigene Worktree unter dem `TMPDIR` des Aufrufers an, setzt nur
   die Test-Hunks auf die Basis und faehrt `verify.sh --tree`; die Antwort ist der `probe`-Block
   des Schemas (`red_without_change`, oder `applicable: false` mit `new-symbol`, `toolchain`,
-  `no-test-change`, `apply-failed`, `other-failure`). `--mutate` setzt genau einen Mutanten in die
+  `no-test-change`, `only-test-change`, `apply-failed`, `other-failure`; `no-test-change` und
+  `only-test-change` ohne Suite-Lauf). `--mutate` setzt genau einen Mutanten in die
   ganze Aenderung (eine Datei der Worktree, sonst Exit 2); der Ersatz muss lint-sauber sein.
 - **`pr-body`** schreibt den PR-Text aus dem Ledger; eine Task ohne Evidenz heisst
-  „unverifiziert", Adressen, Hostnamen privater Netze und VMIDs fallen heraus. Wo Verdict-Dateien
-  liegen, legt Stufe 6b fest, bis dahin `--verdicts <dir>`.
+  „unverifiziert", Adressen, Hostnamen privater Netze und VMIDs fallen heraus. Mit
+  `--verdicts .ah-out/review/<slug>` nimmt es je Task die letzte Runde `<id>.r<n>.verdict.json`
+  (oder `<id>.json`) und prueft sie ueber `check-verdict` selbst: ein schemawidriges Verdict heisst
+  „ungueltig", eines ohne brauchbares approve sagt warum; die Zeile nennt Modell, Runde und
+  Mutanten.
+- **`log`** liest `.ah-out/review/review-log.jsonl`, eine Zeile je Reviewer-Runde (Datum, Ledger,
+  Task, Runde, Modell, Effort, Urteil, Funde, Probe, Mutanten, `cost_usd`, `num_turns`,
+  `duration_s`, Tree), und druckt sie als Tabelle mit der Summe
+  `N runs, A approve, R request_changes, F failed, $X, T turns, S s`. Die Zeilen schreibt
+  `task-close.sh --review auto` (`log --append <verdict>`, eine gescheiterte Runde mit
+  `log --failed "<grund>"`).
+
+### Reviewer als Prozess: `--review auto` (Stufe 6b)
+
+Im Pilot (Ledger-Kopf `Review: auto`) startet `task-close.sh` den Task-Reviewer selbst, statt
+dass die Bau-Session einen Sub-Agent fragt; Prompt und Urteil gehen nicht durch die Session:
+
+```bash
+bash scripts/dev/task-close.sh tasks/<slug>.md T3 --stage --review auto -m "feat(...): ..."
+bash scripts/dev/review.sh log --ledger tasks/<slug>.md      # Runden, Urteile, $, Turns, Sekunden
+```
+
+Nach den billigen Pruefern, der Suite und den Vertraegen:
+
+1. **Runde:** gezaehlt aus den Dateien unter `.ah-out/review/<slug>/`. Liegt fuer genau diesen
+   gestagten Diff, Baum und diese Task schon ein approve (ein Abschluss brach danach ab, etwa am
+   Commit), wird es uebernommen. Eine dritte Runde gibt es nicht (Exit 3 mit Hinweis auf
+   `ledger.sh mark-question`).
+2. **Probe durch den Runner:** `review-probe.sh <komponente> --staged [-- <test aus Verify:>]`;
+   ohne Testdatei oder nur mit Tests antwortet sie `applicable: false`, ohne Suite-Lauf.
+3. **Reviewer:** `scripts/dev/review-run.sh` baut den Prompt (Task-Text, Spec-Pfad, gestagter
+   Diff ohne `tasks/private/`, neue Dateien, Tree-Hash, Probe, Vertraege, Verify-Summary; in
+   Runde 2 der Pfad der Runde 1) und startet aus dem Repo-Wurzelverzeichnis `claude -p` mit dem
+   Reviewer aus `scripts/dev/review-agent.md` (als `--agents`-JSON), `--setting-sources ""` (weder
+   Projekt- noch User-Settings: deren Allow-Regeln deckelt `review-settings.json` nicht),
+   den Settings `scripts/dev/review-settings.json` und dem Schema
+   `scripts/dev/review-output.schema.json`. Das Modell folgt `review.sh risk --staged`:
+   `standard` ist Sonnet/high mit 60 Turns und 5 $, `xhigh` Opus/xhigh mit 80 Turns und 15 $;
+   Timeout 1200 s. Die Deckel werden nach dem Pilot aus den Werten von `review.sh log`
+   nachgestellt.
+4. **Verdict:** aus `structured_output` plus den Feldern des Runners (Task, Tree-Hash, Probe,
+   Verify, Vertraege, Kosten, Turns, Dauer) wird `<id>.r<n>.verdict.json` (Schema-Version 2),
+   daneben liegen `prompt.md`, `raw.json`, `err` (stderr der CLI), `run.err` (stderr von
+   review-run.sh) und `staged` (der Hash des gestagten Diffs, an dem die Uebernahme eines approve
+   haengt) der Runde, alles unter `.ah-out/`, gitignored. `check-verdict --tree --task` entscheidet, ob committet wird; jede Runde geht als
+   Zeile ins Review-Log.
+5. **Scheitern:** kein Start, Timeout, ein `error_*`-Ergebnis, ein Exit ungleich 0 oder ein
+   fehlendes oder schemawidriges `structured_output` sind Exit 74, ohne Verdict und ohne Commit;
+   im Log steht die Runde als `failed` mit Grund. Die Session versucht es einmal neu, danach
+   STOPP; einen Rueckfall auf den Sub-Agent-Review gibt es nicht.
+
+Der Reviewer darf lesen und `git diff|show|log|status`; im Pilot setzt er keine Mutanten (Kevin,
+2026-10-03): ein `review-probe.sh --mutate` laeuft als Code mit den Rechten des Benutzers. Mutanten
+kommen zurueck, sobald es feste Operatoren oder eine Sandbox gibt (Roadmap); von Hand bleibt
+`--mutate` nutzbar. Edit, Write, Netz, `verify.sh` und `run.sh` sind gesperrt. Der
+harness-guard laeuft als PreToolUse-Hook und ist fail-closed: fehlt er, scheitert oder haengt
+er, blockiert der Hook (R-0159). Die Projekt-Settings wirken nicht hinein. Die Aufrufform hat
+`scripts/dev/review-cli-probe.sh` gemessen (CLI 2.1.285); gegen eine neue CLI-Version laesst
+sie sich mit demselben Skript erneut messen.
 
 ### Die Roadmap als Skript: `roadmap.py`
 
@@ -674,8 +739,19 @@ in der Wurzel startet (`find . -name '*.pyc' -delete`): er startet im Unterverze
 (`find apps -name '*.pyc' -delete`); `rm -f *.log` bleibt frei, der Glob trifft nur die Logs. Alle anderen Schreibformen
 pruefen nur den Pfad selbst. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
 python/perl heraus, ein zur Laufzeit gebauter Pfad, ein `find … -exec sed -i`,
-`git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
-auch hier die Deny-Liste, der Hook ist die zweite Schicht:
+`git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Auch git schreibt
+ueber Ausgabe-Optionen: `--output` jedes git-Aufrufs (auch hinter `--`, das ein Optionswert schlucken
+kann; ein Argument namens `--output…`, Pfad oder Optionswert, ist dafuer ein Fehlalarm), `-o` von archive, das Verzeichnis von
+`format-patch -o`, die Datei von `bundle create` zaehlen als Ziel, und der Befehl hinter `git grep -O`
+wird mit den Dateien geprueft, die er bekommt (R-0158). Im Runner ist der
+Hook **fail-closed** (R-0159): Claude Code laesst einen Aufruf durch, wenn ein command-Hook nicht
+startet (Exit 127) oder in seine Zeitgrenze laeuft; nur Exit 2 sperrt. Der Hook-Befehl in
+`scripts/dev/runner-settings.json` prueft deshalb, dass der Waechter lesbar ist, ruft ihn mit
+`timeout -k 2 10` auf und macht aus jedem Fehler Exit 2 (Feld `timeout` 15 s); der Waechter selbst endet
+immer mit 0 und traegt seine Entscheidung im JSON. Ein Fehler **im** Waechter (kein `python3`, eine
+Ausnahme im Parser) laesst ihn dagegen weiter ohne Entscheidung enden (offen, R-0166). Interaktiv
+bleibt der Hook, wie er ist. Die tragende
+Grenze ist auch hier die Deny-Liste, der Hook ist die zweite Schicht:
 
 ```bash
 bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung, pre-commit
@@ -800,6 +876,11 @@ oder Mount, bricht es ab, statt zu kopieren. Ausserdem legt es die geteilte Pyth
 `/var/lib/adminhelper-dev/py.lock` an (root, `0666`, im Verzeichnis `0755` von root; Abschnitt
 „Die schweren Python-Schritte laufen nacheinander"), `--remove --yes` nimmt sie mit; ein
 bestehender Runner bekommt sie mit einem erneuten `sudo bash scripts/dev/runner-setup.sh`.
+Ebenso installiert es das Red Team root-eigen (R-0152): `runner-redteam.sh`, `runner-env.sh`,
+`runner-settings.json` und `runner-claude.version` aus dem Checkout, aus dem es laeuft, nach
+`/usr/local/lib/adminhelper-dev/` (root, Verzeichnis und Skript `0755`, der Rest `0644`), und es
+haelt die sha256 der Runner-CLI in `/var/lib/adminhelper-dev/runner-claude.sha256` fest
+(`0644`); `--remove --yes` nimmt beides mit.
 Danach bleiben **drei Handgriffe** fuer Kevin, die der Runner nicht selbst tun kann:
 
 1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
@@ -809,8 +890,8 @@ Danach bleiben **drei Handgriffe** fuer Kevin, die der Runner nicht selbst tun k
    ACL-Pfade der Rolle `AdminHelperVM`, die Kevins eigener Token hat (Abschnitt
    „VMs mit vm.py") → Werte nach `~adminhelper-runner/.config/adminhelper/pve.env`.
 3. `sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only`, dann der
-   Red-Team-Lauf (unten). `pull`, nicht nur `fetch`: das Red Team laeuft aus diesem
-   Arbeitsbaum und liest das Soll von dort.
+   Red-Team-Lauf (unten). Das Red Team laeuft nicht aus diesem Klon, sondern aus seiner
+   root-eigenen Kopie; der Klon ist nur das Ziel seiner Proben.
 
 **`-iu`, nicht `-u`, bei allem, was die CLI des Runners braucht:** ohne `-i` behaelt
 sudo den PATH des Aufrufers, und die CLI in `~adminhelper-runner/.local/bin` ist dann
@@ -845,15 +926,19 @@ darf nicht davon abhaengen, was die CLI gerade als Standard mitbringt:
 **Das Red Team liest zurueck, was wirklich lief.** Aus dem `system/init`-Ereignis einer
 Modellprobe nimmt es das tatsaechliche Modell und die tatsaechliche CLI-Version, aus
 `result.modelUsage` das Modell, das wirklich geantwortet hat, und vergleicht alles mit dem
-Soll aus seinem Klon. Abweichung, fehlendes Ereignis, eine Probe ohne Ergebnis oder eine
+Soll, das `runner-setup.sh` neben das Red Team installiert hat — nicht mit dem Klon, den der
+Runner aendern kann. Die CLI selbst gehoert dem Runner; dass sie die installierte ist, belegt
+ihre sha256 gegen die festgehaltene (`runner-redteam.sh --claude-sum <datei> <claude>`).
+Abweichung, fehlendes Ereignis, eine Probe ohne Ergebnis oder eine
 fehlende CLI ist ein `FAIL`, kein Hinweis — ein Messgeraet, das nichts misst, darf nicht
 wie ein Ergebnis aussehen. Den Effort liest es **nicht** zurueck: kein Ereignis des
 Protokolls traegt ihn; ihn sichern die Settings und das Leeren von
 `CLAUDE_CODE_EFFORT_LEVEL`.
 
-**Anheben** ist ein bewusster Schritt, kein Nebeneffekt. Das Soll steht an zwei Orten:
-`runner-setup.sh` liest es aus dem Checkout, aus dem es laeuft, das Red Team aus dem Klon
-des Runners. Beide muessen auf demselben `main` stehen:
+**Anheben** ist ein bewusster Schritt, kein Nebeneffekt. Das Soll steht im Repo;
+`runner-setup.sh` liest es aus dem Checkout, aus dem es laeuft, und installiert es mit dem
+Red Team. Nach jedem CLI- oder Modellwechsel laeuft deshalb zuerst `runner-setup.sh`: sonst
+misst das Red Team gegen das alte Soll, und die Pruefsumme der neuen CLI meldet es als `FAIL`:
 
 ```
 # 1. auf einem Branch: neue Version eintragen und pruefen, dass sie das Modell kennt
@@ -862,7 +947,7 @@ echo 2.1.XXX > scripts/dev/runner-claude.version
 # 3. PR, Merge; dann aus einem Checkout auf dem neuen main einrichten und beweisen
 sudo bash scripts/dev/runner-setup.sh
 sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only
-sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh
+sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh
 ```
 
 **Getrusteter Workspace — bewusst abgeschaltet.** Claude Code ignoriert die
@@ -922,18 +1007,48 @@ eigene DB, eigener Proxmox-Token nur fuer den Pool.
 **Red Team.** Der Beweis, dass das haelt, ist ein Lauf als dieser User:
 
 ```bash
-sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh
+sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh
 ```
+
+Das Messgeraet liegt ausserhalb dessen, was der gepruefte Nutzer schreiben kann: die
+root-eigene Kopie, die `runner-setup.sh` installiert. Es startet sich einmal unter `env -i` mit
+festem `PATH` neu, sourct keine Datei des Runners (`runner-env.sh` laesst dort `~/.devenv.sh`
+aus) und bricht ab, wenn `runner-env.sh` seine Funktionen, Zaehler oder seinen `PATH`
+veraendert. Laeuft es von woanders, etwa aus dem Klon, ist das ein `FAIL`, der den richtigen
+Aufruf nennt, und der Lauf endet dort.
 
 Jede Probe druckt `ok`, `FAIL` oder `info`; die letzte Zeile ist `N ok, M FAIL`.
 Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,
 `gh`-Login, D-Bus/Keyring, der eigene Proxmox-Token gegen eine VM **ausserhalb**
 des Pools, und zwei `claude -p`-Laeufe, die ausdruecklich nach einem `git push`
-bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`). Dazu die
+bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`).
+Die Proben auf git, Proxmox, D-Bus und Settings fuehren keinen Code und keine ausfuehrbare
+Konfiguration des Runners aus (R-0156, R-0160 bis R-0163); die Modellproben starten bewusst die
+CLI des Runners, nachdem Pruefsumme und Settings geprueft sind — ein FAIL dort haelt sie nicht auf
+(ihr Verhindern regelt Stufe 7a).
+Die Push-Proben pushen aus einem eigenen Repository ohne Hooks, ohne git-Konfiguration
+des Nutzers und ohne Credential-Helper an die URLs, die der Klon nennt, und lesen seine
+Konfiguration auf Helper, Extra-Header und URL-Umschreibungen (nur Namen, URLs geschwaerzt); ob eine
+Modellprobe den Klon geaendert hat, zeigt die ctime seiner Dateien, nicht `git status`. Der
+Proxmox-Token wird direkt an der API gemessen (`curl -q` ohne die curlrc des Nutzers, Token ueber
+stdin): `GET /pools?poolid=<pool>` muss den Pool zeigen, der Status einer VM ausserhalb des Pools
+muss abgelehnt werden. Das Ziel (URL, Node, Pool, CA) liest das Red Team aus `pve-target.env`, die
+`runner-setup.sh` root-eigen neben das Red Team schreibt (aus der Umgebung des Aufrufs, sonst aus
+`.claude/settings.local.json` des Checkouts, ohne Token; die CA als Kopie) — ohne sie meldet Probe 4
+`info`. Die D-Bus-Probe sucht den Socket in `/run/user/<uid>` und fragt ihn mit gesetztem
+`XDG_RUNTIME_DIR`; das Runtime-Verzeichnis des Besitzers darf der Runner nicht betreten.
+`~/.claude/settings.json` des Runners muss byte-genau der geprueften `runner-settings.json`
+entsprechen; Claude Code schreibt diese Datei selbst, wenn in einer Session `/config` oder `/model`
+eine Wahl speichert (Claude-Code-Doku, Settings), dann hilft ein erneutes `runner-setup.sh`. Ein
+unbekanntes Argument endet mit Exit 2, bevor eine Probe laeuft; viele Proben gibt es einzeln als
+Schritt ohne den Neustart (die Liste nennt die Meldung bei einem unbekannten Argument) — `--pve` und
+`--git` (zu jeder nicht-lokalen Push-URL des Klons und zu einer angegebenen URL) gehen dabei ins
+Netz. Dazu die
 geteilte Python-Sperre `/var/lib/adminhelper-dev/py.lock`: sie existiert, Datei und
 Verzeichnis gehoeren root, der Runner darf das Verzeichnis nicht schreiben und kann die
 Sperre nehmen (ist sie gerade belegt, ein `info`); einzeln mit
-`runner-redteam.sh --py-lock <absoluter-pfad>`.
+`runner-redteam.sh --py-lock <absoluter-pfad>`. Und die Runner-CLI gegen ihre festgehaltene
+sha256 (`--claude-sum`).
 Stufe 4 gilt erst mit `0 FAIL` als abgeschlossen; das Ergebnis gehoert in den
 Anhang von `tasks/harness-stufe-4.md`.
 
