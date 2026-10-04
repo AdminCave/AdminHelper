@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 6b — der Reviewer als eigener Prozess — Task-Ledger
-Status: bereit · Branch: harness/stufe-6b · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: erledigt · Branch: harness/stufe-6b · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe 6b, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-6b.md (Roadmap R-0155, R-0147, R-0150, dazu Teile von R-0151 und R-0154)
 Heavy: none — nur Harness-Skripte unter scripts/dev, eine Agent-Datei, ihre hermetischen Tests (claude-Stub), ein Skill und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Der echte CLI-Kleinstlauf in T1 ist Evidenz in Kevins Session, der Pilot nach dem Merge Handarbeit.
