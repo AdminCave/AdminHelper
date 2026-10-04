@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git log *)",
+      "Bash(git status *)"
+    ],
+    "deny": [
+      "Edit",
+      "Write",
+      "Bash(bash scripts/dev/verify.sh *)",
+      "Bash(bash scripts/tests/run.sh *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(git *--output*)",
+      "Bash(git *--no-index*)",
+      "Bash(git * /*)",
+      "Bash(git *../*)",
+      "Bash(git * ~*)",
+      "Read(~/.config/adminhelper/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "g=\"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\"; [ -r \"$g\" ] || { echo \"harness-guard missing: $g\" >&2; exit 2; }; AH_AUTONOMOUS=1 timeout 30 bash \"$g\" || { echo \"harness-guard failed or timed out\" >&2; exit 2; }",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

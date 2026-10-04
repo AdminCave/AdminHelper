@@ -35,7 +35,11 @@
 #                                                change (collection, import or
 #                                                build error) — no verdict
 #   applicable false, reason toolchain           a required step was skipped
-#   applicable false, reason no-test-change | apply-failed | other-failure
+#   applicable false, reason no-test-change | only-test-change | apply-failed | other-failure
+#                                                (only-test-change: nothing outside
+#                                                the tests, docs/, CHANGELOG.md and
+#                                                tasks/ changed, so there is no
+#                                                change to take away; no run)
 # Red is the failure of a TEST: a pytest <failure> in the JUnit file (an <error>
 # is a collection or setup error), go `--- FAIL:` without `[build failed]`, a
 # failing vitest/cargo test rather than a file that does not compile.
@@ -166,6 +170,15 @@ else
   fi
   [ -s "$PROBE_DIR/tests.patch" ] \
     || answer '{"applicable": false, "reason": "no-test-change", "red_without_change": null}'
+  # What scope lets every task touch (docs, CHANGELOG, the ledgers) is no change
+  # a test could be red without.
+  NOT_TESTS=(":(exclude)docs/" ":(exclude)CHANGELOG.md" ":(exclude)tasks/")
+  for p in "${PATHSPEC[@]}"; do NOT_TESTS+=(":(exclude)$p"); done
+  if [ "$MODE" = commit ]; then
+    "${GIT_DIFF[@]}" --quiet "$REV^" "$REV" -- . "${NOT_TESTS[@]}"
+  else
+    "${GIT_DIFF[@]}" --staged --quiet -- . "${NOT_TESTS[@]}"
+  fi && answer '{"applicable": false, "reason": "only-test-change", "red_without_change": null}'
   git worktree add -q --detach "$WT" "$BASE" >/dev/null 2>&1 || infra "git worktree add failed"
   WT_MADE=1
   git -C "$WT" apply "$PROBE_DIR/tests.patch" 2>/dev/null \
