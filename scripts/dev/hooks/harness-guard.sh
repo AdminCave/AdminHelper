@@ -109,7 +109,15 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 0
+# The project the call is about. Claude Code sets CLAUDE_PROJECT_DIR for its hooks,
+# and the runner's hook runs a root-owned copy of this file outside any checkout
+# (R-0164): the list and the kill switch come from the project, not from where
+# this file lies. A call by hand, or a test, falls back to the file's own checkout.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
+  ROOT="$(cd "$CLAUDE_PROJECT_DIR" && pwd)" || exit 0
+else
+  ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 0
+fi
 PATHS="$ROOT/scripts/dev/harness-paths.txt"
 MARKER="$ROOT/.vm/harness.off"
 
@@ -1073,6 +1081,10 @@ for p in dict.fromkeys(p for p in out if p):
     print("H " + p)
 for p in dict.fromkeys(p for p in taken if p):
     print("A " + printable(p))
+# Any write at all, inside the checkout or not: without its list an autonomous run
+# must not tell them apart by a root that may be the wrong one.
+if out or taken:
+    print("W")
 PY
 )
 targets() { python3 -c "$PARSE" "$ROOT"; }
@@ -1117,8 +1129,9 @@ holds_harness() {
   return 1
 }
 
-TMP_HIT="" BYPASS="" HIT=""
+TMP_HIT="" BYPASS="" HIT="" WRITES=""
 while IFS= read -r line; do
+  case "$line" in W) WRITES=1 ;; esac
   case "$line" in
     "T "*) [ -n "$TMP_HIT" ] || TMP_HIT="${line#T }" ;;
     "B "*) [ -n "$BYPASS" ] || BYPASS="${line#B }" ;;
@@ -1139,6 +1152,14 @@ if [ -n "$TMP_HIT" ]; then
 fi
 if [ -n "$BYPASS" ]; then
   deny "pre-commit bypass: $BYPASS — refused in every mode; the hook runs review.sh sec --staged, fix what it reports instead (R-0102)"
+  exit 0
+fi
+
+# An autonomous run that cannot see the list cannot tell a harness path from any
+# other: it writes nothing (R-0164) — a wrong project directory must not switch
+# the guard off. A session by hand keeps working in a checkout without the list.
+if [ -z "$HIT" ] && [ -n "$WRITES" ] && [ ! -f "$PATHS" ] && [ "${AH_AUTONOMOUS:-0}" = "1" ] && [ ! -e "$MARKER" ]; then
+  deny "no scripts/dev/harness-paths.txt in $ROOT — an autonomous run cannot tell the harness paths, so it writes nothing (R-0164)"
   exit 0
 fi
 

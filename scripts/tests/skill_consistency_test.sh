@@ -119,16 +119,24 @@ cleanup_rule() {
 
 # build_task_findings <skill> <runner settings> — one line per finding in the
 # worker's builder skill (stage 7a): a forbidden command given as an instruction
-# (every code span outside "## Nie"), or a `bash scripts/…` call it instructs that
-# no allow rule of the runner's settings lets through, or a deny stops.
+# (every code span and every line of a fenced block outside "## Nie"), or a
+# `bash scripts/…` call it instructs that no allow rule of the runner's settings
+# lets through, or a deny stops. Settings that do not load are a finding too.
 build_task_findings() {
   unreadable "$1" && return
   unreadable "$2" && return
   python3 - "$1" "$2" <<'PY'
 import fnmatch, json, re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
-perm = json.load(open(sys.argv[2]))["permissions"]
+try:
+    perm = json.load(open(sys.argv[2]))["permissions"]
+except Exception as e:
+    print("cannot load the runner's settings: %s" % e)
+    sys.exit(0)
 instr = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", text)
+FENCE = r"(?ms)^```[^\n]*\n(.*?)^```"
+commands = [l.strip() for b in re.findall(FENCE, instr) for l in b.splitlines() if l.strip()]
+commands += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", instr))]
 # task-close.sh named alone is a name; with arguments it is a call.
 FORBIDDEN = re.compile(r"(git (add|commit|stash|checkout|restore|push)\b|(bash )?(scripts/dev/)?task-close\.sh\s|mktemp\b|rm\b)")
 
@@ -140,8 +148,7 @@ def matches(cmd, rule):
 def rules(kind):
     return [r[5:-1] for r in perm.get(kind, []) if r.startswith("Bash(")]
 
-for span in re.findall(r"`([^`\n]+)`", instr):
-    cmd = span.strip()
+for cmd in commands:
     if FORBIDDEN.match(cmd):
         print("forbidden as an instruction: " + cmd)
     elif cmd.startswith("bash scripts/"):
@@ -151,7 +158,14 @@ PY
 }
 # build_task_calls <skill> — how many `bash scripts/…` calls it instructs.
 build_task_calls() {
-  python3 -c 'import re, sys; t = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", open(sys.argv[1]).read()); print(sum(1 for c in re.findall(r"`([^`\n]+)`", t) if c.strip().startswith("bash scripts/")))' "$1"
+  python3 - "$1" <<'PY'
+import re, sys
+t = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", open(sys.argv[1]).read())
+FENCE = r"(?ms)^```[^\n]*\n(.*?)^```"
+cmds = [l.strip() for b in re.findall(FENCE, t) for l in b.splitlines()]
+cmds += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", t))]
+print(sum(1 for c in cmds if c.startswith("bash scripts/")))
+PY
 }
 
 # fires <detector> <file…> — the detector read its input and reported a finding.
@@ -253,6 +267,12 @@ grep -q 'no allow rule in the runner' <<<"$(build_task_findings "$f" "$WORK/rs.j
 f=$(fixture 'Teste mit `bash scripts/dev/verify.sh scripts --strict`.' '' '## Nie' '' '- kein `git add`, kein `rm`.' '' '## Danach' 'Fertig.')
 [ -z "$(build_task_findings "$f" "$WORK/rs.json")" ] && ok "build_task_findings: the '## Nie' list is no instruction" \
   || bad "build_task_findings fired on: $(build_task_findings "$f" "$WORK/rs.json")"
+f=$(fixture 'So:' '' '```bash' 'bash scripts/dev/verify.sh scripts --strict' 'git add -A' '```')
+grep -q 'forbidden as an instruction: git add -A' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a forbidden command in a fenced block is found" || bad "build_task_findings missed a fenced block"
+printf '{"permissions": ' > "$WORK/broken.json"
+grep -q "cannot load the runner's settings" <<<"$(build_task_findings "$f" "$WORK/broken.json")" \
+  && ok "build_task_findings: settings that do not load are a finding, not a pass" || bad "build_task_findings passed broken settings"
 ! fires build_task_findings "$WORK/nosuch.md" "$WORK/rs.json" && [ -n "$(build_task_findings "$WORK/nosuch.md" "$WORK/rs.json")" ] \
   && ok "build_task_findings: a missing skill is neither a finding nor quiet" || bad "build_task_findings took a missing skill for input"
 
@@ -346,7 +366,7 @@ grep -qF 'Status: aktiv' "$BTS" && grep -qF 'Freigabe:' "$BTS" && grep -qF -- '-
   && ok "build-task checks the head (aktiv, Freigabe:) and knows --fix" || bad "build-task lacks the head check or --fix"
 FINDINGS=$(build_task_findings "$BTS" scripts/dev/runner-settings.json)
 CALLS=$(build_task_calls "$BTS")
-[ -z "$FINDINGS" ] && [ "$CALLS" -ge 4 ] \
+[ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
   && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
   || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
 

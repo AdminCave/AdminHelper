@@ -42,8 +42,10 @@ Abweichung: der Skill nennt den Scratch-Wrapper in T1 nur als Grenze, ohne Befeh
 `bash scripts/dev/scratch.sh new|rm` kommen mit T2 in den Skill, im selben Commit wie ihre Allow-Regeln (die Prüfung
 „jeder angewiesene `bash scripts/…`-Befehl hat eine Allow-Regel“ wäre sonst bis T2 rot).
 
-### T2 — Bau-Session-Grenzen: Deny auf `tasks/**`, Scratch über `scratch.sh` (R-0108)  [ ]
-Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/dev/scratch.sh, scripts/tests/scratch_test.sh, scripts/tests/hooks_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh
+### T2 — Bau-Session-Grenzen: Deny auf `tasks/**`, Scratch über `scratch.sh` (R-0108)  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/dev/scratch.sh, scripts/tests/scratch_test.sh, scripts/tests/hooks_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh, .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh, scripts/dev/hooks/harness-guard.sh, scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @38ea4864 2026-10-04T22:05:42+02:00
+Review: approve (opus/xhigh; 3 nit) · round 2
 Änderung: `runner-settings.json`: Allow `Edit(./tasks/**)` (`:88`) entfällt; Deny `Edit(./tasks/**)` und
 `Edit(//srv/ah/**/tasks/**)`; Allow `Edit(./.ah-out/loop/**)`, `Bash(bash scripts/dev/scratch.sh new:*)`,
 `Bash(bash scripts/dev/scratch.sh rm:*)`. Neues `scripts/dev/scratch.sh` (SPDX): `new [<name>]` ⇒ `mktemp -d -p
@@ -60,6 +62,15 @@ Dedup-Key: bug:scripts:runner-settings.json:mktemp-rm-denied
 HEAD: 2508f092
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
+Dazu (Aufsicht 2026-10-04, Kevin): die Zeilen `bash scripts/dev/scratch.sh new|rm` kommen in den Skill
+`/build-task` (Abweichung aus T1), der Detektor in `skill_consistency_test.sh` liest auch Fenced-Blöcke und fällt rot,
+wenn die Settings nicht laden (nits aus dem T1-Verdict). R-0164: der Guard des Runner-Hooks ist root-eigen
+(`runner-setup.sh` legt ihn wie das Red Team nach `/usr/local/lib/adminhelper-dev`, der Hook ruft diese Kopie), und
+`harness-guard.sh` liest `harness-paths.txt` und `.vm/harness.off` aus `CLAUDE_PROJECT_DIR`, nicht relativ zu sich selbst;
+die Runner-Allowlist verliert die Wege, ein Programm auszuführen oder zu schreiben, die ein Lesebefehl mitbringt —
+`rg` (`--pre`), `git grep` (`-O`), `sed -n` (`e`, `w`) —, die eingebauten Werkzeuge Grep und Read ersetzen sie.
+Tests, die der Builder schreibt und `verify.sh` ausführt, sind Code mit den Rechten des Runners: gewollt, die Grenze dort
+ist der Nutzer (kein Credential, kein Push), nicht die Allowlist.
 
 ### T3 — `ledger-loop.sh`: Gerüst, Preflight, Ledger-Prüfung, Lane, Zustand  [ ]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh
@@ -80,7 +91,7 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 
 ### T4 — Task-Iteration: Bau-Session, `task-close --review auto`, Runde 2, Marker  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/task-close.sh, scripts/tests/task_close_test.sh, scripts/dev/review-run.sh, scripts/tests/review_run_test.sh
 Änderung: Je Task wie Spec „Je Task“ 1–4: `ledger.sh start`; Bau-Session mit `timeout` und den drei Task-Deckeln, JSON
 auswerten (Kosten, Turns, Verweigerungen, Fehlerart, Ergebnis); Commit-Nachricht vorhanden ⇒ `task-close.sh <ledger> <id>
 --stage --review auto --message-file <datei>` aus dem Klon, in der Lane; Exit 0 weiter, 3 ⇒ eine `--fix`-Session mit
@@ -92,6 +103,12 @@ Code und Ledger; 3 dann 0 ⇒ zwei Sessions, die zweite mit `--fix`; 3, 3 ⇒ `[
 läuft; 4 ⇒ `[?]`; 74, 74 ⇒ Exit 74, Task `[ ]`; Stub setzt `[~]` ⇒ Commit nur des Ledgers.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
+Dazu (Aufsicht 2026-10-04, Kevin): R-0167 — eine Bau-Session darf kein approve vortäuschen können:
+`task-close.sh` verweigert `--review none` und `--review verdict:`, wenn der Ledger-Kopf `Review: auto` trägt oder der
+Lauf autonom ist, und `CLAUDE_BIN` gilt nur im Testmodus. R-0170 — `--review auto` vertraut den Dateien unter
+`.ah-out/review/` nicht blind: ein selbst geschriebenes Verdict samt `.staged` darf über die Übernahme kein approve
+liefern, gelöschte Runden-Dateien setzen die Runde nicht zurück, und Runden-Dateien eines früheren Ledgers mit gleichen
+IDs zählen nicht; der Loop ist der einzige Aufrufer und führt die Runde selbst.
 Abhängt von: T3
 
 ### T5 — Abbruch-Aufräumen und Stall  [ ]
