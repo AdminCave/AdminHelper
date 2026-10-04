@@ -72,8 +72,10 @@ die Runner-Allowlist verliert die Wege, ein Programm auszuführen oder zu schrei
 Tests, die der Builder schreibt und `verify.sh` ausführt, sind Code mit den Rechten des Runners: gewollt, die Grenze dort
 ist der Nutzer (kein Credential, kein Push), nicht die Allowlist.
 
-### T3 — `ledger-loop.sh`: Gerüst, Preflight, Ledger-Prüfung, Lane, Zustand  [ ]
+### T3 — `ledger-loop.sh`: Gerüst, Preflight, Ledger-Prüfung, Lane, Zustand  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/harness-paths.txt, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7e61ce9f 2026-10-04T22:57:05+02:00
+Review: approve (opus/xhigh; 6 nit) · round 2
 Änderung: Neues Skript (SPDX) `ledger-loop.sh --ledger <pfad>… [--max-hours 8] [--max-tasks 20] [--max-budget-usd 200]
 [--max-ready 2] [--task-minutes 60] [--task-turns 80] [--task-budget 12]` und `ledger-loop.sh status [--state <datei>]`;
 Zustand nach `${AH_LOOP_DIR:-/srv/ah/loop}` (`state.json`, `summary-<datum>.md`, `<slug>/`). Preflight wie Spec „Start und
