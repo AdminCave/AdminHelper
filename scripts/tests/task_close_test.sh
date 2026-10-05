@@ -726,6 +726,8 @@ grep -qF "$(cd "$FIX" && git show HEAD:scripts/dev/tool.sh | tail -n 1)" "$STUB_
 [ "$(wc -l < "$FIX/.ah-out/review/review-log.jsonl")" -eq 1 ] \
   && grep -q '"task": "T1", "round": 1, .*"verdict": "approve"' "$FIX/.ah-out/review/review-log.jsonl" \
   && ok "the round is in the review log" || bad "log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
+grep -qx 'review cost_usd=0.4 round=1' <<<"$OUT" \
+  && ok "the reviewer's cost is a line of task-close's own output, for the worker's budget" || bad "no cost line: $OUT"
 reset_repo
 
 mk_auto; touch_tool
@@ -736,6 +738,7 @@ STUB=approve c auto T1 -m "refactor: tool" --review auto
 [ $rc -eq 0 ] && [ -f "$VD/T1.r2.verdict.json" ] && grep -qF "$VD/T1.r1.verdict.json" "$STUB_DIR/stdin" \
   && review_line | grep -q '· round 2$' \
   && ok "the second call is round 2: it names round 1's verdict and closes" || bad "round 2: rc=$rc out=$OUT line=$(review_line)"
+grep -qx 'review cost_usd=0.4 round=2' <<<"$OUT" && ok "and round 2 prints its cost too" || bad "no round-2 cost line: $OUT"
 reset_repo
 
 mk_auto; touch_tool
@@ -784,8 +787,8 @@ reset_repo
 
 mk_auto; touch_tool
 STUB=fail c auto T1 -m "refactor: tool" --review auto
-[ $rc -eq 74 ] && [ "$(head_count)" = "$N0" ] && [ ! -e "$VD/T1.r1.verdict.json" ] \
-  && ok "a reviewer that does not start -> exit 74, nothing committed, no verdict" || bad "auto fail: rc=$rc out=$OUT"
+[ $rc -eq 74 ] && [ "$(head_count)" = "$N0" ] && [ ! -e "$VD/T1.r1.verdict.json" ] && ! grep -q '^review cost_usd=' <<<"$OUT" \
+  && ok "a reviewer that does not start -> exit 74, nothing committed, no verdict, no cost line" || bad "auto fail: rc=$rc out=$OUT"
 grep -q '"verdict": "failed", "reason": "review-run.sh: the CLI gave no JSON' "$FIX/.ah-out/review/review-log.jsonl" 2>/dev/null \
   && ok "and the failed round is in the log with its reason" || bad "failed log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
 reset_repo

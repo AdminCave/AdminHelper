@@ -74,6 +74,9 @@ echo "$ledger $id round=$round" >> "${FIXTURE_CLOG:?}"
 rc=0
 if [ -s "${FIXTURE_CSEQ:-}" ]; then rc="$(head -n 1 "$FIXTURE_CSEQ")"; sed -i 1d "$FIXTURE_CSEQ"; fi
 slug="$(basename "$ledger" .md)"
+# With FIXTURE_RCOST a reviewed round prints its cost as the real one does, after a
+# line of the same shape from the suite (the last one counts).
+rcost() { [ -z "${FIXTURE_RCOST:-}" ] || printf 'review cost_usd=0 round=%s\nreview cost_usd=%s round=%s\n' "$round" "$FIXTURE_RCOST" "$round"; }
 case "$rc" in
   0|74a)
     files="$(awk -v id="$id" '$0 ~ "^###[ \t]+" id "([ \t]|$)" { t = 1; next } t && /^###/ { exit }
@@ -84,6 +87,7 @@ case "$rc" in
       mkdir -p ".ah-out/review/$slug"; printf '{"verdict": "approve"}\n' > ".ah-out/review/$slug/$id.r$round.verdict.json"
       echo "task-close: git commit failed"; exit 74
     fi
+    rcost
     bash scripts/dev/ledger.sh mark-done "$ledger" "$id" --evidence "stub run" > /dev/null || exit 74
     grep -q '^###.*\[ \]' "$ledger" || bash scripts/dev/ledger.sh status "$ledger" bereit > /dev/null
     git add -- "$ledger" && git commit -qm "$(cat "$msgf")" || exit 74 ;;
@@ -93,7 +97,7 @@ case "$rc" in
     mkdir -p ".ah-out/review/$slug"
     printf '{"verdict": "request_changes", "findings": [{"severity": "blocker", "file": "apps/x/a.py", "claim": "stub blocker round %s"}]}\n' \
       "$round" > ".ah-out/review/$slug/$id.r$round.verdict.json"
-    echo "task-close: round $round gave no usable approve"; exit 3 ;;
+    rcost; echo "task-close: round $round gave no usable approve"; exit 3 ;;
   4) echo "task-close: blocked — the diff leaves the task's scope"; exit 4 ;;
   4x)
     # The real one refuses at the sec check after mark-done: [x] and the ledger staged.
@@ -136,7 +140,10 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+# A lane whose ignore pattern for .ah-out also matches a link (no trailing slash).
+mapfile -t H < <(head_for ahl2)
+EXTRA='printf ".ah-out\n.vm/\n" > "$SEED/.gitignore"' plan feature/ahl2 ahl2 "${H[@]}"
 # A Freigabe: line in a task's text is no approval of the ledger.
 mapfile -t H < <(head_for bodyfreig)
 EXTRA='printf "Freigabe: im Text einer Task\n" >> "$SEED/tasks/bodyfreig.md"' plan feature/bodyfreig bodyfreig "${H[0]}" "${H[2]}"
@@ -151,7 +158,9 @@ chmod 600 "$FHOME/.config/adminhelper/oauth.env"
 # the lane it runs in: build (a change and the commit message), harness (a change to
 # a harness file too), skip, question, nothing, error (an error result, exit 1),
 # budget and fail (other errors), files (widens Dateien:), hang (leaves work behind and
-# sleeps past the task's time).
+# sleeps past the task's time), filesn (a new Dateien: path each time), limit (the
+# subscription's limit), credits (1M context needs credits), harnskip (a harness
+# change and [~]), mlink (a scratch directory whose marker is a link).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -189,6 +198,16 @@ case "$mode" in
     printf 'b = 1\n' >> apps/x/a.py; : > apps/x/new.py; ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" apps/x/link
     mkdir -p .ah-out/scratch/s.1 && : > .ah-out/scratch/s.1/.ah-scratch; ln -s "$FIXTURE_OUTSIDE/marked" .ah-out/scratch/out
     exec sleep 30 ;;
+  filesn) bash scripts/dev/ledger.sh set-files "$ledger" "$id" "apps/x/w$(date +%s%N).py" > /dev/null ;;
+  limit)
+    printf 'b = 1\n' >> apps/x/a.py; : > apps/x/new.py
+    printf '{"type": "result", "subtype": "success", "is_error": true, "total_cost_usd": 0, "num_turns": 1, "result": "You\x27ve hit your session limit \xc2\xb7 resets 3:45pm"}\n'; exit 1 ;;
+  credits)
+    printf '{"type": "result", "subtype": "success", "is_error": true, "result": "API Error: Usage credits required for 1M context \xc2\xb7 run /usage-credits to turn them on"}\n'; exit 1 ;;
+  harnskip) printf '# x\n' >> scripts/dev/ledger.sh; bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
+  mlink)
+    mkdir -p .ah-out/scratch/m.1 && ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" .ah-out/scratch/m.1/.ah-scratch
+    printf '{"type": "result", "subtype": "error_during_execution", "is_error": true}\n'; exit 1 ;;
   ahlink)
     # .ah-out itself swapped for a link to a directory with a marked scratch child.
     if [ -e .ah-out ]; then mv .ah-out .ah-out.old; fi; ln -s "${FIXTURE_OUTSIDE:?}/ah" .ah-out
@@ -387,7 +406,7 @@ OLDD="$(find "$LA/.ah-out/review/arch" -maxdepth 1 -name 'old-*' -type d | head 
 
 seq_set harness -- 0
 loop --ledger tasks/harn.md
-[ $rc -eq 74 ] && grep -q '^harness-modified — harn T1 changed the harness path scripts/dev/ledger.sh' <<<"$(stopped)" \
+[ $rc -eq 74 ] && grep -q '^harness-modified — harn T1: the session changed the harness path scripts/dev/ledger.sh' <<<"$(stopped)" \
   && [ -z "$(git -C "$(lane harn)" status --porcelain)" ] && [ ! -s "$FIXTURE_CLOG" ] \
   && ok "a session that changes a harness path -> stop: harness-modified, no close, the lane clean" || bad "harn: rc=$rc $(stopped)"
 
@@ -425,6 +444,15 @@ seq_set ahlink
 loop --ledger tasks/ahl.md
 [ "$(box ahl)" = "?" ] && [ -f "$FIXTURE_OUTSIDE/ah/scratch/x.1/.ah-scratch" ] && [ ! -L "$(lane ahl)/.ah-out" ] \
   && ok "a .ah-out swapped for a link out of the lane: the link goes, the marked directory behind it stays" || bad "ahl: $(result ahl) $(ls -la "$FIXTURE_OUTSIDE/ah/scratch" 2>&1)"
+# Where the ignore pattern hides the link from git, only the check on .ah-out itself holds.
+seq_set ahlink
+loop --ledger tasks/ahl2.md
+[ "$(box ahl2)" = "?" ] && [ -L "$(lane ahl2)/.ah-out" ] && [ -f "$FIXTURE_OUTSIDE/ah/scratch/x.1/.ah-scratch" ] \
+  && ok "a linked .ah-out that git ignores: the scratch step does not follow it" || bad "ahl2: $(result ahl2) $(ls -la "$FIXTURE_OUTSIDE/ah/scratch" 2>&1)"
+seq_set mlink
+loop --ledger tasks/mlk.md
+[ "$(box mlk)" = "?" ] && [ -d "$(lane mlk)/.ah-out/scratch/m.1" ] && [ "$(cat "$FIXTURE_OUTSIDE/keep.txt")" = keep ] \
+  && ok "a scratch directory whose marker is a link is not one of scratch.sh's: it stays" || bad "mlk: $(result mlk) $(ls -la "$(lane mlk)/.ah-out/scratch" 2>&1)"
 
 seq_set nothing nothing
 loop --ledger tasks/stall.md
@@ -462,6 +490,66 @@ loop --ledger tasks/left.md
 [ "$(box left)" = x ] && grep -q '^blockiert — T1 closed, but left files outside its Dateien:' <<<"$(result left)" \
   && [ ! -e "$(lane left)/apps/x/new.py" ] && [ -z "$(git -C "$(lane left)" status --porcelain)" ] \
   && ok "a close that leaves undeclared files behind -> they are taken back, the ledger blockiert" || bad "left: $(result left)"
+
+echo "── the run's caps and stop classes ──"
+# summary_line — the last line of the newest summary.
+summary_line() { local f; f="$(ls -t "$LOOPD"/summary-*.md 2>/dev/null | head -n 1)"; [ -n "$f" ] && tail -n 1 "$f"; }
+rm -f -- "${LOOPD:?}"/summary-*.md
+seq_set build -- 0
+loop --ledger tasks/mta.md --ledger tasks/mtb.md --max-tasks 1
+[ $rc -eq 0 ] && [ "$(box mta)" = x ] && [ ! -e "$(lane mtb)" ] && grep -q '^max-tasks — 1 tasks done' <<<"$(stopped)" \
+  && [ "$(summary_line)" = 'ledger-loop: 1 tasks, 1 ready, 0 blocked, $0.25 total, stop: max-tasks' ] \
+  && ok "--max-tasks 1 -> stop: max-tasks at the boundary, the next ledger untouched, the summary's last line" \
+  || bad "max-tasks: rc=$rc $(stopped) | $(summary_line)"
+# The cap is reached inside the first session; it ends the run only after the task.
+seq_set build -- 0
+loop --ledger tasks/bda.md --ledger tasks/bdb.md --max-budget-usd 0.2
+[ $rc -eq 0 ] && [ "$(box bda)" = x ] && [ ! -e "$(lane bdb)" ] && grep -q '^max-budget — the run spent \$0.2500 of the run.s \$0.2' <<<"$(stopped)" \
+  && ok "--max-budget-usd below one session's cost -> that session closes its task, then stop: max-budget" || bad "max-budget: rc=$rc $(stopped)"
+seq_set build build -- 0 0
+loop --ledger tasks/kqa.md --ledger tasks/kqb.md --ledger tasks/kqc.md --max-ready 2
+[ $rc -eq 0 ] && [ "$(box kqa)" = x ] && [ "$(box kqb)" = x ] && [ ! -e "$(lane kqc)" ] && grep -q '^kevin-queue — 2 ledgers bereit' <<<"$(stopped)" \
+  && ok "--max-ready 2 -> two ledgers bereit, stop: kevin-queue before the third" || bad "kevin-queue: rc=$rc $(stopped)"
+# Two reviewed rounds at 0.5 $ and two sessions at 0.25 $: 1.5 $, over a cap of 1.4 $.
+seq_set build build -- 3 0
+FIXTURE_RCOST=0.5 loop --ledger tasks/rca.md --ledger tasks/rcb.md --max-budget-usd 1.4
+[ $rc -eq 0 ] && [ "$(box rca)" = x ] && [ ! -e "$(lane rcb)" ] && grep -q '^max-budget — the run spent \$1.5000' <<<"$(stopped)" \
+  && grep -q '^ledger-loop: 1 tasks, 1 ready, 0 blocked, \$1.50 total, stop: max-budget$' <<<"$(summary_line)" \
+  && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"]["rca/T1"]["review_usd"])' "$LOOPD/state.json")" = 1.0 ] \
+  && ok "two reviewer rounds count into the run's budget: 1.5 \$, stop: max-budget" || bad "rca: rc=$rc $(stopped) | $(summary_line)"
+seq_set build -- 0
+loop --ledger tasks/mh.md --max-hours 0
+[ $rc -eq 0 ] && [ ! -e "$(lane mh)" ] && [ ! -s "$FIXTURE_SLOG" ] && grep -q '^max-hours' <<<"$(stopped)" \
+  && ok "--max-hours 0 -> stop: max-hours before the first ledger, no session" || bad "max-hours: rc=$rc $(stopped)"
+# A session that changes the ledger every time never stalls: the run's budget ends it
+# between two iterations of the same task, and the task stays open.
+seq_set filesn filesn filesn filesn filesn
+loop --ledger tasks/ibud.md --max-budget-usd 0.6
+LB="$(lane ibud)"
+[ $rc -eq 0 ] && [ "$(grep -c . "$FIXTURE_SLOG")" = 3 ] && [ "$(box ibud)" = " " ] && grep -q '^max-budget — .* ibud T1 stays open' <<<"$(stopped)" \
+  && [ -z "$(git -C "$LB" status --porcelain)" ] && ! grep -q 'apps/x/w' "$LB/tasks/ibud.md" \
+  && ok "a ledger changed in every iteration -> stop: max-budget inside the task after 3 sessions, the task open, the lane clean" \
+  || bad "ibud: rc=$rc sessions=$(grep -c . "$FIXTURE_SLOG") $(stopped) $(git -C "$LB" status --short)"
+seq_set limit
+loop --ledger tasks/lim.md
+LL="$(lane lim)"
+[ $rc -eq 0 ] && [ "$(box lim)" = " " ] && grep -q '^usage-limit — lim T1: the subscription.s limit, resets 3:45pm' <<<"$(stopped)" \
+  && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("reset"))' "$LOOPD/state.json")" = 3:45pm ] \
+  && [ -z "$(git -C "$LL" status --porcelain)" ] && [ ! -e "$LL/apps/x/new.py" ] && grep -q '^Reset: 3:45pm' "$(ls -t "$LOOPD"/summary-*.md | head -n 1)" \
+  && ok "the subscription's limit -> stop: usage-limit with the reset time, the task open, the lane clean" || bad "lim: rc=$rc $(stopped)"
+seq_set credits
+loop --ledger tasks/cred.md
+[ $rc -eq 74 ] && [ "$(box cred)" = " " ] && grep -q '^infra — cred T1: the CLI asks for usage credits for 1M context' <<<"$(stopped)" \
+  && ok "1M context without credits -> stop: infra, not a blocked task" || bad "cred: rc=$rc $(stopped)"
+seq_set harnskip
+loop --ledger tasks/hskip.md
+[ $rc -eq 74 ] && grep -q '^harness-modified — hskip T1: the session changed the harness path scripts/dev/ledger.sh' <<<"$(stopped)" \
+  && [ -z "$(git -C "$(lane hskip)" status --porcelain)" ] && [ "$(box hskip)" = " " ] \
+  && grep -q 'stop: harness-modified$' <<<"$(summary_line)" \
+  && ok "a harness change with [~] -> stop: harness-modified, not a skip; the summary too" || bad "hskip: rc=$rc $(stopped)"
+seq_set skip
+loop --ledger tasks/skp2.md
+grep -q 'stop: ledger-leer$' <<<"$(summary_line)" && ok "the end of the list -> summary with stop: ledger-leer" || bad "ledger-leer summary: $(summary_line)"
 
 echo "── what a session's code could do behind the loop ──"
 seq_set commit

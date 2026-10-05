@@ -142,8 +142,10 @@ Marker), nicht über das Skript: das der Lane ist Code, den die Session ändern 
 eigenen Checkout. Dazu: eine Commit-Nachricht gilt nur für die Session, die sie schrieb — der Loop löscht sie vor
 jeder Session, damit ein Abschluss mit Exit 2 die nächste nicht schließt.
 
-### T6 — Lauf-Deckel, Nutzungslimit, Stopp-Klassen, Summary  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+### T6 — Lauf-Deckel, Nutzungslimit, Stopp-Klassen, Summary  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/task-close.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @29f06642 2026-10-05T12:25:18+02:00
+Review: approve (opus/xhigh; 3 nit) · round 1
 Änderung: An jeder Task-Grenze `--max-hours`, `--max-tasks`, `--max-budget-usd` (Summe `total_cost_usd`), `--max-ready`
 ⇒ `stop: max-hours|max-tasks|max-budget|kevin-queue`. Nutzungslimit (Ergebnistext „You've hit your … limit · resets …“,
 Feld aus 6b T1) ⇒ Aufräumen, Task bleibt `[ ]`, `stop: usage-limit`, Reset-Zeit in `state.json` (C). Lane-Diff berührt
@@ -154,6 +156,15 @@ Deckel greift erst an der Task-Grenze, nie mitten in einer Session.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 Abhängt von: T5
+Dazu (Aufsicht 2026-10-05, Entscheidung F zu Ende gedacht): Laufzeit und Lauf-Budget gelten auch zwischen den
+Iterationen einer Task — ohne den alten Deckel „zwei Leerläufe“ liefe eine Task, deren Sessions das Ledger jedes Mal
+ändern, sonst ohne Grenze; einen Deckel „N Sessions je Task“ gibt es nicht (wäre Kevins Entscheidung). Das
+Lauf-Budget zählt die Reviewer-Läufe mit: `task-close.sh` druckt nach dem Reviewer `review cost_usd=<x> round=<n>`,
+der Loop liest die letzte solche Zeile aus dem Close-Log, das er selbst anlegt (ein gescheiterter Reviewer-Lauf
+druckt keine). Nutzungslimit: Wortlaut aus code.claude.com/docs/en/errors; wo `-p` ihn ausgibt, ist nicht
+verifiziert — der Loop liest `result`, die Rohausgabe und stderr, nur bei einem Fehler-Ergebnis. Ebenso: 1M-Kontext
+ohne Credits ⇒ `stop: infra` (Spec, Risiken); die Harness-Prüfung nach jeder Session, nicht erst vor dem Abschluss;
+aus dem T5-Review die Prüfungen, dass weder `.ah-out` noch ein Marker ein Link ist, und der Kopfkommentar.
 
 ### T7 — Ledger-Ende: PR-Text und Übergabe als Bundle  [ ]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh

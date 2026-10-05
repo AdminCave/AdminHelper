@@ -412,6 +412,11 @@ case "$REVIEW" in
       # measurement, not a gate — a log that cannot be written stops nothing.
       if [ "$rc" = 0 ]; then
         bash scripts/dev/review.sh log --append "$VJSON" || echo "task-close: the review log was not written" >&2
+        # The worker adds the reviewer to its run's budget from this line: its own
+        # log of this process, written after the suite (the last such line counts).
+        echo "review cost_usd=$(python3 -c 'import json, sys
+c = json.load(open(sys.argv[1])).get("cost_usd")
+print(c if type(c) in (int, float) and c >= 0 else 0)' "$VJSON" 2>/dev/null || echo 0) round=$ROUND"
       elif [ "$rc" != 2 ]; then
         WHY="$(grep -v '^[[:space:]]*$' "$RUN_ERR" | tail -n 1)"
         bash scripts/dev/review.sh log --failed "${WHY:-review-run.sh exit $rc without a message}" \

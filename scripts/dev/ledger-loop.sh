@@ -50,18 +50,32 @@
 # session with --fix, round 2, and a second 3 is [?] with the first blocker as the
 # question; 4 is [?]; 74 is tried once more, then stop: infra with the task left
 # open; 2 and a session that left neither message nor marker are an iteration
-# without progress, and two of those are [?]. The round lives in this process, not
-# in files (R-0170): any code a session runs can write .ah-out/review/, so a task
-# starts by moving that task's old review files aside. What a session left behind
-# when the task does not close is taken back by the loop (aborted.diff, restore,
-# the new files one by one) — never stash, clean or a glob.
+# without progress, and two in a row that leave the ledger byte for byte the same
+# are [?] stall. A session past its time, turns or budget is [?] timeout, turns or
+# budget, any other error [?] error; the subscription's limit leaves the task open
+# and stops the run (usage-limit). The round lives in this process, not in files
+# (R-0170): any code a session runs can write .ah-out/review/, so a task starts by
+# moving that task's old review files aside. What a session left behind when the
+# task does not close is taken back by the loop (aborted.diff, restore, the new
+# files one by one) — never stash, clean or a glob.
 #
-# State in ${AH_LOOP_DIR:-/srv/ah/loop}: state.json (run, ledgers, task, stop),
-# loop.log, and per ledger <slug>/ with the logs. `status` reads only that file and
-# prints its texts cleaned. Test overrides, as in heavy.sh: AH_LOOP_DIR,
-# AH_LOOP_REPO (the clone; default: this file's checkout), a claude stub on PATH.
+# The run's caps, counted in this process: --max-hours and --max-budget-usd (the
+# total_cost_usd of the sessions and of the reviewers, whose cost task-close prints
+# in its own output) at every task boundary and between the iterations of a
+# task, --max-tasks and --max-ready (ledgers bereit in this run: Kevin's queue) at
+# the boundary; a running session is ended only by its own caps. Stop classes:
+# ledger-leer, max-hours, max-budget, max-tasks, kevin-queue, usage-limit, infra,
+# harness-modified (a lane diff on a harness path, or what only a session's code
+# could have done).
 #
-# Exit: 0 the run ended · 2 usage · 74 stop: infra
+# State in ${AH_LOOP_DIR:-/srv/ah/loop}: state.json (run, ledgers, task, stop,
+# reset), loop.log, summary-<date>.md at every stop (its last line: `ledger-loop: <n>
+# tasks, <k> ready, <b> blocked, $<total> total, stop: <class>`), and per ledger
+# <slug>/ with the logs. `status` reads only that file and prints its texts cleaned.
+# Test overrides, as in heavy.sh: AH_LOOP_DIR, AH_LOOP_REPO (the clone; default:
+# this file's checkout), a claude stub on PATH.
+#
+# Exit: 0 the run ended · 2 usage · 74 stop: infra or harness-modified
 
 set -uo pipefail
 
@@ -134,6 +148,8 @@ done
 mkdir -p "$LOOP" || { echo "ledger-loop.sh: cannot create $LOOP" >&2; exit 74; }
 
 # ── state and log ────────────────────────────────────────────────────────────
+# What the caps count lives here, not in state.json: a session's code can write that.
+RUN_T0=$SECONDS RUN_COST=0 TASKS_DONE=0 READY=0
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$LOOP/loop.log"; }
 # state <python expression over s> — one change of state.json, written atomically.
 state() {
@@ -156,10 +172,84 @@ ledger_result() {  # ledger_result <slug> <result> [<reason>]
   state 's.setdefault("ledgers", {})[a[0]] = {"result": a[1], "reason": a[2] if len(a) > 2 else ""}' "$@"
   log "$1: $2${3:+ — $3}"
 }
+# finish — summary-<date>.md from state.json and this process's counts; its last line
+# goes to the log.
+finish() {
+  local line
+  line="$(python3 - "$STATE" "$LOOP/summary-$(date +%Y-%m-%d-%H%M%S).md" "$TASKS_DONE" "$RUN_COST" <<'PY'
+import json, sys
+state, out, n, cost = sys.argv[1], sys.argv[2], int(sys.argv[3]), float(sys.argv[4])
+
+def clean(v, k=200):
+    return "".join(c for c in str(v) if c.isprintable())[:k]
+
+def obj(v):
+    return v if isinstance(v, dict) else {}
+
+try:
+    s = obj(json.load(open(state)))
+except (OSError, ValueError):
+    s = {}
+led, tasks = obj(s.get("ledgers")), obj(s.get("tasks"))
+res = [clean(obj(l).get("result", "")) for l in led.values()]
+stop = clean(s.get("stop") or "?", 40)
+lines = ["# ledger-loop %s – %s" % (clean(obj(s.get("run")).get("started", "?"), 32), clean(s.get("updated", "?"), 32)),
+         "", "Ledgers, in the order given:"]
+for slug, l in led.items():
+    l = obj(l)
+    lines.append("- %s: %s%s" % (clean(slug, 60), clean(l.get("result", "?"), 60),
+                                 " — " + clean(l["reason"]) if l.get("reason") else ""))
+if tasks:
+    lines += ["", "| task | sessions | turns | denials | sessions $ | reviewer $ |", "|---|---|---|---|---|---|"]
+    for t, v in tasks.items():
+        v = obj(v)
+        lines.append("| %s |" % " | ".join(clean(x, 60).replace("|", "/") for x in
+                                         (t, v.get("sessions"), v.get("turns"), v.get("denials"), v.get("cost_usd"),
+                                          v.get("review_usd", 0))))
+lines += ["", "Stop: %s%s" % (stop, " — " + clean(s["stop_reason"]) if s.get("stop_reason") else "")]
+if s.get("reset"):
+    lines.append("Reset: " + clean(s["reset"], 80))
+lines += ["", "ledger-loop: %d tasks, %d ready, %d blocked, $%.2f total, stop: %s"
+          % (n, sum(r == "bereit" for r in res), sum(r.startswith("blockiert") for r in res), cost, stop)]
+with open(out, "w") as f:
+    f.write("\n".join(lines) + "\n")
+print(lines[-1])
+PY
+)" || { echo "ledger-loop.sh: the summary could not be written" >&2; return; }
+  log "$line"
+}
 stop_infra() {
   state 's["stop"] = "infra"; s["stop_reason"] = a[0]' "$1"
   log "stop: infra — $1"
+  finish
   exit 74
+}
+# stop_run <class> <reason> — a cap or the subscription's limit: the run ends, exit 0.
+stop_run() {
+  state 's["stop"] = a[0]; s["stop_reason"] = a[1]' "$1" "$2"
+  log "stop: $1 — $2"
+  finish
+  exit 0
+}
+# over_cap [task] — the first run cap reached, or nothing. Time and budget hold
+# between the iterations of a task too; tasks and ready ledgers only at a boundary.
+over_cap() {
+  awk -v e="$((SECONDS - RUN_T0))" -v h="$MAX_HOURS" 'BEGIN { exit !(e >= h * 3600) }' \
+    && { echo "max-hours the run reached its $MAX_HOURS h"; return; }
+  awk -v c="$RUN_COST" -v m="$MAX_BUDGET" 'BEGIN { exit !(c >= m) }' \
+    && { echo "max-budget the run spent \$$RUN_COST of the run's \$$MAX_BUDGET"; return; }
+  [ "${1:-}" != task ] || return 0
+  awk -v n="$TASKS_DONE" -v m="$MAX_TASKS" 'BEGIN { exit !(n >= m) }' \
+    && { echo "max-tasks $TASKS_DONE tasks done, the run's cap is $MAX_TASKS"; return; }
+  awk -v n="$READY" -v m="$MAX_READY" 'BEGIN { exit !(n >= m) }' \
+    && { echo "kevin-queue $READY ledgers bereit in this run, Kevin's queue holds $MAX_READY"; return; }
+  return 0
+}
+# at_boundary — between two tasks or ledgers: a cap reached ends the run here.
+at_boundary() {
+  local c
+  c="$(over_cap)"
+  [ -z "$c" ] || stop_run "${c%% *}" "${c#* }"
 }
 
 # One loop at a time: a second run on the same clone would build into the same lanes.
@@ -247,6 +337,7 @@ clone_ok() {
   [ "$(git -C "$REPO" rev-parse HEAD)" = "$CLONE_HEAD" ] && [ -z "$(git -C "$REPO" status --porcelain)" ] && return 0
   state 's["stop"] = "harness-modified"; s["stop_reason"] = a[0]' "the clone $REPO changed during the run"
   log "stop: harness-modified — the clone changed during the run"
+  finish
   exit 74
 }
 
@@ -410,9 +501,11 @@ cleanup_lane() {
   while IFS= read -r -d '' f; do
     rm -f -- "${wt:?}/${f:?}" || stop_infra "cannot remove $wt/$f"
   done < <(git -C "$wt" ls-files -z --others --exclude-standard)
-  if [ -d "$wt/.ah-out/scratch" ] && [ ! -L "$wt/.ah-out/scratch" ]; then
+  # The checks of scratch.sh rm: no link on the way (whether git lists a linked
+  # .ah-out as new hangs on the ignore pattern), a marker that is a file of its own.
+  if [ -d "$wt/.ah-out/scratch" ] && [ ! -L "$wt/.ah-out" ] && [ ! -L "$wt/.ah-out/scratch" ]; then
     while IFS= read -r -d '' d; do
-      [ -f "$d/.ah-scratch" ] && [ ! -L "$d" ] && rm -rf -- "${d:?}"
+      [ -f "$d/.ah-scratch" ] && [ ! -L "$d/.ah-scratch" ] && [ ! -L "$d" ] && rm -rf -- "${d:?}"
     done < <(find "$wt/.ah-out/scratch" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
   m="$(msg_path "$slug" "$id")"
@@ -481,9 +574,16 @@ PY
       --max-budget-usd "$TASK_BUDGET" --output-format json --no-session-persistence \
       < /dev/null > "$out" 2> "$LOOP/$slug/$id.s$n.err" )
   S_RC=$?
-  read -r S_KIND S_COST S_TURNS S_DENIALS < <(python3 - "$out" "$S_RC" <<'PY'
-import json, sys
+  { read -r S_KIND S_COST S_TURNS S_DENIALS; IFS= read -r S_NOTE; } < <(python3 - "$out" "$S_RC" "$LOOP/$slug/$id.s$n.err" <<'PY'
+import json, re, sys
 rc = int(sys.argv[2])
+
+def text(path):
+    try:
+        return open(path, errors="replace").read()
+    except OSError:
+        return ""
+
 try:
     r = json.load(open(sys.argv[1]))
     r = r if isinstance(r, dict) else {}
@@ -492,12 +592,26 @@ except (OSError, ValueError):
 kind = "timeout" if rc in (124, 137, 143) else (r.get("subtype") or "no-json")
 if kind == "success" and (r.get("is_error") is not False or rc != 0):
     kind = "error"
+note = ""
+if kind not in ("success", "timeout"):
+    # The texts of code.claude.com/docs/en/errors; where -p puts them is not
+    # verified, so the result, the raw output and stderr are all read.
+    hay = "\n".join((r.get("result") if isinstance(r.get("result"), str) else "", text(sys.argv[1]), text(sys.argv[3])))
+    m = re.search("You[\u2019']ve hit your [^\n]*?limit", hay)
+    if m:
+        kind = "usage-limit"
+        reset = re.search(r"resets ([^\n\u00b7]+)", hay[m.start():])
+        note = reset.group(1).strip() if reset else ""
+    elif "Usage credits required for 1M context" in hay:
+        kind, note = "infra", "the CLI asks for usage credits for 1M context (the runner's model pin)"
 cost = r.get("total_cost_usd") if type(r.get("total_cost_usd")) in (int, float) else 0
 turns = r.get("num_turns") if type(r.get("num_turns")) is int else 0
 den = r.get("permission_denials") if isinstance(r.get("permission_denials"), list) else []
 print(kind, cost, turns, len(den))
+print("".join(c for c in note if c.isprintable())[:80])
 PY
 )
+  RUN_COST="$(awk -v a="$RUN_COST" -v b="$S_COST" 'BEGIN { printf "%.4f", a + b }')"
   state 's["cost_usd"] = round(s.get("cost_usd", 0) + float(a[0]), 4)
 t = s.setdefault("tasks", {}).setdefault(a[1], {"sessions": 0, "turns": 0, "denials": 0, "cost_usd": 0})
 t["sessions"] += 1; t["turns"] += int(a[2]); t["denials"] += int(a[3]); t["cost_usd"] = round(t["cost_usd"] + float(a[0]), 4)' \
@@ -509,13 +623,14 @@ t["sessions"] += 1; t["turns"] += int(a[2]); t["denials"] += int(a[3]); t["cost_
 tampered() {
   state 's["stop"] = "harness-modified"; s["stop_reason"] = a[0]' "$1"
   log "stop: harness-modified — $1"
+  finish
   exit 74
 }
 
 # close_task <lane> <slug> <id> <round> <n> — task-close for this round, retried
 # once on 74 (only the close, no new session); sets CLOSE (its log), returns its exit.
 close_task() {
-  local wt="$1" slug="$2" id="$3" round="$4" n="$5" ledger="tasks/$2.md" try p pre rc
+  local wt="$1" slug="$2" id="$3" round="$4" n="$5" ledger="tasks/$2.md" try p pre rc rcost
   for try in 1 2; do
     p="$(lane_harness_changed "$wt")"
     [ -z "$p" ] || { cleanup_lane "$wt" "$slug" "$id"; tampered "$slug $id changed the harness path $p"; }
@@ -527,6 +642,15 @@ close_task() {
     rc=$?
     log "$slug $id close (round $round, try $try): exit $rc"
     clone_ok
+    # The reviewer's cost from task-close's line in the log this loop opened; the
+    # suite's output comes before it, so the last such line counts.
+    rcost="$(sed -n 's/^review cost_usd=\([0-9][0-9.]*\) round=[12]$/\1/p' "$CLOSE" | tail -n 1)"
+    if [ -n "$rcost" ]; then
+      RUN_COST="$(awk -v a="$RUN_COST" -v b="$rcost" 'BEGIN { printf "%.4f", a + b }')"
+      state 's["cost_usd"] = round(s.get("cost_usd", 0) + float(a[0]), 4)
+t = s.setdefault("tasks", {}).setdefault(a[1], {"sessions": 0, "turns": 0, "denials": 0, "cost_usd": 0})
+t["review_usd"] = round(t.get("review_usd", 0) + float(a[0]), 4)' "$rcost" "$slug/$id"
+    fi
     # Only a close that commits moves HEAD: a failed one that did ran the session's
     # code (the suite) with the runner's rights.
     if [ "$rc" != 0 ] && [ "$(git -C "$wt" rev-parse HEAD)" != "$pre" ]; then
@@ -552,7 +676,7 @@ close_task() {
 
 # run_task <lane> <slug> <id> — 0 the task is done or skipped, 1 the ledger is blocked.
 run_task() {
-  local wt="$1" slug="$2" id="$3" ledger="tasks/$2.md" round=1 fixed=0 n=0 last="" cur msg box rc vd head why fix=()
+  local wt="$1" slug="$2" id="$3" ledger="tasks/$2.md" round=1 fixed=0 n=0 last="" cur msg box rc vd head why p c fix=()
   bash "$REPO/scripts/dev/ledger.sh" start "$wt/$ledger" "$id" > /dev/null || stop_infra "ledger.sh start failed for $slug $id"
   archive_reviews "$wt" "$slug" "$id"
   vd="$wt/.ah-out/review/$slug"
@@ -560,6 +684,12 @@ run_task() {
   state 's["task"] = {"ledger": a[0], "id": a[1], "since": now}' "$ledger" "$id"
   while :; do
     n=$((n + 1))
+    # The run's time and budget hold inside a task too: a task whose sessions keep
+    # changing the ledger would otherwise never meet a cap. Its work goes back.
+    if [ "$n" -gt 1 ]; then
+      c="$(over_cap task)"
+      [ -z "$c" ] || { cleanup_lane "$wt" "$slug" "$id"; stop_run "${c%% *}" "${c#* } — $slug $id stays open (its work in $LOOP/$slug/$id.aborted.diff)"; }
+    fi
     # Only this session's message closes: one a close refused with 2 left behind
     # is no word of the next session.
     rm -f -- "${msg:?}"
@@ -570,6 +700,19 @@ run_task() {
     # the session at work.
     [ "$(git -C "$wt" rev-parse HEAD)" = "$head" ] || { cleanup_lane "$wt" "$slug" "$id"; tampered "$slug $id: HEAD of the lane moved during the session"; }
     clone_ok
+    # The deny rules should have kept a session off the harness: one that got
+    # there is a stop, whatever the session reports.
+    p="$(lane_harness_changed "$wt")"
+    [ -z "$p" ] || { cleanup_lane "$wt" "$slug" "$id"; tampered "$slug $id: the session changed the harness path $p"; }
+    case "$S_KIND" in
+      usage-limit)
+        cleanup_lane "$wt" "$slug" "$id"
+        state 's["reset"] = a[0]' "${S_NOTE:-?}"
+        stop_run usage-limit "$slug $id: the subscription's limit, resets ${S_NOTE:-?} — the task stays open" ;;
+      infra)
+        cleanup_lane "$wt" "$slug" "$id"
+        stop_infra "$slug $id: $S_NOTE — the task stays open" ;;
+    esac
     if [ "$S_KIND" != success ]; then
       case "$S_KIND" in
         timeout) why="timeout: the build session ran past its $TASK_MINUTES min" ;;
@@ -657,14 +800,18 @@ build_ledger() {
         ledger_commit "$wt" "$slug" bereit
       fi
       ledger_result "$slug" bereit
+      READY=$((READY + 1))
       return
     fi
+    at_boundary
     run_task "$wt" "$slug" "$id" || return
-    state 's["tasks_done"] = s.get("tasks_done", 0) + 1; s["task"] = None'
+    TASKS_DONE=$((TASKS_DONE + 1))
+    state 's["tasks_done"] = int(a[0]); s["task"] = None' "$TASKS_DONE"
   done
 }
 
 for ledger in "${LEDGERS[@]}"; do
+  at_boundary
   setup_ledger "$ledger"
   [ -n "$LANE" ] || continue
   build_ledger "$LANE" "$(basename "$ledger" .md)"
@@ -673,4 +820,5 @@ done
 claude_ok
 state 's["stop"] = "ledger-leer"; s["task"] = None'
 log "stop: ledger-leer"
+finish
 exit 0
