@@ -286,7 +286,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           through the build session. After the cheap checks, the suite and the contracts:</p>
           <ol>
             <li><strong>Round:</strong> counted from <code>.ah-out/review/&lt;slug&gt;/</code>; an approve for exactly
-            this staged diff is taken over, and there is no third round (exit&nbsp;3).</li>
+            this staged diff is taken over, and there is no third round (exit&nbsp;3). In an autonomous run
+            (<code>AH_AUTONOMOUS=1</code>, stage&nbsp;7a) the worker names the round (<code>--round</code>): then no
+            file counts and no earlier approve is taken over. The close refuses <code>--review none</code> and
+            <code>verdict:</code> there and under a <code>Review: auto</code> head.</li>
             <li><strong>Probe:</strong> the runner runs <code>review-probe.sh</code> with the test of the
             <code>Verify:</code> line; without a test change, or with tests alone, it does not apply.</li>
             <li><strong>Reviewer:</strong> <code>scripts/dev/review-run.sh</code> starts <code>claude -p</code> with the
@@ -297,12 +300,43 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <code>scripts/dev/review-output.schema.json</code>; Sonnet/high with 60 turns, or Opus/xhigh with 80 on a
             risk path, timeout 20&nbsp;minutes.</li>
             <li><strong>Verdict:</strong> <code>&lt;id&gt;.r&lt;n&gt;.verdict.json</code> (schema version&nbsp;2) with
-            the runner's fields; <code>check-verdict --tree --task</code> decides on the commit, and every round goes
-            into <code>review.sh log</code>.</li>
+            the runner's fields; <code>check-verdict --tree --task</code> decides on the commit, every round goes
+            into <code>review.sh log</code>, and <code>task-close.sh</code> prints its cost as the line
+            <code>review cost_usd=&lt;x&gt; round=&lt;n&gt;</code> (the worker counts it into its run's budget).</li>
             <li><strong>Failure:</strong> no start, a timeout, an error result, a non-zero exit, or a missing or invalid
             <code>structured_output</code> is exit&nbsp;74 with no verdict and no commit; there is no fallback to the
             subagent review.</li>
           </ol>
+
+          <h2>The worker (<code>scripts/dev/ledger-loop.sh</code>)</h2>
+          <p>From stage&nbsp;7a the worker builds approved ledgers without an open session: as the user
+          <code>adminhelper-runner</code>, in its clone, each ledger in its lane, started in tmux only when Kevin says
+          so. It is no new review layer; it runs the existing ones: per task a fresh build session (<code>claude
+          -p</code> with the text of <code>.claude/skills/build-task/SKILL.md</code>, only the settings of
+          <code>scripts/dev/runner-settings.json</code>, <code>dontAsk</code>), then, outside the session,
+          <code>task-close.sh --review auto --round &lt;n&gt;</code> with layer&nbsp;0, the suite, the contracts and
+          the reviewer as a process.</p>
+          <ul>
+            <li><strong>The build session's boundaries:</strong> no git command that writes, no edit under
+            <code>tasks/</code> (a ledger only through <code>ledger.sh</code>), no harness path, a scratch directory only
+            through <code>scripts/dev/scratch.sh</code>; the red team checks them statically and with model probes.</li>
+            <li><strong>Result per task:</strong> a commit by <code>task-close.sh</code>, or else <code>[~]</code> or
+            <code>[?]</code> with its reason (a second exit&nbsp;3, exit&nbsp;4, time, turns, budget, an error, a
+            stall); a <code>[?]</code> sets the ledger to <code>blockiert</code>, and the loop takes the next one.</li>
+            <li><strong>Caps:</strong> run time and budget (build sessions and reviewers) at every task boundary and
+            between iterations, the number of tasks and of ready ledgers at the boundary; the subscription's limit
+            stops with its reset time.</li>
+            <li><strong>Stop classes:</strong> <code>ledger-leer</code>, <code>max-hours</code>,
+            <code>max-tasks</code>, <code>max-budget</code>, <code>kevin-queue</code>, <code>usage-limit</code>,
+            <code>infra</code>, <code>harness-modified</code> &ndash; in the last line of
+            <code>summary-&lt;date&gt;.md</code>.</li>
+            <li><strong>Handover:</strong> a ledger that is <code>bereit</code> leaves its PR text (<code>review.sh
+            pr-body</code>) and a git bundle of its branch; push and PR stay Kevin's. <code>ledger-loop.sh status</code>
+            from Kevin's checkout and the worker line of <code>scripts/dev/hooks/session-status.sh</code> show the
+            state.</li>
+          </ul>
+          <p>Flow and recovery: <code>AUTONOMOUS.md</code> and <code>DEVELOPMENT.md</code>, &ldquo;Der Worker&rdquo;
+          in both.</p>
 
           <h2>Parity and contract gates</h2>
           <p>Two classes of defect need no VM to be found: &ldquo;the copy drifts&rdquo; (the same truth lives in
