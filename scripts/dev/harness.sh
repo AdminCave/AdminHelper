@@ -42,7 +42,8 @@ hook_line() {
 }
 
 # The commit hooks (review.sh sec before every commit, R-0102; for cherry-pick,
-# revert, rebase, merge commits and git am too, R-0110) are armed per clone by hand;
+# revert, rebase, merge commits and git am too, R-0110) and the pre-push hook (over
+# every commit a push takes out, R-0123) are armed per clone by hand;
 # nothing else would tell that they are missing, because a clone without them
 # commits exactly as before.
 precommit_line() {
@@ -50,7 +51,7 @@ precommit_line() {
   hp="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null)"
   # The setting alone arms nothing: a hook file that is gone or lost its
   # execute bit (`chmod -x`, a copy without modes) is skipped by git in silence.
-  for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+  for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch pre-push; do
     [ -x "$ROOT/scripts/dev/hooks/$h" ] || missing="${missing:+$missing, }$h"
   done
   if [ "$hp" = "scripts/dev/hooks" ] && [ -n "$missing" ]; then

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# pre-push — git hook: `review.sh sec` over every commit a push takes out (R-0123).
+#
+# The commit hooks stop the private roadmap, a security ledger or a finding's
+# dedup key on their way into a commit; the push is the step from which on it is
+# public. git hands this hook one line per ref on stdin — <local ref> <local sha>
+# <remote ref> <remote sha> (githooks(5), pre-push) — and $1 is the remote's name.
+# Each ref is read from what the remote has to the local commit, and only the
+# commits the remote does not have yet (review.sh --not-on): a branch that merged
+# main brings main's public commits along, and they are no finding of this push.
+#   - an update:        <remote sha>..<local sha>
+#   - a new ref, or a remote sha this clone does not know: the whole history
+#   - a deletion (local sha all zeros) pushes nothing
+#
+# Armed with the commit hooks (`git config core.hooksPath scripts/dev/hooks`).
+# Exit ≠ 0 aborts the push: 4 for a finding — a path or file:line with the
+# commit, never the content — anything else when review.sh could not run: fail
+# closed.
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
+REMOTE="${1:-origin}"
+EMPTY_TREE="$(git hash-object -t tree /dev/null)" || exit 2
+# Without tracking refs (a remote never fetched, a push to a URL) nothing is known to
+# be on the remote yet: the whole history is read, public commits included.
+if [ -z "$(git for-each-ref --count=1 "refs/remotes/$REMOTE/" 2>/dev/null)" ]; then
+  echo "pre-push: no tracking refs for '$REMOTE' — reading the whole history; 'git fetch $REMOTE' first if public commits are refused" >&2
+fi
+
+while read -r lref lsha rref rsha; do
+  [ -n "${lsha:-}" ] || continue
+  [ -z "${lsha//0/}" ] && continue
+  # A tag points at a tag object; its commit is what leaves.
+  commit="$(git rev-parse -q --verify "$lsha^{commit}")" \
+    || { echo "pre-push: $lref is no commit — push refused" >&2; exit 2; }
+  if [ -n "${rsha//0/}" ] && git cat-file -e "$rsha^{commit}" 2>/dev/null; then
+    base="$rsha"
+  else
+    base="$EMPTY_TREE"
+  fi
+  bash "$ROOT/scripts/dev/review.sh" sec --range "$base..$commit" --not-on "$REMOTE" >/dev/null || {
+    rc=$?
+    echo "pre-push: $lref -> $REMOTE $rref refused (review.sh sec, exit $rc)" >&2
+    exit "$rc"
+  }
+done
+exit 0
