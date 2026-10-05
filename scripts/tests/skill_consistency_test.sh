@@ -86,7 +86,7 @@ column_in_note() {
 # head_template <feature-plan SKILL.md> — the code block right under "## 3.".
 head_template() {
   unreadable "$1" && return
-  awk '/^## 3\./ { s = 1; next } s && /^```/ { if (inb) exit; inb = 1; next } inb { print }' "$1"
+  awk '/^## 3\./ { s = 1; next } s && /^[ \t]*```/ { if (inb) exit; inb = 1; next } inb { print }' "$1"
 }
 
 # section <file> <from> [<to>] — the text from the heading that starts with
@@ -134,7 +134,7 @@ except Exception as e:
     print("cannot load the runner's settings: %s" % e)
     sys.exit(0)
 instr = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", text)
-FENCE = r"(?ms)^```[^\n]*\n(.*?)^```"
+FENCE = r"(?ms)^[ \t]*```[^\n]*\n(.*?)^[ \t]*```"
 commands = [l.strip() for b in re.findall(FENCE, instr) for l in b.splitlines() if l.strip()]
 commands += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", instr))]
 # task-close.sh named alone is a name; with arguments it is a call.
@@ -161,7 +161,7 @@ build_task_calls() {
   python3 - "$1" <<'PY'
 import re, sys
 t = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", open(sys.argv[1]).read())
-FENCE = r"(?ms)^```[^\n]*\n(.*?)^```"
+FENCE = r"(?ms)^[ \t]*```[^\n]*\n(.*?)^[ \t]*```"
 cmds = [l.strip() for b in re.findall(FENCE, t) for l in b.splitlines()]
 cmds += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", t))]
 print(sum(1 for c in cmds if c.startswith("bash scripts/")))
@@ -239,6 +239,10 @@ f=$(fixture '## 3. Ledger schreiben' '```' 'Status: geplant · Branch: feature/<
 t=$(head_template "$f")
 { ! grep -q '^Heavy:' <<<"$t" && grep -q '^Fast-Suite:' <<<"$t"; } \
   && ok "the old head template is read as one without Heavy:" || bad "head_template read: $t"
+# A fence may be indented, as in a list item (R-0185).
+f=$(fixture '## 3. Ledger schreiben' '   ```' 'Status: geplant · Branch: feature/<slug>' 'Heavy: none — x' '   ```')
+t=$(head_template "$f")
+grep -q '^Heavy: none' <<<"$t" && ok "head_template reads a template in an indented fence" || bad "head_template indented: $t"
 f=$(fixture '4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): einen frischen Sub-Agent' \
             '   - **Modell:** `model: sonnet` ist der Default.' '5. **Schließen**')
 [ -z "$(cleanup_rule "$(section "$f" '4. **Frischer' '5. **Schließen')")" ] \
@@ -270,6 +274,9 @@ f=$(fixture 'Teste mit `bash scripts/dev/verify.sh scripts --strict`.' '' '## Ni
 f=$(fixture 'So:' '' '```bash' 'bash scripts/dev/verify.sh scripts --strict' 'git add -A' '```')
 grep -q 'forbidden as an instruction: git add -A' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
   && ok "build_task_findings: a forbidden command in a fenced block is found" || bad "build_task_findings missed a fenced block"
+f=$(fixture '1. So:' '' '   ```bash' '   bash scripts/dev/verify.sh scripts --strict' '   git add -A' '   ```')
+grep -q 'forbidden as an instruction: git add -A' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: ... and in a fenced block indented under a list item (R-0185)" || bad "build_task_findings missed an indented fence"
 printf '{"permissions": ' > "$WORK/broken.json"
 grep -q "cannot load the runner's settings" <<<"$(build_task_findings "$f" "$WORK/broken.json")" \
   && ok "build_task_findings: settings that do not load are a finding, not a pass" || bad "build_task_findings passed broken settings"

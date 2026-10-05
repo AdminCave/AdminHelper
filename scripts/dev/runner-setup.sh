@@ -452,8 +452,11 @@ run_sh "install -o $RUNNER -g $RUNNER -m 600 $(printf '%q' "$ROOT/scripts/dev/ru
 # adminhelper-runner it says so out loud: "Ignoring 38 permissions.allow entries
 # … this workspace has not been trusted" (seen 2026-09-22). That direction is
 # fail-safe, the DENY list keeps working, so this stays OFF unless it is asked
-# for: accepting the trust is what arms those 38 allow rules, and that is Kevin's
-# call, not a side effect of provisioning. From stage 7 on the runner needs it.
+# for: accepting the trust is what arms a project's allow rules (the 38 were the
+# project's, not the runner's), and that is Kevin's call, not a side effect of
+# provisioning. Whether the worker needs it is not verified: it loads only the
+# runner's settings and works in the lanes, which this flag does not cover; the
+# pilot measures it (DEVELOPMENT.md, the trusted workspace).
 step "trusted workspace for $SRV/repo (only with --trust)"
 if [ "$TRUST" = 1 ]; then
   # Same reason as everywhere else in this script: the runner OWNS its home, so
@@ -483,7 +486,7 @@ PY"
   run_sh "chown $RUNNER:$RUNNER $(printf '%q' "$HOME_DIR/.claude.json")"
   run_sh "chmod 600 $(printf '%q' "$HOME_DIR/.claude.json")"
 else
-  note "not done — run again with --trust when the runner's allow rules should apply (DEVELOPMENT.md)"
+  note "not done — the pilot measures whether the worker needs it; --trust covers $SRV/repo, not the lanes, so ask the supervisor before you run again with --trust (DEVELOPMENT.md)"
 fi
 
 # The CLI is pinned like every other toolchain in this repo (frp, oasdiff, Go, ruff):

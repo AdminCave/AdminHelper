@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 1: Werkzeug-Reste, Token-Muster, Test-Hygiene — Task-Ledger
-Status: aktiv · Branch: harness/kleinpaket-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: bereit · Branch: harness/kleinpaket-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-05 (kleines Fund-Paket aus den in der Triage angenommenen Zeilen R-0165, R-0173, R-0183, R-0185; CLAUDE.md §2 „Entscheidungen“, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0165, R-0183, R-0173, R-0185 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, Kommentare und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Sätze zu `sec` und zum Public repo guard) · docs/developer/cicd.html + docs/en/developer/cicd.html
 (was den Public repo guard rot macht) · CHANGELOG.md
 
-### T3 — Test-Hygiene und veraltete Trust-Sätze (R-0173, R-0185)  [ ]
-Komponente: scripts · Dateien: scripts/tests/review_cli_probe_test.sh, scripts/tests/skill_consistency_test.sh, scripts/dev/runner-setup.sh, tasks/harness-stufe-4.md
+### T3 — Test-Hygiene und veraltete Trust-Sätze (R-0173, R-0185)  [x]
+Komponente: scripts · Dateien: scripts/tests/review_cli_probe_test.sh, scripts/tests/skill_consistency_test.sh, scripts/dev/runner-setup.sh, tasks/harness-stufe-4.md, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ae97db6d 2026-10-05T19:51:31+02:00
+Review: approve (opus/xhigh; 2 nit) · round 2
 Änderung: (a) `review_cli_probe_test.sh` unsettet `CLAUDE_PROJECT_DIR`, damit die Fake-CLI nicht mit dem Projekt der
 aufrufenden Session läuft; ein Fall mit gesetzter Variable endet wie ohne. (b) Die Fence-Leser in
 `skill_consistency_test.sh` — `head_template` (`:89`) und `build_task_findings` aus Stufe 7a — erkennen eingerückte
