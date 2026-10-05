@@ -789,10 +789,19 @@ jobs:
             echo "::error::the base ($base) has no review.sh that reads a range — refusing (fail closed)"
             exit 1
           fi
+          # A span without commits (a dispatch on main) reads nothing: a notice, not "clean".
+          guard() {  # guard <review.sh>
+            local out
+            out="$(bash "$1" sec --range "$range")" || return
+            case "$out" in
+              "sec: empty span"*) echo "::notice::$out" ;;
+              *) echo "$out" ;;
+            esac
+          }
           echo "── base logic ($base)"
-          bash "$base_sh" sec --range "$range"
+          guard "$base_sh"
           echo "── this change's logic"
-          bash scripts/dev/review.sh sec --range "$range"
+          guard scripts/dev/review.sh
 
   # Lint the host ops scripts and run the whole hermetic shell-test block through
   # the aggregator (fake releases over file://, stubbed docker — no real stack).

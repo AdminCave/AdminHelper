@@ -369,6 +369,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jedem Push eine eigene Gruppe je Commit und bricht nur noch Pull-Request-Laeufe ab; ein spaeterer
   Push bricht den Lauf davor weder ab noch verdraengt er ihn, solange er wartet. Nur dieser Lauf liest
   die Commits eines Pushs (`before..sha`). Anleitung: `docs/developer/cicd.html`.
+- **`review.sh sec --range` sagt, wenn die Spanne leer ist (R-0174):** Ohne einen Commit in der
+  Spanne meldet `sec` jetzt `sec: empty span (<range>) — nothing read` statt „sec: clean" (Exit
+  weiter 0, ein Push ohne neue Commits ist keine Verweigerung). Der CI-Job „Public repo guard" macht
+  daraus einen Hinweis, etwa bei einem `workflow_dispatch` auf `main`.
 - **`task-close.sh` prueft billig zuerst (Stufe 6b, R-0150):** `diff-scan`, `scope`,
   `docs-pairs` und `sec` laufen vor der Suite, `contracts` danach; ein einseitiger Doku-Abschluss
   kostet keinen Suite-Lauf mehr. Aendert sich der Index waehrend des Laufs, bricht der Abschluss

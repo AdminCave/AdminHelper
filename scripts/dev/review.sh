@@ -739,6 +739,12 @@ $IMPLICIT"
       [ -n "$NOT_ON" ] && NOT_ARGS=(--not --remotes="$NOT_ON")
       COMMITS="$(git rev-list --reverse "$SPAN" "${NOT_ARGS[@]+"${NOT_ARGS[@]}"}" 2>/dev/null)" \
         || die "not a range git knows: $RANGE"
+      # "clean" is a verdict on commits read; a span without any has none. Exit 0
+      # all the same: a push that brings no new commit is no refusal (pre-push).
+      if [ -z "$COMMITS" ]; then
+        echo "sec: empty span ($RANGE) — nothing read"
+        exit 0
+      fi
       while IFS= read -r c; do
         [ -n "$c" ] || continue
         if git rev-parse -q --verify "$c^2" >/dev/null 2>&1; then

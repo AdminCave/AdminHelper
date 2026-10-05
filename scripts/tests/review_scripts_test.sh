@@ -397,6 +397,12 @@ RCLEAN="$(rg rev-parse HEAD)"
 printf 'two\n' >> "$RFIX/docs/a.md"; rg add -A; rg commit -qm "ordinary"
 rr sec --range "$RCLEAN..HEAD"
 [ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "a clean span -> sec: clean" || bad "range clean: rc=$rc out=$OUT"
+# A span without a commit has nothing to call clean (R-0174); exit 0 all the same.
+for span in HEAD..HEAD HEAD...HEAD; do
+  rr sec --range "$span"
+  [ $rc -eq 0 ] && [ "$OUT" = "sec: empty span ($span) — nothing read" ] \
+    && ok "an empty span ($span) -> 'nothing read', exit 0, not 'clean'" || bad "empty span $span: rc=$rc out=$OUT"
+done
 # The key is assembled at run time: written out, it would stop this very file at sec.
 printf 'x\nDedup-%s: sec:%s\n' Key "server:leak.py:probe" >> "$RFIX/docs/a.md"; rg add -A; rg commit -qm "a finding"
 rr sec --range "$RCLEAN..HEAD"
@@ -466,14 +472,15 @@ CI="$REPO_ROOT/.github/workflows/ci.yml"
 JOB="$(awk '/^  public-repo-guard:/ { f = 1; print; next } f && /^  [A-Za-z0-9_-]+:/ { exit } f' "$CI")"
 grep -qx '    name: Public repo guard (review.sh sec)' <<<"$JOB" \
   && ok "the job carries the name the ruleset requires" || bad "no job named 'Public repo guard (review.sh sec)'"
-grep -q 'fetch-depth: 0' <<<"$JOB" && grep -qF 'bash scripts/dev/review.sh sec --range "$range"' <<<"$JOB" \
+grep -q 'fetch-depth: 0' <<<"$JOB" && grep -qF 'bash "$1" sec --range "$range"' <<<"$JOB" \
+  && grep -qx ' *guard scripts/dev/review.sh' <<<"$JOB" \
   && ok "it fetches the whole history and runs review.sh sec --range" || bad "job steps: $JOB"
 ! grep -q 'secrets\.' <<<"$JOB" && ok "it uses no secret (it runs for fork pull requests too)" || bad "the job reads a secret"
 EXPR="$(grep -F '${{' <<<"$JOB" | grep -vE '^ +[A-Z_]+: \$\{\{ github\.[a-z_.]+ \}\}$')"
 [ -z "$EXPR" ] && ok "event values reach the script as environment only" || bad "an expression outside env: $EXPR"
 # Two logics (R-0174): the base's review.sh, from a worktree of the base, then this
 # change's — both on a span that names $SHA, since HEAD in the worktree is the base.
-grep -qF 'bash "$base_sh" sec --range "$range"' <<<"$JOB" && grep -qF 'git worktree add --quiet --detach "$RUNNER_TEMP/base" "$base"' <<<"$JOB" \
+grep -qx ' *guard "$base_sh"' <<<"$JOB" && grep -qF 'git worktree add --quiet --detach "$RUNNER_TEMP/base" "$base"' <<<"$JOB" \
   && grep -qF 'range="$base...$SHA"' <<<"$JOB" && grep -qF '::error::the base' <<<"$JOB" \
   && ok "it reads with the base's review.sh (a worktree, \$SHA in the span) and fails closed without one" \
   || bad "no base-logic step: $JOB"
@@ -503,6 +510,12 @@ job "$RFIX" EVENT=push BASE_REF='' BEFORE=00000000000000000000000000000000000000
 job "$RFIX" EVENT=push BASE_REF='' BEFORE="$RCLEAN" SHA="$(rg rev-parse feature)"
 [ $rc -eq 4 ] && grep -q "docs/main.md" <<<"$OUT" && grep -q "── base logic ($RCLEAN)" <<<"$OUT" \
   && ok "the job's script: a push is read from 'before' to the pushed commit, with the logic before it" || bad "job push: rc=$rc out=$OUT"
+# A dispatch on main: origin/main...origin/main holds no commit — a notice from each
+# logic, not "clean" (R-0174).
+job "$RFIX" EVENT=workflow_dispatch BASE_REF='' BEFORE='' SHA="$(rg rev-parse origin/main)"
+[ $rc -eq 0 ] && [ "$(grep -c '^::notice::sec: empty span (origin/main\.\.\.[0-9a-f]*) — nothing read$' <<<"$OUT")" = 2 ] \
+  && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "the job's script: an empty span is a notice from both logics, not 'clean'" || bad "job empty: rc=$rc out=$OUT"
 # A pull request that takes the block out of its own review.sh and adds a private
 # file: its own logic passes it, the base's does not — and the base's decides.
 EFIX="$WORK/evil"; mkdir -p "$EFIX/scripts/dev"

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Public repo guard: Logik der Basis, kein abgebrochener Push-Lauf, leere Spanne sagt es — Task-Ledger
-Status: aktiv · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-05 (Design-Gate guard-base-script, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0174
 Heavy: none — nur der CI-Job `public-repo-guard`, die Workflow-`concurrency`, `review.sh sec` und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Beweis liefern der eigene PR-Lauf und der erste Push-Lauf auf main nach dem Merge (siehe T2).
@@ -90,8 +90,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: cicd.html DE+EN (ein Satz: Läufe auf main-Pushes werden nie abgebrochen), CHANGELOG
 Abhängt von: T1 (dieselbe Datei)
 
-### T3 — Eine leere Spanne heißt „nothing read“, nicht „clean“  [ ]
+### T3 — Eine leere Spanne heißt „nothing read“, nicht „clean“  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 8 ok @b64f0ac7 2026-10-05T10:19:28+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenprobe mit review.sh aus HEAD (neues ci.yml und neuer Test im Wegwerf-Worktree): 3 Faelle rot, dort sec: clean
 Änderung: `sec --range` gibt bei null Commits in der Spanne (`COMMITS` leer nach `git rev-list`, `review.sh:740`)
 `sec: empty span (<range>) — nothing read` aus und endet mit Exit 0 — nicht mehr „sec: clean“ (`:759`). Exit 0, weil
 der pre-push-Hook bei einem Push ohne neue Commits sonst fälschlich verweigerte; er verwirft die Standardausgabe ohnehin
