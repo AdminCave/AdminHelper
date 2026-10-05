@@ -823,8 +823,12 @@ Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Was
 Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
 der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
 eines Pull Requests bzw. Pushs (R-0123; ein Commit, der eine private Datei bringt und der naechste,
-der sie wieder loescht, zaehlen beide, denn die Historie wird mit veroeffentlicht). Scharf wird der
-Hook je Klon mit einem Handgriff Kevins:
+der sie wieder loescht, zaehlen beide, denn die Historie wird mit veroeffentlicht). Der Job prueft
+zweimal, mit dem `review.sh` der Basis (ein Worktree von `origin/<base>`, beim Push der Stand vor
+ihm) und mit dem des geaenderten Stands; beide muessen gruen sein (R-0174) — ein Pull Request,
+der `sec` aendert, wird mit der Logik geprueft, die vor ihm galt. Einen Fehlalarm der Basis-Logik
+raeumt ein Pull Request deshalb nicht an ihr vorbei aus, der geht per Admin-Merge. Scharf wird der Hook je Klon mit einem
+Handgriff Kevins:
 
 ```bash
 git config core.hooksPath scripts/dev/hooks   # einmal im Haupt-Checkout; die Lanes erben es

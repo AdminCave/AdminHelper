@@ -743,7 +743,10 @@ jobs:
   # core.hooksPath, the web editor, another machine). It needs no secret, so it runs
   # for pull requests from forks too, and it names paths and file:line, never
   # content, so its log may be public. The event values reach the script as
-  # environment, never as expressions inside it.
+  # environment, never as expressions inside it. It reads with the base's review.sh
+  # and with this change's (R-0174): a pull request cannot loosen the rule it is
+  # checked by. The price: a pull request that fixes a false alarm of the base logic
+  # is still held by it (an admin merge then).
   public-repo-guard:
     name: Public repo guard (review.sh sec)
     runs-on: ubuntu-latest
@@ -760,8 +763,9 @@ jobs:
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
         run: |
+          # The span names $SHA, not HEAD: in the base worktree below HEAD is the base.
           case "$EVENT" in
-            pull_request) range="origin/$BASE_REF...HEAD" ;;
+            pull_request) base="origin/$BASE_REF"; range="$base...$SHA" ;;
             push)
               # An empty or all-zero `before` says nothing about what this push brings:
               # fail closed. On main it does not happen, the ruleset forbids force pushes.
@@ -769,9 +773,22 @@ jobs:
                 echo "::error::push without a usable 'before' — cannot tell which commits it brings"
                 exit 1
               fi
-              range="$BEFORE..$SHA" ;;
-            *) range="origin/main...HEAD" ;;
+              # origin/main is the pushed commit already; the base is main before it.
+              base="$BEFORE"; range="$BEFORE..$SHA" ;;
+            *) base="origin/main"; range="origin/main...$SHA" ;;
           esac
+          # The logic of the base first (R-0174): a change that loosens or breaks sec is
+          # still read by the rule it is about to change. Then this change's own logic,
+          # which keeps the job in step with the local hooks. Both have to be green.
+          git worktree add --quiet --detach "$RUNNER_TEMP/base" "$base"
+          base_sh="$RUNNER_TEMP/base/scripts/dev/review.sh"
+          if [ ! -f "$base_sh" ] || ! grep -q -- '--range' "$base_sh"; then
+            echo "::error::the base ($base) has no review.sh that reads a range — refusing (fail closed)"
+            exit 1
+          fi
+          echo "── base logic ($base)"
+          bash "$base_sh" sec --range "$range"
+          echo "── this change's logic"
           bash scripts/dev/review.sh sec --range "$range"
 
   # Lint the host ops scripts and run the whole hermetic shell-test block through

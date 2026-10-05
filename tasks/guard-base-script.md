@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Public repo guard: Logik der Basis, kein abgebrochener Push-Lauf, leere Spanne sagt es — Task-Ledger
-Status: freigegeben · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-05 (Design-Gate guard-base-script, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0174
 Heavy: none — nur der CI-Job `public-repo-guard`, die Workflow-`concurrency`, `review.sh sec` und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Beweis liefern der eigene PR-Lauf und der erste Push-Lauf auf main nach dem Merge (siehe T2).
@@ -33,8 +33,10 @@ Entscheidungen (Kevin 2026-10-05, C Aufsicht):
 Nicht in diesem Ledger: Punkt (4) der Roadmap-Zeile (Push über die ganze Historie dauert lange) — der pre-push-Hook
 nennt den Grund schon (`scripts/dev/hooks/pre-push:32`).
 
-### T1 — Der Guard prüft mit der Logik der Basis und mit der des PRs  [ ]
+### T1 — Der Guard prüft mit der Logik der Basis und mit der des PRs  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/review_scripts_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 8 ok @5c3330b6 2026-10-05T10:00:30+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenprobe mit ci.yml aus HEAD: 5 Job-Faelle rot, der PR mit gelockertem review.sh laeuft dort gruen (rc 0)
 Änderung: Im Job `public-repo-guard` (`ci.yml:747`) läuft vor dem bisherigen Aufruf (`:775`) ein zweiter mit dem
 `review.sh` der Basis: `git worktree add --detach "$RUNNER_TEMP/base" "origin/$BASE_REF"` (bei push und
 workflow_dispatch `origin/main`), dann `bash "$RUNNER_TEMP/base/scripts/dev/review.sh" sec --range …`. Die Spanne nennt
@@ -58,6 +60,9 @@ Semantik: `docs/developer/cicd.html:40`: „Der Job `public-repo-guard` (…) f�
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: cicd.html DE+EN (Satz zum Job `:40`: prüft mit der Logik der Basis und der des PRs, beide müssen grün sein, mit
 der Grenze aus A), DEVELOPMENT.md (Absatz zum Guard `:824` ff.), CHANGELOG
+Abweichung (Bau): Beim Push ist die Basis `$BEFORE`, nicht `origin/main` — nach dem Push zeigt `origin/main` schon
+auf den gepushten Commit, dessen `review.sh` wäre die Logik des Änderungsstands. Der Test hält beide Basen fest
+(„base logic (origin/main)“ beim PR, „base logic (<before>)“ beim Push).
 
 ### T2 — Pushes auf main laufen immer zu Ende  [ ]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/review_scripts_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md

@@ -359,6 +359,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Der Public repo guard prueft auch mit der Logik der Basis (R-0174):** Der CI-Job
+  „Public repo guard (review.sh sec)" faehrt `review.sh sec --range` zuerst mit dem `review.sh` der
+  Basis (ein Worktree von `origin/<base>`, beim Push der Stand vor ihm), dann mit dem des geaenderten
+  Stands; beide muessen gruen sein. Ein Pull Request, der `sec` aendert, wird so mit der Logik
+  geprueft, die vor ihm galt; eine Basis ohne `sec --range` macht den Job rot. Einen Fehlalarm der
+  Basis-Logik nimmt ein Admin-Merge. Anleitung: `docs/developer/cicd.html`, `DEVELOPMENT.md`.
 - **`task-close.sh` prueft billig zuerst (Stufe 6b, R-0150):** `diff-scan`, `scope`,
   `docs-pairs` und `sec` laufen vor der Suite, `contracts` danach; ein einseitiger Doku-Abschluss
   kostet keinen Suite-Lauf mehr. Aendert sich der Index waehrend des Laufs, bricht der Abschluss
