@@ -171,8 +171,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 Abhängt von: T6
 
-### T9 — Red Team prüft die Bau-Session  [ ]
+### T9 — Red Team prüft die Bau-Session  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @29549f77 2026-10-05T11:22:09+02:00
+Review: approve (opus/xhigh; 3 nit) · round 1
 Änderung: Abschnitt 5 (`runner-redteam.sh:338`) um die Bau-Session-Grenzen aus T2: statisch, ohne Modell, dass die
 Runner-Settings Deny `Edit(./tasks/**)` tragen und die zwei Scratch-Allows; mit `claude_probe` (Budget ≤ 1 $, wie
 heute): eine Session, die `tasks/<x>.md` per Umleitung ändern soll ⇒ `denied`; eine, die nacktes `mktemp -d` ausführen
