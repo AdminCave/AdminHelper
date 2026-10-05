@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Public repo guard: Logik der Basis, kein abgebrochener Push-Lauf, leere Spanne sagt es — Task-Ledger
-Status: geplant · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: freigegeben · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Freigabe: Kevin, 2026-10-05 (Design-Gate guard-base-script, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0174
 Heavy: none — nur der CI-Job `public-repo-guard`, die Workflow-`concurrency`, `review.sh sec` und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Beweis liefern der eigene PR-Lauf und der erste Push-Lauf auf main nach dem Merge (siehe T2).
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
