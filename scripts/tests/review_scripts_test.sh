@@ -433,6 +433,32 @@ rr sec --range "$RCLEAN..feature"
 [ $rc -eq 4 ] && grep -q "docs/main.md" <<<"$OUT" && ok "without --not-on main's commits in the span count" || bad "no not-on: rc=$rc out=$OUT"
 rr sec --range "$RCLEAN..feature" --not-on origin
 [ $rc -eq 0 ] && ok "--not-on origin leaves out what origin already has" || bad "not-on: rc=$rc out=$OUT"
+# A path with `"` or `\` comes out of --name-only C-quoted, and a quoted path matched
+# no pattern: read NUL-separated, it is blocked like any other.
+rg checkout -q main
+mkdir -p "$RFIX/tasks/private"; printf 'q\n' > "$RFIX/tasks/private/a\"b.md"
+rg add -f -- "tasks/private/a\"b.md"; rg commit -qm "a quoted private path"
+rr sec --range "HEAD~1..HEAD"
+[ $rc -eq 4 ] && grep -qF 'tasks/private/a"b.md (commit ' <<<"$OUT" \
+  && ok "a private path with a quote in its name -> exit 4 (range)" || bad "quoted range: rc=$rc out=$OUT"
+rg rm -q --cached -- "tasks/private/a\"b.md"; rg commit -qm "untracked again"
+rg add -f -- "tasks/private/a\"b.md"
+rr sec --staged
+[ $rc -eq 4 ] && grep -qF 'tasks/private/a"b.md' <<<"$OUT" \
+  && ok "... and staged -> exit 4" || bad "quoted staged: rc=$rc out=$OUT"
+rg reset -q -- "tasks/private/a\"b.md"; rm -f "$RFIX/tasks/private/a\"b.md"
+rg checkout -q feature2   # the job cases below read the evil merge of this branch
+# A git that cannot read a commit of the span is no clean span.
+BROKEN="$WORK/broken"; git init -q -b main "$BROKEN"; mkdir -p "$BROKEN/scripts/dev"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$BROKEN/scripts/dev/review.sh"
+git -C "$BROKEN" add -A; git -C "$BROKEN" -c user.name=F -c user.email=f@example.invalid commit -qm base
+printf 'lost\n' > "$BROKEN/lost.md"; git -C "$BROKEN" add lost.md
+git -C "$BROKEN" -c user.name=F -c user.email=f@example.invalid commit -qm "a blob that goes missing"
+BLOB="$(git -C "$BROKEN" rev-parse HEAD:lost.md)"
+rm -f "$BROKEN/.git/objects/${BLOB:0:2}/${BLOB:2}"
+OUT=$(bash "$BROKEN/scripts/dev/review.sh" sec --range "HEAD~1..HEAD" 2>&1); rc=$?
+[ $rc -ne 0 ] && [ $rc -ne 4 ] && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "a commit git cannot read -> an error, not 'sec: clean'" || bad "missing object: rc=$rc out=$OUT"
 
 # ══ ci.yml: the public repo guard (R-0123) ════════════════════════════════════
 echo "── ci.yml: Public repo guard (review.sh sec) ──"
@@ -1342,6 +1368,12 @@ pp origin v0.0.1
   && ok "an annotated tag on clean commits is pushed" || bad "tag push: rc=$rc out=$OUT"
 pp origin --delete feature
 [ $rc -eq 0 ] && [ "$(rhead feature)" = none ] && ok "a deletion is pushed" || bad "delete push: rc=$rc out=$OUT"
+# A remote never fetched: nothing is known to be there, the whole history is read —
+# and the hook says why.
+git init -q --bare -b main "$WORK/mirror.git"; pg remote add mirror "$WORK/mirror.git"
+pp mirror main
+[ $rc -eq 0 ] && grep -q "pre-push: no tracking refs for 'mirror'" <<<"$OUT" \
+  && ok "a push to a remote without tracking refs says the whole history is read" || bad "mirror push: rc=$rc out=$OUT"
 
 # ══ the pre-commit hook ═══════════════════════════════════════════════════════
 echo "── pre-commit hook ──"

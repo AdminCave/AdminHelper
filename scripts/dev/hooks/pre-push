@@ -26,6 +26,11 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
 REMOTE="${1:-origin}"
 EMPTY_TREE="$(git hash-object -t tree /dev/null)" || exit 2
+# Without tracking refs (a remote never fetched, a push to a URL) nothing is known to
+# be on the remote yet: the whole history is read, public commits included.
+if [ -z "$(git for-each-ref --count=1 "refs/remotes/$REMOTE/" 2>/dev/null)" ]; then
+  echo "pre-push: no tracking refs for '$REMOTE' — reading the whole history; 'git fetch $REMOTE' first if public commits are refused" >&2
+fi
 
 while read -r lref lsha rref rsha; do
   [ -n "${lsha:-}" ] || continue

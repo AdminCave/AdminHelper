@@ -670,16 +670,18 @@ $IMPLICIT"
     }
     # sec_scan <tag> <git diff args…> — what this diff adds that must never leave.
     sec_scan() {
-      local tag="$1" p hit
+      local tag="$1" p hit out
       shift
-      while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$("${GIT_DIFF[@]}" "$@" --name-only)"
+      # -z: --name-only C-quotes a path with `"` or `\` even with core.quotePath=false,
+      # and a quoted `"tasks/private/…` matched no pattern. A git that cannot read the
+      # change is no clean change: fail closed.
+      out="$("${GIT_DIFF[@]}" "$@" --name-only -z | tr '\0' '\n')" || die "sec: git could not read this change"
+      while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$out"
       # awk, not `grep -q`: grep leaves the pipeline the moment it matches, git
       # diff dies of SIGPIPE, and with `set -o pipefail` the hit turned into a
       # clean bill of health for every diff larger than the pipe buffer. It also
       # names the line, because "somewhere in this diff" is not actionable.
-      while IFS= read -r hit; do
-        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
-      done <<< "$("${GIT_DIFF[@]}" "$@" | awk '
+      out="$("${GIT_DIFF[@]}" "$@" | awk '
         # Headers only before the first @@ of a file: `++ x` added reads `+++ x`.
         /^diff --git /             { inheader = 1; next }
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
@@ -687,7 +689,10 @@ $IMPLICIT"
         inheader    { next }
         /^\+/       { if ($0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno; newno++; next }
         /^-/        { next }
-                    { newno++ }')"
+                    { newno++ }')" || die "sec: git could not read this change"
+      while IFS= read -r hit; do
+        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
+      done <<< "$out"
     }
     # sec_scan_merge <tag> <merge> — what the merge itself brings: the combined diff
     # shows only what differs from every parent, and a line counts only when it is
@@ -695,21 +700,23 @@ $IMPLICIT"
     # would bring every public line of main along.
     MERGE_DIFF=(git -c core.quotePath=false diff-tree --no-commit-id -r --text --no-ext-diff --no-textconv --no-color)
     sec_scan_merge() {
-      local tag="$1" c="$2" p hit
-      while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$("${MERGE_DIFF[@]}" -c --name-only "$c")"
-      while IFS= read -r hit; do
-        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
-      done <<< "$("${MERGE_DIFF[@]}" --cc -p "$c" | awk '
+      local tag="$1" c="$2" p hit out
+      out="$("${MERGE_DIFF[@]}" -c --name-only -z "$c" | tr '\0' '\n')" || die "sec: git could not read merge $c"
+      while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$out"
+      out="$("${MERGE_DIFF[@]}" --cc -p "$c" | awk '
         /^diff --(cc|combined) /    { inheader = 1; next }
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@@/      { inheader = 0; np = 0; while (substr($0, np + 1, 1) == "@") np++; np--
-                      for (i = 2; i <= NF; i++) if ($i ~ /^\+/) { split($i, nw, ","); newno = substr(nw[1], 2) + 0 }
+                      for (i = 2; i <= NF; i++) if ($i ~ /^\+/) { split($i, nw, ","); newno = substr(nw[1], 2) + 0; break }
                       next }
         inheader    { next }
         { pre = substr($0, 1, np); if (index(pre, "-")) next
           rest = pre; gsub(/\+/, "", rest)
           if (rest == "" && $0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno
-          newno++ }')"
+          newno++ }')" || die "sec: git could not read merge $c"
+      while IFS= read -r hit; do
+        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
+      done <<< "$out"
     }
     if [ -n "$RANGE" ]; then
       # A range is history, not a net change: a file added and removed again inside

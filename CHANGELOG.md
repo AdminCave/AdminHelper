@@ -15,8 +15,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Sicherheitsfunds, `.devenv.sh`, `settings.local.json`), fuer alles, was an ihnen vorbeigeht. `sec`
   liest eine Spanne Commit fuer Commit (eine Datei, die kommt und wieder geht, zaehlt), einen Merge nur
   nach dem, was er selbst bringt; der Job braucht kein Secret und nennt nur Pfad bzw. Datei:Zeile.
-  Kevins Handgriff: den Check im Ruleset fuer `main` als Pflicht eintragen. Anleitung:
-  `docs/developer/cicd.html`, `DEVELOPMENT.md` „pre-commit-Hook".
+  Lokal faehrt der neue Hook `scripts/dev/hooks/pre-push` dieselbe Pruefung ueber jeden Commit, den
+  ein Push nach draussen bringt, und bricht den Push bei einem Treffer ab. Kevins Handgriff: den
+  Check im Ruleset fuer `main` als Pflicht eintragen. Anleitung: `docs/developer/cicd.html`,
+  `DEVELOPMENT.md` „pre-commit-Hook".
 
 - **Der Reviewer als eigener Prozess (Stufe 6b, R-0155, R-0147, R-0150):**
   `task-close.sh --review auto` startet den Task-Reviewer selbst: der Runner faehrt die Probe

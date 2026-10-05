@@ -127,3 +127,19 @@ Commits ab; der Push ist der Schritt, ab dem etwas öffentlich ist.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Absatz zu den Hooks `:767` ff.: fünfter Hook pre-push, was er prüft, Abbruch = kein Push)
 Abhängt von: T1
+
+### T4 — Befunde aus dem Gesamt-Review: gequotete Pfade, git-Fehler, Doku zum Altbestand  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/hooks/pre-push, scripts/tests/review_scripts_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @2601cef8 2026-10-05T07:25:18+02:00
+Review: aus dem Gesamt-Review (Opus): wichtig Doku-Satz zum Altbestand falsch -> korrigiert (drei Treffer, zwei Commits, welche Spannen sie treffen); Roadmap-Kandidaten mit SEC-Bezug vorgezogen: gequotete Pfade und geschluckte git-Fehler; Gegenprobe HEAD: 3 failed
+Änderung: (1) `sec` liest Pfade NUL-getrennt (`--name-only -z`): ein Pfad mit `"` oder `\` kam C-gequotet heraus und
+umging die Pfadsperre (`tasks/private/a"b.md` war „clean“, in `--range` wie in `--staged`). (2) Ein git-Fehler beim Lesen
+einer Änderung ist ein Abbruch (Exit 2), nicht „clean“. (3) Im `--cc`-awk zählt das erste `+`-Feld des Hunk-Kopfs.
+(4) Der pre-push-Hook sagt, wenn der Remote keine Tracking-Refs hat (dann wird die ganze Historie gelesen — erst
+fetchen). (5) Doku: der Altbestand-Satz in `cicd.html` (DE, EN) war falsch — ein PR oder `workflow_dispatch` liest ab
+dem Merge-Base und erfasst die alten Commits nie; rot wird eine Spanne über die ganze Historie (pre-push zu einem
+Remote ohne Tracking-Refs oder einer URL) oder ein PR gegen eine ältere Basis als main; es sind drei Treffer in zwei
+Commits (86128f52, 5bb32570). CHANGELOG nennt den pre-push-Hook. Tests: gequoteter privater Pfad in `--range` und
+`--staged` ⇒ Exit 4; fehlendes Objekt in der Spanne ⇒ Exit ≠ 0, nicht „clean“.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: cicd.html (DE, EN), CHANGELOG
