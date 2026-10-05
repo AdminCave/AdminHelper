@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 7b — der Worker bringt ein Ledger bis PR-fertig: Ebene 3, Heavy aus dem Loop, Übergabe — Task-Ledger
-Status: geplant · Branch: harness/stufe-7b · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: freigegeben · Branch: harness/stufe-7b · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Freigabe: Kevin, 2026-10-05 (Stufen-Plan 7b „Freigeben“; E4: Fix-Tasks aus Ebene 3 automatisch, eng begrenzt; Proxmox-Token: Pilot ohne Token, dann 7b), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-7b.md (Roadmap R-0010, R-0175, R-0177, R-0178)
 Heavy: linux-full — einmal echt am Ende: `bash scripts/tests/heavy.sh gate --for tasks/stufe-7b.md` (dieses Ledger, eine Pool-VM, `run.sh integration`), interaktiv in tmux mit Wächter (D21). Der Lauf als Runner kommt mit Pilot 2 (Spec, „Kevins Handarbeit“ 6). Alle Task-Tests sind hermetisch (claude-, gh-, vm- und heavy-Stubs).
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
