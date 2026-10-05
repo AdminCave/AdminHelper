@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI-Sperre für Privates: review.sh sec über PR-Diff und vor jedem Push — Task-Ledger
-Status: bereit · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: erledigt · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-05 („ci-sec-gate freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0123
 Hängt ab von: harness/stufe-6b (gemergt) — beide ändern scripts/dev/review.sh, review_scripts_test.sh, DEVELOPMENT.md und docs/developer/cicd.html; erst nach dem Merge von 6b bauen und origin/main vorher hineinmergen
@@ -143,3 +143,16 @@ Commits (86128f52, 5bb32570). CHANGELOG nennt den pre-push-Hook. Tests: gequotet
 `--staged` ⇒ Exit 4; fehlendes Objekt in der Spanne ⇒ Exit ≠ 0, nicht „clean“.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: cicd.html (DE, EN), CHANGELOG
+
+Abschluss-Evidenz (2026-10-05):
+- Gesamt-Schnellcheck @9621f5c2: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns`
+  (`run.sh quick --strict`); origin/main (9f68c8de, #76) enthalten, seitdem nichts Neues auf main.
+- Review am Ende (Opus, eine Runde) über T1–T3: ein `wichtig` in der Doku (Altbestand-Satz falsch) und zwei
+  Roadmap-Kandidaten mit SEC-Bezug (gequotete Pfade umgingen die Pfadsperre, git-Fehler wurden zu „clean“) → T4.
+- Gegenproben gegen die jeweils vorige Fassung rot: T1 8 von 11 Range-Fällen, T2 kein Job in der alten `ci.yml`,
+  T3 ohne Hook 3 Push-Fälle, ohne `--not-on` der Merge-Push, T4 3 Fälle (zwei gequotete Pfade „clean“, fehlendes
+  Objekt Exit 0).
+- Der Push dieses Branches durch den neuen pre-push-Hook von Hand simuliert: Exit 0.
+- Altbestand auf main bleibt (Aufsicht): drei Zeilen in zwei Commits beschreiben die Regel selbst, siehe cicd.html.
+- Heavy: none (wie geplant). Der CI-Job beweist sich im eigenen PR.
+
