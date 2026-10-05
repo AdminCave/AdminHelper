@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI-Sperre für Privates: review.sh sec über PR-Diff und vor jedem Push — Task-Ledger
-Status: aktiv · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: bereit · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-05 („ci-sec-gate freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0123
 Hängt ab von: harness/stufe-6b (gemergt) — beide ändern scripts/dev/review.sh, review_scripts_test.sh, DEVELOPMENT.md und docs/developer/cicd.html; erst nach dem Merge von 6b bauen und origin/main vorher hineinmergen
@@ -95,8 +95,10 @@ Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (Tabelle der Workfl
 CHANGELOG (Added)
 Abhängt von: T1
 
-### T3 — pre-push-Hook: sec über jede Spanne, die das Repo verlässt  [ ]
-Komponente: scripts · Dateien: scripts/dev/hooks/pre-push, scripts/dev/harness.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+### T3 — pre-push-Hook: sec über jede Spanne, die das Repo verlässt  [x]
+Komponente: scripts · Dateien: scripts/dev/hooks/pre-push, scripts/dev/harness.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @43bf4627 2026-10-05T06:53:02+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenproben: ohne Hook 3 Push-Faelle rot, Hook ohne --not-on: Merge-Push rot; Push dieses Branches von Hand simuliert: durch
 Änderung: Neuer Hook `scripts/dev/hooks/pre-push` mit SPDX-Kopf, im Stil von `pre-commit` (fail closed: Exit ≠ 0
 bricht den Push ab). Er liest von stdin die Zeilen `<local ref> <local sha> <remote ref> <remote sha>` (githooks(5),
 pre-push) und fährt je Zeile `review.sh sec --range <basis>..<local sha>`.

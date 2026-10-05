@@ -842,14 +842,20 @@ die keinen der drei anderen rufen. Dass der Sequencer `prepare-commit-msg`
 ruft, dokumentiert git nicht; gemessen ist es mit git 2.47.3, und
 `scripts/tests/review_scripts_test.sh` haelt es fest — ein git, das damit aufhoert, macht
 diese Faelle rot. `git commit -n` ueberspringt nur `pre-commit`, nicht `prepare-commit-msg`;
-ein gewoehnlicher Commit faehrt `sec` deshalb zweimal (~20 ms je Lauf). Fehlt einer der vier
-im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status` `NOT armed` und nennt
-ihn. Nach einer Weigerung geht es mit `--abort` zurueck (`git cherry-pick`, `merge`, `rebase`,
+ein gewoehnlicher Commit faehrt `sec` deshalb zweimal (~20 ms je Lauf). Seit R-0123 kommt ein
+fuenfter dazu: `pre-push` faehrt `review.sh sec --range` ueber jeden Commit, den ein Push nach
+draussen bringt — je Ref vom Stand des Remotes bis zum lokalen Commit (eine neue Ref: die ganze
+Historie), und nur die Commits, die der Remote noch nicht hat (`--not-on <remote>`; ein Branch, der
+main gemergt hat, bringt main nicht als Fund mit). Ein Treffer bricht den Push ab und nennt Pfad bzw.
+Datei:Zeile mit dem Commit, nie den Inhalt; eine Loeschung pusht nichts und geht durch. Erst dieser
+Hook verhindert, dass etwas ueberhaupt oeffentlich wird; die CI faengt, was an ihm vorbeigeht.
+Fehlt einer der fuenf im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status`
+`NOT armed` und nennt ihn. Nach einer Weigerung geht es mit `--abort` zurueck (`git cherry-pick`, `merge`, `rebase`,
 `am`, `git revert` einer Serie); ein verweigertes `git revert` eines einzelnen Commits
 hinterlaesst dagegen keinen `REVERT_HEAD` und seine Aenderung gestaged, dort hilft
 `git reset --merge`. Die Hooks sperren
 fail-closed — ein kaputtes `review.sh` blockiert jeden Commit, jeden Merge, cherry-pick,
-rebase und `git am`; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
+rebase, `git am` und jeden Push; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
 Nicht abgedeckt: ein Fast-Forward-Merge (er erzeugt keinen Commit), Plumbing (`commit-tree`,
 `update-ref`) und die Wege am Hook vorbei, die der Waechter nicht sieht (oben). Eine Runner-Regel `Edit(./.git/**)` gibt es bewusst nicht: unter
 `dontAsk` ohne passende Allow-Regel wird so ein Edit schon heute verweigert, und die

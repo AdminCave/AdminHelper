@@ -1289,6 +1289,60 @@ r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index
 
+# ══ the pre-push hook (R-0123) ════════════════════════════════════════════════
+echo "── pre-push hook ──"
+# The push is the step from which on it is public. A fixture with the pre-push hook
+# alone (the commit hooks would stop the private commits these cases need) and a
+# bare repository as its remote.
+PFIX="$WORK/pushing"; PREMOTE="$WORK/remote.git"
+mkdir -p "$PFIX/scripts/dev/hooks" "$PFIX/tasks/private" "$PFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$PFIX/scripts/dev/review.sh"
+cp "$REPO_ROOT/scripts/dev/hooks/pre-push" "$PFIX/scripts/dev/hooks/pre-push"
+chmod 755 "$PFIX/scripts/dev/hooks/pre-push"
+printf 'tasks/private/\n' > "$PFIX/.gitignore"; printf 'plain\n' > "$PFIX/docs/note.md"
+pg() { git -C "$PFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+pp() { OUT=$(cd "$PFIX" && git push -q "$@" 2>&1); rc=$?; }
+rhead() { git -C "$PREMOTE" rev-parse -q --verify "refs/heads/$1" || echo none; }
+pg init -q -b main; pg add -A; pg commit -qm fixture
+git init -q --bare -b main "$PREMOTE"; pg remote add origin "$PREMOTE"
+pg config core.hooksPath scripts/dev/hooks
+pp origin main
+[ $rc -eq 0 ] && [ "$(rhead main)" = "$(pg rev-parse main)" ] \
+  && ok "a clean new branch is pushed" || bad "clean push: rc=$rc out=$OUT"
+R0="$(rhead main)"
+printf 'internal\n' > "$PFIX/tasks/private/x.md"; pg add -f -- tasks/private/x.md; pg commit -qm private
+pp origin main
+[ $rc -ne 0 ] && [ "$(rhead main)" = "$R0" ] && grep -q "tasks/private/x.md (commit " <<<"$OUT" \
+  && grep -q "pre-push: refs/heads/main -> origin refs/heads/main refused" <<<"$OUT" \
+  && ok "a private file: the push is refused, the remote unchanged, the path named" || bad "private push: rc=$rc out=$OUT"
+pg rm -q -- tasks/private/x.md; pg commit -qm "gone again"
+pp origin main
+[ $rc -ne 0 ] && [ "$(rhead main)" = "$R0" ] && grep -q "tasks/private/x.md" <<<"$OUT" \
+  && ok "added and removed again before the push: still refused" || bad "net-zero push: rc=$rc out=$OUT"
+printf 'x\nDedup-%s: sec:%s\n' Key "server:leak.py:probe" >> "$PFIX/docs/note.md"; pg commit -qam key
+pp origin main
+[ $rc -ne 0 ] && grep -q "docs/note.md:3 (commit " <<<"$OUT" && ! grep -q "leak.py" <<<"$OUT" \
+  && ok "a finding's key: refused with file:line, never the line" || bad "key push: rc=$rc out=$OUT"
+pg reset -q --hard "$R0"
+# main on the remote carries a key line already (pushed from a clone without the
+# hook); a branch that merges it brings no finding of its own.
+OTHER="$WORK/other"; git clone -q "$PREMOTE" "$OTHER"
+printf 'Dedup-%s: sec:%s\n' Key "old:main.md:line" > "$OTHER/docs/main.md"
+git -C "$OTHER" add -A; git -C "$OTHER" -c user.name=O -c user.email=o@example.invalid commit -qm "main has a key line"
+git -C "$OTHER" push -q origin main
+pg checkout -q -b feature; printf 'feature\n' > "$PFIX/docs/f.md"; pg add -A; pg commit -qm feature
+pg fetch -q origin; pg merge -q --no-edit origin/main
+pg cat-file -e HEAD:docs/main.md 2>/dev/null || bad "fixture: main's key line did not reach the branch"
+pp origin feature
+[ $rc -eq 0 ] && [ "$(rhead feature)" = "$(pg rev-parse feature)" ] \
+  && ok "a branch that merged main is pushed: main's commits are the remote's already" || bad "merge push: rc=$rc out=$OUT"
+pg tag -a -m release v0.0.1
+pp origin v0.0.1
+[ $rc -eq 0 ] && git -C "$PREMOTE" rev-parse -q --verify refs/tags/v0.0.1 >/dev/null \
+  && ok "an annotated tag on clean commits is pushed" || bad "tag push: rc=$rc out=$OUT"
+pp origin --delete feature
+[ $rc -eq 0 ] && [ "$(rhead feature)" = none ] && ok "a deletion is pushed" || bad "delete push: rc=$rc out=$OUT"
+
 # ══ the pre-commit hook ═══════════════════════════════════════════════════════
 echo "── pre-commit hook ──"
 # R-0102: sec ran only inside task-close.sh, so the plan commit at the gate and

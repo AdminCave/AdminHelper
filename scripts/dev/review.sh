@@ -722,13 +722,16 @@ $IMPLICIT"
                SPAN="$BASE..${RANGE#*...}" ;;
         *)     SPAN="$RANGE" ;;
       esac
+      EMPTY_TREE="$(git hash-object -t tree /dev/null)"
+      # The empty tree on the left means "from the beginning": the whole history of
+      # the right side (the pre-push hook for a new ref).
+      [ "${SPAN%%..*}" = "$EMPTY_TREE" ] && SPAN="${SPAN#*..}"
       # --not-on <remote>: only what that remote does not have yet — a branch that
       # merged main brings main's commits into the span, and they are public already.
       NOT_ARGS=()
       [ -n "$NOT_ON" ] && NOT_ARGS=(--not --remotes="$NOT_ON")
       COMMITS="$(git rev-list --reverse "$SPAN" "${NOT_ARGS[@]+"${NOT_ARGS[@]}"}" 2>/dev/null)" \
         || die "not a range git knows: $RANGE"
-      EMPTY_TREE="$(git hash-object -t tree /dev/null)"
       while IFS= read -r c; do
         [ -n "$c" ] || continue
         if git rev-parse -q --verify "$c^2" >/dev/null 2>&1; then
