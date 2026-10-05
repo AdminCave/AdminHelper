@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Public repo guard: Logik der Basis, kein abgebrochener Push-Lauf, leere Spanne sagt es — Task-Ledger
-Status: bereit · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: erledigt · Branch: harness/guard-base-script · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-05 (Design-Gate guard-base-script, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0174
 Heavy: none — nur der CI-Job `public-repo-guard`, die Workflow-`concurrency`, `review.sh sec` und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Beweis liefern der eigene PR-Lauf und der erste Push-Lauf auf main nach dem Merge (siehe T2).
@@ -121,3 +121,15 @@ der Logik geprüft, die vor ihr galt. (2) Der in T1 eingefügte Absatz in `DEVEL
 umbrochen (eine Zeile mit 121 Zeichen). Kein Verhalten ändert sich.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine weitere (die Änderung ist selbst Kommentar und Doku)
+
+Abschluss-Evidenz (2026-10-05):
+- Gesamt-Schnellcheck @16ab2d3d: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns`
+  (`run.sh quick --strict`); T4 danach nur Kommentar und Umbruch, sein Verify `run.sh[quick] scripts: 6 passed,
+  0 failed, 12 skipped`. origin/main (bde4cfa4, #77) enthalten, seitdem nichts Neues auf main.
+- Review am Ende (Opus, eine Runde) über T1–T3: approve, zwei `nit` → T4; ein Roadmap-Kandidat an die Aufsicht.
+- Gegenproben gegen die jeweils vorige Fassung rot: T1 5 Job-Fälle (der Fall „PR ändert sein review.sh“ lief dort
+  grün), T2 die Concurrency-Prüfung, T3 3 Fälle („sec: clean“ für eine leere Spanne).
+- T1 weicht beim Push ab: Basis `$BEFORE`, nicht `origin/main` (Vermerk in T1).
+- T2 nicht verifiziert: wie GitHub den Group-Ausdruck auswertet, belegt der erste Push-Lauf auf main nach dem Merge
+  (Aufsicht).
+- Heavy: none (wie geplant). Der Job beweist sich im eigenen PR-Lauf.
