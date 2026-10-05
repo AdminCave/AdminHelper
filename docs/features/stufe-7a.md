@@ -139,6 +139,8 @@ Preflight, jeder Fehlschlag `stop: infra` (Exit 74) mit einem Satz:
      `stop: usage-limit` mit Reset-Zeit (C).
    - **Timeout (124/143), `error_max_turns`, `error_max_budget_usd`, sonstiger Fehler** ⇒ Aufräumen, `[?]
      timeout|turns|budget|error` per `ledger.sh mark-question`, Ledger `blockiert` (D).
+     **Gebaut (T14, Aufsicht 2026-10-05):** ein Ergebnis „API Error …“ oder eine Session ohne JSON ist dagegen
+     `stop: infra`, die Task bleibt offen — ein Ausfall soll nicht jedes Ledger der Liste nacheinander blockieren.
    - **`[~]` gesetzt** ⇒ Aufräumen bis auf das Ledger, Ledger-Commit, nächste Task.
    - **`[?]` gesetzt** ⇒ Aufräumen bis auf das Ledger, Ledger-Commit, Ledger `blockiert` (D).
    - **Commit-Nachricht liegt vor** (`.ah-out/loop/<slug>/<id>.commit-msg.txt`) ⇒
@@ -182,7 +184,8 @@ oder einem eigenen Verdict — der Stand vor 6b, sichtbar in der Review-Zeile; a
 die `task-close.sh` ohne `--round` übernimmt — das steht in der Review-Zeile wie ein echtes approve.
 
 **Aufräumen** ist eine Operation des Loops, nie des Modells (die Settings verbieten dem Modell `restore`/`stash`):
-`git diff HEAD > <loop>/<slug>/<id>.aborted.diff`, `git restore --source=HEAD --staged --worktree -- <alles außer
+`git diff HEAD >> <loop>/<slug>/<id>.aborted.diff` (angehängt, mit Zeitstempel: ein zweites Aufräumen derselben
+Task überschreibt das erste nicht), `git restore --source=HEAD --staged --worktree -- <alles außer
 tasks/<slug>.md, wenn das Ledger bleiben soll>`, neue Dateien aus `git status --porcelain --untracked-files=all`
 einzeln mit vollem Pfad löschen (nie per Glob), der Scratch-Ordner der Lane (`scratch.sh`) ebenso.
 
@@ -195,7 +198,9 @@ sonst `stop: infra`. Nachricht `chore(ledger): <slug> <was>`; der pre-commit-Hoo
 Geprüft an jeder Task-Grenze (eine laufende Task wird nie abgebrochen, außer durch ihre eigenen Deckel):
 `--max-hours`, `--max-tasks`, `--max-budget-usd` (Summe `total_cost_usd`, Listenpreis-Äquivalent, D18),
 `--max-ready 2` (zwei Ledger in diesem Lauf auf `bereit` ⇒ `stop: kevin-queue`, der Deckel `bereit 2` aus
-CLAUDE.md §3).
+CLAUDE.md §3). **Gebaut (T6, T14):** Zeit und Budget gelten auch zwischen den Iterationen einer Task; die Summe
+zählt Bau-Sessions und Reviewer, und unbekannte Kosten (eine Session ohne JSON, ein Reviewer-Lauf ohne Kosten-Zeile)
+zählen mit ihrem Deckel, `--task-budget` bzw. dem größeren Budget von `review-run.sh`.
 
 Stopp-Klassen in der letzten Zeile: `ledger-leer` (jedes Ledger der Liste `bereit` oder `blockiert`), `max-hours`,
 `max-tasks`, `max-budget`, `kevin-queue`, `usage-limit`, `infra`, `harness-modified` (der Lane-Diff berührt einen

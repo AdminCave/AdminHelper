@@ -1117,7 +1117,8 @@ bash scripts/dev/ledger-loop.sh status --state /srv/ah/loop/state.json
 Die erste Zeile ist die Worker-Zeile des AH-STATUS (`AH_LOOP_STATE` zeigt dem Hook eine andere
 Datei), danach Stopp-Grund, Ledger und die letzten Zeilen des neuesten `summary-<datum>.md`. Je
 Ledger liegen unter `/srv/ah/loop/<slug>/` die Session-Ausgaben (`<id>.s<n>.json`), die Close-Logs,
-`<id>.aborted.diff` (was der Loop zuruecknahm) und bei `bereit` `pr-body.md`.
+`<id>.aborted.diff` (was der Loop zuruecknahm, jedes Aufraeumen angehaengt mit Zeitstempel) und bei
+`bereit` `pr-body.md`.
 
 **Bundle holen**, wenn ein Ledger `bereit` ist — in Kevins Checkout, kein `git` im Repo des Runners.
 Das Bundle setzt das `origin/main` voraus, auf dem der Runner es schnitt; deshalb zuerst `origin`:
@@ -1143,7 +1144,8 @@ Push und Draft-PR sind danach Kevins bzw. der Aufsicht Handgriff (Text aus
   Der Loop raeumt sie nicht weg (kein `stash`, kein `clean`); ansehen mit
   `sudo -u adminhelper-runner git -C /srv/ah/AdminHelper-<slug> status`, entscheiden tut Kevin.
 - **`stop: infra`:** der Satz dahinter nennt den Grund (Token, CLI-Pin, Klon nicht sauber, `git`,
-  Harness auf `main`); beheben, dann neu starten. Die offene Task bleibt `[ ]`. Ausnahme: sagt der
+  Harness auf `main`, ein API-Fehler oder eine Session ohne JSON); beheben bzw. den Ausfall abwarten,
+  dann neu starten. Die offene Task bleibt `[ ]`. Ausnahme: sagt der
   Satz `the claude CLI … is not the one runner-setup.sh recorded`, nachdem schon Sessions liefen, hat
   vermutlich Code einer Session die CLI ersetzt — das ist dasselbe Signal wie `harness-modified`. Die
   Lane bleibt dann, wie die Session sie verliess (`stop: infra` raeumt nicht auf): ansehen, dann Setup
@@ -1152,7 +1154,9 @@ Push und Draft-PR sind danach Kevins bzw. der Aufsicht Handgriff (Text aus
   die Task ist offen und ihre Lane aufgeraeumt.
 - **`stop: harness-modified`:** nicht einfach neu starten. Etwas, das nur Code einer Session tun
   konnte, ist passiert (ein Harness-Pfad, ein Commit in der Lane, der Klon); `aborted.diff` und die
-  Lane ansehen, dann Setup und Red Team.
+  Lane ansehen, dann Setup und Red Team. Der Loop sperrt das Ledger mit der Datei
+  `/srv/ah/loop/<slug>/harness-modified`: erst wenn Kevin sie nach dem Ansehen entfernt, baut ein
+  neuer Lauf es wieder.
 
 ### Go Toolchain (Agent)
 

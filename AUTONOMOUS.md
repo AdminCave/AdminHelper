@@ -242,18 +242,22 @@ Harness-Pfad in `Dateien:`) bleibt interaktiv: `blockiert (harness)` ohne Lane.
 (`--setting-sources user`, `dontAsk`), dazu `--task-minutes 60 --task-turns 80 --task-budget 12`. Die
 Session baut eine Task, testet mit `verify.sh` und hinterlässt eine Commit-Nachricht; sie committet
 nicht, setzt keinen Haken und ändert ein Ledger nur über `ledger.sh` (`mark-skip`, `mark-question`,
-`set-files`). Danach entscheidet allein der Loop: Er schließt mit `task-close.sh --review auto
+`set-files`) und nur in ihrer eigenen Task — Kopf und andere Tasks bleiben, wie sie waren, sonst wird
+die Task `[?]`. Danach entscheidet allein der Loop: Er schließt mit `task-close.sh --review auto
 --round <n>`; bei Exit 3 gibt es **eine** zweite Session mit `--fix` (Runde 2, wenn die erste ein Verdict
 hatte — eine rote Suite oder ein Diff-Scan-Fund schreibt keins, dann bleibt es Runde 1), ein zweites 3 wird
 `[?]` mit dem ersten Blocker; 4 wird `[?]`; 74 wird einmal wiederholt, dann `stop: infra`. Eine
 Session über Zeit, Turns oder Budget wird `[?] timeout|turns|budget`, ein anderer Fehler
-`[?] error`, zwei Iterationen ohne Fortschritt mit byte-gleichem Ledger `[?] stall`. Ein `[?]` setzt
-das Ledger auf `blockiert`, und der Loop nimmt das nächste der Liste (Entscheidung D). Was eine
+`[?] error`, zwei Iterationen ohne Fortschritt mit byte-gleichem Ledger `[?] stall`; ein API-Fehler
+oder eine Session ohne JSON ist dagegen ein Ausfall: `stop: infra`, die Task bleibt offen. Ein `[?]`
+setzt das Ledger auf `blockiert`, und der Loop nimmt das nächste der Liste (Entscheidung D); ein
+Ledger, in dem nur noch `[?]` offen sind, wird `blockiert`, nie `bereit`. Was eine
 Session hinterlässt, ohne dass die Task schließt, nimmt der Loop zurück (`aborted.diff`, `git
 restore`, neue Dateien einzeln mit vollem Pfad) — nie `stash`, `clean` oder ein Glob.
 
 **Deckel** (Entscheidung F, als Flags, damit der Pilot ohne Code nachstellt): `--max-hours 8`,
-`--max-tasks 20`, `--max-budget-usd 200` (Bau-Sessions **und** Reviewer, im Loop selbst gezählt),
+`--max-tasks 20`, `--max-budget-usd 200` (Bau-Sessions **und** Reviewer, im Loop selbst gezählt;
+unbekannte Kosten zählen mit ihrem Deckel),
 `--max-ready 2` (zwei Ledger `bereit` in diesem Lauf: Kevins Warteschlange). Zeit und Budget gelten an
 jeder Task-Grenze und zwischen den Iterationen einer Task; eine laufende Session beendet nur ihr
 eigener Deckel.
@@ -262,7 +266,8 @@ eigener Deckel.
 `max-hours`, `max-tasks`, `max-budget`, `kevin-queue`, `usage-limit` (das Abo-Limit, mit Reset-Zeit;
 die Task bleibt offen, Entscheidung C), `infra` (Exit 74, ein Satz nennt den Grund) und
 `harness-modified` (Exit 74: eine Session hat einen Harness-Pfad geändert oder etwas getan, was nur
-ihr Code konnte — der HEAD der Lane oder der Klon haben sich bewegt). Eine CLI, die nicht mehr der
+ihr Code konnte — der HEAD der Lane oder der Klon haben sich bewegt; das Ledger bleibt danach gesperrt,
+bis Kevin `/srv/ah/loop/<slug>/harness-modified` entfernt). Eine CLI, die nicht mehr der
 festgehaltenen Prüfsumme entspricht, endet als `infra`; mitten im Lauf ist sie dasselbe Signal
 (`DEVELOPMENT.md`, „Der Worker“, Recovery).
 

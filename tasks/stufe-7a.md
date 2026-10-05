@@ -285,3 +285,24 @@ Stub-`task-close` schreiben die Namen ihrer Umgebungsvariablen in eine Datei; da
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Interna des Workers; `AUTONOMOUS.md` nennt die Grenzen der Session schon allgemein)
 Abhängt von: T4
+
+### T14 — Nachbesserung aus dem Branch-Review  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, docs/features/stufe-7a.md, AUTONOMOUS.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fdb882cd 2026-10-05T17:41:25+02:00
+Review: approve (opus/xhigh; 4 nit) · round 1
+Review-Verlauf: r1/r2 (request_changes, Funde behoben) nach Kevins Dauerauftrag vom 2026-10-05 beiseitegelegt, frische Serie; Kosten r1 $1.95 · r2 $1.73 · die frische Serie im Review-Log (`review.sh log --ledger tasks/stufe-7a.md`).
+Änderung: Aufsicht 2026-10-05 aus dem `/code-review` über den Branch, je mit Test: (1) die Prüfsumme der CLI vor
+ihrem ersten Aufruf im Preflight; (2) der Stand von `origin/main` nach dem Preflight-Fetch als feste SHA für
+Harness-Vergleich, Merge in die Lane und Bundle; (3) ein Stopp `harness-modified` hinterlässt eine Marke beim Ledger,
+und ein neuer Lauf baut dieses Ledger erst wieder, wenn Kevin sie entfernt hat; der nachgeholte Handover prüft die
+Harness-Pfade der Lane; (4) eine Session ändert im Ledger nur ihre eigene Task (Kopf und andere Tasks bleiben
+byte-gleich, sonst Aufräumen und `[?]`), und ein offenes `[?]` am Ende macht das Ledger `blockiert`, nie `bereit`;
+(5) die Frage nach Runde 2 nennt nur Schwere, Datei und den Pfad des Verdicts im Loop-Ordner, nie den Text eines
+Fundes (kein Review-Fund in einer versionierten Datei); (6) die drei Task-Deckel müssen größer als 0 sein. Dazu
+(Entscheidung der Aufsicht): (7) ein Ergebnis „API Error“ oder eine Session ohne JSON ist `stop: infra`, die Task
+bleibt offen — ein Ausfall soll nicht jedes Ledger der Liste blockieren; die Spec sagt es in einem Satz; (8)
+unbekannte Kosten zählen mit dem Deckel: eine Session ohne JSON mit `--task-budget`, ein Reviewer-Lauf ohne
+Kosten-Zeile mit dem Budget von `review-run.sh`.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/features/stufe-7a.md (der Satz zu (7))
+Abhängt von: T12

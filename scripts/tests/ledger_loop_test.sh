@@ -102,6 +102,7 @@ case "$rc" in
       "$round" > ".ah-out/review/$slug/$id.r$round.verdict.json"
     rcost; echo "task-close: round $round gave no usable approve"; exit 3 ;;
   4) echo "task-close: blocked — the diff leaves the task's scope"; exit 4 ;;
+  74r) echo "task-close: the reviewer gave no usable verdict (review-run.sh exit 74)"; exit 74 ;;
   4x)
     # The real one refuses at the sec check after mark-done: [x] and the ledger staged.
     bash scripts/dev/ledger.sh mark-done "$ledger" "$id" --evidence "stub run" > /dev/null || exit 74
@@ -143,10 +144,15 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
+# A ledger whose second task already carries a question.
+mapfile -t H < <(head_for qend)
+EXTRA='printf "\n### T2 — offen  [?] (eine Frage)\nKomponente: scripts · Dateien: apps/x/b.py\nÄnderung: x\n" >> "$SEED/tasks/qend.md"' plan feature/qend qend "${H[@]}"
+mapfile -t H < <(head_for qhb)
+EXTRA='printf "\n### T2 — offen  [?] (eine Frage)\nKomponente: scripts · Dateien: apps/x/b.py\nÄnderung: x\n" >> "$SEED/tasks/qhb.md"' plan feature/qhb qhb "${H[@]}"
 # A lane whose ignore pattern for .ah-out also matches a link (no trailing slash).
 mapfile -t H < <(head_for ahl2)
 EXTRA='printf ".ah-out\n.vm/\n" > "$SEED/.gitignore"' plan feature/ahl2 ahl2 "${H[@]}"
@@ -170,10 +176,13 @@ chmod 600 "$FHOME/.config/adminhelper/pve.env"
 # sleeps past the task's time), filesn (a new Dateien: path each time), limit (the
 # subscription's limit), credits (1M context needs credits), harnskip (a harness
 # change and [~]), mlink (a scratch directory whose marker is a link), negcost and
-# nancost (a cost below 0 or NaN), denylimit (the limit's text only in a denied command).
+# nancost (a cost below 0 or NaN), denylimit (the limit's text only in a denied command),
+# othertask (changes the ledger's head), apierr (an API error), nojson (no JSON at all),
+# refmove (a harness change and a ref origin/main that already holds it).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
+[ -z "${FIXTURE_CLILOG:-}" ] || echo "$1" >> "$FIXTURE_CLILOG"
 case "$1" in
   --version) echo "${FIXTURE_CLAUDE_VERSION:-$(cat "$FIXTURE_PIN")} (Claude Code)"; exit 0 ;;
   auth) printf '{"loggedIn": true, "authMethod": "%s"}\n' "${FIXTURE_AUTH:-oauth_token}"; exit 0 ;;
@@ -221,6 +230,14 @@ case "$mode" in
   infcost) printf 'b = 1\n' >> apps/x/a.py; msg; printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": Infinity, "num_turns": 1}\n'; exit 0 ;;
   denylimit)
     printf '{"type": "result", "subtype": "error_max_turns", "is_error": true, "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "echo You\x27ve hit your session limit \xc2\xb7 resets 9pm"}}]}\n'; exit 1 ;;
+  othertask) bash scripts/dev/ledger.sh status "$ledger" erledigt > /dev/null; printf 'b = 1\n' >> apps/x/a.py; msg ;;
+  apierr) printf 'b = 1\n' >> apps/x/a.py
+    printf '{"type": "result", "subtype": "success", "is_error": true, "total_cost_usd": 0.1, "result": "API Error: 529 overloaded"}\n'; exit 1 ;;
+  nojson) printf 'b = 1\n' >> apps/x/a.py; echo "not json"; exit 1 ;;
+  refmove)
+    printf '# x\n' >> scripts/dev/ledger.sh; msg
+    git add -- scripts/dev/ledger.sh && c="$(git commit-tree "$(git write-tree)" -p HEAD -m moved)" \
+      && git update-ref refs/remotes/origin/main "$c" && git reset -q ;;
   mlink)
     mkdir -p .ah-out/scratch/m.1 && ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" .ah-out/scratch/m.1/.ah-scratch
     printf '{"type": "result", "subtype": "error_during_execution", "is_error": true}\n'; exit 1 ;;
@@ -266,6 +283,10 @@ loop --ledger tasks/Bad_Name.md
 [ $rc -eq 2 ] && ok "a ledger that is no tasks/<lane slug>.md -> 2" || bad "bad ledger: rc=$rc out=$OUT"
 loop --ledger tasks/good.md --max-hours soon
 [ $rc -eq 2 ] && ok "a cap that is no number -> 2" || bad "bad cap: rc=$rc out=$OUT"
+for cap in --task-minutes --task-turns --task-budget; do
+  loop --ledger tasks/good.md "$cap" 0
+  [ $rc -eq 2 ] && grep -q "needs a number above 0" <<<"$OUT" && ok "$cap 0 -> 2: a task cap of 0 would be none" || bad "$cap 0: rc=$rc out=$OUT"
+done
 
 echo "── preflight: stop: infra, exit 74 ──"
 mv "$FHOME/.config/adminhelper/oauth.env" "$WORK/oauth.bak"
@@ -368,7 +389,9 @@ seq_set build build build -- 3 3 0
 loop --ledger tasks/q33.md --ledger tasks/after33.md
 LQ="$(lane q33)"
 [ $rc -eq 0 ] && [ "$(box q33)" = "?" ] && grep -q '^Status: blockiert' "$LQ/tasks/q33.md" \
-  && [ "$(git -C "$LQ" log -1 --format=%s)" = "chore(ledger): q33 T1 [?], blockiert" ] && grep -q 'stub blocker round 2' "$LQ/tasks/q33.md" \
+  && [ "$(git -C "$LQ" log -1 --format=%s)" = "chore(ledger): q33 T1 [?], blockiert" ] \
+  && grep -q 'blocker in apps/x/a.py after round 2, the finding is in .*/q33/T1.r2.verdict.json' "$LQ/tasks/q33.md" \
+  && ! grep -q 'stub blocker' <<<"$(git -C "$LQ" log -p -- tasks/q33.md)" && grep -q 'stub blocker round 2' "$LOOPD/q33/T1.r2.verdict.json" \
   && [ -z "$(git -C "$LQ" status --porcelain)" ] && [ "$(git -C "$LQ" show HEAD:apps/x/a.py)" = "a = 1" ] \
   && ok "3 and 3 -> [?] with the first blocker of round 2, blockiert, the code taken back" || bad "q33: $(result q33) $(git -C "$LQ" status --short)"
 [ "$(box after33)" = x ] && grep -q '^bereit' <<<"$(result after33)" && ok "and the next ledger of the list runs" || bad "after33: $(result after33)"
@@ -377,7 +400,8 @@ LQ="$(lane q33)"
 
 seq_set build -- 4
 loop --ledger tasks/sc4.md
-[ "$(box sc4)" = "?" ] && grep -q 'blocked by task-close: task-close: blocked' "$(lane sc4)/tasks/sc4.md" && grep -q '^blockiert' <<<"$(result sc4)" \
+[ "$(box sc4)" = "?" ] && grep -q 'blocked by task-close (exit 4, scope or sec), see .*/sc4/T1.close' "$(lane sc4)/tasks/sc4.md" \
+  && ! grep -q 'leaves the task' "$(lane sc4)/tasks/sc4.md" && grep -q '^blockiert' <<<"$(result sc4)" \
   && ok "4 -> [?] with task-close's reason, blockiert" || bad "sc4: $(result sc4)"
 
 seq_set build -- 4x
@@ -448,6 +472,7 @@ loop --ledger tasks/hang.md --task-minutes 0.02
 LH="$(lane hang)"
 [ $rc -eq 0 ] && [ $((SECONDS - t0)) -lt 25 ] && [ "$(box hang)" = "?" ] && grep -q '\[?\] (timeout: the build session ran past its 0.02 min (rc 124, ' "$LH/tasks/hang.md" \
   && grep -q '^blockiert' <<<"$(result hang)" && ok "a session past its time -> killed, [?] timeout, blockiert" || bad "hang: rc=$rc $(result hang) $(stopped)"
+[ "$(cost hang/T1)" = "1 0 12.0" ] && ok "a session without JSON counts with its budget (12 \$), not 0" || bad "hang cost: $(cost hang/T1)"
 [ -z "$(git -C "$LH" status --porcelain)" ] && [ ! -e "$LH/apps/x/new.py" ] && [ ! -L "$LH/apps/x/link" ] && [ ! -e "$LH/.ah-out/scratch/s.1" ] \
   && [ "$(git -C "$LH" show HEAD:apps/x/a.py)" = "a = 1" ] \
   && ok "the lane is clean: the change restored, the new file, the link and the scratch directory gone" || bad "hang lane: $(git -C "$LH" status --short) $(ls -A "$LH/.ah-out/scratch" 2>&1)"
@@ -576,19 +601,19 @@ FIXTURE_RCOST=0.5 loop --ledger tasks/rca.md --ledger tasks/rcb.md --max-budget-
   && grep -q '^ledger-loop: 1 tasks, 1 ready, 0 blocked, \$1.50 total, stop: max-budget$' <<<"$(summary_line)" \
   && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"]["rca/T1"]["review_usd"])' "$LOOPD/state.json")" = 1.0 ] \
   && ok "two reviewer rounds count into the run's budget: 1.5 \$, stop: max-budget" || bad "rca: rc=$rc $(stopped) | $(summary_line)"
-# A cost below 0 or NaN is no cost: the budget of the third ledger still ends the run.
-seq_set negcost nancost build build -- 0 0 0 0
-loop --ledger tasks/ng1.md --ledger tasks/ng2.md --ledger tasks/ng3.md --ledger tasks/ng4.md --max-budget-usd 0.2 --max-ready 9
-[ $rc -eq 0 ] && [ "$(box ng3)" = x ] && [ ! -e "$(lane ng4)" ] && grep -q '^max-budget — the run spent \$0.2500' <<<"$(stopped)" \
-  && ok "a session cost below 0 or NaN counts as 0, the cap still holds" || bad "ng: rc=$rc $(stopped)"
-# Whatever awk makes of them, state.json never carries such a cost.
+# A cost below 0 or NaN is no known cost: it counts with the session's cap.
+seq_set negcost nancost -- 0 0
+loop --ledger tasks/ng1.md --ledger tasks/ng2.md --ledger tasks/ng3.md --task-budget 1 --max-budget-usd 1.5 --max-ready 9
+[ $rc -eq 0 ] && [ "$(box ng2)" = x ] && [ ! -e "$(lane ng3)" ] && grep -q '^max-budget — the run spent \$2.0000' <<<"$(stopped)" \
+  && ok "a session cost below 0 or NaN counts with --task-budget, the cap holds" || bad "ng: rc=$rc $(stopped)"
+# Whatever awk makes of them, state.json carries the cap instead.
 seq_set infcost nancost negcost -- 0 0 0
-loop --ledger tasks/if1.md --ledger tasks/if2.md --ledger tasks/if3.md --max-ready 9
-python3 - "$LOOPD/state.json" <<'PY' && ok "Infinity, NaN and -100 count as 0 in state.json, per task and in the sum" || bad "if: $(cat "$LOOPD/state.json")"
+loop --ledger tasks/if1.md --ledger tasks/if2.md --ledger tasks/if3.md --task-budget 1 --max-ready 9
+python3 - "$LOOPD/state.json" <<'PY' && ok "Infinity, NaN and -100 count as the task budget in state.json, per task and in the sum" || bad "if: $(cat "$LOOPD/state.json")"
 import json, math, sys
 s = json.load(open(sys.argv[1]))
-costs = [s["cost_usd"]] + [s["tasks"]["%s/T1" % k]["cost_usd"] for k in ("if1", "if2", "if3")]
-sys.exit(0 if all(math.isfinite(c) and c == 0 for c in costs) else 1)
+costs = [s["tasks"]["%s/T1" % k]["cost_usd"] for k in ("if1", "if2", "if3")]
+sys.exit(0 if s["cost_usd"] == 3 and all(math.isfinite(c) and c == 1 for c in costs) else 1)
 PY
 # The limit's text in a command the session was denied is no limit of the run.
 seq_set denylimit
@@ -630,6 +655,89 @@ loop --ledger tasks/hskip.md
 seq_set skip
 loop --ledger tasks/skp2.md
 grep -q 'stop: ledger-leer$' <<<"$(summary_line)" && ok "the end of the list -> summary with stop: ledger-leer" || bad "ledger-leer summary: $(summary_line)"
+
+echo "── from the branch review ──"
+# The CLI's checksum comes before its first call: a CLI off the record never runs.
+cp "$WORK/claude.sha256" "$WORK/claude.sha256.ok"; printf '0000\n' > "$WORK/claude.sha256"
+CL="$WORK/clilog"; : > "$CL"
+seq_set build -- 0
+FIXTURE_CLILOG="$CL" loop --ledger tasks/good.md
+cp "$WORK/claude.sha256.ok" "$WORK/claude.sha256"
+[ $rc -eq 74 ] && grep -q 'is not the one runner-setup.sh recorded' <<<"$(stopped)" && [ ! -s "$CL" ] \
+  && ok "a CLI that is not the recorded one -> stop: infra before it ran once (no --version, no auth)" || bad "cli order: rc=$rc $(stopped) calls=$(tr '\n' ' ' < "$CL")"
+# A session may change its own task only.
+seq_set othertask -- 0
+loop --ledger tasks/oth.md
+[ $rc -eq 0 ] && [ "$(box oth)" = "?" ] && grep -q 'changed the ledger outside its own task' "$(lane oth)/tasks/oth.md" \
+  && grep -q '^Status: blockiert' "$(lane oth)/tasks/oth.md" && [ ! -s "$FIXTURE_CLOG" ] && [ -z "$(git -C "$(lane oth)" status --porcelain)" ] \
+  && ok "a session that changes the ledger's head -> [?], blockiert, no close" || bad "oth: rc=$rc $(result oth)"
+grep -q '^+b = 1' "$LOOPD/oth/T1.aborted.diff" && grep -q '^+Status: erledigt' "$LOOPD/oth/T1.aborted.diff" \
+  && ok "and aborted.diff keeps the code and the ledger change it took back (two cleanups, nothing lost)" \
+  || bad "oth aborted.diff: $(cat "$LOOPD/oth/T1.aborted.diff" 2>&1)"
+# No task open, but a [?]: blockiert, no handover.
+seq_set build -- 0
+loop --ledger tasks/qend.md
+[ $rc -eq 0 ] && grep -q '^blockiert — no task open, but a \[?\] is' <<<"$(result qend)" && grep -q '^Status: blockiert' "$(lane qend)/tasks/qend.md" \
+  && [ ! -e "$LOOPD/qend.bundle" ] && ok "a ledger left with a [?] -> blockiert, never bereit" || bad "qend: rc=$rc $(result qend)"
+# An outage is no fault of the task: stop: infra, the task open, the lane clean.
+for m in "apie apierr an API error" "nojs nojson no JSON"; do
+  read -r sl mode what <<<"$m"
+  seq_set "$mode"
+  loop --ledger "tasks/$sl.md"
+  [ $rc -eq 74 ] && grep -q "^infra — $sl T1: the build session .*$what.* — the task stays open" <<<"$(stopped)" && [ "$(box "$sl")" = " " ] \
+    && [ -z "$(git -C "$(lane "$sl")" status --porcelain)" ] && ok "$what -> stop: infra, the task open, the lane clean" || bad "$sl: rc=$rc $(stopped)"
+done
+# A reviewer run that printed no cost counts with review-run's larger budget.
+seq_set build -- 74r 74r
+loop --ledger tasks/rvc.md
+[ $rc -eq 74 ] && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["cost_usd"])' "$LOOPD/state.json")" = 30.25 ] \
+  && ok "two reviewer runs without a cost line count 2 x 15 \$ into the run" || bad "rvc: rc=$rc $(cat "$LOOPD/state.json")"
+[ "$(sed -n 's/^REVIEW_BUDGET_MAX=//p' "$REPO_ROOT/scripts/dev/ledger-loop.sh")" = \
+  "$(sed -n 's/.*BUDGET=\([0-9][0-9.]*\).*/\1/p' "$REPO_ROOT/scripts/dev/review-run.sh" | sort -n | tail -n 1)" ] \
+  && ok "REVIEW_BUDGET_MAX is the larger budget of review-run.sh" || bad "REVIEW_BUDGET_MAX and review-run.sh disagree"
+# A ref origin/main that a session moves: the loop compares with the main it fetched.
+seq_set refmove -- 0
+loop --ledger tasks/refm.md
+[ $rc -eq 74 ] && grep -q '^harness-modified — refm T1: the session changed the harness path scripts/dev/ledger.sh' <<<"$(stopped)" \
+  && [ ! -s "$FIXTURE_CLOG" ] && ok "a moved origin/main ref hides no harness change" || bad "refm: rc=$rc $(stopped)"
+# A harness-modified stop shuts the ledger until Kevin removes the marker.
+[ -s "$LOOPD/refm/harness-modified" ] || bad "no marker after the refm stop"
+seq_set build -- 0
+loop --ledger tasks/refm.md
+grep -q '^blockiert (harness-modified)' <<<"$(result refm)" && [ ! -s "$FIXTURE_SLOG" ] \
+  && ok "the next run does not build a ledger with the marker" || bad "refm again: $(result refm)"
+# The made-up handover looks at what the branch changed too.
+seq_set build -- 0
+loop --ledger tasks/hob.md
+LO="$(lane hob)"
+printf '# y\n' >> "$LO/scripts/dev/ledger.sh"; git -C "$LO" commit -qam "a harness path on the branch"
+rm -f -- "${LOOPD:?}/hob.bundle"
+seq_set
+loop --ledger tasks/hob.md
+[ $rc -eq 74 ] && grep -q "^harness-modified — hob: the lane's branch carries the harness path scripts/dev/ledger.sh" <<<"$(stopped)" \
+  && [ ! -e "$LOOPD/hob.bundle" ] && [ -s "$LOOPD/hob/harness-modified" ] \
+  && ok "a lane on bereit whose branch carries a harness path gets no made-up handover" || bad "hob: rc=$rc $(stopped)"
+# A lane left on bereit beside a [?] (a run that broke off after task-close's commit).
+seq_set build -- 0
+loop --ledger tasks/qhb.md
+LB2="$(lane qhb)"
+bash "$CLONE/scripts/dev/ledger.sh" status "$LB2/tasks/qhb.md" bereit > /dev/null && git -C "$LB2" commit -qam "bereit, as task-close leaves it"
+rm -f -- "${LOOPD:?}/qhb.bundle" "${LOOPD:?}/qhb/pr-body.md"
+seq_set
+loop --ledger tasks/qhb.md
+[ $rc -eq 0 ] && grep -q '^blockiert — no task open, but a \[?\] is' <<<"$(result qhb)" && [ ! -e "$LOOPD/qhb.bundle" ] \
+  && grep -q '^Status: blockiert' "$LB2/tasks/qhb.md" && ok "no made-up handover beside a [?]: blockiert" || bad "qhb: rc=$rc $(result qhb)"
+# The question names only this round's verdict, and the round it came from.
+mkdir -p "$LOOPD/stl"
+printf '{"verdict": "request_changes", "findings": [{"severity": "blocker", "file": "old.py", "claim": "stale"}]}\n' > "$LOOPD/stl/T1.r2.verdict.json"
+seq_set build build -- 3 3n
+loop --ledger tasks/stl.md
+[ "$(box stl)" = "?" ] && grep -q 'task-close refused twice, see ' "$(lane stl)/tasks/stl.md" && ! grep -q 'old.py' "$(lane stl)/tasks/stl.md" \
+  && ok "a round without a verdict names the close log, never a verdict file left from before" || bad "stl: $(result stl)"
+seq_set build build -- 3n 3
+loop --ledger tasks/r1q.md
+grep -q 'blocker in apps/x/a.py after round 1, the finding is in .*/r1q/T1.r1.verdict.json' "$(lane r1q)/tasks/r1q.md" \
+  && ok "a second close that was round 1 says so" || bad "r1q: $(result r1q)"
 
 echo "── what a session's code could do behind the loop ──"
 seq_set commit

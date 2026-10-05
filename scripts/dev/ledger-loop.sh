@@ -32,18 +32,21 @@
 # `blockiert (harness)` without a lane; the lane is `lane.sh new <slug>`
 # (<clone>/../AdminHelper-<slug>) or an existing one, clean on feature/<slug> —
 # dirty is `blockiert (Lane schmutzig)`, never stash, checkout -- or clean;
-# `git merge origin/main` in it, a conflict aborted and `blockiert (merge)`; the
+# `git merge` of origin/main as the preflight fetched it (a SHA, not the ref) in it, a
+# conflict aborted and `blockiert (merge)`; the
 # foundation, verify.sh of the open tasks' components against the lane, red is
 # `blockiert (Fundament rot)`; then `Status: aktiv` as the loop's own ledger commit.
 # The loop runs the harness scripts of its clone, never a lane's — except
 # task-close.sh, which closes the lane it lies in; before each close the loop checks
-# that no harness path of the lane differs from origin/main (else
-# `stop: harness-modified`).
+# that no harness path of the lane differs from that main (else
+# `stop: harness-modified`, and the ledger stays shut until Kevin removes
+# <loop>/<slug>/harness-modified).
 #
 # Per task: the first open `### T… [ ]`; ledger.sh start; a fresh build session in
 # the lane — claude -p with the /build-task instructions of the clone, only the
 # runner's user settings (--setting-sources user), dontAsk, the three task caps, an
-# outer timeout, never --bare. Then the loop alone decides: [~] or [?] set by the
+# outer timeout, never --bare. A session changes the ledger only in its own task
+# (else [?]). Then the loop alone decides: [~] or [?] set by the
 # session is a ledger commit (with [?] the ledger is blockiert, decision D); a
 # commit message in .ah-out/loop/<slug>/<id>.commit-msg.txt is
 # `task-close.sh … --stage --review auto --round <n>` — 0 the next task; 3 one more
@@ -52,19 +55,20 @@
 # open; 2 and a session that left neither message nor marker are an iteration
 # without progress, and two in a row that leave the ledger byte for byte the same
 # are [?] stall. A session past its time, turns or budget is [?] timeout, turns or
-# budget, any other error [?] error; the subscription's limit leaves the task open
-# and stops the run (usage-limit). The round lives in this process, not in files
+# budget, any other error [?] error — but an API error or no JSON at all stops the run
+# (infra) with the task open, as the subscription's limit does (usage-limit). A
+# ledger without an open task but with a [?] is blockiert, never bereit. The round lives in this process, not in files
 # (R-0170): any code a session runs can write .ah-out/review/, so a task starts by
 # moving that task's old review files aside. What a session left behind when the
 # task does not close is taken back by the loop (aborted.diff, restore, the new
 # files one by one) — never stash, clean or a glob. A ledger bereit leaves
 # <slug>/pr-body.md (review.sh pr-body; „Heavy offen — fährt die Aufsicht“ unless
-# Heavy: none) and <slug>.bundle (origin/main..feature/<slug>, verified) for Kevin's
+# Heavy: none) and <slug>.bundle (main..feature/<slug>, verified) for Kevin's
 # checkout; push and PR stay his.
 #
 # The run's caps, counted in this process: --max-hours and --max-budget-usd (the
 # total_cost_usd of the sessions and of the reviewers, whose cost task-close prints
-# in its own output) at every task boundary and between the iterations of a
+# in its own output; an unknown cost counts with its cap) at every task boundary and between the iterations of a
 # task, --max-tasks and --max-ready (ledgers bereit in this run: Kevin's queue) at
 # the boundary; a running session is ended only by its own caps. Stop classes:
 # ledger-leer, max-hours, max-budget, max-tasks, kevin-queue, usage-limit, infra,
@@ -160,6 +164,8 @@ fi
 # ── arguments ────────────────────────────────────────────────────────────────
 LEDGERS=() MAX_HOURS=8 MAX_TASKS=20 MAX_BUDGET=200 MAX_READY=2 TASK_MINUTES=60 TASK_TURNS=80 TASK_BUDGET=12
 num() { [[ "$2" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "$1 needs a number, got '$2'"; }
+# A task cap of 0 would switch its limit off (timeout 0m has none): it must be above 0.
+pos() { num "$1" "$2"; awk -v v="$2" 'BEGIN { exit !(v > 0) }' || die "$1 needs a number above 0, got '$2'"; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --ledger) [ $# -ge 2 ] || die "--ledger needs <path>"; LEDGERS+=("$2"); shift ;;
@@ -167,9 +173,9 @@ while [ $# -gt 0 ]; do
     --max-tasks) [ $# -ge 2 ] || die "--max-tasks needs <n>"; num "$1" "$2"; MAX_TASKS="$2"; shift ;;
     --max-budget-usd) [ $# -ge 2 ] || die "--max-budget-usd needs <usd>"; num "$1" "$2"; MAX_BUDGET="$2"; shift ;;
     --max-ready) [ $# -ge 2 ] || die "--max-ready needs <n>"; num "$1" "$2"; MAX_READY="$2"; shift ;;
-    --task-minutes) [ $# -ge 2 ] || die "--task-minutes needs <n>"; num "$1" "$2"; TASK_MINUTES="$2"; shift ;;
-    --task-turns) [ $# -ge 2 ] || die "--task-turns needs <n>"; num "$1" "$2"; TASK_TURNS="$2"; shift ;;
-    --task-budget) [ $# -ge 2 ] || die "--task-budget needs <usd>"; num "$1" "$2"; TASK_BUDGET="$2"; shift ;;
+    --task-minutes) [ $# -ge 2 ] || die "--task-minutes needs <n>"; pos "$1" "$2"; TASK_MINUTES="$2"; shift ;;
+    --task-turns) [ $# -ge 2 ] || die "--task-turns needs <n>"; pos "$1" "$2"; TASK_TURNS="$2"; shift ;;
+    --task-budget) [ $# -ge 2 ] || die "--task-budget needs <usd>"; pos "$1" "$2"; TASK_BUDGET="$2"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown argument: $1" ;;
   esac
@@ -314,13 +320,6 @@ unset "${!AH_PVE_@}"
 for t in git python3 flock timeout claude; do
   command -v "$t" >/dev/null 2>&1 || stop_infra "$t is not installed (or not on the runner's PATH)"
 done
-PIN="$(tr -d '[:space:]' < "$REPO/scripts/dev/runner-claude.version" 2>/dev/null)"
-HAVE="$(timeout 60 claude --version 2>/dev/null | awk 'NR == 1 {print $1}')"
-[ -n "$PIN" ] && [ "$HAVE" = "$PIN" ] || stop_infra "claude --version is '${HAVE:-?}', the pin (runner-claude.version) is '${PIN:-?}'"
-AUTH="$(timeout 60 claude auth status 2>/dev/null | python3 -c 'import json, sys
-try: print(json.load(sys.stdin).get("authMethod", ""))
-except Exception: print("")')"
-[ "$AUTH" = oauth_token ] || stop_infra "claude auth status says authMethod '${AUTH:-?}', not oauth_token"
 # The CLI as runner-setup.sh recorded it, root's file: a session's code runs with the
 # runner's rights and could replace ~/.local/bin/claude by a script that approves.
 SUMF="${AH_LOOP_CLAUDE_SUM:-/var/lib/adminhelper-dev/runner-claude.sha256}"
@@ -332,7 +331,15 @@ claude_ok() {
   got="$( [ -f "$real" ] && sha256sum < "$real" | cut -d' ' -f1)"
   [ "$got" = "$WANT_SUM" ] || stop_infra "the claude CLI (${real:-?}) is not the one runner-setup.sh recorded"
 }
+# Before the CLI runs at all: --version and auth status are calls of it too.
 claude_ok
+PIN="$(tr -d '[:space:]' < "$REPO/scripts/dev/runner-claude.version" 2>/dev/null)"
+HAVE="$(timeout 60 claude --version 2>/dev/null | awk 'NR == 1 {print $1}')"
+[ -n "$PIN" ] && [ "$HAVE" = "$PIN" ] || stop_infra "claude --version is '${HAVE:-?}', the pin (runner-claude.version) is '${PIN:-?}'"
+AUTH="$(timeout 60 claude auth status 2>/dev/null | python3 -c 'import json, sys
+try: print(json.load(sys.stdin).get("authMethod", ""))
+except Exception: print("")')"
+[ "$AUTH" = oauth_token ] || stop_infra "claude auth status says authMethod '${AUTH:-?}', not oauth_token"
 
 [ -d "$REPO/.git" ] || stop_infra "$REPO is no main checkout"
 [ "$(git -C "$REPO" symbolic-ref -q --short HEAD)" = main ] || stop_infra "the clone $REPO is not on main"
@@ -370,12 +377,21 @@ if [ "$(git -C "$REPO" rev-list --count main..origin/main)" != 0 ]; then
   log "clone fast-forwarded to $(git -C "$REPO" rev-parse --short HEAD)"
 fi
 # The clone holds the lists and scripts the loop judges a lane by: it stays as it is
-# now for the whole run.
+# now for the whole run. So does the main a lane is compared with, merged with and
+# bundled against: a SHA, not the ref, which any git in a lane can move.
 CLONE_HEAD="$(git -C "$REPO" rev-parse HEAD)"
+MAIN_SHA="$(git -C "$REPO" rev-parse --verify -q origin/main)" || stop_infra "origin/main cannot be read after the fetch"
 clone_ok() {
   [ "$(git -C "$REPO" rev-parse HEAD)" = "$CLONE_HEAD" ] && [ -z "$(git -C "$REPO" status --porcelain)" ] && return 0
-  state 's["stop"] = "harness-modified"; s["stop_reason"] = a[0]' "the clone $REPO changed during the run"
-  log "stop: harness-modified — the clone changed during the run"
+  tampered "the clone $REPO changed during the run"
+}
+# tampered <reason> — what only code of a session could have done: the run stops, and
+# the ledger it happened in stays shut until Kevin has looked (he removes the marker).
+CUR_SLUG=""
+tampered() {
+  [ -z "$CUR_SLUG" ] || printf '%s\n' "$1" > "$LOOP/$CUR_SLUG/harness-modified"
+  state 's["stop"] = "harness-modified"; s["stop_reason"] = a[0]' "$1"
+  log "stop: harness-modified — $1"
   finish
   exit 74
 }
@@ -407,6 +423,10 @@ setup_ledger() {
   LANE=""
   slug="$(basename "$ledger" .md)"
   mkdir -p "$LOOP/$slug"
+  if [ -e "$LOOP/$slug/harness-modified" ]; then
+    ledger_result "$slug" "blockiert (harness-modified)" "a run stopped harness-modified in it ($LOOP/$slug/harness-modified); Kevin removes the file after looking at the lane"
+    return
+  fi
   # The preflight's fetch brought every branch: a missing ref is a missing branch.
   where=""
   if git -C "$REPO" show-ref --verify --quiet "refs/remotes/origin/feature/$slug"; then
@@ -448,7 +468,22 @@ setup_ledger() {
     st="$(sed -n '/^###[[:space:]]/q; s/^Status:[[:space:]]*\([a-zä]*\).*/\1/p' "$wt/$ledger" | head -n 1)"
     # bereit is committed before the handover: one that broke off (stop: infra) is
     # made up here, or the PR text and the bundle would never come.
+    if [ "$st" = bereit ] && ! { [ -f "$LOOP/$slug.bundle" ] && [ -f "$LOOP/$slug/pr-body.md" ]; } \
+        && grep -qE '^###[[:space:]].*\[\?\]' "$wt/$ledger"; then
+      # task-close sets bereit when no [ ] is left; a [?] beside it is decision D.
+      bash "$REPO/scripts/dev/ledger.sh" status "$wt/$ledger" blockiert > /dev/null \
+        || stop_infra "ledger.sh status blockiert failed for $slug"
+      ledger_commit "$wt" "$slug" blockiert
+      ledger_result "$slug" blockiert "no task open, but a [?] is: the question waits for Kevin"
+      return
+    fi
     if [ "$st" = bereit ] && ! { [ -f "$LOOP/$slug.bundle" ] && [ -f "$LOOP/$slug/pr-body.md" ]; }; then
+      # What the branch changed since the main it was built on: no harness path in it.
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        harness_path "$p" && { CUR_SLUG="$slug"; tampered "$slug: the lane's branch carries the harness path $p"; }
+      done < <(git -C "$wt" -c core.quotePath=false diff --name-only --no-renames \
+                 "$(git -C "$wt" merge-base HEAD "$MAIN_SHA" || echo "$MAIN_SHA")" HEAD)
       handover "$wt" "$slug"
       ledger_result "$slug" bereit "handover made up: PR text $LOOP/$slug/pr-body.md, branch in $LOOP/$slug.bundle"
       return
@@ -465,7 +500,7 @@ setup_ledger() {
     st="$(sed -n '/^###[[:space:]]/q; s/^Status:[[:space:]]*\([a-zä]*\).*/\1/p' "$wt/$ledger" | head -n 1)"
     case "$st" in freigegeben|aktiv) ;; *) ledger_result "$slug" "übersprungen" "Status: ${st:-?} on the local feature/$slug"; return ;; esac
   fi
-  if ! lgit "$wt" merge -q --no-edit origin/main > "$LOOP/$slug/merge.log" 2>&1; then
+  if ! lgit "$wt" merge -q --no-edit "$MAIN_SHA" > "$LOOP/$slug/merge.log" 2>&1; then
     git -C "$wt" merge --abort >> "$LOOP/$slug/merge.log" 2>&1
     [ -z "$(git -C "$wt" status --porcelain)" ] || stop_infra "the aborted merge left $wt unclean"
     ledger_result "$slug" "blockiert (merge)" "git merge origin/main conflicts (log: $LOOP/$slug/merge.log)"
@@ -497,7 +532,25 @@ setup_ledger() {
 # Where the build session leaves the commit message (/build-task names the same
 # path; skill_consistency_test holds the two together).
 COMMIT_MSG='.ah-out/loop/<slug>/<id>.commit-msg.txt'
+# A reviewer run that printed no cost counts with the larger budget of review-run.sh
+# (ledger_loop_test holds the two together): unknown spend counts with its cap.
+REVIEW_BUDGET_MAX=15
 msg_path() { local m="${COMMIT_MSG//<slug>/$1}"; printf '%s' "${m//<id>/$2}"; }
+
+# ledger_rest <ledger file> <id> — a hash of the ledger without the section of task
+# <id>: what a build session of that task leaves exactly as it found it.
+ledger_rest() {
+  L_ID="$2" python3 - "$1" <<'PY'
+import hashlib, os, re, sys
+tid, out, skip = os.environ["L_ID"], [], False
+for line in open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape").splitlines(True):
+    if re.match(r"(###|##)\s", line):
+        skip = bool(re.match(r"###\s+%s(\s|$)" % re.escape(tid), line))
+    if not skip:
+        out.append(line)
+print(hashlib.sha256("".join(out).encode("utf-8", "surrogateescape")).hexdigest())
+PY
+}
 
 # next_task <ledger file> — the id of the first open task, or nothing.
 next_task() { sed -n 's/^###[[:space:]]\{1,\}\([A-Za-z0-9._-]\{1,\}\)[[:space:]].*\[ \].*/\1/p' "$1" | head -n 1; }
@@ -508,13 +561,13 @@ task_box() {
 }
 
 # lane_harness_changed <lane> — prints the first harness path the lane changed
-# against origin/main (committed, staged, unstaged or new), or nothing.
+# against main as the preflight fetched it (committed, staged, unstaged or new), or nothing.
 lane_harness_changed() {
   local p
   while IFS= read -r p; do
     [ -n "$p" ] || continue
     harness_path "$p" && { printf '%s\n' "$p"; return; }
-  done < <({ git -C "$1" -c core.quotePath=false diff --name-only --no-renames origin/main
+  done < <({ git -C "$1" -c core.quotePath=false diff --name-only --no-renames "$MAIN_SHA"
              git -C "$1" -c core.quotePath=false ls-files --others --exclude-standard; } | sort -u)
 }
 
@@ -535,12 +588,15 @@ archive_reviews() {
 }
 
 # cleanup_lane <lane> <slug> <id> [keep-ledger] — takes back what a session left:
-# the diff into aborted.diff, tracked files restored to HEAD (the ledger kept when
+# the diff appended to aborted.diff, tracked files restored to HEAD (the ledger kept when
 # asked), every new file removed by its full path, the lane's scratch directories.
 cleanup_lane() {
   local wt="$1" slug="$2" id="$3" keep="${4:-}" f d m spec=(-- .)
-  { git -C "$wt" diff HEAD; printf '\n# untracked:\n'; git -C "$wt" ls-files --others --exclude-standard; } \
-    > "$LOOP/$slug/$id.aborted.diff" 2>&1
+  # Appended, never replaced: a second cleanup of the same task (block_task after a
+  # first one) must not overwrite what the first took back with an empty diff.
+  { printf '# %s — taken back from %s\n' "$(date -Iseconds)" "$wt"; git -C "$wt" diff HEAD
+    printf '\n# untracked:\n'; git -C "$wt" ls-files --others --exclude-standard; printf '\n'; } \
+    >> "$LOOP/$slug/$id.aborted.diff" 2>&1
   [ -z "$keep" ] || spec=(-- . ":(exclude)tasks/$slug.md")
   git -C "$wt" restore --source=HEAD --staged --worktree "${spec[@]}" 2>/dev/null \
     || stop_infra "git restore in $wt failed (the diff is in $LOOP/$slug/$id.aborted.diff)"
@@ -576,24 +632,24 @@ block_task() {
   ledger_result "$slug" blockiert "$id: $q"
 }
 
-# first_blocker <verdict> <close log> — the question for a task round 2 did not close.
+# first_blocker <verdict> <close log> <round> — the question for a task the second
+# close did not close.
+# The ledger is public: it names the finding's severity and file and where the verdict
+# lies in the loop's directory, never what the finding says.
 first_blocker() {
-  python3 - "$1" "$2" <<'PY'
+  python3 - "$1" "$2" "$3" <<'PY'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
     for sev in ("blocker", "wichtig"):
         for f in d.get("findings", []):
-            if f.get("severity") == sev:
-                print("%s (%s): %s" % (sev, f.get("file", "?"), f.get("claim", "")))
+            if isinstance(f, dict) and f.get("severity") == sev:
+                name = "".join(c for c in str(f.get("file", "?")) if c.isprintable())[:120]
+                print("%s in %s after round %s, the finding is in %s" % (sev, name, sys.argv[3], sys.argv[1]))
                 sys.exit(0)
 except (OSError, ValueError):
     pass
-try:
-    lines = [l.strip() for l in open(sys.argv[2], errors="replace") if l.startswith("task-close:")]
-    print(lines[0] if lines else "task-close refused twice, see the close log")
-except OSError:
-    print("task-close refused twice")
+print("task-close refused twice, see %s" % sys.argv[2])
 PY
 }
 
@@ -620,7 +676,7 @@ PY
       --max-budget-usd "$TASK_BUDGET" --output-format json --no-session-persistence \
       < /dev/null > "$out" 2> "$LOOP/$slug/$id.s$n.err" )
   S_RC=$?
-  { read -r S_KIND S_COST S_TURNS S_DENIALS; IFS= read -r S_NOTE; } < <(python3 - "$out" "$S_RC" "$LOOP/$slug/$id.s$n.err" <<'PY'
+  { read -r S_KIND S_COST S_TURNS S_DENIALS; IFS= read -r S_NOTE; } < <(python3 - "$out" "$S_RC" "$LOOP/$slug/$id.s$n.err" "$TASK_BUDGET" <<'PY'
 import json, re, sys
 rc = int(sys.argv[2])
 
@@ -652,9 +708,16 @@ if kind not in ("success", "timeout"):
         note = reset.group(1).strip() if reset else ""
     elif "Usage credits required for 1M context" in hay:
         kind, note = "infra", "the CLI asks for usage credits for 1M context (the runner's model pin)"
+    # An outage is no fault of the task: it stops the run, the task stays open, and the
+    # rest of the list is not blocked one ledger after the other.
+    elif kind == "no-json":
+        kind, note = "infra", "the build session gave no JSON"
+    elif kind == "error" and "API Error" in (r.get("result") if isinstance(r.get("result"), str) else ""):
+        kind, note = "infra", "the build session ended with an API error"
 c = r.get("total_cost_usd")
-# A cost below 0, NaN or infinite would lower the run's sum or blind its cap.
-cost = c if type(c) in (int, float) and 0 <= c < float("inf") else 0
+# A cost that is unknown, below 0, NaN or infinite counts with the session's cap: the
+# run's sum must not count less than was spent.
+cost = c if type(c) in (int, float) and 0 <= c < float("inf") else float(sys.argv[4])
 turns = r.get("num_turns") if type(r.get("num_turns")) is int else 0
 den = r.get("permission_denials") if isinstance(r.get("permission_denials"), list) else []
 print(kind, cost, turns, len(den))
@@ -669,13 +732,6 @@ t["sessions"] += 1; t["turns"] += int(a[2]); t["denials"] += int(a[3]); t["cost_
   log "$slug $id session $n: $S_KIND (rc $S_RC, \$$S_COST, $S_TURNS turns, $S_DENIALS denials)"
 }
 
-# tampered <reason> — what only code of a session could have done: the run stops.
-tampered() {
-  state 's["stop"] = "harness-modified"; s["stop_reason"] = a[0]' "$1"
-  log "stop: harness-modified — $1"
-  finish
-  exit 74
-}
 
 # close_task <lane> <slug> <id> <round> <n> — task-close for this round, retried
 # once on 74 (only the close, no new session); sets CLOSE (its log), returns its exit.
@@ -695,6 +751,7 @@ close_task() {
     # The reviewer's cost from task-close's line in the log this loop opened; the
     # suite's output comes before it, so the last such line counts.
     rcost="$(sed -n 's/^review cost_usd=\([0-9][0-9.]*\) round=[12]$/\1/p' "$CLOSE" | tail -n 1)"
+    [ -n "$rcost" ] || ! grep -q '^task-close: the reviewer gave no usable verdict' "$CLOSE" || rcost="$REVIEW_BUDGET_MAX"
     if [ -n "$rcost" ]; then
       RUN_COST="$(awk -v a="$RUN_COST" -v b="$rcost" 'BEGIN { printf "%.4f", a + b }')"
       state 's["cost_usd"] = round(s.get("cost_usd", 0) + float(a[0]), 4)
@@ -734,13 +791,13 @@ handover() {
   # Heavy from the loop is stage 7b; a ledger without the line counts as open too.
   heavy="$(sed -n '/^###[[:space:]]/q; s/^Heavy:[[:space:]]*\([^ ·—]*\).*/\1/p' "$wt/tasks/$slug.md" | head -n 1)"
   [ "$heavy" = none ] || printf '\n**Heavy offen — fährt die Aufsicht.**\n' >> "$body"
-  { git -C "$wt" bundle create "$bundle" "origin/main..feature/$slug" && git -C "$wt" bundle verify "$bundle"; } \
+  { git -C "$wt" bundle create "$bundle" "$MAIN_SHA..feature/$slug" && git -C "$wt" bundle verify "$bundle"; } \
     > "$LOOP/$slug/bundle.log" 2>&1 || stop_infra "git bundle of feature/$slug failed (log $LOOP/$slug/bundle.log)"
 }
 
 # run_task <lane> <slug> <id> — 0 the task is done or skipped, 1 the ledger is blocked.
 run_task() {
-  local wt="$1" slug="$2" id="$3" ledger="tasks/$2.md" round=1 fixed=0 n=0 last="" cur msg box rc vd head why p c fix=()
+  local wt="$1" slug="$2" id="$3" ledger="tasks/$2.md" round=1 fixed=0 n=0 last="" cur msg box rc vd head why p c rest fix=()
   bash "$REPO/scripts/dev/ledger.sh" start "$wt/$ledger" "$id" > /dev/null || stop_infra "ledger.sh start failed for $slug $id"
   archive_reviews "$wt" "$slug" "$id"
   vd="$wt/.ah-out/review/$slug"
@@ -760,6 +817,7 @@ run_task() {
     rm -f -- "${msg:?}"
     clone_ok; claude_ok
     head="$(git -C "$wt" rev-parse HEAD)"
+    rest="$(ledger_rest "$wt/$ledger" "$id")"
     session "$wt" "$slug" "$id" "$n" "${fix[@]+"${fix[@]}"}"
     # A build session cannot commit (its settings deny it): a moved HEAD is code of
     # the session at work.
@@ -769,6 +827,12 @@ run_task() {
     # there is a stop, whatever the session reports.
     p="$(lane_harness_changed "$wt")"
     [ -z "$p" ] || { cleanup_lane "$wt" "$slug" "$id"; tampered "$slug $id: the session changed the harness path $p"; }
+    # The ledger's head and the other tasks are no business of this session.
+    if [ "$(ledger_rest "$wt/$ledger" "$id")" != "$rest" ]; then
+      cleanup_lane "$wt" "$slug" "$id"
+      block_task "$wt" "$slug" "$id" "the build session changed the ledger outside its own task (log $LOOP/$slug/$id.s$n.json)"
+      return 1
+    fi
     case "$S_KIND" in
       usage-limit)
         cleanup_lane "$wt" "$slug" "$id"
@@ -776,7 +840,7 @@ run_task() {
         stop_run usage-limit "$slug $id: the subscription's limit, resets ${S_NOTE:-?} — the task stays open" ;;
       infra)
         cleanup_lane "$wt" "$slug" "$id"
-        stop_infra "$slug $id: $S_NOTE — the task stays open" ;;
+        stop_infra "$slug $id: $S_NOTE (log $LOOP/$slug/$id.s$n.json) — the task stays open" ;;
     esac
     if [ "$S_KIND" != success ]; then
       case "$S_KIND" in
@@ -829,10 +893,16 @@ run_task() {
             fix=(--fix ".ah-out/loop/$slug/$id.close.log"); [ ! -f "$reviewed" ] || { fix+=("$reviewed"); round=$((round + 1)); }
             continue
           fi
-          block_task "$wt" "$slug" "$id" "$(first_blocker "$reviewed" "$CLOSE")"
+          # Out of the lane into the loop's directory, which no repository carries.
+          # Only this round's verdict: a file of an earlier run at the same path is gone first.
+          local kept="$LOOP/$slug/$id.r$round.verdict.json"
+          rm -f -- "${kept:?}"
+          [ ! -f "$reviewed" ] || cp -- "$reviewed" "$kept" || stop_infra "cannot keep the verdict of $slug $id"
+          block_task "$wt" "$slug" "$id" "$(first_blocker "$kept" "$CLOSE" "$round")"
           return 1 ;;
         4)
-          block_task "$wt" "$slug" "$id" "blocked by task-close: $(grep -m1 '^task-close:' "$CLOSE" || echo "exit 4, see $CLOSE")"
+          # What sec or scope found stays in the log: the ledger is public.
+          block_task "$wt" "$slug" "$id" "blocked by task-close (exit 4, scope or sec), see $CLOSE"
           return 1 ;;
         74)
           cleanup_lane "$wt" "$slug" "$id"
@@ -854,8 +924,19 @@ run_task() {
 # build_ledger <lane> <slug> — task after task until the ledger is done or blocked.
 build_ledger() {
   local wt="$1" slug="$2" id
+  CUR_SLUG="$slug"
   while :; do
     id="$(next_task "$wt/tasks/$slug.md")"
+    if [ -z "$id" ] && grep -qE '^###[[:space:]].*\[\?\]' "$wt/tasks/$slug.md"; then
+      # Decision D: a question still open makes the ledger blockiert, never bereit.
+      if [ "$(sed -n 's/^Status:[[:space:]]*\([a-zä]*\).*/\1/p' "$wt/tasks/$slug.md" | head -n 1)" != blockiert ]; then
+        bash "$REPO/scripts/dev/ledger.sh" status "$wt/tasks/$slug.md" blockiert > /dev/null \
+          || stop_infra "ledger.sh status blockiert failed for $slug"
+        ledger_commit "$wt" "$slug" blockiert
+      fi
+      ledger_result "$slug" blockiert "no task open, but a [?] is: the question waits for Kevin"
+      return
+    fi
     if [ -z "$id" ]; then
       # task-close moves the head to bereit with the last task it closes; when the
       # last one went by [~] the loop does it, as a session would by hand.
@@ -881,6 +962,7 @@ for ledger in "${LEDGERS[@]}"; do
   setup_ledger "$ledger"
   [ -n "$LANE" ] || continue
   build_ledger "$LANE" "$(basename "$ledger" .md)"
+  CUR_SLUG=""
 done
 
 claude_ok
