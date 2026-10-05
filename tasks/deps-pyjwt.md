@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # pyjwt 2.14.0 → 2.15.1 im Server-Lock (R-0193) — Task-Ledger
-Status: geplant · Branch: feature/deps-pyjwt · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/deps-pyjwt · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0193 am 2026-10-06 angenommen und den Bau durch Worker A gewählt; Ein-Task-Paket, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0193 (Kurz-Ledger ohne Spec)
 Heavy: none — nur der gehashte Lock und die Untergrenze einer reinen Python-Bibliothek in apps/server; kein Dockerfile, kein Compose, kein Gateway-, PKI- oder Install-Pfad. Den JWT-Pfad (`app/core/auth.py`, `jwt.encode`/`jwt.decode` mit HS256) deckt die Server-Unit-Suite, der Lock-Stand des Images läuft im CI-Job `python-lock-server`.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
