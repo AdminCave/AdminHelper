@@ -357,11 +357,10 @@ BTS=.claude/skills/build-task/SKILL.md
 [ -f "$BTS" ] && sed -n '2p' "$BTS" | grep -qx 'name: build-task' && ! grep -q '^disable-model-invocation' "$BTS" \
   && grep -q 'SPDX-License-Identifier: GPL-3.0-or-later' "$BTS" \
   && ok "the build-task skill exists, model-invocable, with its SPDX head" || bad "no build-task skill (or its head is off)"
-# The loop reads the commit message from exactly this path: the spec's text until
-# ledger-loop.sh (T3) carries it as a constant.
-CMSG='.ah-out/loop/<slug>/<id>.commit-msg.txt'
-grep -qF "$CMSG" docs/features/stufe-7a.md && grep -qF "$CMSG" "$BTS" \
-  && ok "build-task names the commit-message path as the spec does" || bad "build-task's commit-message path differs from the spec"
+# The loop reads the commit message from exactly this path: its constant COMMIT_MSG.
+CMSG="$(sed -n "s/^COMMIT_MSG='\\(.*\\)'$/\\1/p" scripts/dev/ledger-loop.sh)"
+[ -n "$CMSG" ] && grep -qF "$CMSG" "$BTS" && grep -qF "$CMSG" docs/features/stufe-7a.md \
+  && ok "build-task names the commit-message path ledger-loop.sh reads ($CMSG)" || bad "commit-message path: loop '$CMSG', skill/spec differ"
 grep -qF 'Status: aktiv' "$BTS" && grep -qF 'Freigabe:' "$BTS" && grep -qF -- '--fix <close-log> [<verdict>]' "$BTS" \
   && ok "build-task checks the head (aktiv, Freigabe:) and knows --fix" || bad "build-task lacks the head check or --fix"
 FINDINGS=$(build_task_findings "$BTS" scripts/dev/runner-settings.json)

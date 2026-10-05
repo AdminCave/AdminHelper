@@ -38,6 +38,9 @@ for f in ledger-loop.sh lane.sh ledger.sh harness-paths.txt runner-env.sh runner
   cp "$REPO_ROOT/scripts/dev/$f" "$SEED/scripts/dev/$f"
 done
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$SEED/scripts/vm/lib.sh"
+# The loop hands every build session the /build-task text of its clone.
+mkdir -p "$SEED/.claude/skills/build-task"
+cp "$REPO_ROOT/.claude/skills/build-task/SKILL.md" "$SEED/.claude/skills/build-task/SKILL.md"
 # The fake suite: records its call, fails for a component FIXTURE_RED names, exits 2
 # for one FIXTURE_UNKNOWN names, and with FIXTURE_DO writes into the lane it got
 # (junk: an untracked file; body: a line into the ledger) — what a suite run could do.
@@ -55,6 +58,49 @@ case "${FIXTURE_DO:-}" in
   body) printf 'Änderung: from the suite\n' >> "$tree/tasks/${tree##*/AdminHelper-}.md" ;;
 esac
 exit 0
+FAKE
+# The fake close (the loop runs the lane's task-close.sh): it records its call and
+# answers with the next exit code of FIXTURE_CSEQ (default 0). 0 commits the task's
+# code with the ledger ticked, as the real one does; 3 leaves a verdict of the round.
+cat > "$SEED/scripts/dev/task-close.sh" <<'FAKE'
+#!/usr/bin/env bash
+ledger="$1" id="$2"; shift 2
+round="" msgf=""
+while [ $# -gt 0 ]; do
+  case "$1" in --round) round="$2"; shift ;; --message-file) msgf="$2"; shift ;; esac
+  shift
+done
+echo "$ledger $id round=$round" >> "${FIXTURE_CLOG:?}"
+rc=0
+if [ -s "${FIXTURE_CSEQ:-}" ]; then rc="$(head -n 1 "$FIXTURE_CSEQ")"; sed -i 1d "$FIXTURE_CSEQ"; fi
+slug="$(basename "$ledger" .md)"
+case "$rc" in
+  0|74a)
+    files="$(awk -v id="$id" '$0 ~ "^###[ \t]+" id "([ \t]|$)" { t = 1; next } t && /^###/ { exit }
+      t && /Dateien:/ { sub(/.*Dateien:[ \t]*/, ""); gsub(/,/, " "); print; exit }' "$ledger")"
+    # shellcheck disable=SC2086
+    git add -A -- $files || exit 74
+    if [ "$rc" = 74a ]; then
+      mkdir -p ".ah-out/review/$slug"; printf '{"verdict": "approve"}\n' > ".ah-out/review/$slug/$id.r$round.verdict.json"
+      echo "task-close: git commit failed"; exit 74
+    fi
+    bash scripts/dev/ledger.sh mark-done "$ledger" "$id" --evidence "stub run" > /dev/null || exit 74
+    grep -q '^###.*\[ \]' "$ledger" || bash scripts/dev/ledger.sh status "$ledger" bereit > /dev/null
+    git add -- "$ledger" && git commit -qm "$(cat "$msgf")" || exit 74 ;;
+  3n) echo "task-close: verify-red (exit 1)"; exit 3 ;;
+  3c) git commit -q --allow-empty -m "sneaked in by the suite"; echo "task-close: verify-red (exit 1)"; exit 3 ;;
+  3)
+    mkdir -p ".ah-out/review/$slug"
+    printf '{"verdict": "request_changes", "findings": [{"severity": "blocker", "file": "apps/x/a.py", "claim": "stub blocker round %s"}]}\n' \
+      "$round" > ".ah-out/review/$slug/$id.r$round.verdict.json"
+    echo "task-close: round $round gave no usable approve"; exit 3 ;;
+  4) echo "task-close: blocked — the diff leaves the task's scope"; exit 4 ;;
+  4x)
+    # The real one refuses at the sec check after mark-done: [x] and the ledger staged.
+    bash scripts/dev/ledger.sh mark-done "$ledger" "$id" --evidence "stub run" > /dev/null || exit 74
+    git add -A -- apps "$ledger"; echo "task-close: blocked — review.sh sec found a secret"; exit 4 ;;
+  *) echo "task-close: stub exit $rc"; exit "$rc" ;;
+esac
 FAKE
 printf '.ah-out/\n.vm/\n' > "$SEED/.gitignore"
 printf 'a = 1\n' > "$SEED/apps/x/a.py"
@@ -90,6 +136,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err stall red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # A Freigabe: line in a task's text is no approval of the ledger.
 mapfile -t H < <(head_for bodyfreig)
 EXTRA='printf "Freigabe: im Text einer Task\n" >> "$SEED/tasks/bodyfreig.md"' plan feature/bodyfreig bodyfreig "${H[0]}" "${H[2]}"
@@ -100,22 +147,59 @@ FHOME="$WORK/home"; mkdir -p "$FHOME/.config/adminhelper" "$FHOME/.local/bin"
 chmod 700 "$FHOME/.config/adminhelper"
 printf 'CLAUDE_CODE_OAUTH_TOKEN=fixture-token\n' > "$FHOME/.config/adminhelper/oauth.env"
 chmod 600 "$FHOME/.config/adminhelper/oauth.env"
-cat > "$FHOME/.local/bin/claude" <<FAKE
+# A build session (-p) does what the next line of FIXTURE_SEQ says (default skip), in
+# the lane it runs in: build (a change and the commit message), harness (a change to
+# a harness file too), skip, question, nothing, error (an error result, exit 1).
+export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
+cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
-case "\$1" in
-  --version) echo "\${FIXTURE_CLAUDE_VERSION:-\$(cat "$CLONE/scripts/dev/runner-claude.version")} (Claude Code)" ;;
-  auth) printf '{"loggedIn": true, "authMethod": "%s"}\n' "\${FIXTURE_AUTH:-oauth_token}" ;;
-  *) echo "stub: no model call in T3" >&2; exit 9 ;;
+case "$1" in
+  --version) echo "${FIXTURE_CLAUDE_VERSION:-$(cat "$FIXTURE_PIN")} (Claude Code)"; exit 0 ;;
+  auth) printf '{"loggedIn": true, "authMethod": "%s"}\n' "${FIXTURE_AUTH:-oauth_token}"; exit 0 ;;
+  -p) ;;
+  *) echo "stub: unknown call $*" >&2; exit 9 ;;
 esac
+# One line per session with its flags; the prompt (many lines) apart.
+printf '%s\n' "${*:3}" >> "${FIXTURE_SLOG:?}"
+printf '%s\n' "$2" >> "$FIXTURE_SLOG.prompts"
+read -r ledger id rest < <(sed -n 's/^ARGUMENTS: //p' <<<"$2")
+slug="$(basename "$ledger" .md)"
+mode="${FIXTURE_SESSION:-skip}"
+if [ -s "${FIXTURE_SEQ:-}" ]; then mode="$(head -n 1 "$FIXTURE_SEQ")"; sed -i 1d "$FIXTURE_SEQ"; fi
+msg() { mkdir -p ".ah-out/loop/$slug" && printf 'feat(x): %s\n' "$id" > ".ah-out/loop/$slug/$id.commit-msg.txt"; }
+case "$mode" in
+  build) printf 'b = %s\n' "$RANDOM" >> apps/x/a.py; msg ;;
+  extra) printf 'b = %s\n' "$RANDOM" >> apps/x/a.py; : > apps/x/new.py; msg ;;
+  commit) printf 'c = 1\n' >> apps/x/a.py; git commit -qam "sneaked in"; bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
+  clone) printf '' > "$FIXTURE_CLONE/scripts/dev/harness-paths.txt"; printf 'b = 1\n' >> apps/x/a.py; msg ;;
+  cli) printf 'b = 1\n' >> apps/x/a.py; msg; printf '# tampered\n' >> "$0" ;;
+  harness) printf '# x\n' >> scripts/dev/ledger.sh; msg ;;
+  skip) bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
+  question) bash scripts/dev/ledger.sh mark-question "$ledger" "$id" "welche Variante?" > /dev/null ;;
+  nothing) ;;
+  error) printf '{"type": "result", "subtype": "error_max_turns", "is_error": true, "total_cost_usd": 0.3, "num_turns": 80}\n'; exit 1 ;;
+esac
+printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": 0.25, "num_turns": 4, "result": "ok", "permission_denials": [{"tool_name": "Bash"}]}\n'
 FAKE
 chmod +x "$FHOME/.local/bin/claude"
 # As runner-setup.sh writes it: the runner's CLI is on PATH only through this file.
 printf 'export PATH="$HOME/.local/bin:$PATH"\n' > "$FHOME/.devenv.sh"
-export FIXTURE_VLOG="$WORK/vlog"
+# The checksum runner-setup.sh records, root's in real life.
+sha256sum < "$FHOME/.local/bin/claude" | cut -d' ' -f1 > "$WORK/claude.sha256"
+export FIXTURE_VLOG="$WORK/vlog" FIXTURE_SLOG="$WORK/slog" FIXTURE_CLOG="$WORK/clog" FIXTURE_SEQ="$WORK/seq" FIXTURE_CSEQ="$WORK/cseq"
+# seq <session modes> -- <close exit codes> — what the next run's sessions and closes do.
+seq_set() {
+  : > "$FIXTURE_SEQ"; : > "$FIXTURE_CSEQ"; : > "$FIXTURE_SLOG"; : > "$FIXTURE_SLOG.prompts"; : > "$FIXTURE_CLOG"
+  local into="$FIXTURE_SEQ" x
+  for x in "$@"; do
+    [ "$x" = -- ] && { into="$FIXTURE_CSEQ"; continue; }
+    printf '%s\n' "$x" >> "$into"
+  done
+}
 loop() {  # loop <args…> — the loop from the clone, as the runner would start it
   : > "$FIXTURE_VLOG"
   # The PATH tmux hands a session started by sudo: no ~/.local/bin of the runner.
-  OUT=$(cd "$CLONE" && env HOME="$FHOME" PATH=/usr/bin:/bin AH_LOOP_DIR="$LOOPD" \
+  OUT=$(cd "$CLONE" && env HOME="$FHOME" PATH=/usr/bin:/bin AH_LOOP_DIR="$LOOPD" AH_LOOP_CLAUDE_SUM="$WORK/claude.sha256" \
     bash scripts/dev/ledger-loop.sh "$@" 2>&1); rc=$?
 }
 result() {  # result <slug> — "<result> — <reason>" from state.json
@@ -158,10 +242,11 @@ echo "── per ledger ──"
 FIXTURE_RED=server loop --ledger tasks/good.md --ledger tasks/nofreig.md --ledger tasks/hx.md --ledger tasks/hpath.md --ledger tasks/red.md
 [ $rc -eq 0 ] && ok "a run over five ledgers ends with 0" || bad "five ledgers: rc=$rc out=$OUT"
 L="$(lane good)"
-[ "$(git -C "$L" symbolic-ref --short HEAD 2>/dev/null)" = feature/good ] && grep -q '^Status: aktiv' "$L/tasks/good.md" \
-  && [ "$(git -C "$L" log -1 --format=%s)" = "chore(ledger): good aktiv" ] && [ -z "$(git -C "$L" status --porcelain)" ] \
-  && grep -q '^aktiv' <<<"$(result good)" \
-  && ok "an approved ledger gets its lane and Status: aktiv as the loop's ledger commit" || bad "good: $(result good) $(git -C "$L" log --oneline -2 2>&1)"
+[ "$(git -C "$L" symbolic-ref --short HEAD 2>/dev/null)" = feature/good ] \
+  && [ "$(git -C "$L" log -3 --format=%s | tr '\n' '|')" = "chore(ledger): good bereit|chore(ledger): good T1 [~]|chore(ledger): good aktiv|" ] \
+  && [ -z "$(git -C "$L" status --porcelain)" ] && grep -q '^bereit' <<<"$(result good)" \
+  && ok "an approved ledger: lane, aktiv, its task [~] by the session, then bereit — each a ledger commit" \
+  || bad "good: $(result good) $(git -C "$L" log --oneline -4 2>&1)"
 grep -qx "scripts --tree $L --strict" "$FIXTURE_VLOG" && ok "the foundation: verify.sh of the open tasks' component against the lane" \
   || bad "foundation call: $(cat "$FIXTURE_VLOG")"
 grep -q '^übersprungen — no Freigabe' <<<"$(result nofreig)" && [ ! -e "$(lane nofreig)" ] \
@@ -174,8 +259,8 @@ grep -q '^blockiert (Fundament rot)' <<<"$(result red)" && ok "a red foundation 
 
 N=$(git -C "$L" rev-list --count HEAD)
 loop --ledger tasks/good.md
-[ $rc -eq 0 ] && grep -q '^aktiv' <<<"$(result good)" && [ "$(git -C "$L" rev-list --count HEAD)" = "$N" ] \
-  && ok "a clean lane is continued, no second aktiv commit" || bad "continue: rc=$rc $(result good)"
+[ $rc -eq 0 ] && grep -q '^übersprungen — Status: bereit in the lane' <<<"$(result good)" && [ "$(git -C "$L" rev-list --count HEAD)" = "$N" ] \
+  && ok "a clean lane is read again: a bereit ledger is not built twice" || bad "continue: rc=$rc $(result good)"
 printf 'half done\n' > "$L/apps/x/new.py"
 loop --ledger tasks/good.md
 [ $rc -eq 0 ] && grep -q '^blockiert (Lane schmutzig)' <<<"$(result good)" && [ -z "$(git -C "$CLONE" stash list)" ] \
@@ -184,10 +269,9 @@ loop --ledger tasks/good.md
 rm -f "$L/apps/x/new.py"
 # Continuing reads the lane's own ledger: what the loop set there (blockiert after
 # D) never reached origin, where the head still says freigegeben.
-mapfile -t H < <(head_for cont)
-loop --ledger tasks/cont.md
+FIXTURE_SESSION=nothing loop --ledger tasks/cont.md
 LCO="$(lane cont)"
-sed -i 's/^Status: aktiv/Status: blockiert/' "$LCO/tasks/cont.md" && git -C "$LCO" commit -qam "chore(ledger): cont blockiert"
+grep -q '^Status: blockiert' "$LCO/tasks/cont.md" || { sed -i 's/^Status: aktiv/Status: blockiert/' "$LCO/tasks/cont.md" && git -C "$LCO" commit -qam "chore(ledger): cont blockiert"; }
 N=$(git -C "$LCO" rev-list --count HEAD)
 loop --ledger tasks/cont.md
 [ $rc -eq 0 ] && grep -q '^übersprungen — Status: blockiert in the lane' <<<"$(result cont)" && [ "$(git -C "$LCO" rev-list --count HEAD)" = "$N" ] \
@@ -205,6 +289,146 @@ FIXTURE_DO=junk loop --ledger tasks/junk.md
 FIXTURE_DO=body loop --ledger tasks/body.md
 [ $rc -eq 74 ] && grep -q 'goes past head and markers' <<<"$(stopped)" \
   && ok "a ledger change beyond head and markers -> no ledger commit, stop: infra" || bad "body: rc=$rc $(stopped)"
+
+echo "── the task iteration ──"
+box() { sed -n 's/^### T1 .*\[\(.\)\].*/\1/p' "$(lane "$1")/tasks/$1.md"; }
+subjects() { git -C "$(lane "$1")" log -"${2:-3}" --format=%s | tr '\n' '|'; }
+cost() { python3 -c 'import json, sys; s = json.load(open(sys.argv[1])); t = s.get("tasks", {}).get(sys.argv[2], {}); print(t.get("sessions"), t.get("denials"), t.get("cost_usd"))' "$LOOPD/state.json" "$1"; }
+
+seq_set build -- 0
+loop --ledger tasks/ok4.md
+L4="$(lane ok4)"
+[ $rc -eq 0 ] && [ "$(box ok4)" = x ] && grep -q '^Status: bereit' "$L4/tasks/ok4.md" && [ "$(git -C "$L4" log -1 --format=%s)" = "feat(x): T1" ] \
+  && git -C "$L4" show --name-only --format= HEAD | grep -qx apps/x/a.py && git -C "$L4" show --name-only --format= HEAD | grep -qx tasks/ok4.md \
+  && grep -q '^bereit' <<<"$(result ok4)" && grep -qx 'tasks/ok4.md T1 round=1' "$FIXTURE_CLOG" \
+  && ok "approve -> one commit with the code and the ticked ledger, the ledger bereit" || bad "ok4: rc=$rc $(result ok4) $(subjects ok4)"
+grep -q -- '--setting-sources user --permission-mode dontAsk --permission-prompts none --max-turns 80 --max-budget-usd 12' "$FIXTURE_SLOG" \
+  && grep -q '^ARGUMENTS: tasks/ok4.md T1$' "$FIXTURE_SLOG.prompts" && grep -q 'Du baust \*\*eine\*\* Task' "$FIXTURE_SLOG.prompts" \
+  && ! grep -q -- '--bare' "$FIXTURE_SLOG" && ! grep -q '^name: build-task' "$FIXTURE_SLOG.prompts" \
+  && ok "the session: the clone's /build-task text, only user settings, dontAsk, the task caps, never --bare" || bad "session call: $(head -c 400 "$FIXTURE_SLOG")"
+[ "$(cost ok4/T1)" = "1 1 0.25" ] && ok "cost, sessions and denials of the task are in state.json" || bad "state per task: $(cost ok4/T1)"
+
+seq_set build build -- 3 0
+loop --ledger tasks/fix4.md
+[ $rc -eq 0 ] && [ "$(box fix4)" = x ] && [ "$(grep -c . "$FIXTURE_SLOG")" = 2 ] && grep -q '^ARGUMENTS: tasks/fix4.md T1 --fix .ah-out/loop/fix4/T1.close.log .*T1.r1.verdict.json$' "$FIXTURE_SLOG.prompts" \
+  && [ "$(tr '\n' '|' < "$FIXTURE_CLOG")" = "tasks/fix4.md T1 round=1|tasks/fix4.md T1 round=2|" ] \
+  && ok "3 then 0 -> a second session with --fix, closed in round 2" || bad "fix4: rc=$rc $(result fix4) $(cat "$FIXTURE_CLOG")"
+
+seq_set build build build -- 3 3 0
+loop --ledger tasks/q33.md --ledger tasks/after33.md
+LQ="$(lane q33)"
+[ $rc -eq 0 ] && [ "$(box q33)" = "?" ] && grep -q '^Status: blockiert' "$LQ/tasks/q33.md" \
+  && [ "$(git -C "$LQ" log -1 --format=%s)" = "chore(ledger): q33 T1 [?], blockiert" ] && grep -q 'stub blocker round 2' "$LQ/tasks/q33.md" \
+  && [ -z "$(git -C "$LQ" status --porcelain)" ] && [ "$(git -C "$LQ" show HEAD:apps/x/a.py)" = "a = 1" ] \
+  && ok "3 and 3 -> [?] with the first blocker of round 2, blockiert, the code taken back" || bad "q33: $(result q33) $(git -C "$LQ" status --short)"
+[ "$(box after33)" = x ] && grep -q '^bereit' <<<"$(result after33)" && ok "and the next ledger of the list runs" || bad "after33: $(result after33)"
+[ -s "$LOOPD/q33/T1.aborted.diff" ] && grep -q '^+b = ' "$LOOPD/q33/T1.aborted.diff" \
+  && ok "what was taken back is kept in aborted.diff" || bad "aborted.diff: $(ls "$LOOPD/q33")"
+
+seq_set build -- 4
+loop --ledger tasks/sc4.md
+[ "$(box sc4)" = "?" ] && grep -q 'blocked by task-close: task-close: blocked' "$(lane sc4)/tasks/sc4.md" && grep -q '^blockiert' <<<"$(result sc4)" \
+  && ok "4 -> [?] with task-close's reason, blockiert" || bad "sc4: $(result sc4)"
+
+seq_set build -- 4x
+loop --ledger tasks/sc4x.md
+LX="$(lane sc4x)"
+[ $rc -eq 0 ] && [ "$(box sc4x)" = "?" ] && grep -q '^blockiert' <<<"$(result sc4x)" && [ -z "$(git -C "$LX" status --porcelain)" ] \
+  && [ "$(git -C "$LX" log -1 --format=%s)" = "chore(ledger): sc4x T1 [?], blockiert" ] && ! grep -q 'stub run' "$LX/tasks/sc4x.md" \
+  && [ "$(git -C "$LX" show HEAD:apps/x/a.py)" = "a = 1" ] \
+  && ok "4 after mark-done with the ledger staged -> [x] and its lines taken back, [?], blockiert, the lane clean" \
+  || bad "sc4x: rc=$rc $(result sc4x) $(stopped) $(git -C "$LX" status --short)"
+
+seq_set build build -- 74 74
+loop --ledger tasks/inf.md
+LI="$(lane inf)"
+[ $rc -eq 74 ] && [ "$(box inf)" = " " ] && [ -z "$(git -C "$LI" status --porcelain)" ] && grep -q 'could not run twice' <<<"$(stopped)" \
+  && [ "$(grep -c . "$FIXTURE_SLOG")" = 1 ] && [ "$(grep -c . "$FIXTURE_CLOG")" = 2 ] \
+  && ok "74 and 74 -> the close alone retried, then stop: infra, the task left open, the lane clean" || bad "inf: rc=$rc $(stopped) $(git -C "$LI" status --short)"
+# Continuing an aktiv lane: no second aktiv commit, the open task is built.
+N=$(git -C "$LI" rev-list --count HEAD)
+seq_set build -- 0
+loop --ledger tasks/inf.md
+[ $rc -eq 0 ] && [ "$(box inf)" = x ] && [ "$(git -C "$LI" rev-list --count HEAD)" = $((N + 1)) ] \
+  && ok "an aktiv lane is continued: no second aktiv commit, its open task built" || bad "continue inf: rc=$rc $(subjects inf 3)"
+
+seq_set skip
+loop --ledger tasks/skp.md
+[ "$(box skp)" = "~" ] && [ "$(subjects skp 2)" = "chore(ledger): skp bereit|chore(ledger): skp T1 [~]|" ] \
+  && [ "$(git -C "$(lane skp)" show --name-only --format= HEAD~1)" = tasks/skp.md ] \
+  && ok "[~] set by the session -> a commit of the ledger alone" || bad "skp: $(subjects skp 3)"
+
+# R-0170: review files of an earlier run of the same task do not decide this one.
+git -C "$CLONE" branch -q feature/arch origin/feature/arch && (cd "$CLONE" && bash scripts/dev/lane.sh new arch) > /dev/null 2>&1
+LA="$(lane arch)"; mkdir -p "$LA/.ah-out/review/arch"
+printf '{"verdict": "approve"}\n' > "$LA/.ah-out/review/arch/T1.r1.verdict.json"; : > "$LA/.ah-out/review/arch/T1.r1.staged"
+printf '{"verdict": "request_changes"}\n' > "$LA/.ah-out/review/arch/T1.r2.verdict.json"
+seq_set build -- 0
+loop --ledger tasks/arch.md
+OLDD="$(find "$LA/.ah-out/review/arch" -maxdepth 1 -name 'old-*' -type d | head -n 1)"
+[ "$(box arch)" = x ] && grep -qx 'tasks/arch.md T1 round=1' "$FIXTURE_CLOG" && [ -n "$OLDD" ] && [ -f "$OLDD/T1.r1.verdict.json" ] \
+  && [ -f "$OLDD/T1.r2.verdict.json" ] && [ ! -e "$LA/.ah-out/review/arch/T1.r1.verdict.json" ] \
+  && ok "old review files of the task go aside, the task starts in round 1" || bad "arch: $(result arch) $(cat "$FIXTURE_CLOG") $(ls "$LA/.ah-out/review/arch")"
+
+seq_set harness -- 0
+loop --ledger tasks/harn.md
+[ $rc -eq 74 ] && grep -q '^harness-modified — harn T1 changed the harness path scripts/dev/ledger.sh' <<<"$(stopped)" \
+  && [ -z "$(git -C "$(lane harn)" status --porcelain)" ] && [ ! -s "$FIXTURE_CLOG" ] \
+  && ok "a session that changes a harness path -> stop: harness-modified, no close, the lane clean" || bad "harn: rc=$rc $(stopped)"
+
+seq_set error
+loop --ledger tasks/err.md
+[ "$(box err)" = "?" ] && grep -q 'the build session ended with error_max_turns' "$(lane err)/tasks/err.md" && grep -q '^blockiert' <<<"$(result err)" \
+  && ok "a session that ends in an error -> [?] with its kind, blockiert" || bad "err: $(result err)"
+
+seq_set nothing nothing
+loop --ledger tasks/stall.md
+[ "$(box stall)" = "?" ] && grep -q 'stall: two iterations without progress' "$(lane stall)/tasks/stall.md" && [ "$(grep -c . "$FIXTURE_SLOG")" = 2 ] \
+  && ok "two sessions without progress -> [?] stall" || bad "stall: $(result stall)"
+
+seq_set build build -- 3n 0
+loop --ledger tasks/red3.md
+[ "$(box red3)" = x ] && [ "$(tr '\n' '|' < "$FIXTURE_CLOG")" = "tasks/red3.md T1 round=1|tasks/red3.md T1 round=1|" ] \
+  && grep -q '^ARGUMENTS: tasks/red3.md T1 --fix .ah-out/loop/red3/T1.close.log$' "$FIXTURE_SLOG.prompts" \
+  && [ -s "$(lane red3)/.ah-out/loop/red3/T1.close.log" ] && grep -q '^Read CLAUDE.md of this checkout first' "$FIXTURE_SLOG.prompts" \
+  && ok "a 3 before the review (red suite) -> a --fix session, the round stays 1, closed" || bad "red3: $(result red3) $(cat "$FIXTURE_CLOG")"
+seq_set build -- 74 0
+loop --ledger tasks/r74.md
+[ "$(box r74)" = x ] && [ "$(grep -c . "$FIXTURE_SLOG")" = 1 ] && [ "$(grep -c . "$FIXTURE_CLOG")" = 2 ] \
+  && ok "74 then 0 -> the close alone is retried, no second session" || bad "r74: $(result r74) slog=$(grep -c . "$FIXTURE_SLOG")"
+seq_set build -- 74a 0
+loop --ledger tasks/r74a.md
+LR="$(lane r74a)"
+[ "$(box r74a)" = x ] && [ -n "$(find "$LR/.ah-out/review/r74a" -maxdepth 2 -path '*old-*' -name 'T1.r1.verdict.json')" ] \
+  && ok "a 74 after the round's verdict -> that verdict goes aside, the retry reviews afresh" || bad "r74a: $(result r74a) $(ls -R "$LR/.ah-out/review/r74a" 2>&1 | head -5)"
+seq_set extra -- 0
+loop --ledger tasks/left.md
+[ "$(box left)" = x ] && grep -q '^blockiert — T1 closed, but left files outside its Dateien:' <<<"$(result left)" \
+  && [ ! -e "$(lane left)/apps/x/new.py" ] && [ -z "$(git -C "$(lane left)" status --porcelain)" ] \
+  && ok "a close that leaves undeclared files behind -> they are taken back, the ledger blockiert" || bad "left: $(result left)"
+
+echo "── what a session's code could do behind the loop ──"
+seq_set commit
+loop --ledger tasks/tcommit.md
+[ $rc -eq 74 ] && grep -q '^harness-modified — tcommit T1: HEAD of the lane moved' <<<"$(stopped)" \
+  && ok "a commit in the lane during a session -> stop: harness-modified" || bad "tcommit: rc=$rc $(stopped)"
+seq_set clone -- 0
+loop --ledger tasks/tclone.md
+[ $rc -eq 74 ] && grep -q '^harness-modified — the clone .* changed during the run' <<<"$(stopped)" && [ ! -s "$FIXTURE_CLOG" ] \
+  && ok "a change to the clone during a session -> stop before the close" || bad "tclone: rc=$rc $(stopped)"
+git -C "$CLONE" checkout -q -- scripts/dev/harness-paths.txt
+# The reviewer's case: the suite of a failing close commits — the loop must see it.
+seq_set build -- 3c
+loop --ledger tasks/tfail.md
+[ $rc -eq 74 ] && grep -q '^harness-modified — tfail T1: HEAD of the lane moved during a close that ended with 3' <<<"$(stopped)" \
+  && [ "$(grep -c . "$FIXTURE_SLOG")" = 1 ] \
+  && ok "a commit made during a failing close -> stop: harness-modified, no fix session" || bad "tfail: rc=$rc $(stopped)"
+cp "$FHOME/.local/bin/claude" "$WORK/claude.pristine"
+seq_set cli -- 0
+loop --ledger tasks/tcli.md
+[ $rc -eq 74 ] && grep -q "^infra — the claude CLI .* is not the one runner-setup.sh recorded" <<<"$(stopped)" && [ ! -s "$FIXTURE_CLOG" ] \
+  && ok "a changed claude CLI -> stop: infra before the close" || bad "tcli: rc=$rc $(stopped)"
+cp "$WORK/claude.pristine" "$FHOME/.local/bin/claude"
 
 echo "── origin/main moved ──"
 # A plain change on main: the clone fast-forwards. It also makes the conflict plan

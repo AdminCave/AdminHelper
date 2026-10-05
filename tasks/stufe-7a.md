@@ -92,8 +92,11 @@ Steuerzeichen gereinigt aus.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 
-### T4 — Task-Iteration: Bau-Session, `task-close --review auto`, Runde 2, Marker  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/task-close.sh, scripts/tests/task_close_test.sh, scripts/dev/review-run.sh, scripts/tests/review_run_test.sh
+### T4 — Task-Iteration: Bau-Session, `task-close --review auto`, Runde 2, Marker  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/task-close.sh, scripts/tests/task_close_test.sh, scripts/dev/review-run.sh, scripts/tests/review_run_test.sh, docs/features/stufe-7a.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @26564c6d 2026-10-05T11:00:15+02:00
+Review: approve (opus/xhigh; 2 nit) · round 2
+Review-Verlauf: r1/r2 (request_changes, Funde behoben) auf Kevins Wort 2026-10-05 beiseitegelegt, frische Runde; Kosten r1 $4.13 · r2 $1.86 · frische r1 $2.57 (request_changes 0/3/2, behoben) · frische r2 im Review-Log (`review.sh log --ledger tasks/stufe-7a.md`).
 Änderung: Je Task wie Spec „Je Task“ 1–4: `ledger.sh start`; Bau-Session mit `timeout` und den drei Task-Deckeln, JSON
 auswerten (Kosten, Turns, Verweigerungen, Fehlerart, Ergebnis); Commit-Nachricht vorhanden ⇒ `task-close.sh <ledger> <id>
 --stage --review auto --message-file <datei>` aus dem Klon, in der Lane; Exit 0 weiter, 3 ⇒ eine `--fix`-Session mit
@@ -112,6 +115,12 @@ Lauf autonom ist, und `CLAUDE_BIN` gilt nur im Testmodus. R-0170 — `--review a
 liefern, gelöschte Runden-Dateien setzen die Runde nicht zurück, und Runden-Dateien eines früheren Ledgers mit gleichen
 IDs zählen nicht; der Loop ist der einzige Aufrufer und führt die Runde selbst.
 Abhängt von: T3
+Abweichung: `task-close.sh` läuft aus der Lane, nicht aus dem Klon — es schließt den Checkout, in dem es liegt; vorher
+prüft der Loop, dass kein Harness-Pfad der Lane von `origin/main` abweicht. Die Bau-Session bekommt
+`--setting-sources user` und den `/build-task`-Text des Klons als Prompt statt `/build-task` als Befehl (Spec, „Je
+Task“ 2). Das Aufräumen aus T5 ist schon hier gebaut, weil `[?]` nach Runde 2 und `[~]` es brauchen; T5 bringt die
+Auslöser Timeout/Turns/Budget und den Stall mit byte-identischem Ledger. Aus dem Review (Runde 1): der Loop erkennt
+Code der Session, der hinter ihm arbeitet (HEAD der Lane, ein Commit je Abschluss, der Klon, die Prüfsumme der CLI).
 
 ### T5 — Abbruch-Aufräumen und Stall  [ ]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh

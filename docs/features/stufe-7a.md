@@ -95,7 +95,9 @@ Preflight, jeder Fehlschlag `stop: infra` (Exit 74) mit einem Satz:
   Loop `--ff-only` nach — **nur** wenn dabei kein Pfad aus `harness-paths.txt` wechselt. Sonst
   `stop: infra (Harness auf main geändert — Pull + Red Team durch Kevin)`: neue Harness-Regeln gelten erst nach
   Kevins Setup- und Red-Team-Lauf.
-- Der Loop ruft immer die Harness-Skripte **seines Klons** (`/srv/ah/repo/scripts/dev/…`), nie die einer Lane.
+- Der Loop ruft immer die Harness-Skripte **seines Klons** (`/srv/ah/repo/scripts/dev/…`), nie die einer Lane —
+  mit einer Ausnahme, `task-close.sh`, das den Checkout schließt, in dem es liegt (unten, „`task-close.sh` aus der
+  Lane“).
 
 ### Je Ledger
 
@@ -121,6 +123,14 @@ Preflight, jeder Fehlschlag `stop: infra` (Exit 74) mit einem Satz:
    --permission-prompts none --max-turns <task-turns> --max-budget-usd <task-budget> --output-format json
    --no-session-persistence` — frisch je Task, nie `--bare` (liest keine Abo-Anmeldung, D18). Modell und Effort
    kommen aus dem Runner-Pin (`runner-settings.json`).
+   **Gebaut (T4):** dazu `--setting-sources user` — die Settings des Runners (Allow-Liste, Deny, der root-eigene
+   Guard), nicht die Projekt-Settings der Lane mit Kevins interaktiver Allow-Liste, die mit einem vertrauten Workspace
+   griffe. Damit ist der Skill nicht sicher als Projekt-Skill auffindbar (6b T1 maß das für Agent-Dateien); der Loop
+   gibt der Session deshalb den Text von `.claude/skills/build-task/SKILL.md` **seines Klons** als Prompt, mit
+   `ARGUMENTS: tasks/<slug>.md <id> [--fix …]`. Der Pilot misst, ob die Session damit arbeitet wie mit `/build-task`.
+   Ob `--setting-sources user` das CLAUDE.md des Projekts noch lädt, ist **nicht verifiziert**: Der Prompt verlangt es
+   ausdrücklich. Das Close-Log einer `--fix`-Session legt der Loop in die Lane (`.ah-out/loop/<slug>/<id>.close.log`),
+   wo die Session lesen darf.
 3. Auswertung des JSON: Kosten, Turns, Verweigerungen, Fehlerart, Ergebnistext. Das Fehlerfeld (`subtype` oder
    anderes) übernimmt 7a aus der Messung von 6b T1 (`Messung:`-Zeilen im 6b-Ledger).
 4. Danach entscheidet allein der Loop:
@@ -147,6 +157,29 @@ Preflight, jeder Fehlschlag `stop: infra` (Exit 74) mit einem Satz:
    Summary; ob die Task trotzdem gut ist, entscheidet `task-close`. Ein abgelehnter harmloser Griff aus Gewohnheit
    (`git add`) ist kein Fehler der Task — aber der Pilot muss ihn sehen, damit Allowlist oder Skill nachgezogen
    werden.
+
+**`task-close.sh` aus der Lane (gebaut, T4):** `task-close.sh` schließt den Checkout, in dem es liegt, darum ruft
+der Loop die Kopie der Lane. Vorher prüft er, dass kein Pfad aus `harness-paths.txt` in der Lane von `origin/main`
+abweicht (eingecheckt, gestaged, geändert oder neu), sonst `stop: harness-modified`.
+
+**Verdicts im Runner (R-0167, R-0170; gebaut, T4):** Code, den eine Bau-Session schreibt, läuft über `verify.sh` mit
+den Rechten des Runners und kann jede Datei des Runners schreiben, auch `.ah-out/review/`, den Loop-Ordner, den Klon
+und `~/.local/bin/claude`. Dateien sind dort kein Vertrauensanker. Der Loop-Prozess zählt die Runde deshalb im
+Speicher und übergibt sie (`task-close.sh … --review auto --round <n>`); er schiebt beim Start einer Task deren alte
+Review-Dateien beiseite; `task-close.sh` verweigert `--review none` und `--review verdict:` bei `Review: auto` im Kopf
+und in jedem autonomen Lauf. Nur im autonomen Lauf (`AH_AUTONOMOUS=1`) nimmt es zudem kein früheres approve über und
+verlangt `--round`, und nur dort ignoriert `review-run.sh` `CLAUDE_BIN`. Was Code der Session darüber hinaus ändern
+kann, **erkennt** der Loop nachträglich und hält an (`stop: harness-modified`): der HEAD der Lane bewegt sich während
+einer Session; ein Abschluss hinterlässt nicht genau einen Commit auf seinem Ausgangs-HEAD, oder dieser trägt einen
+Harness-Pfad; der Klon ist nicht mehr sauber auf seinem HEAD vom Start; die CLI weicht von der Prüfsumme ab, die
+`runner-setup.sh` root-eigen ablegt (`stop: infra`).
+**Bewusst offen:** (1) Innerhalb eines Laufs von `task-close.sh` läuft Code der Session (die Suite) zwischen zwei
+dieser Prüfungen; er kann dort Dateien des Runners verändern, die der Loop erst danach sieht — Verhindern statt
+Erkennen braucht eigene Nutzer für Bau, Suite und Review (Roadmap). (2) Eine beaufsichtigte Session von Hand (ohne
+`AH_AUTONOMOUS=1`) kann sich weiter selbst bestätigen: ohne `Review: auto` im Kopf mit `--review none --review-note …`
+oder einem eigenen Verdict — der Stand vor 6b, sichtbar in der Review-Zeile; auch mit `Review: auto` im Kopf über
+`CLAUDE_BIN`, das dort als Testmodus gilt, oder über eine selbst geschriebene Verdict-Datei der Runde samt `.staged`,
+die `task-close.sh` ohne `--round` übernimmt — das steht in der Review-Zeile wie ein echtes approve.
 
 **Aufräumen** ist eine Operation des Loops, nie des Modells (die Settings verbieten dem Modell `restore`/`stash`):
 `git diff HEAD > <loop>/<slug>/<id>.aborted.diff`, `git restore --source=HEAD --staged --worktree -- <alles außer
