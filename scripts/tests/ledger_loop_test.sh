@@ -136,7 +136,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err stall red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # A Freigabe: line in a task's text is no approval of the ledger.
 mapfile -t H < <(head_for bodyfreig)
 EXTRA='printf "Freigabe: im Text einer Task\n" >> "$SEED/tasks/bodyfreig.md"' plan feature/bodyfreig bodyfreig "${H[0]}" "${H[2]}"
@@ -149,7 +149,9 @@ printf 'CLAUDE_CODE_OAUTH_TOKEN=fixture-token\n' > "$FHOME/.config/adminhelper/o
 chmod 600 "$FHOME/.config/adminhelper/oauth.env"
 # A build session (-p) does what the next line of FIXTURE_SEQ says (default skip), in
 # the lane it runs in: build (a change and the commit message), harness (a change to
-# a harness file too), skip, question, nothing, error (an error result, exit 1).
+# a harness file too), skip, question, nothing, error (an error result, exit 1),
+# budget and fail (other errors), files (widens Dateien:), hang (leaves work behind and
+# sleeps past the task's time).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -178,6 +180,19 @@ case "$mode" in
   question) bash scripts/dev/ledger.sh mark-question "$ledger" "$id" "welche Variante?" > /dev/null ;;
   nothing) ;;
   error) printf '{"type": "result", "subtype": "error_max_turns", "is_error": true, "total_cost_usd": 0.3, "num_turns": 80}\n'; exit 1 ;;
+  budget) printf '{"type": "result", "subtype": "error_max_budget_usd", "is_error": true, "total_cost_usd": 12.1, "num_turns": 30}\n'; exit 1 ;;
+  fail) printf '{"type": "result", "subtype": "error_during_execution", "is_error": true, "total_cost_usd": 0.1, "num_turns": 2}\n'; exit 1 ;;
+  files) bash scripts/dev/ledger.sh set-files "$ledger" "$id" apps/x/w.py > /dev/null ;;
+  hang)
+    # Tracked and untracked work, a link out of the lane, a scratch directory and a
+    # link in the scratch directory to a marked directory outside: then past the time.
+    printf 'b = 1\n' >> apps/x/a.py; : > apps/x/new.py; ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" apps/x/link
+    mkdir -p .ah-out/scratch/s.1 && : > .ah-out/scratch/s.1/.ah-scratch; ln -s "$FIXTURE_OUTSIDE/marked" .ah-out/scratch/out
+    exec sleep 30 ;;
+  ahlink)
+    # .ah-out itself swapped for a link to a directory with a marked scratch child.
+    if [ -e .ah-out ]; then mv .ah-out .ah-out.old; fi; ln -s "${FIXTURE_OUTSIDE:?}/ah" .ah-out
+    printf '{"type": "result", "subtype": "error_during_execution", "is_error": true}\n'; exit 1 ;;
 esac
 printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": 0.25, "num_turns": 4, "result": "ok", "permission_denials": [{"tool_name": "Bash"}]}\n'
 FAKE
@@ -378,13 +393,54 @@ loop --ledger tasks/harn.md
 
 seq_set error
 loop --ledger tasks/err.md
-[ "$(box err)" = "?" ] && grep -q 'the build session ended with error_max_turns' "$(lane err)/tasks/err.md" && grep -q '^blockiert' <<<"$(result err)" \
-  && ok "a session that ends in an error -> [?] with its kind, blockiert" || bad "err: $(result err)"
+[ "$(box err)" = "?" ] && grep -q '\[?\] (turns: the build session used up its 80 turns (rc 1, ' "$(lane err)/tasks/err.md" && grep -q '^blockiert' <<<"$(result err)" \
+  && ok "error_max_turns -> [?] turns, blockiert" || bad "err: $(result err)"
+seq_set budget
+loop --ledger tasks/bud.md
+[ "$(box bud)" = "?" ] && grep -q '\[?\] (budget: the build session used up its \$12 (rc 1, ' "$(lane bud)/tasks/bud.md" && grep -q '^blockiert' <<<"$(result bud)" \
+  && ok "error_max_budget_usd -> [?] budget, blockiert" || bad "bud: $(result bud)"
+seq_set fail
+loop --ledger tasks/oerr.md
+[ "$(box oerr)" = "?" ] && grep -q '\[?\] (error: the build session ended with error_during_execution (rc 1, ' "$(lane oerr)/tasks/oerr.md" \
+  && ok "any other error -> [?] error with its kind" || bad "oerr: $(result oerr)"
+
+# The task's time: in the test a fraction of a minute.
+export FIXTURE_OUTSIDE="$WORK/outside"; mkdir -p "$FIXTURE_OUTSIDE/marked"
+printf 'keep\n' > "$FIXTURE_OUTSIDE/keep.txt"; : > "$FIXTURE_OUTSIDE/marked/.ah-scratch"
+seq_set hang
+t0=$SECONDS
+loop --ledger tasks/hang.md --task-minutes 0.02
+LH="$(lane hang)"
+[ $rc -eq 0 ] && [ $((SECONDS - t0)) -lt 25 ] && [ "$(box hang)" = "?" ] && grep -q '\[?\] (timeout: the build session ran past its 0.02 min (rc 124, ' "$LH/tasks/hang.md" \
+  && grep -q '^blockiert' <<<"$(result hang)" && ok "a session past its time -> killed, [?] timeout, blockiert" || bad "hang: rc=$rc $(result hang) $(stopped)"
+[ -z "$(git -C "$LH" status --porcelain)" ] && [ ! -e "$LH/apps/x/new.py" ] && [ ! -L "$LH/apps/x/link" ] && [ ! -e "$LH/.ah-out/scratch/s.1" ] \
+  && [ "$(git -C "$LH" show HEAD:apps/x/a.py)" = "a = 1" ] \
+  && ok "the lane is clean: the change restored, the new file, the link and the scratch directory gone" || bad "hang lane: $(git -C "$LH" status --short) $(ls -A "$LH/.ah-out/scratch" 2>&1)"
+grep -q '^+b = 1' "$LOOPD/hang/T1.aborted.diff" && grep -qx 'apps/x/new.py' "$LOOPD/hang/T1.aborted.diff" \
+  && ok "aborted.diff keeps the change and names the new file" || bad "hang diff: $(cat "$LOOPD/hang/T1.aborted.diff" 2>&1)"
+[ "$(cat "$FIXTURE_OUTSIDE/keep.txt")" = keep ] && [ -f "$FIXTURE_OUTSIDE/marked/.ah-scratch" ] \
+  && ok "nothing outside the lane is touched: not through a link, not a marked directory linked into scratch" || bad "outside: $(ls -la "$FIXTURE_OUTSIDE" 2>&1)"
+mkdir -p "$FIXTURE_OUTSIDE/ah/scratch/x.1"; : > "$FIXTURE_OUTSIDE/ah/scratch/x.1/.ah-scratch"
+seq_set ahlink
+loop --ledger tasks/ahl.md
+[ "$(box ahl)" = "?" ] && [ -f "$FIXTURE_OUTSIDE/ah/scratch/x.1/.ah-scratch" ] && [ ! -L "$(lane ahl)/.ah-out" ] \
+  && ok "a .ah-out swapped for a link out of the lane: the link goes, the marked directory behind it stays" || bad "ahl: $(result ahl) $(ls -la "$FIXTURE_OUTSIDE/ah/scratch" 2>&1)"
 
 seq_set nothing nothing
 loop --ledger tasks/stall.md
-[ "$(box stall)" = "?" ] && grep -q 'stall: two iterations without progress' "$(lane stall)/tasks/stall.md" && [ "$(grep -c . "$FIXTURE_SLOG")" = 2 ] \
+[ "$(box stall)" = "?" ] && grep -q 'stall: two iterations without progress, the ledger unchanged' "$(lane stall)/tasks/stall.md" && [ "$(grep -c . "$FIXTURE_SLOG")" = 2 ] \
   && ok "two sessions without progress -> [?] stall" || bad "stall: $(result stall)"
+# The ledger decides: a session that only widened Dateien: changed it, the next two compare.
+seq_set nothing files nothing
+loop --ledger tasks/stall3.md
+[ "$(box stall3)" = "?" ] && [ "$(grep -c . "$FIXTURE_SLOG")" = 3 ] && grep -q 'stall: ' "$(lane stall3)/tasks/stall3.md" \
+  && ! grep -q 'apps/x/w.py' "$(lane stall3)/tasks/stall3.md" && [ -z "$(git -C "$(lane stall3)" status --porcelain)" ] \
+  && ok "a ledger changed in between -> no stall yet; the stall after the third, the widened Dateien: taken back" || bad "stall3: $(result stall3) sessions=$(grep -c . "$FIXTURE_SLOG")"
+# A message a close refused with 2 is not the next session's word.
+seq_set build nothing -- 2
+loop --ledger tasks/stale.md
+[ "$(box stale)" = "?" ] && [ "$(grep -c . "$FIXTURE_CLOG")" = 1 ] && [ "$(grep -c . "$FIXTURE_SLOG")" = 2 ] && grep -q 'stall: ' "$(lane stale)/tasks/stale.md" \
+  && ok "2, then a session without a message -> no second close, [?] stall" || bad "stale: $(result stale) closes=$(grep -c . "$FIXTURE_CLOG")"
 
 seq_set build build -- 3n 0
 loop --ledger tasks/red3.md

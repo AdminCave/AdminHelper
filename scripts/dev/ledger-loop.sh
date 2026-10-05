@@ -552,15 +552,17 @@ close_task() {
 
 # run_task <lane> <slug> <id> — 0 the task is done or skipped, 1 the ledger is blocked.
 run_task() {
-  local wt="$1" slug="$2" id="$3" ledger="tasks/$2.md" round=1 fixed=0 n=0 idle=0 msg box rc vd head fix=()
+  local wt="$1" slug="$2" id="$3" ledger="tasks/$2.md" round=1 fixed=0 n=0 last="" cur msg box rc vd head why fix=()
   bash "$REPO/scripts/dev/ledger.sh" start "$wt/$ledger" "$id" > /dev/null || stop_infra "ledger.sh start failed for $slug $id"
   archive_reviews "$wt" "$slug" "$id"
   vd="$wt/.ah-out/review/$slug"
   msg="$wt/$(msg_path "$slug" "$id")"
-  rm -f -- "${msg:?}"
   state 's["task"] = {"ledger": a[0], "id": a[1], "since": now}' "$ledger" "$id"
   while :; do
     n=$((n + 1))
+    # Only this session's message closes: one a close refused with 2 left behind
+    # is no word of the next session.
+    rm -f -- "${msg:?}"
     clone_ok; claude_ok
     head="$(git -C "$wt" rev-parse HEAD)"
     session "$wt" "$slug" "$id" "$n" "${fix[@]+"${fix[@]}"}"
@@ -569,7 +571,13 @@ run_task() {
     [ "$(git -C "$wt" rev-parse HEAD)" = "$head" ] || { cleanup_lane "$wt" "$slug" "$id"; tampered "$slug $id: HEAD of the lane moved during the session"; }
     clone_ok
     if [ "$S_KIND" != success ]; then
-      block_task "$wt" "$slug" "$id" "error: the build session ended with $S_KIND (rc $S_RC, log $LOOP/$slug/$id.s$n.json)"
+      case "$S_KIND" in
+        timeout) why="timeout: the build session ran past its $TASK_MINUTES min" ;;
+        error_max_turns) why="turns: the build session used up its $TASK_TURNS turns" ;;
+        error_max_budget_usd) why="budget: the build session used up its \$$TASK_BUDGET" ;;
+        *) why="error: the build session ended with $S_KIND" ;;
+      esac
+      block_task "$wt" "$slug" "$id" "$why (rc $S_RC, log $LOOP/$slug/$id.s$n.json)"
       return 1
     fi
     box="$(task_box "$wt/$ledger" "$id")"
@@ -606,12 +614,11 @@ run_task() {
           # reviewed (a red suite or a diff-scan finding writes no verdict).
           local reviewed="$vd/$id.r$round.verdict.json"
           if [ "$fixed" = 0 ]; then
-            fixed=1 idle=0
+            fixed=1 last=""
             # Inside the lane, where the session may read; the loop directory may not be.
             mkdir -p "$wt/.ah-out/loop/$slug" && cp -- "$CLOSE" "$wt/.ah-out/loop/$slug/$id.close.log" \
               || stop_infra "cannot copy the close log into the lane"
             fix=(--fix ".ah-out/loop/$slug/$id.close.log"); [ ! -f "$reviewed" ] || { fix+=("$reviewed"); round=$((round + 1)); }
-            rm -f -- "${msg:?}"
             continue
           fi
           block_task "$wt" "$slug" "$id" "$(first_blocker "$reviewed" "$CLOSE")"
@@ -624,12 +631,15 @@ run_task() {
           stop_infra "task-close of $slug $id could not run twice (exit 74, log $CLOSE) — the task stays open" ;;
       esac
     fi
-    # Neither marker nor a close that moved: an iteration without progress.
-    idle=$((idle + 1))
-    if [ "$idle" -ge 2 ]; then
-      block_task "$wt" "$slug" "$id" "stall: two iterations without progress (log $LOOP/$slug/)"
+    # Neither marker nor a close that moved: an iteration without progress. Two in a
+    # row that leave the ledger byte for byte the same are a stall; one that widened
+    # its Dateien: has changed something.
+    cur="$(sha256sum < "$wt/$ledger")"
+    if [ "$cur" = "$last" ]; then
+      block_task "$wt" "$slug" "$id" "stall: two iterations without progress, the ledger unchanged (log $LOOP/$slug/)"
       return 1
     fi
+    last="$cur"
   done
 }
 

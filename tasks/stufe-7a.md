@@ -122,8 +122,10 @@ Task“ 2). Das Aufräumen aus T5 ist schon hier gebaut, weil `[?]` nach Runde 2
 Auslöser Timeout/Turns/Budget und den Stall mit byte-identischem Ledger. Aus dem Review (Runde 1): der Loop erkennt
 Code der Session, der hinter ihm arbeitet (HEAD der Lane, ein Commit je Abschluss, der Klon, die Prüfsumme der CLI).
 
-### T5 — Abbruch-Aufräumen und Stall  [ ]
+### T5 — Abbruch-Aufräumen und Stall  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ed65e18c 2026-10-05T11:48:54+02:00
+Review: approve (opus/xhigh; 4 nit) · round 1
 Änderung: Aufräumen als Loop-Operation wie Spec „Aufräumen“: `aborted.diff`, `git restore --source=HEAD --staged
 --worktree` (wahlweise ohne das Ledger), neue Dateien einzeln mit vollem Pfad löschen, Scratch der Lane über
 `scratch.sh rm`; nie `stash`, `clean` oder ein Glob. Auslöser: Timeout (124/143), `error_max_turns`,
@@ -135,6 +137,10 @@ bleibt unberührt.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 Abhängt von: T4
+Abweichung: Den Scratch der Lane räumt der Loop mit den Prüfungen von `scratch.sh rm` selbst (direktes Kind, kein Link,
+Marker), nicht über das Skript: das der Lane ist Code, den die Session ändern kann, das des Klons räumt nur seinen
+eigenen Checkout. Dazu: eine Commit-Nachricht gilt nur für die Session, die sie schrieb — der Loop löscht sie vor
+jeder Session, damit ein Abschluss mit Exit 2 die nächste nicht schließt.
 
 ### T6 — Lauf-Deckel, Nutzungslimit, Stopp-Klassen, Summary  [ ]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
@@ -183,6 +189,7 @@ Verdikt-Pfad der neuen Proben über `--verdict` mit vorbereiteten Transkripten (
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 Abhängt von: T2
+Beleg: Red Team nach #74 (Kevin, 2026-10-05, Runner-Klon bf9cee5e): 27 ok, 0 FAIL, 2 info (Push in ein selbst angelegtes Bare-Repo, dessen Grenze die Deny-Regel ist; secret-tool fehlt). Jetzt echt gemessen: „no session bus socket at /run/user/1001/bus“, „cannot enter /run/user/1000“, „the runner's Proxmox token works and sees pool adminhelper-ci“, „VM 100 (outside the pool) is refused by the API (403)“, „~/.claude/settings.json is byte for byte the reviewed runner-settings.json“ und die erweiterte git-Konfigprüfung (kein credential helper, extra header, askpass, ssh command, URL rewrite). Die Prüfungen aus T9 misst erst Kevins Handgriff 4 nach dem Merge.
 
 ### T10 — Doku: der Worker  [ ]
 Komponente: scripts · Dateien: AUTONOMOUS.md, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
@@ -194,3 +201,15 @@ CLAUDE.md-Änderung (Kevins Handarbeit, Spec).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md · DEVELOPMENT.md · docs/developer/cicd.html + docs/en/developer/cicd.html · CHANGELOG.md
 Abhängt von: T1–T9
+
+### T11 — Nachbesserung T9: Beweiskraft der Bau-Session-Proben  [ ]
+Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Änderung: Aufsicht 2026-10-05 aus den Nits des T9-Reviews: eine Probe, die aus dem falschen Grund grün oder rot wird,
+beweist nichts. (1) Die Umleitungsprobe mit einem erlaubten Befehl (`cat … >> tasks/README.md`), damit nur die Prüfung
+des Umleitungsziels ablehnen kann; dazu die Gegenprobe: dasselbe Muster auf ein erlaubtes Ziel geht durch bzw. ergibt
+`attempted`. (2) Weicht die `mktemp`-Probe auf das erlaubte `scratch.sh new` aus, ergibt das kein falsches FAIL
+(`redteam_changed` nimmt `.ah-out/scratch/` aus, oder die Probe räumt einen solchen Ordner auf). Der dritte Nit
+(`claude_probe`-shift nur strukturell getestet) bleibt liegen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Interna des Red Teams; den Lauf beschreibt T10)
+Abhängt von: T9
