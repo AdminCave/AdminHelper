@@ -827,8 +827,8 @@ der sie wieder loescht, zaehlen beide, denn die Historie wird mit veroeffentlich
 zweimal, mit dem `review.sh` der Basis (ein Worktree von `origin/<base>`, beim Push der Stand vor
 ihm) und mit dem des geaenderten Stands; beide muessen gruen sein (R-0174) — ein Pull Request,
 der `sec` aendert, wird mit der Logik geprueft, die vor ihm galt. Einen Fehlalarm der Basis-Logik
-raeumt ein Pull Request deshalb nicht an ihr vorbei aus, der geht per Admin-Merge. Scharf wird der Hook je Klon mit einem
-Handgriff Kevins:
+raeumt ein Pull Request deshalb nicht an ihr vorbei aus, der geht per Admin-Merge. Scharf wird
+der Hook je Klon mit einem Handgriff Kevins:
 
 ```bash
 git config core.hooksPath scripts/dev/hooks   # einmal im Haupt-Checkout; die Lanes erben es

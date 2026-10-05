@@ -747,9 +747,9 @@ jobs:
   # for pull requests from forks too, and it names paths and file:line, never
   # content, so its log may be public. The event values reach the script as
   # environment, never as expressions inside it. It reads with the base's review.sh
-  # and with this change's (R-0174): a pull request cannot loosen the rule it is
-  # checked by. The price: a pull request that fixes a false alarm of the base logic
-  # is still held by it (an admin merge then).
+  # and with this change's (R-0174): a change to review.sh is checked with the logic
+  # that held before it. The price: a pull request that fixes a false alarm of the
+  # base logic is still held by it (an admin merge then).
   public-repo-guard:
     name: Public repo guard (review.sh sec)
     runs-on: ubuntu-latest

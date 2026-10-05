@@ -109,3 +109,15 @@ gelesene Commits; über eine leere Spanne gibt es keinen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: cicd.html DE+EN (ein Halbsatz zum Dispatch auf main), CHANGELOG
 Abhängt von: T1 (ci.yml)
+
+### T4 — Befunde aus dem Gesamt-Review: Job-Kommentar enger, Umbruch in DEVELOPMENT.md  [x]
+Komponente: scripts · Dateien: .github/workflows/ci.yml, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 7 ok @16ab2d3d 2026-10-05T10:48:51+02:00
+Review: aus dem Gesamt-Review (Opus, approve): zwei nit mitgenommen, Job-Kommentar enger, Umbruch; kein Verhalten geaendert
+Änderung: Zwei `nit` aus dem Gesamt-Review (Opus, approve), mitgenommen, weil der Kommentar mehr zusagt als der Job
+hält: (1) Der Kommentar über `public-repo-guard` sagt „a pull request cannot loosen the rule it is checked by“ — die
+Workflow-Datei selbst kommt beim PR aber aus dem PR; enger gefasst wie die Doku: eine Änderung an `review.sh` wird mit
+der Logik geprüft, die vor ihr galt. (2) Der in T1 eingefügte Absatz in `DEVELOPMENT.md` (Guard, R-0174) neu
+umbrochen (eine Zeile mit 121 Zeichen). Kein Verhalten ändert sich.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine weitere (die Änderung ist selbst Kommentar und Doku)
