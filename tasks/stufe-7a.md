@@ -215,8 +215,10 @@ Doku: keine (T10)
 Abhängt von: T2
 Beleg: Red Team nach #74 (Kevin, 2026-10-05, Runner-Klon bf9cee5e): 27 ok, 0 FAIL, 2 info (Push in ein selbst angelegtes Bare-Repo, dessen Grenze die Deny-Regel ist; secret-tool fehlt). Jetzt echt gemessen: „no session bus socket at /run/user/1001/bus“, „cannot enter /run/user/1000“, „the runner's Proxmox token works and sees pool adminhelper-ci“, „VM 100 (outside the pool) is refused by the API (403)“, „~/.claude/settings.json is byte for byte the reviewed runner-settings.json“ und die erweiterte git-Konfigprüfung (kein credential helper, extra header, askpass, ssh command, URL rewrite). Die Prüfungen aus T9 misst erst Kevins Handgriff 4 nach dem Merge.
 
-### T10 — Doku: der Worker  [ ]
+### T10 — Doku: der Worker  [x]
 Komponente: scripts · Dateien: AUTONOMOUS.md, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @47dc4db6 2026-10-05T13:50:22+02:00
+Review: approve (opus/xhigh; 2 nit) · round 2
 Änderung: `AUTONOMOUS.md` neuer Abschnitt „Der Worker (Stufe 7a)“: Start (Kevins tmux-Zeile), Ledger-Liste, Deckel und
 Flags, Stopp-Klassen, `[?]`/`blockiert`, Übergabe per Bundle und warum nie `git` im Runner-Repo, Pilot. `DEVELOPMENT.md`:
 Worker starten, `ledger-loop.sh status`, Bundle holen, Recovery (Lane schmutzig, `stop: infra`), Setup erneut nach
@@ -225,6 +227,12 @@ CLAUDE.md-Änderung (Kevins Handarbeit, Spec).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md · DEVELOPMENT.md · docs/developer/cicd.html + docs/en/developer/cicd.html · CHANGELOG.md
 Abhängt von: T1–T9
+Abweichung: `cicd.html` hat keine eigene Ebenen-Übersicht; der Worker steht als eigener Abschnitt hinter den
+Review-Prüfern, und deren `--review auto`-Liste nennt `--round` im autonomen Lauf und die Kosten-Zeile. Im
+Runner-Abschnitt von `DEVELOPMENT.md` waren drei Sätze seit 7a falsch (Deny-Zeile zu `task-close.sh`, „kann ein `[x]`
+schreiben“, die Liste der Modellproben); falsche Doku ist ein Bug, sie sind mitkorrigiert. Aus Runde 1: dazu der
+root-eigene Guard (R-0164) in der Setup-Liste und bei den Setup-Auslösern, und der Satz „ab Stufe 7 braucht er den
+Trust“ ist jetzt „nicht verifiziert, der Pilot misst“ — `--trust` deckt die Lanes nicht ab.
 
 ### T11 — Nachbesserung T9: Beweiskraft der Bau-Session-Proben  [ ]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
@@ -239,12 +247,14 @@ Doku: keine (Interna des Red Teams; den Lauf beschreibt T10)
 Abhängt von: T9
 
 ### T12 — Nachbesserung T7: Handover nachholen  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
 Änderung: Aufsicht 2026-10-05 aus dem T7-Review: Der Loop committet `bereit` vor dem Handover; scheitern danach
 `pr-body` oder das Bundle (`stop: infra`), überspringt ein neuer Lauf das Ledger, und PR-Text und Bundle fehlen.
 `setup_ledger` holt den Handover nach, wenn die Lane auf `bereit` steht und kein Bundle da ist; Test dazu. Dazu die
 Testlücken aus T7: eine Session-Kosten `Infinity`, ein Ledger ohne `Heavy:`-Zeile (Vermerk im PR-Text), und der
-NaN-Fall so, dass er auch unter gawk ohne den Schutz rot wird.
+NaN-Fall so, dass er auch unter gawk ohne den Schutz rot wird. Dazu (Aufsicht 2026-10-05) die Nits aus dem T8-Review:
+der Kopfkommentar von `ledger-loop.sh` nennt die Summary, die `status` liest; der Kopf von `session-status.sh` nennt
+`AH_LOOP_STATE`; `status` druckt höchstens zehn Summary-Zeilen, und `cost_usd` zählt nur endlich und im Bereich.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Korrektur an T7; den Worker beschreibt T10)
 Abhängt von: T7
