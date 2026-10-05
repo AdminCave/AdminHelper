@@ -51,15 +51,22 @@ done
 cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
 #!/usr/bin/env bash
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-# A contract run (review.sh contracts) is the one call with an AH_OUT_DIR of its
-# own — the closer's run has none here; FIXTURE_CONTRACT_RC decides it.
-[ -z "${AH_OUT_DIR:-}" ] || exit "${FIXTURE_CONTRACT_RC:-0}"
+# A contract run (review.sh contracts) and the probe's run (review-probe.sh) are
+# the calls with an AH_OUT_DIR of their own — the closer's run has none here;
+# FIXTURE_CONTRACT_RC decides them, aux-calls.txt records them.
+if [ -n "${AH_OUT_DIR:-}" ]; then
+  mkdir -p "$root/.ah-out"; echo "$*" >> "$root/.ah-out/aux-calls.txt"
+  exit "${FIXTURE_CONTRACT_RC:-0}"
+fi
 out="$root/.ah-out"
 mkdir -p "$out"
 echo "$*" > "$out/verify-called.txt"
 # FIXTURE_INJECT: text the "suite" writes into the ledger while it runs — the
 # builder's test code between the closer's first look and its commit.
 [ -z "${FIXTURE_INJECT:-}" ] || printf '%s\n' "$FIXTURE_INJECT" >> "$root/tasks/fix.md"
+# FIXTURE_STAGE: a file somebody else stages while the suite runs — the worktree,
+# and with it the tree hash, stays the same.
+[ -z "${FIXTURE_STAGE:-}" ] || git -C "$root" add -- "$FIXTURE_STAGE"
 # Like the real one: a run that does not finish leaves NO artifact behind, so a
 # stale file from an earlier run can never be read as this run's evidence.
 rm -f "$out/last-verify.json"
@@ -122,7 +129,7 @@ c() { OUT=$(cd "$FIX" && bash "$CLOSE" "$@" 2>&1); rc=$?; }
 # move HEAD, and the next case has to start from the same state as the first.
 reset_repo() {
   git -C "$FIX" reset -q --hard "$BASE"; git -C "$FIX" clean -qfd; mkskel
-  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH FIXTURE_INJECT FIXTURE_CONTRACT_RC
+  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH FIXTURE_INJECT FIXTURE_CONTRACT_RC FIXTURE_STAGE
 }
 head_count() { git -C "$FIX" rev-list --count HEAD; }
 touch_tool() { printf 'echo more\n' >> "$FIX/scripts/dev/tool.sh"; git -C "$FIX" add -- scripts/dev/tool.sh; }
@@ -441,24 +448,40 @@ reset_repo
 echo "── review.sh gates ──"
 printf 'flaky || true\n' >> "$FIX/scripts/dev/tool.sh"  # review: ok fixture pattern
 git -C "$FIX" add -- scripts/dev/tool.sh
+rm -f "$FIX/.ah-out/verify-called.txt"
 c fix T1 -m "feat: something"
 [ $rc -eq 3 ] && grep -q "diff-scan" <<<"$OUT" && ok "a skip pattern in the diff -> exit 3" || bad "diff-scan: rc=$rc out=$OUT"
+[ ! -e "$FIX/.ah-out/verify-called.txt" ] && ok "before the suite ran (R-0150)" || bad "the suite ran before diff-scan"
 [ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite diff-scan"
 reset_repo
 
 touch_tool
 printf 'internal\n' > "$FIX/tasks/private/roadmap.md"
 git -C "$FIX" add -f -- tasks/private/roadmap.md
+rm -f "$FIX/.ah-out/verify-called.txt"
 c fix T1 -m "feat: something"
 [ $rc -eq 4 ] && ok "a private file in the index -> exit 4 (blocked)" || bad "sec: rc=$rc out=$OUT"
+[ ! -e "$FIX/.ah-out/verify-called.txt" ] && ok "before the suite ran" || bad "the suite ran before sec"
 reset_repo
 
 touch_tool
 printf 'y = 2\n' > "$FIX/apps/server/app/elsewhere.py"
 git -C "$FIX" add -- apps/server/app/elsewhere.py
+rm -f "$FIX/.ah-out/verify-called.txt"
 c fix T1 -m "feat: something"
 [ $rc -eq 4 ] && grep -q "scope" <<<"$OUT" && ok "a path outside the task -> exit 4 (blocked)" || bad "scope: rc=$rc out=$OUT"
+[ ! -e "$FIX/.ah-out/verify-called.txt" ] && ok "before the suite ran" || bad "the suite ran before scope"
 grep -q "set-files" <<<"$OUT" && ok "and it names the way out (ledger.sh set-files)" || bad "no hint: $OUT"
+reset_repo
+
+# The scope check comes before the suite now; a file staged while the suite runs
+# would reach the commit unchecked — the index is held to its state at the start.
+touch_tool
+printf 'y = 2\n' > "$FIX/apps/server/app/foreign.py"
+FIXTURE_STAGE=apps/server/app/foreign.py c fix T1 -m "feat: something"
+[ $rc -eq 2 ] && grep -q 'index changed under the run' <<<"$OUT" && [ "$(head_count)" = "$BEFORE" ] \
+  && ok "a file staged during the suite -> exit 2, nothing committed" || bad "index changed: rc=$rc out=$OUT"
+grep -q '^### T1 .*\[ \]' "$FIX/tasks/fix.md" && ok "and no [x] left behind in the ledger" || bad "box ticked despite exit 2"
 reset_repo
 
 # A Test-Löschung: line written into the ledger does not travel through
@@ -558,9 +581,12 @@ mkdir -p "$FIX/docs/admin"
 printf '<div class="lang-switch"><a href="./benutzer.html" class="is-active">DE</a><a href="../en/admin/users.html">EN</a></div>\n' \
   > "$FIX/docs/admin/benutzer.html"
 git -C "$FIX" add -- docs/admin/benutzer.html
+rm -f "$FIX/.ah-out/verify-called.txt"
 c fix T1 -m "feat: something"
 [ $rc -eq 3 ] && grep -q 'docs/en/admin/users.html' <<<"$OUT" \
   && ok "a close with one language of a docs page -> exit 3" || bad "one-sided docs: rc=$rc out=$OUT"
+[ ! -e "$FIX/.ah-out/verify-called.txt" ] && ok "without a suite run: the cheap checks come first (R-0150)" \
+  || bad "the suite ran for a one-sided docs close"
 [ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite one-sided docs"
 reset_repo
 
@@ -646,6 +672,130 @@ c fix T1 -m "feat: something" --review-note "$(printf 'approve (sonnet)\n### T1 
   && ok "and writes no second heading into the ledger" || bad "the note forged a heading"
 [ "$(grep -c '^Evidenz:' "$FIX/tasks/fix.md")" = 1 ] \
   && ok "and no second evidence line" || bad "the note forged an evidence line"
+reset_repo
+
+# ══ --review auto (stage 6b) ══════════════════════════════════════════════════
+echo "── --review auto ──"
+# The runner's probe and the reviewer as a process: review-probe.sh and
+# review-run.sh for real, a FAKE claude (CLAUDE_BIN) that answers as STUB says.
+cat > "$WORK/claude" <<'FAKE'
+#!/usr/bin/env bash
+cat > "${STUB_DIR:?}/stdin"; echo call >> "$STUB_DIR/calls"
+case "${STUB:-approve}" in
+  approve) so='{"verdict": "approve", "findings": []}' ;;
+  request_changes) so='{"verdict": "request_changes", "findings": [{"severity": "blocker", "file": "scripts/dev/tool.sh", "line": 2, "claim": "wrong", "evidence": "tool.sh prints more, the task says hello"}]}' ;;
+  fail) echo "error: unknown option" >&2; exit 2 ;;
+esac
+printf '{"type": "result", "subtype": "success", "is_error": false, "structured_output": %s, "total_cost_usd": 0.4, "num_turns": 9, "duration_ms": 61000}\n' "$so"
+FAKE
+chmod +x "$WORK/claude"
+STUB_DIR="$WORK/stub"; mkdir -p "$STUB_DIR"
+export STUB_DIR CLAUDE_BIN="$WORK/claude"
+VD="$FIX/.ah-out/review/auto"
+mk_auto() {
+  for f in review-run.sh review-probe.sh review-agent.md review-settings.json review-output.schema.json \
+      review-risk.txt harness-paths.txt; do
+    cp "$REPO_ROOT/scripts/dev/$f" "$FIX/scripts/dev/$f"
+  done
+  { printf '# Auto — Task-Ledger\nStatus: aktiv · Branch: feature/auto\nSpec: docs/features/auto.md\n\n'
+    printf '### T1 — ein Refactor  [ ]\nKomponente: scripts · Dateien: scripts/dev/tool.sh\n'
+    printf 'Änderung: irgendwas\nVerify: bash scripts/dev/verify.sh scripts --strict\n\n'
+    printf '### T2 — Code und Test  [ ]\nKomponente: server · Dateien: apps/server/app/thing.py, apps/server/tests/test_thing.py\n'
+    printf 'Änderung: irgendwas\nVerify: bash scripts/dev/verify.sh server --strict -- tests/test_thing.py\n\n'
+    printf '### T3 — offen  [ ]\nÄnderung: bleibt offen\n'
+  } > "$FIX/tasks/auto.md"
+  git -C "$FIX" add -A && git -C "$FIX" commit -qm "auto ledger"
+  rm -rf "$VD" "$FIX/.ah-out/aux-calls.txt" "$FIX/.ah-out/review/review-log.jsonl"; rm -f "$STUB_DIR/stdin" "$STUB_DIR/calls"
+  N0=$(head_count)
+}
+calls() { [ -f "$STUB_DIR/calls" ] && wc -l < "$STUB_DIR/calls" || echo 0; }
+review_line() { git -C "$FIX" show HEAD:tasks/auto.md | sed -n '/^### T1 /,/^### /{/^Review:/p}'; }
+
+mk_auto; touch_tool
+STUB=approve c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 0 ] && [ "$(head_count)" = "$((N0 + 1))" ] && review_line | grep -q '^Review: approve (sonnet/high) · round 1$' \
+  && ok "a refactor + approve -> committed, the review line from check-verdict" || bad "auto approve: rc=$rc out=$OUT line=$(review_line)"
+python3 -c 'import json, sys; p = json.load(open(sys.argv[1]))["probe"]; sys.exit(0 if p["applicable"] is False and p["reason"] == "no-test-change" else 1)' \
+  "$VD/T1.r1.verdict.json" 2>/dev/null \
+  && ok "the probe block is the runner's: no-test-change" || bad "probe block: $(cat "$VD/T1.r1.verdict.json" 2>&1)"
+grep -qF "$(cd "$FIX" && git show HEAD:scripts/dev/tool.sh | tail -n 1)" "$STUB_DIR/stdin" \
+  && ok "the reviewer got the staged diff" || bad "no diff in the reviewer's prompt"
+[ "$(wc -l < "$FIX/.ah-out/review/review-log.jsonl")" -eq 1 ] \
+  && grep -q '"task": "T1", "round": 1, .*"verdict": "approve"' "$FIX/.ah-out/review/review-log.jsonl" \
+  && ok "the round is in the review log" || bad "log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
+reset_repo
+
+mk_auto; touch_tool
+STUB=request_changes c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 3 ] && [ "$(head_count)" = "$N0" ] && [ -f "$VD/T1.r1.verdict.json" ] && grep -q 'round 2' <<<"$OUT" \
+  && ok "request_changes -> exit 3, nothing committed, r1.verdict.json kept" || bad "auto request_changes: rc=$rc out=$OUT"
+STUB=approve c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 0 ] && [ -f "$VD/T1.r2.verdict.json" ] && grep -qF "$VD/T1.r1.verdict.json" "$STUB_DIR/stdin" \
+  && review_line | grep -q '· round 2$' \
+  && ok "the second call is round 2: it names round 1's verdict and closes" || bad "round 2: rc=$rc out=$OUT line=$(review_line)"
+reset_repo
+
+mk_auto; touch_tool
+STUB=request_changes c auto T1 -m "refactor: tool" --review auto
+STUB=request_changes c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 3 ] && grep -q 'mark-question' <<<"$OUT" && [ "$(head_count)" = "$N0" ] \
+  && ok "round 2 without approve -> exit 3 with the mark-question hint" || bad "round 2 red: rc=$rc out=$OUT"
+BEFORE_CALLS=$(calls)
+STUB=approve c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 3 ] && grep -q 'no third' <<<"$OUT" && grep -qF "$VD" <<<"$OUT" && [ "$(calls)" = "$BEFORE_CALLS" ] \
+  && [ "$(head_count)" = "$N0" ] \
+  && ok "a third call -> exit 3, no third reviewer run, the verdict directory named" || bad "third round: rc=$rc calls=$(calls) out=$OUT"
+reset_repo
+
+# A commit that fails after the approve: the close is run again on the same
+# tree, and the approve of round 1 carries it — no second reviewer run.
+mk_auto; touch_tool
+mkdir -p "$WORK/hooks-once"
+printf '#!/usr/bin/env bash\n[ -e "%s/once" ] && exit 0\ntouch "%s/once"; exit 1\n' "$WORK" "$WORK" > "$WORK/hooks-once/pre-commit"
+chmod +x "$WORK/hooks-once/pre-commit"; rm -f "$WORK/once"
+git -C "$FIX" config core.hooksPath "$WORK/hooks-once"
+STUB=approve c auto T1 -m "refactor: tool" --review auto
+first=$rc
+STUB=request_changes c auto T1 -m "refactor: tool" --review auto
+git -C "$FIX" config --unset core.hooksPath
+[ "$first" -eq 74 ] && [ $rc -eq 0 ] && [ "$(calls)" = 1 ] && [ ! -e "$VD/T1.r2.verdict.json" ] \
+  && review_line | grep -q '· round 1$' \
+  && ok "a failed commit after the approve: the next close reuses it, no round 2" || bad "reuse: first=$first rc=$rc calls=$(calls) out=$OUT"
+reset_repo
+
+# The approve is for the staged diff the reviewer saw. A file staged since — the
+# worktree, and so the tree hash, unchanged — makes it no approve for this close.
+mk_auto; touch_tool
+printf 'echo UNREVIEWED\n' > "$FIX/scripts/dev/extra.sh"
+git -C "$FIX" config core.hooksPath "$WORK/hooks-once"; rm -f "$WORK/once"
+STUB=approve c auto T1 -m "refactor: tool" --review auto
+first=$rc
+(cd "$FIX" && bash scripts/dev/ledger.sh set-files tasks/auto.md T1 scripts/dev/tool.sh scripts/dev/extra.sh >/dev/null) \
+  && git -C "$FIX" add -- tasks/auto.md
+STUB=request_changes c auto T1 --stage -m "refactor: tool" --review auto
+git -C "$FIX" config --unset core.hooksPath
+[ "$first" -eq 74 ] && [ $rc -eq 3 ] && [ "$(calls)" = 2 ] && [ -f "$VD/T1.r2.verdict.json" ] && [ "$(head_count)" = "$N0" ] \
+  && grep -q UNREVIEWED "$STUB_DIR/stdin" \
+  && ok "a file staged after the approve: no reuse, round 2 sees it" || bad "staged since: first=$first rc=$rc calls=$(calls) out=$OUT"
+reset_repo
+
+mk_auto; touch_tool
+STUB=fail c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 74 ] && [ "$(head_count)" = "$N0" ] && [ ! -e "$VD/T1.r1.verdict.json" ] \
+  && ok "a reviewer that does not start -> exit 74, nothing committed, no verdict" || bad "auto fail: rc=$rc out=$OUT"
+grep -q '"verdict": "failed", "reason": "review-run.sh: the CLI gave no JSON' "$FIX/.ah-out/review/review-log.jsonl" 2>/dev/null \
+  && ok "and the failed round is in the log with its reason" || bad "failed log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
+reset_repo
+
+# Code and its test: the runner probes the change with the Verify: line's test.
+mk_auto
+printf 'x = 2\n' > "$FIX/apps/server/app/thing.py"
+printf 'def test_thing():\n    assert True\n' > "$FIX/apps/server/tests/test_thing.py"
+STUB=approve c auto T2 --stage -m "feat: thing" --review auto
+grep -q '^server --tree .* --strict -- tests/test_thing.py$' "$FIX/.ah-out/aux-calls.txt" 2>/dev/null \
+  && ok "code + test -> review-probe.sh with the Verify: line's test (R-0154.2)" || bad "probe call: $(cat "$FIX/.ah-out/aux-calls.txt" 2>&1)"
+[ $rc -eq 3 ] && grep -q 'probe found the new test green' <<<"$OUT" && [ "$(head_count)" = "$N0" ] \
+  && ok "the test green without the change -> the approve does not close (exit 3)" || bad "probe green: rc=$rc out=$OUT"
 reset_repo
 
 # ══ with the pre-commit hook armed (R-0102) ═══════════════════════════════════

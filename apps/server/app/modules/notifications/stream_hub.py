@@ -30,6 +30,8 @@ CHANNEL = "notif:events"
 # Backoff before the SSE reader re-subscribes after a lost Redis connection (module-level so
 # tests can shrink it).
 _RECONNECT_DELAY = 5.0
+# How long start() waits for Redis to confirm the subscription (R-0149).
+_SUBSCRIBE_TIMEOUT = 5.0
 # Bounded so a stuck consumer cannot grow memory without limit; on overflow we
 # drop the refresh nudge (the client's poll fallback reconciles).
 _QUEUE_MAXSIZE = 32
@@ -95,6 +97,23 @@ def publish(user_ids, max_id: int) -> None:
         logger.warning("SSE fan-out publish failed — clients fall back to polling", exc_info=True)
 
 
+async def _await_subscribed(pubsub) -> bool:
+    """Read up to Redis' confirmation of the subscription, for _SUBSCRIBE_TIMEOUT at most."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _SUBSCRIBE_TIMEOUT
+    try:
+        while True:
+            left = deadline - loop.time()
+            if left <= 0:
+                return False
+            msg = await pubsub.get_message(ignore_subscribe_messages=False, timeout=left)
+            if msg and msg.get("type") == "subscribe":
+                return True
+    except Exception:
+        logger.warning("SSE fan-out: reading the subscribe confirmation failed", exc_info=True)
+        return False
+
+
 async def start(redis_url: str) -> None:
     """Start this worker's Redis subscription + reader task (lifespan, once)."""
     global _redis, _reader_task
@@ -106,8 +125,20 @@ async def start(redis_url: str) -> None:
     _redis = aioredis.from_url(redis_url, socket_connect_timeout=2)
     pubsub = _redis.pubsub()
     await pubsub.subscribe(CHANNEL)
+    # subscribe() only sends SUBSCRIBE; Redis knows the subscription once it confirms it,
+    # and a publish before that is lost — Pub/Sub keeps nothing. Without the
+    # confirmation the reader starts anyway and clients keep their polling fallback.
+    confirmed = await _await_subscribed(pubsub)
     _reader_task = asyncio.create_task(_reader(pubsub))
-    logger.info("SSE fan-out subscribed to Redis channel %s", CHANNEL)
+    if confirmed:
+        logger.info("SSE fan-out subscribed to Redis channel %s", CHANNEL)
+    else:
+        logger.warning(
+            "SSE fan-out: Redis did not confirm the subscription to %s within %ss — "
+            "reader started anyway, clients fall back to polling until it does",
+            CHANNEL,
+            _SUBSCRIBE_TIMEOUT,
+        )
 
 
 async def _reader(pubsub) -> None:

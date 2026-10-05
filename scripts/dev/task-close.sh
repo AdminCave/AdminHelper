@@ -7,7 +7,7 @@
 #
 #   bash scripts/dev/task-close.sh <ledger> <id> -m "<message>"
 #   bash scripts/dev/task-close.sh <ledger> <id> --message-file <file>
-#     [--stage] [--review none|verdict:<json>] [--review-note "<text>"]
+#     [--stage] [--review none|verdict:<json>|auto] [--review-note "<text>"]
 #
 # --stage stages exactly the paths the task declares in its `Dateien:` line —
 # nothing else, and never `git add -A`. The runner may not run `git add` at all
@@ -26,27 +26,38 @@
 #                              excluded) is recorded here, checked against the
 #                              one the suite wrote, and handed to the verdict
 #                              check as the identity of what ran.
-#   2. verify.sh <components>  the task's Verify: line as it stands, --strict, for
-#                              real (a prose line: the task's own component).
-#   3. review.sh               diff-scan (did the diff buy its green?), scope
-#                              (did it stay inside the task?), docs-pairs (both
-#                              languages of a docs page?), contracts (the
-#                              checks a changed path pulls in), sec (may this
-#                              be committed at all?).
-#   4. the review verdict      today: `--review none`, the in-session reviewer of
-#                              feature-build. Stage 6 hands in a verdict JSON,
-#                              which review.sh check-verdict holds against
-#                              review-verdict.schema.json and THIS tree hash —
-#                              a verdict for another tree is no verdict.
+#   2. review.sh, the cheap    diff-scan (did the diff buy its green?), scope
+#      checks first            (did it stay inside the task?), docs-pairs (both
+#                              languages of a docs page?), sec (may this be
+#                              committed at all?) — before the suite, so a close
+#                              they refuse costs no suite run (R-0150).
+#   3. verify.sh <components>  the task's Verify: line as it stands, --strict, for
+#                              real (a prose line: the task's own component);
+#                              then review.sh contracts (the checks a changed
+#                              path pulls in).
+#   4. the review verdict      `--review none`: the in-session reviewer of
+#                              feature-build, named by --review-note.
+#                              `verdict:<json>`: a verdict file. `auto` (stage
+#                              6b): the runner probes the change itself
+#                              (review-probe.sh) and starts the reviewer as a
+#                              process of its own (review-run.sh); round 2 is
+#                              the next call after a request_changes, and there
+#                              is no third. Either verdict is held by review.sh
+#                              check-verdict against review-verdict.schema.json,
+#                              THIS tree hash and — with auto — this task.
 #   5. ledger + commit         ledger.sh mark-done with the run's summary line as
 #                              evidence, then one commit carrying code and ledger.
 #                              The last open task also moves an `aktiv` head to
 #                              `bereit`, in that same commit.
 #
-# Exit: 0 committed · 2 usage, nothing staged, or the tree changed under the run
-#       · 3 verify red, a diff-scan finding, a docs page in one language or a
-#       red contract · 4 blocked (sec or scope) · 74 the suite could not run at
-#       all, or its result cannot be tied to this tree.
+# Exit: 0 committed · 2 usage, nothing staged, a verdict outside the schema, or
+#       the tree or the index changed under the run · 3 verify red, a diff-scan finding, a
+#       docs page in one language, a red contract, or a verdict without a usable
+#       approve (request_changes, needs_decision, a blocker with evidence, an
+#       approve over a probe that found the new test green), or a third review
+#       round · 4 blocked (sec or scope), or a verdict about another tree or
+#       another task · 74 the suite, a contract test, the probe or the reviewer
+#       could not run, or the suite's result cannot be tied to this tree.
 
 set -uo pipefail
 
@@ -178,8 +189,35 @@ if [ -n "$TASK_FILES" ]; then
   fi
 fi
 TREE_HASH="$(bash scripts/dev/tree-hash.sh)" || infra "tree-hash.sh failed"
+# The tree hash is the WORKTREE's: a file already there that gets staged while
+# the suite or the reviewer runs leaves it unchanged — and would ride into the
+# commit past the scope check, which now comes first. The index is held to this
+# from here to the commit.
+INDEX_TREE="$(git write-tree)" || infra "git write-tree failed"
 
-# ── 2. the task's own suite ──────────────────────────────────────────────────
+# ── 2. the cheap reviews, before the suite (R-0150) ──────────────────────────
+# --task: a test the task declares as deleted (Test-Löschung:) may take its
+# assertions with it; anything else that silences a test is still a finding.
+bash scripts/dev/review.sh diff-scan --staged --task "$LEDGER" "$ID" || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh diff-scan could not run"
+  exit 3
+}
+bash scripts/dev/review.sh scope "$LEDGER" "$ID" --staged || {
+  rc=$?
+  # A usage error is not a blocked commit; only a real scope violation is.
+  [ "$rc" = 2 ] && die "review.sh scope could not run"
+  echo "task-close: blocked — the diff leaves the task's scope" >&2; exit 4
+}
+# Both languages of a docs page in the same commit (.claude/rules/docs.md).
+bash scripts/dev/review.sh docs-pairs --staged || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh docs-pairs could not run"
+  exit 3
+}
+bash scripts/dev/review.sh sec --staged || { rc=$?; [ "$rc" = 2 ] && die "review.sh sec could not run"; exit 4; }
+
+# ── 3. the task's own suite ──────────────────────────────────────────────────
 [ -n "$COMPONENT" ] && [ "$COMPONENT" != "—" ] \
   || infra "task $ID has no component — nothing to verify (a manual task is closed by hand)"
 # The Verify: line runs as it stands (R-0104): its components, from
@@ -270,35 +308,15 @@ if [ "$ART_TREE" != "$TREE_HASH" ]; then
   exit 2
 fi
 
-# ── 3. the deterministic reviews ─────────────────────────────────────────────
-# --task: a test the task declares as deleted (Test-Löschung:) may take its
-# assertions with it; anything else that silences a test is still a finding.
-bash scripts/dev/review.sh diff-scan --staged --task "$LEDGER" "$ID" || {
-  rc=$?
-  [ "$rc" = 2 ] && die "review.sh diff-scan could not run"
-  exit 3
-}
-bash scripts/dev/review.sh scope "$LEDGER" "$ID" --staged || {
-  rc=$?
-  # A usage error is not a blocked commit; only a real scope violation is.
-  [ "$rc" = 2 ] && die "review.sh scope could not run"
-  echo "task-close: blocked — the diff leaves the task's scope" >&2; exit 4
-}
-# Both languages of a docs page in the same commit (.claude/rules/docs.md).
-bash scripts/dev/review.sh docs-pairs --staged || {
-  rc=$?
-  [ "$rc" = 2 ] && die "review.sh docs-pairs could not run"
-  exit 3
-}
+# ── 3b. the contracts ────────────────────────────────────────────────────────
 # The checks review-contracts.txt ties to the changed paths; what ran goes into
-# the evidence.
+# the evidence. After the suite: a contract runs a test of its own.
 CONTRACTS="$(bash scripts/dev/review.sh contracts --staged)" || {
   rc=$?
   [ "$rc" = 2 ] && die "review.sh contracts could not run"
   [ "$rc" = 74 ] && infra "a contract test could not run"
   exit 3
 }
-bash scripts/dev/review.sh sec --staged || { rc=$?; [ "$rc" = 2 ] && die "review.sh sec could not run"; exit 4; }
 
 # ── 4. the review verdict ────────────────────────────────────────────────────
 case "$REVIEW" in
@@ -316,10 +334,95 @@ case "$REVIEW" in
     REVIEW_TEXT="$(bash scripts/dev/review.sh check-verdict "$VJSON" --tree "$TREE_HASH")" \
       || { rc=$?; echo "task-close: no usable approve verdict for this tree" >&2; exit "$rc"; }
     ;;
-  *) die "--review takes 'none' or 'verdict:<file>'" ;;
+  auto)
+    # One verdict file per round, counted from the files in VDIR; a third round
+    # does not exist. Before anything runs: the round decides whether anything
+    # does.
+    VDIR="$ROOT/.ah-out/review/$(basename "$LEDGER" .md)"
+    ROUND=1 PRIOR=() LAST=""
+    [ -e "$VDIR/$ID.r1.verdict.json" ] && LAST="$VDIR/$ID.r1.verdict.json" ROUND=2 PRIOR=(--prior "$LAST")
+    [ -e "$VDIR/$ID.r2.verdict.json" ] && LAST="$VDIR/$ID.r2.verdict.json" ROUND=3
+    # What the reviewer is shown: the staged diff, without this ledger (a close
+    # that broke off has staged it already). The tree hash is the worktree's
+    # and does not tell a file staged since.
+    STAGED_ID="$(git diff --staged --binary --no-ext-diff --no-textconv --no-color -- . ":(exclude)$LEDGER" \
+      | git hash-object --stdin)" || infra "could not read the staged diff"
+    # An approve for exactly this staged diff, tree and task stays an approve: a
+    # close that broke off after it (a failed commit) is run again, and that must
+    # not spend a round.
+    if [ -n "$LAST" ] && [ "$(cat "${LAST%.verdict.json}.staged" 2>/dev/null)" = "$STAGED_ID" ] \
+        && REVIEW_TEXT="$(bash scripts/dev/review.sh check-verdict "$LAST" --tree "$TREE_HASH" \
+        --task "$LEDGER" "$ID" 2>/dev/null)"; then
+      REVIEW_TEXT+=" · round $((ROUND - 1))"
+      echo "── the approve of round $((ROUND - 1)) is for this tree: $LAST"
+    else
+      if [ "$ROUND" = 3 ]; then
+        echo "task-close: both review rounds of $ID are spent (counted from $VDIR) — there is no third;" >&2
+        echo "  put the open point to Kevin: bash scripts/dev/ledger.sh mark-question $LEDGER $ID \"<frage>\"" >&2
+        exit 3
+      fi
+      # The probe is the runner's, never the reviewer's (R-0147b): is the new
+      # test red without the change? review-probe.sh answers not-applicable by
+      # itself, without a run, when no test or only tests changed (R-0151.2).
+      # The test of a narrow Verify: line goes along (R-0154.2).
+      set -f
+      # shellcheck disable=SC2086  # the ledger's test args are a word list on purpose
+      PROBE="$(bash scripts/dev/review-probe.sh "$COMPONENT" --staged ${VERIFY_ARGS:+-- $VERIFY_ARGS})"
+      rc=$?
+      set +f
+      case "$rc" in
+        0) ;;
+        2) die "review-probe.sh could not run for component $COMPONENT" ;;
+        *) infra "the probe could not run (review-probe.sh exit $rc)" ;;
+      esac
+      CJSON="$(python3 -c 'import json, sys; print(json.dumps({"summary": sys.argv[1]}))' "$CONTRACTS")"
+      # Beside the round's other files, where an interrupted run leaves it too.
+      mkdir -p "$VDIR" || infra "cannot create $VDIR"
+      RUN_ERR="$VDIR/$ID.r$ROUND.run.err"
+      VJSON="$(bash scripts/dev/review-run.sh "$LEDGER" "$ID" --tree "$TREE_HASH" --round "$ROUND" \
+        --probe "$PROBE" --contracts "$CJSON" "${PRIOR[@]+"${PRIOR[@]}"}" 2>"$RUN_ERR")"
+      rc=$?
+      cat "$RUN_ERR" >&2
+      # Every round goes into the review log, a failed one with its reason: the
+      # pilot's cost, turns and duration are read from there. The log is a
+      # measurement, not a gate — a log that cannot be written stops nothing.
+      if [ "$rc" = 0 ]; then
+        bash scripts/dev/review.sh log --append "$VJSON" || echo "task-close: the review log was not written" >&2
+      elif [ "$rc" != 2 ]; then
+        WHY="$(grep -v '^[[:space:]]*$' "$RUN_ERR" | tail -n 1)"
+        bash scripts/dev/review.sh log --failed "${WHY:-review-run.sh exit $rc without a message}" \
+          --task "$LEDGER" "$ID" --round "$ROUND" --tree "$TREE_HASH" || echo "task-close: the review log was not written" >&2
+      fi
+      case "$rc" in
+        0) ;;
+        2) die "review-run.sh could not run" ;;
+        # Decision D: no fallback to a review in the session — a skip is not green.
+        *) infra "the reviewer gave no usable verdict (review-run.sh exit $rc)" ;;
+      esac
+      printf '%s\n' "$STAGED_ID" > "${VJSON%.verdict.json}.staged" || infra "could not write beside $VJSON"
+      REVIEW_TEXT="$(bash scripts/dev/review.sh check-verdict "$VJSON" --tree "$TREE_HASH" --task "$LEDGER" "$ID")" || {
+        rc=$?
+        echo "task-close: round $ROUND gave no usable approve: $VJSON" >&2
+        if [ "$ROUND" = 2 ]; then
+          echo "  there is no third round; put the open point to Kevin:" >&2
+          echo "  bash scripts/dev/ledger.sh mark-question $LEDGER $ID \"<frage>\"" >&2
+        else
+          echo "  fix the findings and close again: that is round 2" >&2
+        fi
+        exit "$rc"
+      }
+      REVIEW_TEXT+=" · round $ROUND"
+    fi
+    ;;
+  *) die "--review takes 'none', 'verdict:<file>' or 'auto'" ;;
 esac
 
 # ── 5. ledger and commit ─────────────────────────────────────────────────────
+# Before the box is ticked: a refused close leaves no [x] behind.
+if [ "$(git write-tree)" != "$INDEX_TREE" ]; then
+  echo "task-close: the index changed under the run — what was checked is not what would be committed; close again" >&2
+  exit 2
+fi
 SUMMARY="$(python3 - "$ARTIFACT" <<'PY' 2>/dev/null
 import json, sys
 d = json.load(open(sys.argv[1]))

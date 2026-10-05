@@ -61,19 +61,26 @@ die Ausnahme: er läuft auf **Sonnet** und nur dann auf Opus, wenn `review.sh ri
 Risikopfad im Diff meldet (`scripts/dev/review-risk.txt` plus die Harness-Pfade) — mit Opus lief
 er regelmäßig eine halbe Stunde ohne Urteil, mit Sonnet urteilt er in Minuten
 (`.claude/skills/feature-build/SKILL.md`, Schritt 4). Eine Review-Runde ist die Regel, eine
-zweite nur bei einem `blocker` oder einem belegten `wichtig`.
+zweite nur bei einem `blocker` oder einem belegten `wichtig`. Seit Stufe 6b kann der Reviewer ein
+eigener Prozess von `task-close.sh` sein (`--review auto`, im Pilot per Ledger-Kopf `Review: auto`):
+der Runner fährt die Probe, `scripts/dev/review-run.sh` startet `claude -p` mit festem Prompt und
+eigenen Settings, und Prompt wie Urteil gehen nicht durch die Bau-Session; höchstens zwei Runden, ein
+Prozess ohne Verdict ist Exit 74 ohne Rückfall auf den Sub-Agent. Jede Runde steht mit Kosten,
+Turns und Dauer in `review.sh log` (`DEVELOPMENT.md`, „Reviewer als Prozess").
 
 **Ebene 0: deterministische Prüfer.** Vor jedem Modell beantworten Skripte, was sich ohne
 Urteil entscheiden lässt (Stufe 6a): `review.sh risk` (Risikopfad im Diff, danach das
 Reviewer-Modell), `docs-pairs` (beide Sprachen einer Doku-Seite), `contracts` (die Prüfungen,
 die an den geänderten Pfaden hängen), `check-verdict` (ein Urteil passt zu Schema und Baum),
-`scripts/dev/review-probe.sh` (wäre der neue Test ohne den Fix rot) und `pr-body` (der PR-Text
-aus dem Ledger). `task-close.sh` fährt `docs-pairs` und `contracts` bei jedem Abschluss; Details
+`scripts/dev/review-probe.sh` (wäre der neue Test ohne den Fix rot), `pr-body` (der PR-Text
+aus dem Ledger) und `log` (jede Reviewer-Runde, Stufe 6b). `task-close.sh` fährt `diff-scan`,
+`scope`, `docs-pairs` und `sec` vor der Suite und `contracts` danach, bei jedem Abschluss; Details
 in `DEVELOPMENT.md`, „Review-Pruefer (Ebene 0)".
 
 **Zwei Review-Ebenen (dein Reviewer-„dazwischen").** Der Code wird nie ungeprüft committet:
-(1) **pro Commit-Einheit** ein **frischer Sub-Agent** (`feature-review`), der nur den Diff +
-die Task + feste Kriterien sieht — unvoreingenommen, weil er den Bau-Verlauf nicht kennt;
+(1) **pro Commit-Einheit** ein **frischer Sub-Agent** (`feature-review`; mit `Review: auto` ein
+eigener Prozess von `task-close.sh`), der nur den Diff + die Task + feste Kriterien sieht —
+unvoreingenommen, weil er den Bau-Verlauf nicht kennt;
 (2) am Ende ein `/code-review` über den ganzen Branch-Diff. Ebene 1 fängt den einzelnen
 Fehltritt sofort, Ebene 2 die Wechselwirkungen. **Ausnahme Kurz-Ledger** (≤ 3 Tasks, Kopf
 `Review: am Ende`): dort fallen beide Ebenen zu **einer** zusammen — ein `feature-review` über

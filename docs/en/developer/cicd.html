@@ -238,10 +238,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
 
           <h2>Review checks and verdict</h2>
           <p>Before a model looks at a diff, deterministic checks run &ndash; level&nbsp;0, no model, no tokens.
-          <code>task-close.sh</code> runs <code>docs-pairs</code> and <code>contracts</code> on every close next to
-          <code>diff-scan</code>, <code>scope</code> and <code>sec</code>; the build (feature-build) calls
-          <code>risk</code> and <code>pr-body</code>, the close runs <code>check-verdict</code> on
-          <code>--review verdict:</code>, <code>review-probe.sh</code> runs by hand.</p>
+          <code>task-close.sh</code> runs <code>diff-scan</code>, <code>scope</code>, <code>docs-pairs</code> and
+          <code>sec</code> on every close before the suite, and <code>contracts</code> after it; the build
+          (feature-build) calls <code>risk</code> and <code>pr-body</code>, the close runs <code>check-verdict</code>
+          on <code>--review verdict:</code> and <code>--review auto</code>; <code>review-probe.sh</code> runs by hand,
+          or through the runner on <code>--review auto</code>.</p>
           <table>
             <thead><tr><th>Check</th><th>Question</th><th>Result</th></tr></thead>
             <tbody>
@@ -257,7 +258,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               goes into the evidence (<code>&middot; contracts: 1 ok</code>)</td></tr>
               <tr><td><code>review.sh check-verdict</code></td><td>Is a reviewer's verdict usable for this tree
               (<code>scripts/dev/review-verdict.schema.json</code>)?</td><td>0 approve, 2 unreadable or outside the
-              schema, 3 no usable approve, 4 another tree</td></tr>
+              schema, 3 no usable approve, 4 another tree or (with <code>--task</code>) another task</td></tr>
               <tr><td><code>scripts/dev/review-probe.sh</code></td><td>Would the new test be red without the change? Does
               a mutant of the change survive the tests (<code>--mutate</code>)?</td><td>the <code>probe</code> block of
               the schema, or <code>killed</code>/<code>survived</code>; in a worktree of its own, the checkout stays
@@ -265,7 +266,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td><code>review.sh pr-body</code></td><td>What goes into the PR?</td><td>the checklist out of the ledger
               with evidence and review; without evidence &ldquo;unverifiziert&rdquo;; addresses, host names of a
               private network (<code>.lan</code>, <code>.local</code>, &hellip;) and VM ids after <code>vm</code>,
-              <code>template</code>, &hellip; cut out</td></tr>
+              <code>template</code>, &hellip; cut out; with <code>--verdicts</code>, the verdict of the last round,
+              checked through <code>check-verdict</code> (one outside the schema reads &ldquo;ung&uuml;ltig&rdquo;)</td></tr>
+              <tr><td><code>review.sh log</code></td><td>What did each reviewer round cost?</td><td>one JSONL line per
+              round in <code>.ah-out/review/review-log.jsonl</code>; printed as a table with a sum (runs, approve,
+              request_changes, failed, $, turns, seconds)</td></tr>
             </tbody>
           </table>
           <p>A verdict is JSON following the schema: task, tree hash, reviewer (model, effort), verdict
@@ -275,6 +280,28 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           without the change; a <code>blocker</code> without evidence counts as a <code>nit</code>.
           <code>task-close.sh --review verdict:&lt;file&gt;</code> has the file checked by
           <code>check-verdict</code>.</p>
+          <p>With <code>task-close.sh --review auto</code> (stage&nbsp;6b, in the pilot through the ledger head
+          <code>Review: auto</code>) the reviewer is a process of its own; neither its prompt nor its verdict goes
+          through the build session. After the cheap checks, the suite and the contracts:</p>
+          <ol>
+            <li><strong>Round:</strong> counted from <code>.ah-out/review/&lt;slug&gt;/</code>; an approve for exactly
+            this staged diff is taken over, and there is no third round (exit&nbsp;3).</li>
+            <li><strong>Probe:</strong> the runner runs <code>review-probe.sh</code> with the test of the
+            <code>Verify:</code> line; without a test change, or with tests alone, it does not apply.</li>
+            <li><strong>Reviewer:</strong> <code>scripts/dev/review-run.sh</code> starts <code>claude -p</code> with the
+            reviewer of <code>scripts/dev/review-agent.md</code>, without the project's or the user's settings, only
+            with <code>scripts/dev/review-settings.json</code> (read and <code>git diff|show|log|status</code>; the
+            harness guard as a hook, fail-closed; no mutants in the pilot &ndash; they come back once there are fixed
+            operators or a sandbox) and the schema
+            <code>scripts/dev/review-output.schema.json</code>; Sonnet/high with 60 turns, or Opus/xhigh with 80 on a
+            risk path, timeout 20&nbsp;minutes.</li>
+            <li><strong>Verdict:</strong> <code>&lt;id&gt;.r&lt;n&gt;.verdict.json</code> (schema version&nbsp;2) with
+            the runner's fields; <code>check-verdict --tree --task</code> decides on the commit, and every round goes
+            into <code>review.sh log</code>.</li>
+            <li><strong>Failure:</strong> no start, a timeout, an error result, a non-zero exit, or a missing or invalid
+            <code>structured_output</code> is exit&nbsp;74 with no verdict and no commit; there is no fallback to the
+            subagent review.</li>
+          </ol>
 
           <h2>Parity and contract gates</h2>
           <p>Two classes of defect need no VM to be found: &ldquo;the copy drifts&rdquo; (the same truth lives in
