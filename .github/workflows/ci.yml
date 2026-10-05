@@ -13,9 +13,12 @@ on:
 permissions:
   contents: read
 
+# A push to main gets a group of its own and is never cancelled or pushed out
+# while pending: its run is the only one that reads before..sha (R-0174). Pull
+# requests still cancel the older run of the same ref.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'push' && format('ci-push-{0}', github.sha) || format('ci-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FRP_VERSION: "0.69.1"

@@ -365,6 +365,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Stands; beide muessen gruen sein. Ein Pull Request, der `sec` aendert, wird so mit der Logik
   geprueft, die vor ihm galt; eine Basis ohne `sec --range` macht den Job rot. Einen Fehlalarm der
   Basis-Logik nimmt ein Admin-Merge. Anleitung: `docs/developer/cicd.html`, `DEVELOPMENT.md`.
+- **CI-Laeufe auf Pushes nach `main` laufen zu Ende (R-0174):** Die `concurrency` von `ci.yml` gibt
+  jedem Push eine eigene Gruppe je Commit und bricht nur noch Pull-Request-Laeufe ab; ein spaeterer
+  Push bricht den Lauf davor weder ab noch verdraengt er ihn, solange er wartet. Nur dieser Lauf liest
+  die Commits eines Pushs (`before..sha`). Anleitung: `docs/developer/cicd.html`.
 - **`task-close.sh` prueft billig zuerst (Stufe 6b, R-0150):** `diff-scan`, `scope`,
   `docs-pairs` und `sec` laufen vor der Suite, `contracts` danach; ein einseitiger Doku-Abschluss
   kostet keinen Suite-Lauf mehr. Aendert sich der Index waehrend des Laufs, bricht der Abschluss

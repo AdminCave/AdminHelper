@@ -477,6 +477,13 @@ grep -qF 'bash "$base_sh" sec --range "$range"' <<<"$JOB" && grep -qF 'git workt
   && grep -qF 'range="$base...$SHA"' <<<"$JOB" && grep -qF '::error::the base' <<<"$JOB" \
   && ok "it reads with the base's review.sh (a worktree, \$SHA in the span) and fails closed without one" \
   || bad "no base-logic step: $JOB"
+# A push run reads before..sha and nothing else does: it is never cancelled, and a
+# group per commit keeps a later push from pushing it out while pending (R-0174).
+CONC="$(awk '/^concurrency:$/ { f = 1; next } f && /^  / { print; next } f { exit }' "$CI")"
+[ "$CONC" = "  group: \${{ github.event_name == 'push' && format('ci-push-{0}', github.sha) || format('ci-{0}', github.ref) }}
+  cancel-in-progress: \${{ github.event_name == 'pull_request' }}" ] \
+  && ok "a push to main runs in a group of its own and is never cancelled; pull requests still are" \
+  || bad "workflow concurrency: $CONC"
 # The job's script itself, run here as GitHub runs it (bash -e): a pull request with
 # a finding is red, a push without a usable 'before' is red, not a scan of nothing.
 JOBSH="$(awk '/^        run: \|$/ { f = 1; next } f && /^ {10}/ { print substr($0, 11); next } f { exit }' <<<"$JOB")"

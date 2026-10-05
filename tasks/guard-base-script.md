@@ -64,8 +64,10 @@ Abweichung (Bau): Beim Push ist die Basis `$BEFORE`, nicht `origin/main` — nac
 auf den gepushten Commit, dessen `review.sh` wäre die Logik des Änderungsstands. Der Test hält beide Basen fest
 („base logic (origin/main)“ beim PR, „base logic (<before>)“ beim Push).
 
-### T2 — Pushes auf main laufen immer zu Ende  [ ]
+### T2 — Pushes auf main laufen immer zu Ende  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/review_scripts_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 8 ok @f7fb1f54 2026-10-05T10:09:32+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenprobe mit ci.yml aus HEAD: Concurrency-Pruefung rot; GitHub-Auswertung des Ausdrucks nicht verifiziert, Beweis nach dem Merge (Aufsicht)
 Änderung: Die Workflow-`concurrency` (`ci.yml:16–18`) wird
 `group: ${{ github.event_name == 'push' && format('ci-push-{0}', github.sha) || format('ci-{0}', github.ref) }}` und
 `cancel-in-progress: ${{ github.event_name == 'pull_request' }}` (Entscheidung B). Ein Push bekommt so eine eigene
