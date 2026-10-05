@@ -819,8 +819,12 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
 **pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
 `review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
 `sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
-Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Scharf wird er je Klon
-mit einem Handgriff Kevins:
+Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Was an den lokalen
+Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
+der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
+eines Pull Requests bzw. Pushs (R-0123; ein Commit, der eine private Datei bringt und der naechste,
+der sie wieder loescht, zaehlen beide, denn die Historie wird mit veroeffentlicht). Scharf wird der
+Hook je Klon mit einem Handgriff Kevins:
 
 ```bash
 git config core.hooksPath scripts/dev/hooks   # einmal im Haupt-Checkout; die Lanes erben es

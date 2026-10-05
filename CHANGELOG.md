@@ -9,6 +9,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **CI-Sperre fuer Privates (R-0123):** Der neue CI-Job „Public repo guard (review.sh sec)" faehrt
+  `scripts/dev/review.sh sec --range` ueber jeden Commit eines Pull Requests bzw. Pushs auf `main` —
+  dieselbe Sperre wie die lokalen Commit-Hooks (privater Plan, SEC-Ledger, Dedup-Key eines
+  Sicherheitsfunds, `.devenv.sh`, `settings.local.json`), fuer alles, was an ihnen vorbeigeht. `sec`
+  liest eine Spanne Commit fuer Commit (eine Datei, die kommt und wieder geht, zaehlt), einen Merge nur
+  nach dem, was er selbst bringt; der Job braucht kein Secret und nennt nur Pfad bzw. Datei:Zeile.
+  Kevins Handgriff: den Check im Ruleset fuer `main` als Pflicht eintragen. Anleitung:
+  `docs/developer/cicd.html`, `DEVELOPMENT.md` „pre-commit-Hook".
+
 - **Der Reviewer als eigener Prozess (Stufe 6b, R-0155, R-0147, R-0150):**
   `task-close.sh --review auto` startet den Task-Reviewer selbst: der Runner faehrt die Probe
   (`review-probe.sh`), `scripts/dev/review-run.sh` startet `claude -p` mit dem Reviewer aus

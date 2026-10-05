@@ -67,8 +67,10 @@ für den pre-push (nur Commits, die der Remote noch nicht hat). Altbestand auf m
 `docs/features/harness-stufe-4.md:124` und `tasks/harness-stufe-4.md:42` (86128f52) beschreiben die Regel selbst;
 eine Spanne, die 86128f52 enthält (z. B. `workflow_dispatch` auf einem Branch von vor dem 2026-09-18), trifft sie.
 
-### T2 — CI-Job „Public repo guard (review.sh sec)“  [ ]
+### T2 — CI-Job „Public repo guard (review.sh sec)“  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/review_scripts_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 8 ok @fa28143c 2026-10-05T06:39:04+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenprobe: die ci.yml aus HEAD hat keinen Job (0 Zeilen), alle Job-Pruefungen rot; Job-Skript im Test gegen Fixture gefahren
 Änderung: Neuer Job `public-repo-guard` in `ci.yml` mit `name: Public repo guard (review.sh sec)`, eingefügt nach
 `openapi-compat` (`ci.yml:705`). Muster für Basis-Ref und `fetch-depth: 0` ist openapi-compat (`:714–738`).
 - Rechte: `permissions: contents: read` (gilt schon global, `:13–14`), keine Secrets.

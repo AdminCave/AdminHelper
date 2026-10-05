@@ -434,6 +434,31 @@ rr sec --range "$RCLEAN..feature"
 rr sec --range "$RCLEAN..feature" --not-on origin
 [ $rc -eq 0 ] && ok "--not-on origin leaves out what origin already has" || bad "not-on: rc=$rc out=$OUT"
 
+# ══ ci.yml: the public repo guard (R-0123) ════════════════════════════════════
+echo "── ci.yml: Public repo guard (review.sh sec) ──"
+CI="$REPO_ROOT/.github/workflows/ci.yml"
+JOB="$(awk '/^  public-repo-guard:/ { f = 1; print; next } f && /^  [A-Za-z0-9_-]+:/ { exit } f' "$CI")"
+grep -qx '    name: Public repo guard (review.sh sec)' <<<"$JOB" \
+  && ok "the job carries the name the ruleset requires" || bad "no job named 'Public repo guard (review.sh sec)'"
+grep -q 'fetch-depth: 0' <<<"$JOB" && grep -qF 'bash scripts/dev/review.sh sec --range "$range"' <<<"$JOB" \
+  && ok "it fetches the whole history and runs review.sh sec --range" || bad "job steps: $JOB"
+! grep -q 'secrets\.' <<<"$JOB" && ok "it uses no secret (it runs for fork pull requests too)" || bad "the job reads a secret"
+EXPR="$(grep -F '${{' <<<"$JOB" | grep -vE '^ +[A-Z_]+: \$\{\{ github\.[a-z_.]+ \}\}$')"
+[ -z "$EXPR" ] && ok "event values reach the script as environment only" || bad "an expression outside env: $EXPR"
+# The job's script itself, run here: a pull request with a finding is red, a push
+# without a usable 'before' is red, not a scan of nothing.
+JOBSH="$(awk '/^        run: \|$/ { f = 1; next } f && /^ {10}/ { print substr($0, 11); next } f { exit }' <<<"$JOB")"
+[ -n "$JOBSH" ] || bad "no run script found in the job"
+OUT=$(cd "$RFIX" && EVENT=pull_request BASE_REF=main BEFORE='' SHA='' bash -c "$JOBSH" 2>&1); rc=$?
+[ $rc -eq 4 ] && grep -q "tasks/private/m.md (merge " <<<"$OUT" \
+  && ok "the job's script: a pull request that brings a private file is red" || bad "job pr: rc=$rc out=$OUT"
+OUT=$(cd "$RFIX" && EVENT=push BASE_REF='' BEFORE=0000000000000000000000000000000000000000 SHA="$(rg rev-parse HEAD)" bash -c "$JOBSH" 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q "without a usable 'before'" <<<"$OUT" \
+  && ok "the job's script: a push with an all-zero 'before' fails closed" || bad "job push zero: rc=$rc out=$OUT"
+OUT=$(cd "$RFIX" && EVENT=push BASE_REF='' BEFORE="$RCLEAN" SHA="$(rg rev-parse feature)" bash -c "$JOBSH" 2>&1); rc=$?
+[ $rc -eq 4 ] && grep -q "docs/main.md" <<<"$OUT" \
+  && ok "the job's script: a push is read from 'before' to the pushed commit" || bad "job push: rc=$rc out=$OUT"
+
 # ══ diff-scan: a declared test deletion ═══════════════════════════════════════
 echo "── diff-scan --task: a whole test may go when the task says so ──"
 cat > "$FIX/tasks/del.md" <<'MD'
