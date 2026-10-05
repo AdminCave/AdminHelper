@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI-Sperre für Privates: review.sh sec über PR-Diff und vor jedem Push — Task-Ledger
-Status: geplant · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: freigegeben · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Freigabe: Kevin, 2026-10-05 („ci-sec-gate freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0123
 Hängt ab von: harness/stufe-6b (gemergt) — beide ändern scripts/dev/review.sh, review_scripts_test.sh, DEVELOPMENT.md und docs/developer/cicd.html; erst nach dem Merge von 6b bauen und origin/main vorher hineinmergen
 Heavy: none — nur ein Harness-Skript, ein neuer git-Hook, ein CI-Job und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Der CI-Job beweist sich im eigenen PR.
