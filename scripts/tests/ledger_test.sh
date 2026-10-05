@@ -261,8 +261,13 @@ l lint fixture
 clean_fixture
 mkdir -p "$TREE/docs/features"; printf '# Spec\n\n%s\n' "$TAG_OPEN" > "$TREE/docs/features/fixture.md"
 l lint fixture
-[ $rc -eq 1 ] && grep -q "ERROR  tasks/../docs/features/fixture.md:3: a remnant of a tool call" <<<"$OUT" \
+[ $rc -eq 1 ] && grep -q "ERROR  docs/features/fixture.md:3: a remnant of a tool call" <<<"$OUT" \
   && ok "an opening tag with a name in the spec the ledger names is an error too" || bad "remnant spec: rc=$rc out=$OUT"
+# The spec need not be the first word of Spec:, nor stand bare.
+sed -i 's|^Spec: docs/features/fixture.md$|Spec: Roadmap R-0001 und `docs/features/fixture.md` (Spec)|' "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  docs/features/fixture.md:3: a remnant of a tool call" <<<"$OUT" \
+  && ok "a spec named later in the Spec: line, in backticks, is linted too" || bad "remnant spec later: rc=$rc out=$OUT"
 clean_fixture
 mkdir -p "$TREE/docs/features"; printf '# Spec\n\n<details>\n<summary>mehr</summary>\n<!-- ein Kommentar -->\n</details>\n' > "$TREE/docs/features/fixture.md"
 printf 'Notiz: eine Zeile mit <br> und `<code>`\n' >> "$FIX"

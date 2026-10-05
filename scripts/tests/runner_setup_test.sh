@@ -468,7 +468,9 @@ grep -q 'run again with --trust' <<<"$PLAN" \
 # Whether the worker needs it is the pilot's measurement, and the flag does not reach
 # the lanes the worker builds in: the plan says both (R-0185).
 grep -q 'the pilot measures whether the worker needs it; --trust covers .*/repo, not the lanes' <<<"$PLAN" \
-  && ok "the plan says the pilot measures it and that --trust does not cover the lanes" || bad "trust note: $(grep -m1 'trust' <<<"$PLAN")"
+  && grep -q "is Kevin's call" <<<"$PLAN" \
+  && ok "the plan says the pilot measures it, that --trust does not cover the lanes and that Kevin decides" \
+  || bad "trust note: $(grep -m1 'trust' <<<"$PLAN")"
 PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run --trust 2>&1)
 grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
   && ok "--trust plans the flag in the runner's .claude.json" || bad "--trust does not plan the trust flag"

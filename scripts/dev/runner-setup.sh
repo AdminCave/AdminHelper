@@ -486,7 +486,7 @@ PY"
   run_sh "chown $RUNNER:$RUNNER $(printf '%q' "$HOME_DIR/.claude.json")"
   run_sh "chmod 600 $(printf '%q' "$HOME_DIR/.claude.json")"
 else
-  note "not done — the pilot measures whether the worker needs it; --trust covers $SRV/repo, not the lanes, so ask the supervisor before you run again with --trust (DEVELOPMENT.md)"
+  note "not done — the pilot measures whether the worker needs it; --trust covers $SRV/repo, not the lanes, so whether to run again with --trust is Kevin's call (DEVELOPMENT.md)"
 fi
 
 # The CLI is pinned like every other toolchain in this repo (frp, oasdiff, Go, ruff):

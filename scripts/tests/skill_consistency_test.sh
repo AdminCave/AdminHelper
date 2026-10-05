@@ -86,7 +86,10 @@ column_in_note() {
 # head_template <feature-plan SKILL.md> — the code block right under "## 3.".
 head_template() {
   unreadable "$1" && return
-  awk '/^## 3\./ { s = 1; next } s && /^[ \t]*```/ { if (inb) exit; inb = 1; next } inb { print }' "$1"
+  # An indented fence (a list item) indents its content as far: that much comes off.
+  awk '/^## 3\./ { s = 1; next }
+       s && /^[ \t]*```/ { if (inb) exit; inb = 1; match($0, /^[ \t]*/); ind = substr($0, 1, RLENGTH); next }
+       inb { if (ind != "" && index($0, ind) == 1) $0 = substr($0, length(ind) + 1); print }' "$1"
 }
 
 # section <file> <from> [<to>] — the text from the heading that starts with
@@ -243,6 +246,10 @@ t=$(head_template "$f")
 f=$(fixture '## 3. Ledger schreiben' '   ```' 'Status: geplant · Branch: feature/<slug>' 'Heavy: none — x' '   ```')
 t=$(head_template "$f")
 grep -q '^Heavy: none' <<<"$t" && ok "head_template reads a template in an indented fence" || bad "head_template indented: $t"
+f=$(fixture '## 3. Ledger schreiben' '- Kopf:' '   ```' '   Status: geplant · Branch: feature/<slug>' '   Heavy: none — x' '   ```')
+t=$(head_template "$f")
+grep -q '^Status: geplant' <<<"$t" && grep -q '^Heavy: none' <<<"$t" \
+  && ok "... and takes the fence's indentation off its content, as under a list item" || bad "head_template indented content: $t"
 f=$(fixture '4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): einen frischen Sub-Agent' \
             '   - **Modell:** `model: sonnet` ist der Default.' '5. **Schließen**')
 [ -z "$(cleanup_rule "$(section "$f" '4. **Frischer' '5. **Schließen')")" ] \
@@ -308,6 +315,12 @@ grep -qE "$SEC_REFUSED" <<<"$(section .claude/skills/feature-plan/SKILL.md '## 3
   || bad "feature-plan '## 3a.' no longer refuses SEC for --kurz"
 tr '\n' ' ' < .claude/skills/feature-build/SKILL.md | grep -qE "$PR_CALL" \
   && ok "feature-build sets the PR column with pr --pr \"#<n>\"" || bad "feature-build names no pr --pr \"#<n>\""
+# The gate lints the plan before it commits it: what a planning agent left around it
+# (R-0165) is caught there, not in the first build.
+gate=$(section .claude/skills/feature-plan/SKILL.md '- **Plan auf den Branch' '- Präsentiere im Chat')
+before_commit="${gate%%dann committen*}"
+[ "$before_commit" != "$gate" ] && [[ "$before_commit" == *'ledger.sh lint tasks/<slug>.md'* ]] \
+  && ok "feature-plan's gate lints the plan before the plan commit" || bad "the gate step does not lint before it commits: $gate"
 t=$(head_template .claude/skills/feature-plan/SKILL.md)
 grep -q '^Status: geplant' <<<"$t" && ok "feature-plan's head template is where the check looks" \
   || bad "no head template under '## 3.' in feature-plan: $t"

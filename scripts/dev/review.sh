@@ -673,24 +673,41 @@ $IMPLICIT"
     # (Proxmox VE API wiki), the GitHub prefixes ghp_ gho_ ghu_ ghs_ ghr_ github_pat_
     # (docs.github.com, token formats) and sk-ant- (Anthropic keys and the setup-token;
     # in no doc, so not verified, taken from practice). A minimum length lets the
-    # placeholders in code, docs and tests pass. No interval expressions: not every
-    # awk knows them, so the length is RLENGTH.
+    # placeholders in code, docs and tests pass, and so does a body of at most two
+    # different characters (xxxx…, 0000-…). No interval expressions: not every awk
+    # knows them, so the length is RLENGTH.
     SEC_TOKEN_AWK='
-      function longrun(s, re, n) {
-        while (match(s, re)) { if (RLENGTH >= n) return 1; s = substr(s, RSTART + RLENGTH) }
+      function plain(t,   i, c, seen, n) {
+        n = 0
+        for (i = 1; i <= length(t); i++) {
+          c = substr(t, i, 1)
+          if (c != "-" && c != "_" && !(c in seen)) { seen[c] = 1; n++ }
+        }
+        return n <= 2
+      }
+      function longrun(s, re, n, cut,   t, b) {
+        while (match(s, re)) {
+          t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+          if (length(t) >= n) { b = t; sub(cut, "", b); if (!plain(b)) return 1 }
+        }
         return 0
       }
       function pvetoken(s,   t, u, g) {
         while (match(s, /[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=[0-9A-Fa-f-]+/)) {
           t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
           u = t; sub(/^.*=/, "", u)
-          if (length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12) return 1
+          if (length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12 && !plain(u)) return 1
         }
         return 0
       }
       function token(s) {
-        return longrun(s, "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]+", 34) || longrun(s, "github_pat_[A-Za-z0-9_]+", 41) ||
-               longrun(s, "sk-ant-[A-Za-z0-9_-]+", 27) || pvetoken(s)
+        return longrun(s, "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]+", 34, "^gh._") ||
+               longrun(s, "github_pat_[A-Za-z0-9_]+", 41, "^github_pat_") ||
+               longrun(s, "sk-ant-[A-Za-z0-9_-]+", 27, "^sk-ant-([a-z]+[0-9]+-)?") || pvetoken(s)
+      }
+      function finding(a, file, n) {
+        if (a ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\tkey\n", file, n
+        else if (token(a)) printf "%s:%d\ttoken\n", file, n
       }'
     # sec_hits <tag> — the lines the awk below printed, as findings: file:line and
     # what it is, never the line itself.
@@ -723,10 +740,7 @@ $IMPLICIT"
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
         inheader    { next }
-        /^\+/       { a = substr($0, 2)
-                      if (a ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\tkey\n", file, newno
-                      else if (token(a)) printf "%s:%d\ttoken\n", file, newno
-                      newno++; next }
+        /^\+/       { finding(substr($0, 2), file, newno); newno++; next }
         /^-/        { next }
                     { newno++ }')" || die "sec: git could not read this change"
       sec_hits "$tag" <<< "$out"
@@ -749,11 +763,17 @@ $IMPLICIT"
         inheader    { next }
         { pre = substr($0, 1, np); if (index(pre, "-")) next
           rest = pre; gsub(/\+/, "", rest)
-          if (rest == "") { a = substr($0, np + 1)
-                            if (a ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\tkey\n", file, newno
-                            else if (token(a)) printf "%s:%d\ttoken\n", file, newno }
+          if (rest == "") finding(substr($0, np + 1), file, newno)
           newno++ }')" || die "sec: git could not read merge $c"
       sec_hits "$tag" <<< "$out"
+    }
+    # sec_scan_message <commit> — its message leaves with a push as well as its diff
+    # (R-0183). Only for a span: at pre-commit there is no message yet.
+    sec_scan_message() {
+      local out
+      out="$(git log -1 --format=%B "$1" | awk "$SEC_TOKEN_AWK"'
+        { if (token($0)) printf "the commit message:%d\ttoken\n", NR }')" || die "sec: git could not read the message of $1"
+      sec_hits " (commit ${1:0:12})" <<< "$out"
     }
     if [ -n "$RANGE" ]; then
       # A range is history, not a net change: a file added and removed again inside
@@ -790,6 +810,7 @@ $IMPLICIT"
           parent="$(git rev-parse -q --verify "$c^1" 2>/dev/null)" || parent="$EMPTY_TREE"
           sec_scan " (commit ${c:0:12})" "$parent" "$c"
         fi
+        sec_scan_message "$c"
       done <<< "$COMMITS"
     else
       sec_scan "" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}"

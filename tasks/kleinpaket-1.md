@@ -74,3 +74,20 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Tests und Kommentare; DEVELOPMENT.md sagt es seit 7a)
 Abhängt von: PR #80 (Stufe 7a) gemergt — `build_task_findings` und der Trust-Satz kommen mit 7a; vor dem Bau
 `origin/main` hineinmergen
+
+### T4 — Nachbesserung aus dem Branch-Review  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, scripts/tests/skill_consistency_test.sh, scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh, DEVELOPMENT.md, CHANGELOG.md, .github/workflows/ci.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 8 ok @8ff9b6d7 2026-10-06T01:39:15+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
+Änderung: Aufsicht 2026-10-05 aus dem `/code-review` über den Branch, je mit Test: (A1) der Gate-Schritt von
+`feature-plan` fährt `ledger.sh lint` vor dem Plan-Commit, `skill_consistency_test` hält das fest; (A3) `head_template`
+zieht die Einrückung einer eingerückten Fence vom Inhalt ab; (A4) `lint` nimmt den ersten `docs/features/`-Pfad
+irgendwo in der `Spec:`-Zeile (auch in Backticks); (A5) ein Token-Rumpf aus höchstens zwei verschiedenen Zeichen ist
+ein Platzhalter, kein Token; (A6) Meldung und Kommentar zum Trust in `runner-setup.sh` sagen „Kevin entscheidet“;
+(B9) `sec --range` prüft auch die Nachricht jedes Commits mit derselben Muster-Funktion und nennt nur Commit und Art,
+nie den Treffer; kein Fehlalarm auf einer gewöhnlichen Merge-Nachricht. A7/A8 nur, wenn sie im selben Zug trivial
+abfallen. Nicht hier (Roadmap): die Zeilennummern nach „No newline at end of file“, weitere Werkzeug-Tags, weitere
+Proxmox-Formen, ein commit-msg-Hook.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md und CHANGELOG.md, falls B9 die beschriebene Reichweite von `sec` ändert
+Abhängt von: T1–T3

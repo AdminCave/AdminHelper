@@ -12,8 +12,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **`review.sh sec` erkennt Token-Muster (R-0183):** eine hinzugefuegte Zeile mit einem
   Proxmox-API-Token (`USER@REALM!TOKENID=UUID`), einem GitHub-Token (`ghp_`, `gho_`, `ghu_`,
   `ghs_`, `ghr_`, `github_pat_`) oder einem `sk-ant-`-Schluessel sperrt den Commit, den Push und
-  den CI-Job „Public repo guard"; genannt wird nur Datei:Zeile, nie der Inhalt. Eine
-  Mindestlaenge laesst die Platzhalter in Code, Doku und Tests durch.
+  den CI-Job „Public repo guard"; genannt wird nur Datei:Zeile, nie der Inhalt. Ueber eine
+  Spanne (pre-push, CI) prueft es auch die Commit-Nachrichten und nennt dann nur den Commit.
+  Eine Mindestlaenge und ein Rumpf aus hoechstens zwei verschiedenen Zeichen (`xxxx…`) lassen
+  die Platzhalter in Code, Doku und Tests durch.
 
 - **`ledger.sh lint` meldet Werkzeug-Reste (R-0165):** Reste eines Werkzeugaufrufs, die ein
   planender Agent in Ledger oder Spec hinterliess, sind ein Lint-Fehler mit Datei:Zeile.
