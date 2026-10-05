@@ -819,7 +819,11 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
 **pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
 `review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
 `sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
-Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Was an den lokalen
+Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Seit R-0183 sperrt `sec`
+auch eine hinzugefuegte Zeile mit einem Token-Muster — ein Proxmox-API-Token
+(`USER@REALM!TOKENID=UUID`), ein GitHub-Token (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`)
+oder ein `sk-ant-`-Schluessel, je mit einer Mindestlaenge, die Platzhalter durchlaesst — und nennt
+dabei nur Datei:Zeile; ein Test, der ein solches Muster braucht, setzt es zur Laufzeit zusammen. Was an den lokalen
 Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
 der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
 eines Pull Requests bzw. Pushs (R-0123; ein Commit, der eine private Datei bringt und der naechste,

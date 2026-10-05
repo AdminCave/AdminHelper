@@ -52,8 +52,9 @@
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
-#              private roadmap, a security ledger, a finding's dedup key, or one
-#              of the two gitignored files that carry credentials.
+#              private roadmap, a security ledger, a finding's dedup key, one
+#              of the two gitignored files that carry credentials, or a line
+#              with a token pattern (Proxmox, GitHub, Anthropic).
 #   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
 #              scripts/dev/review-verdict.schema.json, be about the tree --tree
 #              names, and say approve without a blocker and without a probe
@@ -668,9 +669,44 @@ $IMPLICIT"
         .claude/settings.local.json|.devenv.sh|*/.devenv.sh) BLOCKED+=("$1$2 (carries credentials)") ;;
       esac
     }
+    # Token shapes (R-0183) as their issuers write them: Proxmox USER@REALM!TOKENID=UUID
+    # (Proxmox VE API wiki), the GitHub prefixes ghp_ gho_ ghu_ ghs_ ghr_ github_pat_
+    # (docs.github.com, token formats) and sk-ant- (Anthropic keys and the setup-token;
+    # in no doc, so not verified, taken from practice). A minimum length lets the
+    # placeholders in code, docs and tests pass. No interval expressions: not every
+    # awk knows them, so the length is RLENGTH.
+    SEC_TOKEN_AWK='
+      function longrun(s, re, n) {
+        while (match(s, re)) { if (RLENGTH >= n) return 1; s = substr(s, RSTART + RLENGTH) }
+        return 0
+      }
+      function pvetoken(s,   t, u, g) {
+        while (match(s, /[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=[0-9A-Fa-f-]+/)) {
+          t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+          u = t; sub(/^.*=/, "", u)
+          if (length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12) return 1
+        }
+        return 0
+      }
+      function token(s) {
+        return longrun(s, "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]+", 34) || longrun(s, "github_pat_[A-Za-z0-9_]+", 41) ||
+               longrun(s, "sk-ant-[A-Za-z0-9_-]+", 27) || pvetoken(s)
+      }'
+    # sec_hits <tag> — the lines the awk below printed, as findings: file:line and
+    # what it is, never the line itself.
+    sec_hits() {
+      local hit kind
+      while IFS=$'\t' read -r hit kind; do
+        [ -n "$hit" ] || continue
+        case "$kind" in
+          token) BLOCKED+=("$hit$1 (a token pattern)") ;;
+          *)     BLOCKED+=("$hit$1 (a security finding's Dedup-Key)") ;;
+        esac
+      done
+    }
     # sec_scan <tag> <git diff args…> — what this diff adds that must never leave.
     sec_scan() {
-      local tag="$1" p hit out
+      local tag="$1" p out
       shift
       # -z: --name-only C-quotes a path with `"` or `\` even with core.quotePath=false,
       # and a quoted `"tasks/private/…` matched no pattern. A git that cannot read the
@@ -681,18 +717,19 @@ $IMPLICIT"
       # diff dies of SIGPIPE, and with `set -o pipefail` the hit turned into a
       # clean bill of health for every diff larger than the pipe buffer. It also
       # names the line, because "somewhere in this diff" is not actionable.
-      out="$("${GIT_DIFF[@]}" "$@" | awk '
+      out="$("${GIT_DIFF[@]}" "$@" | awk "$SEC_TOKEN_AWK"'
         # Headers only before the first @@ of a file: `++ x` added reads `+++ x`.
         /^diff --git /             { inheader = 1; next }
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
         inheader    { next }
-        /^\+/       { if ($0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno; newno++; next }
+        /^\+/       { a = substr($0, 2)
+                      if (a ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\tkey\n", file, newno
+                      else if (token(a)) printf "%s:%d\ttoken\n", file, newno
+                      newno++; next }
         /^-/        { next }
                     { newno++ }')" || die "sec: git could not read this change"
-      while IFS= read -r hit; do
-        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
-      done <<< "$out"
+      sec_hits "$tag" <<< "$out"
     }
     # sec_scan_merge <tag> <merge> — what the merge itself brings: the combined diff
     # shows only what differs from every parent, and a line counts only when it is
@@ -700,10 +737,10 @@ $IMPLICIT"
     # would bring every public line of main along.
     MERGE_DIFF=(git -c core.quotePath=false diff-tree --no-commit-id -r --text --no-ext-diff --no-textconv --no-color)
     sec_scan_merge() {
-      local tag="$1" c="$2" p hit out
+      local tag="$1" c="$2" p out
       out="$("${MERGE_DIFF[@]}" -c --name-only -z "$c" | tr '\0' '\n')" || die "sec: git could not read merge $c"
       while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$out"
-      out="$("${MERGE_DIFF[@]}" --cc -p "$c" | awk '
+      out="$("${MERGE_DIFF[@]}" --cc -p "$c" | awk "$SEC_TOKEN_AWK"'
         /^diff --(cc|combined) /    { inheader = 1; next }
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@@/      { inheader = 0; np = 0; while (substr($0, np + 1, 1) == "@") np++; np--
@@ -712,11 +749,11 @@ $IMPLICIT"
         inheader    { next }
         { pre = substr($0, 1, np); if (index(pre, "-")) next
           rest = pre; gsub(/\+/, "", rest)
-          if (rest == "" && $0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno
+          if (rest == "") { a = substr($0, np + 1)
+                            if (a ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\tkey\n", file, newno
+                            else if (token(a)) printf "%s:%d\ttoken\n", file, newno }
           newno++ }')" || die "sec: git could not read merge $c"
-      while IFS= read -r hit; do
-        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
-      done <<< "$out"
+      sec_hits "$tag" <<< "$out"
     }
     if [ -n "$RANGE" ]; then
       # A range is history, not a net change: a file added and removed again inside

@@ -35,8 +35,10 @@ Semantik: keine Stelle in docs/ beschreibt Werkzeug-Reste; `tasks/README.md:72` 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (die `lint`-Zeile)
 
-### T2 — `review.sh sec` erkennt Token-Muster in hinzugefügten Zeilen (R-0183)  [ ]
+### T2 — `review.sh sec` erkennt Token-Muster in hinzugefügten Zeilen (R-0183)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @07928a90 2026-10-05T19:03:51+02:00
+Review: approve (opus/xhigh; 3 nit) · round 1
 Änderung: `sec_scan` und `sec_scan_merge` (`review.sh:672`, `:702`) melden eine hinzugefügte Zeile mit einem
 Token-Muster als Treffer, ausgegeben nur als `Datei:Zeile (a token pattern)`, nie mit Inhalt: Proxmox
 `<user>@<realm>!<tokenid>=<UUID>` (Proxmox-Wiki „Proxmox VE API“: `PVEAPIToken=USER@REALM!TOKENID=UUID`), die
