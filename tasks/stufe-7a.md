@@ -258,3 +258,17 @@ der Kopfkommentar von `ledger-loop.sh` nennt die Summary, die `status` liest; de
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Korrektur an T7; den Worker beschreibt T10)
 Abhängt von: T7
+
+### T13 — Bau- und Review-Sessions ohne Proxmox-Token  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f83a132e 2026-10-05T14:13:11+02:00
+Review: approve (opus/xhigh) · round 1
+Änderung: Aufsicht 2026-10-05, vor dem Pilot: Sessions bekommen nur die Umgebung, die sie brauchen. `runner-env.sh`
+exportiert neben dem Abo-Token (das Bau-Session und Reviewer brauchen) die `AH_PVE_*` aus `pve.env`; der Worker
+braucht in 7a keinen Hypervisor (Heavy aus dem Loop ist 7b) und nimmt sie nach `runner-env.sh` aus seiner Umgebung,
+sodass weder Bau-Session noch `task-close.sh`, Suite, Reviewer oder Fundament sie erben. Test: der Stub-`claude` und der
+Stub-`task-close` schreiben die Namen ihrer Umgebungsvariablen in eine Datei; darin steht kein `AH_PVE_`, wohl aber
+`CLAUDE_CODE_OAUTH_TOKEN`.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Interna des Workers; `AUTONOMOUS.md` nennt die Grenzen der Session schon allgemein)
+Abhängt von: T4

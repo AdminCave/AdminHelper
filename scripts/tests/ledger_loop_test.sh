@@ -53,6 +53,8 @@ for a in "$@"; do
   [ "$a" = "${FIXTURE_RED:-none}" ] && exit 1
   [ "$a" = "${FIXTURE_UNKNOWN:-none}" ] && exit 2
 done
+# With FIXTURE_ENVLOG it records the NAMES of its environment, never a value.
+[ -z "${FIXTURE_ENVLOG:-}" ] || compgen -e >> "$FIXTURE_ENVLOG.verify"
 case "${FIXTURE_DO:-}" in
   junk) : > "$tree/junk.txt" ;;
   body) printf 'Änderung: from the suite\n' >> "$tree/tasks/${tree##*/AdminHelper-}.md" ;;
@@ -71,6 +73,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 echo "$ledger $id round=$round" >> "${FIXTURE_CLOG:?}"
+[ -z "${FIXTURE_ENVLOG:-}" ] || compgen -e >> "$FIXTURE_ENVLOG.close"
 rc=0
 if [ -s "${FIXTURE_CSEQ:-}" ]; then rc="$(head -n 1 "$FIXTURE_CSEQ")"; sed -i 1d "$FIXTURE_CSEQ"; fi
 slug="$(basename "$ledger" .md)"
@@ -140,7 +143,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -157,6 +160,9 @@ FHOME="$WORK/home"; mkdir -p "$FHOME/.config/adminhelper" "$FHOME/.local/bin"
 chmod 700 "$FHOME/.config/adminhelper"
 printf 'CLAUDE_CODE_OAUTH_TOKEN=fixture-token\n' > "$FHOME/.config/adminhelper/oauth.env"
 chmod 600 "$FHOME/.config/adminhelper/oauth.env"
+# The runner's own hypervisor token, as runner-env.sh reads it (a fixture value).
+printf 'AH_PVE_TOKEN_SECRET=fixture-pve\nAH_PVE_TOKEN_ID=fixture@pve!run\n' > "$FHOME/.config/adminhelper/pve.env"
+chmod 600 "$FHOME/.config/adminhelper/pve.env"
 # A build session (-p) does what the next line of FIXTURE_SEQ says (default skip), in
 # the lane it runs in: build (a change and the commit message), harness (a change to
 # a harness file too), skip, question, nothing, error (an error result, exit 1),
@@ -174,6 +180,7 @@ case "$1" in
   -p) ;;
   *) echo "stub: unknown call $*" >&2; exit 9 ;;
 esac
+[ -z "${FIXTURE_ENVLOG:-}" ] || compgen -e >> "$FIXTURE_ENVLOG.session"
 # One line per session with its flags; the prompt (many lines) apart.
 printf '%s\n' "${*:3}" >> "${FIXTURE_SLOG:?}"
 printf '%s\n' "$2" >> "$FIXTURE_SLOG.prompts"
@@ -498,6 +505,16 @@ loop --ledger tasks/left.md
 [ "$(box left)" = x ] && grep -q '^blockiert — T1 closed, but left files outside its Dateien:' <<<"$(result left)" \
   && [ ! -e "$(lane left)/apps/x/new.py" ] && [ -z "$(git -C "$(lane left)" status --porcelain)" ] \
   && ok "a close that leaves undeclared files behind -> they are taken back, the ledger blockiert" || bad "left: $(result left)"
+
+echo "── sessions get only the environment they need ──"
+EL="$WORK/envlog"; rm -f -- "${EL:?}".*
+seq_set build -- 0
+FIXTURE_ENVLOG="$EL" loop --ledger tasks/envp.md
+[ $rc -eq 0 ] && [ "$(box envp)" = x ] && [ -s "$EL.session" ] && [ -s "$EL.close" ] && [ -s "$EL.verify" ] \
+  && ! grep -q '^AH_PVE_' "$EL.session" "$EL.close" "$EL.verify" \
+  && grep -qx 'CLAUDE_CODE_OAUTH_TOKEN' "$EL.session" && grep -qx 'CLAUDE_CODE_OAUTH_TOKEN' "$EL.close" \
+  && ok "the build session, task-close and the foundation run without AH_PVE_*, with the subscription token" \
+  || bad "envp: rc=$rc $(result envp) pve in: $(grep -l '^AH_PVE_' "$EL".* 2>/dev/null | tr '\n' ' ')"
 
 echo "── the ledger's end: PR text and bundle ──"
 seq_set build build -- 0 0

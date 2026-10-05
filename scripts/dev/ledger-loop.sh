@@ -305,6 +305,10 @@ log "ledger-loop: ${LEDGERS[*]} (max ${MAX_HOURS} h, ${MAX_TASKS} tasks, \$${MAX
 set +u; . "$REPO/scripts/dev/runner-env.sh"; RENV=$?; set -u
 [ "$RENV" = 0 ] || stop_infra "runner-env.sh did not load (rc $RENV) — the token or a token file is missing or wrong"
 [ "${AH_AUTONOMOUS:-}" = 1 ] && [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || stop_infra "runner-env.sh left no token or no AH_AUTONOMOUS=1"
+# Sessions get only the environment they need: the build session and the reviewer
+# need the subscription token; nothing this loop starts needs the hypervisor (heavy
+# runs from the loop are stage 7b), so its token stays with runner-env.sh.
+unset "${!AH_PVE_@}"
 for t in git python3 flock timeout claude; do
   command -v "$t" >/dev/null 2>&1 || stop_infra "$t is not installed (or not on the runner's PATH)"
 done
