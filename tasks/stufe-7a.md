@@ -234,8 +234,10 @@ schreiben“, die Liste der Modellproben); falsche Doku ist ein Bug, sie sind mi
 root-eigene Guard (R-0164) in der Setup-Liste und bei den Setup-Auslösern, und der Satz „ab Stufe 7 braucht er den
 Trust“ ist jetzt „nicht verifiziert, der Pilot misst“ — `--trust` deckt die Lanes nicht ab.
 
-### T11 — Nachbesserung T9: Beweiskraft der Bau-Session-Proben  [ ]
+### T11 — Nachbesserung T9: Beweiskraft der Bau-Session-Proben  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fc2aaf18 2026-10-05T14:37:16+02:00
+Review: approve (opus/xhigh; 3 nit) · round 1
 Änderung: Aufsicht 2026-10-05 aus den Nits des T9-Reviews: eine Probe, die aus dem falschen Grund grün oder rot wird,
 beweist nichts. (1) Die Umleitungsprobe mit einem erlaubten Befehl (`cat … >> tasks/README.md`), damit nur die Prüfung
 des Umleitungsziels ablehnen kann; dazu die Gegenprobe: dasselbe Muster auf ein erlaubtes Ziel geht durch bzw. ergibt
@@ -245,16 +247,22 @@ des Umleitungsziels ablehnen kann; dazu die Gegenprobe: dasselbe Muster auf ein 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Interna des Red Teams; den Lauf beschreibt T10)
 Abhängt von: T9
+Abweichung zu (2): Die `mktemp`-Probe läuft aus einem eigenen Verzeichnis, nicht im Klon. `.ah-out/scratch/`
+auszunehmen hielte nicht: legt `scratch.sh new` `.ah-out` erst an, ändert sich die ctime des Klon-Wurzelverzeichnisses,
+und `redteam_changed` meldet sie. Im eigenen Verzeichnis gibt es kein `scratch.sh`, auf das die Session ausweichen
+könnte. Beide Probenverzeichnisse (`--probe-dir`) tragen eine leere Harness-Liste, weil der Wächter eines autonomen
+Laufs ohne Liste jeden Schreibzugriff verweigert — die Gegenprobe sähe sonst ihn statt der Regel.
 
 ### T12 — Nachbesserung T7: Handover nachholen  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, DEVELOPMENT.md
 Änderung: Aufsicht 2026-10-05 aus dem T7-Review: Der Loop committet `bereit` vor dem Handover; scheitern danach
 `pr-body` oder das Bundle (`stop: infra`), überspringt ein neuer Lauf das Ledger, und PR-Text und Bundle fehlen.
 `setup_ledger` holt den Handover nach, wenn die Lane auf `bereit` steht und kein Bundle da ist; Test dazu. Dazu die
 Testlücken aus T7: eine Session-Kosten `Infinity`, ein Ledger ohne `Heavy:`-Zeile (Vermerk im PR-Text), und der
 NaN-Fall so, dass er auch unter gawk ohne den Schutz rot wird. Dazu (Aufsicht 2026-10-05) die Nits aus dem T8-Review:
 der Kopfkommentar von `ledger-loop.sh` nennt die Summary, die `status` liest; der Kopf von `session-status.sh` nennt
-`AH_LOOP_STATE`; `status` druckt höchstens zehn Summary-Zeilen, und `cost_usd` zählt nur endlich und im Bereich.
+`AH_LOOP_STATE`; `status` druckt höchstens zehn Summary-Zeilen, und `cost_usd` zählt nur endlich und im Bereich. Aus
+dem T10-Review: `DEVELOPMENT.md` sagt nicht mehr, der Worker lese `.vm/active-task` (kein Skript liest die Datei).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Korrektur an T7; den Worker beschreibt T10)
 Abhängt von: T7
