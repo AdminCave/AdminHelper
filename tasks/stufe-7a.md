@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 7a — der Worker: `ledger-loop.sh`, `/build-task`, Bau-Session-Grenzen — Task-Ledger
-Status: bereit · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: erledigt · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe 7a, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Pilot: Stufe 6b — `Review: auto` (Reviewer als eigener Prozess über `task-close.sh --review auto`, im tmux mit Wächter); Kevin 2026-10-04, „7a selbst als Pilot“. Zweimal Exit 74 in einer Task ⇒ STOPP und Meldung. Kosten je Runde: `bash scripts/dev/review.sh log --ledger tasks/stufe-7a.md`.
 Spec: docs/features/stufe-7a.md (Roadmap R-0010, R-0108)
