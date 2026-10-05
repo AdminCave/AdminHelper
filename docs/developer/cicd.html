@@ -291,7 +291,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           Bau-Session. Nach den billigen Pr&uuml;fern, der Suite und den Vertr&auml;gen:</p>
           <ol>
             <li><strong>Runde:</strong> gez&auml;hlt aus <code>.ah-out/review/&lt;slug&gt;/</code>; ein approve f&uuml;r
-            genau diesen gestagten Diff wird &uuml;bernommen, eine dritte Runde gibt es nicht (Exit&nbsp;3).</li>
+            genau diesen gestagten Diff wird &uuml;bernommen, eine dritte Runde gibt es nicht (Exit&nbsp;3). Im
+            autonomen Lauf (<code>AH_AUTONOMOUS=1</code>, Stufe&nbsp;7a) nennt der Worker die Runde
+            (<code>--round</code>): dann z&auml;hlt keine Datei, und kein fr&uuml;heres approve wird &uuml;bernommen.
+            <code>--review none</code> und <code>verdict:</code> lehnt der Abschluss dort und bei <code>Review: auto</code>
+            im Kopf ab.</li>
             <li><strong>Probe:</strong> der Runner f&auml;hrt <code>review-probe.sh</code> mit dem Test aus der
             <code>Verify:</code>-Zeile; ohne Test&auml;nderung oder nur mit Tests ist sie nicht anwendbar.</li>
             <li><strong>Reviewer:</strong> <code>scripts/dev/review-run.sh</code> startet <code>claude -p</code> mit
@@ -303,11 +307,42 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             Opus/xhigh mit 80, Timeout 20&nbsp;Minuten.</li>
             <li><strong>Verdict:</strong> <code>&lt;id&gt;.r&lt;n&gt;.verdict.json</code> (Schema-Version&nbsp;2) mit
             den Feldern des Runners; <code>check-verdict --tree --task</code> entscheidet &uuml;ber den Commit, jede
-            Runde steht in <code>review.sh log</code>.</li>
+            Runde steht in <code>review.sh log</code>, und <code>task-close.sh</code> druckt ihre Kosten als Zeile
+            <code>review cost_usd=&lt;x&gt; round=&lt;n&gt;</code> (der Worker z&auml;hlt sie in sein Lauf-Budget).</li>
             <li><strong>Scheitern:</strong> kein Start, Timeout, ein Fehler-Ergebnis, ein Exit ungleich&nbsp;0 oder ein fehlendes oder
             schemawidriges <code>structured_output</code> sind Exit&nbsp;74 ohne Verdict und ohne Commit; kein
             R&uuml;ckfall auf den Sub-Agent-Review.</li>
           </ol>
+
+          <h2>Der Worker (<code>scripts/dev/ledger-loop.sh</code>)</h2>
+          <p>Ab Stufe&nbsp;7a baut der Worker freigegebene Ledger ohne offene Session: als Nutzer
+          <code>adminhelper-runner</code>, in dessen Klon, jedes Ledger in seiner Lane, nur auf Kevins Zuruf in tmux.
+          Er ist keine neue Pr&uuml;f-Ebene, sondern f&auml;hrt die vorhandenen: je Task eine frische Bau-Session
+          (<code>claude -p</code> mit dem Text von <code>.claude/skills/build-task/SKILL.md</code>, nur die Settings
+          aus <code>scripts/dev/runner-settings.json</code>, <code>dontAsk</code>), danach au&szlig;erhalb der Session
+          <code>task-close.sh --review auto --round &lt;n&gt;</code> mit Ebene&nbsp;0, Suite, Vertr&auml;gen und dem
+          Reviewer als Prozess.</p>
+          <ul>
+            <li><strong>Grenzen der Bau-Session:</strong> keine schreibenden Git-Befehle, keine Edits unter
+            <code>tasks/</code> (ein Ledger nur &uuml;ber <code>ledger.sh</code>), keine Harness-Pfade, ein Scratch-Ordner
+            nur &uuml;ber <code>scripts/dev/scratch.sh</code>; das Red Team pr&uuml;ft sie statisch und mit Modellproben.</li>
+            <li><strong>Ergebnis je Task:</strong> ein Commit von <code>task-close.sh</code>, sonst <code>[~]</code> oder
+            <code>[?]</code> mit Grund (zweiter Exit&nbsp;3, Exit&nbsp;4, Zeit, Turns, Budget, Fehler, Stall); ein
+            <code>[?]</code> setzt das Ledger auf <code>blockiert</code>, der Loop nimmt das n&auml;chste.</li>
+            <li><strong>Deckel:</strong> Laufzeit und Budget (Bau-Sessions und Reviewer) an jeder Task-Grenze und
+            zwischen den Iterationen, Task-Zahl und fertige Ledger an der Grenze; das Abo-Limit stoppt mit
+            Reset-Zeit.</li>
+            <li><strong>Stopp-Klassen:</strong> <code>ledger-leer</code>, <code>max-hours</code>,
+            <code>max-tasks</code>, <code>max-budget</code>, <code>kevin-queue</code>, <code>usage-limit</code>,
+            <code>infra</code>, <code>harness-modified</code> &ndash; in der Schlusszeile von
+            <code>summary-&lt;datum&gt;.md</code>.</li>
+            <li><strong>&Uuml;bergabe:</strong> ein Ledger auf <code>bereit</code> hinterl&auml;sst den PR-Text
+            (<code>review.sh pr-body</code>) und ein Git-Bundle des Branches; Push und PR bleiben Kevins. Den Stand
+            zeigt <code>ledger-loop.sh status</code> aus Kevins Checkout und die Worker-Zeile von
+            <code>scripts/dev/hooks/session-status.sh</code>.</li>
+          </ul>
+          <p>Ablauf und Recovery: <code>AUTONOMOUS.md</code> und <code>DEVELOPMENT.md</code>, jeweils
+          &bdquo;Der Worker&ldquo;.</p>
 
           <h2>Parit&auml;ts- und Contract-Gates</h2>
           <p>Zwei Fehlerklassen brauchen keine VM, um gefunden zu werden: &bdquo;Kopie driftet&ldquo; (dieselbe

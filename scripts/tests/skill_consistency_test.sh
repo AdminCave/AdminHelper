@@ -117,6 +117,57 @@ cleanup_rule() {
   echo ok
 }
 
+# build_task_findings <skill> <runner settings> — one line per finding in the
+# worker's builder skill (stage 7a): a forbidden command given as an instruction
+# (every code span and every line of a fenced block outside "## Nie"), or a
+# `bash scripts/…` call it instructs that no allow rule of the runner's settings
+# lets through, or a deny stops. Settings that do not load are a finding too.
+build_task_findings() {
+  unreadable "$1" && return
+  unreadable "$2" && return
+  python3 - "$1" "$2" <<'PY'
+import fnmatch, json, re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+try:
+    perm = json.load(open(sys.argv[2]))["permissions"]
+except Exception as e:
+    print("cannot load the runner's settings: %s" % e)
+    sys.exit(0)
+instr = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", text)
+FENCE = r"(?ms)^```[^\n]*\n(.*?)^```"
+commands = [l.strip() for b in re.findall(FENCE, instr) for l in b.splitlines() if l.strip()]
+commands += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", instr))]
+# task-close.sh named alone is a name; with arguments it is a call.
+FORBIDDEN = re.compile(r"(git (add|commit|stash|checkout|restore|push)\b|(bash )?(scripts/dev/)?task-close\.sh\s|mktemp\b|rm\b)")
+
+def matches(cmd, rule):
+    if rule.endswith(":*"):
+        return cmd == rule[:-2] or cmd.startswith(rule[:-2] + " ")
+    return fnmatch.fnmatchcase(cmd, rule)
+
+def rules(kind):
+    return [r[5:-1] for r in perm.get(kind, []) if r.startswith("Bash(")]
+
+for cmd in commands:
+    if FORBIDDEN.match(cmd):
+        print("forbidden as an instruction: " + cmd)
+    elif cmd.startswith("bash scripts/"):
+        if any(matches(cmd, r) for r in rules("deny")) or not any(matches(cmd, r) for r in rules("allow")):
+            print("no allow rule in the runner's settings: " + cmd)
+PY
+}
+# build_task_calls <skill> — how many `bash scripts/…` calls it instructs.
+build_task_calls() {
+  python3 - "$1" <<'PY'
+import re, sys
+t = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", open(sys.argv[1]).read())
+FENCE = r"(?ms)^```[^\n]*\n(.*?)^```"
+cmds = [l.strip() for b in re.findall(FENCE, t) for l in b.splitlines()]
+cmds += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", t))]
+print(sum(1 for c in cmds if c.startswith("bash scripts/")))
+PY
+}
+
 # fires <detector> <file…> — the detector read its input and reported a finding.
 fires() { local out; out=$("$@"); [ -n "$out" ] && ! grep -q '^cannot read' <<<"$out"; }
 
@@ -202,6 +253,29 @@ f=$(fixture 'Proben nur mit `mktemp -d -p <sein Verzeichnis>`, nur eigene Pfade 
 
 # ══ the real texts ════════════════════════════════════════════════════════════
 echo "── the skills, AUTONOMOUS.md, tasks/README.md ──"
+# The builder-skill detector can fail, both ways, and stays quiet on the "## Nie" list.
+printf '{"permissions": {"allow": ["Bash(bash scripts/dev/verify.sh:*)"], "deny": ["Bash(git add:*)"]}}\n' > "$WORK/rs.json"
+f=$(fixture '1. Teste mit `bash scripts/dev/verify.sh scripts --strict`.' '2. Dann `git add -- x`.')
+fires build_task_findings "$f" "$WORK/rs.json" && grep -q 'forbidden as an instruction: git add' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a git add given as an instruction is found" || bad "build_task_findings missed git add"
+f=$(fixture 'Schließ mit `task-close.sh tasks/x.md T1 --stage`, sobald grün.')
+grep -q 'forbidden as an instruction: task-close.sh' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a task-close call without bash is found" || bad "build_task_findings missed a bare task-close call"
+f=$(fixture 'Lauf `bash scripts/dev/heavy.sh capstone`.')
+grep -q 'no allow rule in the runner' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a call no allow rule lets through is found" || bad "build_task_findings missed an unallowed call"
+f=$(fixture 'Teste mit `bash scripts/dev/verify.sh scripts --strict`.' '' '## Nie' '' '- kein `git add`, kein `rm`.' '' '## Danach' 'Fertig.')
+[ -z "$(build_task_findings "$f" "$WORK/rs.json")" ] && ok "build_task_findings: the '## Nie' list is no instruction" \
+  || bad "build_task_findings fired on: $(build_task_findings "$f" "$WORK/rs.json")"
+f=$(fixture 'So:' '' '```bash' 'bash scripts/dev/verify.sh scripts --strict' 'git add -A' '```')
+grep -q 'forbidden as an instruction: git add -A' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a forbidden command in a fenced block is found" || bad "build_task_findings missed a fenced block"
+printf '{"permissions": ' > "$WORK/broken.json"
+grep -q "cannot load the runner's settings" <<<"$(build_task_findings "$f" "$WORK/broken.json")" \
+  && ok "build_task_findings: settings that do not load are a finding, not a pass" || bad "build_task_findings passed broken settings"
+! fires build_task_findings "$WORK/nosuch.md" "$WORK/rs.json" && [ -n "$(build_task_findings "$WORK/nosuch.md" "$WORK/rs.json")" ] \
+  && ok "build_task_findings: a missing skill is neither a finding nor quiet" || bad "build_task_findings took a missing skill for input"
+
 cd "$REPO_ROOT" || exit 1
 skills=(.claude/skills/*/SKILL.md)
 [ "${#skills[@]}" -ge 4 ] && ok "${#skills[@]} skills to read" || bad "only ${#skills[@]} skills found"
@@ -276,6 +350,24 @@ grep -qF 'review.sh pr-body' <<<"$close5" && grep -qF -- '--body-file' <<<"$clos
 [ "$(cleanup_rule "$(section .claude/skills/feature-review/SKILL.md '## Proben und Aufräumen' '## ')")" = ok ] \
   && ok "feature-review's 'Proben und Aufräumen' carries the cleanup rule" \
   || bad "feature-review has no '## Proben und Aufräumen' with the cleanup rule"
+
+# Stage 7a: /build-task, the worker's builder — one task, no commit, no box.
+echo "── build-task (stage 7a) ──"
+BTS=.claude/skills/build-task/SKILL.md
+[ -f "$BTS" ] && sed -n '2p' "$BTS" | grep -qx 'name: build-task' && ! grep -q '^disable-model-invocation' "$BTS" \
+  && grep -q 'SPDX-License-Identifier: GPL-3.0-or-later' "$BTS" \
+  && ok "the build-task skill exists, model-invocable, with its SPDX head" || bad "no build-task skill (or its head is off)"
+# The loop reads the commit message from exactly this path: its constant COMMIT_MSG.
+CMSG="$(sed -n "s/^COMMIT_MSG='\\(.*\\)'$/\\1/p" scripts/dev/ledger-loop.sh)"
+[ -n "$CMSG" ] && grep -qF "$CMSG" "$BTS" && grep -qF "$CMSG" docs/features/stufe-7a.md \
+  && ok "build-task names the commit-message path ledger-loop.sh reads ($CMSG)" || bad "commit-message path: loop '$CMSG', skill/spec differ"
+grep -qF 'Status: aktiv' "$BTS" && grep -qF 'Freigabe:' "$BTS" && grep -qF -- '--fix <close-log> [<verdict>]' "$BTS" \
+  && ok "build-task checks the head (aktiv, Freigabe:) and knows --fix" || bad "build-task lacks the head check or --fix"
+FINDINGS=$(build_task_findings "$BTS" scripts/dev/runner-settings.json)
+CALLS=$(build_task_calls "$BTS")
+[ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
+  && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
+  || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"

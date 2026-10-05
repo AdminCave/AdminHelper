@@ -29,6 +29,8 @@
       "Edit(./scripts/tests/heavy.sh)",
       "Edit(./scripts/vm/vm.py)",
       "Edit(./tasks/private/**)",
+      "Edit(./tasks/**)",
+      "Bash(git grep:*)",
       "Bash(git switch:*)",
       "Bash(git branch:*)",
       "Bash(git revert:*)",
@@ -47,6 +49,7 @@
       "Edit(//srv/ah/**/scripts/tests/heavy.sh)",
       "Edit(//srv/ah/**/scripts/vm/vm.py)",
       "Edit(//srv/ah/**/tasks/private/**)",
+      "Edit(//srv/ah/**/tasks/**)",
       "Edit(./scripts/vm/**)",
       "Edit(./scripts/tests/multibox.sh)",
       "Edit(//srv/ah/**/scripts/vm/**)",
@@ -71,9 +74,6 @@
       "Bash(git log:*)",
       "Bash(git show:*)",
       "Bash(git status:*)",
-      "Bash(git grep:*)",
-      "Bash(rg:*)",
-      "Bash(sed -n:*)",
       "Bash(cat:*)",
       "Bash(ls:*)",
       "Bash(wc:*)",
@@ -85,7 +85,9 @@
       "Edit(./apps/**)",
       "Edit(./docs/**)",
       "Edit(./scripts/**)",
-      "Edit(./tasks/**)",
+      "Edit(./.ah-out/loop/**)",
+      "Bash(bash scripts/dev/scratch.sh new:*)",
+      "Bash(bash scripts/dev/scratch.sh rm:*)",
       "Edit(./CHANGELOG.md)",
       "Edit(./README.md)",
       "Edit(./DEVELOPMENT.md)",
@@ -111,7 +113,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "g=\"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\"; [ -r \"$g\" ] || { echo \"harness guard not readable: $g - call blocked\" >&2; exit 2; }; timeout -k 2 10 bash \"$g\"; rc=$?; [ \"$rc\" -eq 0 ] || { echo \"harness guard failed (exit $rc) - call blocked\" >&2; exit 2; }",
+            "command": "g=/usr/local/lib/adminhelper-dev/harness-guard.sh; [ -r \"$g\" ] || { echo \"harness guard not readable: $g - call blocked\" >&2; exit 2; }; timeout -k 2 10 bash \"$g\"; rc=$?; [ \"$rc\" -eq 0 ] || { echo \"harness guard failed (exit $rc) - call blocked\" >&2; exit 2; }",
             "timeout": 15
           }
         ]

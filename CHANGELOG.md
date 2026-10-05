@@ -9,6 +9,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Der Worker (Stufe 7a, R-0010, R-0108, R-0164, R-0167, R-0170):** `scripts/dev/ledger-loop.sh`
+  baut freigegebene Ledger Task fuer Task als `adminhelper-runner` in dessen Klon, jedes Ledger in
+  seiner Lane; Kevin startet ihn in tmux mit einer expliziten Ledger-Liste. Je Task eine frische
+  Bau-Session (`claude -p` mit dem Text von `/build-task`, nur die Runner-Settings, `dontAsk`,
+  Deckel fuer Zeit, Turns und Budget); geschlossen wird ausserhalb der Session mit
+  `task-close.sh --review auto --round <n>`. Der Loop zaehlt die Runden selbst, raeumt nach einem
+  Abbruch auf (`aborted.diff`, restore, neue Dateien einzeln), setzt `[?]` mit dem Grund und das
+  Ledger auf `blockiert`, haelt an Lauf-Deckeln (`--max-hours`, `--max-tasks`, `--max-budget-usd`
+  samt Reviewer-Kosten, `--max-ready`) und am Nutzungslimit an und endet mit einer Stopp-Klasse
+  und `summary-<datum>.md`. Ein fertiges Ledger uebergibt er als PR-Text (`review.sh pr-body`) und
+  Git-Bundle; Push und PR bleiben Kevins. Neu sind `/build-task`
+  (`.claude/skills/build-task/SKILL.md`) und `scripts/dev/scratch.sh`; die Runner-Settings
+  verbieten Edits unter `tasks/` und erlauben einen Scratch-Ordner nur ueber `scratch.sh`;
+  `task-close.sh` nimmt im autonomen Lauf weder ein eigenes Verdict noch ein frueheres approve an
+  und druckt die Kosten des Reviewers; das Red Team prueft die Grenzen der Bau-Session;
+  `ledger-loop.sh status` und die Worker-Zeile im AH-STATUS zeigen den Stand. Anleitung:
+  `AUTONOMOUS.md`, „Der Worker", und `DEVELOPMENT.md`, „Der Worker".
 - **CI-Sperre fuer Privates (R-0123):** Der neue CI-Job „Public repo guard (review.sh sec)" faehrt
   `scripts/dev/review.sh sec --range` ueber jeden Commit eines Pull Requests bzw. Pushs auf `main` —
   dieselbe Sperre wie die lokalen Commit-Hooks (privater Plan, SEC-Ledger, Dedup-Key eines

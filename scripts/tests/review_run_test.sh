@@ -26,6 +26,9 @@ command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not available"; exit
 # The suite runs this file from inside run.sh, which exports these for its own run;
 # review-run.sh reads its verify summary from AH_OUT_DIR when it is set.
 unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV
+# The runner exports AH_AUTONOMOUS=1; with it review-run.sh ignores CLAUDE_BIN and
+# would call the real CLI — the case below sets it on purpose, nothing else may.
+unset AH_AUTONOMOUS
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 export TMPDIR="$WORK/tmp"; mkdir -p "$TMPDIR"
@@ -166,6 +169,15 @@ STUB=sleep AH_REVIEW_TIMEOUT=2 r1
   && ok "a reviewer past the timeout -> 74, no verdict file" || bad "timeout: rc=$rc err=$ERR"
 STUB=approve CLAUDE_BIN="$WORK/nosuch" r1
 [ $rc -eq 74 ] && nofile && ok "no CLI -> 74" || bad "no CLI: rc=$rc err=$ERR"
+# R-0167: an autonomous run ignores CLAUDE_BIN and calls the claude on its PATH.
+mkdir -p "$WORK/realbin"
+printf '#!/usr/bin/env bash\ntouch "%s/real-called"; exec "%s" "$@"\n' "$STUB_DIR" "$WORK/claude" > "$WORK/realbin/claude"
+chmod +x "$WORK/realbin/claude"
+cp "$WORK/claude" "$WORK/other-stub"; sed -i 's#^cat > "\$d/stdin"$#touch "$d/other-called"; cat > "$d/stdin"#' "$WORK/other-stub"
+rm -f "$STUB_DIR/real-called" "$STUB_DIR/other-called"
+PATH="$WORK/realbin:$PATH" AH_AUTONOMOUS=1 STUB=approve CLAUDE_BIN="$WORK/other-stub" r1
+[ $rc -eq 0 ] && [ -e "$STUB_DIR/real-called" ] && [ ! -e "$STUB_DIR/other-called" ] && grep -q other-called "$WORK/other-stub" \
+  && ok "an autonomous run calls the claude on PATH, not CLAUDE_BIN" || bad "autonomous CLAUDE_BIN: rc=$rc err=$ERR"
 STUB=budget r1
 grep -q 'error_max_budget_usd' <<<"$ERR" && ok "an error_* result exiting 1 is named by its kind, not by the exit" || bad "error kind: $ERR"
 # The raw answer of an earlier attempt must not stay as this one's.
