@@ -34,7 +34,7 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@ex
 ORIGIN="$WORK/origin.git" SEED="$WORK/seed" CLONE="$WORK/srv/repo" LOOPD="$WORK/loop"
 git init -q --bare -b main "$ORIGIN"
 mkdir -p "$SEED/scripts/dev" "$SEED/scripts/vm" "$SEED/tasks" "$SEED/apps/x" "$SEED/docs"
-for f in ledger-loop.sh lane.sh ledger.sh harness-paths.txt runner-env.sh runner-claude.version; do
+for f in ledger-loop.sh lane.sh ledger.sh review.sh harness-paths.txt runner-env.sh runner-claude.version; do
   cp "$REPO_ROOT/scripts/dev/$f" "$SEED/scripts/dev/$f"
 done
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$SEED/scripts/vm/lib.sh"
@@ -140,7 +140,10 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+# Heavy as the planner writes it, and the open kind.
+mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
+mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
 # A lane whose ignore pattern for .ah-out also matches a link (no trailing slash).
 mapfile -t H < <(head_for ahl2)
 EXTRA='printf ".ah-out\n.vm/\n" > "$SEED/.gitignore"' plan feature/ahl2 ahl2 "${H[@]}"
@@ -160,7 +163,8 @@ chmod 600 "$FHOME/.config/adminhelper/oauth.env"
 # budget and fail (other errors), files (widens Dateien:), hang (leaves work behind and
 # sleeps past the task's time), filesn (a new Dateien: path each time), limit (the
 # subscription's limit), credits (1M context needs credits), harnskip (a harness
-# change and [~]), mlink (a scratch directory whose marker is a link).
+# change and [~]), mlink (a scratch directory whose marker is a link), negcost and
+# nancost (a cost below 0 or NaN), denylimit (the limit's text only in a denied command).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -205,6 +209,10 @@ case "$mode" in
   credits)
     printf '{"type": "result", "subtype": "success", "is_error": true, "result": "API Error: Usage credits required for 1M context \xc2\xb7 run /usage-credits to turn them on"}\n'; exit 1 ;;
   harnskip) printf '# x\n' >> scripts/dev/ledger.sh; bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
+  negcost) printf 'b = 1\n' >> apps/x/a.py; msg; printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": -100, "num_turns": 1}\n'; exit 0 ;;
+  nancost) printf 'b = 1\n' >> apps/x/a.py; msg; printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": NaN, "num_turns": 1}\n'; exit 0 ;;
+  denylimit)
+    printf '{"type": "result", "subtype": "error_max_turns", "is_error": true, "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "echo You\x27ve hit your session limit \xc2\xb7 resets 9pm"}}]}\n'; exit 1 ;;
   mlink)
     mkdir -p .ah-out/scratch/m.1 && ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" .ah-out/scratch/m.1/.ah-scratch
     printf '{"type": "result", "subtype": "error_during_execution", "is_error": true}\n'; exit 1 ;;
@@ -491,6 +499,23 @@ loop --ledger tasks/left.md
   && [ ! -e "$(lane left)/apps/x/new.py" ] && [ -z "$(git -C "$(lane left)" status --porcelain)" ] \
   && ok "a close that leaves undeclared files behind -> they are taken back, the ledger blockiert" || bad "left: $(result left)"
 
+echo "── the ledger's end: PR text and bundle ──"
+seq_set build build -- 0 0
+loop --ledger tasks/hvy.md --ledger tasks/hvn.md
+LY="$(lane hvy)"
+[ $rc -eq 0 ] && [ "$(box hvy)" = x ] && grep -qF -- '- [x] **T1 — eine Aufgabe**' "$LOOPD/hvy/pr-body.md" \
+  && grep -qF -- '- **Heavy:** linux-full' "$LOOPD/hvy/pr-body.md" && grep -qxF '**Heavy offen — fährt die Aufsicht.**' "$LOOPD/hvy/pr-body.md" \
+  && ok "bereit -> pr-body.md from review.sh pr-body, Heavy: linux-full with the note for the supervisor" || bad "hvy: rc=$rc $(result hvy) $(cat "$LOOPD/hvy/pr-body.md" 2>&1)"
+[ -s "$LOOPD/hvn/pr-body.md" ] && ! grep -q 'Heavy offen' "$LOOPD/hvn/pr-body.md" \
+  && ok "Heavy: none -> no note" || bad "hvn: $(cat "$LOOPD/hvn/pr-body.md" 2>&1)"
+# Kevin's checkout: a clone of origin, and the branch from the bundle, nothing else.
+KEV="$WORK/kevin"; git clone -q "$ORIGIN" "$KEV"
+git -C "$KEV" fetch -q "$LOOPD/hvy.bundle" feature/hvy:feature/hvy 2>"$WORK/fetch.err"
+[ "$(git -C "$KEV" rev-parse feature/hvy 2>/dev/null)" = "$(git -C "$LY" rev-parse HEAD)" ] \
+  && [ "$(git -C "$KEV" log --format=%H origin/main..feature/hvy)" = "$(git -C "$LY" log --format=%H origin/main..HEAD)" ] \
+  && grep -q '^bereit — PR text .*hvy/pr-body.md, branch in .*hvy.bundle$' <<<"$(result hvy)" \
+  && ok "the bundle is verified, and a second repo fetches feature/hvy from it with the same commits" || bad "bundle: $(cat "$WORK/fetch.err") $(cat "$LOOPD/hvy/bundle.log" 2>&1)"
+
 echo "── the run's caps and stop classes ──"
 # summary_line — the last line of the newest summary.
 summary_line() { local f; f="$(ls -t "$LOOPD"/summary-*.md 2>/dev/null | head -n 1)"; [ -n "$f" ] && tail -n 1 "$f"; }
@@ -517,6 +542,16 @@ FIXTURE_RCOST=0.5 loop --ledger tasks/rca.md --ledger tasks/rcb.md --max-budget-
   && grep -q '^ledger-loop: 1 tasks, 1 ready, 0 blocked, \$1.50 total, stop: max-budget$' <<<"$(summary_line)" \
   && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"]["rca/T1"]["review_usd"])' "$LOOPD/state.json")" = 1.0 ] \
   && ok "two reviewer rounds count into the run's budget: 1.5 \$, stop: max-budget" || bad "rca: rc=$rc $(stopped) | $(summary_line)"
+# A cost below 0 or NaN is no cost: the budget of the third ledger still ends the run.
+seq_set negcost nancost build build -- 0 0 0 0
+loop --ledger tasks/ng1.md --ledger tasks/ng2.md --ledger tasks/ng3.md --ledger tasks/ng4.md --max-budget-usd 0.2 --max-ready 9
+[ $rc -eq 0 ] && [ "$(box ng3)" = x ] && [ ! -e "$(lane ng4)" ] && grep -q '^max-budget — the run spent \$0.2500' <<<"$(stopped)" \
+  && ok "a session cost below 0 or NaN counts as 0, the cap still holds" || bad "ng: rc=$rc $(stopped)"
+# The limit's text in a command the session was denied is no limit of the run.
+seq_set denylimit
+loop --ledger tasks/dlim.md
+[ $rc -eq 0 ] && [ "$(box dlim)" = "?" ] && grep -q '\[?\] (turns: ' "$(lane dlim)/tasks/dlim.md" && ! grep -q 'usage-limit' <<<"$(stopped)" \
+  && ok "a limit text inside a denied command of the JSON -> [?] turns, no stop: usage-limit" || bad "dlim: rc=$rc $(stopped) $(result dlim)"
 seq_set build -- 0
 loop --ledger tasks/mh.md --max-hours 0
 [ $rc -eq 0 ] && [ ! -e "$(lane mh)" ] && [ ! -s "$FIXTURE_SLOG" ] && grep -q '^max-hours' <<<"$(stopped)" \

@@ -166,8 +166,10 @@ verifiziert — der Loop liest `result`, die Rohausgabe und stderr, nur bei eine
 ohne Credits ⇒ `stop: infra` (Spec, Risiken); die Harness-Prüfung nach jeder Session, nicht erst vor dem Abschluss;
 aus dem T5-Review die Prüfungen, dass weder `.ah-out` noch ein Marker ein Link ist, und der Kopfkommentar.
 
-### T7 — Ledger-Ende: PR-Text und Übergabe als Bundle  [ ]
+### T7 — Ledger-Ende: PR-Text und Übergabe als Bundle  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8eb9c48f 2026-10-05T12:52:43+02:00
+Review: approve (opus/xhigh; 2 nit) · round 1
 Änderung: Steht das Ledger nach der letzten Task auf `bereit`: `review.sh pr-body tasks/<slug>.md` nach
 `<loop>/<slug>/pr-body.md`, bei `Heavy:` ≠ `none` mit dem Vermerk „Heavy offen — fährt die Aufsicht“; `git bundle create
 <loop>/<slug>.bundle origin/main..feature/<slug>` plus `git bundle verify`; dann das nächste Ledger der Liste. Kein Push,
@@ -176,6 +178,11 @@ kein PR. Tests: Ledger durchgelaufen ⇒ `pr-body.md` und Bundle liegen; ein zwe
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 Abhängt von: T4
+Abweichung: Ein Ledger ohne `Heavy:`-Zeile bekommt den Vermerk ebenfalls — offen ist, was niemand als `none`
+geplant hat. Dazu (Aufsicht 2026-10-05, aus dem T6-Review): Kosten einer Session unter 0, NaN oder unendlich
+zählen als 0 (sonst senken sie die Lauf-Summe oder blenden den Deckel); den Text des Nutzungslimits sucht der Loop in
+`result` und stderr, die Rohausgabe nur, wenn sie kein JSON ist — im JSON stehen die verweigerten Befehle, die das
+Modell schrieb.
 
 ### T8 — Stand sichtbar: `ledger-loop.sh status` und die Worker-Zeile im AH-STATUS  [ ]
 Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh

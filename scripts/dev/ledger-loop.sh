@@ -57,7 +57,10 @@
 # (R-0170): any code a session runs can write .ah-out/review/, so a task starts by
 # moving that task's old review files aside. What a session left behind when the
 # task does not close is taken back by the loop (aborted.diff, restore, the new
-# files one by one) — never stash, clean or a glob.
+# files one by one) — never stash, clean or a glob. A ledger bereit leaves
+# <slug>/pr-body.md (review.sh pr-body; „Heavy offen — fährt die Aufsicht“ unless
+# Heavy: none) and <slug>.bundle (origin/main..feature/<slug>, verified) for Kevin's
+# checkout; push and PR stay his.
 #
 # The run's caps, counted in this process: --max-hours and --max-budget-usd (the
 # total_cost_usd of the sessions and of the reviewers, whose cost task-close prints
@@ -595,8 +598,10 @@ if kind == "success" and (r.get("is_error") is not False or rc != 0):
 note = ""
 if kind not in ("success", "timeout"):
     # The texts of code.claude.com/docs/en/errors; where -p puts them is not
-    # verified, so the result, the raw output and stderr are all read.
-    hay = "\n".join((r.get("result") if isinstance(r.get("result"), str) else "", text(sys.argv[1]), text(sys.argv[3])))
+    # verified, so result and stderr are read, the raw output only when it is no
+    # JSON: in JSON it carries the denied commands, which the model wrote.
+    hay = "\n".join((r.get("result") if isinstance(r.get("result"), str) else "", text(sys.argv[3]),
+                     "" if r else text(sys.argv[1])))
     m = re.search("You[\u2019']ve hit your [^\n]*?limit", hay)
     if m:
         kind = "usage-limit"
@@ -604,7 +609,9 @@ if kind not in ("success", "timeout"):
         note = reset.group(1).strip() if reset else ""
     elif "Usage credits required for 1M context" in hay:
         kind, note = "infra", "the CLI asks for usage credits for 1M context (the runner's model pin)"
-cost = r.get("total_cost_usd") if type(r.get("total_cost_usd")) in (int, float) else 0
+c = r.get("total_cost_usd")
+# A cost below 0, NaN or infinite would lower the run's sum or blind its cap.
+cost = c if type(c) in (int, float) and 0 <= c < float("inf") else 0
 turns = r.get("num_turns") if type(r.get("num_turns")) is int else 0
 den = r.get("permission_denials") if isinstance(r.get("permission_denials"), list) else []
 print(kind, cost, turns, len(den))
@@ -672,6 +679,20 @@ t["review_usd"] = round(t.get("review_usd", 0) + float(a[0]), 4)' "$rcost" "$slu
     [ ! -e "$wt/.ah-out/review/$slug/$id.r$round.verdict.json" ] || archive_reviews "$wt" "$slug" "$id" "$round"
   done
   return 74
+}
+
+# handover <lane> <slug> — a ledger bereit: the PR text and the branch as a bundle in
+# the loop's directory. Push and PR stay Kevin's, and Kevin's git never works in a
+# repository of the runner: a bundle is data.
+handover() {
+  local wt="$1" slug="$2" heavy body="$LOOP/$2/pr-body.md" bundle="$LOOP/$2.bundle"
+  bash "$REPO/scripts/dev/review.sh" pr-body "$wt/tasks/$slug.md" > "$body" 2> "$LOOP/$slug/pr-body.err" \
+    || stop_infra "review.sh pr-body failed for $slug (log $LOOP/$slug/pr-body.err)"
+  # Heavy from the loop is stage 7b; a ledger without the line counts as open too.
+  heavy="$(sed -n '/^###[[:space:]]/q; s/^Heavy:[[:space:]]*\([^ ·—]*\).*/\1/p' "$wt/tasks/$slug.md" | head -n 1)"
+  [ "$heavy" = none ] || printf '\n**Heavy offen — fährt die Aufsicht.**\n' >> "$body"
+  { git -C "$wt" bundle create "$bundle" "origin/main..feature/$slug" && git -C "$wt" bundle verify "$bundle"; } \
+    > "$LOOP/$slug/bundle.log" 2>&1 || stop_infra "git bundle of feature/$slug failed (log $LOOP/$slug/bundle.log)"
 }
 
 # run_task <lane> <slug> <id> — 0 the task is done or skipped, 1 the ledger is blocked.
@@ -799,7 +820,8 @@ build_ledger() {
           || stop_infra "ledger.sh status bereit failed for $slug"
         ledger_commit "$wt" "$slug" bereit
       fi
-      ledger_result "$slug" bereit
+      handover "$wt" "$slug"
+      ledger_result "$slug" bereit "PR text $LOOP/$slug/pr-body.md, branch in $LOOP/$slug.bundle"
       READY=$((READY + 1))
       return
     fi
