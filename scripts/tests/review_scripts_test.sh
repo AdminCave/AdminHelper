@@ -374,6 +374,171 @@ stage CHANGELOG.md
 r sec --staged
 [ $rc -eq 0 ] && ok "an ordinary change is not blocked" || bad "false block: rc=$rc out=$OUT"
 
+# ══ sec --range: what a push or a pull request takes along (R-0123) ═══════════
+echo "── sec --range ──"
+# A repository of its own: these cases commit and branch. Every commit of the span
+# counts, not the net diff — a file added and removed again still leaves with a push.
+RFIX="$WORK/range"; mkdir -p "$RFIX/scripts/dev" "$RFIX/tasks/private" "$RFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$RFIX/scripts/dev/review.sh"
+printf 'tasks/private/\n' > "$RFIX/.gitignore"; printf 'one\n' > "$RFIX/docs/a.md"
+rg() { git -C "$RFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+rr() { OUT=$(bash "$RFIX/scripts/dev/review.sh" "$@" 2>&1); rc=$?; }
+rg init -q -b main; rg add -A; rg commit -qm base; RBASE="$(rg rev-parse HEAD)"
+printf 'internal\n' > "$RFIX/tasks/private/x.md"; rg add -f -- tasks/private/x.md; rg commit -qm "private"
+rr sec --range "$RBASE..HEAD"
+[ $rc -eq 4 ] && grep -q "tasks/private/x.md (commit " <<<"$OUT" \
+  && ok "a private file in the span -> exit 4, with the commit" || bad "range private: rc=$rc out=$OUT"
+rg rm -q -- tasks/private/x.md; rg commit -qm "gone again"
+[ -z "$(rg diff --name-only "$RBASE" HEAD)" ] || bad "fixture: the net diff should be empty"
+rr sec --range "$RBASE..HEAD"
+[ $rc -eq 4 ] && grep -q "tasks/private/x.md" <<<"$OUT" \
+  && ok "added and removed again inside the span -> still exit 4 (the net diff is empty)" || bad "range history: rc=$rc out=$OUT"
+RCLEAN="$(rg rev-parse HEAD)"
+printf 'two\n' >> "$RFIX/docs/a.md"; rg add -A; rg commit -qm "ordinary"
+rr sec --range "$RCLEAN..HEAD"
+[ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "a clean span -> sec: clean" || bad "range clean: rc=$rc out=$OUT"
+# A span without a commit has nothing to call clean (R-0174); exit 0 all the same.
+for span in HEAD..HEAD HEAD...HEAD; do
+  rr sec --range "$span"
+  [ $rc -eq 0 ] && [ "$OUT" = "sec: empty span ($span) — nothing read" ] \
+    && ok "an empty span ($span) -> 'nothing read', exit 0, not 'clean'" || bad "empty span $span: rc=$rc out=$OUT"
+done
+# The key is assembled at run time: written out, it would stop this very file at sec.
+printf 'x\nDedup-%s: sec:%s\n' Key "server:leak.py:probe" >> "$RFIX/docs/a.md"; rg add -A; rg commit -qm "a finding"
+rr sec --range "$RCLEAN..HEAD"
+[ $rc -eq 4 ] && grep -q "docs/a.md:4 (commit " <<<"$OUT" && ! grep -q "leak.py" <<<"$OUT" \
+  && ok "a security finding's Dedup-Key -> exit 4 with file:line, never the line" || bad "range key: rc=$rc out=$OUT"
+rr sec --staged --range "$RCLEAN..HEAD"
+[ $rc -eq 2 ] && ok "--staged with --range -> usage error" || bad "staged+range: rc=$rc out=$OUT"
+rr sec --range "$RCLEAN..nosuchref"
+[ $rc -eq 2 ] && ok "a range git does not know -> usage error, not clean" || bad "bad range: rc=$rc out=$OUT"
+rr sec --staged --not-on origin
+[ $rc -eq 2 ] && ok "--not-on without --range -> usage error" || bad "not-on alone: rc=$rc out=$OUT"
+# Merges: a branch that merges main brings main's lines — public already — along.
+# Read by what the merge brings itself, against all its parents, they are no finding;
+# what the merge adds on its own is.
+rg reset -q --hard "$RCLEAN"; rg checkout -q -b feature
+printf 'feature\n' > "$RFIX/docs/f.md"; rg add -A; rg commit -qm "feature"
+rg checkout -q main
+printf 'Dedup-%s: sec:%s\n' Key "old:main.md:line" > "$RFIX/docs/main.md"; rg add -A; rg commit -qm "main has a key line"
+rg checkout -q feature; rg merge -q --no-edit main
+rr sec --range "main...feature"
+[ $rc -eq 0 ] && ok "a merge of main into the branch brings no finding of its own" || bad "merge of main: rc=$rc out=$OUT"
+rg checkout -q -b feature2 "$RCLEAN"
+printf 'feature two\n' > "$RFIX/docs/f2.md"; rg add -A; rg commit -qm "feature two"
+rg merge -q --no-commit --no-ff main >/dev/null
+mkdir -p "$RFIX/tasks/private"; printf 'internal\n' > "$RFIX/tasks/private/m.md"; rg add -f -- tasks/private/m.md
+printf 'Dedup-%s: sec:%s\n' Key "evil:merge.md:line" > "$RFIX/docs/merge.md"; rg add -- docs/merge.md
+rg commit -qm "a merge that adds a private file"
+rr sec --range "main...feature2"
+[ $rc -eq 4 ] && grep -q "tasks/private/m.md (merge " <<<"$OUT" && grep -q "docs/merge.md:1 (merge " <<<"$OUT" \
+  && ok "a merge that adds a private file or a key line itself -> exit 4" || bad "evil merge: rc=$rc out=$OUT"
+# A push: commits the remote has already are no part of what leaves.
+rg update-ref refs/remotes/origin/main main
+rr sec --range "$RCLEAN..feature"
+[ $rc -eq 4 ] && grep -q "docs/main.md" <<<"$OUT" && ok "without --not-on main's commits in the span count" || bad "no not-on: rc=$rc out=$OUT"
+rr sec --range "$RCLEAN..feature" --not-on origin
+[ $rc -eq 0 ] && ok "--not-on origin leaves out what origin already has" || bad "not-on: rc=$rc out=$OUT"
+# A path with `"` or `\` comes out of --name-only C-quoted, and a quoted path matched
+# no pattern: read NUL-separated, it is blocked like any other.
+rg checkout -q main
+mkdir -p "$RFIX/tasks/private"; printf 'q\n' > "$RFIX/tasks/private/a\"b.md"
+rg add -f -- "tasks/private/a\"b.md"; rg commit -qm "a quoted private path"
+rr sec --range "HEAD~1..HEAD"
+[ $rc -eq 4 ] && grep -qF 'tasks/private/a"b.md (commit ' <<<"$OUT" \
+  && ok "a private path with a quote in its name -> exit 4 (range)" || bad "quoted range: rc=$rc out=$OUT"
+rg rm -q --cached -- "tasks/private/a\"b.md"; rg commit -qm "untracked again"
+rg add -f -- "tasks/private/a\"b.md"
+rr sec --staged
+[ $rc -eq 4 ] && grep -qF 'tasks/private/a"b.md' <<<"$OUT" \
+  && ok "... and staged -> exit 4" || bad "quoted staged: rc=$rc out=$OUT"
+rg reset -q -- "tasks/private/a\"b.md"; rm -f "$RFIX/tasks/private/a\"b.md"
+rg checkout -q feature2   # the job cases below read the evil merge of this branch
+# A git that cannot read a commit of the span is no clean span.
+BROKEN="$WORK/broken"; git init -q -b main "$BROKEN"; mkdir -p "$BROKEN/scripts/dev"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$BROKEN/scripts/dev/review.sh"
+git -C "$BROKEN" add -A; git -C "$BROKEN" -c user.name=F -c user.email=f@example.invalid commit -qm base
+printf 'lost\n' > "$BROKEN/lost.md"; git -C "$BROKEN" add lost.md
+git -C "$BROKEN" -c user.name=F -c user.email=f@example.invalid commit -qm "a blob that goes missing"
+BLOB="$(git -C "$BROKEN" rev-parse HEAD:lost.md)"
+rm -f "$BROKEN/.git/objects/${BLOB:0:2}/${BLOB:2}"
+OUT=$(bash "$BROKEN/scripts/dev/review.sh" sec --range "HEAD~1..HEAD" 2>&1); rc=$?
+[ $rc -ne 0 ] && [ $rc -ne 4 ] && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "a commit git cannot read -> an error, not 'sec: clean'" || bad "missing object: rc=$rc out=$OUT"
+
+# ══ ci.yml: the public repo guard (R-0123) ════════════════════════════════════
+echo "── ci.yml: Public repo guard (review.sh sec) ──"
+CI="$REPO_ROOT/.github/workflows/ci.yml"
+JOB="$(awk '/^  public-repo-guard:/ { f = 1; print; next } f && /^  [A-Za-z0-9_-]+:/ { exit } f' "$CI")"
+grep -qx '    name: Public repo guard (review.sh sec)' <<<"$JOB" \
+  && ok "the job carries the name the ruleset requires" || bad "no job named 'Public repo guard (review.sh sec)'"
+grep -q 'fetch-depth: 0' <<<"$JOB" && grep -qF 'bash "$1" sec --range "$range"' <<<"$JOB" \
+  && grep -qx ' *guard scripts/dev/review.sh' <<<"$JOB" \
+  && ok "it fetches the whole history and runs review.sh sec --range" || bad "job steps: $JOB"
+! grep -q 'secrets\.' <<<"$JOB" && ok "it uses no secret (it runs for fork pull requests too)" || bad "the job reads a secret"
+EXPR="$(grep -F '${{' <<<"$JOB" | grep -vE '^ +[A-Z_]+: \$\{\{ github\.[a-z_.]+ \}\}$')"
+[ -z "$EXPR" ] && ok "event values reach the script as environment only" || bad "an expression outside env: $EXPR"
+# Two logics (R-0174): the base's review.sh, from a worktree of the base, then this
+# change's — both on a span that names $SHA, since HEAD in the worktree is the base.
+grep -qx ' *guard "$base_sh"' <<<"$JOB" && grep -qF 'git worktree add --quiet --detach "$RUNNER_TEMP/base" "$base"' <<<"$JOB" \
+  && grep -qF 'range="$base...$SHA"' <<<"$JOB" && grep -qF '::error::the base' <<<"$JOB" \
+  && ok "it reads with the base's review.sh (a worktree, \$SHA in the span) and fails closed without one" \
+  || bad "no base-logic step: $JOB"
+# A push run reads before..sha and nothing else does: it is never cancelled, and a
+# group per commit keeps a later push from pushing it out while pending (R-0174).
+CONC="$(awk '/^concurrency:$/ { f = 1; next } f && /^  / { print; next } f { exit }' "$CI")"
+[ "$CONC" = "  group: \${{ github.event_name == 'push' && format('ci-push-{0}', github.sha) || format('ci-{0}', github.ref) }}
+  cancel-in-progress: \${{ github.event_name == 'pull_request' }}" ] \
+  && ok "a push to main runs in a group of its own and is never cancelled; pull requests still are" \
+  || bad "workflow concurrency: $CONC"
+# The job's script itself, run here as GitHub runs it (bash -e): a pull request with
+# a finding is red, a push without a usable 'before' is red, not a scan of nothing.
+JOBSH="$(awk '/^        run: \|$/ { f = 1; next } f && /^ {10}/ { print substr($0, 11); next } f { exit }' <<<"$JOB")"
+[ -n "$JOBSH" ] || bad "no run script found in the job"
+job() {  # job <repo> <VAR=value…> — the job's script with a fresh RUNNER_TEMP
+  local repo="$1" tmp
+  shift
+  tmp="$(mktemp -d -p "$WORK")"
+  OUT=$(cd "$repo" && env RUNNER_TEMP="$tmp" "$@" bash -e -c "$JOBSH" 2>&1); rc=$?
+}
+job "$RFIX" EVENT=pull_request BASE_REF=main BEFORE='' SHA="$(rg rev-parse HEAD)"
+[ $rc -eq 4 ] && grep -q "tasks/private/m.md (merge " <<<"$OUT" && grep -q "── base logic (origin/main)" <<<"$OUT" \
+  && ok "the job's script: a pull request that brings a private file is red" || bad "job pr: rc=$rc out=$OUT"
+job "$RFIX" EVENT=push BASE_REF='' BEFORE=0000000000000000000000000000000000000000 SHA="$(rg rev-parse HEAD)"
+[ $rc -ne 0 ] && grep -q "without a usable 'before'" <<<"$OUT" \
+  && ok "the job's script: a push with an all-zero 'before' fails closed" || bad "job push zero: rc=$rc out=$OUT"
+job "$RFIX" EVENT=push BASE_REF='' BEFORE="$RCLEAN" SHA="$(rg rev-parse feature)"
+[ $rc -eq 4 ] && grep -q "docs/main.md" <<<"$OUT" && grep -q "── base logic ($RCLEAN)" <<<"$OUT" \
+  && ok "the job's script: a push is read from 'before' to the pushed commit, with the logic before it" || bad "job push: rc=$rc out=$OUT"
+# A dispatch on main: origin/main...origin/main holds no commit — a notice from each
+# logic, not "clean" (R-0174).
+job "$RFIX" EVENT=workflow_dispatch BASE_REF='' BEFORE='' SHA="$(rg rev-parse origin/main)"
+[ $rc -eq 0 ] && [ "$(grep -c '^::notice::sec: empty span (origin/main\.\.\.[0-9a-f]*) — nothing read$' <<<"$OUT")" = 2 ] \
+  && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "the job's script: an empty span is a notice from both logics, not 'clean'" || bad "job empty: rc=$rc out=$OUT"
+# A pull request that takes the block out of its own review.sh and adds a private
+# file: its own logic passes it, the base's does not — and the base's decides.
+EFIX="$WORK/evil"; mkdir -p "$EFIX/scripts/dev"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$EFIX/scripts/dev/review.sh"; printf 'tasks/private/\n' > "$EFIX/.gitignore"
+eg() { git -C "$EFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+eg init -q -b main; eg add -A; eg commit -qm base; eg update-ref refs/remotes/origin/main HEAD
+sed -i 's#tasks/private/\*|##' "$EFIX/scripts/dev/review.sh"
+mkdir -p "$EFIX/tasks/private"; printf 'internal\n' > "$EFIX/tasks/private/x.md"
+eg add -A; eg add -f -- tasks/private/x.md; eg commit -qm "loosen sec and bring a private file"
+OUT=$(bash "$EFIX/scripts/dev/review.sh" sec --range "origin/main...HEAD" 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "fixture: the pull request's own logic lets the private file pass" || bad "fixture own logic: rc=$rc out=$OUT"
+job "$EFIX" EVENT=pull_request BASE_REF=main BEFORE='' SHA="$(eg rev-parse HEAD)"
+[ $rc -eq 4 ] && grep -q "── base logic" <<<"$OUT" && grep -q "tasks/private/x.md (commit " <<<"$OUT" \
+  && ok "the job: the base's logic refuses what the change loosened its own for" || bad "job evil pr: rc=$rc out=$OUT"
+# A base whose review.sh cannot read a range is no gate: fail closed.
+OFIX="$WORK/oldbase"; mkdir -p "$OFIX/scripts/dev"; printf '#!/bin/sh\necho old\n' > "$OFIX/scripts/dev/review.sh"
+og() { git -C "$OFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+og init -q -b main; og add -A; og commit -qm base; og update-ref refs/remotes/origin/main HEAD
+cp "$REPO_ROOT/scripts/dev/review.sh" "$OFIX/scripts/dev/review.sh"; og add -A; og commit -qm "a review.sh that can"
+job "$OFIX" EVENT=pull_request BASE_REF=main BEFORE='' SHA="$(og rev-parse HEAD)"
+[ $rc -eq 1 ] && grep -q "::error::the base (origin/main) has no review.sh that reads a range" <<<"$OUT" \
+  && ok "the job: a base without sec --range fails closed" || bad "job old base: rc=$rc out=$OUT"
+
 # ══ diff-scan: a declared test deletion ═══════════════════════════════════════
 echo "── diff-scan --task: a whole test may go when the task says so ──"
 cat > "$FIX/tasks/del.md" <<'MD'
@@ -1203,6 +1368,66 @@ r diff-scan --staged --task tasks/del.md T1
 r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index
+
+# ══ the pre-push hook (R-0123) ════════════════════════════════════════════════
+echo "── pre-push hook ──"
+# The push is the step from which on it is public. A fixture with the pre-push hook
+# alone (the commit hooks would stop the private commits these cases need) and a
+# bare repository as its remote.
+PFIX="$WORK/pushing"; PREMOTE="$WORK/remote.git"
+mkdir -p "$PFIX/scripts/dev/hooks" "$PFIX/tasks/private" "$PFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$PFIX/scripts/dev/review.sh"
+cp "$REPO_ROOT/scripts/dev/hooks/pre-push" "$PFIX/scripts/dev/hooks/pre-push"
+chmod 755 "$PFIX/scripts/dev/hooks/pre-push"
+printf 'tasks/private/\n' > "$PFIX/.gitignore"; printf 'plain\n' > "$PFIX/docs/note.md"
+pg() { git -C "$PFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+pp() { OUT=$(cd "$PFIX" && git push -q "$@" 2>&1); rc=$?; }
+rhead() { git -C "$PREMOTE" rev-parse -q --verify "refs/heads/$1" || echo none; }
+pg init -q -b main; pg add -A; pg commit -qm fixture
+git init -q --bare -b main "$PREMOTE"; pg remote add origin "$PREMOTE"
+pg config core.hooksPath scripts/dev/hooks
+pp origin main
+[ $rc -eq 0 ] && [ "$(rhead main)" = "$(pg rev-parse main)" ] \
+  && ok "a clean new branch is pushed" || bad "clean push: rc=$rc out=$OUT"
+R0="$(rhead main)"
+printf 'internal\n' > "$PFIX/tasks/private/x.md"; pg add -f -- tasks/private/x.md; pg commit -qm private
+pp origin main
+[ $rc -ne 0 ] && [ "$(rhead main)" = "$R0" ] && grep -q "tasks/private/x.md (commit " <<<"$OUT" \
+  && grep -q "pre-push: refs/heads/main -> origin refs/heads/main refused" <<<"$OUT" \
+  && ok "a private file: the push is refused, the remote unchanged, the path named" || bad "private push: rc=$rc out=$OUT"
+pg rm -q -- tasks/private/x.md; pg commit -qm "gone again"
+pp origin main
+[ $rc -ne 0 ] && [ "$(rhead main)" = "$R0" ] && grep -q "tasks/private/x.md" <<<"$OUT" \
+  && ok "added and removed again before the push: still refused" || bad "net-zero push: rc=$rc out=$OUT"
+printf 'x\nDedup-%s: sec:%s\n' Key "server:leak.py:probe" >> "$PFIX/docs/note.md"; pg commit -qam key
+pp origin main
+[ $rc -ne 0 ] && grep -q "docs/note.md:3 (commit " <<<"$OUT" && ! grep -q "leak.py" <<<"$OUT" \
+  && ok "a finding's key: refused with file:line, never the line" || bad "key push: rc=$rc out=$OUT"
+pg reset -q --hard "$R0"
+# main on the remote carries a key line already (pushed from a clone without the
+# hook); a branch that merges it brings no finding of its own.
+OTHER="$WORK/other"; git clone -q "$PREMOTE" "$OTHER"
+printf 'Dedup-%s: sec:%s\n' Key "old:main.md:line" > "$OTHER/docs/main.md"
+git -C "$OTHER" add -A; git -C "$OTHER" -c user.name=O -c user.email=o@example.invalid commit -qm "main has a key line"
+git -C "$OTHER" push -q origin main
+pg checkout -q -b feature; printf 'feature\n' > "$PFIX/docs/f.md"; pg add -A; pg commit -qm feature
+pg fetch -q origin; pg merge -q --no-edit origin/main
+pg cat-file -e HEAD:docs/main.md 2>/dev/null || bad "fixture: main's key line did not reach the branch"
+pp origin feature
+[ $rc -eq 0 ] && [ "$(rhead feature)" = "$(pg rev-parse feature)" ] \
+  && ok "a branch that merged main is pushed: main's commits are the remote's already" || bad "merge push: rc=$rc out=$OUT"
+pg tag -a -m release v0.0.1
+pp origin v0.0.1
+[ $rc -eq 0 ] && git -C "$PREMOTE" rev-parse -q --verify refs/tags/v0.0.1 >/dev/null \
+  && ok "an annotated tag on clean commits is pushed" || bad "tag push: rc=$rc out=$OUT"
+pp origin --delete feature
+[ $rc -eq 0 ] && [ "$(rhead feature)" = none ] && ok "a deletion is pushed" || bad "delete push: rc=$rc out=$OUT"
+# A remote never fetched: nothing is known to be there, the whole history is read —
+# and the hook says why.
+git init -q --bare -b main "$WORK/mirror.git"; pg remote add mirror "$WORK/mirror.git"
+pp mirror main
+[ $rc -eq 0 ] && grep -q "pre-push: no tracking refs for 'mirror'" <<<"$OUT" \
+  && ok "a push to a remote without tracking refs says the whole history is read" || bad "mirror push: rc=$rc out=$OUT"
 
 # ══ the pre-commit hook ═══════════════════════════════════════════════════════
 echo "── pre-commit hook ──"

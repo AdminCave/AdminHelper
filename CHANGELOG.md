@@ -26,6 +26,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und druckt die Kosten des Reviewers; das Red Team prueft die Grenzen der Bau-Session;
   `ledger-loop.sh status` und die Worker-Zeile im AH-STATUS zeigen den Stand. Anleitung:
   `AUTONOMOUS.md`, „Der Worker", und `DEVELOPMENT.md`, „Der Worker".
+- **CI-Sperre fuer Privates (R-0123):** Der neue CI-Job „Public repo guard (review.sh sec)" faehrt
+  `scripts/dev/review.sh sec --range` ueber jeden Commit eines Pull Requests bzw. Pushs auf `main` —
+  dieselbe Sperre wie die lokalen Commit-Hooks (privater Plan, SEC-Ledger, Dedup-Key eines
+  Sicherheitsfunds, `.devenv.sh`, `settings.local.json`), fuer alles, was an ihnen vorbeigeht. `sec`
+  liest eine Spanne Commit fuer Commit (eine Datei, die kommt und wieder geht, zaehlt), einen Merge nur
+  nach dem, was er selbst bringt; der Job braucht kein Secret und nennt nur Pfad bzw. Datei:Zeile.
+  Lokal faehrt der neue Hook `scripts/dev/hooks/pre-push` dieselbe Pruefung ueber jeden Commit, den
+  ein Push nach draussen bringt, und bricht den Push bei einem Treffer ab. Kevins Handgriff: den
+  Check im Ruleset fuer `main` als Pflicht eintragen. Anleitung: `docs/developer/cicd.html`,
+  `DEVELOPMENT.md` „pre-commit-Hook".
 
 - **Der Reviewer als eigener Prozess (Stufe 6b, R-0155, R-0147, R-0150):**
   `task-close.sh --review auto` startet den Task-Reviewer selbst: der Runner faehrt die Probe
@@ -225,17 +235,28 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Waechter oder haengt er, sperrt der Hook mit Exit 2. Anleitung: `DEVELOPMENT.md` „Runner-User" (Red Team) und
   „Harness-Schutz und Kill-Switch".
 
+- **FRP: Generate-Routen nur mit nutzbaren Tunneln (Server, R-0128):** `visitor-toml`, `visitor-bundle` und
+  `frpc-toml` lassen STCP-Tunnel ohne Secret weg, bevor sie pruefen, ob ein Tunnel da ist. Bleibt keiner uebrig,
+  antworten sie mit demselben `404` wie ohne Tunnel, und `bulk-zip` schreibt fuer einen solchen Nutzer keine
+  `visitors/<user>.toml`. Das `auth.token` von frps steht damit nur in einer Datei, die auch einen Tunnel
+  enthaelt. Doku: `docs/developer/api-reference.html`.
 - **FRP: Secret und Visitor-Port nur an STCP-Tunneln (Server, R-0129):** Ein HTTPS-Tunnel speichert weder
   `secret_key` noch `visitor_port`; `POST` verwirft mitgeschickte Werte, und der Wechsel per `PUT` auf HTTPS
   loescht beide. Der Wechsel zurueck auf STCP erzeugt ein neues Secret und vergibt einen freien Port, wenn der
   gespeicherte inzwischen einem anderen Tunnel gehoert. Das heilt auch aeltere Zeilen ohne Datenmigration;
   bisher endete dieser Rueckwechsel mit `409`. Doku: `docs/developer/api-reference.html`,
   `docs/admin/frp-tunnel.html`.
-- **FRP: Generate-Routen nur mit nutzbaren Tunneln (Server, R-0128):** `visitor-toml`, `visitor-bundle` und
-  `frpc-toml` lassen STCP-Tunnel ohne Secret weg, bevor sie pruefen, ob ein Tunnel da ist. Bleibt keiner uebrig,
-  antworten sie mit demselben `404` wie ohne Tunnel, und `bulk-zip` schreibt fuer einen solchen Nutzer keine
-  `visitors/<user>.toml`. Das `auth.token` von frps steht damit nur in einer Datei, die auch einen Tunnel
-  enthaelt. Doku: `docs/developer/api-reference.html`.
+- **FRP: bulk-zip nur mit nutzbaren Tunneln (Server, R-0148):** `bulk-zip` laesst STCP-Tunnel ohne Secret
+  einmal vorab weg. Ein Server ohne nutzbaren Tunnel bekommt keine `clients/<server>/frpc.toml` mehr (bisher eine
+  mit `auth.token` und ohne Proxy), ohne nutzbaren STCP-Tunnel gibt es keine `visitor.toml`; im Extremfall
+  enthaelt der ZIP nur `frps.toml`. Das ist dieselbe Regel wie der `404` der Einzelrouten. Je Tunnel ohne Secret
+  steht eine Warnung im Log statt einer je Server, Nutzer und Generator-Aufruf. Doku:
+  `docs/developer/api-reference.html`.
+- **SSE: ein Worker verpasste kurz nach dem Start ein Refresh-Signal (Server, R-0149):** `subscribe()` schickt
+  das Abo an Redis nur ab; ein `publish` vor der Bestaetigung ging verloren, Pub/Sub puffert nicht.
+  `stream_hub.start()` liest jetzt die Bestaetigung (hoechstens 5 s), bevor es den Reader startet und
+  „subscribed" meldet. Bleibt sie aus, warnt es und startet den Reader trotzdem; die Clients fallen wie bisher
+  auf Polling zurueck. Das behebt auch den sporadisch roten `test_redis_fanout_only_to_targeted_user`.
 - **Verbindungen: nur bekannte Felder gehen in Spalten (Server, R-0136):** Beim Anlegen, Aendern und
   Importieren uebernimmt der Server nur die Felder der API (`name`, `kind`, `host`, …, in camelCase) in
   die Spalten einer Verbindung. Alles andere bleibt Zusatzinformation in `extra_data`, auch ein
@@ -355,6 +376,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Der Public repo guard prueft auch mit der Logik der Basis (R-0174):** Der CI-Job
+  „Public repo guard (review.sh sec)" faehrt `review.sh sec --range` zuerst mit dem `review.sh` der
+  Basis (ein Worktree von `origin/<base>`, beim Push der Stand vor ihm), dann mit dem des geaenderten
+  Stands; beide muessen gruen sein. Ein Pull Request, der `sec` aendert, wird so mit der Logik
+  geprueft, die vor ihm galt; eine Basis ohne `sec --range` macht den Job rot. Einen Fehlalarm der
+  Basis-Logik nimmt ein Admin-Merge. Anleitung: `docs/developer/cicd.html`, `DEVELOPMENT.md`.
+- **CI-Laeufe auf Pushes nach `main` laufen zu Ende (R-0174):** Die `concurrency` von `ci.yml` gibt
+  jedem Push eine eigene Gruppe je Commit und bricht nur noch Pull-Request-Laeufe ab; ein spaeterer
+  Push bricht den Lauf davor weder ab noch verdraengt er ihn, solange er wartet. Nur dieser Lauf liest
+  die Commits eines Pushs (`before..sha`). Anleitung: `docs/developer/cicd.html`.
+- **`review.sh sec --range` sagt, wenn die Spanne leer ist (R-0174):** Ohne einen Commit in der
+  Spanne meldet `sec` jetzt `sec: empty span (<range>) — nothing read` statt „sec: clean" (Exit
+  weiter 0, ein Push ohne neue Commits ist keine Verweigerung). Der CI-Job „Public repo guard" macht
+  daraus einen Hinweis, etwa bei einem `workflow_dispatch` auf `main`.
 - **`task-close.sh` prueft billig zuerst (Stufe 6b, R-0150):** `diff-scan`, `scope`,
   `docs-pairs` und `sec` laufen vor der Suite, `contracts` danach; ein einseitiger Doku-Abschluss
   kostet keinen Suite-Lauf mehr. Aendert sich der Index waehrend des Laufs, bricht der Abschluss

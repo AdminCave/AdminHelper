@@ -13,9 +13,12 @@ on:
 permissions:
   contents: read
 
+# A push to main gets a group of its own and is never cancelled or pushed out
+# while pending: its run is the only one that reads before..sha (R-0174). Pull
+# requests still cancel the older run of the same ref.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'push' && format('ci-push-{0}', github.sha) || format('ci-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FRP_VERSION: "0.69.1"
@@ -735,6 +738,70 @@ jobs:
         run: bash scripts/dev/openapi-breaking.sh server --base "origin/${{ github.base_ref || 'main' }}"
       - name: Monitoring API stays compatible with the base branch
         run: bash scripts/dev/openapi-breaking.sh monitoring --base "origin/${{ github.base_ref || 'main' }}"
+
+  # What must never become public (R-0123): the private roadmap, the security
+  # ledgers, a security finding's Dedup-Key, the files that carry credentials. The
+  # same `review.sh sec` the local hooks run, here over every commit a pull request
+  # or a push brings — for what goes past the local hooks (a clone without
+  # core.hooksPath, the web editor, another machine). It needs no secret, so it runs
+  # for pull requests from forks too, and it names paths and file:line, never
+  # content, so its log may be public. The event values reach the script as
+  # environment, never as expressions inside it. It reads with the base's review.sh
+  # and with this change's (R-0174): a change to review.sh is checked with the logic
+  # that held before it. The price: a pull request that fixes a false alarm of the
+  # base logic is still held by it (an admin merge then).
+  public-repo-guard:
+    name: Public repo guard (review.sh sec)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Every commit of the span is read, and the base has to exist locally.
+          fetch-depth: 0
+      - name: review.sh sec over the commits this change brings
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          # The span names $SHA, not HEAD: in the base worktree below HEAD is the base.
+          case "$EVENT" in
+            pull_request) base="origin/$BASE_REF"; range="$base...$SHA" ;;
+            push)
+              # An empty or all-zero `before` says nothing about what this push brings:
+              # fail closed. On main it does not happen, the ruleset forbids force pushes.
+              if [ -z "${BEFORE//0/}" ]; then
+                echo "::error::push without a usable 'before' — cannot tell which commits it brings"
+                exit 1
+              fi
+              # origin/main is the pushed commit already; the base is main before it.
+              base="$BEFORE"; range="$BEFORE..$SHA" ;;
+            *) base="origin/main"; range="origin/main...$SHA" ;;
+          esac
+          # The logic of the base first (R-0174): a change that loosens or breaks sec is
+          # still read by the rule it is about to change. Then this change's own logic,
+          # which keeps the job in step with the local hooks. Both have to be green.
+          git worktree add --quiet --detach "$RUNNER_TEMP/base" "$base"
+          base_sh="$RUNNER_TEMP/base/scripts/dev/review.sh"
+          if [ ! -f "$base_sh" ] || ! grep -q -- '--range' "$base_sh"; then
+            echo "::error::the base ($base) has no review.sh that reads a range — refusing (fail closed)"
+            exit 1
+          fi
+          # A span without commits (a dispatch on main) reads nothing: a notice, not "clean".
+          guard() {  # guard <review.sh>
+            local out
+            out="$(bash "$1" sec --range "$range")" || return
+            case "$out" in
+              "sec: empty span"*) echo "::notice::$out" ;;
+              *) echo "$out" ;;
+            esac
+          }
+          echo "── base logic ($base)"
+          guard "$base_sh"
+          echo "── this change's logic"
+          guard scripts/dev/review.sh
 
   # Lint the host ops scripts and run the whole hermetic shell-test block through
   # the aggregator (fake releases over file://, stubbed docker — no real stack).
