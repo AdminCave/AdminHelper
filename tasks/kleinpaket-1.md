@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 1: Werkzeug-Reste, Token-Muster, Test-Hygiene — Task-Ledger
-Status: freigegeben · Branch: harness/kleinpaket-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: aktiv · Branch: harness/kleinpaket-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-05 (kleines Fund-Paket aus den in der Triage angenommenen Zeilen R-0165, R-0173, R-0183, R-0185; CLAUDE.md §2 „Entscheidungen“, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0165, R-0183, R-0173, R-0185 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, Kommentare und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -17,8 +17,10 @@ Entscheidungs-Aufteilung, 2026-10-05). Kurz-Ledger mit `Review: auto` statt `am 
 `main` stolpert. Die Roadmap-Zeilen liegen im privaten Repo und sind in dieser Worktree nicht lesbar; ihren Status
 zieht die Aufsicht nach. Zeilenangaben main@bf9cee5e.
 
-### T1 — `ledger.sh lint` meldet Werkzeug-Reste in Ledger und Spec (R-0165)  [ ]
+### T1 — `ledger.sh lint` meldet Werkzeug-Reste in Ledger und Spec (R-0165)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7c76e197 2026-10-05T18:37:04+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
 Änderung: `ledger.sh lint` (`:285`) meldet als ERROR mit Datei:Zeile jede Zeile im Ledger und in der Spec, die sein
 `Spec:`-Feld nennt (der erste Pfad unter `docs/features/`, falls die Datei existiert), die einen Rest eines
 Werkzeugaufrufs trägt: ein schließendes Tag `content`, `invoke` oder `parameter`, oder ein öffnendes `invoke`- bzw.

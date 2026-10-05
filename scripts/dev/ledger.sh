@@ -365,6 +365,21 @@ case "$CMD" in
           printf "line %d: HEAD: \047%s\047 is not a commit SHA\n", NR, v
       }' "$LEDGER")
 
+    # What a planning agent wrapped around its output and left in the plan (R-0165):
+    # the closing tag of content, invoke or parameter, or an opening invoke or
+    # parameter tag with a name. In the ledger and in the spec its Spec: line names
+    # under docs/features/, the two files the gate commits.
+    LINTED=("$LEDGER")
+    SPEC="$(sed -n '/^###[[:space:]]/q; s/^Spec:[[:space:]]*\(docs\/features\/[^[:space:]]*\.md\).*/\1/p' "$LEDGER" | head -n 1)"
+    [ -z "$SPEC" ] || [ ! -f "$(dirname "$LEDGER")/../$SPEC" ] || LINTED+=("$(dirname "$LEDGER")/../$SPEC")
+    for f in "${LINTED[@]}"; do
+      while IFS= read -r hit; do
+        echo "ERROR  $hit: a remnant of a tool call (R-0165) — text a planning agent wrapped around the plan" >&2
+        RC=1
+      done < <(awk -v f="$f" '/<\/([A-Za-z_]+:)?(content|invoke|parameter)>|<([A-Za-z_]+:)?(invoke|parameter)[ \t]+name=/ {
+                 print f ":" NR }' "$f")
+    done
+
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
       echo "ERROR  Status: aktiv, but no open [ ] task left (tasks/README.md: the invariant)" >&2
       RC=1
