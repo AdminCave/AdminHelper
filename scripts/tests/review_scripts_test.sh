@@ -374,6 +374,66 @@ stage CHANGELOG.md
 r sec --staged
 [ $rc -eq 0 ] && ok "an ordinary change is not blocked" || bad "false block: rc=$rc out=$OUT"
 
+# ══ sec --range: what a push or a pull request takes along (R-0123) ═══════════
+echo "── sec --range ──"
+# A repository of its own: these cases commit and branch. Every commit of the span
+# counts, not the net diff — a file added and removed again still leaves with a push.
+RFIX="$WORK/range"; mkdir -p "$RFIX/scripts/dev" "$RFIX/tasks/private" "$RFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$RFIX/scripts/dev/review.sh"
+printf 'tasks/private/\n' > "$RFIX/.gitignore"; printf 'one\n' > "$RFIX/docs/a.md"
+rg() { git -C "$RFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+rr() { OUT=$(bash "$RFIX/scripts/dev/review.sh" "$@" 2>&1); rc=$?; }
+rg init -q -b main; rg add -A; rg commit -qm base; RBASE="$(rg rev-parse HEAD)"
+printf 'internal\n' > "$RFIX/tasks/private/x.md"; rg add -f -- tasks/private/x.md; rg commit -qm "private"
+rr sec --range "$RBASE..HEAD"
+[ $rc -eq 4 ] && grep -q "tasks/private/x.md (commit " <<<"$OUT" \
+  && ok "a private file in the span -> exit 4, with the commit" || bad "range private: rc=$rc out=$OUT"
+rg rm -q -- tasks/private/x.md; rg commit -qm "gone again"
+[ -z "$(rg diff --name-only "$RBASE" HEAD)" ] || bad "fixture: the net diff should be empty"
+rr sec --range "$RBASE..HEAD"
+[ $rc -eq 4 ] && grep -q "tasks/private/x.md" <<<"$OUT" \
+  && ok "added and removed again inside the span -> still exit 4 (the net diff is empty)" || bad "range history: rc=$rc out=$OUT"
+RCLEAN="$(rg rev-parse HEAD)"
+printf 'two\n' >> "$RFIX/docs/a.md"; rg add -A; rg commit -qm "ordinary"
+rr sec --range "$RCLEAN..HEAD"
+[ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "a clean span -> sec: clean" || bad "range clean: rc=$rc out=$OUT"
+# The key is assembled at run time: written out, it would stop this very file at sec.
+printf 'x\nDedup-%s: sec:%s\n' Key "server:leak.py:probe" >> "$RFIX/docs/a.md"; rg add -A; rg commit -qm "a finding"
+rr sec --range "$RCLEAN..HEAD"
+[ $rc -eq 4 ] && grep -q "docs/a.md:4 (commit " <<<"$OUT" && ! grep -q "leak.py" <<<"$OUT" \
+  && ok "a security finding's Dedup-Key -> exit 4 with file:line, never the line" || bad "range key: rc=$rc out=$OUT"
+rr sec --staged --range "$RCLEAN..HEAD"
+[ $rc -eq 2 ] && ok "--staged with --range -> usage error" || bad "staged+range: rc=$rc out=$OUT"
+rr sec --range "$RCLEAN..nosuchref"
+[ $rc -eq 2 ] && ok "a range git does not know -> usage error, not clean" || bad "bad range: rc=$rc out=$OUT"
+rr sec --staged --not-on origin
+[ $rc -eq 2 ] && ok "--not-on without --range -> usage error" || bad "not-on alone: rc=$rc out=$OUT"
+# Merges: a branch that merges main brings main's lines — public already — along.
+# Read by what the merge brings itself, against all its parents, they are no finding;
+# what the merge adds on its own is.
+rg reset -q --hard "$RCLEAN"; rg checkout -q -b feature
+printf 'feature\n' > "$RFIX/docs/f.md"; rg add -A; rg commit -qm "feature"
+rg checkout -q main
+printf 'Dedup-%s: sec:%s\n' Key "old:main.md:line" > "$RFIX/docs/main.md"; rg add -A; rg commit -qm "main has a key line"
+rg checkout -q feature; rg merge -q --no-edit main
+rr sec --range "main...feature"
+[ $rc -eq 0 ] && ok "a merge of main into the branch brings no finding of its own" || bad "merge of main: rc=$rc out=$OUT"
+rg checkout -q -b feature2 "$RCLEAN"
+printf 'feature two\n' > "$RFIX/docs/f2.md"; rg add -A; rg commit -qm "feature two"
+rg merge -q --no-commit --no-ff main >/dev/null
+mkdir -p "$RFIX/tasks/private"; printf 'internal\n' > "$RFIX/tasks/private/m.md"; rg add -f -- tasks/private/m.md
+printf 'Dedup-%s: sec:%s\n' Key "evil:merge.md:line" > "$RFIX/docs/merge.md"; rg add -- docs/merge.md
+rg commit -qm "a merge that adds a private file"
+rr sec --range "main...feature2"
+[ $rc -eq 4 ] && grep -q "tasks/private/m.md (merge " <<<"$OUT" && grep -q "docs/merge.md:1 (merge " <<<"$OUT" \
+  && ok "a merge that adds a private file or a key line itself -> exit 4" || bad "evil merge: rc=$rc out=$OUT"
+# A push: commits the remote has already are no part of what leaves.
+rg update-ref refs/remotes/origin/main main
+rr sec --range "$RCLEAN..feature"
+[ $rc -eq 4 ] && grep -q "docs/main.md" <<<"$OUT" && ok "without --not-on main's commits in the span count" || bad "no not-on: rc=$rc out=$OUT"
+rr sec --range "$RCLEAN..feature" --not-on origin
+[ $rc -eq 0 ] && ok "--not-on origin leaves out what origin already has" || bad "not-on: rc=$rc out=$OUT"
+
 # ══ diff-scan: a declared test deletion ═══════════════════════════════════════
 echo "── diff-scan --task: a whole test may go when the task says so ──"
 cat > "$FIX/tasks/del.md" <<'MD'

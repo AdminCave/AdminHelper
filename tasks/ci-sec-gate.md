@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI-Sperre für Privates: review.sh sec über PR-Diff und vor jedem Push — Task-Ledger
-Status: freigegeben · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/ci-sec-gate · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-05 („ci-sec-gate freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0123
 Hängt ab von: harness/stufe-6b (gemergt) — beide ändern scripts/dev/review.sh, review_scripts_test.sh, DEVELOPMENT.md und docs/developer/cicd.html; erst nach dem Merge von 6b bauen und origin/main vorher hineinmergen
@@ -30,8 +30,10 @@ Kevins Handgriff nach dem Merge: Im GitHub-Ruleset für main den Check „Public
 Pflicht-Check eintragen, wie die schon offenen „… (pytest, image lock)“-Checks. Der pre-push-Hook wirkt über das
 gesetzte `core.hooksPath=scripts/dev/hooks` ohne weiteren Handgriff in jedem Klon, der main danach holt.
 
-### T1 — `review.sh sec --range <a>..<b>`: sec über eine Commit-Spanne  [ ]
+### T1 — `review.sh sec --range <a>..<b>`: sec über eine Commit-Spanne  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @87f2cc46 2026-10-05T06:29:32+02:00
+Review: Review am Ende (Kurz-Ledger, Opus); Gegenprobe mit review.sh aus HEAD: 8 der 11 Range-Faelle rot (die 3 Usage-Faelle lehnt HEAD ohnehin ab)
 Änderung: `--range` gilt heute nur für `risk` (`review.sh:168` „--range is for risk alone“). Es gilt künftig auch für
 `sec`; `--staged` und `--range` schließen sich weiter aus (`:169`). Beide Prüfungen von sec lesen schon über
 `changed_paths` bzw. `GIT_DIFF` mit `DIFF_ARGS` (`:164–179`, `:612–648`): die gesperrten Pfade und der
@@ -58,6 +60,12 @@ bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger, `sec:`-Dedup-Keys, `.d
 nur in `task-close.sh`“. Dieselbe Sperre soll jeden Weg nach außen abdecken, nicht nur den lokalen Commit.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine eigene (der Kopfkommentar von review.sh; die Nutzer-Doku folgt mit T2/T3)
+Notiz: Eine Spanne wird Commit für Commit gelesen, nicht als Netto-Diff (eine Datei, die in der Spanne kommt und
+wieder geht, verlässt mit dem Push trotzdem die Box); Merges über den kombinierten Diff (nur was gegen alle Eltern neu ist —
+ein Merge von main bringt dessen öffentliche Zeilen nicht als Fund mit; Aufsicht 2026-10-05). Neu `--not-on <remote>`
+für den pre-push (nur Commits, die der Remote noch nicht hat). Altbestand auf main, Aufsicht: bleibt —
+`docs/features/harness-stufe-4.md:124` und `tasks/harness-stufe-4.md:42` (86128f52) beschreiben die Regel selbst;
+eine Spanne, die 86128f52 enthält (z. B. `workflow_dispatch` auf einem Branch von vor dem 2026-09-18), trifft sie.
 
 ### T2 — CI-Job „Public repo guard (review.sh sec)“  [ ]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/review_scripts_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, CHANGELOG.md

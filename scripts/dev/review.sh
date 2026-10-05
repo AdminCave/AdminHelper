@@ -8,7 +8,10 @@
 #   bash scripts/dev/review.sh diff-scan [--staged] [--task <ledger> <id>]
 #                                                       ways to make a suite lie
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
-#   bash scripts/dev/review.sh sec [--staged]           what must never be committed
+#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>]]
+#                                                       what must never be committed or pushed
+#                                                       (names a path or file:line, never a line's
+#                                                       content: its output may stand in a public CI log)
 #   bash scripts/dev/review.sh check-verdict <file> --tree <hash> [--task <ledger> <id>]
 #                                                       a reviewer's verdict JSON
 #   bash scripts/dev/review.sh risk [--staged | --range <a>..<b>]
@@ -148,7 +151,7 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
@@ -171,6 +174,10 @@ while [ $# -gt 0 ]; do
     --tree)
       [ $# -ge 2 ] || die "--tree needs <hash>"
       TREE_ARG="$2"; shift ;;
+    --not-on)
+      [ $# -ge 2 ] || die "--not-on needs <remote>"
+      case "$2" in -*|'') die "not a remote: $2" ;; esac
+      NOT_ON="$2"; shift ;;
     --range)
       [ $# -ge 2 ] || die "--range needs <a>..<b>"
       case "$2" in -*|'') die "not a range: $2" ;; *..*) ;; *) die "not a range (<a>..<b>): $2" ;; esac
@@ -195,9 +202,11 @@ task_field() {
 }
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
+[ -z "$NOT_ON" ] || [ -n "$RANGE" ] || die "--not-on needs --range"
 if [ -n "$RANGE" ]; then
   # The other verbs judge what is about to be committed; a range is history.
-  [ "$VERB" = risk ] || die "--range is for risk alone"
+  case "$VERB" in risk|sec) ;; *) die "--range is for risk and sec alone" ;; esac
+  [ -z "$NOT_ON" ] || [ "$VERB" = sec ] || die "--not-on is for sec --range alone"
   [ "$STAGED" = 0 ] || die "--staged or --range, not both"
   DIFF_ARGS+=("$RANGE")
 fi
@@ -643,34 +652,95 @@ $IMPLICIT"
 
   sec)
     # Fail closed. tasks/private/ is gitignored, but `git add -f` would take it,
-    # and this repo is public (CLAUDE.md §2).
+    # and this repo is public (CLAUDE.md §2). The findings name a path or a
+    # file:line and never the content of a line, so they may stand in a public
+    # CI log.
     BLOCKED=()
-    while IFS= read -r p; do
-      case "$p" in
+    # sec_path <path> <tag> — the files that must never leave.
+    sec_path() {
+      case "$1" in
         # The private roadmap and the security ledgers — and the two files that
         # actually carry credentials on this box: the Proxmox token lives in
         # .claude/settings.local.json (CLAUDE.md §8) and the database password
         # in .devenv.sh. Both are gitignored, and both would be taken by an
         # `git add -f` or a helpful editor.
-        tasks/private/*|tasks/sec-*.md|docs/features/sec-*.md) BLOCKED+=("$p") ;;
-        .claude/settings.local.json|.devenv.sh|*/.devenv.sh) BLOCKED+=("$p (carries credentials)") ;;
+        tasks/private/*|tasks/sec-*.md|docs/features/sec-*.md) BLOCKED+=("$1$2") ;;
+        .claude/settings.local.json|.devenv.sh|*/.devenv.sh) BLOCKED+=("$1$2 (carries credentials)") ;;
       esac
-    done <<< "$(changed_paths)"
-    # awk, not `grep -q`: grep leaves the pipeline the moment it matches, git
-    # diff dies of SIGPIPE, and with `set -o pipefail` the hit turned into a
-    # clean bill of health for every diff larger than the pipe buffer. It also
-    # names the line, because "somewhere in this diff" is not actionable.
-    while IFS= read -r hit; do
-      [ -n "$hit" ] && BLOCKED+=("$hit (a security finding's Dedup-Key)")
-    done <<< "$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" | awk '
-      # Headers only before the first @@ of a file: `++ x` added reads `+++ x`.
-      /^diff --git /             { inheader = 1; next }
-      inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
-      /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
-      inheader    { next }
-      /^\+/       { if ($0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno; newno++; next }
-      /^-/        { next }
-                  { newno++ }')"
+    }
+    # sec_scan <tag> <git diff args…> — what this diff adds that must never leave.
+    sec_scan() {
+      local tag="$1" p hit
+      shift
+      while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$("${GIT_DIFF[@]}" "$@" --name-only)"
+      # awk, not `grep -q`: grep leaves the pipeline the moment it matches, git
+      # diff dies of SIGPIPE, and with `set -o pipefail` the hit turned into a
+      # clean bill of health for every diff larger than the pipe buffer. It also
+      # names the line, because "somewhere in this diff" is not actionable.
+      while IFS= read -r hit; do
+        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
+      done <<< "$("${GIT_DIFF[@]}" "$@" | awk '
+        # Headers only before the first @@ of a file: `++ x` added reads `+++ x`.
+        /^diff --git /             { inheader = 1; next }
+        inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
+        /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
+        inheader    { next }
+        /^\+/       { if ($0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno; newno++; next }
+        /^-/        { next }
+                    { newno++ }')"
+    }
+    # sec_scan_merge <tag> <merge> — what the merge itself brings: the combined diff
+    # shows only what differs from every parent, and a line counts only when it is
+    # new against all of them. Against the first parent alone, a merge of main
+    # would bring every public line of main along.
+    MERGE_DIFF=(git -c core.quotePath=false diff-tree --no-commit-id -r --text --no-ext-diff --no-textconv --no-color)
+    sec_scan_merge() {
+      local tag="$1" c="$2" p hit
+      while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$("${MERGE_DIFF[@]}" -c --name-only "$c")"
+      while IFS= read -r hit; do
+        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
+      done <<< "$("${MERGE_DIFF[@]}" --cc -p "$c" | awk '
+        /^diff --(cc|combined) /    { inheader = 1; next }
+        inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
+        /^@@@/      { inheader = 0; np = 0; while (substr($0, np + 1, 1) == "@") np++; np--
+                      for (i = 2; i <= NF; i++) if ($i ~ /^\+/) { split($i, nw, ","); newno = substr(nw[1], 2) + 0 }
+                      next }
+        inheader    { next }
+        { pre = substr($0, 1, np); if (index(pre, "-")) next
+          rest = pre; gsub(/\+/, "", rest)
+          if (rest == "" && $0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno
+          newno++ }')"
+    }
+    if [ -n "$RANGE" ]; then
+      # A range is history, not a net change: a file added and removed again inside
+      # it still leaves with a push. So every commit is read on its own — against its
+      # parent (a root against the empty tree), a merge by what it brings itself;
+      # `a...b` is the history since the merge base, as `git diff a...b` reads it.
+      case "$RANGE" in
+        *...*) BASE="$(git merge-base "${RANGE%%...*}" "${RANGE#*...}" 2>/dev/null)" \
+                 || die "no merge base for $RANGE"
+               SPAN="$BASE..${RANGE#*...}" ;;
+        *)     SPAN="$RANGE" ;;
+      esac
+      # --not-on <remote>: only what that remote does not have yet — a branch that
+      # merged main brings main's commits into the span, and they are public already.
+      NOT_ARGS=()
+      [ -n "$NOT_ON" ] && NOT_ARGS=(--not --remotes="$NOT_ON")
+      COMMITS="$(git rev-list --reverse "$SPAN" "${NOT_ARGS[@]+"${NOT_ARGS[@]}"}" 2>/dev/null)" \
+        || die "not a range git knows: $RANGE"
+      EMPTY_TREE="$(git hash-object -t tree /dev/null)"
+      while IFS= read -r c; do
+        [ -n "$c" ] || continue
+        if git rev-parse -q --verify "$c^2" >/dev/null 2>&1; then
+          sec_scan_merge " (merge ${c:0:12})" "$c"
+        else
+          parent="$(git rev-parse -q --verify "$c^1" 2>/dev/null)" || parent="$EMPTY_TREE"
+          sec_scan " (commit ${c:0:12})" "$parent" "$c"
+        fi
+      done <<< "$COMMITS"
+    else
+      sec_scan "" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}"
+    fi
     if [ "${#BLOCKED[@]}" -gt 0 ]; then
       echo "review.sh sec: this repo is public — refusing:" >&2
       printf '  %s\n' "${BLOCKED[@]}" >&2
