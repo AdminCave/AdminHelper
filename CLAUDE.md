@@ -27,9 +27,10 @@ eigene PKI), VictoriaMetrics (Line-Protocol), Tauri-IPC, Proxmox-API — vor Än
 <!-- Stufe 0 · Quelle §3.1, §3.2, §5 Leitprinzipien 4/5/7/10, Stufe 13 -->
 
 **Nichts läuft ohne Kevins Start.** Kein Timer, kein Cron, keine Routine. Kevin startet jede Session, jeden Testlauf
-und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`;
-eine zweite **Lane** ist die Ausnahme, die `/feature-plan` am Gate vorschlägt, wenn zwei Ledger disjunkt sind
-und höchstens eines VMs braucht (AUTONOMOUS.md „Parallel-Betrieb").
+und jeden Bau, oder die Aufsichts-Session gibt einem laufenden Worker den Startauftrag (§2 „Entscheidungen“); er setzt
+die Reihenfolge, entscheidet, was unter „Entscheidungen“ steht, und publiziert. Zur Zeit ist genau **ein**
+Bau-Vorhaben `aktiv`; eine zweite **Lane** ist die Ausnahme, die `/feature-plan` am Gate vorschlägt, wenn zwei Ledger
+disjunkt sind und höchstens eines VMs braucht (AUTONOMOUS.md „Parallel-Betrieb").
 **Lange Läufe laufen überwacht:** Wochenlauf, Capstone, Bake, CI-Watch startet Claude auf Kevins Zuruf als
 Hintergrund-Lauf (tmux plus Wächter), bleibt dran bis zum Report und meldet das Ergebnis — nie nackt in einem
 Terminal abgesetzt, nie von selbst gestartet (Regeln in `.claude/skills/test/SKILL.md`).
@@ -38,14 +39,31 @@ Terminal abgesetzt, nie von selbst gestartet (Regeln in `.claude/skills/test/SKI
 ebenfalls; Sonnet nur für die schnellen Task-Reviewer im Bau (Regeln in den Skills).
 
 **Verben, die es heute gibt (Stufe 0):** `/feature-plan` (Spec + Ledger, stoppt am Design-Gate), `/feature-build`
-(Ledger abarbeiten bis zum Draft-PR), `/feature-review` (frischer Reviewer für einen Diff), `/test` (schwere Suiten auf
+(Ledger abarbeiten bis zur Übergabe), `/feature-review` (frischer Reviewer für einen Diff), `/test` (schwere Suiten auf
 VMs), `/roadmap` (Roadmap zeigen, triagieren). Die Zielverben der Roadmap (`/roadmap /spec /build /audit /test /vm /find
 /hunt /release`) entstehen stufenweise. **Ein Verb, das hier fehlt, gibt es noch nicht: sagen, nicht improvisieren.**
 
 **Lebenslauf einer Einheit:** Zeile in `tasks/private/ROADMAP.md` (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE)
-→ `/feature-plan` schreibt `docs/features/<slug>.md` + `tasks/<slug>.md` mit `Status: geplant` → **Kevin liest und
-gibt frei** (der einzige Pflicht-Checkpoint) → `/feature-build` arbeitet Task für Task ab (Verify → Schnellsuite →
-Review → Commit) → Draft-PR → Kevin merged → Roadmap-Zeile nach „Abgeschlossen".
+→ `/feature-plan` schreibt `docs/features/<slug>.md` + `tasks/<slug>.md` mit `Status: geplant` → **Freigabe**
+(der Pflicht-Checkpoint: Kevin, außer bei kleinen Fund-Paketen, siehe „Entscheidungen“) → `/feature-build` arbeitet
+Task für Task ab (Verify → Schnellsuite → Review → Commit) → PR → die Aufsichts-Session prüft und merged, wenn CI grün
+ist (§2/§3-PRs und Bauten ohne Aufsicht: Kevin) → Roadmap-Zeile nach „Abgeschlossen".
+
+**Entscheidungen (Kevin, 2026-10-05):** Kevin entscheidet (1) Reihenfolge und Inhalt der Roadmap (Triage: annehmen,
+zurückstellen, ablehnen, bündeln), (2) die Freigabe von Stufen-Plänen, (3) was ein Nutzer von AdminHelper merkt
+(sichtbares Verhalten, API-Verträge, Datenmigrationen), (4) bewusst hingenommenes Restrisiko, (5) Geld- und Zeitdeckel
+und ein Paket, das sie sprengt, (6) Irreversibles und nach außen Wirkendes, abschließend: Release, Tag, Publish,
+Ruleset, Repo-Einstellungen, (7) was nur er tun kann (sudo, Tokens, Passwörter); dazu startet nur er den Runner-Loop,
+und PRs, die diese Regeln oder die Befugnisse der Aufsicht ändern (§2, §3 dieser Datei), merged nur er. Die
+**Aufsichts-Session** ist die eine Session, die Kevin ausdrücklich als Aufsicht gestartet oder benannt hat (heute
+`adminhelper-ac`, in Kevins eigenem Wort). Jede Session, die `/feature-build` fährt, in einem Lane- oder
+Worker-Worktree läuft oder ihren Auftrag von einer anderen Session bekommt, ist ein **Worker**, gleich wer sie
+gestartet hat; im Zweifel ist eine Session nicht die Aufsicht. Die Aufsicht entscheidet alles andere innerhalb
+angenommener Roadmap-Zeilen und berichtet danach (Zuschnitt, Umsetzungsweg, Teststrategie, Nachbesserungen aus
+Reviews, Einordnung von Review-Funden); sie gibt kleine Fund-Pakete frei (höchstens drei Tasks, aus Zeilen, die Kevin
+in der Triage angenommen hat, nichts aus (1)–(7)), gibt Workern Startaufträge für freigegebene Ledger, pusht Branches
+und das private Roadmap-Repo, öffnet PRs und merged nach eigener Prüfung, wenn CI grün ist (Kevins Dauerauftrag vom
+2026-09-29). Fragen an Kevin gehen gesammelt und mit Empfehlung; im Zweifel fragen statt raten.
 
 **Zwei Wahrheiten:** `tasks/private/ROADMAP.md` ist die einzige Reihenfolge-Wahrheit (was als Nächstes kommt; Kevin
 kuratiert von Hand; eigenes privates Repo, nie im öffentlichen Baum). `tasks/<slug>.md` ist die einzige
@@ -56,7 +74,8 @@ sucht sich Arbeit außerhalb dieser beiden Dateien.
 Freigaben setzen oder Gates überspringen · einen zweiten Bau-Lauf starten · VMs außerhalb des Proxmox-Pools
 `adminhelper-ci` anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte
 Dateien schreiben. Wo ein Skill heute am Ende pushen oder einen PR öffnen will, ist der Permission-Prompt Kevins
-Entscheidung. Innerhalb des Pools `adminhelper-ci` darf Claude VMs klonen, baken und zerstören (Freigabe
+Entscheidung. Ausnahme ist die Aufsichts-Session im Rahmen von „Entscheidungen“; Worker und Runner pushen, mergen
+und geben nie frei. Innerhalb des Pools `adminhelper-ci` darf Claude VMs klonen, baken und zerstören (Freigabe
 2026-09-08). **Committen tut seit Stufe 4 `scripts/dev/task-close.sh`, nicht die Session:** es fährt das
 `Verify:` der Task, prüft Diff-Scan, Scope und Sec-Sperre, setzt den Haken mit der Summary-Zeile als
 Evidenz und committet Code + Ledger. Für den **Runner** sind `git add|commit|checkout|restore|stash`
@@ -100,7 +119,8 @@ beginnt die Antwort mit einer Zeile `Warnung:` — einmal, vor der Arbeit; danac
 v0.45.0, main 1 Commit vor origin — Release halb geschnitten; erst die drei Testebenen, dann Tag und Push."
 **Schweigeregel:** kein Trigger, keine Warnung. Keine Bestätigungsfragen für Routine, keine Warnung für Branch ≠
 `main`, für das Alter einer Warm-VM oder für fehlende Zahlen. Irreversibles (push, tag, publish, merge, `destroy`
-außerhalb des Pools) wird nicht gewarnt, sondern **nicht getan**: Claude nennt den Befehl, Kevin führt ihn aus.
+außerhalb des Pools) wird nicht gewarnt, sondern **nicht getan**: Claude nennt den Befehl, Kevin führt ihn aus —
+ausgenommen push und merge der Aufsichts-Session nach §2 „Entscheidungen“.
 
 ## 4. Stufen-Fahrplan
 
@@ -151,7 +171,8 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
 - **Plattform-Code** (`*_linux.go`/`*_windows.go`, RDP/SSH je OS) wird auf der Plattform verifiziert; was, wo und mit
   welchem Ergebnis steht in Antwort oder PR.
 - **CI nach Push oder Tag begleiten** (`gh run watch`), transiente Fehler per `gh run rerun <id> --failed`; nicht
-  „fertig" melden, solange CI läuft oder rot ist. Push und Tag setzt Kevin.
+  „fertig" melden, solange CI läuft oder rot ist. Tags setzt Kevin; push und merge die Aufsichts-Session (§2),
+  ohne Aufsicht Kevin.
 - **Doku im selben Commit** (DE + EN, README, DEVELOPMENT, CHANGELOG; Regeln in `.claude/rules/docs.md`).
 - **Bei Multi-Step-Tasks** kurzen Plan „Schritt → Verifikation" zeigen.
 
