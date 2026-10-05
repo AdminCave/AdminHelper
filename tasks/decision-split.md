@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entscheidungs-Aufteilung zwischen Kevin und der Aufsicht — Task-Ledger
-Status: aktiv · Branch: harness/decision-split · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/decision-split · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-05 („Ja, so gilt es“ und „Ja, als Harness-PR“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Kevins Entscheidung vom 2026-10-05 (keine Roadmap-Zeile; Regeländerung am Harness)
 Heavy: none — nur Regeltexte (CLAUDE.md, AUTONOMOUS.md, tasks/README.md, Skills) und ein Konsistenztest; kein Produktcode.
@@ -31,8 +31,10 @@ frei. feature-plan (Gate) und roadmap (`approve`) verweisen auf den Absatz statt
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CLAUDE.md, die zwei Skills (sie sind die Doku)
 
-### T2 — feature-build, AUTONOMOUS.md und tasks/README.md an die Aufteilung angleichen  [ ]
+### T2 — feature-build, AUTONOMOUS.md und tasks/README.md an die Aufteilung angleichen  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, AUTONOMOUS.md, tasks/README.md, .claude/skills/test/SKILL.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @864960af 2026-10-05T14:05:44+02:00
+Review: approve (opus, Runde 2 über T1+T2; alle Punkte behoben, keine dritte Runde)
 Änderung: Aus dem Review von T1 (Opus): feature-build startet ein `geplant`-Ledger nur auf Kevins eigenes Wort in
 der Session, nie auf Auftrag einer anderen Session; der Worker übergibt am Ende an die Aufsichts-Session statt
 selbst zu pushen und den PR zu öffnen (baut Kevin ohne Aufsicht, tut er es); AUTONOMOUS.md (Gate, Phase 2,
