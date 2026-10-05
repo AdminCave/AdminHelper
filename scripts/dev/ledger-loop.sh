@@ -98,12 +98,22 @@ if [ "${1-}" = status ]; then
     esac
     shift
   done
-  [ -r "$STATE" ] || { echo "Worker: — (no $STATE)"; exit 0; }
+  # The first line is the worker's line of the AH-STATUS (session-status.sh takes it).
+  [ -r "$STATE" ] || { echo "Worker: —"; exit 0; }
   python3 - "$STATE" <<'PY'
-import json, sys
+import datetime, glob, json, os, sys
 
 def clean(v, n=200):
     return "".join(c for c in str(v) if c.isprintable())[:n]
+
+def obj(v):
+    return v if isinstance(v, dict) else {}
+
+def hhmm(v):
+    try:
+        return datetime.datetime.fromisoformat(str(v)).strftime("%H:%M")
+    except ValueError:
+        return "?"
 
 try:
     s = json.load(open(sys.argv[1]))
@@ -112,15 +122,35 @@ try:
 except (OSError, ValueError):
     print("Worker: ? (state.json unlesbar)")
     sys.exit(0)
-run = s.get("run") if isinstance(s.get("run"), dict) else {}
-stop = s.get("stop")
-print("Worker: %s · started %s" % ("stop: " + clean(stop) if stop else "läuft", clean(run.get("started", "?"), 32)))
+run, task, stop = obj(s.get("run")), obj(s.get("task")), s.get("stop")
+if stop:
+    print("Worker: stop: %s %s" % (clean(stop, 40), hhmm(s.get("updated"))))
+else:
+    cost = s.get("cost_usd") if type(s.get("cost_usd")) in (int, float) else 0
+    where = ""
+    if task.get("id"):
+        of = task.get("of")
+        where = " %s%s %s" % (clean(task["id"], 20), "/" + clean(of, 6) if type(of) is int else "",
+                              clean(task.get("ledger", "?"), 80))
+    print("Worker: läuft%s · %s $ · seit %s" % (where, ("%.2f" % cost).replace(".", ","), hhmm(run.get("started"))))
 if s.get("stop_reason"):
     print("  " + clean(s["stop_reason"]))
-for slug, l in (s.get("ledgers") if isinstance(s.get("ledgers"), dict) else {}).items():
-    l = l if isinstance(l, dict) else {}
+for slug, l in obj(s.get("ledgers")).items():
+    l = obj(l)
     print("  %s: %s%s" % (clean(slug, 60), clean(l.get("result", "?"), 60),
                           " — " + clean(l["reason"]) if l.get("reason") else ""))
+# The last lines of the newest summary beside the state file, from its Stop: line on.
+sums = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "summary-*.md")))
+if sums:
+    try:
+        lines = open(sums[-1], errors="replace").read().split("\n")
+    except OSError:
+        lines = []
+    k = max((i for i, l in enumerate(lines) if l.startswith("Stop:")), default=max(len(lines) - 2, 0))
+    print("  %s:" % clean(os.path.basename(sums[-1]), 80))
+    for l in lines[k:]:
+        if l.strip():
+            print("    " + clean(l))
 PY
   exit 0
 fi
@@ -702,7 +732,8 @@ run_task() {
   archive_reviews "$wt" "$slug" "$id"
   vd="$wt/.ah-out/review/$slug"
   msg="$wt/$(msg_path "$slug" "$id")"
-  state 's["task"] = {"ledger": a[0], "id": a[1], "since": now}' "$ledger" "$id"
+  state 's["task"] = {"ledger": a[0], "id": a[1], "since": now, "of": int(a[2])}' "$ledger" "$id" \
+    "$(grep -cE '^###[[:space:]]+[A-Za-z0-9._-]+[[:space:]]' "$wt/$ledger")"
   while :; do
     n=$((n + 1))
     # The run's time and budget hold inside a task too: a task whose sessions keep

@@ -184,8 +184,10 @@ zählen als 0 (sonst senken sie die Lauf-Summe oder blenden den Deckel); den Tex
 `result` und stderr, die Rohausgabe nur, wenn sie kein JSON ist — im JSON stehen die verweigerten Befehle, die das
 Modell schrieb.
 
-### T8 — Stand sichtbar: `ledger-loop.sh status` und die Worker-Zeile im AH-STATUS  [ ]
+### T8 — Stand sichtbar: `ledger-loop.sh status` und die Worker-Zeile im AH-STATUS  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @cafa4f74 2026-10-05T13:17:07+02:00
+Review: approve (opus/xhigh; 3 nit) · round 1
 Änderung: `session-status.sh:187`: statt „Worker: — (ab 7)“ liest der Hook `${AH_LOOP_STATE:-/srv/ah/loop/state.json}`,
 wenn lesbar, nur als Datei (nie `git` in `/srv/ah`), und druckt „Worker: läuft T<k>/<n> tasks/<slug>.md · <$> · seit
 <hh:mm>“ bzw. „Worker: stop: <klasse> <hh:mm>“ bzw. „Worker: —“; Texte gereinigt und gekürzt. `ledger-loop.sh status`
@@ -194,6 +196,10 @@ druckt dieselbe Zeile plus die letzten Summary-Zeilen. Tests: Zustandsdatei läu
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T10)
 Abhängt von: T6
+Abweichung: Der Hook rechnet die Zeile nicht selbst, er nimmt die erste Zeile von `ledger-loop.sh status` dieses
+Checkouts (eine Stelle, die die Datei liest und reinigt). „seit“ ist der Start des Laufs, die Kosten sind die des
+Laufs; `state.json` trägt dafür je Task `of` (Zahl der Tasks im Ledger). Ein gekillter Loop steht weiter als „läuft“
+da: der Zustand sagt nur, was der Loop zuletzt schrieb.
 
 ### T9 — Red Team prüft die Bau-Session  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
@@ -231,3 +237,14 @@ des Umleitungsziels ablehnen kann; dazu die Gegenprobe: dasselbe Muster auf ein 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Interna des Red Teams; den Lauf beschreibt T10)
 Abhängt von: T9
+
+### T12 — Nachbesserung T7: Handover nachholen  [ ]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Änderung: Aufsicht 2026-10-05 aus dem T7-Review: Der Loop committet `bereit` vor dem Handover; scheitern danach
+`pr-body` oder das Bundle (`stop: infra`), überspringt ein neuer Lauf das Ledger, und PR-Text und Bundle fehlen.
+`setup_ledger` holt den Handover nach, wenn die Lane auf `bereit` steht und kein Bundle da ist; Test dazu. Dazu die
+Testlücken aus T7: eine Session-Kosten `Infinity`, ein Ledger ohne `Heavy:`-Zeile (Vermerk im PR-Text), und der
+NaN-Fall so, dass er auch unter gawk ohne den Schutz rot wird.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Korrektur an T7; den Worker beschreibt T10)
+Abhängt von: T7

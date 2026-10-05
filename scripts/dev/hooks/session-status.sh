@@ -56,6 +56,7 @@ done
 # roadmap.py comes from the checkout this hook lives in, not from the one it
 # looks at (a test runs it against a fixture repo without scripts/).
 ROADMAP_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/roadmap.py"
+LOOP_SH="${ROADMAP_PY%/roadmap.py}/ledger-loop.sh"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$ROOT" ] || exit 0
 cd "$ROOT" || exit 0
@@ -184,7 +185,16 @@ weekly_line() {
     echo "$day: $head"
   fi
 }
-echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: — (ab 7)"
+# The worker (stage 7a): the first line of `ledger-loop.sh status` of THIS checkout,
+# which reads the runner's state file as a file — never git in /srv/ah, never a
+# script of the runner in Kevin's rights.
+worker_line() {
+  local f="${AH_LOOP_STATE:-/srv/ah/loop/state.json}" line
+  [ -r "$f" ] || { echo "—"; return 0; }
+  line="$(timeout 10 bash "$LOOP_SH" status --state "$f" 2>/dev/null | head -n 1)"
+  case "$line" in "Worker: "*) echo "${line#Worker: }" ;; *) echo "?" ;; esac
+}
+echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: $(worker_line)"
 
 # ── line 4b: scheduled workflows ──────────────────────────────────────────────
 # One line per workflow with a `schedule:`. The newest COMPLETED run on main

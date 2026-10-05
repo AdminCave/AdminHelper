@@ -572,6 +572,8 @@ LL="$(lane lim)"
   && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("reset"))' "$LOOPD/state.json")" = 3:45pm ] \
   && [ -z "$(git -C "$LL" status --porcelain)" ] && [ ! -e "$LL/apps/x/new.py" ] && grep -q '^Reset: 3:45pm' "$(ls -t "$LOOPD"/summary-*.md | head -n 1)" \
   && ok "the subscription's limit -> stop: usage-limit with the reset time, the task open, the lane clean" || bad "lim: rc=$rc $(stopped)"
+[ "$(python3 -c 'import json, sys; t = json.load(open(sys.argv[1]))["task"]; print(t["id"], t["of"])' "$LOOPD/state.json")" = "T1 1" ] \
+  && ok "state.json names the task and how many the ledger has" || bad "task in state: $(cat "$LOOPD/state.json")"
 seq_set credits
 loop --ledger tasks/cred.md
 [ $rc -eq 74 ] && [ "$(box cred)" = " " ] && grep -q '^infra — cred T1: the CLI asks for usage credits for 1M context' <<<"$(stopped)" \
@@ -644,6 +646,16 @@ OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&
 printf 'not json' > "$WORK/s.json"
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
 [ $rc -eq 0 ] && grep -q 'Worker: ? (state.json unlesbar)' <<<"$OUT" && ok "a broken state.json is named, not a crash" || bad "broken state: rc=$rc $OUT"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/none.json" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$OUT" = "Worker: —" ] && ok "no state file -> Worker: —" || bad "no state: $OUT"
+SD="$WORK/sdir"; mkdir -p "$SD"
+printf '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": null, "cost_usd": 4.1, "task": {"ledger": "tasks/x.md", "id": "T3", "of": 8}}' > "$SD/state.json"
+printf '# old\n\nStop: max-tasks\n\nledger-loop: 9 tasks, 0 ready, 0 blocked, $1.00 total, stop: max-tasks\n' > "$SD/summary-2026-10-03-230000.md"
+printf '# new\n\nStop: ledger-leer\n\nledger-loop: 2 tasks, 1 ready, 1 blocked, $3.20 total, stop: ledger-leer\n' > "$SD/summary-2026-10-04-064000.md"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SD/state.json" 2>&1)
+[ "$(head -n 1 <<<"$OUT")" = 'Worker: läuft T3/8 tasks/x.md · 4,10 $ · seit 01:12' ] \
+  && grep -qx '    ledger-loop: 2 tasks, 1 ready, 1 blocked, \$3.20 total, stop: ledger-leer' <<<"$OUT" && ! grep -q '9 tasks' <<<"$OUT" \
+  && ok "status: the worker's line first, then the last lines of the newest summary" || bad "status lines: $OUT"
 
 echo "── repo wiring ──"
 for p in scripts/dev/ledger-loop.sh scripts/tests/ledger_loop_test.sh; do
