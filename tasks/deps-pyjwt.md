@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # pyjwt 2.14.0 → 2.15.1 im Server-Lock (R-0193) — Task-Ledger
-Status: aktiv · Branch: feature/deps-pyjwt · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/deps-pyjwt · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0193 am 2026-10-06 angenommen und den Bau durch Worker A gewählt; Ein-Task-Paket, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0193 (Kurz-Ledger ohne Spec)
 Heavy: none — nur der gehashte Lock und die Untergrenze einer reinen Python-Bibliothek in apps/server; kein Dockerfile, kein Compose, kein Gateway-, PKI- oder Install-Pfad. Den JWT-Pfad (`app/core/auth.py`, `jwt.encode`/`jwt.decode` mit HS256) deckt die Server-Unit-Suite, der Lock-Stand des Images läuft im CI-Job `python-lock-server`.
@@ -17,8 +17,10 @@ Der Fund trifft laut Advisory den JWKS-Pfad (`PyJWKClient.get_signing_key_from_j
 Signaturprüfung; der Server nutzt nur `jwt.decode` mit Schlüssel und `algorithms=[…]` (`app/core/auth.py:83`, `:125`,
 `:151`, `:173`). Der Bump macht den Audit wieder grün, eine Code-Änderung gehört nicht dazu.
 
-### T1 — pyjwt im Server-Lock auf 2.15.1 heben (R-0193)  [ ]
+### T1 — pyjwt im Server-Lock auf 2.15.1 heben (R-0193)  [x]
 Komponente: server · Dateien: apps/server/requirements.in, apps/server/requirements.txt, CHANGELOG.md, THIRD_PARTY_LICENSES.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @f3baa7fa 2026-10-06T01:32:36+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Untergrenze in `requirements.in` auf `PyJWT>=2.15.0`. Den Lock nach DEVELOPMENT.md „Lock neu erzeugen“
 erzeugen (Python 3.12 wie das Dockerfile, pip-tools, `--generate-hashes`, dazu `--upgrade-package pyjwt==2.15.1`);
 im Diff von `requirements.txt` ändern sich nur Version und Hashes von pyjwt, der Kopf bleibt. Vorher das offizielle
