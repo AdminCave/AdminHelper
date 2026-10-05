@@ -207,17 +207,28 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Waechter oder haengt er, sperrt der Hook mit Exit 2. Anleitung: `DEVELOPMENT.md` „Runner-User" (Red Team) und
   „Harness-Schutz und Kill-Switch".
 
+- **FRP: Generate-Routen nur mit nutzbaren Tunneln (Server, R-0128):** `visitor-toml`, `visitor-bundle` und
+  `frpc-toml` lassen STCP-Tunnel ohne Secret weg, bevor sie pruefen, ob ein Tunnel da ist. Bleibt keiner uebrig,
+  antworten sie mit demselben `404` wie ohne Tunnel, und `bulk-zip` schreibt fuer einen solchen Nutzer keine
+  `visitors/<user>.toml`. Das `auth.token` von frps steht damit nur in einer Datei, die auch einen Tunnel
+  enthaelt. Doku: `docs/developer/api-reference.html`.
 - **FRP: Secret und Visitor-Port nur an STCP-Tunneln (Server, R-0129):** Ein HTTPS-Tunnel speichert weder
   `secret_key` noch `visitor_port`; `POST` verwirft mitgeschickte Werte, und der Wechsel per `PUT` auf HTTPS
   loescht beide. Der Wechsel zurueck auf STCP erzeugt ein neues Secret und vergibt einen freien Port, wenn der
   gespeicherte inzwischen einem anderen Tunnel gehoert. Das heilt auch aeltere Zeilen ohne Datenmigration;
   bisher endete dieser Rueckwechsel mit `409`. Doku: `docs/developer/api-reference.html`,
   `docs/admin/frp-tunnel.html`.
-- **FRP: Generate-Routen nur mit nutzbaren Tunneln (Server, R-0128):** `visitor-toml`, `visitor-bundle` und
-  `frpc-toml` lassen STCP-Tunnel ohne Secret weg, bevor sie pruefen, ob ein Tunnel da ist. Bleibt keiner uebrig,
-  antworten sie mit demselben `404` wie ohne Tunnel, und `bulk-zip` schreibt fuer einen solchen Nutzer keine
-  `visitors/<user>.toml`. Das `auth.token` von frps steht damit nur in einer Datei, die auch einen Tunnel
-  enthaelt. Doku: `docs/developer/api-reference.html`.
+- **FRP: bulk-zip nur mit nutzbaren Tunneln (Server, R-0148):** `bulk-zip` laesst STCP-Tunnel ohne Secret
+  einmal vorab weg. Ein Server ohne nutzbaren Tunnel bekommt keine `clients/<server>/frpc.toml` mehr (bisher eine
+  mit `auth.token` und ohne Proxy), ohne nutzbaren STCP-Tunnel gibt es keine `visitor.toml`; im Extremfall
+  enthaelt der ZIP nur `frps.toml`. Das ist dieselbe Regel wie der `404` der Einzelrouten. Je Tunnel ohne Secret
+  steht eine Warnung im Log statt einer je Server, Nutzer und Generator-Aufruf. Doku:
+  `docs/developer/api-reference.html`.
+- **SSE: ein Worker verpasste kurz nach dem Start ein Refresh-Signal (Server, R-0149):** `subscribe()` schickt
+  das Abo an Redis nur ab; ein `publish` vor der Bestaetigung ging verloren, Pub/Sub puffert nicht.
+  `stream_hub.start()` liest jetzt die Bestaetigung (hoechstens 5 s), bevor es den Reader startet und
+  „subscribed" meldet. Bleibt sie aus, warnt es und startet den Reader trotzdem; die Clients fallen wie bisher
+  auf Polling zurueck. Das behebt auch den sporadisch roten `test_redis_fanout_only_to_targeted_user`.
 - **Verbindungen: nur bekannte Felder gehen in Spalten (Server, R-0136):** Beim Anlegen, Aendern und
   Importieren uebernimmt der Server nur die Felder der API (`name`, `kind`, `host`, …, in camelCase) in
   die Spalten einer Verbindung. Alles andere bleibt Zusatzinformation in `extra_data`, auch ein
