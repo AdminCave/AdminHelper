@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entscheidungs-Aufteilung zwischen Kevin und der Aufsicht — Task-Ledger
-Status: bereit · Branch: harness/decision-split · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/decision-split · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-05 („Ja, so gilt es“ und „Ja, als Harness-PR“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Kevins Entscheidung vom 2026-10-05 (keine Roadmap-Zeile; Regeländerung am Harness)
 Heavy: none — nur Regeltexte (CLAUDE.md, AUTONOMOUS.md, tasks/README.md, Skills) und ein Konsistenztest; kein Produktcode.
