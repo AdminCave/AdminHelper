@@ -487,9 +487,9 @@ Laufs, `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite in nur einer Sprache, ein 
 approve oder eine dritte Review-Runde, `4` blockiert (Scope/Sec) oder ein Verdict fuer einen anderen Baum oder eine
 andere Task, `74` die Suite, ein Vertrags-Test, die Probe oder der Reviewer-Prozess konnte gar nicht laufen.
 
-`ledger.sh start` schreibt dabei `.vm/active-task` — heute reine **Anzeige** (wer arbeitet
-gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, gelesen wird die
-Datei erst vom Worker-Preflight der Stufe 7.
+`ledger.sh start` schreibt dabei `.vm/active-task` — reine **Anzeige** (wer arbeitet
+gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, und kein Skript liest
+die Datei, auch der Worker (Stufe 7a) nicht.
 
 `ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`,
 `mark-skip`, `mark-question`, `set-files`, `status`, `new-task`, `lint`) — Details

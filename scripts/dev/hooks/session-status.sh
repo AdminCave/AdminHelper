@@ -12,6 +12,7 @@
 #
 #   AH_AUTONOMOUS=1  print nothing (settings hooks fire in `claude -p` too)
 #   AH_DEVENV        path to the devenv file (default <root>/.devenv.sh)
+#   AH_LOOP_STATE    the worker's state file (default /srv/ah/loop/state.json)
 #
 # The WARN lines fire ONLY when Kevin's next move would fail or something
 # irreversible looms — plus one that is no CLAUDE.md §3 trigger: a scheduled

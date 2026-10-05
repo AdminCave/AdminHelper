@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 7a — der Worker: `ledger-loop.sh`, `/build-task`, Bau-Session-Grenzen — Task-Ledger
-Status: aktiv · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: bereit · Branch: harness/stufe-7a · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Kevin, 2026-10-03 (Design-Gate Stufe 7a, „Freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Pilot: Stufe 6b — `Review: auto` (Reviewer als eigener Prozess über `task-close.sh --review auto`, im tmux mit Wächter); Kevin 2026-10-04, „7a selbst als Pilot“. Zweimal Exit 74 in einer Task ⇒ STOPP und Meldung. Kosten je Runde: `bash scripts/dev/review.sh log --ledger tasks/stufe-7a.md`.
 Spec: docs/features/stufe-7a.md (Roadmap R-0010, R-0108)
@@ -253,8 +253,10 @@ und `redteam_changed` meldet sie. Im eigenen Verzeichnis gibt es kein `scratch.s
 könnte. Beide Probenverzeichnisse (`--probe-dir`) tragen eine leere Harness-Liste, weil der Wächter eines autonomen
 Laufs ohne Liste jeden Schreibzugriff verweigert — die Gegenprobe sähe sonst ihn statt der Regel.
 
-### T12 — Nachbesserung T7: Handover nachholen  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, DEVELOPMENT.md
+### T12 — Nachbesserung T7: Handover nachholen  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, DEVELOPMENT.md, scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0e725d26 2026-10-05T15:04:27+02:00
+Review: approve (opus/xhigh; 4 nit) · round 1
 Änderung: Aufsicht 2026-10-05 aus dem T7-Review: Der Loop committet `bereit` vor dem Handover; scheitern danach
 `pr-body` oder das Bundle (`stop: infra`), überspringt ein neuer Lauf das Ledger, und PR-Text und Bundle fehlen.
 `setup_ledger` holt den Handover nach, wenn die Lane auf `bereit` steht und kein Bundle da ist; Test dazu. Dazu die
@@ -263,6 +265,9 @@ NaN-Fall so, dass er auch unter gawk ohne den Schutz rot wird. Dazu (Aufsicht 20
 der Kopfkommentar von `ledger-loop.sh` nennt die Summary, die `status` liest; der Kopf von `session-status.sh` nennt
 `AH_LOOP_STATE`; `status` druckt höchstens zehn Summary-Zeilen, und `cost_usd` zählt nur endlich und im Bereich. Aus
 dem T10-Review: `DEVELOPMENT.md` sagt nicht mehr, der Worker lese `.vm/active-task` (kein Skript liest die Datei).
+Aus dem T11-Review (Aufsicht 2026-10-05): die Gegenprobe läuft nur nach einer abgelehnten Hauptprobe (sonst kostet sie
+bis zu 1 $ ohne Aussage), der Kommentar zur `mktemp`-Probe sagt den Grund richtig herum, und der Kopf von
+`redteam_test.sh` nennt `--pair` und `--probe-dir`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Korrektur an T7; den Worker beschreibt T10)
 Abhängt von: T7

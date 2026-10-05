@@ -143,7 +143,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -218,6 +218,7 @@ case "$mode" in
   harnskip) printf '# x\n' >> scripts/dev/ledger.sh; bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   negcost) printf 'b = 1\n' >> apps/x/a.py; msg; printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": -100, "num_turns": 1}\n'; exit 0 ;;
   nancost) printf 'b = 1\n' >> apps/x/a.py; msg; printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": NaN, "num_turns": 1}\n'; exit 0 ;;
+  infcost) printf 'b = 1\n' >> apps/x/a.py; msg; printf '{"type": "result", "subtype": "success", "is_error": false, "total_cost_usd": Infinity, "num_turns": 1}\n'; exit 0 ;;
   denylimit)
     printf '{"type": "result", "subtype": "error_max_turns", "is_error": true, "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "echo You\x27ve hit your session limit \xc2\xb7 resets 9pm"}}]}\n'; exit 1 ;;
   mlink)
@@ -532,6 +533,22 @@ git -C "$KEV" fetch -q "$LOOPD/hvy.bundle" feature/hvy:feature/hvy 2>"$WORK/fetc
   && [ "$(git -C "$KEV" log --format=%H origin/main..feature/hvy)" = "$(git -C "$LY" log --format=%H origin/main..HEAD)" ] \
   && grep -q '^bereit — PR text .*hvy/pr-body.md, branch in .*hvy.bundle$' <<<"$(result hvy)" \
   && ok "the bundle is verified, and a second repo fetches feature/hvy from it with the same commits" || bad "bundle: $(cat "$WORK/fetch.err") $(cat "$LOOPD/hvy/bundle.log" 2>&1)"
+! grep -q '^- \*\*Heavy:' "$LOOPD/ok4/pr-body.md" && grep -qxF '**Heavy offen — fährt die Aufsicht.**' "$LOOPD/ok4/pr-body.md" \
+  && ok "a ledger without a Heavy: line -> the note too" || bad "no Heavy line: $(cat "$LOOPD/ok4/pr-body.md" 2>&1)"
+# bereit is committed before the handover: a bundle that cannot be written stops the
+# run, and the next run makes the handover up instead of skipping the ledger.
+mkdir -p "$LOOPD/hoa.bundle"
+seq_set build -- 0
+loop --ledger tasks/hoa.md
+first=$rc; firststop="$(stopped)"
+rmdir "$LOOPD/hoa.bundle"
+seq_set
+loop --ledger tasks/hoa.md
+git -C "$KEV" fetch -q "$LOOPD/hoa.bundle" feature/hoa:feature/hoa 2>"$WORK/fetch.err"
+[ "$first" -eq 74 ] && grep -q '^infra — git bundle of feature/hoa failed' <<<"$firststop" && [ $rc -eq 0 ] \
+  && grep -q '^bereit — handover made up' <<<"$(result hoa)" && [ ! -s "$FIXTURE_SLOG" ] \
+  && [ "$(git -C "$KEV" rev-parse feature/hoa 2>/dev/null)" = "$(git -C "$(lane hoa)" rev-parse HEAD)" ] \
+  && ok "a handover that broke off after bereit is made up by the next run, no session" || bad "hoa: first=$first $firststop / rc=$rc $(result hoa) $(cat "$WORK/fetch.err")"
 
 echo "── the run's caps and stop classes ──"
 # summary_line — the last line of the newest summary.
@@ -564,6 +581,15 @@ seq_set negcost nancost build build -- 0 0 0 0
 loop --ledger tasks/ng1.md --ledger tasks/ng2.md --ledger tasks/ng3.md --ledger tasks/ng4.md --max-budget-usd 0.2 --max-ready 9
 [ $rc -eq 0 ] && [ "$(box ng3)" = x ] && [ ! -e "$(lane ng4)" ] && grep -q '^max-budget — the run spent \$0.2500' <<<"$(stopped)" \
   && ok "a session cost below 0 or NaN counts as 0, the cap still holds" || bad "ng: rc=$rc $(stopped)"
+# Whatever awk makes of them, state.json never carries such a cost.
+seq_set infcost nancost negcost -- 0 0 0
+loop --ledger tasks/if1.md --ledger tasks/if2.md --ledger tasks/if3.md --max-ready 9
+python3 - "$LOOPD/state.json" <<'PY' && ok "Infinity, NaN and -100 count as 0 in state.json, per task and in the sum" || bad "if: $(cat "$LOOPD/state.json")"
+import json, math, sys
+s = json.load(open(sys.argv[1]))
+costs = [s["cost_usd"]] + [s["tasks"]["%s/T1" % k]["cost_usd"] for k in ("if1", "if2", "if3")]
+sys.exit(0 if all(math.isfinite(c) and c == 0 for c in costs) else 1)
+PY
 # The limit's text in a command the session was denied is no limit of the run.
 seq_set denylimit
 loop --ledger tasks/dlim.md
@@ -673,6 +699,11 @@ OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SD/state.json" 2
 [ "$(head -n 1 <<<"$OUT")" = 'Worker: läuft T3/8 tasks/x.md · 4,10 $ · seit 01:12' ] \
   && grep -qx '    ledger-loop: 2 tasks, 1 ready, 1 blocked, \$3.20 total, stop: ledger-leer' <<<"$OUT" && ! grep -q '9 tasks' <<<"$OUT" \
   && ok "status: the worker's line first, then the last lines of the newest summary" || bad "status lines: $OUT"
+printf '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": null, "cost_usd": 1e300}' > "$SD/state.json"
+{ printf '# big\n\nStop: x\n'; for i in $(seq 1 40); do printf 'line %s\n' "$i"; done; } > "$SD/summary-2026-10-05-000000.md"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SD/state.json" 2>&1)
+[ "$(head -n 1 <<<"$OUT")" = 'Worker: läuft · ? $ · seit 01:12' ] && [ "$(grep -c '^    ' <<<"$OUT")" = 10 ] \
+  && ok "status: a cost out of range reads ?, and at most ten summary lines" || bad "status caps: $OUT"
 
 echo "── repo wiring ──"
 for p in scripts/dev/ledger-loop.sh scripts/tests/ledger_loop_test.sh; do

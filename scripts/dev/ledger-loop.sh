@@ -74,7 +74,8 @@
 # State in ${AH_LOOP_DIR:-/srv/ah/loop}: state.json (run, ledgers, task, stop,
 # reset), loop.log, summary-<date>.md at every stop (its last line: `ledger-loop: <n>
 # tasks, <k> ready, <b> blocked, $<total> total, stop: <class>`), and per ledger
-# <slug>/ with the logs. `status` reads only that file and prints its texts cleaned.
+# <slug>/ with the logs. `status` reads only that file and the newest summary beside
+# it, and prints their texts cleaned and capped.
 # Test overrides, as in heavy.sh: AH_LOOP_DIR, AH_LOOP_REPO (the clone; default:
 # this file's checkout), a claude stub on PATH.
 #
@@ -101,7 +102,7 @@ if [ "${1-}" = status ]; then
   # The first line is the worker's line of the AH-STATUS (session-status.sh takes it).
   [ -r "$STATE" ] || { echo "Worker: —"; exit 0; }
   python3 - "$STATE" <<'PY'
-import datetime, glob, json, os, sys
+import datetime, glob, json, math, os, sys
 
 def clean(v, n=200):
     return "".join(c for c in str(v) if c.isprintable())[:n]
@@ -126,13 +127,15 @@ run, task, stop = obj(s.get("run")), obj(s.get("task")), s.get("stop")
 if stop:
     print("Worker: stop: %s %s" % (clean(stop, 40), hhmm(s.get("updated"))))
 else:
-    cost = s.get("cost_usd") if type(s.get("cost_usd")) in (int, float) else 0
+    c = s.get("cost_usd", 0)
+    # A runner-written file: a cost that is no finite sum of a run reads as "?".
+    cost = ("%.2f" % c).replace(".", ",") if type(c) in (int, float) and math.isfinite(c) and 0 <= c < 1e6 else "?"
     where = ""
     if task.get("id"):
         of = task.get("of")
         where = " %s%s %s" % (clean(task["id"], 20), "/" + clean(of, 6) if type(of) is int else "",
                               clean(task.get("ledger", "?"), 80))
-    print("Worker: läuft%s · %s $ · seit %s" % (where, ("%.2f" % cost).replace(".", ","), hhmm(run.get("started"))))
+    print("Worker: läuft%s · %s $ · seit %s" % (where, cost, hhmm(run.get("started"))))
 if s.get("stop_reason"):
     print("  " + clean(s["stop_reason"]))
 for slug, l in obj(s.get("ledgers")).items():
@@ -148,9 +151,8 @@ if sums:
         lines = []
     k = max((i for i, l in enumerate(lines) if l.startswith("Stop:")), default=max(len(lines) - 2, 0))
     print("  %s:" % clean(os.path.basename(sums[-1]), 80))
-    for l in lines[k:]:
-        if l.strip():
-            print("    " + clean(l))
+    for l in [l for l in lines[k:] if l.strip()][:10]:
+        print("    " + clean(l))
 PY
   exit 0
 fi
@@ -444,6 +446,13 @@ setup_ledger() {
       || { ledger_result "$slug" "blockiert (Lane schmutzig)" "$wt has changes the loop did not commit"; return; }
     # The loop never pushes: what it set (blockiert after D) stands only in the lane.
     st="$(sed -n '/^###[[:space:]]/q; s/^Status:[[:space:]]*\([a-zä]*\).*/\1/p' "$wt/$ledger" | head -n 1)"
+    # bereit is committed before the handover: one that broke off (stop: infra) is
+    # made up here, or the PR text and the bundle would never come.
+    if [ "$st" = bereit ] && ! { [ -f "$LOOP/$slug.bundle" ] && [ -f "$LOOP/$slug/pr-body.md" ]; }; then
+      handover "$wt" "$slug"
+      ledger_result "$slug" bereit "handover made up: PR text $LOOP/$slug/pr-body.md, branch in $LOOP/$slug.bundle"
+      return
+    fi
     case "$st" in freigegeben|aktiv) ;; *) ledger_result "$slug" "übersprungen" "Status: ${st:-?} in the lane"; return ;; esac
   else
     git -C "$REPO" show-ref --verify --quiet "refs/heads/feature/$slug" \

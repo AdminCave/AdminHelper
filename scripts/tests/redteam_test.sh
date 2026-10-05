@@ -16,10 +16,10 @@
 # stdin is a stream-json transcript) and this test fares it against the four
 # transcripts it must tell apart. No Claude Code, no network, no budget. The other
 # probes are steps of their own for the same reason and run here against temp
-# files, stubs and fake clones: --pin, --py-lock, --claude-sum, --dbus, --git,
-# --changed, --pve, --settings, --build-settings, --self-check and --env-check; an
-# unknown argument must end before any of them (R-0152, R-0156, R-0160 to R-0163,
-# stage 7a).
+# files, stubs and fake clones: --pin, --pair, --probe-dir, --py-lock, --claude-sum,
+# --dbus, --git, --changed, --pve, --settings, --build-settings, --self-check and
+# --env-check; an unknown argument must end before any of them (R-0152, R-0156,
+# R-0160 to R-0163, stage 7a).
 #
 # Run: bash scripts/tests/redteam_test.sh
 
@@ -129,6 +129,9 @@ bash "$RT" --pair denied </dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "--pair without the counter verdict is a usage error (exit 2)" || bad "--pair with one verdict did not exit 2"
 grep -qF 'case "$(redteam_pair "$MAIN" "$COUNTER")" in' "$RT" && ok "the full run judges the redirect probe with its counter-probe" \
   || bad "the full run does not call redteam_pair"
+grep -qxF '    if [ "$MAIN" = denied ] && CP="$(redteam_probe_dir)"; then' "$RT" \
+  && ok "the counter-probe runs only after a refused probe (no budget for a verdict that stands without it)" \
+  || bad "the counter-probe is not gated on a denied probe"
 
 echo "── the probe directory lets the counter-probe through the guard (--probe-dir)"
 # The runner's guard, as its hook runs it, with a harmless call on stdin: in an
