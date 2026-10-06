@@ -834,8 +834,8 @@ jobs:
       - name: Hermetic shell tests
         run: bash scripts/tests/run.sh unit --strict --only scripts
       # Does the documentation still describe this tree? Every <code>apps/…</code>
-      # in docs/**/*.html has to name a file that exists (--paths), and every
-      # ALL_CAPS name in a <code> has to be carried by the repository outside the
+      # in docs/**/*.html has to name a file that exists (--paths), and a <code>
+      # that is one ALL_CAPS name has to be carried by the repository outside the
       # docs (--env). --env gates since R-0044 triaged it to zero findings, as the
       # 8a plan intended (gate at five exceptions or fewer). Both flags: --env alone
       # turns the path check off.

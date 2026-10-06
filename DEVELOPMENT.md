@@ -366,9 +366,9 @@ kennt — und das sind 54.
 `scripts/dev/doc-smoke.py` prueft, ob die Dokumentation den Baum noch beschreibt:
 jedes `<code>`-Fragment in `docs/**/*.html`, das mit `apps/`, `scripts/`, `docs/`,
 `.github/` oder `.claude/` beginnt, muss eine existierende Datei benennen (`--paths`), und
-jeder Name in Grossbuchstaben in einem `<code>` muss ausserhalb der Doku im Repo vorkommen
-(`--env`: die drei `config.py`, `.env.example` oder eine getrackte Datei ausserhalb von
-`docs/`, `CHANGELOG.md` und `tasks/`, R-0044).
+ein `<code>`, das ganz aus einem Namen in Grossbuchstaben besteht, muss ausserhalb der Doku
+im Repo vorkommen (`--env`: die drei `config.py`, `.env.example` oder eine getrackte Datei
+ausserhalb von `docs/`, `CHANGELOG.md` und `tasks/`, R-0044).
 
 ```bash
 python3 scripts/dev/doc-smoke.py                          # nur Pfade, nur berichten (Exit 0)

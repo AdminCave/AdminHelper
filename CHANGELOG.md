@@ -435,6 +435,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Doku-Smoke prueft auch die Namen in Grossbuchstaben als Gate (R-0044):** `scripts/dev/doc-smoke.py --env`
+  zaehlt einen Namen, den die Doku als `<code>` nennt, als bekannt, wenn ihn ausser den drei `config.py` und
+  `.env.example` irgendeine getrackte Datei ausserhalb von `docs/`, `CHANGELOG.md` und `tasks/` traegt — Agent-
+  Einstellungen, CI-Secrets, Zustaende und HTTP-Methoden sind also kein Fund mehr (vorher 138 Funde ueber 48
+  Namen). Der einzige echte Fund, `FRP_DOMAIN` in `docs/en/admin/frp-tunnel.html`, ist korrigiert: gemeint ist der
+  Subdomain-Host der FRP-Server-Konfiguration. Der CI-Job `ops-scripts` faehrt jetzt
+  `doc-smoke.py --paths --env --strict`.
+
 - **Der Public repo guard prueft auch mit der Logik der Basis (R-0174):** Der CI-Job
   „Public repo guard (review.sh sec)" faehrt `review.sh sec --range` zuerst mit dem `review.sh` der
   Basis (ein Worktree von `origin/<base>`, beim Push der Stand vor ihm), dann mit dem des geaenderten

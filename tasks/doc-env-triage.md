@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # doc-smoke `--env`: Namen gegen das ganze Repo statt gegen drei config.py, der eine Doku-Bug, Gate in der CI (R-0044) — Task-Ledger
-Status: aktiv · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus der in der Triage angenommenen Zeile R-0044; --env als Gate nach dem Plan von Stufe 8a; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0044 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Doku-Prüfskript unter scripts/dev, sein hermetischer Test, ein CI-Schritt und Doku-Seiten; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -95,8 +95,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (der `--env`-Absatz)
 Abhängt von: T1, T2
 
-### T4 — Nachbesserung aus dem Review am Ende: Scheintest, git-grep-Robustheit, Wortlaut, CHANGELOG (R-0044)  [ ]
+### T4 — Nachbesserung aus dem Review am Ende: Scheintest, git-grep-Robustheit, Wortlaut, CHANGELOG (R-0044)  [x]
 Komponente: scripts · Dateien: scripts/tests/doc_smoke_test.sh, scripts/dev/doc-smoke.py, .github/workflows/ci.yml, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 8 ok @d7178eed 2026-10-06T17:11:24+02:00
+Review: Review am Ende (Kurz-Ledger), Nachbesserung aus Runde 1
 Änderung: Angelegt 2026-10-06 aus dem Review am Ende (Opus, request_changes). (1) wichtig: Der Fall „--env alone
 checks no path“ (`doc_smoke_test.sh`, aus T3) kann nicht rot werden: Unter `pipefail` zählt der Exit von python, und
 den macht der Env-Fund der Fixture immer 1. Ausgabe erst in eine Variable fassen, dann greppen. Dasselbe Muster im

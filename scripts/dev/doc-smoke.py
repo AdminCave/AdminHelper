@@ -167,6 +167,17 @@ def _repo_words(root: Path) -> set[str] | None:
                 "git",
                 "-C",
                 str(root),
+                # The output is read as words: a user setting that adds line numbers,
+                # columns or colour, or lets grep fall back to untracked files outside a
+                # repository, must not reach it.
+                "-c",
+                "grep.lineNumber=false",
+                "-c",
+                "grep.column=false",
+                "-c",
+                "grep.fallbackToNoIndex=false",
+                "-c",
+                "color.grep=never",
                 "grep",
                 "-I",
                 "-h",
@@ -184,6 +195,11 @@ def _repo_words(root: Path) -> set[str] | None:
         return None
     # 1 is "no line matched", not a failure; anything else (128: no repository) is.
     if proc.returncode not in (0, 1):
+        print(
+            "doc-smoke: git grep could not read the repository"
+            f" (exit {proc.returncode}); --env falls back to config.py and .env.example",
+            file=sys.stderr,
+        )
         return None
     return set(proc.stdout.decode("utf-8", errors="replace").split())
 
@@ -222,7 +238,12 @@ def _load_allowlist(root: Path) -> set[str] | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=True, description="documentation smoke test")
     parser.add_argument("--paths", action="store_true", help="check repo paths (default)")
-    parser.add_argument("--env", action="store_true", help="check environment-variable names")
+    parser.add_argument(
+        "--env",
+        action="store_true",
+        help="check ALL_CAPS names: a <code> that is one name must be carried by the repository"
+        " outside docs/, CHANGELOG.md and tasks/ (alone, it turns the path check off)",
+    )
     parser.add_argument("--strict", action="store_true", help="findings make the run fail")
     parser.add_argument("--root", default=None, help="operate on another checkout")
     args = parser.parse_args(argv)
