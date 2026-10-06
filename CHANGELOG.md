@@ -249,6 +249,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: Zeitstempel in den tz-naiven Spalten durchgehend als naive UTC (Konvention F7):** Vier Schreibstellen
+  (`enrollment/service.py`, zweimal `provisioning/router.py`, `core/auth.py`) gaben zeitzonenbehaftete Werte an
+  `DateTime`-Spalten ohne Zeitzone; Postgres legte sie dann in der Zeitzone der Datenbank-Session ab statt in UTC wie
+  die uebrigen tz-naiven Spalten. Sie schreiben jetzt ueber `utcnow_naive()` aus `app/core/time.py`, und der Abgleich
+  in `cleanup_expired_blacklist` liest mit derselben Konvention, mit 12 h Spielraum fuer Zeilen aus der Zeit davor (sie
+  tragen die Ortszeit der Session). Ein neuer Test prueft die Spalten unter einer Session-Zeitzone ungleich UTC.
+
 - **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
   Die Proben von `scripts/dev/runner-redteam.sh` auf git, Proxmox, D-Bus und Settings fuehren
   keinen Code und keine ausfuehrbare Konfiguration des Runners mehr aus (die Modellproben starten
