@@ -1493,6 +1493,202 @@ r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index
 
+# ══ diff-scan: a declared assertion change (R-0206) ═══════════════════════════
+echo "── diff-scan --task: an assertion may change in a test that stays when the task says so ──"
+cat > "$FIX/tasks/chg.md" <<'MD'
+# Changes — Task-Ledger
+Status: aktiv · Branch: feature/fixture
+
+### T1 — the tightened assertion is declared  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — der Sollwert trägt jetzt den Offset
+
+### T2 — nothing is declared  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+
+### T3 — go, vitest and rust  [ ]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Assertion-Änderung: apps/agent/c_test.go::TestShape — schärfer; apps/web/src/c.test.ts::keeps shape — schärfer; apps/desktop/src-tauri/tests/c.rs::shape — schärfer
+
+### T4 — declared without a reason  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape
+
+### T5 — a name that two classes share  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_same — welcher von beiden?
+
+### T6 — a deletion declared for a test that stays  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Test-Löschung: apps/server/tests/test_chg.py::test_shape — bleibt aber stehen
+
+### T7 — a span guessed too wide  [ ]
+Komponente: web · Dateien: apps/web/src/c.test.ts
+Assertion-Änderung: apps/web/src/c.test.ts::wide — schärfer
+
+### T8 — the file is renamed  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg2.py
+Assertion-Änderung: apps/server/tests/test_chg2.py::test_shape — wandert mit
+MD
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "change ledger"
+CHG_PY='def test_shape():
+    out = build()
+    assert out["at"] == encode(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+CHG_PY_TIGHT='def test_shape():
+    out = build()
+    assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+# tighten <new content> — the base, then the case writes the file again and stages it.
+tighten() { base apps/server/tests/test_chg.py "$CHG_PY"; printf '%s' "$1" > "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py; }
+
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 0 ] && grep -q "clean (1 declared assertion change(s): apps/server/tests/test_chg.py::test_shape (1 removed, 1 added))" <<<"$OUT" \
+  && ok "a declared change in a test that stays: clean, and the run names it with its counts" || bad "declared change: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && grep -q "removed assertion: assert out" <<<"$OUT" && ok "the same change, not declared: a finding" \
+  || bad "undeclared change: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged
+[ $rc -eq 3 ] && ok "without --task a changed assertion is a finding, as before" || bad "change no --task: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T6
+[ $rc -eq 3 ] && ok "a Test-Löschung: for a test that stays covers no change" || bad "deletion for a change: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T4
+[ $rc -eq 3 ] && grep -q "declaration without a reason ignored" <<<"$OUT" \
+  && ok "a change declared without a reason counts for nothing" || bad "change no reason: rc=$rc out=$OUT"
+# n >= r: changed, not taken away.
+tighten 'def test_shape():
+    out = build()
+    out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added in its new body, 1 removed" <<<"$OUT" \
+  && ok "a declared change that adds no assertion: a finding, and it says why" || bad "n=0: rc=$rc out=$OUT"
+tighten 'def test_shape():
+    out = build()
+    # assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added" <<<"$OUT" \
+  && ok "an assertion that only stands in a comment is no added assertion" || bad "comment as added: rc=$rc out=$OUT"
+base apps/server/tests/test_chg.py 'def test_shape():
+    out = build()
+    assert out["at"] == encode(raw)
+    assert out["id"] == 7
+
+
+def test_other():
+    assert other() == 1
+'
+printf '%s' "$CHG_PY_TIGHT" > "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "1 assertion(s) added in its new body, 2 removed" <<<"$OUT" \
+  && ok "two assertions out, one in: a finding (n >= r)" || bad "r=2 n=1: rc=$rc out=$OUT"
+# The declaration names one test; an assertion of its neighbour stays a finding.
+tighten 'def test_shape():
+    out = build()
+    assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() >= 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "removed assertion: assert other() == 1" <<<"$OUT" && ! grep -q "assert out" <<<"$OUT" \
+  && ok "a declared change covers its own test, not the neighbour" || bad "neighbour: rc=$rc out=$OUT"
+# The test has to stay: a head that is gone in the new file is no change.
+tighten 'def test_shape_renamed():
+    out = build()
+    assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "1 tests of that name in the old file and 0 in the new one" <<<"$OUT" \
+  && ok "a declared test whose head is gone in the new file: a finding" || bad "head gone: rc=$rc out=$OUT"
+# Only the committed ledger counts: a line in the working tree grants nothing.
+tighten "$CHG_PY_TIGHT"
+awk -v add='Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — selbst eingetragen' \
+  '{print} /^### T2 /{getline; print; print add}' "$FIX/tasks/chg.md" > "$FIX/tasks/chg.md.new" \
+  && mv "$FIX/tasks/chg.md.new" "$FIX/tasks/chg.md"
+grep -q "selbst eingetragen" "$FIX/tasks/chg.md" || bad "fixture: the working-tree change declaration was not written"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && ok "a change declared only in the working-tree ledger counts for nothing" || bad "working-tree change: rc=$rc out=$OUT"
+git -C "$FIX" checkout -q -- tasks/chg.md
+# Two classes share the name: the gate cannot tell them apart.
+base apps/server/tests/test_chg.py 'class TestA:
+    def test_same(self):
+        assert a() == 1
+
+
+class TestB:
+    def test_same(self):
+        assert b() == 2
+'
+printf 'class TestA:\n    def test_same(self):\n        assert a() == 10\n\n\nclass TestB:\n    def test_same(self):\n        assert b() == 2\n' \
+  > "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py
+r diff-scan --staged --task tasks/chg.md T5
+[ $rc -eq 3 ] && grep -q "2 tests of that name in the old file" <<<"$OUT" \
+  && ok "a changed test whose name two classes share: a finding" || bad "two classes: rc=$rc out=$OUT"
+# A span guessed too wide by odd indentation holds a second test: it counts for nothing.
+base apps/web/src/c.test.ts "describe('d', () => {
+it('wide', () => expect(1).toBe(1));
+  it('y', () => {
+    expect(2).toBe(2);
+  });
+});
+"
+printf "describe('d', () => {\nit('wide', () => expect(1).toBe(1));\n  it('y', () => {\n    expect(2).toBe(3);\n  });\n});\n" \
+  > "$FIX/apps/web/src/c.test.ts"; stage apps/web/src/c.test.ts
+r diff-scan --staged --task tasks/chg.md T7
+[ $rc -eq 3 ] && grep -q "holds another test (y" <<<"$OUT" \
+  && ok "a declared change whose span holds another test counts for nothing" || bad "wide span: rc=$rc out=$OUT"
+# A file renamed in the same diff: the change is not judged across the move.
+base apps/server/tests/test_chg.py "$CHG_PY"
+git -C "$FIX" mv apps/server/tests/test_chg.py apps/server/tests/test_chg2.py
+printf '%s' "$CHG_PY_TIGHT" > "$FIX/apps/server/tests/test_chg2.py"; stage apps/server/tests/test_chg2.py
+r diff-scan --staged --task tasks/chg.md T8
+[ $rc -eq 3 ] && grep -q "the file is renamed in this diff" <<<"$OUT" \
+  && ok "a declared change in a file renamed by the same diff: a finding" || bad "renamed: rc=$rc out=$OUT"
+# Go, vitest and Rust: one tightened assertion each, all three declared.
+reset_index
+mkdir -p "$FIX/apps/agent" "$FIX/apps/web/src" "$FIX/apps/desktop/src-tauri/tests"
+printf 'package x\n\nimport "testing"\n\nfunc TestShape(t *testing.T) {\n\tif got := shape(); got != 1 {\n\t\tt.Fatalf("got %%d", got)\n\t}\n}\n' > "$FIX/apps/agent/c_test.go"
+printf 'it("keeps shape", () => {\n  expect(shape()).toEqual({ a: 1 });\n});\n' > "$FIX/apps/web/src/c.test.ts"
+printf '#[test]\nfn shape() {\n    assert_eq!(shape(), 1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/c.rs"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "three languages"
+sed -i 's|t.Fatalf("got %d", got)|t.Fatalf("got %d, want 1", got)|' "$FIX/apps/agent/c_test.go"
+sed -i 's|toEqual|toStrictEqual|' "$FIX/apps/web/src/c.test.ts"
+sed -i 's|assert_eq!(shape(), 1);|assert_eq!(shape(), 1, "shape");|' "$FIX/apps/desktop/src-tauri/tests/c.rs"
+stage apps/agent/c_test.go apps/web/src/c.test.ts apps/desktop/src-tauri/tests/c.rs
+r diff-scan --staged --task tasks/chg.md T3
+[ $rc -eq 0 ] && grep -q "clean (3 declared assertion change(s): " <<<"$OUT" \
+  && grep -q "apps/agent/c_test.go::TestShape (1 removed, 1 added)" <<<"$OUT" \
+  && grep -q "apps/web/src/c.test.ts::keeps shape (1 removed, 1 added)" <<<"$OUT" \
+  && grep -q "apps/desktop/src-tauri/tests/c.rs::shape (1 removed, 1 added)" <<<"$OUT" \
+  && ok "go, vitest and rust: a declared change each, clean" || bad "three languages: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && [ "$(grep -c 'removed assertion' <<<"$OUT")" = 3 ] \
+  && ok "and undeclared, all three are findings" || bad "three languages undeclared: rc=$rc out=$OUT"
+reset_index
+
 # ══ the pre-push hook (R-0123) ════════════════════════════════════════════════
 echo "── pre-push hook ──"
 # The push is the step from which on it is public. A fixture with the pre-push hook

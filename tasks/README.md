@@ -119,7 +119,8 @@ Dateien, nicht am Diff-Text:
    fällt daran auf.
 6. **Die Assertion gehört zu genau diesem Test.** Ihre alte Zeilennummer liegt im Rumpf des
    angekündigten Tests im alten Stand. Eine Assertion aus einem Test, der stehen bleibt,
-   bleibt ein Fund, angekündigt oder nicht.
+   bleibt ein Fund, außer die Task kündigt die Änderung als `Assertion-Änderung:` an (nächster
+   Abschnitt).
 
 `review.sh` liest jeden Diff mit `--text --no-ext-diff --no-textconv --no-color`: eine
 `.gitattributes` mit `-diff` oder ein Diff-Treiber darf eine Testdatei nicht zu „Binary files
@@ -133,6 +134,45 @@ im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das i
 über den Code und gehört repariert oder als `[?]` vor Kevin, nicht gelöscht.
 `ledger.sh lint` prüft die Form: `<pfad>::<name> — <Grund>`, **der Grund ist Pflicht**. Eine
 Löschung, die niemand begründet, ist genau das, was das Gate verhindern soll.
+
+## `Assertion-Änderung:` — eine Assertion ändert sich in einem Test, der bleibt
+
+Wird eine Assertion in einem bleibenden Test schärfer, oder wechselt ihr Sollwert die Form, sieht
+`diff-scan` eine gelöschte Assertion und eine neue (R-0206). Die Task kündigt das an:
+
+```
+Assertion-Änderung: <datei>::<test> — <Grund>[; <datei>::<test> — <Grund> …]
+```
+
+Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte Assertion nur, wenn
+**alles** gilt, geprüft am Inhalt der Dateien:
+
+1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** Dieselbe Sperre wie bei
+   `Test-Löschung:`: `task-close.sh` verweigert (Exit 4), sobald sich eine der beiden Zeilenarten
+   gegenüber `HEAD` ändert. Die Ankündigung kommt mit dem Plan-Commit ans Gate.
+2. **Sie trägt einen Grund.**
+3. **Der Test bleibt, und er ist eindeutig.** Im alten **und** im neuen Stand gibt es genau einen Test
+   dieses Namens. Teilen sich zwei Klassen oder `describe`-Blöcke einen Namen, zählt die Ankündigung
+   nicht.
+4. **Keine Spanne hält einen zweiten Test**, weder im alten noch im neuen Stand, und die Datei wird im
+   selben Diff nicht umbenannt.
+5. **Die Assertion gehört zu genau diesem Test:** Ihre alte Zeile liegt in seiner alten Spanne.
+6. **Geändert, nicht weggenommen:** Die neue Spanne trägt mindestens so viele hinzugefügte Assertions,
+   wie die alte verliert (n ≥ r). Eine Zeile, die eine Assertion nur im Kommentar trägt, zählt nicht.
+
+Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared assertion change(s):
+<datei>::<test> (1 removed, 1 added))`), und bei einem Fund, warum eine Ankündigung nicht zählte.
+
+**Passt:** Eine Assertion wird schärfer, oder ihr Sollwert wechselt die Form (ein Zeitstempel trägt
+jetzt `Z`). **Passt nicht:** eine rote Assertion abschwächen, damit der Test grün wird. Das ist ein
+Befund über den Code. Mehrere Assertions zu einer zusammenzulegen scheitert an n ≥ r und bleibt ein
+Commit von Hand auf Kevins Wort.
+
+**Was der Scan nicht sieht:** ob die neue Assertion so streng ist wie die alte (auch `assert True`
+zählt als Assertion); das prüft der Review. Und ein Testkopf in einem Kommentar oder String kann eine
+Spanne verschieben: Nennt eine Ankündigung genau diesen Namen, gingen entfernte Assertions des
+Nachbartests durch, sobald dort neue dazukommen. Dagegen schützen nur das Gate (die Ankündigung kommt
+committet aus dem Plan) und der Review. Kevin nimmt das Restrisiko hin (2026-10-06).
 
 ## Beweis-Konvention — was eine Task belegt
 

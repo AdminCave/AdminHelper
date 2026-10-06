@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 3: eine angekündigte Assertion-Änderung im diff-scan — Task-Ledger
-Status: freigegeben · Branch: harness/kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus R-0206, von Kevin am 2026-10-06 angenommen; Kevin am Gate: Helfer eng gefasst ja (T2), Restrisiko verrutschter Spannen durch Testköpfe in Kommentar oder String und `assert True` als neue Assertion hingenommen; Aufsicht: n ≥ r, die Absicht in review.sh und tasks/README.md ändert sich mit Kevins Annahme von R-0206; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0206 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, Skills und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -23,8 +23,10 @@ Der Branch setzt auf `harness/kleinpaket-2` (@0327cb92) auf, weil beide `review.
 hereingeholt. Bau interaktiv (Harness-Pfade), keine Lane, der Runner nicht. Zeilenangaben
 harness/kleinpaket-2@0327cb92.
 
-### T1 — `diff-scan` lässt eine angekündigte `Assertion-Änderung:` durch, `task-close` sperrt die Selbst-Ankündigung  [ ]
+### T1 — `diff-scan` lässt eine angekündigte `Assertion-Änderung:` durch, `task-close` sperrt die Selbst-Ankündigung  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, tasks/README.md, AUTONOMOUS.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @16db5c2a 2026-10-06T16:26:57+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: (1) `diff-scan --task` liest neben `Test-Löschung` (`review.sh:240`) das Feld
 `Assertion-Änderung: <datei>::<test> — <Grund>[; …]` aus dem Ledger in `HEAD`, mit demselben Parser. Das awk gibt
 neben `RA` für jede hinzugefügte Zeile mit Assertion einen Datensatz `AA` aus (dasselbe Prädikat wie `RA`, als awk-
@@ -69,6 +71,10 @@ nicht.“ Die Doku beschreibt das heutige Verhalten als Absicht. Kevin hat R-020
 Absicht ändert sich damit, und T1 zieht beide Stellen nach (offene Frage 3).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (neuer Abschnitt, Punkt 6) · AUTONOMOUS.md · DEVELOPMENT.md
+Abweichung (Bau): Die Commit-Prüfung von `task-close.sh` las alle `tasks/*.md` und hielt die Syntaxzeile des neuen
+README-Abschnitts für eine Ankündigung: Der erste Schließ-Lauf endete mit Exit 4 und nahm den Commit zurück. Sie liest
+jetzt nur Ledger, ohne `tasks/README.md` und `tasks/templates/`, denn `diff-scan` liest eine Ankündigung nur aus der
+Task des Ledgers, das geschlossen wird. Ein Test in `task_close_test.sh` hält das fest.
 
 ### T2 — Ein Helfer in einer Testdatei ist ankündbar  [ ]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, tasks/README.md
