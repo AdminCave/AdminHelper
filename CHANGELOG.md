@@ -249,6 +249,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Tunnel-Hinweis ohne Identitaet (R-0203):** Startet ein Tunnel ohne mTLS-Zertifikat,
+  verweist die Meldung jetzt auf die Registrierung des Geraets mit einem Einmal-Token vom Admin
+  statt auf eine Anmeldung am Server — seit ADR 0003 enrollt der Login nicht.
 - **Zeitstempel der Server-API in UTC mit `Z` (R-0064):** Die Antworten schreiben ihre Zeitstempel
   als RFC 3339 in UTC mit `Z`. Bisher trugen die meisten keinen Offset — auch die vier Felder, fuer
   die das OpenAPI `format: date-time` verspricht (`created_at` der API-Keys, `created_at`, `last_run`

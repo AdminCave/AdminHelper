@@ -106,6 +106,11 @@ async fn fetch_visitor_bundle(
 /// an explicit token instead of a fragile `"identity/` substring rewrite.
 const IDENTITY_DIR_PLACEHOLDER: &str = "{{IDENTITY_DIR}}";
 
+/// What a tunnel start says without an enrolled identity. The login does not enroll
+/// (ADR 0003): the device needs a one-time token from an admin first.
+const NO_IDENTITY_HINT: &str = "No mTLS certificate on this device — enroll it with a one-time \
+     enrollment token from your administrator first, then start the tunnel.";
+
 /// Replace the server's `{{IDENTITY_DIR}}` placeholder in a visitor TOML with the
 /// absolute identity dir the desktop exported its mTLS material into.
 fn rewrite_identity_paths(toml: &str, abs_identity_dir: &str) -> String {
@@ -116,13 +121,8 @@ fn rewrite_identity_paths(toml: &str, abs_identity_dir: &str) -> String {
 /// frpc sidecar can read it as files. The visitor presents the desktop's own
 /// access cert (F2); the server no longer mints one.
 fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
-    let (key_pem, cert_pem, ca_pem) = crate::enrollment::load_identity().ok_or_else(|| {
-        AppError::Validation(
-            "Kein mTLS-Zertifikat vorhanden — bitte zuerst am Server anmelden (Enrollment), \
-             dann den Tunnel starten."
-                .to_string(),
-        )
-    })?;
+    let (key_pem, cert_pem, ca_pem) = crate::enrollment::load_identity()
+        .ok_or_else(|| AppError::Validation(NO_IDENTITY_HINT.to_string()))?;
     std::fs::create_dir_all(identity_dir)?;
     write_secret(&identity_dir.join("key.pem"), key_pem.as_bytes())?;
     std::fs::write(identity_dir.join("cert.pem"), cert_pem.as_bytes())?;
@@ -348,7 +348,7 @@ pub async fn start_tunnel(
 
 #[cfg(test)]
 mod tests {
-    use super::{rewrite_identity_paths, validate_visitor_toml, FrpcProcess};
+    use super::{rewrite_identity_paths, validate_visitor_toml, FrpcProcess, NO_IDENTITY_HINT};
 
     const LEGIT_VISITOR: &str = r#"
 serverAddr = "frps.example.net"
@@ -369,6 +369,19 @@ secretKey = "s3cr3t"
 bindAddr = "127.0.0.1"
 bindPort = 6000
 "#;
+
+    #[test]
+    fn no_identity_hint_names_the_one_time_token_not_a_login() {
+        // ADR 0003: the login does not enroll, so the hint must not send anyone there.
+        assert!(NO_IDENTITY_HINT.contains("one-time enrollment token from your administrator"));
+        let lower = NO_IDENTITY_HINT.to_lowercase();
+        for login in ["log in", "login", "sign in", "anmelden"] {
+            assert!(
+                !lower.contains(login),
+                "hint asks for a login: {NO_IDENTITY_HINT}"
+            );
+        }
+    }
 
     #[test]
     fn validate_visitor_toml_accepts_legit_stcp() {
