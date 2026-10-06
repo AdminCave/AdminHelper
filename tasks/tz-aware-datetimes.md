@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Zeitstempel der Server-API mit UTC-Offset — Task-Ledger
-Status: freigegeben · Branch: feature/tz-aware-datetimes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/tz-aware-datetimes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-10-06 (Design-Gate R-0064: Weg (a), Serialisierung mit „Z“ ohne Migration; to_dict-Antworten mit „Z“, Format „Z“, die str-Felder bleiben str; `last_run` im Hook-Skript-Kontext mit „Z“ und CHANGELOG-Hinweis; Monitoring als eigene Roadmap-Zeile)
 Spec: docs/features/tz-aware-datetimes.md (Roadmap R-0064)
 Heavy: linux-full — die API-Antworten ändern ihr Zeitformat; `run.sh integration` liest sie vom echten Stack. Ob `e2e` mitläuft, prüft der Abschluss am Diff (die Desktop-Live-E2E zeigt Provisioning- und Notification-Zeiten an).
@@ -15,8 +15,10 @@ Geplant 2026-10-06 von Worker B im Auftrag der Aufsicht (adminhelper-ac). Das Le
 der Spec: Serialisierung mit UTC-Offset `Z`, ohne Migration. Entscheidet Kevin (b) oder (c) (offene Frage 1), kommt
 ein zweites Ledger dazu; die Tasks hier bleiben gültig. T6 hängt an der offenen Frage 4. Zeilenangaben main@9fece775.
 
-### T1 — `UtcDatetime` und `iso_utc()` in `app/core/time.py`  [ ]
+### T1 — `UtcDatetime` und `iso_utc()` in `app/core/time.py`  [x]
 Komponente: server · Dateien: apps/server/app/core/time.py, apps/server/tests/test_time_utc.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @56043cbf 2026-10-06T08:25:51+02:00
+Review: approve (sonnet)
 Änderung: Ein Annotated-Typ `UtcDatetime` (Pydantic, Serialisierung im JSON-Modus) und eine Funktion `iso_utc(dt)`:
 `None` bleibt `None`, ein naiver Wert gilt als UTC (die Konvention von `app/core/time.py:5-18`), ein aware Wert wird
 nach UTC umgerechnet; die Ausgabe ist RFC 3339 mit `Z` (Mikrosekunden wie bei `isoformat()`). Neue Testdatei mit
