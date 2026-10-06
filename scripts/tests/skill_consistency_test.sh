@@ -344,7 +344,7 @@ done
 [ -z "$missing" ] && [ "$n" -ge 3 ] && ok "every review.sh verb the skill names exists ($n)" || bad "review.sh has no verb:$missing (read $n)"
 grep -q 'docs-pairs' <<<"$step5" && grep -q 'Vertrag' <<<"$step5" && grep -q 'Vertragstest konnte' <<<"$step5" \
   && ok "step 5's exit codes name docs-pairs and the contracts" || bad "step 5's exit codes miss docs-pairs/contracts"
-close5=$(section .claude/skills/feature-build/SKILL.md '5. **Erledigt, Push + Draft-PR**' '6. **Mit dem PR:**')
+close5=$(section .claude/skills/feature-build/SKILL.md '5. **Erledigt, Übergabe**' '6. **Mit dem PR**')
 grep -qF 'review.sh pr-body' <<<"$close5" && grep -qF -- '--body-file' <<<"$close5" \
   && ok "the PR step takes its text from review.sh pr-body as --body-file" || bad "PR step without pr-body/--body-file"
 [ "$(cleanup_rule "$(section .claude/skills/feature-review/SKILL.md '## Proben und Aufräumen' '## ')")" = ok ] \
