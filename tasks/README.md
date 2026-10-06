@@ -150,7 +150,8 @@ Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte 
 1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** Dieselbe Sperre wie bei
    `Test-Löschung:`: `task-close.sh` verweigert (Exit 4), sobald sich eine der beiden Zeilenarten
    gegenüber `HEAD` ändert. Die Ankündigung kommt mit dem Plan-Commit ans Gate.
-2. **Sie trägt einen Grund.**
+2. **Sie trägt einen Grund.** `ledger.sh lint` prüft die Form wie bei `Test-Löschung:`; ohne
+   Grund ist die Zeile ein Fehler.
 3. **Der Test bleibt, und er ist eindeutig.** Im alten **und** im neuen Stand gibt es genau einen Test
    dieses Namens. Teilen sich zwei Klassen oder `describe`-Blöcke einen Namen, zählt die Ankündigung
    nicht.

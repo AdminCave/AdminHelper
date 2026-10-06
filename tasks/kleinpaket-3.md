@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 3: eine angekündigte Assertion-Änderung im diff-scan — Task-Ledger
-Status: aktiv · Branch: harness/kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus R-0206, von Kevin am 2026-10-06 angenommen; Kevin am Gate: Helfer eng gefasst ja (T2), Restrisiko verrutschter Spannen durch Testköpfe in Kommentar oder String und `assert True` als neue Assertion hingenommen; Aufsicht: n ≥ r, die Absicht in review.sh und tasks/README.md ändert sich mit Kevins Annahme von R-0206; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0206 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, Skills und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -106,8 +106,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (Absatz Helfer)
 Abhängt von: T1
 
-### T3 — `ledger.sh lint` prüft die Form, die Skills nennen die Ankündigung  [ ]
+### T3 — `ledger.sh lint` prüft die Form, die Skills nennen die Ankündigung  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md, .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/skills/feature-review/SKILL.md, .claude/skills/build-task/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0ba57b1a 2026-10-06T17:11:24+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: (1) Der Lint für `Test-Löschung:` (`ledger.sh:308–318`) läuft über beide Felder, die Meldung nennt das
 Feld; `<datei>::<test> — <Grund>`, der Grund ist Pflicht. Tests (`ledger_test.sh:278–296`): je Feld gültig, ohne
 Grund, leerer Grund; `tasks/README.md` sagt es im neuen Abschnitt. (2) Die Ankündigung kommt nur über den Plan-

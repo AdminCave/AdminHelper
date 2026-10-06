@@ -127,7 +127,14 @@ Komponente: apps/… · Dateien: …
 Verify: bash scripts/dev/verify.sh <komponente> --strict     (oder: bash scripts/tests/run.sh <layer> --strict --only <keys…>)
 Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
 Abhängt von: T<k>   (nur falls nötig)
+Test-Löschung: <datei>::<test> — <Grund>        (nur falls nötig: ein ganzer Test geht)
+Assertion-Änderung: <datei>::<test> — <Grund>   (nur falls nötig: eine Assertion eines bleibenden Tests ändert sich)
 ```
+**Bestehende Assertions:** Löscht eine Task einen ganzen Test oder ändert sie eine Assertion in einem
+Test, der bleibt (auch in einem Helfer einer Testdatei), kündigt der Plan das in der Task an
+(`Test-Löschung:` bzw. `Assertion-Änderung:`, Regeln in `tasks/README.md`). `diff-scan` lässt es nur mit
+der **committeten** Ankündigung durch, und der Plan-Commit am Gate ist der Weg dorthin; unterwegs lässt
+sie sich nicht nachtragen. Eine Regel wie „den Zähler je Task anheben“ ist genau so ein Fall.
 
 ## 3a. Die kurzen Wege: `--kurz` und `--bundle`
 
