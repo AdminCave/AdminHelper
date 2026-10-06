@@ -17,8 +17,10 @@ noch in den Schritten „Audit web lockfile“ und „Audit desktop-ui lockfile�
 Lockfile-Bump ohne Override, nach Kevins Regel vom 2026-10-06 ein Fall für die Aufsicht. Vorbild für den Lock-Weg:
 `0ecdc3ca` (npm 10.9.8, `--package-lock-only --ignore-scripts`).
 
-### T1 — `source-map-js` im Web-Lockfile auf 1.2.2 (R-0199)  [ ]
+### T1 — `source-map-js` im Web-Lockfile auf 1.2.2 (R-0199)  [x]
 Komponente: web · Dateien: apps/web/package-lock.json, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @3d518292 2026-10-06T03:26:43+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: In `apps/web` den Lock mit `npm update source-map-js --package-lock-only --ignore-scripts` (oder `npm audit
 fix --package-lock-only --ignore-scripts`, falls `update` nicht greift) auf 1.2.2 heben; `package.json` bleibt
 unverändert, im Lock-Diff bewegt sich nur `source-map-js` (bewegt npm mehr: im Commit-Body nennen und begründen).
