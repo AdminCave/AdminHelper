@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Zeitstempel der Server-API mit UTC-Offset — Task-Ledger
-Status: aktiv · Branch: feature/tz-aware-datetimes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: bereit · Branch: feature/tz-aware-datetimes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-10-06 (Design-Gate R-0064: Weg (a), Serialisierung mit „Z“ ohne Migration; to_dict-Antworten mit „Z“, Format „Z“, die str-Felder bleiben str; `last_run` im Hook-Skript-Kontext mit „Z“ und CHANGELOG-Hinweis; Monitoring als eigene Roadmap-Zeile)
 Spec: docs/features/tz-aware-datetimes.md (Roadmap R-0064)
 Heavy: linux-full — die API-Antworten ändern ihr Zeitformat; `run.sh integration` liest sie vom echten Stack. Ob `e2e` mitläuft, prüft der Abschluss am Diff (die Desktop-Live-E2E zeigt Provisioning- und Notification-Zeiten an).
@@ -90,8 +90,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: CHANGELOG.md (in T7, mit dem Hinweis für Hook-Skripte)
 Abhängt von: T1
 
-### T7 — Doku: Zeitstempel in UTC mit `Z`  [ ]
-Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+### T7 — Doku: Zeitstempel in UTC mit `Z`  [x]
+Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md, docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @2699160e 2026-10-06T11:04:19+02:00
+Review: approve (sonnet)
 Änderung: `api-reference.html` (DE + EN) sagt in einem Satz, dass Zeitstempel RFC 3339 in UTC mit `Z` sind. Der
 CHANGELOG nennt unter Fixed die korrigierte Zeitanzeige in Web und Desktop und, bei Ja zu Frage 4, das neue Format von
 `last_run` für Hook-Skripte.

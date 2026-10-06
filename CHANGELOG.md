@@ -249,6 +249,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Zeitstempel der Server-API in UTC mit `Z` (R-0064):** Die Antworten schreiben ihre Zeitstempel
+  als RFC 3339 in UTC mit `Z`. Bisher trugen die meisten keinen Offset, obwohl das OpenAPI
+  `format: date-time` verspricht, und Audit und Notifications den Offset der Datenbank-Session; Web
+  und Desktop lasen Werte ohne Offset als lokale Zeit und zeigten sie um den Abstand zu UTC
+  verschoben. Das OpenAPI bleibt unveraendert, die Datenbank auch (keine Migration); die
+  Schemathesis-Ausnahmen der API-Key-Routen sind gefallen. **Hinweis fuer Hook-Skripte:** `last_run`
+  im Kontext eines Hook-Skripts traegt jetzt ebenfalls `Z` (`2026-10-05T12:00:00Z` statt
+  `2026-10-05T12:00:00`); ein Skript, das den Wert als String vergleicht oder selbst zerlegt, muss
+  das `Z` erwarten. `datetime.fromisoformat` liest beide Formen. Doku: API-Referenz, „Zeitstempel",
+  und Hooks.
 - **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
   Die Proben von `scripts/dev/runner-redteam.sh` auf git, Proxmox, D-Bus und Settings fuehren
   keinen Code und keine ausfuehrbare Konfiguration des Runners mehr aus (die Modellproben starten
