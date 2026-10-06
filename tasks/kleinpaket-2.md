@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 2: Zeilennummern und Token-Formen in sec, Werkzeug-Hülle, commit-msg-Hook — Task-Ledger
-Status: bereit · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: aktiv · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus den von Kevin am 2026-10-06 als Kleinpaket-2 angenommenen Zeilen R-0194, R-0195, R-0196, R-0197; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0194, R-0196, R-0195, R-0197 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -72,5 +72,19 @@ Beweis: Roadmap R-0197 — heute fängt erst `--range` (pre-push, CI) einen Toke
 liegt dann schon lokal.
 Semantik: DEVELOPMENT.md „pre-commit-Hook“ (`:819` ff.) beschreibt, welcher Hook wann `sec` fährt — der Abschnitt
 bekommt den commit-msg-Hook.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Hook-Abschnitt)
+
+### T4 — Nachbesserung aus den Reviews: --message '' bricht ab, commit-msg-Doku, Kommentar im Rest-Check  [ ]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, scripts/dev/hooks/commit-msg, scripts/dev/ledger.sh
+Änderung: Angelegt 2026-10-06 auf Entscheidung der Aufsicht aus den Review-Funden von T2 und T3 (r2). (a) `review.sh
+sec --message ''` bricht mit Exit 2 und einer Meldung ab, statt in `sec` über den Arbeitsbaum durchzufallen; dazu ein
+Testfall in `review_scripts_test.sh`. (c) `commit-msg` läuft laut githooks(5) nur bei `git commit` und `git merge`
+(„This hook is invoked by git-commit and git-merge, and can be bypassed with the --no-verify option“, gelesen
+2026-10-06); DEVELOPMENT.md (Hook-Abschnitt, die Zeile zum sechsten Hook) und der Kopf von `scripts/dev/hooks/commit-msg`
+sagen das, und dass cherry-pick, revert, rebase und `git am` ihre Nachrichten erst über pre-push und die CI prüfen
+lassen. Der T2-Nit: der Kommentar über dem Rest-Check in `ledger.sh` nennt auch die schließenden Tags von Hülle und
+Ausgabe. Nicht dabei: die Scissors-Regel bei -m/-F (Roadmap-Zeile über die Aufsicht) und das Lesen der `#`-Zeilen
+(bleibt so, die strengere Richtung).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Hook-Abschnitt)
