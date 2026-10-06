@@ -35,8 +35,10 @@ Entscheidungen der Aufsicht 2026-10-06: Branch `harness/…` nach Konvention (sc
 Runner; Umsetzungsweg T1 wie geplant; `--env` wird Gate (T3), wie der 8a-Plan es ab ≤ 5 Ausnahmen vorsah
 (`docs/features/harness-stufe-8a.md:130–132`).
 
-### T1 — `--env`: bekannt ist ein Name, den das Repo außerhalb der Doku trägt (R-0044)  [ ]
+### T1 — `--env`: bekannt ist ein Name, den das Repo außerhalb der Doku trägt (R-0044)  [x]
 Komponente: scripts · Dateien: scripts/dev/doc-smoke.py, scripts/tests/doc_smoke_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @20cb8ba1 2026-10-06T16:34:17+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `_known_env_names` (`doc-smoke.py:144`) nimmt zu den drei `config.py` und `.env.example` jedes Wort in
 Großbuchstaben (`[A-Z][A-Z0-9_]{3,}`, als ganzes Wort) aus den von git getrackten Dateien außerhalb von `docs/`,
 `CHANGELOG.md` und `tasks/` — eine Abfrage per `git grep`, gegen die getrackten Dateien wie beim Pfad-Check (gleicher
