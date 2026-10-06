@@ -217,6 +217,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Vom Dependency-Audit (`pip-audit`) erkannt. Der Changelog 2.13.0 → 2.14.0 enthaelt keine inkompatible Aenderung; `pytest`
   gegen den exakten neuen Lock unter Python 3.12 gruen (server 682), `pip-audit` ohne Befund.
 
+- **pyjwt 2.14.0 → 2.15.1** im Server (gehashte Lock neu generiert, Untergrenze in `requirements.in`
+  auf `>=2.15.0`, R-0193): behebt PYSEC-2026-4141 (behoben ab 2.15.0). Vom Dependency-Audit (`pip-audit`)
+  erkannt. Der Changelog 2.14.0 → 2.15.1 enthaelt keine inkompatible Aenderung fuer `jwt.encode`/`jwt.decode`
+  mit HS256: 2.15.0 meldet zu tief verschachtelte Payloads als `DecodeError` (der Server faengt
+  `InvalidTokenError`), 2.15.1 nimmt ein angehaengtes `=`-Padding in JWS-Segmenten an (gesperrte Tokens
+  erkennt der Server an der `jti`, nicht am Token-String). `pytest` gegen den exakten neuen Lock unter
+  Python 3.12 gruen (server 824), `pip-audit` ohne Befund.
+
 ### Fixed
 
 - **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
