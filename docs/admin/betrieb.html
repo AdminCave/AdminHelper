@@ -162,7 +162,7 @@ docker compose up -d server</code></pre>
           </div>
 
           <h2>Zeitzone</h2>
-          <p><code>TZ</code> wird an alle Container weitergegeben. Voreinstellung <code>Europe/Berlin</code>. Das beeinflusst Audit-Log-Zeitstempel und Cron-ähnliche Hook-Jobs.</p>
+          <p><code>TZ</code> wird an alle Container weitergegeben. Voreinstellung <code>Europe/Berlin</code>. Die API gibt Zeitstempel davon unabhängig in UTC mit <code>Z</code> aus (Web und Desktop zeigen sie in der Ortszeit des Browsers bzw. Rechners), und geplante Hooks rechnen in UTC.</p>
 
           <h2>Zertifikate erneuern</h2>
           <p>Das TLS-Zertifikat des Gateways stellt der <code>ca-issuer</code> aus (access-signiert, 365&nbsp;Tage). Es wird beim ersten Start ins <code>gateway-certs</code>-Volume provisioniert; ein Redeploy/Neustart des <code>ca-issuer</code> erneuert es bei Bedarf. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation.</p>

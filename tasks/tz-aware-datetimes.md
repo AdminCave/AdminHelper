@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Zeitstempel der Server-API mit UTC-Offset — Task-Ledger
-Status: bereit · Branch: feature/tz-aware-datetimes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/tz-aware-datetimes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-10-06 (Design-Gate R-0064: Weg (a), Serialisierung mit „Z“ ohne Migration; to_dict-Antworten mit „Z“, Format „Z“, die str-Felder bleiben str; `last_run` im Hook-Skript-Kontext mit „Z“ und CHANGELOG-Hinweis; Monitoring als eigene Roadmap-Zeile)
 Spec: docs/features/tz-aware-datetimes.md (Roadmap R-0064)
 Heavy: linux-full — die API-Antworten ändern ihr Zeitformat; `run.sh integration` liest sie vom echten Stack. Ob `e2e` mitläuft, prüft der Abschluss am Diff (die Desktop-Live-E2E zeigt Provisioning- und Notification-Zeiten an).
@@ -100,3 +100,29 @@ CHANGELOG nennt unter Fixed die korrigierte Zeitanzeige in Web und Desktop und, 
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html · CHANGELOG.md
 Abhängt von: T2–T6
+
+### T8 — Nachbesserung: Doku, Spec und Test aus dem Branch-Review  [x]
+Komponente: server · Dateien: docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md, docs/features/tz-aware-datetimes.md, apps/server/tests/schemathesis_exclude.toml, apps/server/tests/test_users.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @bd3ae1bf 2026-10-06T13:17:06+02:00
+Review: approve (sonnet)
+Änderung: Aus dem `/code-review` über den Branch, von der Aufsicht freigegeben (2026-10-06). Der `TZ`-Satz der
+Betriebsdoku (DE + EN) nennt weder Audit-Zeitstempel noch Hook-Jobs mehr: die API schreibt UTC mit `Z`, der
+Scheduler rechnet in UTC. Der Abschnitt „Zeitstempel“ der API-Referenz (DE + EN) nennt zwei weitere Ausnahmen:
+`GET /api/frp/status` reicht `lastStartTime`/`lastCloseTime` von frps durch, das `result` von `/run` und `/trigger`
+ist Skript-Ausgabe. Der CHANGELOG sagt genau, welche Felder `format: date-time` tragen. Die Spec nennt, dass
+`EnrollmentToken.to_dict` keinen Aufrufer hat und der Ausschluss `create_hook` bleibt. `until` des Ausschlusses
+`create_hook` ist R-0207, der Grund nennt auch `update_hook`. `tests/test_users.py` prüft im Shape-Helfer
+zusätzlich wörtlich das `Z` (nur hinzugefügt).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_users.py
+Doku: docs/admin/betrieb.html + docs/en/admin/operations.html · docs/developer/api-reference.html + docs/en/developer/api-reference.html · CHANGELOG.md
+Abhängt von: T7
+
+### T9 — Nachbesserung: `triggered_at` im Hook-Skript-Kontext mit `Z`  [ ]
+Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_hooks.py, CHANGELOG.md, docs/developer/hooks.html, docs/en/developer/hooks.html
+Änderung: Kevin, 2026-10-06 (über die Aufsicht): `triggered_at` im Kontext eines Hook-Skripts wird wie `last_run`
+`iso_utc(now)` (`hooks/router.py`, manueller Lauf; `hooks/scheduler.py`, geplanter Lauf), damit ein Kontext nur eine
+Form trägt. Neue Tests für beide Läufe, bestehende Assertions bleiben. Der CHANGELOG-Hinweis für Hook-Skripte nennt
+beide Felder, die Hooks-Seite (DE + EN) das gemeinsame Format.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
+Doku: CHANGELOG.md · docs/developer/hooks.html + docs/en/developer/hooks.html
+Abhängt von: T8

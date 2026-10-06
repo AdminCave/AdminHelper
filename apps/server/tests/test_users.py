@@ -227,6 +227,7 @@ class TestUserResponseShape:
         db_session.refresh(user)
         expected = jsonable_encoder(_user_response(user))
         assert expected["created_at"] == iso_utc(user.created_at)
+        assert expected["created_at"].endswith("Z")
         return expected
 
     def test_created_at_is_rfc3339_utc(self, test_client, admin_user, db_session):

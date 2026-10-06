@@ -250,10 +250,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 ### Fixed
 
 - **Zeitstempel der Server-API in UTC mit `Z` (R-0064):** Die Antworten schreiben ihre Zeitstempel
-  als RFC 3339 in UTC mit `Z`. Bisher trugen die meisten keinen Offset, obwohl das OpenAPI
-  `format: date-time` verspricht, und Audit und Notifications den Offset der Datenbank-Session; Web
-  und Desktop lasen Werte ohne Offset als lokale Zeit und zeigten sie um den Abstand zu UTC
-  verschoben. Das OpenAPI bleibt unveraendert, die Datenbank auch (keine Migration); die
+  als RFC 3339 in UTC mit `Z`. Bisher trugen die meisten keinen Offset — auch die vier Felder, fuer
+  die das OpenAPI `format: date-time` verspricht (`created_at` der API-Keys, `created_at`, `last_run`
+  und `next_run` der Hooks; die uebrigen sind `string` oder untypisiert) —, und Audit und
+  Notifications den Offset der Datenbank-Session; Web und Desktop lasen Werte ohne Offset als
+  lokale Zeit und zeigten sie um den Abstand zu UTC verschoben. Das OpenAPI bleibt unveraendert,
+  die Datenbank auch (keine Migration); die
   Schemathesis-Ausnahmen der API-Key-Routen sind gefallen. **Hinweis fuer Hook-Skripte:** `last_run`
   im Kontext eines Hook-Skripts traegt jetzt ebenfalls `Z` (`2026-10-05T12:00:00Z` statt
   `2026-10-05T12:00:00`); ein Skript, das den Wert als String vergleicht oder selbst zerlegt, muss

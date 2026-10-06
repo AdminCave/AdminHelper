@@ -47,7 +47,13 @@
           <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter liefern die kleinen Listen (servers/connections/hooks) die volle Liste; <code>GET /api/audit</code> deckelt dagegen ohne <code>limit</code> auf 200 Eintr&auml;ge, da der Trail unbeschr&auml;nkt w&auml;chst (mehr via <code>offset</code>).</p>
 
           <h2>Zeitstempel</h2>
-          <p>Zeitstempel in Antworten sind RFC&nbsp;3339 in UTC mit <code>Z</code>, z.&nbsp;B. <code>2026-10-05T12:00:00Z</code> &ndash; auch dort, wo das Schema sie als <code>string</code> f&uuml;hrt. Ausnahmen: <code>lastUsed</code> einer Connection ist ein gespeicherter String und kommt so zur&uuml;ck, wie er geschrieben wurde &ndash; der Server selbst schreibt <code>+00:00</code>, ein Client kann den Wert frei setzen; die Antworten unter <code>/api/monitoring/*</code> reicht der Proxy unver&auml;ndert vom Monitoring-Dienst durch.</p>
+          <p>Zeitstempel in Antworten sind RFC&nbsp;3339 in UTC mit <code>Z</code>, z.&nbsp;B. <code>2026-10-05T12:00:00Z</code> &ndash; auch dort, wo das Schema sie als <code>string</code> f&uuml;hrt. Ausnahmen:</p>
+          <ul>
+            <li><code>lastUsed</code> einer Connection ist ein gespeicherter String und kommt so zur&uuml;ck, wie er geschrieben wurde &ndash; der Server selbst schreibt <code>+00:00</code>, ein Client kann den Wert frei setzen.</li>
+            <li><code>lastStartTime</code>/<code>lastCloseTime</code> von <code>GET /api/frp/status</code> reicht der Server unver&auml;ndert von frps durch (etwa <code>09-27 10:00:00</code>, ohne Jahr und Zone).</li>
+            <li>Das <code>result</code> von <code>POST /api/hooks/{id}/run</code> und <code>/api/hooks/trigger</code> ist, was das Skript zur&uuml;ckgibt.</li>
+            <li>Die Antworten unter <code>/api/monitoring/*</code> reicht der Proxy unver&auml;ndert vom Monitoring-Dienst durch.</li>
+          </ul>
 
           <h2>Auth</h2>
           <div class="endpoint">

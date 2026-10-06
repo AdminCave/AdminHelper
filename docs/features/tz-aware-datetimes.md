@@ -24,6 +24,7 @@ Zeitstempel absichtlich als `str`, um `format: date-time` nicht zu versprechen (
 
 **Ziel:** Jeder Zeitstempel, den die Server-API ausgibt, ist RFC 3339 in UTC mit `Z`. Das gilt für die typisierten
 `response_model`s und für die untypisierten `to_dict`-Antworten. Die drei Schemathesis-Ausschlüsse entfallen.
+(Nachtrag aus dem Bau: zwei fallen; `create_hook` bleibt mit einem zweiten Grund, der darunter lag, R-0207.)
 
 **Nicht-Ziele:**
 - Kein neuer Client-Code. Web und Desktop lesen `Z` schon heute richtig (unten); sie werden nur korrekt, nicht
@@ -66,7 +67,8 @@ Zeitstempel absichtlich als `str`, um `format: date-time` nicht zu versprechen (
   - `frp/schemas.py:199-202`, `:218-219`
 - **Untypisiert über `to_dict` mit `isoformat()`:**
   - naiv, also ohne Offset: `frp/models.py:60-61`, `:130`; `servers/models.py:49`; `ansible/models.py:32-33`;
-    `provisioning/models.py:53-56` und `provisioning/router.py:82`; `enrollment/models.py:60-63`
+    `provisioning/models.py:53-56` und `provisioning/router.py:82`; `enrollment/models.py:60-63` (Nachtrag aus dem
+    Bau: dieses `to_dict` hat im Server keinen Aufrufer, die Mint-Antworten tragen keinen Zeitstempel)
   - mit dem Offset der Session: `audit/models.py:41`; `notifications/models.py:106`, `:115`
 - **Hook-Skript-Kontext:** `last_run` naiv (`hooks/router.py:340`, `hooks/scheduler.py:72`), `triggered_at` aware mit
   `+00:00` (`hooks/router.py:329`).
@@ -170,7 +172,7 @@ Grenze von (a): Es setzt voraus, dass die naiven Werte UTC sind. Ein Bestandswer
    eigenes Vorhaben, wenn die DB-Semantik gebraucht wird. Dieses Ledger plant (a); bei (b) oder (c) kommt ein zweites
    Ledger dazu.
 2. **Auch die untypisierten `to_dict`-Antworten?** Sie versprechen kein `format: date-time`, haben aber denselben
-   Client-Fehler (Server-, FRP-, Provisioning-, Enrollment- und Ansible-Listen, Audit, Notifications). Empfehlung ja:
+   Client-Fehler (Server-, FRP-, Provisioning- und Ansible-Listen, Audit, Notifications; zu Enrollment siehe oben). Empfehlung ja:
    Sonst zeigt dieselbe Oberfläche manche Zeiten richtig und manche verschoben.
 3. **`Z` oder `+00:00`?** Empfehlung `Z` (oben).
 4. **`last_run` im Hook-Skript-Kontext mit `Z`?** Es ändert, was Nutzer-Skripte lesen; `triggered_at` trägt schon
