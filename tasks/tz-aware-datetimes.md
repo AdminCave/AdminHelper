@@ -27,8 +27,10 @@ SPDX-Kopf (`reuse annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-late
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_time_utc.py
 Doku: keine (intern)
 
-### T2 — Typisierte Antworten: API-Keys und Hooks mit `Z`, Schemathesis-Ausschlüsse weg  [ ]
+### T2 — Typisierte Antworten: API-Keys und Hooks mit `Z`, Schemathesis-Ausschlüsse weg  [x]
 Komponente: server · Dateien: apps/server/app/modules/api_keys/schemas.py, apps/server/app/modules/hooks/schemas.py, apps/server/tests/schemathesis_exclude.toml, apps/server/tests/test_api_keys.py, apps/server/tests/test_hooks.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @99cbf0d5 2026-10-06T09:10:16+02:00
+Review: approve (opus)
 Änderung: `ApiKeyResponse.created_at` (`api_keys/schemas.py:22`) und `HookResponse.created_at/last_run/next_run`
 (`hooks/schemas.py:63`, `:66`, `:67`) werden `UtcDatetime`. Die drei Ausschlüsse von `response_schema_conformance`
 (`tests/schemathesis_exclude.toml:142-154`, `:170-175`) entfallen. Der OpenAPI-Snapshot bleibt unverändert
@@ -37,6 +39,10 @@ enden auf `Z`, vor dem Fix rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_keys.py tests/test_hooks.py tests/test_openapi_snapshot.py
 Doku: keine (T7)
 Abhängt von: T1
+Abweichung (Bau): Zwei der drei Ausschlüsse entfallen (`list_api_keys`, `create_api_key`). `create_hook` bleibt mit neuer
+Begründung: ohne den `created_at`-Grund antwortet `_validate_create` (`hooks/router.py`) im Lauf mit 422 und einem
+String in `detail`, das Schema verspricht `HTTPValidationError`. Das liegt außerhalb dieser Task und geht als
+Roadmap-Kandidat an die Aufsicht.
 
 ### T3 — `to_dict` mit `Z`: FRP, Server, Ansible  [ ]
 Komponente: server · Dateien: apps/server/app/modules/frp/models.py, apps/server/app/modules/servers/models.py, apps/server/app/modules/ansible/models.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_servers_schemas.py, apps/server/tests/test_ansible.py

@@ -20,6 +20,28 @@ def _login(client, username, password):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+class TestHookTimestamps:
+    def test_timestamps_are_rfc3339_utc(self, test_client, db_session, admin_user):
+        # format: date-time promises an offset (R-0064): the API writes UTC with Z.
+        from datetime import datetime
+
+        from app.modules.hooks.models import Hook
+
+        h = _login(test_client, "admin", "adminpass")
+        r = test_client.post("/api/hooks", json={**WEBHOOK, "name": "wh-tz"}, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["created_at"].endswith("Z"), r.text
+        hook = db_session.get(Hook, r.json()["id"])
+        hook.last_run = datetime(2026, 10, 5, 12, 0, 0)
+        hook.next_run = datetime(2026, 10, 5, 13, 0, 0)
+        db_session.commit()
+        got = test_client.get(f"/api/hooks/{hook.id}", headers=h).json()
+        assert got["last_run"] == "2026-10-05T12:00:00Z"
+        assert got["next_run"] == "2026-10-05T13:00:00Z"
+        listed = test_client.get("/api/hooks", headers=h).json()
+        assert all(x["created_at"].endswith("Z") for x in listed)
+
+
 class TestHooksAuthz:
     def test_nonadmin_cannot_list(self, test_client, db_session, normal_user):
         h = _login(test_client, "viewer", "viewerpass")
