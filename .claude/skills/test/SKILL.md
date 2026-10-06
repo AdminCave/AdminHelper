@@ -49,8 +49,8 @@ itself (CLAUDE.md §2): no timer, no cron, no "while I'm at it". But once Kevin 
    (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
    `history.csv` and `seen.md` and committed them in `tasks/private/`; a REG/REL row went in
    through `roadmap.py add`, which commits it itself (a refused row — full `neu` cap, open
-   duplicate — is in the report's notes). Nothing is left to commit, and pushing the private
-   repo is Kevin's: name `git -C tasks/private push`, do not run it.
+   duplicate — is in the report's notes). Nothing is left to commit; the private repo is pushed by
+   the supervisor session (CLAUDE.md §2), otherwise name `git -C tasks/private push` for Kevin.
 5. Report to Kevin with the next action: rerun (infra), fix (reg), or nothing (pass). A
    rerun is again Kevin's word, never automatic.
 
