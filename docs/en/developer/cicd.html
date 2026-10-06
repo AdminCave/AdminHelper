@@ -400,8 +400,9 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           outside the documentation: neither the three <code>config.py</code> files nor <code>.env.example</code>
           nor any other tracked file outside <code>docs/</code>, <code>CHANGELOG.md</code> and <code>tasks/</code>
           (R-0044). An agent setting, a CI secret, a state or an HTTP method is therefore no finding; a name that
-          only a test or a comment still carries no longer stands out either. <code>--env</code> is <em>not</em>
-          a gate yet.</p>
+          only a test or a comment still carries no longer stands out either. Since R-0044 <code>--env</code>
+          gates like the path check: the <code>ops-scripts</code> job runs
+          <code>doc-smoke.py --paths --env --strict</code> (<code>--env</code> alone turns the path check off).</p>
 
           <p><strong>Environment parity</strong> (<code>apps/server/tests/test_env_parity.py</code>) holds three
           separately maintained descriptions of the same configuration surface together: a variable a service reads

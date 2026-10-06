@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # doc-smoke `--env`: Namen gegen das ganze Repo statt gegen drei config.py, der eine Doku-Bug, Gate in der CI (R-0044) — Task-Ledger
-Status: aktiv · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus der in der Triage angenommenen Zeile R-0044; --env als Gate nach dem Plan von Stufe 8a; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0044 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Doku-Prüfskript unter scripts/dev, sein hermetischer Test, ein CI-Schritt und Doku-Seiten; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -78,8 +78,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict   und   python3 scripts/dev/
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (sie sind die Änderung)
 Abhängt von: T1
 
-### T3 — `--env` als Gate in der CI: `doc-smoke.py --paths --env --strict` (R-0044)  [ ]
-Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/doc_smoke_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+### T3 — `--env` als Gate in der CI: `doc-smoke.py --paths --env --strict` (R-0044)  [x]
+Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/tests/doc_smoke_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 7 ok @6eef7563 2026-10-06T16:54:46+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Der Schritt „Documentation smoke test“ im Job `ops-scripts` (`ci.yml:842`, heute `doc-smoke.py --strict`)
 fährt `python3 scripts/dev/doc-smoke.py --paths --env --strict`; `--env` allein schaltet den Pfad-Check ab
 (`check_paths = args.paths or not args.env`), deshalb beide Flags. Der Kommentar darüber (`ci.yml:835–837`, heute

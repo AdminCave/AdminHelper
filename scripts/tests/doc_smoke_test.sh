@@ -124,6 +124,17 @@ done
 run_case "a name only in CHANGELOG.md -> finding" 1 "HISTORIC_ONLY_NAME" -- --env --strict --root "$REPO"
 run_case "a name only in tasks/ -> finding" 1 "LEDGER_ONLY_NAME" -- --env --strict --root "$REPO"
 run_case "a name only in an untracked file -> finding" 1 "UNTRACKED_ONLY_NAME" -- --env --strict --root "$REPO"
+# --paths --env runs both checks, the form the CI gate uses (R-0044); --env alone
+# turns the path check off, which is why the gate names both flags.
+REPO="$WORK/r5e"; fixture "$REPO"
+echo '<p><code>apps/server/app/gone.py</code> und <code>NICHT_BEKANNTE_VARIABLE</code></p>' >> "$REPO/docs/developer/good.html"
+run_case "--paths --env --strict: the path finding" 1 "apps/server/app/gone.py" -- --paths --env --strict --root "$REPO"
+run_case "--paths --env --strict: the name finding" 1 "NICHT_BEKANNTE_VARIABLE" -- --paths --env --strict --root "$REPO"
+if python3 "$CHECK" --env --strict --root "$REPO" 2>&1 | grep -q "apps/server/app/gone.py"; then
+  bad "--env alone reported a path"
+else
+  ok "--env alone checks no path"
+fi
 # Outside a repository the three config.py files and .env.example remain the sources.
 REPO="$WORK/r5d"; fixture "$REPO"
 printf 'AH_FIXTURE_FLAG=1\n' > "$REPO/scripts/dev/tool.sh"
