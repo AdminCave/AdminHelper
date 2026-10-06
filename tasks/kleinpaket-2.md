@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 2: Zeilennummern und Token-Formen in sec, Werkzeug-Hülle, commit-msg-Hook — Task-Ledger
-Status: bereit · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: erledigt · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus den von Kevin am 2026-10-06 als Kleinpaket-2 angenommenen Zeilen R-0194, R-0195, R-0196, R-0197; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0194, R-0196, R-0195, R-0197 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
