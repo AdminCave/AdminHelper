@@ -63,8 +63,10 @@ warum es noch kein Gate ist; der Docstring von `doc-smoke.py` sagt, gemeint ist 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (der `--env`-Absatz)
 
-### T2 — `FRP_DOMAIN` in der FRP-Doku: der Subdomain-Host der FRP-Server-Konfiguration (R-0044)  [ ]
+### T2 — `FRP_DOMAIN` in der FRP-Doku: der Subdomain-Host der FRP-Server-Konfiguration (R-0044)  [x]
 Komponente: scripts · Dateien: docs/en/admin/frp-tunnel.html, docs/admin/frp-tunnel.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @88a4515f 2026-10-06T16:44:23+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `docs/en/admin/frp-tunnel.html:53` („HTTP-reverse-proxy tunnel on `FRP_DOMAIN`, subdomain-routed“) und
 `:91` („443/tcp on `FRP_DOMAIN`“) nennen statt der Variable, die es nicht gibt, den Subdomain-Host der
 FRP-Server-Konfiguration (Feld `subdomain_host`, in frps.toml `subDomainHost`). Die deutsche Seite hat zu beiden Zeilen
