@@ -865,7 +865,9 @@ main gemergt hat, bringt main nicht als Fund mit). Ein Treffer bricht den Push a
 Datei:Zeile mit dem Commit, nie den Inhalt; eine Loeschung pusht nichts und geht durch. Erst dieser
 Hook verhindert, dass etwas ueberhaupt oeffentlich wird; die CI faengt, was an ihm vorbeigeht.
 Seit R-0197 ist `commit-msg` der sechste: er faehrt `review.sh sec --message` ueber die Nachricht
-des Commits, der gerade entsteht (`git commit -n` ueberspringt ihn wie `pre-commit`).
+eines `git commit` und eines Merge-Commits von `git merge` — nur die rufen ihn (githooks(5)); die
+Nachrichten von `git cherry-pick`, `git revert`, einem `rebase` und `git am` prueft erst `pre-push`
+bzw. die CI. `git commit -n` ueberspringt ihn wie `pre-commit`.
 Fehlt einer der sechs im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status`
 `NOT armed` und nennt ihn. Nach einer Weigerung geht es mit `--abort` zurueck (`git cherry-pick`, `merge`, `rebase`,
 `am`, `git revert` einer Serie); ein verweigertes `git revert` eines einzelnen Commits

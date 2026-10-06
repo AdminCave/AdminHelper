@@ -3,8 +3,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# commit-msg — git hook: `review.sh sec --message` over the message of every
-# commit (R-0197).
+# commit-msg — git hook: `review.sh sec --message` over the message of a
+# `git commit` or a merge commit of `git merge` (R-0197). Only those two run it
+# (githooks(5)); cherry-pick, revert, rebase and `git am` leave their messages to
+# pre-push and the CI guard.
 #
 # pre-commit reads only what is staged; the message came into view with pre-push
 # and the CI guard (`--range`, R-0183), when the commit already lay in the local

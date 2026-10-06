@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 2: Zeilennummern und Token-Formen in sec, Werkzeug-Hülle, commit-msg-Hook — Task-Ledger
-Status: aktiv · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: bereit · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus den von Kevin am 2026-10-06 als Kleinpaket-2 angenommenen Zeilen R-0194, R-0195, R-0196, R-0197; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0194, R-0196, R-0195, R-0197 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -75,8 +75,10 @@ bekommt den commit-msg-Hook.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Hook-Abschnitt)
 
-### T4 — Nachbesserung aus den Reviews: --message '' bricht ab, commit-msg-Doku, Kommentar im Rest-Check  [ ]
+### T4 — Nachbesserung aus den Reviews: --message '' bricht ab, commit-msg-Doku, Kommentar im Rest-Check  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, scripts/dev/hooks/commit-msg, scripts/dev/ledger.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @840f6d68 2026-10-06T15:44:18+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
 Änderung: Angelegt 2026-10-06 auf Entscheidung der Aufsicht aus den Review-Funden von T2 und T3 (r2). (a) `review.sh
 sec --message ''` bricht mit Exit 2 und einer Meldung ab, statt in `sec` über den Arbeitsbaum durchzufallen; dazu ein
 Testfall in `review_scripts_test.sh`. (c) `commit-msg` läuft laut githooks(5) nur bei `git commit` und `git merge`

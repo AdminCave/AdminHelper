@@ -186,6 +186,9 @@ while [ $# -gt 0 ]; do
       RANGE="$2"; shift ;;
     --message)
       [ $# -ge 2 ] || die "--message needs <file>"
+      # An empty name would leave MESSAGE unset and fall through to sec over the
+      # worktree, which may well say clean.
+      [ -n "$2" ] || die "--message needs a file name, got an empty one"
       MESSAGE="$2"; shift ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"

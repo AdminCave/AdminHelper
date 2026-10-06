@@ -443,6 +443,9 @@ r sec --message "$WORK/no-such-message"
 [ $rc -eq 2 ] && ok "sec --message on a missing file -> exit 2 (the hook fails closed)" || bad "message missing: rc=$rc out=$OUT"
 r sec --staged --message "$MSG"
 [ $rc -eq 2 ] && ok "sec --message stands alone (with --staged -> exit 2)" || bad "message with staged: rc=$rc out=$OUT"
+r sec --message ""
+[ $rc -eq 2 ] && grep -q "got an empty one" <<<"$OUT" && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "sec --message with an empty name -> exit 2, no sec over the worktree" || bad "message empty: rc=$rc out=$OUT"
 rm -f -- "$MSG"
 reset_index
 

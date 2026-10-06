@@ -366,8 +366,9 @@ case "$CMD" in
       }' "$LEDGER")
 
     # What a planning agent wrapped around its output and left in the plan (R-0165):
-    # the closing tag of content, invoke or parameter, or an opening invoke or
-    # parameter tag with a name. In the ledger and in the spec its Spec: line names
+    # the closing tag of content, invoke or parameter, the closing tag of the hull of
+    # a tool call or of its returned output (function_calls, result, output; R-0195),
+    # or an opening invoke or parameter tag with a name. In the ledger and in the spec its Spec: line names
     # under docs/features/, the two files the gate commits.
     LINTED=("$LEDGER")
     # The first docs/features/ path anywhere in the head's Spec: line, in backticks too.
