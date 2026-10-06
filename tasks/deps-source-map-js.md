@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # source-map-js 1.2.1 → 1.2.2 in web und desktop-ui (R-0199) — Task-Ledger
-Status: geplant · Branch: feature/deps-source-map-js · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/deps-source-map-js · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0199 am 2026-10-06 angenommen und den Bau durch Worker A gewählt; Lockfile-Fund nach seiner Regel vom selben Tag, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0199 (Kurz-Ledger ohne Spec)
 Heavy: none — nur die Lockfiles zweier Svelte-Projekte; `source-map-js` hängt dort ausschließlich an Dev-Werkzeug (`@vitest/coverage-v8` → `magicast`, `eslint-plugin-svelte` → `postcss`, `jsdom` → `css-tree`), nicht am Vite-Build und nicht im ausgelieferten Bundle. Kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ESLint und Prettier sauber, Doku im selben Commit, SPDX bei neuen Dateien).
