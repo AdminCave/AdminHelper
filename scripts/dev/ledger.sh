@@ -382,7 +382,7 @@ case "$CMD" in
       while IFS= read -r n; do
         echo "ERROR  $f:$n: a remnant of a tool call (R-0165) — text a planning agent wrapped around the plan" >&2
         RC=1
-      done < <(awk '/<\/([A-Za-z_]+:)?(content|invoke|parameter)>|<([A-Za-z_]+:)?(invoke|parameter)[ \t]+name=/ { print NR }' "$f")
+      done < <(awk '/<\/([A-Za-z_]+:)?(content|invoke|parameter|function_calls|result|output)>|<([A-Za-z_]+:)?(invoke|parameter)[ \t]+name=/ { print NR }' "$f")
     done
 
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then

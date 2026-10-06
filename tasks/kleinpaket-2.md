@@ -39,8 +39,10 @@ Stelle bekommt die neuen Formen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Token-Muster) · docs/developer/cicd.html DE+EN (die Aufzählung beim Public repo guard)
 
-### T2 — `ledger.sh lint`: Werkzeug-Hülle und zurückgegebene Ausgabe als Rest (R-0195)  [ ]
+### T2 — `ledger.sh lint`: Werkzeug-Hülle und zurückgegebene Ausgabe als Rest (R-0195)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9c231653 2026-10-06T14:10:45+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
 Änderung: Das Rest-Muster (`ledger.sh:385`) meldet heute die schließenden Tags von content, invoke und parameter
 und die öffnenden invoke und parameter mit `name=`. Dazu kommen nur schließende Tags, damit Markdown mit gewöhnlichem
 HTML grün bleibt: das der Werkzeugaufruf-Hülle (function_calls) und das der zurückgegebenen Ausgabe (result, output),
