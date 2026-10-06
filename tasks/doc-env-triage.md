@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # doc-smoke `--env`: Namen gegen das ganze Repo statt gegen drei config.py, der eine Doku-Bug, Gate in der CI (R-0044) — Task-Ledger
-Status: geplant · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus der in der Triage angenommenen Zeile R-0044; --env als Gate nach dem Plan von Stufe 8a; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0044 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Doku-Prüfskript unter scripts/dev, sein hermetischer Test, ein CI-Schritt und Doku-Seiten; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
