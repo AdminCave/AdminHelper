@@ -240,12 +240,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   - `npm audit --audit-level=high` in `apps/desktop/e2e` vorher 18 high, nachher 0; `apps/web` und `apps/desktop/ui`
     unveraendert ohne Befund.
 
-- **`source-map-js` 1.2.1 → 1.2.2 im Lockfile von `apps/web` (R-0199):** behebt GHSA-68fv-2mgg-jv7q
+- **`source-map-js` 1.2.1 → 1.2.2 in den Lockfiles von `apps/web` und `apps/desktop/ui` (R-0199):** behebt GHSA-68fv-2mgg-jv7q
   (CVE-2026-93749, high, Event-Loop-Blockade durch indizierte Source-Map-Abschnitte). Vom Dependency-Audit (`npm audit`)
   erkannt. Reiner Lockfile-Bump (`npm update source-map-js --package-lock-only`), `package.json` unveraendert: alle
   Abnehmer (`postcss`, `css-tree`, `magicast`) erlauben `^1.2.1`. Der Changelog 1.2.1 → 1.2.2 enthaelt nur diesen Fix
   und einen CSP-Fix fuer den Browser. Nur Dev-Werkzeug, nicht im ausgelieferten Bundle; `npm audit --audit-level=high`
-  vorher 1 high, nachher 0.
+  vorher je 1 high, nachher 0 in beiden Projekten und in `apps/desktop/e2e`.
 
 ### Fixed
 

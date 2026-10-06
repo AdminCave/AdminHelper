@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # source-map-js 1.2.1 → 1.2.2 in web und desktop-ui (R-0199) — Task-Ledger
-Status: aktiv · Branch: feature/deps-source-map-js · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/deps-source-map-js · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0199 am 2026-10-06 angenommen und den Bau durch Worker A gewählt; Lockfile-Fund nach seiner Regel vom selben Tag, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0199 (Kurz-Ledger ohne Spec)
 Heavy: none — nur die Lockfiles zweier Svelte-Projekte; `source-map-js` hängt dort ausschließlich an Dev-Werkzeug (`@vitest/coverage-v8` → `magicast`, `eslint-plugin-svelte` → `postcss`, `jsdom` → `css-tree`), nicht am Vite-Build und nicht im ausgelieferten Bundle. Kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -35,8 +35,10 @@ Semantik: DEVELOPMENT.md „Audit-Tools lokal“: „`audit.yml` faehrt den woec
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: CHANGELOG.md
 
-### T2 — `source-map-js` im Desktop-UI-Lockfile auf 1.2.2 (R-0199)  [ ]
+### T2 — `source-map-js` im Desktop-UI-Lockfile auf 1.2.2 (R-0199)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/package-lock.json, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @4ec56ad6 2026-10-06T03:28:43+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Wie T1 in `apps/desktop/ui`; der CHANGELOG-Eintrag aus T1 nennt danach beide Projekte. Im Commit-Body
 `npm audit --audit-level=high` in `apps/desktop/ui` vorher (1 high) und nachher (0), dazu `apps/web` und
 `apps/desktop/e2e` ohne Fund.
