@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # doc-smoke `--env`: Namen gegen das ganze Repo statt gegen drei config.py, der eine Doku-Bug, Gate in der CI (R-0044) — Task-Ledger
-Status: bereit · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/doc-env-triage · Commit-Granularität: pro Task · Review: am Ende (feature-review; ci.yml ist ein Risikopfad ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus der in der Triage angenommenen Zeile R-0044; --env als Gate nach dem Plan von Stufe 8a; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0044 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Doku-Prüfskript unter scripts/dev, sein hermetischer Test, ein CI-Schritt und Doku-Seiten; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -94,3 +94,19 @@ Rot vorher: der neue Testfall zu `--paths --env` gibt es auf main nicht; die CI-
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (der `--env`-Absatz)
 Abhängt von: T1, T2
+
+### T4 — Nachbesserung aus dem Review am Ende: Scheintest, git-grep-Robustheit, Wortlaut, CHANGELOG (R-0044)  [ ]
+Komponente: scripts · Dateien: scripts/tests/doc_smoke_test.sh, scripts/dev/doc-smoke.py, .github/workflows/ci.yml, DEVELOPMENT.md, CHANGELOG.md
+Änderung: Angelegt 2026-10-06 aus dem Review am Ende (Opus, request_changes). (1) wichtig: Der Fall „--env alone
+checks no path“ (`doc_smoke_test.sh`, aus T3) kann nicht rot werden: Unter `pipefail` zählt der Exit von python, und
+den macht der Env-Fund der Fixture immer 1. Ausgabe erst in eine Variable fassen, dann greppen. Dasselbe Muster im
+Fall „known env name is not reported“ (älter, gleiche Datei) ebenso. (2) Ein Test für `-w`: eine getrackte Datei mit
+`HTTPServer` bzw. `getFOO_BAR` macht `HTTPS` bzw. `FOO_BAR` nicht bekannt. (3) `_repo_words` ruft git mit
+`-c grep.lineNumber=false -c grep.column=false -c grep.fallbackToNoIndex=false -c color.grep=never`, damit eine
+Nutzer-Konfiguration die Wortmenge nicht verfälscht; scheitert git grep (Exit weder 0 noch 1), sagt das Skript auf
+stderr, dass es auf die alten Quellen zurückfällt. (4) `--help` von `--env` nennt die Regel. (5) Wortlaut: geprüft
+wird ein `<code>`, das ganz aus einem Namen besteht (`ci.yml`-Kommentar, DEVELOPMENT.md). (6) CHANGELOG
+`[Unreleased]` → Changed: `--env` ist Gate (R-0044). Nicht dabei: ob Markdown außerhalb von `docs/` als Träger zählt
+(Umsetzungsweg der Aufsicht, gemeldet).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Doku-Smoke) · CHANGELOG.md
