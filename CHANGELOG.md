@@ -225,13 +225,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erkennt der Server an der `jti`, nicht am Token-String). `pytest` gegen den exakten neuen Lock unter
   Python 3.12 gruen (server 824), `pip-audit` ohne Befund.
 
-- **e2e-Lockfile: `basic-ftp` 5.3.1 → 6.2.2 (R-0198):** `apps/desktop/e2e/package.json` hebt `basic-ftp` per
-  `overrides` auf `^6.2.1`. Es haengt transitiv unter WebdriverIO (`@wdio/utils` → `@puppeteer/browsers` →
-  `proxy-agent` → `pac-proxy-agent` → `get-uri`, das `^5.3.1` verlangt). Behebt GHSA-c475-qrg2-pj4r (high, CPU-Last
-  beim Parsen von Verzeichnislisten), 6.2.2 zusaetzlich GHSA-5rfr-xx34-2xxv. Vom Dependency-Audit (`npm audit`, Schritt
-  „Audit e2e lockfile") erkannt. Der Changelog 5.3.1 → 6.2.2 aendert keine API, die `get-uri` nutzt; der Bruch in
-  6.0.0 (kein getrennter Transfer-Host ohne `allowSeparateTransferHost`) betrifft nur FTP-Downloads, die der Testbaum
-  nicht macht. Nur `dev`-Abhaengigkeit, nichts davon wird ausgeliefert.
+- **e2e-Lockfile: `basic-ftp` 5.3.1 → 6.2.2, `braces` entfernt (R-0198):** zwei `overrides` in
+  `apps/desktop/e2e/package.json`, beide unter WebdriverIO und vom Dependency-Audit (`npm audit`, Schritt „Audit e2e
+  lockfile") erkannt; nur `dev`-Abhaengigkeiten, nichts davon wird ausgeliefert.
+  - `basic-ftp` auf `^6.2.1` (transitiv ueber `@wdio/utils` → `@puppeteer/browsers` → `proxy-agent` →
+    `pac-proxy-agent` → `get-uri`, das `^5.3.1` verlangt): behebt GHSA-c475-qrg2-pj4r (high, CPU-Last beim Parsen von
+    Verzeichnislisten), 6.2.2 zusaetzlich GHSA-5rfr-xx34-2xxv. Der Changelog 5.3.1 → 6.2.2 aendert keine API, die
+    `get-uri` nutzt; der Bruch in 6.0.0 (kein getrennter Transfer-Host ohne `allowSeparateTransferHost`) betrifft nur
+    FTP-Downloads, die der Testbaum nicht macht.
+  - `chokidar` unter `mocha` auf `^4.0.3`: fuer `braces` (GHSA-vfj7-8cjw-p6xm, high, bis 3.0.3, ohne gepatchte
+    Version) gibt es keinen Fix, es hing nur an mochas `chokidar` 3.6.0. Mit chokidar 4, das schon im Baum liegt, faellt
+    es samt elf weiteren Paketen weg. Grenze: Der Watch-Modus der mocha-CLI verliert die Glob-Unterstuetzung; die
+    E2E-Tests nutzen ihn nicht, WebdriverIO ruft mocha programmatisch.
+  - `npm audit --audit-level=high` in `apps/desktop/e2e` vorher 18 high, nachher 0; `apps/web` und `apps/desktop/ui`
+    unveraendert ohne Befund.
 
 ### Fixed
 

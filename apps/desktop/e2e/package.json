@@ -23,6 +23,9 @@
     "serialize-javascript": "^7.0.5",
     "deepmerge-ts": "^8.0.0",
     "@puppeteer/browsers": "^3.2.1",
-    "basic-ftp": "^6.2.1"
+    "basic-ftp": "^6.2.1",
+    "mocha": {
+      "chokidar": "^4.0.3"
+    }
   }
 }

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # basic-ftp im e2e-Lockfile auf 6.2.x (R-0198) — Task-Ledger
-Status: aktiv · Branch: feature/deps-basic-ftp · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/deps-basic-ftp · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0198 am 2026-10-06 angenommen und den Bau durch Worker A gewählt; Ein-Task-Paket, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0198 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — nur der Desktop-E2E-Smoke (`run.sh e2e`, Schritt `desktop-e2e-smoke`) auf einer Pool-VM, weil ein Major-Override im WebdriverIO-Baum den Start von wdio brechen kann; die Aufsicht fährt ihn am Gate. Kein Stack-, Gateway-, PKI- oder Install-Pfad, nichts davon wird ausgeliefert.
@@ -40,8 +40,10 @@ lokal“: „`audit.yml` faehrt den woechentlichen CVE-Sweep in CI.“
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: CHANGELOG.md
 
-### T2 — braces aus dem e2e-Baum: mochas chokidar per Override auf ^4 (R-0198)  [ ]
+### T2 — braces aus dem e2e-Baum: mochas chokidar per Override auf ^4 (R-0198)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/package.json, apps/desktop/e2e/package-lock.json, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @fb275d88 2026-10-06T02:45:21+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Ergänzt 2026-10-06 auf Entscheidung der Aufsicht (Variante B): der zweite High-Fund im selben Audit-Schritt.
 In `overrides` verschachtelt `"mocha": { "chokidar": "^4.0.3" }`, Lock wie in T1 (`npm install --package-lock-only
 --ignore-scripts`, npm 10.9.8). Im Lock-Diff fällt `node_modules/mocha/node_modules/chokidar` 3.6.0 samt `braces` und den
