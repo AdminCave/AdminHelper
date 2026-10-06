@@ -41,6 +41,60 @@ class TestHookTimestamps:
         listed = test_client.get("/api/hooks", headers=h).json()
         assert all(x["created_at"].endswith("Z") for x in listed)
 
+    def test_manual_run_context_has_last_run_with_z(self, test_client, db_session, admin_user):
+        # The script context carries last_run in UTC with Z (R-0064), as triggered_at
+        # already carries an offset.
+        from datetime import datetime
+
+        from app.modules.hooks.models import Hook
+
+        h = _login(test_client, "admin", "adminpass")
+        script = "result = {'last_run': last_run}"
+        r = test_client.post(
+            "/api/hooks", json={**WEBHOOK, "name": "wh-ctx", "script": script}, headers=h
+        )
+        assert r.status_code == 201, r.text
+        db_session.get(Hook, r.json()["id"]).last_run = datetime(2026, 10, 5, 12, 0, 0)
+        db_session.commit()
+        run = test_client.post(f"/api/hooks/{r.json()['id']}/run", headers=h)
+        assert run.status_code == 200, run.text
+        assert run.json()["result"] == {"last_run": "2026-10-05T12:00:00Z"}, run.text
+
+    def test_scheduled_run_context_has_last_run_with_z(self, db_session, monkeypatch):
+        from datetime import datetime
+
+        from sqlalchemy.orm import sessionmaker
+
+        import app.core.database as database
+        import app.modules.hooks.script_runner as script_runner
+        from app.modules.hooks.models import Hook
+        from app.modules.hooks.scheduler import _execute_scheduled_hook
+
+        db_session.add(
+            Hook(
+                id="sched-tz",
+                name="sched-tz",
+                hook_type="schedule",
+                script="pass",
+                enabled=True,
+                schedule_interval="1h",
+                last_run=datetime(2026, 10, 5, 12, 0, 0),
+            )
+        )
+        db_session.flush()
+        seen: list[dict] = []
+        monkeypatch.setattr(
+            script_runner, "run_hook_script", lambda **kw: seen.append(kw["context"])
+        )
+        # _execute_scheduled_hook opens its own SessionLocal; bind it to the test connection.
+        monkeypatch.setattr(
+            database, "SessionLocal", sessionmaker(bind=db_session.connection(), autoflush=False)
+        )
+
+        _execute_scheduled_hook("sched-tz")
+
+        assert [c["last_run"] for c in seen] == ["2026-10-05T12:00:00Z"]
+
 
 class TestHooksAuthz:
     def test_nonadmin_cannot_list(self, test_client, db_session, normal_user):

@@ -79,8 +79,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_audit_api.py te
 Doku: keine (T7)
 Abhängt von: T1
 
-### T6 — Hook-Skript-Kontext: `last_run` mit `Z`  [ ]
+### T6 — Hook-Skript-Kontext: `last_run` mit `Z`  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_hooks.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @e48fead8 2026-10-06T10:39:14+02:00
+Review: approve (sonnet)
 Änderung: `last_run` im Kontext, den ein Hook-Skript bekommt (`hooks/router.py:340`, `hooks/scheduler.py:72`), wird
 `iso_utc(...)`, wie `triggered_at` schon einen Offset trägt. Nur bei Ja zu offener Frage 4; sonst
 `ledger.sh mark-skip` mit Verweis auf die Antwort. Test: der Kontext eines Testlaufs trägt `last_run` mit `Z`.
