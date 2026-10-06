@@ -42,8 +42,7 @@ class TestHookTimestamps:
         assert all(x["created_at"].endswith("Z") for x in listed)
 
     def test_manual_run_context_has_last_run_with_z(self, test_client, db_session, admin_user):
-        # The script context carries last_run in UTC with Z (R-0064), as triggered_at
-        # already carries an offset.
+        # The script context carries last_run in UTC with Z (R-0064), like triggered_at.
         from datetime import datetime
 
         from app.modules.hooks.models import Hook
@@ -59,6 +58,18 @@ class TestHookTimestamps:
         run = test_client.post(f"/api/hooks/{r.json()['id']}/run", headers=h)
         assert run.status_code == 200, run.text
         assert run.json()["result"] == {"last_run": "2026-10-05T12:00:00Z"}, run.text
+
+    def test_manual_run_context_has_triggered_at_with_z(self, test_client, db_session, admin_user):
+        # One form per context (R-0064, Kevin 2026-10-06): triggered_at is UTC with Z too.
+        h = _login(test_client, "admin", "adminpass")
+        script = "result = {'triggered_at': triggered_at}"
+        r = test_client.post(
+            "/api/hooks", json={**WEBHOOK, "name": "wh-trig", "script": script}, headers=h
+        )
+        assert r.status_code == 201, r.text
+        run = test_client.post(f"/api/hooks/{r.json()['id']}/run", headers=h)
+        assert run.status_code == 200, run.text
+        assert run.json()["result"]["triggered_at"].endswith("Z"), run.text
 
     def test_scheduled_run_context_has_last_run_with_z(self, db_session, monkeypatch):
         from datetime import datetime
@@ -94,6 +105,7 @@ class TestHookTimestamps:
         _execute_scheduled_hook("sched-tz")
 
         assert [c["last_run"] for c in seen] == ["2026-10-05T12:00:00Z"]
+        assert seen[0]["triggered_at"].endswith("Z"), seen
 
 
 class TestHooksAuthz:

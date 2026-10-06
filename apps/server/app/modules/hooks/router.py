@@ -327,7 +327,7 @@ def run_hook_manually(
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = iso_utc(datetime.now(timezone.utc))
     context = {
         # Webhook
         "payload": {},

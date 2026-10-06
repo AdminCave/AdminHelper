@@ -82,7 +82,7 @@ def _execute_scheduled_hook(hook_id: str) -> None:
             run_hook_script(
                 script=hook.script,
                 hook_type="schedule",
-                context={"triggered_at": now.isoformat(), "last_run": last_run_str},
+                context={"triggered_at": iso_utc(now), "last_run": last_run_str},
             )
         except Exception:
             logger.exception("Scheduled Hook '%s' fehlgeschlagen", hook.name)

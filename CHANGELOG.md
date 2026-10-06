@@ -257,9 +257,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lokale Zeit und zeigten sie um den Abstand zu UTC verschoben. Das OpenAPI bleibt unveraendert,
   die Datenbank auch (keine Migration); die
   Schemathesis-Ausnahmen der API-Key-Routen sind gefallen. **Hinweis fuer Hook-Skripte:** `last_run`
-  im Kontext eines Hook-Skripts traegt jetzt ebenfalls `Z` (`2026-10-05T12:00:00Z` statt
-  `2026-10-05T12:00:00`); ein Skript, das den Wert als String vergleicht oder selbst zerlegt, muss
-  das `Z` erwarten. `datetime.fromisoformat` liest beide Formen. Doku: API-Referenz, „Zeitstempel",
+  und `triggered_at` im Kontext eines Hook-Skripts tragen jetzt beide `Z` (`last_run` etwa
+  `2026-10-05T12:00:00Z` statt `2026-10-05T12:00:00`, `triggered_at` `…Z` statt `…+00:00`); ein
+  Skript, das die Werte als String vergleicht oder selbst zerlegt, muss das `Z` erwarten.
+  `datetime.fromisoformat` liest alle drei Formen. Doku: API-Referenz, „Zeitstempel",
   und Hooks.
 - **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
   Die Proben von `scripts/dev/runner-redteam.sh` auf git, Proxmox, D-Bus und Settings fuehren
