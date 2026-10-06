@@ -74,6 +74,6 @@ class UserResponse(BaseModel):
     username: str
     is_admin: bool
     server_ids: list[str]
-    # A string, not a datetime: the builder hands out isoformat() — the bytes the
-    # untyped route sent — without promising `format: date-time` (R-0064).
+    # A string, not a datetime: the builder hands out iso_utc() (UTC with Z) without
+    # promising `format: date-time` in the schema (R-0064).
     created_at: Optional[str]

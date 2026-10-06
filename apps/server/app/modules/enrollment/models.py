@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.database import Base
-from app.core.time import utc_now_sql, utcnow_naive
+from app.core.time import iso_utc, utc_now_sql, utcnow_naive
 
 
 class EnrollmentToken(Base):
@@ -57,10 +57,10 @@ class EnrollmentToken(Base):
             "subjectId": self.subject_id,
             "scope": self.scope,
             "browser": self.browser,
-            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
-            "usedAt": self.used_at.isoformat() if self.used_at else None,
+            "expiresAt": iso_utc(self.expires_at),
+            "usedAt": iso_utc(self.used_at),
             "isValid": self.is_valid(),
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "createdAt": iso_utc(self.created_at),
         }
 
 

@@ -55,8 +55,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py t
 Doku: keine (T7)
 Abhängt von: T1
 
-### T4 — `to_dict` mit `Z`: Provisioning, Enrollment, Users  [ ]
-Komponente: server · Dateien: apps/server/app/modules/provisioning/models.py, apps/server/app/modules/provisioning/router.py, apps/server/app/modules/enrollment/models.py, apps/server/app/modules/users/router.py, apps/server/tests/test_provisioning.py, apps/server/tests/test_enrollment_mint.py, apps/server/tests/test_users.py
+### T4 — `to_dict` mit `Z`: Provisioning, Enrollment, Users  [x] (Handcommit auf Kevins Wort (2026-10-06): geänderte Assertion test_users.py:228, verschärft auf iso_utc; task-close stoppte am diff-scan vor dem Verify, scope/docs-pairs/sec/contracts von Hand clean)
+Komponente: server · Dateien: apps/server/app/modules/provisioning/models.py, apps/server/app/modules/provisioning/router.py, apps/server/app/modules/enrollment/models.py, apps/server/app/modules/users/router.py, apps/server/tests/test_provisioning.py, apps/server/tests/test_enrollment_mint.py, apps/server/tests/test_users.py, apps/server/app/modules/users/schemas.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @bfc140a4 2026-10-06T09:42:47+02:00 (verify.sh, Baum 2665a40c)
+Review: approve (opus)
 Änderung: Die `isoformat()`-Stellen in `provisioning/models.py:53-56`, `provisioning/router.py:82`,
 `enrollment/models.py:60-63` und `users/router.py:33` werden `iso_utc(...)`; `users/schemas.py:77-79` bleibt `str`
 (offene Frage 5). `tests/test_users.py:228` vergleicht heute mit `jsonable_encoder(user.created_at)` und erwartet dann
