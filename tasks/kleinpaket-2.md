@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 2: Zeilennummern und Token-Formen in sec, Werkzeug-Hülle, commit-msg-Hook — Task-Ledger
-Status: aktiv · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: bereit · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus den von Kevin am 2026-10-06 als Kleinpaket-2 angenommenen Zeilen R-0194, R-0195, R-0196, R-0197; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0194, R-0196, R-0195, R-0197 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -56,8 +56,10 @@ auch Hülle und Ausgabe.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (die `lint`-Zeile)
 
-### T3 — commit-msg-Hook: Token in der Commit-Nachricht schon beim Commit sperren (R-0197)  [ ]
+### T3 — commit-msg-Hook: Token in der Commit-Nachricht schon beim Commit sperren (R-0197)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/hooks/commit-msg (neu, SPDX), scripts/dev/harness.sh, scripts/tests/review_scripts_test.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c18bf79a 2026-10-06T15:04:23+02:00
+Review: approve (opus/xhigh; 4 nit) · round 2
 Änderung: `review.sh sec` bekommt `--message <datei>`: liest die Datei mit derselben `token()`-Funktion wie
 `sec_scan_message` (`:771–776`) und meldet nur Zeile und Art, nie den Treffer; Kommentarzeilen, die git selbst
 einfügt (`#` am Zeilenanfang), zählen nicht. Neuer Hook `scripts/dev/hooks/commit-msg` (`0755`, SPDX über

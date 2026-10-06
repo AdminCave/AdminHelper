@@ -415,6 +415,35 @@ stage docs/tok.md
 r sec --staged
 [ $rc -eq 0 ] && ok "placeholders of the new forms, a bare UUID and a longer key name are no token" \
   || bad "new-form placeholders: rc=$rc out=$OUT"
+# sec --message (R-0197): the message of the commit being made, as the commit-msg hook
+# hands it over. With commit -v the diff below the scissors line is no part of it; a
+# comment line is, since git keeps it in a commit made with -m.
+MSG="$WORK/commit-msg.txt"
+printf 'subject\n\nbody with %s in it\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:3 (a token pattern)" <<<"$OUT" && ! grep -qF "$T_GH" <<<"$OUT" \
+  && ok "sec --message: a token -> exit 4 with the line, never the token" || bad "message token: rc=$rc out=$OUT"
+printf 'subject\n\nbody with gh%s only\n' "p_short" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "sec --message: a placeholder is clean" || bad "message placeholder: rc=$rc out=$OUT"
+printf 'subject\n# ------------------------ >8 ------------------------\n-old %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 0 ] && ok "sec --message: the diff below the scissors line does not count" \
+  || bad "message scissors: rc=$rc out=$OUT"
+printf 'subject\n# %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:2 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message: a token on a comment line counts (git keeps it with -m)" || bad "message comment: rc=$rc out=$OUT"
+printf 'subject %s\n' "$T_GH" > "$WORK/rel-msg.txt"
+OUT=$(cd "$WORK" && bash "$REVIEW" sec --message rel-msg.txt 2>&1); rc=$?
+[ $rc -eq 4 ] && grep -q "the commit message:1" <<<"$OUT" \
+  && ok "sec --message resolves a relative path from where the caller stands" || bad "message relative: rc=$rc out=$OUT"
+rm -f -- "$WORK/rel-msg.txt"
+r sec --message "$WORK/no-such-message"
+[ $rc -eq 2 ] && ok "sec --message on a missing file -> exit 2 (the hook fails closed)" || bad "message missing: rc=$rc out=$OUT"
+r sec --staged --message "$MSG"
+[ $rc -eq 2 ] && ok "sec --message stands alone (with --staged -> exit 2)" || bad "message with staged: rc=$rc out=$OUT"
+rm -f -- "$MSG"
 reset_index
 
 printf 'ordinary docs\n' >> "$FIX/CHANGELOG.md"
@@ -1529,7 +1558,7 @@ echo "── pre-commit hook ──"
 HFIX="$WORK/hooked"
 mkdir -p "$HFIX/scripts/dev/hooks" "$HFIX/tasks" "$HFIX/docs"
 cp "$REPO_ROOT/scripts/dev/review.sh" "$HFIX/scripts/dev/review.sh"
-for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+for h in pre-commit prepare-commit-msg commit-msg pre-merge-commit pre-applypatch; do
   cp "$REPO_ROOT/scripts/dev/hooks/$h" "$HFIX/scripts/dev/hooks/$h"
   chmod 755 "$HFIX/scripts/dev/hooks/$h"
 done
@@ -1578,6 +1607,14 @@ git -C "$HFIX" checkout -q -- docs/note.md
 printf 'clean line\n' >> "$HFIX/docs/note.md"
 hc -a -m "a clean change"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a clean change is committed" || bad "clean: rc=$rc out=$OUT"
+# commit-msg (R-0197): a token in the message stops the commit itself, not only the
+# push. The merge commits further down pass this hook with git's own message.
+H0=$(heads)
+hc --allow-empty -m "subject $T_GH"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:1 (a token pattern)" <<<"$OUT" \
+  && ! grep -qF "$T_GH" <<<"$OUT" && ok "armed: a token in -m is refused, never echoed" || bad "msg token: rc=$rc out=$OUT"
+hc --allow-empty -m "subject with gh""p_short only"
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a placeholder in -m is committed" || bad "msg placeholder: rc=$rc out=$OUT"
 
 # The relative core.hooksPath is resolved per worktree: a lane runs the hook of
 # ITS branch. Here that branch carries a hook that only leaves a marker behind.
@@ -1686,7 +1723,7 @@ git -C "$HFIX" switch -q "$MAIN"
 # --show-toplevel, not --git-dir: a tarball unpacked inside another repository
 # would find that one.
 HOOK_SKIPPED=0
-for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+for h in pre-commit prepare-commit-msg commit-msg pre-merge-commit pre-applypatch; do
   if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
     mode=$(git -C "$REPO_ROOT" ls-files -s -- "scripts/dev/hooks/$h" | cut -d' ' -f1)
     [ "$mode" = 100755 ] && ok "$h is tracked with mode 100755" || bad "$h mode: '${mode:-untracked}'"
