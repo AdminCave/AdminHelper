@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 3: eine angekündigte Assertion-Änderung im diff-scan — Task-Ledger
-Status: geplant · Branch: harness/kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus R-0206, von Kevin am 2026-10-06 angenommen; Kevin am Gate: Helfer eng gefasst ja (T2), Restrisiko verrutschter Spannen durch Testköpfe in Kommentar oder String und `assert True` als neue Assertion hingenommen; Aufsicht: n ≥ r, die Absicht in review.sh und tasks/README.md ändert sich mit Kevins Annahme von R-0206; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0206 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, Skills und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
