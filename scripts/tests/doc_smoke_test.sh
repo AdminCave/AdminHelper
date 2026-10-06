@@ -96,13 +96,66 @@ run_case "6 allow entries -> exit 2" 2 "the cap is 5" -- --strict --root "$REPO"
 REPO="$WORK/r5"; fixture "$REPO"
 echo '<p><code>NICHT_BEKANNTE_VARIABLE</code> und <code>DATABASE_URL</code></p>' >> "$REPO/docs/developer/good.html"
 run_case "unknown env name -> exit 1 under --env" 1 "NICHT_BEKANNTE_VARIABLE" -- --env --strict --root "$REPO"
-if python3 "$CHECK" --env --strict --root "$REPO" 2>&1 | grep -q "DATABASE_URL"; then
+# The output first, then grep: under pipefail a pipe takes python's exit, and the
+# finding above makes that 1 — the if would never see the grep.
+out=$(python3 "$CHECK" --env --strict --root "$REPO" 2>&1)
+if printf '%s\n' "$out" | grep -q "DATABASE_URL"; then
   bad "a documented env name that the config reads was reported"
 else
   ok "known env name is not reported"
 fi
 # The path check must not report it either way.
 run_case "env name is no path finding" 0 "matches the tree" -- --paths --strict --root "$REPO"
+
+# ── a name the rest of the repository carries is known (R-0044) ──────────────
+# The docs name more than the services read in config.py: agent settings, CI
+# secrets, harness variables, states, constants. A tracked file outside docs/ makes
+# a name known; the changelog, the ledgers and an untracked file do not.
+REPO="$WORK/r5c"; fixture "$REPO"
+mkdir -p "$REPO/scripts/tests" "$REPO/tasks"
+printf 'AH_FIXTURE_FLAG=1\n' > "$REPO/scripts/tests/tool.sh"
+printf 'CHECK_KIND_FIXTURE = "x"\n' > "$REPO/apps/server/real/consts.py"
+printf -- '- removed HISTORIC_ONLY_NAME\n' > "$REPO/CHANGELOG.md"
+printf 'Notiz: LEDGER_ONLY_NAME\n' > "$REPO/tasks/x.md"
+git -C "$REPO" add -A; git -C "$REPO" commit -qm "more names"
+printf 'UNTRACKED_ONLY_NAME=1\n' > "$REPO/scripts/tests/local.sh"
+echo '<p><code>AH_FIXTURE_FLAG</code> und <code>CHECK_KIND_FIXTURE</code></p>' >> "$REPO/docs/developer/good.html"
+run_case "names a tracked script or module carries -> clean under --env" 0 "matches the tree" -- --env --strict --root "$REPO"
+for n in HISTORIC_ONLY_NAME LEDGER_ONLY_NAME UNTRACKED_ONLY_NAME; do
+  echo "<p><code>$n</code></p>" >> "$REPO/docs/developer/good.html"
+done
+run_case "a name only in CHANGELOG.md -> finding" 1 "HISTORIC_ONLY_NAME" -- --env --strict --root "$REPO"
+run_case "a name only in tasks/ -> finding" 1 "LEDGER_ONLY_NAME" -- --env --strict --root "$REPO"
+run_case "a name only in an untracked file -> finding" 1 "UNTRACKED_ONLY_NAME" -- --env --strict --root "$REPO"
+# --paths --env runs both checks, the form the CI gate uses (R-0044); --env alone
+# turns the path check off, which is why the gate names both flags.
+REPO="$WORK/r5e"; fixture "$REPO"
+echo '<p><code>apps/server/app/gone.py</code> und <code>NICHT_BEKANNTE_VARIABLE</code></p>' >> "$REPO/docs/developer/good.html"
+run_case "--paths --env --strict: the path finding" 1 "apps/server/app/gone.py" -- --paths --env --strict --root "$REPO"
+run_case "--paths --env --strict: the name finding" 1 "NICHT_BEKANNTE_VARIABLE" -- --paths --env --strict --root "$REPO"
+out=$(python3 "$CHECK" --env --strict --root "$REPO" 2>&1)
+if printf '%s\n' "$out" | grep -q "apps/server/app/gone.py"; then
+  bad "--env alone reported a path"
+elif ! printf '%s\n' "$out" | grep -q "NICHT_BEKANNTE_VARIABLE"; then
+  bad "--env alone did not run the name check: $out"
+else
+  ok "--env alone checks no path"
+fi
+# A whole word only: HTTPServer does not make HTTPS known, nor getFOO_BAR FOO_BAR.
+REPO="$WORK/r5f"; fixture "$REPO"
+printf 'class HTTPServer: pass\nvalue = getFOO_BAR()\n' > "$REPO/apps/server/real/words.py"
+git -C "$REPO" add -A; git -C "$REPO" commit -qm "words inside words"
+echo '<p><code>HTTPS</code> und <code>FOO_BAR</code></p>' >> "$REPO/docs/developer/good.html"
+run_case "a word inside a longer identifier is not known (HTTPS)" 1 "HTTPS" -- --env --strict --root "$REPO"
+run_case "a word inside a longer identifier is not known (FOO_BAR)" 1 "FOO_BAR" -- --env --strict --root "$REPO"
+# Outside a repository the three config.py files and .env.example remain the sources.
+REPO="$WORK/r5d"; fixture "$REPO"
+printf 'AH_FIXTURE_FLAG=1\n' > "$REPO/scripts/dev/tool.sh"
+rm -rf -- "$REPO/.git"
+echo '<p><code>DATABASE_URL</code></p>' >> "$REPO/docs/developer/good.html"
+run_case "no repository: a name a config.py reads stays known" 0 "matches the tree" -- --env --strict --root "$REPO"
+echo '<p><code>AH_FIXTURE_FLAG</code></p>' >> "$REPO/docs/developer/good.html"
+run_case "no repository: only the old sources count" 1 "AH_FIXTURE_FLAG" -- --env --strict --root "$REPO"
 
 # ── a path that exists only in the working tree is NOT a path ───────────────
 # This is the bug the check had: `apps/web/dist/` exists on a developer box and

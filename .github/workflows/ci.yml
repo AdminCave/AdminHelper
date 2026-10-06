@@ -834,12 +834,13 @@ jobs:
       - name: Hermetic shell tests
         run: bash scripts/tests/run.sh unit --strict --only scripts
       # Does the documentation still describe this tree? Every <code>apps/…</code>
-      # in docs/**/*.html has to name a file that exists. --env stays off: the
-      # ALL_CAPS heuristic still reports 43 names that are not env variables at
-      # all (HTTP methods, log levels, file names), so it is information, not a
-      # gate, until that list is triaged (harness 8a, T17).
+      # in docs/**/*.html has to name a file that exists (--paths), and a <code>
+      # that is one ALL_CAPS name has to be carried by the repository outside the
+      # docs (--env). --env gates since R-0044 triaged it to zero findings, as the
+      # 8a plan intended (gate at five exceptions or fewer). Both flags: --env alone
+      # turns the path check off.
       - name: Documentation smoke test
-        run: python3 scripts/dev/doc-smoke.py --strict
+        run: python3 scripts/dev/doc-smoke.py --paths --env --strict
 
   gateway-config:
     name: Gateway (nginx -t)

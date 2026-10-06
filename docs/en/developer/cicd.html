@@ -396,9 +396,13 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <code>apps/web/dist/</code> only exists on a developer box. Exceptions live in
           <code>scripts/dev/doc-smoke-allow.txt</code> (reason after <code>#</code>); the script refuses more
           than <strong>five</strong>, because an exception list is where a guard like this goes to rot. The
-          second check, <code>--env</code> (ALL_CAPS names against the three <code>config.py</code> files and
-          <code>.env.example</code>), is <em>not</em> a gate yet: the heuristic currently reports 43 names that
-          are not environment variables at all (HTTP methods, log levels, file names).</p>
+          second check, <code>--env</code>, reports an ALL_CAPS name that nothing in the repository carries
+          outside the documentation: neither the three <code>config.py</code> files nor <code>.env.example</code>
+          nor any other tracked file outside <code>docs/</code>, <code>CHANGELOG.md</code> and <code>tasks/</code>
+          (R-0044). An agent setting, a CI secret, a state or an HTTP method is therefore no finding; a name that
+          only a test or a comment still carries no longer stands out either. Since R-0044 <code>--env</code>
+          gates like the path check: the <code>ops-scripts</code> job runs
+          <code>doc-smoke.py --paths --env --strict</code> (<code>--env</code> alone turns the path check off).</p>
 
           <p><strong>Environment parity</strong> (<code>apps/server/tests/test_env_parity.py</code>) holds three
           separately maintained descriptions of the same configuration surface together: a variable a service reads
