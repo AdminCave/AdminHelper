@@ -17,8 +17,10 @@ Kleinpaket-2 angenommen hat; alle vier stammen aus dem `/code-review` über Klei
 Bau interaktiv (Harness-Pfade), keine Lane. Zeilenangaben harness/kleinpaket-1@6c9d7b8e. Die Fixtures setzen
 Werkzeug-Tags und Token zur Laufzeit zusammen, wie in Kleinpaket-1, damit keine Datei im Repo sie wörtlich trägt.
 
-### T1 — `review.sh sec`: richtige Zeilennummern nach „\ No newline“, weitere Proxmox-Formen (R-0194, R-0196)  [ ]
+### T1 — `review.sh sec`: richtige Zeilennummern nach „\ No newline“, weitere Proxmox-Formen (R-0194, R-0196)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @66ec9e96 2026-10-06T13:49:21+02:00
+Review: approve (opus/xhigh; 1 nit) · round 2
 Änderung: (1) In beiden awk von `sec` (`sec_scan`, `:737–744`, und `sec_scan_merge`, `:756–765`) fällt die Zeile
 „\ No newline at end of file“ heute in den Zweig, der `newno` hochzählt; jede folgende Fundzeile ist um eins
 verschoben. Eine eigene Regel für Zeilen, die mit einem Backslash beginnen, überspringt sie, ohne zu zählen.

@@ -692,11 +692,26 @@ $IMPLICIT"
         }
         return 0
       }
-      function pvetoken(s,   t, u, g) {
-        while (match(s, /[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=[0-9A-Fa-f-]+/)) {
-          t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
-          u = t; sub(/^.*=/, "", u)
-          if (length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12 && !plain(u)) return 1
+      function uuidish(u,   g) {
+        return length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12 && !plain(u)
+      }
+      function pvetoken(s,   l, t, u) {
+        # USER@REALM!TOKENID=UUID, the PBS form with a colon, and both URL-encoded
+        # (%40, %21, %3D, %3A) are one pattern once the escapes are undone.
+        l = s; gsub(/%40/, "@", l); gsub(/%21/, "!", l); gsub(/%3[Dd]/, "=", l); gsub(/%3[Aa]/, ":", l)
+        while (match(l, /[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+[=:][0-9A-Fa-f-]+/)) {
+          t = substr(l, RSTART, RLENGTH); l = substr(l, RSTART + RLENGTH)
+          u = t; sub(/^.*[=:]/, "", u)
+          if (uuidish(u)) return 1
+        }
+        # The secret alone behind a key name (api_token_secret, PVE_TOKEN_SECRET and
+        # the like); a bare UUID without such a name is an ordinary id.
+        l = tolower(s)
+        while (match(l, /token_secret[^0-9a-z]*[:=][^0-9a-z]*[0-9a-f-]+/)) {
+          t = substr(l, RSTART, RLENGTH); l = substr(l, RSTART + RLENGTH)
+          # The filler may end in a hyphen, as in a shell default (:-UUID).
+          u = t; sub(/^.*[^0-9a-f-]/, "", u); sub(/^-+/, "", u)
+          if (uuidish(u)) return 1
         }
         return 0
       }
@@ -740,6 +755,8 @@ $IMPLICIT"
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
         inheader    { next }
+        # "\ No newline at end of file" belongs to no side and counts no line.
+        /^\\/       { next }
         /^\+/       { finding(substr($0, 2), file, newno); newno++; next }
         /^-/        { next }
                     { newno++ }')" || die "sec: git could not read this change"
@@ -761,6 +778,9 @@ $IMPLICIT"
                       for (i = 2; i <= NF; i++) if ($i ~ /^\+/) { split($i, nw, ","); newno = substr(nw[1], 2) + 0; break }
                       next }
         inheader    { next }
+        # git does not print the no-newline marker in a combined diff today; should it
+        # ever, the marker counts no line here either.
+        /^\\/       { next }
         { pre = substr($0, 1, np); if (index(pre, "-")) next
           rest = pre; gsub(/\+/, "", rest)
           if (rest == "") finding(substr($0, np + 1), file, newno)

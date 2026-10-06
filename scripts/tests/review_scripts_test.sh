@@ -397,6 +397,24 @@ reset_index
 stage docs/tok.md
 r sec --staged
 [ $rc -eq 0 ] && ok "a full-length placeholder (xxxx…, 0000-…) is no token" || bad "full placeholders: rc=$rc out=$OUT"
+# More Proxmox forms (R-0196): the PBS colon form, the URL-encoded form and the secret
+# alone behind a key name. Key name and UUID meet only at run time, as above.
+U="12345678-90ab-cdef-1234-567890abcdef"; K="token_""secret"; Z="00000000-0000-0000-0000-000000000000"
+for tk in "ah@pbs!run:$U" "ah%40pve%21run%3D$U" "ah%40pve%21run%3d$U" "api_$K = $U" "\"$K\": \"$U\"" "PVE_${K^^}=$U" "PVE_${K^^}=\${PVE_${K^^}:-$U}"; do
+  reset_index
+  printf 'note\nsee %s here\n' "$tk" > "$FIX/docs/tok.md"; stage docs/tok.md
+  r sec --staged
+  [ $rc -eq 4 ] && grep -q "docs/tok.md:2 (a token pattern)" <<<"$OUT" && ! grep -qF "$U" <<<"$OUT" \
+    && ok "the form ${tk:0:12}… -> exit 4 with file:line, never the token" || bad "form ${tk:0:12}: rc=$rc out=$OUT"
+done
+# The same forms as placeholders, a bare UUID without a key name, and a key that only
+# starts like one.
+reset_index
+printf '%s\n' "ah@pbs!run:$Z" "ah%40pve%21run%3D$Z" "api_$K = $Z" "id $U" "${K}_file = /etc/x" > "$FIX/docs/tok.md"
+stage docs/tok.md
+r sec --staged
+[ $rc -eq 0 ] && ok "placeholders of the new forms, a bare UUID and a longer key name are no token" \
+  || bad "new-form placeholders: rc=$rc out=$OUT"
 reset_index
 
 printf 'ordinary docs\n' >> "$FIX/CHANGELOG.md"
@@ -486,6 +504,26 @@ printf 'feature four\n' > "$RFIX/docs/f4.md"; rg add -A; rg commit -qm "feature 
 rg merge -q --no-ff -m "Merge remote-tracking branch 'origin/main' into feature4" main
 rr sec --range "main...feature4"
 [ $rc -eq 0 ] && ok "a merge message 'Merge remote-tracking branch …' is no finding" || bad "merge message: rc=$rc out=$OUT"
+# "\ No newline at end of file" counts no line (R-0194): a finding after it keeps its
+# number, in a commit and in a merge. A repository of its own, to leave the span above alone.
+NFIX="$WORK/nonl"; mkdir -p "$NFIX/scripts/dev" "$NFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$NFIX/scripts/dev/review.sh"
+ng() { git -C "$NFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+nr() { OUT=$(bash "$NFIX/scripts/dev/review.sh" "$@" 2>&1); rc=$?; }
+printf 'a' > "$NFIX/docs/nl.md"; ng init -q -b main; ng add -A; ng commit -qm base; NBASE="$(ng rev-parse HEAD)"
+printf 'a\nb\nsee %s\n' "$T_PVE" > "$NFIX/docs/nl.md"; ng add -A; ng commit -qm "a token after the old last line"
+nr sec --range "$NBASE..HEAD"
+[ $rc -eq 4 ] && grep -q "docs/nl.md:3 (commit " <<<"$OUT" \
+  && ok "a finding after \"No newline\" names its own line (3), not the next" || bad "nonl commit: rc=$rc out=$OUT"
+# Both parents of the merge carry the old last line again, so the merge alone brings the token.
+printf 'a' > "$NFIX/docs/nl.md"; ng add -A; ng commit -qm "back to the old last line"; NBACK="$(ng rev-parse HEAD)"
+ng checkout -q -b side "$NBACK"; printf 'side\n' > "$NFIX/docs/side.md"; ng add -A; ng commit -qm side
+ng checkout -q main; printf 'main\n' > "$NFIX/docs/main.md"; ng add -A; ng commit -qm main
+ng checkout -q side; ng merge -q --no-commit --no-ff main >/dev/null
+printf 'a\nb\nsee %s\n' "$T_PVE" > "$NFIX/docs/nl.md"; ng add -- docs/nl.md; ng commit -qm "a merge that edits it"
+nr sec --range "main...side"
+[ $rc -eq 4 ] && grep -q "docs/nl.md:3 (merge " <<<"$OUT" \
+  && ok "in a merge (git prints no marker in --cc) the finding names line 3 as well" || bad "nonl merge: rc=$rc out=$OUT"
 rg checkout -q feature2
 # A push: commits the remote has already are no part of what leaves.
 rg update-ref refs/remotes/origin/main main

@@ -821,7 +821,9 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
 `sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
 Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Seit R-0183 sperrt `sec`
 auch eine hinzugefuegte Zeile mit einem Token-Muster — ein Proxmox-API-Token
-(`USER@REALM!TOKENID=UUID`), ein GitHub-Token (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`)
+(`USER@REALM!TOKENID=UUID`, ebenso die PBS-Form mit `:` statt `=`, die URL-kodierte Form mit `%40`, `%21`,
+`%3D` und ein Secret allein hinter einem Schluesselnamen wie `api_token_secret` oder `PVE_TOKEN_SECRET`;
+ein nacktes UUID ohne solchen Namen bleibt erlaubt, R-0196), ein GitHub-Token (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`)
 oder ein `sk-ant-`-Schluessel, je mit einer Mindestlaenge, die Platzhalter durchlaesst (ebenso ein
 Rumpf aus hoechstens zwei verschiedenen Zeichen wie `xxxx…`) — und nennt dabei nur Datei:Zeile; ueber
 eine Spanne (`--range`: pre-push und CI) liest es auch die Nachricht jedes Commits und nennt dann nur
