@@ -404,6 +404,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Fehler-Bundles, und dieses Repo ist oeffentlich. Loeschen — dann koennen die zwei
   Eintraege mit.
 
+- **Desktop: Tauri-Command `enroll_device` (R-0040):** das Enrollment ueber die Login-Session hatte keinen
+  Aufrufer in der UI; die App enrollt seit ADR 0003 mit einem Einmal-Token (`enroll_with_token`). Entfernt sind
+  der Command, `enrollment::enroll` und der Zweig in `mint_token`, der nur dafuer ein Access-Token anforderte; der
+  Browser-Export (`export_browser_p12`) nach dem Login bleibt. Der IPC-Inventar-Test fuehrt keinen Command ohne
+  UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
+
 ### Changed
 
 - **Der Public repo guard prueft auch mit der Logik der Basis (R-0174):** Der CI-Job

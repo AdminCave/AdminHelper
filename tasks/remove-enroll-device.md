@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Tauri-Command `enroll_device` entfernen (R-0040) — Task-Ledger
-Status: aktiv · Branch: feature/remove-enroll-device · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/remove-enroll-device · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0040 am 2026-10-06 entschieden: entfernen, Doku korrigieren; Ein-Task-Paket, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0040 (Kurz-Ledger ohne Spec)
 Heavy: none — entfernt einen registrierten Command, den die UI nie aufruft, samt seinem einzigen Rust-Pfad; das Enrollment mit Einmal-Token (`enroll_with_token`) und der Browser-Export (`export_browser_p12`) bleiben unberührt. Build, clippy, die Rust-Tests und der IPC-Inventar-Test belegen den Schnitt; keine Journey ändert sich.
@@ -17,8 +17,10 @@ korrigieren, nicht verdrahten. `enroll_device` (`apps/desktop/src-tauri/src/comm
 `enroll_with_token` auf (`apps/desktop/ui/src/lib/bridge/index.ts:111`, ADR 0003). Review am Ende mit einem
 Opus-Reviewer, weil der Diff im Enrollment-Pfad liegt.
 
-### T1 — `enroll_device` und `enrollment::enroll` entfernen, Allowlist und Doku nachziehen (R-0040)  [ ]
+### T1 — `enroll_device` und `enrollment::enroll` entfernen, Allowlist und Doku nachziehen (R-0040)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/ui/src/lib/bridge/ipc.inventory.test.ts, docs/developer/index.html, docs/en/developer/index.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs desktop-ui: 2 passed, 0 failed, 16 skipped · contracts: 1 ok @6ff0782f 2026-10-06T07:42:09+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Den Command `enroll_device` aus `commands.rs` löschen, ebenso Import und Eintrag in `generate_handler!`
 (`main.rs:30`, `:115`) und `enrollment::enroll` (`enrollment.rs:218`), dessen einziger Aufrufer er ist. `mint_token`
 bleibt, `export_browser_p12` nutzt es (`enrollment.rs:610`); was danach sonst verwaist (Imports, Hilfsfunktionen nur
