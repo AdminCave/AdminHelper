@@ -1529,6 +1529,22 @@ Assertion-Änderung: apps/web/src/c.test.ts::wide — schärfer
 ### T8 — the file is renamed  [ ]
 Komponente: server · Dateien: apps/server/tests/test_chg2.py
 Assertion-Änderung: apps/server/tests/test_chg2.py::test_shape — wandert mit
+
+### T9 — a helper in a test file  [ ]
+Komponente: server · Dateien: apps/server/tests/test_h.py
+Assertion-Änderung: apps/server/tests/test_h.py::_expected — der Sollwert trägt jetzt den Offset
+
+### T10 — a helper name that two classes share  [ ]
+Komponente: server · Dateien: apps/server/tests/test_h.py
+Assertion-Änderung: apps/server/tests/test_h.py::_check — welcher von beiden?
+
+### T11 — an arrow helper  [ ]
+Komponente: web · Dateien: apps/web/src/h.test.ts
+Assertion-Änderung: apps/web/src/h.test.ts::check — eine Pfeil-Funktion
+
+### T12 — a go helper, and a function outside the test paths  [ ]
+Komponente: agent · Dateien: apps/agent/h_test.go
+Assertion-Änderung: apps/agent/h_test.go::checkShape — schärfer; apps/server/app/util.py::check — kein Testpfad
 MD
 git -C "$FIX" add -A && git -C "$FIX" commit -qm "change ledger"
 CHG_PY='def test_shape():
@@ -1687,6 +1703,74 @@ r diff-scan --staged --task tasks/chg.md T3
 r diff-scan --staged --task tasks/chg.md T2
 [ $rc -eq 3 ] && [ "$(grep -c 'removed assertion' <<<"$OUT")" = 3 ] \
   && ok "and undeclared, all three are findings" || bad "three languages undeclared: rc=$rc out=$OUT"
+# A helper in a test file (T2): the anlass of R-0206 sat in one, called by
+# several tests. Modelled on TestUserResponseShape._expected.
+base apps/server/tests/test_h.py 'class TestShape:
+    def _expected(self, raw):
+        out = build(raw)
+        assert out["at"] == encode(raw)
+        return out
+
+    def test_post(self):
+        assert self._expected(1) == post()
+
+    def test_get(self):
+        assert self._expected(2) == get()
+'
+sed -i 's|== encode(raw)|== iso_utc(raw)|' "$FIX/apps/server/tests/test_h.py"; stage apps/server/tests/test_h.py
+r diff-scan --staged --task tasks/chg.md T9
+[ $rc -eq 0 ] && grep -q "apps/server/tests/test_h.py::_expected (helper, 1 removed, 1 added)" <<<"$OUT" \
+  && ok "a declared helper in a test file: clean, and the run marks it as a helper" || bad "helper: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && ok "the same helper change, not declared: a finding" || bad "helper undeclared: rc=$rc out=$OUT"
+base apps/server/tests/test_h.py 'class TestA:
+    def _check(self):
+        assert a() == 1
+
+
+class TestB:
+    def _check(self):
+        assert b() == 2
+'
+sed -i 's|assert a() == 1|assert a() == 10|' "$FIX/apps/server/tests/test_h.py"; stage apps/server/tests/test_h.py
+r diff-scan --staged --task tasks/chg.md T10
+[ $rc -eq 3 ] && grep -q "2 tests of that name in the old file" <<<"$OUT" \
+  && ok "a helper name that two classes share: a finding" || bad "helper twice: rc=$rc out=$OUT"
+base apps/web/src/h.test.ts 'const check = (x) => {
+  expect(x).toBe(1);
+};
+
+it("uses check", () => {
+  check(1);
+});
+'
+sed -i 's|toBe(1)|toStrictEqual(1)|' "$FIX/apps/web/src/h.test.ts"; stage apps/web/src/h.test.ts
+r diff-scan --staged --task tasks/chg.md T11
+[ $rc -eq 3 ] && grep -q "0 tests of that name in the old file" <<<"$OUT" \
+  && ok "an arrow helper cannot be declared: a finding" || bad "arrow helper: rc=$rc out=$OUT"
+# A Go helper is declared; a function outside the test paths is no helper — and
+# losing an assert there is no finding anyway.
+reset_index
+mkdir -p "$FIX/apps/agent" "$FIX/apps/server/app"
+printf 'package x\n\nimport "testing"\n\nfunc checkShape(t *testing.T, got int) {\n\tif got != 1 {\n\t\tt.Fatalf("got %%d", got)\n\t}\n}\n\nfunc TestShape(t *testing.T) {\n\tcheckShape(t, shape())\n}\n' > "$FIX/apps/agent/h_test.go"
+printf 'def check(x):\n    assert x > 0\n    return x\n' > "$FIX/apps/server/app/util.py"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "a go helper and production code"
+sed -i 's|t.Fatalf("got %d", got)|t.Fatalf("got %d, want 1", got)|' "$FIX/apps/agent/h_test.go"
+sed -i 's|assert x > 0|assert x >= 1|' "$FIX/apps/server/app/util.py"
+stage apps/agent/h_test.go apps/server/app/util.py
+r diff-scan --staged --task tasks/chg.md T12
+[ $rc -eq 0 ] && grep -q "clean (1 declared assertion change(s): apps/agent/h_test.go::checkShape (helper, 1 removed, 1 added))" <<<"$OUT" \
+  && ok "a go helper, declared: clean; a function outside the test paths is no helper" || bad "go helper: rc=$rc out=$OUT"
+# A fake nested in the declared test is no second test: the guard stays on test heads.
+base apps/server/tests/test_chg.py 'def test_shape():
+    def fake():
+        return 1
+    assert run(fake) == encode(1)
+'
+sed -i 's|== encode(1)|== iso_utc(1)|' "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 0 ] && grep -q "apps/server/tests/test_chg.py::test_shape (1 removed, 1 added)" <<<"$OUT" \
+  && ok "a fake nested in the declared test does not refuse it" || bad "nested fake: rc=$rc out=$OUT"
 reset_index
 
 # ══ the pre-push hook (R-0123) ════════════════════════════════════════════════

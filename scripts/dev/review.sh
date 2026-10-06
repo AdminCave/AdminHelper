@@ -409,22 +409,36 @@ GO = re.compile(r"^()func\s+(Test\w*)\s*\(")
 JS = re.compile(r"^(\s*)(?:it|test)(?:\.only|\.skip)?\s*\(\s*([\x27\x22`])(.*?)\2")
 RS = re.compile(r"^(\s*)(?:pub\s+)?(?:async\s+)?fn\s+(\w+)")
 RS_ATTR = re.compile(r"^\s*#\[(?:[a-z_]+::)?test[\]()]")   # also #[tokio::test(flavor = …)]
+# Any function, for a declared change in a test file (R-0206): the asserting
+# often sits in a helper the tests call. Go without a receiver, Rust without the
+# test attribute; arrow functions stay out, their forms are too many for one
+# pattern.
+PY_FN = re.compile(r"^(\s*)(?:async\s+)?def\s+(\w+)\s*\(")
+GO_FN = re.compile(r"^()func\s+(\w+)\s*\(")
+JS_FN = re.compile(r"^(\s*)(?:export\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)\s*\(")
+# Where tests are: a test file. See where_tests_are below (R-0130).
+TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_[^/]*[.]py$|_test[.](py|go|sh)$|[.](test|spec)[.][^/]+$")
 
-def heads(path, text):
-    """[(name, first_line, last_line, indent)] of the test heads in text, 1-based."""
+def heads(path, text, helpers=False):
+    """[(name, first_line, last_line, indent)] of the test heads in text, 1-based;
+    with helpers, of any function head as well (one per line)."""
     src = text.split("\n")
     found = []
     for i, s in enumerate(src):
         name = ind = None
         if path.endswith(".py"):
-            m = PY.match(s)
+            m = PY.match(s) or (helpers and PY_FN.match(s))
             if m: ind, name = len(m.group(1)), m.group(2)
         elif path.endswith(".go"):
-            m = GO.match(s)
+            m = GO.match(s) or (helpers and GO_FN.match(s))
             if m: ind, name = 0, m.group(2)
         elif re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path):
             m = JS.match(s)
-            if m: ind, name = len(m.group(1)), m.group(3)
+            if m:
+                ind, name = len(m.group(1)), m.group(3)
+            elif helpers:
+                m = JS_FN.match(s)
+                if m: ind, name = len(m.group(1)), m.group(2)
         elif path.endswith(".rs"):
             m = RS.match(s)
             if m:
@@ -433,7 +447,7 @@ def heads(path, text):
                 while j >= 0 and src[j].strip().startswith("#["):
                     if RS_ATTR.match(src[j]): attr = True
                     j -= 1
-                if attr: ind, name = len(m.group(1)), m.group(2)
+                if attr or helpers: ind, name = len(m.group(1)), m.group(2)
         if name is None:
             continue
         end = len(src)
@@ -513,16 +527,19 @@ for path, name in declared(os.environ.get("DECL", "")):
 # blocks share cannot be told apart), neither span holds the head of another
 # test (a span guessed too wide by odd indentation), and the file is not renamed
 # in this diff. Whether its new body brings back enough assertions is counted
-# below, against the removed ones that count.
+# below, against the removed ones that count. In a test file the name may also
+# be a helper the tests call; the guard against a second test stays on test
+# heads, or every fake nested in a test would refuse it.
 changes = {}
 for path, name in declared(os.environ.get("DECL_CHG", "")):
     what = f"declared change {path}::{name} ignored"
     if path in renamed or path in renamed.values():
         notes.setdefault(path, []).append(f"{what}: the file is renamed in this diff")
         continue
+    fn = bool(TEST_PATH.search(path))
     old_h, new_h = heads(path, old_text(path)), heads(path, new_text(path))
-    old = [h for h in old_h if h[0] == name]
-    new = [h for h in new_h if h[0] == name]
+    old = [h for h in heads(path, old_text(path), fn) if h[0] == name]
+    new = [h for h in heads(path, new_text(path), fn) if h[0] == name]
     if len(old) != 1 or len(new) != 1:
         notes.setdefault(path, []).append(
             f"{what}: {len(old)} tests of that name in the old file and {len(new)} in the new one, it must be one in each")
@@ -532,7 +549,9 @@ for path, name in declared(os.environ.get("DECL_CHG", "")):
     if inner:
         notes.setdefault(path, []).append(f"{what}: its span holds another test ({inner[0][0]}, line {inner[0][1]})")
         continue
-    changes[(path, name)] = (a, b, c, d)
+    # A helper changes the check for every test that calls it: the clean line says so.
+    kind = "" if any(h[0] == name and h[1] == a for h in old_h) else "helper, "
+    changes[(path, name)] = (a, b, c, d, kind)
 
 # A return that ends a test early (bare, or with None, undefined, Ok(()))
 # counts inside the span of a test in the NEW file only; a helper next to the
@@ -596,11 +615,10 @@ for path, newno, ln in ars:
     if any(a < n <= b and ends_test_early(lines, a, b, n, NESTED.get(lang(path))) for _, a, b, _ in found):
         out.append(f"{path}:{newno}  early return in a test: {ln}")
 
-# R-0130: a removed assertion counts where tests are — in a test file, or in
-# the span of a test in the OLD file (Rust keeps tests inline under src/) —
-# and an import line never is one (`use pretty_assertions::assert_eq;`).
+# R-0130: a removed assertion counts where tests are — in a test file (TEST_PATH,
+# above), or in the span of a test in the OLD file (Rust keeps tests inline
+# under src/) — and an import line never is one (`use pretty_assertions::assert_eq;`).
 # Production code may lose an assert or an .expect( without silencing a test.
-TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_[^/]*[.]py$|_test[.](py|go|sh)$|[.](test|spec)[.][^/]+$")
 IMPORT = re.compile(r"^(use|import)[ \t]|^from[ \t]+[^ \t]+[ \t]+import[ \t]")
 old_spans = {}
 
@@ -617,11 +635,11 @@ ras = [r for r in ras if not IMPORT.match(r[2]) and where_tests_are(r[0], int(r[
 # A declared change covers the removed assertions of its old span only when its
 # new span gains at least as many (n >= r): changed, not taken away.
 covered = {}
-for k, (a, b, c, d) in changes.items():
+for k, (a, b, c, d, kind) in changes.items():
     r = sum(1 for p, o, _ in ras if p == k[0] and a <= int(o) <= b)
     n = sum(1 for p, o, _ in aas if p == k[0] and c <= int(o) <= d)
     if r and n >= r:
-        covered[k] = (a, b, r, n)
+        covered[k] = (a, b, r, n, kind)
     elif r:
         notes.setdefault(k[0], []).append(
             f"declared change {k[0]}::{k[1]} ignored: {n} assertion(s) added in its new body, {r} removed")
@@ -630,7 +648,7 @@ used, changed = set(), set()
 for path, oldno, text in ras:
     n = int(oldno)
     hit = [k for k, (a, b) in entries.items() if k[0] == path and a <= n <= b]
-    chg = [k for k, (a, b, _, _) in covered.items() if k[0] == path and a <= n <= b]
+    chg = [k for k, (a, b, _, _, _) in covered.items() if k[0] == path and a <= n <= b]
     if hit:
         used.add(hit[0])
     elif chg:
@@ -641,7 +659,7 @@ for path, oldno, text in ras:
 for k in sorted(used):
     out.append(f"DECLARED\t{k[0]}::{k[1]}")
 for k in sorted(changed):
-    out.append(f"CHANGED\t{k[0]}::{k[1]} ({covered[k][2]} removed, {covered[k][3]} added)")
+    out.append(f"CHANGED\t{k[0]}::{k[1]} ({covered[k][4]}{covered[k][2]} removed, {covered[k][3]} added)")
 print("\n".join(out))
 ')" || die "could not judge the removed assertions"
     GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"

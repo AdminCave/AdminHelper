@@ -160,6 +160,19 @@ Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte 
 6. **Geändert, nicht weggenommen:** Die neue Spanne trägt mindestens so viele hinzugefügte Assertions,
    wie die alte verliert (n ≥ r). Eine Zeile, die eine Assertion nur im Kommentar trägt, zählt nicht.
 
+**Ein Helfer** in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.py|go|sh`,
+`*.test.*`, `*.spec.*`) darf ebenso angekündigt werden, denn oft steht die Assertion dort und nicht
+im Test, der ihn ruft:
+- pytest `def <name>(`, auch als Methode;
+- Go `func <name>(` ohne Receiver;
+- Rust `fn <name>` ohne `#[test]`;
+- vitest/jest `function <name>(`.
+
+Pfeil-Funktionen (`const name = … =>`) nicht, ihre Formen sind zu vielfältig für ein Muster. Es
+gelten dieselben Regeln. Der Schutz gegen einen zweiten Test in der Spanne zählt nur Testköpfe, ein
+in den Test geschachtelter Fake stört also nicht. Eine Ankündigung für einen Helfer gilt für jeden
+Test, der ihn ruft; die Clean-Zeile sagt das mit `(helper, …)`, damit der Review den Radius sieht.
+
 Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared assertion change(s):
 <datei>::<test> (1 removed, 1 added))`), und bei einem Fund, warum eine Ankündigung nicht zählte.
 

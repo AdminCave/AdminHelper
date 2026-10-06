@@ -76,8 +76,10 @@ README-Abschnitts für eine Ankündigung: Der erste Schließ-Lauf endete mit Exi
 jetzt nur Ledger, ohne `tasks/README.md` und `tasks/templates/`, denn `diff-scan` liest eine Ankündigung nur aus der
 Task des Ledgers, das geschlossen wird. Ein Test in `task_close_test.sh` hält das fest.
 
-### T2 — Ein Helfer in einer Testdatei ist ankündbar  [ ]
+### T2 — Ein Helfer in einer Testdatei ist ankündbar  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dc9ed9e1 2026-10-06T16:49:58+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Nur bei Ja zu offener Frage 2, sonst `ledger.sh mark-skip` mit Verweis auf die Antwort. Der Anlassfall
 von T1 stand nicht in einem Test, sondern im Helfer `TestUserResponseShape._expected`, den vier Tests aufrufen;
 `heads()` sieht Helfer nicht, und `diff-scan` zählt die Zeile trotzdem, weil `tests/` ein `TEST_PATH` ist.
