@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # basic-ftp im e2e-Lockfile auf 6.2.x (R-0198) — Task-Ledger
-Status: aktiv · Branch: feature/deps-basic-ftp · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/deps-basic-ftp · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0198 am 2026-10-06 angenommen und den Bau durch Worker A gewählt; Ein-Task-Paket, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0198 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — nur der Desktop-E2E-Smoke (`run.sh e2e`, Schritt `desktop-e2e-smoke`) auf einer Pool-VM, weil ein Major-Override im WebdriverIO-Baum den Start von wdio brechen kann; die Aufsicht fährt ihn am Gate. Kein Stack-, Gateway-, PKI- oder Install-Pfad, nichts davon wird ausgeliefert.
@@ -17,8 +17,10 @@ Schritt „Audit e2e lockfile“ rot. `basic-ftp` 5.3.1 hängt transitiv an `@wd
 `npm audit fix --force` würde `@wdio/mocha-framework` auf 10 heben (Bruch). Vorbild ist der gezielte Override in
 `f8d4376f` und der Lockfile-Weg in `0ecdc3ca`.
 
-### T1 — `basic-ftp` per Override auf `^6.2.1` (R-0198)  [ ]
+### T1 — `basic-ftp` per Override auf `^6.2.1` (R-0198)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/package.json, apps/desktop/e2e/package-lock.json, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @44c6d637 2026-10-06T02:43:22+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: In `apps/desktop/e2e/package.json` unter `overrides` `"basic-ftp": "^6.2.1"` ergänzen und den Lock mit
 `npm install --package-lock-only --ignore-scripts` nachziehen (npm wie in `0ecdc3ca` beschrieben); im Lock-Diff
 bewegt sich nur `basic-ftp` (falls npm mehr bewegt: im Commit-Body nennen und begründen). Vorher das Changelog von

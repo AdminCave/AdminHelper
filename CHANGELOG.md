@@ -225,6 +225,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erkennt der Server an der `jti`, nicht am Token-String). `pytest` gegen den exakten neuen Lock unter
   Python 3.12 gruen (server 824), `pip-audit` ohne Befund.
 
+- **e2e-Lockfile: `basic-ftp` 5.3.1 → 6.2.2 (R-0198):** `apps/desktop/e2e/package.json` hebt `basic-ftp` per
+  `overrides` auf `^6.2.1`. Es haengt transitiv unter WebdriverIO (`@wdio/utils` → `@puppeteer/browsers` →
+  `proxy-agent` → `pac-proxy-agent` → `get-uri`, das `^5.3.1` verlangt). Behebt GHSA-c475-qrg2-pj4r (high, CPU-Last
+  beim Parsen von Verzeichnislisten), 6.2.2 zusaetzlich GHSA-5rfr-xx34-2xxv. Vom Dependency-Audit (`npm audit`, Schritt
+  „Audit e2e lockfile") erkannt. Der Changelog 5.3.1 → 6.2.2 aendert keine API, die `get-uri` nutzt; der Bruch in
+  6.0.0 (kein getrennter Transfer-Host ohne `allowSeparateTransferHost`) betrifft nur FTP-Downloads, die der Testbaum
+  nicht macht. Nur `dev`-Abhaengigkeit, nichts davon wird ausgeliefert.
+
 ### Fixed
 
 - **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
