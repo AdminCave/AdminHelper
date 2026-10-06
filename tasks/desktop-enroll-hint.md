@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Tunnel-Hinweis ohne Login-Enrollment (R-0203) — Task-Ledger
-Status: bereit · Branch: feature/desktop-enroll-hint · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/desktop-enroll-hint · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus R-0203, von Kevin am 2026-10-06 in der Triage angenommen; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0203 (Kurz-Ledger ohne Spec)
 Heavy: none — eine Fehlermeldung im Rust-Backend des Desktops; kein Journey-Pfad ändert sich (der Tunnel startet wie bisher nur mit einer Identität).
