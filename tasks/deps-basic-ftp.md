@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # basic-ftp im e2e-Lockfile auf 6.2.x (R-0198) — Task-Ledger
-Status: geplant · Branch: feature/deps-basic-ftp · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/deps-basic-ftp · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (Kevin hat R-0198 am 2026-10-06 angenommen und den Bau durch Worker A gewählt; Ein-Task-Paket, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0198 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — nur der Desktop-E2E-Smoke (`run.sh e2e`, Schritt `desktop-e2e-smoke`) auf einer Pool-VM, weil ein Major-Override im WebdriverIO-Baum den Start von wdio brechen kann; die Aufsicht fährt ihn am Gate. Kein Stack-, Gateway-, PKI- oder Install-Pfad, nichts davon wird ausgeliefert.
 DoD je Task: CLAUDE.md (Tests grün, ESLint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
