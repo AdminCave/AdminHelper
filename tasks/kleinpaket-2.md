@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 2: Zeilennummern und Token-Formen in sec, Werkzeug-Hülle, commit-msg-Hook — Task-Ledger
-Status: freigegeben · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: bereit · Branch: harness/kleinpaket-2 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus den von Kevin am 2026-10-06 als Kleinpaket-2 angenommenen Zeilen R-0194, R-0195, R-0196, R-0197; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0194, R-0196, R-0195, R-0197 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -17,8 +17,10 @@ Kleinpaket-2 angenommen hat; alle vier stammen aus dem `/code-review` über Klei
 Bau interaktiv (Harness-Pfade), keine Lane. Zeilenangaben harness/kleinpaket-1@6c9d7b8e. Die Fixtures setzen
 Werkzeug-Tags und Token zur Laufzeit zusammen, wie in Kleinpaket-1, damit keine Datei im Repo sie wörtlich trägt.
 
-### T1 — `review.sh sec`: richtige Zeilennummern nach „\ No newline“, weitere Proxmox-Formen (R-0194, R-0196)  [ ]
+### T1 — `review.sh sec`: richtige Zeilennummern nach „\ No newline“, weitere Proxmox-Formen (R-0194, R-0196)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @66ec9e96 2026-10-06T13:49:21+02:00
+Review: approve (opus/xhigh; 1 nit) · round 2
 Änderung: (1) In beiden awk von `sec` (`sec_scan`, `:737–744`, und `sec_scan_merge`, `:756–765`) fällt die Zeile
 „\ No newline at end of file“ heute in den Zweig, der `newno` hochzählt; jede folgende Fundzeile ist um eins
 verschoben. Eine eigene Regel für Zeilen, die mit einem Backslash beginnen, überspringt sie, ohne zu zählen.
@@ -37,8 +39,10 @@ Stelle bekommt die neuen Formen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Token-Muster) · docs/developer/cicd.html DE+EN (die Aufzählung beim Public repo guard)
 
-### T2 — `ledger.sh lint`: Werkzeug-Hülle und zurückgegebene Ausgabe als Rest (R-0195)  [ ]
+### T2 — `ledger.sh lint`: Werkzeug-Hülle und zurückgegebene Ausgabe als Rest (R-0195)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9c231653 2026-10-06T14:10:45+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
 Änderung: Das Rest-Muster (`ledger.sh:385`) meldet heute die schließenden Tags von content, invoke und parameter
 und die öffnenden invoke und parameter mit `name=`. Dazu kommen nur schließende Tags, damit Markdown mit gewöhnlichem
 HTML grün bleibt: das der Werkzeugaufruf-Hülle (function_calls) und das der zurückgegebenen Ausgabe (result, output),
@@ -52,8 +56,10 @@ auch Hülle und Ausgabe.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (die `lint`-Zeile)
 
-### T3 — commit-msg-Hook: Token in der Commit-Nachricht schon beim Commit sperren (R-0197)  [ ]
+### T3 — commit-msg-Hook: Token in der Commit-Nachricht schon beim Commit sperren (R-0197)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/hooks/commit-msg (neu, SPDX), scripts/dev/harness.sh, scripts/tests/review_scripts_test.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c18bf79a 2026-10-06T15:04:23+02:00
+Review: approve (opus/xhigh; 4 nit) · round 2
 Änderung: `review.sh sec` bekommt `--message <datei>`: liest die Datei mit derselben `token()`-Funktion wie
 `sec_scan_message` (`:771–776`) und meldet nur Zeile und Art, nie den Treffer; Kommentarzeilen, die git selbst
 einfügt (`#` am Zeilenanfang), zählen nicht. Neuer Hook `scripts/dev/hooks/commit-msg` (`0755`, SPDX über
@@ -66,5 +72,21 @@ Beweis: Roadmap R-0197 — heute fängt erst `--range` (pre-push, CI) einen Toke
 liegt dann schon lokal.
 Semantik: DEVELOPMENT.md „pre-commit-Hook“ (`:819` ff.) beschreibt, welcher Hook wann `sec` fährt — der Abschnitt
 bekommt den commit-msg-Hook.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Hook-Abschnitt)
+
+### T4 — Nachbesserung aus den Reviews: --message '' bricht ab, commit-msg-Doku, Kommentar im Rest-Check  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, scripts/dev/hooks/commit-msg, scripts/dev/ledger.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @840f6d68 2026-10-06T15:44:18+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
+Änderung: Angelegt 2026-10-06 auf Entscheidung der Aufsicht aus den Review-Funden von T2 und T3 (r2). (a) `review.sh
+sec --message ''` bricht mit Exit 2 und einer Meldung ab, statt in `sec` über den Arbeitsbaum durchzufallen; dazu ein
+Testfall in `review_scripts_test.sh`. (c) `commit-msg` läuft laut githooks(5) nur bei `git commit` und `git merge`
+(„This hook is invoked by git-commit and git-merge, and can be bypassed with the --no-verify option“, gelesen
+2026-10-06); DEVELOPMENT.md (Hook-Abschnitt, die Zeile zum sechsten Hook) und der Kopf von `scripts/dev/hooks/commit-msg`
+sagen das, und dass cherry-pick, revert, rebase und `git am` ihre Nachrichten erst über pre-push und die CI prüfen
+lassen. Der T2-Nit: der Kommentar über dem Rest-Check in `ledger.sh` nennt auch die schließenden Tags von Hülle und
+Ausgabe. Nicht dabei: die Scissors-Regel bei -m/-F (Roadmap-Zeile über die Aufsicht) und das Lesen der `#`-Zeilen
+(bleibt so, die strengere Richtung).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Hook-Abschnitt)

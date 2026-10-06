@@ -8,7 +8,7 @@
 #   bash scripts/dev/review.sh diff-scan [--staged] [--task <ledger> <id>]
 #                                                       ways to make a suite lie
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
-#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>]]
+#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>] | --message <file>]
 #                                                       what must never be committed or pushed
 #                                                       (names a path or file:line, never a line's
 #                                                       content: its output may stand in a public CI log)
@@ -54,7 +54,8 @@
 #   sec        is something staged that this public repo must never hold — the
 #              private roadmap, a security ledger, a finding's dedup key, one
 #              of the two gitignored files that carry credentials, or a line
-#              with a token pattern (Proxmox, GitHub, Anthropic).
+#              with a token pattern (Proxmox, GitHub, Anthropic). With --message,
+#              the message of the commit being made (the commit-msg hook).
 #   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
 #              scripts/dev/review-verdict.schema.json, be about the tree --tree
 #              names, and say approve without a blocker and without a probe
@@ -152,7 +153,7 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
@@ -183,6 +184,12 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || die "--range needs <a>..<b>"
       case "$2" in -*|'') die "not a range: $2" ;; *..*) ;; *) die "not a range (<a>..<b>): $2" ;; esac
       RANGE="$2"; shift ;;
+    --message)
+      [ $# -ge 2 ] || die "--message needs <file>"
+      # An empty name would leave MESSAGE unset and fall through to sec over the
+      # worktree, which may well say clean.
+      [ -n "$2" ] || die "--message needs a file name, got an empty one"
+      MESSAGE="$2"; shift ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
@@ -203,6 +210,14 @@ task_field() {
 }
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
+if [ -n "$MESSAGE" ]; then
+  [ "$VERB" = sec ] || die "--message is for sec alone"
+  # Relative to where the caller stands, as for check-verdict: the hook passes a
+  # path git resolved, a call by hand may come from a subdirectory.
+  case "$MESSAGE" in /*) ;; *) MESSAGE="$CALLER_PWD/$MESSAGE" ;; esac
+  [ "$STAGED" = 0 ] && [ -z "$RANGE" ] || die "--message stands alone, without --staged or --range"
+  [ -f "$MESSAGE" ] && [ -r "$MESSAGE" ] || die "--message: no readable file $MESSAGE"
+fi
 [ -z "$NOT_ON" ] || [ -n "$RANGE" ] || die "--not-on needs --range"
 if [ -n "$RANGE" ]; then
   # The other verbs judge what is about to be committed; a range is history.
@@ -692,11 +707,26 @@ $IMPLICIT"
         }
         return 0
       }
-      function pvetoken(s,   t, u, g) {
-        while (match(s, /[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=[0-9A-Fa-f-]+/)) {
-          t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
-          u = t; sub(/^.*=/, "", u)
-          if (length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12 && !plain(u)) return 1
+      function uuidish(u,   g) {
+        return length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12 && !plain(u)
+      }
+      function pvetoken(s,   l, t, u) {
+        # USER@REALM!TOKENID=UUID, the PBS form with a colon, and both URL-encoded
+        # (%40, %21, %3D, %3A) are one pattern once the escapes are undone.
+        l = s; gsub(/%40/, "@", l); gsub(/%21/, "!", l); gsub(/%3[Dd]/, "=", l); gsub(/%3[Aa]/, ":", l)
+        while (match(l, /[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+[=:][0-9A-Fa-f-]+/)) {
+          t = substr(l, RSTART, RLENGTH); l = substr(l, RSTART + RLENGTH)
+          u = t; sub(/^.*[=:]/, "", u)
+          if (uuidish(u)) return 1
+        }
+        # The secret alone behind a key name (api_token_secret, PVE_TOKEN_SECRET and
+        # the like); a bare UUID without such a name is an ordinary id.
+        l = tolower(s)
+        while (match(l, /token_secret[^0-9a-z]*[:=][^0-9a-z]*[0-9a-f-]+/)) {
+          t = substr(l, RSTART, RLENGTH); l = substr(l, RSTART + RLENGTH)
+          # The filler may end in a hyphen, as in a shell default (:-UUID).
+          u = t; sub(/^.*[^0-9a-f-]/, "", u); sub(/^-+/, "", u)
+          if (uuidish(u)) return 1
         }
         return 0
       }
@@ -740,6 +770,8 @@ $IMPLICIT"
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
         inheader    { next }
+        # "\ No newline at end of file" belongs to no side and counts no line.
+        /^\\/       { next }
         /^\+/       { finding(substr($0, 2), file, newno); newno++; next }
         /^-/        { next }
                     { newno++ }')" || die "sec: git could not read this change"
@@ -761,6 +793,9 @@ $IMPLICIT"
                       for (i = 2; i <= NF; i++) if ($i ~ /^\+/) { split($i, nw, ","); newno = substr(nw[1], 2) + 0; break }
                       next }
         inheader    { next }
+        # git does not print the no-newline marker in a combined diff today; should it
+        # ever, the marker counts no line here either.
+        /^\\/       { next }
         { pre = substr($0, 1, np); if (index(pre, "-")) next
           rest = pre; gsub(/\+/, "", rest)
           if (rest == "") finding(substr($0, np + 1), file, newno)
@@ -775,7 +810,18 @@ $IMPLICIT"
         { if (token($0)) printf "the commit message:%d\ttoken\n", NR }')" || die "sec: git could not read the message of $1"
       sec_hits " (commit ${1:0:12})" <<< "$out"
     }
-    if [ -n "$RANGE" ]; then
+    if [ -n "$MESSAGE" ]; then
+      # The message of the commit being made (R-0197): before this, only a span
+      # (pre-push, CI) read messages, when the commit already lay in the local
+      # history. With commit -v git puts the diff below a scissors line, and that is
+      # no part of the message. Comment lines are read: without an editor (-m, -F)
+      # git keeps them in the commit.
+      out="$(awk "$SEC_TOKEN_AWK"'
+        /^# -+ >8 -+$/ { exit }
+        { if (token($0)) printf "the commit message:%d\ttoken\n", NR }' "$MESSAGE")" \
+        || die "sec: could not read the message $MESSAGE"
+      sec_hits "" <<< "$out"
+    elif [ -n "$RANGE" ]; then
       # A range is history, not a net change: a file added and removed again inside
       # it still leaves with a push. So every commit is read on its own — against its
       # parent (a root against the empty tree), a merge by what it brings itself;
