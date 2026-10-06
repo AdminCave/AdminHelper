@@ -351,7 +351,7 @@ fi
 # checkout together with what it measures against: runner-env.sh, the pinned model
 # (runner-settings.json) and CLI version (runner-claude.version). The red team reads
 # all of it from its own directory, never from the clone (R-0152).
-step "red team in $LIB_DIR (root:root 0755; runner-redteam.sh 0755, the rest 0644)"
+step "red team and harness guard in $LIB_DIR (root:root 0755; the two scripts 0755, the rest 0644)"
 no_symlink_in "$LIB_DIR"
 run install -d -o root -g root -m 755 "$LIB_DIR"
 for f in runner-redteam.sh runner-env.sh runner-settings.json runner-claude.version; do
@@ -359,6 +359,12 @@ for f in runner-redteam.sh runner-env.sh runner-settings.json runner-claude.vers
   case "$f" in runner-redteam.sh) mode=755 ;; *) mode=644 ;; esac   # runner-env.sh is sourced
   run install -o root -g root -m "$mode" "$ROOT/scripts/dev/$f" "$LIB_DIR/$f"
 done
+# The runner's PreToolUse hook runs this copy (runner-settings.json), not the
+# clone's: the guard is what keeps the runner off the harness, so the runner must
+# not be the one who can change it (R-0164). It reads the harness list from the
+# project it guards (CLAUDE_PROJECT_DIR).
+no_symlink_in "$LIB_DIR/harness-guard.sh"
+run install -o root -g root -m 755 "$ROOT/scripts/dev/hooks/harness-guard.sh" "$LIB_DIR/harness-guard.sh"
 
 # The hypervisor the red team's probe 4 asks (R-0156): URL, node, pool and CA —
 # never the token, which is the runner's own and what the probe measures. Root's,

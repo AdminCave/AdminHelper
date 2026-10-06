@@ -33,7 +33,8 @@
 # verdict <id>.r<n>.verdict.json (scripts/dev/review-verdict.schema.json),
 # whose path it prints.
 #
-# Environment: CLAUDE_BIN (default claude; the tests pass a stub),
+# Environment: CLAUDE_BIN (default claude; the tests pass a stub; ignored when
+# AH_AUTONOMOUS=1),
 # AH_REVIEW_TIMEOUT (seconds, default 1200), AH_OUT_DIR (where task-close's suite
 # wrote last-verify.json, as for verify.sh; default .ah-out).
 #
@@ -66,6 +67,8 @@ done
 [ -n "$LEDGER" ] && [ -n "$ID" ] || { usage >&2; die "needs <ledger> <id>"; }
 command -v python3 >/dev/null 2>&1 || die "needs python3"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}" TIMEOUT="${AH_REVIEW_TIMEOUT:-1200}"
+# R-0167: an autonomous run calls the CLI on its PATH; a stub is for the tests.
+[ "${AH_AUTONOMOUS:-0}" != 1 ] || CLAUDE_BIN=claude
 case "$TIMEOUT" in ''|*[!0-9]*) die "AH_REVIEW_TIMEOUT is a number of seconds, got '$TIMEOUT'" ;; esac
 [ "$TIMEOUT" -gt 0 ] || die "AH_REVIEW_TIMEOUT 0 would mean no timeout at all"
 case "$ROUND" in 1|2) ;; *) die "--round is 1 or 2 (there is no third round), got '$ROUND'" ;; esac

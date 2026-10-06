@@ -199,6 +199,9 @@ for f in runner-redteam.sh:755 runner-env.sh:644 runner-settings.json:644 runner
 done
 [ -z "$MISSING" ] && ok "the red team, runner-env.sh and the pin go there from this checkout, root's (0755 / 0644)" \
   || bad "not installed as planned:$MISSING"
+grep -qF -- "install -o root -g root -m 755 $REPO_ROOT/scripts/dev/hooks/harness-guard.sh $LIBS/harness-guard.sh" <<<"$PLAN" \
+  && ok "the harness guard goes there too, root's 0755 — out of the runner's reach (R-0164)" \
+  || bad "guard install: $(grep -F 'harness-guard' <<<"$PLAN" | head -2)"
 grep -qE -- "runuser -u [^ ]+ -- timeout 120 sha256sum --zero -- .* </dev/null" <<<"$PLAN" && grep -qF -- "mv -f $LOCKS_RT/runner-claude.sha256.new $LOCKS_RT/runner-claude.sha256" <<<"$PLAN" \
   && grep -qF -- "install -o root -g root -m 644 /dev/null $LOCKS_RT/runner-claude.sha256.new" <<<"$PLAN" \
   && ok "the sha256 of the runner's claude, read as the runner, goes to $LOCKS_RT/runner-claude.sha256, root:root 0644" \
@@ -227,6 +230,11 @@ SETUP_LOCKDIR="$(sed -n 's/^LOCK_DIR="\(.*\)"$/\1/p' "$SETUP")"
   && grep -qx "  redteam_claude_sum $SETUP_LOCKDIR/runner-claude.sha256 \"\$CLAUDE\"" "$REPO_ROOT/scripts/dev/runner-redteam.sh" \
   && ok "runner-setup.sh and the red team name the same directory and checksum file" \
   || bad "red team paths differ from setup: lib '$SETUP_LIB', lock dir '$SETUP_LOCKDIR'"
+# The runner's hook runs the copy setup installs, not the clone's (R-0164).
+python3 -c 'import json, sys; c = json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+sys.exit(0 if c.startswith("g=" + sys.argv[2] + "/harness-guard.sh;") and "CLAUDE_PROJECT_DIR" not in c else 1)' \
+  "$REPO_ROOT/scripts/dev/runner-settings.json" "$SETUP_LIB" \
+  && ok "the runner hook runs the guard where runner-setup.sh puts it" || bad "the runner hook does not run $SETUP_LIB/harness-guard.sh"
 
 # The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
 # root-owned directory, then moved into place with one `mv --no-copy -T`. Anything already at

@@ -9,6 +9,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Der Worker (Stufe 7a, R-0010, R-0108, R-0164, R-0167, R-0170):** `scripts/dev/ledger-loop.sh`
+  baut freigegebene Ledger Task fuer Task als `adminhelper-runner` in dessen Klon, jedes Ledger in
+  seiner Lane; Kevin startet ihn in tmux mit einer expliziten Ledger-Liste. Je Task eine frische
+  Bau-Session (`claude -p` mit dem Text von `/build-task`, nur die Runner-Settings, `dontAsk`,
+  Deckel fuer Zeit, Turns und Budget); geschlossen wird ausserhalb der Session mit
+  `task-close.sh --review auto --round <n>`. Der Loop zaehlt die Runden selbst, raeumt nach einem
+  Abbruch auf (`aborted.diff`, restore, neue Dateien einzeln), setzt `[?]` mit dem Grund und das
+  Ledger auf `blockiert`, haelt an Lauf-Deckeln (`--max-hours`, `--max-tasks`, `--max-budget-usd`
+  samt Reviewer-Kosten, `--max-ready`) und am Nutzungslimit an und endet mit einer Stopp-Klasse
+  und `summary-<datum>.md`. Ein fertiges Ledger uebergibt er als PR-Text (`review.sh pr-body`) und
+  Git-Bundle; Push und PR bleiben Kevins. Neu sind `/build-task`
+  (`.claude/skills/build-task/SKILL.md`) und `scripts/dev/scratch.sh`; die Runner-Settings
+  verbieten Edits unter `tasks/` und erlauben einen Scratch-Ordner nur ueber `scratch.sh`;
+  `task-close.sh` nimmt im autonomen Lauf weder ein eigenes Verdict noch ein frueheres approve an
+  und druckt die Kosten des Reviewers; das Red Team prueft die Grenzen der Bau-Session;
+  `ledger-loop.sh status` und die Worker-Zeile im AH-STATUS zeigen den Stand. Anleitung:
+  `AUTONOMOUS.md`, „Der Worker", und `DEVELOPMENT.md`, „Der Worker".
 - **CI-Sperre fuer Privates (R-0123):** Der neue CI-Job „Public repo guard (review.sh sec)" faehrt
   `scripts/dev/review.sh sec --range` ueber jeden Commit eines Pull Requests bzw. Pushs auf `main` —
   dieselbe Sperre wie die lokalen Commit-Hooks (privater Plan, SEC-Ledger, Dedup-Key eines
@@ -200,6 +217,36 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Vom Dependency-Audit (`pip-audit`) erkannt. Der Changelog 2.13.0 → 2.14.0 enthaelt keine inkompatible Aenderung; `pytest`
   gegen den exakten neuen Lock unter Python 3.12 gruen (server 682), `pip-audit` ohne Befund.
 
+- **pyjwt 2.14.0 → 2.15.1** im Server (gehashte Lock neu generiert, Untergrenze in `requirements.in`
+  auf `>=2.15.0`, R-0193): behebt PYSEC-2026-4141 (behoben ab 2.15.0). Vom Dependency-Audit (`pip-audit`)
+  erkannt. Der Changelog 2.14.0 → 2.15.1 enthaelt keine inkompatible Aenderung fuer `jwt.encode`/`jwt.decode`
+  mit HS256: 2.15.0 meldet zu tief verschachtelte Payloads als `DecodeError` (der Server faengt
+  `InvalidTokenError`), 2.15.1 nimmt ein angehaengtes `=`-Padding in JWS-Segmenten an (gesperrte Tokens
+  erkennt der Server an der `jti`, nicht am Token-String). `pytest` gegen den exakten neuen Lock unter
+  Python 3.12 gruen (server 824), `pip-audit` ohne Befund.
+
+- **e2e-Lockfile: `basic-ftp` 5.3.1 → 6.2.2, `braces` entfernt (R-0198):** zwei `overrides` in
+  `apps/desktop/e2e/package.json`, beide unter WebdriverIO und vom Dependency-Audit (`npm audit`, Schritt „Audit e2e
+  lockfile") erkannt; nur `dev`-Abhaengigkeiten, nichts davon wird ausgeliefert.
+  - `basic-ftp` auf `^6.2.1` (transitiv ueber `@wdio/utils` → `@puppeteer/browsers` → `proxy-agent` →
+    `pac-proxy-agent` → `get-uri`, das `^5.3.1` verlangt): behebt GHSA-c475-qrg2-pj4r (high, CPU-Last beim Parsen von
+    Verzeichnislisten), 6.2.2 zusaetzlich GHSA-5rfr-xx34-2xxv. Der Changelog 5.3.1 → 6.2.2 aendert keine API, die
+    `get-uri` nutzt; der Bruch in 6.0.0 (kein getrennter Transfer-Host ohne `allowSeparateTransferHost`) betrifft nur
+    FTP-Downloads, die der Testbaum nicht macht.
+  - `chokidar` unter `mocha` auf `^4.0.3`: fuer `braces` (GHSA-vfj7-8cjw-p6xm, high, bis 3.0.3, ohne gepatchte
+    Version) gibt es keinen Fix, es hing nur an mochas `chokidar` 3.6.0. Mit chokidar 4, das schon im Baum liegt, faellt
+    es samt elf weiteren Paketen weg. Grenze: Der Watch-Modus der mocha-CLI verliert die Glob-Unterstuetzung; die
+    E2E-Tests nutzen ihn nicht, WebdriverIO ruft mocha programmatisch.
+  - `npm audit --audit-level=high` in `apps/desktop/e2e` vorher 18 high, nachher 0; `apps/web` und `apps/desktop/ui`
+    unveraendert ohne Befund.
+
+- **`source-map-js` 1.2.1 → 1.2.2 in den Lockfiles von `apps/web` und `apps/desktop/ui` (R-0199):** behebt GHSA-68fv-2mgg-jv7q
+  (CVE-2026-93749, high, Event-Loop-Blockade durch indizierte Source-Map-Abschnitte). Vom Dependency-Audit (`npm audit`)
+  erkannt. Reiner Lockfile-Bump (`npm update source-map-js --package-lock-only`), `package.json` unveraendert: alle
+  Abnehmer (`postcss`, `css-tree`, `magicast`) erlauben `^1.2.1`. Der Changelog 1.2.1 → 1.2.2 enthaelt nur diesen Fix
+  und einen CSP-Fix fuer den Browser. Nur Dev-Werkzeug, nicht im ausgelieferten Bundle; `npm audit --audit-level=high`
+  vorher je 1 high, nachher 0 in beiden Projekten und in `apps/desktop/e2e`.
+
 ### Fixed
 
 - **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
@@ -356,6 +403,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   gitignoriert und vom Sync ausgenommen: `.crabbox/captures` enthaelt unredigierte
   Fehler-Bundles, und dieses Repo ist oeffentlich. Loeschen — dann koennen die zwei
   Eintraege mit.
+
+- **Desktop: Tauri-Command `enroll_device` (R-0040):** das Enrollment ueber die Login-Session hatte keinen
+  Aufrufer in der UI; die App enrollt seit ADR 0003 mit einem Einmal-Token (`enroll_with_token`). Entfernt sind
+  der Command, `enrollment::enroll` und der Zweig in `mint_token`, der nur dafuer ein Access-Token anforderte; der
+  Browser-Export (`export_browser_p12`) nach dem Login bleibt. Der IPC-Inventar-Test fuehrt keinen Command ohne
+  UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
 
 ### Changed
 

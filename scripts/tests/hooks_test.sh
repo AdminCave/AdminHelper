@@ -216,10 +216,12 @@ ERRFILE="$WORK/guard.err"
 guard() {
   local mode="$1" tool="$2" body="$3" json
   json=$(printf '{"tool_name":"%s","tool_input":%s}' "$tool" "$body")
+  # The guard reads the project from CLAUDE_PROJECT_DIR when it is set (R-0164):
+  # an inherited one would make every case check another checkout than $TREE.
   if [ "$mode" = auto ]; then
-    OUT=$(printf '%s' "$json" | AH_AUTONOMOUS=1 bash "$GUARD" 2>"$ERRFILE"); rc=$?
+    OUT=$(printf '%s' "$json" | env -u CLAUDE_PROJECT_DIR AH_AUTONOMOUS=1 bash "$GUARD" 2>"$ERRFILE"); rc=$?
   else
-    OUT=$(printf '%s' "$json" | env -u AH_AUTONOMOUS bash "$GUARD" 2>"$ERRFILE"); rc=$?
+    OUT=$(printf '%s' "$json" | env -u CLAUDE_PROJECT_DIR -u AH_AUTONOMOUS bash "$GUARD" 2>"$ERRFILE"); rc=$?
   fi
   ERR=$(cat "$ERRFILE")
 }
@@ -406,10 +408,16 @@ for body in '{"command":}' 'not json at all' '' '{"tool_input":null}'; do
     || bad "malformed input '$body': rc=$rc out=$OUT"
 done
 
-# A checkout whose list is gone must not start denying at random.
+# A checkout whose list is gone must not start denying at random in a session by
+# hand; an autonomous run, which cannot tell a harness path then, writes nothing
+# (R-0164: the runner's guard reads the list of the project it is handed).
 mv "$TREE/scripts/dev/harness-paths.txt" "$WORK/paths.bak"
-guard auto Edit "{\"file_path\":\"$TREE/CLAUDE.md\"}"
+guard inter Edit "{\"file_path\":\"$TREE/CLAUDE.md\"}"
 [ $rc -eq 0 ] && [ -z "$OUT" ] && ok "without the list the guard steps aside" || bad "no list: rc=$rc out=$OUT"
+guard auto Edit "{\"file_path\":\"$TREE/apps/x.py\"}"
+[ $rc -eq 0 ] && denied "$OUT" && ok "without the list an autonomous run writes nothing" || bad "no list, autonomous: rc=$rc out=$OUT"
+guard auto Bash '{"command":"ls -la"}'
+[ $rc -eq 0 ] && [ -z "$OUT" ] && ok "and still reads" || bad "no list, autonomous read: rc=$rc out=$OUT"
 # ... for the harness paths only: the temp rule below does not need the list.
 guard inter Bash '{"command":"rm -rf /tmp/tmp.*"}'
 denied "$OUT" && ok "without the list a glob delete under /tmp is still denied" || bad "no list, rm glob: $OUT$ERR"
@@ -1417,17 +1425,32 @@ for rule in 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(git 
             'Bash(bash scripts/tests/heavy.sh:*)' 'Bash(bash scripts/tests/multibox.sh:*)' \
             'Edit(~/.claude/**)' 'Edit(//srv/ah/**/CLAUDE.md)' 'Edit(//srv/ah/**/.claude/**)' \
             'Edit(//srv/ah/**/scripts/dev/**)' 'Edit(./scripts/vm/**)' \
-            'Edit(./scripts/tests/multibox.sh)'; do
+            'Edit(./scripts/tests/multibox.sh)' 'Edit(./tasks/**)' 'Edit(//srv/ah/**/tasks/**)' \
+            'Bash(git grep:*)'; do
   python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["permissions"]["deny"] else 1)' "$RS" "$rule" \
     && ok "deny: $rule" || bad "missing deny rule: $rule"
 done
 
 for rule in 'Bash(bash scripts/dev/verify.sh:*)' 'Bash(bash scripts/dev/ledger.sh start:*)' \
             'Bash(python3 scripts/vm/vm.py clone:*)' 'Bash(python3 scripts/vm/vm.py destroy:*)' \
-            'Edit(./apps/**)' 'Edit(./tasks/**)'; do
+            'Edit(./apps/**)' 'Edit(./.ah-out/loop/**)' 'Bash(bash scripts/dev/scratch.sh new:*)' \
+            'Bash(bash scripts/dev/scratch.sh rm:*)'; do
   python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["permissions"]["allow"] else 1)' "$RS" "$rule" \
     && ok "allow: $rule" || bad "missing allow rule: $rule"
 done
+
+# Stage 7a T2: the build session changes a ledger only through ledger.sh, makes
+# scratch only through scratch.sh (R-0108), and no read command it may run brings
+# a way to run or write a program along (R-0164: rg --pre, git grep -O, sed e/w).
+python3 - "$RS" <<'PY' && ok "no allow for an edit under tasks/, bare mktemp, rm, git worktree, rg, sed or git grep" \
+  || bad "the runner may edit tasks/ or run a command that runs or writes a program"
+import json, sys
+allow = json.load(open(sys.argv[1]))["permissions"]["allow"]
+bad = [a for a in allow if a.startswith("Edit(./tasks") or a.startswith("Edit(//srv/ah/**/tasks")
+       or any(a.startswith("Bash(" + c) for c in ("mktemp", "rm", "git worktree", "rg", "sed", "git grep"))]
+print("\n".join("  wrong: " + a for a in bad))
+sys.exit(1 if bad else 0)
+PY
 
 # House style, not semantics: `Bash(ls:*)` and `Bash(ls *)` mean the same thing
 # to Claude Code, and this repo writes the colon form everywhere. One form per
@@ -1521,6 +1544,12 @@ if [ "$GUARD_SKIPPED" = 0 ]; then
   [ -z "$ZERO" ] && ok "the guard ends with 0 for any input, a deny included" || bad "the guard did not end with 0 for:$ZERO"
   HOOKCMD="$(python3 -c 'import json, sys
 print(json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0]["command"])' "$RS")"
+  # The hook runs the root-owned copy runner-setup.sh installs (R-0164), never the
+  # project's file; the cases below point that one path at their fixture.
+  LIBGUARD=/usr/local/lib/adminhelper-dev/harness-guard.sh
+  [[ "$HOOKCMD" == "g=$LIBGUARD;"* ]] && [[ "$HOOKCMD" != *CLAUDE_PROJECT_DIR* ]] \
+    && ok "the runner hook runs the root-owned guard, not the project's copy" || bad "runner hook guard path: $HOOKCMD"
+  hookcmd_at() { printf '%s' "${HOOKCMD//"$LIBGUARD"/$1}"; }
   HOOKT="$(python3 -c 'import json, sys
 print(json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0].get("timeout", ""))' "$RS")"
   INNER="$(sed -n 's/.*timeout -k \([0-9][0-9]*\) \([0-9][0-9]*\) bash.*/\1 \2/p' <<<"$HOOKCMD" | awk '{print $1 + $2}')"
@@ -1533,22 +1562,50 @@ print(json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0].get("ti
   printf "trap '' TERM; exec sleep 60\n" > "$WORK/hang/scripts/dev/hooks/harness-guard.sh"
   for sh in sh bash; do
     printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
-      | CLAUDE_PROJECT_DIR="$TREE" AH_AUTONOMOUS=1 "$sh" -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+      | CLAUDE_PROJECT_DIR="$TREE" AH_AUTONOMOUS=1 "$sh" -c "$(hookcmd_at "$GUARD")" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
     [ "$rc" = 0 ] && [ ! -s "$WORK/hook.out" ] && ok "$sh: a harmless call passes the runner hook" \
       || bad "$sh harmless: rc=$rc out=$(cat "$WORK/hook.out") err=$(cat "$WORK/hook.err")"
     printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/CLAUDE.md"}}' "$TREE" \
-      | CLAUDE_PROJECT_DIR="$TREE" AH_AUTONOMOUS=1 "$sh" -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+      | CLAUDE_PROJECT_DIR="$TREE" AH_AUTONOMOUS=1 "$sh" -c "$(hookcmd_at "$GUARD")" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
     [ "$rc" = 0 ] && denied "$(cat "$WORK/hook.out")" && ok "$sh: the guard's deny comes through the runner hook" \
       || bad "$sh deny: rc=$rc out=$(cat "$WORK/hook.out")"
     printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
-      | CLAUDE_PROJECT_DIR="$WORK/noguard" "$sh" -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+      | CLAUDE_PROJECT_DIR="$TREE" "$sh" -c "$(hookcmd_at "$WORK/noguard/harness-guard.sh")" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
     [ "$rc" = 2 ] && grep -q "harness guard not readable" "$WORK/hook.err" \
       && ok "$sh: without the guard the runner hook blocks (exit 2)" || bad "$sh missing guard: rc=$rc err=$(cat "$WORK/hook.err")"
   done
   printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
-    | CLAUDE_PROJECT_DIR="$WORK/hang" timeout 60 sh -c "$HOOKCMD" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
+    | CLAUDE_PROJECT_DIR="$TREE" timeout 60 sh -c "$(hookcmd_at "$WORK/hang/scripts/dev/hooks/harness-guard.sh")" > "$WORK/hook.out" 2> "$WORK/hook.err"; rc=$?
   [ "$rc" = 2 ] && grep -q "harness guard failed (exit 137)" "$WORK/hook.err" \
     && ok "a guard that ignores TERM is killed and blocks inside the hook's limit (exit 2)" || bad "hanging guard: rc=$rc err=$(cat "$WORK/hook.err")"
+  # The copy outside any checkout reads the list of the project it guards
+  # (CLAUDE_PROJECT_DIR), and an autonomous run without a list writes nothing —
+  # also where the copy's own fallback root does not hold the project: deep, so
+  # that root is $WORK/deep and never contains $TREE, whatever TMPDIR is.
+  mkdir -p "$WORK/deep/a/b/lib"; cp "$GUARD" "$WORK/deep/a/b/lib/harness-guard.sh"
+  lib_guard() {  # lib_guard <project dir or ""> <mode> <file>
+    local env_args=(env -u CLAUDE_PROJECT_DIR)
+    [ -z "$1" ] || env_args=(env CLAUDE_PROJECT_DIR="$1")
+    [ "$2" = auto ] && env_args+=(AH_AUTONOMOUS=1) || env_args+=(-u AH_AUTONOMOUS)
+    OUT=$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$3" | "${env_args[@]}" bash "$WORK/deep/a/b/lib/harness-guard.sh" 2>/dev/null)
+  }
+  lib_guard "$TREE" auto "$TREE/CLAUDE.md"
+  denied "$OUT" && ok "a guard outside the checkout denies a harness path of CLAUDE_PROJECT_DIR" || bad "lib guard, harness path: $OUT"
+  lib_guard "$TREE" auto "$TREE/apps/x.py"
+  [ -z "$OUT" ] && ok "and lets a path that is no harness path through" || bad "lib guard, plain path: $OUT"
+  lib_guard "" auto "$TREE/apps/x.py"
+  denied "$OUT" && grep -q 'no scripts/dev/harness-paths.txt' <<<"$OUT" \
+    && ok "an autonomous run that finds no harness list writes nothing" || bad "lib guard without a list: $OUT"
+  lib_guard "$WORK/nosuch" auto "$TREE/apps/x.py"
+  denied "$OUT" && ok "and so does one whose CLAUDE_PROJECT_DIR is no directory" || bad "lib guard, bad project dir: $OUT"
+  OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"echo x > %s/apps/y.py"}}' "$TREE" \
+    | env -u CLAUDE_PROJECT_DIR AH_AUTONOMOUS=1 bash "$WORK/deep/a/b/lib/harness-guard.sh" 2>/dev/null)
+  denied "$OUT" && ok "and a Bash write outside its fallback root" || bad "lib guard, bash write: $OUT"
+  OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"ls %s"}}' "$TREE" \
+    | env -u CLAUDE_PROJECT_DIR AH_AUTONOMOUS=1 bash "$WORK/deep/a/b/lib/harness-guard.sh" 2>/dev/null)
+  [ -z "$OUT" ] && ok "while a read still passes" || bad "lib guard, read: $OUT"
+  lib_guard "" inter "$TREE/apps/x.py"
+  [ -z "$OUT" ] && ok "a session by hand without the list is not stopped" || bad "lib guard by hand: $OUT"
 fi
 
 # ══ .gitattributes ═══════════════════════════════════════════════════════════

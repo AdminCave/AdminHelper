@@ -216,6 +216,85 @@ Regeln:
   seriell, nur die Burn-Rate steigt (Rate-Limits drosseln ggf. von selbst). Mehr als
   2–3 Lanes stauen an deinen Gates/Reviews, nicht am Compute.
 
+## Der Worker (Stufe 7a)
+
+Bis Stufe 6 baut eine Session, die Kevin offen hat. Der **Worker**
+[`scripts/dev/ledger-loop.sh`](scripts/dev/ledger-loop.sh) baut freigegebene Ledger ohne
+offene Session: als Nutzer `adminhelper-runner`, in dessen Klon `/srv/ah/repo`, jedes Ledger in
+seiner Lane (`lane.sh new <slug>`). Er pusht nie, öffnet keinen PR und merged keinen; in die Lane merged
+er `origin/main` (ein Konflikt ist `blockiert (merge)`) und fährt dann die Suiten der offenen Tasks als
+Fundament (rot ist `blockiert (Fundament rot)`).
+
+**Start** — nur auf Kevins Zuruf, nie per Timer (CLAUDE.md §2), in tmux:
+
+```bash
+sudo -u adminhelper-runner tmux new -d -s ah-loop \
+  'cd /srv/ah/repo && bash scripts/dev/ledger-loop.sh --ledger tasks/<a>.md --ledger tasks/<b>.md'
+```
+
+Die Ledger sind Kevins Liste in seiner Reihenfolge; die Roadmap liest der Loop nie. Ein Plan
+erreicht den Runner als gepushter Branch `feature/<slug>` (die Aufsicht pusht ihn, Entscheidung A);
+gebaut wird nur ein Kopf mit `Branch: feature/<slug>`, `Status: freigegeben` (oder `aktiv`, dann
+geht es weiter) und einer `Freigabe:`-Zeile. Ein Harness-Ledger (Branch `harness/…` oder ein
+Harness-Pfad in `Dateien:`) bleibt interaktiv: `blockiert (harness)` ohne Lane.
+
+**Je Task** eine frische Bau-Session: `claude -p` mit dem Text von
+[`/build-task`](.claude/skills/build-task/SKILL.md) aus dem Klon, nur den Settings des Runners
+(`--setting-sources user`, `dontAsk`), dazu `--task-minutes 60 --task-turns 80 --task-budget 12`. Die
+Session baut eine Task, testet mit `verify.sh` und hinterlässt eine Commit-Nachricht; sie committet
+nicht, setzt keinen Haken und ändert ein Ledger nur über `ledger.sh` (`mark-skip`, `mark-question`,
+`set-files`) und nur in ihrer eigenen Task — Kopf und andere Tasks bleiben, wie sie waren, sonst wird
+die Task `[?]`. Danach entscheidet allein der Loop: Er schließt mit `task-close.sh --review auto
+--round <n>`; bei Exit 3 gibt es **eine** zweite Session mit `--fix` (Runde 2, wenn die erste ein Verdict
+hatte — eine rote Suite oder ein Diff-Scan-Fund schreibt keins, dann bleibt es Runde 1), ein zweites 3 wird
+`[?]` mit dem ersten Blocker; 4 wird `[?]`; 74 wird einmal wiederholt, dann `stop: infra`. Eine
+Session über Zeit, Turns oder Budget wird `[?] timeout|turns|budget`, ein anderer Fehler
+`[?] error`, zwei Iterationen ohne Fortschritt mit byte-gleichem Ledger `[?] stall`; ein API-Fehler
+oder eine Session ohne JSON ist dagegen ein Ausfall: `stop: infra`, die Task bleibt offen. Ein `[?]`
+setzt das Ledger auf `blockiert`, und der Loop nimmt das nächste der Liste (Entscheidung D); ein
+Ledger, in dem nur noch `[?]` offen sind, wird `blockiert`, nie `bereit`. Was eine
+Session hinterlässt, ohne dass die Task schließt, nimmt der Loop zurück (`aborted.diff`, `git
+restore`, neue Dateien einzeln mit vollem Pfad) — nie `stash`, `clean` oder ein Glob.
+
+**Deckel** (Entscheidung F, als Flags, damit der Pilot ohne Code nachstellt): `--max-hours 8`,
+`--max-tasks 20`, `--max-budget-usd 200` (Bau-Sessions **und** Reviewer, im Loop selbst gezählt;
+unbekannte Kosten zählen mit ihrem Deckel),
+`--max-ready 2` (zwei Ledger `bereit` in diesem Lauf: Kevins Warteschlange). Zeit und Budget gelten an
+jeder Task-Grenze und zwischen den Iterationen einer Task; eine laufende Session beendet nur ihr
+eigener Deckel.
+
+**Stopp-Klassen** in der letzten Zeile des Summary: `ledger-leer` (die Liste ist durch),
+`max-hours`, `max-tasks`, `max-budget`, `kevin-queue`, `usage-limit` (das Abo-Limit, mit Reset-Zeit;
+die Task bleibt offen, Entscheidung C), `infra` (Exit 74, ein Satz nennt den Grund) und
+`harness-modified` (Exit 74: eine Session hat einen Harness-Pfad geändert oder etwas getan, was nur
+ihr Code konnte — der HEAD der Lane oder der Klon haben sich bewegt; das Ledger bleibt danach gesperrt,
+bis Kevin `/srv/ah/loop/<slug>/harness-modified` entfernt). Eine CLI, die nicht mehr der
+festgehaltenen Prüfsumme entspricht, endet als `infra`; mitten im Lauf ist sie dasselbe Signal
+(`DEVELOPMENT.md`, „Der Worker“, Recovery).
+
+**Stand und Übergabe.** Der Loop schreibt nach `/srv/ah/loop`: `state.json`, `loop.log`, je Stopp
+`summary-<datum>.md` (Schlusszeile `ledger-loop: <n> tasks, <k> ready, <b> blocked, $<x> total,
+stop: <klasse>`), je Ledger die Logs. Kevin liest das mit `bash scripts/dev/ledger-loop.sh status`
+**aus seinem eigenen Checkout**; die erste Zeile davon steht als „Worker:“ im AH-STATUS. Ein Ledger auf
+`bereit` hinterlässt `<slug>/pr-body.md` (`review.sh pr-body`, mit „Heavy offen — fährt die Aufsicht“
+außer bei `Heavy: none`) und `<slug>.bundle`. Kevin holt den Branch in **seinen** Checkout:
+`git fetch /srv/ah/loop/<slug>.bundle feature/<slug>:feature/<slug>`. Kevins Git arbeitet nie in einem
+Repo des Runners: dafür bräuchte es `safe.directory`, und dann könnte eine Runner-eigene
+`.git/config` (`core.fsmonitor`, `core.hooksPath`) Programme mit Kevins Rechten starten — ein Bundle
+ist nur Daten. Ob `git fetch` aus der Bundle-Datei eines anderen Nutzers ohne `safe.directory` geht,
+ist **nicht verifiziert**; der Pilot prüft es.
+
+**Grenzen.** Die Bau-Session hat keine schreibenden Git-Befehle, keine Edits unter `tasks/`, keine
+Harness-Pfade, kein `mktemp` und kein `rm` (ein Scratch-Ordner nur über `scripts/dev/scratch.sh`); das
+Red Team prüft diese Grenzen. Code, den eine Session schreibt, läuft aber über `verify.sh` mit den
+Rechten des Runners: Was er hinter dem Loop ändert, **erkennt** der Loop nachträglich und hält an,
+verhindern kann er es nicht. Die Spec nennt die bewusst offenen Stellen
+([`docs/features/stufe-7a.md`](docs/features/stufe-7a.md), „Verdicts im Runner“).
+
+**Pilot.** Den ersten echten Lauf fährt Kevin nach dem Merge mit einem kleinen Übungs-Ledger
+(`--max-hours 2`, abends, nach einem Blick auf `/usage`); vorher Setup, Pull und Red Team wie nach
+jeder Änderung an den Runner-Settings (`DEVELOPMENT.md`, „Der Worker“).
+
 ## Was eine Task „autonomietauglich" macht
 
 Das ist der Punkt, an dem die meiste Qualität entsteht — `/feature-plan` achtet darauf, aber

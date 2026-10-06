@@ -487,9 +487,9 @@ Laufs, `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite in nur einer Sprache, ein 
 approve oder eine dritte Review-Runde, `4` blockiert (Scope/Sec) oder ein Verdict fuer einen anderen Baum oder eine
 andere Task, `74` die Suite, ein Vertrags-Test, die Probe oder der Reviewer-Prozess konnte gar nicht laufen.
 
-`ledger.sh start` schreibt dabei `.vm/active-task` — heute reine **Anzeige** (wer arbeitet
-gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, gelesen wird die
-Datei erst vom Worker-Preflight der Stufe 7.
+`ledger.sh start` schreibt dabei `.vm/active-task` — reine **Anzeige** (wer arbeitet
+gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, und kein Skript liest
+die Datei, auch der Worker (Stufe 7a) nicht.
 
 `ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`,
 `mark-skip`, `mark-question`, `set-files`, `status`, `new-task`, `lint`) — Details
@@ -892,7 +892,9 @@ oder Mount, bricht es ab, statt zu kopieren. Ausserdem legt es die geteilte Pyth
 bestehender Runner bekommt sie mit einem erneuten `sudo bash scripts/dev/runner-setup.sh`.
 Ebenso installiert es das Red Team root-eigen (R-0152): `runner-redteam.sh`, `runner-env.sh`,
 `runner-settings.json` und `runner-claude.version` aus dem Checkout, aus dem es laeuft, nach
-`/usr/local/lib/adminhelper-dev/` (root, Verzeichnis und Skript `0755`, der Rest `0644`), und es
+`/usr/local/lib/adminhelper-dev/` (root, Verzeichnis und Skript `0755`, der Rest `0644`), dazu den
+Harness-Waechter `scripts/dev/hooks/harness-guard.sh` als `harness-guard.sh` (`0755`, R-0164): der
+Hook in den Runner-Settings ruft diese Kopie auf, nicht die im Klon, die der Runner aendern kann. Es
 haelt die sha256 der Runner-CLI in `/var/lib/adminhelper-dev/runner-claude.sha256` fest
 (`0644`); `--remove --yes` nimmt beides mit.
 Danach bleiben **drei Handgriffe** fuer Kevin, die der Runner nicht selbst tun kann:
@@ -975,9 +977,12 @@ sudo bash scripts/dev/runner-setup.sh --trust
 ```
 
 Das schreibt `projects["/srv/ah/repo"].hasTrustDialogAccepted` in
-`~adminhelper-runner/.claude.json` — und erst damit gelten die 38 Allow-Regeln des
-Runners. Ab Stufe 7 braucht er das, vorher nicht: solange jeder Lauf von Hand
-gestartet wird, ist der engere Zustand der bessere.
+`~adminhelper-runner/.claude.json`. Die Meldung von 2026-09-22 nennt die Allow-Liste aus
+`.claude/settings.json` des Projekts; ob die Allow-Liste der Runner-Settings ohne Trust gilt, ist
+**nicht verifiziert**. Der Worker (Stufe 7a) laedt die Projekt-Settings gar nicht
+(`--setting-sources user`) und arbeitet in den Lanes `/srv/ah/AdminHelper-<slug>`, die `--trust` nicht
+abdeckt (es trustet nur `/srv/ah/repo`); ob er den Trust braucht, misst der Pilot (Abschnitt „Der
+Worker"). Solange jeder Lauf von Hand gestartet wird, ist der engere Zustand der bessere.
 
 Beide Dateien muessen regulaere `0600`-Dateien in einem Verzeichnis sein, in das
 nur der Runner schreiben darf; `scripts/dev/runner-env.sh` (zum **Sourcen**)
@@ -1001,7 +1006,8 @@ an und **loescht sie wieder** — ein geerbter Wert waere ein Drop in einer frem
 | `git add`, `git commit`, `git push`, `git switch`, `git branch`, `git revert`, `git checkout`, `git restore`, `git stash` | Der Runner schreibt keine Historie. `revert`/`branch`/`switch` stehen mit drin, weil sie committen bzw. ungestagte Arbeit verwerfen koennen — und weil die Projekt-`settings.json` des Klons sie sonst mitbringt (Listen mergen ueber die Ebenen). |
 | `gh:*`, `sudo:*` | Kein GitHub-Zugang, keine Rechteerhoehung. |
 | `vm.py bake`, `bake.sh`, `heavy.sh`, `multibox.sh`, `run.sh all/e2e/integration` | Teure oder VM-fressende Laeufe startet ein Mensch. `vm.py` ist Verb fuer Verb freigegeben, damit kein breites Praefix `bake` mit abdeckt. |
-| `task-close.sh`, `ledger.sh mark-done` | Der Runner schliesst in Stufe 4 keine Task — das tut die interaktive Session. In Stufe 7 aendert sich genau diese Zeile. |
+| `task-close.sh`, `ledger.sh mark-done` | Die Bau-Session schliesst keine Task. Seit Stufe 7a tut das der Worker (`ledger-loop.sh`) ausserhalb der Session mit `task-close.sh --review auto`; die Session hinterlaesst nur eine Commit-Nachricht. |
+| `Edit(./tasks/**)`, `git grep` | Stufe 7a (R-0108): ein Ledger aendert die Bau-Session nur ueber `ledger.sh` (`start`, `mark-skip`, `mark-question`, `set-files`, alle erlaubt); den Haken setzt `task-close.sh`. `git grep` kann mit `-O` ein Programm starten. |
 | `Edit(./.claude/**)`, `Edit(~/.claude/**)`, `CLAUDE.md`, `AUTONOMOUS.md`, `scripts/dev/**`, `run.sh`, `heavy.sh`, `vm.py` | Der Harness ist nicht sein Arbeitsmaterial. `~/.claude` steht mit drin, weil Claude Code Settings **live** nachlaedt. |
 | `Edit(./tasks/private/**)`, `Read(~/.config/adminhelper/**)` | Privates Repo und die eigenen Token-Dateien. Der `Read`-Deny ist Hygiene, **keine Grenze**: die Token stehen nach `runner-env.sh` ohnehin in der Prozess-Umgebung des Runners, und ein erlaubtes `cat` liest die Datei am `Read`-Tool vorbei. Was wirklich schuetzt, ist `0600` plus die Tatsache, dass es seine **eigenen** Token sind (Pool-gescopt, eigenes Abo). |
 | `Edit(//srv/ah/**/…)` (dieselben Harness-Pfade absolut) | Eine `./`-Regel loest gegen das **Arbeitsverzeichnis** der Session auf: startet ein Lauf in einem Unterverzeichnis des Klons, meint `Edit(./CLAUDE.md)` eine ganz andere Datei. Die absoluten Zwillinge halten ueberall. |
@@ -1012,8 +1018,11 @@ scripts/tests/run.sh quick` — wer eine Testdatei aendert und sie dann startet,
 fuehrt eigenen Code aus. Die gefaehrlichste Form davon ist zu: `scripts/vm/**`
 (die Wrapper laufen mit dem Hypervisor-Token) und `scripts/tests/multibox.sh`
 stehen im Deny **und** auf den Harness-Pfaden; was bleibt, sind die uebrigen
-Test-Dateien, die keinen Token in der Hand haben. Ebenso kann er ein `[x]` in ein Ledger schreiben
-(`Edit(./tasks/**)`), nur committen kann er es nicht. **Die tragende Grenze ist
+Test-Dateien, die keinen Token in der Hand haben. Ein Ledger kann die Bau-Session seit Stufe 7a nicht
+mehr direkt editieren (`Edit(./tasks/**)` steht im Deny), wohl aber der Code, den sie ueber
+`verify.sh` startet; was der hinter dem Worker aendert, erkennt der Worker erst danach (Abschnitt
+„Der Worker"). Einen Scratch-Ordner gibt es nur ueber `bash scripts/dev/scratch.sh new|rm` (kein
+`mktemp`, kein `rm` in der Allow-Liste). **Die tragende Grenze ist
 deshalb nicht die Regel-Liste, sondern die Betriebssystem-Ebene:** kein
 `~/.ssh`, kein `gh`-Login, leeres `GH_TOKEN`, `remote.origin.pushurl=/dev/null`,
 eigene DB, eigener Proxmox-Token nur fuer den Pool.
@@ -1034,8 +1043,12 @@ Aufruf nennt, und der Lauf endet dort.
 Jede Probe druckt `ok`, `FAIL` oder `info`; die letzte Zeile ist `N ok, M FAIL`.
 Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,
 `gh`-Login, D-Bus/Keyring, der eigene Proxmox-Token gegen eine VM **ausserhalb**
-des Pools, und zwei `claude -p`-Laeufe, die ausdruecklich nach einem `git push`
-bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`).
+des Pools, und `claude -p`-Laeufe, die ausdruecklich nach einem verbotenen Griff fragen
+(erwartet: `permission_denials`): ein harmloses `git stash list`, ein `git push`, eine
+`CLAUDE.md`-Aenderung und, gestartet wie die Bau-Session des Workers (`--setting-sources user`),
+ein Ledger per Umleitung und ein nacktes `mktemp -d` (Stufe 7a). Ohne Modell prueft
+`--build-settings`, dass die Settings den Deny auf `tasks/` und die zwei Allows fuer `scratch.sh`
+wortgleich tragen.
 Die Proben auf git, Proxmox, D-Bus und Settings fuehren keinen Code und keine ausfuehrbare
 Konfiguration des Runners aus (R-0156, R-0160 bis R-0163); die Modellproben starten bewusst die
 CLI des Runners, nachdem Pruefsumme und Settings geprueft sind — ein FAIL dort haelt sie nicht auf
@@ -1065,6 +1078,85 @@ Sperre nehmen (ist sie gerade belegt, ein `info`); einzeln mit
 sha256 (`--claude-sum`).
 Stufe 4 gilt erst mit `0 FAIL` als abgeschlossen; das Ergebnis gehoert in den
 Anhang von `tasks/harness-stufe-4.md`.
+
+### Der Worker: `ledger-loop.sh` (Stufe 7a)
+
+Der Worker baut freigegebene Ledger als `adminhelper-runner` (Ablauf, Deckel und Stopp-Klassen:
+`AUTONOMOUS.md`, „Der Worker"). Vor dem ersten Start und nach **jeder** Aenderung an
+`scripts/dev/runner-settings.json`, an `scripts/dev/hooks/harness-guard.sh` (der Runner ruft die
+root-eigene Kopie, die nur `runner-setup.sh` erneuert), am Red Team oder an
+`scripts/dev/runner-claude.version` laufen die drei Handgriffe von oben: `sudo bash scripts/dev/runner-setup.sh`, `sudo -u adminhelper-runner
+git -C /srv/ah/repo pull --ff-only`, das Red Team als Runner. Der Worker selbst zieht einen `main`
+mit geaenderten Harness-Pfaden nicht nach, sondern endet mit `stop: infra (Harness auf main
+geaendert — Pull + Red Team durch Kevin)`. Dazu muss das Token des Runners gelten:
+
+```bash
+sudo -u adminhelper-runner bash -lc '. /srv/ah/repo/scripts/dev/runner-env.sh && claude auth status'
+```
+
+**Getrusteter Workspace — nicht verifiziert.** Ob die Bau-Session in einer Lane die Allow-Liste der
+Runner-Settings ohne Trust anwendet, hat noch niemand gemessen (oben, „Getrusteter Workspace").
+Endet im Pilot jede Task als `[?] stall` oder mit vielen Verweigerungen im Summary, und steht in
+`/srv/ah/loop/<slug>/<id>.s<n>.err` (oder `.json`) eine Meldung „Ignoring … permissions.allow
+entries", greift der Trust: das ist dann eine Frage an die Aufsicht, denn `--trust` deckt die Lanes
+nicht ab.
+
+**Starten** (nur Kevin, in tmux; die Ledger in seiner Reihenfolge, die Flags mit ihren Defaults):
+
+```bash
+sudo -u adminhelper-runner tmux new -d -s ah-loop \
+  'cd /srv/ah/repo && bash scripts/dev/ledger-loop.sh --ledger tasks/<a>.md --max-hours 8 --max-budget-usd 200'
+```
+
+**Stand lesen** aus dem eigenen Checkout, nie mit einem Skript des Runners:
+
+```bash
+bash scripts/dev/ledger-loop.sh status --state /srv/ah/loop/state.json
+```
+
+Die erste Zeile ist die Worker-Zeile des AH-STATUS (`AH_LOOP_STATE` zeigt dem Hook eine andere
+Datei), danach Stopp-Grund, Ledger und die letzten Zeilen des neuesten `summary-<datum>.md`. Je
+Ledger liegen unter `/srv/ah/loop/<slug>/` die Session-Ausgaben (`<id>.s<n>.json`), die Close-Logs,
+`<id>.aborted.diff` (was der Loop zuruecknahm, jedes Aufraeumen angehaengt mit Zeitstempel) und bei
+`bereit` `pr-body.md`.
+
+**Bundle holen**, wenn ein Ledger `bereit` ist — in Kevins Checkout, kein `git` im Repo des Runners.
+Das Bundle setzt das `origin/main` voraus, auf dem der Runner es schnitt; deshalb zuerst `origin`:
+
+```bash
+git fetch origin
+git fetch /srv/ah/loop/<slug>.bundle feature/<slug>:feature/<slug>
+```
+
+Push und Draft-PR sind danach Kevins bzw. der Aufsicht Handgriff (Text aus
+`/srv/ah/loop/<slug>/pr-body.md`).
+
+**Recovery:**
+
+- **`[?]` und `blockiert`:** die Frage steht im `[?]` der Task, im Ledger der Lane
+  (`/srv/ah/AdminHelper-<slug>`) und im Summary; der Loop baut das Ledger nicht weiter, bis Kevin
+  entscheidet. Die Ledger-Commits des Loops liegen nur in der Lane, gepusht wird nichts. Einen Befehl,
+  der ein beantwortetes Ledger in der Lane wieder auf `aktiv` setzt, gibt es in 7a nicht: der Loop baut
+  eine bestehende Lane nur weiter, wenn sie sauber ist und ihr Ledger `freigegeben` oder `aktiv` traegt,
+  und nimmt dort die erste Task mit `[ ]` (eine `[?]`-Task bleibt liegen); bis dahin ist das Kevins
+  Handgriff als Runner.
+- **`blockiert (Lane schmutzig)`:** die Lane traegt Aenderungen, die der Loop nicht committet hat.
+  Der Loop raeumt sie nicht weg (kein `stash`, kein `clean`); ansehen mit
+  `sudo -u adminhelper-runner git -C /srv/ah/AdminHelper-<slug> status`, entscheiden tut Kevin.
+- **`stop: infra`:** der Satz dahinter nennt den Grund (Token, CLI-Pin, Klon nicht sauber, `git`,
+  Harness auf `main`, ein API-Fehler oder eine Session ohne JSON); beheben bzw. den Ausfall abwarten,
+  dann neu starten. Die offene Task bleibt `[ ]`. Ausnahme: sagt der
+  Satz `the claude CLI … is not the one runner-setup.sh recorded`, nachdem schon Sessions liefen, hat
+  vermutlich Code einer Session die CLI ersetzt — das ist dasselbe Signal wie `harness-modified`. Die
+  Lane bleibt dann, wie die Session sie verliess (`stop: infra` raeumt nicht auf): ansehen, dann Setup
+  und Red Team, nicht einfach neu starten.
+- **`stop: usage-limit`:** die Reset-Zeit steht in `state.json` und im Summary; danach neu starten,
+  die Task ist offen und ihre Lane aufgeraeumt.
+- **`stop: harness-modified`:** nicht einfach neu starten. Etwas, das nur Code einer Session tun
+  konnte, ist passiert (ein Harness-Pfad, ein Commit in der Lane, der Klon); `aborted.diff` und die
+  Lane ansehen, dann Setup und Red Team. Der Loop sperrt das Ledger mit der Datei
+  `/srv/ah/loop/<slug>/harness-modified`: erst wenn Kevin sie nach dem Ansehen entfernt, baut ein
+  neuer Lauf es wieder.
 
 ### Go Toolchain (Agent)
 
