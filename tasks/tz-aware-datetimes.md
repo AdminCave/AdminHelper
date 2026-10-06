@@ -67,8 +67,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning.py
 Doku: keine (T7)
 Abhängt von: T1
 
-### T5 — `to_dict` mit `Z`: Audit und Notifications (`timestamptz`)  [ ]
+### T5 — `to_dict` mit `Z`: Audit und Notifications (`timestamptz`)  [x]
 Komponente: server · Dateien: apps/server/app/modules/audit/models.py, apps/server/app/modules/notifications/models.py, apps/server/tests/test_audit_api.py, apps/server/tests/test_notifications.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @19585b29 2026-10-06T10:25:30+02:00
+Review: approve (opus)
 Änderung: `audit/models.py:41` und `notifications/models.py:106`, `:115` werden `iso_utc(...)`. Diese Werte kommen
 aware in der Zeitzone der Verbindung; `iso_utc` rechnet sie nach UTC um. Tests mit einer Session-Zeitzone ungleich
 UTC (`SET LOCAL TIME ZONE 'Europe/Berlin'`, wie `tests/test_utc_timestamp_defaults.py:22`): die Antwort endet auf `Z`
