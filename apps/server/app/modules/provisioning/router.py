@@ -42,7 +42,7 @@ from app.core.config import ENROLL_PORT
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_scope
 from app.core.request_context import actor_from_request
-from app.core.time import iso_utc
+from app.core.time import iso_utc, utcnow_naive
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
@@ -72,7 +72,7 @@ def create_provision_token(
         id=str(uuid.uuid4()),
         server_id=server_id,
         hashed_token=hashed,
-        expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24),
+        expires_at=utcnow_naive() + datetime.timedelta(hours=24),
     )
     db.add(token)
     db.commit()
@@ -139,7 +139,7 @@ def activate_provision(
         db.query(ProvisionToken)
         .filter(ProvisionToken.id == token.id, ProvisionToken.used_at.is_(None))
         .update(
-            {ProvisionToken.used_at: datetime.datetime.now(datetime.timezone.utc)},
+            {ProvisionToken.used_at: utcnow_naive()},
             synchronize_session=False,
         )
     )
