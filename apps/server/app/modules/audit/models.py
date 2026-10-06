@@ -8,6 +8,7 @@ from sqlalchemy import BigInteger, Column, DateTime, String, Text
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import iso_utc
 
 
 class AuditLog(Base):
@@ -38,7 +39,7 @@ class AuditLog(Base):
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "timestamp": iso_utc(self.timestamp),
             "actorType": self.actor_type,
             "actorId": self.actor_id,
             "actorLabel": self.actor_label,

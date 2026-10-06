@@ -11,6 +11,8 @@ notified about servers they may see) is pinned here."""
 import json
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import text
+
 from app.core.auth import hash_password
 from app.modules.notifications.models import (
     Notification,
@@ -296,6 +298,30 @@ class TestFeedApi:
 
     def test_feed_requires_auth(self, test_client):
         assert test_client.get("/api/notifications").status_code == 401
+
+    def test_timestamps_are_utc_with_z_under_a_non_utc_session(self, test_client, db_session):
+        # timestamptz comes back in the session zone; the API writes the same instant
+        # in UTC with Z (R-0064), whatever zone the connection runs in.
+        db_session.execute(text("SET LOCAL TIME ZONE 'Europe/Berlin'"))
+        alice = _user(db_session, "alice", is_admin=True)
+        row = Notification(
+            user_id=alice.id,
+            created_at=datetime(2026, 10, 5, 12, 0, 0, tzinfo=timezone.utc),
+            read_at=datetime(2026, 10, 5, 12, 30, 0, tzinfo=timezone.utc),
+            severity="info",
+            category="lifecycle",
+            event_type="tz.probe",
+            title="tz",
+        )
+        db_session.add(row)
+        db_session.commit()
+        db_session.refresh(row)
+        assert row.created_at.utcoffset() == timedelta(hours=2)  # the premise: not UTC
+
+        res = test_client.get("/api/notifications", headers=_login(test_client, "alice"))
+        assert res.status_code == 200, res.text
+        got = [(n["createdAt"], n["readAt"]) for n in res.json() if n["title"] == "tz"]
+        assert got == [("2026-10-05T12:00:00Z", "2026-10-05T12:30:00Z")]
 
 
 # --- preferences API -------------------------------------------------------

@@ -322,3 +322,19 @@ class TestConfigResponseShape:
         assert updated.status_code == 200, updated.text
         assert updated.json() == self._expected(db_session, cid, mask_secrets=True)
         assert updated.json()["extraConfig"] == {"log.level": "debug", "transport.tls.force": True}
+
+    def test_timestamps_are_rfc3339_utc(self, test_client, db_session, admin_user, monkeypatch):
+        # format: date-time promises an offset (R-0064): the API writes UTC with Z.
+        import app.modules.frp.config_router as cr
+
+        monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+        cid = self._sparse_config_with_tunnel(db_session)
+        db_session.get(FrpServerConfig, cid).updated_at = datetime(2026, 10, 5, 12, 0, 0)
+        db_session.commit()
+        h = _login(test_client)
+
+        detail = test_client.get(f"/api/frp/server-config/{cid}", headers=h)
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["createdAt"].endswith("Z"), detail.text
+        assert detail.json()["updatedAt"] == "2026-10-05T12:00:00Z"
+        assert detail.json()["tunnels"][0]["createdAt"].endswith("Z"), detail.text

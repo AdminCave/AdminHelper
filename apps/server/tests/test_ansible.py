@@ -73,6 +73,19 @@ class TestPlaybookCrud:
         assert test_client.delete(f"/api/ansible/playbooks/{pid}", headers=h).status_code == 204
         assert test_client.get(f"/api/ansible/playbooks/{pid}", headers=h).status_code == 404
 
+    def test_timestamps_are_rfc3339_utc(self, test_client, db_session, admin_user):
+        # format: date-time promises an offset (R-0064): the API writes UTC with Z.
+        h = _login(test_client, "admin", "adminpass")
+        created = test_client.post("/api/ansible/playbooks", json=VALID, headers=h)
+        assert created.status_code == 201, created.text
+        assert created.json()["createdAt"].endswith("Z"), created.text
+        pid = created.json()["id"]
+        # A changed column sets updated_at (onupdate); a content-only PUT writes none.
+        upd = test_client.put(f"/api/ansible/playbooks/{pid}", json={"name": "Renamed"}, headers=h)
+        assert upd.status_code == 200, upd.text
+        assert upd.json()["updatedAt"].endswith("Z"), upd.text
+        assert test_client.delete(f"/api/ansible/playbooks/{pid}", headers=h).status_code == 204
+
     def test_invalid_yaml_rejected_before_write(self, test_client, db_session, admin_user):
         h = _login(test_client, "admin", "adminpass")
         bad = {"name": "x", "filename": "bad.yml", "content": "foo: [unclosed"}

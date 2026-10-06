@@ -7,9 +7,12 @@ FRP identifier and a path component in generated TOML/ZIP, so its validator is a
 injection boundary (TOML breakers, path separators/traversal). The tag validator
 trims, length-caps and de-duplicates. Both are pure functions — no DB needed."""
 
+from datetime import datetime
+
 import pytest
 
 from app.modules.frp.schemas import _validate_tags
+from app.modules.servers.models import Server
 from app.modules.servers.schemas import _validate_server_name
 
 
@@ -68,3 +71,12 @@ class TestValidateTags:
 
     def test_empty_list_yields_empty_list(self):
         assert _validate_tags([]) == []
+
+
+class TestServerToDict:
+    def test_created_at_is_rfc3339_utc(self):
+        # format: date-time promises an offset (R-0064): a naive value is UTC by the
+        # storage convention and goes out with Z.
+        server = Server(id="srv-tz", name="tz", hostname="tz.example.test")
+        server.created_at = datetime(2026, 10, 5, 12, 0, 0)
+        assert server.to_dict(include_connections=False)["createdAt"] == "2026-10-05T12:00:00Z"

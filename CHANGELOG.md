@@ -249,6 +249,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Zeitstempel der Server-API in UTC mit `Z` (R-0064):** Die Antworten schreiben ihre Zeitstempel
+  als RFC 3339 in UTC mit `Z`. Bisher trugen die meisten keinen Offset — auch die vier Felder, fuer
+  die das OpenAPI `format: date-time` verspricht (`created_at` der API-Keys, `created_at`, `last_run`
+  und `next_run` der Hooks; die uebrigen sind `string` oder untypisiert) —, und Audit und
+  Notifications den Offset der Datenbank-Session; Web und Desktop lasen Werte ohne Offset als
+  lokale Zeit und zeigten sie um den Abstand zu UTC verschoben. Das OpenAPI bleibt unveraendert,
+  die Datenbank auch (keine Migration); die
+  Schemathesis-Ausnahmen der API-Key-Routen sind gefallen. **Hinweis fuer Hook-Skripte:** `last_run`
+  und `triggered_at` im Kontext eines Hook-Skripts tragen jetzt beide `Z` (`last_run` etwa
+  `2026-10-05T12:00:00Z` statt `2026-10-05T12:00:00`, `triggered_at` `…Z` statt `…+00:00`); ein
+  Skript, das die Werte als String vergleicht oder selbst zerlegt, muss das `Z` erwarten.
+  `datetime.fromisoformat` liest alle drei Formen. Doku: API-Referenz, „Zeitstempel",
+  und Hooks.
 - **Server: Zeitstempel in den tz-naiven Spalten durchgehend als naive UTC (Konvention F7):** Vier Schreibstellen
   (`enrollment/service.py`, zweimal `provisioning/router.py`, `core/auth.py`) gaben zeitzonenbehaftete Werte an
   `DateTime`-Spalten ohne Zeitzone; Postgres legte sie dann in der Zeitzone der Datenbank-Session ab statt in UTC wie

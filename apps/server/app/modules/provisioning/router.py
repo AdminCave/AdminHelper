@@ -42,7 +42,7 @@ from app.core.config import ENROLL_PORT
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_scope
 from app.core.request_context import actor_from_request
-from app.core.time import utcnow_naive
+from app.core.time import iso_utc, utcnow_naive
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
@@ -80,7 +80,7 @@ def create_provision_token(
 
     return {
         "token": raw_token,
-        "expiresAt": token.expires_at.isoformat(),
+        "expiresAt": iso_utc(token.expires_at),
         "serverId": server_id,
         "serverName": server.name,
     }

@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel
 
 from app.core.bounds import RequestModel
+from app.core.time import UtcDatetime
 
 
 class ApiKeyCreate(RequestModel):
@@ -19,7 +19,7 @@ class ApiKeyResponse(BaseModel):
     id: int
     name: str
     permission: str
-    created_at: Optional[datetime] = None
+    created_at: Optional[UtcDatetime] = None
 
     model_config = {"from_attributes": True}
 

@@ -10,7 +10,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, St
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
-from app.core.time import utc_now_sql
+from app.core.time import iso_utc, utc_now_sql
 
 
 class FrpServerConfig(Base):
@@ -57,8 +57,8 @@ class FrpServerConfig(Base):
             "dashboardUser": self.dashboard_user,
             "dashboardPassword": None if mask_secrets else self.dashboard_password,
             "extraConfig": json.loads(self.extra_config) if self.extra_config else None,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+            "createdAt": iso_utc(self.created_at),
+            "updatedAt": iso_utc(self.updated_at),
         }
         if include_tunnels:
             result["tunnels"] = [t.to_dict(mask_secrets=mask_secrets) for t in self.tunnels]
@@ -127,5 +127,5 @@ class FrpTunnel(Base):
             "enabled": self.enabled,
             "extraConfig": json.loads(self.extra_config) if self.extra_config else None,
             "tags": json.loads(self.tags) if self.tags else [],
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "createdAt": iso_utc(self.created_at),
         }
