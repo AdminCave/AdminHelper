@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Tunnel-Hinweis ohne Login-Enrollment (R-0203) — Task-Ledger
-Status: freigegeben · Branch: feature/desktop-enroll-hint · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-enroll-hint · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus R-0203, von Kevin am 2026-10-06 in der Triage angenommen; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0203 (Kurz-Ledger ohne Spec)
 Heavy: none — eine Fehlermeldung im Rust-Backend des Desktops; kein Journey-Pfad ändert sich (der Tunnel startet wie bisher nur mit einer Identität).
@@ -15,8 +15,10 @@ Geplant 2026-10-06 von der Aufsicht (adminhelper-ac) aus R-0203, von Kevin in de
 Seit ADR 0003 und R-0040 (#85) enrollt der Desktop nur noch mit einem Einmal-Token, den ein Admin ausstellt; der
 Login enrollt nicht. Zeilenangaben main@3c1aac69.
 
-### T1 — Die Meldung ohne Identität nennt den Einmal-Token-Weg (R-0203)  [ ]
+### T1 — Die Meldung ohne Identität nennt den Einmal-Token-Weg (R-0203)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @655673c5 2026-10-06T14:47:24+02:00
+Review: approve (opus, Review am Ende über den ganzen Diff)
 Änderung: `export_identity` (`frpc.rs:118`) meldet ohne Identität „Kein mTLS-Zertifikat vorhanden — bitte zuerst am
 Server anmelden (Enrollment), dann den Tunnel starten.“ (`:121`). Das legt nahe, der Login enrolle. Der neue Text
 ist englisch (neue Code-Strings englisch, der deutsche Alt-Bestand bleibt) und nennt den Weg: das Gerät zuerst mit
