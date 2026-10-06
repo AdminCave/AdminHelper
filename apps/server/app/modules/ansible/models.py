@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import Column, DateTime, String
 
 from app.core.database import Base
-from app.core.time import utc_now_sql
+from app.core.time import iso_utc, utc_now_sql
 
 
 class Playbook(Base):
@@ -29,6 +29,6 @@ class Playbook(Base):
             "filename": self.filename,
             "description": self.description or "",
             "tags": json.loads(self.tags) if self.tags else [],
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+            "createdAt": iso_utc(self.created_at),
+            "updatedAt": iso_utc(self.updated_at),
         }

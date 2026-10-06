@@ -9,7 +9,7 @@ from sqlalchemy import Column, DateTime, String
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
-from app.core.time import utc_now_sql
+from app.core.time import iso_utc, utc_now_sql
 
 
 class Server(Base):
@@ -46,7 +46,7 @@ class Server(Base):
             "osType": self.os_type,
             "tags": json.loads(self.tags) if self.tags else [],
             "notes": self.notes or "",
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "createdAt": iso_utc(self.created_at),
         }
         if include_connections:
             result["connections"] = [c.to_dict() for c in self.connections]

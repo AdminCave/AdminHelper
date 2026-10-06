@@ -44,8 +44,10 @@ Begründung: ohne den `created_at`-Grund antwortet `_validate_create` (`hooks/ro
 String in `detail`, das Schema verspricht `HTTPValidationError`. Das liegt außerhalb dieser Task und geht als
 Roadmap-Kandidat an die Aufsicht.
 
-### T3 — `to_dict` mit `Z`: FRP, Server, Ansible  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/models.py, apps/server/app/modules/servers/models.py, apps/server/app/modules/ansible/models.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_servers_schemas.py, apps/server/tests/test_ansible.py
+### T3 — `to_dict` mit `Z`: FRP, Server, Ansible  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/models.py, apps/server/app/modules/servers/models.py, apps/server/app/modules/ansible/models.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_servers_schemas.py, apps/server/tests/test_ansible.py, apps/server/app/modules/frp/schemas.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @8a6f44eb 2026-10-06T09:31:37+02:00
+Review: approve (opus)
 Änderung: Die `isoformat()`-Stellen in `frp/models.py:60-61`, `:130`, `servers/models.py:49` und
 `ansible/models.py:32-33` werden `iso_utc(...)`. Die `str`-Felder in `frp/schemas.py` bleiben `str` (offene Frage 5).
 Tests: je Modul ein Zeitstempel der Antwort endet auf `Z`, vor dem Fix rot.
