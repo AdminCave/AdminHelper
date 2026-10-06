@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 1: Werkzeug-Reste, Token-Muster, Test-Hygiene — Task-Ledger
-Status: bereit · Branch: harness/kleinpaket-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: erledigt · Branch: harness/kleinpaket-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-05 (kleines Fund-Paket aus den in der Triage angenommenen Zeilen R-0165, R-0173, R-0183, R-0185; CLAUDE.md §2 „Entscheidungen“, Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0165, R-0183, R-0173, R-0185 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, Kommentare und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
