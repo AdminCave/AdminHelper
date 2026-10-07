@@ -189,7 +189,9 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   tasks/<slug>.md` — der Pfad gehört in die Spalte `Ledger`, dort lesen ihn `next` und die
   Parallel-Prüfung; derselbe Status füllt nur die Spalte. Nie ein Edit an der Datei.
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
-  stagen, `bash scripts/dev/review.sh sec --staged` (Exit 4: etwas darf nie in dieses
+  stagen, `bash scripts/dev/ledger.sh lint tasks/<slug>.md` (prüft das Ledger und die Spec aus
+  seinem `Spec:`-Feld, auch auf Reste eines Werkzeugaufrufs; Exit 1: beheben, dann erst
+  committen), `bash scripts/dev/review.sh sec --staged` (Exit 4: etwas darf nie in dieses
   öffentliche Repo — nicht committen, melden), dann committen (Ledger mit `Status: geplant`),
   zurück mit `git switch main` — der Haupt-Checkout
   bleibt auf `main`. Die Commit-Nachricht ist `chore(plan): add spec + ledger for <slug>`, bei

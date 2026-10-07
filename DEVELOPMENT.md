@@ -822,7 +822,13 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
 **pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
 `review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
 `sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
-Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Was an den lokalen
+Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Seit R-0183 sperrt `sec`
+auch eine hinzugefuegte Zeile mit einem Token-Muster — ein Proxmox-API-Token
+(`USER@REALM!TOKENID=UUID`), ein GitHub-Token (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`)
+oder ein `sk-ant-`-Schluessel, je mit einer Mindestlaenge, die Platzhalter durchlaesst (ebenso ein
+Rumpf aus hoechstens zwei verschiedenen Zeichen wie `xxxx…`) — und nennt dabei nur Datei:Zeile; ueber
+eine Spanne (`--range`: pre-push und CI) liest es auch die Nachricht jedes Commits und nennt dann nur
+den Commit. Ein Test, der ein solches Muster braucht, setzt es zur Laufzeit zusammen. Was an den lokalen
 Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
 der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
 eines Pull Requests bzw. Pushs (R-0123; ein Commit, der eine private Datei bringt und der naechste,
@@ -1101,7 +1107,7 @@ sudo -u adminhelper-runner bash -lc '. /srv/ah/repo/scripts/dev/runner-env.sh &&
 Runner-Settings ohne Trust anwendet, hat noch niemand gemessen (oben, „Getrusteter Workspace").
 Endet im Pilot jede Task als `[?] stall` oder mit vielen Verweigerungen im Summary, und steht in
 `/srv/ah/loop/<slug>/<id>.s<n>.err` (oder `.json`) eine Meldung „Ignoring … permissions.allow
-entries", greift der Trust: das ist dann eine Frage an die Aufsicht, denn `--trust` deckt die Lanes
+entries", greift der Trust: das entscheidet dann Kevin (die Aufsicht legt es ihm vor), denn `--trust` deckt die Lanes
 nicht ab.
 
 **Starten** (nur Kevin, in tmux; die Ledger in seiner Reihenfolge, die Flags mit ihren Defaults):

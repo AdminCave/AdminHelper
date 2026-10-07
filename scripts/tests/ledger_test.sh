@@ -241,6 +241,40 @@ sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/v
 l lint fixture
 [ $rc -eq 0 ] && grep -q "ok$" <<<"$OUT" && ok "a clean ledger lints green" || bad "clean lint: rc=$rc out=$OUT"
 
+# A remnant of a tool call (R-0165). The tags are put together at run time: no file
+# of this repo may carry one, and lint runs over every real ledger.
+TAG_CLOSE="</""invoke>" TAG_NS="</""ns:content>" TAG_OPEN="<""parameter name=\"x\">"
+clean_fixture() {
+  fresh_fixture
+  sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/verify.sh server --strict|' "$FIX"
+  rm -rf "$TREE/docs"
+}
+clean_fixture
+printf 'Notiz: %s\n' "$TAG_CLOSE" >> "$FIX"; n=$(wc -l < "$FIX")
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  tasks/fixture.md:$n: a remnant of a tool call" <<<"$OUT" \
+  && ok "a closing tag of a tool call in the ledger is an error with its line" || bad "remnant ledger: rc=$rc out=$OUT"
+clean_fixture
+printf 'Notiz: %s\n' "$TAG_NS" >> "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "a remnant of a tool call" <<<"$OUT" && ok "so is one with a namespace prefix" || bad "remnant ns: rc=$rc out=$OUT"
+clean_fixture
+mkdir -p "$TREE/docs/features"; printf '# Spec\n\n%s\n' "$TAG_OPEN" > "$TREE/docs/features/fixture.md"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  docs/features/fixture.md:3: a remnant of a tool call" <<<"$OUT" \
+  && ok "an opening tag with a name in the spec the ledger names is an error too" || bad "remnant spec: rc=$rc out=$OUT"
+# The spec need not be the first word of Spec:, nor stand bare.
+sed -i 's|^Spec: docs/features/fixture.md$|Spec: Roadmap R-0001 und `docs/features/fixture.md` (Spec)|' "$FIX"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  docs/features/fixture.md:3: a remnant of a tool call" <<<"$OUT" \
+  && ok "a spec named later in the Spec: line, in backticks, is linted too" || bad "remnant spec later: rc=$rc out=$OUT"
+clean_fixture
+mkdir -p "$TREE/docs/features"; printf '# Spec\n\n<details>\n<summary>mehr</summary>\n<!-- ein Kommentar -->\n</details>\n' > "$TREE/docs/features/fixture.md"
+printf 'Notiz: eine Zeile mit <br> und `<code>`\n' >> "$FIX"
+l lint fixture
+[ $rc -eq 0 ] && ok "ordinary HTML in ledger and spec stays green" || bad "html: rc=$rc out=$OUT"
+rm -rf "$TREE/docs"
+
 # Test-Löschung: <file>::<test> — <reason>, the reason not optional.
 with_deletion() {  # with_deletion <value> — the clean fixture, T2 declaring a deletion
   fresh_fixture

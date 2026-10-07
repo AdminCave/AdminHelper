@@ -369,6 +369,36 @@ r sec --staged
   || bad "settings.local: rc=$rc out=$OUT"
 reset_index
 
+# Token patterns (R-0183). Each is put together at run time — written out, it would stop
+# this very file at sec — and the output names file:line, never the token.
+T_GH="gh""p_$(printf 'Ab3%.0s' $(seq 1 12))"
+T_PAT="github""_pat_$(printf 'b7Q%.0s' $(seq 1 27))x"
+T_ANT="sk-""ant-api03-$(printf 'c4Z%.0s' $(seq 1 14))"
+T_PVE="ah@pve!run=""12345678-90ab-cdef-1234-567890abcdef"
+for tk in "$T_GH" "$T_PAT" "$T_ANT" "$T_PVE"; do
+  reset_index
+  printf 'note\nsee %s here\n' "$tk" > "$FIX/docs/tok.md"; stage docs/tok.md
+  r sec --staged
+  [ $rc -eq 4 ] && grep -q "docs/tok.md:2 (a token pattern)" <<<"$OUT" && ! grep -qF "$tk" <<<"$OUT" \
+    && ok "a ${tk:0:7}… token in the diff -> exit 4 with file:line, never the token" || bad "token ${tk:0:7}: rc=$rc out=$OUT"
+done
+# What code, docs and tests write in their place passes: shorter than any real token.
+reset_index
+{ printf '%s\n' 'CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat-fixture"' 'Authorization: PVEAPIToken=user@pve!vm=<secret>'
+  printf '%s\n' "PVEAPIToken=ah@pve!probe=TOKEN-0123" "gh""p_short and github""_pat_short"; } > "$FIX/docs/tok.md"
+stage docs/tok.md
+r sec --staged
+[ $rc -eq 0 ] && ok "the placeholders of code, docs and tests are no token" || bad "placeholders: rc=$rc out=$OUT"
+# A placeholder at full length, as docs write one: a body of at most two characters.
+reset_index
+{ printf 'gh%s\n' "p_$(printf 'x%.0s' $(seq 1 36))"; printf 'sk-%s\n' "ant-api03-$(printf 'x%.0s' $(seq 1 40))"
+  printf 'root@pam!monitoring=%s\n' "00000000-0000-0000-0000-000000000000"; printf 'github%s\n' "_pat_$(printf 'xy%.0s' $(seq 1 41))"; } \
+  > "$FIX/docs/tok.md"
+stage docs/tok.md
+r sec --staged
+[ $rc -eq 0 ] && ok "a full-length placeholder (xxxx…, 0000-…) is no token" || bad "full placeholders: rc=$rc out=$OUT"
+reset_index
+
 printf 'ordinary docs\n' >> "$FIX/CHANGELOG.md"
 stage CHANGELOG.md
 r sec --staged
@@ -408,6 +438,16 @@ printf 'x\nDedup-%s: sec:%s\n' Key "server:leak.py:probe" >> "$RFIX/docs/a.md"; 
 rr sec --range "$RCLEAN..HEAD"
 [ $rc -eq 4 ] && grep -q "docs/a.md:4 (commit " <<<"$OUT" && ! grep -q "leak.py" <<<"$OUT" \
   && ok "a security finding's Dedup-Key -> exit 4 with file:line, never the line" || bad "range key: rc=$rc out=$OUT"
+printf 'gh %s\n' "$T_GH" > "$RFIX/docs/tok.md"; rg add -A; rg commit -qm "a token"
+rr sec --range "HEAD~1..HEAD"
+[ $rc -eq 4 ] && grep -q "docs/tok.md:1 (commit .*(a token pattern)" <<<"$OUT" && ! grep -qF "$T_GH" <<<"$OUT" \
+  && ok "a token in a commit of the span -> exit 4 with file:line, never the token" || bad "range token: rc=$rc out=$OUT"
+rg rm -q -- docs/tok.md; rg commit -qm "no token"
+# The message leaves with the push as well (R-0183): it names the commit, never the token.
+rg commit --allow-empty -qm "fix: call the API with $T_GH"
+rr sec --range "HEAD~1..HEAD"
+[ $rc -eq 4 ] && grep -q "the commit message:1 (commit .*(a token pattern)" <<<"$OUT" && ! grep -qF "$T_GH" <<<"$OUT" \
+  && ok "a token in a commit message -> exit 4 naming the commit, never the token" || bad "message token: rc=$rc out=$OUT"
 rr sec --staged --range "$RCLEAN..HEAD"
 [ $rc -eq 2 ] && ok "--staged with --range -> usage error" || bad "staged+range: rc=$rc out=$OUT"
 rr sec --range "$RCLEAN..nosuchref"
@@ -433,6 +473,20 @@ rg commit -qm "a merge that adds a private file"
 rr sec --range "main...feature2"
 [ $rc -eq 4 ] && grep -q "tasks/private/m.md (merge " <<<"$OUT" && grep -q "docs/merge.md:1 (merge " <<<"$OUT" \
   && ok "a merge that adds a private file or a key line itself -> exit 4" || bad "evil merge: rc=$rc out=$OUT"
+rg checkout -q -b feature3 "$RCLEAN"
+printf 'feature three\n' > "$RFIX/docs/f3.md"; rg add -A; rg commit -qm "feature three"
+rg merge -q --no-commit --no-ff main >/dev/null
+printf 'pve %s\n' "$T_PVE" > "$RFIX/docs/mtok.md"; rg add -- docs/mtok.md
+rg commit -qm "a merge that adds a token line"
+rr sec --range "main...feature3"
+[ $rc -eq 4 ] && grep -q "docs/mtok.md:1 (merge .*(a token pattern)" <<<"$OUT" && ! grep -qF "$T_PVE" <<<"$OUT" \
+  && ok "a merge that adds a token line itself -> exit 4, never the token" || bad "token merge: rc=$rc out=$OUT"
+rg checkout -q -b feature4 "$RCLEAN"
+printf 'feature four\n' > "$RFIX/docs/f4.md"; rg add -A; rg commit -qm "feature four"
+rg merge -q --no-ff -m "Merge remote-tracking branch 'origin/main' into feature4" main
+rr sec --range "main...feature4"
+[ $rc -eq 0 ] && ok "a merge message 'Merge remote-tracking branch …' is no finding" || bad "merge message: rc=$rc out=$OUT"
+rg checkout -q feature2
 # A push: commits the remote has already are no part of what leaves.
 rg update-ref refs/remotes/origin/main main
 rr sec --range "$RCLEAN..feature"

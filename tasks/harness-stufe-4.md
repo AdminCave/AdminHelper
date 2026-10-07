@@ -228,6 +228,10 @@ dahin steht der Ledger auf `blockiert`, auch wenn der PR gemergt ist.
       Deny-Liste gilt weiter, die Richtung ist also fail-safe, und bis Stufe 7 ist der
       engere Zustand der bessere. Wenn es so weit ist: `sudo bash scripts/dev/runner-setup.sh --trust`
       — das und nur das macht die 38 Allow-Regeln scharf.
+      Nachtrag 2026-10-05 (Kleinpaket-1 T3): Die 38 Regeln waren die Allow-Liste des Projekts, nicht die
+      des Runners. Ob der Worker (Stufe 7a, nur die Runner-Settings, Sessions in den Lanes) den
+      Trust braucht, misst der Pilot; `--trust` deckt nur `/srv/ah/repo`, nicht die Lanes
+      (DEVELOPMENT.md, „Getrusteter Workspace“).
 - [ ] **(7) Red Team.**
       `sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh`
       — Ausgabe hierher kopieren, vorher **einmal auf Homelab-Namen und Pfade durchsehen**
