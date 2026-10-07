@@ -149,7 +149,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -185,7 +185,8 @@ chmod 600 "$FHOME/.config/adminhelper/pve.env"
 # othertask (changes the ledger's head), apierr (an API error), nojson (no JSON at all),
 # refmove (a harness change and a ref origin/main that already holds it), linger (a
 # child that outlives the loop with stdout and stderr closed, as git maintenance
-# --detach does, then skip).
+# --detach does, then skip), wait (records its pid and sleeps: a session the loop dies
+# under).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -248,6 +249,7 @@ case "$mode" in
   linger)
     ( exec < /dev/null > /dev/null 2>&1; exec sleep 30 ) & echo "$!" > "${FIXTURE_LINGER:?}"
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
+  wait) echo "$$" > "${FIXTURE_SPID:?}"; exec sleep 30 ;;
   mlink)
     mkdir -p .ah-out/scratch/m.1 && ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" .ah-out/scratch/m.1/.ah-scratch
     printf '{"type": "result", "subtype": "error_during_execution", "is_error": true}\n'; exit 1 ;;
@@ -330,6 +332,21 @@ loop --ledger tasks/lng.md
 [ $rc -eq 0 ] && ! grep -q 'another ledger-loop' <<<"$OUT" && grep -q '^übersprungen — Status: bereit in the lane' <<<"$(result lng)" \
   && ok "a child that outlives a run keeps no lock: the next run starts" || bad "lng again: rc=$rc $(result lng)"
 kill "$LPID" 2>/dev/null
+# A loop killed by a signal (tmux kill-session) leaves its session running under
+# timeout: that session keeps the lock, and the next run stops instead of building
+# beside it in the same lane.
+export FIXTURE_SPID="$WORK/session.pid"
+seq_set wait
+( cd "$CLONE" && exec env HOME="$FHOME" PATH=/usr/bin:/bin AH_LOOP_DIR="$LOOPD" AH_LOOP_CLAUDE_SUM="$WORK/claude.sha256" \
+    bash scripts/dev/ledger-loop.sh --ledger tasks/sig.md > "$WORK/sig.out" 2>&1 ) & SIGLOOP=$!
+for _ in $(seq 1 300); do [ -s "$FIXTURE_SPID" ] && break; sleep 0.1; done
+SPID="$(cat "$FIXTURE_SPID" 2>/dev/null)"
+kill -HUP "$SIGLOOP"; wait "$SIGLOOP" 2>/dev/null
+loop --ledger tasks/sig.md
+[ -n "$SPID" ] && kill -0 "$SPID" 2>/dev/null && [ $rc -eq 74 ] && grep -q 'another ledger-loop' <<<"$OUT" \
+  && ok "a loop killed under a running session leaves it the lock: the next run stops" || bad "sig: rc=$rc session=${SPID:-none}"
+kill "$SPID" 2>/dev/null
+flock -w 30 "$LOOPD/loop.lock" true || bad "the session of sig still holds the lock 30 s after it was killed"
 
 echo "── per ledger ──"
 FIXTURE_RED=server loop --ledger tasks/good.md --ledger tasks/nofreig.md --ledger tasks/hx.md --ledger tasks/hpath.md --ledger tasks/red.md

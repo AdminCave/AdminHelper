@@ -214,7 +214,7 @@ ledger_result() {  # ledger_result <slug> <result> [<reason>]
   log "$1: $2${3:+ — $3}"
 }
 # finish — summary-<date>.md from state.json and this process's counts; its last line
-# goes to the log.
+# goes to the log. The run's regular end: the lock goes with it (see the flock below).
 finish() {
   local line
   line="$(python3 - "$STATE" "$LOOP/summary-$(date +%Y-%m-%d-%H%M%S).md" "$TASKS_DONE" "$RUN_COST" <<'PY'
@@ -256,8 +256,9 @@ with open(out, "w") as f:
     f.write("\n".join(lines) + "\n")
 print(lines[-1])
 PY
-)" || { echo "ledger-loop.sh: the summary could not be written" >&2; return; }
+)" || { echo "ledger-loop.sh: the summary could not be written" >&2; flock -u 9; return; }
   log "$line"
+  flock -u 9
 }
 stop_infra() {
   state 's["stop"] = "infra"; s["stop_reason"] = a[0]' "$1"
@@ -301,10 +302,11 @@ if ! flock -n 9; then
   exit 74
 fi
 # Every child is born with fd 9, and one that outlives the run keeps the lock with it:
-# git commit leaves `git maintenance run --auto --detach` behind, and the next run
-# would stop on a lock nobody runs under (R-0200). A flock lock belongs to the open
-# file description, so unlocking it here frees it for every copy of the descriptor.
-trap 'flock -u 9' EXIT
+# git commit (2.47 and later) can leave `git maintenance run --auto --detach` behind
+# for a moment, and the next run would stop on it (R-0200). A flock lock belongs to
+# the open file description, so finish() unlocks it for every copy at the run's
+# regular end. Not in an EXIT trap: a loop killed by a signal leaves its build session
+# running under timeout, and that session must keep the lock until it ends.
 state 's.clear(); s["run"] = {"started": now, "pid": int(a[0]), "flags": dict(zip(
   ("max_hours", "max_tasks", "max_budget_usd", "max_ready", "task_minutes", "task_turns", "task_budget"),
   map(float, a[1:8]))), "ledgers": a[8:]}; s["stop"] = None' \

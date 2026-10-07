@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ledger_loop_test: der Fall r1q flakt in der CI (R-0200) — Task-Ledger
-Status: aktiv · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-07 (kleines Fund-Paket aus der von Kevin am 2026-10-06 angenommenen Zeile R-0200; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0200 (Kurz-Ledger ohne Spec)
 Heavy: none — ein hermetischer Harness-Test und gegebenenfalls `scripts/dev/ledger-loop.sh`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -39,8 +39,10 @@ ist ein Fehler, den wir beheben, nicht wegwiederholen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — Nachbesserung aus dem Review am Ende: die Sperre fällt am regulären Ende, nicht im EXIT-Trap (R-0200)  [ ]
+### T2 — Nachbesserung aus dem Review am Ende: die Sperre fällt am regulären Ende, nicht im EXIT-Trap (R-0200)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eac6e8d9 2026-10-07T12:07:32+02:00
+Review: Review am Ende (Kurz-Ledger), Runde 2 folgt
 Änderung: Angelegt 2026-10-07 aus dem Review am Ende (Opus, request_changes). wichtig: Der EXIT-Trap aus T1 läuft
 auch, wenn der Loop an SIGHUP oder SIGTERM stirbt (`tmux kill-session`). Die Bau-Session unter `timeout` (eigene
 Prozessgruppe) läuft dann weiter, und ein sofort neu gestarteter Loop bekäme die Sperre und könnte neben ihr in
