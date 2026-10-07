@@ -97,21 +97,6 @@ pub fn reset_device_identity(server_url: String) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Enroll this device for mTLS: mint an access-scoped token (using the session
-/// JWT), generate an on-device key + CSR, and fetch + store the client cert from
-/// the ca-issuer (A5). The cert is presented on later requests by build_client
-/// (next increment). Idempotent from the user's view — re-running re-enrolls.
-#[tauri::command]
-pub async fn enroll_device(
-    app: tauri::AppHandle,
-    server_url: String,
-    token: String,
-    allow_self_signed: Option<bool>,
-) -> Result<(), AppError> {
-    let self_signed = self_signed_setting(&app, allow_self_signed);
-    enrollment::enroll(&server_url, &token, self_signed).await
-}
-
 /// Decoupled enrollment (ADR 0003): enroll using a one-time token an admin minted
 /// out-of-band and handed over, WITHOUT a prior login. Lets a brand-new client
 /// obtain its cert under enforced mTLS, where it cannot reach the login on :443.

@@ -351,7 +351,7 @@ fi
 # checkout together with what it measures against: runner-env.sh, the pinned model
 # (runner-settings.json) and CLI version (runner-claude.version). The red team reads
 # all of it from its own directory, never from the clone (R-0152).
-step "red team in $LIB_DIR (root:root 0755; runner-redteam.sh 0755, the rest 0644)"
+step "red team and harness guard in $LIB_DIR (root:root 0755; the two scripts 0755, the rest 0644)"
 no_symlink_in "$LIB_DIR"
 run install -d -o root -g root -m 755 "$LIB_DIR"
 for f in runner-redteam.sh runner-env.sh runner-settings.json runner-claude.version; do
@@ -359,6 +359,12 @@ for f in runner-redteam.sh runner-env.sh runner-settings.json runner-claude.vers
   case "$f" in runner-redteam.sh) mode=755 ;; *) mode=644 ;; esac   # runner-env.sh is sourced
   run install -o root -g root -m "$mode" "$ROOT/scripts/dev/$f" "$LIB_DIR/$f"
 done
+# The runner's PreToolUse hook runs this copy (runner-settings.json), not the
+# clone's: the guard is what keeps the runner off the harness, so the runner must
+# not be the one who can change it (R-0164). It reads the harness list from the
+# project it guards (CLAUDE_PROJECT_DIR).
+no_symlink_in "$LIB_DIR/harness-guard.sh"
+run install -o root -g root -m 755 "$ROOT/scripts/dev/hooks/harness-guard.sh" "$LIB_DIR/harness-guard.sh"
 
 # The hypervisor the red team's probe 4 asks (R-0156): URL, node, pool and CA —
 # never the token, which is the runner's own and what the probe measures. Root's,
@@ -446,8 +452,11 @@ run_sh "install -o $RUNNER -g $RUNNER -m 600 $(printf '%q' "$ROOT/scripts/dev/ru
 # adminhelper-runner it says so out loud: "Ignoring 38 permissions.allow entries
 # … this workspace has not been trusted" (seen 2026-09-22). That direction is
 # fail-safe, the DENY list keeps working, so this stays OFF unless it is asked
-# for: accepting the trust is what arms those 38 allow rules, and that is Kevin's
-# call, not a side effect of provisioning. From stage 7 on the runner needs it.
+# for: accepting the trust is what arms a project's allow rules (the 38 were the
+# project's, not the runner's), and that is Kevin's call, not a side effect of
+# provisioning. Whether the worker needs it is not verified: it loads only the
+# runner's settings and works in the lanes, which this flag does not cover; the
+# pilot measures it (DEVELOPMENT.md, the trusted workspace).
 step "trusted workspace for $SRV/repo (only with --trust)"
 if [ "$TRUST" = 1 ]; then
   # Same reason as everywhere else in this script: the runner OWNS its home, so
@@ -477,7 +486,7 @@ PY"
   run_sh "chown $RUNNER:$RUNNER $(printf '%q' "$HOME_DIR/.claude.json")"
   run_sh "chmod 600 $(printf '%q' "$HOME_DIR/.claude.json")"
 else
-  note "not done — run again with --trust when the runner's allow rules should apply (DEVELOPMENT.md)"
+  note "not done — the pilot measures whether the worker needs it; --trust covers $SRV/repo, not the lanes, so whether to run again with --trust is Kevin's call (DEVELOPMENT.md)"
 fi
 
 # The CLI is pinned like every other toolchain in this repo (frp, oasdiff, Go, ruff):

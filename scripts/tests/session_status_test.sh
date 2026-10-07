@@ -30,6 +30,8 @@ unset AH_OUT_DIR
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
 HOOK="$REPO_ROOT/scripts/dev/hooks/session-status.sh"
+# Never the runner's real state (/srv/ah/loop on this box): each case names its file.
+export AH_LOOP_STATE=/nonexistent/state.json
 
 PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
@@ -168,7 +170,7 @@ grep -qF "Unterpunkt" <<<"$OUT" && bad "roadmap: an indented sub-item became a p
 grep -qxF "WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 0/20 · ALT: 0" <<<"$OUT" \
   && ok "WIP: the counters from roadmap.py, no cap reached, no Warnung" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
 grep -qF "## Danach" <<<"$OUT" && bad "roadmap: next section leaked" || ok "roadmap: stops at next section"
-grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: $NEW_DAY (3 d): UNVERIFIED (doctor red) · Worker: — (ab 7)" <<<"$OUT" \
+grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: $NEW_DAY (3 d): UNVERIFIED (doctor red) · Worker: —" <<<"$OUT" \
   && ok "line 4: ledgers + PRs + weekly verdict" || bad "line 4: $(grep -m1 '^Ledger' <<<"$OUT")"
 grep -qF "Wochenlauf: $OLD_DAY" <<<"$OUT" \
   && bad "line 4: the older report won" || ok "line 4: the newest report wins"
@@ -176,6 +178,21 @@ grep -qF "Wochenlauf: kein Report" <<<"$OUT" \
   && bad "line 4: a run in progress hid the last verdict" \
   || ok "line 4: a verdict-less newest directory does not hide the last report"
 grep -qxF "VMs: warm.env desktop=warmbox-7" <<<"$OUT" && ok "line 5: warm.env" || bad "line 5: $(grep -m1 '^VMs:' <<<"$OUT")"
+
+# The worker's state, read as a file through ledger-loop.sh status of this checkout.
+WS="$WORK/loopstate"; mkdir -p "$WS"
+worker() { printf '%s' "$1" > "$WS/state.json"; OUT=$(AH_LOOP_STATE="$WS/state.json" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' run_hook "$DIRTY"); }
+worker '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": null, "cost_usd": 4.1, "task": {"ledger": "tasks/x.md", "id": "T3", "of": 8}}'
+grep -q ' · Worker: läuft T3/8 tasks/x.md · 4,10 \$ · seit 01:12$' <<<"$OUT" \
+  && ok "worker running: task of the ledger, cost, since when" || bad "worker running: $(grep -m1 '^Ledger' <<<"$OUT")"
+worker '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": "ledger-leer", "updated": "2026-10-04T06:40:00+02:00"}'
+grep -q ' · Worker: stop: ledger-leer 06:40$' <<<"$OUT" && ok "worker stopped: its class and the time" || bad "worker stop: $(grep -m1 '^Ledger' <<<"$OUT")"
+worker 'not json'
+grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
+  && ok "a broken state.json: named, and the hook goes on" || bad "worker broken: $OUT"
+worker '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}'
+grep -q ' · Worker: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
+  && ok "control characters in the ledger name are removed" || bad "worker control chars: $(cat -v <<<"$OUT" | grep -m1 '^Ledger')"
 
 # the seven triggers, one WARN line each
 grep -q '^WARN: .*tauri.conf.json 0.46.0, kein Tag v0.46.0' <<<"$OUT" && ok "trigger: bump without tag" || bad "trigger: bump without tag"

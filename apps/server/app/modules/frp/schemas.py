@@ -199,7 +199,7 @@ class FrpTunnelUpdate(RequestModel):
 # Key for key what FrpServerConfig.to_dict / FrpTunnel.to_dict hand out (R-0043): Pydantic
 # drops a key the model does not declare without a word. Nullable columns are Optional
 # (authToken and dashboardPassword also because every response but the create masks them),
-# and the timestamps stay the isoformat() strings to_dict builds.
+# and the timestamps stay the strings to_dict builds (iso_utc: UTC with Z, R-0064).
 
 
 class FrpServerConfigOut(BaseModel):

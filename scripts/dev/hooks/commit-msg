@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# commit-msg — git hook: `review.sh sec --message` over the message of a
+# `git commit` or a merge commit of `git merge` (R-0197). Only those two run it
+# (githooks(5)); cherry-pick, revert, rebase and `git am` leave their messages to
+# pre-push and the CI guard.
+#
+# pre-commit reads only what is staged; the message came into view with pre-push
+# and the CI guard (`--range`, R-0183), when the commit already lay in the local
+# history. git hands over the message file ($1); review.sh reads all of it but,
+# with `commit -v`, the diff below the scissors line.
+# `git commit --no-verify` skips this hook like pre-commit; the harness guard
+# refuses that flag (R-0102).
+#
+# Exit ≠ 0 aborts the commit: 4 for a finding, anything else when review.sh could
+# not run — fail closed, like pre-commit.
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
+exec bash "$ROOT/scripts/dev/review.sh" sec --message "${1:?commit-msg: git passes the message file}"

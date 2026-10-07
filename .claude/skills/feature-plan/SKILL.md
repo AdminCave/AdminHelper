@@ -79,9 +79,9 @@ nutzen; bei einem Report-Backlog zeigt das Feld auf den Report statt auf eine Sp
 Roadmap-ID dahinter ist die Zeile, die das Gate anlegt (4) und der `feature-build` den Status
 nachzieht — ohne sie bleibt die Zeile über Bau und PR hinweg stehen.)
 (`Status:` = Ledger-Zustand in der Folge `geplant` → `freigegeben` → `aktiv` → `bereit` →
-`erledigt`, daneben `blockiert` (tasks/README.md). `feature-plan` schreibt `geplant`; Kevins
-Freigabe am Gate macht daraus `freigegeben`, der Start von `/feature-build` `aktiv`. Nicht mit
-dem Task-Status `[ ]`/`[x]` verwechseln.)
+`erledigt`, daneben `blockiert` (tasks/README.md). `feature-plan` schreibt `geplant`; die
+Freigabe am Gate (CLAUDE.md §2) macht daraus `freigegeben`, der Start von `/feature-build`
+`aktiv`. Nicht mit dem Task-Status `[ ]`/`[x]` verwechseln.)
 (`Review:` = wann der Frischer-Kontext-Review läuft. `pro Task (feature-review)` ist der
 Default. Ein **Kurz-Ledger** mit **≤ 3 Tasks** bekommt stattdessen `Review: am Ende` —
 `feature-build` fährt dann genau **einen** Review über den ganzen Branch-Diff und lässt den
@@ -127,7 +127,14 @@ Komponente: apps/… · Dateien: …
 Verify: bash scripts/dev/verify.sh <komponente> --strict     (oder: bash scripts/tests/run.sh <layer> --strict --only <keys…>)
 Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
 Abhängt von: T<k>   (nur falls nötig)
+Test-Löschung: <datei>::<test> — <Grund>        (nur falls nötig: ein ganzer Test geht)
+Assertion-Änderung: <datei>::<test> — <Grund>   (nur falls nötig: eine Assertion eines bleibenden Tests ändert sich)
 ```
+**Bestehende Assertions:** Löscht eine Task einen ganzen Test oder ändert sie eine Assertion in einem
+Test, der bleibt (auch in einem Helfer einer Testdatei), kündigt der Plan das in der Task an
+(`Test-Löschung:` bzw. `Assertion-Änderung:`, Regeln in `tasks/README.md`). `diff-scan` lässt es nur mit
+der **committeten** Ankündigung durch, und der Plan-Commit am Gate ist der Weg dorthin; unterwegs lässt
+sie sich nicht nachtragen. Eine Regel wie „den Zähler je Task anheben“ ist genau so ein Fall.
 
 ## 3a. Die kurzen Wege: `--kurz` und `--bundle`
 
@@ -173,7 +180,7 @@ Abhängt von: T<k>   (nur falls nötig)
   (bei REF meist Klasse B oder C: `Metrik:`, `Orakel:`).
 
 Beide Wege enden am **selben Gate** (4): Roadmap-Zeilen auf `geplant`, der Plan als erster
-Commit auf `feature/<slug>`, Präsentation, Freigabe nur mit Kevins Wort. Beim Bündel gilt jeder
+Commit auf `feature/<slug>`, Präsentation, Freigabe (CLAUDE.md §2). Beim Bündel gilt jeder
 Roadmap-Schritt des Gates **für jede enthaltene Zeile**: `roadmap.py status R-x geplant --ledger
 tasks/<slug>.md` je Zeile, und bei der Freigabe `roadmap.py approve R-x` je Zeile (beide Verben
 nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl sie gebaut ist.
@@ -189,7 +196,9 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   tasks/<slug>.md` — der Pfad gehört in die Spalte `Ledger`, dort lesen ihn `next` und die
   Parallel-Prüfung; derselbe Status füllt nur die Spalte. Nie ein Edit an der Datei.
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
-  stagen, `bash scripts/dev/review.sh sec --staged` (Exit 4: etwas darf nie in dieses
+  stagen, `bash scripts/dev/ledger.sh lint tasks/<slug>.md` (prüft das Ledger und die Spec aus
+  seinem `Spec:`-Feld, auch auf Reste eines Werkzeugaufrufs; Exit 1: beheben, dann erst
+  committen), `bash scripts/dev/review.sh sec --staged` (Exit 4: etwas darf nie in dieses
   öffentliche Repo — nicht committen, melden), dann committen (Ledger mit `Status: geplant`),
   zurück mit `git switch main` — der Haupt-Checkout
   bleibt auf `main`. Die Commit-Nachricht ist `chore(plan): add spec + ledger for <slug>`, bei
@@ -226,9 +235,11 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   prüfen/anpassen. Zum Bauen nach der Freigabe: **`/feature-build tasks/<slug>.md`** auf
   `feature/<slug>` in einer Opus-Session — oder als parallele Lane
   **`bash scripts/dev/lane.sh new <slug>`** (AUTONOMOUS.md „Parallel-Betrieb")."
-- **Die Freigabe** ist Kevins Wort (nächster User-Turn). Dann und nur dann:
+- **Die Freigabe** ist Kevins Wort (nächster User-Turn); ein kleines Fund-Paket gibt die
+  Aufsichts-Session frei (CLAUDE.md §2 „Entscheidungen“). Alles, was Kevin nach §2 (1)–(7)
+  entscheidet, gibt immer er frei, auch jeden Stufen-Plan. Erst mit der Freigabe:
   `python3 scripts/dev/roadmap.py approve R-nnnn` und ein Commit auf `feature/<slug>`, der den
-  Ledger-Kopf auf `Status: freigegeben` setzt (`chore(plan): approve <slug>`). Ohne sein
-  Wort bleibt beides `geplant`.
+  Ledger-Kopf auf `Status: freigegeben` setzt (`chore(plan): approve <slug>`) und die Zeile
+  `Freigabe:` trägt. Ohne sie bleibt beides `geplant`.
 - **Implementiere nichts.** Diese Phase endet hier: kein Produktivcode, kein weiterer Branch,
   nichts auf `main`.

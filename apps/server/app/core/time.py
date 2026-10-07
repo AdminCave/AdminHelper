@@ -18,7 +18,9 @@ know which world a column belongs to. New tz-naive columns should use these help
 """
 
 from datetime import datetime, timezone
+from typing import Annotated
 
+from pydantic import PlainSerializer, WithJsonSchema
 from sqlalchemy import func
 
 
@@ -35,5 +37,28 @@ def utc_now_sql():
     regardless of the database session's timezone. A bare ``func.now()`` coerces in
     the session TZ, and the stack runs the postgres container with
     ``TZ=Europe/Berlin`` — so ``server_default=func.now()`` stored Berlin local time
-    while the application writes UTC via ``utcnow_naive()`` (8.14)."""
+    while the application writes UTC via ``utcnow_naive()`` (8.14). Since R-0209
+    every server session runs in UTC (``app.core.database``), but this explicit form
+    stays: it does not depend on the session, and the other services' engines do
+    not set it."""
     return func.timezone("UTC", func.now())
+
+
+def iso_utc(dt: datetime | None) -> str | None:
+    """RFC 3339 in UTC with ``Z`` — what the API promises with ``format: date-time``
+    (R-0064). A naive value is UTC by the storage convention above; an aware one,
+    as a timestamptz column hands it out in the session's zone, is converted."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().removesuffix("+00:00") + "Z"
+
+
+# A response field that is written with iso_utc(). The JSON schema stays
+# string/date-time: a bare PlainSerializer would turn it into a plain string.
+UtcDatetime = Annotated[
+    datetime,
+    PlainSerializer(iso_utc, return_type=str, when_used="json"),
+    WithJsonSchema({"type": "string", "format": "date-time"}, mode="serialization"),
+]

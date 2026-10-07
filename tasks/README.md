@@ -18,8 +18,8 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 
 | `Status:` | Bedeutung |
 |---|---|
-| `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Interaktiv startet `/feature-build` es weiterhin mit ausdrücklichem Pfad (setzt auf `aktiv`). |
-| `freigegeben` | Kevin hat am Design-Gate freigegeben: `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
+| `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Nur auf Kevins eigenes Wort startet `/feature-build` es mit ausdrücklichem Pfad (setzt auf `aktiv`), nie auf Auftrag einer anderen Session (CLAUDE.md §2). |
+| `freigegeben` | am Design-Gate freigegeben (CLAUDE.md §2: Kevin, bei kleinen Fund-Paketen die Aufsichts-Session; die Zeile `Freigabe:` nennt wer): `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
 | `aktiv` | wird gebaut. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
 | `bereit` | alle Tasks sind zu; der Abschluss von `feature-build` (Schnellcheck, schwere Suite, Branch-Review) und der PR stehen aus. |
 | `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. Bleibt als Historie liegen. |
@@ -69,7 +69,9 @@ bash scripts/dev/ledger.sh set-files <ledger> <id> <pfad…>        # Dateien: e
 bash scripts/dev/ledger.sh status                                  # Übersicht aller Ledger
 bash scripts/dev/ledger.sh status <ledger> <wert>                  # Kopf-Status setzen
 bash scripts/dev/ledger.sh new-task <ledger> --title "…"           # aus tasks/templates/task.md
-bash scripts/dev/ledger.sh lint <ledger>                           # Verify-Präfix, [x] ohne Evidenz, Invariante
+bash scripts/dev/ledger.sh lint <ledger>                           # Verify-Präfix, [x] ohne Evidenz, Invariante,
+                                                                   # Reste eines Werkzeugaufrufs in Ledger und Spec
+                                                                   # (auch die Hülle und die zurückgegebene Ausgabe)
 ```
 
 `<ledger>` ist der Pfad oder der reine Slug (`harness-stufe-4`), `<id>` die Task-Kennung aus
@@ -117,7 +119,8 @@ Dateien, nicht am Diff-Text:
    fällt daran auf.
 6. **Die Assertion gehört zu genau diesem Test.** Ihre alte Zeilennummer liegt im Rumpf des
    angekündigten Tests im alten Stand. Eine Assertion aus einem Test, der stehen bleibt,
-   bleibt ein Fund, angekündigt oder nicht.
+   bleibt ein Fund, außer die Task kündigt die Änderung als `Assertion-Änderung:` an (nächster
+   Abschnitt).
 
 `review.sh` liest jeden Diff mit `--text --no-ext-diff --no-textconv --no-color`: eine
 `.gitattributes` mit `-diff` oder ein Diff-Treiber darf eine Testdatei nicht zu „Binary files
@@ -131,6 +134,65 @@ im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das i
 über den Code und gehört repariert oder als `[?]` vor Kevin, nicht gelöscht.
 `ledger.sh lint` prüft die Form: `<pfad>::<name> — <Grund>`, **der Grund ist Pflicht**. Eine
 Löschung, die niemand begründet, ist genau das, was das Gate verhindern soll.
+
+## `Assertion-Änderung:` — eine Assertion ändert sich in einem Test, der bleibt
+
+Wird eine Assertion in einem bleibenden Test schärfer, oder wechselt ihr Sollwert die Form, sieht
+`diff-scan` eine gelöschte Assertion und eine neue (R-0206). Die Task kündigt das an:
+
+```
+Assertion-Änderung: <datei>::<test> — <Grund>[; <datei>::<test> — <Grund> …]
+```
+
+Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte Assertion nur, wenn
+**alles** gilt, geprüft am Inhalt der Dateien:
+
+1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** Dieselbe Sperre wie bei
+   `Test-Löschung:`: `task-close.sh` verweigert (Exit 4), sobald sich eine der beiden Zeilenarten
+   gegenüber `HEAD` ändert. Die Ankündigung kommt mit dem Plan-Commit ans Gate.
+2. **Sie trägt einen Grund.** `ledger.sh lint` prüft die Form wie bei `Test-Löschung:`; ohne
+   Grund ist die Zeile ein Fehler.
+3. **Der Test bleibt, und er ist eindeutig.** Im alten **und** im neuen Stand gibt es genau einen Test
+   dieses Namens. Teilen sich zwei Klassen oder `describe`-Blöcke einen Namen, zählt die Ankündigung
+   nicht.
+4. **Keine Spanne hält einen zweiten Test**, weder im alten noch im neuen Stand, und die Datei wird im
+   selben Diff nicht umbenannt.
+5. **Die Assertion gehört zu genau diesem Test:** Ihre alte Zeile liegt in seiner alten Spanne.
+6. **Geändert, nicht weggenommen:** Die neue Spanne trägt mindestens so viele hinzugefügte Assertions,
+   wie die alte verliert (n ≥ r; gezählt werden Zeilen mit einer Assertion). Eine Assertion, die nur in
+   einem Kommentar steht, am Zeilenanfang oder hinter Code, zählt nicht.
+
+**Ein Helfer** in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.py|go|sh`,
+`*.test.*`, `*.spec.*`) darf ebenso angekündigt werden, denn oft steht die Assertion dort und nicht
+im Test, der ihn ruft:
+- pytest `def <name>(`, auch als Methode;
+- Go `func <name>(` ohne Receiver;
+- Rust `fn <name>` ohne `#[test]`;
+- vitest/jest `function <name>(`.
+
+Pfeil-Funktionen (`const name = … =>`) nicht, ihre Formen sind zu vielfältig für ein Muster. Es
+gelten dieselben Regeln. Der Schutz gegen einen zweiten Test in der Spanne zählt nur Testköpfe, ein
+in den Test geschachtelter Fake stört also nicht. Eine Ankündigung für einen Helfer gilt für jeden
+Test, der ihn ruft; die Clean-Zeile sagt das mit `(helper, …)`, damit der Review den Radius sieht.
+
+Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared assertion change(s):
+<datei>::<test> (1 removed, 1 added))`), und bei einem Fund, warum eine Ankündigung nicht zählte.
+
+**Passt:** Eine Assertion wird schärfer, oder ihr Sollwert wechselt die Form (ein Zeitstempel trägt
+jetzt `Z`). **Passt nicht:** eine rote Assertion abschwächen, damit der Test grün wird. Das ist ein
+Befund über den Code. Mehrere Assertions zu einer zusammenzulegen scheitert an n ≥ r und bleibt ein
+Commit von Hand auf Kevins Wort.
+
+**Was der Scan nicht sieht:** ob die neue Assertion so streng ist wie die alte (auch `assert True`
+zählt als Assertion); das prüft der Review. Und ein Testkopf in einem Kommentar oder String kann eine
+Spanne verschieben: Nennt eine Ankündigung genau diesen Namen, gingen entfernte Assertions des
+Nachbartests durch, sobald dort neue dazukommen. Ebenso kann die Spanne eines Helfers bei schiefer
+Einrückung einen zweiten Helfer schlucken, denn der Schutz gegen eine zu weite Spanne zählt nur
+Testköpfe. Dagegen schützen nur das Gate (die Ankündigung kommt committet aus dem Plan) und der Review.
+Kevin nimmt das Restrisiko hin (2026-10-06). Ein Ledger ist nur `tasks/*.md`, ohne `tasks/README.md` und
+`tasks/templates/`: genau das, was die Commit-Prüfung von `task-close.sh` schützt. `diff-scan --task` und
+`task-close.sh` lehnen alles andere ab (Exit 2), eine Ankündigung in der CHANGELOG oder einer Spec gewährt
+nichts.
 
 ## Beweis-Konvention — was eine Task belegt
 
@@ -189,7 +251,7 @@ führt die Zeilen im Kopfkommentar auf; `new-task` hängt sie nicht an.
   `Verify: bash scripts/dev/verify.sh <komponente> --strict`, dazu ein Beweis-Absatz über die
   drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit). Komponente (auch im
   Platzhalter) und `Semantik:` ergänzt `/feature-plan --kurz` aus der Roadmap-Zeile;
-  die Freigabe bleibt Kevins Haken, danach ist es ein Ledger wie jedes andere. Die zugehörige
+  die Freigabe folgt CLAUDE.md §2 „Entscheidungen“, danach ist es ein Ledger wie jedes andere. Die zugehörige
   Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
 - **`harness-stufe-1.md`** — `Status: erledigt` (gemergt, PR #11). Stufe 1 der Autonomie-Roadmap („Grün heißt
   Beweis"): SKIP wird Exit 75, `run.sh` bekommt `--strict`/`--only`/`--step`, dazu `verify.sh`,

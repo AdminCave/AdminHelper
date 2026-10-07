@@ -7,7 +7,7 @@
 #
 #   bash scripts/dev/task-close.sh <ledger> <id> -m "<message>"
 #   bash scripts/dev/task-close.sh <ledger> <id> --message-file <file>
-#     [--stage] [--review none|verdict:<json>|auto] [--review-note "<text>"]
+#     [--stage] [--review none|verdict:<json>|auto [--round <1|2>]] [--review-note "<text>"]
 #
 # --stage stages exactly the paths the task declares in its `Dateien:` line —
 # nothing else, and never `git add -A`. The runner may not run `git add` at all
@@ -69,7 +69,7 @@ usage() { sed -n '/^#   bash scripts\/dev\/task-close.sh/,/^# Until this stage/p
 die()   { echo "task-close: $*" >&2; exit 2; }
 infra() { echo "task-close: $*" >&2; exit 74; }
 
-LEDGER="" ID="" MSG="" MSGFILE="" REVIEW="none" REVIEW_NOTE="" STAGE=0
+LEDGER="" ID="" MSG="" MSGFILE="" REVIEW="none" REVIEW_NOTE="" STAGE=0 ROUND_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --stage)        STAGE=1 ;;
@@ -77,6 +77,7 @@ while [ $# -gt 0 ]; do
     --message-file) shift; MSGFILE="${1-}" ;;
     --review)       shift; REVIEW="${1-}" ;;
     --review-note)  shift; REVIEW_NOTE="${1-}" ;;
+    --round)        shift; ROUND_ARG="${1-}" ;;
     -h|--help)      usage; exit 0 ;;
     --*)            die "unknown flag: $1" ;;
     *)              if [ -z "$LEDGER" ]; then LEDGER="$1"
@@ -88,11 +89,35 @@ done
 [ -n "$LEDGER" ] && [ -n "$ID" ] || { echo "task-close needs <ledger> <id>" >&2; usage >&2; exit 2; }
 case "$LEDGER" in */*) ;; *) LEDGER="tasks/$LEDGER" ;; esac
 case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
+# A ledger is exactly what the commit check below guards: tasks/*.md without the
+# README (it shows the syntax of both declarations) and the template. Anything
+# else, the CHANGELOG or a spec, could carry a task section past that check
+# (R-0206; for Test-Löschung that way was open since R-0079).
+case "$(realpath -m --relative-to=. -- "$LEDGER")" in
+  tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $LEDGER" ;;
+  tasks/*.md) ;;
+  *) die "not a ledger: $LEDGER" ;;
+esac
 [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"
 
-# A declared test deletion (Test-Löschung:) counts only once it is committed, and
+# R-0167: where the reviewer is task-close's own process, nobody hands in a verdict
+# of their own — a ledger whose head says `Review: auto`, and every autonomous run.
+# There the worker counts the rounds itself and names them (R-0170): files under
+# .ah-out/review/ can be written by any code the run executes.
+case "$ROUND_ARG" in ""|1|2) ;; *) die "--round is 1 or 2, got '$ROUND_ARG'" ;; esac
+[ -z "$ROUND_ARG" ] || [ "$REVIEW" = auto ] || die "--round goes with --review auto"
+if [ "$REVIEW" != auto ]; then
+  sed '/^###[[:space:]]/,$d' "$LEDGER" | grep -qE 'Review:[[:space:]]*auto([[:space:]·]|$)' \
+    && die "the head of $LEDGER says Review: auto — close with --review auto, not '$REVIEW'"
+  [ "${AH_AUTONOMOUS:-0}" != 1 ] || die "an autonomous run closes with --review auto only, not '$REVIEW'"
+elif [ "${AH_AUTONOMOUS:-0}" = 1 ] && [ -z "$ROUND_ARG" ]; then
+  die "an autonomous run names the round (--round <1|2>): the worker counts it, not the files of .ah-out/review"
+fi
+
+# A declared test deletion (Test-Löschung:) or assertion change (Assertion-Änderung:,
+# R-0206) counts only once it is committed, and
 # this script must not be the way it gets committed: it stages the whole ledger,
 # so a builder could write the line while closing one task and use it in the next
 # (adversarial review, 2026-09-25). The declaration comes with the plan commit at
@@ -102,9 +127,9 @@ case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
 # UTF-8 locale while awk and python still read it. The check that carries is the
 # one on the finished commit, at the end: it also covers the ledger changing
 # while the suite runs and a declaration in any other staged ledger.
-decl_lines() { LC_ALL=C grep -aE '^Test-Löschung:' || true; }  # review: ok no match is an empty list, not a failure
+decl_lines() { LC_ALL=C grep -aE '^(Test-Löschung|Assertion-Änderung):' || true; }  # review: ok no match is an empty list, not a failure
 if [ "$(git show "HEAD:$LEDGER" 2>/dev/null | decl_lines)" != "$(decl_lines < "$LEDGER")" ]; then
-  echo "task-close: the Test-Löschung: lines of $LEDGER differ from the committed ones —" >&2
+  echo "task-close: the Test-Löschung:/Assertion-Änderung: lines of $LEDGER differ from the committed ones —" >&2
   echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
   exit 4
 fi
@@ -197,7 +222,9 @@ INDEX_TREE="$(git write-tree)" || infra "git write-tree failed"
 
 # ── 2. the cheap reviews, before the suite (R-0150) ──────────────────────────
 # --task: a test the task declares as deleted (Test-Löschung:) may take its
-# assertions with it; anything else that silences a test is still a finding.
+# assertions with it, and one it declares as changed (Assertion-Änderung:) may
+# trade them for at least as many; anything else that silences a test is still
+# a finding.
 bash scripts/dev/review.sh diff-scan --staged --task "$LEDGER" "$ID" || {
   rc=$?
   [ "$rc" = 2 ] && die "review.sh diff-scan could not run"
@@ -340,8 +367,17 @@ case "$REVIEW" in
     # does.
     VDIR="$ROOT/.ah-out/review/$(basename "$LEDGER" .md)"
     ROUND=1 PRIOR=() LAST=""
-    [ -e "$VDIR/$ID.r1.verdict.json" ] && LAST="$VDIR/$ID.r1.verdict.json" ROUND=2 PRIOR=(--prior "$LAST")
-    [ -e "$VDIR/$ID.r2.verdict.json" ] && LAST="$VDIR/$ID.r2.verdict.json" ROUND=3
+    if [ -n "$ROUND_ARG" ]; then
+      # Named by the worker: no file decides the round, and none is taken over.
+      ROUND="$ROUND_ARG"
+      if [ "$ROUND" = 2 ]; then
+        [ -e "$VDIR/$ID.r1.verdict.json" ] || die "round 2 without round 1's verdict ($VDIR/$ID.r1.verdict.json)"
+        PRIOR=(--prior "$VDIR/$ID.r1.verdict.json")
+      fi
+    else
+      [ -e "$VDIR/$ID.r1.verdict.json" ] && LAST="$VDIR/$ID.r1.verdict.json" ROUND=2 PRIOR=(--prior "$LAST")
+      [ -e "$VDIR/$ID.r2.verdict.json" ] && LAST="$VDIR/$ID.r2.verdict.json" ROUND=3
+    fi
     # What the reviewer is shown: the staged diff, without this ledger (a close
     # that broke off has staged it already). The tree hash is the worktree's
     # and does not tell a file staged since.
@@ -388,6 +424,11 @@ case "$REVIEW" in
       # measurement, not a gate — a log that cannot be written stops nothing.
       if [ "$rc" = 0 ]; then
         bash scripts/dev/review.sh log --append "$VJSON" || echo "task-close: the review log was not written" >&2
+        # The worker adds the reviewer to its run's budget from this line: its own
+        # log of this process, written after the suite (the last such line counts).
+        echo "review cost_usd=$(python3 -c 'import json, sys
+c = json.load(open(sys.argv[1])).get("cost_usd")
+print(c if type(c) in (int, float) and c >= 0 else 0)' "$VJSON" 2>/dev/null || echo 0) round=$ROUND"
       elif [ "$rc" != 2 ]; then
         WHY="$(grep -v '^[[:space:]]*$' "$RUN_ERR" | tail -n 1)"
         bash scripts/dev/review.sh log --failed "${WHY:-review-run.sh exit $rc without a message}" \
@@ -457,8 +498,9 @@ if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$
 fi
 git add -- "$LEDGER" || infra "could not stage the ledger"
 
-# The ledger is staged last, and `Edit(./tasks/**)` is allowed even where
-# committing is not — so the sec gate runs once more over it: a security
+# The ledger is staged last, and in an interactive session `Edit(./tasks/**)` is
+# free (the runner's settings deny it since stage 7a) — so the sec gate runs once
+# more over it: a security
 # finding's dedup key (the line review.sh sec looks for) written into a task
 # would otherwise reach this public repo unscanned. Only sec.
 # diff-scan is deliberately NOT repeated here: a task DESCRIPTION quotes patterns
@@ -473,16 +515,20 @@ else
   git commit -q -m "$MSG" || infra "$COMMIT_HELP"
 fi
 # The check that carries: on the commit itself, byte-exact, over every ledger in
-# it. A Test-Löschung: line this commit adds, removes or moves — through a ledger
+# it. A Test-Löschung: or Assertion-Änderung: line this commit adds, removes or moves — through a ledger
 # edited while the suite ran, or another ledger staged via Dateien: — takes the
 # commit back (adversarial review, 2026-09-25). grep -c reads to the end: with
 # -q it would leave early, git diff would die of SIGPIPE, and pipefail would turn
-# the hit into a pass.
+# the hit into a pass. Ledgers only: tasks/README.md shows the syntax of both
+# fields in a line of its own, and the template is no ledger either; diff-scan
+# reads a declaration from the task section of the ledger being closed, never
+# from those (R-0206, the README section tripped this check).
 DECL_CHANGED="$(git -c core.quotePath=false diff --text --no-ext-diff --no-textconv --no-color -U0 HEAD^ HEAD -- 'tasks/*.md' \
-  | LC_ALL=C grep -acE '^[-+]Test-Löschung:')"
+  ':(exclude)tasks/README.md' ':(exclude)tasks/templates/*' \
+  | LC_ALL=C grep -acE '^[-+](Test-Löschung|Assertion-Änderung):')"
 if [ "${DECL_CHANGED:-0}" != 0 ]; then
-  git reset -q --soft HEAD^ || infra "the commit changed a Test-Löschung: line and could not be taken back — inspect HEAD"
-  echo "task-close: the commit changed a Test-Löschung: line in a ledger — taken back (git reset --soft)" >&2
+  git reset -q --soft HEAD^ || infra "the commit changed a Test-Löschung:/Assertion-Änderung: line and could not be taken back — inspect HEAD"
+  echo "task-close: the commit changed a Test-Löschung:/Assertion-Änderung: line in a ledger — taken back (git reset --soft)" >&2
   echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
   exit 4
 fi

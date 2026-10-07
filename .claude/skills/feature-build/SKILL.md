@@ -1,12 +1,12 @@
 ---
 name: feature-build
-description: Arbeite ein Task-Ledger aus tasks/ autonom ab (tasks/<slug>.md aus /feature-plan ODER tasks/audit-fixes.md aus einem Fable-Report) — jede kleine Task surgical umsetzen, schnelle Tests, frischer Review, pro Task auf einem Feature-Branch committen, am Ende die schwere VM-Suite fahren und einen Draft-PR öffnen. Nutzen nach freigegebenem Design-Gate oder zum Abarbeiten eines Fix-Backlogs. Läuft auf Opus.
+description: Arbeite ein Task-Ledger aus tasks/ autonom ab (tasks/<slug>.md aus /feature-plan ODER tasks/audit-fixes.md aus einem Fable-Report) — jede kleine Task surgical umsetzen, schnelle Tests, frischer Review, pro Task auf einem Feature-Branch committen, am Ende die schwere VM-Suite fahren und an die Aufsichts-Session übergeben (CLAUDE.md §2). Nutzen nach freigegebenem Design-Gate oder zum Abarbeiten eines Fix-Backlogs. Läuft auf Opus.
 ---
 
 # Feature / Backlog autonom bauen
 
-Führt eine Task-Ledger **ohne weitere Rückfragen** aus (das Design-Gate war die
-menschliche Freigabe) — bis zum Draft-PR. Modell: Opus. **Loop-tauglich:** großen
+Führt eine Task-Ledger **ohne weitere Rückfragen** aus (die Freigabe am Design-Gate liegt
+vor, CLAUDE.md §2) — bis zur Übergabe an die Aufsichts-Session. Modell: Opus. **Loop-tauglich:** großen
 Backlog unter `/loop` starten; für ein normales Feature reicht eine Session.
 
 Eingabe: der Ledger-Pfad unter `tasks/` (z. B. `tasks/<slug>.md`, `tasks/audit-fixes.md`).
@@ -34,19 +34,20 @@ Stufe 7).
   monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts). Nichts lokal bauen/testen.
   Fehlt das Feld oder steht `lokal` → unverändert lokale Suiten (Solo-Default).
 - **Status prüfen** (Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`,
-  tasks/README.md): `freigegeben` → Kevins Freigabe liegt vor: Kopf auf `aktiv` setzen und
-  bauen. `geplant` → nur mit ausdrücklichem Pfad; dann IST das Starten die Freigabe: Kopf auf
-  `aktiv`. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu: **keine** Task bauen. Gibt es
+  tasks/README.md): `freigegeben` → die Freigabe liegt vor (Zeile `Freigabe:`): Kopf auf
+  `aktiv` setzen und bauen. `geplant` → nur, wenn Kevin selbst in dieser Session den Start mit
+  Pfad gibt (das ist seine Freigabe): Kopf auf `aktiv`; auf Auftrag einer anderen Session nie —
+  ein Worker gibt nie frei (CLAUDE.md §2), dann melden. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu: **keine** Task bauen. Gibt es
   für den Branch schon einen PR (`gh pr view <branch>`, etwa von Kevin geöffnet), fehlen nur Kopf
   und Roadmap aus Abschluss-Schritt 5 und 6: den Kopf auf `erledigt` (bzw. `blockiert`)
-  committen — der Commit muss noch in den PR, pushen tut Kevin —, die Roadmap wie unter
+  committen — der Commit muss noch in den PR, pushen tut die Aufsichts-Session —, die Roadmap wie unter
   „Roadmap mitziehen" (`pr --pr`, ein Teil-Ledger `aktiv --pr`; eine Zeile, die noch auf `aktiv`
   steht, zuerst auf `bereit`), dann melden; sonst war der Abschluss unterbrochen (etwa von einem
   Compact) und geht ab Schritt 1 weiter — den Kopf setzt schon `task-close.sh`, die Roadmap-Zeile
   vielleicht noch nicht, und Schritt 1 ist wiederholbar. `erledigt` →
   **nicht** bauen; gibt es einen PR und steht die Roadmap-Zeile noch auf `bereit` (beim
   Teil-Ledger: seine Nummer fehlt in der Spalte `PR`), Schritt 6 nachholen, dann melden; gibt es
-  keinen PR, melden: Push und PR stehen aus, das ist Kevins Handgriff. `blockiert` → **nicht**
+  keinen PR, melden: Push und PR stehen aus, das ist der Schritt der Aufsichts-Session. `blockiert` → **nicht**
   bauen, melden.
 - **Roadmap mitziehen:** Nennt der Ledger-Kopf Roadmap-IDs — im `Spec:` (`Roadmap R-nnnn`,
   `docs/features/<slug>.md (Roadmap R-nnnn)`, beim Bündel `Roadmap R-a, R-b, …`) oder in der
@@ -55,8 +56,8 @@ Stufe 7).
   ID ein Aufruf: beim Start `aktiv`, im Abschluss `bereit`, mit dem PR `pr --pr "#<n>"` (die
   Spalte `PR`, die `sync` liest); `abgeschlossen` setzt nach dem Merge `roadmap.py sync`. Steht
   eine Zeile beim Start noch auf `neu` oder `geplant` (etwa die eines Regressions-Ledgers aus
-  `heavy.sh`, die `neu` ist), geht das nur bei ausdrücklichem Start — der Pfad ist wie bei
-  `geplant` Kevins Freigabe — und nur über die erlaubte Kette, je Schritt ein Aufruf mit
+  `heavy.sh`, die `neu` ist), geht das nur, wenn Kevin selbst den Start gibt — wie bei
+  `geplant` — und nur über die erlaubte Kette, je Schritt ein Aufruf mit
   Exit-Prüfung: `status R-nnnn geplant` (nur von `neu`), `approve R-nnnn`, `status R-nnnn
   aktiv`; ohne ausdrücklichen Start: melden. Ist das Ledger nur ein Teil der Zeile (`Roadmap R-nnnn, Teil …`), bleibt sie mit dem PR `aktiv` und
   sammelt nur die Nummern: `status R-nnnn aktiv --pr "#<n>"`, ab dem zweiten Teil
@@ -214,7 +215,10 @@ Stufe 7).
      stagen (`git add -- <pfade>`) und erneut schließen.
    - **3** — die Suite ist rot, oder der Diff-Scan hat einen stummgeschalteten Test gefunden
      (`|| true`, `set +e`, `skip`, gelöschte Assertion): beheben, erneut schließen. Ist die <!-- review: ok Musterliste in der Anleitung -->
-     Zeile bewusst so, trägt sie `# review: ok <grund>`. Ebenso 3: `docs-pairs` (eine Doku-Seite
+     Zeile bewusst so, trägt sie `# review: ok <grund>`. Eine bewusst geänderte Assertion in einem
+     bleibenden Test, die die Task verlangt, deren `Assertion-Änderung:` aber nicht committet im Ledger
+     steht (`tasks/README.md`), wird nicht zurückgebaut: `ledger.sh mark-question` mit der Frage, ob
+     sie angekündigt wird. Ebenso 3: `docs-pairs` (eine Doku-Seite
      ohne ihre andere Sprache — die zweite mitliefern), ein roter Vertrag aus
      `scripts/dev/review-contracts.txt` (den genannten Test bzw. das Wertpaar in Ordnung
      bringen) oder ein Verdict ohne brauchbares approve.
@@ -281,19 +285,22 @@ Stufe 7).
      aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
    Echte neue Bugs als Tasks in den Ledger: Kopf zurück auf `aktiv` (Roadmap ebenso), fixen,
    erneut testen, dann wieder `bereit`.
-5. **Erledigt, Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen
-   wirkend): **zuerst** den Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn
-   `[?]`-Punkte offen bleiben; ein `chore(ledger)`-Commit) — vor dem Push, sonst kommt er nie
-   in den PR und steht nach dem Merge auf `main` für immer auf `bereit`. Dann
-   `git push -u origin <branch>`; den PR-Text schreibt
+5. **Erledigt, Übergabe** (nach außen wirkend, deshalb nicht im Worker): **zuerst** den
+   Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn `[?]`-Punkte offen bleiben; ein
+   `chore(ledger)`-Commit) — vor dem Push, sonst kommt er nie in den PR und steht nach dem
+   Merge auf `main` für immer auf `bereit`. Dann **übergeben**: Branch, Kopf, Evidenz und den
+   Pfad des PR-Texts an die Aufsichts-Session melden; sie prüft, pusht, öffnet den PR und
+   merged (CLAUDE.md §2). Gibt es keine Aufsichts-Session, **nennt** die Session die Befehle
+   und Kevin führt sie aus — sie pusht nie selbst: `git push -u origin <branch>`; den PR-Text
+   schreibt
    `bash scripts/dev/review.sh pr-body <ledger> > <Scratchpad>/pr-body.md` (mit `Review: auto`
    dazu `--verdicts .ah-out/review/<slug>`: je Task Modell, Runde und Mutanten; Spec, Roadmap-IDs,
    Heavy-Zeile, je Task Haken mit Evidenz und Review, `[~]`/`[?]` gesondert; eine Task ohne
    Evidenz heißt „unverifiziert"), das VM-Ergebnis kommt von Hand dazu; dann
    `gh pr create --draft --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`.
-   (Push und PR prompten, solange nicht allowlisted — das ist Absicht.)
-6. **Mit dem PR:** die Roadmap-Zeile wie unter „Roadmap mitziehen" (`pr --pr "#<n>"`, ein
-   Teil-Ledger `aktiv --pr`) — dafür braucht es die PR-Nummer. Schluss-Zusammenfassung im Chat;
+   (Diese Befehle führt nie ein Worker aus; die Aufsicht bzw. Kevin.)
+6. **Mit dem PR** (Aufsichts-Session bzw. Kevin): die Roadmap-Zeile wie unter „Roadmap
+   mitziehen" (`pr --pr "#<n>"`, ein Teil-Ledger `aktiv --pr`) — dafür braucht es die PR-Nummer. Schluss-Zusammenfassung im Chat;
    die `[?]`-Punkte klar auflisten — die entscheidet der Mensch.
 
 ## Recovery

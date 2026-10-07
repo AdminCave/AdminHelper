@@ -86,7 +86,10 @@ column_in_note() {
 # head_template <feature-plan SKILL.md> — the code block right under "## 3.".
 head_template() {
   unreadable "$1" && return
-  awk '/^## 3\./ { s = 1; next } s && /^```/ { if (inb) exit; inb = 1; next } inb { print }' "$1"
+  # An indented fence (a list item) indents its content as far: that much comes off.
+  awk '/^## 3\./ { s = 1; next }
+       s && /^[ \t]*```/ { if (inb) exit; inb = 1; match($0, /^[ \t]*/); ind = substr($0, 1, RLENGTH); next }
+       inb { if (ind != "" && index($0, ind) == 1) $0 = substr($0, length(ind) + 1); print }' "$1"
 }
 
 # section <file> <from> [<to>] — the text from the heading that starts with
@@ -115,6 +118,57 @@ cleanup_rule() {
   local re
   for re in "${CLEANUP_RULE[@]}"; do grep -qE -- "$re" <<<"$1" || return 0; done
   echo ok
+}
+
+# build_task_findings <skill> <runner settings> — one line per finding in the
+# worker's builder skill (stage 7a): a forbidden command given as an instruction
+# (every code span and every line of a fenced block outside "## Nie"), or a
+# `bash scripts/…` call it instructs that no allow rule of the runner's settings
+# lets through, or a deny stops. Settings that do not load are a finding too.
+build_task_findings() {
+  unreadable "$1" && return
+  unreadable "$2" && return
+  python3 - "$1" "$2" <<'PY'
+import fnmatch, json, re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+try:
+    perm = json.load(open(sys.argv[2]))["permissions"]
+except Exception as e:
+    print("cannot load the runner's settings: %s" % e)
+    sys.exit(0)
+instr = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", text)
+FENCE = r"(?ms)^[ \t]*```[^\n]*\n(.*?)^[ \t]*```"
+commands = [l.strip() for b in re.findall(FENCE, instr) for l in b.splitlines() if l.strip()]
+commands += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", instr))]
+# task-close.sh named alone is a name; with arguments it is a call.
+FORBIDDEN = re.compile(r"(git (add|commit|stash|checkout|restore|push)\b|(bash )?(scripts/dev/)?task-close\.sh\s|mktemp\b|rm\b)")
+
+def matches(cmd, rule):
+    if rule.endswith(":*"):
+        return cmd == rule[:-2] or cmd.startswith(rule[:-2] + " ")
+    return fnmatch.fnmatchcase(cmd, rule)
+
+def rules(kind):
+    return [r[5:-1] for r in perm.get(kind, []) if r.startswith("Bash(")]
+
+for cmd in commands:
+    if FORBIDDEN.match(cmd):
+        print("forbidden as an instruction: " + cmd)
+    elif cmd.startswith("bash scripts/"):
+        if any(matches(cmd, r) for r in rules("deny")) or not any(matches(cmd, r) for r in rules("allow")):
+            print("no allow rule in the runner's settings: " + cmd)
+PY
+}
+# build_task_calls <skill> — how many `bash scripts/…` calls it instructs.
+build_task_calls() {
+  python3 - "$1" <<'PY'
+import re, sys
+t = re.sub(r"(?ms)^## Nie\n.*?(?=^## |\Z)", "", open(sys.argv[1]).read())
+FENCE = r"(?ms)^[ \t]*```[^\n]*\n(.*?)^[ \t]*```"
+cmds = [l.strip() for b in re.findall(FENCE, t) for l in b.splitlines()]
+cmds += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", t))]
+print(sum(1 for c in cmds if c.startswith("bash scripts/")))
+PY
 }
 
 # fires <detector> <file…> — the detector read its input and reported a finding.
@@ -188,6 +242,14 @@ f=$(fixture '## 3. Ledger schreiben' '```' 'Status: geplant · Branch: feature/<
 t=$(head_template "$f")
 { ! grep -q '^Heavy:' <<<"$t" && grep -q '^Fast-Suite:' <<<"$t"; } \
   && ok "the old head template is read as one without Heavy:" || bad "head_template read: $t"
+# A fence may be indented, as in a list item (R-0185).
+f=$(fixture '## 3. Ledger schreiben' '   ```' 'Status: geplant · Branch: feature/<slug>' 'Heavy: none — x' '   ```')
+t=$(head_template "$f")
+grep -q '^Heavy: none' <<<"$t" && ok "head_template reads a template in an indented fence" || bad "head_template indented: $t"
+f=$(fixture '## 3. Ledger schreiben' '- Kopf:' '   ```' '   Status: geplant · Branch: feature/<slug>' '   Heavy: none — x' '   ```')
+t=$(head_template "$f")
+grep -q '^Status: geplant' <<<"$t" && grep -q '^Heavy: none' <<<"$t" \
+  && ok "... and takes the fence's indentation off its content, as under a list item" || bad "head_template indented content: $t"
 f=$(fixture '4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): einen frischen Sub-Agent' \
             '   - **Modell:** `model: sonnet` ist der Default.' '5. **Schließen**')
 [ -z "$(cleanup_rule "$(section "$f" '4. **Frischer' '5. **Schließen')")" ] \
@@ -202,6 +264,32 @@ f=$(fixture 'Proben nur mit `mktemp -d -p <sein Verzeichnis>`, nur eigene Pfade 
 
 # ══ the real texts ════════════════════════════════════════════════════════════
 echo "── the skills, AUTONOMOUS.md, tasks/README.md ──"
+# The builder-skill detector can fail, both ways, and stays quiet on the "## Nie" list.
+printf '{"permissions": {"allow": ["Bash(bash scripts/dev/verify.sh:*)"], "deny": ["Bash(git add:*)"]}}\n' > "$WORK/rs.json"
+f=$(fixture '1. Teste mit `bash scripts/dev/verify.sh scripts --strict`.' '2. Dann `git add -- x`.')
+fires build_task_findings "$f" "$WORK/rs.json" && grep -q 'forbidden as an instruction: git add' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a git add given as an instruction is found" || bad "build_task_findings missed git add"
+f=$(fixture 'Schließ mit `task-close.sh tasks/x.md T1 --stage`, sobald grün.')
+grep -q 'forbidden as an instruction: task-close.sh' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a task-close call without bash is found" || bad "build_task_findings missed a bare task-close call"
+f=$(fixture 'Lauf `bash scripts/dev/heavy.sh capstone`.')
+grep -q 'no allow rule in the runner' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a call no allow rule lets through is found" || bad "build_task_findings missed an unallowed call"
+f=$(fixture 'Teste mit `bash scripts/dev/verify.sh scripts --strict`.' '' '## Nie' '' '- kein `git add`, kein `rm`.' '' '## Danach' 'Fertig.')
+[ -z "$(build_task_findings "$f" "$WORK/rs.json")" ] && ok "build_task_findings: the '## Nie' list is no instruction" \
+  || bad "build_task_findings fired on: $(build_task_findings "$f" "$WORK/rs.json")"
+f=$(fixture 'So:' '' '```bash' 'bash scripts/dev/verify.sh scripts --strict' 'git add -A' '```')
+grep -q 'forbidden as an instruction: git add -A' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a forbidden command in a fenced block is found" || bad "build_task_findings missed a fenced block"
+f=$(fixture '1. So:' '' '   ```bash' '   bash scripts/dev/verify.sh scripts --strict' '   git add -A' '   ```')
+grep -q 'forbidden as an instruction: git add -A' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: ... and in a fenced block indented under a list item (R-0185)" || bad "build_task_findings missed an indented fence"
+printf '{"permissions": ' > "$WORK/broken.json"
+grep -q "cannot load the runner's settings" <<<"$(build_task_findings "$f" "$WORK/broken.json")" \
+  && ok "build_task_findings: settings that do not load are a finding, not a pass" || bad "build_task_findings passed broken settings"
+! fires build_task_findings "$WORK/nosuch.md" "$WORK/rs.json" && [ -n "$(build_task_findings "$WORK/nosuch.md" "$WORK/rs.json")" ] \
+  && ok "build_task_findings: a missing skill is neither a finding nor quiet" || bad "build_task_findings took a missing skill for input"
+
 cd "$REPO_ROOT" || exit 1
 skills=(.claude/skills/*/SKILL.md)
 [ "${#skills[@]}" -ge 4 ] && ok "${#skills[@]} skills to read" || bad "only ${#skills[@]} skills found"
@@ -227,6 +315,12 @@ grep -qE "$SEC_REFUSED" <<<"$(section .claude/skills/feature-plan/SKILL.md '## 3
   || bad "feature-plan '## 3a.' no longer refuses SEC for --kurz"
 tr '\n' ' ' < .claude/skills/feature-build/SKILL.md | grep -qE "$PR_CALL" \
   && ok "feature-build sets the PR column with pr --pr \"#<n>\"" || bad "feature-build names no pr --pr \"#<n>\""
+# The gate lints the plan before it commits it: what a planning agent left around it
+# (R-0165) is caught there, not in the first build.
+gate=$(section .claude/skills/feature-plan/SKILL.md '- **Plan auf den Branch' '- Präsentiere im Chat')
+before_commit="${gate%%dann committen*}"
+[ "$before_commit" != "$gate" ] && [[ "$before_commit" == *'ledger.sh lint tasks/<slug>.md'* ]] \
+  && ok "feature-plan's gate lints the plan before the plan commit" || bad "the gate step does not lint before it commits: $gate"
 t=$(head_template .claude/skills/feature-plan/SKILL.md)
 grep -q '^Status: geplant' <<<"$t" && ok "feature-plan's head template is where the check looks" \
   || bad "no head template under '## 3.' in feature-plan: $t"
@@ -270,12 +364,30 @@ done
 [ -z "$missing" ] && [ "$n" -ge 3 ] && ok "every review.sh verb the skill names exists ($n)" || bad "review.sh has no verb:$missing (read $n)"
 grep -q 'docs-pairs' <<<"$step5" && grep -q 'Vertrag' <<<"$step5" && grep -q 'Vertragstest konnte' <<<"$step5" \
   && ok "step 5's exit codes name docs-pairs and the contracts" || bad "step 5's exit codes miss docs-pairs/contracts"
-close5=$(section .claude/skills/feature-build/SKILL.md '5. **Erledigt, Push + Draft-PR**' '6. **Mit dem PR:**')
+close5=$(section .claude/skills/feature-build/SKILL.md '5. **Erledigt, Übergabe**' '6. **Mit dem PR**')
 grep -qF 'review.sh pr-body' <<<"$close5" && grep -qF -- '--body-file' <<<"$close5" \
   && ok "the PR step takes its text from review.sh pr-body as --body-file" || bad "PR step without pr-body/--body-file"
 [ "$(cleanup_rule "$(section .claude/skills/feature-review/SKILL.md '## Proben und Aufräumen' '## ')")" = ok ] \
   && ok "feature-review's 'Proben und Aufräumen' carries the cleanup rule" \
   || bad "feature-review has no '## Proben und Aufräumen' with the cleanup rule"
+
+# Stage 7a: /build-task, the worker's builder — one task, no commit, no box.
+echo "── build-task (stage 7a) ──"
+BTS=.claude/skills/build-task/SKILL.md
+[ -f "$BTS" ] && sed -n '2p' "$BTS" | grep -qx 'name: build-task' && ! grep -q '^disable-model-invocation' "$BTS" \
+  && grep -q 'SPDX-License-Identifier: GPL-3.0-or-later' "$BTS" \
+  && ok "the build-task skill exists, model-invocable, with its SPDX head" || bad "no build-task skill (or its head is off)"
+# The loop reads the commit message from exactly this path: its constant COMMIT_MSG.
+CMSG="$(sed -n "s/^COMMIT_MSG='\\(.*\\)'$/\\1/p" scripts/dev/ledger-loop.sh)"
+[ -n "$CMSG" ] && grep -qF "$CMSG" "$BTS" && grep -qF "$CMSG" docs/features/stufe-7a.md \
+  && ok "build-task names the commit-message path ledger-loop.sh reads ($CMSG)" || bad "commit-message path: loop '$CMSG', skill/spec differ"
+grep -qF 'Status: aktiv' "$BTS" && grep -qF 'Freigabe:' "$BTS" && grep -qF -- '--fix <close-log> [<verdict>]' "$BTS" \
+  && ok "build-task checks the head (aktiv, Freigabe:) and knows --fix" || bad "build-task lacks the head check or --fix"
+FINDINGS=$(build_task_findings "$BTS" scripts/dev/runner-settings.json)
+CALLS=$(build_task_calls "$BTS")
+[ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
+  && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
+  || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"

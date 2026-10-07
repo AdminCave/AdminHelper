@@ -28,9 +28,7 @@ const DESKTOP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 
 const read = (...p: string[]): string => readFileSync(join(DESKTOP, ...p), 'utf-8');
 
 /** Commands not called from the UI, with the reason each one may stay. */
-const UNCALLED_ALLOWLIST: Record<string, string> = {
-  enroll_device: 'no UI caller; roadmap row REF — wire it up or remove it',
-};
+const UNCALLED_ALLOWLIST: Record<string, string> = {};
 
 function definedCommands(): Set<string> {
   const src = read('src-tauri', 'src', 'commands.rs');

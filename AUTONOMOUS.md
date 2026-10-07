@@ -23,14 +23,16 @@ Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneb
    übersteht Kontext-Resets — das macht lange autonome Läufe erst möglich.
 2. **Klein genug.** Eine Task ≈ eine fokussierte Änderung, möglichst eine Komponente,
    mit einem konkreten `Verify:`. Nur so kann sie ohne Rückfrage abgearbeitet werden.
-3. **Ein Gate.** Der einzige feste menschliche Kontrollpunkt ist das **Design-Gate** nach
-   der Planung. Danach läuft Bauen → Testen → PR autonom.
+3. **Ein Gate.** Der feste Kontrollpunkt ist das **Design-Gate** nach der Planung: Kevin gibt
+   frei, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2 „Entscheidungen“). Danach
+   läuft Bauen → Testen → PR autonom.
 4. **Granulare Commits = einfache Recovery.** Ein Commit pro Task auf einem Feature-Branch,
    geschrieben von [`scripts/dev/task-close.sh`](scripts/dev/task-close.sh) — nicht von der
    Session. Geht etwas schief: `git revert <commit>` statt Handarbeit. Ein abgeschalteter Test
    hält den Commit auf (`review.sh diff-scan`); ein ganzer Test darf nur gehen (toter Code oder
-   ein genauerer Ersatz), wenn die Task ihn schon **committet** als `Test-Löschung:` ankündigt
-   ([`tasks/README.md`](tasks/README.md)).
+   ein genauerer Ersatz), wenn die Task ihn schon **committet** als `Test-Löschung:` ankündigt, und
+   eine Assertion in einem bleibenden Test sich nur ändern, wenn sie ebenso committet als
+   `Assertion-Änderung:` dasteht ([`tasks/README.md`](tasks/README.md)).
 5. **Test-Tiering.** Schnelle Suiten laufen nach jeder Task; die schwere VM-Suite erst
    am Ende, einmal.
 
@@ -39,9 +41,9 @@ Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneb
 | Phase | Aufruf | Ergebnis |
 |---|---|---|
 | **1 · Design** | `/feature-plan <idee>` (oder `--kurz R-nnnn`, `--bundle <komponente>`) | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger, `Status: geplant`) als ersten Commit auf `feature/<slug>` und trägt die Roadmap-Zeile auf `geplant`. **Stoppt am Design-Gate.** |
-| **2 · Freigabe** | _du_ | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Dein Wort ist die Freigabe: `roadmap.py approve` und der Kopf auf `freigegeben`. |
+| **2 · Freigabe** | _du_ (kleine Fund-Pakete: die Aufsichts-Session, CLAUDE.md §2) | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Die Freigabe setzt `roadmap.py approve` und den Kopf auf `freigegeben` mit der Zeile `Freigabe:`. |
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: `ledger.sh start` → umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → `task-close.sh` setzt den Haken und committet Code + Ledger auf `feature/<slug>`. |
-| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
+| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Übergabe an die Aufsicht**, die prüft, pusht, den PR öffnet und merged (CLAUDE.md §2). |
 
 **Woher die Arbeit kommt.** Was als Nächstes gebaut wird, steht in der privaten Roadmap
 `tasks/private/ROADMAP.md`. Ihren Abschnitt „Als Nächstes" kuratiert Kevin von Hand. Die
@@ -51,8 +53,8 @@ Tabellenzeilen pflegt [`scripts/dev/roadmap.py`](scripts/dev/roadmap.py) (`add`,
 Roadmap als Skript"). Neue Zeilen legen Kevin und die Skripte an (`heavy.sh` für
 Regressionen und ein rotes Dependency-Audit). `/roadmap` zeigt den Stand mit den WIP-Deckeln, und `/roadmap triage` geht die
 `neu`-Zeilen mit Kevin durch (annehmen, ablehnen, zurückstellen, bündeln). Eine angenommene
-Zeile wird über `/feature-plan` zu Spec und Ledger (Phase 1); freigeben (`approve`) tut nur
-Kevin.
+Zeile wird über `/feature-plan` zu Spec und Ledger (Phase 1); freigeben (`approve`) tut
+Kevin, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2).
 
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
@@ -106,10 +108,10 @@ git switch feature/connection-note
 /feature-build tasks/connection-note.md
 ```
 
-Der einzige Prompt, den du im autonomen Lauf standardmäßig noch siehst, ist das
-**PR-Öffnen** am Ende — bewusst prompt-pflichtig, weil es nach außen wirkt, und das bleibt
-so: Push, PR und Merge sind deine Entscheidung (Betriebsmodell in `CLAUDE.md`). Eine
-Allow-Regel für `gh pr create` oder `--dangerously-skip-permissions` ist nicht vorgesehen.
+Push, PR und Merge stehen nicht im Lauf eines Workers: Er übergibt am Ende, die
+Aufsichts-Session prüft, pusht, öffnet den PR und merged; ohne Aufsicht nennt die Session die
+Befehle und du führst sie aus (Betriebsmodell in `CLAUDE.md` §2). Eine Allow-Regel für
+`gh pr create` oder `--dangerously-skip-permissions` ist nicht vorgesehen.
 
 ## Zweiter Einstiegspunkt: einen Fable-Report abarbeiten
 
@@ -215,6 +217,85 @@ Regeln:
   seriell, nur die Burn-Rate steigt (Rate-Limits drosseln ggf. von selbst). Mehr als
   2–3 Lanes stauen an deinen Gates/Reviews, nicht am Compute.
 
+## Der Worker (Stufe 7a)
+
+Bis Stufe 6 baut eine Session, die Kevin offen hat. Der **Worker**
+[`scripts/dev/ledger-loop.sh`](scripts/dev/ledger-loop.sh) baut freigegebene Ledger ohne
+offene Session: als Nutzer `adminhelper-runner`, in dessen Klon `/srv/ah/repo`, jedes Ledger in
+seiner Lane (`lane.sh new <slug>`). Er pusht nie, öffnet keinen PR und merged keinen; in die Lane merged
+er `origin/main` (ein Konflikt ist `blockiert (merge)`) und fährt dann die Suiten der offenen Tasks als
+Fundament (rot ist `blockiert (Fundament rot)`).
+
+**Start** — nur auf Kevins Zuruf, nie per Timer (CLAUDE.md §2), in tmux:
+
+```bash
+sudo -u adminhelper-runner tmux new -d -s ah-loop \
+  'cd /srv/ah/repo && bash scripts/dev/ledger-loop.sh --ledger tasks/<a>.md --ledger tasks/<b>.md'
+```
+
+Die Ledger sind Kevins Liste in seiner Reihenfolge; die Roadmap liest der Loop nie. Ein Plan
+erreicht den Runner als gepushter Branch `feature/<slug>` (die Aufsicht pusht ihn, Entscheidung A);
+gebaut wird nur ein Kopf mit `Branch: feature/<slug>`, `Status: freigegeben` (oder `aktiv`, dann
+geht es weiter) und einer `Freigabe:`-Zeile. Ein Harness-Ledger (Branch `harness/…` oder ein
+Harness-Pfad in `Dateien:`) bleibt interaktiv: `blockiert (harness)` ohne Lane.
+
+**Je Task** eine frische Bau-Session: `claude -p` mit dem Text von
+[`/build-task`](.claude/skills/build-task/SKILL.md) aus dem Klon, nur den Settings des Runners
+(`--setting-sources user`, `dontAsk`), dazu `--task-minutes 60 --task-turns 80 --task-budget 12`. Die
+Session baut eine Task, testet mit `verify.sh` und hinterlässt eine Commit-Nachricht; sie committet
+nicht, setzt keinen Haken und ändert ein Ledger nur über `ledger.sh` (`mark-skip`, `mark-question`,
+`set-files`) und nur in ihrer eigenen Task — Kopf und andere Tasks bleiben, wie sie waren, sonst wird
+die Task `[?]`. Danach entscheidet allein der Loop: Er schließt mit `task-close.sh --review auto
+--round <n>`; bei Exit 3 gibt es **eine** zweite Session mit `--fix` (Runde 2, wenn die erste ein Verdict
+hatte — eine rote Suite oder ein Diff-Scan-Fund schreibt keins, dann bleibt es Runde 1), ein zweites 3 wird
+`[?]` mit dem ersten Blocker; 4 wird `[?]`; 74 wird einmal wiederholt, dann `stop: infra`. Eine
+Session über Zeit, Turns oder Budget wird `[?] timeout|turns|budget`, ein anderer Fehler
+`[?] error`, zwei Iterationen ohne Fortschritt mit byte-gleichem Ledger `[?] stall`; ein API-Fehler
+oder eine Session ohne JSON ist dagegen ein Ausfall: `stop: infra`, die Task bleibt offen. Ein `[?]`
+setzt das Ledger auf `blockiert`, und der Loop nimmt das nächste der Liste (Entscheidung D); ein
+Ledger, in dem nur noch `[?]` offen sind, wird `blockiert`, nie `bereit`. Was eine
+Session hinterlässt, ohne dass die Task schließt, nimmt der Loop zurück (`aborted.diff`, `git
+restore`, neue Dateien einzeln mit vollem Pfad) — nie `stash`, `clean` oder ein Glob.
+
+**Deckel** (Entscheidung F, als Flags, damit der Pilot ohne Code nachstellt): `--max-hours 8`,
+`--max-tasks 20`, `--max-budget-usd 200` (Bau-Sessions **und** Reviewer, im Loop selbst gezählt;
+unbekannte Kosten zählen mit ihrem Deckel),
+`--max-ready 2` (zwei Ledger `bereit` in diesem Lauf: Kevins Warteschlange). Zeit und Budget gelten an
+jeder Task-Grenze und zwischen den Iterationen einer Task; eine laufende Session beendet nur ihr
+eigener Deckel.
+
+**Stopp-Klassen** in der letzten Zeile des Summary: `ledger-leer` (die Liste ist durch),
+`max-hours`, `max-tasks`, `max-budget`, `kevin-queue`, `usage-limit` (das Abo-Limit, mit Reset-Zeit;
+die Task bleibt offen, Entscheidung C), `infra` (Exit 74, ein Satz nennt den Grund) und
+`harness-modified` (Exit 74: eine Session hat einen Harness-Pfad geändert oder etwas getan, was nur
+ihr Code konnte — der HEAD der Lane oder der Klon haben sich bewegt; das Ledger bleibt danach gesperrt,
+bis Kevin `/srv/ah/loop/<slug>/harness-modified` entfernt). Eine CLI, die nicht mehr der
+festgehaltenen Prüfsumme entspricht, endet als `infra`; mitten im Lauf ist sie dasselbe Signal
+(`DEVELOPMENT.md`, „Der Worker“, Recovery).
+
+**Stand und Übergabe.** Der Loop schreibt nach `/srv/ah/loop`: `state.json`, `loop.log`, je Stopp
+`summary-<datum>.md` (Schlusszeile `ledger-loop: <n> tasks, <k> ready, <b> blocked, $<x> total,
+stop: <klasse>`), je Ledger die Logs. Kevin liest das mit `bash scripts/dev/ledger-loop.sh status`
+**aus seinem eigenen Checkout**; die erste Zeile davon steht als „Worker:“ im AH-STATUS. Ein Ledger auf
+`bereit` hinterlässt `<slug>/pr-body.md` (`review.sh pr-body`, mit „Heavy offen — fährt die Aufsicht“
+außer bei `Heavy: none`) und `<slug>.bundle`. Kevin holt den Branch in **seinen** Checkout:
+`git fetch /srv/ah/loop/<slug>.bundle feature/<slug>:feature/<slug>`. Kevins Git arbeitet nie in einem
+Repo des Runners: dafür bräuchte es `safe.directory`, und dann könnte eine Runner-eigene
+`.git/config` (`core.fsmonitor`, `core.hooksPath`) Programme mit Kevins Rechten starten — ein Bundle
+ist nur Daten. Ob `git fetch` aus der Bundle-Datei eines anderen Nutzers ohne `safe.directory` geht,
+ist **nicht verifiziert**; der Pilot prüft es.
+
+**Grenzen.** Die Bau-Session hat keine schreibenden Git-Befehle, keine Edits unter `tasks/`, keine
+Harness-Pfade, kein `mktemp` und kein `rm` (ein Scratch-Ordner nur über `scripts/dev/scratch.sh`); das
+Red Team prüft diese Grenzen. Code, den eine Session schreibt, läuft aber über `verify.sh` mit den
+Rechten des Runners: Was er hinter dem Loop ändert, **erkennt** der Loop nachträglich und hält an,
+verhindern kann er es nicht. Die Spec nennt die bewusst offenen Stellen
+([`docs/features/stufe-7a.md`](docs/features/stufe-7a.md), „Verdicts im Runner“).
+
+**Pilot.** Den ersten echten Lauf fährt Kevin nach dem Merge mit einem kleinen Übungs-Ledger
+(`--max-hours 2`, abends, nach einem Blick auf `/usage`); vorher Setup, Pull und Red Team wie nach
+jeder Änderung an den Runner-Settings (`DEVELOPMENT.md`, „Der Worker“).
+
 ## Was eine Task „autonomietauglich" macht
 
 Das ist der Punkt, an dem die meiste Qualität entsteht — `/feature-plan` achtet darauf, aber
@@ -319,8 +400,9 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   die Liste endet mit Exit 74, wenn auf dieser Lane etwas läuft, das niemand beansprucht.
 - **Plattform-Code** (Windows-Agent, RDP/SSH pro OS) wird laut CLAUDE.md manuell verifiziert
   — solche Tasks markiert `/feature-plan` als `[?]` bzw. mit manuellem Verify-Schritt.
-- **Kein Ersatz für Review.** Das Design-Gate und der finale PR-Review bleiben deine
-  Entscheidung; der Loop bereitet vor, du gibst frei.
+- **Kein Ersatz für Review.** Das Design-Gate gibt Kevin frei (kleine Fund-Pakete die
+  Aufsichts-Session), den PR prüft und merged die Aufsichts-Session, Regel-PRs Kevin
+  (CLAUDE.md §2); der Loop bereitet vor.
 - Es gilt weiterhin **`CLAUDE.md`** (Surgical Changes, Doku-Pflege, Conventional Commits,
   SPDX, Test-DoD) und **`CONTRIBUTING.md`**. Dieses Dokument beschreibt nur, _wie_ die Arbeit
   fließt — nicht neue Regeln.

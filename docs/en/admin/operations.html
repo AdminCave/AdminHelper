@@ -121,7 +121,7 @@
           </div>
 
           <h2>Timezone</h2>
-          <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. It affects audit-log timestamps and cron-like hook jobs.</p>
+          <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. The API returns timestamps in UTC with <code>Z</code> regardless (web and desktop show them in the browser's or machine's local time), and scheduled hooks run on UTC.</p>
 
           <h2>Renewing certificates</h2>
           <p>The gateway's TLS certificate is issued by the <code>ca-issuer</code> (access-signed, 365 days). It is provisioned into the <code>gateway-certs</code> volume on first start; a redeploy/restart of the <code>ca-issuer</code> renews it when needed. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation.</p>
