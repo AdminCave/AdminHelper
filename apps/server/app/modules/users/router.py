@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import actor_from_request
-from app.core.time import utcnow_naive
+from app.core.time import iso_utc, utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import clear_revocation, revoke_identity
 from app.modules.notifications.models import NotificationSubscription
@@ -30,7 +30,7 @@ def _user_response(user: User) -> dict:
         "username": user.username,
         "is_admin": user.is_admin,
         "server_ids": [s.id for s in user.servers],
-        "created_at": user.created_at.isoformat() if user.created_at is not None else None,
+        "created_at": iso_utc(user.created_at),
     }
 
 

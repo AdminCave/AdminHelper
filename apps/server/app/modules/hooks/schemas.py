@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel
 
 from app.core.bounds import RequestModel
+from app.core.time import UtcDatetime
 from app.modules.hooks.scheduler import INTERVAL_MAP
 
 VALID_EVENTS = [
@@ -60,11 +60,11 @@ class HookResponse(BaseModel):
     description: Optional[str] = None
     hook_type: str
     enabled: bool
-    created_at: Optional[datetime] = None
+    created_at: Optional[UtcDatetime] = None
     event_triggers: Optional[list[str]] = None
     schedule_interval: Optional[str] = None
-    last_run: Optional[datetime] = None
-    next_run: Optional[datetime] = None
+    last_run: Optional[UtcDatetime] = None
+    next_run: Optional[UtcDatetime] = None
 
 
 class HookDetailResponse(HookResponse):

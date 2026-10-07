@@ -18,8 +18,8 @@ from app.modules.users.models import TokenBlacklist
 
 
 def test_cleanup_removes_expired_keeps_valid(db_session):
-    now = datetime.datetime.now(datetime.timezone.utc)
-    db_session.add(TokenBlacklist(jti="expired-1", expires_at=now - datetime.timedelta(hours=1)))
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    db_session.add(TokenBlacklist(jti="expired-1", expires_at=now - datetime.timedelta(hours=13)))
     db_session.add(TokenBlacklist(jti="expired-2", expires_at=now - datetime.timedelta(days=2)))
     db_session.add(TokenBlacklist(jti="valid-1", expires_at=now + datetime.timedelta(hours=1)))
     db_session.commit()

@@ -4,13 +4,14 @@
 
 //! Desktop mTLS enrollment (ADR 0001 §3.3 / A5).
 //!
-//! After login the desktop mints an access-scoped enrollment token at the server
-//! (`POST /api/enrollment/token`, JWT-gated), generates an ECDSA P-256 keypair +
-//! CSR **on-device** (the private key never leaves the host), and redeems the
-//! token at the gateway's certless enroll plane. The ca-issuer signs an
-//! access-scoped client leaf; the desktop pins the returned CA chain and presents
-//! the cert on every later request (mTLS + CA-pinning in `build_client`), renews
-//! it at ~50% lifetime, and can export a long-lived browser cert as a PKCS12.
+//! The desktop enrolls with a one-time token an admin minted out-of-band
+//! (`POST /api/enrollment/token/for`, ADR 0003) — no prior login, so it works under
+//! enforced mTLS. It generates an ECDSA P-256 keypair + CSR **on-device** (the
+//! private key never leaves the host) and redeems the token at the gateway's
+//! certless enroll plane. The ca-issuer signs an access-scoped client leaf; the
+//! desktop pins the returned CA chain and presents the cert on every later request
+//! (mTLS + CA-pinning in `build_client`), renews it at ~50% lifetime, and — after
+//! login — can export a long-lived browser cert as a PKCS12.
 
 use std::sync::Arc;
 
@@ -211,32 +212,6 @@ pub fn clear_identity() {
 
 // ── Enrollment orchestration ──────────────────────────────────────────────
 
-/// Run the full enrollment: mint an access-scoped token (JWT), generate an
-/// on-device key + CSR, redeem it at the gateway enroll plane, and store the
-/// issued identity. The TLS trust for both calls is the same the login used
-/// (the TOFU-pinned gateway cert — the enroll plane presents the same leaf).
-pub async fn enroll(server_url: &str, jwt: &str, allow_self_signed: bool) -> Result<(), AppError> {
-    let grant = mint_token(server_url, jwt, allow_self_signed, false).await?;
-    // The desktop is a human client — refuse anything but an access-scoped grant.
-    if grant.scope != "access" {
-        return Err(AppError::Validation(format!(
-            "Unerwarteter Enrollment-Scope '{}' (erwartet 'access')",
-            grant.scope
-        )));
-    }
-    let key_and_csr = generate_key_and_csr(&grant.subject_id)?;
-    let endpoint = enroll_endpoint(server_url, grant.enroll_port)?;
-    let issued = redeem(
-        &endpoint,
-        &grant.token,
-        &key_and_csr.csr_pem,
-        server_url,
-        allow_self_signed,
-    )
-    .await?;
-    store_identity(&key_and_csr.key_pem, &issued)
-}
-
 /// Decoupled enrollment (ADR 0003): enroll with a one-time token an admin minted
 /// out-of-band (`POST /api/enrollment/token/for`) and handed over — **without** a
 /// prior login. Skips `mint_token` (the token already exists), so it works under
@@ -268,11 +243,13 @@ pub async fn enroll_with_token(
     store_identity(&key_and_csr.key_pem, &issued)
 }
 
+/// Mint the long-lived browser grant (`?browser=true`, D5) with the session JWT —
+/// the only token the desktop mints itself; its own identity comes from a
+/// one-time token an admin handed over (`enroll_with_token`, ADR 0003).
 async fn mint_token(
     server_url: &str,
     jwt: &str,
     allow_self_signed: bool,
-    browser: bool,
 ) -> Result<EnrollGrant, AppError> {
     // Same token-destination pin as api_proxy: refuse to send the session JWT if
     // server_url (frontend-controlled) drifts off the logged-in server, so an XSS'd
@@ -286,11 +263,7 @@ async fn mint_token(
     )?;
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let base = server_url.trim_end_matches('/');
-    let url = if browser {
-        format!("{base}/api/enrollment/token?browser=true")
-    } else {
-        format!("{base}/api/enrollment/token")
-    };
+    let url = format!("{base}/api/enrollment/token?browser=true");
     let resp = client
         .post(&url)
         .header("Authorization", format!("Bearer {jwt}"))
@@ -607,7 +580,7 @@ pub async fn export_browser_p12(
 ) -> Result<Vec<u8>, AppError> {
     // Fail fast before minting + enrolling a throwaway long-lived cert (3.58).
     check_export_password(password)?;
-    let grant = mint_token(server_url, jwt, allow_self_signed, true).await?;
+    let grant = mint_token(server_url, jwt, allow_self_signed).await?;
     if grant.scope != "access" {
         return Err(AppError::Validation(format!(
             "Unerwarteter Enrollment-Scope '{}' (erwartet 'access')",
