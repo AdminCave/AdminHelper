@@ -15,6 +15,7 @@ from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
+from app.core.time import iso_utc
 from app.modules.hooks.models import Hook
 
 # Scheduled-hook jobs are owned by the dedicated scheduler process; the web
@@ -326,7 +327,7 @@ def run_hook_manually(
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = iso_utc(datetime.now(timezone.utc))
     context = {
         # Webhook
         "payload": {},
@@ -337,7 +338,7 @@ def run_hook_manually(
         "event_data": {},
         # Schedule
         "triggered_at": now,
-        "last_run": hook.last_run.isoformat() if hook.last_run else None,
+        "last_run": iso_utc(hook.last_run),
     }
 
     try:

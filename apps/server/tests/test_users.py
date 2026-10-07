@@ -202,7 +202,7 @@ class TestPromotionDefaultSubscription:
 class TestUserResponseShape:
     """R-0043: GET/POST/PUT declare UserResponse. Pydantic drops a key the model does not
     declare without a word, so each route's body must equal what the builder hands out —
-    and created_at must be the bytes the untyped route sent for the raw datetime."""
+    and created_at must be the raw datetime in UTC with Z (iso_utc, R-0064)."""
 
     def _servers(self, db_session):
         from app.modules.servers.models import Server
@@ -219,14 +219,22 @@ class TestUserResponseShape:
     def _expected(self, db_session, uid):
         from fastapi.encoders import jsonable_encoder
 
+        from app.core.time import iso_utc
         from app.modules.users.models import User
         from app.modules.users.router import _user_response
 
         user = db_session.get(User, uid)
         db_session.refresh(user)
         expected = jsonable_encoder(_user_response(user))
-        assert expected["created_at"] == jsonable_encoder(user.created_at)
+        assert expected["created_at"] == iso_utc(user.created_at)
+        assert expected["created_at"].endswith("Z")
         return expected
+
+    def test_created_at_is_rfc3339_utc(self, test_client, admin_user, db_session):
+        # format: date-time promises an offset (R-0064): the API writes UTC with Z.
+        res = test_client.get("/api/users", headers=_admin_headers(test_client))
+        assert res.status_code == 200, res.text
+        assert res.json() and all(u["created_at"].endswith("Z") for u in res.json()), res.text
 
     def test_post_without_servers(self, test_client, admin_user, db_session):
         res = test_client.post(

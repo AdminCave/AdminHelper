@@ -28,6 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import iso_utc
 
 # Severity vocabulary, mirrored from the monitoring service (info < warning <
 # critical). A subscription's min_severity is the lowest level that still
@@ -103,7 +104,7 @@ class Notification(Base):
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "createdAt": iso_utc(self.created_at),
             "severity": self.severity,
             "category": self.category,
             "eventType": self.event_type,
@@ -112,7 +113,7 @@ class Notification(Base):
             "sourceType": self.source_type,
             "sourceId": self.source_id,
             "read": self.read_at is not None,
-            "readAt": self.read_at.isoformat() if self.read_at else None,
+            "readAt": iso_utc(self.read_at),
         }
 
 

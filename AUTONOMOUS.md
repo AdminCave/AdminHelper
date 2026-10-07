@@ -23,8 +23,9 @@ Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneb
    übersteht Kontext-Resets — das macht lange autonome Läufe erst möglich.
 2. **Klein genug.** Eine Task ≈ eine fokussierte Änderung, möglichst eine Komponente,
    mit einem konkreten `Verify:`. Nur so kann sie ohne Rückfrage abgearbeitet werden.
-3. **Ein Gate.** Der einzige feste menschliche Kontrollpunkt ist das **Design-Gate** nach
-   der Planung. Danach läuft Bauen → Testen → PR autonom.
+3. **Ein Gate.** Der feste Kontrollpunkt ist das **Design-Gate** nach der Planung: Kevin gibt
+   frei, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2 „Entscheidungen“). Danach
+   läuft Bauen → Testen → PR autonom.
 4. **Granulare Commits = einfache Recovery.** Ein Commit pro Task auf einem Feature-Branch,
    geschrieben von [`scripts/dev/task-close.sh`](scripts/dev/task-close.sh) — nicht von der
    Session. Geht etwas schief: `git revert <commit>` statt Handarbeit. Ein abgeschalteter Test
@@ -39,9 +40,9 @@ Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneb
 | Phase | Aufruf | Ergebnis |
 |---|---|---|
 | **1 · Design** | `/feature-plan <idee>` (oder `--kurz R-nnnn`, `--bundle <komponente>`) | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger, `Status: geplant`) als ersten Commit auf `feature/<slug>` und trägt die Roadmap-Zeile auf `geplant`. **Stoppt am Design-Gate.** |
-| **2 · Freigabe** | _du_ | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Dein Wort ist die Freigabe: `roadmap.py approve` und der Kopf auf `freigegeben`. |
+| **2 · Freigabe** | _du_ (kleine Fund-Pakete: die Aufsichts-Session, CLAUDE.md §2) | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Die Freigabe setzt `roadmap.py approve` und den Kopf auf `freigegeben` mit der Zeile `Freigabe:`. |
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: `ledger.sh start` → umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → `task-close.sh` setzt den Haken und committet Code + Ledger auf `feature/<slug>`. |
-| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
+| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Übergabe an die Aufsicht**, die prüft, pusht, den PR öffnet und merged (CLAUDE.md §2). |
 
 **Woher die Arbeit kommt.** Was als Nächstes gebaut wird, steht in der privaten Roadmap
 `tasks/private/ROADMAP.md`. Ihren Abschnitt „Als Nächstes" kuratiert Kevin von Hand. Die
@@ -51,8 +52,8 @@ Tabellenzeilen pflegt [`scripts/dev/roadmap.py`](scripts/dev/roadmap.py) (`add`,
 Roadmap als Skript"). Neue Zeilen legen Kevin und die Skripte an (`heavy.sh` für
 Regressionen und ein rotes Dependency-Audit). `/roadmap` zeigt den Stand mit den WIP-Deckeln, und `/roadmap triage` geht die
 `neu`-Zeilen mit Kevin durch (annehmen, ablehnen, zurückstellen, bündeln). Eine angenommene
-Zeile wird über `/feature-plan` zu Spec und Ledger (Phase 1); freigeben (`approve`) tut nur
-Kevin.
+Zeile wird über `/feature-plan` zu Spec und Ledger (Phase 1); freigeben (`approve`) tut
+Kevin, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2).
 
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
@@ -106,10 +107,10 @@ git switch feature/connection-note
 /feature-build tasks/connection-note.md
 ```
 
-Der einzige Prompt, den du im autonomen Lauf standardmäßig noch siehst, ist das
-**PR-Öffnen** am Ende — bewusst prompt-pflichtig, weil es nach außen wirkt, und das bleibt
-so: Push, PR und Merge sind deine Entscheidung (Betriebsmodell in `CLAUDE.md`). Eine
-Allow-Regel für `gh pr create` oder `--dangerously-skip-permissions` ist nicht vorgesehen.
+Push, PR und Merge stehen nicht im Lauf eines Workers: Er übergibt am Ende, die
+Aufsichts-Session prüft, pusht, öffnet den PR und merged; ohne Aufsicht nennt die Session die
+Befehle und du führst sie aus (Betriebsmodell in `CLAUDE.md` §2). Eine Allow-Regel für
+`gh pr create` oder `--dangerously-skip-permissions` ist nicht vorgesehen.
 
 ## Zweiter Einstiegspunkt: einen Fable-Report abarbeiten
 
@@ -398,8 +399,9 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   die Liste endet mit Exit 74, wenn auf dieser Lane etwas läuft, das niemand beansprucht.
 - **Plattform-Code** (Windows-Agent, RDP/SSH pro OS) wird laut CLAUDE.md manuell verifiziert
   — solche Tasks markiert `/feature-plan` als `[?]` bzw. mit manuellem Verify-Schritt.
-- **Kein Ersatz für Review.** Das Design-Gate und der finale PR-Review bleiben deine
-  Entscheidung; der Loop bereitet vor, du gibst frei.
+- **Kein Ersatz für Review.** Das Design-Gate gibt Kevin frei (kleine Fund-Pakete die
+  Aufsichts-Session), den PR prüft und merged die Aufsichts-Session, Regel-PRs Kevin
+  (CLAUDE.md §2); der Loop bereitet vor.
 - Es gilt weiterhin **`CLAUDE.md`** (Surgical Changes, Doku-Pflege, Conventional Commits,
   SPDX, Test-DoD) und **`CONTRIBUTING.md`**. Dieses Dokument beschreibt nur, _wie_ die Arbeit
   fließt — nicht neue Regeln.

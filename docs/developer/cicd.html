@@ -403,9 +403,14 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           weil Build-Ausgaben wie <code>apps/web/dist/</code> nur auf der Entwickler-Box liegen. Ausnahmen
           stehen in <code>scripts/dev/doc-smoke-allow.txt</code> (Begr&uuml;ndung nach <code>#</code>); mehr als
           <strong>f&uuml;nf</strong> verweigert das Skript, weil eine Ausnahmeliste der Ort ist, an dem so ein
-          Guard verrottet. Die zweite Pr&uuml;fung <code>--env</code> (Namen in Gro&szlig;buchstaben gegen die drei
-          <code>config.py</code> und <code>.env.example</code>) ist noch <em>kein</em> Gate: die Heuristik
-          meldet derzeit 43 Namen, die gar keine Env-Variablen sind (HTTP-Methoden, Log-Level, Dateinamen).</p>
+          Guard verrottet. Die zweite Pr&uuml;fung <code>--env</code> meldet einen Namen in Gro&szlig;buchstaben,
+          den au&szlig;erhalb der Doku nichts im Repo mehr tr&auml;gt: weder die drei <code>config.py</code> noch
+          <code>.env.example</code> noch eine andere getrackte Datei au&szlig;erhalb von <code>docs/</code>,
+          <code>CHANGELOG.md</code> und <code>tasks/</code> (R-0044). Eine Agent-Einstellung, ein CI-Secret, ein
+          Zustand oder eine HTTP-Methode ist damit kein Fund; ein Name, den nur noch ein Test oder ein Kommentar
+          tr&auml;gt, f&auml;llt aber auch nicht mehr auf. Seit R-0044 ist <code>--env</code> Gate wie die
+          Pfad-Pr&uuml;fung: der Job <code>ops-scripts</code> f&auml;hrt <code>doc-smoke.py --paths --env --strict</code>
+          (<code>--env</code> allein schaltet die Pfad-Pr&uuml;fung ab).</p>
 
           <p><strong>Env-Parit&auml;t</strong> (<code>apps/server/tests/test_env_parity.py</code>) h&auml;lt drei
           getrennt gepflegte Beschreibungen derselben Konfigurationsfl&auml;che zusammen: eine Variable, die ein

@@ -28,6 +28,7 @@ from app.core.config import (
 from app.core.database import get_db
 from app.core.middleware import resolve_client_ip
 from app.core.request_context import Actor, bind_actor
+from app.core.time import utcnow_naive
 from app.modules.api_keys.models import ApiKey
 from app.modules.users.models import TokenBlacklist, User
 
@@ -129,7 +130,7 @@ def blacklist_token(token: str, db: Session) -> bool:
     exp = payload.get("exp")
     if not jti or not exp:
         return False
-    expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+    expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None)
     db.add(TokenBlacklist(jti=jti, expires_at=expires_at))
     try:
         db.commit()
@@ -180,8 +181,10 @@ def username_from_token_unverified(token: str) -> Optional[str]:
 
 def cleanup_expired_blacklist(db: Session) -> int:
     """Remove expired entries from the blacklist."""
-    now = datetime.now(timezone.utc)
-    count = db.query(TokenBlacklist).filter(TokenBlacklist.expires_at < now).delete()
+    # Rows written before F7 may hold a session-local time up to 12 h behind UTC;
+    # the cutoff keeps that margin.
+    cutoff = utcnow_naive() - timedelta(hours=12)
+    count = db.query(TokenBlacklist).filter(TokenBlacklist.expires_at < cutoff).delete()
     db.commit()
     return count
 

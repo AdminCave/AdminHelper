@@ -16,8 +16,9 @@ Commit je Schritt kommen von dort (DEVELOPMENT.md, „Die Roadmap als Skript").
 
 **Nie:** `Edit`/`Write` auf die Datei · „Als Nächstes" umschreiben (das kuratiert Kevin von
 Hand; der Skill darf einen Vorschlag machen, nicht schreiben) · `approve` ohne Kevins
-ausdrückliches Wort (die Freigabe ist sein einziger Pflicht-Checkpoint) · das private Repo
-pushen (den Befehl nennen, Kevin führt ihn aus).
+ausdrückliches Wort (die Freigabe ist der Pflicht-Checkpoint; Ausnahme: die Aufsichts-Session
+bei kleinen Fund-Paketen, CLAUDE.md §2) · das private Repo pushen (den Befehl nennen, Kevin
+führt ihn aus; die Aufsichts-Session pusht es selbst, CLAUDE.md §2).
 
 Alle Aufrufe ohne `--file`: der Default ist die echte Datei. Exit-Codes von `roadmap.py`
 sind Anweisungen: **2** Aufruf oder Übergang falsch (Meldung zeigen, nicht umgehen) ·
@@ -73,11 +74,12 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
    Dann die nächste Runde, bis keine `neu`-Zeile mehr offen ist oder Kevin aufhört; die
    letzte Runde darf eine einzige Zeile haben.
 5. **Abschluss.** `roadmap.py show --wip` und eine Zeile je Entscheidung (ID → Status). Dann
-   den Push des privaten Repos **nennen**, nicht ausführen:
-   `git -C tasks/private push`.
+   den Push des privaten Repos **nennen**, nicht ausführen: `git -C tasks/private push`
+   (die Aufsichts-Session führt ihn selbst aus, CLAUDE.md §2).
 
 ## Was dieser Skill nicht tut
 
 Er gibt nichts frei (`approve` sagt Kevin selbst: „R-nnnn freigeben" → dann und nur dann
-`roadmap.py approve R-nnnn`), plant nichts (das ist `/feature-plan`), schreibt kein
+`roadmap.py approve R-nnnn`; kleine Fund-Pakete gibt die Aufsichts-Session frei, CLAUDE.md §2),
+plant nichts (das ist `/feature-plan`), schreibt kein
 „Als Nächstes" und legt keine Zeilen an (`add` gehört den Findern, `heavy.sh` und Kevin).

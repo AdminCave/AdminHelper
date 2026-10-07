@@ -50,7 +50,7 @@
             <thead><tr><th>Type</th><th>Description</th><th>Use case</th></tr></thead>
             <tbody>
               <tr><td><code>tcp</code></td><td>FRP-assigned remote port on the server, visible from the public network.</td><td>RDP/SSH/VNC over untrusted networks – treat this as public-facing.</td></tr>
-              <tr><td><code>http</code></td><td>HTTP-reverse-proxy tunnel on <code>FRP_DOMAIN</code>, subdomain-routed.</td><td>Web UIs behind NAT (e.g. IPMI, home-automation).</td></tr>
+              <tr><td><code>http</code></td><td>HTTP-reverse-proxy tunnel, routed by subdomain under the subdomain host of the FRP server configuration (<code>subDomainHost</code> in <code>frps.toml</code>).</td><td>Web UIs behind NAT (e.g. IPMI, home-automation).</td></tr>
               <tr><td><code>stcp</code></td><td>Secret-key gated, only another visitor with matching <code>sk</code> can connect.</td><td>Private tunnels – zero public port exposure.</td></tr>
             </tbody>
           </table>
@@ -88,7 +88,7 @@
               <tr><td><code>7000/tcp</code></td><td>Inbound</td><td>FRP control channel (token auth)</td></tr>
               <tr><td><code>7443/tcp</code></td><td>Inbound</td><td>FRP mTLS (client-cert required)</td></tr>
               <tr><td><code>6000–6999/tcp</code></td><td>Inbound</td><td>Visitor port pool</td></tr>
-              <tr><td><code>443/tcp</code> on <code>FRP_DOMAIN</code></td><td>Inbound</td><td>HTTP tunnels (requires wildcard cert)</td></tr>
+              <tr><td><code>443/tcp</code> on the subdomain host</td><td>Inbound</td><td>HTTP tunnels (requires wildcard cert)</td></tr>
             </tbody>
           </table>
 

@@ -87,3 +87,32 @@ def test_audit_default_caps_at_200(test_client, db_session, admin_user):
     assert len(r.json()) == 200
     # X-Total-Count still reflects the full, pre-pagination count.
     assert int(r.headers["X-Total-Count"]) >= 205
+
+
+def test_timestamp_is_utc_with_z_under_a_non_utc_session(test_client, db_session, admin_user):
+    # timestamptz comes back in the session zone; the API writes the same instant in
+    # UTC with Z (R-0064), whatever zone the connection runs in.
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import text
+
+    from app.modules.audit.models import AuditLog
+
+    db_session.execute(text("SET LOCAL TIME ZONE 'Europe/Berlin'"))
+    row = AuditLog(
+        timestamp=datetime(2026, 10, 5, 12, 0, 0, tzinfo=timezone.utc),
+        actor_type="system",
+        action="tz.probe",
+        status="success",
+    )
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    assert row.timestamp.utcoffset() == timedelta(hours=2)  # the premise: not UTC
+
+    token = _login(test_client, "admin", "adminpass")
+    r = test_client.get(
+        "/api/audit", params={"action": "tz.probe"}, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 200, r.text
+    assert [e["timestamp"] for e in r.json()] == ["2026-10-05T12:00:00Z"]

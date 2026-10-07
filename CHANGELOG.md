@@ -228,7 +228,60 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Vom Dependency-Audit (`pip-audit`) erkannt. Der Changelog 2.13.0 → 2.14.0 enthaelt keine inkompatible Aenderung; `pytest`
   gegen den exakten neuen Lock unter Python 3.12 gruen (server 682), `pip-audit` ohne Befund.
 
+- **pyjwt 2.14.0 → 2.15.1** im Server (gehashte Lock neu generiert, Untergrenze in `requirements.in`
+  auf `>=2.15.0`, R-0193): behebt PYSEC-2026-4141 (behoben ab 2.15.0). Vom Dependency-Audit (`pip-audit`)
+  erkannt. Der Changelog 2.14.0 → 2.15.1 enthaelt keine inkompatible Aenderung fuer `jwt.encode`/`jwt.decode`
+  mit HS256: 2.15.0 meldet zu tief verschachtelte Payloads als `DecodeError` (der Server faengt
+  `InvalidTokenError`), 2.15.1 nimmt ein angehaengtes `=`-Padding in JWS-Segmenten an (gesperrte Tokens
+  erkennt der Server an der `jti`, nicht am Token-String). `pytest` gegen den exakten neuen Lock unter
+  Python 3.12 gruen (server 824), `pip-audit` ohne Befund.
+
+- **e2e-Lockfile: `basic-ftp` 5.3.1 → 6.2.2, `braces` entfernt (R-0198):** zwei `overrides` in
+  `apps/desktop/e2e/package.json`, beide unter WebdriverIO und vom Dependency-Audit (`npm audit`, Schritt „Audit e2e
+  lockfile") erkannt; nur `dev`-Abhaengigkeiten, nichts davon wird ausgeliefert.
+  - `basic-ftp` auf `^6.2.1` (transitiv ueber `@wdio/utils` → `@puppeteer/browsers` → `proxy-agent` →
+    `pac-proxy-agent` → `get-uri`, das `^5.3.1` verlangt): behebt GHSA-c475-qrg2-pj4r (high, CPU-Last beim Parsen von
+    Verzeichnislisten), 6.2.2 zusaetzlich GHSA-5rfr-xx34-2xxv. Der Changelog 5.3.1 → 6.2.2 aendert keine API, die
+    `get-uri` nutzt; der Bruch in 6.0.0 (kein getrennter Transfer-Host ohne `allowSeparateTransferHost`) betrifft nur
+    FTP-Downloads, die der Testbaum nicht macht.
+  - `chokidar` unter `mocha` auf `^4.0.3`: fuer `braces` (GHSA-vfj7-8cjw-p6xm, high, bis 3.0.3, ohne gepatchte
+    Version) gibt es keinen Fix, es hing nur an mochas `chokidar` 3.6.0. Mit chokidar 4, das schon im Baum liegt, faellt
+    es samt elf weiteren Paketen weg. Grenze: Der Watch-Modus der mocha-CLI verliert die Glob-Unterstuetzung; die
+    E2E-Tests nutzen ihn nicht, WebdriverIO ruft mocha programmatisch.
+  - `npm audit --audit-level=high` in `apps/desktop/e2e` vorher 18 high, nachher 0; `apps/web` und `apps/desktop/ui`
+    unveraendert ohne Befund.
+
+- **`source-map-js` 1.2.1 → 1.2.2 in den Lockfiles von `apps/web` und `apps/desktop/ui` (R-0199):** behebt GHSA-68fv-2mgg-jv7q
+  (CVE-2026-93749, high, Event-Loop-Blockade durch indizierte Source-Map-Abschnitte). Vom Dependency-Audit (`npm audit`)
+  erkannt. Reiner Lockfile-Bump (`npm update source-map-js --package-lock-only`), `package.json` unveraendert: alle
+  Abnehmer (`postcss`, `css-tree`, `magicast`) erlauben `^1.2.1`. Der Changelog 1.2.1 → 1.2.2 enthaelt nur diesen Fix
+  und einen CSP-Fix fuer den Browser. Nur Dev-Werkzeug, nicht im ausgelieferten Bundle; `npm audit --audit-level=high`
+  vorher je 1 high, nachher 0 in beiden Projekten und in `apps/desktop/e2e`.
+
 ### Fixed
+
+- **Desktop: Tunnel-Hinweis ohne Identitaet (R-0203):** Startet ein Tunnel ohne mTLS-Zertifikat,
+  verweist die Meldung jetzt auf die Registrierung des Geraets mit einem Einmal-Token vom Admin
+  statt auf eine Anmeldung am Server — seit ADR 0003 enrollt der Login nicht.
+- **Zeitstempel der Server-API in UTC mit `Z` (R-0064):** Die Antworten schreiben ihre Zeitstempel
+  als RFC 3339 in UTC mit `Z`. Bisher trugen die meisten keinen Offset — auch die vier Felder, fuer
+  die das OpenAPI `format: date-time` verspricht (`created_at` der API-Keys, `created_at`, `last_run`
+  und `next_run` der Hooks; die uebrigen sind `string` oder untypisiert) —, und Audit und
+  Notifications den Offset der Datenbank-Session; Web und Desktop lasen Werte ohne Offset als
+  lokale Zeit und zeigten sie um den Abstand zu UTC verschoben. Das OpenAPI bleibt unveraendert,
+  die Datenbank auch (keine Migration); die
+  Schemathesis-Ausnahmen der API-Key-Routen sind gefallen. **Hinweis fuer Hook-Skripte:** `last_run`
+  und `triggered_at` im Kontext eines Hook-Skripts tragen jetzt beide `Z` (`last_run` etwa
+  `2026-10-05T12:00:00Z` statt `2026-10-05T12:00:00`, `triggered_at` `…Z` statt `…+00:00`); ein
+  Skript, das die Werte als String vergleicht oder selbst zerlegt, muss das `Z` erwarten.
+  `datetime.fromisoformat` liest alle drei Formen. Doku: API-Referenz, „Zeitstempel",
+  und Hooks.
+- **Server: Zeitstempel in den tz-naiven Spalten durchgehend als naive UTC (Konvention F7):** Vier Schreibstellen
+  (`enrollment/service.py`, zweimal `provisioning/router.py`, `core/auth.py`) gaben zeitzonenbehaftete Werte an
+  `DateTime`-Spalten ohne Zeitzone; Postgres legte sie dann in der Zeitzone der Datenbank-Session ab statt in UTC wie
+  die uebrigen tz-naiven Spalten. Sie schreiben jetzt ueber `utcnow_naive()` aus `app/core/time.py`, und der Abgleich
+  in `cleanup_expired_blacklist` liest mit derselben Konvention, mit 12 h Spielraum fuer Zeilen aus der Zeit davor (sie
+  tragen die Ortszeit der Session). Ein neuer Test prueft die Spalten unter einer Session-Zeitzone ungleich UTC.
 
 - **Red Team und Waechter unabhaengig vom geprueften Nutzer (R-0156, R-0158 bis R-0163):**
   Die Proben von `scripts/dev/runner-redteam.sh` auf git, Proxmox, D-Bus und Settings fuehren
@@ -385,7 +438,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Fehler-Bundles, und dieses Repo ist oeffentlich. Loeschen — dann koennen die zwei
   Eintraege mit.
 
+- **Desktop: Tauri-Command `enroll_device` (R-0040):** das Enrollment ueber die Login-Session hatte keinen
+  Aufrufer in der UI; die App enrollt seit ADR 0003 mit einem Einmal-Token (`enroll_with_token`). Entfernt sind
+  der Command, `enrollment::enroll` und der Zweig in `mint_token`, der nur dafuer ein Access-Token anforderte; der
+  Browser-Export (`export_browser_p12`) nach dem Login bleibt. Der IPC-Inventar-Test fuehrt keinen Command ohne
+  UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
+
 ### Changed
+
+- **Doku-Smoke prueft auch die Namen in Grossbuchstaben als Gate (R-0044):** `scripts/dev/doc-smoke.py --env`
+  zaehlt einen Namen, den die Doku als `<code>` nennt, als bekannt, wenn ihn ausser den drei `config.py` und
+  `.env.example` irgendeine getrackte Datei ausserhalb von `docs/`, `CHANGELOG.md` und `tasks/` traegt — Agent-
+  Einstellungen, CI-Secrets, Zustaende und HTTP-Methoden sind also kein Fund mehr (vorher 138 Funde ueber 48
+  Namen). Der einzige echte Fund, `FRP_DOMAIN` in `docs/en/admin/frp-tunnel.html`, ist korrigiert: gemeint ist der
+  Subdomain-Host der FRP-Server-Konfiguration. Der CI-Job `ops-scripts` faehrt jetzt
+  `doc-smoke.py --paths --env --strict`.
 
 - **Der Public repo guard prueft auch mit der Logik der Basis (R-0174):** Der CI-Job
   „Public repo guard (review.sh sec)" faehrt `review.sh sec --range` zuerst mit dem `review.sh` der
