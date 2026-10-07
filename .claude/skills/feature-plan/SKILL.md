@@ -127,7 +127,14 @@ Komponente: apps/… · Dateien: …
 Verify: bash scripts/dev/verify.sh <komponente> --strict     (oder: bash scripts/tests/run.sh <layer> --strict --only <keys…>)
 Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
 Abhängt von: T<k>   (nur falls nötig)
+Test-Löschung: <datei>::<test> — <Grund>        (nur falls nötig: ein ganzer Test geht)
+Assertion-Änderung: <datei>::<test> — <Grund>   (nur falls nötig: eine Assertion eines bleibenden Tests ändert sich)
 ```
+**Bestehende Assertions:** Löscht eine Task einen ganzen Test oder ändert sie eine Assertion in einem
+Test, der bleibt (auch in einem Helfer einer Testdatei), kündigt der Plan das in der Task an
+(`Test-Löschung:` bzw. `Assertion-Änderung:`, Regeln in `tasks/README.md`). `diff-scan` lässt es nur mit
+der **committeten** Ankündigung durch, und der Plan-Commit am Gate ist der Weg dorthin; unterwegs lässt
+sie sich nicht nachtragen. Eine Regel wie „den Zähler je Task anheben“ ist genau so ein Fall.
 
 ## 3a. Die kurzen Wege: `--kurz` und `--bundle`
 
@@ -189,7 +196,9 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   tasks/<slug>.md` — der Pfad gehört in die Spalte `Ledger`, dort lesen ihn `next` und die
   Parallel-Prüfung; derselbe Status füllt nur die Spalte. Nie ein Edit an der Datei.
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
-  stagen, `bash scripts/dev/review.sh sec --staged` (Exit 4: etwas darf nie in dieses
+  stagen, `bash scripts/dev/ledger.sh lint tasks/<slug>.md` (prüft das Ledger und die Spec aus
+  seinem `Spec:`-Feld, auch auf Reste eines Werkzeugaufrufs; Exit 1: beheben, dann erst
+  committen), `bash scripts/dev/review.sh sec --staged` (Exit 4: etwas darf nie in dieses
   öffentliche Repo — nicht committen, melden), dann committen (Ledger mit `Status: geplant`),
   zurück mit `git switch main` — der Haupt-Checkout
   bleibt auf `main`. Die Commit-Nachricht ist `chore(plan): add spec + ledger for <slug>`, bei

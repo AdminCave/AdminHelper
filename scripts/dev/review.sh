@@ -8,7 +8,7 @@
 #   bash scripts/dev/review.sh diff-scan [--staged] [--task <ledger> <id>]
 #                                                       ways to make a suite lie
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
-#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>]]
+#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>] | --message <file>]
 #                                                       what must never be committed or pushed
 #                                                       (names a path or file:line, never a line's
 #                                                       content: its output may stand in a public CI log)
@@ -47,13 +47,19 @@
 #              that goes with its WHOLE test — the test's head deleted in the
 #              same block and not added back — when the task declares that test
 #              in a `Test-Löschung: <file>::<test> — <reason>` line. Dead code and
-#              its test can leave together; an assertion out of a test that
-#              stays is still a finding, declared or not.
+#              its test can leave together. And a fourth: an assertion out of a
+#              test that STAYS, when the task declares that change in an
+#              `Assertion-Änderung: <file>::<test> — <reason>` line, the test is
+#              there exactly once before and after, and its new body gains at
+#              least as many assertions as it loses (R-0206). Any other assertion
+#              out of a test that stays is still a finding.
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
-#              private roadmap, a security ledger, a finding's dedup key, or one
-#              of the two gitignored files that carry credentials.
+#              private roadmap, a security ledger, a finding's dedup key, one
+#              of the two gitignored files that carry credentials, or a line
+#              with a token pattern (Proxmox, GitHub, Anthropic). With --message,
+#              the message of the commit being made (the commit-msg hook).
 #   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
 #              scripts/dev/review-verdict.schema.json, be about the tree --tree
 #              names, and say approve without a blocker and without a probe
@@ -151,7 +157,7 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
@@ -182,6 +188,12 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || die "--range needs <a>..<b>"
       case "$2" in -*|'') die "not a range: $2" ;; *..*) ;; *) die "not a range (<a>..<b>): $2" ;; esac
       RANGE="$2"; shift ;;
+    --message)
+      [ $# -ge 2 ] || die "--message needs <file>"
+      # An empty name would leave MESSAGE unset and fall through to sec over the
+      # worktree, which may well say clean.
+      [ -n "$2" ] || die "--message needs a file name, got an empty one"
+      MESSAGE="$2"; shift ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
@@ -202,6 +214,14 @@ task_field() {
 }
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
+if [ -n "$MESSAGE" ]; then
+  [ "$VERB" = sec ] || die "--message is for sec alone"
+  # Relative to where the caller stands, as for check-verdict: the hook passes a
+  # path git resolved, a call by hand may come from a subdirectory.
+  case "$MESSAGE" in /*) ;; *) MESSAGE="$CALLER_PWD/$MESSAGE" ;; esac
+  [ "$STAGED" = 0 ] && [ -z "$RANGE" ] || die "--message stands alone, without --staged or --range"
+  [ -f "$MESSAGE" ] && [ -r "$MESSAGE" ] || die "--message: no readable file $MESSAGE"
+fi
 [ -z "$NOT_ON" ] || [ -n "$RANGE" ] || die "--not-on needs --range"
 if [ -n "$RANGE" ]; then
   # The other verbs judge what is about to be committed; a range is history.
@@ -221,22 +241,35 @@ changed_paths() { "${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-on
 
 case "$VERB" in
   diff-scan)
-    # The tests the task declares as deleted — read from the COMMITTED ledger
+    # The tests the task declares as deleted (Test-Löschung) or as changed
+    # (Assertion-Änderung) — read from the COMMITTED ledger
     # (HEAD), never from the working tree: a builder must not be able to grant
     # itself the exception in the same run (Kevin, 2026-09-25). The declaration
     # typically arrives with the plan commit at the gate. Only with --task: a
     # call by hand has no task to speak for it and stays strict.
     DECL=""
+    DECL_CHG=""
     if [ -n "$TASK_LEDGER" ]; then
       case "$TASK_ID" in ""|*[!A-Za-z0-9._-]*) die "not a task id: $TASK_ID" ;; esac
       case "$TASK_LEDGER" in */*) ;; *) TASK_LEDGER="tasks/$TASK_LEDGER" ;; esac
       case "$TASK_LEDGER" in *.md) ;; *) TASK_LEDGER="$TASK_LEDGER.md" ;; esac
+      # A ledger is exactly what the commit check of task-close guards: tasks/*.md
+      # without the README (it shows the syntax of both declarations) and the
+      # template. Anything else, the CHANGELOG or a spec, could carry a task
+      # section past that check and grant itself an exception (R-0206; for
+      # Test-Löschung that way was open since R-0079).
+      case "$(realpath -m --relative-to=. -- "$TASK_LEDGER")" in
+        tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $TASK_LEDGER" ;;
+        tasks/*.md) ;;
+        *) die "not a ledger: $TASK_LEDGER" ;;
+      esac
       [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"
       COMMITTED="$(mktemp)" || die "mktemp failed"
       if git show "HEAD:$TASK_LEDGER" > "$COMMITTED" 2>/dev/null; then
         DECL="$(task_field "$COMMITTED" "$TASK_ID" "Test-Löschung")"
+        DECL_CHG="$(task_field "$COMMITTED" "$TASK_ID" "Assertion-Änderung")"
       fi
       rm -f "$COMMITTED"
     fi
@@ -259,6 +292,13 @@ case "$VERB" in
         if (match(s, /(^|[ \t])#/))    c = RSTART + RLENGTH - 1
         if (match(s, /(^|[ \t])\/\//)) { c2 = RSTART + RLENGTH - 2; if (!c || c2 < c) c = c2 }
         return c
+      }
+      # assert, the Rust macros assert_{eq,ne,matches,…}!, expect( of vitest/jest,
+      # and in a Go test file the calls on its testing.T t — outside one, a t is
+      # just a name.
+      function is_assert(s, f) {
+        return s ~ /(^|[^A-Za-z_.])assert(_[a-z]+)?!?([^A-Za-z_]|$)/ || s ~ /expect\(/ ||
+               (f ~ /_test\.go$/ && s ~ /(^|[^A-Za-z0-9_.])t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)\(/)
       }
       /^diff --git /  { inheader = 1; next }
       # git ends a path that holds a space with a tab.
@@ -284,20 +324,21 @@ case "$VERB" in
       /^-/            {
                         line = substr($0, 2)
                         printf "RL\t%s\t%d\n", file, oldno
-                        # assert, the Rust macros assert_{eq,ne,matches,…}!, expect(
-                        # of vitest/jest, and in a Go test file the calls on its
-                        # testing.T t — outside one, a t is just a name. Whether
-                        # the line stood where tests are is the judge below.
-                        if (line !~ /review: ok/ &&
-                            (line ~ /(^|[^A-Za-z_.])assert(_[a-z]+)?!?([^A-Za-z_]|$)/ || line ~ /expect\(/ ||
-                             (file ~ /_test\.go$/ &&
-                              line ~ /(^|[^A-Za-z0-9_.])t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)\(/)))
+                        # Whether the line stood where tests are is the judge below.
+                        if (line !~ /review: ok/ && is_assert(line, file))
                           printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
                         oldno++; next
                       }
       /^\+/           {
                         line = substr($0, 2)
                         sub(/\r$/, "", line)
+                        # An added assertion, not one that only stands in a comment
+                        # (at the start of the line or behind code): what a declared
+                        # change has to bring back, counted below.
+                        acmt = comment_at(line)
+                        acode = acmt ? substr(line, 1, acmt - 1) : line
+                        if (is_assert(acode, file) && line !~ /^[ \t]*(\/\*|\*)/)
+                          printf "AA\t%s\t%d\t%s\n", file, newno, trim(line)
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
                           cnt = split(PAT, pat, "\x1f")
@@ -334,8 +375,12 @@ case "$VERB" in
     # with the dead one —, (3) no head of that name is left in the new version of
     # the file, and (4) no file of the diff gains a head of that name (a test
     # that moves is not a test that goes). An assertion passes only when its OLD
-    # line number lies inside the old span of such a test.
-    FOUND="$(printf '%s\n' "$RAW" | DECL="$DECL" STAGED="$STAGED" python3 -c '
+    # line number lies inside the old span of such a test. A declared change
+    # (R-0206) counts only if the name is a test head exactly once in the old AND
+    # in the new version, neither span holds another head and the file is not
+    # renamed; its removed assertions pass when its new span gains at least as
+    # many added ones.
+    FOUND="$(printf '%s\n' "$RAW" | DECL="$DECL" DECL_CHG="$DECL_CHG" STAGED="$STAGED" python3 -c '
 import os, re, subprocess, sys
 
 staged = os.environ.get("STAGED") == "1"
@@ -347,8 +392,9 @@ for l in lines:
         _, f, n = l.split("\t", 2)
         removed.setdefault(f, set()).add(int(n))
 ars = [l.split("\t", 3)[1:] for l in lines if l.startswith("AR\t")]
+aas = [l.split("\t", 3)[1:] for l in lines if l.startswith("AA\t")]
 renamed = dict(l.split("\t", 2)[1:][::-1] for l in lines if l.startswith("RN\t"))   # new -> old
-out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t", "RN\t"))]
+out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t", "AA\t", "RN\t"))]
 
 def git(*a):
     r = subprocess.run(("git", "-c", "core.quotePath=false") + a, capture_output=True)
@@ -376,22 +422,36 @@ GO = re.compile(r"^()func\s+(Test\w*)\s*\(")
 JS = re.compile(r"^(\s*)(?:it|test)(?:\.only|\.skip)?\s*\(\s*([\x27\x22`])(.*?)\2")
 RS = re.compile(r"^(\s*)(?:pub\s+)?(?:async\s+)?fn\s+(\w+)")
 RS_ATTR = re.compile(r"^\s*#\[(?:[a-z_]+::)?test[\]()]")   # also #[tokio::test(flavor = …)]
+# Any function, for a declared change in a test file (R-0206): the asserting
+# often sits in a helper the tests call. Go without a receiver, Rust without the
+# test attribute; arrow functions stay out, their forms are too many for one
+# pattern.
+PY_FN = re.compile(r"^(\s*)(?:async\s+)?def\s+(\w+)\s*\(")
+GO_FN = re.compile(r"^()func\s+(\w+)\s*\(")
+JS_FN = re.compile(r"^(\s*)(?:export\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)\s*\(")
+# Where tests are: a test file. See where_tests_are below (R-0130).
+TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_[^/]*[.]py$|_test[.](py|go|sh)$|[.](test|spec)[.][^/]+$")
 
-def heads(path, text):
-    """[(name, first_line, last_line, indent)] of the test heads in text, 1-based."""
+def heads(path, text, helpers=False):
+    """[(name, first_line, last_line, indent)] of the test heads in text, 1-based;
+    with helpers, of any function head as well (one per line)."""
     src = text.split("\n")
     found = []
     for i, s in enumerate(src):
         name = ind = None
         if path.endswith(".py"):
-            m = PY.match(s)
+            m = PY.match(s) or (helpers and PY_FN.match(s))
             if m: ind, name = len(m.group(1)), m.group(2)
         elif path.endswith(".go"):
-            m = GO.match(s)
+            m = GO.match(s) or (helpers and GO_FN.match(s))
             if m: ind, name = 0, m.group(2)
         elif re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path):
             m = JS.match(s)
-            if m: ind, name = len(m.group(1)), m.group(3)
+            if m:
+                ind, name = len(m.group(1)), m.group(3)
+            elif helpers:
+                m = JS_FN.match(s)
+                if m: ind, name = len(m.group(1)), m.group(2)
         elif path.endswith(".rs"):
             m = RS.match(s)
             if m:
@@ -400,7 +460,7 @@ def heads(path, text):
                 while j >= 0 and src[j].strip().startswith("#["):
                     if RS_ATTR.match(src[j]): attr = True
                     j -= 1
-                if attr: ind, name = len(m.group(1)), m.group(2)
+                if attr or helpers: ind, name = len(m.group(1)), m.group(2)
         if name is None:
             continue
         end = len(src)
@@ -426,16 +486,22 @@ def heads(path, text):
 changed = [p for p in text(git("diff", *(["--staged"] if staged else []), "--name-only", "-z")).split("\0") if p]
 
 entries, notes = {}, {}
-decl = os.environ.get("DECL", "")
-for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
-    part = part.strip()
-    if not part:
-        continue
-    m = re.match(r"^([^\s:]+)::(.+?)\s+—\s+\S", part)
-    if not m:
-        notes.setdefault(part.split("::")[0], []).append("declaration without a reason ignored: " + part)
-        continue
-    path, name = m.group(1), m.group(2).strip()
+
+
+def declared(decl):
+    """(path, name) of each declaration that carries a reason; the others become notes."""
+    for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^([^\s:]+)::(.+?)\s+—\s+\S", part)
+        if not m:
+            notes.setdefault(part.split("::")[0], []).append("declaration without a reason ignored: " + part)
+            continue
+        yield m.group(1), m.group(2).strip()
+
+
+for path, name in declared(os.environ.get("DECL", "")):
     old = [h for h in heads(path, old_text(path)) if h[0] == name]
     new = [h for h in heads(path, new_text(path)) if h[0] == name]
     moved = [f for f in changed if f != path and
@@ -468,6 +534,37 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
                 f"declared {path}::{name} ignored: line {kept[0]} of its old body is not deleted — the whole test does not go")
         else:
             entries[(path, name)] = (a, b)
+
+# Declared changes (R-0206): an assertion may leave a test that STAYS. The test
+# is there exactly once before and after (a name that two classes or describe
+# blocks share cannot be told apart), neither span holds the head of another
+# test (a span guessed too wide by odd indentation), and the file is not renamed
+# in this diff. Whether its new body brings back enough assertions is counted
+# below, against the removed ones that count. In a test file the name may also
+# be a helper the tests call; the guard against a second test stays on test
+# heads, or every fake nested in a test would refuse it.
+changes = {}
+for path, name in declared(os.environ.get("DECL_CHG", "")):
+    what = f"declared change {path}::{name} ignored"
+    if path in renamed or path in renamed.values():
+        notes.setdefault(path, []).append(f"{what}: the file is renamed in this diff")
+        continue
+    fn = bool(TEST_PATH.search(path))
+    old_h, new_h = heads(path, old_text(path)), heads(path, new_text(path))
+    old = [h for h in heads(path, old_text(path), fn) if h[0] == name]
+    new = [h for h in heads(path, new_text(path), fn) if h[0] == name]
+    if len(old) != 1 or len(new) != 1:
+        notes.setdefault(path, []).append(
+            f"{what}: {len(old)} tests of that name in the old file and {len(new)} in the new one, it must be one in each")
+        continue
+    (a, b), (c, d) = old[0][1:3], new[0][1:3]
+    inner = [h for h in old_h if a < h[1] <= b] + [h for h in new_h if c < h[1] <= d]
+    if inner:
+        notes.setdefault(path, []).append(f"{what}: its span holds another test ({inner[0][0]}, line {inner[0][1]})")
+        continue
+    # A helper changes the check for every test that calls it: the clean line says so.
+    kind = "" if any(h[0] == name and h[1] == a for h in old_h) else "helper, "
+    changes[(path, name)] = (a, b, c, d, kind)
 
 # A return that ends a test early (bare, or with None, undefined, Ok(()))
 # counts inside the span of a test in the NEW file only; a helper next to the
@@ -531,11 +628,10 @@ for path, newno, ln in ars:
     if any(a < n <= b and ends_test_early(lines, a, b, n, NESTED.get(lang(path))) for _, a, b, _ in found):
         out.append(f"{path}:{newno}  early return in a test: {ln}")
 
-# R-0130: a removed assertion counts where tests are — in a test file, or in
-# the span of a test in the OLD file (Rust keeps tests inline under src/) —
-# and an import line never is one (`use pretty_assertions::assert_eq;`).
+# R-0130: a removed assertion counts where tests are — in a test file (TEST_PATH,
+# above), or in the span of a test in the OLD file (Rust keeps tests inline
+# under src/) — and an import line never is one (`use pretty_assertions::assert_eq;`).
 # Production code may lose an assert or an .expect( without silencing a test.
-TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_[^/]*[.]py$|_test[.](py|go|sh)$|[.](test|spec)[.][^/]+$")
 IMPORT = re.compile(r"^(use|import)[ \t]|^from[ \t]+[^ \t]+[ \t]+import[ \t]")
 old_spans = {}
 
@@ -549,31 +645,54 @@ def where_tests_are(path, n):
 
 ras = [r for r in ras if not IMPORT.match(r[2]) and where_tests_are(r[0], int(r[1]))]
 
-used = set()
+# A declared change covers the removed assertions of its old span only when its
+# new span gains at least as many (n >= r): changed, not taken away.
+covered = {}
+for k, (a, b, c, d, kind) in changes.items():
+    r = sum(1 for p, o, _ in ras if p == k[0] and a <= int(o) <= b)
+    n = sum(1 for p, o, _ in aas if p == k[0] and c <= int(o) <= d)
+    if r and n >= r:
+        covered[k] = (a, b, r, n, kind)
+    elif r:
+        notes.setdefault(k[0], []).append(
+            f"declared change {k[0]}::{k[1]} ignored: {n} assertion(s) added in its new body, {r} removed")
+
+used, changed_tests = set(), set()
 for path, oldno, text in ras:
     n = int(oldno)
     hit = [k for k, (a, b) in entries.items() if k[0] == path and a <= n <= b]
+    chg = [k for k, (a, b, _, _, _) in covered.items() if k[0] == path and a <= n <= b]
     if hit:
         used.add(hit[0])
+    elif chg:
+        changed_tests.add(chg[0])
     else:
         why = "; ".join(notes.get(path, []))
         out.append(f"{path}:{oldno}  removed assertion: {text}" + (f"  ({why})" if why else ""))
 for k in sorted(used):
     out.append(f"DECLARED\t{k[0]}::{k[1]}")
+for k in sorted(changed_tests):
+    out.append(f"CHANGED\t{k[0]}::{k[1]} ({covered[k][4]}{covered[k][2]} removed, {covered[k][3]} added)")
 print("\n".join(out))
 ')" || die "could not judge the removed assertions"
     GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"
-    FOUND="$(printf '%s\n' "$FOUND" | grep -v '^DECLARED' | grep -v '^$')"
+    CHG="$(printf '%s\n' "$FOUND" | sed -n 's/^CHANGED\t//p' | sort)"
+    FOUND="$(printf '%s\n' "$FOUND" | grep -v -e $'^DECLARED\t' -e $'^CHANGED\t' | grep -v '^$')"
     if [ -n "$FOUND" ]; then
       echo "review.sh diff-scan: the diff changes what a green run means" >&2
       printf '%s\n' "$FOUND" >&2
       echo "  (deliberate? append '# review: ok <reason>' to the line; a whole test that" >&2
-      echo "   goes with dead code: 'Test-Löschung: <file>::<test> — <reason>' in the task," >&2
-      echo "   committed before the deletion — the working-tree ledger does not count)" >&2
+      echo "   goes with dead code: 'Test-Löschung: <file>::<test> — <reason>' in the task;" >&2
+      echo "   an assertion changed in a test that stays: 'Assertion-Änderung: <file>::<test>" >&2
+      echo "   — <reason>'; either committed before the change — the working-tree ledger does not count)" >&2
       exit 3
     fi
-    if [ -n "$GONE" ]; then
-      echo "diff-scan: clean ($(grep -c . <<<"$GONE") declared test deletion(s): $(paste -sd, - <<<"$GONE" | sed 's/,/, /g'))"
+    # Each entry of a change carries a comma of its own, so the lists are joined with "; ".
+    DONE=""
+    [ -z "$GONE" ] || DONE="$(grep -c . <<<"$GONE") declared test deletion(s): $(paste -sd, - <<<"$GONE" | sed 's/,/, /g')"
+    [ -z "$CHG" ] || DONE="${DONE:+$DONE; }$(grep -c . <<<"$CHG") declared assertion change(s): $(awk 'NR > 1 { printf "; " } { printf "%s", $0 }' <<<"$CHG")"
+    if [ -n "$DONE" ]; then
+      echo "diff-scan: clean ($DONE)"
     else
       echo "diff-scan: clean"
     fi
@@ -668,9 +787,76 @@ $IMPLICIT"
         .claude/settings.local.json|.devenv.sh|*/.devenv.sh) BLOCKED+=("$1$2 (carries credentials)") ;;
       esac
     }
+    # Token shapes (R-0183) as their issuers write them: Proxmox USER@REALM!TOKENID=UUID
+    # (Proxmox VE API wiki), the GitHub prefixes ghp_ gho_ ghu_ ghs_ ghr_ github_pat_
+    # (docs.github.com, token formats) and sk-ant- (Anthropic keys and the setup-token;
+    # in no doc, so not verified, taken from practice). A minimum length lets the
+    # placeholders in code, docs and tests pass, and so does a body of at most two
+    # different characters (xxxx…, 0000-…). No interval expressions: not every awk
+    # knows them, so the length is RLENGTH.
+    SEC_TOKEN_AWK='
+      function plain(t,   i, c, seen, n) {
+        n = 0
+        for (i = 1; i <= length(t); i++) {
+          c = substr(t, i, 1)
+          if (c != "-" && c != "_" && !(c in seen)) { seen[c] = 1; n++ }
+        }
+        return n <= 2
+      }
+      function longrun(s, re, n, cut,   t, b) {
+        while (match(s, re)) {
+          t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+          if (length(t) >= n) { b = t; sub(cut, "", b); if (!plain(b)) return 1 }
+        }
+        return 0
+      }
+      function uuidish(u,   g) {
+        return length(u) == 36 && split(u, g, "-") == 5 && length(g[1]) == 8 && length(g[5]) == 12 && !plain(u)
+      }
+      function pvetoken(s,   l, t, u) {
+        # USER@REALM!TOKENID=UUID, the PBS form with a colon, and both URL-encoded
+        # (%40, %21, %3D, %3A) are one pattern once the escapes are undone.
+        l = s; gsub(/%40/, "@", l); gsub(/%21/, "!", l); gsub(/%3[Dd]/, "=", l); gsub(/%3[Aa]/, ":", l)
+        while (match(l, /[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+[=:][0-9A-Fa-f-]+/)) {
+          t = substr(l, RSTART, RLENGTH); l = substr(l, RSTART + RLENGTH)
+          u = t; sub(/^.*[=:]/, "", u)
+          if (uuidish(u)) return 1
+        }
+        # The secret alone behind a key name (api_token_secret, PVE_TOKEN_SECRET and
+        # the like); a bare UUID without such a name is an ordinary id.
+        l = tolower(s)
+        while (match(l, /token_secret[^0-9a-z]*[:=][^0-9a-z]*[0-9a-f-]+/)) {
+          t = substr(l, RSTART, RLENGTH); l = substr(l, RSTART + RLENGTH)
+          # The filler may end in a hyphen, as in a shell default (:-UUID).
+          u = t; sub(/^.*[^0-9a-f-]/, "", u); sub(/^-+/, "", u)
+          if (uuidish(u)) return 1
+        }
+        return 0
+      }
+      function token(s) {
+        return longrun(s, "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]+", 34, "^gh._") ||
+               longrun(s, "github_pat_[A-Za-z0-9_]+", 41, "^github_pat_") ||
+               longrun(s, "sk-ant-[A-Za-z0-9_-]+", 27, "^sk-ant-([a-z]+[0-9]+-)?") || pvetoken(s)
+      }
+      function finding(a, file, n) {
+        if (a ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\tkey\n", file, n
+        else if (token(a)) printf "%s:%d\ttoken\n", file, n
+      }'
+    # sec_hits <tag> — the lines the awk below printed, as findings: file:line and
+    # what it is, never the line itself.
+    sec_hits() {
+      local hit kind
+      while IFS=$'\t' read -r hit kind; do
+        [ -n "$hit" ] || continue
+        case "$kind" in
+          token) BLOCKED+=("$hit$1 (a token pattern)") ;;
+          *)     BLOCKED+=("$hit$1 (a security finding's Dedup-Key)") ;;
+        esac
+      done
+    }
     # sec_scan <tag> <git diff args…> — what this diff adds that must never leave.
     sec_scan() {
-      local tag="$1" p hit out
+      local tag="$1" p out
       shift
       # -z: --name-only C-quotes a path with `"` or `\` even with core.quotePath=false,
       # and a quoted `"tasks/private/…` matched no pattern. A git that cannot read the
@@ -681,18 +867,18 @@ $IMPLICIT"
       # diff dies of SIGPIPE, and with `set -o pipefail` the hit turned into a
       # clean bill of health for every diff larger than the pipe buffer. It also
       # names the line, because "somewhere in this diff" is not actionable.
-      out="$("${GIT_DIFF[@]}" "$@" | awk '
+      out="$("${GIT_DIFF[@]}" "$@" | awk "$SEC_TOKEN_AWK"'
         # Headers only before the first @@ of a file: `++ x` added reads `+++ x`.
         /^diff --git /             { inheader = 1; next }
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
         inheader    { next }
-        /^\+/       { if ($0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno; newno++; next }
+        # "\ No newline at end of file" belongs to no side and counts no line.
+        /^\\/       { next }
+        /^\+/       { finding(substr($0, 2), file, newno); newno++; next }
         /^-/        { next }
                     { newno++ }')" || die "sec: git could not read this change"
-      while IFS= read -r hit; do
-        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
-      done <<< "$out"
+      sec_hits "$tag" <<< "$out"
     }
     # sec_scan_merge <tag> <merge> — what the merge itself brings: the combined diff
     # shows only what differs from every parent, and a line counts only when it is
@@ -700,25 +886,45 @@ $IMPLICIT"
     # would bring every public line of main along.
     MERGE_DIFF=(git -c core.quotePath=false diff-tree --no-commit-id -r --text --no-ext-diff --no-textconv --no-color)
     sec_scan_merge() {
-      local tag="$1" c="$2" p hit out
+      local tag="$1" c="$2" p out
       out="$("${MERGE_DIFF[@]}" -c --name-only -z "$c" | tr '\0' '\n')" || die "sec: git could not read merge $c"
       while IFS= read -r p; do sec_path "$p" "$tag"; done <<< "$out"
-      out="$("${MERGE_DIFF[@]}" --cc -p "$c" | awk '
+      out="$("${MERGE_DIFF[@]}" --cc -p "$c" | awk "$SEC_TOKEN_AWK"'
         /^diff --(cc|combined) /    { inheader = 1; next }
         inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
         /^@@@/      { inheader = 0; np = 0; while (substr($0, np + 1, 1) == "@") np++; np--
                       for (i = 2; i <= NF; i++) if ($i ~ /^\+/) { split($i, nw, ","); newno = substr(nw[1], 2) + 0; break }
                       next }
         inheader    { next }
+        # git does not print the no-newline marker in a combined diff today; should it
+        # ever, the marker counts no line here either.
+        /^\\/       { next }
         { pre = substr($0, 1, np); if (index(pre, "-")) next
           rest = pre; gsub(/\+/, "", rest)
-          if (rest == "" && $0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno
+          if (rest == "") finding(substr($0, np + 1), file, newno)
           newno++ }')" || die "sec: git could not read merge $c"
-      while IFS= read -r hit; do
-        [ -n "$hit" ] && BLOCKED+=("$hit$tag (a security finding's Dedup-Key)")
-      done <<< "$out"
+      sec_hits "$tag" <<< "$out"
     }
-    if [ -n "$RANGE" ]; then
+    # sec_scan_message <commit> — its message leaves with a push as well as its diff
+    # (R-0183). Only for a span: at pre-commit there is no message yet.
+    sec_scan_message() {
+      local out
+      out="$(git log -1 --format=%B "$1" | awk "$SEC_TOKEN_AWK"'
+        { if (token($0)) printf "the commit message:%d\ttoken\n", NR }')" || die "sec: git could not read the message of $1"
+      sec_hits " (commit ${1:0:12})" <<< "$out"
+    }
+    if [ -n "$MESSAGE" ]; then
+      # The message of the commit being made (R-0197): before this, only a span
+      # (pre-push, CI) read messages, when the commit already lay in the local
+      # history. With commit -v git puts the diff below a scissors line, and that is
+      # no part of the message. Comment lines are read: without an editor (-m, -F)
+      # git keeps them in the commit.
+      out="$(awk "$SEC_TOKEN_AWK"'
+        /^# -+ >8 -+$/ { exit }
+        { if (token($0)) printf "the commit message:%d\ttoken\n", NR }' "$MESSAGE")" \
+        || die "sec: could not read the message $MESSAGE"
+      sec_hits "" <<< "$out"
+    elif [ -n "$RANGE" ]; then
       # A range is history, not a net change: a file added and removed again inside
       # it still leaves with a push. So every commit is read on its own — against its
       # parent (a root against the empty tree), a merge by what it brings itself;
@@ -753,6 +959,7 @@ $IMPLICIT"
           parent="$(git rev-parse -q --verify "$c^1" 2>/dev/null)" || parent="$EMPTY_TREE"
           sec_scan " (commit ${c:0:12})" "$parent" "$c"
         fi
+        sec_scan_message "$c"
       done <<< "$COMMITS"
     else
       sec_scan "" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}"

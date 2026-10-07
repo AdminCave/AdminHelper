@@ -215,7 +215,10 @@ Stufe 7).
      stagen (`git add -- <pfade>`) und erneut schließen.
    - **3** — die Suite ist rot, oder der Diff-Scan hat einen stummgeschalteten Test gefunden
      (`|| true`, `set +e`, `skip`, gelöschte Assertion): beheben, erneut schließen. Ist die <!-- review: ok Musterliste in der Anleitung -->
-     Zeile bewusst so, trägt sie `# review: ok <grund>`. Ebenso 3: `docs-pairs` (eine Doku-Seite
+     Zeile bewusst so, trägt sie `# review: ok <grund>`. Eine bewusst geänderte Assertion in einem
+     bleibenden Test, die die Task verlangt, deren `Assertion-Änderung:` aber nicht committet im Ledger
+     steht (`tasks/README.md`), wird nicht zurückgebaut: `ledger.sh mark-question` mit der Frage, ob
+     sie angekündigt wird. Ebenso 3: `docs-pairs` (eine Doku-Seite
      ohne ihre andere Sprache — die zweite mitliefern), ein roter Vertrag aus
      `scripts/dev/review-contracts.txt` (den genannten Test bzw. das Wertpaar in Ordnung
      bringen) oder ein Verdict ohne brauchbares approve.

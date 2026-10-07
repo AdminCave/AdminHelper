@@ -457,13 +457,20 @@ OUT=$(PATH="$SHIM:$PATH" bash "$SETUP" --wat 2>&1); rc=$?
 
 # ══ what it installs ══════════════════════════════════════════════════════════
 echo "── the trusted workspace is opt-in ──"
-# Trust arms the runner's 38 allow rules. Provisioning must not do that as a side
-# effect, so the default plan says what it did NOT do, and --trust is what asks.
+# Trust arms a project's allow rules (the 38 of 2026-09-22 were the project's, not the
+# runner's). Provisioning must not do that as a side effect, so the default plan says
+# what it did NOT do, and --trust is what asks.
 PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run 2>&1)
 grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
   && bad "the default plan already trusts the workspace" || ok "the default plan does not trust the workspace"
 grep -q 'run again with --trust' <<<"$PLAN" \
   && ok "the plan says how to ask for it" || bad "the plan does not say how to ask for trust"
+# Whether the worker needs it is the pilot's measurement, and the flag does not reach
+# the lanes the worker builds in: the plan says both (R-0185).
+grep -q 'the pilot measures whether the worker needs it; --trust covers .*/repo, not the lanes' <<<"$PLAN" \
+  && grep -q "is Kevin's call" <<<"$PLAN" \
+  && ok "the plan says the pilot measures it, that --trust does not cover the lanes and that Kevin decides" \
+  || bad "trust note: $(grep -m1 'trust' <<<"$PLAN")"
 PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run --trust 2>&1)
 grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
   && ok "--trust plans the flag in the runner's .claude.json" || bad "--trust does not plan the trust flag"

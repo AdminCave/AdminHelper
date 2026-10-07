@@ -24,6 +24,9 @@ command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not available"; exit
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 export TMPDIR="$WORK/tmp"; mkdir -p "$TMPDIR"
+# The guard reads its project from CLAUDE_PROJECT_DIR (R-0164): one inherited from the
+# session that runs this test would point it at another checkout (R-0173).
+unset CLAUDE_PROJECT_DIR
 FIX="$WORK/repo"
 PROBE="$FIX/scripts/dev/review-cli-probe.sh"
 mkdir -p "$FIX/scripts/dev/hooks"
@@ -73,6 +76,8 @@ if agent and val("--agents") is None:
     fm = re.findall(r'command: "(.*)"', open(os.path.join(".claude", "agents", agent + ".md")).read())
 prompt = args[-1]
 cmds = re.findall(r"^\d\. (.*)$", prompt, re.M)
+# Claude Code hands its hooks the project it runs in as CLAUDE_PROJECT_DIR.
+hook_env = dict(os.environ, CLAUDE_PROJECT_DIR=os.getcwd())
 denied = []
 for c in cmds:
     if kind == "not-attempted":
@@ -82,11 +87,11 @@ for c in cmds:
     hook_deny = False
     for h in hooks:
         r = subprocess.run(h, shell=True, input=json.dumps({"tool_name": "Bash", "tool_input": {"command": c}}),
-                           text=True, capture_output=True)
+                           text=True, capture_output=True, env=hook_env)
         hook_deny = hook_deny or '"permissionDecision":"deny"' in r.stdout
     if kind != "no-frontmatter-hook":
         for h in fm:
-            subprocess.run(h, shell=True)
+            subprocess.run(h, shell=True, env=hook_env)
     if c.startswith("git log"):
         continue
     if hook_deny:
@@ -138,6 +143,11 @@ FIXTURE=success p --shape agent-file
   && ok "the success fixture, agent-file: every point ok, exit 0" || bad "success: rc=$rc out=$OUT"
 [ "$(state 4)" = ok ] && [ "$(state 5)" = ok ] && [ "$(state 8)" = ok ] && [ "$(state 9)" = ok ] && [ "$(state 10)" = ok ] \
   && ok "denials, project rules out, both hooks fired, the guard refused" || bad "success points: $OUT"
+# As the real CLI does, the fake one hands its hooks its own project: a value the caller
+# set does not change what the guard looks at.
+CLAUDE_PROJECT_DIR="$WORK" FIXTURE=success p --shape agent-file
+[ $rc -eq 0 ] && grep -q '^review-cli-probe: 10 ok, 0 fail, 0 unknown$' <<<"$OUT" \
+  && ok "a CLAUDE_PROJECT_DIR set by the caller ends as without it" || bad "caller's project dir: rc=$rc out=$OUT"
 FIXTURE=success p
 [ $rc -eq 0 ] && grep -q '^review-cli-probe: 9 ok, 0 fail, 1 unknown$' <<<"$OUT" && [ "$(state 9)" = unknown ] \
   && ok "the default shape agents-json: (9) has no agent file to tell" || bad "agents-json: rc=$rc out=$OUT"

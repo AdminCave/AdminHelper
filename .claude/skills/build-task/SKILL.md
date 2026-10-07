@@ -48,7 +48,9 @@ Du baust **eine** Task. Haken, Review, Commit und den Status des Ledgers macht d
 Der Abschluss hat mit Exit 3 abgelehnt. Lies das Close-Log und, wenn genannt, das Verdict. Behebe
 **nur** die Punkte daraus und **nur** in den Dateien der Task (`Dateien:`), teste wie oben und schreibe
 die Commit-Nachricht neu. Liegt ein Punkt außerhalb der Task, baust du ihn nicht: `mark-question` mit
-dem Punkt als Frage.
+dem Punkt als Frage. Meldet der Diff-Scan eine Assertion, die die Task bewusst ändert, deren
+`Assertion-Änderung:` aber im committeten Ledger fehlt, baust du sie nicht zurück: `mark-question` mit
+der Frage, ob die Änderung angekündigt wird.
 
 ## Nie
 

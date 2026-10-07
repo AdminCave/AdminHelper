@@ -15,10 +15,13 @@ Two checks over every ``<code>…</code>`` in ``docs/**/*.html``:
                       the single most common way this documentation goes stale,
                       and nothing has ever checked it.
   --env               an ALL_CAPS fragment that looks like an environment
-                      variable is known to at least one of the three config.py
-                      files or to .env.example. Only names no source knows at
-                      all are reported — a variable read by one service and
-                      documented for another is not drift.
+                      variable is known to the repository outside the
+                      documentation: one of the three config.py files,
+                      .env.example, or any tracked file outside docs/,
+                      CHANGELOG.md and tasks/ (R-0044). Only names nothing else
+                      carries are reported — a variable read by one service and
+                      documented for another is not drift, and neither is an
+                      agent setting, a CI secret, a state or an HTTP method.
 
 Exceptions live in scripts/dev/doc-smoke-allow.txt, one entry per line with a
 reason after '#'; the file is shared by both checks, so an entry silences a path
@@ -61,6 +64,11 @@ _CONFIGS = (
 )
 _ENV_IN_CODE = re.compile(r'os\.environ(?:\.get)?\(?\[?\s*["\']([A-Z][A-Z0-9_]*)["\']')
 _ENV_IN_EXAMPLE = re.compile(r"^\s*#?\s*([A-Z][A-Z0-9_]*)=", re.M)
+# The rest of the repository (R-0044): every ALL_CAPS word of a tracked file, but not
+# the documentation itself, nor the changelog and the ledgers, which keep removed
+# names as history.
+_REPO_WORD = r"[A-Z][A-Z0-9_]{3,}"
+_REPO_WORD_EXCLUDES = (":!docs", ":!CHANGELOG.md", ":!tasks")
 
 
 def _unescape(text: str) -> str:
@@ -141,8 +149,63 @@ def _tracked_paths(root: Path) -> set[str] | None:
     return known
 
 
+def _repo_words(root: Path) -> set[str] | None:
+    """Every ALL_CAPS word of a tracked file outside the excluded paths, or None
+    outside a repository.
+
+    The documentation names more than the services' settings in <code>: the agent's
+    configuration, CI secrets, the variables of the harness scripts, states,
+    constants, HTTP methods. All of them are real and none is in a config.py, and an
+    exception list capped at five cannot hold them. So a name counts as stale only
+    when nothing in the repository carries it any more. Read from what git tracks,
+    like the path check, so a developer box and CI answer alike. The price: a name
+    that only a test or a comment still carries no longer counts as stale.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                # The output is read as words: a user setting that adds line numbers,
+                # columns or colour, or lets grep fall back to untracked files outside a
+                # repository, must not reach it.
+                "-c",
+                "grep.lineNumber=false",
+                "-c",
+                "grep.column=false",
+                "-c",
+                "grep.fallbackToNoIndex=false",
+                "-c",
+                "color.grep=never",
+                "grep",
+                "-I",
+                "-h",
+                "-o",
+                "-w",
+                "-E",
+                _REPO_WORD,
+                "--",
+                ".",
+                *_REPO_WORD_EXCLUDES,
+            ],
+            capture_output=True,
+        )
+    except OSError:
+        return None
+    # 1 is "no line matched", not a failure; anything else (128: no repository) is.
+    if proc.returncode not in (0, 1):
+        print(
+            "doc-smoke: git grep could not read the repository"
+            f" (exit {proc.returncode}); --env falls back to config.py and .env.example",
+            file=sys.stderr,
+        )
+        return None
+    return set(proc.stdout.decode("utf-8", errors="replace").split())
+
+
 def _known_env_names(root: Path) -> set[str]:
-    names: set[str] = set()
+    names: set[str] = set(_repo_words(root) or ())
     for rel in _CONFIGS:
         path = root / rel
         if path.exists():
@@ -175,7 +238,12 @@ def _load_allowlist(root: Path) -> set[str] | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=True, description="documentation smoke test")
     parser.add_argument("--paths", action="store_true", help="check repo paths (default)")
-    parser.add_argument("--env", action="store_true", help="check environment-variable names")
+    parser.add_argument(
+        "--env",
+        action="store_true",
+        help="check ALL_CAPS names: a <code> that is one name must be carried by the repository"
+        " outside docs/, CHANGELOG.md and tasks/ (alone, it turns the path check off)",
+    )
     parser.add_argument("--strict", action="store_true", help="findings make the run fail")
     parser.add_argument("--root", default=None, help="operate on another checkout")
     args = parser.parse_args(argv)
