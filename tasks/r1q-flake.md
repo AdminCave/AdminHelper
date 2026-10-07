@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ledger_loop_test: der Fall r1q flakt in der CI (R-0200) — Task-Ledger
-Status: bereit · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-07 (kleines Fund-Paket aus der von Kevin am 2026-10-06 angenommenen Zeile R-0200; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0200 (Kurz-Ledger ohne Spec)
 Heavy: none — ein hermetischer Harness-Test und gegebenenfalls `scripts/dev/ledger-loop.sh`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -36,5 +36,18 @@ Dedup-Key: bug:scripts:ledger_loop_test.sh:r1q-flaky
 HEAD: a50bdf4e
 Semantik: CLAUDE.md §6: „ein erst roter, dann grüner Test ist `flaky`, nicht PASS“ — ein Test auf `main`, der flakt,
 ist ein Fehler, den wir beheben, nicht wegwiederholen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+
+### T2 — Nachbesserung aus dem Review am Ende: die Sperre fällt am regulären Ende, nicht im EXIT-Trap (R-0200)  [ ]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Änderung: Angelegt 2026-10-07 aus dem Review am Ende (Opus, request_changes). wichtig: Der EXIT-Trap aus T1 läuft
+auch, wenn der Loop an SIGHUP oder SIGTERM stirbt (`tmux kill-session`). Die Bau-Session unter `timeout` (eigene
+Prozessgruppe) läuft dann weiter, und ein sofort neu gestarteter Loop bekäme die Sperre und könnte neben ihr in
+derselben Lane bauen. Deshalb `flock -u 9` am Ende von `finish()`, über das alle regulären Enden laufen
+(`stop_infra`, `stop_run`, `tampered`, `ledger-leer`), statt im Trap: Ein Loop, der an einem Signal stirbt, lässt
+die Sperre bei seiner Session. Neuer Fall `sig`: Fake-Session `wait`, `kill -HUP` auf den Loop, der nächste Lauf
+endet mit 74 („another ledger-loop holds“) — rot mit dem Trap aus T1. Dazu der Wortlaut (nit): git hinterlässt die
+Maintenance erst ab 2.47 (CI: 2.55) und nicht bei jedem Commit länger als den Lauf.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
