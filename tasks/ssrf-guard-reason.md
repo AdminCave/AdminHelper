@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard nennt den Grund: privat oder nicht auflösbar (R-0045) — Task-Ledger
-Status: aktiv · Branch: feature/ssrf-guard-reason · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: bereit · Branch: feature/ssrf-guard-reason · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-05 (kleines Fund-Paket aus der angenommenen Zeile R-0045, Pilot Stufe 7a; delegiert von Kevin am 2026-10-05)
 Pilot: Stufe 7a — erstes Übungs-Ledger für den Worker (`ledger-loop.sh` als `adminhelper-runner`, unbeaufsichtigt, `task-close.sh --review auto` je Task). Gebaut wird es erst nach dem Merge von 7a und Kevins Setup- und Red-Team-Lauf, und nur vom Loop: interaktiv vorgezogen wäre die Übung verbraucht (Spec Stufe 7a, „Pilot“).
 Pilot entfällt: Runner eingefroren (Kevin 2026-10-07), interaktiv gebaut.
@@ -81,8 +81,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: CHANGELOG `[Unreleased]` unter `### Fixed` ein Eintrag „SSRF-Guard nennt den Grund (R-0045)“ für HTTP-Check und Alert-Webhook, transliteriert wie die übrigen (ae/oe/ue); `docs/` keine (beschreibt die Ablehnung, nicht die Meldung)
 Abhängt von: T1
 
-### T3 — Server-Hooks: `http_get`/`http_post` melden ein nicht auflösbares Ziel als solches  [ ]
+### T3 — Server-Hooks: `http_get`/`http_post` melden ein nicht auflösbares Ziel als solches  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_worker.py, apps/server/tests/test_hooks_http_ssrf.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @e62b3679 2026-10-07T13:50:22+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
 Änderung: `script_worker.py` importiert `UrlVerdict` und `classify_url` statt `is_private_url`; `_safe_http_get` und
 `_safe_http_post` werfen bei `PRIVATE` wie heute `ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")`, bei
 `UNRESOLVED` `ValueError(f"Target host could not be resolved (DNS error or timeout), rejected by the SSRF guard:

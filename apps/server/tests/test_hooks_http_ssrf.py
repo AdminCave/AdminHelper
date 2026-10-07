@@ -9,6 +9,7 @@ network. Mirrors the monitoring service's guard."""
 
 import pytest
 
+from app.core import ssrf as ssrf_mod
 from app.modules.hooks import script_worker
 from app.modules.hooks.script_worker import _safe_http_get, _safe_http_post
 
@@ -58,3 +59,15 @@ def test_safe_http_get_disables_redirects_and_caps_body(monkeypatch):
     with pytest.raises(ValueError, match="zu gross"):
         _safe_http_get("http://93.184.216.34/")
     assert captured["follow_redirects"] is False  # no redirect into an internal target
+
+
+@pytest.mark.parametrize("helper", [_safe_http_get, _safe_http_post])
+def test_unresolvable_target_is_named_as_such(monkeypatch, helper):
+    # R-0045: a host that does not resolve (DNS error or timeout) is still refused without
+    # a request, but the hook's error says so instead of calling the target private.
+    streamed = []
+    monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
+    monkeypatch.setattr(script_worker.httpx, "stream", lambda *a, **k: streamed.append(1))
+    with pytest.raises(ValueError, match="could not be resolved"):
+        helper("http://dead-nameserver.example/")
+    assert streamed == []
