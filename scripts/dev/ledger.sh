@@ -305,17 +305,19 @@ case "$CMD" in
       /^## / { flush(); open = 0 }
       END { flush() }' "$LEDGER")
 
-    # A declared test deletion (review.sh diff-scan --task) needs the test and a
-    # reason: the gate passes an assertion over only for the <file>::<test>
-    # named here, and a deletion nobody can explain is the one thing it exists
-    # to stop.
-    while IFS= read -r entry; do
-      echo "ERROR  Test-Löschung: '$entry' is not <file>::<test> — <reason>" >&2
-      RC=1
-    done < <(sed -n 's/^Test-Löschung:[[:space:]]*//p' "$LEDGER" \
-      | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
-      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
-      | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
+    # A declared test deletion or assertion change (review.sh diff-scan --task,
+    # R-0206) needs the test and a reason: the gate passes an assertion over
+    # only for the <file>::<test> named here, and a deletion or change nobody
+    # can explain is the one thing it exists to stop.
+    for field in Test-Löschung Assertion-Änderung; do
+      while IFS= read -r entry; do
+        echo "ERROR  $field: '$entry' is not <file>::<test> — <reason>" >&2
+        RC=1
+      done < <(sed -n "s/^$field:[[:space:]]*//p" "$LEDGER" \
+        | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
+        | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
+    done
 
     # Heavy: none | linux-full | scenario <flags> | windows replaces Fast-Suite: and
     # Warm-Profil: (tasks/README.md). A free Heavy: text beside the old fields is

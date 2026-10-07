@@ -55,7 +55,9 @@ verweigert diese Form inzwischen, die Regel gilt trotzdem.
    realistischen **und** bösartigen Eingaben das Richtige?
 3. **Tests.** Neuer Flow/Logik ⇒ gibt es einen Test? Prüft er **echtes Verhalten mit echten
    Assertions** (kein Scheintest, der nur „läuft durch")? Ist der **Fehlerpfad** abgedeckt,
-   nicht nur der Happy Path? Würde der Test ohne den Fix rot?
+   nicht nur der Happy Path? Würde der Test ohne den Fix rot? Trägt die Task `Assertion-Änderung:`:
+   Ist die neue Assertion mindestens so streng wie die alte? `diff-scan` zählt nur, dass eine dazukommt
+   (auch `assert True` zählt), das Urteil über die Strenge liegt hier.
 4. **Sicherheit (projektkritisch).** Keine neue Injection (SQL/Command/TOML/Path/Template),
    keine AuthZ-Lücke (fehlender Permission-Check, IDOR), keine Secrets in Logs/Fehlern, keine
    deaktivierte TLS-Verifikation, Boundary-Validierung an neuen Eingängen vorhanden. Bei

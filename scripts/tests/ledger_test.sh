@@ -288,13 +288,14 @@ l lint fixture
 [ $rc -eq 0 ] && ok "an opening output or result tag alone stays green" || bad "opening output: rc=$rc out=$OUT"
 rm -rf "$TREE/docs"
 
-# Test-Löschung: <file>::<test> — <reason>, the reason not optional.
-with_deletion() {  # with_deletion <value> — the clean fixture, T2 declaring a deletion
+# Test-Löschung: and Assertion-Änderung: <file>::<test> — <reason>, the reason not optional.
+with_decl() {  # with_decl <field> <value> — the clean fixture, T2 carrying the declaration
   fresh_fixture
   sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/verify.sh server --strict|' "$FIX"
-  L_VAL="$1" awk '/^### T2 /{print; print "Test-Löschung: " ENVIRON["L_VAL"]; next} {print}' "$FIX" > "$FIX.new" \
+  L_LINE="$1: $2" awk '/^### T2 /{print; print ENVIRON["L_LINE"]; next} {print}' "$FIX" > "$FIX.new" \
     && mv "$FIX.new" "$FIX"
 }
+with_deletion() { with_decl Test-Löschung "$1"; }
 with_deletion "apps/server/tests/test_x.py::test_dead — der Code hat keinen Nutzer mehr; apps/web/src/x.test.ts::adds up — ersetzt durch den genaueren Test"
 l lint fixture
 [ $rc -eq 0 ] && ok "a well-formed Test-Löschung: line lints clean" || bad "valid deletion: rc=$rc out=$OUT"
@@ -311,6 +312,17 @@ l lint fixture
 with_deletion "apps/server/tests/test_x.py::test_dead — kein Aufrufer mehr; siehe Ticket #12; apps/web/src/x.test.ts::adds up — ersetzt"
 l lint fixture
 [ $rc -eq 0 ] && ok "a ; inside a reason does not split the entry" || bad "; in the reason: rc=$rc out=$OUT"
+# The same form for a declared assertion change (R-0206).
+with_decl Assertion-Änderung "apps/server/tests/test_x.py::test_shape — der Sollwert trägt jetzt den Offset"
+l lint fixture
+[ $rc -eq 0 ] && ok "a well-formed Assertion-Änderung: line lints clean" || bad "valid change: rc=$rc out=$OUT"
+with_decl Assertion-Änderung "apps/server/tests/test_x.py::test_shape"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "Assertion-Änderung: 'apps/server/tests/test_x.py::test_shape'" <<<"$OUT" \
+  && ok "a change without a reason is an error, and the message names the field" || bad "change no reason: rc=$rc out=$OUT"
+with_decl Assertion-Änderung "apps/server/tests/test_x.py::test_shape — "
+l lint fixture
+[ $rc -eq 1 ] && ok "a change with an empty reason is an error too" || bad "change empty reason: rc=$rc out=$OUT"
 
 # Heavy: none | linux-full | scenario <flags> | windows — the head field that
 # replaces Fast-Suite:/Warm-Profil:. A free Heavy: text beside the old fields is

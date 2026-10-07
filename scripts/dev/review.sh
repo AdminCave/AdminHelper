@@ -47,8 +47,12 @@
 #              that goes with its WHOLE test — the test's head deleted in the
 #              same block and not added back — when the task declares that test
 #              in a `Test-Löschung: <file>::<test> — <reason>` line. Dead code and
-#              its test can leave together; an assertion out of a test that
-#              stays is still a finding, declared or not.
+#              its test can leave together. And a fourth: an assertion out of a
+#              test that STAYS, when the task declares that change in an
+#              `Assertion-Änderung: <file>::<test> — <reason>` line, the test is
+#              there exactly once before and after, and its new body gains at
+#              least as many assertions as it loses (R-0206). Any other assertion
+#              out of a test that stays is still a finding.
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
@@ -237,22 +241,35 @@ changed_paths() { "${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-on
 
 case "$VERB" in
   diff-scan)
-    # The tests the task declares as deleted — read from the COMMITTED ledger
+    # The tests the task declares as deleted (Test-Löschung) or as changed
+    # (Assertion-Änderung) — read from the COMMITTED ledger
     # (HEAD), never from the working tree: a builder must not be able to grant
     # itself the exception in the same run (Kevin, 2026-09-25). The declaration
     # typically arrives with the plan commit at the gate. Only with --task: a
     # call by hand has no task to speak for it and stays strict.
     DECL=""
+    DECL_CHG=""
     if [ -n "$TASK_LEDGER" ]; then
       case "$TASK_ID" in ""|*[!A-Za-z0-9._-]*) die "not a task id: $TASK_ID" ;; esac
       case "$TASK_LEDGER" in */*) ;; *) TASK_LEDGER="tasks/$TASK_LEDGER" ;; esac
       case "$TASK_LEDGER" in *.md) ;; *) TASK_LEDGER="$TASK_LEDGER.md" ;; esac
+      # A ledger is exactly what the commit check of task-close guards: tasks/*.md
+      # without the README (it shows the syntax of both declarations) and the
+      # template. Anything else, the CHANGELOG or a spec, could carry a task
+      # section past that check and grant itself an exception (R-0206; for
+      # Test-Löschung that way was open since R-0079).
+      case "$(realpath -m --relative-to=. -- "$TASK_LEDGER")" in
+        tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $TASK_LEDGER" ;;
+        tasks/*.md) ;;
+        *) die "not a ledger: $TASK_LEDGER" ;;
+      esac
       [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"
       COMMITTED="$(mktemp)" || die "mktemp failed"
       if git show "HEAD:$TASK_LEDGER" > "$COMMITTED" 2>/dev/null; then
         DECL="$(task_field "$COMMITTED" "$TASK_ID" "Test-Löschung")"
+        DECL_CHG="$(task_field "$COMMITTED" "$TASK_ID" "Assertion-Änderung")"
       fi
       rm -f "$COMMITTED"
     fi
@@ -275,6 +292,13 @@ case "$VERB" in
         if (match(s, /(^|[ \t])#/))    c = RSTART + RLENGTH - 1
         if (match(s, /(^|[ \t])\/\//)) { c2 = RSTART + RLENGTH - 2; if (!c || c2 < c) c = c2 }
         return c
+      }
+      # assert, the Rust macros assert_{eq,ne,matches,…}!, expect( of vitest/jest,
+      # and in a Go test file the calls on its testing.T t — outside one, a t is
+      # just a name.
+      function is_assert(s, f) {
+        return s ~ /(^|[^A-Za-z_.])assert(_[a-z]+)?!?([^A-Za-z_]|$)/ || s ~ /expect\(/ ||
+               (f ~ /_test\.go$/ && s ~ /(^|[^A-Za-z0-9_.])t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)\(/)
       }
       /^diff --git /  { inheader = 1; next }
       # git ends a path that holds a space with a tab.
@@ -300,20 +324,21 @@ case "$VERB" in
       /^-/            {
                         line = substr($0, 2)
                         printf "RL\t%s\t%d\n", file, oldno
-                        # assert, the Rust macros assert_{eq,ne,matches,…}!, expect(
-                        # of vitest/jest, and in a Go test file the calls on its
-                        # testing.T t — outside one, a t is just a name. Whether
-                        # the line stood where tests are is the judge below.
-                        if (line !~ /review: ok/ &&
-                            (line ~ /(^|[^A-Za-z_.])assert(_[a-z]+)?!?([^A-Za-z_]|$)/ || line ~ /expect\(/ ||
-                             (file ~ /_test\.go$/ &&
-                              line ~ /(^|[^A-Za-z0-9_.])t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)\(/)))
+                        # Whether the line stood where tests are is the judge below.
+                        if (line !~ /review: ok/ && is_assert(line, file))
                           printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
                         oldno++; next
                       }
       /^\+/           {
                         line = substr($0, 2)
                         sub(/\r$/, "", line)
+                        # An added assertion, not one that only stands in a comment
+                        # (at the start of the line or behind code): what a declared
+                        # change has to bring back, counted below.
+                        acmt = comment_at(line)
+                        acode = acmt ? substr(line, 1, acmt - 1) : line
+                        if (is_assert(acode, file) && line !~ /^[ \t]*(\/\*|\*)/)
+                          printf "AA\t%s\t%d\t%s\n", file, newno, trim(line)
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
                           cnt = split(PAT, pat, "\x1f")
@@ -350,8 +375,12 @@ case "$VERB" in
     # with the dead one —, (3) no head of that name is left in the new version of
     # the file, and (4) no file of the diff gains a head of that name (a test
     # that moves is not a test that goes). An assertion passes only when its OLD
-    # line number lies inside the old span of such a test.
-    FOUND="$(printf '%s\n' "$RAW" | DECL="$DECL" STAGED="$STAGED" python3 -c '
+    # line number lies inside the old span of such a test. A declared change
+    # (R-0206) counts only if the name is a test head exactly once in the old AND
+    # in the new version, neither span holds another head and the file is not
+    # renamed; its removed assertions pass when its new span gains at least as
+    # many added ones.
+    FOUND="$(printf '%s\n' "$RAW" | DECL="$DECL" DECL_CHG="$DECL_CHG" STAGED="$STAGED" python3 -c '
 import os, re, subprocess, sys
 
 staged = os.environ.get("STAGED") == "1"
@@ -363,8 +392,9 @@ for l in lines:
         _, f, n = l.split("\t", 2)
         removed.setdefault(f, set()).add(int(n))
 ars = [l.split("\t", 3)[1:] for l in lines if l.startswith("AR\t")]
+aas = [l.split("\t", 3)[1:] for l in lines if l.startswith("AA\t")]
 renamed = dict(l.split("\t", 2)[1:][::-1] for l in lines if l.startswith("RN\t"))   # new -> old
-out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t", "RN\t"))]
+out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t", "AA\t", "RN\t"))]
 
 def git(*a):
     r = subprocess.run(("git", "-c", "core.quotePath=false") + a, capture_output=True)
@@ -392,22 +422,36 @@ GO = re.compile(r"^()func\s+(Test\w*)\s*\(")
 JS = re.compile(r"^(\s*)(?:it|test)(?:\.only|\.skip)?\s*\(\s*([\x27\x22`])(.*?)\2")
 RS = re.compile(r"^(\s*)(?:pub\s+)?(?:async\s+)?fn\s+(\w+)")
 RS_ATTR = re.compile(r"^\s*#\[(?:[a-z_]+::)?test[\]()]")   # also #[tokio::test(flavor = …)]
+# Any function, for a declared change in a test file (R-0206): the asserting
+# often sits in a helper the tests call. Go without a receiver, Rust without the
+# test attribute; arrow functions stay out, their forms are too many for one
+# pattern.
+PY_FN = re.compile(r"^(\s*)(?:async\s+)?def\s+(\w+)\s*\(")
+GO_FN = re.compile(r"^()func\s+(\w+)\s*\(")
+JS_FN = re.compile(r"^(\s*)(?:export\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)\s*\(")
+# Where tests are: a test file. See where_tests_are below (R-0130).
+TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_[^/]*[.]py$|_test[.](py|go|sh)$|[.](test|spec)[.][^/]+$")
 
-def heads(path, text):
-    """[(name, first_line, last_line, indent)] of the test heads in text, 1-based."""
+def heads(path, text, helpers=False):
+    """[(name, first_line, last_line, indent)] of the test heads in text, 1-based;
+    with helpers, of any function head as well (one per line)."""
     src = text.split("\n")
     found = []
     for i, s in enumerate(src):
         name = ind = None
         if path.endswith(".py"):
-            m = PY.match(s)
+            m = PY.match(s) or (helpers and PY_FN.match(s))
             if m: ind, name = len(m.group(1)), m.group(2)
         elif path.endswith(".go"):
-            m = GO.match(s)
+            m = GO.match(s) or (helpers and GO_FN.match(s))
             if m: ind, name = 0, m.group(2)
         elif re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path):
             m = JS.match(s)
-            if m: ind, name = len(m.group(1)), m.group(3)
+            if m:
+                ind, name = len(m.group(1)), m.group(3)
+            elif helpers:
+                m = JS_FN.match(s)
+                if m: ind, name = len(m.group(1)), m.group(2)
         elif path.endswith(".rs"):
             m = RS.match(s)
             if m:
@@ -416,7 +460,7 @@ def heads(path, text):
                 while j >= 0 and src[j].strip().startswith("#["):
                     if RS_ATTR.match(src[j]): attr = True
                     j -= 1
-                if attr: ind, name = len(m.group(1)), m.group(2)
+                if attr or helpers: ind, name = len(m.group(1)), m.group(2)
         if name is None:
             continue
         end = len(src)
@@ -442,16 +486,22 @@ def heads(path, text):
 changed = [p for p in text(git("diff", *(["--staged"] if staged else []), "--name-only", "-z")).split("\0") if p]
 
 entries, notes = {}, {}
-decl = os.environ.get("DECL", "")
-for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
-    part = part.strip()
-    if not part:
-        continue
-    m = re.match(r"^([^\s:]+)::(.+?)\s+—\s+\S", part)
-    if not m:
-        notes.setdefault(part.split("::")[0], []).append("declaration without a reason ignored: " + part)
-        continue
-    path, name = m.group(1), m.group(2).strip()
+
+
+def declared(decl):
+    """(path, name) of each declaration that carries a reason; the others become notes."""
+    for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^([^\s:]+)::(.+?)\s+—\s+\S", part)
+        if not m:
+            notes.setdefault(part.split("::")[0], []).append("declaration without a reason ignored: " + part)
+            continue
+        yield m.group(1), m.group(2).strip()
+
+
+for path, name in declared(os.environ.get("DECL", "")):
     old = [h for h in heads(path, old_text(path)) if h[0] == name]
     new = [h for h in heads(path, new_text(path)) if h[0] == name]
     moved = [f for f in changed if f != path and
@@ -484,6 +534,37 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
                 f"declared {path}::{name} ignored: line {kept[0]} of its old body is not deleted — the whole test does not go")
         else:
             entries[(path, name)] = (a, b)
+
+# Declared changes (R-0206): an assertion may leave a test that STAYS. The test
+# is there exactly once before and after (a name that two classes or describe
+# blocks share cannot be told apart), neither span holds the head of another
+# test (a span guessed too wide by odd indentation), and the file is not renamed
+# in this diff. Whether its new body brings back enough assertions is counted
+# below, against the removed ones that count. In a test file the name may also
+# be a helper the tests call; the guard against a second test stays on test
+# heads, or every fake nested in a test would refuse it.
+changes = {}
+for path, name in declared(os.environ.get("DECL_CHG", "")):
+    what = f"declared change {path}::{name} ignored"
+    if path in renamed or path in renamed.values():
+        notes.setdefault(path, []).append(f"{what}: the file is renamed in this diff")
+        continue
+    fn = bool(TEST_PATH.search(path))
+    old_h, new_h = heads(path, old_text(path)), heads(path, new_text(path))
+    old = [h for h in heads(path, old_text(path), fn) if h[0] == name]
+    new = [h for h in heads(path, new_text(path), fn) if h[0] == name]
+    if len(old) != 1 or len(new) != 1:
+        notes.setdefault(path, []).append(
+            f"{what}: {len(old)} tests of that name in the old file and {len(new)} in the new one, it must be one in each")
+        continue
+    (a, b), (c, d) = old[0][1:3], new[0][1:3]
+    inner = [h for h in old_h if a < h[1] <= b] + [h for h in new_h if c < h[1] <= d]
+    if inner:
+        notes.setdefault(path, []).append(f"{what}: its span holds another test ({inner[0][0]}, line {inner[0][1]})")
+        continue
+    # A helper changes the check for every test that calls it: the clean line says so.
+    kind = "" if any(h[0] == name and h[1] == a for h in old_h) else "helper, "
+    changes[(path, name)] = (a, b, c, d, kind)
 
 # A return that ends a test early (bare, or with None, undefined, Ok(()))
 # counts inside the span of a test in the NEW file only; a helper next to the
@@ -547,11 +628,10 @@ for path, newno, ln in ars:
     if any(a < n <= b and ends_test_early(lines, a, b, n, NESTED.get(lang(path))) for _, a, b, _ in found):
         out.append(f"{path}:{newno}  early return in a test: {ln}")
 
-# R-0130: a removed assertion counts where tests are — in a test file, or in
-# the span of a test in the OLD file (Rust keeps tests inline under src/) —
-# and an import line never is one (`use pretty_assertions::assert_eq;`).
+# R-0130: a removed assertion counts where tests are — in a test file (TEST_PATH,
+# above), or in the span of a test in the OLD file (Rust keeps tests inline
+# under src/) — and an import line never is one (`use pretty_assertions::assert_eq;`).
 # Production code may lose an assert or an .expect( without silencing a test.
-TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_[^/]*[.]py$|_test[.](py|go|sh)$|[.](test|spec)[.][^/]+$")
 IMPORT = re.compile(r"^(use|import)[ \t]|^from[ \t]+[^ \t]+[ \t]+import[ \t]")
 old_spans = {}
 
@@ -565,31 +645,54 @@ def where_tests_are(path, n):
 
 ras = [r for r in ras if not IMPORT.match(r[2]) and where_tests_are(r[0], int(r[1]))]
 
-used = set()
+# A declared change covers the removed assertions of its old span only when its
+# new span gains at least as many (n >= r): changed, not taken away.
+covered = {}
+for k, (a, b, c, d, kind) in changes.items():
+    r = sum(1 for p, o, _ in ras if p == k[0] and a <= int(o) <= b)
+    n = sum(1 for p, o, _ in aas if p == k[0] and c <= int(o) <= d)
+    if r and n >= r:
+        covered[k] = (a, b, r, n, kind)
+    elif r:
+        notes.setdefault(k[0], []).append(
+            f"declared change {k[0]}::{k[1]} ignored: {n} assertion(s) added in its new body, {r} removed")
+
+used, changed_tests = set(), set()
 for path, oldno, text in ras:
     n = int(oldno)
     hit = [k for k, (a, b) in entries.items() if k[0] == path and a <= n <= b]
+    chg = [k for k, (a, b, _, _, _) in covered.items() if k[0] == path and a <= n <= b]
     if hit:
         used.add(hit[0])
+    elif chg:
+        changed_tests.add(chg[0])
     else:
         why = "; ".join(notes.get(path, []))
         out.append(f"{path}:{oldno}  removed assertion: {text}" + (f"  ({why})" if why else ""))
 for k in sorted(used):
     out.append(f"DECLARED\t{k[0]}::{k[1]}")
+for k in sorted(changed_tests):
+    out.append(f"CHANGED\t{k[0]}::{k[1]} ({covered[k][4]}{covered[k][2]} removed, {covered[k][3]} added)")
 print("\n".join(out))
 ')" || die "could not judge the removed assertions"
     GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"
-    FOUND="$(printf '%s\n' "$FOUND" | grep -v '^DECLARED' | grep -v '^$')"
+    CHG="$(printf '%s\n' "$FOUND" | sed -n 's/^CHANGED\t//p' | sort)"
+    FOUND="$(printf '%s\n' "$FOUND" | grep -v -e $'^DECLARED\t' -e $'^CHANGED\t' | grep -v '^$')"
     if [ -n "$FOUND" ]; then
       echo "review.sh diff-scan: the diff changes what a green run means" >&2
       printf '%s\n' "$FOUND" >&2
       echo "  (deliberate? append '# review: ok <reason>' to the line; a whole test that" >&2
-      echo "   goes with dead code: 'Test-Löschung: <file>::<test> — <reason>' in the task," >&2
-      echo "   committed before the deletion — the working-tree ledger does not count)" >&2
+      echo "   goes with dead code: 'Test-Löschung: <file>::<test> — <reason>' in the task;" >&2
+      echo "   an assertion changed in a test that stays: 'Assertion-Änderung: <file>::<test>" >&2
+      echo "   — <reason>'; either committed before the change — the working-tree ledger does not count)" >&2
       exit 3
     fi
-    if [ -n "$GONE" ]; then
-      echo "diff-scan: clean ($(grep -c . <<<"$GONE") declared test deletion(s): $(paste -sd, - <<<"$GONE" | sed 's/,/, /g'))"
+    # Each entry of a change carries a comma of its own, so the lists are joined with "; ".
+    DONE=""
+    [ -z "$GONE" ] || DONE="$(grep -c . <<<"$GONE") declared test deletion(s): $(paste -sd, - <<<"$GONE" | sed 's/,/, /g')"
+    [ -z "$CHG" ] || DONE="${DONE:+$DONE; }$(grep -c . <<<"$CHG") declared assertion change(s): $(awk 'NR > 1 { printf "; " } { printf "%s", $0 }' <<<"$CHG")"
+    if [ -n "$DONE" ]; then
+      echo "diff-scan: clean ($DONE)"
     else
       echo "diff-scan: clean"
     fi

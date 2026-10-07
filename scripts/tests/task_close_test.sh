@@ -149,6 +149,31 @@ c fix T99 -m "x"
 [ $rc -eq 2 ] && grep -q "no task T99" <<<"$OUT" && ok "unknown task -> exit 2" || bad "unknown task: rc=$rc"
 c nowhere T1 -m "x"
 [ $rc -eq 2 ] && grep -q "no such ledger" <<<"$OUT" && ok "unknown ledger -> exit 2" || bad "unknown ledger: rc=$rc"
+# A ledger is tasks/*.md without the README and the template: a task section
+# written into anything else must not make it one (R-0206). Each file carries a
+# section T1 like the fixture ledger, so only the allow-list can refuse it.
+mkdir -p "$FIX/tasks/templates" "$FIX/docs/features"
+for f in tasks/README.md tasks/templates/task.md CHANGELOG.md docs/features/x.md; do
+  sed -n '/^### T1 /,/^### T2 /p' "$FIX/tasks/fix.md" | sed '$d' > "$FIX/$f"
+done
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "task sections outside the ledgers"
+for L in tasks/README.md ./tasks/./README.md tasks/templates/task.md ./CHANGELOG.md docs/features/x.md; do
+  touch_tool
+  c "$L" T1 -m "feat: something"
+  [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ok "$L as the ledger -> exit 2, it is no ledger" \
+    || bad "$L as ledger: rc=$rc out=$OUT"
+done
+reset_repo
+# The exclude of the commit check, :(exclude)tasks/README.md, also leaves out a
+# directory of that name: a ledger below it is no ledger either.
+mkdir -p "$FIX/tasks/README.md"
+sed -n '/^### T1 /,/^### T2 /p' "$FIX/tasks/fix.md" | sed '$d' > "$FIX/tasks/README.md/x.md"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "a ledger below a directory tasks/README.md"
+touch_tool
+c tasks/README.md/x.md T1 -m "feat: something"
+[ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ok "tasks/README.md/x.md as the ledger -> exit 2, it is no ledger" \
+  || bad "README dir as ledger: rc=$rc out=$OUT"
+reset_repo
 
 # ══ what may be committed at all ══════════════════════════════════════════════
 echo "── the staged state ──"
@@ -487,44 +512,58 @@ FIXTURE_STAGE=apps/server/app/foreign.py c fix T1 -m "feat: something"
 grep -q '^### T1 .*\[ \]' "$FIX/tasks/fix.md" && ok "and no [x] left behind in the ledger" || bad "box ticked despite exit 2"
 reset_repo
 
-# A Test-Löschung: line written into the ledger does not travel through
-# task-close: the next task would find it "committed" (adversarial review).
+# A Test-Löschung: or Assertion-Änderung: line (R-0206) written into the ledger
+# does not travel through task-close: the next task would find it "committed"
+# (adversarial review). The same four ways in, for both fields.
+for F in Test-Löschung Assertion-Änderung; do
 touch_tool
-printf 'Test-Löschung: apps/server/tests/test_x.py::test_y — selbst eingetragen\n' >> "$FIX/tasks/fix.md"
+printf '%s: apps/server/tests/test_x.py::test_y — selbst eingetragen\n' "$F" >> "$FIX/tasks/fix.md"
 c fix T1 -m "feat: something"
-[ $rc -eq 4 ] && grep -q "Test-Löschung" <<<"$OUT" \
-  && ok "a new Test-Löschung: line in the ledger -> exit 4, it is not committed through task-close" \
-  || bad "self-declared deletion: rc=$rc out=$OUT"
-[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite a self-declared deletion"
+[ $rc -eq 4 ] && grep -q "$F" <<<"$OUT" \
+  && ok "a new $F: line in the ledger -> exit 4, it is not committed through task-close" \
+  || bad "self-declared $F: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed ($F)" || bad "commit despite a self-declared $F"
 reset_repo
 
 # ... nor with an invalid UTF-8 byte at its end, which hid it from grep under a
 # UTF-8 locale while awk and python still read it.
 touch_tool
-printf 'Test-Löschung: apps/server/tests/test_x.py::test_y — z\xff\n' >> "$FIX/tasks/fix.md"
+printf '%s: apps/server/tests/test_x.py::test_y — z\xff\n' "$F" >> "$FIX/tasks/fix.md"
 c fix T1 -m "feat: something"
-[ $rc -eq 4 ] && ok "a declaration with an invalid UTF-8 byte is seen too -> exit 4" \
-  || bad "invalid byte: rc=$rc out=$OUT"
-[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite an invalid-byte declaration"
+[ $rc -eq 4 ] && ok "a $F declaration with an invalid UTF-8 byte is seen too -> exit 4" \
+  || bad "invalid byte ($F): rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed ($F, invalid byte)" || bad "commit despite an invalid-byte $F"
 reset_repo
 # ... nor written while the suite runs (after the first look): the check on the
 # finished commit takes it back.
 touch_tool
-export FIXTURE_INJECT='Test-Löschung: apps/server/tests/test_x.py::test_y — während des Laufs'
+export FIXTURE_INJECT="$F: apps/server/tests/test_x.py::test_y — während des Laufs"
 c fix T1 -m "feat: something"
 [ $rc -eq 4 ] && grep -q "taken back" <<<"$OUT" \
-  && ok "a declaration written during the run -> the commit is taken back (exit 4)" || bad "toctou: rc=$rc out=$OUT"
-[ "$(head_count)" = "$BEFORE" ] && ok "and HEAD is where it was" || bad "the toctou commit stayed"
+  && ok "a $F declaration written during the run -> the commit is taken back (exit 4)" || bad "toctou ($F): rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and HEAD is where it was ($F, toctou)" || bad "the toctou commit stayed ($F)"
 reset_repo
 # ... nor in another ledger staged along via Dateien:.
 touch_tool
 sed -i 's|^Komponente: scripts · Dateien: scripts/dev/tool.sh$|Komponente: scripts · Dateien: scripts/dev/tool.sh, tasks/other.md|' "$FIX/tasks/fix.md"
-printf '# Other\n\n### O1 — x  [ ]\nTest-Löschung: apps/server/tests/test_x.py::test_y — anderes Ledger\n' > "$FIX/tasks/other.md"
+printf '# Other\n\n### O1 — x  [ ]\n%s: apps/server/tests/test_x.py::test_y — anderes Ledger\n' "$F" > "$FIX/tasks/other.md"
 git -C "$FIX" add -- tasks/other.md
 c fix T1 -m "feat: something"
 [ $rc -eq 4 ] && grep -q "taken back" <<<"$OUT" \
-  && ok "a declaration in another staged ledger -> the commit is taken back" || bad "other ledger: rc=$rc out=$OUT"
-[ "$(head_count)" = "$BEFORE" ] && ok "and HEAD is where it was" || bad "the other-ledger commit stayed"
+  && ok "a $F declaration in another staged ledger -> the commit is taken back" || bad "other ledger ($F): rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and HEAD is where it was ($F, other ledger)" || bad "the other-ledger commit stayed ($F)"
+reset_repo
+done
+# tasks/README.md shows the syntax of both fields in lines of their own. It is
+# no ledger (diff-scan reads a declaration only from the task section of the
+# ledger it closes), so a commit that documents them stands.
+touch_tool
+sed -i 's|^Komponente: scripts · Dateien: scripts/dev/tool.sh$|Komponente: scripts · Dateien: scripts/dev/tool.sh, tasks/README.md|' "$FIX/tasks/fix.md"
+printf '# Tasks\n\n```\nTest-Löschung: <datei>::<test> — <Grund>\nAssertion-Änderung: <datei>::<test> — <Grund>\n```\n' > "$FIX/tasks/README.md"
+git -C "$FIX" add -- tasks/README.md
+c fix T1 -m "feat: something"
+[ $rc -eq 0 ] && [ "$(head_count)" = "$((BEFORE + 1))" ] \
+  && ok "the syntax of both fields in tasks/README.md: no ledger, the commit stands" || bad "readme syntax: rc=$rc out=$OUT"
 reset_repo
 
 # A task without a component cannot be verified — that is infrastructure, not a

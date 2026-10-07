@@ -9,6 +9,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **`Assertion-Aenderung:` im Ledger (R-0206):** eine Task kann eine absichtlich geaenderte
+  Assertion in einem bleibenden Test oder Test-Helfer ankuendigen (`<datei>::<test> — <Grund>`).
+  `review.sh diff-scan` laesst dann genau diese Aenderung durch, wenn der Test mindestens so viele
+  Assertions hinzubekommt, wie er verliert; `task-close.sh` sperrt eine Ankuendigung, die erst mit
+  der Task selbst kommt, und `ledger.sh lint` prueft die Form. Als Ledger gelten nur noch
+  `tasks/*.md` ohne `tasks/README.md` und `tasks/templates/` — das schliesst auch einen aelteren
+  Weg an `Test-Loeschung:` vorbei.
+
+- **commit-msg-Hook (R-0197):** `scripts/dev/hooks/commit-msg` faehrt `review.sh sec --message`
+  und sperrt einen Token in der Commit-Nachricht schon beim Commit. Dazu meldet `sec` die Zeile
+  nach „\ No newline at end of file“ richtig und erkennt weitere Formen eines Proxmox-Tokens
+  (PBS mit Doppelpunkt, URL-kodiert, Secret hinter einem Schluesselnamen; R-0194, R-0196), und
+  `ledger.sh lint` meldet auch Huelle und Ausgabe eines Werkzeugaufrufs als Rest (R-0195).
+
 - **`review.sh sec` erkennt Token-Muster (R-0183):** eine hinzugefuegte Zeile mit einem
   Proxmox-API-Token (`USER@REALM!TOKENID=UUID`), einem GitHub-Token (`ghp_`, `gho_`, `ghu_`,
   `ghs_`, `ghr_`, `github_pat_`) oder einem `sk-ant-`-Schluessel sperrt den Commit, den Push und

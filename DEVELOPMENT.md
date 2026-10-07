@@ -469,7 +469,9 @@ ohnehin liefert (`None`, `undefined`, `Ok(())`), auch in einer Datei mit CRLF-Ze
 Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Tests folgt und es
 nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
-als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade),
+als `Test-Löschung:` ankündigt, eine Assertion in einem bleibenden Test darf sich ändern, wenn die Task das als
+`Assertion-Änderung:` ankündigt und mindestens so viele Assertions zurückbringt — geprüft am Inhalt, siehe
+`tasks/README.md`), `review.sh scope` (Fremd-Pfade),
 `review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache) und `review.sh sec` (was nie ins
 oeffentliche Repo darf); (3) das
 `Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
