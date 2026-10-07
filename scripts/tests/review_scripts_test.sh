@@ -397,6 +397,56 @@ reset_index
 stage docs/tok.md
 r sec --staged
 [ $rc -eq 0 ] && ok "a full-length placeholder (xxxx…, 0000-…) is no token" || bad "full placeholders: rc=$rc out=$OUT"
+# More Proxmox forms (R-0196): the PBS colon form, the URL-encoded form and the secret
+# alone behind a key name. Key name and UUID meet only at run time, as above.
+U="12345678-90ab-cdef-1234-567890abcdef"; K="token_""secret"; Z="00000000-0000-0000-0000-000000000000"
+for tk in "ah@pbs!run:$U" "ah%40pve%21run%3D$U" "ah%40pve%21run%3d$U" "api_$K = $U" "\"$K\": \"$U\"" "PVE_${K^^}=$U" "PVE_${K^^}=\${PVE_${K^^}:-$U}"; do
+  reset_index
+  printf 'note\nsee %s here\n' "$tk" > "$FIX/docs/tok.md"; stage docs/tok.md
+  r sec --staged
+  [ $rc -eq 4 ] && grep -q "docs/tok.md:2 (a token pattern)" <<<"$OUT" && ! grep -qF "$U" <<<"$OUT" \
+    && ok "the form ${tk:0:12}… -> exit 4 with file:line, never the token" || bad "form ${tk:0:12}: rc=$rc out=$OUT"
+done
+# The same forms as placeholders, a bare UUID without a key name, and a key that only
+# starts like one.
+reset_index
+printf '%s\n' "ah@pbs!run:$Z" "ah%40pve%21run%3D$Z" "api_$K = $Z" "id $U" "${K}_file = /etc/x" > "$FIX/docs/tok.md"
+stage docs/tok.md
+r sec --staged
+[ $rc -eq 0 ] && ok "placeholders of the new forms, a bare UUID and a longer key name are no token" \
+  || bad "new-form placeholders: rc=$rc out=$OUT"
+# sec --message (R-0197): the message of the commit being made, as the commit-msg hook
+# hands it over. With commit -v the diff below the scissors line is no part of it; a
+# comment line is, since git keeps it in a commit made with -m.
+MSG="$WORK/commit-msg.txt"
+printf 'subject\n\nbody with %s in it\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:3 (a token pattern)" <<<"$OUT" && ! grep -qF "$T_GH" <<<"$OUT" \
+  && ok "sec --message: a token -> exit 4 with the line, never the token" || bad "message token: rc=$rc out=$OUT"
+printf 'subject\n\nbody with gh%s only\n' "p_short" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "sec --message: a placeholder is clean" || bad "message placeholder: rc=$rc out=$OUT"
+printf 'subject\n# ------------------------ >8 ------------------------\n-old %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 0 ] && ok "sec --message: the diff below the scissors line does not count" \
+  || bad "message scissors: rc=$rc out=$OUT"
+printf 'subject\n# %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:2 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message: a token on a comment line counts (git keeps it with -m)" || bad "message comment: rc=$rc out=$OUT"
+printf 'subject %s\n' "$T_GH" > "$WORK/rel-msg.txt"
+OUT=$(cd "$WORK" && bash "$REVIEW" sec --message rel-msg.txt 2>&1); rc=$?
+[ $rc -eq 4 ] && grep -q "the commit message:1" <<<"$OUT" \
+  && ok "sec --message resolves a relative path from where the caller stands" || bad "message relative: rc=$rc out=$OUT"
+rm -f -- "$WORK/rel-msg.txt"
+r sec --message "$WORK/no-such-message"
+[ $rc -eq 2 ] && ok "sec --message on a missing file -> exit 2 (the hook fails closed)" || bad "message missing: rc=$rc out=$OUT"
+r sec --staged --message "$MSG"
+[ $rc -eq 2 ] && ok "sec --message stands alone (with --staged -> exit 2)" || bad "message with staged: rc=$rc out=$OUT"
+r sec --message ""
+[ $rc -eq 2 ] && grep -q "got an empty one" <<<"$OUT" && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "sec --message with an empty name -> exit 2, no sec over the worktree" || bad "message empty: rc=$rc out=$OUT"
+rm -f -- "$MSG"
 reset_index
 
 printf 'ordinary docs\n' >> "$FIX/CHANGELOG.md"
@@ -486,6 +536,26 @@ printf 'feature four\n' > "$RFIX/docs/f4.md"; rg add -A; rg commit -qm "feature 
 rg merge -q --no-ff -m "Merge remote-tracking branch 'origin/main' into feature4" main
 rr sec --range "main...feature4"
 [ $rc -eq 0 ] && ok "a merge message 'Merge remote-tracking branch …' is no finding" || bad "merge message: rc=$rc out=$OUT"
+# "\ No newline at end of file" counts no line (R-0194): a finding after it keeps its
+# number, in a commit and in a merge. A repository of its own, to leave the span above alone.
+NFIX="$WORK/nonl"; mkdir -p "$NFIX/scripts/dev" "$NFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$NFIX/scripts/dev/review.sh"
+ng() { git -C "$NFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+nr() { OUT=$(bash "$NFIX/scripts/dev/review.sh" "$@" 2>&1); rc=$?; }
+printf 'a' > "$NFIX/docs/nl.md"; ng init -q -b main; ng add -A; ng commit -qm base; NBASE="$(ng rev-parse HEAD)"
+printf 'a\nb\nsee %s\n' "$T_PVE" > "$NFIX/docs/nl.md"; ng add -A; ng commit -qm "a token after the old last line"
+nr sec --range "$NBASE..HEAD"
+[ $rc -eq 4 ] && grep -q "docs/nl.md:3 (commit " <<<"$OUT" \
+  && ok "a finding after \"No newline\" names its own line (3), not the next" || bad "nonl commit: rc=$rc out=$OUT"
+# Both parents of the merge carry the old last line again, so the merge alone brings the token.
+printf 'a' > "$NFIX/docs/nl.md"; ng add -A; ng commit -qm "back to the old last line"; NBACK="$(ng rev-parse HEAD)"
+ng checkout -q -b side "$NBACK"; printf 'side\n' > "$NFIX/docs/side.md"; ng add -A; ng commit -qm side
+ng checkout -q main; printf 'main\n' > "$NFIX/docs/main.md"; ng add -A; ng commit -qm main
+ng checkout -q side; ng merge -q --no-commit --no-ff main >/dev/null
+printf 'a\nb\nsee %s\n' "$T_PVE" > "$NFIX/docs/nl.md"; ng add -- docs/nl.md; ng commit -qm "a merge that edits it"
+nr sec --range "main...side"
+[ $rc -eq 4 ] && grep -q "docs/nl.md:3 (merge " <<<"$OUT" \
+  && ok "in a merge (git prints no marker in --cc) the finding names line 3 as well" || bad "nonl merge: rc=$rc out=$OUT"
 rg checkout -q feature2
 # A push: commits the remote has already are no part of what leaves.
 rg update-ref refs/remotes/origin/main main
@@ -1491,7 +1561,7 @@ echo "── pre-commit hook ──"
 HFIX="$WORK/hooked"
 mkdir -p "$HFIX/scripts/dev/hooks" "$HFIX/tasks" "$HFIX/docs"
 cp "$REPO_ROOT/scripts/dev/review.sh" "$HFIX/scripts/dev/review.sh"
-for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+for h in pre-commit prepare-commit-msg commit-msg pre-merge-commit pre-applypatch; do
   cp "$REPO_ROOT/scripts/dev/hooks/$h" "$HFIX/scripts/dev/hooks/$h"
   chmod 755 "$HFIX/scripts/dev/hooks/$h"
 done
@@ -1540,6 +1610,14 @@ git -C "$HFIX" checkout -q -- docs/note.md
 printf 'clean line\n' >> "$HFIX/docs/note.md"
 hc -a -m "a clean change"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a clean change is committed" || bad "clean: rc=$rc out=$OUT"
+# commit-msg (R-0197): a token in the message stops the commit itself, not only the
+# push. The merge commits further down pass this hook with git's own message.
+H0=$(heads)
+hc --allow-empty -m "subject $T_GH"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:1 (a token pattern)" <<<"$OUT" \
+  && ! grep -qF "$T_GH" <<<"$OUT" && ok "armed: a token in -m is refused, never echoed" || bad "msg token: rc=$rc out=$OUT"
+hc --allow-empty -m "subject with gh""p_short only"
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a placeholder in -m is committed" || bad "msg placeholder: rc=$rc out=$OUT"
 
 # The relative core.hooksPath is resolved per worktree: a lane runs the hook of
 # ITS branch. Here that branch carries a hook that only leaves a marker behind.
@@ -1648,7 +1726,7 @@ git -C "$HFIX" switch -q "$MAIN"
 # --show-toplevel, not --git-dir: a tarball unpacked inside another repository
 # would find that one.
 HOOK_SKIPPED=0
-for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+for h in pre-commit prepare-commit-msg commit-msg pre-merge-commit pre-applypatch; do
   if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
     mode=$(git -C "$REPO_ROOT" ls-files -s -- "scripts/dev/hooks/$h" | cut -d' ' -f1)
     [ "$mode" = 100755 ] && ok "$h is tracked with mode 100755" || bad "$h mode: '${mode:-untracked}'"

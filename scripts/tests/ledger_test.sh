@@ -273,6 +273,19 @@ mkdir -p "$TREE/docs/features"; printf '# Spec\n\n<details>\n<summary>mehr</summ
 printf 'Notiz: eine Zeile mit <br> und `<code>`\n' >> "$FIX"
 l lint fixture
 [ $rc -eq 0 ] && ok "ordinary HTML in ledger and spec stays green" || bad "html: rc=$rc out=$OUT"
+# The hull of a tool call and its returned output (R-0195): closing tags only, so an
+# opening one alone, as ordinary HTML may carry, stays green.
+for tag in "</""function_calls>" "</""result>" "</""output>" "</""ns:function_calls>"; do
+  clean_fixture
+  printf 'Notiz: %s\n' "$tag" >> "$FIX"; n=$(wc -l < "$FIX")
+  l lint fixture
+  [ $rc -eq 1 ] && grep -q "ERROR  tasks/fixture.md:$n: a remnant of a tool call" <<<"$OUT" \
+    && ok "the closing tag ${tag#</} is an error with its line" || bad "remnant ${tag}: rc=$rc out=$OUT"
+done
+clean_fixture
+printf 'Notiz: %s und %s\n' "<""output>" "<""result>" >> "$FIX"
+l lint fixture
+[ $rc -eq 0 ] && ok "an opening output or result tag alone stays green" || bad "opening output: rc=$rc out=$OUT"
 rm -rf "$TREE/docs"
 
 # Test-Löschung: <file>::<test> — <reason>, the reason not optional.

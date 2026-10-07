@@ -366,8 +366,9 @@ case "$CMD" in
       }' "$LEDGER")
 
     # What a planning agent wrapped around its output and left in the plan (R-0165):
-    # the closing tag of content, invoke or parameter, or an opening invoke or
-    # parameter tag with a name. In the ledger and in the spec its Spec: line names
+    # the closing tag of content, invoke or parameter, the closing tag of the hull of
+    # a tool call or of its returned output (function_calls, result, output; R-0195),
+    # or an opening invoke or parameter tag with a name. In the ledger and in the spec its Spec: line names
     # under docs/features/, the two files the gate commits.
     LINTED=("$LEDGER")
     # The first docs/features/ path anywhere in the head's Spec: line, in backticks too.
@@ -382,7 +383,7 @@ case "$CMD" in
       while IFS= read -r n; do
         echo "ERROR  $f:$n: a remnant of a tool call (R-0165) — text a planning agent wrapped around the plan" >&2
         RC=1
-      done < <(awk '/<\/([A-Za-z_]+:)?(content|invoke|parameter)>|<([A-Za-z_]+:)?(invoke|parameter)[ \t]+name=/ { print NR }' "$f")
+      done < <(awk '/<\/([A-Za-z_]+:)?(content|invoke|parameter|function_calls|result|output)>|<([A-Za-z_]+:)?(invoke|parameter)[ \t]+name=/ { print NR }' "$f")
     done
 
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
