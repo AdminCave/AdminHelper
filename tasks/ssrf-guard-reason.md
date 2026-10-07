@@ -4,9 +4,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard nennt den Grund: privat oder nicht auflösbar (R-0045) — Task-Ledger
-Status: freigegeben · Branch: feature/ssrf-guard-reason · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: aktiv · Branch: feature/ssrf-guard-reason · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-05 (kleines Fund-Paket aus der angenommenen Zeile R-0045, Pilot Stufe 7a; delegiert von Kevin am 2026-10-05)
 Pilot: Stufe 7a — erstes Übungs-Ledger für den Worker (`ledger-loop.sh` als `adminhelper-runner`, unbeaufsichtigt, `task-close.sh --review auto` je Task). Gebaut wird es erst nach dem Merge von 7a und Kevins Setup- und Red-Team-Lauf, und nur vom Loop: interaktiv vorgezogen wäre die Übung verbraucht (Spec Stufe 7a, „Pilot“).
+Pilot entfällt: Runner eingefroren (Kevin 2026-10-07), interaktiv gebaut.
 Spec: Roadmap R-0045 (privat; was der Bau braucht, steht in diesem Ledger)
 Heavy: none — Python in apps/server und apps/monitoring (SSRF-Guard und seine drei Aufrufer) mit Unit-Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad, kein Wire-Format, keine Migration. Die Runner-Box hat Python, Shell und Git (`runner-setup.sh`), also genau diese beiden Suiten.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
