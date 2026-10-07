@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: die DB-Session läuft in UTC (R-0209) — Task-Ledger
-Status: geplant · Branch: feature/db-session-utc · Commit-Granularität: pro Task · Review: am Ende (feature-review; app/core/database.py trägt jede DB-Verbindung des Servers ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: feature/db-session-utc · Commit-Granularität: pro Task · Review: am Ende (feature-review; app/core/database.py trägt jede DB-Verbindung des Servers ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-07 (kleines Fund-Paket aus der von Kevin am 2026-10-07 angenommenen Zeile R-0209; Listener nach dem SQLAlchemy-Rezept statt options, weil PGTZ die options überstimmt (gemessen); alembic und ca-issuer aus dem Umfang; Heavy linux-full, gefahren von der Aufsicht am Gate; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0209 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — nur `run.sh integration` auf einer Pool-VM: der Stack fährt postgres mit `TZ=Europe/Berlin`, genau den Fall, den dieser Fix abfängt, und die Unit-Suite nutzt fast durchweg die Engine aus `tests/conftest.py`, nicht die der App; erst der echte Stack fährt jeden Request über die geänderte Engine.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
