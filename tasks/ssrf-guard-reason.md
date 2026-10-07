@@ -59,8 +59,10 @@ Semantik: docs/admin/monitoring.html:188 „Aus Sicherheitsgründen (SSRF) werde
 Verify: bash scripts/dev/verify.sh server monitoring --strict
 Doku: keine (intern: neue Funktion, `is_private_url` antwortet wie vorher)
 
-### T2 — Monitoring: HTTP-Check und Webhook melden ein nicht auflösbares Ziel als solches  [ ]
+### T2 — Monitoring: HTTP-Check und Webhook melden ein nicht auflösbares Ziel als solches  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/http.py, apps/monitoring/app/alerter.py, apps/monitoring/tests/test_http_checker.py, apps/monitoring/tests/test_alerter.py, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @f90f7ffb 2026-10-07T13:22:05+02:00
+Review: approve (opus/xhigh; 1 nit) · round 1
 Änderung: Beide Module importieren `UrlVerdict` und `classify_url` statt `is_private_url` und verzweigen nach dem Grund.
 `HttpChecker.run`: Start-URL `PRIVATE` wie heute; `UNRESOLVED` ⇒ `("unknown", "URL host could not be resolved (DNS
 error or timeout), rejected by the SSRF guard", None)`. Redirect-Ziel `PRIVATE` wie heute (`critical`); `UNRESOLVED` ⇒
