@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: die DB-Session läuft in UTC (R-0209) — Task-Ledger
-Status: aktiv · Branch: feature/db-session-utc · Commit-Granularität: pro Task · Review: am Ende (feature-review; app/core/database.py trägt jede DB-Verbindung des Servers ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: feature/db-session-utc · Commit-Granularität: pro Task · Review: am Ende (feature-review; app/core/database.py trägt jede DB-Verbindung des Servers ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-07 (kleines Fund-Paket aus der von Kevin am 2026-10-07 angenommenen Zeile R-0209; Listener nach dem SQLAlchemy-Rezept statt options, weil PGTZ die options überstimmt (gemessen); alembic und ca-issuer aus dem Umfang; Heavy linux-full, gefahren von der Aufsicht am Gate; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0209 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — nur `run.sh integration` auf einer Pool-VM: der Stack fährt postgres mit `TZ=Europe/Berlin`, genau den Fall, den dieser Fix abfängt, und die Unit-Suite nutzt fast durchweg die Engine aus `tests/conftest.py`, nicht die der App; erst der echte Stack fährt jeden Request über die geänderte Engine.
@@ -33,8 +33,10 @@ Insert aus), und eine künftige Datenmigration, die Altzeilen aus Ortszeit umrec
 Session-TZ des Clusters, nicht UTC; der ca-issuer (`apps/ca-issuer/app/db.py:74`) schreibt nur naive Python-Werte
 (`_now_naive`) und vergleicht naiv, die Session-TZ berührt ihn nicht; das Monitoring hat eine eigene DB und Engine.
 
-### T1 — `database.py`: jede Verbindung der Server-Engine setzt ihre Session auf UTC (R-0209)  [ ]
+### T1 — `database.py`: jede Verbindung der Server-Engine setzt ihre Session auf UTC (R-0209)  [x]
 Komponente: server · Dateien: apps/server/app/core/database.py, apps/server/tests/test_db_session_utc.py (neu, SPDX), apps/server/app/core/time.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @83fbf503 2026-10-07T09:52:46+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Ein `connect`-Listener auf `engine` (`database.py:14`) nach dem Rezept der SQLAlchemy-Doku, mit
 `insert=True`: `autocommit` kurz an, `SET TIME ZONE 'UTC'`, `autocommit` zurück — außerhalb jeder Transaktion, damit
 ein Rollback es nicht zurücknimmt, und nach libpq, damit `PGTZ` es nicht überstimmt (Kommentar: warum kein

@@ -249,6 +249,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server-Datenbank-Sessions in UTC (R-0209):** Jede Verbindung des Servers setzt ihre Session
+  auf `UTC`, unabhaengig von der Zeitzone des Postgres-Clusters (der Stack startet ihn mit
+  `TZ=Europe/Berlin`) und von einem `PGTZ` in der Umgebung. Postgres rechnete einen Zeitwert mit
+  Offset bisher in die Session-Zeitzone um, bevor er in eine Spalte ohne Zeitzone ging; diese Spalten
+  halten aber UTC. Bereits gespeicherte Werte bleiben, wie sie sind (keine Migration), die
+  API-Ausgabe auch.
 - **Desktop: Tunnel-Hinweis ohne Identitaet (R-0203):** Startet ein Tunnel ohne mTLS-Zertifikat,
   verweist die Meldung jetzt auf die Registrierung des Geraets mit einem Einmal-Token vom Admin
   statt auf eine Anmeldung am Server — seit ADR 0003 enrollt der Login nicht.

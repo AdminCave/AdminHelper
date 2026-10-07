@@ -37,7 +37,10 @@ def utc_now_sql():
     regardless of the database session's timezone. A bare ``func.now()`` coerces in
     the session TZ, and the stack runs the postgres container with
     ``TZ=Europe/Berlin`` — so ``server_default=func.now()`` stored Berlin local time
-    while the application writes UTC via ``utcnow_naive()`` (8.14)."""
+    while the application writes UTC via ``utcnow_naive()`` (8.14). Since R-0209
+    every server session runs in UTC (``app.core.database``), but this explicit form
+    stays: it does not depend on the session, and the other services' engines do
+    not set it."""
     return func.timezone("UTC", func.now())
 
 
