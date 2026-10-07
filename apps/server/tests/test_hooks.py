@@ -20,6 +20,94 @@ def _login(client, username, password):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+class TestHookTimestamps:
+    def test_timestamps_are_rfc3339_utc(self, test_client, db_session, admin_user):
+        # format: date-time promises an offset (R-0064): the API writes UTC with Z.
+        from datetime import datetime
+
+        from app.modules.hooks.models import Hook
+
+        h = _login(test_client, "admin", "adminpass")
+        r = test_client.post("/api/hooks", json={**WEBHOOK, "name": "wh-tz"}, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["created_at"].endswith("Z"), r.text
+        hook = db_session.get(Hook, r.json()["id"])
+        hook.last_run = datetime(2026, 10, 5, 12, 0, 0)
+        hook.next_run = datetime(2026, 10, 5, 13, 0, 0)
+        db_session.commit()
+        got = test_client.get(f"/api/hooks/{hook.id}", headers=h).json()
+        assert got["last_run"] == "2026-10-05T12:00:00Z"
+        assert got["next_run"] == "2026-10-05T13:00:00Z"
+        listed = test_client.get("/api/hooks", headers=h).json()
+        assert all(x["created_at"].endswith("Z") for x in listed)
+
+    def test_manual_run_context_has_last_run_with_z(self, test_client, db_session, admin_user):
+        # The script context carries last_run in UTC with Z (R-0064), like triggered_at.
+        from datetime import datetime
+
+        from app.modules.hooks.models import Hook
+
+        h = _login(test_client, "admin", "adminpass")
+        script = "result = {'last_run': last_run}"
+        r = test_client.post(
+            "/api/hooks", json={**WEBHOOK, "name": "wh-ctx", "script": script}, headers=h
+        )
+        assert r.status_code == 201, r.text
+        db_session.get(Hook, r.json()["id"]).last_run = datetime(2026, 10, 5, 12, 0, 0)
+        db_session.commit()
+        run = test_client.post(f"/api/hooks/{r.json()['id']}/run", headers=h)
+        assert run.status_code == 200, run.text
+        assert run.json()["result"] == {"last_run": "2026-10-05T12:00:00Z"}, run.text
+
+    def test_manual_run_context_has_triggered_at_with_z(self, test_client, db_session, admin_user):
+        # One form per context (R-0064, Kevin 2026-10-06): triggered_at is UTC with Z too.
+        h = _login(test_client, "admin", "adminpass")
+        script = "result = {'triggered_at': triggered_at}"
+        r = test_client.post(
+            "/api/hooks", json={**WEBHOOK, "name": "wh-trig", "script": script}, headers=h
+        )
+        assert r.status_code == 201, r.text
+        run = test_client.post(f"/api/hooks/{r.json()['id']}/run", headers=h)
+        assert run.status_code == 200, run.text
+        assert run.json()["result"]["triggered_at"].endswith("Z"), run.text
+
+    def test_scheduled_run_context_has_last_run_with_z(self, db_session, monkeypatch):
+        from datetime import datetime
+
+        from sqlalchemy.orm import sessionmaker
+
+        import app.core.database as database
+        import app.modules.hooks.script_runner as script_runner
+        from app.modules.hooks.models import Hook
+        from app.modules.hooks.scheduler import _execute_scheduled_hook
+
+        db_session.add(
+            Hook(
+                id="sched-tz",
+                name="sched-tz",
+                hook_type="schedule",
+                script="pass",
+                enabled=True,
+                schedule_interval="1h",
+                last_run=datetime(2026, 10, 5, 12, 0, 0),
+            )
+        )
+        db_session.flush()
+        seen: list[dict] = []
+        monkeypatch.setattr(
+            script_runner, "run_hook_script", lambda **kw: seen.append(kw["context"])
+        )
+        # _execute_scheduled_hook opens its own SessionLocal; bind it to the test connection.
+        monkeypatch.setattr(
+            database, "SessionLocal", sessionmaker(bind=db_session.connection(), autoflush=False)
+        )
+
+        _execute_scheduled_hook("sched-tz")
+
+        assert [c["last_run"] for c in seen] == ["2026-10-05T12:00:00Z"]
+        assert seen[0]["triggered_at"].endswith("Z"), seen
+
+
 class TestHooksAuthz:
     def test_nonadmin_cannot_list(self, test_client, db_session, normal_user):
         h = _login(test_client, "viewer", "viewerpass")

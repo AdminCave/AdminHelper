@@ -30,6 +30,17 @@ def test_create_then_delete_api_key_204(test_client, admin_user, db_session):
     assert resp.status_code == 204
 
 
+def test_created_at_is_rfc3339_utc(test_client, admin_user, db_session):
+    # format: date-time promises an offset (R-0064): the API writes UTC with Z.
+    headers = _login(test_client)
+    created = _create_key(test_client, headers)
+    assert created.status_code == 201, created.text
+    assert created.json()["created_at"].endswith("Z"), created.text
+    listed = test_client.get("/api/api-keys", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert listed.json() and all(k["created_at"].endswith("Z") for k in listed.json())
+
+
 def test_delete_unknown_api_key_404(test_client, admin_user, db_session):
     headers = _login(test_client)
     resp = test_client.delete("/api/api-keys/999999", headers=headers)

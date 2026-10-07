@@ -55,6 +55,7 @@ def _parse_trigger(interval: str):
 
 def _execute_scheduled_hook(hook_id: str) -> None:
     from app.core.database import SessionLocal
+    from app.core.time import iso_utc
     from app.modules.hooks.models import Hook
     from app.modules.hooks.script_runner import run_hook_script
 
@@ -69,7 +70,7 @@ def _execute_scheduled_hook(hook_id: str) -> None:
             return
 
         now = datetime.now(timezone.utc)
-        last_run_str = hook.last_run.isoformat() if hook.last_run else None
+        last_run_str = iso_utc(hook.last_run)
 
         hook.last_run = now.replace(tzinfo=None)
         job = scheduler.get_job(hook_id)
@@ -81,7 +82,7 @@ def _execute_scheduled_hook(hook_id: str) -> None:
             run_hook_script(
                 script=hook.script,
                 hook_type="schedule",
-                context={"triggered_at": now.isoformat(), "last_run": last_run_str},
+                context={"triggered_at": iso_utc(now), "last_run": last_run_str},
             )
         except Exception:
             logger.exception("Scheduled Hook '%s' fehlgeschlagen", hook.name)

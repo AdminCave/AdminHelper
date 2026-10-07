@@ -17,6 +17,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.core.auth import generate_api_key, hash_api_key
+from app.core.time import utcnow_naive
 from app.modules.enrollment.models import EnrollmentToken
 
 # Default window: long enough to enroll right after login, short enough to limit
@@ -43,7 +44,7 @@ def mint_enrollment_token(
             subject_id=subject_id,
             scope=scope,
             browser=browser,
-            expires_at=datetime.datetime.now(datetime.timezone.utc) + ttl,
+            expires_at=utcnow_naive() + ttl,
         )
     )
     db.commit()

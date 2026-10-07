@@ -90,6 +90,27 @@ class TestProvisionTokenLifecycle:
         assert body["serverId"] == srv.id
         assert body["serverName"] == srv.name
 
+    def test_token_timestamps_are_rfc3339_utc(self, test_client, admin_user, db_session):
+        # format: date-time promises an offset (R-0064): the API writes UTC with Z.
+        srv = _make_server(db_session)
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+        )
+        assert login.status_code == 200, login.text
+        h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        res = test_client.post(f"/api/servers/{srv.id}/provision/token", headers=h)
+        assert res.status_code == 200, res.text
+        assert res.json()["expiresAt"].endswith("Z"), res.text
+
+        listed = test_client.get(f"/api/servers/{srv.id}/provision/tokens", headers=h)
+        assert listed.status_code == 200, listed.text
+        assert len(listed.json()) == 1, listed.text
+        row = listed.json()[0]
+        assert row["expiresAt"].endswith("Z") and row["createdAt"].endswith("Z"), row
+        assert row["usedAt"] is None
+
 
 class TestProvisionActivate:
     def test_activate_minimal_monitor_down(
