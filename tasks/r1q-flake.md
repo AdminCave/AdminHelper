@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ledger_loop_test: der Fall r1q flakt in der CI (R-0200) — Task-Ledger
-Status: aktiv · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-07 (kleines Fund-Paket aus der von Kevin am 2026-10-06 angenommenen Zeile R-0200; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0200 (Kurz-Ledger ohne Spec)
 Heavy: none — ein hermetischer Harness-Test und gegebenenfalls `scripts/dev/ledger-loop.sh`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -15,8 +15,10 @@ Geplant 2026-10-07 von der Aufsicht (adminhelper-ac). Kevin hat R-0200 am 2026-1
 zur Stufe „Team“ umgeschnitten, und der Fall macht `main` inzwischen zum zweiten Mal rot. Deshalb ein eigenes
 Kleinpaket. Bau interaktiv (Harness-Pfad). Zeilenangaben main@a50bdf4e.
 
-### T1 — r1q: Diagnose in der Fehlermeldung, Ursache finden und beheben (R-0200)  [ ]
+### T1 — r1q: Diagnose in der Fehlermeldung, Ursache finden und beheben (R-0200)  [x]
 Komponente: scripts · Dateien: scripts/tests/ledger_loop_test.sh, scripts/dev/ledger-loop.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @78e59f06 2026-10-07T11:26:25+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Der Fall `r1q` (`ledger_loop_test.sh:736–740`) meldet bei Rot nur `result r1q` und damit „- —“: Der Loop
 endete, bevor er r1q in `state.json` eintrug, und keine Lane entstand. Zuerst nennt der `bad`-Zweig `rc` und die letzten
 Zeilen von `$OUT` (ohne Geheimnisse; die Fixture hat keine). Dasselbe gilt für die übrigen `bad`-Zweige, die nur `result`

@@ -300,6 +300,11 @@ if ! flock -n 9; then
   echo "ledger-loop.sh: another ledger-loop holds $LOOP/loop.lock — stop: infra" >&2
   exit 74
 fi
+# Every child is born with fd 9, and one that outlives the run keeps the lock with it:
+# git commit leaves `git maintenance run --auto --detach` behind, and the next run
+# would stop on a lock nobody runs under (R-0200). A flock lock belongs to the open
+# file description, so unlocking it here frees it for every copy of the descriptor.
+trap 'flock -u 9' EXIT
 state 's.clear(); s["run"] = {"started": now, "pid": int(a[0]), "flags": dict(zip(
   ("max_hours", "max_tasks", "max_budget_usd", "max_ready", "task_minutes", "task_turns", "task_budget"),
   map(float, a[1:8]))), "ledgers": a[8:]}; s["stop"] = None' \
