@@ -123,3 +123,24 @@ Beweis: wie T1; `ledger.sh lint` prüft heute nur `Test-Löschung:` (`ledger.sh:
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (Lint-Satz) · die vier Skills
 Abhängt von: T1
+
+### T4 — Nachbesserung: Funde des Gesamt-Reviews  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @58bdb00f 2026-10-07T06:32:56+02:00
+Review: Fix nach frischer Runde 1 ohne weitere Runde, Kevin 2026-10-07
+Änderung: Aus dem Gesamt-Review über T1–T3 (Opus), von der Aufsicht freigegeben (2026-10-06). (1) Ein Test für den
+`inner`-Schutz auf der alten Spanne allein: alt schief eingerückt mit einem zweiten Test in der Spanne, neu gerade; die
+Mutante „nur neue Spanne“ wird einmal rot gezeigt. (2) `tasks/README.md` und `tasks/templates/*` sind kein Ledger:
+`diff-scan --task` und `task-close.sh` nehmen nach Runde 2 als Ledger nur `tasks/*.md` ohne README und Templates an,
+genau was die Commit-Prüfung schützt, und lehnen alles andere mit Exit 2 ab (auch CHANGELOG und Specs; für
+`Test-Löschung:` stand dieser Weg seit R-0079 offen). Je mit Test, der den Weg nachstellt. Der Ausschluss in der
+Commit-Prüfung bleibt. (3) Eine hinzugefügte Assertion zählt nur vor dem Kommentar der Zeile (`comment_at`), mit Test. (4) Die
+Filter auf `DECLARED`/`CHANGED` sind an den Tab gebunden. (5) Das README nennt beim Restrisiko, dass eine
+Helfer-Spanne bei schiefer Einrückung einen zweiten Helfer schlucken kann. (6) Der Test zur Funktion außerhalb der
+Testpfade sagt, was er prüft; dazu positive Tests für Helfer mit JS `function` und Rust `fn`. (7) Die Menge der
+geänderten Tests bekommt einen eigenen Namen statt `changed`.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: tasks/README.md (Restrisiko, Kommentar)
+Abhängt von: T1–T3
+Frage (Runde 2, Opus): Die Ledger-Sperre war eine Sperrliste; jede `.md` außerhalb von `tasks/` galt weiter als Ledger. Antwort der Aufsicht (2026-10-06): die Erlaubnisliste als Teil von T4, Revert-Probe, frische Review-Serie.
+Frage (frische Serie, Opus): `:(exclude)tasks/README.md` schließt auch ein Verzeichnis `tasks/README.md/` aus, die Erlaubnisliste nur die Datei. Entscheidung Kevin (2026-10-07): `tasks/README.md/*` mit abweisen, Revert-Probe, ohne weitere Runde.

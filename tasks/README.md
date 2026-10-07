@@ -159,7 +159,8 @@ Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte 
    selben Diff nicht umbenannt.
 5. **Die Assertion gehört zu genau diesem Test:** Ihre alte Zeile liegt in seiner alten Spanne.
 6. **Geändert, nicht weggenommen:** Die neue Spanne trägt mindestens so viele hinzugefügte Assertions,
-   wie die alte verliert (n ≥ r). Eine Zeile, die eine Assertion nur im Kommentar trägt, zählt nicht.
+   wie die alte verliert (n ≥ r; gezählt werden Zeilen mit einer Assertion). Eine Assertion, die nur in
+   einem Kommentar steht, am Zeilenanfang oder hinter Code, zählt nicht.
 
 **Ein Helfer** in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.py|go|sh`,
 `*.test.*`, `*.spec.*`) darf ebenso angekündigt werden, denn oft steht die Assertion dort und nicht
@@ -185,8 +186,13 @@ Commit von Hand auf Kevins Wort.
 **Was der Scan nicht sieht:** ob die neue Assertion so streng ist wie die alte (auch `assert True`
 zählt als Assertion); das prüft der Review. Und ein Testkopf in einem Kommentar oder String kann eine
 Spanne verschieben: Nennt eine Ankündigung genau diesen Namen, gingen entfernte Assertions des
-Nachbartests durch, sobald dort neue dazukommen. Dagegen schützen nur das Gate (die Ankündigung kommt
-committet aus dem Plan) und der Review. Kevin nimmt das Restrisiko hin (2026-10-06).
+Nachbartests durch, sobald dort neue dazukommen. Ebenso kann die Spanne eines Helfers bei schiefer
+Einrückung einen zweiten Helfer schlucken, denn der Schutz gegen eine zu weite Spanne zählt nur
+Testköpfe. Dagegen schützen nur das Gate (die Ankündigung kommt committet aus dem Plan) und der Review.
+Kevin nimmt das Restrisiko hin (2026-10-06). Ein Ledger ist nur `tasks/*.md`, ohne `tasks/README.md` und
+`tasks/templates/`: genau das, was die Commit-Prüfung von `task-close.sh` schützt. `diff-scan --task` und
+`task-close.sh` lehnen alles andere ab (Exit 2), eine Ankündigung in der CHANGELOG oder einer Spec gewährt
+nichts.
 
 ## Beweis-Konvention — was eine Task belegt
 

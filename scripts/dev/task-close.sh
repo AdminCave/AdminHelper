@@ -89,6 +89,15 @@ done
 [ -n "$LEDGER" ] && [ -n "$ID" ] || { echo "task-close needs <ledger> <id>" >&2; usage >&2; exit 2; }
 case "$LEDGER" in */*) ;; *) LEDGER="tasks/$LEDGER" ;; esac
 case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
+# A ledger is exactly what the commit check below guards: tasks/*.md without the
+# README (it shows the syntax of both declarations) and the template. Anything
+# else, the CHANGELOG or a spec, could carry a task section past that check
+# (R-0206; for Test-Löschung that way was open since R-0079).
+case "$(realpath -m --relative-to=. -- "$LEDGER")" in
+  tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $LEDGER" ;;
+  tasks/*.md) ;;
+  *) die "not a ledger: $LEDGER" ;;
+esac
 [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"

@@ -253,6 +253,16 @@ case "$VERB" in
       case "$TASK_ID" in ""|*[!A-Za-z0-9._-]*) die "not a task id: $TASK_ID" ;; esac
       case "$TASK_LEDGER" in */*) ;; *) TASK_LEDGER="tasks/$TASK_LEDGER" ;; esac
       case "$TASK_LEDGER" in *.md) ;; *) TASK_LEDGER="$TASK_LEDGER.md" ;; esac
+      # A ledger is exactly what the commit check of task-close guards: tasks/*.md
+      # without the README (it shows the syntax of both declarations) and the
+      # template. Anything else, the CHANGELOG or a spec, could carry a task
+      # section past that check and grant itself an exception (R-0206; for
+      # Test-Löschung that way was open since R-0079).
+      case "$(realpath -m --relative-to=. -- "$TASK_LEDGER")" in
+        tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $TASK_LEDGER" ;;
+        tasks/*.md) ;;
+        *) die "not a ledger: $TASK_LEDGER" ;;
+      esac
       [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"
@@ -322,9 +332,12 @@ case "$VERB" in
       /^\+/           {
                         line = substr($0, 2)
                         sub(/\r$/, "", line)
-                        # An added assertion, not a line that only comments: what a
-                        # declared change has to bring back, counted below.
-                        if (is_assert(line, file) && line !~ /^[ \t]*(#|\/\/|\/\*|\*)/)
+                        # An added assertion, not one that only stands in a comment
+                        # (at the start of the line or behind code): what a declared
+                        # change has to bring back, counted below.
+                        acmt = comment_at(line)
+                        acode = acmt ? substr(line, 1, acmt - 1) : line
+                        if (is_assert(acode, file) && line !~ /^[ \t]*(\/\*|\*)/)
                           printf "AA\t%s\t%d\t%s\n", file, newno, trim(line)
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
@@ -644,7 +657,7 @@ for k, (a, b, c, d, kind) in changes.items():
         notes.setdefault(k[0], []).append(
             f"declared change {k[0]}::{k[1]} ignored: {n} assertion(s) added in its new body, {r} removed")
 
-used, changed = set(), set()
+used, changed_tests = set(), set()
 for path, oldno, text in ras:
     n = int(oldno)
     hit = [k for k, (a, b) in entries.items() if k[0] == path and a <= n <= b]
@@ -652,19 +665,19 @@ for path, oldno, text in ras:
     if hit:
         used.add(hit[0])
     elif chg:
-        changed.add(chg[0])
+        changed_tests.add(chg[0])
     else:
         why = "; ".join(notes.get(path, []))
         out.append(f"{path}:{oldno}  removed assertion: {text}" + (f"  ({why})" if why else ""))
 for k in sorted(used):
     out.append(f"DECLARED\t{k[0]}::{k[1]}")
-for k in sorted(changed):
+for k in sorted(changed_tests):
     out.append(f"CHANGED\t{k[0]}::{k[1]} ({covered[k][4]}{covered[k][2]} removed, {covered[k][3]} added)")
 print("\n".join(out))
 ')" || die "could not judge the removed assertions"
     GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"
     CHG="$(printf '%s\n' "$FOUND" | sed -n 's/^CHANGED\t//p' | sort)"
-    FOUND="$(printf '%s\n' "$FOUND" | grep -v -e '^DECLARED' -e '^CHANGED' | grep -v '^$')"
+    FOUND="$(printf '%s\n' "$FOUND" | grep -v -e $'^DECLARED\t' -e $'^CHANGED\t' | grep -v '^$')"
     if [ -n "$FOUND" ]; then
       echo "review.sh diff-scan: the diff changes what a green run means" >&2
       printf '%s\n' "$FOUND" >&2

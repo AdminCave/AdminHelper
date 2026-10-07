@@ -149,6 +149,31 @@ c fix T99 -m "x"
 [ $rc -eq 2 ] && grep -q "no task T99" <<<"$OUT" && ok "unknown task -> exit 2" || bad "unknown task: rc=$rc"
 c nowhere T1 -m "x"
 [ $rc -eq 2 ] && grep -q "no such ledger" <<<"$OUT" && ok "unknown ledger -> exit 2" || bad "unknown ledger: rc=$rc"
+# A ledger is tasks/*.md without the README and the template: a task section
+# written into anything else must not make it one (R-0206). Each file carries a
+# section T1 like the fixture ledger, so only the allow-list can refuse it.
+mkdir -p "$FIX/tasks/templates" "$FIX/docs/features"
+for f in tasks/README.md tasks/templates/task.md CHANGELOG.md docs/features/x.md; do
+  sed -n '/^### T1 /,/^### T2 /p' "$FIX/tasks/fix.md" | sed '$d' > "$FIX/$f"
+done
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "task sections outside the ledgers"
+for L in tasks/README.md ./tasks/./README.md tasks/templates/task.md ./CHANGELOG.md docs/features/x.md; do
+  touch_tool
+  c "$L" T1 -m "feat: something"
+  [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ok "$L as the ledger -> exit 2, it is no ledger" \
+    || bad "$L as ledger: rc=$rc out=$OUT"
+done
+reset_repo
+# The exclude of the commit check, :(exclude)tasks/README.md, also leaves out a
+# directory of that name: a ledger below it is no ledger either.
+mkdir -p "$FIX/tasks/README.md"
+sed -n '/^### T1 /,/^### T2 /p' "$FIX/tasks/fix.md" | sed '$d' > "$FIX/tasks/README.md/x.md"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "a ledger below a directory tasks/README.md"
+touch_tool
+c tasks/README.md/x.md T1 -m "feat: something"
+[ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ok "tasks/README.md/x.md as the ledger -> exit 2, it is no ledger" \
+  || bad "README dir as ledger: rc=$rc out=$OUT"
+reset_repo
 
 # ══ what may be committed at all ══════════════════════════════════════════════
 echo "── the staged state ──"

@@ -1545,6 +1545,10 @@ Assertion-Änderung: apps/web/src/h.test.ts::check — eine Pfeil-Funktion
 ### T12 — a go helper, and a function outside the test paths  [ ]
 Komponente: agent · Dateien: apps/agent/h_test.go
 Assertion-Änderung: apps/agent/h_test.go::checkShape — schärfer; apps/server/app/util.py::check — kein Testpfad
+
+### T13 — a js function helper and a rust fn helper  [ ]
+Komponente: web · Dateien: apps/web/src/h2.test.ts
+Assertion-Änderung: apps/web/src/h2.test.ts::check — schärfer; apps/desktop/src-tauri/tests/h.rs::check — schärfer
 MD
 git -C "$FIX" add -A && git -C "$FIX" commit -qm "change ledger"
 CHG_PY='def test_shape():
@@ -1602,6 +1606,49 @@ def test_other():
 r diff-scan --staged --task tasks/chg.md T1
 [ $rc -eq 3 ] && grep -q "0 assertion(s) added" <<<"$OUT" \
   && ok "an assertion that only stands in a comment is no added assertion" || bad "comment as added: rc=$rc out=$OUT"
+tighten 'def test_shape():
+    out = build()
+    out["at"]  # assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added" <<<"$OUT" \
+  && ok "nor one in the comment behind code on its line" || bad "trailing comment as added: rc=$rc out=$OUT"
+# Only tasks/*.md without README and template is a ledger: a task section written
+# into anything else grants nothing. The way the second review showed: a section
+# with a declaration in the CHANGELOG or in a spec, committed, and an assertion
+# weakened to `assert True` staged.
+CHG_SECTION='# changelog
+
+### T1 — x  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — lockerer
+'
+base CHANGELOG.md "$CHG_SECTION"
+base docs/features/x.md "$CHG_SECTION"
+# The exclude of the commit check, :(exclude)tasks/README.md, also leaves out a
+# directory of that name: a ledger below it must be refused as well.
+base tasks/README.md/x.md "$CHG_SECTION"
+mkdir -p "$FIX/tasks/templates"
+tighten 'def test_shape():
+    out = build()
+    assert True
+
+
+def test_other():
+    assert other() == 1
+'
+for L in tasks/README.md ./tasks/./README.md tasks/templates/task.md ./CHANGELOG.md docs/features/x.md tasks/README.md/x.md; do
+  r diff-scan --staged --task "$L" T1
+  [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ! grep -q "clean" <<<"$OUT" \
+    && ok "diff-scan --task $L -> exit 2, it is no ledger" || bad "diff-scan $L: rc=$rc out=$OUT"
+done
+base CHANGELOG.md '# changelog
+'
+git -C "$FIX" rm -q -- docs/features/x.md tasks/README.md/x.md && git -C "$FIX" commit -qm "drop the outside sections" >/dev/null 2>&1
 base apps/server/tests/test_chg.py 'def test_shape():
     out = build()
     assert out["at"] == encode(raw)
@@ -1676,6 +1723,21 @@ printf "describe('d', () => {\nit('wide', () => expect(1).toBe(1));\n  it('y', (
 r diff-scan --staged --task tasks/chg.md T7
 [ $rc -eq 3 ] && grep -q "holds another test (y" <<<"$OUT" \
   && ok "a declared change whose span holds another test counts for nothing" || bad "wide span: rc=$rc out=$OUT"
+# The same guard on the OLD span alone: there the span is too wide and holds y,
+# in the new file y stands on its own and is weakened. Two assertions out of the
+# old span, two into the new one: only the old-side guard refuses it.
+base apps/web/src/c.test.ts "describe('d', () => {
+it('wide', () => expect(1).toBe(1));
+  it('y', () => {
+    expect(2).toBe(2);
+  });
+});
+"
+printf "describe('d', () => {\nit('wide', () => {\n  expect(1).toStrictEqual(1);\n  expect(1).toBeTruthy();\n});\nit('y', () => {\n  expect(2).toBeDefined();\n});\n});\n" \
+  > "$FIX/apps/web/src/c.test.ts"; stage apps/web/src/c.test.ts
+r diff-scan --staged --task tasks/chg.md T7
+[ $rc -eq 3 ] && grep -q "holds another test (y" <<<"$OUT" && grep -q "expect(2).toBe(2)" <<<"$OUT" \
+  && ok "a span too wide in the OLD file alone: the change counts for nothing" || bad "old wide span: rc=$rc out=$OUT"
 # A file renamed in the same diff: the change is not judged across the move.
 base apps/server/tests/test_chg.py "$CHG_PY"
 git -C "$FIX" mv apps/server/tests/test_chg.py apps/server/tests/test_chg2.py
@@ -1760,7 +1822,19 @@ sed -i 's|assert x > 0|assert x >= 1|' "$FIX/apps/server/app/util.py"
 stage apps/agent/h_test.go apps/server/app/util.py
 r diff-scan --staged --task tasks/chg.md T12
 [ $rc -eq 0 ] && grep -q "clean (1 declared assertion change(s): apps/agent/h_test.go::checkShape (helper, 1 removed, 1 added))" <<<"$OUT" \
-  && ok "a go helper, declared: clean; a function outside the test paths is no helper" || bad "go helper: rc=$rc out=$OUT"
+  && ok "a go helper, declared: clean; an assert lost outside the test paths is no finding, declared or not" || bad "go helper: rc=$rc out=$OUT"
+reset_index
+mkdir -p "$FIX/apps/web/src" "$FIX/apps/desktop/src-tauri/tests"
+printf 'function check(x) {\n  expect(x).toBe(1);\n}\n\nit("uses check", () => {\n  check(1);\n});\n' > "$FIX/apps/web/src/h2.test.ts"
+printf 'fn check(x: i32) {\n    assert_eq!(x, 1);\n}\n\n#[test]\nfn uses_check() {\n    check(1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/h.rs"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "a js and a rust helper"
+sed -i 's|toBe(1)|toStrictEqual(1)|' "$FIX/apps/web/src/h2.test.ts"
+sed -i 's|assert_eq!(x, 1);|assert_eq!(x, 1, "x");|' "$FIX/apps/desktop/src-tauri/tests/h.rs"
+stage apps/web/src/h2.test.ts apps/desktop/src-tauri/tests/h.rs
+r diff-scan --staged --task tasks/chg.md T13
+[ $rc -eq 0 ] && grep -q "apps/web/src/h2.test.ts::check (helper, 1 removed, 1 added)" <<<"$OUT" \
+  && grep -q "apps/desktop/src-tauri/tests/h.rs::check (helper, 1 removed, 1 added)" <<<"$OUT" \
+  && ok "a js function helper and a rust fn helper, declared: clean, both marked" || bad "js/rust helper: rc=$rc out=$OUT"
 # A fake nested in the declared test is no second test: the guard stays on test heads.
 base apps/server/tests/test_chg.py 'def test_shape():
     def fake():
