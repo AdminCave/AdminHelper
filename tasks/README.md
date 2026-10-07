@@ -69,7 +69,8 @@ bash scripts/dev/ledger.sh set-files <ledger> <id> <pfad…>        # Dateien: e
 bash scripts/dev/ledger.sh status                                  # Übersicht aller Ledger
 bash scripts/dev/ledger.sh status <ledger> <wert>                  # Kopf-Status setzen
 bash scripts/dev/ledger.sh new-task <ledger> --title "…"           # aus tasks/templates/task.md
-bash scripts/dev/ledger.sh lint <ledger>                           # Verify-Präfix, [x] ohne Evidenz, Invariante
+bash scripts/dev/ledger.sh lint <ledger>                           # Verify-Präfix, [x] ohne Evidenz, Invariante,
+                                                                   # Reste eines Werkzeugaufrufs in Ledger und Spec
 ```
 
 `<ledger>` ist der Pfad oder der reine Slug (`harness-stufe-4`), `<id>` die Task-Kennung aus
