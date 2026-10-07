@@ -39,8 +39,10 @@ Entwurf (für alle drei Tasks; Zeilenangaben main@bf9cee5e, beim Bau an Symbolen
   (Roadmap-Kandidat über die Aufsicht); ein eigener Grund für den Deckel; Seiten unter `docs/` (sie beschreiben die
   Ablehnung privater Ziele, und das bleibt wahr).
 
-### T1 — `ssrf.py` in beiden Diensten: `classify_url` mit Grund, `is_private_url` als Hülle  [ ]
+### T1 — `ssrf.py` in beiden Diensten: `classify_url` mit Grund, `is_private_url` als Hülle  [x]
 Komponente: server · Dateien: apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf.py, apps/monitoring/tests/test_ssrf.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @96dc450d 2026-10-07T13:10:30+02:00
+Review: approve (opus/xhigh; 2 nit) · round 1
 Änderung: In beiden `ssrf.py` derselbe Code (Parität): `import enum`, `UrlVerdict` und `classify_url` wie im Entwurf;
 der Körper des heutigen `is_private_url` wandert nach `classify_url` (jedes `return True` wird `UNRESOLVED` oder
 `PRIVATE` nach dem Entwurf, `return False` wird `ALLOWED`), `is_private_url` wird die Ein-Zeilen-Hülle. Docstrings
