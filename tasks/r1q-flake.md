@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ledger_loop_test: der Fall r1q flakt in der CI (R-0200) — Task-Ledger
-Status: geplant · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/r1q-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-07 (kleines Fund-Paket aus der von Kevin am 2026-10-06 angenommenen Zeile R-0200; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0200 (Kurz-Ledger ohne Spec)
 Heavy: none — ein hermetischer Harness-Test und gegebenenfalls `scripts/dev/ledger-loop.sh`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
