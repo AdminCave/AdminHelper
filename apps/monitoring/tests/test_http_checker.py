@@ -9,6 +9,8 @@ public URL bounce into the internal network unchecked."""
 import httpx
 
 from app.checkers import http as http_mod
+from app.core import ssrf as ssrf_mod
+from app.core.ssrf import UrlVerdict
 
 
 def test_http_checker_rejects_redirect_to_private(monkeypatch):
@@ -75,7 +77,7 @@ def test_http_checker_blocks_private_initial_url(monkeypatch):
     # The is_private_url guard runs BEFORE the request; the existing tests only cover the redirect-hop
     # guard. A private initial URL must be refused with no request at all (6.52).
     calls = []
-    monkeypatch.setattr(http_mod, "is_private_url", lambda u: True)
+    monkeypatch.setattr(http_mod, "classify_url", lambda u: UrlVerdict.PRIVATE)
     monkeypatch.setattr(http_mod.httpx, "request", lambda *a, **k: calls.append(1))
     status, msg, metrics = http_mod.HttpChecker().run({"url": "http://169.254.169.254/"})
     assert status == "unknown"
@@ -136,3 +138,46 @@ def test_http_checker_other_exception_maps_to_unknown(monkeypatch):
     monkeypatch.setattr(http_mod.httpx, "request", boom)
     status, _msg, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
     assert status == "unknown"
+
+
+def test_http_checker_unresolvable_initial_url_says_so(monkeypatch):
+    # R-0045: a dead nameserver is no private target. The check says which of the two
+    # it is, and still sends no request.
+    calls = []
+    monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
+    monkeypatch.setattr(http_mod.httpx, "request", lambda *a, **k: calls.append(1))
+    status, msg, metrics = http_mod.HttpChecker().run({"url": "http://dead-nameserver.example/"})
+    assert status == "unknown"
+    assert "could not be resolved" in msg
+    assert "SSRF" in msg
+    assert metrics is None
+    assert calls == []
+
+
+def test_http_checker_unresolvable_redirect_target_says_so(monkeypatch):
+    # Only the hop's host fails to resolve; the public IP literal resolves for real.
+    real_resolve = ssrf_mod._resolve
+    monkeypatch.setattr(
+        ssrf_mod,
+        "_resolve",
+        lambda host, timeout: (
+            None if host == "unresolvable.example" else real_resolve(host, timeout)
+        ),
+    )
+    calls = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append(str(url))
+        return httpx.Response(
+            302,
+            headers={"location": "http://unresolvable.example/"},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(http_mod.httpx, "request", fake_request)
+    status, msg, metrics = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
+    assert status == "critical"
+    assert "could not be resolved" in msg
+    assert "SSRF" in msg
+    assert metrics is None
+    assert calls == ["http://93.184.216.34/"]  # the hop itself is never fetched

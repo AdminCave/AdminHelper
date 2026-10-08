@@ -24,7 +24,7 @@ from typing import Any
 
 import httpx
 
-from app.core.ssrf import is_private_url
+from app.core.ssrf import UrlVerdict, classify_url
 
 # Cap the reflected body so a large internal response can't flood the worker's
 # memory (the hook may echo it back through the result dict).
@@ -52,7 +52,13 @@ def _read_capped_body(resp: httpx.Response) -> tuple[str, Any]:
 def _safe_http_get(url: str, headers: dict | None = None, timeout: int = 10) -> dict:
     # The URL can come straight from an attacker-controlled webhook payload, so guard
     # against SSRF and never follow a redirect into an internal target (3.37).
-    if is_private_url(url):
+    verdict = classify_url(url)
+    if verdict is UrlVerdict.UNRESOLVED:
+        raise ValueError(
+            "Target host could not be resolved (DNS error or timeout), rejected by the SSRF guard: "
+            f"{url}"
+        )
+    if verdict is not UrlVerdict.ALLOWED:
         raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
     with httpx.stream(
         "GET", url, headers=headers or {}, timeout=timeout, follow_redirects=False
@@ -64,7 +70,13 @@ def _safe_http_get(url: str, headers: dict | None = None, timeout: int = 10) -> 
 def _safe_http_post(
     url: str, json_data: Any = None, headers: dict | None = None, timeout: int = 10
 ) -> dict:
-    if is_private_url(url):
+    verdict = classify_url(url)
+    if verdict is UrlVerdict.UNRESOLVED:
+        raise ValueError(
+            "Target host could not be resolved (DNS error or timeout), rejected by the SSRF guard: "
+            f"{url}"
+        )
+    if verdict is not UrlVerdict.ALLOWED:
         raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
     with httpx.stream(
         "POST",

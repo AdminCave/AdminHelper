@@ -274,6 +274,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **SSRF-Guard nennt den Grund (R-0045):** Der HTTP-Check und der Alert-Webhook des Monitorings sowie die
+  Hook-Funktionen `http_get`/`http_post` des Servers melden ein Ziel, dessen Host nicht aufloest
+  (DNS-Fehler oder Zeitlimit), jetzt als solches (`could not be resolved … rejected by the SSRF guard`)
+  statt als private/reservierte Adresse. Abgelehnt wird es weiter, ohne Request; die Meldung fuer
+  private Ziele bleibt unveraendert.
 - **Server-Datenbank-Sessions in UTC (R-0209):** Jede Verbindung des Servers setzt ihre Session
   auf `UTC`, unabhaengig von der Zeitzone des Postgres-Clusters (der Stack startet ihn mit
   `TZ=Europe/Berlin`) und von einem `PGTZ` in der Umgebung. Postgres rechnete einen Zeitwert mit

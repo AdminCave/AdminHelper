@@ -11,6 +11,7 @@ probe the internal network from the monitoring service.
 
 from __future__ import annotations
 
+import enum
 import ipaddress
 import logging
 import socket
@@ -63,7 +64,7 @@ def _warn_inflight_cap() -> None:
         _dns_cap_warned_at = now
     logger.warning(
         "SSRF guard: %d DNS resolutions in flight (cap reached), rejecting further targets as "
-        "private until they drain — a nameserver is most likely hung",
+        "unresolved until they drain — a nameserver is most likely hung",
         _DNS_MAX_INFLIGHT,
     )
 
@@ -116,26 +117,34 @@ def _resolve(hostname: str, timeout: float) -> list | None:
     return resolved[0] if resolved else None
 
 
-def is_private_url(url: str) -> bool:
-    """Checks whether a URL resolves to a private/reserved/loopback address.
+class UrlVerdict(enum.Enum):
+    """What the guard says about an outbound target: allowed, or why it is rejected."""
 
-    Fail-closed: an unresolvable host, a parse error, or an unspecified/mapped
-    address counts as private, so the guard never lets an internal target through
-    by accident. Note: this is a resolve-then-check; it does not pin the resolved
-    IP into the subsequent request, so it is not by itself DNS-rebinding-proof.
+    ALLOWED = "allowed"
+    PRIVATE = "private"
+    UNRESOLVED = "unresolved"
+
+
+def classify_url(url: str) -> UrlVerdict:
+    """Classifies a URL: ALLOWED, PRIVATE or UNRESOLVED (R-0045).
+
+    Both rejections fail closed; the reason only lets a caller tell an operator
+    whether the target resolves to a blocked address (PRIVATE, an unreadable
+    address included) or does not resolve at all (UNRESOLVED: no host, a DNS error,
+    the deadline or the in-flight cap missed) — a dead nameserver is not a wrong URL.
     """
     parsed = urlparse(url)
     hostname = parsed.hostname
     if not hostname:
-        return True
+        return UrlVerdict.UNRESOLVED
     addr_info = _resolve(hostname, _DNS_TIMEOUT_S)
     if not addr_info:
-        return True  # unresolvable, timed out, capped or empty -> fail closed, never allow
+        return UrlVerdict.UNRESOLVED  # timed out, capped or empty -> fail closed, never allow
     for _family, _, _, _, sockaddr in addr_info:
         try:
             ip = ipaddress.ip_address(sockaddr[0])
         except ValueError:
-            return True
+            return UrlVerdict.PRIVATE
         # Normalize IPv4-mapped IPv6 (::ffff:127.0.0.1) to the embedded IPv4 so the
         # IPv4 category checks below catch it.
         if ip.version == 6 and ip.ipv4_mapped is not None:
@@ -149,5 +158,17 @@ def is_private_url(url: str) -> bool:
             or ip.is_unspecified
             or any(ip in net for net in _BLOCKED_NETWORKS)
         ):
-            return True
-    return False
+            return UrlVerdict.PRIVATE
+    return UrlVerdict.ALLOWED
+
+
+def is_private_url(url: str) -> bool:
+    """Checks whether a URL resolves to a private/reserved/loopback address.
+
+    Fail-closed: an unresolvable host, a parse error, or an unspecified/mapped
+    address counts as private, so the guard never lets an internal target through
+    by accident; classify_url says which of the two it is. Note: this is a
+    resolve-then-check; it does not pin the resolved IP into the subsequent
+    request, so it is not by itself DNS-rebinding-proof.
+    """
+    return classify_url(url) is not UrlVerdict.ALLOWED
