@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # vm.py und lib.sh lesen den Proxmox-Zugang aus einer 0600-Datei (R-0229) — Task-Ledger
-Status: geplant · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Paket aus R-0229, Team-Plan Phase 0, von Kevin am 2026-10-08 angenommen; Delegation Kevin 2026-10-05; Harness-Pfade, den PR merged Kevin)
 Spec: Roadmap R-0229 (Kurz-Ledger ohne Spec)
 Heavy: none — Python und Shell unter scripts/vm mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Zugriff mit dem umgezogenen Token (`vm.py doctor`) prüft Kevin nach seinem Umzug (T3).
 DoD je Task: CLAUDE.md (Tests grün, ruff und shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
