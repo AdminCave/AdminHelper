@@ -1565,10 +1565,10 @@ Gruppe und Andere nicht schreiben — sonst bricht `vm.py` mit Exit 2 und dem pa
 
 **Umzug des Tokens (einmal):** Der Befehl schreibt `AH_PVE_TOKEN` aus der settings-Datei nach
 `pve.env` (Datei 600, Verzeichnis 700) und nimmt es dort heraus, ohne den Wert auszugeben; eine
-vorhandene `pve.env` liest er wie `vm.py`, und ein Symlink an ihrer Stelle bricht ab. Im
-Haupt-Checkout ausfuehren und danach in jeder Lane (`../AdminHelper-<slug>`), denn `lane.sh new` legt
-jeder Lane eine eigene Kopie der settings-Datei an; dort steht das Token schon in `pve.env`, und der
-Befehl nimmt nur die Kopie heraus.
+vorhandene `pve.env` liest er wie `vm.py`, und ein Symlink an ihrer Stelle bricht ab, bevor er etwas
+schreibt. Im Haupt-Checkout ausfuehren und danach in jeder Lane (`../AdminHelper-<slug>`), denn
+`lane.sh new` legt jeder Lane eine eigene Kopie der settings-Datei an; dort steht das Token schon in
+`pve.env`, und der Befehl nimmt nur die Kopie heraus.
 
 ```bash
 python3 - .claude/settings.local.json <<'PY'
@@ -1580,7 +1580,10 @@ with open(src) as fh:
 token = data.get("env", {}).pop("AH_PVE_TOKEN", None)
 if token is None:
     sys.exit("%s has no AH_PVE_TOKEN - nothing to move" % src)
-text = open(dst).read() if os.path.exists(dst) else ""
+text = ""
+if os.path.lexists(dst):  # O_NOFOLLOW: a link is refused here too, before anything is written
+    with os.fdopen(os.open(dst, os.O_RDONLY | os.O_NOFOLLOW), encoding="utf-8") as fh:
+        text = fh.read()
 have = False  # read as vm.py reads it: an empty value is no token
 for line in text.splitlines():
     line = line.strip()
@@ -1589,8 +1592,8 @@ for line in text.splitlines():
     key, _, value = line.partition("=")
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
         value = value[1:-1]
-    if key == "AH_PVE_TOKEN":
-        have = bool(value)
+    if key == "AH_PVE_TOKEN" and value:
+        have = True
 if not have:
     os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
     os.chmod(os.path.dirname(dst), 0o700)
