@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # vm.py und lib.sh lesen den Proxmox-Zugang aus einer 0600-Datei (R-0229) — Task-Ledger
-Status: bereit · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Paket aus R-0229, Team-Plan Phase 0, von Kevin am 2026-10-08 angenommen; Delegation Kevin 2026-10-05; Harness-Pfade, den PR merged Kevin)
 Spec: Roadmap R-0229 (Kurz-Ledger ohne Spec)
 Heavy: none — Python und Shell unter scripts/vm mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Zugriff mit dem umgezogenen Token (`vm.py doctor`) prüft Kevin nach seinem Umzug (T3).
@@ -105,3 +105,18 @@ bis zu ihrem Neustart in der Umgebung; `python3 scripts/vm/vm.py doctor` ist die
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: das ist die Doku-Task (Harness-Seiten auf Deutsch, die Skills wie bisher; `docs/` bleibt unberührt)
 Abhängt von: T1, T2
+
+### T4 — Nachbesserung aus dem Review am Ende: der Umzugsbefehl verliert kein Token (R-0229)  [ ]
+Komponente: scripts · Dateien: DEVELOPMENT.md, .claude/skills/test/SKILL.md, scripts/vm/tests/README.md, scripts/tests/heavy.sh
+Änderung: Angelegt 2026-10-08 aus dem Review am Ende (Opus, request_changes). wichtig, belegt mit Platzhaltern
+gegen ein Fake-HOME: Der Umzugsbefehl in DEVELOPMENT.md verliert das Token, wenn schon eine pve.env liegt. (1) Endet
+ihre letzte Zeile ohne Zeilenumbruch, klebt die neue Zeile daran (`AH_VM_MAX=3AH_PVE_TOKEN=…`): das Token fehlt in
+beiden Dateien, und `AH_VM_MAX` trägt es in eine Fehlermeldung von vm.py. (2) Eine leere Zeile `AH_PVE_TOKEN=` zählt
+als vorhanden, das Token verschwindet aus der JSON-Datei, vm.py wertet leer als nicht gesetzt. Der Befehl liest die
+vorhandene Datei deshalb wie vm.py (`export`, Anführungszeichen, leer zählt nicht), setzt vor die neue Zeile einen
+Umbruch, wenn der letzten einer fehlt, und öffnet pve.env mit `O_NOFOLLOW` (ein Symlink dort bricht ab, das Token
+bleibt in der JSON-Datei). Dazu die nits aus derselben Runde: der Umzugsblock steht hinter der Schlüsseltabelle, die
+Zeile im `/test`-Skill wird umbrochen, und `scripts/vm/tests/README.md` (Aufzeichnung „mit dem Token aus
+settings.local.json“) sowie die Meldung in `heavy.sh` `preflight` nennen beide Quellen. Kein Test pinnt die Meldung.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: das ist Doku (DEVELOPMENT.md, Skill, README); kein CHANGELOG-Nachtrag, der Eintrag aus T3 gilt
