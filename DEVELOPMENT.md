@@ -1549,8 +1549,23 @@ regulaere Datei mit Modus 600 sein, die dem eigenen Benutzer gehoert, in einem V
 Gruppe und Andere nicht schreiben — sonst bricht `vm.py` mit Exit 2 und dem passenden `chmod` ab.
 `scripts/vm/lib.sh` liest ueber `vm.py` genau dieselben Werte.
 
+| Schluessel | Bedeutung |
+|---|---|
+| `AH_PVE_URL` | `https://<host>:8006`. Der Name **muss** im SAN des Zertifikats stehen (siehe TLS). |
+| `AH_PVE_NODE` | Der Knoten, auf dem geklont wird. |
+| `AH_PVE_TOKEN` | `<user>@pve!<tokenid>=<secret>`. Wandert nur im `Authorization`-Header, nie in eine URL. |
+| `AH_PVE_CA` | Pfad zur Root-CA des Hypervisors (PEM). |
+| `AH_PVE_STORAGE` · `AH_PVE_BRIDGE` · `AH_PVE_POOL` | Storage, Bridge und Pool der Klone. |
+| `AH_PVE_VMID_RANGE` | `3000-3999`. Klone liegen im **unteren**, Templates im **oberen** Hundert. |
+| `AH_VM_SSH_KEY` | Privater Schluessel; der `.pub` daneben wird per cloud-init in den Klon injiziert. |
+| `AH_VM_MAX` | Deckel fuer gleichzeitige Leases **je Lane** (Default 8 — der Capstone haelt sieben). |
+| `AH_VM_LINKED` | `1` (Default) = Linked Clone in ~2 s statt ~11 min Vollklon. |
+| `AH_VM_REMOTE_DIR` | Wohin `sync` den Checkout schiebt (Default `~/adminhelper`). |
+| `AH_VM_STATE_DIR` | Lokaler Zwischenspeicher (Default `.vm/`): `lane` und `warm.env`. |
+
 **Umzug des Tokens (einmal):** Der Befehl schreibt `AH_PVE_TOKEN` aus der settings-Datei nach
-`pve.env` (Datei 600, Verzeichnis 700) und nimmt es dort heraus, ohne den Wert auszugeben. Im
+`pve.env` (Datei 600, Verzeichnis 700) und nimmt es dort heraus, ohne den Wert auszugeben; eine
+vorhandene `pve.env` liest er wie `vm.py`, und ein Symlink an ihrer Stelle bricht ab. Im
 Haupt-Checkout ausfuehren und danach in jeder Lane (`../AdminHelper-<slug>`), denn `lane.sh new` legt
 jeder Lane eine eigene Kopie der settings-Datei an; dort steht das Token schon in `pve.env`, und der
 Befehl nimmt nur die Kopie heraus.
@@ -1565,16 +1580,25 @@ with open(src) as fh:
 token = data.get("env", {}).pop("AH_PVE_TOKEN", None)
 if token is None:
     sys.exit("%s has no AH_PVE_TOKEN - nothing to move" % src)
-have = os.path.exists(dst) and any(
-    line.strip().removeprefix("export ").split("=", 1)[0].strip() == "AH_PVE_TOKEN"
-    for line in open(dst)
-)
+text = open(dst).read() if os.path.exists(dst) else ""
+have = False  # read as vm.py reads it: an empty value is no token
+for line in text.splitlines():
+    line = line.strip()
+    if line.startswith("export") and line[6:7].isspace():
+        line = line[6:].lstrip()
+    key, _, value = line.partition("=")
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    if key == "AH_PVE_TOKEN":
+        have = bool(value)
 if not have:
     os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
     os.chmod(os.path.dirname(dst), 0o700)
-    with os.fdopen(os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a") as fh:
-        fh.write("AH_PVE_TOKEN=%s\n" % token)
-    os.chmod(dst, 0o600)
+    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "a") as fh:
+        os.fchmod(fh.fileno(), 0o600)
+        # A last line without a newline would swallow the token.
+        fh.write(("\n" if text and not text.endswith("\n") else "") + "AH_PVE_TOKEN=%s\n" % token)
 tmp = src + ".new"
 with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as fh:
     json.dump(data, fh, indent=2)
@@ -1587,20 +1611,6 @@ PY
 
 Danach `python3 scripts/vm/vm.py doctor` als Probe. Eine laufende Session traegt den alten Wert bis zu
 ihrem Neustart in ihrer Umgebung — und dort gewinnt er weiter ueber `pve.env`.
-
-| Schluessel | Bedeutung |
-|---|---|
-| `AH_PVE_URL` | `https://<host>:8006`. Der Name **muss** im SAN des Zertifikats stehen (siehe TLS). |
-| `AH_PVE_NODE` | Der Knoten, auf dem geklont wird. |
-| `AH_PVE_TOKEN` | `<user>@pve!<tokenid>=<secret>`. Wandert nur im `Authorization`-Header, nie in eine URL. |
-| `AH_PVE_CA` | Pfad zur Root-CA des Hypervisors (PEM). |
-| `AH_PVE_STORAGE` · `AH_PVE_BRIDGE` · `AH_PVE_POOL` | Storage, Bridge und Pool der Klone. |
-| `AH_PVE_VMID_RANGE` | `3000-3999`. Klone liegen im **unteren**, Templates im **oberen** Hundert. |
-| `AH_VM_SSH_KEY` | Privater Schluessel; der `.pub` daneben wird per cloud-init in den Klon injiziert. |
-| `AH_VM_MAX` | Deckel fuer gleichzeitige Leases **je Lane** (Default 8 — der Capstone haelt sieben). |
-| `AH_VM_LINKED` | `1` (Default) = Linked Clone in ~2 s statt ~11 min Vollklon. |
-| `AH_VM_REMOTE_DIR` | Wohin `sync` den Checkout schiebt (Default `~/adminhelper`). |
-| `AH_VM_STATE_DIR` | Lokaler Zwischenspeicher (Default `.vm/`): `lane` und `warm.env`. |
 
 Den SSH-Schluessel legt man **einmal** selbst an — `doctor` erzeugt ihn bewusst nicht als
 Nebenwirkung:

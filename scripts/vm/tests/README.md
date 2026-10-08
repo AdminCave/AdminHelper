@@ -13,7 +13,8 @@ nicht erfunden. Das ist der Unterschied zwischen „der Test prüft, was die API
 ## Herkunft
 
 Aufgezeichnet am 2026-09-16 gegen Proxmox VE **9.2.3** (`pve-manager/9.2.3`, Kernel 7.0.12-1-pve)
-mit dem Token aus `.claude/settings.local.json`, im Pool `adminhelper-ci`. Die mutierenden
+mit dem Token aus `.claude/settings.local.json` (seit R-0229 liegt es in `~/.config/adminhelper/pve.env`),
+im Pool `adminhelper-ci`. Die mutierenden
 Antworten stammen aus drei Wegwerf-Klonen des Fat-Templates 9402 (VMIDs 3000/3001), die im
 selben Lauf wieder zerstört wurden; danach war `/cluster/resources` wieder leer bis auf die
 drei Templates. Das Aufzeichnungsskript lag im Scratchpad und ist **nicht** committet — eine
