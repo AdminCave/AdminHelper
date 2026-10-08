@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-UI-Kleinpaket 1: Export-Passwort wie dokumentiert, ein veralteter E2E-Kommentar — Task-Ledger
-Status: bereit · Branch: feature/desktop-ui-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/desktop-ui-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Fund-Paket aus R-0219 und R-0221, von Kevin am 2026-10-08 in der Triage angenommen; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0219, R-0221 (Kurz-Ledger ohne Spec)
 Heavy: none — eine Eingabeprüfung und zwei Texte in der Desktop-UI, dazu ein Kommentar in einer E2E-Spec; der Export-Pfad selbst und keine Journey ändern sich.
