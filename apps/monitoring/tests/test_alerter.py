@@ -14,6 +14,8 @@ from types import SimpleNamespace
 
 from app import alerter
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
+from app.core import ssrf as ssrf_mod
+from app.core.ssrf import UrlVerdict
 
 from ._helpers import _CapturingDb, make_check, make_msg, make_rule
 
@@ -169,7 +171,7 @@ class TestWebhookSsrf:
 
     def test_private_target_rejected_without_request(self, monkeypatch):
         posted = {"n": 0}
-        monkeypatch.setattr(alerter, "is_private_url", lambda url: True)
+        monkeypatch.setattr(alerter, "classify_url", lambda url: UrlVerdict.PRIVATE)
         monkeypatch.setattr(
             alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
         )
@@ -186,7 +188,7 @@ class TestWebhookSsrf:
 
     def test_public_target_is_dispatched(self, monkeypatch):
         posted = {"n": 0}
-        monkeypatch.setattr(alerter, "is_private_url", lambda url: False)
+        monkeypatch.setattr(alerter, "classify_url", lambda url: UrlVerdict.ALLOWED)
 
         class _Resp:
             status_code = 200
@@ -206,6 +208,26 @@ class TestWebhookSsrf:
 
         assert success is True
         assert posted["n"] == 1
+
+    def test_unresolvable_target_rejected_without_request(self, monkeypatch):
+        # R-0045: a webhook host that does not resolve is reported as such, not as private.
+        posted = {"n": 0}
+        monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
+        monkeypatch.setattr(
+            alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
+        )
+
+        success, error = alerter._send_webhook(
+            {"url": "https://dead-nameserver.example/x"},
+            make_rule(),
+            make_check(),
+            make_msg(),
+        )
+
+        assert success is False
+        assert "could not be resolved" in error
+        assert "SSRF" in error
+        assert posted["n"] == 0
 
 
 class TestRuleLoopIsolation:
