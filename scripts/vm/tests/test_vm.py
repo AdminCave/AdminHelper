@@ -59,6 +59,115 @@ def test_missing_key_is_a_usage_error(tmp_path):
     assert "AH_PVE_URL" in str(caught.value)
 
 
+# ── pve.env (R-0229) ─────────────────────────────────────────────────────────
+# Placeholders only: nothing here looks like a token, and no real file is read
+# (the autouse pve_env fixture points vm.PVE_ENV_FILE into tmp_path).
+def _write(path, text: str, mode: int = 0o600) -> None:
+    path.write_text(text)
+    path.chmod(mode)
+
+
+def test_config_reads_pve_env(tmp_path, pve_env):
+    _write(pve_env, "AH_PVE_URL=https://pve.example:8006\nAH_PVE_TOKEN=placeholder-token\n")
+    cfg = vm.Config.load(root=str(tmp_path), environ={})
+    assert cfg["AH_PVE_URL"] == "https://pve.example:8006"
+    assert cfg["AH_PVE_TOKEN"] == "placeholder-token"
+
+
+def test_pve_env_wins_over_settings_and_the_environment_over_both(tmp_path, pve_env):
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    (claude / "settings.local.json").write_text(
+        json.dumps(
+            {
+                "env": {
+                    "AH_PVE_URL": "https://from-settings:8006",
+                    "AH_PVE_NODE": "settings-node",
+                    "AH_PVE_POOL": "settings-pool",
+                }
+            }
+        )
+    )
+    _write(pve_env, "AH_PVE_URL=https://from-pve-env:8006\nAH_PVE_NODE=pve-env-node\n")
+    cfg = vm.Config.load(root=str(tmp_path), environ={"AH_PVE_NODE": "env-node"})
+    assert cfg["AH_PVE_URL"] == "https://from-pve-env:8006"  # pve.env over the settings file
+    assert cfg["AH_PVE_NODE"] == "env-node"  # the environment over pve.env
+    assert cfg["AH_PVE_POOL"] == "settings-pool"  # the settings file stays the fallback
+
+
+def test_pve_env_is_read_as_runner_env_reads_it(tmp_path, pve_env):
+    lines = [
+        "# a comment",
+        "",
+        "export AH_PVE_URL=https://pve.example:8006",
+        '  AH_PVE_NODE="node one"  ',
+        "AH_PVE_POOL='pool'",
+        "OTHER_KEY=not-ours",
+        "AH_PVE_BRIDGE=",  # empty counts as unset
+        "AH_PVE_STORAGE",  # no '=': no value
+        "AH_VM_MAX=3",
+        "AH_VM_MAX=4",  # a later line wins; the last line has no newline
+    ]
+    _write(pve_env, "\n".join(lines))
+    assert vm.file_values(str(tmp_path)) == {
+        "AH_PVE_URL": "https://pve.example:8006",
+        "AH_PVE_NODE": "node one",
+        "AH_PVE_POOL": "pool",
+        "AH_VM_MAX": "4",
+    }
+
+
+def _loose_mode(path, monkeypatch):
+    _write(path, "AH_PVE_TOKEN=placeholder-secret\n", mode=0o640)
+
+
+def _symlink(path, monkeypatch):
+    target = path.parent / "real.env"
+    _write(target, "AH_PVE_TOKEN=placeholder-secret\n")
+    path.symlink_to(target)
+
+
+def _not_a_file(path, monkeypatch):
+    path.mkdir()
+
+
+def _open_folder(path, monkeypatch):
+    _write(path, "AH_PVE_TOKEN=placeholder-secret\n")
+    path.parent.chmod(0o777)
+
+
+def _foreign_owner(path, monkeypatch):
+    _write(path, "AH_PVE_TOKEN=placeholder-secret\n")
+    uid = os.getuid()
+    monkeypatch.setattr(vm.os, "getuid", lambda: uid + 1)
+
+
+@pytest.mark.parametrize(
+    ("make", "hint"),
+    [
+        (_loose_mode, "chmod 600"),
+        (_symlink, "symlink"),
+        (_not_a_file, "not a regular file"),
+        (_open_folder, "chmod 700"),
+        (_foreign_owner, "somebody else"),
+    ],
+    ids=["mode-640", "symlink", "directory", "folder-777", "foreign-owner"],
+)
+def test_an_unsafe_pve_env_is_refused_with_the_fix(tmp_path, pve_env, monkeypatch, make, hint):
+    # A token file somebody else can read or replace is a finding, not a fallback:
+    # the settings file would have the value, and still the load stops.
+    claude = tmp_path / ".claude"
+    claude.mkdir()
+    (claude / "settings.local.json").write_text(
+        json.dumps({"env": {"AH_PVE_URL": "https://x:8006"}})
+    )
+    make(pve_env, monkeypatch)
+    with pytest.raises(vm.Usage) as caught:
+        vm.Config.load(root=str(tmp_path), environ={})
+    assert hint in str(caught.value)
+    assert "placeholder-secret" not in str(caught.value)
+
+
 @pytest.mark.parametrize("raw", ["3000-3999", " 3000 - 3999 "])
 def test_vmid_range_parses(cfg, raw):
     cfg.values["AH_PVE_VMID_RANGE"] = raw

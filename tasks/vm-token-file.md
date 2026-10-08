@@ -48,8 +48,10 @@ Token in eine 0600-Datei wandert (Konzept „AdminHelper Agenten-Team“, Abschn
 zieht diese und die übrigen Stellen nach. Unter `docs/` nennt nur `docs/developer/cicd.html` (DE und EN)
 `settings.local.json`, in der Liste der Sec-Sperre, und das bleibt wahr.
 
-### T1 — vm.py: `Config.load` liest zusätzlich `~/.config/adminhelper/pve.env` (R-0229)  [ ]
+### T1 — vm.py: `Config.load` liest zusätzlich `~/.config/adminhelper/pve.env` (R-0229)  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, scripts/vm/tests/conftest.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c128d669 2026-10-08T13:18:43+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Nach dem Entwurf: `PVE_ENV_FILE`, eine Lese- und Prüffunktion für pve.env und `file_values(root)`, die
 `Config.load` nutzt; der Vorrang der Umgebung (`:138`) bleibt. Die Usage-Meldung für einen fehlenden Schlüssel
 (`:146`) und der Modul-Docstring (`:15–17`) nennen beide Quellen. Ein autouse-Fixture in `conftest.py` (wie
