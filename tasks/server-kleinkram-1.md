@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinkram 1: Modelle im Test-conftest, `EnrollmentToken.to_dict` ohne Aufrufer — Task-Ledger
-Status: bereit · Branch: feature/server-kleinkram-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: erledigt · Branch: feature/server-kleinkram-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus den von Kevin am 2026-10-06 als Runner-Futter angenommenen Zeilen R-0205, R-0208; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0205, R-0208 (Kurz-Ledger ohne Spec)
 Heavy: none — Server-Testinfrastruktur und eine ungenutzte Methode; kein Stack-, Gateway-, PKI- oder Install-Pfad, kein API-Vertrag, keine Migration. Python und die Server-Suite reichen, also auch auf der Runner-Box baubar.
