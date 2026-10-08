@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # vm.py und lib.sh lesen den Proxmox-Zugang aus einer 0600-Datei (R-0229) — Task-Ledger
-Status: aktiv · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Paket aus R-0229, Team-Plan Phase 0, von Kevin am 2026-10-08 angenommen; Delegation Kevin 2026-10-05; Harness-Pfade, den PR merged Kevin)
 Spec: Roadmap R-0229 (Kurz-Ledger ohne Spec)
 Heavy: none — Python und Shell unter scripts/vm mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Zugriff mit dem umgezogenen Token (`vm.py doctor`) prüft Kevin nach seinem Umzug (T3).
@@ -88,8 +88,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (die Doku ist T3)
 Abhängt von: T1
 
-### T3 — Doku: das Token gehört nach pve.env, und der Umzug für Kevin (R-0229)  [ ]
+### T3 — Doku: das Token gehört nach pve.env, und der Umzug für Kevin (R-0229)  [x]
 Komponente: scripts · Dateien: CLAUDE.md, DEVELOPMENT.md, AUTONOMOUS.md, .claude/skills/vm/SKILL.md, .claude/skills/test/SKILL.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @757f2792 2026-10-08T13:41:51+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: CLAUDE.md §8 (`:205–206`), DEVELOPMENT.md „VMs mit vm.py“ (Konfiguration, `:1542–1544`) und „Schwere
 Suites auf VMs“ (`:1653–1654`), AUTONOMOUS.md (`:333–335`), der `/vm`-Skill (`:47–49`) und der `/test`-Skill
 (`:13–15`) nennen `~/.config/adminhelper/pve.env` (0600, Zeilen `KEY=VALUE`, gelesen, nie gesourct) als Ort des
