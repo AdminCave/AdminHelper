@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # vm.py und lib.sh lesen den Proxmox-Zugang aus einer 0600-Datei (R-0229) — Task-Ledger
-Status: bereit · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/vm-token-file · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Paket aus R-0229, Team-Plan Phase 0, von Kevin am 2026-10-08 angenommen; Delegation Kevin 2026-10-05; Harness-Pfade, den PR merged Kevin)
 Spec: Roadmap R-0229 (Kurz-Ledger ohne Spec)
 Heavy: none — Python und Shell unter scripts/vm mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den echten Zugriff mit dem umgezogenen Token (`vm.py doctor`) prüft Kevin nach seinem Umzug (T3).
@@ -122,3 +122,15 @@ Zeile im `/test`-Skill wird umbrochen, und `scripts/vm/tests/README.md` (Aufzeic
 settings.local.json“) sowie die Meldung in `heavy.sh` `preflight` nennen beide Quellen. Kein Test pinnt die Meldung.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: das ist Doku (DEVELOPMENT.md, Skill, README); kein CHANGELOG-Nachtrag, der Eintrag aus T3 gilt
+
+### T5 — Nachbesserung aus Runde 2: der Umzugsbefehl folgt auch beim Lesen keinem Link (R-0229)  [ ]
+Komponente: scripts · Dateien: DEVELOPMENT.md
+Änderung: Angelegt 2026-10-08 aus Runde 2 des Reviews am Ende (Opus, request_changes). wichtig, belegt mit
+Platzhaltern: Der Befehl liest eine vorhandene pve.env mit `open()` und folgt damit einem Symlink. Zeigt der Link auf
+eine Datei mit Token, meldet er „kept the one“ und nimmt das Token aus der JSON-Datei, vm.py lehnt den Link dann ab —
+das Token steht nirgends mehr. Das Lesen geht deshalb über `os.open(…, O_RDONLY | O_NOFOLLOW)` (UTF-8 wie vm.py),
+jeder Link bricht vor dem ersten Schreiben ab. Dazu das nit derselben Runde: eine spätere leere Zeile setzt `have`
+nicht zurück, wie in vm.py. Die Fälle des Reviewers stehen im Probesatz (acht Zustände gegen ein Fake-HOME, darunter
+„Symlink auf eine Datei mit Token“). Keine dritte Runde.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: das ist Doku (DEVELOPMENT.md)
