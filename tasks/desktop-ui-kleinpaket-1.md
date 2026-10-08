@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-UI-Kleinpaket 1: Export-Passwort wie dokumentiert, ein veralteter E2E-Kommentar — Task-Ledger
-Status: aktiv · Branch: feature/desktop-ui-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-ui-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Fund-Paket aus R-0219 und R-0221, von Kevin am 2026-10-08 in der Triage angenommen; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0219, R-0221 (Kurz-Ledger ohne Spec)
 Heavy: none — eine Eingabeprüfung und zwei Texte in der Desktop-UI, dazu ein Kommentar in einer E2E-Spec; der Export-Pfad selbst und keine Journey ändern sich.
@@ -47,8 +47,10 @@ weicht ab.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: CHANGELOG.md (Fixed); benutzer/users nennen die 12 schon
 
-### T2 — Veralteter Kommentar in `tunnel-start.live.js` (R-0221)  [ ]
+### T2 — Veralteter Kommentar in `tunnel-start.live.js` (R-0221)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-start.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @2c247b66 2026-10-08T14:24:04+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Der Kommentar `tunnel-start.live.js:21–23` begründet die Registrierung über die Bridge damit, das
 GUI-Formular reiche das Vertrauen in selbstsignierte Zertifikate nicht durch („the GUI enroll form doesn't pass it“).
 Seit `Login.svelte:116–124` reicht es `allowSelfSignedCerts` durch.
