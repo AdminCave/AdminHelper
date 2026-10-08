@@ -69,8 +69,10 @@ HEAD: 7129dc57
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (die Doku ist T3)
 
-### T2 — lib.sh: `vm_load_env` nimmt dieselbe Quelle über vm.py (R-0229)  [ ]
+### T2 — lib.sh: `vm_load_env` nimmt dieselbe Quelle über vm.py (R-0229)  [x]
 Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/tests/lib_vm_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d8af69d9 2026-10-08T13:29:50+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Das Python in `vm_load_env` (`lib.sh:31–39`) liest settings.local.json nicht mehr selbst, sondern
 importiert vm.py aus `$VM_ROOT/scripts/vm` und exportiert die Werte von `file_values()` für jeden Schlüssel, der in der
 Umgebung noch leer ist (Vorrang wie heute, `shlex.quote` bleibt). Eine abgelehnte pve.env (`Usage`) endet mit der
