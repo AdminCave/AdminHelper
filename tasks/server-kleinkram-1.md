@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinkram 1: Modelle im Test-conftest, `EnrollmentToken.to_dict` ohne Aufrufer — Task-Ledger
-Status: aktiv · Branch: feature/server-kleinkram-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
+Status: bereit · Branch: feature/server-kleinkram-1 · Commit-Granularität: pro Task · Review: auto · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-06 (kleines Fund-Paket aus den von Kevin am 2026-10-06 als Runner-Futter angenommenen Zeilen R-0205, R-0208; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0205, R-0208 (Kurz-Ledger ohne Spec)
 Heavy: none — Server-Testinfrastruktur und eine ungenutzte Methode; kein Stack-, Gateway-, PKI- oder Install-Pfad, kein API-Vertrag, keine Migration. Python und die Server-Suite reichen, also auch auf der Runner-Box baubar.
@@ -32,8 +32,10 @@ know about them.“ — heute stimmt „all“ nicht.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_conftest_models.py
 Doku: keine (intern)
 
-### T2 — `EnrollmentToken.to_dict` entfernen (R-0208)  [ ]
+### T2 — `EnrollmentToken.to_dict` entfernen (R-0208)  [x] (Handcommit auf Kevins Wort (2026-10-08): Probe-Fehlalarm bei reiner Entfernung, Reviewer approve r1)
 Komponente: server · Dateien: apps/server/app/modules/enrollment/models.py, apps/server/tests/test_enrollment_mint.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @417ad1d7 2026-10-07T13:20:25+02:00 (verify.sh, Baum f5c7c69d; server pytest 12 passed, schemathesis 308 passed)
+Review: approve (opus/xhigh) · round 1
 Änderung: `EnrollmentToken.to_dict` (`app/modules/enrollment/models.py:54`) hat im Server keinen Aufrufer (kein
 Router gibt Enrollment-Token aus); R-0064 T4 hat ihr nur das Zeitformat nachgezogen und einen Test dazu geschrieben.
 Methode und Test entfernen, ebenso Imports, die danach verwaisen (`Any`, `iso_utc`, falls nur hier genutzt). Vorher
