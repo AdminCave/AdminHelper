@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Messlauf 1: Offset-Schutztest und FRP-Doku (R-0210, R-0214) — Task-Ledger
-Status: geplant · Branch: feature/messlauf-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/messlauf-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Fund-Paket aus R-0210 und R-0214, von Kevin am 2026-10-07 in der Triage angenommen; Messlauf laut Team-Plan, Kevin 2026-10-08)
 Spec: Roadmap R-0210, R-0214 (Kurz-Ledger ohne Spec)
 Heavy: none — ein neuer Server-Test ohne Produktivcode und zwei Doku-Seiten; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ruff sauber, Doku DE und EN im selben Commit, SPDX bei neuen Dateien).
