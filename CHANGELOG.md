@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Geraet aus den Einstellungen registrieren (R-0212):** Im Modus `server` zeigen die
+  Einstellungen einem Geraet ohne Identitaet ein Feld fuer den Einmal-Token vom Admin; nach der
+  Registrierung startet der Tunnel. Wer ohne erzwungenes mTLS angemeldet ist, muss sich dafuer nicht
+  mehr abmelden. Ein Geraet mit Identitaet sieht dort wie bisher nur das Zuruecksetzen.
 - **`Assertion-Aenderung:` im Ledger (R-0206):** eine Task kann eine absichtlich geaenderte
   Assertion in einem bleibenden Test oder Test-Helfer ankuendigen (`<datei>::<test> — <Grund>`).
   `review.sh diff-scan` laesst dann genau diese Aenderung durch, wenn der Test mindestens so viele
@@ -274,6 +278,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Login nennt das fehlende Geraete-Zertifikat (R-0222):** Unter erzwungenem mTLS weist das
+  Gateway ein Geraet ohne Zertifikat schon vor dem Login mit 400 ab; der Login zeigte bisher nur
+  „Login fehlgeschlagen (400 Bad Request)“ samt Fehlerseite. Jetzt sagt er, dass der Server ein
+  Geraete-Zertifikat verlangt, und fuehrt per Knopf zum Formular fuer den Einmal-Token. Jede andere
+  Login-Meldung bleibt, wie sie war.
+- **Desktop: Registrieren ueber eine vorhandene Identitaet ohne unpassendes Paar (R-0220):** Wer sich
+  mit einem neuen Einmal-Token registrierte, waehrend noch eine Identitaet im Keyring lag, bekam erst
+  den neuen Schluessel und danach das Zertifikat geschrieben; ein Abbruch dazwischen liess den neuen
+  Schluessel neben dem alten Zertifikat stehen, und unter erzwungenem mTLS sperrte sich das Geraet aus.
+  Jetzt loescht die Registrierung erst die alte Identitaet und schreibt dann die neue, das Zertifikat
+  zuletzt. Ein Abbruch hinterlaesst schlimmstenfalls ein Geraet ohne Identitaet, das einen neuen Token
+  braucht.
+- **Desktop: Meldung nach dem Zuruecksetzen der Geraete-Identitaet (R-0212):** Die Bestaetigung stand in
+  dem Teil der Einstellungen, der beim Zuruecksetzen verschwindet, und war deshalb nie zu sehen. Sie
+  erscheint jetzt, zusammen mit dem Feld fuer den neuen Token.
 - **Review-Probe bei totem Code samt angekuendigtem Test (R-0227):** `scripts/dev/review-probe.sh` probt
   einen Test-Diff, der nur aus Tests besteht, die die Task als `Test-Löschung:` ankuendigt (samt ihren
   Import- und Leerzeilen), nicht mehr: ohne die Aenderung war dort nichts rot, und `check-verdict`

@@ -73,7 +73,7 @@
 # prompts for the admin password. Non-interactive: --admin-password … --yes.
 # --permissive leaves the stack permissive (no enforced mTLS).
 # --reset wipes volumes from a failed attempt (docker compose down -v).</code></pre>
-          <p>The script prints the credentials: URL, admin login, and an <strong>enrollment token</strong>. Redeem the token in the desktop client under <em>"Enroll with token"</em> (server URL + token) — the client generates its mTLS cert <strong>on-device</strong> — then log in normally. Export the browser <code>.p12</code> afterwards from the desktop's export button. Updates: <code>./scripts/update.sh</code> inside the created <code>adminhelper/</code> directory.</p>
+          <p>The script prints the credentials: URL, admin login, and an <strong>enrollment token</strong>. Redeem the token in the desktop client under <em>"Enroll this device with a token"</em> (server URL + token) — the client generates its mTLS cert <strong>on-device</strong> — then log in normally. Export the browser <code>.p12</code> afterwards from the desktop's export button. Updates: <code>./scripts/update.sh</code> inside the created <code>adminhelper/</code> directory.</p>
           <p>Why the token? Under enforced mTLS the data plane <code>:443</code> (including login) rejects certless clients at the TLS handshake. The very first admin therefore cannot fetch a cert via login; the script mints the token out-of-band over the internal network. The admin onboards follow-up users afterwards (<a href="../developer/index.html">ADR 0003</a>).</p>
 
           <h2 id="stack">Start the Stack (manual)</h2>

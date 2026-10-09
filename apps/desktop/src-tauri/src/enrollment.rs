@@ -148,11 +148,11 @@ pub fn enroll_endpoint(server_url: &str, port: u16) -> Result<String, AppError> 
 
 // ── Identity storage (keyring) ────────────────────────────────────────────
 
-/// Persist the enrolled identity: key + fullchain + pinned CA chain. On first
-/// enroll the key is written first, so a partial failure cannot leave a cert
-/// without a key. On renew the key is unchanged (the cert is re-issued for the
-/// same key, see `renew`), so a partial write can never produce a key/cert
-/// mismatch — the keyring's lack of an atomic multi-entry swap is thereby moot.
+/// Persist a renewed identity: key + fullchain + pinned CA chain. On renew the
+/// key is unchanged (the cert is re-issued for the same key, see `renew`), so a
+/// partial write can never produce a key/cert mismatch — the keyring's lack of
+/// an atomic multi-entry swap is thereby moot. A new enrollment brings a new key
+/// and goes through `replace_identity` instead.
 fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError> {
     keyring_store::set(KEYRING_KEY, key_pem)?;
     keyring_store::set(KEYRING_CERT, &issued.fullchain)?;
@@ -161,6 +161,30 @@ fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError
     // picks up the newly enrolled identity (5.1).
     crate::http_client::invalidate_client_cache();
     Ok(())
+}
+
+/// Replace whatever identity the keyring holds with a freshly enrolled one
+/// (R-0220). Unlike `renew`, an enrollment brings a NEW key: written over an old
+/// identity it would sit next to the OLD cert until the cert write lands, and a
+/// crash in between is a mismatch that locks the device out under enforced mTLS.
+/// So the old entries go first — the cert first, so the device stops counting as
+/// enrolled (`is_enrolled`) before anything else changes — and a failed delete
+/// stops before anything is written. The new cert goes last, so the device counts
+/// as enrolled only once key, CA chain and cert are all in place. Every state a
+/// crash can leave is the old identity untouched, no identity, or the new one.
+/// The keyring calls come in as parameters: the tests have no keyring.
+fn replace_identity(
+    key_pem: &str,
+    issued: &IssuedIdentity,
+    mut delete: impl FnMut(&str) -> Result<(), AppError>,
+    mut set: impl FnMut(&str, &str) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    for entry in [KEYRING_CERT, KEYRING_KEY, KEYRING_CA] {
+        delete(entry)?;
+    }
+    set(KEYRING_KEY, key_pem)?;
+    set(KEYRING_CA, &issued.chain)?;
+    set(KEYRING_CERT, &issued.fullchain)
 }
 
 /// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled. Used
@@ -240,7 +264,16 @@ pub async fn enroll_with_token(
         allow_self_signed,
     )
     .await?;
-    store_identity(&key_and_csr.key_pem, &issued)
+    let stored = replace_identity(
+        &key_and_csr.key_pem,
+        &issued,
+        keyring_store::delete,
+        keyring_store::set,
+    );
+    // Even a failed replace may have deleted the old entries: drop the cached
+    // client either way, so the next build_client sees what is there (5.1).
+    crate::http_client::invalidate_client_cache();
+    stored
 }
 
 /// Mint the long-lived browser grant (`?browser=true`, D5) with the session JWT —
@@ -656,6 +689,150 @@ mod tests {
             got_spki,
             want_spki.as_slice(),
             "Renew muss den vorhandenen Schlüssel wiederverwenden, nicht neu erzeugen"
+        );
+    }
+
+    /// A keyring double for `replace_identity`: the entries plus a budget of
+    /// calls after which every call fails — a crash between two writes.
+    struct FakeKeyring {
+        entries: std::collections::HashMap<String, String>,
+        budget: usize,
+    }
+
+    impl FakeKeyring {
+        fn with(entries: &[(&str, &str)], budget: usize) -> std::cell::RefCell<Self> {
+            std::cell::RefCell::new(Self {
+                entries: entries
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                budget,
+            })
+        }
+
+        fn spend(&mut self) -> Result<(), AppError> {
+            if self.budget == 0 {
+                return Err(AppError::Keyring("simulated crash".to_string()));
+            }
+            self.budget -= 1;
+            Ok(())
+        }
+    }
+
+    const OLD: [(&str, &str); 3] = [
+        (KEYRING_KEY, "old-key"),
+        (KEYRING_CERT, "old-cert"),
+        (KEYRING_CA, "old-ca"),
+    ];
+
+    fn replace_on(store: &std::cell::RefCell<FakeKeyring>) -> Result<(), AppError> {
+        let issued = IssuedIdentity {
+            fullchain: "new-cert".to_string(),
+            chain: "new-ca".to_string(),
+        };
+        replace_identity(
+            "new-key",
+            &issued,
+            |k| {
+                let mut s = store.borrow_mut();
+                s.spend()?;
+                // A missing entry is success, as in keyring_store::delete.
+                s.entries.remove(k);
+                Ok(())
+            },
+            |k, v| {
+                let mut s = store.borrow_mut();
+                s.spend()?;
+                s.entries.insert(k.to_string(), v.to_string());
+                Ok(())
+            },
+        )
+    }
+
+    #[test]
+    fn replace_identity_never_pairs_a_new_key_with_the_old_cert() {
+        // R-0220: whatever call the crash hits, the keyring holds the old identity,
+        // no identity, or the new one — never a key of one identity next to the
+        // cert of the other, which locks the device out under enforced mTLS, and
+        // never key and cert (is_enrolled) without the CA chain load_identity needs.
+        for budget in 0..=6 {
+            let store = FakeKeyring::with(&OLD, budget);
+            let result = replace_on(&store);
+            let s = store.borrow();
+            let key = s.entries.get(KEYRING_KEY).map(String::as_str);
+            let cert = s.entries.get(KEYRING_CERT).map(String::as_str);
+            let ca = s.entries.get(KEYRING_CA).map(String::as_str);
+            if (1..=5).contains(&budget) {
+                // The first delete went through and the new identity is not complete.
+                assert!(
+                    key.is_none() || cert.is_none(),
+                    "budget {budget}: an identity is left, key {key:?}, cert {cert:?}"
+                );
+            }
+            if let (Some(key), Some(cert)) = (key, cert) {
+                let identity = cert.split('-').next();
+                assert_eq!(
+                    key.split('-').next(),
+                    identity,
+                    "budget {budget}: key {key} next to cert {cert}"
+                );
+                assert_eq!(
+                    ca.and_then(|ca| ca.split('-').next()),
+                    identity,
+                    "budget {budget}: cert {cert} next to CA {ca:?}"
+                );
+            }
+            assert_eq!(result.is_ok(), budget >= 6, "budget {budget}");
+        }
+    }
+
+    #[test]
+    fn replace_identity_writes_nothing_when_a_delete_fails() {
+        // Only the delete fails here and every write would go through: a failed
+        // delete has to stop the replace before the first write, whichever entry
+        // it hits — else the old cert could stay next to the new key.
+        let issued = IssuedIdentity {
+            fullchain: "new-cert".to_string(),
+            chain: "new-ca".to_string(),
+        };
+        for failing in [KEYRING_CERT, KEYRING_KEY, KEYRING_CA] {
+            let mut writes: Vec<String> = Vec::new();
+            let result = replace_identity(
+                "new-key",
+                &issued,
+                |k| {
+                    if k == failing {
+                        Err(AppError::Keyring("delete failed".to_string()))
+                    } else {
+                        Ok(())
+                    }
+                },
+                |k, _| {
+                    writes.push(k.to_string());
+                    Ok(())
+                },
+            );
+            assert!(result.is_err(), "{failing}: the replace went on");
+            assert!(writes.is_empty(), "{failing}: wrote {writes:?}");
+        }
+    }
+
+    #[test]
+    fn replace_identity_without_an_old_identity_stores_the_new_one() {
+        let store = FakeKeyring::with(&[], 6);
+        replace_on(&store).unwrap();
+        let s = store.borrow();
+        assert_eq!(
+            s.entries.get(KEYRING_KEY).map(String::as_str),
+            Some("new-key")
+        );
+        assert_eq!(
+            s.entries.get(KEYRING_CERT).map(String::as_str),
+            Some("new-cert")
+        );
+        assert_eq!(
+            s.entries.get(KEYRING_CA).map(String::as_str),
+            Some("new-ca")
         );
     }
 

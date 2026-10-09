@@ -19,9 +19,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     resetServerCertPin,
     resetDeviceIdentity,
     isDeviceEnrolled,
+    enrollWithToken,
     exportBrowserP12,
     generateDiagnostics,
   } from '$lib/bridge';
+  import { startIfServerMode, stop as stopTunnel } from '$lib/stores/tunnel';
   import { save, confirm } from '@tauri-apps/plugin-dialog';
   import {
     RDP_WINDOW_MODES,
@@ -55,6 +57,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let pinResetMsgKey = $state('');
   let deviceEnrolled = $state(false);
   let deviceResetMsgKey = $state('');
+  let enrollToken = $state('');
+  let enrollMsg = $state('');
+  let enrollBusy = $state(false);
   let browserCertPassword = $state('');
   let browserCertMsg = $state('');
   let browserCertBusy = $state(false);
@@ -78,6 +83,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     osNotifications = Boolean(s.osNotifications);
     pinResetMsgKey = '';
     deviceResetMsgKey = '';
+    enrollToken = '';
+    enrollMsg = '';
+    enrollBusy = false;
     browserCertPassword = '';
     browserCertMsg = '';
     browserCertBusy = false;
@@ -127,11 +135,46 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await resetDeviceIdentity(target);
       deviceEnrolled = false;
+      enrollMsg = '';
       deviceResetMsgKey = 'settings.resetDeviceId.done';
     } catch (err) {
       deviceResetMsgKey = '';
       reportError(errMsg(err));
     }
+  }
+
+  async function onEnroll(): Promise<void> {
+    const target = ($session?.serverUrl ?? serverUrl).trim();
+    const token = enrollToken.trim();
+    if (!target) {
+      enrollMsg = $t('settings.resetCertPin.missingUrl');
+      return;
+    }
+    if (!token) return;
+    enrollBusy = true;
+    enrollMsg = '';
+    deviceResetMsgKey = '';
+    try {
+      await enrollWithToken(target, token, allowSelfSignedCerts);
+      deviceEnrolled = true;
+      enrollToken = '';
+      enrollMsg = $t('settings.enroll.done');
+    } catch (err) {
+      enrollMsg = errMsg(err);
+      return;
+    } finally {
+      enrollBusy = false;
+    }
+    // frpc reads the identity only when it starts (export_identity). After a reset
+    // it may still run on the old identity — the reset clears the keyring, not the
+    // process — and a start next to it fails ("frpc laeuft bereits"). Stopping is a
+    // no-op when none runs; a frpc that cannot be stopped is reported by the start.
+    try {
+      await stopTunnel();
+    } catch {
+      // reported by startIfServerMode below
+    }
+    await startIfServerMode();
   }
 
   async function onExportBrowserCert(): Promise<void> {
@@ -357,14 +400,45 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </div>
       {/if}
 
-      {#if mode === 'server' && deviceEnrolled}
-        <div class="sm-reset-pin">
-          <button class="btn ghost small danger" onclick={onResetDeviceIdentity}
-            >{$t('settings.resetDeviceId')}</button
-          >
-          <span class="field-label">{$t('settings.resetDeviceId.hint')}</span>
-          {#if deviceResetMsgKey}<span class="sm-reset-msg">{$t(deviceResetMsgKey)}</span>{/if}
-        </div>
+      {#if mode === 'server'}
+        {#if deviceEnrolled}
+          <div class="sm-reset-pin">
+            <button
+              class="btn ghost small danger"
+              data-action="device-reset"
+              onclick={onResetDeviceIdentity}>{$t('settings.resetDeviceId')}</button
+            >
+            <span class="field-label">{$t('settings.resetDeviceId.hint')}</span>
+          </div>
+        {:else}
+          <div class="sm-enroll">
+            <span class="field-label">{$t('settings.enroll.hint')}</span>
+            <div class="sm-enroll-row">
+              <input
+                type="text"
+                data-action="enroll-token"
+                aria-label={$t('login.enroll.token')}
+                bind:value={enrollToken}
+                placeholder={$t('login.enroll.token.placeholder')}
+                autocomplete="off"
+              />
+              <button
+                class="btn ghost small"
+                data-action="enroll-submit"
+                onclick={onEnroll}
+                disabled={enrollBusy}
+              >
+                {enrollBusy ? $t('login.enroll.working') : $t('login.enroll.submit')}
+              </button>
+            </div>
+          </div>
+        {/if}
+        <!-- Outside the two branches: the reset message used to sit in the
+             enrolled branch, which disappears the moment the reset succeeds. -->
+        {#if deviceResetMsgKey}<span class="sm-reset-msg" data-msg="device-reset"
+            >{$t(deviceResetMsgKey)}</span
+          >{/if}
+        {#if enrollMsg}<span class="sm-reset-msg" data-msg="enroll">{enrollMsg}</span>{/if}
       {/if}
 
       <div class="sm-section">
@@ -570,19 +644,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border-color: var(--danger);
     background: rgba(248, 113, 113, 0.12);
   }
-  .sm-browser-cert {
+  .sm-browser-cert,
+  .sm-enroll {
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
     padding-top: var(--sp-2);
   }
-  .sm-browser-cert-row {
+  .sm-browser-cert-row,
+  .sm-enroll-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--sp-2);
   }
-  .sm-browser-cert-row input {
+  .sm-browser-cert-row input,
+  .sm-enroll-row input {
     flex: 1;
     min-width: 180px;
     background: var(--bg-input, var(--bg-panel));
@@ -593,7 +670,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-size: 13px;
     font-family: inherit;
   }
-  .sm-browser-cert-row input:focus {
+  .sm-browser-cert-row input:focus,
+  .sm-enroll-row input:focus {
     outline: 1px solid var(--accent);
   }
   .sm-browser-cert-msg {
