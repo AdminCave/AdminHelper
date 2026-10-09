@@ -45,8 +45,9 @@ Cloud-Images, aus denen gebacken wird). Die Rolle bestimmt RAM und Kerne.
 
 **Zustand liegt auf dem Hypervisor**, als Tags: `ah;role-…;lane-…;sc-…;ttl-<epoch>;tpl-…`.
 Lokal liegt nur `.vm/warm.env` (welche VMID gerade warm ist) und `.vm/lane`. Konfiguration
-und Token kommen ausschließlich aus `.claude/settings.local.json` → `env` (gitignored);
-eine echte Umgebungsvariable gewinnt.
+kommt aus `.claude/settings.local.json` → `env` (gitignored), das Token aus
+`~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct; R-0229); `pve.env` gewinnt über
+die settings-Datei, eine echte Umgebungsvariable über beide.
 
 ## Exit-Codes
 
