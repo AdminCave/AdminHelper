@@ -36,6 +36,8 @@ scripts/dev/roadmap.py
 scripts/dev/runner-env.sh
 scripts/dev/runner-settings.json
 scripts/dev/runner-setup.sh
+# It writes the builder's settings, as runner-setup.sh writes the runner's.
+scripts/dev/builder-home.sh
 scripts/dev/runner-redteam.sh
 scripts/dev/task-close.sh
 scripts/dev/tree-hash.sh
@@ -65,5 +67,6 @@ scripts/tests/scratch_test.sh
 scripts/tests/ledger_loop_test.sh
 scripts/tests/task_close_test.sh
 scripts/tests/runner_setup_test.sh
+scripts/tests/builder_home_test.sh
 scripts/tests/verify_test.sh
 scripts/dev/runner-claude.version

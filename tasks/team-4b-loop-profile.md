@@ -146,8 +146,10 @@ Dedup-Key: ref:scripts:runner-settings.json:loop-allow-list
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T11)
 
-### T9 — `builder-home.sh setup|token|status`: das Builder-HOME ohne Handgriff  [ ]
-Komponente: scripts · Dateien: scripts/dev/builder-home.sh (neu, SPDX), scripts/tests/builder_home_test.sh (neu, SPDX), scripts/tests/run.sh
+### T9 — `builder-home.sh setup|token|status`: das Builder-HOME ohne Handgriff  [x]
+Komponente: scripts · Dateien: scripts/dev/builder-home.sh (neu, SPDX), scripts/tests/builder_home_test.sh (neu, SPDX), scripts/tests/run.sh, scripts/dev/harness-paths.txt
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @61225d82 2026-10-09T17:38:15+02:00
+Review: approve (opus)
 Änderung: Nach der Spec, Ziel 1 und 2. `setup` ist idempotent und braucht kein sudo; ein zweites `setup` ändert
 nichts, was schon stimmt. Es legt an:
 - die Verzeichnisse mit 0700;
