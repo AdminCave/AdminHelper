@@ -15,8 +15,10 @@ Geplant 2026-10-09 von Worker B im Auftrag der Aufsicht (adminhelper-ac) aus dre
 triagiert und angenommen hat. Alle drei stammen aus dem Opus-Review über den Branch von R-0212 (#102). Die private
 Roadmap ist in diesem Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht. Zeilenangaben origin/main@bf383a7a.
 
-### T1 — Einstellungen: Ein Fehler der Registrierung erscheint ohne `ERR_*`-Code (R-0243)  [ ]
+### T1 — Einstellungen: Ein Fehler der Registrierung erscheint ohne `ERR_*`-Code (R-0243)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/utils/errors.ts, apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @06fe43f6 2026-10-09T16:12:56+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `onEnroll` zeigt einen Fehler als `enrollMsg = errMsg(err)` (`SettingsModal.svelte:163`), also samt Code,
 etwa `ERR_TLS_UNKNOWN_ISSUER: AdminHelper: …`, wenn „Selbstsignierte erlauben“ im offenen Dialog aus ist.
 - Der Login entfernt die Codes schon (`displayError`, `Login.svelte:59-61`), mit einer festen Liste.

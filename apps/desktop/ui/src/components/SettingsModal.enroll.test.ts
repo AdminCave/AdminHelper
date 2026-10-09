@@ -173,6 +173,23 @@ describe('SettingsModal — enroll from the settings (R-0212)', () => {
     expect(h.stop).not.toHaveBeenCalled();
   });
 
+  it('shows a failure without the machine-readable code (R-0243)', async () => {
+    h.enrollWithToken.mockRejectedValueOnce(
+      new Error(
+        'ERR_TLS_UNKNOWN_ISSUER: AdminHelper: Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA.',
+      ),
+    );
+    const container = open();
+    await enroll(container, 'tok-1');
+
+    await waitFor(() =>
+      expect(el(container, '[data-msg="enroll"]')?.textContent).toContain(
+        'Das Server-Zertifikat stammt nicht',
+      ),
+    );
+    expect(el(container, '[data-msg="enroll"]')?.textContent).not.toContain('ERR_');
+  });
+
   it('offers only the reset when the device has an identity', async () => {
     h.isDeviceEnrolled.mockImplementation(async () => true);
     const container = open();

@@ -278,6 +278,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Fehler der Registrierung in den Einstellungen ohne Code (R-0243):** Scheiterte die Registrierung
+  in den Einstellungen, stand der rohe Text samt Code da, etwa `ERR_TLS_UNKNOWN_ISSUER: …`. Jetzt erscheint nur
+  der Text, wie im Login.
 - **Desktop: Login nennt das fehlende Geraete-Zertifikat (R-0222):** Unter erzwungenem mTLS weist das
   Gateway ein Geraet ohne Zertifikat schon vor dem Login mit 400 ab; der Login zeigte bisher nur
   „Login fehlgeschlagen (400 Bad Request)“ samt Fehlerseite. Jetzt sagt er, dass der Server ein
