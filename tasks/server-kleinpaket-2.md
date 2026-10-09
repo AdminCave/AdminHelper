@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinpaket 2: SSRF-Schutz bei kaputtem IPv6-Literal, 422 der Hooks im versprochenen Format — Task-Ledger
-Status: geplant · Branch: feature/server-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/server-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0181 und R-0207, von Kevin in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen entschieden: 1 T3 ja (Kevin, 2026-10-09, sichtbares Verhalten); 2 Heavy linux-full bleibt (Aufsicht: Fehler-Format der Server-API); 3 ein Parse-Fehler ergibt PRIVATE (Aufsicht, fail closed wie der Docstring)
 Spec: Roadmap R-0181, R-0207 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — die Hook-API antwortet auf ungültige Eingaben in einem anderen Fehler-Format, und die Web-Oberfläche liest es; `run.sh integration` mit `web_live` gegen den echten Stack.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber bzw. eslint/prettier, Doku im selben Commit, SPDX bei neuen Dateien).
