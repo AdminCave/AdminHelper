@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 1: Kostenquelle, Zeilengrenzen, lane_db geschlossen (R-0250, R-0251, R-0255) — Task-Ledger
-Status: aktiv · Branch: harness/loop-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/loop-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (Harness-Kleinpaket aus R-0250, R-0251 und R-0255, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05; den PR merged Kevin). Offene Fragen (Aufsicht): 1 die Kostendatei; 2 der Satz in DEVELOPMENT.md ja, keine Normalisierung von postgres:// in lane.sh
 Spec: Roadmap R-0250, R-0251, R-0255 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell und Python unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -124,8 +124,10 @@ Doku: DEVELOPMENT.md (ein Satz, „Eine Lane hat ihre eigene Test-DB“)
    DEVELOPMENT.md (in T3). Normalisiert `lane.sh` `postgres://` wie `builder-home.sh`? Empfehlung: nein. Die
    Projekt-URLs sind SQLAlchemy-URLs (`postgresql+<treiber>`), und die Prüfung lehnt jede andere Form ab.
 
-### T4 — Nachbesserungen aus dem Review am Ende (R-0250, R-0251, R-0255)  [ ]
+### T4 — Nachbesserungen aus dem Review am Ende (R-0250, R-0251, R-0255)  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, scripts/dev/lane.sh, scripts/tests/lane_test.sh, scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2bedd17a 2026-10-09T22:11:44+02:00
+Review: Review am Ende (opus), round 2 findings fixed with the reviewer cases, no third round
 Änderung: Die Funde des Reviews über den ganzen Branch-Diff (Opus).
 - wichtig: Der Satz aus T3 in DEVELOPMENT.md versprach mehr, als `lane_db` prüft: Eine gültige URL mit
   `?password=` in der Query geht weiter ins Argument. Der Satz nennt jetzt genau die Form `Benutzer:Passwort@`.

@@ -139,8 +139,9 @@ for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "r
   printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
   : > "$PG_LOG"
   lane new "$slug"; rc=$?
-  [ "$rc" != 0 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
     && grep -q 'password cannot be taken out of the URL' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
+    && grep -q "nothing of lane $slug was created" "$WORK/out.log" && ! grep -q 'createdb .* failed' "$WORK/out.log" \
     && ok "${url%%:*}://… whose password the pattern does not take out: no createdb, no lane, no secret printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 done
@@ -247,6 +248,8 @@ unset FAKE_CREATEDB_FAIL
   && ! git -C "$MAIN" show-ref --verify --quiet refs/heads/feature/kappa \
   && ok "a failing createdb leaves no worktree, no branch and no mark" \
   || bad "kappa rc=$rc: $(cat "$WORK/out.log")"
+grep -q 'createdb adminhelper_test_kappa failed — nothing of lane kappa was created' "$WORK/out.log" \
+  && ok "and says that createdb failed, and that nothing was made" || bad "kappa message: $(cat "$WORK/out.log")"
 ! grep -q "lane.sh done" "$WORK/out.log" && ok "and sends nobody to done" \
   || bad "the failure message still suggests done: $(cat "$WORK/out.log")"
 # lambda: a venv and a database of the lane's name that no lane made.

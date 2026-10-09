@@ -860,7 +860,7 @@ reset_repo
 mk_auto; touch_tool
 STUB=fail c auto T1 -m "refactor: tool" --review auto --cost-file "$WORK/cost.fail"
 [ $rc -eq 74 ] && [ ! -e "$WORK/cost.fail" ] \
-  && ok "a reviewer that does not start writes no cost file either" || bad "cost file after fail: rc=$rc $(cat "$WORK/cost.fail" 2>&1)"
+  && ok "a reviewer run that fails writes no cost file either" || bad "cost file after fail: rc=$rc $(cat "$WORK/cost.fail" 2>&1)"
 reset_repo
 
 # R-0167: where the reviewer is task-close's own process, no other verdict counts.

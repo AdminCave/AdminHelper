@@ -610,7 +610,7 @@ text = open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape")
 if not text.endswith("\n"):
     text += "\n"
 # Lines end at \n only, where sed and awk of this loop end them (next_task, task_box):
-# splitlines() also splits at \x0b, \x0c, \x1c-\x1e, \x85 and U+2028/9 and would read
+# splitlines() also splits at a lone \r, \x0b, \x0c, \x1c-\x1e, \x85 and U+2028/9 and would read
 # a heading inside a line of the session's own task (R-0251).
 for line in re.split(r"(?<=\n)", text):
     if re.match(r"(###|##)\s", line):
@@ -851,18 +851,18 @@ t["sessions"] += 1; t["turns"] += int(a[2]); t["denials"] += int(a[3]); t["cost_
 # close_task <lane> <slug> <id> <round> <n> — task-close for this round, retried
 # once on 74 (only the close, no new session); sets CLOSE (its log), returns its exit.
 close_task() {
-  local wt="$1" slug="$2" id="$3" round="$4" n="$5" ledger="tasks/$2.md" try p pre rc rcost COSTF
+  local wt="$1" slug="$2" id="$3" round="$4" n="$5" ledger="tasks/$2.md" try p pre rc rcost costf
   for try in 1 2; do
     p="$(lane_harness_changed "$wt")"
     [ -z "$p" ] || { cleanup_lane "$wt" "$slug" "$id"; tampered "$slug $id changed the harness path $p"; }
     clone_ok; claude_ok
     pre="$(git -C "$wt" rev-parse HEAD)"
-    CLOSE="$LOOP/$slug/$id.close.r$round.$n.$try.log" COSTF="$LOOP/$slug/$id.cost.r$round.$n.$try"
-    rm -f "$COSTF"
+    CLOSE="$LOOP/$slug/$id.close.r$round.$n.$try.log" costf="$LOOP/$slug/$id.cost.r$round.$n.$try"
+    rm -f "$costf"
     # The close runs the session's code too (its tests): what that leaves goes as well.
     (cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.c$round.$n.$try" bash scripts/dev/task-close.sh "$ledger" "$id" \
        --stage --review auto --round "$round" --message-file "$wt/$(msg_path "$slug" "$id")" \
-       --cost-file "$COSTF") > "$CLOSE" 2>&1
+       --cost-file "$costf") > "$CLOSE" 2>&1
     rc=$?
     reap_session "$$.$slug.$id.c$round.$n.$try" "$slug" "$id"
     log "$slug $id close (round $round, try $try): exit $rc"
@@ -878,7 +878,7 @@ close_task() {
     if grep -q '^task-close: the reviewer gave no usable verdict' "$CLOSE"; then
       rcost="$REVIEW_BUDGET_MAX"
     else
-      rcost="$(sed -nE 's/^review cost_usd=([0-9][0-9.]*|unknown) round=[12]$/\1/p' "$COSTF" 2>/dev/null | head -n 1)"
+      rcost="$(sed -nE 's/^review cost_usd=([0-9][0-9.]*|unknown) round=[12]$/\1/p' "$costf" 2>/dev/null | head -n 1)"
       [ "$rcost" != unknown ] || rcost="$REVIEW_BUDGET_MAX"
       [ -n "$rcost" ] || [ ! -e "$wt/.ah-out/review/$slug/$id.r$round.raw.json" ] || rcost="$REVIEW_BUDGET_MAX"
     fi

@@ -181,6 +181,9 @@ for x in nnf nnl; do
   if [ "$x" = nnl ]; then H=("Status: aktiv · Branch: feature/nnl · Review: auto" "${OKHEAD[@]:1}"); else mapfile -t H < <(head_for nnf); fi
   EXTRA="printf '\\n### T2 — die letzte  [ ]\\nKomponente: scripts · Dateien: apps/x/b.py\\nÄnderung: ohne Schluss-Newline' >> \"\$SEED/tasks/$x.md\"" plan "feature/$x" "$x" "${H[@]}"
 done
+# A plain ledger for a cost file left from an earlier run (R-0250).
+mapfile -t H < <(head_for rst)
+plan feature/rst rst "${H[@]}"
 # A line of T1 that carries U+2028 and a heading after it (R-0251): one line for the
 # loop's line tools, so no task of its own.
 mapfile -t H < <(head_for nls)
@@ -825,6 +828,13 @@ seq_set build -- 0
 loop --ledger tasks/rnr.md
 [ "$(box rnr)" = x ] && [ "$(review_usd rnr/T1)" = 0 ] \
   && ok "a close whose reviewer never ran counts nothing for it" || bad "rnr: $(review_usd rnr/T1) $(result rnr)"
+# A cost file left at the first close's name from an earlier run is gone before
+# that close: its reviewer never runs, so nothing counts.
+mkdir -p "$LOOPD/rst" && printf 'review cost_usd=9 round=1\n' > "$LOOPD/rst/T1.cost.r1.1.1"
+seq_set build -- 0
+loop --ledger tasks/rst.md
+[ "$(box rst)" = x ] && [ "$(review_usd rst/T1)" = 0 ] \
+  && ok "a cost file left from an earlier run does not count" || bad "rst: $(review_usd rst/T1) $(result rst)"
 [ "$(sed -n 's/^REVIEW_BUDGET_MAX=//p' "$REPO_ROOT/scripts/dev/ledger-loop.sh")" = \
   "$(sed -n 's/.*BUDGET=\([0-9][0-9.]*\).*/\1/p' "$REPO_ROOT/scripts/dev/review-run.sh" | sort -n | tail -n 1)" ] \
   && ok "REVIEW_BUDGET_MAX is the larger budget of review-run.sh" || bad "REVIEW_BUDGET_MAX and review-run.sh disagree"
