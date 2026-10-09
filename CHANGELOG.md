@@ -274,6 +274,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Review-Probe bei totem Code samt angekuendigtem Test (R-0227):** `scripts/dev/review-probe.sh` probt
+  einen Test-Diff, der nur aus Tests besteht, die die Task als `Test-Löschung:` ankuendigt (samt ihren
+  Import- und Leerzeilen), nicht mehr: ohne die Aenderung war dort nichts rot, und `check-verdict`
+  sperrte das approve des Reviewers. Die Antwort heisst `only-declared-deletion` und steht sichtbar in
+  der Review-Zeile; ein Ersatztest oder jede andere Aenderung am Test-Diff wird weiter geprobt. Dazu
+  `review.sh declared-only`, und `task-close.sh` gibt der Probe die Task mit.
 - **Zeitstempel der Monitoring-Antworten in UTC mit `Z` (R-0202):** Die Antworten unter
   `/api/monitoring/*` schreiben ihre Zeitstempel (`createdAt`, `updatedAt`, `since`, `lastCheck`,
   `sentAt`, `startsAt`, `endsAt`) als RFC 3339 in UTC mit `Z`, wie die Server-API seit R-0064; bisher

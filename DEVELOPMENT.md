@@ -560,11 +560,21 @@ bash scripts/dev/review.sh log [--ledger tasks/<slug>.md]          # jede Review
   Runde, Turns, Dauer und den `probe`-Block; eine Probe mit `applicable: false` (etwa
   `no-test-change`, ein Refactor) ist kein Hindernis, ein ueberlebender Mutant steht in der
   Review-Zeile, ebenso eine Probe, die nicht lief (`probe not run: toolchain|other-failure|…`).
+  `only-declared-deletion` ist auch kein Hindernis, steht aber sichtbar in der Review-Zeile
+  (`probe: only a declared test deletion, not run`): das lockert ein Gate (R-0227).
+- **`declared-only`** (`<komponente> (--staged | --commit <rev>) --task <ledger> <id>`) sagt, ob
+  der Diff unter den Testpfaden der Komponente nur aus angekuendigten `Test-Löschung:`-Tests
+  besteht: keine Zeile hinzugefuegt, jede entfernte Zeile leer, ein Import, der keine Tests
+  mitbringt (kein `*`, kein Name `test…`/`Test…`, in JS/TS kein blosser Import und keiner einer
+  `.test`/`.spec`-Datei; ein Go-Importblock nur vor der ersten Deklaration), oder in der alten
+  Spanne eines angekuendigten Tests, der nach den Regeln von `diff-scan` zaehlt (derselbe Code).
+  Die Ankuendigung kommt aus dem Ledger vor der Aenderung (`HEAD` bzw. `<rev>^`). Exit 0 ja, 1 nein.
 - **`review-probe.sh`** legt eine eigene Worktree unter dem `TMPDIR` des Aufrufers an, setzt nur
   die Test-Hunks auf die Basis und faehrt `verify.sh --tree`; die Antwort ist der `probe`-Block
   des Schemas (`red_without_change`, oder `applicable: false` mit `new-symbol`, `toolchain`,
-  `no-test-change`, `only-test-change`, `apply-failed`, `other-failure`; `no-test-change` und
-  `only-test-change` ohne Suite-Lauf). `--mutate` setzt genau einen Mutanten in die
+  `no-test-change`, `only-test-change`, `only-declared-deletion`, `apply-failed`, `other-failure`;
+  `no-test-change`, `only-test-change` und `only-declared-deletion` ohne Suite-Lauf, der letzte nur mit
+  `--task`, wie es `task-close.sh` uebergibt). `--mutate` setzt genau einen Mutanten in die
   ganze Aenderung (eine Datei der Worktree, sonst Exit 2); der Ersatz muss lint-sauber sein.
 - **`pr-body`** schreibt den PR-Text aus dem Ledger; eine Task ohne Evidenz heisst
   „unverifiziert", Adressen, Hostnamen privater Netze und VMIDs fallen heraus. Mit
