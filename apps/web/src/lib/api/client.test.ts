@@ -347,3 +347,49 @@ describe('http client token refresh', () => {
     expect(calls.map((c) => c.path)).toEqual(['/api/servers', '/api/auth/refresh']); // no retry
   });
 });
+
+describe('http client error messages', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function messageOf(body: unknown, status = 422): Promise<string> {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(jsonResponse(body, status))),
+    );
+    const { http } = await importClient();
+    const err = await http.get('/api/hooks').catch((e: unknown) => e);
+    expect((err as ApiError).name).toBe('ApiError');
+    return (err as ApiError).message;
+  }
+
+  // The OpenAPI promises HTTPValidationError for a 422 (R-0207): a list of
+  // {loc, msg, type}. Its msg texts are the message, not "HTTP 422".
+  it('shows the msg of a 422 detail list', async () => {
+    const body = {
+      detail: [
+        { loc: ['body', 'schedule_interval'], msg: 'Ungültiges Intervall', type: 'value_error' },
+      ],
+    };
+    expect(await messageOf(body)).toBe('Ungültiges Intervall');
+  });
+
+  it('joins several msg texts', async () => {
+    const body = {
+      detail: [
+        { loc: ['body', 'a'], msg: 'first', type: 'value_error' },
+        { loc: ['body', 'b'], msg: 'second', type: 'missing' },
+      ],
+    };
+    expect(await messageOf(body)).toBe('first; second');
+  });
+
+  it('keeps a string detail as it is', async () => {
+    expect(await messageOf({ detail: 'Hook nicht gefunden' }, 404)).toBe('Hook nicht gefunden');
+  });
+
+  it('falls back to the status when the list carries no msg', async () => {
+    expect(await messageOf({ detail: [{ loc: ['body'] }] })).toBe('HTTP 422');
+  });
+});

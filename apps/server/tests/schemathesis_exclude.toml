@@ -39,6 +39,11 @@
 # created_at-Grund zeigte der Lauf die 422 von _validate_create mit String-detail — derselbe
 # Check, ein zweiter Grund, der darunter lag.
 #
+# HOOK-422 (2026-10-09, R-0207): create_hook ist gefallen. Die Hook-Routen antworten auf
+# ungueltige Eingaben mit RequestValidationError, also im versprochenen Format
+# HTTPValidationError (detail als Liste); update_hook ebenso. Der Lauf ohne den Eintrag am
+# 2026-10-09: `308 passed`.
+#
 # PROXY-STUB (2026-10-02, R-0063): Die fuenf raises-Eintraege der Proxy-Routen
 # (proxy_to_monitoring GET/PUT/POST/DELETE, proxy_agent_report) sind gefallen. Ihr
 # Grund war der prozessweite httpx-Client, den der Lifespan schliesst; die Fixture
@@ -158,13 +163,6 @@ checks = ["negative_data_rejection"]
 # POST /api/frp/server-config
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
-
-[[exclude]]
-operation_id = "create_hook_api_hooks_post"
-checks = ["response_schema_conformance"]
-# POST /api/hooks
-reason = "response_schema_conformance — _validate_create (hooks/router.py) prueft die vom hook_type abhaengigen Felder selbst und antwortet mit HTTPException(422, detail=<String>); das Schema verspricht fuer 422 HTTPValidationError, detail als Array. Gemessen 2026-10-06, Kontext admin_jwt: `{\"hook_type\": \"schedule\", \"schedule_interval\": null, ...}` -> 422 mit String-detail. Der created_at-Grund, wegen dem der Eintrag bis R-0064 stand, ist behoben (UtcDatetime); dieser zweite Grund lag darunter verdeckt. Dieselbe String-422 hat update_hook ueber _validate_schedule_interval; im Lauf faellt es dort nicht auf, weil die zufaelligen hook_ids vorher mit 404 enden"
-until = "R-0207: die 422 von Hook-Anlage und -Aenderung im Format HTTPValidationError"
 
 [[exclude]]
 operation_id = "notification_stream_api_notifications_stream_get"
