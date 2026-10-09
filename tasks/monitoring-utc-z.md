@@ -75,8 +75,10 @@ Semantik:
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: in T3 (API-Referenz DE+EN, CHANGELOG)
 
-### T2 — Desktop: `formatCheckTime` liest einen Wert ohne Zone als UTC, Tests mit `Z`  [ ]
+### T2 — Desktop: `formatCheckTime` liest einen Wert ohne Zone als UTC, Tests mit `Z`  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/models/monitoring.ts, apps/desktop/ui/src/lib/models/monitoring.test.ts, apps/desktop/ui/src/lib/models/maintenance.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @0000f16c 2026-10-09T11:26:43+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Der Plan folgt der Empfehlung zu offener Frage 1, Weg (b).
 - `formatCheckTime` (`lib/models/monitoring.ts:124-135`) hängt `Z` an, wenn es fehlt, wie die drei
   Wartungs-Leser (`maintenance.ts:46-47`). Damit zeigt der Desktop die Check- und Alarmzeiten auch gegen einen
