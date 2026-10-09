@@ -98,8 +98,10 @@ Dedup-Key: ref:scripts:ledger-loop.sh:t14-rest
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/features/stufe-7a.md, AUTONOMOUS.md (Wortlaut)
 
-### T6 — Die Probe greift ohne `ruff` auf dem PATH (R-0234)  [ ]
+### T6 — Die Probe greift ohne `ruff` auf dem PATH (R-0234)  [x]
 Komponente: scripts · Dateien: scripts/dev/review-probe.sh, scripts/tests/review_probe_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4a7e1d91 2026-10-09T15:18:41+02:00
+Review: approve (opus)
 Änderung: `review-probe.sh` verlinkt nach `git worktree add` die Komponenten-venvs des Aufrufers in seine Worktree,
 Eintrag für Eintrag in ein echtes Verzeichnis, so wie `lane.sh lane_link_dir`. Damit findet `run.sh` `ruff` über die
 Komponenten-venv. Dazu erkennt der toolchain-Regex (`:236`) auch eine SKIP-Zeile mit geschachtelten Klammern
