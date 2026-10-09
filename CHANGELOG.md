@@ -295,6 +295,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Reviewer-Kosten zaehlen mit ihrem Deckel, nie als 0, und ein Ledger ohne Schluss-Newline gilt nicht
   mehr als Aenderung ausserhalb der Task (R-0190, R-0191); die Review-Probe findet `ruff` auch ohne
   ihn auf dem PATH (R-0234).
+- **Hooks: Cron-Intervalle werden wirklich geprueft (R-0235):** `POST /api/hooks` und `PUT /api/hooks/{id}`
+  nahmen jedes Intervall aus fuenf Feldern an, auch `a b c d e` oder `61 * * * *`; der Scheduler konnte es nicht
+  lesen und uebersprang den Hook bei jedem Abgleich, ohne Meldung. Die Routen pruefen jetzt mit dem Parser des
+  Schedulers und antworten auf ein unlesbares Intervall mit 422. Ein schon gespeicherter Hook mit so einem
+  Intervall laeuft weiter nicht, der Scheduler meldet ihn aber einmal mit einer Warnung im Log.
 - **Desktop: Registrieren und Zuruecksetzen in den Einstellungen nur mit Anmeldung (R-0244):** Stellte man im
   Einstellungs-Dialog nur den Modus auf `server`, ohne angemeldet zu sein, erschien das Token-Feld; eine
   Registrierung lief dann gegen die eingetragene URL und startete keinen Tunnel. Token-Feld und Zuruecksetzen
