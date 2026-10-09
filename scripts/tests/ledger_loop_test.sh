@@ -90,6 +90,8 @@ slug="$(basename "$ledger" .md)"
 rcost() { [ -z "${FIXTURE_RCOST:-}" ] || printf 'review cost_usd=0 round=%s\nreview cost_usd=%s round=%s\n' "$round" "$FIXTURE_RCOST" "$round"; }
 case "$rc" in
   0|74a)
+    # FIXTURE_RAW: the reviewer ran (its raw output is there), but no cost line follows.
+    [ -z "${FIXTURE_RAW:-}" ] || { mkdir -p ".ah-out/review/$slug" && : > ".ah-out/review/$slug/$id.r$round.raw.json"; }
     files="$(awk -v id="$id" '$0 ~ "^###[ \t]+" id "([ \t]|$)" { t = 1; next } t && /^###/ { exit }
       t && /Dateien:/ { sub(/.*Dateien:[ \t]*/, ""); gsub(/,/, " "); print; exit }' "$ledger")"
     # shellcheck disable=SC2086
@@ -110,7 +112,8 @@ case "$rc" in
       "$round" > ".ah-out/review/$slug/$id.r$round.verdict.json"
     rcost; echo "task-close: round $round gave no usable approve"; exit 3 ;;
   4) echo "task-close: blocked — the diff leaves the task's scope"; exit 4 ;;
-  74r) echo "task-close: the reviewer gave no usable verdict (review-run.sh exit 74)"; exit 74 ;;
+  74r) [ -z "${FIXTURE_SUITECOST:-}" ] || echo "review cost_usd=0 round=$round"
+       echo "task-close: the reviewer gave no usable verdict (review-run.sh exit 74)"; exit 74 ;;
   4x)
     # The real one refuses at the sec check after mark-done: [x] and the ledger staged.
     bash scripts/dev/ledger.sh mark-done "$ledger" "$id" --evidence "stub run" > /dev/null || exit 74
@@ -152,7 +155,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp ruk rvz rrw rnr stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -760,6 +763,24 @@ seq_set build -- 74r 74r
 loop --ledger tasks/rvc.md
 [ $rc -eq 74 ] && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["cost_usd"])' "$LOOPD/state.json")" = 30.25 ] \
   && ok "two reviewer runs without a cost line count 2 x 15 \$ into the run" || bad "rvc: rc=$rc $(cat "$LOOPD/state.json")"
+# R-0190/R-0191: unknown spend counts with REVIEW_BUDGET_MAX, never as 0.
+review_usd() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"].get(sys.argv[2], {}).get("review_usd", 0))' "$LOOPD/state.json" "$1"; }
+seq_set build -- 0
+FIXTURE_RCOST=unknown loop --ledger tasks/ruk.md
+[ "$(box ruk)" = x ] && [ "$(review_usd ruk/T1)" = 15.0 ] \
+  && ok "a reviewer cost 'unknown' counts 15 \$" || bad "ruk: $(review_usd ruk/T1) $(result ruk)"
+seq_set build -- 74r 74r
+FIXTURE_SUITECOST=1 loop --ledger tasks/rvz.md
+[ $rc -eq 74 ] && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["cost_usd"])' "$LOOPD/state.json")" = 30.25 ] \
+  && ok "no usable verdict counts 15 \$ even behind a suite line 'review cost_usd=0'" || bad "rvz: rc=$rc $(cat "$LOOPD/state.json")"
+seq_set build -- 0
+FIXTURE_RAW=1 loop --ledger tasks/rrw.md
+[ "$(box rrw)" = x ] && [ "$(review_usd rrw/T1)" = 15.0 ] \
+  && ok "a reviewer that ran without a cost line counts 15 \$" || bad "rrw: $(review_usd rrw/T1) $(result rrw)"
+seq_set build -- 0
+loop --ledger tasks/rnr.md
+[ "$(box rnr)" = x ] && [ "$(review_usd rnr/T1)" = 0 ] \
+  && ok "a close whose reviewer never ran counts nothing for it" || bad "rnr: $(review_usd rnr/T1) $(result rnr)"
 [ "$(sed -n 's/^REVIEW_BUDGET_MAX=//p' "$REPO_ROOT/scripts/dev/ledger-loop.sh")" = \
   "$(sed -n 's/.*BUDGET=\([0-9][0-9.]*\).*/\1/p' "$REPO_ROOT/scripts/dev/review-run.sh" | sort -n | tail -n 1)" ] \
   && ok "REVIEW_BUDGET_MAX is the larger budget of review-run.sh" || bad "REVIEW_BUDGET_MAX and review-run.sh disagree"

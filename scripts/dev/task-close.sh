@@ -426,9 +426,11 @@ case "$REVIEW" in
         bash scripts/dev/review.sh log --append "$VJSON" || echo "task-close: the review log was not written" >&2
         # The worker adds the reviewer to its run's budget from this line: its own
         # log of this process, written after the suite (the last such line counts).
-        echo "review cost_usd=$(python3 -c 'import json, sys
+        # A cost the verdict does not carry is `unknown`, never 0: the worker counts
+        # it with its cap (R-0190).
+        echo "review cost_usd=$(python3 -c 'import json, math, sys
 c = json.load(open(sys.argv[1])).get("cost_usd")
-print(c if type(c) in (int, float) and c >= 0 else 0)' "$VJSON" 2>/dev/null || echo 0) round=$ROUND"
+print(c if type(c) in (int, float) and math.isfinite(c) and c >= 0 else "unknown")' "$VJSON" 2>/dev/null || echo unknown) round=$ROUND"
       elif [ "$rc" != 2 ]; then
         WHY="$(grep -v '^[[:space:]]*$' "$RUN_ERR" | tail -n 1)"
         bash scripts/dev/review.sh log --failed "${WHY:-review-run.sh exit $rc without a message}" \

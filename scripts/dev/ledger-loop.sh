@@ -809,8 +809,17 @@ close_task() {
     clone_ok
     # The reviewer's cost from task-close's line in the log this loop opened; the
     # suite's output comes before it, so the last such line counts.
-    rcost="$(sed -n 's/^review cost_usd=\([0-9][0-9.]*\) round=[12]$/\1/p' "$CLOSE" | tail -n 1)"
-    [ -n "$rcost" ] || ! grep -q '^task-close: the reviewer gave no usable verdict' "$CLOSE" || rcost="$REVIEW_BUDGET_MAX"
+    # Unknown spend counts with its cap, never as 0 (R-0190, R-0191): a reviewer
+    # that gave no usable verdict — whatever line the suite printed before —, a cost
+    # task-close calls `unknown`, and a round whose reviewer ran (its raw output is
+    # there) without a cost line. A close that never reached the reviewer costs none.
+    if grep -q '^task-close: the reviewer gave no usable verdict' "$CLOSE"; then
+      rcost="$REVIEW_BUDGET_MAX"
+    else
+      rcost="$(sed -nE 's/^review cost_usd=([0-9][0-9.]*|unknown) round=[12]$/\1/p' "$CLOSE" | tail -n 1)"
+      [ "$rcost" != unknown ] || rcost="$REVIEW_BUDGET_MAX"
+      [ -n "$rcost" ] || [ ! -e "$wt/.ah-out/review/$slug/$id.r$round.raw.json" ] || rcost="$REVIEW_BUDGET_MAX"
+    fi
     if [ -n "$rcost" ]; then
       RUN_COST="$(awk -v a="$RUN_COST" -v b="$rcost" 'BEGIN { printf "%.4f", a + b }')"
       state 's["cost_usd"] = round(s.get("cost_usd", 0) + float(a[0]), 4)

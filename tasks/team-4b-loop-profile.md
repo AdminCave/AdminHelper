@@ -60,8 +60,10 @@ Dedup-Key: ref:scripts:ledger-loop.sh:lock-orphan-session
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; die Spec nennt das Restrisiko eines Rests, der sein Verzeichnis wechselt)
 
-### T4 — Fehlende Reviewer-Kosten zählen mit dem Deckel, nie als 0 (R-0190, R-0191 Punkt 1)  [ ]
+### T4 — Fehlende Reviewer-Kosten zählen mit dem Deckel, nie als 0 (R-0190, R-0191 Punkt 1)  [x]
 Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/dev/ledger-loop.sh, scripts/tests/task_close_test.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e393fcc2 2026-10-09T14:01:59+02:00
+Review: approve (opus)
 Änderung:
 - `task-close.sh` (`:429`) druckt `review cost_usd=unknown round=<n>`, wenn das Verdict kein brauchbares
   `cost_usd` trägt, statt `0`.
