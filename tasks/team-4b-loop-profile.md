@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Team-Plan 4b: der Loop unter Kevins Benutzer (Builder-Profil) — Task-Ledger
-Status: aktiv · Branch: harness/team-4b-loop-profile · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/team-4b-loop-profile · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-09 (Stufen-Plan, im Chat mit der Aufsicht). Offene Fragen: 1 R-0231 und R-0237 angenommen (Kevin); WebFetch-Domains (Kevin): gofrp.org, docs.python.org, code.claude.com, tauri.app, docs.victoriametrics.com, pve.proxmox.com; 2 R-0190/R-0191 hängt die Aufsicht von 7b auf dieses Ledger um (erledigt); 3 der Start legt die tmux-Session selbst an (Aufsicht); 4 die CLI-Sandbox wird eine eigene Roadmap-Zeile (Aufsicht); 5 der python3-Symlink des eingefrorenen Runners bleibt liegen (Aufsicht)
 Spec: docs/features/team-4b-loop-profile.md (Roadmap R-0230, R-0231, R-0237, R-0226, R-0190, R-0191, R-0234)
 Heavy: none — Shell, Python und Settings unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Abnahme (ein zweiter Lauf ohne Handgriff außer dem Start, keine Kosten als 0) ist ein echter Loop-Lauf: Kevins Start, nach dem Merge.
@@ -200,8 +200,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T11)
 Abhängt von: T1, T9
 
-### T11 — Doku: Builder-Profil, Einrichtung, Start und Restrisiko  [ ]
+### T11 — Doku: Builder-Profil, Einrichtung, Start und Restrisiko  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @17a94f30 2026-10-09T18:27:37+02:00
+Review: opus, round 2 findings fixed, no third round
 Änderung: `DEVELOPMENT.md`, „Der Worker“ (`:1102`):
 - die Einrichtung (`builder-home.sh setup`, dann `token`) und der Start und Status
   (`ledger-loop.sh start|status --profile kevin`);
