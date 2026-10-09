@@ -84,6 +84,12 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
     pass="${pass//\\/\\\\}"
     pass="$(printf '%b' "${pass//%/\\x}")"
   fi
+  # A user:password the pattern did not take apart would go into an argument
+  # unchanged: stop before either program runs (R-0255).
+  if [[ "$url" =~ ^[^/]*//[^/@]*:[^/@]*@ ]]; then
+    echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
+    return 1
+  fi
   case "$1" in
     create) ( [ -z "$pass" ] || export PGPASSWORD="$pass"
               exec createdb --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;

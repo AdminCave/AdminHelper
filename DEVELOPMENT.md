@@ -205,7 +205,8 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
 Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt der Lane eine eigene
 `.devenv.sh`: Sie sourct die des Haupt-Checkouts und biegt danach `AH_TEST_DB` auf diese DB und
 `AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
-braucht dafür `CREATEDB`, die sie oben ohnehin hat.
+braucht dafür `CREATEDB`, die sie oben ohnehin hat. Das Passwort der URL reist dabei in `PGPASSWORD`,
+nie in einem Argument; eine URL, aus der `lane.sh` es nicht herauslösen kann, legt keine Lane an.
 Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
 und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
 angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
