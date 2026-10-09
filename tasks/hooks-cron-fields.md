@@ -15,8 +15,10 @@ Geplant 2026-10-09 von Worker B im Auftrag der Aufsicht (adminhelper-ac) aus ein
 triagiert und angenommen hat. Sie stammt aus dem Gesamt-Review von Server-Kleinpaket-2 (R-0207). Die private Roadmap
 ist in diesem Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht. Zeilenangaben origin/main@bf383a7a.
 
-### T1 — Hook-Routen: ein Intervall, das der Scheduler nicht lesen kann, ist ein 422 (R-0235)  [ ]
+### T1 — Hook-Routen: ein Intervall, das der Scheduler nicht lesen kann, ist ein 422 (R-0235)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/tests/test_hooks.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @5d3665d0 2026-10-09T17:09:23+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `_validate_schedule_interval` (`router.py:89-99`) prüft nur, ob ein Intervall ein bekannter Alias ist oder
 aus fünf Feldern besteht. `"a b c d e"` und `"61 * * * *"` kommen deshalb mit 201 durch. Der Scheduler liest dieselben
 Werte mit `_parse_trigger` (`scheduler.py:44-53`, `CronTrigger.from_crontab`) und scheitert mit `ValueError`.
