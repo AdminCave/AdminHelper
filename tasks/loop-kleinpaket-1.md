@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 1: Kostenquelle, Zeilengrenzen, lane_db geschlossen (R-0250, R-0251, R-0255) — Task-Ledger
-Status: bereit · Branch: harness/loop-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/loop-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (Harness-Kleinpaket aus R-0250, R-0251 und R-0255, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05; den PR merged Kevin). Offene Fragen (Aufsicht): 1 die Kostendatei; 2 der Satz in DEVELOPMENT.md ja, keine Normalisierung von postgres:// in lane.sh
 Spec: Roadmap R-0250, R-0251, R-0255 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell und Python unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -123,3 +123,21 @@ Doku: DEVELOPMENT.md (ein Satz, „Eine Lane hat ihre eigene Test-DB“)
 2. R-0255, die Semantik-Lücke. Die Regel „Passwort nie im Argument“ steht nur im Code. Empfehlung: der eine Satz in
    DEVELOPMENT.md (in T3). Normalisiert `lane.sh` `postgres://` wie `builder-home.sh`? Empfehlung: nein. Die
    Projekt-URLs sind SQLAlchemy-URLs (`postgresql+<treiber>`), und die Prüfung lehnt jede andere Form ab.
+
+### T4 — Nachbesserungen aus dem Review am Ende (R-0250, R-0251, R-0255)  [ ]
+Komponente: scripts · Dateien: DEVELOPMENT.md, scripts/dev/lane.sh, scripts/tests/lane_test.sh, scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/tests/task_close_test.sh
+Änderung: Die Funde des Reviews über den ganzen Branch-Diff (Opus).
+- wichtig: Der Satz aus T3 in DEVELOPMENT.md versprach mehr, als `lane_db` prüft: Eine gültige URL mit
+  `?password=` in der Query geht weiter ins Argument. Der Satz nennt jetzt genau die Form `Benutzer:Passwort@`.
+- `lane.sh`: Die Ablehnung hat einen eigenen Rückgabewert (3). `lane.sh new` meldet dann kein gescheitertes
+  createdb.
+- `ledger-loop.sh`: Die Liste der Trennzeichen von `splitlines()` im Kommentar nennt das alleinstehende `\r`;
+  die lokale Variable heißt `costf` wie die übrigen lokalen.
+- Tests:
+  - `ledger_loop_test` prüft das `rm -f` der Kostendatei: Eine Datei aus einem früheren Lauf am Namen des ersten
+    Close zählt nicht.
+  - `task_close_test` benennt den Fehlerfall richtig.
+  - `lane_test` prüft, dass keine createdb-Meldung kommt.
+Rot vorher: Ohne das `rm -f` zählt der Loop die alte Datei (9 $).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (der Satz aus T3, enger)
