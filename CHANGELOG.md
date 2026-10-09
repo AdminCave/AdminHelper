@@ -283,6 +283,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lesen und uebersprang den Hook bei jedem Abgleich, ohne Meldung. Die Routen pruefen jetzt mit dem Parser des
   Schedulers und antworten auf ein unlesbares Intervall mit 422. Ein schon gespeicherter Hook mit so einem
   Intervall laeuft weiter nicht, der Scheduler meldet ihn aber einmal mit einer Warnung im Log.
+- **Desktop: Registrieren und Zuruecksetzen in den Einstellungen nur mit Anmeldung (R-0244):** Stellte man im
+  Einstellungs-Dialog nur den Modus auf `server`, ohne angemeldet zu sein, erschien das Token-Feld; eine
+  Registrierung lief dann gegen die eingetragene URL und startete keinen Tunnel. Token-Feld und Zuruecksetzen
+  erscheinen jetzt nur mit Anmeldung; ohne sie bietet der Login-Screen dieselben Wege.
+- **Desktop: Speichern der Einstellungen bei laufendem Tunnel (R-0245):** Im Modus `server` startete jedes
+  Speichern den Tunnel erneut, auch bei einer Sprach- oder RDP-Einstellung; neben dem laufenden frpc scheiterte
+  das mit „frpc laeuft bereits“, die Anzeige ging auf getrennt, und die Statusleiste meldete einen Fehler. Ein
+  laufender Tunnel bleibt jetzt, wie er ist; gestartet wird nur, wenn keiner laeuft.
+- **Desktop: Fehler der Registrierung in den Einstellungen ohne Code (R-0243):** Scheiterte die Registrierung
+  in den Einstellungen, stand der rohe Text samt Code da, etwa `ERR_TLS_UNKNOWN_ISSUER: …`. Jetzt erscheint nur
+  der Text, wie im Login.
 - **Desktop: Login nennt das fehlende Geraete-Zertifikat (R-0222):** Unter erzwungenem mTLS weist das
   Gateway ein Geraet ohne Zertifikat schon vor dem Login mit 400 ab; der Login zeigte bisher nur
   „Login fehlgeschlagen (400 Bad Request)“ samt Fehlerseite. Jetzt sagt er, dass der Server ein
