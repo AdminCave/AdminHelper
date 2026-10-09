@@ -898,6 +898,42 @@ grep -q '^server --tree .* --strict -- tests/test_thing.py$' "$FIX/.ah-out/aux-c
   && ok "the test green without the change -> the approve does not close (exit 3)" || bad "probe green: rc=$rc out=$OUT"
 reset_repo
 
+# R-0227, the finding itself: dead code and its test leave, the test declared as
+# Test-Löschung in the committed ledger. There is no new test to probe, so the
+# approve closes, and the review line says why no probe ran.
+mk_dead() {
+  mk_auto
+  { printf '# Dead — Task-Ledger\nStatus: aktiv · Branch: feature/dead\nSpec: docs/features/dead.md\n\n'
+    printf '### T1 — toter Code geht  [ ]\nKomponente: server · Dateien: apps/server/app/thing.py, apps/server/tests/test_thing.py\n'
+    printf 'Änderung: irgendwas\nTest-Löschung: apps/server/tests/test_thing.py::test_dead — sein Code hat keinen Nutzer mehr\n'
+    printf 'Verify: bash scripts/dev/verify.sh server --strict -- tests/test_thing.py\n'
+  } > "$FIX/tasks/dead.md"
+  printf 'def alive():\n    return 1\n\n\ndef dead():\n    return 2\n' > "$FIX/apps/server/app/thing.py"
+  printf 'import json\n\nfrom app.thing import alive\nfrom app.thing import dead\n\n\ndef test_alive():\n    assert alive() == 1\n\n\ndef test_dead():\n    assert json.dumps(dead()) == "2"\n' \
+    > "$FIX/apps/server/tests/test_thing.py"
+  git -C "$FIX" add -A && git -C "$FIX" commit -qm "dead code, its test and the ledger"
+  N0=$(head_count)
+  printf 'def alive():\n    return 1\n' > "$FIX/apps/server/app/thing.py"
+  printf 'from app.thing import alive\n\n\ndef test_alive():\n    assert alive() == 1\n' > "$FIX/apps/server/tests/test_thing.py"
+}
+dead_line() { git -C "$FIX" show HEAD:tasks/dead.md | sed -n '/^### T1 /,/^### /{/^Review:/p}'; }
+mk_dead
+STUB=approve c dead T1 --stage -m "refactor: drop dead" --review auto
+[ $rc -eq 0 ] && [ "$(head_count)" = "$((N0 + 1))" ] && ! grep -q -e '--tree' "$FIX/.ah-out/aux-calls.txt" 2>/dev/null \
+  && ok "dead code and its declared test + approve -> closed, no probe run" || bad "declared deletion: rc=$rc out=$OUT calls=$(cat "$FIX/.ah-out/aux-calls.txt" 2>&1)"
+dead_line | grep -q '^Review: approve (.*probe: only a declared test deletion, not run' \
+  && ok "the review line names the probe that did not run: only a declared test deletion" || bad "review line: $(dead_line)"
+reset_repo
+# The counter-case: a test added besides the declared deletion is probed, and
+# green without the change it keeps the approve from closing.
+mk_dead
+printf '\n\ndef test_alive_twice():\n    assert alive() + alive() == 2\n' >> "$FIX/apps/server/tests/test_thing.py"
+STUB=approve c dead T1 --stage -m "refactor: drop dead" --review auto
+grep -q -e '--tree' "$FIX/.ah-out/aux-calls.txt" 2>/dev/null && [ $rc -eq 3 ] && grep -q 'probe found the new test green' <<<"$OUT" \
+  && [ "$(head_count)" = "$N0" ] && ok "a declared deletion plus a new test -> probed, green without the change -> exit 3" \
+  || bad "deletion plus a test: rc=$rc out=$OUT"
+reset_repo
+
 # ══ with the pre-commit hook armed (R-0102) ═══════════════════════════════════
 echo "── pre-commit hook armed ──"
 # The hook runs review.sh sec a third time; the closer keeps its own two runs for

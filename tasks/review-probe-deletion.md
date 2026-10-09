@@ -69,8 +69,10 @@ Dedup-Key: bug:scripts:review-probe.sh:declared-deletion
 HEAD: b64253ca
 Verify: bash scripts/dev/verify.sh scripts --strict
 
-### T2 — review-probe.sh `--task` und task-close: keine Probe für eine reine Löschung (R-0227)  [ ]
+### T2 — review-probe.sh `--task` und task-close: keine Probe für eine reine Löschung (R-0227)  [x]
 Komponente: scripts · Dateien: scripts/dev/review-probe.sh, scripts/dev/task-close.sh, scripts/tests/review_probe_test.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @268c6354 2026-10-09T10:04:01+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `review-probe.sh` nimmt `--task <ledger> <id>`; nach den Antworten ohne Lauf (`no-test-change`,
 `only-test-change`, `:181`) fragt es `review.sh declared-only` mit derselben Komponente und demselben Modus und
 antwortet bei Exit 0 ohne Lauf mit `only-declared-deletion`; Exit 1 heißt: wie bisher proben. Der Kopf
