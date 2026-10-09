@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   tunnelStop: vi.fn(async () => {}),
   tunnelStart: vi.fn(),
   saveSettingsBridge: vi.fn(async () => {}),
+  tunnelStatus: vi.fn(async () => ({ running: false })),
 }));
 
 vi.mock('./connections', () => ({
@@ -39,7 +40,10 @@ vi.mock('./session', () => ({
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError, showStatus: h.showStatus }));
 vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k, setLanguage: vi.fn() }));
-vi.mock('$lib/bridge', () => ({ saveSettings: h.saveSettingsBridge }));
+vi.mock('$lib/bridge', () => ({
+  saveSettings: h.saveSettingsBridge,
+  tunnelStatus: h.tunnelStatus,
+}));
 vi.mock('./tunnel', () => ({ stop: h.tunnelStop, startIfServerMode: h.tunnelStart }));
 
 import { syncNow, saveSettings, stopSyncTimer } from './settings';
@@ -108,6 +112,29 @@ describe('saveSettings mode-switch orchestration (6.6)', () => {
     await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
     expect(h.dropSession).toHaveBeenCalled();
     expect(h.tunnelStop).toHaveBeenCalled();
+  });
+
+  it('saving in server mode leaves a running tunnel alone (R-0245)', async () => {
+    // Nothing the tunnel depends on changed (a new server URL logs out above), and a
+    // second start next to the running frpc fails with "frpc laeuft bereits".
+    h.tunnelStatus.mockResolvedValueOnce({ running: true });
+    await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));
+    expect(h.reloadForMode).toHaveBeenCalled();
+    expect(h.tunnelStart).not.toHaveBeenCalled();
+    expect(h.tunnelStop).not.toHaveBeenCalled();
+  });
+
+  it('saving in server mode still starts the tunnel when the status call fails', async () => {
+    h.tunnelStatus.mockRejectedValueOnce(new Error('status unavailable'));
+    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));
+    expect(h.tunnelStart).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+  });
+
+  it('saving in server mode starts the tunnel when none runs', async () => {
+    h.tunnelStatus.mockResolvedValueOnce({ running: false });
+    await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));
+    expect(h.tunnelStart).toHaveBeenCalledTimes(1);
   });
 
   it('switching server->local stops the tunnel and drops the session', async () => {

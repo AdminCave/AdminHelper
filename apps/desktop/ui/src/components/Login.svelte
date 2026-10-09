@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { errMsg } from '$lib/utils/errors';
+  import { errMsg, withoutErrorCodes } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setAllowSelfSignedCerts, setMode, settings } from '$lib/stores/session';
   import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
@@ -51,10 +51,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // buried in the reqwest source chain, so match them anywhere in the string.
   let caPinError = $derived(error.includes('ERR_CA_PIN_MISMATCH'));
   let pinError = $derived(error.includes('ERR_TOFU_PIN_MISMATCH') || caPinError);
+  // Under enforced mTLS a device without a certificate is turned away at the
+  // gateway before the login (auth.rs, R-0222): name that and offer the token
+  // form instead of the raw message.
+  let mtlsRequired = $derived(error.includes('ERR_MTLS_CERT_REQUIRED'));
   // Never show the machine-readable code to the user; keep only the human text.
-  let displayError = $derived(
-    error.replace(/ERR_(?:(?:CA|TOFU)_PIN_MISMATCH|TLS_UNKNOWN_ISSUER):\s*/g, ''),
-  );
+  let displayError = $derived(withoutErrorCodes(error));
 
   async function resetCertTrust(): Promise<void> {
     const target = serverUrl.trim();
@@ -235,7 +237,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <input type="password" bind:value={password} required disabled={busy} />
         </label>
 
-        {#if error}
+        {#if mtlsRequired}
+          <div class="login-error" data-msg="mtls-required">{$t('login.mtlsRequired')}</div>
+          <button
+            type="button"
+            class="btn ghost login-secondary"
+            data-action="mtls-enroll"
+            onclick={() => switchMode('enroll')}
+            disabled={busy}
+          >
+            {$t('login.enroll.switch')}
+          </button>
+        {:else if error}
           <div class="login-error">{displayError}</div>
           {#if pinError}
             <button
@@ -253,15 +266,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {busy ? $t('login.signingIn') : $t('login.signIn')}
         </button>
       </form>
-      <button
-        type="button"
-        class="btn ghost login-secondary"
-        data-action="enroll-switch"
-        onclick={() => switchMode('enroll')}
-        disabled={busy}
-      >
-        {$t('login.enroll.switch')}
-      </button>
+      <!-- The mTLS hint carries the same button; one is enough. -->
+      {#if !mtlsRequired}
+        <button
+          type="button"
+          class="btn ghost login-secondary"
+          data-action="enroll-switch"
+          onclick={() => switchMode('enroll')}
+          disabled={busy}
+        >
+          {$t('login.enroll.switch')}
+        </button>
+      {/if}
       <button type="button" class="btn ghost login-secondary" onclick={useLocal} disabled={busy}>
         {$t('login.useLocal')}
       </button>
