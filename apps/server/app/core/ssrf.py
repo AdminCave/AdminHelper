@@ -135,8 +135,12 @@ def classify_url(url: str) -> UrlVerdict:
     address included) or does not resolve at all (UNRESOLVED: no host, a DNS error,
     the deadline or the in-flight cap missed) — a dead nameserver is not a wrong URL.
     """
-    parsed = urlparse(url)
-    hostname = parsed.hostname
+    try:
+        hostname = urlparse(url).hostname
+    except ValueError:
+        # urlparse raises on a malformed IPv6 literal ("http://[::1"); an unreadable
+        # URL fails closed like an unreadable address below (R-0181).
+        return UrlVerdict.PRIVATE
     if not hostname:
         return UrlVerdict.UNRESOLVED
     addr_info = _resolve(hostname, _DNS_TIMEOUT_S)
