@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Messlauf 1: Offset-Schutztest und FRP-Doku (R-0210, R-0214) — Task-Ledger
-Status: aktiv · Branch: feature/messlauf-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/messlauf-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Fund-Paket aus R-0210 und R-0214, von Kevin am 2026-10-07 in der Triage angenommen; Messlauf laut Team-Plan, Kevin 2026-10-08)
 Spec: Roadmap R-0210, R-0214 (Kurz-Ledger ohne Spec)
 Heavy: none — ein neuer Server-Test ohne Produktivcode und zwei Doku-Seiten; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -39,7 +39,9 @@ Dedup-Key: ref:server:to_dict:offset-guard-test
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_to_dict_utc_offsets.py
 Doku: keine (intern)
 
-### T2 — FRP-Tunnel-Doku: DE und EN mit demselben Inhalt (R-0214)  [ ]
+### T2 — FRP-Tunnel-Doku: DE und EN mit demselben Inhalt (R-0214)  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d8c2339a 2026-10-09T10:59:31+02:00
+Review: approve (sonnet/high) · round 1
 Antwort der Aufsicht (2026-10-09): Die zwei SKIPs (vm.py pytest, scripts/dev pytest) kamen aus der Builder-Umgebung — ihr python3 hatte kein pytest, weil das Einrichtungs-Skript den Link auf das Tools-venv vergessen hatte (runner-setup.sh legt ihn an). Behoben; die Task neu bauen.
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
 Änderung: Die beiden Seiten sind auseinandergelaufen. Der deutschen fehlt der Abschnitt zur Firewall mit seiner
