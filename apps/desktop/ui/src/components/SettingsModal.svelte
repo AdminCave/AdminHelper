@@ -137,7 +137,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   async function onExportBrowserCert(): Promise<void> {
     const sess = $session;
     if (!sess) return;
-    if (browserCertPassword.length < 8) {
+    // Characters as Rust counts them (chars(), code points), not UTF-16 units:
+    // check_export_password rejects anything shorter than 12, and that rejection
+    // would only reach the user as the generic export error below.
+    if ([...browserCertPassword].length < 12) {
       browserCertMsg = $t('settings.browserCert.passwordTooShort');
       return;
     }
@@ -320,11 +323,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <div class="sm-browser-cert-row">
               <input
                 type="password"
+                data-action="browser-cert-password"
                 bind:value={browserCertPassword}
                 placeholder={$t('settings.browserCert.passwordPlaceholder')}
               />
               <button
                 class="btn ghost small"
+                data-action="browser-cert-export"
                 onclick={onExportBrowserCert}
                 disabled={browserCertBusy}
               >

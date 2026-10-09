@@ -279,6 +279,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `event_triggers` mit einem 422, dessen `detail` ein String war. Die OpenAPI und die API-Referenz
   versprechen eine Liste von `{loc, msg, type}`; so antworten die Routen jetzt, mit den bisherigen
   Texten als `msg`.
+- **Desktop: Passwort fuer den Browser-Export (R-0219):** Die Einstellungen liessen ein Passwort ab 8
+  Zeichen zu, der Export selbst verlangt 12; ein Passwort mit 8 bis 11 Zeichen endete in der
+  allgemeinen Meldung „angemeldet und Server erreichbar?“. Die Einstellungen verlangen jetzt die
+  dokumentierten 12 Zeichen, gezaehlt wie im Backend, und sagen das.
 - **SSRF-Guard nennt den Grund (R-0045):** Der HTTP-Check und der Alert-Webhook des Monitorings sowie die
   Hook-Funktionen `http_get`/`http_post` des Servers melden ein Ziel, dessen Host nicht aufloest
   (DNS-Fehler oder Zeitlimit), jetzt als solches (`could not be resolved … rejected by the SSRF guard`)
