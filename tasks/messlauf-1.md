@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Messlauf 1: Offset-Schutztest und FRP-Doku (R-0210, R-0214) — Task-Ledger
-Status: aktiv · Branch: feature/messlauf-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: blockiert · Branch: feature/messlauf-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-08 (kleines Fund-Paket aus R-0210 und R-0214, von Kevin am 2026-10-07 in der Triage angenommen; Messlauf laut Team-Plan, Kevin 2026-10-08)
 Spec: Roadmap R-0210, R-0214 (Kurz-Ledger ohne Spec)
 Heavy: none — ein neuer Server-Test ohne Produktivcode und zwei Doku-Seiten; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -39,7 +39,7 @@ Dedup-Key: ref:server:to_dict:offset-guard-test
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_to_dict_utc_offsets.py
 Doku: keine (intern)
 
-### T2 — FRP-Tunnel-Doku: DE und EN mit demselben Inhalt (R-0214)  [ ]
+### T2 — FRP-Tunnel-Doku: DE und EN mit demselben Inhalt (R-0214)  [?] (Doku ist gebaut (nur die zwei Task-Dateien im Arbeitsbaum geändert), aber 'verify.sh scripts --strict' ist nicht grün: 'vm.py pytest' und 'scripts/dev pytest' sind SKIP mit 'python3 or pytest not installed' (Builder-Umgebung ohne .devenv.sh und ohne pytest), alle übrigen Schritte PASS (run.sh[quick]: 4 passed, 2 failed, 14 skipped). Bekommt die Builder-Umgebung pytest, damit T2 danach über task-close.sh geschlossen werden kann?)
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
 Änderung: Die beiden Seiten sind auseinandergelaufen. Der deutschen fehlt der Abschnitt zur Firewall mit seiner
 Tabelle (EN `:84`), der englischen fehlen „Architektur“ (DE `:41`) und „Provision-Token“ (DE `:76`). Die
