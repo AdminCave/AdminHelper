@@ -15,8 +15,10 @@ Geplant 2026-10-09 von der Aufsicht (adminhelper-ac) aus drei Zeilen, die Kevin 
 (R-0225, R-0228 am 2026-10-08, R-0236 am 2026-10-09). Dieses Ledger ist der Abnahmelauf von Schritt 4b: `ledger-loop.sh
 start --profile kevin` baut es, und außer dem Start braucht es keinen Handgriff. Zeilenangaben main@c94c59d5.
 
-### T1 — Die Test-Engine fährt ihre Sessions in UTC wie die App (R-0225)  [ ]
+### T1 — Die Test-Engine fährt ihre Sessions in UTC wie die App (R-0225)  [x]
 Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_session_timezone.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @9098a252 2026-10-09T21:22:48+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: Die App stellt jede Verbindung auf `SET TIME ZONE 'UTC'` (`app/core/database.py:29-35`, R-0209). Die Engine der
 Unit-Suite in `tests/conftest.py` (`pg_engine`, `:92`; `create_engine` in `:106` und `:120`) hat diesen Listener nicht und
 läuft deshalb in der Default-Zeitzone der Datenbank: lokal Europe/Berlin, in der CI UTC. Die Suite sieht damit lokal
