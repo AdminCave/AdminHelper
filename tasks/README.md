@@ -129,6 +129,14 @@ differ“ machen und damit alle drei Prüfungen blind.
 Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared test deletion(s): …)`),
 und bei einem Fund, warum eine Ankündigung nicht zählte.
 
+**Die Probe** (`review-probe.sh`, unter `--review auto`) fragt, ob der neue Test ohne die Änderung
+rot wäre. Eine reine angekündigte Löschung bringt keinen neuen Test mit: Besteht der Test-Diff nur
+aus angekündigten Tests, die nach den Regeln oben zählen, samt den Import- und Leerzeilen, die mit
+ihnen gehen, antwortet sie ohne Lauf `only-declared-deletion` (`review.sh declared-only`, R-0227).
+Das approve steht dann, und die Review-Zeile nennt den Grund (`probe: only a declared test
+deletion, not run`). Alles daneben — ein Ersatztest, eine Änderung an einem bleibenden Test, ein
+entfernter Helfer, eine nur gekürzte Import-Zeile — wird weiter geprobt.
+
 **Passt:** toter Code geht samt seinem Test; ein Test wird durch einen genaueren ersetzt, der
 im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das ist ein Befund
 über den Code und gehört repariert oder als `[?]` vor Kevin, nicht gelöscht.

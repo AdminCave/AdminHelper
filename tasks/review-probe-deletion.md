@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # review-probe: eine reine Entfernung mit angekündigter Test-Löschung sperrt kein approve (R-0227) — Task-Ledger
-Status: aktiv · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (Harness-Kleinpaket aus R-0227, von Kevin am 2026-10-08 in der Triage als „zuerst“ angenommen; Delegation Kevin 2026-10-05; den PR merged Kevin). Entscheidungen: 1, 2, 4, 5, 6 wie empfohlen; 3 abweichend: `only-declared-deletion` wird nicht still angenommen, die Review-/Verdict-Zeile im Ledger nennt den Grund sichtbar (etwa „Probe: nur angekündigte Löschung“), weil das Paket ein Gate lockert
 Spec: Roadmap R-0227 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell und Python unter scripts/dev mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -86,8 +86,10 @@ Rot vorher: die neuen Fälle scheitern auf dem Stand von T1 ohne diese Änderung
 Verify: bash scripts/dev/verify.sh scripts --strict
 Abhängt von: T1
 
-### T3 — Doku: was die Probe bei einer angekündigten Löschung tut (R-0227)  [ ]
+### T3 — Doku: was die Probe bei einer angekündigten Löschung tut (R-0227)  [x]
 Komponente: scripts · Dateien: tasks/README.md, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @79ef07b7 2026-10-09T10:16:45+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `tasks/README.md`, Abschnitt `Test-Löschung:` (`:86`): ein Satz, dass die Probe einen Test-Diff, der nur
 aus angekündigten Löschungen (samt ihren Importen und Leerzeilen) besteht, als `only-declared-deletion` nicht
 probt, und dass alles daneben — ein Ersatztest, eine Änderung an einem bleibenden Test — weiter geprobt wird.
