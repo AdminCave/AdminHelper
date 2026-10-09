@@ -281,7 +281,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Hooks: Cron-Intervalle werden wirklich geprueft (R-0235):** `POST /api/hooks` und `PUT /api/hooks/{id}`
   nahmen jedes Intervall aus fuenf Feldern an, auch `a b c d e` oder `61 * * * *`; der Scheduler konnte es nicht
   lesen und uebersprang den Hook bei jedem Abgleich, ohne Meldung. Die Routen pruefen jetzt mit dem Parser des
-  Schedulers und antworten auf ein unlesbares Intervall mit 422.
+  Schedulers und antworten auf ein unlesbares Intervall mit 422. Ein schon gespeicherter Hook mit so einem
+  Intervall laeuft weiter nicht, der Scheduler meldet ihn aber einmal mit einer Warnung im Log.
 - **Desktop: Login nennt das fehlende Geraete-Zertifikat (R-0222):** Unter erzwungenem mTLS weist das
   Gateway ein Geraet ohne Zertifikat schon vor dem Login mit 400 ab; der Login zeigte bisher nur
   „Login fehlgeschlagen (400 Bad Request)“ samt Fehlerseite. Jetzt sagt er, dass der Server ein

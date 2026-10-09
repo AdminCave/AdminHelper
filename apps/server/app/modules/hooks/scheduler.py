@@ -116,6 +116,12 @@ def get_next_run(hook_id: str) -> datetime | None:
     return None
 
 
+# Hooks whose stored interval the scheduler cannot read, as (hook id, interval). The
+# reconcile runs every 30 s: without this a hook stored before the routes validated
+# with _parse_trigger (R-0235) would warn on every run — or, as before, never.
+_unreadable_warned: set[tuple[str, str]] = set()
+
+
 def reconcile_scheduled_hooks(db=None) -> None:
     """Sync the scheduler's jobs with the hooks table (the source of truth).
 
@@ -147,6 +153,15 @@ def reconcile_scheduled_hooks(db=None) -> None:
                 add_hook(hook.id, hook.schedule_interval)  # replace_existing -> idempotent
                 active_ids.add(hook.id)
             except ValueError:
+                key = (hook.id, hook.schedule_interval)
+                if key not in _unreadable_warned:
+                    _unreadable_warned.add(key)
+                    logger.warning(
+                        "Scheduled hook %s has an interval the scheduler cannot read (%r); "
+                        "it does not run until the interval is fixed",
+                        hook.id,
+                        hook.schedule_interval,
+                    )
                 continue
 
         # Drop jobs whose hook is gone or disabled (leave the system:* jobs alone).

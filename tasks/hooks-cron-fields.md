@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Intervalle wirklich prüfen, kein stilles Überspringen — Task-Ledger
-Status: aktiv · Branch: feature/hooks-cron-fields · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/hooks-cron-fields · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0235, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen (Aufsicht): 1 Weg (a), eine Warnung je Hook und Intervall, keine Datenaenderung; 2 Heavy linux-full
 Spec: Roadmap R-0235 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — die Server-API lehnt kuenftig mehr Eingaben ab (Aufsicht 2026-10-09: Server-API-Pfad laut Heavy-Regel); run.sh integration auf einer Pool-VM
@@ -44,8 +44,10 @@ Semantik: `docs/developer/server.html:157`: „Trigger-Typen: vordefinierte Inte
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: CHANGELOG.md (Fixed); server.html beschreibt die Regel schon
 
-### T2 — Scheduler: ein gespeichertes Intervall, das nicht parst, wird gemeldet statt still übersprungen (R-0235)  [ ]
+### T2 — Scheduler: ein gespeichertes Intervall, das nicht parst, wird gemeldet statt still übersprungen (R-0235)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_scheduler_reconcile.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @6a26a4a6 2026-10-09T17:46:24+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `reconcile_scheduled_hooks` fängt den `ValueError` von `add_hook` und macht `continue` (`scheduler.py:149`).
 Ein Hook, der vor T1 mit einem solchen Intervall gespeichert wurde, läuft deshalb nie, und niemand erfährt es.
 - Der Plan folgt der Empfehlung zu offener Frage 1, Weg (a).
