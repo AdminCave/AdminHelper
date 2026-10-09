@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Kleinpaket 3: keine ERR_*-Codes in der Statusleiste — Task-Ledger
-Status: aktiv · Branch: feature/desktop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0248, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Frage (Aufsicht): 1 Weg (a), der Filter sitzt zentral in reportError; die Inline-Stellen ausserhalb der Statusleiste sind eine eigene Roadmap-Zeile
 Spec: Roadmap R-0248 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Textfilter im Store der Statusleiste (`desktop-ui`); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Live-Spec liest die Statusleiste (die `ERR_`-Prüfung in `enroll-trust-dialog.live.js` liest den Login-Fehler), der Komponententest deckt den Weg ab.
@@ -15,8 +15,10 @@ Geplant 2026-10-09 von Worker B im Auftrag der Aufsicht (adminhelper-ac) aus ein
 „Kleinpaket Desktop 3“ triagiert hat. Sie stammt aus dem Gesamt-Review von Desktop-Kleinpaket 2 (#103). Die private
 Roadmap ist in diesem Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht. Zeilenangaben origin/main@33cf47b6.
 
-### T1 — Statusleiste: `reportError` zeigt die Meldung ohne die Maschinen-Codes (R-0248)  [ ]
+### T1 — Statusleiste: `reportError` zeigt die Meldung ohne die Maschinen-Codes (R-0248)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/statusBar.ts, apps/desktop/ui/src/lib/stores/statusBar.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @c12faa2c 2026-10-09T20:46:15+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: R-0243 (#103) hat die Codes nur aus der Registrierung in den Einstellungen genommen (`withoutErrorCodes`,
 `lib/utils/errors.ts:16`). Die Statusleiste zeigt sie weiter:
 - Jede Meldung der Statusleiste geht über `reportError` (`stores/statusBar.ts:36`), heute 70 Aufrufe in Stores und
