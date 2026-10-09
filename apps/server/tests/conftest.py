@@ -30,6 +30,7 @@ import app.modules.enrollment.models  # noqa: F401
 import app.modules.frp.models  # noqa: F401
 import app.modules.hooks.models  # noqa: F401
 import app.modules.notifications.models  # noqa: F401
+import app.modules.provisioning.models  # noqa: F401
 
 # Explicitly import all models — otherwise Base.metadata does not know about them.
 import app.modules.servers.models  # noqa: F401
