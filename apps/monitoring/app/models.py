@@ -18,7 +18,7 @@ from sqlalchemy import (
 )
 
 from app.core.database import Base
-from app.core.time import utc_now_sql
+from app.core.time import iso_utc, utc_now_sql
 
 
 class MonitorCheck(Base):
@@ -52,8 +52,8 @@ class MonitorCheck(Base):
             "severity": self.severity,
             "consecutiveFails": self.consecutive_fails,
             "templateId": self.template_id,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+            "createdAt": iso_utc(self.created_at),
+            "updatedAt": iso_utc(self.updated_at),
         }
         if state:
             d["state"] = state.to_dict()
@@ -79,8 +79,8 @@ class MonitorState(Base):
         return {
             "checkId": self.check_id,
             "status": self.status,
-            "since": self.since.isoformat() if self.since else None,
-            "lastCheck": self.last_check.isoformat() if self.last_check else None,
+            "since": iso_utc(self.since),
+            "lastCheck": iso_utc(self.last_check),
             "failCount": self.fail_count,
             "message": self.message,
             "details": json.loads(self.details) if self.details else None,
@@ -121,8 +121,8 @@ class MonitorAlertRule(Base):
             "cooldownMinutes": self.cooldown_minutes,
             "enabled": self.enabled,
             "templateId": self.template_id,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+            "createdAt": iso_utc(self.created_at),
+            "updatedAt": iso_utc(self.updated_at),
         }
 
 
@@ -158,7 +158,7 @@ class MonitorAlertLog(Base):
             "checkId": self.check_id,
             "oldStatus": self.old_status,
             "newStatus": self.new_status,
-            "sentAt": self.sent_at.isoformat() if self.sent_at else None,
+            "sentAt": iso_utc(self.sent_at),
             "success": self.success,
             "error": self.error,
         }
@@ -190,8 +190,8 @@ class MonitorTemplate(Base):
             "alertDefinitions": json.loads(self.alert_definitions)
             if self.alert_definitions
             else [],
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+            "createdAt": iso_utc(self.created_at),
+            "updatedAt": iso_utc(self.updated_at),
         }
         if assignments is not None:
             d["assignments"] = [a.to_dict() for a in assignments]
@@ -275,7 +275,7 @@ class MonitorAgentKey(Base):
             "id": self.id,
             "serverId": self.server_id,
             "apiKey": "***" + self.hashed_key[-8:],
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "createdAt": iso_utc(self.created_at),
         }
 
 
@@ -321,14 +321,14 @@ class MonitorMaintenance(Base):
             "serverId": self.server_id,
             "note": self.note,
             "kind": self.kind,
-            "startsAt": self.starts_at.isoformat() if self.starts_at else None,
-            "endsAt": self.ends_at.isoformat() if self.ends_at else None,
+            "startsAt": iso_utc(self.starts_at),
+            "endsAt": iso_utc(self.ends_at),
             "weekdays": json.loads(self.weekdays) if self.weekdays else [],
             "startTime": self.start_time,
             "durationMinutes": self.duration_minutes,
             "timezone": self.timezone,
             "enabled": self.enabled,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "createdAt": iso_utc(self.created_at),
         }
 
 

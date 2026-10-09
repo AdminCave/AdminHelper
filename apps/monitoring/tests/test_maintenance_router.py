@@ -82,9 +82,9 @@ def test_aware_datetimes_normalize_to_naive_utc(client_db):
     )
     assert created.status_code == 201
     body = created.json()
-    # +02:00 wall time stored as naive UTC.
-    assert body["startsAt"] == "2026-07-19T12:00:00"
-    assert body["endsAt"] == "2026-07-19T14:00:00"
+    # +02:00 wall time stored as naive UTC, and answered as UTC with Z (R-0202).
+    assert body["startsAt"] == "2026-07-19T12:00:00Z"
+    assert body["endsAt"] == "2026-07-19T14:00:00Z"
 
 
 # One minute of offset is enough to push the UTC conversion past year 1 or 9999.
@@ -109,4 +109,4 @@ def test_a_naive_year_one_stays_valid(client_db):
     client, _ = client_db
     created = client.post("/maintenance", json=_once(starts_at="0001-01-01T00:00:00"))
     assert created.status_code == 201
-    assert created.json()["startsAt"] == "0001-01-01T00:00:00"
+    assert created.json()["startsAt"] == "0001-01-01T00:00:00Z"

@@ -52,7 +52,7 @@
             <li><code>lastUsed</code> einer Connection ist ein gespeicherter String und kommt so zur&uuml;ck, wie er geschrieben wurde &ndash; der Server selbst schreibt <code>+00:00</code>, ein Client kann den Wert frei setzen.</li>
             <li><code>lastStartTime</code>/<code>lastCloseTime</code> von <code>GET /api/frp/status</code> reicht der Server unver&auml;ndert von frps durch (etwa <code>09-27 10:00:00</code>, ohne Jahr und Zone).</li>
             <li>Das <code>result</code> von <code>POST /api/hooks/{id}/run</code> und <code>/api/hooks/trigger</code> ist, was das Skript zur&uuml;ckgibt.</li>
-            <li>Die Antworten unter <code>/api/monitoring/*</code> reicht der Proxy unver&auml;ndert vom Monitoring-Dienst durch.</li>
+            <li><code>data</code> und <code>statusHistory</code> von <code>GET /api/monitoring/checks/{id}/metrics</code> sind Reihen aus VictoriaMetrics; ihre Werte sind Paare <code>[epoch, "wert"]</code> mit der Zeit in Unix-Sekunden.</li>
           </ul>
 
           <h2>Auth</h2>
