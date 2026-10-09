@@ -278,6 +278,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Login nennt das fehlende Geraete-Zertifikat (R-0222):** Unter erzwungenem mTLS weist das
+  Gateway ein Geraet ohne Zertifikat schon vor dem Login mit 400 ab; der Login zeigte bisher nur
+  „Login fehlgeschlagen (400 Bad Request)“ samt Fehlerseite. Jetzt sagt er, dass der Server ein
+  Geraete-Zertifikat verlangt, und fuehrt per Knopf zum Formular fuer den Einmal-Token. Jede andere
+  Login-Meldung bleibt, wie sie war.
 - **Desktop: Registrieren ueber eine vorhandene Identitaet ohne unpassendes Paar (R-0220):** Wer sich
   mit einem neuen Einmal-Token registrierte, waehrend noch eine Identitaet im Keyring lag, bekam erst
   den neuen Schluessel und danach das Zertifikat geschrieben; ein Abbruch dazwischen liess den neuen

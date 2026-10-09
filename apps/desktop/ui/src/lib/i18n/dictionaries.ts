@@ -300,6 +300,8 @@ export const translations: Translations = {
     'login.signingIn': 'Anmelden…',
     'login.signIn': 'Anmelden',
     'login.enroll.switch': 'Gerät mit Token registrieren',
+    'login.mtlsRequired':
+      'Der Server verlangt ein Geräte-Zertifikat (mTLS ist erzwungen). Registriere dieses Gerät mit einem Einmal-Token vom Admin.',
     'login.enroll.token': 'Enrollment-Token',
     'login.enroll.token.placeholder': 'Token vom Administrator',
     'login.enroll.submit': 'Gerät registrieren',
@@ -898,6 +900,8 @@ export const translations: Translations = {
     'login.signingIn': 'Signing in…',
     'login.signIn': 'Sign in',
     'login.enroll.switch': 'Enroll this device with a token',
+    'login.mtlsRequired':
+      'The server requires a device certificate (mTLS is enforced). Enroll this device with a one-time token from your administrator.',
     'login.enroll.token': 'Enrollment token',
     'login.enroll.token.placeholder': 'Token from your administrator',
     'login.enroll.submit': 'Enroll device',

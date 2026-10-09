@@ -126,8 +126,10 @@ Test in `auth.rs` (Teststrategie der Aufsicht: Unit-Tests reichen):
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (die sichtbare Wirkung beschreibt T5)
 
-### T5 — R-0222: Der Login zeigt bei `ERR_MTLS_CERT_REQUIRED` Hinweis und Knopf zum Token-Formular  [ ]
+### T5 — R-0222: Der Login zeigt bei `ERR_MTLS_CERT_REQUIRED` Hinweis und Knopf zum Token-Formular  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Login.mtls.test.ts, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @0e48d912 2026-10-09T13:23:13+02:00
+Review: approve (opus) · round 1
 Änderung (F6): `surfaceError` (`Login.svelte:133`) erkennt `ERR_MTLS_CERT_REQUIRED` wie schon `ERR_TLS_UNKNOWN_ISSUER`
 (`:135`).
 - Statt des rohen Texts zeigt es den Hinweis `login.mtlsRequired` (DE und EN): Der Server verlangt ein
