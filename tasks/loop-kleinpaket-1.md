@@ -63,8 +63,10 @@ steht.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Kopf von ledger-loop.sh)
 
-### T2 — `ledger_rest` trennt nur an `\n` (R-0251)  [ ]
+### T2 — `ledger_rest` trennt nur an `\n` (R-0251)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4717d016 2026-10-09T20:43:59+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `ledger_rest` (`ledger-loop.sh:612`) zerlegt den Text mit `re.split(r"(?<=\n)", text)` statt mit `splitlines(True)`.
   So endet eine Zeile dort, wo sie auch für sed und awk des Loops endet (`next_task`, `task_box`).

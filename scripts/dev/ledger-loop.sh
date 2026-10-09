@@ -609,7 +609,10 @@ text = open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape")
 # \r at a line end is a change like any other, and would hide a task from the line tools.
 if not text.endswith("\n"):
     text += "\n"
-for line in text.splitlines(True):
+# Lines end at \n only, where sed and awk of this loop end them (next_task, task_box):
+# splitlines() also splits at \x0b, \x0c, \x1c-\x1e, \x85 and U+2028/9 and would read
+# a heading inside a line of the session's own task (R-0251).
+for line in re.split(r"(?<=\n)", text):
     if re.match(r"(###|##)\s", line):
         skip = bool(re.match(r"###\s+%s(\s|$)" % re.escape(tid), line))
     if not skip:

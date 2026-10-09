@@ -181,6 +181,10 @@ for x in nnf nnl; do
   if [ "$x" = nnl ]; then H=("Status: aktiv · Branch: feature/nnl · Review: auto" "${OKHEAD[@]:1}"); else mapfile -t H < <(head_for nnf); fi
   EXTRA="printf '\\n### T2 — die letzte  [ ]\\nKomponente: scripts · Dateien: apps/x/b.py\\nÄnderung: ohne Schluss-Newline' >> \"\$SEED/tasks/$x.md\"" plan "feature/$x" "$x" "${H[@]}"
 done
+# A line of T1 that carries U+2028 and a heading after it (R-0251): one line for the
+# loop's line tools, so no task of its own.
+mapfile -t H < <(head_for nls)
+plan feature/nls nls "${H[@]}"
 mapfile -t H < <(head_for ncr)
 EXTRA='printf "\n### T2 — eine andere  [ ]\nKomponente: scripts · Dateien: apps/x/b.py\nÄnderung: y\n" >> "$SEED/tasks/ncr.md"' plan feature/ncr ncr "${H[@]}"
 # A Freigabe: line in a task's text is no approval of the ledger.
@@ -277,6 +281,7 @@ case "$mode" in
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   wait) echo "$$" > "${FIXTURE_SPID:?}"; exec sleep 30 ;;
   cr) sed -i '/^### T2 /s/$/\r/' "tasks/$slug.md"; msg ;;
+  ls) sed -i '/^Änderung: x$/s/$/\xe2\x80\xa8### T2 — eine andere  [ ]/' "tasks/$slug.md"; msg ;;
   orphan)
     setsid sleep 30 < /dev/null > /dev/null 2>&1 & echo "$!" > "${FIXTURE_ORPHAN:?}"
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
@@ -793,6 +798,10 @@ for x in nnf nnl; do
     && ok "$x: a ledger without a final newline: the loop's commits and set-files of T1 are no change outside T1" \
     || bad "$x: $(result "$x")"
 done
+seq_set ls
+loop --ledger tasks/nls.md
+grep -q '^bereit' <<<"$(result nls)" && [ "$(box nls)" = x ] \
+  && ok "a U+2028 and a heading inside a line of the session's own task: still its own task" || bad "nls: $(result nls)"
 # ... and nothing else is evened out: a carriage return in another task's line is a change.
 seq_set cr
 loop --ledger tasks/ncr.md
