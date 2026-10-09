@@ -26,8 +26,10 @@ Entwurf:
 - R-0255: `lane.sh lane_db` bricht ab, wenn nach dem Zerlegen noch `user:password@` in der URL steht. Weder
   createdb noch dropdb laufen, und die Meldung nennt den Wert nicht. So hält es schon `builder-home.sh` `pg`.
 
-### T1 — Die Reviewer-Kosten kommen aus einer Datei des Loops, nicht aus der letzten Zeile des Close-Logs (R-0250)  [ ]
+### T1 — Die Reviewer-Kosten kommen aus einer Datei des Loops, nicht aus der letzten Zeile des Close-Logs (R-0250)  [x]
 Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/dev/ledger-loop.sh, scripts/tests/task_close_test.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0ed0578e 2026-10-09T20:27:18+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `task-close.sh` nimmt `--cost-file <pfad>`. Nach einem Reviewer-Lauf mit Verdict (`:432`) schreibt es dieselbe Zeile
   `review cost_usd=<x|unknown> round=<n>` auch in diese Datei: neu angelegt bzw. abgeschnitten. Ohne das Flag

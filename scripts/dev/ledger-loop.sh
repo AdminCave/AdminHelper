@@ -77,8 +77,8 @@
 # checkout; push and PR stay his.
 #
 # The run's caps, counted in this process: --max-hours and --max-budget-usd (the
-# total_cost_usd of the sessions and of the reviewers, whose cost task-close prints
-# in its own output; an unknown cost counts with its cap) at every task boundary and between the iterations of a
+# total_cost_usd of the sessions and of the reviewers, whose cost task-close writes
+# to a file the loop names; an unknown cost counts with its cap) at every task boundary and between the iterations of a
 # task, --max-tasks and --max-ready (ledgers bereit in this run: Kevin's queue) at
 # the boundary; a running session is ended only by its own caps. Stop classes:
 # ledger-leer, max-hours, max-budget, max-tasks, kevin-queue, usage-limit, infra,
@@ -848,30 +848,34 @@ t["sessions"] += 1; t["turns"] += int(a[2]); t["denials"] += int(a[3]); t["cost_
 # close_task <lane> <slug> <id> <round> <n> — task-close for this round, retried
 # once on 74 (only the close, no new session); sets CLOSE (its log), returns its exit.
 close_task() {
-  local wt="$1" slug="$2" id="$3" round="$4" n="$5" ledger="tasks/$2.md" try p pre rc rcost
+  local wt="$1" slug="$2" id="$3" round="$4" n="$5" ledger="tasks/$2.md" try p pre rc rcost COSTF
   for try in 1 2; do
     p="$(lane_harness_changed "$wt")"
     [ -z "$p" ] || { cleanup_lane "$wt" "$slug" "$id"; tampered "$slug $id changed the harness path $p"; }
     clone_ok; claude_ok
     pre="$(git -C "$wt" rev-parse HEAD)"
-    CLOSE="$LOOP/$slug/$id.close.r$round.$n.$try.log"
+    CLOSE="$LOOP/$slug/$id.close.r$round.$n.$try.log" COSTF="$LOOP/$slug/$id.cost.r$round.$n.$try"
+    rm -f "$COSTF"
     # The close runs the session's code too (its tests): what that leaves goes as well.
     (cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.c$round.$n.$try" bash scripts/dev/task-close.sh "$ledger" "$id" \
-       --stage --review auto --round "$round" --message-file "$wt/$(msg_path "$slug" "$id")") > "$CLOSE" 2>&1
+       --stage --review auto --round "$round" --message-file "$wt/$(msg_path "$slug" "$id")" \
+       --cost-file "$COSTF") > "$CLOSE" 2>&1
     rc=$?
     reap_session "$$.$slug.$id.c$round.$n.$try" "$slug" "$id"
     log "$slug $id close (round $round, try $try): exit $rc"
     clone_ok
-    # The reviewer's cost from task-close's line in the log this loop opened; the
-    # suite's output comes before it, so the last such line counts.
+    # The reviewer's cost from the file task-close wrote for this close, not from
+    # the log: the suite writes there too, and whatever it leaves running keeps
+    # doing so until the reap (R-0250). Under one UID that is no hard border — a
+    # process that finds the file's path can write it as well.
     # Unknown spend counts with its cap, never as 0 (R-0190, R-0191): a reviewer
-    # that gave no usable verdict — whatever line the suite printed before —, a cost
-    # task-close calls `unknown`, and a round whose reviewer ran (its raw output is
-    # there) without a cost line. A close that never reached the reviewer costs none.
+    # that gave no usable verdict, a cost task-close calls `unknown`, and a round
+    # whose reviewer ran (its raw output is there) without a cost file. A close
+    # that never reached the reviewer costs none.
     if grep -q '^task-close: the reviewer gave no usable verdict' "$CLOSE"; then
       rcost="$REVIEW_BUDGET_MAX"
     else
-      rcost="$(sed -nE 's/^review cost_usd=([0-9][0-9.]*|unknown) round=[12]$/\1/p' "$CLOSE" | tail -n 1)"
+      rcost="$(sed -nE 's/^review cost_usd=([0-9][0-9.]*|unknown) round=[12]$/\1/p' "$COSTF" 2>/dev/null | head -n 1)"
       [ "$rcost" != unknown ] || rcost="$REVIEW_BUDGET_MAX"
       [ -n "$rcost" ] || [ ! -e "$wt/.ah-out/review/$slug/$id.r$round.raw.json" ] || rcost="$REVIEW_BUDGET_MAX"
     fi

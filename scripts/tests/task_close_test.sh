@@ -770,6 +770,19 @@ grep -qF "$(cd "$FIX" && git show HEAD:scripts/dev/tool.sh | tail -n 1)" "$STUB_
 grep -qx 'review cost_usd=0.4 round=1' <<<"$OUT" \
   && ok "the reviewer's cost is a line of task-close's own output, for the worker's budget" || bad "no cost line: $OUT"
 reset_repo
+# R-0250: the worker counts from a file it names, not from this output, which the
+# suite shares.
+mk_auto; touch_tool
+STUB=approve c auto T1 -m "refactor: tool" --review auto --cost-file "$WORK/cost.ok"
+[ $rc -eq 0 ] && [ "$(cat "$WORK/cost.ok" 2>/dev/null)" = 'review cost_usd=0.4 round=1' ] \
+  && grep -qx 'review cost_usd=0.4 round=1' <<<"$OUT" \
+  && ok "--cost-file: the same cost line in the worker's file, and still in the output" || bad "cost file: rc=$rc $(cat "$WORK/cost.ok" 2>&1)"
+reset_repo
+mk_auto; touch_tool
+STUB=approve STUB_NOCOST=1 c auto T1 -m "refactor: tool" --review auto --cost-file "$WORK/cost.unknown"
+[ $rc -eq 0 ] && [ "$(cat "$WORK/cost.unknown" 2>/dev/null)" = 'review cost_usd=unknown round=1' ] \
+  && ok "--cost-file: a verdict without a cost writes 'unknown' there too" || bad "cost file unknown: rc=$rc $(cat "$WORK/cost.unknown" 2>&1)"
+reset_repo
 # R-0190: a verdict without a cost says so; 0 would count as free in the worker's budget.
 mk_auto; touch_tool
 STUB=approve STUB_NOCOST=1 c auto T1 -m "refactor: tool" --review auto
@@ -843,6 +856,11 @@ STUB=fail c auto T1 -m "refactor: tool" --review auto
   && ok "a reviewer that does not start -> exit 74, nothing committed, no verdict, no cost line" || bad "auto fail: rc=$rc out=$OUT"
 grep -q '"verdict": "failed", "reason": "review-run.sh: the CLI gave no JSON' "$FIX/.ah-out/review/review-log.jsonl" 2>/dev/null \
   && ok "and the failed round is in the log with its reason" || bad "failed log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
+reset_repo
+mk_auto; touch_tool
+STUB=fail c auto T1 -m "refactor: tool" --review auto --cost-file "$WORK/cost.fail"
+[ $rc -eq 74 ] && [ ! -e "$WORK/cost.fail" ] \
+  && ok "a reviewer that does not start writes no cost file either" || bad "cost file after fail: rc=$rc $(cat "$WORK/cost.fail" 2>&1)"
 reset_repo
 
 # R-0167: where the reviewer is task-close's own process, no other verdict counts.

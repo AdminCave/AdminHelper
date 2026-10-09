@@ -75,9 +75,9 @@ FAKE
 cat > "$SEED/scripts/dev/task-close.sh" <<'FAKE'
 #!/usr/bin/env bash
 ledger="$1" id="$2"; shift 2
-round="" msgf=""
+round="" msgf="" costf=""
 while [ $# -gt 0 ]; do
-  case "$1" in --round) round="$2"; shift ;; --message-file) msgf="$2"; shift ;; esac
+  case "$1" in --round) round="$2"; shift ;; --message-file) msgf="$2"; shift ;; --cost-file) costf="$2"; shift ;; esac
   shift
 done
 echo "$ledger $id round=$round" >> "${FIXTURE_CLOG:?}"
@@ -85,9 +85,16 @@ echo "$ledger $id round=$round" >> "${FIXTURE_CLOG:?}"
 rc=0
 if [ -s "${FIXTURE_CSEQ:-}" ]; then rc="$(head -n 1 "$FIXTURE_CSEQ")"; sed -i 1d "$FIXTURE_CSEQ"; fi
 slug="$(basename "$ledger" .md)"
-# With FIXTURE_RCOST a reviewed round prints its cost as the real one does, after a
-# line of the same shape from the suite (the last one counts).
-rcost() { [ -z "${FIXTURE_RCOST:-}" ] || printf 'review cost_usd=0 round=%s\nreview cost_usd=%s round=%s\n' "$round" "$FIXTURE_RCOST" "$round"; }
+# With FIXTURE_RCOST a reviewed round prints its cost and writes it to the loop's
+# cost file, as the real one does. Around it the log gets a line of the same shape
+# from the suite before and one from a process the suite left running after: the
+# log is no source of the cost (R-0250).
+rcost() {
+  [ -n "${FIXTURE_RCOST:-}" ] || return 0
+  printf 'review cost_usd=0 round=%s\n' "$round"
+  printf 'review cost_usd=%s round=%s\n' "$FIXTURE_RCOST" "$round" | tee "${costf:-/dev/null}"
+  printf 'review cost_usd=0 round=%s\n' "$round"
+}
 case "$rc" in
   0|74a)
     # FIXTURE_RAW: the reviewer ran (its raw output is there), but no cost line follows.
@@ -676,6 +683,9 @@ FIXTURE_RCOST=0.5 loop --ledger tasks/rca.md --ledger tasks/rcb.md --max-budget-
   && grep -q '^ledger-loop: 1 tasks, 1 ready, 0 blocked, \$1.50 total, stop: max-budget$' <<<"$(summary_line)" \
   && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"]["rca/T1"]["review_usd"])' "$LOOPD/state.json")" = 1.0 ] \
   && ok "two reviewer rounds count into the run's budget: 1.5 \$, stop: max-budget" || bad "rca: rc=$rc $(stopped) | $(summary_line)"
+[ "$(cat "$LOOPD"/rca/T1.cost.r* 2>/dev/null)" = $'review cost_usd=0.5 round=1\nreview cost_usd=0.5 round=2' ] \
+  && ok "a cost file per close, and the count comes from it, not from a late line in the log" \
+  || bad "rca cost files: $(ls "$LOOPD/rca")"
 # A cost below 0 or NaN is no known cost: it counts with the session's cap.
 seq_set negcost nancost -- 0 0
 loop --ledger tasks/ng1.md --ledger tasks/ng2.md --ledger tasks/ng3.md --task-budget 1 --max-budget-usd 1.5 --max-ready 9
@@ -801,7 +811,7 @@ FIXTURE_SUITECOST=1 loop --ledger tasks/rvz.md
 seq_set build -- 0
 FIXTURE_RAW=1 loop --ledger tasks/rrw.md
 [ "$(box rrw)" = x ] && [ "$(review_usd rrw/T1)" = 15.0 ] \
-  && ok "a reviewer that ran without a cost line counts 15 \$" || bad "rrw: $(review_usd rrw/T1) $(result rrw)"
+  && ok "a reviewer that ran without a cost file counts 15 \$" || bad "rrw: $(review_usd rrw/T1) $(result rrw)"
 seq_set build -- 0
 loop --ledger tasks/rnr.md
 [ "$(box rnr)" = x ] && [ "$(review_usd rnr/T1)" = 0 ] \
