@@ -1188,6 +1188,68 @@ Push und Draft-PR sind danach Kevins bzw. der Aufsicht Handgriff (Text aus
   `/srv/ah/loop/<slug>/harness-modified`: erst wenn Kevin sie nach dem Ansehen entfernt, baut ein
   neuer Lauf es wieder.
 
+#### Das Builder-Profil: der Loop unter Kevins Benutzer
+
+Solange der Runner ruht, laeuft der Loop unter Kevins UID mit einem eigenen HOME, dem Builder unter
+`~/.cache/ah-builder`: `home/` fuer die Sessions, `repo/` als Klon (die Lanes daneben), `loop/` fuer
+den Stand. Einrichten, ohne sudo, einmal und danach nach jeder Aenderung an den Runner-Settings oder an
+der Harness auf `main`; die Stopp-Meldung „Harness auf main geaendert … Pull + Red Team durch Kevin“
+heisst beim Builder: `setup`. Voraussetzung ist, was `sudo bash scripts/dev/runner-setup.sh`
+hinterlegt: die Pruefsumme der CLI (`/var/lib/adminhelper-dev/runner-claude.sha256`), die root-eigene
+Kopie des Waechters, die der Hook der Settings ruft (`/usr/local/lib/adminhelper-dev/harness-guard.sh`),
+und die geteilte Python-Sperre. Nach einer Aenderung an `runner-claude.version` oder an
+`scripts/dev/hooks/harness-guard.sh` deshalb zuerst `runner-setup.sh`, dann `setup`:
+
+```bash
+bash scripts/dev/builder-home.sh setup     # idempotent: was schon stimmt, bleibt
+bash scripts/dev/builder-home.sh token     # claude setup-token, dann das Token verdeckt einfuegen
+bash scripts/dev/builder-home.sh status    # nennt, was fehlt (Exit 1)
+```
+
+`setup` legt die Verzeichnisse mit 0700 an, installiert die CLI aus `runner-claude.version` des
+Checkouts, in dem `setup` laeuft (vorher auf `main` pullen, wie fuer `runner-setup.sh`), ins
+Builder-HOME (mit Abgleich gegen die Pruefsumme, die `runner-setup.sh` schrieb; eine Abweichung ist
+nur eine `note`, der Loop endet dann in der Vorpruefung mit `stop: infra`), zieht den Klon auf
+`origin/main` vor (`pushurl=/dev/null`, `core.hooksPath`), schreibt die Settings aus der
+`runner-settings.json` des Klons, ein Tools-venv (`ruff` wie `runner-setup.sh`, `python3` als Wrapper
+auf das venv), eine eigene Test-DB `adminhelper_builder` auf dem Server des Haupt-Checkouts,
+`.devenv.sh` (0600) und die Git-Identitaet. `oauth.env` schreibt nur `token`, und nur ein Token der Form
+`sk-ant-oat01-…`; der Code, den der Browser unterwegs zeigt, ist keins.
+
+**Starten** (nur Kevin; die Ledger in seiner Reihenfolge, die Deckel wie oben) und **Stand lesen**:
+
+```bash
+bash scripts/dev/ledger-loop.sh start --profile kevin --ledger tasks/<a>.md --max-hours 8 --max-budget-usd 200
+bash scripts/dev/ledger-loop.sh status --profile kevin
+```
+
+`start` prueft `builder-home.sh status`, verweigert neben einer schon laufenden tmux-Session
+`ah-builder` und startet darin den Loop des Klons mit `env -i` (nur `HOME`, `PATH`, `LANG`, `USER`,
+`LOGNAME`, `TERM`, `AH_LOOP_DIR`: kein SSH-Agent, keine D-Bus-Adresse, kein Proxmox-Token) und
+`</dev/null`. Die Ausgabe steht in `~/.cache/ah-builder/loop/builder.log`, der Exit-Code am Ende in
+`builder.done` (`rc=<n>`). Was oben unter `/srv/ah/loop` steht (Logs je Ledger, `pr-body.md`, Bundle),
+liegt beim Builder unter `~/.cache/ah-builder/loop`, die Lanes neben `~/.cache/ah-builder/repo`.
+
+**Die Sperrregeln und ihre Grenze.** Die Settings des Builders sind die des Runners, die Lane-Regeln
+(`//srv/ah/…`) auf das Builder-Verzeichnis umgeschrieben. Dazu kommen absolute Deny-Regeln (`//<pfad>`,
+denn `~/` meint in einer Session das Builder-HOME) fuer die privaten Verzeichnisse in Kevins HOME
+(`~/.ssh`, `~/.config/gh`, `~/.claude` und `~/.claude.json`, `~/.config/adminhelper`, die Keyrings,
+`~/.gnupg`) und fuer `tasks/private` und `.claude/settings.local.json` jedes Checkouts; dazu Deny fuer
+die Befehle `ssh` und `docker`. Sie halten die eingebauten Werkzeuge der Session (Read, Edit, Write,
+Grep, Glob), die Datei-Befehle, die Claude Code in Bash erkennt (`cat`, `head`, `tail`, `sed`, `tee`),
+soweit sie die Datei nennen, und die Ziele von Umleitungen. Sie halten kein Programm, das Dateien
+selbst oeffnet — ein Testskript unter `pytest` oder `npm run` ebenso wie einen Befehl, den Claude Code
+nicht als Datei-Befehl kennt: die Session laeuft unter Kevins UID, und was ein solches Programm tut,
+sieht keine Regel. Dieses Restrisiko hat Kevin hingenommen; eine harte Grenze gaebe erst eine eigene
+UID oder die Sandbox der CLI.
+
+**Wartezeit:** `server-pytest` und `schemathesis` nehmen die gemeinsame Python-Sperre
+(`/var/lib/adminhelper-dev/py.lock`). Laeuft daneben eine andere Server-Suite (Haupt-Checkout, eine
+Lane), wartet schon die Grundlage, der `verify.sh`-Lauf vor der ersten Task, dort
+(`loop/<slug>/fundament.log`: `waiting for the shared python lock`); im ersten Messlauf 10–38 Minuten.
+Nach `AH_PY_LOCK_WAIT` (3600 s) ist der Schritt ein SKIP; bei `server-pytest`, einem Pflicht-Schritt
+des Builders, macht `--strict` die Grundlage rot.
+
 ### Go Toolchain (Agent)
 
 ```bash

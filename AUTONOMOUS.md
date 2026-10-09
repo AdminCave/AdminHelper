@@ -248,7 +248,9 @@ nicht, setzt keinen Haken und ändert ein Ledger nur über `ledger.sh` (`mark-sk
 die Task `[?]`. Danach entscheidet allein der Loop: Er schließt mit `task-close.sh --review auto
 --round <n>`; bei Exit 3 gibt es **eine** zweite Session mit `--fix` (Runde 2, wenn die erste ein Verdict
 hatte — eine rote Suite oder ein Diff-Scan-Fund schreibt keins, dann bleibt es Runde 1), ein zweites 3 wird
-`[?]` mit dem ersten Blocker; 4 wird `[?]`; 74 wird einmal wiederholt, dann `stop: infra`. Eine
+`[?]` mit der Schwere und der Datei des ersten `blocker` (sonst des ersten `wichtig`) und dem Pfad des
+Verdicts, ohne passendes Verdict mit dem Pfad des Close-Logs; 4 wird `[?]`; 74 wird einmal wiederholt,
+dann `stop: infra`. Eine
 Session über Zeit, Turns oder Budget wird `[?] timeout|turns|budget`, ein anderer Fehler
 `[?] error`, zwei Iterationen ohne Fortschritt mit byte-gleichem Ledger `[?] stall`; ein API-Fehler
 oder eine Session ohne JSON ist dagegen ein Ausfall: `stop: infra`, die Task bleibt offen. Ein `[?]`
@@ -291,6 +293,16 @@ Red Team prüft diese Grenzen. Code, den eine Session schreibt, läuft aber übe
 Rechten des Runners: Was er hinter dem Loop ändert, **erkennt** der Loop nachträglich und hält an,
 verhindern kann er es nicht. Die Spec nennt die bewusst offenen Stellen
 ([`docs/features/stufe-7a.md`](docs/features/stufe-7a.md), „Verdicts im Runner“).
+
+**Builder-Profil** (Team-Plan 4b). Solange der Runner ruht, startet Kevin den Loop unter seinem
+Benutzer mit einem eigenen HOME: `bash scripts/dev/builder-home.sh setup` (und einmal `token`) richtet
+es unter `~/.cache/ah-builder` ein, `bash scripts/dev/ledger-loop.sh start --profile kevin --ledger …`
+startet den Loop des Builder-Klons in der tmux-Session `ah-builder` mit `env -i` und `</dev/null`,
+`status --profile kevin` liest seinen Stand. Die Settings sind die des Runners, dazu Sperren mit
+absolutem Pfad für die privaten Verzeichnisse in Kevins HOME (`~/.ssh`, `~/.config/gh`, `~/.claude`,
+`~/.config/adminhelper`, …) und die privaten Dateien jedes Checkouts. Sie halten die Werkzeuge der
+Session, soweit sie die Datei nennen, nicht ein Programm, das Dateien selbst öffnet (`DEVELOPMENT.md`,
+„Das Builder-Profil“).
 
 **Pilot.** Den ersten echten Lauf fährt Kevin nach dem Merge mit einem kleinen Übungs-Ledger
 (`--max-hours 2`, abends, nach einem Blick auf `/usage`); vorher Setup, Pull und Red Team wie nach

@@ -30,6 +30,9 @@ command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not available"; exit
 command -v flock >/dev/null 2>&1 || { echo "SKIP: flock not available"; exit 75; }
 # The suite runs this file from inside run.sh, which exports these for its own run.
 unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV AH_AUTONOMOUS CLAUDE_PROJECT_DIR
+# And a loop's own overrides: an inherited AH_LOOP_REPO pointed every case at the real
+# clone (R-0231); each case sets what it needs.
+unset "${!AH_LOOP_@}"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 export TMPDIR="$WORK/tmp"; mkdir -p "$TMPDIR"
@@ -87,6 +90,8 @@ slug="$(basename "$ledger" .md)"
 rcost() { [ -z "${FIXTURE_RCOST:-}" ] || printf 'review cost_usd=0 round=%s\nreview cost_usd=%s round=%s\n' "$round" "$FIXTURE_RCOST" "$round"; }
 case "$rc" in
   0|74a)
+    # FIXTURE_RAW: the reviewer ran (its raw output is there), but no cost line follows.
+    [ -z "${FIXTURE_RAW:-}" ] || { mkdir -p ".ah-out/review/$slug" && : > ".ah-out/review/$slug/$id.r$round.raw.json"; }
     files="$(awk -v id="$id" '$0 ~ "^###[ \t]+" id "([ \t]|$)" { t = 1; next } t && /^###/ { exit }
       t && /Dateien:/ { sub(/.*Dateien:[ \t]*/, ""); gsub(/,/, " "); print; exit }' "$ledger")"
     # shellcheck disable=SC2086
@@ -107,7 +112,8 @@ case "$rc" in
       "$round" > ".ah-out/review/$slug/$id.r$round.verdict.json"
     rcost; echo "task-close: round $round gave no usable approve"; exit 3 ;;
   4) echo "task-close: blocked — the diff leaves the task's scope"; exit 4 ;;
-  74r) echo "task-close: the reviewer gave no usable verdict (review-run.sh exit 74)"; exit 74 ;;
+  74r) [ -z "${FIXTURE_SUITECOST:-}" ] || echo "review cost_usd=0 round=$round"
+       echo "task-close: the reviewer gave no usable verdict (review-run.sh exit 74)"; exit 74 ;;
   4x)
     # The real one refuses at the sec check after mark-done: [x] and the ledger staged.
     bash scripts/dev/ledger.sh mark-done "$ledger" "$id" --evidence "stub run" > /dev/null || exit 74
@@ -149,7 +155,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp ruk rvz rrw rnr stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -161,6 +167,15 @@ EXTRA='printf "\n### T2 — offen  [?] (eine Frage)\nKomponente: scripts · Date
 # A lane whose ignore pattern for .ah-out also matches a link (no trailing slash).
 mapfile -t H < <(head_for ahl2)
 EXTRA='printf ".ah-out\n.vm/\n" > "$SEED/.gitignore"' plan feature/ahl2 ahl2 "${H[@]}"
+# A ledger whose last line, of another task, has no final newline (R-0191): nnf comes
+# freigegeben, so the loop's own aktiv commit is the first to add the newline; nnl comes
+# aktiv already (a lane continued), so the session's set-files is.
+for x in nnf nnl; do
+  if [ "$x" = nnl ]; then H=("Status: aktiv · Branch: feature/nnl · Review: auto" "${OKHEAD[@]:1}"); else mapfile -t H < <(head_for nnf); fi
+  EXTRA="printf '\\n### T2 — die letzte  [ ]\\nKomponente: scripts · Dateien: apps/x/b.py\\nÄnderung: ohne Schluss-Newline' >> \"\$SEED/tasks/$x.md\"" plan "feature/$x" "$x" "${H[@]}"
+done
+mapfile -t H < <(head_for ncr)
+EXTRA='printf "\n### T2 — eine andere  [ ]\nKomponente: scripts · Dateien: apps/x/b.py\nÄnderung: y\n" >> "$SEED/tasks/ncr.md"' plan feature/ncr ncr "${H[@]}"
 # A Freigabe: line in a task's text is no approval of the ledger.
 mapfile -t H < <(head_for bodyfreig)
 EXTRA='printf "Freigabe: im Text einer Task\n" >> "$SEED/tasks/bodyfreig.md"' plan feature/bodyfreig bodyfreig "${H[0]}" "${H[2]}"
@@ -169,7 +184,7 @@ git clone -q "$ORIGIN" "$CLONE"
 # The runner's world: a HOME with its token file, a claude that answers version and auth.
 FHOME="$WORK/home"; mkdir -p "$FHOME/.config/adminhelper" "$FHOME/.local/bin"
 chmod 700 "$FHOME/.config/adminhelper"
-printf 'CLAUDE_CODE_OAUTH_TOKEN=fixture-token\n' > "$FHOME/.config/adminhelper/oauth.env"
+printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture\n' > "$FHOME/.config/adminhelper/oauth.env"
 chmod 600 "$FHOME/.config/adminhelper/oauth.env"
 # The runner's own hypervisor token, as runner-env.sh reads it (a fixture value).
 printf 'AH_PVE_TOKEN_SECRET=fixture-pve\nAH_PVE_TOKEN_ID=fixture@pve!run\n' > "$FHOME/.config/adminhelper/pve.env"
@@ -186,11 +201,13 @@ chmod 600 "$FHOME/.config/adminhelper/pve.env"
 # refmove (a harness change and a ref origin/main that already holds it), linger (a
 # child that outlives the loop with stdout and stderr closed, as git maintenance
 # --detach does, then skip), wait (records its pid and sleeps: a session the loop dies
-# under).
+# under), orphan (leaves a sleeper with a session of its own behind, then skip), cr
+# (puts a carriage return at the end of the T2 heading, another task's line).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
 [ -z "${FIXTURE_CLILOG:-}" ] || echo "$1" >> "$FIXTURE_CLILOG"
+[ -z "${FIXTURE_STDINLOG:-}" ] || echo "$1 $(readlink /proc/self/fd/0)" >> "$FIXTURE_STDINLOG"
 case "$1" in
   --version) echo "${FIXTURE_CLAUDE_VERSION:-$(cat "$FIXTURE_PIN")} (Claude Code)"; exit 0 ;;
   auth) printf '{"loggedIn": true, "authMethod": "%s"}\n' "${FIXTURE_AUTH:-oauth_token}"; exit 0 ;;
@@ -247,9 +264,15 @@ case "$mode" in
     git add -- scripts/dev/ledger.sh && c="$(git commit-tree "$(git write-tree)" -p HEAD -m moved)" \
       && git update-ref refs/remotes/origin/main "$c" && git reset -q ;;
   linger)
-    ( exec < /dev/null > /dev/null 2>&1; exec sleep 30 ) & echo "$!" > "${FIXTURE_LINGER:?}"
+    # Without the session's mark, like the git maintenance a ledger commit of the loop
+    # itself leaves behind: the loop does not end it, and its lock still must not stay.
+    ( exec < /dev/null > /dev/null 2>&1; exec env -u AH_LOOP_SESSION sleep 30 ) & echo "$!" > "${FIXTURE_LINGER:?}"
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   wait) echo "$$" > "${FIXTURE_SPID:?}"; exec sleep 30 ;;
+  cr) sed -i '/^### T2 /s/$/\r/' "tasks/$slug.md"; msg ;;
+  orphan)
+    setsid sleep 30 < /dev/null > /dev/null 2>&1 & echo "$!" > "${FIXTURE_ORPHAN:?}"
+    bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   mlink)
     mkdir -p .ah-out/scratch/m.1 && ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" .ah-out/scratch/m.1/.ah-scratch
     printf '{"type": "result", "subtype": "error_during_execution", "is_error": true}\n'; exit 1 ;;
@@ -341,12 +364,25 @@ seq_set wait
     bash scripts/dev/ledger-loop.sh --ledger tasks/sig.md > "$WORK/sig.out" 2>&1 ) & SIGLOOP=$!
 for _ in $(seq 1 300); do [ -s "$FIXTURE_SPID" ] && break; sleep 0.1; done
 SPID="$(cat "$FIXTURE_SPID" 2>/dev/null)"
-kill -HUP "$SIGLOOP"; wait "$SIGLOOP" 2>/dev/null
+kill -HUP "$SIGLOOP" 2>/dev/null; wait "$SIGLOOP" 2>/dev/null
 loop --ledger tasks/sig.md
 [ -n "$SPID" ] && kill -0 "$SPID" 2>/dev/null && [ $rc -eq 74 ] && grep -q 'another ledger-loop' <<<"$OUT" \
   && ok "a loop killed under a running session leaves it the lock: the next run stops" || bad "sig: rc=$rc session=${SPID:-none}"
 kill "$SPID" 2>/dev/null
 flock -w 30 "$LOOPD/loop.lock" true || bad "the session of sig still holds the lock 30 s after it was killed"
+# R-0226: a process the session leaves behind with a session (and a process group) of
+# its own outlives timeout's kill; the loop ends it before it goes on and names it.
+# A process of the same user without the session's mark stays.
+export FIXTURE_ORPHAN="$WORK/orphan.pid"
+( cd "$CLONE" && exec sleep 30 ) & KEEP=$!
+seq_set orphan
+loop --ledger tasks/orp.md
+OPID="$(cat "$FIXTURE_ORPHAN" 2>/dev/null)"
+[ -n "$OPID" ] && ! kill -0 "$OPID" 2>/dev/null && grep -q "a process left behind, ended: $OPID " "$LOOPD/loop.log" \
+  && ok "a process the session left with a session of its own is ended and named in the log" \
+  || bad "orphan: pid=${OPID:-none} $(kill -0 "$OPID" 2>/dev/null && echo alive) $(tail -n 2 "$LOOPD/loop.log")"
+kill -0 "$KEEP" 2>/dev/null && ok "a process of the same user without the session's mark stays" || bad "the unmarked process was ended"
+kill "$OPID" "$KEEP" 2>/dev/null; wait "$KEEP" 2>/dev/null
 
 echo "── per ledger ──"
 FIXTURE_RED=server loop --ledger tasks/good.md --ledger tasks/nofreig.md --ledger tasks/hx.md --ledger tasks/hpath.md --ledger tasks/red.md
@@ -663,6 +699,13 @@ seq_set build -- 0
 loop --ledger tasks/mh.md --max-hours 0
 [ $rc -eq 0 ] && [ ! -e "$(lane mh)" ] && [ ! -s "$FIXTURE_SLOG" ] && grep -q '^max-hours' <<<"$(stopped)" \
   && ok "--max-hours 0 -> stop: max-hours before the first ledger, no session" || bad "max-hours: rc=$rc $(stopped)"
+# R-0230: the preflight calls of the CLI read /dev/null, not the loop's stdin (from a
+# tmux terminal, timeout's child was stopped there).
+printf 'not a terminal, but not /dev/null either\n' > "$WORK/stdin.txt"
+FIXTURE_STDINLOG="$WORK/stdin.log" loop --ledger tasks/mh.md --max-hours 0 < "$WORK/stdin.txt"
+[ "$(grep -c . "$WORK/stdin.log" 2>/dev/null)" = 2 ] && [ "$(grep -c ' /dev/null$' "$WORK/stdin.log")" = 2 ] \
+  && grep -q '^--version ' "$WORK/stdin.log" && grep -q '^auth ' "$WORK/stdin.log" \
+  && ok "the preflight's claude --version and auth status read /dev/null" || bad "preflight stdin: $(cat "$WORK/stdin.log" 2>&1)"
 # A session that changes the ledger every time never stalls: the run's budget ends it
 # between two iterations of the same task, and the task stays open.
 seq_set filesn filesn filesn filesn filesn
@@ -731,6 +774,38 @@ seq_set build -- 74r 74r
 loop --ledger tasks/rvc.md
 [ $rc -eq 74 ] && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["cost_usd"])' "$LOOPD/state.json")" = 30.25 ] \
   && ok "two reviewer runs without a cost line count 2 x 15 \$ into the run" || bad "rvc: rc=$rc $(cat "$LOOPD/state.json")"
+# R-0191: set-files writes the ledger with a final newline; when the last line is
+# another task's, that is no change of the ledger outside the session's own task.
+for x in nnf nnl; do
+  seq_set files skip skip
+  loop --ledger "tasks/$x.md"
+  grep -q '^bereit' <<<"$(result "$x")" && [ "$(box "$x")" = "~" ] \
+    && ok "$x: a ledger without a final newline: the loop's commits and set-files of T1 are no change outside T1" \
+    || bad "$x: $(result "$x")"
+done
+# ... and nothing else is evened out: a carriage return in another task's line is a change.
+seq_set cr
+loop --ledger tasks/ncr.md
+grep -q '^blockiert — T1: the build session changed the ledger outside its own task' <<<"$(result ncr)" \
+  && ok "a carriage return put into another task's line is a change outside the session's task" || bad "ncr: $(result ncr)"
+# R-0190/R-0191: unknown spend counts with REVIEW_BUDGET_MAX, never as 0.
+review_usd() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"].get(sys.argv[2], {}).get("review_usd", 0))' "$LOOPD/state.json" "$1"; }
+seq_set build -- 0
+FIXTURE_RCOST=unknown loop --ledger tasks/ruk.md
+[ "$(box ruk)" = x ] && [ "$(review_usd ruk/T1)" = 15.0 ] \
+  && ok "a reviewer cost 'unknown' counts 15 \$" || bad "ruk: $(review_usd ruk/T1) $(result ruk)"
+seq_set build -- 74r 74r
+FIXTURE_SUITECOST=1 loop --ledger tasks/rvz.md
+[ $rc -eq 74 ] && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["cost_usd"])' "$LOOPD/state.json")" = 30.25 ] \
+  && ok "no usable verdict counts 15 \$ even behind a suite line 'review cost_usd=0'" || bad "rvz: rc=$rc $(cat "$LOOPD/state.json")"
+seq_set build -- 0
+FIXTURE_RAW=1 loop --ledger tasks/rrw.md
+[ "$(box rrw)" = x ] && [ "$(review_usd rrw/T1)" = 15.0 ] \
+  && ok "a reviewer that ran without a cost line counts 15 \$" || bad "rrw: $(review_usd rrw/T1) $(result rrw)"
+seq_set build -- 0
+loop --ledger tasks/rnr.md
+[ "$(box rnr)" = x ] && [ "$(review_usd rnr/T1)" = 0 ] \
+  && ok "a close whose reviewer never ran counts nothing for it" || bad "rnr: $(review_usd rnr/T1) $(result rnr)"
 [ "$(sed -n 's/^REVIEW_BUDGET_MAX=//p' "$REPO_ROOT/scripts/dev/ledger-loop.sh")" = \
   "$(sed -n 's/.*BUDGET=\([0-9][0-9.]*\).*/\1/p' "$REPO_ROOT/scripts/dev/review-run.sh" | sort -n | tail -n 1)" ] \
   && ok "REVIEW_BUDGET_MAX is the larger budget of review-run.sh" || bad "REVIEW_BUDGET_MAX and review-run.sh disagree"
@@ -851,6 +926,73 @@ printf '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": null, "cost_us
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SD/state.json" 2>&1)
 [ "$(head -n 1 <<<"$OUT")" = 'Worker: läuft · ? $ · seit 01:12' ] && [ "$(grep -c '^    ' <<<"$OUT")" = 10 ] \
   && ok "status: a cost out of range reads ?, and at most ten summary lines" || bad "status caps: $OUT"
+
+echo "── start --profile kevin ──"
+# The builder: a clone whose loop only records how it was started, and a
+# builder-home.sh status beside the starting checkout that says ready or not. The
+# fake tmux runs the session's command to its end, with a file as stdin where a
+# session would have its terminal.
+PB="$WORK/builder"; PS="$WORK/starter"
+mkdir -p "$PB/home" "$PB/loop" "$PB/repo/scripts/dev" "$PS/scripts/dev" "$WORK/tbin"
+cat > "$PB/repo/scripts/dev/ledger-loop.sh" <<'FAKE'
+env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | sort > "$AH_LOOP_DIR/env.names"
+[ ! -e "$AH_LOOP_DIR/builder.done" ] || echo "a mark of the run before" > "$AH_LOOP_DIR/stale"
+printf '%s\n' "$HOME" "$PWD" > "$AH_LOOP_DIR/where"
+readlink /proc/self/fd/0 > "$AH_LOOP_DIR/stdin"
+printf '%s\n' "$@" > "$AH_LOOP_DIR/args"
+echo "the builder loop ran"
+exit 3
+FAKE
+printf '#!/usr/bin/env bash\necho "missing: the token"; exit "${FIXTURE_BH_RC:-0}"\n' > "$PS/scripts/dev/builder-home.sh"
+cat > "$WORK/tbin/tmux" <<'FAKE'
+#!/usr/bin/env bash
+echo "tmux $*" >> "$FIXTURE_TMUXLOG"
+case "$1" in
+  has-session) [ "${FIXTURE_TMUX_RUNNING:-0}" = 1 ] ;;
+  new-session) [ "$2" = -d ] && [ "$3" = -s ] || exit 9; shift 4; "$@" < "$FIXTURE_TTY" ;;
+  *) exit 9 ;;
+esac
+FAKE
+chmod +x "$WORK/tbin/tmux"; printf 'a terminal\n' > "$WORK/tty"
+export FIXTURE_TMUXLOG="$WORK/tmux.log" FIXTURE_TTY="$WORK/tty"
+start() {  # start <args…> — as Kevin would, with an agent, a D-Bus address and a PVE token around
+  : > "$FIXTURE_TMUXLOG"
+  OUT=$(env PATH="$WORK/tbin:/usr/bin:/bin" AH_LOOP_REPO="$PS" AH_BUILDER_DIR="$PB" SSH_AUTH_SOCK=/tmp/agent.sock \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/bus AH_PVE_TOKEN=leftover-pve \
+    bash "$CLONE/scripts/dev/ledger-loop.sh" start "$@" 2>&1); rc=$?
+}
+printf 'rc=99\n' > "$PB/loop/builder.done"
+start --profile kevin --ledger 'tasks/a $HOME b.md' --max-tasks 2
+[ $rc -eq 0 ] && grep -q 'started in tmux ah-builder' <<<"$OUT" && grep -q '^tmux new-session -d -s ah-builder /usr/bin/env -i ' "$FIXTURE_TMUXLOG" \
+  && grep -qx 'tmux has-session -t =ah-builder' "$FIXTURE_TMUXLOG" \
+  && ok "start --profile kevin starts the builder loop in the tmux session ah-builder (exact name)" || bad "start: rc=$rc out=$OUT"
+[ ! -e "$PB/loop/stale" ] && ok "the mark of the run before is gone when the loop starts" || bad "a stale builder.done was there"
+extra="$(grep -vxF -f <(printf '%s\n' AH_LOOP_DIR HOME LANG LOGNAME OLDPWD PATH PWD SHLVL TERM USER _) "$PB/loop/env.names")"
+[ -z "$extra" ] && [ "$(grep -cxE 'AH_LOOP_DIR|HOME|LANG|LOGNAME|PATH|TERM|USER' "$PB/loop/env.names")" = 7 ] \
+  && ok "its environment is the seven names: no agent, no D-Bus address, no PVE token" || bad "environment: extra=[$extra]"
+[ "$(cat "$PB/loop/where")" = "$PB/home"$'\n'"$PB/repo" ] && [ "$(cat "$PB/loop/stdin")" = /dev/null ] \
+  && ok "HOME is the builder HOME, it runs in the builder clone, stdin is /dev/null" || bad "where/stdin: $(cat "$PB/loop/where" "$PB/loop/stdin")"
+[ "$(cat "$PB/loop/args")" = $'--ledger\ntasks/a $HOME b.md\n--max-tasks\n2' ] \
+  && ok "the run's arguments arrive word for word" || bad "args: $(cat "$PB/loop/args")"
+[ "$(cat "$PB/loop/builder.done")" = rc=3 ] && grep -q 'the builder loop ran' "$PB/loop/builder.log" \
+  && ok "the output in builder.log, the exit code in builder.done (rc=)" || bad "done: $(cat "$PB/loop/builder.done" 2>&1)"
+# A builder without its loop directory (state reset): the session still has a log.
+rm -r "$PB/loop"
+start --profile kevin --ledger tasks/a.md
+[ $rc -eq 0 ] && [ "$(cat "$PB/loop/builder.done" 2>/dev/null)" = rc=3 ] && [ "$(stat -c %a "$PB/loop")" = 700 ] \
+  && ok "without the loop directory start makes it (0700), and log and mark land there" || bad "no loop dir: rc=$rc out=$OUT"
+FIXTURE_TMUX_RUNNING=1 start --profile kevin --ledger tasks/a.md
+[ $rc -eq 74 ] && grep -q 'is there already' <<<"$OUT" && ! grep -q new-session "$FIXTURE_TMUXLOG" \
+  && ok "a second start beside a running session is refused" || bad "second start: rc=$rc out=$OUT"
+FIXTURE_BH_RC=1 start --profile kevin --ledger tasks/a.md
+[ $rc -eq 74 ] && grep -q 'missing: the token' <<<"$OUT" && grep -q 'builder home is not ready' <<<"$OUT" && [ ! -s "$FIXTURE_TMUXLOG" ] \
+  && ok "a builder home without its token stops before tmux" || bad "not ready: rc=$rc out=$OUT"
+start --ledger tasks/a.md
+[ $rc -eq 2 ] && [ ! -s "$FIXTURE_TMUXLOG" ] && ok "start without --profile kevin is a usage error" || bad "no profile: rc=$rc"
+printf '{"run": {"started": "2026-10-09T10:59:00+02:00"}, "stop": "ledger-leer"}' > "$PB/loop/state.json"
+OUT=$(AH_BUILDER_DIR="$PB" bash "$CLONE/scripts/dev/ledger-loop.sh" status --profile kevin 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q '^Worker: stop: ledger-leer' <<<"$OUT" && ok "status --profile kevin reads the builder's state.json" \
+  || bad "status profile: rc=$rc $OUT"
 
 echo "── repo wiring ──"
 for p in scripts/dev/ledger-loop.sh scripts/tests/ledger_loop_test.sh; do

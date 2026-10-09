@@ -45,6 +45,10 @@ mkdir -p "$out/junit"
   echo "devenv: ${AH_DEVENV:-unset}"
   grep -q FIXED "$tree/apps/monitoring/app/x.py" && echo "code: fixed" || echo "code: base"
   grep -q test_new "$tree/apps/monitoring/tests/test_x.py" && echo "test: new" || echo "test: old"
+  [ -d "$tree/apps/monitoring/.venv" ] && [ ! -L "$tree/apps/monitoring/.venv" ] \
+    && [ -x "$tree/apps/monitoring/.venv/bin/ruff" ] && echo "venv: linked" || echo "venv: missing"
+  [ -z "$(git -C "$tree" status --porcelain --untracked-files=all -- apps/monitoring/.venv)" ] \
+    && echo "venv-status: ignored" || echo "venv-status: untracked"
 } >> "${FIXTURE_CALLS:?}"
 junit() { printf '<testsuites><testsuite><testcase name="test_new">%s</testcase></testsuite></testsuites>\n' "$1" \
   > "$out/junit/$comp-pytest.xml"; }
@@ -58,6 +62,10 @@ case "${FIXTURE_KIND:-green}" in
   go-build) printf 'ok  x\nFAIL\tx [build failed]\n' > "$out/step-go-agent.log"; exit 1 ;;
   go-fail) printf -- '--- FAIL: TestNew (0.00s)\nFAIL\n' > "$out/step-go-agent.log"; exit 1 ;;
   toolchain) echo "  SKIP  go agent (go not installed)"; exit 1 ;;
+  # run.sh's own words when ruff is nowhere: the reason holds parens itself.
+  toolchain-nested) echo "  SKIP  ruff check (scripts) (AH_ONLY)"
+    echo "  SKIP  ruff check (ruff not installed (not on PATH, no component venv))"; exit 1 ;;
+  only-aonly) echo "  SKIP  ruff check (scripts) (AH_ONLY)"; echo "  SKIP  gofmt (agent) (AH_ONLY)"; exit 1 ;;
   lint) echo "  FAIL  ruff check"; junit ""; exit 1 ;;
   covered)
     if [ "$(sed -n 2p "$tree/apps/monitoring/app/x.py")" = "    return 200  # FIXED" ]; then junit ""; exit 0; fi
@@ -66,8 +74,12 @@ esac
 FAKE
 printf 'def f():\n    return 409\n\n\ndef g():\n    return 1\n' > "$FIX/apps/monitoring/app/x.py"
 printf 'def test_old():\n    assert True\n' > "$FIX/apps/monitoring/tests/test_x.py"
-printf '.devenv.sh\n' > "$FIX/.gitignore"
+printf '.devenv.sh\n.venv/\n' > "$FIX/.gitignore"
 printf 'export AH_TEST_DB=fixture\n' > "$FIX/.devenv.sh"
+# The caller's component venv, gitignored like the real ones: where run.sh finds ruff.
+mkdir -p "$FIX/apps/monitoring/.venv/bin"
+printf '#!/bin/sh\n' > "$FIX/apps/monitoring/.venv/bin/ruff"; chmod +x "$FIX/apps/monitoring/.venv/bin/ruff"
+printf 'home = /usr/bin\n' > "$FIX/apps/monitoring/.venv/pyvenv.cfg"
 git -C "$FIX" init -q
 git -C "$FIX" config user.email test@example.invalid
 git -C "$FIX" config user.name "Fixture"
@@ -97,6 +109,11 @@ out="$(sed -n 's/^out: //p' "$FIXTURE_CALLS")"
   && ok "an AH_OUT_DIR of its own, gone afterwards (the builder's last-verify.json stays)" || bad "out dir: $out"
 grep -qx "devenv: $FIX/.devenv.sh" "$FIXTURE_CALLS" \
   && ok "AH_DEVENV is the caller's .devenv.sh (the worktree has none)" || bad "devenv: $(cat "$FIXTURE_CALLS")"
+grep -qx 'venv: linked' "$FIXTURE_CALLS" && grep -qx 'venv-status: ignored' "$FIXTURE_CALLS" \
+  && ok "the caller's apps/<c>/.venv is in the worktree, a real directory git ignores (R-0234)" \
+  || bad "venv: $(cat "$FIXTURE_CALLS")"
+[ -x "$FIX/apps/monitoring/.venv/bin/ruff" ] && [ -f "$FIX/apps/monitoring/.venv/pyvenv.cfg" ] \
+  && ok "the caller's venv is whole after the worktree went" || bad "the caller's venv lost entries"
 [ "$(git -C "$FIX" status --porcelain)" = "$STATUS_BEFORE" ] \
   && ok "the caller's git status is the same before and after" || bad "status changed"
 [ "$(git -C "$FIX" worktree list | wc -l)" -eq 1 ] && ok "git worktree list has one line afterwards" \
@@ -129,6 +146,14 @@ FIXTURE_KIND=go-fail p monitoring --staged
 FIXTURE_KIND=toolchain p monitoring --staged
 [ $rc -eq 0 ] && [ "$(field applicable)" = false ] && [ "$(field reason)" = '"toolchain"' ] \
   && ok "a required step skipped -> applicable: false, reason: toolchain" || bad "toolchain: rc=$rc out=$OUT err=$ERR"
+FIXTURE_KIND=toolchain-nested p monitoring --staged
+[ $rc -eq 0 ] && [ "$(field applicable)" = false ] && [ "$(field reason)" = '"toolchain"' ] \
+  && ok "a skip reason with parens of its own (ruff nowhere) -> toolchain (R-0234)" \
+  || bad "toolchain nested: rc=$rc out=$OUT err=$ERR"
+FIXTURE_KIND=only-aonly p monitoring --staged
+[ $rc -eq 0 ] && [ "$(field applicable)" = false ] && [ "$(field reason)" = '"other-failure"' ] \
+  && ok "AH_ONLY skips, also after a name with parens, are no missing toolchain" \
+  || bad "AH_ONLY skips: rc=$rc out=$OUT err=$ERR"
 FIXTURE_KIND=lint p monitoring --staged
 [ $rc -eq 0 ] && [ "$(field applicable)" = false ] && [ "$(field red_without_change)" != true ] \
   && ok "a red run without a failing test (lint) is no verdict" || bad "lint: rc=$rc out=$OUT err=$ERR"
@@ -149,6 +174,8 @@ FIXTURE_KIND=pytest-failure p monitoring --commit HEAD --base HEAD~2
 FIXTURE_KIND=covered p monitoring --commit HEAD --mutate 'apps/monitoring/app/x.py:2' '    return 409'
 [ $rc -eq 0 ] && [ "$(field mutant)" = '"killed"' ] && grep -q '^test: new' "$FIXTURE_CALLS" \
   && ok "--mutate on a covered line -> killed" || bad "mutate covered: rc=$rc out=$OUT err=$ERR"
+grep -qx 'venv: linked' "$FIXTURE_CALLS" && ok "--mutate: the caller's venv is in that worktree too" \
+  || bad "mutate venv: $(cat "$FIXTURE_CALLS")"
 FIXTURE_KIND=covered p monitoring --commit HEAD --mutate 'apps/monitoring/app/x.py:6' '    return 2'
 [ $rc -eq 0 ] && [ "$(field mutant)" = '"survived"' ] && grep -q '^code: fixed' "$FIXTURE_CALLS" \
   && ok "--mutate on an uncovered line -> survived" || bad "mutate uncovered: rc=$rc out=$OUT err=$ERR"
@@ -166,6 +193,16 @@ p monitoring --staged --mutate 'apps/monitoring/app/link.txt:1' 'OVERWRITTEN'
 [ $rc -eq 2 ] && [ "$(cat "$WORK/victim.txt")" = victim ] \
   && ok "--mutate through a symlink out of the worktree -> 2" || bad "mutate symlink: rc=$rc out=$OUT err=$ERR"
 git -C "$FIX" rm -q --cached apps/monitoring/app/link.txt; rm -f "$FIX/apps/monitoring/app/link.txt"
+# A change that tracks apps/<c>/.venv as a symlink (`.venv/` ignores directories
+# only): the probe links nothing through it into what it points to.
+mkdir -p "$FIX/apps/server"; ln -s "$FIX/apps/monitoring/.venv" "$FIX/apps/server/.venv"
+git -C "$FIX" add apps/server/.venv
+VENV_BEFORE="$(ls -A "$FIX/apps/monitoring/.venv")"
+FIXTURE_KIND=covered p monitoring --staged --mutate 'apps/monitoring/app/x.py:2' '    return 409'
+[ $rc -eq 0 ] && [ "$(ls -A "$FIX/apps/monitoring/.venv")" = "$VENV_BEFORE" ] && [ ! -e "$FIX/apps/monitoring/.venv/bin/bin" ] \
+  && ok "a tracked .venv symlink in the change: nothing is linked through it" \
+  || bad "linked through a tracked .venv: rc=$rc $(ls -A "$FIX/apps/monitoring/.venv" "$FIX/apps/monitoring/.venv/bin")"
+git -C "$FIX" rm -q --cached apps/server/.venv; rm -f "$FIX/apps/server/.venv"; rmdir "$FIX/apps/server"
 p monitoring --staged --base HEAD --mutate 'apps/monitoring/app/x.py:2' 'x'
 [ $rc -eq 2 ] && ok "--base with --mutate -> 2" || bad "base+mutate: rc=$rc out=$OUT err=$ERR"
 FIXTURE_KIND=lint p monitoring --staged --mutate 'apps/monitoring/app/x.py:2' '    return 409'
