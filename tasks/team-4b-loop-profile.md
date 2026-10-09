@@ -4,9 +4,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Team-Plan 4b: der Loop unter Kevins Benutzer (Builder-Profil) — Task-Ledger
-Status: bereit · Branch: harness/team-4b-loop-profile · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
+Status: erledigt · Branch: harness/team-4b-loop-profile · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-09 (Stufen-Plan, im Chat mit der Aufsicht). Offene Fragen: 1 R-0231 und R-0237 angenommen (Kevin); WebFetch-Domains (Kevin): gofrp.org, docs.python.org, code.claude.com, tauri.app, docs.victoriametrics.com, pve.proxmox.com; 2 R-0190/R-0191 hängt die Aufsicht von 7b auf dieses Ledger um (erledigt); 3 der Start legt die tmux-Session selbst an (Aufsicht); 4 die CLI-Sandbox wird eine eigene Roadmap-Zeile (Aufsicht); 5 der python3-Symlink des eingefrorenen Runners bleibt liegen (Aufsicht)
-Spec: docs/features/team-4b-loop-profile.md (Roadmap R-0230, R-0231, R-0237, R-0226, R-0190, R-0191, R-0234)
+Spec: docs/features/team-4b-loop-profile.md (Roadmap R-0230, R-0231, R-0237, R-0226, R-0190, R-0191, R-0234, R-0232)
 Heavy: none — Shell, Python und Settings unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Abnahme (ein zweiter Lauf ohne Handgriff außer dem Start, keine Kosten als 0) ist ein echter Loop-Lauf: Kevins Start, nach dem Merge.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
