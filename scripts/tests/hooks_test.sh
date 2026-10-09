@@ -1289,7 +1289,8 @@ runner_env() {
                  PGPASSWORD AWS_ACCESS_KEY_ID PGPORT PGSSLMODE \
                  ANTHROPIC_MODEL CLAUDE_CODE_EFFORT_LEVEL; do
           eval "echo \"$v=\${$v-<unset>}\""
-        done; } > "$2"' _ "$RUNNER_ENV" "$WORK/env.out" 2>&1)
+        done
+        echo "PVE_NAMES=${!AH_PVE_@}"; } > "$2"' _ "$RUNNER_ENV" "$WORK/env.out" 2>&1)
   OUT=$(cat "$WORK/env.out")
 }
 val() { sed -n "s/^$1=//p" <<<"$OUT"; }
@@ -1371,7 +1372,7 @@ runner_env "$H"
 [ "$(val RC)" != 0 ] && grep -q "not of the form sk-ant-oat01-" <<<"$ERR" && grep -qF "$H/.config/adminhelper/oauth.env" <<<"$ERR" \
   && ok "a value with # (the browser code) aborts and names the file" || bad "browser code: rc=$(val RC) err=$ERR"
 ! grep -qF "pastedcode" <<<"$ERR$OUT" && [ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "<unset>" ] \
-  && ok "and neither the message nor the environment carries the value" || bad "the value leaked: $ERR"
+  && ok "and neither the message nor the environment carries the value" || bad "the message or the environment carries the value: $ERR"
 H=$(mk_home shortform); printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-\n' > "$H/.config/adminhelper/oauth.env"
 runner_env "$H"
 [ "$(val RC)" != 0 ] && ok "the prefix alone is no token" || bad "prefix only: rc=$(val RC)"
@@ -1391,6 +1392,22 @@ if [ -n "$LOC" ] && LC_ALL="$LOC" bash -c '[[ $(printf "\303\244") =~ ^[a-z]$ ]]
 else
   echo "  SKIP: no de_DE or en_US UTF-8 locale whose a-z takes an ä — the token shape under another locale is not verified"
 fi
+
+# pve.env keys as vm.py takes them (R-0232): a key with a blank before the =, a
+# blank inside or a letter outside A-Z is skipped, the next line still counts,
+# and nothing of a skipped line is printed — under a UTF-8 locale too.
+H=$(mk_home pvekeys)
+printf 'AH_PVE_TOKEN =pve-placeholder-1\nAH_PVE_A B=pve-placeholder-2\nAH_PVE_\303\204=pve-placeholder-3\nAH_PVE_=pve-placeholder-4\nAH_PVE_NODE="node9"\n' \
+  > "$H/.config/adminhelper/pve.env"
+[ -n "$LOC" ] || echo "  SKIP: no de_DE or en_US UTF-8 locale — pve.env keys under a UTF-8 locale are not verified"
+for loc in C ${LOC:+"$LOC"}; do
+  LC_ALL="$loc" runner_env "$H"
+  [ "$(val RC)" = 0 ] && [ "$(val AH_PVE_NODE)" = node9 ] && [ "$(val PVE_NAMES)" = AH_PVE_NODE ] \
+    && ok "pve.env ($loc): keys vm.py would not take are skipped, the others still read" \
+    || bad "pve.env keys ($loc): rc=$(val RC) node=$(val AH_PVE_NODE) names=$(val PVE_NAMES)"
+  ! grep -qF 'pve-placeholder' <<<"$ERR$OUT" && ok "and nothing of a skipped line is printed ($loc)" \
+    || bad "a skipped pve.env line was printed ($loc)"
+done
 
 H=$(mk_home nofile); rm -f "$H/.config/adminhelper/oauth.env"
 runner_env "$H"

@@ -208,3 +208,18 @@ und Fixed (R-0230, R-0231, R-0226, R-0190/R-0191, R-0234).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: das ist die Doku-Task (`docs/` bleibt unberührt)
 Abhängt von: T1–T10
+
+### T12 — `runner-env.sh` liest pve.env-Schlüssel wie vm.py (R-0232)  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-env.sh, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a1c55834 2026-10-09T16:25:10+02:00
+Review: approve (opus)
+Änderung: `runner-env.sh` nimmt aus `pve.env` nur Zeilen, deren Schlüssel `^AH_PVE_[A-Za-z0-9_]+$` ist, wie `vm.py`
+(`FILE_KEY`); die Klasse ausgeschrieben wie in T7. Andere Zeilen (Leerraum vor dem `=`, ein fremder Schlüssel) werden
+übergangen, ohne Export und ohne Ausgabe.
+Test im Abschnitt `runner-env.sh` von `hooks_test.sh`, nur mit Platzhaltern, unter C und einer UTF-8-Locale: solche
+Zeilen werden übergangen, eine gültige Zeile danach gilt weiter, und von einer übergangenen Zeile steht nichts in der
+Ausgabe.
+Rot vorher: Eine solche Zeile wird nicht übergangen.
+Beweis: Review R-0229 Runde 1 (Worker A), 2026-10-09 · Code-Lesung `runner-env.sh` pve.env-Schleife
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)

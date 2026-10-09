@@ -57,6 +57,8 @@ ah_runner_env() {
   # Spelled out, not A-Z: outside the C locale a range matches by collation, and
   # under de_DE.UTF-8 [A-Za-z] takes an ä as well.
   local token_re='^sk-ant-oat01-[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]+$'
+  # A pve.env key as vm.py takes one (FILE_KEY), spelled out for the same reason.
+  local pve_key_re='^AH_PVE_[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]+$'
 
   if [ "${AH_RUNNER_ENV_NO_DEVENV:-0}" != 1 ]; then
     # shellcheck disable=SC1090  # per-host file, gitignored by design
@@ -159,6 +161,8 @@ ah_runner_env() {
       case "$line" in
         AH_PVE_*=*)
           key="${line%%=*}"
+          # Any other key is skipped without a word, as vm.py skips it.
+          [[ "$key" =~ $pve_key_re ]] || continue
           value="$(printf '%s' "${line#*=}" | sed 's/[[:space:]]*$//; s/^"\(.*\)"$/\1/; s/^'\''\(.*\)'\''$/\1/')"
           export "$key=$value"
           ;;
