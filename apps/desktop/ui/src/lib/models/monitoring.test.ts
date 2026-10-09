@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   worstStatus,
   groupChecksByServer,
@@ -15,6 +15,7 @@ import {
   metricSeriesLabel,
   isPushOnlyCheck,
   canRunManually,
+  formatCheckTime,
 } from './monitoring';
 import type { MonitorCheck, Server } from '$lib/api/types';
 
@@ -207,5 +208,34 @@ describe('isPushOnlyCheck / canRunManually', () => {
     expect(canRunManually({ checkType: 'ping', enabled: false })).toBe(false);
     expect(canRunManually({ checkType: 'smart_health', enabled: true })).toBe(false);
     expect(canRunManually({ checkType: 'smart_health', enabled: false })).toBe(false);
+  });
+});
+
+describe('formatCheckTime (R-0202)', () => {
+  // A zone other than UTC: on a UTC machine like the CI, a value read as local time
+  // would show the same clock as one read as UTC, and the test could not fail.
+  beforeEach(() => {
+    vi.stubEnv('TZ', 'Europe/Berlin');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('shows a value with Z as that UTC instant in local time', () => {
+    expect(formatCheckTime('2026-10-09T08:15:30Z')).toContain('10:15:30'); // CEST
+  });
+
+  it('reads a value without a zone as UTC, as monitoring services before R-0202 send it', () => {
+    expect(formatCheckTime('2026-10-09T08:15:30.123456')).toBe(
+      formatCheckTime('2026-10-09T08:15:30.123456Z'),
+    );
+    expect(formatCheckTime('2026-10-09T08:15:30')).toContain('10:15:30');
+  });
+
+  it('shows a dash for a missing or unreadable value', () => {
+    expect(formatCheckTime(null)).toBe('-');
+    expect(formatCheckTime(undefined)).toBe('-');
+    expect(formatCheckTime('')).toBe('-');
+    expect(formatCheckTime('not a date')).toBe('-');
   });
 });

@@ -123,7 +123,9 @@ export function statusClass(status: MonStatus | string | undefined | null): stri
 
 export function formatCheckTime(isoStr: string | null | undefined): string {
   if (!isoStr) return '-';
-  const d = new Date(isoStr);
+  // Monitoring values are UTC; services before R-0202 send them without a zone,
+  // which new Date() would read as local time.
+  const d = new Date(isoStr.endsWith('Z') ? isoStr : `${isoStr}Z`);
   if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleString(currentLocale(), {
     day: '2-digit',
