@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Zeitstempel in UTC mit `Z` — Task-Ledger
-Status: bereit · Branch: feature/monitoring-utc-z · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/monitoring-utc-z · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0202, von Kevin am 2026-10-06 angenommen: „nach R-0064, gleiches Muster“ — das deckt den API-Vertrag samt Altzeilen-Grenze; Delegation Kevin 2026-10-05). Offene Fragen entschieden (Aufsicht): 1 Weg (b), formatCheckTime liest einen Wert ohne Zone als UTC wie die drei Wartungs-Leser; 2 Heavy none, keine Integrations- oder E2E-Stufe liest Monitoring-Zeitstempel; 3 Zuständigkeit wie oben
 Spec: Roadmap R-0202 (Kurz-Ledger ohne Spec)
 Heavy: none — Monitoring-Dienst und Desktop-UI, kein Stack-, Gateway-, PKI- oder Install-Pfad; der Server-Proxy reicht die Antworten byteweise durch, und keine Integrations- oder E2E-Stufe liest Monitoring-Zeitstempel (offene Frage 2).
