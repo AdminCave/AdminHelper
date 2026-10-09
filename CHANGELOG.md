@@ -274,6 +274,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Hooks: ungueltige Eingaben im dokumentierten Fehler-Format (R-0207):** `POST` und `PUT /api/hooks`
+  antworteten bei fehlendem oder ungueltigem `schedule_interval` und bei fehlenden oder unbekannten
+  `event_triggers` mit einem 422, dessen `detail` ein String war. Die OpenAPI und die API-Referenz
+  versprechen eine Liste von `{loc, msg, type}`; so antworten die Routen jetzt, mit den bisherigen
+  Texten als `msg`.
 - **SSRF-Guard nennt den Grund (R-0045):** Der HTTP-Check und der Alert-Webhook des Monitorings sowie die
   Hook-Funktionen `http_get`/`http_post` des Servers melden ein Ziel, dessen Host nicht aufloest
   (DNS-Fehler oder Zeitlimit), jetzt als solches (`could not be resolved … rejected by the SSRF guard`)

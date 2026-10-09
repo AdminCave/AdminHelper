@@ -142,6 +142,65 @@ class TestHookCreateValidation:
         h = _login(test_client, "admin", "adminpass")
         assert test_client.post("/api/hooks", json=payload, headers=h).status_code == 422
 
+    @pytest.mark.parametrize(
+        ("payload", "field", "msg"),
+        [
+            (
+                {"name": "e", "hook_type": "event", "script": "x"},
+                "event_triggers",
+                "event_triggers erforderlich",
+            ),
+            (
+                {"name": "e", "hook_type": "event", "script": "x", "event_triggers": ["bogus"]},
+                "event_triggers",
+                "Unbekanntes Event: 'bogus'",
+            ),
+            (
+                {"name": "s", "hook_type": "schedule", "script": "x"},
+                "schedule_interval",
+                "schedule_interval erforderlich",
+            ),
+            (
+                {"name": "s", "hook_type": "schedule", "script": "x", "schedule_interval": "nope"},
+                "schedule_interval",
+                "Ungültiges Intervall",
+            ),
+        ],
+    )
+    def test_invalid_create_answers_in_the_promised_format(
+        self, test_client, db_session, admin_user, payload, field, msg
+    ):
+        # The OpenAPI promises HTTPValidationError for a 422 (R-0207): detail is a
+        # list of {loc, msg, type}, not a string.
+        h = _login(test_client, "admin", "adminpass")
+        r = test_client.post("/api/hooks", json=payload, headers=h)
+        assert r.status_code == 422, r.text
+        detail = r.json()["detail"]
+        assert isinstance(detail, list) and len(detail) == 1, r.text
+        assert detail[0]["loc"] == ["body", field], r.text
+        assert detail[0]["type"] == "value_error", r.text
+        assert detail[0]["msg"].startswith(msg), r.text
+
+    @pytest.mark.parametrize(
+        ("change", "field", "msg"),
+        [
+            ({"event_triggers": ["bogus"]}, "event_triggers", "Unbekanntes Event: 'bogus'"),
+            ({"schedule_interval": "nope"}, "schedule_interval", "Ungültiges Intervall"),
+        ],
+    )
+    def test_invalid_update_answers_in_the_promised_format(
+        self, test_client, db_session, admin_user, change, field, msg
+    ):
+        h = _login(test_client, "admin", "adminpass")
+        created = test_client.post("/api/hooks", json={**WEBHOOK, "name": "wh-upd"}, headers=h)
+        assert created.status_code == 201, created.text
+        r = test_client.put(f"/api/hooks/{created.json()['id']}", json=change, headers=h)
+        assert r.status_code == 422, r.text
+        detail = r.json()["detail"]
+        assert isinstance(detail, list) and len(detail) == 1, r.text
+        assert detail[0]["loc"] == ["body", field], r.text
+        assert detail[0]["msg"].startswith(msg), r.text
+
     def test_valid_event_hook_created_201(self, test_client, db_session, admin_user):
         # A valid schedule hook additionally needs the running APScheduler
         # (started in the app lifespan, not in tests), so its happy path is an

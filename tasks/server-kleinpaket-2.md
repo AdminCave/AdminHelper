@@ -42,8 +42,10 @@ as private“.
 Verify: bash scripts/tests/run.sh quick --strict --only server monitoring
 Doku: keine (die Doku verspricht das Verhalten schon)
 
-### T2 — Hooks: 422 im Format `HTTPValidationError` (R-0207)  [ ]
+### T2 — Hooks: 422 im Format `HTTPValidationError` (R-0207)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/tests/test_hooks.py, apps/server/tests/schemathesis_exclude.toml, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @4665ff7b 2026-10-09T09:49:14+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Fünf Stellen in `hooks/router.py` antworten mit `HTTPException(422, detail=<String>)`:
 - `_validate_schedule_interval` (`:85`, „Ungültiges Intervall …“), geteilt von create und update;
 - `_validate_create`: `event_triggers` fehlt (`:96`), ein unbekanntes Event (`:101`), `schedule_interval` fehlt (`:106`);
