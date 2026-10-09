@@ -194,7 +194,7 @@ RUN_T0=$SECONDS RUN_COST=0 TASKS_DONE=0 READY=0
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$LOOP/loop.log"; }
 # state <python expression over s> — one change of state.json, written atomically.
 state() {
-  python3 - "$STATE" "$1" "${@:2}" <<'PY' || { echo "ledger-loop.sh: could not write $STATE" >&2; exit 74; }
+  python3 - "$STATE" "$1" "${@:2}" <<'PY' || { echo "ledger-loop.sh: could not write $STATE" >&2; flock -u 9 2>/dev/null; exit 74; }
 import datetime, json, os, sys
 path, expr, args = sys.argv[1], sys.argv[2], sys.argv[3:]
 try:
@@ -664,6 +664,51 @@ print("task-close refused twice, see %s" % sys.argv[2])
 PY
 }
 
+# reap_session <mark> <slug> <id> — what a build session or its close left running:
+# the processes of this user that carry its AH_LOOP_SESSION. A rest with a process
+# group or a working directory of its own carries it too, and nothing else of this
+# user does — Kevin's own shells stay (R-0226). TERM, then KILL, then one more look
+# for a child born in between; the log names each. A rest that clears its environment
+# (env -i), rewrites it, or was started through a daemon that was already running is
+# not found: that stays a residual risk.
+marked_pids() {
+  AH_REAP="AH_LOOP_SESSION=$1" python3 - <<'PY'
+import os
+want = os.environ["AH_REAP"].encode()
+for d in os.listdir("/proc"):
+    if not d.isdigit() or int(d) == os.getpid():
+        continue
+    try:
+        env = open("/proc/%s/environ" % d, "rb").read().split(b"\0")
+    except OSError:
+        continue
+    if want in env:
+        print(d)
+PY
+}
+reap_session() {
+  local mark="$1" slug="$2" id="$3" pids alive p _
+  pids="$(marked_pids "$mark")"
+  [ -n "$pids" ] || return 0
+  for p in $pids; do
+    log "$slug $id: a process left behind, ended: $p $(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | tr -c '[:print:]' ' ' | cut -c1-120)"
+  done
+  # shellcheck disable=SC2086  # a word list of pids
+  kill -TERM $pids 2>/dev/null
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    alive=""
+    for p in $pids; do kill -0 "$p" 2>/dev/null && alive+=" $p"; done
+    [ -n "$alive" ] || break
+    sleep 0.5
+  done
+  # shellcheck disable=SC2086
+  [ -z "$alive" ] || kill -KILL $alive 2>/dev/null
+  pids="$(marked_pids "$mark")"
+  # shellcheck disable=SC2086
+  [ -z "$pids" ] || { log "$slug $id: ended late as well: $(tr '\n' ' ' <<<"$pids")"; kill -KILL $pids 2>/dev/null; }
+  return 0
+}
+
 # session <lane> <slug> <id> <n> [--fix <log> [<verdict>]] — one build session;
 # sets S_RC, S_KIND (success or the error kind), S_COST, S_TURNS, S_DENIALS.
 session() {
@@ -682,11 +727,12 @@ PY
 )" || stop_infra "cannot read the build-task skill of the clone"
   # Only the runner's user settings (its permissions and the root-owned guard): a
   # lane's project settings carry the interactive allow list.
-  ( cd "$wt" && timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
+  ( cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.s$n" timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
       --permission-mode dontAsk --permission-prompts none --max-turns "$TASK_TURNS" \
       --max-budget-usd "$TASK_BUDGET" --output-format json --no-session-persistence \
       < /dev/null > "$out" 2> "$LOOP/$slug/$id.s$n.err" )
   S_RC=$?
+  reap_session "$$.$slug.$id.s$n" "$slug" "$id"
   { read -r S_KIND S_COST S_TURNS S_DENIALS; IFS= read -r S_NOTE; } < <(python3 - "$out" "$S_RC" "$LOOP/$slug/$id.s$n.err" "$TASK_BUDGET" <<'PY'
 import json, re, sys
 rc = int(sys.argv[2])
@@ -754,9 +800,11 @@ close_task() {
     clone_ok; claude_ok
     pre="$(git -C "$wt" rev-parse HEAD)"
     CLOSE="$LOOP/$slug/$id.close.r$round.$n.$try.log"
-    (cd "$wt" && bash scripts/dev/task-close.sh "$ledger" "$id" --stage --review auto --round "$round" \
-       --message-file "$wt/$(msg_path "$slug" "$id")") > "$CLOSE" 2>&1
+    # The close runs the session's code too (its tests): what that leaves goes as well.
+    (cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.c$round.$n.$try" bash scripts/dev/task-close.sh "$ledger" "$id" \
+       --stage --review auto --round "$round" --message-file "$wt/$(msg_path "$slug" "$id")") > "$CLOSE" 2>&1
     rc=$?
+    reap_session "$$.$slug.$id.c$round.$n.$try" "$slug" "$id"
     log "$slug $id close (round $round, try $try): exit $rc"
     clone_ok
     # The reviewer's cost from task-close's line in the log this loop opened; the

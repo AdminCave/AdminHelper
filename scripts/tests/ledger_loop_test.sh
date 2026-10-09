@@ -152,7 +152,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -189,7 +189,7 @@ chmod 600 "$FHOME/.config/adminhelper/pve.env"
 # refmove (a harness change and a ref origin/main that already holds it), linger (a
 # child that outlives the loop with stdout and stderr closed, as git maintenance
 # --detach does, then skip), wait (records its pid and sleeps: a session the loop dies
-# under).
+# under), orphan (leaves a sleeper with a session of its own behind, then skip).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -251,9 +251,14 @@ case "$mode" in
     git add -- scripts/dev/ledger.sh && c="$(git commit-tree "$(git write-tree)" -p HEAD -m moved)" \
       && git update-ref refs/remotes/origin/main "$c" && git reset -q ;;
   linger)
-    ( exec < /dev/null > /dev/null 2>&1; exec sleep 30 ) & echo "$!" > "${FIXTURE_LINGER:?}"
+    # Without the session's mark, like the git maintenance a ledger commit of the loop
+    # itself leaves behind: the loop does not end it, and its lock still must not stay.
+    ( exec < /dev/null > /dev/null 2>&1; exec env -u AH_LOOP_SESSION sleep 30 ) & echo "$!" > "${FIXTURE_LINGER:?}"
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   wait) echo "$$" > "${FIXTURE_SPID:?}"; exec sleep 30 ;;
+  orphan)
+    setsid sleep 30 < /dev/null > /dev/null 2>&1 & echo "$!" > "${FIXTURE_ORPHAN:?}"
+    bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   mlink)
     mkdir -p .ah-out/scratch/m.1 && ln -s "${FIXTURE_OUTSIDE:?}/keep.txt" .ah-out/scratch/m.1/.ah-scratch
     printf '{"type": "result", "subtype": "error_during_execution", "is_error": true}\n'; exit 1 ;;
@@ -345,12 +350,25 @@ seq_set wait
     bash scripts/dev/ledger-loop.sh --ledger tasks/sig.md > "$WORK/sig.out" 2>&1 ) & SIGLOOP=$!
 for _ in $(seq 1 300); do [ -s "$FIXTURE_SPID" ] && break; sleep 0.1; done
 SPID="$(cat "$FIXTURE_SPID" 2>/dev/null)"
-kill -HUP "$SIGLOOP"; wait "$SIGLOOP" 2>/dev/null
+kill -HUP "$SIGLOOP" 2>/dev/null; wait "$SIGLOOP" 2>/dev/null
 loop --ledger tasks/sig.md
 [ -n "$SPID" ] && kill -0 "$SPID" 2>/dev/null && [ $rc -eq 74 ] && grep -q 'another ledger-loop' <<<"$OUT" \
   && ok "a loop killed under a running session leaves it the lock: the next run stops" || bad "sig: rc=$rc session=${SPID:-none}"
 kill "$SPID" 2>/dev/null
 flock -w 30 "$LOOPD/loop.lock" true || bad "the session of sig still holds the lock 30 s after it was killed"
+# R-0226: a process the session leaves behind with a session (and a process group) of
+# its own outlives timeout's kill; the loop ends it before it goes on and names it.
+# A process of the same user without the session's mark stays.
+export FIXTURE_ORPHAN="$WORK/orphan.pid"
+( cd "$CLONE" && exec sleep 30 ) & KEEP=$!
+seq_set orphan
+loop --ledger tasks/orp.md
+OPID="$(cat "$FIXTURE_ORPHAN" 2>/dev/null)"
+[ -n "$OPID" ] && ! kill -0 "$OPID" 2>/dev/null && grep -q "a process left behind, ended: $OPID " "$LOOPD/loop.log" \
+  && ok "a process the session left with a session of its own is ended and named in the log" \
+  || bad "orphan: pid=${OPID:-none} $(kill -0 "$OPID" 2>/dev/null && echo alive) $(tail -n 2 "$LOOPD/loop.log")"
+kill -0 "$KEEP" 2>/dev/null && ok "a process of the same user without the session's mark stays" || bad "the unmarked process was ended"
+kill "$OPID" "$KEEP" 2>/dev/null; wait "$KEEP" 2>/dev/null
 
 echo "── per ledger ──"
 FIXTURE_RED=server loop --ledger tasks/good.md --ledger tasks/nofreig.md --ledger tasks/hx.md --ledger tasks/hpath.md --ledger tasks/red.md

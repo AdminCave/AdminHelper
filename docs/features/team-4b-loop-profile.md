@@ -124,10 +124,17 @@ Claude-Code-Permissions, nachgelesen am 2026-10-09 in der offiziellen Doku (code
 - **Profil im Loop statt eigenes Startskript:** `start --profile kevin` gehört zum Loop, denn Status, Sperre und
   Zustandsverzeichnis sind dieselben. Ein eigenes Skript wäre eine zweite Stelle für dieselben Pfade.
 - **Reste der Session (R-0226):** `systemd-run --user --scope` würde alle Abkömmlinge fassen, braucht aber die
-  D-Bus-Adresse, die `env -i` mit Absicht weglässt. Empfehlung: Nach jeder Session beendet der Loop die Prozesse
-  dieses Benutzers, deren Arbeitsverzeichnis in der Lane liegt (TERM, dann KILL), und nennt sie im Log, bevor er die
-  nächste Task oder das Ende angeht. Das fasst auch einen Rest mit eigener Prozessgruppe. Ein Rest, der sein
-  Verzeichnis wechselt, entgeht dem; das bleibt ein Restrisiko.
+  D-Bus-Adresse, die `env -i` mit Absicht weglässt. Gebaut (T3): Jede Session und jeder Close bekommt eine Marke
+  `AH_LOOP_SESSION` in die Umgebung. Danach beendet der Loop die Prozesse dieses Benutzers, die diese Marke tragen
+  (TERM, dann KILL, dann ein zweiter Blick), und nennt sie im Log. Das fasst auch einen Rest mit eigener
+  Prozessgruppe oder eigenem Verzeichnis (ein Daemon mit `chdir("/")`). Kevins eigene Prozesse tragen die Marke
+  nie, auch eine Shell, die in einer Lane steht. Im Plan stand zuerst „Arbeitsverzeichnis in der Lane“; das hätte
+  genau so eine Shell getroffen. Restrisiko ist ein Rest, der die Marke nicht trägt:
+  - einer, der seine Umgebung leert (`env -i`, `env -u`);
+  - einer, der sie überschreibt;
+  - einer, dessen `environ` nicht lesbar ist;
+  - einer, der über einen schon laufenden Daemon gestartet wurde.
+  Eine git maintenance aus dem Close wird mit beendet; Git räumt dabei seine Sperrdateien ab.
 - **R-0234:** Nur den Regex zu reparieren ergäbe `toolchain` statt `other-failure`, die Probe liefe aber weiter nicht.
   Empfehlung: zusätzlich die Komponenten-venvs in die Probe-Worktree verlinken (wie `lane.sh lane_link_dir`). Damit
   greift die Probe unabhängig vom PATH der Shell.

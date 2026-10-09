@@ -44,8 +44,10 @@ Dedup-Key: bug:scripts:ledger_loop_test.sh:inherited-loop-repo
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T3 — Reste einer Session beenden, bevor der Loop weitergeht oder entsperrt (R-0226)  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+### T3 — Reste einer Session beenden, bevor der Loop weitergeht oder entsperrt (R-0226)  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, docs/features/team-4b-loop-profile.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @af22cb0a 2026-10-09T13:37:24+02:00
+Review: approve (opus)
 Änderung: Nach jeder Session und vor `finish()` beendet der Loop die Prozesse dieses Benutzers, deren
 Arbeitsverzeichnis in der Lane liegt (`/proc/<pid>/cwd`): erst TERM, nach einer kurzen Frist KILL. Jeder beendete
 Prozess steht mit pid und Kommandozeile (gekürzt) im Log. Auch ein Rest mit eigener Prozessgruppe wird so gefasst.
