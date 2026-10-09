@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 1: Kostenquelle, Zeilengrenzen, lane_db geschlossen (R-0250, R-0251, R-0255) — Task-Ledger
-Status: bereit · Branch: harness/loop-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/loop-kleinpaket-1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (Harness-Kleinpaket aus R-0250, R-0251 und R-0255, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05; den PR merged Kevin). Offene Fragen (Aufsicht): 1 die Kostendatei; 2 der Satz in DEVELOPMENT.md ja, keine Normalisierung von postgres:// in lane.sh
 Spec: Roadmap R-0250, R-0251, R-0255 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell und Python unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
