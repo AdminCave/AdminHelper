@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Messlauf 2: Test-Engine in UTC, SSRF-Testlücken, FRP-Port in der Doku (R-0225, R-0228, R-0236) — Task-Ledger
-Status: geplant · Branch: feature/messlauf-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/messlauf-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0225, R-0228 und R-0236, von Kevin in der Triage als Loop-Futter angenommen; Delegation Kevin 2026-10-05; Abnahmelauf von Schritt 4b)
 Spec: Roadmap R-0225, R-0228, R-0236 (Kurz-Ledger ohne Spec)
 Heavy: none — Server-Tests ohne Produktivcode und zwei Doku-Seiten je Sprache; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ruff sauber, Doku DE und EN im selben Commit, SPDX bei neuen Dateien).
