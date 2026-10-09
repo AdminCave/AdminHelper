@@ -15,8 +15,10 @@ Geplant 2026-10-09 von Worker A für die Aufsicht (adminhelper-ac); ein Stufen-P
 Zeilenangaben main@81c8efe9; beim Bau an Symbolen orientieren. Die Vorlage sind die Einrichtungs-, Start- und
 Token-Skripte des ersten Messlaufs (#99), die außerhalb des Repos liegen.
 
-### T1 — Vorprüfung ohne Terminal: `claude --version` und `auth status` mit `</dev/null` (R-0230)  [ ]
+### T1 — Vorprüfung ohne Terminal: `claude --version` und `auth status` mit `</dev/null` (R-0230)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7d8c707c 2026-10-09T12:53:37+02:00
+Review: approve (opus)
 Änderung: Die zwei CLI-Aufrufe der Vorprüfung (`ledger-loop.sh:344` und `:346`) lesen von `/dev/null`. In einem
 tmux-Terminal hielt `timeout` sonst `claude auth status` an (SIGTTIN, State T), über das Timeout hinaus. Test: Die
 Fake-CLI in `ledger_loop_test.sh` schreibt bei `--version` und `auth`, woher ihr stdin kommt

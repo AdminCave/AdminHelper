@@ -191,6 +191,7 @@ export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CL
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
 [ -z "${FIXTURE_CLILOG:-}" ] || echo "$1" >> "$FIXTURE_CLILOG"
+[ -z "${FIXTURE_STDINLOG:-}" ] || echo "$1 $(readlink /proc/self/fd/0)" >> "$FIXTURE_STDINLOG"
 case "$1" in
   --version) echo "${FIXTURE_CLAUDE_VERSION:-$(cat "$FIXTURE_PIN")} (Claude Code)"; exit 0 ;;
   auth) printf '{"loggedIn": true, "authMethod": "%s"}\n' "${FIXTURE_AUTH:-oauth_token}"; exit 0 ;;
@@ -663,6 +664,13 @@ seq_set build -- 0
 loop --ledger tasks/mh.md --max-hours 0
 [ $rc -eq 0 ] && [ ! -e "$(lane mh)" ] && [ ! -s "$FIXTURE_SLOG" ] && grep -q '^max-hours' <<<"$(stopped)" \
   && ok "--max-hours 0 -> stop: max-hours before the first ledger, no session" || bad "max-hours: rc=$rc $(stopped)"
+# R-0230: the preflight calls of the CLI read /dev/null, not the loop's stdin (from a
+# tmux terminal, timeout's child was stopped there).
+printf 'not a terminal, but not /dev/null either\n' > "$WORK/stdin.txt"
+FIXTURE_STDINLOG="$WORK/stdin.log" loop --ledger tasks/mh.md --max-hours 0 < "$WORK/stdin.txt"
+[ "$(grep -c . "$WORK/stdin.log" 2>/dev/null)" = 2 ] && [ "$(grep -c ' /dev/null$' "$WORK/stdin.log")" = 2 ] \
+  && grep -q '^--version ' "$WORK/stdin.log" && grep -q '^auth ' "$WORK/stdin.log" \
+  && ok "the preflight's claude --version and auth status read /dev/null" || bad "preflight stdin: $(cat "$WORK/stdin.log" 2>&1)"
 # A session that changes the ledger every time never stalls: the run's budget ends it
 # between two iterations of the same task, and the task stays open.
 seq_set filesn filesn filesn filesn filesn

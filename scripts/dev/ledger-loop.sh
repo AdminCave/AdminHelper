@@ -341,9 +341,13 @@ claude_ok() {
 # Before the CLI runs at all: --version and auth status are calls of it too.
 claude_ok
 PIN="$(tr -d '[:space:]' < "$REPO/scripts/dev/runner-claude.version" 2>/dev/null)"
-HAVE="$(timeout 60 claude --version 2>/dev/null | awk 'NR == 1 {print $1}')"
+# </dev/null: timeout runs its child in a process group of its own, and from a tmux
+# terminal a child that touches the tty is stopped there (SIGTTIN) past the timeout
+# (R-0230); -k: a child that ignores TERM must not hang there either. The sessions
+# below read /dev/null too.
+HAVE="$(timeout -k 5 60 claude --version < /dev/null 2>/dev/null | awk 'NR == 1 {print $1}')"
 [ -n "$PIN" ] && [ "$HAVE" = "$PIN" ] || stop_infra "claude --version is '${HAVE:-?}', the pin (runner-claude.version) is '${PIN:-?}'"
-AUTH="$(timeout 60 claude auth status 2>/dev/null | python3 -c 'import json, sys
+AUTH="$(timeout -k 5 60 claude auth status < /dev/null 2>/dev/null | python3 -c 'import json, sys
 try: print(json.load(sys.stdin).get("authMethod", ""))
 except Exception: print("")')"
 [ "$AUTH" = oauth_token ] || stop_infra "claude auth status says authMethod '${AUTH:-?}', not oauth_token"
