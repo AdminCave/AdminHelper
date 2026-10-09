@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # review-probe: eine reine Entfernung mit angekündigter Test-Löschung sperrt kein approve (R-0227) — Task-Ledger
-Status: freigegeben · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (Harness-Kleinpaket aus R-0227, von Kevin am 2026-10-08 in der Triage als „zuerst“ angenommen; Delegation Kevin 2026-10-05; den PR merged Kevin). Entscheidungen: 1, 2, 4, 5, 6 wie empfohlen; 3 abweichend: `only-declared-deletion` wird nicht still angenommen, die Review-/Verdict-Zeile im Ledger nennt den Grund sichtbar (etwa „Probe: nur angekündigte Löschung“), weil das Paket ein Gate lockert
 Spec: Roadmap R-0227 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell und Python unter scripts/dev mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
