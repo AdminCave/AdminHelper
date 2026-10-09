@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Kleinpaket 2: Fehler ohne Code, Identitäts-Block nur mit Session, Tunnel beim Speichern — Task-Ledger
-Status: aktiv · Branch: feature/desktop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0243, R-0244, R-0245, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen (Aufsicht): 1 Weg (b), nur starten, wenn kein Tunnel laeuft — ein Neustart bei jedem Speichern braeche laufende SSH-/RDP-Verbindungen; 2 Heavy linux-full nur mit desktop_e2e_tunnel und desktop_e2e_crud (Enrollment-UI ist eine Journey)
 Spec: Roadmap R-0243, R-0244, R-0245 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — die Registrierung in den Einstellungen und das Speichern im Server-Modus ändern sich (Enrollment-UI, Tunnel); auf einer Pool-VM `run.sh e2e` nur mit `desktop_e2e_tunnel` (darin `settings-enroll.live.js`) und `desktop_e2e_crud` (darin `settings-mode.live.js`), kein Server- oder Gateway-Pfad (offene Frage 2).
@@ -68,8 +68,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (die Doku beschreibt schon den Fall mit Session)
 Abhängt von: T1
 
-### T3 — Speichern im Server-Modus scheitert nicht mehr an einem laufenden Tunnel (R-0245)  [ ]
+### T3 — Speichern im Server-Modus scheitert nicht mehr an einem laufenden Tunnel (R-0245)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @4b5b8c39 2026-10-09T16:22:43+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `saveSettings` ruft im Modus `server` mit Session `void tunnelStore.startIfServerMode()`
 (`stores/settings.ts:102`), ohne Rücksicht auf einen laufenden Tunnel.
 - Läuft frpc schon, scheitert `start_frpc` an „frpc laeuft bereits“ (`frpc.rs:245-247`).

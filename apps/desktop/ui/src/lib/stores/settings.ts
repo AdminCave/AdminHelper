@@ -61,6 +61,14 @@ export interface SaveResult {
   needsLogin?: { serverUrl: string };
 }
 
+async function tunnelRunning(): Promise<boolean> {
+  try {
+    return (await bridge.tunnelStatus()).running;
+  } catch {
+    return false; // the start then reports what is wrong
+  }
+}
+
 /**
  * Saves settings, stops/starts tunnel + sync depending on the mode switch
  * and triggers a connection reload if needed. May return needsLogin.
@@ -99,7 +107,10 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
       // tunnel. Without this, a server->local->server round-trip leaves stale
       // local data and no tunnel until the app is restarted.
       await reloadForMode(next, session);
-      void tunnelStore.startIfServerMode();
+      // A running tunnel stays: nothing it depends on changed (a new server URL
+      // logged out above), and a second start next to it fails ("frpc laeuft
+      // bereits"). The frpc status decides, not the indicator (R-0245).
+      if (!(await tunnelRunning())) void tunnelStore.startIfServerMode();
     } else if (next.mode === 'sync') {
       if (session) {
         try {

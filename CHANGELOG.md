@@ -278,6 +278,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Speichern der Einstellungen bei laufendem Tunnel (R-0245):** Im Modus `server` startete jedes
+  Speichern den Tunnel erneut, auch bei einer Sprach- oder RDP-Einstellung; neben dem laufenden frpc scheiterte
+  das mit „frpc laeuft bereits“, die Anzeige ging auf getrennt, und die Statusleiste meldete einen Fehler. Ein
+  laufender Tunnel bleibt jetzt, wie er ist; gestartet wird nur, wenn keiner laeuft.
 - **Desktop: Fehler der Registrierung in den Einstellungen ohne Code (R-0243):** Scheiterte die Registrierung
   in den Einstellungen, stand der rohe Text samt Code da, etwa `ERR_TLS_UNKNOWN_ISSUER: …`. Jetzt erscheint nur
   der Text, wie im Login.
