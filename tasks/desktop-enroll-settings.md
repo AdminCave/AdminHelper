@@ -105,8 +105,10 @@ kein unpassendes Paar mehr, sondern schlimmstenfalls ein Gerät ohne Identität,
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: CHANGELOG.md
 
-### T4 — R-0222: Der Login erkennt die nginx-400 ohne Zertifikat und meldet `ERR_MTLS_CERT_REQUIRED`  [ ]
+### T4 — R-0222: Der Login erkennt die nginx-400 ohne Zertifikat und meldet `ERR_MTLS_CERT_REQUIRED`  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @db5d8d1f 2026-10-09T13:13:39+02:00
+Review: approve (opus/xhigh) · round 1
 Änderung (F6): Der Fehlerzweig von `login` (`auth.rs:49-55`) läuft über eine reine Funktion aus Status und Rumpf.
 - Status 400 und im Rumpf „No required SSL certificate was sent“ ergeben
   `AppError::Validation("ERR_MTLS_CERT_REQUIRED: <englische Erklärung>")`. Der Code ist fest, die Erklärung darf

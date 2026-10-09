@@ -31,6 +31,33 @@ struct MeResponse {
     is_admin: bool,
 }
 
+/// What the gateway answers a client without a device certificate under enforced
+/// mTLS: nginx turns its own error 496 ("a client has not presented the required
+/// certificate") into status 400 with this standard page (`ngx_http_error_496_page`
+/// in nginx's `src/http/ngx_http_special_response.c`). ADR 0001 recorded this answer
+/// against the running stack (A8 enforcement, 2026-06-12); not re-checked since.
+const NGINX_NO_CLIENT_CERT: &str = "No required SSL certificate was sent";
+
+/// The error a failed login reports. The gateway's no-certificate page becomes a
+/// stable code the login screen keys its hint off (ERR_* pattern, Login.svelte,
+/// like ERR_TLS_UNKNOWN_ISSUER in error.rs): the prose may change, the code must
+/// not (R-0222). Any other answer stays the status plus the redacted body.
+fn login_failure(status: reqwest::StatusCode, body: &str) -> AppError {
+    if status == reqwest::StatusCode::BAD_REQUEST && body.contains(NGINX_NO_CLIENT_CERT) {
+        return AppError::Validation(
+            "ERR_MTLS_CERT_REQUIRED: The server requires a device certificate (mTLS is \
+             enforced). Enroll this device with a one-time enrollment token from your \
+             administrator."
+                .to_string(),
+        );
+    }
+    AppError::Validation(format!(
+        "Login fehlgeschlagen ({}): {}",
+        status,
+        crate::diagnostics::redact_body(body)
+    ))
+}
+
 pub async fn login(
     server_url: &str,
     username: &str,
@@ -48,11 +75,8 @@ pub async fn login(
 
     if !response.status().is_success() {
         let status = response.status();
-        let text = crate::diagnostics::redact_body(&response.text().await.unwrap_or_default());
-        return Err(AppError::Validation(format!(
-            "Login fehlgeschlagen ({}): {}",
-            status, text
-        )));
+        let text = response.text().await.unwrap_or_default();
+        return Err(login_failure(status, &text));
     }
 
     let login_resp: LoginResponse = response.json().await?;
@@ -249,4 +273,52 @@ fn clear_keyring() -> Result<(), AppError> {
         keyring_store::delete(key)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::StatusCode;
+
+    /// The body nginx sends for its error 496, as in ngx_http_special_response.c.
+    const NGINX_496_PAGE: &str = "<html>\r\n<head><title>400 No required SSL certificate was sent</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>No required SSL certificate was sent</center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n";
+
+    #[test]
+    fn the_gateway_no_cert_page_becomes_the_stable_code() {
+        let msg = login_failure(StatusCode::BAD_REQUEST, NGINX_496_PAGE).to_string();
+        assert!(msg.starts_with("ERR_MTLS_CERT_REQUIRED: "), "{msg}");
+        assert!(
+            !msg.contains("<html>"),
+            "the page leaks into the message: {msg}"
+        );
+    }
+
+    #[test]
+    fn other_failures_keep_the_status_and_the_body() {
+        for (status, body) in [
+            (StatusCode::BAD_REQUEST, "{\"detail\":\"bad request\"}"),
+            (
+                StatusCode::UNAUTHORIZED,
+                "{\"detail\":\"Invalid credentials\"}",
+            ),
+            // The page text under another status is not the gateway's 496 answer.
+            (StatusCode::FORBIDDEN, NGINX_496_PAGE),
+            (StatusCode::INTERNAL_SERVER_ERROR, NGINX_496_PAGE),
+        ] {
+            let msg = login_failure(status, body).to_string();
+            assert!(!msg.contains("ERR_MTLS_CERT_REQUIRED"), "{status}: {msg}");
+            assert!(
+                msg.starts_with(&format!("Login fehlgeschlagen ({status}): ")),
+                "{status}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_failures_still_redact_the_body() {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
+        let msg = login_failure(StatusCode::UNAUTHORIZED, &format!("token {jwt}")).to_string();
+        assert!(msg.contains("<redacted-jwt>"), "{msg}");
+        assert!(!msg.contains(jwt), "{msg}");
+    }
 }
