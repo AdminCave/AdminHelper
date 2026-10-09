@@ -35,8 +35,10 @@ Leser, gegen origin/main geprüft (Lehre aus R-0201: Schreiber umstellen reicht 
   Betroffen wären nur `createdAt`/`updatedAt` aus dieser Zeit. Sie erscheinen mit `Z` um den Offset verschoben;
   keine Oberfläche zeigt sie. Das ist dieselbe Grenze wie bei R-0064 (keine Migration).
 
-### T1 — Monitoring: Zeitstempel der Antworten in UTC mit `Z` (R-0202)  [ ]
+### T1 — Monitoring: Zeitstempel der Antworten in UTC mit `Z` (R-0202)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/time.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_core_time.py, apps/monitoring/tests/test_models_timestamps.py, apps/monitoring/tests/test_maintenance_router.py
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped @73d65055 2026-10-09T10:58:48+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Die 13 `to_dict`-Stellen in `apps/monitoring/app/models.py` schreiben `.isoformat()` eines naiven
 UTC-Werts, also ohne Zone: `:55`, `:56`, `:82`, `:83`, `:124`, `:125`, `:161`, `:193`, `:194`, `:278`, `:324`, `:325`, `:331`.
 - `iso_utc(dt)` kommt in `apps/monitoring/app/core/time.py`, mit derselben Semantik wie die Server-Kopie:
