@@ -130,8 +130,10 @@ Beweis: Messlauf 1, 2026-10-08 · Kevin hatte zuerst den Browser-Code eingefügt
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T11)
 
-### T8 — Allow-Liste der Sessions nach dem Messlauf (R-0237)  [ ]
+### T8 — Allow-Liste der Sessions nach dem Messlauf (R-0237)  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eebb6c84 2026-10-09T17:05:34+02:00
+Review: approve (opus, round 2)
 Änderung: Nach der Antwort auf offene Frage 1 der Spec (Kevin triagiert R-0237):
 - `WebFetch(domain:…)` für die Liste offizieller Doku-Domains, die Kevin festlegt.
 - `Bash(echo:*)`.

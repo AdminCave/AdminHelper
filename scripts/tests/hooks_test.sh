@@ -1490,6 +1490,42 @@ for rule in 'Bash(bash scripts/dev/verify.sh:*)' 'Bash(bash scripts/dev/ledger.s
     && ok "allow: $rule" || bad "missing allow rule: $rule"
 done
 
+# After the first measuring run of the loop (R-0237), Kevin chose six official doc
+# domains, by domain and nothing else, and echo. python3 only with a script under
+# scripts/vm, which the deny list keeps the session from editing, and paste not at
+# all: python3 -c, python3 - and the command in a paste <(…) are whatever the
+# session writes.
+python3 - "$RS" <<'PY' && ok "the WebFetch allow rules are exactly the six doc domains, echo allowed, python3 only with a script, no paste" \
+  || bad "the allow list of R-0237 is not what Kevin decided"
+import json, sys
+allow = json.load(open(sys.argv[1]))["permissions"]["allow"]
+want = {f"WebFetch(domain:{d})" for d in ("gofrp.org", "docs.python.org", "code.claude.com", "tauri.app",
+                                          "docs.victoriametrics.com", "pve.proxmox.com")}
+web = {a for a in allow if a.startswith("WebFetch")}
+wrong = sorted(web ^ want) + [a for a in allow if (a.startswith("Bash(python3") and not a.startswith("Bash(python3 scripts/vm/"))
+                               or a.startswith("Bash(paste")]
+if "Bash(echo:*)" not in allow:
+    wrong.append("no Bash(echo:*)")
+print("\n".join("  wrong: " + w for w in wrong))
+sys.exit(1 if wrong else 0)
+PY
+# The counter-probe: `echo x > ~/.bashrc` is an echo, and Claude Code checks the
+# target of a redirect against the Edit rules; a target with a leading ~ needs an
+# approval (docs, permissions, Redirections), which dontAsk turns into a refusal,
+# and .bashrc is a protected path besides. The home files that are not, such as
+# ~/.ssh/authorized_keys by their absolute path, stay refused as long as no Edit
+# or Write allow rule reaches them: none is bare (a bare rule holds everywhere),
+# every one is relative to the lane (./), and none climbs out of it.
+python3 - "$RS" <<'PY' && ok "echo x > ~/.bashrc stays refused: no Edit or Write allow rule reaches the home" \
+  || bad "an Edit or Write allow rule reaches past the lane, so a write tool or a redirect can write there"
+import json, sys
+allow = json.load(open(sys.argv[1]))["permissions"]["allow"]
+reach = [a for a in allow if a.split("(", 1)[0] in ("Edit", "Write")
+         and (not a.startswith(("Edit(./", "Write(./")) or ".." in a)]
+print("\n".join("  reaches out: " + a for a in reach))
+sys.exit(1 if reach else 0)
+PY
+
 # Stage 7a T2: the build session changes a ledger only through ledger.sh, makes
 # scratch only through scratch.sh (R-0108), and no read command it may run brings
 # a way to run or write a program along (R-0164: rg --pre, git grep -O, sed e/w).
