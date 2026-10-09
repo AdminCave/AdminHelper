@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Zeitstempel in UTC mit `Z` — Task-Ledger
-Status: erledigt · Branch: feature/monitoring-utc-z · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/monitoring-utc-z · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0202, von Kevin am 2026-10-06 angenommen: „nach R-0064, gleiches Muster“ — das deckt den API-Vertrag samt Altzeilen-Grenze; Delegation Kevin 2026-10-05). Offene Fragen entschieden (Aufsicht): 1 Weg (b), formatCheckTime liest einen Wert ohne Zone als UTC wie die drei Wartungs-Leser; 2 Heavy none, keine Integrations- oder E2E-Stufe liest Monitoring-Zeitstempel; 3 Zuständigkeit wie oben
 Spec: Roadmap R-0202 (Kurz-Ledger ohne Spec)
 Heavy: none — Monitoring-Dienst und Desktop-UI, kein Stack-, Gateway-, PKI- oder Install-Pfad; der Server-Proxy reicht die Antworten byteweise durch, und keine Integrations- oder E2E-Stufe liest Monitoring-Zeitstempel (offene Frage 2).
@@ -119,3 +119,19 @@ Review: Review am Ende (Kurz-Ledger)
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html · CHANGELOG.md
 Abhängt von: T1, T2
+
+### T4 — Nachbesserung: `fromisoformat` erst ab Python 3.11, Ausnahme für die Metrik-Reihen  [x]
+Komponente: monitoring · Dateien: CHANGELOG.md, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @f6266d1a 2026-10-09T12:34:31+02:00
+Review: kein neuer Review (Doku-Nachbesserung, Aufsicht 2026-10-09)
+Änderung: Aus dem Opus-Review über den Branch, von der Aufsicht freigegeben (2026-10-09), nur Doku, ohne neuen Review.
+- `CHANGELOG.md`: „`datetime.fromisoformat` liest beide Formen“ gilt erst ab Python 3.11; ältere Versionen werfen bei
+  `Z` einen `ValueError`. Der Satz nennt das und den Weg für ältere Versionen (`Z` vorher durch `+00:00` ersetzen),
+  im Eintrag von R-0202 und ebenso im Eintrag von R-0064 („alle drei Formen“), der auch unter `[Unreleased]` steht.
+- API-Referenz DE und EN, „Zeitstempel“ bzw. „Timestamps“: Ohne die Monitoring-Ausnahme deckt die Regel auch
+  `GET /api/monitoring/checks/{id}/metrics` ab. Dessen `data` und `statusHistory` sind VictoriaMetrics-Reihen mit
+  Paaren `[epoch, "wert"]` in Unix-Sekunden (`apps/monitoring/app/routers/checks.py`, `get_check_metrics`). Das wird
+  ein eigener Aufzählungspunkt unter den Ausnahmen.
+Verify: bash scripts/dev/verify.sh monitoring --strict
+Doku: CHANGELOG.md · docs/developer/api-reference.html + docs/en/developer/api-reference.html
+Abhängt von: T3
