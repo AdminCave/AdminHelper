@@ -24,6 +24,18 @@ def utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def iso_utc(dt: datetime | None) -> str | None:
+    """RFC 3339 in UTC with ``Z`` — the timestamp format of the API responses, as on
+    the server (R-0202, R-0064). A naive value is UTC by the convention above; an
+    aware one is converted. ``Z``, not ``+00:00``: the desktop readers of maintenance
+    windows append a ``Z`` to a value without one, and ``…+00:00Z`` is no date."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().removesuffix("+00:00") + "Z"
+
+
 class utc_now_sql(FunctionElement):
     """SQL default for the tz-naive DateTime columns — the DB-side twin of
     utcnow_naive(). Yields the UTC wall-clock as a *naive* timestamp.
