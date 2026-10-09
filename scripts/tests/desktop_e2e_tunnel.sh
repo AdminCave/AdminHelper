@@ -12,6 +12,9 @@
 # through the GUI, and AppShell auto-starts the seeded tunnel. We assert the GUI's
 # tunnel indicator reaches "connected" AND that the frps container log shows the
 # desktop's frpc logging in — the full PKI + frps + enrollment chain.
+# A second run (settings-enroll.live.js, R-0212) clears the identity, signs in
+# without one, registers the device in the settings with a second token and
+# asserts that the tunnel connects afterwards.
 #
 # Boot/seed/teardown shared via lib_e2e_stack.sh. Needs docker(+compose), openssl,
 # curl, python3, node, xvfb-run, WebKitWebDriver, tauri-driver, tauri-cli,
@@ -70,7 +73,24 @@ dbus-run-session -- bash -c '
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/tunnel-start.live.js
 ' && ok "GUI: enrolled, logged in, tunnel indicator connected" || bad "GUI tunnel-start spec failed"
 
+# ── Enroll from the settings (R-0212): its own one-time token, minted just
+# before its run like the first one ───────────────────────────────────────────
+SETTINGS_TOKEN=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+if [ -n "$SETTINGS_TOKEN" ]; then
+    ok "minted a second enrollment token"
+    echo "[e2e-tunnel] running the settings-enroll spec under xvfb..."
+    export AH_SETTINGS_ENROLL_TOKEN="$SETTINGS_TOKEN"
+    dbus-run-session -- bash -c '
+        eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true  # review: ok best-effort unlock as in the run above, an unusable keyring fails the spec itself
+        export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+        cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/settings-enroll.live.js
+    ' && ok "GUI: registered from the settings, tunnel indicator connected" || bad "GUI settings-enroll spec failed"
+else
+    bad "could not mint the second enrollment token"
+fi
+
 # ── Independent check: frps logged the desktop's frpc connecting ─────────────
+# (the first run already satisfies it; the second run's proof is its indicator)
 FRPS_LOG=$(e2e_dc logs --no-color frps 2>/dev/null)
 if printf '%s' "$FRPS_LOG" | grep -qiE "new proxy|client login|login to the server|new work connection|start proxy success|get a new work connection"; then
     ok "frps shows the desktop tunnel connected"
