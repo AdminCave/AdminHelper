@@ -330,9 +330,10 @@ prüf es am Gate mit:
 > **`.claude/` wird per Whitelist geteilt** (das Repo ist PUBLIC). Versioniert sind die
 > wiederverwendbare Automatisierung: `settings.json` (Permissions + Hook), `skills/`,
 > `rules/` (pfadgebundene Regeln) und `agents/`.
-> **Draußen bleibt nur `settings.local.json`** — sie trägt jetzt sowohl das Proxmox-Token
-> als auch die Proxmox-Infra (`env`, aus `settings.json` dorthin verschoben, damit keine
-> Homelab-Details öffentlich werden). Neue `.claude/`-Dateien sind per Default ignoriert, bis
+> **Draußen bleibt nur `settings.local.json`** — sie trägt die Proxmox-Infra (`env`, aus
+> `settings.json` dorthin verschoben, damit keine Homelab-Details öffentlich werden). Das
+> Proxmox-Token liegt außerhalb des Baums in `~/.config/adminhelper/pve.env` (0600, R-0229);
+> der `env`-Block bleibt dafür nur der Rückfall. Neue `.claude/`-Dateien sind per Default ignoriert, bis
 > du sie in der `.gitignore`-Whitelist freigibst.
 
 Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerichtet:

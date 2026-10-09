@@ -19,25 +19,35 @@ VM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AH_VM_STATE_DIR="${AH_VM_STATE_DIR:-$VM_ROOT/.vm}"
 
 # --- environment -------------------------------------------------------------
-# Load AH_PVE_*/AH_VM_* from .claude/settings.local.json (gitignored — the only
-# place the token lives). A variable that is already set wins, which is the same
-# precedence vm.py uses, so a runner can inject its own without a file.
-# Idempotent.
+# Load AH_PVE_*/AH_VM_* from ~/.config/adminhelper/pve.env (0600, where the token
+# belongs) and .claude/settings.local.json (gitignored, the fallback), pve.env
+# first. A variable that is already set wins, which is the same precedence vm.py
+# uses, so a runner can inject its own without a file. Idempotent.
 vm_load_env() {
   [ -n "${AH_PVE_URL:-}" ] && return 0
-  # shlex.quote, not %r: a value holding a single quote flips Python's repr to
-  # DOUBLE quotes, and the shell would then expand $…, backticks and backslashes
-  # inside a token this file is supposed to pass through untouched.
-  eval "$(cd "$VM_ROOT" && python3 -c '
-import json, os, shlex
+  local exports
+  # vm.py's file_values(), not a second parser: the two sides must agree about
+  # where a key comes from and which pve.env is refused (R-0229). A refused file is
+  # an error, not a fallback, and nothing is exported then. shlex.quote, not %r: a
+  # value holding a single quote flips Python's repr to DOUBLE quotes, and the shell
+  # would then expand $…, backticks and backslashes inside a token this file is
+  # supposed to pass through untouched.
+  exports="$(cd "$VM_ROOT" && python3 -c '
+import os, shlex, sys
+sys.path.insert(0, "scripts/vm")
+import vm
 try:
-    env = json.load(open(".claude/settings.local.json")).get("env", {})
-except Exception:
-    env = {}
-for k, v in env.items():
-    if (k.startswith("AH_PVE_") or k.startswith("AH_VM_")) and not os.environ.get(k):
-        print("export %s=%s" % (k, shlex.quote(str(v))))')"
-  [ -n "${AH_PVE_URL:-}" ] || { echo "vm_lib: AH_PVE_URL unset (.claude/settings.local.json -> env)" >&2; return 1; }
+    values = vm.file_values(".")
+except vm.Usage as exc:
+    sys.exit("vm_lib: %s" % exc)
+for k, v in values.items():
+    if not os.environ.get(k):
+        print("export %s=%s" % (k, shlex.quote(str(v))))')" || return 1
+  eval "$exports"
+  [ -n "${AH_PVE_URL:-}" ] || {
+    echo "vm_lib: AH_PVE_URL unset (~/.config/adminhelper/pve.env or .claude/settings.local.json -> env)" >&2
+    return 1
+  }
 }
 
 # --- calling vm.py -----------------------------------------------------------
