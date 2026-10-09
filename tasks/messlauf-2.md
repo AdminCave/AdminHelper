@@ -34,8 +34,10 @@ Dedup-Key: ref:server:tests/conftest.py:pg_engine-utc
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 
-### T2 — SSRF-Tests decken die zwei fehlenden Zweige ab (R-0228)  [ ]
+### T2 — SSRF-Tests decken die zwei fehlenden Zweige ab (R-0228)  [x]
 Komponente: server · Dateien: apps/server/tests/test_ssrf.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @9110f01e 2026-10-09T21:46:39+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: Seit R-0045 unterscheidet `classify_url` (`app/core/ssrf.py`, Server und Monitoring zeilengleich) ALLOWED,
 PRIVATE und UNRESOLVED. Zwei Zweige haben keinen Test: eine Adresse, die `ipaddress` nicht lesen kann, ergibt PRIVATE
 (der `ValueError`-Zweig), und eine leere `getaddrinfo`-Liste ergibt UNRESOLVED. Beide bekommen je einen Test in
