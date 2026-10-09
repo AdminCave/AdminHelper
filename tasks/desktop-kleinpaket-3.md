@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Kleinpaket 3: keine ERR_*-Codes in der Statusleiste — Task-Ledger
-Status: freigegeben · Branch: feature/desktop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/desktop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0248, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Frage (Aufsicht): 1 Weg (a), der Filter sitzt zentral in reportError; die Inline-Stellen ausserhalb der Statusleiste sind eine eigene Roadmap-Zeile
 Spec: Roadmap R-0248 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Textfilter im Store der Statusleiste (`desktop-ui`); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Live-Spec liest die Statusleiste (die `ERR_`-Prüfung in `enroll-trust-dialog.live.js` liest den Login-Fehler), der Komponententest deckt den Weg ab.
