@@ -245,3 +245,12 @@ def test_is_private_url_still_rejects_for_both_reasons(monkeypatch):
     assert ssrf_mod.is_private_url("http://") is True
     monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
     assert ssrf_mod.is_private_url("http://dead-nameserver.example/") is True
+
+
+@pytest.mark.parametrize(
+    "url", ["http://[::1", "http://[", "http://[fe80::1%25eth0", "https://[::1:8443/x"]
+)
+def test_a_malformed_ipv6_literal_is_rejected_not_raised(url):
+    # urlparse raises ValueError on these (R-0181); the guard answers with a verdict.
+    assert ssrf_mod.classify_url(url) is ssrf_mod.UrlVerdict.PRIVATE
+    assert ssrf_mod.is_private_url(url) is True

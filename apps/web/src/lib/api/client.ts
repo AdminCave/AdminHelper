@@ -115,11 +115,7 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   }
 
   if (!res.ok) {
-    const message =
-      (data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
-        ? data.detail
-        : null) ?? `HTTP ${res.status}`;
-    throw new ApiError(res.status, message, data);
+    throw new ApiError(res.status, errorDetail(data) ?? `HTTP ${res.status}`, data);
   }
 
   // A 2xx promises a T. A body that could not be read — cut off by a reload
@@ -128,6 +124,22 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   if (unreadable) throw new ApiError(res.status, 'Invalid response body');
 
   return data as T;
+}
+
+// The message of an error body: a string detail as it is, or a 422 in the format the
+// OpenAPI promises (HTTPValidationError, R-0207), a list of {loc, msg, type}, as its msg
+// texts. Anything else has no message of its own.
+function errorDetail(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || !('detail' in data)) return null;
+  const { detail } = data;
+  if (typeof detail === 'string') return detail;
+  if (!Array.isArray(detail)) return null;
+  const msgs = detail
+    .map((d: unknown) =>
+      d && typeof d === 'object' && 'msg' in d && typeof d.msg === 'string' ? d.msg : null,
+    )
+    .filter((m): m is string => m !== null);
+  return msgs.length ? msgs.join('; ') : null;
 }
 
 // Raw GET that shares the same 401 -> tryRefresh -> retry path as request(), but

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -77,15 +78,24 @@ def _to_dict(hook: Hook) -> dict:
     }
 
 
+def _invalid(field: str, msg: str, value: object) -> RequestValidationError:
+    """A 422 in the format the OpenAPI promises (HTTPValidationError, R-0207): FastAPI's
+    own handler renders it as {"detail": [{"loc", "msg", "type", "input"}]}."""
+    return RequestValidationError(
+        [{"type": "value_error", "loc": ("body", field), "msg": msg, "input": value}]
+    )
+
+
 def _validate_schedule_interval(interval: str) -> None:
     """Rejects an interval that is neither a known alias nor a 5-field cron
     expression. Shared by create and update so a bad cron on PUT raises 422
     instead of reaching add_hook -> _parse_trigger as an unhandled 500."""
     parts = interval.split()
     if interval not in INTERVAL_MAP and len(parts) != 5:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Ungültiges Intervall. Erlaubt: {', '.join(VALID_INTERVALS)} oder Cron (5 Felder)",
+        raise _invalid(
+            "schedule_interval",
+            f"Ungültiges Intervall. Erlaubt: {', '.join(VALID_INTERVALS)} oder Cron (5 Felder)",
+            interval,
         )
 
 
@@ -94,18 +104,20 @@ def _validate_create(data: HookCreate) -> None:
         pass  # token is generated server-side
     elif data.hook_type == "event":
         if not data.event_triggers:
-            raise HTTPException(
-                status_code=422, detail="event_triggers erforderlich für Event-Hooks"
+            raise _invalid(
+                "event_triggers", "event_triggers erforderlich für Event-Hooks", data.event_triggers
             )
         for evt in data.event_triggers:
             if evt not in VALID_EVENTS:
-                raise HTTPException(
-                    status_code=422, detail=f"Unbekanntes Event: {evt!r}. Erlaubt: {VALID_EVENTS}"
+                raise _invalid(
+                    "event_triggers", f"Unbekanntes Event: {evt!r}. Erlaubt: {VALID_EVENTS}", evt
                 )
     elif data.hook_type == "schedule":
         if not data.schedule_interval:
-            raise HTTPException(
-                status_code=422, detail="schedule_interval erforderlich für Scheduled Hooks"
+            raise _invalid(
+                "schedule_interval",
+                "schedule_interval erforderlich für Scheduled Hooks",
+                data.schedule_interval,
             )
         _validate_schedule_interval(data.schedule_interval)
 
@@ -259,7 +271,7 @@ def update_hook(
     if data.event_triggers is not None:
         for evt in data.event_triggers:
             if evt not in VALID_EVENTS:
-                raise HTTPException(status_code=422, detail=f"Unbekanntes Event: {evt!r}")
+                raise _invalid("event_triggers", f"Unbekanntes Event: {evt!r}", evt)
         hook.event_triggers = json.dumps(data.event_triggers)
     if data.schedule_interval is not None:
         _validate_schedule_interval(data.schedule_interval)

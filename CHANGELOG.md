@@ -280,6 +280,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sperrte das approve des Reviewers. Die Antwort heisst `only-declared-deletion` und steht sichtbar in
   der Review-Zeile; ein Ersatztest oder jede andere Aenderung am Test-Diff wird weiter geprobt. Dazu
   `review.sh declared-only`, und `task-close.sh` gibt der Probe die Task mit.
+- **Hooks: ungueltige Eingaben im dokumentierten Fehler-Format (R-0207):** `POST /api/hooks` und
+  `PUT /api/hooks/{id}` antworteten bei fehlendem oder ungueltigem `schedule_interval` und bei fehlenden
+  oder unbekannten `event_triggers` mit einem 422, dessen `detail` ein String war. Die OpenAPI und die
+  API-Referenz versprechen eine Liste von `{loc, msg, type}`; so antworten die Routen jetzt, mit den
+  bisherigen Texten als `msg`. Die Web-Oberflaeche zeigt bei jedem 422 mit solcher Liste jetzt die
+  `msg`-Texte (mit „; “ verbunden) statt „HTTP 422“ — auch bei den Pydantic-Fehlern der uebrigen Routen.
 - **Desktop: Passwort fuer den Browser-Export (R-0219):** Die Einstellungen liessen ein Passwort ab 8
   Zeichen zu, der Export selbst verlangt 12; ein Passwort mit 8 bis 11 Zeichen endete in der
   allgemeinen Meldung „angemeldet und Server erreichbar?“. Die Einstellungen verlangen jetzt die
