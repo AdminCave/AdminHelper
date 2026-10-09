@@ -14,6 +14,7 @@ import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import net from 'net';
+import { SevereServiceError } from 'webdriverio';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const desktopDir = path.resolve(__dirname, '..');
@@ -109,7 +110,10 @@ export const config = {
         shell: true,
       },
     );
-    if (r.status !== 0) throw new Error(`tauri build failed (${r.status})`);
+    // Only a SevereServiceError stops the launcher: wdio logs any other error from a
+    // launcher hook and runs the specs anyway, against whatever binary an earlier
+    // build left behind (R-0259).
+    if (r.status !== 0) throw new SevereServiceError(`tauri build failed (${r.status})`);
   },
 
   // Start tauri-driver before the session so it can proxy the WebDriver requests.

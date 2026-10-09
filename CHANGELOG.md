@@ -300,6 +300,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lesen und uebersprang den Hook bei jedem Abgleich, ohne Meldung. Die Routen pruefen jetzt mit dem Parser des
   Schedulers und antworten auf ein unlesbares Intervall mit 422. Ein schon gespeicherter Hook mit so einem
   Intervall laeuft weiter nicht, der Scheduler meldet ihn aber einmal mit einer Warnung im Log.
+- **Desktop-E2E: ein gescheiterter Build macht den Lauf rot (R-0259):** `onPrepare` in
+  `apps/desktop/e2e/wdio.conf.js` baut die App mit `cargo tauri build`. Scheiterte der Build, schrieb wdio den
+  Fehler nur ins Log und liess die Specs gegen das Binary eines frueheren Laufs laufen; der Lauf meldete PASS.
+  `onPrepare` wirft jetzt eine `SevereServiceError`, und der Lauf endet vor dem ersten Spec mit Exit 1. Ein
+  Unit-Test unter `test/unit/` prueft das ohne Display und ohne Rust und laeuft in `npm run lint` mit.
 - **Desktop: Registrieren und Zuruecksetzen in den Einstellungen nur mit Anmeldung (R-0244):** Stellte man im
   Einstellungs-Dialog nur den Modus auf `server`, ohne angemeldet zu sein, erschien das Token-Feld; eine
   Registrierung lief dann gegen die eingetragene URL und startete keinen Tunnel. Token-Feld und Zuruecksetzen

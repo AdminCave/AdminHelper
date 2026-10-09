@@ -14,7 +14,9 @@
 # desktop's frpc logging in — the full PKI + frps + enrollment chain.
 # A second run (settings-enroll.live.js, R-0212) clears the identity, signs in
 # without one, registers the device in the settings with a second token and
-# asserts that the tunnel connects afterwards.
+# asserts that the tunnel connects afterwards. Its last step (R-0246) resets the
+# identity while that tunnel runs and registers again with a third token: a new
+# frpc has to take over.
 #
 # Boot/seed/teardown shared via lib_e2e_stack.sh. Needs docker(+compose), openssl,
 # curl, python3, node, xvfb-run, WebKitWebDriver, tauri-driver, tauri-cli,
@@ -73,20 +75,21 @@ dbus-run-session -- bash -c '
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/tunnel-start.live.js
 ' && ok "GUI: enrolled, logged in, tunnel indicator connected" || bad "GUI tunnel-start spec failed"
 
-# ── Enroll from the settings (R-0212): its own one-time token, minted just
-# before its run like the first one ───────────────────────────────────────────
+# ── Enroll from the settings (R-0212), then again (R-0246): one-time tokens of
+# their own, minted just before the run like the first one ────────────────────
 SETTINGS_TOKEN=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
-if [ -n "$SETTINGS_TOKEN" ]; then
-    ok "minted a second enrollment token"
+REENROLL_TOKEN=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+if [ -n "$SETTINGS_TOKEN" ] && [ -n "$REENROLL_TOKEN" ]; then
+    ok "minted a second and a third enrollment token"
     echo "[e2e-tunnel] running the settings-enroll spec under xvfb..."
-    export AH_SETTINGS_ENROLL_TOKEN="$SETTINGS_TOKEN"
+    export AH_SETTINGS_ENROLL_TOKEN="$SETTINGS_TOKEN" AH_SETTINGS_REENROLL_TOKEN="$REENROLL_TOKEN"
     dbus-run-session -- bash -c '
         eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true  # review: ok best-effort unlock as in the run above, an unusable keyring fails the spec itself
         export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
         cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/settings-enroll.live.js
-    ' && ok "GUI: registered from the settings, tunnel indicator connected" || bad "GUI settings-enroll spec failed"
+    ' && ok "GUI: registered from the settings and again, a new frpc connected" || bad "GUI settings-enroll spec failed"
 else
-    bad "could not mint the second enrollment token"
+    bad "could not mint the second and third enrollment tokens"
 fi
 
 # ── Independent check: frps logged the desktop's frpc connecting ─────────────
