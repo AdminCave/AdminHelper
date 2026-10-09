@@ -62,7 +62,7 @@ export const translations: Translations = {
     'infra.prov.caFp':
       'CA-Fingerprint für --ca-fp (verifizierter Erstkontakt; auch für den Out-of-band-Vergleich):',
     'infra.prov.noCaFp':
-      'Dieses Gerät ist nicht enrollt — Befehle ohne --ca-fp: Der Erstkontakt der Agents bleibt unverifiziert (Trust-on-first-use).',
+      'Dieses Gerät ist nicht registriert — Befehle ohne --ca-fp: Der Erstkontakt der Agents bleibt unverifiziert (Trust-on-first-use).',
     'infra.prov.existingTokens': 'Vorhandene Tokens',
     'infra.prov.noTokens': 'Keine Tokens',
     'infra.prov.created': 'Token erzeugt',
@@ -212,11 +212,11 @@ export const translations: Translations = {
     'settings.resetCertPin.missingUrl': 'Bitte zuerst eine Server-URL eintragen.',
     'settings.resetDeviceId': 'Geräte-Identität zurücksetzen',
     'settings.resetDeviceId.hint':
-      'Nur nach einer Server-Neuinstallation bzw. neu erzeugter PKI nötig: löscht das mTLS-Geräte-Zertifikat und den Zertifikat-Pin. Danach ist eine erneute Anmeldung/Registrierung erforderlich.',
+      'Nur nach einer Server-Neuinstallation bzw. neu erzeugter PKI nötig: löscht das mTLS-Geräte-Zertifikat und den Zertifikat-Pin. Danach braucht das Gerät einen neuen Einmal-Token vom Admin; registriert wird es hier in den Einstellungen.',
     'settings.resetDeviceId.confirm':
-      'Achtung: Dies löscht das mTLS-Geräte-Zertifikat dieses Geräts und den gepinnten Zertifikat-Fingerprint. Nur fortfahren, wenn der Zertifikatswechsel erwartet ist (z. B. nach einer Server-Neuinstallation) — ein unerwarteter Wechsel kann auf einen MITM-Angriff hindeuten. Danach musst du dich neu anmelden bzw. das Gerät neu registrieren. Fortfahren?',
+      'Achtung: Dies löscht das mTLS-Geräte-Zertifikat dieses Geräts und den gepinnten Zertifikat-Fingerprint. Nur fortfahren, wenn der Zertifikatswechsel erwartet ist (z. B. nach einer Server-Neuinstallation) — ein unerwarteter Wechsel kann auf einen MITM-Angriff hindeuten. Danach registrierst du das Gerät mit einem neuen Einmal-Token vom Admin, hier in den Einstellungen. Fortfahren?',
     'settings.resetDeviceId.done':
-      'Geräte-Identität zurückgesetzt. Bitte neu anmelden/registrieren.',
+      'Geräte-Identität zurückgesetzt. Jetzt mit einem Einmal-Token vom Admin neu registrieren.',
     'settings.enroll.hint':
       'Dieses Gerät hat noch kein Geräte-Zertifikat. Mit einem Einmal-Token vom Admin registrieren, danach startet der Tunnel.',
     'settings.enroll.done': 'Gerät registriert.',
@@ -299,16 +299,16 @@ export const translations: Translations = {
     'login.serverUrl.placeholder': 'https://adminhelper.example.com',
     'login.signingIn': 'Anmelden…',
     'login.signIn': 'Anmelden',
-    'login.enroll.switch': 'Erstes Mal? Gerät mit Token einrichten',
+    'login.enroll.switch': 'Gerät mit Token registrieren',
     'login.enroll.token': 'Enrollment-Token',
     'login.enroll.token.placeholder': 'Token vom Administrator',
-    'login.enroll.submit': 'Gerät enrollen',
-    'login.enroll.working': 'Enrolle…',
+    'login.enroll.submit': 'Gerät registrieren',
+    'login.enroll.working': 'Registriere…',
     'login.enroll.back': 'Zurück zur Anmeldung',
-    'login.enroll.done': 'Gerät enrollt — jetzt anmelden.',
+    'login.enroll.done': 'Gerät registriert — jetzt anmelden.',
     'login.useLocal': 'Ohne Server fortfahren (nur lokale Verbindungen)',
     'login.resetPin': 'Gepinntes Server-Zertifikat zurücksetzen',
-    'login.resetDeviceId': 'Geräte-Registrierung zurücksetzen',
+    'login.resetDeviceId': 'Geräte-Identität zurücksetzen',
     'login.resetPin.done':
       'Vertrauen zurückgesetzt. Erneut verbinden — beim nächsten Versuch wird das aktuelle Server-Zertifikat neu gepinnt.',
     'login.resetPin.missingUrl': 'Bitte zuerst die Server-URL eintragen.',
@@ -810,10 +810,11 @@ export const translations: Translations = {
     'settings.resetCertPin.missingUrl': 'Please enter a server URL first.',
     'settings.resetDeviceId': 'Reset device identity',
     'settings.resetDeviceId.hint':
-      'Only needed after a server reinstall or a re-created PKI: removes the mTLS device certificate and the certificate pin. You must sign in / re-enroll afterwards.',
+      'Only needed after a server reinstall or a re-created PKI: removes the mTLS device certificate and the certificate pin. Afterwards the device needs a new one-time token from your administrator; enroll it here in the settings.',
     'settings.resetDeviceId.confirm':
-      'Warning: this removes this device’s mTLS certificate and the pinned certificate fingerprint. Only continue if the certificate change is expected (e.g. after a server reinstall) — an unexpected change may indicate a MITM attack. You will need to sign in / re-enroll the device afterwards. Continue?',
-    'settings.resetDeviceId.done': 'Device identity reset. Please sign in / re-enroll.',
+      'Warning: this removes this device’s mTLS certificate and the pinned certificate fingerprint. Only continue if the certificate change is expected (e.g. after a server reinstall) — an unexpected change may indicate a MITM attack. Afterwards you enroll the device with a new one-time token from your administrator, here in the settings. Continue?',
+    'settings.resetDeviceId.done':
+      'Device identity reset. Enroll the device again with a one-time token from your administrator.',
     'settings.enroll.hint':
       'This device has no device certificate yet. Enroll it with a one-time token from your administrator; the tunnel starts afterwards.',
     'settings.enroll.done': 'Device enrolled.',
@@ -896,7 +897,7 @@ export const translations: Translations = {
     'login.serverUrl.placeholder': 'https://adminhelper.example.com',
     'login.signingIn': 'Signing in…',
     'login.signIn': 'Sign in',
-    'login.enroll.switch': 'First time? Set up this device with a token',
+    'login.enroll.switch': 'Enroll this device with a token',
     'login.enroll.token': 'Enrollment token',
     'login.enroll.token.placeholder': 'Token from your administrator',
     'login.enroll.submit': 'Enroll device',
@@ -905,7 +906,7 @@ export const translations: Translations = {
     'login.enroll.done': 'Device enrolled — sign in now.',
     'login.useLocal': 'Continue without a server (local connections only)',
     'login.resetPin': 'Reset pinned server certificate',
-    'login.resetDeviceId': 'Reset device enrollment',
+    'login.resetDeviceId': 'Reset device identity',
     'login.resetPin.done':
       'Trust reset. Reconnect — the current server certificate will be re-pinned on the next attempt.',
     'login.resetPin.missingUrl': 'Please enter the server URL first.',

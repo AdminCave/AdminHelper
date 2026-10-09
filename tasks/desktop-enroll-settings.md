@@ -50,8 +50,10 @@ registriert. Dazu CHANGELOG unter Added (der Eintrag samt Tunnelstart) und Fixed
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html · CHANGELOG.md
 
-### T2 — Texte: Zurücksetzen nennt den Token-Weg, ein Begriff je Sprache  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/developer/desktop.html, docs/en/developer/desktop.html
+### T2 — Texte: Zurücksetzen nennt den Token-Weg, ein Begriff je Sprache  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/installation.html, docs/en/admin/installation.html, docs/developer/desktop.html, docs/en/developer/desktop.html, docs/admin/betrieb.html, docs/en/admin/operations.html, README.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @01f6b739 2026-10-09T12:54:24+02:00
+Review: approve (sonnet) · round 1
 Änderung (F4):
 - `settings.resetDeviceId.hint`, `.confirm` und `.done` (DE `dictionaries.ts:214-219`, EN `:809-813`) nennen den
   Einmal-Token vom Admin und den Eintrag in den Einstellungen statt „anmelden / registrieren“.
