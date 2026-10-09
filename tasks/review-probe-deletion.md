@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # review-probe: eine reine Entfernung mit angekündigter Test-Löschung sperrt kein approve (R-0227) — Task-Ledger
-Status: bereit · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (Harness-Kleinpaket aus R-0227, von Kevin am 2026-10-08 in der Triage als „zuerst“ angenommen; Delegation Kevin 2026-10-05; den PR merged Kevin). Entscheidungen: 1, 2, 4, 5, 6 wie empfohlen; 3 abweichend: `only-declared-deletion` wird nicht still angenommen, die Review-/Verdict-Zeile im Ledger nennt den Grund sichtbar (etwa „Probe: nur angekündigte Löschung“), weil das Paket ein Gate lockert
 Spec: Roadmap R-0227 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell und Python unter scripts/dev mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -100,3 +100,19 @@ angekündigte Löschung. CHANGELOG `[Unreleased]` → Fixed.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: das ist die Doku-Task (DE und EN der cicd-Seite im selben Commit)
 Abhängt von: T1, T2
+
+### T4 — Nachbesserung aus dem Review am Ende: kein Import-Schlupfloch (R-0227)  [ ]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, tasks/README.md, DEVELOPMENT.md
+Änderung: Angelegt 2026-10-09 aus dem Review am Ende (Opus, request_changes). wichtig, belegt mit einer
+hermetischen Probe: `go_import_block` erkennt `import (` überall, auch in einem Raw-String oder Kommentar, und ohne
+eine folgende Zeile `)` zählt der Rest der Datei als Import. Eine entfernte Zeile eines bleibenden Tests ging so als
+„Import“ durch (`declared-only: yes`). Der Block zählt deshalb nur vor der ersten Deklaration auf oberster Ebene
+(`func`/`type`/`var`/`const`), auch mitten in einem offenen Block. Aus derselben Runde, weil es dieselbe Regel
+schärft: eine Import-Zeile, die selbst Tests mitbringt, ist keine harmlose — in Python ein `*` oder ein Name, der mit
+`test`/`Test` beginnt (pytest sammelt, was ein Modul importiert), in JS/TS ein bloßer Import ohne `from` oder der
+Import einer `.test`/`.spec`-Datei (ein importiertes Modul läuft). Tests: der Go-Fall des Reviewers mit Raw-String
+⇒ no, ein Import-Block oben ⇒ yes; Python `*`- und `test_`-Import ⇒ no; JS-Seiteneffekt-Import ⇒ no, eine reine
+JS-Löschung ⇒ yes. Dazu die nits: der Kopf von review.sh nennt `<rev>^`, DEVELOPMENT.md nennt die drei Gründe ohne
+Lauf beim Namen, tasks/README.md die Ausnahme bei den Importen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: tasks/README.md, DEVELOPMENT.md (der Rest ist Code)
