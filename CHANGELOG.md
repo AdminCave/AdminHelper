@@ -274,6 +274,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Zeitstempel der Monitoring-Antworten in UTC mit `Z` (R-0202):** Die Antworten unter
+  `/api/monitoring/*` schreiben ihre Zeitstempel (`createdAt`, `updatedAt`, `since`, `lastCheck`,
+  `sentAt`, `startsAt`, `endsAt`) als RFC 3339 in UTC mit `Z`, wie die Server-API seit R-0064; bisher
+  trugen sie keine Zone. Der Desktop las die Zeit der letzten Pruefung und des Alarm-Logs deshalb als
+  Ortszeit und zeigte sie um den Abstand zu UTC verschoben; er liest einen Wert ohne Zone jetzt als
+  UTC, auch von einem aelteren Monitoring-Dienst. Keine Migration: `createdAt`/`updatedAt` von vor dem
+  2026-07-09 (NEU-8.14b) koennen um den Offset abweichen. **Hinweis fuer eigene Skripte** gegen
+  `/api/monitoring/*`: Wer die Werte als String vergleicht oder selbst zerlegt, muss das `Z` erwarten;
+  `datetime.fromisoformat` liest beide Formen. Doku: API-Referenz, „Zeitstempel".
 - **Desktop: Passwort fuer den Browser-Export (R-0219):** Die Einstellungen liessen ein Passwort ab 8
   Zeichen zu, der Export selbst verlangt 12; ein Passwort mit 8 bis 11 Zeichen endete in der
   allgemeinen Meldung „angemeldet und Server erreichbar?“. Die Einstellungen verlangen jetzt die

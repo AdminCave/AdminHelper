@@ -52,7 +52,6 @@
             <li>A connection's <code>lastUsed</code> is a stored string and comes back as it was written &ndash; the server itself writes <code>+00:00</code>, a client may set the value freely.</li>
             <li><code>lastStartTime</code>/<code>lastCloseTime</code> of <code>GET /api/frp/status</code> are passed through unchanged from frps (e.g. <code>09-27 10:00:00</code>, without year and zone).</li>
             <li>The <code>result</code> of <code>POST /api/hooks/{id}/run</code> and <code>/api/hooks/trigger</code> is whatever the script returns.</li>
-            <li>The responses under <code>/api/monitoring/*</code> are passed through unchanged from the monitoring service.</li>
           </ul>
 
           <h2>Auth</h2>

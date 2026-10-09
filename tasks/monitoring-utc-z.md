@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Zeitstempel in UTC mit `Z` — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-utc-z · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/monitoring-utc-z · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0202, von Kevin am 2026-10-06 angenommen: „nach R-0064, gleiches Muster“ — das deckt den API-Vertrag samt Altzeilen-Grenze; Delegation Kevin 2026-10-05). Offene Fragen entschieden (Aufsicht): 1 Weg (b), formatCheckTime liest einen Wert ohne Zone als UTC wie die drei Wartungs-Leser; 2 Heavy none, keine Integrations- oder E2E-Stufe liest Monitoring-Zeitstempel; 3 Zuständigkeit wie oben
 Spec: Roadmap R-0202 (Kurz-Ledger ohne Spec)
 Heavy: none — Monitoring-Dienst und Desktop-UI, kein Stack-, Gateway-, PKI- oder Install-Pfad; der Server-Proxy reicht die Antworten byteweise durch, und keine Integrations- oder E2E-Stufe liest Monitoring-Zeitstempel (offene Frage 2).
@@ -103,8 +103,10 @@ Semantik: wie T1. Die Desktop-Doku beschreibt die Anzeige nicht. Gesucht wurde i
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: in T3 (CHANGELOG)
 
-### T3 — Doku: Monitoring-Antworten in UTC mit `Z`  [ ]
+### T3 — Doku: Monitoring-Antworten in UTC mit `Z`  [x]
 Komponente: monitoring · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @6722c904 2026-10-09T11:28:29+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Die Ausnahme zu `/api/monitoring/*` in „Zeitstempel“ bzw. „Timestamps“ fällt weg: DE und EN je
   `api-reference.html:55`. Die Regel in `:50` gilt dann auch dort.
