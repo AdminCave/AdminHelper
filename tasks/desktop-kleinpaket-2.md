@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Kleinpaket 2: Fehler ohne Code, Identitäts-Block nur mit Session, Tunnel beim Speichern — Task-Ledger
-Status: bereit · Branch: feature/desktop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/desktop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0243, R-0244, R-0245, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen (Aufsicht): 1 Weg (b), nur starten, wenn kein Tunnel laeuft — ein Neustart bei jedem Speichern braeche laufende SSH-/RDP-Verbindungen; 2 Heavy linux-full nur mit desktop_e2e_tunnel und desktop_e2e_crud (Enrollment-UI ist eine Journey)
 Spec: Roadmap R-0243, R-0244, R-0245 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — die Registrierung in den Einstellungen und das Speichern im Server-Modus ändern sich (Enrollment-UI, Tunnel); auf einer Pool-VM `run.sh e2e` nur mit `desktop_e2e_tunnel` (darin `settings-enroll.live.js`) und `desktop_e2e_crud` (darin `settings-mode.live.js`), kein Server- oder Gateway-Pfad (offene Frage 2).
