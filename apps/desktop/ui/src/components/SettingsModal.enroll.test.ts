@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   enrollWithToken: vi.fn(async () => undefined),
   resetDeviceIdentity: vi.fn(async () => undefined),
   startIfServerMode: vi.fn(async () => undefined),
+  stop: vi.fn(async () => undefined),
 }));
 
 // Everything but the calls under test fails loudly, as in SettingsModal.export.test.ts.
@@ -63,7 +64,7 @@ vi.mock('$lib/stores/session', async () => {
   };
 });
 
-vi.mock('$lib/stores/tunnel', () => ({ startIfServerMode: h.startIfServerMode }));
+vi.mock('$lib/stores/tunnel', () => ({ startIfServerMode: h.startIfServerMode, stop: h.stop }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   save: vi.fn(async () => null),
@@ -124,6 +125,38 @@ describe('SettingsModal — enroll from the settings (R-0212)', () => {
     expect(el(container, '[data-action="enroll-token"]')).toBeNull();
     expect(el(container, '[data-msg="enroll"]')?.textContent).toContain('Gerät registriert');
     await waitFor(() => expect(h.startIfServerMode).toHaveBeenCalledTimes(1));
+    // A frpc still running on a reset identity goes first, or the start fails (T7).
+    expect(h.stop).toHaveBeenCalledTimes(1);
+    expect(h.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      h.startIfServerMode.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('starts the tunnel only once the old one has stopped', async () => {
+    let release: () => void = () => {};
+    h.stop.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          release = () => resolve(undefined);
+        }),
+    );
+    const container = open();
+    await enroll(container, 'tok-1');
+
+    await waitFor(() => expect(h.stop).toHaveBeenCalledTimes(1));
+    expect(h.startIfServerMode).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(h.startIfServerMode).toHaveBeenCalledTimes(1));
+  });
+
+  it('still starts the tunnel when stopping the old one fails', async () => {
+    h.stop.mockRejectedValueOnce(new Error('stop failed'));
+    const container = open();
+    await enroll(container, 'tok-1');
+
+    // The start reports a frpc that is still running; the enrollment stands.
+    await waitFor(() => expect(h.startIfServerMode).toHaveBeenCalledTimes(1));
+    expect(el(container, '[data-msg="enroll"]')?.textContent).toContain('Gerät registriert');
   });
 
   it('shows a failure inline, keeps the field and leaves the tunnel alone', async () => {
@@ -137,6 +170,7 @@ describe('SettingsModal — enroll from the settings (R-0212)', () => {
     expect(el(container, '[data-action="enroll-token"]')).not.toBeNull();
     expect(el(container, '[data-action="device-reset"]')).toBeNull();
     expect(h.startIfServerMode).not.toHaveBeenCalled();
+    expect(h.stop).not.toHaveBeenCalled();
   });
 
   it('offers only the reset when the device has an identity', async () => {

@@ -23,7 +23,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     exportBrowserP12,
     generateDiagnostics,
   } from '$lib/bridge';
-  import { startIfServerMode } from '$lib/stores/tunnel';
+  import { startIfServerMode, stop as stopTunnel } from '$lib/stores/tunnel';
   import { save, confirm } from '@tauri-apps/plugin-dialog';
   import {
     RDP_WINDOW_MODES,
@@ -165,8 +165,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     } finally {
       enrollBusy = false;
     }
-    // frpc reads the identity only when it starts (export_identity), so a tunnel
-    // started before the enrollment would stay without a certificate.
+    // frpc reads the identity only when it starts (export_identity). After a reset
+    // it may still run on the old identity — the reset clears the keyring, not the
+    // process — and a start next to it fails ("frpc laeuft bereits"). Stopping is a
+    // no-op when none runs; a frpc that cannot be stopped is reported by the start.
+    try {
+      await stopTunnel();
+    } catch {
+      // reported by startIfServerMode below
+    }
     await startIfServerMode();
   }
 

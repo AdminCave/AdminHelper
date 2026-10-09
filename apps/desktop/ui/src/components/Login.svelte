@@ -268,15 +268,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {busy ? $t('login.signingIn') : $t('login.signIn')}
         </button>
       </form>
-      <button
-        type="button"
-        class="btn ghost login-secondary"
-        data-action="enroll-switch"
-        onclick={() => switchMode('enroll')}
-        disabled={busy}
-      >
-        {$t('login.enroll.switch')}
-      </button>
+      <!-- The mTLS hint carries the same button; one is enough. -->
+      {#if !mtlsRequired}
+        <button
+          type="button"
+          class="btn ghost login-secondary"
+          data-action="enroll-switch"
+          onclick={() => switchMode('enroll')}
+          disabled={busy}
+        >
+          {$t('login.enroll.switch')}
+        </button>
+      {/if}
       <button type="button" class="btn ghost login-secondary" onclick={useLocal} disabled={busy}>
         {$t('login.useLocal')}
       </button>

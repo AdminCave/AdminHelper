@@ -166,3 +166,26 @@ denn jeder Token gilt nur einmal, und fährt die Spec. Der Orchestrator läuft o
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict (Lint; der echte Lauf ist die Heavy-Zeile)
 Doku: keine (Test)
 Abhängt von: T1
+
+### T7 — Nachbesserung: Tunnel nach dem Registrieren neu starten, ein Knopf beim mTLS-Hinweis  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts, apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/components/Login.mtls.test.ts, docs/features/desktop-enroll-settings.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @84c4c8af 2026-10-09T14:15:27+02:00
+Review: approve (opus) · round 1 (Nachbesserung, Aufsicht 2026-10-09)
+Änderung: Aus dem Opus-Review über den ganzen Branch, von der Aufsicht freigegeben (2026-10-09), ein Review (Opus).
+- Ein Nutzer mit laufendem Tunnel setzt die Identität in den Einstellungen zurück und registriert das Gerät gleich
+  dort neu. `reset_device_identity` (`commands.rs:94-98`) stoppt frpc nicht, und `startIfServerMode()` nach der
+  Registrierung scheitert an „frpc laeuft bereits“ (`start_frpc`, `frpc.rs:245-247`). Die Anzeige geht auf
+  `disconnected`, der alte frpc läuft mit dem alten Zertifikat weiter.
+- `onEnroll` ruft deshalb vor `startIfServerMode()` `stop()` (`lib/stores/tunnel.ts:64`). `stop_frpc` ist ohne
+  laufenden frpc ein No-op. Der Kommentar dazu nennt den echten Fall: einen Tunnel, der noch mit der zurückgesetzten
+  Identität läuft.
+- Test in `SettingsModal.enroll.test.ts`: nach Erfolg `stop` vor `startIfServerMode`, nach einem Fehler keines von
+  beiden.
+- Bei `ERR_MTLS_CERT_REQUIRED` zeigt der Login den Knopf `enroll-switch` nicht mehr; sonst stünden zwei gleich
+  beschriftete Knöpfe untereinander. Ein Assert in `Login.mtls.test.ts`.
+- Die Spec beschreibt, was gebaut ist: die nginx-400 laut ADR 0001 am Stack festgehalten, die Schreibfolge mit dem
+  Zertifikat zuletzt, die Prüfung als `$derived` aus `error`, die drei Doku-Dateien aus T2, der Neustart des Tunnels.
+- Die Live-E2E bleibt, wie sie ist; die Reihenfolge prüft der Unit-Test (eigene Roadmap-Zeile der Aufsicht).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: docs/features/desktop-enroll-settings.md
+Abhängt von: T1, T5

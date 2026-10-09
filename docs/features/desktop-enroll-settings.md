@@ -82,7 +82,8 @@ tauschen. Die Erneuerung (`renew`, `:348`) umgeht das, indem sie den Schlüssel 
 Fehler 496 („a client has not presented the required certificate“, nginx-Doku `ngx_http_ssl_module`, „Error
 Processing“). Ausgeliefert wird er als Status 400 mit der Standardseite „400 No required SSL certificate was sent“
 (nginx-Quelltext `src/http/ngx_http_special_response.c`, `ngx_http_error_496_page` und `NGX_HTTPS_NO_CERT` →
-`NGX_HTTP_BAD_REQUEST`). Gegen den Stack ist das nicht verifiziert. `login` (`auth.rs:34`) macht daraus
+`NGX_HTTP_BAD_REQUEST`). ADR 0001 (A8-Enforcement) hielt genau diese Antwort am 2026-06-12 gegen den laufenden Stack
+fest; seitdem ist sie nicht erneut geprüft. `login` (`auth.rs:34`) macht daraus
 `Login fehlgeschlagen (<status>): <Rumpf>` (`:49-55`).
 
 **Tests:**
@@ -112,7 +113,9 @@ In `local` und `sync` erscheint der Block nicht, dort gibt es nichts zu registri
    „Selbstsignierte erlauben“ steht im selben Overlay.
 2. Bei Erfolg ist das Gerät registriert, das Feld leert sich, eine Meldung erscheint, und der Block zeigt das
    Zurücksetzen. Danach startet die Einstellung den Tunnel über `startIfServerMode()` (`lib/stores/tunnel.ts:36`),
-   denn frpc liest die Identität nur beim Start (`export_identity`, `frpc.rs:123`).
+   denn frpc liest die Identität nur beim Start (`export_identity`, `frpc.rs:123`). Vorher stoppt sie einen noch
+   laufenden Tunnel (`stop()`): Das Zurücksetzen leert den Keyring, nicht den frpc-Prozess, und ein Start neben dem
+   laufenden scheitert an „frpc laeuft bereits“ (`start_frpc`). Ohne laufenden frpc ist das Stoppen ein No-op.
 3. Ein Fehler erscheint inline, wie die anderen Fehler der Einstellungen; der Tunnel startet dann nicht.
 4. Die Erfolgsmeldung des Zurücksetzens steht außerhalb des Identitäts-Zweigs und wird damit sichtbar. Nach dem
    Zurücksetzen erscheint im selben Block das Token-Feld.
@@ -122,7 +125,9 @@ erzwungenem mTLS nach dem Zurücksetzen angemeldet bleibt, wenn API-Aufrufe sche
 zurück, führt dort der Hinweis aus R-0222 zum Token-Formular.
 
 **Schreibfolge beim Registrieren (R-0220).** `enroll_with_token` löst zuerst den Token ein. Erst danach löscht es die
-alte Identität, dann schreibt es Schlüssel, Zertifikat und CA-Kette.
+alte Identität, das Zertifikat zuerst, dann schreibt es Schlüssel, CA-Kette und zuletzt das Zertifikat. Als registriert
+gilt das Gerät (`is_enrolled`: Schlüssel und Zertifikat) damit erst, wenn alles liegt, und nach dem ersten Löschen
+nicht mehr (`replace_identity`).
 - Schlägt das Löschen fehl, bricht es vor dem Schreiben ab.
 - Ein Abbruch nach dem Löschen lässt das Gerät ohne Identität zurück, nie mit einem unpassenden Paar. Mit einem
   neuen Token registriert es sich dann wieder, in den Einstellungen oder auf dem Login-Screen.
@@ -133,9 +138,11 @@ alte Identität, dann schreibt es Schlüssel, Zertifikat und CA-Kette.
 **Hinweis beim Login (R-0222).** `login` erkennt genau die Antwort von nginx: Status 400 und im Rumpf
 „No required SSL certificate was sent“. Daraus wird ein fester Code nach dem Muster von `ERR_TLS_UNKNOWN_ISSUER`:
 `ERR_MTLS_CERT_REQUIRED: …`, gefolgt von einer englischen Erklärung. Jede andere Antwort bleibt wie heute.
-- `surfaceError` im Login zeigt bei diesem Code einen eigenen Hinweis (`login.mtlsRequired`, DE und EN), nicht den
-  rohen Text.
-- Daneben steht ein Knopf, der zum Token-Formular wechselt (`switchMode('enroll')`).
+- Der Login leitet die Prüfung aus dem Fehlertext ab (`$derived`, wie die Pin-Prüfungen daneben), nicht aus einem
+  Zweig in `surfaceError`. So greift sie auch beim Wiederholen nach dem Vertrauensdialog, das den Fehler direkt setzt.
+- Bei diesem Code zeigt er einen eigenen Hinweis (`login.mtlsRequired`, DE und EN), nicht den rohen Text.
+- Daneben steht ein Knopf, der zum Token-Formular wechselt (`switchMode('enroll')`). Der gleich beschriftete Knopf
+  unter dem Formular entfällt, solange der Hinweis steht.
 - Ändert nginx den Text, fällt der Login auf die heutige Meldung zurück; er bricht nicht.
 
 **Texte, DE und EN:**
@@ -148,7 +155,8 @@ alte Identität, dann schreibt es Schlüssel, Zertifikat und CA-Kette.
   einem Zurücksetzen ist es nicht das erste Mal.
 - Die Doku-Stellen, die diese Labels zitieren, ziehen mit.
 
-**Kein neuer Command.** Wiederverwendet werden `enrollWithToken`, `isDeviceEnrolled` und `startIfServerMode`. Das
+**Kein neuer Command.** Wiederverwendet werden `enrollWithToken`, `isDeviceEnrolled`, `startIfServerMode` und `stop`
+(der Command `stop_tunnel`). Das
 IPC-Inventar und der Typ-Paritätstest bleiben unverändert.
 
 ## Betroffene Komponenten und Dateien
@@ -166,6 +174,7 @@ IPC-Inventar und der Typ-Paritätstest bleiben unverändert.
   - `docs/admin/benutzer.html` / `docs/en/admin/users.html`;
   - `docs/admin/troubleshooting.html` / EN;
   - `docs/admin/installation.html` / EN (das Label dort passt heute nicht zur UI);
+  - `docs/admin/betrieb.html` / `docs/en/admin/operations.html` und `README.md` (zitieren das Login-Label);
   - `docs/developer/desktop.html` / EN;
   - dazu `CHANGELOG.md`.
 
@@ -235,3 +244,7 @@ Kevin hat F1 bis F4 beantwortet, die Aufsicht (adminhelper-ac) F5 bis F7 und die
 **Teststrategie** (Aufsicht): Für R-0222 reichen Unit-Tests, in Rust (Status und Rumpf ergeben den Code) und als
 Komponententest im Login. Heavy bleibt `linux-full` für die Desktop-Journey. Ein Multibox-Lauf mit `--enforce`, der
 den Hinweis live zeigen könnte, ist nicht eingeplant. Er bliebe ask-first.
+
+**Nachbesserung aus dem Branch-Review** (Aufsicht, 2026-10-09): Die Reihenfolge „Tunnel stoppen, dann starten“ nach
+einem Zurücksetzen prüft heute nur der Komponententest. Die Live-E2E setzt die Identität vor dem Login zurück, dort
+läuft noch kein frpc. Eine Live-E2E für diese Journey steht als eigene Roadmap-Zeile.

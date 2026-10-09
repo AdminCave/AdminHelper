@@ -79,6 +79,8 @@ describe('Login — device certificate required (ERR_MTLS_CERT_REQUIRED)', () =>
     expect(hint.textContent).toContain('Geräte-Zertifikat');
     expect(container.textContent).not.toContain('ERR_MTLS_CERT_REQUIRED');
     expect(container.textContent).not.toContain('one-time enrollment token');
+    // One way out, not two buttons with the same label (T7).
+    expect(container.querySelector('[data-action="enroll-switch"]')).toBeNull();
 
     await fireEvent.click(container.querySelector('[data-action="mtls-enroll"]')!);
 
@@ -120,5 +122,6 @@ describe('Login — device certificate required (ERR_MTLS_CERT_REQUIRED)', () =>
     );
     expect(container.querySelector('[data-msg="mtls-required"]')).toBeNull();
     expect(container.querySelector('[data-action="mtls-enroll"]')).toBeNull();
+    expect(container.querySelector('[data-action="enroll-switch"]')).not.toBeNull();
   });
 });
