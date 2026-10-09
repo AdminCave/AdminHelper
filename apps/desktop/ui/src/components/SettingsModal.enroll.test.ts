@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   resetDeviceIdentity: vi.fn(async () => undefined),
   startIfServerMode: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
+  // Set by the session mock below: null signs the user out for one test.
+  setSession: (_value: unknown): void => {},
 }));
 
 // Everything but the calls under test fails loudly, as in SettingsModal.export.test.ts.
@@ -47,7 +49,7 @@ vi.mock('$lib/bridge', () => {
 });
 
 vi.mock('$lib/stores/session', async () => {
-  const { readable } = await import('svelte/store');
+  const { readable, writable } = await import('svelte/store');
   const settings = {
     mode: 'server',
     url: null,
@@ -56,10 +58,12 @@ vi.mock('$lib/stores/session', async () => {
     allowSelfSignedCerts: false,
   };
   const session = { username: 'admin', serverUrl: 'https://srv.example', token: 'jwt-1' };
+  const sessionStore = writable<typeof session | null>(session);
+  h.setSession = (value) => sessionStore.set(value as typeof session | null);
   return {
     sessionStore: readable({ settings, session, ready: true }),
     settings: readable(settings),
-    session: readable(session),
+    session: sessionStore,
     currentSession: () => session,
   };
 });
@@ -79,6 +83,7 @@ afterEach(() => {
   settingsModalOpen.set(false);
   vi.clearAllMocks();
   h.isDeviceEnrolled.mockImplementation(async () => false);
+  h.setSession({ username: 'admin', serverUrl: 'https://srv.example', token: 'jwt-1' });
 });
 
 function open(): HTMLElement {
@@ -188,6 +193,23 @@ describe('SettingsModal — enroll from the settings (R-0212)', () => {
       ),
     );
     expect(el(container, '[data-msg="enroll"]')?.textContent).not.toContain('ERR_');
+  });
+
+  it('shows neither field nor reset without a session (R-0244)', async () => {
+    // The radio in the dialog says "server", but nobody is signed in: there is no
+    // session URL to enroll against, and no tunnel to start afterwards.
+    for (const enrolled of [false, true]) {
+      h.setSession(null);
+      h.isDeviceEnrolled.mockImplementation(async () => enrolled);
+      const container = open();
+
+      await waitFor(() => expect(h.isDeviceEnrolled).toHaveBeenCalled());
+      expect(el(container, '[data-action="enroll-token"]')).toBeNull();
+      expect(el(container, '[data-action="device-reset"]')).toBeNull();
+      cleanup();
+      settingsModalOpen.set(false);
+      vi.clearAllMocks();
+    }
   });
 
   it('offers only the reset when the device has an identity', async () => {

@@ -41,8 +41,10 @@ inline.“ Der Code ist für die Maschine, der Nutzer liest den Text; die Einste
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: CHANGELOG.md (Fixed)
 
-### T2 — Einstellungen: Der Identitäts-Block erscheint nur mit Session (R-0244)  [ ]
+### T2 — Einstellungen: Der Identitäts-Block erscheint nur mit Session (R-0244)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2ebde36b 2026-10-09T16:17:44+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Der Block hängt an `{#if mode === 'server'}` (`SettingsModal.svelte:403`), und `mode` ist der Radio-Knopf im
 Dialog, nicht der gespeicherte Modus.
 - Wer in `local` oder `sync` nur „Server“ anklickt, sieht ohne Session das Token-Feld; vor R-0212 sah er dort schon den
