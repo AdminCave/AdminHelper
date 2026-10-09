@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinpaket 2: SSRF-Schutz bei kaputtem IPv6-Literal, 422 der Hooks im versprochenen Format — Task-Ledger
-Status: aktiv · Branch: feature/server-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/server-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0181 und R-0207, von Kevin in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen entschieden: 1 T3 ja (Kevin, 2026-10-09, sichtbares Verhalten); 2 Heavy linux-full bleibt (Aufsicht: Fehler-Format der Server-API); 3 ein Parse-Fehler ergibt PRIVATE (Aufsicht, fail closed wie der Docstring)
 Spec: Roadmap R-0181, R-0207 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — die Hook-API antwortet auf ungültige Eingaben in einem anderen Fehler-Format, und die Web-Oberfläche liest es; `run.sh integration` mit `web_live` gegen den echten Stack.
@@ -76,8 +76,10 @@ Unprocessable Entity … { "detail": [ { "loc": ["body", "port"], "msg": "ensure
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
 Doku: CHANGELOG.md (Fixed); die API-Referenz zeigt das Format schon
 
-### T3 — Web: ein 422 mit `detail` als Liste zeigt die Meldung statt „HTTP 422“  [ ]
+### T3 — Web: ein 422 mit `detail` als Liste zeigt die Meldung statt „HTTP 422“  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @d433d36b 2026-10-09T09:51:28+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Nur bei Ja zu offener Frage 1, sonst `ledger.sh mark-skip` mit Verweis auf die Antwort.
 - Heute übernimmt `request` nur ein `detail` vom Typ String als Meldung (`client.ts:119`), sonst `HTTP <status>`.
 - Damit zeigte der Hook-Dialog nach T2 für ein ungültiges Cron-Intervall nur noch „HTTP 422“. Diese Prüfung macht nur
