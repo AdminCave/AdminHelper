@@ -31,44 +31,36 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>FRP Tunnel</h1>
-          <p class="lead">AdminHelper runs a managed FRP server on the unified internal PKI. Agents authenticate with the tunnel cert they enrolled; RDP/SSH/VNC tunnels get dynamically assigned visitor ports.</p>
+          <p class="lead">FRP (Fast Reverse Proxy) builds encrypted, bidirectional tunnels between agent and server. That lets you reach RDP/SSH/HTTP on servers behind NAT or firewalls without port forwarding.</p>
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div><div class="callout-title">Where things are managed (since v0.32.0)</div><p>The <strong>individual tunnels</strong> of a server are created and edited in the <strong>desktop client</strong> (server mode), in the <em>Tunnel</em> tab under <em>Infrastructure</em>; when creating a tunnel you pick the FRP server configuration to use. The <strong>FRP server configuration</strong> (frps settings) itself stays in the <strong>web admin panel</strong> (the <em>FRP</em> page) — the desktop only references it.</p></div>
           </div>
 
-          <h2>PKI</h2>
+          <h2>Architecture</h2>
+          <p>Three components:</p>
           <ul>
-            <li>The <code>ca-issuer</code>'s <code>tunnel</code> intermediate signs the frps server cert and the agent tunnel certs (ECDSA P-256, a single trust root — as of A7, no longer a frps-run CA).</li>
-            <li>frps server cert: provisioned into the frps volume on first start (SAN = the public frps address). The CA key never reaches the internet-facing frps.</li>
-            <li>Agent tunnel cert: enrolled on-device during provisioning (A4) — the same cert serves server pushes <em>and</em> the frp tunnel. <code>trustedCaFile</code> is the <code>tunnel</code> chain on both sides.</li>
+            <li><strong>frps</strong> – runs in the server stack, exposes port 7000 (control channel) and 7443 (HTTPS tunnels).</li>
+            <li><strong>frpc</strong> – runs on every agent host, connects to <code>frps</code> and registers services.</li>
+            <li><strong>PKI</strong> – the <code>ca-issuer</code>'s internal <code>tunnel</code> intermediate signs the frps server cert and the agent tunnel certs; every <code>frpc</code> authenticates via mTLS (as of A7 a single trust root instead of a frps-run CA).</li>
           </ul>
 
-          <h2>Tunnel Types</h2>
-          <table>
-            <thead><tr><th>Type</th><th>Description</th><th>Use case</th></tr></thead>
-            <tbody>
-              <tr><td><code>tcp</code></td><td>FRP-assigned remote port on the server, visible from the public network.</td><td>RDP/SSH/VNC over untrusted networks – treat this as public-facing.</td></tr>
-              <tr><td><code>http</code></td><td>HTTP-reverse-proxy tunnel, routed by subdomain under the subdomain host of the FRP server configuration (<code>subDomainHost</code> in <code>frps.toml</code>).</td><td>Web UIs behind NAT (e.g. IPMI, home-automation).</td></tr>
-              <tr><td><code>stcp</code></td><td>Secret-key gated, only another visitor with matching <code>sk</code> can connect.</td><td>Private tunnels – zero public port exposure.</td></tr>
-            </tbody>
-          </table>
-          <p>The <strong>Secret key</strong> field of an STCP tunnel: left empty on create, the server generates a secret; left empty on edit, the stored one stays unchanged (the server never hands it back, so the field starts empty). To rotate it, enter a new value (at least 16 characters), then restart the tunnel in the desktop. Switching to HTTPS deletes the secret; switching back to STCP gets a new one.</p>
+          <h2>PKI Setup</h2>
+          <p>The tunnel PKI is part of the unified internal CA (ADR 0001):</p>
+          <ul>
+            <li><strong>frps server cert</strong>: issued by the <code>ca-issuer</code> under <code>tunnel</code> (ECDSA P-256, SAN = the public frps address), provisioned into the frps volume on first start. The CA key never reaches the internet-facing frps.</li>
+            <li><strong>Agent tunnel cert</strong>: the agent <em>enrolls</em> it on-device during provisioning (A4) — the same <code>tunnel</code> cert serves server pushes <em>and</em> the frp tunnel.</li>
+            <li><strong>trustedCaFile</strong>: the <code>tunnel</code> chain (intermediate + root) on both sides.</li>
+          </ul>
 
-          <h2>Visitor Ports</h2>
-          <p>The desktop client uses <code>stcp</code> whenever possible. When the tunnel is opened, the server assigns a free port from the <code>VISITOR_PORT_START..END</code> pool (default 6000–6999). The port is released as soon as the client disconnects.</p>
-
-          <h2>Status Dashboard</h2>
-          <p>The tunnel status view queries the frps dashboard. By default the server reaches it via the Compose service name (<code>http://frps:PORT</code>, with a <code>127.0.0.1</code> fallback). If frps runs in a different topology (its own host), set the base URL via <code>FRPS_DASHBOARD_URL</code> in <code>.env</code> instead of editing the code.</p>
-
-          <h2>Certificate Rotation</h2>
-          <p>The agent renews its tunnel cert automatically once it reaches ~50&nbsp;% of its lifetime, calling <code>/ca/renew</code> with the current cert as proof — no manual rotation trigger. An expired cert falls back to re-enrollment. Since the PKI migration the desktop visitor presents its enrolled <code>access</code> identity (the same one it uses for web/API access) and renews it automatically — no more server-minted visitor cert.</p>
-
-          <div class="callout callout-tip" data-reveal>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Backup the CA</div><p>The security asset is now the <code>ca-issuer</code>'s <code>ca-pki</code> volume (Root + intermediates). Losing it means every client must re-enroll. Back it up encrypted, off-site.</p></div>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Don't forget the CA backup</div><p>The security asset is now the <code>ca-issuer</code>'s <code>ca-pki</code> volume (Root + intermediates). Losing it means every client must re-enroll. Back it up encrypted, off-site; backup details under <a href="./operations.html#backup">Data directory backup</a>.</p></div>
           </div>
+
+          <h2>Rotating Client Certificates</h2>
+          <p>The agent renews its tunnel cert <strong>automatically</strong> once it reaches ~50&nbsp;% of its lifetime, calling <code>/ca/renew</code> with the current cert as proof — no manual rotation trigger. An expired cert can no longer be renewed; only a fresh enrollment helps then. Since the PKI migration the desktop visitor presents its enrolled <code>access</code> identity (the same one it uses for web/API access) and renews it automatically — no more server-minted visitor cert.</p>
 
           <h2>Rotating the FRP <code>auth.token</code></h2>
           <p><strong>Caution — breaking change:</strong> the global <code>auth.token</code> (in the FRP server config) flows identically into <code>frps.toml</code>, every agent <code>frpc.toml</code> and every desktop <code>visitor.toml</code>. In token mode frps knows exactly <em>one</em> token; there is no overlap/dual-token mechanism. A rotation therefore <strong>breaks all</strong> agents and visitors at once, until each has re-synced / re-downloaded its bundle. The actual tunnel security is enforced mTLS (<code>transport.tls.force</code>) plus the STCP <code>secretKey</code> anyway — the token is only the weaker second factor.</p>
@@ -81,16 +73,46 @@
 
           <p><strong>Applies to every FRP server-config change:</strong> not only token rotation — changed dashboard credentials, ports or <code>vhost</code> settings also write the new <code>frps.toml</code> immediately but only take effect after <code>docker compose restart frps</code> (frps has no config hot-reload, and the server container has no docker socket to restart it). The server logs a warning on every runtime change.</p>
 
+          <h2>Provision Token</h2>
+          <p>Every new agent gets a one-time token when it is registered. Token properties:</p>
+          <ul>
+            <li>Valid for 24h</li>
+            <li>Single use (invalidated server-side right after use)</li>
+            <li>Bound to a server ID, i.e. the token fits only a single agent entry</li>
+          </ul>
+
+          <h2>Tunnel Types</h2>
+          <table>
+            <thead><tr><th>Type</th><th>Description</th><th>Use case</th></tr></thead>
+            <tbody>
+              <tr><td><code>https</code></td><td>HTTPS tunnel with virtual-host routing (<code>idrac.srv1.example.com</code>) under the subdomain host of the FRP server configuration (<code>subDomainHost</code> in <code>frps.toml</code>).</td><td>Web UIs behind NAT (e.g. IPMI, home automation).</td></tr>
+              <tr><td><code>stcp</code></td><td>Secure TCP: only a visitor with the matching <code>secretKey</code> gets through. The visitor runs on the client side – the desktop client takes care of that automatically.</td><td>SSH, RDP, VNC, any TCP service as a private tunnel – zero public port exposure.</td></tr>
+            </tbody>
+          </table>
+          <p>The <strong>Secret key</strong> field of an STCP tunnel: left empty on create, the server generates a secret; left empty on edit, the stored one stays unchanged (the server never hands it back, so the field starts empty). To rotate it, enter a new value (at least 16 characters), then restart the tunnel in the desktop. Switching to HTTPS deletes the secret; switching back to STCP gets a new one.</p>
+
+          <h2>Visitor Ports</h2>
+          <p>STCP tunnels need a local port on the admin PC for the visitor, which binds it to <code>127.0.0.1</code>. The server assigns it when the tunnel is created, unless one is given: the first free port from the <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> range (default 6000–6999). The port stays assigned to the tunnel; two STCP tunnels never share one. With firewall restrictions, narrow the range via <code>.env</code>.</p>
+
           <h2>Firewall</h2>
           <table>
             <thead><tr><th>Port</th><th>Direction</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>7000/tcp</code></td><td>Inbound</td><td>FRP control channel (token auth)</td></tr>
-              <tr><td><code>7443/tcp</code></td><td>Inbound</td><td>FRP mTLS (client-cert required)</td></tr>
-              <tr><td><code>6000–6999/tcp</code></td><td>Inbound</td><td>Visitor port pool</td></tr>
-              <tr><td><code>443/tcp</code> on the subdomain host</td><td>Inbound</td><td>HTTP tunnels (requires wildcard cert)</td></tr>
+              <tr><td><code>7000/tcp</code></td><td>Inbound</td><td>FRP control channel (<code>FRP_BIND_PORT</code>): agents and desktop visitors connect here, with token auth and mTLS (client cert required)</td></tr>
+              <tr><td><code>7443/tcp</code></td><td>Inbound</td><td>HTTPS tunnels on the subdomain host (<code>FRP_HTTPS_PORT</code>, frps port 443 inside the container; requires a wildcard cert)</td></tr>
             </tbody>
           </table>
+          <p>The visitor ports (default 6000–6999) bind only locally on the admin PC to <code>127.0.0.1</code> and need no rule on the server.</p>
+
+          <h2>Status Dashboard</h2>
+          <p>The tunnel status view queries the frps dashboard. By default the server reaches it via the Compose service name (<code>http://frps:PORT</code>, with a <code>127.0.0.1</code> fallback). If frps runs in a different topology (its own host), set the base URL via <code>FRPS_DASHBOARD_URL</code> in <code>.env</code> instead of editing the code.</p>
+
+          <h2>Troubleshooting</h2>
+          <ul>
+            <li><strong>Agent does not connect</strong>: check the cert expiry (<code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>), server reachability via <code>nc -vz srm.example.com 7000</code>.</li>
+            <li><strong>"Tunnel not found"</strong>: is the tunnel enabled in the desktop client (<em>Infrastructure → Server → Tunnel tab</em>)? FRP logs: <code>docker compose logs -f frps</code>.</li>
+            <li><strong>STCP does not work</strong>: visitor port already taken? Check the desktop client log.</li>
+          </ul>
 
           <div class="page-nav">
             <a class="prev" href="./monitoring.html"><span class="label">← Previous chapter</span><span class="title">Monitoring</span></a>
