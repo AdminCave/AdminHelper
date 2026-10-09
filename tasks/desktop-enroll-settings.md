@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Gerät registrieren aus den Einstellungen — Task-Ledger
-Status: bereit · Branch: feature/desktop-enroll-settings · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/desktop-enroll-settings · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-10-09 (Stufen-Plan, im Chat mit der Aufsicht; F1–F4 Kevin, F5–F7 und Teststrategie Aufsicht, siehe Spec „Entscheidungen (2026-10-09)“)
 Spec: docs/features/desktop-enroll-settings.md (Roadmap R-0212, R-0220, R-0222)
 Heavy: linux-full — eine Desktop-Journey ändert sich (Registrierung aus den Einstellungen, danach Tunnelstart); `run.sh integration` und `run.sh e2e` mit der Desktop-GUI-E2E, darin `settings-enroll.live.js` über `desktop_e2e_tunnel.sh`, auf einer Pool-VM. Ein Multibox-Lauf mit `--enforce`, der den Login-Hinweis aus R-0222 live zeigen könnte, ist nicht eingeplant und bliebe ask-first.
