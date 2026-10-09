@@ -30,6 +30,9 @@ command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not available"; exit
 command -v flock >/dev/null 2>&1 || { echo "SKIP: flock not available"; exit 75; }
 # The suite runs this file from inside run.sh, which exports these for its own run.
 unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV AH_AUTONOMOUS CLAUDE_PROJECT_DIR
+# And a loop's own overrides: an inherited AH_LOOP_REPO pointed every case at the real
+# clone (R-0231); each case sets what it needs.
+unset "${!AH_LOOP_@}"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 export TMPDIR="$WORK/tmp"; mkdir -p "$TMPDIR"

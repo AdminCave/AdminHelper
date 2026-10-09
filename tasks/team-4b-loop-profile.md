@@ -30,8 +30,10 @@ Dedup-Key: bug:scripts:ledger-loop.sh:preflight-tty
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — `ledger_loop_test.sh` hermetisch gegen ein geerbtes `AH_LOOP_REPO` (R-0231)  [ ]
+### T2 — `ledger_loop_test.sh` hermetisch gegen ein geerbtes `AH_LOOP_REPO` (R-0231)  [x]
 Komponente: scripts · Dateien: scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b405c953 2026-10-09T13:10:13+02:00
+Review: approve (opus)
 Änderung: Der Test nimmt `AH_LOOP_REPO` in seine `unset`-Zeile (`:32`). Die Loop-Aufrufe (`loop()` bei `:281`
 und der Signal-Fall bei `:340`) setzen ihn nicht und dürfen ihn deshalb nicht erben. Der Beweis ist die Revert-Probe
 im Bau: `AH_LOOP_REPO` auf einen falschen Pfad gesetzt, dann `bash scripts/tests/ledger_loop_test.sh` — ohne die
