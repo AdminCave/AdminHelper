@@ -124,6 +124,13 @@ describe('saveSettings mode-switch orchestration (6.6)', () => {
     expect(h.tunnelStop).not.toHaveBeenCalled();
   });
 
+  it('saving in server mode still starts the tunnel when the status call fails', async () => {
+    h.tunnelStatus.mockRejectedValueOnce(new Error('status unavailable'));
+    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));
+    expect(h.tunnelStart).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+  });
+
   it('saving in server mode starts the tunnel when none runs', async () => {
     h.tunnelStatus.mockResolvedValueOnce({ running: false });
     await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));

@@ -9,6 +9,7 @@
 // on success, so nobody ever saw it.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { tick } from 'svelte';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
 import { settingsModalOpen } from '$lib/stores/settings';
@@ -204,6 +205,9 @@ describe('SettingsModal — enroll from the settings (R-0212)', () => {
       const container = open();
 
       await waitFor(() => expect(h.isDeviceEnrolled).toHaveBeenCalled());
+      // The call happens at once; wait for its answer to reach the DOM as well.
+      await h.isDeviceEnrolled.mock.results[0]?.value;
+      await tick();
       expect(el(container, '[data-action="enroll-token"]')).toBeNull();
       expect(el(container, '[data-action="device-reset"]')).toBeNull();
       cleanup();

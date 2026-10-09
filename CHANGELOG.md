@@ -278,6 +278,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Registrieren und Zuruecksetzen in den Einstellungen nur mit Anmeldung (R-0244):** Stellte man im
+  Einstellungs-Dialog nur den Modus auf `server`, ohne angemeldet zu sein, erschien das Token-Feld; eine
+  Registrierung lief dann gegen die eingetragene URL und startete keinen Tunnel. Token-Feld und Zuruecksetzen
+  erscheinen jetzt nur mit Anmeldung; ohne sie bietet der Login-Screen dieselben Wege.
 - **Desktop: Speichern der Einstellungen bei laufendem Tunnel (R-0245):** Im Modus `server` startete jedes
   Speichern den Tunnel erneut, auch bei einer Sprach- oder RDP-Einstellung; neben dem laufenden frpc scheiterte
   das mit „frpc laeuft bereits“, die Anzeige ging auf getrennt, und die Statusleiste meldete einen Fehler. Ein

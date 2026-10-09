@@ -102,3 +102,20 @@ im Server-Mode: `startIfServerMode()` im Tunnel-Store bricht ab, wenn keine Sess
 'server'`.“ Das gewollte Verhalten entscheidet offene Frage 1.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: CHANGELOG.md (Fixed)
+
+### T4 — Nachbesserung: Zurücksetzen ohne Anmeldung in der Doku, zwei Tests, CHANGELOG zu R-0244  [x]
+Komponente: desktop-ui · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/developer/desktop.html, docs/en/developer/desktop.html, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @8c61d5c3 2026-10-09T16:55:02+02:00
+Review: kein neuer Review (Nachbesserung, Aufsicht 2026-10-09)
+Änderung: Aus dem Gesamt-Review (Opus), von der Aufsicht freigegeben (2026-10-09), ohne neuen Review.
+- Nach einer Server-Neuinstallation scheitert ein registriertes Gerät mit `ERR_CA_PIN_MISMATCH` und kommt nicht
+  mehr in eine Session. `troubleshooting.html:73` / EN `:74` schickten es zum Zurücksetzen in die Einstellungen;
+  seit T2 gibt es den Block dort nur mit Session. Beide nennen jetzt den Knopf unter der Fehlermeldung auf dem
+  Login-Screen (`login.resetDeviceId`) und die Einstellungen nur noch für Angemeldete.
+- `docs/developer/desktop.html:129` / EN: „nur sichtbar wenn registriert und angemeldet“.
+- Tests: Der Fall ohne Session wartet auf das Ergebnis von `isDeviceEnrolled` im DOM (`tick()`), nicht nur auf den
+  Aufruf. Ein gescheiterter `tunnel_status` löst in `saveSettings` den Start trotzdem aus.
+- CHANGELOG: eine Zeile zu R-0244 unter Fixed, weil sichtbar.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: docs/admin/troubleshooting.html + docs/en/admin/troubleshooting.html · docs/developer/desktop.html + docs/en/developer/desktop.html · CHANGELOG.md
+Abhängt von: T2, T3
