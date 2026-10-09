@@ -30,7 +30,8 @@
 #   CLAUDE_CODE_OAUTH_TOKEN  unset first, then read out of
 #                       ~/.config/adminhelper/oauth.env, which must be a regular
 #                       0600 file — a token file the group can read is a finding,
-#                       not a detail, so this aborts instead of warning.
+#                       not a detail, so this aborts instead of warning. Only in
+#                       the shape claude setup-token prints, never echoed.
 #   AH_AUTONOMOUS=1     the session is unattended: the harness guard denies edits
 #                       to harness paths, the status hook stays quiet.
 #   AH_VM_MAX=8         the ceiling this user may lease in the pool.
@@ -44,7 +45,8 @@
 # can execute code is a token file that can do anything the runner can.
 #
 # Returns non-zero (without killing the shell) when a token file is missing,
-# empty, not a regular file or too permissive — that is the un-provisioned state,
+# empty, not a regular file or too permissive, or holds no token of the shape
+# claude setup-token prints — that is the un-provisioned state,
 # and a run that starts anyway would fail later with a worse message.
 # scripts/dev/runner-setup.sh creates both files as 0600 templates.
 
@@ -52,6 +54,9 @@ ah_runner_env() {
   local cfg="$HOME/.config/adminhelper"
   local devenv="$HOME/.devenv.sh" oauth="$cfg/oauth.env" pve="$cfg/pve.env"
   local perm token line key value
+  # Spelled out, not A-Z: outside the C locale a range matches by collation, and
+  # under de_DE.UTF-8 [A-Za-z] takes an ä as well.
+  local token_re='^sk-ant-oat01-[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]+$'
 
   if [ "${AH_RUNNER_ENV_NO_DEVENV:-0}" != 1 ]; then
     # shellcheck disable=SC1090  # per-host file, gitignored by design
@@ -128,6 +133,14 @@ ah_runner_env() {
     | tail -n1 | sed 's/[[:space:]]*$//; s/^"\(.*\)"$/\1/; s/^'\''\(.*\)'\''$/\1/')"
   if [ -z "$token" ]; then
     echo "runner-env: $oauth has no CLAUDE_CODE_OAUTH_TOKEN= line yet (claude setup-token)" >&2
+    return 1
+  fi
+  # The shape claude setup-token prints, taken from practice (in no doc, not
+  # verified). The code the browser shows on the way carries a `#` and is no
+  # token; a run on it would fail later, at the CLI's login, with a worse
+  # message. The message names the file, never the value.
+  if [[ ! "$token" =~ $token_re ]]; then
+    echo "runner-env: the CLAUDE_CODE_OAUTH_TOKEN in $oauth is not of the form sk-ant-oat01-… (letters, digits, _ and - only) — the code the browser shows is not the token (claude setup-token)" >&2
     return 1
   fi
   export CLAUDE_CODE_OAUTH_TOKEN="$token"

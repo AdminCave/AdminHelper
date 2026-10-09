@@ -1260,7 +1260,7 @@ mk_home() {
   local h="$WORK/home-$1"
   mkdir -p "$h/.config/adminhelper"
   printf 'export AH_TEST_DB=postgresql://ah_runner@localhost/ah_runner_test\n' > "$h/.devenv.sh"
-  printf 'CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat-fixture"\n' > "$h/.config/adminhelper/oauth.env"
+  printf 'CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-fixture"\n' > "$h/.config/adminhelper/oauth.env"
   # The real key names vm.py reads (AH_PVE_URL/NODE/TOKEN/…) — a fixture with an
   # invented key would make every assertion below pass for the wrong reason.
   printf 'AH_PVE_URL=https://pve.invalid:8006\nexport AH_PVE_NODE="node9"' \
@@ -1300,7 +1300,7 @@ runner_env "$H"
 [ "$(val AH_AUTONOMOUS)" = 1 ] && ok "AH_AUTONOMOUS=1 (the guard denies, the status hook stays quiet)" \
   || bad "AH_AUTONOMOUS=$(val AH_AUTONOMOUS)"
 [ "$(val AH_VM_MAX)" = 8 ] && ok "AH_VM_MAX=8, even with 99 in the environment" || bad "AH_VM_MAX=$(val AH_VM_MAX)"
-[ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "sk-ant-oat-fixture" ] \
+[ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "sk-ant-oat01-fixture" ] \
   && ok "the subscription token comes out of oauth.env" || bad "token: $(val CLAUDE_CODE_OAUTH_TOKEN)"
 # Both of these take PRECEDENCE over the OAuth token — an inherited one would
 # silently move the run onto an API account (roadmap D18).
@@ -1362,6 +1362,35 @@ chmod 600 "$H/.config/adminhelper/oauth.env"
 runner_env "$H"
 [ "$(val RC)" != 0 ] && grep -q "setup-token" <<<"$ERR" \
   && ok "an empty template aborts and names the fix" || bad "empty token: rc=$(val RC) err=$ERR"
+
+# Only the shape claude setup-token prints. The code the browser shows on the way
+# there carries a `#`; it was pasted once, and a run on it would fail at the login.
+H=$(mk_home browsercode)
+printf 'CLAUDE_CODE_OAUTH_TOKEN=pastedcode#browserstate\n' > "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && grep -q "not of the form sk-ant-oat01-" <<<"$ERR" && grep -qF "$H/.config/adminhelper/oauth.env" <<<"$ERR" \
+  && ok "a value with # (the browser code) aborts and names the file" || bad "browser code: rc=$(val RC) err=$ERR"
+! grep -qF "pastedcode" <<<"$ERR$OUT" && [ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "<unset>" ] \
+  && ok "and neither the message nor the environment carries the value" || bad "the value leaked: $ERR"
+H=$(mk_home shortform); printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-\n' > "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && ok "the prefix alone is no token" || bad "prefix only: rc=$(val RC)"
+H=$(mk_home hashbody); printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture#state\n' > "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && ok "the right prefix with a # behind it is no token either" || bad "# after the prefix: rc=$(val RC)"
+# Under a locale other than C, a range like A-Z matches by collation: in
+# de_DE.UTF-8 it takes an ä. The box runs with LANG=de_DE.UTF-8.
+# The case proves something only where the range really takes the ä; else it says so.
+LOC="$(locale -a 2>/dev/null | grep -iE '^(de_DE|en_US)\.utf-?8$' | head -n 1)"
+if [ -n "$LOC" ] && LC_ALL="$LOC" bash -c '[[ $(printf "\303\244") =~ ^[a-z]$ ]]'; then
+  H=$(mk_home umlaut); printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture\303\244\n' > "$H/.config/adminhelper/oauth.env"
+  LC_ALL="$LOC" runner_env "$H"
+  [ "$(val RC)" != 0 ] && ok "under $LOC a letter outside A-Z is no token" || bad "umlaut under $LOC: rc=$(val RC)"
+  LC_ALL="$LOC" runner_env "$(mk_home locok)"
+  [ "$(val RC)" = 0 ] && ok "and under $LOC the placeholder still is one" || bad "placeholder under $LOC: rc=$(val RC) err=$ERR"
+else
+  echo "  SKIP: no de_DE or en_US UTF-8 locale whose a-z takes an ä — the token shape under another locale is not verified"
+fi
 
 H=$(mk_home nofile); rm -f "$H/.config/adminhelper/oauth.env"
 runner_env "$H"

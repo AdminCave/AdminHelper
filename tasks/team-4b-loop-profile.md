@@ -115,8 +115,10 @@ Dedup-Key: bug:scripts:review-probe.sh:toolchain-path
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T7 — `runner-env.sh` prüft die Form des Tokens  [ ]
-Komponente: scripts · Dateien: scripts/dev/runner-env.sh, scripts/tests/hooks_test.sh
+### T7 — `runner-env.sh` prüft die Form des Tokens  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-env.sh, scripts/tests/hooks_test.sh, scripts/tests/ledger_loop_test.sh, scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ac35dbda 2026-10-09T15:57:26+02:00
+Review: approve (opus, round 2)
 Änderung: `runner-env.sh` (`:127–133`) nimmt das Token nur in der Form `sk-ant-oat01-` gefolgt von
 `[A-Za-z0-9_-]+`. Etwas anderes, etwa der Browser-Code mit `#`, endet mit Return ≠ 0 und einer Meldung, die die
 Datei nennt und nie den Wert. Tests im Abschnitt `runner-env.sh` von `hooks_test.sh` (`:1252`), nur mit Platzhaltern:

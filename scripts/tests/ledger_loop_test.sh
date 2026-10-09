@@ -184,7 +184,7 @@ git clone -q "$ORIGIN" "$CLONE"
 # The runner's world: a HOME with its token file, a claude that answers version and auth.
 FHOME="$WORK/home"; mkdir -p "$FHOME/.config/adminhelper" "$FHOME/.local/bin"
 chmod 700 "$FHOME/.config/adminhelper"
-printf 'CLAUDE_CODE_OAUTH_TOKEN=fixture-token\n' > "$FHOME/.config/adminhelper/oauth.env"
+printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture\n' > "$FHOME/.config/adminhelper/oauth.env"
 chmod 600 "$FHOME/.config/adminhelper/oauth.env"
 # The runner's own hypervisor token, as runner-env.sh reads it (a fixture value).
 printf 'AH_PVE_TOKEN_SECRET=fixture-pve\nAH_PVE_TOKEN_ID=fixture@pve!run\n' > "$FHOME/.config/adminhelper/pve.env"

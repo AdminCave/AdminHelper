@@ -299,7 +299,7 @@ done
 
 echo "── a provisioned home passes the check unchanged"
 PH="$LT/prov"; mkdir -p "$PH/.config/adminhelper"; chmod 700 "$PH/.config/adminhelper"
-printf 'CLAUDE_CODE_OAUTH_TOKEN=probe\n' > "$PH/.config/adminhelper/oauth.env"; chmod 600 "$PH/.config/adminhelper/oauth.env"
+printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-probe\n' > "$PH/.config/adminhelper/oauth.env"; chmod 600 "$PH/.config/adminhelper/oauth.env"
 bash "$RT" --env-check "$PH" > "$LT/out" 2>&1; rc=$?
 [ "$rc" = 0 ] && grep -q "^ok    runner-env.sh: own token" "$LT/out" && grep -q "^1 ok, 0 FAIL, 0 info$" "$LT/out" \
   && ok "the real runner-env.sh leaves the instrument as it was" || bad "provisioned: rc=$rc $(cat "$LT/out")"
