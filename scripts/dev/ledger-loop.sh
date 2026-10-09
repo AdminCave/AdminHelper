@@ -9,7 +9,17 @@
 #   bash scripts/dev/ledger-loop.sh --ledger tasks/<a>.md [--ledger tasks/<b>.md …]
 #        [--max-hours 8] [--max-tasks 20] [--max-budget-usd 200] [--max-ready 2]
 #        [--task-minutes 60] [--task-turns 80] [--task-budget 12]
-#   bash scripts/dev/ledger-loop.sh status [--state <file>]
+#   bash scripts/dev/ledger-loop.sh status [--state <file> | --profile kevin]
+#   bash scripts/dev/ledger-loop.sh start --profile kevin --ledger tasks/<a>.md [caps…]
+#
+# `start --profile kevin` is the one start command of a run under Kevin's UID, with
+# the builder HOME of scripts/dev/builder-home.sh (team plan 4b): it checks
+# `builder-home.sh status`, refuses while its tmux session is there, starts the loop
+# of the builder clone in that session and returns. The run gets env -i with HOME,
+# PATH, LANG, USER, LOGNAME, TERM and AH_LOOP_DIR, and stdin /dev/null: no SSH
+# agent, no D-Bus address, no Proxmox token. Its output is appended to builder.log
+# in the builder's loop directory, its exit code goes to builder.done (`rc=<n>`).
+# `status --profile kevin` reads the builder's state.json.
 #
 # Only Kevin starts it — never a timer (CLAUDE.md §2) —, in tmux:
 #   sudo -u adminhelper-runner tmux new -d -s ah-loop \
@@ -84,6 +94,8 @@
 # this file's checkout), a claude stub on PATH.
 #
 # Exit: 0 the run ended · 2 usage · 74 stop: infra or harness-modified
+#       start: 0 started · 2 usage · 74 the builder home is not ready, its session is
+#       there, or tmux or the loop directory failed
 
 set -uo pipefail
 
@@ -93,13 +105,48 @@ die() { echo "ledger-loop.sh: $*" >&2; exit 2; }
 REPO="${AH_LOOP_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 LOOP="${AH_LOOP_DIR:-/srv/ah/loop}"
 STATE="$LOOP/state.json"
+# The builder profile; builder-home.sh has the same default.
+BUILDER="${AH_BUILDER_DIR:-$HOME/.cache/ah-builder}"
+SESSION=ah-builder
+
+if [ "${1-}" = start ]; then
+  shift
+  [ "${1-}" = --profile ] && [ "${2-}" = kevin ] || die "start needs --profile kevin, the one profile there is"
+  shift 2
+  [ $# -gt 0 ] || die "start --profile kevin needs the run's arguments: --ledger tasks/<a>.md …"
+  bash "$REPO/scripts/dev/builder-home.sh" status \
+    || { echo "ledger-loop.sh: the builder home is not ready — bash scripts/dev/builder-home.sh setup (and token)" >&2; exit 74; }
+  command -v tmux >/dev/null 2>&1 || { echo "ledger-loop.sh: no tmux" >&2; exit 74; }
+  if tmux has-session -t "=$SESSION" 2>/dev/null; then
+    echo "ledger-loop.sh: the tmux session $SESSION is there already — one run at a time (follow it: tail -f $BUILDER/loop/builder.log)" >&2
+    exit 74
+  fi
+  log="$BUILDER/loop/builder.log" mark="$BUILDER/loop/builder.done" me="$(id -un)"
+  # The session opens the log before the loop runs: without the directory it would
+  # end at once, with neither log nor mark.
+  mkdir -p "$BUILDER/loop" && chmod 700 "$BUILDER/loop" \
+    || { echo "ledger-loop.sh: cannot create or chmod 700 $BUILDER/loop" >&2; exit 74; }
+  rm -f "$mark"
+  # Every word quoted for the session's shell: a ledger path stays one word.
+  printf -v inner 'cd %q && bash scripts/dev/ledger-loop.sh' "$BUILDER/repo"
+  printf -v args ' %q' "$@"
+  printf -v rest ' < /dev/null >> %q 2>&1; echo "rc=$?" > %q' "$log" "$mark"
+  # LANG and TERM as in the first measuring run: the loop and task-close read
+  # what git says, in English.
+  tmux new-session -d -s "$SESSION" /usr/bin/env -i HOME="$BUILDER/home" PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 \
+    USER="$me" LOGNAME="$me" TERM=xterm-256color AH_LOOP_DIR="$BUILDER/loop" bash -c "$inner$args$rest" \
+    || { echo "ledger-loop.sh: tmux new-session failed" >&2; exit 74; }
+  echo "started in tmux $SESSION — follow it with: tail -f $log (the exit code lands in $mark)"
+  exit 0
+fi
 
 if [ "${1-}" = status ]; then
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
       --state) [ $# -ge 2 ] || die "--state needs <file>"; STATE="$2"; shift ;;
-      *) die "status takes only --state <file>" ;;
+      --profile) [ "${2-}" = kevin ] || die "--profile knows only kevin"; STATE="$BUILDER/loop/state.json"; shift ;;
+      *) die "status takes only --state <file> or --profile kevin" ;;
     esac
     shift
   done
@@ -194,7 +241,7 @@ RUN_T0=$SECONDS RUN_COST=0 TASKS_DONE=0 READY=0
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$LOOP/loop.log"; }
 # state <python expression over s> — one change of state.json, written atomically.
 state() {
-  python3 - "$STATE" "$1" "${@:2}" <<'PY' || { echo "ledger-loop.sh: could not write $STATE" >&2; exit 74; }
+  python3 - "$STATE" "$1" "${@:2}" <<'PY' || { echo "ledger-loop.sh: could not write $STATE" >&2; flock -u 9 2>/dev/null; exit 74; }
 import datetime, json, os, sys
 path, expr, args = sys.argv[1], sys.argv[2], sys.argv[3:]
 try:
@@ -341,9 +388,13 @@ claude_ok() {
 # Before the CLI runs at all: --version and auth status are calls of it too.
 claude_ok
 PIN="$(tr -d '[:space:]' < "$REPO/scripts/dev/runner-claude.version" 2>/dev/null)"
-HAVE="$(timeout 60 claude --version 2>/dev/null | awk 'NR == 1 {print $1}')"
+# </dev/null: timeout runs its child in a process group of its own, and from a tmux
+# terminal a child that touches the tty is stopped there (SIGTTIN) past the timeout
+# (R-0230); -k: a child that ignores TERM must not hang there either. The sessions
+# below read /dev/null too.
+HAVE="$(timeout -k 5 60 claude --version < /dev/null 2>/dev/null | awk 'NR == 1 {print $1}')"
 [ -n "$PIN" ] && [ "$HAVE" = "$PIN" ] || stop_infra "claude --version is '${HAVE:-?}', the pin (runner-claude.version) is '${PIN:-?}'"
-AUTH="$(timeout 60 claude auth status 2>/dev/null | python3 -c 'import json, sys
+AUTH="$(timeout -k 5 60 claude auth status < /dev/null 2>/dev/null | python3 -c 'import json, sys
 try: print(json.load(sys.stdin).get("authMethod", ""))
 except Exception: print("")')"
 [ "$AUTH" = oauth_token ] || stop_infra "claude auth status says authMethod '${AUTH:-?}', not oauth_token"
@@ -410,8 +461,10 @@ ledger_commit() {
   local wt="$1" slug="$2" what="$3" file="tasks/$2.md" bad
   [ "$(git -C "$wt" status --porcelain)" = " M $file" ] \
     || stop_infra "a ledger commit of $slug would carry more than $file: $(git -C "$wt" status --porcelain | tr '\n' ' ')"
-  bad="$(git -C "$wt" diff -U0 -- "$file" | grep -E '^[-+]' | grep -vE '^(\+\+\+|---) ' \
-    | grep -vE '^[-+](Status:|### |Komponente:)')"
+  # Compared with the final newline made sure on both sides: ledger.sh writes the file
+  # with one, and a last line that only gains it is no change of that line (R-0191).
+  bad="$(diff -U0 <(git -C "$wt" show "HEAD:$file" | sed '$a\') <(sed '$a\' "$wt/$file") \
+    | grep -E '^[-+]' | grep -vE '^(\+\+\+|---) ' | grep -vE '^[-+](Status:|### |Komponente:)')"
   [ -z "$bad" ] || stop_infra "the ledger change of $slug goes past head and markers: $(head -n 1 <<<"$bad")"
   git -C "$wt" add -- "$file" && lgit "$wt" commit -q -m "chore(ledger): $slug $what" \
     || stop_infra "the ledger commit of $slug ($what) failed"
@@ -550,7 +603,13 @@ ledger_rest() {
   L_ID="$2" python3 - "$1" <<'PY'
 import hashlib, os, re, sys
 tid, out, skip = os.environ["L_ID"], [], False
-for line in open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape").splitlines(True):
+text = open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape")
+# The last line gains its newline, as ledger.sh writes the file: a last line of another
+# task without one is no change of that task (R-0191). Nothing else is evened out — a
+# \r at a line end is a change like any other, and would hide a task from the line tools.
+if not text.endswith("\n"):
+    text += "\n"
+for line in text.splitlines(True):
     if re.match(r"(###|##)\s", line):
         skip = bool(re.match(r"###\s+%s(\s|$)" % re.escape(tid), line))
     if not skip:
@@ -660,6 +719,51 @@ print("task-close refused twice, see %s" % sys.argv[2])
 PY
 }
 
+# reap_session <mark> <slug> <id> — what a build session or its close left running:
+# the processes of this user that carry its AH_LOOP_SESSION. A rest with a process
+# group or a working directory of its own carries it too, and nothing else of this
+# user does — Kevin's own shells stay (R-0226). TERM, then KILL, then one more look
+# for a child born in between; the log names each. A rest that clears its environment
+# (env -i), rewrites it, or was started through a daemon that was already running is
+# not found: that stays a residual risk.
+marked_pids() {
+  AH_REAP="AH_LOOP_SESSION=$1" python3 - <<'PY'
+import os
+want = os.environ["AH_REAP"].encode()
+for d in os.listdir("/proc"):
+    if not d.isdigit() or int(d) == os.getpid():
+        continue
+    try:
+        env = open("/proc/%s/environ" % d, "rb").read().split(b"\0")
+    except OSError:
+        continue
+    if want in env:
+        print(d)
+PY
+}
+reap_session() {
+  local mark="$1" slug="$2" id="$3" pids alive p _
+  pids="$(marked_pids "$mark")"
+  [ -n "$pids" ] || return 0
+  for p in $pids; do
+    log "$slug $id: a process left behind, ended: $p $(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | tr -c '[:print:]' ' ' | cut -c1-120)"
+  done
+  # shellcheck disable=SC2086  # a word list of pids
+  kill -TERM $pids 2>/dev/null
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    alive=""
+    for p in $pids; do kill -0 "$p" 2>/dev/null && alive+=" $p"; done
+    [ -n "$alive" ] || break
+    sleep 0.5
+  done
+  # shellcheck disable=SC2086
+  [ -z "$alive" ] || kill -KILL $alive 2>/dev/null
+  pids="$(marked_pids "$mark")"
+  # shellcheck disable=SC2086
+  [ -z "$pids" ] || { log "$slug $id: ended late as well: $(tr '\n' ' ' <<<"$pids")"; kill -KILL $pids 2>/dev/null; }
+  return 0
+}
+
 # session <lane> <slug> <id> <n> [--fix <log> [<verdict>]] — one build session;
 # sets S_RC, S_KIND (success or the error kind), S_COST, S_TURNS, S_DENIALS.
 session() {
@@ -678,11 +782,12 @@ PY
 )" || stop_infra "cannot read the build-task skill of the clone"
   # Only the runner's user settings (its permissions and the root-owned guard): a
   # lane's project settings carry the interactive allow list.
-  ( cd "$wt" && timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
+  ( cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.s$n" timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
       --permission-mode dontAsk --permission-prompts none --max-turns "$TASK_TURNS" \
       --max-budget-usd "$TASK_BUDGET" --output-format json --no-session-persistence \
       < /dev/null > "$out" 2> "$LOOP/$slug/$id.s$n.err" )
   S_RC=$?
+  reap_session "$$.$slug.$id.s$n" "$slug" "$id"
   { read -r S_KIND S_COST S_TURNS S_DENIALS; IFS= read -r S_NOTE; } < <(python3 - "$out" "$S_RC" "$LOOP/$slug/$id.s$n.err" "$TASK_BUDGET" <<'PY'
 import json, re, sys
 rc = int(sys.argv[2])
@@ -750,15 +855,26 @@ close_task() {
     clone_ok; claude_ok
     pre="$(git -C "$wt" rev-parse HEAD)"
     CLOSE="$LOOP/$slug/$id.close.r$round.$n.$try.log"
-    (cd "$wt" && bash scripts/dev/task-close.sh "$ledger" "$id" --stage --review auto --round "$round" \
-       --message-file "$wt/$(msg_path "$slug" "$id")") > "$CLOSE" 2>&1
+    # The close runs the session's code too (its tests): what that leaves goes as well.
+    (cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.c$round.$n.$try" bash scripts/dev/task-close.sh "$ledger" "$id" \
+       --stage --review auto --round "$round" --message-file "$wt/$(msg_path "$slug" "$id")") > "$CLOSE" 2>&1
     rc=$?
+    reap_session "$$.$slug.$id.c$round.$n.$try" "$slug" "$id"
     log "$slug $id close (round $round, try $try): exit $rc"
     clone_ok
     # The reviewer's cost from task-close's line in the log this loop opened; the
     # suite's output comes before it, so the last such line counts.
-    rcost="$(sed -n 's/^review cost_usd=\([0-9][0-9.]*\) round=[12]$/\1/p' "$CLOSE" | tail -n 1)"
-    [ -n "$rcost" ] || ! grep -q '^task-close: the reviewer gave no usable verdict' "$CLOSE" || rcost="$REVIEW_BUDGET_MAX"
+    # Unknown spend counts with its cap, never as 0 (R-0190, R-0191): a reviewer
+    # that gave no usable verdict — whatever line the suite printed before —, a cost
+    # task-close calls `unknown`, and a round whose reviewer ran (its raw output is
+    # there) without a cost line. A close that never reached the reviewer costs none.
+    if grep -q '^task-close: the reviewer gave no usable verdict' "$CLOSE"; then
+      rcost="$REVIEW_BUDGET_MAX"
+    else
+      rcost="$(sed -nE 's/^review cost_usd=([0-9][0-9.]*|unknown) round=[12]$/\1/p' "$CLOSE" | tail -n 1)"
+      [ "$rcost" != unknown ] || rcost="$REVIEW_BUDGET_MAX"
+      [ -n "$rcost" ] || [ ! -e "$wt/.ah-out/review/$slug/$id.r$round.raw.json" ] || rcost="$REVIEW_BUDGET_MAX"
+    fi
     if [ -n "$rcost" ]; then
       RUN_COST="$(awk -v a="$RUN_COST" -v b="$rcost" 'BEGIN { printf "%.4f", a + b }')"
       state 's["cost_usd"] = round(s.get("cost_usd", 0) + float(a[0]), 4)

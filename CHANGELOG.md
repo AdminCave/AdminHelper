@@ -9,6 +9,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Builder-Profil des Workers (Team-Plan 4b):** `scripts/dev/builder-home.sh setup|token|status`
+  richtet ohne sudo ein eigenes HOME fuer den Loop unter Kevins Benutzer ein (CLI-Pin, Settings des
+  Runners mit Deny-Regeln mit absolutem Pfad fuer die privaten Verzeichnisse in Kevins HOME (`~/.ssh`,
+  `~/.config/gh`, `~/.claude`, …) und die privaten Dateien jedes Checkouts, Tools-venv, eigene Test-DB,
+  Klon ohne Push). `ledger-loop.sh start --profile kevin` startet den Loop darin in tmux mit `env -i`
+  und `</dev/null`, `status --profile kevin` liest seinen Stand. Die Sessions duerfen sechs offizielle
+  Doku-Domains abrufen (`WebFetch(domain:…)`) und `echo` nutzen (R-0237); `runner-env.sh`
+  nimmt das Token nur in der Form `sk-ant-oat01-…` und `pve.env`-Schluessel nur so, wie `vm.py` sie
+  nimmt (R-0232).
+
 - **Desktop: Geraet aus den Einstellungen registrieren (R-0212):** Im Modus `server` zeigen die
   Einstellungen einem Geraet ohne Identitaet ein Feld fuer den Einmal-Token vom Admin; nach der
   Registrierung startet der Tunnel. Wer ohne erzwungenes mTLS angemeldet ist, muss sich dafuer nicht
@@ -278,6 +288,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Funde des ersten Messlaufs im Worker:** Der Preflight fragt `claude --version` und `auth status`
+  mit stdin `/dev/null` und einer Frist (R-0230); ein geerbtes `AH_LOOP_*` lenkt `ledger_loop_test`
+  nicht mehr auf den echten Klon (R-0231); was eine Bau-Session oder ein Close an Prozessen
+  hinterlaesst, beendet der Loop ueber eine Marke in deren Umgebung (R-0226); fehlende oder unlesbare
+  Reviewer-Kosten zaehlen mit ihrem Deckel, nie als 0, und ein Ledger ohne Schluss-Newline gilt nicht
+  mehr als Aenderung ausserhalb der Task (R-0190, R-0191); die Review-Probe findet `ruff` auch ohne
+  ihn auf dem PATH (R-0234).
 - **Hooks: Cron-Intervalle werden wirklich geprueft (R-0235):** `POST /api/hooks` und `PUT /api/hooks/{id}`
   nahmen jedes Intervall aus fuenf Feldern an, auch `a b c d e` oder `61 * * * *`; der Scheduler konnte es nicht
   lesen und uebersprang den Hook bei jedem Abgleich, ohne Meldung. Die Routen pruefen jetzt mit dem Parser des

@@ -728,7 +728,9 @@ case "${STUB:-approve}" in
   request_changes) so='{"verdict": "request_changes", "findings": [{"severity": "blocker", "file": "scripts/dev/tool.sh", "line": 2, "claim": "wrong", "evidence": "tool.sh prints more, the task says hello"}]}' ;;
   fail) echo "error: unknown option" >&2; exit 2 ;;
 esac
-printf '{"type": "result", "subtype": "success", "is_error": false, "structured_output": %s, "total_cost_usd": 0.4, "num_turns": 9, "duration_ms": 61000}\n' "$so"
+# STUB_NOCOST: a result without total_cost_usd, so the verdict carries no cost.
+cost="\"total_cost_usd\": ${STUB_COST:-0.4}, "; [ -z "${STUB_NOCOST:-}" ] || cost=''
+printf '{"type": "result", "subtype": "success", "is_error": false, "structured_output": %s, %s"num_turns": 9, "duration_ms": 61000}\n' "$so" "$cost"
 FAKE
 chmod +x "$WORK/claude"
 STUB_DIR="$WORK/stub"; mkdir -p "$STUB_DIR"
@@ -767,6 +769,17 @@ grep -qF "$(cd "$FIX" && git show HEAD:scripts/dev/tool.sh | tail -n 1)" "$STUB_
   && ok "the round is in the review log" || bad "log: $(cat "$FIX/.ah-out/review/review-log.jsonl" 2>&1)"
 grep -qx 'review cost_usd=0.4 round=1' <<<"$OUT" \
   && ok "the reviewer's cost is a line of task-close's own output, for the worker's budget" || bad "no cost line: $OUT"
+reset_repo
+# R-0190: a verdict without a cost says so; 0 would count as free in the worker's budget.
+mk_auto; touch_tool
+STUB=approve STUB_NOCOST=1 c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 0 ] && grep -qx 'review cost_usd=unknown round=1' <<<"$OUT" && ! grep -q '^review cost_usd=0 ' <<<"$OUT" \
+  && ok "a verdict without a cost -> 'review cost_usd=unknown', never 0" || bad "no cost: rc=$rc out=$OUT"
+reset_repo
+mk_auto; touch_tool
+STUB=approve STUB_COST=Infinity c auto T1 -m "refactor: tool" --review auto
+[ $rc -eq 0 ] && grep -qx 'review cost_usd=unknown round=1' <<<"$OUT" \
+  && ok "a cost of Infinity -> 'unknown' as well" || bad "infinite cost: rc=$rc out=$OUT"
 reset_repo
 
 mk_auto; touch_tool
