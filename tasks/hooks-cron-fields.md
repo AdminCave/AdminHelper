@@ -4,9 +4,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Intervalle wirklich prüfen, kein stilles Überspringen — Task-Ledger
-Status: geplant · Branch: feature/hooks-cron-fields · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/hooks-cron-fields · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0235, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen (Aufsicht): 1 Weg (a), eine Warnung je Hook und Intervall, keine Datenaenderung; 2 Heavy linux-full
 Spec: Roadmap R-0235 (Kurz-Ledger ohne Spec)
-Heavy: none — eine Eingabeprüfung der Hook-Routen und eine Log-Zeile im Scheduler; das Fehler-Format bleibt (R-0207), kein Stack-, Gateway-, PKI- oder Install-Pfad, und keine Integrations-Stufe legt Hooks mit Cron-Intervall an (offene Frage 2).
+Heavy: linux-full — die Server-API lehnt kuenftig mehr Eingaben ab (Aufsicht 2026-10-09: Server-API-Pfad laut Heavy-Regel); run.sh integration auf einer Pool-VM
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
