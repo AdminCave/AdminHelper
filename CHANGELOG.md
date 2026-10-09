@@ -293,6 +293,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: Meldung nach dem Zuruecksetzen der Geraete-Identitaet (R-0212):** Die Bestaetigung stand in
   dem Teil der Einstellungen, der beim Zuruecksetzen verschwindet, und war deshalb nie zu sehen. Sie
   erscheint jetzt, zusammen mit dem Feld fuer den neuen Token.
+- **Review-Probe bei totem Code samt angekuendigtem Test (R-0227):** `scripts/dev/review-probe.sh` probt
+  einen Test-Diff, der nur aus Tests besteht, die die Task als `Test-Löschung:` ankuendigt (samt ihren
+  Import- und Leerzeilen), nicht mehr: ohne die Aenderung war dort nichts rot, und `check-verdict`
+  sperrte das approve des Reviewers. Die Antwort heisst `only-declared-deletion` und steht sichtbar in
+  der Review-Zeile; ein Ersatztest oder jede andere Aenderung am Test-Diff wird weiter geprobt. Dazu
+  `review.sh declared-only`, und `task-close.sh` gibt der Probe die Task mit.
 - **Zeitstempel der Monitoring-Antworten in UTC mit `Z` (R-0202):** Die Antworten unter
   `/api/monitoring/*` schreiben ihre Zeitstempel (`createdAt`, `updatedAt`, `since`, `lastCheck`,
   `sentAt`, `startsAt`, `endsAt`) als RFC 3339 in UTC mit `Z`, wie die Server-API seit R-0064; bisher
@@ -510,6 +516,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Proxmox-Token aus einer 0600-Datei (R-0229):** `scripts/vm/vm.py` und `scripts/vm/lib.sh` lesen den
+  Proxmox-Zugang auch aus `~/.config/adminhelper/pve.env` (Zeilen `KEY=VALUE` fuer `AH_PVE_*`/`AH_VM_*`,
+  gelesen, nie gesourct). Vorrang: Umgebung > `pve.env` > `env`-Block von `.claude/settings.local.json`,
+  der als Rueckfall bleibt. Eine `pve.env`, die kein regulaeres 0600-File des eigenen Benutzers in einem
+  fuer Gruppe und Andere nicht schreibbaren Verzeichnis ist, bricht mit Exit 2 und dem `chmod` ab. Das
+  Token gehoert nach `pve.env`, damit es nicht mehr in der Umgebung jeder Session steht; den einmaligen
+  Umzug beschreibt `DEVELOPMENT.md`, „VMs mit vm.py“.
 - **Doku-Smoke prueft auch die Namen in Grossbuchstaben als Gate (R-0044):** `scripts/dev/doc-smoke.py --env`
   zaehlt einen Namen, den die Doku als `<code>` nennt, als bekannt, wenn ihn ausser den drei `config.py` und
   `.env.example` irgendeine getrackte Datei ausserhalb von `docs/`, `CHANGELOG.md` und `tasks/` traegt — Agent-

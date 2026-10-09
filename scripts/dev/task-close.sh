@@ -399,11 +399,12 @@ case "$REVIEW" in
       fi
       # The probe is the runner's, never the reviewer's (R-0147b): is the new
       # test red without the change? review-probe.sh answers not-applicable by
-      # itself, without a run, when no test or only tests changed (R-0151.2).
-      # The test of a narrow Verify: line goes along (R-0154.2).
+      # itself, without a run, when no test or only tests changed (R-0151.2), or
+      # when the test diff is nothing but tests this task declares as deleted
+      # (R-0227). The test of a narrow Verify: line goes along (R-0154.2).
       set -f
       # shellcheck disable=SC2086  # the ledger's test args are a word list on purpose
-      PROBE="$(bash scripts/dev/review-probe.sh "$COMPONENT" --staged ${VERIFY_ARGS:+-- $VERIFY_ARGS})"
+      PROBE="$(bash scripts/dev/review-probe.sh "$COMPONENT" --staged --task "$LEDGER" "$ID" ${VERIFY_ARGS:+-- $VERIFY_ARGS})"
       rc=$?
       set +f
       case "$rc" in

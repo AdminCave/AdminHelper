@@ -1493,6 +1493,186 @@ r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index
 
+# ══ declared-only: a test diff that is a declared deletion alone (R-0227) ═════
+echo "── declared-only: dead code and its declared test leave, the probe has nothing to ask ──"
+# The shape of the real case (server-kleinkram-1 T2): the declared test goes,
+# and with it the import only it used and the blank lines in front.
+PYI='import json
+
+
+def test_alive():
+    assert 1 == 1
+
+
+def helper():
+    return 2
+
+
+def test_dead():
+    assert json.loads("2") == helper()
+'
+PYI_WITHOUT_DEAD='def test_alive():
+    assert 1 == 1
+
+
+def helper():
+    return 2
+'
+dead_only() {  # the declared test and its import go; the code it tested too
+  base apps/server/tests/test_del.py "$PYI"
+  printf '%s' "$PYI_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"
+  printf 'x = 1\n' > "$FIX/apps/server/app/thing.py"
+  stage apps/server/tests/test_del.py apps/server/app/thing.py
+}
+dead_only; r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -qx "declared-only: yes (apps/server/tests/test_del.py::test_dead)" <<<"$OUT" \
+  && ok "the declared test with its import and blank lines -> yes, and it names the test" || bad "declared only: rc=$rc out=$OUT"
+# The counter-cases: anything besides the declared deletion keeps the probe.
+dead_only; printf '\n\ndef test_dead_v2():\n    assert helper() == 2\n' >> "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && grep -q "^declared-only: no — apps/server/tests/test_del.py:[0-9]* adds a line" <<<"$OUT" \
+  && ok "a replacement test besides the deletion -> no: it has to be probed" || bad "replacement: rc=$rc out=$OUT"
+dead_only; printf 'def test_alive():\n    pass\n\n\ndef helper():\n    return 2\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && grep -q "^declared-only: no — " <<<"$OUT" \
+  && ok "an assertion out of the test that stays -> no" || bad "kept test changed: rc=$rc out=$OUT"
+dead_only; printf 'def test_alive():\n    assert 1 == 1\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && grep -q "^declared-only: no — apps/server/tests/test_del.py:[0-9]* is no part of a declared deletion" <<<"$OUT" \
+  && ok "a helper removed with the declared test -> no: the helper is no declared test" || bad "helper: rc=$rc out=$OUT"
+dead_only; r declared-only server --staged --task tasks/del.md T2
+[ $rc -eq 1 ] && grep -q "no declared test goes whole" <<<"$OUT" \
+  && ok "the same deletion without a declaration -> no" || bad "undeclared: rc=$rc out=$OUT"
+dead_only; r declared-only server --staged --task tasks/del.md T5
+[ $rc -eq 1 ] && ok "a declaration without a reason -> no" || bad "no reason: rc=$rc out=$OUT"
+base apps/server/tests/test_del.py "$PYI"
+printf 'def test_alive():\n    assert 1 == 1\n\n\ndef helper():\n    return 2\n\n\n    assert json.loads("2") == helper()\n' > "$FIX/apps/server/tests/test_del.py"
+stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && ok "a declared test whose body partly stays -> no" || bad "partly kept: rc=$rc out=$OUT"
+# A declaration only in the working tree is none: the committed ledger speaks.
+dead_only
+awk -v add='Test-Löschung: apps/server/tests/test_del.py::test_dead — nur im Arbeitsbaum' \
+  '{ print } /^### T2 /{ print add }' "$FIX/tasks/del.md" > "$WORK/del.md" && cp "$WORK/del.md" "$FIX/tasks/del.md"
+r declared-only server --staged --task tasks/del.md T2
+[ $rc -eq 1 ] && ok "a declaration in the working tree only -> no" || bad "working tree only: rc=$rc out=$OUT"
+git -C "$FIX" checkout -q -- tasks/del.md
+# --commit: the declaration has to stand in the parent, as HEAD stands before what is staged.
+dead_only; git -C "$FIX" commit -qm "dead code and its test go"
+r declared-only server --commit HEAD --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -q "^declared-only: yes" <<<"$OUT" \
+  && ok "--commit: a deletion declared before the commit -> yes" || bad "commit: rc=$rc out=$OUT"
+base apps/server/tests/test_del.py "$PYI"
+printf '%s' "$PYI_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"
+printf '# Late\n\n### T1 — late  [ ]\nKomponente: server · Dateien: apps/server/tests/test_del.py\nTest-Löschung: apps/server/tests/test_del.py::test_dead — in the same commit\n' > "$FIX/tasks/late.md"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "the declaration comes with the deletion"
+r declared-only server --commit HEAD --task tasks/late.md T1
+[ $rc -eq 1 ] && ok "--commit: a declaration that comes in the same commit -> no" || bad "late declaration: rc=$rc out=$OUT"
+git -C "$FIX" rm -q tasks/late.md && git -C "$FIX" commit -qm "no late ledger"
+# Round 1 of the closing review: an import that brings tests along is no
+# harmless one, and a Go `import (` below the first declaration is no import block.
+cat > "$FIX/tasks/imp.md" <<'MD'
+# Imports — Task-Ledger
+Status: aktiv · Branch: feature/fixture
+
+### T1 — python  [ ]
+Komponente: server · Dateien: apps/server/tests/test_imp.py
+Test-Löschung: apps/server/tests/test_imp.py::test_dead — tot
+
+### T2 — js  [ ]
+Komponente: web · Dateien: apps/web/src/imp.test.ts
+Test-Löschung: apps/web/src/imp.test.ts::dead case — tot
+MD
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "import ledger"
+py_imp() {  # py_imp <the import line that leaves with test_dead>
+  base apps/server/tests/test_imp.py "from shared import helper
+$1
+
+
+def test_alive():
+    assert helper() == 1
+
+
+def test_dead():
+    assert helper() == 2
+"
+  printf 'from shared import helper\n\n\ndef test_alive():\n    assert helper() == 1\n' > "$FIX/apps/server/tests/test_imp.py"
+  stage apps/server/tests/test_imp.py
+}
+py_imp 'from shared import other'; r declared-only server --staged --task tasks/imp.md T1
+[ $rc -eq 0 ] && ok "a plain import that leaves with the declared test -> yes" || bad "plain import: rc=$rc out=$OUT"
+py_imp 'from shared import *'; r declared-only server --staged --task tasks/imp.md T1
+[ $rc -eq 1 ] && grep -q "test_imp.py:2 is no part of a declared deletion" <<<"$OUT" \
+  && ok "a star import that leaves with it -> no: pytest collects what it brings" || bad "star import: rc=$rc out=$OUT"
+py_imp 'from shared import test_contract'; r declared-only server --staged --task tasks/imp.md T1
+[ $rc -eq 1 ] && grep -q "test_imp.py:2 is no part" <<<"$OUT" \
+  && ok "an imported test name that leaves with it -> no" || bad "test name import: rc=$rc out=$OUT"
+JS_IMP='import { expect, it } from "vitest";
+import "./shared.test";
+
+it("alive case", () => {
+  expect(1).toBe(1);
+});
+
+it("dead case", () => {
+  expect(2).toBe(2);
+});
+'
+base apps/web/src/imp.test.ts "$JS_IMP"
+printf 'import { expect, it } from "vitest";\n\nit("alive case", () => {\n  expect(1).toBe(1);\n});\n' > "$FIX/apps/web/src/imp.test.ts"
+stage apps/web/src/imp.test.ts
+r declared-only web --staged --task tasks/imp.md T2
+[ $rc -eq 1 ] && grep -q "imp.test.ts:2 is no part" <<<"$OUT" \
+  && ok "a bare JS import that leaves with the declared test -> no: the module runs, its tests too" || bad "bare import: rc=$rc out=$OUT"
+base apps/web/src/imp.test.ts "$JS_IMP"
+printf 'import { expect, it } from "vitest";\nimport "./shared.test";\n\nit("alive case", () => {\n  expect(1).toBe(1);\n});\n' > "$FIX/apps/web/src/imp.test.ts"
+stage apps/web/src/imp.test.ts
+r declared-only web --staged --task tasks/imp.md T2
+[ $rc -eq 0 ] && grep -q "imp.test.ts::dead case" <<<"$OUT" \
+  && ok "the declared JS test alone -> yes" || bad "js alone: rc=$rc out=$OUT"
+# The reviewer's Go case: an `import (` in a raw string inside a test, and the
+# remaining test loses a line besides the declared one.
+GO_RAW='package x
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestDead(t *testing.T) {
+	_ = strings.TrimSpace(" ")
+}
+
+func TestGen(t *testing.T) {
+	src := `
+import (
+	"fmt"
+`
+	checkAll(t)
+	_ = src
+}
+'
+base apps/agent/x_test.go "$GO_RAW"
+printf 'package x\n\nimport (\n\t"strings"\n\t"testing"\n)\n\nfunc TestGen(t *testing.T) {\n\tsrc := `\nimport (\n\t"fmt"\n`\n\t_ = src\n}\n' > "$FIX/apps/agent/x_test.go"
+stage apps/agent/x_test.go
+r declared-only agent --staged --task tasks/del.md T4
+[ $rc -eq 1 ] && grep -q "x_test.go:17 is no part of a declared deletion" <<<"$OUT" \
+  && ok "an import ( in a raw string is no import block: the line out of the remaining test -> no" || bad "go raw string: rc=$rc out=$OUT"
+base apps/agent/x_test.go "$GO_RAW"
+printf 'package x\n\nimport (\n\t"testing"\n)\n\nfunc TestGen(t *testing.T) {\n\tsrc := `\nimport (\n\t"fmt"\n`\n\tcheckAll(t)\n\t_ = src\n}\n' > "$FIX/apps/agent/x_test.go"
+stage apps/agent/x_test.go
+r declared-only agent --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "x_test.go::TestDead" <<<"$OUT" \
+  && ok "a line of the import block at the top leaves with the declared Go test -> yes" || bad "go block: rc=$rc out=$OUT"
+reset_index
+r declared-only server --staged
+[ $rc -eq 2 ] && grep -q "declared-only needs --task" <<<"$OUT" && ok "declared-only without --task -> 2" || bad "no task: rc=$rc out=$OUT"
+r declared-only --staged --task tasks/del.md T1
+[ $rc -eq 2 ] && grep -q "declared-only needs <component>" <<<"$OUT" && ok "declared-only without a component -> 2" || bad "no component: rc=$rc out=$OUT"
+r diff-scan --commit HEAD
+[ $rc -eq 2 ] && grep -q -e "--commit is for declared-only alone" <<<"$OUT" && ok "--commit is for declared-only alone -> 2" || bad "commit on diff-scan: rc=$rc out=$OUT"
+reset_index
+
 # ══ diff-scan: a declared assertion change (R-0206) ═══════════════════════════
 echo "── diff-scan --task: an assertion may change in a test that stays when the task says so ──"
 cat > "$FIX/tasks/chg.md" <<'MD'
@@ -2178,6 +2358,11 @@ for reason in no-test-change only-test-change; do
   [ $rc -eq 0 ] && ! grep -q 'probe not run' <<<"$OUT" \
     && ok "$reason is no obstacle to approve and no probe gap" || bad "$reason: rc=$rc out=$OUT"
 done
+# R-0227: a declared deletion eases the gate, so the review line says so.
+vjson "$V2; d['probe'] = {'applicable': False, 'reason': 'only-declared-deletion', 'red_without_change': None}"
+r check-verdict "$WORK/v.json" --tree "$VT"
+[ $rc -eq 0 ] && grep -q '^approve (.*probe: only a declared test deletion, not run' <<<"$OUT" && ! grep -q 'probe not run' <<<"$OUT" \
+  && ok "only-declared-deletion keeps the approve and is named in the review line" || bad "only-declared-deletion: rc=$rc out=$OUT"
 vjson "$V2; d['mutants'] = [{'file': 'apps/x.py', 'line': 7, 'replacement': 'return 1', 'result': 'survived'}]"
 r check-verdict "$WORK/v.json" --tree "$VT"
 [ $rc -eq 0 ] && grep -q '^approve (.*mutant survived: apps/x.py:7' <<<"$OUT" \

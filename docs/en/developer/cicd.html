@@ -291,7 +291,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             file counts and no earlier approve is taken over. The close refuses <code>--review none</code> and
             <code>verdict:</code> there and under a <code>Review: auto</code> head.</li>
             <li><strong>Probe:</strong> the runner runs <code>review-probe.sh</code> with the test of the
-            <code>Verify:</code> line; without a test change, or with tests alone, it does not apply.</li>
+            <code>Verify:</code> line; without a test change, with tests alone, or for a declared test deletion
+            alone (<code>only-declared-deletion</code>, which the review line names), it does not apply.</li>
             <li><strong>Reviewer:</strong> <code>scripts/dev/review-run.sh</code> starts <code>claude -p</code> with the
             reviewer of <code>scripts/dev/review-agent.md</code>, without the project's or the user's settings, only
             with <code>scripts/dev/review-settings.json</code> (read and <code>git diff|show|log|status</code>; the
