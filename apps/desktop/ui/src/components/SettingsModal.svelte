@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { settings, session } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
-  import { errMsg } from '$lib/utils/errors';
+  import { errMsg, withoutErrorCodes } from '$lib/utils/errors';
   import {
     settingsModalOpen,
     closeSettings,
@@ -144,23 +144,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onEnroll(): Promise<void> {
-    const target = ($session?.serverUrl ?? serverUrl).trim();
+    const sess = $session;
     const token = enrollToken.trim();
-    if (!target) {
-      enrollMsg = $t('settings.resetCertPin.missingUrl');
-      return;
-    }
-    if (!token) return;
+    if (!sess || !token) return;
     enrollBusy = true;
     enrollMsg = '';
     deviceResetMsgKey = '';
     try {
-      await enrollWithToken(target, token, allowSelfSignedCerts);
+      await enrollWithToken(sess.serverUrl, token, allowSelfSignedCerts);
       deviceEnrolled = true;
       enrollToken = '';
       enrollMsg = $t('settings.enroll.done');
     } catch (err) {
-      enrollMsg = errMsg(err);
+      enrollMsg = withoutErrorCodes(errMsg(err));
       return;
     } finally {
       enrollBusy = false;
@@ -400,7 +396,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </div>
       {/if}
 
-      {#if mode === 'server'}
+      <!-- With a session only: the radio above may say "server" before anyone signed
+           in, and an enrollment then had no session URL and no tunnel to start. -->
+      {#if mode === 'server' && $session}
         {#if deviceEnrolled}
           <div class="sm-reset-pin">
             <button

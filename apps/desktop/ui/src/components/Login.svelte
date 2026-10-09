@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { errMsg } from '$lib/utils/errors';
+  import { errMsg, withoutErrorCodes } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setAllowSelfSignedCerts, setMode, settings } from '$lib/stores/session';
   import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
@@ -56,9 +56,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // form instead of the raw message.
   let mtlsRequired = $derived(error.includes('ERR_MTLS_CERT_REQUIRED'));
   // Never show the machine-readable code to the user; keep only the human text.
-  let displayError = $derived(
-    error.replace(/ERR_(?:(?:CA|TOFU)_PIN_MISMATCH|TLS_UNKNOWN_ISSUER):\s*/g, ''),
-  );
+  let displayError = $derived(withoutErrorCodes(error));
 
   async function resetCertTrust(): Promise<void> {
     const target = serverUrl.trim();
