@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Live-E2E: neu registrieren bei laufendem Tunnel — Task-Ledger
-Status: aktiv · Branch: feature/desktop-e2e-reenroll · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-e2e-reenroll · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0246, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen (Aufsicht): 1 Weg (a), dritter Schritt in settings-enroll.live.js; 2 Gegenprobe ja, als Teil der Heavy-Zeile (Wegwerf-Worktree ohne den Stop in onEnroll muss am neuen Schritt rot werden; dort wird nichts committet)
 Spec: Roadmap R-0246 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — eine Desktop-Journey kommt dazu (Neu-Registrierung in den Einstellungen bei laufendem Tunnel); auf einer Pool-VM `run.sh e2e` mit `desktop_e2e_tunnel`. Dazu eine Gegenprobe auf derselben Box: derselbe Schritt auf einem Wegwerf-Stand ohne `stopTunnel()` in `onEnroll` muss rot werden (offene Frage 2).
@@ -15,8 +15,10 @@ Geplant 2026-10-09 von Worker B im Auftrag der Aufsicht (adminhelper-ac) aus ein
 2026-10-09 angenommen hat („später, braucht Heavy“). Sie stammt aus dem T7-Review von R-0212 (#102). Die private
 Roadmap ist in diesem Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht. Zeilenangaben origin/main@af77eb3c.
 
-### T1 — `settings-enroll.live.js`: neu registrieren, während der Tunnel läuft, startet ihn neu (R-0246)  [ ]
+### T1 — `settings-enroll.live.js`: neu registrieren, während der Tunnel läuft, startet ihn neu (R-0246)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/settings-enroll.live.js, scripts/tests/desktop_e2e_tunnel.sh
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @2c47a796 2026-10-09T18:29:20+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Seit #102 (T7) stoppt `onEnroll` in den Einstellungen einen laufenden Tunnel, bevor es ihn startet. Sonst
 scheitert der Start neben dem frpc, der nach einem Zurücksetzen mit der alten Identität weiterläuft („frpc laeuft
 bereits“). Das prüft heute nur der Komponententest. Die Live-E2E setzt die Identität vor dem Login zurück, dort läuft
