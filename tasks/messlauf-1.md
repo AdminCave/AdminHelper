@@ -16,8 +16,10 @@ Geplant 2026-10-08 von der Aufsicht (adminhelper-ac) aus R-0210 und R-0214, beid
 Phase 0, Kevin 2026-10-08): `ledger-loop.sh` baut es unter Kevins Benutzer mit eigenem Builder-HOME. Gemessen werden
 Turns, Verweigerungen, Dauer und Limit-Anteil je Task. Zeilenangaben main@7129dc57.
 
-### T1 — Schutztest: kein `to_dict` liefert einen Zeitstempel ohne Offset (R-0210)  [ ]
+### T1 — Schutztest: kein `to_dict` liefert einen Zeitstempel ohne Offset (R-0210)  [x]
 Komponente: server · Dateien: apps/server/tests/test_to_dict_utc_offsets.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @8f7fcc53 2026-10-09T09:47:54+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: Ein neuer Test geht alle ORM-Klassen mit eigenem `to_dict` durch. Er findet sie über die Mapper-Registry
 von `Base`, nicht über eine feste Liste: Ein neues Modell wird so automatisch mitgeprüft, und ein entferntes bricht den
 Test nicht (R-0208 nimmt `EnrollmentToken.to_dict`, `app/modules/enrollment/models.py:54`, gerade weg). Je Klasse
