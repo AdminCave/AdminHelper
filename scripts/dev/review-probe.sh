@@ -6,7 +6,8 @@
 # review-probe.sh — would the new test be red without the change? And does a
 # mutant of the change get past the tests?
 #
-#   bash scripts/dev/review-probe.sh <component> [--staged | --commit <rev>] [--base <rev>] [-- <test>]
+#   bash scripts/dev/review-probe.sh <component> [--staged | --commit <rev>] [--base <rev>]
+#                                    [--task <ledger> <id>] [-- <test>]
 #   bash scripts/dev/review-probe.sh <component> [--staged | --commit <rev>]
 #                                    --mutate <file>:<line> '<replacement>' [-- <test>]
 #
@@ -15,6 +16,9 @@
 #     --staged     the change is what is staged, on HEAD (the default)
 #     --commit     the change is that commit, on <rev>^
 #     --base       another base for the test hunks
+#     --task       the task the change belongs to: a test diff that is nothing
+#                  but tests it declares as Test-Löschung (review.sh declared-only)
+#                  is not probed (R-0227)
 #     -- <test>    handed to the suite (verify.sh <component> -- <test>)
 #     --mutate     one line of a file of the change replaced; the suite is the
 #                  quick layer, so the replacement has to be lint-clean
@@ -40,6 +44,13 @@
 #                                                the tests, docs/, CHANGELOG.md and
 #                                                tasks/ changed, so there is no
 #                                                change to take away; no run)
+#   applicable false, reason only-declared-deletion
+#                                                (with --task: the test diff only
+#                                                removes tests the task declares as
+#                                                Test-Löschung, with their imports
+#                                                and blank lines — dead code and
+#                                                its test leave, there is no new
+#                                                test to be red; no run)
 # Red is the failure of a TEST: a pytest <failure> in the JUnit file (an <error>
 # is a collection or setup error), go `--- FAIL:` without `[build failed]`, a
 # failing vitest/cargo test rather than a file that does not compile.
@@ -83,7 +94,7 @@ COMP="${1-}"; [ $# -gt 0 ] && shift
 case "$COMP" in -h|--help) usage; exit 0 ;; ""|-*) usage >&2; die "needs a component" ;; esac
 TESTPATHS="$(component_tests "$COMP")"
 [ -n "$TESTPATHS" ] || die "unknown component: $COMP"
-MODE="" REV="" BASE="" MUT_AT="" MUT_TO="" TESTARGS=()
+MODE="" REV="" BASE="" MUT_AT="" MUT_TO="" TASK_LEDGER="" TASK_ID="" TESTARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) [ -z "$MODE" ] || die "--staged or --commit, not both"; MODE=staged ;;
@@ -91,6 +102,7 @@ while [ $# -gt 0 ]; do
       [ -z "$MODE" ] || die "--staged or --commit, not both"
       [ $# -ge 2 ] || die "--commit needs <rev>"; MODE=commit; REV="$2"; shift ;;
     --base) [ $# -ge 2 ] || die "--base needs <rev>"; BASE="$2"; shift ;;
+    --task) [ $# -ge 3 ] || die "--task needs <ledger> <id>"; TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
     --mutate)
       [ $# -ge 3 ] || die "--mutate needs <file>:<line> '<replacement>'"
       MUT_AT="$2"; MUT_TO="$3"; shift 2 ;;
@@ -101,6 +113,7 @@ while [ $# -gt 0 ]; do
 done
 MODE="${MODE:-staged}"
 [ -z "$BASE" ] || [ -z "$MUT_AT" ] || die "--base has no meaning with --mutate (the mutant sits on the whole change)"
+[ -z "$TASK_LEDGER" ] || [ -z "$MUT_AT" ] || die "--task has no meaning with --mutate (the mutant sits on the whole change)"
 case "$MUT_AT" in "") ;; *:*[!0-9]*|*:) die "--mutate needs <file>:<line>, got $MUT_AT" ;; *:*) ;; *) die "--mutate needs <file>:<line>, got $MUT_AT" ;; esac
 
 if [ "$MODE" = commit ]; then
@@ -179,6 +192,19 @@ else
   else
     "${GIT_DIFF[@]}" --staged --quiet -- . "${NOT_TESTS[@]}"
   fi && answer '{"applicable": false, "reason": "only-test-change", "red_without_change": null}'
+  # Dead code and its declared test leaving together (R-0227): without the change
+  # nothing is red, and that proves nothing. Only a test diff that is that alone;
+  # a replacement test or any other test change is probed as before.
+  if [ -n "$TASK_LEDGER" ]; then
+    if [ "$MODE" = commit ]; then DECLARED=(--commit "$REV"); else DECLARED=(--staged); fi
+    bash "$ROOT/scripts/dev/review.sh" declared-only "$COMP" "${DECLARED[@]}" --task "$TASK_LEDGER" "$TASK_ID" \
+      > "$PROBE_DIR/declared.log" 2>&1
+    case $? in
+      0) answer '{"applicable": false, "reason": "only-declared-deletion", "red_without_change": null}' ;;
+      1) ;;
+      *) die "review.sh declared-only refused: $(tail -n 1 "$PROBE_DIR/declared.log")" ;;
+    esac
+  fi
   git worktree add -q --detach "$WT" "$BASE" >/dev/null 2>&1 || infra "git worktree add failed"
   WT_MADE=1
   git -C "$WT" apply "$PROBE_DIR/tests.patch" 2>/dev/null \

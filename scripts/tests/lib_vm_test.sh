@@ -124,6 +124,11 @@ echo "── the environment ──"
 # against whatever happens to be in the environment.
 FAKE="$WORK/repo"; mkdir -p "$FAKE/.claude" "$FAKE/scripts/vm"
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$FAKE/scripts/vm/lib.sh"
+cp "$REPO_ROOT/scripts/vm/vm.py" "$FAKE/scripts/vm/vm.py"
+# vm_load_env reads ~/.config/adminhelper/pve.env too (R-0229): HOME points at a
+# fixture, or these cases would read the developer's real file.
+export HOME="$WORK/home"; PVE="$HOME/.config/adminhelper/pve.env"
+mkdir -p "$HOME/.config/adminhelper"; chmod 700 "$HOME/.config/adminhelper"
 echo '{"env": {"AH_PVE_URL": "https://pve.example:8006", "AH_VM_MAX": "8", "OTHER": "x"}}' \
   > "$FAKE/.claude/settings.local.json"
 ENVOUT=$(cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env && echo "$AH_PVE_URL|$AH_VM_MAX|${OTHER-<unset>}"')
@@ -144,6 +149,24 @@ ENVOUT=$(cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env && printf "%s" 
 echo '{"env": {}}' > "$FAKE/.claude/settings.local.json"
 (cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env' 2>/dev/null) \
   && bad "an empty config was accepted" || ok "an empty config fails loudly"
+
+# pve.env, with placeholders only: the same source and precedence as vm.py.
+echo '{"env": {"AH_PVE_URL": "https://from-settings:8006", "AH_PVE_NODE": "settings-node"}}' \
+  > "$FAKE/.claude/settings.local.json"
+printf 'AH_PVE_URL=https://from-pve-env:8006\nAH_PVE_TOKEN=placeholder-token\nAH_VM_MAX=3\n' > "$PVE"
+chmod 600 "$PVE"
+ENVOUT=$(cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env && echo "$AH_PVE_URL|$AH_PVE_NODE|$AH_PVE_TOKEN"')
+[ "$ENVOUT" = "https://from-pve-env:8006|settings-node|placeholder-token" ] \
+  && ok "pve.env is read and wins over settings.local.json, which stays the fallback" || bad "pve.env: $ENVOUT"
+ENVOUT=$(cd "$FAKE" && AH_VM_MAX=99 bash -c '. scripts/vm/lib.sh; vm_load_env && echo "$AH_VM_MAX"')
+[ "$ENVOUT" = "99" ] && ok "the environment wins over pve.env" || bad "pve.env precedence: $ENVOUT"
+# A token file others can read is a finding, not a fallback: settings.local.json
+# would have the URL, and still nothing is exported.
+chmod 644 "$PVE"
+ERR=$(cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env && echo "loaded:$AH_PVE_URL"' 2>&1); rc=$?
+[ "$rc" -ne 0 ] && grep -q 'chmod 600' <<<"$ERR" && ! grep -q 'loaded:' <<<"$ERR" && ! grep -q 'placeholder-token' <<<"$ERR" \
+  && ok "a pve.env others can read stops the load with the fix, nothing exported" || bad "loose pve.env: rc=$rc $ERR"
+rm -f -- "$PVE"
 
 echo "lib_vm_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

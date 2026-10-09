@@ -233,6 +233,20 @@ def state_dir(tmp_path, monkeypatch):
     return path
 
 
+@pytest.fixture(autouse=True)
+def pve_env(tmp_path, monkeypatch):
+    """No test reads the developer's real ~/.config/adminhelper/pve.env (R-0229).
+
+    The path points into tmp_path, where nothing exists until a test writes it; the
+    directory is 0700, so a file written there meets the same checks as the real one.
+    """
+    folder = tmp_path / "adminhelper"
+    folder.mkdir(mode=0o700)
+    path = folder / "pve.env"
+    monkeypatch.setattr(vm, "PVE_ENV_FILE", str(path))
+    return path
+
+
 @pytest.fixture
 def cfg(tmp_path) -> vm.Config:
     ca = tmp_path / "ca.pem"

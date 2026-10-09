@@ -10,10 +10,11 @@ docker-compose stack, mTLS enrollment, Redis SSE fan-out, agent monitoring, apt/
 build, the upgrade path from the last release, and multi-host scenarios (cross-distro rpm,
 3-host FRP tunnel, monitoring closed-loop, the real Tauri desktop GUI) — needs real Linux
 with Docker + a display, which the sandboxed dev box lacks. `scripts/vm/vm.py` clones
-ephemeral Proxmox VMs, rsyncs the tree, runs, and destroys them. Provider env AND token live
-only in the gitignored `.claude/settings.local.json` (nothing infra-bearing in the public
-`settings.json`); confirm with `python3 scripts/vm/vm.py doctor`. Driving a VM by hand is the
-`/vm` skill; this one is about the suites.
+ephemeral Proxmox VMs, rsyncs the tree, runs, and destroys them. The token lives in
+`~/.config/adminhelper/pve.env` (0600, R-0229), the provider env in the gitignored
+`.claude/settings.local.json` (nothing infra-bearing in the public `settings.json`); confirm
+with `python3 scripts/vm/vm.py doctor`. Driving a VM by hand is the `/vm` skill; this one is
+about the suites.
 
 ## The five verbs
 

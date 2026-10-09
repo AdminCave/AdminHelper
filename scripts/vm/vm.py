@@ -12,9 +12,11 @@ list bake. Python 3 standard library only — no proxmoxer, no pvesh, no qm: the
 REST API is the whole surface, and a dependency for ~25 endpoints buys nothing a
 hermetic test could not give us (spec: docs/features/harness-stufe-2.md).
 
-Configuration comes from .claude/settings.local.json -> "env" (gitignored, the
-only place the token lives); a real environment variable of the same name wins,
-so a runner can inject its own without a file. Keys:
+Configuration comes from ~/.config/adminhelper/pve.env (a 0600 file of KEY=VALUE
+lines, read, never sourced — where the token belongs) and from
+.claude/settings.local.json -> "env" (gitignored, the fallback). pve.env wins over
+the settings file, and a real environment variable of the same name wins over
+both, so a runner can inject its own without a file (R-0229). Keys:
 
     AH_PVE_URL NODE TOKEN CA STORAGE BRIDGE POOL VMID_RANGE
     AH_VM_SSH_KEY MAX LINKED REMOTE_DIR
@@ -38,6 +40,7 @@ import os
 import re
 import shlex
 import ssl
+import stat
 import subprocess
 import sys
 import time
@@ -82,6 +85,14 @@ DEFAULTS = {
     "AH_VM_LINKED": "1",
     "AH_VM_REMOTE_DIR": "~/adminhelper",
 }
+# This user's Proxmox access, beside the token files runner-env.sh reads: a file
+# only its owner can read, so the token no longer has to sit in the `env` block
+# Claude Code exports into every session (R-0229). Expanded when it is read, so a
+# test can point it elsewhere.
+PVE_ENV_FILE = "~/.config/adminhelper/pve.env"
+# The only keys either file may set; vm.py reads no others, and lib.sh exports
+# exactly these.
+FILE_KEY = re.compile(r"AH_(PVE|VM)_[A-Za-z0-9_]+")
 # Keys that only ever come from the file or the environment, so they need no
 # default. Presence is not checked here — Config.__getitem__ raises on access,
 # which is what keeps `vm.py list` from demanding a bake profile.
@@ -115,6 +126,81 @@ class Infra(VmError):
 
 
 # ── configuration ────────────────────────────────────────────────────────────
+def read_pve_env(path: str) -> dict:
+    """The AH_PVE_*/AH_VM_* lines of pve.env, read as runner-env.sh reads them.
+
+    {} when the file does not exist. Otherwise it must be a regular file, no link,
+    mode 600, owned by this user, in a directory group and others cannot write —
+    a token file somebody else can read or replace is a finding, not a fallback,
+    so anything else is a Usage error. No message names a value from the file.
+    """
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        raise Usage("cannot read %s: %s" % (path, exc.strerror)) from exc
+    if stat.S_ISLNK(st.st_mode):
+        raise Usage("%s is a symlink — a token file must be a regular file" % path)
+    if not stat.S_ISREG(st.st_mode):
+        raise Usage("%s is not a regular file" % path)
+    mode = stat.S_IMODE(st.st_mode)
+    if mode != 0o600:
+        raise Usage("%s is mode %o, must be 600 — chmod 600 %s" % (path, mode, shlex.quote(path)))
+    if st.st_uid != os.getuid():
+        raise Usage("%s belongs to somebody else" % path)
+    folder = os.path.dirname(path)
+    try:
+        dmode = stat.S_IMODE(os.stat(folder).st_mode)
+    except OSError as exc:
+        raise Usage("cannot read %s: %s" % (folder, exc.strerror)) from exc
+    if dmode & 0o022:
+        raise Usage(
+            "%s is mode %o — group and others must not write here (chmod 700 %s)"
+            % (folder, dmode, shlex.quote(folder))
+        )
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise Usage("cannot read %s: %s" % (path, type(exc).__name__)) from exc
+    values = {}
+    for line in lines:
+        line = line.strip()
+        if line.startswith("export") and line[6:7].isspace():
+            line = line[6:].lstrip()
+        key, sep, value = line.partition("=")
+        if not sep or not FILE_KEY.fullmatch(key):
+            continue  # a comment, a blank line or a key that is none of ours
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if value:  # empty counts as unset, as it does in the environment
+            values[key] = value  # a later line wins
+    return values
+
+
+def file_values(root: str = ROOT) -> dict:
+    """The AH_PVE_*/AH_VM_* values of both files, pve.env over settings.local.json.
+
+    Config.load puts the environment on top; vm_load_env in lib.sh exports the same
+    values, so the shell side and this one cannot disagree about where a key is from.
+    """
+    path = os.path.join(root, ".claude", "settings.local.json")
+    try:
+        with open(path) as fh:
+            values = {
+                k: v for k, v in json.load(fh).get("env", {}).items() if FILE_KEY.fullmatch(k)
+            }
+    except FileNotFoundError:
+        values = {}
+    except (OSError, ValueError, AttributeError, TypeError) as exc:
+        # AttributeError/TypeError cover a settings file whose top level is
+        # not an object — a broken config must not surface as a traceback.
+        raise Usage("cannot read %s: %s" % (path, exc)) from exc
+    values.update(read_pve_env(os.path.expanduser(PVE_ENV_FILE)))
+    return values
+
+
 class Config:
     def __init__(self, values: dict):
         self.values = values
@@ -123,16 +209,7 @@ class Config:
     def load(cls, root: str = ROOT, environ=None) -> "Config":
         environ = os.environ if environ is None else environ
         values = dict(DEFAULTS)
-        path = os.path.join(root, ".claude", "settings.local.json")
-        try:
-            with open(path) as fh:
-                values.update(json.load(fh).get("env", {}))
-        except FileNotFoundError:
-            pass
-        except (OSError, ValueError, AttributeError, TypeError) as exc:
-            # AttributeError/TypeError cover a settings file whose top level is
-            # not an object — a broken config must not surface as a traceback.
-            raise Usage("cannot read %s: %s" % (path, exc)) from exc
+        values.update(file_values(root))
         # The environment wins over the file so `ah-runner` (stage 4) can hand a
         # job its own token without writing one to disk.
         for key in list(values) + list(ENV_KEYS):
@@ -143,7 +220,10 @@ class Config:
     def __getitem__(self, key: str) -> str:
         value = self.values.get(key, "")
         if not value:
-            raise Usage("%s is not configured (.claude/settings.local.json -> env)" % key)
+            raise Usage(
+                "%s is not configured (%s, or .claude/settings.local.json -> env)"
+                % (key, PVE_ENV_FILE)
+            )
         return value
 
     def get(self, key: str, default: str = "") -> str:

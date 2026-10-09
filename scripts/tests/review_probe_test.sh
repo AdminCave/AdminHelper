@@ -196,6 +196,50 @@ FIXTURE_KIND=green p monitoring --commit HEAD
   && ok "the same for --commit" || bad "only tests, commit: rc=$rc out=$OUT err=$ERR"
 git -C "$FIX" reset -q --hard HEAD~1
 
+# A declared deletion (R-0227): g goes, and its test, declared as Test-Löschung
+# in the committed ledger, goes with it, together with the import only it used.
+# review.sh declared-only answers whether the test diff is that alone.
+BASE0="$(git -C "$FIX" rev-parse HEAD)"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$FIX/scripts/dev/review.sh"
+mkdir -p "$FIX/tasks"
+printf '# Fixture\n\n### T1 — g has no caller  [ ]\nKomponente: monitoring · Dateien: apps/monitoring/app/x.py, apps/monitoring/tests/test_x.py\nTest-Löschung: apps/monitoring/tests/test_x.py::test_g — g has no caller left\n\n### T2 — nothing declared  [ ]\nKomponente: monitoring · Dateien: apps/monitoring/app/x.py\n' \
+  > "$FIX/tasks/fix.md"
+printf 'import json\n\n\ndef test_old():\n    assert True\n\n\ndef test_g():\n    assert json.dumps(g()) == "1"\n' > "$FIX/apps/monitoring/tests/test_x.py"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "a test for g, and the ledger"
+DEL_BASE="$(git -C "$FIX" rev-parse HEAD)"
+dead_g() {
+  git -C "$FIX" reset -q --hard "$DEL_BASE"
+  printf 'def f():\n    return 409\n' > "$FIX/apps/monitoring/app/x.py"
+  printf 'def test_old():\n    assert True\n' > "$FIX/apps/monitoring/tests/test_x.py"
+  git -C "$FIX" add -A
+}
+dead_g; FIXTURE_KIND=green p monitoring --staged --task tasks/fix.md T1
+[ $rc -eq 0 ] && [ "$(field applicable)" = false ] && [ "$(field reason)" = '"only-declared-deletion"' ] && [ ! -s "$FIXTURE_CALLS" ] \
+  && ok "dead code and its declared test -> only-declared-deletion, no run" || bad "declared deletion: rc=$rc out=$OUT err=$ERR"
+# The counter-case: besides the declared deletion the test diff adds a test, so
+# the probe asks as before.
+dead_g; printf '\n\ndef test_f():\n    assert f() == 409\n' >> "$FIX/apps/monitoring/tests/test_x.py"; git -C "$FIX" add -A
+FIXTURE_KIND=green p monitoring --staged --task tasks/fix.md T1
+[ $rc -eq 0 ] && [ "$(field applicable)" = true ] && [ "$(field red_without_change)" = false ] && [ -s "$FIXTURE_CALLS" ] \
+  && ok "a declared deletion plus another test change -> probed as before" || bad "deletion plus more: rc=$rc out=$OUT err=$ERR"
+dead_g; FIXTURE_KIND=green p monitoring --staged --task tasks/fix.md T2
+[ $rc -eq 0 ] && [ "$(field applicable)" = true ] && [ -s "$FIXTURE_CALLS" ] \
+  && ok "the same deletion for a task that declares nothing -> probed" || bad "undeclared: rc=$rc out=$OUT err=$ERR"
+dead_g; FIXTURE_KIND=green p monitoring --staged
+[ $rc -eq 0 ] && [ "$(field applicable)" = true ] && [ -s "$FIXTURE_CALLS" ] \
+  && ok "without --task the deletion is probed as before" || bad "no --task: rc=$rc out=$OUT err=$ERR"
+dead_g; git -C "$FIX" commit -qm "g goes"
+FIXTURE_KIND=green p monitoring --commit HEAD --task tasks/fix.md T1
+[ $rc -eq 0 ] && [ "$(field reason)" = '"only-declared-deletion"' ] && [ ! -s "$FIXTURE_CALLS" ] \
+  && ok "the same for --commit" || bad "declared deletion, commit: rc=$rc out=$OUT err=$ERR"
+dead_g; p monitoring --staged --task tasks/nosuch.md T1
+[ $rc -eq 2 ] && grep -q "declared-only refused" <<<"$ERR" && [ ! -s "$FIXTURE_CALLS" ] \
+  && ok "a task review.sh cannot read -> 2, no run" || bad "bad task: rc=$rc out=$OUT err=$ERR"
+p monitoring --staged --task tasks/fix.md T1 --mutate apps/monitoring/app/x.py:2 '    return 1'
+[ $rc -eq 2 ] && grep -q -e "--task has no meaning with --mutate" <<<"$ERR" \
+  && ok "--task with --mutate -> 2" || bad "task and mutate: rc=$rc out=$OUT err=$ERR"
+git -C "$FIX" reset -q --hard "$BASE0"
+
 for args in "" "nosuch --staged" "monitoring --staged --commit HEAD" "monitoring --frob" "monitoring --mutate x"; do
   # shellcheck disable=SC2086  # the words ARE the arguments
   p $args

@@ -7,6 +7,8 @@
 #
 #   bash scripts/dev/review.sh diff-scan [--staged] [--task <ledger> <id>]
 #                                                       ways to make a suite lie
+#   bash scripts/dev/review.sh declared-only <component> (--staged | --commit <rev>) --task <ledger> <id>
+#                                                       is the test diff a declared deletion alone
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
 #   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>] | --message <file>]
 #                                                       what must never be committed or pushed
@@ -53,6 +55,17 @@
 #              there exactly once before and after, and its new body gains at
 #              least as many assertions as it loses (R-0206). Any other assertion
 #              out of a test that stays is still a finding.
+#   declared-only  is the diff under the component's test paths nothing but the
+#              tests the task declares as `Test-Löschung:` (R-0227)? No line
+#              added, and every removed line blank, an import, or inside the old
+#              span of a declared test that counts as diff-scan counts it — the
+#              same code. A removal of dead code has no new test, so the probe
+#              has nothing to ask (review-probe.sh --task); a replacement test,
+#              a change to a test that stays or a removed helper is more than
+#              that and keeps the probe, and so does an import that brings tests
+#              along (`*`, a test name, a bare JS import). The declaration is the
+#              committed one before the change: HEAD with --staged, <rev>^ with
+#              --commit. Exit 0 yes, 1 no.
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
@@ -157,7 +170,7 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" COMMIT_REV="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
@@ -197,6 +210,10 @@ while [ $# -gt 0 ]; do
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
+    --commit)
+      [ $# -ge 2 ] || die "--commit needs <rev>"
+      case "$2" in -*|'') die "not a revision: $2" ;; esac
+      COMMIT_REV="$2"; shift ;;
     -h|--help) usage; exit 0 ;;
     --*) die "unknown flag: $1" ;;
     *) ARGS+=("$1") ;;
@@ -214,6 +231,12 @@ task_field() {
 }
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
+if [ -n "$COMMIT_REV" ]; then
+  [ "$VERB" = declared-only ] || die "--commit is for declared-only alone"
+  [ "$STAGED" = 0 ] || die "--staged or --commit, not both"
+  git rev-parse --verify -q "$COMMIT_REV^{commit}" >/dev/null || die "no such commit: $COMMIT_REV"
+  DIFF_ARGS+=("$COMMIT_REV^" "$COMMIT_REV")
+fi
 if [ -n "$MESSAGE" ]; then
   [ "$VERB" = sec ] || die "--message is for sec alone"
   # Relative to where the caller stands, as for check-verdict: the hook passes a
@@ -240,7 +263,18 @@ GIT_DIFF=(git -c core.quotePath=false diff --text --no-ext-diff --no-textconv --
 changed_paths() { "${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only; }
 
 case "$VERB" in
-  diff-scan)
+  diff-scan|declared-only)
+    # declared-only (R-0227) runs the same judgement over the diff under the
+    # component's test paths and answers yes or no instead of listing findings.
+    DIFF_PATHS=()
+    if [ "$VERB" = declared-only ]; then
+      [ "${#ARGS[@]}" = 1 ] || die "declared-only needs <component>"
+      read -ra DIFF_PATHS <<< "$(component_tests "${ARGS[0]}")"
+      [ "${#DIFF_PATHS[@]}" -gt 0 ] || die "unknown component: ${ARGS[0]}"
+      DIFF_PATHS=(-- "${DIFF_PATHS[@]}")
+      [ -n "$TASK_LEDGER" ] || die "declared-only needs --task <ledger> <id>"
+      [ "$STAGED" = 1 ] || [ -n "$COMMIT_REV" ] || die "declared-only needs --staged or --commit <rev>"
+    fi
     # The tests the task declares as deleted (Test-Löschung) or as changed
     # (Assertion-Änderung) — read from the COMMITTED ledger
     # (HEAD), never from the working tree: a builder must not be able to grant
@@ -267,7 +301,11 @@ case "$VERB" in
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"
       COMMITTED="$(mktemp)" || die "mktemp failed"
-      if git show "HEAD:$TASK_LEDGER" > "$COMMITTED" 2>/dev/null; then
+      # For a commit, its parent: the declaration has to stand before the change,
+      # as HEAD stands before what is staged.
+      BEFORE=HEAD
+      [ -z "$COMMIT_REV" ] || BEFORE="$COMMIT_REV^"
+      if git show "$BEFORE:$TASK_LEDGER" > "$COMMITTED" 2>/dev/null; then
         DECL="$(task_field "$COMMITTED" "$TASK_ID" "Test-Löschung")"
         DECL_CHG="$(task_field "$COMMITTED" "$TASK_ID" "Assertion-Änderung")"
       fi
@@ -283,7 +321,7 @@ case "$VERB" in
     # A removed assertion is not judged here: it leaves as an RA record, and the
     # check below decides against the file CONTENTS whether a declared test
     # covers it.
-    RAW="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | awk -v PAT="$SKIP_PATTERNS" '
+    RAW="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 "${DIFF_PATHS[@]+"${DIFF_PATHS[@]}"}" | awk -v PAT="$SKIP_PATTERNS" '
       function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
       # Where a comment starts, or 0. Only a marker at the start of the line or
       # after whitespace counts, so the // in an https:// URL is not a comment.
@@ -330,6 +368,7 @@ case "$VERB" in
                         oldno++; next
                       }
       /^\+/           {
+                        printf "AL\t%s\t%d\n", file, newno
                         line = substr($0, 2)
                         sub(/\r$/, "", line)
                         # An added assertion, not one that only stands in a comment
@@ -380,10 +419,11 @@ case "$VERB" in
     # in the new version, neither span holds another head and the file is not
     # renamed; its removed assertions pass when its new span gains at least as
     # many added ones.
-    FOUND="$(printf '%s\n' "$RAW" | DECL="$DECL" DECL_CHG="$DECL_CHG" STAGED="$STAGED" python3 -c '
+    FOUND="$(printf '%s\n' "$RAW" | DECL="$DECL" DECL_CHG="$DECL_CHG" STAGED="$STAGED" MODE="$VERB" REV="$COMMIT_REV" python3 -c '
 import os, re, subprocess, sys
 
 staged = os.environ.get("STAGED") == "1"
+rev = os.environ.get("REV", "")
 lines = [l for l in sys.stdin.read().split("\n") if l]
 ras = [l.split("\t", 3)[1:] for l in lines if l.startswith("RA\t")]
 removed = {}
@@ -393,8 +433,9 @@ for l in lines:
         removed.setdefault(f, set()).add(int(n))
 ars = [l.split("\t", 3)[1:] for l in lines if l.startswith("AR\t")]
 aas = [l.split("\t", 3)[1:] for l in lines if l.startswith("AA\t")]
+added = [l.split("\t", 2)[1:] for l in lines if l.startswith("AL\t")]
 renamed = dict(l.split("\t", 2)[1:][::-1] for l in lines if l.startswith("RN\t"))   # new -> old
-out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t", "AA\t", "RN\t"))]
+out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t", "AA\t", "RN\t", "AL\t"))]
 
 def git(*a):
     r = subprocess.run(("git", "-c", "core.quotePath=false") + a, capture_output=True)
@@ -406,9 +447,13 @@ def text(b):
     return (b or b"").decode("utf-8", errors="replace")
 
 def old_text(path):   # the side the diff removes from
+    if rev:
+        return text(git("show", rev + "^:" + path))
     return text(git("show", ("HEAD:" if staged else ":") + path))
 
 def new_text(path):   # the side the diff arrives at
+    if rev:
+        return text(git("show", rev + ":" + path))
     if staged:
         return text(git("show", ":" + path))
     try:
@@ -483,7 +528,7 @@ def heads(path, text, helpers=False):
         found.append((name, i + 1, end, ind))
     return found
 
-changed = [p for p in text(git("diff", *(["--staged"] if staged else []), "--name-only", "-z")).split("\0") if p]
+changed = [p for p in text(git("diff", *([rev + "^", rev] if rev else ["--staged"] if staged else []), "--name-only", "-z")).split("\0") if p]
 
 entries, notes = {}, {}
 
@@ -645,6 +690,72 @@ def where_tests_are(path, n):
 
 ras = [r for r in ras if not IMPORT.match(r[2]) and where_tests_are(r[0], int(r[1]))]
 
+def go_import_block(path, src):
+    """The line numbers inside a Go `import ( … )` block of src, before its first
+    declaration: further down, an `import (` is text in a string or a comment, and
+    a block left open there would make the rest of the file an import."""
+    found, inside = set(), False
+    if not path.endswith(".go"):
+        return found
+    for i, s in enumerate(src, 1):
+        if re.match(r"^(func|type|var|const)\b", s):
+            break
+        t = s.strip()
+        if inside:
+            if t == ")":
+                inside = False
+            else:
+                found.add(i)
+        elif re.match(r"^import\s*\($", t):
+            inside = True
+    return found
+
+
+def harmless_import(path, line):
+    """An import line that may leave together with a declared test: one that
+    brings no test along. pytest collects what a module imports by name, so no
+    `*` and no name that starts with test or Test; in JS/TS a module runs when it
+    is imported, so no bare import and none of a .test or .spec file."""
+    if not IMPORT.match(line):
+        return False
+    if path.endswith(".py") and line.startswith("from"):
+        names = line.split(" import ", 1)[-1]
+        if "*" in names or re.search(r"(^|[\s,(])(test|Test)", names):
+            return False
+    if re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path):
+        if " from " not in line or re.search(r"\.(test|spec)\b", line):
+            return False
+    return True
+
+# R-0227: nothing but declared deletions. No line added, and every removed line
+# blank, an import, or inside the old span of a declared test that goes whole
+# (entries, judged above as diff-scan judges them). Anything more keeps the
+# probe asking, and the first such line is the reason of the answer.
+if os.environ.get("MODE") == "declared-only":
+    why = ""
+    if renamed:
+        why = "%s is renamed" % next(iter(renamed))
+    elif added:
+        why = "%s:%s adds a line" % tuple(added[0])
+    elif not entries:
+        why = "no declared test goes whole"
+    else:
+        for path in sorted(removed):
+            src = old_text(path).split("\n")
+            block = go_import_block(path, src)
+            for n in sorted(removed[path]):
+                line = src[n - 1] if n - 1 < len(src) else ""
+                if not line.strip() or harmless_import(path, line) or n in block:
+                    continue
+                if any(k[0] == path and a <= n <= b for k, (a, b) in entries.items()):
+                    continue
+                why = "%s:%d is no part of a declared deletion" % (path, n)
+                break
+            if why:
+                break
+    print("DECLARED-ONLY\t" + (why or "yes\t" + ", ".join("%s::%s" % k for k in sorted(entries))))
+    sys.exit(0)
+
 # A declared change covers the removed assertions of its old span only when its
 # new span gains at least as many (n >= r): changed, not taken away.
 covered = {}
@@ -675,6 +786,14 @@ for k in sorted(changed_tests):
     out.append(f"CHANGED\t{k[0]}::{k[1]} ({covered[k][4]}{covered[k][2]} removed, {covered[k][3]} added)")
 print("\n".join(out))
 ')" || die "could not judge the removed assertions"
+    if [ "$VERB" = declared-only ]; then
+      DO="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED-ONLY\t//p' | head -n 1)"
+      case "$DO" in
+        "") die "declared-only gave no answer" ;;
+        yes$'\t'*) echo "declared-only: yes (${DO#yes$'\t'})"; exit 0 ;;
+        *) echo "declared-only: no — $DO"; exit 1 ;;
+      esac
+    fi
     GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"
     CHG="$(printf '%s\n' "$FOUND" | sed -n 's/^CHANGED\t//p' | sort)"
     FOUND="$(printf '%s\n' "$FOUND" | grep -v -e $'^DECLARED\t' -e $'^CHANGED\t' | grep -v '^$')"
@@ -1096,7 +1215,11 @@ if probe.get("applicable") and probe.get("red_without_change") is not True:
 noted = ["%d %s" % (n, k) for k, n in counts.items() if n]
 noted += ["mutant survived: %s:%s" % (m["file"], m["line"]) for m in d.get("mutants", []) if m["result"] == "survived"]
 # A probe that could not run proves nothing: the approve stands, but says so.
-if probe and not probe.get("applicable") and probe.get("reason") not in ("no-test-change", "only-test-change"):
+# One with nothing to ask because the task declared the deletion (R-0227)
+# stands too, and the line says so: the package eases a gate, so it shows.
+if probe and not probe.get("applicable") and probe.get("reason") == "only-declared-deletion":
+    noted.append("probe: only a declared test deletion, not run")
+elif probe and not probe.get("applicable") and probe.get("reason") not in ("no-test-change", "only-test-change"):
     noted.append("probe not run: %s" % probe.get("reason"))
 print("approve (%s/%s%s)" % (d["reviewer"]["model"], d["reviewer"]["effort"], "; " + ", ".join(noted) if noted else ""))
 PY

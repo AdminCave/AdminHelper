@@ -149,7 +149,7 @@ for vm in data.get("vms", []):
 
 preflight() {
   echo "== pre-flight =="
-  vm_load_env || { set_infra "vm.py env not loaded (.claude/settings.local.json)"; return 74; }
+  vm_load_env || { set_infra "vm.py env not loaded (~/.config/adminhelper/pve.env, .claude/settings.local.json)"; return 74; }
   # --roles: doctor's capacity check needs to know what the run is about to ask
   # for, or it reports "fits" against a single probe box. `all` warms one desktop
   # box, `capstone` clones the seven of the multibox scenario.

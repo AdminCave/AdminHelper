@@ -202,8 +202,9 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
 
 Die Dev-Box hat kein Docker und kein Display. Schwere Suiten laufen auf ephemeren Proxmox-VMs, geklont von
 `scripts/vm/vm.py` (Verben und Regeln in `/vm`), gefahren über `scripts/vm/warm.sh`, `iter.sh`, `reap.sh` und
-`scripts/tests/multibox.sh` (Ablauf in `/test`). Provider-Env und Token liegen **nur** in
-`.claude/settings.local.json` (gitignored), nie in `settings.json`. Nach jedem Lauf
+`scripts/tests/multibox.sh` (Ablauf in `/test`). Das Token liegt in `~/.config/adminhelper/pve.env` (0600,
+gelesen, nie gesourct), die übrige Provider-Env in `.claude/settings.local.json` (gitignored), nie in
+`settings.json`; Vorrang: Umgebung > `pve.env` > `settings.local.json`. Nach jedem Lauf
 `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler, kein Detail.
 
 ## 9. Wo steht was

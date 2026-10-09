@@ -297,7 +297,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <code>--review none</code> und <code>verdict:</code> lehnt der Abschluss dort und bei <code>Review: auto</code>
             im Kopf ab.</li>
             <li><strong>Probe:</strong> der Runner f&auml;hrt <code>review-probe.sh</code> mit dem Test aus der
-            <code>Verify:</code>-Zeile; ohne Test&auml;nderung oder nur mit Tests ist sie nicht anwendbar.</li>
+            <code>Verify:</code>-Zeile; ohne Test&auml;nderung, nur mit Tests oder bei einer reinen angek&uuml;ndigten
+            Test-L&ouml;schung (<code>only-declared-deletion</code>, die Review-Zeile nennt sie) ist sie nicht anwendbar.</li>
             <li><strong>Reviewer:</strong> <code>scripts/dev/review-run.sh</code> startet <code>claude -p</code> mit
             dem Reviewer aus <code>scripts/dev/review-agent.md</code>, ohne Projekt- und Benutzer-Settings, nur mit
             <code>scripts/dev/review-settings.json</code> (lesen und <code>git diff|show|log|status</code>; der

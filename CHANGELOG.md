@@ -274,6 +274,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Review-Probe bei totem Code samt angekuendigtem Test (R-0227):** `scripts/dev/review-probe.sh` probt
+  einen Test-Diff, der nur aus Tests besteht, die die Task als `Test-Löschung:` ankuendigt (samt ihren
+  Import- und Leerzeilen), nicht mehr: ohne die Aenderung war dort nichts rot, und `check-verdict`
+  sperrte das approve des Reviewers. Die Antwort heisst `only-declared-deletion` und steht sichtbar in
+  der Review-Zeile; ein Ersatztest oder jede andere Aenderung am Test-Diff wird weiter geprobt. Dazu
+  `review.sh declared-only`, und `task-close.sh` gibt der Probe die Task mit.
+- **Zeitstempel der Monitoring-Antworten in UTC mit `Z` (R-0202):** Die Antworten unter
+  `/api/monitoring/*` schreiben ihre Zeitstempel (`createdAt`, `updatedAt`, `since`, `lastCheck`,
+  `sentAt`, `startsAt`, `endsAt`) als RFC 3339 in UTC mit `Z`, wie die Server-API seit R-0064; bisher
+  trugen sie keine Zone. Der Desktop las die Zeit der letzten Pruefung und des Alarm-Logs deshalb als
+  Ortszeit und zeigte sie um den Abstand zu UTC verschoben; er liest einen Wert ohne Zone jetzt als
+  UTC, auch von einem aelteren Monitoring-Dienst. Keine Migration: `createdAt`/`updatedAt` von vor dem
+  2026-07-09 (NEU-8.14b) koennen um den Offset abweichen. **Hinweis fuer eigene Skripte** gegen
+  `/api/monitoring/*`: Wer die Werte als String vergleicht oder selbst zerlegt, muss das `Z` erwarten;
+  `datetime.fromisoformat` liest beide Formen ab Python 3.11, aeltere Versionen ersetzen `Z` vorher durch
+  `+00:00`. Doku: API-Referenz, „Zeitstempel".
 - **Hooks: ungueltige Eingaben im dokumentierten Fehler-Format (R-0207):** `POST /api/hooks` und
   `PUT /api/hooks/{id}` antworteten bei fehlendem oder ungueltigem `schedule_interval` und bei fehlenden
   oder unbekannten `event_triggers` mit einem 422, dessen `detail` ein String war. Die OpenAPI und die
@@ -309,8 +325,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und `triggered_at` im Kontext eines Hook-Skripts tragen jetzt beide `Z` (`last_run` etwa
   `2026-10-05T12:00:00Z` statt `2026-10-05T12:00:00`, `triggered_at` `…Z` statt `…+00:00`); ein
   Skript, das die Werte als String vergleicht oder selbst zerlegt, muss das `Z` erwarten.
-  `datetime.fromisoformat` liest alle drei Formen. Doku: API-Referenz, „Zeitstempel",
-  und Hooks.
+  `datetime.fromisoformat` liest alle drei Formen ab Python 3.11, aeltere Versionen ersetzen `Z` vorher
+  durch `+00:00`. Doku: API-Referenz, „Zeitstempel", und Hooks.
 - **Server: Zeitstempel in den tz-naiven Spalten durchgehend als naive UTC (Konvention F7):** Vier Schreibstellen
   (`enrollment/service.py`, zweimal `provisioning/router.py`, `core/auth.py`) gaben zeitzonenbehaftete Werte an
   `DateTime`-Spalten ohne Zeitzone; Postgres legte sie dann in der Zeitzone der Datenbank-Session ab statt in UTC wie
@@ -481,6 +497,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Proxmox-Token aus einer 0600-Datei (R-0229):** `scripts/vm/vm.py` und `scripts/vm/lib.sh` lesen den
+  Proxmox-Zugang auch aus `~/.config/adminhelper/pve.env` (Zeilen `KEY=VALUE` fuer `AH_PVE_*`/`AH_VM_*`,
+  gelesen, nie gesourct). Vorrang: Umgebung > `pve.env` > `env`-Block von `.claude/settings.local.json`,
+  der als Rueckfall bleibt. Eine `pve.env`, die kein regulaeres 0600-File des eigenen Benutzers in einem
+  fuer Gruppe und Andere nicht schreibbaren Verzeichnis ist, bricht mit Exit 2 und dem `chmod` ab. Das
+  Token gehoert nach `pve.env`, damit es nicht mehr in der Umgebung jeder Session steht; den einmaligen
+  Umzug beschreibt `DEVELOPMENT.md`, „VMs mit vm.py“.
 - **Doku-Smoke prueft auch die Namen in Grossbuchstaben als Gate (R-0044):** `scripts/dev/doc-smoke.py --env`
   zaehlt einen Namen, den die Doku als `<code>` nennt, als bekannt, wenn ihn ausser den drei `config.py` und
   `.env.example` irgendeine getrackte Datei ausserhalb von `docs/`, `CHANGELOG.md` und `tasks/` traegt — Agent-

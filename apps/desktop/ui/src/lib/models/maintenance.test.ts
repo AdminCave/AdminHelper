@@ -49,6 +49,13 @@ describe('isWindowActive (T27)', () => {
     expect(isWindowActive({ ...w, enabled: false }, new Date('2026-07-19T13:00:00Z'))).toBe(false);
   });
 
+  it('one-off windows with Z compare the same UTC instants (R-0202)', () => {
+    const w = once('2026-07-19T12:00:00Z', '2026-07-19T14:00:00Z');
+    expect(isWindowActive(w, new Date('2026-07-19T11:59:59Z'))).toBe(false);
+    expect(isWindowActive(w, new Date('2026-07-19T13:00:00Z'))).toBe(true);
+    expect(isWindowActive(w, new Date('2026-07-19T14:00:00Z'))).toBe(false); // end exclusive
+  });
+
   it('weekly windows stay wall-clock correct across DST (Europe/Berlin)', () => {
     const w = weekly([6], '02:00', 120, 'Europe/Berlin'); // Sunday 02:00-04:00
     expect(isWindowActive(w, new Date('2026-07-19T00:30:00Z'))).toBe(true); // 02:30 CEST
