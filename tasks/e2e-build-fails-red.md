@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-E2E: ein gescheiterter Build macht den Lauf rot — Task-Ledger
-Status: aktiv · Branch: feature/e2e-build-fails-red · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/e2e-build-fails-red · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0259, von Kevin am 2026-10-09 in der Triage mit Vorrang angenommen; Delegation Kevin 2026-10-05). Offene Fragen (Aufsicht): 1 Weg (a), SevereServiceError in onPrepare; 2 der Test laeuft in npm run lint mit; webdriverio wird direkte devDependency ohne Versionswechsel
 Spec: Roadmap R-0259 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Start jedes Desktop-E2E-Laufs ändert sich (`onPrepare` in `wdio.conf.js`); auf einer Pool-VM `run.sh e2e` mit `desktop_e2e_tunnel`: der Build gelingt, die Specs laufen wie bisher. Dazu eine Gegenprobe auf derselben Box: ein Wegwerf-Stand, der nicht kompiliert (eine unbenutzte Variable in der UI, wie im Beweis), muss den Schritt rot machen; im Log steht `tauri build failed`, kein Spec meldet `PASSED`. Der Wegwerf-Worktree bekommt nur Links und Kopien, dort wird nichts committet, danach wird er mit vollem Pfad entfernt.
@@ -15,8 +15,10 @@ Geplant 2026-10-09 von Worker B im Auftrag der Aufsicht (adminhelper-ac) aus ein
 R-0246 stammt. Die private Roadmap ist in diesem Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht.
 Zeilenangaben origin/main@33cf47b6, wdio-Quelltext `@wdio/cli` 9.29.0 (die installierte Version, `package-lock.json`).
 
-### T1 — `onPrepare`: ein gescheiterter `cargo tauri build` bricht den wdio-Lauf ab (R-0259)  [ ]
+### T1 — `onPrepare`: ein gescheiterter `cargo tauri build` bricht den wdio-Lauf ab (R-0259)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/wdio.conf.js, apps/desktop/e2e/test/unit/onprepare.test.js, apps/desktop/e2e/package.json, apps/desktop/e2e/package-lock.json, apps/desktop/e2e/README.md, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @e6e3e2d5 2026-10-09T20:02:41+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `onPrepare` (`wdio.conf.js:101-113`) baut die App und wirft bei Exit ≠ 0 `new Error("tauri build failed …")`
 (`:112`). wdio fängt das ab und läuft weiter:
 - `runLauncherHook` (`@wdio/cli/build/index.js:354-370`) schreibt jeden Fehler als „Error in hook“ ins Log. Weiter
