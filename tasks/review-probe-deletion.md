@@ -48,8 +48,10 @@ Aenderung gruen fand“ — die Sperre gilt dem **neuen** Test; eine reine angek
 `tasks/README.md:132` „**Passt:** toter Code geht samt seinem Test“ — der Fall, den `Test-Löschung:` erlaubt; das Gate
 soll ihn nicht an einer Probe scheitern lassen, die für ihn keine Frage hat.
 
-### T1 — review.sh: `declared-only` und `check-verdict` für `only-declared-deletion` (R-0227)  [ ]
+### T1 — review.sh: `declared-only` und `check-verdict` für `only-declared-deletion` (R-0227)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8f9e2a06 2026-10-09T09:48:24+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Das Verb `declared-only` nach dem Entwurf, mit `declared()`/`heads()` des Python-Teils von `diff-scan`,
 nicht mit einer zweiten Kopie der Spannen-Logik; die Usage im Kopf von review.sh nennt es. `check-verdict`
 (`:1099`) nimmt `only-declared-deletion` in die Gründe ohne Notiz. Tests in `review_scripts_test.sh` an einem

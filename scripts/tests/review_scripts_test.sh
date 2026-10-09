@@ -1493,6 +1493,90 @@ r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index
 
+# ══ declared-only: a test diff that is a declared deletion alone (R-0227) ═════
+echo "── declared-only: dead code and its declared test leave, the probe has nothing to ask ──"
+# The shape of the real case (server-kleinkram-1 T2): the declared test goes,
+# and with it the import only it used and the blank lines in front.
+PYI='import json
+
+
+def test_alive():
+    assert 1 == 1
+
+
+def helper():
+    return 2
+
+
+def test_dead():
+    assert json.loads("2") == helper()
+'
+PYI_WITHOUT_DEAD='def test_alive():
+    assert 1 == 1
+
+
+def helper():
+    return 2
+'
+dead_only() {  # the declared test and its import go; the code it tested too
+  base apps/server/tests/test_del.py "$PYI"
+  printf '%s' "$PYI_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"
+  printf 'x = 1\n' > "$FIX/apps/server/app/thing.py"
+  stage apps/server/tests/test_del.py apps/server/app/thing.py
+}
+dead_only; r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -qx "declared-only: yes (apps/server/tests/test_del.py::test_dead)" <<<"$OUT" \
+  && ok "the declared test with its import and blank lines -> yes, and it names the test" || bad "declared only: rc=$rc out=$OUT"
+# The counter-cases: anything besides the declared deletion keeps the probe.
+dead_only; printf '\n\ndef test_dead_v2():\n    assert helper() == 2\n' >> "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && grep -q "^declared-only: no — apps/server/tests/test_del.py:[0-9]* adds a line" <<<"$OUT" \
+  && ok "a replacement test besides the deletion -> no: it has to be probed" || bad "replacement: rc=$rc out=$OUT"
+dead_only; printf 'def test_alive():\n    pass\n\n\ndef helper():\n    return 2\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && grep -q "^declared-only: no — " <<<"$OUT" \
+  && ok "an assertion out of the test that stays -> no" || bad "kept test changed: rc=$rc out=$OUT"
+dead_only; printf 'def test_alive():\n    assert 1 == 1\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && grep -q "^declared-only: no — apps/server/tests/test_del.py:[0-9]* is no part of a declared deletion" <<<"$OUT" \
+  && ok "a helper removed with the declared test -> no: the helper is no declared test" || bad "helper: rc=$rc out=$OUT"
+dead_only; r declared-only server --staged --task tasks/del.md T2
+[ $rc -eq 1 ] && grep -q "no declared test goes whole" <<<"$OUT" \
+  && ok "the same deletion without a declaration -> no" || bad "undeclared: rc=$rc out=$OUT"
+dead_only; r declared-only server --staged --task tasks/del.md T5
+[ $rc -eq 1 ] && ok "a declaration without a reason -> no" || bad "no reason: rc=$rc out=$OUT"
+base apps/server/tests/test_del.py "$PYI"
+printf 'def test_alive():\n    assert 1 == 1\n\n\ndef helper():\n    return 2\n\n\n    assert json.loads("2") == helper()\n' > "$FIX/apps/server/tests/test_del.py"
+stage apps/server/tests/test_del.py
+r declared-only server --staged --task tasks/del.md T1
+[ $rc -eq 1 ] && ok "a declared test whose body partly stays -> no" || bad "partly kept: rc=$rc out=$OUT"
+# A declaration only in the working tree is none: the committed ledger speaks.
+dead_only
+awk -v add='Test-Löschung: apps/server/tests/test_del.py::test_dead — nur im Arbeitsbaum' \
+  '{ print } /^### T2 /{ print add }' "$FIX/tasks/del.md" > "$WORK/del.md" && cp "$WORK/del.md" "$FIX/tasks/del.md"
+r declared-only server --staged --task tasks/del.md T2
+[ $rc -eq 1 ] && ok "a declaration in the working tree only -> no" || bad "working tree only: rc=$rc out=$OUT"
+git -C "$FIX" checkout -q -- tasks/del.md
+# --commit: the declaration has to stand in the parent, as HEAD stands before what is staged.
+dead_only; git -C "$FIX" commit -qm "dead code and its test go"
+r declared-only server --commit HEAD --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -q "^declared-only: yes" <<<"$OUT" \
+  && ok "--commit: a deletion declared before the commit -> yes" || bad "commit: rc=$rc out=$OUT"
+base apps/server/tests/test_del.py "$PYI"
+printf '%s' "$PYI_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"
+printf '# Late\n\n### T1 — late  [ ]\nKomponente: server · Dateien: apps/server/tests/test_del.py\nTest-Löschung: apps/server/tests/test_del.py::test_dead — in the same commit\n' > "$FIX/tasks/late.md"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "the declaration comes with the deletion"
+r declared-only server --commit HEAD --task tasks/late.md T1
+[ $rc -eq 1 ] && ok "--commit: a declaration that comes in the same commit -> no" || bad "late declaration: rc=$rc out=$OUT"
+git -C "$FIX" rm -q tasks/late.md && git -C "$FIX" commit -qm "no late ledger"
+r declared-only server --staged
+[ $rc -eq 2 ] && grep -q "declared-only needs --task" <<<"$OUT" && ok "declared-only without --task -> 2" || bad "no task: rc=$rc out=$OUT"
+r declared-only --staged --task tasks/del.md T1
+[ $rc -eq 2 ] && grep -q "declared-only needs <component>" <<<"$OUT" && ok "declared-only without a component -> 2" || bad "no component: rc=$rc out=$OUT"
+r diff-scan --commit HEAD
+[ $rc -eq 2 ] && grep -q -e "--commit is for declared-only alone" <<<"$OUT" && ok "--commit is for declared-only alone -> 2" || bad "commit on diff-scan: rc=$rc out=$OUT"
+reset_index
+
 # ══ diff-scan: a declared assertion change (R-0206) ═══════════════════════════
 echo "── diff-scan --task: an assertion may change in a test that stays when the task says so ──"
 cat > "$FIX/tasks/chg.md" <<'MD'
@@ -2178,6 +2262,11 @@ for reason in no-test-change only-test-change; do
   [ $rc -eq 0 ] && ! grep -q 'probe not run' <<<"$OUT" \
     && ok "$reason is no obstacle to approve and no probe gap" || bad "$reason: rc=$rc out=$OUT"
 done
+# R-0227: a declared deletion eases the gate, so the review line says so.
+vjson "$V2; d['probe'] = {'applicable': False, 'reason': 'only-declared-deletion', 'red_without_change': None}"
+r check-verdict "$WORK/v.json" --tree "$VT"
+[ $rc -eq 0 ] && grep -q '^approve (.*probe: only a declared test deletion, not run' <<<"$OUT" && ! grep -q 'probe not run' <<<"$OUT" \
+  && ok "only-declared-deletion keeps the approve and is named in the review line" || bad "only-declared-deletion: rc=$rc out=$OUT"
 vjson "$V2; d['mutants'] = [{'file': 'apps/x.py', 'line': 7, 'replacement': 'return 1', 'result': 'survived'}]"
 r check-verdict "$WORK/v.json" --tree "$VT"
 [ $rc -eq 0 ] && grep -q '^approve (.*mutant survived: apps/x.py:7' <<<"$OUT" \
