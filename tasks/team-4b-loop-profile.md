@@ -82,8 +82,10 @@ Dedup-Key: ref:scripts:task-close.sh:missing-cost-zero
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; die Regel „unbekannte Kosten zählen mit dem Deckel“ steht schon in AUTONOMOUS.md)
 
-### T5 — `ledger_rest` ohne Fehlalarm, die Doku nennt Schwere, Datei und Pfad (R-0191 Punkte 2 und 4)  [ ]
+### T5 — `ledger_rest` ohne Fehlalarm, die Doku nennt Schwere, Datei und Pfad (R-0191 Punkte 2 und 4)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, docs/features/stufe-7a.md, AUTONOMOUS.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @19ad07bc 2026-10-09T14:54:26+02:00
+Review: approve (opus, round 2)
 Änderung: `ledger_rest` (`ledger-loop.sh:549`) vergleicht den Rest des Ledgers so, dass ein fehlender Schluss-Newline
 nach einem legitimen `set-files` keinen Fehlalarm „the build session changed the ledger outside its own task“ gibt.
 Konkret: ein Newline am Dateiende wird vor dem Hashen ergänzt. `docs/features/stufe-7a.md:151` und

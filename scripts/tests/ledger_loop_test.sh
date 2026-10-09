@@ -167,6 +167,15 @@ EXTRA='printf "\n### T2 — offen  [?] (eine Frage)\nKomponente: scripts · Date
 # A lane whose ignore pattern for .ah-out also matches a link (no trailing slash).
 mapfile -t H < <(head_for ahl2)
 EXTRA='printf ".ah-out\n.vm/\n" > "$SEED/.gitignore"' plan feature/ahl2 ahl2 "${H[@]}"
+# A ledger whose last line, of another task, has no final newline (R-0191): nnf comes
+# freigegeben, so the loop's own aktiv commit is the first to add the newline; nnl comes
+# aktiv already (a lane continued), so the session's set-files is.
+for x in nnf nnl; do
+  if [ "$x" = nnl ]; then H=("Status: aktiv · Branch: feature/nnl · Review: auto" "${OKHEAD[@]:1}"); else mapfile -t H < <(head_for nnf); fi
+  EXTRA="printf '\\n### T2 — die letzte  [ ]\\nKomponente: scripts · Dateien: apps/x/b.py\\nÄnderung: ohne Schluss-Newline' >> \"\$SEED/tasks/$x.md\"" plan "feature/$x" "$x" "${H[@]}"
+done
+mapfile -t H < <(head_for ncr)
+EXTRA='printf "\n### T2 — eine andere  [ ]\nKomponente: scripts · Dateien: apps/x/b.py\nÄnderung: y\n" >> "$SEED/tasks/ncr.md"' plan feature/ncr ncr "${H[@]}"
 # A Freigabe: line in a task's text is no approval of the ledger.
 mapfile -t H < <(head_for bodyfreig)
 EXTRA='printf "Freigabe: im Text einer Task\n" >> "$SEED/tasks/bodyfreig.md"' plan feature/bodyfreig bodyfreig "${H[0]}" "${H[2]}"
@@ -192,7 +201,8 @@ chmod 600 "$FHOME/.config/adminhelper/pve.env"
 # refmove (a harness change and a ref origin/main that already holds it), linger (a
 # child that outlives the loop with stdout and stderr closed, as git maintenance
 # --detach does, then skip), wait (records its pid and sleeps: a session the loop dies
-# under), orphan (leaves a sleeper with a session of its own behind, then skip).
+# under), orphan (leaves a sleeper with a session of its own behind, then skip), cr
+# (puts a carriage return at the end of the T2 heading, another task's line).
 export FIXTURE_PIN="$CLONE/scripts/dev/runner-claude.version" FIXTURE_CLONE="$CLONE"
 cat > "$FHOME/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env bash
@@ -259,6 +269,7 @@ case "$mode" in
     ( exec < /dev/null > /dev/null 2>&1; exec env -u AH_LOOP_SESSION sleep 30 ) & echo "$!" > "${FIXTURE_LINGER:?}"
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   wait) echo "$$" > "${FIXTURE_SPID:?}"; exec sleep 30 ;;
+  cr) sed -i '/^### T2 /s/$/\r/' "tasks/$slug.md"; msg ;;
   orphan)
     setsid sleep 30 < /dev/null > /dev/null 2>&1 & echo "$!" > "${FIXTURE_ORPHAN:?}"
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
@@ -763,6 +774,20 @@ seq_set build -- 74r 74r
 loop --ledger tasks/rvc.md
 [ $rc -eq 74 ] && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["cost_usd"])' "$LOOPD/state.json")" = 30.25 ] \
   && ok "two reviewer runs without a cost line count 2 x 15 \$ into the run" || bad "rvc: rc=$rc $(cat "$LOOPD/state.json")"
+# R-0191: set-files writes the ledger with a final newline; when the last line is
+# another task's, that is no change of the ledger outside the session's own task.
+for x in nnf nnl; do
+  seq_set files skip skip
+  loop --ledger "tasks/$x.md"
+  grep -q '^bereit' <<<"$(result "$x")" && [ "$(box "$x")" = "~" ] \
+    && ok "$x: a ledger without a final newline: the loop's commits and set-files of T1 are no change outside T1" \
+    || bad "$x: $(result "$x")"
+done
+# ... and nothing else is evened out: a carriage return in another task's line is a change.
+seq_set cr
+loop --ledger tasks/ncr.md
+grep -q '^blockiert — T1: the build session changed the ledger outside its own task' <<<"$(result ncr)" \
+  && ok "a carriage return put into another task's line is a change outside the session's task" || bad "ncr: $(result ncr)"
 # R-0190/R-0191: unknown spend counts with REVIEW_BUDGET_MAX, never as 0.
 review_usd() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"].get(sys.argv[2], {}).get("review_usd", 0))' "$LOOPD/state.json" "$1"; }
 seq_set build -- 0

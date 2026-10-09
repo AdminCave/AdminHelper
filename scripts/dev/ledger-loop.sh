@@ -414,8 +414,10 @@ ledger_commit() {
   local wt="$1" slug="$2" what="$3" file="tasks/$2.md" bad
   [ "$(git -C "$wt" status --porcelain)" = " M $file" ] \
     || stop_infra "a ledger commit of $slug would carry more than $file: $(git -C "$wt" status --porcelain | tr '\n' ' ')"
-  bad="$(git -C "$wt" diff -U0 -- "$file" | grep -E '^[-+]' | grep -vE '^(\+\+\+|---) ' \
-    | grep -vE '^[-+](Status:|### |Komponente:)')"
+  # Compared with the final newline made sure on both sides: ledger.sh writes the file
+  # with one, and a last line that only gains it is no change of that line (R-0191).
+  bad="$(diff -U0 <(git -C "$wt" show "HEAD:$file" | sed '$a\') <(sed '$a\' "$wt/$file") \
+    | grep -E '^[-+]' | grep -vE '^(\+\+\+|---) ' | grep -vE '^[-+](Status:|### |Komponente:)')"
   [ -z "$bad" ] || stop_infra "the ledger change of $slug goes past head and markers: $(head -n 1 <<<"$bad")"
   git -C "$wt" add -- "$file" && lgit "$wt" commit -q -m "chore(ledger): $slug $what" \
     || stop_infra "the ledger commit of $slug ($what) failed"
@@ -554,7 +556,13 @@ ledger_rest() {
   L_ID="$2" python3 - "$1" <<'PY'
 import hashlib, os, re, sys
 tid, out, skip = os.environ["L_ID"], [], False
-for line in open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape").splitlines(True):
+text = open(sys.argv[1], "rb").read().decode("utf-8", "surrogateescape")
+# The last line gains its newline, as ledger.sh writes the file: a last line of another
+# task without one is no change of that task (R-0191). Nothing else is evened out — a
+# \r at a line end is a change like any other, and would hide a task from the line tools.
+if not text.endswith("\n"):
+    text += "\n"
+for line in text.splitlines(True):
     if re.match(r"(###|##)\s", line):
         skip = bool(re.match(r"###\s+%s(\s|$)" % re.escape(tid), line))
     if not skip:

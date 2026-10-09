@@ -248,7 +248,9 @@ nicht, setzt keinen Haken und ändert ein Ledger nur über `ledger.sh` (`mark-sk
 die Task `[?]`. Danach entscheidet allein der Loop: Er schließt mit `task-close.sh --review auto
 --round <n>`; bei Exit 3 gibt es **eine** zweite Session mit `--fix` (Runde 2, wenn die erste ein Verdict
 hatte — eine rote Suite oder ein Diff-Scan-Fund schreibt keins, dann bleibt es Runde 1), ein zweites 3 wird
-`[?]` mit dem ersten Blocker; 4 wird `[?]`; 74 wird einmal wiederholt, dann `stop: infra`. Eine
+`[?]` mit der Schwere und der Datei des ersten `blocker` (sonst des ersten `wichtig`) und dem Pfad des
+Verdicts, ohne passendes Verdict mit dem Pfad des Close-Logs; 4 wird `[?]`; 74 wird einmal wiederholt,
+dann `stop: infra`. Eine
 Session über Zeit, Turns oder Budget wird `[?] timeout|turns|budget`, ein anderer Fehler
 `[?] error`, zwei Iterationen ohne Fortschritt mit byte-gleichem Ledger `[?] stall`; ein API-Fehler
 oder eine Session ohne JSON ist dagegen ein Ausfall: `stop: infra`, die Task bleibt offen. Ein `[?]`

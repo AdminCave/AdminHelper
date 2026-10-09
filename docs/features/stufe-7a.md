@@ -148,7 +148,8 @@ Preflight, jeder Fehlschlag `stop: infra` (Exit 74) mit einem Satz:
      - `0` ⇒ nächste Task.
      - `3` (Verify rot, Diff-Scan, Doku-Paar, Vertrag oder `request_changes`) ⇒ **eine** zweite Bau-Session
        `/build-task tasks/<slug>.md <id> --fix <close-log> [<verdict>]`, dann `task-close` erneut. Wieder `3` ⇒
-       `[?]` mit dem ersten Blocker als Frage, Aufräumen, Ledger `blockiert` (D).
+       `[?]` mit der Schwere und der Datei des ersten `blocker` (sonst des ersten `wichtig`) und dem Pfad des
+       Verdicts als Frage, ohne passendes Verdict mit dem Pfad des Close-Logs; Aufräumen, Ledger `blockiert` (D).
      - `4` (sec, scope, Blocker nach Runde 2) ⇒ `[?]`, Aufräumen, `blockiert` (D).
      - `74` ⇒ ein Wiederholungsversuch; wieder `74` ⇒ Aufräumen, Task bleibt `[ ]`, `stop: infra`.
      - `2` (nichts gestagt, Baum geändert) ⇒ zählt als Iteration ohne Fortschritt (Stall).
