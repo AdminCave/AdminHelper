@@ -217,6 +217,9 @@ export const translations: Translations = {
       'Achtung: Dies löscht das mTLS-Geräte-Zertifikat dieses Geräts und den gepinnten Zertifikat-Fingerprint. Nur fortfahren, wenn der Zertifikatswechsel erwartet ist (z. B. nach einer Server-Neuinstallation) — ein unerwarteter Wechsel kann auf einen MITM-Angriff hindeuten. Danach musst du dich neu anmelden bzw. das Gerät neu registrieren. Fortfahren?',
     'settings.resetDeviceId.done':
       'Geräte-Identität zurückgesetzt. Bitte neu anmelden/registrieren.',
+    'settings.enroll.hint':
+      'Dieses Gerät hat noch kein Geräte-Zertifikat. Mit einem Einmal-Token vom Admin registrieren, danach startet der Tunnel.',
+    'settings.enroll.done': 'Gerät registriert.',
     'settings.serverUrl': 'Server-URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Angemeldet als',
@@ -811,6 +814,9 @@ export const translations: Translations = {
     'settings.resetDeviceId.confirm':
       'Warning: this removes this device’s mTLS certificate and the pinned certificate fingerprint. Only continue if the certificate change is expected (e.g. after a server reinstall) — an unexpected change may indicate a MITM attack. You will need to sign in / re-enroll the device afterwards. Continue?',
     'settings.resetDeviceId.done': 'Device identity reset. Please sign in / re-enroll.',
+    'settings.enroll.hint':
+      'This device has no device certificate yet. Enroll it with a one-time token from your administrator; the tunnel starts afterwards.',
+    'settings.enroll.done': 'Device enrolled.',
     'settings.serverUrl': 'Server URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Signed in as',

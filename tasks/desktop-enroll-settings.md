@@ -16,8 +16,10 @@ angenommen. Nachgezogen 2026-10-09 nach den Entscheidungen (Spec, „Entscheidun
 die Teststrategie die Aufsicht. Dazu kamen R-0220 und R-0222 aus der Triage vom 2026-10-08. Sechs Tasks, also gibt
 Kevin den Plan frei. Kein neuer Tauri-Command, kein Server, kein Gateway. Zeilenangaben main@81c8efe9.
 
-### T1 — Einstellungen: Token-Feld, wenn das Gerät keine Identität hat; danach startet der Tunnel  [ ]
+### T1 — Einstellungen: Token-Feld, wenn das Gerät keine Identität hat; danach startet der Tunnel  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts, CHANGELOG.md, docs/admin/benutzer.html, docs/en/admin/users.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @0fe30f07 2026-10-09T12:48:27+02:00
+Review: approve (sonnet) · round 1
 Änderung (F1, F2): Der Block `{#if mode === 'server' && deviceEnrolled}` (`SettingsModal.svelte:360`) wird
 `{#if mode === 'server'}`:
 - **mit Identität:** wie heute das Zurücksetzen, kein „Neu registrieren“;

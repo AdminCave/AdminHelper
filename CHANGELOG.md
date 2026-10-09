@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Geraet aus den Einstellungen registrieren (R-0212):** Im Modus `server` zeigen die
+  Einstellungen einem Geraet ohne Identitaet ein Feld fuer den Einmal-Token vom Admin; nach der
+  Registrierung startet der Tunnel. Wer ohne erzwungenes mTLS angemeldet ist, muss sich dafuer nicht
+  mehr abmelden. Ein Geraet mit Identitaet sieht dort wie bisher nur das Zuruecksetzen.
 - **`Assertion-Aenderung:` im Ledger (R-0206):** eine Task kann eine absichtlich geaenderte
   Assertion in einem bleibenden Test oder Test-Helfer ankuendigen (`<datei>::<test> — <Grund>`).
   `review.sh diff-scan` laesst dann genau diese Aenderung durch, wenn der Test mindestens so viele
@@ -274,6 +278,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Meldung nach dem Zuruecksetzen der Geraete-Identitaet (R-0212):** Die Bestaetigung stand in
+  dem Teil der Einstellungen, der beim Zuruecksetzen verschwindet, und war deshalb nie zu sehen. Sie
+  erscheint jetzt, zusammen mit dem Feld fuer den neuen Token.
 - **Hooks: ungueltige Eingaben im dokumentierten Fehler-Format (R-0207):** `POST /api/hooks` und
   `PUT /api/hooks/{id}` antworteten bei fehlendem oder ungueltigem `schedule_interval` und bei fehlenden
   oder unbekannten `event_triggers` mit einem 422, dessen `detail` ein String war. Die OpenAPI und die
