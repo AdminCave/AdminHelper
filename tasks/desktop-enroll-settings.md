@@ -76,8 +76,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: benutzer/users · troubleshooting · installation · developer/desktop (je DE + EN)
 Abhängt von: T1
 
-### T3 — R-0220: Registrierung über eine vorhandene Identität löscht erst, dann schreibt  [ ]
+### T3 — R-0220: Registrierung über eine vorhandene Identität löscht erst, dann schreibt  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @b48c62f1 2026-10-09T13:09:00+02:00
+Review: opus/xhigh · round 2: two test findings fixed with the reviewers cases, no third round
 Änderung (F5): Heute schreibt `enroll_with_token` (`enrollment.rs:228-244`) über `store_identity` (`:156-164`) erst
 den neuen Schlüssel, dann Zertifikat und CA-Kette. Ein Abbruch dazwischen lässt den neuen Schlüssel neben dem alten
 Zertifikat zurück.

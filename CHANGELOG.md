@@ -278,6 +278,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Registrieren ueber eine vorhandene Identitaet ohne unpassendes Paar (R-0220):** Wer sich
+  mit einem neuen Einmal-Token registrierte, waehrend noch eine Identitaet im Keyring lag, bekam erst
+  den neuen Schluessel und danach das Zertifikat geschrieben; ein Abbruch dazwischen liess den neuen
+  Schluessel neben dem alten Zertifikat stehen, und unter erzwungenem mTLS sperrte sich das Geraet aus.
+  Jetzt loescht die Registrierung erst die alte Identitaet und schreibt dann die neue, das Zertifikat
+  zuletzt. Ein Abbruch hinterlaesst schlimmstenfalls ein Geraet ohne Identitaet, das einen neuen Token
+  braucht.
 - **Desktop: Meldung nach dem Zuruecksetzen der Geraete-Identitaet (R-0212):** Die Bestaetigung stand in
   dem Teil der Einstellungen, der beim Zuruecksetzen verschwindet, und war deshalb nie zu sehen. Sie
   erscheint jetzt, zusammen mit dem Feld fuer den neuen Token.
