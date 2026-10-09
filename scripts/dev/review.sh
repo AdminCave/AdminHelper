@@ -62,8 +62,10 @@
 #              same code. A removal of dead code has no new test, so the probe
 #              has nothing to ask (review-probe.sh --task); a replacement test,
 #              a change to a test that stays or a removed helper is more than
-#              that and keeps the probe. The declaration is the committed one:
-#              HEAD with --staged, <rev> with --commit. Exit 0 yes, 1 no.
+#              that and keeps the probe, and so does an import that brings tests
+#              along (`*`, a test name, a bare JS import). The declaration is the
+#              committed one before the change: HEAD with --staged, <rev>^ with
+#              --commit. Exit 0 yes, 1 no.
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
@@ -689,11 +691,15 @@ def where_tests_are(path, n):
 ras = [r for r in ras if not IMPORT.match(r[2]) and where_tests_are(r[0], int(r[1]))]
 
 def go_import_block(path, src):
-    """The line numbers inside a Go `import ( … )` block of src."""
+    """The line numbers inside a Go `import ( … )` block of src, before its first
+    declaration: further down, an `import (` is text in a string or a comment, and
+    a block left open there would make the rest of the file an import."""
     found, inside = set(), False
     if not path.endswith(".go"):
         return found
     for i, s in enumerate(src, 1):
+        if re.match(r"^(func|type|var|const)\b", s):
+            break
         t = s.strip()
         if inside:
             if t == ")":
@@ -703,6 +709,23 @@ def go_import_block(path, src):
         elif re.match(r"^import\s*\($", t):
             inside = True
     return found
+
+
+def harmless_import(path, line):
+    """An import line that may leave together with a declared test: one that
+    brings no test along. pytest collects what a module imports by name, so no
+    `*` and no name that starts with test or Test; in JS/TS a module runs when it
+    is imported, so no bare import and none of a .test or .spec file."""
+    if not IMPORT.match(line):
+        return False
+    if path.endswith(".py") and line.startswith("from"):
+        names = line.split(" import ", 1)[-1]
+        if "*" in names or re.search(r"(^|[\s,(])(test|Test)", names):
+            return False
+    if re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path):
+        if " from " not in line or re.search(r"\.(test|spec)\b", line):
+            return False
+    return True
 
 # R-0227: nothing but declared deletions. No line added, and every removed line
 # blank, an import, or inside the old span of a declared test that goes whole
@@ -722,7 +745,7 @@ if os.environ.get("MODE") == "declared-only":
             block = go_import_block(path, src)
             for n in sorted(removed[path]):
                 line = src[n - 1] if n - 1 < len(src) else ""
-                if not line.strip() or IMPORT.match(line) or n in block:
+                if not line.strip() or harmless_import(path, line) or n in block:
                     continue
                 if any(k[0] == path and a <= n <= b for k, (a, b) in entries.items()):
                     continue

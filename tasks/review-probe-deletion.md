@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # review-probe: eine reine Entfernung mit angekündigter Test-Löschung sperrt kein approve (R-0227) — Task-Ledger
-Status: aktiv · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/review-probe-deletion · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (Harness-Kleinpaket aus R-0227, von Kevin am 2026-10-08 in der Triage als „zuerst“ angenommen; Delegation Kevin 2026-10-05; den PR merged Kevin). Entscheidungen: 1, 2, 4, 5, 6 wie empfohlen; 3 abweichend: `only-declared-deletion` wird nicht still angenommen, die Review-/Verdict-Zeile im Ledger nennt den Grund sichtbar (etwa „Probe: nur angekündigte Löschung“), weil das Paket ein Gate lockert
 Spec: Roadmap R-0227 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell und Python unter scripts/dev mit hermetischen Tests, dazu Harness-Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -101,8 +101,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: das ist die Doku-Task (DE und EN der cicd-Seite im selben Commit)
 Abhängt von: T1, T2
 
-### T4 — Nachbesserung aus dem Review am Ende: kein Import-Schlupfloch (R-0227)  [ ]
+### T4 — Nachbesserung aus dem Review am Ende: kein Import-Schlupfloch (R-0227)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, tasks/README.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5298967b 2026-10-09T11:00:00+02:00
+Review: Review am Ende (Kurz-Ledger), Runde 2 folgt
 Änderung: Angelegt 2026-10-09 aus dem Review am Ende (Opus, request_changes). wichtig, belegt mit einer
 hermetischen Probe: `go_import_block` erkennt `import (` überall, auch in einem Raw-String oder Kommentar, und ohne
 eine folgende Zeile `)` zählt der Rest der Datei als Import. Eine entfernte Zeile eines bleibenden Tests ging so als

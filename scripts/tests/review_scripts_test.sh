@@ -1569,6 +1569,102 @@ git -C "$FIX" add -A && git -C "$FIX" commit -qm "the declaration comes with the
 r declared-only server --commit HEAD --task tasks/late.md T1
 [ $rc -eq 1 ] && ok "--commit: a declaration that comes in the same commit -> no" || bad "late declaration: rc=$rc out=$OUT"
 git -C "$FIX" rm -q tasks/late.md && git -C "$FIX" commit -qm "no late ledger"
+# Round 1 of the closing review: an import that brings tests along is no
+# harmless one, and a Go `import (` below the first declaration is no import block.
+cat > "$FIX/tasks/imp.md" <<'MD'
+# Imports — Task-Ledger
+Status: aktiv · Branch: feature/fixture
+
+### T1 — python  [ ]
+Komponente: server · Dateien: apps/server/tests/test_imp.py
+Test-Löschung: apps/server/tests/test_imp.py::test_dead — tot
+
+### T2 — js  [ ]
+Komponente: web · Dateien: apps/web/src/imp.test.ts
+Test-Löschung: apps/web/src/imp.test.ts::dead case — tot
+MD
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "import ledger"
+py_imp() {  # py_imp <the import line that leaves with test_dead>
+  base apps/server/tests/test_imp.py "from shared import helper
+$1
+
+
+def test_alive():
+    assert helper() == 1
+
+
+def test_dead():
+    assert helper() == 2
+"
+  printf 'from shared import helper\n\n\ndef test_alive():\n    assert helper() == 1\n' > "$FIX/apps/server/tests/test_imp.py"
+  stage apps/server/tests/test_imp.py
+}
+py_imp 'from shared import other'; r declared-only server --staged --task tasks/imp.md T1
+[ $rc -eq 0 ] && ok "a plain import that leaves with the declared test -> yes" || bad "plain import: rc=$rc out=$OUT"
+py_imp 'from shared import *'; r declared-only server --staged --task tasks/imp.md T1
+[ $rc -eq 1 ] && grep -q "test_imp.py:2 is no part of a declared deletion" <<<"$OUT" \
+  && ok "a star import that leaves with it -> no: pytest collects what it brings" || bad "star import: rc=$rc out=$OUT"
+py_imp 'from shared import test_contract'; r declared-only server --staged --task tasks/imp.md T1
+[ $rc -eq 1 ] && grep -q "test_imp.py:2 is no part" <<<"$OUT" \
+  && ok "an imported test name that leaves with it -> no" || bad "test name import: rc=$rc out=$OUT"
+JS_IMP='import { expect, it } from "vitest";
+import "./shared.test";
+
+it("alive case", () => {
+  expect(1).toBe(1);
+});
+
+it("dead case", () => {
+  expect(2).toBe(2);
+});
+'
+base apps/web/src/imp.test.ts "$JS_IMP"
+printf 'import { expect, it } from "vitest";\n\nit("alive case", () => {\n  expect(1).toBe(1);\n});\n' > "$FIX/apps/web/src/imp.test.ts"
+stage apps/web/src/imp.test.ts
+r declared-only web --staged --task tasks/imp.md T2
+[ $rc -eq 1 ] && grep -q "imp.test.ts:2 is no part" <<<"$OUT" \
+  && ok "a bare JS import that leaves with the declared test -> no: the module runs, its tests too" || bad "bare import: rc=$rc out=$OUT"
+base apps/web/src/imp.test.ts "$JS_IMP"
+printf 'import { expect, it } from "vitest";\nimport "./shared.test";\n\nit("alive case", () => {\n  expect(1).toBe(1);\n});\n' > "$FIX/apps/web/src/imp.test.ts"
+stage apps/web/src/imp.test.ts
+r declared-only web --staged --task tasks/imp.md T2
+[ $rc -eq 0 ] && grep -q "imp.test.ts::dead case" <<<"$OUT" \
+  && ok "the declared JS test alone -> yes" || bad "js alone: rc=$rc out=$OUT"
+# The reviewer's Go case: an `import (` in a raw string inside a test, and the
+# remaining test loses a line besides the declared one.
+GO_RAW='package x
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestDead(t *testing.T) {
+	_ = strings.TrimSpace(" ")
+}
+
+func TestGen(t *testing.T) {
+	src := `
+import (
+	"fmt"
+`
+	checkAll(t)
+	_ = src
+}
+'
+base apps/agent/x_test.go "$GO_RAW"
+printf 'package x\n\nimport (\n\t"strings"\n\t"testing"\n)\n\nfunc TestGen(t *testing.T) {\n\tsrc := `\nimport (\n\t"fmt"\n`\n\t_ = src\n}\n' > "$FIX/apps/agent/x_test.go"
+stage apps/agent/x_test.go
+r declared-only agent --staged --task tasks/del.md T4
+[ $rc -eq 1 ] && grep -q "x_test.go:17 is no part of a declared deletion" <<<"$OUT" \
+  && ok "an import ( in a raw string is no import block: the line out of the remaining test -> no" || bad "go raw string: rc=$rc out=$OUT"
+base apps/agent/x_test.go "$GO_RAW"
+printf 'package x\n\nimport (\n\t"testing"\n)\n\nfunc TestGen(t *testing.T) {\n\tsrc := `\nimport (\n\t"fmt"\n`\n\tcheckAll(t)\n\t_ = src\n}\n' > "$FIX/apps/agent/x_test.go"
+stage apps/agent/x_test.go
+r declared-only agent --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "x_test.go::TestDead" <<<"$OUT" \
+  && ok "a line of the import block at the top leaves with the declared Go test -> yes" || bad "go block: rc=$rc out=$OUT"
+reset_index
 r declared-only server --staged
 [ $rc -eq 2 ] && grep -q "declared-only needs --task" <<<"$OUT" && ok "declared-only without --task -> 2" || bad "no task: rc=$rc out=$OUT"
 r declared-only --staged --task tasks/del.md T1

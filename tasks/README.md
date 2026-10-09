@@ -132,7 +132,9 @@ und bei einem Fund, warum eine Ankündigung nicht zählte.
 **Die Probe** (`review-probe.sh`, unter `--review auto`) fragt, ob der neue Test ohne die Änderung
 rot wäre. Eine reine angekündigte Löschung bringt keinen neuen Test mit: Besteht der Test-Diff nur
 aus angekündigten Tests, die nach den Regeln oben zählen, samt den Import- und Leerzeilen, die mit
-ihnen gehen, antwortet sie ohne Lauf `only-declared-deletion` (`review.sh declared-only`, R-0227).
+ihnen gehen, antwortet sie ohne Lauf `only-declared-deletion` (`review.sh declared-only`, R-0227). Ein
+Import, der selbst Tests mitbringt, geht nicht mit: in Python ein `*` oder ein Name, der mit `test`
+oder `Test` beginnt, in JS/TS ein bloßer Import oder einer einer `.test`/`.spec`-Datei.
 Das approve steht dann, und die Review-Zeile nennt den Grund (`probe: only a declared test
 deletion, not run`). Alles daneben — ein Ersatztest, eine Änderung an einem bleibenden Test, ein
 entfernter Helfer, eine nur gekürzte Import-Zeile — wird weiter geprobt.
