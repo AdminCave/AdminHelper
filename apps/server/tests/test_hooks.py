@@ -201,10 +201,46 @@ class TestHookCreateValidation:
         assert detail[0]["loc"] == ["body", field], r.text
         assert detail[0]["msg"].startswith(msg), r.text
 
+    @pytest.mark.parametrize("interval", ["a b c d e", "61 * * * *"])
+    def test_a_cron_the_scheduler_cannot_read_is_422(
+        self, test_client, db_session, admin_user, interval
+    ):
+        # R-0235: five fields are not yet a cron expression. The scheduler would reject
+        # it and skip the hook on every reconcile, so the routes reject it up front.
+        h = _login(test_client, "admin", "adminpass")
+        payload = {
+            "name": "s",
+            "hook_type": "schedule",
+            "script": "x",
+            "schedule_interval": interval,
+        }
+        r = test_client.post("/api/hooks", json=payload, headers=h)
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"][0]["loc"] == ["body", "schedule_interval"], r.text
+
+        created = test_client.post("/api/hooks", json={**WEBHOOK, "name": "wh-cron"}, headers=h)
+        assert created.status_code == 201, created.text
+        r = test_client.put(
+            f"/api/hooks/{created.json()['id']}", json={"schedule_interval": interval}, headers=h
+        )
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"][0]["loc"] == ["body", "schedule_interval"], r.text
+
+    def test_a_valid_cron_is_accepted(self, test_client, db_session, admin_user):
+        h = _login(test_client, "admin", "adminpass")
+        payload = {
+            "name": "s",
+            "hook_type": "schedule",
+            "script": "x",
+            "schedule_interval": "*/5 * * * *",
+        }
+        r = test_client.post("/api/hooks", json=payload, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["schedule_interval"] == "*/5 * * * *"
+
     def test_valid_event_hook_created_201(self, test_client, db_session, admin_user):
-        # A valid schedule hook additionally needs the running APScheduler
-        # (started in the app lifespan, not in tests), so its happy path is an
-        # integration concern; the schedule *validation* is covered above (422).
+        # The schedule happy path is test_a_valid_cron_is_accepted above: since the
+        # scheduler process reconciles hooks, creating one needs no running APScheduler.
         h = _login(test_client, "admin", "adminpass")
         payload = {
             "name": "e",

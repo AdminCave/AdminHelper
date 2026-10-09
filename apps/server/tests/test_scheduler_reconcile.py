@@ -6,6 +6,8 @@
 the dedicated scheduler process reconciles scheduled hooks from the DB. These
 tests pin the reconcile (add / drop / leave-system-jobs / ignore-non-schedule)."""
 
+import logging
+
 import pytest
 
 from app.modules.hooks.models import Hook
@@ -88,3 +90,18 @@ class TestReconcile:
         db_session.commit()
         reconcile_scheduled_hooks(db_session)
         assert scheduler.get_job("e1") is None
+
+    def test_warns_once_about_an_interval_it_cannot_read(self, db_session, caplog):
+        # R-0235: a hook stored before the routes validated its cron gets no job.
+        # It used to be skipped without a word on every reconcile; now the scheduler
+        # says so once, and the valid hook next to it is registered as before.
+        _sched_hook(db_session, "r0235-bad", "a b c d e")
+        _sched_hook(db_session, "r0235-good", "5m")
+        with caplog.at_level(logging.WARNING, logger="app.modules.hooks.scheduler"):
+            reconcile_scheduled_hooks(db_session)
+            reconcile_scheduled_hooks(db_session)
+        assert scheduler.get_job("r0235-bad") is None
+        assert scheduler.get_job("r0235-good") is not None
+        warned = [r for r in caplog.records if "r0235-bad" in r.getMessage()]
+        assert len(warned) == 1, [r.getMessage() for r in caplog.records]
+        assert "a b c d e" in warned[0].getMessage()
