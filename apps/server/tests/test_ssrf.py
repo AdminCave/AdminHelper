@@ -216,3 +216,41 @@ def test_a_thread_constructor_failure_hands_the_permit_back(monkeypatch):
 
     assert ssrf_mod._DNS_INFLIGHT.acquire(blocking=False) is True
     assert ssrf_mod._DNS_INFLIGHT.acquire(blocking=False) is True
+
+
+# R-0045: both rejections fail closed, but a target that does not resolve is not one
+# that resolves privately — the callers tell the operator which of the two it is.
+@pytest.mark.parametrize(
+    ("url", "verdict"),
+    [
+        ("http://127.0.0.1/", "PRIVATE"),
+        ("http://93.184.216.34/", "ALLOWED"),
+        ("http://", "UNRESOLVED"),  # no host
+    ],
+)
+def test_classify_url_names_the_reason(url, verdict):
+    assert ssrf_mod.classify_url(url) is ssrf_mod.UrlVerdict[verdict]
+
+
+def test_a_host_that_does_not_resolve_is_unresolved_not_private(monkeypatch):
+    # DNS error, missed deadline and the in-flight cap all reach the caller as None.
+    monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
+    assert (
+        ssrf_mod.classify_url("http://dead-nameserver.example/") is ssrf_mod.UrlVerdict.UNRESOLVED
+    )
+
+
+def test_is_private_url_still_rejects_for_both_reasons(monkeypatch):
+    assert ssrf_mod.is_private_url("http://127.0.0.1/") is True
+    assert ssrf_mod.is_private_url("http://") is True
+    monkeypatch.setattr(ssrf_mod, "_resolve", lambda _host, _timeout: None)
+    assert ssrf_mod.is_private_url("http://dead-nameserver.example/") is True
+
+
+@pytest.mark.parametrize(
+    "url", ["http://[::1", "http://[", "http://[fe80::1%25eth0", "https://[::1:8443/x"]
+)
+def test_a_malformed_ipv6_literal_is_rejected_not_raised(url):
+    # urlparse raises ValueError on these (R-0181); the guard answers with a verdict.
+    assert ssrf_mod.classify_url(url) is ssrf_mod.UrlVerdict.PRIVATE
+    assert ssrf_mod.is_private_url(url) is True

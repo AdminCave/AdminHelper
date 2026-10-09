@@ -124,14 +124,14 @@ if [ "$(git -C "$TREE" rev-parse --git-dir 2>/dev/null)" = ".git" ]; then
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — core.hooksPath is set, but this checkout has no executable" <<<"$OUT" \
     && ok "core.hooksPath set, but no hook file in this checkout: NOT armed" || bad "no hook file: rc=$rc out=$OUT"
-  for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch pre-push; do
+  for h in pre-commit prepare-commit-msg commit-msg pre-merge-commit pre-applypatch pre-push; do
     printf '#!/bin/sh\nexit 0\n' > "$TREE/scripts/dev/hooks/$h"
   done
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed" <<<"$OUT" \
     && ok "... and hook files without the execute bit are NOT armed either" || bad "non-executable hook: rc=$rc out=$OUT"
   chmod 755 "$TREE/scripts/dev/hooks/pre-commit" "$TREE/scripts/dev/hooks/prepare-commit-msg" \
-    "$TREE/scripts/dev/hooks/pre-applypatch" "$TREE/scripts/dev/hooks/pre-push"
+    "$TREE/scripts/dev/hooks/pre-applypatch" "$TREE/scripts/dev/hooks/pre-push" "$TREE/scripts/dev/hooks/commit-msg"
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — .* no executable pre-merge-commit in scripts/dev/hooks" <<<"$OUT" \
     && ok "one of the hooks missing: NOT armed, and it names that one" || bad "pre-merge-commit missing: rc=$rc out=$OUT"
@@ -146,12 +146,17 @@ if [ "$(git -C "$TREE" rev-parse --git-dir 2>/dev/null)" = ".git" ]; then
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — .* no executable pre-push in scripts/dev/hooks" <<<"$OUT" \
     && ok "pre-push missing: NOT armed, and it names that one (R-0123)" || bad "pre-push missing: rc=$rc out=$OUT"
   chmod 755 "$TREE/scripts/dev/hooks/pre-push"
+  chmod 644 "$TREE/scripts/dev/hooks/commit-msg"
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — .* no executable commit-msg in scripts/dev/hooks" <<<"$OUT" \
+    && ok "commit-msg missing: NOT armed, and it names that one (R-0197)" || bad "commit-msg missing: rc=$rc out=$OUT"
+  chmod 755 "$TREE/scripts/dev/hooks/commit-msg"
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *armed (core.hooksPath=scripts/dev/hooks)" <<<"$OUT" \
-    && ok "core.hooksPath=scripts/dev/hooks and all five hooks executable: armed" || bad "armed: rc=$rc out=$OUT"
+    && ok "core.hooksPath=scripts/dev/hooks and all six hooks executable: armed" || bad "armed: rc=$rc out=$OUT"
   rm -f "$TREE/scripts/dev/hooks/pre-commit" "$TREE/scripts/dev/hooks/prepare-commit-msg" \
     "$TREE/scripts/dev/hooks/pre-merge-commit" "$TREE/scripts/dev/hooks/pre-applypatch" \
-    "$TREE/scripts/dev/hooks/pre-push"
+    "$TREE/scripts/dev/hooks/pre-push" "$TREE/scripts/dev/hooks/commit-msg"
   git -C "$TREE" config core.hooksPath .githooks
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT set (core.hooksPath=.githooks)" <<<"$OUT" \

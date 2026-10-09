@@ -305,17 +305,19 @@ case "$CMD" in
       /^## / { flush(); open = 0 }
       END { flush() }' "$LEDGER")
 
-    # A declared test deletion (review.sh diff-scan --task) needs the test and a
-    # reason: the gate passes an assertion over only for the <file>::<test>
-    # named here, and a deletion nobody can explain is the one thing it exists
-    # to stop.
-    while IFS= read -r entry; do
-      echo "ERROR  Test-Löschung: '$entry' is not <file>::<test> — <reason>" >&2
-      RC=1
-    done < <(sed -n 's/^Test-Löschung:[[:space:]]*//p' "$LEDGER" \
-      | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
-      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
-      | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
+    # A declared test deletion or assertion change (review.sh diff-scan --task,
+    # R-0206) needs the test and a reason: the gate passes an assertion over
+    # only for the <file>::<test> named here, and a deletion or change nobody
+    # can explain is the one thing it exists to stop.
+    for field in Test-Löschung Assertion-Änderung; do
+      while IFS= read -r entry; do
+        echo "ERROR  $field: '$entry' is not <file>::<test> — <reason>" >&2
+        RC=1
+      done < <(sed -n "s/^$field:[[:space:]]*//p" "$LEDGER" \
+        | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
+        | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
+    done
 
     # Heavy: none | linux-full | scenario <flags> | windows replaces Fast-Suite: and
     # Warm-Profil: (tasks/README.md). A free Heavy: text beside the old fields is
@@ -364,6 +366,27 @@ case "$CMD" in
         if (v !~ /^[0-9a-f]+$/ || length(v) < 7 || length(v) > 40)
           printf "line %d: HEAD: \047%s\047 is not a commit SHA\n", NR, v
       }' "$LEDGER")
+
+    # What a planning agent wrapped around its output and left in the plan (R-0165):
+    # the closing tag of content, invoke or parameter, the closing tag of the hull of
+    # a tool call or of its returned output (function_calls, result, output; R-0195),
+    # or an opening invoke or parameter tag with a name. In the ledger and in the spec its Spec: line names
+    # under docs/features/, the two files the gate commits.
+    LINTED=("$LEDGER")
+    # The first docs/features/ path anywhere in the head's Spec: line, in backticks too.
+    SPEC="$(sed -n '/^###[[:space:]]/q; /^Spec:/p' "$LEDGER" | head -n 1 | grep -oE 'docs/features/[A-Za-z0-9._/-]+\.md' | head -n 1)"
+    if [ -n "$SPEC" ]; then
+      # The checkout the ledger lies in; named as the gate names it when that is this one.
+      SBASE="$(cd "$(dirname "$LEDGER")/.." && pwd)"
+      [ "$SBASE" = "$ROOT" ] || SPEC="$SBASE/$SPEC"
+      [ ! -f "$SPEC" ] || LINTED+=("$SPEC")
+    fi
+    for f in "${LINTED[@]}"; do
+      while IFS= read -r n; do
+        echo "ERROR  $f:$n: a remnant of a tool call (R-0165) — text a planning agent wrapped around the plan" >&2
+        RC=1
+      done < <(awk '/<\/([A-Za-z_]+:)?(content|invoke|parameter|function_calls|result|output)>|<([A-Za-z_]+:)?(invoke|parameter)[ \t]+name=/ { print NR }' "$f")
+    done
 
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
       echo "ERROR  Status: aktiv, but no open [ ] task left (tasks/README.md: the invariant)" >&2

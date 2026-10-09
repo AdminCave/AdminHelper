@@ -32,7 +32,7 @@ from app.core.config import (
     SMTP_PORT,
     SMTP_USER,
 )
-from app.core.ssrf import is_private_url
+from app.core.ssrf import UrlVerdict, classify_url
 from app.core.time import utcnow_naive
 from app.maintenance import is_in_maintenance
 from app.models import (
@@ -389,7 +389,14 @@ def _send_webhook(
     # SSRF guard: a webhook URL is user-supplied; reject private/reserved
     # targets so it cannot probe the internal network from the monitor service
     # (same protection the HTTP checker already applies to its targets).
-    if is_private_url(url):
+    verdict = classify_url(url)
+    if verdict is UrlVerdict.UNRESOLVED:
+        logger.warning("Webhook target rejected (could not be resolved): %s", url)
+        return (
+            False,
+            "Webhook target could not be resolved (DNS error or timeout), rejected by the SSRF guard",
+        )
+    if verdict is not UrlVerdict.ALLOWED:
         logger.warning("Webhook-Ziel abgelehnt (privat/reserviert): %s", url)
         return False, "Webhook-Ziel ist privat/reserviert (nicht erlaubt)"
 

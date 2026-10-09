@@ -369,6 +369,86 @@ r sec --staged
   || bad "settings.local: rc=$rc out=$OUT"
 reset_index
 
+# Token patterns (R-0183). Each is put together at run time — written out, it would stop
+# this very file at sec — and the output names file:line, never the token.
+T_GH="gh""p_$(printf 'Ab3%.0s' $(seq 1 12))"
+T_PAT="github""_pat_$(printf 'b7Q%.0s' $(seq 1 27))x"
+T_ANT="sk-""ant-api03-$(printf 'c4Z%.0s' $(seq 1 14))"
+T_PVE="ah@pve!run=""12345678-90ab-cdef-1234-567890abcdef"
+for tk in "$T_GH" "$T_PAT" "$T_ANT" "$T_PVE"; do
+  reset_index
+  printf 'note\nsee %s here\n' "$tk" > "$FIX/docs/tok.md"; stage docs/tok.md
+  r sec --staged
+  [ $rc -eq 4 ] && grep -q "docs/tok.md:2 (a token pattern)" <<<"$OUT" && ! grep -qF "$tk" <<<"$OUT" \
+    && ok "a ${tk:0:7}… token in the diff -> exit 4 with file:line, never the token" || bad "token ${tk:0:7}: rc=$rc out=$OUT"
+done
+# What code, docs and tests write in their place passes: shorter than any real token.
+reset_index
+{ printf '%s\n' 'CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat-fixture"' 'Authorization: PVEAPIToken=user@pve!vm=<secret>'
+  printf '%s\n' "PVEAPIToken=ah@pve!probe=TOKEN-0123" "gh""p_short and github""_pat_short"; } > "$FIX/docs/tok.md"
+stage docs/tok.md
+r sec --staged
+[ $rc -eq 0 ] && ok "the placeholders of code, docs and tests are no token" || bad "placeholders: rc=$rc out=$OUT"
+# A placeholder at full length, as docs write one: a body of at most two characters.
+reset_index
+{ printf 'gh%s\n' "p_$(printf 'x%.0s' $(seq 1 36))"; printf 'sk-%s\n' "ant-api03-$(printf 'x%.0s' $(seq 1 40))"
+  printf 'root@pam!monitoring=%s\n' "00000000-0000-0000-0000-000000000000"; printf 'github%s\n' "_pat_$(printf 'xy%.0s' $(seq 1 41))"; } \
+  > "$FIX/docs/tok.md"
+stage docs/tok.md
+r sec --staged
+[ $rc -eq 0 ] && ok "a full-length placeholder (xxxx…, 0000-…) is no token" || bad "full placeholders: rc=$rc out=$OUT"
+# More Proxmox forms (R-0196): the PBS colon form, the URL-encoded form and the secret
+# alone behind a key name. Key name and UUID meet only at run time, as above.
+U="12345678-90ab-cdef-1234-567890abcdef"; K="token_""secret"; Z="00000000-0000-0000-0000-000000000000"
+for tk in "ah@pbs!run:$U" "ah%40pve%21run%3D$U" "ah%40pve%21run%3d$U" "api_$K = $U" "\"$K\": \"$U\"" "PVE_${K^^}=$U" "PVE_${K^^}=\${PVE_${K^^}:-$U}"; do
+  reset_index
+  printf 'note\nsee %s here\n' "$tk" > "$FIX/docs/tok.md"; stage docs/tok.md
+  r sec --staged
+  [ $rc -eq 4 ] && grep -q "docs/tok.md:2 (a token pattern)" <<<"$OUT" && ! grep -qF "$U" <<<"$OUT" \
+    && ok "the form ${tk:0:12}… -> exit 4 with file:line, never the token" || bad "form ${tk:0:12}: rc=$rc out=$OUT"
+done
+# The same forms as placeholders, a bare UUID without a key name, and a key that only
+# starts like one.
+reset_index
+printf '%s\n' "ah@pbs!run:$Z" "ah%40pve%21run%3D$Z" "api_$K = $Z" "id $U" "${K}_file = /etc/x" > "$FIX/docs/tok.md"
+stage docs/tok.md
+r sec --staged
+[ $rc -eq 0 ] && ok "placeholders of the new forms, a bare UUID and a longer key name are no token" \
+  || bad "new-form placeholders: rc=$rc out=$OUT"
+# sec --message (R-0197): the message of the commit being made, as the commit-msg hook
+# hands it over. With commit -v the diff below the scissors line is no part of it; a
+# comment line is, since git keeps it in a commit made with -m.
+MSG="$WORK/commit-msg.txt"
+printf 'subject\n\nbody with %s in it\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:3 (a token pattern)" <<<"$OUT" && ! grep -qF "$T_GH" <<<"$OUT" \
+  && ok "sec --message: a token -> exit 4 with the line, never the token" || bad "message token: rc=$rc out=$OUT"
+printf 'subject\n\nbody with gh%s only\n' "p_short" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "sec --message: a placeholder is clean" || bad "message placeholder: rc=$rc out=$OUT"
+printf 'subject\n# ------------------------ >8 ------------------------\n-old %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 0 ] && ok "sec --message: the diff below the scissors line does not count" \
+  || bad "message scissors: rc=$rc out=$OUT"
+printf 'subject\n# %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:2 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message: a token on a comment line counts (git keeps it with -m)" || bad "message comment: rc=$rc out=$OUT"
+printf 'subject %s\n' "$T_GH" > "$WORK/rel-msg.txt"
+OUT=$(cd "$WORK" && bash "$REVIEW" sec --message rel-msg.txt 2>&1); rc=$?
+[ $rc -eq 4 ] && grep -q "the commit message:1" <<<"$OUT" \
+  && ok "sec --message resolves a relative path from where the caller stands" || bad "message relative: rc=$rc out=$OUT"
+rm -f -- "$WORK/rel-msg.txt"
+r sec --message "$WORK/no-such-message"
+[ $rc -eq 2 ] && ok "sec --message on a missing file -> exit 2 (the hook fails closed)" || bad "message missing: rc=$rc out=$OUT"
+r sec --staged --message "$MSG"
+[ $rc -eq 2 ] && ok "sec --message stands alone (with --staged -> exit 2)" || bad "message with staged: rc=$rc out=$OUT"
+r sec --message ""
+[ $rc -eq 2 ] && grep -q "got an empty one" <<<"$OUT" && ! grep -q "sec: clean" <<<"$OUT" \
+  && ok "sec --message with an empty name -> exit 2, no sec over the worktree" || bad "message empty: rc=$rc out=$OUT"
+rm -f -- "$MSG"
+reset_index
+
 printf 'ordinary docs\n' >> "$FIX/CHANGELOG.md"
 stage CHANGELOG.md
 r sec --staged
@@ -408,6 +488,16 @@ printf 'x\nDedup-%s: sec:%s\n' Key "server:leak.py:probe" >> "$RFIX/docs/a.md"; 
 rr sec --range "$RCLEAN..HEAD"
 [ $rc -eq 4 ] && grep -q "docs/a.md:4 (commit " <<<"$OUT" && ! grep -q "leak.py" <<<"$OUT" \
   && ok "a security finding's Dedup-Key -> exit 4 with file:line, never the line" || bad "range key: rc=$rc out=$OUT"
+printf 'gh %s\n' "$T_GH" > "$RFIX/docs/tok.md"; rg add -A; rg commit -qm "a token"
+rr sec --range "HEAD~1..HEAD"
+[ $rc -eq 4 ] && grep -q "docs/tok.md:1 (commit .*(a token pattern)" <<<"$OUT" && ! grep -qF "$T_GH" <<<"$OUT" \
+  && ok "a token in a commit of the span -> exit 4 with file:line, never the token" || bad "range token: rc=$rc out=$OUT"
+rg rm -q -- docs/tok.md; rg commit -qm "no token"
+# The message leaves with the push as well (R-0183): it names the commit, never the token.
+rg commit --allow-empty -qm "fix: call the API with $T_GH"
+rr sec --range "HEAD~1..HEAD"
+[ $rc -eq 4 ] && grep -q "the commit message:1 (commit .*(a token pattern)" <<<"$OUT" && ! grep -qF "$T_GH" <<<"$OUT" \
+  && ok "a token in a commit message -> exit 4 naming the commit, never the token" || bad "message token: rc=$rc out=$OUT"
 rr sec --staged --range "$RCLEAN..HEAD"
 [ $rc -eq 2 ] && ok "--staged with --range -> usage error" || bad "staged+range: rc=$rc out=$OUT"
 rr sec --range "$RCLEAN..nosuchref"
@@ -433,6 +523,40 @@ rg commit -qm "a merge that adds a private file"
 rr sec --range "main...feature2"
 [ $rc -eq 4 ] && grep -q "tasks/private/m.md (merge " <<<"$OUT" && grep -q "docs/merge.md:1 (merge " <<<"$OUT" \
   && ok "a merge that adds a private file or a key line itself -> exit 4" || bad "evil merge: rc=$rc out=$OUT"
+rg checkout -q -b feature3 "$RCLEAN"
+printf 'feature three\n' > "$RFIX/docs/f3.md"; rg add -A; rg commit -qm "feature three"
+rg merge -q --no-commit --no-ff main >/dev/null
+printf 'pve %s\n' "$T_PVE" > "$RFIX/docs/mtok.md"; rg add -- docs/mtok.md
+rg commit -qm "a merge that adds a token line"
+rr sec --range "main...feature3"
+[ $rc -eq 4 ] && grep -q "docs/mtok.md:1 (merge .*(a token pattern)" <<<"$OUT" && ! grep -qF "$T_PVE" <<<"$OUT" \
+  && ok "a merge that adds a token line itself -> exit 4, never the token" || bad "token merge: rc=$rc out=$OUT"
+rg checkout -q -b feature4 "$RCLEAN"
+printf 'feature four\n' > "$RFIX/docs/f4.md"; rg add -A; rg commit -qm "feature four"
+rg merge -q --no-ff -m "Merge remote-tracking branch 'origin/main' into feature4" main
+rr sec --range "main...feature4"
+[ $rc -eq 0 ] && ok "a merge message 'Merge remote-tracking branch …' is no finding" || bad "merge message: rc=$rc out=$OUT"
+# "\ No newline at end of file" counts no line (R-0194): a finding after it keeps its
+# number, in a commit and in a merge. A repository of its own, to leave the span above alone.
+NFIX="$WORK/nonl"; mkdir -p "$NFIX/scripts/dev" "$NFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$NFIX/scripts/dev/review.sh"
+ng() { git -C "$NFIX" -c user.name=Fixture -c user.email=t@example.invalid "$@"; }
+nr() { OUT=$(bash "$NFIX/scripts/dev/review.sh" "$@" 2>&1); rc=$?; }
+printf 'a' > "$NFIX/docs/nl.md"; ng init -q -b main; ng add -A; ng commit -qm base; NBASE="$(ng rev-parse HEAD)"
+printf 'a\nb\nsee %s\n' "$T_PVE" > "$NFIX/docs/nl.md"; ng add -A; ng commit -qm "a token after the old last line"
+nr sec --range "$NBASE..HEAD"
+[ $rc -eq 4 ] && grep -q "docs/nl.md:3 (commit " <<<"$OUT" \
+  && ok "a finding after \"No newline\" names its own line (3), not the next" || bad "nonl commit: rc=$rc out=$OUT"
+# Both parents of the merge carry the old last line again, so the merge alone brings the token.
+printf 'a' > "$NFIX/docs/nl.md"; ng add -A; ng commit -qm "back to the old last line"; NBACK="$(ng rev-parse HEAD)"
+ng checkout -q -b side "$NBACK"; printf 'side\n' > "$NFIX/docs/side.md"; ng add -A; ng commit -qm side
+ng checkout -q main; printf 'main\n' > "$NFIX/docs/main.md"; ng add -A; ng commit -qm main
+ng checkout -q side; ng merge -q --no-commit --no-ff main >/dev/null
+printf 'a\nb\nsee %s\n' "$T_PVE" > "$NFIX/docs/nl.md"; ng add -- docs/nl.md; ng commit -qm "a merge that edits it"
+nr sec --range "main...side"
+[ $rc -eq 4 ] && grep -q "docs/nl.md:3 (merge " <<<"$OUT" \
+  && ok "in a merge (git prints no marker in --cc) the finding names line 3 as well" || bad "nonl merge: rc=$rc out=$OUT"
+rg checkout -q feature2
 # A push: commits the remote has already are no part of what leaves.
 rg update-ref refs/remotes/origin/main main
 rr sec --range "$RCLEAN..feature"
@@ -1369,6 +1493,360 @@ r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index
 
+# ══ diff-scan: a declared assertion change (R-0206) ═══════════════════════════
+echo "── diff-scan --task: an assertion may change in a test that stays when the task says so ──"
+cat > "$FIX/tasks/chg.md" <<'MD'
+# Changes — Task-Ledger
+Status: aktiv · Branch: feature/fixture
+
+### T1 — the tightened assertion is declared  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — der Sollwert trägt jetzt den Offset
+
+### T2 — nothing is declared  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+
+### T3 — go, vitest and rust  [ ]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Assertion-Änderung: apps/agent/c_test.go::TestShape — schärfer; apps/web/src/c.test.ts::keeps shape — schärfer; apps/desktop/src-tauri/tests/c.rs::shape — schärfer
+
+### T4 — declared without a reason  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape
+
+### T5 — a name that two classes share  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_same — welcher von beiden?
+
+### T6 — a deletion declared for a test that stays  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Test-Löschung: apps/server/tests/test_chg.py::test_shape — bleibt aber stehen
+
+### T7 — a span guessed too wide  [ ]
+Komponente: web · Dateien: apps/web/src/c.test.ts
+Assertion-Änderung: apps/web/src/c.test.ts::wide — schärfer
+
+### T8 — the file is renamed  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg2.py
+Assertion-Änderung: apps/server/tests/test_chg2.py::test_shape — wandert mit
+
+### T9 — a helper in a test file  [ ]
+Komponente: server · Dateien: apps/server/tests/test_h.py
+Assertion-Änderung: apps/server/tests/test_h.py::_expected — der Sollwert trägt jetzt den Offset
+
+### T10 — a helper name that two classes share  [ ]
+Komponente: server · Dateien: apps/server/tests/test_h.py
+Assertion-Änderung: apps/server/tests/test_h.py::_check — welcher von beiden?
+
+### T11 — an arrow helper  [ ]
+Komponente: web · Dateien: apps/web/src/h.test.ts
+Assertion-Änderung: apps/web/src/h.test.ts::check — eine Pfeil-Funktion
+
+### T12 — a go helper, and a function outside the test paths  [ ]
+Komponente: agent · Dateien: apps/agent/h_test.go
+Assertion-Änderung: apps/agent/h_test.go::checkShape — schärfer; apps/server/app/util.py::check — kein Testpfad
+
+### T13 — a js function helper and a rust fn helper  [ ]
+Komponente: web · Dateien: apps/web/src/h2.test.ts
+Assertion-Änderung: apps/web/src/h2.test.ts::check — schärfer; apps/desktop/src-tauri/tests/h.rs::check — schärfer
+MD
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "change ledger"
+CHG_PY='def test_shape():
+    out = build()
+    assert out["at"] == encode(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+CHG_PY_TIGHT='def test_shape():
+    out = build()
+    assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+# tighten <new content> — the base, then the case writes the file again and stages it.
+tighten() { base apps/server/tests/test_chg.py "$CHG_PY"; printf '%s' "$1" > "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py; }
+
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 0 ] && grep -q "clean (1 declared assertion change(s): apps/server/tests/test_chg.py::test_shape (1 removed, 1 added))" <<<"$OUT" \
+  && ok "a declared change in a test that stays: clean, and the run names it with its counts" || bad "declared change: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && grep -q "removed assertion: assert out" <<<"$OUT" && ok "the same change, not declared: a finding" \
+  || bad "undeclared change: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged
+[ $rc -eq 3 ] && ok "without --task a changed assertion is a finding, as before" || bad "change no --task: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T6
+[ $rc -eq 3 ] && ok "a Test-Löschung: for a test that stays covers no change" || bad "deletion for a change: rc=$rc out=$OUT"
+tighten "$CHG_PY_TIGHT"; r diff-scan --staged --task tasks/chg.md T4
+[ $rc -eq 3 ] && grep -q "declaration without a reason ignored" <<<"$OUT" \
+  && ok "a change declared without a reason counts for nothing" || bad "change no reason: rc=$rc out=$OUT"
+# n >= r: changed, not taken away.
+tighten 'def test_shape():
+    out = build()
+    out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added in its new body, 1 removed" <<<"$OUT" \
+  && ok "a declared change that adds no assertion: a finding, and it says why" || bad "n=0: rc=$rc out=$OUT"
+tighten 'def test_shape():
+    out = build()
+    # assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added" <<<"$OUT" \
+  && ok "an assertion that only stands in a comment is no added assertion" || bad "comment as added: rc=$rc out=$OUT"
+tighten 'def test_shape():
+    out = build()
+    out["at"]  # assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added" <<<"$OUT" \
+  && ok "nor one in the comment behind code on its line" || bad "trailing comment as added: rc=$rc out=$OUT"
+# Only tasks/*.md without README and template is a ledger: a task section written
+# into anything else grants nothing. The way the second review showed: a section
+# with a declaration in the CHANGELOG or in a spec, committed, and an assertion
+# weakened to `assert True` staged.
+CHG_SECTION='# changelog
+
+### T1 — x  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — lockerer
+'
+base CHANGELOG.md "$CHG_SECTION"
+base docs/features/x.md "$CHG_SECTION"
+# The exclude of the commit check, :(exclude)tasks/README.md, also leaves out a
+# directory of that name: a ledger below it must be refused as well.
+base tasks/README.md/x.md "$CHG_SECTION"
+mkdir -p "$FIX/tasks/templates"
+tighten 'def test_shape():
+    out = build()
+    assert True
+
+
+def test_other():
+    assert other() == 1
+'
+for L in tasks/README.md ./tasks/./README.md tasks/templates/task.md ./CHANGELOG.md docs/features/x.md tasks/README.md/x.md; do
+  r diff-scan --staged --task "$L" T1
+  [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ! grep -q "clean" <<<"$OUT" \
+    && ok "diff-scan --task $L -> exit 2, it is no ledger" || bad "diff-scan $L: rc=$rc out=$OUT"
+done
+base CHANGELOG.md '# changelog
+'
+git -C "$FIX" rm -q -- docs/features/x.md tasks/README.md/x.md && git -C "$FIX" commit -qm "drop the outside sections" >/dev/null 2>&1
+base apps/server/tests/test_chg.py 'def test_shape():
+    out = build()
+    assert out["at"] == encode(raw)
+    assert out["id"] == 7
+
+
+def test_other():
+    assert other() == 1
+'
+printf '%s' "$CHG_PY_TIGHT" > "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "1 assertion(s) added in its new body, 2 removed" <<<"$OUT" \
+  && ok "two assertions out, one in: a finding (n >= r)" || bad "r=2 n=1: rc=$rc out=$OUT"
+# The declaration names one test; an assertion of its neighbour stays a finding.
+tighten 'def test_shape():
+    out = build()
+    assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() >= 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "removed assertion: assert other() == 1" <<<"$OUT" && ! grep -q "assert out" <<<"$OUT" \
+  && ok "a declared change covers its own test, not the neighbour" || bad "neighbour: rc=$rc out=$OUT"
+# The test has to stay: a head that is gone in the new file is no change.
+tighten 'def test_shape_renamed():
+    out = build()
+    assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "1 tests of that name in the old file and 0 in the new one" <<<"$OUT" \
+  && ok "a declared test whose head is gone in the new file: a finding" || bad "head gone: rc=$rc out=$OUT"
+# Only the committed ledger counts: a line in the working tree grants nothing.
+tighten "$CHG_PY_TIGHT"
+awk -v add='Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — selbst eingetragen' \
+  '{print} /^### T2 /{getline; print; print add}' "$FIX/tasks/chg.md" > "$FIX/tasks/chg.md.new" \
+  && mv "$FIX/tasks/chg.md.new" "$FIX/tasks/chg.md"
+grep -q "selbst eingetragen" "$FIX/tasks/chg.md" || bad "fixture: the working-tree change declaration was not written"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && ok "a change declared only in the working-tree ledger counts for nothing" || bad "working-tree change: rc=$rc out=$OUT"
+git -C "$FIX" checkout -q -- tasks/chg.md
+# Two classes share the name: the gate cannot tell them apart.
+base apps/server/tests/test_chg.py 'class TestA:
+    def test_same(self):
+        assert a() == 1
+
+
+class TestB:
+    def test_same(self):
+        assert b() == 2
+'
+printf 'class TestA:\n    def test_same(self):\n        assert a() == 10\n\n\nclass TestB:\n    def test_same(self):\n        assert b() == 2\n' \
+  > "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py
+r diff-scan --staged --task tasks/chg.md T5
+[ $rc -eq 3 ] && grep -q "2 tests of that name in the old file" <<<"$OUT" \
+  && ok "a changed test whose name two classes share: a finding" || bad "two classes: rc=$rc out=$OUT"
+# A span guessed too wide by odd indentation holds a second test: it counts for nothing.
+base apps/web/src/c.test.ts "describe('d', () => {
+it('wide', () => expect(1).toBe(1));
+  it('y', () => {
+    expect(2).toBe(2);
+  });
+});
+"
+printf "describe('d', () => {\nit('wide', () => expect(1).toBe(1));\n  it('y', () => {\n    expect(2).toBe(3);\n  });\n});\n" \
+  > "$FIX/apps/web/src/c.test.ts"; stage apps/web/src/c.test.ts
+r diff-scan --staged --task tasks/chg.md T7
+[ $rc -eq 3 ] && grep -q "holds another test (y" <<<"$OUT" \
+  && ok "a declared change whose span holds another test counts for nothing" || bad "wide span: rc=$rc out=$OUT"
+# The same guard on the OLD span alone: there the span is too wide and holds y,
+# in the new file y stands on its own and is weakened. Two assertions out of the
+# old span, two into the new one: only the old-side guard refuses it.
+base apps/web/src/c.test.ts "describe('d', () => {
+it('wide', () => expect(1).toBe(1));
+  it('y', () => {
+    expect(2).toBe(2);
+  });
+});
+"
+printf "describe('d', () => {\nit('wide', () => {\n  expect(1).toStrictEqual(1);\n  expect(1).toBeTruthy();\n});\nit('y', () => {\n  expect(2).toBeDefined();\n});\n});\n" \
+  > "$FIX/apps/web/src/c.test.ts"; stage apps/web/src/c.test.ts
+r diff-scan --staged --task tasks/chg.md T7
+[ $rc -eq 3 ] && grep -q "holds another test (y" <<<"$OUT" && grep -q "expect(2).toBe(2)" <<<"$OUT" \
+  && ok "a span too wide in the OLD file alone: the change counts for nothing" || bad "old wide span: rc=$rc out=$OUT"
+# A file renamed in the same diff: the change is not judged across the move.
+base apps/server/tests/test_chg.py "$CHG_PY"
+git -C "$FIX" mv apps/server/tests/test_chg.py apps/server/tests/test_chg2.py
+printf '%s' "$CHG_PY_TIGHT" > "$FIX/apps/server/tests/test_chg2.py"; stage apps/server/tests/test_chg2.py
+r diff-scan --staged --task tasks/chg.md T8
+[ $rc -eq 3 ] && grep -q "the file is renamed in this diff" <<<"$OUT" \
+  && ok "a declared change in a file renamed by the same diff: a finding" || bad "renamed: rc=$rc out=$OUT"
+# Go, vitest and Rust: one tightened assertion each, all three declared.
+reset_index
+mkdir -p "$FIX/apps/agent" "$FIX/apps/web/src" "$FIX/apps/desktop/src-tauri/tests"
+printf 'package x\n\nimport "testing"\n\nfunc TestShape(t *testing.T) {\n\tif got := shape(); got != 1 {\n\t\tt.Fatalf("got %%d", got)\n\t}\n}\n' > "$FIX/apps/agent/c_test.go"
+printf 'it("keeps shape", () => {\n  expect(shape()).toEqual({ a: 1 });\n});\n' > "$FIX/apps/web/src/c.test.ts"
+printf '#[test]\nfn shape() {\n    assert_eq!(shape(), 1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/c.rs"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "three languages"
+sed -i 's|t.Fatalf("got %d", got)|t.Fatalf("got %d, want 1", got)|' "$FIX/apps/agent/c_test.go"
+sed -i 's|toEqual|toStrictEqual|' "$FIX/apps/web/src/c.test.ts"
+sed -i 's|assert_eq!(shape(), 1);|assert_eq!(shape(), 1, "shape");|' "$FIX/apps/desktop/src-tauri/tests/c.rs"
+stage apps/agent/c_test.go apps/web/src/c.test.ts apps/desktop/src-tauri/tests/c.rs
+r diff-scan --staged --task tasks/chg.md T3
+[ $rc -eq 0 ] && grep -q "clean (3 declared assertion change(s): " <<<"$OUT" \
+  && grep -q "apps/agent/c_test.go::TestShape (1 removed, 1 added)" <<<"$OUT" \
+  && grep -q "apps/web/src/c.test.ts::keeps shape (1 removed, 1 added)" <<<"$OUT" \
+  && grep -q "apps/desktop/src-tauri/tests/c.rs::shape (1 removed, 1 added)" <<<"$OUT" \
+  && ok "go, vitest and rust: a declared change each, clean" || bad "three languages: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && [ "$(grep -c 'removed assertion' <<<"$OUT")" = 3 ] \
+  && ok "and undeclared, all three are findings" || bad "three languages undeclared: rc=$rc out=$OUT"
+# A helper in a test file (T2): the anlass of R-0206 sat in one, called by
+# several tests. Modelled on TestUserResponseShape._expected.
+base apps/server/tests/test_h.py 'class TestShape:
+    def _expected(self, raw):
+        out = build(raw)
+        assert out["at"] == encode(raw)
+        return out
+
+    def test_post(self):
+        assert self._expected(1) == post()
+
+    def test_get(self):
+        assert self._expected(2) == get()
+'
+sed -i 's|== encode(raw)|== iso_utc(raw)|' "$FIX/apps/server/tests/test_h.py"; stage apps/server/tests/test_h.py
+r diff-scan --staged --task tasks/chg.md T9
+[ $rc -eq 0 ] && grep -q "apps/server/tests/test_h.py::_expected (helper, 1 removed, 1 added)" <<<"$OUT" \
+  && ok "a declared helper in a test file: clean, and the run marks it as a helper" || bad "helper: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && ok "the same helper change, not declared: a finding" || bad "helper undeclared: rc=$rc out=$OUT"
+base apps/server/tests/test_h.py 'class TestA:
+    def _check(self):
+        assert a() == 1
+
+
+class TestB:
+    def _check(self):
+        assert b() == 2
+'
+sed -i 's|assert a() == 1|assert a() == 10|' "$FIX/apps/server/tests/test_h.py"; stage apps/server/tests/test_h.py
+r diff-scan --staged --task tasks/chg.md T10
+[ $rc -eq 3 ] && grep -q "2 tests of that name in the old file" <<<"$OUT" \
+  && ok "a helper name that two classes share: a finding" || bad "helper twice: rc=$rc out=$OUT"
+base apps/web/src/h.test.ts 'const check = (x) => {
+  expect(x).toBe(1);
+};
+
+it("uses check", () => {
+  check(1);
+});
+'
+sed -i 's|toBe(1)|toStrictEqual(1)|' "$FIX/apps/web/src/h.test.ts"; stage apps/web/src/h.test.ts
+r diff-scan --staged --task tasks/chg.md T11
+[ $rc -eq 3 ] && grep -q "0 tests of that name in the old file" <<<"$OUT" \
+  && ok "an arrow helper cannot be declared: a finding" || bad "arrow helper: rc=$rc out=$OUT"
+# A Go helper is declared; a function outside the test paths is no helper — and
+# losing an assert there is no finding anyway.
+reset_index
+mkdir -p "$FIX/apps/agent" "$FIX/apps/server/app"
+printf 'package x\n\nimport "testing"\n\nfunc checkShape(t *testing.T, got int) {\n\tif got != 1 {\n\t\tt.Fatalf("got %%d", got)\n\t}\n}\n\nfunc TestShape(t *testing.T) {\n\tcheckShape(t, shape())\n}\n' > "$FIX/apps/agent/h_test.go"
+printf 'def check(x):\n    assert x > 0\n    return x\n' > "$FIX/apps/server/app/util.py"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "a go helper and production code"
+sed -i 's|t.Fatalf("got %d", got)|t.Fatalf("got %d, want 1", got)|' "$FIX/apps/agent/h_test.go"
+sed -i 's|assert x > 0|assert x >= 1|' "$FIX/apps/server/app/util.py"
+stage apps/agent/h_test.go apps/server/app/util.py
+r diff-scan --staged --task tasks/chg.md T12
+[ $rc -eq 0 ] && grep -q "clean (1 declared assertion change(s): apps/agent/h_test.go::checkShape (helper, 1 removed, 1 added))" <<<"$OUT" \
+  && ok "a go helper, declared: clean; an assert lost outside the test paths is no finding, declared or not" || bad "go helper: rc=$rc out=$OUT"
+reset_index
+mkdir -p "$FIX/apps/web/src" "$FIX/apps/desktop/src-tauri/tests"
+printf 'function check(x) {\n  expect(x).toBe(1);\n}\n\nit("uses check", () => {\n  check(1);\n});\n' > "$FIX/apps/web/src/h2.test.ts"
+printf 'fn check(x: i32) {\n    assert_eq!(x, 1);\n}\n\n#[test]\nfn uses_check() {\n    check(1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/h.rs"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "a js and a rust helper"
+sed -i 's|toBe(1)|toStrictEqual(1)|' "$FIX/apps/web/src/h2.test.ts"
+sed -i 's|assert_eq!(x, 1);|assert_eq!(x, 1, "x");|' "$FIX/apps/desktop/src-tauri/tests/h.rs"
+stage apps/web/src/h2.test.ts apps/desktop/src-tauri/tests/h.rs
+r diff-scan --staged --task tasks/chg.md T13
+[ $rc -eq 0 ] && grep -q "apps/web/src/h2.test.ts::check (helper, 1 removed, 1 added)" <<<"$OUT" \
+  && grep -q "apps/desktop/src-tauri/tests/h.rs::check (helper, 1 removed, 1 added)" <<<"$OUT" \
+  && ok "a js function helper and a rust fn helper, declared: clean, both marked" || bad "js/rust helper: rc=$rc out=$OUT"
+# A fake nested in the declared test is no second test: the guard stays on test heads.
+base apps/server/tests/test_chg.py 'def test_shape():
+    def fake():
+        return 1
+    assert run(fake) == encode(1)
+'
+sed -i 's|== encode(1)|== iso_utc(1)|' "$FIX/apps/server/tests/test_chg.py"; stage apps/server/tests/test_chg.py
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 0 ] && grep -q "apps/server/tests/test_chg.py::test_shape (1 removed, 1 added)" <<<"$OUT" \
+  && ok "a fake nested in the declared test does not refuse it" || bad "nested fake: rc=$rc out=$OUT"
+reset_index
+
 # ══ the pre-push hook (R-0123) ════════════════════════════════════════════════
 echo "── pre-push hook ──"
 # The push is the step from which on it is public. A fixture with the pre-push hook
@@ -1437,7 +1915,7 @@ echo "── pre-commit hook ──"
 HFIX="$WORK/hooked"
 mkdir -p "$HFIX/scripts/dev/hooks" "$HFIX/tasks" "$HFIX/docs"
 cp "$REPO_ROOT/scripts/dev/review.sh" "$HFIX/scripts/dev/review.sh"
-for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+for h in pre-commit prepare-commit-msg commit-msg pre-merge-commit pre-applypatch; do
   cp "$REPO_ROOT/scripts/dev/hooks/$h" "$HFIX/scripts/dev/hooks/$h"
   chmod 755 "$HFIX/scripts/dev/hooks/$h"
 done
@@ -1486,6 +1964,14 @@ git -C "$HFIX" checkout -q -- docs/note.md
 printf 'clean line\n' >> "$HFIX/docs/note.md"
 hc -a -m "a clean change"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a clean change is committed" || bad "clean: rc=$rc out=$OUT"
+# commit-msg (R-0197): a token in the message stops the commit itself, not only the
+# push. The merge commits further down pass this hook with git's own message.
+H0=$(heads)
+hc --allow-empty -m "subject $T_GH"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:1 (a token pattern)" <<<"$OUT" \
+  && ! grep -qF "$T_GH" <<<"$OUT" && ok "armed: a token in -m is refused, never echoed" || bad "msg token: rc=$rc out=$OUT"
+hc --allow-empty -m "subject with gh""p_short only"
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a placeholder in -m is committed" || bad "msg placeholder: rc=$rc out=$OUT"
 
 # The relative core.hooksPath is resolved per worktree: a lane runs the hook of
 # ITS branch. Here that branch carries a hook that only leaves a marker behind.
@@ -1594,7 +2080,7 @@ git -C "$HFIX" switch -q "$MAIN"
 # --show-toplevel, not --git-dir: a tarball unpacked inside another repository
 # would find that one.
 HOOK_SKIPPED=0
-for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+for h in pre-commit prepare-commit-msg commit-msg pre-merge-commit pre-applypatch; do
   if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
     mode=$(git -C "$REPO_ROOT" ls-files -s -- "scripts/dev/hooks/$h" | cut -d' ' -f1)
     [ "$mode" = 100755 ] && ok "$h is tracked with mode 100755" || bad "$h mode: '${mode:-untracked}'"

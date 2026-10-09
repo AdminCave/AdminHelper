@@ -8,7 +8,7 @@ import time
 
 import httpx
 
-from app.core.ssrf import is_private_url
+from app.core.ssrf import UrlVerdict, classify_url
 
 # Redirects are followed manually (see run) so every hop is re-checked against the
 # SSRF guard; cap the chain length like a browser would.
@@ -29,7 +29,14 @@ class HttpChecker:
         if not url:
             return "unknown", "Keine URL angegeben", None
 
-        if is_private_url(url):
+        verdict = classify_url(url)
+        if verdict is UrlVerdict.UNRESOLVED:
+            return (
+                "unknown",
+                "URL host could not be resolved (DNS error or timeout), rejected by the SSRF guard",
+                None,
+            )
+        if verdict is not UrlVerdict.ALLOWED:
             return "unknown", "URL zeigt auf eine private/reservierte Adresse (SSRF-Schutz)", None
 
         try:
@@ -52,7 +59,15 @@ class HttpChecker:
                 if not location:
                     break
                 next_url = str(resp.url.join(location))
-                if is_private_url(next_url):
+                hop = classify_url(next_url)
+                if hop is UrlVerdict.UNRESOLVED:
+                    return (
+                        "critical",
+                        "Redirect target could not be resolved (DNS error or timeout), "
+                        "rejected by the SSRF guard",
+                        None,
+                    )
+                if hop is not UrlVerdict.ALLOWED:
                     return (
                         "critical",
                         "Redirect auf private/reservierte Adresse abgelehnt (SSRF-Schutz)",

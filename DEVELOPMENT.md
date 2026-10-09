@@ -469,7 +469,9 @@ ohnehin liefert (`None`, `undefined`, `Ok(())`), auch in einer Datei mit CRLF-Ze
 Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Tests folgt und es
 nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
-als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade),
+als `Test-Löschung:` ankündigt, eine Assertion in einem bleibenden Test darf sich ändern, wenn die Task das als
+`Assertion-Änderung:` ankündigt und mindestens so viele Assertions zurückbringt — geprüft am Inhalt, siehe
+`tasks/README.md`), `review.sh scope` (Fremd-Pfade),
 `review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache) und `review.sh sec` (was nie ins
 oeffentliche Repo darf); (3) das
 `Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
@@ -822,7 +824,18 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
 **pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
 `review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
 `sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
-Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Was an den lokalen
+Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Seit R-0183 sperrt `sec`
+auch eine hinzugefuegte Zeile mit einem Token-Muster — ein Proxmox-API-Token
+(`USER@REALM!TOKENID=UUID`, ebenso die PBS-Form mit `:` statt `=`, die URL-kodierte Form mit `%40`, `%21`,
+`%3D` und ein Secret allein hinter einem Schluesselnamen wie `api_token_secret` oder `PVE_TOKEN_SECRET`;
+ein nacktes UUID ohne solchen Namen bleibt erlaubt, R-0196), ein GitHub-Token (`ghp_`, `gho_`, `ghu_`,
+`ghs_`, `ghr_`, `github_pat_`) oder ein `sk-ant-`-Schluessel, je mit einer Mindestlaenge, die Platzhalter durchlaesst (ebenso ein
+Rumpf aus hoechstens zwei verschiedenen Zeichen wie `xxxx…`) — und nennt dabei nur Datei:Zeile; ueber
+eine Spanne (`--range`: pre-push und CI) liest es auch die Nachricht jedes Commits und nennt dann nur
+den Commit. Schon beim Commit liest der Hook `scripts/dev/hooks/commit-msg` die Nachricht
+(`review.sh sec --message <datei>`, R-0197): ein Token darin bricht den Commit ab, gemeldet wird nur
+die Zeile; bei `commit -v` zaehlt alles unter der Schnittlinie nicht. Ein Test, der ein solches
+Muster braucht, setzt es zur Laufzeit zusammen. Was an den lokalen
 Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
 der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
 eines Pull Requests bzw. Pushs (R-0123; ein Commit, der eine private Datei bringt und der naechste,
@@ -856,7 +869,11 @@ Historie), und nur die Commits, die der Remote noch nicht hat (`--not-on <remote
 main gemergt hat, bringt main nicht als Fund mit). Ein Treffer bricht den Push ab und nennt Pfad bzw.
 Datei:Zeile mit dem Commit, nie den Inhalt; eine Loeschung pusht nichts und geht durch. Erst dieser
 Hook verhindert, dass etwas ueberhaupt oeffentlich wird; die CI faengt, was an ihm vorbeigeht.
-Fehlt einer der fuenf im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status`
+Seit R-0197 ist `commit-msg` der sechste: er faehrt `review.sh sec --message` ueber die Nachricht
+eines `git commit` und eines Merge-Commits von `git merge` — nur die rufen ihn (githooks(5)); die
+Nachrichten von `git cherry-pick`, `git revert`, einem `rebase` und `git am` prueft erst `pre-push`
+bzw. die CI. `git commit -n` ueberspringt ihn wie `pre-commit`.
+Fehlt einer der sechs im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status`
 `NOT armed` und nennt ihn. Nach einer Weigerung geht es mit `--abort` zurueck (`git cherry-pick`, `merge`, `rebase`,
 `am`, `git revert` einer Serie); ein verweigertes `git revert` eines einzelnen Commits
 hinterlaesst dagegen keinen `REVERT_HEAD` und seine Aenderung gestaged, dort hilft
@@ -1101,7 +1118,7 @@ sudo -u adminhelper-runner bash -lc '. /srv/ah/repo/scripts/dev/runner-env.sh &&
 Runner-Settings ohne Trust anwendet, hat noch niemand gemessen (oben, „Getrusteter Workspace").
 Endet im Pilot jede Task als `[?] stall` oder mit vielen Verweigerungen im Summary, und steht in
 `/srv/ah/loop/<slug>/<id>.s<n>.err` (oder `.json`) eine Meldung „Ignoring … permissions.allow
-entries", greift der Trust: das ist dann eine Frage an die Aufsicht, denn `--trust` deckt die Lanes
+entries", greift der Trust: das entscheidet dann Kevin (die Aufsicht legt es ihm vor), denn `--trust` deckt die Lanes
 nicht ab.
 
 **Starten** (nur Kevin, in tmux; die Ledger in seiner Reihenfolge, die Flags mit ihren Defaults):

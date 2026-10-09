@@ -89,6 +89,15 @@ done
 [ -n "$LEDGER" ] && [ -n "$ID" ] || { echo "task-close needs <ledger> <id>" >&2; usage >&2; exit 2; }
 case "$LEDGER" in */*) ;; *) LEDGER="tasks/$LEDGER" ;; esac
 case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
+# A ledger is exactly what the commit check below guards: tasks/*.md without the
+# README (it shows the syntax of both declarations) and the template. Anything
+# else, the CHANGELOG or a spec, could carry a task section past that check
+# (R-0206; for Test-Löschung that way was open since R-0079).
+case "$(realpath -m --relative-to=. -- "$LEDGER")" in
+  tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $LEDGER" ;;
+  tasks/*.md) ;;
+  *) die "not a ledger: $LEDGER" ;;
+esac
 [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"
@@ -107,7 +116,8 @@ elif [ "${AH_AUTONOMOUS:-0}" = 1 ] && [ -z "$ROUND_ARG" ]; then
   die "an autonomous run names the round (--round <1|2>): the worker counts it, not the files of .ah-out/review"
 fi
 
-# A declared test deletion (Test-Löschung:) counts only once it is committed, and
+# A declared test deletion (Test-Löschung:) or assertion change (Assertion-Änderung:,
+# R-0206) counts only once it is committed, and
 # this script must not be the way it gets committed: it stages the whole ledger,
 # so a builder could write the line while closing one task and use it in the next
 # (adversarial review, 2026-09-25). The declaration comes with the plan commit at
@@ -117,9 +127,9 @@ fi
 # UTF-8 locale while awk and python still read it. The check that carries is the
 # one on the finished commit, at the end: it also covers the ledger changing
 # while the suite runs and a declaration in any other staged ledger.
-decl_lines() { LC_ALL=C grep -aE '^Test-Löschung:' || true; }  # review: ok no match is an empty list, not a failure
+decl_lines() { LC_ALL=C grep -aE '^(Test-Löschung|Assertion-Änderung):' || true; }  # review: ok no match is an empty list, not a failure
 if [ "$(git show "HEAD:$LEDGER" 2>/dev/null | decl_lines)" != "$(decl_lines < "$LEDGER")" ]; then
-  echo "task-close: the Test-Löschung: lines of $LEDGER differ from the committed ones —" >&2
+  echo "task-close: the Test-Löschung:/Assertion-Änderung: lines of $LEDGER differ from the committed ones —" >&2
   echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
   exit 4
 fi
@@ -212,7 +222,9 @@ INDEX_TREE="$(git write-tree)" || infra "git write-tree failed"
 
 # ── 2. the cheap reviews, before the suite (R-0150) ──────────────────────────
 # --task: a test the task declares as deleted (Test-Löschung:) may take its
-# assertions with it; anything else that silences a test is still a finding.
+# assertions with it, and one it declares as changed (Assertion-Änderung:) may
+# trade them for at least as many; anything else that silences a test is still
+# a finding.
 bash scripts/dev/review.sh diff-scan --staged --task "$LEDGER" "$ID" || {
   rc=$?
   [ "$rc" = 2 ] && die "review.sh diff-scan could not run"
@@ -503,16 +515,20 @@ else
   git commit -q -m "$MSG" || infra "$COMMIT_HELP"
 fi
 # The check that carries: on the commit itself, byte-exact, over every ledger in
-# it. A Test-Löschung: line this commit adds, removes or moves — through a ledger
+# it. A Test-Löschung: or Assertion-Änderung: line this commit adds, removes or moves — through a ledger
 # edited while the suite ran, or another ledger staged via Dateien: — takes the
 # commit back (adversarial review, 2026-09-25). grep -c reads to the end: with
 # -q it would leave early, git diff would die of SIGPIPE, and pipefail would turn
-# the hit into a pass.
+# the hit into a pass. Ledgers only: tasks/README.md shows the syntax of both
+# fields in a line of its own, and the template is no ledger either; diff-scan
+# reads a declaration from the task section of the ledger being closed, never
+# from those (R-0206, the README section tripped this check).
 DECL_CHANGED="$(git -c core.quotePath=false diff --text --no-ext-diff --no-textconv --no-color -U0 HEAD^ HEAD -- 'tasks/*.md' \
-  | LC_ALL=C grep -acE '^[-+]Test-Löschung:')"
+  ':(exclude)tasks/README.md' ':(exclude)tasks/templates/*' \
+  | LC_ALL=C grep -acE '^[-+](Test-Löschung|Assertion-Änderung):')"
 if [ "${DECL_CHANGED:-0}" != 0 ]; then
-  git reset -q --soft HEAD^ || infra "the commit changed a Test-Löschung: line and could not be taken back — inspect HEAD"
-  echo "task-close: the commit changed a Test-Löschung: line in a ledger — taken back (git reset --soft)" >&2
+  git reset -q --soft HEAD^ || infra "the commit changed a Test-Löschung:/Assertion-Änderung: line and could not be taken back — inspect HEAD"
+  echo "task-close: the commit changed a Test-Löschung:/Assertion-Änderung: line in a ledger — taken back (git reset --soft)" >&2
   echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
   exit 4
 fi

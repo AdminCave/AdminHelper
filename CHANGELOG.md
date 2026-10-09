@@ -9,6 +9,31 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **`Assertion-Aenderung:` im Ledger (R-0206):** eine Task kann eine absichtlich geaenderte
+  Assertion in einem bleibenden Test oder Test-Helfer ankuendigen (`<datei>::<test> — <Grund>`).
+  `review.sh diff-scan` laesst dann genau diese Aenderung durch, wenn der Test mindestens so viele
+  Assertions hinzubekommt, wie er verliert; `task-close.sh` sperrt eine Ankuendigung, die erst mit
+  der Task selbst kommt, und `ledger.sh lint` prueft die Form. Als Ledger gelten nur noch
+  `tasks/*.md` ohne `tasks/README.md` und `tasks/templates/` — das schliesst auch einen aelteren
+  Weg an `Test-Loeschung:` vorbei.
+
+- **commit-msg-Hook (R-0197):** `scripts/dev/hooks/commit-msg` faehrt `review.sh sec --message`
+  und sperrt einen Token in der Commit-Nachricht schon beim Commit. Dazu meldet `sec` die Zeile
+  nach „\ No newline at end of file“ richtig und erkennt weitere Formen eines Proxmox-Tokens
+  (PBS mit Doppelpunkt, URL-kodiert, Secret hinter einem Schluesselnamen; R-0194, R-0196), und
+  `ledger.sh lint` meldet auch Huelle und Ausgabe eines Werkzeugaufrufs als Rest (R-0195).
+
+- **`review.sh sec` erkennt Token-Muster (R-0183):** eine hinzugefuegte Zeile mit einem
+  Proxmox-API-Token (`USER@REALM!TOKENID=UUID`), einem GitHub-Token (`ghp_`, `gho_`, `ghu_`,
+  `ghs_`, `ghr_`, `github_pat_`) oder einem `sk-ant-`-Schluessel sperrt den Commit, den Push und
+  den CI-Job „Public repo guard"; genannt wird nur Datei:Zeile, nie der Inhalt. Ueber eine
+  Spanne (pre-push, CI) prueft es auch die Commit-Nachrichten und nennt dann nur den Commit.
+  Eine Mindestlaenge und ein Rumpf aus hoechstens zwei verschiedenen Zeichen (`xxxx…`) lassen
+  die Platzhalter in Code, Doku und Tests durch.
+
+- **`ledger.sh lint` meldet Werkzeug-Reste (R-0165):** Reste eines Werkzeugaufrufs, die ein
+  planender Agent in Ledger oder Spec hinterliess, sind ein Lint-Fehler mit Datei:Zeile.
+
 - **Der Worker (Stufe 7a, R-0010, R-0108, R-0164, R-0167, R-0170):** `scripts/dev/ledger-loop.sh`
   baut freigegebene Ledger Task fuer Task als `adminhelper-runner` in dessen Klon, jedes Ledger in
   seiner Lane; Kevin startet ihn in tmux mit einer expliziten Ledger-Liste. Je Task eine frische
@@ -249,6 +274,27 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Hooks: ungueltige Eingaben im dokumentierten Fehler-Format (R-0207):** `POST /api/hooks` und
+  `PUT /api/hooks/{id}` antworteten bei fehlendem oder ungueltigem `schedule_interval` und bei fehlenden
+  oder unbekannten `event_triggers` mit einem 422, dessen `detail` ein String war. Die OpenAPI und die
+  API-Referenz versprechen eine Liste von `{loc, msg, type}`; so antworten die Routen jetzt, mit den
+  bisherigen Texten als `msg`. Die Web-Oberflaeche zeigt bei jedem 422 mit solcher Liste jetzt die
+  `msg`-Texte (mit „; “ verbunden) statt „HTTP 422“ — auch bei den Pydantic-Fehlern der uebrigen Routen.
+- **Desktop: Passwort fuer den Browser-Export (R-0219):** Die Einstellungen liessen ein Passwort ab 8
+  Zeichen zu, der Export selbst verlangt 12; ein Passwort mit 8 bis 11 Zeichen endete in der
+  allgemeinen Meldung „angemeldet und Server erreichbar?“. Die Einstellungen verlangen jetzt die
+  dokumentierten 12 Zeichen, gezaehlt wie im Backend, und sagen das.
+- **SSRF-Guard nennt den Grund (R-0045):** Der HTTP-Check und der Alert-Webhook des Monitorings sowie die
+  Hook-Funktionen `http_get`/`http_post` des Servers melden ein Ziel, dessen Host nicht aufloest
+  (DNS-Fehler oder Zeitlimit), jetzt als solches (`could not be resolved … rejected by the SSRF guard`)
+  statt als private/reservierte Adresse. Abgelehnt wird es weiter, ohne Request; die Meldung fuer
+  private Ziele bleibt unveraendert.
+- **Server-Datenbank-Sessions in UTC (R-0209):** Jede Verbindung des Servers setzt ihre Session
+  auf `UTC`, unabhaengig von der Zeitzone des Postgres-Clusters (der Stack startet ihn mit
+  `TZ=Europe/Berlin`) und von einem `PGTZ` in der Umgebung. Postgres rechnete einen Zeitwert mit
+  Offset bisher in die Session-Zeitzone um, bevor er in eine Spalte ohne Zeitzone ging; diese Spalten
+  halten aber UTC. Bereits gespeicherte Werte bleiben, wie sie sind (keine Migration), die
+  API-Ausgabe auch.
 - **Desktop: Tunnel-Hinweis ohne Identitaet (R-0203):** Startet ein Tunnel ohne mTLS-Zertifikat,
   verweist die Meldung jetzt auf die Registrierung des Geraets mit einem Einmal-Token vom Admin
   statt auf eine Anmeldung am Server — seit ADR 0003 enrollt der Login nicht.

@@ -41,7 +41,7 @@
           <h2>Architektur</h2>
           <p>Drei Komponenten:</p>
           <ul>
-            <li><strong>frps</strong> – läuft im Server-Stack, exponiert Port 7000 (Kontrollkanal) und 7443 (Tunnel).</li>
+            <li><strong>frps</strong> – läuft im Server-Stack, exponiert Port 7000 (Kontrollkanal) und 7443 (HTTPS-Tunnel).</li>
             <li><strong>frpc</strong> – läuft auf jedem Agent-Host, verbindet sich zu <code>frps</code> und meldet Services an.</li>
             <li><strong>PKI</strong> – die interne <code>tunnel</code>-Intermediate des <code>ca-issuer</code> signiert das frps-Server-Cert und die Agent-Tunnel-Certs; jeder <code>frpc</code> authentifiziert sich per mTLS (seit A7 eine einheitliche Vertrauenswurzel statt einer frps-eigenen CA).</li>
           </ul>
@@ -56,11 +56,11 @@
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">CA-Backup nicht vergessen</div><p>Das Security-Asset ist jetzt das <code>ca-pki</code>-Volume des <code>ca-issuer</code> (Root + Intermediates). Verlust bedeutet, dass alle Clients neu enrollen müssen. Backup-Details unter <a href="./betrieb.html#backup">Datenverzeichnis-Backup</a>.</p></div>
+            <div><div class="callout-title">CA-Backup nicht vergessen</div><p>Das Security-Asset ist jetzt das <code>ca-pki</code>-Volume des <code>ca-issuer</code> (Root + Intermediates). Verlust bedeutet, dass alle Clients neu enrollen müssen. Verschlüsselt und außer Haus sichern; Backup-Details unter <a href="./betrieb.html#backup">Datenverzeichnis-Backup</a>.</p></div>
           </div>
 
           <h2>Client-Zertifikate rotieren</h2>
-          <p>Das Agent-Tunnel-Cert wird vom Agent <strong>automatisch erneuert</strong>, sobald es ~50&nbsp;% seiner Laufzeit erreicht (über <code>/ca/renew</code>, mit dem aktuellen Cert als Nachweis) — kein manueller Rotate-Trigger nötig. Der Desktop-Visitor präsentiert seit der PKI-Migration seine enrollte <code>access</code>-Identität (dieselbe wie für den Web-/API-Zugriff) und erneuert sie automatisch — kein server-gemüntztes Visitor-Cert mehr.</p>
+          <p>Das Agent-Tunnel-Cert wird vom Agent <strong>automatisch erneuert</strong>, sobald es ~50&nbsp;% seiner Laufzeit erreicht (über <code>/ca/renew</code>, mit dem aktuellen Cert als Nachweis) — kein manueller Rotate-Trigger nötig. Ein abgelaufenes Cert lässt sich nicht mehr erneuern; dann hilft nur ein neues Enrollment. Der Desktop-Visitor präsentiert seit der PKI-Migration seine enrollte <code>access</code>-Identität (dieselbe wie für den Web-/API-Zugriff) und erneuert sie automatisch — kein server-gemüntztes Visitor-Cert mehr.</p>
 
           <h2>FRP <code>auth.token</code> rotieren</h2>
           <p><strong>Achtung — Breaking-Change:</strong> Das globale <code>auth.token</code> (in der FRP-Server-Config) fließt identisch in <code>frps.toml</code>, in jede Agent-<code>frpc.toml</code> und in jede Desktop-<code>visitor.toml</code>. frps kennt im Token-Modus nur genau <em>ein</em> Token; es gibt keinen Overlap-/Dual-Token-Mechanismus. Eine Rotation bricht daher <strong>schlagartig alle</strong> Agents und Visitor, bis jeder neu synchronisiert bzw. das Bundle neu geladen hat. Die eigentliche Tunnel-Sicherheit ist ohnehin das erzwungene mTLS (<code>transport.tls.force</code>) plus der STCP-<code>secretKey</code> — das Token ist nur der schwächere zweite Faktor.</p>
@@ -83,24 +83,33 @@
 
           <h2>Tunneltypen</h2>
           <table>
-            <thead><tr><th>Typ</th><th>Use-Case</th></tr></thead>
+            <thead><tr><th>Typ</th><th>Beschreibung</th><th>Use-Case</th></tr></thead>
             <tbody>
-              <tr><td><code>tcp</code></td><td>SSH, RDP, VNC, beliebige TCP-Services</td></tr>
-              <tr><td><code>http</code>/<code>https</code></td><td>Web-UIs mit Virtual-Host-Routing (<code>idrac.srv1.example.com</code>) unter dem Subdomain-Host der FRP-Server-Konfiguration (<code>subDomainHost</code> in <code>frps.toml</code>)</td></tr>
-              <tr><td><code>stcp</code></td><td>Secure-TCP, braucht Visitor auf Client-Seite – Desktop-Client löst das automatisch.</td></tr>
+              <tr><td><code>https</code></td><td>HTTPS-Tunnel mit Virtual-Host-Routing (<code>idrac.srv1.example.com</code>) unter dem Subdomain-Host der FRP-Server-Konfiguration (<code>subDomainHost</code> in <code>frps.toml</code>).</td><td>Web-UIs hinter NAT (z.&nbsp;B. IPMI, Hausautomation).</td></tr>
+              <tr><td><code>stcp</code></td><td>Secure-TCP: nur ein Visitor mit passendem <code>secretKey</code> kommt durch. Der Visitor läuft auf der Client-Seite – der Desktop-Client löst das automatisch.</td><td>SSH, RDP, VNC, beliebige TCP-Services als private Tunnel – kein öffentlicher Port.</td></tr>
             </tbody>
           </table>
           <p>Das Feld <strong>Secret-Key</strong> eines STCP-Tunnels: leer beim Anlegen erzeugt der Server ein Secret; leer beim Bearbeiten bleibt das gespeicherte unverändert (der Server liefert es nie zurück, das Feld startet deshalb leer). Zum Rotieren einen neuen Wert eintragen (mindestens 16 Zeichen) und danach den Tunnel im Desktop neu starten. Der Wechsel auf HTTPS löscht das Secret; zurück auf STCP gibt es ein neues.</p>
 
           <h2>Visitor-Ports</h2>
-          <p>STCP-Tunnel brauchen lokal einen freien Port für den Visitor. Der Desktop-Client wählt zufällig aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
+          <p>STCP-Tunnel brauchen auf dem Admin-PC einen lokalen Port für den Visitor, der ihn an <code>127.0.0.1</code> bindet. Der Server vergibt ihn beim Anlegen des Tunnels, wenn keiner angegeben ist: den ersten freien Port aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Der Port bleibt dem Tunnel zugeordnet; zwei STCP-Tunnel teilen sich nie einen. Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
+
+          <h2>Firewall</h2>
+          <table>
+            <thead><tr><th>Port</th><th>Richtung</th><th>Zweck</th></tr></thead>
+            <tbody>
+              <tr><td><code>7000/tcp</code></td><td>Eingehend</td><td>FRP-Kontrollkanal (<code>FRP_BIND_PORT</code>): Agents und Desktop-Visitor verbinden sich hierher, mit Token-Auth und mTLS (Client-Cert Pflicht)</td></tr>
+              <tr><td><code>7443/tcp</code></td><td>Eingehend</td><td>HTTPS-Tunnel unter dem Subdomain-Host (<code>FRP_HTTPS_PORT</code>, im Container der frps-Port 443; braucht ein Wildcard-Cert)</td></tr>
+            </tbody>
+          </table>
+          <p>Die Visitor-Ports (Default 6000–6999) binden nur lokal auf dem Admin-PC an <code>127.0.0.1</code> und brauchen am Server keine Freigabe.</p>
 
           <h2>Status-Dashboard</h2>
           <p>Die Tunnel-Statusansicht fragt das frps-Dashboard ab. Standardmäßig erreicht der Server es über den Compose-Servicenamen (<code>http://frps:PORT</code>, mit <code>127.0.0.1</code>-Fallback). Läuft frps in einer anderen Topologie (eigener Host), die Basis-URL über <code>FRPS_DASHBOARD_URL</code> in der <code>.env</code> setzen, statt den Code zu ändern.</p>
 
           <h2>Troubleshooting</h2>
           <ul>
-            <li><strong>Agent verbindet sich nicht</strong>: Zertifikats-Ablauf prüfen (<code>openssl x509 -in /etc/adminhelper/client.crt -noout -enddate</code>), Server-Erreichbarkeit via <code>nc -vz srm.example.com 7000</code>.</li>
+            <li><strong>Agent verbindet sich nicht</strong>: Zertifikats-Ablauf prüfen (<code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>), Server-Erreichbarkeit via <code>nc -vz srm.example.com 7000</code>.</li>
             <li><strong>"Tunnel not found"</strong>: Tunnel im Desktop-Client (<em>Infrastruktur → Server → Tab Tunnel</em>) aktiviert? FRP-Logs: <code>docker compose logs -f frps</code>.</li>
             <li><strong>STCP klappt nicht</strong>: Visitor-Port bereits belegt? Desktop-Client-Log prüfen.</li>
           </ul>
