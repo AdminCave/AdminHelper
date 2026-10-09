@@ -9,7 +9,17 @@
 #   bash scripts/dev/ledger-loop.sh --ledger tasks/<a>.md [--ledger tasks/<b>.md …]
 #        [--max-hours 8] [--max-tasks 20] [--max-budget-usd 200] [--max-ready 2]
 #        [--task-minutes 60] [--task-turns 80] [--task-budget 12]
-#   bash scripts/dev/ledger-loop.sh status [--state <file>]
+#   bash scripts/dev/ledger-loop.sh status [--state <file> | --profile kevin]
+#   bash scripts/dev/ledger-loop.sh start --profile kevin --ledger tasks/<a>.md [caps…]
+#
+# `start --profile kevin` is the one start command of a run under Kevin's UID, with
+# the builder HOME of scripts/dev/builder-home.sh (team plan 4b): it checks
+# `builder-home.sh status`, refuses while its tmux session is there, starts the loop
+# of the builder clone in that session and returns. The run gets env -i with HOME,
+# PATH, LANG, USER, LOGNAME, TERM and AH_LOOP_DIR, and stdin /dev/null: no SSH
+# agent, no D-Bus address, no Proxmox token. Its output is appended to builder.log
+# in the builder's loop directory, its exit code goes to builder.done (`rc=<n>`).
+# `status --profile kevin` reads the builder's state.json.
 #
 # Only Kevin starts it — never a timer (CLAUDE.md §2) —, in tmux:
 #   sudo -u adminhelper-runner tmux new -d -s ah-loop \
@@ -84,6 +94,8 @@
 # this file's checkout), a claude stub on PATH.
 #
 # Exit: 0 the run ended · 2 usage · 74 stop: infra or harness-modified
+#       start: 0 started · 2 usage · 74 the builder home is not ready, its session is
+#       there, or tmux or the loop directory failed
 
 set -uo pipefail
 
@@ -93,13 +105,48 @@ die() { echo "ledger-loop.sh: $*" >&2; exit 2; }
 REPO="${AH_LOOP_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 LOOP="${AH_LOOP_DIR:-/srv/ah/loop}"
 STATE="$LOOP/state.json"
+# The builder profile; builder-home.sh has the same default.
+BUILDER="${AH_BUILDER_DIR:-$HOME/.cache/ah-builder}"
+SESSION=ah-builder
+
+if [ "${1-}" = start ]; then
+  shift
+  [ "${1-}" = --profile ] && [ "${2-}" = kevin ] || die "start needs --profile kevin, the one profile there is"
+  shift 2
+  [ $# -gt 0 ] || die "start --profile kevin needs the run's arguments: --ledger tasks/<a>.md …"
+  bash "$REPO/scripts/dev/builder-home.sh" status \
+    || { echo "ledger-loop.sh: the builder home is not ready — bash scripts/dev/builder-home.sh setup (and token)" >&2; exit 74; }
+  command -v tmux >/dev/null 2>&1 || { echo "ledger-loop.sh: no tmux" >&2; exit 74; }
+  if tmux has-session -t "=$SESSION" 2>/dev/null; then
+    echo "ledger-loop.sh: the tmux session $SESSION is there already — one run at a time (follow it: tail -f $BUILDER/loop/builder.log)" >&2
+    exit 74
+  fi
+  log="$BUILDER/loop/builder.log" mark="$BUILDER/loop/builder.done" me="$(id -un)"
+  # The session opens the log before the loop runs: without the directory it would
+  # end at once, with neither log nor mark.
+  mkdir -p "$BUILDER/loop" && chmod 700 "$BUILDER/loop" \
+    || { echo "ledger-loop.sh: cannot create or chmod 700 $BUILDER/loop" >&2; exit 74; }
+  rm -f "$mark"
+  # Every word quoted for the session's shell: a ledger path stays one word.
+  printf -v inner 'cd %q && bash scripts/dev/ledger-loop.sh' "$BUILDER/repo"
+  printf -v args ' %q' "$@"
+  printf -v rest ' < /dev/null >> %q 2>&1; echo "rc=$?" > %q' "$log" "$mark"
+  # LANG and TERM as in the first measuring run: the loop and task-close read
+  # what git says, in English.
+  tmux new-session -d -s "$SESSION" /usr/bin/env -i HOME="$BUILDER/home" PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 \
+    USER="$me" LOGNAME="$me" TERM=xterm-256color AH_LOOP_DIR="$BUILDER/loop" bash -c "$inner$args$rest" \
+    || { echo "ledger-loop.sh: tmux new-session failed" >&2; exit 74; }
+  echo "started in tmux $SESSION — follow it with: tail -f $log (the exit code lands in $mark)"
+  exit 0
+fi
 
 if [ "${1-}" = status ]; then
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
       --state) [ $# -ge 2 ] || die "--state needs <file>"; STATE="$2"; shift ;;
-      *) die "status takes only --state <file>" ;;
+      --profile) [ "${2-}" = kevin ] || die "--profile knows only kevin"; STATE="$BUILDER/loop/state.json"; shift ;;
+      *) die "status takes only --state <file> or --profile kevin" ;;
     esac
     shift
   done

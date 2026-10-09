@@ -177,8 +177,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine in dieser Task (T11)
 Abhängt von: T7, T8
 
-### T10 — `ledger-loop.sh start|status --profile kevin`: der eine Startbefehl  [ ]
+### T10 — `ledger-loop.sh start|status --profile kevin`: der eine Startbefehl  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ca85baf8 2026-10-09T17:57:59+02:00
+Review: approve (opus, round 2)
 Änderung: Nach der Spec, Ziel 3. Ablauf von `start --profile kevin --ledger … [Deckel]`:
 - Es prüft `builder-home.sh status` (Exit ≠ 0: Meldung, kein Start) und eine schon laufende tmux-Session
   (Meldung, kein zweiter Start).

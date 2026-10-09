@@ -927,6 +927,73 @@ OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SD/state.json" 2
 [ "$(head -n 1 <<<"$OUT")" = 'Worker: läuft · ? $ · seit 01:12' ] && [ "$(grep -c '^    ' <<<"$OUT")" = 10 ] \
   && ok "status: a cost out of range reads ?, and at most ten summary lines" || bad "status caps: $OUT"
 
+echo "── start --profile kevin ──"
+# The builder: a clone whose loop only records how it was started, and a
+# builder-home.sh status beside the starting checkout that says ready or not. The
+# fake tmux runs the session's command to its end, with a file as stdin where a
+# session would have its terminal.
+PB="$WORK/builder"; PS="$WORK/starter"
+mkdir -p "$PB/home" "$PB/loop" "$PB/repo/scripts/dev" "$PS/scripts/dev" "$WORK/tbin"
+cat > "$PB/repo/scripts/dev/ledger-loop.sh" <<'FAKE'
+env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | sort > "$AH_LOOP_DIR/env.names"
+[ ! -e "$AH_LOOP_DIR/builder.done" ] || echo "a mark of the run before" > "$AH_LOOP_DIR/stale"
+printf '%s\n' "$HOME" "$PWD" > "$AH_LOOP_DIR/where"
+readlink /proc/self/fd/0 > "$AH_LOOP_DIR/stdin"
+printf '%s\n' "$@" > "$AH_LOOP_DIR/args"
+echo "the builder loop ran"
+exit 3
+FAKE
+printf '#!/usr/bin/env bash\necho "missing: the token"; exit "${FIXTURE_BH_RC:-0}"\n' > "$PS/scripts/dev/builder-home.sh"
+cat > "$WORK/tbin/tmux" <<'FAKE'
+#!/usr/bin/env bash
+echo "tmux $*" >> "$FIXTURE_TMUXLOG"
+case "$1" in
+  has-session) [ "${FIXTURE_TMUX_RUNNING:-0}" = 1 ] ;;
+  new-session) [ "$2" = -d ] && [ "$3" = -s ] || exit 9; shift 4; "$@" < "$FIXTURE_TTY" ;;
+  *) exit 9 ;;
+esac
+FAKE
+chmod +x "$WORK/tbin/tmux"; printf 'a terminal\n' > "$WORK/tty"
+export FIXTURE_TMUXLOG="$WORK/tmux.log" FIXTURE_TTY="$WORK/tty"
+start() {  # start <args…> — as Kevin would, with an agent, a D-Bus address and a PVE token around
+  : > "$FIXTURE_TMUXLOG"
+  OUT=$(env PATH="$WORK/tbin:/usr/bin:/bin" AH_LOOP_REPO="$PS" AH_BUILDER_DIR="$PB" SSH_AUTH_SOCK=/tmp/agent.sock \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/bus AH_PVE_TOKEN=leftover-pve \
+    bash "$CLONE/scripts/dev/ledger-loop.sh" start "$@" 2>&1); rc=$?
+}
+printf 'rc=99\n' > "$PB/loop/builder.done"
+start --profile kevin --ledger 'tasks/a $HOME b.md' --max-tasks 2
+[ $rc -eq 0 ] && grep -q 'started in tmux ah-builder' <<<"$OUT" && grep -q '^tmux new-session -d -s ah-builder /usr/bin/env -i ' "$FIXTURE_TMUXLOG" \
+  && grep -qx 'tmux has-session -t =ah-builder' "$FIXTURE_TMUXLOG" \
+  && ok "start --profile kevin starts the builder loop in the tmux session ah-builder (exact name)" || bad "start: rc=$rc out=$OUT"
+[ ! -e "$PB/loop/stale" ] && ok "the mark of the run before is gone when the loop starts" || bad "a stale builder.done was there"
+extra="$(grep -vxF -f <(printf '%s\n' AH_LOOP_DIR HOME LANG LOGNAME OLDPWD PATH PWD SHLVL TERM USER _) "$PB/loop/env.names")"
+[ -z "$extra" ] && [ "$(grep -cxE 'AH_LOOP_DIR|HOME|LANG|LOGNAME|PATH|TERM|USER' "$PB/loop/env.names")" = 7 ] \
+  && ok "its environment is the seven names: no agent, no D-Bus address, no PVE token" || bad "environment: extra=[$extra]"
+[ "$(cat "$PB/loop/where")" = "$PB/home"$'\n'"$PB/repo" ] && [ "$(cat "$PB/loop/stdin")" = /dev/null ] \
+  && ok "HOME is the builder HOME, it runs in the builder clone, stdin is /dev/null" || bad "where/stdin: $(cat "$PB/loop/where" "$PB/loop/stdin")"
+[ "$(cat "$PB/loop/args")" = $'--ledger\ntasks/a $HOME b.md\n--max-tasks\n2' ] \
+  && ok "the run's arguments arrive word for word" || bad "args: $(cat "$PB/loop/args")"
+[ "$(cat "$PB/loop/builder.done")" = rc=3 ] && grep -q 'the builder loop ran' "$PB/loop/builder.log" \
+  && ok "the output in builder.log, the exit code in builder.done (rc=)" || bad "done: $(cat "$PB/loop/builder.done" 2>&1)"
+# A builder without its loop directory (state reset): the session still has a log.
+rm -r "$PB/loop"
+start --profile kevin --ledger tasks/a.md
+[ $rc -eq 0 ] && [ "$(cat "$PB/loop/builder.done" 2>/dev/null)" = rc=3 ] && [ "$(stat -c %a "$PB/loop")" = 700 ] \
+  && ok "without the loop directory start makes it (0700), and log and mark land there" || bad "no loop dir: rc=$rc out=$OUT"
+FIXTURE_TMUX_RUNNING=1 start --profile kevin --ledger tasks/a.md
+[ $rc -eq 74 ] && grep -q 'is there already' <<<"$OUT" && ! grep -q new-session "$FIXTURE_TMUXLOG" \
+  && ok "a second start beside a running session is refused" || bad "second start: rc=$rc out=$OUT"
+FIXTURE_BH_RC=1 start --profile kevin --ledger tasks/a.md
+[ $rc -eq 74 ] && grep -q 'missing: the token' <<<"$OUT" && grep -q 'builder home is not ready' <<<"$OUT" && [ ! -s "$FIXTURE_TMUXLOG" ] \
+  && ok "a builder home without its token stops before tmux" || bad "not ready: rc=$rc out=$OUT"
+start --ledger tasks/a.md
+[ $rc -eq 2 ] && [ ! -s "$FIXTURE_TMUXLOG" ] && ok "start without --profile kevin is a usage error" || bad "no profile: rc=$rc"
+printf '{"run": {"started": "2026-10-09T10:59:00+02:00"}, "stop": "ledger-leer"}' > "$PB/loop/state.json"
+OUT=$(AH_BUILDER_DIR="$PB" bash "$CLONE/scripts/dev/ledger-loop.sh" status --profile kevin 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q '^Worker: stop: ledger-leer' <<<"$OUT" && ok "status --profile kevin reads the builder's state.json" \
+  || bad "status profile: rc=$rc $OUT"
+
 echo "── repo wiring ──"
 for p in scripts/dev/ledger-loop.sh scripts/tests/ledger_loop_test.sh; do
   grep -qxF "$p" "$REPO_ROOT/scripts/dev/harness-paths.txt" && ok "$p is a harness path" || bad "$p is missing from harness-paths.txt"
