@@ -100,3 +100,18 @@ docs/ nicht (offene Frage 1).
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (Anzeige; der CHANGELOG-Eintrag aus T2 nennt sie mit)
 Abhängt von: T2
+
+### T4 — Nachbesserung: CHANGELOG und Schemathesis-Absatz aus dem Gesamt-Review  [x]
+Komponente: server · Dateien: CHANGELOG.md, apps/server/tests/schemathesis_exclude.toml
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @9d75fc6a 2026-10-09T10:37:56+02:00
+Review: kein neuer Review (Doku-Nachbesserung, Aufsicht 2026-10-09)
+Änderung: Aus dem Gesamt-Review über T1–T3 (Opus), von der Aufsicht freigegeben (2026-10-09), ohne neuen Review.
+- Der CHANGELOG-Eintrag aus T2 nennt jetzt auch die sichtbare Änderung aus T3: Die Web-Oberfläche zeigt bei jedem 422
+  mit `detail`-Liste die `msg`-Texte statt „HTTP 422“, auch bei den Pydantic-Fehlern der übrigen Routen. Damit stimmt
+  auch die Doku-Zeile von T3, die das schon behauptete.
+- Der PUT-Pfad heißt dort `PUT /api/hooks/{id}`.
+- Der Absatz HOOK-422 in `tests/schemathesis_exclude.toml` nennt den Lauf ohne Ausschluss (`308 passed`, 2026-10-09), wie
+  die Nachbarabsätze.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks.py
+Doku: CHANGELOG.md
+Abhängt von: T2, T3

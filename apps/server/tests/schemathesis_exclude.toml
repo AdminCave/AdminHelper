@@ -41,7 +41,8 @@
 #
 # HOOK-422 (2026-10-09, R-0207): create_hook ist gefallen. Die Hook-Routen antworten auf
 # ungueltige Eingaben mit RequestValidationError, also im versprochenen Format
-# HTTPValidationError (detail als Liste); update_hook ebenso.
+# HTTPValidationError (detail als Liste); update_hook ebenso. Der Lauf ohne den Eintrag am
+# 2026-10-09: `308 passed`.
 #
 # PROXY-STUB (2026-10-02, R-0063): Die fuenf raises-Eintraege der Proxy-Routen
 # (proxy_to_monitoring GET/PUT/POST/DELETE, proxy_agent_report) sind gefallen. Ihr
