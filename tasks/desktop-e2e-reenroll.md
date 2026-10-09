@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Live-E2E: neu registrieren bei laufendem Tunnel — Task-Ledger
-Status: freigegeben · Branch: feature/desktop-e2e-reenroll · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/desktop-e2e-reenroll · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0246, von Kevin am 2026-10-09 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen (Aufsicht): 1 Weg (a), dritter Schritt in settings-enroll.live.js; 2 Gegenprobe ja, als Teil der Heavy-Zeile (Wegwerf-Worktree ohne den Stop in onEnroll muss am neuen Schritt rot werden; dort wird nichts committet)
 Spec: Roadmap R-0246 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — eine Desktop-Journey kommt dazu (Neu-Registrierung in den Einstellungen bei laufendem Tunnel); auf einer Pool-VM `run.sh e2e` mit `desktop_e2e_tunnel`. Dazu eine Gegenprobe auf derselben Box: derselbe Schritt auf einem Wegwerf-Stand ohne `stopTunnel()` in `onEnroll` muss rot werden (offene Frage 2).
