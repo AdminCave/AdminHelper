@@ -21,8 +21,8 @@ from app.modules.hooks.models import Hook
 
 # Scheduled-hook jobs are owned by the dedicated scheduler process; the web
 # workers only persist hook rows to the DB and let the periodic reconcile pick
-# them up. INTERVAL_MAP is still needed here for interval validation.
-from app.modules.hooks.scheduler import INTERVAL_MAP
+# them up. Its trigger parser is still needed here for interval validation.
+from app.modules.hooks.scheduler import _parse_trigger
 from app.modules.hooks.schemas import (
     VALID_EVENTS,
     VALID_INTERVALS,
@@ -87,16 +87,18 @@ def _invalid(field: str, msg: str, value: object) -> RequestValidationError:
 
 
 def _validate_schedule_interval(interval: str) -> None:
-    """Rejects an interval that is neither a known alias nor a 5-field cron
-    expression. Shared by create and update so a bad cron on PUT raises 422
-    instead of reaching add_hook -> _parse_trigger as an unhandled 500."""
-    parts = interval.split()
-    if interval not in INTERVAL_MAP and len(parts) != 5:
+    """Rejects an interval the scheduler cannot read, with the scheduler's own parser:
+    five fields are not yet a cron expression ("a b c d e"), and the scheduler
+    process's reconcile would skip such a hook on every run (R-0235). Shared by
+    create and update."""
+    try:
+        _parse_trigger(interval)
+    except ValueError:
         raise _invalid(
             "schedule_interval",
             f"Ungültiges Intervall. Erlaubt: {', '.join(VALID_INTERVALS)} oder Cron (5 Felder)",
             interval,
-        )
+        ) from None
 
 
 def _validate_create(data: HookCreate) -> None:
