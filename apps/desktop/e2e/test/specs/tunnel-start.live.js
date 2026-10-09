@@ -19,8 +19,9 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
     await $('.login-card').waitForExist({ timeout: 20000 });
 
     // Enrollment is device setup, not the flow under test. Do it via the bridge
-    // with explicit self-signed trust (the GUI enroll form doesn't pass it). The
-    // cert lands in the run's fresh keyring, where start_tunnel reads it.
+    // with explicit self-signed trust, so the spec does not depend on the
+    // setting the GUI enroll form reads. The cert lands in the run's fresh
+    // keyring, where start_tunnel reads it.
     const err = await browser.executeAsync(
       (url, token, done) => {
         window.__TAURI__.core
