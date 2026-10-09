@@ -7,8 +7,6 @@ access-scoped token to redeem at the ca-issuer for its mTLS client cert."""
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from app.core.auth import hash_api_key
 from app.modules.enrollment.models import EnrollmentToken
 
@@ -212,21 +210,3 @@ def test_mint_for_writes_audit(test_client, admin_user, normal_user, db_session)
     assert res.status_code == 200, res.text
     n = db_session.query(AuditLog).filter(AuditLog.action == "enrollment.token.minted_for").count()
     assert n == 1, f"expected exactly one enrollment audit row, got {n}"
-
-
-def test_to_dict_timestamps_are_rfc3339_utc():
-    # format: date-time promises an offset (R-0064): a naive value is UTC by the
-    # storage convention and goes out with Z.
-    row = EnrollmentToken(
-        id="tok-tz",
-        hashed_token="h",
-        subject_id="admin",
-        scope="access",
-        expires_at=datetime(2026, 10, 5, 12, 0, 0),
-        used_at=datetime(2026, 10, 5, 11, 30, 0),
-    )
-    row.created_at = datetime(2026, 10, 5, 11, 0, 0)
-    out = row.to_dict()
-    assert out["expiresAt"] == "2026-10-05T12:00:00Z"
-    assert out["usedAt"] == "2026-10-05T11:30:00Z"
-    assert out["createdAt"] == "2026-10-05T11:00:00Z"

@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, String, UniqueConstraint, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.database import Base
-from app.core.time import iso_utc, utc_now_sql, utcnow_naive
+from app.core.time import utc_now_sql, utcnow_naive
 
 
 class EnrollmentToken(Base):
@@ -50,18 +49,6 @@ class EnrollmentToken(Base):
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=datetime.timezone.utc)
         return self.used_at is None and now < expires
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "subjectId": self.subject_id,
-            "scope": self.scope,
-            "browser": self.browser,
-            "expiresAt": iso_utc(self.expires_at),
-            "usedAt": iso_utc(self.used_at),
-            "isValid": self.is_valid(),
-            "createdAt": iso_utc(self.created_at),
-        }
 
 
 def cleanup_finished_enrollment_tokens(db: Session) -> int:
