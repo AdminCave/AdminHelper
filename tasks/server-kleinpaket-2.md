@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Kleinpaket 2: SSRF-Schutz bei kaputtem IPv6-Literal, 422 der Hooks im versprochenen Format — Task-Ledger
-Status: freigegeben · Branch: feature/server-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/server-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0181 und R-0207, von Kevin in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Fragen entschieden: 1 T3 ja (Kevin, 2026-10-09, sichtbares Verhalten); 2 Heavy linux-full bleibt (Aufsicht: Fehler-Format der Server-API); 3 ein Parse-Fehler ergibt PRIVATE (Aufsicht, fail closed wie der Docstring)
 Spec: Roadmap R-0181, R-0207 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — die Hook-API antwortet auf ungültige Eingaben in einem anderen Fehler-Format, und die Web-Oberfläche liest es; `run.sh integration` mit `web_live` gegen den echten Stack.
@@ -16,8 +16,10 @@ Geplant 2026-10-09 von Worker B im Auftrag der Aufsicht (adminhelper-ac) aus zwe
 ist in diesem Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht. R-0181 ist gegen origin/main@7129dc57
 nachgeprüft und nicht erledigt (Beweis unter T1). Zeilenangaben main@7129dc57.
 
-### T1 — `classify_url` wirft bei einem kaputten IPv6-Literal nicht mehr, sondern lehnt ab (R-0181)  [ ]
+### T1 — `classify_url` wirft bei einem kaputten IPv6-Literal nicht mehr, sondern lehnt ab (R-0181)  [x]
 Komponente: server · Dateien: apps/server/app/core/ssrf.py, apps/monitoring/app/core/ssrf.py, apps/server/tests/test_ssrf.py, apps/monitoring/tests/test_ssrf.py
+Evidenz: run.sh[quick] server monitoring: 5 passed, 0 failed, 13 skipped @033f0496 2026-10-09T09:22:02+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `classify_url` ruft `urlparse(url)` ungeschützt auf (`ssrf.py:138`, in beiden Kopien gleich), und `urlparse`
 wirft bei `http://[::1`, `http://[` oder `https://[::1:8443/x` einen `ValueError` („Invalid IPv6 URL“). Damit platzt die
 Ausnahme bei den Aufrufern: `script_worker.py:55`/`:73` im Server; `alerter.py:392` und `checkers/http.py:32`/`:62` im
