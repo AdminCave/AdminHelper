@@ -77,6 +77,7 @@
       "Bash(cat:*)",
       "Bash(ls:*)",
       "Bash(wc:*)",
+      "Bash(echo:*)",
       "Bash(pytest:*)",
       "Bash(ruff:*)",
       "Bash(go test:*)",
@@ -103,7 +104,13 @@
       "Bash(python3 scripts/vm/vm.py delsnap:*)",
       "Bash(python3 scripts/vm/vm.py destroy:*)",
       "Bash(python3 scripts/vm/vm.py reap:*)",
-      "Bash(python3 scripts/vm/vm.py list:*)"
+      "Bash(python3 scripts/vm/vm.py list:*)",
+      "WebFetch(domain:gofrp.org)",
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:tauri.app)",
+      "WebFetch(domain:docs.victoriametrics.com)",
+      "WebFetch(domain:pve.proxmox.com)"
     ]
   },
   "hooks": {

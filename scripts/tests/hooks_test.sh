@@ -1260,7 +1260,7 @@ mk_home() {
   local h="$WORK/home-$1"
   mkdir -p "$h/.config/adminhelper"
   printf 'export AH_TEST_DB=postgresql://ah_runner@localhost/ah_runner_test\n' > "$h/.devenv.sh"
-  printf 'CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat-fixture"\n' > "$h/.config/adminhelper/oauth.env"
+  printf 'CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-fixture"\n' > "$h/.config/adminhelper/oauth.env"
   # The real key names vm.py reads (AH_PVE_URL/NODE/TOKEN/…) — a fixture with an
   # invented key would make every assertion below pass for the wrong reason.
   printf 'AH_PVE_URL=https://pve.invalid:8006\nexport AH_PVE_NODE="node9"' \
@@ -1289,7 +1289,8 @@ runner_env() {
                  PGPASSWORD AWS_ACCESS_KEY_ID PGPORT PGSSLMODE \
                  ANTHROPIC_MODEL CLAUDE_CODE_EFFORT_LEVEL; do
           eval "echo \"$v=\${$v-<unset>}\""
-        done; } > "$2"' _ "$RUNNER_ENV" "$WORK/env.out" 2>&1)
+        done
+        echo "PVE_NAMES=${!AH_PVE_@}"; } > "$2"' _ "$RUNNER_ENV" "$WORK/env.out" 2>&1)
   OUT=$(cat "$WORK/env.out")
 }
 val() { sed -n "s/^$1=//p" <<<"$OUT"; }
@@ -1300,7 +1301,7 @@ runner_env "$H"
 [ "$(val AH_AUTONOMOUS)" = 1 ] && ok "AH_AUTONOMOUS=1 (the guard denies, the status hook stays quiet)" \
   || bad "AH_AUTONOMOUS=$(val AH_AUTONOMOUS)"
 [ "$(val AH_VM_MAX)" = 8 ] && ok "AH_VM_MAX=8, even with 99 in the environment" || bad "AH_VM_MAX=$(val AH_VM_MAX)"
-[ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "sk-ant-oat-fixture" ] \
+[ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "sk-ant-oat01-fixture" ] \
   && ok "the subscription token comes out of oauth.env" || bad "token: $(val CLAUDE_CODE_OAUTH_TOKEN)"
 # Both of these take PRECEDENCE over the OAuth token — an inherited one would
 # silently move the run onto an API account (roadmap D18).
@@ -1362,6 +1363,51 @@ chmod 600 "$H/.config/adminhelper/oauth.env"
 runner_env "$H"
 [ "$(val RC)" != 0 ] && grep -q "setup-token" <<<"$ERR" \
   && ok "an empty template aborts and names the fix" || bad "empty token: rc=$(val RC) err=$ERR"
+
+# Only the shape claude setup-token prints. The code the browser shows on the way
+# there carries a `#`; it was pasted once, and a run on it would fail at the login.
+H=$(mk_home browsercode)
+printf 'CLAUDE_CODE_OAUTH_TOKEN=pastedcode#browserstate\n' > "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && grep -q "not of the form sk-ant-oat01-" <<<"$ERR" && grep -qF "$H/.config/adminhelper/oauth.env" <<<"$ERR" \
+  && ok "a value with # (the browser code) aborts and names the file" || bad "browser code: rc=$(val RC) err=$ERR"
+! grep -qF "pastedcode" <<<"$ERR$OUT" && [ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "<unset>" ] \
+  && ok "and neither the message nor the environment carries the value" || bad "the message or the environment carries the value: $ERR"
+H=$(mk_home shortform); printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-\n' > "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && ok "the prefix alone is no token" || bad "prefix only: rc=$(val RC)"
+H=$(mk_home hashbody); printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture#state\n' > "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && ok "the right prefix with a # behind it is no token either" || bad "# after the prefix: rc=$(val RC)"
+# Under a locale other than C, a range like A-Z matches by collation: in
+# de_DE.UTF-8 it takes an ä. The box runs with LANG=de_DE.UTF-8.
+# The case proves something only where the range really takes the ä; else it says so.
+LOC="$(locale -a 2>/dev/null | grep -iE '^(de_DE|en_US)\.utf-?8$' | head -n 1)"
+if [ -n "$LOC" ] && LC_ALL="$LOC" bash -c '[[ $(printf "\303\244") =~ ^[a-z]$ ]]'; then
+  H=$(mk_home umlaut); printf 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture\303\244\n' > "$H/.config/adminhelper/oauth.env"
+  LC_ALL="$LOC" runner_env "$H"
+  [ "$(val RC)" != 0 ] && ok "under $LOC a letter outside A-Z is no token" || bad "umlaut under $LOC: rc=$(val RC)"
+  LC_ALL="$LOC" runner_env "$(mk_home locok)"
+  [ "$(val RC)" = 0 ] && ok "and under $LOC the placeholder still is one" || bad "placeholder under $LOC: rc=$(val RC) err=$ERR"
+else
+  echo "  SKIP: no de_DE or en_US UTF-8 locale whose a-z takes an ä — the token shape under another locale is not verified"
+fi
+
+# pve.env keys as vm.py takes them (R-0232): a key with a blank before the =, a
+# blank inside or a letter outside A-Z is skipped, the next line still counts,
+# and nothing of a skipped line is printed — under a UTF-8 locale too.
+H=$(mk_home pvekeys)
+printf 'AH_PVE_TOKEN =pve-placeholder-1\nAH_PVE_A B=pve-placeholder-2\nAH_PVE_\303\204=pve-placeholder-3\nAH_PVE_=pve-placeholder-4\nAH_PVE_NODE="node9"\n' \
+  > "$H/.config/adminhelper/pve.env"
+[ -n "$LOC" ] || echo "  SKIP: no de_DE or en_US UTF-8 locale — pve.env keys under a UTF-8 locale are not verified"
+for loc in C ${LOC:+"$LOC"}; do
+  LC_ALL="$loc" runner_env "$H"
+  [ "$(val RC)" = 0 ] && [ "$(val AH_PVE_NODE)" = node9 ] && [ "$(val PVE_NAMES)" = AH_PVE_NODE ] \
+    && ok "pve.env ($loc): keys vm.py would not take are skipped, the others still read" \
+    || bad "pve.env keys ($loc): rc=$(val RC) node=$(val AH_PVE_NODE) names=$(val PVE_NAMES)"
+  ! grep -qF 'pve-placeholder' <<<"$ERR$OUT" && ok "and nothing of a skipped line is printed ($loc)" \
+    || bad "a skipped pve.env line was printed ($loc)"
+done
 
 H=$(mk_home nofile); rm -f "$H/.config/adminhelper/oauth.env"
 runner_env "$H"
@@ -1443,6 +1489,42 @@ for rule in 'Bash(bash scripts/dev/verify.sh:*)' 'Bash(bash scripts/dev/ledger.s
   python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["permissions"]["allow"] else 1)' "$RS" "$rule" \
     && ok "allow: $rule" || bad "missing allow rule: $rule"
 done
+
+# After the first measuring run of the loop (R-0237), Kevin chose six official doc
+# domains, by domain and nothing else, and echo. python3 only with a script under
+# scripts/vm, which the deny list keeps the session from editing, and paste not at
+# all: python3 -c, python3 - and the command in a paste <(…) are whatever the
+# session writes.
+python3 - "$RS" <<'PY' && ok "the WebFetch allow rules are exactly the six doc domains, echo allowed, python3 only with a script, no paste" \
+  || bad "the allow list of R-0237 is not what Kevin decided"
+import json, sys
+allow = json.load(open(sys.argv[1]))["permissions"]["allow"]
+want = {f"WebFetch(domain:{d})" for d in ("gofrp.org", "docs.python.org", "code.claude.com", "tauri.app",
+                                          "docs.victoriametrics.com", "pve.proxmox.com")}
+web = {a for a in allow if a.startswith("WebFetch")}
+wrong = sorted(web ^ want) + [a for a in allow if (a.startswith("Bash(python3") and not a.startswith("Bash(python3 scripts/vm/"))
+                               or a.startswith("Bash(paste")]
+if "Bash(echo:*)" not in allow:
+    wrong.append("no Bash(echo:*)")
+print("\n".join("  wrong: " + w for w in wrong))
+sys.exit(1 if wrong else 0)
+PY
+# The counter-probe: `echo x > ~/.bashrc` is an echo, and Claude Code checks the
+# target of a redirect against the Edit rules; a target with a leading ~ needs an
+# approval (docs, permissions, Redirections), which dontAsk turns into a refusal,
+# and .bashrc is a protected path besides. The home files that are not, such as
+# ~/.ssh/authorized_keys by their absolute path, stay refused as long as no Edit
+# or Write allow rule reaches them: none is bare (a bare rule holds everywhere),
+# every one is relative to the lane (./), and none climbs out of it.
+python3 - "$RS" <<'PY' && ok "echo x > ~/.bashrc stays refused: no Edit or Write allow rule reaches the home" \
+  || bad "an Edit or Write allow rule reaches past the lane, so a write tool or a redirect can write there"
+import json, sys
+allow = json.load(open(sys.argv[1]))["permissions"]["allow"]
+reach = [a for a in allow if a.split("(", 1)[0] in ("Edit", "Write")
+         and (not a.startswith(("Edit(./", "Write(./")) or ".." in a)]
+print("\n".join("  reaches out: " + a for a in reach))
+sys.exit(1 if reach else 0)
+PY
 
 # Stage 7a T2: the build session changes a ledger only through ledger.sh, makes
 # scratch only through scratch.sh (R-0108), and no read command it may run brings

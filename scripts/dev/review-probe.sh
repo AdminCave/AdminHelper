@@ -28,8 +28,9 @@
 # ONLY the hunks under the component's test paths onto the base: the new test
 # without the fix. verify.sh <component> --tree <worktree> --strict then runs with
 # an AH_OUT_DIR of its own — verify.sh deletes the last-verify.json of whatever
-# directory it writes to, and the builder's is task-close's evidence — and with
-# AH_DEVENV on the caller's .devenv.sh, since the worktree has none (gitignored).
+# directory it writes to, and the builder's is task-close's evidence — with
+# AH_DEVENV on the caller's .devenv.sh, since the worktree has none (gitignored),
+# and with the caller's component venvs linked in, where run.sh looks for ruff.
 # A trap removes the worktree and prunes it.
 #
 # The answer is the probe block of review-verdict.schema.json, on stdout:
@@ -211,6 +212,24 @@ else
     || answer '{"applicable": false, "reason": "apply-failed", "red_without_change": null}'
 fi
 
+# A worktree has no apps/<c>/.venv (gitignored), and run.sh falls back to them
+# for ruff: without one the lint steps of a shell without ruff on its PATH were
+# skipped, and the probe gave no answer (R-0234). Entry by entry into a real
+# directory, as lane.sh lane_link_dir does, so that .venv/ stays ignored; the
+# worktree removal takes the links, not what they point to. run.sh runs no
+# pytest from apps/<c>/.venv, so the probe's code is still the worktree's.
+# What the change itself puts there stays as it is: linking through a tracked
+# symlink would write into whatever it points to.
+for c in server monitoring ca-issuer; do
+  [ -d "$ROOT/apps/$c/.venv" ] || continue
+  { [ -e "$WT/apps/$c/.venv" ] || [ -L "$WT/apps/$c/.venv" ]; } && continue
+  mkdir -p "$WT/apps/$c/.venv"
+  for entry in "$ROOT/apps/$c/.venv"/* "$ROOT/apps/$c/.venv"/.[!.]* "$ROOT/apps/$c/.venv"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    ln -sfn "$entry" "$WT/apps/$c/.venv/${entry##*/}"
+  done
+done
+
 OUT="$PROBE_DIR/out"; mkdir -p "$OUT"
 DEVENV=()
 [ -f "$ROOT/.devenv.sh" ] && DEVENV=(AH_DEVENV="$ROOT/.devenv.sh")
@@ -259,7 +278,9 @@ def verdict():
                  logs, re.M):
         return "red", ""
     # Under --strict a skipped required step fails the run: no toolchain for it.
-    if re.search(r"^\s+SKIP\s+.*\((?!AH_ONLY\))[^)]*\)\s*$", logs, re.M):
+    # run.sh prints `SKIP  <name> (<reason>)`, and a reason may hold one pair of
+    # parens itself (ruff's does); an AH_ONLY skip is no missing toolchain.
+    if re.search(r"^\s+SKIP\s+.*\((?!AH_ONLY\))(?:[^()]|\([^()]*\))*\)\s*$", logs, re.M):
         return "none", "toolchain"
     return "none", "other-failure"
 
