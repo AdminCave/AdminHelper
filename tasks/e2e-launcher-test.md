@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-E2E: ein Launcher-Test hält fest, dass ein gescheiterter Build den wdio-Lauf stoppt — Task-Ledger
-Status: freigegeben · Branch: feature/e2e-launcher-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/e2e-launcher-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0260, aus Kevins Triage 2026-10-10; nur ein Test und eine README-Zeile, kein sichtbares Verhalten; Bau durch Worker B statt den Loop, Umsetzungsweg der Aufsicht; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0260 (Kurz-Ledger ohne Spec)
 Heavy: none — ein neuer Test in `npm run lint`. Er startet den wdio-Launcher mit einem falschen `cargo` und braucht weder Display noch Rust noch Netz: Er endet, bevor ein Worker startet, die Probe lief in einem Netz-Namespace ohne Netz. Kein Code der App, keine Desktop-Journey und kein Live-Spec ändern sich.
