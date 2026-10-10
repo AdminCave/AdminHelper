@@ -117,7 +117,9 @@ Xvfb) is set by the config automatically.
 Deliberately **no** CI job *runs* this layer — smoke included (headless WebKit
 drifts with the runner image; see the note above and `.github/workflows/ci.yml`,
 where CI only installs + lints this dir, never launches the app; `npm run lint` also
-runs the unit test under `test/unit/`, which needs neither a display nor Rust). Run
+runs the unit tests under `test/unit/`, which need neither a display nor Rust: one of
+them starts the real wdio launcher with a fake `cargo` and checks that the failed build
+stops it before any worker starts). Run
 the smoke locally before a release: `cd apps/desktop/e2e && xvfb-run -a npm test`.
 
 The **live** specs (`*.live.js`, orchestrated by `scripts/tests/desktop_e2e_*.sh`
