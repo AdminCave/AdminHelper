@@ -313,6 +313,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Speichern den Tunnel erneut, auch bei einer Sprach- oder RDP-Einstellung; neben dem laufenden frpc scheiterte
   das mit „frpc laeuft bereits“, die Anzeige ging auf getrennt, und die Statusleiste meldete einen Fehler. Ein
   laufender Tunnel bleibt jetzt, wie er ist; gestartet wird nur, wenn keiner laeuft.
+- **Desktop: Statusleiste ohne `ERR_*`-Codes (R-0248):** Ein Netzwerkfehler aus dem Backend traegt die
+  Maschinen-Codes (`ERR_TOFU_PIN_MISMATCH`, `ERR_CA_PIN_MISMATCH`, `ERR_TLS_UNKNOWN_ISSUER`) in seiner Meldung,
+  und die Statusleiste zeigte sie mit, etwa nach einem Zertifikatswechsel am Server als `Tunnel: …
+  ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: …`. `reportError` nimmt die Codes jetzt fuer alle Meldungen heraus,
+  wie R-0243 es fuer die Registrierung in den Einstellungen tat; der Text dahinter bleibt.
 - **Desktop: Fehler der Registrierung in den Einstellungen ohne Code (R-0243):** Scheiterte die Registrierung
   in den Einstellungen, stand der rohe Text samt Code da, etwa `ERR_TLS_UNKNOWN_ISSUER: …`. Jetzt erscheint nur
   der Text, wie im Login.
