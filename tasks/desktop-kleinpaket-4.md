@@ -32,8 +32,10 @@ Bestand. Alle Stellen der Desktop-UI, die `errMsg(err)` oder einen daraus gebaut
 Der Plan folgt der Empfehlung zu offener Frage 1, Weg (a): `withoutErrorCodes` an den drei Stellen, wie R-0243 und
 R-0248.
 
-### T1 — Benachrichtigungen: die Fehleranzeige zeigt die Meldung ohne die Maschinen-Codes (R-0261)  [ ]
+### T1 — Benachrichtigungen: die Fehleranzeige zeigt die Meldung ohne die Maschinen-Codes (R-0261)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationPrefs.svelte, apps/desktop/ui/src/components/NotificationPrefs.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @c15768a2 2026-10-10T07:37:45+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `NotificationPrefs.svelte` setzt bei einem Fehler beim Laden (`:91`) und beim Speichern (`:138`) `errorMsg =
 errMsg(err)`. Ein Netzwerkfehler aus dem Backend trägt die Codes in seiner Quellenkette (`AppError::Network`,
 `error.rs`), etwa `ERR_TOFU_PIN_MISMATCH` nach einem Zertifikatswechsel am Server. Künftig `errorMsg =
