@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Kleinpaket 4: keine ERR_*-Codes in Fehleranzeigen im Fenster — Task-Ledger
-Status: geplant · Branch: feature/desktop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/desktop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0261, von Kevin am 2026-10-10 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Frage (Aufsicht): 1 Weg (a), der Filter an den drei Stellen; (b) zentral in errMsg ist eine eigene Roadmap-Zeile mit den Pin-Tests als erstem Schritt
 Spec: Roadmap R-0261 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Textfilter an drei Fehleranzeigen der Desktop-UI (`desktop-ui`); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Live-Spec liest diese Anzeigen, die Komponenten- und Store-Tests decken die Wege ab.
 DoD je Task: CLAUDE.md (Tests grün, svelte-check, ESLint und Prettier sauber, Doku im selben Commit, SPDX bei neuen Dateien).
