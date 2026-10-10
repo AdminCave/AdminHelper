@@ -20,6 +20,8 @@ from app.core import config
 from app.core.auth import create_access_token, create_refresh_token, hash_api_key
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT
 from app.modules.api_keys.models import ApiKey
+from app.modules.audit.models import AuditLog
+from app.modules.users.models import User
 from tests.test_mtls_scope import _gateway_headers, _req
 
 MISMATCH = "ERR_CERT_USER_MISMATCH"
@@ -193,3 +195,55 @@ def test_bootstrap_with_the_new_users_certificate_passes(test_client, bootstrap_
         headers=_gateway_headers(cn="firstadmin"),
     )
     assert resp.status_code == 201, resp.text
+
+
+# --- order and switch (Nachbesserung T4) --------------------------------------
+
+
+def test_a_refused_login_is_audited(test_client, db_session, admin_user, normal_user):
+    resp = test_client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "adminpass"},
+        headers=_gateway_headers(cn="viewer"),
+    )
+    _assert_mismatch(resp)
+    rows = db_session.query(AuditLog).filter(AuditLog.action == "auth.login_failed").all()
+    assert len(rows) == 1
+    assert rows[0].status == "failure"
+    assert rows[0].actor_label == "admin"
+
+
+def test_a_refused_refresh_does_not_use_up_the_token(test_client, admin_user, normal_user):
+    refresh = create_refresh_token({"sub": "admin"})
+    refused = test_client.post(
+        "/api/auth/refresh", json={"refresh_token": refresh}, headers=_gateway_headers(cn="viewer")
+    )
+    _assert_mismatch(refused)
+    # Checked before the rotation: the same token still works with the user's own certificate.
+    again = test_client.post(
+        "/api/auth/refresh", json={"refresh_token": refresh}, headers=_gateway_headers(cn="admin")
+    )
+    assert again.status_code == 200, again.text
+
+
+def test_a_refused_bootstrap_creates_no_user(test_client, db_session, bootstrap_token):
+    body = {"token": bootstrap_token, "username": "firstadmin", "password": "a-long-password"}
+    refused = test_client.post(
+        "/api/auth/bootstrap", json=body, headers=_gateway_headers(cn="someone-else")
+    )
+    _assert_mismatch(refused)
+    assert db_session.query(User).count() == 0
+    again = test_client.post(
+        "/api/auth/bootstrap", json=body, headers=_gateway_headers(cn="firstadmin")
+    )
+    assert again.status_code == 201, again.text
+
+
+def test_the_binding_holds_in_permissive_mode_too(
+    test_client, admin_user, normal_user, monkeypatch
+):
+    monkeypatch.setattr(config, "MTLS_ENFORCE", False)
+    resp = test_client.get(
+        "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
+    )
+    _assert_mismatch(resp)

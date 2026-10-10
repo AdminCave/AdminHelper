@@ -144,8 +144,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html · docs/adr/0001 und 0002 (die Task ist die Doku)
 Abhängt von: T1
 
-### T4 — Nachbesserung aus dem Review am Ende: Reihenfolge und Permissiv-Modus der Bindung in Tests (R-0223)  [ ]
+### T4 — Nachbesserung aus dem Review am Ende: Reihenfolge und Permissiv-Modus der Bindung in Tests (R-0223)  [x]
 Komponente: server · Dateien: apps/server/tests/test_cert_user_binding.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @1d9dd940 2026-10-10T18:19:57+02:00
+Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus); die Aufsicht hat alle nits als Nachbesserung angeordnet.
 Die Reihenfolge der Prüfung ist im Code richtig, aber kein Test hält sie fest. Ebenso wenig, dass die Bindung im
 permissiven Modus gilt. Neue Fälle in `tests/test_cert_user_binding.py`:
