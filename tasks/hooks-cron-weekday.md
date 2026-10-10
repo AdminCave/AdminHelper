@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
 Spec: Roadmap R-0249 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
@@ -109,8 +109,10 @@ Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (der Text ist die Hilfe selbst; server.html kommt mit T1)
 Abhängt von: T1
 
-### T3 — Nachbesserung aus dem Review am Ende: Stillstand bei Schritt auf Einzelzahl oder Name benennen (R-0249)  [ ]
+### T3 — Nachbesserung aus dem Review am Ende: Stillstand bei Schritt auf Einzelzahl oder Name benennen (R-0249)  [x]
 Komponente: server · Dateien: CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @dfc73527 2026-10-10T05:11:50+02:00
+Review: Review am Ende (Kurz-Ledger, Opus), Runde 2 über die Nachbesserung
 Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus, request_changes, ein belegtes `wichtig`). Kevin hat über
 die Aufsicht entschieden: ablehnen und klar benennen, nur Doku, kein Code.
 - `wichtig`: Ein Schritt auf einer Einzelzahl oder einem Namen lief bisher und wird seit T1 abgelehnt, wie in
