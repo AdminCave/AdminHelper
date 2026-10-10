@@ -102,7 +102,10 @@ npm test          # onPrepare builds the UI + the debug binary, then drives it
 `cargo tauri build --debug --no-bundle --config tauri.e2e.conf.json` in
 `../src-tauri` (which builds `../ui` via `beforeBuildCommand` and embeds it), so the
 binary tauri-driver launches (`../src-tauri/target/debug/adminhelper`) is always
-current. It must be `tauri build`, **not** a plain `cargo build` — the latter
+current. A failed build stops the run (exit 1) before any spec starts: `onPrepare`
+throws a `SevereServiceError`, the only error wdio does not just log and run past,
+so the specs never drive an older binary. It must be `tauri build`, **not** a plain
+`cargo build` — the latter
 points the webview at the dev URL (`localhost:1420`, not served) instead of the
 embedded frontend. The `--config` overlay re-enables `withGlobalTauri` (the specs
 reach the app via `window.__TAURI__`); production builds ship it off. Headless rendering env
@@ -113,8 +116,9 @@ Xvfb) is set by the config automatically.
 
 Deliberately **no** CI job *runs* this layer — smoke included (headless WebKit
 drifts with the runner image; see the note above and `.github/workflows/ci.yml`,
-where CI only installs + lints this dir, never launches the app). Run the smoke
-locally before a release: `cd apps/desktop/e2e && xvfb-run -a npm test`.
+where CI only installs + lints this dir, never launches the app; `npm run lint` also
+runs the unit test under `test/unit/`, which needs neither a display nor Rust). Run
+the smoke locally before a release: `cd apps/desktop/e2e && xvfb-run -a npm test`.
 
 The **live** specs (`*.live.js`, orchestrated by `scripts/tests/desktop_e2e_*.sh`
 / `run.sh e2e` on a VM) are likewise never in CI — they boot a full stack + frps
