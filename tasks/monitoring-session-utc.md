@@ -47,8 +47,10 @@ Nicht im Umfang:
 - alembic `env.py:57-62`: eigene Engine ohne Listener; keine Migration schreibt Zeitwerte, Begründung wie bei R-0209.
 - `scripts/tests/run.sh` (`test_skip_is_required`): Harness-Pfad, nicht in diesem Branch.
 
-### T1 — Monitoring-Engine: jede Verbindung setzt ihre Session auf UTC (R-0218)  [ ]
+### T1 — Monitoring-Engine: jede Verbindung setzt ihre Session auf UTC (R-0218)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/database.py, apps/monitoring/tests/test_db_session_utc.py, apps/monitoring/app/core/time.py, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @fdf8e8aa 2026-10-10T09:35:17+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Ein `connect`-Listener auf `engine` (`apps/monitoring/app/core/database.py:12-18`), dieselbe Form wie im
 Server (`apps/server/app/core/database.py:23-37`, R-0209):
 - `insert=True`.

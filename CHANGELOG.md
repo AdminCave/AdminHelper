@@ -563,6 +563,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: die DB-Session laeuft in UTC (R-0218):** Wie der Server seit R-0209 setzt jetzt auch die Engine des
+  Monitorings jede Verbindung auf `TimeZone=UTC`, auch gegen ein `PGTZ` in der Umgebung. Der Stack faehrt Postgres mit
+  `TZ=Europe/Berlin`; ohne das lief die Session des Monitorings dort in Ortszeit. Heute schreibt und vergleicht das
+  Monitoring schon ueberall naive UTC, Werte und Ausgaben aendern sich also nicht; die Einstellung schuetzt kuenftigen
+  Code.
 - **Hooks: Cron-Wochentage zaehlen wie im Standard-Cron (R-0249):** Im Wochentag-Feld eines Schedule-Hooks war `0`
   Montag statt Sonntag, denn APScheduler 3.x zaehlt in `from_crontab` ab Montag. Damit lag jeder Wochentag in Ziffern
   einen Tag daneben: `0 9 * * 1-5` lief Dienstag bis Samstag, `7` wurde abgelehnt. Jetzt gilt Standard-Cron: `0` und
