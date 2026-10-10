@@ -75,9 +75,9 @@ FAKE
 cat > "$SEED/scripts/dev/task-close.sh" <<'FAKE'
 #!/usr/bin/env bash
 ledger="$1" id="$2"; shift 2
-round="" msgf=""
+round="" msgf="" costf=""
 while [ $# -gt 0 ]; do
-  case "$1" in --round) round="$2"; shift ;; --message-file) msgf="$2"; shift ;; esac
+  case "$1" in --round) round="$2"; shift ;; --message-file) msgf="$2"; shift ;; --cost-file) costf="$2"; shift ;; esac
   shift
 done
 echo "$ledger $id round=$round" >> "${FIXTURE_CLOG:?}"
@@ -85,9 +85,16 @@ echo "$ledger $id round=$round" >> "${FIXTURE_CLOG:?}"
 rc=0
 if [ -s "${FIXTURE_CSEQ:-}" ]; then rc="$(head -n 1 "$FIXTURE_CSEQ")"; sed -i 1d "$FIXTURE_CSEQ"; fi
 slug="$(basename "$ledger" .md)"
-# With FIXTURE_RCOST a reviewed round prints its cost as the real one does, after a
-# line of the same shape from the suite (the last one counts).
-rcost() { [ -z "${FIXTURE_RCOST:-}" ] || printf 'review cost_usd=0 round=%s\nreview cost_usd=%s round=%s\n' "$round" "$FIXTURE_RCOST" "$round"; }
+# With FIXTURE_RCOST a reviewed round prints its cost and writes it to the loop's
+# cost file, as the real one does. Around it the log gets a line of the same shape
+# from the suite before and one from a process the suite left running after: the
+# log is no source of the cost (R-0250).
+rcost() {
+  [ -n "${FIXTURE_RCOST:-}" ] || return 0
+  printf 'review cost_usd=0 round=%s\n' "$round"
+  printf 'review cost_usd=%s round=%s\n' "$FIXTURE_RCOST" "$round" | tee "${costf:-/dev/null}"
+  printf 'review cost_usd=0 round=%s\n' "$round"
+}
 case "$rc" in
   0|74a)
     # FIXTURE_RAW: the reviewer ran (its raw output is there), but no cost line follows.
@@ -174,6 +181,13 @@ for x in nnf nnl; do
   if [ "$x" = nnl ]; then H=("Status: aktiv · Branch: feature/nnl · Review: auto" "${OKHEAD[@]:1}"); else mapfile -t H < <(head_for nnf); fi
   EXTRA="printf '\\n### T2 — die letzte  [ ]\\nKomponente: scripts · Dateien: apps/x/b.py\\nÄnderung: ohne Schluss-Newline' >> \"\$SEED/tasks/$x.md\"" plan "feature/$x" "$x" "${H[@]}"
 done
+# A plain ledger for a cost file left from an earlier run (R-0250).
+mapfile -t H < <(head_for rst)
+plan feature/rst rst "${H[@]}"
+# A line of T1 that carries U+2028 and a heading after it (R-0251): one line for the
+# loop's line tools, so no task of its own.
+mapfile -t H < <(head_for nls)
+plan feature/nls nls "${H[@]}"
 mapfile -t H < <(head_for ncr)
 EXTRA='printf "\n### T2 — eine andere  [ ]\nKomponente: scripts · Dateien: apps/x/b.py\nÄnderung: y\n" >> "$SEED/tasks/ncr.md"' plan feature/ncr ncr "${H[@]}"
 # A Freigabe: line in a task's text is no approval of the ledger.
@@ -270,6 +284,7 @@ case "$mode" in
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
   wait) echo "$$" > "${FIXTURE_SPID:?}"; exec sleep 30 ;;
   cr) sed -i '/^### T2 /s/$/\r/' "tasks/$slug.md"; msg ;;
+  ls) sed -i '/^Änderung: x$/s/$/\xe2\x80\xa8### T2 — eine andere  [ ]/' "tasks/$slug.md"; msg ;;
   orphan)
     setsid sleep 30 < /dev/null > /dev/null 2>&1 & echo "$!" > "${FIXTURE_ORPHAN:?}"
     bash scripts/dev/ledger.sh mark-skip "$ledger" "$id" "schon erledigt" > /dev/null ;;
@@ -676,6 +691,9 @@ FIXTURE_RCOST=0.5 loop --ledger tasks/rca.md --ledger tasks/rcb.md --max-budget-
   && grep -q '^ledger-loop: 1 tasks, 1 ready, 0 blocked, \$1.50 total, stop: max-budget$' <<<"$(summary_line)" \
   && [ "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["tasks"]["rca/T1"]["review_usd"])' "$LOOPD/state.json")" = 1.0 ] \
   && ok "two reviewer rounds count into the run's budget: 1.5 \$, stop: max-budget" || bad "rca: rc=$rc $(stopped) | $(summary_line)"
+[ "$(cat "$LOOPD"/rca/T1.cost.r* 2>/dev/null)" = $'review cost_usd=0.5 round=1\nreview cost_usd=0.5 round=2' ] \
+  && ok "a cost file per close, and the count comes from it, not from a late line in the log" \
+  || bad "rca cost files: $(ls "$LOOPD/rca")"
 # A cost below 0 or NaN is no known cost: it counts with the session's cap.
 seq_set negcost nancost -- 0 0
 loop --ledger tasks/ng1.md --ledger tasks/ng2.md --ledger tasks/ng3.md --task-budget 1 --max-budget-usd 1.5 --max-ready 9
@@ -783,6 +801,10 @@ for x in nnf nnl; do
     && ok "$x: a ledger without a final newline: the loop's commits and set-files of T1 are no change outside T1" \
     || bad "$x: $(result "$x")"
 done
+seq_set ls
+loop --ledger tasks/nls.md
+grep -q '^bereit' <<<"$(result nls)" && [ "$(box nls)" = x ] \
+  && ok "a U+2028 and a heading inside a line of the session's own task: still its own task" || bad "nls: $(result nls)"
 # ... and nothing else is evened out: a carriage return in another task's line is a change.
 seq_set cr
 loop --ledger tasks/ncr.md
@@ -801,11 +823,18 @@ FIXTURE_SUITECOST=1 loop --ledger tasks/rvz.md
 seq_set build -- 0
 FIXTURE_RAW=1 loop --ledger tasks/rrw.md
 [ "$(box rrw)" = x ] && [ "$(review_usd rrw/T1)" = 15.0 ] \
-  && ok "a reviewer that ran without a cost line counts 15 \$" || bad "rrw: $(review_usd rrw/T1) $(result rrw)"
+  && ok "a reviewer that ran without a cost file counts 15 \$" || bad "rrw: $(review_usd rrw/T1) $(result rrw)"
 seq_set build -- 0
 loop --ledger tasks/rnr.md
 [ "$(box rnr)" = x ] && [ "$(review_usd rnr/T1)" = 0 ] \
   && ok "a close whose reviewer never ran counts nothing for it" || bad "rnr: $(review_usd rnr/T1) $(result rnr)"
+# A cost file left at the first close's name from an earlier run is gone before
+# that close: its reviewer never runs, so nothing counts.
+mkdir -p "$LOOPD/rst" && printf 'review cost_usd=9 round=1\n' > "$LOOPD/rst/T1.cost.r1.1.1"
+seq_set build -- 0
+loop --ledger tasks/rst.md
+[ "$(box rst)" = x ] && [ "$(review_usd rst/T1)" = 0 ] \
+  && ok "a cost file left from an earlier run does not count" || bad "rst: $(review_usd rst/T1) $(result rst)"
 [ "$(sed -n 's/^REVIEW_BUDGET_MAX=//p' "$REPO_ROOT/scripts/dev/ledger-loop.sh")" = \
   "$(sed -n 's/.*BUDGET=\([0-9][0-9.]*\).*/\1/p' "$REPO_ROOT/scripts/dev/review-run.sh" | sort -n | tail -n 1)" ] \
   && ok "REVIEW_BUDGET_MAX is the larger budget of review-run.sh" || bad "REVIEW_BUDGET_MAX and review-run.sh disagree"
