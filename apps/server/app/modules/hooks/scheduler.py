@@ -9,6 +9,7 @@ Uses APScheduler's BackgroundScheduler (its own thread pool).
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -41,13 +42,60 @@ INTERVAL_MAP = {
 }
 
 
+# The weekday field read as standard cron (Vixie cron, entry.c get_range): a part is "*",
+# a value or a range, and only "*" and a range take a "/step"; a value is a number from
+# 0 to 7 (0 and 7 are Sunday) or a name, which counts as its number, also as a range end.
+# APScheduler 3.x counts from Monday in from_crontab, so "1-5" ran Tuesday to Saturday
+# (R-0249). The field goes on as the list of meant days: APScheduler rejects a range
+# across the end of the week ("sun-sat").
+_CRON_WEEKDAYS = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+_WEEKDAY_PART = re.compile(
+    r"(?:(?P<star>\*)|(?P<first>[0-9]+|[a-z]+)(?:-(?P<last>[0-9]+|[a-z]+))?)(?:/(?P<step>[0-9]+))?",
+    re.IGNORECASE,
+)
+
+
+def _weekday_value(token: str) -> int:
+    if token.isdigit():
+        return int(token)
+    if token.lower() in _CRON_WEEKDAYS:
+        return _CRON_WEEKDAYS.index(token.lower())
+    raise ValueError(f"invalid weekday {token!r}")
+
+
+def _cron_weekdays(field: str) -> str:
+    """The weekday field of a cron expression, as APScheduler reads standard cron."""
+    if field == "*":
+        return field
+    days: set[int] = set()
+    for part in field.split(","):
+        m = _WEEKDAY_PART.fullmatch(part)
+        if not m or (m["step"] and m["first"] and not m["last"]):
+            raise ValueError(f"invalid weekday {part!r}")
+        if m["star"]:
+            first, last = 0, 7
+        else:
+            first = _weekday_value(m["first"])
+            last = _weekday_value(m["last"]) if m["last"] else first
+            # Vixie rejects "sat-sun" (sun is 0 there); APScheduler ran it as Saturday
+            # and Sunday, so a stored hook with it keeps running.
+            if m["last"] and m["last"].lower() == "sun" and first > 0:
+                last = 7
+        step = int(m["step"] or 1)
+        if last > 7 or first > last or step < 1:
+            raise ValueError(f"invalid weekday {part!r}")
+        days.update(day % 7 for day in range(first, last + 1, step))
+    return ",".join(_CRON_WEEKDAYS[day] for day in sorted(days))
+
+
 def _parse_trigger(interval: str):
     """Convert an interval string or cron expression into an APScheduler trigger."""
     if interval in INTERVAL_MAP:
         return IntervalTrigger(**INTERVAL_MAP[interval])
     parts = interval.split()
     if len(parts) == 5:
-        return CronTrigger.from_crontab(interval)
+        parts[4] = _cron_weekdays(parts[4])
+        return CronTrigger.from_crontab(" ".join(parts))
     raise ValueError(
         f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(INTERVAL_MAP)} oder Cron (5 Felder)"
     )

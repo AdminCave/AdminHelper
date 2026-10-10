@@ -201,7 +201,7 @@ class TestHookCreateValidation:
         assert detail[0]["loc"] == ["body", field], r.text
         assert detail[0]["msg"].startswith(msg), r.text
 
-    @pytest.mark.parametrize("interval", ["a b c d e", "61 * * * *"])
+    @pytest.mark.parametrize("interval", ["a b c d e", "61 * * * *", "0 9 * * 8"])
     def test_a_cron_the_scheduler_cannot_read_is_422(
         self, test_client, db_session, admin_user, interval
     ):
@@ -237,6 +237,20 @@ class TestHookCreateValidation:
         r = test_client.post("/api/hooks", json=payload, headers=h)
         assert r.status_code == 201, r.text
         assert r.json()["schedule_interval"] == "*/5 * * * *"
+
+    def test_weekday_7_is_sunday_and_accepted(self, test_client, db_session, admin_user):
+        # R-0249: standard cron counts 7 as Sunday; APScheduler 3.x alone rejected it.
+        # The routes store the expression as written, the scheduler reads it.
+        h = _login(test_client, "admin", "adminpass")
+        payload = {
+            "name": "s",
+            "hook_type": "schedule",
+            "script": "x",
+            "schedule_interval": "0 0 * * 7",
+        }
+        r = test_client.post("/api/hooks", json=payload, headers=h)
+        assert r.status_code == 201, r.text
+        assert r.json()["schedule_interval"] == "0 0 * * 7"
 
     def test_valid_event_hook_created_201(self, test_client, db_session, admin_user):
         # The schedule happy path is test_a_valid_cron_is_accepted above: since the
