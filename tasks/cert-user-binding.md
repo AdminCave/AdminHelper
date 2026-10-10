@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Client-Zertifikat und angemeldeter Benutzer gehören zusammen — Task-Ledger
-Status: erledigt · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (Kevin hat die Entscheidungen zu R-0223 am 2026-10-10 an die Aufsicht übergeben: „Entscheide du“; Richtung und sichtbares Verhalten wie dort entschieden, Bootstrap mit gebunden; Multibox-Lauf vor dem Merge)
 Spec: Roadmap R-0223
 Heavy: linux-full + scenario --enforce --desktop — Auth- und mTLS-Pfad des Servers: `run.sh integration` (Gateway mit `MTLS_ENFORCE`, Login mit Client-Zertifikat) und `run.sh e2e` (Desktop-Login, Registrieren, Tunnel) auf einer Pool-VM; dazu vor dem Merge ein Multibox-Lauf `--enforce --desktop`, weil die Prüfung nur mit echtem mTLS über das Gateway greift. Der Multibox-Lauf ist ask-first, die Aufsicht holt ihn.
@@ -158,7 +158,7 @@ permissiven Modus gilt. Neue Fälle in `tests/test_cert_user_binding.py`:
 - **Permissiv** (`MTLS_ENFORCE=False`): Ein verifiziertes Zertifikat eines anderen Benutzers + JWT gibt 403. Die Bindung
   hängt nicht am Schalter.
 - **Gegenprobe im Wegwerf-Worktree:** Liegt die Prüfung beim Refresh hinter `blacklist_token` und beim Bootstrap hinter dem
-  Anlegen, werden die neuen Fälle rot.
+  Anlegen, werden die beiden Reihenfolge-Fälle rot.
 Die Umformulierung im Ledger (T1, „Beweis“ und Test-Absatz) steht im Commit, der diese Task anlegt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py
 Doku: keine (Tests)
@@ -185,3 +185,16 @@ Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 - **CHANGELOG**, Eintrag aus T1: „muss ihr Scope `access` und ihr CN der Username sein“.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/adr/0001 und 0002 · CHANGELOG.md (die Task ist die Doku)
+
+### T7 — Nachbesserung: ADR 0001 D3 und CHANGELOG nennen genau die gebundenen Stellen (R-0223)  [ ]
+Komponente: scripts · Dateien: docs/adr/0001-unified-pki-and-secure-deployment.md, CHANGELOG.md, apps/server/tests/test_cert_user_binding.py
+Änderung: Angelegt 2026-10-10 aus dem Opus-Review über den Diff der Nachbesserungen (nits); die Aufsicht hat sie als
+eine Task angeordnet, ohne neuen Review (nur Doku und Kommentar).
+- **ADR 0001**, Nachtrag in D3, und **CHANGELOG**, Eintrag aus T1: Sie nennen genau die gebundenen Stellen.
+  - Gebunden sind Login, Refresh und Bootstrap (dort der neu anzulegende Username), die Anfragen, deren Benutzer aus
+    dem JWT kommt (`get_current_user`, darunter die Zertifikats-Ausgabe), und das Öffnen des Benachrichtigungs-Streams.
+  - Nicht gebunden sind Logout und Zugänge, bei denen der API-Key entscheidet.
+- **Test** `tests/test_cert_user_binding.py`: Die Abschnittsüberschrift verliert die Task-Nummer.
+- Das Wort im Ledger zu T4 (rot werden die zwei Reihenfolge-Fälle) steht im Commit, der diese Task anlegt.
+Verify: bash scripts/dev/verify.sh scripts server --strict
+Doku: docs/adr/0001 · CHANGELOG.md (die Task ist die Doku)
