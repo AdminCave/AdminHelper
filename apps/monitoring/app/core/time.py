@@ -9,7 +9,9 @@ without time zone``). Writing or comparing a tz-aware datetime against them make
 the result depend on the container's session timezone, so all call sites use
 ``utcnow_naive()`` instead of re-implementing
 ``datetime.now(timezone.utc).replace(tzinfo=None)`` — or, worse, a bare
-``datetime.now(timezone.utc)`` that silently stays aware (audit 2.29).
+``datetime.now(timezone.utc)`` that silently stays aware (audit 2.29). Since R-0218
+every session of the service's engine runs in UTC (``app.core.database``); the
+helpers stay the explicit form, which does not depend on the session.
 """
 
 from datetime import datetime, timezone
@@ -44,7 +46,9 @@ class utc_now_sql(FunctionElement):
     in the DB *session* timezone, and prod runs the postgres container with
     ``TZ=Europe/Berlin`` — so it stored Berlin local time (NEU-8.14b). Postgres
     needs the explicit ``timezone('UTC', now())`` wrapping; SQLite (the test DB)
-    has no ``timezone()`` function but its ``CURRENT_TIMESTAMP`` is already UTC."""
+    has no ``timezone()`` function but its ``CURRENT_TIMESTAMP`` is already UTC.
+    Since R-0218 the engine's sessions run in UTC, but this explicit form stays: it
+    does not depend on the session, and Alembic's engine does not set it."""
 
     inherit_cache = True
 

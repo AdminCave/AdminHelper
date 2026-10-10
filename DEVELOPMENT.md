@@ -1575,8 +1575,8 @@ bash scripts/tests/sse_push_e2e.sh
 bash scripts/tests/desktop_e2e_sse_push.sh
 
 # Pflicht-Tests gegen Postgres/Redis des Stacks (run.sh-Schritt stack-pytest):
-# Migrations-Smoke (monitoring), test_stream_redis (server), TOCTOU-Test
-# (ca-issuer). Startet nur postgres + redis; ein Skip ist hier ein Fehler.
+# Migrations-Smoke und test_db_session_utc (monitoring), test_stream_redis (server),
+# TOCTOU-Test (ca-issuer). Startet nur postgres + redis; ein Skip ist hier ein Fehler.
 # JUnit: .ah-out/junit/stack-<name>.xml. Braucht das venv mit den Python-Deps.
 bash scripts/tests/stack_pytest.sh
 
