@@ -4,9 +4,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: bereit · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
-Spec: Roadmap R-0249 (Kurz-Ledger ohne Spec)
+Spec: Roadmap R-0249, R-0273 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, svelte-check und ESLint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
@@ -30,7 +30,11 @@ die Spalte „danach“ ist Standard-Cron:
 | `*/2` | Mo, Mi, Fr, So | So, Di, Do, Sa |
 | `7` | seit R-0235 422; ein älterer Hook läuft nie und steht als Warnung im Log | So |
 | `mon-fri`, `sun`, `*` | unverändert | unverändert |
-| `1/2`, `mon/2`, `mon-fri/2` (Schritt auf Einzelzahl oder Name) | liefen: `1/2` Di, Do, Sa; `mon/2` Mo; `mon-fri/2` Mo–Fr (Schritt ignoriert) | abgelehnt wie in Vixie-Cron: 422; ein gespeicherter Hook läuft erst nach einer Korrektur wieder, Warnung im Log (T3) |
+| `1/2`, `mon/2` (Schritt auf einem Einzelwert) | liefen: `1/2` Di, Do, Sa; `mon/2` Mo | abgelehnt wie in Vixie-Cron: 422; ein gespeicherter Hook läuft erst nach einer Korrektur wieder, Warnung im Log (T3) |
+| `mon-fri/2` (Namensbereich mit Schritt) | Mo–Fr (Schritt ignoriert) | Mo, Mi, Fr wie in Vixie-Cron (T4) |
+| `sun-thu`, `1-fri`, `mon-5` | abgelehnt bzw. `mon-5` nur Mo | So–Do, Mo–Fr, Mo–Fr (T4) |
+| `mon;wed`, `mon-fri-sat` (kaputte Namen) | liefen über einen Präfix-Treffer: Mo bzw. Mo–Fr | abgelehnt (T4) |
+| `sat-sun`, `fri-sun` | Sa, So bzw. Fr–So | unverändert (T4; Vixie lehnt sie ab, `sun` am Bereichsende zählt hier als 7) |
 
 ### T1 — Scheduler: das Wochentag-Feld eines Cron-Ausdrucks gilt nach Standard-Cron (R-0249)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_scheduler_cron.py, apps/server/tests/test_hooks.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
@@ -128,3 +132,43 @@ Sat; `'0 9 * * mon-fri/2'` → Mon–Fri; `'0 9 * * mon/2'` → Mon. `_parse_tri
 `ValueError: invalid weekday …`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py
 Doku: CHANGELOG.md (Changed, der Eintrag aus T1)
+
+### T4 — Nachbesserung aus Runde 2: Namen lesen wie Zahlen, wie Vixie-Cron (R-0249, R-0273)  [ ]
+Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_scheduler_cron.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
+Änderung: Angelegt 2026-10-10 aus Runde 2 des Reviews am Ende (Opus, request_changes, ein belegtes `wichtig`). Die
+Meldung vor Kevins Entscheidung zu T3 war falsch: `mon-fri/2` ist gültiges Cron. Kevin hat über die Aufsicht neu
+entschieden, (b): eine Grammatik für Zahlen und Namen wie in Vixie-Cron. R-0273 (`sun-thu` abgelehnt) ist damit
+erledigt.
+
+Vixie-Cron (github.com/vixie/cron, `entry.c`; `get_range`, `get_number`; `DowNames` in `globals.h`):
+- Ein Teil ist `*` oder ein Wert oder ein Bereich `a-b`; nur nach `*` und nach einem Bereich darf `/n` folgen.
+- Ein Wert ist eine Zahl oder ein Name aus `DowNames`, ohne Rücksicht auf Groß- und Kleinschreibung. Jedes
+  Bereichsende wird für sich gelesen, also ist `1-fri` gültig (1–5).
+- Der Wochentag reicht von 0 bis 7. 7 und 0 sind Sonntag; ein Name sucht den ersten Treffer, `sun` ist 0.
+
+`_cron_weekdays` liest das Feld künftig genau so, Namen also wie die Zahlen, für die sie stehen:
+- `mon-fri/2` ergibt Mo, Mi, Fr (bisher Mo–Fr, der Schritt fiel weg); `sun-thu` ergibt So–Do (bisher abgelehnt).
+- `1/2` und `mon/2` bleiben abgelehnt (T3).
+- Kaputte Namen, die APScheduler über einen Präfix-Treffer annahm (`mon;wed`, `mon-fri-sat`), werden abgelehnt.
+- Eine Ausnahme von Vixie: `sun` als Ende eines Bereichs, der später beginnt, zählt als 7. `sat-sun` und `fri-sun`
+  liefen bisher Sa, So bzw. Fr–So, und Vixie würde sie als umgekehrten Bereich ablehnen. So läuft ein solcher Hook
+  weiter wie bisher, statt still zu stehen; die Bedeutung ist eindeutig.
+- Der Kommentar über dem Helfer beschreibt diese Grammatik.
+
+Tests in `test_scheduler_cron.py`, mit den Fällen des Reviewers aus Runde 2 und den Gegenfällen:
+- Gültig: `mon-fri/2` → Mo, Mi, Fr; `sun-thu` → So–Do; `MON-FRI` und `1-fri` und `mon-5` → Mo–Fr; `mon,0` → So, Mo;
+  `sat-sun` → Sa, So; `fri-sun` → Fr, Sa, So; `*/7` → So.
+- Abgelehnt: `mon/2`, `MON/2`, `sun/2`, `0/1`, `mon;wed`, `mon-fri-sat`, `monday`, `*/0`.
+- `1-fri` wandert aus den abgelehnten Fällen zu den gültigen.
+
+Doku:
+- `server.html` DE+EN: Namen gelten wie die Zahlen, auch in Bereichen und mit Schritt.
+- CHANGELOG: Der falsche Satz „wie im Standard-Cron abgelehnt“ zu `mon-fri/2` wird richtiggestellt. Dazu die beiden
+  nits aus Runde 2: der Halbsatz zu `*/2` (So, Di, Do, Sa statt Mo, Mi, Fr, So) und die kaputten Namen, die die
+  Abfrage nicht findet.
+Assertion-Änderung: apps/server/tests/test_scheduler_cron.py::test_a_weekday_standard_cron_does_not_know_is_rejected — `1-fri` ist in Vixie-Cron gültig (1–5) und wandert zu den gültigen Fällen, neue abgelehnte Fälle kommen dazu
+Beweis: Runde 2 an feature/hooks-cron-weekday@8de89712 mit APScheduler 3.11.3 und einer Kopie von `scheduler.py`:
+`mon-fri/2` bisher Mo–Fr, mit T1 `ValueError`; `entry.c` (`get_range`) liest `mon-fri/2` als Mo, Mi, Fr. Selbst
+nachgelesen in `entry.c` und `globals.h` (`DowNames = "Sun", "Mon", …, "Sat", "Sun"`).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py tests/test_hooks.py tests/test_scheduler_reconcile.py
+Doku: docs/developer/server.html + docs/en/developer/server.html · CHANGELOG.md (Changed, der Eintrag aus T1)
