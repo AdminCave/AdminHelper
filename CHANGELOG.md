@@ -572,6 +572,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Montag statt Sonntag, denn APScheduler 3.x zaehlt in `from_crontab` ab Montag. Damit lag jeder Wochentag in Ziffern
   einen Tag daneben: `0 9 * * 1-5` lief Dienstag bis Samstag, `7` wurde abgelehnt. Jetzt gilt Standard-Cron: `0` und
   `7` sind Sonntag, `1` ist Montag, `1-5` ist Montag bis Freitag. Namen wie `mon-fri` galten schon richtig.
+  Tag-im-Monat und Wochentag bleiben, anders als im Standard-Cron, mit UND verknuepft: `0 9 1-7 * mon` laeuft am
+  ersten Montag des Monats (R-0274).
   **Bei bestehenden Hooks meinen die Ziffern im Wochentag ab diesem Stand den Tag davor**: `1` war Dienstag und ist
   jetzt Montag, der Hook laeuft also an dem Tag, den der Cron-Ausdruck meint. Das gilt auch hinter einem Schritt:
   `*/2` laeuft Sonntag, Dienstag, Donnerstag, Samstag statt Montag, Mittwoch, Freitag, Sonntag. Die gespeicherten
