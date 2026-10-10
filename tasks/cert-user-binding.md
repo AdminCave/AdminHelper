@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Client-Zertifikat und angemeldeter Benutzer gehören zusammen — Task-Ledger
-Status: bereit · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (Kevin hat die Entscheidungen zu R-0223 am 2026-10-10 an die Aufsicht übergeben: „Entscheide du“; Richtung und sichtbares Verhalten wie dort entschieden, Bootstrap mit gebunden; Multibox-Lauf vor dem Merge)
 Spec: Roadmap R-0223
 Heavy: linux-full + scenario --enforce --desktop — Auth- und mTLS-Pfad des Servers: `run.sh integration` (Gateway mit `MTLS_ENFORCE`, Login mit Client-Zertifikat) und `run.sh e2e` (Desktop-Login, Registrieren, Tunnel) auf einer Pool-VM; dazu vor dem Merge ein Multibox-Lauf `--enforce --desktop`, weil die Prüfung nur mit echtem mTLS über das Gateway greift. Der Multibox-Lauf ist ask-first, die Aufsicht holt ihn.
