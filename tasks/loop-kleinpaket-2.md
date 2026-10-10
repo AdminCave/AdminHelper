@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 2: Zertifikatspfad im Troubleshooting, Kostendatei in der CI/CD-Doku — Task-Ledger
-Status: geplant · Branch: feature/loop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/loop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0275 und R-0268, Loop-Futter aus Kevins Triage 2026-10-10; reine Doku; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0275, R-0268 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Doku unter docs/ (DE+EN); kein Code, kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Doku DE+EN im selben Commit, Doku-Smoke und docs-pairs sauber).
