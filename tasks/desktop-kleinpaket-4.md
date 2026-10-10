@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Kleinpaket 4: keine ERR_*-Codes in Fehleranzeigen im Fenster — Task-Ledger
-Status: aktiv · Branch: feature/desktop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0261, von Kevin am 2026-10-10 in der Triage angenommen; Delegation Kevin 2026-10-05). Offene Frage (Aufsicht): 1 Weg (a), der Filter an den drei Stellen; (b) zentral in errMsg ist eine eigene Roadmap-Zeile mit den Pin-Tests als erstem Schritt
 Spec: Roadmap R-0261 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Textfilter an drei Fehleranzeigen der Desktop-UI (`desktop-ui`); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Live-Spec liest diese Anzeigen, die Komponenten- und Store-Tests decken die Wege ab.
@@ -61,8 +61,10 @@ die Meldung (ohne Code) inline.“ `lib/utils/errors.ts:11`: „They are for the
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: CHANGELOG.md (Fixed); keine Seite unter docs/ beschreibt diese Anzeigen
 
-### T2 — Ansible und Monitoring-Übersicht: der Ladefehler ohne die Maschinen-Codes (R-0261)  [ ]
+### T2 — Ansible und Monitoring-Übersicht: der Ladefehler ohne die Maschinen-Codes (R-0261)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/lib/stores/ansible.pipeline.test.ts, apps/desktop/ui/src/lib/stores/monitoring.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @933eb173 2026-10-10T07:40:15+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Zwei Stores legen den Ladefehler als Text ab, den eine Seite inline zeigt:
 - `loadAnsibleData` (`stores/ansible.ts:80-81`) setzt `loadError: msg`.
 - `loadMonitoring` (`stores/monitoring.ts:238-246`) setzt `error: msg === SESSION_EXPIRED ? null : msg`.
