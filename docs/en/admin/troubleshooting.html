@@ -75,6 +75,8 @@ journalctl -u adminhelper-agent.service -n 100 --no-pager</code></pre>
 
           <p><strong>Desktop client, login: “The server requires a device certificate”:</strong> the gateway enforces mTLS (<code>MTLS_ENFORCE=true</code>) and turns a device without a certificate away with <code>400</code> before the login. Signing in does not help here: the button <em>“Enroll this device with a token”</em> below leads the way, with a one-time token from your administrator (see <a href="./users.html">Users &amp; Access</a>). Then the login works.</p>
 
+          <p><strong>Desktop client, login: “This device is registered for another user”:</strong> under mTLS the device certificate belongs to the user the device was registered for; the server accepts it for that user only (<code>403</code>, <code>ERR_CERT_USER_MISMATCH</code>). Sign in as that user, or use the button <em>“Reset device identity”</em> below to reset the identity and register the device for yourself with a one-time token (see <a href="./users.html">Users &amp; Access</a>). In the browser the same holds for a <code>.p12</code>: each user uses their own.</p>
+
           <h2>Monitoring ingest dropping samples</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Check auth

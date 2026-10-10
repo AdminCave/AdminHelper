@@ -85,8 +85,10 @@ in Doku und ADR.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py tests/test_mtls_scope.py tests/test_stream.py tests/test_enrollment_mint.py
 Doku: CHANGELOG.md (Changed); Benutzer-Doku und ADR in T3
 
-### T2 — Desktop: der Login erklärt `ERR_CERT_USER_MISMATCH` und bietet das Zurücksetzen der Geräte-Identität an (R-0223)  [ ]
+### T2 — Desktop: der Login erklärt `ERR_CERT_USER_MISMATCH` und bietet das Zurücksetzen der Geräte-Identität an (R-0223)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/lib/utils/errors.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Login.binding.test.ts, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d858a89b 2026-10-10T17:18:09+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Der Login liest Codes aus seinem eigenen Fehlertext (`Login.svelte:52-57`) und zeigt die Meldung ohne Code
 (`displayError`, `:59`). Neu kommt `ERR_CERT_USER_MISMATCH` dazu:
 - **Hinweis:** „Dieses Gerät ist für einen anderen Benutzer registriert. Melde dich als dieser Benutzer an, oder setze die
