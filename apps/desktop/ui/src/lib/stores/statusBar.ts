@@ -6,6 +6,7 @@
 // Auto-clear after timeoutMs, currently 6s on success and 10s on error.
 
 import { writable } from 'svelte/store';
+import { withoutErrorCodes } from '$lib/utils/errors';
 
 export interface StatusMessage {
   text: string;
@@ -33,9 +34,11 @@ export function showStatus(text: string): void {
   scheduleClear(counter, 6000);
 }
 
+// Every error the UI shows here goes through this one function; a backend network error
+// carries the ERR_* codes in its message, and the user reads the prose (R-0248).
 export function reportError(text: string): void {
   counter += 1;
-  _state.set({ text, isError: true, id: counter });
+  _state.set({ text: withoutErrorCodes(text), isError: true, id: counter });
   scheduleClear(counter, 10000);
 }
 
