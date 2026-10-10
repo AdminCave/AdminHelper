@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Tag-im-Monat und Wochentag bleiben mit UND verknüpft — Task-Ledger
-Status: aktiv · Branch: feature/hooks-cron-dom-dow · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/hooks-cron-dom-dow · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0274; die Richtung hat Kevin am 2026-10-10 selbst entschieden: UND behalten und als Abweichung vom Standard-Cron dokumentieren; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0274 (Kurz-Ledger ohne Spec)
 Heavy: none — kein Code; ein Test hält das bestehende Verhalten des Parsers fest, dazu Doku. Kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -17,8 +17,10 @@ Vorabmeldung mit dem Gegenfall „erster Montag“: Option (b), UND behalten und
 dokumentieren. Die private Roadmap ist in diesem Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht.
 Zeilenangaben origin/main@7573443a.
 
-### T1 — Doku und Test: Tag-im-Monat und Wochentag müssen beide passen, abweichend vom Standard-Cron (R-0274)  [ ]
+### T1 — Doku und Test: Tag-im-Monat und Wochentag müssen beide passen, abweichend vom Standard-Cron (R-0274)  [x]
 Komponente: server · Dateien: apps/server/tests/test_scheduler_cron.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @d8129f3c 2026-10-10T08:44:03+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: APScheduler 3.x verknüpft im `CronTrigger` Tag-im-Monat und Wochentag mit UND. Standard-Cron verknüpft sie
 mit ODER, sobald keines der beiden Felder mit `*` beginnt (Vixie-Cron, `cron.c` `find_jobs`: `(e->flags &
 (DOM_STAR|DOW_STAR)) != 0 ? (thisdom && thisdow) : (thisdom || thisdow)`; `entry.c` setzt die Flags, wenn das Feld mit
