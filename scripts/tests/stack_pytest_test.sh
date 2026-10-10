@@ -17,7 +17,7 @@
 set -uo pipefail
 
 # The calls are checked for exactly the variable each test gets; one inherited
-# from the caller (.devenv.sh exports AH_TEST_DB) would show up in all three.
+# from the caller (.devenv.sh exports AH_TEST_DB) would show up in all four.
 unset DATABASE_URL AH_TEST_DB AH_TEST_REDIS_URL
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -81,11 +81,11 @@ run_stack() {
   OUT=$(env PATH="$SHIM:$PATH" TMPDIR="$WORK" AH_OUT_DIR="$WORK/out-$c" "$@" bash "$STACK" 2>&1); rc=$?
 }
 
-# ── all three pass ───────────────────────────────────────────────────────────
+# ── all four pass ────────────────────────────────────────────────────────────
 run_stack green
-[ "$rc" = 0 ] && grep -q '^stack_pytest: 3 passed, 0 failed$' <<<"$OUT" \
-  && ok "three passing tests -> exit 0, summary 3 passed" || bad "green: rc=$rc; $OUT"
-for n in monitoring-migrations server-redis ca-issuer-toctou; do
+[ "$rc" = 0 ] && grep -q '^stack_pytest: 4 passed, 0 failed$' <<<"$OUT" \
+  && ok "four passing tests -> exit 0, summary 4 passed" || bad "green: rc=$rc; $OUT"
+for n in monitoring-migrations monitoring-session-utc server-redis ca-issuer-toctou; do
   [ -f "$WORK/out-green/junit/stack-$n.xml" ] && ok "junit/stack-$n.xml written" \
     || bad "no junit/stack-$n.xml: $(ls "$WORK/out-green/junit" 2>&1)"
 done
@@ -95,6 +95,9 @@ REDIS=$(grep -o 'redis://127\.0\.0\.1:[0-9]*/0' "$CALLS" | head -1)
 grep -q "cwd=.*/apps/monitoring test=tests/test_migrations_smoke.py DATABASE_URL=$DB AH_TEST_REDIS_URL= " "$CALLS" \
   && [ -n "$DB" ] && ok "monitoring's migration smoke gets DATABASE_URL = the stack's Postgres" \
   || bad "monitoring call: $(grep monitoring "$CALLS")"
+grep -q "cwd=.*/apps/monitoring test=tests/test_db_session_utc.py DATABASE_URL=$DB AH_TEST_REDIS_URL= " "$CALLS" \
+  && [ -n "$DB" ] && ok "monitoring's session test gets DATABASE_URL = the stack's Postgres" \
+  || bad "monitoring session call: $(grep test_db_session_utc "$CALLS")"
 grep -q "cwd=.*/apps/server test=tests/test_stream_redis.py DATABASE_URL= AH_TEST_REDIS_URL=$REDIS " "$CALLS" \
   && [ -n "$REDIS" ] && ok "server's stream test gets AH_TEST_REDIS_URL = the stack's Redis" \
   || bad "server call: $(grep apps/server "$CALLS")"
@@ -118,7 +121,7 @@ OUT=$(cd "$WORK" && env PATH="$SHIM:$PATH" TMPDIR="$WORK" AH_OUT_DIR=out-rel bas
 # ── the one thing the step exists for: a skip is a failure ───────────────────
 run_stack skip SHIM_PYTEST=skip SHIM_PYTEST_ONLY=test_stream_redis
 [ "$rc" = 1 ] && grep -q 'stack-server-redis.xml: 1 skipped' <<<"$OUT" \
-  && grep -q '^stack_pytest: 2 passed, 1 failed (server-redis)$' <<<"$OUT" \
+  && grep -q '^stack_pytest: 3 passed, 1 failed (server-redis)$' <<<"$OUT" \
   && ok "a test that skips although pytest exits 0 fails the step and is named" \
   || bad "skip: rc=$rc; $OUT"
 

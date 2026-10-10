@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: die DB-Session läuft in UTC (R-0218) — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-session-utc · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/monitoring-session-utc · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0218, Loop-Futter aus Kevins Triage 2026-10-08; Haertung ohne sichtbares Verhalten und ohne Datenmigration; Teststrategie: T2 ja, der Test laeuft im integration-Layer gegen das Berliner Cluster; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0218 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — `run.sh integration` auf einer Pool-VM, wie bei R-0209: Der Stack fährt Postgres mit `TZ=Europe/Berlin`, genau den Fall, den der Listener abfängt. `agent_monitoring` fährt die Engine des Monitorings im Container, `stack-pytest` den neuen Test gegen das Postgres des Stacks (T2).
@@ -93,8 +93,10 @@ der Abweichung. Unter `docs/` beschreibt keine Stelle die Session-Zeitzone (wie 
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: CHANGELOG.md (Changed); die Docstrings in `time.py`
 
-### T2 — `stack_pytest.sh`: der neue Test läuft im integration-Layer gegen das Postgres des Stacks (R-0218)  [ ]
+### T2 — `stack_pytest.sh`: der neue Test läuft im integration-Layer gegen das Postgres des Stacks (R-0218)  [x]
 Komponente: scripts · Dateien: scripts/tests/stack_pytest.sh, scripts/tests/stack_pytest_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @77815da5 2026-10-10T09:47:44+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `stack_pytest.sh` fährt heute drei Tests, die einen echten Dienst brauchen, gegen den Compose-Stack. Dort ist
 ein Skip ein Fehler (`:6-15`, `:92`, Summary `:100`). Ein vierter Aufruf `stack_test monitoring-session-utc
 apps/monitoring tests/test_db_session_utc.py "DATABASE_URL=$ITEST_DATABASE_URL"` kommt dazu, neben
