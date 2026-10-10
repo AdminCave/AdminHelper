@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: die DB-Session läuft in UTC (R-0218) — Task-Ledger
-Status: geplant · Branch: feature/monitoring-session-utc · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/monitoring-session-utc · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0218, Loop-Futter aus Kevins Triage 2026-10-08; Haertung ohne sichtbares Verhalten und ohne Datenmigration; Teststrategie: T2 ja, der Test laeuft im integration-Layer gegen das Berliner Cluster; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0218 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — `run.sh integration` auf einer Pool-VM, wie bei R-0209: Der Stack fährt Postgres mit `TZ=Europe/Berlin`, genau den Fall, den der Listener abfängt. `agent_monitoring` fährt die Engine des Monitorings im Container, `stack-pytest` den neuen Test gegen das Postgres des Stacks (T2).
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
