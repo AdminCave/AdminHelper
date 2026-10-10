@@ -131,14 +131,16 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   und umgekehrt; permissive loggt, erlaubt.
 - **Aufwand:** M · **Risiko:** niedrig-mittel · **Abh.:** A2
 - **Fortschritt ✅ ABGESCHLOSSEN 2026-06-11:** Scope-Schicht in **neuem** `app/core/identity.py`
-  (statt `auth.py` — die mTLS-Identität ist orthogonal zu JWT/API-Key, zweiter Faktor D3):
+  (statt `auth.py` — die mTLS-Identität ist ein eigenes Modul neben JWT/API-Key, zweiter Faktor D3;
+  seit R-0223 an den Benutzer gebunden: `require_cert_user` verlangt bei verifizierter Identität
+  den Username als CN, API-Keys bleiben ungebunden):
   `ClientIdentity` + `get_client_identity` (parst den vom Gateway weitergereichten Cert-PEM
   authoritativ, wie der ca-issuer auf `/renew`) + `require_scope(*allowed)` (Factory).
   - **Scope-Entscheidung:** `access` = Mensch (Desktop/Browser), **`tunnel` = Agent**
     (ADR §3.1: Agent-/Visitor-Certs unter der tunnel-Intermediate; D8 trennt Mensch/Agent auf
     `:443` per Scope). Zentral als Konstanten `SCOPE_ACCESS`/`SCOPE_AGENT` — A4 kann es bei der
     Enrollment-Umsetzung bestätigen/anpassen.
-  - **Permissiv-Schalter:** `MTLS_ENFORCE` (Default `false`, `core/config.py`). Permissiv: ein
+  - **Permissiv-Schalter:** `MTLS_ENFORCE` (Default damals `false`, seit 0.29.0 `true`, `core/config.py`). Permissiv: ein
     Mismatch wird geloggt (WARNING nur bei *falschem* Cert-Scope, DEBUG beim erwarteten
     „noch-kein-Cert"), Request **läuft durch**. A8 setzt `MTLS_ENFORCE=true` → 403.
   - **Guards angewandt:** Router-Level `access` für pure Human/Admin-Router (users, api_keys,
@@ -148,7 +150,9 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     Monitoring-Proxy-Admin + Provision-Token-Mint/List.
   - **Bewusst offen gelassen** (Enforcement-Nuance = A8): `auth_router` (Login/Bootstrap),
     `hooks/trigger/{token}` (öffentlicher Webhook-Ingest, externe Aufrufer ohne Cert),
-    `provision/activate` (Bootstrap-Tür, certless wie enroll), SPA/Static.
+    `provision/activate` (Bootstrap-Tür, certless wie enroll), SPA/Static. Seit R-0223 prüfen
+    Login, Refresh und Bootstrap die Bindung von Zertifikat und Benutzer; einen Scope-Guard haben
+    sie weiter nicht.
   - **Tests:** `tests/test_mtls_scope.py` (18) — Identity-Parsing + `require_scope` permissiv/
     enforced (inkl. dual-use) als Unit; Integration via TestClient: permissiv durchlässig (401
     von Auth statt 403), enforced 403 ohne Cert, 200 mit access-Cert+JWT, 403 mit tunnel-Cert

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Client-Zertifikat und angemeldeter Benutzer gehören zusammen — Task-Ledger
-Status: aktiv · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (Kevin hat die Entscheidungen zu R-0223 am 2026-10-10 an die Aufsicht übergeben: „Entscheide du“; Richtung und sichtbares Verhalten wie dort entschieden, Bootstrap mit gebunden; Multibox-Lauf vor dem Merge)
 Spec: Roadmap R-0223
 Heavy: linux-full + scenario --enforce --desktop — Auth- und mTLS-Pfad des Servers: `run.sh integration` (Gateway mit `MTLS_ENFORCE`, Login mit Client-Zertifikat) und `run.sh e2e` (Desktop-Login, Registrieren, Tunnel) auf einer Pool-VM; dazu vor dem Merge ein Multibox-Lauf `--enforce --desktop`, weil die Prüfung nur mit echtem mTLS über das Gateway greift. Der Multibox-Lauf ist ask-first, die Aufsicht holt ihn.
@@ -119,8 +119,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/troubleshooting.html + docs/en/admin/troubleshooting.html
 Abhängt von: T1
 
-### T3 — Doku: ein Zertifikat je Benutzer, ein Desktop je Benutzer, ADR präzisiert (R-0223)  [ ]
+### T3 — Doku: ein Zertifikat je Benutzer, ein Desktop je Benutzer, ADR präzisiert (R-0223)  [x]
 Komponente: scripts · Dateien: docs/admin/benutzer.html, docs/en/admin/users.html, docs/adr/0001-unified-pki-and-secure-deployment.md, docs/adr/0002-phase-a-task-plan.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3103a208 2026-10-10T17:30:06+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Die Benutzer-Doku und die ADRs sagen, was seit T1 gilt.
 - `benutzer.html:84` („Verteile die `.p12` also an jeden, der das Panel im Browser nutzt.“), EN `users.html:78`: Jeder
   Benutzer exportiert seine eigene `.p12` aus seinem Desktop.
