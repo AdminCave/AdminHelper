@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: freigegeben · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
 Spec: Roadmap R-0249 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
