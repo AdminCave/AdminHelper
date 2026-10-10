@@ -55,6 +55,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // gateway before the login (auth.rs, R-0222): name that and offer the token
   // form instead of the raw message.
   let mtlsRequired = $derived(error.includes('ERR_MTLS_CERT_REQUIRED'));
+  // Under mTLS the device certificate belongs to one user (R-0223): signing in as
+  // another one is refused. Name that and offer to register the device anew.
+  let certUserMismatch = $derived(error.includes('ERR_CERT_USER_MISMATCH'));
   // Never show the machine-readable code to the user; keep only the human text.
   let displayError = $derived(withoutErrorCodes(error));
 
@@ -83,6 +86,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
       }
       error = '';
       info = $t('login.resetPin.done');
+    } catch (err) {
+      error = errMsg(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // Drops this device's identity so it can be registered for the user who signs in.
+  // No MITM warning as for a pin mismatch: the server is the one the user trusts.
+  async function resetIdentityForSelf(): Promise<void> {
+    const target = serverUrl.trim();
+    if (!target) {
+      error = $t('login.resetPin.missingUrl');
+      return;
+    }
+    const ok = await confirm($t('login.certUserMismatch.confirm'), {
+      title: $t('login.resetDeviceId'),
+      kind: 'warning',
+    });
+    if (!ok) return;
+    busy = true;
+    try {
+      await resetDeviceIdentity(target);
+      error = '';
+      info = $t('login.certUserMismatch.done');
     } catch (err) {
       error = errMsg(err);
     } finally {
@@ -247,6 +275,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
             disabled={busy}
           >
             {$t('login.enroll.switch')}
+          </button>
+        {:else if certUserMismatch}
+          <div class="login-error" data-msg="cert-user-mismatch">
+            {$t('login.certUserMismatch')}
+          </div>
+          <button
+            type="button"
+            class="btn ghost login-secondary"
+            data-action="cert-user-reset"
+            onclick={resetIdentityForSelf}
+            disabled={busy}
+          >
+            {$t('login.resetDeviceId')}
           </button>
         {:else if error}
           <div class="login-error">{displayError}</div>

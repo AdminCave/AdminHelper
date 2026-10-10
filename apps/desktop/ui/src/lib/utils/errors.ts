@@ -8,9 +8,11 @@ export function errMsg(err: unknown): string {
 }
 
 // The stable codes the backend puts in front of a message so the UI can key off
-// them (error.rs, auth.rs). They are for the code, not the user; they can sit
-// anywhere in a message, buried in the reqwest source chain.
-const ERROR_CODES = /ERR_(?:(?:CA|TOFU)_PIN_MISMATCH|TLS_UNKNOWN_ISSUER|MTLS_CERT_REQUIRED):\s*/g;
+// them (error.rs, auth.rs; ERR_CERT_USER_MISMATCH comes from the server). They are
+// for the code, not the user; they can sit anywhere in a message, buried in the
+// reqwest source chain.
+const ERROR_CODES =
+  /ERR_(?:(?:CA|TOFU)_PIN_MISMATCH|TLS_UNKNOWN_ISSUER|MTLS_CERT_REQUIRED|CERT_USER_MISMATCH):\s*/g;
 
 /** A backend message as the user reads it: the human text without the codes. */
 export function withoutErrorCodes(msg: string): string {

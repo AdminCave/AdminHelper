@@ -302,6 +302,12 @@ export const translations: Translations = {
     'login.enroll.switch': 'Gerät mit Token registrieren',
     'login.mtlsRequired':
       'Der Server verlangt ein Geräte-Zertifikat (mTLS ist erzwungen). Registriere dieses Gerät mit einem Einmal-Token vom Admin.',
+    'login.certUserMismatch':
+      'Dieses Gerät ist für einen anderen Benutzer registriert. Melde dich als dieser Benutzer an, oder setze die Geräte-Identität zurück und registriere das Gerät für dich.',
+    'login.certUserMismatch.confirm':
+      'Die Geräte-Identität dieses Geräts wird gelöscht. Danach registrierst du das Gerät mit einem Einmal-Token vom Admin für dich. Fortfahren?',
+    'login.certUserMismatch.done':
+      'Geräte-Identität zurückgesetzt. Registriere das Gerät jetzt mit einem Einmal-Token für dich.',
     'login.enroll.token': 'Enrollment-Token',
     'login.enroll.token.placeholder': 'Token vom Administrator',
     'login.enroll.submit': 'Gerät registrieren',
@@ -902,6 +908,12 @@ export const translations: Translations = {
     'login.enroll.switch': 'Enroll this device with a token',
     'login.mtlsRequired':
       'The server requires a device certificate (mTLS is enforced). Enroll this device with a one-time token from your administrator.',
+    'login.certUserMismatch':
+      'This device is registered for another user. Sign in as that user, or reset the device identity and register the device for yourself.',
+    'login.certUserMismatch.confirm':
+      'The identity of this device will be deleted. Afterwards you register the device for yourself with a one-time token from your administrator. Continue?',
+    'login.certUserMismatch.done':
+      'Device identity reset. Now register the device for yourself with a one-time token.',
     'login.enroll.token': 'Enrollment token',
     'login.enroll.token.placeholder': 'Token from your administrator',
     'login.enroll.submit': 'Enroll device',

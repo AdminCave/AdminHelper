@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from app.core.identity import ClientIdentity, get_client_identity
+from app.core.identity import ClientIdentity, get_client_identity, require_cert_user
 from app.modules.notifications import stream_hub
 
 stream_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -76,6 +76,8 @@ def authenticate_stream_user(request: Request) -> int:
             detail="Nicht authentifiziert",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Once, at the opening: the certificate and the token of an open stream do not change.
+    require_cert_user(request, user.username)
     return user.id
 
 
