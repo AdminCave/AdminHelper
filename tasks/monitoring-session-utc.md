@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: die DB-Session läuft in UTC (R-0218) — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-session-utc · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/monitoring-session-utc · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0218, Loop-Futter aus Kevins Triage 2026-10-08; Haertung ohne sichtbares Verhalten und ohne Datenmigration; Teststrategie: T2 ja, der Test laeuft im integration-Layer gegen das Berliner Cluster; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0218 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — `run.sh integration` auf einer Pool-VM, wie bei R-0209: Der Stack fährt Postgres mit `TZ=Europe/Berlin`, genau den Fall, den der Listener abfängt. `agent_monitoring` fährt die Engine des Monitorings im Container, `stack-pytest` den neuen Test gegen das Postgres des Stacks (T2).
@@ -120,8 +120,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (stack-pytest)
 Abhängt von: T1
 
-### T3 — Nachbesserung aus dem Review am Ende: DEVELOPMENT.md nennt die vier Pflicht-Tests von stack-pytest (R-0218)  [ ]
+### T3 — Nachbesserung aus dem Review am Ende: DEVELOPMENT.md nennt die vier Pflicht-Tests von stack-pytest (R-0218)  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8c4f6938 2026-10-10T10:30:49+02:00
+Review: kein neuer Review (Nachbesserung, Aufsicht 2026-10-10)
 Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus, approve, nit 1), von der Aufsicht als Nachbesserung
 angeordnet, ohne neuen Review. Der Kommentar zum Schritt stack-pytest in `DEVELOPMENT.md:1577-1580` zählt noch drei
 Pflicht-Tests auf (Migrations-Smoke, test_stream_redis, TOCTOU-Test). Seit T2 sind es vier: `test_db_session_utc`
