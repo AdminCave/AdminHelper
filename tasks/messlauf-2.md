@@ -52,6 +52,7 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf.py tests/t
 Doku: keine (intern)
 
 ### T3 — Die Doku nennt 7443 nicht mehr als FRP-mTLS-Port (R-0236)  [ ]
+Antwort der Aufsicht (2026-10-10, Kevin hat den Neustart freigegeben): Der erste Lauf scheiterte an `review.sh docs-pairs` — nur `docs/en/admin/troubleshooting.html` war geändert. Der englische Satz „Common causes: clock skew > 5 min, expired client cert, DNS failure, firewall blocking …“ hat auf der deutschen Seite kein Gegenstück; die Seiten waren schon auseinander. Die deutsche Seite bekommt denselben Satz in korrekter Form an der entsprechenden Stelle im Agent-Abschnitt (bei „Zertifikat abgelaufen?“), damit beide Sprachen dasselbe sagen und beide Dateien im Commit stehen.
 Komponente: scripts · Dateien: docs/en/admin/installation.html, docs/admin/installation.html, docs/en/admin/troubleshooting.html, docs/admin/troubleshooting.html
 Änderung: `docs/en/admin/installation.html:41` nennt `7443` den „FRP mTLS tunnel“-Port, und
 `docs/en/admin/troubleshooting.html:67` verbindet ein abgelaufenes Client-Zertifikat mit einer Firewall-Regel für
