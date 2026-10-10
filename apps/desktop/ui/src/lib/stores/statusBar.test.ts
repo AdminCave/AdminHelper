@@ -30,6 +30,34 @@ describe('statusBar store', () => {
     expect(s?.isError).toBe(true);
   });
 
+  // R-0248: a network error from the backend carries the ERR_* codes in its source
+  // chain (error.rs); they are for the code, the status bar shows the prose.
+  it('reportError drops a code buried in the message, as a failed tunnel start reports it', () => {
+    reportError(
+      'Tunnel: error sending request for url (https://x/api/frp/generate/visitor-bundle): ' +
+        'client error (Connect): ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat ' +
+        'für x hat sich seit dem ersten Verbinden geändert',
+    );
+    expect(get(status)?.text).toBe(
+      'Tunnel: error sending request for url (https://x/api/frp/generate/visitor-bundle): ' +
+        'client error (Connect): AdminHelper TOFU: Das Server-Zertifikat ' +
+        'für x hat sich seit dem ersten Verbinden geändert',
+    );
+  });
+
+  it('reportError drops a code at the start of the message', () => {
+    reportError(
+      'ERR_CA_PIN_MISMATCH: AdminHelper: Das Server-Zertifikat wird nicht mehr von der ' +
+        'bei der Geräte-Registrierung gepinnten CA gedeckt (mögliche MITM-Attacke).',
+    );
+    const s = get(status);
+    expect(s?.text).toBe(
+      'AdminHelper: Das Server-Zertifikat wird nicht mehr von der ' +
+        'bei der Geräte-Registrierung gepinnten CA gedeckt (mögliche MITM-Attacke).',
+    );
+    expect(s?.isError).toBe(true);
+  });
+
   it('assigns a fresh, increasing id per message', () => {
     showStatus('a');
     const first = get(status)?.id;
