@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Client-Zertifikat und angemeldeter Benutzer gehören zusammen — Task-Ledger
-Status: bereit · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (Kevin hat die Entscheidungen zu R-0223 am 2026-10-10 an die Aufsicht übergeben: „Entscheide du“; Richtung und sichtbares Verhalten wie dort entschieden, Bootstrap mit gebunden; Multibox-Lauf vor dem Merge)
 Spec: Roadmap R-0223
 Heavy: linux-full + scenario --enforce --desktop — Auth- und mTLS-Pfad des Servers: `run.sh integration` (Gateway mit `MTLS_ENFORCE`, Login mit Client-Zertifikat) und `run.sh e2e` (Desktop-Login, Registrieren, Tunnel) auf einer Pool-VM; dazu vor dem Merge ein Multibox-Lauf `--enforce --desktop`, weil die Prüfung nur mit echtem mTLS über das Gateway greift. Der Multibox-Lauf ist ask-first, die Aufsicht holt ihn.
@@ -61,19 +61,17 @@ Gateway-Headern wie in `test_mtls_scope.py` (`_gateway_headers`, `:59-60`). Sie 
 - **Refresh, SSE-Öffnen und Bootstrap:** mit fremdem Zertifikat 403.
 - **Rot vor dem Fix:** alle 403-Fälle.
 
-In `test_mtls_scope.py` schickt `test_enforced_admin_route_passes_with_access_cert` (`:254-261`) ein Zertifikat mit dem
-Default-CN `user-01` und ein JWT von `admin` und erwartet 200. Der Test bekommt ein Zertifikat mit dem CN des JWT-Benutzers.
-Die Erwartung 200 bleibt. `test_bootstrap_route_stays_open_under_enforcement` (`:285-292`) schickt kein Zertifikat und
-bleibt unverändert.
+In `test_mtls_scope.py` schickt `test_enforced_admin_route_passes_with_access_cert` (`:254-261`) künftig das Zertifikat
+des JWT-Benutzers; die Erwartung 200 bleibt. `test_bootstrap_route_stays_open_under_enforcement` (`:285-292`) schickt
+kein Zertifikat und bleibt unverändert.
 
 CHANGELOG unter `[Unreleased]` → `### Changed`, neutral: „Unter mTLS gehört das Client-Zertifikat dem angemeldeten
 Benutzer; Login, API und Zertifikats-Ausgabe prüfen das. Jeder Benutzer nutzt sein eigenes Zertifikat.“
 Assertion-Änderung: apps/server/tests/test_mtls_scope.py::test_enforced_admin_route_passes_with_access_cert — das Zertifikat trägt künftig den CN des JWT-Benutzers, die Erwartung 200 bleibt
 Beweis: origin/main@38990d6a:
-- CN und JWT-Benutzer werden heute nicht verglichen. `get_current_user` lädt den Benutzer aus dem JWT (`auth.py:212-229`,
-  `_get_user_from_token` `:82`). `require_scope` prüft Verifizierung, Scope und Widerruf (`identity.py:129-131`).
-- `grep -rn 'identity.cn' apps/server/app` findet den CN nur in `identity.py` und `modules/notifications/stream.py`.
-- `test_mtls_scope.py:254-261` erwartet 200 für CN `user-01` mit JWT `admin`.
+- `get_current_user` lädt den Benutzer aus dem JWT (`auth.py:212-229`, `_get_user_from_token` `:82`).
+- `require_scope` prüft Verifizierung, Scope und Widerruf (`identity.py:129-131`).
+- Die Bindung kommt als `require_cert_user` dazu.
 HEAD: 38990d6a
 Semantik:
 - `docs/admin/benutzer.html:90`: „Der spätere Zertifikats-CN ist genau dieser Username.“
@@ -145,3 +143,39 @@ Semantik: die Entscheidung zu R-0223 (Bindung); der Rest beschreibt, was T1 und 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html · docs/adr/0001 und 0002 (die Task ist die Doku)
 Abhängt von: T1
+
+### T4 — Nachbesserung aus dem Review am Ende: Reihenfolge und Permissiv-Modus der Bindung in Tests (R-0223)  [ ]
+Komponente: server · Dateien: apps/server/tests/test_cert_user_binding.py
+Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus); die Aufsicht hat alle nits als Nachbesserung angeordnet.
+Die Reihenfolge der Prüfung ist im Code richtig, aber kein Test hält sie fest. Ebenso wenig, dass die Bindung im
+permissiven Modus gilt. Neue Fälle in `tests/test_cert_user_binding.py`:
+- **Refresh:** Nach dem 403 mit fremdem Zertifikat gibt derselbe Refresh-Token mit eigenem Zertifikat 200. Die Prüfung
+  liegt vor der Rotation und verbraucht den Token nicht.
+- **Bootstrap:** Nach dem 403 gibt es keinen Benutzer, und dasselbe Bootstrap-Token mit passendem Zertifikat gibt 201.
+- **Login:** Der 403 schreibt einen Audit-Eintrag `auth.login_failed` für den eingegebenen Username.
+- **Permissiv** (`MTLS_ENFORCE=False`): Ein verifiziertes Zertifikat eines anderen Benutzers + JWT gibt 403. Die Bindung
+  hängt nicht am Schalter.
+- **Gegenprobe im Wegwerf-Worktree:** Liegt die Prüfung beim Refresh hinter `blacklist_token` und beim Bootstrap hinter dem
+  Anlegen, werden die neuen Fälle rot.
+Die Umformulierung im Ledger (T1, „Beweis“ und Test-Absatz) steht im Commit, der diese Task anlegt.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py
+Doku: keine (Tests)
+
+### T5 — Nachbesserung aus dem Review am Ende: abgelehnte Bestätigung setzt nichts zurück (R-0223)  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.binding.test.ts
+Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus, nit). `Login.binding.test.ts` bekommt den Fall „Bestätigung
+abgelehnt“: `confirm` gibt `false`, `resetDeviceIdentity` wird nicht aufgerufen, der Hinweis bleibt stehen.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: keine (Test)
+
+### T6 — Nachbesserung aus dem Review am Ende: die Regel in ADR und CHANGELOG vollständig (R-0223)  [ ]
+Komponente: scripts · Dateien: docs/adr/0001-unified-pki-and-secure-deployment.md, docs/adr/0002-phase-a-task-plan.md, CHANGELOG.md
+Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus, nit). Die Regel steht in ADR und CHANGELOG vollständig.
+- **ADR 0001**, Nachtrag in D3 (`:82`): Bei verifizierter Identität müssen Scope `access` und CN = Username gelten.
+  Geprüft wird bei Login, Refresh, Bootstrap, jeder JWT-Anfrage und der Zertifikats-Ausgabe.
+- **ADR 0002 `:143`**, Permissiv-Schalter: Die Bindung gilt bei verifizierter Identität unabhängig von `MTLS_ENFORCE`.
+- **ADR 0002 `:154`**: Login, Refresh und Bootstrap haben keinen Scope-Guard, `require_cert_user` verlangt dort aber Scope
+  `access`.
+- **CHANGELOG**, Eintrag aus T1: „muss ihr Scope `access` und ihr CN der Username sein“.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: docs/adr/0001 und 0002 · CHANGELOG.md (die Task ist die Doku)
