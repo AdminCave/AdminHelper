@@ -31,8 +31,10 @@ die Spalte „danach“ ist Standard-Cron:
 | `7` | seit R-0235 422; ein älterer Hook läuft nie und steht als Warnung im Log | So |
 | `mon-fri`, `sun`, `*` | unverändert | unverändert |
 
-### T1 — Scheduler: das Wochentag-Feld eines Cron-Ausdrucks gilt nach Standard-Cron (R-0249)  [ ]
+### T1 — Scheduler: das Wochentag-Feld eines Cron-Ausdrucks gilt nach Standard-Cron (R-0249)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_scheduler_cron.py, apps/server/tests/test_hooks.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @fd358c62 2026-10-10T04:27:48+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `_parse_trigger` (`scheduler.py:44-53`) gibt einen Ausdruck aus fünf Feldern unverändert an
 `CronTrigger.from_crontab` (`:50`). APScheduler 3.x zählt den Wochentag dort ab Montag; Standard-Cron zählt 0 und 7 als
 Sonntag, 1 als Montag. Jeder Wochentag in Ziffern liegt deshalb einen Tag daneben, `7` ist ungültig. Die Routen prüfen

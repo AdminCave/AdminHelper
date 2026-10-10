@@ -554,6 +554,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Hooks: Cron-Wochentage zaehlen wie im Standard-Cron (R-0249):** Im Wochentag-Feld eines Schedule-Hooks war `0`
+  Montag statt Sonntag, denn APScheduler 3.x zaehlt in `from_crontab` ab Montag. Damit lag jeder Wochentag in Ziffern
+  einen Tag daneben: `0 9 * * 1-5` lief Dienstag bis Samstag, `7` wurde abgelehnt. Jetzt gilt Standard-Cron: `0` und
+  `7` sind Sonntag, `1` ist Montag, `1-5` ist Montag bis Freitag. Namen wie `mon-fri` galten schon richtig.
+  **Bestehende Hooks mit Ziffern im Wochentag laufen ab diesem Stand einen Tag frueher als bisher**, an dem Tag, den
+  der Cron-Ausdruck meint. Die gespeicherten Ausdruecke bleiben, wie sie sind; den neuen Zeitpunkt (`next_run`)
+  traegt der Scheduler beim naechsten Abgleich ein. Ein Hook mit `7`, angelegt vor R-0235, lief bisher nie und laeuft
+  jetzt sonntags. Betroffene Hooks findet diese Abfrage auf der Server-Datenbank:
+  `SELECT id, name, enabled, schedule_interval FROM hooks WHERE hook_type = 'schedule' AND
+  (regexp_split_to_array(btrim(schedule_interval), '\s+'))[5] ~ '[0-9]';` Sie listet auch Ausdruecke wie `*/1`, die
+  sich nicht aendern.
 - **Proxmox-Token aus einer 0600-Datei (R-0229):** `scripts/vm/vm.py` und `scripts/vm/lib.sh` lesen den
   Proxmox-Zugang auch aus `~/.config/adminhelper/pve.env` (Zeilen `KEY=VALUE` fuer `AH_PVE_*`/`AH_VM_*`,
   gelesen, nie gesourct). Vorrang: Umgebung > `pve.env` > `env`-Block von `.claude/settings.local.json`,

@@ -9,6 +9,7 @@ Uses APScheduler's BackgroundScheduler (its own thread pool).
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -41,13 +42,47 @@ INTERVAL_MAP = {
 }
 
 
+# Standard cron counts the weekday from Sunday (0 and 7), APScheduler 3.x from Monday:
+# from_crontab passes the field through, so "1-5" ran Tuesday to Saturday (R-0249).
+# Numeric parts become the names APScheduler reads the same way. A list, not a range:
+# APScheduler rejects a range across the end of the week ("sun-sat").
+_CRON_WEEKDAYS = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+_WEEKDAY_NAMES = re.compile(r"[a-z]{3}(-[a-z]{3})?", re.IGNORECASE)
+_WEEKDAY_NUMBERS = re.compile(r"(\*|\d+(?:-\d+)?)(?:/(\d+))?")
+
+
+def _cron_weekdays(field: str) -> str:
+    """The weekday field of a cron expression, as APScheduler reads standard cron."""
+    if field == "*":
+        return field
+    names: list[str] = []
+    days: set[int] = set()
+    for part in field.split(","):
+        if _WEEKDAY_NAMES.fullmatch(part):
+            names.append(part)
+            continue
+        m = _WEEKDAY_NUMBERS.fullmatch(part)
+        # A step needs a range or "*", as in cron: "1/2" is no weekday there.
+        if not m or (m.group(2) and m.group(1).isdigit()):
+            raise ValueError(f"invalid weekday {part!r}")
+        span, step = m.group(1), int(m.group(2) or 1)
+        low, _, high = ("0-6" if span == "*" else span).partition("-")
+        first, last = int(low), int(high or low)
+        if last > 7 or first > last or step < 1:
+            raise ValueError(f"invalid weekday {part!r}")
+        days.update(day % 7 for day in range(first, last + 1, step))
+    names.extend(_CRON_WEEKDAYS[day] for day in sorted(days))
+    return ",".join(names)
+
+
 def _parse_trigger(interval: str):
     """Convert an interval string or cron expression into an APScheduler trigger."""
     if interval in INTERVAL_MAP:
         return IntervalTrigger(**INTERVAL_MAP[interval])
     parts = interval.split()
     if len(parts) == 5:
-        return CronTrigger.from_crontab(interval)
+        parts[4] = _cron_weekdays(parts[4])
+        return CronTrigger.from_crontab(" ".join(parts))
     raise ValueError(
         f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(INTERVAL_MAP)} oder Cron (5 Felder)"
     )
