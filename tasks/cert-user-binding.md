@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Client-Zertifikat und angemeldeter Benutzer gehören zusammen — Task-Ledger
-Status: aktiv · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/cert-user-binding · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (Kevin hat die Entscheidungen zu R-0223 am 2026-10-10 an die Aufsicht übergeben: „Entscheide du“; Richtung und sichtbares Verhalten wie dort entschieden, Bootstrap mit gebunden; Multibox-Lauf vor dem Merge)
 Spec: Roadmap R-0223
 Heavy: linux-full + scenario --enforce --desktop — Auth- und mTLS-Pfad des Servers: `run.sh integration` (Gateway mit `MTLS_ENFORCE`, Login mit Client-Zertifikat) und `run.sh e2e` (Desktop-Login, Registrieren, Tunnel) auf einer Pool-VM; dazu vor dem Merge ein Multibox-Lauf `--enforce --desktop`, weil die Prüfung nur mit echtem mTLS über das Gateway greift. Der Multibox-Lauf ist ask-first, die Aufsicht holt ihn.
@@ -186,8 +186,10 @@ Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/adr/0001 und 0002 · CHANGELOG.md (die Task ist die Doku)
 
-### T7 — Nachbesserung: ADR 0001 D3 und CHANGELOG nennen genau die gebundenen Stellen (R-0223)  [ ]
+### T7 — Nachbesserung: ADR 0001 D3 und CHANGELOG nennen genau die gebundenen Stellen (R-0223)  [x]
 Komponente: scripts · Dateien: docs/adr/0001-unified-pki-and-secure-deployment.md, CHANGELOG.md, apps/server/tests/test_cert_user_binding.py
+Evidenz: run.sh[quick] scripts server: 10 passed, 0 failed, 8 skipped · contracts: 1 ok @31493628 2026-10-10T19:33:00+02:00
+Review: kein Review (nur Doku und Kommentar), Anordnung der Aufsicht
 Änderung: Angelegt 2026-10-10 aus dem Opus-Review über den Diff der Nachbesserungen (nits); die Aufsicht hat sie als
 eine Task angeordnet, ohne neuen Review (nur Doku und Kommentar).
 - **ADR 0001**, Nachtrag in D3, und **CHANGELOG**, Eintrag aus T1: Sie nennen genau die gebundenen Stellen.

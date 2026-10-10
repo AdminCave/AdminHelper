@@ -197,7 +197,7 @@ def test_bootstrap_with_the_new_users_certificate_passes(test_client, bootstrap_
     assert resp.status_code == 201, resp.text
 
 
-# --- order and switch (Nachbesserung T4) --------------------------------------
+# --- order and switch -------------------------------------------------------
 
 
 def test_a_refused_login_is_audited(test_client, db_session, admin_user, normal_user):
