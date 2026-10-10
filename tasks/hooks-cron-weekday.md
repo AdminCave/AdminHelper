@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
 Spec: Roadmap R-0249, R-0273 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
@@ -175,8 +175,10 @@ nachgelesen in `entry.c` und `globals.h` (`DowNames = "Sun", "Mon", …, "Sat", 
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py tests/test_hooks.py tests/test_scheduler_reconcile.py
 Doku: docs/developer/server.html + docs/en/developer/server.html · CHANGELOG.md (Changed, der Eintrag aus T1)
 
-### T5 — Nachbesserung aus dem Gate-Review: sun-Sonderfall testen, Abfrage um Namensbereiche ab sun (R-0249, R-0273)  [ ]
+### T5 — Nachbesserung aus dem Gate-Review: sun-Sonderfall testen, Abfrage um Namensbereiche ab sun (R-0249, R-0273)  [x]
 Komponente: server · Dateien: apps/server/tests/test_scheduler_cron.py, CHANGELOG.md, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @79473148 2026-10-10T06:24:52+02:00
+Review: kein neues Review (Nachbesserung aus dem Gate-Review, Aufsicht 2026-10-10)
 Änderung: Angelegt 2026-10-10 aus dem Opus-Review der Aufsicht am Gate über T4. Der Code ist dort korrekt (6157
 Ausdrücke gegen eine Vixie-Nachbildung, keine Abweichung), aber zwei belegte `wichtig` betreffen Test und Doku. Die
 Aufsicht hat sie als Nachbesserung ohne neues Review angeordnet.

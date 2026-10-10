@@ -562,7 +562,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jetzt Montag, der Hook laeuft also an dem Tag, den der Cron-Ausdruck meint. Das gilt auch hinter einem Schritt:
   `*/2` laeuft Sonntag, Dienstag, Donnerstag, Samstag statt Montag, Mittwoch, Freitag, Sonntag. Die gespeicherten
   Ausdruecke bleiben, wie sie sind; den neuen Zeitpunkt (`next_run`) traegt der Scheduler beim naechsten Abgleich
-  ein. Ein Hook mit `7`, angelegt vor R-0235, lief bisher nie und laeuft jetzt sonntags. Namen gelten wie ihre
+  ein. Ein Hook mit `7`, angelegt vor R-0235, lief bisher nie und laeuft jetzt sonntags; ebenso ein Namensbereich ab
+  `sun` (`sun-mon` bis `sun-sat`, jede Schreibweise), den APScheduler ablehnte und der jetzt laeuft. Namen gelten wie ihre
   Zahlen, auch in Bereichen und mit Schritt, wie in Vixie-Cron: `mon-fri/2` laeuft Montag, Mittwoch, Freitag (bisher
   Montag bis Freitag, der Schritt fiel weg), `sun-thu` Sonntag bis Donnerstag (bisher abgelehnt); `sat-sun` laeuft
   weiter Samstag und Sonntag.
@@ -571,8 +572,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Korrektur wieder, mit einer Warnung im Scheduler-Log. Betroffene Hooks findet diese Abfrage auf der
   Server-Datenbank:
   `SELECT id, name, enabled, schedule_interval FROM hooks WHERE hook_type = 'schedule' AND
-  (regexp_split_to_array(btrim(schedule_interval), '\s+'))[5] ~ '[0-9]';` Sie listet auch Ausdruecke wie `*/1`, die
-  sich nicht aendern; kaputte Namen ohne Ziffer (`mon;wed`) findet sie nicht, die meldet der Scheduler im Log.
+  (regexp_split_to_array(btrim(schedule_interval), '\s+'))[5] ~* '[0-9]|sun-';` Sie listet auch Ausdruecke wie `*/1`
+  oder `sun-sun`, die sich nicht aendern; kaputte Namen ohne Ziffer (`mon;wed`) findet sie nicht, die meldet der
+  Scheduler im Log.
 - **Proxmox-Token aus einer 0600-Datei (R-0229):** `scripts/vm/vm.py` und `scripts/vm/lib.sh` lesen den
   Proxmox-Zugang auch aus `~/.config/adminhelper/pve.env` (Zeilen `KEY=VALUE` fuer `AH_PVE_*`/`AH_VM_*`,
   gelesen, nie gesourct). Vorrang: Umgebung > `pve.env` > `env`-Block von `.claude/settings.local.json`,

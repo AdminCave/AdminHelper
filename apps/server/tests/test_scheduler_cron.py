@@ -92,6 +92,13 @@ def test_sun_ends_a_range_as_7_so_the_weekend_keeps_running(expr, days):
     assert _weekdays(expr) == days
 
 
+@pytest.mark.parametrize("expr", ["0 9 * * sun-sun", "0 9 * * 0-sun"])
+def test_sun_ends_a_range_from_sunday_as_0(expr):
+    # Only a range that starts after Sunday reads sun as 7: from Sunday it would be
+    # the whole week.
+    assert _weekdays(expr) == {"Sun"}
+
+
 @pytest.mark.parametrize(
     "expr",
     [
