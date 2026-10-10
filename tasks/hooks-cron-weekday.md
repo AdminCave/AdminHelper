@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: bereit · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
 Spec: Roadmap R-0249 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
@@ -30,6 +30,7 @@ die Spalte „danach“ ist Standard-Cron:
 | `*/2` | Mo, Mi, Fr, So | So, Di, Do, Sa |
 | `7` | seit R-0235 422; ein älterer Hook läuft nie und steht als Warnung im Log | So |
 | `mon-fri`, `sun`, `*` | unverändert | unverändert |
+| `1/2`, `mon/2`, `mon-fri/2` (Schritt auf Einzelzahl oder Name) | liefen: `1/2` Di, Do, Sa; `mon/2` Mo; `mon-fri/2` Mo–Fr (Schritt ignoriert) | abgelehnt wie in Vixie-Cron: 422; ein gespeicherter Hook läuft erst nach einer Korrektur wieder, Warnung im Log (T3) |
 
 ### T1 — Scheduler: das Wochentag-Feld eines Cron-Ausdrucks gilt nach Standard-Cron (R-0249)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_scheduler_cron.py, apps/server/tests/test_hooks.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
@@ -107,3 +108,21 @@ Review: Review am Ende (Kurz-Ledger, Opus)
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (der Text ist die Hilfe selbst; server.html kommt mit T1)
 Abhängt von: T1
+
+### T3 — Nachbesserung aus dem Review am Ende: Stillstand bei Schritt auf Einzelzahl oder Name benennen (R-0249)  [ ]
+Komponente: server · Dateien: CHANGELOG.md
+Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus, request_changes, ein belegtes `wichtig`). Kevin hat über
+die Aufsicht entschieden: ablehnen und klar benennen, nur Doku, kein Code.
+- `wichtig`: Ein Schritt auf einer Einzelzahl oder einem Namen lief bisher und wird seit T1 abgelehnt, wie in
+  Vixie-Cron. APScheduler 3.x las `1/2` als Bereich bis zum Ende seiner Woche (Di, Do, Sa), `mon-fri/2` als `mon-fri`
+  und `mon/2` als `mon`; der Schritt fiel still weg. Ein gespeicherter Hook damit läuft erst nach einer Korrektur
+  wieder, mit der Warnung aus R-0235 im Scheduler-Log; ein PUT gibt 422. Der CHANGELOG-Eintrag aus T1 nannte das
+  nicht. Er bekommt den Satz, die Tabelle im Ledger-Kopf eine Zeile.
+- nit: „einen Tag früher als bisher“ stimmt bei gemischten Listen nur für den Ziffernteil. `mon,0` lief bisher nur
+  montags und läuft danach So und Mo. Der Satz heißt künftig: die Ziffern meinen jetzt den Tag davor.
+
+Beweis: feature/hooks-cron-weekday@e27f4462, APScheduler 3.11.3 direkt ab Fr 09.10.2026: `'0 9 * * 1/2'` → Tue, Thu,
+Sat; `'0 9 * * mon-fri/2'` → Mon–Fri; `'0 9 * * mon/2'` → Mon. `_parse_trigger` auf demselben Stand: alle drei
+`ValueError: invalid weekday …`.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py
+Doku: CHANGELOG.md (Changed, der Eintrag aus T1)
