@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Tag-im-Monat und Wochentag bleiben mit UND verknüpft — Task-Ledger
-Status: geplant · Branch: feature/hooks-cron-dom-dow · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/hooks-cron-dom-dow · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0274; die Richtung hat Kevin am 2026-10-10 selbst entschieden: UND behalten und als Abweichung vom Standard-Cron dokumentieren; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0274 (Kurz-Ledger ohne Spec)
 Heavy: none — kein Code; ein Test hält das bestehende Verhalten des Parsers fest, dazu Doku. Kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
