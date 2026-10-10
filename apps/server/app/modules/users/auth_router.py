@@ -23,6 +23,7 @@ from app.core.auth import (
 )
 from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
+from app.core.identity import require_cert_user
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
 from app.core.request_context import Actor
@@ -123,6 +124,21 @@ def login(
     ip = resolve_client_ip(request)
     _check_rate_limit(ip)
 
+    # The certificate has to belong to the user who signs in (R-0223). Checked before
+    # the password, so the answer says nothing about it.
+    try:
+        require_cert_user(request, data.username)
+    except HTTPException:
+        audit.record(
+            db,
+            "auth.login_failed",
+            status="failure",
+            actor=Actor("anonymous", None, data.username, ip),
+            object_type="user",
+            object_label=data.username,
+        )
+        raise
+
     user = db.query(User).filter(User.username == data.username).first()
     # Always run one bcrypt verify — against a dummy hash when the user is missing — so
     # the response time doesn't reveal whether the username exists (3.94).
@@ -205,6 +221,8 @@ def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger oder abgelaufener Refresh-Token",
         )
+    # Before the rotation, so a refused refresh does not use up the token.
+    require_cert_user(request, user.username)
 
     # Rotation: blacklist the old refresh token immediately so it cannot be used
     # again. A parallel attacker with a copy of the token thereby fails from the
@@ -301,6 +319,7 @@ def bootstrap(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungueltiger Bootstrap-Token",
         )
+    require_cert_user(request, data.username)
 
     user = User(
         username=data.username,

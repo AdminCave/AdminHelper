@@ -26,8 +26,10 @@ prüfen das.
   - Ein Desktop ist einem Benutzer zugeordnet. Wer sich dort als ein anderer Benutzer anmelden will, setzt die
     Geräte-Identität zurück und registriert das Gerät neu.
 
-### T1 — Server: Login, API und Zertifikats-Ausgabe verlangen ein Zertifikat des angemeldeten Benutzers (R-0223)  [ ]
+### T1 — Server: Login, API und Zertifikats-Ausgabe verlangen ein Zertifikat des angemeldeten Benutzers (R-0223)  [x]
 Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/core/auth.py, apps/server/app/modules/users/auth_router.py, apps/server/app/modules/notifications/stream.py, apps/server/tests/test_cert_user_binding.py, apps/server/tests/test_mtls_scope.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @ec77c47c 2026-10-10T17:04:12+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Ein Helfer in `identity.py` (neben `get_client_identity`, `:71-94`) prüft eine verifizierte Identität gegen einen
 Username. Er gibt 403 mit `ERR_CERT_USER_MISMATCH: …` und einem lesbaren englischen Satz zurück. Er greift überall, wo ein
 Benutzer aus einem JWT oder aus Zugangsdaten entsteht:
