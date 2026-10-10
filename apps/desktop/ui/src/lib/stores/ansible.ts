@@ -5,7 +5,7 @@
 // Ansible store: 3-step wizard (playbook -> targets -> run).
 // Loads playbooks + servers from the server API and starts the local terminal runner.
 
-import { errMsg } from '$lib/utils/errors';
+import { errMsg, withoutErrorCodes } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { currentSession } from './session';
@@ -77,7 +77,7 @@ export async function loadAnsibleData(): Promise<void> {
       loading: false,
     }));
   } catch (err) {
-    const msg = errMsg(err);
+    const msg = withoutErrorCodes(errMsg(err));
     _state.update((s) => ({ ...s, loading: false, loadError: msg }));
   }
 }

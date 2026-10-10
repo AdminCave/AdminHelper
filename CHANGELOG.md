@@ -313,6 +313,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Speichern den Tunnel erneut, auch bei einer Sprach- oder RDP-Einstellung; neben dem laufenden frpc scheiterte
   das mit „frpc laeuft bereits“, die Anzeige ging auf getrennt, und die Statusleiste meldete einen Fehler. Ein
   laufender Tunnel bleibt jetzt, wie er ist; gestartet wird nur, wenn keiner laeuft.
+- **Desktop: Fehleranzeigen im Fenster ohne `ERR_*`-Codes (R-0261):** Wie zuvor die Statusleiste (R-0248) zeigten
+  die Benachrichtigungs-Einstellungen einen Fehler beim Laden oder Speichern samt Maschinen-Code, etwa nach einem
+  Zertifikatswechsel am Server `… ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: …`; ebenso die Ansible-Seite und die
+  Monitoring-Uebersicht ihren Ladefehler. Jetzt erscheint nur der Text.
 - **Desktop: Statusleiste ohne `ERR_*`-Codes (R-0248):** Ein Netzwerkfehler aus dem Backend traegt die
   Maschinen-Codes (`ERR_TOFU_PIN_MISMATCH`, `ERR_CA_PIN_MISMATCH`, `ERR_TLS_UNKNOWN_ISSUER`) in seiner Meldung,
   und die Statusleiste zeigte sie mit, etwa nach einem Zertifikatswechsel am Server als `Tunnel: …
