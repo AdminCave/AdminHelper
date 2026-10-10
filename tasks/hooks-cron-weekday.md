@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
 Spec: Roadmap R-0249, R-0273 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
@@ -133,8 +133,10 @@ Sat; `'0 9 * * mon-fri/2'` → Mon–Fri; `'0 9 * * mon/2'` → Mon. `_parse_tri
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py
 Doku: CHANGELOG.md (Changed, der Eintrag aus T1)
 
-### T4 — Nachbesserung aus Runde 2: Namen lesen wie Zahlen, wie Vixie-Cron (R-0249, R-0273)  [ ]
+### T4 — Nachbesserung aus Runde 2: Namen lesen wie Zahlen, wie Vixie-Cron (R-0249, R-0273)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_scheduler_cron.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @1eed1948 2026-10-10T05:39:19+02:00
+Review: Review am Ende (Kurz-Ledger, Opus), Fund aus Runde 2 mit den Faellen des Reviewers als Tests behoben, keine dritte Runde
 Änderung: Angelegt 2026-10-10 aus Runde 2 des Reviews am Ende (Opus, request_changes, ein belegtes `wichtig`). Die
 Meldung vor Kevins Entscheidung zu T3 war falsch: `mon-fri/2` ist gültiges Cron. Kevin hat über die Aufsicht neu
 entschieden, (b): eine Grammatik für Zahlen und Namen wie in Vixie-Cron. R-0273 (`sun-thu` abgelehnt) ist damit

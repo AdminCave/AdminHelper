@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The weekday field of a scheduled hook's cron expression counts as in standard cron
-(R-0249): 0 and 7 are Sunday, 1 is Monday. APScheduler 3.x counts from Monday in
-from_crontab, so "1-5" used to run Tuesday to Saturday."""
+(R-0249): 0 and 7 are Sunday, 1 is Monday, and a name counts as the number it stands
+for, as in Vixie cron (entry.c). APScheduler 3.x counts from Monday in from_crontab, so
+"1-5" used to run Tuesday to Saturday."""
 
 from datetime import datetime, timezone
 
@@ -62,7 +63,51 @@ def test_names_and_star_stay_as_they_were(expr, days):
     assert _weekdays(expr) == days
 
 
-@pytest.mark.parametrize("expr", ["0 9 * * 8", "0 9 * * 5-1", "0 9 * * 1-fri", "0 9 * * 1/2"])
+@pytest.mark.parametrize(
+    ("expr", "days"),
+    [
+        ("0 9 * * mon-fri/2", {"Mon", "Wed", "Fri"}),
+        ("0 9 * * sun-thu", {"Sun", "Mon", "Tue", "Wed", "Thu"}),
+        ("0 9 * * MON-FRI", WEEKDAYS),
+        ("0 9 * * 1-fri", WEEKDAYS),
+        ("0 9 * * mon-5", WEEKDAYS),
+        ("0 9 * * mon,0", {"Sun", "Mon"}),
+        ("0 9 * * */7", {"Sun"}),
+    ],
+)
+def test_names_count_as_their_numbers(expr, days):
+    assert _weekdays(expr) == days
+
+
+@pytest.mark.parametrize(
+    ("expr", "days"),
+    [
+        ("0 9 * * sat-sun", {"Sat", "Sun"}),
+        ("0 9 * * fri-sun", {"Fri", "Sat", "Sun"}),
+    ],
+)
+def test_sun_ends_a_range_as_7_so_the_weekend_keeps_running(expr, days):
+    # Vixie reads sun as 0 and rejects "sat-sun"; APScheduler ran it as Saturday and
+    # Sunday, and a stored hook with it keeps doing that.
+    assert _weekdays(expr) == days
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "0 9 * * 8",
+        "0 9 * * 5-1",
+        "0 9 * * 1/2",
+        "0 9 * * 0/1",
+        "0 9 * * mon/2",
+        "0 9 * * MON/2",
+        "0 9 * * sun/2",
+        "0 9 * * mon;wed",
+        "0 9 * * mon-fri-sat",
+        "0 9 * * monday",
+        "0 9 * * */0",
+    ],
+)
 def test_a_weekday_standard_cron_does_not_know_is_rejected(expr):
     with pytest.raises(ValueError):
         _parse_trigger(expr)

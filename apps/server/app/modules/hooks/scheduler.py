@@ -42,37 +42,50 @@ INTERVAL_MAP = {
 }
 
 
-# Standard cron counts the weekday from Sunday (0 and 7), APScheduler 3.x from Monday:
-# from_crontab passes the field through, so "1-5" ran Tuesday to Saturday (R-0249).
-# Numeric parts become the names APScheduler reads the same way. A list, not a range:
-# APScheduler rejects a range across the end of the week ("sun-sat").
+# The weekday field read as standard cron (Vixie cron, entry.c get_range): a part is "*",
+# a value or a range, and only "*" and a range take a "/step"; a value is a number from
+# 0 to 7 (0 and 7 are Sunday) or a name, which counts as its number, also as a range end.
+# APScheduler 3.x counts from Monday in from_crontab, so "1-5" ran Tuesday to Saturday
+# (R-0249). The field goes on as the list of meant days: APScheduler rejects a range
+# across the end of the week ("sun-sat").
 _CRON_WEEKDAYS = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
-_WEEKDAY_NAMES = re.compile(r"[a-z]{3}(-[a-z]{3})?", re.IGNORECASE)
-_WEEKDAY_NUMBERS = re.compile(r"(\*|\d+(?:-\d+)?)(?:/(\d+))?")
+_WEEKDAY_PART = re.compile(
+    r"(?:(?P<star>\*)|(?P<first>[0-9]+|[a-z]+)(?:-(?P<last>[0-9]+|[a-z]+))?)(?:/(?P<step>[0-9]+))?",
+    re.IGNORECASE,
+)
+
+
+def _weekday_value(token: str) -> int:
+    if token.isdigit():
+        return int(token)
+    if token.lower() in _CRON_WEEKDAYS:
+        return _CRON_WEEKDAYS.index(token.lower())
+    raise ValueError(f"invalid weekday {token!r}")
 
 
 def _cron_weekdays(field: str) -> str:
     """The weekday field of a cron expression, as APScheduler reads standard cron."""
     if field == "*":
         return field
-    names: list[str] = []
     days: set[int] = set()
     for part in field.split(","):
-        if _WEEKDAY_NAMES.fullmatch(part):
-            names.append(part)
-            continue
-        m = _WEEKDAY_NUMBERS.fullmatch(part)
-        # A step needs a range or "*", as in cron: "1/2" is no weekday there.
-        if not m or (m.group(2) and m.group(1).isdigit()):
+        m = _WEEKDAY_PART.fullmatch(part)
+        if not m or (m["step"] and m["first"] and not m["last"]):
             raise ValueError(f"invalid weekday {part!r}")
-        span, step = m.group(1), int(m.group(2) or 1)
-        low, _, high = ("0-6" if span == "*" else span).partition("-")
-        first, last = int(low), int(high or low)
+        if m["star"]:
+            first, last = 0, 7
+        else:
+            first = _weekday_value(m["first"])
+            last = _weekday_value(m["last"]) if m["last"] else first
+            # Vixie rejects "sat-sun" (sun is 0 there); APScheduler ran it as Saturday
+            # and Sunday, so a stored hook with it keeps running.
+            if m["last"] and m["last"].lower() == "sun" and first > 0:
+                last = 7
+        step = int(m["step"] or 1)
         if last > 7 or first > last or step < 1:
             raise ValueError(f"invalid weekday {part!r}")
         days.update(day % 7 for day in range(first, last + 1, step))
-    names.extend(_CRON_WEEKDAYS[day] for day in sorted(days))
-    return ",".join(names)
+    return ",".join(_CRON_WEEKDAYS[day] for day in sorted(days))
 
 
 def _parse_trigger(interval: str):
