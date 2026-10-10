@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
 Spec: Roadmap R-0249 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
@@ -96,8 +96,10 @@ docs/ nennt die Zählung von APScheduler.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py tests/test_hooks.py tests/test_scheduler_reconcile.py
 Doku: docs/developer/server.html + docs/en/developer/server.html (Trigger-Typen) · CHANGELOG.md (Changed, mit Hinweis auf die Verschiebung)
 
-### T2 — Web-Panel: die Cron-Hilfe im Hook-Dialog nennt die Zählung des Wochentags (R-0249)  [ ]
+### T2 — Web-Panel: die Cron-Hilfe im Hook-Dialog nennt die Zählung des Wochentags (R-0249)  [x]
 Komponente: web · Dateien: apps/web/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @cf6142f1 2026-10-10T04:28:50+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Die Hilfe unter dem Cron-Feld (`HookModal.svelte:181`, Schlüssel `modal.hook.cronFormat`,
 `dictionaries.ts:181` DE und `:410` EN) bekommt den Zusatz „(Wochentag: 0 und 7 = Sonntag, 1 = Montag)“ bzw.
 „(weekday: 0 and 7 = Sunday, 1 = Monday)“. Dort tippt man die Ziffern; nach T1 stimmt die Angabe. Kein Test: ein
