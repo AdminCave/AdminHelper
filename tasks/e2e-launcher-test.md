@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-E2E: ein Launcher-Test hält fest, dass ein gescheiterter Build den wdio-Lauf stoppt — Task-Ledger
-Status: aktiv · Branch: feature/e2e-launcher-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/e2e-launcher-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0260, aus Kevins Triage 2026-10-10; nur ein Test und eine README-Zeile, kein sichtbares Verhalten; Bau durch Worker B statt den Loop, Umsetzungsweg der Aufsicht; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0260 (Kurz-Ledger ohne Spec)
 Heavy: none — ein neuer Test in `npm run lint`. Er startet den wdio-Launcher mit einem falschen `cargo` und braucht weder Display noch Rust noch Netz: Er endet, bevor ein Worker startet, die Probe lief in einem Netz-Namespace ohne Netz. Kein Code der App, keine Desktop-Journey und kein Live-Spec ändern sich.
@@ -15,8 +15,10 @@ Geplant 2026-10-10 von Worker B im Auftrag der Aufsicht (adminhelper-ac) aus ein
 Loop-Futter triagiert hat. Sie stammt aus dem Opus-Review von R-0259 (Nit 2). Die private Roadmap ist in diesem
 Worktree nicht lesbar; der Zeileninhalt kommt von der Aufsicht. Zeilenangaben origin/main@128b7fb5.
 
-### T1 — `test/unit/launcher.test.js`: ein gescheiterter Build stoppt `wdio run`, bevor ein Worker startet (R-0260)  [ ]
+### T1 — `test/unit/launcher.test.js`: ein gescheiterter Build stoppt `wdio run`, bevor ein Worker startet (R-0260)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/unit/launcher.test.js, apps/desktop/e2e/README.md
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @cb461dfb 2026-10-10T10:35:22+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `test/unit/onprepare.test.js` (R-0259) hält nur die eigene Seite fest: `onPrepare` wirft eine
 `SevereServiceError` aus derselben `webdriverio`-Kopie, die `@wdio/cli` lädt (`:40`, `:57`). Dass der Launcher genau
 diese Klasse weiterwirft und dann keinen Worker startet, steht im Quelltext von `@wdio/cli` 9.29.0. Ein künftiges
