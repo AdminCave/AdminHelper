@@ -133,7 +133,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 - **Fortschritt ✅ ABGESCHLOSSEN 2026-06-11:** Scope-Schicht in **neuem** `app/core/identity.py`
   (statt `auth.py` — die mTLS-Identität ist ein eigenes Modul neben JWT/API-Key, zweiter Faktor D3;
   seit R-0223 an den Benutzer gebunden: `require_cert_user` verlangt bei verifizierter Identität
-  den Username als CN, API-Keys bleiben ungebunden):
+  Scope `access` und den Username als CN, API-Keys bleiben ungebunden):
   `ClientIdentity` + `get_client_identity` (parst den vom Gateway weitergereichten Cert-PEM
   authoritativ, wie der ca-issuer auf `/renew`) + `require_scope(*allowed)` (Factory).
   - **Scope-Entscheidung:** `access` = Mensch (Desktop/Browser), **`tunnel` = Agent**
@@ -142,7 +142,8 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     Enrollment-Umsetzung bestätigen/anpassen.
   - **Permissiv-Schalter:** `MTLS_ENFORCE` (Default damals `false`, seit 0.29.0 `true`, `core/config.py`). Permissiv: ein
     Mismatch wird geloggt (WARNING nur bei *falschem* Cert-Scope, DEBUG beim erwarteten
-    „noch-kein-Cert"), Request **läuft durch**. A8 setzt `MTLS_ENFORCE=true` → 403.
+    „noch-kein-Cert"), Request **läuft durch**. A8 setzt `MTLS_ENFORCE=true` → 403. Die Bindung an den
+    Benutzer (R-0223) gilt bei verifizierter Identität unabhängig von `MTLS_ENFORCE`.
   - **Guards angewandt:** Router-Level `access` für pure Human/Admin-Router (users, api_keys,
     connections, ansible, servers + frp config/tunnel/generate/status/pki); per-Route `tunnel`
     für Agent-Push (`/api/monitoring/agent/{id}/report`); **`tunnel`+`access`** für den dual-use
@@ -152,7 +153,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     `hooks/trigger/{token}` (öffentlicher Webhook-Ingest, externe Aufrufer ohne Cert),
     `provision/activate` (Bootstrap-Tür, certless wie enroll), SPA/Static. Seit R-0223 prüfen
     Login, Refresh und Bootstrap die Bindung von Zertifikat und Benutzer; einen Scope-Guard haben
-    sie weiter nicht.
+    sie weiter nicht, `require_cert_user` verlangt bei verifizierter Identität aber Scope `access`.
   - **Tests:** `tests/test_mtls_scope.py` (18) — Identity-Parsing + `require_scope` permissiv/
     enforced (inkl. dual-use) als Unit; Integration via TestClient: permissiv durchlässig (401
     von Auth statt 403), enforced 403 ohne Cert, 200 mit access-Cert+JWT, 403 mit tunnel-Cert
