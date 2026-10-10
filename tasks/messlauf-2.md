@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Messlauf 2: Test-Engine in UTC, SSRF-Testlücken, FRP-Port in der Doku (R-0225, R-0228, R-0236) — Task-Ledger
-Status: aktiv · Branch: feature/messlauf-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/messlauf-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-09 (kleines Fund-Paket aus R-0225, R-0228 und R-0236, von Kevin in der Triage als Loop-Futter angenommen; Delegation Kevin 2026-10-05; Abnahmelauf von Schritt 4b)
 Spec: Roadmap R-0225, R-0228, R-0236 (Kurz-Ledger ohne Spec)
 Heavy: none — Server-Tests ohne Produktivcode und zwei Doku-Seiten je Sprache; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -51,7 +51,9 @@ Dedup-Key: ref:server:ssrf.py:classify-url-test-gaps
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf.py tests/test_ssrf_parity.py
 Doku: keine (intern)
 
-### T3 — Die Doku nennt 7443 nicht mehr als FRP-mTLS-Port (R-0236)  [ ]
+### T3 — Die Doku nennt 7443 nicht mehr als FRP-mTLS-Port (R-0236)  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1f427dba 2026-10-10T04:53:05+02:00
+Review: approve (sonnet/high) · round 1
 Antwort der Aufsicht (2026-10-10, Kevin hat den Neustart freigegeben): Der erste Lauf scheiterte an `review.sh docs-pairs` — nur `docs/en/admin/troubleshooting.html` war geändert. Der englische Satz „Common causes: clock skew > 5 min, expired client cert, DNS failure, firewall blocking …“ hat auf der deutschen Seite kein Gegenstück; die Seiten waren schon auseinander. Die deutsche Seite bekommt denselben Satz in korrekter Form an der entsprechenden Stelle im Agent-Abschnitt (bei „Zertifikat abgelaufen?“), damit beide Sprachen dasselbe sagen und beide Dateien im Commit stehen.
 Komponente: scripts · Dateien: docs/en/admin/installation.html, docs/admin/installation.html, docs/en/admin/troubleshooting.html, docs/admin/troubleshooting.html
 Änderung: `docs/en/admin/installation.html:41` nennt `7443` den „FRP mTLS tunnel“-Port, und
