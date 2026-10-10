@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hooks: Cron-Wochentage nach Standard-Cron — Task-Ledger
-Status: erledigt · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/hooks-cron-weekday · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (im Chat mit der Aufsicht; sichtbares Verhalten). Offene Fragen (Kevin): 1 Altbestand unveraendert nach Standard-Cron umdeuten (a); 2 die Abfrage nach betroffenen Hooks steht im CHANGELOG-Eintrag; T2 Web-Hilfe ja
 Spec: Roadmap R-0249, R-0273 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — der Scheduler-Prozess des Stacks liest jeden gespeicherten Schedule-Hook beim Abgleich mit dem geänderten Parser, und die Routen prüfen mit demselben Parser; auf einer Pool-VM `run.sh integration`.
@@ -34,7 +34,7 @@ die Spalte „danach“ ist Standard-Cron:
 | `mon-fri/2` (Namensbereich mit Schritt) | Mo–Fr (Schritt ignoriert) | Mo, Mi, Fr wie in Vixie-Cron (T4) |
 | `sun-thu`, `1-fri`, `mon-5` | abgelehnt bzw. `mon-5` nur Mo | So–Do, Mo–Fr, Mo–Fr (T4) |
 | `mon;wed`, `mon-fri-sat` (kaputte Namen) | liefen über einen Präfix-Treffer: Mo bzw. Mo–Fr | abgelehnt (T4) |
-| `sat-sun`, `fri-sun` | Sa, So bzw. Fr–So | unverändert (T4; Vixie lehnt sie ab, `sun` am Bereichsende zählt hier als 7) |
+| `sat-sun`, `fri-sun` | Sa, So bzw. Fr–So | unverändert (T4; Vixie lehnt sie ab, `sun` am Ende eines Bereichs, der nach Sonntag beginnt, zählt hier als 7) |
 
 ### T1 — Scheduler: das Wochentag-Feld eines Cron-Ausdrucks gilt nach Standard-Cron (R-0249)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/scheduler.py, apps/server/tests/test_scheduler_cron.py, apps/server/tests/test_hooks.py, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
@@ -174,3 +174,24 @@ Beweis: Runde 2 an feature/hooks-cron-weekday@8de89712 mit APScheduler 3.11.3 un
 nachgelesen in `entry.c` und `globals.h` (`DowNames = "Sun", "Mon", …, "Sat", "Sun"`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py tests/test_hooks.py tests/test_scheduler_reconcile.py
 Doku: docs/developer/server.html + docs/en/developer/server.html · CHANGELOG.md (Changed, der Eintrag aus T1)
+
+### T5 — Nachbesserung aus dem Gate-Review: sun-Sonderfall testen, Abfrage um Namensbereiche ab sun (R-0249, R-0273)  [ ]
+Komponente: server · Dateien: apps/server/tests/test_scheduler_cron.py, CHANGELOG.md, docs/developer/server.html, docs/en/developer/server.html
+Änderung: Angelegt 2026-10-10 aus dem Opus-Review der Aufsicht am Gate über T4. Der Code ist dort korrekt (6157
+Ausdrücke gegen eine Vixie-Nachbildung, keine Abweichung), aber zwei belegte `wichtig` betreffen Test und Doku. Die
+Aufsicht hat sie als Nachbesserung ohne neues Review angeordnet.
+- `wichtig`, Test: Die Bedingung `and first > 0` in `_cron_weekdays` (`scheduler.py:82`) deckt kein Test ab. Ohne sie
+  bleiben alle Fälle grün, aber `sun-sun` liefe jeden Tag. Neue Fälle: `0 9 * * sun-sun` und `0 9 * * 0-sun` laufen
+  nur sonntags. Revert-Probe in einem Wegwerf-Worktree: ohne die Bedingung rot.
+- `wichtig`, Doku: Die Abfrage im CHANGELOG übersieht Namensbereiche ab `sun` (`sun-mon` bis `sun-sat`, jede
+  Schreibweise). APScheduler hat sie abgelehnt; ein solcher Hook, gespeichert vor R-0235, lief nie und läuft jetzt,
+  ohne Ziffer und ohne Warnung. Die Abfrage listet sie mit (`~* '[0-9]|sun-'`), und ein Satz nennt die Klasse wie den
+  zu `7`.
+- nit, Doku: `server.html:157` DE und EN: `sun` zählt als 7 am Ende eines Bereichs, der nach Sonntag beginnt, nicht
+  pauschal am Bereichsende.
+
+Beweis: Gate-Review der Aufsicht an feature/hooks-cron-weekday@5acb5a0d (Mutation ohne `and first > 0`: alle Fälle
+grün, `sun-sun` jeden Tag). APScheduler 3.11.3 lehnt `sun-thu` ab (`ValueError: The minimum value in a range must not
+be higher than the maximum`, Probe aus dem Plan zu `sun-sat`).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_scheduler_cron.py
+Doku: CHANGELOG.md (Changed, der Eintrag aus T1) · docs/developer/server.html + docs/en/developer/server.html
