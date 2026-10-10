@@ -98,6 +98,24 @@ describe('Login — device certificate of another user (ERR_CERT_USER_MISMATCH)'
     await waitFor(() => expect(container.textContent).toContain('Geräte-Identität zurückgesetzt'));
   });
 
+  it('a declined confirmation resets nothing and keeps the hint', async () => {
+    h.login.mockRejectedValueOnce(new Error(MISMATCH));
+    h.confirm.mockResolvedValueOnce(false);
+    const { container } = render(Login);
+    await submitLogin(container);
+    const reset = await waitFor(() => {
+      const el = container.querySelector<HTMLButtonElement>('[data-action="cert-user-reset"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+
+    await fireEvent.click(reset);
+
+    await waitFor(() => expect(h.confirm).toHaveBeenCalledTimes(1));
+    expect(h.resetDeviceIdentity).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-msg="cert-user-mismatch"]')).not.toBeNull();
+  });
+
   it('shows any other login failure as text, without the hint', async () => {
     h.login.mockRejectedValueOnce(new Error('Login fehlgeschlagen (401 Unauthorized): nope'));
     const { container } = render(Login);

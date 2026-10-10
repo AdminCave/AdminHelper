@@ -163,8 +163,10 @@ Die Umformulierung im Ledger (T1, „Beweis“ und Test-Absatz) steht im Commit,
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_cert_user_binding.py
 Doku: keine (Tests)
 
-### T5 — Nachbesserung aus dem Review am Ende: abgelehnte Bestätigung setzt nichts zurück (R-0223)  [ ]
+### T5 — Nachbesserung aus dem Review am Ende: abgelehnte Bestätigung setzt nichts zurück (R-0223)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.binding.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @726bdd00 2026-10-10T18:22:22+02:00
+Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Änderung: Angelegt 2026-10-10 aus dem Review am Ende (Opus, nit). `Login.binding.test.ts` bekommt den Fall „Bestätigung
 abgelehnt“: `confirm` gibt `false`, `resetDeviceIdentity` wird nicht aufgerufen, der Hinweis bleibt stehen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
