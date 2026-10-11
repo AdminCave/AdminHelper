@@ -14,8 +14,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Geplant 2026-10-11 von Worker A für die Aufsicht (adminhelper-ac). Kevin hat beide Zeilen am 2026-10-10 in der Triage
 als „Flake-Paket, zuerst“ angenommen. Zeilenangaben origin/main@8e31cf71; beim Bau an Symbolen orientieren.
 
-### T1 — ledger_loop_test klont das Fixture über den Transport, nicht per Hardlink (R-0262)  [ ]
+### T1 — ledger_loop_test klont das Fixture über den Transport, nicht per Hardlink (R-0262)  [x]
 Komponente: scripts · Dateien: scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b8a9c19e 2026-10-11T16:14:36+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Die beiden Klone aus dem Fixture-Origin, `:197` (`$CLONE`) und `:645` (`$KEV`), laufen mit `git clone --no-local`.
   Git holt die Objekte dann über den Transport, statt das Objektverzeichnis Datei für Datei zu verlinken oder zu
