@@ -125,3 +125,27 @@ def test_the_other_fields_pass_through():
     trigger = _parse_trigger("30 6 15 * *")
     fire = trigger.get_next_fire_time(None, START)
     assert (fire.day, fire.hour, fire.minute) == (15, 6, 30)
+
+
+def _fire_dates(expr: str, n: int = 3) -> list[str]:
+    trigger = _parse_trigger(expr)
+    dates, prev, now = [], None, START
+    for _ in range(n):
+        fire = trigger.get_next_fire_time(prev, now)
+        dates.append(fire.strftime("%a %Y-%m-%d"))
+        prev = now = fire
+    return dates
+
+
+@pytest.mark.parametrize(
+    ("expr", "dates"),
+    [
+        # The first Monday of each month, which standard cron cannot express.
+        ("0 9 1-7 * mon", ["Mon 2026-11-02", "Mon 2026-12-07", "Mon 2027-01-04"]),
+        ("0 9 15 * mon", ["Mon 2027-02-15", "Mon 2027-03-15", "Mon 2027-11-15"]),
+    ],
+)
+def test_day_of_month_and_weekday_both_have_to_match(expr, dates):
+    # R-0274, Kevin 2026-10-10: unlike standard cron (Vixie: OR once neither field
+    # starts with "*"), a hook runs only where both fields match, as APScheduler does.
+    assert _fire_dates(expr) == dates

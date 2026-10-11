@@ -3,10 +3,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# stack_pytest.sh — the three tests that need a real Postgres or Redis, run
+# stack_pytest.sh — the four tests that need a real Postgres or Redis, run
 # against the compose stack's own (run.sh integration, step stack-pytest).
 #
 #   monitoring  tests/test_migrations_smoke.py                             DATABASE_URL
+#   monitoring  tests/test_db_session_utc.py                               DATABASE_URL
 #   server      tests/test_stream_redis.py                                 AH_TEST_REDIS_URL
 #   ca-issuer   tests/test_db_token_store.py::test_concurrent_consume_...  AH_TEST_DB
 #
@@ -24,7 +25,7 @@
 # the shared venv before this step, and each component's requirements-dev.txt is
 # installed into it here, as the unit steps do.
 #
-# Exit: 0 all three passed · 1 a test failed, skipped or wrote no XML, or the
+# Exit: 0 all four passed · 1 a test failed, skipped or wrote no XML, or the
 # services did not come up · 75 docker/compose/openssl/curl/python3 missing
 #
 # Run: bash scripts/tests/stack_pytest.sh
@@ -90,6 +91,9 @@ stack_test() {
 }
 
 stack_test monitoring-migrations apps/monitoring tests/test_migrations_smoke.py \
+  "DATABASE_URL=$ITEST_DATABASE_URL"
+# The stack runs postgres with TZ=Europe/Berlin, the case the session listener guards (R-0218).
+stack_test monitoring-session-utc apps/monitoring tests/test_db_session_utc.py \
   "DATABASE_URL=$ITEST_DATABASE_URL"
 stack_test server-redis apps/server tests/test_stream_redis.py \
   "AH_TEST_REDIS_URL=$ITEST_REDIS_URL"

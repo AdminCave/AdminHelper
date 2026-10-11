@@ -94,6 +94,34 @@ def get_client_identity(request: Request) -> ClientIdentity:
     )
 
 
+# The detail of the 403 a client keys its hint off (the ERR_* pattern of the desktop);
+# the prose may change, the code must not.
+CERT_USER_MISMATCH = (
+    "ERR_CERT_USER_MISMATCH: The client certificate belongs to another user. Sign in as "
+    "that user, or register this device for yourself."
+)
+
+
+def require_cert_user(request: Request, username: str) -> None:
+    """Under mTLS the client certificate belongs to the signed-in user (R-0223): a
+    verified identity must carry the access scope and ``username`` as its CN, or the
+    request gets a 403. Without a verified identity there is nothing to check. Callers
+    apply it where a user comes from a JWT or credentials; an API key belongs to no
+    user and is not bound."""
+    identity = get_client_identity(request)
+    if not identity.verified or (identity.scope == SCOPE_ACCESS and identity.cn == username):
+        return
+    logger.warning(
+        "mTLS: %s %s — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
+        request.method,
+        request.url.path,
+        identity.cn,
+        identity.scope,
+        username,
+    )
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_USER_MISMATCH)
+
+
 def _is_revoked(db: Session | None, cn: str | None, scope: str | None) -> bool:
     """Whether the verified identity has been revoked (ADR 0001 §3.4 lever 2 — the
     immediate data-plane cut-off, not waiting for cert expiry). ``db`` is the
