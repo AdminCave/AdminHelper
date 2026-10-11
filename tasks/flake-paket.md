@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Flake-Paket: der Fixture-Klon in ledger_loop_test, die Pipes in diagnostics_test (R-0262, R-0264) — Task-Ledger
-Status: geplant · Branch: harness/flake-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/flake-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0262 und R-0264, Flake-Paket aus Kevins Triage 2026-10-10; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0262, R-0264 (Kurz-Ledger ohne Spec)
 Heavy: none — zwei Shell-Tests unter scripts/tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
