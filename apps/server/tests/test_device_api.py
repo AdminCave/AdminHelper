@@ -171,3 +171,24 @@ def test_an_agent_certificate_does_not_revoke_itself_here(test_client, db_sessio
     assert test_client.post("/api/enrollment/self/revoke", headers=headers).status_code == 409
     db_session.refresh(line)
     assert line.revoked_at is None
+
+
+def test_a_new_namesake_sees_the_devices_of_the_deleted_user_as_revoked(
+    test_client, db_session, admin_user, normal_user
+):
+    _, cert = _leaf("viewer")
+    line = _record(db_session, cert, "viewer")
+    admin_headers, _ = _leaf("admin")
+    admin = _admin(admin_headers)
+
+    assert test_client.delete(f"/api/users/{normal_user.id}", headers=admin).status_code == 204
+    created = test_client.post(
+        "/api/users", json={"username": "viewer", "password": "password1"}, headers=admin
+    )
+    assert created.status_code == 201, created.text
+
+    resp = test_client.get(f"/api/users/{created.json()['id']}/devices", headers=admin)
+    assert resp.status_code == 200, resp.text
+    devices = resp.json()
+    assert [(d["id"], d["revoked_reason"]) for d in devices] == [(line.id, "admin")]
+    assert devices[0]["revoked_at"] is not None

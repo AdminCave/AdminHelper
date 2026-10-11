@@ -12,7 +12,13 @@ namesake's stay revoked."""
 
 from __future__ import annotations
 
-from datetime import timedelta
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import delete, text
+from sqlalchemy.orm import sessionmaker
 
 import app.modules.servers.router as servers_router
 from app.core import config
@@ -20,11 +26,15 @@ from app.core.auth import create_access_token
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT
 from app.core.time import utcnow_naive
 from app.modules.enrollment.models import (
+    DeviceLine,
+    IssuedCertificate,
     RevokedIdentity,
+    admit_certificate,
     is_identity_revoked,
     revoke_identity,
 )
 from app.modules.servers.models import Server
+from tests.test_certificate_check import _fp, _leaf, _record
 from tests.test_mtls_scope import _gateway_headers
 
 
@@ -172,3 +182,125 @@ def test_a_new_user_keeps_the_former_namesakes_certificates_out(
     assert test_client.get("/api/users/me/servers", headers={**bob, **old}).status_code == 403
     resp = test_client.get("/api/users/me/servers", headers={**bob, **new})
     assert resp.status_code == 200, resp.text
+
+
+# --- the device lines of a revoked identity (R-0224) -------------------------
+
+
+def test_revoking_an_identity_revokes_its_open_lines_and_no_others(db_session):
+    _, laptop = _leaf("carol")
+    _, phone = _leaf("carol")
+    _, agent = _leaf("carol", SCOPE_AGENT)
+    _, other = _leaf("dave")
+    open_line = _record(db_session, laptop, "carol")
+    replaced = _record(db_session, phone, "carol")
+    earlier = utcnow_naive() - timedelta(days=1)
+    replaced.revoked_at, replaced.revoked_reason = earlier, "replaced"
+    db_session.commit()
+    agent_line = _record(db_session, agent, "carol", SCOPE_AGENT)
+    others = _record(db_session, other, "dave")
+
+    revoke_identity(db_session, "carol", SCOPE_ACCESS)
+    db_session.commit()
+    for line in (open_line, replaced, agent_line, others):
+        db_session.refresh(line)
+    assert open_line.revoked_reason == "admin"
+    assert open_line.revoked_at is not None
+    assert (replaced.revoked_reason, replaced.revoked_at) == ("replaced", earlier)
+    assert (agent_line.revoked_at, others.revoked_at) == (None, None)
+
+
+def test_deleting_a_server_revokes_the_line_of_its_agent(
+    test_client, admin_user, db_session, monkeypatch
+):
+    monkeypatch.setattr(servers_router.httpx, "delete", lambda *a, **k: None)
+    db_session.add(Server(id="srv-line", name="web2", hostname="web2.example"))
+    db_session.commit()
+    _, cert = _leaf("srv-line", SCOPE_AGENT)
+    line = _record(db_session, cert, "srv-line", SCOPE_AGENT)
+
+    token = _login(test_client, "admin", "adminpass")
+    deleted = test_client.delete(
+        "/api/servers/srv-line", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert deleted.status_code == 204, deleted.text
+    db_session.refresh(line)
+    assert line.revoked_reason == "admin"
+
+
+def _a_session_waits_for(engine, blocker_pid: int, timeout: float = 10.0) -> bool:
+    # A fresh connection per look: pg_stat_activity keeps its snapshot for a transaction.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as probe:
+            waiting = probe.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity"
+                    " WHERE :blocker = ANY(pg_blocking_pids(pid))"
+                ),
+                {"blocker": blocker_pid},
+            ).scalar()
+        if waiting:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_deletion_waits_for_a_renewal_that_holds_the_line_and_revokes_its_successor(
+    pg_engine,
+):
+    # A renewal holds its line (FOR UPDATE, as the ca-issuer does) while it signs, and
+    # puts the successor on it. A deletion in that moment waits for the line; then the
+    # line is revoked with the successor on it, although the successor was issued after
+    # the point in time. Two real connections: the rows are removed at the end.
+    subject = f"race-{uuid.uuid4().hex[:8]}"
+    new_session = sessionmaker(bind=pg_engine)
+    _, first = _leaf(subject)
+    _, successor = _leaf(subject, not_before=datetime.now(timezone.utc) + timedelta(minutes=5))
+    with new_session() as setup:
+        line_id = _record(setup, first, subject).id
+
+    def deletion():
+        with new_session() as session:
+            revoke_identity(session, subject, SCOPE_ACCESS)
+            session.commit()
+
+    renewal = new_session()
+    ex = ThreadPoolExecutor(max_workers=1)
+    try:
+        renewal.query(DeviceLine).filter(DeviceLine.id == line_id).with_for_update().one()
+        renewal_pid = renewal.execute(text("SELECT pg_backend_pid()")).scalar()
+        deleting = ex.submit(deletion)
+        assert _a_session_waits_for(pg_engine, renewal_pid), "the deletion must wait for the line"
+        assert not deleting.done()
+        renewal.add(
+            IssuedCertificate(
+                fingerprint=_fp(successor),
+                line_id=line_id,
+                serial=format(successor.serial_number, "x"),
+                not_before=successor.not_valid_before_utc.replace(tzinfo=None),
+                not_after=successor.not_valid_after_utc.replace(tzinfo=None),
+                renewed_from=_fp(first),
+            )
+        )
+        renewal.commit()
+        deleting.result(10)
+
+        with new_session() as check:
+            assert check.get(DeviceLine, line_id).revoked_reason == "admin"
+            assert not admit_certificate(
+                check,
+                cn=subject,
+                scope=SCOPE_ACCESS,
+                fingerprint=_fp(successor),
+                serial=format(successor.serial_number, "x"),
+                not_before=successor.not_valid_before_utc.replace(tzinfo=None),
+                not_after=successor.not_valid_after_utc.replace(tzinfo=None),
+            )
+    finally:
+        # Release the line first: a deletion still waiting for it would hold the shutdown.
+        renewal.close()
+        ex.shutdown(wait=True)
+        with pg_engine.begin() as conn:
+            conn.execute(delete(DeviceLine).where(DeviceLine.subject_id == subject))
+            conn.execute(delete(RevokedIdentity).where(RevokedIdentity.subject_id == subject))

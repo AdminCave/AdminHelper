@@ -347,8 +347,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Task ist die Doku
 Abhängt von: T7, T9
 
-### T15 — Server: Löschen sperrt auch die Geräte des Benutzers oder Servers (R-0224)  [ ]
+### T15 — Server: Löschen sperrt auch die Geräte des Benutzers oder Servers (R-0224)  [x]
 Komponente: server · Dateien: apps/server/app/modules/enrollment/models.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_device_api.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @70f20e2a 2026-10-11T16:30:56+02:00
+Review: approve (opus); nits 1-2 done, nit 3 to the supervisor
 Nachbesserung aus dem Branch-Review (Aufsicht, 2026-10-11).
 Änderung: `revoke_identity` sperrt in derselben Transaktion auch die offenen Linien des Subjekts
 (`revoked_reason` `admin`), beim Löschen eines Benutzers wie eines Servers; eine schon gesperrte Linie behält Grund und

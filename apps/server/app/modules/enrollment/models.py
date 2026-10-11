@@ -2,11 +2,14 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Enrollment tokens + identity revocation for the PKI plane (ADR 0001).
+"""Enrollment tokens, identity revocation and the certificate register for the PKI
+plane (ADR 0001).
 
 The server (control plane) mints one-time enrollment tokens — like the existing
 provision tokens — and writes identity revocations. The ca-issuer (signing
-plane) reads/consumes them; it never holds a minting capability of its own.
+plane) consumes the tokens and records every certificate it issues in the register
+(R-0224); it never holds a minting capability of its own. Both check a presented
+certificate against the register.
 """
 
 from __future__ import annotations
@@ -99,9 +102,13 @@ def revoke_identity(db: Session, subject_id: str, scope: str) -> None:
     """Revoke every certificate ``(subject_id, scope)`` holds up to now, so the
     ca-issuer refuses to renew it (lever 1) and the data plane rejects it on sight
     (lever 2) — the fast cut-off without CRL (ADR 0001 §3.4, F1). Revoking again
-    moves the point to now. Does not commit; the caller's transaction (e.g. user or
-    server deletion) does. Race-free via INSERT ... ON CONFLICT DO UPDATE on the
-    unique (subject_id, scope) constraint — no read-then-write window."""
+    moves the point to now. The open device lines of the identity are revoked too
+    (``admin``; a line revoked before keeps its reason): they show as revoked, also in
+    the device list of a later user of the same name, and a renewal that holds a line
+    meanwhile is waited for, so its successor lands on a revoked line (R-0224).
+    Does not commit; the caller's transaction (e.g. user or server deletion) does.
+    Race-free via INSERT ... ON CONFLICT DO UPDATE on the unique (subject_id, scope)
+    constraint — no read-then-write window."""
     db.execute(
         pg_insert(RevokedIdentity.__table__)
         .values(id=str(uuid.uuid4()), subject_id=subject_id, scope=scope)
@@ -109,6 +116,11 @@ def revoke_identity(db: Session, subject_id: str, scope: str) -> None:
             constraint="uq_revoked_subject_scope", set_={"revoked_at": utc_now_sql()}
         )
     )
+    db.query(DeviceLine).filter(
+        DeviceLine.subject_id == subject_id,
+        DeviceLine.scope == scope,
+        DeviceLine.revoked_at.is_(None),
+    ).update({"revoked_at": utcnow_naive(), "revoked_reason": "admin"}, synchronize_session=False)
 
 
 def is_identity_revoked(

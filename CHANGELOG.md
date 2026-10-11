@@ -585,7 +585,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Der Widerruf eines Benutzers ist ein Zeitpunkt (R-0224):** Wird ein Benutzer geloescht, gelten alle bis dahin
   ausgestellten Zertifikate dieses Usernames nicht mehr, am Server wie beim Erneuern. Legt ein Admin spaeter einen
   Benutzer mit demselben Namen an, bekommt der neue Benutzer neue Zertifikate; die alten bleiben gesperrt. Ein erneutes
-  Loeschen setzt den Zeitpunkt neu.
+  Loeschen setzt den Zeitpunkt neu. Das Loeschen eines Benutzers oder Servers sperrt auch seine offenen Geraete (Grund
+  `admin`); sie stehen als widerrufen in der Geraeteliste, auch in der eines spaeter gleichnamig angelegten
+  Benutzers.
 - **Client-Zertifikat und angemeldeter Benutzer gehoeren zusammen (R-0223):** Unter mTLS gehoert das
   Client-Zertifikat dem angemeldeten Benutzer; Login, API und Zertifikats-Ausgabe pruefen das. Ist die Identitaet am
   Gateway verifiziert, muss ihr Scope `access` und ihr CN der Username sein, sonst antwortet der Server mit 403
