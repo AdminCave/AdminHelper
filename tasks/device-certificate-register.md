@@ -280,8 +280,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (Doku in T14)
 Abhängt von: T3
 
-### T11 — Stack-Test: Erneuern, Ablösen und Selbst-Widerruf über das Gateway (R-0224)  [ ]
-Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts/tests/stack_pytest.sh
+### T11 — Stack-Test: Erneuern, Ablösen und Selbst-Widerruf über das Gateway (R-0224)  [x]
+Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts/tests/stack_pytest.sh, scripts/tests/stack_pytest_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @59846efc 2026-10-11T13:03:37+02:00
+Review: approve (sonnet)
 Änderung:
 - `integration_stack_test.sh` bekommt nach Schritt 8 (`:146-166`), vor dem Enroll-Burst (`:168`), einen Schritt 8b:
   1. zweites Token für `admin`;
