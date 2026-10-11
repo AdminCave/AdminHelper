@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Team-Plan Phase 1, Schritt 2: die Regeln des Teams in CLAUDE.md §2/§3 — Task-Ledger
-Status: bereit · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
+Status: erledigt · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (Stufen-Plan, im Chat mit der Aufsicht; Roadmap R-0270). Offene Fragen: 1 Zeilenbudget <= 226 jetzt, per Test festgeschrieben, <= 185 spaeter als eigene Zeile R-0271 (Kevin); 2 Deckel aktiv 2 in Code und Status, Disjunkt-Pflicht bleibt (Aufsicht); 3 roter main: Revert des letzten Merges, flaky heisst Rerun plus Roadmap-Zeile (Kevin) - der Satz kommt in den Text; 4 Tagesbericht erst mit seiner Stufe, der Chef uebernimmt seinen Stand aus AH-STATUS, Roadmap und Ledgern (Kevin); 5 oeffentlicher Wortlaut des Restrisikos allgemein (Aufsicht); 6 1 VM-Lauf meint Laeufe, keine stehende Warm-Box (Kevin, bestaetigt 2026-10-11)
 Spec: docs/features/team-rules.md (Roadmap: die Zeile legt der Chef an)
 Heavy: none — Regeltext, Python und Shell unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
