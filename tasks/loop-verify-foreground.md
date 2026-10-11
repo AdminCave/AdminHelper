@@ -34,8 +34,10 @@ Entwurf:
 - Der Aufgabentext verlangt: im Vordergrund testen, gezielt, ein Befehl je Aufruf. Die volle Suite fährt
   `task-close.sh` im Loop nach der Session ohnehin (T3).
 
-### T1 — Der Loop gibt der Session für einen Befehl im Vordergrund die Zeit der Session  [ ]
+### T1 — Der Loop gibt der Session für einen Befehl im Vordergrund die Zeit der Session  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3baf6102 2026-10-11T17:47:22+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Der Aufruf von `claude -p` (`ledger-loop.sh:788`) bekommt `BASH_DEFAULT_TIMEOUT_MS` und `BASH_MAX_TIMEOUT_MS` mit
   dem Wert `TASK_MINUTES · 60000` in der Umgebung. Laut Claude-Code-Doku („Environment variables“) sind beide in der

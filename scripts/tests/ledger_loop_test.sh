@@ -162,7 +162,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp ruk rvz rrw rnr stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in tmo tmo2 ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp ruk rvz rrw rnr stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -229,6 +229,7 @@ case "$1" in
   *) echo "stub: unknown call $*" >&2; exit 9 ;;
 esac
 [ -z "${FIXTURE_ENVLOG:-}" ] || compgen -e >> "$FIXTURE_ENVLOG.session"
+[ -z "${FIXTURE_TIMEOUTLOG:-}" ] || printf '%s %s\n' "${BASH_DEFAULT_TIMEOUT_MS-<unset>}" "${BASH_MAX_TIMEOUT_MS-<unset>}" >> "$FIXTURE_TIMEOUTLOG"
 # One line per session with its flags; the prompt (many lines) apart.
 printf '%s\n' "${*:3}" >> "${FIXTURE_SLOG:?}"
 printf '%s\n' "$2" >> "$FIXTURE_SLOG.prompts"
@@ -631,6 +632,17 @@ FIXTURE_ENVLOG="$EL" loop --ledger tasks/envp.md
   && grep -qx 'CLAUDE_CODE_OAUTH_TOKEN' "$EL.session" && grep -qx 'CLAUDE_CODE_OAUTH_TOKEN' "$EL.close" \
   && ok "the build session, task-close and the foundation run without AH_PVE_*, with the subscription token" \
   || bad "envp: rc=$rc $(result envp) pve in: $(grep -l '^AH_PVE_' "$EL".* 2>/dev/null | tr '\n' ' ')"
+
+# R-0263: a command in the foreground may run as long as the session, so it never
+# moves to the background where the session cannot wait for it.
+TL="$WORK/timeouts"; rm -f -- "$TL"
+seq_set build -- 0
+FIXTURE_TIMEOUTLOG="$TL" loop --ledger tasks/tmo.md
+seq_set build -- 0
+FIXTURE_TIMEOUTLOG="$TL" loop --ledger tasks/tmo2.md --task-minutes 7
+[ "$(cat "$TL" 2>/dev/null)" = $'3600000 3600000\n420000 420000' ] \
+  && ok "the session's Bash timeouts are its own minutes (60 by default, 7 with --task-minutes 7)" \
+  || bad "Bash timeouts of the session: $(cat "$TL" 2>&1)"
 
 echo "── the ledger's end: PR text and bundle ──"
 seq_set build build -- 0 0

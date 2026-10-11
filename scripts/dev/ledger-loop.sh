@@ -785,7 +785,14 @@ PY
 )" || stop_infra "cannot read the build-task skill of the clone"
   # Only the runner's user settings (its permissions and the root-owned guard): a
   # lane's project settings carry the interactive allow list.
-  ( cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.s$n" timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
+  # A command in the foreground may run as long as the session: at the Bash tool's
+  # own limit (10 min unless set) it would move to the background, and the session
+  # has no allowed way to wait for it (R-0263; Claude Code docs, tools reference and
+  # environment variables). The session's own timeout stays the outer border.
+  local bash_ms
+  bash_ms="$(awk -v m="$TASK_MINUTES" 'BEGIN { printf "%d", m * 60000 }')"
+  ( cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.s$n" BASH_DEFAULT_TIMEOUT_MS="$bash_ms" BASH_MAX_TIMEOUT_MS="$bash_ms" \
+      timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
       --permission-mode dontAsk --permission-prompts none --max-turns "$TASK_TURNS" \
       --max-budget-usd "$TASK_BUDGET" --output-format json --no-session-persistence \
       < /dev/null > "$out" 2> "$LOOP/$slug/$id.s$n.err" )
