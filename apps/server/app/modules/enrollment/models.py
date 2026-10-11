@@ -30,6 +30,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.database import Base
+from app.core.identity import SCOPE_AGENT
 from app.core.time import utc_now_sql, utcnow_naive
 
 
@@ -207,3 +208,121 @@ def cleanup_expired_certificates(db: Session) -> tuple[int, int]:
     )
     db.commit()
     return certificates, lines
+
+
+# How long after the register was installed a certificate it never recorded (issued
+# before it existed) is still taken over: the native lifetime, so every active device
+# has been seen by then. The ca-issuer has the same window (app.tokens.LEGACY_WINDOW).
+LEGACY_WINDOW = datetime.timedelta(days=90)
+
+
+def legacy_admitted(
+    not_before: datetime.datetime | None,
+    installed_at: datetime.datetime | None,
+    now: datetime.datetime,
+) -> bool:
+    """Whether an unrecorded certificate may be taken over: issued before the register
+    existed, while the transition still runs. One issued after it cannot be genuine,
+    since every issuance since then is recorded. Without either time, never."""
+    if not_before is None or installed_at is None:
+        return False
+    return not_before < installed_at and now < installed_at + LEGACY_WINDOW
+
+
+# The native leaf lifetime of the ca-issuer (pki.LEAF_DAYS_NATIVE); a longer span is a
+# browser certificate.
+_NATIVE_DAYS = 90
+
+
+def _legacy_kind(scope: str, not_before: datetime.datetime, not_after: datetime.datetime) -> str:
+    # The kind is not in the certificate: the scope and the span tell it, as at renewal.
+    if scope == SCOPE_AGENT:
+        return "agent"
+    return "browser" if (not_after - not_before).days > _NATIVE_DAYS else "desktop"
+
+
+def admit_certificate(
+    db: Session,
+    *,
+    cn: str,
+    scope: str,
+    fingerprint: str | None,
+    serial: str | None,
+    not_before: datetime.datetime | None,
+    not_after: datetime.datetime | None,
+) -> bool:
+    """Whether the register admits a verified certificate (R-0224): its identity was
+    not revoked at or after its notBefore, and it is recorded on a line that is not
+    revoked and belongs to its CN and scope. A certificate from before the register
+    is taken over on first contact during the transition — recorded on a ``legacy``
+    line and admitted — and refused afterwards. Commits a takeover itself; nothing
+    else is pending in the session then, since every check runs before its route
+    writes."""
+    if is_identity_revoked(db, cn, scope, not_before):
+        return False
+    if not fingerprint:
+        return False
+    line = _line_of(db, fingerprint)
+    if line is None:
+        installed_at = (
+            db.query(CertificateRegisterState.installed_at)
+            .filter(CertificateRegisterState.id == 1)
+            .scalar()
+        )
+        if serial is None or not_after is None:
+            return False
+        if not legacy_admitted(not_before, installed_at, utcnow_naive()):
+            return False
+        _take_over(db, cn, scope, fingerprint, serial, not_before, not_after)
+        line = _line_of(db, fingerprint)
+        if line is None:
+            return False
+    return line.revoked_at is None and (line.subject_id, line.scope) == (cn, scope)
+
+
+def _line_of(db: Session, fingerprint: str) -> DeviceLine | None:
+    return (
+        db.query(DeviceLine)
+        .join(IssuedCertificate, IssuedCertificate.line_id == DeviceLine.id)
+        .filter(IssuedCertificate.fingerprint == fingerprint)
+        .first()
+    )
+
+
+def _take_over(
+    db: Session,
+    cn: str,
+    scope: str,
+    fingerprint: str,
+    serial: str,
+    not_before: datetime.datetime,
+    not_after: datetime.datetime,
+) -> None:
+    line_id = str(uuid.uuid4())
+    db.add(
+        DeviceLine(
+            id=line_id,
+            subject_id=cn,
+            scope=scope,
+            kind=_legacy_kind(scope, not_before, not_after),
+            legacy=True,
+        )
+    )
+    db.flush()
+    # A parallel first contact (here or at the ca-issuer) may record it first; then that
+    # line stands and this one goes again.
+    recorded = db.execute(
+        pg_insert(IssuedCertificate.__table__)
+        .values(
+            fingerprint=fingerprint,
+            line_id=line_id,
+            serial=serial,
+            not_before=not_before,
+            not_after=not_after,
+        )
+        .on_conflict_do_nothing(index_elements=["fingerprint"])
+        .returning(IssuedCertificate.__table__.c.fingerprint)
+    ).first()
+    if recorded is None:
+        db.query(DeviceLine).filter(DeviceLine.id == line_id).delete(synchronize_session=False)
+    db.commit()

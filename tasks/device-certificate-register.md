@@ -141,8 +141,10 @@ Doku: keine (intern; Doku in T13)
 Abhängt von: T3
 Assertion-Änderung: apps/ca-issuer/tests/test_db_token_store.py::test_is_active_until_revoked — die Prüfung des Widerrufs wird ein Zeitpunkt und bekommt das notBefore des Zertifikats
 
-### T5 — Server: Jedes vorgelegte Zertifikat wird gegen das Register geprüft (R-0224)  [ ]
-Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/core/auth.py, apps/server/app/modules/users/auth_router.py, apps/server/app/modules/notifications/stream.py, apps/server/tests/conftest.py, apps/server/tests/test_certificate_check.py, apps/server/tests/test_mtls_scope.py, apps/server/tests/test_stream.py, apps/server/tests/test_cert_user_binding.py, CHANGELOG.md
+### T5 — Server: Jedes vorgelegte Zertifikat wird gegen das Register geprüft (R-0224)  [x]
+Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/core/auth.py, apps/server/app/modules/users/auth_router.py, apps/server/app/modules/notifications/stream.py, apps/server/tests/conftest.py, apps/server/tests/test_certificate_check.py, apps/server/tests/test_mtls_scope.py, apps/server/tests/test_stream.py, apps/server/tests/test_cert_user_binding.py, CHANGELOG.md, apps/server/app/modules/enrollment/models.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @04f7bcd3 2026-10-11T10:45:36+02:00
+Review: request_changes (opus, 2 wichtig: permissiver Scope-Guard und get_current_user ungetestet) behoben, r2 approve (opus)
 Änderung:
 - `ClientIdentity` bekommt `fingerprint` (am Ende, Default `None`). `get_client_identity` berechnet ihn aus dem geparsten
   Leaf (SHA-256 über DER, hex klein). Kein neuer Gateway-Header; `tests/test_identity_header_contract.py` bleibt.

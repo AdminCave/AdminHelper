@@ -563,6 +563,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Client-Zertifikate werden pro Geraet erfasst und geprueft (R-0224):** Der ca-issuer haelt jedes ausgestellte
+  Client-Zertifikat in einem Register fest (Fingerprint, Seriennummer, Laufzeit, Art) und ordnet es einer
+  Geraete-Linie zu; ein Erneuern bleibt auf der Linie. Server und Erneuern pruefen jedes Zertifikat, mit dem sich ein
+  Client ausweist: Es gilt, wenn seine Linie nicht gesperrt ist und es nicht unter den Widerruf seines Benutzers
+  faellt. Sonst antwortet der Server mit 403 `ERR_CERT_REVOKED`, auch bei `MTLS_ENFORCE=false`. Erneuert wird nur ein
+  Zertifikat, das vom Intermediate seines eigenen Scopes signiert ist. Zertifikate von vor dem Update werden beim
+  ersten Kontakt uebernommen; das geht 90 Tage ab dem Update, danach gilt nur noch, was erfasst ist.
 - **Der Widerruf eines Benutzers ist ein Zeitpunkt (R-0224):** Wird ein Benutzer geloescht, gelten alle bis dahin
   ausgestellten Zertifikate dieses Usernames nicht mehr, am Server wie beim Erneuern. Legt ein Admin spaeter einen
   Benutzer mit demselben Namen an, bekommt der neue Benutzer neue Zertifikate; die alten bleiben gesperrt. Ein erneutes

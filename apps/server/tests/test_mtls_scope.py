@@ -39,6 +39,7 @@ def _client_cert_pem(
     cn: str = "user-01",
     ou: str | None = SCOPE_ACCESS,
     not_before: datetime.datetime | None = None,
+    days: int = 1,
 ) -> str:
     """A leaf as the gateway would forward it (URL-escaped PEM). Self-signed is
     fine — get_client_identity only parses the subject, the gateway already
@@ -56,7 +57,7 @@ def _client_cert_pem(
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(start)
-        .not_valid_after(start + datetime.timedelta(days=1))
+        .not_valid_after(start + datetime.timedelta(days=days))
         .sign(key, hashes.SHA256())
     )
     return urllib.parse.quote(cert.public_bytes(serialization.Encoding.PEM).decode())
@@ -142,7 +143,7 @@ def test_wrong_scope_skips_revocation_query(monkeypatch):
 
     calls: list = []
 
-    def fake_is_revoked(db, cn, scope, not_before=None):
+    def fake_is_revoked(db, cn, scope, not_before=None, identity=None):
         calls.append((cn, scope))
         return False
 
@@ -160,7 +161,7 @@ def test_matching_scope_still_checks_revocation(monkeypatch):
 
     calls: list = []
 
-    def fake_is_revoked(db, cn, scope, not_before=None):
+    def fake_is_revoked(db, cn, scope, not_before=None, identity=None):
         calls.append((cn, scope))
         return False
 
@@ -229,19 +230,8 @@ def test_enforced_allows_non_revoked_identity(db_session, monkeypatch):
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
     dep = require_scope(SCOPE_ACCESS)
     # A matching, non-revoked cert still passes (the check is scoped to the row).
-    assert (
-        _check(dep, ClientIdentity(True, "fresh", SCOPE_ACCESS), db_session).scope == SCOPE_ACCESS
-    )
-
-
-def test_permissive_allows_revoked_identity(db_session):
-    from app.modules.enrollment.models import revoke_identity
-
-    revoke_identity(db_session, "u", SCOPE_ACCESS)
-    db_session.commit()
-    dep = require_scope(SCOPE_ACCESS)
-    # Permissive: still allowed (the deleted user is blocked by app-layer auth).
-    assert _check(dep, ClientIdentity(True, "u", SCOPE_ACCESS), db_session).verified is True
+    fresh = get_client_identity(_req(_gateway_headers(cn="fresh")))
+    assert _check(dep, fresh, db_session).scope == SCOPE_ACCESS
 
 
 # --- integration: real routes through the TestClient -------------------------

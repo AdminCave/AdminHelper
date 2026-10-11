@@ -40,6 +40,7 @@ def _stream_reauth_ok(
     scope: str | None,
     verified: bool,
     not_before: datetime | None = None,
+    identity: ClientIdentity | None = None,
 ) -> bool:
     """Re-check a live stream's authorization: the bearer JWT must still be valid
     (not blacklisted / expired / pre-password-reset) and the mTLS identity must not
@@ -53,7 +54,7 @@ def _stream_reauth_ok(
     try:
         if not token or _get_user_from_token(token, db) is None:
             return False
-        if verified and _is_revoked(db, cn, scope, not_before=not_before):
+        if verified and _is_revoked(db, cn, scope, not_before=not_before, identity=identity):
             return False
         return True
     finally:
@@ -75,17 +76,18 @@ def authenticate_stream_user(request: Request) -> int:
     db = SessionLocal()
     try:
         user = _get_user_from_token(token, db) if token else None
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Nicht authentifiziert",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # Once, at the opening: the certificate and the token of an open stream do not
+        # change; the reauth below follows a revocation that comes later.
+        require_cert_user(request, user.username, db)
+        return user.id
     finally:
         db.close()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nicht authentifiziert",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    # Once, at the opening: the certificate and the token of an open stream do not change.
-    require_cert_user(request, user.username)
-    return user.id
 
 
 @stream_router.get("/stream")
@@ -117,6 +119,7 @@ async def notification_stream(
                         identity.scope,
                         identity.verified,
                         identity.not_before,
+                        identity=identity,
                     )
                     if not ok:
                         break

@@ -130,7 +130,7 @@ class TestStreamReauth:
 
         monkeypatch.setattr(db_mod, "SessionLocal", lambda: _FakeDB())
         monkeypatch.setattr(auth_mod, "_get_user_from_token", lambda token, db: user)
-        monkeypatch.setattr(id_mod, "_is_revoked", lambda db, cn, scope, not_before=None: revoked)
+        monkeypatch.setattr(id_mod, "_is_revoked", lambda db, cn, scope, **_: revoked)
 
     def test_ok_when_valid_and_not_revoked(self, monkeypatch):
         from app.modules.notifications.stream import _stream_reauth_ok
@@ -167,7 +167,7 @@ class TestStreamReauth:
         self._patch(monkeypatch, user=object(), revoked=False)
         seen: list = []
 
-        def fake_is_revoked(db, cn, scope, not_before=None):
+        def fake_is_revoked(db, cn, scope, not_before=None, identity=None):
             seen.append(not_before)
             return False
 
@@ -181,7 +181,7 @@ class TestStreamReauth:
 
         seen: list = []
 
-        def fake_reauth(token, cn, scope, verified, not_before=None):
+        def fake_reauth(token, cn, scope, verified, not_before=None, identity=None):
             seen.append((token, cn, scope, verified, not_before))
             return False  # end the stream at the first check
 
@@ -203,3 +203,31 @@ class TestStreamReauth:
 
         assert asyncio.run(scenario()) == [": connected\n\n"]
         assert seen == [("tok", "bob", "access", True, not_before)]
+
+    def test_the_open_stream_reauths_with_the_whole_certificate(self, monkeypatch):
+        # R-0224: the reauth asks the certificate register, which keys on the fingerprint.
+        from app.modules.notifications import stream as stream_mod
+
+        seen: list = []
+
+        def fake_reauth(token, cn, scope, verified, not_before=None, identity=None):
+            seen.append(identity)
+            return False
+
+        monkeypatch.setattr(stream_mod, "_REAUTH_INTERVAL_SECS", 0)
+        monkeypatch.setattr(stream_mod, "_stream_reauth_ok", fake_reauth)
+
+        class _Request:
+            headers = {"authorization": "Bearer tok"}
+
+            async def is_disconnected(self):
+                return False
+
+        identity = ClientIdentity(True, "bob", "access", fingerprint="ab" * 32)
+
+        async def scenario():
+            resp = await stream_mod.notification_stream(_Request(), user_id=1, identity=identity)
+            return [chunk async for chunk in resp.body_iterator]
+
+        asyncio.run(scenario())
+        assert seen == [identity]
