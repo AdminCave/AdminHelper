@@ -563,6 +563,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Client-Zertifikat und angemeldeter Benutzer gehoeren zusammen (R-0223):** Unter mTLS gehoert das
+  Client-Zertifikat dem angemeldeten Benutzer; Login, API und Zertifikats-Ausgabe pruefen das. Ist die Identitaet am
+  Gateway verifiziert, muss ihr Scope `access` und ihr CN der Username sein, sonst antwortet der Server mit 403
+  `ERR_CERT_USER_MISMATCH`. Das gilt fuer Login, Refresh und Bootstrap (dort fuer den neu anzulegenden Username), fuer
+  die Anfragen, deren Benutzer aus dem JWT kommt, darunter die Zertifikats-Ausgabe, und fuer das Oeffnen des
+  Benachrichtigungs-Streams. Logout und Zugaenge, bei denen der API-Key entscheidet, sind nicht gebunden; ein API-Key
+  gehoert keinem Benutzer. Jeder Benutzer nutzt damit sein eigenes Zertifikat.
 - **Monitoring: die DB-Session laeuft in UTC (R-0218):** Wie der Server seit R-0209 setzt jetzt auch die Engine des
   Monitorings jede Verbindung auf `TimeZone=UTC`, auch gegen ein `PGTZ` in der Umgebung. Der Stack faehrt Postgres mit
   `TZ=Europe/Berlin`; ohne das lief die Session des Monitorings dort in Ortszeit. Heute schreibt und vergleicht das
