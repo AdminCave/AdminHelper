@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Team-Plan Phase 1, Schritt 2: die Regeln des Teams in CLAUDE.md §2/§3 — Task-Ledger
-Status: aktiv · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (Stufen-Plan, im Chat mit der Aufsicht; Roadmap R-0270). Offene Fragen: 1 Zeilenbudget <= 226 jetzt, per Test festgeschrieben, <= 185 spaeter als eigene Zeile R-0271 (Kevin); 2 Deckel aktiv 2 in Code und Status, Disjunkt-Pflicht bleibt (Aufsicht); 3 roter main: Revert des letzten Merges, flaky heisst Rerun plus Roadmap-Zeile (Kevin) - der Satz kommt in den Text; 4 Tagesbericht erst mit seiner Stufe, der Chef uebernimmt seinen Stand aus AH-STATUS, Roadmap und Ledgern (Kevin); 5 oeffentlicher Wortlaut des Restrisikos allgemein (Aufsicht); 6 1 VM-Lauf meint Laeufe, keine stehende Warm-Box (Kevin, bestaetigt 2026-10-11)
 Spec: docs/features/team-rules.md (Roadmap: die Zeile legt der Chef an)
 Heavy: none — Regeltext, Python und Shell unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -77,8 +77,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md (eine Zeile)
 Abhängt von: T1
 
-### T4 — Nachbesserung aus dem Branch-Review  [ ]
+### T4 — Nachbesserung aus dem Branch-Review  [x]
 Komponente: scripts · Dateien: CLAUDE.md, CHANGELOG.md, docs/features/team-rules.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @0160cbf5 2026-10-11T19:13:30+02:00
+Review: approve (opus, Runde 2; wichtig aus Runde 1 behoben)
 Änderung: Funde „wichtig“ aus dem Opus-Review über den ganzen Branch (Aufsicht, 2026-10-11):
 - CLAUDE.md §2 „Merge“: „nach eigener Prüfung“ wieder einsetzen. Der Chef merged Produkt-PRs nach eigener Prüfung,
   wenn die CI im ersten Anlauf grün ist; der Wegfall war nicht entschieden.

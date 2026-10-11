@@ -181,20 +181,25 @@ print(sum(1 for c in cmds if c.startswith("bash scripts/")))
 PY
 }
 
-# claude_rules <CLAUDE.md> — one line per team rule (Kevin, 2026-10-10) missing
+# claude_rules <CLAUDE.md> — one line per team rule (Kevin, 2026-10-10/11) missing
 # from it, and one when it is longer than its budget: the sandbox before every
 # unattended run, the Chef with the old name as its bridge (a fresh session looks
-# for the "Aufsicht"), no Sonnet reviewing Sonnet. Line breaks are read as
-# spaces, so a reflow is no finding.
+# for the "Aufsicht"), no Sonnet reviewing Sonnet, the two build slots, the Chef's
+# merge after his own review, and the PRs to harness and gates, `.github/workflows/`
+# among them, that Kevin merges. Line breaks are read as spaces, so a reflow is no
+# finding.
 CLAUDE_MAX_LINES=226
+CLAUDE_GATE_PRS='PRs an Harness und Gates \([^)]*`\.github/workflows/`[^)]*\) merged Kevin'
 claude_rules() {
   unreadable "$1" && return
   local text s n
   text=$(tr '\n' ' ' < "$1" | tr -s ' ')
   for s in 'Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox' '**Chef** (bisher „Aufsicht“' \
-           'Nie prüft Sonnet, was Sonnet baute'; do
+           'Nie prüft Sonnet, was Sonnet baute' '**Deckel:** 2 Bau-Slots' \
+           'Der Chef merged Produkt-PRs nach eigener Prüfung'; do
     grep -qF -- "$s" <<<"$text" || echo "missing: $s"
   done
+  grep -qE -- "$CLAUDE_GATE_PRS" <<<"$text" || echo "missing: PRs an Harness und Gates (… .github/workflows/ …) merged Kevin"
   n=$(wc -l < "$1")
   [ "$n" -le "$CLAUDE_MAX_LINES" ] || echo "$n lines, more than $CLAUDE_MAX_LINES"
 }
@@ -457,18 +462,35 @@ CALLS=$(build_task_calls "$BTS")
 # the file does not grow past the budget Kevin set (2026-10-10).
 echo "── CLAUDE.md, the team's rules ──"
 f=$(fixture '## 2. Betriebsmodell' '**Restrisiko:** hingenommen für beaufsichtigte Läufe.' \
-            'Die **Aufsichts-Session** ist die eine Session …' 'Sonnet nur für die schnellen Task-Reviewer im Bau.')
+            'Die **Aufsichts-Session** ist die eine Session …' 'Sonnet nur für die schnellen Task-Reviewer im Bau.' \
+            'Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`.' 'Die Aufsicht öffnet PRs und merged nach eigener Prüfung.' \
+            'PRs, die diese Regeln ändern (§2, §3 dieser Datei), merged nur er.')
 out=$(claude_rules "$f")
-[ "$(grep -c '^missing: ' <<<"$out")" -eq 3 ] && ok "claude_rules: the old §2 misses all three rules" \
+[ "$(grep -c '^missing: ' <<<"$out")" -eq 6 ] && ok "claude_rules: the old §2 misses all six rules" \
   || bad "claude_rules on the old §2: $out"
-mapfile -t pad < <(seq 227)
+# The state after the first build: the merge without the Chef's own review, and
+# .github/workflows/ named, but not among the PRs Kevin merges.
+f=$(fixture '**Deckel:** 2 Bau-Slots (zwei Ledger `aktiv`)' 'CI-Läufe stehen unter `.github/workflows/`.' \
+            '**Merge:** Der Chef merged Produkt-PRs nach grüner CI im ersten Versuch. PRs an Harness und Gates' \
+            '(§2/§3, `scripts/dev/harness-paths.txt`) merged Kevin.' '**Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox.**' \
+            'Der **Chef** (bisher „Aufsicht“)' 'Nie prüft Sonnet, was Sonnet baute.')
+out=$(claude_rules "$f")
+[ "$(grep -c . <<<"$out")" -eq 2 ] && grep -qF 'missing: Der Chef merged Produkt-PRs nach eigener Prüfung' <<<"$out" \
+  && grep -qF 'missing: PRs an Harness und Gates (… .github/workflows/ …) merged Kevin' <<<"$out" \
+  && ok "claude_rules: a merge without own review, and workflows outside the gate PRs, are found" \
+  || bad "claude_rules on the first-build merge: $out"
+mapfile -t pad < <(seq 224)
 f=$(fixture '**Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox (R-0241).**' \
-            'Der **Chef** (bisher „Aufsicht“; Skills sagen es noch so)' 'Nie prüft Sonnet, was Sonnet baute.' "${pad[@]}")
+            'Der **Chef** (bisher „Aufsicht“; Skills sagen es noch so)' 'Nie prüft Sonnet, was Sonnet baute.' \
+            '**Deckel:** 2 Bau-Slots' 'Der Chef merged Produkt-PRs nach eigener Prüfung, wenn die CI grün ist.' \
+            'PRs an Harness und Gates (§2/§3, `.github/workflows/`) merged Kevin.' "${pad[@]}")
 [ "$(claude_rules "$f")" = "230 lines, more than $CLAUDE_MAX_LINES" ] \
   && ok "claude_rules: 230 lines are over the budget, and only that is found" || bad "claude_rules on 230 lines: $(claude_rules "$f")"
 f=$(fixture 'hingenommen für beaufsichtigte Läufe. **Vor jedem unbeaufsichtigten' 'Dauerlauf kommt die Sandbox (R-0241).**' \
             'Der **Chef** (bisher' '„Aufsicht“; Skills sagen es noch so)' 'den ganzen Branch prüft Opus. Nie prüft Sonnet, was' \
-            '  Sonnet baute.')
+            '  Sonnet baute.' '**Deckel:** 2' 'Bau-Slots' 'Kein Fund. **Merge:** Der Chef merged Produkt-PRs nach eigener' \
+            'Prüfung, wenn die CI grün ist. PRs an Harness und Gates (§2/§3, `scripts/dev/harness-paths.txt`,' \
+            '`.github/workflows/`) merged Kevin, oder der Chef auf Kevins Wort.')
 [ -z "$(claude_rules "$f")" ] && ok "claude_rules: the rules wrapped across line breaks are found" \
   || bad "claude_rules fired on the wrapped rules: $(claude_rules "$f")"
 out=$(claude_rules CLAUDE.md)

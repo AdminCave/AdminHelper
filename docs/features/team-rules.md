@@ -32,8 +32,8 @@ Messzahlen, auf die sich die Deckel stützen:
    Roadmap, Ledger, Tagesbericht.
 2. Das **Team** läuft unter Kevins UID, ohne Docker und ohne sudo: Builder-Profil (`builder-home.sh`), Sperrregeln,
    später ein Stolperdraht. Der Runner-Nutzer ist eingefroren.
-3. **Restrisiko hingenommen:** Code einer Task läuft mit Kevins Rechten, die Sperrregeln erschweren nur. Ein in R-0258
-   beschriebener Kanal ist nur für beaufsichtigte Läufe hingenommen. **Vor jedem unbeaufsichtigten Dauerlauf kommt die
+3. **Restrisiko hingenommen:** Code einer Task läuft mit Kevins Rechten, die Sperrregeln erschweren nur. Das
+   hingenommene Restrisiko gilt für beaufsichtigte Läufe. **Vor jedem unbeaufsichtigten Dauerlauf kommt die
    Sandbox (R-0241)**, und das steht als Regel drin.
 4. **Deckel:** 2 Bau-Slots, 1 VM-Lauf zugleich. Das Team nutzt höchstens die Hälfte des Wochenlimits, bis es gemessen
    ist.
@@ -235,6 +235,6 @@ CLAUDE.md ist selbst die Doku. Dazu ein CHANGELOG-Eintrag unter Changed und die 
    dazu.
 4. **Tagesbericht:** Es gibt ihn noch nicht. Soll die Regel ihn schon nennen (Entwurf) oder erst mit seiner Stufe?
 5. **Öffentlicher Wortlaut des Restrisikos:** Der Entwurf sagt allgemein „Code einer Task läuft mit Kevins Rechten“
-   und nennt den Kanal aus R-0258 nicht, weil CLAUDE.md öffentlich ist. Passt das?
+   und nennt keine Einzelheiten, weil CLAUDE.md öffentlich ist. Passt das?
 6. **„1 VM-Lauf zugleich“:** Gemeint sind Läufe über `/test` bzw. `heavy.sh`/`multibox.sh`, nicht eine warme Box, die
    nur steht. Richtig?

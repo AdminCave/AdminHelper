@@ -67,11 +67,11 @@ Einordnung von Review-Funden); er gibt kleine Fund-Pakete frei (höchstens drei 
 angenommen hat, nichts aus (1)–(7)), gibt Workern Startaufträge für freigegebene Ledger, pusht Branches und das
 private Roadmap-Repo und öffnet PRs. Fragen an Kevin gehen gesammelt und mit Empfehlung; im Zweifel fragen statt raten.
 **Triage:** Was Kevin diktiert, gilt als angenommen; alles andere schlägt der Chef vor, Kevin bestätigt gesammelt.
-Kein eigener Fund wird ohne Kevin `geplant`.
-**Merge:** Der Chef merged Produkt-PRs nach grüner CI im ersten Versuch, einen je CI-Zyklus, vorher die
-Kombinationsprüfung (main + PR im Wegwerf-Worktree). PRs an Harness und Gates (§2/§3, `scripts/dev/harness-paths.txt`)
-merged Kevin, oder der Chef auf Kevins ausdrückliches Wort im selben Zug. Ist `main` rot, wird der letzte Merge per
-Revert zurückgenommen, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile.
+Kein eigener Fund wird ohne Kevin `geplant`. **Merge:** Der Chef merged Produkt-PRs nach eigener Prüfung, wenn die CI
+im ersten Anlauf grün ist, einen je CI-Zyklus, vorher die Kombinationsprüfung (main + PR im Wegwerf-Worktree). PRs an
+Harness und Gates (§2/§3, `scripts/dev/harness-paths.txt`, `.github/workflows/`) merged Kevin, oder der Chef auf Kevins
+ausdrückliches Wort im selben Zug. Ist `main` rot, wird der letzte Merge per Revert zurückgenommen, und bis `main` grün
+ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile.
 
 **Zwei Wahrheiten:** `tasks/private/ROADMAP.md` ist die einzige Reihenfolge-Wahrheit (Kevin kuratiert von Hand; eigenes
 privates Repo, nie im öffentlichen Baum), `tasks/<slug>.md` die einzige Fortschritts-Wahrheit (`[ ]`/`[x]`/`[~]`/`[?]`,
@@ -93,7 +93,8 @@ Temp-Verzeichnissen und die Umgehung des pre-commit-Hooks (`review.sh sec`); Ein
 `bash scripts/dev/harness.sh off|on|status` (Kevins Handgriff): AUTONOMOUS.md, „Die Automatisierungs-Schicht“.
 
 **Release-Kanäle (ab Stufe 13 per Skript, bis dahin von Hand):** `beta` nach jedem grünen Wochenlauf, `rc` schneidet
-Kevin, `stable` frühestens 7 Tage nach dem RC, `hotfix` als einziger Weg daran vorbei: `.claude/rules/release.md`.
+Kevin, `stable` frühestens 7 Tage nach dem RC ohne Fix und ohne Rückmeldung, `hotfix` als einziger Weg daran vorbei:
+`.claude/rules/release.md`.
 
 ## 3. Vor jeder Arbeit
 
@@ -126,13 +127,12 @@ ausgenommen push und merge des Chefs nach §2 „Merge“.
 
 <!-- Stufe 0 · Quelle §7.0 · Fortschritt nur in tasks/private/ROADMAP.md -->
 
-Reihenfolge der Autonomie-Roadmap (Nummern sind Kennungen, keine Reihenfolge): **0** Vorab → **1** Grün heißt
-Beweis → **3** Ausführung zuerst (Wochenlauf, Release-Assertionen) → **8a/8b** VM-freie Orakel → **2** Proxmox-VM-Skill
-→ **4** Runner-Isolation und Gates → **5** Roadmap und Beweis → **6** Reviewer-Ebenen → **7** Worker →
-**8c/8d, 10, 12, 13** baut der Worker (Harness-Anteile Kevin) → **9** Finder-Flotte.
-Welche Stufe `aktiv`, `geplant` oder `abgeschlossen` ist, steht **nur** in `tasks/private/ROADMAP.md`; das Warum
-steht im Roadmap-Dokument `tasks/private/autonomy-roadmap.md`. Jede Stufe wird als gewöhnliches Vorhaben über
-`/feature-plan` geschnitten und über `/feature-build` gebaut.
+Reihenfolge der Autonomie-Roadmap (Nummern sind Kennungen, keine Reihenfolge): **0** Vorab → **1** Grün heißt Beweis →
+**3** Ausführung zuerst (Wochenlauf, Release-Assertionen) → **8a/8b** VM-freie Orakel → **2** Proxmox-VM-Skill → **4**
+Runner-Isolation und Gates → **5** Roadmap und Beweis → **6** Reviewer-Ebenen → **7** Worker → **8c/8d, 10, 12, 13**
+baut der Worker (Harness-Anteile Kevin) → **9** Finder-Flotte. Welche Stufe `aktiv`, `geplant` oder `abgeschlossen` ist,
+steht **nur** in `tasks/private/ROADMAP.md`; das Warum steht im Roadmap-Dokument `tasks/private/autonomy-roadmap.md`.
+Jede Stufe wird als gewöhnliches Vorhaben über `/feature-plan` geschnitten und über `/feature-build` gebaut.
 
 ## 5. Arbeitsweise
 
