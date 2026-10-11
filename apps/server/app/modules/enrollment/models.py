@@ -262,7 +262,7 @@ def admit_certificate(
         return False
     if not fingerprint:
         return False
-    line = _line_of(db, fingerprint)
+    line = line_of(db, fingerprint)
     if line is None:
         installed_at = (
             db.query(CertificateRegisterState.installed_at)
@@ -274,19 +274,53 @@ def admit_certificate(
         if not legacy_admitted(not_before, installed_at, utcnow_naive()):
             return False
         _take_over(db, cn, scope, fingerprint, serial, not_before, not_after)
-        line = _line_of(db, fingerprint)
+        line = line_of(db, fingerprint)
         if line is None:
             return False
     return line.revoked_at is None and (line.subject_id, line.scope) == (cn, scope)
 
 
-def _line_of(db: Session, fingerprint: str) -> DeviceLine | None:
+def line_of(db: Session, fingerprint: str) -> DeviceLine | None:
+    """The device line of a recorded certificate, or None."""
     return (
         db.query(DeviceLine)
         .join(IssuedCertificate, IssuedCertificate.line_id == DeviceLine.id)
         .filter(IssuedCertificate.fingerprint == fingerprint)
         .first()
     )
+
+
+def revoke_line(db: Session, line_id: str, reason: str) -> bool:
+    """Revoke one device (``reason``: replaced | self | admin). A line already revoked
+    keeps its first reason and time. True if this call revoked it. Does not commit."""
+    changed = (
+        db.query(DeviceLine)
+        .filter(DeviceLine.id == line_id, DeviceLine.revoked_at.is_(None))
+        .update({"revoked_at": utcnow_naive(), "revoked_reason": reason}, synchronize_session=False)
+    )
+    return changed > 0
+
+
+def devices_of(
+    db: Session, subject_id: str, scope: str
+) -> list[tuple[DeviceLine, IssuedCertificate | None]]:
+    """The device lines of a subject, oldest first, each with its newest certificate."""
+    lines = (
+        db.query(DeviceLine)
+        .filter(DeviceLine.subject_id == subject_id, DeviceLine.scope == scope)
+        .order_by(DeviceLine.created_at, DeviceLine.id)
+        .all()
+    )
+    return [
+        (
+            line,
+            db.query(IssuedCertificate)
+            .filter(IssuedCertificate.line_id == line.id)
+            .order_by(IssuedCertificate.not_after.desc())
+            .first(),
+        )
+        for line in lines
+    ]
 
 
 def _take_over(

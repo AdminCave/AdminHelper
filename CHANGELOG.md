@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Geraete einzeln widerrufen (R-0224):** Ein Admin listet die Geraete eines Benutzers mit
+  `GET /api/users/{id}/devices` und widerruft eines mit `DELETE /api/users/{id}/devices/{device_id}`; die uebrigen
+  Geraete des Benutzers bleiben. Ein Geraet widerruft sich selbst mit `POST /api/enrollment/self/revoke`, ausgewiesen
+  durch sein Client-Zertifikat. Jeder Widerruf steht im Audit-Log (`device.revoked`).
 - **Builder-Profil des Workers (Team-Plan 4b):** `scripts/dev/builder-home.sh setup|token|status`
   richtet ohne sudo ein eigenes HOME fuer den Loop unter Kevins Benutzer ein (CLI-Pin, Settings des
   Runners mit Deny-Regeln mit absolutem Pfad fuer die privaten Verzeichnisse in Kevins HOME (`~/.ssh`,

@@ -178,8 +178,10 @@ Abhängt von: T1, T2
 Test-Löschung: apps/server/tests/test_mtls_scope.py::test_permissive_allows_revoked_identity — ein gesperrtes Zertifikat wird künftig auch permissiv abgelehnt, ersetzt durch den Fall in test_certificate_check.py
 Assertion-Änderung: apps/server/tests/test_mtls_scope.py::test_enforced_allows_non_revoked_identity — die Identität trägt Fingerprint und notBefore eines erfassten Zertifikats; apps/server/tests/test_stream.py::test_ok_when_valid_and_not_revoked — der Reauth bekommt den Fingerprint; apps/server/tests/test_stream.py::test_ends_when_jwt_blacklisted — ebenso; apps/server/tests/test_stream.py::test_ends_when_identity_revoked — ebenso; apps/server/tests/test_stream.py::test_unverified_identity_skips_revocation_check — ebenso
 
-### T6 — Server: Selbst-Widerruf und Geräteliste für Admins (R-0224)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/enrollment/router.py, apps/server/app/modules/enrollment/models.py, apps/server/app/modules/users/router.py, apps/server/tests/test_device_api.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+### T6 — Server: Selbst-Widerruf und Geräteliste für Admins (R-0224)  [x]
+Komponente: server · Dateien: apps/server/app/modules/enrollment/router.py, apps/server/app/modules/enrollment/models.py, apps/server/app/modules/users/router.py, apps/server/tests/test_device_api.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md, apps/server/app/modules/users/schemas.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @f799c3bb 2026-10-11T11:25:46+02:00
+Review: request_changes (opus, 2 wichtig: legacy in der Liste, Audit bei schon gesperrter Linie) behoben, r2 approve (opus)
 Änderung: Drei Routen:
 - `POST /api/enrollment/self/revoke` sperrt die Linie des vorgelegten Zertifikats (`self`), Antwort 204.
   - Nachweis ist die verifizierte Identität allein (mTLS), kein JWT: Der Desktop setzt auch am Anmeldebildschirm zurück.

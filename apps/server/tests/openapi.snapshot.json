@@ -449,6 +449,82 @@
         "title": "ConnectionUpdate",
         "type": "object"
       },
+      "DeviceResponse": {
+        "description": "One device of a user: a line of client certificates (R-0224).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "legacy": {
+            "title": "Legacy",
+            "type": "boolean"
+          },
+          "not_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not After"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked Reason"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "legacy",
+          "created_at"
+        ],
+        "title": "DeviceResponse",
+        "type": "object"
+      },
       "EnrollmentTokenForRequest": {
         "properties": {
           "browser": {
@@ -3896,6 +3972,21 @@
         ]
       }
     },
+    "/api/enrollment/self/revoke": {
+      "post": {
+        "description": "Revoke the device that calls: the line of the client certificate this request\npresents (R-0224). Holding that certificate and its key is the proof, so no JWT\nis needed — a device resets its identity at the login screen too. A certificate\nalready revoked never gets here: the scope guard refuses it with ERR_CERT_REVOKED.",
+        "operationId": "revoke_own_device_api_enrollment_self_revoke_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Revoke Own Device",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
     "/api/enrollment/token": {
       "post": {
         "description": "Mint a one-time access-scoped enrollment token for the logged-in user.\n\nThe self-service door: the caller authenticates with its JWT and mints a\ntoken for *its own* identity, then redeems it at the ca-issuer.",
@@ -6396,6 +6487,114 @@
           }
         ],
         "summary": "Update User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/users/{user_id}/devices": {
+      "get": {
+        "description": "The user's devices, one per line of client certificates (R-0224).",
+        "operationId": "list_devices_api_users__user_id__devices_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceResponse"
+                  },
+                  "title": "Response List Devices Api Users  User Id  Devices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Devices",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/users/{user_id}/devices/{device_id}": {
+      "delete": {
+        "description": "Revoke one device of the user: its certificates are refused from now on and\ncannot be renewed; the user's other devices stay (R-0224).",
+        "operationId": "revoke_device_api_users__user_id__devices__device_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Device",
         "tags": [
           "users"
         ]
