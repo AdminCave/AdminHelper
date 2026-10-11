@@ -16,8 +16,10 @@ merged Kevin, denn er ändert §2/§3. Zeilenangaben origin/main@d2a654cd; beim 
 Wortlaut für CLAUDE.md steht in der Spec, „Der Entwurf für CLAUDE.md“. Kevins Antworten auf die offenen Fragen der
 Spec gehen vor dem Bau in diesen Wortlaut ein.
 
-### T1 — CLAUDE.md §2/§3/§6/§8 nach dem Entwurf, CHANGELOG  [ ]
+### T1 — CLAUDE.md §2/§3/§6/§8 nach dem Entwurf, CHANGELOG  [x]
 Komponente: scripts · Dateien: CLAUDE.md, CHANGELOG.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @d075d2d5 2026-10-11T17:29:12+02:00
+Review: approve (opus, 2 nits erledigt)
 Änderung:
 - `CLAUDE.md:25–97` (§2) wird der Entwurf der Spec. §3 Trigger 3 (`:112–113`) und der letzte Satz der Schweigeregel
   (`:123`), §6 (`:174–175`) und §8 (`:203`) ändern sich wie dort.

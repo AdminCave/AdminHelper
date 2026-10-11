@@ -10,7 +10,8 @@
 # --note` instead of `--ledger`/`--pr`; it holds that `--kurz` refuses SEC, so
 # no finding is committed into this public repo; and that a reviewer gets its own
 # directory and the cleanup rule of R-0098 (a reviewer's `rm -rf /tmp/tmp.*`
-# took every other session's fixtures on 2026-09-25). Read-only; each check first
+# took every other session's fixtures on 2026-09-25); and that CLAUDE.md keeps the
+# team's rules (R-0270) within its line budget. Read-only; each check first
 # proves on a fixture that it can fail at all, and that it stays quiet on the
 # sentences it must not mistake.
 #
@@ -171,6 +172,24 @@ print(sum(1 for c in cmds if c.startswith("bash scripts/")))
 PY
 }
 
+# claude_rules <CLAUDE.md> — one line per team rule (Kevin, 2026-10-10) missing
+# from it, and one when it is longer than its budget: the sandbox before every
+# unattended run, the Chef with the old name as its bridge (a fresh session looks
+# for the "Aufsicht"), no Sonnet reviewing Sonnet. Line breaks are read as
+# spaces, so a reflow is no finding.
+CLAUDE_MAX_LINES=226
+claude_rules() {
+  unreadable "$1" && return
+  local text s n
+  text=$(tr '\n' ' ' < "$1" | tr -s ' ')
+  for s in 'Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox' '**Chef** (bisher „Aufsicht“' \
+           'Nie prüft Sonnet, was Sonnet baute'; do
+    grep -qF -- "$s" <<<"$text" || echo "missing: $s"
+  done
+  n=$(wc -l < "$1")
+  [ "$n" -le "$CLAUDE_MAX_LINES" ] || echo "$n lines, more than $CLAUDE_MAX_LINES"
+}
+
 # fires <detector> <file…> — the detector read its input and reported a finding.
 fires() { local out; out=$("$@"); [ -n "$out" ] && ! grep -q '^cannot read' <<<"$out"; }
 
@@ -178,7 +197,7 @@ fixture() { printf '%s\n' "$@" > "$WORK/fx.md"; echo "$WORK/fx.md"; }
 
 # ══ the checks can fail ═══════════════════════════════════════════════════════
 echo "── the checks themselves ──"
-for d in plan_on_main status_lists column_in_note; do
+for d in plan_on_main status_lists column_in_note claude_rules; do
   { ! fires "$d" "" && [ -n "$("$d" "")" ]; } && ok "$d: an empty path is neither a finding nor quiet" \
     || bad "$d took an empty path for input"
 done
@@ -388,6 +407,27 @@ CALLS=$(build_task_calls "$BTS")
 [ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
   && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
   || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
+
+# Team-Plan Phase 1 (R-0270): the team's rules in CLAUDE.md do not go silently, and
+# the file does not grow past the budget Kevin set (2026-10-10).
+echo "── CLAUDE.md, the team's rules ──"
+f=$(fixture '## 2. Betriebsmodell' '**Restrisiko:** hingenommen für beaufsichtigte Läufe.' \
+            'Die **Aufsichts-Session** ist die eine Session …' 'Sonnet nur für die schnellen Task-Reviewer im Bau.')
+out=$(claude_rules "$f")
+[ "$(grep -c '^missing: ' <<<"$out")" -eq 3 ] && ok "claude_rules: the old §2 misses all three rules" \
+  || bad "claude_rules on the old §2: $out"
+mapfile -t pad < <(seq 227)
+f=$(fixture '**Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox (R-0241).**' \
+            'Der **Chef** (bisher „Aufsicht“; Skills sagen es noch so)' 'Nie prüft Sonnet, was Sonnet baute.' "${pad[@]}")
+[ "$(claude_rules "$f")" = "230 lines, more than $CLAUDE_MAX_LINES" ] \
+  && ok "claude_rules: 230 lines are over the budget, and only that is found" || bad "claude_rules on 230 lines: $(claude_rules "$f")"
+f=$(fixture 'hingenommen für beaufsichtigte Läufe. **Vor jedem unbeaufsichtigten' 'Dauerlauf kommt die Sandbox (R-0241).**' \
+            'Der **Chef** (bisher' '„Aufsicht“; Skills sagen es noch so)' 'den ganzen Branch prüft Opus. Nie prüft Sonnet, was' \
+            '  Sonnet baute.')
+[ -z "$(claude_rules "$f")" ] && ok "claude_rules: the rules wrapped across line breaks are found" \
+  || bad "claude_rules fired on the wrapped rules: $(claude_rules "$f")"
+out=$(claude_rules CLAUDE.md)
+[ -z "$out" ] && ok "CLAUDE.md keeps the team's rules within $CLAUDE_MAX_LINES lines" || bad "CLAUDE.md: $out"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"
