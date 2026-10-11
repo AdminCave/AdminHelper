@@ -209,7 +209,7 @@ Abhängt von: T5
 ### T7 — Server: Neu-Provisionieren ersetzt den API-Key des Agents (R-0279)  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/router.py, apps/server/tests/test_provisioning.py, CHANGELOG.md
 Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @753908b1 2026-10-11T11:45:34+02:00
-Review: approve (opus, Aufsicht: Opus fuer T1-T7; risk sagt standard), 3 nits behoben, Wettlauf zweier Aktivierungen als Kandidat gemeldet
+Review: approve (opus, Aufsicht: Opus fuer T1-T7; risk sagt standard), 3 nits behoben, 1 Kandidat an die Aufsicht gemeldet
 Änderung: `POST /api/servers/{id}/provision/activate` löscht vor dem neuen Agent-Key (`router.py:150-158`) alle API-Keys
 mit derselben `server_id`, in derselben Transaktion, mit einem Audit-Eintrag.
 - Server-gebundene Keys entstehen nur hier; manuell angelegte Keys tragen keine `server_id` (`api_keys/router.py:24-37`).
