@@ -50,10 +50,7 @@ Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/hooks/sessio
 - Ein Paritätstest in `skill_consistency_test.sh` hält zusammen: die Deckel in CLAUDE.md §3 Trigger 3, `roadmap.py`
   `WIP_CAPS`, `session-status.sh` `WIP_CAPS` und den `/roadmap`-Skill. Er zeigt an einer Fixture, dass er bei einer
   abweichenden Zahl fällt.
-Assertion-Änderung: scripts/dev/tests/test_roadmap.py::test_show_wip_counts_the_rows_not_the_header — der Deckel `aktiv` ist 2 (Kevin, 2 Bau-Slots)
-Assertion-Änderung: scripts/dev/tests/test_roadmap.py::test_show_the_overview — der Deckel `aktiv` ist 2 (Kevin, 2 Bau-Slots)
-Assertion-Änderung: scripts/dev/tests/test_roadmap.py::test_the_header_follows_the_move — der Kopf zählt gegen `aktiv` 2
-Assertion-Änderung: scripts/dev/tests/test_roadmap.py::test_add_appends_a_neu_row_and_touches_nothing_else — der neu gerechnete Kopf zählt gegen `aktiv` 2
+Assertion-Änderung: scripts/dev/tests/test_roadmap.py::test_show_wip_counts_the_rows_not_the_header — der Deckel `aktiv` ist 2 (Kevin, 2 Bau-Slots); scripts/dev/tests/test_roadmap.py::test_show_the_overview — der Deckel `aktiv` ist 2 (Kevin, 2 Bau-Slots); scripts/dev/tests/test_roadmap.py::test_the_header_follows_the_move — der Kopf zählt gegen `aktiv` 2; scripts/dev/tests/test_roadmap.py::test_add_appends_a_neu_row_and_touches_nothing_else — der neu gerechnete Kopf zählt gegen `aktiv` 2
 Rot vorher: Der Paritätstest fällt, sobald CLAUDE.md (T1) `aktiv` 2 sagt und der Code noch 1.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; die Regel steht in T1)
