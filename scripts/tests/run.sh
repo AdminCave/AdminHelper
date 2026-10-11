@@ -755,11 +755,20 @@ layer_unit() {
   else skip desktop-e2e-lint "desktop-e2e lint" "node/npm not installed"; fi
 
   # Ops/harness shell tests — hermetic, no docker, no display (see scripts_block).
-  # AH_ARGS has no meaning here (the knob is AH_SCRIPT_TESTS), and silently
-  # ignoring it would let `verify.sh scripts -- install_test` look narrowed while
-  # the whole list ran.
+  # `verify.sh scripts -- <test…>` names tests of the list, and only those run: a
+  # build session runs the one of its task in the foreground, in minutes instead
+  # of the whole list (R-0263). A name that is not on the list is an error, so a
+  # typo never looks like a narrowed green run.
   if [ -n "$AH_ARGS" ] && only scripts && [ -n "$AH_ONLY" ]; then
-    echo "the 'scripts' step takes no -- args (use AH_SCRIPT_TESTS); got: $AH_ARGS"; exit 2
+    # shellcheck disable=SC2086  # the list is words, on several lines
+    for st in $AH_ARGS; do
+      case " $(printf '%s ' $AH_SCRIPT_TESTS)" in
+        *" $st "*) ;;
+        *) echo "the 'scripts' step takes names of its tests after --; not on the list: $st"; exit 2 ;;
+      esac
+    done
+    # AH_ARGS is exported: the tests call run.sh themselves and would get the names.
+    AH_SCRIPT_TESTS="$AH_ARGS"; AH_ARGS=""
   fi
   if ! only scripts; then skip scripts "scripts (hermetic)" "AH_ONLY"
   else

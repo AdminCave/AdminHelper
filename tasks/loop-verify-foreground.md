@@ -60,8 +60,10 @@ Semantik: `AUTONOMOUS.md:242–246` „**Je Task** eine frische Bau-Session … 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Kopf von ledger-loop.sh nennt die Variablen)
 
-### T2 — `verify.sh scripts --strict -- <test…>` fährt nur diese Script-Tests  [ ]
+### T2 — `verify.sh scripts --strict -- <test…>` fährt nur diese Script-Tests  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6d393f8e 2026-10-11T18:08:37+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `scripts_block` (`run.sh:597`) nimmt `AH_ARGS` als Liste von Test-Namen, wenn es gesetzt ist; `verify.sh` reicht
   `-- <args>` dorthin durch. Ein Name, der nicht in `AH_SCRIPT_TESTS_DEFAULT` steht, ist ein Fehler mit Exit 2 und
