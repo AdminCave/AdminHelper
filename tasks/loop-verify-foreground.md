@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Sessions testen im Vordergrund und gezielt (R-0263) — Task-Ledger
-Status: aktiv · Branch: harness/loop-verify-foreground · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/loop-verify-foreground · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0263, Harness-Paket Worker A aus Kevins Triage 2026-10-10; Lösung (a) Timeout-Variablen für claude -p und (b) gezielte Tests in der Session, die volle Suite fährt task-close; Bau erst nach flake-paket und team-rules oder mit main hinein; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0263 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell unter scripts/ und ein Skill-Text mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -85,8 +85,10 @@ Suite der Komponente. Für `scripts` bewirkten sie bisher nichts.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (eine Zeile)
 
-### T3 — `/build-task`: im Vordergrund, gezielt, ein Befehl je Aufruf  [ ]
+### T3 — `/build-task`: im Vordergrund, gezielt, ein Befehl je Aufruf  [x]
 Komponente: scripts · Dateien: .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7a4ee785 2026-10-11T18:21:30+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Schritt 4 („Testen“, `SKILL.md:31`) und Schritt 6 („Commit-Nachricht“, `:41`) sagen:
 - Tests laufen im Vordergrund, mit einem `timeout`, der den Lauf trägt. Der Loop erlaubt bis zum Ende der Session
   (T1).

@@ -123,8 +123,8 @@ cleanup_rule() {
 # build_task_findings <skill> <runner settings> — one line per finding in the
 # worker's builder skill (stage 7a): a forbidden command given as an instruction
 # (every code span and every line of a fenced block outside "## Nie"), or a
-# `bash scripts/…` call it instructs that no allow rule of the runner's settings
-# lets through, or a deny stops. Settings that do not load are a finding too.
+# `bash scripts/…` or `ruff …` call it instructs that no allow rule of the runner's
+# settings lets through, or a deny stops. Settings that do not load are a finding too.
 build_task_findings() {
   unreadable "$1" && return
   unreadable "$2" && return
@@ -154,7 +154,7 @@ def rules(kind):
 for cmd in commands:
     if FORBIDDEN.match(cmd):
         print("forbidden as an instruction: " + cmd)
-    elif cmd.startswith("bash scripts/"):
+    elif cmd.startswith(("bash scripts/", "ruff ")):
         if any(matches(cmd, r) for r in rules("deny")) or not any(matches(cmd, r) for r in rules("allow")):
             print("no allow rule in the runner's settings: " + cmd)
 PY
@@ -169,6 +169,17 @@ cmds = [l.strip() for b in re.findall(FENCE, t) for l in b.splitlines()]
 cmds += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", t))]
 print(sum(1 for c in cmds if c.startswith("bash scripts/")))
 PY
+}
+
+# foreground_rule <text> — "ok" when a test step keeps its run in the foreground
+# (R-0263): it says "Vordergrund", and after a "nie", in the same sentence, it
+# forbids run_in_background and each way to wait for a run there. The runner's
+# settings deny the waiting, so a session that sent its run away ends waiting.
+FOREGROUND_RULE=('Vordergrund' '\b[Nn]ie\b[^.]*run_in_background' '\b[Nn]ie\b[^.]*Monitor[^.]*sleep[^.]*tail --pid[^.]*ps')
+foreground_rule() {
+  local re
+  for re in "${FOREGROUND_RULE[@]}"; do grep -qE -- "$re" <<<"$1" || return 0; done
+  echo ok
 }
 
 # fires <detector> <file…> — the detector read its input and reported a finding.
@@ -289,6 +300,18 @@ grep -q "cannot load the runner's settings" <<<"$(build_task_findings "$f" "$WOR
   && ok "build_task_findings: settings that do not load are a finding, not a pass" || bad "build_task_findings passed broken settings"
 ! fires build_task_findings "$WORK/nosuch.md" "$WORK/rs.json" && [ -n "$(build_task_findings "$WORK/nosuch.md" "$WORK/rs.json")" ] \
   && ok "build_task_findings: a missing skill is neither a finding nor quiet" || bad "build_task_findings took a missing skill for input"
+f=$(fixture 'Lint direkt: `ruff check x.py`.')
+grep -q "no allow rule in the runner's settings: ruff check x.py" <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a ruff call no allow rule lets through is found" || bad "build_task_findings missed an unallowed ruff call"
+f=$(fixture '4. **Testen**:' '   - Im Vordergrund. Nie `run_in_background`, nie warten mit Monitor,' '     `sleep`, `tail --pid` oder `ps`.' '5. **Danach**')
+[ "$(foreground_rule "$(section "$f" '4. **Testen' '5. **')")" = ok ] \
+  && ok "foreground_rule: the rule wrapped across a line break is found" || bad "foreground_rule missed the wrapped rule"
+f=$(fixture '4. **Testen**:' '   Lange Läufe mit `run_in_background` starten und mit Monitor, `sleep`, `tail --pid` oder `ps`' '   warten, kurze im Vordergrund.' '5. **Danach**')
+[ -z "$(foreground_rule "$(section "$f" '4. **Testen' '5. **')")" ] \
+  && ok "foreground_rule: a step that sends its run to the background is no ok" || bad "foreground_rule passed run_in_background as an instruction"
+f=$(fixture '4. **Testen**:' '   Im Vordergrund. Nie `run_in_background`.' '5. **Danach**')
+[ -z "$(foreground_rule "$(section "$f" '4. **Testen' '5. **')")" ] \
+  && ok "foreground_rule: forbidding the background without the ways to wait is no ok" || bad "foreground_rule passed a step that still lets it wait"
 
 cd "$REPO_ROOT" || exit 1
 skills=(.claude/skills/*/SKILL.md)
@@ -388,6 +411,9 @@ CALLS=$(build_task_calls "$BTS")
 [ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
   && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
   || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
+[ "$(foreground_rule "$(section "$BTS" '4. **Testen' '5. **')")" = ok ] \
+  && ok "build-task tests in the foreground and forbids the background and waiting there (R-0263)" \
+  || bad "build-task's step 4 lacks the foreground rule (Vordergrund, nie run_in_background, nie warten)"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"
