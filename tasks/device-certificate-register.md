@@ -263,8 +263,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: CHANGELOG (Changed); Admin-Doku in T14
 Abhängt von: T8
 
-### T10 — Agent: Neu-Provisionieren nennt das vorige Zertifikat (R-0224, R-0280)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/internal/enroll/client.go
+### T10 — Agent: Neu-Provisionieren nennt das vorige Zertifikat (R-0224, R-0280)  [x]
+Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/internal/enroll/client.go, apps/agent/internal/enroll/enroll_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0089c928 2026-10-11T12:27:40+02:00
+Review: request_changes (opus, 1 wichtig: Testdatei fehlte in Dateien) behoben, r2 approve (opus)
 Änderung:
 - `enroll.Request` (`enroll.go:46-49`) bekommt `Replaces` mit `json:"replaces,omitempty"`.
 - `runEnrollment` (`provision.go:240-266`) liest vor `Submit` das Leaf aus `agent.crt`, wenn `enroll.Provisioned(dir)`,

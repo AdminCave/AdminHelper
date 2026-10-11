@@ -258,7 +258,14 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	if err != nil {
 		return err
 	}
-	issued, err := enroll.Submit(client, endpoint, enroll.Request{Token: info.Token, CSR: string(csr)})
+	// The identity of an earlier provisioning is still on disk until Store replaces it:
+	// naming it lets the issuer revoke the old line (R-0224).
+	req := enroll.Request{
+		Token:    info.Token,
+		CSR:      string(csr),
+		Replaces: enroll.LeafFingerprint(config.AgentPkiDir()),
+	}
+	issued, err := enroll.Submit(client, endpoint, req)
 	if err != nil {
 		return err
 	}
