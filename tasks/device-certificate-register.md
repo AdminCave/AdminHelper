@@ -298,8 +298,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 Abhängt von: T4, T5, T6
 
-### T12 — Desktop-E2E: Nach dem Zurücksetzen ist das vorige Gerät gesperrt (R-0224)  [ ]
+### T12 — Desktop-E2E: Nach dem Zurücksetzen ist das vorige Gerät gesperrt (R-0224)  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/settings-enroll.live.js, apps/desktop/e2e/test/lib/live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @71f11093 2026-10-11T13:06:55+02:00
+Review: approve (sonnet), 1 nit behoben
 Änderung: Im dritten Fall von `settings-enroll.live.js` (`:102-134`, Zurücksetzen bei laufendem Tunnel, dann neu
 registrieren) fragt die Spec die Geräteliste des Admins ab (`GET /api/users/{id}/devices`):
 - Vor dem Zurücksetzen gibt es eine aktive Linie.

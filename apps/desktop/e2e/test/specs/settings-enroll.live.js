@@ -9,9 +9,11 @@
 // token of its own (AH_SETTINGS_ENROLL_TOKEN): every token is single-use.
 // The third step (R-0246) starts where the second ends: it resets the identity
 // while the tunnel runs and registers again with a third token
-// (AH_SETTINGS_REENROLL_TOKEN), so a new frpc has to replace the old one.
+// (AH_SETTINGS_REENROLL_TOKEN), so a new frpc has to replace the old one. The reset
+// revokes the device at the server first (R-0224): the admin's device list shows the
+// old line revoked by the device itself and, after registering again, a new one.
 
-import { login, jsClick, SERVER_URL } from '../lib/live.js';
+import { adminDevices, login, jsClick, SERVER_URL } from '../lib/live.js';
 
 const TOKEN = process.env.AH_SETTINGS_ENROLL_TOKEN;
 const REENROLL_TOKEN = process.env.AH_SETTINGS_REENROLL_TOKEN;
@@ -105,10 +107,19 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
     expect(before && before.running).toBe(true);
     expect(before.connectedSince).toBeTruthy();
 
+    const linesBefore = adminDevices();
+    const activeBefore = new Set(linesBefore.filter((d) => !d.revoked_at).map((d) => d.id));
+
     // The reset clears the keyring, not the frpc process: the tunnel keeps running on
     // the old identity, the case onEnroll stops before it starts (#102, T7).
     const reset = await invoke('reset_device_identity', { serverUrl: SERVER_URL });
     expect(reset.error).toBeUndefined();
+    // First revoked at the server, with this very certificate (R-0224).
+    expect(reset.value).toBe('revoked');
+    const revokedBySelf = adminDevices().filter(
+      (d) => activeBefore.has(d.id) && d.revoked_reason === 'self',
+    );
+    expect(revokedBySelf.length).toBe(1);
 
     // The settings read the identity when they open; reopen them for the token field.
     await jsClick(await $('.sm-panel .panel-header button'));
@@ -131,5 +142,10 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
       async () => (await $('.tunnel-indicator').getAttribute('data-status')) === 'connected',
       { timeout: 30000, timeoutMsg: 'the tunnel indicator never reached "connected" again' },
     );
+
+    // Registering again opened a new device line; the revoked one stays revoked.
+    const known = new Set(linesBefore.map((d) => d.id));
+    const fresh = adminDevices().filter((d) => !d.revoked_at && !known.has(d.id));
+    expect(fresh.length).toBe(1);
   });
 });
