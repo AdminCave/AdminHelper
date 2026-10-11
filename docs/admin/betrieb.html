@@ -93,12 +93,12 @@
             <div><div class="callout-title"><code>CA_ROOT_PASSPHRASE</code> getrennt aufbewahren</div><p>Die Passphrase wird bewusst <em>nicht</em> ins Backup geschrieben — sie verschlüsselt den mit-gesicherten Root-Key, beides zusammen wäre wertlos (ADR 0001 §5/D7). Im Passwortmanager getrennt halten. Der restaurierte Stack läuft auch ohne sie; gebraucht wird sie nur zum Rotieren der Intermediates.</p></div>
           </div>
 
-          <p>Für automatische tägliche DB-Backups: den auskommentierten <code>pg-backup</code>-Service in <code>docker-compose.yml</code> einkommentieren (nur DBs, Retention 7 Tage) — ersetzt nicht das vollständige <code>backup.sh</code> inkl. CA.</p>
+          <p>Für automatische tägliche DB-Backups: den auskommentierten <code>pg-backup</code>-Service in <code>docker-compose.yml</code> einkommentieren (nur DBs, Retention 7 Tage) — ersetzt nicht das vollständige <code>backup.sh</code> inkl. CA. Ein Restore nur der Datenbank mit <code>scripts/pg-restore.sh</code> beginnt den Übergang des Zertifikats-Registers ebenso neu.</p>
 
           <h3>Restore</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>./scripts/restore.sh ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz</code></pre>
-          <p>Stoppt den Stack, stellt Volumes + DBs wieder her und fährt hoch. Die restaurierte Root ist <strong>identisch</strong> — bereits enrollte Agenten bleiben vertraut, ohne Re-Enrollment. Die <code>.env</code> aus dem Backup wird als <code>.env.restored</code> abgelegt (überschreibt eine vorhandene <code>.env</code> nicht); auf einem frischen Host die getrennt aufbewahrte <code>CA_ROOT_PASSPHRASE</code> ergänzen und nach <code>.env</code> übernehmen.</p>
+          <p>Stoppt den Stack, stellt Volumes + DBs wieder her und fährt hoch. Die restaurierte Root ist <strong>identisch</strong> — bereits enrollte Agenten bleiben vertraut, ohne Re-Enrollment. Das Zertifikats-Register beginnt dabei seinen Übergang neu: Zertifikate, die seit dem Backup ausgestellt oder erneuert wurden, stehen nicht in der zurückgespielten Datenbank; sie werden beim ersten Kontakt übernommen, 90&nbsp;Tage ab dem Restore (siehe „Zertifikats-Register und Übergang“ unten). Die <code>.env</code> aus dem Backup wird als <code>.env.restored</code> abgelegt (überschreibt eine vorhandene <code>.env</code> nicht); auf einem frischen Host die getrennt aufbewahrte <code>CA_ROOT_PASSPHRASE</code> ergänzen und nach <code>.env</code> übernehmen.</p>
 
           <h2>Logs</h2>
           <p>Die Container schreiben Plain-Text-Zeilen <strong>mit Zeitstempel</strong> auf stderr (stdout bleibt für Subprozess-IPC frei); <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg. Format: <code>2026-06-15 11:25:53 INFO     adminhelper.auth …</code> (Datum, Uhrzeit, Level, Logger, Meldung).</p>
@@ -173,6 +173,7 @@ docker compose up -d server</code></pre>
             <li>Sie gelten <strong>90 Tage ab dem Update</strong> weiter und werden beim ersten Kontakt mit dem Server oder beim ersten Erneuern erfasst. Danach gelten sie wie jedes andere Zertifikat bis zu ihrem Ablauf.</li>
             <li>Ein Desktop oder Agent, der in dieser Zeit den Server erreicht, ist damit erfasst; er erneuert sein Zertifikat danach wie gewohnt.</li>
             <li>Eine <code>.p12</code>, die in den 90 Tagen nicht benutzt wurde, nimmt der Server danach nicht mehr an (<code>ERR_CERT_REVOKED</code>): neu exportieren und importieren.</li>
+            <li>Ein Restore (<code>restore.sh</code>, <code>pg-restore.sh</code>) beginnt den Übergang neu, 90 Tage ab dem Restore, für die Zertifikate, die die zurückgespielte Datenbank nicht kennt.</li>
           </ul>
           <p>Nach den 90 Tagen gilt nur noch, was im Register steht.</p>
 

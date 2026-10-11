@@ -582,6 +582,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   faellt. Sonst antwortet der Server mit 403 `ERR_CERT_REVOKED`, auch bei `MTLS_ENFORCE=false`. Erneuert wird nur ein
   Zertifikat, das vom Intermediate seines eigenen Scopes signiert ist. Zertifikate von vor dem Update werden beim
   ersten Kontakt uebernommen; das geht 90 Tage ab dem Update, danach gilt nur noch, was erfasst ist.
+- **Ein Restore beginnt den Uebergang des Registers neu (R-0224):** `restore.sh` und `pg-restore.sh` setzen nach dem
+  Restore der Server-DB den Installationszeitpunkt des Registers auf den Restore. Zertifikate, die seit dem Backup
+  ausgestellt oder erneuert wurden und deshalb nicht im zurueckgespielten Register stehen, werden beim ersten Kontakt
+  uebernommen, 90 Tage ab dem Restore.
 - **Der Widerruf eines Benutzers ist ein Zeitpunkt (R-0224):** Wird ein Benutzer geloescht, gelten alle bis dahin
   ausgestellten Zertifikate dieses Usernames nicht mehr, am Server wie beim Erneuern. Legt ein Admin spaeter einen
   Benutzer mit demselben Namen an, bekommt der neue Benutzer neue Zertifikate; die alten bleiben gesperrt. Ein erneutes
