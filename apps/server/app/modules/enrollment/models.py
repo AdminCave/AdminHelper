@@ -14,7 +14,18 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, String, UniqueConstraint, or_
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    exists,
+    or_,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -116,3 +127,82 @@ def is_identity_revoked(db: Session, subject_id: str, scope: str) -> bool:
         .first()
         is not None
     )
+
+
+class DeviceLine(Base):
+    """One device (R-0224): the line of certificates it holds. Enrollment opens a
+    line, a renewal stays on it, so one device can be revoked without the user's
+    other devices. Written by the ca-issuer (enroll, renew) and by the server when
+    it takes over a certificate issued before the register existed (``legacy``)."""
+
+    __tablename__ = "device_lines"
+    __table_args__ = (Index("ix_device_lines_subject_scope", "subject_id", "scope"),)
+
+    id = Column(String(36), primary_key=True)
+    subject_id = Column(String, nullable=False)
+    scope = Column(String, nullable=False)
+    kind = Column(String, nullable=False)  # "desktop" | "browser" | "agent"
+    legacy = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
+    revoked_at = Column(DateTime, nullable=True)
+    revoked_reason = Column(String, nullable=True)  # "replaced" | "self" | "admin"
+
+
+class IssuedCertificate(Base):
+    """One issued client certificate, keyed by its SHA-256 fingerprint over DER
+    (the hash of RFC 8705's x5t#S256, as lowercase hex). The serial is up to 159
+    bits (x509.random_serial_number), hex, so it does not fit a BIGINT."""
+
+    __tablename__ = "issued_certificates"
+
+    fingerprint = Column(String(64), primary_key=True)
+    line_id = Column(
+        String(36),
+        ForeignKey("device_lines.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    serial = Column(String(40), nullable=False)
+    not_before = Column(DateTime, nullable=False)
+    not_after = Column(DateTime, nullable=False, index=True)
+    # No FK: a predecessor may be pruned before its successor.
+    renewed_from = Column(String(64), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
+
+
+class CertificateRegisterState(Base):
+    """The one row (id 1) the migration writes: when the register was installed.
+    A certificate issued before then is not recorded and is taken over at first
+    contact for a while; one issued after it is always recorded."""
+
+    __tablename__ = "certificate_register_state"
+
+    id = Column(Integer, primary_key=True, autoincrement=False)
+    installed_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
+
+
+# How long past ``not_after`` a certificate stays in the register. A renewal locks
+# the line of a certificate that is still valid; pruning that line in the same
+# moment would cascade over the successor it just inserted. A day of margin keeps
+# the prune away from any line a renewal can still be working on.
+_EXPIRED_MARGIN = datetime.timedelta(days=1)
+
+
+def cleanup_expired_certificates(db: Session) -> tuple[int, int]:
+    """Prune certificates a day past ``not_after`` and then the lines left without
+    one, so the register does not grow without bound. An expired certificate fails
+    the handshake anyway, and a line without certificates admits nothing and has
+    nothing left to block. Returns (certificates, lines) removed."""
+    cutoff = utcnow_naive() - _EXPIRED_MARGIN
+    certificates = (
+        db.query(IssuedCertificate)
+        .filter(IssuedCertificate.not_after < cutoff)
+        .delete(synchronize_session=False)
+    )
+    lines = (
+        db.query(DeviceLine)
+        .filter(~exists().where(IssuedCertificate.line_id == DeviceLine.id))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return certificates, lines

@@ -279,3 +279,44 @@ def test_fill_empty_stcp_secrets_gives_each_its_own(pg_engine, monkeypatch):
         engine.dispose()
         _drop_database(admin_engine, dbname)
         admin_engine.dispose()
+
+
+def test_certificate_register_installs_its_time_and_goes_on_downgrade(pg_engine, monkeypatch):
+    # R-0224: the revision writes the one state row whose install time starts the transition,
+    # records no certificate, and its downgrade removes all three tables.
+    admin_url = pg_engine.url
+    dbname = f"alembic_certreg_{uuid.uuid4().hex[:8]}"
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(SERVER_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(SERVER_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    tables = ("device_lines", "issued_certificates", "certificate_register_state")
+    try:
+        command.upgrade(cfg, "3f9c2a7e5b1d")
+        with engine.connect() as conn:
+            state = conn.execute(
+                text(
+                    "SELECT id, timezone('UTC', now()) - installed_at FROM certificate_register_state"
+                )
+            ).all()
+            certificates = conn.execute(text("SELECT count(*) FROM issued_certificates")).scalar()
+        assert [row[0] for row in state] == [1], "genau eine Zustandszeile"
+        # Naive UTC like every other default (F7): a session-timezone default would be hours off.
+        assert abs(state[0][1].total_seconds()) < 300
+        assert certificates == 0, "nichts wird rueckerfasst"
+
+        command.downgrade(cfg, "8bdf9641a51f")
+        with engine.connect() as conn:
+            left = conn.execute(
+                text("SELECT tablename FROM pg_tables WHERE tablename = ANY(:names)"),
+                {"names": list(tables)},
+            ).all()
+        assert left == []
+    finally:
+        engine.dispose()
+        _drop_database(admin_engine, dbname)
+        admin_engine.dispose()

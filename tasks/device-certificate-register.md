@@ -31,8 +31,10 @@ sonst Sonnet; am Ende ein Opus-Review über den ganzen Branch.
 - **Übergang:** Zertifikate, die vor dem Update ausgestellt wurden, gelten 90 Tage ab dem Update weiter und werden beim
   ersten Kontakt erfasst. Danach gilt nur noch, was erfasst ist.
 
-### T1 — Server: Tabellen des Registers, Migration und Aufräumen (R-0224)  [ ]
+### T1 — Server: Tabellen des Registers, Migration und Aufräumen (R-0224)  [x]
 Komponente: server · Dateien: apps/server/alembic/versions/3f9c2a7e5b1d_add_certificate_register.py, apps/server/app/modules/enrollment/models.py, apps/server/app/modules/hooks/scheduler.py, apps/server/app/scheduler_main.py, apps/server/tests/test_certificate_register.py, apps/server/tests/test_migrations_smoke.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @8bfcba7f 2026-10-11T08:39:50+02:00
+Review: approve (opus), 3 nits in derselben Runde behoben
 Änderung: Neue Revision `3f9c2a7e5b1d` (Vorgänger `8bdf9641a51f`, Stil wie
 `9aa48c0eaecb_add_enrollment_tokens_revoked_identities.py`) mit drei Tabellen, die Modelle in `enrollment/models.py`
 (Zeitspalten naive UTC, Konvention F7 `models.py:29-33`):
