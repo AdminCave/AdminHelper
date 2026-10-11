@@ -4,9 +4,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Ausstellungsregister und Widerruf pro Gerät — Task-Ledger
-Status: freigegeben · Branch: feature/device-certificate-register · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/device-certificate-register · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-10-11 (Phase B mit F1–F8 wie empfohlen: Übergang ab Installation des Registers, Sperre auch permissiv, ERR_CERT_REVOKED, Restrisiko Handshake/frps hingenommen, der Agent-Hinweis aus R-0280 in T10); gesetzt von der Aufsicht adminhelper-ac
-Spec: Roadmap R-0224, R-0279
+Spec: Roadmap R-0224, R-0279, R-0280
 Heavy: linux-full + scenario --enforce --agents 1 --desktop — PKI-, mTLS- und Provisionierungs-Pfad über mehrere Dienste: `run.sh integration` (Enroll und Renew über das Gateway, Migration im Stack und im `upgrade-path`, Postgres-Fall im `stack-pytest`) und `run.sh e2e` (Desktop: Registrieren, Zurücksetzen, Neu-Registrieren) auf einer Pool-VM; dazu vor dem Merge ein Multibox-Lauf `--enforce --agents 1 --desktop`, weil die Prüfung am Server und am Issuer nur mit echtem mTLS über das Gateway greift und Agent und Desktop dort eigene Zertifikate tragen. Der Multibox-Lauf ist ask-first, die Aufsicht holt ihn.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, gofmt und go vet, cargo fmt und clippy -D warnings, svelte-check, ESLint und Prettier sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
@@ -245,12 +245,14 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: CHANGELOG (Changed); Admin-Doku in T14
 Abhängt von: T8
 
-### T10 — Agent: Neu-Provisionieren nennt das vorige Zertifikat (R-0224)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go
+### T10 — Agent: Neu-Provisionieren nennt das vorige Zertifikat (R-0224, R-0280)  [ ]
+Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/internal/enroll/client.go
 Änderung:
 - `enroll.Request` (`enroll.go:46-49`) bekommt `Replaces` mit `json:"replaces,omitempty"`.
 - `runEnrollment` (`provision.go:240-266`) liest vor `Submit` das Leaf aus `agent.crt`, wenn `enroll.Provisioned(dir)`,
   und schickt dessen Fingerprint (SHA-256 über DER, hex klein, wie `provision.go:218-219`).
+- Nachgetragen beim Bau (R-0280, Aufsicht 2026-10-11): Der Hinweis bei abgelaufenem Leaf (`client.go:36`) nennt den
+  Befehl, den es gibt: `adminhelper-agent provision --url … --token … --server-id …` statt `enroll --token`.
 - **Tests:**
   - Mit vorhandener Identität trägt der Body den Fingerprint des alten Leafs, ohne Identität fehlt das Feld.
   - Muster: `httptest`-Server und `t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())`.
