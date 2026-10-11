@@ -4,9 +4,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket scripts-tests: eingebaute Schreiber vor grep -q, lokale Klone, Ankündigung in einer Zeile (R-0286, R-0287, R-0297) — Task-Ledger
-Status: geplant · Branch: harness/scripts-tests · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/scripts-tests · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0286, R-0287, R-0297, Triage Kevin 2026-10-11; Fragen: 1 Heavy linux-full statt none, 2 echo mitnehmen, 3 Variante (a) der Lint lehnt die Mehrzeilen-Form ab, 4 runner-setup.sh bleibt draussen; Bau erst nach dem Merge von #117; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0286, R-0287, R-0297 (Kurz-Ledger ohne Spec)
-Heavy: none — Shell-Tests unter scripts/tests, ledger.sh und builder-home.sh mit hermetischen Tests; vier Zeilen in drei Stack-Tests ändern nur die Form einer Prüfung (offene Frage 1).
+Heavy: linux-full — T1 ändert Zeilen in upgrade_path_test, integration_stack_test und backup_restore_test, die nur auf dem Stack laufen; `run.sh integration` auf einer Pool-VM belegt sie (Teststrategie der Aufsicht, 2026-10-11).
 Hängt ab von: harness/flake-paket (#117) — sonst meldet der Wächter aus T1 die zehn Stellen in diagnostics_test.sh, die #117 umstellt; erst nach dem Merge bauen und origin/main vorher hineinmergen.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
