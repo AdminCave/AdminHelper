@@ -4,8 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Team-Plan Phase 1, Schritt 2: die Regeln des Teams in CLAUDE.md §2/§3 — Task-Ledger
-Status: erledigt · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
-Freigabe: Kevin, 2026-10-10 (Stufen-Plan, im Chat mit der Aufsicht; Roadmap R-0270). Offene Fragen: 1 Zeilenbudget <= 226 jetzt, per Test festgeschrieben, <= 185 spaeter als eigene Zeile R-0271 (Kevin); 2 Deckel aktiv 2 in Code und Status, Disjunkt-Pflicht bleibt (Aufsicht); 3 roter main: Revert des letzten Merges, flaky heisst Rerun plus Roadmap-Zeile (Kevin) - der Satz kommt in den Text; 4 Tagesbericht erst mit seiner Stufe, der Chef uebernimmt seinen Stand aus AH-STATUS, Roadmap und Ledgern (Kevin); 5 oeffentlicher Wortlaut des Restrisikos allgemein (Aufsicht); 6 1 VM-Lauf meint Laeufe, keine stehende Warm-Box (Aufsicht)
+Status: aktiv · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Kevin, 2026-10-10 (Stufen-Plan, im Chat mit der Aufsicht; Roadmap R-0270). Offene Fragen: 1 Zeilenbudget <= 226 jetzt, per Test festgeschrieben, <= 185 spaeter als eigene Zeile R-0271 (Kevin); 2 Deckel aktiv 2 in Code und Status, Disjunkt-Pflicht bleibt (Aufsicht); 3 roter main: Revert des letzten Merges, flaky heisst Rerun plus Roadmap-Zeile (Kevin) - der Satz kommt in den Text; 4 Tagesbericht erst mit seiner Stufe, der Chef uebernimmt seinen Stand aus AH-STATUS, Roadmap und Ledgern (Kevin); 5 oeffentlicher Wortlaut des Restrisikos allgemein (Aufsicht); 6 1 VM-Lauf meint Laeufe, keine stehende Warm-Box (Kevin, bestaetigt 2026-10-11)
 Spec: docs/features/team-rules.md (Roadmap: die Zeile legt der Chef an)
 Heavy: none — Regeltext, Python und Shell unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck/ruff sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -75,4 +75,24 @@ Review: approve (opus, Runde 2; wichtig aus Runde 1 behoben)
 Rot vorher: Die neue Prüfung fällt auf main (`:281` nennt `review.sh risk`).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md (eine Zeile)
+Abhängt von: T1
+
+### T4 — Nachbesserung aus dem Branch-Review  [ ]
+Komponente: scripts · Dateien: CLAUDE.md, CHANGELOG.md, docs/features/team-rules.md, scripts/tests/skill_consistency_test.sh
+Änderung: Funde „wichtig“ aus dem Opus-Review über den ganzen Branch (Aufsicht, 2026-10-11):
+- CLAUDE.md §2 „Merge“: „nach eigener Prüfung“ wieder einsetzen. Der Chef merged Produkt-PRs nach eigener Prüfung,
+  wenn die CI im ersten Anlauf grün ist; der Wegfall war nicht entschieden.
+- CLAUDE.md §2 „Merge“: PRs, die `.github/workflows/` ändern, zählen zu den Gate-PRs; die merged nur Kevin, oder der
+  Chef auf Kevins ausdrückliches Wort (Kevin, 2026-10-11).
+- CLAUDE.md §2 „Release-Kanäle“: `stable` wieder „ohne Fix und ohne Rückmeldung“, wenn es ins Budget passt (höchstens
+  226 Zeilen, neue Zeilen höchstens 120 Zeichen); sonst bleibt es in `.claude/rules/release.md`, und das wird gemeldet.
+- Spec `docs/features/team-rules.md` (Kevins Entscheidung 3 und offene Frage 5): Roadmap-ID und Mechanismus des
+  Restrisikos raus, neutral formuliert: das hingenommene Restrisiko gilt für beaufsichtigte Läufe.
+- `claude_rules` in `skill_consistency_test.sh` hält zusätzlich fest: die 2 Bau-Slots in §2, dass Kevin die PRs an
+  Harness und Gates samt `.github/workflows/` merged, und „nach eigener Prüfung“; je mit Fixture-Gegenprobe wie in T1.
+- CHANGELOG: Der Eintrag aus T1 wird daraufhin geprüft und, wo er nicht mehr stimmt, nachgezogen.
+Rot vorher: Die neuen Prüfungen in `claude_rules` fallen auf dem Stand nach T3 (kein „nach eigener Prüfung“, kein
+`.github/workflows/` bei den Gate-PRs).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: CHANGELOG.md (Eintrag aus T1 nachziehen)
 Abhängt von: T1
