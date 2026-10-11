@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 2: Zertifikatspfad im Troubleshooting, Kostendatei in der CI/CD-Doku — Task-Ledger
-Status: aktiv · Branch: feature/loop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: blockiert · Branch: feature/loop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0275 und R-0268, Loop-Futter aus Kevins Triage 2026-10-10; reine Doku; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0275, R-0268 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Doku unter docs/ (DE+EN); kein Code, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -16,7 +16,7 @@ Loop-Futter triagiert hat. Die private Roadmap ist in diesem Worktree nicht lesb
 Aufsicht. R-0242 (`scripts/install.sh`) bleibt draußen: Es fällt unter die Install-Regel für Heavy und passt nicht in
 einen reinen Doku-Lauf. Zeilenangaben origin/main@d4515a1e.
 
-### T1 — Troubleshooting: der Zertifikatspfad des Agents ist `/etc/adminhelper/identity/agent.crt`, DE und EN (R-0275)  [ ]
+### T1 — Troubleshooting: der Zertifikatspfad des Agents ist `/etc/adminhelper/identity/agent.crt`, DE und EN (R-0275)  [?] (stall: two iterations without progress, the ledger unchanged (log /home/kevin/.cache/ah-builder/loop/loop-kleinpaket-2/))
 Komponente: scripts · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html
 Änderung: Der Abschnitt „Agent meldet sich nicht mehr“ (`docs/admin/troubleshooting.html:82`) prüft den Ablauf mit
 `openssl x509 -in /etc/adminhelper/client.crt -noout -enddate`. Diese Datei schreibt der Agent nicht:
