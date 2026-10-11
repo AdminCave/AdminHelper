@@ -75,7 +75,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -131,6 +131,21 @@ for evil in 'x;y' 'a b' 'A' '../up' '$(id)' "$(printf 'a%.0s' $(seq 1 41))"; do
 done
 [ ! -s "$PG_LOG" ] && ok "six hostile slugs (one 41 long) refused by new and done before any database call" \
   || bad "a hostile slug reached the database tools: $(cat "$PG_LOG")"
+
+echo "── new: a URL whose password lane.sh cannot take out makes no lane (R-0255) ──"
+cp "$MAIN/.devenv.sh" "$WORK/devenv.keep"
+for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "rho postgres://ah:secret@localhost:5432/adminhelper_test"; do
+  slug="${pair%% *}" url="${pair#* }"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
+    && grep -q 'password cannot be taken out of the URL' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
+    && grep -q "nothing of lane $slug was created" "$WORK/out.log" && ! grep -q 'createdb .* failed' "$WORK/out.log" \
+    && ok "${url%%:*}://… whose password the pattern does not take out: no createdb, no lane, no secret printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
 echo "── done: takes the lane's database and venv, nothing else ──"
 mkdir -p "$HOME/.cache/ah-venv-alpha/bin" "$HOME/.cache/ah-venv/bin" "$HOME/.cache/ah-venv-beta-two/bin"
@@ -233,6 +248,8 @@ unset FAKE_CREATEDB_FAIL
   && ! git -C "$MAIN" show-ref --verify --quiet refs/heads/feature/kappa \
   && ok "a failing createdb leaves no worktree, no branch and no mark" \
   || bad "kappa rc=$rc: $(cat "$WORK/out.log")"
+grep -q 'createdb adminhelper_test_kappa failed — nothing of lane kappa was created' "$WORK/out.log" \
+  && ok "and says that createdb failed, and that nothing was made" || bad "kappa message: $(cat "$WORK/out.log")"
 ! grep -q "lane.sh done" "$WORK/out.log" && ok "and sends nobody to done" \
   || bad "the failure message still suggests done: $(cat "$WORK/out.log")"
 # lambda: a venv and a database of the lane's name that no lane made.

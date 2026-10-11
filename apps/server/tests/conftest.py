@@ -35,7 +35,7 @@ import app.modules.provisioning.models  # noqa: F401
 # Explicitly import all models — otherwise Base.metadata does not know about them.
 import app.modules.servers.models  # noqa: F401
 from app.core.auth import hash_password
-from app.core.database import Base, get_db
+from app.core.database import Base, _session_utc, get_db
 from app.modules.users.models import User
 
 # One seed, not a new one per run. A property suite that draws different data every
@@ -57,6 +57,15 @@ def _normalize_postgres_url(raw_url: str) -> str:
         if raw_url.startswith(old):
             return "postgresql+psycopg://" + raw_url[len(old) :]
     return raw_url
+
+
+def _utc_engine(url: str):
+    # The app's own connect listener (R-0209): without it the suite's sessions run in
+    # the database's default zone — Europe/Berlin locally, UTC in CI — and the suite
+    # sees another session than the app does (R-0225).
+    engine = create_engine(url)
+    event.listen(engine, "connect", _session_utc, insert=True)
+    return engine
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +112,7 @@ def pg_engine():
     env_url = os.environ.get("DATABASE_URL", "").strip()
     if env_url:
         url = _normalize_postgres_url(env_url)
-        engine = create_engine(url)
+        engine = _utc_engine(url)
         Base.metadata.create_all(bind=engine)
         try:
             yield engine
@@ -117,7 +126,7 @@ def pg_engine():
 
     with PostgresContainer("postgres:17-alpine") as pg:
         url = _normalize_postgres_url(pg.get_connection_url())
-        engine = create_engine(url)
+        engine = _utc_engine(url)
         Base.metadata.create_all(bind=engine)
         try:
             yield engine

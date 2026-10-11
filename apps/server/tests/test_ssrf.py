@@ -240,6 +240,21 @@ def test_a_host_that_does_not_resolve_is_unresolved_not_private(monkeypatch):
     )
 
 
+def test_an_empty_address_list_is_unresolved_not_private(monkeypatch):
+    # Through the real _resolve: a lookup that succeeds with no address has nothing to
+    # classify, so the verdict is the one for "does not resolve", not a blocked address.
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *_a, **_k: [])
+    assert ssrf_mod.classify_url("http://no-addresses.example/") is ssrf_mod.UrlVerdict.UNRESOLVED
+
+
+def test_an_unreadable_address_is_private_not_unresolved(monkeypatch):
+    # The host did resolve, just to something ipaddress cannot read — fail-closed counts
+    # that as a blocked address, not as a lookup that never answered.
+    unreadable = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("not-an-address", 0))]
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *_a, **_k: unreadable)
+    assert ssrf_mod.classify_url("http://garbled.example/") is ssrf_mod.UrlVerdict.PRIVATE
+
+
 def test_is_private_url_still_rejects_for_both_reasons(monkeypatch):
     assert ssrf_mod.is_private_url("http://127.0.0.1/") is True
     assert ssrf_mod.is_private_url("http://") is True

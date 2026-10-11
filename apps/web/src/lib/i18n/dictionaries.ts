@@ -178,7 +178,8 @@ export const translations: Translations = {
     'modal.hook.interval24h': 'Jeden Tag',
     'modal.hook.intervalCustom': 'Cron-Ausdruck…',
     'modal.hook.cron': 'Cron-Ausdruck',
-    'modal.hook.cronFormat': 'Format: Minute Stunde Tag Monat Wochentag',
+    'modal.hook.cronFormat':
+      'Format: Minute Stunde Tag Monat Wochentag (Wochentag: 0 und 7 = Sonntag, 1 = Montag)',
     'modal.hook.script': 'Script *',
     'modal.hook.scriptPlaceholder': '# Python-Script hier eingeben',
     'modal.hook.selectEvent': 'Bitte mindestens ein Event auswählen',
@@ -407,7 +408,8 @@ export const translations: Translations = {
     'modal.hook.interval24h': 'Every day',
     'modal.hook.intervalCustom': 'Cron expression…',
     'modal.hook.cron': 'Cron expression',
-    'modal.hook.cronFormat': 'Format: Minute Hour Day Month Weekday',
+    'modal.hook.cronFormat':
+      'Format: Minute Hour Day Month Weekday (weekday: 0 and 7 = Sunday, 1 = Monday)',
     'modal.hook.script': 'Script *',
     'modal.hook.scriptPlaceholder': '# Enter Python script here',
     'modal.hook.selectEvent': 'Please select at least one event',

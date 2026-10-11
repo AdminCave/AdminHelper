@@ -313,6 +313,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Speichern den Tunnel erneut, auch bei einer Sprach- oder RDP-Einstellung; neben dem laufenden frpc scheiterte
   das mit „frpc laeuft bereits“, die Anzeige ging auf getrennt, und die Statusleiste meldete einen Fehler. Ein
   laufender Tunnel bleibt jetzt, wie er ist; gestartet wird nur, wenn keiner laeuft.
+- **Desktop: Fehleranzeigen im Fenster ohne `ERR_*`-Codes (R-0261):** Wie zuvor die Statusleiste (R-0248) zeigten
+  die Benachrichtigungs-Einstellungen einen Fehler beim Laden oder Speichern samt Maschinen-Code, etwa nach einem
+  Zertifikatswechsel am Server `… ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: …`; ebenso die Ansible-Seite und die
+  Monitoring-Uebersicht ihren Ladefehler. Jetzt erscheint nur der Text.
 - **Desktop: Statusleiste ohne `ERR_*`-Codes (R-0248):** Ein Netzwerkfehler aus dem Backend traegt die
   Maschinen-Codes (`ERR_TOFU_PIN_MISMATCH`, `ERR_CA_PIN_MISMATCH`, `ERR_TLS_UNKNOWN_ISSUER`) in seiner Meldung,
   und die Statusleiste zeigte sie mit, etwa nach einem Zertifikatswechsel am Server als `Tunnel: …
@@ -559,6 +563,41 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Client-Zertifikat und angemeldeter Benutzer gehoeren zusammen (R-0223):** Unter mTLS gehoert das
+  Client-Zertifikat dem angemeldeten Benutzer; Login, API und Zertifikats-Ausgabe pruefen das. Ist die Identitaet am
+  Gateway verifiziert, muss ihr Scope `access` und ihr CN der Username sein, sonst antwortet der Server mit 403
+  `ERR_CERT_USER_MISMATCH`. Das gilt fuer Login, Refresh und Bootstrap (dort fuer den neu anzulegenden Username), fuer
+  die Anfragen, deren Benutzer aus dem JWT kommt, darunter die Zertifikats-Ausgabe, und fuer das Oeffnen des
+  Benachrichtigungs-Streams. Logout und Zugaenge, bei denen der API-Key entscheidet, sind nicht gebunden; ein API-Key
+  gehoert keinem Benutzer. Jeder Benutzer nutzt damit sein eigenes Zertifikat.
+- **Monitoring: die DB-Session laeuft in UTC (R-0218):** Wie der Server seit R-0209 setzt jetzt auch die Engine des
+  Monitorings jede Verbindung auf `TimeZone=UTC`, auch gegen ein `PGTZ` in der Umgebung. Der Stack faehrt Postgres mit
+  `TZ=Europe/Berlin`; ohne das lief die Session des Monitorings dort in Ortszeit. Heute schreibt und vergleicht das
+  Monitoring schon ueberall naive UTC, Werte und Ausgaben aendern sich also nicht; die Einstellung schuetzt kuenftigen
+  Code.
+- **Hooks: Cron-Wochentage zaehlen wie im Standard-Cron (R-0249):** Im Wochentag-Feld eines Schedule-Hooks war `0`
+  Montag statt Sonntag, denn APScheduler 3.x zaehlt in `from_crontab` ab Montag. Damit lag jeder Wochentag in Ziffern
+  einen Tag daneben: `0 9 * * 1-5` lief Dienstag bis Samstag, `7` wurde abgelehnt. Jetzt gilt Standard-Cron: `0` und
+  `7` sind Sonntag, `1` ist Montag, `1-5` ist Montag bis Freitag. Namen wie `mon-fri` galten schon richtig.
+  Tag-im-Monat und Wochentag bleiben, anders als im Standard-Cron, mit UND verknuepft: `0 9 1-7 * mon` laeuft am
+  ersten Montag des Monats (R-0274).
+  **Bei bestehenden Hooks meinen die Ziffern im Wochentag ab diesem Stand den Tag davor**: `1` war Dienstag und ist
+  jetzt Montag, der Hook laeuft also an dem Tag, den der Cron-Ausdruck meint. Das gilt auch hinter einem Schritt:
+  `*/2` laeuft Sonntag, Dienstag, Donnerstag, Samstag statt Montag, Mittwoch, Freitag, Sonntag. Die gespeicherten
+  Ausdruecke bleiben, wie sie sind; den neuen Zeitpunkt (`next_run`) traegt der Scheduler beim naechsten Abgleich
+  ein. Ein Hook mit `7`, angelegt vor R-0235, lief bisher nie und laeuft jetzt sonntags; ebenso ein Namensbereich ab
+  `sun` (`sun-mon` bis `sun-sat`, jede Schreibweise), den APScheduler ablehnte und der jetzt laeuft. Namen gelten wie ihre
+  Zahlen, auch in Bereichen und mit Schritt, wie in Vixie-Cron: `mon-fri/2` laeuft Montag, Mittwoch, Freitag (bisher
+  Montag bis Freitag, der Schritt fiel weg), `sun-thu` Sonntag bis Donnerstag (bisher abgelehnt); `sat-sun` laeuft
+  weiter Samstag und Sonntag.
+  **Ein Schritt auf einem einzelnen Wert (`1/2`, `mon/2`) und kaputte Namen (`mon;wed`, `mon-fri-sat`) werden jetzt
+  abgelehnt**; APScheduler nahm sie bisher an, Standard-Cron lehnt sie ab. Solche Hooks laufen erst nach einer
+  Korrektur wieder, mit einer Warnung im Scheduler-Log. Betroffene Hooks findet diese Abfrage auf der
+  Server-Datenbank:
+  `SELECT id, name, enabled, schedule_interval FROM hooks WHERE hook_type = 'schedule' AND
+  (regexp_split_to_array(btrim(schedule_interval), '\s+'))[5] ~* '[0-9]|sun-';` Sie listet auch Ausdruecke wie `*/1`
+  oder `sun-sun`, die sich nicht aendern; kaputte Namen ohne Ziffer (`mon;wed`) findet sie nicht, die meldet der
+  Scheduler im Log.
 - **Proxmox-Token aus einer 0600-Datei (R-0229):** `scripts/vm/vm.py` und `scripts/vm/lib.sh` lesen den
   Proxmox-Zugang auch aus `~/.config/adminhelper/pve.env` (Zeilen `KEY=VALUE` fuer `AH_PVE_*`/`AH_VM_*`,
   gelesen, nie gesourct). Vorrang: Umgebung > `pve.env` > `env`-Block von `.claude/settings.local.json`,

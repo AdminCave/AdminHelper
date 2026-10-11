@@ -98,3 +98,38 @@ describe('NotificationPrefs — save error path', () => {
     await findByText(/server down/);
   });
 });
+
+// R-0261: a network error from the backend carries the ERR_* codes in its source chain
+// (error.rs); they are for the code, the editor shows the prose.
+const PIN_MISMATCH =
+  'error sending request for url (https://t/api/notifications/prefs): client error (Connect): ' +
+  'ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für t hat sich geändert';
+const PROSE =
+  'error sending request for url (https://t/api/notifications/prefs): client error (Connect): ' +
+  'AdminHelper TOFU: Das Server-Zertifikat für t hat sich geändert';
+
+describe('NotificationPrefs — errors without the machine codes (R-0261)', () => {
+  it('shows a failed load as prose', async () => {
+    h.fetchPrefs.mockRejectedValueOnce(PIN_MISMATCH);
+
+    const { container } = render(NotificationPrefs);
+
+    await waitFor(() => expect(container.querySelector('.np-err')).not.toBeNull());
+    expect(container.querySelector('.np-err')?.textContent).toBe(PROSE);
+  });
+
+  it('shows a failed save as prose', async () => {
+    h.fetchPrefs.mockResolvedValueOnce({
+      email: 'a@b.de',
+      telegramChatId: null,
+      subscriptions: [],
+    });
+    h.savePrefs.mockRejectedValueOnce(PIN_MISMATCH);
+
+    const { container, findByText } = render(NotificationPrefs);
+    await fireEvent.click(await findByText('Benachrichtigungen speichern'));
+
+    await waitFor(() => expect(container.querySelector('.np-err')).not.toBeNull());
+    expect(container.querySelector('.np-err')?.textContent).toBe(PROSE);
+  });
+});

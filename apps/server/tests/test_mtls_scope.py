@@ -256,7 +256,11 @@ def test_enforced_admin_route_passes_with_access_cert(test_client, admin_user, m
     token = create_access_token({"sub": admin_user.username})
     resp = test_client.get(
         "/api/api-keys",
-        headers={"Authorization": f"Bearer {token}", **_gateway_headers(ou=SCOPE_ACCESS)},
+        headers={
+            "Authorization": f"Bearer {token}",
+            # The certificate belongs to the signed-in user (R-0223).
+            **_gateway_headers(cn=admin_user.username, ou=SCOPE_ACCESS),
+        },
     )
     assert resp.status_code == 200
 

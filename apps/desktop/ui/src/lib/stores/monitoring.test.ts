@@ -46,7 +46,9 @@ import {
   assignTemplateToServers,
   unassignTemplateFromServer,
   assignTagToTemplate,
+  monitoringError,
 } from './monitoring';
+import { SESSION_EXPIRED } from '$lib/utils/errors';
 
 function check(serverId: string, status: string): MonitorCheck {
   return { id: `${serverId}-${status}`, serverId, state: { status } } as unknown as MonitorCheck;
@@ -142,5 +144,30 @@ describe('template assignment store actions (T13)', () => {
     h.assignTemplateTag.mockRejectedValue(new Error('409'));
     expect(await assignTagToTemplate('tpl-1', 'web')).toBe(false);
     expect(h.reportError).toHaveBeenCalledTimes(1);
+  });
+});
+
+// R-0261: a network error from the backend carries the ERR_* codes in its source chain
+// (error.rs); they are for the code, the page shows the prose.
+const PIN_MISMATCH =
+  'error sending request for url (https://x/api/x): client error (Connect): ' +
+  'ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für x hat sich geändert';
+const PROSE =
+  'error sending request for url (https://x/api/x): client error (Connect): ' +
+  'AdminHelper TOFU: Das Server-Zertifikat für x hat sich geändert';
+
+describe('monitoring store: a failed load without the machine codes (R-0261)', () => {
+  beforeEach(() => h.fetchStatus.mockReset());
+
+  it('keeps the prose for the overview', async () => {
+    h.fetchStatus.mockRejectedValueOnce(PIN_MISMATCH);
+    await loadMonitoring();
+    expect(get(monitoringError)).toBe(PROSE);
+  });
+
+  it('still shows no error for an expired session', async () => {
+    h.fetchStatus.mockRejectedValueOnce(new Error(SESSION_EXPIRED));
+    await loadMonitoring();
+    expect(get(monitoringError)).toBeNull();
   });
 });

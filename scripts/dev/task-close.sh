@@ -8,6 +8,12 @@
 #   bash scripts/dev/task-close.sh <ledger> <id> -m "<message>"
 #   bash scripts/dev/task-close.sh <ledger> <id> --message-file <file>
 #     [--stage] [--review none|verdict:<json>|auto [--round <1|2>]] [--review-note "<text>"]
+#     [--cost-file <file>]
+#
+# --cost-file (the worker's): after a reviewer run with a verdict, the cost line
+# goes to <file> as well. The worker reads the reviewer's cost from there, not
+# from this script's output, which the suite and whatever it leaves running
+# share (R-0250).
 #
 # --stage stages exactly the paths the task declares in its `Dateien:` line —
 # nothing else, and never `git add -A`. The runner may not run `git add` at all
@@ -69,7 +75,7 @@ usage() { sed -n '/^#   bash scripts\/dev\/task-close.sh/,/^# Until this stage/p
 die()   { echo "task-close: $*" >&2; exit 2; }
 infra() { echo "task-close: $*" >&2; exit 74; }
 
-LEDGER="" ID="" MSG="" MSGFILE="" REVIEW="none" REVIEW_NOTE="" STAGE=0 ROUND_ARG=""
+LEDGER="" ID="" MSG="" MSGFILE="" REVIEW="none" REVIEW_NOTE="" STAGE=0 ROUND_ARG="" COST_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --stage)        STAGE=1 ;;
@@ -78,6 +84,7 @@ while [ $# -gt 0 ]; do
     --review)       shift; REVIEW="${1-}" ;;
     --review-note)  shift; REVIEW_NOTE="${1-}" ;;
     --round)        shift; ROUND_ARG="${1-}" ;;
+    --cost-file)    shift; COST_FILE="${1-}" ;;
     -h|--help)      usage; exit 0 ;;
     --*)            die "unknown flag: $1" ;;
     *)              if [ -z "$LEDGER" ]; then LEDGER="$1"
@@ -425,13 +432,17 @@ case "$REVIEW" in
       # measurement, not a gate — a log that cannot be written stops nothing.
       if [ "$rc" = 0 ]; then
         bash scripts/dev/review.sh log --append "$VJSON" || echo "task-close: the review log was not written" >&2
-        # The worker adds the reviewer to its run's budget from this line: its own
-        # log of this process, written after the suite (the last such line counts).
+        # The reviewer's cost, for the worker's budget: in this script's output for
+        # a reader, and in the worker's --cost-file, the one place it counts from.
         # A cost the verdict does not carry is `unknown`, never 0: the worker counts
         # it with its cap (R-0190).
-        echo "review cost_usd=$(python3 -c 'import json, math, sys
+        COSTLINE="review cost_usd=$(python3 -c 'import json, math, sys
 c = json.load(open(sys.argv[1])).get("cost_usd")
 print(c if type(c) in (int, float) and math.isfinite(c) and c >= 0 else "unknown")' "$VJSON" 2>/dev/null || echo unknown) round=$ROUND"
+        echo "$COSTLINE"
+        # A file that cannot be written counts with the cap on the worker's side.
+        [ -z "$COST_FILE" ] || printf '%s\n' "$COSTLINE" > "$COST_FILE" \
+          || echo "task-close: the cost file $COST_FILE was not written" >&2
       elif [ "$rc" != 2 ]; then
         WHY="$(grep -v '^[[:space:]]*$' "$RUN_ERR" | tail -n 1)"
         bash scripts/dev/review.sh log --failed "${WHY:-review-run.sh exit $rc without a message}" \

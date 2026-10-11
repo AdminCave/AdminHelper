@@ -82,7 +82,7 @@
           <h2 id="voraussetzungen">Voraussetzungen</h2>
           <ul>
             <li>Linux-Host mit Docker 24+ und Docker-Compose v2</li>
-            <li>Öffentlich erreichbarer Port 443 (Web/API) und 8444 (Enrollment); 7000 und 7443 für FRP; optional 8445 (Agent-Paket-Repo, falls genutzt)</li>
+            <li>Öffentlich erreichbarer Port 443 (Web/API) und 8444 (Enrollment); 7000 (FRP-Kontrollkanal, mTLS) und 7443 (FRP-HTTPS-Tunnel unter dem Subdomain-Host), wenn FRP-Tunnel genutzt werden; optional 8445 (Agent-Paket-Repo, falls genutzt)</li>
             <li>DNS-Eintrag, der auf den Host zeigt (<code>srm.example.com</code>)</li>
             <li>Kein externer Reverse-Proxy nötig: der Stack bringt ein eigenes TLS-Gateway (nginx) mit, das auf <code>443</code> terminiert (siehe unten)</li>
           </ul>

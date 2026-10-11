@@ -84,6 +84,12 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
     pass="${pass//\\/\\\\}"
     pass="$(printf '%b' "${pass//%/\\x}")"
   fi
+  # A user:password the pattern did not take apart would go into an argument
+  # unchanged: stop before either program runs (R-0255), with a code of its own.
+  if [[ "$url" =~ ^[^/]*//[^/@]*:[^/@]*@ ]]; then
+    echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
+    return 3
+  fi
   case "$1" in
     create) ( [ -z "$pass" ] || export PGPASSWORD="$pass"
               exec createdb --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;
@@ -159,13 +165,17 @@ lane_new() {
   # (the name is taken) must leave nothing behind, and every step after it takes
   # back what came before. The mark's directory is made before anything else.
   mkdir -p "$ROOT/.vm/lanes"
-  local made_db=0
+  local made_db=0 db_rc=0
   if [ -n "$(lane_db_url)" ]; then
-    lane_db create "$slug" || {
-      echo "  createdb $(lane_db_name "$slug") failed — nothing of lane $slug was created."
-      echo "  If that database exists and belongs to no lane, pick another slug."
-      exit 1
-    }
+    # The || keeps set -e from ending the script inside lane_db, before the case.
+    lane_db create "$slug" || db_rc=$?
+    case "$db_rc" in
+      0) ;;
+      3) echo "  nothing of lane $slug was created."; exit 1 ;;
+      *) echo "  createdb $(lane_db_name "$slug") failed — nothing of lane $slug was created."
+         echo "  If that database exists and belongs to no lane, pick another slug."
+         exit 1 ;;
+    esac
     made_db=1
   elif [ -f .devenv.sh ]; then
     echo "  no AH_TEST_DB in .devenv.sh — no database of the lane's own"

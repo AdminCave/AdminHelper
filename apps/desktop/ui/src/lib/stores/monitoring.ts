@@ -5,7 +5,7 @@
 // Monitoring store: holds checks, servers, filters, alert rules, alert log.
 // Auto-refresh via activate()/deactivate() from the monitoring page.
 
-import { errMsg, SESSION_EXPIRED } from '$lib/utils/errors';
+import { errMsg, SESSION_EXPIRED, withoutErrorCodes } from '$lib/utils/errors';
 import { writable, derived } from 'svelte/store';
 import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
@@ -243,7 +243,7 @@ export async function loadMonitoring(): Promise<void> {
       checks: [],
       loading: false,
       hasLoaded: true,
-      error: msg === SESSION_EXPIRED ? null : msg,
+      error: msg === SESSION_EXPIRED ? null : withoutErrorCodes(msg),
     }));
   }
 }

@@ -205,7 +205,9 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
 Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt der Lane eine eigene
 `.devenv.sh`: Sie sourct die des Haupt-Checkouts und biegt danach `AH_TEST_DB` auf diese DB und
 `AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
-braucht dafür `CREATEDB`, die sie oben ohnehin hat.
+braucht dafür `CREATEDB`, die sie oben ohnehin hat. Steht das Passwort als `Benutzer:Passwort@` in der
+URL, reist es in `PGPASSWORD`, nicht in einem Argument von `createdb`/`dropdb`; kann `lane.sh` es dort
+nicht herauslösen, legt es keine Lane an.
 Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
 und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
 angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
@@ -1573,8 +1575,8 @@ bash scripts/tests/sse_push_e2e.sh
 bash scripts/tests/desktop_e2e_sse_push.sh
 
 # Pflicht-Tests gegen Postgres/Redis des Stacks (run.sh-Schritt stack-pytest):
-# Migrations-Smoke (monitoring), test_stream_redis (server), TOCTOU-Test
-# (ca-issuer). Startet nur postgres + redis; ein Skip ist hier ein Fehler.
+# Migrations-Smoke und test_db_session_utc (monitoring), test_stream_redis (server),
+# TOCTOU-Test (ca-issuer). Startet nur postgres + redis; ein Skip ist hier ein Fehler.
 # JUnit: .ah-out/junit/stack-<name>.xml. Braucht das venv mit den Python-Deps.
 bash scripts/tests/stack_pytest.sh
 

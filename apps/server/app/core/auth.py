@@ -26,6 +26,7 @@ from app.core.config import (
     SECRET_KEY,
 )
 from app.core.database import get_db
+from app.core.identity import require_cert_user
 from app.core.middleware import resolve_client_ip
 from app.core.request_context import Actor, bind_actor
 from app.core.time import utcnow_naive
@@ -225,6 +226,7 @@ def get_current_user(
             detail="Nicht authentifiziert",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    require_cert_user(request, user.username)
     bind_actor(request, Actor("user", str(user.id), user.username, resolve_client_ip(request)))
     return user
 
@@ -302,6 +304,7 @@ class ApiKeyOrUser:
                 )
                 return None, api_key
             if user:
+                require_cert_user(request, user.username)
                 if self.require_admin and not user.is_admin:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich"
