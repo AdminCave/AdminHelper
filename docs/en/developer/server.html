@@ -150,6 +150,7 @@ allowUsers = ["ops-admin"]</code></pre>
             <li><code>ApiKey</code> with <code>permission &isin; {read, read_write}</code></li>
             <li><code>Hook</code> (<code>hook_type &isin; {webhook, event, schedule}</code>, JSON <code>event_triggers</code>, Python <code>script</code>)</li>
             <li><code>FrpServerConfig</code> &harr; <code>FrpTunnel</code> (n:1) &harr; <code>ProvisionToken</code> (n:1, 24 h TTL, one-time)</li>
+            <li><code>DeviceLine</code> &harr; <code>IssuedCertificate</code> (n:1, fingerprint as PK) and <code>CertificateRegisterState</code> (one row, install time): the certificate register (R-0224); next to them <code>EnrollmentToken</code> (one-time token) and <code>RevokedIdentity</code> (revocation as a point in time). The ca-issuer writes the register through a Core view of its own.</li>
             <li><code>Playbook</code> (Ansible) with disk-backed YAML content</li>
           </ul>
 

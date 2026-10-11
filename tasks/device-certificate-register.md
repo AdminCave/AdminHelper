@@ -311,8 +311,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T6, T8
 
-### T13 — Doku: ADR und Entwickler-Doku zum Register (R-0224)  [ ]
+### T13 — Doku: ADR und Entwickler-Doku zum Register (R-0224)  [x]
 Komponente: scripts · Dateien: docs/adr/0001-unified-pki-and-secure-deployment.md, docs/developer/index.html, docs/en/developer/index.html, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5bf0e560 2026-10-11T13:29:39+02:00
+Review: approve (sonnet), 2 nits behoben (Prüfstellen und Grenzen genauer)
 Änderung:
 - **ADR 0001:** Statuszeile D4 (`:36`). §3.4 (`:170-184`):
   - Der Widerruf wirkt pro Gerät (Linie) und pro Benutzer als Zeitpunkt.

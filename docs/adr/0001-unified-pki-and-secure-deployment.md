@@ -33,7 +33,7 @@ ist eine Operator-Entscheidung.
 | D1 Root → tunnel/access/internal | ✅ `ca-issuer` erzeugt die Hierarchie beim First-Boot |
 | D2 CA-Pinning + Leaf-Rotation | ✅ Desktop pinnt die CA-Kette (hostname-agnostisch); Agent pinnt die Root |
 | D3 mTLS-Pflicht `:443` | ✅ **enforced** per Default (ab 0.29.0, Code + Compose); Permissiv-Rollout per `MTLS_ENFORCE=false` (Schalter umgesetzt + **end-to-end verifiziert**: permissiv↔enforced↔rollback, A8) |
-| D4 kurzlebige Certs, Revocation = Ablauf | ✅ native 90 d / Auto-Renew; `revoked_identities` als Schnell-Widerruf |
+| D4 kurzlebige Certs, Revocation = Ablauf | ✅ native 90 d / Auto-Renew; Schnell-Widerruf pro Gerät (Zertifikats-Register) und pro Benutzer als Zeitpunkt (`revoked_identities`), R-0224 |
 | D5 Cert-Laufzeit pro Zielgruppe | ✅ native kurz+auto; Browser lang (`browser=true`) + P12-Re-Import |
 | D6 eigener `ca-issuer`, Server nie im Signier-Pfad | ✅ einzige Signier-Capability; Gateway hält nur ein Leaf; die alte server-eigene FRP-CA ist entfernt (F3, 0.28.0) |
 | D7 Root kalt + passphrase-verschlüsselt | ✅ `root.key.enc`; `CA_ROOT_PASSPHRASE` getrennt vom Backup |
@@ -171,17 +171,39 @@ Header-Integrität der Datenebene, nicht die CA.
 
 „Revocation = Ablauf" wirkt auf der **TLS-Schicht**. Für *sofortiges* Kappen eines
 kompromittierten/ausgemusterten Geräts **vor** Ablauf gibt es zwei App-Ebenen-Hebel
-(**beide umgesetzt**, F1):
-1. **Renewal-Verweigerung**: Der Issuer prüft beim `/renew` die `revoked_identities`-Liste
-   (`is_active`) → das Cert wird nicht erneuert und stirbt zum Ablauf.
-2. **Aktiv-Prüfung pro Request** auf `:443` (`require_scope` → `is_identity_revoked`, billiger
-   indexierter Lookup) → Zugang sofort entzogen, ohne auf den TLS-Ablauf zu warten.
+(**beide umgesetzt**, F1; seit R-0224 pro Zertifikat):
+1. **Renewal-Verweigerung**: Der Issuer prüft beim `/renew` das vorgelegte Zertifikat gegen das
+   Zertifikats-Register (Regel unten) → ein gesperrtes Cert wird nicht erneuert und stirbt zum Ablauf.
+2. **Aktiv-Prüfung pro Request**: Der Server prüft das Zertifikat einer Anfrage gegen dieselbe
+   Regel, wo es zählt: im Scope-Guard und überall, wo ein Benutzer aus JWT oder Zugangsdaten kommt
+   (JWT-Routen samt Enrollment-Token-Ausgabe, Login, Refresh, Bootstrap, Öffnen und Reauth des
+   Streams) → `403 ERR_CERT_REVOKED`, ohne auf den TLS-Ablauf zu warten, auch bei
+   `MTLS_ENFORCE=false`.
 
-Die Liste wird beim Löschen eines Users (CN = Username, `access`) bzw. Servers (CN = `server_id`,
-`tunnel`) befüllt; das Neuanlegen eines Users räumt einen veralteten Eintrag (Username-Reuse).
-**Grenze:** der Widerruf keyt auf den CN — ein bereits ausgestelltes, noch gültiges Cert wird auf
-der TLS-Schicht erst zum Ablauf endgültig wertlos (App-Auth/JWT greift sofort). Das ist der
-praktische Schnell-Widerruf ohne CRL-Maschinerie.
+**Das Register** (`device_lines`, `issued_certificates`): Der Issuer hält jede Ausstellung mit
+Fingerprint (SHA-256 über DER) fest, auf einer **Geräte-Linie**: Enrollment öffnet eine Linie,
+ein Renew bleibt auf ihr. Ein Zertifikat gilt, wenn seine Linie nicht gesperrt ist, zu CN und Scope
+passt und es nicht unter den Widerruf seiner Identität fällt.
+- **Widerruf einer Identität als Zeitpunkt** (`revoked_identities.revoked_at`): gesperrt ist jedes
+  Cert dieses CN und Scopes mit `notBefore <= revoked_at`. Befüllt beim Löschen eines Users
+  (CN = Username, `access`) bzw. Servers (CN = `server_id`, `tunnel`); ein erneuter Widerruf zieht den
+  Zeitpunkt nach. Das Neuanlegen eines Users räumt nichts mehr: Die Certs des früheren Namensvetters
+  bleiben gesperrt, die neuen des neuen Users gelten.
+- **Widerruf eines Geräts** (Linie): Neu-Registrieren nennt das vorige Cert (`replaces`, nur bei
+  gleichem Subjekt und Scope), „Geräte-Identität zurücksetzen“ widerruft per
+  `POST /api/enrollment/self/revoke` mit dem eigenen Cert, ein Admin per
+  `DELETE /api/users/{id}/devices/{device_id}`, Neu-Provisionieren eines Agents per `replaces`.
+- **Übergang:** Ein Cert, das vor der Installation des Registers ausgestellt wurde und nicht erfasst
+  ist, wird beim ersten Kontakt (Server oder `/renew`) auf einer `legacy`-Linie übernommen, 90 Tage
+  ab der Installation (`certificate_register_state.installed_at`). Danach und für jedes nicht
+  erfasste Cert, das später ausgestellt wurde, gilt: gesperrt.
+
+**Grenze:** Server und Issuer prüfen pro Zertifikat; der TLS-Handshake am Gateway und frps prüfen
+weiter nur die Kette (frp kennt keine CRL, siehe V2). Ein gesperrtes, noch nicht abgelaufenes Cert
+besteht dort den TLS-Teil bis zum Ablauf. Auf der App-Ebene nicht an das Zertifikat gebunden sind
+Logout, Zugänge, bei denen ein API-Key auf einer Route ohne Scope-Guard entscheidet, und im
+permissiven Modus ein Zertifikat mit falschem Scope (es trägt dort nichts zur Anmeldung bei). Das ist
+der praktische Schnell-Widerruf ohne CRL-Maschinerie.
 
 ---
 
