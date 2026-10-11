@@ -23,6 +23,7 @@ import pytest
 from app.core.auth import hash_api_key
 from app.core.config import MONITOR_SERVICE_URL
 from app.modules.api_keys.models import ApiKey
+from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
 from app.modules.provisioning import helpers as prov_helpers
 from app.modules.provisioning.models import ProvisionToken
@@ -258,6 +259,57 @@ class TestProvisionActivate:
             headers={"X-Provision-Token": raw},
         )
         assert res.status_code == 403
+
+    def test_a_new_provisioning_replaces_the_agent_key(self, test_client, db_session):
+        # R-0279: the agent installed by the new provisioning holds the server's key; the
+        # key of the earlier one stops working.
+        srv = _make_server(db_session, sid="srv-again", name="again")
+        first = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": _make_token(db_session, server_id=srv.id)},
+        )
+        assert first.status_code == 200, first.text
+        old_key = first.json()["apiKey"]
+        old_id = db_session.query(ApiKey).filter(ApiKey.server_id == srv.id).one().id
+
+        second = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": _make_token(db_session, server_id=srv.id)},
+        )
+        assert second.status_code == 200, second.text
+        new_key = second.json()["apiKey"]
+
+        hash_url = f"/api/frp/provision/{srv.id}/config-hash"
+        assert test_client.get(hash_url, headers={"X-API-Key": old_key}).status_code == 401
+        # Accepted: without an FRP config the route answers 404, past the key check.
+        assert test_client.get(hash_url, headers={"X-API-Key": new_key}).status_code == 404
+        assert db_session.query(ApiKey).filter(ApiKey.server_id == srv.id).count() == 1
+        rows = db_session.query(AuditLog).filter(AuditLog.action == "apikey.deleted").all()
+        assert [row.object_id for row in rows] == [str(old_id)]
+
+    def test_a_provisioning_leaves_the_keys_of_other_servers_and_global_keys(
+        self, test_client, db_session
+    ):
+        srv = _make_server(db_session, sid="srv-mine", name="mine")
+        other = _make_server(db_session, sid="srv-other", name="other")
+        db_session.add(ApiKey(name="global", hashed_key=hash_api_key("g"), permission="read"))
+        db_session.add(
+            ApiKey(
+                name="agent-other",
+                hashed_key=hash_api_key("o"),
+                permission="read",
+                server_id=other.id,
+            )
+        )
+        db_session.commit()
+
+        res = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": _make_token(db_session, server_id=srv.id)},
+        )
+        assert res.status_code == 200, res.text
+        names = sorted(k.name for k in db_session.query(ApiKey).all())
+        assert names == ["agent-mine", "agent-other", "global"]
 
 
 class TestProvisionActivateConcurrency:
