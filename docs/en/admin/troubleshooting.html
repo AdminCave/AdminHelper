@@ -77,6 +77,10 @@ journalctl -u adminhelper-agent.service -n 100 --no-pager</code></pre>
 
           <p><strong>Desktop client, login: “This device is registered for another user”:</strong> under mTLS the device certificate belongs to the user the device was registered for; the server accepts it for that user only (<code>403</code>, <code>ERR_CERT_USER_MISMATCH</code>). Sign in as that user, or use the button <em>“Reset device identity”</em> below to reset the identity and register the device for yourself with a one-time token (see <a href="./users.html">Users &amp; Access</a>). In the browser the same holds for a <code>.p12</code>: each user uses their own.</p>
 
+          <p><strong>Desktop client, login: “The certificate of this device is no longer valid”:</strong> the server no longer accepts the device certificate (<code>403</code>, <code>ERR_CERT_REVOKED</code>). The device was revoked, its user deleted, the certificate replaced by a newer one of this device, or it dates from before the certificate register and was not used during the transition (see <a href="./operations.html">Operations &amp; Config</a>). Use the button <em>“Reset device identity”</em> below to reset the identity, then register the device again with a one-time token from your administrator. In the browser: export a new <code>.p12</code>, import it and remove the old one from the certificate store. An agent gets a new certificate by being provisioned again (see <a href="./agent-deployment.html">Agent Deployment</a>).</p>
+
+          <p><strong>Desktop client, “On this device only: the server did not revoke the old certificate”:</strong> the server could not be reached while resetting the device identity; the certificate is deleted on this device only. Registering the device again for the same user replaces the old certificate. If it is not registered again, or for another user, the administrator revokes the old device through the device API (see <a href="./users.html">Users &amp; Access</a>).</p>
+
           <h2>Monitoring ingest dropping samples</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Check auth

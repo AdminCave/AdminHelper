@@ -100,6 +100,15 @@
             <div><div class="callout-title">Ausnahme: der allererste Admin</div><p>Für den <strong>ersten</strong> Admin gibt es noch niemanden, der ein Token ausstellen könnte. Am einfachsten erledigt das <code>scripts/install.sh</code> (legt Admin + Erst-Token out-of-band an und schaltet scharf). Manuell ohne Script: ein <strong>einmaliges</strong> permissives Fenster (<code>MTLS_ENFORCE=false</code>, ersten Admin anlegen + Desktop enrollen, dann <code>MTLS_ENFORCE=true</code>). Ab da läuft jedes weitere Onboarding über die Token-Tür – ohne erneutes Lockern.</p></div>
           </div>
 
+          <h2>Geräte und Widerruf</h2>
+          <p>Jedes Client-Zertifikat, das der <code>ca-issuer</code> ausstellt, hält ein Register fest und ordnet es einem <strong>Gerät</strong> zu: einem Desktop, einer exportierten <code>.p12</code> oder einem Agent. Ein erneuertes Zertifikat bleibt beim selben Gerät. Der Server nimmt ein Zertifikat nur an, solange sein Gerät nicht widerrufen ist, sonst antwortet er mit <code>403</code> und <code>ERR_CERT_REVOKED</code>, auch bei <code>MTLS_ENFORCE=false</code>.</p>
+          <ul>
+            <li><strong>Benutzer löschen</strong> sperrt alle Zertifikate, die bis dahin für diesen Benutzer ausgestellt wurden, am Server wie beim Erneuern. Legst du später einen Benutzer mit demselben Namen an, registriert er seine Geräte neu; die alten Zertifikate bleiben gesperrt.</li>
+            <li><strong>Ein Gerät widerrufen</strong> (Admin): <code>GET /api/users/{id}/devices</code> listet die Geräte eines Benutzers mit Art, Fingerprint, Laufzeit und Widerruf; <code>DELETE /api/users/{id}/devices/{device_id}</code> widerruft eines. Die übrigen Geräte des Benutzers bleiben. Ein Widerruf über die API steht im Audit-Log (<code>device.revoked</code>).</li>
+            <li><strong>„Geräte-Identität zurücksetzen“</strong> (Desktop) widerruft das Gerät zuerst am Server und löscht dann sein Zertifikat auf dem Gerät. Erreicht der Desktop den Server dabei nicht, sagt er, dass er nur lokal zurückgesetzt hat (siehe <a href="./troubleshooting.html">Fehlerbehebung</a>).</li>
+            <li><strong>Neu registrieren:</strong> Registriert ein Desktop sich neu, löst das neue Zertifikat das vorige dieses Geräts ab. Eine <code>.p12</code> ist ein eigenes Gerät und löst nichts ab; eine, die nicht mehr gebraucht wird, widerrufst du über die Geräte-API.</li>
+          </ul>
+
           <h2>API-Keys</h2>
           <p>API-Keys authentifizieren nicht-interaktive Clients (Go-Agent, Skripte, CI-Jobs). Unterschiede zu User-Credentials:</p>
           <ul>

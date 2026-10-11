@@ -126,11 +126,20 @@
           <h2>Renewing certificates</h2>
           <p>The gateway's TLS certificate is issued by the <code>ca-issuer</code> (access-signed, 365 days). It is provisioned into the <code>gateway-certs</code> volume on first start; a redeploy/restart of the <code>ca-issuer</code> renews it when needed. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation.</p>
 
+          <h2>Certificate register and transition</h2>
+          <p>The <code>ca-issuer</code> records every client certificate it issues or renews in a register; the server accepts recorded certificates only, also with <code>MTLS_ENFORCE=false</code> (see <a href="./users.html">Users &amp; Access → Devices and revocation</a>). Certificates issued before the update to the register are not known to it yet. A transition applies to them:</p>
+          <ul>
+            <li>They stay valid for <strong>90 days from the update</strong> and are recorded at their first contact with the server or their first renewal. From then on they count like any other certificate until they expire.</li>
+            <li>A desktop or agent that reaches the server during this time is recorded that way; it renews its certificate as usual afterwards.</li>
+            <li>A <code>.p12</code> that was not used during the 90 days is no longer accepted afterwards (<code>ERR_CERT_REVOKED</code>): export and import a new one.</li>
+          </ul>
+          <p>After the 90 days, only what is in the register counts.</p>
+
           <h2>Enforcing mTLS (CERT_REQUIRED)</h2>
           <p>Since 0.29.0 the data plane (<code>:443</code>) runs <strong>enforced</strong> by default (<code>MTLS_ENFORCE=true</code>): the gateway requires a valid client certificate at the TLS handshake (<code>CERT_REQUIRED</code>) <em>and</em> the server rejects protected routes without a valid scope with <code>403</code>. A fresh install is usable enforced via <code>scripts/install.sh</code> (it fetches the first admin's cert out-of-band). <strong>Permissive</strong> (<code>MTLS_ENFORCE=false</code>) lets certless clients through and only logs — needed only for a manual first bootstrap. Both are driven by <strong>one</strong> variable: <code>MTLS_ENFORCE</code>.</p>
           <div class="callout callout-danger" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-            <div><div class="callout-title">Enroll every client first, then flip</div><p>Only enforce once <em>every</em> client – agent, desktop <strong>and your own browser</strong> – holds a certificate, otherwise you lock yourself out. Agent and desktop enroll automatically; prepare the browser via the desktop P12 export (<a href="./users.html">Users &amp; Access → Browser access</a>). Test on real hardware <strong>first</strong>: Windows desktop enrollment and the browser import. Note that a browser leaf is long-lived (~1&nbsp;year) and never renews, so it is <strong>only revocable under enforcement</strong> (the data-plane revocation check) — under permissive mode an issued browser certificate stays valid for its full lifetime.</p></div>
+            <div><div class="callout-title">Enroll every client first, then flip</div><p>Only enforce once <em>every</em> client – agent, desktop <strong>and your own browser</strong> – holds a certificate, otherwise you lock yourself out. Agent and desktop enroll automatically; prepare the browser via the desktop P12 export (<a href="./users.html">Users &amp; Access → Browser access</a>). Test on real hardware <strong>first</strong>: Windows desktop enrollment and the browser import. Note that a browser leaf is long-lived (~1&nbsp;year) and never renews. The server refuses a revoked one in both modes, but the revocation <strong>locks the browser out</strong> only under enforcement, because in permissive mode it reaches the login without a certificate as well.</p></div>
           </div>
           <p>Enforce:</p>
           <div class="code-header"><span>bash</span></div>
