@@ -36,8 +36,10 @@ Rot vorher: Der neue Abschnitt fällt auf main, weil weder Chef noch Sandbox-Reg
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CHANGELOG.md (Changed)
 
-### T2 — Deckel `aktiv` 2 im Code, die vier Stellen gleich  [ ]
+### T2 — Deckel `aktiv` 2 im Code, die vier Stellen gleich  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/hooks/session-status.sh, .claude/skills/roadmap/SKILL.md, scripts/dev/tests/test_roadmap.py, scripts/tests/session_status_test.sh, scripts/tests/heavy_test.sh, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6a84ec9c 2026-10-11T17:55:33+02:00
+Review: approve (opus, 1 nit erledigt)
 Änderung:
 - `WIP_CAPS` in `roadmap.py:151` und `session-status.sh:119` setzt `aktiv` auf 2; die Kommentare `session-status.sh:35`
   und `:117` ziehen nach. Der `/roadmap`-Skill (`:36`) nennt `aktiv` 2.

@@ -509,7 +509,7 @@ roadmap_of | grep -q '| neu |' && ok "roadmap: the row is 'neu', never released"
 # Through roadmap.py, not beside it: the key, the recomputed header, the ledger file.
 roadmap_of | grep -q '| weekly .* · Dedup-Key: reg:web-vitest |' \
   && ok "roadmap: the row carries its Dedup-Key reg:<step>" || bad "no Dedup-Key: $(roadmap_of | grep '^| R-0018')"
-roadmap_of | grep -q '^Stand: .* · WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0$' \
+roadmap_of | grep -q '^Stand: .* · WIP: aktiv 0/2 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0$' \
   && ok "roadmap: the header was recomputed by roadmap.py" || bad "header: $(roadmap_of | grep '^Stand')"
 roadmap_of | grep -q '^| R-0018 | .* | tasks/reg-[0-9-]*-web-vitest.md | ' \
   && ok "roadmap: the Ledger column names the ledger file" || bad "ledger cell: $(roadmap_of | grep '^| R-0018')"

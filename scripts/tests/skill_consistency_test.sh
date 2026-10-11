@@ -11,7 +11,8 @@
 # no finding is committed into this public repo; and that a reviewer gets its own
 # directory and the cleanup rule of R-0098 (a reviewer's `rm -rf /tmp/tmp.*`
 # took every other session's fixtures on 2026-09-25); and that CLAUDE.md keeps the
-# team's rules (R-0270) within its line budget. Read-only; each check first
+# team's rules (R-0270) within its line budget, with the WIP caps that roadmap.py,
+# the status hook and /roadmap count against. Read-only; each check first
 # proves on a fixture that it can fail at all, and that it stays quiet on the
 # sentences it must not mistake.
 #
@@ -188,6 +189,32 @@ claude_rules() {
   done
   n=$(wc -l < "$1")
   [ "$n" -le "$CLAUDE_MAX_LINES" ] || echo "$n lines, more than $CLAUDE_MAX_LINES"
+}
+
+# wip_caps <file> — the WIP caps a file states, as "aktiv 2 bereit 2 pr 3 neu 20".
+# Each names them in one place: CLAUDE.md in §3 trigger 3 and the /roadmap skill in
+# its "Zähler >=" bracket (`aktiv` 2 · …, read across line breaks), roadmap.py and
+# session-status.sh in their WIP_CAPS line (("aktiv", 2), … and aktiv:2 …).
+wip_caps() {
+  unreadable "$1" && return
+  { tr '\n' ' ' < "$1" | grep -oE '3\. Ein Deckel ist erreicht \([^)]*\)|Zähler >= [^)]*\)'
+    grep -E '^WIP_CAPS *= *' "$1"; } | head -1 \
+    | grep -oE '(aktiv|bereit|pr|neu)[`"]?(, | |:)[[:digit:]]+' | tr -d '`"' | tr ',:' '  ' | tr -s ' ' | paste -sd' '
+}
+
+# caps_parity <CLAUDE.md> <file…> — one line per file whose WIP caps differ from
+# those of CLAUDE.md, and one when CLAUDE.md does not name all four: two
+# extractions that read nothing must not pass as equal.
+caps_parity() {
+  local want f got
+  want=$(wip_caps "$1")
+  [[ "$want" =~ ^aktiv\ [[:digit:]]+\ bereit\ [[:digit:]]+\ pr\ [[:digit:]]+\ neu\ [[:digit:]]+$ ]] \
+    || { echo "$1: not the four caps: '$want'"; return; }
+  shift
+  for f; do
+    got=$(wip_caps "$f")
+    [ "$got" = "$want" ] || echo "$f: '$got', CLAUDE.md: '$want'"
+  done
 }
 
 # fires <detector> <file…> — the detector read its input and reported a finding.
@@ -428,6 +455,27 @@ f=$(fixture 'hingenommen für beaufsichtigte Läufe. **Vor jedem unbeaufsichtigt
   || bad "claude_rules fired on the wrapped rules: $(claude_rules "$f")"
 out=$(claude_rules CLAUDE.md)
 [ -z "$out" ] && ok "CLAUDE.md keeps the team's rules within $CLAUDE_MAX_LINES lines" || bad "CLAUDE.md: $out"
+
+# The WIP caps: CLAUDE.md §3 sets them, roadmap.py and the status hook count
+# against them, /roadmap renders them — one number changed alone is a finding.
+CAPS_FX=("$WORK/caps-claude.md" "$WORK/caps.py" "$WORK/caps.sh" "$WORK/caps-skill.md")
+printf '%s\n' '3. Ein Deckel ist erreicht (`aktiv` 2 · `bereit` 2 · `pr` 3 · `neu` 20), oder ein dritter' > "${CAPS_FX[0]}"
+printf '%s\n' 'WIP_CAPS = (("aktiv", 2), ("bereit", 2), ("pr", 3), ("neu", 20))' > "${CAPS_FX[1]}"
+printf '%s\n' 'WIP_CAPS="aktiv:2 bereit:2 pr:3 neu:20"' > "${CAPS_FX[2]}"
+printf '%s\n' 'ein Deckel erreicht (Zähler >= `aktiv` 2 · `bereit` 2 · `pr` 3 ·' '`neu` 20), schreib' > "${CAPS_FX[3]}"
+[ -z "$(caps_parity "${CAPS_FX[@]}")" ] && ok "caps_parity: the same caps in four forms are equal, a wrapped one too" \
+  || bad "caps_parity fired on equal caps: $(caps_parity "${CAPS_FX[@]}")"
+printf '%s\n' 'WIP_CAPS="aktiv:1 bereit:2 pr:3 neu:20"' > "${CAPS_FX[2]}"
+out=$(caps_parity "${CAPS_FX[@]}")
+[ "$(grep -c . <<<"$out")" = 1 ] && grep -qF "${CAPS_FX[2]}: 'aktiv 1 bereit 2 pr 3 neu 20'" <<<"$out" \
+  && ok "caps_parity: one number that differs is found, in its file" || bad "caps_parity on aktiv 1: $out"
+printf '%s\n' '3. Ein Deckel ist erreicht, oder ein dritter Bau-Lauf würde starten.' > "${CAPS_FX[0]}"
+fires caps_parity "${CAPS_FX[@]}" && grep -qF 'not the four caps' <<<"$(caps_parity "${CAPS_FX[@]}")" \
+  && ok "caps_parity: a CLAUDE.md without the caps is a finding, not equal" \
+  || bad "caps_parity passed a CLAUDE.md without caps"
+out=$(caps_parity CLAUDE.md scripts/dev/roadmap.py scripts/dev/hooks/session-status.sh .claude/skills/roadmap/SKILL.md)
+[ -z "$out" ] && ok "CLAUDE.md, roadmap.py, session-status.sh and /roadmap name the same caps ($(wip_caps CLAUDE.md))" \
+  || bad "the WIP caps differ: $out"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"
