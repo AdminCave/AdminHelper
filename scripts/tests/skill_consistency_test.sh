@@ -122,6 +122,14 @@ cleanup_rule() {
   echo ok
 }
 
+# branch_review_opus <text> — "ok" when the review over the whole branch (close
+# step 4 of feature-build) runs on Opus and takes no model from review.sh risk,
+# which says standard, that is Sonnet, for a branch outside the risk paths
+# (CLAUDE.md §2 "Modelle": den ganzen Branch prüft Opus).
+branch_review_opus() {
+  grep -qF 'model: opus' <<<"$1" && ! grep -qF 'review.sh risk' <<<"$1" && echo ok
+}
+
 # build_task_findings <skill> <runner settings> — one line per finding in the
 # worker's builder skill (stage 7a): a forbidden command given as an instruction
 # (every code span and every line of a fenced block outside "## Nie"), or a
@@ -307,6 +315,16 @@ f=$(fixture 'Proben nur mit `mktemp -d -p <sein Verzeichnis>`, nur eigene Pfade 
             '     Glob.')
 [ "$(cleanup_rule "$(tr '\n' ' ' < "$f")")" = ok ] \
   && ok "the rule wrapped across a line break is found" || bad "cleanup_rule missed the wrapped rule"
+f=$(fixture '## Abschluss' '4. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:' \
+            '     zweite Durchgang kostet nur Zeit. Das Modell kommt hier aus' \
+            '     `bash scripts/dev/review.sh risk --range main...HEAD`: ohne Flag ist nach den Commits nichts' \
+            '5. **Erledigt, Übergabe**')
+[ -z "$(branch_review_opus "$(section "$f" '4. **Review über den Branch-Diff**' '5. **Erledigt')")" ] \
+  && ok "a closing review that takes its model from review.sh risk is no ok" || bad "branch_review_opus passed the old step 4"
+f=$(fixture '4. **Review über den Branch-Diff**' '   Opus (`model: opus`), bei einem kleinen Branch das Modell aus `review.sh risk`.' \
+            '5. **Erledigt, Übergabe**')
+[ -z "$(branch_review_opus "$(section "$f" '4. **Review über den Branch-Diff**' '5. **Erledigt')")" ] \
+  && ok "... nor one that names Opus beside review.sh risk" || bad "branch_review_opus passed Opus beside review.sh risk"
 
 # ══ the real texts ════════════════════════════════════════════════════════════
 echo "── the skills, AUTONOMOUS.md, tasks/README.md ──"
@@ -386,9 +404,9 @@ grep -qF 'bash scripts/dev/review.sh risk' <<<"$step4" && grep -q 'Eine Runde' <
 ! grep -q 'Release-Workflows (`.github/workflows/release' <<<"$step4" \
   && ok "and no longer carries its own list of risk paths" || bad "step 4 still lists risk paths in prose"
 close4=$(section .claude/skills/feature-build/SKILL.md '4. **Review über den Branch-Diff**' '5. **Erledigt')
-grep -qF 'review.sh risk --range main...HEAD' <<<"$close4" \
-  && ok "the closing review takes its model from the branch range (nothing is uncommitted by then)" \
-  || bad "close step 4 lacks review.sh risk --range main...HEAD"
+[ "$(branch_review_opus "$close4")" = ok ] \
+  && ok "the review over the whole branch runs on Opus, not on the model of review.sh risk" \
+  || bad "close step 4 names no model: opus, or still takes its model from review.sh risk"
 step5=$(section .claude/skills/feature-build/SKILL.md '5. **Schließen' '## Abschluss')
 # Stage 6b: with `Review: auto` in the ledger head the reviewer is task-close's own
 # process — no subagent in step 4, --review auto in step 5, the log for the pilot.

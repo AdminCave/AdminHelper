@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Team-Plan Phase 1, Schritt 2: die Regeln des Teams in CLAUDE.md §2/§3 — Task-Ledger
-Status: aktiv · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/team-rules · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-10 (Stufen-Plan, im Chat mit der Aufsicht; Roadmap R-0270). Offene Fragen: 1 Zeilenbudget <= 226 jetzt, per Test festgeschrieben, <= 185 spaeter als eigene Zeile R-0271 (Kevin); 2 Deckel aktiv 2 in Code und Status, Disjunkt-Pflicht bleibt (Aufsicht); 3 roter main: Revert des letzten Merges, flaky heisst Rerun plus Roadmap-Zeile (Kevin) - der Satz kommt in den Text; 4 Tagesbericht erst mit seiner Stufe, der Chef uebernimmt seinen Stand aus AH-STATUS, Roadmap und Ledgern (Kevin); 5 oeffentlicher Wortlaut des Restrisikos allgemein (Aufsicht); 6 1 VM-Lauf meint Laeufe, keine stehende Warm-Box (Aufsicht)
 Spec: docs/features/team-rules.md (Roadmap: die Zeile legt der Chef an)
 Heavy: none — Regeltext, Python und Shell unter scripts/dev mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -58,8 +58,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; die Regel steht in T1)
 Abhängt von: T1
 
-### T3 — Skills und AUTONOMOUS.md: die Einzeiler gegen die neuen Regeln  [ ]
+### T3 — Skills und AUTONOMOUS.md: die Einzeiler gegen die neuen Regeln  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, .claude/skills/test/SKILL.md, AUTONOMOUS.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @501d5d55 2026-10-11T18:23:51+02:00
+Review: approve (opus, Runde 2; wichtig aus Runde 1 behoben)
 Änderung: Die Zeilen aus der Tabelle „Widersprüche“ der Spec, je eine:
 - `feature-plan/SKILL.md:232`: Zwei Bau-Slots sind der Deckel; eine Lane nur für disjunkte Ledger.
 - `feature-plan/SKILL.md:191`: Eine neue Zeile legt das Gate nur für ein Vorhaben an, das Kevin diktiert oder
