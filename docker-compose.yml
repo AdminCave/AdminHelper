@@ -229,8 +229,9 @@ services:
       - CA_FRPS_SERVER_ADDR=${FRP_SERVER_ADDR:-${DOMAIN:-localhost}}
       # Extra SANs for the frps leaf; empty falls back to EXTRA_SANS (the gateway's).
       - CA_FRPS_EXTRA_SANS=${CA_FRPS_EXTRA_SANS:-}
-      # Reads enrollment tokens + identity revocations from the shared DB (the
-      # server's tables); the issuer only ever READS them.
+      # Works on the server's tables in the shared DB: consumes enrollment tokens and
+      # keeps the certificate register (device lines, issued certificates); it reads
+      # identity revocations and never mints a token.
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
     healthcheck:
       test:

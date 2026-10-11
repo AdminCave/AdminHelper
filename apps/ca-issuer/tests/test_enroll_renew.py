@@ -9,6 +9,7 @@ cannot renew."""
 
 import datetime
 import urllib.parse
+import uuid
 
 import pytest
 from cryptography import x509
@@ -16,10 +17,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
-from app import config, pki
+from app import config, db, pki
 from app.main import app
-from app.tokens import EnrollmentGrant, InMemoryTokenStore
+from app.tokens import CertRecord, EnrollmentGrant, InMemoryTokenStore
 
 
 def _csr_pem(common_name: str) -> str:
@@ -360,3 +363,123 @@ def test_inmemory_expired_token_is_not_consumable():
     grant = EnrollmentGrant(subject_id="a", scope="access")
     store.mint("tok", grant, ttl=datetime.timedelta(seconds=-1))
     assert store.consume("tok") is None
+
+
+# --- the certificate register at enrollment (R-0224) -------------------------
+
+
+def _db_store():
+    eng = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    db.metadata.create_all(eng)
+    return db.DbTokenStore(eng)
+
+
+@pytest.fixture(params=["memory", "db"])
+def register_client(request):
+    """The same cases against both stores: the in-memory one and the DB one."""
+    with TestClient(app) as c:
+        store = InMemoryTokenStore() if request.param == "memory" else _db_store()
+        c.app.state.issuer.tokens = store
+        c.app.state.token_store = store
+        yield c
+
+
+def _mint(client, token: str, grant: EnrollmentGrant) -> None:
+    store = client.app.state.token_store
+    if isinstance(store, InMemoryTokenStore):
+        store.mint(token, grant)
+        return
+    expires = datetime.datetime.now(datetime.timezone.utc).replace(
+        tzinfo=None
+    ) + datetime.timedelta(minutes=15)
+    with store._engine.begin() as conn:
+        conn.execute(
+            db.enrollment_tokens.insert().values(
+                id=str(uuid.uuid4()),
+                hashed_token=db._hash(token),
+                subject_id=grant.subject_id,
+                scope=grant.scope,
+                browser=grant.browser,
+                expires_at=expires,
+            )
+        )
+
+
+def _enroll_fp(client, token: str, grant: EnrollmentGrant, replaces: str | None = None) -> str:
+    _mint(client, token, grant)
+    body = {"token": token, "csr": _csr_pem(grant.subject_id)}
+    if replaces:
+        body["replaces"] = replaces
+    r = client.post("/enroll", json=body)
+    assert r.status_code == 200, r.text
+    return _leaf(r.json()["cert"]).fingerprint(hashes.SHA256()).hex()
+
+
+def test_enroll_records_the_leaf_on_a_new_device_line(register_client):
+    store = register_client.app.state.token_store
+    agent = _enroll_fp(register_client, "t-agent", EnrollmentGrant("agent-01", "tunnel"))
+    desk = _enroll_fp(register_client, "t-desk", EnrollmentGrant("alice", "access"))
+    p12 = _enroll_fp(register_client, "t-p12", EnrollmentGrant("alice", "access", browser=True))
+
+    lines = [store.line_of(fp) for fp in (agent, desk, p12)]
+    assert [(i.subject_id, i.scope, i.kind) for i in lines] == [
+        ("agent-01", "tunnel", "agent"),
+        ("alice", "access", "desktop"),
+        ("alice", "access", "browser"),
+    ]
+    assert len({i.line_id for i in lines}) == 3, "each enrollment opens its own line"
+    assert all(i.revoked_reason is None and not i.legacy for i in lines)
+
+
+def test_replaces_retires_the_previous_device_of_the_same_user(register_client):
+    store = register_client.app.state.token_store
+    old = _enroll_fp(register_client, "t1", EnrollmentGrant("alice", "access"))
+    new = _enroll_fp(register_client, "t2", EnrollmentGrant("alice", "access"), replaces=old)
+
+    assert store.line_of(old).revoked_reason == "replaced"
+    assert store.line_of(new).revoked_reason is None
+    assert store.line_of(new).line_id != store.line_of(old).line_id
+
+
+def test_replaces_leaves_another_users_device_and_an_unknown_fingerprint(register_client):
+    store = register_client.app.state.token_store
+    alices = _enroll_fp(register_client, "t1", EnrollmentGrant("alice", "access"))
+    _enroll_fp(register_client, "t2", EnrollmentGrant("bob", "access"), replaces=alices)
+    _enroll_fp(register_client, "t3", EnrollmentGrant("alice", "tunnel"), replaces=alices)
+    _enroll_fp(register_client, "t4", EnrollmentGrant("alice", "access"), replaces="0" * 64)
+
+    assert store.line_of(alices).revoked_reason is None
+
+
+def test_enroll_refuses_a_malformed_replaces(register_client):
+    _mint(register_client, "t1", EnrollmentGrant("alice", "access"))
+    r = register_client.post(
+        "/enroll", json={"token": "t1", "csr": _csr_pem("alice"), "replaces": "not-a-fingerprint"}
+    )
+    assert r.status_code == 422
+    # Refused before the issuer ran: the token is still there.
+    assert register_client.app.state.token_store.consume("t1") is not None
+
+
+def test_a_failed_signing_does_not_spend_the_token(register_client):
+    store = register_client.app.state.token_store
+    # A scope without an intermediate makes signing fail after the token was taken.
+    _mint(register_client, "t-bad", EnrollmentGrant("alice", "bogus"))
+    r = register_client.post("/enroll", json={"token": "t-bad", "csr": _csr_pem("alice")})
+    assert r.status_code == 403
+    assert store.consume("t-bad") == EnrollmentGrant("alice", "bogus")
+
+
+def test_the_record_of_a_leaf_keeps_what_the_register_stores(client):
+    leaf = _leaf(_enroll(client, "agent-02", "tunnel"))
+    record = CertRecord.of(leaf)
+
+    assert record.fingerprint == leaf.fingerprint(hashes.SHA256()).hex()
+    assert len(record.fingerprint) == 64 and record.fingerprint == record.fingerprint.lower()
+    assert int(record.serial, 16) == leaf.serial_number
+    assert len(record.serial) <= 40, "fits the register's serial column"
+    assert record.not_before == leaf.not_valid_before_utc.replace(tzinfo=None)
+    assert record.not_after == leaf.not_valid_after_utc.replace(tzinfo=None)
+    assert record.not_before.tzinfo is None

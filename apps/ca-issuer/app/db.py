@@ -2,22 +2,30 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""DB-backed token store: reads/consumes enrollment tokens + identity
-revocations from the shared AdminHelper DB. The ca-issuer only ever READS the
-control-plane's tables (it never mints) — defined here as a minimal SQLAlchemy
-Core view rather than importing the server's ORM, to keep the services decoupled.
+"""DB-backed token store on the shared AdminHelper DB. The tables belong to the
+server (its Alembic chain creates them); the ca-issuer sees them through a minimal
+SQLAlchemy Core view rather than the server's ORM, to keep the services decoupled.
+
+What the issuer writes: it consumes enrollment tokens (sets ``used_at``) and keeps
+the certificate register — a device line and a certificate row per issued leaf,
+and the revocation of a line that ``replaces`` names (R-0224). What it only reads:
+identity revocations. It never mints a token.
 """
 
 from __future__ import annotations
 
 import datetime
 import hashlib
+import uuid
 
 from sqlalchemy import (
     Boolean,
     Column,
+    Connection,
     DateTime,
     Engine,
+    ForeignKey,
+    Integer,
     MetaData,
     String,
     Table,
@@ -26,7 +34,7 @@ from sqlalchemy import (
     update,
 )
 
-from app.tokens import EnrollmentGrant
+from app.tokens import CertRecord, EnrollmentGrant, LineInfo, Signer, kind_of
 
 metadata = MetaData()
 
@@ -48,6 +56,41 @@ revoked_identities = Table(
     Column("id", String, primary_key=True),
     Column("subject_id", String, nullable=False),
     Column("scope", String, nullable=False),
+    Column("revoked_at", DateTime),
+)
+
+device_lines = Table(
+    "device_lines",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("subject_id", String, nullable=False),
+    Column("scope", String, nullable=False),
+    Column("kind", String, nullable=False),
+    Column("legacy", Boolean, nullable=False),
+    Column("created_at", DateTime, nullable=False),
+    Column("revoked_at", DateTime, nullable=True),
+    Column("revoked_reason", String, nullable=True),
+)
+
+issued_certificates = Table(
+    "issued_certificates",
+    metadata,
+    Column("fingerprint", String(64), primary_key=True),
+    Column(
+        "line_id", String(36), ForeignKey("device_lines.id", ondelete="CASCADE"), nullable=False
+    ),
+    Column("serial", String(40), nullable=False),
+    Column("not_before", DateTime, nullable=False),
+    Column("not_after", DateTime, nullable=False),
+    Column("renewed_from", String(64), nullable=True),
+    Column("created_at", DateTime, nullable=False),
+)
+
+certificate_register_state = Table(
+    "certificate_register_state",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=False),
+    Column("installed_at", DateTime, nullable=False),
 )
 
 
@@ -89,8 +132,8 @@ class DbTokenStore:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def consume(self, token: str) -> EnrollmentGrant | None:
-        now = _now_naive()
+    @staticmethod
+    def _consume(conn: Connection, token: str, now: datetime.datetime) -> EnrollmentGrant | None:
         stmt = (
             update(enrollment_tokens)
             .where(
@@ -105,12 +148,90 @@ class DbTokenStore:
                 enrollment_tokens.c.browser,
             )
         )
-        with self._engine.begin() as conn:
-            row = conn.execute(stmt).first()
+        row = conn.execute(stmt).first()
         if row is None:
             return None
         return EnrollmentGrant(
             subject_id=row.subject_id, scope=row.scope, browser=bool(row.browser)
+        )
+
+    def consume(self, token: str) -> EnrollmentGrant | None:
+        with self._engine.begin() as conn:
+            return self._consume(conn, token, _now_naive())
+
+    def enroll(
+        self, token: str, sign: Signer, replaces: str | None = None
+    ) -> dict[str, str] | None:
+        # One transaction from the consume to the register rows: if signing or a write
+        # fails, the rollback leaves the token unspent and nothing half-recorded.
+        now = _now_naive()
+        with self._engine.begin() as conn:
+            grant = self._consume(conn, token, now)
+            if grant is None:
+                return None
+            leaf, response = sign(grant)
+            record = CertRecord.of(leaf)
+            line_id = str(uuid.uuid4())
+            conn.execute(
+                device_lines.insert().values(
+                    id=line_id,
+                    subject_id=grant.subject_id,
+                    scope=grant.scope,
+                    kind=kind_of(grant),
+                    legacy=False,
+                    created_at=now,
+                )
+            )
+            conn.execute(
+                issued_certificates.insert().values(
+                    fingerprint=record.fingerprint,
+                    line_id=line_id,
+                    serial=record.serial,
+                    not_before=record.not_before,
+                    not_after=record.not_after,
+                    renewed_from=None,
+                    created_at=now,
+                )
+            )
+            if replaces:
+                self._revoke_replaced(conn, replaces, grant, now)
+        return response
+
+    @staticmethod
+    def _revoke_replaced(
+        conn: Connection, fingerprint: str, grant: EnrollmentGrant, now: datetime.datetime
+    ) -> None:
+        # Only a line of the grant's own subject and scope: whoever holds a token for
+        # this user can retire one of this user's devices, never another user's.
+        line_id = conn.execute(
+            select(issued_certificates.c.line_id)
+            .join(device_lines, device_lines.c.id == issued_certificates.c.line_id)
+            .where(
+                issued_certificates.c.fingerprint == fingerprint,
+                device_lines.c.subject_id == grant.subject_id,
+                device_lines.c.scope == grant.scope,
+            )
+        ).scalar()
+        if line_id is not None:
+            conn.execute(
+                update(device_lines)
+                .where(device_lines.c.id == line_id, device_lines.c.revoked_at.is_(None))
+                .values(revoked_at=now, revoked_reason="replaced")
+            )
+
+    def line_of(self, fingerprint: str) -> LineInfo | None:
+        """The line of a recorded certificate, or None if it is not recorded."""
+        stmt = (
+            select(device_lines)
+            .join(issued_certificates, issued_certificates.c.line_id == device_lines.c.id)
+            .where(issued_certificates.c.fingerprint == fingerprint)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(stmt).first()
+        if row is None:
+            return None
+        return LineInfo(
+            row.id, row.subject_id, row.scope, row.kind, bool(row.legacy), row.revoked_reason
         )
 
     def is_active(self, subject_id: str, scope: str) -> bool:

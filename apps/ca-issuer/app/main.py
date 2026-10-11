@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import config
 from app.issuer import IssuanceError, Issuer
@@ -112,6 +112,9 @@ def get_issuer(request: Request) -> Issuer:
 class EnrollRequest(BaseModel):
     token: str
     csr: str  # PEM
+    # Fingerprint (SHA-256 over DER, hex) of the certificate this device held before;
+    # the issuer revokes its line when it belongs to the same subject and scope.
+    replaces: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class RenewRequest(BaseModel):
@@ -126,7 +129,7 @@ def healthz():
 @app.post("/enroll")
 def enroll(body: EnrollRequest, issuer: Issuer = Depends(get_issuer)):
     try:
-        return issuer.enroll(body.token, body.csr.encode())
+        return issuer.enroll(body.token, body.csr.encode(), body.replaces)
     except IssuanceError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 

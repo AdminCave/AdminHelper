@@ -99,9 +99,9 @@ def pg_engine():
     if not url or "postgres" not in url:
         pytest.skip("kein Postgres (AH_TEST_DB) — der TOCTOU-Test braucht echte Nebenläufigkeit")
     eng = db.make_engine(url)
-    db.metadata.create_all(
-        eng
-    )  # enrollment_tokens is ca-issuer-owned; absent in the shared test DB
+    # The tables belong to the server; the shared test DB may lack them, so they come
+    # from the issuer's own view here.
+    db.metadata.create_all(eng)
     yield eng
     db.metadata.drop_all(eng)
     eng.dispose()

@@ -69,11 +69,14 @@ class Issuer:
                 continue
         raise IssuanceError("Vorgelegtes Cert ist nicht von dieser CA signiert")
 
-    def _sign(self, csr: x509.CertificateSigningRequest, spec: pki.LeafSpec) -> dict[str, str]:
+    def _sign(
+        self, csr: x509.CertificateSigningRequest, spec: pki.LeafSpec
+    ) -> tuple[x509.Certificate, dict[str, str]]:
+        """The signed leaf (for the register) and the response body."""
         inter = self._intermediate(spec.scope)
         leaf = pki.sign_leaf(csr, inter.cert, inter.key, spec)
         leaf_pem = pki.cert_to_pem(leaf)
-        return {
+        return leaf, {
             "cert": leaf_pem.decode(),
             # fullchain = leaf + intermediate (what a client presents)
             "fullchain": (leaf_pem + pki.cert_to_pem(inter.cert)).decode(),
@@ -94,27 +97,36 @@ class Issuer:
             raise IssuanceError("CSR-Signatur ist ungültig")
         return csr
 
-    def enroll(self, token: str, csr_pem: bytes) -> dict[str, str]:
+    def enroll(self, token: str, csr_pem: bytes, replaces: str | None = None) -> dict[str, str]:
+        """``replaces`` is the fingerprint of the certificate this device held before;
+        its line is revoked when it belongs to the same subject and scope (R-0224)."""
         # Validate the CSR fully (parse + signature) BEFORE consuming the one-time token: a
         # client-side format or signature error (truncated PEM, corrupted CSR) must not burn the
         # token, or the retry with a corrected CSR fails as "already used" and an operator has to
         # mint a fresh token by hand (4.16).
         csr = self._load_csr(csr_pem)
-        grant = self.tokens.consume(token)
-        if grant is None:
-            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
 
-        spec = pki.LeafSpec(
-            lifetime_days=_leaf_days(grant),
-            client_auth=True,
-            server_auth=False,
-            subject_cn=grant.subject_id,  # identity from the grant, NOT the CSR
-            scope=grant.scope,
-        )
-        logger.info(
-            "Enroll: %s (scope=%s, browser=%s)", grant.subject_id, grant.scope, grant.browser
-        )
-        return self._sign(csr, spec)
+        def sign(grant: EnrollmentGrant) -> tuple[x509.Certificate, dict[str, str]]:
+            spec = pki.LeafSpec(
+                lifetime_days=_leaf_days(grant),
+                client_auth=True,
+                server_auth=False,
+                subject_cn=grant.subject_id,  # identity from the grant, NOT the CSR
+                scope=grant.scope,
+            )
+            logger.info(
+                "Enroll: %s (scope=%s, browser=%s, replaces=%s)",
+                grant.subject_id,
+                grant.scope,
+                grant.browser,
+                bool(replaces),
+            )
+            return self._sign(csr, spec)
+
+        issued = self.tokens.enroll(token, sign, replaces)
+        if issued is None:
+            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
+        return issued
 
     def renew(self, verified_cert_pem: bytes, csr_pem: bytes) -> dict[str, str]:
         try:
@@ -151,4 +163,4 @@ class Issuer:
             scope=scope,
         )
         logger.info("Renew: %s (scope=%s, %dd)", cn, scope, spec.lifetime_days)
-        return self._sign(csr, spec)
+        return self._sign(csr, spec)[1]

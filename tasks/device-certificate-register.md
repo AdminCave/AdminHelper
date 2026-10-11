@@ -80,8 +80,10 @@ Doku: CHANGELOG (Changed); Admin-Doku in T14
 Test-Löschung: apps/server/tests/test_identity_revocation.py::test_clear_revocation_removes_row — der Helfer `clear_revocation` entfällt mit seinem Aufruf; apps/server/tests/test_identity_revocation.py::test_create_user_clears_a_stale_revocation — das Neuanlegen räumt nichts mehr, ersetzt durch den Namensvetter-Fall mit eigenem Namen
 Assertion-Änderung: apps/server/tests/test_identity_revocation.py::test_revoke_identity_is_idempotent — die Aussage fragt den Zeitpunkt des Widerrufs ab statt Ja/Nein; apps/server/tests/test_identity_revocation.py::test_scope_is_part_of_the_revocation_key — ebenso; apps/server/tests/test_identity_revocation.py::test_delete_user_revokes_its_access_identity — ebenso; apps/server/tests/test_identity_revocation.py::test_delete_server_revokes_its_tunnel_identity — ebenso
 
-### T3 — ca-issuer: Jede Ausstellung wird erfasst, `replaces` löst das vorige Zertifikat ab (R-0224)  [ ]
+### T3 — ca-issuer: Jede Ausstellung wird erfasst, `replaces` löst das vorige Zertifikat ab (R-0224)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/db.py, apps/ca-issuer/app/tokens.py, apps/ca-issuer/app/issuer.py, apps/ca-issuer/app/main.py, apps/ca-issuer/tests/test_enroll_renew.py, apps/ca-issuer/tests/test_db_token_store.py, apps/server/tests/test_certificate_register_view.py, docker-compose.yml
+Evidenz: run.sh[quick] ca-issuer server: 5 passed, 0 failed, 13 skipped · contracts: 1 ok @ee5cc8e8 2026-10-11T09:40:57+02:00
+Review: request_changes (opus, 1 wichtig: Pflichtfeld-Regel im Vertragstest) behoben, r2 approve (opus)
 Änderung:
 - **Core-Sicht** (`db.py:31-51`) um die drei Tabellen aus T1 und `revoked_identities.revoked_at` erweitern.
   `tests/test_certificate_register_view.py` im Server (neu, SPDX) hält die Sicht am Server-Modell fest: Jede Spalte der
