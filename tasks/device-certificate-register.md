@@ -244,8 +244,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: keine (Doku in T14)
 Abhängt von: T6
 
-### T9 — Desktop-UI: Hinweise zu Widerruf und gesperrtem Zertifikat (R-0224)  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/utils/errors.ts, apps/desktop/ui/src/components/Login.revoked.test.ts, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts, apps/desktop/ui/src/components/Login.binding.test.ts, apps/desktop/ui/src/components/Login.mtls.test.ts, apps/desktop/ui/src/components/Login.trust.test.ts, CHANGELOG.md
+### T9 — Desktop-UI: Hinweise zu Widerruf und gesperrtem Zertifikat (R-0224)  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/utils/errors.ts, apps/desktop/ui/src/components/Login.revoked.test.ts, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts, apps/desktop/ui/src/components/Login.binding.test.ts, apps/desktop/ui/src/components/Login.mtls.test.ts, apps/desktop/ui/src/components/Login.trust.test.ts, CHANGELOG.md, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/types.parity.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @e14f3cb8 2026-10-11T12:21:09+02:00
+Review: request_changes (opus, 1 wichtig: Ursache im Nur-lokal-Hinweis) behoben, r2 approve (opus)
 Änderung:
 - `resetDeviceIdentity` (`bridge/index.ts:93-95`) gibt das Ergebnis aus T8 zurück.
 - Einstellungen (`SettingsModal.svelte:121-144`) und Login zeigen nach dem Zurücksetzen, ob am Server widerrufen wurde

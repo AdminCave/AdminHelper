@@ -11,6 +11,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
 import { withoutErrorCodes } from '$lib/utils/errors';
+import type { ResetOutcome } from '$lib/bridge';
 
 // What auth.rs makes of the server's 403: the status and the body around the code.
 const MISMATCH =
@@ -22,7 +23,7 @@ const h = vi.hoisted(() => ({
   setAllowSelfSignedCerts: vi.fn(async () => {}),
   enrollWithToken: vi.fn(),
   resetServerCertPin: vi.fn(),
-  resetDeviceIdentity: vi.fn(async () => {}),
+  resetDeviceIdentity: vi.fn(async (_serverUrl: string): Promise<ResetOutcome> => 'revoked'),
   confirm: vi.fn(async () => true),
 }));
 

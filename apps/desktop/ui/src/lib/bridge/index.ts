@@ -21,6 +21,7 @@ import type {
   Connection,
   HttpMethod,
   PasswordState,
+  ResetOutcome,
   ResolvedConnection,
   Settings,
   TunnelMapping,
@@ -89,9 +90,10 @@ export function isDeviceEnrolled(): Promise<boolean> {
 }
 
 // Reset the enrolled mTLS identity AND the TOFU pin for a server — the recovery
-// path after a server reinstall / PKI re-creation. The user must re-enroll after.
-export function resetDeviceIdentity(serverUrl: string): Promise<void> {
-  return invoke('reset_device_identity', { serverUrl });
+// path after a server reinstall / PKI re-creation. The identity is revoked at the
+// server first where it can be. The user must re-enroll after.
+export function resetDeviceIdentity(serverUrl: string): Promise<ResetOutcome> {
+  return invoke<ResetOutcome>('reset_device_identity', { serverUrl });
 }
 
 // SHA-256 fingerprint of the CA pinned at enrollment (access intermediate) —
@@ -248,4 +250,4 @@ export function stopNotificationStream(): Promise<void> {
   return invoke('stop_notification_stream');
 }
 
-export type { Connection, Settings, AuthSession, TunnelStatus, TunnelMapping };
+export type { Connection, Settings, AuthSession, TunnelStatus, TunnelMapping, ResetOutcome };

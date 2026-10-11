@@ -567,6 +567,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: Zuruecksetzen widerruft das Geraet am Server (R-0224):** "Geraete-Identitaet zuruecksetzen" widerruft das
+  Geraet zuerst am Server, ausgewiesen durch sein Zertifikat, und loescht es dann lokal. Widerruft der Server es
+  nicht, sagt der Desktop das; registriert man das Geraet danach wieder fuer denselben Benutzer, loest das das alte
+  Zertifikat ab. Neu-Registrieren nennt das vorige Zertifikat dieses Geraets, ein Browser-Export nie. Lehnt der Server
+  das Zertifikat ab (`ERR_CERT_REVOKED`), zeigt der Login einen Hinweis und bietet das Zuruecksetzen an.
 - **Neu-Provisionieren ersetzt den API-Key des Agents (R-0279):** Eine weitere Provisionierung desselben Servers loescht
   den API-Key der vorigen; es gilt nur noch der Key des Agents, der jetzt installiert wird. Globale und manuell angelegte
   Keys sowie die Keys anderer Server bleiben. Das Audit-Log nennt jeden ersetzten Key (`apikey.deleted`).
