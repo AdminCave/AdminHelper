@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Ausstellungsregister und Widerruf pro Gerät — Task-Ledger
-Status: bereit · Branch: feature/device-certificate-register · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/device-certificate-register · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-10-11 (Phase B mit F1–F8 wie empfohlen: Übergang ab Installation des Registers, Sperre auch permissiv, ERR_CERT_REVOKED, Restrisiko Handshake/frps hingenommen, der Agent-Hinweis aus R-0280 in T10); gesetzt von der Aufsicht adminhelper-ac
 Spec: Roadmap R-0224, R-0279, R-0280
 Heavy: linux-full + scenario --enforce --agents 1 --desktop — PKI-, mTLS- und Provisionierungs-Pfad über mehrere Dienste: `run.sh integration` (Enroll und Renew über das Gateway, Migration im Stack und im `upgrade-path`, Postgres-Fall im `stack-pytest`) und `run.sh e2e` (Desktop: Registrieren, Zurücksetzen, Neu-Registrieren) auf einer Pool-VM; dazu vor dem Merge ein Multibox-Lauf `--enforce --agents 1 --desktop`, weil die Prüfung am Server und am Issuer nur mit echtem mTLS über das Gateway greift und Agent und Desktop dort eigene Zertifikate tragen. Der Multibox-Lauf ist ask-first, die Aufsicht holt ihn.
@@ -346,3 +346,36 @@ Review: approve (sonnet); nit audit-log wording done
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Task ist die Doku
 Abhängt von: T7, T9
+
+### T15 — Server: Löschen sperrt auch die Geräte des Benutzers oder Servers (R-0224)  [ ]
+Komponente: server · Dateien: apps/server/app/modules/enrollment/models.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_device_api.py, CHANGELOG.md
+Nachbesserung aus dem Branch-Review (Aufsicht, 2026-10-11).
+Änderung: `revoke_identity` sperrt in derselben Transaktion auch die offenen Linien des Subjekts
+(`revoked_reason` `admin`), beim Löschen eines Benutzers wie eines Servers; eine schon gesperrte Linie behält Grund und
+Zeit. Die Geräteliste eines später gleichnamig angelegten Benutzers zeigt die Linien des früheren damit als widerrufen.
+Dazu der Modul-Docstring von `enrollment/models.py`: der ca-issuer schreibt das Register mit.
+- Tests: Löschen und Neuanlegen, danach die Geräteliste (`GET /api/users/{id}/devices`); Löschen eines Servers sperrt
+  die Linie seines Agents; ein Erneuern, das die Linie gerade hält: das Löschen wartet darauf, danach ist die Linie
+  samt Nachfolger gesperrt (zwei Verbindungen auf Postgres).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_revocation.py tests/test_device_api.py
+Doku: CHANGELOG (Eintrag zum Widerruf eines Benutzers ergänzen)
+Abhängt von: T6
+
+### T16 — Restore öffnet den Übergang neu; Texte zu „nur lokal zurückgesetzt“ (R-0224)  [ ]
+Komponente: scripts · Dateien: scripts/restore.sh, scripts/pg-restore.sh, scripts/tests/restore_guard_test.sh, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Nachbesserung aus dem Branch-Review (Aufsicht, 2026-10-11); der Weg für den Restore ist Kevins Entscheidung (2026-10-11).
+Änderung:
+- `restore.sh` und `pg-restore.sh` setzen nach dem Einspielen der Server-DB `certificate_register_state.installed_at`
+  auf den Restore-Zeitpunkt. Zertifikate, die das zurückgespielte Register nicht kennt, werden wie im Übergang beim
+  ersten Kontakt übernommen, 90 Tage ab dem Restore. Fehlt die Tabelle (Backup von vor dem Register), schreibt die
+  Migration den Zeitpunkt beim Start selbst.
+- Test in `restore_guard_test.sh` mit Stubs: restore.sh setzt den Zeitpunkt nach dem Restore der Server-DB;
+  `pg-restore.sh` ebenso für `adminhelper`, nicht für `adminhelper_monitor`.
+- Doku DE und EN: Restore-Abschnitt und „Zertifikats-Register und Übergang“ in `betrieb.html` / `operations.html`;
+  Löschen eines Benutzers sperrt auch seine Geräte (`benutzer.html` / `users.html`); „nur lokal zurückgesetzt“ heißt,
+  der Server hat das Zertifikat nicht widerrufen, etwa weil er nicht erreichbar war (`benutzer.html` / `users.html`,
+  `troubleshooting.html`); `api-reference.html`: die Aktivierung löscht die früheren API-Keys dieses Servers.
+  CHANGELOG.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: die Task ist zum großen Teil Doku
+Abhängt von: T14, T15
