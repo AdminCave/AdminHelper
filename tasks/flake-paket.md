@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Flake-Paket: der Fixture-Klon in ledger_loop_test, die Pipes in diagnostics_test (R-0262, R-0264) — Task-Ledger
-Status: aktiv · Branch: harness/flake-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/flake-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0262 und R-0264, Flake-Paket aus Kevins Triage 2026-10-10; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0262, R-0264 (Kurz-Ledger ohne Spec)
 Heavy: none — zwei Shell-Tests unter scripts/tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -44,8 +44,10 @@ Fixture, das an fremder Wartung scheitert, ist ein Flake der Suite selbst.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — diagnostics_test prüft ohne Pipe in grep -q (R-0264)  [ ]
+### T2 — diagnostics_test prüft ohne Pipe in grep -q (R-0264)  [x]
 Komponente: scripts · Dateien: scripts/tests/diagnostics_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @55206df2 2026-10-11T16:25:44+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Eine Hilfe `has <muster> <text>` mit `grep -q -- "$1" <<<"$2"` ersetzt die zehn `printf '%s' "$x" | grep -q …`
   (`:37`, `:44`, `:47–50`, `:64`, `:66–68`). Ohne Pipe kann der Schreiber kein SIGPIPE bekommen, wenn grep nach dem
