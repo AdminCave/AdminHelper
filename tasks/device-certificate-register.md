@@ -58,8 +58,10 @@ Review: approve (opus), 3 nits in derselben Runde behoben
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_certificate_register.py tests/test_migrations_smoke.py tests/test_alembic_builtin.py tests/test_scheduler_reconcile.py
 Doku: keine (intern; Schema-Liste in T13)
 
-### T2 — Server: Der Widerruf eines Benutzers wird ein Zeitpunkt (R-0224)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/enrollment/models.py, apps/server/app/modules/users/router.py, apps/server/app/core/identity.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_mtls_scope.py, CHANGELOG.md
+### T2 — Server: Der Widerruf eines Benutzers wird ein Zeitpunkt (R-0224)  [x]
+Komponente: server · Dateien: apps/server/app/modules/enrollment/models.py, apps/server/app/modules/users/router.py, apps/server/app/core/identity.py, apps/server/tests/test_identity_revocation.py, apps/server/tests/test_mtls_scope.py, CHANGELOG.md, apps/server/app/modules/notifications/stream.py, apps/server/tests/test_stream.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @10acad6e 2026-10-11T09:08:04+02:00
+Review: request_changes (opus, 1 wichtig: Stream-Weitergabe ungetestet) behoben, r2 approve (opus)
 Änderung: `revoked_identities.revoked_at` wird zum Zeitpunkt, ab dem die Zertifikate eines CN und Scopes nicht mehr gelten.
 - `revoke_identity` (`models.py:83-96`) wird zum Upsert: Ein erneuter Widerruf setzt `revoked_at` auf jetzt.
 - `clear_revocation` (`models.py:99-107`) und sein Aufruf beim Neuanlegen eines Benutzers (`users/router.py:63-65`)
@@ -73,7 +75,7 @@ Komponente: server · Dateien: apps/server/app/modules/enrollment/models.py, app
     Neuanlegen gilt.
   - Erneutes Löschen zieht den Zeitpunkt nach.
   - Der Helfer `_client_cert_pem` in `test_mtls_scope.py` bekommt `not_before` als Parameter.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_revocation.py tests/test_mtls_scope.py tests/test_cert_user_binding.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_revocation.py tests/test_mtls_scope.py tests/test_cert_user_binding.py tests/test_stream.py
 Doku: CHANGELOG (Changed); Admin-Doku in T14
 Test-Löschung: apps/server/tests/test_identity_revocation.py::test_clear_revocation_removes_row — der Helfer `clear_revocation` entfällt mit seinem Aufruf; apps/server/tests/test_identity_revocation.py::test_create_user_clears_a_stale_revocation — das Neuanlegen räumt nichts mehr, ersetzt durch den Namensvetter-Fall mit eigenem Namen
 Assertion-Änderung: apps/server/tests/test_identity_revocation.py::test_revoke_identity_is_idempotent — die Aussage fragt den Zeitpunkt des Widerrufs ab statt Ja/Nein; apps/server/tests/test_identity_revocation.py::test_scope_is_part_of_the_revocation_key — ebenso; apps/server/tests/test_identity_revocation.py::test_delete_user_revokes_its_access_identity — ebenso; apps/server/tests/test_identity_revocation.py::test_delete_server_revokes_its_tunnel_identity — ebenso

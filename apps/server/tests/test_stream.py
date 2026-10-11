@@ -6,8 +6,12 @@
 and the stream endpoint's auth gate. The Redis fan-out and the live frame
 delivery are covered by the end-to-end test, not here."""
 
+import asyncio
+from datetime import datetime
+
 import pytest
 
+from app.core.identity import ClientIdentity
 from app.modules.notifications import stream_hub
 from app.modules.notifications.service import ingest_event
 
@@ -126,7 +130,7 @@ class TestStreamReauth:
 
         monkeypatch.setattr(db_mod, "SessionLocal", lambda: _FakeDB())
         monkeypatch.setattr(auth_mod, "_get_user_from_token", lambda token, db: user)
-        monkeypatch.setattr(id_mod, "_is_revoked", lambda db, cn, scope: revoked)
+        monkeypatch.setattr(id_mod, "_is_revoked", lambda db, cn, scope, not_before=None: revoked)
 
     def test_ok_when_valid_and_not_revoked(self, monkeypatch):
         from app.modules.notifications.stream import _stream_reauth_ok
@@ -153,3 +157,49 @@ class TestStreamReauth:
         # revoked flag must not end the stream.
         self._patch(monkeypatch, user=object(), revoked=True)
         assert _stream_reauth_ok("tok", None, None, False) is True
+
+    def test_hands_the_certificates_not_before_to_the_revocation_check(self, monkeypatch):
+        # R-0224: the revocation is a point in time, so the check needs the cert's notBefore;
+        # without it a new user who took over a revoked name would lose the stream each cycle.
+        import app.core.identity as id_mod
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        self._patch(monkeypatch, user=object(), revoked=False)
+        seen: list = []
+
+        def fake_is_revoked(db, cn, scope, not_before=None):
+            seen.append(not_before)
+            return False
+
+        monkeypatch.setattr(id_mod, "_is_revoked", fake_is_revoked)
+        not_before = datetime(2026, 10, 1, 12, 0, 0)
+        assert _stream_reauth_ok("tok", "cn", "access", True, not_before) is True
+        assert seen == [not_before]
+
+    def test_the_open_stream_reauths_with_the_certificates_not_before(self, monkeypatch):
+        from app.modules.notifications import stream as stream_mod
+
+        seen: list = []
+
+        def fake_reauth(token, cn, scope, verified, not_before=None):
+            seen.append((token, cn, scope, verified, not_before))
+            return False  # end the stream at the first check
+
+        monkeypatch.setattr(stream_mod, "_REAUTH_INTERVAL_SECS", 0)
+        monkeypatch.setattr(stream_mod, "_stream_reauth_ok", fake_reauth)
+
+        class _Request:
+            headers = {"authorization": "Bearer tok"}
+
+            async def is_disconnected(self):
+                return False
+
+        not_before = datetime(2026, 10, 1, 12, 0, 0)
+        identity = ClientIdentity(True, "bob", "access", not_before=not_before)
+
+        async def scenario():
+            resp = await stream_mod.notification_stream(_Request(), user_id=1, identity=identity)
+            return [chunk async for chunk in resp.body_iterator]
+
+        assert asyncio.run(scenario()) == [": connected\n\n"]
+        assert seen == [("tok", "bob", "access", True, not_before)]

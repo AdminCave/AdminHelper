@@ -6,20 +6,26 @@
 
 Deleting a user/server writes a RevokedIdentity so the ca-issuer refuses to renew
 its cert (lever 1) and the data plane rejects it on sight (lever 2, in
-test_mtls_scope). Usernames are reusable, so creating a user clears any stale
-revocation from a former namesake."""
+test_mtls_scope). The revocation is a point in time (R-0224): usernames are
+reusable, and a new user's certificates, issued after it, pass while the former
+namesake's stay revoked."""
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import app.modules.servers.router as servers_router
+from app.core import config
+from app.core.auth import create_access_token
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT
+from app.core.time import utcnow_naive
 from app.modules.enrollment.models import (
     RevokedIdentity,
-    clear_revocation,
     is_identity_revoked,
     revoke_identity,
 )
 from app.modules.servers.models import Server
+from tests.test_mtls_scope import _gateway_headers
 
 
 def _login(client, username: str, password: str) -> str:
@@ -39,14 +45,6 @@ def test_revoke_identity_is_idempotent(db_session):
         db_session.query(RevokedIdentity).filter_by(subject_id="x", scope=SCOPE_ACCESS).count() == 1
     )
     assert is_identity_revoked(db_session, "x", SCOPE_ACCESS)
-
-
-def test_clear_revocation_removes_row(db_session):
-    revoke_identity(db_session, "x", SCOPE_ACCESS)
-    db_session.commit()
-    assert clear_revocation(db_session, "x", SCOPE_ACCESS) == 1
-    db_session.commit()
-    assert not is_identity_revoked(db_session, "x", SCOPE_ACCESS)
 
 
 def test_scope_is_part_of_the_revocation_key(db_session):
@@ -74,23 +72,6 @@ def test_delete_user_revokes_its_access_identity(test_client, admin_user, db_ses
     deleted = test_client.delete(f"/api/users/{user_id}", headers=headers)
     assert deleted.status_code == 204, deleted.text
     assert is_identity_revoked(db_session, "alice", SCOPE_ACCESS)
-
-
-def test_create_user_clears_a_stale_revocation(test_client, admin_user, db_session):
-    # A former namesake left a revocation behind.
-    revoke_identity(db_session, "bob", SCOPE_ACCESS)
-    db_session.commit()
-    assert is_identity_revoked(db_session, "bob", SCOPE_ACCESS)
-
-    token = _login(test_client, "admin", "adminpass")
-    created = test_client.post(
-        "/api/users",
-        json={"username": "bob", "password": "password1"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert created.status_code == 201, created.text
-    # The new bob must not inherit the old revocation, or it could never renew.
-    assert not is_identity_revoked(db_session, "bob", SCOPE_ACCESS)
 
 
 def test_delete_server_revokes_its_tunnel_identity(
@@ -132,3 +113,62 @@ def test_oversized_forwarded_cert_header_skips_parse(monkeypatch):
     ident = identity_mod.get_client_identity(req)
     assert ident.verified is False
     assert called["parse"] is False, "parse must be skipped for an oversized header (4.132)"
+
+
+# --- the revocation as a point in time (R-0224) ------------------------------
+
+
+def _revoked_at(db, subject_id: str, scope: str = SCOPE_ACCESS):
+    return (
+        db.query(RevokedIdentity.revoked_at).filter_by(subject_id=subject_id, scope=scope).scalar()
+    )
+
+
+def test_revoking_again_moves_the_point_in_time(db_session):
+    revoke_identity(db_session, "x", SCOPE_ACCESS)
+    db_session.commit()
+    earlier = utcnow_naive() - timedelta(days=1)
+    db_session.query(RevokedIdentity).filter_by(subject_id="x").update({"revoked_at": earlier})
+    db_session.commit()
+
+    revoke_identity(db_session, "x", SCOPE_ACCESS)
+    db_session.commit()
+    assert _revoked_at(db_session, "x") > earlier
+
+
+def test_only_a_certificate_issued_up_to_the_revocation_is_revoked(db_session):
+    revoke_identity(db_session, "x", SCOPE_ACCESS)
+    db_session.commit()
+    revoked_at = _revoked_at(db_session, "x")
+
+    assert is_identity_revoked(db_session, "x", SCOPE_ACCESS, revoked_at - timedelta(hours=1))
+    assert is_identity_revoked(db_session, "x", SCOPE_ACCESS, revoked_at)
+    assert not is_identity_revoked(db_session, "x", SCOPE_ACCESS, revoked_at + timedelta(seconds=1))
+
+
+def test_a_new_user_keeps_the_former_namesakes_certificates_out(
+    test_client, admin_user, db_session, monkeypatch
+):
+    # A former bob was deleted. Taking the name again leaves the revocation in place:
+    # his old certificate stays out, the new bob's later one gets in.
+    monkeypatch.setattr(config, "MTLS_ENFORCE", True)
+    revoke_identity(db_session, "bob", SCOPE_ACCESS)
+    db_session.commit()
+    revoked_at = _revoked_at(db_session, "bob")
+
+    admin = {
+        "Authorization": f"Bearer {create_access_token({'sub': 'admin'})}",
+        **_gateway_headers(cn="admin"),
+    }
+    created = test_client.post(
+        "/api/users", json={"username": "bob", "password": "password1"}, headers=admin
+    )
+    assert created.status_code == 201, created.text
+    assert _revoked_at(db_session, "bob") == revoked_at
+
+    bob = {"Authorization": f"Bearer {create_access_token({'sub': 'bob'})}"}
+    old = _gateway_headers(cn="bob", not_before=revoked_at - timedelta(days=1))
+    new = _gateway_headers(cn="bob", not_before=revoked_at + timedelta(seconds=2))
+    assert test_client.get("/api/users/me/servers", headers={**bob, **old}).status_code == 403
+    resp = test_client.get("/api/users/me/servers", headers={**bob, **new})
+    assert resp.status_code == 200, resp.text

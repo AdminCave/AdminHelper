@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import urllib.parse
 from dataclasses import dataclass
+from datetime import datetime
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -55,6 +56,7 @@ class ClientIdentity:
     verified: bool
     cn: str | None = None
     scope: str | None = None
+    not_before: datetime | None = None  # naive UTC, like the register's columns (F7)
 
     def __bool__(self) -> bool:
         return self.verified
@@ -91,6 +93,7 @@ def get_client_identity(request: Request) -> ClientIdentity:
         verified=True,
         cn=_first(cert, NameOID.COMMON_NAME),
         scope=_first(cert, NameOID.ORGANIZATIONAL_UNIT_NAME),
+        not_before=cert.not_valid_before_utc.replace(tzinfo=None),
     )
 
 
@@ -122,16 +125,18 @@ def require_cert_user(request: Request, username: str) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_USER_MISMATCH)
 
 
-def _is_revoked(db: Session | None, cn: str | None, scope: str | None) -> bool:
-    """Whether the verified identity has been revoked (ADR 0001 §3.4 lever 2 — the
-    immediate data-plane cut-off, not waiting for cert expiry). ``db`` is the
-    request session; it is None only in pure-logic unit tests, where there is no
-    revocation to check."""
+def _is_revoked(
+    db: Session | None, cn: str | None, scope: str | None, not_before: datetime | None = None
+) -> bool:
+    """Whether the verified certificate has been revoked (ADR 0001 §3.4 lever 2 — the
+    immediate data-plane cut-off, not waiting for cert expiry): a revocation of its
+    CN and scope at or after its ``not_before``. ``db`` is the request session; it is
+    None only in pure-logic unit tests, where there is no revocation to check."""
     if db is None or cn is None or scope is None:
         return False
     from app.modules.enrollment.models import is_identity_revoked
 
-    return is_identity_revoked(db, cn, scope)
+    return is_identity_revoked(db, cn, scope, not_before)
 
 
 def require_scope(*allowed: str):
@@ -155,7 +160,7 @@ def require_scope(*allowed: str):
         # settles it (5.27). revoked stays False for the wrong-scope case — the scope mismatch is the
         # reported reason, which is at least as informative.
         if identity.verified and identity.scope in allowed_set:
-            if not _is_revoked(db, identity.cn, identity.scope):
+            if not _is_revoked(db, identity.cn, identity.scope, not_before=identity.not_before):
                 return identity
             revoked = True
         else:

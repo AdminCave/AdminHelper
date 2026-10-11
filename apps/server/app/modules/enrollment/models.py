@@ -79,8 +79,11 @@ def cleanup_finished_enrollment_tokens(db: Session) -> int:
 
 
 class RevokedIdentity(Base):
-    """Fast cut-off without CRL (ADR 0001 §3.4): the ca-issuer refuses to renew
-    an identity listed here. Populated by the server's deprovision flow."""
+    """Fast cut-off without CRL (ADR 0001 §3.4), as a point in time (R-0224): a
+    certificate of ``(subject_id, scope)`` issued at or before ``revoked_at`` is
+    refused, by the ca-issuer on renewal and by the data plane on sight. One issued
+    later — a new user who took over the name — is not. Populated by the server's
+    deprovision flow."""
 
     __tablename__ = "revoked_identities"
     __table_args__ = (UniqueConstraint("subject_id", "scope", name="uq_revoked_subject_scope"),)
@@ -92,41 +95,39 @@ class RevokedIdentity(Base):
 
 
 def revoke_identity(db: Session, subject_id: str, scope: str) -> None:
-    """Mark ``(subject_id, scope)`` revoked so the ca-issuer refuses to renew its
-    cert (lever 1) and the data plane rejects it on sight (lever 2) — the fast
-    cut-off without CRL (ADR 0001 §3.4, F1). Idempotent. Does not commit; the
-    caller's transaction (e.g. user/server deletion) does. Idempotent and
-    race-free via INSERT ... ON CONFLICT DO NOTHING on the unique (subject_id,
-    scope) constraint — no read-then-write window. Identity reuse caveat: the cert
-    CN is the username/server-id, so a still-valid cert minted before the
-    revocation is only fully cut off once it expires (≤90 d native)."""
+    """Revoke every certificate ``(subject_id, scope)`` holds up to now, so the
+    ca-issuer refuses to renew it (lever 1) and the data plane rejects it on sight
+    (lever 2) — the fast cut-off without CRL (ADR 0001 §3.4, F1). Revoking again
+    moves the point to now. Does not commit; the caller's transaction (e.g. user or
+    server deletion) does. Race-free via INSERT ... ON CONFLICT DO UPDATE on the
+    unique (subject_id, scope) constraint — no read-then-write window."""
     db.execute(
         pg_insert(RevokedIdentity.__table__)
         .values(id=str(uuid.uuid4()), subject_id=subject_id, scope=scope)
-        .on_conflict_do_nothing(constraint="uq_revoked_subject_scope")
+        .on_conflict_do_update(
+            constraint="uq_revoked_subject_scope", set_={"revoked_at": utc_now_sql()}
+        )
     )
 
 
-def clear_revocation(db: Session, subject_id: str, scope: str) -> int:
-    """Drop any revocation for ``(subject_id, scope)``. Usernames are reusable, so
-    re-creating a user must clear a stale revocation from a former namesake — else
-    the new identity could never renew its cert. Returns the rows removed."""
-    return (
-        db.query(RevokedIdentity)
-        .filter(RevokedIdentity.subject_id == subject_id, RevokedIdentity.scope == scope)
-        .delete(synchronize_session=False)
-    )
-
-
-def is_identity_revoked(db: Session, subject_id: str, scope: str) -> bool:
-    """True if ``(subject_id, scope)`` is revoked (renewal refusal + data-plane
-    cut-off)."""
-    return (
-        db.query(RevokedIdentity.id)
+def is_identity_revoked(
+    db: Session, subject_id: str, scope: str, not_before: datetime.datetime | None = None
+) -> bool:
+    """True if a certificate of ``(subject_id, scope)`` issued at ``not_before``
+    (naive UTC) is revoked: a revocation exists at or after that time. The cert's
+    notBefore has whole seconds, so one issued in the second of the revocation counts
+    as revoked. Without ``not_before`` any revocation counts, the conservative
+    reading."""
+    revoked_at = (
+        db.query(RevokedIdentity.revoked_at)
         .filter(RevokedIdentity.subject_id == subject_id, RevokedIdentity.scope == scope)
         .first()
-        is not None
     )
+    if revoked_at is None:
+        return False
+    if not_before is None or revoked_at[0] is None:
+        return True
+    return revoked_at[0] >= not_before
 
 
 class DeviceLine(Base):

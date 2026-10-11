@@ -35,31 +35,39 @@ from app.core.identity import (
 # --- helpers -----------------------------------------------------------------
 
 
-def _client_cert_pem(cn: str = "user-01", ou: str | None = SCOPE_ACCESS) -> str:
+def _client_cert_pem(
+    cn: str = "user-01",
+    ou: str | None = SCOPE_ACCESS,
+    not_before: datetime.datetime | None = None,
+) -> str:
     """A leaf as the gateway would forward it (URL-escaped PEM). Self-signed is
     fine — get_client_identity only parses the subject, the gateway already
-    verified the chain."""
+    verified the chain. ``not_before`` (UTC) defaults to now."""
     key = ec.generate_private_key(ec.SECP256R1())
     attrs = [x509.NameAttribute(NameOID.COMMON_NAME, cn)]
     if ou is not None:
         attrs.append(x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, ou))
     name = x509.Name(attrs)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    start = not_before or datetime.datetime.now(datetime.timezone.utc)
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=1))
+        .not_valid_before(start)
+        .not_valid_after(start + datetime.timedelta(days=1))
         .sign(key, hashes.SHA256())
     )
     return urllib.parse.quote(cert.public_bytes(serialization.Encoding.PEM).decode())
 
 
-def _gateway_headers(cn: str = "user-01", ou: str | None = SCOPE_ACCESS) -> dict[str, str]:
-    return {"X-Client-Verify": "SUCCESS", "X-Client-Cert": _client_cert_pem(cn, ou)}
+def _gateway_headers(
+    cn: str = "user-01",
+    ou: str | None = SCOPE_ACCESS,
+    not_before: datetime.datetime | None = None,
+) -> dict[str, str]:
+    return {"X-Client-Verify": "SUCCESS", "X-Client-Cert": _client_cert_pem(cn, ou, not_before)}
 
 
 def _req(headers: dict[str, str]) -> Request:
@@ -134,7 +142,7 @@ def test_wrong_scope_skips_revocation_query(monkeypatch):
 
     calls: list = []
 
-    def fake_is_revoked(db, cn, scope):
+    def fake_is_revoked(db, cn, scope, not_before=None):
         calls.append((cn, scope))
         return False
 
@@ -152,7 +160,7 @@ def test_matching_scope_still_checks_revocation(monkeypatch):
 
     calls: list = []
 
-    def fake_is_revoked(db, cn, scope):
+    def fake_is_revoked(db, cn, scope, not_before=None):
         calls.append((cn, scope))
         return False
 

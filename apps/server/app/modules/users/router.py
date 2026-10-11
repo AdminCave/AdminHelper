@@ -14,7 +14,7 @@ from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import actor_from_request
 from app.core.time import iso_utc, utcnow_naive
 from app.modules.audit import service as audit
-from app.modules.enrollment.models import clear_revocation, revoke_identity
+from app.modules.enrollment.models import revoke_identity
 from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
@@ -60,9 +60,8 @@ def create_user(
         servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
         user.servers = servers
     db.add(user)
-    # Usernames are reusable and the cert CN is the username, so a new user must
-    # not inherit a stale revocation from a former namesake (F1).
-    clear_revocation(db, data.username, SCOPE_ACCESS)
+    # A revocation of a former namesake stays: it is a point in time, so it keeps
+    # the old certificates out and lets the new user's later ones through (R-0224).
     try:
         if data.is_admin:
             # A fresh install has zero subscriptions, so alerts would reach
