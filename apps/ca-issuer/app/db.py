@@ -8,8 +8,10 @@ SQLAlchemy Core view rather than the server's ORM, to keep the services decouple
 
 What the issuer writes: it consumes enrollment tokens (sets ``used_at``) and keeps
 the certificate register — a device line and a certificate row per issued leaf,
-and the revocation of a line that ``replaces`` names (R-0224). What it only reads:
-identity revocations. It never mints a token.
+the revocation of a line that ``replaces`` names, and a ``legacy`` line for a
+certificate from before the register that it takes over on renewal (R-0224). What
+it only reads: identity revocations and the register's install time. It never
+mints a token.
 """
 
 from __future__ import annotations
@@ -33,8 +35,18 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.exc import IntegrityError
 
-from app.tokens import CertRecord, EnrollmentGrant, LineInfo, Signer, kind_of
+from app.tokens import (
+    CertRecord,
+    EnrollmentGrant,
+    LineInfo,
+    RenewalRefused,
+    RenewSigner,
+    Signer,
+    kind_of,
+    legacy_admitted,
+)
 
 metadata = MetaData()
 
@@ -182,17 +194,7 @@ class DbTokenStore:
                     created_at=now,
                 )
             )
-            conn.execute(
-                issued_certificates.insert().values(
-                    fingerprint=record.fingerprint,
-                    line_id=line_id,
-                    serial=record.serial,
-                    not_before=record.not_before,
-                    not_after=record.not_after,
-                    renewed_from=None,
-                    created_at=now,
-                )
-            )
+            self._record(conn, record, line_id, now)
             if replaces:
                 self._revoke_replaced(conn, replaces, grant, now)
         return response
@@ -234,10 +236,121 @@ class DbTokenStore:
             row.id, row.subject_id, row.scope, row.kind, bool(row.legacy), row.revoked_reason
         )
 
-    def is_active(self, subject_id: str, scope: str) -> bool:
-        stmt = select(revoked_identities.c.id).where(
-            revoked_identities.c.subject_id == subject_id,
-            revoked_identities.c.scope == scope,
+    def renew(
+        self,
+        current: CertRecord,
+        subject_id: str,
+        scope: str,
+        legacy_kind: str,
+        sign: RenewSigner,
+    ) -> dict[str, str]:
+        # One transaction with the line locked: a revocation of the line waits until
+        # this renewal is done, or this renewal sees it and refuses. The successor
+        # stays on the line, so a revocation that comes later covers it as well.
+        now = _now_naive()
+        try:
+            with self._engine.begin() as conn:
+                if not self._active(conn, subject_id, scope, current.not_before):
+                    raise RenewalRefused("identity is deprovisioned")
+                line = conn.execute(
+                    select(
+                        device_lines.c.id,
+                        device_lines.c.subject_id,
+                        device_lines.c.scope,
+                        device_lines.c.revoked_at,
+                    )
+                    .join(issued_certificates, issued_certificates.c.line_id == device_lines.c.id)
+                    .where(issued_certificates.c.fingerprint == current.fingerprint)
+                    .with_for_update(of=device_lines)
+                ).first()
+                if line is None:
+                    line_id = self._take_over(conn, current, subject_id, scope, legacy_kind, now)
+                elif line.revoked_at is not None or (line.subject_id, line.scope) != (
+                    subject_id,
+                    scope,
+                ):
+                    raise RenewalRefused("the device line is revoked")
+                else:
+                    line_id = line.id
+                leaf, response = sign()
+                # Once more after signing: a deprovisioning committed meanwhile is not held
+                # off by the line lock, and the successor's later notBefore would pass it.
+                if not self._active(conn, subject_id, scope, current.not_before):
+                    raise RenewalRefused("identity is deprovisioned")
+                self._record(conn, CertRecord.of(leaf), line_id, now, renewed_from=current)
+        except IntegrityError as exc:
+            # Two first contacts of the same unrecorded certificate at once (here and at
+            # the server): one wins, the other renewal is refused and the client retries.
+            raise RenewalRefused("recorded concurrently, retry the renewal") from exc
+        return response
+
+    def _take_over(
+        self,
+        conn: Connection,
+        current: CertRecord,
+        subject_id: str,
+        scope: str,
+        kind: str,
+        now: datetime.datetime,
+    ) -> str:
+        installed_at = conn.execute(
+            select(certificate_register_state.c.installed_at).where(
+                certificate_register_state.c.id == 1
+            )
+        ).scalar()
+        if not legacy_admitted(current.not_before, installed_at, now):
+            raise RenewalRefused("certificate is not in the register")
+        line_id = str(uuid.uuid4())
+        conn.execute(
+            device_lines.insert().values(
+                id=line_id,
+                subject_id=subject_id,
+                scope=scope,
+                kind=kind,
+                legacy=True,
+                created_at=now,
+            )
         )
+        self._record(conn, current, line_id, now)
+        return line_id
+
+    @staticmethod
+    def _record(
+        conn: Connection,
+        record: CertRecord,
+        line_id: str,
+        now: datetime.datetime,
+        renewed_from: CertRecord | None = None,
+    ) -> None:
+        conn.execute(
+            issued_certificates.insert().values(
+                fingerprint=record.fingerprint,
+                line_id=line_id,
+                serial=record.serial,
+                not_before=record.not_before,
+                not_after=record.not_after,
+                renewed_from=renewed_from.fingerprint if renewed_from else None,
+                created_at=now,
+            )
+        )
+
+    @staticmethod
+    def _active(
+        conn: Connection, subject_id: str, scope: str, not_before: datetime.datetime | None
+    ) -> bool:
+        row = conn.execute(
+            select(revoked_identities.c.revoked_at).where(
+                revoked_identities.c.subject_id == subject_id,
+                revoked_identities.c.scope == scope,
+            )
+        ).first()
+        if row is None:
+            return True
+        # Revoked up to revoked_at; without a time on either side, conservatively revoked.
+        return not_before is not None and row.revoked_at is not None and not_before > row.revoked_at
+
+    def is_active(
+        self, subject_id: str, scope: str, not_before: datetime.datetime | None = None
+    ) -> bool:
         with self._engine.connect() as conn:
-            return conn.execute(stmt).first() is None
+            return self._active(conn, subject_id, scope, not_before)

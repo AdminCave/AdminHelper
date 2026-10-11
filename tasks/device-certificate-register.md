@@ -111,8 +111,10 @@ Verify: bash scripts/dev/verify.sh ca-issuer server --strict
 Doku: keine (intern; Doku in T13)
 Abhängt von: T1
 
-### T4 — ca-issuer: Renew prüft gegen das Register, den Zeitpunkt und den Übergang (R-0224)  [ ]
+### T4 — ca-issuer: Renew prüft gegen das Register, den Zeitpunkt und den Übergang (R-0224)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/issuer.py, apps/ca-issuer/app/db.py, apps/ca-issuer/app/tokens.py, apps/ca-issuer/tests/test_enroll_renew.py, apps/ca-issuer/tests/test_db_token_store.py
+Evidenz: run.sh[quick] ca-issuer: 4 passed, 0 failed, 14 skipped @b42e24bf 2026-10-11T09:57:24+02:00
+Review: request_changes (opus, 3 wichtig: Subject-Parse, Cutoff nach dem Signieren, Ed25519-Testpfad) behoben, r2 approve (opus)
 Änderung:
 - Die Signatur des vorgelegten Zertifikats wird nur gegen das Intermediate seiner OU geprüft (`issuer.py:46-70`).
 - **Die Regel**, für Server und Renew dieselbe:

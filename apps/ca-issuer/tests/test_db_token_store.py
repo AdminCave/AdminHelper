@@ -6,6 +6,8 @@
 
 import datetime
 import os
+import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -14,7 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app import db
-from app.tokens import EnrollmentGrant
+from app.tokens import CertRecord, EnrollmentGrant, RenewalRefused
 
 
 @pytest.fixture()
@@ -70,13 +72,19 @@ def test_browser_flag_roundtrips(engine):
 def test_is_active_until_revoked(engine):
     store = db.DbTokenStore(engine)
     assert store.is_active("agent-09", "tunnel") is True
+    revoked_at = datetime.datetime(2026, 10, 1, 12, 0, 0)
     with engine.begin() as conn:
         conn.execute(
             db.revoked_identities.insert().values(
-                id=str(uuid.uuid4()), subject_id="agent-09", scope="tunnel"
+                id=str(uuid.uuid4()), subject_id="agent-09", scope="tunnel", revoked_at=revoked_at
             )
         )
-    assert store.is_active("agent-09", "tunnel") is False
+    # The revocation is a point in time: certificates up to it are out, later ones are in.
+    hour = datetime.timedelta(hours=1)
+    assert store.is_active("agent-09", "tunnel", revoked_at - hour) is False
+    assert store.is_active("agent-09", "tunnel", revoked_at) is False
+    assert store.is_active("agent-09", "tunnel", revoked_at + hour) is True
+    assert store.is_active("agent-09", "tunnel") is False  # without notBefore: revoked
     # a different identity stays active
     assert store.is_active("agent-09", "access") is True
 
@@ -118,3 +126,101 @@ def test_concurrent_consume_only_one_wins(pg_engine):
     winners = [r for r in results if r is not None]
     assert len(winners) == 1, f"erwartet genau 1 Gewinner, {len(winners)}"
     assert winners[0].subject_id == "agent-01"
+
+
+def _self_signed(cn: str, scope: str):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, cn),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, scope),
+        ]
+    )
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=90))
+        .sign(key, hashes.SHA256())
+    )
+
+
+def test_a_line_revoked_during_a_renewal_waits_and_covers_the_successor(pg_engine):
+    # R-0224: the renewal locks its line. A revocation of that line waits for it, and
+    # because the successor stays on the line, the revocation covers the successor too:
+    # no certificate leaves the line unrevoked. sqlite has no row locks; Postgres does.
+    store = db.DbTokenStore(pg_engine)
+    _mint(pg_engine, "race-renew", "agent-11", "tunnel")
+    first = _self_signed("agent-11", "tunnel")
+    store.enroll("race-renew", lambda grant: (first, {}))
+    current = CertRecord.of(first)
+    line_id = store.line_of(current.fingerprint).line_id
+
+    signing, release = threading.Event(), threading.Event()
+    successor = _self_signed("agent-11", "tunnel")
+
+    def sign():
+        signing.set()  # the line is locked by now
+        release.wait(10)
+        return successor, {}
+
+    def revoke_line():
+        with pg_engine.begin() as conn:
+            conn.execute(
+                db.device_lines.update()
+                .where(db.device_lines.c.id == line_id)
+                .values(revoked_at=db._now_naive(), revoked_reason="admin")
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        renewal = ex.submit(store.renew, current, "agent-11", "tunnel", "agent", sign)
+        assert signing.wait(10)
+        revocation = ex.submit(revoke_line)
+        time.sleep(0.5)
+        assert not revocation.done(), "the revocation must wait for the locked line"
+        release.set()
+        renewal.result(10)
+        revocation.result(10)
+
+    assert store.line_of(CertRecord.of(successor).fingerprint).revoked_reason == "admin"
+    # Once revoked, the line renews nothing more.
+    with pytest.raises(RenewalRefused):
+        store.renew(
+            CertRecord.of(successor), "agent-11", "tunnel", "agent", lambda: (successor, {})
+        )
+
+
+def test_a_deprovisioning_while_signing_refuses_the_renewal(pg_engine):
+    # The line lock does not hold off a deprovisioning of the identity; the renewal looks
+    # once more after signing, so a revocation committed meanwhile still refuses it.
+    store = db.DbTokenStore(pg_engine)
+    _mint(pg_engine, "race-deprov", "agent-13", "tunnel")
+    first = _self_signed("agent-13", "tunnel")
+    store.enroll("race-deprov", lambda grant: (first, {}))
+    current = CertRecord.of(first)
+    successor = _self_signed("agent-13", "tunnel")
+
+    def sign():
+        with pg_engine.begin() as conn:
+            conn.execute(
+                db.revoked_identities.insert().values(
+                    id=str(uuid.uuid4()),
+                    subject_id="agent-13",
+                    scope="tunnel",
+                    revoked_at=current.not_before,
+                )
+            )
+        return successor, {}
+
+    with pytest.raises(RenewalRefused):
+        store.renew(current, "agent-13", "tunnel", "agent", sign)
+    assert store.line_of(CertRecord.of(successor).fingerprint) is None, "nothing was recorded"
