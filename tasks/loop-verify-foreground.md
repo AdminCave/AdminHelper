@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Sessions testen im Vordergrund und gezielt (R-0263) — Task-Ledger
-Status: geplant · Branch: harness/loop-verify-foreground · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/loop-verify-foreground · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0263, Harness-Paket Worker A aus Kevins Triage 2026-10-10; Lösung (a) Timeout-Variablen für claude -p und (b) gezielte Tests in der Session, die volle Suite fährt task-close; Bau erst nach flake-paket und team-rules oder mit main hinein; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0263 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell unter scripts/ und ein Skill-Text mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
