@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Sessions testen im Vordergrund und gezielt (R-0263) — Task-Ledger
-Status: aktiv · Branch: harness/loop-verify-foreground · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/loop-verify-foreground · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0263, Harness-Paket Worker A aus Kevins Triage 2026-10-10; Lösung (a) Timeout-Variablen für claude -p und (b) gezielte Tests in der Session, die volle Suite fährt task-close; Bau erst nach flake-paket und team-rules oder mit main hinein; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0263 (Kurz-Ledger ohne Spec)
 Heavy: none — Shell unter scripts/ und ein Skill-Text mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -113,8 +113,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (der Skill-Text ist die Anleitung)
 Abhängt von: T1, T2
 
-### T4 — Nachbesserung aus dem Review am Ende: ein gezieltes Verify: ersetzt die Suite nicht (R-0263)  [ ]
+### T4 — Nachbesserung aus dem Review am Ende: ein gezieltes Verify: ersetzt die Suite nicht (R-0263)  [x]
 Komponente: scripts · Dateien: .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh, scripts/dev/ledger-loop.sh, scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a60f2815 2026-10-11T18:46:43+02:00
+Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Änderung: Angelegt 2026-10-11 aus dem Review am Ende (Opus, `request_changes`: ein belegter Fund, fünf nits).
 - Schritt 4 von `/build-task` (T3) sagte, `task-close.sh` fahre die volle Suite. Es fährt aber das `Verify:` der Task,
   und ein gezieltes `Verify:` (`… server --strict -- tests/test_hooks.py`) fährt nur diesen Test. Eine Regression in

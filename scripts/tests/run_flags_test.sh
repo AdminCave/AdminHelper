@@ -605,6 +605,9 @@ AH_ARGS="blockargs" block_run "blockargs blockpass"
 AH_ARGS="nosuch_test" block_run "blockpass blockfail"
 [ $rc -eq 2 ] && grep -q "not on the list: nosuch_test" <<<"$OUT" && ! grep -q '^  ── block' <<<"$OUT" \
   && ok "block: a name not on the list -> 2, nothing runs" || bad "unknown name: rc=$rc"
+AH_ARGS='*' block_run "blockpass blockfail"
+[ $rc -eq 2 ] && grep -qF "not on the list: *" <<<"$OUT" \
+  && ok "block: a glob after -- is a name, not expanded against the checkout" || bad "glob name: rc=$rc $(grep 'not on the list' <<<"$OUT")"
 
 # ══ heavy layers derive their own required set ═══════════════════════════════
 echo "── heavy layers ──"

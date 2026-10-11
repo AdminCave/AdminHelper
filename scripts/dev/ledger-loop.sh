@@ -786,9 +786,10 @@ PY
   # Only the runner's user settings (its permissions and the root-owned guard): a
   # lane's project settings carry the interactive allow list.
   # A command in the foreground may run as long as the session: at the Bash tool's
-  # own limit (10 min unless set) it would move to the background, and the session
-  # has no allowed way to wait for it (R-0263; Claude Code docs, tools reference and
-  # environment variables). The session's own timeout stays the outer border.
+  # own limits (2 min without a timeout, at most 10, unless set) it would move to the
+  # background, and the session has no allowed way to wait for it (R-0263; Claude
+  # Code docs, tools reference and environment variables). The session's own timeout
+  # stays the outer border.
   local bash_ms
   bash_ms="$(awk -v m="$TASK_MINUTES" 'BEGIN { printf "%d", m * 60000 }')"
   ( cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.s$n" BASH_DEFAULT_TIMEOUT_MS="$bash_ms" BASH_MAX_TIMEOUT_MS="$bash_ms" \

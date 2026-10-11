@@ -30,11 +30,13 @@ Du baust **eine** Task. Haken, Review, Commit und den Status des Ledgers macht d
    `bash scripts/dev/ledger.sh set-files tasks/<slug>.md <id> <pfad…>` — der Scope wird nicht gelockert.
 4. **Testen**, gezielt, im Vordergrund und in Flag-Form:
    - Gezielt: `bash scripts/dev/verify.sh <komponente> --strict -- <test>`, für `scripts` der Name des
-     Script-Tests (`bash scripts/dev/verify.sh scripts --strict -- ledger_loop_test`). Die volle Suite
-     und das `Verify:` der Task fährt `task-close.sh` im Loop nach der Session.
+     Script-Tests (`bash scripts/dev/verify.sh scripts --strict -- ledger_loop_test`), für `agent`
+     `-- -run <Test>`. Das `Verify:` der Task fährt `task-close.sh` im Loop nach der Session. Ist es
+     gezielt (`-- …`), fährst du vor der Commit-Nachricht einmal die ganze Suite der Komponente:
+     `bash scripts/dev/verify.sh <komponente> --strict`.
    - Im Vordergrund, bis die Summary-Zeile da ist: Der Loop setzt den Timeout des Bash-Werkzeugs auf
      die Dauer der Session, gib keinen kürzeren an. Nie `run_in_background`, nie warten mit Monitor,
-     `sleep`, `tail --pid` oder `ps`: Das verweigern die Settings, und die Session endet wartend.
+     `sleep`, `tail --pid` oder `ps`: Das Warten verweigern die Settings, und die Session endet wartend.
    - Ein Befehl je Aufruf, ohne `source`, `cd`, `;`, `&&` oder `|`: Die Allow-Liste prüft jeden Teil.
      Ruff geht direkt: `ruff check <datei>`, `ruff format --check <datei>`.
    - Ein Lauf zur Zeit. Rot durch deine Änderung: beheben. Brauchst du einen Scratch-Ordner:
@@ -46,7 +48,7 @@ Du baust **eine** Task. Haken, Review, Commit und den Status des Ledgers macht d
      `bash scripts/dev/ledger.sh mark-skip tasks/<slug>.md <id> "<ein Satz>"`;
    - braucht eine Entscheidung, ist destruktiv oder mehrdeutig:
      `bash scripts/dev/ledger.sh mark-question tasks/<slug>.md <id> "<frage>"`.
-6. **Commit-Nachricht**, nur wenn gebaut ist und der gezielte Lauf aus Schritt 4 grün ist: eine
+6. **Commit-Nachricht**, nur wenn gebaut ist und die Läufe aus Schritt 4 grün sind: eine
    Conventional-Commit-Nachricht auf Englisch (`feat(scripts): …`, im Body Task-ID und Stichwort) in die Datei
    `.ah-out/loop/<slug>/<id>.commit-msg.txt`. Sie sagt dem Loop, dass `task-close.sh` schließen soll;
    ohne sie zählt die Iteration als eine ohne Fortschritt.

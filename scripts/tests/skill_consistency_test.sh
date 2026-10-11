@@ -414,6 +414,11 @@ CALLS=$(build_task_calls "$BTS")
 [ "$(foreground_rule "$(section "$BTS" '4. **Testen' '5. **')")" = ok ] \
   && ok "build-task tests in the foreground and forbids the background and waiting there (R-0263)" \
   || bad "build-task's step 4 lacks the foreground rule (Vordergrund, nie run_in_background, nie warten)"
+# task-close.sh runs the task's Verify: — a targeted one runs only its test, so the
+# session runs the component's whole suite itself.
+grep -qF '`bash scripts/dev/verify.sh <komponente> --strict`' <<<"$(section "$BTS" '4. **Testen' '5. **')" \
+  && ok "build-task runs the whole suite itself when the task's Verify: is targeted" \
+  || bad "build-task's step 4 does not name the whole-suite run for a targeted Verify:"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"

@@ -760,6 +760,7 @@ layer_unit() {
   # of the whole list (R-0263). A name that is not on the list is an error, so a
   # typo never looks like a narrowed green run.
   if [ -n "$AH_ARGS" ] && only scripts && [ -n "$AH_ONLY" ]; then
+    set -f  # names, not globs: `-- '*'` must not expand against the checkout
     # shellcheck disable=SC2086  # the list is words, on several lines
     for st in $AH_ARGS; do
       case " $(printf '%s ' $AH_SCRIPT_TESTS)" in
@@ -767,6 +768,7 @@ layer_unit() {
         *) echo "the 'scripts' step takes names of its tests after --; not on the list: $st"; exit 2 ;;
       esac
     done
+    set +f
     # AH_ARGS is exported: the tests call run.sh themselves and would get the names.
     AH_SCRIPT_TESTS="$AH_ARGS"; AH_ARGS=""
   fi
