@@ -35,6 +35,10 @@ const KEYRING_KEY: &str = "enroll|key"; // the EC private key (PKCS#8 PEM)
 const KEYRING_CERT: &str = "enroll|cert"; // fullchain: leaf + access intermediate
 const KEYRING_CA: &str = "enroll|ca"; // chain: access intermediate + root
 
+/// The fingerprint of a leaf this device reset while the server could not revoke
+/// it (R-0224): the next enrollment names it as replaced, so its line goes then.
+const KEYRING_REPLACES: &str = "enroll|replaces";
+
 /// The grant the server returns from `POST /api/enrollment/token`. The host is
 /// not carried — the desktop reuses the (already TLS-trusted) server URL it is
 /// logged into + `enroll_port`, mirroring the Go agent.
@@ -53,6 +57,11 @@ pub struct EnrollGrant {
 pub struct EnrollRequest<'a> {
     pub token: &'a str,
     pub csr: &'a str,
+    /// Fingerprint of the certificate this device held before (R-0224): the issuer
+    /// revokes its device line. Never sent for a browser export, which is a device
+    /// of its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<&'a str>,
 }
 
 /// Body for `/ca/renew` (CSR only; the issuer derives the identity from the
@@ -222,6 +231,112 @@ fn ca_fingerprint_of_chain(chain_pem: &str) -> Option<String> {
     Some(crate::tofu::fingerprint(cert.as_ref()))
 }
 
+/// SHA-256 (lowercase hex) of the stored leaf: the fullchain begins with it.
+fn leaf_fingerprint() -> Option<String> {
+    ca_fingerprint_of_chain(&keyring_store::get(KEYRING_CERT)?)
+}
+
+/// What an enrollment is for: this device's own identity, or a browser
+/// certificate exported from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnrollmentKind {
+    Device,
+    Browser,
+}
+
+/// What an enrollment names as replaced (R-0224). The device's own enrollment
+/// replaces the leaf it holds, else one it reset while the server was out of reach.
+/// A browser certificate is a device of its own and replaces nothing — naming the
+/// desktop's leaf there would revoke the desktop.
+fn replaces_for(
+    kind: EnrollmentKind,
+    held: Option<String>,
+    pending: Option<String>,
+) -> Option<String> {
+    match kind {
+        EnrollmentKind::Device => held.or(pending),
+        EnrollmentKind::Browser => None,
+    }
+}
+
+/// How resetting the device identity went (R-0224).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ResetOutcome {
+    /// The server revoked the device (or had already refused its certificate).
+    Revoked,
+    /// Deleted here only: the server could not be asked. The next enrollment of
+    /// this device names the old certificate as replaced.
+    LocalOnly,
+    /// There was no identity to revoke.
+    NotEnrolled,
+}
+
+/// Reset the device identity: revoke it at the server with this very certificate,
+/// then delete it here. The revocation goes first, because without the key the
+/// device can no longer prove which certificate it means.
+pub async fn reset_identity(server_url: &str) -> ResetOutcome {
+    reset_with(
+        leaf_fingerprint(),
+        || revoke_on_server(server_url),
+        clear_identity,
+        |fingerprint| {
+            let _ = keyring_store::set(KEYRING_REPLACES, fingerprint);
+        },
+    )
+    .await
+}
+
+/// The order of `reset_identity`, with the keyring and the server call as
+/// parameters: the tests have neither.
+async fn reset_with<F, Fut>(
+    fingerprint: Option<String>,
+    revoke: F,
+    clear: impl FnOnce(),
+    remember: impl FnOnce(&str),
+) -> ResetOutcome
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<bool, AppError>>,
+{
+    let Some(fingerprint) = fingerprint else {
+        clear();
+        return ResetOutcome::NotEnrolled;
+    };
+    let revoked = matches!(revoke().await, Ok(true));
+    clear();
+    if revoked {
+        ResetOutcome::Revoked
+    } else {
+        remember(&fingerprint);
+        ResetOutcome::LocalOnly
+    }
+}
+
+/// `POST /api/enrollment/self/revoke` with the enrolled mTLS client: the
+/// certificate is the proof, no JWT. The CA pin keeps the call on our server.
+async fn revoke_on_server(server_url: &str) -> Result<bool, AppError> {
+    // As build_client demands for every server call: no plain http off loopback,
+    // where anyone on the path could answer "revoked" and the leaf would not be
+    // remembered.
+    crate::validation::validate_server_url_secure(server_url)?;
+    let client = enrolled_client()?;
+    let url = format!(
+        "{}/api/enrollment/self/revoke",
+        server_url.trim_end_matches('/')
+    );
+    let resp = client.post(&url).send().await?;
+    let status = resp.status().as_u16();
+    let body = resp.text().await.unwrap_or_default();
+    Ok(revoked_by(status, &body))
+}
+
+/// Whether the server's answer means the device is revoked: done now (2xx), or
+/// refused already as revoked (403 with ERR_CERT_REVOKED).
+fn revoked_by(status: u16, body: &str) -> bool {
+    (200..300).contains(&status) || (status == 403 && body.contains("ERR_CERT_REVOKED"))
+}
+
 /// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
 /// user out under enforced mTLS — the cert is needed to reach the login). Invoked
 /// by the explicit "reset device identity" settings action (`reset_device_identity`)
@@ -256,10 +371,16 @@ pub async fn enroll_with_token(
 ) -> Result<(), AppError> {
     let key_and_csr = generate_key_and_csr("adminhelper-enrollment")?;
     let endpoint = enroll_endpoint(server_url, DEFAULT_ENROLL_PORT)?;
+    let replaces = replaces_for(
+        EnrollmentKind::Device,
+        leaf_fingerprint(),
+        keyring_store::get(KEYRING_REPLACES),
+    );
     let issued = redeem(
         &endpoint,
         token,
         &key_and_csr.csr_pem,
+        replaces.as_deref(),
         server_url,
         allow_self_signed,
     )
@@ -273,6 +394,10 @@ pub async fn enroll_with_token(
     // Even a failed replace may have deleted the old entries: drop the cached
     // client either way, so the next build_client sees what is there (5.1).
     crate::http_client::invalidate_client_cache();
+    if stored.is_ok() {
+        // Named as replaced in this enrollment: nothing is pending any more.
+        let _ = keyring_store::delete(KEYRING_REPLACES);
+    }
     stored
 }
 
@@ -316,6 +441,7 @@ async fn redeem(
     endpoint: &str,
     token: &str,
     csr_pem: &str,
+    replaces: Option<&str>,
     server_url: &str,
     allow_self_signed: bool,
 ) -> Result<IssuedIdentity, AppError> {
@@ -327,6 +453,7 @@ async fn redeem(
         .json(&EnrollRequest {
             token,
             csr: csr_pem,
+            replaces,
         })
         .send()
         .await?;
@@ -622,10 +749,16 @@ pub async fn export_browser_p12(
     }
     let key_and_csr = generate_key_and_csr(&grant.subject_id)?;
     let endpoint = enroll_endpoint(server_url, grant.enroll_port)?;
+    let replaces = replaces_for(
+        EnrollmentKind::Browser,
+        leaf_fingerprint(),
+        keyring_store::get(KEYRING_REPLACES),
+    );
     let issued = redeem(
         &endpoint,
         &grant.token,
         &key_and_csr.csr_pem,
+        replaces.as_deref(),
         server_url,
         allow_self_signed,
     )
@@ -833,6 +966,132 @@ mod tests {
         assert_eq!(
             s.entries.get(KEYRING_CA).map(String::as_str),
             Some("new-ca")
+        );
+    }
+
+    // ── R-0224: replaces and the reset ─────────────────────────────────────
+
+    #[test]
+    fn the_enroll_body_names_the_replaced_certificate_only_when_there_is_one() {
+        let with = serde_json::to_value(EnrollRequest {
+            token: "t",
+            csr: "c",
+            replaces: Some("ab12"),
+        })
+        .unwrap();
+        assert_eq!(with["replaces"], "ab12");
+        let without = serde_json::to_value(EnrollRequest {
+            token: "t",
+            csr: "c",
+            replaces: None,
+        })
+        .unwrap();
+        assert!(without.get("replaces").is_none(), "{without}");
+    }
+
+    #[test]
+    fn an_enrollment_replaces_the_held_leaf_before_a_remembered_one() {
+        let held = Some("held".to_string());
+        let remembered = Some("remembered".to_string());
+        let device = EnrollmentKind::Device;
+        assert_eq!(replaces_for(device, held.clone(), remembered.clone()), held);
+        assert_eq!(replaces_for(device, None, remembered.clone()), remembered);
+        assert_eq!(replaces_for(device, None, None), None);
+    }
+
+    #[test]
+    fn a_browser_export_replaces_nothing_even_while_the_desktop_holds_a_leaf() {
+        let held = Some("desktop-leaf".to_string());
+        let remembered = Some("remembered".to_string());
+        assert_eq!(
+            replaces_for(EnrollmentKind::Browser, held, remembered),
+            None
+        );
+    }
+
+    #[test]
+    fn the_server_answer_counts_as_revoked_when_done_or_already_refused() {
+        assert!(revoked_by(204, ""));
+        assert!(revoked_by(
+            403,
+            r#"{"detail":"ERR_CERT_REVOKED: no longer valid"}"#
+        ));
+        assert!(!revoked_by(
+            403,
+            r#"{"detail":"Kein gültiges Client-Zertifikat"}"#
+        ));
+        assert!(!revoked_by(409, "no device"));
+        assert!(!revoked_by(502, ""));
+    }
+
+    #[tokio::test]
+    async fn a_reset_revokes_at_the_server_before_it_deletes_here() {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let outcome = reset_with(
+            Some("fp".to_string()),
+            || async {
+                calls.borrow_mut().push("revoke");
+                Ok(true)
+            },
+            || calls.borrow_mut().push("clear"),
+            |_| calls.borrow_mut().push("remember"),
+        )
+        .await;
+        assert_eq!(outcome, ResetOutcome::Revoked);
+        assert_eq!(*calls.borrow(), vec!["revoke", "clear"]);
+    }
+
+    #[tokio::test]
+    async fn a_reset_the_server_did_not_take_deletes_and_remembers_the_leaf() {
+        for answer in [
+            Ok(false),
+            Err(AppError::Connection("unreachable".to_string())),
+        ] {
+            let calls = std::cell::RefCell::new(Vec::new());
+            let remembered = std::cell::RefCell::new(None);
+            let outcome = reset_with(
+                Some("fp".to_string()),
+                || async { answer },
+                || calls.borrow_mut().push("clear"),
+                |fp: &str| *remembered.borrow_mut() = Some(fp.to_string()),
+            )
+            .await;
+            assert_eq!(outcome, ResetOutcome::LocalOnly);
+            assert_eq!(*calls.borrow(), vec!["clear"]);
+            assert_eq!(remembered.borrow().as_deref(), Some("fp"));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reset_without_an_identity_asks_no_server() {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let outcome = reset_with(
+            None,
+            || async {
+                calls.borrow_mut().push("revoke");
+                Ok(true)
+            },
+            || calls.borrow_mut().push("clear"),
+            |_| calls.borrow_mut().push("remember"),
+        )
+        .await;
+        assert_eq!(outcome, ResetOutcome::NotEnrolled);
+        assert_eq!(*calls.borrow(), vec!["clear"]);
+    }
+
+    #[test]
+    fn the_reset_outcome_reaches_the_ui_in_camel_case() {
+        assert_eq!(
+            serde_json::to_value(ResetOutcome::LocalOnly).unwrap(),
+            "localOnly"
+        );
+        assert_eq!(
+            serde_json::to_value(ResetOutcome::NotEnrolled).unwrap(),
+            "notEnrolled"
+        );
+        assert_eq!(
+            serde_json::to_value(ResetOutcome::Revoked).unwrap(),
+            "revoked"
         );
     }
 

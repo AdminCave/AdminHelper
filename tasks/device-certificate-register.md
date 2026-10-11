@@ -220,8 +220,10 @@ mit derselben `server_id`, in derselben Transaktion, mit einem Audit-Eintrag.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning.py
 Doku: CHANGELOG (Changed); Admin-Doku in T14
 
-### T8 — Desktop-Backend: Neu-Registrieren nennt das vorige Zertifikat, Zurücksetzen widerruft am Server (R-0224)  [ ]
+### T8 — Desktop-Backend: Neu-Registrieren nennt das vorige Zertifikat, Zurücksetzen widerruft am Server (R-0224)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @b298c1cf 2026-10-11T12:01:57+02:00
+Review: request_changes (opus, 1 wichtig: Export-Regel ungetestet) behoben, r2 approve (opus)
 Änderung:
 - `EnrollRequest` (`enrollment.rs:52-56`) bekommt `replaces` (nur serialisiert, wenn gesetzt).
 - `enroll_with_token` (`:252-277`) liest vor `redeem` den Fingerprint des gespeicherten Leafs (der Fullchain beginnt mit
