@@ -20,8 +20,10 @@ das heutige Verhalten ist mit einer Probe auf diesem Stand belegt (nicht committ
 Agent-Zertifikat (Scope `tunnel`) dem Server, für den der Agent provisioniert wurde. Was ein Zertifikat einer Identität
 zuordnet, gilt an jeder Route, die mit dieser Identität arbeitet.
 
-### T1 — Logout: die Regel festhalten, Tokens werden entwertet, gleich welches Zertifikat (R-0282)  [ ]
+### T1 — Logout: die Regel festhalten, Tokens werden entwertet, gleich welches Zertifikat (R-0282)  [x]
 Komponente: server · Dateien: apps/server/tests/test_cert_user_binding.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @40c9234a 2026-10-12T12:32:21+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung (Weg (b), siehe Gate): `POST /api/auth/logout` (`auth_router.py:242-275`) bleibt ohne Bindung: er entwertet nur
 die Tokens, die vorgelegt werden (Bearer, Refresh aus Body oder Cookie), verleiht nichts und gibt nichts preis. So kann
 sich auch ein Gerät abmelden, dessen Zertifikat der Server nicht mehr annimmt.
@@ -29,7 +31,7 @@ sich auch ein Gerät abmelden, dessen Zertifikat der Server nicht mehr annimmt.
   gesperrten Zertifikat gibt 200, und der vorgelegte Bearer gilt danach nicht mehr (`/api/auth/me` 401).
 - `api-reference.html` (DE und EN) beim Logout: ein Satz, dass der Logout die Zertifikats-Bindung bewusst nicht prüft,
   weil er nur entwertet.
-- Wählt Kevin Weg (a), wird T1 eine Code-Änderung: `logout` ruft die Bindung aus `require_cert_user` für den Benutzer
+- Weg (a) verworfen (Kevin, 2026-10-12, Weg (b)). Er hätte bedeutet, dass T1 eine Code-Änderung wird: `logout` ruft die Bindung aus `require_cert_user` für den Benutzer
   des vorgelegten Tokens, ohne die Register-Prüfung; die Tests erwarten dann 403 `ERR_CERT_USER_MISMATCH` mit fremdem
   Zertifikat und 200 mit dem eigenen, auch wenn es gesperrt ist.
 Verify: bash scripts/dev/verify.sh server --strict
