@@ -1456,7 +1456,7 @@ runner_env "$H"
 # where the two used to part: quotes in quotes, an empty value, CRLF, a U+2028 and
 # a NEL inside a value, a tab at the end, export with a tab. Placeholders only.
 pve_shell() {  # pve_shell <home> — the AH_PVE_* pairs runner-env.sh exports, sorted
-  HOME="$1" TMPDIR="$WORK" bash -c '. "$1" >/dev/null 2>&1 || exit 9
+  HOME="$1" TMPDIR="$WORK" bash -c 'unset "${!AH_PVE_@}"; . "$1" >/dev/null 2>&1 || exit 9
     for v in ${!AH_PVE_@}; do printf "%s=%s\n" "$v" "${!v}"; done | LC_ALL=C sort' _ "$RUNNER_ENV"
 }
 pve_python() {  # pve_python <home> — the AH_PVE_* pairs vm.read_pve_env returns, sorted
@@ -1476,8 +1476,9 @@ PY
 H=$(mk_home parity)
 LS=$'\xe2\x80\xa8' NEL=$'\xc2\x85'
 { printf '%s\n' "AH_PVE_URL=\"'twice-quoted'\"" "AH_PVE_NODE=" "AH_PVE_STORAGE=a${LS}b" "AH_PVE_BRIDGE=n${NEL}x" \
-    "AH_PVE_POOL='single'" $'export\tAH_PVE_VLAN=7'
-  printf 'AH_PVE_TEMPLATE=crlf-placeholder\r\nAH_PVE_TOKEN=tab-placeholder\t\n'; } > "$H/.config/adminhelper/pve.env"
+    "AH_PVE_POOL='single'" $'export\tAH_PVE_VLAN=7' $'export \xc2\xa0AH_PVE_CLUSTER=nbsp-placeholder'
+  printf 'AH_PVE_TEMPLATE=crlf-placeholder\r\nAH_PVE_TOKEN=tab-placeholder\t\n'
+  printf 'AH_PVE_GATEWAY=a\rAH_PVE_ZONE=cr-placeholder\n'; } > "$H/.config/adminhelper/pve.env"
 for loc in C ${LOC:+"$LOC"}; do
   SHELL_PAIRS="$(LC_ALL="$loc" pve_shell "$H")"; PY_PAIRS="$(LC_ALL="$loc" pve_python "$H")"
   [ -n "$PY_PAIRS" ] && [ "$SHELL_PAIRS" = "$PY_PAIRS" ] \
@@ -1485,9 +1486,11 @@ for loc in C ${LOC:+"$LOC"}; do
     || bad "pve.env parity ($loc): shell=[$SHELL_PAIRS] python=[$PY_PAIRS]"
 done
 grep -qx "AH_PVE_URL='twice-quoted'" <<<"$PY_PAIRS" && ! grep -q '^AH_PVE_NODE=' <<<"$PY_PAIRS" \
-  && ok "... with one pair of quotes taken and an empty value left out" || bad "pve.env parity cases: $PY_PAIRS"
+  && ! grep -q '^AH_PVE_ZONE=' <<<"$PY_PAIRS" && ! grep -q '^AH_PVE_CLUSTER=' <<<"$PY_PAIRS" \
+  && ok "... with one pair of quotes taken, an empty value left out, a lone CR inside a value and no NBSP as white space" \
+  || bad "pve.env parity cases: $PY_PAIRS"
 # A NUL byte and a byte that is no UTF-8: both readers refuse the file, and say no value.
-for bad_file in 'AH_PVE_URL=nul\000placeholder\n' 'AH_PVE_URL=bad\377placeholder\n'; do
+for bad_file in 'AH_PVE_URL=nul\000placeholder\n' 'AH_PVE_URL=bad\377placeholder\n' 'AH_PVE_URL=big\364\220\200\200placeholder\n'; do
   printf "$bad_file" > "$H/.config/adminhelper/pve.env"
   runner_env "$H"; PY_PAIRS="$(pve_python "$H")"
   [ "$(val RC)" != 0 ] && [ "$(val AH_PVE_URL)" = "<unset>" ] && grep -q '^USAGE: ' <<<"$PY_PAIRS" \

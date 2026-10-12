@@ -149,8 +149,9 @@ import json, re, sys
 ledger, tid, tree, rnd, probe, contracts, prior, new_files, verify_json = sys.argv[1:10]
 # Lines end at \n only, where task-close and the loop end them: splitlines() also splits
 # at \x0b, \x0c, \x1c-\x1e, \x85 and U+2028/9 and would read a heading inside a line
-# of the task, cutting the task short for the reviewer (R-0267, as R-0251).
-lines = open(ledger, encoding="utf-8").read().split("\n")
+# of the task, cutting the task short for the reviewer (R-0267, as R-0251); and text
+# mode would make a lone \r a line end too, hence newline="".
+lines = open(ledger, encoding="utf-8", newline="").read().split("\n")
 head = next((m.group(1).strip() for m in (re.match(r"Spec:\s*(.*)", l) for l in lines) if m), "")
 # A short ledger names only roadmap ids ("Spec: Roadmap R-0152"): then there is no file to read.
 word = head.split()[0].strip("`,;") if head else ""

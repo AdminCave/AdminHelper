@@ -261,7 +261,9 @@ lane_new() {
     if ! lane_inside "$wt" "$bin"; then
       echo "  WARN: $bin in the lane leads outside it — the frpc sidecar is not copied"
     else
-      { mkdir -p "$wt/$bin" && cp -RpL "$ROOT/$bin/." "$wt/$bin/"; } \
+      # --remove-destination: a file of the branch's binaries/ that is a symlink out of
+      # the lane is replaced, not written through.
+      { mkdir -p "$wt/$bin" && cp -RpL --remove-destination "$ROOT/$bin/." "$wt/$bin/"; } \
         || echo "  WARN: could not copy all of $bin — without the frpc sidecar cargo test (desktop) skips in the lane"
     fi
   fi

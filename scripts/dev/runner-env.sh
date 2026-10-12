@@ -159,7 +159,8 @@ ah_runner_env() {
     if [ "$(tr -d '\000' < "$pve" | wc -c)" != "$(wc -c < "$pve")" ]; then
       echo "runner-env: $pve contains a NUL byte" >&2; return 1
     fi
-    if ! iconv -f UTF-8 -t UTF-8 "$pve" >/dev/null 2>&1; then
+    # To UTF-16LE: glibc takes code points past U+10FFFF as UTF-8 to UTF-8, Python does not.
+    if ! iconv -f UTF-8 -t UTF-16LE "$pve" >/dev/null 2>&1; then
       echo "runner-env: $pve is no UTF-8" >&2; return 1
     fi
     local ws=$' \t\r\v\f'

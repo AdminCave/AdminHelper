@@ -48,6 +48,7 @@ Spec: docs/features/fix.md (Roadmap R-0001)
 Komponente: scripts · Dateien: apps/x/a.py, apps/x/new.py
 Änderung: x returns 2 instead of 1.
 SEP-LINE
+SEP2-LINE
 Rest: T1-TAIL-MARKER
 
 ### T2 — something else  [ ]
@@ -56,6 +57,8 @@ EOF
 # R-0267: a line of T1 that carries U+2028 and a heading after it stays one line of T1.
 LS=$'\xe2\x80\xa8'
 sed -i "s/^SEP-LINE\$/Note: one line${LS}### T9 — not a task/" "$FIX/tasks/fix.md"
+CR=$'\r'
+sed -i "s/^SEP2-LINE\$/Note: two${CR}### T8 — not a task either/" "$FIX/tasks/fix.md"
 printf 'def x():\n    return 1\n' > "$FIX/apps/x/a.py"
 printf '# rules\n' > "$FIX/CLAUDE.md"
 printf '.ah-out/\ntasks/private/\n' > "$FIX/.gitignore"
@@ -235,6 +238,7 @@ grep -q '^### T1 — x returns 2' "$P" && grep -q 'x returns 2 instead of 1' "$P
 grep -q '^- apps/x/new.py$' "$P" && grep -q '^+    return 2$' "$P" && grep -q 'NEW_FILE_BODY' "$P" \
   && ok "the new files and the staged diff" || bad "prompt: diff/new files"
 grep -q 'T1-TAIL-MARKER' "$P" && grep -qF "Note: one line${LS}### T9 — not a task" "$P" \
+  && grep -qF "Note: two${CR}### T8 — not a task either" "$P" \
   && ok "a U+2028 and a heading inside a line of T1: the reviewer still gets all of T1 (R-0267)" || bad "prompt: T1 cut at a U+2028"
 grep -qxF -- "- apps/x/odd${LS}name.py" "$P" \
   && ok "a new file whose name holds a U+2028 is one line under New files" || bad "prompt: a new file name split at a U+2028"

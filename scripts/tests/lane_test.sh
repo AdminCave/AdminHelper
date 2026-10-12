@@ -319,6 +319,24 @@ lane new outside; rc=$?
   && [ "$(readlink "$WORK/AdminHelper-outside/apps/monitoring/.venv/bin")" = "$MAIN/apps/monitoring/.venv/bin" ] \
   && ok "... and the other venvs are linked as always" || bad "monitoring venv: $(ls -la "$WORK/AdminHelper-outside/apps/monitoring/.venv" 2>&1)"
 lane "done" outside || bad "done outside: $(cat "$WORK/out.log")"
+# The sidecar's directory is a real one, but the sidecar in it a symlink out of the lane.
+OUTF="$WORK/outside-file"; echo untouched > "$OUTF"
+g worktree add -q -b feature/outside2 "$WORK/mk-outside2" main
+mkdir -p "$WORK/mk-outside2/${SIDECAR%/*}"
+ln -s "$OUTF" "$WORK/mk-outside2/$SIDECAR"
+echo "# plan outside2" > "$WORK/mk-outside2/tasks/outside2.md"
+git -C "$WORK/mk-outside2" add -f "$SIDECAR" tasks/outside2.md
+git -C "$WORK/mk-outside2" -c user.name=t -c user.email=t@t commit -qm "a sidecar that is a symlink out of the lane"
+g worktree remove "$WORK/mk-outside2"
+lane new outside2; rc=$?
+[ "$rc" = 0 ] && [ "$(cat "$OUTF")" = untouched ] && [ ! -L "$WORK/AdminHelper-outside2/$SIDECAR" ] \
+  && cmp -s "$WORK/AdminHelper-outside2/$SIDECAR" "$MAIN/$SIDECAR" \
+  && ok "a sidecar that the branch tracks as a symlink out of the lane is replaced, not written through" \
+  || bad "new outside2 rc=$rc: outside=[$(cat "$OUTF")] sidecar=$(ls -la "$WORK/AdminHelper-outside2/$SIDECAR" 2>&1)"
+# The lane holds a real sidecar where the branch tracks a link, so done would call it
+# unclean: the tracked file goes back first.
+git -C "$WORK/AdminHelper-outside2" checkout -q -- "$SIDECAR"
+lane "done" outside2 || bad "done outside2: $(cat "$WORK/out.log")"
 
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"

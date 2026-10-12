@@ -168,7 +168,8 @@ def read_pve_env(path: str) -> dict:
             % (folder, dmode, shlex.quote(folder))
         )
     try:
-        with open(path, encoding="utf-8") as fh:
+        # newline="": text mode would make a lone \r a line end, bash read does not.
+        with open(path, encoding="utf-8", newline="") as fh:
             text = fh.read()
     except (OSError, UnicodeDecodeError) as exc:
         raise Usage("cannot read %s: %s" % (path, type(exc).__name__)) from exc
@@ -179,7 +180,7 @@ def read_pve_env(path: str) -> dict:
     for line in lines:
         line = line.strip(ASCII_SPACE)
         if line.startswith("export") and line[6:7] and line[6] in ASCII_SPACE:
-            line = line[6:].lstrip()
+            line = line[6:].lstrip(ASCII_SPACE)
         key, sep, value = line.partition("=")
         if not sep or not FILE_KEY.fullmatch(key):
             continue  # a comment, a blank line or a key that is none of ours
