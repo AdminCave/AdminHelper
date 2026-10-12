@@ -36,8 +36,9 @@
 #
 # AH_REQUIRED="<step-ids…>" (space-separated, usually set in .devenv.sh) is the
 # set of steps that MUST really run under --strict; it overrides the built-in
-# AH_REQUIRED_DEFAULT per host, because the dev box has no docker and no display
-# while a VM box has both. Step ids are listed next to AH_REQUIRED_DEFAULT.
+# AH_REQUIRED_DEFAULT per host: the dev box has docker but no display, and its
+# heavy steps run on a VM box (CLAUDE.md §8), so its set carries none of them.
+# Step ids are listed next to AH_REQUIRED_DEFAULT.
 #
 # Exit code: non-zero if any step FAILED. Without --strict a SKIP never fails the
 # run; with --strict a skipped required step does ("SKIP heisst nicht verifiziert").

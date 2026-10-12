@@ -43,7 +43,7 @@ Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneb
 | **1 · Design** | `/feature-plan <idee>` (oder `--kurz R-nnnn`, `--bundle <komponente>`) | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger, `Status: geplant`) als ersten Commit auf `feature/<slug>` und trägt die Roadmap-Zeile auf `geplant`. **Stoppt am Design-Gate.** |
 | **2 · Freigabe** | _du_ (kleine Fund-Pakete: die Aufsichts-Session, CLAUDE.md §2) | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Die Freigabe setzt `roadmap.py approve` und den Kopf auf `freigegeben` mit der Zeile `Freigabe:`. |
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: `ledger.sh start` → umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → `task-close.sh` setzt den Haken und committet Code + Ledger auf `feature/<slug>`. |
-| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Übergabe an die Aufsicht**, die prüft, pusht, den PR öffnet und merged (CLAUDE.md §2). |
+| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch auf Opus (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Übergabe an die Aufsicht**, die prüft, pusht, den PR öffnet und merged (CLAUDE.md §2). |
 
 **Woher die Arbeit kommt.** Was als Nächstes gebaut wird, steht in der privaten Roadmap
 `tasks/private/ROADMAP.md`. Ihren Abschnitt „Als Nächstes" kuratiert Kevin von Hand. Die
@@ -58,11 +58,12 @@ Kevin, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2).
 
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
-Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer** ist
+Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer je Task** ist
 die Ausnahme: er läuft auf **Sonnet** und nur dann auf Opus, wenn `review.sh risk` einen
 Risikopfad im Diff meldet (`scripts/dev/review-risk.txt` plus die Harness-Pfade) — mit Opus lief
 er regelmäßig eine halbe Stunde ohne Urteil, mit Sonnet urteilt er in Minuten
-(`.claude/skills/feature-build/SKILL.md`, Schritt 4). Eine Review-Runde ist die Regel, eine
+(`.claude/skills/feature-build/SKILL.md`, Schritt 4). Den Review über den ganzen Branch fährt
+immer Opus (CLAUDE.md §2 „Modelle“). Eine Review-Runde ist die Regel, eine
 zweite nur bei einem `blocker` oder einem belegten `wichtig`. Seit Stufe 6b kann der Reviewer ein
 eigener Prozess von `task-close.sh` sein (`--review auto`, im Pilot per Ledger-Kopf `Review: auto`):
 der Runner fährt die Probe, `scripts/dev/review-run.sh` startet `claude -p` mit festem Prompt und
@@ -85,9 +86,9 @@ eigener Prozess von `task-close.sh`), der nur den Diff + die Task + feste Kriter
 unvoreingenommen, weil er den Bau-Verlauf nicht kennt;
 (2) am Ende ein `/code-review` über den ganzen Branch-Diff. Ebene 1 fängt den einzelnen
 Fehltritt sofort, Ebene 2 die Wechselwirkungen. **Ausnahme Kurz-Ledger** (≤ 3 Tasks, Kopf
-`Review: am Ende`): dort fallen beide Ebenen zu **einer** zusammen — ein `feature-review` über
-den ganzen Branch-Diff, kein `/code-review` hinterher, weil der zweite Durchgang denselben Diff
-noch einmal sähe. `feature-review` läuft auch standalone (`/feature-review`, oder
+`Review: am Ende`): dort fallen beide Ebenen zu **einer** zusammen — ein `feature-review` auf Opus
+über den ganzen Branch-Diff, kein `/code-review` hinterher, weil der zweite Durchgang denselben
+Diff noch einmal sähe. `feature-review` läuft auch standalone (`/feature-review`, oder
 `/loop /feature-review` für einen frischen Prüf-Durchlauf).
 
 ### So startest du konkret
@@ -206,10 +207,11 @@ Regeln:
   ausschließlich in Lanes.
 - **Lanes komponenten-disjunkt schneiden.** Das Gate prüft gegen aktive Lanes:
   Komponenten, geteilte Contracts (API-Schemas, Migrationen, FRP-Format, Tauri-Commands),
-  primäre `docs/`-Seiten. Überlappt es → seriell statt parallel. Ist es disjunkt und braucht
-  höchstens eines der Vorhaben VMs, **schlägt das Gate die Lane von sich aus vor** und gibt
-  die Startbefehle mit (Kevin, 2026-09-18). Zwei Python-Bauten kollidieren nicht mehr auf
-  der Test-DB: jede Lane hat ihre eigene.
+  primäre `docs/`-Seiten. Überlappt es → seriell statt parallel. Ist es disjunkt, **schlägt das
+  Gate die Lane von sich aus vor** und gibt die Startbefehle mit (Kevin, 2026-09-18). VMs
+  dürfen beide brauchen: Es gilt 1 VM-Lauf zugleich (eine stehende Warm-Box zählt nicht,
+  CLAUDE.md §2), ihre VM-Läufe laufen nacheinander. Zwei Python-Bauten kollidieren nicht mehr
+  auf der Test-DB: jede Lane hat ihre eigene.
 - **PRs landen einzeln.** Nach jedem Merge in den verbleibenden Lanes
   `git rebase origin/main` + einmal `bash scripts/vm/iter.sh quick`. Bekannte, triviale
   Rebase-Konflikte: `CHANGELOG.md` (Unreleased) und geteilte docs-Seiten — additiv.
