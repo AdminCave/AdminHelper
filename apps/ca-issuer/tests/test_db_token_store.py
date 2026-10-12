@@ -356,3 +356,72 @@ def test_a_revocation_waits_for_a_renewal_that_takes_over_and_covers_its_line(pg
         ex.shutdown(wait=True)
         revocation.close()
     assert store.line_of(CertRecord.of(successor).fingerprint).revoked_reason == "admin"
+
+
+# --- R-0306: a token minted before the revocation of its identity enrolls nothing ------
+
+
+def _mint_at(engine, raw_token: str, subject_id: str, scope: str, minted_at) -> None:
+    _mint(engine, raw_token, subject_id, scope)
+    with engine.begin() as conn:
+        conn.execute(
+            db.enrollment_tokens.update()
+            .where(db.enrollment_tokens.c.hashed_token == db._hash(raw_token))
+            .values(created_at=minted_at)
+        )
+
+
+def test_a_token_minted_up_to_the_revocation_enrolls_nothing(engine):
+    now = db._now_naive()
+    revoked_at = now - datetime.timedelta(minutes=1)
+    with engine.begin() as conn:
+        conn.execute(
+            db.revoked_identities.insert().values(
+                id=str(uuid.uuid4()), subject_id="alice", scope="access", revoked_at=revoked_at
+            )
+        )
+    _mint_at(engine, "before", "alice", "access", revoked_at - datetime.timedelta(minutes=1))
+    _mint_at(engine, "at", "alice", "access", revoked_at)
+    _mint_at(engine, "after", "alice", "access", now)
+    store = db.DbTokenStore(engine)
+    signed = []
+
+    def sign(grant):
+        signed.append(grant)
+        return _self_signed("alice", "access"), {"cert": "x"}
+
+    assert store.enroll("before", sign) is None
+    assert store.enroll("at", sign) is None
+    assert signed == []
+    assert store.consume("before") is None, "the refused token is spent"
+    leaf = _self_signed("alice", "access")
+    assert store.enroll("after", lambda grant: (leaf, {"cert": "y"})) == {"cert": "y"}
+    assert store.line_of(CertRecord.of(leaf).fingerprint).revoked_reason is None
+
+
+def test_an_enrollment_waits_for_a_revocation_and_enrolls_nothing(pg_engine):
+    _mint_at(
+        pg_engine, "racing", "agent-31", "tunnel", db._now_naive() - datetime.timedelta(minutes=1)
+    )
+    store = db.DbTokenStore(pg_engine)
+    signed = []
+
+    def sign(grant):
+        signed.append(grant)
+        return _self_signed("agent-31", "tunnel"), {"cert": "x"}
+
+    revocation = pg_engine.connect()
+    ex = ThreadPoolExecutor(max_workers=1)
+    try:
+        tx = revocation.begin()
+        revocation_pid = revocation.execute(text("SELECT pg_backend_pid()")).scalar()
+        _revoke(revocation, "agent-31", "tunnel")
+        enrolling = ex.submit(store.enroll, "racing", sign)
+        assert _waits_for(pg_engine, revocation_pid), "the enrollment must wait for the revocation"
+        assert not enrolling.done()
+        tx.commit()
+        assert enrolling.result(10) is None
+    finally:
+        revocation.close()
+        ex.shutdown(wait=True)
+    assert signed == [], "nothing was signed"

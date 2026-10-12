@@ -725,3 +725,18 @@ def test_renew_rejects_a_cert_with_an_unknown_signature_algorithm(client):
     pem = odd.public_bytes(serialization.Encoding.PEM).decode()
     r = client.post("/renew", json={"csr": _csr_pem("admin")}, headers=_renew_headers(pem))
     assert 400 <= r.status_code < 500, r.text
+
+
+# R-0306: a token minted before its identity was deprovisioned enrolls nothing; one
+# minted after it does (a later user of the same name).
+
+
+def test_enroll_refuses_a_token_minted_before_its_identity_was_deprovisioned(client):
+    store = client.app.state.token_store
+    store.mint("old", EnrollmentGrant(subject_id="bob", scope="access"))
+    store.deprovision("bob", "access")
+    refused = client.post("/enroll", json={"token": "old", "csr": _csr_pem("bob")})
+    assert 400 <= refused.status_code < 500, refused.text
+    store.mint("new", EnrollmentGrant(subject_id="bob", scope="access"))
+    issued = client.post("/enroll", json={"token": "new", "csr": _csr_pem("bob")})
+    assert issued.status_code == 200, issued.text
