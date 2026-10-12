@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-text: Review-Modell, Lane-Bedingung, Docker-Kommentar (R-0298, R-0299, R-0300) — Task-Ledger
-Status: aktiv · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0298, R-0299, R-0300, Triage Kevin 2026-10-11; CLAUDE.md ist die Vorlage, keine Änderung daran; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0298, R-0299, R-0300 (Kurz-Ledger ohne Spec)
 Heavy: none — Skill-Texte, AUTONOMOUS.md und zwei Kommentare unter scripts/tests mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -117,8 +117,10 @@ Proxmox-VMs“.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kommentare)
 
-### T4 — Nachbesserung aus dem Review am Ende: der Modell-Absatz in AUTONOMOUS.md, schärfere Prüfungen (R-0298, R-0300)  [ ]
+### T4 — Nachbesserung aus dem Review am Ende: der Modell-Absatz in AUTONOMOUS.md, schärfere Prüfungen (R-0298, R-0300)  [x]
 Komponente: scripts · Dateien: AUTONOMOUS.md, scripts/tests/skill_consistency_test.sh, .claude/skills/feature-review/SKILL.md, .claude/skills/feature-plan/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7fcde6fa 2026-10-12T08:26:36+02:00
+Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Änderung: Angelegt 2026-10-12 aus dem Review am Ende (Opus, `request_changes`: zwei belegte Funde, drei nits).
 - AUTONOMOUS.md, Absatz zum Modell (:59–64), sagt allgemein „Der **Reviewer** ist die Ausnahme: er läuft auf
   **Sonnet** und nur dann auf Opus, wenn `review.sh risk` einen Risikopfad … meldet“. Wer dort nachschlägt, nimmt für

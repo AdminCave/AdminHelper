@@ -233,7 +233,7 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   ```
   Dazu ein Satz zu den Grenzen: beide Opus-Bauten teilen sich Kevins Nutzungsfenster, der
   zweite PR muss rebasen (CHANGELOG, DEVELOPMENT.md), und Kevins Review-Zeit bleibt der
-  Engpass. Zwei Bau-Slots und 1 VM-Lauf zugleich sind die Deckel (CLAUDE.md §2; eine stehende
+  Engpass. Zwei Bau-Slots und 1 VM-Lauf zugleich sind zwei der Deckel (CLAUDE.md §2; eine stehende
   Warm-Box zählt nicht): Brauchen beide Vorhaben VMs, laufen ihre VM-Läufe nacheinander. Eine Lane
   gibt es nur für disjunkte Ledger — nicht der Default, sondern ein Vorschlag, den Kevin annimmt
   oder nicht.

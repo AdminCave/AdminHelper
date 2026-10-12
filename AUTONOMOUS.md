@@ -58,11 +58,12 @@ Kevin, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2).
 
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
-Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer** ist
+Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer je Task** ist
 die Ausnahme: er läuft auf **Sonnet** und nur dann auf Opus, wenn `review.sh risk` einen
 Risikopfad im Diff meldet (`scripts/dev/review-risk.txt` plus die Harness-Pfade) — mit Opus lief
 er regelmäßig eine halbe Stunde ohne Urteil, mit Sonnet urteilt er in Minuten
-(`.claude/skills/feature-build/SKILL.md`, Schritt 4). Eine Review-Runde ist die Regel, eine
+(`.claude/skills/feature-build/SKILL.md`, Schritt 4). Den Review über den ganzen Branch fährt
+immer Opus (CLAUDE.md §2 „Modelle“). Eine Review-Runde ist die Regel, eine
 zweite nur bei einem `blocker` oder einem belegten `wichtig`. Seit Stufe 6b kann der Reviewer ein
 eigener Prozess von `task-close.sh` sein (`--review auto`, im Pilot per Ledger-Kopf `Review: auto`):
 der Runner fährt die Probe, `scripts/dev/review-run.sh` startet `claude -p` mit festem Prompt und

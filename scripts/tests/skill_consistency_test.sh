@@ -133,14 +133,18 @@ branch_review_opus() {
 # lane_vm_cap <text> — "ok" when a lane rule leans on the cap of one VM run at a
 # time (CLAUDE.md §2) and no longer on "at most one of them needs VMs" (R-0300).
 lane_vm_cap() {
-  grep -qF '1 VM-Lauf zugleich' <<<"$1" && ! grep -qF 'höchstens eines' <<<"$1" && echo ok
+  grep -qF '1 VM-Lauf zugleich' <<<"$1" && ! grep -qE 'höchstens[[:space:]]+eine[rs]?' <<<"$1" && echo ok
 }
 
 # whole_branch_opus <text> — "ok" when one sentence of the text names the review
-# over the whole branch together with Opus (R-0298). A sentence ends at a period;
-# the text comes from section(), so line breaks are spaces already.
+# over the whole branch together with Opus and neither Sonnet nor a "nicht" (R-0298):
+# "über den ganzen Branch läuft er auf Sonnet, Opus nur bei …" is the reading the
+# rule removes. A sentence ends at every period, so a dot inside one (review.sh)
+# can only make the check fail, never pass.
 whole_branch_opus() {
-  grep -qE 'ganzen Branch[^.]*Opus|Opus[^.]*ganzen Branch' <<<"$1" && echo ok
+  local s
+  s="$(tr '.' '\n' <<<"$1" | grep -F 'ganzen Branch' | grep -F 'Opus' | grep -vE 'Sonnet|nicht')"
+  [ -n "$s" ] && echo ok
 }
 
 # build_task_findings <skill> <runner settings> — one line per finding in the
@@ -363,9 +367,18 @@ f=$(fixture 'Zweck: x.' 'ein `feature-review` über' 'den ganzen Branch-Diff, ke
 f=$(fixture 'Zweck: x.' 'Je Task Sonnet. Den Review über den ganzen' 'Branch fährt immer **Opus**.' '**Wichtig:** y')
 [ "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" = ok ] \
   && ok "whole_branch_opus: the rule wrapped across a line break is found" || bad "whole_branch_opus missed the wrapped rule"
+f=$(fixture 'Zweck: x.' 'Je Task und über den ganzen Branch läuft er auf Sonnet, Opus nur bei einem Risikopfad.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: Sonnet over the whole branch, Opus only on a risk path, is no ok" || bad "whole_branch_opus passed Sonnet over the whole branch"
+f=$(fixture 'Zweck: x.' 'Den Review über den ganzen Branch fährt nicht Opus, sondern Sonnet.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: a negated Opus is no ok" || bad "whole_branch_opus passed 'nicht Opus'"
 f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht' '  höchstens eines der Vorhaben VMs, schlägt das Gate die Lane vor.' '- **PRs**')
 [ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
   && ok "lane_vm_cap: the old condition is no ok" || bad "lane_vm_cap passed 'höchstens eines'"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht höchstens' '  einer VMs, schlägt das Gate die Lane vor. Es gilt 1 VM-Lauf zugleich.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: ... also wrapped, and as 'höchstens einer'" || bad "lane_vm_cap passed a wrapped 'höchstens einer'"
 f=$(fixture '- **Lanes**' '  Ist es disjunkt, schlägt das Gate die Lane vor.' '- **PRs**')
 [ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
   && ok "lane_vm_cap: dropping the condition without naming the VM cap is no ok either" || bad "lane_vm_cap passed a rule without the cap"
@@ -472,6 +485,9 @@ close4=$(section .claude/skills/feature-build/SKILL.md '4. **Review über den Br
 [ "$(whole_branch_opus "$(section AUTONOMOUS.md '**Zwei Review-Ebenen' '### So startest du')")" = ok ] \
   && ok "AUTONOMOUS.md: the one review of a Kurz-Ledger over the whole branch runs on Opus" \
   || bad "AUTONOMOUS.md 'Zwei Review-Ebenen' names no Opus for the review over the whole branch"
+[ "$(whole_branch_opus "$(section AUTONOMOUS.md 'Die Session läuft auf **mindestens Opus**' '**Ebene 0:')")" = ok ] \
+  && ok "AUTONOMOUS.md: the paragraph on models gives Opus the review over the whole branch" \
+  || bad "AUTONOMOUS.md's paragraph on models names no Opus for the review over the whole branch"
 [ "$(lane_vm_cap "$(section .claude/skills/feature-plan/SKILL.md '- **Lanes aktiv vorschlagen' '- Sage explizit')")" = ok ] \
   && ok "feature-plan: the lane proposal follows the cap of one VM run at a time (R-0300)" \
   || bad "feature-plan's lane proposal still says 'höchstens eines' or names no VM cap"
