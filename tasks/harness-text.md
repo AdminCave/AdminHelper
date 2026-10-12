@@ -29,8 +29,10 @@ Vorab geprüft:
   diagnostics_test :3, check_versions_test :9, run.sh :15, :757). Falsch sind nur die beiden Aussagen über die
   Dev-Box (T3).
 
-### T1 — feature-review und AUTONOMOUS.md: je Task Sonnet, über den ganzen Branch Opus (R-0298)  [ ]
+### T1 — feature-review und AUTONOMOUS.md: je Task Sonnet, über den ganzen Branch Opus (R-0298)  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-review/SKILL.md, AUTONOMOUS.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f221ab67 2026-10-12T07:42:01+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - feature-review/SKILL.md:10–11 sagt heute „Läuft auf **Sonnet** — Opus nur bei einem Risikopfad im Diff
   (`feature-build`, Schritt 4)“. Neu:

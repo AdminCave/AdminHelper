@@ -7,8 +7,9 @@ description: Frischer-Kontext-Reviewer für einen Task-/Commit-Diff — prüft A
 
 Zweck: eine **zweite, unvoreingenommene Instanz** prüft den Code, den ein anderer Kontext
 geschrieben hat. Der Wert liegt genau im **frischen Kontext** — der Reviewer kennt die
-Implementierungs-Ausreden nicht und sieht nur das Ergebnis. Läuft auf **Sonnet** — Opus
-nur bei einem Risikopfad im Diff (`feature-build`, Schritt 4).
+Implementierungs-Ausreden nicht und sieht nur das Ergebnis. Je Task läuft er auf **Sonnet**, auf
+Opus bei einem Risikopfad im Diff (`feature-build`, Schritt 4). Den Review über den ganzen Branch
+fährt immer **Opus**, auch den einen am Ende eines Kurz-Ledgers (CLAUDE.md §2 „Modelle“).
 
 **Wichtig:** Diesen Review IMMER in frischem Kontext fahren — als eigenständigen Aufruf,
 unter `/loop`, oder (aus `feature-build` heraus) als **frischer Sub-Agent** (Agent-Tool,
