@@ -13,6 +13,11 @@ source "$ROOT/scripts/diagnostics.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+# has <pattern> <text> — grep -q over the text without a pipe. In `printf | grep -q`
+# under pipefail, grep may stop at a match before printf is done writing; printf then
+# dies of SIGPIPE (141) and the pipeline reads as no match (R-0264).
+has() { grep -q -- "$1" <<<"$2"; }
+
 cat > "$tmp/.env" <<'EOF'
 SECRET_KEY=topsecret123value
 POSTGRES_PASSWORD=pgpw456word
@@ -32,22 +37,27 @@ out="$(printf '%s\n' "$input" | redact "$sedfile")"
 
 fail=0
 
+# has() itself: a match in the first line of more than a pipe holds, where the pipe
+# form ends with 141 every time.
+big="$(printf 'first\n'; head -c 300000 /dev/zero | tr '\0' x)"
+has '^first$' "$big" || { echo "has() missed a match in front of a large text" >&2; fail=1; }
+
 # Secret values must be gone.
 for leak in topsecret123value pgpw456word mon789key smtprelay999pw; do
-    if printf '%s' "$out" | grep -q "$leak"; then
+    if has "$leak" "$out"; then
         echo "LEAK: secret '$leak' survived redaction" >&2
         fail=1
     fi
 done
 
 # Non-secret values must survive.
-printf '%s' "$out" | grep -q 'example.com' || { echo "non-secret was over-redacted" >&2; fail=1; }
+has 'example.com' "$out" || { echo "non-secret was over-redacted" >&2; fail=1; }
 
 # Generic token shapes must be masked.
-printf '%s' "$out" | grep -q '<redacted>' || { echo "missing <redacted> marker" >&2; fail=1; }
-printf '%s' "$out" | grep -q '<redacted-jwt>' || { echo "JWT not redacted" >&2; fail=1; }
-printf '%s' "$out" | grep -q 'ah_<redacted>' || { echo "ah_ key not redacted" >&2; fail=1; }
-printf '%s' "$out" | grep -q 'Bearer <redacted>' || { echo "bearer not redacted" >&2; fail=1; }
+has '<redacted>' "$out" || { echo "missing <redacted> marker" >&2; fail=1; }
+has '<redacted-jwt>' "$out" || { echo "JWT not redacted" >&2; fail=1; }
+has 'ah_<redacted>' "$out" || { echo "ah_ key not redacted" >&2; fail=1; }
+has 'Bearer <redacted>' "$out" || { echo "bearer not redacted" >&2; fail=1; }
 
 # --- sanitize_env: the second, independent redaction path (env.sanitized) (6.65) ---
 # Untested before; if it broke (extending SECRET_KEYS, a bad IFS='|' join) .env cleartext
@@ -61,11 +71,11 @@ NORMAL_VAR=notasecret
 EOF
 sanitized="$(sanitize_env "$env2")"
 for leak in supersecret111 pgpass222 indented333; do
-    printf '%s' "$sanitized" | grep -q "$leak" && { echo "LEAK: '$leak' survived sanitize_env" >&2; fail=1; }
+    has "$leak" "$sanitized" && { echo "LEAK: '$leak' survived sanitize_env" >&2; fail=1; }
 done
-printf '%s' "$sanitized" | grep -q '^SECRET_KEY=<redacted>' || { echo "SECRET_KEY not masked by sanitize_env" >&2; fail=1; }
-printf '%s' "$sanitized" | grep -q '^  ADMIN_PASSWORD=<redacted>' || { echo "indented key not masked" >&2; fail=1; }
-printf '%s' "$sanitized" | grep -q 'NORMAL_VAR=notasecret' || { echo "non-secret var dropped/masked" >&2; fail=1; }
+has '^SECRET_KEY=<redacted>' "$sanitized" || { echo "SECRET_KEY not masked by sanitize_env" >&2; fail=1; }
+has '^  ADMIN_PASSWORD=<redacted>' "$sanitized" || { echo "indented key not masked" >&2; fail=1; }
+has 'NORMAL_VAR=notasecret' "$sanitized" || { echo "non-secret var dropped/masked" >&2; fail=1; }
 
 if [ "$fail" = 0 ]; then
     echo "diagnostics_test: OK"
