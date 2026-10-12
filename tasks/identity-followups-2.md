@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Identität: Übernahme, Enroll, Aktivierung und Neu-Provisionieren nach dem Zertifikats-Register — Task-Ledger
-Status: geplant · Branch: feature/identity-followups-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/identity-followups-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0306, R-0311, R-0312, Triage Kevin 2026-10-12; R-0312 Weg (a) als Bugfix im Sinn der Doku; die Zeitpruefung beim Enroll in T1 angenommen, sie schliesst eine zurueckgestellte Zeile, die jetzt belegt ist; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0306, R-0311, R-0312
 Heavy: linux-full + scenario --enforce --agents 1 — `apps/ca-issuer`, Server-API und `apps/agent`: `run.sh integration` (Enroll und Erneuern über das Gateway, Stack-Test Schritt 8b, Register-Sperrtests) und ein Multibox-Lauf, weil sich die Aktivierung über `:8444` und die Agent-Provisionierung ändern.
 DoD je Task: CLAUDE.md (Tests grün, ruff check und ruff format sauber, gofmt und go vet sauber, Doku im selben Commit, SPDX bei neuen Dateien).
