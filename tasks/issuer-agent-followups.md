@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ca-issuer und Agent: Prüfung, Reihenfolge und Neu-Provisionieren nach dem Zertifikats-Register — Task-Ledger
-Status: aktiv · Branch: feature/issuer-agent-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/issuer-agent-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0290, R-0292, R-0293, Triage Kevin 2026-10-11; kein Refuter, die Proben belegen die Funde; Teststrategie: Multibox gemeinsam mit server-identity-followups nach dessen Bau, über beide Stände; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0290, R-0292, R-0293
 Heavy: linux-full — `apps/ca-issuer` und `apps/agent`: `run.sh integration` (Erneuern über das Gateway, Stack-Test Schritt 8b, die Register-Sperrtests in `stack_pytest`); der Multibox-Lauf `--enforce --agents 1 --tunnel` folgt gemeinsam mit server-identity-followups über beide Stände (Teststrategie der Aufsicht, 2026-10-12).
@@ -61,8 +61,10 @@ HEAD: 40d3eb0a
 Semantik: `docs/admin/benutzer.html:106`: „Benutzer löschen sperrt alle Zertifikate, die bis dahin für diesen Benutzer
 ausgestellt wurden, am Server wie beim Erneuern.“
 
-### T3 — Agent: Neu-Provisionieren prüft vor dem Antrag, dass die Identität geschrieben werden kann (R-0293)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/enroll_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go
+### T3 — Agent: Neu-Provisionieren prüft vor dem Antrag, dass die Identität geschrieben werden kann (R-0293)  [x]
+Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/enroll_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/internal/enroll/client.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @08f24804 2026-10-12T11:03:33+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `runEnrollment` (`provision.go:240-272`) prüft vor `enroll.Submit` (`:268`), dass das Identitäts-Verzeichnis
 die neue Identität aufnehmen kann: ein Probe-Schreiben der gestagten Dateien wie in `stageIdentity` (`enroll.go:161`),
 danach wieder entfernt. Scheitert das, bricht die Provisionierung vor dem Antrag ab; das bisherige Zertifikat und seine

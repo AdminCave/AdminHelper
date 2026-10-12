@@ -146,6 +146,30 @@ func Store(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) error {
 	return commit()
 }
 
+// CheckStorable reports whether dir can take a new identity: the staged writes Store
+// does, without content, removed again. A provisioning runs it before the enrollment
+// request, because that request already names the earlier certificate as replaced and
+// the issuer revokes its line at once (R-0293). Only the files it created are removed.
+func CheckStorable(dir string) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("create the identity directory: %w", err)
+	}
+	_ = config.SecureDir(dir)
+	var created []string
+	defer func() {
+		for _, p := range created {
+			_ = os.Remove(p)
+		}
+	}()
+	for _, p := range []string{KeyPath(dir) + tmpSuffix, CertPath(dir) + tmpSuffix, CAPath(dir) + tmpSuffix} {
+		if err := writeFileSync(p, nil, 0600); err != nil {
+			return err
+		}
+		created = append(created, p)
+	}
+	return nil
+}
+
 // staged is one identity file: its temp copy, its final path, its mode.
 type staged struct {
 	tmp   string
