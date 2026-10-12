@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket lane.sh: Passwort in der Query, Gruppe über `/`, Meldung bei Exit 3 (R-0265, R-0266, R-0269) — Task-Ledger
-Status: bereit · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0265, R-0266, R-0269, Triage Kevin 2026-10-10; R-0265 geschlossen fehlschlagen wie R-0255; Proben nur mit Platzhalter; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0265, R-0266, R-0269 (Kurz-Ledger ohne Spec)
 Heavy: none — scripts/dev/lane.sh mit dem hermetischen lane_test (Fake-createdb/-dropdb); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -102,3 +102,29 @@ dropdb.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; die Meldung ist der Text)
 Abhängt von: T1
+
+### T3 — Nachbesserung aus dem Review am Ende: lane_db liest die URL wie SQLAlchemy, kodierte Query-Schlüssel abgelehnt (R-0266, R-0265)  [ ]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Änderung: Angelegt 2026-10-12 aus dem Review am Ende (Opus, `request_changes`: ein Blocker in T1, zwei nits). Den Weg
+(B) hat die Aufsicht entschieden.
+- **R-0266 ist ein Falsch-Positiv.** `AH_TEST_DB` ist eine SQLAlchemy-URL. SQLAlchemy liest das Passwort mit `[^@]*`,
+  über `/` hinweg (`sqlalchemy/engine/url.py`, Muster für das Passwort; geprüft mit `make_url` in 2.0.51 aus dem
+  Server-venv, der Reviewer sah es in 2.1.1).
+  - `ah:pa/ss@localhost…` ergibt Passwort `pa/ss` und Host `localhost`.
+  - `localhost:5432/…?application_name=a:b@c` ergibt Benutzer `localhost` und Host `c`; genau so las es das alte
+    `lane_db`. Eine solche URL kann im Haupt-Checkout keine funktionierende Test-DB sein.
+  - Die Änderung von T1 an der Gruppe (`([^@/]*)`) war deshalb eine Regression. Ein Passwort mit unkodiertem `/` (etwa
+    base64) löste `lane_db` nicht mehr heraus, und die URL ging samt Passwort in das Argument von createdb.
+  - Neu: Die Gruppe steht wieder auf `([^@]*)`, der Kommentar sagt, dass sie wie SQLAlchemy liest.
+  - T1 bleibt `[x]`, denn es trägt auch R-0265. Den Teil zu R-0266 nimmt diese Task zurück.
+- Der Fall `upsilon` aus T1 (die URL bleibt ganz) geht. An seine Stelle kommt der Schutzfall `ah:pa/ss@…`: createdb
+  bekommt `pw=pa/ss` und die URL ohne Passwort, und kein Argument enthält das Passwort. Der Fall `phi` bleibt.
+- R-0265, nit aus demselben Review: libpq dekodiert auch Schlüssel der Query, so käme `?pass%77ord=secret` an
+  `[?&]password=` vorbei.
+  - Neu: Ein Schlüssel der Query mit `%` lässt `lane_db` geschlossen fehlschlagen (Exit 3, Meldung ohne URL).
+  - Fall in lane_test; ein Satz in DEVELOPMENT.md (:208–210).
+- nit: Der Fall `psi` (T2) prüft auch die Zeile davor („carries its password in the query“).
+Test-Löschung: scripts/tests/lane_test.sh::upsilon: createdb gets the URL whole, a password only from user:password@ — der Fall prüfte die Änderung aus T1 an der Gruppe, die als Regression zurückgenommen wird (R-0266 Falsch-Positiv, Entscheidung der Aufsicht 2026-10-12); der Schutzfall ah:pa/ss@ tritt an seine Stelle
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (ein Satz)
+Abhängt von: T2
