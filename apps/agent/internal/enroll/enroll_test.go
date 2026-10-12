@@ -6,6 +6,8 @@ package enroll
 
 import (
 	"crypto/elliptic"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"crypto/x509"
 	"encoding/pem"
@@ -213,5 +216,48 @@ func TestStageIdentityCleansUpStagedTempsOnWriteError(t *testing.T) {
 	// The already-written key temp must be gone — no .tmp leftovers after the aborted staging.
 	if _, statErr := os.Stat(KeyPath(dir) + tmpSuffix); !os.IsNotExist(statErr) {
 		t.Errorf("agent.key.tmp muss nach dem Schreibfehler aufgeraeumt sein, stat err = %v", statErr)
+	}
+}
+
+// R-0224: re-provisioning names the leaf it replaces, so the issuer revokes its line.
+
+func TestLeafFingerprintIsTheSHA256OfTheStoredLeaf(t *testing.T) {
+	dir := t.TempDir()
+	if got := LeafFingerprint(dir); got != "" {
+		t.Fatalf("ohne Identität erwartet leer, bekam %q", got)
+	}
+	now := time.Now()
+	leaf, key := selfSigned(t, "srv-1", now.Add(-time.Hour), now.Add(time.Hour))
+	other, _ := selfSigned(t, "intermediate", now.Add(-time.Hour), now.Add(time.Hour))
+	mustWrite(t, CertPath(dir), append(append([]byte{}, leaf...), other...)) // fullchain
+	mustWrite(t, KeyPath(dir), key)
+
+	block, _ := pem.Decode(leaf)
+	sum := sha256.Sum256(block.Bytes)
+	if got, want := LeafFingerprint(dir), hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("Fingerprint = %q, erwartet %q (das erste Zertifikat der Fullchain)", got, want)
+	}
+}
+
+func TestRequestNamesReplacesOnlyWhenSet(t *testing.T) {
+	first, _ := json.Marshal(Request{Token: "t", CSR: "c"})
+	if strings.Contains(string(first), "replaces") {
+		t.Fatalf("Erst-Provisionierung trägt replaces: %s", first)
+	}
+	again, _ := json.Marshal(Request{Token: "t", CSR: "c", Replaces: "ab12"})
+	if !strings.Contains(string(again), `"replaces":"ab12"`) {
+		t.Fatalf("replaces fehlt: %s", again)
+	}
+}
+
+func TestReprovisionHintNamesTheProvisionCommand(t *testing.T) {
+	// R-0280: the agent has no "enroll" subcommand; a new identity comes from provision.
+	for _, part := range []string{"adminhelper-agent provision", "--url", "--token", "--server-id"} {
+		if !strings.Contains(reprovisionHint, part) {
+			t.Fatalf("Hinweis ohne %q: %q", part, reprovisionHint)
+		}
+	}
+	if strings.Contains(reprovisionHint, "enroll") {
+		t.Fatalf("Hinweis nennt den falschen Befehl: %q", reprovisionHint)
 	}
 }

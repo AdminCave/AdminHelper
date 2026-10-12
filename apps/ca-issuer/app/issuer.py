@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
 from app.storage import Intermediate
-from app.tokens import EnrollmentGrant, TokenStore
+from app.tokens import CertRecord, EnrollmentGrant, RenewalRefused, TokenStore, kind_of
 
 logger = logging.getLogger("ca-issuer.issuer")
 
@@ -43,37 +43,44 @@ class Issuer:
             raise IssuanceError(f"Unbekannter Scope '{scope}'")
         return inter
 
-    def _verify_ca_signed(self, cert: x509.Certificate) -> None:
-        """Defense-in-depth: verify the presented cert was signed by one of our
-        intermediates and is time-valid, instead of trusting the gateway's
+    def _verify_ca_signed(self, cert: x509.Certificate, scope: str) -> None:
+        """Defense-in-depth: verify the presented cert was signed by the intermediate
+        of its own scope and is time-valid, instead of trusting the gateway's
         x-client-verify: SUCCESS header alone. The `pki` compose network now fences the
         issuer to the gateway (1.1), but this stays a second line: should that boundary
         ever regress, a reachable container still must not be able to POST a self-made
-        cert and renew any identity (3.3)."""
+        cert and renew any identity (3.3). Only that intermediate counts: the issuer
+        always signs a leaf of scope X with intermediate X, so a leaf whose OU names
+        another scope than its signer is not one of ours (R-0224)."""
         now = pki._now()
         if not (cert.not_valid_before_utc <= now <= cert.not_valid_after_utc):
             raise IssuanceError("Vorgelegtes Cert ist abgelaufen oder noch nicht gültig")
-        for inter in self._inter.values():
-            try:
-                inter.cert.public_key().verify(
-                    cert.signature,
-                    cert.tbs_certificate_bytes,
-                    ec.ECDSA(cert.signature_hash_algorithm),
-                )
-                return
-            except (InvalidSignature, TypeError, ValueError):
-                # Any non-ECDSA or malformed presented cert (e.g. an Ed25519 leaf
-                # whose signature_hash_algorithm is None, or an RSA key) fails to
-                # verify against our ECDSA intermediates — it is a forgery and must
-                # be rejected cleanly here, never bubble up as a 500 at the issuer.
-                continue
-        raise IssuanceError("Vorgelegtes Cert ist nicht von dieser CA signiert")
+        inter = self._inter.get(scope)
+        if inter is None:
+            raise IssuanceError("presented certificate carries an unknown scope")
+        try:
+            inter.cert.public_key().verify(
+                cert.signature,
+                cert.tbs_certificate_bytes,
+                ec.ECDSA(cert.signature_hash_algorithm),
+            )
+        except (InvalidSignature, TypeError, ValueError) as exc:
+            # Any non-ECDSA or malformed presented cert (e.g. an Ed25519 leaf whose
+            # signature_hash_algorithm is None, or an RSA key) fails to verify against
+            # our ECDSA intermediate — it is a forgery and must be rejected cleanly
+            # here, never bubble up as a 500 at the issuer.
+            raise IssuanceError(
+                "presented certificate is not signed by the intermediate of its scope"
+            ) from exc
 
-    def _sign(self, csr: x509.CertificateSigningRequest, spec: pki.LeafSpec) -> dict[str, str]:
+    def _sign(
+        self, csr: x509.CertificateSigningRequest, spec: pki.LeafSpec
+    ) -> tuple[x509.Certificate, dict[str, str]]:
+        """The signed leaf (for the register) and the response body."""
         inter = self._intermediate(spec.scope)
         leaf = pki.sign_leaf(csr, inter.cert, inter.key, spec)
         leaf_pem = pki.cert_to_pem(leaf)
-        return {
+        return leaf, {
             "cert": leaf_pem.decode(),
             # fullchain = leaf + intermediate (what a client presents)
             "fullchain": (leaf_pem + pki.cert_to_pem(inter.cert)).decode(),
@@ -94,27 +101,36 @@ class Issuer:
             raise IssuanceError("CSR-Signatur ist ungültig")
         return csr
 
-    def enroll(self, token: str, csr_pem: bytes) -> dict[str, str]:
+    def enroll(self, token: str, csr_pem: bytes, replaces: str | None = None) -> dict[str, str]:
+        """``replaces`` is the fingerprint of the certificate this device held before;
+        its line is revoked when it belongs to the same subject and scope (R-0224)."""
         # Validate the CSR fully (parse + signature) BEFORE consuming the one-time token: a
         # client-side format or signature error (truncated PEM, corrupted CSR) must not burn the
         # token, or the retry with a corrected CSR fails as "already used" and an operator has to
         # mint a fresh token by hand (4.16).
         csr = self._load_csr(csr_pem)
-        grant = self.tokens.consume(token)
-        if grant is None:
-            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
 
-        spec = pki.LeafSpec(
-            lifetime_days=_leaf_days(grant),
-            client_auth=True,
-            server_auth=False,
-            subject_cn=grant.subject_id,  # identity from the grant, NOT the CSR
-            scope=grant.scope,
-        )
-        logger.info(
-            "Enroll: %s (scope=%s, browser=%s)", grant.subject_id, grant.scope, grant.browser
-        )
-        return self._sign(csr, spec)
+        def sign(grant: EnrollmentGrant) -> tuple[x509.Certificate, dict[str, str]]:
+            spec = pki.LeafSpec(
+                lifetime_days=_leaf_days(grant),
+                client_auth=True,
+                server_auth=False,
+                subject_cn=grant.subject_id,  # identity from the grant, NOT the CSR
+                scope=grant.scope,
+            )
+            logger.info(
+                "Enroll: %s (scope=%s, browser=%s, replaces=%s)",
+                grant.subject_id,
+                grant.scope,
+                grant.browser,
+                bool(replaces),
+            )
+            return self._sign(csr, spec)
+
+        issued = self.tokens.enroll(token, sign, replaces)
+        if issued is None:
+            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
+        return issued
 
     def renew(self, verified_cert_pem: bytes, csr_pem: bytes) -> dict[str, str]:
         try:
@@ -122,15 +138,16 @@ class Issuer:
         except ValueError as exc:
             raise IssuanceError(f"Vorgelegtes Cert nicht lesbar: {exc}") from exc
 
-        # Never trust the gateway header alone: the issuer holds the intermediates,
-        # so it verifies the presented cert against them itself (3.3).
-        self._verify_ca_signed(current)
-
-        cn, scope = pki.read_identity(current)
+        try:
+            cn, scope = pki.read_identity(current)
+        except ValueError as exc:
+            # The subject is parsed lazily: a malformed one fails here, a 4xx like any forgery.
+            raise IssuanceError("presented certificate has an unreadable subject") from exc
         if not cn or not scope:
             raise IssuanceError("Vorgelegtes Cert trägt keine Identität/Scope")
-        if not self.tokens.is_active(cn, scope):
-            raise IssuanceError("Identität ist deprovisioniert")
+        # Never trust the gateway header alone: the issuer holds the intermediates,
+        # so it verifies the presented cert against the one of its scope itself (3.3).
+        self._verify_ca_signed(current, scope)
 
         csr = self._load_csr(csr_pem)
 
@@ -150,5 +167,14 @@ class Issuer:
             subject_cn=cn,
             scope=scope,
         )
-        logger.info("Renew: %s (scope=%s, %dd)", cn, scope, spec.lifetime_days)
-        return self._sign(csr, spec)
+
+        def sign() -> tuple[x509.Certificate, dict[str, str]]:
+            logger.info("Renew: %s (scope=%s, %dd)", cn, scope, spec.lifetime_days)
+            return self._sign(csr, spec)
+
+        # A certificate the register never recorded gets the kind its span tells.
+        legacy_kind = kind_of(EnrollmentGrant(cn, scope, browser=span_days > pki.LEAF_DAYS_NATIVE))
+        try:
+            return self.tokens.renew(CertRecord.of(current), cn, scope, legacy_kind, sign)
+        except RenewalRefused as exc:
+            raise IssuanceError(str(exc)) from exc

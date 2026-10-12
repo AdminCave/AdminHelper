@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Geraete einzeln widerrufen (R-0224):** Ein Admin listet die Geraete eines Benutzers mit
+  `GET /api/users/{id}/devices` und widerruft eines mit `DELETE /api/users/{id}/devices/{device_id}`; die uebrigen
+  Geraete des Benutzers bleiben. Ein Geraet widerruft sich selbst mit `POST /api/enrollment/self/revoke`, ausgewiesen
+  durch sein Client-Zertifikat. Jeder Widerruf steht im Audit-Log (`device.revoked`).
 - **Builder-Profil des Workers (Team-Plan 4b):** `scripts/dev/builder-home.sh setup|token|status`
   richtet ohne sudo ein eigenes HOME fuer den Loop unter Kevins Benutzer ein (CLI-Pin, Settings des
   Runners mit Deny-Regeln mit absolutem Pfad fuer die privaten Verzeichnisse in Kevins HOME (`~/.ssh`,
@@ -563,6 +567,31 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: Zuruecksetzen widerruft das Geraet am Server (R-0224):** "Geraete-Identitaet zuruecksetzen" widerruft das
+  Geraet zuerst am Server, ausgewiesen durch sein Zertifikat, und loescht es dann lokal. Widerruft der Server es
+  nicht, sagt der Desktop das; registriert man das Geraet danach wieder fuer denselben Benutzer, loest das das alte
+  Zertifikat ab. Neu-Registrieren nennt das vorige Zertifikat dieses Geraets, ein Browser-Export nie. Lehnt der Server
+  das Zertifikat ab (`ERR_CERT_REVOKED`), zeigt der Login einen Hinweis und bietet das Zuruecksetzen an.
+- **Neu-Provisionieren ersetzt den API-Key des Agents (R-0279):** Eine weitere Provisionierung desselben Servers loescht
+  den API-Key der vorigen; es gilt nur noch der Key des Agents, der jetzt installiert wird. Globale und manuell angelegte
+  Keys sowie die Keys anderer Server bleiben. Das Audit-Log nennt jeden ersetzten Key (`apikey.deleted`).
+- **Client-Zertifikate werden pro Geraet erfasst und geprueft (R-0224):** Der ca-issuer haelt jedes ausgestellte
+  Client-Zertifikat in einem Register fest (Fingerprint, Seriennummer, Laufzeit, Art) und ordnet es einer
+  Geraete-Linie zu; ein Erneuern bleibt auf der Linie. Server und Erneuern pruefen jedes Zertifikat, mit dem sich ein
+  Client ausweist: Es gilt, wenn seine Linie nicht gesperrt ist und es nicht unter den Widerruf seines Benutzers
+  faellt. Sonst antwortet der Server mit 403 `ERR_CERT_REVOKED`, auch bei `MTLS_ENFORCE=false`. Erneuert wird nur ein
+  Zertifikat, das vom Intermediate seines eigenen Scopes signiert ist. Zertifikate von vor dem Update werden beim
+  ersten Kontakt uebernommen; das geht 90 Tage ab dem Update, danach gilt nur noch, was erfasst ist.
+- **Ein Restore beginnt den Uebergang des Registers neu (R-0224):** `restore.sh` und `pg-restore.sh` setzen nach dem
+  Restore der Server-DB den Installationszeitpunkt des Registers auf den Restore. Zertifikate, die seit dem Backup
+  ausgestellt oder erneuert wurden und deshalb nicht im zurueckgespielten Register stehen, werden beim ersten Kontakt
+  uebernommen, 90 Tage ab dem Restore.
+- **Der Widerruf eines Benutzers ist ein Zeitpunkt (R-0224):** Wird ein Benutzer geloescht, gelten alle bis dahin
+  ausgestellten Zertifikate dieses Usernames nicht mehr, am Server wie beim Erneuern. Legt ein Admin spaeter einen
+  Benutzer mit demselben Namen an, bekommt der neue Benutzer neue Zertifikate; die alten bleiben gesperrt. Ein erneutes
+  Loeschen setzt den Zeitpunkt neu. Das Loeschen eines Benutzers oder Servers sperrt auch seine offenen Geraete (Grund
+  `admin`); sie stehen als widerrufen in der Geraeteliste, auch in der eines spaeter gleichnamig angelegten
+  Benutzers.
 - **Regeln des Teams in `CLAUDE.md` (Team-Plan Phase 1, R-0270):** §2 beschreibt das Betriebsmodell mit dem Team.
   Die Aufsicht heisst jetzt Chef und uebernimmt ihren Stand aus Dateien (AH-STATUS, Roadmap, Ledger). Das Team laeuft
   unter Kevins UID ohne Docker und ohne sudo; der Runner-Nutzer ist eingefroren. Deckel: 2 Bau-Slots (nur disjunkte

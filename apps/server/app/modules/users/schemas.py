@@ -7,6 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.core.bounds import RequestModel
+from app.core.time import UtcDatetime
 
 # Usernames are interpolated into FRP TOML and used as PKI/cert file stems,
 # so restrict them to a safe charset (see frp/config_generator + pki.py).
@@ -77,3 +78,17 @@ class UserResponse(BaseModel):
     # A string, not a datetime: the builder hands out iso_utc() (UTC with Z) without
     # promising `format: date-time` in the schema (R-0064).
     created_at: Optional[str]
+
+
+class DeviceResponse(BaseModel):
+    """One device of a user: a line of client certificates (R-0224)."""
+
+    id: str
+    kind: str  # desktop | browser
+    legacy: bool  # taken over from before the certificate register
+    created_at: UtcDatetime
+    revoked_at: Optional[UtcDatetime] = None
+    revoked_reason: Optional[str] = None  # replaced | self | admin
+    # Of the newest certificate on the line.
+    fingerprint: Optional[str] = None
+    not_after: Optional[UtcDatetime] = None

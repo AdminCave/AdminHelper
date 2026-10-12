@@ -17,7 +17,7 @@
 set -uo pipefail
 
 # The calls are checked for exactly the variable each test gets; one inherited
-# from the caller (.devenv.sh exports AH_TEST_DB) would show up in all four.
+# from the caller (.devenv.sh exports AH_TEST_DB) would show up in every one.
 unset DATABASE_URL AH_TEST_DB AH_TEST_REDIS_URL
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -81,11 +81,12 @@ run_stack() {
   OUT=$(env PATH="$SHIM:$PATH" TMPDIR="$WORK" AH_OUT_DIR="$WORK/out-$c" "$@" bash "$STACK" 2>&1); rc=$?
 }
 
-# ── all four pass ────────────────────────────────────────────────────────────
+# ── all six pass ─────────────────────────────────────────────────────────────
 run_stack green
-[ "$rc" = 0 ] && grep -q '^stack_pytest: 4 passed, 0 failed$' <<<"$OUT" \
-  && ok "four passing tests -> exit 0, summary 4 passed" || bad "green: rc=$rc; $OUT"
-for n in monitoring-migrations monitoring-session-utc server-redis ca-issuer-toctou; do
+[ "$rc" = 0 ] && grep -q '^stack_pytest: 6 passed, 0 failed$' <<<"$OUT" \
+  && ok "six passing tests -> exit 0, summary 6 passed" || bad "green: rc=$rc; $OUT"
+for n in monitoring-migrations monitoring-session-utc server-redis ca-issuer-toctou \
+  ca-issuer-register-lock ca-issuer-register-recheck; do
   [ -f "$WORK/out-green/junit/stack-$n.xml" ] && ok "junit/stack-$n.xml written" \
     || bad "no junit/stack-$n.xml: $(ls "$WORK/out-green/junit" 2>&1)"
 done
@@ -104,6 +105,12 @@ grep -q "cwd=.*/apps/server test=tests/test_stream_redis.py DATABASE_URL= AH_TES
 grep -q "cwd=.*/apps/ca-issuer test=tests/test_db_token_store.py::test_concurrent_consume_only_one_wins .*AH_TEST_DB=$DB$" "$CALLS" \
   && ok "ca-issuer's TOCTOU test gets AH_TEST_DB = the stack's Postgres" \
   || bad "ca-issuer call: $(grep ca-issuer "$CALLS")"
+for t in test_a_line_revoked_during_a_renewal_waits_and_covers_the_successor \
+  test_a_deprovisioning_while_signing_refuses_the_renewal; do
+  grep -q "cwd=.*/apps/ca-issuer test=tests/test_db_token_store.py::$t .*AH_TEST_DB=$DB$" "$CALLS" \
+    && ok "ca-issuer's register test $t gets AH_TEST_DB = the stack's Postgres" \
+    || bad "ca-issuer register call $t: $(grep "$t" "$CALLS")"
+done
 grep -q -- 'up -d --wait --wait-timeout 180 postgres redis' "$WORK/log-green/docker.args" \
   && ok "only postgres and redis are started, waited for healthy" \
   || bad "docker up: $(grep ' up ' "$WORK/log-green/docker.args")"
@@ -121,7 +128,7 @@ OUT=$(cd "$WORK" && env PATH="$SHIM:$PATH" TMPDIR="$WORK" AH_OUT_DIR=out-rel bas
 # ── the one thing the step exists for: a skip is a failure ───────────────────
 run_stack skip SHIM_PYTEST=skip SHIM_PYTEST_ONLY=test_stream_redis
 [ "$rc" = 1 ] && grep -q 'stack-server-redis.xml: 1 skipped' <<<"$OUT" \
-  && grep -q '^stack_pytest: 3 passed, 1 failed (server-redis)$' <<<"$OUT" \
+  && grep -q '^stack_pytest: 5 passed, 1 failed (server-redis)$' <<<"$OUT" \
   && ok "a test that skips although pytest exits 0 fails the step and is named" \
   || bad "skip: rc=$rc; $OUT"
 

@@ -17,8 +17,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -46,6 +48,9 @@ func CAPath(dir string) string   { return filepath.Join(dir, CAFileName) }
 type Request struct {
 	Token string `json:"token"`
 	CSR   string `json:"csr"`
+	// Replaces names the certificate this agent held before (R-0224): the issuer
+	// revokes its device line. Empty on a first provisioning.
+	Replaces string `json:"replaces,omitempty"`
 }
 
 // IssueResponse is what /enroll and /renew return.
@@ -185,6 +190,25 @@ func stageIdentity(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) (func
 // Provisioned reports whether an enrolled identity (cert + key) exists in dir.
 func Provisioned(dir string) bool {
 	return fileExists(CertPath(dir)) && fileExists(KeyPath(dir))
+}
+
+// LeafFingerprint is the SHA-256 (lowercase hex, over DER) of the leaf stored in
+// dir — the first certificate of agent.crt, the fullchain — or "" when there is
+// none to read.
+func LeafFingerprint(dir string) string {
+	if !Provisioned(dir) {
+		return ""
+	}
+	pemBytes, err := os.ReadFile(CertPath(dir))
+	if err != nil {
+		return ""
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return ""
+	}
+	sum := sha256.Sum256(block.Bytes)
+	return hex.EncodeToString(sum[:])
 }
 
 // writeFileSync writes data to path with the given mode and fsyncs it, so the

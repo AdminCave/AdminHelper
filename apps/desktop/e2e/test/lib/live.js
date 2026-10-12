@@ -126,14 +126,10 @@ export function injectEvent(title, severity = "critical") {
   }
 }
 
-// Give the logged-in admin a scope=all notification subscription so an injected
-// event resolves them as a recipient. A fresh user carries NO subscription and
-// there is no default, so `ingest_event` resolves 0 recipients and the SSE push
-// has no destination — the real reason the push spec was red (4.32). Runs from the
-// Node runner via the permissive gateway (-k), like injectEvent. Secrets go via
-// stdin, not argv, so they can't leak into the test log through a curl error
-// (3.19): the login body (password) as `--data @-`, the Bearer token as `-H @-`.
-export function ensureAllSubscription() {
+// The admin's access token from the Node runner, through the permissive gateway (-k).
+// The login body (password) goes via stdin, not argv, so it can't leak into the test
+// log through a curl error (3.19).
+function adminToken() {
   const loginOut = execFileSync(
     "curl",
     [
@@ -156,11 +152,23 @@ export function ensureAllSubscription() {
     token = JSON.parse(loginOut).access_token;
   } catch {
     throw new Error(
-      `ensureAllSubscription: login response not JSON: ${loginOut.slice(0, 120)}`,
+      `adminToken: login response not JSON: ${loginOut.slice(0, 120)}`,
     );
   }
   if (!token)
-    throw new Error("ensureAllSubscription: login returned no access_token");
+    throw new Error("adminToken: login returned no access_token");
+  return token;
+}
+
+// Give the logged-in admin a scope=all notification subscription so an injected
+// event resolves them as a recipient. A fresh user carries NO subscription and
+// there is no default, so `ingest_event` resolves 0 recipients and the SSE push
+// has no destination — the real reason the push spec was red (4.32). Runs from the
+// Node runner via the permissive gateway (-k), like injectEvent. Secrets go via
+// stdin, not argv, so they can't leak into the test log through a curl error
+// (3.19): the login body (password) as `--data @-`, the Bearer token as `-H @-`.
+export function ensureAllSubscription() {
+  const token = adminToken();
 
   const prefs = JSON.stringify({
     email: null,
@@ -183,6 +191,33 @@ export function ensureAllSubscription() {
     ],
     { encoding: "utf8", input: `Authorization: Bearer ${token}` },
   );
+}
+
+// The admin's devices as the server lists them (R-0224): GET /api/users, then
+// /api/users/{id}/devices, each line with its id, revoked_at and revoked_reason. The
+// Bearer token goes via stdin (`-H @-`), as in ensureAllSubscription.
+export function adminDevices() {
+  const token = adminToken();
+  const get = (path) =>
+    execFileSync("curl", ["-sk", `${SERVER_URL}${path}`, "-H", "@-"], {
+      encoding: "utf8",
+      input: `Authorization: Bearer ${token}`,
+    });
+  const list = (path) => {
+    const out = get(path);
+    let value;
+    try {
+      value = JSON.parse(out);
+    } catch {
+      value = null;
+    }
+    if (!Array.isArray(value))
+      throw new Error(`adminDevices: ${path}: unexpected response: ${out.slice(0, 200)}`);
+    return value;
+  };
+  const me = list("/api/users").find((u) => u.username === USER);
+  if (!me) throw new Error(`adminDevices: no user ${USER}`);
+  return list(`/api/users/${me.id}/devices`);
 }
 
 export async function gotoInfrastructure() {

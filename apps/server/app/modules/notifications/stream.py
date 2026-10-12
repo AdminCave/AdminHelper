@@ -14,6 +14,7 @@ sync SQLAlchemy). Cross-worker delivery is handled by stream_hub via Redis Pub/S
 
 import asyncio
 import time
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -33,7 +34,14 @@ _HEARTBEAT_SECS = 15
 _REAUTH_INTERVAL_SECS = 60
 
 
-def _stream_reauth_ok(token: str, cn: str | None, scope: str | None, verified: bool) -> bool:
+def _stream_reauth_ok(
+    token: str,
+    cn: str | None,
+    scope: str | None,
+    verified: bool,
+    not_before: datetime | None = None,
+    identity: ClientIdentity | None = None,
+) -> bool:
     """Re-check a live stream's authorization: the bearer JWT must still be valid
     (not blacklisted / expired / pre-password-reset) and the mTLS identity must not
     have been revoked. Sync SQLAlchemy, so callers run it via run_in_threadpool to
@@ -46,7 +54,7 @@ def _stream_reauth_ok(token: str, cn: str | None, scope: str | None, verified: b
     try:
         if not token or _get_user_from_token(token, db) is None:
             return False
-        if verified and _is_revoked(db, cn, scope):
+        if verified and _is_revoked(db, cn, scope, not_before=not_before, identity=identity):
             return False
         return True
     finally:
@@ -68,17 +76,18 @@ def authenticate_stream_user(request: Request) -> int:
     db = SessionLocal()
     try:
         user = _get_user_from_token(token, db) if token else None
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Nicht authentifiziert",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # Once, at the opening: the certificate and the token of an open stream do not
+        # change; the reauth below follows a revocation that comes later.
+        require_cert_user(request, user.username, db)
+        return user.id
     finally:
         db.close()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nicht authentifiziert",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    # Once, at the opening: the certificate and the token of an open stream do not change.
-    require_cert_user(request, user.username)
-    return user.id
 
 
 @stream_router.get("/stream")
@@ -104,7 +113,13 @@ async def notification_stream(
                     # blacklisted or the identity revoked mid-stream (3.38). Time-based,
                     # so a busy stream (frequent payloads, never idles) is covered too.
                     ok = await run_in_threadpool(
-                        _stream_reauth_ok, token, identity.cn, identity.scope, identity.verified
+                        _stream_reauth_ok,
+                        token,
+                        identity.cn,
+                        identity.scope,
+                        identity.verified,
+                        identity.not_before,
+                        identity=identity,
                     )
                     if not ok:
                         break

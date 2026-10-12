@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,12 +16,12 @@ from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import actor_from_request
 from app.core.time import iso_utc, utcnow_naive
 from app.modules.audit import service as audit
-from app.modules.enrollment.models import clear_revocation, revoke_identity
+from app.modules.enrollment.models import DeviceLine, devices_of, revoke_identity, revoke_line
 from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
 from app.modules.users.models import User
-from app.modules.users.schemas import UserCreate, UserResponse, UserUpdate
+from app.modules.users.schemas import DeviceResponse, UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -60,9 +62,8 @@ def create_user(
         servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
         user.servers = servers
     db.add(user)
-    # Usernames are reusable and the cert CN is the username, so a new user must
-    # not inherit a stale revocation from a former namesake (F1).
-    clear_revocation(db, data.username, SCOPE_ACCESS)
+    # A revocation of a former namesake stays: it is a point in time, so it keeps
+    # the old certificates out and lets the new user's later ones through (R-0224).
     try:
         if data.is_admin:
             # A fresh install has zero subscriptions, so alerts would reach
@@ -180,6 +181,61 @@ def delete_user(
         object_type="user",
         object_id=user_id,
         object_label=username,
+    )
+
+
+def _user_or_404(db: Session, user_id: int) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
+    return user
+
+
+@router.get("/{user_id}/devices", response_model=list[DeviceResponse])
+def list_devices(user_id: IntPk, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    """The user's devices, one per line of client certificates (R-0224)."""
+    user = _user_or_404(db, user_id)
+    return [
+        DeviceResponse(
+            id=line.id,
+            kind=line.kind,
+            legacy=line.legacy,
+            created_at=line.created_at,
+            revoked_at=line.revoked_at,
+            revoked_reason=line.revoked_reason,
+            fingerprint=cert.fingerprint if cert else None,
+            not_after=cert.not_after if cert else None,
+        )
+        for line, cert in devices_of(db, user.username, SCOPE_ACCESS)
+    ]
+
+
+@router.delete("/{user_id}/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_device(
+    user_id: IntPk,
+    device_id: Annotated[str, Path(min_length=1, max_length=36)],
+    request: Request,
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
+    """Revoke one device of the user: its certificates are refused from now on and
+    cannot be renewed; the user's other devices stay (R-0224)."""
+    user = _user_or_404(db, user_id)
+    line = db.get(DeviceLine, device_id)
+    if line is None or (line.subject_id, line.scope) != (user.username, SCOPE_ACCESS):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    # Idempotent: a line revoked before keeps its reason, and nothing new is audited.
+    if not revoke_line(db, line.id, "admin"):
+        return
+    db.commit()
+    audit.record(
+        db,
+        "device.revoked",
+        actor=actor_from_request(request),
+        object_type="device",
+        object_id=line.id,
+        object_label=user.username,
+        detail="reason=admin",
     )
 
 
