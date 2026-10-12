@@ -75,8 +75,10 @@ Doku: DEVELOPMENT.md, der Satz aus #133 (:1770–1774).
 - Ein anderes Verzeichnis als das eigene `.vm` liest ohne diese Prüfung. Das ist die Wortwahl aus R-0329; „außerhalb
   des Checkouts“ war zu eng.
 
-### T2 — warm und run nutzen nur Boxen der eigenen Lane (R-0324)  [ ]
-Komponente: scripts · Dateien: scripts/vm/warm.sh, scripts/vm/vm.py, scripts/tests/vm_wrappers_test.sh, scripts/vm/tests/test_vm.py, DEVELOPMENT.md
+### T2 — warm und run nutzen nur Boxen der eigenen Lane (R-0324)  [x]
+Komponente: scripts · Dateien: scripts/vm/warm.sh, scripts/vm/vm.py, scripts/tests/vm_wrappers_test.sh, scripts/vm/tests/test_vm.py, DEVELOPMENT.md, scripts/tests/iter_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @44b36f5b 2026-10-12T22:25:51+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - warm.sh `box_running` (:38–47) prüft nur `vmid` und `status` aus `vm.py list --json`.
   - Eine VMID, die inzwischen eine andere Lane trägt (`free_vmid` vergibt die kleinste freie wieder), gilt so als

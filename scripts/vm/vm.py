@@ -1249,8 +1249,19 @@ def verb_ssh(cfg: Config, api: Api, args) -> int:
     return run_ssh(cfg, target.user, target.ip, command)
 
 
+def require_own_lane(cfg: Config, api: Api, vmid: int) -> None:
+    """run and sync write onto a box (rsync --delete, suites), so only onto one of
+    this lane, read from fresh state: the pool hands a freed VMID out again, and the
+    listing may still show its last tenant. A box of another lane takes
+    AH_LANE=<lane> to mean it."""
+    current = fresh_entry(cfg, api, vmid)
+    if current is not None:
+        require_selected(current, [("lane-", "on lane", current_lane())])
+
+
 def verb_sync(cfg: Config, api: Api, args) -> int:
     target = Target(cfg, api, args.vm)
+    require_own_lane(cfg, api, target.vmid)
     _sync(cfg, target, delete=not args.no_delete)
     return 0
 
@@ -1271,6 +1282,7 @@ def verb_run(cfg: Config, api: Api, args) -> int:
     if not command:
         raise Usage("run needs a command: vm.py run <vm> -- <command>")
     target = Target(cfg, api, args.vm)
+    require_own_lane(cfg, api, target.vmid)
     if args.extend:
         extend_lease(cfg, api, target, args.extend)
     if args.sync:

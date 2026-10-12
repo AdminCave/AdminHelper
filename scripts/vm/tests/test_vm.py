@@ -1555,8 +1555,14 @@ def shell(monkeypatch):
 
 
 @pytest.fixture
-def reachable(http):
-    """A VM that resolves to an id, an address and a guest user."""
+def reachable(http, monkeypatch):
+    """A VM that resolves to an id, an address and a guest user, on this lane."""
+    # run and sync act only on a box of their own lane: the lane is pinned here,
+    # not taken from the .vm of whatever checkout runs the suite.
+    monkeypatch.setenv("AH_LANE", "main")
+    http.add(
+        "GET", "/qemu/3000/status/current", body=current_of(3000, tags=POOL_NOW[3000][0])["body"]
+    )
     http.add("GET", "/cluster/resources", "cluster_resources")
     http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
     http.add("GET", "/qemu/3000/config", "clone_config")
@@ -1826,18 +1832,51 @@ def test_the_address_and_user_are_resolved_once_per_invocation(
     cfg, api, reachable, shell, tmp_path
 ):
     verb("run", cfg, api, "3000", "--sync", "--out", str(tmp_path / "o"), "--", "true")
-    # Four shell calls that all need user@ip, one lookup of each.
-    assert len(reachable.paths("GET")) == 3
+    # Four shell calls that all need user@ip, one lookup of each, and one fresh
+    # read of the box for its lane.
+    assert len(reachable.paths("GET")) == 4
     assert len(shell.runs) == 4
 
 
-def test_a_vm_without_an_address_says_what_to_do(cfg, api, http, shell):
+def test_a_vm_without_an_address_says_what_to_do(cfg, api, http, shell, monkeypatch):
+    monkeypatch.setenv("AH_LANE", "main")
+    http.add(
+        "GET", "/qemu/3000/status/current", body=current_of(3000, tags=POOL_NOW[3000][0])["body"]
+    )
     http.add("GET", "/cluster/resources", "cluster_resources")
     http.add("GET", "/agent/network-get-interfaces", body={"data": {"result": []}})
     http.add("GET", "/qemu/3000/config", "clone_config")
     with pytest.raises(vm.Infra) as caught:
         verb("sync", cfg, api, "3000")
     assert "vm.py wait 3000" in str(caught.value)
+
+
+@pytest.mark.parametrize("argv", [["run", "3000", "--", "true"], ["sync", "3000"]])
+def test_run_and_sync_refuse_a_box_of_another_lane(cfg, api, reachable, shell, monkeypatch, argv):
+    # 3000 is lane main's; this checkout acts as lane pilot.
+    monkeypatch.setenv("AH_LANE", "pilot")
+    with pytest.raises(vm.Usage) as caught:
+        verb(argv[0], cfg, api, *argv[1:])
+    assert "3000 is not on lane pilot (it carries lane-main)" in str(caught.value)
+    assert shell.runs == []
+
+
+def test_run_holds_the_lane_against_fresh_state_not_the_listing(cfg, api, http, shell, monkeypatch):
+    # The listing still shows 3000 on lane main; the VM itself says lane pilot by now.
+    monkeypatch.setenv("AH_LANE", "main")
+    tags, name = POOL_NOW[3000]
+    http.add(
+        "GET",
+        "/qemu/3000/status/current",
+        body=current_of(3000, tags=tags.replace("lane-main", "lane-pilot"), name=name)["body"],
+    )
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    with pytest.raises(vm.Usage) as caught:
+        verb("run", cfg, api, "3000", "--extend", "1h", "--", "true")
+    assert "(it carries lane-pilot)" in str(caught.value)
+    assert shell.runs == []
+    # Refused before the lease was touched.
+    assert http.paths("PUT") == [] and http.paths("POST") == []
 
 
 def test_a_missing_rsync_is_infrastructure(cfg, api, reachable, monkeypatch):

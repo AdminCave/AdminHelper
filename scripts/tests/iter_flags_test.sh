@@ -166,7 +166,7 @@ set -u
 printf '%s\n' "$*" >> "$FAKE_LOG"
 case "${1:-}" in
   list) [ "${2:-}" = "--json" ] && printf '%s\n' \
-          '{"vms": [{"vmid": 3001, "status": "running"}, {"vmid": 3002, "status": "running"}]}' \
+          '{"vms": [{"vmid": 3001, "status": "running", "lane": "main"}, {"vmid": 3002, "status": "running", "lane": "main"}]}' \
                                || echo "2 ours, 0 not ours" ;;
   run)  exit "${FAKE_RUN_RC:-0}" ;;
 esac
