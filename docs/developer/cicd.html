@@ -114,21 +114,22 @@
           real gegen ein zweites Install-Verzeichnis (<code>UPDATE_SH_OK</code>, oder
           <code>UPDATE_SH_SKIP</code>, wenn das Release kein Runtime-Bundle hat). Ohne Docker oder Netz endet
           sie mit 75.</p>
-          <p><strong>Pflicht-Tests gegen den Stack.</strong> Vier Tests brauchen einen echten Dienst und
+          <p><strong>Pflicht-Tests gegen den Stack.</strong> Einige Tests brauchen einen echten Dienst und
           skippen sich &uuml;berall, wo er fehlt: der Migrations-Smoke des Monitorings (Postgres),
           <code>test_db_session_utc</code> des Monitorings (Postgres; die Session l&auml;uft in UTC, auch
           gegen das Cluster mit <code>TZ=Europe/Berlin</code>),
-          <code>test_stream_redis</code> (Redis) und der TOCTOU-Test in <code>test_db_token_store</code>
-          (Postgres, echte Nebenl&auml;ufigkeit). Der <code>integration</code>-Layer f&auml;hrt sie im Schritt
+          <code>test_stream_redis</code> (Redis) und die Postgres-Tests in <code>test_db_token_store</code> des
+          Issuers (echte Nebenl&auml;ufigkeit: das Einl&ouml;sen eines Tokens, die Zeilensperren des Registers,
+          die Sperre der Identit&auml;t). Der <code>integration</code>-Layer f&auml;hrt sie im Schritt
           <code>stack-pytest</code> (<code>scripts/tests/stack_pytest.sh</code>) gegen Postgres und Redis des
           Compose-Stacks, die das Test-Overlay nur auf <code>127.0.0.1</code> ver&ouml;ffentlicht. Dort ist ein
           Skip ein Fehler, denn der Dienst ist da: das Urteil kommt aus der JUnit-XML jedes Tests
           (<code>junit/stack-*.xml</code>), und ein Skip, ein Lauf ohne Test oder eine fehlende Datei f&auml;rbt
           den Schritt rot. Im PR-CI laufen der Migrations-Smoke, <code>test_db_session_utc</code> und <code>test_stream_redis</code> weiter
           gegen die Service-Container ihrer Jobs (Postgres, Redis auf 6380): dort f&auml;ngt schon der PR
-          einen Fehler, ohne Image-Build und ohne Stack. Den TOCTOU-Test f&auml;hrt das PR-CI nicht mit
-          Postgres &ndash; der Job <code>ca-issuer</code> nutzt den In-Memory-Token-Store &ndash;, mit echtem
-          Postgres l&auml;uft er nur hier. Der zweite Schritt, <code>web-live</code>
+          einen Fehler, ohne Image-Build und ohne Stack. Die Postgres-Tests des Issuers f&auml;hrt das PR-CI
+          nicht mit Postgres &ndash; der Job <code>ca-issuer</code> nutzt den In-Memory-Token-Store &ndash;, mit
+          echtem Postgres laufen sie nur hier. Der zweite Schritt, <code>web-live</code>
           (<code>scripts/tests/web_live.sh</code>), f&auml;hrt das Playwright-Projekt <code>live</code> ohne
           Mocks gegen das Gateway: Login als Seed-Admin, jede Admin-Seite, Benutzer anlegen und l&ouml;schen.
           Das Projekt <code>chromium</code> bleibt im PR-CI gegen die Mocks; <code>live</code> gibt es nur,

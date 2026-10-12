@@ -55,7 +55,11 @@ case "${1:-}" in
       *box_serverbox.sh*)
         [ "${FAKE_SERVER_RC:-0}" = 0 ] || exit "$FAKE_SERVER_RC"
         echo "MB_SID=s1 MB_PTOK=p1 MB_ADMIN_PW=pw1 MB_MONITOR_KEY=k1"
-        echo "MB_REPO_GPG_FP=fp1 MB_CA_FP=ca1 MB_DEB_OLDDPKG_OK=1 MB_FRPS_UP=1" ;;
+        echo "MB_REPO_GPG_FP=fp1 MB_CA_FP=ca1 MB_DEB_OLDDPKG_OK=1 MB_FRPS_UP=1"
+        echo "MB_TUN_SID=t1 MB_TUN_PTOK=tp1 MB_VIS_SID=v1 MB_VIS_PTOK=vp1 MB_VISITOR_B64=dmlz" ;;
+      *box_tunnelbox.sh*) echo "TUNNEL_FRPC_CONNECTED ${FAKE_TUNNEL_SYNC:-TUNNEL_SYNC_HASH_OK}" ;;
+      *box_visitorbox.sh*) echo "VIS_TUNNEL_SSH_OK" ;;
+      *"logs --no-color frps"*) echo "new proxy" ;;
       *box_agentbox.sh*)
         echo "AGENT_PROVISION_OK AGENT_CERT_OK AGENT_REPO_OK AGENT_CAFLIP_OK" ;;
       *box_moncheckbox.sh*start*) echo "MC_MAILHOG_UP=1 MC_CA_B64=Y2E=" ;;
@@ -96,6 +100,23 @@ grep -q '^run 3002 --sync --timeout 3000 -- bash scripts/tests/box_agentbox.sh 1
   || bad "agentbox: $(grep box_agentbox "$FAKE_LOG")"
 [ "$(verbs)" = "doctor,clone,wait,clone,wait,run,run,run,destroy" ] \
   && ok "the call order is doctor, clones, role scripts, teardown" || bad "order: $(verbs)"
+
+echo "── --tunnel: the agent's own sync over its server's route ──"
+reset_state
+OUT=$(bash "$MB" --tunnel 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q '^  ok   tunnel agent: frpc sync got config-hash' <<<"$OUT" \
+  && ok "a sync that gets the provisioned hash back is an ok of its own" \
+  || bad "tunnel sync ok: rc=$rc; $(grep -a 'tunnel agent' <<<"$OUT")"
+reset_state
+OUT=$(FAKE_TUNNEL_SYNC=TUNNEL_SYNC_FAILED bash "$MB" --tunnel 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q '^  FAIL tunnel agent: frpc sync .*: TUNNEL_SYNC_FAILED' <<<"$OUT" \
+  && ok "a failed sync fails the run and names its marker" \
+  || bad "tunnel sync failed: rc=$rc; $(grep -a 'tunnel agent' <<<"$OUT")"
+reset_state
+OUT=$(FAKE_TUNNEL_SYNC=NONE bash "$MB" --tunnel 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q '^  FAIL tunnel agent: frpc sync .*: no marker' <<<"$OUT" \
+  && ok "a tunnel box without a sync marker fails the run" \
+  || bad "tunnel sync missing: rc=$rc; $(grep -a 'tunnel agent' <<<"$OUT")"
 
 echo "── the teardown ──"
 reset_state
