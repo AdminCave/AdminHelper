@@ -35,8 +35,10 @@ Bestand.
   `errMsg` zentral und liest der Login danach versehentlich den gefilterten Text, verschwinden beide Knöpfe ohne roten
   Test. Darum kommen die Tests zuerst (T1).
 
-### T1 — Login: Tests für beide Wiederherstellungen nach einem Pin-Mismatch (R-0276)  [ ]
+### T1 — Login: Tests für beide Wiederherstellungen nach einem Pin-Mismatch (R-0276)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.pin.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8f36d2cd 2026-10-12T09:16:23+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Neue Testdatei mit SPDX-Header, die Mocks wie in `Login.revoked.test.ts` (Bridge, `confirm`); am Produktcode
 ändert sich nichts. Fälle:
 - Login scheitert mit `ERR_TOFU_PIN_MISMATCH` in der Quellenkette: der Knopf „Gepinntes Server-Zertifikat
