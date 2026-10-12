@@ -190,7 +190,8 @@ for want in 'CLAUDE.md' '.claude/**' 'scripts/tests/run.sh' 'scripts/vm/vm.py' \
             'scripts/dev/runner-redteam.sh' 'scripts/tests/hooks_test.sh' \
             'scripts/tests/task_close_test.sh' 'scripts/tests/review_scripts_test.sh' \
             'scripts/vm/warm.sh' 'scripts/vm/iter.sh' 'scripts/vm/reap.sh' 'scripts/vm/lib.sh' \
-            'scripts/vm/bake.sh' 'scripts/tests/multibox.sh' 'scripts/dev/roadmap.py'; do
+            'scripts/vm/bake.sh' 'scripts/tests/multibox.sh' 'scripts/dev/roadmap.py' \
+            'scripts/dev/doc-smoke.py' 'scripts/dev/doc-smoke-allow.txt'; do
   grep -qxF "$want" "$PATHS" && ok "listed: $want" || bad "missing from harness-paths.txt: $want"
 done
 
@@ -273,6 +274,12 @@ denied "$OUT" && ok "the kill switch itself is a harness path" || bad "harness.s
 # trigger 3 from it: an autonomous run must not move them (Kevin, 2026-09-25).
 guard auto Edit "{\"file_path\":\"$TREE/scripts/dev/roadmap.py\"}"
 denied "$OUT" && ok "roadmap.py is a harness path: an autonomous edit is denied" || bad "roadmap.py: $OUT"
+# The build session may start the doc smoke (R-0304), and its allow list decides
+# what the smoke lets through: an autonomous run edits neither.
+for f in scripts/dev/doc-smoke.py scripts/dev/doc-smoke-allow.txt; do
+  guard auto Edit "{\"file_path\":\"$TREE/$f\"}"
+  denied "$OUT" && ok "$f is a harness path: an autonomous edit is denied" || bad "$f: $OUT"
+done
 
 # A guard that also stops ordinary work would be switched off on day one.
 guard auto Edit "{\"file_path\":\"$TREE/apps/server/app/main.py\"}"

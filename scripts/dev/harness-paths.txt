@@ -42,6 +42,10 @@ scripts/dev/runner-redteam.sh
 scripts/dev/task-close.sh
 scripts/dev/tree-hash.sh
 scripts/dev/verify.sh
+# The build session is allowed to START the doc smoke (R-0304): editing it is code
+# execution under that rule, and its allow list decides what the smoke lets through.
+scripts/dev/doc-smoke.py
+scripts/dev/doc-smoke-allow.txt
 scripts/tests/run.sh
 scripts/tests/heavy.sh
 scripts/tests/multibox.sh
