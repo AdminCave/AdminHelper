@@ -167,7 +167,7 @@ grep -qF "R-0046 IDEE fuenfte Zeile" <<<"$OUT" && ok "roadmap: the fifth point t
   || bad "roadmap: $(grep -cE '^  [0-9]+\. R-00' <<<"$OUT") point lines"
 grep -qF "Fortsetzung" <<<"$OUT" && bad "roadmap: a continuation line leaked" || ok "roadmap: a point is its first line"
 grep -qF "Unterpunkt" <<<"$OUT" && bad "roadmap: an indented sub-item became a point" || ok "roadmap: an indented sub-item is no point"
-grep -qxF "WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 0/20 · ALT: 0" <<<"$OUT" \
+grep -qxF "WIP: aktiv 0/2 · bereit 0/2 · pr 0/3 · neu 0/20 · ALT: 0" <<<"$OUT" \
   && ok "WIP: the counters from roadmap.py, no cap reached, no Warnung" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
 grep -qF "## Danach" <<<"$OUT" && bad "roadmap: next section leaked" || ok "roadmap: stops at next section"
 grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: $NEW_DAY (3 d): UNVERIFIED (doctor red) · Worker: —" <<<"$OUT" \
@@ -305,11 +305,12 @@ cat >> "$CLEAN/tasks/private/ROADMAP.md" <<'ROWS'
 | ID | Klasse | Titel | Status | Quelle / Beweis | Ledger | Hängt ab von | PR | Ablauf | Kevin-min |
 |---|---|---|---|---|---|---|---|---|---|
 | R-0050 | FEAT | Im Bau | aktiv | kevin | — | — | — | — | — |
+| R-0053 | REF | Auch im Bau, disjunkt | aktiv | kevin | — | — | — | — | — |
 | R-0051 | FEAT | Wartet auf den PR | bereit | kevin | — | — | — | — | — |
 | R-0052 | BUG | Wartet auch | bereit | kevin | — | — | — | — | — |
 ROWS
 OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN")
-grep -qxF "WIP: aktiv 1/1 · bereit 2/2 · pr 0/3 · neu 0/20 · ALT: 0 · Warnung: Deckel erreicht (aktiv 1/1, bereit 2/2)" <<<"$OUT" \
+grep -qxF "WIP: aktiv 2/2 · bereit 2/2 · pr 0/3 · neu 0/20 · ALT: 0 · Warnung: Deckel erreicht (aktiv 2/2, bereit 2/2)" <<<"$OUT" \
   && ok "WIP: reached caps say Warnung, and name each" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
 # A copy of the hook with its own roadmap.py beside it: broken, then gone.
 HOOKCOPY="$WORK/hookcopy/scripts/dev"

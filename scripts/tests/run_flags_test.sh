@@ -529,6 +529,7 @@ mk_case blockpass 0
 mk_case blockskip 75
 mk_case blockfail 1
 mk_case blockfail2 2
+printf '#!/bin/sh\n[ -z "$AH_ARGS" ]\n' > "$BLOCK/blockargs.sh"; chmod +x "$BLOCK/blockargs.sh"
 # AH_SCRIPT_TESTS_DIR keeps the fixtures in the temp dir: a leftover under
 # scripts/tests/ would shift every later tree_hash — the evidence this stage is
 # built on. AH_IN_SCRIPTS_BLOCK is cleared per call rather than for the whole
@@ -589,6 +590,24 @@ block_run "$(printf '\n\t ')"
 block_run "blockpass"
 grep -q "not the default list" <<<"$OUT" \
   && ok "block: a narrowed list is announced, not silent" || bad "narrowed list not announced"
+
+# R-0263: `verify.sh scripts -- <name…>` runs only the named tests of the list.
+AH_ARGS="blockpass" block_run "blockpass blockfail"
+[ $rc -eq 0 ] && grep -q "PASS  scripts (hermetic)" <<<"$OUT" && [ "$(grep -c '^  ── block' <<<"$OUT")" -eq 1 ] \
+  && grep -q "not the default list" <<<"$OUT" \
+  && ok "block: -- blockpass runs only blockpass, and says the list is narrowed" || bad "named test: rc=$rc $(grep '──' <<<"$OUT")"
+AH_ARGS="blockfail blockpass" block_run "blockpass blockfail"
+[ $rc -eq 1 ] && grep -q "blockfail: FAILED (rc=1)" <<<"$OUT" \
+  && ok "block: a named test that fails still fails the run" || bad "named failing test: rc=$rc"
+AH_ARGS="blockargs" block_run "blockargs blockpass"
+[ $rc -eq 0 ] && grep -q "PASS  scripts (hermetic)" <<<"$OUT" \
+  && ok "block: a named test does not inherit the names (it may call run.sh itself)" || bad "names leak into the test: rc=$rc"
+AH_ARGS="nosuch_test" block_run "blockpass blockfail"
+[ $rc -eq 2 ] && grep -q "not on the list: nosuch_test" <<<"$OUT" && ! grep -q '^  ── block' <<<"$OUT" \
+  && ok "block: a name not on the list -> 2, nothing runs" || bad "unknown name: rc=$rc"
+AH_ARGS='*' block_run "blockpass blockfail"
+[ $rc -eq 2 ] && grep -qF "not on the list: *" <<<"$OUT" \
+  && ok "block: a glob after -- is a name, not expanded against the checkout" || bad "glob name: rc=$rc $(grep 'not on the list' <<<"$OUT")"
 
 # ══ heavy layers derive their own required set ═══════════════════════════════
 echo "── heavy layers ──"

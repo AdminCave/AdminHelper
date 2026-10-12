@@ -278,9 +278,8 @@ Stufe 7).
    - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
      ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4 der Iteration) — und **kein**
      `/code-review` hinterher: der eine Reviewer hat genau diesen Diff schon gesehen, der
-     zweite Durchgang kostet nur Zeit. Das Modell kommt hier aus
-     `bash scripts/dev/review.sh risk --range main...HEAD`: ohne Flag ist nach den Commits nichts
-     mehr offen, `risk` hieße immer `standard`.
+     zweite Durchgang kostet nur Zeit. Das Modell ist hier immer Opus (`model: opus`), wie für
+     jeden Review über den ganzen Branch (CLAUDE.md §2 „Modelle“).
    - **`Review: pro Task`** (Default für große Ledger): die Einheiten sind einzeln reviewt,
      aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
    Echte neue Bugs als Tasks in den Ledger: Kopf zurück auf `aktiv` (Roadmap ebenso), fixen,

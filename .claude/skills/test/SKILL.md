@@ -274,6 +274,6 @@ prompts for it (D17), so the restraint is yours.
   and `heavy.sh`. Inside the pool, cloning, baking and destroying need no prompt (CLAUDE.md §2,
   2026-09-08) — what prompts is what reaches outside it: push, PR, merge, publish, deleting a
   template. The one exception in `permissions.ask` is `bootstrap_linux.sh`: it is the only
-  script here that mutates the machine it runs ON, and this dev box deliberately has no docker.
+  script here that rebuilds the machine it runs ON (apt, docker, toolchains), made for a fresh box.
 - Starting a long run is a question of INITIATIVE, not of permissions: `all`/`capstone`/`weekly`
   begin on Kevin's word only, and no allowlist entry changes that.
