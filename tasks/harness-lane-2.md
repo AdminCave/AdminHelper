@@ -81,8 +81,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md :210–211. Aus „Ein Passwort in der Query (`?password=`)“ wird „Ein Passwort oder ein anderes
 Geheimnis in der Query (`password`, `sslpassword`, `oauth_client_secret`, `scram_client_key`, `scram_server_key`)“.
 
-### T2 — lane_db dekodiert das Passwort wie SQLAlchemy (R-0313)  [ ]
+### T2 — lane_db dekodiert das Passwort wie SQLAlchemy (R-0313)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5141fdc8 2026-10-12T23:51:21+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `lane_db` (:86–87) dekodiert mit `printf '%b'` jedes `%` als `\x`. SQLAlchemy nimmt nur `%` mit zwei Hex-Ziffern
   (`urllib.parse.unquote`).

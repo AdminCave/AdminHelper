@@ -81,10 +81,27 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   # SQLAlchemy reads AH_TEST_DB (sqlalchemy/engine/url.py): a password the suites
   # take out of the URL is one lane_db takes out too (R-0266).
   if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
-    pass="${BASH_REMATCH[2]}"
+    local raw="${BASH_REMATCH[2]}" ch hex='^%([0123456789abcdefABCDEF]{2})'
     url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
-    pass="${pass//\\/\\\\}"
-    pass="$(printf '%b' "${pass//%/\\x}")"
+    # Decoded as urllib.parse.unquote does it, which SQLAlchemy uses: %XX with two
+    # hex digits becomes that byte, every other % stays (50%zz, a trailing %). The
+    # class is spelled out: a range matches more under de_DE.UTF-8. printf -v keeps
+    # a decoded newline at the end, which $(…) would cut off.
+    while [ -n "$raw" ]; do
+      if [[ "$raw" =~ $hex ]]; then
+        # A NUL cannot travel in PGPASSWORD; bash would drop it without a word.
+        [ "${BASH_REMATCH[1]}" != 00 ] || { echo "  lane.sh: AH_TEST_DB has a password with a NUL byte" >&2; return 3; }
+        printf -v ch "\\x${BASH_REMATCH[1]}"; pass+="$ch"; raw="${raw:3}"
+      else
+        pass+="${raw:0:1}"; raw="${raw:1}"
+      fi
+    done
+    # SQLAlchemy reads bytes that are no UTF-8 as U+FFFD: that would be another
+    # password than the one in the URL, so neither is sent.
+    if ! printf '%s' "$pass" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
+      echo "  lane.sh: AH_TEST_DB has a password that is no UTF-8 once decoded" >&2
+      return 3
+    fi
   fi
   # A user:password the pattern did not take apart would go into an argument
   # unchanged: stop before either program runs (R-0255), with a code of its own.

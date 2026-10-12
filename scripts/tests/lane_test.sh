@@ -76,7 +76,8 @@ for c in server monitoring; do
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
 for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota \
-            qsec-ssl qsec-oauth qsec-scramc qsec-scrams qsec-upper qsec-pwupper qsec-mode; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+            qsec-ssl qsec-oauth qsec-scramc qsec-scrams qsec-upper qsec-pwupper qsec-mode \
+            dec-zz dec-4z dec-pct dec-trail dec-slash dec-uml dec-ff dec-nul; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -196,6 +197,33 @@ lane new eta; rc=$?
   && grep -q "nothing of lane eta was created" "$WORK/out.log" \
   && ok "eta: a percent-encoded key in the query means no createdb, no lane, no secret printed" \
   || bad "eta: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: lane_db decodes the password the way SQLAlchemy does (R-0313) ──"
+# The oracle is the consumer: SQLAlchemy takes the password of AH_TEST_DB with
+# urllib.parse.unquote, so PGPASSWORD must be what unquote makes of it.
+for pair in "dec-zz 50%zz" "dec-4z a%4zb" "dec-pct a%%41b" "dec-trail x%" "dec-slash pa%2Fss" "dec-uml %C3%A4"; do
+  slug="${pair%% *}" pw="${pair#* }"
+  want="$(python3 -c 'import sys, urllib.parse; sys.stdout.write(urllib.parse.unquote(sys.argv[1]))' "$pw")"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+    "postgresql+psycopg://ah:$pw@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 0 ] && grep -qxF "createdb pw=$want --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_${slug//-/_}" "$PG_LOG" \
+    && ok "$slug: PGPASSWORD is what unquote makes of $pw" || bad "$slug: rc=$rc want=[$want] pg=$(cat "$PG_LOG")"
+  lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
+done
+# Bytes that are no UTF-8 once decoded, and a NUL, are refused, naming no value.
+for pair in "dec-ff pw%ffx|no UTF-8 once decoded" "dec-nul pw%00x|a NUL byte"; do
+  slug="${pair%% *}" rest="${pair#* }"; pw="${rest%|*}" why="${rest#*|}"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+    "postgresql+psycopg://ah:$pw@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && grep -qF "$why" "$WORK/out.log" \
+    && ! grep -q 'pw%' "$WORK/out.log" && ok "$slug: refused, no createdb, no value printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
 echo "── new: lane_db reads the URL the way SQLAlchemy does (R-0266) ──"
