@@ -242,14 +242,25 @@ lane_new() {
   # VM this worktree clones carries `lane-<slug>` and no other lane's reap can
   # take it. Deriving the id from the directory name is gone — a file cannot be
   # guessed wrong by one side and right by the other.
-  mkdir -p "$wt/.vm" && printf '%s\n' "$slug" > "$wt/.vm/lane"
+  # The files new writes into the lane check their target first, as the links do
+  # (lane_inside): a path the branch tracks as a symlink, or one that leads out of
+  # the lane, stops new before anything is written there.
+  local f
+  for f in .vm/lane .claude/settings.local.json .devenv.sh; do
+    if [ -L "$wt/$f" ] || ! lane_inside "$wt" "$f"; then
+      echo "  lane.sh: $f in the lane is a symlink or leads outside it — nothing written there"
+      echo "  run: bash scripts/dev/lane.sh done $slug"
+      exit 1
+    fi
+  done
+  mkdir -p "$wt/.vm" && rm -f "$wt/.vm/lane" && printf '%s\n' "$slug" > "$wt/.vm/lane"
   # Per-machine files the lane needs (both gitignored). settings.local.json is
   # WRITTEN by Claude Code (permission grants): a symlink would make N lane
   # sessions read-modify-write ONE shared file → COPY. .devenv.sh is the lane's
   # own (lane_devenv above), and so is the database it points at.
   [ -f .claude/settings.local.json ] \
-    && cp .claude/settings.local.json "$wt/.claude/settings.local.json"
-  [ ! -f .devenv.sh ] || lane_devenv "$slug" > "$wt/.devenv.sh"
+    && cp --remove-destination .claude/settings.local.json "$wt/.claude/settings.local.json"
+  [ ! -f .devenv.sh ] || { rm -f "$wt/.devenv.sh" && lane_devenv "$slug" > "$wt/.devenv.sh"; }
   # Gitignored parts of the main checkout that a build needs. The frpc sidecar
   # cargo test wants is COPIED: a link would reach a box as a link into nothing,
   # and a heavy run from the lane loses cargo test and the desktop E2E (R-0094).

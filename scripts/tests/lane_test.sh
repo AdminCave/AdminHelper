@@ -338,6 +338,35 @@ lane new outside2; rc=$?
 git -C "$WORK/AdminHelper-outside2" checkout -q -- "$SIDECAR"
 lane "done" outside2 || bad "done outside2: $(cat "$WORK/out.log")"
 
+echo "── new: the files new writes into the lane check their target first ──"
+# One branch per file, each tracking it as a symlink out of the lane: to a mark
+# that must stay as it is, and for .devenv.sh to a target that must not appear.
+for spec in "lnk-vm .vm/lane" "lnk-settings .claude/settings.local.json" "lnk-devenv .devenv.sh"; do
+  slug="${spec%% *}" f="${spec#* }"
+  # The main checkout's file only where the case copies it: the fixture branches carry
+  # no .claude/, and a copy into nothing would end new before the case's own file.
+  rm -f "$MAIN/.claude/settings.local.json"
+  [ "$slug" != lnk-settings ] || printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json"
+  MARK="$WORK/mark-$slug"; GONE="$WORK/never-$slug"
+  echo untouched > "$MARK"; rm -f "$GONE"
+  target="$MARK"; [ "$f" != .devenv.sh ] || target="$GONE"
+  g worktree add -q -b "feature/$slug" "$WORK/mk-$slug" main
+  case "$f" in */*) mkdir -p "$WORK/mk-$slug/${f%/*}" ;; esac
+  ln -s "$target" "$WORK/mk-$slug/$f"
+  echo "# plan $slug" > "$WORK/mk-$slug/tasks/$slug.md"
+  git -C "$WORK/mk-$slug" add -f "$f" "tasks/$slug.md"
+  git -C "$WORK/mk-$slug" -c user.name=t -c user.email=t@t commit -qm "$f is a symlink out of the lane"
+  g worktree remove "$WORK/mk-$slug"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ "$(cat "$MARK")" = untouched ] && [ ! -e "$GONE" ] \
+    && grep -qF "lane.sh: $f in the lane is a symlink or leads outside it — nothing written there" "$WORK/out.log" \
+    && grep -q "run: bash scripts/dev/lane.sh done $slug" "$WORK/out.log" \
+    && ok "$slug: a file new writes that the branch tracks as a symlink out of the lane is not written through" \
+    || bad "new $slug rc=$rc: mark=[$(cat "$MARK")] gone=$([ -e "$GONE" ] && echo exists || echo absent) out=$(cat "$WORK/out.log")"
+  lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
+done
+rm -f "$MAIN/.claude/settings.local.json"
+
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"
 export FAKE_CREATEDB_FAIL=1

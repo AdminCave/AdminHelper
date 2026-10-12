@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-rest: Prompt nur an \n, Lane-Links in der Lane, pve.env gleich gelesen (R-0267, R-0252, R-0253) — Task-Ledger
-Status: aktiv · Branch: harness/harness-rest · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/harness-rest · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0267, R-0252, R-0253, Triage Kevin 2026-10-09/10; Frage 1: ungueltiges UTF-8 gehoert in T3, runner-env.sh lehnt es ebenfalls ab; pve.env nur als Fixture mit Platzhaltern; T2 erst nach dem Merge von lane-paket; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0267, R-0252, R-0253 (Kurz-Ledger ohne Spec)
 Heavy: none — review-run.sh, lane.sh, runner-env.sh und vm.py mit hermetischen Tests (Fake-CLI, Fixture-Repos, Platzhalter-pve.env); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -164,8 +164,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Abhängt von: T3
 
-### T5 — Weitere Schreibstellen in lane_new prüfen ihr Ziel (wie R-0252)  [ ]
+### T5 — Weitere Schreibstellen in lane_new prüfen ihr Ziel (wie R-0252)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @813eae59 2026-10-12T15:34:07+02:00
+Review: Review über T4 und T5 (Opus) folgt
 Änderung: Angelegt 2026-10-12 auf Wort der Aufsicht, aus dem Review am Ende. Es ist dieselbe Klasse wie T2.
 - `lane_new` schreibt nach dem Anlegen der Lane weitere Dateien in sie hinein. Sie prüfen ihr Ziel jetzt wie die
   Links aus T2.
