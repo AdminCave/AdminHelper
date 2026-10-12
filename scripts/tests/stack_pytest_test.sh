@@ -81,12 +81,13 @@ run_stack() {
   OUT=$(env PATH="$SHIM:$PATH" TMPDIR="$WORK" AH_OUT_DIR="$WORK/out-$c" "$@" bash "$STACK" 2>&1); rc=$?
 }
 
-# ── all six pass ─────────────────────────────────────────────────────────────
+# ── all nine pass ────────────────────────────────────────────────────────────
 run_stack green
-[ "$rc" = 0 ] && grep -q '^stack_pytest: 6 passed, 0 failed$' <<<"$OUT" \
-  && ok "six passing tests -> exit 0, summary 6 passed" || bad "green: rc=$rc; $OUT"
+[ "$rc" = 0 ] && grep -q '^stack_pytest: 9 passed, 0 failed$' <<<"$OUT" \
+  && ok "nine passing tests -> exit 0, summary 9 passed" || bad "green: rc=$rc; $OUT"
 for n in monitoring-migrations monitoring-session-utc server-redis ca-issuer-toctou \
-  ca-issuer-register-lock ca-issuer-register-recheck; do
+  ca-issuer-register-lock ca-issuer-register-recheck ca-issuer-renew-waits-revoke \
+  ca-issuer-revoke-waits-renew ca-issuer-enroll-waits-revoke; do
   [ -f "$WORK/out-green/junit/stack-$n.xml" ] && ok "junit/stack-$n.xml written" \
     || bad "no junit/stack-$n.xml: $(ls "$WORK/out-green/junit" 2>&1)"
 done
@@ -111,6 +112,13 @@ for t in test_a_line_revoked_during_a_renewal_waits_and_covers_the_successor \
     && ok "ca-issuer's register test $t gets AH_TEST_DB = the stack's Postgres" \
     || bad "ca-issuer register call $t: $(grep "$t" "$CALLS")"
 done
+for t in test_a_renewal_that_takes_over_waits_for_a_revocation_and_is_refused \
+  test_a_revocation_waits_for_a_renewal_that_takes_over_and_covers_its_line \
+  test_an_enrollment_waits_for_a_revocation_and_enrolls_nothing; do
+  grep -q "cwd=.*/apps/ca-issuer test=tests/test_db_token_store.py::$t .*AH_TEST_DB=$DB$" "$CALLS" \
+    && ok "ca-issuer's identity-lock test $t gets AH_TEST_DB = the stack's Postgres" \
+    || bad "ca-issuer identity-lock call $t: $(grep "$t" "$CALLS")"
+done
 grep -q -- 'up -d --wait --wait-timeout 180 postgres redis' "$WORK/log-green/docker.args" \
   && ok "only postgres and redis are started, waited for healthy" \
   || bad "docker up: $(grep ' up ' "$WORK/log-green/docker.args")"
@@ -128,7 +136,7 @@ OUT=$(cd "$WORK" && env PATH="$SHIM:$PATH" TMPDIR="$WORK" AH_OUT_DIR=out-rel bas
 # ── the one thing the step exists for: a skip is a failure ───────────────────
 run_stack skip SHIM_PYTEST=skip SHIM_PYTEST_ONLY=test_stream_redis
 [ "$rc" = 1 ] && grep -q 'stack-server-redis.xml: 1 skipped' <<<"$OUT" \
-  && grep -q '^stack_pytest: 5 passed, 1 failed (server-redis)$' <<<"$OUT" \
+  && grep -q '^stack_pytest: 8 passed, 1 failed (server-redis)$' <<<"$OUT" \
   && ok "a test that skips although pytest exits 0 fails the step and is named" \
   || bad "skip: rc=$rc; $OUT"
 

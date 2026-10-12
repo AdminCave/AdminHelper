@@ -30,8 +30,10 @@ steht in `scripts/dev/harness-paths.txt`.
   `stack_pytest.sh` führt die ersten drei (`:100-109`). Die Tests aus R-0292 (`:294`, `:323`) und R-0306 (`:402`)
   laufen nirgends gegen Postgres als bei einem Lauf mit `AH_TEST_DB` von Hand.
 
-### T1 — stack_pytest: die drei Postgres-Tests des Issuers, die bisher nirgends laufen (R-0309)  [ ]
+### T1 — stack_pytest: die drei Postgres-Tests des Issuers, die bisher nirgends laufen (R-0309)  [x]
 Komponente: scripts · Dateien: scripts/tests/stack_pytest.sh, scripts/tests/stack_pytest_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dfa75ec0 2026-10-12T23:40:24+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `stack_pytest.sh` bekommt nach `:109` drei `stack_test`-Einträge (ca-issuer, `AH_TEST_DB=$ITEST_DATABASE_URL`,
   wie `:100-109`), mit einem Kommentar zur Sperre der Identität (R-0292, R-0306):
