@@ -7,6 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Status: geplant · Branch: harness/harness-rest · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Spec: Roadmap R-0267, R-0252, R-0253 (Kurz-Ledger ohne Spec)
 Heavy: none — review-run.sh, lane.sh, runner-env.sh und vm.py mit hermetischen Tests (Fake-CLI, Fixture-Repos, Platzhalter-pve.env); kein Stack-, Gateway-, PKI- oder Install-Pfad.
+Hängt ab von: harness/lane-paket — T2 ändert lane.sh und lane_test.sh, die lane-paket auch ändert (dazu die Liste der
+Plan-Slugs in lane_test); erst nach dessen Merge bauen und origin/main vorher hineinmergen. T1 und T3 hängen nicht daran.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck/ruff sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
