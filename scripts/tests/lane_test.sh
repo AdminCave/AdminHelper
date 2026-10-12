@@ -406,6 +406,7 @@ mk_branch() {  # mk_branch <slug> <what> — a plan branch whose .vm or .claude 
     claude-dir)  ln -s tasks "$WORK/mk-$1/.claude" ;;
     vm-main)     ln -s ../AdminHelper/.vm "$WORK/mk-$1/.vm" ;;
     vm-tracked)  mkdir "$WORK/mk-$1/.vm"; printf 'desktop=3101\nserver=3102\n' > "$WORK/mk-$1/.vm/warm.env" ;;
+    claude-tracked) mkdir "$WORK/mk-$1/.claude"; echo '{"placeholder": "branch"}' > "$WORK/mk-$1/.claude/settings.json" ;;
   esac
   echo "# plan $1" > "$WORK/mk-$1/tasks/$1.md"
   git -C "$WORK/mk-$1" add -f -A
@@ -473,6 +474,28 @@ lane new par-no-claude; rc=$?
 rm -f "$MAIN/.claude/settings.local.json"
 lane "done" par-no-claude && [ ! -e "$WORK/AdminHelper-par-no-claude" ] \
   && ok "... and done takes that lane down" || bad "done par-no-claude: $(cat "$WORK/out.log")"
+
+echo "── the normal case: the branch tracks .claude/, the lane gets its own copy ──"
+# As in the real repo: .claude/ is tracked, settings.local.json lies gitignored in
+# the main checkout, and new copies it into the lane. Placeholders only.
+mk_branch hp-claude claude-tracked
+printf '{"permissions": {"allow": ["placeholder"]}}\n' > "$MAIN/.claude/settings.local.json"
+cp "$MAIN/.claude/settings.local.json" "$WORK/settings.mark"
+lane new hp-claude; rc=$?
+L="$WORK/AdminHelper-hp-claude"
+[ "$rc" = 0 ] && grep -q "lane hp-claude ready" "$WORK/out.log" \
+  && [ -f "$L/.claude/settings.local.json" ] && [ ! -L "$L/.claude/settings.local.json" ] \
+  && cmp -s "$L/.claude/settings.local.json" "$WORK/settings.mark" \
+  && cmp -s "$MAIN/.claude/settings.local.json" "$WORK/settings.mark" \
+  && [ "$(cat "$L/.claude/settings.json")" = '{"placeholder": "branch"}' ] \
+  && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+  && ok "hp-claude: new copies settings.local.json into the tracked .claude/, a file of its own and ignored" \
+  || bad "new hp-claude rc=$rc: claude=[$(ls -lA "$L/.claude" 2>&1)] status=[$(git -C "$L" status --porcelain 2>&1)] out=$(cat "$WORK/out.log")"
+lane "done" hp-claude; rc=$?
+[ "$rc" = 0 ] && [ ! -e "$L" ] && cmp -s "$MAIN/.claude/settings.local.json" "$WORK/settings.mark" \
+  && ok "... and done takes the lane down, the main checkout's file as it was" \
+  || bad "done hp-claude rc=$rc: out=$(cat "$WORK/out.log")"
+rm -f "$MAIN/.claude/settings.local.json"
 
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"

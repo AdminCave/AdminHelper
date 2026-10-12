@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket lane-reap-guard: reap nur in der eigenen Lane, kein getrackter Zustand unter .vm (R-0317, R-0318) — Task-Ledger
-Status: aktiv · Branch: harness/lane-reap-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/lane-reap-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-12; Fragen 1-3 wie empfohlen: die Regel gilt fuer alle drei Filter, eine unpassende VMID lehnt den ganzen Aufruf ab, kein mkdir fuer .claude; T2/T3 erst nach dem Merge von harness-rest; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0317, R-0318 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py (destroy), reap.sh und lane.sh mit hermetischen Tests: pytest gegen die Fake-API von test_vm, Fake-vm.py in vm_wrappers_test und lane_test, Fixture-Repos. Kein echtes destroy, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -118,8 +118,10 @@ Semantik:
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T3 — lane_test: der Normalfall mit getracktem .claude/ (R-0318)  [ ]
+### T3 — lane_test: der Normalfall mit getracktem .claude/ (R-0318)  [x]
 Komponente: scripts · Dateien: scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7b5d8fcb 2026-10-12T18:17:22+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Das Fixture trackt heute kein `.claude/`. Der Normalfall des echten Repos ist nicht getestet: `.claude/` getrackt,
   `settings.local.json` im Haupt-Checkout, die Lane kopiert sie.
