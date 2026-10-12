@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ca-issuer und Agent: Prüfung, Reihenfolge und Neu-Provisionieren nach dem Zertifikats-Register — Task-Ledger
-Status: freigegeben · Branch: feature/issuer-agent-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/issuer-agent-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0290, R-0292, R-0293, Triage Kevin 2026-10-11; kein Refuter, die Proben belegen die Funde; Teststrategie: Multibox gemeinsam mit server-identity-followups nach dessen Bau, über beide Stände; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0290, R-0292, R-0293
 Heavy: linux-full — `apps/ca-issuer` und `apps/agent`: `run.sh integration` (Erneuern über das Gateway, Stack-Test Schritt 8b, die Register-Sperrtests in `stack_pytest`); der Multibox-Lauf `--enforce --agents 1 --tunnel` folgt gemeinsam mit server-identity-followups über beide Stände (Teststrategie der Aufsicht, 2026-10-12).
