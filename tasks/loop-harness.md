@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket loop-harness: doc-smoke in der Bau-Session, kein Hintergrund, redteam-Klone (R-0304, R-0301, R-0303) — Task-Ledger
-Status: bereit · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0304, R-0301, R-0303, Triage Kevin 2026-10-11/12; R-0304 als gezielte Allow-Regel nur fuer das lesende doc-smoke.py; R-0301 an der Doku belegt; R-0303 mit differentiellem Orakel, eine geaenderte Probe ist [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0304, R-0301, R-0303 (Kurz-Ledger ohne Spec)
 Heavy: none — Runner-Settings, ledger-loop.sh, ein Skill-Text und Shell-Tests unter scripts/ mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -26,7 +26,9 @@ Vorab geprüft:
   - Die Prüfung der echten Doku läuft heute nur im CI (`ci.yml:844`, „Documentation smoke test“,
     `python3 scripts/dev/doc-smoke.py --paths --env --strict`), nicht in `run.sh` und nicht in `task-close.sh`.
   - `doc-smoke.py` ist lesend: Es ruft `git ls-files` und `git grep` auf, liest Dateien und gibt Funde aus. `--root`
-    liest einen anderen Checkout, schreibt aber nichts.
+    liest einen anderen Checkout, schreibt aber nichts. Korrektur aus dem Review am Ende (T4): Mit `--root` führt
+    `git ls-files` die Git-Konfiguration des fremden Repos aus. Deshalb gilt die Regel nur für den CI-Befehl ohne
+    `--root`.
   - Die Regel ist eng gefasst und erlaubt genau dieses Skript: `Bash(python3 scripts/dev/doc-smoke.py:*)`.
   - Alternative wäre doc-smoke in `run.sh` oder `task-close.sh`. Das ist größer und ändert jeden Lauf, also nicht in
     diesem Paket.
@@ -133,3 +135,26 @@ selbst und klassifiziert ihn, statt die Suiten heimlich retryen zu lassen“. Ei
 scheitert, ist ein Flake der Suite selbst.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
+
+### T4 — Nachbesserung aus dem Review am Ende: doc-smoke genau mit dem CI-Befehl, Funde zu neuen Dateien (R-0304, R-0301)  [ ]
+Komponente: scripts · Dateien: scripts/dev/runner-settings.json, .claude/skills/build-task/SKILL.md, scripts/tests/hooks_test.sh, scripts/tests/ledger_loop_test.sh
+Änderung: Angelegt 2026-10-12 aus dem Review am Ende (Opus, `request_changes`: zwei belegte Funde zu T1, vier nits).
+- **„lesend“ stimmt mit `--root` nicht.** `Bash(python3 scripts/dev/doc-smoke.py:*)` lässt `--root <verzeichnis>` zu.
+  Dort führt `git ls-files` die Git-Konfiguration des fremden Repos aus, etwa `core.fsmonitor`. Der Reviewer hat das
+  mit einer Marke belegt; dieselbe UID, also kein `safe.directory`. Die Aussage unter „Vorab geprüft“ war falsch.
+  - Neu: Die Regel erlaubt genau den Befehl des CI, `Bash(python3 scripts/dev/doc-smoke.py --paths --env --strict)`.
+    Ohne `--root` ist die Wurzel der eigene Checkout, dessen Git-Konfiguration die Session nicht ändern kann.
+  - Das bleibt in Kevins (a), „genau doc-smoke.py“, und ist enger.
+  - hooks_test: Die Prüfung aus R-0237 lässt genau diesen String durch, der Kommentar sagt warum.
+  - Die Gegenprobe prüft die Ausgabe (`wrong: …`) statt nur den Exit. Sie verlangt, dass auch die breite Form
+    `Bash(python3 scripts/dev/doc-smoke.py:*)` und ein anderes Skript aus scripts/dev fallen.
+- **doc-smoke ist in der Session rot, obwohl die Doku stimmt.** Es kennt nur, was git trackt (`git ls-files`,
+  `git grep`), und die Session kann nicht stagen. Eine neue Datei, die die Task in der Doku nennt, ist bis zum Commit ein
+  Fund.
+  - Neu: `/build-task` Schritt 4 sagt, dass solche Funde bis zum Commit erwartet sind. Die Session lässt sie stehen und
+    nennt sie in der Commit-Nachricht.
+- nit aus demselben Review: ledger_loop_test setzt `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` vor seinen Läufen zurück.
+  Sonst sähe die Prüfung aus T2 in einer Bau-Session, die die Variable trägt, einen geerbten Wert.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (der Skill-Text ist die Anleitung)
+Abhängt von: T3
