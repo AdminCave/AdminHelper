@@ -132,7 +132,8 @@ git -C "$DIRTY/tasks/private" config user.name Test
 git -C "$DIRTY/tasks/private" add -A
 git -C "$DIRTY/tasks/private" commit -qm "roadmap"
 # warm box recorded
-echo "desktop=warmbox-7" > "$DIRTY/.vm/warm.env"
+# Role slots with their VM ids, and keys with an underscore that never reach the block.
+printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\nserver_sid=plchold\nserver_key=plchold\n' > "$DIRTY/.vm/warm.env"
 # Two weekly reports: the NEWER one must win. Dates are relative so the "(n d)"
 # age in the line is deterministic whenever this test runs.
 OLD_DAY=$(date -d '10 days ago' +%F); NEW_DAY=$(date -d '3 days ago' +%F)
@@ -177,7 +178,10 @@ grep -qF "Wochenlauf: $OLD_DAY" <<<"$OUT" \
 grep -qF "Wochenlauf: kein Report" <<<"$OUT" \
   && bad "line 4: a run in progress hid the last verdict" \
   || ok "line 4: a verdict-less newest directory does not hide the last report"
-grep -qxF "VMs: warm.env desktop=warmbox-7" <<<"$OUT" && ok "line 5: warm.env" || bad "line 5: $(grep -m1 '^VMs:' <<<"$OUT")"
+grep -qxF "VMs: warm.env desktop=3001 server=3002" <<<"$OUT" && ok "line 5: warm.env shows the role slots" \
+  || bad "line 5: $(grep -m1 '^VMs:' <<<"$OUT")"
+! grep -q 'plchold\|10\.0\.0\.42' <<<"$OUT" && ok "line 5: no key with an underscore reaches the block" \
+  || bad "line 5 leaked: $(grep -m1 '^VMs:' <<<"$OUT")"
 
 # The worker's state, read as a file through ledger-loop.sh status of this checkout.
 WS="$WORK/loopstate"; mkdir -p "$WS"
@@ -286,6 +290,17 @@ OUT=$(cd "$WORK/norepo" && GIT_CEILING_DIRECTORIES="$WORK" bash "$HOOK" 2>&1)
 rc=$?
 [ $rc -eq 0 ] && ok "exit 0 outside a repo" || bad "exit=$rc"
 [ -z "$OUT" ] && ok "prints nothing outside a repo" || bad "printed: $OUT"
+
+# ══ case 5b: a checkout that tracks paths under .vm ════════════════════════════
+echo "── tracked .vm ──"
+TRACKED="$WORK/tracked"
+mk_repo "$TRACKED" "0.45.0" "v0.45.0"
+printf 'desktop=3001\nserver_sid=plchold\n' > "$TRACKED/.vm/warm.env"
+git -C "$TRACKED" add -f .vm/warm.env && git -C "$TRACKED" commit -qm "state"
+OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$TRACKED")
+grep -qxF "VMs: warm.env nicht gelesen (Zustand unter .vm ist getrackt)" <<<"$OUT" \
+  && ! grep -q 'plchold\|3001' <<<"$OUT" \
+  && ok "tracked .vm: warm.env is not read, no slot and no value shown" || bad "tracked: $(grep -m1 '^VMs:' <<<"$OUT")"
 
 # ══ case 6: missing roadmap ═══════════════════════════════════════════════════
 echo "── roadmap missing ──"

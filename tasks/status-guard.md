@@ -24,8 +24,10 @@ Vorab geprüft:
   - vm.py `require_untracked_state` (:564);
   - lane.sh `lane_vm_untracked` (:144).
 
-### T1 — AH-STATUS zeigt aus der warm.env nur Rollen und VM-IDs  [ ]
+### T1 — AH-STATUS zeigt aus der warm.env nur Rollen und VM-IDs  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8aaae593 2026-10-13T01:03:39+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - session-status.sh, Zeile 5 des Blocks (:238–241), druckt heute jede Zeile der warm.env, die wie `KEY=` beginnt.
   - Neu: Nur die Rollen-Slots kommen in den Block, Schlüssel ohne `_` mit einer VM-ID aus Ziffern, wie `warm_vmids`
