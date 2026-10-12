@@ -151,8 +151,9 @@ whole_branch_opus() {
 # build_task_findings <skill> <runner settings> — one line per finding in the
 # worker's builder skill (stage 7a): a forbidden command given as an instruction
 # (every code span and every line of a fenced block outside "## Nie"), or a
-# `bash scripts/…` or `ruff …` call it instructs that no allow rule of the runner's
-# settings lets through, or a deny stops. Settings that do not load are a finding too.
+# `bash scripts/…`, `ruff …` or `python3 scripts/…` call it instructs that no allow
+# rule of the runner's settings lets through, or a deny stops. Settings that do not
+# load are a finding too.
 build_task_findings() {
   unreadable "$1" && return
   unreadable "$2" && return
@@ -182,7 +183,7 @@ def rules(kind):
 for cmd in commands:
     if FORBIDDEN.match(cmd):
         print("forbidden as an instruction: " + cmd)
-    elif cmd.startswith(("bash scripts/", "ruff ")):
+    elif cmd.startswith(("bash scripts/", "ruff ", "python3 scripts/")):
         if any(matches(cmd, r) for r in rules("deny")) or not any(matches(cmd, r) for r in rules("allow")):
             print("no allow rule in the runner's settings: " + cmd)
 PY
@@ -257,6 +258,18 @@ foreground_rule() {
   local re
   for re in "${FOREGROUND_RULE[@]}"; do grep -qE -- "$re" <<<"$1" || return 0; done
   echo ok
+}
+
+# doc_smoke_expected <text> — "ok" when the build step says which doc-smoke findings
+# are expected before the commit — only those on a file the task adds, or on a name
+# only such a file carries — and that every other one is fixed (R-0304): git grep
+# reads the tracked files of the work tree, so a finding on any other name is a real
+# mistake. Runs of spaces are one, the text comes wrapped.
+doc_smoke_expected() {
+  local t
+  t="$(tr -s '[:space:]' ' ' <<<"$1")"
+  grep -qF 'Erwartet ist bis zum Commit nur ein Fund auf eine Datei, die deine Task neu anlegt' <<<"$t" \
+    && grep -qF 'Jeden anderen Fund behebst du' <<<"$t" && echo ok
 }
 
 # fires <detector> <file…> — the detector read its input and reported a finding.
@@ -429,6 +442,15 @@ grep -q "cannot load the runner's settings" <<<"$(build_task_findings "$f" "$WOR
 f=$(fixture 'Lint direkt: `ruff check x.py`.')
 grep -q "no allow rule in the runner's settings: ruff check x.py" <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
   && ok "build_task_findings: a ruff call no allow rule lets through is found" || bad "build_task_findings missed an unallowed ruff call"
+f=$(fixture '4. **Testen**:' '   - Doku: `x`. Es kennt nur, was git trackt: Eine Datei' '     oder ein Name, den erst deine Task anlegt, ist bis zum Commit ein Fund. Den lässt du stehen.' '5. **Danach**')
+[ -z "$(doc_smoke_expected "$(section "$f" '4. **Testen' '5. **')")" ] \
+  && ok "doc_smoke_expected: every finding on a name the task adds is no expected one" || bad "doc_smoke_expected passed the sentence of T4"
+f=$(fixture '4. **Testen**:' '   - Doku: `x`. Erwartet ist bis zum Commit nur ein Fund auf eine Datei, die deine Task' '     neu anlegt, oder auf einen Namen, der nur dort steht. Jeden anderen Fund behebst du.' '5. **Danach**')
+[ "$(doc_smoke_expected "$(section "$f" '4. **Testen' '5. **')")" = ok ] \
+  && ok "doc_smoke_expected: the rule wrapped across a line break is found" || bad "doc_smoke_expected missed the wrapped rule"
+f=$(fixture 'Doku prüfen: `python3 scripts/dev/doc-smoke.py --paths --env --strict`.')
+grep -q "no allow rule in the runner's settings: python3 scripts/dev/doc-smoke.py --paths --env --strict" <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a python3 scripts/ call no allow rule lets through is found (R-0304)" || bad "build_task_findings missed an unallowed python3 scripts/ call"
 f=$(fixture '4. **Testen**:' '   - Im Vordergrund. Nie `run_in_background`, nie warten mit Monitor,' '     `sleep`, `tail --pid` oder `ps`.' '5. **Danach**')
 [ "$(foreground_rule "$(section "$f" '4. **Testen' '5. **')")" = ok ] \
   && ok "foreground_rule: the rule wrapped across a line break is found" || bad "foreground_rule missed the wrapped rule"
@@ -549,6 +571,9 @@ grep -qF 'Status: aktiv' "$BTS" && grep -qF 'Freigabe:' "$BTS" && grep -qF -- '-
   && ok "build-task checks the head (aktiv, Freigabe:) and knows --fix" || bad "build-task lacks the head check or --fix"
 FINDINGS=$(build_task_findings "$BTS" scripts/dev/runner-settings.json)
 CALLS=$(build_task_calls "$BTS")
+[ "$(doc_smoke_expected "$(section "$BTS" '4. **Testen' '5. **')")" = ok ] \
+  && ok "build-task: only findings on a new file are expected before the commit, every other one is fixed (R-0304)" \
+  || bad "build-task's doc-smoke sentence lets a finding on any name the task adds pass as expected"
 [ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
   && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
   || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
