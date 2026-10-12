@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import ApiKeyOrUser
 from app.core.database import get_db
+from app.core.identity import require_cert_server
 from app.modules.frp import provisioner
 from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import generate_frpc_toml
@@ -66,7 +67,7 @@ def _load_sync_inputs(db: Session, server_id: str, auth):
     return config, tunnels, server.name, get_allow_users(db, server_id)
 
 
-@router.get("/provision/{server_id}/config")
+@router.get("/provision/{server_id}/config", dependencies=[Depends(require_cert_server)])
 def get_provision_config(
     server_id: str,
     db: Session = Depends(get_db),
@@ -78,7 +79,7 @@ def get_provision_config(
     return PlainTextResponse(toml_content, media_type="application/toml")
 
 
-@router.get("/provision/{server_id}/config-hash")
+@router.get("/provision/{server_id}/config-hash", dependencies=[Depends(require_cert_server)])
 def get_provision_config_hash(
     server_id: str,
     db: Session = Depends(get_db),
