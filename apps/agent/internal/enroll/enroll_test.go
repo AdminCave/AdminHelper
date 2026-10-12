@@ -295,3 +295,38 @@ func TestCheckStorableReportsAStagedFileThatCannotBeWritten(t *testing.T) {
 		t.Errorf("das blockierende Verzeichnis ist weg: %v", err)
 	}
 }
+
+// R-0312: reading the CN of the stored leaf and dropping an identity.
+
+func TestLeafCommonNameIsTheCNOfTheFirstCertificate(t *testing.T) {
+	dir := t.TempDir()
+	if got := LeafCommonName(dir); got != "" {
+		t.Fatalf("ohne Identität erwartet leer, bekam %q", got)
+	}
+	now := time.Now()
+	leaf, key := selfSigned(t, "srv-9", now.Add(-time.Hour), now.Add(time.Hour))
+	other, _ := selfSigned(t, "intermediate", now.Add(-time.Hour), now.Add(time.Hour))
+	mustWrite(t, CertPath(dir), append(append([]byte{}, leaf...), other...)) // fullchain
+	mustWrite(t, KeyPath(dir), key)
+	if got := LeafCommonName(dir); got != "srv-9" {
+		t.Fatalf("CN = %q, erwartet srv-9 (das erste Zertifikat der Fullchain)", got)
+	}
+}
+
+func TestRemoveIdentityRemovesKeyCertAndCA(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []string{KeyPath(dir), CertPath(dir), CAPath(dir)} {
+		mustWrite(t, p, []byte("x"))
+	}
+	if err := RemoveIdentity(dir); err != nil {
+		t.Fatalf("RemoveIdentity: %v", err)
+	}
+	for _, p := range []string{KeyPath(dir), CertPath(dir), CAPath(dir)} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s ist noch da: %v", p, err)
+		}
+	}
+	if err := RemoveIdentity(dir); err != nil {
+		t.Fatalf("ein zweites RemoveIdentity ohne Dateien: %v", err)
+	}
+}

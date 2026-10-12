@@ -337,3 +337,44 @@ def test_the_identity_lock_is_the_one_the_ca_issuer_takes():
         and any(isinstance(t, ast.Name) and t.id == "IDENTITY_LOCK_SQL" for t in node.targets)
     ]
     assert statements == [IDENTITY_LOCK_SQL]
+
+
+# --- R-0306: a take-over waits for a running revocation ------------------------------
+
+
+def test_a_take_over_waits_for_a_running_revocation_and_creates_no_line(pg_engine):
+    subject = f"take-{uuid.uuid4().hex[:8]}"
+    new_session = sessionmaker(bind=pg_engine)
+    _, cert = _leaf(subject)
+
+    def take_over():
+        with new_session() as request:
+            return admit_certificate(
+                request,
+                cn=subject,
+                scope=SCOPE_ACCESS,
+                fingerprint=_fp(cert),
+                serial=format(cert.serial_number, "x"),
+                not_before=cert.not_valid_before_utc.replace(tzinfo=None),
+                not_after=cert.not_valid_after_utc.replace(tzinfo=None),
+            )
+
+    revocation = new_session()
+    ex = ThreadPoolExecutor(max_workers=1)
+    try:
+        revoke_identity(revocation, subject, SCOPE_ACCESS)  # holds the identity lock
+        revocation_pid = revocation.execute(text("SELECT pg_backend_pid()")).scalar()
+        taking = ex.submit(take_over)
+        assert _a_session_waits_for(pg_engine, revocation_pid), "the take-over must wait"
+        assert not taking.done()
+        revocation.commit()
+        assert taking.result(10) is False
+        with new_session() as check:
+            assert check.query(DeviceLine).filter(DeviceLine.subject_id == subject).count() == 0
+    finally:
+        # Release the lock first: a take-over still waiting would hold the shutdown.
+        revocation.close()
+        ex.shutdown(wait=True)
+        with pg_engine.begin() as conn:
+            conn.execute(delete(DeviceLine).where(DeviceLine.subject_id == subject))
+            conn.execute(delete(RevokedIdentity).where(RevokedIdentity.subject_id == subject))

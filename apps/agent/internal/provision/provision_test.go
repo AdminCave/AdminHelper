@@ -6,10 +6,16 @@ package provision
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/enroll"
@@ -332,5 +339,78 @@ func TestRunEnrollmentNamesTheWayOutWhenStoringFailsAfterTheRequest(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "adminhelper-agent provision") {
 		t.Fatalf("Fehler ohne den Befehl zum Neu-Provisionieren: %v", err)
+	}
+}
+
+// R-0312: an identity issued for another server is one this server never accepts; a
+// provisioning for another server drops it before asking for a new one.
+
+// storeIdentityOf writes a key and a leaf with the given CN into dir, as an earlier
+// provisioning would have left them.
+func storeIdentityOf(t *testing.T, dir, cn string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: cn},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, _ := x509.MarshalPKCS8PrivateKey(key)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(enroll.CertPath(dir), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(enroll.KeyPath(dir), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// issuerDown answers every enrollment with a 500.
+func issuerDown(t *testing.T) (*httptest.Server, int) {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "issuer down", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	return srv, port
+}
+
+func TestRunEnrollmentDropsTheIdentityOfAnotherServer(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	dir := config.AgentPkiDir()
+	storeIdentityOf(t, dir, "srv-1")
+	srv, port := issuerDown(t)
+
+	if err := runEnrollment(srv.URL, &enrollmentInfo{Token: "t", SubjectID: "srv-2", EnrollPort: port}, "", true); err == nil {
+		t.Fatal("erwartet Fehler, der Issuer antwortet 500")
+	}
+	if enroll.Provisioned(dir) {
+		t.Fatalf("die Identität von srv-1 ist nach der Provisionierung für srv-2 noch da (CN %q)", enroll.LeafCommonName(dir))
+	}
+}
+
+func TestRunEnrollmentKeepsTheIdentityOfTheSameServerWhenEnrollmentFails(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	dir := config.AgentPkiDir()
+	storeIdentityOf(t, dir, "srv-1")
+	srv, port := issuerDown(t)
+
+	if err := runEnrollment(srv.URL, &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}, "", true); err == nil {
+		t.Fatal("erwartet Fehler, der Issuer antwortet 500")
+	}
+	if got := enroll.LeafCommonName(dir); got != "srv-1" {
+		t.Fatalf("die eigene Identität muss bleiben, CN = %q", got)
 	}
 }
