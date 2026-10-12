@@ -72,9 +72,18 @@ vm_py() {
 # sweep what the other believes is leased. Non-ASCII is the documented limit:
 # `tr` counts bytes where Python counts codepoints, so an umlaut lane falls back
 # to `main` here and may not there. `lane.sh new` only ever writes [a-z0-9-].
+# The lane file is the lane's own and gitignored: in a checkout that tracks paths
+# under .vm it is not read, and a git that cannot say counts as tracked. vm.py's
+# current_lane() refuses the same way, with the same exit code.
 vm_lane() {
-  local lane="${AH_LANE:-}"
-  [ -n "$lane" ] || lane="$(cat "$AH_VM_STATE_DIR/lane" 2>/dev/null || true)"
+  local lane="${AH_LANE:-}" tracked
+  if [ -z "$lane" ] && { [ -e "$AH_VM_STATE_DIR/lane" ] || [ -L "$AH_VM_STATE_DIR/lane" ]; }; then
+    if ! tracked="$(git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" || [ -n "$tracked" ]; then
+      echo "vm_lib: this checkout tracks paths under .vm — the lane is not read from tracked state" >&2
+      return 2
+    fi
+    lane="$(cat "$AH_VM_STATE_DIR/lane" 2>/dev/null || true)"  # review: ok an unreadable lane file means main, as before
+  fi
   lane="$(printf '%s' "$lane" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
   while [ "${lane#-}" != "$lane" ]; do lane="${lane#-}"; done
   while [ "${lane%-}" != "$lane" ]; do lane="${lane%-}"; done

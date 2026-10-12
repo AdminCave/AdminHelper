@@ -1767,7 +1767,10 @@ sonst aus `AH_LANE`, sonst aus `.vm/lane` — die Datei ist heute von Hand zu se
 `AH_LANE` im Worktree einfacher; ab 2b legt `lane.sh new <slug>` sie an —, sonst ist sie
 `main` — der Hauptcheckout. `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
 `scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
-darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde.
+darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Aus `.vm/lane` liest
+keine der beiden Seiten in einem Checkout, der Pfade unter `.vm` trackt: `vm.py` und `lib.sh`
+lehnen dann mit Exit 2 ab (ein git, das nicht antwortet, zaehlt wie ein Treffer); mit `--lane`
+oder `AH_LANE` wird die Datei nicht gelesen.
 
 **TLS.** Die Root-CA des Hypervisors traegt kein `keyUsage`, was Python 3.13 unter
 `VERIFY_X509_STRICT` ablehnt. `vm.py` loescht **genau dieses eine Flag** und verifiziert sonst

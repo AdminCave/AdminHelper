@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket lane-reap-guard: reap nur in der eigenen Lane, kein getrackter Zustand unter .vm (R-0317, R-0318) — Task-Ledger
-Status: aktiv · Branch: harness/lane-reap-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/lane-reap-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-12; Fragen 1-3 wie empfohlen: die Regel gilt fuer alle drei Filter, eine unpassende VMID lehnt den ganzen Aufruf ab, kein mkdir fuer .claude; T2/T3 erst nach dem Merge von harness-rest; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0317, R-0318 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py (destroy), reap.sh und lane.sh mit hermetischen Tests: pytest gegen die Fake-API von test_vm, Fake-vm.py in vm_wrappers_test und lane_test, Fixture-Repos. Kein echtes destroy, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -167,9 +167,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Abhängt von: T1, T2
 
-### T5 — lib.sh und vm.py lesen die Lane nicht aus getracktem Zustand  [ ]
+### T5 — lib.sh und vm.py lesen die Lane nicht aus getracktem Zustand  [x]
 Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/vm/reap.sh, scripts/vm/warm.sh, scripts/vm/vm.py, scripts/tests/lib_vm_test.sh, scripts/vm/tests/test_vm.py, DEVELOPMENT.md
-Review: Nachbesserung, Opus-Review über T4 und T5 folgt
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ad80a35b 2026-10-12T19:27:40+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Angelegt 2026-10-12 auf Entscheidung der Aufsicht (adminhelper-ac), aus dem Review am Ende.
 - `vm_lane` (lib.sh) und `current_lane` (vm.py) nehmen die Lane aus `--lane`, sonst aus `AH_LANE`, sonst aus
   `.vm/lane`.

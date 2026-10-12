@@ -78,6 +78,40 @@ else
   echo "SKIP: python3 not available — the vm.py cross-check cannot run"; exit 75
 fi
 
+echo "── the lane is not read from tracked state ──"
+# A checkout of its own, lib.sh and reap.sh copied in, its .vm/lane naming lane-a.
+# git stops at WORK: a repository around the temp dir cannot answer for it.
+CO="$WORK/checkout"
+mkdir -p "$CO/scripts/vm" "$CO/.vm"
+cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$CO/scripts/vm/"
+echo "lane-a" > "$CO/.vm/lane"
+printf 'desktop=3001\n' > "$CO/.vm/warm.env"; cp "$CO/.vm/warm.env" "$WORK/co-warm.mark"
+export GIT_CEILING_DIRECTORIES="$WORK"
+# shellcheck source=/dev/null
+co_lane() { (unset AH_LANE; export AH_VM_STATE_DIR="$CO/.vm"; . "$CO/scripts/vm/lib.sh"; vm_lane) 2>&1; }
+out=$(co_lane); rc=$?
+[ "$rc" = 2 ] && grep -q 'tracks paths under .vm' <<<"$out" && ! grep -q 'lane-a' <<<"$out" \
+  && ok "a checkout git cannot read: vm_lane refuses with exit 2 and names no value" || bad "no git: rc=$rc out=$out"
+git -C "$CO" init -q
+out=$(co_lane); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "lane-a" ] && ok "an untracked .vm/lane is read as before" || bad "untracked: rc=$rc out=$out"
+git -C "$CO" add -f .vm/lane
+out=$(co_lane); rc=$?
+[ "$rc" = 2 ] && grep -q 'tracks paths under .vm' <<<"$out" && ! grep -q 'lane-a' <<<"$out" \
+  && ok "a tracked .vm/lane: vm_lane refuses with exit 2 and names no value" || bad "tracked: rc=$rc out=$out"
+# shellcheck source=/dev/null
+out=$( (export AH_LANE=from-env AH_VM_STATE_DIR="$CO/.vm"; . "$CO/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "from-env" ] && ok "with AH_LANE the file is not read" || bad "AH_LANE: rc=$rc out=$out"
+# reap.sh stops before it calls vm.py or touches warm.env.
+: > "$WORK/co-vm.log"
+printf '#!/bin/sh\necho "$*" >> "%s"\n' "$WORK/co-vm.log" > "$WORK/co-vm.py"; chmod +x "$WORK/co-vm.py"
+out=$( (unset AH_LANE; export AH_VM_STATE_DIR="$CO/.vm" AH_VM_PY="$WORK/co-vm.py" AH_PVE_URL="https://lib-vm-test.invalid"
+        bash "$CO/scripts/vm/reap.sh") 2>&1); rc=$?
+[ "$rc" = 2 ] && [ ! -s "$WORK/co-vm.log" ] && cmp -s "$CO/.vm/warm.env" "$WORK/co-warm.mark" \
+  && ok "reap.sh in that checkout: exit 2, no call to vm.py, warm.env as it was" \
+  || bad "reap.sh: rc=$rc vm=[$(cat "$WORK/co-vm.log")] out=$out"
+unset GIT_CEILING_DIRECTORIES
+
 echo "── warm slots ──"
 [ -z "$(warm_get desktop)" ] && ok "an unset slot reads empty" || bad "unset slot: $(warm_get desktop)"
 

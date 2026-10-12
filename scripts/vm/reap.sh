@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --all) ALL=1 ;;
   *) echo "unknown arg: $1 (use --lane <lane> | --all)"; exit 2 ;;
 esac; shift; done
-LANE="$(vm_lane)"
+LANE="$(vm_lane)" || exit 2
 # vm.py derives the lane the same way (AH_LANE, then .vm/lane) — export the
 # resolved name so both sides agree even when neither was set.
 export AH_LANE="$LANE"

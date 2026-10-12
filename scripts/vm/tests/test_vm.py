@@ -1057,6 +1057,42 @@ def test_an_empty_lane_file_still_means_main(state_dir):
     assert vm.current_lane(environ={}) == "main"
 
 
+def checkout_with_lane(tmp_path, monkeypatch, git=True, tracked=False):
+    """A checkout of its own as ROOT, its .vm/lane naming lane-a; git stops at tmp_path."""
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    root = tmp_path / "checkout"
+    (root / ".vm").mkdir(parents=True)
+    (root / ".vm" / "lane").write_text("lane-a\n")
+    if git:
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+    if tracked:
+        subprocess.run(["git", "-C", str(root), "add", "-f", ".vm/lane"], check=True)
+    monkeypatch.setattr(vm, "ROOT", str(root))
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(root / ".vm"))
+
+
+def test_the_lane_is_not_read_from_tracked_state(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch, tracked=True)
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "tracks paths under .vm" in str(caught.value)
+    assert "lane-a" not in str(caught.value)
+    # Given by flag or environment, the file is not read and git is not asked.
+    assert vm.current_lane(environ={"AH_LANE": "from-env"}) == "from-env"
+    assert vm.current_lane(override="flag", environ={}) == "flag"
+
+
+def test_an_untracked_lane_file_is_read_as_before(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch)
+    assert vm.current_lane(environ={}) == "lane-a"
+
+
+def test_a_checkout_git_cannot_read_counts_as_tracked(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch, git=False)
+    with pytest.raises(vm.Usage):
+        vm.current_lane(environ={})
+
+
 def test_a_vm_is_found_by_id_or_by_name(cfg, api, http):
     http.add("GET", "/cluster/resources", "cluster_resources")
     assert vm.find_vm(cfg, api, "3001")["vmid"] == 3001
