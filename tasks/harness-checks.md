@@ -73,11 +73,12 @@ Postgres läuft er nur hier.“ Ein Postgres-Test des Issuers, der nicht in der 
 
 ### T2 — multibox --tunnel: der Tunnel-Agent synct einmal über die Route seines Servers (R-0315)  [x]
 Komponente: scripts · Dateien: scripts/tests/box_tunnelbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d948094f 2026-10-12T23:54:14+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @be16ab9d 2026-10-13T00:13:38+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
-- `box_tunnelbox.sh`: Nach dem Provisionieren (`:29-32`) und dem Start von frpc (`:34-43`) ruft die Box einmal
-  `sudo adminhelper-agent sync` (`apps/agent/cmd/adminhelper-agent/main.go:121` → `frpc.Sync`). Der holt
+- `box_tunnelbox.sh`: Nach dem Provisionieren (`:29-32`) und dem Start von frpc (`:36-45`) ruft die Box einmal
+  `sudo adminhelper-agent frpc sync` (`apps/agent/cmd/adminhelper-agent/main.go:110-125`, `frpc` → `sync` →
+  `frpc.Sync`). Der holt
   `/api/frp/provision/{id}/config-hash` mit der mTLS-Identität des Agents und seinem API-Key
   (`apps/agent/internal/frpc/sync.go:47-58`) und vergleicht mit der Hash-Datei, die das Provisionieren geschrieben
   hat (`config.FrpHashFile()`, `sync.go:136`).
@@ -99,7 +100,7 @@ Review: Review am Ende (Kurz-Ledger, Opus)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (die Prüfung eines Testlaufs)
 Beweis: feature/server-identity-followups@268e3eae, `multibox.sh --enforce --agents 1 --tunnel`: `16 ok`, im Log kein
-Abruf von `config-hash` (Zeile R-0315). origin/main@9a512413: `git grep -n 'config-hash\|adminhelper-agent sync' --
+Abruf von `config-hash` (Zeile R-0315). origin/main@9a512413: `git grep -n 'config-hash\|adminhelper-agent frpc sync' --
 scripts/tests/multibox.sh scripts/tests/box_tunnelbox.sh` → kein Treffer.
 Metrik: Abrufe der gebundenen Sync-Route mit dem Agent-Zertifikat in einem Multibox-Lauf mit `--tunnel`: 0 → 1.
 Orakel: mutation-sample — in `multibox.sh` die neue Prüfung entfernt oder auf `ok` gestellt: der neue Fall in

@@ -30,6 +30,8 @@ echo "[tunnelbox] provision against https://$SRV_IP (server $SID) -> writes frpc
 sudo adminhelper-agent provision --url "https://$SRV_IP" --token "$PTOK" --server-id "$SID" --insecure \
   && echo "TUNNEL_PROVISION_OK" || { echo "TUNNEL_PROVISION_FAIL"; exit 1; }
 if sudo test -f /etc/frp/frpc.toml; then echo "TUNNEL_FRPC_TOML_OK"; else echo "TUNNEL_FRPC_TOML_MISSING"; sudo ls -la /etc/frp/ 2>/dev/null; fi
+# The hash provisioning wrote, read before anything else can rewrite it (the sync below).
+hash_before="$(sudo cat /etc/frp/.config-hash 2>/dev/null)"
 
 echo "[tunnelbox] start frpc (STCP server) -> registers with frps at $SRV_IP:7000"
 sudo systemctl restart frpc 2>/dev/null || sudo systemctl start frpc 2>/dev/null || true
@@ -47,8 +49,7 @@ fi
 # it laid down; the same hash back means the bound route answers this agent with the
 # config it was provisioned with.
 echo "[tunnelbox] frpc sync: config-hash over the route of server $SID with the agent certificate"
-hash_before="$(sudo cat /etc/frp/.config-hash 2>/dev/null)"
-if sync_out="$(sudo adminhelper-agent sync 2>&1)"; then
+if sync_out="$(sudo adminhelper-agent frpc sync 2>&1)"; then
   hash_after="$(sudo cat /etc/frp/.config-hash 2>/dev/null)"
   if [ -n "$hash_before" ] && [ "$hash_before" = "$hash_after" ] \
      && ! grep -q 'Config-Aenderung erkannt' <<<"$sync_out"; then
