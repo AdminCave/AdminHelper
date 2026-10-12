@@ -445,10 +445,12 @@ rm -f "$MAIN/.vm/warm.env"
   && ok "... and that done still takes the lane down" || bad "done par-vm-main left the lane: rc=$rc"
 # A branch that tracks paths under .vm: new writes nothing there, and done reads
 # no state from that .vm — it goes the way without a worktree.
+printf 'desktop=3001\nserver=3002\n' > "$MAIN/.vm/warm.env"; cp "$MAIN/.vm/warm.env" "$WORK/warm.env.mark"
 mk_branch par-vm-tracked vm-tracked
 lane new par-vm-tracked; rc=$?
 L="$WORK/AdminHelper-par-vm-tracked"
 [ "$rc" = 1 ] && [ ! -e "$L/.vm/lane" ] && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+  && cmp -s "$MAIN/.vm/warm.env" "$WORK/warm.env.mark" \
   && grep -qF "lane.sh: the branch tracks paths under .vm in the lane" "$WORK/out.log" \
   && grep -qF "run: bash scripts/dev/lane.sh done par-vm-tracked" "$WORK/out.log" \
   && ! grep -q "lane par-vm-tracked ready" "$WORK/out.log" \
@@ -456,11 +458,12 @@ L="$WORK/AdminHelper-par-vm-tracked"
   || bad "new par-vm-tracked rc=$rc: lane=[$(ls -A "$L/.vm" 2>&1)] out=$(cat "$WORK/out.log")"
 : > "$VM_LOG"
 lane "done" par-vm-tracked; rc=$?
-[ "$rc" = 0 ] && ! grep -qE '\b310[12]\b' "$VM_LOG" && grep -q '^destroy --lane par-vm-tracked$' "$VM_LOG" \
-  && grep -q 'done reads no state from it' "$WORK/out.log" \
+[ "$rc" = 0 ] && ! grep -qE '\b3[01]0[12]\b' "$VM_LOG" && grep -q '^destroy --lane par-vm-tracked$' "$VM_LOG" \
+  && grep -q 'done reads no state from it' "$WORK/out.log" && cmp -s "$MAIN/.vm/warm.env" "$WORK/warm.env.mark" \
   && [ ! -e "$L" ] && [ ! -e "$MAIN/.vm/lanes/par-vm-tracked" ] \
   && ok "... done reads no state from that .vm, destroys by the lane and takes the lane down" \
   || bad "done par-vm-tracked rc=$rc: vm=[$(cat "$VM_LOG")] out=$(cat "$WORK/out.log")"
+rm -f "$MAIN/.vm/warm.env"
 # The copy into .claude/ names the way back when it fails, as the other write
 # steps do: a branch without .claude/ has nowhere to copy it to.
 printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json"

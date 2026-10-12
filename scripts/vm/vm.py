@@ -1441,11 +1441,15 @@ def require_selected(entry: dict, selectors: list) -> dict:
     names its warm slots with its lane: a slot of another lane is not its to take."""
     tags = tags_of(entry)
     for prefix, flag, value in selectors:
-        have = selector_value(tags, prefix)
-        if have != value:
+        # Every value of the prefix, not the first of a set: with two lane tags,
+        # which one comes first depends on the hash seed.
+        have = sorted(t[len(prefix) :] for t in tags if t.startswith(prefix))
+        if not have and prefix == "lane-":
+            have = ["main"]
+        if have != [value]:
+            carries = ", ".join(prefix + h for h in have) or "no %s tag" % prefix
             raise Usage(
-                "%d is not %s %s (it carries %s) — refusing"
-                % (entry["vmid"], flag, value, prefix + have if have else "no %s tag" % prefix)
+                "%d is not %s %s (it carries %s) — refusing" % (entry["vmid"], flag, value, carries)
             )
     return entry
 

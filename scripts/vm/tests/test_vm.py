@@ -1930,6 +1930,26 @@ def test_destroy_refuses_a_named_vm_of_another_lane_and_destroys_nothing(cfg, ap
     assert http.paths("DELETE") == []
 
 
+def test_destroy_refuses_before_it_destroys_a_vm_that_sorts_first(cfg, api, http, clock):
+    # 3000 matches and sorts first: a check made while destroying would take it
+    # before it reached 3001.
+    purgeable(http, 3000, 3001)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "3001", "--lane", "main")
+    assert "3001 is not --lane main (it carries lane-pilot)" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_holds_every_tag_of_a_prefix_not_the_first_of_a_set(cfg, api, http, clock):
+    tags, name = POOL_NOW[3001]
+    purgeable(http, now={3001: (tags + ";lane-main", name)})
+    for lane in ("pilot", "main"):
+        with pytest.raises(vm.Usage) as caught:
+            verb("destroy", cfg, api, "3001", "--lane", lane)
+        assert "(it carries lane-main, lane-pilot)" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
 def test_destroy_of_a_named_vm_with_its_lane_takes_that_vm_only(cfg, api, http, clock, capsys):
     # 3000 is on lane pilot too: a lane next to a VMID narrows, it adds nothing.
     pool = fixture("cluster_resources")

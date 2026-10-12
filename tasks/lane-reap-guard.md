@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket lane-reap-guard: reap nur in der eigenen Lane, kein getrackter Zustand unter .vm (R-0317, R-0318) — Task-Ledger
-Status: bereit · Branch: harness/lane-reap-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/lane-reap-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-12; Fragen 1-3 wie empfohlen: die Regel gilt fuer alle drei Filter, eine unpassende VMID lehnt den ganzen Aufruf ab, kein mkdir fuer .claude; T2/T3 erst nach dem Merge von harness-rest; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0317, R-0318 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py (destroy), reap.sh und lane.sh mit hermetischen Tests: pytest gegen die Fake-API von test_vm, Fake-vm.py in vm_wrappers_test und lane_test, Fixture-Repos. Kein echtes destroy, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -144,3 +144,45 @@ Semantik: DEVELOPMENT.md :1808–1810 („`.claude/settings.local.json` als **Ko
 Permission-Grants, ein Symlink waere ein geteiltes Write-Target aller Lanes“).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
+
+### T4 — Nachbesserung aus dem Review am Ende: nichts zerstört auch hinter einer passenden VM, eindeutige Tags, Marke in par-vm-tracked  [x]
+Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @36f6093b 2026-10-12T19:00:54+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-12 aus dem Review am Ende (Opus, `request_changes`: ein belegter Fund, zwei nits).
+- T1, Test: `test_destroy_refuses_a_named_vm_of_another_lane_and_destroys_nothing` lehnt eine VM ab, die vor der
+  passenden sortiert.
+  - Eine Prüfung, die erst beim Zerstören liefe, bliebe damit grün. Der Reviewer hat das als Mutante geprobt.
+  - Neu: ein Fall, in dem die abgelehnte VM nach der passenden kommt (`destroy 3000 3001 --lane main`). Abgelehnt
+    wird 3001, und `DELETE` gibt es keins.
+- nit, T1, `require_selected`: Trägt eine VM zwei Tags eines Präfixes (`lane-main` und `lane-pilot`), liest
+  `tag_value` den ersten aus einem Set, und welcher das ist, hängt von `PYTHONHASHSEED` ab.
+  - Neu: Die Prüfung vergleicht alle Werte des Präfixes. Sie passt nur, wenn genau der verlangte dasteht, bei der Lane
+    ohne Tag weiter `main`.
+  - Die Meldung nennt alle Werte. Dazu ein Fall in test_vm.
+  - Die Auswahl über Filter allein bleibt, wie sie ist.
+- nit, T2, lane_test `par-vm-tracked`: Die cmp-Marke im Haupt-Checkout, die das Ledger nennt, kommt dazu
+  (`$MAIN/.vm/warm.env` und die Marke, wie in `par-vm-main`).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T1, T2
+
+### T5 — lib.sh und vm.py lesen die Lane nicht aus getracktem Zustand  [ ]
+Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/vm/reap.sh, scripts/vm/warm.sh, scripts/vm/vm.py, scripts/tests/lib_vm_test.sh, scripts/vm/tests/test_vm.py, DEVELOPMENT.md
+Review: Nachbesserung, Opus-Review über T4 und T5 folgt
+Änderung: Angelegt 2026-10-12 auf Entscheidung der Aufsicht (adminhelper-ac), aus dem Review am Ende.
+- `vm_lane` (lib.sh) und `current_lane` (vm.py) nehmen die Lane aus `--lane`, sonst aus `AH_LANE`, sonst aus
+  `.vm/lane`.
+  - Kommt sie aus der Datei, und trackt der Checkout, zu dem das Werkzeug gehört, Pfade unter `.vm`, lehnen beide ab:
+    Exit 2, die Meldung nennt keinen Wert.
+  - Geprüft wird mit `git ls-files -- .vm`. Ein Fehler von git zählt als Treffer.
+  - Mit `--lane` oder `AH_LANE` wird die Datei nicht gelesen und git nicht gefragt.
+- `reap.sh` und `warm.sh` enden dann mit Exit 2, bevor sie vm.py aufrufen oder die warm.env ändern.
+- Tests, kein echtes destroy:
+  - lib_vm_test mit einem tmp-Repo als Checkout, das `.vm/lane` trackt: `vm_lane` Exit 2, `reap.sh` Exit 2 ohne einen
+    Aufruf an die Fake-vm.py, die warm.env unverändert.
+  - Ungetrackt bleibt es wie bisher.
+  - test_vm mit tmp-Repo: `current_lane` wirft `Usage`. Mit `AH_LANE` oder `--lane` ist kein git nötig.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, Lane-Absatz („Sie kommt aus `--lane`, sonst aus `AH_LANE`, sonst aus `.vm/lane`“).
+Abhängt von: T1
