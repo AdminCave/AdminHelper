@@ -147,7 +147,11 @@ python3 - "$LEDGER" "$ID" "$TREE" "$ROUND" "$PROBE" "$CONTRACTS" "$PRIOR" "$NEW_
 import json, re, sys
 
 ledger, tid, tree, rnd, probe, contracts, prior, new_files, verify_json = sys.argv[1:10]
-lines = open(ledger, encoding="utf-8").read().splitlines()
+# Lines end at \n only, where task-close and the loop end them: splitlines() also splits
+# at \x0b, \x0c, \x1c-\x1e, \x85 and U+2028/9 and would read a heading inside a line
+# of the task, cutting the task short for the reviewer (R-0267, as R-0251); and text
+# mode would make a lone \r a line end too, hence newline="".
+lines = open(ledger, encoding="utf-8", newline="").read().split("\n")
 head = next((m.group(1).strip() for m in (re.match(r"Spec:\s*(.*)", l) for l in lines) if m), "")
 # A short ledger names only roadmap ids ("Spec: Roadmap R-0152"): then there is no file to read.
 word = head.split()[0].strip("`,;") if head else ""
@@ -171,7 +175,8 @@ out = ["# Review of %s %s, round %s" % (ledger, tid, rnd), "",
        "## What the runner measured", "",
        "Verify: %s" % verify, "Probe: %s" % probe, "Contracts: %s" % contracts, "",
        "## New files", ""]
-out += ["- " + f for f in new_files.splitlines()] or ["(none)"]
+# git names them unquoted here (core.quotePath=false): one per \n, whatever else a name holds.
+out += ["- " + f for f in new_files.split("\n") if f] or ["(none)"]
 if rnd == "2":
     out += ["", "## Round 2", "",
             "Round 1's verdict is %s. Check whether its blocker and wichtig findings are fixed; "

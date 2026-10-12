@@ -296,6 +296,152 @@ rm -f "$MAIN/${SIDECAR%/*}/frpc-dangling"
   || bad "new sigma rc=$rc: $(cat "$WORK/out.log")"
 lane "done" sigma || bad "done sigma: $(cat "$WORK/out.log")"
 
+echo "── new: no link and no copy follows a tracked symlink out of the lane (R-0252) ──"
+# The branch is anybody's: its apps/server/.venv and the sidecar's directory are
+# tracked symlinks to directories outside the lane. Made in a worktree of its own,
+# so the main checkout stays on main.
+OUTV="$WORK/outside-venv" OUTB="$WORK/outside-bin"; mkdir -p "$OUTV" "$OUTB"
+g worktree add -q -b feature/outside "$WORK/mk-outside" main
+mkdir -p "$WORK/mk-outside/apps/server" "$WORK/mk-outside/${SIDECAR%/*/*}"
+ln -s "$OUTV" "$WORK/mk-outside/apps/server/.venv"
+ln -s "$OUTB" "$WORK/mk-outside/${SIDECAR%/*}"
+echo "# plan outside" > "$WORK/mk-outside/tasks/outside.md"
+git -C "$WORK/mk-outside" add -f apps/server/.venv "${SIDECAR%/*}" tasks/outside.md
+git -C "$WORK/mk-outside" -c user.name=t -c user.email=t@t commit -qm "tracked symlinks out of the lane"
+g worktree remove "$WORK/mk-outside"
+lane new outside; rc=$?
+[ "$rc" = 0 ] && [ -z "$(ls -A "$OUTV")" ] && [ -z "$(ls -A "$OUTB")" ] \
+  && grep -q 'WARN: apps/server/.venv in the lane leads outside it — not linked' "$WORK/out.log" \
+  && grep -q "WARN: ${SIDECAR%/*} in the lane leads outside it — the frpc sidecar is not copied" "$WORK/out.log" \
+  && ok "tracked symlinks out of the lane: nothing written through them, a WARN for each, the lane still made" \
+  || bad "new outside rc=$rc: venv=[$(ls -A "$OUTV")] bin=[$(ls -A "$OUTB")] out=$(cat "$WORK/out.log")"
+[ -d "$WORK/AdminHelper-outside/apps/monitoring/.venv" ] && [ ! -L "$WORK/AdminHelper-outside/apps/monitoring/.venv" ] \
+  && [ "$(readlink "$WORK/AdminHelper-outside/apps/monitoring/.venv/bin")" = "$MAIN/apps/monitoring/.venv/bin" ] \
+  && ok "... and the other venvs are linked as always" || bad "monitoring venv: $(ls -la "$WORK/AdminHelper-outside/apps/monitoring/.venv" 2>&1)"
+lane "done" outside || bad "done outside: $(cat "$WORK/out.log")"
+# The sidecar's directory is a real one, but the sidecar in it a symlink out of the lane.
+OUTF="$WORK/outside-file"; echo untouched > "$OUTF"
+g worktree add -q -b feature/outside2 "$WORK/mk-outside2" main
+mkdir -p "$WORK/mk-outside2/${SIDECAR%/*}"
+ln -s "$OUTF" "$WORK/mk-outside2/$SIDECAR"
+echo "# plan outside2" > "$WORK/mk-outside2/tasks/outside2.md"
+git -C "$WORK/mk-outside2" add -f "$SIDECAR" tasks/outside2.md
+git -C "$WORK/mk-outside2" -c user.name=t -c user.email=t@t commit -qm "a sidecar that is a symlink out of the lane"
+g worktree remove "$WORK/mk-outside2"
+lane new outside2; rc=$?
+[ "$rc" = 0 ] && [ "$(cat "$OUTF")" = untouched ] && [ ! -L "$WORK/AdminHelper-outside2/$SIDECAR" ] \
+  && cmp -s "$WORK/AdminHelper-outside2/$SIDECAR" "$MAIN/$SIDECAR" \
+  && ok "a sidecar that the branch tracks as a symlink out of the lane is replaced, not written through" \
+  || bad "new outside2 rc=$rc: outside=[$(cat "$OUTF")] sidecar=$(ls -la "$WORK/AdminHelper-outside2/$SIDECAR" 2>&1)"
+# The lane holds a real sidecar where the branch tracks a link, so done would call it
+# unclean: the tracked file goes back first.
+git -C "$WORK/AdminHelper-outside2" checkout -q -- "$SIDECAR"
+lane "done" outside2 || bad "done outside2: $(cat "$WORK/out.log")"
+
+echo "── new: the files new writes into the lane check their target first ──"
+# One branch per file, each tracking it as a symlink out of the lane: to a mark
+# that must stay as it is, and for .devenv.sh to a target that must not appear.
+for spec in "lnk-vm .vm/lane" "lnk-settings .claude/settings.local.json" "lnk-devenv .devenv.sh"; do
+  slug="${spec%% *}" f="${spec#* }"
+  # The main checkout's file only where the case copies it: the fixture branches carry
+  # no .claude/, and a copy into nothing would end new before the case's own file.
+  rm -f "$MAIN/.claude/settings.local.json"
+  [ "$slug" != lnk-settings ] || printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json"
+  MARK="$WORK/mark-$slug"; GONE="$WORK/never-$slug"
+  echo untouched > "$MARK"; rm -f "$GONE"
+  target="$MARK"; [ "$f" != .devenv.sh ] || target="$GONE"
+  g worktree add -q -b "feature/$slug" "$WORK/mk-$slug" main
+  case "$f" in */*) mkdir -p "$WORK/mk-$slug/${f%/*}" ;; esac
+  ln -s "$target" "$WORK/mk-$slug/$f"
+  echo "# plan $slug" > "$WORK/mk-$slug/tasks/$slug.md"
+  git -C "$WORK/mk-$slug" add -f "$f" "tasks/$slug.md"
+  git -C "$WORK/mk-$slug" -c user.name=t -c user.email=t@t commit -qm "$f is a symlink out of the lane"
+  g worktree remove "$WORK/mk-$slug"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ "$(cat "$MARK")" = untouched ] && [ ! -e "$GONE" ] \
+    && grep -qF "lane.sh: $f exists in the lane already, is a symlink or leads outside it — nothing written there" "$WORK/out.log" \
+    && grep -q "run: bash scripts/dev/lane.sh done $slug" "$WORK/out.log" \
+    && ok "$slug: a file new writes that the branch tracks as a symlink out of the lane is not written through" \
+    || bad "new $slug rc=$rc: mark=[$(cat "$MARK")] gone=$([ -e "$GONE" ] && echo exists || echo absent) out=$(cat "$WORK/out.log")"
+  lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
+done
+rm -f "$MAIN/.claude/settings.local.json"
+# Whatever else the branch puts at such a path stops new as well, and nothing in the
+# lane changes: a regular file, a directory, and a symlink to a target in the lane
+# that does not exist (that one only [ -L ] sees).
+for spec in "vm .vm/lane" "settings .claude/settings.local.json" "devenv .devenv.sh"; do
+  for kind in file dir link; do
+    slug="ex-${spec%% *}-$kind" f="${spec#* }"
+    rm -f "$MAIN/.claude/settings.local.json"
+    case "$slug" in *settings*) printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json" ;; esac
+    g worktree add -q -b "feature/$slug" "$WORK/mk-$slug" main
+    case "$f" in */*) mkdir -p "$WORK/mk-$slug/${f%/*}" ;; esac
+    case "$kind" in
+      file) echo "placeholder-$slug" > "$WORK/mk-$slug/$f" ;;
+      dir)  mkdir -p "$WORK/mk-$slug/$f" && echo "placeholder-$slug" > "$WORK/mk-$slug/$f/x" ;;
+      link) ln -s "never-$slug.md" "$WORK/mk-$slug/$f" ;;
+    esac
+    echo "# plan $slug" > "$WORK/mk-$slug/tasks/$slug.md"
+    git -C "$WORK/mk-$slug" add -f "$f" "tasks/$slug.md"
+    git -C "$WORK/mk-$slug" -c user.name=t -c user.email=t@t commit -qm "a $kind at $f"
+    g worktree remove "$WORK/mk-$slug"
+    lane new "$slug"; rc=$?
+    L="$WORK/AdminHelper-$slug"
+    [ "$rc" = 1 ] && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+      && grep -qF "lane.sh: $f exists in the lane already, is a symlink or leads outside it — nothing written there" "$WORK/out.log" \
+      && ok "$slug: a $kind the branch puts at a file new writes stops new, and nothing in the lane changes" \
+      || bad "new $slug rc=$rc: status=[$(git -C "$L" status --porcelain 2>&1)] out=$(cat "$WORK/out.log")"
+    lane "done" "$slug" && [ ! -e "$L" ] || bad "done $slug: $(cat "$WORK/out.log")"
+  done
+done
+rm -f "$MAIN/.claude/settings.local.json"
+# The directory such a file goes into: a file, a dangling link, a link to a directory
+# of the lane. Each stops new with the lane unchanged, and done cleans up.
+mk_branch() {  # mk_branch <slug> <what> — a plan branch whose .vm or .claude is <what>
+  g worktree add -q -b "feature/$1" "$WORK/mk-$1" main
+  case "$2" in
+    vm-file)     echo "placeholder-$1" > "$WORK/mk-$1/.vm" ;;
+    vm-dangling) ln -s nothere "$WORK/mk-$1/.vm" ;;
+    vm-dir)      ln -s tasks "$WORK/mk-$1/.vm" ;;
+    claude-dir)  ln -s tasks "$WORK/mk-$1/.claude" ;;
+    vm-main)     ln -s ../AdminHelper/.vm "$WORK/mk-$1/.vm" ;;
+  esac
+  echo "# plan $1" > "$WORK/mk-$1/tasks/$1.md"
+  git -C "$WORK/mk-$1" add -f -A
+  git -C "$WORK/mk-$1" -c user.name=t -c user.email=t@t commit -qm "$2"
+  g worktree remove "$WORK/mk-$1"
+}
+for what in vm-file vm-dangling vm-dir claude-dir; do
+  slug="par-$what" d=.vm; [ "$what" != claude-dir ] || d=.claude
+  # The main checkout's file only where the case copies it, as above.
+  rm -f "$MAIN/.claude/settings.local.json"
+  [ "$what" != claude-dir ] || printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json"
+  mk_branch "$slug" "$what"
+  lane new "$slug"; rc=$?
+  L="$WORK/AdminHelper-$slug"
+  [ "$rc" = 1 ] && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+    && grep -qF "lane.sh: $d in the lane is a symlink or no directory — nothing written there" "$WORK/out.log" \
+    && ! grep -q "lane $slug ready" "$WORK/out.log" \
+    && ok "$slug: a $d that is no real directory stops new, and nothing in the lane changes" \
+    || bad "new $slug rc=$rc: status=[$(git -C "$L" status --porcelain 2>&1)] out=$(cat "$WORK/out.log")"
+  lane "done" "$slug" && [ ! -e "$L" ] || bad "done $slug: $(cat "$WORK/out.log")"
+done
+rm -f "$MAIN/.claude/settings.local.json"
+# done reads its state only from the lane: with the lane's .vm pointing into the
+# main checkout, neither the main checkout's (fake) boxes nor its warm.env change.
+printf 'desktop=3001\nserver=3002\n' > "$MAIN/.vm/warm.env"; cp "$MAIN/.vm/warm.env" "$WORK/warm.env.mark"
+mk_branch par-vm-main vm-main
+lane new par-vm-main
+: > "$VM_LOG"
+lane "done" par-vm-main; rc=$?
+! grep -qE 'destroy.*\b300[12]\b' "$VM_LOG" && cmp -s "$MAIN/.vm/warm.env" "$WORK/warm.env.mark" \
+  && grep -q 'done reads no state from it' "$WORK/out.log" \
+  && ok "done with the lane's .vm pointing into the main checkout: its boxes and warm.env stay as they are" \
+  || bad "done par-vm-main rc=$rc: vm=[$(cat "$VM_LOG")] warm=[$(cat "$MAIN/.vm/warm.env")] out=$(cat "$WORK/out.log")"
+rm -f "$MAIN/.vm/warm.env"
+[ "$rc" = 0 ] && [ ! -e "$WORK/AdminHelper-par-vm-main" ] && [ ! -e "$MAIN/.vm/lanes/par-vm-main" ] \
+  && ok "... and that done still takes the lane down" || bad "done par-vm-main left the lane: rc=$rc"
+
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"
 export FAKE_CREATEDB_FAIL=1
