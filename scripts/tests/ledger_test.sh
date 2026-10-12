@@ -323,6 +323,34 @@ l lint fixture
 with_decl Assertion-Änderung "apps/server/tests/test_x.py::test_shape — "
 l lint fixture
 [ $rc -eq 1 ] && ok "a change with an empty reason is an error too" || bad "change empty reason: rc=$rc out=$OUT"
+# One line of each per task (R-0297): the gate reads only the first.
+with_lines() {  # with_lines <regex of task heads> <line>… — the clean fixture, the lines under each such head
+  local heads="$1"; shift
+  fresh_fixture
+  sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/verify.sh server --strict|' "$FIX"
+  L_HEADS="$heads" L_LINES="$(printf '%s\n' "$@")" awk '$0 ~ ENVIRON["L_HEADS"] {print; print ENVIRON["L_LINES"]; next} {print}' \
+    "$FIX" > "$FIX.new" && mv "$FIX.new" "$FIX"
+}
+CHG1="apps/server/tests/test_x.py::test_shape — der Sollwert trägt jetzt den Offset"
+CHG2="apps/server/tests/test_x.py::test_size — die Grenze ist jetzt 2"
+with_lines '^### T2 ' "Assertion-Änderung: $CHG1" "Assertion-Änderung: $CHG2"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  T2: two Assertion-Änderung: lines — diff-scan reads only the first" <<<"$OUT" \
+  && ok "two Assertion-Änderung: lines in one task are an error, with task and field" || bad "two change lines: rc=$rc out=$OUT"
+with_lines '^### T2 ' "Assertion-Änderung: $CHG1; $CHG2"
+l lint fixture
+[ $rc -eq 0 ] && ok "the same two entries in one line with ; lint clean" || bad "one change line: rc=$rc out=$OUT"
+with_lines '^### T2 ' "Test-Löschung: apps/server/tests/test_x.py::test_dead — kein Nutzer mehr" \
+  "Test-Löschung: apps/web/src/x.test.ts::adds up — ersetzt"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "ERROR  T2: two Test-Löschung: lines" <<<"$OUT" \
+  && ok "two Test-Löschung: lines in one task are an error too" || bad "two deletion lines: rc=$rc out=$OUT"
+with_lines '^### T(1|2) ' "Assertion-Änderung: $CHG1"
+l lint fixture
+[ $rc -eq 0 ] && ok "one Assertion-Änderung: line in each of two tasks lints clean" || bad "one line per task: rc=$rc out=$OUT"
+with_lines '^### T2 ' "Assertion-Änderung: $CHG1" "Test-Löschung: apps/server/tests/test_x.py::test_dead — kein Nutzer mehr"
+l lint fixture
+[ $rc -eq 0 ] && ok "one line of each kind in one task lints clean" || bad "one of each: rc=$rc out=$OUT"
 
 # Heavy: none | linux-full | scenario <flags> | windows — the head field that
 # replaces Fast-Suite:/Warm-Profil:. A free Heavy: text beside the old fields is

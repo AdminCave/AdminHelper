@@ -73,7 +73,7 @@ case "\$1" in
   version) echo "0.43.0-test" ;;
   provision)
     shift
-    if [ "\$1" = "--help" ] || printf '%s\n' "\$@" | grep -qx -- '--help'; then
+    if [ "\$1" = "--help" ] || grep -qx -- '--help' <<<"\$(printf '%s\n' "\$@")"; then
       if [ "\${AH_STUB_NO_CAFP:-0}" = 1 ]; then
         echo "Flags: --url --token --server-id --cacert --insecure"
       else
@@ -139,7 +139,7 @@ echo "── GPG fingerprint mismatch: abort before any source is written ──
 fresh_env; export AH_PKG_MGR=apt
 out=$(run_script --server https://srm.example.com --gpg-fp 0000000000000000000000000000000000000000); rc=$?
 [ $rc -ne 0 ] && ok "exits non-zero" || bad "mismatch did not fail"
-echo "$out" | grep -qi "mismatch" && ok "names the mismatch" || bad "no mismatch message"
+grep -qi "mismatch" <<<"$out" && ok "names the mismatch" || bad "no mismatch message"
 [ ! -e "$AH_APT_SOURCES_DIR/adminhelper.sources" ] && ok "no source file written" || bad "source written despite mismatch"
 [ ! -e "$WORK/apt-get.calls" ] || ! grep -q "install -y adminhelper-agent" "$WORK/apt-get.calls" \
     && ok "no package installed" || bad "package installed despite mismatch"
@@ -151,7 +151,7 @@ out=$(run_script --server https://srm.example.com --token t --server-id s \
 [ $rc -eq 0 ] && ok "exits 0" || bad "exit=$rc"
 grep -q -- "--insecure" "$WORK/provision.args" && ! grep -q -- "--ca-fp" "$WORK/provision.args" \
     && ok "fell back to --insecure" || bad "fallback args wrong: $(cat "$WORK/provision.args" 2>/dev/null)"
-echo "$out" | grep -qi "predates --ca-fp" && ok "warns about the version skew" || bad "no skew warning"
+grep -qi "predates --ca-fp" <<<"$out" && ok "warns about the version skew" || bad "no skew warning"
 
 echo "── dnf path: verified local gpgkey, sslverify flip after enroll ──"
 fresh_env; export AH_PKG_MGR=dnf
@@ -167,7 +167,7 @@ grep -q -- "--insecure" "$WORK/provision.args" && ok "no --ca-fp given -> TOFU" 
 echo "── argument validation ──"
 fresh_env; export AH_PKG_MGR=apt
 out=$(run_script --server https://s.example --token t --gpg-fp "$FP"); rc=$?
-[ $rc -ne 0 ] && echo "$out" | grep -q -- "--server-id" && ok "--token without --server-id refused" || bad "combo not refused"
+[ $rc -ne 0 ] && grep -q -- "--server-id" <<<"$out" && ok "--token without --server-id refused" || bad "combo not refused"
 out=$(run_script --token t --server-id s); rc=$?
 [ $rc -ne 0 ] && ok "missing --server refused" || bad "missing --server accepted"
 out=$(run_script --server http://plain.example); rc=$?
