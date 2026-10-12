@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-text: Review-Modell, Lane-Bedingung, Docker-Kommentar (R-0298, R-0299, R-0300) — Task-Ledger
-Status: bereit · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: erledigt · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0298, R-0299, R-0300, Triage Kevin 2026-10-11; CLAUDE.md ist die Vorlage, keine Änderung daran; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0298, R-0299, R-0300 (Kurz-Ledger ohne Spec)
 Heavy: none — Skill-Texte, AUTONOMOUS.md und zwei Kommentare unter scripts/tests mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
