@@ -359,11 +359,40 @@ for spec in "lnk-vm .vm/lane" "lnk-settings .claude/settings.local.json" "lnk-de
   g worktree remove "$WORK/mk-$slug"
   lane new "$slug"; rc=$?
   [ "$rc" = 1 ] && [ "$(cat "$MARK")" = untouched ] && [ ! -e "$GONE" ] \
-    && grep -qF "lane.sh: $f in the lane is a symlink or leads outside it — nothing written there" "$WORK/out.log" \
+    && grep -qF "lane.sh: $f exists in the lane already, is a symlink or leads outside it — nothing written there" "$WORK/out.log" \
     && grep -q "run: bash scripts/dev/lane.sh done $slug" "$WORK/out.log" \
     && ok "$slug: a file new writes that the branch tracks as a symlink out of the lane is not written through" \
     || bad "new $slug rc=$rc: mark=[$(cat "$MARK")] gone=$([ -e "$GONE" ] && echo exists || echo absent) out=$(cat "$WORK/out.log")"
   lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
+done
+rm -f "$MAIN/.claude/settings.local.json"
+# Whatever else the branch puts at such a path stops new as well, and nothing in the
+# lane changes: a regular file, a directory, and a symlink to a target in the lane
+# that does not exist (that one only [ -L ] sees).
+for spec in "vm .vm/lane" "settings .claude/settings.local.json" "devenv .devenv.sh"; do
+  for kind in file dir link; do
+    slug="ex-${spec%% *}-$kind" f="${spec#* }"
+    rm -f "$MAIN/.claude/settings.local.json"
+    case "$slug" in *settings*) printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json" ;; esac
+    g worktree add -q -b "feature/$slug" "$WORK/mk-$slug" main
+    case "$f" in */*) mkdir -p "$WORK/mk-$slug/${f%/*}" ;; esac
+    case "$kind" in
+      file) echo "placeholder-$slug" > "$WORK/mk-$slug/$f" ;;
+      dir)  mkdir -p "$WORK/mk-$slug/$f" && echo "placeholder-$slug" > "$WORK/mk-$slug/$f/x" ;;
+      link) ln -s "never-$slug.md" "$WORK/mk-$slug/$f" ;;
+    esac
+    echo "# plan $slug" > "$WORK/mk-$slug/tasks/$slug.md"
+    git -C "$WORK/mk-$slug" add -f "$f" "tasks/$slug.md"
+    git -C "$WORK/mk-$slug" -c user.name=t -c user.email=t@t commit -qm "a $kind at $f"
+    g worktree remove "$WORK/mk-$slug"
+    lane new "$slug"; rc=$?
+    L="$WORK/AdminHelper-$slug"
+    [ "$rc" = 1 ] && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+      && grep -qF "lane.sh: $f exists in the lane already, is a symlink or leads outside it — nothing written there" "$WORK/out.log" \
+      && ok "$slug: a $kind the branch puts at a file new writes stops new, and nothing in the lane changes" \
+      || bad "new $slug rc=$rc: status=[$(git -C "$L" status --porcelain 2>&1)] out=$(cat "$WORK/out.log")"
+    lane "done" "$slug" && [ ! -e "$L" ] || bad "done $slug: $(cat "$WORK/out.log")"
+  done
 done
 rm -f "$MAIN/.claude/settings.local.json"
 

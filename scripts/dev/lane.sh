@@ -243,12 +243,13 @@ lane_new() {
   # take it. Deriving the id from the directory name is gone — a file cannot be
   # guessed wrong by one side and right by the other.
   # The files new writes into the lane check their target first, as the links do
-  # (lane_inside): a path the branch tracks as a symlink, or one that leads out of
-  # the lane, stops new before anything is written there.
+  # (lane_inside). They are gitignored and the lane is new, so whatever stands at
+  # such a path came with the branch: a file, a directory, a symlink, or a path that
+  # leads out of the lane stops new before anything is written there.
   local f
   for f in .vm/lane .claude/settings.local.json .devenv.sh; do
-    if [ -L "$wt/$f" ] || ! lane_inside "$wt" "$f"; then
-      echo "  lane.sh: $f in the lane is a symlink or leads outside it — nothing written there"
+    if [ -e "$wt/$f" ] || [ -L "$wt/$f" ] || ! lane_inside "$wt" "$f"; then
+      echo "  lane.sh: $f exists in the lane already, is a symlink or leads outside it — nothing written there"
       echo "  run: bash scripts/dev/lane.sh done $slug"
       exit 1
     fi
