@@ -87,6 +87,9 @@ cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$CO/scripts/v
 echo "lane-a" > "$CO/.vm/lane"
 printf 'desktop=3001\n' > "$CO/.vm/warm.env"; cp "$CO/.vm/warm.env" "$WORK/co-warm.mark"
 export GIT_CEILING_DIRECTORIES="$WORK"
+# The fixtures are repositories of their own: an inherited GIT_DIR would make every
+# git -C below act on somebody else's index.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 # shellcheck source=/dev/null
 co_lane() { (unset AH_LANE; export AH_VM_STATE_DIR="$CO/.vm"; . "$CO/scripts/vm/lib.sh"; vm_lane) 2>&1; }
 out=$(co_lane); rc=$?
