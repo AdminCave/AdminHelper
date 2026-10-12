@@ -318,6 +318,18 @@ case "$CMD" in
         | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
         | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
     done
+    # One line of each per task: the gate reads only the first (review.sh
+    # task_field), so a second one would announce nothing (R-0297).
+    while IFS= read -r msg; do
+      echo "ERROR  $msg" >&2
+      RC=1
+    done < <(awk '
+      /^###[ \t]/ { id = $2; next }
+      /^## / { id = "" }
+      id != "" && match($0, /^(Test-Löschung|Assertion-Änderung):/) {
+        f = substr($0, 1, RLENGTH - 1)
+        if (++n[id, f] == 2) print id ": two " f ": lines — diff-scan reads only the first; join the entries with ; (tasks/README.md)"
+      }' "$LEDGER")
 
     # Heavy: none | linux-full | scenario <flags> | windows replaces Fast-Suite: and
     # Warm-Profil: (tasks/README.md). A free Heavy: text beside the old fields is

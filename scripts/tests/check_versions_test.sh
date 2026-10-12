@@ -65,7 +65,7 @@ run_case() {
   if [ "$rc" != "$want_rc" ]; then
     bad "$name: rc=$rc (expected $want_rc)"; printf '%s\n' "$out" | sed 's/^/       /'; return
   fi
-  if [ -n "$want" ] && ! printf '%s' "$out" | grep -qF "$want"; then
+  if [ -n "$want" ] && ! grep -qF "$want" <<<"$out"; then
     bad "$name: output does not mention '$want'"; printf '%s\n' "$out" | sed 's/^/       /'; return
   fi
   ok "$name"

@@ -2064,7 +2064,7 @@ pp origin main
 pg reset -q --hard "$R0"
 # main on the remote carries a key line already (pushed from a clone without the
 # hook); a branch that merges it brings no finding of its own.
-OTHER="$WORK/other"; git clone -q "$PREMOTE" "$OTHER"
+OTHER="$WORK/other"; git clone -q --no-local "$PREMOTE" "$OTHER"
 printf 'Dedup-%s: sec:%s\n' Key "old:main.md:line" > "$OTHER/docs/main.md"
 git -C "$OTHER" add -A; git -C "$OTHER" -c user.name=O -c user.email=o@example.invalid commit -qm "main has a key line"
 git -C "$OTHER" push -q origin main
@@ -2853,6 +2853,12 @@ grep -qF 'review.sh check-verdict "$VJSON" --tree "$TREE_HASH"' "$REPO_ROOT/scri
   && ok "task-close.sh delegates the verdict to check-verdict" || bad "task-close.sh checks the verdict itself"
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'review_scripts_test' \
   && ok "review_scripts_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
+
+# R-0287: a local clone copies or links the objects directory file by file, and
+# a file a parallel git process adds or removes there breaks it (R-0262); over
+# the transport (--no-local) it cannot.
+plain="$(grep -nE '^[^#]*git( -C [^ ]+)? clone ' "$HERE/review_scripts_test.sh" | grep -v -- '--no-local')"
+[ -z "$plain" ] && ok "every git clone of a fixture here uses --no-local" || bad "a local clone without --no-local: $plain"
 
 echo ""
 echo "review_scripts_test: $PASS passed, $FAIL failed"

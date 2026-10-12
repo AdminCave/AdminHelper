@@ -111,7 +111,7 @@ grep -q 'server:0.34.0' "$INST/.env" && ok "images pinned to ref" || bad "images
 # ── 2. fail-closed: a release tag with no bundle asset must abort, not raw-fetch
 INST="$WORK/inst2"
 out=$(run_install --ref v9.9.9 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'Kein verifiziertes Runtime-Bundle'; } \
+{ [ $rc -ne 0 ] && grep -q 'Kein verifiziertes Runtime-Bundle' <<<"$out"; } \
   && ok "missing bundle aborts (fail-closed, 3.29)" || bad "missing bundle did not abort: rc=$rc"
 [ ! -f "$INST/docker-compose.yml" ] && ok "no runtime files placed on abort" || bad "files placed despite abort"
 
@@ -119,7 +119,7 @@ out=$(run_install --ref v9.9.9 --dir "$INST" --domain t --admin-password sikrit1
 make_release 0.35.0 1
 INST="$WORK/inst3"
 out=$(run_install --ref v0.35.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -qE 'Signatur ungueltig|Checksumme'; } \
+{ [ $rc -ne 0 ] && grep -qE 'Signatur ungueltig|Checksumme' <<<"$out"; } \
   && ok "tampered bundle aborts" || bad "tamper not caught: rc=$rc"
 
 echo

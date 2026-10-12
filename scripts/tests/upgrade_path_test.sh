@@ -215,7 +215,7 @@ REL_JSON=""
 if ! REL_JSON=$(curl -fsSL --max-time 20 -H "Accept: application/vnd.github+json" \
         "$API/repos/AdminCave/AdminHelper/releases/tags/$PREV" 2>/dev/null); then
     bad "could not ask GitHub for the assets of $PREV — update.sh path not verified"
-elif printf '%s' "$REL_JSON" | grep -q "\"name\": *\"adminhelper-runtime-$PREV\.tar\.gz\""; then
+elif grep -q "\"name\": *\"adminhelper-runtime-$PREV\.tar\.gz\"" <<<"$REL_JSON"; then
     INST="$E2E_WORK/install"; mkdir -p "$INST/scripts"
     cp "$E2E_REPO_ROOT/docker-compose.yml" "$INST/"
     # .env.example is NOT optional: update.sh snapshots (docker-compose.yml,
@@ -279,7 +279,7 @@ elif printf '%s' "$REL_JSON" | grep -q "\"name\": *\"adminhelper-runtime-$PREV\.
         notrunning="$(printf '%s\n' "$states" | grep -v '^$' | grep -v ' running$' | paste -sd' ' -)"
         missing=""
         for svc in postgres server gateway ca-issuer monitoring; do
-            printf '%s\n' "$states" | grep -q "^$svc running$" || missing="$missing $svc"
+            grep -q "^$svc running$" <<<"$states" || missing="$missing $svc"
         done
         [ -z "$missing" ] && [ -z "$notrunning" ] \
             && ok "update.sh: the whole updated stack is up ($(printf '%s\n' "$states" | grep -c .) containers)" \
