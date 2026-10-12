@@ -1057,6 +1057,76 @@ def test_an_empty_lane_file_still_means_main(state_dir):
     assert vm.current_lane(environ={}) == "main"
 
 
+def checkout_with_lane(tmp_path, monkeypatch, git=True, tracked=False, lane=True):
+    """A checkout of its own as ROOT, its .vm/lane naming lane-a; git stops at tmp_path."""
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        monkeypatch.delenv(name, raising=False)
+    root = tmp_path / "checkout"
+    (root / ".vm").mkdir(parents=True)
+    if lane:
+        (root / ".vm" / "lane").write_text("lane-a\n")
+    if git:
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+    if tracked:
+        subprocess.run(["git", "-C", str(root), "add", "-f", ".vm/lane"], check=True)
+    monkeypatch.setattr(vm, "ROOT", str(root))
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(root / ".vm"))
+    return root
+
+
+def test_the_lane_is_not_read_from_tracked_state(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch, tracked=True)
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "tracks paths under .vm" in str(caught.value)
+    assert "lane-a" not in str(caught.value)
+    # Given by flag or environment, the file is not read and git is not asked.
+    assert vm.current_lane(environ={"AH_LANE": "from-env"}) == "from-env"
+    assert vm.current_lane(override="flag", environ={}) == "flag"
+
+
+def test_an_untracked_lane_file_is_read_as_before(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch)
+    assert vm.current_lane(environ={}) == "lane-a"
+
+
+def test_a_checkout_git_cannot_read_counts_as_tracked(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch, git=False)
+    with pytest.raises(vm.Usage):
+        vm.current_lane(environ={})
+
+
+def test_a_tracked_vm_without_a_lane_file_is_refused_too(tmp_path, monkeypatch):
+    # .vm itself is tracked, as a link to a directory with state and no lane file.
+    root = checkout_with_lane(tmp_path, monkeypatch, lane=False)
+    (root / ".vm").rmdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "warm.env").write_text("desktop=3001\n")
+    (root / ".vm").symlink_to(elsewhere)
+    subprocess.run(["git", "-C", str(root), "add", ".vm"], check=True)
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "tracks paths under .vm" in str(caught.value)
+
+
+def test_an_own_untracked_vm_without_a_lane_file_is_main(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch, lane=False)
+    assert vm.current_lane(environ={}) == "main"
+
+
+def test_a_state_dir_elsewhere_reads_its_lane_without_asking_git(tmp_path, monkeypatch):
+    # A tree whose .git leads nowhere (a box synced from a worktree), with the
+    # state in a directory of its own: the lane is read, git is not asked.
+    checkout_with_lane(tmp_path, monkeypatch, git=False, lane=False)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "lane").write_text("lane-b\n")
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(state))
+    assert vm.current_lane(environ={}) == "lane-b"
+
+
 def test_a_vm_is_found_by_id_or_by_name(cfg, api, http):
     http.add("GET", "/cluster/resources", "cluster_resources")
     assert vm.find_vm(cfg, api, "3001")["vmid"] == 3001
@@ -1918,6 +1988,86 @@ def test_destroy_of_a_selector_that_matches_nothing_is_not_an_error(cfg, api, ht
     purgeable(http)
     assert verb("destroy", cfg, api, "--lane", "nobody") == 0
     assert "nothing to destroy" in capsys.readouterr().out
+
+
+def test_destroy_refuses_a_named_vm_of_another_lane_and_destroys_nothing(cfg, api, http, clock):
+    # reap.sh names its warm slots with its lane, and 3000 is lane main's.
+    purgeable(http, 3000, 3001)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "3001", "--lane", "pilot")
+    assert "3000 is not --lane pilot (it carries lane-main)" in str(caught.value)
+    # Checked before the first destruction: 3001, which is pilot's, still stands.
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_refuses_before_it_destroys_a_vm_that_sorts_first(cfg, api, http, clock):
+    # 3000 matches and sorts first: a check made while destroying would take it
+    # before it reached 3001.
+    purgeable(http, 3000, 3001)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "3001", "--lane", "main")
+    assert "3001 is not --lane main (it carries lane-pilot)" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_holds_every_tag_of_a_prefix_not_the_first_of_a_set(cfg, api, http, clock):
+    tags, name = POOL_NOW[3001]
+    purgeable(http, now={3001: (tags + ";lane-main", name)})
+    for lane in ("pilot", "main"):
+        with pytest.raises(vm.Usage) as caught:
+            verb("destroy", cfg, api, "3001", "--lane", lane)
+        assert "(it carries lane-main, lane-pilot)" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_of_a_named_vm_with_its_lane_takes_that_vm_only(cfg, api, http, clock, capsys):
+    # 3000 is on lane pilot too: a lane next to a VMID narrows, it adds nothing.
+    pool = fixture("cluster_resources")
+    for entry in pool["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = entry["tags"].replace("lane-main", "lane-pilot")
+    http.add("GET", "/cluster/resources", body=pool["body"])
+    http.add(
+        "GET", "/qemu/3001/status/current", body=current_of(3001, tags=POOL_NOW[3001][0])["body"]
+    )
+    http.add("DELETE", "/qemu/3001", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    assert verb("destroy", cfg, api, "3001", "--lane", "pilot") == 0
+    assert "destroyed 3001" in capsys.readouterr().out
+    assert http.paths("DELETE") == ["https://pve.example:8006/api2/json/nodes/<node>/qemu/3001"]
+
+
+def test_destroy_holds_a_named_vm_against_fresh_tags_not_the_cache(cfg, api, http, clock):
+    # The listing still shows 3001 on lane pilot; the VM itself says lane main.
+    tags, name = POOL_NOW[3001]
+    purgeable(http, 3001, now={3001: (tags.replace("lane-pilot", "lane-main"), name)})
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--lane", "pilot")
+    assert "3001 is not --lane pilot (it carries lane-main)" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_holds_a_named_vm_against_role_and_scenario_too(cfg, api, http, clock):
+    purgeable(http)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--role", "probe")
+    assert "3001 is not --role probe (it carries role-server)" in str(caught.value)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "--scenario", "capstone")
+    assert "3000 is not --scenario capstone (it carries sc-none)" in str(caught.value)
+    # Every selector given must hold, not one of them.
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--lane", "pilot", "--role", "probe")
+    assert "3001 is not --role probe" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_names_a_missing_tag_when_it_refuses(cfg, api, http, clock):
+    purgeable(http, now={3000: ("ah;lane-main", POOL_NOW[3000][1])})
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "--role", "probe")
+    assert "3000 is not --role probe (it carries no role- tag)" in str(caught.value)
+    assert http.paths("DELETE") == []
 
 
 # ── reap ─────────────────────────────────────────────────────────────────────
