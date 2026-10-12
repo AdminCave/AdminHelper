@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket lane.sh: Passwort in der Query, Gruppe über `/`, Meldung bei Exit 3 (R-0265, R-0266, R-0269) — Task-Ledger
-Status: freigegeben · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0265, R-0266, R-0269, Triage Kevin 2026-10-10; R-0265 geschlossen fehlschlagen wie R-0255; Proben nur mit Platzhalter; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0265, R-0266, R-0269 (Kurz-Ledger ohne Spec)
 Heavy: none — scripts/dev/lane.sh mit dem hermetischen lane_test (Fake-createdb/-dropdb); kein Stack-, Gateway-, PKI- oder Install-Pfad.
