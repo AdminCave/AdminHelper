@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 3: Server- und Desktop-Entwicklerdoku nach dem Zertifikats-Register — Task-Ledger
-Status: freigegeben · Branch: feature/loop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/loop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0284, R-0285, R-0296, Loop-Futter aus Kevins Triage 2026-10-11; fuer den Builder-Loop geschnitten; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0284, R-0285, R-0296 (Kurz-Ledger ohne Spec)
 Heavy: none — Doku unter docs/developer (DE+EN) und ein Docstring in den Server-Tests; kein Code, kein Stack-, Gateway-, PKI- oder Install-Pfad.
