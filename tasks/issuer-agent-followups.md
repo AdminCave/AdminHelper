@@ -38,8 +38,10 @@ Semantik: keine Stelle in `docs/` — gesucht in `docs/developer/` und ADR 0001 
 Absicht steht im Code: `issuer.py:68-71` „it is a forgery and must be rejected cleanly here, never bubble up as a 500 at
 the issuer“.
 
-### T2 — Erneuern und Löschen derselben Identität laufen nacheinander (R-0292)  [ ]
-Komponente: ca-issuer server · Dateien: apps/ca-issuer/app/db.py, apps/ca-issuer/tests/test_db_token_store.py, apps/server/app/modules/enrollment/models.py, apps/server/tests/test_identity_revocation.py
+### T2 — Erneuern und Löschen derselben Identität laufen nacheinander (R-0292)  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/db.py, apps/ca-issuer/tests/test_db_token_store.py, apps/server/app/modules/enrollment/models.py, apps/server/tests/test_identity_revocation.py
+Evidenz: run.sh[quick] ca-issuer server: 5 passed, 0 failed, 13 skipped @f363b087 2026-10-12T11:01:36+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `revoke_identity` (Server, `enrollment/models.py:101-123`) und `DbTokenStore.renew` (ca-issuer, `db.py:239-285`)
 nehmen am Anfang ihrer Transaktion dieselbe Sperre auf die Identität (subject, scope), einen transaktionsweiten
 Advisory-Lock in Postgres. Damit sieht das Löschen auch eine Linie, die ein Erneuern gerade erst anlegt (`db.py:266-267`,
