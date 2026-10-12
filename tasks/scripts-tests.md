@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket scripts-tests: eingebaute Schreiber vor grep -q, lokale Klone, Ankündigung in einer Zeile (R-0286, R-0287, R-0297) — Task-Ledger
-Status: aktiv · Branch: harness/scripts-tests · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/scripts-tests · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0286, R-0287, R-0297, Triage Kevin 2026-10-11; Fragen: 1 Heavy linux-full statt none, 2 echo mitnehmen, 3 Variante (a) der Lint lehnt die Mehrzeilen-Form ab, 4 runner-setup.sh bleibt draussen; Bau erst nach dem Merge von #117; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0286, R-0287, R-0297 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — T1 ändert Zeilen in upgrade_path_test, integration_stack_test und backup_restore_test, die nur auf dem Stack laufen; `run.sh integration` auf einer Pool-VM belegt sie (Teststrategie der Aufsicht, 2026-10-11).
@@ -133,8 +133,10 @@ Semantik: wie T1.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T3 — ledger.sh lint lehnt eine zweite Ankündigungszeile je Task ab (R-0297)  [ ]
+### T3 — ledger.sh lint lehnt eine zweite Ankündigungszeile je Task ab (R-0297)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fbdcb8e4 2026-10-12T06:08:08+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `ledger.sh lint` (Schleife über `Test-Löschung` und `Assertion-Änderung`, :312) meldet eine Task, die eine der
   beiden Zeilenarten zweimal trägt, als Fehler mit Exit 1. Die Meldung: „<id>: two <field>: lines — diff-scan reads
