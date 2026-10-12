@@ -145,3 +145,20 @@ Semantik: harness-paths.txt :9–10 („Add a path here when changing it would c
 :49–50. Unter docs/ gibt es keine Stelle zu harness-paths.txt.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
+
+### T4 — lane_db lehnt eine Test-DB-URL ab, die kein UTF-8 ist  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5d1fa6af 2026-10-13T00:48:46+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 auf Entscheidung der Aufsicht (adminhelper-ac), aus dem Review am Ende (Opus, `approve`).
+- `lane_db` liest die URL mit Mustern, die UTF-8 erwarten. Ganz vorne lehnt es jetzt eine `AH_TEST_DB` ab, die kein
+  UTF-8 ist: Exit 3, ohne Wert in der Meldung. Die Prüfung ist dieselbe wie in T2 (`iconv -f UTF-8 -t UTF-16LE`).
+- Fälle in lane_test, mit Platzhaltern:
+  - ein Byte, das kein UTF-8 ist, im Passwort und eines im Nutzer. Beide Male: keine Lane, kein createdb, kein
+    Platzhalter in Ausgabe oder PG-Log.
+- nits aus dem Review:
+  - Die Fälle `%ff`/`%00` aus T2 bekommen einen eindeutigen Platzhalter und prüfen auch den dekodierten Wert.
+  - Ein Fall `%0A` am Ende prüft, dass der Zeilenumbruch in `PGPASSWORD` bleibt.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T2

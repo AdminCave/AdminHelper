@@ -74,6 +74,11 @@ lane_db_url() {  # the main checkout's AH_TEST_DB as a libpq URL, or nothing
 lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   local url pass=""
   url="$(lane_db_url)"
+  # The patterns below read UTF-8: a URL that is none is refused before them.
+  if ! printf '%s' "$url" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
+    echo "  lane.sh: AH_TEST_DB is no UTF-8" >&2
+    return 3
+  fi
   # The password travels in the environment, and not through `env`'s arguments
   # either: every local user can read a process's arguments (/proc/<pid>/cmdline),
   # only its owner its environment. The URL percent-encodes the password;

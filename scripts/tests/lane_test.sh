@@ -77,7 +77,7 @@ for c in server monitoring; do
 done
 for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota \
             qsec-ssl qsec-oauth qsec-scramc qsec-scrams qsec-upper qsec-pwupper qsec-mode \
-            dec-zz dec-4z dec-pct dec-trail dec-slash dec-uml dec-ff dec-nul; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+            dec-zz dec-4z dec-pct dec-trail dec-slash dec-uml dec-ff dec-nul dec-nl utf-pw utf-user; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -214,15 +214,33 @@ for pair in "dec-zz 50%zz" "dec-4z a%4zb" "dec-pct a%%41b" "dec-trail x%" "dec-s
   lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
 done
 # Bytes that are no UTF-8 once decoded, and a NUL, are refused, naming no value.
-for pair in "dec-ff pw%ffx|no UTF-8 once decoded" "dec-nul pw%00x|a NUL byte"; do
+for pair in "dec-ff plchold%ffx|no UTF-8 once decoded" "dec-nul plchold%00x|a NUL byte"; do
   slug="${pair%% *}" rest="${pair#* }"; pw="${rest%|*}" why="${rest#*|}"
   printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
     "postgresql+psycopg://ah:$pw@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
   : > "$PG_LOG"
   lane new "$slug"; rc=$?
   [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && grep -qF "$why" "$WORK/out.log" \
-    && ! grep -q 'pw%' "$WORK/out.log" && ok "$slug: refused, no createdb, no value printed" \
+    && ! grep -aq plchold "$WORK/out.log" && ok "$slug: refused, no createdb, no value printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+# A decoded newline at the end stays in PGPASSWORD, as unquote keeps it.
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah:x%0A@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane new dec-nl; rc=$?
+python3 -c 'import sys; sys.exit(0 if b"createdb pw=x\n --maintenance-db=" in open(sys.argv[1], "rb").read() else 1)' "$PG_LOG" \
+  && [ "$rc" = 0 ] && ok "dec-nl: a decoded newline at the end stays in PGPASSWORD" || bad "dec-nl: rc=$rc pg=$(cat "$PG_LOG")"
+lane "done" dec-nl || bad "done dec-nl: $(cat "$WORK/out.log")"
+# A URL that is no UTF-8, in the password or in the user: refused before anything.
+for pair in "utf-pw ah:plch\\xffold" "utf-user a\\xffh:plchold"; do
+  slug="${pair%% *}" userinfo="${pair#* }"
+  printf "export AH_TEST_DB=\"postgresql+psycopg://$userinfo@localhost:5432/adminhelper_test\"\nexport AH_VENV=\"\$HOME/.cache/ah-venv\"\n" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && grep -q 'AH_TEST_DB is no UTF-8' "$WORK/out.log" \
+    && ! grep -aq plchold "$WORK/out.log" && ok "$slug: a URL that is no UTF-8 means no createdb, no lane, no value printed" \
+    || bad "$slug: rc=$rc pg=$(cat -v "$PG_LOG") out=$(cat -v "$WORK/out.log")"
 done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
