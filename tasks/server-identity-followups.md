@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Logout, Agent-Routen und Aktivierung nach dem Zertifikats-Register — Task-Ledger
-Status: aktiv · Branch: feature/server-identity-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/server-identity-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0282, R-0283, R-0291, Triage Kevin 2026-10-11; R-0282 nach Kevins Wort vom 2026-10-12 Weg (b): Logout bleibt ungebunden und wird dokumentiert; kein Refuter; der Multibox-Lauf deckt auch issuer-agent-followups ab; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0282, R-0283, R-0291
 Heavy: linux-full + scenario --enforce --agents 1 --tunnel — Server-API unter mTLS: `run.sh integration` (Gateway, Login und Logout mit Client-Zertifikat, Agent-Routen) und ein Multibox-Lauf, weil die Agent-Pushes und die frpc-Config über den Netz-Hop mit dem Agent-Zertifikat laufen.
@@ -65,8 +65,10 @@ die frpc-Config ebenso (`frp/router.py:21`); die Zuordnung zur `server_id` des P
 HEAD: 40d3eb0a
 Semantik: `docs/admin/agent-deployment.html:148`: „Danach weist sich der Agent bei allen Server-Pushes mit diesem Cert aus“.
 
-### T3 — Aktivierung: zwei Aktivierungen desselben Servers laufen nacheinander (R-0291)  [ ]
+### T3 — Aktivierung: zwei Aktivierungen desselben Servers laufen nacheinander (R-0291)  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/router.py, apps/server/tests/test_provisioning.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @a2ce38b7 2026-10-12T13:03:43+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `activate_provision` (`provisioning/router.py:107`) sperrt die Zeile des Servers für die Dauer der Aktivierung
 (`SELECT … FOR NO KEY UPDATE`, statt der Abfrage `:131`), bevor es die Keys des Servers ersetzt (`:151-155`). Eine zweite
 Aktivierung mit einem anderen Token wartet, sieht danach den Key der ersten und ersetzt ihn. Am Ende bleibt genau ein
