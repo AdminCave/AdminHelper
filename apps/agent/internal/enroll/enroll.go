@@ -146,10 +146,17 @@ func Store(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) error {
 	return commit()
 }
 
+// storableProbe is what CheckStorable writes per file: more than Store writes (a key
+// PEM, a fullchain, a chain, each well under 4 KiB) and one block of the usual 4 KiB,
+// because an empty file needs no data block and would pass on a disk without free space.
+// Not zeros: a compressing file system stores a block of zeros as a hole.
+var storableProbe = bytes.Repeat([]byte("x"), 4096)
+
 // CheckStorable reports whether dir can take a new identity: the staged writes Store
-// does, without content, removed again. A provisioning runs it before the enrollment
-// request, because that request already names the earlier certificate as replaced and
-// the issuer revokes its line at once (R-0293). Only the files it created are removed.
+// does, with placeholders of their size, fsynced and removed again. A provisioning runs
+// it before the enrollment request, because that request already names the earlier
+// certificate as replaced and the issuer revokes its line at once (R-0293). It removes
+// the files it created; whatever stood at a probe path before stays.
 func CheckStorable(dir string) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create the identity directory: %w", err)
@@ -162,10 +169,14 @@ func CheckStorable(dir string) error {
 		}
 	}()
 	for _, p := range []string{KeyPath(dir) + tmpSuffix, CertPath(dir) + tmpSuffix, CAPath(dir) + tmpSuffix} {
-		if err := writeFileSync(p, nil, 0600); err != nil {
+		// Remove only what the check itself puts there, also when the write fails after
+		// the file was created; whatever stood at the path before stays.
+		if _, err := os.Lstat(p); os.IsNotExist(err) {
+			created = append(created, p)
+		}
+		if err := writeFileSync(p, storableProbe, 0600); err != nil {
 			return err
 		}
-		created = append(created, p)
 	}
 	return nil
 }

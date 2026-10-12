@@ -63,8 +63,8 @@ ausgestellt wurden, am Server wie beim Erneuern.“
 
 ### T3 — Agent: Neu-Provisionieren prüft vor dem Antrag, dass die Identität geschrieben werden kann (R-0293)  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/enroll_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/internal/enroll/client.go
-Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @08f24804 2026-10-12T11:03:33+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @900f5a87 2026-10-12T11:37:28+02:00
+Review: Review am Ende (Opus): r1 request_changes, 1 wichtig (leere Probe ohne Datenblock) behoben, r2 approve, 2 nits erledigt
 Änderung: `runEnrollment` (`provision.go:240-272`) prüft vor `enroll.Submit` (`:268`), dass das Identitäts-Verzeichnis
 die neue Identität aufnehmen kann: ein Probe-Schreiben der gestagten Dateien wie in `stageIdentity` (`enroll.go:161`),
 danach wieder entfernt. Scheitert das, bricht die Provisionierung vor dem Antrag ab; das bisherige Zertifikat und seine
