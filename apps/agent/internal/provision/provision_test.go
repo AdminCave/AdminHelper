@@ -261,3 +261,76 @@ func TestRunEnrollmentNamesTheLeafItReplaces(t *testing.T) {
 		t.Fatalf("replaces = %v, erwartet %q", got, want)
 	}
 }
+
+// R-0293: the enrollment request lets the issuer revoke the earlier line at once, so a
+// re-provisioning asks only for an identity this host can store.
+
+// provisionedOnce provisions once against srv and leaves an old leaf on disk.
+func provisionedOnce(t *testing.T, srv *httptest.Server, info *enrollmentInfo) string {
+	t.Helper()
+	if err := runEnrollment(srv.URL, info, "", true); err != nil {
+		t.Fatalf("erste Provisionierung: %v", err)
+	}
+	dir := config.AgentPkiDir()
+	leaf := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(enroll.CertPath(dir), leaf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestRunEnrollmentRequestsNothingWhenTheIdentityCannotBeStored(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	requests := 0
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_ = json.NewEncoder(w).Encode(map[string]string{"cert": "c", "fullchain": "fullchain", "chain": "chain"})
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	info := &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}
+	dir := provisionedOnce(t, srv, info)
+	before, _ := os.ReadFile(enroll.CertPath(dir))
+
+	// The staged cert cannot be written: its temp path is taken by a directory. A chmod
+	// would not do, Store and the check set the directory to 0700 themselves.
+	if err := os.Mkdir(enroll.CertPath(dir)+".tmp", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := runEnrollment(srv.URL, info, "", true); err == nil {
+		t.Fatal("erwartet Fehler, wenn die Identität nicht gespeichert werden kann")
+	}
+	if requests != 1 {
+		t.Fatalf("erwartet keinen zweiten Enroll-Aufruf, der Issuer bekam %d", requests)
+	}
+	if after, _ := os.ReadFile(enroll.CertPath(dir)); !bytes.Equal(after, before) {
+		t.Fatal("das bisherige Zertifikat wurde verändert")
+	}
+}
+
+func TestRunEnrollmentNamesTheWayOutWhenStoringFailsAfterTheRequest(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	block := false
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// The disk gives out between the check and Store: block the staged cert now.
+		if block {
+			_ = os.Mkdir(enroll.CertPath(config.AgentPkiDir())+".tmp", 0o755)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"cert": "c", "fullchain": "fullchain", "chain": "chain"})
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	info := &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}
+	provisionedOnce(t, srv, info)
+
+	block = true
+	err := runEnrollment(srv.URL, info, "", true)
+	if err == nil {
+		t.Fatal("erwartet Fehler, wenn Store nach dem Antrag scheitert")
+	}
+	if !strings.Contains(err.Error(), "adminhelper-agent provision") {
+		t.Fatalf("Fehler ohne den Befehl zum Neu-Provisionieren: %v", err)
+	}
+}

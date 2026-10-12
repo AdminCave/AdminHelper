@@ -710,3 +710,18 @@ def test_nothing_is_taken_over_without_an_install_time():
     installed = now - datetime.timedelta(days=1)
     assert legacy_admitted(installed - datetime.timedelta(seconds=1), installed, now) is True
     assert legacy_admitted(installed, installed, now) is False
+
+
+# R-0290: a signature algorithm cryptography does not know raises UnsupportedAlgorithm
+# when the issuer asks for its hash; that is a refusal like any other, not a 500.
+_ECDSA_SHA256_OID = bytes.fromhex("06082a8648ce3d040302")  # 1.2.840.10045.4.3.2
+_UNKNOWN_SIGNATURE_OID = bytes.fromhex("06082a8648ce3d040309")  # 1.2.840.10045.4.3.9
+
+
+def test_renew_rejects_a_cert_with_an_unknown_signature_algorithm(client):
+    der = _leaf(_self_signed_leaf("admin", "access")).public_bytes(serialization.Encoding.DER)
+    assert der.count(_ECDSA_SHA256_OID) == 2  # the TBS signature field and the outer one
+    odd = x509.load_der_x509_certificate(der.replace(_ECDSA_SHA256_OID, _UNKNOWN_SIGNATURE_OID))
+    pem = odd.public_bytes(serialization.Encoding.PEM).decode()
+    r = client.post("/renew", json={"csr": _csr_pem("admin")}, headers=_renew_headers(pem))
+    assert 400 <= r.status_code < 500, r.text

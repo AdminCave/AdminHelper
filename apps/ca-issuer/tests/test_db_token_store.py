@@ -12,7 +12,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
 from app import db
@@ -224,3 +224,135 @@ def test_a_deprovisioning_while_signing_refuses_the_renewal(pg_engine):
     with pytest.raises(RenewalRefused):
         store.renew(current, "agent-13", "tunnel", "agent", sign)
     assert store.line_of(CertRecord.of(successor).fingerprint) is None, "nothing was recorded"
+
+
+# --- R-0292: renewing and revoking one identity go one after the other ------------------
+
+
+def _transition_open(engine) -> None:
+    # The register was installed a day from now: an unrecorded certificate is taken over.
+    with engine.begin() as conn:
+        conn.execute(
+            db.certificate_register_state.insert().values(
+                id=1, installed_at=db._now_naive() + datetime.timedelta(days=1)
+            )
+        )
+
+
+def _revoke(conn, subject_id: str, scope: str) -> None:
+    """What the server's revoke_identity does, from the issuer's view of the tables."""
+    conn.execute(text(db.IDENTITY_LOCK_SQL), {"subject_id": subject_id, "scope": scope})
+    now = db._now_naive()
+    conn.execute(
+        db.revoked_identities.insert().values(
+            id=str(uuid.uuid4()), subject_id=subject_id, scope=scope, revoked_at=now
+        )
+    )
+    conn.execute(
+        db.device_lines.update()
+        .where(
+            db.device_lines.c.subject_id == subject_id,
+            db.device_lines.c.scope == scope,
+            db.device_lines.c.revoked_at.is_(None),
+        )
+        .values(revoked_at=now, revoked_reason="admin")
+    )
+
+
+def _blocked(engine, pid: int, timeout: float = 10.0) -> bool:
+    # A fresh connection per look: pg_stat_activity keeps its snapshot for a transaction.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as probe:
+            waiting = probe.execute(
+                text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"),
+                {"pid": pid},
+            ).scalar()
+        if waiting:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _waits_for(engine, blocker_pid: int, timeout: float = 10.0) -> bool:
+    """Whether some session waits for a lock that ``blocker_pid`` holds."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as probe:
+            waiting = probe.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))"
+                ),
+                {"pid": blocker_pid},
+            ).scalar()
+        if waiting:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_renewal_that_takes_over_waits_for_a_revocation_and_is_refused(pg_engine):
+    _transition_open(pg_engine)
+    store = db.DbTokenStore(pg_engine)
+    current, successor = _self_signed("agent-21", "tunnel"), _self_signed("agent-21", "tunnel")
+    revocation = pg_engine.connect()
+    ex = ThreadPoolExecutor(max_workers=1)
+    try:
+        tx = revocation.begin()
+        revocation_pid = revocation.execute(text("SELECT pg_backend_pid()")).scalar()
+        _revoke(revocation, "agent-21", "tunnel")
+        renewing = ex.submit(
+            store.renew,
+            CertRecord.of(current),
+            "agent-21",
+            "tunnel",
+            "agent",
+            lambda: (successor, {}),
+        )
+        assert _waits_for(pg_engine, revocation_pid), "the renewal must wait for the revocation"
+        assert not renewing.done()
+        tx.commit()
+        with pytest.raises(RenewalRefused):
+            renewing.result(10)
+    finally:
+        revocation.close()
+        ex.shutdown(wait=True)
+    assert store.line_of(CertRecord.of(successor).fingerprint) is None, "nothing was recorded"
+
+
+def test_a_revocation_waits_for_a_renewal_that_takes_over_and_covers_its_line(pg_engine):
+    _transition_open(pg_engine)
+    store = db.DbTokenStore(pg_engine)
+    current, successor = _self_signed("agent-22", "tunnel"), _self_signed("agent-22", "tunnel")
+    signing, release = threading.Event(), threading.Event()
+
+    def sign():
+        signing.set()  # the new line exists, not yet committed
+        release.wait(10)
+        return successor, {}
+
+    revocation = pg_engine.connect()
+    revocation_pid = revocation.execute(text("SELECT pg_backend_pid()")).scalar()
+    revocation.commit()
+
+    def revoke():
+        with revocation.begin():
+            _revoke(revocation, "agent-22", "tunnel")
+
+    ex = ThreadPoolExecutor(max_workers=2)
+    try:
+        renewing = ex.submit(
+            store.renew, CertRecord.of(current), "agent-22", "tunnel", "agent", sign
+        )
+        assert signing.wait(10)
+        revoking = ex.submit(revoke)
+        assert _blocked(pg_engine, revocation_pid), "the revocation must wait for the renewal"
+        assert not revoking.done()
+        release.set()
+        renewing.result(10)
+        revoking.result(10)
+    finally:
+        release.set()
+        ex.shutdown(wait=True)
+        revocation.close()
+    assert store.line_of(CertRecord.of(successor).fingerprint).revoked_reason == "admin"
