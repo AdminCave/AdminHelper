@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-guard: AH-STATUS zeigt nur Rollen und VM-IDs, Nachträge aus lane-state-guard (R-0331) — Task-Ledger
-Status: aktiv · Branch: harness/status-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/status-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-12: sofort; lane.sh lane_vm_untracked ohne eigenen Fall wie empfohlen; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0331 (Kurz-Ledger ohne Spec)
 Heavy: none — session-status.sh, heavy.sh, lib.sh, vm.py und lane.sh mit hermetischen Tests: session_status_test mit Fixture-Repo, heavy_test mit Shims, lib_vm_test und test_vm mit tmp-Repos und Fake-API; nur Platzhalter, keine VM, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -88,8 +88,10 @@ Semantik:
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T3 — Die Sperre fragt git ohne geerbtes GIT_DIR (R-0331)  [ ]
+### T3 — Die Sperre fragt git ohne geerbtes GIT_DIR (R-0331)  [x]
 Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/vm/vm.py, scripts/dev/lane.sh, scripts/tests/lib_vm_test.sh, scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ea8e8ac6 2026-10-13T01:30:14+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Die drei Stellen der Sperre (lib.sh :84, vm.py :564, lane.sh :144) fragen `git ls-files -- .vm` unter der geerbten
   Umgebung.

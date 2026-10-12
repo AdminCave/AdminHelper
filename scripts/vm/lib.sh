@@ -74,14 +74,16 @@ vm_py() {
 # to `main` here and may not there. `lane.sh new` only ever writes [a-z0-9-].
 # The checkout's own .vm is gitignored state: in a checkout that tracks paths under
 # .vm it is not read, whether the lane comes from AH_LANE, --lane or the lane file,
-# and a git that cannot say counts as tracked. reap.sh, warm.sh and iter.sh call
+# and a git that cannot say counts as tracked; an inherited GIT_DIR, GIT_WORK_TREE
+# or GIT_INDEX_FILE would make git read another index. reap.sh, warm.sh and iter.sh call
 # this before they touch warm.env. A state dir elsewhere is its caller's to vouch
 # for (lane.sh done, the tests). vm.py's current_lane() refuses the same way, with
 # the same exit code.
 vm_lane() {
   local lane="${AH_LANE:-}" tracked
   if [ "$(realpath -m -- "$AH_VM_STATE_DIR")" = "$(realpath -m -- "$VM_ROOT/.vm")" ] \
-    && { ! tracked="$(git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" || [ -n "$tracked" ]; }; then
+    && { ! tracked="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" \
+         || [ -n "$tracked" ]; }; then
     echo "vm_lib: this checkout tracks paths under .vm — state there is not read" >&2
     return 2
   fi

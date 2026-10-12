@@ -1090,6 +1090,19 @@ def test_the_lane_is_not_read_from_tracked_state(tmp_path, monkeypatch):
     assert "tracks paths under .vm" in str(caught.value)
 
 
+def test_a_foreign_git_dir_in_the_environment_does_not_answer_for_the_checkout(
+    tmp_path, monkeypatch
+):
+    checkout_with_lane(tmp_path, monkeypatch, tracked=True)
+    foreign = tmp_path / "foreign"
+    subprocess.run(["git", "init", "-q", str(foreign)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(foreign / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "empty.index"))
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "tracks paths under .vm" in str(caught.value)
+
+
 def test_an_untracked_lane_file_is_read_as_before(tmp_path, monkeypatch):
     checkout_with_lane(tmp_path, monkeypatch)
     assert vm.current_lane(environ={}) == "lane-a"
