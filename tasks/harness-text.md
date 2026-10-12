@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-text: Review-Modell, Lane-Bedingung, Docker-Kommentar (R-0298, R-0299, R-0300) — Task-Ledger
-Status: bereit · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0298, R-0299, R-0300, Triage Kevin 2026-10-11; CLAUDE.md ist die Vorlage, keine Änderung daran; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0298, R-0299, R-0300 (Kurz-Ledger ohne Spec)
 Heavy: none — Skill-Texte, AUTONOMOUS.md und zwei Kommentare unter scripts/tests mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -140,3 +140,21 @@ Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md (eine Stelle); der Skill-Text ist die Anleitung
 Abhängt von: T3
+
+### T5 — Nachbesserung aus Runde 2: whole_branch_opus teilt nur am Satzende (R-0298)  [ ]
+Komponente: scripts · Dateien: scripts/tests/skill_consistency_test.sh
+Änderung: Angelegt 2026-10-12 aus dem Re-Review von T4 (Opus, Runde 2, `request_changes`: ein belegter Fund, drei
+nits). Nach der Regel der zweiten Runde behoben, mit den Fällen des Reviewers als Tests; eine dritte Runde gibt es
+nicht.
+- `whole_branch_opus` (T4) teilte mit `tr '.'` an jedem Punkt, auch in `review.sh` und `CLAUDE.md`. Ein „Sonnet“
+  oder „nicht“ hinter einem solchen Punkt sah die Prüfung nicht mehr. Drei Texte kamen deshalb als `ok` durch:
+  - „Über den ganzen Branch läuft er auf Opus nur bei einem Risikopfad (`review.sh risk`), sonst auf Sonnet.“
+  - „Den Review über den ganzen Branch fährt Opus (CLAUDE.md §2) nicht mehr, sondern Sonnet.“
+  - „Nicht Opus fährt den Review über den ganzen Branch.“
+- Neu: Die Prüfung teilt nur an `.`, `!` oder `?` vor Leerraum oder am Ende, wie `plan_on_main`. Das Ausschlusswort
+  zählt ohne Rücksicht auf Groß- und Kleinschreibung. Die drei Fälle kommen als Fixtures dazu, der Kommentar sagt
+  es richtig.
+- Nit aus derselben Runde: `lane_vm_cap` erkennt auch „höchstens ein Vorhaben“ (`höchstens[[:space:]]+ein`).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Test)
+Abhängt von: T4
