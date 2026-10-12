@@ -25,8 +25,10 @@ Vorab geprüft:
 - R-0251 (gemergt, PR #109) hat dieselbe Klasse wie R-0267 in ledger-loop.sh gelöst: `re.split(r"(?<=\n)", text)`,
   denn `splitlines()` trennt auch an `\x0b`, `\x0c`, `\x1c`–`\x1e`, `\x85` und U+2028/9.
 
-### T1 — review-run.sh baut den Prompt nur an \n (R-0267)  [ ]
+### T1 — review-run.sh baut den Prompt nur an \n (R-0267)  [x]
 Komponente: scripts · Dateien: scripts/dev/review-run.sh, scripts/tests/review_run_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e97d8d55 2026-10-12T14:07:03+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Der Ledger-Text für den Prompt (:150) wird mit `split("\n")` statt `splitlines()` zerlegt.
   - Mit `splitlines()` beendet eine Zeile von T1, die ein U+2028 vor `### T9 — …` trägt, für den Reviewer den

@@ -47,10 +47,15 @@ Spec: docs/features/fix.md (Roadmap R-0001)
 ### T1 — x returns 2  [ ]
 Komponente: scripts · Dateien: apps/x/a.py, apps/x/new.py
 Änderung: x returns 2 instead of 1.
+SEP-LINE
+Rest: T1-TAIL-MARKER
 
 ### T2 — something else  [ ]
 Komponente: scripts · Dateien: apps/x/b.py
 EOF
+# R-0267: a line of T1 that carries U+2028 and a heading after it stays one line of T1.
+LS=$'\xe2\x80\xa8'
+sed -i "s/^SEP-LINE\$/Note: one line${LS}### T9 — not a task/" "$FIX/tasks/fix.md"
 printf 'def x():\n    return 1\n' > "$FIX/apps/x/a.py"
 printf '# rules\n' > "$FIX/CLAUDE.md"
 printf '.ah-out/\ntasks/private/\n' > "$FIX/.gitignore"
@@ -62,8 +67,9 @@ git -C "$FIX" add -A && git -C "$FIX" commit -qm "base"
 # private repository that must never reach the reviewer.
 printf 'def x():\n    return 2\n' > "$FIX/apps/x/a.py"
 printf 'NEW_FILE_BODY = 1\n' > "$FIX/apps/x/new.py"
+printf 'ODD = 1\n' > "$FIX/apps/x/odd${LS}name.py"
 printf 'PRIVATE-MARKER\n' > "$FIX/tasks/private/secret.md"
-git -C "$FIX" add apps/x/a.py apps/x/new.py && git -C "$FIX" add -f tasks/private/secret.md
+git -C "$FIX" add apps/x/a.py apps/x/new.py "apps/x/odd${LS}name.py" && git -C "$FIX" add -f tasks/private/secret.md
 cat > "$FIX/.ah-out/last-verify.json" <<'EOF'
 {"layer": "quick", "strict": true, "only": "scripts", "passed": 6, "failed": 0, "skipped": 12, "reruns": 0,
  "tree_hash": "1111111111111111111111111111111111111111", "finished": "2026-10-03T10:19:44Z", "steps": []}
@@ -228,6 +234,10 @@ grep -q '^### T1 — x returns 2' "$P" && grep -q 'x returns 2 instead of 1' "$P
   && ok "the task's text (only T1), the spec path and the verify summary" || bad "prompt: task/spec/verify"
 grep -q '^- apps/x/new.py$' "$P" && grep -q '^+    return 2$' "$P" && grep -q 'NEW_FILE_BODY' "$P" \
   && ok "the new files and the staged diff" || bad "prompt: diff/new files"
+grep -q 'T1-TAIL-MARKER' "$P" && grep -qF "Note: one line${LS}### T9 — not a task" "$P" \
+  && ok "a U+2028 and a heading inside a line of T1: the reviewer still gets all of T1 (R-0267)" || bad "prompt: T1 cut at a U+2028"
+grep -qxF -- "- apps/x/odd${LS}name.py" "$P" \
+  && ok "a new file whose name holds a U+2028 is one line under New files" || bad "prompt: a new file name split at a U+2028"
 ! grep -q 'PRIVATE-MARKER\|tasks/private' "$P" && ok "nothing from tasks/private/, though it is staged" || bad "tasks/private leaked into the prompt"
 cmp -s "$P" "$VDIR/T1.r1.prompt.md" && ok "the kept prompt is what the reviewer got" || bad "prompt.md differs from stdin"
 # A harness path in the diff makes it xhigh: opus with the larger caps.
