@@ -49,12 +49,12 @@
           </table>
 
           <h2>Router Overview</h2>
-          <p>Eleven top-level routers under <code>apps/server/app/modules/</code>; each module bundles models, schemas and routes.</p>
+          <p>Twelve top-level routers under <code>apps/server/app/modules/</code>; each module bundles models, schemas and routes.</p>
           <table>
             <thead><tr><th>Prefix</th><th>Module</th><th>Purpose</th></tr></thead>
             <tbody>
               <tr><td><code>/api/auth</code></td><td><code>modules/users/auth_router.py</code></td><td>Login, refresh (cookie <em>or</em> body), logout, <code>/me</code>.</td></tr>
-              <tr><td><code>/api/users</code></td><td><code>modules/users/</code></td><td>User CRUD (admin), <code>/me/servers</code> for self access.</td></tr>
+              <tr><td><code>/api/users</code></td><td><code>modules/users/</code></td><td>User CRUD (admin), <code>/me/servers</code> for self access, <code>/{id}/devices</code>: list a user's devices, revoke one (admin).</td></tr>
               <tr><td><code>/api/connections</code></td><td><code>modules/connections/</code></td><td>Connection CRUD, <code>/touch</code>, <code>/export</code>, <code>/import</code> (replace/merge).</td></tr>
               <tr><td><code>/api/servers</code></td><td><code>modules/servers/</code></td><td>Server inventory with user assignments; cleanup hook to monitoring on delete.</td></tr>
               <tr><td><code>/api/api-keys</code></td><td><code>modules/api_keys/</code></td><td>API keys with <code>read</code> or <code>read_write</code> permission, SHA-256 hashed.</td></tr>
@@ -62,6 +62,7 @@
               <tr><td><code>/api/hooks</code></td><td><code>modules/hooks/</code></td><td>Hook CRUD, public <code>/trigger/{token}</code>, <code>/run</code> for manual test, <code>/rotate</code> for webhook token.</td></tr>
               <tr><td><code>/api/ansible/playbooks</code></td><td><code>modules/ansible/</code></td><td>Playbook CRUD with YAML validation, disk storage under <code>/data/ansible/playbooks/{id}/</code>.</td></tr>
               <tr><td><code>/api/servers/{id}/provision</code></td><td><code>modules/provisioning/</code></td><td>Server-centric provisioning: token lifecycle and activate (FRP-independent). Returns server API key, optional monitor key, optional FRP bundle.</td></tr>
+              <tr><td><code>/api/enrollment</code></td><td><code>modules/enrollment/router.py</code></td><td>One-time enrollment tokens: <code>POST /token</code> for the logged-in user (self-service), <code>POST /token/for</code> issued by an admin for another user (ADR 0003). <code>POST /self/revoke</code>: a device revokes itself, identified by its client certificate, without a JWT.</td></tr>
               <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Four sub-routers: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> for the running FRPC sync.</td></tr>
               <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy.py</code></td><td>Reverse proxy to the monitoring microservice; public agent push endpoint <code>/agent/{id}/report</code>.</td></tr>
             </tbody>
@@ -143,7 +144,7 @@ allowUsers = ["ops-admin"]</code></pre>
           <p>The TLS wiring in <code>frps.toml</code>/<code>frpc.toml</code> is produced by the <code>config_generator</code>: the server block (<code>force = true</code>) points at the issuer-provisioned material under <code>/etc/frp-pki</code>; the agent block (<code>enable = true</code>) at the enrolled tunnel cert under <code>/etc/adminhelper/identity</code>; the visitor block at the desktop's exported enrolled identity (<code>{{IDENTITY_DIR}}</code> placeholder, replaced by the desktop with absolute paths at runtime).</p>
 
           <h2>SQLAlchemy Models</h2>
-          <p>Tables live in their respective modules (e.g. <code>modules/users/models.py</code>). The schema is managed by <strong>Alembic</strong> (<code>apps/server/alembic/</code>): <code>docker-entrypoint.sh</code> runs <code>alembic upgrade head</code> before startup. The former SQLite approach (<code>Base.metadata.create_all()</code> at startup plus idempotent <code>_migrate_add_columns()</code> PRAGMA migrations) was dropped with the move to Postgres. The test suite, by contrast, builds the schema directly via <code>Base.metadata.create_all()</code> and checks for drift between models and migrations with <code>test_alembic_consistency.py</code>.</p>
+          <p>Tables live in their respective modules (e.g. <code>modules/users/models.py</code>). The schema is managed by <strong>Alembic</strong> (<code>apps/server/alembic/</code>): <code>docker-entrypoint.sh</code> runs <code>alembic upgrade head</code> before startup. The former SQLite approach (<code>Base.metadata.create_all()</code> at startup plus idempotent <code>_migrate_add_columns()</code> PRAGMA migrations) was dropped with the move to Postgres. The test suite, by contrast, builds the schema directly via <code>Base.metadata.create_all()</code>; <code>test_alembic_builtin.py</code> and <code>test_migrations_smoke.py</code> check for drift between models and migrations (see Tests).</p>
           <ul>
             <li><code>User</code> &harr; <code>Server</code> (n:m via <code>user_servers</code>), <code>TokenBlacklist</code></li>
             <li><code>Server</code> (UUID PK, JSON tags, <code>os_type</code>) &harr; <code>Connection</code> (n:1, <code>server_id</code> nullable for standalone)</li>
@@ -209,7 +210,7 @@ allowUsers = ["ops-admin"]</code></pre>
     &#9492;&#9472;&#9472; ca.crt, frps.crt, frps.key   # published subset &mdash; NO ca.key, NO client keys</code></pre>
 
           <h2>Tests</h2>
-          <p>Pytest suite under <code>server/tests/</code>. Tests run against a <strong>real Postgres 17</strong> via <code>testcontainers</code> (local) or <code>services: postgres:17-alpine</code> (CI). SAVEPOINT pattern in the <code>db_session</code> fixture: outer transaction + <code>begin_nested</code> + <code>after_transaction_end</code> listener — tests can call <code>commit()</code>, everything is rolled back at the end. Plus <code>test_alembic_consistency.py</code> as drift detector between <code>Base.metadata</code> and Alembic migrations.</p>
+          <p>Pytest suite under <code>server/tests/</code>. Tests run against a <strong>real Postgres 17</strong> via <code>testcontainers</code> (local) or <code>services: postgres:17-alpine</code> (CI). SAVEPOINT pattern in the <code>db_session</code> fixture: outer transaction + <code>begin_nested</code> + <code>after_transaction_end</code> listener — tests can call <code>commit()</code>, everything is rolled back at the end. Plus two drift detectors between <code>Base.metadata</code> and the Alembic migrations: <code>test_alembic_builtin.py</code> runs pytest-alembic's built-in tests (exactly one head, every revision in order, models match the DDL after the full run, every revision survives a down-and-up round trip) and one data migration with data; <code>test_migrations_smoke.py</code> checks that <code>upgrade head</code> on an empty database yields the models.</p>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code>cd apps/server
