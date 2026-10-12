@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 3: Server- und Desktop-Entwicklerdoku nach dem Zertifikats-Register — Task-Ledger
-Status: aktiv · Branch: feature/loop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/loop-kleinpaket-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0284, R-0285, R-0296, Loop-Futter aus Kevins Triage 2026-10-11; fuer den Builder-Loop geschnitten; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0284, R-0285, R-0296 (Kurz-Ledger ohne Spec)
 Heavy: none — Doku unter docs/developer (DE+EN) und ein Docstring in den Server-Tests; kein Code, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -69,8 +69,10 @@ Dedup-Key: ref:docs:server.html:alembic-consistency-test
 HEAD: bf41e8d8
 Semantik: `apps/server/tests/test_alembic_builtin.py:5-12`, wie in T1.
 
-### T3 — desktop.html: Zurücksetzen widerruft zuerst am Server, DE und EN (R-0296)  [ ]
+### T3 — desktop.html: Zurücksetzen widerruft zuerst am Server, DE und EN (R-0296)  [x]
 Komponente: scripts · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @91fd810d 2026-10-12T17:00:46+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: Der Punkt zu `reset_device_identity` (`desktop.html:129`, EN ebenso) beschreibt nur das Löschen. Der Ablauf
 ist (`apps/desktop/src-tauri/src/enrollment.rs:262-330`):
 - Zuerst widerruft der Client das Gerät am Server mit genau diesem Zertifikat: `POST /api/enrollment/self/revoke` über
