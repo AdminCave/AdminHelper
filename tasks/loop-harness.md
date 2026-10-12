@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket loop-harness: doc-smoke in der Bau-Session, kein Hintergrund, redteam-Klone (R-0304, R-0301, R-0303) — Task-Ledger
-Status: bereit · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0304, R-0301, R-0303, Triage Kevin 2026-10-11/12; R-0304 als gezielte Allow-Regel nur fuer das lesende doc-smoke.py; R-0301 an der Doku belegt; R-0303 mit differentiellem Orakel, eine geaenderte Probe ist [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0304, R-0301, R-0303 (Kurz-Ledger ohne Spec)
 Heavy: none — Runner-Settings, ledger-loop.sh, ein Skill-Text und Shell-Tests unter scripts/ mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -26,10 +26,10 @@ Vorab geprüft:
   - Die Prüfung der echten Doku läuft heute nur im CI (`ci.yml:844`, „Documentation smoke test“,
     `python3 scripts/dev/doc-smoke.py --paths --env --strict`), nicht in `run.sh` und nicht in `task-close.sh`.
   - `doc-smoke.py` ist lesend: Es ruft `git ls-files` und `git grep` auf, liest Dateien und gibt Funde aus. `--root`
-    liest einen anderen Checkout, schreibt aber nichts. Korrektur aus dem Review am Ende (T4): Mit `--root` führt
-    `git ls-files` die Git-Konfiguration des fremden Repos aus. Deshalb gilt die Regel nur für den CI-Befehl ohne
+    liest einen anderen Checkout, schreibt aber nichts. Korrektur aus dem Review am Ende (T4): Mit `--root` führen
+    `git ls-files` und `git grep` die Git-Konfiguration des fremden Repos aus. Deshalb gilt die Regel nur für den CI-Befehl ohne
     `--root`.
-  - Die Regel ist eng gefasst und erlaubt genau dieses Skript: `Bash(python3 scripts/dev/doc-smoke.py:*)`.
+  - Die Regel erlaubt seit T4 genau den CI-Befehl: `Bash(python3 scripts/dev/doc-smoke.py --paths --env --strict)`.
   - Alternative wäre doc-smoke in `run.sh` oder `task-close.sh`. Das ist größer und ändert jeden Lauf, also nicht in
     diesem Paket.
 - **R-0301, gegen die Claude-Code-Doku geprüft (WebFetch, 2026-10-12):**
@@ -160,3 +160,23 @@ Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (der Skill-Text ist die Anleitung)
 Abhängt von: T3
+
+### T5 — Nachbesserung aus Runde 2: erwartet ist nur ein Fund auf eine neue Datei (R-0304)  [ ]
+Komponente: scripts · Dateien: .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh
+Änderung: Angelegt 2026-10-12 aus dem Re-Review von T4 (Opus, Runde 2, `request_changes`: ein belegter Fund, drei nits).
+Nach der Regel der zweiten Runde behoben, mit dem Fall des Reviewers als Test; eine dritte Runde gibt es nicht.
+- Der Satz aus T4 in `/build-task` erklärte jeden Fund auf „eine Datei oder einen Namen, den erst deine Task anlegt“ für
+  erwartet.
+  - doc-smoke liest aber Namen per `git grep` aus den getrackten Dateien im Arbeitsbaum.
+  - Ein Name, den die Task in eine schon getrackte Datei schreibt (`config.py`), ist also kein Fund. Ein gemeldeter Name
+    ist dann fast immer ein echter Fehler, etwa `AH_FOO_TIMEOUTS` in der Doku gegen `AH_FOO_TIMEOUT` in `config.py`.
+  - Neu: Erwartet ist bis zum Commit nur ein Fund auf eine Datei, die die Task neu anlegt, oder auf einen Namen, der nur
+    in einer solchen neuen Datei steht. Jeden anderen Fund behebt die Session.
+  - Einen Pfad, den die Task löscht oder umbenennt, sucht sie selbst in der Doku, denn bis zum Commit steht er noch im
+    Index.
+- `skill_consistency_test` prüft den Satz. Eine Fixture mit dem Satz aus T4 fällt.
+- Im Ledger widersprach „Vorab geprüft“ (R-0304) der eigenen Korrektur, denn dort stand noch die Regel mit `:*`. Das ist
+  im Commit, der diese Task anlegt, berichtigt.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (der Skill-Text ist die Anleitung)
+Abhängt von: T4
