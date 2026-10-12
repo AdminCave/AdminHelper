@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Installer: die Zusammenfassung nennt den Desktop-Knopf, wie er heißt — Task-Ledger
-Status: bereit · Branch: feature/install-wording · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/install-wording · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0242, Triage Kevin 2026-10-09; Heavy none ist die Teststrategie der Aufsicht, weil kein schwerer Pfad install.sh ausfuehrt und install_test.sh die Zeile hermetisch faehrt; ASCII-Umlaut; EN-Text nicht in diesem Paket; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0242 (Kurz-Ledger ohne Spec)
 Heavy: none — kein Multibox- oder linux-full-Pfad führt `scripts/install.sh` aus (`box_serverbox.sh` startet den Stack mit compose, `multibox.sh` ruft nur `agent-install.sh`); die geänderte Zeile ist Text im Heredoc der Zusammenfassung, und `install_test.sh` (Unit-Layer, `scripts`) fährt `install.sh` hermetisch bis zu dieser Ausgabe.
