@@ -99,9 +99,11 @@ class RevokedIdentity(Base):
     revoked_at = Column(DateTime, server_default=utc_now_sql())
 
 
-# The lock the ca-issuer's renewal takes as well (apps/ca-issuer/app/db.py, the same
-# statement, compared by a test): revoking an identity and renewing one of its
-# certificates go one after the other (R-0292).
+# The lock on an identity (R-0292, R-0306): taken by revoke_identity and by whoever
+# creates a line for the identity, the take-over in admit_certificate here and the
+# enrollment and the renewal at the ca-issuer (apps/ca-issuer/app/db.py, the same
+# statement, compared by a test). So revoking an identity and creating a line for it go
+# one after the other.
 IDENTITY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext(:subject_id), hashtext(:scope))"
 
 
@@ -293,6 +295,11 @@ def admit_certificate(
         if serial is None or not_after is None:
             return False
         if not legacy_admitted(not_before, installed_at, utcnow_naive()):
+            return False
+        # A take-over creates a line: wait for a revocation of the identity that is
+        # running, then look at its point in time once more (R-0306).
+        db.execute(text(IDENTITY_LOCK_SQL), {"subject_id": cn, "scope": scope})
+        if is_identity_revoked(db, cn, scope, not_before):
             return False
         _take_over(db, cn, scope, fingerprint, serial, not_before, not_after)
         line = line_of(db, fingerprint)

@@ -128,9 +128,11 @@ def activate_provision(
     if token.server_id != server_id:
         raise HTTPException(status_code=403, detail="Token gehoert nicht zu diesem Server")
 
-    # FOR NO KEY UPDATE on the server row: a second activation of the same server (with
-    # another token) waits until this one is done, then replaces its key, so one key
-    # stays (R-0291). The weaker lock still lets foreign keys to the server through.
+    # FOR NO KEY UPDATE on the server row, held until the activation commits, after the
+    # API key, the monitor key and the enrollment token all exist: a second activation of
+    # the same server (with another token) waits, then replaces all of them, so what the
+    # agent gets comes from one activation (R-0291, R-0311). The weaker lock still lets
+    # foreign keys to the server through.
     server = db.query(Server).filter(Server.id == server_id).with_for_update(key_share=True).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
@@ -164,19 +166,10 @@ def activate_provision(
         server_id=server_id,  # bound to exactly this server (IDOR protection)
     )
     db.add(api_key)
-    db.commit()
-    for old_key in replaced:
-        audit.record(
-            db,
-            "apikey.deleted",
-            object_type="api_key",
-            object_id=old_key.id,
-            object_label=old_key.name,
-            detail="replaced by a new provisioning of the server",
-            actor=actor_from_request(request),
-        )
+    replaced_keys = [(old_key.id, old_key.name) for old_key in replaced]
 
-    # 2. Monitor agent key (resilient: None on error)
+    # 2. Monitor agent key (resilient: None on error). The monitoring service keeps one
+    # key per server and replaces it here; it does not call back into this database.
     monitor_key = fetch_or_skip_monitor_key(server_id)
 
     # 3. FRP bundle (only if FRP is configured + tunnels exist)
@@ -188,6 +181,20 @@ def activate_provision(
     # consumes by) and TTL stay in lockstep with the HTTP enrollment path (2.51);
     # identity (CN) is the stable server_id, not the client's CSR.
     raw_enroll_token = mint_enrollment_token(db, server_id, SCOPE_AGENT)
+    # The end of the activation: the spent provision token, the keys and the enrollment
+    # token at once (mint_enrollment_token commits as well), and the server row is free
+    # again. The audit entries commit on their own, so they come after it.
+    db.commit()
+    for key_id, key_name in replaced_keys:
+        audit.record(
+            db,
+            "apikey.deleted",
+            object_type="api_key",
+            object_id=key_id,
+            object_label=key_name,
+            detail="replaced by a new provisioning of the server",
+            actor=actor_from_request(request),
+        )
     audit.record(
         db,
         "enrollment.token.minted",

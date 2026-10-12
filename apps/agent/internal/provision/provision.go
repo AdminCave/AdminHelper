@@ -259,6 +259,15 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 		return err
 	}
 	dir := config.AgentPkiDir()
+	// An identity issued for another server is one this server never accepts (R-0283):
+	// drop it before asking, so a failed enrollment leaves the agent on its API key, as
+	// the best-effort enrollment promises (R-0312).
+	if cn := enroll.LeafCommonName(dir); cn != "" && cn != info.SubjectID {
+		if err := enroll.RemoveIdentity(dir); err != nil {
+			return fmt.Errorf("drop the identity of server %q: %w", cn, err)
+		}
+		fmt.Printf("→ Dropped the identity of server %q: this host is provisioned for %q now.\n", cn, info.SubjectID)
+	}
 	// The request below lets the issuer revoke the earlier line at once: ask only for an
 	// identity this host can store (R-0293).
 	if err := enroll.CheckStorable(dir); err != nil {

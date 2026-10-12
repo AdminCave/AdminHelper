@@ -582,6 +582,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   faellt. Sonst antwortet der Server mit 403 `ERR_CERT_REVOKED`, auch bei `MTLS_ENFORCE=false`. Erneuert wird nur ein
   Zertifikat, das vom Intermediate seines eigenen Scopes signiert ist. Zertifikate von vor dem Update werden beim
   ersten Kontakt uebernommen; das geht 90 Tage ab dem Update, danach gilt nur noch, was erfasst ist.
+- **Ein Enrollment-Token gilt nur fuer eine Identitaet, die noch besteht (R-0306):** Ein Token, das bis zum Loeschen
+  seines Benutzers oder Servers ausgestellt und noch nicht eingeloest wurde, stellt danach kein Zertifikat mehr aus.
+  Wer eine Geraete-Linie anlegt (Enroll, Erneuern, die Uebernahme eines Zertifikats von vor dem Register) und wer eine
+  Identitaet widerruft, laufen nacheinander.
 - **Ein Agent-Zertifikat gilt nur fuer den eigenen Server (R-0283):** An den Routen eines Servers, dem Agent-Report
   und der frpc-Config, muss der CN eines Agent-Zertifikats die `server_id` des Pfads sein. Sonst antwortet der Server
   mit 403 `ERR_CERT_SERVER_MISMATCH`, auch bei `MTLS_ENFORCE=false`. Ein Admin mit seinem access-Zertifikat liest die

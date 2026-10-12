@@ -246,6 +246,38 @@ func LeafFingerprint(dir string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// LeafCommonName is the CN of the leaf stored in dir — the server ID an agent
+// identity was issued for — or "" when there is none to read.
+func LeafCommonName(dir string) string {
+	if !Provisioned(dir) {
+		return ""
+	}
+	pemBytes, err := os.ReadFile(CertPath(dir))
+	if err != nil {
+		return ""
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return ""
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return ""
+	}
+	return leaf.Subject.CommonName
+}
+
+// RemoveIdentity deletes the identity in dir: key, certificate and CA. A file that is
+// not there is fine.
+func RemoveIdentity(dir string) error {
+	for _, p := range []string{KeyPath(dir), CertPath(dir), CAPath(dir)} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", filepath.Base(p), err)
+		}
+	}
+	return nil
+}
+
 // writeFileSync writes data to path with the given mode and fsyncs it, so the
 // bytes are durable before the rename that activates the staged file.
 func writeFileSync(path string, data []byte, perm os.FileMode) error {

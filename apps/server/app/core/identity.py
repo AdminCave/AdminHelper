@@ -121,7 +121,7 @@ CERT_SERVER_MISMATCH = (
 
 
 # The 403 for a certificate the register refuses: revoked, or not recorded after the
-# transition (R-0224). The desktop keys its hint off the code, as with the one above.
+# transition (R-0224). The desktop keys its hint off the code, as with CERT_USER_MISMATCH.
 CERT_REVOKED = (
     "ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the device "
     "identity and register the device again."

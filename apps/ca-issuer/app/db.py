@@ -61,6 +61,9 @@ enrollment_tokens = Table(
     Column("browser", Boolean, nullable=False),
     Column("expires_at", DateTime, nullable=False),
     Column("used_at", DateTime, nullable=True),
+    # When the server minted the token (its own column default): a token minted at or
+    # before the revocation of its identity enrolls nothing (R-0306).
+    Column("created_at", DateTime, nullable=True),
 )
 
 revoked_identities = Table(
@@ -111,12 +114,13 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-# The lock both writers of an identity's device lines take, held to the end of their
-# transaction (R-0292): the server when it revokes the identity (revoke_identity), the
-# issuer when it renews. A renewal that takes over an unrecorded certificate creates a
-# line no concurrent revocation could see before; with the lock one of them goes first.
-# The server keeps the same statement (app/modules/enrollment/models.py), a test there
-# compares the two.
+# The lock on an identity, held to the end of the transaction (R-0292, R-0306): taken by
+# whoever revokes the identity (the server's revoke_identity) and by whoever creates a
+# line for it (here the enrollment and the renewal; at the server the take-over in
+# admit_certificate). A line created in the same moment as a revocation is otherwise one
+# the revocation does not see until it is committed; with the lock one of them goes
+# first. The server keeps the same statement (app/modules/enrollment/models.py), a test
+# there compares the two.
 IDENTITY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext(:subject_id), hashtext(:scope))"
 
 
@@ -161,7 +165,10 @@ class DbTokenStore:
         self._engine = engine
 
     @staticmethod
-    def _consume(conn: Connection, token: str, now: datetime.datetime) -> EnrollmentGrant | None:
+    def _consume(
+        conn: Connection, token: str, now: datetime.datetime
+    ) -> tuple[EnrollmentGrant, datetime.datetime | None] | None:
+        """The grant of a usable token, spent now, with the time it was minted."""
         stmt = (
             update(enrollment_tokens)
             .where(
@@ -174,18 +181,21 @@ class DbTokenStore:
                 enrollment_tokens.c.subject_id,
                 enrollment_tokens.c.scope,
                 enrollment_tokens.c.browser,
+                enrollment_tokens.c.created_at,
             )
         )
         row = conn.execute(stmt).first()
         if row is None:
             return None
-        return EnrollmentGrant(
+        grant = EnrollmentGrant(
             subject_id=row.subject_id, scope=row.scope, browser=bool(row.browser)
         )
+        return grant, row.created_at
 
     def consume(self, token: str) -> EnrollmentGrant | None:
         with self._engine.begin() as conn:
-            return self._consume(conn, token, _now_naive())
+            consumed = self._consume(conn, token, _now_naive())
+        return consumed[0] if consumed else None
 
     def enroll(
         self, token: str, sign: Signer, replaces: str | None = None
@@ -194,8 +204,15 @@ class DbTokenStore:
         # fails, the rollback leaves the token unspent and nothing half-recorded.
         now = _now_naive()
         with self._engine.begin() as conn:
-            grant = self._consume(conn, token, now)
-            if grant is None:
+            consumed = self._consume(conn, token, now)
+            if consumed is None:
+                return None
+            grant, minted_at = consumed
+            # A token minted at or before the revocation of its identity is spent and
+            # enrolls nothing, like an unknown one; the lock waits for a revocation that
+            # is running (R-0306).
+            _lock_identity(conn, grant.subject_id, grant.scope)
+            if not self._active(conn, grant.subject_id, grant.scope, minted_at):
                 return None
             leaf, response = sign(grant)
             record = CertRecord.of(leaf)
