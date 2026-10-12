@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-rest: Prompt nur an \n, Lane-Links in der Lane, pve.env gleich gelesen (R-0267, R-0252, R-0253) — Task-Ledger
-Status: bereit · Branch: harness/harness-rest · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/harness-rest · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0267, R-0252, R-0253, Triage Kevin 2026-10-09/10; Frage 1: ungueltiges UTF-8 gehoert in T3, runner-env.sh lehnt es ebenfalls ab; pve.env nur als Fixture mit Platzhaltern; T2 erst nach dem Merge von lane-paket; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0267, R-0252, R-0253 (Kurz-Ledger ohne Spec)
 Heavy: none — review-run.sh, lane.sh, runner-env.sh und vm.py mit hermetischen Tests (Fake-CLI, Fixture-Repos, Platzhalter-pve.env); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -204,3 +204,21 @@ belegten Funden.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Abhängt von: T5
+
+### T7 — Nachbesserung aus Runde 2 zu T6: auch die Elternpfade, und Schreiben schlägt laut fehl  [ ]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Änderung: Angelegt 2026-10-12 aus dem Re-Review von T6 (Opus, Runde 2, `request_changes`). Nach der Regel der zweiten
+Runde behoben, mit den Fällen des Reviewers als Tests; eine dritte Runde gibt es nicht.
+- Die Prüfung aus T6 sah auf den Pfad selbst, nicht auf sein Elternverzeichnis.
+  - Trägt der Branch `.vm` als Datei oder als hängenden Link, scheitert `mkdir -p` in der `&&`-Kette. `set -e` greift
+    dort nicht, und `new` endete mit Exit 0 ohne die Kennung der Lane.
+  - Ein Elternpfad, der als Symlink innerhalb der Lane bleibt, schrieb die Dateien an eine andere Stelle der Lane.
+    `done` nannte die Lane danach unsauber.
+- Neu: Das Elternverzeichnis eines solchen Pfads muss fehlen oder ein echtes Verzeichnis sein, kein Symlink. Die
+  Schreibschritte enden bei einem Fehler laut (Exit 1, Hinweis auf `done`) statt still.
+- Fälle in lane_test: `.vm` als Datei, `.vm` als hängender Link, `.vm` als Link auf ein Verzeichnis der Lane und das
+  zweite Elternverzeichnis als Link in die Lane.
+  - Erwartet: Exit 1, `git status --porcelain` der Lane leer, `done` räumt ab.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T6
