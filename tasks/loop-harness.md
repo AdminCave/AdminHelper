@@ -48,7 +48,7 @@ Vorab geprüft:
     `remote.origin.receivepack`, einen pre-push-Hook). Mit `--no-local` läuft beim Klonen `git-upload-pack` in `$FC`.
     Der Bau zeigt, dass sich dadurch keine Probe und keine Marke ändert (T3).
 
-### T1 — Die Bau-Session darf doc-smoke fahren (R-0304)  [ ]
+### T1 — Die Bau-Session darf doc-smoke fahren (R-0304)  [?] (hooks_test hält Kevins Entscheidung aus R-0237 fest: python3 nur mit einem Skript unter scripts/vm. Die Allow-Regel Bash(python3 scripts/dev/doc-smoke.py:*) bricht diese Prüfung, und der Plan kündigte das nicht an. Vorschlag: die Regel aus R-0237 auf doc-smoke.py erweitern (scripts/dev ist per deny Edit(./scripts/dev/**) für die Session ebenso wenig schreibbar wie scripts/vm), mit Plan-Korrektur und Kevins Wort; sonst T1 überspringen. Der Bau liegt als Patch bereit.)
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh
 Änderung:
 - `runner-settings.json` bekommt in `allow` die Regel `Bash(python3 scripts/dev/doc-smoke.py:*)`, neben
