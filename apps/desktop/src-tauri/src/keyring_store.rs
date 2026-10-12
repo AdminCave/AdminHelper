@@ -85,7 +85,7 @@ pub fn delete(key: &str) -> Result<(), AppError> {
 }
 
 /// While the guard lives, this thread's keyring is a map in memory, empty at the
-/// start; dropping the guard throws it away and switches back to the OS store. One
+/// start; dropping the guard throws it away and switches back to no store. One
 /// thread, one map: each `#[test]` and each current-thread `#[tokio::test]` has its
 /// own, so tests share nothing.
 #[cfg(test)]
@@ -242,7 +242,7 @@ mod tests {
             let _keyring = memory();
             set("b", "2").unwrap();
         }
-        // Dropping the guard switched back to the OS store.
+        // Dropping the guard switched back to no store.
         assert!(memory_backend::with(|_| ()).is_none());
         let _keyring = memory();
         assert_eq!(get("b"), None);
@@ -265,6 +265,8 @@ mod tests {
     #[test]
     fn without_a_guard_a_test_reaches_no_store() {
         assert!(set("d", "1").is_err());
+        // The test build refuses, not a store that happens to be unreachable.
+        assert!(matches!(set("d", "1"), Err(AppError::Keyring(m)) if m == NO_KEYRING_IN_TESTS));
         assert_eq!(get("d"), None);
         assert!(matches!(try_get("d"), Ok(None)));
         assert!(delete("d").is_ok());
