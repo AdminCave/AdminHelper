@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Logout, Agent-Routen und Aktivierung nach dem Zertifikats-Register — Task-Ledger
-Status: bereit · Branch: feature/server-identity-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/server-identity-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0282, R-0283, R-0291, Triage Kevin 2026-10-11; R-0282 nach Kevins Wort vom 2026-10-12 Weg (b): Logout bleibt ungebunden und wird dokumentiert; kein Refuter; der Multibox-Lauf deckt auch issuer-agent-followups ab; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0282, R-0283, R-0291
 Heavy: linux-full + scenario --enforce --agents 1 --tunnel — Server-API unter mTLS: `run.sh integration` (Gateway, Login und Logout mit Client-Zertifikat, Agent-Routen) und ein Multibox-Lauf, weil die Agent-Pushes und die frpc-Config über den Netz-Hop mit dem Agent-Zertifikat laufen.
