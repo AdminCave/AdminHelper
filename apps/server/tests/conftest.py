@@ -124,8 +124,11 @@ def pg_engine():
     - Otherwise -> testcontainers starts a Postgres 17-alpine container.
 
     Create the schema once per session via Base.metadata.create_all
-    (faster than alembic upgrade head; Alembic drift is checked separately
-    against the models set in test_alembic_consistency.py).
+    (faster than alembic upgrade head). Drift between the models and the
+    Alembic chain is checked separately: test_alembic_builtin.py runs
+    pytest-alembic's built-in tests, among them models match DDL, and
+    test_migrations_smoke.py checks that upgrade head on an empty database
+    produces the models.
     """
     env_url = os.environ.get("DATABASE_URL", "").strip()
     if env_url:

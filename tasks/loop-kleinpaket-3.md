@@ -52,8 +52,10 @@ Semantik: `apps/server/tests/test_alembic_builtin.py:5-12` (die vier eingebauten
 match the DDL after the full run“); `server.html:52`: „11 Top-Level-Router unter `apps/server/app/modules/`; jedes Modul
 kapselt Models, Schemas und Routen.“
 
-### T2 — Server-Tests: der Docstring von pg_engine nennt den richtigen Drift-Test (R-0284)  [ ]
+### T2 — Server-Tests: der Docstring von pg_engine nennt den richtigen Drift-Test (R-0284)  [x]
 Komponente: server · Dateien: apps/server/tests/conftest.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @a4e93f62 2026-10-12T16:34:40+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: Der Docstring der Fixture `pg_engine` (`conftest.py:120-129`) sagt, der Drift zwischen Modellen und Alembic
 werde „separately against the models set in test_alembic_consistency.py“ geprüft. Er nennt künftig
 `test_alembic_builtin.py` (pytest-alembic, unter anderem Modelle gleich DDL) und `test_migrations_smoke.py`. Nur der
