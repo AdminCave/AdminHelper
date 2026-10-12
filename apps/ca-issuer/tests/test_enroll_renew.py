@@ -740,3 +740,73 @@ def test_enroll_refuses_a_token_minted_before_its_identity_was_deprovisioned(cli
     store.mint("new", EnrollmentGrant(subject_id="bob", scope="access"))
     issued = client.post("/enroll", json={"token": "new", "csr": _csr_pem("bob")})
     assert issued.status_code == 200, issued.text
+
+
+# R-0295: the in-memory store takes an unrecorded certificate over only with a renewal
+# that succeeds, as the DbTokenStore does in one transaction.
+
+
+def _taken_over_store() -> tuple[InMemoryTokenStore, CertRecord]:
+    """A store whose transition still runs and a certificate it never recorded."""
+    store = InMemoryTokenStore(installed_at=_now_naive() + datetime.timedelta(days=1))
+    return store, CertRecord.of(_leaf(_self_signed_leaf("old-device", "tunnel")))
+
+
+def test_a_failed_signing_takes_nothing_over():
+    store, current = _taken_over_store()
+
+    def sign():
+        raise RuntimeError("signing failed")
+
+    with pytest.raises(RuntimeError):
+        store.renew(current, "old-device", "tunnel", "agent", sign)
+    assert store.line_of(current.fingerprint) is None
+
+
+def test_a_renewal_refused_after_signing_takes_nothing_over():
+    store, current = _taken_over_store()
+    successor = _leaf(_self_signed_leaf("old-device", "tunnel"))
+
+    def sign():
+        store.deprovision("old-device", "tunnel", at=current.not_before)
+        return successor, {}
+
+    with pytest.raises(RenewalRefused):
+        store.renew(current, "old-device", "tunnel", "agent", sign)
+    assert store.line_of(current.fingerprint) is None
+    assert store.line_of(CertRecord.of(successor).fingerprint) is None
+
+
+def test_a_successful_renewal_takes_the_certificate_over():
+    store, current = _taken_over_store()
+    successor = _leaf(_self_signed_leaf("old-device", "tunnel"))
+
+    response = store.renew(
+        current, "old-device", "tunnel", "agent", lambda: (successor, {"a": "b"})
+    )
+    assert response == {"a": "b"}
+    line = store.line_of(current.fingerprint)
+    assert (line.legacy, line.kind, line.subject_id, line.scope) == (
+        True,
+        "agent",
+        "old-device",
+        "tunnel",
+    )
+    assert store.line_of(CertRecord.of(successor).fingerprint).line_id == line.line_id
+
+
+def test_of_two_renewals_taking_one_certificate_over_the_later_is_refused():
+    store, current = _taken_over_store()
+    earlier = _leaf(_self_signed_leaf("old-device", "tunnel"))
+    later = _leaf(_self_signed_leaf("old-device", "tunnel"))
+
+    def sign():
+        # Another renewal of the same certificate completes while this one signs.
+        store.renew(current, "old-device", "tunnel", "agent", lambda: (earlier, {}))
+        return later, {}
+
+    with pytest.raises(RenewalRefused):
+        store.renew(current, "old-device", "tunnel", "agent", sign)
+    line = store.line_of(current.fingerprint)
+    assert store.line_of(CertRecord.of(earlier).fingerprint).line_id == line.line_id
+    assert store.line_of(CertRecord.of(later).fingerprint) is None
