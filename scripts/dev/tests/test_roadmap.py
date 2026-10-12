@@ -416,7 +416,7 @@ def spawn_add(p: pathlib.Path, title: str) -> subprocess.Popen[str]:
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
-NEW_HEADER = "Stand: 2026-09-25 · WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 3/20 · ALT: 0"
+NEW_HEADER = "Stand: 2026-09-25 · WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 3/20 · ALT: 0"
 OLD_HEADER = "Stand: 2026-09-20 · WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0"
 
 
@@ -926,7 +926,7 @@ def test_the_header_follows_the_move(tmp_path: pathlib.Path) -> None:
     p = aged(write(tmp_path, CLEAN))
     assert status(p, "R-0004", "bereit") == 0
     assert (
-        "Stand: 2026-09-25 · WIP: aktiv 0/1 · bereit 1/2 · pr 0/3 · neu 2/20 · ALT: 0"
+        "Stand: 2026-09-25 · WIP: aktiv 0/2 · bereit 1/2 · pr 0/3 · neu 2/20 · ALT: 0"
         in p.read_text(encoding="utf-8")
     )
 
@@ -1017,7 +1017,7 @@ def test_show_wip_counts_the_rows_not_the_header(
 ) -> None:
     p = write(tmp_path, CLEAN.replace("neu 2/20", "neu 7/20"))
     assert run(p, "show", "--wip") == 0
-    assert capsys.readouterr().out == "WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0\n"
+    assert capsys.readouterr().out == "WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0\n"
 
 
 def test_show_one_row(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1038,7 +1038,7 @@ def test_show_the_overview(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
         "1. R-0003 erst das, dann das",
         "2. Kevin, Handarbeit: irgendwas",
     ]
-    assert "WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0" in out
+    assert "WIP: aktiv 1/2 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0" in out
     assert "  R-0004  FEAT  aktiv (T2/5)  " + long[:89] + "…" in out
     assert "  R-0005  BUG   neu  Ein Fehler" in out
     # History is counted, not listed.
