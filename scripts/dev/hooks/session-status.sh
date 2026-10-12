@@ -32,7 +32,7 @@
 # release · .claude/rules or .claude/agents gitignored · an env block in the public
 # settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing ·
 # a scheduled workflow whose last run on main is red or older than 8 days.
-# Trigger 3 (a WIP cap reached: aktiv 1 · bereit 2 · pr 3 · neu 20) is no WARN
+# Trigger 3 (a WIP cap reached: aktiv 2 · bereit 2 · pr 3 · neu 20) is no WARN
 # line: the WIP line under the roadmap carries `Warnung:` itself, counted by
 # roadmap.py from the rows, not read from the roadmap's own header.
 #
@@ -115,8 +115,9 @@ fi
 # ── line 3: roadmap ───────────────────────────────────────────────────────────
 ROADMAP="tasks/private/ROADMAP.md"
 # The WIP caps of CLAUDE.md §3 trigger 3 — the hook measures against these, not
-# against whatever caps a roadmap header prints.
-WIP_CAPS="aktiv:1 bereit:2 pr:3 neu:20"
+# against whatever caps a roadmap header prints. skill_consistency_test holds them
+# equal to CLAUDE.md, roadmap.py and the /roadmap skill.
+WIP_CAPS="aktiv:2 bereit:2 pr:3 neu:20"
 wip_line() {  # the counters from roadmap.py, `Warnung:` on a reached cap, or the error
   local out rc cap name n reached=()
   [ -f "$ROADMAP_PY" ] || { echo "WIP: ? (roadmap.py fehlt: $ROADMAP_PY)"; return; }

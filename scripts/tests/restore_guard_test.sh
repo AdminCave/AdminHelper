@@ -55,20 +55,20 @@ run_restore() { ( cd "$WORK" && bash "$RESTORE" "$1" </dev/null 2>&1 ); }
 out=$(run_restore "$WORK/good.tar.gz")
 # The guard passes (no rejection); restore then reaches the confirm and stops on the
 # EOF read — the point is that the guard did NOT reject a legitimate archive.
-{ echo "$out" | grep -q 'Fortfahren' && ! echo "$out" | grep -qiE 'absolute oder|Sym-/Hardlink'; } \
+{ grep -q 'Fortfahren' <<<"$out" && ! grep -qiE 'absolute oder|Sym-/Hardlink' <<<"$out"; } \
   && ok "clean archive passes the guard (reaches the confirm)" || bad "clean archive: [$out]"
 
 # --- 2. absolute path member rejected ──────────────────────────────────────
 out=$(run_restore "$WORK/abs.tar.gz"); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'absolute'; } && ok "absolute path rejected" || bad "absolute not rejected: rc=$rc out=[$out]"
+{ [ $rc -ne 0 ] && grep -q 'absolute' <<<"$out"; } && ok "absolute path rejected" || bad "absolute not rejected: rc=$rc out=[$out]"
 
 # --- 3. ../ escape member rejected ──────────────────────────────────────────
 out=$(run_restore "$WORK/dotdot.tar.gz"); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'absolute oder'; } && ok "../ escape rejected" || bad "../ not rejected: rc=$rc out=[$out]"
+{ [ $rc -ne 0 ] && grep -q 'absolute oder' <<<"$out"; } && ok "../ escape rejected" || bad "../ not rejected: rc=$rc out=[$out]"
 
 # --- 4. symlink member rejected ─────────────────────────────────────────────
 out=$(run_restore "$WORK/sym.tar.gz"); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'Sym-/Hardlink'; } && ok "symlink member rejected" || bad "symlink not rejected: rc=$rc out=[$out]"
+{ [ $rc -ne 0 ] && grep -q 'Sym-/Hardlink' <<<"$out"; } && ok "symlink member rejected" || bad "symlink not rejected: rc=$rc out=[$out]"
 
 # --- 5. the wait for postgres takes the path restore_db takes ────────────────
 # On a fresh volume the image's init server listens on the socket only: a socket

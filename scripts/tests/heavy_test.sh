@@ -222,7 +222,7 @@ history_of() { cat "$AH_PRIVATE_DIR/history.csv" 2>/dev/null; }
 # ── 1: usage ─────────────────────────────────────────────────────────────────
 mk_case
 out=$(bash "$HEAVY" 2>&1); rc=$?
-[ "$rc" = 2 ] && printf '%s' "$out" | grep -q '^usage:' \
+[ "$rc" = 2 ] && grep -q '^usage:' <<<"$out" \
   && ok "no mode -> usage, exit 2" || bad "no mode -> rc=$rc, out: $out"
 out=$(bash "$HEAVY" all --nope 2>&1); rc=$?
 [ "$rc" = 2 ] && ok "unknown flag -> exit 2" || bad "unknown flag -> rc=$rc"
@@ -509,7 +509,7 @@ roadmap_of | grep -q '| neu |' && ok "roadmap: the row is 'neu', never released"
 # Through roadmap.py, not beside it: the key, the recomputed header, the ledger file.
 roadmap_of | grep -q '| weekly .* · Dedup-Key: reg:web-vitest |' \
   && ok "roadmap: the row carries its Dedup-Key reg:<step>" || bad "no Dedup-Key: $(roadmap_of | grep '^| R-0018')"
-roadmap_of | grep -q '^Stand: .* · WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0$' \
+roadmap_of | grep -q '^Stand: .* · WIP: aktiv 0/2 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0$' \
   && ok "roadmap: the header was recomputed by roadmap.py" || bad "header: $(roadmap_of | grep '^Stand')"
 roadmap_of | grep -q '^| R-0018 | .* | tasks/reg-[0-9-]*-web-vitest.md | ' \
   && ok "roadmap: the Ledger column names the ledger file" || bad "ledger cell: $(roadmap_of | grep '^| R-0018')"
@@ -714,14 +714,14 @@ grep -q 'ntfy' "$SHIM_STATE/curl.args" 2>/dev/null   && bad "notified without --
 mk_case
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all --notify 2>&1); rc=$?
-[ "$rc" = 0 ] && printf '%s' "$out" | grep -q 'AH_NOTIFY_URL is not set'   && ok "--notify without a URL is a hint, not an error" || bad "no-URL case: rc=$rc"
+[ "$rc" = 0 ] && grep -q 'AH_NOTIFY_URL is not set' <<<"$out"   && ok "--notify without a URL is a hint, not an error" || bad "no-URL case: rc=$rc"
 
 mk_case
 artifact "ruff check:pass:3"
 export AH_NOTIFY_URL="https://ntfy.example.invalid/ah" SHIM_NOTIFY_RC=7
 out=$(bash "$HEAVY" all --notify 2>&1); rc=$?
 [ "$rc" = 0 ] && ok "a failed POST does not fail the run" || bad "failed POST -> rc=$rc"
-printf '%s' "$out" | grep -q 'POST failed' && ok "the failed POST is reported" || bad "silent POST failure"
+grep -q 'POST failed' <<<"$out" && ok "the failed POST is reported" || bad "silent POST failure"
 
 # ── 4l: a stale artifact is never counted as this run's evidence ─────────────
 mk_case
@@ -743,7 +743,7 @@ json.dump(d, open(sys.argv[1], "w"))
 PY
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 history_of | grep -q ',ruff check,'   && bad "an artifact describing another tree was counted: $(history_of)"   || ok "an artifact from another tree is ignored"
-printf '%s' "$out" | grep -q 'another tree' && ok "and the run says so" || bad "silently ignored"
+grep -q 'another tree' <<<"$out" && ok "and the run says so" || bad "silently ignored"
 
 # ── 4m: the hypervisor not answering is infra, never 'no foreign boxes' ──────
 mk_case
@@ -751,7 +751,7 @@ export SHIM_LIST_RC=7
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "vm.py list unavailable -> exit 74" || bad "list unavailable -> rc=$rc"
-printf '%s' "$out" | grep -q 'no foreign boxes'   && bad "claimed a clean hypervisor it never saw" || ok "no unfounded 'no foreign boxes'"
+grep -q 'no foreign boxes' <<<"$out"   && bad "claimed a clean hypervisor it never saw" || ok "no unfounded 'no foreign boxes'"
 
 # A VM of OUR OWN lane that nothing claims is foreign too — vm.py calls it a
 # leak, and a run must not start on top of one.
@@ -761,7 +761,7 @@ export SHIM_LIST_JSON='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a leaked VM of our own lane aborts the run" || bad "leak -> rc=$rc"
-printf '%s' "$out" | grep -q '3007' && ok "and the report names it" || bad "leak not named: $out"
+grep -q '3007' <<<"$out" && ok "and the report names it" || bad "leak not named: $out"
 
 # ── 5: a foreign box stops the run before any VM burns ───────────────────────
 mk_case
@@ -769,7 +769,7 @@ export SHIM_LIST_JSON='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "
  {"vmid": 3050, "name": "ah-desktop-someone-else", "lane": "someone-else", "status": "running"}], "untagged": 0, "leaked": []}'
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "foreign box -> exit 74" || bad "foreign box -> rc=$rc"
-printf '%s' "$out" | grep -q 'ah-desktop-someone-else' \
+grep -q 'ah-desktop-someone-else' <<<"$out" \
   && ok "the foreign box is named" || bad "foreign box not named: $out"
 [ ! -f "$AH_OUT_DIR/all.log" ] && [ -z "$(ls "$AH_OUT_DIR"/weekly/*/all.log 2>/dev/null)" ] \
   && ok "no layer ran after the foreign-box abort" || bad "a layer ran despite the abort"
@@ -804,7 +804,7 @@ printf '  run.sh[all]: 41 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns\n'
 touch -d '1 hour ago' "$AH_OUT_DIR/last.out.log"
 out=$(cd "$AH_HEAVY_ROOT" && bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a stale captured summary is not adopted as evidence"   || bad "stale summary -> rc=$rc"
-printf '%s' "$out" | grep -q 'predates this run'   && ok "and the run says why" || bad "no reason given"
+grep -q 'predates this run' <<<"$out"   && ok "and the run says why" || bad "no reason given"
 rm -f "$AH_OUT_DIR/last.out.log"
 
 # ── 4o: a stopped foreign box does not abort the run ─────────────────────────
@@ -1089,7 +1089,7 @@ out=$(bash "$HEAVY" weekly 2>&1); rc=$?
 grep -q 'AH_DESKTOP_VM=3001' "$SHIM_STATE/mb.env" 2>/dev/null \
   && ok "weekly hands the warm desktop box to the capstone" \
   || bad "AH_DESKTOP_VM not passed: $(cat "$SHIM_STATE/mb.env" 2>/dev/null)"
-printf '%s' "$out" | grep -q 'capstone reuses the warm desktop box 3001' \
+grep -q 'capstone reuses the warm desktop box 3001' <<<"$out" \
   && ok "and the report says which box" || bad "no note about the reuse"
 
 mk_case
@@ -1151,7 +1151,7 @@ export SHIM_ITER_OUT="  strict-failed: desktop-e2e smoke (SKIP)"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" weekly 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "weekly with an unverified 'all' -> exit 74" || bad "weekly unverified -> rc=$rc"
-printf '%s' "$out" | grep -q 'capstone skipped' \
+grep -q 'capstone skipped' <<<"$out" \
   && ok "weekly skips the capstone and says so" || bad "capstone was not skipped: $out"
 history_of | grep -q ',capstone,' && bad "capstone rows written although it never ran" \
   || ok "no capstone rows for a capstone that never ran"

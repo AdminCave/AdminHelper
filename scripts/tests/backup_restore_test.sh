@@ -95,7 +95,7 @@ INSTALLED_AFTER=$(register_installed_at)
 
 TOKEN2=$(e2e_admin_token)
 SERVERS=$(curl -k -s -H "Authorization: Bearer $TOKEN2" "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo "")
-echo "$SERVERS" | grep -q "dr-probe" \
+grep -q "dr-probe" <<<"$SERVERS" \
     && ok "server record survived the roundtrip (dr-probe present)" \
     || bad "server record LOST after restore"
 

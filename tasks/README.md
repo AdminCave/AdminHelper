@@ -107,7 +107,9 @@ Dateien, nicht am Diff-Text:
    kommt mit dem Plan-Commit am Gate, den Kevin liest. Wer unterwegs merkt, dass ein Test gehen
    muss, setzt `[?]` und fragt. Ein Commit von Hand an `task-close` vorbei ist Kevins eigene
    Entscheidung; der Runner kann ihn nicht machen.
-2. **Sie trägt einen Grund.** Ohne `— <Grund>` zählt sie nicht, auch in `diff-scan`.
+2. **Sie trägt einen Grund.** Ohne `— <Grund>` zählt sie nicht, auch in `diff-scan`. Mehrere Tests
+   stehen in einer Zeile, getrennt durch `;`: `diff-scan` liest je Task nur die erste Zeile, und
+   `ledger.sh lint` lehnt eine zweite ab.
 3. **Der Name ist eindeutig.** Im alten Stand der Datei gibt es genau einen Test dieses
    Namens. Teilen sich zwei `describe`-Blöcke einen Namen, kann das Gate sie nicht
    auseinanderhalten, und die Ankündigung zählt nicht; umbenennen, dann löschen.
@@ -161,7 +163,7 @@ Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte 
    `Test-Löschung:`: `task-close.sh` verweigert (Exit 4), sobald sich eine der beiden Zeilenarten
    gegenüber `HEAD` ändert. Die Ankündigung kommt mit dem Plan-Commit ans Gate.
 2. **Sie trägt einen Grund.** `ledger.sh lint` prüft die Form wie bei `Test-Löschung:`; ohne
-   Grund ist die Zeile ein Fehler.
+   Grund ist die Zeile ein Fehler, ebenso eine zweite Zeile in derselben Task.
 3. **Der Test bleibt, und er ist eindeutig.** Im alten **und** im neuen Stand gibt es genau einen Test
    dieses Namens. Teilen sich zwei Klassen oder `describe`-Blöcke einen Namen, zählt die Ankündigung
    nicht.

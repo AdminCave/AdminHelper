@@ -367,7 +367,7 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   (der eine bewusste Endstopp): `git push`, `gh pr create`, alles unter `rm`/`reset --hard`,
   `harness.sh off` und `ledger.sh mark-done` (der Kill-Switch des Wächters und der Haken
   ohne Lauf sind Kevins Handgriffe, nicht die des Modells) und `scripts/vm/bootstrap_linux.sh` — das einzige Skript, das die Maschine
-  verändert, auf der es läuft, und die Dev-Box hat bewusst kein Docker.
+  umbaut, auf der es läuft (apt, Docker, Toolchains), gemacht für eine frische Box.
   **Einen langen Lauf zu STARTEN ist davon unberührt:** das ist eine Frage der Initiative,
   nicht der Permission, und bleibt bei Kevins Zuruf (CLAUDE.md §2).
 - **Ein `PreToolUse`-Hook: der Harness-Wächter.** `scripts/dev/hooks/harness-guard.sh` liest

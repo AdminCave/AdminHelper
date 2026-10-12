@@ -28,18 +28,28 @@ Du baust **eine** Task. Haken, Review, Commit und den Status des Ledgers macht d
    bekommt den SPDX-Kopf. Braucht die Task eine Datei, die nicht in ihrem `Dateien:` steht, erweiterst
    du die Liste sichtbar, mit allen Pfaden:
    `bash scripts/dev/ledger.sh set-files tasks/<slug>.md <id> <pfad…>` — der Scope wird nicht gelockert.
-4. **Testen**, iterativ und in Flag-Form: `bash scripts/dev/verify.sh <komponente> --strict`, gezielt
-   `bash scripts/dev/verify.sh <komponente> --strict -- <test>`. Ein Lauf zur Zeit. Rot durch deine
-   Änderung: beheben. Brauchst du einen Scratch-Ordner: `bash scripts/dev/scratch.sh new <name>` legt
-   ihn an und druckt seinen Pfad, `bash scripts/dev/scratch.sh rm <pfad>` räumt ihn vor dem Ende weg.
+4. **Testen**, gezielt, im Vordergrund und in Flag-Form:
+   - Gezielt: `bash scripts/dev/verify.sh <komponente> --strict -- <test>`, für `scripts` der Name des
+     Script-Tests (`bash scripts/dev/verify.sh scripts --strict -- ledger_loop_test`), für `agent`
+     `-- -run <Test>`. Das `Verify:` der Task fährt `task-close.sh` im Loop nach der Session. Ist es
+     gezielt (`-- …`), fährst du vor der Commit-Nachricht einmal die ganze Suite der Komponente:
+     `bash scripts/dev/verify.sh <komponente> --strict`.
+   - Im Vordergrund, bis die Summary-Zeile da ist: Der Loop setzt den Timeout des Bash-Werkzeugs auf
+     die Dauer der Session, gib keinen kürzeren an. Nie `run_in_background`, nie warten mit Monitor,
+     `sleep`, `tail --pid` oder `ps`: Das Warten verweigern die Settings, und die Session endet wartend.
+   - Ein Befehl je Aufruf, ohne `source`, `cd`, `;`, `&&` oder `|`: Die Allow-Liste prüft jeden Teil.
+     Ruff geht direkt: `ruff check <datei>`, `ruff format --check <datei>`.
+   - Ein Lauf zur Zeit. Rot durch deine Änderung: beheben. Brauchst du einen Scratch-Ordner:
+     `bash scripts/dev/scratch.sh new <name>` legt ihn an und druckt seinen Pfad,
+     `bash scripts/dev/scratch.sh rm <pfad>` räumt ihn vor dem Ende weg.
 5. **Ehrlich entscheiden**, wenn du nicht bauen kannst oder sollst — das sind die einzigen zwei Marker,
    die du im Ledger setzt:
    - schon erledigt, hinfällig oder ein Falsch-Positiv, der Code bleibt unverändert:
      `bash scripts/dev/ledger.sh mark-skip tasks/<slug>.md <id> "<ein Satz>"`;
    - braucht eine Entscheidung, ist destruktiv oder mehrdeutig:
      `bash scripts/dev/ledger.sh mark-question tasks/<slug>.md <id> "<frage>"`.
-6. **Commit-Nachricht**, nur wenn gebaut ist und die Suite grün lief: eine Conventional-Commit-Nachricht
-   auf Englisch (`feat(scripts): …`, im Body Task-ID und Stichwort) in die Datei
+6. **Commit-Nachricht**, nur wenn gebaut ist und die Läufe aus Schritt 4 grün sind: eine
+   Conventional-Commit-Nachricht auf Englisch (`feat(scripts): …`, im Body Task-ID und Stichwort) in die Datei
    `.ah-out/loop/<slug>/<id>.commit-msg.txt`. Sie sagt dem Loop, dass `task-close.sh` schließen soll;
    ohne sie zählt die Iteration als eine ohne Fortschritt.
 

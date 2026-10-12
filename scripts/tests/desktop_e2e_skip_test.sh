@@ -61,7 +61,7 @@ for s in $SUITES; do
   # `timeout` guards the failure mode this test exists to catch: if the skip
   # branch ever stopped firing, the script would try to bring a stack up.
   out=$(cd "$REPO_ROOT" && PATH="$SHIM" "$SHIM/timeout" 30 "$SHIM/bash" "scripts/tests/$s.sh" 2>&1); rc=$?
-  if [ "$rc" -eq 75 ] && printf '%s' "$out" | grep -q "SKIP: tauri-cli"; then
+  if [ "$rc" -eq 75 ] && grep -q "SKIP: tauri-cli" <<<"$out"; then
     ok "$s -> exit 75 (tauri-cli)"
   else
     bad "$s -> rc=$rc, out: $(printf '%s' "$out" | tail -1)"

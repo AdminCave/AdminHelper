@@ -592,6 +592,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Loeschen setzt den Zeitpunkt neu. Das Loeschen eines Benutzers oder Servers sperrt auch seine offenen Geraete (Grund
   `admin`); sie stehen als widerrufen in der Geraeteliste, auch in der eines spaeter gleichnamig angelegten
   Benutzers.
+- **Regeln des Teams in `CLAUDE.md` (Team-Plan Phase 1, R-0270):** §2 beschreibt das Betriebsmodell mit dem Team.
+  Die Aufsicht heisst jetzt Chef und uebernimmt ihren Stand aus Dateien (AH-STATUS, Roadmap, Ledger). Das Team laeuft
+  unter Kevins UID ohne Docker und ohne sudo; der Runner-Nutzer ist eingefroren. Deckel: 2 Bau-Slots (nur disjunkte
+  Ledger), 1 VM-Lauf zugleich, hoechstens die Haelfte des Wochenlimits. Opus plant und baut; Sonnet prueft nur Tasks
+  ausserhalb der Risikopfade, den ganzen Branch prueft Opus. Der Chef merged Produkt-PRs nach eigener Pruefung, wenn
+  die CI im ersten Anlauf gruen ist; PRs an Harness und Gates, auch an `.github/workflows/`, merged Kevin; ein roter
+  `main` wird per Revert des letzten Merges zurueckgenommen. In der Triage gilt als angenommen, was Kevin diktiert;
+  kein eigener Fund wird ohne ihn `geplant`. Ein Dauerlauf laeuft nach Kevins Start innerhalb der Deckel weiter, aber
+  erst nach der Sandbox (R-0241). §8 sagt jetzt richtig, dass die Dev-Box Docker hat. `skill_consistency_test` haelt
+  die Sandbox-Regel, den Chef samt altem Namen, „Nie prueft Sonnet, was Sonnet baute“, die 2 Bau-Slots, den Merge
+  nach eigener Pruefung, Kevins Merge der PRs an Harness und Gates und hoechstens 226 Zeilen fest.
 - **Client-Zertifikat und angemeldeter Benutzer gehoeren zusammen (R-0223):** Unter mTLS gehoert das
   Client-Zertifikat dem angemeldeten Benutzer; Login, API und Zertifikats-Ausgabe pruefen das. Ist die Identitaet am
   Gateway verifiziert, muss ihr Scope `access` und ihr CN der Username sein, sonst antwortet der Server mit 403
