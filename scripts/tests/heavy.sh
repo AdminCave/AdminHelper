@@ -64,7 +64,7 @@ done
 case "$MODE" in all|capstone|weekly) ;; *) usage ;; esac
 
 # The box decides its own required set. AH_REQUIRED in this shell is the DEV
-# BOX's (from .devenv.sh: no docker, no display, so no heavy ids) and
+# BOX's (from .devenv.sh: no display, the heavy steps run on VMs, so no heavy ids) and
 # iter.sh forwards it verbatim — on the box it would then exempt every
 # heavy step from --strict, and a self-SKIP of upgrade-path would stay green.
 # Unset => run.sh derives the layer's full set; AH_REQUIRED_BOX names one explicitly.

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-text: Review-Modell, Lane-Bedingung, Docker-Kommentar (R-0298, R-0299, R-0300) — Task-Ledger
-Status: aktiv · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0298, R-0299, R-0300, Triage Kevin 2026-10-11; CLAUDE.md ist die Vorlage, keine Änderung daran; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0298, R-0299, R-0300 (Kurz-Ledger ohne Spec)
 Heavy: none — Skill-Texte, AUTONOMOUS.md und zwei Kommentare unter scripts/tests mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -92,8 +92,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md (eine Stelle); der Skill-Text ist die Anleitung
 Abhängt von: T1
 
-### T3 — run.sh und heavy.sh: die Dev-Box hat Docker, aber kein Display (R-0299)  [ ]
+### T3 — run.sh und heavy.sh: die Dev-Box hat Docker, aber kein Display (R-0299)  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/heavy.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9300f432 2026-10-12T08:05:11+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - run.sh:39 („because the dev box has no docker and no display while a VM box has both“) und heavy.sh:67 („from
   .devenv.sh: no docker, no display, so no heavy ids“) nennen den richtigen Grund.
