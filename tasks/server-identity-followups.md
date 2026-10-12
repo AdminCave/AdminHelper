@@ -43,8 +43,10 @@ Semantik: `docs/admin/benutzer.html:90`: „Unter mTLS gehört das Zertifikat di
 Zertifikats-Ausgabe nehmen es nur für ihn an.“; `docs/developer/api-reference.html:68` beschreibt den Logout als
 „Authentifizierung optional“. Ob der Logout zur gebundenen API zählt, sagt keine Stelle — die offene Frage am Gate.
 
-### T2 — Agent-Routen: ein Agent-Zertifikat gilt nur für seinen eigenen Server (R-0283)  [ ]
+### T2 — Agent-Routen: ein Agent-Zertifikat gilt nur für seinen eigenen Server (R-0283)  [x]
 Komponente: server · Dateien: apps/server/app/core/identity.py, apps/server/app/modules/monitoring_proxy/router.py, apps/server/app/modules/frp/provision_router.py, apps/server/tests/test_mtls_scope.py, CHANGELOG.md, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped · contracts: 1 ok @a76db1bd 2026-10-12T12:49:40+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Eine Route mit `server_id` im Pfad, die ein Agent-Zertifikat annimmt, verlangt, dass dessen CN diese
 `server_id` ist; sonst 403. Das betrifft den Agent-Report (`monitoring_proxy/router.py:55-80`) und die frpc-Config
 (`frp/provision_router.py:69` und `:81`, über `frp/router.py:21` für `tunnel` und `access`). Ein access-Zertifikat
