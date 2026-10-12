@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: der ERR_*-Filter zentral in errMsg — Task-Ledger
-Status: aktiv · Branch: feature/desktop-errmsg-filter · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-errmsg-filter · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0276, Triage 2026-10-10 auf Kevins Delegation; Entscheidungen a und b wie im Plan; Bau erst nach dem Merge von Phase B (R-0224), mit origin/main hinein; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0276 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Textfilter der Desktop-UI (`desktop-ui`), der heute an jeder Stelle von Hand steht; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Live-Spec liest diese Texte, Komponenten- und Store-Tests decken die Wege ab.
@@ -83,8 +83,10 @@ Dedup-Key: ref:desktop:errors.ts:central-filter
 Semantik: `docs/developer/desktop.html:125`: „Abbrechen zeigt die Meldung (ohne Code) inline.“; `errors.ts:12-13`:
 „They are for the code, not the user“.
 
-### T3 — Die Filter an den einzelnen Aufrufern fallen weg (R-0276)  [ ]
+### T3 — Die Filter an den einzelnen Aufrufern fallen weg (R-0276)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/NotificationPrefs.svelte, apps/desktop/ui/src/lib/stores/ansible.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/components/SettingsModal.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @acd50174 2026-10-12T09:22:19+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `withoutErrorCodes(errMsg(err))` wird `errMsg(err)` in `NotificationPrefs.svelte:91` und `:138`,
 `stores/ansible.ts:80` und `SettingsModal.svelte:162`; in `stores/monitoring.ts:246` wird `withoutErrorCodes(msg)` zu
 `msg`. Ungenutzte Imports gehen mit. `stores/statusBar.ts:41` behält seinen Filter: `reportError` nimmt auch Texte, die
