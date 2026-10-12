@@ -278,8 +278,10 @@ def test_enforced_dual_use_route_accepts_agent_scope(test_client, monkeypatch):
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
     # frpc-sync is dual-use: a tunnel cert passes the scope guard, then auth
     # blocks (no API key / JWT) -> 401, proving the scope itself was accepted.
+    # The cert is the one of that very server: another one is refused first (R-0283).
     resp = test_client.get(
-        "/api/frp/provision/some-server-id/config", headers=_gateway_headers(ou=SCOPE_AGENT)
+        "/api/frp/provision/some-server-id/config",
+        headers=_gateway_headers(cn="some-server-id", ou=SCOPE_AGENT),
     )
     assert resp.status_code == 401
 
@@ -292,3 +294,104 @@ def test_bootstrap_route_stays_open_under_enforcement(test_client, monkeypatch):
         json={"token": "bogus", "username": "x", "password": "y"},
     )
     assert resp.status_code != 403
+
+
+# --- an agent certificate belongs to its own server (R-0283) -------------------------
+
+
+class _Monitoring:
+    """Stands in for the proxy's client to the monitoring service: records forwards."""
+
+    def __init__(self):
+        self.forwarded: list[str] = []
+
+    async def post(self, url, **kwargs):
+        import httpx
+
+        self.forwarded.append(url)
+        return httpx.Response(202, json={"ok": True})
+
+
+def _report(test_client, server_id: str, headers: dict[str, str]):
+    return test_client.post(
+        f"/api/monitoring/agent/{server_id}/report",
+        content=b"{}",
+        headers={"X-API-Key": "k", **headers},
+    )
+
+
+def _agent_server(db) -> str:
+    """A server with its agent key; returns the raw key for the frpc routes."""
+    import secrets
+
+    from app.core.auth import hash_api_key
+    from app.modules.api_keys.models import ApiKey
+    from app.modules.servers.models import Server
+
+    db.add(Server(id="srv-own", name="own", hostname="own.example.test"))
+    db.flush()  # the key refers to the server
+    raw = f"adminhelper_{secrets.token_urlsafe(16)}"
+    db.add(
+        ApiKey(
+            name="agent-own", hashed_key=hash_api_key(raw), permission="read", server_id="srv-own"
+        )
+    )
+    db.commit()
+    return raw
+
+
+@pytest.mark.parametrize("enforced", [False, True])
+def test_an_agent_report_with_another_servers_certificate_is_refused(
+    test_client, monkeypatch, enforced
+):
+    import app.modules.monitoring_proxy.router as proxy
+
+    monkeypatch.setattr(config, "MTLS_ENFORCE", enforced)
+    monitoring = _Monitoring()
+    monkeypatch.setattr(proxy, "_client", monitoring)
+    resp = _report(test_client, "srv-1", _gateway_headers(cn="srv-2", ou=SCOPE_AGENT))
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"].startswith("ERR_CERT_SERVER_MISMATCH: "), resp.text
+    assert monitoring.forwarded == []
+
+
+def test_an_agent_report_with_its_own_certificate_is_forwarded(test_client, monkeypatch):
+    import app.modules.monitoring_proxy.router as proxy
+
+    monkeypatch.setattr(config, "MTLS_ENFORCE", True)
+    monitoring = _Monitoring()
+    monkeypatch.setattr(proxy, "_client", monitoring)
+    resp = _report(test_client, "srv-1", _gateway_headers(cn="srv-1", ou=SCOPE_AGENT))
+    assert resp.status_code == 202, resp.text
+    assert len(monitoring.forwarded) == 1
+
+
+def test_an_agent_report_without_a_certificate_stays_as_it_is_in_permissive_mode(
+    test_client, monkeypatch
+):
+    import app.modules.monitoring_proxy.router as proxy
+
+    monitoring = _Monitoring()
+    monkeypatch.setattr(proxy, "_client", monitoring)
+    resp = _report(test_client, "srv-1", {})
+    assert resp.status_code == 202, resp.text
+    assert len(monitoring.forwarded) == 1
+
+
+@pytest.mark.parametrize("route", ["config", "config-hash"])
+def test_the_frpc_config_takes_only_the_agent_certificate_of_its_server(
+    test_client, db_session, monkeypatch, route
+):
+    monkeypatch.setattr(config, "MTLS_ENFORCE", True)
+    key = {"X-API-Key": _agent_server(db_session)}
+    url = f"/api/frp/provision/srv-own/{route}"
+    other = test_client.get(
+        url, headers={**key, **_gateway_headers(cn="srv-other", ou=SCOPE_AGENT)}
+    )
+    assert other.status_code == 403, other.text
+    assert other.json()["detail"].startswith("ERR_CERT_SERVER_MISMATCH: "), other.text
+    # Past the binding the route answers 404: the server has no FRP config.
+    own = test_client.get(url, headers={**key, **_gateway_headers(cn="srv-own", ou=SCOPE_AGENT)})
+    assert own.status_code == 404, own.text
+    admin = test_client.get(url, headers={**key, **_gateway_headers(cn="admin", ou=SCOPE_ACCESS)})
+    assert admin.status_code == 404, admin.text

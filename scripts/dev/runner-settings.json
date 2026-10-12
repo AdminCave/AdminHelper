@@ -80,6 +80,7 @@
       "Bash(echo:*)",
       "Bash(pytest:*)",
       "Bash(ruff:*)",
+      "Bash(python3 scripts/dev/doc-smoke.py --paths --env --strict)",
       "Bash(go test:*)",
       "Bash(cargo test:*)",
       "Bash(npm run:*)",

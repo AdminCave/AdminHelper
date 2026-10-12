@@ -19,7 +19,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import get_current_admin
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
-from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_scope
+from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_cert_server, require_scope
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend
 
@@ -52,7 +52,7 @@ _ALLOWED_PATH_PREFIXES = (
 )
 
 
-@router.post("/agent/{server_id}/report")
+@router.post("/agent/{server_id}/report", dependencies=[Depends(require_cert_server)])
 async def proxy_agent_report(
     server_id: str,
     request: Request,

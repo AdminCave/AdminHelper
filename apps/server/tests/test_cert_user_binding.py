@@ -250,3 +250,37 @@ def test_the_binding_holds_in_permissive_mode_too(
         "/api/api-keys", headers={**_bearer("admin"), **_gateway_headers(cn="viewer")}
     )
     _assert_mismatch(resp)
+
+
+# --- logout: not bound, on purpose (R-0282) ------------------------------------------
+# Logging out only ends the tokens it is given; it grants nothing and shows nothing. It
+# works with any certificate, also one the server no longer admits, so a device whose
+# certificate was revoked can still end its session.
+
+
+def test_logout_with_another_users_certificate_ends_the_presented_token(
+    test_client, admin_user, normal_user
+):
+    viewer = _bearer("viewer")
+    own = {**viewer, **_gateway_headers(cn="viewer")}
+    assert test_client.get("/api/auth/me", headers=own).status_code == 200
+    resp = test_client.post("/api/auth/logout", headers={**viewer, **_gateway_headers(cn="admin")})
+    assert resp.status_code == 200, resp.text
+    me = test_client.get("/api/auth/me", headers=own)
+    assert me.status_code == 401, me.text
+
+
+def test_logout_with_a_revoked_certificate_ends_the_presented_token(
+    test_client, db_session, admin_user
+):
+    from tests.test_certificate_check import _leaf, _record
+
+    admin = _bearer("admin")
+    revoked_headers, revoked = _leaf("admin")
+    _record(db_session, revoked, "admin", revoked=True)
+    fresh_headers, _ = _leaf("admin")
+    assert test_client.get("/api/auth/me", headers={**admin, **fresh_headers}).status_code == 200
+    resp = test_client.post("/api/auth/logout", headers={**admin, **revoked_headers})
+    assert resp.status_code == 200, resp.text
+    me = test_client.get("/api/auth/me", headers={**admin, **fresh_headers})
+    assert me.status_code == 401, me.text

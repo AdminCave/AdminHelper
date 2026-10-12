@@ -30,6 +30,9 @@ command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not available"; exit
 command -v flock >/dev/null 2>&1 || { echo "SKIP: flock not available"; exit 75; }
 # The suite runs this file from inside run.sh, which exports these for its own run.
 unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV AH_AUTONOMOUS CLAUDE_PROJECT_DIR
+# And what a build session hands down (R-0263, R-0301): run inside one, the cases
+# would see its values instead of the loop's.
+unset BASH_DEFAULT_TIMEOUT_MS BASH_MAX_TIMEOUT_MS CLAUDE_CODE_DISABLE_BACKGROUND_TASKS
 # And a loop's own overrides: an inherited AH_LOOP_REPO pointed every case at the real
 # clone (R-0231); each case sets what it needs.
 unset "${!AH_LOOP_@}"
@@ -233,6 +236,7 @@ case "$1" in
 esac
 [ -z "${FIXTURE_ENVLOG:-}" ] || compgen -e >> "$FIXTURE_ENVLOG.session"
 [ -z "${FIXTURE_TIMEOUTLOG:-}" ] || printf '%s %s\n' "${BASH_DEFAULT_TIMEOUT_MS-<unset>}" "${BASH_MAX_TIMEOUT_MS-<unset>}" >> "$FIXTURE_TIMEOUTLOG"
+[ -z "${FIXTURE_BGLOG:-}" ] || printf '%s\n' "${CLAUDE_CODE_DISABLE_BACKGROUND_TASKS-<unset>}" >> "$FIXTURE_BGLOG"
 # One line per session with its flags; the prompt (many lines) apart.
 printf '%s\n' "${*:3}" >> "${FIXTURE_SLOG:?}"
 printf '%s\n' "$2" >> "$FIXTURE_SLOG.prompts"
@@ -638,14 +642,18 @@ FIXTURE_ENVLOG="$EL" loop --ledger tasks/envp.md
 
 # R-0263: a command in the foreground may run as long as the session, so it never
 # moves to the background where the session cannot wait for it.
-TL="$WORK/timeouts"; rm -f -- "$TL"
+TL="$WORK/timeouts"; BL="$WORK/background"; rm -f -- "$TL" "$BL"
 seq_set build -- 0
-FIXTURE_TIMEOUTLOG="$TL" loop --ledger tasks/tmo.md
+FIXTURE_TIMEOUTLOG="$TL" FIXTURE_BGLOG="$BL" loop --ledger tasks/tmo.md
 seq_set build -- 0
-FIXTURE_TIMEOUTLOG="$TL" loop --ledger tasks/tmo2.md --task-minutes 7
+FIXTURE_TIMEOUTLOG="$TL" FIXTURE_BGLOG="$BL" loop --ledger tasks/tmo2.md --task-minutes 7
 [ "$(cat "$TL" 2>/dev/null)" = $'3600000 3600000\n420000 420000' ] \
   && ok "the session's Bash timeouts are its own minutes (60 by default, 7 with --task-minutes 7)" \
   || bad "Bash timeouts of the session: $(cat "$TL" 2>&1)"
+# R-0301: and no background at all — no run_in_background, nothing moved there.
+[ "$(cat "$BL" 2>/dev/null)" = $'1\n1' ] \
+  && ok "every build session runs with background tasks off" \
+  || bad "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS of the sessions: $(cat "$BL" 2>&1)"
 
 echo "── the ledger's end: PR text and bundle ──"
 seq_set build build -- 0 0

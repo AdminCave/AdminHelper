@@ -582,6 +582,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   faellt. Sonst antwortet der Server mit 403 `ERR_CERT_REVOKED`, auch bei `MTLS_ENFORCE=false`. Erneuert wird nur ein
   Zertifikat, das vom Intermediate seines eigenen Scopes signiert ist. Zertifikate von vor dem Update werden beim
   ersten Kontakt uebernommen; das geht 90 Tage ab dem Update, danach gilt nur noch, was erfasst ist.
+- **Ein Agent-Zertifikat gilt nur fuer den eigenen Server (R-0283):** An den Routen eines Servers, dem Agent-Report
+  und der frpc-Config, muss der CN eines Agent-Zertifikats die `server_id` des Pfads sein. Sonst antwortet der Server
+  mit 403 `ERR_CERT_SERVER_MISMATCH`, auch bei `MTLS_ENFORCE=false`. Ein Admin mit seinem access-Zertifikat liest die
+  frpc-Config wie bisher.
 - **Ein Restore beginnt den Uebergang des Registers neu (R-0224):** `restore.sh` und `pg-restore.sh` setzen nach dem
   Restore der Server-DB den Installationszeitpunkt des Registers auf den Restore. Zertifikate, die seit dem Backup
   ausgestellt oder erneuert wurden und deshalb nicht im zurueckgespielten Register stehen, werden beim ersten Kontakt

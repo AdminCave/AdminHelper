@@ -378,3 +378,101 @@ class TestProvisionActivateConcurrency:
         )
         assert r2.status_code in (401, 409)
         assert db_session.query(ApiKey).count() == before + 1
+
+
+# ---------------------------------------------------------------------------
+# R-0291: two activations of one server go one after the other
+# ---------------------------------------------------------------------------
+
+
+def _waits_for(engine, blocker_pid: int, timeout: float = 10.0) -> bool:
+    """Whether some session waits for a lock that ``blocker_pid`` holds."""
+    import time
+
+    from sqlalchemy import text
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        # A fresh connection per look: pg_stat_activity keeps its snapshot for a transaction.
+        with engine.connect() as probe:
+            waiting = probe.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))"
+                ),
+                {"pid": blocker_pid},
+            ).scalar()
+        if waiting:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_second_activation_waits_for_the_first_and_one_key_stays(pg_engine):
+    # Two real connections: the first activation holds the server row as the route does
+    # and has written its key; the second goes through the route, waits, and then
+    # replaces that key. Rows written here are removed at the end.
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete, func, select, text
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.database import get_db
+    from app.main import app
+
+    sid = f"srv-twice-{uuid.uuid4().hex[:6]}"
+    new_session = sessionmaker(bind=pg_engine)
+    with new_session() as setup:
+        audit_before = setup.execute(select(func.coalesce(func.max(AuditLog.id), 0))).scalar()
+        setup.add(Server(id=sid, name=sid, hostname=f"{sid}.example.test"))
+        setup.commit()
+        raw = _make_token(setup, server_id=sid)
+
+    def _db():
+        session = new_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    first = new_session()
+    ex = ThreadPoolExecutor(max_workers=1)
+    app.dependency_overrides[get_db] = _db
+    try:
+        first.query(Server).filter(Server.id == sid).with_for_update(key_share=True).one()
+        first.add(
+            ApiKey(
+                name=f"agent-{sid}",
+                hashed_key=hash_api_key("first" + sid),
+                permission="read",
+                server_id=sid,
+            )
+        )
+        first.flush()
+        first_pid = first.execute(text("SELECT pg_backend_pid()")).scalar()
+
+        second = ex.submit(
+            TestClient(app).post,
+            f"/api/servers/{sid}/provision/activate",
+            headers={"X-Provision-Token": raw},
+        )
+        assert _waits_for(pg_engine, first_pid), "the second activation must wait for the first"
+        assert not second.done()
+        first.commit()
+        resp = second.result(10)
+        assert resp.status_code == 200, resp.text
+
+        with new_session() as check:
+            keys = check.query(ApiKey).filter(ApiKey.server_id == sid).all()
+            assert [k.hashed_key for k in keys] == [hash_api_key(resp.json()["apiKey"])]
+    finally:
+        # Release the server row first: a waiting activation would hold the shutdown.
+        first.close()
+        ex.shutdown(wait=True)
+        app.dependency_overrides.clear()
+        with pg_engine.begin() as conn:
+            conn.execute(delete(AuditLog).where(AuditLog.id > audit_before))
+            conn.execute(delete(ApiKey).where(ApiKey.server_id == sid))
+            conn.execute(delete(ProvisionToken).where(ProvisionToken.server_id == sid))
+            conn.execute(delete(EnrollmentToken).where(EnrollmentToken.subject_id == sid))
+            conn.execute(delete(Server).where(Server.id == sid))

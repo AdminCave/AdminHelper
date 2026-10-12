@@ -789,11 +789,14 @@ PY
   # own limits (2 min without a timeout, at most 10, unless set) it would move to the
   # background, and the session has no allowed way to wait for it (R-0263; Claude
   # Code docs, tools reference and environment variables). The session's own timeout
-  # stays the outer border.
+  # stays the outer border. Nor does anything go to the background: with background
+  # tasks off there is no run_in_background, and a command at its timeout stops
+  # instead of moving there (R-0301; the same docs, "Foreground commands that move to
+  # the background").
   local bash_ms
   bash_ms="$(awk -v m="$TASK_MINUTES" 'BEGIN { printf "%d", m * 60000 }')"
   ( cd "$wt" && AH_LOOP_SESSION="$$.$slug.$id.s$n" BASH_DEFAULT_TIMEOUT_MS="$bash_ms" BASH_MAX_TIMEOUT_MS="$bash_ms" \
-      timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 timeout -k 30 "${TASK_MINUTES}m" claude -p "$prompt" --setting-sources user \
       --permission-mode dontAsk --permission-prompts none --max-turns "$TASK_TURNS" \
       --max-budget-usd "$TASK_BUDGET" --output-format json --no-session-persistence \
       < /dev/null > "$out" 2> "$LOOP/$slug/$id.s$n.err" )
