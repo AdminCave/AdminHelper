@@ -16,7 +16,9 @@ Loop-Futter triagiert hat. Die private Roadmap ist in diesem Worktree nicht lesb
 Aufsicht. R-0242 (`scripts/install.sh`) bleibt draußen: Es fällt unter die Install-Regel für Heavy und passt nicht in
 einen reinen Doku-Lauf. Zeilenangaben origin/main@d4515a1e.
 
-### T1 — Troubleshooting: der Zertifikatspfad des Agents ist `/etc/adminhelper/identity/agent.crt`, DE und EN (R-0275)  [ ]
+### T1 — Troubleshooting: der Zertifikatspfad des Agents ist `/etc/adminhelper/identity/agent.crt`, DE und EN (R-0275)  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7dfc0e1c 2026-10-12T06:18:47+02:00
+Review: approve (sonnet/high) · round 1
 Antwort der Aufsicht (2026-10-12): Der stall kam vom Warten auf einen Verify-Lauf im Hintergrund (R-0263, seit #120 behoben: Vordergrund, gezielte Tests). Die Doku-Änderung selbst war richtig; neu bauen.
 Komponente: scripts · Dateien: docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html
 Änderung: Der Abschnitt „Agent meldet sich nicht mehr“ (`docs/admin/troubleshooting.html:82`) prüft den Ablauf mit
