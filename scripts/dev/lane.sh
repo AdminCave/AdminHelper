@@ -77,9 +77,10 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   # The password travels in the environment, and not through `env`'s arguments
   # either: every local user can read a process's arguments (/proc/<pid>/cmdline),
   # only its owner its environment. The URL percent-encodes the password;
-  # PGPASSWORD takes it raw. The password stops at a / as well: in the userinfo
-  # one never stands unencoded, and past it lie port, path and query (R-0266).
-  if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@/]*)@(.*)$ ]]; then
+  # PGPASSWORD takes it raw. The password runs to the first @, across a /, the way
+  # SQLAlchemy reads AH_TEST_DB (sqlalchemy/engine/url.py): a password the suites
+  # take out of the URL is one lane_db takes out too (R-0266).
+  if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
     pass="${BASH_REMATCH[2]}"
     url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
     pass="${pass//\\/\\\\}"
@@ -96,6 +97,13 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   local query_pw='[?&]password='
   if [[ "$url" =~ $query_pw ]]; then
     echo "  lane.sh: AH_TEST_DB carries its password in the query; write it as user:password@ before the host" >&2
+    return 3
+  fi
+  # libpq decodes the keys of the query too, so pass%77ord= is a password as well:
+  # no percent sign in a key at all.
+  local query_key_pct='[?&][^=&]*%[^=&]*='
+  if [[ "$url" =~ $query_key_pct ]]; then
+    echo "  lane.sh: AH_TEST_DB has a percent-encoded key in its query; write the keys plain" >&2
     return 3
   fi
   case "$1" in

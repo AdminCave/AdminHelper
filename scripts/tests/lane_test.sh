@@ -75,7 +75,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau upsilon phi chi psi; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -160,10 +160,19 @@ for pair in "tau postgresql+psycopg://ah@localhost:5432/adminhelper_test?passwor
     && ok "$slug: a password in the query means no createdb, no lane, no secret printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 done
+# libpq decodes the keys of the query too: a percent sign in a key is refused.
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah@localhost:5432/adminhelper_test?pass%77ord=secret" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane new eta; rc=$?
+[ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-eta" ] && [ ! -e "$MAIN/.vm/lanes/eta" ] \
+  && grep -q 'has a percent-encoded key in its query' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
+  && ok "eta: a percent-encoded key in the query means no createdb, no lane, no secret printed" \
+  || bad "eta: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
-echo "── new: a : and an @ in the query stay in the URL (R-0266) ──"
-for pair in "upsilon postgresql+psycopg://localhost:5432/adminhelper_test?application_name=a:b@c|<unset>|postgresql://localhost:5432/adminhelper_test?application_name=a:b@c" \
+echo "── new: lane_db reads the URL the way SQLAlchemy does (R-0266) ──"
+for pair in "omega postgresql+psycopg://ah:pa/ss@localhost:5432/adminhelper_test|pa/ss|postgresql://ah@localhost:5432/adminhelper_test" \
             "phi postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test?application_name=a:b@c|secret|postgresql://ah@localhost:5432/adminhelper_test?application_name=a:b@c"; do
   IFS='|' read -r spec pw want <<<"$pair"
   slug="${spec%% *}" url="${spec#* }"
@@ -171,7 +180,7 @@ for pair in "upsilon postgresql+psycopg://localhost:5432/adminhelper_test?applic
   : > "$PG_LOG"
   lane new "$slug"; rc=$?
   [ "$rc" = 0 ] && grep -qxF "createdb pw=$pw --maintenance-db=$want adminhelper_test_$slug" "$PG_LOG" \
-    && ok "$slug: createdb gets the URL whole, a password only from user:password@" \
+    && ok "$slug: the password goes to PGPASSWORD up to the first @, the URL keeps the rest" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
   lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
 done
@@ -218,6 +227,7 @@ printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
 : > "$PG_LOG"
 lane "done" psi; rc=$?
 [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && grep -q 'database adminhelper_test_psi is not dropped — the line above says why' "$WORK/out.log" \
+  && grep -q 'carries its password in the query' "$WORK/out.log" \
   && ! grep -q 'dropdb failed' "$WORK/out.log" && grep -qx 'db=adminhelper_test_psi' "$MAIN/.vm/lanes/psi" \
   && ! grep -q secret "$WORK/out.log" \
   && ok "done with a URL lane_db refuses: no dropdb, says why, the mark keeps its db line" \

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket lane.sh: Passwort in der Query, Gruppe über `/`, Meldung bei Exit 3 (R-0265, R-0266, R-0269) — Task-Ledger
-Status: aktiv · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0265, R-0266, R-0269, Triage Kevin 2026-10-10; R-0265 geschlossen fehlschlagen wie R-0255; Proben nur mit Platzhalter; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0265, R-0266, R-0269 (Kurz-Ledger ohne Spec)
 Heavy: none — scripts/dev/lane.sh mit dem hermetischen lane_test (Fake-createdb/-dropdb); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -103,8 +103,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; die Meldung ist der Text)
 Abhängt von: T1
 
-### T3 — Nachbesserung aus dem Review am Ende: lane_db liest die URL wie SQLAlchemy, kodierte Query-Schlüssel abgelehnt (R-0266, R-0265)  [ ]
+### T3 — Nachbesserung aus dem Review am Ende: lane_db liest die URL wie SQLAlchemy, kodierte Query-Schlüssel abgelehnt (R-0266, R-0265)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d04a7fef 2026-10-12T12:50:19+02:00
+Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Änderung: Angelegt 2026-10-12 aus dem Review am Ende (Opus, `request_changes`: ein Blocker in T1, zwei nits). Den Weg
 (B) hat die Aufsicht entschieden.
 - **R-0266 ist ein Falsch-Positiv.** `AH_TEST_DB` ist eine SQLAlchemy-URL. SQLAlchemy liest das Passwort mit `[^@]*`,
