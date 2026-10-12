@@ -18,8 +18,10 @@ das heutige Verhalten ist mit einer Probe auf diesem Stand belegt (nicht committ
 
 Beide Teile ändern Code der Komponente `server` und teilen sich die Test-Datenbank: Teil 1 und T2 hier laufen nacheinander.
 
-### T1 — ca-issuer: ein Zertifikat mit unbekanntem Signatur-Algorithmus wird abgelehnt, nicht mit 500 (R-0290)  [ ]
+### T1 — ca-issuer: ein Zertifikat mit unbekanntem Signatur-Algorithmus wird abgelehnt, nicht mit 500 (R-0290)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/issuer.py, apps/ca-issuer/tests/test_enroll_renew.py
+Evidenz: run.sh[quick] ca-issuer: 4 passed, 0 failed, 14 skipped @f5335b73 2026-10-12T10:44:07+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `_verify_ca_signed` (`issuer.py:46-74`) fängt auch `cryptography.exceptions.UnsupportedAlgorithm`: Ein
 vorgelegtes Zertifikat, dessen Signatur-Algorithmus `cryptography` nicht kennt, ist keines des Issuers und wird wie die
 übrigen mit `IssuanceError` abgelehnt (4xx), nicht als 500 durchgereicht.
