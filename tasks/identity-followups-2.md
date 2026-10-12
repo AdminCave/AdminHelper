@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Identität: Übernahme, Enroll, Aktivierung und Neu-Provisionieren nach dem Zertifikats-Register — Task-Ledger
-Status: aktiv · Branch: feature/identity-followups-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/identity-followups-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0306, R-0311, R-0312, Triage Kevin 2026-10-12; R-0312 Weg (a) als Bugfix im Sinn der Doku; die Zeitpruefung beim Enroll in T1 angenommen, sie schliesst eine zurueckgestellte Zeile, die jetzt belegt ist; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0306, R-0311, R-0312
 Heavy: linux-full + scenario --enforce --agents 1 — `apps/ca-issuer`, Server-API und `apps/agent`: `run.sh integration` (Enroll und Erneuern über das Gateway, Stack-Test Schritt 8b, Register-Sperrtests) und ein Multibox-Lauf, weil sich die Aktivierung über `:8444` und die Agent-Provisionierung ändern.
@@ -79,8 +79,10 @@ HEAD: 2ebdef55
 Semantik: `docs/admin/agent-deployment.html:149`: „Der Server löscht den API-Key der vorigen Provisionierung; es gilt nur
 noch der Key, den der Agent jetzt bekommt.“
 
-### T3 — Agent: Neu-Provisionieren für einen anderen Server verwirft dessen Identität (R-0312)  [ ]
+### T3 — Agent: Neu-Provisionieren für einen anderen Server verwirft dessen Identität (R-0312)  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/enroll_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6485582b 2026-10-12T17:52:16+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung (Empfehlung, siehe Gate): `runEnrollment` (`provision.go:240`) prüft vor `CheckStorable` (`:264`) den CN der
 gespeicherten Identität. Gehört sie zu einem anderen Server als `info.SubjectID`, entfernt der Agent sie (Key,
 Zertifikat, CA), bevor er das Zertifikat für den neuen Server beantragt: Seit R-0283 nimmt der neue Server ein
