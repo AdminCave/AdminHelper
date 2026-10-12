@@ -76,8 +76,10 @@ Doku-Schritt im CI tut.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (der Skill-Text ist die Anleitung)
 
-### T2 — Der Loop schaltet Hintergrund-Befehle der Bau-Session ab (R-0301)  [ ]
+### T2 — Der Loop schaltet Hintergrund-Befehle der Bau-Session ab (R-0301)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @36259ea9 2026-10-12T09:56:18+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Der Aufruf von `claude -p` (`ledger-loop.sh:795`, neben `BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS` aus R-0263)
   bekommt `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` in die Umgebung.
