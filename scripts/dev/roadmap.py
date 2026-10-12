@@ -148,7 +148,7 @@ SECTION_OF = {
 CLOSED = frozenset({"abgeschlossen", "abgelehnt"})
 ALIASES = {"geparkt": "zurückgestellt", "erledigt": "abgeschlossen"}
 # The header's counters, in the order it prints them; the caps are CLAUDE.md's.
-WIP_CAPS = (("aktiv", 1), ("bereit", 2), ("pr", 3), ("neu", 20))
+WIP_CAPS = (("aktiv", 2), ("bereit", 2), ("pr", 3), ("neu", 20))
 NEU_CAP = dict(WIP_CAPS)["neu"]
 # Which status may follow which (the Ledger chain of the spec, plus the ways
 # out: zurückgestellt, blockiert, abgelehnt). A closed row only turns
