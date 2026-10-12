@@ -111,6 +111,7 @@ Semantik:
 - AUTONOMOUS.md (Eigene Lane-Kennung je Worktree) „Lanes können sich nicht gegenseitig die Boxen abräumen“.
 - `.claude/skills/vm/SKILL.md` :74–75 „Parallele Lanes teilen nichts“.
 - Unter docs/ gibt es keine Stelle zu warm.sh oder `vm.py run`.
+Assertion-Änderung: scripts/vm/tests/test_vm.py::test_the_address_and_user_are_resolved_once_per_invocation — run prüft die Lane der Ziel-VM am frischen Zustand (status/current): vier GETs statt drei, je Aufruf weiter einmal aufgelöst
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku:
 - DEVELOPMENT.md: In der vm.py-Tabelle, Zeilen `run` und `sync`, kommt ein Halbsatz dazu („nur auf VMs der eigenen
