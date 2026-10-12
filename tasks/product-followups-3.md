@@ -16,8 +16,10 @@ angenommen. Die private Roadmap ist in diesem Worktree nicht lesbar; der Zeileni
 Zeilenangaben origin/main@b7ab9b6c. Jede Aussage über das heutige Verhalten ist mit einer Probe auf diesem Stand belegt
 (nicht committet).
 
-### T1 — keyring_store: ohne Guard antwortet ein Test-Build wie eine Plattform ohne Store (R-0327)  [ ]
+### T1 — keyring_store: ohne Guard antwortet ein Test-Build wie eine Plattform ohne Store (R-0327)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/keyring_store.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @10b0a44d 2026-10-12T22:09:25+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: In Test-Builds (`#[cfg(test)]`) gehen `set`, `get`, `try_get` und `delete` (`:26`, `:40`, `:49`, `:58`)
 ohne Guard nicht mehr an `os_*`, sondern antworten wie die Fassung für Plattformen ohne Store (`:124-127` usw.):
 `set` → `Err(AppError::Keyring(…))`, `get` → `None`, `try_get` → `Ok(None)`, `delete` → `Ok(())`. Mit Guard
