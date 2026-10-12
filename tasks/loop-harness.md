@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket loop-harness: doc-smoke in der Bau-Session, kein Hintergrund, redteam-Klone (R-0304, R-0301, R-0303) — Task-Ledger
-Status: geplant · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0304, R-0301, R-0303, Triage Kevin 2026-10-11/12; R-0304 als gezielte Allow-Regel nur fuer das lesende doc-smoke.py; R-0301 an der Doku belegt; R-0303 mit differentiellem Orakel, eine geaenderte Probe ist [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0304, R-0301, R-0303 (Kurz-Ledger ohne Spec)
 Heavy: none — Runner-Settings, ledger-loop.sh, ein Skill-Text und Shell-Tests unter scripts/ mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
