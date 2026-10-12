@@ -73,8 +73,10 @@ Doku:
   vm.py lehnt eine VMID ab, die nicht dazu passt.
 - Beide Dateien gibt es nur auf Deutsch. CHANGELOG nicht (intern).
 
-### T2 — lane.sh new lehnt getrackten Zustand unter .vm ab; der Kopierschritt nennt den Rückweg (R-0317)  [ ]
+### T2 — lane.sh new lehnt getrackten Zustand unter .vm ab; der Kopierschritt nennt den Rückweg (R-0317)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @74303daf 2026-10-12T17:58:36+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `lane_new`: Direkt nach `git worktree add` und vor der Prüfschleife (:250) prüft `new`, ob der Branch Pfade unter
   `.vm` trackt (`git -C "$wt" ls-files -- .vm`).
