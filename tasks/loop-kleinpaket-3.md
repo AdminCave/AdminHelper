@@ -19,8 +19,10 @@ alle Fakten in der Task, das Verify zuerst, danach der Doku-Smoke.
 Schon erledigt und nicht Teil des Pakets: `server.html:153` (DE und EN) nennt die Tabellen des Registers sowie
 `EnrollmentToken` und `RevokedIdentity` seit Phase B. Von R-0285 bleibt die Router-Tabelle.
 
-### T1 — server.html: der Drift-Test heißt richtig, der Enrollment-Router steht in der Tabelle, DE und EN (R-0284, R-0285)  [ ]
+### T1 — server.html: der Drift-Test heißt richtig, der Enrollment-Router steht in der Tabelle, DE und EN (R-0284, R-0285)  [x]
 Komponente: scripts · Dateien: docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b0d97213 2026-10-12T16:09:52+02:00
+Review: approve (sonnet/high) · round 1
 Änderung, in beiden Sprachen an denselben Stellen:
 - `:146` und `:212` nennen `test_alembic_consistency.py`. Die Datei gibt es nicht. Den Abgleich von Modellen und
   Migrationen machen heute zwei Tests in `apps/server/tests/`:
