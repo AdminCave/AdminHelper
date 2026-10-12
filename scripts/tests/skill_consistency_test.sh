@@ -10,7 +10,9 @@
 # --note` instead of `--ledger`/`--pr`; it holds that `--kurz` refuses SEC, so
 # no finding is committed into this public repo; and that a reviewer gets its own
 # directory and the cleanup rule of R-0098 (a reviewer's `rm -rf /tmp/tmp.*`
-# took every other session's fixtures on 2026-09-25). Read-only; each check first
+# took every other session's fixtures on 2026-09-25); and that CLAUDE.md keeps the
+# team's rules (R-0270) within its line budget, with the WIP caps that roadmap.py,
+# the status hook and /roadmap count against. Read-only; each check first
 # proves on a fixture that it can fail at all, and that it stays quiet on the
 # sentences it must not mistake.
 #
@@ -120,6 +122,14 @@ cleanup_rule() {
   echo ok
 }
 
+# branch_review_opus <text> — "ok" when the review over the whole branch (close
+# step 4 of feature-build) runs on Opus and takes no model from review.sh risk,
+# which says standard, that is Sonnet, for a branch outside the risk paths
+# (CLAUDE.md §2 "Modelle": den ganzen Branch prüft Opus).
+branch_review_opus() {
+  grep -qF 'model: opus' <<<"$1" && ! grep -qF 'review.sh risk' <<<"$1" && echo ok
+}
+
 # build_task_findings <skill> <runner settings> — one line per finding in the
 # worker's builder skill (stage 7a): a forbidden command given as an instruction
 # (every code span and every line of a fenced block outside "## Nie"), or a
@@ -171,6 +181,55 @@ print(sum(1 for c in cmds if c.startswith("bash scripts/")))
 PY
 }
 
+# claude_rules <CLAUDE.md> — one line per team rule (Kevin, 2026-10-10/11) missing
+# from it, and one when it is longer than its budget: the sandbox before every
+# unattended run, the Chef with the old name as its bridge (a fresh session looks
+# for the "Aufsicht"), no Sonnet reviewing Sonnet, the two build slots, the Chef's
+# merge after his own review, and the PRs to harness and gates, `.github/workflows/`
+# among them, that Kevin merges. Line breaks are read as spaces, so a reflow is no
+# finding.
+CLAUDE_MAX_LINES=226
+CLAUDE_GATE_PRS='PRs an Harness und Gates \([^)]*`\.github/workflows/`[^)]*\) merged Kevin'
+claude_rules() {
+  unreadable "$1" && return
+  local text s n
+  text=$(tr '\n' ' ' < "$1" | tr -s ' ')
+  for s in 'Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox' '**Chef** (bisher „Aufsicht“' \
+           'Nie prüft Sonnet, was Sonnet baute' '**Deckel:** 2 Bau-Slots' \
+           'Der Chef merged Produkt-PRs nach eigener Prüfung'; do
+    grep -qF -- "$s" <<<"$text" || echo "missing: $s"
+  done
+  grep -qE -- "$CLAUDE_GATE_PRS" <<<"$text" || echo "missing: PRs an Harness und Gates (… .github/workflows/ …) merged Kevin"
+  n=$(wc -l < "$1")
+  [ "$n" -le "$CLAUDE_MAX_LINES" ] || echo "$n lines, more than $CLAUDE_MAX_LINES"
+}
+
+# wip_caps <file> — the WIP caps a file states, as "aktiv 2 bereit 2 pr 3 neu 20".
+# Each names them in one place: CLAUDE.md in §3 trigger 3 and the /roadmap skill in
+# its "Zähler >=" bracket (`aktiv` 2 · …, read across line breaks), roadmap.py and
+# session-status.sh in their WIP_CAPS line (("aktiv", 2), … and aktiv:2 …).
+wip_caps() {
+  unreadable "$1" && return
+  { tr '\n' ' ' < "$1" | grep -oE '3\. Ein Deckel ist erreicht \([^)]*\)|Zähler >= [^)]*\)'
+    grep -E '^WIP_CAPS *= *' "$1"; } | head -1 \
+    | grep -oE '(aktiv|bereit|pr|neu)[`"]?(, | |:)[[:digit:]]+' | tr -d '`"' | tr ',:' '  ' | tr -s ' ' | paste -sd' '
+}
+
+# caps_parity <CLAUDE.md> <file…> — one line per file whose WIP caps differ from
+# those of CLAUDE.md, and one when CLAUDE.md does not name all four: two
+# extractions that read nothing must not pass as equal.
+caps_parity() {
+  local want f got
+  want=$(wip_caps "$1")
+  [[ "$want" =~ ^aktiv\ [[:digit:]]+\ bereit\ [[:digit:]]+\ pr\ [[:digit:]]+\ neu\ [[:digit:]]+$ ]] \
+    || { echo "$1: not the four caps: '$want'"; return; }
+  shift
+  for f; do
+    got=$(wip_caps "$f")
+    [ "$got" = "$want" ] || echo "$f: '$got', CLAUDE.md: '$want'"
+  done
+}
+
 # fires <detector> <file…> — the detector read its input and reported a finding.
 fires() { local out; out=$("$@"); [ -n "$out" ] && ! grep -q '^cannot read' <<<"$out"; }
 
@@ -178,7 +237,7 @@ fixture() { printf '%s\n' "$@" > "$WORK/fx.md"; echo "$WORK/fx.md"; }
 
 # ══ the checks can fail ═══════════════════════════════════════════════════════
 echo "── the checks themselves ──"
-for d in plan_on_main status_lists column_in_note; do
+for d in plan_on_main status_lists column_in_note claude_rules; do
   { ! fires "$d" "" && [ -n "$("$d" "")" ]; } && ok "$d: an empty path is neither a finding nor quiet" \
     || bad "$d took an empty path for input"
 done
@@ -261,6 +320,16 @@ f=$(fixture 'Proben nur mit `mktemp -d -p <sein Verzeichnis>`, nur eigene Pfade 
             '     Glob.')
 [ "$(cleanup_rule "$(tr '\n' ' ' < "$f")")" = ok ] \
   && ok "the rule wrapped across a line break is found" || bad "cleanup_rule missed the wrapped rule"
+f=$(fixture '## Abschluss' '4. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:' \
+            '     zweite Durchgang kostet nur Zeit. Das Modell kommt hier aus' \
+            '     `bash scripts/dev/review.sh risk --range main...HEAD`: ohne Flag ist nach den Commits nichts' \
+            '5. **Erledigt, Übergabe**')
+[ -z "$(branch_review_opus "$(section "$f" '4. **Review über den Branch-Diff**' '5. **Erledigt')")" ] \
+  && ok "a closing review that takes its model from review.sh risk is no ok" || bad "branch_review_opus passed the old step 4"
+f=$(fixture '4. **Review über den Branch-Diff**' '   Opus (`model: opus`), bei einem kleinen Branch das Modell aus `review.sh risk`.' \
+            '5. **Erledigt, Übergabe**')
+[ -z "$(branch_review_opus "$(section "$f" '4. **Review über den Branch-Diff**' '5. **Erledigt')")" ] \
+  && ok "... nor one that names Opus beside review.sh risk" || bad "branch_review_opus passed Opus beside review.sh risk"
 
 # ══ the real texts ════════════════════════════════════════════════════════════
 echo "── the skills, AUTONOMOUS.md, tasks/README.md ──"
@@ -340,9 +409,9 @@ grep -qF 'bash scripts/dev/review.sh risk' <<<"$step4" && grep -q 'Eine Runde' <
 ! grep -q 'Release-Workflows (`.github/workflows/release' <<<"$step4" \
   && ok "and no longer carries its own list of risk paths" || bad "step 4 still lists risk paths in prose"
 close4=$(section .claude/skills/feature-build/SKILL.md '4. **Review über den Branch-Diff**' '5. **Erledigt')
-grep -qF 'review.sh risk --range main...HEAD' <<<"$close4" \
-  && ok "the closing review takes its model from the branch range (nothing is uncommitted by then)" \
-  || bad "close step 4 lacks review.sh risk --range main...HEAD"
+[ "$(branch_review_opus "$close4")" = ok ] \
+  && ok "the review over the whole branch runs on Opus, not on the model of review.sh risk" \
+  || bad "close step 4 names no model: opus, or still takes its model from review.sh risk"
 step5=$(section .claude/skills/feature-build/SKILL.md '5. **Schließen' '## Abschluss')
 # Stage 6b: with `Review: auto` in the ledger head the reviewer is task-close's own
 # process — no subagent in step 4, --review auto in step 5, the log for the pilot.
@@ -388,6 +457,65 @@ CALLS=$(build_task_calls "$BTS")
 [ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
   && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
   || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
+
+# Team-Plan Phase 1 (R-0270): the team's rules in CLAUDE.md do not go silently, and
+# the file does not grow past the budget Kevin set (2026-10-10).
+echo "── CLAUDE.md, the team's rules ──"
+f=$(fixture '## 2. Betriebsmodell' '**Restrisiko:** hingenommen für beaufsichtigte Läufe.' \
+            'Die **Aufsichts-Session** ist die eine Session …' 'Sonnet nur für die schnellen Task-Reviewer im Bau.' \
+            'Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`.' 'Die Aufsicht öffnet PRs und merged nach eigener Prüfung.' \
+            'PRs, die diese Regeln ändern (§2, §3 dieser Datei), merged nur er.')
+out=$(claude_rules "$f")
+[ "$(grep -c '^missing: ' <<<"$out")" -eq 6 ] && ok "claude_rules: the old §2 misses all six rules" \
+  || bad "claude_rules on the old §2: $out"
+# The state after the first build: the merge without the Chef's own review, and
+# .github/workflows/ named, but not among the PRs Kevin merges.
+f=$(fixture '**Deckel:** 2 Bau-Slots (zwei Ledger `aktiv`)' 'CI-Läufe stehen unter `.github/workflows/`.' \
+            '**Merge:** Der Chef merged Produkt-PRs nach grüner CI im ersten Versuch. PRs an Harness und Gates' \
+            '(§2/§3, `scripts/dev/harness-paths.txt`) merged Kevin.' '**Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox.**' \
+            'Der **Chef** (bisher „Aufsicht“)' 'Nie prüft Sonnet, was Sonnet baute.')
+out=$(claude_rules "$f")
+[ "$(grep -c . <<<"$out")" -eq 2 ] && grep -qF 'missing: Der Chef merged Produkt-PRs nach eigener Prüfung' <<<"$out" \
+  && grep -qF 'missing: PRs an Harness und Gates (… .github/workflows/ …) merged Kevin' <<<"$out" \
+  && ok "claude_rules: a merge without own review, and workflows outside the gate PRs, are found" \
+  || bad "claude_rules on the first-build merge: $out"
+mapfile -t pad < <(seq 224)
+f=$(fixture '**Vor jedem unbeaufsichtigten Dauerlauf kommt die Sandbox (R-0241).**' \
+            'Der **Chef** (bisher „Aufsicht“; Skills sagen es noch so)' 'Nie prüft Sonnet, was Sonnet baute.' \
+            '**Deckel:** 2 Bau-Slots' 'Der Chef merged Produkt-PRs nach eigener Prüfung, wenn die CI grün ist.' \
+            'PRs an Harness und Gates (§2/§3, `.github/workflows/`) merged Kevin.' "${pad[@]}")
+[ "$(claude_rules "$f")" = "230 lines, more than $CLAUDE_MAX_LINES" ] \
+  && ok "claude_rules: 230 lines are over the budget, and only that is found" || bad "claude_rules on 230 lines: $(claude_rules "$f")"
+f=$(fixture 'hingenommen für beaufsichtigte Läufe. **Vor jedem unbeaufsichtigten' 'Dauerlauf kommt die Sandbox (R-0241).**' \
+            'Der **Chef** (bisher' '„Aufsicht“; Skills sagen es noch so)' 'den ganzen Branch prüft Opus. Nie prüft Sonnet, was' \
+            '  Sonnet baute.' '**Deckel:** 2' 'Bau-Slots' 'Kein Fund. **Merge:** Der Chef merged Produkt-PRs nach eigener' \
+            'Prüfung, wenn die CI grün ist. PRs an Harness und Gates (§2/§3, `scripts/dev/harness-paths.txt`,' \
+            '`.github/workflows/`) merged Kevin, oder der Chef auf Kevins Wort.')
+[ -z "$(claude_rules "$f")" ] && ok "claude_rules: the rules wrapped across line breaks are found" \
+  || bad "claude_rules fired on the wrapped rules: $(claude_rules "$f")"
+out=$(claude_rules CLAUDE.md)
+[ -z "$out" ] && ok "CLAUDE.md keeps the team's rules within $CLAUDE_MAX_LINES lines" || bad "CLAUDE.md: $out"
+
+# The WIP caps: CLAUDE.md §3 sets them, roadmap.py and the status hook count
+# against them, /roadmap renders them — one number changed alone is a finding.
+CAPS_FX=("$WORK/caps-claude.md" "$WORK/caps.py" "$WORK/caps.sh" "$WORK/caps-skill.md")
+printf '%s\n' '3. Ein Deckel ist erreicht (`aktiv` 2 · `bereit` 2 · `pr` 3 · `neu` 20), oder ein dritter' > "${CAPS_FX[0]}"
+printf '%s\n' 'WIP_CAPS = (("aktiv", 2), ("bereit", 2), ("pr", 3), ("neu", 20))' > "${CAPS_FX[1]}"
+printf '%s\n' 'WIP_CAPS="aktiv:2 bereit:2 pr:3 neu:20"' > "${CAPS_FX[2]}"
+printf '%s\n' 'ein Deckel erreicht (Zähler >= `aktiv` 2 · `bereit` 2 · `pr` 3 ·' '`neu` 20), schreib' > "${CAPS_FX[3]}"
+[ -z "$(caps_parity "${CAPS_FX[@]}")" ] && ok "caps_parity: the same caps in four forms are equal, a wrapped one too" \
+  || bad "caps_parity fired on equal caps: $(caps_parity "${CAPS_FX[@]}")"
+printf '%s\n' 'WIP_CAPS="aktiv:1 bereit:2 pr:3 neu:20"' > "${CAPS_FX[2]}"
+out=$(caps_parity "${CAPS_FX[@]}")
+[ "$(grep -c . <<<"$out")" = 1 ] && grep -qF "${CAPS_FX[2]}: 'aktiv 1 bereit 2 pr 3 neu 20'" <<<"$out" \
+  && ok "caps_parity: one number that differs is found, in its file" || bad "caps_parity on aktiv 1: $out"
+printf '%s\n' '3. Ein Deckel ist erreicht, oder ein dritter Bau-Lauf würde starten.' > "${CAPS_FX[0]}"
+fires caps_parity "${CAPS_FX[@]}" && grep -qF 'not the four caps' <<<"$(caps_parity "${CAPS_FX[@]}")" \
+  && ok "caps_parity: a CLAUDE.md without the caps is a finding, not equal" \
+  || bad "caps_parity passed a CLAUDE.md without caps"
+out=$(caps_parity CLAUDE.md scripts/dev/roadmap.py scripts/dev/hooks/session-status.sh .claude/skills/roadmap/SKILL.md)
+[ -z "$out" ] && ok "CLAUDE.md, roadmap.py, session-status.sh and /roadmap name the same caps ($(wip_caps CLAUDE.md))" \
+  || bad "the WIP caps differ: $out"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"
