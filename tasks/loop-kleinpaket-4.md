@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 4: der InMemoryTokenStore legt bei einem abgelehnten Erneuern nichts an — Task-Ledger
-Status: bereit · Branch: feature/loop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/loop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0295, Loop-Futter aus Kevins Triage 2026-10-11; R-0294 bleibt draussen, solange der Builder-Klon kein frpc-Sidecar hat; in den Loop erst nach dem Merge von identity-followups-2; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0295 (Kurz-Ledger ohne Spec)
 Heavy: none — der `InMemoryTokenStore` dient nur Tests und Dev; der Stack nutzt den `DbTokenStore`, an dem sich nichts ändert.
