@@ -296,6 +296,30 @@ rm -f "$MAIN/${SIDECAR%/*}/frpc-dangling"
   || bad "new sigma rc=$rc: $(cat "$WORK/out.log")"
 lane "done" sigma || bad "done sigma: $(cat "$WORK/out.log")"
 
+echo "── new: no link and no copy follows a tracked symlink out of the lane (R-0252) ──"
+# The branch is anybody's: its apps/server/.venv and the sidecar's directory are
+# tracked symlinks to directories outside the lane. Made in a worktree of its own,
+# so the main checkout stays on main.
+OUTV="$WORK/outside-venv" OUTB="$WORK/outside-bin"; mkdir -p "$OUTV" "$OUTB"
+g worktree add -q -b feature/outside "$WORK/mk-outside" main
+mkdir -p "$WORK/mk-outside/apps/server" "$WORK/mk-outside/${SIDECAR%/*/*}"
+ln -s "$OUTV" "$WORK/mk-outside/apps/server/.venv"
+ln -s "$OUTB" "$WORK/mk-outside/${SIDECAR%/*}"
+echo "# plan outside" > "$WORK/mk-outside/tasks/outside.md"
+git -C "$WORK/mk-outside" add -f apps/server/.venv "${SIDECAR%/*}" tasks/outside.md
+git -C "$WORK/mk-outside" -c user.name=t -c user.email=t@t commit -qm "tracked symlinks out of the lane"
+g worktree remove "$WORK/mk-outside"
+lane new outside; rc=$?
+[ "$rc" = 0 ] && [ -z "$(ls -A "$OUTV")" ] && [ -z "$(ls -A "$OUTB")" ] \
+  && grep -q 'WARN: apps/server/.venv in the lane leads outside it — not linked' "$WORK/out.log" \
+  && grep -q "WARN: ${SIDECAR%/*} in the lane leads outside it — the frpc sidecar is not copied" "$WORK/out.log" \
+  && ok "tracked symlinks out of the lane: nothing written through them, a WARN for each, the lane still made" \
+  || bad "new outside rc=$rc: venv=[$(ls -A "$OUTV")] bin=[$(ls -A "$OUTB")] out=$(cat "$WORK/out.log")"
+[ -d "$WORK/AdminHelper-outside/apps/monitoring/.venv" ] && [ ! -L "$WORK/AdminHelper-outside/apps/monitoring/.venv" ] \
+  && [ "$(readlink "$WORK/AdminHelper-outside/apps/monitoring/.venv/bin")" = "$MAIN/apps/monitoring/.venv/bin" ] \
+  && ok "... and the other venvs are linked as always" || bad "monitoring venv: $(ls -la "$WORK/AdminHelper-outside/apps/monitoring/.venv" 2>&1)"
+lane "done" outside || bad "done outside: $(cat "$WORK/out.log")"
+
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"
 export FAKE_CREATEDB_FAIL=1

@@ -126,6 +126,16 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
 # lane's name go down with the lane.
 lane_mark() { printf '%s/.vm/lanes/%s' "$ROOT" "$1"; }
 
+# lane_inside <worktree> <dir> — 0 when <dir> of the lane resolves inside the lane.
+# The branch is anybody's: a tracked symlink on the way (apps/server/.venv, or
+# apps/server itself) would let mkdir, ln and cp write wherever it points
+# (R-0252), the way the probe guards its mutant since 4b (review-probe.sh).
+lane_inside() {
+  local root real
+  root="$(realpath -- "$1")" && real="$(realpath -m -- "$1/$2")" || return 1
+  case "$real" in "$root"/*) return 0 ;; *) return 1 ;; esac
+}
+
 # lane_link_dir <worktree> <dir> — link every entry of the main checkout's <dir>
 # into a REAL <dir> in the lane. .gitignore matches these as directories
 # (`.venv/`); a symlink in their place is no directory to it, so it would be
@@ -140,6 +150,10 @@ lane_mark() { printf '%s/.vm/lanes/%s' "$ROOT" "$1"; }
 lane_link_dir() {
   local wt="$1" dir="$2" entry
   [ -d "$ROOT/$dir" ] || return 0
+  if ! lane_inside "$wt" "$dir"; then
+    echo "  WARN: $dir in the lane leads outside it — not linked"
+    return 0
+  fi
   mkdir -p "$wt/$dir"
   for entry in "$ROOT/$dir"/* "$ROOT/$dir"/.[!.]* "$ROOT/$dir"/..?*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
@@ -244,8 +258,12 @@ lane_new() {
   # links for reading: rsync-exclude.txt keeps .venv off the box anyway.
   local bin=apps/desktop/src-tauri/binaries
   if [ -d "$ROOT/$bin" ]; then
-    { mkdir -p "$wt/$bin" && cp -RpL "$ROOT/$bin/." "$wt/$bin/"; } \
-      || echo "  WARN: could not copy all of $bin — without the frpc sidecar cargo test (desktop) skips in the lane"
+    if ! lane_inside "$wt" "$bin"; then
+      echo "  WARN: $bin in the lane leads outside it — the frpc sidecar is not copied"
+    else
+      { mkdir -p "$wt/$bin" && cp -RpL "$ROOT/$bin/." "$wt/$bin/"; } \
+        || echo "  WARN: could not copy all of $bin — without the frpc sidecar cargo test (desktop) skips in the lane"
+    fi
   fi
   local c
   for c in server monitoring ca-issuer; do lane_link_dir "$wt" "apps/$c/.venv"; done
