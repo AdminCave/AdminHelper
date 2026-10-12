@@ -225,6 +225,8 @@ mod tests {
             let _keyring = memory();
             set("b", "2").unwrap();
         }
+        // Dropping the guard switched back to the OS store.
+        assert!(memory_backend::with(|_| ()).is_none());
         let _keyring = memory();
         assert_eq!(get("b"), None);
     }

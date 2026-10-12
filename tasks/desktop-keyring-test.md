@@ -30,8 +30,8 @@ prüfen. Getestet sind deshalb nur reine Teile: `replaces_for` (`src/enrollment.
 
 ### T1 — keyring_store: ein Speicher-Backend, das ein Test einschaltet (R-0294)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/keyring_store.rs
-Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @adf773dc 2026-10-12T18:48:17+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @92ed61ed 2026-10-12T19:23:06+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve, Nit miterledigt
 Änderung: Unter `#[cfg(test)]` ein Backend im Speicher, das ein Test ausdrücklich einschaltet, und nur dann: ein
 Guard, etwa `let _keyring = keyring_store::memory();`, der für die Dauer seines Lebens `set`, `get`, `try_get` und
 `delete` auf eine Map umleitet und beim Drop wieder zurückstellt. Die Map ist thread-lokal (`thread_local!`): jeder
