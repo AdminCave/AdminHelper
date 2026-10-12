@@ -63,7 +63,7 @@ run_case() {
   if [ "$rc" != "$want_rc" ]; then
     bad "$name: rc=$rc (expected $want_rc)"; printf '%s\n' "$out" | sed 's/^/       /'; return
   fi
-  if [ -n "$want" ] && ! printf '%s' "$out" | grep -qF -- "$want"; then
+  if [ -n "$want" ] && ! grep -qF -- "$want" <<<"$out"; then
     bad "$name: output does not mention '$want'"; printf '%s\n' "$out" | sed 's/^/       /'; return
   fi
   ok "$name"
@@ -99,7 +99,7 @@ run_case "unknown env name -> exit 1 under --env" 1 "NICHT_BEKANNTE_VARIABLE" --
 # The output first, then grep: under pipefail a pipe takes python's exit, and the
 # finding above makes that 1 — the if would never see the grep.
 out=$(python3 "$CHECK" --env --strict --root "$REPO" 2>&1)
-if printf '%s\n' "$out" | grep -q "DATABASE_URL"; then
+if grep -q "DATABASE_URL" <<<"$out"; then
   bad "a documented env name that the config reads was reported"
 else
   ok "known env name is not reported"
@@ -134,9 +134,9 @@ echo '<p><code>apps/server/app/gone.py</code> und <code>NICHT_BEKANNTE_VARIABLE<
 run_case "--paths --env --strict: the path finding" 1 "apps/server/app/gone.py" -- --paths --env --strict --root "$REPO"
 run_case "--paths --env --strict: the name finding" 1 "NICHT_BEKANNTE_VARIABLE" -- --paths --env --strict --root "$REPO"
 out=$(python3 "$CHECK" --env --strict --root "$REPO" 2>&1)
-if printf '%s\n' "$out" | grep -q "apps/server/app/gone.py"; then
+if grep -q "apps/server/app/gone.py" <<<"$out"; then
   bad "--env alone reported a path"
-elif ! printf '%s\n' "$out" | grep -q "NICHT_BEKANNTE_VARIABLE"; then
+elif ! grep -q "NICHT_BEKANNTE_VARIABLE" <<<"$out"; then
   bad "--env alone did not run the name check: $out"
 else
   ok "--env alone checks no path"

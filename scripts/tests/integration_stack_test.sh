@@ -171,7 +171,7 @@ codes=$(for _ in $(seq 1 40); do
         -X POST "$ENROLL/enroll" -H 'Content-Type: application/json' \
         -d '{"token":"bogus","csr":"x"}' 2>/dev/null
 done)
-echo "$codes" | grep -q '^429$' && ok "enroll plane returns 429 after a burst (limit_req)" \
+grep -q '^429$' <<<"$codes" && ok "enroll plane returns 429 after a burst (limit_req)" \
     || bad "no 429 after 40 enroll requests"
 
 # ── 10. Repo plane :8445 path filtering (6.63 exposes it, 6.125 asserts it) ──

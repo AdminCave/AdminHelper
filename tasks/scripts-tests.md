@@ -47,8 +47,10 @@ Offene Fragen am Gate:
    - Empfehlung: nicht in diesem Paket und keine eigene Zeile. Ein gescheiterter Klon dort ist sichtbar und
      wiederholbar.
 
-### T1 — Der Wächter kennt eingebaute Schreiber; die Stellen lesen per Here-String (R-0286)  [ ]
+### T1 — Der Wächter kennt eingebaute Schreiber; die Stellen lesen per Here-String (R-0286)  [x]
 Komponente: scripts · Dateien: scripts/tests/pipe_guard_test.sh, scripts/tests/heavy_test.sh, scripts/tests/doc_smoke_test.sh, scripts/tests/upgrade_path_test.sh, scripts/tests/update_test.sh, scripts/tests/toolchain_lockstep_test.sh, scripts/tests/sync_check_test.sh, scripts/tests/openapi_breaking_test.sh, scripts/tests/desktop_e2e_skip_test.sh, scripts/tests/check_versions_test.sh, scripts/tests/agent_install_test.sh, scripts/tests/restore_guard_test.sh, scripts/tests/install_test.sh, scripts/tests/integration_stack_test.sh, scripts/tests/backup_restore_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ce19ccfb 2026-10-12T05:44:36+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `pipe_guard_test.sh` zählt `printf` und `echo` zu den Schreibern: `many()` (:56) und der Vorfilter (:114), der
   heute nur Zeilen mit `git` liest.

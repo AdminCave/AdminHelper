@@ -8,10 +8,14 @@
 # `man git`), so in `git log | grep -q x` grep exits on a middle line, git's next
 # write gets SIGPIPE (141), and under `set -o pipefail` the match turns into a
 # red. heavy_test 4i-d fell that way in about 3 % of its runs (R-0103).
+# The builtins printf and echo are such writers too (R-0286): past the pipe
+# buffer they write in parts, and `printf '%s' "$out" | grep -q x` ends with 141
+# every time at 300 kB; a short one flaked once in diagnostics_test (R-0264, the
+# cause there not verified). Their text reaches grep by a here-string instead.
 # The rule for scripts/tests/*_test.sh: the output of git log, rev-list, reflog,
 # shortlog, check-attr or check-ignore goes into a variable first, or is cut to
 # one record (-1, -n 1, --max-count=1), before grep -q/-m/-l, head or sed …q
-# reads it.
+# reads it; printf and echo never feed one of these readers.
 #
 # A line scan, not a parser: continuation lines are joined, comments dropped, and
 # a pipe inside quotes is no pipe — which also hides one inside a quoted "$(…)",
@@ -52,10 +56,12 @@ scan() {
     gsub(/>&/, ">_", out); gsub(/<&/, "<_", out); gsub(/&>/, "_>", out)
     return out
   }
-  # The git command a pipe starts from: many records, not cut to one?
+  # The git command a pipe starts from: many records, not cut to one? A printf
+  # or echo always counts: a builtin writes its text in as many parts as it likes.
   function many(s,   t, n, i, k) {
     n = split(s, t, /[ \t]+/)
     for (i = 1; i <= n; i++) {
+      if (t[i] ~ /(^|[(`])(printf|echo)$/) return 1
       if (t[i] !~ /(^|[(`])git$/) continue
       for (k = i + 1; k <= n; k++) {
         if (t[k] == "-C" || t[k] == "-c") { k++; continue }
@@ -111,7 +117,7 @@ scan() {
     if (buf == "") start = FNR
     if ($0 ~ /\\$/) { buf = buf substr($0, 1, length($0) - 1) " "; next }
     line = buf $0; buf = ""
-    if (line ~ /git/) check(line, start)
+    if (line ~ /git|printf|echo/) check(line, start)
   }' "$@"
 }
 
@@ -155,6 +161,14 @@ else
   expect clean "a git command outside the list" 'git status --porcelain | grep -q x'
   expect clean "|| is no pipe" 'git log || grep -q x f'
   expect clean "the pipeline ended before the pipe" 'git log > f; cat f | grep -q x'
+  expect hit "printf into grep -q (R-0286)" "printf '%s' \"\$out\" | grep -q x"
+  expect hit "echo into grep -qi" 'echo "$out" | grep -qi x'
+  expect hit "printf of a list into head" "printf '%s\\n' \"\$@\" | head -1"
+  expect hit "printf behind && in a check" "[ \"\$rc\" = 0 ] && printf '%s' \"\$out\" | grep -q x && ok y"
+  expect hit "a negative check: SIGPIPE reads as no match" "! echo \"\$out\" | grep -qF -- \"\$want\""
+  expect clean "a here-string instead" 'grep -q x <<<"$out"' "! grep -qF -- \"\$want\" <<<\"\$out\""
+  expect clean "printf and echo into readers that read everything" "printf '%s' \"\$out\" | grep -c x" 'echo "$out" | wc -l'
+  expect clean "printf | grep -q inside quotes" "echo 'see printf x | grep -q y'"
   # Registered, or the scripts block never runs it.
   grep -qw pipe_guard_test <<<"$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$HERE/run.sh")" \
     && ok "pipe_guard_test is registered in AH_SCRIPT_TESTS_DEFAULT" \
@@ -172,9 +186,9 @@ found=$(scan "${files[@]}"); rc=$?
 if [ "$rc" != 0 ]; then
   bad "the scan itself failed (awk exit $rc)"
 elif [ -z "$found" ]; then
-  ok "no git producer of many records feeds an early reader"
+  ok "no git producer of many records and no printf or echo feeds an early reader"
 else
-  while IFS= read -r line; do bad "SIGPIPE under pipefail (R-0103): $line"; done <<<"$found"
+  while IFS= read -r line; do bad "SIGPIPE under pipefail (R-0103, R-0286): $line"; done <<<"$found"
 fi
 
 echo ""
