@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 4: der InMemoryTokenStore legt bei einem abgelehnten Erneuern nichts an — Task-Ledger
-Status: aktiv · Branch: feature/loop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/loop-kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0295, Loop-Futter aus Kevins Triage 2026-10-11; R-0294 bleibt draussen, solange der Builder-Klon kein frpc-Sidecar hat; in den Loop erst nach dem Merge von identity-followups-2; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0295 (Kurz-Ledger ohne Spec)
 Heavy: none — der `InMemoryTokenStore` dient nur Tests und Dev; der Stack nutzt den `DbTokenStore`, an dem sich nichts ändert.
@@ -20,8 +20,10 @@ R-0294 (desktop-rs, ein Test-Backend für `keyring_store`) gehört nicht in dies
 das frpc-Sidecar, also fehlt es auch in jeder Lane, und der Fundament-Lauf von `desktop-rs` wäre rot. Die Zeile bleibt
 für eine Bau-Session außerhalb des Loops oder bis der Clone das Sidecar hat.
 
-### T1 — ca-issuer: der InMemoryTokenStore übernimmt ein Zertifikat erst, wenn das Erneuern gelingt (R-0295)  [ ]
+### T1 — ca-issuer: der InMemoryTokenStore übernimmt ein Zertifikat erst, wenn das Erneuern gelingt (R-0295)  [x]
 Komponente: ca-issuer · Dateien: apps/ca-issuer/app/tokens.py, apps/ca-issuer/tests/test_enroll_renew.py
+Evidenz: run.sh[quick] ca-issuer: 4 passed, 0 failed, 14 skipped @15635e7e 2026-10-12T21:54:00+02:00
+Review: approve (opus/xhigh) · round 1
 Änderung: `InMemoryTokenStore.renew` (`apps/ca-issuer/app/tokens.py:247-277`) legt für ein nie erfasstes Zertifikat
 heute schon vor dem Signieren eine Legacy-Linie an und trägt das Zertifikat darauf ein:
 
