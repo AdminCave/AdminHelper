@@ -55,8 +55,10 @@ HEAD: 2ebdef55
 Semantik: `docs/admin/benutzer.html:106`: „Benutzer löschen sperrt alle Zertifikate, die bis dahin für diesen Benutzer
 ausgestellt wurden, am Server wie beim Erneuern.“
 
-### T2 — Aktivierung: API-Key, Monitor-Key und Enrollment-Token entstehen unter einer Sperre (R-0311)  [ ]
+### T2 — Aktivierung: API-Key, Monitor-Key und Enrollment-Token entstehen unter einer Sperre (R-0311)  [x]
 Komponente: server · Dateien: apps/server/app/modules/provisioning/router.py, apps/server/tests/test_provisioning.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @dfc59ad6 2026-10-12T17:50:04+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `activate_provision` (`router.py:107`) hält die Zeile des Servers (`:134`, `FOR NO KEY UPDATE`) heute nur bis
 zum ersten Commit (`:167`); Monitor-Key (`:180`) und Enrollment-Token (`:190`) entstehen danach. Künftig: Keys ersetzen,
 Monitor-Key holen, FRP-Bundle, Enrollment-Token prägen, und erst dann committen; die Audit-Einträge folgen danach

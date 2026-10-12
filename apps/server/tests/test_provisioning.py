@@ -476,3 +476,102 @@ def test_a_second_activation_waits_for_the_first_and_one_key_stays(pg_engine):
             conn.execute(delete(ProvisionToken).where(ProvisionToken.server_id == sid))
             conn.execute(delete(EnrollmentToken).where(EnrollmentToken.subject_id == sid))
             conn.execute(delete(Server).where(Server.id == sid))
+
+
+# ---------------------------------------------------------------------------
+# R-0311: what the agent gets comes from one activation
+# ---------------------------------------------------------------------------
+
+
+def _a_session_waits_for_a_lock(engine, timeout: float = 10.0) -> bool:
+    import time
+
+    from sqlalchemy import text
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as probe:
+            waiting = probe.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity"
+                    " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                )
+            ).scalar()
+        if waiting:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_two_activations_hand_out_the_keys_of_one_of_them(pg_engine, monkeypatch):
+    # The monitoring service as a stand-in with its rule: one key per server, a new one
+    # replaces the old. The first activation stops at its monitor key; the second has to
+    # wait for it, and in the end the valid API key and the valid monitor key both come
+    # from the second. Rows written here are removed at the end.
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete, func, select
+    from sqlalchemy.orm import sessionmaker
+
+    import app.modules.provisioning.router as prov
+    from app.core.database import get_db
+    from app.main import app
+
+    sid = f"srv-keys-{uuid.uuid4().hex[:6]}"
+    new_session = sessionmaker(bind=pg_engine)
+    with new_session() as setup:
+        audit_before = setup.execute(select(func.coalesce(func.max(AuditLog.id), 0))).scalar()
+        setup.add(Server(id=sid, name=sid, hostname=f"{sid}.example.test"))
+        setup.commit()
+        token_a, token_b = _make_token(setup, server_id=sid), _make_token(setup, server_id=sid)
+
+    monitoring: dict[str, str] = {}
+    calls = {"n": 0}
+    paused, release = threading.Event(), threading.Event()
+
+    def monitor_key(server_id, timeout=5.0):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            paused.set()
+            release.wait(10)
+        monitoring[server_id] = f"mk-{uuid.uuid4().hex[:8]}"
+        return monitoring[server_id]
+
+    monkeypatch.setattr(prov, "fetch_or_skip_monitor_key", monitor_key)
+
+    def _db():
+        session = new_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    url = f"/api/servers/{sid}/provision/activate"
+    app.dependency_overrides[get_db] = _db
+    ex = ThreadPoolExecutor(max_workers=2)
+    try:
+        first = ex.submit(TestClient(app).post, url, headers={"X-Provision-Token": token_a})
+        assert paused.wait(10)
+        second = ex.submit(TestClient(app).post, url, headers={"X-Provision-Token": token_b})
+        assert _a_session_waits_for_a_lock(pg_engine), "the second activation must wait"
+        assert not second.done()
+        release.set()
+        assert first.result(10).status_code == 200
+        b = second.result(10)
+        assert b.status_code == 200, b.text
+        with new_session() as check:
+            current = check.query(ApiKey).filter(ApiKey.server_id == sid).one().hashed_key
+        assert current == hash_api_key(b.json()["apiKey"])
+        assert monitoring[sid] == b.json()["monitorApiKey"]
+    finally:
+        release.set()
+        ex.shutdown(wait=True)
+        app.dependency_overrides.clear()
+        with pg_engine.begin() as conn:
+            conn.execute(delete(AuditLog).where(AuditLog.id > audit_before))
+            conn.execute(delete(ApiKey).where(ApiKey.server_id == sid))
+            conn.execute(delete(ProvisionToken).where(ProvisionToken.server_id == sid))
+            conn.execute(delete(EnrollmentToken).where(EnrollmentToken.subject_id == sid))
+            conn.execute(delete(Server).where(Server.id == sid))
