@@ -107,3 +107,8 @@ export interface AnsibleTarget {
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+
+// How resetting the device identity went (enrollment.rs ResetOutcome, R-0224): revoked
+// at the server, deleted only here because the server did not revoke it (not reachable,
+// or it declined), or there was no identity at all.
+export type ResetOutcome = 'revoked' | 'localOnly' | 'notEnrolled';

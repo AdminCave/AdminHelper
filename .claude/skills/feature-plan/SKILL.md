@@ -195,6 +195,10 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   (etwa in `/roadmap` angenommen), wird `roadmap.py status R-nnnn geplant --ledger
   tasks/<slug>.md` — der Pfad gehört in die Spalte `Ledger`, dort lesen ihn `next` und die
   Parallel-Prüfung; derselbe Status füllt nur die Spalte. Nie ein Edit an der Datei.
+  Beides nur für ein Vorhaben, das Kevin diktiert oder angenommen hat. Ein eigener Fund bleibt
+  `neu` bis zu Kevins Bestätigung (CLAUDE.md §2 „Triage“): eine bestehende Zeile bekommt nur die
+  Spalte (`roadmap.py status R-nnnn neu --ledger tasks/<slug>.md`), eine neue die echte Quelle des
+  Funds.
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
   stagen, `bash scripts/dev/ledger.sh lint tasks/<slug>.md` (prüft das Ledger und die Spec aus
   seinem `Spec:`-Feld, auch auf Reste eines Werkzeugaufrufs; Exit 1: beheben, dann erst
@@ -229,8 +233,8 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   ```
   Dazu ein Satz zu den Grenzen: beide Opus-Bauten teilen sich Kevins Nutzungsfenster, der
   zweite PR muss rebasen (CHANGELOG, DEVELOPMENT.md), und Kevins Review-Zeit bleibt der
-  Engpass. Die Lane ist die Ausnahme vom Deckel „genau ein Bau aktiv" (CLAUDE.md §2) — nicht
-  der Default, sondern ein Vorschlag, den Kevin annimmt oder nicht.
+  Engpass. Zwei Bau-Slots sind der Deckel (CLAUDE.md §2); eine Lane gibt es nur für disjunkte
+  Ledger — nicht der Default, sondern ein Vorschlag, den Kevin annimmt oder nicht.
 - Sage explizit: „Bitte `docs/features/<slug>.md` und `tasks/<slug>.md` auf `feature/<slug>`
   prüfen/anpassen. Zum Bauen nach der Freigabe: **`/feature-build tasks/<slug>.md`** auf
   `feature/<slug>` in einer Opus-Session — oder als parallele Lane

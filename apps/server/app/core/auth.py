@@ -226,7 +226,7 @@ def get_current_user(
             detail="Nicht authentifiziert",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    require_cert_user(request, user.username)
+    require_cert_user(request, user.username, db)
     bind_actor(request, Actor("user", str(user.id), user.username, resolve_client_ip(request)))
     return user
 
@@ -304,7 +304,7 @@ class ApiKeyOrUser:
                 )
                 return None, api_key
             if user:
-                require_cert_user(request, user.username)
+                require_cert_user(request, user.username, db)
                 if self.require_admin and not user.is_admin:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich"

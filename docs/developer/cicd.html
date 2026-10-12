@@ -311,7 +311,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <li><strong>Verdict:</strong> <code>&lt;id&gt;.r&lt;n&gt;.verdict.json</code> (Schema-Version&nbsp;2) mit
             den Feldern des Runners; <code>check-verdict --tree --task</code> entscheidet &uuml;ber den Commit, jede
             Runde steht in <code>review.sh log</code>, und <code>task-close.sh</code> druckt ihre Kosten als Zeile
-            <code>review cost_usd=&lt;x&gt; round=&lt;n&gt;</code> (der Worker z&auml;hlt sie in sein Lauf-Budget).</li>
+            <code>review cost_usd=&lt;x&gt; round=&lt;n&gt;</code>; in sein Lauf-Budget z&auml;hlt der Worker aber die
+            Zeile aus seiner Kostendatei (<code>--cost-file</code>, je Abschluss frisch), und unbekannte Kosten
+            z&auml;hlen mit dem Deckel <code>REVIEW_BUDGET_MAX</code>.</li>
             <li><strong>Scheitern:</strong> kein Start, Timeout, ein Fehler-Ergebnis, ein Exit ungleich&nbsp;0 oder ein fehlendes oder
             schemawidriges <code>structured_output</code> sind Exit&nbsp;74 ohne Verdict und ohne Commit; kein
             R&uuml;ckfall auf den Sub-Agent-Review.</li>

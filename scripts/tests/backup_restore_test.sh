@@ -44,6 +44,16 @@ ca_fingerprint() {
 }
 CA_BEFORE=$(ca_fingerprint)
 [ -n "$CA_BEFORE" ] && ok "captured CA before ($CA_BEFORE)" || bad "could not read gateway CA"
+# R-0224: the restore reopens the transition of the certificate register, so its
+# install time moves from the migration to the restore.
+register_installed_at() {
+    e2e_dc exec -T postgres sh -c \
+        'PGPASSWORD=$POSTGRES_PASSWORD psql -h 127.0.0.1 -U adminhelper -d adminhelper -tAc "SELECT extract(epoch FROM installed_at)::bigint FROM certificate_register_state WHERE id = 1"' \
+        2>/dev/null | tr -d '[:space:]'
+}
+INSTALLED_BEFORE=$(register_installed_at)
+[ -n "$INSTALLED_BEFORE" ] && ok "read the install time of the register ($INSTALLED_BEFORE)" \
+    || bad "could not read the install time of the register"
 
 # ── backup.sh against the e2e stack ───────────────────────────────────────────
 export COMPOSE_PROJECT_NAME="$E2E_PROJECT"
@@ -78,9 +88,14 @@ for _ in $(seq 1 60); do
 done
 [ "$code" != "000" ] && ok "restored stack answers again" || bad "restored stack never came back"
 
+INSTALLED_AFTER=$(register_installed_at)
+{ [ -n "$INSTALLED_BEFORE" ] && [ -n "$INSTALLED_AFTER" ] && [ "$INSTALLED_AFTER" -gt "$INSTALLED_BEFORE" ]; } \
+    && ok "the restore reopened the register transition (install time $INSTALLED_BEFORE -> $INSTALLED_AFTER)" \
+    || bad "the install time of the register did not move: '$INSTALLED_BEFORE' -> '$INSTALLED_AFTER'"
+
 TOKEN2=$(e2e_admin_token)
 SERVERS=$(curl -k -s -H "Authorization: Bearer $TOKEN2" "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo "")
-echo "$SERVERS" | grep -q "dr-probe" \
+grep -q "dr-probe" <<<"$SERVERS" \
     && ok "server record survived the roundtrip (dr-probe present)" \
     || bad "server record LOST after restore"
 

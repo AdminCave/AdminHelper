@@ -89,7 +89,7 @@ run_case() {
   fi
   # -- before the pattern: a few expectations start with a dash ("--root needs
   # a directory"), and grep would read those as its own flags.
-  if [ -n "$want" ] && ! printf '%s' "$out" | grep -qF -- "$want"; then
+  if [ -n "$want" ] && ! grep -qF -- "$want" <<<"$out"; then
     bad "$name: output does not mention '$want'"; printf '%s\n' "$out" | sed 's/^/       /'; return
   fi
   ok "$name"

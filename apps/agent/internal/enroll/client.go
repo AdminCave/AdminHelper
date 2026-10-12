@@ -16,6 +16,10 @@ import (
 // logger tags enroll's operational logs with component=enroll.
 var logger = logging.For("enroll")
 
+// reprovisionHint is the command an operator runs when the identity has run out
+// (R-0280): provisioning is the one way to a new one.
+const reprovisionHint = "adminhelper-agent provision --url <URL> --token <TOKEN> --server-id <ID>"
+
 // ServerClient returns the HTTP client the agent uses for server pushes: mTLS
 // with the enrolled identity when present (client cert + custom-root-only),
 // otherwise the legacy fallback (pinned cacert / insecure) so pre-enrollment
@@ -33,7 +37,7 @@ func ServerClient(dir, fallbackCacert string, fallbackInsecure bool, timeout tim
 		// operator knows to re-provision (4.8).
 		if pemBytes, rerr := os.ReadFile(CertPath(dir)); rerr == nil {
 			if expired, notAfter, lerr := leafExpired(pemBytes); lerr == nil && expired {
-				logger.Warnf("mTLS-Client-Cert seit %s abgelaufen — Handshake kann nicht gelingen; Agent neu provisionieren (adminhelper-agent enroll --token <TOKEN>)", notAfter.Format(time.RFC3339))
+				logger.Warnf("mTLS-Client-Cert seit %s abgelaufen — Handshake kann nicht gelingen; Agent neu provisionieren (%s)", notAfter.Format(time.RFC3339), reprovisionHint)
 			}
 		}
 		return httpclient.NewMTLS(CertPath(dir), KeyPath(dir), CAPath(dir), timeout)

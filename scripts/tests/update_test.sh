@@ -140,20 +140,20 @@ ls "$INST"/backups/runtime-prev-*.tar.gz >/dev/null 2>&1 && ok "runtime snapshot
 # ── 2. --check is a dry run (no changes) ─────────────────────────────────────
 INST="$WORK/inst2"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(run_update "$INST" --check 2>&1); rc=$?
-{ [ $rc -eq 0 ] && echo "$out" | grep -q 'Update verfuegbar'; } && ok "--check reports update" || bad "--check output: $out"
+{ [ $rc -eq 0 ] && grep -q 'Update verfuegbar' <<<"$out"; } && ok "--check reports update" || bad "--check output: $out"
 grep -q 'server:0.33.0' "$INST/.env" && ok "--check left .env untouched" || bad "--check mutated .env"
 
 # ── 3. already up to date → no-op ────────────────────────────────────────────
 INST="$WORK/inst3"; make_install 0.34.0 "$SRC_NEW" "$INST"
 out=$(run_update "$INST" 2>&1); rc=$?
-{ [ $rc -eq 0 ] && echo "$out" | grep -q 'Bereits auf der neuesten'; } && ok "up-to-date no-op" || bad "up-to-date: rc=$rc $out"
+{ [ $rc -eq 0 ] && grep -q 'Bereits auf der neuesten' <<<"$out"; } && ok "up-to-date no-op" || bad "up-to-date: rc=$rc $out"
 ls "$INST"/backups/runtime-prev-*.tar.gz >/dev/null 2>&1 && bad "no-op wrote a snapshot" || ok "no-op wrote nothing"
 
 # ── 4. downgrade guard: installed 0.34.0, latest regressed to 0.33.0 ─────────
 make_release 0.33.0 "$SRC_OLD" "$DL" "$API" v0.33.0   # latest now (wrongly) 0.33.0
 INST="$WORK/inst4"; make_install 0.34.0 "$SRC_NEW" "$INST"
 out=$(run_update "$INST" 2>&1); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'kein stiller Downgrade'; } && ok "downgrade refused" || bad "downgrade not refused: rc=$rc"
+{ [ $rc -ne 0 ] && grep -q 'kein stiller Downgrade' <<<"$out"; } && ok "downgrade refused" || bad "downgrade not refused: rc=$rc"
 grep -q 'server:0.34.0' "$INST/.env" && ok "downgrade left .env at 0.34.0" || bad "downgrade mutated .env"
 
 # ── 5. --ref forces an explicit move (downgrade allowed) ─────────────────────
@@ -179,7 +179,7 @@ out=$(run_update "$INST" 2>&1); rc=$?
 INST="$WORK/inst8"; make_install 0.33.0 "$SRC_OLD" "$INST"
 printf '\n# stale local marker — forces a self-update hand-off\n' >> "$INST/scripts/update.sh"
 out=$(run_update "$INST" 2>&1); rc=$?
-{ [ $rc -eq 0 ] && echo "$out" | grep -q 'uebergebe an die neue Version'; } && ok "self-update re-exec triggered" || bad "no re-exec: rc=$rc"
+{ [ $rc -eq 0 ] && grep -q 'uebergebe an die neue Version' <<<"$out"; } && ok "self-update re-exec triggered" || bad "no re-exec: rc=$rc"
 { grep -q 'server:0.34.0' "$INST/.env" && ! grep -q 'stale local marker' "$INST/scripts/update.sh"; } \
   && ok "re-exec completed + canonical update.sh placed" || bad "re-exec did not complete cleanly"
 
@@ -243,7 +243,7 @@ out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'server:0.34.0' "$INST/.env"; } \
   && ok "unarmed pubkey: update proceeds on the checksum alone" \
   || bad "unarmed path broken: rc=$rc"
-printf '%s' "$out" | grep -q 'Release-Signatur nicht konfiguriert' \
+grep -q 'Release-Signatur nicht konfiguriert' <<<"$out" \
   && ok "unarmed pubkey warns that only transport integrity was checked" \
   || bad "no warning on the unarmed path"
 

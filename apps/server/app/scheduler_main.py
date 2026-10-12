@@ -69,6 +69,7 @@ def main() -> None:
         reconcile_scheduled_hooks,
         schedule_audit_cleanup,
         schedule_blacklist_cleanup,
+        schedule_certificate_register_cleanup,
         schedule_enrollment_token_cleanup,
         schedule_hook_reconcile,
         schedule_notification_cleanup,
@@ -80,6 +81,7 @@ def main() -> None:
     _wait_for_schema_head()  # don't schedule jobs against a stale/mid-migration schema (4.73)
     schedule_blacklist_cleanup()
     schedule_enrollment_token_cleanup()
+    schedule_certificate_register_cleanup()
     schedule_provision_token_cleanup()
     schedule_audit_cleanup()
     schedule_outbox_drain()

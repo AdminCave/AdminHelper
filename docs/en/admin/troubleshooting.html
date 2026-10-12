@@ -62,7 +62,8 @@ docker compose logs server | grep 'untrusted proxy'</code></pre>
           <div class="code-header"><span>bash</span></div>
 <pre><code>adminhelper-agent run --verbose   # one-shot debug run
 systemctl status adminhelper-agent.timer
-journalctl -u adminhelper-agent.service -n 100 --no-pager</code></pre>
+journalctl -u adminhelper-agent.service -n 100 --no-pager
+openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate   # client cert expired?</code></pre>
 
           <p>Common causes: clock skew &gt; 5 min, expired client cert, DNS failure, firewall blocking <code>443/tcp</code> (the agent's pushes and its cert renewal go through the gateway).</p>
           <p><strong>Timer red vs. green:</strong> A <em>permanent</em> failure — a revoked/rotated API key (401/403) or a deleted server (404) — makes the <code>adminhelper-agent.service</code> oneshot exit non-zero (shows as <code>failed</code> in <code>systemctl status</code>, and a configured <code>OnFailure=</code> fires). <em>Transient</em> failures (server 5xx, network/DNS) stay green and are retried on the next run.</p>
@@ -76,6 +77,10 @@ journalctl -u adminhelper-agent.service -n 100 --no-pager</code></pre>
           <p><strong>Desktop client, login: “The server requires a device certificate”:</strong> the gateway enforces mTLS (<code>MTLS_ENFORCE=true</code>) and turns a device without a certificate away with <code>400</code> before the login. Signing in does not help here: the button <em>“Enroll this device with a token”</em> below leads the way, with a one-time token from your administrator (see <a href="./users.html">Users &amp; Access</a>). Then the login works.</p>
 
           <p><strong>Desktop client, login: “This device is registered for another user”:</strong> under mTLS the device certificate belongs to the user the device was registered for; the server accepts it for that user only (<code>403</code>, <code>ERR_CERT_USER_MISMATCH</code>). Sign in as that user, or use the button <em>“Reset device identity”</em> below to reset the identity and register the device for yourself with a one-time token (see <a href="./users.html">Users &amp; Access</a>). In the browser the same holds for a <code>.p12</code>: each user uses their own.</p>
+
+          <p><strong>Desktop client, login: “The certificate of this device is no longer valid”:</strong> the server no longer accepts the device certificate (<code>403</code>, <code>ERR_CERT_REVOKED</code>). The device was revoked, its user deleted, the certificate replaced by a newer one of this device, or it dates from before the certificate register and was not used during the transition (see <a href="./operations.html">Operations &amp; Config</a>). Use the button <em>“Reset device identity”</em> below to reset the identity, then register the device again with a one-time token from your administrator. In the browser: export a new <code>.p12</code>, import it and remove the old one from the certificate store. An agent gets a new certificate by being provisioned again (see <a href="./agent-deployment.html">Agent Deployment</a>).</p>
+
+          <p><strong>Desktop client, “On this device only: the server did not revoke the old certificate”:</strong> while resetting the device identity the server did not revoke the certificate, for example because it could not be reached or does not know the function yet; the certificate is deleted on this device only. Registering the device again for the same user replaces the old certificate. If it is not registered again, or for another user, the administrator revokes the old device through the device API (see <a href="./users.html">Users &amp; Access</a>).</p>
 
           <h2>Monitoring ingest dropping samples</h2>
           <div class="code-header"><span>bash</span></div>

@@ -13,6 +13,10 @@
 #   4. cert-only GET :443/api/...   -> 401 (the app's JWT layer is independent)
 #   5. cert + login :443           -> JWT
 #   6. cert + JWT GET :443/api/...  -> 200 (real routing + DB + admin authz)
+#   8. /ca/renew with the enrolled cert -> a renewed cert
+#   8b. re-enrolling the device names the first cert as replaced: the first cert
+#       neither renews nor reaches the API, the new one does — until the device
+#       revokes itself (R-0224)
 #
 # Hermetic boot/seed/teardown is shared via lib_e2e_stack.sh. Needs docker
 # (+ compose v2), openssl, curl, python3. SKIPs cleanly when docker is
@@ -165,13 +169,77 @@ PY
 )
 [ "$code" = "ok" ] && ok "/ca/renew through the gateway returned a cert (6.48)" || bad "/ca/renew failed: got '$code'"
 
+# ── 8b. Per-device revocation through the gateway (R-0224) ────────────────────
+# Re-enrolling the same device names its first certificate as replaced; the issuer
+# revokes that device line. From then on the first certificate neither renews nor
+# gets past the server, while the new one does both — until the device revokes
+# itself with it. Every step goes through the real gateway headers.
+renew_with() {  # renew_with <fullchain> <key> -> ok | <status>
+    python3 - "$E2E_WORK" "$E2E_SERVER_URL" "$1" "$2" <<'PY'
+import sys, json, ssl, urllib.request
+work, base, chain, key = sys.argv[1:5]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+ctx.load_cert_chain(chain, key)
+req = urllib.request.Request(f"{base}/ca/renew",
+    data=json.dumps({"csr": open(f"{work}/renew.csr").read()}).encode(),
+    headers={"Content-Type": "application/json"})
+try:
+    body = urllib.request.urlopen(req, context=ctx, timeout=5).read().decode()
+    print("ok" if "BEGIN CERTIFICATE" in body else "no-cert")
+except Exception as e:
+    print(getattr(e, "code", "err"))
+PY
+}
+TOKEN2=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+FIRST_FP=$(openssl x509 -in "$E2E_WORK/client-fullchain.pem" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)
+openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client2.key" 2>/dev/null
+openssl req -new -key "$E2E_WORK/client2.key" -subj "/CN=itest" -out "$E2E_WORK/client2.csr" 2>/dev/null
+if [ -n "$TOKEN2" ] && python3 - "$E2E_WORK" "$ENROLL" "$TOKEN2" "$FIRST_FP" <<'PY'
+import json, ssl, sys, urllib.request
+work, enroll, token, replaces = sys.argv[1:5]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+body = json.dumps({"token": token, "csr": open(f"{work}/client2.csr").read(), "replaces": replaces})
+req = urllib.request.Request(f"{enroll}/enroll", data=body.encode(),
+    headers={"Content-Type": "application/json"})
+data = json.load(urllib.request.urlopen(req, context=ctx, timeout=15))
+open(f"{work}/client2-fullchain.pem", "w").write(data["fullchain"])
+PY
+then
+    ok "re-enrolled the device, naming the first cert as replaced"
+else
+    bad "re-enrollment with replaces failed"
+fi
+code=$(renew_with "$E2E_WORK/client-fullchain.pem" "$E2E_WORK/client.key")
+[ "$code" = "403" ] && ok "the replaced cert no longer renews (403)" || bad "replaced cert renew: expected 403, got '$code'"
+code=$(renew_with "$E2E_WORK/client2-fullchain.pem" "$E2E_WORK/client2.key")
+[ "$code" = "ok" ] && ok "the new cert renews" || bad "new cert renew failed: got '$code'"
+
+CERT2=(--cert "$E2E_WORK/client2-fullchain.pem" --key "$E2E_WORK/client2.key")
+resp=$(curl -k -s "${CERT[@]}" -H "Authorization: Bearer $JWT" -w '\n%{http_code}' --max-time 5 \
+    "$E2E_SERVER_URL/api/servers" 2>/dev/null)
+code=${resp##*$'\n'}
+if [ "$code" = "403" ] && [[ "$resp" == *ERR_CERT_REVOKED* ]]; then
+    ok "the replaced cert is refused on the API (403 ERR_CERT_REVOKED)"
+else
+    bad "replaced cert on the API: expected 403 ERR_CERT_REVOKED, got '$code'"
+fi
+code=$(curl -k -s "${CERT2[@]}" -H "Authorization: Bearer $JWT" -o /dev/null -w '%{http_code}' \
+    --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000)
+[ "$code" = "200" ] && ok "the new cert + JWT -> 200" || bad "new cert on the API: expected 200, got '$code'"
+code=$(curl -k -s "${CERT2[@]}" -X POST -o /dev/null -w '%{http_code}' --max-time 5 \
+    "$E2E_SERVER_URL/api/enrollment/self/revoke" 2>/dev/null || echo 000)
+[ "$code" = "204" ] && ok "the device revoked itself with its cert (204)" || bad "self-revoke: expected 204, got '$code'"
+code=$(curl -k -s "${CERT2[@]}" -H "Authorization: Bearer $JWT" -o /dev/null -w '%{http_code}' \
+    --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000)
+[ "$code" = "403" ] && ok "after self-revocation the cert is refused (403)" || bad "after self-revoke: expected 403, got '$code'"
+
 # ── 9. The enroll plane throttles a burst to 429 — token brute-force brake (6.124)
 codes=$(for _ in $(seq 1 40); do
     curl -k -s -o /dev/null -w '%{http_code}\n' --max-time 5 \
         -X POST "$ENROLL/enroll" -H 'Content-Type: application/json' \
         -d '{"token":"bogus","csr":"x"}' 2>/dev/null
 done)
-echo "$codes" | grep -q '^429$' && ok "enroll plane returns 429 after a burst (limit_req)" \
+grep -q '^429$' <<<"$codes" && ok "enroll plane returns 429 after a burst (limit_req)" \
     || bad "no 429 after 40 enroll requests"
 
 # ── 10. Repo plane :8445 path filtering (6.63 exposes it, 6.125 asserts it) ──

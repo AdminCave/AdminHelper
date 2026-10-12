@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# restore_guard_test.sh — hermetic tests for restore.sh.
+# restore_guard_test.sh — hermetic tests for restore.sh and pg-restore.sh.
 #
 # 1-4: the tar-escape guard. It (reject absolute / ../ paths and sym/hardlink
 # members) runs BEFORE any docker call or the confirm prompt, so it's testable
@@ -10,6 +10,9 @@
 # silently disable the guard and let a hostile backup write outside the target
 # (audit 6.66).
 # 5: the wait for postgres, against a docker stub that plays a fresh host.
+# 6-9: after a restore of the server DB, restore.sh and pg-restore.sh move the
+# install time of the certificate register to now (R-0224), against stubs; without
+# the server DB nothing is moved.
 #
 # Run: bash scripts/tests/restore_guard_test.sh   (needs bash, tar, coreutils)
 
@@ -52,20 +55,20 @@ run_restore() { ( cd "$WORK" && bash "$RESTORE" "$1" </dev/null 2>&1 ); }
 out=$(run_restore "$WORK/good.tar.gz")
 # The guard passes (no rejection); restore then reaches the confirm and stops on the
 # EOF read — the point is that the guard did NOT reject a legitimate archive.
-{ echo "$out" | grep -q 'Fortfahren' && ! echo "$out" | grep -qiE 'absolute oder|Sym-/Hardlink'; } \
+{ grep -q 'Fortfahren' <<<"$out" && ! grep -qiE 'absolute oder|Sym-/Hardlink' <<<"$out"; } \
   && ok "clean archive passes the guard (reaches the confirm)" || bad "clean archive: [$out]"
 
 # --- 2. absolute path member rejected ──────────────────────────────────────
 out=$(run_restore "$WORK/abs.tar.gz"); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'absolute'; } && ok "absolute path rejected" || bad "absolute not rejected: rc=$rc out=[$out]"
+{ [ $rc -ne 0 ] && grep -q 'absolute' <<<"$out"; } && ok "absolute path rejected" || bad "absolute not rejected: rc=$rc out=[$out]"
 
 # --- 3. ../ escape member rejected ──────────────────────────────────────────
 out=$(run_restore "$WORK/dotdot.tar.gz"); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'absolute oder'; } && ok "../ escape rejected" || bad "../ not rejected: rc=$rc out=[$out]"
+{ [ $rc -ne 0 ] && grep -q 'absolute oder' <<<"$out"; } && ok "../ escape rejected" || bad "../ not rejected: rc=$rc out=[$out]"
 
 # --- 4. symlink member rejected ─────────────────────────────────────────────
 out=$(run_restore "$WORK/sym.tar.gz"); rc=$?
-{ [ $rc -ne 0 ] && echo "$out" | grep -q 'Sym-/Hardlink'; } && ok "symlink member rejected" || bad "symlink not rejected: rc=$rc out=[$out]"
+{ [ $rc -ne 0 ] && grep -q 'Sym-/Hardlink' <<<"$out"; } && ok "symlink member rejected" || bad "symlink not rejected: rc=$rc out=[$out]"
 
 # --- 5. the wait for postgres takes the path restore_db takes ────────────────
 # On a fresh volume the image's init server listens on the socket only: a socket
@@ -97,6 +100,68 @@ first_psql=$(grep -n 'psql' "$WORK/calls.log" 2>/dev/null | head -n1 | cut -d: -
 { [ -n "$ready" ] && [ -n "$first_psql" ] && [ "$ready" -lt "$first_psql" ]; } \
   && ok "TCP is ready before the first psql" \
   || bad "no TCP pg_isready before psql: $(cat "$WORK/calls.log" 2>/dev/null)"
+
+# --- 6./7. restore.sh reopens the register transition after the server DB ───
+REOPEN="UPDATE certificate_register_state SET installed_at = timezone('UTC', now())"
+mkdir -p "$WORK/reg/bin" "$WORK/reg/full" "$WORK/reg/mon" "$WORK/reg/a" "$WORK/reg/b"
+cat > "$WORK/reg/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *ON_ERROR_STOP*) cat > "$STUB_DIR/register.sql" ;;
+  *pg_restore*)    cat >/dev/null ;;
+esac
+echo "$*" >> "$STUB_DIR/calls.log"
+exit 0
+STUB
+chmod +x "$WORK/reg/bin/docker"
+printf 'dump\n' > "$WORK/reg/full/adminhelper.dump"
+printf 'dump\n' > "$WORK/reg/mon/adminhelper_monitor.dump"
+tar czf "$WORK/reg/full.tar.gz" -C "$WORK/reg/full" .
+tar czf "$WORK/reg/mon.tar.gz" -C "$WORK/reg/mon" .
+reg_restore() { ( cd "$WORK" && STUB_DIR="$1" PATH="$WORK/reg/bin:$PATH" bash "$RESTORE" "$2" --yes </dev/null 2>&1 ); }
+
+out=$(reg_restore "$WORK/reg/a" "$WORK/reg/full.tar.gz"); rc=$?
+restored=$(grep -n 'pg_restore' "$WORK/reg/a/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
+reopened=$(grep -n 'ON_ERROR_STOP' "$WORK/reg/a/calls.log" 2>/dev/null | head -n1 | cut -d: -f1)
+{ [ $rc -eq 0 ] && grep -qF "$REOPEN" "$WORK/reg/a/register.sql" 2>/dev/null; } \
+  && ok "restore.sh moves the install time of the register to now" \
+  || bad "register not reopened: rc=$rc out=[$out] calls=[$(cat "$WORK/reg/a/calls.log" 2>/dev/null)]"
+{ [ -n "$restored" ] && [ -n "$reopened" ] && [ "$restored" -lt "$reopened" ]; } \
+  && ok "the register is reopened after the server DB is restored" \
+  || bad "order: pg_restore at ${restored:-none}, reopen at ${reopened:-none}"
+
+out=$(reg_restore "$WORK/reg/b" "$WORK/reg/mon.tar.gz"); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'pg_restore' "$WORK/reg/b/calls.log" 2>/dev/null \
+    && ! grep -q 'ON_ERROR_STOP' "$WORK/reg/b/calls.log"; } \
+  && ok "without the server DB the register is left alone" \
+  || bad "monitor-only restore: rc=$rc calls=[$(cat "$WORK/reg/b/calls.log" 2>/dev/null)]"
+
+# --- 8./9. pg-restore.sh does the same, for the server DB only ──────────────
+mkdir -p "$WORK/pg/bin" "$WORK/pg/a" "$WORK/pg/b"
+cat > "$WORK/pg/bin/pg_restore" <<'STUB'
+#!/usr/bin/env bash
+echo "pg_restore $*" >> "$STUB_DIR/calls.log"
+STUB
+cat > "$WORK/pg/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+echo "psql $*" >> "$STUB_DIR/calls.log"
+cat >> "$STUB_DIR/psql.in"
+STUB
+chmod +x "$WORK/pg/bin/pg_restore" "$WORK/pg/bin/psql"
+printf 'dump\n' > "$WORK/pg/x.dump"
+pg_restore_run() { STUB_DIR="$1" PATH="$WORK/pg/bin:$PATH" sh "$REPO_ROOT/scripts/pg-restore.sh" "$2" "$WORK/pg/x.dump" 2>&1; }
+
+out=$(pg_restore_run "$WORK/pg/a" adminhelper); rc=$?
+first=$(head -n1 "$WORK/pg/a/calls.log" 2>/dev/null)
+{ [ $rc -eq 0 ] && grep -qF "$REOPEN" "$WORK/pg/a/psql.in" 2>/dev/null && [ "${first%% *}" = pg_restore ]; } \
+  && ok "pg-restore.sh reopens the register after restoring the server DB" \
+  || bad "pg-restore adminhelper: rc=$rc out=[$out] calls=[$(cat "$WORK/pg/a/calls.log" 2>/dev/null)]"
+
+out=$(pg_restore_run "$WORK/pg/b" adminhelper_monitor); rc=$?
+{ [ $rc -eq 0 ] && grep -q '^pg_restore' "$WORK/pg/b/calls.log" 2>/dev/null \
+    && ! grep -q '^psql' "$WORK/pg/b/calls.log"; } \
+  && ok "pg-restore.sh leaves the register alone for the monitoring DB" \
+  || bad "pg-restore adminhelper_monitor: rc=$rc calls=[$(cat "$WORK/pg/b/calls.log" 2>/dev/null)]"
 
 echo
 echo "──────────────────────────────────────────"

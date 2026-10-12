@@ -13,11 +13,12 @@ import { tick } from 'svelte';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { setLanguage } from '$lib/i18n';
 import { settingsModalOpen } from '$lib/stores/settings';
+import type { ResetOutcome } from '$lib/bridge';
 
 const h = vi.hoisted(() => ({
   isDeviceEnrolled: vi.fn(async () => false),
   enrollWithToken: vi.fn(async () => undefined),
-  resetDeviceIdentity: vi.fn(async () => undefined),
+  resetDeviceIdentity: vi.fn(async (_serverUrl: string): Promise<ResetOutcome> => 'revoked'),
   startIfServerMode: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
   // Set by the session mock below: null signs the user out for one test.
@@ -239,5 +240,37 @@ describe('SettingsModal — enroll from the settings (R-0212)', () => {
     expect(el(container, '[data-msg="device-reset"]')?.textContent).toContain(
       'Geräte-Identität zurückgesetzt',
     );
+  });
+
+  it('says when the reset reached this device only', async () => {
+    h.isDeviceEnrolled.mockImplementation(async () => true);
+    h.resetDeviceIdentity.mockResolvedValueOnce('localOnly');
+    const container = open();
+    const reset = await waitFor(() => {
+      const found = el(container, '[data-action="device-reset"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await fireEvent.click(reset);
+
+    await waitFor(() =>
+      expect(el(container, '[data-msg="device-reset-local"]')?.textContent).toContain(
+        'Nur auf diesem Gerät',
+      ),
+    );
+  });
+
+  it('shows no such hint after a reset the server took', async () => {
+    h.isDeviceEnrolled.mockImplementation(async () => true);
+    const container = open();
+    const reset = await waitFor(() => {
+      const found = el(container, '[data-action="device-reset"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await fireEvent.click(reset);
+
+    await waitFor(() => expect(el(container, '[data-msg="device-reset"]')).not.toBeNull());
+    expect(el(container, '[data-msg="device-reset-local"]')).toBeNull();
   });
 });

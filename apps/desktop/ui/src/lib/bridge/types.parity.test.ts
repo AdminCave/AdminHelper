@@ -25,18 +25,17 @@ import { dirname, join } from 'path';
 
 // src/lib/bridge -> the desktop component root
 const DESKTOP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
-const RUST_FILES = ['models.rs', 'tunnel.rs', 'ansible.rs'];
+const RUST_FILES = ['models.rs', 'tunnel.rs', 'ansible.rs', 'enrollment.rs'];
 
 /** serde types in other modules, with the reason each stays out of the scan. */
-const NOT_ON_THE_BRIDGE: Record<string, string> = {
-  EnrollGrant: 'enrollment.rs — wire type of the /enroll HTTP call, never an IPC result',
-  EnrollRequest: 'enrollment.rs — request body sent to the issuer',
-  IssuedIdentity: 'enrollment.rs — issuer response, consumed inside Rust',
-};
+const NOT_ON_THE_BRIDGE: Record<string, string> = {};
 
 /** Rust types with no TypeScript counterpart, and why each one may stay. */
 const RUST_ONLY_ALLOWLIST: Record<string, string> = {
   RdpErrorPayload: 'event payload, not a command result — never crosses bridge/index.ts',
+  EnrollGrant: 'enrollment.rs — wire type of the /enroll HTTP call, never an IPC result',
+  EnrollRequest: 'enrollment.rs — request body sent to the issuer',
+  IssuedIdentity: 'enrollment.rs — issuer response, consumed inside Rust',
 };
 
 const rustSource = (file: string): string =>
@@ -48,7 +47,12 @@ const toCamel = (s: string): string =>
   s.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
 
 function applyRenameAll(name: string, renameAll: string | null): string {
-  if (renameAll === 'camelCase') return toCamel(name);
+  // serde's camelCase also lowers the first letter: a PascalCase variant
+  // (`LocalOnly`) goes out as `localOnly`, a snake_case field as before.
+  if (renameAll === 'camelCase') {
+    const camel = toCamel(name);
+    return camel.charAt(0).toLowerCase() + camel.slice(1);
+  }
   if (renameAll === 'lowercase') return name.toLowerCase();
   return name;
 }

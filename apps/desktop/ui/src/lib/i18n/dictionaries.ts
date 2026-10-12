@@ -217,6 +217,8 @@ export const translations: Translations = {
       'Achtung: Dies löscht das mTLS-Geräte-Zertifikat dieses Geräts und den gepinnten Zertifikat-Fingerprint. Nur fortfahren, wenn der Zertifikatswechsel erwartet ist (z. B. nach einer Server-Neuinstallation) — ein unerwarteter Wechsel kann auf einen MITM-Angriff hindeuten. Danach registrierst du das Gerät mit einem neuen Einmal-Token vom Admin, hier in den Einstellungen. Fortfahren?',
     'settings.resetDeviceId.done':
       'Geräte-Identität zurückgesetzt. Jetzt mit einem Einmal-Token vom Admin neu registrieren.',
+    'settings.resetDeviceId.localOnly':
+      'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.',
     'settings.enroll.hint':
       'Dieses Gerät hat noch kein Geräte-Zertifikat. Mit einem Einmal-Token vom Admin registrieren, danach startet der Tunnel.',
     'settings.enroll.done': 'Gerät registriert.',
@@ -308,6 +310,14 @@ export const translations: Translations = {
       'Die Geräte-Identität dieses Geräts wird gelöscht. Danach registrierst du das Gerät mit einem Einmal-Token vom Admin für dich. Fortfahren?',
     'login.certUserMismatch.done':
       'Geräte-Identität zurückgesetzt. Registriere das Gerät jetzt mit einem Einmal-Token für dich.',
+    'login.certRevoked':
+      'Das Zertifikat dieses Geräts gilt nicht mehr. Setze die Geräte-Identität zurück und registriere das Gerät mit einem Einmal-Token vom Admin neu.',
+    'login.certRevoked.confirm':
+      'Die Geräte-Identität dieses Geräts wird gelöscht. Danach registrierst du das Gerät mit einem Einmal-Token vom Admin neu. Fortfahren?',
+    'login.certRevoked.done':
+      'Geräte-Identität zurückgesetzt. Registriere das Gerät jetzt mit einem Einmal-Token neu.',
+    'login.resetDeviceId.localOnly':
+      'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.',
     'login.enroll.token': 'Enrollment-Token',
     'login.enroll.token.placeholder': 'Token vom Administrator',
     'login.enroll.submit': 'Gerät registrieren',
@@ -823,6 +833,8 @@ export const translations: Translations = {
       'Warning: this removes this device’s mTLS certificate and the pinned certificate fingerprint. Only continue if the certificate change is expected (e.g. after a server reinstall) — an unexpected change may indicate a MITM attack. Afterwards you enroll the device with a new one-time token from your administrator, here in the settings. Continue?',
     'settings.resetDeviceId.done':
       'Device identity reset. Enroll the device again with a one-time token from your administrator.',
+    'settings.resetDeviceId.localOnly':
+      'On this device only: the server did not revoke the old certificate. Registering the device again for the same user replaces it.',
     'settings.enroll.hint':
       'This device has no device certificate yet. Enroll it with a one-time token from your administrator; the tunnel starts afterwards.',
     'settings.enroll.done': 'Device enrolled.',
@@ -914,6 +926,14 @@ export const translations: Translations = {
       'The identity of this device will be deleted. Afterwards you register the device for yourself with a one-time token from your administrator. Continue?',
     'login.certUserMismatch.done':
       'Device identity reset. Now register the device for yourself with a one-time token.',
+    'login.certRevoked':
+      'The certificate of this device is no longer valid. Reset the device identity and register the device again with a one-time token from your administrator.',
+    'login.certRevoked.confirm':
+      'The identity of this device will be deleted. Afterwards you register the device again with a one-time token from your administrator. Continue?',
+    'login.certRevoked.done':
+      'Device identity reset. Now register the device again with a one-time token.',
+    'login.resetDeviceId.localOnly':
+      'On this device only: the server did not revoke the old certificate. Registering the device again for the same user replaces it.',
     'login.enroll.token': 'Enrollment token',
     'login.enroll.token.placeholder': 'Token from your administrator',
     'login.enroll.submit': 'Enroll device',

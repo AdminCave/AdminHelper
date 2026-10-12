@@ -25,8 +25,10 @@ from __future__ import annotations
 import logging
 import urllib.parse
 from dataclasses import dataclass
+from datetime import datetime
 
 from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
@@ -55,6 +57,11 @@ class ClientIdentity:
     verified: bool
     cn: str | None = None
     scope: str | None = None
+    not_before: datetime | None = None  # naive UTC, like the register's columns (F7)
+    # What the certificate register keys on and records (R-0224).
+    fingerprint: str | None = None  # SHA-256 over DER, lowercase hex
+    serial: str | None = None  # hex
+    not_after: datetime | None = None  # naive UTC
 
     def __bool__(self) -> bool:
         return self.verified
@@ -91,6 +98,10 @@ def get_client_identity(request: Request) -> ClientIdentity:
         verified=True,
         cn=_first(cert, NameOID.COMMON_NAME),
         scope=_first(cert, NameOID.ORGANIZATIONAL_UNIT_NAME),
+        not_before=cert.not_valid_before_utc.replace(tzinfo=None),
+        fingerprint=cert.fingerprint(hashes.SHA256()).hex(),
+        serial=format(cert.serial_number, "x"),
+        not_after=cert.not_valid_after_utc.replace(tzinfo=None),
     )
 
 
@@ -102,14 +113,27 @@ CERT_USER_MISMATCH = (
 )
 
 
-def require_cert_user(request: Request, username: str) -> None:
+# The 403 for a certificate the register refuses: revoked, or not recorded after the
+# transition (R-0224). The desktop keys its hint off the code, as with the one above.
+CERT_REVOKED = (
+    "ERR_CERT_REVOKED: This device certificate is no longer valid. Reset the device "
+    "identity and register the device again."
+)
+
+
+def require_cert_user(request: Request, username: str, db: Session) -> None:
     """Under mTLS the client certificate belongs to the signed-in user (R-0223): a
     verified identity must carry the access scope and ``username`` as its CN, or the
-    request gets a 403. Without a verified identity there is nothing to check. Callers
-    apply it where a user comes from a JWT or credentials; an API key belongs to no
-    user and is not bound."""
+    request gets a 403. The certificate itself must be one the register admits
+    (R-0224), or the 403 says so. Without a verified identity there is nothing to
+    check. Callers apply it where a user comes from a JWT or credentials; an API key
+    belongs to no user and is not bound."""
     identity = get_client_identity(request)
-    if not identity.verified or (identity.scope == SCOPE_ACCESS and identity.cn == username):
+    if not identity.verified:
+        return
+    if _refused(request, db, identity):
+        _deny_refused(request, identity)
+    if identity.scope == SCOPE_ACCESS and identity.cn == username:
         return
     logger.warning(
         "mTLS: %s %s — Client-Cert CN=%s (scope=%s) gehört nicht zum Benutzer %s",
@@ -122,16 +146,57 @@ def require_cert_user(request: Request, username: str) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_USER_MISMATCH)
 
 
-def _is_revoked(db: Session | None, cn: str | None, scope: str | None) -> bool:
-    """Whether the verified identity has been revoked (ADR 0001 §3.4 lever 2 — the
-    immediate data-plane cut-off, not waiting for cert expiry). ``db`` is the
-    request session; it is None only in pure-logic unit tests, where there is no
-    revocation to check."""
+def _is_revoked(
+    db: Session | None,
+    cn: str | None,
+    scope: str | None,
+    not_before: datetime | None = None,
+    identity: ClientIdentity | None = None,
+) -> bool:
+    """Whether the verified certificate is refused (ADR 0001 §3.4 lever 2 — the
+    immediate data-plane cut-off, not waiting for cert expiry): a revocation of its
+    CN and scope at or after its ``not_before``, and with the full ``identity`` the
+    certificate register as well — its device line revoked, or not recorded once the
+    transition is over (R-0224). ``db`` is the request session; it is None only in
+    pure-logic unit tests, where there is no revocation to check."""
     if db is None or cn is None or scope is None:
         return False
-    from app.modules.enrollment.models import is_identity_revoked
+    from app.modules.enrollment.models import admit_certificate, is_identity_revoked
 
-    return is_identity_revoked(db, cn, scope)
+    if identity is None:
+        return is_identity_revoked(db, cn, scope, not_before)
+    return not admit_certificate(
+        db,
+        cn=cn,
+        scope=scope,
+        fingerprint=identity.fingerprint,
+        serial=identity.serial,
+        not_before=identity.not_before,
+        not_after=identity.not_after,
+    )
+
+
+def _refused(request: Request, db: Session, identity: ClientIdentity) -> bool:
+    """The register's answer for this request's certificate, asked once per request:
+    an access route runs require_scope and get_current_user, and both ask."""
+    cached = getattr(request.state, "certificate_refused", None)
+    if cached is None:
+        cached = _is_revoked(
+            db, identity.cn, identity.scope, not_before=identity.not_before, identity=identity
+        )
+        request.state.certificate_refused = cached
+    return cached
+
+
+def _deny_refused(request: Request, identity: ClientIdentity) -> None:
+    logger.warning(
+        "mTLS: %s %s — client certificate CN=%s (scope=%s) is revoked or not recorded",
+        request.method,
+        request.url.path,
+        identity.cn,
+        identity.scope,
+    )
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_REVOKED)
 
 
 def require_scope(*allowed: str):
@@ -139,10 +204,11 @@ def require_scope(*allowed: str):
     scopes and not be revoked. Dual-use routes pass several (e.g. agent + admin
     read the same config).
 
-    Permissive (default): a missing/mismatched/revoked cert is logged but the
-    request proceeds — only a *wrong-scope* or *revoked* cert warns; the expected
-    "no cert yet" case stays at debug so the rollout doesn't spam logs. Enforced
-    (``MTLS_ENFORCE``, A8): any of those returns 403."""
+    Permissive (default): a missing/mismatched cert is logged but the request
+    proceeds — only a *wrong-scope* cert warns; the expected "no cert yet" case stays
+    at debug so the rollout doesn't spam logs. Enforced (``MTLS_ENFORCE``, A8): either
+    returns 403. A presented certificate the register refuses gets the 403 in both
+    modes, like the binding to the user (R-0224)."""
     allowed_set = frozenset(allowed)
 
     def dependency(
@@ -150,36 +216,23 @@ def require_scope(*allowed: str):
         identity: ClientIdentity = Depends(get_client_identity),
         db: Session = Depends(get_db),
     ) -> ClientIdentity:
-        # Check the scope before the revocation query: a wrong-scope cert is rejected regardless, so
-        # spare the revoked_identities SELECT on the hot data-plane path when the scope already
-        # settles it (5.27). revoked stays False for the wrong-scope case — the scope mismatch is the
-        # reported reason, which is at least as informative.
+        # Check the scope before the register query, and only a cert of a wanted scope asks the
+        # register (5.27): enforced, a wrong-scope cert is rejected anyway; permissive, it grants
+        # nothing here and the request rests on its other credentials, so the scope mismatch is
+        # what gets logged.
         if identity.verified and identity.scope in allowed_set:
-            if not _is_revoked(db, identity.cn, identity.scope):
-                return identity
-            revoked = True
-        else:
-            revoked = False
+            if _refused(request, db, identity):
+                _deny_refused(request, identity)
+            return identity
 
         if config.MTLS_ENFORCE:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Identität widerrufen"
-                if revoked
-                else "Kein gültiges Client-Zertifikat mit passendem Scope",
+                detail="Kein gültiges Client-Zertifikat mit passendem Scope",
             )
 
         wanted = "/".join(sorted(allowed_set))
-        if revoked:
-            logger.warning(
-                "mTLS permissiv: %s %s — widerrufene Identität CN=%s (scope=%s) erlaubt "
-                "(App-Auth blockt)",
-                request.method,
-                request.url.path,
-                identity.cn,
-                identity.scope,
-            )
-        elif identity.verified:
+        if identity.verified:
             logger.warning(
                 "mTLS permissiv: %s %s erwartet Scope %s, Cert hat '%s' (CN=%s) — erlaubt",
                 request.method,

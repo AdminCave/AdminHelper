@@ -162,7 +162,7 @@ mapfile -t H < <(head_for conflict)
 EXTRA='printf "branch\n" > "$SEED/apps/c.txt"' plan feature/conflict conflict "${H[@]}"
 for x in junk body cont; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 mapfile -t H < <(head_for unk);     COMP=apps/server plan feature/unk unk "${H[@]}"
-for x in ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp ruk rvz rrw rnr stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
+for x in tmo tmo2 ok4 fix4 q33 after33 sc4 sc4x inf skp arch harn err bud oerr hang ahl mlk mta mtb bda bdb kqa kqb kqc mh ibud lim cred hskip skp2 rca rcb ng1 ng2 ng3 ng4 dlim envp if1 if2 if3 hoa oth apie nojs rvc hob refm stl r1q lng sig orp ruk rvz rrw rnr stall stall3 stale red3 r74 r74a left tcommit tclone tcli tfail; do mapfile -t H < <(head_for "$x"); plan "feature/$x" "$x" "${H[@]}"; done
 # Heavy as the planner writes it, and the open kind.
 mapfile -t H < <(head_for hvy); plan feature/hvy hvy "${H[@]}" "Heavy: linux-full"
 mapfile -t H < <(head_for hvn); plan feature/hvn hvn "${H[@]}" "Heavy: none — nur Skripte"
@@ -194,7 +194,10 @@ EXTRA='printf "\n### T2 — eine andere  [ ]\nKomponente: scripts · Dateien: ap
 mapfile -t H < <(head_for bodyfreig)
 EXTRA='printf "Freigabe: im Text einer Task\n" >> "$SEED/tasks/bodyfreig.md"' plan feature/bodyfreig bodyfreig "${H[0]}" "${H[2]}"
 
-git clone -q "$ORIGIN" "$CLONE"
+# Through the transport, not as a local clone (R-0262): that links the origin's
+# object directory file by file and dies when a git process puts a lock there in
+# between ("hardlink different from source", CI main 7600dc25).
+git clone -q --no-local "$ORIGIN" "$CLONE"
 # The runner's world: a HOME with its token file, a claude that answers version and auth.
 FHOME="$WORK/home"; mkdir -p "$FHOME/.config/adminhelper" "$FHOME/.local/bin"
 chmod 700 "$FHOME/.config/adminhelper"
@@ -229,6 +232,7 @@ case "$1" in
   *) echo "stub: unknown call $*" >&2; exit 9 ;;
 esac
 [ -z "${FIXTURE_ENVLOG:-}" ] || compgen -e >> "$FIXTURE_ENVLOG.session"
+[ -z "${FIXTURE_TIMEOUTLOG:-}" ] || printf '%s %s\n' "${BASH_DEFAULT_TIMEOUT_MS-<unset>}" "${BASH_MAX_TIMEOUT_MS-<unset>}" >> "$FIXTURE_TIMEOUTLOG"
 # One line per session with its flags; the prompt (many lines) apart.
 printf '%s\n' "${*:3}" >> "${FIXTURE_SLOG:?}"
 printf '%s\n' "$2" >> "$FIXTURE_SLOG.prompts"
@@ -632,6 +636,17 @@ FIXTURE_ENVLOG="$EL" loop --ledger tasks/envp.md
   && ok "the build session, task-close and the foundation run without AH_PVE_*, with the subscription token" \
   || bad "envp: rc=$rc $(result envp) pve in: $(grep -l '^AH_PVE_' "$EL".* 2>/dev/null | tr '\n' ' ')"
 
+# R-0263: a command in the foreground may run as long as the session, so it never
+# moves to the background where the session cannot wait for it.
+TL="$WORK/timeouts"; rm -f -- "$TL"
+seq_set build -- 0
+FIXTURE_TIMEOUTLOG="$TL" loop --ledger tasks/tmo.md
+seq_set build -- 0
+FIXTURE_TIMEOUTLOG="$TL" loop --ledger tasks/tmo2.md --task-minutes 7
+[ "$(cat "$TL" 2>/dev/null)" = $'3600000 3600000\n420000 420000' ] \
+  && ok "the session's Bash timeouts are its own minutes (60 by default, 7 with --task-minutes 7)" \
+  || bad "Bash timeouts of the session: $(cat "$TL" 2>&1)"
+
 echo "── the ledger's end: PR text and bundle ──"
 seq_set build build -- 0 0
 loop --ledger tasks/hvy.md --ledger tasks/hvn.md
@@ -642,7 +657,7 @@ LY="$(lane hvy)"
 [ -s "$LOOPD/hvn/pr-body.md" ] && ! grep -q 'Heavy offen' "$LOOPD/hvn/pr-body.md" \
   && ok "Heavy: none -> no note" || bad "hvn: $(cat "$LOOPD/hvn/pr-body.md" 2>&1)"
 # Kevin's checkout: a clone of origin, and the branch from the bundle, nothing else.
-KEV="$WORK/kevin"; git clone -q "$ORIGIN" "$KEV"
+KEV="$WORK/kevin"; git clone -q --no-local "$ORIGIN" "$KEV"
 git -C "$KEV" fetch -q "$LOOPD/hvy.bundle" feature/hvy:feature/hvy 2>"$WORK/fetch.err"
 [ "$(git -C "$KEV" rev-parse feature/hvy 2>/dev/null)" = "$(git -C "$LY" rev-parse HEAD)" ] \
   && [ "$(git -C "$KEV" log --format=%H origin/main..feature/hvy)" = "$(git -C "$LY" log --format=%H origin/main..HEAD)" ] \
@@ -1024,6 +1039,9 @@ OUT=$(AH_BUILDER_DIR="$PB" bash "$CLONE/scripts/dev/ledger-loop.sh" status --pro
   || bad "status profile: rc=$rc $OUT"
 
 echo "── repo wiring ──"
+# No local clone of a fixture: each one goes through the transport (R-0262).
+plain="$(grep -nE '^[^#]*git( -C [^ ]+)? clone ' "$HERE/ledger_loop_test.sh" | grep -v -- '--no-local')"
+[ -z "$plain" ] && ok "every git clone of a fixture here uses --no-local" || bad "a local clone of a fixture: $plain"
 for p in scripts/dev/ledger-loop.sh scripts/tests/ledger_loop_test.sh; do
   grep -qxF "$p" "$REPO_ROOT/scripts/dev/harness-paths.txt" && ok "$p is a harness path" || bad "$p is missing from harness-paths.txt"
 done

@@ -305,7 +305,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <li><strong>Verdict:</strong> <code>&lt;id&gt;.r&lt;n&gt;.verdict.json</code> (schema version&nbsp;2) with
             the runner's fields; <code>check-verdict --tree --task</code> decides on the commit, every round goes
             into <code>review.sh log</code>, and <code>task-close.sh</code> prints its cost as the line
-            <code>review cost_usd=&lt;x&gt; round=&lt;n&gt;</code> (the worker counts it into its run's budget).</li>
+            <code>review cost_usd=&lt;x&gt; round=&lt;n&gt;</code>; the worker, though, counts the line from its cost file
+            (<code>--cost-file</code>, a fresh one per close) into its run's budget, and an unknown cost counts with the
+            cap <code>REVIEW_BUDGET_MAX</code>.</li>
             <li><strong>Failure:</strong> no start, a timeout, an error result, a non-zero exit, or a missing or invalid
             <code>structured_output</code> is exit&nbsp;74 with no verdict and no commit; there is no fallback to the
             subagent review.</li>
