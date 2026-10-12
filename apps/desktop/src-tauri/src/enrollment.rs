@@ -181,7 +181,7 @@ fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError
 /// stops before anything is written. The new cert goes last, so the device counts
 /// as enrolled only once key, CA chain and cert are all in place. Every state a
 /// crash can leave is the old identity untouched, no identity, or the new one.
-/// The keyring calls come in as parameters: the tests have no keyring.
+/// The keyring calls come in as parameters, so a test can fail any one of them.
 fn replace_identity(
     key_pem: &str,
     issued: &IssuedIdentity,
@@ -259,6 +259,23 @@ fn replaces_for(
     }
 }
 
+/// What an enrollment of `kind` names as replaced, read from the keyring.
+fn pending_replaces(kind: EnrollmentKind) -> Option<String> {
+    replaces_for(
+        kind,
+        leaf_fingerprint(),
+        keyring_store::get(KEYRING_REPLACES),
+    )
+}
+
+/// Once the new identity is stored, the remembered leaf has been named and is done
+/// with; after a failed store it stays for the next enrollment.
+fn settle_replaces(stored: &Result<(), AppError>) {
+    if stored.is_ok() {
+        let _ = keyring_store::delete(KEYRING_REPLACES);
+    }
+}
+
 /// How resetting the device identity went (R-0224).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -288,7 +305,7 @@ pub async fn reset_identity(server_url: &str) -> ResetOutcome {
 }
 
 /// The order of `reset_identity`, with the keyring and the server call as
-/// parameters: the tests have neither.
+/// parameters, so a test can see the order and choose the server's answer.
 async fn reset_with<F, Fut>(
     fingerprint: Option<String>,
     revoke: F,
@@ -371,11 +388,7 @@ pub async fn enroll_with_token(
 ) -> Result<(), AppError> {
     let key_and_csr = generate_key_and_csr("adminhelper-enrollment")?;
     let endpoint = enroll_endpoint(server_url, DEFAULT_ENROLL_PORT)?;
-    let replaces = replaces_for(
-        EnrollmentKind::Device,
-        leaf_fingerprint(),
-        keyring_store::get(KEYRING_REPLACES),
-    );
+    let replaces = pending_replaces(EnrollmentKind::Device);
     let issued = redeem(
         &endpoint,
         token,
@@ -394,10 +407,7 @@ pub async fn enroll_with_token(
     // Even a failed replace may have deleted the old entries: drop the cached
     // client either way, so the next build_client sees what is there (5.1).
     crate::http_client::invalidate_client_cache();
-    if stored.is_ok() {
-        // Named as replaced in this enrollment: nothing is pending any more.
-        let _ = keyring_store::delete(KEYRING_REPLACES);
-    }
+    settle_replaces(&stored);
     stored
 }
 
@@ -749,11 +759,7 @@ pub async fn export_browser_p12(
     }
     let key_and_csr = generate_key_and_csr(&grant.subject_id)?;
     let endpoint = enroll_endpoint(server_url, grant.enroll_port)?;
-    let replaces = replaces_for(
-        EnrollmentKind::Browser,
-        leaf_fingerprint(),
-        keyring_store::get(KEYRING_REPLACES),
-    );
+    let replaces = pending_replaces(EnrollmentKind::Browser);
     let issued = redeem(
         &endpoint,
         &grant.token,
@@ -1387,6 +1393,90 @@ mod tests {
                 }
                 other => panic!("erwartet General-Gefahrenmeldung, war: {other:?}"),
             }
+        }
+    }
+
+    // The steps of the enroll flows that touch only the keyring, against the
+    // in-memory keyring (R-0294).
+
+    /// (cert_pem, key_pem, fingerprint) of a self-signed leaf.
+    fn leaf() -> (String, String, String) {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let cert = CertificateParams::new(vec![])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        (
+            cert.pem(),
+            key.serialize_pem(),
+            crate::tofu::fingerprint(cert.der()),
+        )
+    }
+
+    #[test]
+    fn a_device_enrollment_names_the_held_leaf_before_a_remembered_one() {
+        let _keyring = keyring_store::memory();
+        let (cert, _, fingerprint) = leaf();
+        keyring_store::set(KEYRING_CERT, &cert).unwrap();
+        keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
+        assert_eq!(pending_replaces(EnrollmentKind::Device), Some(fingerprint));
+    }
+
+    #[test]
+    fn a_device_enrollment_without_an_identity_names_the_remembered_leaf() {
+        let _keyring = keyring_store::memory();
+        keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
+        assert_eq!(
+            pending_replaces(EnrollmentKind::Device).as_deref(),
+            Some("remembered")
+        );
+    }
+
+    #[test]
+    fn a_browser_export_names_nothing_from_the_keyring() {
+        let _keyring = keyring_store::memory();
+        let (cert, _, _) = leaf();
+        keyring_store::set(KEYRING_CERT, &cert).unwrap();
+        keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
+        assert_eq!(pending_replaces(EnrollmentKind::Browser), None);
+    }
+
+    #[test]
+    fn only_a_stored_enrollment_drops_the_remembered_leaf() {
+        let _keyring = keyring_store::memory();
+        keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
+        settle_replaces(&Err(AppError::Keyring("write failed".to_string())));
+        assert_eq!(
+            keyring_store::get(KEYRING_REPLACES).as_deref(),
+            Some("remembered")
+        );
+        settle_replaces(&Ok(()));
+        assert_eq!(keyring_store::get(KEYRING_REPLACES), None);
+    }
+
+    #[tokio::test]
+    async fn a_reset_with_the_server_out_of_reach_remembers_the_leaf_and_deletes_the_identity() {
+        let _keyring = keyring_store::memory();
+        let (cert, key, fingerprint) = leaf();
+        keyring_store::set(KEYRING_KEY, &key).unwrap();
+        keyring_store::set(KEYRING_CERT, &cert).unwrap();
+        keyring_store::set(KEYRING_CA, &cert).unwrap();
+        // The identity is sound; what fails is reaching the server.
+        assert!(enrolled_client().is_ok());
+        // Bound and let go again: nobody listens on the port.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+
+        let outcome = reset_identity(&format!("http://127.0.0.1:{port}")).await;
+
+        assert_eq!(outcome, ResetOutcome::LocalOnly);
+        assert_eq!(keyring_store::get(KEYRING_REPLACES), Some(fingerprint));
+        for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+            assert_eq!(keyring_store::get(entry), None, "{entry}");
         }
     }
 }
