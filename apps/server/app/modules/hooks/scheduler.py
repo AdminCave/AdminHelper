@@ -332,6 +332,34 @@ def schedule_enrollment_token_cleanup(hours: int = 6) -> None:
     )
 
 
+_CERTIFICATE_REGISTER_CLEANUP_JOB_ID = "system:certificate-register-cleanup"
+
+
+def _run_certificate_register_cleanup() -> None:
+    """Remove expired certificates and the device lines left without one so the
+    certificate register does not grow without bound (R-0224)."""
+    from app.modules.enrollment.models import cleanup_expired_certificates
+
+    def work(db):
+        certificates, lines = cleanup_expired_certificates(db)
+        if not (certificates or lines):
+            return None
+        return (
+            f"Zertifikats-Register-Cleanup: {certificates} abgelaufene Zertifikate, "
+            f"{lines} leere Geraete-Linien entfernt"
+        )
+
+    _run_in_session("Zertifikats-Register-Cleanup", work)
+
+
+def schedule_certificate_register_cleanup(hours: int = 6) -> None:
+    """Register a periodic system job for the certificate-register cleanup
+    (idempotent). Runs once immediately at start and then every `hours` hours."""
+    _register_system_job(
+        _run_certificate_register_cleanup, _CERTIFICATE_REGISTER_CLEANUP_JOB_ID, hours=hours
+    )
+
+
 _PROVISION_TOKEN_CLEANUP_JOB_ID = "system:provision-token-cleanup"
 
 

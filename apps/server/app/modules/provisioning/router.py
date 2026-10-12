@@ -146,7 +146,13 @@ def activate_provision(
     if consumed == 0:
         raise HTTPException(status_code=409, detail="Token wurde bereits eingeloest")
 
-    # 1. Server read API key (always)
+    # 1. Server read API key (always). It replaces the key of an earlier provisioning:
+    # the agent installed now is the one that holds the server's key (R-0279). Keys bound
+    # to a server only come from here; manually created keys carry no server_id (except
+    # ones named agent-<server> before c3a7e1f50b2d, which that migration bound).
+    replaced = db.query(ApiKey).filter(ApiKey.server_id == server_id).all()
+    for old_key in replaced:
+        db.delete(old_key)
     raw_api_key = generate_api_key()
     api_key = ApiKey(
         name=f"agent-{server.name}",
@@ -156,6 +162,16 @@ def activate_provision(
     )
     db.add(api_key)
     db.commit()
+    for old_key in replaced:
+        audit.record(
+            db,
+            "apikey.deleted",
+            object_type="api_key",
+            object_id=old_key.id,
+            object_label=old_key.name,
+            detail="replaced by a new provisioning of the server",
+            actor=actor_from_request(request),
+        )
 
     # 2. Monitor agent key (resilient: None on error)
     monitor_key = fetch_or_skip_monitor_key(server_id)

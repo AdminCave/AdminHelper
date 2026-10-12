@@ -7,6 +7,7 @@ SAVEPOINT-based transaction-rollback pattern for test isolation."""
 
 import os
 import sys
+from datetime import timedelta
 
 # Set test defaults BEFORE app modules are imported.
 os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
@@ -36,6 +37,7 @@ import app.modules.provisioning.models  # noqa: F401
 import app.modules.servers.models  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import Base, _session_utc, get_db
+from app.core.time import utcnow_naive
 from app.modules.users.models import User
 
 # One seed, not a new one per run. A property suite that draws different data every
@@ -97,6 +99,22 @@ def _idle_tag_sync_notify_pool():
     barrier()
 
 
+def _seed_register_state(engine) -> None:
+    """The state row the migration writes (R-0224), here a month ahead: the suite's
+    ad-hoc client certificates then count as issued before the register, during the
+    transition, as on an installation that has just been updated. Tests of the
+    register itself move it inside their own transaction."""
+    from app.modules.enrollment.models import CertificateRegisterState
+
+    with engine.begin() as conn:
+        conn.execute(CertificateRegisterState.__table__.delete())
+        conn.execute(
+            CertificateRegisterState.__table__.insert().values(
+                id=1, installed_at=utcnow_naive() + timedelta(days=30)
+            )
+        )
+
+
 @pytest.fixture(scope="session")
 def pg_engine():
     """Postgres engine for the entire test session.
@@ -114,6 +132,7 @@ def pg_engine():
         url = _normalize_postgres_url(env_url)
         engine = _utc_engine(url)
         Base.metadata.create_all(bind=engine)
+        _seed_register_state(engine)
         try:
             yield engine
         finally:
@@ -128,6 +147,7 @@ def pg_engine():
         url = _normalize_postgres_url(pg.get_connection_url())
         engine = _utc_engine(url)
         Base.metadata.create_all(bind=engine)
+        _seed_register_state(engine)
         try:
             yield engine
         finally:

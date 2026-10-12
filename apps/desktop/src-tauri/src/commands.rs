@@ -89,12 +89,16 @@ pub fn is_device_enrolled() -> bool {
 /// `enrolled_client` (CA-pin), so dropping the identity makes the next connection
 /// fall back to the self-signed/TOFU (or public-CA) path; clearing the stale leaf
 /// pin in the same step lets that fallback re-pin instead of being rejected by
-/// the old pin. The user must log in / re-enroll afterwards.
+/// the old pin. The user must log in / re-enroll afterwards. The identity is
+/// revoked at the server first, where it can be (R-0224); the outcome tells the
+/// UI whether that happened.
 #[tauri::command]
-pub fn reset_device_identity(server_url: String) -> Result<(), AppError> {
-    enrollment::clear_identity();
+pub async fn reset_device_identity(
+    server_url: String,
+) -> Result<enrollment::ResetOutcome, AppError> {
+    let outcome = enrollment::reset_identity(&server_url).await;
     tofu::forget_pin(&server_url);
-    Ok(())
+    Ok(outcome)
 }
 
 /// Decoupled enrollment (ADR 0003): enroll using a one-time token an admin minted

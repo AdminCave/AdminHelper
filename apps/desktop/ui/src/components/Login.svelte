@@ -8,7 +8,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { errMsg, withoutErrorCodes } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setAllowSelfSignedCerts, setMode, settings } from '$lib/stores/session';
-  import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
+  import {
+    enrollWithToken,
+    resetServerCertPin,
+    resetDeviceIdentity,
+    type ResetOutcome,
+  } from '$lib/bridge';
   import { t } from '$lib/i18n';
   import { confirm } from '@tauri-apps/plugin-dialog';
 
@@ -58,6 +63,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // Under mTLS the device certificate belongs to one user (R-0223): signing in as
   // another one is refused. Name that and offer to register the device anew.
   let certUserMismatch = $derived(error.includes('ERR_CERT_USER_MISMATCH'));
+  // A certificate the server no longer admits (R-0224): revoked, or not recorded once
+  // the transition is over. The way out is the same, a reset and a new registration.
+  let certRevoked = $derived(error.includes('ERR_CERT_REVOKED'));
   // Never show the machine-readable code to the user; keep only the human text.
   let displayError = $derived(withoutErrorCodes(error));
 
@@ -79,13 +87,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       // The enrolled-CA case must also drop the stale device cert (which is what
       // build_client presents); resetDeviceIdentity clears identity AND pin.
+      let outcome: ResetOutcome | undefined;
       if (caPinError) {
-        await resetDeviceIdentity(target);
+        outcome = await resetDeviceIdentity(target);
       } else {
         await resetServerCertPin(target);
       }
       error = '';
-      info = $t('login.resetPin.done');
+      info = resetInfo('login.resetPin.done', outcome);
     } catch (err) {
       error = errMsg(err);
     } finally {
@@ -93,24 +102,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  // Drops this device's identity so it can be registered for the user who signs in.
-  // No MITM warning as for a pin mismatch: the server is the one the user trusts.
-  async function resetIdentityForSelf(): Promise<void> {
+  // The message after a reset, with the hint when the server did not revoke it.
+  function resetInfo(doneKey: string, outcome: ResetOutcome | undefined): string {
+    const done = $t(doneKey);
+    return outcome === 'localOnly' ? `${done} ${$t('login.resetDeviceId.localOnly')}` : done;
+  }
+
+  // Drops this device's identity so it can be registered anew: for the user who signs
+  // in (another user's certificate) or after the server stopped admitting it. No MITM
+  // warning as for a pin mismatch: the server is the one the user trusts.
+  async function resetIdentity(confirmKey: string, doneKey: string): Promise<void> {
     const target = serverUrl.trim();
     if (!target) {
       error = $t('login.resetPin.missingUrl');
       return;
     }
-    const ok = await confirm($t('login.certUserMismatch.confirm'), {
+    const ok = await confirm($t(confirmKey), {
       title: $t('login.resetDeviceId'),
       kind: 'warning',
     });
     if (!ok) return;
     busy = true;
     try {
-      await resetDeviceIdentity(target);
+      const outcome = await resetDeviceIdentity(target);
       error = '';
-      info = $t('login.certUserMismatch.done');
+      info = resetInfo(doneKey, outcome);
     } catch (err) {
       error = errMsg(err);
     } finally {
@@ -284,7 +300,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
             type="button"
             class="btn ghost login-secondary"
             data-action="cert-user-reset"
-            onclick={resetIdentityForSelf}
+            onclick={() =>
+              resetIdentity('login.certUserMismatch.confirm', 'login.certUserMismatch.done')}
+            disabled={busy}
+          >
+            {$t('login.resetDeviceId')}
+          </button>
+        {:else if certRevoked}
+          <div class="login-error" data-msg="cert-revoked">{$t('login.certRevoked')}</div>
+          <button
+            type="button"
+            class="btn ghost login-secondary"
+            data-action="cert-revoked-reset"
+            onclick={() => resetIdentity('login.certRevoked.confirm', 'login.certRevoked.done')}
             disabled={busy}
           >
             {$t('login.resetDeviceId')}

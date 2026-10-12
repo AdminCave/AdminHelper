@@ -7,6 +7,7 @@ package provision
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -16,6 +17,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/enroll"
 )
 
 // TOFU (GHSA-wv93): a --insecure provisioning call must capture the certificate
@@ -212,5 +216,48 @@ func TestCallActivateRejectsBadJSON(t *testing.T) {
 	port, _ := strconv.Atoi(u.Port())
 	if _, _, err := callActivate(srv.URL, "tok", "srv-1", "", true, nil, port); err == nil {
 		t.Fatal("kaputtes JSON haette einen Fehler ergeben muessen")
+	}
+}
+
+// R-0224: a re-provisioning names the leaf of the earlier one, so the issuer revokes
+// that line; a first provisioning names nothing.
+func TestRunEnrollmentNamesTheLeafItReplaces(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	var bodies []map[string]any
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"cert": "c", "fullchain": "fullchain", "chain": "chain",
+		})
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	info := &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}
+
+	if err := runEnrollment(srv.URL, info, "", true); err != nil {
+		t.Fatalf("erste Provisionierung: %v", err)
+	}
+	// The earlier provisioning left this leaf on disk (the key Store wrote stays).
+	oldLeaf := srv.Certificate().Raw
+	certPath := enroll.CertPath(config.AgentPkiDir())
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: oldLeaf}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runEnrollment(srv.URL, info, "", true); err != nil {
+		t.Fatalf("Neu-Provisionierung: %v", err)
+	}
+
+	if len(bodies) != 2 {
+		t.Fatalf("erwartet 2 Enroll-Aufrufe, bekam %d", len(bodies))
+	}
+	if _, ok := bodies[0]["replaces"]; ok {
+		t.Fatalf("Erst-Provisionierung trägt replaces: %v", bodies[0])
+	}
+	sum := sha256.Sum256(oldLeaf)
+	if got, want := bodies[1]["replaces"], hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("replaces = %v, erwartet %q", got, want)
 	}
 }

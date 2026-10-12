@@ -100,6 +100,13 @@ stack_test server-redis apps/server tests/test_stream_redis.py \
 stack_test ca-issuer-toctou apps/ca-issuer \
   tests/test_db_token_store.py::test_concurrent_consume_only_one_wins \
   "AH_TEST_DB=$ITEST_DATABASE_URL"
+# The certificate register's row locks (R-0224): sqlite has none, Postgres does.
+stack_test ca-issuer-register-lock apps/ca-issuer \
+  tests/test_db_token_store.py::test_a_line_revoked_during_a_renewal_waits_and_covers_the_successor \
+  "AH_TEST_DB=$ITEST_DATABASE_URL"
+stack_test ca-issuer-register-recheck apps/ca-issuer \
+  tests/test_db_token_store.py::test_a_deprovisioning_while_signing_refuses_the_renewal \
+  "AH_TEST_DB=$ITEST_DATABASE_URL"
 
 echo "stack_pytest: $PASSED passed, ${#FAILED[@]} failed${FAILED[*]:+ (${FAILED[*]})}"
 [ "${#FAILED[@]}" -eq 0 ]

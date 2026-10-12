@@ -93,12 +93,12 @@
             <div><div class="callout-title"><code>CA_ROOT_PASSPHRASE</code> getrennt aufbewahren</div><p>Die Passphrase wird bewusst <em>nicht</em> ins Backup geschrieben — sie verschlüsselt den mit-gesicherten Root-Key, beides zusammen wäre wertlos (ADR 0001 §5/D7). Im Passwortmanager getrennt halten. Der restaurierte Stack läuft auch ohne sie; gebraucht wird sie nur zum Rotieren der Intermediates.</p></div>
           </div>
 
-          <p>Für automatische tägliche DB-Backups: den auskommentierten <code>pg-backup</code>-Service in <code>docker-compose.yml</code> einkommentieren (nur DBs, Retention 7 Tage) — ersetzt nicht das vollständige <code>backup.sh</code> inkl. CA.</p>
+          <p>Für automatische tägliche DB-Backups: den auskommentierten <code>pg-backup</code>-Service in <code>docker-compose.yml</code> einkommentieren (nur DBs, Retention 7 Tage) — ersetzt nicht das vollständige <code>backup.sh</code> inkl. CA. Ein Restore nur der Datenbank mit <code>scripts/pg-restore.sh</code> beginnt den Übergang des Zertifikats-Registers ebenso neu.</p>
 
           <h3>Restore</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>./scripts/restore.sh ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz</code></pre>
-          <p>Stoppt den Stack, stellt Volumes + DBs wieder her und fährt hoch. Die restaurierte Root ist <strong>identisch</strong> — bereits enrollte Agenten bleiben vertraut, ohne Re-Enrollment. Die <code>.env</code> aus dem Backup wird als <code>.env.restored</code> abgelegt (überschreibt eine vorhandene <code>.env</code> nicht); auf einem frischen Host die getrennt aufbewahrte <code>CA_ROOT_PASSPHRASE</code> ergänzen und nach <code>.env</code> übernehmen.</p>
+          <p>Stoppt den Stack, stellt Volumes + DBs wieder her und fährt hoch. Die restaurierte Root ist <strong>identisch</strong> — bereits enrollte Agenten bleiben vertraut, ohne Re-Enrollment. Das Zertifikats-Register beginnt dabei seinen Übergang neu: Zertifikate, die seit dem Backup ausgestellt oder erneuert wurden, stehen nicht in der zurückgespielten Datenbank; sie werden beim ersten Kontakt übernommen, 90&nbsp;Tage ab dem Restore (siehe „Zertifikats-Register und Übergang“ unten). Die <code>.env</code> aus dem Backup wird als <code>.env.restored</code> abgelegt (überschreibt eine vorhandene <code>.env</code> nicht); auf einem frischen Host die getrennt aufbewahrte <code>CA_ROOT_PASSPHRASE</code> ergänzen und nach <code>.env</code> übernehmen.</p>
 
           <h2>Logs</h2>
           <p>Die Container schreiben Plain-Text-Zeilen <strong>mit Zeitstempel</strong> auf stderr (stdout bleibt für Subprozess-IPC frei); <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg. Format: <code>2026-06-15 11:25:53 INFO     adminhelper.auth …</code> (Datum, Uhrzeit, Level, Logger, Meldung).</p>
@@ -167,11 +167,21 @@ docker compose up -d server</code></pre>
           <h2>Zertifikate erneuern</h2>
           <p>Das TLS-Zertifikat des Gateways stellt der <code>ca-issuer</code> aus (access-signiert, 365&nbsp;Tage). Es wird beim ersten Start ins <code>gateway-certs</code>-Volume provisioniert; ein Redeploy/Neustart des <code>ca-issuer</code> erneuert es bei Bedarf. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation.</p>
 
+          <h2>Zertifikats-Register und Übergang</h2>
+          <p>Der <code>ca-issuer</code> hält jedes Client-Zertifikat, das er ausstellt oder erneuert, in einem Register fest; der Server nimmt nur erfasste Zertifikate an, auch bei <code>MTLS_ENFORCE=false</code> (siehe <a href="./benutzer.html">Benutzer &amp; Zugriff → Geräte und Widerruf</a>). Zertifikate, die vor dem Update auf das Register ausgestellt wurden, kennt es noch nicht. Für sie gilt ein Übergang:</p>
+          <ul>
+            <li>Sie gelten <strong>90 Tage ab dem Update</strong> weiter und werden beim ersten Kontakt mit dem Server oder beim ersten Erneuern erfasst. Danach gelten sie wie jedes andere Zertifikat bis zu ihrem Ablauf.</li>
+            <li>Ein Desktop oder Agent, der in dieser Zeit den Server erreicht, ist damit erfasst; er erneuert sein Zertifikat danach wie gewohnt.</li>
+            <li>Eine <code>.p12</code>, die in den 90 Tagen nicht benutzt wurde, nimmt der Server danach nicht mehr an (<code>ERR_CERT_REVOKED</code>): neu exportieren und importieren.</li>
+            <li>Ein Restore (<code>restore.sh</code>, <code>pg-restore.sh</code>) beginnt den Übergang neu, 90 Tage ab dem Restore, für die Zertifikate, die die zurückgespielte Datenbank nicht kennt.</li>
+          </ul>
+          <p>Nach den 90 Tagen gilt nur noch, was im Register steht.</p>
+
           <h2>mTLS scharfschalten (CERT_REQUIRED)</h2>
           <p>Die Datenebene (<code>:443</code>) läuft seit 0.29.0 per Default <strong>scharf</strong> (<code>MTLS_ENFORCE=true</code>): das Gateway verlangt am TLS-Handshake ein gültiges Client-Zertifikat (<code>CERT_REQUIRED</code>) <em>und</em> der Server weist geschützte Routen ohne gültigen Scope mit <code>403</code> ab. Ein frischer Install ist via <code>scripts/install.sh</code> sofort enforced nutzbar (es besorgt dem Erst-Admin sein Cert out-of-band). <strong>Permissiv</strong> (<code>MTLS_ENFORCE=false</code>) lässt certlose Clients durch und loggt nur — nötig nur für einen manuellen Erst-Bootstrap. Beides steuert <strong>eine</strong> Variable: <code>MTLS_ENFORCE</code>.</p>
           <div class="callout callout-danger" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-            <div><div class="callout-title">Erst alle Clients enrollen, dann umlegen</div><p>Schalte <strong>erst</strong> scharf, wenn <em>jeder</em> Client – Agent, Desktop <strong>und dein eigener Browser</strong> – ein Zertifikat hat, sonst sperrst du dich selbst aus. Agent und Desktop enrollen automatisch; den Browser bereitest du über den Desktop-P12-Export vor (<a href="./benutzer.html">Benutzer &amp; Zugriff → Browser-Zugriff</a>). <strong>Vorher</strong> auf echter Hardware testen: Windows-Desktop-Enrollment und Browser-Import. Beachte, dass ein Browser-Leaf langlebig ist (~1&nbsp;Jahr) und sich nie erneuert — er ist daher <strong>nur unter Enforcement widerrufbar</strong> (die Data-Plane-Revocation-Prüfung); im permissiven Modus bleibt ein ausgestelltes Browser-Zertifikat seine volle Laufzeit gültig.</p></div>
+            <div><div class="callout-title">Erst alle Clients enrollen, dann umlegen</div><p>Schalte <strong>erst</strong> scharf, wenn <em>jeder</em> Client – Agent, Desktop <strong>und dein eigener Browser</strong> – ein Zertifikat hat, sonst sperrst du dich selbst aus. Agent und Desktop enrollen automatisch; den Browser bereitest du über den Desktop-P12-Export vor (<a href="./benutzer.html">Benutzer &amp; Zugriff → Browser-Zugriff</a>). <strong>Vorher</strong> auf echter Hardware testen: Windows-Desktop-Enrollment und Browser-Import. Beachte, dass ein Browser-Leaf langlebig ist (~1&nbsp;Jahr) und sich nie erneuert. Ein widerrufenes nimmt der Server in beiden Modi nicht an; <strong>aussperren</strong> kann der Widerruf den Browser aber nur unter Enforcement, denn permissiv erreicht er die Anmeldung auch ohne Zertifikat.</p></div>
           </div>
           <p>Scharfschalten:</p>
           <div class="code-header"><span>bash</span></div>

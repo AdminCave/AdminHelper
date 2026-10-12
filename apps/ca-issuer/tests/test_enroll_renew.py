@@ -9,6 +9,7 @@ cannot renew."""
 
 import datetime
 import urllib.parse
+import uuid
 
 import pytest
 from cryptography import x509
@@ -16,10 +17,18 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.pool import StaticPool
 
-from app import config, pki
+from app import config, db, pki
 from app.main import app
-from app.tokens import EnrollmentGrant, InMemoryTokenStore
+from app.tokens import (
+    CertRecord,
+    EnrollmentGrant,
+    InMemoryTokenStore,
+    RenewalRefused,
+    legacy_admitted,
+)
 
 
 def _csr_pem(common_name: str) -> str:
@@ -228,7 +237,12 @@ def test_renew_rejects_non_ecdsa_cert_cleanly(client):
     # at the sole signing authority (untrusted containers can reach /renew directly).
     key = ed25519.Ed25519PrivateKey.generate()
     now = pki._now()
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "admin")])
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, "admin"),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "access"),
+        ]
+    )
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -360,3 +374,339 @@ def test_inmemory_expired_token_is_not_consumable():
     grant = EnrollmentGrant(subject_id="a", scope="access")
     store.mint("tok", grant, ttl=datetime.timedelta(seconds=-1))
     assert store.consume("tok") is None
+
+
+# --- the certificate register at enrollment (R-0224) -------------------------
+
+
+def _db_store():
+    eng = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    db.metadata.create_all(eng)
+    # The state row the server's migration writes: the register is installed now.
+    with eng.begin() as conn:
+        conn.execute(db.certificate_register_state.insert().values(id=1, installed_at=_now_naive()))
+    return db.DbTokenStore(eng)
+
+
+def _now_naive() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+@pytest.fixture(params=["memory", "db"])
+def register_client(request):
+    """The same cases against both stores: the in-memory one and the DB one."""
+    with TestClient(app) as c:
+        store = InMemoryTokenStore() if request.param == "memory" else _db_store()
+        c.app.state.issuer.tokens = store
+        c.app.state.token_store = store
+        yield c
+
+
+def _mint(client, token: str, grant: EnrollmentGrant) -> None:
+    store = client.app.state.token_store
+    if isinstance(store, InMemoryTokenStore):
+        store.mint(token, grant)
+        return
+    expires = datetime.datetime.now(datetime.timezone.utc).replace(
+        tzinfo=None
+    ) + datetime.timedelta(minutes=15)
+    with store._engine.begin() as conn:
+        conn.execute(
+            db.enrollment_tokens.insert().values(
+                id=str(uuid.uuid4()),
+                hashed_token=db._hash(token),
+                subject_id=grant.subject_id,
+                scope=grant.scope,
+                browser=grant.browser,
+                expires_at=expires,
+            )
+        )
+
+
+def _enroll_fp(client, token: str, grant: EnrollmentGrant, replaces: str | None = None) -> str:
+    _mint(client, token, grant)
+    body = {"token": token, "csr": _csr_pem(grant.subject_id)}
+    if replaces:
+        body["replaces"] = replaces
+    r = client.post("/enroll", json=body)
+    assert r.status_code == 200, r.text
+    return _leaf(r.json()["cert"]).fingerprint(hashes.SHA256()).hex()
+
+
+def test_enroll_records_the_leaf_on_a_new_device_line(register_client):
+    store = register_client.app.state.token_store
+    agent = _enroll_fp(register_client, "t-agent", EnrollmentGrant("agent-01", "tunnel"))
+    desk = _enroll_fp(register_client, "t-desk", EnrollmentGrant("alice", "access"))
+    p12 = _enroll_fp(register_client, "t-p12", EnrollmentGrant("alice", "access", browser=True))
+
+    lines = [store.line_of(fp) for fp in (agent, desk, p12)]
+    assert [(i.subject_id, i.scope, i.kind) for i in lines] == [
+        ("agent-01", "tunnel", "agent"),
+        ("alice", "access", "desktop"),
+        ("alice", "access", "browser"),
+    ]
+    assert len({i.line_id for i in lines}) == 3, "each enrollment opens its own line"
+    assert all(i.revoked_reason is None and not i.legacy for i in lines)
+
+
+def test_replaces_retires_the_previous_device_of_the_same_user(register_client):
+    store = register_client.app.state.token_store
+    old = _enroll_fp(register_client, "t1", EnrollmentGrant("alice", "access"))
+    new = _enroll_fp(register_client, "t2", EnrollmentGrant("alice", "access"), replaces=old)
+
+    assert store.line_of(old).revoked_reason == "replaced"
+    assert store.line_of(new).revoked_reason is None
+    assert store.line_of(new).line_id != store.line_of(old).line_id
+
+
+def test_replaces_leaves_another_users_device_and_an_unknown_fingerprint(register_client):
+    store = register_client.app.state.token_store
+    alices = _enroll_fp(register_client, "t1", EnrollmentGrant("alice", "access"))
+    _enroll_fp(register_client, "t2", EnrollmentGrant("bob", "access"), replaces=alices)
+    _enroll_fp(register_client, "t3", EnrollmentGrant("alice", "tunnel"), replaces=alices)
+    _enroll_fp(register_client, "t4", EnrollmentGrant("alice", "access"), replaces="0" * 64)
+
+    assert store.line_of(alices).revoked_reason is None
+
+
+def test_enroll_refuses_a_malformed_replaces(register_client):
+    _mint(register_client, "t1", EnrollmentGrant("alice", "access"))
+    r = register_client.post(
+        "/enroll", json={"token": "t1", "csr": _csr_pem("alice"), "replaces": "not-a-fingerprint"}
+    )
+    assert r.status_code == 422
+    # Refused before the issuer ran: the token is still there.
+    assert register_client.app.state.token_store.consume("t1") is not None
+
+
+def test_a_failed_signing_does_not_spend_the_token(register_client):
+    store = register_client.app.state.token_store
+    # A scope without an intermediate makes signing fail after the token was taken.
+    _mint(register_client, "t-bad", EnrollmentGrant("alice", "bogus"))
+    r = register_client.post("/enroll", json={"token": "t-bad", "csr": _csr_pem("alice")})
+    assert r.status_code == 403
+    assert store.consume("t-bad") == EnrollmentGrant("alice", "bogus")
+
+
+def test_the_record_of_a_leaf_keeps_what_the_register_stores(client):
+    leaf = _leaf(_enroll(client, "agent-02", "tunnel"))
+    record = CertRecord.of(leaf)
+
+    assert record.fingerprint == leaf.fingerprint(hashes.SHA256()).hex()
+    assert len(record.fingerprint) == 64 and record.fingerprint == record.fingerprint.lower()
+    assert int(record.serial, 16) == leaf.serial_number
+    assert len(record.serial) <= 40, "fits the register's serial column"
+    assert record.not_before == leaf.not_valid_before_utc.replace(tzinfo=None)
+    assert record.not_after == leaf.not_valid_after_utc.replace(tzinfo=None)
+    assert record.not_before.tzinfo is None
+
+
+# --- renewal against the register (R-0224) -----------------------------------
+
+
+def _fp(pem: str) -> str:
+    return _leaf(pem).fingerprint(hashes.SHA256()).hex()
+
+
+def _enroll_pem(client, token: str, grant: EnrollmentGrant, replaces: str | None = None) -> str:
+    _mint(client, token, grant)
+    body = {"token": token, "csr": _csr_pem(grant.subject_id)}
+    if replaces:
+        body["replaces"] = replaces
+    r = client.post("/enroll", json=body)
+    assert r.status_code == 200, r.text
+    return r.json()["cert"]
+
+
+def _renew(client, pem: str):
+    return client.post("/renew", json={"csr": _csr_pem("ignored")}, headers=_renew_headers(pem))
+
+
+def _installed(client, at: datetime.datetime) -> None:
+    store = client.app.state.token_store
+    if isinstance(store, InMemoryTokenStore):
+        store.installed_at = at
+        return
+    with store._engine.begin() as conn:
+        conn.execute(db.certificate_register_state.update().values(installed_at=at))
+
+
+def _revoke(client, subject_id: str, scope: str, at: datetime.datetime) -> None:
+    store = client.app.state.token_store
+    if isinstance(store, InMemoryTokenStore):
+        store.deprovision(subject_id, scope, at=at)
+        return
+    with store._engine.begin() as conn:
+        conn.execute(db.revoked_identities.delete())
+        conn.execute(
+            db.revoked_identities.insert().values(
+                id=str(uuid.uuid4()), subject_id=subject_id, scope=scope, revoked_at=at
+            )
+        )
+
+
+def _unrecorded_leaf(
+    client, cn: str, scope: str, *, not_before: datetime.datetime, days: int, signer: str = ""
+) -> str:
+    """A leaf of this CA that the register never saw, as from before the register."""
+    inter = client.app.state.issuer._intermediate(signer or scope)
+    key = pki.generate_key()
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, cn),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, scope),
+        ]
+    )
+    start = not_before.replace(tzinfo=datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(inter.cert.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(start)
+        .not_valid_after(start + datetime.timedelta(days=days))
+        .sign(inter.key, hashes.SHA256())
+    )
+    return cert.public_bytes(serialization.Encoding.PEM).decode()
+
+
+def test_a_recorded_certificate_renews_onto_its_own_line(register_client):
+    store = register_client.app.state.token_store
+    old = _enroll_pem(register_client, "t1", EnrollmentGrant("agent-07", "tunnel"))
+    r = _renew(register_client, old)
+    assert r.status_code == 200, r.text
+    new = r.json()["cert"]
+
+    assert store.line_of(_fp(new)).line_id == store.line_of(_fp(old)).line_id
+    if isinstance(store, db.DbTokenStore):
+        with store._engine.connect() as conn:
+            renewed_from = conn.execute(
+                select(db.issued_certificates.c.renewed_from).where(
+                    db.issued_certificates.c.fingerprint == _fp(new)
+                )
+            ).scalar()
+        assert renewed_from == _fp(old)
+
+
+def test_a_replaced_certificate_no_longer_renews(register_client):
+    old = _enroll_pem(register_client, "t1", EnrollmentGrant("alice", "access"))
+    new = _enroll_pem(register_client, "t2", EnrollmentGrant("alice", "access"), _fp(old))
+
+    assert _renew(register_client, old).status_code == 403
+    assert _renew(register_client, new).status_code == 200
+
+
+def test_renewal_follows_the_point_of_revocation(register_client):
+    pem = _enroll_pem(register_client, "t1", EnrollmentGrant("alice", "access"))
+    issued = _leaf(pem).not_valid_before_utc.replace(tzinfo=None)
+
+    # Revoked after the certificate was issued: it stays out.
+    _revoke(register_client, "alice", "access", issued + datetime.timedelta(hours=1))
+    assert _renew(register_client, pem).status_code == 403
+    # A revocation before it (a former namesake): this certificate renews.
+    _revoke(register_client, "alice", "access", issued - datetime.timedelta(hours=1))
+    assert _renew(register_client, pem).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "scope, days, kind",
+    [("access", 90, "desktop"), ("access", 365, "browser"), ("tunnel", 90, "agent")],
+)
+def test_an_unrecorded_certificate_from_before_the_register_is_taken_over(
+    register_client, scope, days, kind
+):
+    store = register_client.app.state.token_store
+    now = _now_naive()
+    _installed(register_client, now - datetime.timedelta(days=10))
+    old = _unrecorded_leaf(
+        register_client,
+        "old-device",
+        scope,
+        not_before=now - datetime.timedelta(days=30),
+        days=days,
+    )
+    assert store.line_of(_fp(old)) is None
+
+    r = _renew(register_client, old)
+    assert r.status_code == 200, r.text
+    line = store.line_of(_fp(old))
+    assert (line.legacy, line.kind, line.subject_id) == (True, kind, "old-device")
+    assert store.line_of(_fp(r.json()["cert"])).line_id == line.line_id
+
+
+def test_an_unrecorded_certificate_is_refused_once_the_transition_ends(register_client):
+    now = _now_naive()
+    _installed(register_client, now - datetime.timedelta(days=91))
+    p12 = _unrecorded_leaf(
+        register_client, "alice", "access", not_before=now - datetime.timedelta(days=100), days=365
+    )
+    assert _renew(register_client, p12).status_code == 403
+
+
+def test_an_unrecorded_certificate_issued_after_the_register_is_refused(register_client):
+    now = _now_naive()
+    _installed(register_client, now - datetime.timedelta(days=1))
+    late = _unrecorded_leaf(
+        register_client, "alice", "access", not_before=now - datetime.timedelta(hours=1), days=90
+    )
+    assert _renew(register_client, late).status_code == 403
+
+
+def test_a_leaf_signed_by_another_scopes_intermediate_does_not_renew(register_client):
+    now = _now_naive()
+    _installed(register_client, now + datetime.timedelta(days=1))
+    access_by_tunnel = _unrecorded_leaf(
+        register_client,
+        "admin",
+        "access",
+        not_before=now - datetime.timedelta(hours=1),
+        days=90,
+        signer="tunnel",
+    )
+    assert _renew(register_client, access_by_tunnel).status_code == 403
+
+
+def test_renew_rejects_an_unreadable_subject_cleanly(client):
+    # The subject is parsed lazily: a CN that is not valid UTF-8 must give a 4xx, not a 500.
+    good = _self_signed_leaf("XXXXXXXX", "access")
+    der = x509.load_pem_x509_certificate(good.encode()).public_bytes(serialization.Encoding.DER)
+    assert der.count(b"XXXXXXXX") == 2  # subject and issuer of the self-signed leaf
+    broken = der.replace(b"XXXXXXXX", b"\xff" * 8)
+    pem = x509.load_der_x509_certificate(broken).public_bytes(serialization.Encoding.PEM).decode()
+    r = client.post("/renew", json={"csr": _csr_pem("x")}, headers=_renew_headers(pem))
+    assert 400 <= r.status_code < 500, r.text
+
+
+def test_a_deprovisioning_while_signing_refuses_the_renewal(client):
+    store = client.app.state.token_store
+    pem = _enroll(client, "agent-12", "tunnel")
+    current = CertRecord.of(_leaf(pem))
+    successor = _leaf(_enroll(client, "agent-12b", "tunnel"))
+
+    def sign():
+        store.deprovision("agent-12", "tunnel", at=current.not_before)
+        return successor, {}
+
+    with pytest.raises(RenewalRefused):
+        store.renew(current, "agent-12", "tunnel", "agent", sign)
+    # The successor's fingerprint stays with the line it was enrolled on, not agent-12's.
+    assert store.line_of(CertRecord.of(successor).fingerprint).subject_id == "agent-12b"
+
+
+def test_the_in_memory_revocation_holds_at_its_own_second():
+    store = InMemoryTokenStore()
+    at = datetime.datetime(2026, 10, 1, 12, 0, 0)
+    store.deprovision("alice", "access", at=at)
+    assert store.is_active("alice", "access", at) is False
+    assert store.is_active("alice", "access", at + datetime.timedelta(seconds=1)) is True
+
+
+def test_nothing_is_taken_over_without_an_install_time():
+    now = _now_naive()
+    assert legacy_admitted(now - datetime.timedelta(days=1), None, now) is False
+    installed = now - datetime.timedelta(days=1)
+    assert legacy_admitted(installed - datetime.timedelta(seconds=1), installed, now) is True
+    assert legacy_admitted(installed, installed, now) is False

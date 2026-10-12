@@ -145,6 +145,7 @@ def test_opening_the_stream_with_another_users_certificate_is_refused(monkeypatc
     # regression would hang instead of fail. Session and token as in test_stream.py.
     import app.core.auth as auth_mod
     import app.core.database as db_mod
+    import app.core.identity as id_mod
     from app.modules.notifications.stream import authenticate_stream_user
 
     class _FakeDB:
@@ -157,6 +158,8 @@ def test_opening_the_stream_with_another_users_certificate_is_refused(monkeypatc
 
     monkeypatch.setattr(db_mod, "SessionLocal", lambda: _FakeDB())
     monkeypatch.setattr(auth_mod, "_get_user_from_token", lambda token, db: _User())
+    # The fake session has no tables: the register admits both certificates here.
+    monkeypatch.setattr(id_mod, "_is_revoked", lambda *a, **k: False)
     headers = {"Authorization": "Bearer tok", **_gateway_headers(cn="viewer")}
     with pytest.raises(HTTPException) as exc:
         authenticate_stream_user(_req(headers))

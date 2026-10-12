@@ -13,16 +13,18 @@ cert-gated: the client has no cert yet — this is its bootstrap door.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.bounds import RequestModel
 from app.core.config import ENROLL_PORT
 from app.core.database import get_db
-from app.core.identity import SCOPE_ACCESS
-from app.core.request_context import actor_from_request
+from app.core.identity import SCOPE_ACCESS, ClientIdentity, require_scope
+from app.core.middleware import resolve_client_ip
+from app.core.request_context import Actor, actor_from_request
 from app.modules.audit import service as audit
+from app.modules.enrollment.models import line_of, revoke_line
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.users.models import User
 
@@ -112,3 +114,35 @@ def mint_enrollment_token_for(
         actor=actor_from_request(request),
     )
     return res
+
+
+@router.post("/self/revoke", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_own_device(
+    request: Request,
+    db: Session = Depends(get_db),
+    identity: ClientIdentity = Depends(require_scope(SCOPE_ACCESS)),
+):
+    """Revoke the device that calls: the line of the client certificate this request
+    presents (R-0224). Holding that certificate and its key is the proof, so no JWT
+    is needed — a device resets its identity at the login screen too. A certificate
+    already revoked never gets here: the scope guard refuses it with ERR_CERT_REVOKED."""
+    # A device of a user: an agent is retired by re-provisioning, not here.
+    own = identity.verified and identity.scope == SCOPE_ACCESS and identity.fingerprint
+    line = line_of(db, identity.fingerprint) if own else None
+    if line is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No verified client certificate: there is no device to revoke",
+        )
+    if not revoke_line(db, line.id, "self"):
+        return
+    db.commit()
+    audit.record(
+        db,
+        "device.revoked",
+        actor=Actor("user", None, identity.cn, resolve_client_ip(request)),
+        object_type="device",
+        object_id=line.id,
+        object_label=identity.cn,
+        detail="reason=self",
+    )

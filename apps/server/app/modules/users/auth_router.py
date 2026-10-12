@@ -127,7 +127,7 @@ def login(
     # The certificate has to belong to the user who signs in (R-0223). Checked before
     # the password, so the answer says nothing about it.
     try:
-        require_cert_user(request, data.username)
+        require_cert_user(request, data.username, db)
     except HTTPException:
         audit.record(
             db,
@@ -222,7 +222,7 @@ def refresh_token(
             detail="Ungültiger oder abgelaufener Refresh-Token",
         )
     # Before the rotation, so a refused refresh does not use up the token.
-    require_cert_user(request, user.username)
+    require_cert_user(request, user.username, db)
 
     # Rotation: blacklist the old refresh token immediately so it cannot be used
     # again. A parallel attacker with a copy of the token thereby fails from the
@@ -319,7 +319,7 @@ def bootstrap(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungueltiger Bootstrap-Token",
         )
-    require_cert_user(request, data.username)
+    require_cert_user(request, data.username, db)
 
     user = User(
         username=data.username,

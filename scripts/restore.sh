@@ -135,7 +135,29 @@ restore_db() {
         < "$STAGE/$db.dump"
 }
 
+# The certificate register (R-0224) admits only the certificates it recorded, and the
+# restored copy lacks those issued or renewed since the backup. Moving its install
+# time to now reopens the transition: they are taken over at first contact, for 90
+# days from here. Without the table (a backup from before the register), the server's
+# migration writes the time itself when it starts.
+reopen_register_transition() {
+    [ -f "$STAGE/adminhelper.dump" ] || return 0
+    echo "[restore] certificate register: transition reopened as of now (90 days)"
+    docker compose exec -T postgres sh -c \
+        "PGPASSWORD=\$POSTGRES_PASSWORD psql -h 127.0.0.1 -U adminhelper -d adminhelper -v ON_ERROR_STOP=1 -q" \
+        <<'SQL'
+DO $$
+BEGIN
+    IF to_regclass('public.certificate_register_state') IS NOT NULL THEN
+        UPDATE certificate_register_state SET installed_at = timezone('UTC', now());
+    END IF;
+END
+$$;
+SQL
+}
+
 restore_db adminhelper
+reopen_register_transition
 restore_db adminhelper_monitor
 
 echo "[restore] Starte den kompletten Stack..."

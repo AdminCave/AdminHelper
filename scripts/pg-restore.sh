@@ -31,4 +31,19 @@ esac
 
 echo "[pg-restore] Restoring $DUMP -> $DB"
 pg_restore -d "$DB" --clean --if-exists --no-owner --no-privileges "$DUMP"
+
+# As in restore.sh: the restored certificate register (R-0224) lacks what was issued
+# or renewed since the dump, so its transition starts again as of now (90 days).
+if [ "$DB" = adminhelper ]; then
+    psql -d "$DB" -v ON_ERROR_STOP=1 -q <<'SQL'
+DO $$
+BEGIN
+    IF to_regclass('public.certificate_register_state') IS NOT NULL THEN
+        UPDATE certificate_register_state SET installed_at = timezone('UTC', now());
+    END IF;
+END
+$$;
+SQL
+    echo "[pg-restore] certificate register: transition reopened as of now (90 days)"
+fi
 echo "[pg-restore] Restore OK fuer DB $DB"

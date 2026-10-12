@@ -57,6 +57,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let pinResetMsgKey = $state('');
   let deviceEnrolled = $state(false);
   let deviceResetMsgKey = $state('');
+  // The last reset deleted the identity here only: the server did not revoke it.
+  let deviceResetLocal = $state(false);
   let enrollToken = $state('');
   let enrollMsg = $state('');
   let enrollBusy = $state(false);
@@ -133,9 +135,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     });
     if (!ok) return;
     try {
-      await resetDeviceIdentity(target);
+      const outcome = await resetDeviceIdentity(target);
       deviceEnrolled = false;
       enrollMsg = '';
+      deviceResetLocal = outcome === 'localOnly';
       deviceResetMsgKey = 'settings.resetDeviceId.done';
     } catch (err) {
       deviceResetMsgKey = '';
@@ -434,7 +437,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <!-- Outside the two branches: the reset message used to sit in the
              enrolled branch, which disappears the moment the reset succeeds. -->
         {#if deviceResetMsgKey}<span class="sm-reset-msg" data-msg="device-reset"
-            >{$t(deviceResetMsgKey)}</span
+            >{$t(
+              deviceResetMsgKey,
+            )}{#if deviceResetLocal && deviceResetMsgKey === 'settings.resetDeviceId.done'}
+              <span data-msg="device-reset-local">{$t('settings.resetDeviceId.localOnly')}</span
+              >{/if}</span
           >{/if}
         {#if enrollMsg}<span class="sm-reset-msg" data-msg="enroll">{enrollMsg}</span>{/if}
       {/if}
