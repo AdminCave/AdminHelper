@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: ein Test-Backend für den Keyring, Tests für die Aufrufstellen von replaces_for — Task-Ledger
-Status: geplant · Branch: feature/desktop-keyring-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/desktop-keyring-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0294, Triage Kevin 2026-10-11; Heavy e2e bleibt, weil T2 die Aufrufstellen in enrollment.rs umstellt; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0294 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — `run.sh e2e` (die Desktop-Enrollment-Journey `settings-enroll.live.js`), weil T2 die Aufrufstellen in `enrollment.rs` umstellt; das Verhalten bleibt, die Journey belegt es. Kein Stack- oder Gateway-Pfad, daher nur e2e.
 DoD je Task: CLAUDE.md (cargo fmt, cargo clippy -D warnings, cargo test grün, SPDX bei neuen Dateien).
