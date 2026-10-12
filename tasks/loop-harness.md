@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket loop-harness: doc-smoke in der Bau-Session, kein Hintergrund, redteam-Klone (R-0304, R-0301, R-0303) — Task-Ledger
-Status: aktiv · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0304, R-0301, R-0303, Triage Kevin 2026-10-11/12; R-0304 als gezielte Allow-Regel nur fuer das lesende doc-smoke.py; R-0301 an der Doku belegt; R-0303 mit differentiellem Orakel, eine geaenderte Probe ist [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0304, R-0301, R-0303 (Kurz-Ledger ohne Spec)
 Heavy: none — Runner-Settings, ledger-loop.sh, ein Skill-Text und Shell-Tests unter scripts/ mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -108,8 +108,10 @@ verweigern die Settings.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Kommentar im Loop nennt die Variable)
 
-### T3 — redteam_test klont seine Fixtures mit --no-local (R-0303)  [ ]
+### T3 — redteam_test klont seine Fixtures mit --no-local (R-0303)  [x]
 Komponente: scripts · Dateien: scripts/tests/redteam_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3e484464 2026-10-12T10:25:45+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Die drei Klone (:451, :468, :487) laufen mit `gitq clone -q --no-local --template= "$FC" …`.
 - Eine Prüfung wie „repo wiring“ in ledger_loop_test (R-0262): In `redteam_test.sh` steht kein `git clone` und kein

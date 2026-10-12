@@ -448,7 +448,7 @@ grep -qF -- "$PUSHED" "$G/git.log" \
 # Pushed to a local repository, its own configuration would run: not pushed to.
 gitq init -q --bare --template= "$G/target.git"
 gitq -C "$G/target.git" config core.alternateRefsCommand "$G/hooks/altrefs"
-FC2="$G/clone2"; gitq clone -q --template= "$FC" "$FC2" 2>/dev/null
+FC2="$G/clone2"; gitq clone -q --no-local --template= "$FC" "$FC2" 2>/dev/null
 gitq -C "$FC2" config --unset credential.helper; gitq -C "$FC2" config --unset-all http.https://example.invalid/.extraheader
 gitq -C "$FC2" config remote.origin.pushurl "$G/target.git"
 gitq -C "$FC2" config --add remote.origin.pushurl http://127.0.0.1:9/x.git
@@ -465,7 +465,7 @@ grep -q "^FAIL  the clone rewrites https://example.invalid/net.git to $G/target.
 # A rewrite that only a push applies, with a token in the URL: a FAIL, and the token
 # never on the terminal — nor one in a push URL. An empty credential.helper only
 # resets the list. A local path with :// further on is still a local path.
-FC3="$G/clone3"; gitq clone -q --template= "$FC" "$FC3" 2>/dev/null
+FC3="$G/clone3"; gitq clone -q --no-local --template= "$FC" "$FC3" 2>/dev/null
 gitq -C "$FC3" config --unset credential.helper; gitq -C "$FC3" config --unset-all http.https://example.invalid/.extraheader
 gitq -C "$FC3" config --add credential.helper ""
 gitq -C "$FC3" config url."http://user:TOKENX@127.0.0.1:9/".pushInsteadOf https://github.com/
@@ -484,7 +484,7 @@ probe_git "$FC5"; rc=$?
   && ok "an unreadable git configuration is a FAIL, not 'no credential'" || bad "broken config: rc=$rc $(cat "$LT/out")"
 # More ways a git configuration carries a credential — names only; a push URL with an
 # @ in its password or a token in its query is redacted all the same.
-FC6="$G/clone6"; gitq clone -q --template= "$FC" "$FC6" 2>/dev/null
+FC6="$G/clone6"; gitq clone -q --no-local --template= "$FC" "$FC6" 2>/dev/null
 gitq -C "$FC6" config --unset credential.helper; gitq -C "$FC6" config --unset-all http.https://example.invalid/.extraheader
 for k in http.sslCert http.https://x.invalid/.sslKey http.cookieFile core.askPass core.sshCommand; do
   gitq -C "$FC6" config "$k" "SECRETV-$k"
@@ -672,6 +672,12 @@ bash "$RT" --build-settings </dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "--build-settings without a file is a usage error (exit 2)" || bad "--build-settings without a file did not exit 2"
 grep -qx 'redteam_build_settings "$HOME/.claude/settings.json"' "$RT" \
   && ok "the normal run checks the build session's rules in the settings in force" || bad "the normal run does not call redteam_build_settings"
+
+# R-0303: a local clone copies or links the objects directory file by file, and a
+# file a parallel git process adds or removes there breaks it (R-0262); over the
+# transport (--no-local) it cannot. gitq is git with the caller's configuration out.
+plain="$(grep -nE '^[^#]*\bgitq?( -C [^ ]+)? clone ' "$HERE/redteam_test.sh" | grep -v -- '--no-local')"
+[ -z "$plain" ] && ok "every git or gitq clone of a fixture here uses --no-local" || bad "a local clone without --no-local: $plain"
 
 echo ""
 echo "redteam_test: $PASS passed, $FAIL failed"
