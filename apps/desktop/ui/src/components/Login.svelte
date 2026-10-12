@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { errMsg, withoutErrorCodes } from '$lib/utils/errors';
+  import { errRaw, withoutErrorCodes } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setAllowSelfSignedCerts, setMode, settings } from '$lib/stores/session';
   import {
@@ -96,7 +96,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       error = '';
       info = resetInfo('login.resetPin.done', outcome);
     } catch (err) {
-      error = errMsg(err);
+      error = errRaw(err);
     } finally {
       busy = false;
     }
@@ -128,7 +128,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       error = '';
       info = resetInfo(doneKey, outcome);
     } catch (err) {
-      error = errMsg(err);
+      error = errRaw(err);
     } finally {
       busy = false;
     }
@@ -144,7 +144,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await setMode('local');
     } catch (err) {
-      error = errMsg(err);
+      error = errRaw(err);
     } finally {
       busy = false;
     }
@@ -177,7 +177,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // An unknown issuer on first contact opens the trust dialog instead of a
   // dead-end error; everything else surfaces inline as before.
   function surfaceError(err: unknown, retry: 'login' | 'enroll'): void {
-    const msg = errMsg(err);
+    const msg = errRaw(err);
     if (msg.includes('ERR_TLS_UNKNOWN_ISSUER')) {
       trustError = msg;
       trustPrompt = retry;
@@ -229,7 +229,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         await doEnroll();
       }
     } catch (err) {
-      error = errMsg(err);
+      error = errRaw(err);
     } finally {
       busy = false;
     }
