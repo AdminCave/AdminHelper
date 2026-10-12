@@ -48,8 +48,9 @@ Vorab geprüft:
     `remote.origin.receivepack`, einen pre-push-Hook). Mit `--no-local` läuft beim Klonen `git-upload-pack` in `$FC`.
     Der Bau zeigt, dass sich dadurch keine Probe und keine Marke ändert (T3).
 
-### T1 — Die Bau-Session darf doc-smoke fahren (R-0304)  [?] (hooks_test hält Kevins Entscheidung aus R-0237 fest: python3 nur mit einem Skript unter scripts/vm. Die Allow-Regel Bash(python3 scripts/dev/doc-smoke.py:*) bricht diese Prüfung, und der Plan kündigte das nicht an. Vorschlag: die Regel aus R-0237 auf doc-smoke.py erweitern (scripts/dev ist per deny Edit(./scripts/dev/**) für die Session ebenso wenig schreibbar wie scripts/vm), mit Plan-Korrektur und Kevins Wort; sonst T1 überspringen. Der Bau liegt als Patch bereit.)
-Komponente: scripts · Dateien: scripts/dev/runner-settings.json, .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh
+### T1 — Die Bau-Session darf doc-smoke fahren (R-0304)  [ ]
+Antwort: Kevin 2026-10-12, (a): die Regel aus R-0237 erlaubt neben scripts/vm genau scripts/dev/doc-smoke.py (Rückfrage in der Session der Aufsicht; Plan-Korrektur durch die Aufsicht).
+Komponente: scripts · Dateien: scripts/dev/runner-settings.json, .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh, scripts/tests/hooks_test.sh
 Änderung:
 - `runner-settings.json` bekommt in `allow` die Regel `Bash(python3 scripts/dev/doc-smoke.py:*)`, neben
   `Bash(ruff:*)` (:82).
@@ -73,6 +74,7 @@ HEAD: c719ace6
 Semantik: `AUTONOMOUS.md:242–245` „**Je Task** eine frische Bau-Session … Die Session baut eine Task, testet mit `verify.sh`
 und hinterlässt eine Commit-Nachricht“. Eine Doku-Task muss ihre Doku in der Session prüfen können, wie es der
 Doku-Schritt im CI tut.
+Assertion-Änderung: scripts/tests/hooks_test.sh::the WebFetch allow rules are exactly the six doc domains, echo allowed, python3 only with a script, no paste — die Regel aus R-0237 erlaubt neben scripts/vm genau scripts/dev/doc-smoke.py (Kevin 2026-10-12, R-0304)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (der Skill-Text ist die Anleitung)
 
