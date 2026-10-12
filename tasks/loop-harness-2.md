@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Harness 2: Suchen in der Bau-Session, das frpc-Sidecar im Builder-Klon, ein Symlink .vm — Task-Ledger
-Status: freigegeben · Branch: harness/loop-harness-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/loop-harness-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0319, R-0325, R-0326, Triage Kevin 2026-10-12; R-0319 Weg B: keine Allow-Regel fuer git grep, die Deny-Entscheidung R-0164 bleibt, der Skill verweist auf das Grep-Werkzeug; T3 mit eigener Testdatei; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0319, R-0325, R-0326 (Kurz-Ledger ohne Spec)
 Heavy: none — Skill-Text und ein hermetischer Skill-Test, ein Einrichtungsskript des Builders mit hermetischem Test, eine Zeile `.gitignore`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
