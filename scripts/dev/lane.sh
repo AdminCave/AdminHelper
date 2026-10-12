@@ -339,8 +339,15 @@ lane_done() {
         echo "  WARN: no AH_TEST_DB in the main checkout's .devenv.sh — database $db is NOT dropped;"
         echo "        drop it by hand on the server AH_TEST_DB named (dropdb $db), or run done again"
       else
-        lane_db drop "$slug" \
-          || { echo "  dropdb failed — database $db is left behind, and so is the mark"; exit 1; }
+        # The || keeps set -e from ending the script inside lane_db, before the case.
+        # 3: lane_db refused the URL, and dropdb never ran (R-0269).
+        local drop_rc=0
+        lane_db drop "$slug" || drop_rc=$?
+        case "$drop_rc" in
+          0) ;;
+          3) echo "  database $db is not dropped — the line above says why; the mark stays"; exit 1 ;;
+          *) echo "  dropdb failed — database $db is left behind, and so is the mark"; exit 1 ;;
+        esac
         sed -i '/^db=/d' "$mark"
       fi
     fi

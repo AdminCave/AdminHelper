@@ -211,6 +211,21 @@ lane new gamma; rc=$?
 lane "done" gamma && grep -q "^dropdb .* adminhelper_test_gamma$" "$PG_LOG" && [ ! -e "$MAIN/.vm/lanes/gamma" ] \
   && ok "done with the file back drops it and takes the mark" || bad "done gamma again: $(cat "$WORK/out.log")"
 
+echo "── done: a URL lane_db refuses is no failed dropdb (R-0269) ──"
+lane new psi || bad "new psi failed: $(cat "$WORK/out.log")"
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah@localhost:5432/adminhelper_test?password=secret" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane "done" psi; rc=$?
+[ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && grep -q 'database adminhelper_test_psi is not dropped — the line above says why' "$WORK/out.log" \
+  && ! grep -q 'dropdb failed' "$WORK/out.log" && grep -qx 'db=adminhelper_test_psi' "$MAIN/.vm/lanes/psi" \
+  && ! grep -q secret "$WORK/out.log" \
+  && ok "done with a URL lane_db refuses: no dropdb, says why, the mark keeps its db line" \
+  || bad "done psi: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+lane "done" psi && [ ! -e "$MAIN/.vm/lanes/psi" ] && ok "and the next done with a usable URL finishes it" \
+  || bad "done psi again: $(cat "$WORK/out.log")"
+
 echo "── new: the plan has to be committed where the build will look ──"
 g() { git -C "$MAIN" -c user.name=t -c user.email=t@t "$@"; }
 # delta: the plan only on its branch, as the gate commits it (R-0065).
@@ -313,6 +328,8 @@ lane "done" nu; rc=$?
 unset FAKE_DROPDB_FAIL
 [ "$rc" != 0 ] && grep -q "^db=adminhelper_test_nu$" "$MAIN/.vm/lanes/nu" 2>/dev/null \
   && ok "a failing dropdb leaves the mark with its db line" || bad "done nu rc=$rc: $(cat "$MAIN/.vm/lanes/nu" 2>&1)"
+grep -q 'dropdb failed — database adminhelper_test_nu is left behind' "$WORK/out.log" \
+  && ok "... and says that dropdb failed" || bad "done nu: no dropdb failed message: $(cat "$WORK/out.log")"
 lane "done" nu && [ ! -e "$MAIN/.vm/lanes/nu" ] && ok "and the next done finishes it" \
   || bad "done nu again: $(cat "$WORK/out.log")"
 # xi: no .devenv.sh at new — no database, so nothing for done to drop, and a

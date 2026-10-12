@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket lane.sh: Passwort in der Query, Gruppe über `/`, Meldung bei Exit 3 (R-0265, R-0266, R-0269) — Task-Ledger
-Status: aktiv · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0265, R-0266, R-0269, Triage Kevin 2026-10-10; R-0265 geschlossen fehlschlagen wie R-0255; Proben nur mit Platzhalter; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0265, R-0266, R-0269 (Kurz-Ledger ohne Spec)
 Heavy: none — scripts/dev/lane.sh mit dem hermetischen lane_test (Fake-createdb/-dropdb); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -70,8 +70,10 @@ nicht in einem Argument von `createdb`/`dropdb`; kann `lane.sh` es dort nicht he
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (ein Satz)
 
-### T2 — lane_done: Exit 3 heißt „nicht gelöscht, siehe oben“, nicht „dropdb failed“ (R-0269)  [ ]
+### T2 — lane_done: Exit 3 heißt „nicht gelöscht, siehe oben“, nicht „dropdb failed“ (R-0269)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a5eeb9cf 2026-10-12T12:26:58+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - In `lane_done` (:334–335) fängt `rc=0; lane_db drop "$slug" || rc=$?` den Rückgabewert, wie in `lane_new` (:171).
   lane.sh läuft unter `set -e`, darum nicht `lane_db drop; rc=$?`.
