@@ -1920,6 +1920,66 @@ def test_destroy_of_a_selector_that_matches_nothing_is_not_an_error(cfg, api, ht
     assert "nothing to destroy" in capsys.readouterr().out
 
 
+def test_destroy_refuses_a_named_vm_of_another_lane_and_destroys_nothing(cfg, api, http, clock):
+    # reap.sh names its warm slots with its lane, and 3000 is lane main's.
+    purgeable(http, 3000, 3001)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "3001", "--lane", "pilot")
+    assert "3000 is not --lane pilot (it carries lane-main)" in str(caught.value)
+    # Checked before the first destruction: 3001, which is pilot's, still stands.
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_of_a_named_vm_with_its_lane_takes_that_vm_only(cfg, api, http, clock, capsys):
+    # 3000 is on lane pilot too: a lane next to a VMID narrows, it adds nothing.
+    pool = fixture("cluster_resources")
+    for entry in pool["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = entry["tags"].replace("lane-main", "lane-pilot")
+    http.add("GET", "/cluster/resources", body=pool["body"])
+    http.add(
+        "GET", "/qemu/3001/status/current", body=current_of(3001, tags=POOL_NOW[3001][0])["body"]
+    )
+    http.add("DELETE", "/qemu/3001", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    assert verb("destroy", cfg, api, "3001", "--lane", "pilot") == 0
+    assert "destroyed 3001" in capsys.readouterr().out
+    assert http.paths("DELETE") == ["https://pve.example:8006/api2/json/nodes/<node>/qemu/3001"]
+
+
+def test_destroy_holds_a_named_vm_against_fresh_tags_not_the_cache(cfg, api, http, clock):
+    # The listing still shows 3001 on lane pilot; the VM itself says lane main.
+    tags, name = POOL_NOW[3001]
+    purgeable(http, 3001, now={3001: (tags.replace("lane-pilot", "lane-main"), name)})
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--lane", "pilot")
+    assert "3001 is not --lane pilot (it carries lane-main)" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_holds_a_named_vm_against_role_and_scenario_too(cfg, api, http, clock):
+    purgeable(http)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--role", "probe")
+    assert "3001 is not --role probe (it carries role-server)" in str(caught.value)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "--scenario", "capstone")
+    assert "3000 is not --scenario capstone (it carries sc-none)" in str(caught.value)
+    # Every selector given must hold, not one of them.
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--lane", "pilot", "--role", "probe")
+    assert "3001 is not --role probe" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_names_a_missing_tag_when_it_refuses(cfg, api, http, clock):
+    purgeable(http, now={3000: ("ah;lane-main", POOL_NOW[3000][1])})
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "--role", "probe")
+    assert "3000 is not --role probe (it carries no role- tag)" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
 # ── reap ─────────────────────────────────────────────────────────────────────
 def leased(http, *entries):
     """A pool of our own VMs with the given (vmid, lane, ttl-offset, template)."""

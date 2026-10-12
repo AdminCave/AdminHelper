@@ -1711,7 +1711,7 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `run <vm> [--sync] [--timeout S] [--out DIR] [--extend <dauer>] -- <cmd>` | Fuehrt das Kommando in einer **Login-Shell** im Checkout aus und reicht dessen Exit-Code **unveraendert** zurueck. `--out` holt `<remote>/.ah-out/`, `--extend 4h` versetzt vorher den `ttl-`Tag. |
 | `pull <vm> <glob> <dir>` | Holt Dateien von der Box. |
 | `snap <vm> <name> [--ram]` · `rollback <vm> <name> [--start]` · `delsnap <vm> <name>` | Snapshot, Ruecksetzen, Loeschen. `snap` und `rollback` je ~1–3 s auf LVM-thin; `delsnap` direkt nach einem `rollback --start` wartet, bis der Start das Config-Lock wieder freigibt (gemessen 35 s). |
-| `destroy <vm>… \| --scenario id \| --lane l \| --role r` | Stoppt und loescht mit Platte. |
+| `destroy <vm>… \| --scenario id \| --lane l \| --role r` | Stoppt und loescht mit Platte. Genannte VMs zusammen mit `--scenario`/`--lane`/`--role`: jede muss zu jedem Filter passen, sonst Abbruch (Exit 2) vor der ersten Zerstoerung; die Filter fuegen dann keine VMs hinzu. |
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
 | `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). |
@@ -1812,7 +1812,9 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   `reap`, der Auto-Sweep am Ende jedes Verbs und die Leak-Pruefung in `list` arbeiten
   auf der eigenen Lane — Reap einer Lane laesst die anderen stehen. `destroy` filtert
   ueber `--lane/--scenario/--role`; eine ausdruecklich genannte VMID wird zerstoert,
-  geschuetzt ist dort nur, was kein `ah`-Tag traegt. Klone werden seriell abgeschickt (ein
+  geschuetzt ist dort nur, was kein `ah`-Tag traegt. Steht neben ihr ein Filter, muss sie
+  zu ihm passen: `reap.sh` nennt die Warm-Slots mit `--lane` der eigenen Lane, und `vm.py`
+  lehnt einen Slot ab, dessen VM eine andere Lane traegt. Klone werden seriell abgeschickt (ein
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
   2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der

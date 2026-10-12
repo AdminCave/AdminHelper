@@ -16,7 +16,8 @@
 #
 # Only this lane's warm slots are destroyed outright: another lane's warm.env is
 # in another worktree, and guessing at its VMs by tag is how one lane kills the
-# box another is iterating on.
+# box another is iterating on. The slots go to vm.py with the lane, and vm.py
+# refuses a slot whose VM carries another lane's tag.
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/vm/lib.sh
@@ -44,7 +45,7 @@ done
 # A slot whose VM is already gone is the normal case after a ttl expired, and
 # vm.py says so and moves on — the sweep must not stop at it.
 if [ ${#IDS[@]} -gt 0 ]; then
-  vm_py destroy "${IDS[@]}" 2>&1 | sed 's/^/  /' || true
+  vm_py destroy --lane "$LANE" "${IDS[@]}" 2>&1 | sed 's/^/  /' || true  # review: ok the sweep goes on; the closing list exits 74 on a leak
 else
   echo "  no warm slots recorded"
 fi

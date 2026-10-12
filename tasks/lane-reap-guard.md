@@ -28,8 +28,10 @@ Vorab geprüft:
 - Die Tests der Shell-Seite (`ok`/`bad`) sind für `diff-scan` keine Assertions. Die geänderte Erwartung in
   vm_wrappers_test (T1) braucht deshalb keine `Assertion-Änderung:`. Der Review sieht sie im Diff.
 
-### T1 — reap zerstört nur Boxen der eigenen Lane: destroy mit VMIDs und Filter verlangt, dass beide passen  [ ]
+### T1 — reap zerstört nur Boxen der eigenen Lane: destroy mit VMIDs und Filter verlangt, dass beide passen  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/reap.sh, scripts/vm/tests/test_vm.py, scripts/tests/vm_wrappers_test.sh, DEVELOPMENT.md, AUTONOMOUS.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1db98a16 2026-10-12T17:42:10+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `vm.py destroy`: Werden VMs genannt und zugleich `--lane`, `--scenario` oder `--role` gegeben, muss jede genannte VM
   zu jedem gegebenen Filter passen.

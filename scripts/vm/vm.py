@@ -1382,20 +1382,15 @@ def verb_delsnap(cfg: Config, api: Api, args) -> int:
     return 0
 
 
-def select_vms(cfg: Config, vms: list, args) -> list:
-    """The VMs a `destroy` names, by id/name or by tag."""
-    chosen: dict = {}
-    for ref in args.vm or []:
-        entry = find_vm(cfg, None, ref, vms=vms)
-        chosen[entry["vmid"]] = entry
-    filters = []
+def destroy_selectors(args) -> list:
+    """(prefix, flag, value) for each of --scenario/--lane/--role that was given."""
+    selectors = []
     for prefix, flag, raw in (
         ("sc-", "--scenario", args.scenario),
         ("lane-", "--lane", args.lane),
         ("role-", "--role", args.role),
     ):
         if raw is None:
-            filters.append((prefix, None))
             continue
         clean = tag_safe(raw)
         # An empty value would compare equal to the default and select every VM
@@ -1403,19 +1398,44 @@ def select_vms(cfg: Config, vms: list, args) -> list:
         # the lane's scenario-less VMs. Refuse instead of guessing.
         if not clean:
             raise Usage("%s %r has nothing usable in it" % (flag, raw))
-        filters.append((prefix, clean))
-    if any(value for _, value in filters):
+        selectors.append((prefix, flag, clean))
+    return selectors
+
+
+def selector_value(tags: set, prefix: str) -> str:
+    return tag_value(tags, prefix, "main" if prefix == "lane-" else "")
+
+
+def select_vms(cfg: Config, vms: list, args) -> list:
+    """The VMs a `destroy` names, by id/name or by tag. Named VMs are not widened
+    by a selector given with them: verb_destroy holds each one against it."""
+    chosen: dict = {}
+    for ref in args.vm or []:
+        entry = find_vm(cfg, None, ref, vms=vms)
+        chosen[entry["vmid"]] = entry
+    selectors = destroy_selectors(args)
+    if selectors and not args.vm:
         for entry in vms:
             tags = tags_of(entry)
             if OURS not in tags or entry.get("template"):
                 continue
-            if all(
-                value is None
-                or tag_value(tags, prefix, "main" if prefix == "lane-" else "") == value
-                for prefix, value in filters
-            ):
+            if all(selector_value(tags, prefix) == value for prefix, _, value in selectors):
                 chosen[entry["vmid"]] = entry
     return [chosen[vmid] for vmid in sorted(chosen)]
+
+
+def require_selected(entry: dict, selectors: list) -> dict:
+    """A VM named together with --lane/--scenario/--role must carry them. reap.sh
+    names its warm slots with its lane: a slot of another lane is not its to take."""
+    tags = tags_of(entry)
+    for prefix, flag, value in selectors:
+        have = selector_value(tags, prefix)
+        if have != value:
+            raise Usage(
+                "%d is not %s %s (it carries %s) — refusing"
+                % (entry["vmid"], flag, value, prefix + have if have else "no %s tag" % prefix)
+            )
+    return entry
 
 
 def verb_destroy(cfg: Config, api: Api, args) -> int:
@@ -1423,6 +1443,7 @@ def verb_destroy(cfg: Config, api: Api, args) -> int:
         raise Usage("destroy needs VMs, or one of --scenario/--lane/--role")
     vms = pool_vms(cfg, api)
     chosen = select_vms(cfg, vms, args)
+    selectors = destroy_selectors(args) if args.vm else []
     # Everything is checked BEFORE the first destruction, and checked against
     # FRESH state rather than the resource cache that picked it: a refusal
     # halfway through would leave a scenario partly torn down, and a stale name
@@ -1434,6 +1455,7 @@ def verb_destroy(cfg: Config, api: Api, args) -> int:
             print("already gone %d %s" % (entry["vmid"], entry.get("name", "")))
             continue
         require_ours(current)
+        require_selected(current, selectors)
         confirmed.append(current)
     failures = []
     for entry in confirmed:
