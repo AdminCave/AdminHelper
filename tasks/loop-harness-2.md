@@ -71,8 +71,10 @@ HEAD: 710b68a2
 Semantik: `scripts/tests/hooks_test.sh:1599-1601`: „the build session … no read command it may run brings a way to run
 or write a program along (R-0164: rg --pre, git grep -O, sed e/w)“.
 
-### T2 — builder-home.sh setup kopiert das frpc-Sidecar in den Klon (R-0325)  [ ]
+### T2 — builder-home.sh setup kopiert das frpc-Sidecar in den Klon (R-0325)  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9f1b1b40 2026-10-13T01:52:48+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - **`setup`:** Nach `setup_clone` (`builder-home.sh:147-165`) kopiert der Schritt `apps/desktop/src-tauri/binaries/`
   aus diesem Checkout (`$ROOT`) in den Klon (`$CLONE`), wie `lane.sh new` es für eine Lane tut (`lane.sh:322-338`):

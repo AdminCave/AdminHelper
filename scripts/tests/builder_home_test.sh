@@ -42,9 +42,12 @@ mkdir -p "$MAIN/scripts/dev"
 cp "$REPO_ROOT/scripts/dev/builder-home.sh" "$REPO_ROOT/scripts/dev/runner-settings.json" \
   "$REPO_ROOT/scripts/dev/runner-env.sh" "$MAIN/scripts/dev/"
 printf '2.1.999\n' > "$MAIN/scripts/dev/runner-claude.version"
-printf '.devenv.sh\n' > "$MAIN/.gitignore"
+printf '.devenv.sh\n/apps/desktop/src-tauri/binaries/\n' > "$MAIN/.gitignore"
 printf 'export AH_TEST_DB="postgresql+psycopg://ah:%s@localhost/adminhelper_test"\n' "$PW_URL" > "$MAIN/.devenv.sh"
 git init -q -b main "$MAIN" && git -C "$MAIN" add -A && git -C "$MAIN" commit -qm base
+# The frpc sidecar, gitignored here as in the real checkout.
+SC=apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+mkdir -p "$MAIN/${SC%/*}" && printf 'fake frpc\n' > "$MAIN/$SC" && chmod 755 "$MAIN/$SC"
 git clone -q --bare --no-local "$MAIN" "$ORIGIN"
 git -C "$MAIN" remote add origin "$ORIGIN" && git -C "$MAIN" fetch -q origin
 
@@ -164,6 +167,10 @@ grep -qxF "export AH_TEST_DB=\"postgresql+psycopg://ah:$PW_URL@localhost/adminhe
   && ok ".devenv.sh names the builder's own database" || bad "devenv AH_TEST_DB is not the builder database"
 grep -q 'still missing: the token' <<<"$OUT" && ok "setup names the missing token" || bad "no token hint: $OUT"
 [ ! -e "$H/.config/adminhelper/oauth.env" ] && ok "and writes no oauth.env itself" || bad "setup wrote oauth.env"
+[ -f "$B/repo/$SC" ] && [ ! -L "$B/repo/$SC" ] && cmp -s "$MAIN/$SC" "$B/repo/$SC" && [ -x "$B/repo/$SC" ] \
+  && grep -q '^  wrote apps/desktop/src-tauri/binaries' <<<"$OUT" \
+  && ok "the frpc sidecar is copied into the clone, a file of its own (R-0325)" \
+  || bad "sidecar in the clone: $(ls -l "$B/repo/${SC%/*}" 2>&1); out=$OUT"
 
 echo "── setup, the second time: nothing that is right changes"
 snap() { (cd "$B" && find . -path ./repo/.git -prune -o \( -type f -o -type l \) -printf '%p %m %l\n' | sort
@@ -202,6 +209,21 @@ OUT=$(cd "$MAIN" && bash "$BH" token < "$WORK/in.ok" 2>&1); rc=$?; ALL_OUT+="$OU
   && ok "a token of the right form lands in oauth.env, 0600" || bad "good token: rc=$rc out=$OUT"
 run status; ALL_OUT+="$OUT"
 [ $rc -eq 0 ] && grep -q 'complete' <<<"$OUT" && ok "status: complete -> exit 0" || bad "status: rc=$rc out=$OUT"
+# The sidecar gone from the clone is missing, and setup brings it back.
+rm -f "$B/repo/$SC"
+run status; ALL_OUT+="$OUT"
+[ $rc -ne 0 ] && grep -q '^missing: the frpc sidecar' <<<"$OUT" && ok "status: no frpc sidecar in the clone -> missing" \
+  || bad "status without the sidecar: rc=$rc out=$OUT"
+run setup; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && cmp -s "$MAIN/$SC" "$B/repo/$SC" && ok "and setup copies it again" || bad "re-copy: rc=$rc out=$OUT"
+# A checkout without one: setup says what that costs and goes on; status asks nothing.
+mv "$MAIN/${SC%/*}" "$WORK/binaries.away"
+run setup; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && grep -q '^  note  this checkout has no apps/desktop/src-tauri/binaries' <<<"$OUT" \
+  && ok "a checkout without the sidecar: setup notes it, exit 0" || bad "no sidecar here: rc=$rc out=$OUT"
+run status; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && ok "and status does not ask for one" || bad "status, no sidecar here: rc=$rc out=$OUT"
+mv "$WORK/binaries.away" "$MAIN/${SC%/*}"
 # What runner-env.sh refuses for another reason, it says, and status shows it.
 printf 'AH_PVE_URL=https://pve.invalid:8006\n' > "$H/.config/adminhelper/pve.env"; chmod 644 "$H/.config/adminhelper/pve.env"
 run status; ALL_OUT+="$OUT"
