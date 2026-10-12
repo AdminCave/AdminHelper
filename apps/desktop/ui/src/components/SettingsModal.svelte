@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { settings, session } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
-  import { errMsg, withoutErrorCodes } from '$lib/utils/errors';
+  import { errMsg } from '$lib/utils/errors';
   import {
     settingsModalOpen,
     closeSettings,
@@ -159,7 +159,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       enrollToken = '';
       enrollMsg = $t('settings.enroll.done');
     } catch (err) {
-      enrollMsg = withoutErrorCodes(errMsg(err));
+      enrollMsg = errMsg(err);
       return;
     } finally {
       enrollBusy = false;
