@@ -99,8 +99,10 @@ scheitert, ist ein Flake der Suite selbst.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Kopf von pipe_guard_test.sh nennt die Regel)
 
-### T2 — Fixture-Klone und builder-home.sh setup klonen mit --no-local (R-0287)  [ ]
+### T2 — Fixture-Klone und builder-home.sh setup klonen mit --no-local (R-0287)  [x]
 Komponente: scripts · Dateien: scripts/tests/builder_home_test.sh, scripts/tests/review_scripts_test.sh, scripts/dev/builder-home.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bb5df25a 2026-10-12T05:56:35+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `git clone --no-local` an vier Stellen:
   - builder_home_test.sh:48 (`--bare` aus `$MAIN`);

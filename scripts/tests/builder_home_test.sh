@@ -45,7 +45,7 @@ printf '2.1.999\n' > "$MAIN/scripts/dev/runner-claude.version"
 printf '.devenv.sh\n' > "$MAIN/.gitignore"
 printf 'export AH_TEST_DB="postgresql+psycopg://ah:%s@localhost/adminhelper_test"\n' "$PW_URL" > "$MAIN/.devenv.sh"
 git init -q -b main "$MAIN" && git -C "$MAIN" add -A && git -C "$MAIN" commit -qm base
-git clone -q --bare "$MAIN" "$ORIGIN"
+git clone -q --bare --no-local "$MAIN" "$ORIGIN"
 git -C "$MAIN" remote add origin "$ORIGIN" && git -C "$MAIN" fetch -q origin
 
 # The fakes. claude installs itself as the pinned "binary", so the checksum is the
@@ -220,7 +220,7 @@ mkvenv "$H2/.local/share/ah-tools/venv"
 ln -s "$H2/.local/share/ah-tools/venv/bin/python3" "$H2/.local/bin/python3"
 printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$TOK_OK" > "$H2/.config/adminhelper/oauth.env"; chmod 600 "$H2/.config/adminhelper/oauth.env"
 printf 'state\n' > "$B2/loop/messlauf-1/state.json"
-git clone -q "$ORIGIN" "$B2/repo" && git -C "$B2/repo" config ah.fixture kept
+git clone -q --no-local "$ORIGIN" "$B2/repo" && git -C "$B2/repo" config ah.fixture kept
 TOKSUM="$(sha256sum < "$H2/.config/adminhelper/oauth.env")"
 : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B2" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
 [ $rc -eq 0 ] && [ "$(sha256sum < "$H2/.config/adminhelper/oauth.env")" = "$TOKSUM" ] \
@@ -289,6 +289,12 @@ if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --severity=warning "$REPO_ROOT/scripts/dev/builder-home.sh" \
     && ok "shellcheck: builder-home.sh is clean" || bad "shellcheck findings in builder-home.sh"
 fi
+
+# R-0287: a local clone copies or links the objects directory file by file, and
+# a file a parallel git process adds or removes there breaks it (R-0262); over
+# the transport (--no-local) it cannot.
+plain="$(grep -nE '^[^#]*git( -C [^ ]+)? clone ' "$HERE/builder_home_test.sh" "$REPO_ROOT/scripts/dev/builder-home.sh" | grep -v -- '--no-local')"
+[ -z "$plain" ] && ok "every git clone here and in builder-home.sh uses --no-local" || bad "a local clone without --no-local: $plain"
 
 echo ""
 echo "builder_home_test: $PASS passed, $FAIL failed"

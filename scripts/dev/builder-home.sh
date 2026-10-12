@@ -149,7 +149,9 @@ setup_clone() {
   say "── clone $CLONE"
   origin="$(git -C "$ROOT" config --get remote.origin.url)" || fail "this checkout has no origin"
   if [ ! -d "$CLONE/.git" ]; then
-    git clone -q --no-hardlinks -b main "$ROOT" "$CLONE" || fail "git clone failed"
+    # Over the transport: other sessions run git in this checkout, and a file
+    # they add or remove in its objects breaks a clone that copies them (R-0287).
+    git clone -q --no-local -b main "$ROOT" "$CLONE" || fail "git clone failed"
   fi
   git -C "$CLONE" config remote.origin.url "$origin" &&
     git -C "$CLONE" config remote.origin.pushurl /dev/null &&
