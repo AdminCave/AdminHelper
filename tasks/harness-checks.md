@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Prüfungen: die Rennen-Tests des Issuers gegen Postgres, der frpc-Sync im Multibox — Task-Ledger
-Status: aktiv · Branch: harness/harness-checks · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/harness-checks · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0309, R-0315, Triage Kevin 2026-10-12; der Postgres-Service im CA-Issuer-Job bleibt draussen und geht als eigene Zeile an Kevin; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0309, R-0315 (Kurz-Ledger ohne Spec)
 Heavy: linux-full + scenario --enforce --agents 1 --tunnel — T1: `run.sh integration` fährt `stack_pytest.sh` (Schritt `stack-pytest`) gegen das Postgres des Stacks; T2: ein Multibox-Lauf, `--tunnel`, weil die Route ohne FRP-Config mit 404 antwortet, und `--enforce`, weil erst dann ein gelungener Sync das Agent-Zertifikat beweist.
@@ -71,8 +71,10 @@ und skippen sich überall, wo er fehlt … Der `integration`-Layer fährt sie im
 TOCTOU-Test fährt das PR-CI nicht mit Postgres – der Job `ca-issuer` nutzt den In-Memory-Token-Store –, mit echtem
 Postgres läuft er nur hier.“ Ein Postgres-Test des Issuers, der nicht in der Liste steht, läuft also nirgends.
 
-### T2 — multibox --tunnel: der Tunnel-Agent synct einmal über die Route seines Servers (R-0315)  [ ]
+### T2 — multibox --tunnel: der Tunnel-Agent synct einmal über die Route seines Servers (R-0315)  [x]
 Komponente: scripts · Dateien: scripts/tests/box_tunnelbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d948094f 2026-10-12T23:54:14+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `box_tunnelbox.sh`: Nach dem Provisionieren (`:29-32`) und dem Start von frpc (`:34-43`) ruft die Box einmal
   `sudo adminhelper-agent sync` (`apps/agent/cmd/adminhelper-agent/main.go:121` → `frpc.Sync`). Der holt

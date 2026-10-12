@@ -41,4 +41,22 @@ if [ "$tun_ok" = 1 ]; then
 else
   echo "TUNNEL_FRPC_NOT_CONNECTED"; sudo journalctl -u frpc --no-pager -n 30 2>/dev/null | sed 's/^/    /'
 fi
+
+# The agent's own sync, once (R-0315): config-hash over the route bound to its server,
+# with its mTLS identity and its API key. Provisioning wrote the hash of the frpc.toml
+# it laid down; the same hash back means the bound route answers this agent with the
+# config it was provisioned with.
+echo "[tunnelbox] frpc sync: config-hash over the route of server $SID with the agent certificate"
+hash_before="$(sudo cat /etc/frp/.config-hash 2>/dev/null)"
+if sync_out="$(sudo adminhelper-agent sync 2>&1)"; then
+  hash_after="$(sudo cat /etc/frp/.config-hash 2>/dev/null)"
+  if [ -n "$hash_before" ] && [ "$hash_before" = "$hash_after" ] \
+     && ! grep -q 'Config-Aenderung erkannt' <<<"$sync_out"; then
+    echo "TUNNEL_SYNC_HASH_OK"
+  else
+    echo "TUNNEL_SYNC_HASH_CHANGED"; printf '%s\n' "$sync_out" | sed 's/^/    /'
+  fi
+else
+  echo "TUNNEL_SYNC_FAILED"; printf '%s\n' "$sync_out" | sed 's/^/    /'
+fi
 echo "TUNNEL_AGENT_DONE"

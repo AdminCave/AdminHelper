@@ -249,6 +249,12 @@ if [ "$TUNNEL" = 1 ]; then
     printf '%s' "$TOUT" | grep -q TUNNEL_FRPC_CONNECTED \
       && ok "tunnel agent: frpc STCP server connected to the remote frps" \
       || bad "tunnel agent: frpc did not connect (see output above)"
+    # The agent's own sync over the route bound to its server, with its certificate:
+    # under --enforce nothing else gets through the gateway (R-0315).
+    SYNC_MARK="$(printf '%s' "$TOUT" | grep -oE 'TUNNEL_SYNC_[A-Z_]+' | head -1)"
+    [ "$SYNC_MARK" = TUNNEL_SYNC_HASH_OK ] \
+      && ok "tunnel agent: frpc sync got config-hash over its server's route, the provisioned hash" \
+      || bad "tunnel agent: frpc sync over its server's route: ${SYNC_MARK:-no marker} (see output above)"
     # Independent check on the server: frps logged the STCP registration cross-host.
     FRPSLOG="$(ask "$SRV_VM" 300 'mb-dc logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
     printf '%s' "$FRPSLOG" | grep -qiE 'new proxy|start proxy success|stcp' \
