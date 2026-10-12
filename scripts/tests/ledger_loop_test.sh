@@ -194,7 +194,10 @@ EXTRA='printf "\n### T2 — eine andere  [ ]\nKomponente: scripts · Dateien: ap
 mapfile -t H < <(head_for bodyfreig)
 EXTRA='printf "Freigabe: im Text einer Task\n" >> "$SEED/tasks/bodyfreig.md"' plan feature/bodyfreig bodyfreig "${H[0]}" "${H[2]}"
 
-git clone -q "$ORIGIN" "$CLONE"
+# Through the transport, not as a local clone (R-0262): that links the origin's
+# object directory file by file and dies when a git process puts a lock there in
+# between ("hardlink different from source", CI main 7600dc25).
+git clone -q --no-local "$ORIGIN" "$CLONE"
 # The runner's world: a HOME with its token file, a claude that answers version and auth.
 FHOME="$WORK/home"; mkdir -p "$FHOME/.config/adminhelper" "$FHOME/.local/bin"
 chmod 700 "$FHOME/.config/adminhelper"
@@ -654,7 +657,7 @@ LY="$(lane hvy)"
 [ -s "$LOOPD/hvn/pr-body.md" ] && ! grep -q 'Heavy offen' "$LOOPD/hvn/pr-body.md" \
   && ok "Heavy: none -> no note" || bad "hvn: $(cat "$LOOPD/hvn/pr-body.md" 2>&1)"
 # Kevin's checkout: a clone of origin, and the branch from the bundle, nothing else.
-KEV="$WORK/kevin"; git clone -q "$ORIGIN" "$KEV"
+KEV="$WORK/kevin"; git clone -q --no-local "$ORIGIN" "$KEV"
 git -C "$KEV" fetch -q "$LOOPD/hvy.bundle" feature/hvy:feature/hvy 2>"$WORK/fetch.err"
 [ "$(git -C "$KEV" rev-parse feature/hvy 2>/dev/null)" = "$(git -C "$LY" rev-parse HEAD)" ] \
   && [ "$(git -C "$KEV" log --format=%H origin/main..feature/hvy)" = "$(git -C "$LY" log --format=%H origin/main..HEAD)" ] \
@@ -1036,6 +1039,9 @@ OUT=$(AH_BUILDER_DIR="$PB" bash "$CLONE/scripts/dev/ledger-loop.sh" status --pro
   || bad "status profile: rc=$rc $OUT"
 
 echo "── repo wiring ──"
+# No local clone of a fixture: each one goes through the transport (R-0262).
+plain="$(grep -nE '^[^#]*git( -C [^ ]+)? clone ' "$HERE/ledger_loop_test.sh" | grep -v -- '--no-local')"
+[ -z "$plain" ] && ok "every git clone of a fixture here uses --no-local" || bad "a local clone of a fixture: $plain"
 for p in scripts/dev/ledger-loop.sh scripts/tests/ledger_loop_test.sh; do
   grep -qxF "$p" "$REPO_ROOT/scripts/dev/harness-paths.txt" && ok "$p is a harness path" || bad "$p is missing from harness-paths.txt"
 done
