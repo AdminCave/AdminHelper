@@ -224,17 +224,19 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   <Grund>". Überlappt es → **warnen** und seriell empfehlen, nicht parallel.
 - **Lanes aktiv vorschlagen (Kevin, 2026-09-18).** Ist das Vorhaben disjunkt zu einem anderen
   `freigegeben`- oder `aktiv`-Ledger (Komponenten, Contracts, `run.sh`/`ci.yml`-Stellen, primäre
-  Doku-Seiten) **und** braucht höchstens eines der beiden VMs **und** teilen sie sich keine
-  Test-Datenbank (zwei Server-Suiten gleichzeitig zerstören sich das Ergebnis), dann steht am
-  Gate nicht nur „parallel-tauglich: ja", sondern der fertige Lane-Start:
+  Doku-Seiten) **und** teilen sie sich keine Test-Datenbank (zwei Server-Suiten gleichzeitig
+  zerstören sich das Ergebnis), dann steht am Gate nicht nur „parallel-tauglich: ja", sondern der
+  fertige Lane-Start:
   ```
   bash scripts/dev/lane.sh new <slug>          # Worktree auf feature/<slug>, der Plan ist schon drin
   cd ../AdminHelper-<slug> && claude          # dort: /feature-build tasks/<slug>.md
   ```
   Dazu ein Satz zu den Grenzen: beide Opus-Bauten teilen sich Kevins Nutzungsfenster, der
   zweite PR muss rebasen (CHANGELOG, DEVELOPMENT.md), und Kevins Review-Zeit bleibt der
-  Engpass. Zwei Bau-Slots sind der Deckel (CLAUDE.md §2); eine Lane gibt es nur für disjunkte
-  Ledger — nicht der Default, sondern ein Vorschlag, den Kevin annimmt oder nicht.
+  Engpass. Zwei Bau-Slots und 1 VM-Lauf zugleich sind die Deckel (CLAUDE.md §2; eine stehende
+  Warm-Box zählt nicht): Brauchen beide Vorhaben VMs, laufen ihre VM-Läufe nacheinander. Eine Lane
+  gibt es nur für disjunkte Ledger — nicht der Default, sondern ein Vorschlag, den Kevin annimmt
+  oder nicht.
 - Sage explizit: „Bitte `docs/features/<slug>.md` und `tasks/<slug>.md` auf `feature/<slug>`
   prüfen/anpassen. Zum Bauen nach der Freigabe: **`/feature-build tasks/<slug>.md`** auf
   `feature/<slug>` in einer Opus-Session — oder als parallele Lane

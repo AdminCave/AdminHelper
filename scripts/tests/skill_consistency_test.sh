@@ -130,6 +130,12 @@ branch_review_opus() {
   grep -qF 'model: opus' <<<"$1" && ! grep -qF 'review.sh risk' <<<"$1" && echo ok
 }
 
+# lane_vm_cap <text> — "ok" when a lane rule leans on the cap of one VM run at a
+# time (CLAUDE.md §2) and no longer on "at most one of them needs VMs" (R-0300).
+lane_vm_cap() {
+  grep -qF '1 VM-Lauf zugleich' <<<"$1" && ! grep -qF 'höchstens eines' <<<"$1" && echo ok
+}
+
 # whole_branch_opus <text> — "ok" when one sentence of the text names the review
 # over the whole branch together with Opus (R-0298). A sentence ends at a period;
 # the text comes from section(), so line breaks are spaces already.
@@ -357,6 +363,15 @@ f=$(fixture 'Zweck: x.' 'ein `feature-review` über' 'den ganzen Branch-Diff, ke
 f=$(fixture 'Zweck: x.' 'Je Task Sonnet. Den Review über den ganzen' 'Branch fährt immer **Opus**.' '**Wichtig:** y')
 [ "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" = ok ] \
   && ok "whole_branch_opus: the rule wrapped across a line break is found" || bad "whole_branch_opus missed the wrapped rule"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht' '  höchstens eines der Vorhaben VMs, schlägt das Gate die Lane vor.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: the old condition is no ok" || bad "lane_vm_cap passed 'höchstens eines'"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt, schlägt das Gate die Lane vor.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: dropping the condition without naming the VM cap is no ok either" || bad "lane_vm_cap passed a rule without the cap"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt, schlägt das Gate die Lane vor. Es gilt 1 VM-Lauf zugleich.' '- **PRs**')
+[ "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" = ok ] \
+  && ok "lane_vm_cap: a rule that names the cap is ok" || bad "lane_vm_cap missed the cap"
 
 # ══ the real texts ════════════════════════════════════════════════════════════
 echo "── the skills, AUTONOMOUS.md, tasks/README.md ──"
@@ -457,6 +472,12 @@ close4=$(section .claude/skills/feature-build/SKILL.md '4. **Review über den Br
 [ "$(whole_branch_opus "$(section AUTONOMOUS.md '**Zwei Review-Ebenen' '### So startest du')")" = ok ] \
   && ok "AUTONOMOUS.md: the one review of a Kurz-Ledger over the whole branch runs on Opus" \
   || bad "AUTONOMOUS.md 'Zwei Review-Ebenen' names no Opus for the review over the whole branch"
+[ "$(lane_vm_cap "$(section .claude/skills/feature-plan/SKILL.md '- **Lanes aktiv vorschlagen' '- Sage explizit')")" = ok ] \
+  && ok "feature-plan: the lane proposal follows the cap of one VM run at a time (R-0300)" \
+  || bad "feature-plan's lane proposal still says 'höchstens eines' or names no VM cap"
+[ "$(lane_vm_cap "$(section AUTONOMOUS.md '- **Lanes komponenten-disjunkt' '- **PRs landen einzeln')")" = ok ] \
+  && ok "AUTONOMOUS.md: the lane rule follows the same cap" \
+  || bad "AUTONOMOUS.md's lane rule still says 'höchstens eines' or names no VM cap"
 step5=$(section .claude/skills/feature-build/SKILL.md '5. **Schließen' '## Abschluss')
 # Stage 6b: with `Review: auto` in the ledger head the reviewer is task-close's own
 # process — no subagent in step 4, --review auto in step 5, the log for the pilot.

@@ -63,8 +63,10 @@ Branch prüft Opus. Nie prüft Sonnet, was Sonnet baute.“ Die Regel steht in C
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md (zwei Stellen); der Skill-Text ist die Anleitung
 
-### T2 — Die Lane-Bedingung folgt dem VM-Deckel (R-0300)  [ ]
+### T2 — Die Lane-Bedingung folgt dem VM-Deckel (R-0300)  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, AUTONOMOUS.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @37180b5f 2026-10-12T07:54:26+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - feature-plan/SKILL.md, „Lanes aktiv vorschlagen“ (:225–228) und AUTONOMOUS.md, „Lanes komponenten-disjunkt
   schneiden“ (:207–211) setzen heute „braucht höchstens eines der beiden VMs“ als Bedingung für den Lane-Vorschlag.
