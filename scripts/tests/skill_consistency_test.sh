@@ -130,6 +130,24 @@ branch_review_opus() {
   grep -qF 'model: opus' <<<"$1" && ! grep -qF 'review.sh risk' <<<"$1" && echo ok
 }
 
+# lane_vm_cap <text> — "ok" when a lane rule leans on the cap of one VM run at a
+# time (CLAUDE.md §2) and no longer on "at most one of them needs VMs" (R-0300).
+lane_vm_cap() {
+  grep -qF '1 VM-Lauf zugleich' <<<"$1" && ! grep -qE 'höchstens[[:space:]]+ein' <<<"$1" && echo ok
+}
+
+# whole_branch_opus <text> — "ok" when one sentence of the text names the review
+# over the whole branch together with Opus and neither Sonnet nor a "nicht" (R-0298):
+# "über den ganzen Branch läuft er auf Sonnet, Opus nur bei …" is the reading the
+# rule removes. A sentence ends at . ! or ? before a space or the end, so the dots
+# of review.sh or CLAUDE.md stay inside it and a Sonnet behind them is still seen.
+# Known limits: "nie Sonnet" reads as no ok, "kein Opus" goes unseen.
+whole_branch_opus() {
+  local s
+  s="$(sed -E 's/[.!?]([[:space:]]|$)/\n/g' <<<"$1" | grep -F 'ganzen Branch' | grep -F 'Opus' | grep -viE 'Sonnet|nicht')"
+  [ -n "$s" ] && echo ok
+}
+
 # build_task_findings <skill> <runner settings> — one line per finding in the
 # worker's builder skill (stage 7a): a forbidden command given as an instruction
 # (every code span and every line of a fenced block outside "## Nie"), or a
@@ -341,6 +359,45 @@ f=$(fixture '4. **Review über den Branch-Diff**' '   Opus (`model: opus`), bei 
             '5. **Erledigt, Übergabe**')
 [ -z "$(branch_review_opus "$(section "$f" '4. **Review über den Branch-Diff**' '5. **Erledigt')")" ] \
   && ok "... nor one that names Opus beside review.sh risk" || bad "branch_review_opus passed Opus beside review.sh risk"
+f=$(fixture 'Zweck: x.' 'Ergebnis. Läuft auf **Sonnet** — Opus' 'nur bei einem Risikopfad im Diff (`feature-build`, Schritt 4).' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: Sonnet with Opus on a risk path is no branch review on Opus" || bad "whole_branch_opus passed the old feature-review text"
+f=$(fixture 'Zweck: x.' 'ein `feature-review` über' 'den ganzen Branch-Diff, kein `/code-review`. Opus nur beim Risikopfad.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: Opus in another sentence does not count" || bad "whole_branch_opus took Opus from the next sentence"
+f=$(fixture 'Zweck: x.' 'Je Task Sonnet. Den Review über den ganzen' 'Branch fährt immer **Opus**.' '**Wichtig:** y')
+[ "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" = ok ] \
+  && ok "whole_branch_opus: the rule wrapped across a line break is found" || bad "whole_branch_opus missed the wrapped rule"
+f=$(fixture 'Zweck: x.' 'Je Task und über den ganzen Branch läuft er auf Sonnet, Opus nur bei einem Risikopfad.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: Sonnet over the whole branch, Opus only on a risk path, is no ok" || bad "whole_branch_opus passed Sonnet over the whole branch"
+f=$(fixture 'Zweck: x.' 'Den Review über den ganzen Branch fährt nicht Opus, sondern Sonnet.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: a negated Opus is no ok" || bad "whole_branch_opus passed 'nicht Opus'"
+f=$(fixture 'Zweck: x.' 'Über den ganzen Branch läuft er auf Opus nur bei einem Risikopfad (`review.sh risk`), sonst auf Sonnet.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: ... nor a Sonnet behind the dot of review.sh" || bad "whole_branch_opus split at the dot of review.sh"
+f=$(fixture 'Zweck: x.' 'Den Review über den ganzen Branch fährt Opus (CLAUDE.md §2) nicht mehr, sondern Sonnet.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: ... nor a nicht behind the dot of CLAUDE.md" || bad "whole_branch_opus split at the dot of CLAUDE.md"
+f=$(fixture 'Zweck: x.' 'Nicht Opus fährt den Review über den ganzen Branch.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: ... nor a capital Nicht" || bad "whole_branch_opus passed 'Nicht Opus'"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht' '  höchstens eines der Vorhaben VMs, schlägt das Gate die Lane vor.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: the old condition is no ok" || bad "lane_vm_cap passed 'höchstens eines'"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht höchstens' '  einer VMs, schlägt das Gate die Lane vor. Es gilt 1 VM-Lauf zugleich.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: ... also wrapped, and as 'höchstens einer'" || bad "lane_vm_cap passed a wrapped 'höchstens einer'"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht höchstens ein Vorhaben VMs. Es gilt 1 VM-Lauf zugleich.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: ... and as 'höchstens ein'" || bad "lane_vm_cap passed 'höchstens ein'"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt, schlägt das Gate die Lane vor.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: dropping the condition without naming the VM cap is no ok either" || bad "lane_vm_cap passed a rule without the cap"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt, schlägt das Gate die Lane vor. Es gilt 1 VM-Lauf zugleich.' '- **PRs**')
+[ "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" = ok ] \
+  && ok "lane_vm_cap: a rule that names the cap is ok" || bad "lane_vm_cap missed the cap"
 
 # ══ the real texts ════════════════════════════════════════════════════════════
 echo "── the skills, AUTONOMOUS.md, tasks/README.md ──"
@@ -435,6 +492,21 @@ close4=$(section .claude/skills/feature-build/SKILL.md '4. **Review über den Br
 [ "$(branch_review_opus "$close4")" = ok ] \
   && ok "the review over the whole branch runs on Opus, not on the model of review.sh risk" \
   || bad "close step 4 names no model: opus, or still takes its model from review.sh risk"
+[ "$(whole_branch_opus "$(section .claude/skills/feature-review/SKILL.md 'Zweck:' '**Wichtig:**')")" = ok ] \
+  && ok "feature-review: the review over the whole branch runs on Opus (R-0298)" \
+  || bad "feature-review's opening names no Opus for the review over the whole branch"
+[ "$(whole_branch_opus "$(section AUTONOMOUS.md '**Zwei Review-Ebenen' '### So startest du')")" = ok ] \
+  && ok "AUTONOMOUS.md: the one review of a Kurz-Ledger over the whole branch runs on Opus" \
+  || bad "AUTONOMOUS.md 'Zwei Review-Ebenen' names no Opus for the review over the whole branch"
+[ "$(whole_branch_opus "$(section AUTONOMOUS.md 'Die Session läuft auf **mindestens Opus**' '**Ebene 0:')")" = ok ] \
+  && ok "AUTONOMOUS.md: the paragraph on models gives Opus the review over the whole branch" \
+  || bad "AUTONOMOUS.md's paragraph on models names no Opus for the review over the whole branch"
+[ "$(lane_vm_cap "$(section .claude/skills/feature-plan/SKILL.md '- **Lanes aktiv vorschlagen' '- Sage explizit')")" = ok ] \
+  && ok "feature-plan: the lane proposal follows the cap of one VM run at a time (R-0300)" \
+  || bad "feature-plan's lane proposal still says 'höchstens eines' or names no VM cap"
+[ "$(lane_vm_cap "$(section AUTONOMOUS.md '- **Lanes komponenten-disjunkt' '- **PRs landen einzeln')")" = ok ] \
+  && ok "AUTONOMOUS.md: the lane rule follows the same cap" \
+  || bad "AUTONOMOUS.md's lane rule still says 'höchstens eines' or names no VM cap"
 step5=$(section .claude/skills/feature-build/SKILL.md '5. **Schließen' '## Abschluss')
 # Stage 6b: with `Review: auto` in the ledger head the reviewer is task-close's own
 # process — no subagent in step 4, --review auto in step 5, the log for the pilot.
