@@ -62,8 +62,10 @@ Geräte-Identität zurücksetzen unter der Fehlermeldung klicken“; `:72`: „E
 Zertifikats-Rotation die Meldung AdminHelper TOFU: … hat sich geändert“ (die Meldung, die der Nutzer liest, beginnt ohne
 Code).
 
-### T2 — errMsg filtert zentral, der Login liest die Codes roh (R-0276)  [ ]
+### T2 — errMsg filtert zentral, der Login liest die Codes roh (R-0276)  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/utils/errors.ts, apps/desktop/ui/src/lib/utils/errors.test.ts, apps/desktop/ui/src/components/Login.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @1249cfb4 2026-10-12T09:19:35+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `errMsg` gibt die Meldung ohne die Codes aus `ERROR_CODES` zurück. Neu ist `errRaw(err)` mit dem rohen Text,
 für den, der an den Codes verzweigt; der Kommentar in `errors.ts` sagt das. `Login.svelte` nimmt `errRaw` an den fünf
 Stellen, an denen es `error` oder `msg` setzt (`:99`, `:131`, `:147`, `:180`, `:232`), und zeigt weiter `displayError`.
