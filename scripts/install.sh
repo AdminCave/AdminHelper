@@ -11,8 +11,8 @@
 # Since 0.29.0 mTLS is enforced by default. There is no "arm" step and no
 # permissive window: the first admin + a one-time enrollment token are created
 # via the in-container management CLI (which talks to Postgres directly, not the
-# cert-gated :443). The admin redeems the token in the desktop ("enroll with
-# token"), gets an on-device cert, then logs in.
+# cert-gated :443). The admin redeems the token in the desktop ("Enroll this
+# device with a token"), gets an on-device cert, then logs in.
 #
 # Options:
 #   --domain D --admin-user U --admin-password P --enroll-ttl-minutes N
@@ -297,7 +297,7 @@ cat <<EOF
 
   Admin-Login:    ${ADMIN_USER}   (Passwort wie bei der Installation gesetzt)
 
-  Desktop-Cert:   Desktop oeffnen -> "Mit Token enrollen" -> Server-URL + Token:
+  Desktop-Cert:   Desktop oeffnen -> "Geraet mit Token registrieren" -> Server-URL + Token:
                   ${ENROLL_TOKEN}
                   (einmalig, ${ENROLL_TTL} Min gueltig; danach Login + optional
                    Browser-.p12 ueber den Export-Knopf im Desktop)

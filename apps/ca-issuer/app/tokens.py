@@ -123,7 +123,8 @@ class TokenStore(Protocol):
         """Consume the token, sign, and record the leaf on a new device line, all in
         one step; ``replaces`` (a fingerprint) revokes that certificate's line when
         it belongs to the grant's subject and scope, and does nothing otherwise.
-        None if the token is not usable. If ``sign`` raises, the token stays
+        None if the token is not usable, also when it was minted at or before the
+        revocation of its identity (R-0306). If ``sign`` raises, the token stays
         unspent and nothing is recorded."""
         ...
 
@@ -154,6 +155,7 @@ class TokenStore(Protocol):
 class _Entry:
     grant: EnrollmentGrant
     expires_at: datetime.datetime
+    minted_at: datetime.datetime  # naive UTC, like the server's column
 
 
 @dataclass
@@ -189,7 +191,9 @@ class InMemoryTokenStore:
         ttl: datetime.timedelta = datetime.timedelta(minutes=15),
     ) -> None:
         self._tokens[token] = _Entry(
-            grant=grant, expires_at=datetime.datetime.now(datetime.timezone.utc) + ttl
+            grant=grant,
+            expires_at=datetime.datetime.now(datetime.timezone.utc) + ttl,
+            minted_at=_now_naive(),
         )
 
     def deprovision(self, subject_id: str, scope: str, at: datetime.datetime | None = None) -> None:
@@ -213,6 +217,9 @@ class InMemoryTokenStore:
         if entry is None or datetime.datetime.now(datetime.timezone.utc) >= entry.expires_at:
             return None
         grant = entry.grant
+        with self._lock:
+            if not self._active(grant.subject_id, grant.scope, entry.minted_at):
+                return None  # minted at or before the revocation of its identity
         try:
             leaf, response = sign(grant)
         except Exception:
@@ -256,13 +263,13 @@ class InMemoryTokenStore:
             if not self._active(subject_id, scope, current.not_before):
                 raise RenewalRefused("identity is deprovisioned")
             line_id = self._certs.get(current.fingerprint)
+            taken_over = None
             if line_id is None:
                 if not legacy_admitted(current.not_before, self.installed_at, _now_naive()):
                     raise RenewalRefused("certificate is not in the register")
                 line_id = str(uuid.uuid4())
-                self._lines[line_id] = _Line(subject_id, scope, legacy_kind, legacy=True)
-                self._certs[current.fingerprint] = line_id
-            line = self._lines[line_id]
+                taken_over = _Line(subject_id, scope, legacy_kind, legacy=True)
+            line = taken_over or self._lines[line_id]
             if line.revoked_reason is not None or (line.subject_id, line.scope) != (
                 subject_id,
                 scope,
@@ -273,6 +280,13 @@ class InMemoryTokenStore:
             # Once more after signing: a deprovisioning that came in meanwhile wins.
             if not self._active(subject_id, scope, current.not_before):
                 raise RenewalRefused("identity is deprovisioned")
+            if taken_over is not None:
+                # The take-over is recorded only with its successor, as the DbTokenStore
+                # does in one transaction; of two at once, the later one is refused.
+                if current.fingerprint in self._certs:
+                    raise RenewalRefused("recorded concurrently, retry the renewal")
+                self._lines[line_id] = taken_over
+                self._certs[current.fingerprint] = line_id
             self._certs[CertRecord.of(leaf).fingerprint] = line_id
         return response
 

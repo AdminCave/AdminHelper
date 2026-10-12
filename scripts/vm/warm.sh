@@ -25,7 +25,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/lib.sh"
 cd "$VM_ROOT" || exit 1
 vm_load_env || exit 1
-LANE="$(vm_lane)"
+LANE="$(vm_lane)" || exit 2
 TTL="${AH_WARM_TTL:-8h}"
 # The bound the old wrapper carried, unchanged: a full bootstrap measured 10–20
 # min on the fat template, and an unbounded ssh would sit there for a night if

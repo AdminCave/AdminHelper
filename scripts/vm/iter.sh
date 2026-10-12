@@ -32,8 +32,11 @@ cd "$VM_ROOT" || exit 1
 # A dry run never reaches the hypervisor, so it must not demand a token either:
 # that is what lets the argument handling be tested off this box — in CI, in a
 # fresh clone, anywhere without the gitignored provider env.
+# The lane is checked before warm.env is read, as reap.sh and warm.sh do: a run
+# syncs onto the box a slot names. A dry run reaches no box.
 if [ "${AH_DRY_RUN:-0}" != "1" ]; then
   vm_load_env || exit 1
+  vm_lane >/dev/null || exit 2
 fi
 
 OUT_DIR="${AH_OUT_DIR:-.ah-out}"

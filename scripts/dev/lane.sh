@@ -136,6 +136,15 @@ lane_inside() {
   case "$real" in "$root"/*) return 0 ;; *) return 1 ;; esac
 }
 
+# lane_vm_untracked <worktree> — 0 when the lane's branch tracks nothing under .vm.
+# .vm is the lane's own state, gitignored, and no branch's; a git that cannot say
+# counts as tracked.
+lane_vm_untracked() {
+  local tracked
+  tracked="$(git -C "$1" ls-files -- .vm)" || return 1
+  [ -z "$tracked" ]
+}
+
 # lane_link_dir <worktree> <dir> — link every entry of the main checkout's <dir>
 # into a REAL <dir> in the lane. .gitignore matches these as directories
 # (`.venv/`); a symlink in their place is no directory to it, so it would be
@@ -261,6 +270,11 @@ lane_new() {
       exit 1
     fi
   done
+  if ! lane_vm_untracked "$wt"; then
+    echo "  lane.sh: the branch tracks paths under .vm in the lane — the lane's state is its own, nothing written there"
+    echo "  run: bash scripts/dev/lane.sh done $slug"
+    exit 1
+  fi
   # Loud on failure: set -e does not stop inside an && list, and a lane without its
   # id would run on lane main.
   { mkdir -p "$wt/.vm" && rm -f "$wt/.vm/lane" && printf '%s\n' "$slug" > "$wt/.vm/lane"; } \
@@ -269,8 +283,9 @@ lane_new() {
   # WRITTEN by Claude Code (permission grants): a symlink would make N lane
   # sessions read-modify-write ONE shared file → COPY. .devenv.sh is the lane's
   # own (lane_devenv above), and so is the database it points at.
-  [ -f .claude/settings.local.json ] \
-    && cp --remove-destination .claude/settings.local.json "$wt/.claude/settings.local.json"
+  [ ! -f .claude/settings.local.json ] \
+    || cp --remove-destination .claude/settings.local.json "$wt/.claude/settings.local.json" \
+    || { echo "  lane.sh: could not copy .claude/settings.local.json"; echo "  run: bash scripts/dev/lane.sh done $slug"; exit 1; }
   [ ! -f .devenv.sh ] || { rm -f "$wt/.devenv.sh" && lane_devenv "$slug" > "$wt/.devenv.sh"; } \
     || { echo "  lane.sh: could not write .devenv.sh"; echo "  run: bash scripts/dev/lane.sh done $slug"; exit 1; }
   # Gitignored parts of the main checkout that a build needs. The frpc sidecar
@@ -344,13 +359,14 @@ lane_done() {
   # somebody removed by hand is exactly the case that leaks, so it must not be
   # the case that silently skips the sweep. Never the MAIN checkout's .vm — that
   # would destroy this session's own warm box.
-  # And only the lane's own: a .vm the branch made a symlink, or one that leads out
-  # of the lane, is read as no state at all — the way without a worktree below.
+  # And only the lane's own: a .vm the branch made a symlink, one that leads out
+  # of the lane, or one the branch tracks paths in, is read as no state at all —
+  # the way without a worktree below.
   local state
-  if [ -d "$wt" ] && [ ! -L "$wt/.vm" ] && lane_inside "$wt" .vm; then
+  if [ -d "$wt" ] && [ ! -L "$wt/.vm" ] && lane_inside "$wt" .vm && lane_vm_untracked "$wt"; then
     state="$(cd "$wt" && pwd)/.vm"
   else
-    [ ! -d "$wt" ] || echo "  WARN: .vm in the lane is a symlink or leads outside it — done reads no state from it"
+    [ ! -d "$wt" ] || echo "  WARN: .vm in the lane is a symlink, leads outside it or is tracked by the branch — done reads no state from it"
     # No worktree, no warm.env — so `reap.sh` would find no VMIDs to destroy and
     # `vm.py reap` only takes what has already expired. A LIVE box of this lane
     # would then burn until its ttl while the closing listing correctly calls it

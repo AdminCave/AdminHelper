@@ -405,6 +405,8 @@ mk_branch() {  # mk_branch <slug> <what> — a plan branch whose .vm or .claude 
     vm-dir)      ln -s tasks "$WORK/mk-$1/.vm" ;;
     claude-dir)  ln -s tasks "$WORK/mk-$1/.claude" ;;
     vm-main)     ln -s ../AdminHelper/.vm "$WORK/mk-$1/.vm" ;;
+    vm-tracked)  mkdir "$WORK/mk-$1/.vm"; printf 'desktop=3101\nserver=3102\n' > "$WORK/mk-$1/.vm/warm.env" ;;
+    claude-tracked) mkdir "$WORK/mk-$1/.claude"; echo '{"placeholder": "branch"}' > "$WORK/mk-$1/.claude/settings.json" ;;
   esac
   echo "# plan $1" > "$WORK/mk-$1/tasks/$1.md"
   git -C "$WORK/mk-$1" add -f -A
@@ -441,6 +443,62 @@ lane "done" par-vm-main; rc=$?
 rm -f "$MAIN/.vm/warm.env"
 [ "$rc" = 0 ] && [ ! -e "$WORK/AdminHelper-par-vm-main" ] && [ ! -e "$MAIN/.vm/lanes/par-vm-main" ] \
   && ok "... and that done still takes the lane down" || bad "done par-vm-main left the lane: rc=$rc"
+# A branch that tracks paths under .vm: new writes nothing there, and done reads
+# no state from that .vm — it goes the way without a worktree.
+printf 'desktop=3001\nserver=3002\n' > "$MAIN/.vm/warm.env"; cp "$MAIN/.vm/warm.env" "$WORK/warm.env.mark"
+mk_branch par-vm-tracked vm-tracked
+lane new par-vm-tracked; rc=$?
+L="$WORK/AdminHelper-par-vm-tracked"
+[ "$rc" = 1 ] && [ ! -e "$L/.vm/lane" ] && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+  && cmp -s "$MAIN/.vm/warm.env" "$WORK/warm.env.mark" \
+  && grep -qF "lane.sh: the branch tracks paths under .vm in the lane" "$WORK/out.log" \
+  && grep -qF "run: bash scripts/dev/lane.sh done par-vm-tracked" "$WORK/out.log" \
+  && ! grep -q "lane par-vm-tracked ready" "$WORK/out.log" \
+  && ok "par-vm-tracked: a branch that tracks paths under .vm stops new before .vm/lane is written" \
+  || bad "new par-vm-tracked rc=$rc: lane=[$(ls -A "$L/.vm" 2>&1)] out=$(cat "$WORK/out.log")"
+: > "$VM_LOG"
+lane "done" par-vm-tracked; rc=$?
+[ "$rc" = 0 ] && ! grep -qE '\b3[01]0[12]\b' "$VM_LOG" && grep -q '^destroy --lane par-vm-tracked$' "$VM_LOG" \
+  && grep -q 'done reads no state from it' "$WORK/out.log" && cmp -s "$MAIN/.vm/warm.env" "$WORK/warm.env.mark" \
+  && [ ! -e "$L" ] && [ ! -e "$MAIN/.vm/lanes/par-vm-tracked" ] \
+  && ok "... done reads no state from that .vm, destroys by the lane and takes the lane down" \
+  || bad "done par-vm-tracked rc=$rc: vm=[$(cat "$VM_LOG")] out=$(cat "$WORK/out.log")"
+rm -f "$MAIN/.vm/warm.env"
+# The copy into .claude/ names the way back when it fails, as the other write
+# steps do: a branch without .claude/ has nowhere to copy it to.
+printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json"
+mk_branch par-no-claude plain
+lane new par-no-claude; rc=$?
+[ "$rc" = 1 ] && grep -qF "lane.sh: could not copy .claude/settings.local.json" "$WORK/out.log" \
+  && grep -qF "run: bash scripts/dev/lane.sh done par-no-claude" "$WORK/out.log" \
+  && ! grep -q "lane par-no-claude ready" "$WORK/out.log" \
+  && ok "par-no-claude: a copy into .claude/ that fails stops new and names done" \
+  || bad "new par-no-claude rc=$rc: out=$(cat "$WORK/out.log")"
+rm -f "$MAIN/.claude/settings.local.json"
+lane "done" par-no-claude && [ ! -e "$WORK/AdminHelper-par-no-claude" ] \
+  && ok "... and done takes that lane down" || bad "done par-no-claude: $(cat "$WORK/out.log")"
+
+echo "── the normal case: the branch tracks .claude/, the lane gets its own copy ──"
+# As in the real repo: .claude/ is tracked, settings.local.json lies gitignored in
+# the main checkout, and new copies it into the lane. Placeholders only.
+mk_branch hp-claude claude-tracked
+printf '{"permissions": {"allow": ["placeholder"]}}\n' > "$MAIN/.claude/settings.local.json"
+cp "$MAIN/.claude/settings.local.json" "$WORK/settings.mark"
+lane new hp-claude; rc=$?
+L="$WORK/AdminHelper-hp-claude"
+[ "$rc" = 0 ] && grep -q "lane hp-claude ready" "$WORK/out.log" \
+  && [ -f "$L/.claude/settings.local.json" ] && [ ! -L "$L/.claude/settings.local.json" ] \
+  && cmp -s "$L/.claude/settings.local.json" "$WORK/settings.mark" \
+  && cmp -s "$MAIN/.claude/settings.local.json" "$WORK/settings.mark" \
+  && [ "$(cat "$L/.claude/settings.json")" = '{"placeholder": "branch"}' ] \
+  && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+  && ok "hp-claude: new copies settings.local.json into the tracked .claude/, a file of its own and ignored" \
+  || bad "new hp-claude rc=$rc: claude=[$(ls -lA "$L/.claude" 2>&1)] status=[$(git -C "$L" status --porcelain 2>&1)] out=$(cat "$WORK/out.log")"
+lane "done" hp-claude; rc=$?
+[ "$rc" = 0 ] && [ ! -e "$L" ] && cmp -s "$MAIN/.claude/settings.local.json" "$WORK/settings.mark" \
+  && ok "... and done takes the lane down, the main checkout's file as it was" \
+  || bad "done hp-claude rc=$rc: out=$(cat "$WORK/out.log")"
+rm -f "$MAIN/.claude/settings.local.json"
 
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"

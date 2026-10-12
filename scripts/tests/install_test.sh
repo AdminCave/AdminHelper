@@ -107,6 +107,14 @@ grep -q '^DOMAIN=test.example' "$INST/.env" && ok "DOMAIN written to .env" || ba
 grep -q 'server:0.34.0' "$INST/.env" && ok "images pinned to ref" || bad "images not pinned to ref"
 [ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = sikrit123 ] \
   && ok "admin password reached create-admin on stdin" || bad "create-admin got no password on stdin"
+# The summary names the desktop button by its German label, folded to ae/oe/ue like
+# the rest of install.sh's output. The label comes from the desktop's dictionary, so
+# a rename there turns this red instead of the two drifting apart (R-0242).
+label=$(grep -m1 "'login.enroll.switch'" "$REPO_ROOT/apps/desktop/ui/src/lib/i18n/dictionaries.ts" \
+  | cut -d"'" -f4 | sed 's/ä/ae/g; s/ö/oe/g; s/ü/ue/g; s/Ä/Ae/g; s/Ö/Oe/g; s/Ü/Ue/g; s/ß/ss/g')
+[ -n "$label" ] && ok "desktop button label read: $label" || bad "no login.enroll.switch label in dictionaries.ts"
+{ [ -n "$label" ] && grep -qF "\"$label\"" <<<"$out"; } \
+  && ok "summary names the desktop button" || bad "summary does not name the desktop button \"$label\""
 
 # ── 2. fail-closed: a release tag with no bundle asset must abort, not raw-fetch
 INST="$WORK/inst2"

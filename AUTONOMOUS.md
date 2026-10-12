@@ -168,8 +168,9 @@ Mechanik dahinter:
   jedes Verbs und die Leak-Prüfung in `list` arbeiten auf der eigenen Lane — Lanes können
   sich nicht gegenseitig die Boxen abräumen, und zwar über den Zustand auf dem Hypervisor,
   nicht über eine lokale Ableitung, die zwei Seiten verschieden raten können. (`destroy`
-  filtert über `--lane/--scenario/--role`; eine ausdrücklich genannte VMID wird zerstört —
-  darauf beruht `reap.sh`, das die VMIDs aus der warm.env der eigenen Lane nimmt.) Klone werden seriell
+  filtert über `--lane/--scenario/--role`; eine ausdrücklich genannte VMID wird zerstört,
+  mit einem Filter daneben nur, wenn sie zu ihm passt — `reap.sh` nennt die VMIDs aus der
+  warm.env mit `--lane` der eigenen Lane, und `vm.py` lehnt eine VMID einer anderen Lane ab.) Klone werden seriell
   abgeschickt (ein Linked Clone dauert ~2 s); Bootstrap und Iterationen laufen parallel.
   Aus einem Worktree reist `.git` nur als Zeiger mit, der auf der Box ins Leere zeigt
   (`scripts/vm/rsync-exclude.txt` schließt `.git` nicht aus, aber nichts auf der Box verlässt

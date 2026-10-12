@@ -177,8 +177,9 @@ reset_state
 printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\nserver_ptok=p\n' > "$AH_VM_STATE_DIR/warm.env"
 OUT=$(bash "$REAP" 2>&1); rc=$?
 [ $rc -eq 0 ] || bad "reap failed: rc=$rc out=$OUT"
-grep -q '^destroy 3001 3002$' "$FAKE_LOG" \
-  && ok "both warm slots are destroyed in ONE call" || bad "destroy args: $(grep '^destroy' "$FAKE_LOG")"
+# With the lane: vm.py refuses a slot whose VM carries another lane's tag.
+grep -q '^destroy --lane main 3001 3002$' "$FAKE_LOG" \
+  && ok "both warm slots are destroyed in ONE call, with the lane" || bad "destroy args: $(grep '^destroy' "$FAKE_LOG")"
 grep -q '^reap$' "$FAKE_LOG" && ok "the expiry sweep follows" || bad "no plain reap: $(cat "$FAKE_LOG")"
 [ -z "$(slot server_ip)" ] && [ -z "$(slot desktop)" ] \
   && ok "warm.env is emptied, credentials included" || bad "warm.env left: $(cat "$AH_VM_STATE_DIR/warm.env")"
@@ -199,6 +200,11 @@ grep -q "lane pilot-two" <<<"$OUT" && ok "--lane names the lane it acts on" || b
 # sweep runs against `main` while the header claims another lane.
 [ "$(cat "$FAKE_LANE")" = "pilot-two" ] && ok "the lane reaches vm.py as AH_LANE" \
   || bad "AH_LANE seen by vm.py: $(cat "$FAKE_LANE")"
+reset_state
+printf 'desktop=3001\nserver=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+bash "$REAP" --lane pilot-two >/dev/null 2>&1
+grep -q '^destroy --lane pilot-two 3001 3002$' "$FAKE_LOG" \
+  && ok "--lane goes with the warm slots to vm.py" || bad "destroy args: $(grep '^destroy' "$FAKE_LOG")"
 
 reset_state
 OUT=$(bash "$REAP" --bogus 2>&1); rc=$?
