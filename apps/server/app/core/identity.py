@@ -113,6 +113,13 @@ CERT_USER_MISMATCH = (
 )
 
 
+# The 403 for an agent certificate on a route of another server (R-0283).
+CERT_SERVER_MISMATCH = (
+    "ERR_CERT_SERVER_MISMATCH: The client certificate belongs to another server. "
+    "Provision this host for the server it reports for."
+)
+
+
 # The 403 for a certificate the register refuses: revoked, or not recorded after the
 # transition (R-0224). The desktop keys its hint off the code, as with the one above.
 CERT_REVOKED = (
@@ -144,6 +151,25 @@ def require_cert_user(request: Request, username: str, db: Session) -> None:
         username,
     )
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_USER_MISMATCH)
+
+
+def require_cert_server(server_id: str, request: Request) -> None:
+    """An agent certificate belongs to the server it was provisioned for (R-0283): on a
+    route of one server (``server_id`` in the path), a verified identity of the agent
+    scope must carry that server_id as its CN, or the request gets a 403, in both modes
+    like the binding to the user. An access certificate (an admin) and a request without
+    a verified identity are not this check's; the scope guard of the route decides."""
+    identity = get_client_identity(request)
+    if not identity.verified or identity.scope != SCOPE_AGENT or identity.cn == server_id:
+        return
+    logger.warning(
+        "mTLS: %s %s — agent certificate CN=%s is not for server %s",
+        request.method,
+        request.url.path,
+        identity.cn,
+        server_id,
+    )
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CERT_SERVER_MISMATCH)
 
 
 def _is_revoked(

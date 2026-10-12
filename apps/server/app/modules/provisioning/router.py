@@ -128,7 +128,10 @@ def activate_provision(
     if token.server_id != server_id:
         raise HTTPException(status_code=403, detail="Token gehoert nicht zu diesem Server")
 
-    server = db.query(Server).filter(Server.id == server_id).first()
+    # FOR NO KEY UPDATE on the server row: a second activation of the same server (with
+    # another token) waits until this one is done, then replaces its key, so one key
+    # stays (R-0291). The weaker lock still lets foreign keys to the server through.
+    server = db.query(Server).filter(Server.id == server_id).with_for_update(key_share=True).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
