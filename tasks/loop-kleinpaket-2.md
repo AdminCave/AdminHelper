@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 2: Zertifikatspfad im Troubleshooting, Kostendatei in der CI/CD-Doku — Task-Ledger
-Status: aktiv · Branch: feature/loop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/loop-kleinpaket-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-10 (kleines Fund-Paket aus R-0275 und R-0268, Loop-Futter aus Kevins Triage 2026-10-10; reine Doku; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0275, R-0268 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Doku unter docs/ (DE+EN); kein Code, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -49,8 +49,10 @@ Semantik: `apps/agent/internal/enroll/enroll.go:33-37` („File layout inside th
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/admin/troubleshooting.html + docs/en/admin/troubleshooting.html (die Task ist die Doku)
 
-### T2 — CI/CD-Doku: der Worker zählt die Reviewer-Kosten aus seiner Kostendatei, DE und EN (R-0268)  [ ]
+### T2 — CI/CD-Doku: der Worker zählt die Reviewer-Kosten aus seiner Kostendatei, DE und EN (R-0268)  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fe816d17 2026-10-12T06:44:14+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: `docs/developer/cicd.html:311-312` und EN `:305-306` sagen noch: `task-close.sh` druckt die Kosten als Zeile
 `review cost_usd=<x> round=<n>`, und der Worker zählt sie in sein Lauf-Budget. Seit R-0250 (4717d016, T1 von
 loop-kleinpaket-1) gilt:
