@@ -3,13 +3,14 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# stack_pytest.sh — the four tests that need a real Postgres or Redis, run
-# against the compose stack's own (run.sh integration, step stack-pytest).
+# stack_pytest.sh — the tests that need a real Postgres or Redis, run against
+# the compose stack's own (run.sh integration, step stack-pytest).
 #
 #   monitoring  tests/test_migrations_smoke.py                             DATABASE_URL
 #   monitoring  tests/test_db_session_utc.py                               DATABASE_URL
 #   server      tests/test_stream_redis.py                                 AH_TEST_REDIS_URL
-#   ca-issuer   tests/test_db_token_store.py::test_concurrent_consume_...  AH_TEST_DB
+#   ca-issuer   tests/test_db_token_store.py, its Postgres tests           AH_TEST_DB
+#               (redeeming a token, the register's row locks, the identity lock)
 #
 # In the unit layer each of them skips wherever its service is missing, and a
 # skip inside a passing suite reads as green. Here the service IS there, so a
@@ -25,7 +26,7 @@
 # the shared venv before this step, and each component's requirements-dev.txt is
 # installed into it here, as the unit steps do.
 #
-# Exit: 0 all four passed · 1 a test failed, skipped or wrote no XML, or the
+# Exit: 0 all passed · 1 a test failed, skipped or wrote no XML, or the
 # services did not come up · 75 docker/compose/openssl/curl/python3 missing
 #
 # Run: bash scripts/tests/stack_pytest.sh
@@ -106,6 +107,18 @@ stack_test ca-issuer-register-lock apps/ca-issuer \
   "AH_TEST_DB=$ITEST_DATABASE_URL"
 stack_test ca-issuer-register-recheck apps/ca-issuer \
   tests/test_db_token_store.py::test_a_deprovisioning_while_signing_refuses_the_renewal \
+  "AH_TEST_DB=$ITEST_DATABASE_URL"
+# The identity lock (R-0292, R-0306): renewing, revoking and enrolling one identity go
+# one after the other. The advisory lock is Postgres only; the PR CI's ca-issuer job
+# has no Postgres, so these run nowhere else.
+stack_test ca-issuer-renew-waits-revoke apps/ca-issuer \
+  tests/test_db_token_store.py::test_a_renewal_that_takes_over_waits_for_a_revocation_and_is_refused \
+  "AH_TEST_DB=$ITEST_DATABASE_URL"
+stack_test ca-issuer-revoke-waits-renew apps/ca-issuer \
+  tests/test_db_token_store.py::test_a_revocation_waits_for_a_renewal_that_takes_over_and_covers_its_line \
+  "AH_TEST_DB=$ITEST_DATABASE_URL"
+stack_test ca-issuer-enroll-waits-revoke apps/ca-issuer \
+  tests/test_db_token_store.py::test_an_enrollment_waits_for_a_revocation_and_enrolls_nothing \
   "AH_TEST_DB=$ITEST_DATABASE_URL"
 
 echo "stack_pytest: $PASSED passed, ${#FAILED[@]} failed${FAILED[*]:+ (${FAILED[*]})}"

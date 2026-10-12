@@ -75,7 +75,9 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota \
+            qsec-ssl qsec-oauth qsec-scramc qsec-scrams qsec-upper qsec-pwupper qsec-mode \
+            dec-zz dec-4z dec-pct dec-trail dec-slash dec-uml dec-ff dec-nul dec-nl utf-pw utf-user; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -161,6 +163,30 @@ for pair in "tau postgresql+psycopg://ah@localhost:5432/adminhelper_test?passwor
     && ok "$slug: a password in the query means no createdb, no lane, no secret printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 done
+# The other keys that carry a secret, in any spelling (R-0310). The placeholder is
+# not the word "secret": the refusal itself says that word.
+for pair in "qsec-ssl ?sslpassword=plchold-77|sslpassword" "qsec-oauth ?sslmode=require&oauth_client_secret=plchold-77|oauth_client_secret" \
+            "qsec-scramc ?scram_client_key=plchold-77|scram_client_key" "qsec-scrams ?scram_server_key=plchold-77|scram_server_key" \
+            "qsec-upper ?SSLPassword=plchold-77|sslpassword" "qsec-pwupper ?Password=plchold-77|password"; do
+  slug="${pair%% *}" rest="${pair#* }"; query="${rest%|*}" key="${rest#*|}"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+    "postgresql+psycopg://ah@localhost:5432/adminhelper_test$query" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
+    && grep -qF "carries a secret in its query ($key=)" "$WORK/out.log" && ! grep -q plchold-77 "$WORK/out.log" && ! grep -q plchold-77 "$PG_LOG" \
+    && ok "$slug: $key= in the query means no createdb, no lane, no secret printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+# A query key that carries no secret still goes through.
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test?sslmode=disable" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane new qsec-mode; rc=$?
+[ "$rc" = 0 ] && grep -qx "createdb pw=secret --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test?sslmode=disable adminhelper_test_qsec_mode" "$PG_LOG" \
+  && ok "qsec-mode: sslmode= alone goes through, the password in PGPASSWORD only" \
+  || bad "qsec-mode: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+lane "done" qsec-mode || bad "done qsec-mode: $(cat "$WORK/out.log")"
 # libpq decodes the keys of the query too: a percent sign in a key is refused.
 printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
   "postgresql+psycopg://ah@localhost:5432/adminhelper_test?pass%77ord=secret" > "$MAIN/.devenv.sh"
@@ -171,6 +197,51 @@ lane new eta; rc=$?
   && grep -q "nothing of lane eta was created" "$WORK/out.log" \
   && ok "eta: a percent-encoded key in the query means no createdb, no lane, no secret printed" \
   || bad "eta: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: lane_db decodes the password the way SQLAlchemy does (R-0313) ──"
+# The oracle is the consumer: SQLAlchemy takes the password of AH_TEST_DB with
+# urllib.parse.unquote, so PGPASSWORD must be what unquote makes of it.
+for pair in "dec-zz 50%zz" "dec-4z a%4zb" "dec-pct a%%41b" "dec-trail x%" "dec-slash pa%2Fss" "dec-uml %C3%A4"; do
+  slug="${pair%% *}" pw="${pair#* }"
+  want="$(python3 -c 'import sys, urllib.parse; sys.stdout.write(urllib.parse.unquote(sys.argv[1]))' "$pw")"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+    "postgresql+psycopg://ah:$pw@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 0 ] && grep -qxF "createdb pw=$want --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_${slug//-/_}" "$PG_LOG" \
+    && ok "$slug: PGPASSWORD is what unquote makes of $pw" || bad "$slug: rc=$rc want=[$want] pg=$(cat "$PG_LOG")"
+  lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
+done
+# Bytes that are no UTF-8 once decoded, and a NUL, are refused, naming no value.
+for pair in "dec-ff plchold%ffx|no UTF-8 once decoded" "dec-nul plchold%00x|a NUL byte"; do
+  slug="${pair%% *}" rest="${pair#* }"; pw="${rest%|*}" why="${rest#*|}"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+    "postgresql+psycopg://ah:$pw@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && grep -qF "$why" "$WORK/out.log" \
+    && ! grep -aq plchold "$WORK/out.log" && ok "$slug: refused, no createdb, no value printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+# A decoded newline at the end stays in PGPASSWORD, as unquote keeps it.
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah:x%0A@localhost:5432/adminhelper_test" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane new dec-nl; rc=$?
+python3 -c 'import sys; sys.exit(0 if b"createdb pw=x\n --maintenance-db=" in open(sys.argv[1], "rb").read() else 1)' "$PG_LOG" \
+  && [ "$rc" = 0 ] && ok "dec-nl: a decoded newline at the end stays in PGPASSWORD" || bad "dec-nl: rc=$rc pg=$(cat "$PG_LOG")"
+lane "done" dec-nl || bad "done dec-nl: $(cat "$WORK/out.log")"
+# A URL that is no UTF-8, in the password or in the user: refused before anything.
+for pair in "utf-pw ah:plch\\xffold" "utf-user a\\xffh:plchold"; do
+  slug="${pair%% *}" userinfo="${pair#* }"
+  printf "export AH_TEST_DB=\"postgresql+psycopg://$userinfo@localhost:5432/adminhelper_test\"\nexport AH_VENV=\"\$HOME/.cache/ah-venv\"\n" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && grep -q 'AH_TEST_DB is no UTF-8' "$WORK/out.log" \
+    && ! grep -aq plchold "$WORK/out.log" && ok "$slug: a URL that is no UTF-8 means no createdb, no lane, no value printed" \
+    || bad "$slug: rc=$rc pg=$(cat -v "$PG_LOG") out=$(cat -v "$WORK/out.log")"
+done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
 echo "── new: lane_db reads the URL the way SQLAlchemy does (R-0266) ──"
