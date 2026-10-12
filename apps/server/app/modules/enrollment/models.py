@@ -103,7 +103,8 @@ class RevokedIdentity(Base):
 # creates a line for the identity, the take-over in admit_certificate here and the
 # enrollment and the renewal at the ca-issuer (apps/ca-issuer/app/db.py, the same
 # statement, compared by a test). So revoking an identity and creating a line for it go
-# one after the other.
+# one after the other. Whoever also locks a server row locks it before the identity
+# (delete_server), so nobody waits for a row with an identity lock in hand (R-0322).
 IDENTITY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext(:subject_id), hashtext(:scope))"
 
 

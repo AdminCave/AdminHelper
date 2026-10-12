@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Produkt-Folgen 3: der Keyring in Tests ohne Guard, das Löschen eines Servers neben einer Aktivierung — Task-Ledger
-Status: aktiv · Branch: feature/product-followups-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/product-followups-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0327, R-0322, Triage Kevin 2026-10-12; T2 als Fix mit anderer Sperr-Reihenfolge, R-0311 bleibt zu; Heavy linux-full nach Regel; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0327, R-0322 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — `run.sh integration`, weil T2 eine Server-Route ändert (`DELETE /api/servers/{id}`); T1 ändert nur Test-Builds der Desktop-Crate. Die Aktivierung über `:8444` bleibt, wie sie ist, daher kein Multibox.
@@ -48,8 +48,10 @@ HEAD: b7ab9b6c
 Semantik: keine Stelle in docs/ — `docs/developer/desktop.html:112-115` („Keyring-Secrets“) nennt nur die Stores im
 Betrieb. Im Code beschreibt `keyring_store.rs:17-18` das heutige Verhalten, das diese Zeile ändert.
 
-### T2 — Server löschen: erst die Zeile sperren, dann die Identität (R-0322)  [ ]
+### T2 — Server löschen: erst die Zeile sperren, dann die Identität (R-0322)  [x]
 Komponente: server · Dateien: apps/server/app/modules/servers/router.py, apps/server/app/modules/enrollment/models.py, apps/server/tests/test_provisioning.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @2c759eb0 2026-10-12T22:30:03+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `delete_server` (`servers/router.py:182`) liest die Server-Zeile ohne Sperre (`:188`), nimmt in
 `revoke_identity` (`:194`) die Sperre der Identität und wartet erst bei `db.delete(server)` (`:195`) auf eine
 Aktivierung, die die Zeile hält. Die Aktivierung hält sie von `provisioning/router.py:136` bis zum Commit (`:187`),
