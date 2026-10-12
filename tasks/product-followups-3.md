@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Produkt-Folgen 3: der Keyring in Tests ohne Guard, das Löschen eines Servers neben einer Aktivierung — Task-Ledger
-Status: bereit · Branch: feature/product-followups-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/product-followups-3 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0327, R-0322, Triage Kevin 2026-10-12; T2 als Fix mit anderer Sperr-Reihenfolge, R-0311 bleibt zu; Heavy linux-full nach Regel; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0327, R-0322 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — `run.sh integration`, weil T2 eine Server-Route ändert (`DELETE /api/servers/{id}`); T1 ändert nur Test-Builds der Desktop-Crate. Die Aktivierung über `:8444` bleibt, wie sie ist, daher kein Multibox.
