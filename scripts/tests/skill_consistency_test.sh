@@ -133,8 +133,9 @@ branch_review_opus() {
 # build_task_findings <skill> <runner settings> — one line per finding in the
 # worker's builder skill (stage 7a): a forbidden command given as an instruction
 # (every code span and every line of a fenced block outside "## Nie"), or a
-# `bash scripts/…` or `ruff …` call it instructs that no allow rule of the runner's
-# settings lets through, or a deny stops. Settings that do not load are a finding too.
+# `bash scripts/…`, `ruff …` or `python3 scripts/…` call it instructs that no allow
+# rule of the runner's settings lets through, or a deny stops. Settings that do not
+# load are a finding too.
 build_task_findings() {
   unreadable "$1" && return
   unreadable "$2" && return
@@ -164,7 +165,7 @@ def rules(kind):
 for cmd in commands:
     if FORBIDDEN.match(cmd):
         print("forbidden as an instruction: " + cmd)
-    elif cmd.startswith(("bash scripts/", "ruff ")):
+    elif cmd.startswith(("bash scripts/", "ruff ", "python3 scripts/")):
         if any(matches(cmd, r) for r in rules("deny")) or not any(matches(cmd, r) for r in rules("allow")):
             print("no allow rule in the runner's settings: " + cmd)
 PY
@@ -372,6 +373,9 @@ grep -q "cannot load the runner's settings" <<<"$(build_task_findings "$f" "$WOR
 f=$(fixture 'Lint direkt: `ruff check x.py`.')
 grep -q "no allow rule in the runner's settings: ruff check x.py" <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
   && ok "build_task_findings: a ruff call no allow rule lets through is found" || bad "build_task_findings missed an unallowed ruff call"
+f=$(fixture 'Doku prüfen: `python3 scripts/dev/doc-smoke.py --paths --env --strict`.')
+grep -q "no allow rule in the runner's settings: python3 scripts/dev/doc-smoke.py --paths --env --strict" <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a python3 scripts/ call no allow rule lets through is found (R-0304)" || bad "build_task_findings missed an unallowed python3 scripts/ call"
 f=$(fixture '4. **Testen**:' '   - Im Vordergrund. Nie `run_in_background`, nie warten mit Monitor,' '     `sleep`, `tail --pid` oder `ps`.' '5. **Danach**')
 [ "$(foreground_rule "$(section "$f" '4. **Testen' '5. **')")" = ok ] \
   && ok "foreground_rule: the rule wrapped across a line break is found" || bad "foreground_rule missed the wrapped rule"

@@ -48,7 +48,9 @@ Vorab geprüft:
     `remote.origin.receivepack`, einen pre-push-Hook). Mit `--no-local` läuft beim Klonen `git-upload-pack` in `$FC`.
     Der Bau zeigt, dass sich dadurch keine Probe und keine Marke ändert (T3).
 
-### T1 — Die Bau-Session darf doc-smoke fahren (R-0304)  [ ]
+### T1 — Die Bau-Session darf doc-smoke fahren (R-0304)  [x]
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @9fa91bdc 2026-10-12T10:13:47+02:00
+Review: Review am Ende (Kurz-Ledger)
 Antwort: Kevin 2026-10-12, (a): die Regel aus R-0237 erlaubt neben scripts/vm genau scripts/dev/doc-smoke.py (Rückfrage in der Session der Aufsicht; Plan-Korrektur durch die Aufsicht).
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh, scripts/tests/hooks_test.sh
 Änderung:
