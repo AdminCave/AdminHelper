@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket lane-state-guard: kein getrackter Zustand unter .vm, auch mit gesetzter Lane; warm und run nur auf Boxen der eigenen Lane (R-0329, R-0324) — Task-Ledger
-Status: geplant · Branch: harness/lane-state-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/lane-state-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-12; Fragen: 1 ein Slot einer anderen Lane wird gemeldet, geleert und neu gewaermt; 2 run und sync pruefen die Lane, die Handwerkzeuge nicht; T1-T3 erst nach dem Merge von #133; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0329, R-0324 (Kurz-Ledger ohne Spec)
 Heavy: none — lib.sh, vm.py, warm.sh, iter.sh, reap.sh und heavy.sh mit hermetischen Tests: pytest gegen die Fake-API von test_vm, Fake-vm.py in lib_vm_test, vm_wrappers_test und heavy_test, tmp-Repos. Kein echtes destroy, kein Stack-, Gateway-, PKI- oder Install-Pfad.
 Hängt ab von: harness/lane-reap-guard (PR #133) — alle drei Tasks bauen auf dessen Sperre in lib.sh/vm.py und den
