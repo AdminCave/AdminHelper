@@ -72,21 +72,20 @@ vm_py() {
 # sweep what the other believes is leased. Non-ASCII is the documented limit:
 # `tr` counts bytes where Python counts codepoints, so an umlaut lane falls back
 # to `main` here and may not there. `lane.sh new` only ever writes [a-z0-9-].
-# The checkout's own .vm is gitignored state: when the lane would come from there
-# (no AH_LANE), a checkout that tracks paths under .vm is refused, lane file or not,
-# and a git that cannot say counts as tracked. A state dir elsewhere is its
-# caller's to vouch for (lane.sh done passes --lane). vm.py's current_lane()
-# refuses the same way, with the same exit code.
+# The checkout's own .vm is gitignored state: in a checkout that tracks paths under
+# .vm it is not read, whether the lane comes from AH_LANE, --lane or the lane file,
+# and a git that cannot say counts as tracked. reap.sh, warm.sh and iter.sh call
+# this before they touch warm.env. A state dir elsewhere is its caller's to vouch
+# for (lane.sh done, the tests). vm.py's current_lane() refuses the same way, with
+# the same exit code.
 vm_lane() {
   local lane="${AH_LANE:-}" tracked
-  if [ -z "$lane" ]; then
-    if [ "$(realpath -m -- "$AH_VM_STATE_DIR")" = "$(realpath -m -- "$VM_ROOT/.vm")" ] \
-      && { ! tracked="$(git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" || [ -n "$tracked" ]; }; then
-      echo "vm_lib: this checkout tracks paths under .vm — the lane is not read from tracked state" >&2
-      return 2
-    fi
-    lane="$(cat "$AH_VM_STATE_DIR/lane" 2>/dev/null || true)"  # review: ok an unreadable lane file means main, as before
+  if [ "$(realpath -m -- "$AH_VM_STATE_DIR")" = "$(realpath -m -- "$VM_ROOT/.vm")" ] \
+    && { ! tracked="$(git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" || [ -n "$tracked" ]; }; then
+    echo "vm_lib: this checkout tracks paths under .vm — state there is not read" >&2
+    return 2
   fi
+  [ -n "$lane" ] || lane="$(cat "$AH_VM_STATE_DIR/lane" 2>/dev/null || true)"  # review: ok an unreadable lane file means main, as before
   lane="$(printf '%s' "$lane" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
   while [ "${lane#-}" != "$lane" ]; do lane="${lane#-}"; done
   while [ "${lane%-}" != "$lane" ]; do lane="${lane%-}"; done

@@ -71,7 +71,8 @@ reset_state() {  # a fresh warm.env + an empty call log for every case
   unset FAKE_NEWID FAKE_IP FAKE_RUN_OUT FAKE_RUN_RC FAKE_LIST_JSON
 }
 slot() { grep -E "^$1=" "$AH_VM_STATE_DIR/warm.env" 2>/dev/null | tail -1 | cut -d= -f2-; }
-running_json() { printf '{"vms": [{"vmid": %s, "status": "running"}], "untagged": 0}' "$1"; }
+# vm.py list --json names each VM's lane; warm.sh reuses a slot only on its own.
+running_json() { printf '{"vms": [{"vmid": %s, "status": "running", "lane": "%s"}], "untagged": 0}' "$1" "${2:-main}"; }
 
 echo "── warm.sh: reuse ──"
 reset_state
@@ -84,6 +85,25 @@ OUT=$(FAKE_LIST_JSON="$(running_json 3001)" bash "$WARM" desktop 2>&1); rc=$?
 grep -q '^clone' "$FAKE_LOG" && bad "reuse still cloned: $(cat "$FAKE_LOG")" \
   || ok "reuse clones nothing"
 grep -q '^run' "$FAKE_LOG" && bad "reuse still bootstrapped" || ok "reuse bootstraps nothing"
+
+echo "── warm.sh: a slot whose box carries another lane is not reused ──"
+reset_state
+echo "desktop=3001" > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3005 FAKE_LIST_JSON="$(running_json 3001 pilot)" bash "$WARM" desktop 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "recorded desktop VM 3001 carries lane pilot, not main — re-warming" <<<"$OUT" \
+  && ! grep -q "reuse desktop box" <<<"$OUT" \
+  && ok "a running slot of another lane is not reused, and the message says so" || bad "other lane: rc=$rc out=$OUT"
+grep -q '^clone' "$FAKE_LOG" && [ "$(slot desktop)" = "3005" ] \
+  && ok "... a new box is warmed and takes the slot" || bad "other lane slot: $(slot desktop) log=$(cat "$FAKE_LOG")"
+grep -q '^run 3001' "$FAKE_LOG" && bad "the box of the other lane was run on: $(cat "$FAKE_LOG")" \
+  || ok "... and nothing runs on the box of the other lane"
+reset_state
+printf 'server=3002\nserver_ip=10.0.0.42\nserver_ptok=p\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$(running_json 3002 pilot)" bash "$WARM" server 2>&1); rc=$?
+grep -q "recorded server VM 3002 carries lane pilot, not main — re-warming" <<<"$OUT" \
+  && ! grep -q "reuse server box" <<<"$OUT" && ! grep -q '=p\b' <<<"$OUT" \
+  && ok "the server slot of another lane is not reused either, and no credential is printed" \
+  || bad "server other lane: rc=$rc out=$OUT"
 
 echo "── warm.sh: the one-time clone ──"
 reset_state
@@ -215,7 +235,7 @@ OUT=$(bash "$REAP" --bogus 2>&1); rc=$?
 # on it. warm.sh records the frist as desktop_ttl; iter.sh renews with that,
 # AH_WARM_TTL still wins, and a warm.env from before the key keeps 8h.
 ITER="$REPO_ROOT/scripts/vm/iter.sh"
-RUNNING='{"vms": [{"vmid": 3001, "status": "running"}]}'
+RUNNING='{"vms": [{"vmid": 3001, "status": "running", "lane": "main"}]}'
 echo "── iter.sh: --extend uses the frist the box was warmed with ──"
 reset_state
 AH_WARM_TTL=20m bash "$WARM" desktop >/dev/null 2>&1

@@ -280,10 +280,18 @@ run_all() {
   local warm_rc=0 t_wall0
   t_wall0="$(date +%s)"
   bash "$WRAPPERS/warm.sh" desktop >"$OUT/warm.log" 2>&1 || warm_rc=$?
-  if [ "$warm_rc" != 0 ]; then
+  # Exit 2 is warm.sh refusing (a usage error, or lane state it will not read), not
+  # the race above: a second attempt would only repeat it and blame the bootstrap.
+  if [ "$warm_rc" != 0 ] && [ "$warm_rc" != 2 ]; then
     note "warm lease failed — retrying once (the guest bootstrap is racy on a fresh VM)"
     warm_rc=0
     bash "$WRAPPERS/warm.sh" desktop >>"$OUT/warm.log" 2>&1 || warm_rc=$?
+  fi
+  if [ "$warm_rc" = 2 ]; then
+    set_infra "warm.sh refused (exit 2), see warm.log"
+    tail -5 "$OUT/warm.log" | sed 's/^/  /'
+    FINDINGS+=("all|-|infra|$((SECONDS - t_layer0))|-|warm.sh refused (exit 2)")
+    return 74
   fi
   if [ "$warm_rc" != 0 ]; then
     set_infra "warm box could not be leased after a retry (see warm.log)"
