@@ -75,7 +75,8 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota \
+            qsec-ssl qsec-oauth qsec-scramc qsec-scrams qsec-upper qsec-pwupper qsec-mode; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -161,6 +162,30 @@ for pair in "tau postgresql+psycopg://ah@localhost:5432/adminhelper_test?passwor
     && ok "$slug: a password in the query means no createdb, no lane, no secret printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 done
+# The other keys that carry a secret, in any spelling (R-0310). The placeholder is
+# not the word "secret": the refusal itself says that word.
+for pair in "qsec-ssl ?sslpassword=plchold-77|sslpassword" "qsec-oauth ?sslmode=require&oauth_client_secret=plchold-77|oauth_client_secret" \
+            "qsec-scramc ?scram_client_key=plchold-77|scram_client_key" "qsec-scrams ?scram_server_key=plchold-77|scram_server_key" \
+            "qsec-upper ?SSLPassword=plchold-77|sslpassword" "qsec-pwupper ?Password=plchold-77|password"; do
+  slug="${pair%% *}" rest="${pair#* }"; query="${rest%|*}" key="${rest#*|}"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+    "postgresql+psycopg://ah@localhost:5432/adminhelper_test$query" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
+    && grep -qF "carries a secret in its query ($key=)" "$WORK/out.log" && ! grep -q plchold-77 "$WORK/out.log" && ! grep -q plchold-77 "$PG_LOG" \
+    && ok "$slug: $key= in the query means no createdb, no lane, no secret printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+# A query key that carries no secret still goes through.
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test?sslmode=disable" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane new qsec-mode; rc=$?
+[ "$rc" = 0 ] && grep -qx "createdb pw=secret --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test?sslmode=disable adminhelper_test_qsec_mode" "$PG_LOG" \
+  && ok "qsec-mode: sslmode= alone goes through, the password in PGPASSWORD only" \
+  || bad "qsec-mode: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+lane "done" qsec-mode || bad "done qsec-mode: $(cat "$WORK/out.log")"
 # libpq decodes the keys of the query too: a percent sign in a key is refused.
 printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
   "postgresql+psycopg://ah@localhost:5432/adminhelper_test?pass%77ord=secret" > "$MAIN/.devenv.sh"

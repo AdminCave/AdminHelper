@@ -101,6 +101,15 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
     echo "  lane.sh: AH_TEST_DB carries its password in the query; write it as user:password@ before the host" >&2
     return 3
   fi
+  # The other keys whose value is a secret of its own (libpq, Parameter Key Words):
+  # the passphrase of the client key, the OAuth client secret, and the SCRAM keys
+  # (the client key alone signs in, RFC 5802). In any spelling, password included:
+  # whether libpq quotes the value of a key it does not know is not verified.
+  local query_secret='[?&](password|sslpassword|oauth_client_secret|scram_client_key|scram_server_key)='
+  if [[ "${url,,}" =~ $query_secret ]]; then
+    echo "  lane.sh: AH_TEST_DB carries a secret in its query (${BASH_REMATCH[1]}=); lane.sh does not pass it on" >&2
+    return 3
+  fi
   # libpq decodes the keys of the query too, so pass%77ord= is a password as well:
   # no percent sign in a key at all.
   local query_key_pct='[?&][^=&]*%[^=&]*='

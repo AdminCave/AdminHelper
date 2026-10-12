@@ -48,8 +48,10 @@ Vorab geprüft:
 
   - Dazu schneidet `$(…)` ein dekodiertes `%0A` am Ende ab.
 
-### T1 — lane_db lehnt jedes Geheimnis in der Query ab, nicht nur password= (R-0310)  [ ]
+### T1 — lane_db lehnt jedes Geheimnis in der Query ab, nicht nur password= (R-0310)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fbed6364 2026-10-12T23:32:59+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `lane_db` (:99–103) lehnt heute nur `[?&]password=` ab. Steht `sslpassword=`, `oauth_client_secret=`,
   `scram_client_key=` oder `scram_server_key=` in der Query, geht die URL samt Wert in
