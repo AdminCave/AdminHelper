@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-rest: Prompt nur an \n, Lane-Links in der Lane, pve.env gleich gelesen (R-0267, R-0252, R-0253) — Task-Ledger
-Status: bereit · Branch: harness/harness-rest · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/harness-rest · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0267, R-0252, R-0253, Triage Kevin 2026-10-09/10; Frage 1: ungueltiges UTF-8 gehoert in T3, runner-env.sh lehnt es ebenfalls ab; pve.env nur als Fixture mit Platzhaltern; T2 erst nach dem Merge von lane-paket; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0267, R-0252, R-0253 (Kurz-Ledger ohne Spec)
 Heavy: none — review-run.sh, lane.sh, runner-env.sh und vm.py mit hermetischen Tests (Fake-CLI, Fixture-Repos, Platzhalter-pve.env); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -181,3 +181,24 @@ Review: Review über T4 und T5 (Opus) folgt
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Abhängt von: T4
+
+### T6 — Nachbesserung zu T5: an den Pfaden darf nichts stehen  [ ]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Änderung: Angelegt 2026-10-12 aus dem Review über T4 und T5 (Opus). T4 bekam `approve`, T5 `request_changes` mit zwei
+belegten Funden.
+- Die Prüfung aus T5 ließ alles durch, was kein Symlink nach außen ist.
+  - Ein Verzeichnis, das der Branch an einem der Pfade trägt: `rm -f` scheitert in einer `&&`-Kette, und `set -e` greift
+    dort nicht. `new` endete mit Exit 0 ohne die Datei. Die Lane hatte dann keine eigene Kennung und keine eigene
+    Umgebung. Mit dem Stand von T4 endete das noch mit Exit 1.
+  - Eine reguläre Datei, die der Branch dort trägt, wurde überschrieben.
+- Neu: Steht an einem der Pfade schon irgendetwas (`-e` oder `-L`), endet `new` mit Exit 1, bevor dort geschrieben
+  wird.
+  - Die Pfade sind gitignored, und die Lane ist frisch angelegt: Was dort steht, kommt vom Branch.
+  - `rm -f` und die ersetzende Kopie bleiben als zweite Sicherung.
+- Fälle in lane_test je Pfad, mit den Fällen des Reviewers: eine reguläre Datei, ein Verzeichnis, ein Symlink auf ein
+  Ziel in der Lane, das nicht existiert. Der letzte Fall prüft `[ -L ]` allein.
+  - Erwartet: Exit 1, nichts geändert (`git status --porcelain` der Lane leer), `done` räumt ab.
+  - Die Fixtures tragen nur Platzhalter.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T5
