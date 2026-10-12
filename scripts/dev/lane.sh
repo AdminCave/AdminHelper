@@ -246,22 +246,33 @@ lane_new() {
   # (lane_inside). They are gitignored and the lane is new, so whatever stands at
   # such a path came with the branch: a file, a directory, a symlink, or a path that
   # leads out of the lane stops new before anything is written there.
-  local f
+  local f d
   for f in .vm/lane .claude/settings.local.json .devenv.sh; do
+    # The directory the file goes into, too: missing or a real one, never a link.
+    d=""; case "$f" in */*) d="${f%/*}" ;; esac
+    if [ -n "$d" ] && { [ -L "$wt/$d" ] || { [ -e "$wt/$d" ] && [ ! -d "$wt/$d" ]; }; }; then
+      echo "  lane.sh: $d in the lane is a symlink or no directory — nothing written there"
+      echo "  run: bash scripts/dev/lane.sh done $slug"
+      exit 1
+    fi
     if [ -e "$wt/$f" ] || [ -L "$wt/$f" ] || ! lane_inside "$wt" "$f"; then
       echo "  lane.sh: $f exists in the lane already, is a symlink or leads outside it — nothing written there"
       echo "  run: bash scripts/dev/lane.sh done $slug"
       exit 1
     fi
   done
-  mkdir -p "$wt/.vm" && rm -f "$wt/.vm/lane" && printf '%s\n' "$slug" > "$wt/.vm/lane"
+  # Loud on failure: set -e does not stop inside an && list, and a lane without its
+  # id would run on lane main.
+  { mkdir -p "$wt/.vm" && rm -f "$wt/.vm/lane" && printf '%s\n' "$slug" > "$wt/.vm/lane"; } \
+    || { echo "  lane.sh: could not write .vm/lane"; echo "  run: bash scripts/dev/lane.sh done $slug"; exit 1; }
   # Per-machine files the lane needs (both gitignored). settings.local.json is
   # WRITTEN by Claude Code (permission grants): a symlink would make N lane
   # sessions read-modify-write ONE shared file → COPY. .devenv.sh is the lane's
   # own (lane_devenv above), and so is the database it points at.
   [ -f .claude/settings.local.json ] \
     && cp --remove-destination .claude/settings.local.json "$wt/.claude/settings.local.json"
-  [ ! -f .devenv.sh ] || { rm -f "$wt/.devenv.sh" && lane_devenv "$slug" > "$wt/.devenv.sh"; }
+  [ ! -f .devenv.sh ] || { rm -f "$wt/.devenv.sh" && lane_devenv "$slug" > "$wt/.devenv.sh"; } \
+    || { echo "  lane.sh: could not write .devenv.sh"; echo "  run: bash scripts/dev/lane.sh done $slug"; exit 1; }
   # Gitignored parts of the main checkout that a build needs. The frpc sidecar
   # cargo test wants is COPIED: a link would reach a box as a link into nothing,
   # and a heavy run from the lane loses cargo test and the desktop E2E (R-0094).
@@ -333,10 +344,13 @@ lane_done() {
   # somebody removed by hand is exactly the case that leaks, so it must not be
   # the case that silently skips the sweep. Never the MAIN checkout's .vm — that
   # would destroy this session's own warm box.
+  # And only the lane's own: a .vm the branch made a symlink, or one that leads out
+  # of the lane, is read as no state at all — the way without a worktree below.
   local state
-  if [ -d "$wt" ]; then
+  if [ -d "$wt" ] && [ ! -L "$wt/.vm" ] && lane_inside "$wt" .vm; then
     state="$(cd "$wt" && pwd)/.vm"
   else
+    [ ! -d "$wt" ] || echo "  WARN: .vm in the lane is a symlink or leads outside it — done reads no state from it"
     # No worktree, no warm.env — so `reap.sh` would find no VMIDs to destroy and
     # `vm.py reap` only takes what has already expired. A LIVE box of this lane
     # would then burn until its ttl while the closing listing correctly calls it

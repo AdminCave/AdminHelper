@@ -395,6 +395,52 @@ for spec in "vm .vm/lane" "settings .claude/settings.local.json" "devenv .devenv
   done
 done
 rm -f "$MAIN/.claude/settings.local.json"
+# The directory such a file goes into: a file, a dangling link, a link to a directory
+# of the lane. Each stops new with the lane unchanged, and done cleans up.
+mk_branch() {  # mk_branch <slug> <what> — a plan branch whose .vm or .claude is <what>
+  g worktree add -q -b "feature/$1" "$WORK/mk-$1" main
+  case "$2" in
+    vm-file)     echo "placeholder-$1" > "$WORK/mk-$1/.vm" ;;
+    vm-dangling) ln -s nothere "$WORK/mk-$1/.vm" ;;
+    vm-dir)      ln -s tasks "$WORK/mk-$1/.vm" ;;
+    claude-dir)  ln -s tasks "$WORK/mk-$1/.claude" ;;
+    vm-main)     ln -s ../AdminHelper/.vm "$WORK/mk-$1/.vm" ;;
+  esac
+  echo "# plan $1" > "$WORK/mk-$1/tasks/$1.md"
+  git -C "$WORK/mk-$1" add -f -A
+  git -C "$WORK/mk-$1" -c user.name=t -c user.email=t@t commit -qm "$2"
+  g worktree remove "$WORK/mk-$1"
+}
+for what in vm-file vm-dangling vm-dir claude-dir; do
+  slug="par-$what" d=.vm; [ "$what" != claude-dir ] || d=.claude
+  # The main checkout's file only where the case copies it, as above.
+  rm -f "$MAIN/.claude/settings.local.json"
+  [ "$what" != claude-dir ] || printf '{"permissions": {"allow": []}}\n' > "$MAIN/.claude/settings.local.json"
+  mk_branch "$slug" "$what"
+  lane new "$slug"; rc=$?
+  L="$WORK/AdminHelper-$slug"
+  [ "$rc" = 1 ] && [ -z "$(git -C "$L" status --porcelain 2>&1)" ] \
+    && grep -qF "lane.sh: $d in the lane is a symlink or no directory — nothing written there" "$WORK/out.log" \
+    && ! grep -q "lane $slug ready" "$WORK/out.log" \
+    && ok "$slug: a $d that is no real directory stops new, and nothing in the lane changes" \
+    || bad "new $slug rc=$rc: status=[$(git -C "$L" status --porcelain 2>&1)] out=$(cat "$WORK/out.log")"
+  lane "done" "$slug" && [ ! -e "$L" ] || bad "done $slug: $(cat "$WORK/out.log")"
+done
+rm -f "$MAIN/.claude/settings.local.json"
+# done reads its state only from the lane: with the lane's .vm pointing into the
+# main checkout, neither the main checkout's (fake) boxes nor its warm.env change.
+printf 'desktop=3001\nserver=3002\n' > "$MAIN/.vm/warm.env"; cp "$MAIN/.vm/warm.env" "$WORK/warm.env.mark"
+mk_branch par-vm-main vm-main
+lane new par-vm-main
+: > "$VM_LOG"
+lane "done" par-vm-main; rc=$?
+! grep -qE 'destroy.*\b300[12]\b' "$VM_LOG" && cmp -s "$MAIN/.vm/warm.env" "$WORK/warm.env.mark" \
+  && grep -q 'done reads no state from it' "$WORK/out.log" \
+  && ok "done with the lane's .vm pointing into the main checkout: its boxes and warm.env stay as they are" \
+  || bad "done par-vm-main rc=$rc: vm=[$(cat "$VM_LOG")] warm=[$(cat "$MAIN/.vm/warm.env")] out=$(cat "$WORK/out.log")"
+rm -f "$MAIN/.vm/warm.env"
+[ "$rc" = 0 ] && [ ! -e "$WORK/AdminHelper-par-vm-main" ] && [ ! -e "$MAIN/.vm/lanes/par-vm-main" ] \
+  && ok "... and that done still takes the lane down" || bad "done par-vm-main left the lane: rc=$rc"
 
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"
