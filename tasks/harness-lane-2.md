@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-lane-2: weitere Geheimnisse in der Query, Passwort wie SQLAlchemy dekodiert, doc-smoke.py als Harness-Pfad (R-0310, R-0313, R-0305) — Task-Ledger
-Status: geplant · Branch: harness/harness-lane-2 · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/harness-lane-2 · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0310, R-0313, R-0305, Triage Kevin 2026-10-12; Fragen: 2 ein dekodiertes Passwort ohne UTF-8 wird mit Exit 3 abgelehnt, 3 doc-smoke-allow.txt kommt mit in harness-paths.txt; Bau nach lane-state-guard; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0310, R-0313, R-0305 (Kurz-Ledger ohne Spec)
 Heavy: none — lane.sh (lane_db) mit Fake-createdb/dropdb in lane_test, harness-paths.txt mit hooks_test; nur Platzhalter, kein echter createdb, kein Stack-, Gateway-, PKI- oder Install-Pfad.
 Hängt ab von: harness/lane-state-guard — kein gemeinsamer Code, aber beide sind Harness-Pakete auf derselben
