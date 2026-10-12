@@ -28,8 +28,10 @@ Vorab geprüft:
     `Benutzer:Passwort@`).
   - Die Meldung sagt, wie es geht (`Benutzer:Passwort@` vor den Host), und nennt die URL nicht.
 
-### T1 — lane_db: keine Gruppe über `/`, kein Passwort in der Query (R-0266, R-0265)  [ ]
+### T1 — lane_db: keine Gruppe über `/`, kein Passwort in der Query (R-0266, R-0265)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a3f106f1 2026-10-12T12:12:37+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - R-0266: In `lane_db` (:81) wird die Passwort-Gruppe von `([^@]*)` zu `([^@/]*)`.
   - Heute läuft sie über `/` hinaus. `postgresql://localhost:5432/adminhelper_test?application_name=a:b@c` wird als

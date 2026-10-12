@@ -75,7 +75,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau upsilon phi chi psi; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -144,6 +144,36 @@ for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "r
     && grep -q "nothing of lane $slug was created" "$WORK/out.log" && ! grep -q 'createdb .* failed' "$WORK/out.log" \
     && ok "${url%%:*}://… whose password the pattern does not take out: no createdb, no lane, no secret printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: a password in the URL's query makes no lane either (R-0265) ──"
+for pair in "tau postgresql+psycopg://ah@localhost:5432/adminhelper_test?password=secret" \
+            "chi postgresql+psycopg://ah@localhost:5432/adminhelper_test?sslmode=disable&password=secret"; do
+  slug="${pair%% *}" url="${pair#* }"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
+    && grep -q 'carries its password in the query' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
+    && grep -q "nothing of lane $slug was created" "$WORK/out.log" \
+    && ok "$slug: a password in the query means no createdb, no lane, no secret printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: a : and an @ in the query stay in the URL (R-0266) ──"
+for pair in "upsilon postgresql+psycopg://localhost:5432/adminhelper_test?application_name=a:b@c|<unset>|postgresql://localhost:5432/adminhelper_test?application_name=a:b@c" \
+            "phi postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test?application_name=a:b@c|secret|postgresql://ah@localhost:5432/adminhelper_test?application_name=a:b@c"; do
+  IFS='|' read -r spec pw want <<<"$pair"
+  slug="${spec%% *}" url="${spec#* }"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 0 ] && grep -qxF "createdb pw=$pw --maintenance-db=$want adminhelper_test_$slug" "$PG_LOG" \
+    && ok "$slug: createdb gets the URL whole, a password only from user:password@" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+  lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
 done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
