@@ -261,3 +261,37 @@ func TestReprovisionHintNamesTheProvisionCommand(t *testing.T) {
 		t.Fatalf("Hinweis nennt den falschen Befehl: %q", reprovisionHint)
 	}
 }
+
+// R-0293: the check before an enrollment request does the staged writes of Store and
+// leaves nothing behind.
+
+func TestCheckStorableLeavesNothingBehind(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "identity") // not there yet, as on a first provisioning
+	if err := CheckStorable(dir); err != nil {
+		t.Fatalf("CheckStorable: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("Reste der Prüfung: %v", entries)
+	}
+}
+
+func TestCheckStorableReportsAStagedFileThatCannotBeWritten(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(CertPath(dir)+tmpSuffix, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckStorable(dir); err == nil {
+		t.Fatal("erwartet Fehler, wenn agent.crt.tmp nicht geschrieben werden kann")
+	}
+	if _, err := os.Stat(KeyPath(dir) + tmpSuffix); !os.IsNotExist(err) {
+		t.Errorf("die Probe für agent.key blieb liegen, stat err = %v", err)
+	}
+	// What blocked the write is not the check's to remove.
+	if fi, err := os.Stat(CertPath(dir) + tmpSuffix); err != nil || !fi.IsDir() {
+		t.Errorf("das blockierende Verzeichnis ist weg: %v", err)
+	}
+}

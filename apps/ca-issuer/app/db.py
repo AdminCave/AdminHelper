@@ -33,6 +33,7 @@ from sqlalchemy import (
     Table,
     create_engine,
     select,
+    text,
     update,
 )
 from sqlalchemy.exc import IntegrityError
@@ -108,6 +109,21 @@ certificate_register_state = Table(
 
 def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+# The lock both writers of an identity's device lines take, held to the end of their
+# transaction (R-0292): the server when it revokes the identity (revoke_identity), the
+# issuer when it renews. A renewal that takes over an unrecorded certificate creates a
+# line no concurrent revocation could see before; with the lock one of them goes first.
+# The server keeps the same statement (app/modules/enrollment/models.py), a test there
+# compares the two.
+IDENTITY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext(:subject_id), hashtext(:scope))"
+
+
+def _lock_identity(conn: Connection, subject_id: str, scope: str) -> None:
+    # sqlite (the unit tests) has no advisory locks and no concurrent writer to keep out.
+    if conn.dialect.name == "postgresql":
+        conn.execute(text(IDENTITY_LOCK_SQL), {"subject_id": subject_id, "scope": scope})
 
 
 def _now_naive() -> datetime.datetime:
@@ -244,12 +260,13 @@ class DbTokenStore:
         legacy_kind: str,
         sign: RenewSigner,
     ) -> dict[str, str]:
-        # One transaction with the line locked: a revocation of the line waits until
-        # this renewal is done, or this renewal sees it and refuses. The successor
-        # stays on the line, so a revocation that comes later covers it as well.
+        # One transaction with the identity and the line locked: a revocation waits until
+        # this renewal is done, or this renewal sees it and refuses. The successor stays
+        # on the line, so a revocation that comes later covers it as well.
         now = _now_naive()
         try:
             with self._engine.begin() as conn:
+                _lock_identity(conn, subject_id, scope)
                 if not self._active(conn, subject_id, scope, current.not_before):
                     raise RenewalRefused("identity is deprovisioned")
                 line = conn.execute(

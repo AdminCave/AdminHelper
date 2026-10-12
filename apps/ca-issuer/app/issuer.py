@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
@@ -64,9 +64,10 @@ class Issuer:
                 cert.tbs_certificate_bytes,
                 ec.ECDSA(cert.signature_hash_algorithm),
             )
-        except (InvalidSignature, TypeError, ValueError) as exc:
+        except (InvalidSignature, TypeError, ValueError, UnsupportedAlgorithm) as exc:
             # Any non-ECDSA or malformed presented cert (e.g. an Ed25519 leaf whose
-            # signature_hash_algorithm is None, or an RSA key) fails to verify against
+            # signature_hash_algorithm is None, an RSA key, or a signature algorithm
+            # cryptography does not know) fails to verify against
             # our ECDSA intermediate — it is a forgery and must be rejected cleanly
             # here, never bubble up as a 500 at the issuer.
             raise IssuanceError(
