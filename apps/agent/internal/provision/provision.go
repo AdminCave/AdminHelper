@@ -258,18 +258,27 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	if err != nil {
 		return err
 	}
+	dir := config.AgentPkiDir()
+	// The request below lets the issuer revoke the earlier line at once: ask only for an
+	// identity this host can store (R-0293).
+	if err := enroll.CheckStorable(dir); err != nil {
+		return fmt.Errorf("the identity cannot be stored, nothing was requested: %w", err)
+	}
 	// The identity of an earlier provisioning is still on disk until Store replaces it:
 	// naming it lets the issuer revoke the old line (R-0224).
 	req := enroll.Request{
 		Token:    info.Token,
 		CSR:      string(csr),
-		Replaces: enroll.LeafFingerprint(config.AgentPkiDir()),
+		Replaces: enroll.LeafFingerprint(dir),
 	}
 	issued, err := enroll.Submit(client, endpoint, req)
 	if err != nil {
 		return err
 	}
-	return enroll.Store(config.AgentPkiDir(), key, issued)
+	if err := enroll.Store(dir, key, issued); err != nil {
+		return fmt.Errorf("store the new identity: %w; provision again with a new token: %s", err, enroll.ReprovisionHint)
+	}
+	return nil
 }
 
 // enrollEndpoint reuses the host of the already-trusted server URL and swaps in

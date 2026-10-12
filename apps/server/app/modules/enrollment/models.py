@@ -28,6 +28,7 @@ from sqlalchemy import (
     UniqueConstraint,
     exists,
     or_,
+    text,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -98,6 +99,12 @@ class RevokedIdentity(Base):
     revoked_at = Column(DateTime, server_default=utc_now_sql())
 
 
+# The lock the ca-issuer's renewal takes as well (apps/ca-issuer/app/db.py, the same
+# statement, compared by a test): revoking an identity and renewing one of its
+# certificates go one after the other (R-0292).
+IDENTITY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext(:subject_id), hashtext(:scope))"
+
+
 def revoke_identity(db: Session, subject_id: str, scope: str) -> None:
     """Revoke every certificate ``(subject_id, scope)`` holds up to now, so the
     ca-issuer refuses to renew it (lever 1) and the data plane rejects it on sight
@@ -108,7 +115,9 @@ def revoke_identity(db: Session, subject_id: str, scope: str) -> None:
     meanwhile is waited for, so its successor lands on a revoked line (R-0224).
     Does not commit; the caller's transaction (e.g. user or server deletion) does.
     Race-free via INSERT ... ON CONFLICT DO UPDATE on the unique (subject_id, scope)
-    constraint — no read-then-write window."""
+    constraint — no read-then-write window. Takes the identity lock first, so a
+    renewal that is creating a line for this identity is waited for (R-0292)."""
+    db.execute(text(IDENTITY_LOCK_SQL), {"subject_id": subject_id, "scope": scope})
     db.execute(
         pg_insert(RevokedIdentity.__table__)
         .values(id=str(uuid.uuid4()), subject_id=subject_id, scope=scope)

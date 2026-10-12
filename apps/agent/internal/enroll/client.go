@@ -20,6 +20,10 @@ var logger = logging.For("enroll")
 // (R-0280): provisioning is the one way to a new one.
 const reprovisionHint = "adminhelper-agent provision --url <URL> --token <TOKEN> --server-id <ID>"
 
+// ReprovisionHint is the same command for the provisioning's own error when the new
+// identity could not be stored after the request.
+const ReprovisionHint = reprovisionHint
+
 // ServerClient returns the HTTP client the agent uses for server pushes: mTLS
 // with the enrolled identity when present (client cert + custom-root-only),
 // otherwise the legacy fallback (pinned cacert / insecure) so pre-enrollment

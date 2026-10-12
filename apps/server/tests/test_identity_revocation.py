@@ -12,10 +12,12 @@ namesake's stay revoked."""
 
 from __future__ import annotations
 
+import ast
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import delete, text
 from sqlalchemy.orm import sessionmaker
@@ -26,6 +28,7 @@ from app.core.auth import create_access_token
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT
 from app.core.time import utcnow_naive
 from app.modules.enrollment.models import (
+    IDENTITY_LOCK_SQL,
     DeviceLine,
     IssuedCertificate,
     RevokedIdentity,
@@ -304,3 +307,33 @@ def test_a_deletion_waits_for_a_renewal_that_holds_the_line_and_revokes_its_succ
         with pg_engine.begin() as conn:
             conn.execute(delete(DeviceLine).where(DeviceLine.subject_id == subject))
             conn.execute(delete(RevokedIdentity).where(RevokedIdentity.subject_id == subject))
+
+
+# --- R-0292: the identity lock shared with the ca-issuer -----------------------------
+
+
+def test_revoking_an_identity_holds_its_lock_until_the_transaction_ends(db_session, pg_engine):
+    revoke_identity(db_session, "dora", SCOPE_ACCESS)  # the outer transaction stays open
+    with pg_engine.connect() as other:
+        taken = other.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtext(:s), hashtext(:sc))"),
+            {"s": "dora", "sc": SCOPE_ACCESS},
+        ).scalar()
+        free = other.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtext(:s), hashtext(:sc))"),
+            {"s": "dora", "sc": SCOPE_AGENT},
+        ).scalar()
+    assert (taken, free) == (False, True)
+
+
+def test_the_identity_lock_is_the_one_the_ca_issuer_takes():
+    # The renewal at the ca-issuer takes the same lock; it is a separate service with its
+    # own venv, so its statement is read as source.
+    source = Path(__file__).resolve().parents[3] / "apps" / "ca-issuer" / "app" / "db.py"
+    statements = [
+        node.value.value
+        for node in ast.walk(ast.parse(source.read_text()))
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "IDENTITY_LOCK_SQL" for t in node.targets)
+    ]
+    assert statements == [IDENTITY_LOCK_SQL]
