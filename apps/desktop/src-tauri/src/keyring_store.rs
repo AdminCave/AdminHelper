@@ -15,12 +15,17 @@
 //! not a generic app key and cannot go through this abstraction.
 //!
 //! In tests, [`memory`] switches this thread's keyring to an empty map for as long
-//! as its guard lives (R-0294); without the guard tests reach the OS store as before.
+//! as its guard lives (R-0294). Without the guard a test build answers like a
+//! platform without a store (`set` fails, `get` and `try_get` find nothing, `delete`
+//! succeeds), so no test reaches the OS store (R-0327).
 
 use crate::error::AppError;
 
 /// Credential-store service/collection every app secret lives under.
 pub const SERVICE: &str = "com.admincave.adminhelper";
+
+/// Why `set` fails in a test that took no [`memory`] guard.
+const NO_KEYRING_IN_TESTS: &str = "no keyring in tests: take keyring_store::memory()";
 
 /// Store a secret under `key`.
 pub fn set(key: &str, value: &str) -> Result<(), AppError> {
@@ -32,6 +37,9 @@ pub fn set(key: &str, value: &str) -> Result<(), AppError> {
     {
         return Ok(());
     }
+    if cfg!(test) {
+        return Err(AppError::Keyring(NO_KEYRING_IN_TESTS.to_string()));
+    }
     os_set(key, value)
 }
 
@@ -42,6 +50,9 @@ pub fn get(key: &str) -> Option<String> {
     if let Some(value) = memory_backend::with(|m| m.get(key).cloned()) {
         return value;
     }
+    if cfg!(test) {
+        return None;
+    }
     os_get(key)
 }
 
@@ -50,6 +61,9 @@ pub fn try_get(key: &str) -> Result<Option<String>, AppError> {
     #[cfg(test)]
     if let Some(value) = memory_backend::with(|m| m.get(key).cloned()) {
         return Ok(value);
+    }
+    if cfg!(test) {
+        return Ok(None);
     }
     os_try_get(key)
 }
@@ -64,11 +78,14 @@ pub fn delete(key: &str) -> Result<(), AppError> {
     {
         return Ok(());
     }
+    if cfg!(test) {
+        return Ok(());
+    }
     os_delete(key)
 }
 
 /// While the guard lives, this thread's keyring is a map in memory, empty at the
-/// start; dropping the guard throws it away and switches back to the OS store. One
+/// start; dropping the guard throws it away and switches back to no store. One
 /// thread, one map: each `#[test]` and each current-thread `#[tokio::test]` has its
 /// own, so tests share nothing.
 #[cfg(test)]
@@ -225,7 +242,7 @@ mod tests {
             let _keyring = memory();
             set("b", "2").unwrap();
         }
-        // Dropping the guard switched back to the OS store.
+        // Dropping the guard switched back to no store.
         assert!(memory_backend::with(|_| ()).is_none());
         let _keyring = memory();
         assert_eq!(get("b"), None);
@@ -243,5 +260,15 @@ mod tests {
         .join()
         .unwrap();
         assert_eq!(get("c").as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn without_a_guard_a_test_reaches_no_store() {
+        assert!(set("d", "1").is_err());
+        // The test build refuses, not a store that happens to be unreachable.
+        assert!(matches!(set("d", "1"), Err(AppError::Keyring(m)) if m == NO_KEYRING_IN_TESTS));
+        assert_eq!(get("d"), None);
+        assert!(matches!(try_get("d"), Ok(None)));
+        assert!(delete("d").is_ok());
     }
 }

@@ -575,3 +575,93 @@ def test_two_activations_hand_out_the_keys_of_one_of_them(pg_engine, monkeypatch
             conn.execute(delete(ProvisionToken).where(ProvisionToken.server_id == sid))
             conn.execute(delete(EnrollmentToken).where(EnrollmentToken.subject_id == sid))
             conn.execute(delete(Server).where(Server.id == sid))
+
+
+# ---------------------------------------------------------------------------
+# R-0322: deleting a server waits for an activation without holding the identity
+
+
+def test_a_server_delete_waits_for_an_activation_without_holding_the_identity(
+    pg_engine, monkeypatch
+):
+    # Three real connections: an activation holds the server row as the route does (over
+    # its monitor call), the delete goes through the route and waits for it, and the
+    # identity lock of the server's agent stays free meanwhile, so an enrollment or a
+    # renewal at the ca-issuer does not wait behind the delete. Rows written here are
+    # removed at the end.
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete, func, select, text
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.auth import get_current_admin
+    from app.core.database import get_db
+    from app.core.identity import SCOPE_AGENT
+    from app.main import app
+    from app.modules.enrollment.models import RevokedIdentity, is_identity_revoked
+    from app.modules.servers import router as servers_router
+
+    # The delete handler best-effort calls the monitoring cleanup; stub it out.
+    monkeypatch.setattr(servers_router.httpx, "delete", lambda *a, **k: None)
+    sid = f"srv-delete-{uuid.uuid4().hex[:6]}"
+    new_session = sessionmaker(bind=pg_engine)
+    with new_session() as setup:
+        audit_before = setup.execute(select(func.coalesce(func.max(AuditLog.id), 0))).scalar()
+        setup.add(Server(id=sid, name=sid, hostname=f"{sid}.example.test"))
+        setup.commit()
+
+    def _db():
+        session = new_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    activation = new_session()
+    ex = ThreadPoolExecutor(max_workers=1)
+    app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[get_current_admin] = lambda: SimpleNamespace(
+        username="admin", is_admin=True
+    )
+    try:
+        activation.query(Server).filter(Server.id == sid).with_for_update(key_share=True).one()
+        activation.add(
+            ApiKey(
+                name=f"agent-{sid}",
+                hashed_key=hash_api_key("activation" + sid),
+                permission="read",
+                server_id=sid,
+            )
+        )
+        activation.flush()
+        activation_pid = activation.execute(text("SELECT pg_backend_pid()")).scalar()
+
+        deleting = ex.submit(TestClient(app).delete, f"/api/servers/{sid}")
+        assert _waits_for(pg_engine, activation_pid), "the delete must wait for the activation"
+        with pg_engine.connect() as renewal:
+            free = renewal.execute(
+                text("SELECT pg_try_advisory_xact_lock(hashtext(:s), hashtext(:c))"),
+                {"s": sid, "c": SCOPE_AGENT},
+            ).scalar()
+            renewal.rollback()
+        assert free, "the identity lock must stay free while the delete waits"
+        assert not deleting.done()
+
+        activation.commit()
+        resp = deleting.result(10)
+        assert resp.status_code == 204, resp.text
+        with new_session() as check:
+            assert is_identity_revoked(check, sid, SCOPE_AGENT)
+            assert check.get(Server, sid) is None
+    finally:
+        # Release the server row first: the waiting delete would hold the shutdown.
+        activation.close()
+        ex.shutdown(wait=True)
+        app.dependency_overrides.clear()
+        with pg_engine.begin() as conn:
+            conn.execute(delete(AuditLog).where(AuditLog.id > audit_before))
+            conn.execute(delete(ApiKey).where(ApiKey.server_id == sid))
+            conn.execute(delete(RevokedIdentity).where(RevokedIdentity.subject_id == sid))
+            conn.execute(delete(Server).where(Server.id == sid))
