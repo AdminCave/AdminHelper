@@ -32,19 +32,24 @@ TTL="${AH_WARM_TTL:-8h}"
 # the guest hangs.
 HYDRATE_TIMEOUT=2700
 
-# box_running <vmid> -> 0 while vm.py still lists that VM as running.
+# box_lane <vmid> -> the lane of that VM while vm.py lists it as running, else
+# nothing; `?` when the listing names no lane. A slot is reused only on this lane:
+# the pool hands a freed VMID out again, and a slot whose box expired may name the
+# box another lane is working on by now.
 # The exit code of `list` is ignored on purpose: it is 74 when the listing finds
 # a leaked VM, and the JSON we care about is on stdout long before that.
-box_running() {
+box_lane() {
   vm_py list --json 2>/dev/null | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
 except ValueError:
-    sys.exit(1)
+    sys.exit(0)
 want = sys.argv[1]
-sys.exit(0 if any(str(v.get("vmid")) == want and v.get("status") == "running"
-                  for v in data.get("vms", [])) else 1)' "$1"
+for v in data.get("vms", []):
+    if str(v.get("vmid")) == want and v.get("status") == "running":
+        print(v.get("lane") or "?")
+        break' "$1"
 }
 
 kept() {  # kept <vmid> <what failed> — a box we leave standing, and how to get at it
@@ -66,12 +71,17 @@ clone_box() {
 
 # warm_role <role> <profile> <bootstrap-profile> -> stdout: vmid ; stderr: progress
 warm_role() {
-  local role="$1" profile="$2" boot="$3" vmid ip
+  local role="$1" profile="$2" boot="$3" vmid ip lane=""
   vmid="$(warm_get "$role")"
-  if [ -n "$vmid" ] && box_running "$vmid"; then
+  [ -z "$vmid" ] || lane="$(box_lane "$vmid")"
+  if [ -n "$vmid" ] && [ "$lane" = "$LANE" ]; then
     echo "  reuse $role box $vmid (already warm)" >&2; echo "$vmid"; return 0
   fi
-  [ -n "$vmid" ] && { echo "  recorded $role VM $vmid is gone — re-warming" >&2; warm_clear "$role"; }
+  if [ -n "$lane" ]; then
+    echo "  recorded $role VM $vmid carries lane $lane, not $LANE — re-warming" >&2; warm_clear "$role"
+  elif [ -n "$vmid" ]; then
+    echo "  recorded $role VM $vmid is gone — re-warming" >&2; warm_clear "$role"
+  fi
   echo "  clone + hydrate $role box (profile=$profile) — one-time bootstrap" >&2
   read -r vmid ip < <(clone_box "$role" "$profile") || return 1
   echo "  $role box $vmid @ ${ip:-?} — hydrating" >&2
@@ -91,12 +101,17 @@ warm_role() {
 # box_serverbox.sh does its OWN bootstrap (server profile) + stack up, so clone
 # and run it directly — do NOT warm_role first (that would bootstrap twice).
 warm_server() {
-  local vmid ip out sid ptok pw key
+  local vmid ip out sid ptok pw key lane=""
   vmid="$(warm_get server)"
-  if [ -n "$vmid" ] && box_running "$vmid" && [ -n "$(warm_get server_ip)" ]; then
+  [ -z "$vmid" ] || lane="$(box_lane "$vmid")"
+  if [ -n "$vmid" ] && [ "$lane" = "$LANE" ] && [ -n "$(warm_get server_ip)" ]; then
     echo "  reuse server box $vmid (stack up @ $(warm_get server_ip))" >&2; return 0
   fi
-  [ -n "$vmid" ] && { echo "  recorded server VM $vmid is gone — re-warming" >&2; warm_clear server; }
+  if [ -n "$lane" ] && [ "$lane" != "$LANE" ]; then
+    echo "  recorded server VM $vmid carries lane $lane, not $LANE — re-warming" >&2; warm_clear server
+  elif [ -n "$vmid" ]; then
+    echo "  recorded server VM $vmid is gone — re-warming" >&2; warm_clear server
+  fi
   echo "  clone server box + hydrate + bring up the stack (one-time)" >&2
   read -r vmid ip < <(clone_box server linux-server) || return 1
   echo "  server box $vmid @ ${ip:-?} — box_serverbox.sh (bootstrap + stack up)" >&2

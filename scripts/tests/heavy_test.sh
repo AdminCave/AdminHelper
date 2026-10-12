@@ -837,6 +837,19 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 history_of | grep -q ',all,-,infra,'   && ok "history.csv records the attempt as infra" || bad "history: $(history_of)"
 report_of | grep -q 'could not be leased'   && ok "the report names the reason" || bad "no reason in the report"
 
+# ── 5a': a refusal of warm.sh is not retried ─────────────────────────────────
+# Exit 2 is warm.sh refusing (usage, or lane state it will not read): a retry
+# would only repeat it, and the report would blame the guest bootstrap.
+mk_case
+export SHIM_WARM_RC=2
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a refused warm lease -> exit 74" || bad "refused lease -> rc=$rc"
+[ "$(grep -c 'warm shim' <<<"$out")" = 1 ]   && ok "a refusal is not retried" || bad "$(grep -c 'warm shim' <<<"$out") lease attempts"
+! grep -q 'retrying once' <<<"$out" && report_of | grep -q 'warm.sh refused (exit 2)' \
+  && ok "the report says it was refused, not that the bootstrap raced" || bad "refusal report: $(report_of)"
+history_of | grep -q ',all,-,infra,'   && ok "history.csv records the refusal as infra" || bad "history: $(history_of)"
+
 # ── 5b: vm.py's own infrastructure reasons void the layer ────────────────────
 # There is no binary to be missing any more — vm.py answers 74 and SAYS why, and
 # those lines are what heavy.sh must recognise instead of a red test.

@@ -185,7 +185,11 @@ def delete_server(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    server = db.query(Server).filter(Server.id == server_id).first()
+    # The row first, the identity after: an activation holds this row until it commits,
+    # over its call to the monitoring service. Waiting for it with the identity lock in
+    # hand would hold every enrollment and renewal of the agent, up to the ca-issuer's
+    # statement_timeout (R-0322).
+    server = db.query(Server).filter(Server.id == server_id).with_for_update().first()
     if not server:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server nicht gefunden")
     server_name = server.name

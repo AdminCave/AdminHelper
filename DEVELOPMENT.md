@@ -1708,8 +1708,8 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `clone --profile p --role r [--lane l] [--scenario id] [--ttl 8h] [--memory MB] [--cores N] [--name n]` | Klont das Profil-Template, taggt die Lease, injiziert den Schluessel und startet die VM. Druckt `VMID NAME`. |
 | `wait <vm> [--timeout 900]` | Wartet auf Guest-Agent, IPv4 und ssh — alle drei an **einer** Frist. Druckt die Adresse. |
 | `ssh <vm> [-- cmd]` | Ohne Kommando eine interaktive Sitzung im Checkout, sonst der Exit-Code des Kommandos — roh, ohne Login-Shell (siehe `run`). |
-| `sync <vm> [--no-delete]` | `rsync` des Checkouts auf die Box (Ausschlussliste: `scripts/vm/rsync-exclude.txt`). |
-| `run <vm> [--sync] [--timeout S] [--out DIR] [--extend <dauer>] -- <cmd>` | Fuehrt das Kommando in einer **Login-Shell** im Checkout aus und reicht dessen Exit-Code **unveraendert** zurueck. `--out` holt `<remote>/.ah-out/`, `--extend 4h` versetzt vorher den `ttl-`Tag. |
+| `sync <vm> [--no-delete]` | `rsync` des Checkouts auf die Box (Ausschlussliste: `scripts/vm/rsync-exclude.txt`). Nur auf eine VM der eigenen Lane, am frischen Zustand geprueft; eine andere mit `AH_LANE=<lane>`. |
+| `run <vm> [--sync] [--timeout S] [--out DIR] [--extend <dauer>] -- <cmd>` | Fuehrt das Kommando in einer **Login-Shell** im Checkout aus und reicht dessen Exit-Code **unveraendert** zurueck. `--out` holt `<remote>/.ah-out/`, `--extend 4h` versetzt vorher den `ttl-`Tag. Wie `sync` nur auf eine VM der eigenen Lane. |
 | `pull <vm> <glob> <dir>` | Holt Dateien von der Box. |
 | `snap <vm> <name> [--ram]` · `rollback <vm> <name> [--start]` · `delsnap <vm> <name>` | Snapshot, Ruecksetzen, Loeschen. `snap` und `rollback` je ~1–3 s auf LVM-thin; `delsnap` direkt nach einem `rollback --start` wartet, bis der Start das Config-Lock wieder freigibt (gemessen 35 s). |
 | `destroy <vm>… \| --scenario id \| --lane l \| --role r` | Stoppt und loescht mit Platte. Genannte VMs zusammen mit `--scenario`/`--lane`/`--role`: jede muss zu jedem Filter passen, sonst Abbruch (Exit 2) vor der ersten Zerstoerung; die Filter fuegen dann keine VMs hinzu. |
@@ -1768,11 +1768,12 @@ sonst aus `AH_LANE`, sonst aus `.vm/lane` — die Datei ist heute von Hand zu se
 `AH_LANE` im Worktree einfacher; ab 2b legt `lane.sh new <slug>` sie an —, sonst ist sie
 `main` — der Hauptcheckout. `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
 `scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
-darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Die Lane kommt nur
-aus ungetracktem Zustand des eigenen Checkouts: ohne `--lane` und `AH_LANE` lehnen `vm.py` und
-`lib.sh` (und mit ihnen `reap.sh`, `warm.sh`, `iter.sh`) mit Exit 2 ab, wenn der Checkout Pfade
-unter `.vm` trackt oder git nicht antwortet; ohne lesbares git ist `AH_LANE` zu setzen. Ein
-`AH_VM_STATE_DIR` ausserhalb des Checkouts liest die Lane ohne diese Pruefung.
+darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Den Zustand im eigenen
+`.vm` (Lane-Datei, `warm.env`) lesen `vm.py` und `lib.sh` (und mit ihnen `reap.sh`, `warm.sh`,
+`iter.sh`) nur ungetrackt, mit oder ohne `--lane`/`AH_LANE`: trackt der Checkout Pfade unter
+`.vm` oder antwortet git nicht, lehnen sie mit Exit 2 ab; ohne lesbares git braucht es ein
+`AH_VM_STATE_DIR`, das nicht das eigene `.vm` ist. Jedes andere Verzeichnis als das eigene `.vm`
+liest ohne diese Pruefung.
 
 **TLS.** Die Root-CA des Hypervisors traegt kein `keyUsage`, was Python 3.13 unter
 `VERIFY_X509_STRICT` ablehnt. `vm.py` loescht **genau dieses eine Flag** und verifiziert sonst
