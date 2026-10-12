@@ -88,8 +88,10 @@ checkout's <dir> into a REAL <dir> in the lane“). Die Links gehören in die La
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T3 — runner-env.sh und vm.py lesen pve.env gleich, mit Paritätstest (R-0253)  [ ]
+### T3 — runner-env.sh und vm.py lesen pve.env gleich, mit Paritätstest (R-0253)  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-env.sh, scripts/vm/vm.py, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @21aba14a 2026-10-12T14:27:43+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Heute lesen die beiden Leser an fünf Stellen verschieden:
 

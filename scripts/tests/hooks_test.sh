@@ -1451,6 +1451,51 @@ runner_env "$H"
 [ "$(val RC)" != 0 ] && [ "$(val DATABASE_URL)" = "<unset>" ] && [ "$(val ANTHROPIC_API_KEY)" = "<unset>" ] \
   && ok "an aborted run still leaves no inherited credential behind" || bad "abort kept credentials"
 
+# R-0253: runner-env.sh and vm.py read one pve.env to one result. The AH_PVE_*
+# values the shell exports are exactly those read_pve_env returns, for the cases
+# where the two used to part: quotes in quotes, an empty value, CRLF, a U+2028 and
+# a NEL inside a value, a tab at the end, export with a tab. Placeholders only.
+pve_shell() {  # pve_shell <home> — the AH_PVE_* pairs runner-env.sh exports, sorted
+  HOME="$1" TMPDIR="$WORK" bash -c '. "$1" >/dev/null 2>&1 || exit 9
+    for v in ${!AH_PVE_@}; do printf "%s=%s\n" "$v" "${!v}"; done | LC_ALL=C sort' _ "$RUNNER_ENV"
+}
+pve_python() {  # pve_python <home> — the AH_PVE_* pairs vm.read_pve_env returns, sorted
+  PYTHONIOENCODING=utf-8 python3 - "$REPO_ROOT/scripts/vm" "$1/.config/adminhelper/pve.env" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import vm
+try:
+    d = vm.read_pve_env(sys.argv[2])
+except vm.Usage as exc:
+    print("USAGE: %s" % exc)
+    sys.exit(0)
+for k in sorted(k for k in d if k.startswith("AH_PVE_")):
+    print("%s=%s" % (k, d[k]))
+PY
+}
+H=$(mk_home parity)
+LS=$'\xe2\x80\xa8' NEL=$'\xc2\x85'
+{ printf '%s\n' "AH_PVE_URL=\"'twice-quoted'\"" "AH_PVE_NODE=" "AH_PVE_STORAGE=a${LS}b" "AH_PVE_BRIDGE=n${NEL}x" \
+    "AH_PVE_POOL='single'" $'export\tAH_PVE_VLAN=7'
+  printf 'AH_PVE_TEMPLATE=crlf-placeholder\r\nAH_PVE_TOKEN=tab-placeholder\t\n'; } > "$H/.config/adminhelper/pve.env"
+for loc in C ${LOC:+"$LOC"}; do
+  SHELL_PAIRS="$(LC_ALL="$loc" pve_shell "$H")"; PY_PAIRS="$(LC_ALL="$loc" pve_python "$H")"
+  [ -n "$PY_PAIRS" ] && [ "$SHELL_PAIRS" = "$PY_PAIRS" ] \
+    && ok "pve.env ($loc): runner-env.sh exports the AH_PVE_* values vm.py reads, one for one (R-0253)" \
+    || bad "pve.env parity ($loc): shell=[$SHELL_PAIRS] python=[$PY_PAIRS]"
+done
+grep -qx "AH_PVE_URL='twice-quoted'" <<<"$PY_PAIRS" && ! grep -q '^AH_PVE_NODE=' <<<"$PY_PAIRS" \
+  && ok "... with one pair of quotes taken and an empty value left out" || bad "pve.env parity cases: $PY_PAIRS"
+# A NUL byte and a byte that is no UTF-8: both readers refuse the file, and say no value.
+for bad_file in 'AH_PVE_URL=nul\000placeholder\n' 'AH_PVE_URL=bad\377placeholder\n'; do
+  printf "$bad_file" > "$H/.config/adminhelper/pve.env"
+  runner_env "$H"; PY_PAIRS="$(pve_python "$H")"
+  [ "$(val RC)" != 0 ] && [ "$(val AH_PVE_URL)" = "<unset>" ] && grep -q '^USAGE: ' <<<"$PY_PAIRS" \
+    && ! grep -q 'placeholder' <<<"$ERR$OUT$PY_PAIRS" \
+    && ok "pve.env with $( [ "${bad_file#*\\000}" != "$bad_file" ] && echo 'a NUL byte' || echo 'no UTF-8'): refused by both, no value named" \
+    || bad "pve.env refusal: rc=$(val RC) url=$(val AH_PVE_URL) py=$PY_PAIRS err=$ERR"
+done
+
 # ══ runner-settings.json — the runner's permission boundary ══════════════════
 echo "── runner-settings.json ──"
 

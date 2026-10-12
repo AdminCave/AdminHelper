@@ -93,6 +93,8 @@ PVE_ENV_FILE = "~/.config/adminhelper/pve.env"
 # The only keys either file may set; vm.py reads no others, and lib.sh exports
 # exactly these.
 FILE_KEY = re.compile(r"AH_(PVE|VM)_[A-Za-z0-9_]+")
+# White space in pve.env is what bash's read and runner-env.sh strip: the ASCII kind.
+ASCII_SPACE = " \t\r\v\f"
 # Keys that only ever come from the file or the environment, so they need no
 # default. Presence is not checked here — Config.__getitem__ raises on access,
 # which is what keeps `vm.py list` from demanding a bake profile.
@@ -127,7 +129,13 @@ class Infra(VmError):
 
 # ── configuration ────────────────────────────────────────────────────────────
 def read_pve_env(path: str) -> dict:
-    """The AH_PVE_*/AH_VM_* lines of pve.env, read as runner-env.sh reads them.
+    """The AH_PVE_*/AH_VM_* lines of pve.env.
+
+    The AH_PVE_* lines are read as runner-env.sh reads them, and hooks_test holds the
+    two to one result: lines end at \n, white space is the ASCII kind, one pair of
+    quotes goes, an empty value is no value, a file with a NUL byte or one that is no
+    UTF-8 is refused (R-0253). AH_VM_* is read only here; runner-env.sh sets AH_VM_MAX
+    itself.
 
     {} when the file does not exist. Otherwise it must be a regular file, no link,
     mode 600, owned by this user, in a directory group and others cannot write —
@@ -161,13 +169,16 @@ def read_pve_env(path: str) -> dict:
         )
     try:
         with open(path, encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
+            text = fh.read()
     except (OSError, UnicodeDecodeError) as exc:
         raise Usage("cannot read %s: %s" % (path, type(exc).__name__)) from exc
+    if "\0" in text:
+        raise Usage("%s contains a NUL byte" % path)
+    lines = text.split("\n")
     values = {}
     for line in lines:
-        line = line.strip()
-        if line.startswith("export") and line[6:7].isspace():
+        line = line.strip(ASCII_SPACE)
+        if line.startswith("export") and line[6:7] and line[6] in ASCII_SPACE:
             line = line[6:].lstrip()
         key, sep, value = line.partition("=")
         if not sep or not FILE_KEY.fullmatch(key):
