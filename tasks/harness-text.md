@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket harness-text: Review-Modell, Lane-Bedingung, Docker-Kommentar (R-0298, R-0299, R-0300) — Task-Ledger
-Status: aktiv · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/harness-text · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0298, R-0299, R-0300, Triage Kevin 2026-10-11; CLAUDE.md ist die Vorlage, keine Änderung daran; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0298, R-0299, R-0300 (Kurz-Ledger ohne Spec)
 Heavy: none — Skill-Texte, AUTONOMOUS.md und zwei Kommentare unter scripts/tests mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -141,8 +141,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: AUTONOMOUS.md (eine Stelle); der Skill-Text ist die Anleitung
 Abhängt von: T3
 
-### T5 — Nachbesserung aus Runde 2: whole_branch_opus teilt nur am Satzende (R-0298)  [ ]
+### T5 — Nachbesserung aus Runde 2: whole_branch_opus teilt nur am Satzende (R-0298)  [x]
 Komponente: scripts · Dateien: scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @cd02c1d3 2026-10-12T08:44:28+02:00
+Review: Nachbesserung aus Runde 2, mit den Fällen des Reviewers als Tests (keine dritte Runde)
 Änderung: Angelegt 2026-10-12 aus dem Re-Review von T4 (Opus, Runde 2, `request_changes`: ein belegter Fund, drei
 nits). Nach der Regel der zweiten Runde behoben, mit den Fällen des Reviewers als Tests; eine dritte Runde gibt es
 nicht.

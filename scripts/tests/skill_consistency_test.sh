@@ -133,17 +133,18 @@ branch_review_opus() {
 # lane_vm_cap <text> — "ok" when a lane rule leans on the cap of one VM run at a
 # time (CLAUDE.md §2) and no longer on "at most one of them needs VMs" (R-0300).
 lane_vm_cap() {
-  grep -qF '1 VM-Lauf zugleich' <<<"$1" && ! grep -qE 'höchstens[[:space:]]+eine[rs]?' <<<"$1" && echo ok
+  grep -qF '1 VM-Lauf zugleich' <<<"$1" && ! grep -qE 'höchstens[[:space:]]+ein' <<<"$1" && echo ok
 }
 
 # whole_branch_opus <text> — "ok" when one sentence of the text names the review
 # over the whole branch together with Opus and neither Sonnet nor a "nicht" (R-0298):
 # "über den ganzen Branch läuft er auf Sonnet, Opus nur bei …" is the reading the
-# rule removes. A sentence ends at every period, so a dot inside one (review.sh)
-# can only make the check fail, never pass.
+# rule removes. A sentence ends at . ! or ? before a space or the end, so the dots
+# of review.sh or CLAUDE.md stay inside it and a Sonnet behind them is still seen.
+# Known limits: "nie Sonnet" reads as no ok, "kein Opus" goes unseen.
 whole_branch_opus() {
   local s
-  s="$(tr '.' '\n' <<<"$1" | grep -F 'ganzen Branch' | grep -F 'Opus' | grep -vE 'Sonnet|nicht')"
+  s="$(sed -E 's/[.!?]([[:space:]]|$)/\n/g' <<<"$1" | grep -F 'ganzen Branch' | grep -F 'Opus' | grep -viE 'Sonnet|nicht')"
   [ -n "$s" ] && echo ok
 }
 
@@ -373,12 +374,24 @@ f=$(fixture 'Zweck: x.' 'Je Task und über den ganzen Branch läuft er auf Sonne
 f=$(fixture 'Zweck: x.' 'Den Review über den ganzen Branch fährt nicht Opus, sondern Sonnet.' '**Wichtig:** y')
 [ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
   && ok "whole_branch_opus: a negated Opus is no ok" || bad "whole_branch_opus passed 'nicht Opus'"
+f=$(fixture 'Zweck: x.' 'Über den ganzen Branch läuft er auf Opus nur bei einem Risikopfad (`review.sh risk`), sonst auf Sonnet.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: ... nor a Sonnet behind the dot of review.sh" || bad "whole_branch_opus split at the dot of review.sh"
+f=$(fixture 'Zweck: x.' 'Den Review über den ganzen Branch fährt Opus (CLAUDE.md §2) nicht mehr, sondern Sonnet.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: ... nor a nicht behind the dot of CLAUDE.md" || bad "whole_branch_opus split at the dot of CLAUDE.md"
+f=$(fixture 'Zweck: x.' 'Nicht Opus fährt den Review über den ganzen Branch.' '**Wichtig:** y')
+[ -z "$(whole_branch_opus "$(section "$f" 'Zweck:' '**Wichtig:**')")" ] \
+  && ok "whole_branch_opus: ... nor a capital Nicht" || bad "whole_branch_opus passed 'Nicht Opus'"
 f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht' '  höchstens eines der Vorhaben VMs, schlägt das Gate die Lane vor.' '- **PRs**')
 [ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
   && ok "lane_vm_cap: the old condition is no ok" || bad "lane_vm_cap passed 'höchstens eines'"
 f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht höchstens' '  einer VMs, schlägt das Gate die Lane vor. Es gilt 1 VM-Lauf zugleich.' '- **PRs**')
 [ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
   && ok "lane_vm_cap: ... also wrapped, and as 'höchstens einer'" || bad "lane_vm_cap passed a wrapped 'höchstens einer'"
+f=$(fixture '- **Lanes**' '  Ist es disjunkt und braucht höchstens ein Vorhaben VMs. Es gilt 1 VM-Lauf zugleich.' '- **PRs**')
+[ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
+  && ok "lane_vm_cap: ... and as 'höchstens ein'" || bad "lane_vm_cap passed 'höchstens ein'"
 f=$(fixture '- **Lanes**' '  Ist es disjunkt, schlägt das Gate die Lane vor.' '- **PRs**')
 [ -z "$(lane_vm_cap "$(section "$f" '- **Lanes**' '- **PRs**')")" ] \
   && ok "lane_vm_cap: dropping the condition without naming the VM cap is no ok either" || bad "lane_vm_cap passed a rule without the cap"
