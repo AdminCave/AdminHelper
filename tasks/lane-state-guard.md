@@ -29,8 +29,10 @@ Vorab geprüft:
 - Die run-Tests in test_vm (:1656ff.) zielen auf 3000, Lane `main`. Heute hängen sie, wie jeder Test, der `current_lane()`
   ohne `state_dir` ruft, an der `.vm/lane` des Checkouts, in dem sie laufen. Mit T2 muss ihre Lane fest stehen.
 
-### T1 — Kein getrackter Zustand unter .vm, auch mit gesetzter Lane  [ ]
+### T1 — Kein getrackter Zustand unter .vm, auch mit gesetzter Lane  [x]
 Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/vm/vm.py, scripts/tests/lib_vm_test.sh, scripts/vm/tests/test_vm.py, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @95a87cba 2026-10-12T21:56:21+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Die Sperre aus lane-reap-guard (T5/T6) prüft heute nur, wenn die Lane nicht aus `--lane` oder `AH_LANE` kommt
   (lib.sh `vm_lane` :82, vm.py `current_lane` :570).

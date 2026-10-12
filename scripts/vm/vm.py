@@ -549,11 +549,16 @@ def tag_safe(value: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", (value or "").lower()).strip("-")
 
 
+def own_state(path: str) -> bool:
+    """`path` is the checkout's own .vm, the state the guard below is about."""
+    return os.path.realpath(path) == os.path.realpath(os.path.join(ROOT, ".vm"))
+
+
 def require_untracked_state() -> None:
-    """The checkout's own .vm is gitignored state: when the lane would come from
-    there, a checkout that tracks paths under .vm is refused, lane file or not, and
-    a git that cannot say counts as tracked. A state dir elsewhere is its caller's
-    to vouch for. lib.sh's vm_lane refuses the same way."""
+    """The checkout's own .vm is gitignored state: in a checkout that tracks paths
+    under .vm it is not read, whether the lane comes from --lane, AH_LANE or the
+    lane file, and a git that cannot say counts as tracked. A state dir elsewhere is
+    its caller's to vouch for. lib.sh's vm_lane refuses the same way."""
     try:
         listed = subprocess.run(
             ["git", "-C", ROOT, "ls-files", "--", ".vm"], capture_output=True, text=True, timeout=60
@@ -562,21 +567,18 @@ def require_untracked_state() -> None:
     except (OSError, subprocess.SubprocessError):
         tracked = True
     if tracked:
-        raise Usage(
-            "this checkout tracks paths under .vm — the lane is not read from tracked state"
-        )
+        raise Usage("this checkout tracks paths under .vm — state there is not read")
 
 
 def current_lane(override: str | None = None, environ=None) -> str:
     """--lane, else AH_LANE, else .vm/lane, else `main` (the shared checkout)."""
     environ = os.environ if environ is None else environ
+    if own_state(VM_STATE_DIR):
+        require_untracked_state()
     lane = override or environ.get("AH_LANE") or ""
     if not lane:
-        path = os.path.join(VM_STATE_DIR, "lane")
-        if os.path.realpath(VM_STATE_DIR) == os.path.realpath(os.path.join(ROOT, ".vm")):
-            require_untracked_state()
         try:
-            with open(path) as fh:
+            with open(os.path.join(VM_STATE_DIR, "lane")) as fh:
                 lane = fh.read().strip()
         except OSError:
             lane = ""
@@ -1574,6 +1576,8 @@ def verb_reap(cfg: Config, api: Api, args) -> int:
 def warm_vmids(path: str | None = None) -> set:
     """The VMIDs .vm/warm.env claims as long-lived. Written by the wrappers."""
     path = path or os.path.join(VM_STATE_DIR, "warm.env")
+    if own_state(os.path.dirname(path)):
+        require_untracked_state()
     kept = set()
     try:
         with open(path) as fh:

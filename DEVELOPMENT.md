@@ -1767,11 +1767,12 @@ sonst aus `AH_LANE`, sonst aus `.vm/lane` — die Datei ist heute von Hand zu se
 `AH_LANE` im Worktree einfacher; ab 2b legt `lane.sh new <slug>` sie an —, sonst ist sie
 `main` — der Hauptcheckout. `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
 `scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
-darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Die Lane kommt nur
-aus ungetracktem Zustand des eigenen Checkouts: ohne `--lane` und `AH_LANE` lehnen `vm.py` und
-`lib.sh` (und mit ihnen `reap.sh`, `warm.sh`, `iter.sh`) mit Exit 2 ab, wenn der Checkout Pfade
-unter `.vm` trackt oder git nicht antwortet; ohne lesbares git ist `AH_LANE` zu setzen. Ein
-`AH_VM_STATE_DIR` ausserhalb des Checkouts liest die Lane ohne diese Pruefung.
+darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Den Zustand im eigenen
+`.vm` (Lane-Datei, `warm.env`) lesen `vm.py` und `lib.sh` (und mit ihnen `reap.sh`, `warm.sh`,
+`iter.sh`) nur ungetrackt, mit oder ohne `--lane`/`AH_LANE`: trackt der Checkout Pfade unter
+`.vm` oder antwortet git nicht, lehnen sie mit Exit 2 ab; ohne lesbares git braucht es ein
+`AH_VM_STATE_DIR`, das nicht das eigene `.vm` ist. Jedes andere Verzeichnis als das eigene `.vm`
+liest ohne diese Pruefung.
 
 **TLS.** Die Root-CA des Hypervisors traegt kein `keyUsage`, was Python 3.13 unter
 `VERIFY_X509_STRICT` ablehnt. `vm.py` loescht **genau dieses eine Flag** und verifiziert sonst

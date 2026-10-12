@@ -101,7 +101,8 @@ out=$(co_lane); rc=$?
   && ok "a tracked .vm/lane: vm_lane refuses with exit 2 and names no value" || bad "tracked: rc=$rc out=$out"
 # shellcheck source=/dev/null
 out=$( (export AH_LANE=from-env AH_VM_STATE_DIR="$CO/.vm"; . "$CO/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
-[ "$rc" = 0 ] && [ "$out" = "from-env" ] && ok "with AH_LANE the file is not read" || bad "AH_LANE: rc=$rc out=$out"
+[ "$rc" = 2 ] && grep -q 'tracks paths under .vm' <<<"$out" && ! grep -q 'lane-a' <<<"$out" \
+  && ok "with AH_LANE set, tracked state is refused too" || bad "AH_LANE: rc=$rc out=$out"
 # reap.sh stops before it calls vm.py or touches warm.env.
 : > "$WORK/co-vm.log"
 printf '#!/bin/sh\necho "$*" >> "%s"\n' "$WORK/co-vm.log" > "$WORK/co-vm.py"; chmod +x "$WORK/co-vm.py"
@@ -111,7 +112,7 @@ out=$( (unset AH_LANE; export AH_VM_STATE_DIR="$CO/.vm" AH_VM_PY="$WORK/co-vm.py
   && ok "reap.sh in that checkout: exit 2, no call to vm.py, warm.env as it was" \
   || bad "reap.sh: rc=$rc vm=[$(cat "$WORK/co-vm.log")] out=$out"
 # .vm itself tracked, as a link to a directory with state and no lane file:
-# reap.sh, warm.sh and iter.sh stop before they call vm.py.
+# reap.sh, warm.sh and iter.sh stop before they call vm.py, with a lane given or not.
 CL="$WORK/checkout-link"
 mkdir -p "$CL/scripts/vm" "$WORK/elsewhere"
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$REPO_ROOT/scripts/vm/warm.sh" \
@@ -119,15 +120,18 @@ cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$REPO_ROOT/sc
 printf 'desktop=3001\n' > "$WORK/elsewhere/warm.env"; cp "$WORK/elsewhere/warm.env" "$WORK/cl-warm.mark"
 ln -s "$WORK/elsewhere" "$CL/.vm"
 git -C "$CL" init -q && git -C "$CL" add .vm
-for spec in "reap.sh" "warm.sh desktop" "iter.sh quick"; do
+for spec in "|reap.sh" "|warm.sh desktop" "|iter.sh quick" \
+            "|reap.sh --lane pilot" "pilot|warm.sh desktop" "pilot|iter.sh quick"; do
+  lane="${spec%%|*}" spec="${spec#*|}"
   : > "$WORK/co-vm.log"
   # shellcheck disable=SC2086
-  out=$( (unset AH_LANE AH_VM_STATE_DIR; export AH_VM_PY="$WORK/co-vm.py" AH_PVE_URL="https://lib-vm-test.invalid"
+  out=$( (unset AH_LANE AH_VM_STATE_DIR; [ -z "$lane" ] || export AH_LANE="$lane"
+          export AH_VM_PY="$WORK/co-vm.py" AH_PVE_URL="https://lib-vm-test.invalid"
           bash "$CL/scripts/vm/"$spec) 2>&1); rc=$?
   [ "$rc" = 2 ] && [ ! -s "$WORK/co-vm.log" ] && cmp -s "$WORK/elsewhere/warm.env" "$WORK/cl-warm.mark" \
     && grep -q 'tracks paths under .vm' <<<"$out" \
-    && ok "${spec%% *} with .vm tracked as a link and no lane file: exit 2, no call to vm.py" \
-    || bad "${spec%% *} (tracked .vm link): rc=$rc vm=[$(cat "$WORK/co-vm.log")] out=$out"
+    && ok "$spec${lane:+ (AH_LANE=$lane)} with .vm tracked as a link: exit 2, no call to vm.py" \
+    || bad "$spec${lane:+ (AH_LANE=$lane)} (tracked .vm link): rc=$rc vm=[$(cat "$WORK/co-vm.log")] out=$out"
 done
 # The checkout's own .vm untracked, no lane file: main, as before.
 CU="$WORK/checkout-plain"
