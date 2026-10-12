@@ -21,8 +21,10 @@ ausgestellt oder angelegt wurde, gilt danach nicht mehr, und wer gleichzeitig ei
 Sperre der Identität (`IDENTITY_LOCK_SQL`). Eine Aktivierung ersetzt alles, was ein Agent für seinen Server bekommt, auf
 einmal.
 
-### T1 — Übernahme und Enroll nehmen die Sperre der Identität; ein Token von vor dem Widerruf gilt nicht mehr (R-0306)  [ ]
-Komponente: ca-issuer · Dateien: apps/ca-issuer/app/db.py, apps/ca-issuer/app/tokens.py, apps/ca-issuer/tests/test_db_token_store.py, apps/server/app/modules/enrollment/models.py, apps/server/app/core/identity.py, apps/server/tests/test_identity_revocation.py, CHANGELOG.md, docs/admin/benutzer.html, docs/en/admin/users.html
+### T1 — Übernahme und Enroll nehmen die Sperre der Identität; ein Token von vor dem Widerruf gilt nicht mehr (R-0306)  [x]
+Komponente: ca-issuer · Dateien: apps/ca-issuer/app/db.py, apps/ca-issuer/app/tokens.py, apps/ca-issuer/tests/test_db_token_store.py, apps/server/app/modules/enrollment/models.py, apps/server/app/core/identity.py, apps/server/tests/test_identity_revocation.py, CHANGELOG.md, docs/admin/benutzer.html, docs/en/admin/users.html, apps/ca-issuer/tests/test_enroll_renew.py
+Evidenz: run.sh[quick] ca-issuer server: 5 passed, 0 failed, 13 skipped · contracts: 1 ok @5a0791e4 2026-10-12T17:35:13+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - **ca-issuer, Enroll** (`db.py:190-216`): nach dem Einlösen (`_consume`, `:164-185`) die Sperre der Identität des
   Grants (`_lock_identity`, `:123`), dann der Zeitpunkt: Ist die Identität zu oder nach dem Prägen des Tokens widerrufen,
