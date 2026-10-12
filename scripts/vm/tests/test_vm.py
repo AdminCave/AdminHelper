@@ -1807,7 +1807,9 @@ def test_extend_moves_only_the_ttl_tag(cfg, api, reachable, shell, clock):
     assert int(vm.tag_value(set(tags), "ttl-")) - int(time.time()) > 14000
 
 
-def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell):
+def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell, monkeypatch):
+    # run checks the lane before the lease: pinned, not taken from the checkout.
+    monkeypatch.setenv("AH_LANE", "main")
     strangers = fixture("cluster_resources")
     for entry in strangers["body"]["data"]:
         if entry["vmid"] == 3000:

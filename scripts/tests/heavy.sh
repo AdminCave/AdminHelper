@@ -397,7 +397,9 @@ run_all() {
     done 3< "$OUT/steps-all.tsv"
   else
     note "no readable last-all.json — per-step results unavailable"
-    [ "$rc" = 0 ] || reds=1
+    # Exit 2 is a refusal (vm.py run declining a box of another lane, or a usage
+    # error): nothing ran, so there is no red step to count, see below.
+    [ "$rc" = 0 ] || [ "$rc" = 2 ] || reds=1
   fi
 
   if [ "$reds" -gt 0 ]; then
@@ -418,6 +420,10 @@ run_all() {
       return 0
     fi
     FINDINGS+=("all|-|pass|$secs_layer|$box|")
+  elif [ "$rc" = 2 ]; then
+    # A refusal says nothing about the code: UNVERIFIED, never a regression.
+    set_infra "iter.sh all refused (exit 2), see all.log"
+    FINDINGS+=("all|-|infra|$secs_layer|$box|iter.sh all refused (exit 2)")
   else
     # Every step green but the wrapper red: something outside the step list said
     # no (a crashed run, a strict layer that ran nothing). Not quietly a pass.

@@ -55,8 +55,10 @@ Semantik:
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — heavy.sh bucht eine Ablehnung von iter.sh als infra, die Tests hängen nicht an AH_LANE (R-0331)  [ ]
+### T2 — heavy.sh bucht eine Ablehnung von iter.sh als infra, die Tests hängen nicht an AH_LANE (R-0331)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, scripts/tests/iter_flags_test.sh, scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b95e18df 2026-10-13T01:17:20+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - heavy.sh `run_all` (:421–425): Endet `iter.sh all` mit einem Exit ≠ 0 ohne roten Schritt, wird das FAIL („wrapper
   exit $rc without a red step“).
