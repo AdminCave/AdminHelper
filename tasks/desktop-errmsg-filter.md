@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: der ERR_*-Filter zentral in errMsg — Task-Ledger
-Status: freigegeben · Branch: feature/desktop-errmsg-filter · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/desktop-errmsg-filter · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-11 (kleines Fund-Paket aus R-0276, Triage 2026-10-10 auf Kevins Delegation; Entscheidungen a und b wie im Plan; Bau erst nach dem Merge von Phase B (R-0224), mit origin/main hinein; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0276 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Textfilter der Desktop-UI (`desktop-ui`), der heute an jeder Stelle von Hand steht; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Live-Spec liest diese Texte, Komponenten- und Store-Tests decken die Wege ab.
