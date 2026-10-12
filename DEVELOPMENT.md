@@ -207,7 +207,8 @@ Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt de
 `AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
 braucht dafür `CREATEDB`, die sie oben ohnehin hat. Steht das Passwort als `Benutzer:Passwort@` in der
 URL, reist es in `PGPASSWORD`, nicht in einem Argument von `createdb`/`dropdb`; kann `lane.sh` es dort
-nicht herauslösen, legt es keine Lane an.
+nicht herauslösen, legt es keine Lane an. Ein Passwort in der Query (`?password=`) lehnt `lane.sh`
+ebenso ab, auch einen prozentkodierten Schlüssel der Query (libpq dekodiert auch Schlüssel).
 Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
 und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
 angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder

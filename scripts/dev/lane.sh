@@ -77,7 +77,9 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   # The password travels in the environment, and not through `env`'s arguments
   # either: every local user can read a process's arguments (/proc/<pid>/cmdline),
   # only its owner its environment. The URL percent-encodes the password;
-  # PGPASSWORD takes it raw.
+  # PGPASSWORD takes it raw. The password runs to the first @, across a /, the way
+  # SQLAlchemy reads AH_TEST_DB (sqlalchemy/engine/url.py): a password the suites
+  # take out of the URL is one lane_db takes out too (R-0266).
   if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
     pass="${BASH_REMATCH[2]}"
     url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
@@ -86,8 +88,24 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   fi
   # A user:password the pattern did not take apart would go into an argument
   # unchanged: stop before either program runs (R-0255), with a code of its own.
-  if [[ "$url" =~ ^[^/]*//[^/@]*:[^/@]*@ ]]; then
+  # The part before the password may hold an @ of its own: SQLAlchemy reads
+  # ah@corp:<password>@host as user ah@corp, the pattern above does not (R-0265).
+  if [[ "$url" =~ ^[^/]*//[^/]*:[^/@]*@ ]]; then
     echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
+    return 3
+  fi
+  # Nor one in the query: libpq takes ?password= too, and it would reach the
+  # arguments the same way (R-0265).
+  local query_pw='[?&]password='
+  if [[ "$url" =~ $query_pw ]]; then
+    echo "  lane.sh: AH_TEST_DB carries its password in the query; write it as user:password@ before the host" >&2
+    return 3
+  fi
+  # libpq decodes the keys of the query too, so pass%77ord= is a password as well:
+  # no percent sign in a key at all.
+  local query_key_pct='[?&][^=&]*%[^=&]*='
+  if [[ "$url" =~ $query_key_pct ]]; then
+    echo "  lane.sh: AH_TEST_DB has a percent-encoded key in its query; write the keys plain" >&2
     return 3
   fi
   case "$1" in
@@ -331,8 +349,15 @@ lane_done() {
         echo "  WARN: no AH_TEST_DB in the main checkout's .devenv.sh — database $db is NOT dropped;"
         echo "        drop it by hand on the server AH_TEST_DB named (dropdb $db), or run done again"
       else
-        lane_db drop "$slug" \
-          || { echo "  dropdb failed — database $db is left behind, and so is the mark"; exit 1; }
+        # The || keeps set -e from ending the script inside lane_db, before the case.
+        # 3: lane_db refused the URL, and dropdb never ran (R-0269).
+        local drop_rc=0
+        lane_db drop "$slug" || drop_rc=$?
+        case "$drop_rc" in
+          0) ;;
+          3) echo "  database $db is not dropped — the line above says why; the mark stays"; exit 1 ;;
+          *) echo "  dropdb failed — database $db is left behind, and so is the mark"; exit 1 ;;
+        esac
         sed -i '/^db=/d' "$mark"
       fi
     fi

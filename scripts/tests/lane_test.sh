@@ -75,7 +75,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -134,7 +134,8 @@ done
 
 echo "── new: a URL whose password lane.sh cannot take out makes no lane (R-0255) ──"
 cp "$MAIN/.devenv.sh" "$WORK/devenv.keep"
-for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "rho postgres://ah:secret@localhost:5432/adminhelper_test"; do
+for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "rho postgres://ah:secret@localhost:5432/adminhelper_test" \
+            "iota postgresql+psycopg://ah@corp:secret@localhost:5432/adminhelper_test"; do
   slug="${pair%% *}" url="${pair#* }"
   printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
   : > "$PG_LOG"
@@ -144,6 +145,46 @@ for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "r
     && grep -q "nothing of lane $slug was created" "$WORK/out.log" && ! grep -q 'createdb .* failed' "$WORK/out.log" \
     && ok "${url%%:*}://… whose password the pattern does not take out: no createdb, no lane, no secret printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: a password in the URL's query makes no lane either (R-0265) ──"
+for pair in "tau postgresql+psycopg://ah@localhost:5432/adminhelper_test?password=secret" \
+            "chi postgresql+psycopg://ah@localhost:5432/adminhelper_test?sslmode=disable&password=secret"; do
+  slug="${pair%% *}" url="${pair#* }"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
+    && grep -q 'carries its password in the query' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
+    && grep -q "nothing of lane $slug was created" "$WORK/out.log" \
+    && ok "$slug: a password in the query means no createdb, no lane, no secret printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+# libpq decodes the keys of the query too: a percent sign in a key is refused.
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah@localhost:5432/adminhelper_test?pass%77ord=secret" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane new eta; rc=$?
+[ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-eta" ] && [ ! -e "$MAIN/.vm/lanes/eta" ] \
+  && grep -q 'has a percent-encoded key in its query' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
+  && grep -q "nothing of lane eta was created" "$WORK/out.log" \
+  && ok "eta: a percent-encoded key in the query means no createdb, no lane, no secret printed" \
+  || bad "eta: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: lane_db reads the URL the way SQLAlchemy does (R-0266) ──"
+for pair in "omega postgresql+psycopg://ah:pa/ss@localhost:5432/adminhelper_test|pa/ss|postgresql://ah@localhost:5432/adminhelper_test" \
+            "phi postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test?application_name=a:b@c&fallback_application_name=a%20b|secret|postgresql://ah@localhost:5432/adminhelper_test?application_name=a:b@c&fallback_application_name=a%20b"; do
+  IFS='|' read -r spec pw want <<<"$pair"
+  slug="${spec%% *}" url="${spec#* }"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 0 ] && grep -qxF "createdb pw=$pw --maintenance-db=$want adminhelper_test_$slug" "$PG_LOG" \
+    && ok "$slug: the password goes to PGPASSWORD up to the first @, the URL keeps the rest" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+  lane "done" "$slug" || bad "done $slug: $(cat "$WORK/out.log")"
 done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
@@ -180,6 +221,22 @@ lane new gamma; rc=$?
 : > "$PG_LOG"
 lane "done" gamma && grep -q "^dropdb .* adminhelper_test_gamma$" "$PG_LOG" && [ ! -e "$MAIN/.vm/lanes/gamma" ] \
   && ok "done with the file back drops it and takes the mark" || bad "done gamma again: $(cat "$WORK/out.log")"
+
+echo "── done: a URL lane_db refuses is no failed dropdb (R-0269) ──"
+lane new psi || bad "new psi failed: $(cat "$WORK/out.log")"
+printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+  "postgresql+psycopg://ah@localhost:5432/adminhelper_test?password=secret" > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane "done" psi; rc=$?
+[ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && grep -q 'database adminhelper_test_psi is not dropped — the line above says why' "$WORK/out.log" \
+  && grep -q 'carries its password in the query' "$WORK/out.log" \
+  && ! grep -q 'dropdb failed' "$WORK/out.log" && grep -qx 'db=adminhelper_test_psi' "$MAIN/.vm/lanes/psi" \
+  && ! grep -q secret "$WORK/out.log" \
+  && ok "done with a URL lane_db refuses: no dropdb, says why, the mark keeps its db line" \
+  || bad "done psi: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+lane "done" psi && [ ! -e "$MAIN/.vm/lanes/psi" ] && ok "and the next done with a usable URL finishes it" \
+  || bad "done psi again: $(cat "$WORK/out.log")"
 
 echo "── new: the plan has to be committed where the build will look ──"
 g() { git -C "$MAIN" -c user.name=t -c user.email=t@t "$@"; }
@@ -283,6 +340,8 @@ lane "done" nu; rc=$?
 unset FAKE_DROPDB_FAIL
 [ "$rc" != 0 ] && grep -q "^db=adminhelper_test_nu$" "$MAIN/.vm/lanes/nu" 2>/dev/null \
   && ok "a failing dropdb leaves the mark with its db line" || bad "done nu rc=$rc: $(cat "$MAIN/.vm/lanes/nu" 2>&1)"
+grep -q 'dropdb failed — database adminhelper_test_nu is left behind' "$WORK/out.log" \
+  && ok "... and says that dropdb failed" || bad "done nu: no dropdb failed message: $(cat "$WORK/out.log")"
 lane "done" nu && [ ! -e "$MAIN/.vm/lanes/nu" ] && ok "and the next done finishes it" \
   || bad "done nu again: $(cat "$WORK/out.log")"
 # xi: no .devenv.sh at new — no database, so nothing for done to drop, and a
