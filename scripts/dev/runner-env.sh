@@ -152,18 +152,35 @@ ah_runner_env() {
   # AH_PVE_* of another user are gone either way, that happened above.
   if [ -e "$pve" ]; then
     ah_secure_file "$pve" || return 1
+    # Read as vm.py reads it (read_pve_env; hooks_test holds the two to one result,
+    # R-0253): lines end at \n, white space is the ASCII kind, spelled out, one pair
+    # of quotes goes, an empty value is no value. A NUL byte bash would drop without a
+    # word, and vm.py refuses a file that is no UTF-8: both are refused here too.
+    if [ "$(tr -d '\000' < "$pve" | wc -c)" != "$(wc -c < "$pve")" ]; then
+      echo "runner-env: $pve contains a NUL byte" >&2; return 1
+    fi
+    # To UTF-16LE: glibc takes code points past U+10FFFF as UTF-8 to UTF-8, Python does not.
+    if ! iconv -f UTF-8 -t UTF-16LE "$pve" >/dev/null 2>&1; then
+      echo "runner-env: $pve is no UTF-8" >&2; return 1
+    fi
+    local ws=$' \t\r\v\f'
     # `|| [ -n "$line" ]`: a last line without a newline is a value, not noise.
     while IFS= read -r line || [ -n "$line" ]; do
-      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line#"${line%%[!$ws]*}"}"
+      line="${line%"${line##*[!$ws]}"}"
       case "$line" in
-        export[[:space:]]*) line="${line#export}"; line="${line#"${line%%[![:space:]]*}"}" ;;
+        export[$ws]*) line="${line#export}"; line="${line#"${line%%[!$ws]*}"}" ;;
       esac
       case "$line" in
         AH_PVE_*=*)
           key="${line%%=*}"
           # Any other key is skipped without a word, as vm.py skips it.
           [[ "$key" =~ $pve_key_re ]] || continue
-          value="$(printf '%s' "${line#*=}" | sed 's/[[:space:]]*$//; s/^"\(.*\)"$/\1/; s/^'\''\(.*\)'\''$/\1/')"
+          value="${line#*=}"
+          if [ "${#value}" -ge 2 ] && { [[ "$value" == \"*\" ]] || [[ "$value" == \'*\' ]]; }; then
+            value="${value:1:${#value}-2}"
+          fi
+          [ -n "$value" ] || continue
           export "$key=$value"
           ;;
       esac
