@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket lane.sh: Passwort in der Query, Gruppe über `/`, Meldung bei Exit 3 (R-0265, R-0266, R-0269) — Task-Ledger
-Status: aktiv · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/lane-paket · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0265, R-0266, R-0269, Triage Kevin 2026-10-10; R-0265 geschlossen fehlschlagen wie R-0255; Proben nur mit Platzhalter; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0265, R-0266, R-0269 (Kurz-Ledger ohne Spec)
 Heavy: none — scripts/dev/lane.sh mit dem hermetischen lane_test (Fake-createdb/-dropdb); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -131,8 +131,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (ein Satz)
 Abhängt von: T2
 
-### T4 — Nachbesserung aus Runde 2: ein @ im Benutzer schlägt geschlossen fehl (R-0265)  [ ]
+### T4 — Nachbesserung aus Runde 2: ein @ im Benutzer schlägt geschlossen fehl (R-0265)  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6273756d 2026-10-12T13:14:35+02:00
+Review: Nachbesserung aus Runde 2, mit dem Fall des Reviewers als Test (keine dritte Runde)
 Änderung: Angelegt 2026-10-12 aus dem Re-Review von T3 (Opus, Runde 2, `request_changes`: ein belegter Fund, drei nits).
 Nach der Regel der zweiten Runde behoben, mit dem Fall des Reviewers als Test; eine dritte Runde gibt es nicht.
 - Ein Benutzer mit rohem `@`, etwa `postgresql+psycopg://ah@corp:secret@localhost:5432/adminhelper_test`.
@@ -145,7 +147,7 @@ Nach der Regel der zweiten Runde behoben, mit dem Fall des Reviewers als Test; e
   - Neu: Die Prüfung liest den Teil vor dem Passwort wie SQLAlchemy, über ein `@` hinweg: `^[^/]*//[^/]*:[^/@]*@`.
     Die Form schlägt geschlossen fehl (Exit 3), mit der Meldung von R-0255.
   - `ah%40corp:…@` (das `@` kodiert) geht weiter richtig durch.
-  - Fall `zeta` in lane_test, beim Abschnitt zu R-0255.
+  - Fall `iota` in lane_test, beim Abschnitt zu R-0255 (`zeta` ist dort schon vergeben).
 - nits aus derselben Runde:
   - Eine positive Gegenprobe zur `%`-Prüfung: Der Fall `phi` trägt `&fallback_application_name=a%20b`, ein `%` im Wert
     geht durch.

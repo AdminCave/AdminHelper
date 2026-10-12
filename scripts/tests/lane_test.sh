@@ -75,7 +75,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -134,7 +134,8 @@ done
 
 echo "── new: a URL whose password lane.sh cannot take out makes no lane (R-0255) ──"
 cp "$MAIN/.devenv.sh" "$WORK/devenv.keep"
-for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "rho postgres://ah:secret@localhost:5432/adminhelper_test"; do
+for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "rho postgres://ah:secret@localhost:5432/adminhelper_test" \
+            "iota postgresql+psycopg://ah@corp:secret@localhost:5432/adminhelper_test"; do
   slug="${pair%% *}" url="${pair#* }"
   printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
   : > "$PG_LOG"
@@ -167,13 +168,14 @@ printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
 lane new eta; rc=$?
 [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-eta" ] && [ ! -e "$MAIN/.vm/lanes/eta" ] \
   && grep -q 'has a percent-encoded key in its query' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
+  && grep -q "nothing of lane eta was created" "$WORK/out.log" \
   && ok "eta: a percent-encoded key in the query means no createdb, no lane, no secret printed" \
   || bad "eta: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 
 echo "── new: lane_db reads the URL the way SQLAlchemy does (R-0266) ──"
 for pair in "omega postgresql+psycopg://ah:pa/ss@localhost:5432/adminhelper_test|pa/ss|postgresql://ah@localhost:5432/adminhelper_test" \
-            "phi postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test?application_name=a:b@c|secret|postgresql://ah@localhost:5432/adminhelper_test?application_name=a:b@c"; do
+            "phi postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test?application_name=a:b@c&fallback_application_name=a%20b|secret|postgresql://ah@localhost:5432/adminhelper_test?application_name=a:b@c&fallback_application_name=a%20b"; do
   IFS='|' read -r spec pw want <<<"$pair"
   slug="${spec%% *}" url="${spec#* }"
   printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"

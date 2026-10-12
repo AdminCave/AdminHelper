@@ -88,7 +88,9 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   fi
   # A user:password the pattern did not take apart would go into an argument
   # unchanged: stop before either program runs (R-0255), with a code of its own.
-  if [[ "$url" =~ ^[^/]*//[^/@]*:[^/@]*@ ]]; then
+  # The part before the password may hold an @ of its own: SQLAlchemy reads
+  # ah@corp:<password>@host as user ah@corp, the pattern above does not (R-0265).
+  if [[ "$url" =~ ^[^/]*//[^/]*:[^/@]*@ ]]; then
     echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
     return 3
   fi
