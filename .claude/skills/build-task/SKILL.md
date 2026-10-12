@@ -39,8 +39,10 @@ Du baust **eine** Task. Haken, Review, Commit und den Status des Ledgers macht d
      `sleep`, `tail --pid` oder `ps`: Das Warten verweigern die Settings, und die Session endet wartend.
    - Ein Befehl je Aufruf, ohne `source`, `cd`, `;`, `&&` oder `|`: Die Allow-Liste prüft jeden Teil.
      Ruff geht direkt: `ruff check <datei>`, `ruff format --check <datei>`.
-   - Ändert die Task Doku, prüfst du sie wie das CI:
-     `python3 scripts/dev/doc-smoke.py --paths --env --strict`.
+   - Ändert die Task Doku, prüfst du sie wie das CI, genau mit diesem Befehl:
+     `python3 scripts/dev/doc-smoke.py --paths --env --strict`. Es kennt nur, was git trackt: Eine Datei
+     oder ein Name, den erst deine Task anlegt, ist bis zum Commit ein Fund. Den lässt du stehen und
+     nennst ihn in der Commit-Nachricht.
    - Ein Lauf zur Zeit. Rot durch deine Änderung: beheben. Brauchst du einen Scratch-Ordner:
      `bash scripts/dev/scratch.sh new <name>` legt ihn an und druckt seinen Pfad,
      `bash scripts/dev/scratch.sh rm <pfad>` räumt ihn vor dem Ende weg.

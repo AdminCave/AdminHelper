@@ -1493,9 +1493,10 @@ done
 # After the first measuring run of the loop (R-0237), Kevin chose six official doc
 # domains, by domain and nothing else, and echo. python3 only with a script under
 # scripts/vm, which the deny list keeps the session from editing, and since R-0304
-# (Kevin, 2026-10-12) scripts/dev/doc-smoke.py, which only reads and is kept from
-# edits the same way; paste not at all: python3 -c, python3 - and the command in a
-# paste <(…) are whatever the session writes.
+# (Kevin, 2026-10-12) scripts/dev/doc-smoke.py, kept from edits the same way, as the
+# one command of the CI: on its own checkout it only reads, and with --root git would
+# run the configuration of another; paste not at all: python3 -c, python3 - and the
+# command in a paste <(…) are whatever the session writes.
 r0237_allow() {  # r0237_allow <settings> — exit 0 when the allow list is what Kevin decided
   python3 - "$1" <<'PY'
 import json, sys
@@ -1504,7 +1505,7 @@ want = {f"WebFetch(domain:{d})" for d in ("gofrp.org", "docs.python.org", "code.
                                           "docs.victoriametrics.com", "pve.proxmox.com")}
 web = {a for a in allow if a.startswith("WebFetch")}
 wrong = sorted(web ^ want) + [a for a in allow if (a.startswith("Bash(python3") and not a.startswith("Bash(python3 scripts/vm/")
-                                                   and a != "Bash(python3 scripts/dev/doc-smoke.py:*)")
+                                                   and a != "Bash(python3 scripts/dev/doc-smoke.py --paths --env --strict)")
                                or a.startswith("Bash(paste")]
 if "Bash(echo:*)" not in allow:
     wrong.append("no Bash(echo:*)")
@@ -1514,11 +1515,15 @@ PY
 }
 r0237_allow "$RS" && ok "the WebFetch allow rules are exactly the six doc domains, echo allowed, python3 only with a script, no paste" \
   || bad "the allow list of R-0237 is not what Kevin decided"
-# The exception is that one script: a rule for another one of scripts/dev is wrong.
-python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); d["permissions"]["allow"].append("Bash(python3 scripts/dev/roadmap.py:*)"); json.dump(d, open(sys.argv[2], "w"))' \
+# The exception is that one command: the script with any other arguments and any
+# other script of scripts/dev are wrong, each named.
+python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); d["permissions"]["allow"] += ["Bash(python3 scripts/dev/doc-smoke.py:*)", "Bash(python3 scripts/dev/roadmap.py:*)"]; json.dump(d, open(sys.argv[2], "w"))' \
   "$RS" "$WORK/rs-r0237.json"
-! r0237_allow "$WORK/rs-r0237.json" >/dev/null \
-  && ok "... and doc-smoke.py is the one script of scripts/dev it lets through (R-0304)" || bad "the R-0237 check let another script of scripts/dev through"
+r0237_out="$(r0237_allow "$WORK/rs-r0237.json")"; r0237_rc=$?
+[ "$r0237_rc" = 1 ] && grep -qF 'wrong: Bash(python3 scripts/dev/doc-smoke.py:*)' <<<"$r0237_out" \
+  && grep -qF 'wrong: Bash(python3 scripts/dev/roadmap.py:*)' <<<"$r0237_out" \
+  && ok "... and the CI's doc-smoke.py command is the one of scripts/dev it lets through (R-0304)" \
+  || bad "the R-0237 check let a wider doc-smoke rule or another script of scripts/dev through: rc=$r0237_rc $r0237_out"
 # The counter-probe: `echo x > ~/.bashrc` is an echo, and Claude Code checks the
 # target of a redirect against the Edit rules; a target with a leading ~ needs an
 # approval (docs, permissions, Redirections), which dontAsk turns into a refusal,

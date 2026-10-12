@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket loop-harness: doc-smoke in der Bau-Session, kein Hintergrund, redteam-Klone (R-0304, R-0301, R-0303) — Task-Ledger
-Status: aktiv · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/loop-harness · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0304, R-0301, R-0303, Triage Kevin 2026-10-11/12; R-0304 als gezielte Allow-Regel nur fuer das lesende doc-smoke.py; R-0301 an der Doku belegt; R-0303 mit differentiellem Orakel, eine geaenderte Probe ist [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0304, R-0301, R-0303 (Kurz-Ledger ohne Spec)
 Heavy: none — Runner-Settings, ledger-loop.sh, ein Skill-Text und Shell-Tests unter scripts/ mit hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -136,8 +136,10 @@ scheitert, ist ein Flake der Suite selbst.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T4 — Nachbesserung aus dem Review am Ende: doc-smoke genau mit dem CI-Befehl, Funde zu neuen Dateien (R-0304, R-0301)  [ ]
+### T4 — Nachbesserung aus dem Review am Ende: doc-smoke genau mit dem CI-Befehl, Funde zu neuen Dateien (R-0304, R-0301)  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, .claude/skills/build-task/SKILL.md, scripts/tests/hooks_test.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @90530363 2026-10-12T11:01:06+02:00
+Review: Nachbesserung, Opus-Review über den Diff der Nachbesserungen folgt
 Änderung: Angelegt 2026-10-12 aus dem Review am Ende (Opus, `request_changes`: zwei belegte Funde zu T1, vier nits).
 - **„lesend“ stimmt mit `--root` nicht.** `Bash(python3 scripts/dev/doc-smoke.py:*)` lässt `--root <verzeichnis>` zu.
   Dort führt `git ls-files` die Git-Konfiguration des fremden Repos aus, etwa `core.fsmonitor`. Der Reviewer hat das
