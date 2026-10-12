@@ -72,13 +72,16 @@ vm_py() {
 # sweep what the other believes is leased. Non-ASCII is the documented limit:
 # `tr` counts bytes where Python counts codepoints, so an umlaut lane falls back
 # to `main` here and may not there. `lane.sh new` only ever writes [a-z0-9-].
-# The lane file is the lane's own and gitignored: in a checkout that tracks paths
-# under .vm it is not read, and a git that cannot say counts as tracked. vm.py's
-# current_lane() refuses the same way, with the same exit code.
+# The checkout's own .vm is gitignored state: when the lane would come from there
+# (no AH_LANE), a checkout that tracks paths under .vm is refused, lane file or not,
+# and a git that cannot say counts as tracked. A state dir elsewhere is its
+# caller's to vouch for (lane.sh done passes --lane). vm.py's current_lane()
+# refuses the same way, with the same exit code.
 vm_lane() {
   local lane="${AH_LANE:-}" tracked
-  if [ -z "$lane" ] && { [ -e "$AH_VM_STATE_DIR/lane" ] || [ -L "$AH_VM_STATE_DIR/lane" ]; }; then
-    if ! tracked="$(git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" || [ -n "$tracked" ]; then
+  if [ -z "$lane" ]; then
+    if [ "$(realpath -m -- "$AH_VM_STATE_DIR")" = "$(realpath -m -- "$VM_ROOT/.vm")" ] \
+      && { ! tracked="$(git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" || [ -n "$tracked" ]; }; then
       echo "vm_lib: this checkout tracks paths under .vm — the lane is not read from tracked state" >&2
       return 2
     fi

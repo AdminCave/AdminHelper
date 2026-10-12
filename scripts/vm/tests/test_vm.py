@@ -1057,18 +1057,22 @@ def test_an_empty_lane_file_still_means_main(state_dir):
     assert vm.current_lane(environ={}) == "main"
 
 
-def checkout_with_lane(tmp_path, monkeypatch, git=True, tracked=False):
+def checkout_with_lane(tmp_path, monkeypatch, git=True, tracked=False, lane=True):
     """A checkout of its own as ROOT, its .vm/lane naming lane-a; git stops at tmp_path."""
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        monkeypatch.delenv(name, raising=False)
     root = tmp_path / "checkout"
     (root / ".vm").mkdir(parents=True)
-    (root / ".vm" / "lane").write_text("lane-a\n")
+    if lane:
+        (root / ".vm" / "lane").write_text("lane-a\n")
     if git:
         subprocess.run(["git", "init", "-q", str(root)], check=True)
     if tracked:
         subprocess.run(["git", "-C", str(root), "add", "-f", ".vm/lane"], check=True)
     monkeypatch.setattr(vm, "ROOT", str(root))
     monkeypatch.setattr(vm, "VM_STATE_DIR", str(root / ".vm"))
+    return root
 
 
 def test_the_lane_is_not_read_from_tracked_state(tmp_path, monkeypatch):
@@ -1091,6 +1095,36 @@ def test_a_checkout_git_cannot_read_counts_as_tracked(tmp_path, monkeypatch):
     checkout_with_lane(tmp_path, monkeypatch, git=False)
     with pytest.raises(vm.Usage):
         vm.current_lane(environ={})
+
+
+def test_a_tracked_vm_without_a_lane_file_is_refused_too(tmp_path, monkeypatch):
+    # .vm itself is tracked, as a link to a directory with state and no lane file.
+    root = checkout_with_lane(tmp_path, monkeypatch, lane=False)
+    (root / ".vm").rmdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "warm.env").write_text("desktop=3001\n")
+    (root / ".vm").symlink_to(elsewhere)
+    subprocess.run(["git", "-C", str(root), "add", ".vm"], check=True)
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "tracks paths under .vm" in str(caught.value)
+
+
+def test_an_own_untracked_vm_without_a_lane_file_is_main(tmp_path, monkeypatch):
+    checkout_with_lane(tmp_path, monkeypatch, lane=False)
+    assert vm.current_lane(environ={}) == "main"
+
+
+def test_a_state_dir_elsewhere_reads_its_lane_without_asking_git(tmp_path, monkeypatch):
+    # A tree whose .git leads nowhere (a box synced from a worktree), with the
+    # state in a directory of its own: the lane is read, git is not asked.
+    checkout_with_lane(tmp_path, monkeypatch, git=False, lane=False)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "lane").write_text("lane-b\n")
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(state))
+    assert vm.current_lane(environ={}) == "lane-b"
 
 
 def test_a_vm_is_found_by_id_or_by_name(cfg, api, http):

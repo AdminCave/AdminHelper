@@ -187,3 +187,30 @@ Review: Review am Ende (Kurz-Ledger)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, Lane-Absatz („Sie kommt aus `--lane`, sonst aus `AH_LANE`, sonst aus `.vm/lane`“).
 Abhängt von: T1
+
+### T6 — Nachbesserung aus dem Review von T4/T5: die Prüfung gilt für das eigene .vm, ob mit Lane-Datei oder ohne  [x]
+Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/vm/vm.py, scripts/vm/iter.sh, scripts/tests/lib_vm_test.sh, scripts/vm/tests/test_vm.py, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ccb032d7 2026-10-12T20:09:31+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-12 aus dem Opus-Review über T4 und T5 (`request_changes`: zwei belegte Funde, zwei nits).
+- T5 prüfte nur, wenn `.vm/lane` existiert.
+  - Fehlt die Datei, weil `.vm` selbst getrackt ist (etwa als Symlink), fiel die Lane ohne Prüfung auf `main`.
+  - Neu: Die Prüfung gilt, sobald die Lane nicht aus `--lane` oder `AH_LANE` kommt und das State-Verzeichnis das
+    eigene `.vm` des Checkouts ist (realpath-Vergleich). Ob die Datei existiert, spielt keine Rolle mehr.
+- T5 fragte das git des Checkouts auch dann, wenn `AH_VM_STATE_DIR` woanders liegt.
+  - Die Tests mit temporärem State-Verzeichnis wurden so auf einem Baum mit totem `.git`-Zeiger rot (Box-Lauf aus
+    einem Worktree).
+  - Neu: Ein State-Verzeichnis, das nicht das eigene ist, prüft der Aufrufer selbst. `lane.sh done` gibt dazu
+    `--lane` mit.
+- nit: Der Fall `warm.sh` mit Exit 2 kommt in lib_vm_test dazu.
+- `iter.sh` prüft die Lane ebenso, bevor es die warm.env liest: `vm_lane >/dev/null || exit 2`. Ein Fall in
+  lib_vm_test, auf Entscheidung der Aufsicht.
+- nit: Der Kommentar nennt, dass nur das eigene `.vm` geprüft wird.
+- Fälle, kein echtes destroy:
+  - `.vm` als Symlink getrackt, ohne `lane`: reap.sh, warm.sh und iter.sh Exit 2, kein Aufruf an die Fake-vm.py.
+  - Ein Checkout ohne git mit State außerhalb: Die Lane wird gelesen.
+  - Das eigene `.vm` ungetrackt ohne `lane`: `main`.
+  - Dieselben Fälle in test_vm.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, der Satz aus T5 zum Lane-Absatz.
+Abhängt von: T5

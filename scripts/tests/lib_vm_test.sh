@@ -110,6 +110,39 @@ out=$( (unset AH_LANE; export AH_VM_STATE_DIR="$CO/.vm" AH_VM_PY="$WORK/co-vm.py
 [ "$rc" = 2 ] && [ ! -s "$WORK/co-vm.log" ] && cmp -s "$CO/.vm/warm.env" "$WORK/co-warm.mark" \
   && ok "reap.sh in that checkout: exit 2, no call to vm.py, warm.env as it was" \
   || bad "reap.sh: rc=$rc vm=[$(cat "$WORK/co-vm.log")] out=$out"
+# .vm itself tracked, as a link to a directory with state and no lane file:
+# reap.sh, warm.sh and iter.sh stop before they call vm.py.
+CL="$WORK/checkout-link"
+mkdir -p "$CL/scripts/vm" "$WORK/elsewhere"
+cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$REPO_ROOT/scripts/vm/warm.sh" \
+   "$REPO_ROOT/scripts/vm/iter.sh" "$CL/scripts/vm/"
+printf 'desktop=3001\n' > "$WORK/elsewhere/warm.env"; cp "$WORK/elsewhere/warm.env" "$WORK/cl-warm.mark"
+ln -s "$WORK/elsewhere" "$CL/.vm"
+git -C "$CL" init -q && git -C "$CL" add .vm
+for spec in "reap.sh" "warm.sh desktop" "iter.sh quick"; do
+  : > "$WORK/co-vm.log"
+  # shellcheck disable=SC2086
+  out=$( (unset AH_LANE AH_VM_STATE_DIR; export AH_VM_PY="$WORK/co-vm.py" AH_PVE_URL="https://lib-vm-test.invalid"
+          bash "$CL/scripts/vm/"$spec) 2>&1); rc=$?
+  [ "$rc" = 2 ] && [ ! -s "$WORK/co-vm.log" ] && cmp -s "$WORK/elsewhere/warm.env" "$WORK/cl-warm.mark" \
+    && grep -q 'tracks paths under .vm' <<<"$out" \
+    && ok "${spec%% *} with .vm tracked as a link and no lane file: exit 2, no call to vm.py" \
+    || bad "${spec%% *} (tracked .vm link): rc=$rc vm=[$(cat "$WORK/co-vm.log")] out=$out"
+done
+# The checkout's own .vm untracked, no lane file: main, as before.
+CU="$WORK/checkout-plain"
+mkdir -p "$CU/scripts/vm" "$CU/.vm"; cp "$REPO_ROOT/scripts/vm/lib.sh" "$CU/scripts/vm/"; git -C "$CU" init -q
+# shellcheck source=/dev/null
+out=$( (unset AH_LANE AH_VM_STATE_DIR; . "$CU/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "main" ] && ok "an own untracked .vm without a lane file is main" || bad "own plain: rc=$rc out=$out"
+# A tree git cannot read, its state in a directory of its own (a box synced from a
+# worktree): the lane is read and git is not asked.
+CB="$WORK/checkout-box"
+mkdir -p "$CB/scripts/vm" "$WORK/box-state"; cp "$REPO_ROOT/scripts/vm/lib.sh" "$CB/scripts/vm/"
+echo "gitdir: /nonexistent/worktrees/x" > "$CB/.git"; echo "lane-b" > "$WORK/box-state/lane"
+# shellcheck source=/dev/null
+out=$( (unset AH_LANE; export AH_VM_STATE_DIR="$WORK/box-state"; . "$CB/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "lane-b" ] && ok "a state dir elsewhere is read without asking git" || bad "box: rc=$rc out=$out"
 unset GIT_CEILING_DIRECTORIES
 
 echo "── warm slots ──"

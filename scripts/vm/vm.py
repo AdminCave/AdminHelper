@@ -550,9 +550,10 @@ def tag_safe(value: str) -> str:
 
 
 def require_untracked_state() -> None:
-    """The lane file is the lane's own and gitignored: in a checkout that tracks
-    paths under .vm it is not read, and a git that cannot say counts as tracked.
-    lib.sh's vm_lane refuses the same way."""
+    """The checkout's own .vm is gitignored state: when the lane would come from
+    there, a checkout that tracks paths under .vm is refused, lane file or not, and
+    a git that cannot say counts as tracked. A state dir elsewhere is its caller's
+    to vouch for. lib.sh's vm_lane refuses the same way."""
     try:
         listed = subprocess.run(
             ["git", "-C", ROOT, "ls-files", "--", ".vm"], capture_output=True, text=True, timeout=60
@@ -572,7 +573,7 @@ def current_lane(override: str | None = None, environ=None) -> str:
     lane = override or environ.get("AH_LANE") or ""
     if not lane:
         path = os.path.join(VM_STATE_DIR, "lane")
-        if os.path.lexists(path):
+        if os.path.realpath(VM_STATE_DIR) == os.path.realpath(os.path.join(ROOT, ".vm")):
             require_untracked_state()
         try:
             with open(path) as fh:
