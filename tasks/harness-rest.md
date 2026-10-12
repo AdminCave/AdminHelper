@@ -138,7 +138,26 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; die Kommentare und der Docstring sind die Regel)
 
 ### T4 — Nachbesserung aus dem Review am Ende: \r und Unicode-Leerraum, Datei-Symlinks im Sidecar (R-0253, R-0267, R-0252)  [ ]
-Komponente: <komponente> · Dateien: <pfad…>
-Änderung: <was genau geändert wird — eine fokussierte Änderung, keine Design-Entscheidung>
-Verify: bash scripts/dev/verify.sh <komponente> --strict
-Doku: <Datei(en), oder „keine (Grund)">
+Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/dev/runner-env.sh, scripts/tests/hooks_test.sh, scripts/dev/review-run.sh, scripts/tests/review_run_test.sh, scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Änderung: Angelegt 2026-10-12 aus dem Review am Ende (Opus, `request_changes`: vier belegte Funde, zwei nits).
+- T3, vm.py nach `export`: `lstrip()` ohne Argument nahm Unicode-Leerraum.
+  - Bei `export \xc2\xa0AH_PVE_URL=…` las vm.py den Schlüssel, runner-env.sh nicht.
+  - Neu: `lstrip(ASCII_SPACE)`.
+- T3, vm.py liest im Textmodus: Python macht dabei aus einem einzelnen `\r` schon beim Lesen ein `\n`.
+  - `AH_PVE_URL=a\rAH_PVE_NODE=…` waren dort zwei Zeilen, in runner-env.sh eine.
+  - Neu: `open(…, newline="")`. CRLF bleibt gleich, denn `\r` am Zeilenende fällt als ASCII-Leerraum.
+- T1, review-run.sh hatte dieselbe Lücke: Eine Task-Zeile `… \r### T9 — …` beendete den Abschnitt weiter.
+  - Neu: `newline=""`. Ein Fall mit einzelnem `\r` kommt in review_run_test.
+- T2, Sidecar (lane.sh, Kopie mit `cp -RpL`): `lane_inside` prüft das Verzeichnis `binaries`, nicht seine Einträge.
+  - Trägt der Branch dort eine Datei als Symlink nach außen, überschreibt `cp` deren Ziel.
+  - Neu: `cp -RpL --remove-destination`, das ersetzt den Symlink durch die Kopie. Ein Fall in lane_test.
+  - `ln -sfn` in `lane_link_dir` folgt einem Ziel-Symlink nicht (`-n`), das hat der Reviewer geprüft.
+- nits:
+  - runner-env.sh prüft UTF-8 mit `iconv -f UTF-8 -t UTF-16LE`. `-t UTF-8` ließ in glibc Codepunkte über U+10FFFF durch,
+    die Python ablehnt.
+  - `pve_shell` in hooks_test setzt geerbte `AH_PVE_*` vor dem Sourcen selbst zurück und hängt dafür nicht am Code
+    unter Test.
+- Die Paritäts-Fixture bekommt die Fälle aus den Funden 1 und 2 und eine Zeile über U+10FFFF.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T3
