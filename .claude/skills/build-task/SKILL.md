@@ -24,6 +24,8 @@ Du baust **eine** Task. Haken, Review, Commit und den Status des Ledgers macht d
 2. **Lesen.** Die Task `### <id> — …` (Änderung, Dateien, Verify, Doku, Rot vorher), die Stelle der
    Spec aus dem Kopf (`Spec:`), den echten Code und seinen Kontext (Aufrufer, Tests, Config).
    Zeilennummern können sich verschoben haben: an Symbolen orientieren, nicht an der Zeile.
+   Gesucht wird mit dem Grep-Werkzeug, Dateinamen mit Glob. git grep und rg verweigern die Settings, weil
+   git grep mit -O und rg mit --pre ein Programm starten (R-0164).
 3. **Bauen, surgical.** Nur, was die Task verlangt, im Stil des umgebenden Codes; eine neue Datei
    bekommt den SPDX-Kopf. Braucht die Task eine Datei, die nicht in ihrem `Dateien:` steht, erweiterst
    du die Liste sichtbar, mit allen Pfaden:
@@ -71,7 +73,7 @@ der Frage, ob die Änderung angekündigt wird.
 ## Nie
 
 - Git, das schreibt: kein `git add`, `git commit`, `git stash`, `git checkout`, `git restore`, kein
-  Push. Git nur lesend.
+  Push. Git nur lesend, und ohne `git grep` (Schritt 2).
 - Kein Edit unter `tasks/`: das Ledger ändert nur `ledger.sh` (Schritte 3 und 5).
 - Keine Harness-Pfade (`scripts/dev/harness-paths.txt`: Regeln, Skills, Gates).
 - `task-close.sh` nicht — den Abschluss macht der Loop.

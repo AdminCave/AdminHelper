@@ -19,8 +19,10 @@ die Aufsicht auf sein Wort. Disjunkt zu Worker As `harness/harness-lane-2` (`scr
 ohne Hunk) und `harness/status-guard` (`scripts/dev/hooks/session-status.sh`, `scripts/vm/lib.sh`, `scripts/vm/vm.py`,
 `scripts/tests/lib_vm_test.sh` u. a.); keine Task hier berührt sie.
 
-### T1 — build-task: Suchen mit dem Grep-Werkzeug; `git grep` steht unter „Nie" (R-0319)  [ ]
+### T1 — build-task: Suchen mit dem Grep-Werkzeug; `git grep` steht unter „Nie" (R-0319)  [x]
 Komponente: scripts · Dateien: .claude/skills/build-task/SKILL.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @47ed5cf1 2026-10-13T01:38:11+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Befund und Empfehlung:
 - Messlauf-5 hat fünf `permission_denials`, alle `Bash` mit `git grep` (`~/.cache/ah-builder/loop/loop-kleinpaket-3/`):
   - `T1.s1.json`: drei.

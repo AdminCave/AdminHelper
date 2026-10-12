@@ -170,7 +170,7 @@ FENCE = r"(?ms)^[ \t]*```[^\n]*\n(.*?)^[ \t]*```"
 commands = [l.strip() for b in re.findall(FENCE, instr) for l in b.splitlines() if l.strip()]
 commands += [c.strip() for c in re.findall(r"`([^`\n]+)`", re.sub(FENCE, "", instr))]
 # task-close.sh named alone is a name; with arguments it is a call.
-FORBIDDEN = re.compile(r"(git (add|commit|stash|checkout|restore|push)\b|(bash )?(scripts/dev/)?task-close\.sh\s|mktemp\b|rm\b)")
+FORBIDDEN = re.compile(r"(git (add|commit|stash|checkout|restore|push|grep)\b|(bash )?(scripts/dev/)?task-close\.sh\s|mktemp\b|rm\b)")
 
 def matches(cmd, rule):
     if rule.endswith(":*"):
@@ -419,6 +419,10 @@ printf '{"permissions": {"allow": ["Bash(bash scripts/dev/verify.sh:*)"], "deny"
 f=$(fixture '1. Teste mit `bash scripts/dev/verify.sh scripts --strict`.' '2. Dann `git add -- x`.')
 fires build_task_findings "$f" "$WORK/rs.json" && grep -q 'forbidden as an instruction: git add' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
   && ok "build_task_findings: a git add given as an instruction is found" || bad "build_task_findings missed git add"
+f=$(fixture '2. Such mit `git grep -n include_router -- apps/server`.')
+grep -q 'forbidden as an instruction: git grep' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
+  && ok "build_task_findings: a git grep given as an instruction is found (R-0164, R-0319)" \
+  || bad "build_task_findings missed git grep"
 f=$(fixture 'Schließ mit `task-close.sh tasks/x.md T1 --stage`, sobald grün.')
 grep -q 'forbidden as an instruction: task-close.sh' <<<"$(build_task_findings "$f" "$WORK/rs.json")" \
   && ok "build_task_findings: a task-close call without bash is found" || bad "build_task_findings missed a bare task-close call"
@@ -577,6 +581,11 @@ CALLS=$(build_task_calls "$BTS")
 [ -z "$FINDINGS" ] && [ "$CALLS" -ge 6 ] \
   && ok "build-task gives no forbidden command and only calls the runner may run ($CALLS checked)" \
   || bad "build-task: ${FINDINGS:-only $CALLS calls checked}"
+# The runner denies git grep (its -O runs a program, R-0164); the session searches with
+# the Grep tool, which needs no rule in dontAsk (R-0319).
+grep -qF 'Grep-Werkzeug' <<<"$(section "$BTS" '2. **Lesen' '3. **')" \
+  && ok "build-task searches with the Grep tool, not with git grep (R-0319)" \
+  || bad "build-task's step 2 does not name the Grep tool"
 [ "$(foreground_rule "$(section "$BTS" '4. **Testen' '5. **')")" = ok ] \
   && ok "build-task tests in the foreground and forbids the background and waiting there (R-0263)" \
   || bad "build-task's step 4 lacks the foreground rule (Vordergrund, nie run_in_background, nie warten)"
