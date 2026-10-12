@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: ein Test-Backend für den Keyring, Tests für die Aufrufstellen von replaces_for — Task-Ledger
-Status: aktiv · Branch: feature/desktop-keyring-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-keyring-test · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-12 (kleines Fund-Paket aus R-0294, Triage Kevin 2026-10-11; Heavy e2e bleibt, weil T2 die Aufrufstellen in enrollment.rs umstellt; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0294 (Kurz-Ledger ohne Spec)
 Heavy: linux-full — `run.sh e2e` (die Desktop-Enrollment-Journey `settings-enroll.live.js`), weil T2 die Aufrufstellen in `enrollment.rs` umstellt; das Verhalten bleibt, die Journey belegt es. Kein Stack- oder Gateway-Pfad, daher nur e2e.
@@ -53,8 +53,10 @@ HEAD: dba03852
 Semantik: `src/keyring_store.rs:5-9` (ein Backend für alle Sicherheitsmodule, damit sich Änderungen nicht über Kopien
 verteilen); ein Test-Backend an derselben Stelle folgt dem.
 
-### T2 — enrollment: die Aufrufstellen von replaces_for und das Merken beim Zurücksetzen sind getestet (R-0294)  [ ]
+### T2 — enrollment: die Aufrufstellen von replaces_for und das Merken beim Zurücksetzen sind getestet (R-0294)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @65b6da31 2026-10-12T18:51:51+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Die zwei Schritte der Enroll-Abläufe, die nur den Keyring berühren, werden kleine Funktionen und an beiden
 Stellen benutzt; das Verhalten bleibt:
 - `pending_replaces(kind)` = `replaces_for(kind, leaf_fingerprint(), keyring_store::get(KEYRING_REPLACES))`, in
