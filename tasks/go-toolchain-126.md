@@ -221,3 +221,19 @@ Semantik: DEVELOPMENT.md:1349–1351 „Die Dev-Box muss deshalb dieselbe Minor 
 Verify: bash scripts/dev/verify.sh agent scripts --strict  und (cd apps/agent && govulncheck ./...) → „No vulnerabilities found.“ unter go1.26.9 oder neuer
 Doku: DEVELOPMENT.md, docs/developer/index.html + docs/en/developer/index.html, CHANGELOG
 Abhängt von: T1
+
+### T4 — Nachbesserung aus dem Review am Ende: 1b fällt, wenn awk nicht läuft; der CHANGELOG nennt das Restrisiko  [x]
+Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @211014fb 2026-10-13T14:28:38+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `approve` mit vier nits). Zwei davon behebt diese Task, die
+anderen zwei gehen als Nachzügler-Zeile in die Roadmap.
+- 1b in toolchain-lockstep.sh war still grün, wenn awk nicht bis zum Ende lief: Ohne Ausgabe lief die Schleife nie.
+  - Neu: Der Scan schließt mit einer Zeile `end`. Fehlt sie, kommt eine `::error::`-Zeile („did not run to its end —
+    nothing was checked“), Exit 1.
+  - Fall in toolchain_lockstep_test: ein awk vorn im PATH, das ohne Ausgabe mit 1 endet → Exit 1 mit dieser Meldung.
+- CHANGELOG: „also mit 1.26.9 oder neuer“ gilt nur, solange setup-go sein Versions-Manifest erreicht; sonst nimmt es den
+  Patch aus dem Toolcache des Runners (Restrisiko aus F3). Der Satz sagt das.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: CHANGELOG
+Abhängt von: T2

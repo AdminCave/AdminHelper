@@ -107,12 +107,11 @@ echo "go-version:$versions"
 # ── 1b: check-latest beside every go-version ─────────────────────────────────
 # Per `with:` block, in any order: a block is the go-version line's siblings —
 # every line around it at its indent or deeper, comments and blank lines
-# included. A check-latest in another job's block does not count.
+# included. A check-latest in another job's block does not count. The scan ends
+# with a line "end": without it awk did not run to the end, and a check that
+# cannot fail checks nothing.
 for f in ci release audit; do
-  while IFS= read -r n; do
-    echo "::error::.github/workflows/$f.yml:$n sets go-version without check-latest: true in the same with: block — setup-go then takes the newest patch in the runner's toolcache, and the release can ship another stdlib than the audit checks"
-    exit 1
-  done < <(awk '
+  scan="$(awk '
     function ind(s) { return match(s, /[^ ]/) - 1 }
     function inblock(s, d) { return s ~ /^[ ]*(#.*)?$/ || ind(s) >= d }
     function latest(s, d) { return ind(s) == d && s ~ /^[ ]*check-latest:[ ]*true[ ]*(#.*)?$/ }
@@ -125,7 +124,15 @@ for f in ci release audit; do
         for (j = i + 1; j <= NR && inblock(line[j], d); j++) if (latest(line[j], d)) found = 1
         if (!found) print i
       }
-    }' "$WF/$f.yml")
+      print "end"
+    }' "$WF/$f.yml")"
+  [ "$(tail -n 1 <<<"$scan")" = end ] || {
+    echo "::error::the check-latest scan of .github/workflows/$f.yml did not run to its end — nothing was checked"
+    exit 1; }
+  n="$(head -n 1 <<<"$scan")"
+  [ "$n" = end ] || {
+    echo "::error::.github/workflows/$f.yml:$n sets go-version without check-latest: true in the same with: block — setup-go then takes the newest patch in the runner's toolcache, and the release can ship another stdlib than the audit checks"
+    exit 1; }
 done
 echo "check-latest: true beside every go-version"
 

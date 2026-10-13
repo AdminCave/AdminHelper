@@ -256,6 +256,11 @@ ORDER="$WORK/orderlatest"; fixture "$ORDER" 1.25 1.25 1.25 v1.7.0
 printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          check-latest: true\n          # plchold\n          go-version: "1.25"\n' > "$ORDER/.github/workflows/release.yml"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest before go-version, a comment between -> exit 0" 0 "check-latest: true beside every go-version" -- --root "$ORDER"
 
+# An awk that does not run to its end must not leave the check green.
+BADAWK="$WORK/badawk"; mkdir -p "$BADAWK"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$BADAWK/awk"; chmod +x "$BADAWK/awk"
+PATH="$BADAWK:$PATH" FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "an awk that fails -> exit 1, nothing checked" 1 "did not run to its end — nothing was checked" -- --root "$GOOD"
+
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -213,7 +213,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 ### Security
 
 - **Agent und Audit auf Go 1.26 (R-0348):** CI (`agent`, `agent-windows`), Release und der woechentliche
-  Audit bauen mit Go 1.26 und `check-latest`, also mit 1.26.9 oder neuer. Das schliesst neun stdlib-Funde aus
+  Audit bauen mit Go 1.26 und `check-latest`, also mit 1.26.9 oder neuer, solange setup-go sein
+  Versions-Manifest erreicht (sonst nimmt es den Patch aus dem Toolcache des Runners). Das schliesst neun stdlib-Funde aus
   go1.25.14, die erst go1.26.9 behebt: GO-2026-6603, -6605, -6607, -6608, -6610, -6611, -6612, -6613 und
   -6617 (`net/http`, `net/textproto`, `crypto/tls`). `govulncheck` steht auf v1.9.0. Die `go`-Direktive in
   `apps/agent/go.mod` bleibt `1.25.0`. `scripts/dev/toolchain-lockstep.sh` verlangt neben jeder `go-version`
