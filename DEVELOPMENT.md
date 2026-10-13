@@ -1232,6 +1232,12 @@ bash scripts/dev/ledger-loop.sh start --profile kevin --ledger tasks/<a>.md --ma
 bash scripts/dev/ledger-loop.sh status --profile kevin
 ```
 
+Ein Lauf im Builder-Profil steht ausserdem als eigene Zeile `Builder:` im `AH-STATUS`-Block: die
+gesaeuberte erste Zeile von `status` (Stand, Kosten oder Stop-Klasse), `(tmux ah-builder)`, solange die
+Session laeuft, und `fertig rc=<n>` aus `builder.done`. Ohne Spur des Profils fehlt die Zeile; mehr aus
+dem Builder zeigt der Hook nicht. `state.json` und `builder.done` nimmt er nur als regulaere Dateien, und
+jeder Lesezugriff hat ein kurzes Zeitlimit: ein haengender Builder kostet die Zeile, nicht den Block.
+
 `start` prueft `builder-home.sh status`, verweigert neben einer schon laufenden tmux-Session
 `ah-builder` und startet darin den Loop des Klons mit `env -i` (nur `HOME`, `PATH`, `LANG`, `USER`,
 `LOGNAME`, `TERM`, `AH_LOOP_DIR`: kein SSH-Agent, keine D-Bus-Adresse, kein Proxmox-Token) und
