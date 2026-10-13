@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Skip-Regeln: run.sh kennt test_db_session_utc, die Kommentare zählen richtig — Task-Ledger
-Status: geplant · Branch: harness/skip-rules · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/skip-rules · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0277, R-0278, Triage 2026-10-10 auf Kevins Delegation; cicd.html :40 DE/EN mit in T2, weil dieselbe falsche Aussage; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0277, R-0278 (Kurz-Ledger ohne Spec)
 Heavy: none — eine Regel in `scripts/tests/run.sh` mit hermetischem Test und ein Kommentar in `.github/workflows/ci.yml`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber).
