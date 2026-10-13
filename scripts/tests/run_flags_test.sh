@@ -308,8 +308,8 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
 [ $rc -eq 1 ] && ok "a required test-skip fails the run" || bad "required test-skip: rc=$rc"
 grep -q "strict-failed: .*test_migrations_smoke.*(test-skip)" <<<"$OUT"   && ok "the strict-failed line names the test" || bad "line: $(grep -m1 strict-failed <<<"$OUT")"
 
-# test_db_session_utc gates on a Postgres URL, the server's and monitoring's: with one
-# its skip is a hole (R-0277); with a SQLite URL it skips honestly.
+# test_db_session_utc under a Postgres DATABASE_URL: its skip is a hole (R-0277). Under a
+# SQLite URL monitoring's copy skips honestly.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest" \
       DATABASE_URL="postgresql://x@localhost/y" \
       SHIM_SKIP="tests/test_db_session_utc.py:26: needs a postgres DATABASE_URL: the app engine connects to it" \

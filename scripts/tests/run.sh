@@ -346,14 +346,17 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     DATABASE_URL points at a Postgres. Skipping it there would leave the one
 #     test of that lock silently unrun.
 #   test_db_session_utc       the session's time zone is a Postgres setting (the
-#     stack's runs with TZ=Europe/Berlin). Both tests of the name, the server's and
-#     monitoring's, run only against a Postgres DATABASE_URL; a skip there leaves
-#     the zone the naive UTC columns depend on unchecked.
+#     stack's runs with TZ=Europe/Berlin); a skip under a Postgres URL leaves the
+#     zone the naive UTC columns depend on unchecked. Two tests carry the name:
+#     monitoring's skips without a Postgres DATABASE_URL, the server's only without
+#     any. The rule reads run.sh's own DATABASE_URL, so it holds the server's copy
+#     only where that is exported; the server step's fallback to AH_TEST_DB stays
+#     out of its sight, as a skip line does not say which suite it came from.
 # test_alembic_builtin, test_check_engine_concurrency and test_db_session_utc
-# match on *postgres* rather than on "is set": the tests themselves
-# gate on the URL naming a Postgres (a SQLite URL makes FOR UPDATE a no-op), so a
-# run with such a URL skips honestly — and calling that strict-failed would be a
-# red with nothing behind it.
+# match on *postgres* rather than on "is set": the first two and monitoring's
+# test_db_session_utc gate on the URL naming a Postgres (a SQLite URL makes FOR
+# UPDATE a no-op), so a run with such a URL skips honestly — and calling that
+# strict-failed would be a red with nothing behind it.
 # The host and port test_stream_redis.py's REDIS_URL connects to, taken the way
 # redis.from_url takes them: any scheme, credentials dropped, 6379 without a port.
 redis_reachable() {

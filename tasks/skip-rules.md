@@ -18,7 +18,7 @@ Gate-Pfad. Den PR merged Kevin oder die Aufsicht auf sein Wort.
 
 ### T1 — run.sh: ein Skip von test_db_session_utc mit Postgres-URL ist unter --strict rot (R-0277)  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @04c5e269 2026-10-13T07:54:26+02:00
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b3ae4057 2026-10-13T08:33:14+02:00
 Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `test_skip_is_required` (`run.sh:362-372`) bekommt eine Regel `*test_db_session_utc*`. Ist `DATABASE_URL` ein Postgres
@@ -44,7 +44,9 @@ Beweis: origin/main@75ed3e09:
 - `test_skip_is_required` (`:362-372`) kennt `test_migrations_smoke`, `test_auth_token_lifecycle`, `test_stream_redis`,
   `test_db_token_store`, `test_check_engine_concurrency` und `test_alembic_builtin`.
 - Die Skip-Bedingungen der beiden Tests stehen oben.
-Metrik: Tests mit Postgres-Bedingung, deren Skip unter `--strict` nicht auffällt: 2 (beide `test_db_session_utc`) → 0.
+Metrik: Tests mit Postgres-Bedingung, deren Skip unter `--strict` nicht auffällt: 2 (beide `test_db_session_utc`) → 0, wo
+`DATABASE_URL` selbst gesetzt ist (CI-Service, Stack). Ohne sie nimmt der Server-Schritt `AH_TEST_DB` (`run.sh:667`), das
+die Regel nicht sieht; dort bleibt es für die Server-Kopie bei 1 (Review am Ende).
 Orakel: mutation-sample — die neue Regel gestrichen: der neue Fall in `run_flags_test.sh` rot.
 Dedup-Key: ref:scripts:run.sh:test_skip_is_required-session-utc
 HEAD: 75ed3e09
