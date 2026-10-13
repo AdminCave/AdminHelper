@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Skip-Regeln: run.sh kennt test_db_session_utc, die Kommentare zählen richtig — Task-Ledger
-Status: aktiv · Branch: harness/skip-rules · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/skip-rules · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0277, R-0278, Triage 2026-10-10 auf Kevins Delegation; cicd.html :40 DE/EN mit in T2, weil dieselbe falsche Aussage; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0277, R-0278 (Kurz-Ledger ohne Spec)
 Heavy: none — eine Regel in `scripts/tests/run.sh` mit hermetischem Test und ein Kommentar in `.github/workflows/ci.yml`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -51,8 +51,10 @@ HEAD: 75ed3e09
 Semantik: `run.sh:325-330`: „Tests that MUST NOT skip once their precondition is met. Each guards a path nothing else
 covers, and a skip inside an otherwise passing suite is invisible: "N passed" quietly means "N minus this one".“
 
-### T2 — ci.yml und cicd.html: der Postgres-Service des Monitorings dient mehr als dem Migrations-Smoke (R-0278)  [ ]
+### T2 — ci.yml und cicd.html: der Postgres-Service des Monitorings dient mehr als dem Migrations-Smoke (R-0278)  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 7 ok @7ea0ef39 2026-10-13T08:07:19+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `ci.yml:115-116` sagt zum Service `postgres` des Jobs `monitoring`: „Only consumed by tests/test_migrations_smoke.py
   (alembic upgrade head against a fresh DB); all other monitoring tests stay DB-free.“
