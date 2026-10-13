@@ -60,8 +60,10 @@ Warm-Slots mit `--lane` der eigenen Lane, und `vm.py` lehnt einen Slot ab, desse
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: .claude/skills/vm/SKILL.md (Optionsliste)
 
-### T2 — reap.sh nennt jeden Slot mit seiner Rolle und ohne Szenario  [ ]
+### T2 — reap.sh nennt jeden Slot mit seiner Rolle und ohne Szenario  [x]
 Komponente: scripts · Dateien: scripts/vm/reap.sh, scripts/tests/vm_wrappers_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3bd8c975 2026-10-13T10:28:45+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - reap.sh merkt sich je Slot Rolle und VMID (:41–50) und ruft je Slot
   `vm_py destroy --lane "$LANE" --role "$role" --no-scenario "$v"` (:58).
