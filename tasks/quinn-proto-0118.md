@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Backend: quinn-proto 0.11.18 im Lockfile, cargo audit wieder grün (R-0357) — Task-Ledger
-Status: freigegeben · Branch: feature/quinn-proto-0118 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/quinn-proto-0118 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13: sofort; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0357 (Kurz-Ledger ohne Spec)
 Heavy: none — nur `apps/desktop/src-tauri/Cargo.lock` (Patch im selben Minor, kein Code, kein Feature-Wechsel); kein Stack-, Gateway-, PKI- oder Install-Pfad.
