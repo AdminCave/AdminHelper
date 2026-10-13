@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Warm-Slots: eine Box gilt nur als eigene, wenn Rolle, Szenario und Name stimmen — Task-Ledger
-Status: freigegeben · Branch: harness/warm-slot-identity · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/warm-slot-identity · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-5 wie empfohlen: Altbestand einmal uebernehmen, alle drei Tasks, iter endet mit dem Exit von vm.py, kein eigenes --name, warm prueft ueber list und iter/reap lassen vm.py frisch pruefen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0347 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API), warm.sh, iter.sh und reap.sh mit dem Fake-vm.py der Script-Tests; keine echte VM, kein Stack-, Gateway-, PKI- oder Install-Pfad.
