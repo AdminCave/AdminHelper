@@ -51,8 +51,8 @@ Semantik: `lane.sh:61-63`: „That URL is SQLAlchemy's (postgresql+psycopg://…
 
 ### T2 — lane_db liest die URL byteweise, unabhängig von der Locale des Aufrufers  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f08fea1a 2026-10-13T06:17:31+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @68ad3c9d 2026-10-13T07:05:44+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve, Nit miterledigt
 Abhängt von: T1
 Änderung:
 - `lane_db` setzt am Anfang `local LC_ALL=C`. Die Muster der Funktion lesen damit Bytes, auch unter einer

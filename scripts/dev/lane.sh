@@ -78,7 +78,7 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   local LC_ALL=C
   local url pass=""
   url="$(lane_db_url)"
-  # The patterns below read UTF-8: a URL that is none is refused before them.
+  # SQLAlchemy reads AH_TEST_DB as a UTF-8 string: a URL that is no UTF-8 is refused first.
   if ! printf '%s' "$url" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
     echo "  lane.sh: AH_TEST_DB is no UTF-8" >&2
     return 3
