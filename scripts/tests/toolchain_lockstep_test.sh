@@ -261,6 +261,17 @@ BADAWK="$WORK/badawk"; mkdir -p "$BADAWK"
 printf '#!/usr/bin/env bash\nexit 1\n' > "$BADAWK/awk"; chmod +x "$BADAWK/awk"
 PATH="$BADAWK:$PATH" FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "an awk that fails -> exit 1, nothing checked" 1 "did not run to its end — nothing was checked" -- --root "$GOOD"
 
+# ── 8: a comment after the go-version value ──────────────────────────────────
+# A line the pattern skips counts for nothing, so a drift on it passed unseen.
+CMT="$WORK/comment"; fixture "$CMT" 1.25 1.25 1.25 v1.7.0
+for f in ci release audit; do
+  sed -i 's/^\(          go-version: "1.25"\)$/\1  # plchold/' "$CMT/.github/workflows/$f.yml"
+done
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version with a comment after the value is read -> exit 0" 0 "go-version: ci=1.25 ci=1.25 release=1.25 audit=1.25" -- --root "$CMT"
+CMTD="$WORK/commentdrift"; fixture "$CMTD" 1.25 1.25 1.25 v1.7.0
+sed -i '0,/go-version: "1.25"/! s/go-version: "1.25"/go-version: "1.26"  # plchold/' "$CMTD/.github/workflows/ci.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a drift with a comment after the value -> exit 1" 1 "go-version drift" -- --root "$CMTD"
+
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

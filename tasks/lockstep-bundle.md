@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket lockstep-bundle: der Toolchain-Lockstep liest Kommentare, die Test-Box-Go und jede wahre Schreibweise von check-latest (R-0355, R-0356, R-0354) — Task-Ledger
-Status: freigegeben · Branch: harness/lockstep-bundle · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/lockstep-bundle · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Bau nach der Uebergabe von status-robust; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0355, R-0356, R-0354 (Kurz-Ledger ohne Spec)
 Heavy: none — toolchain-lockstep.sh mit toolchain_lockstep_test (Fixture-Bäume, Fake-curl); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -25,8 +25,10 @@ Vorab geprüft:
   (https://github.com/actions/toolkit/blob/main/packages/core/src/core.ts, `getBooleanInput`).
 - Die Fixture `fixture()` in toolchain_lockstep_test (:50–70) schreibt bootstrap_linux.sh ohne `GO_VERSION`.
 
-### T1 — Prüfung 1 liest go-version auch mit einem Kommentar dahinter (R-0355)  [ ]
+### T1 — Prüfung 1 liest go-version auch mit einem Kommentar dahinter (R-0355)  [x]
 Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @97ffb09e 2026-10-13T20:15:25+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Der sed in Prüfung 1 (:93) lässt nach dem Wert einen Kommentar zu: `[[:space:]]*\(#.*\)\{0,1\}$`. Der Wert selbst bleibt
   wörtlich und wird geprüft wie heute.
