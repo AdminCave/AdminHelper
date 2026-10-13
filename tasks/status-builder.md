@@ -88,3 +88,25 @@ Review: Review am Ende (Kurz-Ledger)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, der Satz aus T1
 Abhängt von: T1
+
+### T3 — Nachbesserung aus Runde 2: jeder Lesezugriff des Builders bleibt unter dem Budget des Hooks  [x]
+Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bd09f150 2026-10-13T06:50:33+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Re-Review von T2 (Opus, `request_changes`: ein belegter Fund, drei nits).
+- `ledger-loop.sh status` liest neben state.json auch die neueste `summary-*.md`, ohne Prüfung auf reguläre Datei.
+  - Eine FIFO dort hielt den Hook 10 s fest, und der SessionStart-Hook hat seit #143 selbst nur 10 s.
+  - Die Ursache in `status` behebt R-0338 im nächsten Paket.
+  - Hier: Der Builder-Status läuft unter `timeout 3` statt 10. tmux und builder.done bekommen je `timeout 2`.
+  - Ein hängender Builder kostet so eine Zeile, nicht den Block.
+- builder.done wird nur bis 4096 Byte gelesen (`head -c 4096`), denn grep puffert eine lange Zeile ganz.
+- Kommentar und DEVELOPMENT.md sagen, was stimmt: Der Hook prüft state.json und builder.done auf reguläre Dateien, und
+  jeder Lesezugriff hat ein kurzes Zeitlimit.
+- Tests:
+  - eine FIFO als `summary-*.md` neben einer gültigen state.json;
+  - die FIFO-Fälle prüfen jetzt auch die Laufzeit;
+  - „nothing else“ prüft, dass `rc=8` nicht erscheint;
+  - ein `rc=` hinter 4096 Byte erscheint nicht.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, der Satz aus T1
+Abhängt von: T2

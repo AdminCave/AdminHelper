@@ -201,17 +201,18 @@ echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_l
 # A run in the builder profile (the team under Kevin's UID): the same cleaned first
 # line of `ledger-loop.sh status`, whether its tmux session is up, and the exit code
 # builder.done recorded, digits only. A line only when the profile has a trace, and
-# it shows nothing else of the builder. Regular files only, every read bounded: the
-# loop writes this directory, and a FIFO or a device there must not hold up the
-# start of every session.
+# it shows nothing else of the builder. state.json and builder.done only as regular
+# files, every read under a short limit: the loop writes this directory, and the
+# hook itself has 10 s for every session start; a stuck builder costs this line.
 builder_line() {
   local d="${AH_BUILDER_DIR:-${HOME:-}/.cache/ah-builder}/loop" line="" up="" rc=""
   if [ -f "$d/state.json" ] && [ -r "$d/state.json" ]; then
-    line="$(timeout 10 bash "$LOOP_SH" status --state "$d/state.json" 2>/dev/null | head -n 1)"
+    line="$(timeout 3 bash "$LOOP_SH" status --state "$d/state.json" 2>/dev/null | head -n 1)"
     case "$line" in "Worker: "*) line="${line#Worker: }" ;; *) line="?" ;; esac
   fi
-  timeout 5 tmux has-session -t "=ah-builder" 2>/dev/null && up=" (tmux ah-builder)"
-  [ ! -f "$d/builder.done" ] || rc="$(LC_ALL=C timeout 5 grep -m1 -xE 'rc=[0-9]{1,3}' "$d/builder.done" 2>/dev/null)"
+  timeout 2 tmux has-session -t "=ah-builder" 2>/dev/null && up=" (tmux ah-builder)"
+  [ ! -f "$d/builder.done" ] \
+    || rc="$(timeout 2 head -c 4096 -- "$d/builder.done" 2>/dev/null | LC_ALL=C grep -m1 -xE 'rc=[0-9]{1,3}')"
   [ -n "$line$up$rc" ] || return 0
   echo "Builder: ${line:-—}${up}${rc:+ · fertig $rc}"
 }

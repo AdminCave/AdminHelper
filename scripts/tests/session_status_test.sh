@@ -235,17 +235,33 @@ SHIM_TMUX_BUILDER=1 builder
 grep -qx 'Builder: — (tmux ah-builder)' <<<"$OUT" && ok "builder: the session alone is a line" || bad "builder session only: $(grep -m1 '^Builder' <<<"$OUT")"
 printf 'junk\nrc=7\nrc=8\n' > "$BD/loop/builder.done"
 builder
-grep -qx 'Builder: — · fertig rc=7' <<<"$OUT" && ok "builder: the first rc=<digits> line of builder.done, nothing else" \
+grep -qx 'Builder: — · fertig rc=7' <<<"$OUT" && ! grep -qx 'rc=8' <<<"$OUT" \
+  && ok "builder: the first rc=<digits> line of builder.done, nothing else" \
   || bad "builder done only: $(grep -m1 '^Builder' <<<"$OUT")"
+# Only the first 4096 bytes of builder.done are read.
+{ head -c 8192 /dev/zero | tr '\0' x; printf '\nrc=5\n'; } > "$BD/loop/builder.done"
+builder
+! grep -q 'fertig' <<<"$OUT" && ok "builder: an rc= past 4096 bytes is not read" || bad "builder long done: $(grep -m1 '^Builder' <<<"$OUT")"
 rm -f "$BD/loop/builder.done"
-# A FIFO in the builder's directory must not hold up the hook.
+# A FIFO in the builder's directory must not hold up the hook, not even for the
+# limits of the reads behind it.
 for f in builder.done state.json; do
   mkfifo "$BD/loop/$f"
+  t0=$SECONDS
   OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
-  [ "$rc" = 0 ] && grep -q '^VMs:' <<<"$OUT" && ! grep -q '^Builder:' <<<"$OUT" \
-    && ok "a FIFO as $f does not hold up the hook" || bad "FIFO $f: rc=$rc out=$(grep -m1 '^Builder' <<<"$OUT")"
+  [ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q '^VMs:' <<<"$OUT" && ! grep -q '^Builder:' <<<"$OUT" \
+    && ok "a FIFO as $f does not hold up the hook" || bad "FIFO $f: rc=$rc $((SECONDS - t0)) s out=$(grep -m1 '^Builder' <<<"$OUT")"
   rm -f "$BD/loop/$f"
 done
+# A FIFO beside a valid state.json (the status verb reads the newest summary too):
+# the builder line gives up after its own limit, the block is there.
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
+mkfifo "$BD/loop/summary-2026-10-13-000000.md"
+t0=$SECONDS
+OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
+[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 6 ] && grep -q '^VMs:' <<<"$OUT" \
+  && ok "a FIFO as summary-*.md costs the builder line its limit, not the block" || bad "FIFO summary: rc=$rc $((SECONDS - t0)) s"
+rm -f "$BD/loop/summary-2026-10-13-000000.md" "$BD/loop/state.json"
 
 # the seven triggers, one WARN line each
 grep -q '^WARN: .*tauri.conf.json 0.46.0, kein Tag v0.46.0' <<<"$OUT" && ok "trigger: bump without tag" || bad "trigger: bump without tag"
