@@ -24,6 +24,9 @@
 #   - the clone: from this checkout, origin as here, pushurl /dev/null,
 #     core.hooksPath scripts/dev/hooks, fast-forwarded to origin/main. This is
 #     Kevin's setup step the loop waits for before new harness rules count;
+#   - the frpc sidecar (apps/desktop/src-tauri/binaries/), copied from this
+#     checkout into the clone as lane.sh new copies it into a lane: git ignores it,
+#     and without it cargo test (desktop) skips in every lane of the loop;
 #   - home/.claude/settings.json from the CLONE's runner-settings.json: the lane
 #     rules of the runner (//srv/ah/) moved to this directory, plus denies for
 #     Kevin's real HOME and for every checkout's private files. They are absolute
@@ -55,6 +58,7 @@ V="$H/.local/share/ah-tools/venv"
 OAUTH="$H/.config/adminhelper/oauth.env"
 SUM="${AH_BUILDER_SUM:-/var/lib/adminhelper-dev/runner-claude.sha256}"
 DBNAME=adminhelper_builder
+SIDECAR=apps/desktop/src-tauri/binaries
 # As runner-setup.sh VENV_PKGS: one ruff for every user that lints this repo.
 VENV_PKGS=(ruff==0.15.20 pytest pytest-cov pytest-httpx)
 # runner-env.sh's shape, spelled out: outside the C locale A-Z matches by collation.
@@ -164,6 +168,41 @@ setup_clone() {
   say "  ok    $(git -C "$CLONE" log --oneline -1)"
 }
 
+# The frpc sidecar is gitignored, so the clone has none of its own, and lane.sh new
+# copies it from the clone into each lane: without it a desktop task's fundament run
+# skips cargo test and is red under --strict (R-0325). Copied, not linked, as
+# lane.sh does it (R-0094); a failed copy costs the desktop tasks, not the setup.
+# sidecar_in_clone — 0 when every file of this checkout's sidecar is in the clone,
+# the same. One way only: setup adds and replaces, it removes nothing, so a file
+# only the clone has (an old one) must not keep status from ever being complete.
+# A pipe, not < <(…): under pipefail a cd or find that fails makes it 1, not "complete".
+sidecar_in_clone() {
+  local rel
+  (cd "$ROOT/$SIDECAR" && find -L . -type f -print0) | while IFS= read -r -d '' rel; do
+    cmp -s -- "$ROOT/$SIDECAR/$rel" "$CLONE/$SIDECAR/$rel" || return 1
+  done
+}
+
+setup_sidecar() {
+  say "── frpc sidecar $SIDECAR into the clone"
+  if [ ! -d "$ROOT/$SIDECAR" ]; then
+    say "  note  this checkout has no $SIDECAR: desktop tasks are not loop-ready"; return 0
+  fi
+  # As lane.sh's lane_inside: wherever a symlink on the way leads, it must end below
+  # the clone; the clone root itself does not count.
+  case "$(realpath -m -- "$CLONE/$SIDECAR")" in
+    "$(realpath -m -- "$CLONE")"/*) ;;
+    *) say "  note  $SIDECAR in the clone leads outside it: the sidecar is not copied"; return 0 ;;
+  esac
+  if sidecar_in_clone; then
+    say "  ok    $SIDECAR as in this checkout"
+  elif mkdir -p "$CLONE/$SIDECAR" && cp -RpL --remove-destination "$ROOT/$SIDECAR/." "$CLONE/$SIDECAR/"; then
+    say "  wrote $SIDECAR"
+  else
+    say "  note  could not copy all of $SIDECAR: without it cargo test (desktop) skips in the loop"
+  fi
+}
+
 setup_settings() {
   local json
   say "── $H/.claude/settings.json from the clone's runner-settings.json"
@@ -241,6 +280,7 @@ do_setup() {
   setup_dirs
   setup_cli
   setup_clone
+  setup_sidecar
   setup_settings
   setup_venv
   setup_db
@@ -290,6 +330,8 @@ do_status() {
   [ -f "$H/.local/bin/python3" ] && [ ! -L "$H/.local/bin/python3" ] || m "the python3 wrapper in $H/.local/bin"
   [ "$(stat -c %a "$H/.devenv.sh" 2>/dev/null)" = 600 ] || m "$H/.devenv.sh (0600)"
   [ "$(git -C "$CLONE" config --get remote.origin.pushurl 2>/dev/null)" = /dev/null ] || m "the clone $CLONE (pushurl /dev/null)"
+  [ ! -d "$ROOT/$SIDECAR" ] || sidecar_in_clone \
+    || m "the frpc sidecar of this checkout in the clone ($SIDECAR) — run setup"
   [ -n "$(git config --file "$H/.gitconfig" user.email 2>/dev/null)" ] || m "the git identity in $H/.gitconfig"
   if [ ! -f "$CLONE/scripts/dev/runner-env.sh" ]; then m "the clone's runner-env.sh — run setup"
   elif ! why="$(token_ok 2>&1)"; then

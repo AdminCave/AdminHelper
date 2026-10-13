@@ -1206,7 +1206,9 @@ heisst beim Builder: `setup`. Voraussetzung ist, was `sudo bash scripts/dev/runn
 hinterlegt: die Pruefsumme der CLI (`/var/lib/adminhelper-dev/runner-claude.sha256`), die root-eigene
 Kopie des Waechters, die der Hook der Settings ruft (`/usr/local/lib/adminhelper-dev/harness-guard.sh`),
 und die geteilte Python-Sperre. Nach einer Aenderung an `runner-claude.version` oder an
-`scripts/dev/hooks/harness-guard.sh` deshalb zuerst `runner-setup.sh`, dann `setup`:
+`scripts/dev/hooks/harness-guard.sh` deshalb zuerst `runner-setup.sh`, dann `setup`. `setup` kopiert auch das
+frpc-Sidecar (`apps/desktop/src-tauri/binaries/`) aus diesem Checkout in den Klon, wie `lane.sh new` es in eine Lane
+kopiert; ohne es sind Desktop-Tasks nicht loop-tauglich:
 
 ```bash
 bash scripts/dev/builder-home.sh setup     # idempotent: was schon stimmt, bleibt

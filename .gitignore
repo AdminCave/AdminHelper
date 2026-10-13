@@ -60,6 +60,8 @@ Desktop.ini
 # Autonomie-Harness (Roadmap Stufe 0): Lauf-Artefakte und das private Roadmap-Repo bleiben lokal.
 .ah-out/
 .vm/
+# Auch ein .vm an der Wurzel, das ein Symlink ist: .vm/ trifft nur Verzeichnisse.
+/.vm
 /tasks/private/
 
 # Local-only Arbeitsartefakte — dieses Repo ist PUBLIC. Der Audit-Report und sein Ledger
