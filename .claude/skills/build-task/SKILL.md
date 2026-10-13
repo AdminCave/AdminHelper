@@ -24,7 +24,7 @@ Du baust **eine** Task. Haken, Review, Commit und den Status des Ledgers macht d
 2. **Lesen.** Die Task `### <id> — …` (Änderung, Dateien, Verify, Doku, Rot vorher), die Stelle der
    Spec aus dem Kopf (`Spec:`), den echten Code und seinen Kontext (Aufrufer, Tests, Config).
    Zeilennummern können sich verschoben haben: an Symbolen orientieren, nicht an der Zeile.
-   Gesucht wird mit dem Grep-Werkzeug, Dateinamen mit Glob. git grep und rg verweigern die Settings, weil
+   Gesucht wird mit dem Grep-Werkzeug, Dateinamen mit Glob. Die Settings verweigern git grep und rg, weil
    git grep mit -O und rg mit --pre ein Programm starten (R-0164).
 3. **Bauen, surgical.** Nur, was die Task verlangt, im Stil des umgebenden Codes; eine neue Datei
    bekommt den SPDX-Kopf. Braucht die Task eine Datei, die nicht in ihrem `Dateien:` steht, erweiterst
