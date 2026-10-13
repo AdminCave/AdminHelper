@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # URL-Helfer: lane_db und pg lesen AH_TEST_DB mit einer gemeinsamen Funktion — Task-Ledger
-Status: bereit · Branch: harness/pg-url-helper · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/pg-url-helper · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-3 wie empfohlen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — ein gesourcter Shell-Helfer in `scripts/dev/`, `lane_db` in `lane.sh`, `pg` in `builder-home.sh` und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -35,7 +35,7 @@ So bleiben die angenommenen Formen beider, wie sie sind.
 ### T1 — pg-url.sh: ein Helfer zerlegt eine Postgres-URL in URL und Passwort oder lehnt sie mit Grund ab  [x]
 Komponente: scripts · Dateien: scripts/dev/pg-url.sh, scripts/tests/pg_url_test.sh, scripts/tests/run.sh, scripts/dev/harness-paths.txt
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eea16c9a 2026-10-13T15:45:28+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve
 Änderung:
 - Neue Datei `scripts/dev/pg-url.sh` mit SPDX-Kopf (`reuse annotate --copyright "Kevin Stenzel" --license
   GPL-3.0-or-later`). Sie enthält nur Funktionen und ist zum Sourcen gedacht.
@@ -98,7 +98,7 @@ argument … (lane.sh lane_db)“. Beide meinen dieselbe Regel.
 ### T2 — lane.sh: lane_db nimmt den Helfer  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, scripts/tests/ledger_loop_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4c79a03c 2026-10-13T16:18:43+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve
 Abhängt von: T1
 Änderung:
 - `lane.sh` sourct `scripts/dev/pg-url.sh`, neben `scripts/vm/lib.sh` (`:33`).
