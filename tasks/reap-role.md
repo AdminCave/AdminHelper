@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-role: reap.sh nennt jeden Slot mit Rolle und ohne Szenario, list-Exit 74 im Test (R-0336) — Task-Ledger
-Status: bereit · Branch: harness/reap-role · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: erledigt · Branch: harness/reap-role · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T1 bleibt drin; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0336 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API, keine echte VM), reap.sh mit vm_wrappers_test (Fake-vm.py); kein Stack-, Gateway-, PKI- oder Install-Pfad, kein echtes destroy.
