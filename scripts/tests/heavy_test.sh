@@ -889,6 +889,19 @@ export SHIM_ITER_OUT="vm.py: no ssh: adminhelper@10.0.0.9 refused for 900s"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a box that never answered ssh is infra too" || bad "no ssh -> rc=$rc"
+# The reason heads the report and goes into AH-STATUS: no box address in it.
+h="$(report_of | head -1)"; v="$(grep -a 'heavy.sh\[all\]: UNVERIFIED' <<<"$out")"
+grep -qF 'no ssh: <user>@<host> refused for 900s' <<<"$h" && grep -qF 'no ssh: <user>@<host> refused for 900s' <<<"$v" \
+  && ! grep -q '10\.0\.0\.9' <<<"$h$v" \
+  && ok "the reason names no box address, in the report and in the verdict line" || bad "address: head=$h verdict=$v"
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: sync failed: rsync to 198.51.100.7 exited 12"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" = 74 ] && grep -qF 'sync failed: rsync to <ip> exited 12' <<<"$h" && ! grep -q '198\.51\.100\.7' <<<"$h" \
+  && ok "a bare address in the reason becomes <ip>" || bad "bare address: rc=$rc head=$h"
 # The wording matters: vm.py says "clone of 3010 into 3015 failed", never
 # "clone failed" — a marker written from the call site would never fire.
 mk_case
