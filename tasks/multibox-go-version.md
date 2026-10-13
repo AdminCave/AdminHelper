@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Multibox: das Urteil nennt das Go, mit dem die Server-Box das Agent-Paket gebaut hat — Task-Ledger
-Status: bereit · Branch: harness/multibox-go-version · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/multibox-go-version · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-4 wie empfohlen; Frage 5: Heavy none, die Box-Zeile verifiziert der naechste Multibox- bzw. Wochenlauf; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0359 (Kurz-Ledger ohne Spec)
 Heavy: none — wie am Gate entschieden: Die Zeile von der Server-Box (`box_serverbox.sh`) zeigt erst der nächste echte Multibox- oder Wochenlauf; der Fake-vm.py des hermetischen Tests führt das Skript nicht aus.
@@ -29,7 +29,7 @@ Wort. Adressen in Tests und Proben sind Platzhalter.
 ### T1 — Das Multibox-Urteil nennt die Go-Version des Agent-Binarys, das die Server-Box gebaut hat (R-0359)  [x]
 Komponente: scripts · Dateien: scripts/tests/box_serverbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh, DEVELOPMENT.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1d869138 2026-10-13T21:02:18+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve
 Änderung:
 - `box_serverbox.sh`: Im Zweig nach einem erfolgreichen `vm_build_agent_deb` (`:160-161`) druckt das Skript eine Zeile
   `MB_AGENT_GO=<version>`.
