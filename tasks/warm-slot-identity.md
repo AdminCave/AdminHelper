@@ -119,8 +119,8 @@ anderes Szenario oder ein anderer Checkout auf die VMID gelegt hat. `.claude/ski
 
 ### T3 — iter.sh und reap.sh geben den gemerkten Namen an vm.py (R-0347)  [x]
 Komponente: scripts · Dateien: scripts/vm/iter.sh, scripts/vm/reap.sh, scripts/tests/vm_wrappers_test.sh, scripts/tests/iter_flags_test.sh, DEVELOPMENT.md
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4af9c72d 2026-10-13T14:14:21+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @584aa7f4 2026-10-13T15:04:50+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve, Nits miterledigt
 Abhängt von: T1, T2
 Änderung:
 - `iter.sh` `box_run` (`:88-93`): Trägt der Slot `desktop_name`, ruft es `vm.py run <vmid> --expect-name <name> …`.

@@ -52,7 +52,7 @@ set -u
 printf '%s\n' "$*" >> "$FAKE_LOG"
 printf '%s\n' "${AH_LANE-<unset>}" > "$FAKE_LANE"
 case "${1:-}" in
-  clone) echo "${FAKE_NEWID:-3001} ${FAKE_NAME:-ah-fake-main-0001}" ;;
+  clone) echo "${FAKE_NEWID:-3001} ${FAKE_NAME-ah-fake-main-0001}" ;;
   wait)  echo "${FAKE_IP:-10.0.0.9}" ;;
   run)   [ -n "${FAKE_RUN_OUT:-}" ] && printf '%s\n' "$FAKE_RUN_OUT"
          exit "${FAKE_RUN_RC:-0}" ;;
@@ -385,6 +385,27 @@ OUT=$(FAKE_LIST_JSON="$RUNNING" FAKE_RUN_RC=2 FAKE_RUN_OUT="vm.py: 3001 is named
   && ! grep -q "auto-debug captured" <<<"$OUT" && [ "$(grep -c '^run' "$FAKE_LOG")" = 1 ] \
   && ok "a box vm.py refuses by name ends iter.sh with that exit and names warm.sh, not a red run" \
   || bad "iter refused: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-fake-main-0001\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$RUNNING" FAKE_RUN_RC=2 FAKE_RUN_OUT="a suite line that ends — refusing" \
+  AH_OUT_DIR="$WORK/out" bash "$ITER" lint 2>&1); rc=$?
+[ $rc -eq 2 ] && ! grep -q "nothing was synced" <<<"$OUT" && grep -q "auto-debug captured" <<<"$OUT" \
+  && ok "a line of the box's own output is no refusal by vm.py: the run stays a red run" \
+  || bad "box output: rc=$rc out=$OUT"
+
+echo "── warm.sh: the server slot and the clone's name ──"
+reset_state
+printf 'server=3002\nserver_name=ah-server-main-aaaa\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3005 FAKE_LIST_JSON="$(running_json 3002 main server ah-server-main-aaaa)" bash "$WARM" server 2>&1); rc=$?
+grep -q "recorded server VM 3002 has no server_ip — re-warming" <<<"$OUT" && ! grep -q "reuse server box" <<<"$OUT" \
+  && grep -q '^clone --profile linux-server --role server' "$FAKE_LOG" \
+  && ok "the server slot's own box without a server_ip is warmed anew" || bad "no server_ip: rc=$rc out=$OUT"
+reset_state
+OUT=$(FAKE_NAME="" bash "$WARM" desktop 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "clone printed no name on 3001 — box kept for inspection" <<<"$OUT" \
+  && [ -z "$(slot desktop)" ] && ! grep -q '^run' "$FAKE_LOG" \
+  && ok "a clone that prints no name claims no slot, and the box is kept with how to drop it" \
+  || bad "no name: rc=$rc out=$OUT slot=$(slot desktop)"
 
 echo ""
 echo "vm_wrappers_test: $PASS passed, $FAIL failed"

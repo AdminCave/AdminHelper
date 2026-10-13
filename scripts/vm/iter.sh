@@ -97,7 +97,9 @@ box_run() {
   vm_py run "$vmid" "${SYNC[@]}" --timeout "$tmo" --out "$OUT_DIR" --extend "$TTL" "${expect[@]}" \
     -- "$@" 2>&1 | tee "$BOX_LOG"
   rc="${PIPESTATUS[0]}"
-  if [ "$rc" = 2 ] && [ -n "$name" ] && grep -q ' — refusing$' "$BOX_LOG"; then
+  # vm.py's own refusal of this VMID, on the line it writes to stderr — not any line
+  # of a suite's output that happens to end the same way.
+  if [ "$rc" = 2 ] && [ -n "$name" ] && grep -qE "^vm\.py: $vmid is .* — refusing\$" "$BOX_LOG"; then
     echo "  ✗ box $vmid is not the warm slot's box $name now — nothing was synced; next: bash scripts/vm/warm.sh desktop"
     exit "$rc"
   fi
