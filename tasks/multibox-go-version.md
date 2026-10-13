@@ -4,10 +4,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Multibox: das Urteil nennt das Go, mit dem die Server-Box das Agent-Paket gebaut hat — Task-Ledger
-Status: freigegeben · Branch: harness/multibox-go-version · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/multibox-go-version · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-4 wie empfohlen; Frage 5: Heavy none, die Box-Zeile verifiziert der naechste Multibox- bzw. Wochenlauf; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0359 (Kurz-Ledger ohne Spec)
-Heavy: scenario --agents 1 — die neue Zeile entsteht auf der Server-Box (`box_serverbox.sh`), und der Fake-vm.py des hermetischen Tests führt das Skript nicht aus; nur ein echter Lauf zeigt sie. Der Lauf bleibt ask-first.
+Heavy: none — wie am Gate entschieden: Die Zeile von der Server-Box (`box_serverbox.sh`) zeigt erst der nächste echte Multibox- oder Wochenlauf; der Fake-vm.py des hermetischen Tests führt das Skript nicht aus.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
