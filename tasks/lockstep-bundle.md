@@ -97,3 +97,23 @@ Semantik: `getBooleanInput` in @actions/core (Link oben).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Abhängt von: T2
+
+### T4 — Nachbesserung aus dem Review am Ende: # ohne Leerzeichen davor gehört zum Wert  [x]
+Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4c852e4f 2026-10-13T21:29:23+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `request_changes`: ein belegter Fund, drei nits).
+- T1 schloss `#` aus dem Wert aus und verlangte vor dem Kommentar kein Leerzeichen. YAML liest `#` aber nur nach einem
+  Leerzeichen als Kommentar.
+  - Folge: `go-version: 1.25#x` las Prüfung 1 als `1.25`, auf main war die Zeile laut („cannot compare go-version
+    '1.25#x'“).
+  - Neu: Der Wert nimmt `#` wieder auf, der Kommentar verlangt davor Leerraum.
+  - Fälle: `go-version: 1.25#x` und `go-version: "1.25#x"` → Exit 1, „cannot compare go-version '1.25#x'“. Die Fälle aus
+    T1 bleiben grün.
+- nit: Der Zweig „Default von GO_VERSION ist kein X.Y.Z“ in 1c hatte keinen Fall. Neu: `GO_VERSION` 1.25 → Exit 1,
+  „no plain GO_VERSION“.
+- Die nits zu gemischten Anführungszeichen bei check-latest und zu `"1.25 # x"` bleiben liegen: In beiden Fällen
+  scheitert der Workflow schon selbst.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T3

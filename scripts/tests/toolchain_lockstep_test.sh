@@ -299,6 +299,17 @@ NEXT="$WORK/nextstep"; fixture "$NEXT" 1.25 1.25 1.25 v1.7.0
 printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "1.25"\n      - name: plchold\n        with:\n          check-latest: true\n' > "$NEXT/.github/workflows/release.yml"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest in the next step does not count -> exit 1" 1 ".github/workflows/release.yml:7 sets go-version without check-latest: true" -- --root "$NEXT"
 
+# ── 11: `#` without a blank before it is part of the value, as in YAML ───────
+n=0
+for v in '1.25#x' '"1.25#x"'; do
+  n=$((n + 1)); HV="$WORK/hashv$n"; fixture "$HV" 1.25 1.25 1.25 v1.7.0
+  sed -i "s/^          go-version: \"1.25\"\$/          go-version: $v/" "$HV/.github/workflows/release.yml"
+  FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version: $v -> exit 1, named" 1 "cannot compare go-version '1.25#x' in .github/workflows/release.yml" -- --root "$HV"
+done
+# 1c refuses a GO_VERSION default that is no X.Y.Z of digits.
+GMM="$WORK/gominor"; fixture "$GMM" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.25
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap GO_VERSION 1.25 (no patch) -> exit 1" 1 "no plain GO_VERSION" -- --root "$GMM"
+
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -85,7 +85,8 @@ for f in ci release audit; do
     # Exactly MAJOR.MINOR, digits only. `[0-9]*.[0-9]*` would let "1.25.x"
     # through — it matches, and the value then fails later as phantom "drift".
     # A comment after the value is allowed: a line the pattern skipped would
-    # count for nothing, and a drift on it would pass unseen.
+    # count for nothing, and a drift on it would pass unseen. YAML reads `#` as a
+    # comment only after a blank, so `1.25#x` stays the value and is judged.
     case "$v" in
       *[!0-9.]* | *.*.* | *.) bad_version=1 ;;
       *.*) bad_version=0 ;;
@@ -95,7 +96,7 @@ for f in ci release audit; do
       echo "::error::cannot compare go-version '$v' in .github/workflows/$f.yml — this check needs a plain MAJOR.MINOR pin, not a range, alias or .x wildcard"
       exit 1; }
     versions="$versions $f=$v"
-  done < <(sed -n 's/^[[:space:]]*go-version:[[:space:]]*"\{0,1\}\([^"[:space:]#]*\)"\{0,1\}[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$WF/$f.yml")
+  done < <(sed -n 's/^[[:space:]]*go-version:[[:space:]]*"\{0,1\}\([^"[:space:]]*\)"\{0,1\}\([[:space:]]\{1,\}#.*\)\{0,1\}[[:space:]]*$/\1/p' "$WF/$f.yml")
 done
 [ -n "$versions" ] || { echo "::error::no go-version: found in ci.yml/release.yml/audit.yml"; exit 1; }
 
