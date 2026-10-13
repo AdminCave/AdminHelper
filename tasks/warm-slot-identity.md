@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Warm-Slots: eine Box gilt nur als eigene, wenn Rolle, Szenario und Name stimmen — Task-Ledger
-Status: bereit · Branch: harness/warm-slot-identity · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/warm-slot-identity · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-5 wie empfohlen: Altbestand einmal uebernehmen, alle drei Tasks, iter endet mit dem Exit von vm.py, kein eigenes --name, warm prueft ueber list und iter/reap lassen vm.py frisch pruefen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0347 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API), warm.sh, iter.sh und reap.sh mit dem Fake-vm.py der Script-Tests; keine echte VM, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -41,7 +41,7 @@ Der Zuschnitt folgt daraus:
 ### T1 — vm.py: `--expect-name` für run, sync und destroy, geprüft gegen `status/current` (R-0347)  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, .claude/skills/vm/SKILL.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f6800f30 2026-10-13T13:45:13+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve
 Änderung:
 - `run`, `sync` und `destroy` (Parser `vm.py:1941-1978`) nehmen ein optionales `--expect-name <name>`.
 - Ist es gesetzt, gilt die VM nur, wenn `status/current` genau diesen Namen trägt.
@@ -71,7 +71,7 @@ cache is how the wrong VM dies“.
 ### T2 — warm.sh: der Slot merkt den Namen und gilt nur mit eigener Lane, Rolle, ohne Szenario und mit diesem Namen (R-0347)  [x]
 Komponente: scripts · Dateien: scripts/vm/warm.sh, scripts/tests/vm_wrappers_test.sh, scripts/tests/iter_flags_test.sh, DEVELOPMENT.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @15e7ddf5 2026-10-13T14:00:11+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve
 Abhängt von: T1
 Änderung:
 - `clone_box` (`warm.sh:62-70`) gibt den Namen aus `clone` mit weiter, ohne den Exit von `clone` zu verlieren.
