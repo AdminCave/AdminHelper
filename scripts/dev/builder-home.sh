@@ -116,7 +116,24 @@ pg() {
     pass="$(printf '%b' "${pass//%/\\x}")"
   fi
   # A user:password the pattern did not take apart would go into an argument.
-  [[ ! "$url" =~ ^[^/]*//[^/@]*:[^/@]*@ ]] || fail "AH_TEST_DB has a form whose password cannot be taken out of the URL"
+  # The part before the password may hold an @ of its own: SQLAlchemy reads
+  # ah@corp:<password>@host as user ah@corp, the pattern above does not.
+  [[ ! "$url" =~ ^[^/]*//[^/]*:[^/@]*@ ]] || fail "AH_TEST_DB has a form whose password cannot be taken out of the URL"
+  # Nor one in the query: libpq takes ?password= too, and the other keys whose
+  # value is a secret of its own (libpq, Parameter Key Words), in any spelling;
+  # libpq decodes the keys as well, so no percent sign in a key (lane.sh lane_db).
+  local query_pw='[?&]password='
+  local query_secret='[?&](password|sslpassword|oauth_client_secret|scram_client_key|scram_server_key)='
+  local query_key_pct='[?&][^=&]*%[^=&]*='
+  if [[ "$url" =~ $query_pw ]]; then
+    fail "AH_TEST_DB carries its password in the query; write it as user:password@ before the host"
+  fi
+  if [[ "${url,,}" =~ $query_secret ]]; then
+    fail "AH_TEST_DB carries a secret in its query (${BASH_REMATCH[1]}=); builder-home.sh does not pass it on"
+  fi
+  if [[ "$url" =~ $query_key_pct ]]; then
+    fail "AH_TEST_DB has a percent-encoded key in its query; write the keys plain"
+  fi
   # Only the form the sed above makes, a postgresql:// URL, goes on to psql or
   # createdb. Any other (the key=value form of libpq, a scheme without //) ends
   # here, as in lane.sh lane_db.

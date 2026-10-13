@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # builder-home.sh: pg nimmt nur postgresql://-URLs und liest sie unter C — Task-Ledger
-Status: aktiv · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 bleibt drin; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — `pg` in `scripts/dev/builder-home.sh` und sein hermetischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -76,8 +76,10 @@ HEAD: b57c2813
 Semantik: `lane.sh:75-77`: „Bytes, not the caller's characters: the patterns below must find the same @ and : under any
 locale, and a multibyte one can read a byte after a character as part of it.“ `pg` folgt `lane_db` (`builder-home.sh:104`).
 
-### T3 — pg lehnt ab, was lane_db ablehnt: einen Nutzer mit @ vor dem Passwort, ein Geheimnis in der Query  [ ]
+### T3 — pg lehnt ab, was lane_db ablehnt: einen Nutzer mit @ vor dem Passwort, ein Geheimnis in der Query  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @da064d67 2026-10-13T11:20:50+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - Die Prüfung `:115` nimmt die Form von `lane.sh:119`: Der Teil vor dem Passwort darf ein eigenes `@` tragen

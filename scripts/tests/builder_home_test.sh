@@ -310,6 +310,21 @@ if localedef -i zh_CN -f GBK "$LOC/zh_CN.GBK" >/dev/null 2>&1; then
 else
   bad "localedef could not build zh_CN.GBK in $LOC: the locale case is not verified"
 fi
+# What lane.sh refuses, pg refuses too: a user with an @ of its own before the
+# password, a password or another secret in the query in any spelling, and a
+# percent-encoded key. label|AH_TEST_DB|what the message says
+for case_ in "a user with an @ of its own|postgresql://ah@corp:$PW_URL@localhost/adminhelper_test|cannot be taken out" \
+             "a password in the query|postgresql://ah@localhost/adminhelper_test?password=$PW_URL|password in the query" \
+             "a secret key in another spelling|postgresql://ah@localhost/adminhelper_test?SSLPassword=$PW_URL|(sslpassword=)" \
+             "a percent-encoded key|postgresql://ah@localhost/adminhelper_test?pass%77ord=$PW_URL|percent-encoded key"; do
+  label="${case_%%|*}"; rest="${case_#*|}"; form="${rest%|*}"; says="${rest##*|}"
+  printf 'export AH_TEST_DB="%s"\n' "$form" > "$MAIN/.devenv.sh"
+  : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+  [ $rc -eq 1 ] && grep -qF -- "$says" <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
+    && ! grep -qF -e "$PW_RAW" -e "$PW_URL" <<<"$OUT" \
+    && ok "$label stops setup, no database program runs" \
+    || bad "$label: rc=$rc log=$(sed "s/$PW_URL/<pw>/g; s/$PW_RAW/<pw>/g" "$FIXTURE_LOG")"
+done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 # With an XDG git config of the caller's and no .gitconfig in a fresh builder HOME
 # yet, git config --global would write the caller's file; the identity still goes
