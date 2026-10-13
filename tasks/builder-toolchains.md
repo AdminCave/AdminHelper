@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Builder-Profil: cargo und go aus dem HOME des Aufrufers, Caches im Builder-HOME — Task-Ledger
-Status: geplant · Branch: harness/builder-toolchains · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/builder-toolchains · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 und das Restrisiko Toolchain-Tausch waehrend eines Loops auf Kevins Wort 2026-10-13; Fragen 2-4 wie empfohlen; Bau nach dem Merge von pg-url-helper; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0358 (Kurz-Ledger ohne Spec)
 Heavy: none — `setup`, `status` und `setup_settings` in `scripts/dev/builder-home.sh` mit ihrem hermetischen Test; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Abnahme im echten Builder (`setup`, `status`, ein Messlauf) ist Kevins Schritt.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit).
