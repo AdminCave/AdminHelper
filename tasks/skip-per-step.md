@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket skip-per-step: die Skip-Regeln von run.sh sehen die Datenbank-URL ihres Schritts (R-0342) — Task-Ledger
-Status: freigegeben · Branch: harness/skip-per-step · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/skip-per-step · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; test_db_token_store bleibt beim Teilstring wie sein Test; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0342 (Kurz-Ledger ohne Spec)
 Heavy: none — run.sh mit run_flags_test (python3-Shim, Fixture-URLs); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine echte Datenbank.
@@ -38,8 +38,10 @@ Vorab geprüft:
   `--strict` meldete ein falsches `strict-failed`.
 - `test_db_token_store` prüft selbst per Teilstring. Dort bleibt `*postgres*`, denn die Regel spiegelt den Test.
 
-### T1 — Die Skip-Regeln bekommen die Step-ID und sehen die URL, die der Schritt seiner Suite gibt  [ ]
+### T1 — Die Skip-Regeln bekommen die Step-ID und sehen die URL, die der Schritt seiner Suite gibt  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fc8dbfd3 2026-10-13T16:35:46+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `run_py_step` reicht seine ID weiter: `scan_test_skips "$id" "$log"` → `test_skip_is_required "$id" "$line"`.
 - `test_skip_is_required` rechnet die URL des Schritts aus:

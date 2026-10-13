@@ -319,7 +319,7 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
     *)  fail "$name"; result="fail" ;;
   esac
   record_step "$name" "$result" "$((SECONDS - t0))"
-  scan_test_skips "$log"
+  scan_test_skips "$id" "$log"
 }
 
 # Tests that MUST NOT skip once their precondition is met. Each guards a path
@@ -349,9 +349,12 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     stack's runs with TZ=Europe/Berlin); a skip under a Postgres URL leaves the
 #     zone the naive UTC columns depend on unchecked. Two tests carry the name:
 #     monitoring's skips without a Postgres DATABASE_URL, the server's only without
-#     any. The rule reads run.sh's own DATABASE_URL, so it holds the server's copy
-#     only where that is exported; the server step's fallback to AH_TEST_DB stays
-#     out of its sight, as a skip line does not say which suite it came from.
+#     any.
+# The URL rules read the URL the step gives its suite, not run.sh's own: a skip
+# line does not say which suite it came from, so run_py_step hands its id on. The
+# server step falls back to AH_TEST_DB (the dev box and the builder profile leave
+# DATABASE_URL unset on purpose), and its copies of test_db_session_utc and
+# test_alembic_builtin count there too.
 # test_alembic_builtin, test_check_engine_concurrency and test_db_session_utc
 # match on *postgres* rather than on "is set": the first two and monitoring's
 # test_db_session_utc gate on the URL naming a Postgres (a SQLite URL makes FOR
@@ -367,30 +370,33 @@ redis_reachable() {
   (exec 3<>"/dev/tcp/$host/$port") >/dev/null 2>&1
 }
 
-test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must not skip
-  case "$1" in
-    *test_migrations_smoke*)     [ -n "${DATABASE_URL:-}" ] ;;
+test_skip_is_required() {  # test_skip_is_required <step id> <skip line> -> 0 if it must not skip
+  local db="${DATABASE_URL:-}"
+  # The same expression the server step exports to its suite (layer_unit).
+  [ "$1" = server-pytest ] && db="${DATABASE_URL:-${AH_TEST_DB:-}}"
+  case "$2" in
+    *test_migrations_smoke*)     [ -n "$db" ] ;;
     *test_auth_token_lifecycle*) [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker ;;
     *test_stream_redis*)         redis_reachable ;;
     *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_check_engine_concurrency*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_alembic_builtin*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_db_session_utc*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_check_engine_concurrency*) case "$db" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_alembic_builtin*) case "$db" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_db_session_utc*) case "$db" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
     *) return 1 ;;
   esac
 }
 
-# scan_test_skips <logfile> — read pytest's `-rs` short summary. Only populated
-# under --strict, where the suites are told to report their skips at all.
+# scan_test_skips <step id> <logfile> — read pytest's `-rs` short summary. Only
+# populated under --strict, where the suites are told to report their skips at all.
 scan_test_skips() {
-  local log="$1" line name
+  local step="$1" log="$2" line name
   [ -f "$log" ] || return 0
   while IFS= read -r line; do
     # Strip pytest's own "SKIPPED [n] " prefix, count included.
     name="${line#SKIPPED }"; name="${name#\[*\] }"
     TEST_SKIPS+=("$name")
     [ "$AH_STRICT" = "1" ] || continue
-    if test_skip_is_required "$line"; then
+    if test_skip_is_required "$step" "$line"; then
       echo "  strict-failed: $name (test-skip)"
       STRICT_FAILED+=("$name"); FAIL=$((FAIL+1)); FAILED_STEPS+=("$name")
     fi
