@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Backend: Tests, die einen abgelehnten Port brauchen, halten ihn, statt ihn freizugeben — Task-Ledger
-Status: geplant · Branch: feature/desktop-tls-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/desktop-tls-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T2 bleibt drin; der Windows-Job der CI entscheidet T1, rot wird [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0341 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Testcode im Desktop-Backend (`#[cfg(test)]`); kein Produktcode, kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, `cargo fmt` und `cargo clippy -- -D warnings` sauber).
