@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-robust: status übersteht eine entartete state.json und liest seine Dateien nur direkt (R-0343) — Task-Ledger
-Status: geplant · Branch: harness/status-robust · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/status-robust · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T2 fuer beide Dateien; Bau nach der Uebergabe von skip-per-step; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0343 (Kurz-Ledger ohne Spec)
 Heavy: none — ledger-loop.sh status mit ledger_loop_test (Fixture-Dateien); kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
