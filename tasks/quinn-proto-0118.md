@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Backend: quinn-proto 0.11.18 im Lockfile, cargo audit wieder grün (R-0357) — Task-Ledger
-Status: geplant · Branch: feature/quinn-proto-0118 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/quinn-proto-0118 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13: sofort; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0357 (Kurz-Ledger ohne Spec)
 Heavy: none — nur `apps/desktop/src-tauri/Cargo.lock` (Patch im selben Minor, kein Code, kein Feature-Wechsel); kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, `cargo fmt` und `cargo clippy -- -D warnings` sauber, CHANGELOG im selben Commit).
@@ -38,6 +39,6 @@ gezogen von `reqwest` 0.12.28); `gh run view 38395878852 --log-failed` → RUSTS
 Orakel: analyzer — cargo audit gegen die RustSec-Datenbank
 Dedup-Key: rel:desktop-rs:Cargo.lock:quinn-proto
 HEAD: 23539b81
-Semantik: DEVELOPMENT.md:1312 „`audit.yml` faehrt den woechentlichen CVE-Sweep in CI.“
+Semantik: DEVELOPMENT.md:1314 „`audit.yml` faehrt den woechentlichen CVE-Sweep in CI.“
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: CHANGELOG (Security)
