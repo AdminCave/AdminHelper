@@ -218,7 +218,10 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     Hostname** — ein Custom-`CaPinVerifier` nutzt rustls' `WebPkiServerVerifier`, akzeptiert aber
     `NotValidForName{,Context}` (Kette-zur-CA erzwungen, Hostname nicht) → kein Regressions-Risiko
     bei Zugriff über einen Host außerhalb der Gateway-Leaf-SANs, überlebt aber Leaf-Rotation (D2).
-    Logout räumt die (user-spezifische) Identität.
+    Logout räumte damals die (user-spezifische) Identität; heute behält Logout das Geräte-Zertifikat
+    (ein Geräte-, kein Sitzungs-Credential, das unter enforced mTLS schon der Login braucht).
+    Zurückgesetzt wird es über „Geräte-Identität zurücksetzen“, das das Gerät zuerst am Server
+    widerruft.
   - **Verifiziert:** cargo fmt/clippy(`--all-targets -D warnings`)/test **55 grün**, inkl. **zwei
     echter In-Process-mTLS-Handshake-Tests** (rcgen-CA + Server/Client-Leaves, tokio-rustls-Server
     mit Client-Auth-Pflicht): Client präsentiert Cert + wird gegen die gepinnte CA akzeptiert,
@@ -230,8 +233,10 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   via `x509-parser`, `now` als Parameter → deterministisch testbar) + `renew` (präsentiert das
   **aktuelle** Cert per `enrolled_client` an `/ca/renew`, neue CSR, speichert das neue Identity-
   Tripel — der Issuer leitet die Identität aus dem vorgelegten Cert ab) + `maybe_renew` (bei
-  ≥50 % Laufzeit). Verdrahtet **best-effort in `check_session`** (Auto-Trigger beim App-Start,
-  analog zum Per-Run-Check des Go-Agents — der Desktop ist langlaufend, kein oneshot). Test:
+  ≥50 % Laufzeit). Verdrahtet **best-effort**, damals in `check_session` (Auto-Trigger beim
+  App-Start, analog zum Per-Run-Check des Go-Agents — der Desktop ist langlaufend, kein oneshot);
+  heute stößt der Login das Erneuern an, als einziger Trigger, weil der Start keine gespeicherte
+  Session mehr wiederherstellt (`check_session` gibt es nicht mehr). Test:
   Renew-Entscheidung über mehrere Cert-Alter (rcgen-Festdatums-Certs). **56 cargo-Tests grün.**
 - **A5c (Browser-P12-Export) ✅ ABGESCHLOSSEN 2026-06-12:** Server-Mint-Endpoint um `browser=true`
   erweitert → langlebiges Cert (D5). Desktop `export_browser_p12`: enrollt ein eigenes

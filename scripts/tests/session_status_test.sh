@@ -197,11 +197,18 @@ grep -q ' · Worker: läuft T3/8 tasks/x.md · 4,10 \$ · seit 01:12$' <<<"$OUT"
   && ok "worker running: task of the ledger, cost, since when" || bad "worker running: $(grep -m1 '^Ledger' <<<"$OUT")"
 worker '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": "ledger-leer", "updated": "2026-10-04T06:40:00+02:00"}'
 grep -q ' · Worker: stop: ledger-leer 06:40$' <<<"$OUT" && ok "worker stopped: its class and the time" || bad "worker stop: $(grep -m1 '^Ledger' <<<"$OUT")"
+# The runner's state as a FIFO: named at once, the block is there.
+mkfifo "$WS/fifo.json"
+t0=$SECONDS
+OUT=$(AH_LOOP_STATE="$WS/fifo.json" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
+[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
+  && ok "the runner's state.json as a FIFO does not hold up the hook" || bad "worker FIFO: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Ledger' <<<"$OUT")"
+rm -f "$WS/fifo.json"
 worker 'not json'
 grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
   && ok "a broken state.json: named, and the hook goes on" || bad "worker broken: $OUT"
 worker '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}'
-grep -q ' · Worker: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
+grep -q ' · Worker: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
   && ok "control characters in the ledger name are removed" || bad "worker control chars: $(cat -v <<<"$OUT" | grep -m1 '^Ledger')"
 
 # A run in the builder profile: its own line, only when there is a trace of it.
@@ -216,10 +223,10 @@ grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
 SHIM_TMUX_BUILDER=1 builder
 grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05 (tmux ah-builder)' <<<"$OUT" \
   && ok "builder running: the tmux session is named" || bad "builder tmux: $(grep -m1 '^Builder' <<<"$OUT")"
-printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": "kappe", "updated": "2026-10-13T11:40:00+02:00", "stop_reason": "plchold"}' > "$BD/loop/state.json"
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": "max-hours", "updated": "2026-10-13T11:40:00+02:00", "stop_reason": "plchold"}' > "$BD/loop/state.json"
 printf 'rc=1\n' > "$BD/loop/builder.done"
 builder
-grep -qx 'Builder: stop: kappe 11:40 · fertig rc=1' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+grep -qx 'Builder: stop: max-hours 11:40 · fertig rc=1' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
   && ok "builder stopped: its class, the time, the exit code; no free-text reason" || bad "builder stop: $(grep -m1 '^Builder' <<<"$OUT")"
 rm -f "$BD/loop/state.json"; printf 'rc=1; plchold\n' > "$BD/loop/builder.done"
 builder
@@ -227,8 +234,13 @@ builder
   && ok "a builder.done that is not rc=<digits> shows nothing" || bad "builder junk done: $(grep -m1 '^Builder' <<<"$OUT")"
 printf '%s' '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}' > "$BD/loop/state.json"; rm -f "$BD/loop/builder.done"
 builder
-grep -q '^Builder: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
+grep -q '^Builder: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
   && ok "builder: control characters in state.json are removed" || bad "builder control chars: $(cat -v <<<"$OUT" | grep -m1 '^Builder')"
+# A stop that is no class of the loop shows as "?", its text nowhere.
+printf '%s' '{"stop": "plchold plchold plchold", "updated": "2026-10-13T11:40:00+02:00"}' > "$BD/loop/state.json"
+builder
+grep -qx 'Builder: stop: ? 11:40' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "builder: a stop that is no class shows as ?" || bad "builder free stop: $(grep -m1 '^Builder' <<<"$OUT")"
 rm -f "$BD/loop/state.json"
 # Without a state.json: the session alone, and builder.done alone (several lines).
 SHIM_TMUX_BUILDER=1 builder
@@ -254,13 +266,14 @@ for f in builder.done state.json; do
   rm -f "$BD/loop/$f"
 done
 # A FIFO beside a valid state.json (the status verb reads the newest summary too):
-# the builder line gives up after its own limit, the block is there.
+# status passes it over, so the builder line is there at once.
 printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
 mkfifo "$BD/loop/summary-2026-10-13-000000.md"
 t0=$SECONDS
 OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
-[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 6 ] && grep -q '^VMs:' <<<"$OUT" \
-  && ok "a FIFO as summary-*.md costs the builder line its limit, not the block" || bad "FIFO summary: rc=$rc $((SECONDS - t0)) s"
+[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q '^VMs:' <<<"$OUT" \
+  && grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
+  && ok "a FIFO as summary-*.md is passed over: the builder line is there at once" || bad "FIFO summary: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Builder' <<<"$OUT")"
 rm -f "$BD/loop/summary-2026-10-13-000000.md" "$BD/loop/state.json"
 
 # the seven triggers, one WARN line each
