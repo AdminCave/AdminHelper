@@ -324,10 +324,10 @@ uebernimmt das `bash -e`, mit dem GitHub jeden `run:`-Schritt faehrt; beim Einfu
 normale Shell gibt es das nicht.
 
 Das Release-Binary statt `go install`: jede oasdiff-Fassung ab v1.24.0 verlangt `go 1.26` in
-ihrer go.mod, waehrend die Workflows Go 1.25 mit `GOTOOLCHAIN=local` pinnen — aus der Quelle
-bauen scheitert dort genauso wie seinerzeit `govulncheck` (PR #14). Ein Tarball braucht gar
-keine Toolchain, und die Pruefsumme macht ein ausgetauschtes Asset zum Fehler statt zur
-Ueberraschung.
+ihrer go.mod, und die Workflows bauen mit `GOTOOLCHAIN=local` — aus der Quelle bricht der Bau,
+sobald oasdiff die `go-version` der Workflows ueberholt, genauso wie seinerzeit `govulncheck`
+(PR #14). Ein Tarball braucht gar keine Toolchain, und die Pruefsumme macht ein ausgetauschtes
+Asset zum Fehler statt zur Ueberraschung.
 
 Lokal gegen den Basis-Branch pruefen (braucht `oasdiff` im PATH, sonst Exit 75 = SKIP):
 
@@ -1271,11 +1271,12 @@ des Builders, macht `--strict` die Grundlage rot.
 ### Go Toolchain (Agent)
 
 ```bash
-# Go 1.25+ installieren (siehe https://go.dev/dl/ — go.mod verlangt 1.25)
-sudo apt install -y golang-go
-# Oder manuell (Version von https://go.dev/dl/ einsetzen):
-# wget https://go.dev/dl/go1.25.x.linux-amd64.tar.gz
-# sudo tar -C /usr/local -xzf go1.25.x.linux-amd64.tar.gz
+# Go 1.26.9 oder neuer installieren (https://go.dev/dl/). go.mod verlangt nur 1.25, CI und
+# Release bauen aber mit dem neuesten 1.26.x: ein Bau mit 1.25.x traegt stdlib-Luecken, die
+# erst go1.26.9 schliesst. Das Debian-Paket golang-go ist dafuer zu alt (trixie: 1.24), also
+# manuell (Version von https://go.dev/dl/ einsetzen):
+# wget https://go.dev/dl/go1.26.x.linux-amd64.tar.gz
+# sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.26.x.linux-amd64.tar.gz
 ```
 
 ### Node.js + npm (Desktop-UI und Web-Frontend)
@@ -1321,7 +1322,7 @@ vergleicht andere Befunde:
 # GOTOOLCHAIN=local, weil CI (setup-go) genauso baut — ohne das holt sich go
 # still eine neuere Toolchain und der Pin sagt nichts mehr darueber aus, was in
 # CI ueberhaupt uebersetzt.
-GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 # Python: Debians pip ist externally-managed (PEP 668), also ein eigenes venv
 # statt --user, plus ein Symlink in den PATH.
@@ -1347,10 +1348,11 @@ Aufrufe je Komponente — dieselben wie in `audit.yml`, aus dem Repo-Root
 `--disable-pip` ist kein Detail: `requirements.txt` ist der gehashte Lock, und
 ohne das Flag wuerde pip-audit ihn zum Aufloesen installieren wollen.
 
-`govulncheck` meldet auch stdlib-Funde und bewertet sie gegen die Go-Version,
-mit der es gebaut wurde. Die Dev-Box muss deshalb dieselbe Minor fahren wie
-`go-version` in den Workflows (heute `1.25`), sonst weicht der lokale Befund von
-CI ab. Gewechselt wird per Tarball-Swap unter `~/sdk/go` — `.devenv.sh` legt
+`govulncheck` meldet auch stdlib-Funde und bewertet sie im Quelltext-Modus gegen
+die Version des `go` im PATH. Die Dev-Box muss deshalb dieselbe Minor fahren wie
+`go-version` in den Workflows (heute `1.26`), und zwar wie CI mit `check-latest`
+den neuesten Patch (1.26.9 oder neuer), sonst weicht der lokale Befund von CI ab.
+Gewechselt wird per Tarball-Swap unter `~/sdk/go` — `.devenv.sh` legt
 `~/sdk/go/bin` vor das System-Go. Dass der govulncheck-Pin ueberhaupt noch zur
 `go-version` passt, prueft `bash scripts/dev/toolchain-lockstep.sh` (in CI ein
 Step im Job `frp-consistency`): x/vuln v1.8.0 verlangt `go 1.26.0` und liesse

@@ -217,7 +217,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   go1.25.14, die erst go1.26.9 behebt: GO-2026-6603, -6605, -6607, -6608, -6610, -6611, -6612, -6613 und
   -6617 (`net/http`, `net/textproto`, `crypto/tls`). `govulncheck` steht auf v1.9.0. Die `go`-Direktive in
   `apps/agent/go.mod` bleibt `1.25.0`. `scripts/dev/toolchain-lockstep.sh` verlangt neben jeder `go-version`
-  `check-latest: true`.
+  `check-latest: true`. Die Test-Boxen (`scripts/vm/bootstrap_linux.sh`) installieren go1.26.9 statt 1.25.0.
 
 - **Server-gebundene API-Keys schreiben nur fuer ihren Server (Server):** `POST /api/connections` und
   `PUT /api/connections/{id}` nehmen von einem an einen Server gebundenen API-Key nur eine `serverId`
