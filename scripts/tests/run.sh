@@ -319,7 +319,7 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
     *)  fail "$name"; result="fail" ;;
   esac
   record_step "$name" "$result" "$((SECONDS - t0))"
-  scan_test_skips "$log"
+  scan_test_skips "$id" "$log"
 }
 
 # Tests that MUST NOT skip once their precondition is met. Each guards a path
@@ -349,14 +349,21 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     stack's runs with TZ=Europe/Berlin); a skip under a Postgres URL leaves the
 #     zone the naive UTC columns depend on unchecked. Two tests carry the name:
 #     monitoring's skips without a Postgres DATABASE_URL, the server's only without
-#     any. The rule reads run.sh's own DATABASE_URL, so it holds the server's copy
-#     only where that is exported; the server step's fallback to AH_TEST_DB stays
-#     out of its sight, as a skip line does not say which suite it came from.
+#     any.
+# The URL rules read the URL the pytest step gives its suite, not run.sh's own: a
+# skip line does not say which suite it came from, so run_py_step hands its id on.
+# The server step falls back to AH_TEST_DB (the dev box and the builder profile
+# leave DATABASE_URL unset on purpose), and its copies of test_db_session_utc and
+# test_alembic_builtin count there too. The schemathesis step sets DATABASE_URL per
+# service itself; `-m schemathesis` deselects every test listed here.
 # test_alembic_builtin, test_check_engine_concurrency and test_db_session_utc
-# match on *postgres* rather than on "is set": the first two and monitoring's
-# test_db_session_utc gate on the URL naming a Postgres (a SQLite URL makes FOR
-# UPDATE a no-op), so a run with such a URL skips honestly — and calling that
-# strict-failed would be a red with nothing behind it.
+# match on a URL that starts with postgres rather than on "is set": the first two
+# and monitoring's test_db_session_utc gate on DATABASE_URL.startswith("postgres")
+# (a SQLite URL makes FOR UPDATE a no-op), so a run with such a URL skips honestly
+# — and calling that strict-failed would be a red with nothing behind it. A
+# postgres elsewhere in the URL (sqlite:///…/postgres/x.db) is no Postgres.
+# test_db_token_store keeps *postgres*: its fixture skips unless "postgres" is
+# anywhere in AH_TEST_DB, and the rule mirrors the test.
 # The host and port test_stream_redis.py's REDIS_URL connects to, taken the way
 # redis.from_url takes them: any scheme, credentials dropped, 6379 without a port.
 redis_reachable() {
@@ -367,30 +374,33 @@ redis_reachable() {
   (exec 3<>"/dev/tcp/$host/$port") >/dev/null 2>&1
 }
 
-test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must not skip
-  case "$1" in
-    *test_migrations_smoke*)     [ -n "${DATABASE_URL:-}" ] ;;
+test_skip_is_required() {  # test_skip_is_required <step id> <skip line> -> 0 if it must not skip
+  local db="${DATABASE_URL:-}"
+  # The same expression the server step exports to its suite (layer_unit).
+  [ "$1" = server-pytest ] && db="${DATABASE_URL:-${AH_TEST_DB:-}}"
+  case "$2" in
+    *test_migrations_smoke*)     [ -n "$db" ] ;;
     *test_auth_token_lifecycle*) [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker ;;
     *test_stream_redis*)         redis_reachable ;;
     *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_check_engine_concurrency*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_alembic_builtin*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_db_session_utc*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_check_engine_concurrency*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_alembic_builtin*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_db_session_utc*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
     *) return 1 ;;
   esac
 }
 
-# scan_test_skips <logfile> — read pytest's `-rs` short summary. Only populated
-# under --strict, where the suites are told to report their skips at all.
+# scan_test_skips <step id> <logfile> — read pytest's `-rs` short summary. Only
+# populated under --strict, where the suites are told to report their skips at all.
 scan_test_skips() {
-  local log="$1" line name
+  local step="$1" log="$2" line name
   [ -f "$log" ] || return 0
   while IFS= read -r line; do
     # Strip pytest's own "SKIPPED [n] " prefix, count included.
     name="${line#SKIPPED }"; name="${name#\[*\] }"
     TEST_SKIPS+=("$name")
     [ "$AH_STRICT" = "1" ] || continue
-    if test_skip_is_required "$line"; then
+    if test_skip_is_required "$step" "$line"; then
       echo "  strict-failed: $name (test-skip)"
       STRICT_FAILED+=("$name"); FAIL=$((FAIL+1)); FAILED_STEPS+=("$name")
     fi
@@ -598,7 +608,7 @@ restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test review_probe_test review_cli_probe_test review_run_test scratch_test ledger_loop_test task_close_test runner_setup_test redteam_test builder_home_test gitignore_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
-multibox_test lane_test skill_consistency_test schemathesis_determinism_test"
+multibox_test lane_test pg_url_test skill_consistency_test schemathesis_determinism_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
