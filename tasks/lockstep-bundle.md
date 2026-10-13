@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket lockstep-bundle: der Toolchain-Lockstep liest Kommentare, die Test-Box-Go und jede wahre Schreibweise von check-latest (R-0355, R-0356, R-0354) — Task-Ledger
-Status: geplant · Branch: harness/lockstep-bundle · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/lockstep-bundle · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Bau nach der Uebergabe von status-robust; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0355, R-0356, R-0354 (Kurz-Ledger ohne Spec)
 Heavy: none — toolchain-lockstep.sh mit toolchain_lockstep_test (Fixture-Bäume, Fake-curl); kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku DE+EN im selben Commit, SPDX bei neuen Dateien).
