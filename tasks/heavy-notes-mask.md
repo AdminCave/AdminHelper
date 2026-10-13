@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # heavy.sh: was der Lauf auf stdout druckt, trägt keine Box-Adresse — Task-Ledger
-Status: aktiv · Branch: harness/heavy-notes-mask · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/heavy-notes-mask · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Frage 1 Lesart L2: nur stdout maskieren; Frage 2 report.md bleibt woertlich, Restrisiko auf Kevins Wort 2026-10-13; Frage 3 VMIDs bleiben; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0351 (Kurz-Ledger ohne Spec)
 Heavy: none — `heavy.sh` mit seinem hermetischen Test (Shims für vm.py, iter, warm und multibox); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine VM.
@@ -28,8 +28,10 @@ Aufsicht auf sein Wort. Adressen in Tests und Proben sind Platzhalter (RFC 5737)
   - `tail -25 multibox.log` (`:860`).
 - `session_status_test.sh:356-361` verlangt in `heavy.sh` genau ein `sed -E`-Programm, gleich dem des Hooks.
 
-### T1 — heavy.sh: Notizen und Log-Ausschnitte gehen maskiert auf stdout, report.md und die Logs bleiben wörtlich (R-0351)  [ ]
+### T1 — heavy.sh: Notizen und Log-Ausschnitte gehen maskiert auf stdout, report.md und die Logs bleiben wörtlich (R-0351)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @af31093a 2026-10-13T19:41:34+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `mask_addr` (`:116-118`) wird zu zwei Funktionen mit demselben einen Programm:
   - `mask_stream` (stdin → stdout) trägt das unveränderte `LC_ALL=C sed -E '…'`.
