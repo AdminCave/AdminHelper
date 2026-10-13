@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-guard: AH-STATUS zeigt nur Rollen und VM-IDs, Nachträge aus lane-state-guard (R-0331) — Task-Ledger
-Status: bereit · Branch: harness/status-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: erledigt · Branch: harness/status-guard · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-12: sofort; lane.sh lane_vm_untracked ohne eigenen Fall wie empfohlen; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0331 (Kurz-Ledger ohne Spec)
 Heavy: none — session-status.sh, heavy.sh, lib.sh, vm.py und lane.sh mit hermetischen Tests: session_status_test mit Fixture-Repo, heavy_test mit Shims, lib_vm_test und test_vm mit tmp-Repos und Fake-API; nur Platzhalter, keine VM, kein Stack-, Gateway-, PKI- oder Install-Pfad.
