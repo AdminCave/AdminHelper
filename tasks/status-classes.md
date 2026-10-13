@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-classes: status zeigt nur bekannte Stop-Klassen und Muster und liest begrenzt (R-0338) — Task-Ledger
-Status: aktiv · Branch: harness/status-classes · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/status-classes · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-13; Bau nach dem Merge von status-builder; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0338 (Kurz-Ledger ohne Spec)
 Heavy: none — ledger-loop.sh status und session-status.sh mit ledger_loop_test und session_status_test (Fixture-Dateien, Shims); nur Platzhalter, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -66,8 +66,10 @@ Semantik:
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; DEVELOPMENT.md nennt die Klassen schon)
 
-### T2 — status liest state.json und Summary nur als reguläre Dateien, begrenzt; worker_line ebenso (R-0338)  [ ]
+### T2 — status liest state.json und Summary nur als reguläre Dateien, begrenzt; worker_line ebenso (R-0338)  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ca3dee4a 2026-10-13T08:30:51+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `ledger-loop.sh status`:
   - liest state.json (:154, :171) und die neueste `summary-*.md` (:200) nur, wenn sie reguläre Dateien sind;

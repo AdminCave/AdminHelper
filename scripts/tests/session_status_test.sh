@@ -197,6 +197,13 @@ grep -q ' · Worker: läuft T3/8 tasks/x.md · 4,10 \$ · seit 01:12$' <<<"$OUT"
   && ok "worker running: task of the ledger, cost, since when" || bad "worker running: $(grep -m1 '^Ledger' <<<"$OUT")"
 worker '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": "ledger-leer", "updated": "2026-10-04T06:40:00+02:00"}'
 grep -q ' · Worker: stop: ledger-leer 06:40$' <<<"$OUT" && ok "worker stopped: its class and the time" || bad "worker stop: $(grep -m1 '^Ledger' <<<"$OUT")"
+# The runner's state as a FIFO: named at once, the block is there.
+mkfifo "$WS/fifo.json"
+t0=$SECONDS
+OUT=$(AH_LOOP_STATE="$WS/fifo.json" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
+[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
+  && ok "the runner's state.json as a FIFO does not hold up the hook" || bad "worker FIFO: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Ledger' <<<"$OUT")"
+rm -f "$WS/fifo.json"
 worker 'not json'
 grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
   && ok "a broken state.json: named, and the hook goes on" || bad "worker broken: $OUT"
