@@ -216,11 +216,20 @@ echo "── reap.sh: a slot vm.py refuses costs only its own call ──"
 reset_state
 printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\n' > "$AH_VM_STATE_DIR/warm.env"
 OUT=$(FAKE_DESTROY_FAIL=3001 bash "$REAP" 2>&1); rc=$?
-grep -q '^destroy --lane main 3002$' "$FAKE_LOG" && grep -q "no VM '3001' in pool" <<<"$OUT" \
-  && ok "the slot after a refused one is destroyed all the same" || bad "refused slot: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
+[ "$rc" = 0 ] && grep -q '^destroy --lane main 3002$' "$FAKE_LOG" && grep -q "no VM '3001' in pool" <<<"$OUT" \
+  && ok "the slot after a refused one is destroyed all the same, exit 0" || bad "refused slot: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
 [ -z "$(slot desktop)" ] && [ -z "$(slot server)" ] && [ -z "$(slot server_ip)" ] \
   && ok "... and warm.env is emptied as before" || bad "warm.env left: $(cat "$AH_VM_STATE_DIR/warm.env")"
 grep -q '^reap$' "$FAKE_LOG" && ok "... and the expiry sweep follows" || bad "no reap after a refused slot: $(cat "$FAKE_LOG")"
+
+echo "── reap.sh: a slot that holds no VMID is skipped ──"
+reset_state
+printf 'desktop=--role=desktop\nserver=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(bash "$REAP" 2>&1); rc=$?
+[ "$rc" = 0 ] && ! grep -q -- '--role' "$FAKE_LOG" && grep -q '^destroy --lane main 3002$' "$FAKE_LOG" \
+  && grep -q 'slot desktop holds no VMID — skipped' <<<"$OUT" && ! grep -q -- '--role=desktop' <<<"$OUT" \
+  && ok "a slot that holds no VMID never reaches vm.py, the other slot still goes" \
+  || bad "non-VMID slot: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
 
 echo "── reap.sh --all ──"
 reset_state

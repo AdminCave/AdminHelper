@@ -61,3 +61,23 @@ Semantik: reap.sh :45–46 („A slot whose VM is already gone is the normal cas
 stop at it“). Unter docs/ gibt es keine Stelle zu reap.sh.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; DEVELOPMENT.md und AUTONOMOUS.md sagen nur, dass reap.sh die Slots mit `--lane` nennt, das bleibt)
+
+### T2 — Nachbesserung aus dem Review am Ende: nur Slots aus Ziffern, der Exit-Code des Ablehnungsfalls  [x]
+Komponente: scripts · Dateien: scripts/vm/reap.sh, scripts/tests/vm_wrappers_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8760914f 2026-10-13T03:13:35+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `approve`, zwei nits).
+- reap.sh gibt jeden Slot-Wert als Argument an `vm.py destroy`. Ein Wert, der mit `-` beginnt, würde argparse als
+  Option lesen. `desktop=--role=desktop` hieße dann `destroy --lane main --role=desktop` und träfe per Filter jede
+  Desktop-VM der Lane.
+  - Neu: reap.sh nimmt nur Slot-Werte aus Ziffern. Einen anderen meldet es mit der Rolle, ohne den Wert, und
+    überspringt ihn.
+  - Der Vorschlag `destroy -- <id>` aus dem Review geht nicht: `vm.main` schneidet `--` vor argparse ab, und ein Verb
+    ohne Kommando endet dann mit Exit 2 (test_vm `test_a_verb_without_a_command_refuses_one`).
+- vm_wrappers_test:
+  - Der Ablehnungsfall aus T1 prüft auch, dass reap.sh mit 0 endet; über rot oder grün entscheidet das abschließende
+    `list`.
+  - Ein Fall `desktop=--role=desktop`: kein `destroy` mit diesem Wert, die Meldung nennt die Rolle, Exit 0.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T1

@@ -40,7 +40,13 @@ echo "== reap warm boxes (lane $LANE) =="
 IDS=()
 for role in desktop server; do
   v="$(warm_get "$role")"
-  [ -n "$v" ] && { echo "  destroy $role $v"; IDS+=("$v"); }
+  [ -n "$v" ] || continue
+  # A VMID and nothing else: a value starting with - would reach vm.py's argparse
+  # as an option (--role=desktop would select every desktop VM of the lane).
+  case "$v" in
+    *[!0123456789]*) echo "  slot $role holds no VMID — skipped"; continue ;;
+  esac
+  echo "  destroy $role $v"; IDS+=("$v")
 done
 # One call per slot: vm.py checks every VM it is named before it destroys the
 # first and refuses the whole call for one it will not take. A slot whose VM is
