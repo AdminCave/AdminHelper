@@ -20,8 +20,10 @@ Frisch geprüft, was nach Phase A/B noch gilt:
 - ADR 0002 `:141` ist schon richtig („Default damals `false`, seit 0.29.0 `true`“) und nicht Teil des Pakets.
 - So korrigieren die ADRs sich schon heute: an der Stelle, mit „damals … seit …“. Beide Tasks halten diese Form.
 
-### T1 — ADR 0001: der Umsetzungsstand nennt den Default von heute (R-0281)  [ ]
+### T1 — ADR 0001: der Umsetzungsstand nennt den Default von heute (R-0281)  [x]
 Komponente: scripts · Dateien: docs/adr/0001-unified-pki-and-secure-deployment.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e07104b8 2026-10-13T08:44:52+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: Abschnitt „0. Umsetzungsstand (Phase A)“, der erste Absatz (`:26-29`), lautet heute:
 > Der **Kern** dieses Entwurfs ist umgesetzt und läuft per Default **permissiv** (nutzbar, ohne dass schon ein Client
 > ausgesperrt wird). Das Scharfschalten auf `CERT_REQUIRED` ist der `MTLS_ENFORCE`-Schalter (A8) — umgesetzt und
