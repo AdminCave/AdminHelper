@@ -344,6 +344,18 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
   && ok "monitoring step: the same skip with only AH_TEST_DB set is an honest test-skip" \
   || bad "monitoring session-utc skip, AH_TEST_DB only: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
 
+# The Postgres rules hold the start of the URL, as their tests do: a postgres in a
+# SQLite path is no Postgres, and its skip is honest.
+for t in "test_db_session_utc.py:26: needs a postgres DATABASE_URL: the app engine connects to it" \
+         "test_alembic_builtin.py:41: kein Postgres in DATABASE_URL — die Migrationskette braucht ein echtes Postgres"; do
+  OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest" \
+        DATABASE_URL="sqlite:///$WORK/postgres/x.db" SHIM_SKIP="tests/$t" \
+        "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
+  [ $rc -eq 0 ] && grep -q "1 test-skips" <<<"$OUT" && ! grep -q "strict-failed" <<<"$OUT" \
+    && ok "a ${t%%.py*} skip under a SQLite URL with postgres in its path is an honest test-skip" \
+    || bad "${t%%.py*} skip, sqlite path with postgres: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+done
+
 # ...and without --strict pytest is not even asked for its skips, so the step
 # behaves exactly as it did before this stage.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" DATABASE_URL="postgresql://x@localhost/y"       SHIM_SKIP="tests/test_migrations_smoke.py:21: DATABASE_URL nicht gesetzt"       "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1); rc=$?

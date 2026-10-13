@@ -356,10 +356,13 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # DATABASE_URL unset on purpose), and its copies of test_db_session_utc and
 # test_alembic_builtin count there too.
 # test_alembic_builtin, test_check_engine_concurrency and test_db_session_utc
-# match on *postgres* rather than on "is set": the first two and monitoring's
-# test_db_session_utc gate on the URL naming a Postgres (a SQLite URL makes FOR
-# UPDATE a no-op), so a run with such a URL skips honestly — and calling that
-# strict-failed would be a red with nothing behind it.
+# match on a URL that starts with postgres rather than on "is set": the first two
+# and monitoring's test_db_session_utc gate on DATABASE_URL.startswith("postgres")
+# (a SQLite URL makes FOR UPDATE a no-op), so a run with such a URL skips honestly
+# — and calling that strict-failed would be a red with nothing behind it. A
+# postgres elsewhere in the URL (sqlite:///…/postgres/x.db) is no Postgres.
+# test_db_token_store keeps *postgres*: its fixture skips unless "postgres" is
+# anywhere in AH_TEST_DB, and the rule mirrors the test.
 # The host and port test_stream_redis.py's REDIS_URL connects to, taken the way
 # redis.from_url takes them: any scheme, credentials dropped, 6379 without a port.
 redis_reachable() {
@@ -379,9 +382,9 @@ test_skip_is_required() {  # test_skip_is_required <step id> <skip line> -> 0 if
     *test_auth_token_lifecycle*) [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker ;;
     *test_stream_redis*)         redis_reachable ;;
     *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_check_engine_concurrency*) case "$db" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_alembic_builtin*) case "$db" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_db_session_utc*) case "$db" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_check_engine_concurrency*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_alembic_builtin*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_db_session_utc*) case "$db" in postgres*) return 0 ;; *) return 1 ;; esac ;;
     *) return 1 ;;
   esac
 }

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket skip-per-step: die Skip-Regeln von run.sh sehen die Datenbank-URL ihres Schritts (R-0342) — Task-Ledger
-Status: aktiv · Branch: harness/skip-per-step · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/skip-per-step · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; test_db_token_store bleibt beim Teilstring wie sein Test; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0342 (Kurz-Ledger ohne Spec)
 Heavy: none — run.sh mit run_flags_test (python3-Shim, Fixture-URLs); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine echte Datenbank.
@@ -70,8 +70,10 @@ Semantik: docs/developer/cicd.html:92–93 „Vorbedingungen sind das, worauf de
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (Absatz „test-skips“)
 
-### T2 — Die drei Postgres-Regeln prüfen den Anfang der URL wie ihre Tests  [ ]
+### T2 — Die drei Postgres-Regeln prüfen den Anfang der URL wie ihre Tests  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d157b2d7 2026-10-13T16:57:29+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `test_alembic_builtin`, `test_check_engine_concurrency` und `test_db_session_utc`: `*postgres*` wird `postgres*`.
   Das ist das `startswith("postgres")` ihrer Tests.
