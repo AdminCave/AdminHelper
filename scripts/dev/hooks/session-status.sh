@@ -177,6 +177,9 @@ weekly_line() {
     dir="$(dirname "$f")"; break
   done < <(ls -1d "$out"/weekly/*/report.md 2>/dev/null | sort -r)
   [ -n "$dir" ] || { echo "kein Report"; return 0; }
+  # No box address in the block, masked as heavy.sh mask_addr does: a report written
+  # before heavy.sh masked its reason still carries one.
+  head="$(printf '%s' "$head" | LC_ALL=C sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g')"
   stamp="$(basename "$dir")"; day="${stamp%-*}"
   # Both ends normalised to UTC midnight: a local-time difference is off by one
   # for an hour around a DST change, and "(3 d)" that flickers is worse than none.

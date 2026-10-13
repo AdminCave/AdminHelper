@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-no-address: Grund und Wochenlauf-Zeile ohne Box-Adresse (R-0335) — Task-Ledger
-Status: aktiv · Branch: harness/status-no-address · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/status-no-address · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0335, Triage Kevin 2026-10-13; Bau nach status-classes; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0335 (Kurz-Ledger ohne Spec)
 Heavy: none — heavy.sh mit heavy_test (Shims), session-status.sh mit session_status_test (Fixture-Reports); nur Platzhalter-Adressen (die bestehenden 10.x-Fixtures bleiben, neue aus RFC 5737), kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -50,8 +50,10 @@ die Session-Transkripte gehören in dieselbe Vorsicht. heavy.sh :109–111: der 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — Die Wochenlauf-Zeile zeigt keine Box-Adresse  [ ]
+### T2 — Die Wochenlauf-Zeile zeigt keine Box-Adresse  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a6927285 2026-10-13T11:44:48+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `weekly_line` maskiert die Kopfzeile wie T1 (IPv4 zu `<ip>`, `<nutzer>@<host>` zu `<user>@<host>`), bevor sie in den
   Block geht.

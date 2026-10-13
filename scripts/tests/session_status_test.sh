@@ -330,6 +330,16 @@ grep -qF "Wochenlauf: kaputt: FAIL" <<<"$OUT4" \
   && ok "an unparseable stamp drops the age, not the verdict" \
   || bad "bad stamp: $(grep -m1 '^Ledger' <<<"$OUT4")"
 
+# The weekly line shows no box address, also from a report written before heavy.sh
+# masked its reason.
+mkdir -p "$WORK/addr/weekly/$(date +%F)-1200"
+printf 'UNVERIFIED (vm.py: no ssh: adminhelper@192.0.2.9 refused for 900s, last seen at 198.51.100.7)\n\n# r\n' \
+  > "$WORK/addr/weekly/$(date +%F)-1200/report.md"
+OUT5=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/addr" run_hook "$CLEAN")
+grep -qF "(0 d): UNVERIFIED (vm.py: no ssh: <user>@<host> refused for 900s, last seen at <ip>) · Worker:" <<<"$OUT5" \
+  && ! grep -q '192\.0\.2\.9\|198\.51\.100\.7' <<<"$OUT5" \
+  && ok "the weekly line shows no box address" || bad "weekly address: $(grep -m1 '^Ledger' <<<"$OUT5")"
+
 # AH_OUT_DIR is the documented source, so it has to be honoured, not just defaulted.
 mkdir -p "$WORK/anderswo/weekly/$(date +%F)-1200"
 printf 'PASS\n' > "$WORK/anderswo/weekly/$(date +%F)-1200/report.md"
