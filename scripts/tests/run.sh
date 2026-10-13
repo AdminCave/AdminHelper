@@ -350,11 +350,12 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     zone the naive UTC columns depend on unchecked. Two tests carry the name:
 #     monitoring's skips without a Postgres DATABASE_URL, the server's only without
 #     any.
-# The URL rules read the URL the step gives its suite, not run.sh's own: a skip
-# line does not say which suite it came from, so run_py_step hands its id on. The
-# server step falls back to AH_TEST_DB (the dev box and the builder profile leave
-# DATABASE_URL unset on purpose), and its copies of test_db_session_utc and
-# test_alembic_builtin count there too.
+# The URL rules read the URL the pytest step gives its suite, not run.sh's own: a
+# skip line does not say which suite it came from, so run_py_step hands its id on.
+# The server step falls back to AH_TEST_DB (the dev box and the builder profile
+# leave DATABASE_URL unset on purpose), and its copies of test_db_session_utc and
+# test_alembic_builtin count there too. The schemathesis step sets DATABASE_URL per
+# service itself; `-m schemathesis` deselects every test listed here.
 # test_alembic_builtin, test_check_engine_concurrency and test_db_session_utc
 # match on a URL that starts with postgres rather than on "is set": the first two
 # and monitoring's test_db_session_utc gate on DATABASE_URL.startswith("postgres")

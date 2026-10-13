@@ -347,7 +347,8 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
 # The Postgres rules hold the start of the URL, as their tests do: a postgres in a
 # SQLite path is no Postgres, and its skip is honest.
 for t in "test_db_session_utc.py:26: needs a postgres DATABASE_URL: the app engine connects to it" \
-         "test_alembic_builtin.py:41: kein Postgres in DATABASE_URL — die Migrationskette braucht ein echtes Postgres"; do
+         "test_alembic_builtin.py:41: kein Postgres in DATABASE_URL — die Migrationskette braucht ein echtes Postgres" \
+         "test_check_engine_concurrency.py:54: kein Postgres in DATABASE_URL — FOR UPDATE ist sonst ein No-op"; do
   OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest" \
         DATABASE_URL="sqlite:///$WORK/postgres/x.db" SHIM_SKIP="tests/$t" \
         "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
@@ -355,6 +356,16 @@ for t in "test_db_session_utc.py:26: needs a postgres DATABASE_URL: the app engi
     && ok "a ${t%%.py*} skip under a SQLite URL with postgres in its path is an honest test-skip" \
     || bad "${t%%.py*} skip, sqlite path with postgres: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
 done
+
+# In the server step DATABASE_URL wins over AH_TEST_DB, as in the step itself: a
+# SQLite DATABASE_URL beside a Postgres AH_TEST_DB is no Postgres for the suite.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="server-pytest" \
+      DATABASE_URL="sqlite:///$WORK/x.db" AH_TEST_DB="postgresql://x@localhost/y" \
+      SHIM_SKIP="tests/test_alembic_builtin.py:47: kein Postgres in DATABASE_URL — die Migrationskette braucht ein echtes Postgres" \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "server pytest" 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "1 test-skips" <<<"$OUT" && ! grep -q "strict-failed" <<<"$OUT" \
+  && ok "server step: DATABASE_URL wins over AH_TEST_DB, a SQLite one makes the skip honest" \
+  || bad "server precedence: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
 
 # ...and without --strict pytest is not even asked for its skips, so the step
 # behaves exactly as it did before this stage.

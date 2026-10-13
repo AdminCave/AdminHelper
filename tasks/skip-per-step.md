@@ -90,3 +90,19 @@ Semantik: wie T1.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; cicd.html nennt die drei Regeln nicht einzeln)
 Abhängt von: T1
+
+### T3 — Nachbesserung aus dem Review am Ende: der Kommentar nennt die pytest-Schritte, zwei Fälle mehr  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @69e53d08 2026-10-13T17:49:32+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `approve` mit drei nits).
+- Der Kommentar über den URL-Regeln galt für jeden Schritt. Der Schritt `schemathesis` setzt DATABASE_URL aber je
+  Service selbst (Server mit Rückfall auf AH_TEST_DB, die anderen ohne). Neu: Der Kommentar nennt die pytest-Schritte und
+  sagt, dass `-m schemathesis` jeden Pflicht-Test abwählt.
+- Kein Fall hielt fest, dass im Server-Schritt DATABASE_URL vor AH_TEST_DB gewinnt. Neu: Server-Schritt mit
+  `DATABASE_URL="sqlite:///$WORK/x.db"` und `AH_TEST_DB=postgresql://x@localhost/y`, Skip von `test_alembic_builtin` →
+  rc 0, `1 test-skips`, kein `strict-failed`.
+- Der SQLite-Pfad-Fall aus T2 deckte `test_check_engine_concurrency` nicht ab. Neu: Die Schleife nimmt ihn auf.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T2
