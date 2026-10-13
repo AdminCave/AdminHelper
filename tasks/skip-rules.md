@@ -16,8 +16,10 @@ Geplant 2026-10-13 von Worker B im Auftrag der Aufsicht (adminhelper-ac). Die Ze
 Zeilenangaben origin/main@75ed3e09. `scripts/tests/run.sh` ist ein Harness-Pfad, `.github/workflows/ci.yml` ein
 Gate-Pfad. Den PR merged Kevin oder die Aufsicht auf sein Wort.
 
-### T1 — run.sh: ein Skip von test_db_session_utc mit Postgres-URL ist unter --strict rot (R-0277)  [ ]
+### T1 — run.sh: ein Skip von test_db_session_utc mit Postgres-URL ist unter --strict rot (R-0277)  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @04c5e269 2026-10-13T07:54:26+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `test_skip_is_required` (`run.sh:362-372`) bekommt eine Regel `*test_db_session_utc*`. Ist `DATABASE_URL` ein Postgres
   (`*postgres*`), ist der Skip Pflicht-rot. Die Form ist die von `test_alembic_builtin` und
