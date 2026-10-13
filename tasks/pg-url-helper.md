@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # URL-Helfer: lane_db und pg lesen AH_TEST_DB mit einer gemeinsamen Funktion — Task-Ledger
-Status: aktiv · Branch: harness/pg-url-helper · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/pg-url-helper · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-3 wie empfohlen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — ein gesourcter Shell-Helfer in `scripts/dev/`, `lane_db` in `lane.sh`, `pg` in `builder-home.sh` und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -118,8 +118,10 @@ Dedup-Key: ref:scripts:lane.sh:shared-db-url-helper
 HEAD: 1409c285
 Semantik: `DEVELOPMENT.md:209-210`: „kann `lane.sh` es dort nicht herauslösen, legt es keine Lane an“.
 
-### T3 — builder-home.sh: pg nimmt den Helfer und liest das Passwort wie SQLAlchemy  [ ]
+### T3 — builder-home.sh: pg nimmt den Helfer und liest das Passwort wie SQLAlchemy  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @63b17de9 2026-10-13T16:32:30+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `builder-home.sh` sourct `scripts/dev/pg-url.sh`, nach `ROOT=` (`:50`).
