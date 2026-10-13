@@ -266,13 +266,14 @@ for f in builder.done state.json; do
   rm -f "$BD/loop/$f"
 done
 # A FIFO beside a valid state.json (the status verb reads the newest summary too):
-# the builder line gives up after its own limit, the block is there.
+# status passes it over, so the builder line is there at once.
 printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
 mkfifo "$BD/loop/summary-2026-10-13-000000.md"
 t0=$SECONDS
 OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
-[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 6 ] && grep -q '^VMs:' <<<"$OUT" \
-  && ok "a FIFO as summary-*.md costs the builder line its limit, not the block" || bad "FIFO summary: rc=$rc $((SECONDS - t0)) s"
+[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q '^VMs:' <<<"$OUT" \
+  && grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
+  && ok "a FIFO as summary-*.md is passed over: the builder line is there at once" || bad "FIFO summary: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Builder' <<<"$OUT")"
 rm -f "$BD/loop/summary-2026-10-13-000000.md" "$BD/loop/state.json"
 
 # the seven triggers, one WARN line each

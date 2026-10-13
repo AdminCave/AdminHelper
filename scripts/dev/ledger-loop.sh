@@ -204,7 +204,8 @@ except (OSError, ValueError):
     sys.exit(0)
 run, task, stop = obj(s.get("run")), obj(s.get("task")), s.get("stop")
 if stop:
-    print("Worker: stop: %s %s" % (stop if stop in STOP_CLASSES else "?", hhmm(s.get("updated"))), flush=True)
+    print("Worker: stop: %s %s" % (stop if isinstance(stop, str) and stop in STOP_CLASSES else "?",
+                                   hhmm(s.get("updated"))), flush=True)
 else:
     c = s.get("cost_usd", 0)
     # A runner-written file: a cost that is no finite sum of a run reads as "?".

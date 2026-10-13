@@ -98,3 +98,20 @@ HEAD: 75ed3e09
 Semantik: session-status.sh, Kopf: „a SessionStart hook that fails or blocks would break every session“.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
+
+### T3 — Nachbesserung aus dem Review am Ende: ein stop vom falschen Typ, der Synchron-Test, der FIFO-Summary-Fall  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0a7f0c68 2026-10-13T09:37:10+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `request_changes`: ein belegter Fund, zwei nits).
+- T1 prüfte `stop in STOP_CLASSES` ohne Typprüfung.
+  - Ein `stop` als Liste oder Objekt warf einen `TypeError`, und `status` gab gar nichts aus.
+  - Neu: nur ein String aus der Menge zählt, alles andere ist `?`. Dazu ein Fall `{"stop": ["infra"]}`: `Worker: stop: ? ?`,
+    kein Traceback.
+- nit: Der Synchron-Test der Klassen fand `stop_run` nur mit einem Bindestrich im Namen und ohne Anführungszeichen.
+  - Neu: Das Muster nimmt auch ein Wort ohne Bindestrich und eine Klasse in Anführungszeichen.
+- nit: Der FIFO-Summary-Fall in session_status_test beschrieb noch das Verhalten vor T2.
+  - Neu: Er erwartet die volle Builder-Zeile und eine Laufzeit unter 4 s.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T2

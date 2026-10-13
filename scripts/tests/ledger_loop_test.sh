@@ -965,6 +965,10 @@ printf '{"stop": "plchold plchold", "updated": "2026-10-04T06:40:00+02:00"}' > "
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
 [ $rc -eq 0 ] && [ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: ? 06:40' ] \
   && ok "status: a stop that is no class of the loop shows as ?" || bad "status free stop: $OUT"
+printf '{"stop": ["infra"], "stop_reason": "r", "ledgers": {"good-1": {"result": "aktiv"}}}' > "$WORK/s.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: ? ?' ] && grep -qx '  good-1: aktiv' <<<"$OUT" && ! grep -q Traceback <<<"$OUT" \
+  && ok "status: a stop of the wrong type shows as ?, and the rest still comes" || bad "status stop list: rc=$rc $OUT"
 printf '{"stop": "max-budget", "updated": "2026-10-04T06:40:00+02:00"}' > "$WORK/s.json"
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1)
 [ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: max-budget 06:40' ] && ok "status: a class of the loop shows as it is" || bad "status class: $OUT"
@@ -977,7 +981,7 @@ OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&
 LL="$REPO_ROOT/scripts/dev/ledger-loop.sh"
 written="$( { grep -oE 's\["stop"\] = "[a-z-]+"' "$LL" | sed -E 's/.*"([a-z-]+)"/\1/'
               awk '/^over_cap\(\) \{/,/^}/' "$LL" | grep -oE 'echo "[a-z]+(-[a-z]+)* ' | sed -E 's/echo "//; s/ $//'
-              grep -oE 'stop_run [a-z]+(-[a-z]+)+ ' "$LL" | sed -E 's/stop_run //; s/ $//'; } | sort -u)"
+              grep -oE 'stop_run "?[a-z]+(-[a-z]+)*"? ' "$LL" | sed -E 's/stop_run //; s/ $//; s/"//g'; } | sort -u)"
 listed="$(sed -n '/^STOP_CLASSES = {/,/}/p' "$LL" | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u)"
 [ -n "$written" ] && [ "$written" = "$listed" ] && [ "$(grep -c . <<<"$listed")" -ge 8 ] \
   && ok "status: STOP_CLASSES holds exactly the classes the loop writes" || bad "stop classes: written=[$(tr '\n' ' ' <<<"$written")] listed=[$(tr '\n' ' ' <<<"$listed")]"
