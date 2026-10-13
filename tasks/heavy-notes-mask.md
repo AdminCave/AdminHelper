@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # heavy.sh: was der Lauf auf stdout druckt, trägt keine Box-Adresse — Task-Ledger
-Status: freigegeben · Branch: harness/heavy-notes-mask · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/heavy-notes-mask · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Frage 1 Lesart L2: nur stdout maskieren; Frage 2 report.md bleibt woertlich, Restrisiko auf Kevins Wort 2026-10-13; Frage 3 VMIDs bleiben; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0351 (Kurz-Ledger ohne Spec)
 Heavy: none — `heavy.sh` mit seinem hermetischen Test (Shims für vm.py, iter, warm und multibox); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine VM.
