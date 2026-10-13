@@ -70,3 +70,22 @@ HEAD: 75ed3e09
 Semantik: wie T1.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
+
+### T3 — Nachbesserung aus dem Review am Ende: auch Host und Node des Hypervisors werden maskiert  [x]
+Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f312754e 2026-10-13T12:31:02+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `request_changes`: ein belegter Fund, zwei nits).
+- vm.py hängt an `no ip: …` (`wait_for`) und `clone of … failed` den API-Fehler an:
+  `POST <AH_PVE_URL>/api2/json/nodes/<node>/…`.
+  - `infra_marker` übernimmt diese Zeilen, und T1/T2 ließen den Host der URL und den Node-Namen stehen.
+- Neu: `mask_addr` in heavy.sh und `weekly_line` maskieren zusätzlich den Host jeder `http(s)://`-URL zu `<host>`
+  und `/nodes/<name>` zu `/nodes/<node>`. Beide sed-Zeilen bleiben gleich.
+- Fälle, Platzhalter:
+  - heavy_test: der Grund `no ip` mit `POST https://pve.plchold.example:8006/api2/json/nodes/plchold-n1/…` ergibt
+    `https://<host>:8006/…/nodes/<node>/…`, in der Kopfzeile und in der Urteilszeile.
+  - session_status_test: ein Report mit `clone of … failed: POST https://203.0.113.5:8006/…/nodes/plchold-n1/…`.
+- nit: Der Kopfkommentar von session-status.sh sagte „read verbatim“.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T2

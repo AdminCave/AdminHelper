@@ -20,7 +20,7 @@
 # workflow (the dependency audit) that is red or has stopped running. No
 # trigger, no WARN line.
 #
-# Line 4 carries the weekly run's verdict, read verbatim from the newest
+# Line 4 carries the weekly run's verdict (addresses masked) from the newest
 # non-empty $AH_OUT_DIR/weekly/<stamp>/report.md (heavy.sh, stage 3); "kein
 # Report" when none exists yet. The WARN trigger "release without a green weekly
 # run" (CLAUDE.md §3 trigger 2) deliberately waits for stage 13 — a FAIL here
@@ -177,9 +177,9 @@ weekly_line() {
     dir="$(dirname "$f")"; break
   done < <(ls -1d "$out"/weekly/*/report.md 2>/dev/null | sort -r)
   [ -n "$dir" ] || { echo "kein Report"; return 0; }
-  # No box address in the block, masked as heavy.sh mask_addr does: a report written
-  # before heavy.sh masked its reason still carries one.
-  head="$(printf '%s' "$head" | LC_ALL=C sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g')"
+  # No address or host name of the lab in the block, masked as heavy.sh mask_addr
+  # does: a report written before heavy.sh masked its reason still carries them.
+  head="$(printf '%s' "$head" | LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#/nodes/[^/[:space:]]+#/nodes/<node>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g')"
   stamp="$(basename "$dir")"; day="${stamp%-*}"
   # Both ends normalised to UTC midnight: a local-time difference is off by one
   # for an hour around a DST change, and "(3 d)" that flickers is worse than none.

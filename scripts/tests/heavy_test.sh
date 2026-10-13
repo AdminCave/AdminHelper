@@ -902,6 +902,17 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 h="$(report_of | head -1)"
 [ "$rc" = 74 ] && grep -qF 'sync failed: rsync to <ip> exited 12' <<<"$h" && ! grep -q '198\.51\.100\.7' <<<"$h" \
   && ok "a bare address in the reason becomes <ip>" || bad "bare address: rc=$rc head=$h"
+# vm.py's API errors carry the hypervisor's URL and its node.
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: no ip: guest agent of 3015 silent after 900s (POST https://pve.plchold.example:8006/api2/json/nodes/plchold-n1/qemu/3015/agent/ping: HTTP 500 QEMU guest agent is not running)"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+h="$(report_of | head -1)"; v="$(grep -a 'heavy.sh\[all\]: UNVERIFIED' <<<"$out")"
+[ "$rc" = 74 ] \
+  && grep -qF '(POST https://<host>:8006/api2/json/nodes/<node>/qemu/3015/agent/ping: HTTP 500 QEMU guest agent is not running)' <<<"$h" \
+  && grep -qF 'https://<host>:8006/api2/json/nodes/<node>/qemu/3015' <<<"$v" && ! grep -q 'plchold' <<<"$h$v" \
+  && ok "the hypervisor's host and its node are masked in the reason too" || bad "api host: rc=$rc head=$h verdict=$v"
 # The wording matters: vm.py says "clone of 3010 into 3015 failed", never
 # "clone failed" — a marker written from the call site would never fire.
 mk_case
