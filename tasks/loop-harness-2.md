@@ -108,8 +108,8 @@ Checkout.
 
 ### T3 — .gitignore: `/.vm` ignoriert auch einen Symlink .vm (R-0326)  [x]
 Komponente: scripts · Dateien: .gitignore, scripts/tests/gitignore_test.sh, scripts/tests/run.sh
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d6c249d1 2026-10-13T02:05:58+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b616ab92 2026-10-13T02:53:29+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - `.gitignore`: Nach `.vm/` (`:62`) kommt die Zeile `/.vm`. Beide bleiben: `.vm/` trifft wie heute jedes Verzeichnis
   dieses Namens, `/.vm` zusätzlich den Eintrag an der Wurzel in jeder Form, auch als Symlink.

@@ -34,7 +34,8 @@ ignored() {
     dir) mkdir "$r/.vm" && : > "$r/.vm/lane" || return 2 ;;
     symlink) ln -s "$WORK/elsewhere" "$r/.vm" || return 2 ;;
   esac
-  git -C "$r" check-ignore -q -- "$3"
+  # Without the caller's global excludes file: only this .gitignore decides.
+  git -c core.excludesFile=/dev/null -C "$r" check-ignore -q -- "$3"
 }
 
 echo "── the check can fail: .vm/ alone does not take a symlink"
