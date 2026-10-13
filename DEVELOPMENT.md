@@ -1225,7 +1225,9 @@ nur eine `note`, der Loop endet dann in der Vorpruefung mit `stop: infra`), zieh
 auf das venv), eine eigene Test-DB `adminhelper_builder` auf dem Server des Haupt-Checkouts,
 `.devenv.sh` (0600) und die Git-Identitaet. Fuer die Test-DB nimmt `setup` nur eine URL `postgresql://`
 oder `postgres://`, beide auch mit `+<treiber>`; eine andere Form, etwa die Keyword-Form von libpq
-(`host=… dbname=…`), lehnt es ab. `oauth.env` schreibt nur `token`, und nur ein Token der Form
+(`host=… dbname=…`), lehnt es ab. Das Passwort liest es wie SQLAlchemy, mit denselben Regeln wie
+`lane.sh` (`scripts/dev/pg-url.sh`), und eine URL, die kein UTF-8 ist, lehnt es ebenso ab.
+`oauth.env` schreibt nur `token`, und nur ein Token der Form
 `sk-ant-oat01-…`; der Code, den der Browser unterwegs zeigt, ist keins.
 
 **Starten** (nur Kevin; die Ledger in seiner Reihenfolge, die Deckel wie oben) und **Stand lesen**:
