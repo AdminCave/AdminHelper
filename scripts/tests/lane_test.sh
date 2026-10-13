@@ -61,7 +61,7 @@ export PATH="$WORK/bin:$PATH" AH_VM_PY="$WORK/bin/vm.py"
 MAIN="$WORK/AdminHelper"
 MAIN_DB="postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test"
 mkdir -p "$MAIN/scripts/dev" "$MAIN/scripts/vm" "$MAIN/tasks" "$MAIN/.claude"
-cp "$REPO_ROOT/scripts/dev/lane.sh" "$MAIN/scripts/dev/"
+cp "$REPO_ROOT/scripts/dev/lane.sh" "$REPO_ROOT/scripts/dev/pg-url.sh" "$MAIN/scripts/dev/"
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$MAIN/scripts/vm/"
 printf '/.devenv.sh\n.vm/\n.claude/settings.local.json\n/apps/desktop/src-tauri/binaries/\n.venv/\n' > "$MAIN/.gitignore"
 # Gitignored parts of the main checkout a lane copies or links (T3): the frpc
