@@ -64,3 +64,27 @@ Semantik:
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md :1229–1230 (Builder-Profil). Ein Satz: Ein Lauf im Builder-Profil steht als Zeile „Builder:“ im
 AH-STATUS, mit Stand, Kosten, laufender Sitzung und Exit-Code.
+
+### T2 — Nachbesserung aus dem Review am Ende: der Hook hängt an keiner Datei des Builders  [x]
+Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b70c88aa 2026-10-13T06:04:35+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `request_changes`: ein belegter Fund, vier nits).
+- Der Hook las `builder.done` mit grep ohne Zeitlimit und prüfte nur `-r`.
+  - Ist die Datei eine FIFO oder ein Symlink auf ein Gerät, blockiert grep, und jede Session wartet ohne AH-STATUS.
+  - Für `state.json` gilt dasselbe im Kleinen: 10 s bis zum `timeout`.
+  - Neu: Beide Dateien werden nur gelesen, wenn sie reguläre Dateien sind (`-f`), und grep läuft unter
+    `timeout 5`.
+- nits:
+  - `${HOME:-}` statt `$HOME` unter `set -u`.
+  - `AH_BUILDER_DIR` kommt in die Liste der Variablen im Kopf.
+  - Kommentar und DEVELOPMENT.md sagen „zeigt nichts weiter“ statt „liest nicht“, denn `ledger-loop.sh status` öffnet
+    auch die neueste Summary.
+  - Tests:
+    - der Zweig ohne state.json (nur Sitzung, nur builder.done);
+    - eine mehrzeilige builder.done;
+    - ein tmux-Shim, der den Sitzungsnamen `=ah-builder` prüft;
+    - eine FIFO als builder.done und als state.json, bei der der Hook unter einem äußeren Zeitlimit mit 0 endet.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, der Satz aus T1
+Abhängt von: T1

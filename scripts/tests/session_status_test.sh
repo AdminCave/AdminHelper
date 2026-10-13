@@ -63,7 +63,7 @@ esac
 EOF
 chmod +x "$BIN/gh"
 # tmux: `has-session` succeeds only when the case says the builder session is up.
-printf '#!/usr/bin/env bash\n[ "${1:-}" = has-session ] && [ -n "${SHIM_TMUX_BUILDER:-}" ] && exit 0\nexit 1\n' > "$BIN/tmux"
+printf '#!/usr/bin/env bash\n[ "$*" = "has-session -t =ah-builder" ] && [ -n "${SHIM_TMUX_BUILDER:-}" ] && exit 0\nexit 1\n' > "$BIN/tmux"
 chmod +x "$BIN/tmux"
 export PATH="$BIN:$PATH"
 
@@ -230,6 +230,22 @@ builder
 grep -q '^Builder: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
   && ok "builder: control characters in state.json are removed" || bad "builder control chars: $(cat -v <<<"$OUT" | grep -m1 '^Builder')"
 rm -f "$BD/loop/state.json"
+# Without a state.json: the session alone, and builder.done alone (several lines).
+SHIM_TMUX_BUILDER=1 builder
+grep -qx 'Builder: — (tmux ah-builder)' <<<"$OUT" && ok "builder: the session alone is a line" || bad "builder session only: $(grep -m1 '^Builder' <<<"$OUT")"
+printf 'junk\nrc=7\nrc=8\n' > "$BD/loop/builder.done"
+builder
+grep -qx 'Builder: — · fertig rc=7' <<<"$OUT" && ok "builder: the first rc=<digits> line of builder.done, nothing else" \
+  || bad "builder done only: $(grep -m1 '^Builder' <<<"$OUT")"
+rm -f "$BD/loop/builder.done"
+# A FIFO in the builder's directory must not hold up the hook.
+for f in builder.done state.json; do
+  mkfifo "$BD/loop/$f"
+  OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
+  [ "$rc" = 0 ] && grep -q '^VMs:' <<<"$OUT" && ! grep -q '^Builder:' <<<"$OUT" \
+    && ok "a FIFO as $f does not hold up the hook" || bad "FIFO $f: rc=$rc out=$(grep -m1 '^Builder' <<<"$OUT")"
+  rm -f "$BD/loop/$f"
+done
 
 # the seven triggers, one WARN line each
 grep -q '^WARN: .*tauri.conf.json 0.46.0, kein Tag v0.46.0' <<<"$OUT" && ok "trigger: bump without tag" || bad "trigger: bump without tag"

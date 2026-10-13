@@ -13,6 +13,7 @@
 #   AH_AUTONOMOUS=1  print nothing (settings hooks fire in `claude -p` too)
 #   AH_DEVENV        path to the devenv file (default <root>/.devenv.sh)
 #   AH_LOOP_STATE    the worker's state file (default /srv/ah/loop/state.json)
+#   AH_BUILDER_DIR   the builder profile (default ~/.cache/ah-builder)
 #
 # The WARN lines fire ONLY when Kevin's next move would fail or something
 # irreversible looms — plus one that is no CLAUDE.md §3 trigger: a scheduled
@@ -200,15 +201,17 @@ echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_l
 # A run in the builder profile (the team under Kevin's UID): the same cleaned first
 # line of `ledger-loop.sh status`, whether its tmux session is up, and the exit code
 # builder.done recorded, digits only. A line only when the profile has a trace, and
-# nothing else of the builder is read.
+# it shows nothing else of the builder. Regular files only, every read bounded: the
+# loop writes this directory, and a FIFO or a device there must not hold up the
+# start of every session.
 builder_line() {
-  local d="${AH_BUILDER_DIR:-$HOME/.cache/ah-builder}/loop" line="" up="" rc=""
-  if [ -r "$d/state.json" ]; then
+  local d="${AH_BUILDER_DIR:-${HOME:-}/.cache/ah-builder}/loop" line="" up="" rc=""
+  if [ -f "$d/state.json" ] && [ -r "$d/state.json" ]; then
     line="$(timeout 10 bash "$LOOP_SH" status --state "$d/state.json" 2>/dev/null | head -n 1)"
     case "$line" in "Worker: "*) line="${line#Worker: }" ;; *) line="?" ;; esac
   fi
   timeout 5 tmux has-session -t "=ah-builder" 2>/dev/null && up=" (tmux ah-builder)"
-  [ ! -r "$d/builder.done" ] || rc="$(LC_ALL=C grep -m1 -xE 'rc=[0-9]{1,3}' "$d/builder.done" 2>/dev/null)"
+  [ ! -f "$d/builder.done" ] || rc="$(LC_ALL=C timeout 5 grep -m1 -xE 'rc=[0-9]{1,3}' "$d/builder.done" 2>/dev/null)"
   [ -n "$line$up$rc" ] || return 0
   echo "Builder: ${line:-—}${up}${rc:+ · fertig $rc}"
 }
