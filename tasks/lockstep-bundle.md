@@ -43,8 +43,10 @@ Semantik: docs/developer/cicd.html:40 „jede <code>go-version</code>-Stelle in 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — Der Lockstep hält GO_VERSION der Test-Boxen auf der Minor der Workflows (R-0356)  [ ]
+### T2 — Der Lockstep hält GO_VERSION der Test-Boxen auf der Minor der Workflows (R-0356)  [x]
 Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @51c2a014 2026-10-13T20:29:02+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Neue Offline-Prüfung 1c nach 1b: Der Default von `GO_VERSION="${AH_GO_VERSION:-X.Y.Z}"` in bootstrap_linux.sh muss
   dieselbe MAJOR.MINOR haben wie `go-version`. Der Patch ist frei.

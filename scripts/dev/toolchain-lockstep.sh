@@ -16,7 +16,7 @@
 # looking like an ordinary red run. The pin's comment says "raise this together
 # with go-version"; this is that sentence as a check.
 #
-# Four assertions:
+# Five assertions:
 #   1  every `go-version:` in ci.yml, release.yml and audit.yml is the same
 #      (the pin is chosen against one Go version — three different ones make
 #      "the Go version" meaningless before the third assertion can mean
@@ -26,6 +26,9 @@
 #      the image held 1.26.8 when the stdlib fixes came with 1.26.9: without it,
 #      release.yml can ship another stdlib than the one audit.yml scanned.
 #      Offline, like 2.
+#   1c the default of GO_VERSION in scripts/vm/bootstrap_linux.sh, the Go every
+#      heavy-tier box builds the agent with, has that go-version's MAJOR.MINOR.
+#      The patch is free (the tarball's SHA-256 pins it). Offline.
 #   2  the ruff that ci.yml installs is the default of RUFF_VERSION in
 #      scripts/vm/bootstrap_linux.sh and the `ruff==` pin in
 #      apps/server/requirements-dev.txt. The first bake of a linux-server
@@ -138,11 +141,29 @@ for f in ci release audit; do
 done
 echo "check-latest: true beside every go-version"
 
+# ── 1c: the test boxes' Go on the workflows' minor ───────────────────────────
+# Without it a minor bump of the workflows leaves the boxes on the old Go, and
+# the heavy tier tests a toolchain CI no longer ships.
+BOOT="$ROOT/scripts/vm/bootstrap_linux.sh"
+[ -f "$BOOT" ] || { echo "::error::missing scripts/vm/bootstrap_linux.sh — the test boxes' Go cannot be checked"; exit 1; }
+GO_BOOT="$(sed -n 's/^GO_VERSION="\${AH_GO_VERSION:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
+case "$GO_BOOT" in
+  "" | *[!0-9.]* | .* | *. | *..* | *.*.*.*) go_boot_ok=0 ;;
+  *.*.*) go_boot_ok=1 ;;
+  *) go_boot_ok=0 ;;
+esac
+[ "$go_boot_ok" = 1 ] || {
+  echo "::error::no plain GO_VERSION=\"\${AH_GO_VERSION:-X.Y.Z}\" default in scripts/vm/bootstrap_linux.sh (found '$GO_BOOT')"
+  exit 1; }
+[ "${GO_BOOT%.*}" = "$GO_VERSION" ] || {
+  echo "::error::scripts/vm/bootstrap_linux.sh installs Go $GO_BOOT on the test boxes, the workflows run go-version $GO_VERSION — raise GO_VERSION and its SHA-256 together with go-version"
+  exit 1; }
+echo "bootstrap: GO_VERSION=$GO_BOOT on go-version $GO_VERSION"
+
 # ── 2: one ruff at all five places ───────────────────────────────────────────
 # Plain dotted digits only: `ruff==0.15.*` is a valid pip specifier that matches
 # more than one ruff, and a pin that is not one release is the drift itself.
 plain_version() { case "$1" in "" | *[!0-9.]* | .* | *. | *..*) return 1 ;; esac; }
-BOOT="$ROOT/scripts/vm/bootstrap_linux.sh"
 REQ="$ROOT/apps/server/requirements-dev.txt"
 TOML="$ROOT/ruff.toml"
 RUNNER_SETUP="$ROOT/scripts/dev/runner-setup.sh"
