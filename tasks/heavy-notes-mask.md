@@ -30,8 +30,8 @@ Aufsicht auf sein Wort. Adressen in Tests und Proben sind Platzhalter (RFC 5737)
 
 ### T1 — heavy.sh: Notizen und Log-Ausschnitte gehen maskiert auf stdout, report.md und die Logs bleiben wörtlich (R-0351)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @af31093a 2026-10-13T19:41:34+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8533e0f7 2026-10-13T20:35:17+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve, Nit miterledigt
 Änderung:
 - `mask_addr` (`:116-118`) wird zu zwei Funktionen mit demselben einen Programm:
   - `mask_stream` (stdin → stdout) trägt das unveränderte `LC_ALL=C sed -E '…'`.

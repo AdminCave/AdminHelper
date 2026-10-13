@@ -1296,6 +1296,10 @@ mk_case
 export SHIM_WARM_RC=1 SHIM_WARM_OUT="vm.py: no ssh: adminhelper@$A refused for 900s"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ! grep -qF "$A" <<<"$out" && ok "warm: its tail goes out masked" || bad "warm, stdout: rc=$rc $(grep -F "$A" <<<"$out")"
+mk_case
+export SHIM_WARM_RC=2 SHIM_WARM_OUT="vm.py: no ssh: adminhelper@$A refused for 900s"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ! grep -qF "$A" <<<"$out" && ok "warm refused (exit 2): its tail goes out masked too" || bad "warm refused, stdout: rc=$rc $(grep -F "$A" <<<"$out")"
 
 echo ""
 echo "heavy_test: $PASS passed, $FAIL failed"
