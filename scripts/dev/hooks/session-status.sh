@@ -236,8 +236,17 @@ for f in .github/workflows/*.yml .github/workflows/*.yaml; do
 done
 
 # ── line 5: warm boxes ────────────────────────────────────────────────────────
-WARM="$(grep -E '^[A-Za-z0-9_-]+=' .vm/warm.env 2>/dev/null | paste -sd' ' -)"
-[ -n "$WARM" ] || WARM="leer"
+# Nothing but the role slots and their VM ids, the keys vm.py's warm_vmids reads:
+# this block goes into every session, and the file holds more than that. The
+# checkout's own .vm is read only untracked, as lib.sh and vm.py read it; a git
+# that cannot say counts as tracked.
+if ! vm_tracked="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git ls-files -- .vm 2>/dev/null)" \
+  || [ -n "$vm_tracked" ]; then
+  WARM="nicht gelesen (Zustand unter .vm ist getrackt)"
+else
+  WARM="$(LC_ALL=C grep -E '^[a-z]+=[0-9]+$' .vm/warm.env 2>/dev/null | paste -sd' ' -)"
+  [ -n "$WARM" ] || WARM="leer"
+fi
 echo "VMs: warm.env $WARM"
 
 # ── remaining triggers ────────────────────────────────────────────────────────

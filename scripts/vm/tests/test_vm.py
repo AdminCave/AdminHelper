@@ -1090,6 +1090,19 @@ def test_the_lane_is_not_read_from_tracked_state(tmp_path, monkeypatch):
     assert "tracks paths under .vm" in str(caught.value)
 
 
+def test_a_foreign_git_dir_in_the_environment_does_not_answer_for_the_checkout(
+    tmp_path, monkeypatch
+):
+    checkout_with_lane(tmp_path, monkeypatch, tracked=True)
+    foreign = tmp_path / "foreign"
+    subprocess.run(["git", "init", "-q", str(foreign)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(foreign / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "empty.index"))
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "tracks paths under .vm" in str(caught.value)
+
+
 def test_an_untracked_lane_file_is_read_as_before(tmp_path, monkeypatch):
     checkout_with_lane(tmp_path, monkeypatch)
     assert vm.current_lane(environ={}) == "lane-a"
@@ -1807,7 +1820,9 @@ def test_extend_moves_only_the_ttl_tag(cfg, api, reachable, shell, clock):
     assert int(vm.tag_value(set(tags), "ttl-")) - int(time.time()) > 14000
 
 
-def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell):
+def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell, monkeypatch):
+    # run checks the lane before the lease: pinned, not taken from the checkout.
+    monkeypatch.setenv("AH_LANE", "main")
     strangers = fixture("cluster_resources")
     for entry in strangers["body"]["data"]:
         if entry["vmid"] == 3000:

@@ -276,6 +276,29 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 # row in history.csv there is nothing to compare against, so it stays unconfirmed.
 history_of | grep -q ',all,web vitest,unbestaetigt,' && ok "history.csv names the red step" || bad "red step not in history: $(history_of)"
 
+# ── 3b: a refusal of iter.sh all (exit 2) is INFRA, a red step stays FAIL ─────
+# vm.py run declines a box of another lane with exit 2: nothing ran.
+mk_case
+export SHIM_ITER_RC=2 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: 3001 is not on lane main (it carries lane-pilot) — refusing"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a refused iter.sh all -> exit 74" || bad "refused iter -> rc=$rc"
+report_of | head -1 | grep -q '^UNVERIFIED (iter.sh all refused (exit 2)' \
+  && ok "report head UNVERIFIED names the refusal" || bad "report head '$(report_of | head -1)'"
+history_of | grep -q ',all,-,infra,' && ok "history.csv: the refusal is infra" || bad "no infra row: $(history_of)"
+mk_case
+export SHIM_ITER_RC=2
+export SHIM_ITER_OUT="  run.sh[all]: 39 passed, 0 failed, 3 skipped, 0 test-skips, 0 reruns"
+artifact "ruff check:pass:3" "web vitest:pass:19"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "exit 2 with every step green -> exit 74, not a failure" || bad "exit 2 green -> rc=$rc"
+mk_case
+export SHIM_ITER_RC=2
+export SHIM_ITER_OUT="  run.sh[all]: 39 passed, 2 failed, 3 skipped, 0 test-skips, 0 reruns"
+artifact "ruff check:pass:3" "web vitest:fail:19"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 1 ] && [ "$(report_of | head -1)" = "FAIL" ] && ok "exit 2 with a red step stays FAIL" || bad "exit 2 red -> rc=$rc head '$(report_of | head -1)'"
+
 # ── 4: strict-failed (SKIP) is INFRA, never FAIL ─────────────────────────────
 # The real wrapper prints the strict-failed line into the box capture, not into
 # all.log — only the artifact carries it (result "strict-failed"). No stdout
