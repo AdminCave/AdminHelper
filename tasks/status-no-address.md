@@ -89,3 +89,24 @@ Review: Review am Ende (Kurz-Ledger)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Abhängt von: T2
+
+### T4 — Nachbesserung aus dem Re-Review: der Node in der Meldung von PVE und die UPID werden maskiert  [x]
+Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @760bf551 2026-10-13T12:52:51+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Re-Review (Opus, `request_changes`: zwei belegte Funde). Behoben mit den Fällen
+des Reviewers als Tests.
+- Die Meldung von PVE `Configuration file 'nodes/<node>/qemu-server/<id>.conf' does not exist` trägt den Node ohne
+  führenden Schrägstrich. vm.py übernimmt sie wörtlich, und die Regel aus T3 griff nur `/nodes/`.
+  - Neu: `nodes/<name>` wird nach jedem Zeichen außer einem Wortzeichen zu `nodes/<node>`, auch am Zeilenanfang.
+- Der Status-Pfad eines Tasks trägt die UPID (`UPID:<node>:…:<nutzer>@pve!<token-id>:`), URL-kodiert.
+  - Neu: Jede UPID wird zu `<upid>`.
+- Beide sed-Zeilen bleiben gleich. session_status_test prüft das jetzt: die Programme in heavy.sh und session-status.sh
+  sind identisch.
+- Fälle, Platzhalter `plchold`, `*.example`:
+  - heavy_test: `clone … failed: … HTTP 500 Configuration file 'nodes/plchold-n1/…'` und ein Aufräumfehler mit
+    `…/tasks/UPID%3Aplchold-n1%3A…/status`.
+  - session_status_test: ein Report `no ip … Configuration file 'nodes/plchold-n1/…'`.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T3

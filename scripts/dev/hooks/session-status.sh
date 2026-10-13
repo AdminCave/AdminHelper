@@ -179,7 +179,7 @@ weekly_line() {
   [ -n "$dir" ] || { echo "kein Report"; return 0; }
   # No address or host name of the lab in the block, masked as heavy.sh mask_addr
   # does: a report written before heavy.sh masked its reason still carries them.
-  head="$(printf '%s' "$head" | LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#/nodes/[^/[:space:]]+#/nodes/<node>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g')"
+  head="$(printf '%s' "$head" | LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#(^|[^A-Za-z0-9_.-])nodes/[^/[:space:]]+#\1nodes/<node>#g; s#UPID[^/[:space:]]*#<upid>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g')"
   stamp="$(basename "$dir")"; day="${stamp%-*}"
   # Both ends normalised to UTC midnight: a local-time difference is off by one
   # for an hour around a DST change, and "(3 d)" that flickers is worse than none.
