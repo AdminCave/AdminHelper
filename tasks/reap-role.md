@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-role: reap.sh nennt jeden Slot mit Rolle und ohne Szenario, list-Exit 74 im Test (R-0336) — Task-Ledger
-Status: aktiv · Branch: harness/reap-role · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/reap-role · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T1 bleibt drin; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0336 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API, keine echte VM), reap.sh mit vm_wrappers_test (Fake-vm.py); kein Stack-, Gateway-, PKI- oder Install-Pfad, kein echtes destroy.
@@ -86,8 +86,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md :1833
 Abhängt von: T1
 
-### T3 — Der Exit 74 von list wird der Exit von reap.sh, im Test festgehalten  [ ]
+### T3 — Der Exit 74 von list wird der Exit von reap.sh, im Test festgehalten  [x]
 Komponente: scripts · Dateien: scripts/tests/vm_wrappers_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e22b1485 2026-10-13T10:41:49+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Der Fake beendet `list` mit `FAKE_LIST_RC` (Default 0) (:61–62).
 - Neuer Fall: `FAKE_LIST_RC=74` → reap.sh endet mit 74. Vorher liefen `destroy` je Slot, `reap` und das Leeren von

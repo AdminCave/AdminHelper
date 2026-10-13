@@ -57,7 +57,7 @@ case "${1:-}" in
   run)   [ -n "${FAKE_RUN_OUT:-}" ] && printf '%s\n' "$FAKE_RUN_OUT"
          exit "${FAKE_RUN_RC:-0}" ;;
   list)  if [ "${2:-}" = "--json" ]; then printf '%s\n' "${FAKE_LIST_JSON:-{\"vms\": []\}}"
-         else echo "0 ours, 0 not ours"; fi ;;
+         else echo "0 ours, 0 not ours"; exit "${FAKE_LIST_RC:-0}"; fi ;;
   destroy) shift
            # FAKE_DESTROY_FAIL=<vmid> refuses a call that names it, as vm.py does
            # for a VM gone from the listing or of another lane.
@@ -222,6 +222,17 @@ grep -q '^reap$' "$FAKE_LOG" && ok "the expiry sweep follows" || bad "no plain r
   && ok "warm.env is emptied, credentials included" || bad "warm.env left: $(cat "$AH_VM_STATE_DIR/warm.env")"
 [ "$(tail -1 "$FAKE_LOG")" = "list" ] \
   && ok "the sweep ends by listing what is left" || bad "last call: $(tail -1 "$FAKE_LOG")"
+
+echo "── reap.sh: a leak in the closing list is the script's exit ──"
+# vm.py list exits 74 when it finds a VM of the lane that nothing claims; lane.sh
+# done keeps the worktree when reap.sh does not exit 0.
+reset_state
+printf 'desktop=3001\nserver=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_RC=74 bash "$REAP" 2>&1); rc=$?
+[ "$rc" = 74 ] && [ "$(grep -c '^destroy' "$FAKE_LOG")" = 2 ] && grep -q '^reap$' "$FAKE_LOG" \
+  && [ "$(tail -1 "$FAKE_LOG")" = "list" ] && [ -z "$(slot desktop)" ] && [ -z "$(slot server)" ] \
+  && ok "list exits 74 on a leak, and reap.sh exits 74 after the full sweep" \
+  || bad "list 74: rc=$rc log=$(tr '\n' ' ' < "$FAKE_LOG")"
 
 echo "── reap.sh: a slot vm.py refuses costs only its own call ──"
 reset_state
