@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket skip-per-step: die Skip-Regeln von run.sh sehen die Datenbank-URL ihres Schritts (R-0342) — Task-Ledger
-Status: bereit · Branch: harness/skip-per-step · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: erledigt · Branch: harness/skip-per-step · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; test_db_token_store bleibt beim Teilstring wie sein Test; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0342 (Kurz-Ledger ohne Spec)
 Heavy: none — run.sh mit run_flags_test (python3-Shim, Fixture-URLs); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine echte Datenbank.
