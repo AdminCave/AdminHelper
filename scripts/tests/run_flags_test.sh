@@ -308,6 +308,23 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
 [ $rc -eq 1 ] && ok "a required test-skip fails the run" || bad "required test-skip: rc=$rc"
 grep -q "strict-failed: .*test_migrations_smoke.*(test-skip)" <<<"$OUT"   && ok "the strict-failed line names the test" || bad "line: $(grep -m1 strict-failed <<<"$OUT")"
 
+# test_db_session_utc under a Postgres DATABASE_URL: its skip is a hole (R-0277). Under a
+# SQLite URL monitoring's copy skips honestly.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest" \
+      DATABASE_URL="postgresql://x@localhost/y" \
+      SHIM_SKIP="tests/test_db_session_utc.py:26: needs a postgres DATABASE_URL: the app engine connects to it" \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "strict-failed: .*test_db_session_utc.*(test-skip)" <<<"$OUT" \
+  && ok "a test_db_session_utc skip under a Postgres DATABASE_URL fails the run" \
+  || bad "session-utc skip, postgres: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest" \
+      DATABASE_URL="sqlite:///$WORK/x.db" \
+      SHIM_SKIP="tests/test_db_session_utc.py:26: needs a postgres DATABASE_URL: the app engine connects to it" \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "1 test-skips" <<<"$OUT" && ! grep -q "strict-failed" <<<"$OUT" \
+  && ok "the same skip under a SQLite URL is an honest test-skip" \
+  || bad "session-utc skip, sqlite: rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+
 # ...and without --strict pytest is not even asked for its skips, so the step
 # behaves exactly as it did before this stage.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" DATABASE_URL="postgresql://x@localhost/y"       SHIM_SKIP="tests/test_migrations_smoke.py:21: DATABASE_URL nicht gesetzt"       "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1); rc=$?
