@@ -33,11 +33,13 @@ python3 scripts/vm/vm.py <verb> [options]
 
 `doctor` (Konfiguration, Rechte, Templates, Kapazität — `--roles a,b,c` rechnet den echten
 RAM-Bedarf) · `clone --profile <p> --role <r> [--lane|--scenario|--ttl|--memory|--cores]` ·
-`wait <vm>` · `ssh <vm> [cmd…]` · `sync <vm>` · `run <vm> [--sync] [--timeout s] [--out dir]
-[--extend 8h] -- <cmd>` · `pull <vm> <glob> <dir>` · `snap|rollback|delsnap <vm> <name>` ·
-`destroy <vm…> | --scenario s | --lane l | --role r` (mit VMs auch `--no-scenario`: keine VM mit
-Szenario-Tag) · `reap [--all] [--dry-run]` ·
-`list [--json] [--lane l]` · `bake --profile <p>`.
+`wait <vm>` · `ssh <vm> [cmd…]` · `sync <vm> [--expect-name n]` · `run <vm> [--sync] [--timeout s]
+[--out dir] [--extend 8h] [--expect-name n] -- <cmd>` · `pull <vm> <glob> <dir>` ·
+`snap|rollback|delsnap <vm> <name>` · `destroy <vm…> | --scenario s | --lane l | --role r` (mit VMs
+auch `--no-scenario`: keine VM mit Szenario-Tag; mit genau einer VM `--expect-name n`) ·
+`reap [--all] [--dry-run]` · `list [--json] [--lane l]` · `bake --profile <p>`.
+`--expect-name` lässt einen Aufruf nur zu, wenn `status/current` der VM genau diesen Namen trägt;
+die Ressourcenliste kann eine wiederverwendete VMID noch unter dem Namen des Vorgängers zeigen.
 
 Eine VM wird über ihre **VMID** angesprochen (auch über den Namen). Profile stehen in
 `scripts/vm/profiles.json`: `linux-full` (Toolchains, Docker, Caches — die schweren Tiers),

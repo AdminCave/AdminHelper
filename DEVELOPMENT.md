@@ -1136,7 +1136,7 @@ sudo -u adminhelper-runner bash -lc '. /srv/ah/repo/scripts/dev/runner-env.sh &&
 Runner-Settings ohne Trust anwendet, hat noch niemand gemessen (oben, „Getrusteter Workspace").
 Endet im Pilot jede Task als `[?] stall` oder mit vielen Verweigerungen im Summary, und steht in
 `/srv/ah/loop/<slug>/<id>.s<n>.err` (oder `.json`) eine Meldung „Ignoring … permissions.allow
-entries", greift der Trust: das entscheidet dann Kevin (die Aufsicht legt es ihm vor), denn `--trust` deckt die Lanes
+entries", greift der Trust: das entscheidet dann Kevin (der Chef legt es ihm vor), denn `--trust` deckt die Lanes
 nicht ab.
 
 **Starten** (nur Kevin, in tmux; die Ledger in seiner Reihenfolge, die Flags mit ihren Defaults):
@@ -1166,7 +1166,7 @@ git fetch origin
 git fetch /srv/ah/loop/<slug>.bundle feature/<slug>:feature/<slug>
 ```
 
-Push und Draft-PR sind danach Kevins bzw. der Aufsicht Handgriff (Text aus
+Push und Draft-PR sind danach Kevins bzw. des Chefs Handgriff (Text aus
 `/srv/ah/loop/<slug>/pr-body.md`).
 
 **Recovery:**
@@ -1823,7 +1823,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:
   `bash scripts/vm/warm.sh <desktop|server|pond>` hydriert **einmal** und merkt die
-  VMID (`.vm/warm.env`); danach ist jede Iteration inkrementell (`target/` +
+  VMID und den Namen aus `clone` (`.vm/warm.env`). Wieder genommen wird der Slot nur, solange
+  `vm.py list` auf der VMID eine laufende Box der eigenen Lane mit seiner Rolle, ohne Szenario
+  und unter diesem Namen zeigt; einen Slot ohne Namen uebernimmt `warm.sh` einmal. Danach ist
+  jede Iteration inkrementell (`target/` +
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
   `bash scripts/vm/iter.sh <layer>` bzw. `iter.sh --desktop`; `iter.sh
   --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)
@@ -1841,9 +1844,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   ueber `--lane/--scenario/--role`; eine ausdruecklich genannte VMID wird zerstoert,
   geschuetzt ist dort nur, was kein `ah`-Tag traegt. Steht neben ihr ein Filter, muss sie
   zu ihm passen: `reap.sh` nennt die Warm-Slots mit `--lane` der eigenen Lane, ihrer Rolle
-  (`--role`) und `--no-scenario`, und `vm.py` lehnt einen Slot ab, dessen VM eine andere Lane
-  oder Rolle oder ein Szenario traegt: `free_vmid` gibt eine freigewordene VMID dem naechsten
-  Klon, ein Szenario least seinen Server zuerst. Klone werden seriell abgeschickt (ein
+  (`--role`), `--no-scenario` und, wo `warm.sh` ihn gemerkt hat, mit `--expect-name` ihrem Namen,
+  und `vm.py` lehnt einen Slot ab, dessen VM eine andere Lane oder Rolle oder ein Szenario traegt
+  oder frisch (`status/current`) einen anderen Namen: `free_vmid` gibt eine freigewordene VMID
+  dem naechsten Klon, ein Szenario least seinen Server zuerst. Klone werden seriell abgeschickt (ein
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
   2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der

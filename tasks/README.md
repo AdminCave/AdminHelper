@@ -19,7 +19,7 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 | `Status:` | Bedeutung |
 |---|---|
 | `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Nur auf Kevins eigenes Wort startet `/feature-build` es mit ausdrücklichem Pfad (setzt auf `aktiv`), nie auf Auftrag einer anderen Session (CLAUDE.md §2). |
-| `freigegeben` | am Design-Gate freigegeben (CLAUDE.md §2: Kevin, bei kleinen Fund-Paketen die Aufsichts-Session; die Zeile `Freigabe:` nennt wer): `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
+| `freigegeben` | am Design-Gate freigegeben (CLAUDE.md §2: Kevin, bei kleinen Fund-Paketen der Chef; die Zeile `Freigabe:` nennt wer): `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
 | `aktiv` | wird gebaut. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
 | `bereit` | alle Tasks sind zu; der Abschluss von `feature-build` (Schnellcheck, schwere Suite, Branch-Review) und der PR stehen aus. |
 | `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. Bleibt als Historie liegen. |
