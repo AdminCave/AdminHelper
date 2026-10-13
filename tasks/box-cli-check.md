@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Box-Skripte: jeder Aufruf der Agent-CLI ist gegen die CLI geprüft — Task-Ledger
-Status: aktiv · Branch: harness/box-cli-check · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/box-cli-check · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0333, Triage Kevin 2026-10-13; als Go-Test im Agent statt Script-Test, weil der Ops-Job kein Go hat; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0333 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Test im Paket `cmd/adminhelper-agent`, das Agent-Binary selbst ändert sich nicht; kein Stack-, Gateway-, PKI- oder Install-Pfad, und die Box-Skripte bleiben, wie sie sind.
@@ -21,8 +21,10 @@ prüft keiner diese Aufrufe, denn `multibox_test.sh` ersetzt `vm.py` und damit j
 `adminhelper-agent frpc sync` (`apps/agent/cmd/adminhelper-agent/main.go:110-125`). Erst der Review fand es, und der
 Multibox-Lauf wäre an einem Fehler des Harness rot geworden.
 
-### T1 — agent: ein Test prüft jeden Aufruf der Agent-CLI in den Box-Skripten mit `--help` (R-0333)  [ ]
+### T1 — agent: ein Test prüft jeden Aufruf der Agent-CLI in den Box-Skripten mit `--help` (R-0333)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/box_cli_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a7570f0b 2026-10-13T06:07:57+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Neue Datei `box_cli_test.go` im Paket `main`, SPDX-Kopf (`reuse annotate --copyright "Kevin Stenzel"
 --license GPL-3.0-or-later`). Am Produktionscode ändert sich nichts.
 - **Die Aufrufe lesen:**
@@ -31,8 +33,11 @@ Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/box_cli_test.go
   - Unterbefehle sind die Wörter bis zum ersten Flag. Ein Flag ist sein Name ohne Wert. Werte, Variablen und
     Shell-Operatoren (`&&`, `||`, `|`, `;`, `\`, Umleitungen) beenden bzw. überspringt der Parser.
   - Heute sind es sieben Aufrufe: `provision` viermal, `run --once` zweimal, `frpc sync` einmal (`box_agentbox.sh:48`,
-    `:53`; `box_agentbox_rpm.sh:36`, `:37`; `box_tunnelbox.sh:30`, `:52`; `box_visitorbox.sh:27`). Findet der Parser
-    weniger als einen je Skript, das `adminhelper-agent` nennt, ist der Test rot und kein leeres Grün.
+    `:53`; `box_agentbox_rpm.sh:36`, `:37`; `box_tunnelbox.sh:30`, `:52`; `box_visitorbox.sh:27`).
+  - Ein Aufruf zählt nur, wenn `adminhelper-agent` als Kommando dasteht: am Zeilenanfang, nach `sudo`, `$(` oder
+    einem Operator. `command -v …`, `journalctl -u …` und der Pfad in `box_serverbox.sh` nennen nur das Paket.
+  - Die vier Skripte mit Aufrufen nennt der Test beim Namen. Findet er in einem davon keinen, ist er rot und kein
+    leeres Grün.
 - **Gegen die echte CLI:**
   - Je Aufruf startet der Test sein eigenes Binary neu, als Hilfsprozess: das übliche Muster mit
     `os.Args[0] -test.run=…` und einer Umgebungsvariable.
