@@ -330,6 +330,36 @@ grep -qF "Wochenlauf: kaputt: FAIL" <<<"$OUT4" \
   && ok "an unparseable stamp drops the age, not the verdict" \
   || bad "bad stamp: $(grep -m1 '^Ledger' <<<"$OUT4")"
 
+# The weekly line shows no box address, also from a report written before heavy.sh
+# masked its reason.
+mkdir -p "$WORK/addr/weekly/$(date +%F)-1200"
+printf 'UNVERIFIED (vm.py: no ssh: adminhelper@192.0.2.9 refused for 900s, last seen at 198.51.100.7)\n\n# r\n' \
+  > "$WORK/addr/weekly/$(date +%F)-1200/report.md"
+OUT5=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/addr" run_hook "$CLEAN")
+grep -qF "(0 d): UNVERIFIED (vm.py: no ssh: <user>@<host> refused for 900s, last seen at <ip>) · Worker:" <<<"$OUT5" \
+  && ! grep -q '192\.0\.2\.9\|198\.51\.100\.7' <<<"$OUT5" \
+  && ok "the weekly line shows no box address" || bad "weekly address: $(grep -m1 '^Ledger' <<<"$OUT5")"
+mkdir -p "$WORK/addr2/weekly/$(date +%F)-1200"
+printf 'UNVERIFIED (vm.py: clone of 9402 into 3015 failed: POST https://203.0.113.5:8006/api2/json/nodes/plchold-n1/qemu/9402/clone: HTTP 500 internal error)\n' \
+  > "$WORK/addr2/weekly/$(date +%F)-1200/report.md"
+OUT6=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/addr2" run_hook "$CLEAN")
+grep -qF "(0 d): UNVERIFIED (vm.py: clone of 9402 into 3015 failed: POST https://<host>:8006/api2/json/nodes/<node>/qemu/9402/clone: HTTP 500 internal error) · Worker:" <<<"$OUT6" \
+  && ! grep -q '203\.0\.113\.5\|plchold-n1' <<<"$OUT6" \
+  && ok "the weekly line masks the hypervisor's address and its node" || bad "weekly api host: $(grep -m1 '^Ledger' <<<"$OUT6")"
+mkdir -p "$WORK/addr3/weekly/$(date +%F)-1200"
+printf '%s\n' "UNVERIFIED (vm.py: no ip: guest agent of 3015 silent after 900s (POST https://pve.plchold.example:8006/api2/json/nodes/plchold-n1/qemu/3015/agent/ping: HTTP 500 Configuration file 'nodes/plchold-n1/qemu-server/3015.conf' does not exist))" \
+  > "$WORK/addr3/weekly/$(date +%F)-1200/report.md"
+OUT7=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/addr3" run_hook "$CLEAN")
+grep -qF "/nodes/<node>/qemu/3015/agent/ping: HTTP 500 Configuration file 'nodes/<node>/qemu-server/3015.conf' does not exist)) · Worker:" <<<"$OUT7" \
+  && ! grep -q 'plchold' <<<"$OUT7" \
+  && ok "the weekly line masks the node in PVE's own message" || bad "weekly pve message node: $(grep -m1 '^Ledger' <<<"$OUT7")"
+# The hook and heavy.sh mask with the same program: a form one of them learns, the
+# other must know too.
+p_hook="$(grep -o "sed -E '[^']*'" "$HOOK")"
+p_heavy="$(grep -o "sed -E '[^']*'" "$REPO_ROOT/scripts/tests/heavy.sh")"
+[ -n "$p_hook" ] && [ "$(grep -c . <<<"$p_hook")" = 1 ] && [ "$p_hook" = "$p_heavy" ] \
+  && ok "the hook masks with the same sed program as heavy.sh" || bad "mask programs differ: hook=[$p_hook] heavy=[$p_heavy]"
+
 # AH_OUT_DIR is the documented source, so it has to be honoured, not just defaulted.
 mkdir -p "$WORK/anderswo/weekly/$(date +%F)-1200"
 printf 'PASS\n' > "$WORK/anderswo/weekly/$(date +%F)-1200/report.md"

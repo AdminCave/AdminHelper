@@ -43,7 +43,8 @@ export PATH="$FAKE:$PATH"
 # fixture <dir> <go-version-ci> <go-version-release> <go-version-audit> <pin>
 #         [<ruff-ci> <ruff-bootstrap> <ruff-dev>]
 # ci.yml carries go-version TWICE, like the real one (agent + agent-windows) —
-# the single-file drift a per-file check would miss. The ruff pins default to
+# the single-file drift a per-file check would miss. Each go-version comes with
+# check-latest: true, as the workflows must set it. The ruff pins default to
 # agreeing ones, so the go cases below see a tree that is in lockstep there;
 # ruff.toml's required-version and runner-setup.sh's VENV_PKGS follow
 # <ruff-bootstrap>.
@@ -54,14 +55,14 @@ fixture() {
   printf '#!/usr/bin/env bash\nRUNNER="adminhelper-runner"\nVENV_PKGS="ruff==%s pytest pytest-cov pytest-httpx"\n' \
     "$ruff_boot" > "$d/scripts/dev/runner-setup.sh"
   printf 'required-version = "==%s"\nline-length = 100\n\n[lint]\nextend-select = ["I"]\n' "$ruff_boot" > "$d/ruff.toml"
-  printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
+  printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
   printf '#!/usr/bin/env bash\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\n' \
     "$ruff_boot" > "$d/scripts/vm/bootstrap_linux.sh"
   printf -- '-r requirements.in\n\npytest>=9.0.3\nruff==%s\n' "$ruff_dev" > "$d/apps/server/requirements-dev.txt"
-  printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
+  printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
     "$rel" > "$d/.github/workflows/release.yml"
-  printf 'name: Dependency Audit\njobs:\n  go:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n      - name: Install govulncheck\n        run: go install golang.org/x/vuln/cmd/govulncheck@%s\n' \
+  printf 'name: Dependency Audit\njobs:\n  go:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n      - name: Install govulncheck\n        run: go install golang.org/x/vuln/cmd/govulncheck@%s\n' \
     "$aud" "$pin" > "$d/.github/workflows/audit.yml"
 }
 
@@ -235,6 +236,30 @@ run_case "--root without a value -> exit 2" 2 "--root needs a directory" -- --ro
 run_case "--root at a non-directory -> exit 2" 2 "no such root" -- --root "$WORK/does-not-exist"
 EMPTY="$WORK/empty"; mkdir -p "$EMPTY/.github/workflows"
 run_case "a tree without the workflows -> exit 1" 1 "missing workflow" -- --root "$EMPTY"
+
+# ── 7: check-latest beside every go-version ──────────────────────────────────
+# Without it setup-go takes the newest patch in the runner's toolcache, and the
+# release can ship another stdlib than the audit checks.
+NOLAT="$WORK/nolatest"; fixture "$NOLAT" 1.25 1.25 1.25 v1.7.0
+sed -i '/check-latest/d' "$NOLAT/.github/workflows/release.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "release.yml without check-latest -> exit 1, named" 1 ".github/workflows/release.yml:7 sets go-version without check-latest: true" -- --root "$NOLAT"
+FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "without check-latest: true" -- --root "$NOLAT"
+# Only the SECOND block in ci.yml without it: the drift a once-per-file check reports as green.
+HALFLAT="$WORK/halflatest"; fixture "$HALFLAT" 1.25 1.25 1.25 v1.7.0
+sed -i '0,/check-latest: true/! s/check-latest: true/plchold: true/' "$HALFLAT/.github/workflows/ci.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "one of ci.yml's two blocks without check-latest -> exit 1" 1 ".github/workflows/ci.yml:17 sets go-version without check-latest: true" -- --root "$HALFLAT"
+FALSELAT="$WORK/falselatest"; fixture "$FALSELAT" 1.25 1.25 1.25 v1.7.0
+sed -i 's/check-latest: true/check-latest: false/' "$FALSELAT/.github/workflows/audit.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest: false -> exit 1" 1 ".github/workflows/audit.yml:7 sets go-version without check-latest: true" -- --root "$FALSELAT"
+# In any order inside the block, with a comment between: still in lockstep.
+ORDER="$WORK/orderlatest"; fixture "$ORDER" 1.25 1.25 1.25 v1.7.0
+printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          check-latest: true\n          # plchold\n          go-version: "1.25"\n' > "$ORDER/.github/workflows/release.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest before go-version, a comment between -> exit 0" 0 "check-latest: true beside every go-version" -- --root "$ORDER"
+
+# An awk that does not run to its end must not leave the check green.
+BADAWK="$WORK/badawk"; mkdir -p "$BADAWK"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$BADAWK/awk"; chmod +x "$BADAWK/awk"
+PATH="$BADAWK:$PATH" FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "an awk that fails -> exit 1, nothing checked" 1 "did not run to its end — nothing was checked" -- --root "$GOOD"
 
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"
