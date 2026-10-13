@@ -113,6 +113,13 @@ pg() {
   fi
   # A user:password the pattern did not take apart would go into an argument.
   [[ ! "$url" =~ ^[^/]*//[^/@]*:[^/@]*@ ]] || fail "AH_TEST_DB has a form whose password cannot be taken out of the URL"
+  # Only the form the sed above makes, a postgresql:// URL, goes on to psql or
+  # createdb. Any other (the key=value form of libpq, a scheme without //) ends
+  # here, as in lane.sh lane_db.
+  case "$url" in
+    postgresql://*) ;;
+    *) fail "AH_TEST_DB is no postgresql:// URL (postgres:// and postgresql+<driver>:// count as one)" ;;
+  esac
   ( [ -z "$pass" ] || export PGPASSWORD="$pass"
     case "$prog" in
       psql) exec psql -X --dbname="$url" "$@" ;;

@@ -20,8 +20,10 @@ Harness-Pfade; den PR merged Kevin oder die Aufsicht auf sein Wort. Alle Werte i
 (`:107`), löst das Passwort heraus (`:108-113`) und prüft danach eine Form (`:115`). `lane_db` in `scripts/dev/lane.sh`
 (`:74-160`) tut dasselbe für die Test-DB einer Lane und prüft mehr. Dieses Ledger bringt `pg` auf dieselben Regeln.
 
-### T1 — pg: nur eine URL, die mit `postgresql://` beginnt, erreicht psql/createdb  [ ]
+### T1 — pg: nur eine URL, die mit `postgresql://` beginnt, erreicht psql/createdb  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4317d020 2026-10-13T10:52:09+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `pg`: Nach der Prüfung `:115` und vor dem Aufruf (`:116`) nimmt die Funktion nur noch eine URL an, die mit
   `postgresql://` beginnt. Nach `:107` gilt das auch für `postgres://` und `postgresql+<treiber>://`. Jede andere Form

@@ -281,6 +281,17 @@ printf 'export AH_TEST_DB="postgresql+psycopg://:%s@localhost/adminhelper_test"\
 : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
 [ $rc -eq 1 ] && grep -q 'password cannot be taken out' <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
   && ok "a password it cannot take out of the URL stops setup, no database program runs" || bad "fail closed: rc=$rc out=$OUT log=$(cat "$FIXTURE_LOG")"
+# Only a postgresql:// URL (postgres:// and postgresql+<driver>:// become one) reaches
+# a database program: the key=value form of libpq and a scheme without // stop setup.
+for pair in "the key=value form|host=localhost user=ah password=$PW_URL dbname=adminhelper_test" \
+            "a scheme without //|postgresql+psycopg:ah:$PW_URL@localhost/adminhelper_test"; do
+  printf 'export AH_TEST_DB="%s"\n' "${pair#*|}" > "$MAIN/.devenv.sh"
+  : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+  [ $rc -eq 1 ] && grep -q 'is no postgresql:// URL' <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
+    && ! grep -qF -e "$PW_RAW" -e "$PW_URL" <<<"$OUT" \
+    && ok "${pair%%|*} stops setup, no database program runs" \
+    || bad "${pair%%|*}: rc=$rc log=$(sed 's/ PGPASSWORD=.*$//' "$FIXTURE_LOG")"
+done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 # With an XDG git config of the caller's and no .gitconfig in a fresh builder HOME
 # yet, git config --global would write the caller's file; the identity still goes
