@@ -660,7 +660,7 @@ seq_set build build -- 0 0
 loop --ledger tasks/hvy.md --ledger tasks/hvn.md
 LY="$(lane hvy)"
 [ $rc -eq 0 ] && [ "$(box hvy)" = x ] && grep -qF -- '- [x] **T1 — eine Aufgabe**' "$LOOPD/hvy/pr-body.md" \
-  && grep -qF -- '- **Heavy:** linux-full' "$LOOPD/hvy/pr-body.md" && grep -qxF '**Heavy offen — fährt die Aufsicht.**' "$LOOPD/hvy/pr-body.md" \
+  && grep -qF -- '- **Heavy:** linux-full' "$LOOPD/hvy/pr-body.md" && grep -qxF '**Heavy offen — fährt der Chef.**' "$LOOPD/hvy/pr-body.md" \
   && ok "bereit -> pr-body.md from review.sh pr-body, Heavy: linux-full with the note for the supervisor" || bad "hvy: rc=$rc $(result hvy) $(cat "$LOOPD/hvy/pr-body.md" 2>&1)"
 [ -s "$LOOPD/hvn/pr-body.md" ] && ! grep -q 'Heavy offen' "$LOOPD/hvn/pr-body.md" \
   && ok "Heavy: none -> no note" || bad "hvn: $(cat "$LOOPD/hvn/pr-body.md" 2>&1)"
@@ -671,7 +671,7 @@ git -C "$KEV" fetch -q "$LOOPD/hvy.bundle" feature/hvy:feature/hvy 2>"$WORK/fetc
   && [ "$(git -C "$KEV" log --format=%H origin/main..feature/hvy)" = "$(git -C "$LY" log --format=%H origin/main..HEAD)" ] \
   && grep -q '^bereit — PR text .*hvy/pr-body.md, branch in .*hvy.bundle$' <<<"$(result hvy)" \
   && ok "the bundle is verified, and a second repo fetches feature/hvy from it with the same commits" || bad "bundle: $(cat "$WORK/fetch.err") $(cat "$LOOPD/hvy/bundle.log" 2>&1)"
-! grep -q '^- \*\*Heavy:' "$LOOPD/ok4/pr-body.md" && grep -qxF '**Heavy offen — fährt die Aufsicht.**' "$LOOPD/ok4/pr-body.md" \
+! grep -q '^- \*\*Heavy:' "$LOOPD/ok4/pr-body.md" && grep -qxF '**Heavy offen — fährt der Chef.**' "$LOOPD/ok4/pr-body.md" \
   && ok "a ledger without a Heavy: line -> the note too" || bad "no Heavy line: $(cat "$LOOPD/ok4/pr-body.md" 2>&1)"
 # bereit is committed before the handover: a bundle that cannot be written stops the
 # run, and the next run makes the handover up instead of skipping the ledger.

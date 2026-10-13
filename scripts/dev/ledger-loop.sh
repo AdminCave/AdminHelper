@@ -72,7 +72,7 @@
 # moving that task's old review files aside. What a session left behind when the
 # task does not close is taken back by the loop (aborted.diff, restore, the new
 # files one by one) — never stash, clean or a glob. A ledger bereit leaves
-# <slug>/pr-body.md (review.sh pr-body; „Heavy offen — fährt die Aufsicht“ unless
+# <slug>/pr-body.md (review.sh pr-body; „Heavy offen — fährt der Chef“ unless
 # Heavy: none) and <slug>.bundle (main..feature/<slug>, verified) for Kevin's
 # checkout; push and PR stay his.
 #
@@ -960,7 +960,7 @@ handover() {
     || stop_infra "review.sh pr-body failed for $slug (log $LOOP/$slug/pr-body.err)"
   # Heavy from the loop is stage 7b; a ledger without the line counts as open too.
   heavy="$(sed -n '/^###[[:space:]]/q; s/^Heavy:[[:space:]]*\([^ ·—]*\).*/\1/p' "$wt/tasks/$slug.md" | head -n 1)"
-  [ "$heavy" = none ] || printf '\n**Heavy offen — fährt die Aufsicht.**\n' >> "$body"
+  [ "$heavy" = none ] || printf '\n**Heavy offen — fährt der Chef.**\n' >> "$body"
   { git -C "$wt" bundle create "$bundle" "$MAIN_SHA..feature/$slug" && git -C "$wt" bundle verify "$bundle"; } \
     > "$LOOP/$slug/bundle.log" 2>&1 || stop_infra "git bundle of feature/$slug failed (log $LOOP/$slug/bundle.log)"
 }
