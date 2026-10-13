@@ -1259,19 +1259,24 @@ def verb_ssh(cfg: Config, api: Api, args) -> int:
     return run_ssh(cfg, target.user, target.ip, command)
 
 
-def require_own_lane(cfg: Config, api: Api, vmid: int) -> None:
+def require_own_lane(cfg: Config, api: Api, vmid: int, expect_name: str | None = None) -> None:
     """run and sync write onto a box (rsync --delete, suites), so only onto one of
     this lane, read from fresh state: the pool hands a freed VMID out again, and the
     listing may still show its last tenant. A box of another lane takes
-    AH_LANE=<lane> to mean it."""
+    AH_LANE=<lane> to mean it. With --expect-name the box must also carry that name."""
     current = fresh_entry(cfg, api, vmid)
-    if current is not None:
-        require_selected(current, [("lane-", "on lane", current_lane())])
+    if current is None:
+        if expect_name is not None:
+            raise Usage("%d is gone, not %s — refusing" % (vmid, expect_name))
+        return
+    require_selected(current, [("lane-", "on lane", current_lane())])
+    if expect_name is not None:
+        require_name(current, expect_name)
 
 
 def verb_sync(cfg: Config, api: Api, args) -> int:
     target = Target(cfg, api, args.vm)
-    require_own_lane(cfg, api, target.vmid)
+    require_own_lane(cfg, api, target.vmid, args.expect_name)
     _sync(cfg, target, delete=not args.no_delete)
     return 0
 
@@ -1292,7 +1297,7 @@ def verb_run(cfg: Config, api: Api, args) -> int:
     if not command:
         raise Usage("run needs a command: vm.py run <vm> -- <command>")
     target = Target(cfg, api, args.vm)
-    require_own_lane(cfg, api, target.vmid)
+    require_own_lane(cfg, api, target.vmid, args.expect_name)
     if args.extend:
         extend_lease(cfg, api, target, args.extend)
     if args.sync:
@@ -1510,6 +1515,16 @@ def require_no_scenario(entry: dict) -> dict:
     return entry
 
 
+def require_name(entry: dict, name: str) -> dict:
+    """iter.sh and reap.sh name a warm slot with the name warm.sh recorded from
+    clone. Only fresh state may answer it: the resource list can show a recycled
+    VMID under its last tenant's name (scripts/vm/tests/README.md)."""
+    have = entry.get("name", "")
+    if have != name:
+        raise Usage("%d is named %s, not %s — refusing" % (entry["vmid"], have or "nothing", name))
+    return entry
+
+
 def verb_destroy(cfg: Config, api: Api, args) -> int:
     if not (args.vm or args.scenario or args.lane or args.role):
         raise Usage("destroy needs VMs, or one of --scenario/--lane/--role")
@@ -1519,6 +1534,9 @@ def verb_destroy(cfg: Config, api: Api, args) -> int:
         raise Usage("--no-scenario holds named VMs only — name them")
     if args.no_scenario and args.scenario:
         raise Usage("--no-scenario and --scenario contradict each other")
+    # One name for one VM: it is the name warm.sh recorded for one slot.
+    if args.expect_name is not None and len(args.vm) != 1:
+        raise Usage("--expect-name holds exactly one named VM")
     vms = pool_vms(cfg, api)
     chosen = select_vms(cfg, vms, args)
     selectors = destroy_selectors(args) if args.vm else []
@@ -1536,6 +1554,8 @@ def verb_destroy(cfg: Config, api: Api, args) -> int:
         require_selected(current, selectors)
         if args.no_scenario:
             require_no_scenario(current)
+        if args.expect_name is not None:
+            require_name(current, args.expect_name)
         confirmed.append(current)
     failures = []
     for entry in confirmed:
@@ -1941,6 +1961,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync = sub.add_parser("sync", help="rsync the checkout onto a VM")
     sync.add_argument("vm")
     sync.add_argument("--no-delete", action="store_true")
+    sync.add_argument("--expect-name")
 
     run = sub.add_parser("run", help="run a command in the synced checkout")
     run.add_argument("vm")
@@ -1948,6 +1969,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--timeout", type=int)
     run.add_argument("--out")
     run.add_argument("--extend")
+    run.add_argument("--expect-name")
     run.add_argument("cmd", nargs="*")
 
     pull = sub.add_parser("pull", help="copy files off a VM")
@@ -1975,6 +1997,7 @@ def build_parser() -> argparse.ArgumentParser:
     destroy.add_argument("--lane")
     destroy.add_argument("--role")
     destroy.add_argument("--no-scenario", action="store_true")
+    destroy.add_argument("--expect-name")
 
     reap = sub.add_parser("reap", help="destroy expired VMs")
     reap.add_argument("--all", action="store_true", dest="every_lane")

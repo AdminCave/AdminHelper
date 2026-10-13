@@ -38,8 +38,10 @@ Der Zuschnitt folgt daraus:
 - T3 lässt `iter.sh` und `reap.sh` den Namen an `vm.py` geben. Wo der Cache noch einen alten Namen zeigt, lehnt dann
   `vm.py` den Aufruf ab, statt auf die fremde Box zu schreiben oder sie zu zerstören.
 
-### T1 — vm.py: `--expect-name` für run, sync und destroy, geprüft gegen `status/current` (R-0347)  [ ]
+### T1 — vm.py: `--expect-name` für run, sync und destroy, geprüft gegen `status/current` (R-0347)  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, .claude/skills/vm/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f6800f30 2026-10-13T13:45:13+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `run`, `sync` und `destroy` (Parser `vm.py:1941-1978`) nehmen ein optionales `--expect-name <name>`.
 - Ist es gesetzt, gilt die VM nur, wenn `status/current` genau diesen Namen trägt.
