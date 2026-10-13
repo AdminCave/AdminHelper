@@ -1229,7 +1229,7 @@ oder `postgres://`, beide auch mit `+<treiber>`; eine andere Form, etwa die Keyw
 `lane.sh` (`scripts/dev/pg-url.sh`), und eine URL, die kein UTF-8 ist, lehnt es ebenso ab.
 cargo und go nimmt `setup` read-only aus dem HOME, in dem es laeuft (`~/.cargo/bin` mit `RUSTUP_HOME`,
 `~/sdk/go` mit `GOROOT`), die Caches (`CARGO_HOME`, `GOPATH`, `GOCACHE`) legt es ins Builder-HOME; rustup
-installiert dort nichts nach (`RUSTUP_AUTO_INSTALL=0`), go bleibt bei der eigenen Toolchain
+installiert in `~/.rustup` nichts nach (`RUSTUP_AUTO_INSTALL=0`), go bleibt bei der eigenen Toolchain
 (`GOTOOLCHAIN=local`). Fehlt eine der beiden, nennt `setup` das und laesst ihre Zeilen weg.
 `oauth.env` schreibt nur `token`, und nur ein Token der Form
 `sk-ant-oat01-…`; der Code, den der Browser unterwegs zeigt, ist keins.

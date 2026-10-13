@@ -226,10 +226,21 @@ run setup; ALL_OUT+="$OUT"
 mv "$WORK/sdk.away" "$HOME/sdk"
 run setup; ALL_OUT+="$OUT"
 grep -q 'GOTOOLCHAIN=local' "$H/.devenv.sh" && ok "and with go back, setup writes its lines again" || bad "go back: $(grep -v AH_TEST_DB "$H/.devenv.sh")"
-QH="$WORK/ho\"me"; mkdir -p "$QH"
-: > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && HOME="$QH" AH_BUILDER_DIR="$WORK/b-quote" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
-[ $rc -eq 1 ] && grep -q "has a character the builder's .devenv.sh cannot hold" <<<"$OUT" && [ ! -e "$WORK/b-quote" ] \
-  && ok "a HOME with a double quote stops setup before it makes anything" || bad "quoted HOME: rc=$rc out=$OUT"
+mv "$HOME/.rustup" "$WORK/rustup.away"
+run setup; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && grep -q "note  no cargo in $HOME/.cargo/bin with $HOME/.rustup: the builder gets none" <<<"$OUT" \
+  && ! grep -q 'RUSTUP_HOME\|CARGO_HOME\|\.cargo/bin' "$H/.devenv.sh" && grep -q 'GOTOOLCHAIN=local' "$H/.devenv.sh" \
+  && ok "a cargo without a RUSTUP_HOME at the caller's is no toolchain: no cargo lines; go stays" \
+  || bad "no rustup: rc=$rc out=$OUT"
+mv "$WORK/rustup.away" "$HOME/.rustup"
+run setup; ALL_OUT+="$OUT"
+grep -q 'RUSTUP_HOME' "$H/.devenv.sh" && ok "and with it back, setup writes the cargo lines again" || bad "rustup back: $(grep -v AH_TEST_DB "$H/.devenv.sh")"
+for ch in '"' '$' '\' '`'; do
+  QH="$WORK/ho${ch}me"; mkdir -p "$QH"
+  : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && HOME="$QH" AH_BUILDER_DIR="$WORK/b-quote" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+  [ $rc -eq 1 ] && grep -q "has a character the builder's .devenv.sh cannot hold" <<<"$OUT" && [ ! -e "$WORK/b-quote" ] \
+    && ok "a HOME with $ch stops setup before it makes anything" || bad "HOME with $ch: rc=$rc out=$OUT"
+done
 
 echo "── token"
 printf 'pastedcode#browserstate\n' > "$WORK/in.bad"
@@ -286,10 +297,19 @@ mv "$WORK/binaries.away" "$MAIN/${SC%/*}"
 # the file of the first measuring runs, without them, is missing cargo and go.
 cp "$H/.devenv.sh" "$WORK/devenv.builder.keep"
 printf 'export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"\n' > "$H/.devenv.sh"; chmod 600 "$H/.devenv.sh"
+# A host with a go or cargo of its own on the system PATH (a distribution package)
+# gives the loop that one whatever the file says, and status then rightly finds it.
+SYS_GO="$(/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin sh -c 'command -v go')"
+SYS_CARGO="$(/usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin sh -c 'command -v cargo')"
+said() {  # said <tool> <what the system PATH has of it> -> 0 when status said what this host makes true
+  if [ -z "$2" ]; then grep -q "^missing: $1 in $H/.devenv.sh, as the loop finds it" <<<"$OUT"
+  else ! grep -q "^missing: $1 in" <<<"$OUT"; fi
+}
+want=0; { [ -n "$SYS_GO" ] && [ -n "$SYS_CARGO" ]; } || want=1
 run status; ALL_OUT+="$OUT"
-[ $rc -eq 1 ] && grep -q "^missing: cargo in $H/.devenv.sh, as the loop finds it" <<<"$OUT" \
-  && grep -q "^missing: go in $H/.devenv.sh, as the loop finds it" <<<"$OUT" \
-  && ok "status: a .devenv.sh without the caller's cargo and go -> both missing, exit 1" || bad "status, old devenv: rc=$rc out=$OUT"
+[ $rc -eq $want ] && said cargo "$SYS_CARGO" && said go "$SYS_GO" \
+  && ok "status: a .devenv.sh without the caller's cargo and go -> missing, unless the system PATH has them" \
+  || bad "status, old devenv: rc=$rc (system go=${SYS_GO:-none} cargo=${SYS_CARGO:-none}) out=$OUT"
 # Without RUSTUP_HOME the proxy picks no toolchain: cargo is missing, go is not.
 grep -v RUSTUP_HOME "$WORK/devenv.builder.keep" > "$H/.devenv.sh"; chmod 600 "$H/.devenv.sh"
 run status; ALL_OUT+="$OUT"
@@ -323,6 +343,7 @@ mkvenv "$H2/.local/share/ah-tools/venv"
 ln -s "$H2/.local/share/ah-tools/venv/bin/python3" "$H2/.local/bin/python3"
 printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$TOK_OK" > "$H2/.config/adminhelper/oauth.env"; chmod 600 "$H2/.config/adminhelper/oauth.env"
 printf 'state\n' > "$B2/loop/messlauf-1/state.json"
+printf 'export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"\n' > "$H2/.devenv.sh"; chmod 600 "$H2/.devenv.sh"
 git clone -q --no-local "$ORIGIN" "$B2/repo" && git -C "$B2/repo" config ah.fixture kept
 TOKSUM="$(sha256sum < "$H2/.config/adminhelper/oauth.env")"
 : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B2" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
@@ -331,6 +352,8 @@ TOKSUM="$(sha256sum < "$H2/.config/adminhelper/oauth.env")"
   && ok "the token, the loop state and the clone stay" || bad "measuring-run home: rc=$rc out=$OUT"
 [ ! -L "$H2/.local/bin/python3" ] && [ "$("$H2/.local/bin/python3" -c 'import sys; print(sys.prefix)')" = "$H2/.local/share/ah-tools/venv" ] \
   && ok "and its python3 symlink becomes the wrapper" || bad "python3 there: $(ls -l "$H2/.local/bin/python3")"
+grep -qxF "export RUSTUP_HOME=\"$HOME/.rustup\"" "$H2/.devenv.sh" && grep -qxF 'export GOTOOLCHAIN=local' "$H2/.devenv.sh" \
+  && ok "and its .devenv.sh of the first runs gets the caller's toolchains" || bad "measuring-run devenv: $(grep -v AH_TEST_DB "$H2/.devenv.sh")"
 
 echo "── setup refuses a clone with changes"
 printf 'local\n' > "$B2/repo/stray.txt"
