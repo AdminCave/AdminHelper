@@ -174,8 +174,10 @@ def known(v, pattern, n):
 
 def capped(path, n):
     # A regular file of at most n bytes, judged on the open descriptor: a FIFO or a
-    # device put there between a check and the open must not hold this up.
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    # device put there between a check and the open must not hold this up. Never
+    # through a symlink: the loop writes state.json and its summaries itself, as
+    # regular files, and status reads only those.
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError("no regular file")
@@ -199,7 +201,9 @@ try:
     s = json.loads(capped(sys.argv[1], 1 << 20))
     if not isinstance(s, dict):
         raise ValueError
-except (OSError, ValueError):
+# json gives up on deep nesting (a state.json of 100 000 "[") with RecursionError,
+# not a ValueError.
+except (OSError, ValueError, RecursionError):
     print("Worker: ? (state.json unlesbar)", flush=True)
     sys.exit(0)
 run, task, stop = obj(s.get("run")), obj(s.get("task")), s.get("stop")
@@ -209,7 +213,7 @@ if stop:
 else:
     c = s.get("cost_usd", 0)
     # A runner-written file: a cost that is no finite sum of a run reads as "?".
-    cost = ("%.2f" % c).replace(".", ",") if type(c) in (int, float) and math.isfinite(c) and 0 <= c < 1e6 else "?"
+    cost = ("%.2f" % c).replace(".", ",") if type(c) in (int, float) and 0 <= c < 1e6 and math.isfinite(c) else "?"
     where = ""
     if task.get("id"):
         of = task.get("of")
