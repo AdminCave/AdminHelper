@@ -55,8 +55,10 @@ Session, die Kevin ausdrücklich als Chef gestartet oder benannt hat“.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Skills selbst
 
-### T2 — AUTONOMOUS.md und DEVELOPMENT.md sagen „Chef“  [ ]
+### T2 — AUTONOMOUS.md und DEVELOPMENT.md sagen „Chef“  [x]
 Komponente: scripts · Dateien: AUTONOMOUS.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @597604ea 2026-10-13T15:11:06+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Die Stellen der Tabelle in AUTONOMOUS.md (ohne :285, das zum PR-Text von T3 gehört) und in DEVELOPMENT.md werden nach
   der Wortregel zu „Chef“. Sonst ändert sich nichts.

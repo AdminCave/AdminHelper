@@ -24,7 +24,7 @@ Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneb
 2. **Klein genug.** Eine Task ≈ eine fokussierte Änderung, möglichst eine Komponente,
    mit einem konkreten `Verify:`. Nur so kann sie ohne Rückfrage abgearbeitet werden.
 3. **Ein Gate.** Der feste Kontrollpunkt ist das **Design-Gate** nach der Planung: Kevin gibt
-   frei, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2 „Entscheidungen“). Danach
+   frei, bei kleinen Fund-Paketen der Chef (CLAUDE.md §2 „Entscheidungen“). Danach
    läuft Bauen → Testen → PR autonom.
 4. **Granulare Commits = einfache Recovery.** Ein Commit pro Task auf einem Feature-Branch,
    geschrieben von [`scripts/dev/task-close.sh`](scripts/dev/task-close.sh) — nicht von der
@@ -41,9 +41,9 @@ Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneb
 | Phase | Aufruf | Ergebnis |
 |---|---|---|
 | **1 · Design** | `/feature-plan <idee>` (oder `--kurz R-nnnn`, `--bundle <komponente>`) | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger, `Status: geplant`) als ersten Commit auf `feature/<slug>` und trägt die Roadmap-Zeile auf `geplant`. **Stoppt am Design-Gate.** |
-| **2 · Freigabe** | _du_ (kleine Fund-Pakete: die Aufsichts-Session, CLAUDE.md §2) | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Die Freigabe setzt `roadmap.py approve` und den Kopf auf `freigegeben` mit der Zeile `Freigabe:`. |
+| **2 · Freigabe** | _du_ (kleine Fund-Pakete: der Chef, CLAUDE.md §2) | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Die Freigabe setzt `roadmap.py approve` und den Kopf auf `freigegeben` mit der Zeile `Freigabe:`. |
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: `ledger.sh start` → umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → `task-close.sh` setzt den Haken und committet Code + Ledger auf `feature/<slug>`. |
-| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch auf Opus (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Übergabe an die Aufsicht**, die prüft, pusht, den PR öffnet und merged (CLAUDE.md §2). |
+| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch auf Opus (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Übergabe an den Chef**, der prüft, pusht, den PR öffnet und merged (CLAUDE.md §2). |
 
 **Woher die Arbeit kommt.** Was als Nächstes gebaut wird, steht in der privaten Roadmap
 `tasks/private/ROADMAP.md`. Ihren Abschnitt „Als Nächstes" kuratiert Kevin von Hand. Die
@@ -54,7 +54,7 @@ Roadmap als Skript"). Neue Zeilen legen Kevin und die Skripte an (`heavy.sh` fü
 Regressionen und ein rotes Dependency-Audit). `/roadmap` zeigt den Stand mit den WIP-Deckeln, und `/roadmap triage` geht die
 `neu`-Zeilen mit Kevin durch (annehmen, ablehnen, zurückstellen, bündeln). Eine angenommene
 Zeile wird über `/feature-plan` zu Spec und Ledger (Phase 1); freigeben (`approve`) tut
-Kevin, bei kleinen Fund-Paketen die Aufsichts-Session (CLAUDE.md §2).
+Kevin, bei kleinen Fund-Paketen der Chef (CLAUDE.md §2).
 
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
@@ -109,8 +109,8 @@ git switch feature/connection-note
 /feature-build tasks/connection-note.md
 ```
 
-Push, PR und Merge stehen nicht im Lauf eines Workers: Er übergibt am Ende, die
-Aufsichts-Session prüft, pusht, öffnet den PR und merged; ohne Aufsicht nennt die Session die
+Push, PR und Merge stehen nicht im Lauf eines Workers: Er übergibt am Ende, der
+Chef prüft, pusht, öffnet den PR und merged; ohne Chef nennt die Session die
 Befehle und du führst sie aus (Betriebsmodell in `CLAUDE.md` §2). Eine Allow-Regel für
 `gh pr create` oder `--dangerously-skip-permissions` ist nicht vorgesehen.
 
@@ -237,7 +237,7 @@ sudo -u adminhelper-runner tmux new -d -s ah-loop \
 ```
 
 Die Ledger sind Kevins Liste in seiner Reihenfolge; die Roadmap liest der Loop nie. Ein Plan
-erreicht den Runner als gepushter Branch `feature/<slug>` (die Aufsicht pusht ihn, Entscheidung A);
+erreicht den Runner als gepushter Branch `feature/<slug>` (der Chef pusht ihn, Entscheidung A);
 gebaut wird nur ein Kopf mit `Branch: feature/<slug>`, `Status: freigegeben` (oder `aktiv`, dann
 geht es weiter) und einer `Freigabe:`-Zeile. Ein Harness-Ledger (Branch `harness/…` oder ein
 Harness-Pfad in `Dateien:`) bleibt interaktiv: `blockiert (harness)` ohne Lane.
@@ -416,8 +416,8 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   die Liste endet mit Exit 74, wenn auf dieser Lane etwas läuft, das niemand beansprucht.
 - **Plattform-Code** (Windows-Agent, RDP/SSH pro OS) wird laut CLAUDE.md manuell verifiziert
   — solche Tasks markiert `/feature-plan` als `[?]` bzw. mit manuellem Verify-Schritt.
-- **Kein Ersatz für Review.** Das Design-Gate gibt Kevin frei (kleine Fund-Pakete die
-  Aufsichts-Session), den PR prüft und merged die Aufsichts-Session, Regel-PRs Kevin
+- **Kein Ersatz für Review.** Das Design-Gate gibt Kevin frei (kleine Fund-Pakete der
+  Chef), den PR prüft und merged der Chef, Regel-PRs Kevin
   (CLAUDE.md §2); der Loop bereitet vor.
 - Es gilt weiterhin **`CLAUDE.md`** (Surgical Changes, Doku-Pflege, Conventional Commits,
   SPDX, Test-DoD) und **`CONTRIBUTING.md`**. Dieses Dokument beschreibt nur, _wie_ die Arbeit
