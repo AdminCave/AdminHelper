@@ -1815,7 +1815,9 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:
   `bash scripts/vm/warm.sh <desktop|server|pond>` hydriert **einmal** und merkt die
-  VMID (`.vm/warm.env`); danach ist jede Iteration inkrementell (`target/` +
+  VMID und den Namen aus `clone` (`.vm/warm.env`). Wieder genommen wird der Slot nur, solange
+  `vm.py list` auf der VMID eine laufende Box der eigenen Lane mit seiner Rolle, ohne Szenario
+  und unter diesem Namen zeigt; einen Slot ohne Namen uebernimmt `warm.sh` einmal. Danach ist jede Iteration inkrementell (`target/` +
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
   `bash scripts/vm/iter.sh <layer>` bzw. `iter.sh --desktop`; `iter.sh
   --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)

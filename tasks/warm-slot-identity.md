@@ -68,8 +68,10 @@ Semantik: `scripts/vm/tests/README.md:77-78`: „Frischen Zustand einer einzelne
 (`status_current_*.json`), nicht die Ressourcenliste.“ Dazu `vm.py:689`: „Deciding to destroy something from a
 cache is how the wrong VM dies“.
 
-### T2 — warm.sh: der Slot merkt den Namen und gilt nur mit eigener Lane, Rolle, ohne Szenario und mit diesem Namen (R-0347)  [ ]
+### T2 — warm.sh: der Slot merkt den Namen und gilt nur mit eigener Lane, Rolle, ohne Szenario und mit diesem Namen (R-0347)  [x]
 Komponente: scripts · Dateien: scripts/vm/warm.sh, scripts/tests/vm_wrappers_test.sh, scripts/tests/iter_flags_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @15e7ddf5 2026-10-13T14:00:11+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `clone_box` (`warm.sh:62-70`) gibt den Namen aus `clone` mit weiter, ohne den Exit von `clone` zu verlieren.

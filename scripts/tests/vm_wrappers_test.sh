@@ -52,7 +52,7 @@ set -u
 printf '%s\n' "$*" >> "$FAKE_LOG"
 printf '%s\n' "${AH_LANE-<unset>}" > "$FAKE_LANE"
 case "${1:-}" in
-  clone) echo "${FAKE_NEWID:-3001} ah-fake-main-0001" ;;
+  clone) echo "${FAKE_NEWID:-3001} ${FAKE_NAME:-ah-fake-main-0001}" ;;
   wait)  echo "${FAKE_IP:-10.0.0.9}" ;;
   run)   [ -n "${FAKE_RUN_OUT:-}" ] && printf '%s\n' "$FAKE_RUN_OUT"
          exit "${FAKE_RUN_RC:-0}" ;;
@@ -81,11 +81,16 @@ chmod +x "$AH_VM_PY"
 reset_state() {  # a fresh warm.env + an empty call log for every case
   rm -rf "$AH_VM_STATE_DIR"; mkdir -p "$AH_VM_STATE_DIR"
   : > "$FAKE_LOG"
-  unset FAKE_NEWID FAKE_IP FAKE_RUN_OUT FAKE_RUN_RC FAKE_LIST_JSON
+  unset FAKE_NEWID FAKE_NAME FAKE_IP FAKE_RUN_OUT FAKE_RUN_RC FAKE_LIST_JSON
 }
 slot() { grep -E "^$1=" "$AH_VM_STATE_DIR/warm.env" 2>/dev/null | tail -1 | cut -d= -f2-; }
-# vm.py list --json names each VM's lane; warm.sh reuses a slot only on its own.
-running_json() { printf '{"vms": [{"vmid": %s, "status": "running", "lane": "%s"}], "untagged": 0}' "$1" "${2:-main}"; }
+# vm.py list --json names each VM's lane, role, scenario and name; warm.sh reuses a
+# slot only on its own lane, with its role, without a scenario and under its name.
+# running_json <vmid> [lane] [role] [name] [scenario]
+running_json() {
+  printf '{"vms": [{"vmid": %s, "status": "running", "lane": "%s", "role": "%s", "name": "%s", "scenario": "%s"}], "untagged": 0}' \
+    "$1" "${2:-main}" "${3:-desktop}" "${4:-ah-fake-main-0001}" "${5:-}"
+}
 
 echo "── warm.sh: reuse ──"
 reset_state
@@ -117,6 +122,44 @@ grep -q "recorded server VM 3002 carries lane pilot, not main — re-warming" <<
   && ! grep -q "reuse server box" <<<"$OUT" && ! grep -q '=p\b' <<<"$OUT" \
   && ok "the server slot of another lane is not reused either, and no credential is printed" \
   || bad "server other lane: rc=$rc out=$OUT"
+
+echo "── warm.sh: a slot is the box clone made, not whatever runs on its VMID now ──"
+# The pool hands a freed VMID out again: to a scenario's box, or to another
+# checkout's warm box of the same lane and role.
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-desktop-main-aaaa\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3005 FAKE_NAME=ah-desktop-main-cccc FAKE_LIST_JSON="$(running_json 3001 main server ah-server-main-bbbb mb-4242)" bash "$WARM" desktop 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "recorded desktop VM 3001 carries role server, not desktop — re-warming" <<<"$OUT" \
+  && ! grep -q '^run 3001' "$FAKE_LOG" && [ "$(slot desktop)" = 3005 ] && [ "$(slot desktop_name)" = ah-desktop-main-cccc ] \
+  && ok "a scenario's server on the slot's VMID is not the slot's box; a new one takes the slot with its name" \
+  || bad "scenario box: rc=$rc out=$OUT slot=$(slot desktop)/$(slot desktop_name) log=$(cat "$FAKE_LOG")"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-desktop-main-aaaa\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3005 FAKE_LIST_JSON="$(running_json 3001 main desktop ah-desktop-main-aaaa mb-4242)" bash "$WARM" desktop 2>&1); rc=$?
+grep -q "recorded desktop VM 3001 carries scenario mb-4242, not a warm box — re-warming" <<<"$OUT" && ! grep -q '^run 3001' "$FAKE_LOG" \
+  && ok "a box with a scenario is no warm slot, whatever its role and name" || bad "scenario tag: rc=$rc out=$OUT"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-desktop-main-aaaa\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_NEWID=3005 FAKE_LIST_JSON="$(running_json 3001 main desktop ah-desktop-main-bbbb)" bash "$WARM" desktop 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "recorded desktop VM 3001 is named ah-desktop-main-bbbb, not ah-desktop-main-aaaa — re-warming" <<<"$OUT" \
+  && ! grep -q '^run 3001' "$FAKE_LOG" && [ "$(slot desktop)" = 3005 ] \
+  && ok "another checkout's desktop box on the slot's VMID is not the slot's" || bad "foreign name: rc=$rc out=$OUT log=$(cat "$FAKE_LOG")"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-desktop-main-aaaa\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$(running_json 3001 main desktop ah-desktop-main-aaaa)" bash "$WARM" desktop 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "reuse desktop box 3001" <<<"$OUT" && ! grep -q '^clone' "$FAKE_LOG" \
+  && ok "the slot's own box, by lane, role and name, is reused" || bad "own box: rc=$rc out=$OUT"
+reset_state
+printf 'desktop=3001\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$(running_json 3001 main desktop ah-desktop-main-aaaa)" bash "$WARM" desktop 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "recorded desktop VM 3001 has no name yet — taking it as ah-desktop-main-aaaa" <<<"$OUT" \
+  && grep -q "reuse desktop box 3001" <<<"$OUT" && [ "$(slot desktop_name)" = ah-desktop-main-aaaa ] && ! grep -q '^clone' "$FAKE_LOG" \
+  && ok "a slot recorded without a name is taken over once, and its name is written down" || bad "adopt: rc=$rc out=$OUT name=$(slot desktop_name)"
+reset_state
+printf 'server=3002\nserver_name=ah-server-main-aaaa\nserver_ip=10.0.0.42\nserver_ptok=p\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$(running_json 3002 main server ah-server-main-dddd mb-4242)" bash "$WARM" server 2>&1); rc=$?
+grep -q "recorded server VM 3002 carries scenario mb-4242, not a warm box — re-warming" <<<"$OUT" && ! grep -q "reuse server box" <<<"$OUT" \
+  && ok "a scenario's server on the server slot's VMID is not reused, server_ip or not" || bad "server scenario: rc=$rc out=$OUT"
 
 echo "── warm.sh: the one-time clone ──"
 reset_state
@@ -294,7 +337,7 @@ OUT=$(bash "$REAP" --bogus 2>&1); rc=$?
 # on it. warm.sh records the frist as desktop_ttl; iter.sh renews with that,
 # AH_WARM_TTL still wins, and a warm.env from before the key keeps 8h.
 ITER="$REPO_ROOT/scripts/vm/iter.sh"
-RUNNING='{"vms": [{"vmid": 3001, "status": "running", "lane": "main"}]}'
+RUNNING='{"vms": [{"vmid": 3001, "status": "running", "lane": "main", "role": "desktop", "name": "ah-fake-main-0001", "scenario": ""}]}'
 echo "── iter.sh: --extend uses the frist the box was warmed with ──"
 reset_state
 AH_WARM_TTL=20m bash "$WARM" desktop >/dev/null 2>&1
