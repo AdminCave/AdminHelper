@@ -72,9 +72,13 @@ lane_db_url() {  # the main checkout's AH_TEST_DB as a libpq URL, or nothing
 }
 
 lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
+  # Bytes, not the caller's characters: the patterns below must find the same @ and :
+  # under any locale, and a multibyte one can read a byte after a character as part
+  # of it. The UTF-8 checks name their encoding themselves.
+  local LC_ALL=C
   local url pass=""
   url="$(lane_db_url)"
-  # The patterns below read UTF-8: a URL that is none is refused before them.
+  # SQLAlchemy reads AH_TEST_DB as a UTF-8 string: a URL that is no UTF-8 is refused first.
   if ! printf '%s' "$url" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
     echo "  lane.sh: AH_TEST_DB is no UTF-8" >&2
     return 3
@@ -139,6 +143,14 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
     echo "  lane.sh: AH_TEST_DB has a percent-encoded key in its query; write the keys plain" >&2
     return 3
   fi
+  # Only the form lane_db_url makes, a postgresql:// URL, goes on to createdb or dropdb.
+  # Any other (the key=value form of libpq, a scheme without //) ends here, after the
+  # refusals above, which keep their own messages.
+  case "$url" in
+    postgresql://*) ;;
+    *) echo "  lane.sh: AH_TEST_DB is no postgresql:// URL (postgresql+<driver>:// counts as one)" >&2
+       return 3 ;;
+  esac
   case "$1" in
     create) ( [ -z "$pass" ] || export PGPASSWORD="$pass"
               exec createdb --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;
