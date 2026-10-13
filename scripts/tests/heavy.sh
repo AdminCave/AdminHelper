@@ -108,7 +108,13 @@ set_fail()  { [ "$VERDICT" = "UNVERIFIED" ] && return 0; VERDICT="FAIL"; }
 set_infra() {
   local had_fail=""
   [ "$VERDICT" = "FAIL" ] && had_fail=" (FAIL already found before this)"
-  VERDICT="UNVERIFIED"; [ -n "$REASON" ] || REASON="$1$had_fail"
+  VERDICT="UNVERIFIED"; [ -n "$REASON" ] || REASON="$(mask_addr "$1")$had_fail"
+}
+# The reason heads report.md, and AH-STATUS shows that line in every session: no
+# address or host name of the lab in it. vm.py's API errors carry the hypervisor's
+# URL and node. The rest stays word for word, for the triage.
+mask_addr() {  # mask_addr <text> -> URL hosts, /nodes/<name>, user@host and IPv4 masked
+  printf '%s' "$1" | LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#(^|[^A-Za-z0-9_.-])nodes/[^/[:space:]]+#\1nodes/<node>#g; s#UPID[^/[:space:]]*#<upid>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g'
 }
 note()      { NOTES+=("$1"); echo "  $1"; }
 

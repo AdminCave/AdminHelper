@@ -889,6 +889,50 @@ export SHIM_ITER_OUT="vm.py: no ssh: adminhelper@10.0.0.9 refused for 900s"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a box that never answered ssh is infra too" || bad "no ssh -> rc=$rc"
+# The reason heads the report and goes into AH-STATUS: no box address in it.
+h="$(report_of | head -1)"; v="$(grep -a 'heavy.sh\[all\]: UNVERIFIED' <<<"$out")"
+grep -qF 'no ssh: <user>@<host> refused for 900s' <<<"$h" && grep -qF 'no ssh: <user>@<host> refused for 900s' <<<"$v" \
+  && ! grep -q '10\.0\.0\.9' <<<"$h$v" \
+  && ok "the reason names no box address, in the report and in the verdict line" || bad "address: head=$h verdict=$v"
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: sync failed: rsync to 198.51.100.7 exited 12"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" = 74 ] && grep -qF 'sync failed: rsync to <ip> exited 12' <<<"$h" && ! grep -q '198\.51\.100\.7' <<<"$h" \
+  && ok "a bare address in the reason becomes <ip>" || bad "bare address: rc=$rc head=$h"
+# vm.py's API errors carry the hypervisor's URL and its node.
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: no ip: guest agent of 3015 silent after 900s (POST https://pve.plchold.example:8006/api2/json/nodes/plchold-n1/qemu/3015/agent/ping: HTTP 500 QEMU guest agent is not running)"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+h="$(report_of | head -1)"; v="$(grep -a 'heavy.sh\[all\]: UNVERIFIED' <<<"$out")"
+[ "$rc" = 74 ] \
+  && grep -qF '(POST https://<host>:8006/api2/json/nodes/<node>/qemu/3015/agent/ping: HTTP 500 QEMU guest agent is not running)' <<<"$h" \
+  && grep -qF 'https://<host>:8006/api2/json/nodes/<node>/qemu/3015' <<<"$v" && ! grep -q 'plchold' <<<"$h$v" \
+  && ok "the hypervisor's host and its node are masked in the reason too" || bad "api host: rc=$rc head=$h verdict=$v"
+# PVE's own message names the node without a leading slash.
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: clone of 9402 into 3015 failed: POST https://pve.plchold.example:8006/api2/json/nodes/plchold-n1/qemu/9402/clone: HTTP 500 Configuration file 'nodes/plchold-n1/qemu-server/9402.conf' does not exist"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" = 74 ] && grep -qF "/nodes/<node>/qemu/9402/clone: HTTP 500 Configuration file 'nodes/<node>/qemu-server/9402.conf' does not exist" <<<"$h" \
+  && ! grep -q 'plchold' <<<"$h" \
+  && ok "the node in PVE's own message is masked too" || bad "pve message node: rc=$rc head=$h"
+# A task's status path carries its UPID, with the node and the token user in it.
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: clone of 9402 into 3015 was retried and may have landed; cleaning 3015 up failed too: GET https://pve.plchold.example:8006/api2/json/nodes/plchold-n1/tasks/UPID%3Aplchold-n1%3A0029D8B9%3A20A1013A%3A6AAA7A35%3Aqmdestroy%3A3015%3Aplchold%40pve%21plchold%3A/status: HTTP 500 internal error"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" = 74 ] && grep -qF 'https://<host>:8006/api2/json/nodes/<node>/tasks/<upid>/status: HTTP 500 internal error' <<<"$h" \
+  && ! grep -q 'plchold' <<<"$h" \
+  && ok "a task's UPID is masked in the reason" || bad "upid: rc=$rc head=$h"
 # The wording matters: vm.py says "clone of 3010 into 3015 failed", never
 # "clone failed" — a marker written from the call site would never fire.
 mk_case
