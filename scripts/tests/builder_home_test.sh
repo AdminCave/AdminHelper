@@ -96,6 +96,18 @@ TMPDIR_STATUS="$WORK/tmp"; mkdir -p "$TMPDIR_STATUS"
 run() { : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && TMPDIR="$TMPDIR_STATUS" bash "$BH" "$@" 2>&1); rc=$?; }
 B="$HOME/.cache/ah-builder"; H="$B/home"; V="$H/.local/share/ah-tools/venv"
 ALL_OUT=""
+# The caller's toolchains, which the builder takes read-only: a cargo that, like a
+# rustup proxy, needs RUSTUP_HOME and says which RUSTUP_HOME and CARGO_HOME it sees,
+# and a go with its gofmt.
+mkdir -p "$HOME/.cargo/bin" "$HOME/.rustup" "$HOME/sdk/go/bin"
+cat > "$HOME/.cargo/bin/cargo" <<'FAKE'
+#!/usr/bin/env bash
+[ -n "${RUSTUP_HOME:-}" ] || { echo "error: rustup could not choose a version of cargo to run" >&2; exit 1; }
+echo "cargo RUSTUP_HOME=$RUSTUP_HOME CARGO_HOME=${CARGO_HOME-<unset>}"
+FAKE
+printf '#!/bin/sh\necho "go version go0.0-fake"\n' > "$HOME/sdk/go/bin/go"
+printf '#!/bin/sh\nexit 0\n' > "$HOME/sdk/go/bin/gofmt"
+chmod +x "$HOME/.cargo/bin/cargo" "$HOME/sdk/go/bin/go" "$HOME/sdk/go/bin/gofmt"
 
 echo "── setup, the first time"
 mkvenv "$V"
@@ -165,6 +177,20 @@ grep -q -- "^createdb --maintenance-db=postgresql://ah@localhost/adminhelper_tes
   || bad "createdb: $(grep createdb "$FIXTURE_LOG")"
 grep -qxF "export AH_TEST_DB=\"postgresql+psycopg://ah:$PW_URL@localhost/adminhelper_builder\"" "$H/.devenv.sh" \
   && ok ".devenv.sh names the builder's own database" || bad "devenv AH_TEST_DB is not the builder database"
+grep -qxF "export PATH=\"\$HOME/.local/bin:$HOME/.cargo/bin:$HOME/sdk/go/bin:/usr/local/bin:/usr/bin:/bin\"" "$H/.devenv.sh" \
+  && grep -qxF "export RUSTUP_HOME=\"$HOME/.rustup\"" "$H/.devenv.sh" && grep -qxF 'export RUSTUP_AUTO_INSTALL=0' "$H/.devenv.sh" \
+  && grep -qxF 'export CARGO_HOME="$HOME/.cargo"' "$H/.devenv.sh" && grep -qxF "export GOROOT=\"$HOME/sdk/go\"" "$H/.devenv.sh" \
+  && grep -qxF 'export GOPATH="$HOME/go"' "$H/.devenv.sh" && grep -qxF 'export GOCACHE="$HOME/.cache/go-build"' "$H/.devenv.sh" \
+  && grep -qxF 'export GOTOOLCHAIN=local' "$H/.devenv.sh" \
+  && ok ".devenv.sh puts the caller's cargo and go on PATH and the caches into the builder HOME" \
+  || bad "devenv toolchains: $(grep -v AH_TEST_DB "$H/.devenv.sh")"
+# The loop's view: env -i with the builder HOME and the system PATH, as ledger-loop.sh
+# starts it, and this file sourced, as runner-env.sh does.
+LOOP=$(/usr/bin/env -i HOME="$H" PATH=/usr/local/bin:/usr/bin:/bin bash -c '. "$HOME/.devenv.sh" && command -v cargo go gofmt && cargo' 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qxF "$HOME/.cargo/bin/cargo" <<<"$LOOP" && grep -qxF "$HOME/sdk/go/bin/go" <<<"$LOOP" \
+  && grep -qxF "$HOME/sdk/go/bin/gofmt" <<<"$LOOP" && grep -qxF "cargo RUSTUP_HOME=$HOME/.rustup CARGO_HOME=$H/.cargo" <<<"$LOOP" \
+  && ok "the loop finds cargo, go and gofmt, and cargo its RUSTUP_HOME and the builder's CARGO_HOME" \
+  || bad "the loop's view: rc=$rc $LOOP"
 grep -q 'still missing: the token' <<<"$OUT" && ok "setup names the missing token" || bad "no token hint: $OUT"
 [ ! -e "$H/.config/adminhelper/oauth.env" ] && ok "and writes no oauth.env itself" || bad "setup wrote oauth.env"
 [ -f "$B/repo/$SC" ] && [ ! -L "$B/repo/$SC" ] && cmp -s "$MAIN/$SC" "$B/repo/$SC" && [ -x "$B/repo/$SC" ] \
@@ -181,6 +207,20 @@ run setup; ALL_OUT+="$OUT"
   || bad "second setup: rc=$rc diff: $(diff <(echo "$BEFORE") <(snap) | head -5)"
 ! grep -q '^  wrote' <<<"$OUT" && ! grep -q '^createdb' "$FIXTURE_LOG" && ! grep -q 'claude install' "$FIXTURE_LOG" \
   && ok "and writes nothing, creates no database, installs no CLI" || bad "second setup did work: $OUT"
+
+echo "── setup without a toolchain of the caller's, and a HOME it cannot write down"
+mv "$HOME/sdk" "$WORK/sdk.away"
+run setup; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && grep -q "note  no go in $HOME/sdk/go/bin: the builder gets none" <<<"$OUT" \
+  && ! grep -q 'GOROOT\|GOPATH\|GOCACHE\|GOTOOLCHAIN\|sdk/go' "$H/.devenv.sh" && grep -q 'RUSTUP_HOME' "$H/.devenv.sh" \
+  && ok "without go at the caller's, setup says so and writes no go lines; cargo stays" || bad "no go: rc=$rc out=$OUT"
+mv "$WORK/sdk.away" "$HOME/sdk"
+run setup; ALL_OUT+="$OUT"
+grep -q 'GOTOOLCHAIN=local' "$H/.devenv.sh" && ok "and with go back, setup writes its lines again" || bad "go back: $(grep -v AH_TEST_DB "$H/.devenv.sh")"
+QH="$WORK/ho\"me"; mkdir -p "$QH"
+: > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && HOME="$QH" AH_BUILDER_DIR="$WORK/b-quote" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+[ $rc -eq 1 ] && grep -q "has a character the builder's .devenv.sh cannot hold" <<<"$OUT" && [ ! -e "$WORK/b-quote" ] \
+  && ok "a HOME with a double quote stops setup before it makes anything" || bad "quoted HOME: rc=$rc out=$OUT"
 
 echo "── token"
 printf 'pastedcode#browserstate\n' > "$WORK/in.bad"

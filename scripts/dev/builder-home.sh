@@ -36,7 +36,8 @@
 #     (sys.prefix /usr, measured 2026-10-09), a wrapper the venv;
 #   - its own test database on the server of this checkout's AH_TEST_DB, with
 #     its credentials; the password travels in the environment, as in lane.sh;
-#   - home/.devenv.sh (0600) and the git identity of this user.
+#   - home/.devenv.sh (0600) with this user's cargo and go on PATH, read-only,
+#     and the builder's own caches; and the git identity of this user.
 # Neither setup nor status ever prints a password or a token, and setup never
 # touches oauth.env.
 #
@@ -253,15 +254,37 @@ setup_db() {
   fi
 }
 
+# The toolchains of whoever runs setup, read-only (R-0358): rustup's proxies in
+# ~/.cargo/bin pick their toolchain from RUSTUP_HOME, and go knows its tree from
+# where it lies (GOROOT says the same). The caches are the builder's own, under its
+# HOME: CARGO_HOME, GOPATH, GOCACHE. RUSTUP_AUTO_INSTALL=0 keeps a branch's
+# rust-toolchain.toml from installing into that RUSTUP_HOME, and GOTOOLCHAIN=local
+# keeps go from fetching another, as in CI. The loop starts under env -i, so this
+# file is all the PATH it has (ledger-loop.sh start, runner-env.sh).
 setup_devenv() {
-  local url
+  local url path='$HOME/.local/bin' rust="" go=""
   say "── $H/.devenv.sh (0600)"
+  if [ -x "$HOME/.cargo/bin/cargo" ] && [ -d "$HOME/.rustup" ]; then rust=1; path+=":$HOME/.cargo/bin"
+  else say "  note  no cargo in $HOME/.cargo/bin with $HOME/.rustup: the builder gets none"; fi
+  if [ -x "$HOME/sdk/go/bin/go" ]; then go=1; path+=":$HOME/sdk/go/bin"
+  else say "  note  no go in $HOME/sdk/go/bin: the builder gets none"; fi
   url="$(db_url)"
   {
-    printf 'export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"\n'
+    printf 'export PATH="%s:/usr/local/bin:/usr/bin:/bin"\n' "$path"
     printf 'export AH_TEST_DB="%s"\n' "$url"
     printf 'export AH_VENV="$HOME/.cache/ah-venv"\n'
     printf 'export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest scripts vm-pytest dev-pytest"\n'
+    if [ -n "$rust" ]; then
+      printf 'export RUSTUP_HOME="%s/.rustup"\n' "$HOME"
+      printf 'export RUSTUP_AUTO_INSTALL=0\n'
+      printf 'export CARGO_HOME="$HOME/.cargo"\n'
+    fi
+    if [ -n "$go" ]; then
+      printf 'export GOROOT="%s/sdk/go"\n' "$HOME"
+      printf 'export GOPATH="$HOME/go"\n'
+      printf 'export GOCACHE="$HOME/.cache/go-build"\n'
+      printf 'export GOTOOLCHAIN=local\n'
+    fi
   } | write_if "$H/.devenv.sh" 600 || fail "could not write $H/.devenv.sh"
 }
 
@@ -277,6 +300,11 @@ setup_git() {
 }
 
 do_setup() {
+  # HOME goes into double-quoted exports of the builder's .devenv.sh: a character
+  # those cannot hold stops setup before it makes anything.
+  case "$HOME" in
+    *'"'*|*'$'*|*'\'*|*'`'*) fail "HOME ($HOME) has a character the builder's .devenv.sh cannot hold" ;;
+  esac
   setup_dirs
   setup_cli
   setup_clone

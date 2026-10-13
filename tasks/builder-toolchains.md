@@ -29,8 +29,10 @@ Harness-Pfade; den PR merged Kevin oder die Aufsicht auf sein Wort.
   - Rust kommt über rustup-Proxies in `<KH>/.cargo/bin`, mit den Toolchains unter `<KH>/.rustup`.
   - Go liegt in `<KH>/sdk/go`.
 
-### T1 — setup: der `.devenv.sh` des Builders nennt cargo und go des Aufrufers und eigene Caches (R-0358)  [ ]
+### T1 — setup: der `.devenv.sh` des Builders nennt cargo und go des Aufrufers und eigene Caches (R-0358)  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @68464b4f 2026-10-13T18:01:33+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `setup_devenv` (`:292-302`) schreibt, je für eine Toolchain, die es unter `<KH>` gibt:
   - Der PATH bekommt `<KH>/.cargo/bin` und `<KH>/sdk/go/bin` hinter `$HOME/.local/bin` und vor die Systempfade. `<KH>`
