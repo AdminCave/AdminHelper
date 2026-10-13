@@ -1860,6 +1860,8 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/
   Monitoring) — Cross-Host-mTLS, echtes `.deb`, Monitoring ueber den Netz-Hop.
   `--capstone` ist die Release-Kombination (alle Szenarien plus `--enforce`).
+  Unter der Summary nennt der Lauf die Go-Version, mit der die Server-Box das Agent-Binary
+  der Pakete gebaut hat (`go version (agent .deb, server box): …`, aus dem Binary gelesen).
   Die Frist der Warm-Box kommt aus `AH_WARM_TTL` (Default 8h); `iter.sh` verlaengert bei
   jedem Lauf um genau diese Frist (warm.sh merkt sie als `desktop_ttl` in `.vm/warm.env`),
   eine bewusst kurze Box bleibt also kurz.
