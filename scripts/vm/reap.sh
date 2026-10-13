@@ -39,7 +39,7 @@ LANE="$(vm_lane)" || exit 2
 export AH_LANE="$LANE"
 
 echo "== reap warm boxes (lane $LANE) =="
-ROLES=() IDS=()
+ROLES=() IDS=() NAMES=()
 for role in desktop server; do
   v="$(warm_get "$role")"
   [ -n "$v" ] || continue
@@ -48,7 +48,15 @@ for role in desktop server; do
   case "$v" in
     *[!0123456789]*) echo "  slot $role holds no VMID — skipped"; continue ;;
   esac
-  echo "  destroy $role $v"; ROLES+=("$role"); IDS+=("$v")
+  # The name warm.sh recorded from clone: vm.py holds it against fresh state, so a
+  # VMID another box of the lane and role took since is refused. A name is what
+  # clone makes of role and lane, lowercase words and dashes; anything else is
+  # skipped like a slot without a VMID. A slot from before names stays by VMID.
+  n="$(warm_get "${role}_name")"
+  case "$n" in
+    -*|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) echo "  slot $role holds no usable name — skipped"; continue ;;
+  esac
+  echo "  destroy $role $v${n:+ ($n)}"; ROLES+=("$role"); IDS+=("$v"); NAMES+=("$n")
 done
 # One call per slot: vm.py checks every VM it is named before it destroys the
 # first and refuses the whole call for one it will not take. A slot whose VM is
@@ -57,7 +65,8 @@ done
 # own call, not the live slot next to it.
 if [ ${#IDS[@]} -gt 0 ]; then
   for i in "${!IDS[@]}"; do
-    vm_py destroy --lane "$LANE" --role "${ROLES[$i]}" --no-scenario "${IDS[$i]}" 2>&1 | sed 's/^/  /' || true  # review: ok the sweep goes on; the closing list exits 74 on a leak
+    expect=(); [ -z "${NAMES[$i]}" ] || expect=(--expect-name "${NAMES[$i]}")
+    vm_py destroy --lane "$LANE" --role "${ROLES[$i]}" --no-scenario "${expect[@]}" "${IDS[$i]}" 2>&1 | sed 's/^/  /' || true  # review: ok the sweep goes on; the closing list exits 74 on a leak
   done
 else
   echo "  no warm slots recorded"

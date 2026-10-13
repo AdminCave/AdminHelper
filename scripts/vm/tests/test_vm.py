@@ -2985,3 +2985,107 @@ def test_destroy_no_scenario_alone_or_with_a_scenario_is_a_usage_error(cfg, api,
         verb("destroy", cfg, api, *argv)
     assert "--no-scenario" in str(caught.value)
     assert http.calls == []
+
+
+# ── --expect-name ────────────────────────────────────────────────────────────
+# iter.sh and reap.sh name a warm slot with the name warm.sh recorded from clone.
+# The resource list may show a recycled VMID under its last tenant's name, so the
+# name is held against status/current only.
+def named_box(http, monkeypatch, name):
+    """3000 on this lane, resolvable, and named `name` by status/current."""
+    monkeypatch.setenv("AH_LANE", "main")
+    http.add(
+        "GET",
+        "/qemu/3000/status/current",
+        body=current_of(3000, tags=POOL_NOW[3000][0], name=name)["body"],
+    )
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    return http
+
+
+@pytest.mark.parametrize("argv", [["run", "3000", "--", "true"], ["sync", "3000"]])
+def test_run_and_sync_take_a_box_with_the_expected_name(cfg, api, http, shell, monkeypatch, argv):
+    named_box(http, monkeypatch, "ah-desktop-main-aaaa")
+    assert verb(argv[0], cfg, api, argv[1], "--expect-name", "ah-desktop-main-aaaa", *argv[2:]) == 0
+    assert shell.runs != []
+
+
+@pytest.mark.parametrize("argv", [["run", "3000", "--", "true"], ["sync", "3000"]])
+def test_run_and_sync_refuse_a_box_with_another_name(cfg, api, http, shell, monkeypatch, argv):
+    named_box(http, monkeypatch, "ah-desktop-main-bbbb")
+    with pytest.raises(vm.Usage) as caught:
+        verb(argv[0], cfg, api, argv[1], "--expect-name", "ah-desktop-main-aaaa", *argv[2:])
+    assert "3000 is named ah-desktop-main-bbbb, not ah-desktop-main-aaaa — refusing" in str(
+        caught.value
+    )
+    assert shell.runs == []
+
+
+def test_run_holds_the_name_against_fresh_state_not_the_listing(cfg, api, http, shell, monkeypatch):
+    # The listing still names 3000 ah-probe-main-a1b2; the VM itself says otherwise.
+    named_box(http, monkeypatch, "ah-desktop-main-bbbb")
+    with pytest.raises(vm.Usage) as caught:
+        verb(
+            "run",
+            cfg,
+            api,
+            "3000",
+            "--expect-name",
+            "ah-probe-main-a1b2",
+            "--extend",
+            "1h",
+            "--sync",
+            "--",
+            "true",
+        )
+    assert "3000 is named ah-desktop-main-bbbb, not ah-probe-main-a1b2" in str(caught.value)
+    assert shell.runs == []
+    # Refused before the lease was touched.
+    assert http.paths("PUT") == [] and http.paths("POST") == []
+
+
+def test_an_expected_name_on_a_vm_that_is_gone_is_refused(cfg, api, http):
+    http.add(
+        "GET",
+        "/qemu/3000/status/current",
+        status=500,
+        body='{"message":"Configuration file \'nodes/n/qemu-server/3000.conf\' does not exist"}',
+    )
+    with pytest.raises(vm.Usage) as caught:
+        vm.require_own_lane(cfg, api, 3000, "ah-probe-main-a1b2")
+    assert "3000 is gone, not ah-probe-main-a1b2 — refusing" in str(caught.value)
+
+
+def test_destroy_expect_name_takes_the_vm_with_that_name(cfg, api, http, clock, capsys):
+    warm = "ah;lane-main;role-probe;tpl-linux-full;ttl-1789558820"
+    purgeable(http, 3000, now={3000: (warm, "ah-probe-main-a1b2")})
+    argv = ("3000", "--lane", "main", "--role", "probe", "--no-scenario")
+    assert verb("destroy", cfg, api, *argv, "--expect-name", "ah-probe-main-a1b2") == 0
+    assert "destroyed 3000" in capsys.readouterr().out
+    assert http.paths("DELETE") == ["https://pve.example:8006/api2/json/nodes/<node>/qemu/3000"]
+
+
+def test_destroy_expect_name_refuses_another_fresh_name_and_destroys_nothing(cfg, api, http, clock):
+    # The listing names 3000 ah-probe-main-a1b2, as the slot recorded; fresh state
+    # names another box of the same lane and role.
+    warm = "ah;lane-main;role-probe;tpl-linux-full;ttl-1789558820"
+    purgeable(http, 3000, now={3000: (warm, "ah-probe-main-ffff")})
+    argv = ("3000", "--lane", "main", "--role", "probe", "--no-scenario")
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, *argv, "--expect-name", "ah-probe-main-a1b2")
+    assert "3000 is named ah-probe-main-ffff, not ah-probe-main-a1b2 — refusing" in str(
+        caught.value
+    )
+    assert http.paths("DELETE") == []
+
+
+@pytest.mark.parametrize(
+    "argv", [("--lane", "main", "--expect-name", "x"), ("3000", "3001", "--expect-name", "x")]
+)
+def test_destroy_expect_name_holds_exactly_one_named_vm(cfg, api, http, argv):
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, *argv)
+    assert "--expect-name holds exactly one named VM" in str(caught.value)
+    assert http.calls == []

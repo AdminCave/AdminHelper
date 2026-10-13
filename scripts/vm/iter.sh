@@ -85,11 +85,25 @@ SYNC=(--sync); [ "${AH_NO_SYNC:-0}" = 1 ] && SYNC=()
 # The remote exit code is this function's, unchanged: a red suite stays 1, and
 # vm.py's own 74 (no ssh, capacity, timeout) stays 74 so heavy.sh can sort it
 # away as infrastructure instead of reporting a test that never ran.
+#
+# With the name warm.sh recorded for the slot, vm.py holds the box against it in
+# fresh state: a VMID the pool has handed to another box since is refused before
+# anything is synced. That ends this script with vm.py's exit, not as a red run.
 box_run() {
-  local vmid="$1" tmo="$2"; shift 2
-  vm_py run "$vmid" "${SYNC[@]}" --timeout "$tmo" --out "$OUT_DIR" --extend "$TTL" \
+  local vmid="$1" tmo="$2" name rc; shift 2
+  local expect=()
+  name="$(warm_get desktop_name)"
+  [ -z "$name" ] || expect=(--expect-name "$name")
+  vm_py run "$vmid" "${SYNC[@]}" --timeout "$tmo" --out "$OUT_DIR" --extend "$TTL" "${expect[@]}" \
     -- "$@" 2>&1 | tee "$BOX_LOG"
-  return "${PIPESTATUS[0]}"
+  rc="${PIPESTATUS[0]}"
+  # vm.py's own refusal of this VMID, on the line it writes to stderr — not any line
+  # of a suite's output that happens to end the same way.
+  if [ "$rc" = 2 ] && [ -n "$name" ] && grep -qE "^vm\.py: $vmid is .* — refusing\$" "$BOX_LOG"; then
+    echo "  ✗ box $vmid is not the warm slot's box $name now — nothing was synced; next: bash scripts/vm/warm.sh desktop"
+    exit "$rc"
+  fi
+  return "$rc"
 }
 
 report_fail() {
