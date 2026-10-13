@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # URL-Helfer: lane_db und pg lesen AH_TEST_DB mit einer gemeinsamen Funktion — Task-Ledger
-Status: freigegeben · Branch: harness/pg-url-helper · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/pg-url-helper · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-3 wie empfohlen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — ein gesourcter Shell-Helfer in `scripts/dev/`, `lane_db` in `lane.sh`, `pg` in `builder-home.sh` und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad.
