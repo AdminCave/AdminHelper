@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Box-Skripte: jeder Aufruf der Agent-CLI ist gegen die CLI geprüft — Task-Ledger
-Status: bereit · Branch: harness/box-cli-check · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/box-cli-check · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0333, Triage Kevin 2026-10-13; als Go-Test im Agent statt Script-Test, weil der Ops-Job kein Go hat; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0333 (Kurz-Ledger ohne Spec)
 Heavy: none — ein Test im Paket `cmd/adminhelper-agent`, das Agent-Binary selbst ändert sich nicht; kein Stack-, Gateway-, PKI- oder Install-Pfad, und die Box-Skripte bleiben, wie sie sind.
