@@ -16,10 +16,10 @@ set -euo pipefail
 
 FRP_VERSION="${AH_FRP_VERSION:-0.69.1}"
 FRP_SHA256_LINUX_AMD64="7be257b72dbbc60bcb3e0e25a5afd1dfac7b63f897084864d3c956dd3d5674e1"
-GO_VERSION="${AH_GO_VERSION:-1.25.0}"
+GO_VERSION="${AH_GO_VERSION:-1.26.9}"
 # Pin the Go tarball checksum like the frpc one (consistency) — the official sha256
 # from go.dev's release JSON; override alongside a non-default GO_VERSION (4.123).
-GO_SHA256_LINUX_AMD64="${AH_GO_SHA256:-2852af0cb20a13139b3448992e69b868e50ed0f8a1e5940ee1de9e19a123b613}"
+GO_SHA256_LINUX_AMD64="${AH_GO_SHA256:-42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d}"
 NODE_MAJOR="${AH_NODE_MAJOR:-22}"
 TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"
 # Pinned, and to the same version ci.yml installs: a bake picks up whatever pip

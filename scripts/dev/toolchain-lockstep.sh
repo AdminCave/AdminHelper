@@ -16,11 +16,16 @@
 # looking like an ordinary red run. The pin's comment says "raise this together
 # with go-version"; this is that sentence as a check.
 #
-# Three assertions:
+# Four assertions:
 #   1  every `go-version:` in ci.yml, release.yml and audit.yml is the same
 #      (the pin is chosen against one Go version — three different ones make
 #      "the Go version" meaningless before the third assertion can mean
 #      anything)
+#   1b every `with:` block that sets `go-version:` also sets `check-latest: true`.
+#      setup-go resolves MAJOR.MINOR from the runner image's toolcache first, and
+#      the image held 1.26.8 when the stdlib fixes came with 1.26.9: without it,
+#      release.yml can ship another stdlib than the one audit.yml scanned.
+#      Offline, like 2.
 #   2  the ruff that ci.yml installs is the default of RUFF_VERSION in
 #      scripts/vm/bootstrap_linux.sh and the `ruff==` pin in
 #      apps/server/requirements-dev.txt. The first bake of a linux-server
@@ -82,7 +87,7 @@ for f in ci release audit; do
       *) bad_version=1 ;;
     esac
     [ "$bad_version" = 0 ] || {
-      echo "::error::cannot compare go-version '$v' in .github/workflows/$f.yml — this check needs a plain MAJOR.MINOR pin (today \"1.25\"), not a range, alias or .x wildcard"
+      echo "::error::cannot compare go-version '$v' in .github/workflows/$f.yml — this check needs a plain MAJOR.MINOR pin, not a range, alias or .x wildcard"
       exit 1; }
     versions="$versions $f=$v"
   done < <(sed -n 's/^[[:space:]]*go-version:[[:space:]]*"\{0,1\}\([^"[:space:]]*\)"\{0,1\}[[:space:]]*$/\1/p' "$WF/$f.yml")
@@ -98,6 +103,38 @@ for pair in $versions; do
     exit 1; }
 done
 echo "go-version:$versions"
+
+# ── 1b: check-latest beside every go-version ─────────────────────────────────
+# Per `with:` block, in any order: a block is the go-version line's siblings —
+# every line around it at its indent or deeper, comments and blank lines
+# included. A check-latest in another job's block does not count. The scan ends
+# with a line "end": without it awk did not run to the end, and a check that
+# cannot fail checks nothing.
+for f in ci release audit; do
+  scan="$(awk '
+    function ind(s) { return match(s, /[^ ]/) - 1 }
+    function inblock(s, d) { return s ~ /^[ ]*(#.*)?$/ || ind(s) >= d }
+    function latest(s, d) { return ind(s) == d && s ~ /^[ ]*check-latest:[ ]*true[ ]*(#.*)?$/ }
+    { line[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) {
+        if (line[i] !~ /^[ ]*go-version:/) continue
+        d = ind(line[i]); found = 0
+        for (j = i - 1; j >= 1 && inblock(line[j], d); j--) if (latest(line[j], d)) found = 1
+        for (j = i + 1; j <= NR && inblock(line[j], d); j++) if (latest(line[j], d)) found = 1
+        if (!found) print i
+      }
+      print "end"
+    }' "$WF/$f.yml")"
+  [ "$(tail -n 1 <<<"$scan")" = end ] || {
+    echo "::error::the check-latest scan of .github/workflows/$f.yml did not run to its end — nothing was checked"
+    exit 1; }
+  n="$(head -n 1 <<<"$scan")"
+  [ "$n" = end ] || {
+    echo "::error::.github/workflows/$f.yml:$n sets go-version without check-latest: true in the same with: block — setup-go then takes the newest patch in the runner's toolcache, and the release can ship another stdlib than the audit checks"
+    exit 1; }
+done
+echo "check-latest: true beside every go-version"
 
 # ── 2: one ruff at all five places ───────────────────────────────────────────
 # Plain dotted digits only: `ruff==0.15.*` is a valid pip specifier that matches

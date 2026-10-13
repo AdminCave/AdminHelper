@@ -355,7 +355,11 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "1.25"
+          go-version: "1.26"
+          # The runner image's toolcache holds an older patch (20261004: 1.26.8), and
+          # the stdlib fixes the agent needs came with 1.26.9. Without check-latest,
+          # setup-go takes the cached one.
+          check-latest: true
           cache-dependency-path: apps/agent/go.sum
       - name: gofmt
         working-directory: apps/agent
@@ -395,7 +399,8 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "1.25"
+          go-version: "1.26"
+          check-latest: true
           cache-dependency-path: apps/agent/go.sum
       # Nothing in apps/agent has ever RUN on Windows: `GOOS=windows go vet` on the
       # ubuntu runner compiles and executes nothing. Seven files are windows-tagged
@@ -725,10 +730,11 @@ jobs:
           fetch-depth: 0
       - name: Install oasdiff
         # Release tarball, not `go install`: every oasdiff from v1.24.0 on declares
-        # `go 1.26` in its go.mod, while these workflows pin Go 1.25 with
-        # GOTOOLCHAIN=local — building from source fails exactly the way govulncheck
-        # did (PR #14). A prebuilt tarball needs no toolchain at all; the SHA-256
-        # above is the pin, so a swapped asset is a failure, not a surprise binary.
+        # `go 1.26` in its go.mod, and these workflows run with GOTOOLCHAIN=local, so
+        # a source build breaks the day oasdiff outruns our go-version — exactly the
+        # way govulncheck did (PR #14). A prebuilt tarball needs no toolchain at all;
+        # the SHA-256 above is the pin, so a swapped asset is a failure, not a
+        # surprise binary.
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
           url="https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
