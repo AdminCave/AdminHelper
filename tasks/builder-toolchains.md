@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Builder-Profil: cargo und go aus dem HOME des Aufrufers, Caches im Builder-HOME — Task-Ledger
-Status: bereit · Branch: harness/builder-toolchains · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/builder-toolchains · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 und das Restrisiko Toolchain-Tausch waehrend eines Loops auf Kevins Wort 2026-10-13; Fragen 2-4 wie empfohlen; Bau nach dem Merge von pg-url-helper; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0358 (Kurz-Ledger ohne Spec)
 Heavy: none — `setup`, `status` und `setup_settings` in `scripts/dev/builder-home.sh` mit ihrem hermetischen Test; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Abnahme im echten Builder (`setup`, `status`, ein Messlauf) ist Kevins Schritt.
@@ -32,7 +32,7 @@ Harness-Pfade; den PR merged Kevin oder die Aufsicht auf sein Wort.
 ### T1 — setup: der `.devenv.sh` des Builders nennt cargo und go des Aufrufers und eigene Caches (R-0358)  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ca46367c 2026-10-13T19:19:15+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - `setup_devenv` (`:292-302`) schreibt, je für eine Toolchain, die es unter `<KH>` gibt:
   - Der PATH bekommt `<KH>/.cargo/bin` und `<KH>/sdk/go/bin` hinter `$HOME/.local/bin` und vor die Systempfade. `<KH>`
@@ -92,7 +92,7 @@ Builder-Home)“.
 ### T2 — status: fehlt im Builder eine Toolchain, die der Aufrufer hat, meldet `status` sie (R-0358)  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2611211c 2026-10-13T18:16:21+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Abhängt von: T1
 Änderung:
 - `do_status` (`:357-379`) bekommt eine Prüfung je Toolchain, die es unter `<KH>` gibt (dieselben Prüfpunkte wie in T1).
@@ -120,7 +120,7 @@ Semantik: `builder-home.sh:12`: „status    what is missing; exit 1 if anything
 ### T3 — setup_settings: die Session des Builders darf die Toolchain-Bäume des Aufrufers nicht bearbeiten (R-0358)  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4d397123 2026-10-13T18:30:04+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Abhängt von: T1
 Änderung:
 - `setup_settings` (`:246-266`) hängt an die Sperren zu privaten Pfaden (`:254-258`) Edit-Sperren an:
