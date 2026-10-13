@@ -2063,6 +2063,17 @@ def test_destroy_refuses_a_named_vm_of_another_lane_and_destroys_nothing(cfg, ap
     assert http.paths("DELETE") == []
 
 
+def test_destroy_refuses_a_vmid_not_in_the_pool_and_destroys_nothing(cfg, api, http, clock):
+    # A VM gone from the listing cannot be told from one of another pool: the
+    # whole call is refused before the first destruction. reap.sh therefore names
+    # its warm slots one call each.
+    purgeable(http, 3001)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "3005")
+    assert "no VM '3005' in pool" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
 def test_destroy_refuses_before_it_destroys_a_vm_that_sorts_first(cfg, api, http, clock):
     # 3000 matches and sorts first: a check made while destroying would take it
     # before it reached 3001.

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-slots: reap.sh zerstört die Warm-Slots einzeln (R-0320, R-0323) — Task-Ledger
-Status: aktiv · Branch: harness/reap-slots · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/reap-slots · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0320, R-0323, Triage Kevin 2026-10-12; R-0320 jetzt mit Probe belegt; vm.py bleibt streng; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0320, R-0323 (Kurz-Ledger ohne Spec)
 Heavy: none — reap.sh mit Fake-vm.py in vm_wrappers_test, vm.py destroy mit der Fake-API von test_vm; kein echtes destroy, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -25,8 +25,10 @@ Vorab geprüft:
   nicht von einer VM eines anderen Pools unterscheiden, und eine solche darf es nie anfassen (`require_ours`, `find_vm`
   „resolved inside our pool — and nowhere else“). Der Fix gehört deshalb in reap.sh.
 
-### T1 — reap.sh zerstört die Warm-Slots einzeln (R-0320, R-0323)  [ ]
+### T1 — reap.sh zerstört die Warm-Slots einzeln (R-0320, R-0323)  [x]
 Komponente: scripts · Dateien: scripts/vm/reap.sh, scripts/tests/vm_wrappers_test.sh, scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5a4e4d0b 2026-10-13T02:29:31+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - reap.sh (:40–49) übergibt alle Warm-Slots in einem `vm_py destroy --lane "$LANE" <ids…>`.
   - vm.py prüft vor der ersten Zerstörung alles und bricht den ganzen Aufruf ab, wenn ein Slot nicht durchgeht. Das

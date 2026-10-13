@@ -58,7 +58,11 @@ case "${1:-}" in
          exit "${FAKE_RUN_RC:-0}" ;;
   list)  if [ "${2:-}" = "--json" ]; then printf '%s\n' "${FAKE_LIST_JSON:-{\"vms\": []\}}"
          else echo "0 ours, 0 not ours"; fi ;;
-  destroy) shift; echo "destroyed $*" ;;
+  destroy) shift
+           # FAKE_DESTROY_FAIL=<vmid> refuses a call that names it, as vm.py does
+           # for a VM gone from the listing or of another lane.
+           case " $* " in *" ${FAKE_DESTROY_FAIL:-none} "*) echo "vm.py: no VM '$FAKE_DESTROY_FAIL' in pool" >&2; exit 2 ;; esac
+           echo "destroyed $*" ;;
   reap)  echo "nothing expired" ;;
 esac
 exit 0
@@ -197,14 +201,26 @@ reset_state
 printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\nserver_ptok=p\n' > "$AH_VM_STATE_DIR/warm.env"
 OUT=$(bash "$REAP" 2>&1); rc=$?
 [ $rc -eq 0 ] || bad "reap failed: rc=$rc out=$OUT"
-# With the lane: vm.py refuses a slot whose VM carries another lane's tag.
-grep -q '^destroy --lane main 3001 3002$' "$FAKE_LOG" \
-  && ok "both warm slots are destroyed in ONE call, with the lane" || bad "destroy args: $(grep '^destroy' "$FAKE_LOG")"
+# One call per slot, with the lane: vm.py refuses a slot whose VM carries another
+# lane's tag, and that refusal must not keep the other slot standing.
+grep -q '^destroy --lane main 3001$' "$FAKE_LOG" && grep -q '^destroy --lane main 3002$' "$FAKE_LOG" \
+  && [ "$(grep -c '^destroy' "$FAKE_LOG")" = 2 ] \
+  && ok "each warm slot is destroyed in a call of its own, with the lane" || bad "destroy args: $(grep '^destroy' "$FAKE_LOG")"
 grep -q '^reap$' "$FAKE_LOG" && ok "the expiry sweep follows" || bad "no plain reap: $(cat "$FAKE_LOG")"
 [ -z "$(slot server_ip)" ] && [ -z "$(slot desktop)" ] \
   && ok "warm.env is emptied, credentials included" || bad "warm.env left: $(cat "$AH_VM_STATE_DIR/warm.env")"
 [ "$(tail -1 "$FAKE_LOG")" = "list" ] \
   && ok "the sweep ends by listing what is left" || bad "last call: $(tail -1 "$FAKE_LOG")"
+
+echo "── reap.sh: a slot vm.py refuses costs only its own call ──"
+reset_state
+printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_DESTROY_FAIL=3001 bash "$REAP" 2>&1); rc=$?
+grep -q '^destroy --lane main 3002$' "$FAKE_LOG" && grep -q "no VM '3001' in pool" <<<"$OUT" \
+  && ok "the slot after a refused one is destroyed all the same" || bad "refused slot: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
+[ -z "$(slot desktop)" ] && [ -z "$(slot server)" ] && [ -z "$(slot server_ip)" ] \
+  && ok "... and warm.env is emptied as before" || bad "warm.env left: $(cat "$AH_VM_STATE_DIR/warm.env")"
+grep -q '^reap$' "$FAKE_LOG" && ok "... and the expiry sweep follows" || bad "no reap after a refused slot: $(cat "$FAKE_LOG")"
 
 echo "── reap.sh --all ──"
 reset_state
@@ -223,8 +239,8 @@ grep -q "lane pilot-two" <<<"$OUT" && ok "--lane names the lane it acts on" || b
 reset_state
 printf 'desktop=3001\nserver=3002\n' > "$AH_VM_STATE_DIR/warm.env"
 bash "$REAP" --lane pilot-two >/dev/null 2>&1
-grep -q '^destroy --lane pilot-two 3001 3002$' "$FAKE_LOG" \
-  && ok "--lane goes with the warm slots to vm.py" || bad "destroy args: $(grep '^destroy' "$FAKE_LOG")"
+grep -q '^destroy --lane pilot-two 3001$' "$FAKE_LOG" && grep -q '^destroy --lane pilot-two 3002$' "$FAKE_LOG" \
+  && ok "--lane goes with each warm slot to vm.py" || bad "destroy args: $(grep '^destroy' "$FAKE_LOG")"
 
 reset_state
 OUT=$(bash "$REAP" --bogus 2>&1); rc=$?

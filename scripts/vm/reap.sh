@@ -42,10 +42,15 @@ for role in desktop server; do
   v="$(warm_get "$role")"
   [ -n "$v" ] && { echo "  destroy $role $v"; IDS+=("$v"); }
 done
-# A slot whose VM is already gone is the normal case after a ttl expired, and
-# vm.py says so and moves on — the sweep must not stop at it.
+# One call per slot: vm.py checks every VM it is named before it destroys the
+# first and refuses the whole call for one it will not take. A slot whose VM is
+# already gone (the normal case after a ttl expired, not in the listing any more)
+# or whose VMID carries another lane by now must cost only its own call, not the
+# live slot next to it.
 if [ ${#IDS[@]} -gt 0 ]; then
-  vm_py destroy --lane "$LANE" "${IDS[@]}" 2>&1 | sed 's/^/  /' || true  # review: ok the sweep goes on; the closing list exits 74 on a leak
+  for v in "${IDS[@]}"; do
+    vm_py destroy --lane "$LANE" "$v" 2>&1 | sed 's/^/  /' || true  # review: ok the sweep goes on; the closing list exits 74 on a leak
+  done
 else
   echo "  no warm slots recorded"
 fi
