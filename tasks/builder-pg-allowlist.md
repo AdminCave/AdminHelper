@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # builder-home.sh: pg nimmt nur postgresql://-URLs und liest sie unter C — Task-Ledger
-Status: aktiv · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 bleibt drin; Delegation Kevin 2026-10-05)
 Freigabe T4: Aufsicht adminhelper-ac, 2026-10-13 (Erweiterung auf Kevins Wort 2026-10-13)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
@@ -110,8 +110,10 @@ Semantik: `builder-home.sh:114`: „A user:password the pattern did not take apa
 ah@corp:<password>@host as user ah@corp, the pattern above does not“ und „libpq takes ?password= too, and it would reach
 the arguments the same way“.
 
-### T4 — lane_db: wo das Muster nichts zerlegt hat, lehnt es auch die Lesart von SQLAlchemy ab  [ ]
+### T4 — lane_db: wo das Muster nichts zerlegt hat, lehnt es auch die Lesart von SQLAlchemy ab  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a3dc8118 2026-10-13T12:32:39+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `lane_db` (`lane.sh:74-160`) merkt sich, ob das Muster in `:92` die URL zerlegt hat.
 - Hat es nichts zerlegt, lehnt `lane_db` nach der Prüfung `:119-122` auch eine URL ab, in der SQLAlchemy ein Passwort

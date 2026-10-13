@@ -76,7 +76,7 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   # under any locale, and a multibyte one can read a byte after a character as part
   # of it. The UTF-8 checks name their encoding themselves.
   local LC_ALL=C
-  local url pass=""
+  local url pass="" split=0
   url="$(lane_db_url)"
   # SQLAlchemy reads AH_TEST_DB as a UTF-8 string: a URL that is no UTF-8 is refused first.
   if ! printf '%s' "$url" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
@@ -90,6 +90,7 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   # SQLAlchemy reads AH_TEST_DB (sqlalchemy/engine/url.py): a password the suites
   # take out of the URL is one lane_db takes out too (R-0266).
   if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
+    split=1
     local raw="${BASH_REMATCH[2]}" ch hex='^%([0123456789abcdefABCDEF]{2})'
     url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
     # Decoded as urllib.parse.unquote does it, which SQLAlchemy uses: %XX with two
@@ -117,6 +118,14 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
   # The part before the password may hold an @ of its own: SQLAlchemy reads
   # ah@corp:<password>@host as user ah@corp, the pattern above does not (R-0265).
   if [[ "$url" =~ ^[^/]*//[^/]*:[^/@]*@ ]]; then
+    echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
+    return 3
+  fi
+  # Where the pattern took nothing apart, SQLAlchemy may still read a password: the
+  # user up to the first :, the password up to the first @, across a /
+  # (sqlalchemy/engine/url.py). ah@corp:<pass/word>@host and :<pass/word>@host are
+  # two such forms; after a split the first @ is gone, and with it that reading.
+  if [ "$split" = 0 ] && [[ "$url" =~ ^[^/]*//[^:/]*:[^@]*@ ]]; then
     echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
     return 3
   fi
