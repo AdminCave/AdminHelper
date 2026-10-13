@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Harness 2: Suchen in der Bau-Session, das frpc-Sidecar im Builder-Klon, ein Symlink .vm — Task-Ledger
-Status: aktiv · Branch: harness/loop-harness-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/loop-harness-2 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0319, R-0325, R-0326, Triage Kevin 2026-10-12; R-0319 Weg B: keine Allow-Regel fuer git grep, die Deny-Entscheidung R-0164 bleibt, der Skill verweist auf das Grep-Werkzeug; T3 mit eigener Testdatei; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0319, R-0325, R-0326 (Kurz-Ledger ohne Spec)
 Heavy: none — Skill-Text und ein hermetischer Skill-Test, ein Einrichtungsskript des Builders mit hermetischem Test, eine Zeile `.gitignore`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -106,8 +106,10 @@ Semantik: `scripts/dev/lane.sh:322-324`: „Gitignored parts of the main checkou
 cargo test wants is COPIED: a link would reach a box as a link into nothing“. Der Builder-Klon ist für den Loop dieser
 Checkout.
 
-### T3 — .gitignore: `/.vm` ignoriert auch einen Symlink .vm (R-0326)  [ ]
+### T3 — .gitignore: `/.vm` ignoriert auch einen Symlink .vm (R-0326)  [x]
 Komponente: scripts · Dateien: .gitignore, scripts/tests/gitignore_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d6c249d1 2026-10-13T02:05:58+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `.gitignore`: Nach `.vm/` (`:62`) kommt die Zeile `/.vm`. Beide bleiben: `.vm/` trifft wie heute jedes Verzeichnis
   dieses Namens, `/.vm` zusätzlich den Eintrag an der Wurzel in jeder Form, auch als Symlink.
