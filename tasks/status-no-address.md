@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-no-address: Grund und Wochenlauf-Zeile ohne Box-Adresse (R-0335) — Task-Ledger
-Status: geplant · Branch: harness/status-no-address · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/status-no-address · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0335, Triage Kevin 2026-10-13; Bau nach status-classes; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0335 (Kurz-Ledger ohne Spec)
 Heavy: none — heavy.sh mit heavy_test (Shims), session-status.sh mit session_status_test (Fixture-Reports); nur Platzhalter-Adressen aus 10.0.0.0/8 wie in den Tests heute, kein Stack-, Gateway-, PKI- oder Install-Pfad.
 Hängt ab von: harness/status-classes — beide ändern session-status.sh und session_status_test.sh; erst nach dessen
