@@ -35,7 +35,8 @@ python3 scripts/vm/vm.py <verb> [options]
 RAM-Bedarf) · `clone --profile <p> --role <r> [--lane|--scenario|--ttl|--memory|--cores]` ·
 `wait <vm>` · `ssh <vm> [cmd…]` · `sync <vm>` · `run <vm> [--sync] [--timeout s] [--out dir]
 [--extend 8h] -- <cmd>` · `pull <vm> <glob> <dir>` · `snap|rollback|delsnap <vm> <name>` ·
-`destroy <vm…> | --scenario s | --lane l | --role r` · `reap [--all] [--dry-run]` ·
+`destroy <vm…> | --scenario s | --lane l | --role r` (mit VMs auch `--no-scenario`: keine VM mit
+Szenario-Tag) · `reap [--all] [--dry-run]` ·
 `list [--json] [--lane l]` · `bake --profile <p>`.
 
 Eine VM wird über ihre **VMID** angesprochen (auch über den Namen). Profile stehen in

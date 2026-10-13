@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-role: reap.sh nennt jeden Slot mit Rolle und ohne Szenario, list-Exit 74 im Test (R-0336) — Task-Ledger
-Status: freigegeben · Branch: harness/reap-role · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/reap-role · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T1 bleibt drin; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0336 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API, keine echte VM), reap.sh mit vm_wrappers_test (Fake-vm.py); kein Stack-, Gateway-, PKI- oder Install-Pfad, kein echtes destroy.
@@ -31,8 +31,10 @@ Vorab geprüft:
 - lane.sh `done` baut auf den Exit von reap.sh (:427–429). reap.sh gibt den Exit von `vm_py list` weiter (:74–78, unter
   `pipefail`). Der Fake in vm_wrappers_test beendet `list` immer mit 0 (:61–62), kein Fall hält den Exit fest.
 
-### T1 — vm.py destroy --no-scenario: eine genannte VM mit Szenario-Tag wird abgelehnt  [ ]
+### T1 — vm.py destroy --no-scenario: eine genannte VM mit Szenario-Tag wird abgelehnt  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, .claude/skills/vm/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6bca397d 2026-10-13T10:15:13+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `destroy` bekommt `--no-scenario` (Parser :1953–1957).
   - Mit genannten VMs: Trägt eine von ihnen einen `sc-`-Tag, lehnt `verb_destroy` den ganzen Aufruf ab, bevor es die

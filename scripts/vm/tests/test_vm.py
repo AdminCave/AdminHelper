@@ -2954,3 +2954,34 @@ def test_a_listing_that_fails_only_later_still_keeps_the_template(
     out = capsys.readouterr().out
     assert "could not be read" in out
     assert out.splitlines()[-1].startswith("3900 ah-tpl-linux-full-")
+
+
+# ── destroy --no-scenario ────────────────────────────────────────────────────
+# reap.sh names its warm slots with --no-scenario: a warm box never carries a
+# scenario tag, and a VMID that a scenario's box took over since is not the slot's.
+def test_destroy_no_scenario_refuses_a_named_vm_with_a_scenario_tag(cfg, api, http, clock):
+    purgeable(http)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--lane", "pilot", "--role", "server", "--no-scenario")
+    assert "3001 carries sc-capstone, not a warm box — refusing" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_no_scenario_takes_a_named_vm_without_one(cfg, api, http, clock, capsys):
+    warm = "ah;lane-main;role-probe;tpl-linux-full;ttl-1789558820"
+    purgeable(http, 3000, now={3000: (warm, POOL_NOW[3000][1])})
+    argv = ("3000", "--lane", "main", "--role", "probe", "--no-scenario")
+    assert verb("destroy", cfg, api, *argv) == 0
+    assert "destroyed 3000" in capsys.readouterr().out
+    assert http.paths("DELETE") == ["https://pve.example:8006/api2/json/nodes/<node>/qemu/3000"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [("--lane", "main", "--no-scenario"), ("3000", "--scenario", "capstone", "--no-scenario")],
+)
+def test_destroy_no_scenario_alone_or_with_a_scenario_is_a_usage_error(cfg, api, http, argv):
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, *argv)
+    assert "--no-scenario" in str(caught.value)
+    assert http.calls == []
