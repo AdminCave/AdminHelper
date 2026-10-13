@@ -1464,12 +1464,9 @@ mod tests {
         keyring_store::set(KEYRING_CA, &cert).unwrap();
         // The identity is sound; what fails is reaching the server.
         assert!(enrolled_client().is_ok());
-        // Bound and let go again: nobody listens on the port.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        // Held, not freed: nobody listens on the port, and no parallel test's
+        // server can be handed it.
+        let (_reserved, port) = crate::test_tls::refused_port();
 
         let outcome = reset_identity(&format!("http://127.0.0.1:{port}")).await;
 
