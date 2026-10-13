@@ -93,8 +93,9 @@
           pr&uuml;ft &ndash; <code>DATABASE_URL</code> f&uuml;r <code>test_migrations_smoke</code>, ein erreichbares
           Redis f&uuml;r <code>test_stream_redis</code>, ein Postgres in <code>AH_TEST_DB</code> f&uuml;r
           <code>test_db_token_store</code>, eine erreichbare Datenbank (oder Docker) f&uuml;r
-          <code>test_auth_token_lifecycle</code>. Auf einer Box, die einen Test wirklich nicht fahren kann,
-          bleibt er ein sichtbarer SKIP.</p>
+          <code>test_auth_token_lifecycle</code>. Die Datenbank-URL ist dabei die, die der Schritt seiner Suite
+          gibt: der Server-Schritt nimmt <code>DATABASE_URL</code>, sonst <code>AH_TEST_DB</code>. Auf einer Box,
+          die einen Test wirklich nicht fahren kann, bleibt er ein sichtbarer SKIP.</p>
           <p>Die Summary lautet deshalb
           <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> bleibt
           bewusst 0: der Wochenlauf wiederholt einen roten Schritt selbst und klassifiziert ihn, statt die
