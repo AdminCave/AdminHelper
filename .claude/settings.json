@@ -64,7 +64,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/session-status.sh\""
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/session-status.sh\"",
+            "timeout": 10
           }
         ]
       }

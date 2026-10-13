@@ -32,6 +32,8 @@ REPO_ROOT=$(cd "$HERE/../.." && pwd)
 HOOK="$REPO_ROOT/scripts/dev/hooks/session-status.sh"
 # Never the runner's real state (/srv/ah/loop on this box): each case names its file.
 export AH_LOOP_STATE=/nonexistent/state.json
+# Nor the builder profile of whoever runs the test: a fixture directory, empty here.
+export AH_BUILDER_DIR=/nonexistent/builder
 
 PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
@@ -60,6 +62,9 @@ case "$1" in
 esac
 EOF
 chmod +x "$BIN/gh"
+# tmux: `has-session` succeeds only when the case says the builder session is up.
+printf '#!/usr/bin/env bash\n[ "$*" = "has-session -t =ah-builder" ] && [ -n "${SHIM_TMUX_BUILDER:-}" ] && exit 0\nexit 1\n' > "$BIN/tmux"
+chmod +x "$BIN/tmux"
 export PATH="$BIN:$PATH"
 
 # ── fixture builder ───────────────────────────────────────────────────────────
@@ -132,7 +137,9 @@ git -C "$DIRTY/tasks/private" config user.name Test
 git -C "$DIRTY/tasks/private" add -A
 git -C "$DIRTY/tasks/private" commit -qm "roadmap"
 # warm box recorded
-echo "desktop=warmbox-7" > "$DIRTY/.vm/warm.env"
+# Role slots with their VM ids, and keys with an underscore that never reach the block.
+# Keys without an underscore count only with a VM id of digits, and nothing after it.
+printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\nserver_sid=plchold\nserver_key=plchold\nserverx=plchold\ndesktop=3001plchold\n' > "$DIRTY/.vm/warm.env"
 # Two weekly reports: the NEWER one must win. Dates are relative so the "(n d)"
 # age in the line is deterministic whenever this test runs.
 OLD_DAY=$(date -d '10 days ago' +%F); NEW_DAY=$(date -d '3 days ago' +%F)
@@ -177,7 +184,10 @@ grep -qF "Wochenlauf: $OLD_DAY" <<<"$OUT" \
 grep -qF "Wochenlauf: kein Report" <<<"$OUT" \
   && bad "line 4: a run in progress hid the last verdict" \
   || ok "line 4: a verdict-less newest directory does not hide the last report"
-grep -qxF "VMs: warm.env desktop=warmbox-7" <<<"$OUT" && ok "line 5: warm.env" || bad "line 5: $(grep -m1 '^VMs:' <<<"$OUT")"
+grep -qxF "VMs: warm.env desktop=3001 server=3002" <<<"$OUT" && ok "line 5: warm.env shows the role slots" \
+  || bad "line 5: $(grep -m1 '^VMs:' <<<"$OUT")"
+! grep -q 'plchold\|10\.0\.0\.42' <<<"$OUT" && ok "line 5: no key with an underscore reaches the block" \
+  || bad "line 5 leaked: $(grep -m1 '^VMs:' <<<"$OUT")"
 
 # The worker's state, read as a file through ledger-loop.sh status of this checkout.
 WS="$WORK/loopstate"; mkdir -p "$WS"
@@ -187,12 +197,84 @@ grep -q ' · Worker: läuft T3/8 tasks/x.md · 4,10 \$ · seit 01:12$' <<<"$OUT"
   && ok "worker running: task of the ledger, cost, since when" || bad "worker running: $(grep -m1 '^Ledger' <<<"$OUT")"
 worker '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": "ledger-leer", "updated": "2026-10-04T06:40:00+02:00"}'
 grep -q ' · Worker: stop: ledger-leer 06:40$' <<<"$OUT" && ok "worker stopped: its class and the time" || bad "worker stop: $(grep -m1 '^Ledger' <<<"$OUT")"
+# The runner's state as a FIFO: named at once, the block is there.
+mkfifo "$WS/fifo.json"
+t0=$SECONDS
+OUT=$(AH_LOOP_STATE="$WS/fifo.json" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
+[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
+  && ok "the runner's state.json as a FIFO does not hold up the hook" || bad "worker FIFO: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Ledger' <<<"$OUT")"
+rm -f "$WS/fifo.json"
 worker 'not json'
 grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
   && ok "a broken state.json: named, and the hook goes on" || bad "worker broken: $OUT"
 worker '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}'
-grep -q ' · Worker: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
+grep -q ' · Worker: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
   && ok "control characters in the ledger name are removed" || bad "worker control chars: $(cat -v <<<"$OUT" | grep -m1 '^Ledger')"
+
+# A run in the builder profile: its own line, only when there is a trace of it.
+BD="$WORK/builder"; mkdir -p "$BD/loop"
+builder() { OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' run_hook "$DIRTY"); }
+builder
+! grep -q '^Builder:' <<<"$OUT" && ok "no trace of the builder profile: no Builder line" || bad "builder empty: $(grep -m1 '^Builder' <<<"$OUT")"
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
+builder
+grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
+  && ok "builder running: task, cost, since when" || bad "builder running: $(grep -m1 '^Builder' <<<"$OUT")"
+SHIM_TMUX_BUILDER=1 builder
+grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05 (tmux ah-builder)' <<<"$OUT" \
+  && ok "builder running: the tmux session is named" || bad "builder tmux: $(grep -m1 '^Builder' <<<"$OUT")"
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": "max-hours", "updated": "2026-10-13T11:40:00+02:00", "stop_reason": "plchold"}' > "$BD/loop/state.json"
+printf 'rc=1\n' > "$BD/loop/builder.done"
+builder
+grep -qx 'Builder: stop: max-hours 11:40 · fertig rc=1' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "builder stopped: its class, the time, the exit code; no free-text reason" || bad "builder stop: $(grep -m1 '^Builder' <<<"$OUT")"
+rm -f "$BD/loop/state.json"; printf 'rc=1; plchold\n' > "$BD/loop/builder.done"
+builder
+! grep -q '^Builder:' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "a builder.done that is not rc=<digits> shows nothing" || bad "builder junk done: $(grep -m1 '^Builder' <<<"$OUT")"
+printf '%s' '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}' > "$BD/loop/state.json"; rm -f "$BD/loop/builder.done"
+builder
+grep -q '^Builder: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
+  && ok "builder: control characters in state.json are removed" || bad "builder control chars: $(cat -v <<<"$OUT" | grep -m1 '^Builder')"
+# A stop that is no class of the loop shows as "?", its text nowhere.
+printf '%s' '{"stop": "plchold plchold plchold", "updated": "2026-10-13T11:40:00+02:00"}' > "$BD/loop/state.json"
+builder
+grep -qx 'Builder: stop: ? 11:40' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "builder: a stop that is no class shows as ?" || bad "builder free stop: $(grep -m1 '^Builder' <<<"$OUT")"
+rm -f "$BD/loop/state.json"
+# Without a state.json: the session alone, and builder.done alone (several lines).
+SHIM_TMUX_BUILDER=1 builder
+grep -qx 'Builder: — (tmux ah-builder)' <<<"$OUT" && ok "builder: the session alone is a line" || bad "builder session only: $(grep -m1 '^Builder' <<<"$OUT")"
+printf 'junk\nrc=7\nrc=8\n' > "$BD/loop/builder.done"
+builder
+grep -qx 'Builder: — · fertig rc=7' <<<"$OUT" && ! grep -qx 'rc=8' <<<"$OUT" \
+  && ok "builder: the first rc=<digits> line of builder.done, nothing else" \
+  || bad "builder done only: $(grep -m1 '^Builder' <<<"$OUT")"
+# Only the first 4096 bytes of builder.done are read.
+{ head -c 8192 /dev/zero | tr '\0' x; printf '\nrc=5\n'; } > "$BD/loop/builder.done"
+builder
+! grep -q 'fertig' <<<"$OUT" && ok "builder: an rc= past 4096 bytes is not read" || bad "builder long done: $(grep -m1 '^Builder' <<<"$OUT")"
+rm -f "$BD/loop/builder.done"
+# A FIFO in the builder's directory must not hold up the hook, not even for the
+# limits of the reads behind it.
+for f in builder.done state.json; do
+  mkfifo "$BD/loop/$f"
+  t0=$SECONDS
+  OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
+  [ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q '^VMs:' <<<"$OUT" && ! grep -q '^Builder:' <<<"$OUT" \
+    && ok "a FIFO as $f does not hold up the hook" || bad "FIFO $f: rc=$rc $((SECONDS - t0)) s out=$(grep -m1 '^Builder' <<<"$OUT")"
+  rm -f "$BD/loop/$f"
+done
+# A FIFO beside a valid state.json (the status verb reads the newest summary too):
+# status passes it over, so the builder line is there at once.
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
+mkfifo "$BD/loop/summary-2026-10-13-000000.md"
+t0=$SECONDS
+OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
+[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q '^VMs:' <<<"$OUT" \
+  && grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
+  && ok "a FIFO as summary-*.md is passed over: the builder line is there at once" || bad "FIFO summary: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Builder' <<<"$OUT")"
+rm -f "$BD/loop/summary-2026-10-13-000000.md" "$BD/loop/state.json"
 
 # the seven triggers, one WARN line each
 grep -q '^WARN: .*tauri.conf.json 0.46.0, kein Tag v0.46.0' <<<"$OUT" && ok "trigger: bump without tag" || bad "trigger: bump without tag"
@@ -286,6 +368,36 @@ OUT=$(cd "$WORK/norepo" && GIT_CEILING_DIRECTORIES="$WORK" bash "$HOOK" 2>&1)
 rc=$?
 [ $rc -eq 0 ] && ok "exit 0 outside a repo" || bad "exit=$rc"
 [ -z "$OUT" ] && ok "prints nothing outside a repo" || bad "printed: $OUT"
+
+# ══ case 5b: a checkout that tracks paths under .vm ════════════════════════════
+echo "── tracked .vm ──"
+TRACKED="$WORK/tracked"
+mk_repo "$TRACKED" "0.45.0" "v0.45.0"
+printf 'desktop=3001\nserver_sid=plchold\n' > "$TRACKED/.vm/warm.env"
+git -C "$TRACKED" add -f .vm/warm.env && git -C "$TRACKED" commit -qm "state"
+OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$TRACKED")
+grep -qxF "VMs: warm.env nicht gelesen (Zustand unter .vm ist getrackt)" <<<"$OUT" \
+  && ! grep -q 'plchold\|3001' <<<"$OUT" \
+  && ok "tracked .vm: warm.env is not read, no slot and no value shown" || bad "tracked: $(grep -m1 '^VMs:' <<<"$OUT")"
+# A foreign GIT_DIR and an empty index inherited must not answer for the checkout.
+git init -q "$WORK/foreign-status"
+OUT=$(GIT_DIR="$WORK/foreign-status/.git" GIT_INDEX_FILE="$WORK/empty-status.index" \
+      SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$TRACKED")
+grep -qxF "VMs: warm.env nicht gelesen (Zustand unter .vm ist getrackt)" <<<"$OUT" && ! grep -q 'plchold\|3001' <<<"$OUT" \
+  && ok "tracked .vm with a foreign GIT_DIR inherited: still not read" || bad "foreign GIT_DIR: $(grep -m1 '^VMs:' <<<"$OUT")"
+# A git that cannot say counts as tracked: an untracked .vm, but ls-files fails.
+UNTRACKED="$WORK/untracked"
+mk_repo "$UNTRACKED" "0.45.0" "v0.45.0"
+printf 'desktop=3001\n' > "$UNTRACKED/.vm/warm.env"
+GITFAIL="$WORK/gitfail"; mkdir -p "$GITFAIL"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = ls-files ] && exit 128; done\nexec %s "$@"\n' "$(command -v git)" > "$GITFAIL/git"
+chmod +x "$GITFAIL/git"
+OUT=$(PATH="$GITFAIL:$PATH" SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$UNTRACKED")
+grep -qxF "VMs: warm.env nicht gelesen (Zustand unter .vm ist getrackt)" <<<"$OUT" \
+  && ok "a git that cannot answer counts as tracked: warm.env not read" || bad "git fails: $(grep -m1 '^VMs:' <<<"$OUT")"
+OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$UNTRACKED")
+grep -qxF "VMs: warm.env desktop=3001" <<<"$OUT" && ok "... and with a working git the same checkout shows its slot" \
+  || bad "untracked: $(grep -m1 '^VMs:' <<<"$OUT")"
 
 # ══ case 6: missing roadmap ═══════════════════════════════════════════════════
 echo "── roadmap missing ──"

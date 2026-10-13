@@ -549,6 +549,9 @@ def tag_safe(value: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", (value or "").lower()).strip("-")
 
 
+GIT_REDIRECTS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+
+
 def own_state(path: str) -> bool:
     """`path` is the checkout's own .vm, the state the guard below is about."""
     return os.path.realpath(path) == os.path.realpath(os.path.join(ROOT, ".vm"))
@@ -560,8 +563,15 @@ def require_untracked_state() -> None:
     lane file, and a git that cannot say counts as tracked. A state dir elsewhere is
     its caller's to vouch for. lib.sh's vm_lane refuses the same way."""
     try:
+        # Without an inherited GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE: git would read
+        # another index, and tracked paths would pass as untracked.
+        env = {k: v for k, v in os.environ.items() if k not in GIT_REDIRECTS}
         listed = subprocess.run(
-            ["git", "-C", ROOT, "ls-files", "--", ".vm"], capture_output=True, text=True, timeout=60
+            ["git", "-C", ROOT, "ls-files", "--", ".vm"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
         )
         tracked = listed.returncode != 0 or bool(listed.stdout.strip())
     except (OSError, subprocess.SubprocessError):
@@ -1489,9 +1499,26 @@ def require_selected(entry: dict, selectors: list) -> dict:
     return entry
 
 
+def require_no_scenario(entry: dict) -> dict:
+    """reap.sh names its warm slots with --no-scenario: a warm box never carries a
+    scenario tag, and a VMID that a scenario's box took over since is not the slot's."""
+    scenarios = sorted(t for t in tags_of(entry) if t.startswith("sc-"))
+    if scenarios:
+        raise Usage(
+            "%d carries %s, not a warm box — refusing" % (entry["vmid"], ", ".join(scenarios))
+        )
+    return entry
+
+
 def verb_destroy(cfg: Config, api: Api, args) -> int:
     if not (args.vm or args.scenario or args.lane or args.role):
         raise Usage("destroy needs VMs, or one of --scenario/--lane/--role")
+    # It only holds VMs named with it: alone it would select every VM without a
+    # scenario, and next to --scenario it says the opposite.
+    if args.no_scenario and not args.vm:
+        raise Usage("--no-scenario holds named VMs only — name them")
+    if args.no_scenario and args.scenario:
+        raise Usage("--no-scenario and --scenario contradict each other")
     vms = pool_vms(cfg, api)
     chosen = select_vms(cfg, vms, args)
     selectors = destroy_selectors(args) if args.vm else []
@@ -1507,6 +1534,8 @@ def verb_destroy(cfg: Config, api: Api, args) -> int:
             continue
         require_ours(current)
         require_selected(current, selectors)
+        if args.no_scenario:
+            require_no_scenario(current)
         confirmed.append(current)
     failures = []
     for entry in confirmed:
@@ -1945,6 +1974,7 @@ def build_parser() -> argparse.ArgumentParser:
     destroy.add_argument("--scenario")
     destroy.add_argument("--lane")
     destroy.add_argument("--role")
+    destroy.add_argument("--no-scenario", action="store_true")
 
     reap = sub.add_parser("reap", help="destroy expired VMs")
     reap.add_argument("--all", action="store_true", dest="every_lane")

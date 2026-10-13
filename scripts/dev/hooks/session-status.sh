@@ -13,6 +13,7 @@
 #   AH_AUTONOMOUS=1  print nothing (settings hooks fire in `claude -p` too)
 #   AH_DEVENV        path to the devenv file (default <root>/.devenv.sh)
 #   AH_LOOP_STATE    the worker's state file (default /srv/ah/loop/state.json)
+#   AH_BUILDER_DIR   the builder profile (default ~/.cache/ah-builder)
 #
 # The WARN lines fire ONLY when Kevin's next move would fail or something
 # irreversible looms — plus one that is no CLAUDE.md §3 trigger: a scheduled
@@ -192,11 +193,33 @@ weekly_line() {
 # script of the runner in Kevin's rights.
 worker_line() {
   local f="${AH_LOOP_STATE:-/srv/ah/loop/state.json}" line
-  [ -r "$f" ] || { echo "—"; return 0; }
-  line="$(timeout 10 bash "$LOOP_SH" status --state "$f" 2>/dev/null | head -n 1)"
+  [ -e "$f" ] || [ -L "$f" ] || { echo "—"; return 0; }
+  # A regular file only, and under the same short limit as the builder line: the
+  # hook has 10 s for every session start.
+  [ -f "$f" ] || { echo "? (state.json unlesbar)"; return 0; }
+  line="$(timeout 3 bash "$LOOP_SH" status --state "$f" 2>/dev/null | head -n 1)"
   case "$line" in "Worker: "*) echo "${line#Worker: }" ;; *) echo "?" ;; esac
 }
 echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: $(worker_line)"
+# A run in the builder profile (the team under Kevin's UID): the same cleaned first
+# line of `ledger-loop.sh status`, whether its tmux session is up, and the exit code
+# builder.done recorded, digits only. A line only when the profile has a trace, and
+# it shows nothing else of the builder. state.json and builder.done only as regular
+# files, every read under a short limit: the loop writes this directory, and the
+# hook itself has 10 s for every session start; a stuck builder costs this line.
+builder_line() {
+  local d="${AH_BUILDER_DIR:-${HOME:-}/.cache/ah-builder}/loop" line="" up="" rc=""
+  if [ -f "$d/state.json" ] && [ -r "$d/state.json" ]; then
+    line="$(timeout 3 bash "$LOOP_SH" status --state "$d/state.json" 2>/dev/null | head -n 1)"
+    case "$line" in "Worker: "*) line="${line#Worker: }" ;; *) line="?" ;; esac
+  fi
+  timeout 2 tmux has-session -t "=ah-builder" 2>/dev/null && up=" (tmux ah-builder)"
+  [ ! -f "$d/builder.done" ] \
+    || rc="$(timeout 2 head -c 4096 -- "$d/builder.done" 2>/dev/null | LC_ALL=C grep -m1 -xE 'rc=[0-9]{1,3}')"
+  [ -n "$line$up$rc" ] || return 0
+  echo "Builder: ${line:-—}${up}${rc:+ · fertig $rc}"
+}
+builder_line
 
 # ── line 4b: scheduled workflows ──────────────────────────────────────────────
 # One line per workflow with a `schedule:`. The newest COMPLETED run on main
@@ -236,8 +259,17 @@ for f in .github/workflows/*.yml .github/workflows/*.yaml; do
 done
 
 # ── line 5: warm boxes ────────────────────────────────────────────────────────
-WARM="$(grep -E '^[A-Za-z0-9_-]+=' .vm/warm.env 2>/dev/null | paste -sd' ' -)"
-[ -n "$WARM" ] || WARM="leer"
+# Nothing but the role slots and their VM ids, the keys vm.py's warm_vmids reads:
+# this block goes into every session, and the file holds more than that. The
+# checkout's own .vm is read only untracked, as lib.sh and vm.py read it; a git
+# that cannot say counts as tracked.
+if ! vm_tracked="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git ls-files -- .vm 2>/dev/null)" \
+  || [ -n "$vm_tracked" ]; then
+  WARM="nicht gelesen (Zustand unter .vm ist getrackt)"
+else
+  WARM="$(LC_ALL=C grep -E '^[a-z]+=[0-9]+$' .vm/warm.env 2>/dev/null | paste -sd' ' -)"
+  [ -n "$WARM" ] || WARM="leer"
+fi
 echo "VMs: warm.env $WARM"
 
 # ── remaining triggers ────────────────────────────────────────────────────────

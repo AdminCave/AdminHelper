@@ -102,6 +102,15 @@ git -C "$CO" add -f .vm/lane
 out=$(co_lane); rc=$?
 [ "$rc" = 2 ] && grep -q 'tracks paths under .vm' <<<"$out" && ! grep -q 'lane-a' <<<"$out" \
   && ok "a tracked .vm/lane: vm_lane refuses with exit 2 and names no value" || bad "tracked: rc=$rc out=$out"
+# An inherited GIT_DIR and an empty GIT_INDEX_FILE of somebody else's repository
+# must not let git answer for this checkout.
+git init -q "$WORK/foreign"
+# shellcheck source=/dev/null
+out=$( (unset AH_LANE; export AH_VM_STATE_DIR="$CO/.vm" GIT_DIR="$WORK/foreign/.git" GIT_INDEX_FILE="$WORK/empty.index"
+        . "$CO/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 2 ] && grep -q 'tracks paths under .vm' <<<"$out" \
+  && ok "with a foreign GIT_DIR and an empty index exported, the tracked .vm/lane is still refused" \
+  || bad "foreign GIT_DIR: rc=$rc out=$out"
 # shellcheck source=/dev/null
 out=$( (export AH_LANE=from-env AH_VM_STATE_DIR="$CO/.vm"; . "$CO/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
 [ "$rc" = 2 ] && grep -q 'tracks paths under .vm' <<<"$out" && ! grep -q 'lane-a' <<<"$out" \

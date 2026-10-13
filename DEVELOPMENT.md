@@ -210,7 +210,8 @@ URL, reist es in `PGPASSWORD`, nicht in einem Argument von `createdb`/`dropdb`; 
 nicht herauslösen, legt es keine Lane an. Ein Passwort oder ein anderes Geheimnis in der Query
 (`password`, `sslpassword`, `oauth_client_secret`, `scram_client_key`, `scram_server_key`, in jeder
 Schreibweise) lehnt `lane.sh` ebenso ab, auch einen prozentkodierten Schlüssel der Query (libpq
-dekodiert auch Schlüssel).
+dekodiert auch Schlüssel). Eine andere Form als eine URL `postgresql://` oder `postgresql+<treiber>://`, etwa
+die Keyword-Form von libpq (`host=… dbname=…`), nimmt `lane.sh` nicht an.
 Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
 und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
 angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
@@ -1205,7 +1206,9 @@ heisst beim Builder: `setup`. Voraussetzung ist, was `sudo bash scripts/dev/runn
 hinterlegt: die Pruefsumme der CLI (`/var/lib/adminhelper-dev/runner-claude.sha256`), die root-eigene
 Kopie des Waechters, die der Hook der Settings ruft (`/usr/local/lib/adminhelper-dev/harness-guard.sh`),
 und die geteilte Python-Sperre. Nach einer Aenderung an `runner-claude.version` oder an
-`scripts/dev/hooks/harness-guard.sh` deshalb zuerst `runner-setup.sh`, dann `setup`:
+`scripts/dev/hooks/harness-guard.sh` deshalb zuerst `runner-setup.sh`, dann `setup`. `setup` kopiert auch das
+frpc-Sidecar (`apps/desktop/src-tauri/binaries/`) aus diesem Checkout in den Klon, wie `lane.sh new` es in eine Lane
+kopiert; ohne es sind Desktop-Tasks nicht loop-tauglich:
 
 ```bash
 bash scripts/dev/builder-home.sh setup     # idempotent: was schon stimmt, bleibt
@@ -1229,6 +1232,12 @@ auf das venv), eine eigene Test-DB `adminhelper_builder` auf dem Server des Haup
 bash scripts/dev/ledger-loop.sh start --profile kevin --ledger tasks/<a>.md --max-hours 8 --max-budget-usd 200
 bash scripts/dev/ledger-loop.sh status --profile kevin
 ```
+
+Ein Lauf im Builder-Profil steht ausserdem als eigene Zeile `Builder:` im `AH-STATUS`-Block: die
+gesaeuberte erste Zeile von `status` (Stand, Kosten oder Stop-Klasse), `(tmux ah-builder)`, solange die
+Session laeuft, und `fertig rc=<n>` aus `builder.done`. Ohne Spur des Profils fehlt die Zeile; mehr aus
+dem Builder zeigt der Hook nicht. `state.json` und `builder.done` nimmt er nur als regulaere Dateien, und
+jeder Lesezugriff hat ein kurzes Zeitlimit: ein haengender Builder kostet die Zeile, nicht den Block.
 
 `start` prueft `builder-home.sh status`, verweigert neben einer schon laufenden tmux-Session
 `ah-builder` und startet darin den Loop des Klons mit `env -i` (nur `HOME`, `PATH`, `LANG`, `USER`,
@@ -1821,8 +1830,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   auf der eigenen Lane — Reap einer Lane laesst die anderen stehen. `destroy` filtert
   ueber `--lane/--scenario/--role`; eine ausdruecklich genannte VMID wird zerstoert,
   geschuetzt ist dort nur, was kein `ah`-Tag traegt. Steht neben ihr ein Filter, muss sie
-  zu ihm passen: `reap.sh` nennt die Warm-Slots mit `--lane` der eigenen Lane, und `vm.py`
-  lehnt einen Slot ab, dessen VM eine andere Lane traegt. Klone werden seriell abgeschickt (ein
+  zu ihm passen: `reap.sh` nennt die Warm-Slots mit `--lane` der eigenen Lane, ihrer Rolle
+  (`--role`) und `--no-scenario`, und `vm.py` lehnt einen Slot ab, dessen VM eine andere Lane
+  oder Rolle oder ein Szenario traegt: `free_vmid` gibt eine freigewordene VMID dem naechsten
+  Klon, ein Szenario least seinen Server zuerst. Klone werden seriell abgeschickt (ein
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
   2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der

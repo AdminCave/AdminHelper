@@ -1090,6 +1090,19 @@ def test_the_lane_is_not_read_from_tracked_state(tmp_path, monkeypatch):
     assert "tracks paths under .vm" in str(caught.value)
 
 
+def test_a_foreign_git_dir_in_the_environment_does_not_answer_for_the_checkout(
+    tmp_path, monkeypatch
+):
+    checkout_with_lane(tmp_path, monkeypatch, tracked=True)
+    foreign = tmp_path / "foreign"
+    subprocess.run(["git", "init", "-q", str(foreign)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(foreign / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "empty.index"))
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "tracks paths under .vm" in str(caught.value)
+
+
 def test_an_untracked_lane_file_is_read_as_before(tmp_path, monkeypatch):
     checkout_with_lane(tmp_path, monkeypatch)
     assert vm.current_lane(environ={}) == "lane-a"
@@ -1807,7 +1820,9 @@ def test_extend_moves_only_the_ttl_tag(cfg, api, reachable, shell, clock):
     assert int(vm.tag_value(set(tags), "ttl-")) - int(time.time()) > 14000
 
 
-def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell):
+def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell, monkeypatch):
+    # run checks the lane before the lease: pinned, not taken from the checkout.
+    monkeypatch.setenv("AH_LANE", "main")
     strangers = fixture("cluster_resources")
     for entry in strangers["body"]["data"]:
         if entry["vmid"] == 3000:
@@ -2060,6 +2075,17 @@ def test_destroy_refuses_a_named_vm_of_another_lane_and_destroys_nothing(cfg, ap
         verb("destroy", cfg, api, "3000", "3001", "--lane", "pilot")
     assert "3000 is not --lane pilot (it carries lane-main)" in str(caught.value)
     # Checked before the first destruction: 3001, which is pilot's, still stands.
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_refuses_a_vmid_not_in_the_pool_and_destroys_nothing(cfg, api, http, clock):
+    # A VM gone from the listing cannot be told from one of another pool: the
+    # whole call is refused before the first destruction. reap.sh therefore names
+    # its warm slots one call each.
+    purgeable(http, 3001)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "3005")
+    assert "no VM '3005' in pool" in str(caught.value)
     assert http.paths("DELETE") == []
 
 
@@ -2928,3 +2954,34 @@ def test_a_listing_that_fails_only_later_still_keeps_the_template(
     out = capsys.readouterr().out
     assert "could not be read" in out
     assert out.splitlines()[-1].startswith("3900 ah-tpl-linux-full-")
+
+
+# ── destroy --no-scenario ────────────────────────────────────────────────────
+# reap.sh names its warm slots with --no-scenario: a warm box never carries a
+# scenario tag, and a VMID that a scenario's box took over since is not the slot's.
+def test_destroy_no_scenario_refuses_a_named_vm_with_a_scenario_tag(cfg, api, http, clock):
+    purgeable(http)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3001", "--lane", "pilot", "--role", "server", "--no-scenario")
+    assert "3001 carries sc-capstone, not a warm box — refusing" in str(caught.value)
+    assert http.paths("DELETE") == []
+
+
+def test_destroy_no_scenario_takes_a_named_vm_without_one(cfg, api, http, clock, capsys):
+    warm = "ah;lane-main;role-probe;tpl-linux-full;ttl-1789558820"
+    purgeable(http, 3000, now={3000: (warm, POOL_NOW[3000][1])})
+    argv = ("3000", "--lane", "main", "--role", "probe", "--no-scenario")
+    assert verb("destroy", cfg, api, *argv) == 0
+    assert "destroyed 3000" in capsys.readouterr().out
+    assert http.paths("DELETE") == ["https://pve.example:8006/api2/json/nodes/<node>/qemu/3000"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [("--lane", "main", "--no-scenario"), ("3000", "--scenario", "capstone", "--no-scenario")],
+)
+def test_destroy_no_scenario_alone_or_with_a_scenario_is_a_usage_error(cfg, api, http, argv):
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, *argv)
+    assert "--no-scenario" in str(caught.value)
+    assert http.calls == []
