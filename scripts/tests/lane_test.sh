@@ -78,7 +78,7 @@ done
 for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota \
             qsec-ssl qsec-oauth qsec-scramc qsec-scrams qsec-upper qsec-pwupper qsec-mode \
             dec-zz dec-4z dec-pct dec-trail dec-slash dec-uml dec-ff dec-nul dec-nl utf-pw utf-user \
-            form-kw form-noslash; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+            form-kw form-noslash gbk-c gbk-gbk; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -166,6 +166,30 @@ for pair in "form-kw host=localhost user=ah password=plchold-55 dbname=adminhelp
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: lane_db reads the URL byte by byte, whatever the caller's locale ──"
+# A GBK locale, built into the test directory. glibc reads LOCPATH from the
+# environment the process starts with, so the lane runs under /usr/bin/env, not
+# after an export (and not through the env recorder above).
+LOC="$WORK/locale"; mkdir -p "$LOC"
+if localedef -i zh_CN -f GBK "$LOC/zh_CN.GBK" >/dev/null 2>&1; then
+  cp "$MAIN/.devenv.sh" "$WORK/devenv.keep"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' \
+    'postgresql+psycopg://ah:plchold中@localhost:5432/adminhelper_test' > "$MAIN/.devenv.sh"
+  want='pw=plchold中 --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test '
+  for pair in "gbk-c C" "gbk-gbk zh_CN.GBK"; do
+    slug="${pair%% *}" loc="${pair#* }"
+    : > "$PG_LOG"
+    (cd "$MAIN" && /usr/bin/env LOCPATH="$LOC" LC_ALL="$loc" bash "$LANE" new "$slug") > "$WORK/out.log" 2>&1; rc=$?
+    [ "$rc" = 0 ] && grep -qF "createdb $want" "$PG_LOG" && ! grep -q setlocale "$WORK/out.log" \
+      && ok "$slug: under LC_ALL=$loc createdb gets the password in PGPASSWORD and the URL without it" \
+      || bad "$slug: rc=$rc pg=$(sed 's/plchold[^ ]*/<pw>/g' "$PG_LOG") out=$(sed 's/plchold[^ ]*/<pw>/g' "$WORK/out.log")"
+    lane "done" "$slug" || bad "done $slug: $(sed 's/plchold[^ ]*/<pw>/g' "$WORK/out.log")"
+  done
+  cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+else
+  bad "localedef could not build zh_CN.GBK in $LOC: the locale case is not verified"
+fi
 
 echo "── new: a password in the URL's query makes no lane either (R-0265) ──"
 for pair in "tau postgresql+psycopg://ah@localhost:5432/adminhelper_test?password=secret" \

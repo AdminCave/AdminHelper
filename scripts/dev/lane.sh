@@ -72,6 +72,10 @@ lane_db_url() {  # the main checkout's AH_TEST_DB as a libpq URL, or nothing
 }
 
 lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
+  # Bytes, not the caller's characters: the patterns below must find the same @ and :
+  # under any locale, and a multibyte one can read a byte after a character as part
+  # of it. The UTF-8 checks name their encoding themselves.
+  local LC_ALL=C
   local url pass=""
   url="$(lane_db_url)"
   # The patterns below read UTF-8: a URL that is none is refused before them.

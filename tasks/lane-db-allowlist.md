@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # lane.sh: lane_db nimmt nur postgresql://-URLs und liest sie unter C — Task-Ledger
-Status: aktiv · Branch: harness/lane-db-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/lane-db-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13, neutral oeffentlich geplant auf sein Wort; T2 ohne Skip: fehlt die Locale-Quelle im CI, ist der Fall rot und wird nachgezogen; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — `lane_db` in `scripts/dev/lane.sh` und sein hermetischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -49,8 +49,10 @@ HEAD: 7860cfdd
 Semantik: `lane.sh:61-63`: „That URL is SQLAlchemy's (postgresql+psycopg://…); libpq wants plain postgresql://, and
 --maintenance-db takes a whole connection string.“ Was nicht diese Form hat, ist keine, die `lane_db` kennt.
 
-### T2 — lane_db liest die URL byteweise, unabhängig von der Locale des Aufrufers  [ ]
+### T2 — lane_db liest die URL byteweise, unabhängig von der Locale des Aufrufers  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f08fea1a 2026-10-13T06:17:31+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `lane_db` setzt am Anfang `local LC_ALL=C`. Die Muster der Funktion lesen damit Bytes, auch unter einer
