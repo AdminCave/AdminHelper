@@ -201,7 +201,7 @@ worker 'not json'
 grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
   && ok "a broken state.json: named, and the hook goes on" || bad "worker broken: $OUT"
 worker '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}'
-grep -q ' · Worker: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
+grep -q ' · Worker: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
   && ok "control characters in the ledger name are removed" || bad "worker control chars: $(cat -v <<<"$OUT" | grep -m1 '^Ledger')"
 
 # A run in the builder profile: its own line, only when there is a trace of it.
@@ -216,10 +216,10 @@ grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
 SHIM_TMUX_BUILDER=1 builder
 grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05 (tmux ah-builder)' <<<"$OUT" \
   && ok "builder running: the tmux session is named" || bad "builder tmux: $(grep -m1 '^Builder' <<<"$OUT")"
-printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": "kappe", "updated": "2026-10-13T11:40:00+02:00", "stop_reason": "plchold"}' > "$BD/loop/state.json"
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": "max-hours", "updated": "2026-10-13T11:40:00+02:00", "stop_reason": "plchold"}' > "$BD/loop/state.json"
 printf 'rc=1\n' > "$BD/loop/builder.done"
 builder
-grep -qx 'Builder: stop: kappe 11:40 · fertig rc=1' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+grep -qx 'Builder: stop: max-hours 11:40 · fertig rc=1' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
   && ok "builder stopped: its class, the time, the exit code; no free-text reason" || bad "builder stop: $(grep -m1 '^Builder' <<<"$OUT")"
 rm -f "$BD/loop/state.json"; printf 'rc=1; plchold\n' > "$BD/loop/builder.done"
 builder
@@ -227,8 +227,13 @@ builder
   && ok "a builder.done that is not rc=<digits> shows nothing" || bad "builder junk done: $(grep -m1 '^Builder' <<<"$OUT")"
 printf '%s' '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}' > "$BD/loop/state.json"; rm -f "$BD/loop/builder.done"
 builder
-grep -q '^Builder: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
+grep -q '^Builder: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
   && ok "builder: control characters in state.json are removed" || bad "builder control chars: $(cat -v <<<"$OUT" | grep -m1 '^Builder')"
+# A stop that is no class of the loop shows as "?", its text nowhere.
+printf '%s' '{"stop": "plchold plchold plchold", "updated": "2026-10-13T11:40:00+02:00"}' > "$BD/loop/state.json"
+builder
+grep -qx 'Builder: stop: ? 11:40' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "builder: a stop that is no class shows as ?" || bad "builder free stop: $(grep -m1 '^Builder' <<<"$OUT")"
 rm -f "$BD/loop/state.json"
 # Without a state.json: the session alone, and builder.done alone (several lines).
 SHIM_TMUX_BUILDER=1 builder

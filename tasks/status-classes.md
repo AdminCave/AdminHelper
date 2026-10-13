@@ -28,8 +28,10 @@ Vorab geprüft:
   - Ledger `tasks/<slug>.md` mit Slug `[a-z0-9][a-z0-9-]*`, das Zeichensatz-Muster von lane.sh.
 - Tests nur mit Platzhaltern (`plchold`).
 
-### T1 — status zeigt nur bekannte Stop-Klassen, Task-IDs und Ledger-Namen  [ ]
+### T1 — status zeigt nur bekannte Stop-Klassen, Task-IDs und Ledger-Namen  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3a42a523 2026-10-13T08:11:17+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `ledger-loop.sh status` (:143ff.):
   - `stop` erscheint nur, wenn es eine der acht Klassen oben ist, sonst als `?`.
