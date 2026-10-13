@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-slots: reap.sh zerstört die Warm-Slots einzeln (R-0320, R-0323) — Task-Ledger
-Status: geplant · Branch: harness/reap-slots · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/reap-slots · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0320, R-0323, Triage Kevin 2026-10-12; R-0320 jetzt mit Probe belegt; vm.py bleibt streng; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0320, R-0323 (Kurz-Ledger ohne Spec)
 Heavy: none — reap.sh mit Fake-vm.py in vm_wrappers_test, vm.py destroy mit der Fake-API von test_vm; kein echtes destroy, kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck/ruff sauber, Doku im selben Commit, SPDX bei neuen Dateien).
