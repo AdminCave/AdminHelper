@@ -1832,8 +1832,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   auf der eigenen Lane — Reap einer Lane laesst die anderen stehen. `destroy` filtert
   ueber `--lane/--scenario/--role`; eine ausdruecklich genannte VMID wird zerstoert,
   geschuetzt ist dort nur, was kein `ah`-Tag traegt. Steht neben ihr ein Filter, muss sie
-  zu ihm passen: `reap.sh` nennt die Warm-Slots mit `--lane` der eigenen Lane, und `vm.py`
-  lehnt einen Slot ab, dessen VM eine andere Lane traegt. Klone werden seriell abgeschickt (ein
+  zu ihm passen: `reap.sh` nennt die Warm-Slots mit `--lane` der eigenen Lane, ihrer Rolle
+  (`--role`) und `--no-scenario`, und `vm.py` lehnt einen Slot ab, dessen VM eine andere Lane
+  oder Rolle oder ein Szenario traegt: `free_vmid` gibt eine freigewordene VMID dem naechsten
+  Klon, ein Szenario least seinen Server zuerst. Klone werden seriell abgeschickt (ein
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
   2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der
