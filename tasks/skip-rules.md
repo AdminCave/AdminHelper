@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Skip-Regeln: run.sh kennt test_db_session_utc, die Kommentare zählen richtig — Task-Ledger
-Status: bereit · Branch: harness/skip-rules · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/skip-rules · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0277, R-0278, Triage 2026-10-10 auf Kevins Delegation; cicd.html :40 DE/EN mit in T2, weil dieselbe falsche Aussage; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0277, R-0278 (Kurz-Ledger ohne Spec)
 Heavy: none — eine Regel in `scripts/tests/run.sh` mit hermetischem Test und ein Kommentar in `.github/workflows/ci.yml`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -19,7 +19,7 @@ Gate-Pfad. Den PR merged Kevin oder die Aufsicht auf sein Wort.
 ### T1 — run.sh: ein Skip von test_db_session_utc mit Postgres-URL ist unter --strict rot (R-0277)  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b3ae4057 2026-10-13T08:33:14+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - `test_skip_is_required` (`run.sh:362-372`) bekommt eine Regel `*test_db_session_utc*`. Ist `DATABASE_URL` ein Postgres
   (`*postgres*`), ist der Skip Pflicht-rot. Die Form ist die von `test_alembic_builtin` und
@@ -44,8 +44,8 @@ Beweis: origin/main@75ed3e09:
 - `test_skip_is_required` (`:362-372`) kennt `test_migrations_smoke`, `test_auth_token_lifecycle`, `test_stream_redis`,
   `test_db_token_store`, `test_check_engine_concurrency` und `test_alembic_builtin`.
 - Die Skip-Bedingungen der beiden Tests stehen oben.
-Metrik: Tests mit Postgres-Bedingung, deren Skip unter `--strict` nicht auffällt: 2 (beide `test_db_session_utc`) → 0, wo
-`DATABASE_URL` selbst gesetzt ist (CI-Service, Stack). Ohne sie nimmt der Server-Schritt `AH_TEST_DB` (`run.sh:667`), das
+Metrik: Tests mit Postgres-Bedingung, deren Skip unter `--strict` nicht auffällt: 2 (beide `test_db_session_utc`) → 0 in einem
+run.sh-Lauf mit exportiertem `DATABASE_URL`. Ohne sie nimmt der Server-Schritt `AH_TEST_DB` (`run.sh:667`), das
 die Regel nicht sieht; dort bleibt es für die Server-Kopie bei 1 (Review am Ende).
 Orakel: mutation-sample — die neue Regel gestrichen: der neue Fall in `run_flags_test.sh` rot.
 Dedup-Key: ref:scripts:run.sh:test_skip_is_required-session-utc
@@ -56,7 +56,7 @@ covers, and a skip inside an otherwise passing suite is invisible: "N passed" qu
 ### T2 — ci.yml und cicd.html: der Postgres-Service des Monitorings dient mehr als dem Migrations-Smoke (R-0278)  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 7 ok @7ea0ef39 2026-10-13T08:07:19+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - `ci.yml:115-116` sagt zum Service `postgres` des Jobs `monitoring`: „Only consumed by tests/test_migrations_smoke.py
   (alembic upgrade head against a fresh DB); all other monitoring tests stay DB-free.“
