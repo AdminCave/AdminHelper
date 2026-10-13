@@ -212,10 +212,19 @@ run status; ALL_OUT+="$OUT"
 # The sidecar gone from the clone is missing, and setup brings it back.
 rm -f "$B/repo/$SC"
 run status; ALL_OUT+="$OUT"
-[ $rc -ne 0 ] && grep -q '^missing: the frpc sidecar' <<<"$OUT" && ok "status: no frpc sidecar in the clone -> missing" \
+[ $rc -eq 1 ] && grep -q '^missing: the frpc sidecar' <<<"$OUT" && ok "status: no frpc sidecar in the clone -> missing, exit 1" \
   || bad "status without the sidecar: rc=$rc out=$OUT"
 run setup; ALL_OUT+="$OUT"
 [ $rc -eq 0 ] && cmp -s "$MAIN/$SC" "$B/repo/$SC" && ok "and setup copies it again" || bad "re-copy: rc=$rc out=$OUT"
+# A file only the clone has (an old sidecar): setup removes nothing, so it does not
+# count; setup leaves it, writes nothing, and status is complete.
+printf 'old\n' > "$B/repo/${SC%/*}/frpc-old.exe"
+run setup; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && ! grep -q '^  wrote apps/desktop' <<<"$OUT" && [ -f "$B/repo/${SC%/*}/frpc-old.exe" ] \
+  && ok "a file only in the clone: setup writes nothing" || bad "extra file, setup: rc=$rc out=$OUT"
+run status; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && ok "and status is complete" || bad "extra file, status: rc=$rc out=$OUT"
+rm -f "$B/repo/${SC%/*}/frpc-old.exe"
 # A checkout without one: setup says what that costs and goes on; status asks nothing.
 mv "$MAIN/${SC%/*}" "$WORK/binaries.away"
 run setup; ALL_OUT+="$OUT"
