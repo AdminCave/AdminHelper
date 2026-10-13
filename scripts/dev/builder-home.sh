@@ -107,9 +107,10 @@ pg() {
   # and : under any locale, and a multibyte one can read a byte after a character
   # as part of it (lane.sh lane_db).
   local LC_ALL=C
-  local prog="$1" url pass=""; shift
+  local prog="$1" url pass="" split=0; shift
   url="$(main_db_url | sed -E 's#^postgres(ql)?(\+[a-z0-9]+)?://#postgresql://#')"
   if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
+    split=1
     pass="${BASH_REMATCH[2]}"
     url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
     pass="${pass//\\/\\\\}"
@@ -119,6 +120,13 @@ pg() {
   # The part before the password may hold an @ of its own: SQLAlchemy reads
   # ah@corp:<password>@host as user ah@corp, the pattern above does not.
   [[ ! "$url" =~ ^[^/]*//[^/]*:[^/@]*@ ]] || fail "AH_TEST_DB has a form whose password cannot be taken out of the URL"
+  # Where the pattern took nothing apart, SQLAlchemy may still read a password: the
+  # user up to the first :, the password up to the first @, across a /
+  # (sqlalchemy/engine/url.py). ah@corp:<pass/word>@host and :<pass/word>@host are
+  # two such forms; after a split the first @ is gone, and with it that reading.
+  if [ "$split" = 0 ] && [[ "$url" =~ ^[^/]*//[^:/]*:[^@]*@ ]]; then
+    fail "AH_TEST_DB has a form whose password cannot be taken out of the URL"
+  fi
   # Nor one in the query: libpq takes ?password= too, and the other keys whose
   # value is a secret of its own (libpq, Parameter Key Words), in any spelling;
   # libpq decodes the keys as well, so no percent sign in a key (lane.sh lane_db).
@@ -139,7 +147,7 @@ pg() {
   # here, as in lane.sh lane_db.
   case "$url" in
     postgresql://*) ;;
-    *) fail "AH_TEST_DB is no postgresql:// URL (postgres:// and postgresql+<driver>:// count as one)" ;;
+    *) fail "AH_TEST_DB is no postgresql:// URL (postgres:// and postgres(ql)+<driver>:// count as one)" ;;
   esac
   ( [ -z "$pass" ] || export PGPASSWORD="$pass"
     case "$prog" in

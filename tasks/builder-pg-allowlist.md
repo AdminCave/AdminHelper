@@ -78,8 +78,8 @@ Semantik: `lane.sh:75-77`: „Bytes, not the caller's characters: the patterns b
 locale, and a multibyte one can read a byte after a character as part of it.“ `pg` folgt `lane_db` (`builder-home.sh:104`).
 
 ### T3 — pg lehnt ab, was lane_db ablehnt: einen Nutzer mit @ vor dem Passwort, ein Geheimnis in der Query  [x]
-Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @da064d67 2026-10-13T11:20:50+02:00
+Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @66324a99 2026-10-13T12:15:19+02:00
 Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
@@ -98,8 +98,8 @@ Abhängt von: T1
   - `?pass%77ord=…`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; `DEVELOPMENT.md` nennt nach T1 die angenommenen Formen)
-Beweis: origin/main@b57c2813. Dieselbe Probe, dieselbe Attrappe. Zwei Formen erreichen den Aufruf von `createdb` mit
-der URL, wie sie ist, je mit rc 0:
+Beweis: origin/main@b57c2813. Dieselbe Probe, dieselbe Attrappe. Zwei Formen erreichen den Aufruf von `createdb`, je mit
+rc 0:
 - `postgresql://ah@corp:…@db.invalid/adminhelper_test`;
 - `postgresql://ah@db.invalid/adminhelper_test?password=…`.
 Orakel: mutation-sample — die Prüfung `:115` auf die alte Form zurückgesetzt bzw. die Query-Prüfungen entfernt: die

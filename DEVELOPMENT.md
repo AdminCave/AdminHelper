@@ -1223,8 +1223,8 @@ nur eine `note`, der Loop endet dann in der Vorpruefung mit `stop: infra`), zieh
 `origin/main` vor (`pushurl=/dev/null`, `core.hooksPath`), schreibt die Settings aus der
 `runner-settings.json` des Klons, ein Tools-venv (`ruff` wie `runner-setup.sh`, `python3` als Wrapper
 auf das venv), eine eigene Test-DB `adminhelper_builder` auf dem Server des Haupt-Checkouts,
-`.devenv.sh` (0600) und die Git-Identitaet. Fuer die Test-DB nimmt `setup` wie `lane.sh` nur eine URL
-`postgresql://`, `postgres://` oder `postgresql+<treiber>://`; eine andere Form, etwa die Keyword-Form von libpq
+`.devenv.sh` (0600) und die Git-Identitaet. Fuer die Test-DB nimmt `setup` nur eine URL `postgresql://`
+oder `postgres://`, beide auch mit `+<treiber>`; eine andere Form, etwa die Keyword-Form von libpq
 (`host=… dbname=…`), lehnt es ab. `oauth.env` schreibt nur `token`, und nur ein Token der Form
 `sk-ant-oat01-…`; der Code, den der Browser unterwegs zeigt, ist keins.
 
