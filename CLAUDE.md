@@ -57,7 +57,7 @@ zurückstellen, ablehnen, bündeln), (2) die Freigabe von Stufen-Plänen, (3) wa
 (sichtbares Verhalten, API-Verträge, Datenmigrationen), (4) bewusst hingenommenes Restrisiko, (5) Geld- und Zeitdeckel
 und ein Paket, das sie sprengt, (6) Irreversibles und nach außen Wirkendes, abschließend: Release, Tag, Publish,
 Ruleset, Repo-Einstellungen, (7) was nur er tun kann (sudo, Tokens, Passwörter); dazu startet nur er den Loop. Der
-**Chef** (bisher „Aufsicht“; Skills und AUTONOMOUS.md sagen es noch so) ist die eine Session, die Kevin ausdrücklich
+**Chef** (bisher „Aufsicht“) ist die eine Session, die Kevin ausdrücklich
 als Chef gestartet oder benannt hat, in Kevins eigenem Wort. Er startet täglich frisch und übernimmt seinen Stand
 aus Dateien: AH-STATUS, Roadmap, Ledger. Jede Session, die `/feature-build` fährt, in einem Lane- oder
 Worker-Worktree läuft oder ihren Auftrag von einer anderen Session bekommt, ist ein **Worker**, gleich wer sie

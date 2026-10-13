@@ -1136,7 +1136,7 @@ sudo -u adminhelper-runner bash -lc '. /srv/ah/repo/scripts/dev/runner-env.sh &&
 Runner-Settings ohne Trust anwendet, hat noch niemand gemessen (oben, „Getrusteter Workspace").
 Endet im Pilot jede Task als `[?] stall` oder mit vielen Verweigerungen im Summary, und steht in
 `/srv/ah/loop/<slug>/<id>.s<n>.err` (oder `.json`) eine Meldung „Ignoring … permissions.allow
-entries", greift der Trust: das entscheidet dann Kevin (die Aufsicht legt es ihm vor), denn `--trust` deckt die Lanes
+entries", greift der Trust: das entscheidet dann Kevin (der Chef legt es ihm vor), denn `--trust` deckt die Lanes
 nicht ab.
 
 **Starten** (nur Kevin, in tmux; die Ledger in seiner Reihenfolge, die Flags mit ihren Defaults):
@@ -1166,7 +1166,7 @@ git fetch origin
 git fetch /srv/ah/loop/<slug>.bundle feature/<slug>:feature/<slug>
 ```
 
-Push und Draft-PR sind danach Kevins bzw. der Aufsicht Handgriff (Text aus
+Push und Draft-PR sind danach Kevins bzw. des Chefs Handgriff (Text aus
 `/srv/ah/loop/<slug>/pr-body.md`).
 
 **Recovery:**

@@ -241,8 +241,8 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   prüfen/anpassen. Zum Bauen nach der Freigabe: **`/feature-build tasks/<slug>.md`** auf
   `feature/<slug>` in einer Opus-Session — oder als parallele Lane
   **`bash scripts/dev/lane.sh new <slug>`** (AUTONOMOUS.md „Parallel-Betrieb")."
-- **Die Freigabe** ist Kevins Wort (nächster User-Turn); ein kleines Fund-Paket gibt die
-  Aufsichts-Session frei (CLAUDE.md §2 „Entscheidungen“). Alles, was Kevin nach §2 (1)–(7)
+- **Die Freigabe** ist Kevins Wort (nächster User-Turn); ein kleines Fund-Paket gibt der
+  Chef frei (CLAUDE.md §2 „Entscheidungen“). Alles, was Kevin nach §2 (1)–(7)
   entscheidet, gibt immer er frei, auch jeden Stufen-Plan. Erst mit der Freigabe:
   `python3 scripts/dev/roadmap.py approve R-nnnn` und ein Commit auf `feature/<slug>`, der den
   Ledger-Kopf auf `Status: freigegeben` setzt (`chore(plan): approve <slug>`) und die Zeile
