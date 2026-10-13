@@ -53,7 +53,7 @@ Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger
     - Ein Builder-Fall mit Freitext in `stop` ergibt `stop: ?`.
 Rot vorher: Auf main zeigt `status` eine Stop-Klasse `plchold plchold plchold` wörtlich (gekürzt auf 40 Zeichen).
 Beweis:
-- origin/main@75ed3e09, ledger-loop.sh :178 `print("Worker: stop: %s %s" % (clean(stop, 40), …))`.
+- origin/main@75ed3e09, ledger-loop.sh :179 `print("Worker: stop: %s %s" % (clean(stop, 40), …))`.
 - Fund: Review status-builder, Worker A, 2026-10-13.
 HEAD: 75ed3e09
 Semantik:
