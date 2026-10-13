@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-classes: status zeigt nur bekannte Stop-Klassen und Muster und liest begrenzt (R-0338) — Task-Ledger
-Status: freigegeben · Branch: harness/status-classes · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/status-classes · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage und Reihenfolge Kevin 2026-10-13; Bau nach dem Merge von status-builder; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0338 (Kurz-Ledger ohne Spec)
 Heavy: none — ledger-loop.sh status und session-status.sh mit ledger_loop_test und session_status_test (Fixture-Dateien, Shims); nur Platzhalter, kein Stack-, Gateway-, PKI- oder Install-Pfad.
