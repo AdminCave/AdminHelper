@@ -89,8 +89,10 @@ eigene Test-DB … `.devenv.sh` (0600)“, also die Umgebung, in der der Loop ba
 2026-10-13): „Toolchains read-only (RUSTUP_HOME/GOROOT aus Kevins Home), Caches eigen (CARGO_HOME/GOPATH/GOCACHE im
 Builder-Home)“.
 
-### T2 — status: fehlt im Builder eine Toolchain, die der Aufrufer hat, meldet `status` sie (R-0358)  [ ]
+### T2 — status: fehlt im Builder eine Toolchain, die der Aufrufer hat, meldet `status` sie (R-0358)  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2611211c 2026-10-13T18:16:21+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `do_status` (`:357-379`) bekommt eine Prüfung je Toolchain, die es unter `<KH>` gibt (dieselben Prüfpunkte wie in T1).

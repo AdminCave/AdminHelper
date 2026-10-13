@@ -261,12 +261,15 @@ setup_db() {
 # rust-toolchain.toml from installing into that RUSTUP_HOME, and GOTOOLCHAIN=local
 # keeps go from fetching another, as in CI. The loop starts under env -i, so this
 # file is all the PATH it has (ledger-loop.sh start, runner-env.sh).
+caller_has_rust() { [ -x "$HOME/.cargo/bin/cargo" ] && [ -d "$HOME/.rustup" ]; }
+caller_has_go()   { [ -x "$HOME/sdk/go/bin/go" ]; }
+
 setup_devenv() {
   local url path='$HOME/.local/bin' rust="" go=""
   say "── $H/.devenv.sh (0600)"
-  if [ -x "$HOME/.cargo/bin/cargo" ] && [ -d "$HOME/.rustup" ]; then rust=1; path+=":$HOME/.cargo/bin"
+  if caller_has_rust; then rust=1; path+=":$HOME/.cargo/bin"
   else say "  note  no cargo in $HOME/.cargo/bin with $HOME/.rustup: the builder gets none"; fi
-  if [ -x "$HOME/sdk/go/bin/go" ]; then go=1; path+=":$HOME/sdk/go/bin"
+  if caller_has_go; then go=1; path+=":$HOME/sdk/go/bin"
   else say "  note  no go in $HOME/sdk/go/bin: the builder gets none"; fi
   url="$(db_url)"
   {
@@ -346,6 +349,14 @@ token_ok() {
     exit "$rc" )
 }
 
+# in_loop <command…> -> 0 when the command runs where the loop gives a session its
+# shell: env -i with the builder HOME and the system PATH (ledger-loop.sh start),
+# the builder's .devenv.sh sourced (runner-env.sh). Its output is not shown.
+in_loop() {
+  /usr/bin/env -i HOME="$H" PATH=/usr/local/bin:/usr/bin:/bin \
+    bash -c '[ -f "$HOME/.devenv.sh" ] && . "$HOME/.devenv.sh" && "$@"' in_loop "$@" >/dev/null 2>&1
+}
+
 do_status() {
   local miss=0 v why
   v="$(pin)"
@@ -357,6 +368,10 @@ do_status() {
   [ -x "$V/bin/ruff" ] || m "ruff in $V"
   [ -f "$H/.local/bin/python3" ] && [ ! -L "$H/.local/bin/python3" ] || m "the python3 wrapper in $H/.local/bin"
   [ "$(stat -c %a "$H/.devenv.sh" 2>/dev/null)" = 600 ] || m "$H/.devenv.sh (0600)"
+  # The toolchains setup writes into that file, as the loop finds them; only what
+  # this user has is asked for, as with the sidecar below.
+  ! caller_has_rust || in_loop cargo --version || m "cargo in $H/.devenv.sh, as the loop finds it — run setup"
+  ! caller_has_go || in_loop go version || m "go in $H/.devenv.sh, as the loop finds it — run setup"
   [ "$(git -C "$CLONE" config --get remote.origin.pushurl 2>/dev/null)" = /dev/null ] || m "the clone $CLONE (pushurl /dev/null)"
   [ ! -d "$ROOT/$SIDECAR" ] || sidecar_in_clone \
     || m "the frpc sidecar of this checkout in the clone ($SIDECAR) — run setup"

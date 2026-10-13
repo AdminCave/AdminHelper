@@ -273,6 +273,29 @@ run setup; ALL_OUT+="$OUT"
 run status; ALL_OUT+="$OUT"
 [ $rc -eq 0 ] && ok "and status does not ask for one" || bad "status, no sidecar here: rc=$rc out=$OUT"
 mv "$WORK/binaries.away" "$MAIN/${SC%/*}"
+# The toolchains as the loop finds them (env -i, the builder's .devenv.sh sourced):
+# the file of the first measuring runs, without them, is missing cargo and go.
+cp "$H/.devenv.sh" "$WORK/devenv.builder.keep"
+printf 'export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"\n' > "$H/.devenv.sh"; chmod 600 "$H/.devenv.sh"
+run status; ALL_OUT+="$OUT"
+[ $rc -eq 1 ] && grep -q "^missing: cargo in $H/.devenv.sh, as the loop finds it" <<<"$OUT" \
+  && grep -q "^missing: go in $H/.devenv.sh, as the loop finds it" <<<"$OUT" \
+  && ok "status: a .devenv.sh without the caller's cargo and go -> both missing, exit 1" || bad "status, old devenv: rc=$rc out=$OUT"
+# Without RUSTUP_HOME the proxy picks no toolchain: cargo is missing, go is not.
+grep -v RUSTUP_HOME "$WORK/devenv.builder.keep" > "$H/.devenv.sh"; chmod 600 "$H/.devenv.sh"
+run status; ALL_OUT+="$OUT"
+[ $rc -eq 1 ] && grep -q '^missing: cargo in' <<<"$OUT" && ! grep -q '^missing: go in' <<<"$OUT" \
+  && ok "status: cargo without RUSTUP_HOME is missing, go is there" || bad "status, no RUSTUP_HOME: rc=$rc out=$OUT"
+cp "$WORK/devenv.builder.keep" "$H/.devenv.sh"; chmod 600 "$H/.devenv.sh"
+run status; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && ok "status: with the .devenv.sh setup writes, cargo and go are there" || bad "status, toolchains: rc=$rc out=$OUT"
+# A caller without go: status asks for none.
+mv "$HOME/sdk" "$WORK/sdk.away"
+printf 'export PATH="$HOME/.local/bin:%s/.cargo/bin:/usr/local/bin:/usr/bin:/bin"\nexport RUSTUP_HOME="%s/.rustup"\n' "$HOME" "$HOME" > "$H/.devenv.sh"
+chmod 600 "$H/.devenv.sh"
+run status; ALL_OUT+="$OUT"
+[ $rc -eq 0 ] && ! grep -q '^missing: go' <<<"$OUT" && ok "status: a caller without go is asked for no go" || bad "status, no go: rc=$rc out=$OUT"
+mv "$WORK/sdk.away" "$HOME/sdk"; cp "$WORK/devenv.builder.keep" "$H/.devenv.sh"; chmod 600 "$H/.devenv.sh"
 # What runner-env.sh refuses for another reason, it says, and status shows it.
 printf 'AH_PVE_URL=https://pve.invalid:8006\n' > "$H/.config/adminhelper/pve.env"; chmod 644 "$H/.config/adminhelper/pve.env"
 run status; ALL_OUT+="$OUT"
