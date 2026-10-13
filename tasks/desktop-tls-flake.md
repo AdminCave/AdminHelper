@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Backend: Tests, die einen abgelehnten Port brauchen, halten ihn, statt ihn freizugeben — Task-Ledger
-Status: aktiv · Branch: feature/desktop-tls-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/desktop-tls-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T2 bleibt drin; der Windows-Job der CI entscheidet T1, rot wird [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0341 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Testcode im Desktop-Backend (`#[cfg(test)]`); kein Produktcode, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -77,8 +77,10 @@ reqwest-Quellenkette … und ersetzt die rohe rustls-Meldung durch den stabilen 
 Handlungs-Hinweis.“ A und B prüfen beide Seiten von „genau diesen Fall“. Dafür muss B wirklich auf einen Port treffen, an
 dem niemand lauscht.
 
-### T2 — enrollment.rs: der Reset-Test ohne erreichbaren Server nimmt denselben Helfer (R-0341)  [ ]
+### T2 — enrollment.rs: der Reset-Test ohne erreichbaren Server nimmt denselben Helfer (R-0341)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @8684312c 2026-10-13T10:08:06+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `a_reset_with_the_server_out_of_reach_remembers_the_leaf_and_deletes_the_identity` (`:1458-1481`, `#[tokio::test]`):
