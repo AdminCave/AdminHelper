@@ -282,7 +282,7 @@ festgehaltenen Prüfsumme entspricht, endet als `infra`; mitten im Lauf ist sie 
 `summary-<datum>.md` (Schlusszeile `ledger-loop: <n> tasks, <k> ready, <b> blocked, $<x> total,
 stop: <klasse>`), je Ledger die Logs. Kevin liest das mit `bash scripts/dev/ledger-loop.sh status`
 **aus seinem eigenen Checkout**; die erste Zeile davon steht als „Worker:“ im AH-STATUS. Ein Ledger auf
-`bereit` hinterlässt `<slug>/pr-body.md` (`review.sh pr-body`, mit „Heavy offen — fährt die Aufsicht“
+`bereit` hinterlässt `<slug>/pr-body.md` (`review.sh pr-body`, mit „Heavy offen — fährt der Chef“
 außer bei `Heavy: none`) und `<slug>.bundle`. Kevin holt den Branch in **seinen** Checkout:
 `git fetch /srv/ah/loop/<slug>.bundle feature/<slug>:feature/<slug>`. Kevins Git arbeitet nie in einem
 Repo des Runners: dafür bräuchte es `safe.directory`, und dann könnte eine Runner-eigene

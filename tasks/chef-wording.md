@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket chef-wording: „Aufsicht“ heißt „Chef“ (R-0272) — Task-Ledger
-Status: aktiv · Branch: harness/chef-wording · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/chef-wording · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0272, Triage Kevin 2026-10-10; die Bruecke in CLAUDE.md kuerzt Kevin selbst oder auf sein Wort; Bau nach dem Merge von loop-harness-2; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0272 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Wortlaut in Skills, Doku und einem PR-Text von ledger-loop.sh samt Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -70,8 +70,10 @@ Semantik: wie T1.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die beiden Dateien selbst; beide gibt es nur auf Deutsch
 
-### T3 — Der PR-Text von ledger-loop.sh sagt „fährt der Chef“  [ ]
+### T3 — Der PR-Text von ledger-loop.sh sagt „fährt der Chef“  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh, AUTONOMOUS.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c6007db6 2026-10-13T15:29:05+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - ledger-loop.sh (:934) schreibt in `pr-body.md` „**Heavy offen — fährt die Aufsicht.**“. Neu: „**Heavy offen — fährt
   der Chef.**“. Der Kommentar (:75) zieht mit.
