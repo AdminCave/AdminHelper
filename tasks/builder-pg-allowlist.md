@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # builder-home.sh: pg nimmt nur postgresql://-URLs und liest sie unter C — Task-Ledger
-Status: bereit · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 bleibt drin; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — `pg` in `scripts/dev/builder-home.sh` und sein hermetischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -108,3 +108,30 @@ Semantik: `builder-home.sh:114`: „A user:password the pattern did not take apa
 `lane.sh:115-118` und `:123-124`: „The part before the password may hold an @ of its own: SQLAlchemy reads
 ah@corp:<password>@host as user ah@corp, the pattern above does not“ und „libpq takes ?password= too, and it would reach
 the arguments the same way“.
+
+### T4 — lane_db: wo das Muster nichts zerlegt hat, lehnt es auch die Lesart von SQLAlchemy ab  [ ]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Änderung:
+- `lane_db` (`lane.sh:74-160`) merkt sich, ob das Muster in `:92` die URL zerlegt hat.
+- Hat es nichts zerlegt, lehnt `lane_db` nach der Prüfung `:119-122` auch eine URL ab, in der SQLAlchemy ein Passwort
+  liest. SQLAlchemy liest den Nutzer bis zum ersten `:` und das Passwort bis zum ersten `@`, auch über `/` hinweg
+  (`^[^/]*//[^:/]*:[^@]*@`). Meldung und Code sind die von `:120-121` (`return 3`, kein Wert).
+- Nach einer Zerlegung ist das erste `@` verbraucht. Ein `@` weiter hinten, etwa in der Query hinter einem Port, bleibt
+  erlaubt; das deckt der bestehende Fall „phi“ (`lane_test.sh:290`).
+- `pg` in `builder-home.sh` bekommt dieselbe Prüfung als Nachbesserung zu T3, aus dem Review am Ende.
+- `lane_test.sh`: ein neuer Block nach dem von `:138-152`. Zwei Formen mit einem `/` im Passwort ergeben je: rc 1,
+  kein Aufruf von `createdb`, keine Lane, keine Marke, die Meldung, und der Platzhalter in keiner Ausgabe.
+  - ein Nutzer mit eigenem `@`;
+  - ein leerer Nutzer.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (`DEVELOPMENT.md:209-210`: „kann `lane.sh` es dort nicht herauslösen, legt es keine Lane an“ deckt die Form)
+Beweis: origin/main@c37d4198. Die Probe (nicht committet, Platzhalter) zieht `lane_db_name`, `lane_db_url` und `lane_db`
+aus `lane.sh` und stellt eine aufzeichnende `createdb`-Attrappe davor. Zwei Formen erreichen den Aufruf von `createdb`,
+je mit rc 0:
+- `postgresql+psycopg://ah@corp:…/…@db.invalid/adminhelper_test`;
+- `postgresql+psycopg://:…/…@db.invalid/adminhelper_test`.
+Orakel: mutation-sample — die neue Prüfung entfernt: die zwei neuen Fälle in `lane_test.sh` rot.
+HEAD: c37d4198
+Semantik: `lane.sh:89-91`: „The password runs to the first @, across a /, the way SQLAlchemy reads AH_TEST_DB
+(sqlalchemy/engine/url.py): a password the suites take out of the URL is one lane_db takes out too“. Dazu `:115-116`: „A
+user:password the pattern did not take apart would go into an argument unchanged: stop before either program runs“.
