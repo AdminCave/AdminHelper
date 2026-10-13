@@ -23,8 +23,8 @@ Multibox-Lauf wäre an einem Fehler des Harness rot geworden.
 
 ### T1 — agent: ein Test prüft jeden Aufruf der Agent-CLI in den Box-Skripten mit `--help` (R-0333)  [x]
 Komponente: agent · Dateien: apps/agent/cmd/adminhelper-agent/box_cli_test.go
-Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a7570f0b 2026-10-13T06:07:57+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @68784adb 2026-10-13T06:39:23+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung: Neue Datei `box_cli_test.go` im Paket `main`, SPDX-Kopf (`reuse annotate --copyright "Kevin Stenzel"
 --license GPL-3.0-or-later`). Am Produktionscode ändert sich nichts.
 - **Die Aufrufe lesen:**
