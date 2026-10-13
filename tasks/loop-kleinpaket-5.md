@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 5: ADR 0001 und ADR 0002 sagen, was heute gilt — Task-Ledger
-Status: aktiv · Branch: feature/loop-kleinpaket-5 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/loop-kleinpaket-5 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0281, Triage 2026-10-10 auf Kevins Delegation; fuer den Builder-Loop geschnitten; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0281 (Kurz-Ledger ohne Spec)
 Heavy: none — zwei Markdown-Dateien unter `docs/adr/`; kein Code, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -51,8 +51,10 @@ HEAD: 75ed3e09
 Semantik: `docs/adr/0001-unified-pki-and-secure-deployment.md:9-10` (der Status derselben Datei, oben zitiert) und
 `docs/admin/installation.html:162` („unter dem enforced-Default“).
 
-### T2 — ADR 0002: Logout und Erneuern so, wie der Desktop es heute tut (R-0281)  [ ]
+### T2 — ADR 0002: Logout und Erneuern so, wie der Desktop es heute tut (R-0281)  [x]
 Komponente: scripts · Dateien: docs/adr/0002-phase-a-task-plan.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @69f1f8f6 2026-10-13T09:15:34+02:00
+Review: approve (sonnet/high) · round 1
 Änderung: Zwei Sätze im Abschnitt A5 beschreiben ein Verhalten, das der Desktop nicht mehr hat. Beide werden in der
 Form von `:141` richtiggestellt („damals …, heute …“); der Rest des Abschnitts bleibt.
 - **`:221`, „Logout räumt die (user-spezifische) Identität.“**
