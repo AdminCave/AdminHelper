@@ -212,6 +212,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Security
 
+- **Agent und Audit auf Go 1.26 (R-0348):** CI (`agent`, `agent-windows`), Release und der woechentliche
+  Audit bauen mit Go 1.26 und `check-latest`, also mit 1.26.9 oder neuer, solange setup-go sein
+  Versions-Manifest erreicht (sonst nimmt es den Patch aus dem Toolcache des Runners). Das schliesst neun stdlib-Funde aus
+  go1.25.14, die erst go1.26.9 behebt: GO-2026-6603, -6605, -6607, -6608, -6610, -6611, -6612, -6613 und
+  -6617 (`net/http`, `net/textproto`, `crypto/tls`). `govulncheck` steht auf v1.9.0. Die `go`-Direktive in
+  `apps/agent/go.mod` bleibt `1.25.0`. `scripts/dev/toolchain-lockstep.sh` verlangt neben jeder `go-version`
+  `check-latest: true`. Die Test-Boxen (`scripts/vm/bootstrap_linux.sh`) installieren go1.26.9 statt 1.25.0.
+
 - **Server-gebundene API-Keys schreiben nur fuer ihren Server (Server):** `POST /api/connections` und
   `PUT /api/connections/{id}` nehmen von einem an einen Server gebundenen API-Key nur eine `serverId`
   gleich diesem Server an; eine andere oder eine leere `serverId` ergibt `403` „Kein Zugriff auf diesen
@@ -248,6 +256,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Gefunden vom gepinnten `cargo audit` des Audit-Sweeps. Cargo 1.96 haengt beim Update
   zusaetzlich fuenf `windows-sys`-Kanten (errno, os_pipe, rustix, tempfile, winapi-util)
   auf bereits gelockte Versionen um — Windows-only, vom CI-Job `rust-windows` gebaut.
+
+- **Desktop-Backend:** `quinn-proto` 0.11.15 → 0.11.18 (RUSTSEC-2026-0338, -0339, -0340, -0341,
+  -0342: ein QUIC-Peer konnte quinn-proto in einen Panic treiben oder Speicher unbegrenzt wachsen
+  lassen; zwei davon high) — nur der Lockfile-Stand, keine Verhaltensaenderung. Das Paket haengt
+  ueber `quinn` 0.11.9 an `reqwest` 0.12.28 und steht nur wegen dessen schwacher Feature-Kante
+  `quinn?/ring` im Lockfile; gebaut wird es fuer kein Ziel (`cargo tree --target all --all-features
+  -i quinn-proto` ist leer). Mit 0.11.18 kommen `chacha20` 0.10.2, `cpufeatures` 0.3.1, `rand`
+  0.10.3, `rand_core` 0.10.1 und `rand_pcg` 0.10.2 neu ins Lockfile; die wasm-only-Kanten
+  `js-sys`/`wasm-bindgen` wandern von `getrandom` 0.3.4 zu 0.4.2. Gefunden vom gepinnten
+  `cargo audit` des Audit-Sweeps.
 
 - **anyio 4.13.0 → 4.14.2** in server, monitoring und ca-issuer (gehashte Locks neu generiert):
   behebt CVE-2026-63374 und CVE-2026-64847. Vom woechentlichen Dependency-Audit (`pip-audit`)
