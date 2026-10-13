@@ -116,3 +116,19 @@ Semantik: DEVELOPMENT.md, Lane-Absatz (seit #136): „Den Zustand im eigenen `.v
 ungetrackt“.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
+
+### T4 — Nachbesserung aus dem Review am Ende: die Tests halten die Ziffern und das fail-closed des Hooks fest  [x]
+Komponente: scripts · Dateien: scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @66392cbd 2026-10-13T02:14:20+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-13 aus dem Review am Ende (Opus, `approve`, zwei nits). Nur Tests.
+- Das Fixture von T1 hielt nur den Ausschluss der Schlüssel mit `_` fest. Ein Hook, der die Ziffern-Bedingung oder das
+  `$` am Ende verliert, blieb grün.
+  - Neu: zwei Zeilen mit Platzhalter ohne `_`, die keine VM-ID tragen (`serverx=plchold`, `desktop=3001plchold`). Die
+    Prüfung, dass `plchold` nicht im Block steht, fängt beide.
+- Fall 5b prüfte nicht, dass der Hook fail-closed ist und ohne geerbtes `GIT_DIR` fragt.
+  - Neu: eine Variante mit fremdem `GIT_DIR` und leerem `GIT_INDEX_FILE` (wie lib_vm_test) und eine mit einem git, das
+    bei `ls-files` scheitert. Beide sagen „nicht gelesen“.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T1

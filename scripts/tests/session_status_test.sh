@@ -133,7 +133,8 @@ git -C "$DIRTY/tasks/private" add -A
 git -C "$DIRTY/tasks/private" commit -qm "roadmap"
 # warm box recorded
 # Role slots with their VM ids, and keys with an underscore that never reach the block.
-printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\nserver_sid=plchold\nserver_key=plchold\n' > "$DIRTY/.vm/warm.env"
+# Keys without an underscore count only with a VM id of digits, and nothing after it.
+printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.42\nserver_sid=plchold\nserver_key=plchold\nserverx=plchold\ndesktop=3001plchold\n' > "$DIRTY/.vm/warm.env"
 # Two weekly reports: the NEWER one must win. Dates are relative so the "(n d)"
 # age in the line is deterministic whenever this test runs.
 OLD_DAY=$(date -d '10 days ago' +%F); NEW_DAY=$(date -d '3 days ago' +%F)
@@ -301,6 +302,25 @@ OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$TRACKED")
 grep -qxF "VMs: warm.env nicht gelesen (Zustand unter .vm ist getrackt)" <<<"$OUT" \
   && ! grep -q 'plchold\|3001' <<<"$OUT" \
   && ok "tracked .vm: warm.env is not read, no slot and no value shown" || bad "tracked: $(grep -m1 '^VMs:' <<<"$OUT")"
+# A foreign GIT_DIR and an empty index inherited must not answer for the checkout.
+git init -q "$WORK/foreign-status"
+OUT=$(GIT_DIR="$WORK/foreign-status/.git" GIT_INDEX_FILE="$WORK/empty-status.index" \
+      SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$TRACKED")
+grep -qxF "VMs: warm.env nicht gelesen (Zustand unter .vm ist getrackt)" <<<"$OUT" && ! grep -q 'plchold\|3001' <<<"$OUT" \
+  && ok "tracked .vm with a foreign GIT_DIR inherited: still not read" || bad "foreign GIT_DIR: $(grep -m1 '^VMs:' <<<"$OUT")"
+# A git that cannot say counts as tracked: an untracked .vm, but ls-files fails.
+UNTRACKED="$WORK/untracked"
+mk_repo "$UNTRACKED" "0.45.0" "v0.45.0"
+printf 'desktop=3001\n' > "$UNTRACKED/.vm/warm.env"
+GITFAIL="$WORK/gitfail"; mkdir -p "$GITFAIL"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = ls-files ] && exit 128; done\nexec %s "$@"\n' "$(command -v git)" > "$GITFAIL/git"
+chmod +x "$GITFAIL/git"
+OUT=$(PATH="$GITFAIL:$PATH" SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$UNTRACKED")
+grep -qxF "VMs: warm.env nicht gelesen (Zustand unter .vm ist getrackt)" <<<"$OUT" \
+  && ok "a git that cannot answer counts as tracked: warm.env not read" || bad "git fails: $(grep -m1 '^VMs:' <<<"$OUT")"
+OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$UNTRACKED")
+grep -qxF "VMs: warm.env desktop=3001" <<<"$OUT" && ok "... and with a working git the same checkout shows its slot" \
+  || bad "untracked: $(grep -m1 '^VMs:' <<<"$OUT")"
 
 # ══ case 6: missing roadmap ═══════════════════════════════════════════════════
 echo "── roadmap missing ──"
