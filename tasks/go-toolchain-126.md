@@ -155,8 +155,10 @@ gepinnten govulncheck-Release darf nicht darüber liegen“.
 Verify: bash scripts/dev/verify.sh scripts --strict  und bash scripts/dev/toolchain-lockstep.sh → „toolchain-lockstep: ok (go 1.26 <= 1.26)“ (braucht den Modul-Proxy; 75 = nicht geprüft)
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (oasdiff-Absatz), CHANGELOG
 
-### T2 — Lockstep verlangt `check-latest: true` an jeder `go-version`-Stelle  [ ]
+### T2 — Lockstep verlangt `check-latest: true` an jeder `go-version`-Stelle  [x]
 Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 1 ok @234b9503 2026-10-13T13:21:44+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - toolchain-lockstep.sh bekommt eine Offline-Prüfung neben Prüfung 1 (:68–100), vor dem Proxy-Abruf wie die
   ruff-Prüfung. Jeder `with:`-Block in ci.yml, release.yml und audit.yml, der `go-version:` setzt, trägt auch

@@ -1353,7 +1353,11 @@ CI ab. Gewechselt wird per Tarball-Swap unter `~/sdk/go` — `.devenv.sh` legt
 `go-version` passt, prueft `bash scripts/dev/toolchain-lockstep.sh` (in CI ein
 Step im Job `frp-consistency`): x/vuln v1.8.0 verlangt `go 1.26.0` und liesse
 sich unter `GOTOOLCHAIN=local` auf 1.25 nicht mehr bauen — ein Job, der schon
-beim Installieren scheitert, sagt nichts ueber unsere Dependencies aus.
+beim Installieren scheitert, sagt nichts ueber unsere Dependencies aus. Dieselbe
+Pruefung verlangt neben jeder `go-version` im selben `with:`-Block
+`check-latest: true`: sonst nimmt setup-go den Patch aus dem Toolcache des
+Runner-Images, und der Release liefert womoeglich einen anderen stdlib-Stand aus,
+als der Audit prueft.
 
 ---
 
