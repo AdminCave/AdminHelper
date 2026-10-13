@@ -36,7 +36,8 @@
 #     (sys.prefix /usr, measured 2026-10-09), a wrapper the venv;
 #   - its own test database on the server of this checkout's AH_TEST_DB, with
 #     its credentials; the password travels in the environment, as in lane.sh;
-#   - home/.devenv.sh (0600) and the git identity of this user.
+#   - home/.devenv.sh (0600) with this user's cargo and go on PATH, read-only,
+#     and the builder's own caches; and the git identity of this user.
 # Neither setup nor status ever prints a password or a token, and setup never
 # touches oauth.env.
 #
@@ -223,6 +224,11 @@ for p in private:
 # The file beside ~/.claude: account and MCP settings.
 for tool in ("Read", "Edit"):
     perm["deny"].append(f"{tool}(/{home}/.claude.json)")
+# The caller's toolchains, which the builder's .devenv.sh puts on PATH: read, never
+# edited (R-0358). For a process of the same UID, a build.rs or a test, that stays a
+# convention until the sandbox (R-0241).
+for p in (".rustup", ".cargo", "sdk"):
+    perm["deny"].append(f"Edit(/{home}/{p}/**)")
 for p in ("**/tasks/private/**", "**/.claude/settings.local.json"):
     for tool in ("Read", "Edit"):
         perm["deny"].append(f"{tool}(//{p})")
@@ -253,15 +259,40 @@ setup_db() {
   fi
 }
 
+# The toolchains of whoever runs setup, read-only (R-0358): rustup's proxies in
+# ~/.cargo/bin pick their toolchain from RUSTUP_HOME, and go knows its tree from
+# where it lies (GOROOT says the same). The caches are the builder's own, under its
+# HOME: CARGO_HOME, GOPATH, GOCACHE. RUSTUP_AUTO_INSTALL=0 keeps a branch's
+# rust-toolchain.toml from installing into that RUSTUP_HOME, and GOTOOLCHAIN=local
+# keeps go from fetching another, as in CI. The loop starts under env -i, so this
+# file is all the PATH it has (ledger-loop.sh start, runner-env.sh).
+caller_has_rust() { [ -x "$HOME/.cargo/bin/cargo" ] && [ -d "$HOME/.rustup" ]; }
+caller_has_go()   { [ -x "$HOME/sdk/go/bin/go" ]; }
+
 setup_devenv() {
-  local url
+  local url path='$HOME/.local/bin' rust="" go=""
   say "── $H/.devenv.sh (0600)"
+  if caller_has_rust; then rust=1; path+=":$HOME/.cargo/bin"
+  else say "  note  no cargo in $HOME/.cargo/bin with $HOME/.rustup: the builder gets none"; fi
+  if caller_has_go; then go=1; path+=":$HOME/sdk/go/bin"
+  else say "  note  no go in $HOME/sdk/go/bin: the builder gets none"; fi
   url="$(db_url)"
   {
-    printf 'export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"\n'
+    printf 'export PATH="%s:/usr/local/bin:/usr/bin:/bin"\n' "$path"
     printf 'export AH_TEST_DB="%s"\n' "$url"
     printf 'export AH_VENV="$HOME/.cache/ah-venv"\n'
     printf 'export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest scripts vm-pytest dev-pytest"\n'
+    if [ -n "$rust" ]; then
+      printf 'export RUSTUP_HOME="%s/.rustup"\n' "$HOME"
+      printf 'export RUSTUP_AUTO_INSTALL=0\n'
+      printf 'export CARGO_HOME="$HOME/.cargo"\n'
+    fi
+    if [ -n "$go" ]; then
+      printf 'export GOROOT="%s/sdk/go"\n' "$HOME"
+      printf 'export GOPATH="$HOME/go"\n'
+      printf 'export GOCACHE="$HOME/.cache/go-build"\n'
+      printf 'export GOTOOLCHAIN=local\n'
+    fi
   } | write_if "$H/.devenv.sh" 600 || fail "could not write $H/.devenv.sh"
 }
 
@@ -277,6 +308,11 @@ setup_git() {
 }
 
 do_setup() {
+  # HOME goes into double-quoted exports of the builder's .devenv.sh: a character
+  # those cannot hold stops setup before it makes anything.
+  case "$HOME" in
+    *'"'*|*'$'*|*'\'*|*'`'*) fail "HOME ($HOME) has a character the builder's .devenv.sh cannot hold" ;;
+  esac
   setup_dirs
   setup_cli
   setup_clone
@@ -318,6 +354,14 @@ token_ok() {
     exit "$rc" )
 }
 
+# in_loop <command…> -> 0 when the command runs where the loop gives a session its
+# shell: env -i with the builder HOME and the system PATH (ledger-loop.sh start),
+# the builder's .devenv.sh sourced (runner-env.sh). Its output is not shown.
+in_loop() {
+  /usr/bin/env -i HOME="$H" PATH=/usr/local/bin:/usr/bin:/bin \
+    bash -c '[ -f "$HOME/.devenv.sh" ] && . "$HOME/.devenv.sh" && "$@"' in_loop "$@" >/dev/null 2>&1
+}
+
 do_status() {
   local miss=0 v why
   v="$(pin)"
@@ -329,6 +373,10 @@ do_status() {
   [ -x "$V/bin/ruff" ] || m "ruff in $V"
   [ -f "$H/.local/bin/python3" ] && [ ! -L "$H/.local/bin/python3" ] || m "the python3 wrapper in $H/.local/bin"
   [ "$(stat -c %a "$H/.devenv.sh" 2>/dev/null)" = 600 ] || m "$H/.devenv.sh (0600)"
+  # The toolchains setup writes into that file, as the loop finds them; only what
+  # this user has is asked for, as with the sidecar below.
+  ! caller_has_rust || in_loop cargo --version || m "cargo in $H/.devenv.sh, as the loop finds it — run setup"
+  ! caller_has_go || in_loop go version || m "go in $H/.devenv.sh, as the loop finds it — run setup"
   [ "$(git -C "$CLONE" config --get remote.origin.pushurl 2>/dev/null)" = /dev/null ] || m "the clone $CLONE (pushurl /dev/null)"
   [ ! -d "$ROOT/$SIDECAR" ] || sidecar_in_clone \
     || m "the frpc sidecar of this checkout in the clone ($SIDECAR) — run setup"
