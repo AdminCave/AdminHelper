@@ -193,8 +193,11 @@ weekly_line() {
 # script of the runner in Kevin's rights.
 worker_line() {
   local f="${AH_LOOP_STATE:-/srv/ah/loop/state.json}" line
-  [ -r "$f" ] || { echo "—"; return 0; }
-  line="$(timeout 10 bash "$LOOP_SH" status --state "$f" 2>/dev/null | head -n 1)"
+  [ -e "$f" ] || [ -L "$f" ] || { echo "—"; return 0; }
+  # A regular file only, and under the same short limit as the builder line: the
+  # hook has 10 s for every session start.
+  [ -f "$f" ] || { echo "? (state.json unlesbar)"; return 0; }
+  line="$(timeout 3 bash "$LOOP_SH" status --state "$f" 2>/dev/null | head -n 1)"
   case "$line" in "Worker: "*) echo "${line#Worker: }" ;; *) echo "?" ;; esac
 }
 echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: $(worker_line)"

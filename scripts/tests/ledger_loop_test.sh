@@ -955,8 +955,53 @@ loop --ledger tasks/good.md
 echo "── status ──"
 printf '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": "infra\\u001b[31m", "stop_reason": "x\\u0007y", "ledgers": {"evil\\u001b]0;t\\u0007": {"result": "aktiv"}}}' > "$WORK/s.json"
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
-[ $rc -eq 0 ] && ! grep -q $'\e\|\a' <<<"$OUT" && grep -q 'stop: infra\[31m' <<<"$OUT" && grep -q 'evil\]0;t' <<<"$OUT" \
+[ $rc -eq 0 ] && ! grep -q $'\e\|\a' <<<"$OUT" && grep -q '^Worker: stop: ? ' <<<"$OUT" && grep -q '^  ?: aktiv' <<<"$OUT" \
+  && ! grep -q 'infra\[31m\|evil' <<<"$OUT" \
   && ok "status prints state.json with its control characters cleaned" || bad "status: rc=$rc $(cat -v <<<"$OUT")"
+# The first line goes into every AH-STATUS: only the classes and patterns the loop
+# writes itself. A stop with free text, a task id or a ledger name outside the
+# pattern shows as "?".
+printf '{"stop": "plchold plchold", "updated": "2026-10-04T06:40:00+02:00"}' > "$WORK/s.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: ? 06:40' ] \
+  && ok "status: a stop that is no class of the loop shows as ?" || bad "status free stop: $OUT"
+printf '{"stop": ["infra"], "stop_reason": "r", "ledgers": {"good-1": {"result": "aktiv"}}}' > "$WORK/s.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: ? ?' ] && grep -qx '  good-1: aktiv' <<<"$OUT" && ! grep -q Traceback <<<"$OUT" \
+  && ok "status: a stop of the wrong type shows as ?, and the rest still comes" || bad "status stop list: rc=$rc $OUT"
+printf '{"stop": "max-budget", "updated": "2026-10-04T06:40:00+02:00"}' > "$WORK/s.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1)
+[ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: max-budget 06:40' ] && ok "status: a class of the loop shows as it is" || bad "status class: $OUT"
+printf '{"stop": null, "task": {"ledger": "tasks/../plchold.md", "id": "T 1 plchold", "of": 3}, "ledgers": {"good-1": {"result": "aktiv"}}}' > "$WORK/s.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1)
+[ "$(head -n 1 <<<"$OUT")" = 'Worker: läuft ?/3 ? · 0,00 $ · seit ?' ] && grep -qx '  good-1: aktiv' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "status: a task id and a ledger name outside their pattern show as ?, a slug as it is" || bad "status patterns: $OUT"
+# The set of classes is the loop's own: every stop the script writes is in it, and
+# it holds nothing the script never writes.
+LL="$REPO_ROOT/scripts/dev/ledger-loop.sh"
+written="$( { grep -oE 's\["stop"\] = "[a-z-]+"' "$LL" | sed -E 's/.*"([a-z-]+)"/\1/'
+              awk '/^over_cap\(\) \{/,/^}/' "$LL" | grep -oE 'echo "[a-z]+(-[a-z]+)* ' | sed -E 's/echo "//; s/ $//'
+              grep -oE 'stop_run "?[a-z]+(-[a-z]+)*"? ' "$LL" | sed -E 's/stop_run //; s/ $//; s/"//g'; } | sort -u)"
+listed="$(sed -n '/^STOP_CLASSES = {/,/}/p' "$LL" | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u)"
+[ -n "$written" ] && [ "$written" = "$listed" ] && [ "$(grep -c . <<<"$listed")" -ge 8 ] \
+  && ok "status: STOP_CLASSES holds exactly the classes the loop writes" || bad "stop classes: written=[$(tr '\n' ' ' <<<"$written")] listed=[$(tr '\n' ' ' <<<"$listed")]"
+# Read only as regular files, capped: a FIFO as state.json or beside it as the
+# newest summary must not hold status up, and the first line comes first.
+mkfifo "$WORK/fifo.json"
+t0=$SECONDS; OUT=$(timeout 20 bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/fifo.json" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ $((SECONDS - t0)) -lt 3 ] && [ "$OUT" = 'Worker: ? (state.json unlesbar)' ] \
+  && ok "status: a FIFO as state.json is named at once" || bad "status FIFO state: rc=$rc $((SECONDS - t0)) s $OUT"
+rm -f "$WORK/fifo.json"
+SF="$WORK/sfifo"; mkdir -p "$SF"
+printf '{"stop": "ledger-leer", "updated": "2026-10-04T06:40:00+02:00"}' > "$SF/state.json"
+mkfifo "$SF/summary-2026-10-04-064000.md"
+t0=$SECONDS; OUT=$(timeout 20 bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SF/state.json" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ $((SECONDS - t0)) -lt 3 ] && [ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: ledger-leer 06:40' ] \
+  && ok "status: a FIFO as the newest summary is passed over, the first line is there" || bad "status FIFO summary: rc=$rc $((SECONDS - t0)) s $OUT"
+rm -f "$SF/summary-2026-10-04-064000.md"
+{ printf '{"stop": "infra", "pad": "'; head -c 1100000 /dev/zero | tr '\0' x; printf '"}'; } > "$SF/state.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SF/state.json" 2>&1)
+[ "$OUT" = 'Worker: ? (state.json unlesbar)' ] && ok "status: a state.json over 1 MiB is not read" || bad "status big state: $(head -c 200 <<<"$OUT")"
 printf '{"run": [1], "stop": "infra"}' > "$WORK/s.json"
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
 [ $rc -eq 0 ] && grep -q 'Worker: stop: infra' <<<"$OUT" && ! grep -q Traceback <<<"$OUT" && ok "a run field of the wrong type is no traceback" || bad "run list: $OUT"

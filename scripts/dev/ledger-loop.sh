@@ -151,12 +151,40 @@ if [ "${1-}" = status ]; then
     shift
   done
   # The first line is the worker's line of the AH-STATUS (session-status.sh takes it).
-  [ -r "$STATE" ] || { echo "Worker: —"; exit 0; }
+  [ -e "$STATE" ] || [ -L "$STATE" ] || { echo "Worker: —"; exit 0; }
   python3 - "$STATE" <<'PY'
-import datetime, glob, json, math, os, sys
+import datetime, glob, json, math, os, re, stat, sys
+
+# The first line goes into every session's AH-STATUS: a stop shows only as a class
+# the loop writes itself (state, stop_run, over_cap; ledger_loop_test holds the set
+# against this file), a task id and a ledger name only in their own pattern, and
+# anything else as "?".
+STOP_CLASSES = {"ledger-leer", "infra", "harness-modified", "usage-limit",
+                "max-hours", "max-budget", "max-tasks", "kevin-queue"}
+TASK_ID = re.compile(r"[A-Za-z0-9._-]{1,20}")
+LEDGER = re.compile(r"tasks/[a-z0-9][a-z0-9-]*\.md")
+SLUG = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 def clean(v, n=200):
     return "".join(c for c in str(v) if c.isprintable())[:n]
+
+def known(v, pattern, n):
+    v = str(v)
+    return v if len(v) <= n and pattern.fullmatch(v) else "?"
+
+def capped(path, n):
+    # A regular file of at most n bytes, judged on the open descriptor: a FIFO or a
+    # device put there between a check and the open must not hold this up.
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("no regular file")
+        data = os.read(fd, n + 1)
+    finally:
+        os.close(fd)
+    if len(data) > n:
+        raise OSError("too large")
+    return data.decode("utf-8", errors="replace")
 
 def obj(v):
     return v if isinstance(v, dict) else {}
@@ -168,15 +196,16 @@ def hhmm(v):
         return "?"
 
 try:
-    s = json.load(open(sys.argv[1]))
+    s = json.loads(capped(sys.argv[1], 1 << 20))
     if not isinstance(s, dict):
         raise ValueError
 except (OSError, ValueError):
-    print("Worker: ? (state.json unlesbar)")
+    print("Worker: ? (state.json unlesbar)", flush=True)
     sys.exit(0)
 run, task, stop = obj(s.get("run")), obj(s.get("task")), s.get("stop")
 if stop:
-    print("Worker: stop: %s %s" % (clean(stop, 40), hhmm(s.get("updated"))))
+    print("Worker: stop: %s %s" % (stop if isinstance(stop, str) and stop in STOP_CLASSES else "?",
+                                   hhmm(s.get("updated"))), flush=True)
 else:
     c = s.get("cost_usd", 0)
     # A runner-written file: a cost that is no finite sum of a run reads as "?".
@@ -184,20 +213,20 @@ else:
     where = ""
     if task.get("id"):
         of = task.get("of")
-        where = " %s%s %s" % (clean(task["id"], 20), "/" + clean(of, 6) if type(of) is int else "",
-                              clean(task.get("ledger", "?"), 80))
-    print("Worker: läuft%s · %s $ · seit %s" % (where, cost, hhmm(run.get("started"))))
+        where = " %s%s %s" % (known(task["id"], TASK_ID, 20), "/" + clean(of, 6) if type(of) is int else "",
+                              known(task.get("ledger", "?"), LEDGER, 80))
+    print("Worker: läuft%s · %s $ · seit %s" % (where, cost, hhmm(run.get("started"))), flush=True)
 if s.get("stop_reason"):
     print("  " + clean(s["stop_reason"]))
 for slug, l in obj(s.get("ledgers")).items():
     l = obj(l)
-    print("  %s: %s%s" % (clean(slug, 60), clean(l.get("result", "?"), 60),
+    print("  %s: %s%s" % (known(slug, SLUG, 60), clean(l.get("result", "?"), 60),
                           " — " + clean(l["reason"]) if l.get("reason") else ""))
 # The last lines of the newest summary beside the state file, from its Stop: line on.
 sums = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "summary-*.md")))
 if sums:
     try:
-        lines = open(sums[-1], errors="replace").read().split("\n")
+        lines = capped(sums[-1], 64 << 10).split("\n")
     except OSError:
         lines = []
     k = max((i for i, l in enumerate(lines) if l.startswith("Stop:")), default=max(len(lines) - 2, 0))
