@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # lane.sh: lane_db nimmt nur postgresql://-URLs und liest sie unter C — Task-Ledger
-Status: geplant · Branch: harness/lane-db-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/lane-db-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13, neutral oeffentlich geplant auf sein Wort; T2 ohne Skip: fehlt die Locale-Quelle im CI, ist der Fall rot und wird nachgezogen; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — `lane_db` in `scripts/dev/lane.sh` und sein hermetischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit).
