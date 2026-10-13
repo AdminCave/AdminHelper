@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Go-Toolchain 1.26: der Agent ohne die neun stdlib-Funde aus go1.25.14, govulncheck wieder grün (R-0348) — Task-Ledger
-Status: freigegeben · Branch: harness/go-toolchain-126 · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/go-toolchain-126 · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13: Go 1.26 als Naechstes; F1 1.26 wie in der Zeile, F2 go-Direktive bleibt 1.25.0, F3 check-latest mit T2, F4 tauscht die Aufsicht vor T3; Merge des Gate-PRs auf Kevins Wort; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0348 (Kurz-Ledger ohne Spec)
 Heavy: scenario --agents 1 — der Wechsel ändert das ausgelieferte Agent-Binary (anderer Compiler, Runtime und stdlib bei gleicher Quelle und gleicher `go`-Direktive). Nur der Multibox-Lauf baut das .deb mit dem neuen Bootstrap-Go (T3) auf der Server-Box, installiert es über das signierte Repo (:8445) auf einer zweiten Box, provisioniert über :8444 mit mTLS gegen nginx, wartet auf den Monitoring-Push und startet das statische Binary in debian:9; und nur er ruft das neue Tarball-Pin samt SHA-256 in bootstrap_linux.sh wirklich ab. Die CI-Jobs `agent`/`agent-windows` testen gegen Go-eigene httptest-Server, nie gegen nginx/OpenSSL oder eine alte glibc. Kein `--rpm`/`--tunnel`: Paketformate und frpc ändern sich nicht. Läuft nach T3, ask-first, ein VM-Lauf.
@@ -127,8 +127,10 @@ Dockerfiles (kein `golang:`-Image), `.claude/rules/release.md`, README.
   (Rückweg). Danach `GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`. Im Builder-Profil
   (eigenes HOME) vorher `go version` dort prüfen, wo gebaut wird.
 
-### T1 — Workflows auf Go 1.26 mit `check-latest`, govulncheck v1.9.0  [ ]
+### T1 — Workflows auf Go 1.26 mit `check-latest`, govulncheck v1.9.0  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, .github/workflows/release.yml, .github/workflows/audit.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped · contracts: 8 ok @551185df 2026-10-13T13:08:11+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `go-version: "1.25"` wird `"1.26"` an allen vier Stellen (ci.yml:358, :398, release.yml:99, audit.yml:72). Jede
   bekommt im selben `with:`-Block `check-latest: true`. Einmal je Datei sagt ein Kommentar warum: Der Toolcache des

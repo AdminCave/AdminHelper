@@ -394,8 +394,9 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           selbst tr&auml;gt keine Begr&uuml;ndung: <code>oasdiff</code> verlangt genau zwei Felder je Zeile
           und lehnt Kommentare und Leerzeilen ab. <code>oasdiff</code> kommt als <strong>Release-Tarball
           v1.32.0 mit gepinnter SHA-256</strong>, nicht per <code>go install</code>: jede Version ab v1.24.0
-          verlangt <code>go 1.26</code>, die Workflows pinnen aber Go 1.25 mit <code>GOTOOLCHAIN=local</code>
-          &ndash; der Bau aus Quellen scheitert dann genau wie bei <code>govulncheck</code> (PR&nbsp;#14).
+          verlangt <code>go 1.26</code>, und die Workflows laufen mit <code>GOTOOLCHAIN=local</code> &ndash; ein
+          Bau aus Quellen bricht, sobald <code>oasdiff</code> die <code>go-version</code> der Workflows
+          &uuml;berholt, genau wie bei <code>govulncheck</code> (PR&nbsp;#14). Das Tarball braucht keine Toolchain.
           Fehlt das Binary lokal, endet das Skript mit <code>75</code> (SKIP, unter <code>--strict</code> rot),
           nie mit einem stillen Gr&uuml;n; eine Basis-Ref, die im Checkout nicht aufl&ouml;st, ist ein Fehler
           (Exit&nbsp;2), damit ein flacher Klon das Gate nicht aushebelt.</p>

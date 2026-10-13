@@ -387,8 +387,9 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           missing the gate stays strict instead of quietly loosening. The file carries no reasons of its own:
           <code>oasdiff</code> wants exactly two fields per line and rejects comments and blank lines. <code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
           SHA-256</strong>, not via <code>go install</code>: every release from v1.24.0 on requires
-          <code>go 1.26</code> while the workflows pin Go 1.25 with <code>GOTOOLCHAIN=local</code>, so building
-          from source fails exactly the way <code>govulncheck</code> did (PR&nbsp;#14). If the binary is missing
+          <code>go 1.26</code> and the workflows run with <code>GOTOOLCHAIN=local</code>, so a source build
+          breaks as soon as <code>oasdiff</code> outruns the workflows' <code>go-version</code>, exactly the way
+          <code>govulncheck</code> did (PR&nbsp;#14); the tarball needs no toolchain. If the binary is missing
           locally the script exits <code>75</code> (SKIP, red under <code>--strict</code>), never a silent
           green; a base ref that does not resolve in the checkout is an error (exit&nbsp;2), so a shallow clone
           cannot defeat the gate.</p>

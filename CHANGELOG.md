@@ -212,6 +212,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Security
 
+- **Agent und Audit auf Go 1.26 (R-0348):** CI (`agent`, `agent-windows`), Release und der woechentliche
+  Audit bauen mit Go 1.26 und `check-latest`, also mit 1.26.9 oder neuer. Das schliesst neun stdlib-Funde aus
+  go1.25.14, die erst go1.26.9 behebt: GO-2026-6603, -6605, -6607, -6608, -6610, -6611, -6612, -6613 und
+  -6617 (`net/http`, `net/textproto`, `crypto/tls`). `govulncheck` steht auf v1.9.0. Die `go`-Direktive in
+  `apps/agent/go.mod` bleibt `1.25.0`.
+
 - **Server-gebundene API-Keys schreiben nur fuer ihren Server (Server):** `POST /api/connections` und
   `PUT /api/connections/{id}` nehmen von einem an einen Server gebundenen API-Key nur eine `serverId`
   gleich diesem Server an; eine andere oder eine leere `serverId` ergibt `403` „Kein Zugriff auf diesen
