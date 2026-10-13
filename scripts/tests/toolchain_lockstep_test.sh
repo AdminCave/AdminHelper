@@ -282,6 +282,23 @@ GNONE="$WORK/gonone"; fixture "$GNONE" 1.25 1.25 1.25 v1.7.0
 sed -i '/^GO_VERSION=/d' "$GNONE/scripts/vm/bootstrap_linux.sh"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without a GO_VERSION default -> exit 1" 1 "no plain GO_VERSION" -- --root "$GNONE"
 
+# ── 10: every true spelling setup-go takes, and only the go-version's block ──
+# setup-go reads check-latest with core.getBooleanInput: true, True or TRUE, quoted
+# or not. Anything else it refuses, and so does this check.
+n=0
+for v in '"true"' 'True' "'TRUE'"; do
+  n=$((n + 1)); TV="$WORK/truev$n"; fixture "$TV" 1.25 1.25 1.25 v1.7.0
+  sed -i "s/^          check-latest: true\$/          check-latest: $v/" "$TV/.github/workflows/release.yml"
+  FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest: $v -> exit 0" 0 "check-latest: true beside every go-version" -- --root "$TV"
+done
+TVNO="$WORK/truevno"; fixture "$TVNO" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^          check-latest: true$/          check-latest: yes/' "$TVNO/.github/workflows/release.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest: yes -> exit 1" 1 ".github/workflows/release.yml:7 sets go-version without check-latest: true" -- --root "$TVNO"
+# A check-latest in the next step's block is not the go-version's.
+NEXT="$WORK/nextstep"; fixture "$NEXT" 1.25 1.25 1.25 v1.7.0
+printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "1.25"\n      - name: plchold\n        with:\n          check-latest: true\n' > "$NEXT/.github/workflows/release.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest in the next step does not count -> exit 1" 1 ".github/workflows/release.yml:7 sets go-version without check-latest: true" -- --root "$NEXT"
+
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

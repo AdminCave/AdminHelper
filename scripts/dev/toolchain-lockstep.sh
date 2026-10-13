@@ -114,12 +114,13 @@ echo "go-version:$versions"
 # every line around it at its indent or deeper, comments and blank lines
 # included. A check-latest in another job's block does not count. The scan ends
 # with a line "end": without it awk did not run to the end, and a check that
-# cannot fail checks nothing.
+# cannot fail checks nothing. True is what setup-go's core.getBooleanInput takes:
+# true, True or TRUE, quoted or not; the single quote comes in as q.
 for f in ci release audit; do
-  scan="$(awk '
+  scan="$(awk -v q="'" '
     function ind(s) { return match(s, /[^ ]/) - 1 }
     function inblock(s, d) { return s ~ /^[ ]*(#.*)?$/ || ind(s) >= d }
-    function latest(s, d) { return ind(s) == d && s ~ /^[ ]*check-latest:[ ]*true[ ]*(#.*)?$/ }
+    function latest(s, d) { return ind(s) == d && s ~ ("^[ ]*check-latest:[ ]*[" q "\"]?(true|True|TRUE)[" q "\"]?[ ]*(#.*)?$") }
     { line[NR] = $0 }
     END {
       for (i = 1; i <= NR; i++) {

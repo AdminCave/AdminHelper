@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket lockstep-bundle: der Toolchain-Lockstep liest Kommentare, die Test-Box-Go und jede wahre Schreibweise von check-latest (R-0355, R-0356, R-0354) — Task-Ledger
-Status: aktiv · Branch: harness/lockstep-bundle · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/lockstep-bundle · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Bau nach der Uebergabe von status-robust; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0355, R-0356, R-0354 (Kurz-Ledger ohne Spec)
 Heavy: none — toolchain-lockstep.sh mit toolchain_lockstep_test (Fixture-Bäume, Fake-curl); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -75,8 +75,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html, DEVELOPMENT.md
 Abhängt von: T1
 
-### T3 — 1b nimmt jede wahre Schreibweise von check-latest, und der Nachbar-Step zählt nicht (R-0354)  [ ]
+### T3 — 1b nimmt jede wahre Schreibweise von check-latest, und der Nachbar-Step zählt nicht (R-0354)  [x]
 Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @044cb5fd 2026-10-13T20:42:32+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Prüfung 1b (:117) nimmt `true`, `True` und `TRUE`, auch in einfachen oder doppelten Anführungszeichen. Das ist die
   Menge von `getBooleanInput`.
