@@ -210,7 +210,8 @@ URL, reist es in `PGPASSWORD`, nicht in einem Argument von `createdb`/`dropdb`; 
 nicht herauslösen, legt es keine Lane an. Ein Passwort oder ein anderes Geheimnis in der Query
 (`password`, `sslpassword`, `oauth_client_secret`, `scram_client_key`, `scram_server_key`, in jeder
 Schreibweise) lehnt `lane.sh` ebenso ab, auch einen prozentkodierten Schlüssel der Query (libpq
-dekodiert auch Schlüssel).
+dekodiert auch Schlüssel). Eine andere Form als eine URL `postgresql://` oder `postgresql+<treiber>://`, etwa
+die Keyword-Form von libpq (`host=… dbname=…`), nimmt `lane.sh` nicht an.
 Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
 und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
 angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
@@ -1231,6 +1232,12 @@ auf das venv), eine eigene Test-DB `adminhelper_builder` auf dem Server des Haup
 bash scripts/dev/ledger-loop.sh start --profile kevin --ledger tasks/<a>.md --max-hours 8 --max-budget-usd 200
 bash scripts/dev/ledger-loop.sh status --profile kevin
 ```
+
+Ein Lauf im Builder-Profil steht ausserdem als eigene Zeile `Builder:` im `AH-STATUS`-Block: die
+gesaeuberte erste Zeile von `status` (Stand, Kosten oder Stop-Klasse), `(tmux ah-builder)`, solange die
+Session laeuft, und `fertig rc=<n>` aus `builder.done`. Ohne Spur des Profils fehlt die Zeile; mehr aus
+dem Builder zeigt der Hook nicht. `state.json` und `builder.done` nimmt er nur als regulaere Dateien, und
+jeder Lesezugriff hat ein kurzes Zeitlimit: ein haengender Builder kostet die Zeile, nicht den Block.
 
 `start` prueft `builder-home.sh status`, verweigert neben einer schon laufenden tmux-Session
 `ah-builder` und startet darin den Loop des Klons mit `env -i` (nur `HOME`, `PATH`, `LANG`, `USER`,
