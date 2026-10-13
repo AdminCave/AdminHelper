@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-robust: status übersteht eine entartete state.json und liest seine Dateien nur direkt (R-0343) — Task-Ledger
-Status: aktiv · Branch: harness/status-robust · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/status-robust · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T2 fuer beide Dateien; Bau nach der Uebergabe von skip-per-step; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0343 (Kurz-Ledger ohne Spec)
 Heavy: none — ledger-loop.sh status mit ledger_loop_test (Fixture-Dateien); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -49,8 +49,10 @@ von `status` steht im AH-STATUS (AUTONOMOUS.md :283–284).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — status liest state.json und die Summary nicht über einen Symlink  [ ]
+### T2 — status liest state.json und die Summary nicht über einen Symlink  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4d131ba8 2026-10-13T18:27:31+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `capped()` öffnet zusätzlich mit `os.O_NOFOLLOW`. Ein Symlink im letzten Pfadteil gibt `OSError` und wird behandelt
   wie eine Datei, die keine reguläre ist:

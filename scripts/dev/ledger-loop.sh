@@ -174,8 +174,10 @@ def known(v, pattern, n):
 
 def capped(path, n):
     # A regular file of at most n bytes, judged on the open descriptor: a FIFO or a
-    # device put there between a check and the open must not hold this up.
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    # device put there between a check and the open must not hold this up. Never
+    # through a symlink: the loop writes state.json and its summaries itself, as
+    # regular files, and status reads only those.
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError("no regular file")
