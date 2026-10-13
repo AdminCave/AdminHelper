@@ -180,9 +180,8 @@ mod tests {
     async fn non_tls_network_errors_keep_the_raw_chain() {
         // Connection refused has no rustls error in its chain — it must NOT be
         // rewritten into the unknown-issuer hint.
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener); // free the port again -> refused
+        // Held, not freed: a freed port can go to a parallel test's TLS server.
+        let (_reserved, port) = crate::test_tls::refused_port();
 
         let client = crate::http_client::with_timeouts(reqwest::Client::builder())
             .build()
@@ -192,6 +191,16 @@ mod tests {
             .send()
             .await
             .expect_err("Verbindung auf geschlossenen Port muss scheitern");
+
+        let mut refused = false;
+        let mut source = std::error::Error::source(&err);
+        while let Some(cause) = source {
+            refused |= cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| io.kind() == std::io::ErrorKind::ConnectionRefused);
+            source = cause.source();
+        }
+        assert!(refused, "no ConnectionRefused in the chain: {err:?}");
 
         let msg = AppError::from(err).to_string();
         assert!(
