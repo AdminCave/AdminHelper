@@ -28,8 +28,10 @@ totem Session-Bus (`DBUS_SESSION_BUS_ADDRESS=unix:path=<eigener Pfad>/no-bus`).
 - `src/enrollment.rs:1468-1472` (`a_reset_with_the_server_out_of_reach_remembers_the_leaf_and_deletes_the_identity`)
   nutzt dasselbe Muster mit `std::net::TcpListener`.
 
-### T1 — test_tls: `refused_port()` hält einen abgelehnten Port, und der Refused-Test in error.rs nimmt ihn (R-0341)  [ ]
+### T1 — test_tls: `refused_port()` hält einen abgelehnten Port, und der Refused-Test in error.rs nimmt ihn (R-0341)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/test_tls.rs, apps/desktop/src-tauri/src/error.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @519c0a70 2026-10-13T10:06:31+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `src/test_tls.rs`: neue Funktion `pub fn refused_port() -> (tokio::net::TcpSocket, u16)`.
   - `tokio::net::TcpSocket::new_v4()` setzt kein `SO_REUSEADDR`. Der Socket wird an `127.0.0.1:0` gebunden und lauscht
