@@ -74,9 +74,6 @@ lane_db_url() {  # the main checkout's AH_TEST_DB as a libpq URL, or nothing
 }
 
 lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
-  # Bytes, not the caller's characters, for lane_db_url's rewrite as for the rules
-  # in pg-url.sh, which set the same for themselves.
-  local LC_ALL=C
   local url
   url="$(lane_db_url)"
   # The rules live in scripts/dev/pg-url.sh, shared with builder-home.sh's pg: the

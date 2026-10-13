@@ -119,9 +119,9 @@ HEAD: 1409c285
 Semantik: `DEVELOPMENT.md:209-210`: „kann `lane.sh` es dort nicht herauslösen, legt es keine Lane an“.
 
 ### T3 — builder-home.sh: pg nimmt den Helfer und liest das Passwort wie SQLAlchemy  [x]
-Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @63b17de9 2026-10-13T16:32:30+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md, scripts/dev/lane.sh, scripts/dev/harness-paths.txt
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @afe75fbb 2026-10-13T17:25:06+02:00
+Review: Review am Ende (Kurz-Ledger, Opus): approve, Nits miterledigt
 Abhängt von: T1
 Änderung:
 - `builder-home.sh` sourct `scripts/dev/pg-url.sh`, nach `ROOT=` (`:50`).
