@@ -179,7 +179,7 @@ export AH_OUT_DIR="$SHIM/out"
 
 : > "$REC"; OUT=$(bash "$ITER" quick --strict 2>&1); rc=$?
 [ $rc -eq 0 ] && ok "a green box run is green here" || bad "layer run: rc=$rc out=$OUT"
-grep -q "^run 3001 --sync --timeout 3000 --out $AH_OUT_DIR --extend 8h -- AH_ALLOW_REAL=1 AH_CAPTURE=1 .*bash scripts/tests/run.sh quick --strict$" "$REC"   && ok "the layer run syncs, extends the lease and pulls the artifacts"   || bad "run args: $(grep '^run' "$REC")"
+grep -q "^run 3001 --sync --timeout 3000 --out $AH_OUT_DIR --extend 8h --expect-name ah-desktop-main-0001 -- AH_ALLOW_REAL=1 AH_CAPTURE=1 .*bash scripts/tests/run.sh quick --strict$" "$REC"   && ok "the layer run syncs, extends the lease and pulls the artifacts"   || bad "run args: $(grep '^run' "$REC")"
 [ -f "$AH_OUT_DIR/last.out.log" ] && ok "the box output is kept as a file for heavy.sh"   || bad "no $AH_OUT_DIR/last.out.log"
 
 : > "$REC"; bash "$ITER" all --strict >/dev/null 2>&1

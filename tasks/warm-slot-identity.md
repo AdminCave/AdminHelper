@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Warm-Slots: eine Box gilt nur als eigene, wenn Rolle, Szenario und Name stimmen — Task-Ledger
-Status: aktiv · Branch: harness/warm-slot-identity · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/warm-slot-identity · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; Fragen 1-5 wie empfohlen: Altbestand einmal uebernehmen, alle drei Tasks, iter endet mit dem Exit von vm.py, kein eigenes --name, warm prueft ueber list und iter/reap lassen vm.py frisch pruefen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0347 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API), warm.sh, iter.sh und reap.sh mit dem Fake-vm.py der Script-Tests; keine echte VM, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -117,8 +117,10 @@ box expired may name the box another lane is working on by now.“ Dasselbe gilt
 anderes Szenario oder ein anderer Checkout auf die VMID gelegt hat. `.claude/skills/test/SKILL.md:141`: „Warm once
 (idempotent — reuses `.vm/warm.env` if the VM is still running)“ meint die eigene VM.
 
-### T3 — iter.sh und reap.sh geben den gemerkten Namen an vm.py (R-0347)  [ ]
+### T3 — iter.sh und reap.sh geben den gemerkten Namen an vm.py (R-0347)  [x]
 Komponente: scripts · Dateien: scripts/vm/iter.sh, scripts/vm/reap.sh, scripts/tests/vm_wrappers_test.sh, scripts/tests/iter_flags_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4af9c72d 2026-10-13T14:14:21+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1, T2
 Änderung:
 - `iter.sh` `box_run` (`:88-93`): Trägt der Slot `desktop_name`, ruft es `vm.py run <vmid> --expect-name <name> …`.

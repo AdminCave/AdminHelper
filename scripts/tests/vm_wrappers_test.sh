@@ -356,6 +356,36 @@ FAKE_LIST_JSON="$RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" lint >/dev/null 2>
 grep -q -- '--extend 8h ' "$FAKE_LOG" && ok "a warm.env without desktop_ttl keeps the 8h renewal" \
   || bad "extend args: $(grep '^run' "$FAKE_LOG")"
 
+echo "── reap.sh and iter.sh hand the slot's name to vm.py ──"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-desktop-main-aaaa\nserver=3002\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(bash "$REAP" 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q '^destroy --lane main --role desktop --no-scenario --expect-name ah-desktop-main-aaaa 3001$' "$FAKE_LOG" \
+  && grep -q '^destroy --lane main --role server --no-scenario 3002$' "$FAKE_LOG" \
+  && ok "reap.sh names a slot with its recorded name, a slot from before names by VMID only" \
+  || bad "reap names: rc=$rc log=$(grep '^destroy' "$FAKE_LOG")"
+reset_state
+printf 'desktop=3001\ndesktop_name=--role=desktop\nserver=3002\nserver_name=ah-server-main-bbbb\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(bash "$REAP" 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "slot desktop holds no usable name — skipped" <<<"$OUT" && ! grep -q -- '--role=desktop' "$FAKE_LOG" \
+  && [ "$(grep -c '^destroy' "$FAKE_LOG")" = 1 ] \
+  && grep -q '^destroy --lane main --role server --no-scenario --expect-name ah-server-main-bbbb 3002$' "$FAKE_LOG" \
+  && ok "a name that would read as an option is skipped, the next slot is destroyed all the same" \
+  || bad "unusable name: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-fake-main-0001\n' > "$AH_VM_STATE_DIR/warm.env"
+FAKE_LIST_JSON="$RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" lint >/dev/null 2>&1; rc=$?
+[ $rc -eq 0 ] && grep -q '^run 3001 --sync .* --extend 8h --expect-name ah-fake-main-0001 -- ' "$FAKE_LOG" \
+  && ok "iter.sh runs on the box with the slot's recorded name" || bad "iter name: rc=$rc $(grep '^run' "$FAKE_LOG")"
+reset_state
+printf 'desktop=3001\ndesktop_name=ah-fake-main-0001\n' > "$AH_VM_STATE_DIR/warm.env"
+OUT=$(FAKE_LIST_JSON="$RUNNING" FAKE_RUN_RC=2 FAKE_RUN_OUT="vm.py: 3001 is named ah-desktop-main-bbbb, not ah-fake-main-0001 — refusing" \
+  AH_OUT_DIR="$WORK/out" bash "$ITER" lint 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "nothing was synced; next: bash scripts/vm/warm.sh desktop" <<<"$OUT" \
+  && ! grep -q "auto-debug captured" <<<"$OUT" && [ "$(grep -c '^run' "$FAKE_LOG")" = 1 ] \
+  && ok "a box vm.py refuses by name ends iter.sh with that exit and names warm.sh, not a red run" \
+  || bad "iter refused: rc=$rc out=$OUT log=$(grep '^run' "$FAKE_LOG")"
+
 echo ""
 echo "vm_wrappers_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
