@@ -40,7 +40,7 @@ TOK_OK='sk-ant-oat01-placeholder'
 MAIN="$WORK/main"; ORIGIN="$WORK/origin.git"
 mkdir -p "$MAIN/scripts/dev"
 cp "$REPO_ROOT/scripts/dev/builder-home.sh" "$REPO_ROOT/scripts/dev/runner-settings.json" \
-  "$REPO_ROOT/scripts/dev/runner-env.sh" "$MAIN/scripts/dev/"
+  "$REPO_ROOT/scripts/dev/runner-env.sh" "$REPO_ROOT/scripts/dev/pg-url.sh" "$MAIN/scripts/dev/"
 printf '2.1.999\n' > "$MAIN/scripts/dev/runner-claude.version"
 printf '.devenv.sh\n/apps/desktop/src-tauri/binaries/\n' > "$MAIN/.gitignore"
 printf 'export AH_TEST_DB="postgresql+psycopg://ah:%s@localhost/adminhelper_test"\n' "$PW_URL" > "$MAIN/.devenv.sh"
@@ -336,6 +336,23 @@ pgline="$(grep -m1 '^psql ' "$FIXTURE_LOG")"
 [ $rc -eq 0 ] && [[ "$pgline" == "psql -X --dbname=postgresql://ah@localhost:5432/adminhelper_test?application_name=me@x "*" PGPASSWORD=$PW_RAW" ]] \
   && ok "an @ in the query behind a port and a password that was taken out still reaches psql" \
   || bad "@ in the query: rc=$rc psql=$(sed "s/$PW_URL/<pw>/g; s/$PW_RAW/<pw>/g" <<<"$pgline")"
+# pg reads the password the way SQLAlchemy does (urllib's unquote): a % without two
+# hex digits stays a %. A NUL cannot travel in PGPASSWORD, and a URL that is no
+# UTF-8 is not one SQLAlchemy would read the same: both stop setup.
+printf 'export AH_TEST_DB="postgresql+psycopg://ah:pl50%%zzchold@localhost/adminhelper_test"\n' > "$MAIN/.devenv.sh"
+: > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+pgline="$(grep -m1 '^psql ' "$FIXTURE_LOG")"
+[ $rc -eq 0 ] && [[ "$pgline" == "psql -X --dbname=postgresql://ah@localhost/adminhelper_test "*" PGPASSWORD=pl50%zzchold" ]] \
+  && ok "a % without two hex digits stays a % in PGPASSWORD, as urllib reads it" \
+  || bad "stray %: rc=$rc psql=$(sed 's/pl50[^ ]*/<pw>/g' <<<"$pgline")"
+printf 'export AH_TEST_DB="postgresql+psycopg://ah:plc%%00hold@localhost/adminhelper_test"\n' > "$MAIN/.devenv.sh"
+: > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+[ $rc -eq 1 ] && grep -q 'password with a NUL byte' <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
+  && ok "an encoded NUL in the password stops setup, no database program runs" || bad "NUL: rc=$rc out=$OUT"
+printf 'export AH_TEST_DB="postgresql+psycopg://ah:plchold\xff@localhost/adminhelper_test"\n' > "$MAIN/.devenv.sh"
+: > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+[ $rc -eq 1 ] && grep -q 'AH_TEST_DB is no UTF-8' <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
+  && ok "a URL that is no UTF-8 stops setup, no database program runs" || bad "no UTF-8: rc=$rc out=$OUT"
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 # With an XDG git config of the caller's and no .gitconfig in a fresh builder HOME
 # yet, git config --global would write the caller's file; the identity still goes
