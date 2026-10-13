@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-builder: AH-STATUS zeigt einen Lauf im Builder-Profil (R-0256) — Task-Ledger
-Status: geplant · Branch: harness/status-builder · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/status-builder · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0256, Triage Kevin 2026-10-09; nur die Stop-Klasse, kein freier stop_reason; Bau nach dem Merge von status-guard; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0256 (Kurz-Ledger ohne Spec)
 Heavy: none — session-status.sh mit session_status_test (Fixture-Repo, Fixture-Builder-Verzeichnis, tmux-Shim); kein Stack-, Gateway-, PKI- oder Install-Pfad.
 Hängt ab von: harness/status-guard (PR #140) — beide ändern session-status.sh und session_status_test.sh; erst nach
