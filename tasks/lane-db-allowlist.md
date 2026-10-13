@@ -20,8 +20,10 @@ merged Kevin oder die Aufsicht auf sein Wort. Alle Werte in Tests und Proben sin
 `postgresql://`. Danach prüft `lane_db` einige Formen (ohne UTF-8, Passwort nicht herauszulösen, Geheimnisse in der
 Query), das Schema aber nicht.
 
-### T1 — lane_db: nur eine URL, die mit `postgresql://` beginnt, erreicht createdb/dropdb  [ ]
+### T1 — lane_db: nur eine URL, die mit `postgresql://` beginnt, erreicht createdb/dropdb  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @13a1a689 2026-10-13T05:53:31+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - `lane_db`: Unmittelbar vor `case "$1" in` (`:142`), nach allen bisherigen Prüfungen, nimmt die Funktion nur noch eine
   URL an, die mit `postgresql://` beginnt. Jede andere Form endet mit einer Meldung ohne Wert und `return 3`, wie die

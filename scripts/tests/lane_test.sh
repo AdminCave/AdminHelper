@@ -77,7 +77,8 @@ for c in server monitoring; do
 done
 for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma pi rho tau omega phi chi psi eta iota \
             qsec-ssl qsec-oauth qsec-scramc qsec-scrams qsec-upper qsec-pwupper qsec-mode \
-            dec-zz dec-4z dec-pct dec-trail dec-slash dec-uml dec-ff dec-nul dec-nl utf-pw utf-user; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+            dec-zz dec-4z dec-pct dec-trail dec-slash dec-uml dec-ff dec-nul dec-nl utf-pw utf-user \
+            form-kw form-noslash; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -146,6 +147,22 @@ for pair in "pi postgresql+psycopg://:secret@localhost:5432/adminhelper_test" "r
     && grep -q 'password cannot be taken out of the URL' "$WORK/out.log" && ! grep -q secret "$WORK/out.log" \
     && grep -q "nothing of lane $slug was created" "$WORK/out.log" && ! grep -q 'createdb .* failed' "$WORK/out.log" \
     && ok "${url%%:*}://… whose password the pattern does not take out: no createdb, no lane, no secret printed" \
+    || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
+done
+cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
+
+echo "── new: only a postgresql:// URL reaches createdb ──"
+cp "$MAIN/.devenv.sh" "$WORK/devenv.keep"
+for pair in "form-kw host=localhost user=ah password=plchold-55 dbname=adminhelper_test" \
+            "form-noslash postgresql+psycopg:ah:plchold-55@localhost:5432/adminhelper_test"; do
+  slug="${pair%% *}" url="${pair#* }"
+  printf 'export AH_TEST_DB="%s"\nexport AH_VENV="$HOME/.cache/ah-venv"\n' "$url" > "$MAIN/.devenv.sh"
+  : > "$PG_LOG"
+  lane new "$slug"; rc=$?
+  [ "$rc" = 1 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$WORK/AdminHelper-$slug" ] && [ ! -e "$MAIN/.vm/lanes/$slug" ] \
+    && grep -q 'is no postgresql:// URL' "$WORK/out.log" && ! grep -q plchold "$WORK/out.log" \
+    && grep -q "nothing of lane $slug was created" "$WORK/out.log" \
+    && ok "$slug: a form that is no postgresql:// URL means no createdb, no lane, no value printed" \
     || bad "$slug: rc=$rc pg=$(cat "$PG_LOG") out=$(cat "$WORK/out.log")"
 done
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"

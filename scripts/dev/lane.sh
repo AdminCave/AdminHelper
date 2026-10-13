@@ -139,6 +139,14 @@ lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
     echo "  lane.sh: AH_TEST_DB has a percent-encoded key in its query; write the keys plain" >&2
     return 3
   fi
+  # Only the form lane_db_url makes, a postgresql:// URL, goes on to createdb or dropdb.
+  # Any other (the key=value form of libpq, a scheme without //) ends here, after the
+  # refusals above, which keep their own messages.
+  case "$url" in
+    postgresql://*) ;;
+    *) echo "  lane.sh: AH_TEST_DB is no postgresql:// URL (postgresql+<driver>:// counts as one)" >&2
+       return 3 ;;
+  esac
   case "$1" in
     create) ( [ -z "$pass" ] || export PGPASSWORD="$pass"
               exec createdb --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;

@@ -210,7 +210,8 @@ URL, reist es in `PGPASSWORD`, nicht in einem Argument von `createdb`/`dropdb`; 
 nicht herauslösen, legt es keine Lane an. Ein Passwort oder ein anderes Geheimnis in der Query
 (`password`, `sslpassword`, `oauth_client_secret`, `scram_client_key`, `scram_server_key`, in jeder
 Schreibweise) lehnt `lane.sh` ebenso ab, auch einen prozentkodierten Schlüssel der Query (libpq
-dekodiert auch Schlüssel).
+dekodiert auch Schlüssel). Eine andere Form als eine URL `postgresql://` oder `postgresql+<treiber>://`, etwa
+die Keyword-Form von libpq (`host=… dbname=…`), nimmt `lane.sh` nicht an.
 Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
 und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
 angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
