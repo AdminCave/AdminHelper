@@ -32,6 +32,8 @@ REPO_ROOT=$(cd "$HERE/../.." && pwd)
 HOOK="$REPO_ROOT/scripts/dev/hooks/session-status.sh"
 # Never the runner's real state (/srv/ah/loop on this box): each case names its file.
 export AH_LOOP_STATE=/nonexistent/state.json
+# Nor the builder profile of whoever runs the test: a fixture directory, empty here.
+export AH_BUILDER_DIR=/nonexistent/builder
 
 PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
@@ -60,6 +62,9 @@ case "$1" in
 esac
 EOF
 chmod +x "$BIN/gh"
+# tmux: `has-session` succeeds only when the case says the builder session is up.
+printf '#!/usr/bin/env bash\n[ "${1:-}" = has-session ] && [ -n "${SHIM_TMUX_BUILDER:-}" ] && exit 0\nexit 1\n' > "$BIN/tmux"
+chmod +x "$BIN/tmux"
 export PATH="$BIN:$PATH"
 
 # ── fixture builder ───────────────────────────────────────────────────────────
@@ -198,6 +203,33 @@ grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"
 worker '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}'
 grep -q ' · Worker: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
   && ok "control characters in the ledger name are removed" || bad "worker control chars: $(cat -v <<<"$OUT" | grep -m1 '^Ledger')"
+
+# A run in the builder profile: its own line, only when there is a trace of it.
+BD="$WORK/builder"; mkdir -p "$BD/loop"
+builder() { OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' run_hook "$DIRTY"); }
+builder
+! grep -q '^Builder:' <<<"$OUT" && ok "no trace of the builder profile: no Builder line" || bad "builder empty: $(grep -m1 '^Builder' <<<"$OUT")"
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
+builder
+grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
+  && ok "builder running: task, cost, since when" || bad "builder running: $(grep -m1 '^Builder' <<<"$OUT")"
+SHIM_TMUX_BUILDER=1 builder
+grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05 (tmux ah-builder)' <<<"$OUT" \
+  && ok "builder running: the tmux session is named" || bad "builder tmux: $(grep -m1 '^Builder' <<<"$OUT")"
+printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": "kappe", "updated": "2026-10-13T11:40:00+02:00", "stop_reason": "plchold"}' > "$BD/loop/state.json"
+printf 'rc=1\n' > "$BD/loop/builder.done"
+builder
+grep -qx 'Builder: stop: kappe 11:40 · fertig rc=1' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "builder stopped: its class, the time, the exit code; no free-text reason" || bad "builder stop: $(grep -m1 '^Builder' <<<"$OUT")"
+rm -f "$BD/loop/state.json"; printf 'rc=1; plchold\n' > "$BD/loop/builder.done"
+builder
+! grep -q '^Builder:' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
+  && ok "a builder.done that is not rc=<digits> shows nothing" || bad "builder junk done: $(grep -m1 '^Builder' <<<"$OUT")"
+printf '%s' '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}' > "$BD/loop/state.json"; rm -f "$BD/loop/builder.done"
+builder
+grep -q '^Builder: läuft T1 tasks/e\[31mvil.md · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" \
+  && ok "builder: control characters in state.json are removed" || bad "builder control chars: $(cat -v <<<"$OUT" | grep -m1 '^Builder')"
+rm -f "$BD/loop/state.json"
 
 # the seven triggers, one WARN line each
 grep -q '^WARN: .*tauri.conf.json 0.46.0, kein Tag v0.46.0' <<<"$OUT" && ok "trigger: bump without tag" || bad "trigger: bump without tag"

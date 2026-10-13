@@ -197,6 +197,22 @@ worker_line() {
   case "$line" in "Worker: "*) echo "${line#Worker: }" ;; *) echo "?" ;; esac
 }
 echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: $(worker_line)"
+# A run in the builder profile (the team under Kevin's UID): the same cleaned first
+# line of `ledger-loop.sh status`, whether its tmux session is up, and the exit code
+# builder.done recorded, digits only. A line only when the profile has a trace, and
+# nothing else of the builder is read.
+builder_line() {
+  local d="${AH_BUILDER_DIR:-$HOME/.cache/ah-builder}/loop" line="" up="" rc=""
+  if [ -r "$d/state.json" ]; then
+    line="$(timeout 10 bash "$LOOP_SH" status --state "$d/state.json" 2>/dev/null | head -n 1)"
+    case "$line" in "Worker: "*) line="${line#Worker: }" ;; *) line="?" ;; esac
+  fi
+  timeout 5 tmux has-session -t "=ah-builder" 2>/dev/null && up=" (tmux ah-builder)"
+  [ ! -r "$d/builder.done" ] || rc="$(LC_ALL=C grep -m1 -xE 'rc=[0-9]{1,3}' "$d/builder.done" 2>/dev/null)"
+  [ -n "$line$up$rc" ] || return 0
+  echo "Builder: ${line:-—}${up}${rc:+ · fertig $rc}"
+}
+builder_line
 
 # ── line 4b: scheduled workflows ──────────────────────────────────────────────
 # One line per workflow with a `schedule:`. The newest COMPLETED run on main
