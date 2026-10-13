@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Loop-Kleinpaket 5: ADR 0001 und ADR 0002 sagen, was heute gilt — Task-Ledger
-Status: bereit · Branch: feature/loop-kleinpaket-5 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/loop-kleinpaket-5 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0281, Triage 2026-10-10 auf Kevins Delegation; fuer den Builder-Loop geschnitten; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0281 (Kurz-Ledger ohne Spec)
 Heavy: none — zwei Markdown-Dateien unter `docs/adr/`; kein Code, kein Stack-, Gateway-, PKI- oder Install-Pfad.
