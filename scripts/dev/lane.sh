@@ -31,6 +31,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 # shellcheck source=scripts/vm/lib.sh
 . "$ROOT/scripts/vm/lib.sh"
+# shellcheck source=scripts/dev/pg-url.sh
+. "$ROOT/scripts/dev/pg-url.sh"
 # Refuse to run from a linked worktree (its .git is a FILE): `done` would remove
 # the very worktree the session sits in, leaving the caller in a deleted cwd.
 [ -d "$ROOT/.git" ] || { echo "lane.sh must run from the MAIN checkout, not a worktree"; exit 1; }
@@ -72,99 +74,23 @@ lane_db_url() {  # the main checkout's AH_TEST_DB as a libpq URL, or nothing
 }
 
 lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
-  # Bytes, not the caller's characters: the patterns below must find the same @ and :
-  # under any locale, and a multibyte one can read a byte after a character as part
-  # of it. The UTF-8 checks name their encoding themselves.
+  # Bytes, not the caller's characters, for lane_db_url's rewrite as for the rules
+  # in pg-url.sh, which set the same for themselves.
   local LC_ALL=C
-  local url pass="" split=0
+  local url
   url="$(lane_db_url)"
-  # SQLAlchemy reads AH_TEST_DB as a UTF-8 string: a URL that is no UTF-8 is refused first.
-  if ! printf '%s' "$url" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
-    echo "  lane.sh: AH_TEST_DB is no UTF-8" >&2
+  # The rules live in scripts/dev/pg-url.sh, shared with builder-home.sh's pg: the
+  # password goes to PGPASSWORD, decoded the way SQLAlchemy does, and a form it
+  # cannot take apart, or a secret in the query, makes no lane.
+  if ! pg_url_split "$url" "postgresql+<driver>:// counts as one"; then
+    echo "  lane.sh: $PG_URL_ERR" >&2
     return 3
   fi
-  # The password travels in the environment, and not through `env`'s arguments
-  # either: every local user can read a process's arguments (/proc/<pid>/cmdline),
-  # only its owner its environment. The URL percent-encodes the password;
-  # PGPASSWORD takes it raw. The password runs to the first @, across a /, the way
-  # SQLAlchemy reads AH_TEST_DB (sqlalchemy/engine/url.py): a password the suites
-  # take out of the URL is one lane_db takes out too (R-0266).
-  if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
-    split=1
-    local raw="${BASH_REMATCH[2]}" ch hex='^%([0123456789abcdefABCDEF]{2})'
-    url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
-    # Decoded as urllib.parse.unquote does it, which SQLAlchemy uses: %XX with two
-    # hex digits becomes that byte, every other % stays (50%zz, a trailing %). The
-    # class is spelled out: a range matches more under de_DE.UTF-8. printf -v keeps
-    # a decoded newline at the end, which $(…) would cut off.
-    while [ -n "$raw" ]; do
-      if [[ "$raw" =~ $hex ]]; then
-        # A NUL cannot travel in PGPASSWORD; bash would drop it without a word.
-        [ "${BASH_REMATCH[1]}" != 00 ] || { echo "  lane.sh: AH_TEST_DB has a password with a NUL byte" >&2; return 3; }
-        printf -v ch "\\x${BASH_REMATCH[1]}"; pass+="$ch"; raw="${raw:3}"
-      else
-        pass+="${raw:0:1}"; raw="${raw:1}"
-      fi
-    done
-    # SQLAlchemy reads bytes that are no UTF-8 as U+FFFD: that would be another
-    # password than the one in the URL, so neither is sent.
-    if ! printf '%s' "$pass" | iconv -f UTF-8 -t UTF-16LE >/dev/null 2>&1; then
-      echo "  lane.sh: AH_TEST_DB has a password that is no UTF-8 once decoded" >&2
-      return 3
-    fi
-  fi
-  # A user:password the pattern did not take apart would go into an argument
-  # unchanged: stop before either program runs (R-0255), with a code of its own.
-  # The part before the password may hold an @ of its own: SQLAlchemy reads
-  # ah@corp:<password>@host as user ah@corp, the pattern above does not (R-0265).
-  if [[ "$url" =~ ^[^/]*//[^/]*:[^/@]*@ ]]; then
-    echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
-    return 3
-  fi
-  # Where the pattern took nothing apart, SQLAlchemy may still read a password: the
-  # user up to the first :, the password up to the first @, across a /
-  # (sqlalchemy/engine/url.py). ah@corp:<pass/word>@host and :<pass/word>@host are
-  # two such forms; after a split the first @ is gone, and with it that reading.
-  if [ "$split" = 0 ] && [[ "$url" =~ ^[^/]*//[^:/]*:[^@]*@ ]]; then
-    echo "  lane.sh: AH_TEST_DB has a form whose password cannot be taken out of the URL" >&2
-    return 3
-  fi
-  # Nor one in the query: libpq takes ?password= too, and it would reach the
-  # arguments the same way (R-0265).
-  local query_pw='[?&]password='
-  if [[ "$url" =~ $query_pw ]]; then
-    echo "  lane.sh: AH_TEST_DB carries its password in the query; write it as user:password@ before the host" >&2
-    return 3
-  fi
-  # The other keys whose value is a secret of its own (libpq, Parameter Key Words):
-  # the passphrase of the client key, the OAuth client secret, and the SCRAM keys
-  # (the client key alone signs in, RFC 5802). In any spelling, password included:
-  # whether libpq quotes the value of a key it does not know is not verified.
-  local query_secret='[?&](password|sslpassword|oauth_client_secret|scram_client_key|scram_server_key)='
-  if [[ "${url,,}" =~ $query_secret ]]; then
-    echo "  lane.sh: AH_TEST_DB carries a secret in its query (${BASH_REMATCH[1]}=); lane.sh does not pass it on" >&2
-    return 3
-  fi
-  # libpq decodes the keys of the query too, so pass%77ord= is a password as well:
-  # no percent sign in a key at all.
-  local query_key_pct='[?&][^=&]*%[^=&]*='
-  if [[ "$url" =~ $query_key_pct ]]; then
-    echo "  lane.sh: AH_TEST_DB has a percent-encoded key in its query; write the keys plain" >&2
-    return 3
-  fi
-  # Only the form lane_db_url makes, a postgresql:// URL, goes on to createdb or dropdb.
-  # Any other (the key=value form of libpq, a scheme without //) ends here, after the
-  # refusals above, which keep their own messages.
-  case "$url" in
-    postgresql://*) ;;
-    *) echo "  lane.sh: AH_TEST_DB is no postgresql:// URL (postgresql+<driver>:// counts as one)" >&2
-       return 3 ;;
-  esac
   case "$1" in
-    create) ( [ -z "$pass" ] || export PGPASSWORD="$pass"
-              exec createdb --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;
-    drop)   ( [ -z "$pass" ] || export PGPASSWORD="$pass"
-              exec dropdb --if-exists --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;
+    create) ( [ -z "$PG_URL_PASS" ] || export PGPASSWORD="$PG_URL_PASS"
+              exec createdb --maintenance-db="$PG_URL_OUT" "$(lane_db_name "$2")" ) ;;
+    drop)   ( [ -z "$PG_URL_PASS" ] || export PGPASSWORD="$PG_URL_PASS"
+              exec dropdb --if-exists --maintenance-db="$PG_URL_OUT" "$(lane_db_name "$2")" ) ;;
   esac
 }
 

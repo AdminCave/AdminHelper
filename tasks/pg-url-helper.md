@@ -95,8 +95,10 @@ Semantik: `lane.sh:96-97`: „Decoded as urllib.parse.unquote does it, which SQL
 becomes that byte, every other % stays“. Dazu `builder-home.sh:101-104`: „The password travels in PGPASSWORD and not in an
 argument … (lane.sh lane_db)“. Beide meinen dieselbe Regel.
 
-### T2 — lane.sh: lane_db nimmt den Helfer  [ ]
-Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+### T2 — lane.sh: lane_db nimmt den Helfer  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4c79a03c 2026-10-13T16:18:43+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `lane.sh` sourct `scripts/dev/pg-url.sh`, neben `scripts/vm/lib.sh` (`:33`).

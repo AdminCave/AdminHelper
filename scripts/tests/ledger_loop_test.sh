@@ -45,7 +45,7 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@ex
 ORIGIN="$WORK/origin.git" SEED="$WORK/seed" CLONE="$WORK/srv/repo" LOOPD="$WORK/loop"
 git init -q --bare -b main "$ORIGIN"
 mkdir -p "$SEED/scripts/dev" "$SEED/scripts/vm" "$SEED/tasks" "$SEED/apps/x" "$SEED/docs"
-for f in ledger-loop.sh lane.sh ledger.sh review.sh harness-paths.txt runner-env.sh runner-claude.version; do
+for f in ledger-loop.sh lane.sh pg-url.sh ledger.sh review.sh harness-paths.txt runner-env.sh runner-claude.version; do
   cp "$REPO_ROOT/scripts/dev/$f" "$SEED/scripts/dev/$f"
 done
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$SEED/scripts/vm/lib.sh"
