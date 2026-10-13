@@ -92,8 +92,9 @@
           precondition mirrors what the test itself checks &ndash; <code>DATABASE_URL</code> for
           <code>test_migrations_smoke</code>, a reachable Redis for <code>test_stream_redis</code>, a
           Postgres in <code>AH_TEST_DB</code> for <code>test_db_token_store</code>, a reachable database
-          (or Docker) for <code>test_auth_token_lifecycle</code>. On a box that genuinely cannot run a test
-          it stays a visible SKIP.</p>
+          (or Docker) for <code>test_auth_token_lifecycle</code>. The database URL is the one the step gives
+          its suite: the server step takes <code>DATABASE_URL</code>, else <code>AH_TEST_DB</code>. On a box
+          that genuinely cannot run a test it stays a visible SKIP.</p>
           <p>The summary line is therefore
           <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> stays 0 on
           purpose: the weekly run re-runs a red step itself and classifies it, rather than letting the suites
