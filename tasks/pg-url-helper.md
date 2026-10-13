@@ -32,8 +32,10 @@ Aufrufer:
 
 So bleiben die angenommenen Formen beider, wie sie sind.
 
-### T1 — pg-url.sh: ein Helfer zerlegt eine Postgres-URL in URL und Passwort oder lehnt sie mit Grund ab  [ ]
+### T1 — pg-url.sh: ein Helfer zerlegt eine Postgres-URL in URL und Passwort oder lehnt sie mit Grund ab  [x]
 Komponente: scripts · Dateien: scripts/dev/pg-url.sh, scripts/tests/pg_url_test.sh, scripts/tests/run.sh, scripts/dev/harness-paths.txt
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @eea16c9a 2026-10-13T15:45:28+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - Neue Datei `scripts/dev/pg-url.sh` mit SPDX-Kopf (`reuse annotate --copyright "Kevin Stenzel" --license
   GPL-3.0-or-later`). Sie enthält nur Funktionen und ist zum Sourcen gedacht.
