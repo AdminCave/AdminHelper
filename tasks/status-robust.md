@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket status-robust: status übersteht eine entartete state.json und liest seine Dateien nur direkt (R-0343) — Task-Ledger
-Status: freigegeben · Branch: harness/status-robust · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/status-robust · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T2 fuer beide Dateien; Bau nach der Uebergabe von skip-per-step; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0343 (Kurz-Ledger ohne Spec)
 Heavy: none — ledger-loop.sh status mit ledger_loop_test (Fixture-Dateien); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -27,8 +27,10 @@ Vorab geprüft (Python 3.13.5, die Version der Dev-Box):
 - `capped()` (:175–187) öffnet mit `os.O_RDONLY | os.O_NONBLOCK` und folgt damit einem Symlink im letzten Pfadteil. Das
   betrifft state.json (:199) und die neueste `summary-*.md` (:229). Beide schreibt der Loop selbst als reguläre Dateien.
 
-### T1 — status fängt die Rekursionsgrenze und prüft den Kostenbereich vor isfinite  [ ]
+### T1 — status fängt die Rekursionsgrenze und prüft den Kostenbereich vor isfinite  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger-loop.sh, scripts/tests/ledger_loop_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @79f24d72 2026-10-13T18:08:57+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Das Laden von state.json (:199–203) fängt zusätzlich `RecursionError`. Das Ergebnis ist
   `Worker: ? (state.json unlesbar)`.
