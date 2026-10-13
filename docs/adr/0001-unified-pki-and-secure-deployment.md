@@ -23,10 +23,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## 0. Umsetzungsstand (Phase A) — Stand 2026-06-12
 
-Der **Kern** dieses Entwurfs ist umgesetzt und läuft per Default **permissiv** (nutzbar, ohne dass
-schon ein Client ausgesperrt wird). Das Scharfschalten auf `CERT_REQUIRED` ist der `MTLS_ENFORCE`-
-Schalter (A8) — umgesetzt und end-to-end verifiziert (§7), aber bewusst per Default aus; der Flip
-ist eine Operator-Entscheidung.
+Der **Kern** dieses Entwurfs ist umgesetzt; bis 0.28 lief er per Default **permissiv** (nutzbar,
+ohne dass schon ein Client ausgesperrt wird). Das Scharfschalten auf `CERT_REQUIRED` ist der
+`MTLS_ENFORCE`-Schalter (A8) — umgesetzt und end-to-end verifiziert (§7), seit 0.29.0 per Default
+an (Code und Compose); ein permissiver Rollout geht per `MTLS_ENFORCE=false`.
 
 | Entscheidung | Stand |
 |---|---|
