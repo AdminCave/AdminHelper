@@ -1002,6 +1002,30 @@ rm -f "$SF/summary-2026-10-04-064000.md"
 { printf '{"stop": "infra", "pad": "'; head -c 1100000 /dev/zero | tr '\0' x; printf '"}'; } > "$SF/state.json"
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SF/state.json" 2>&1)
 [ "$OUT" = 'Worker: ? (state.json unlesbar)' ] && ok "status: a state.json over 1 MiB is not read" || bad "status big state: $(head -c 200 <<<"$OUT")"
+# A state.json past json's recursion limit, and a cost no float can hold: a Worker
+# line each, no traceback.
+head -c 100000 /dev/zero | tr '\0' '[' > "$SF/state.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SF/state.json" 2>&1)
+[ "$OUT" = 'Worker: ? (state.json unlesbar)' ] \
+  && ok "status: a state.json nested past the recursion limit is unreadable, no traceback" || bad "status deep state: $(head -c 300 <<<"$OUT")"
+{ printf '{"stop": null, "cost_usd": 1'; head -c 400 /dev/zero | tr '\0' 0; printf '}'; } > "$SF/state.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SF/state.json" 2>&1)
+[ "$(head -n 1 <<<"$OUT")" = 'Worker: läuft · ? $ · seit ?' ] && ! grep -q Traceback <<<"$OUT" \
+  && ok "status: a cost beyond any float shows as ?, no traceback" || bad "status huge cost: $(head -c 300 <<<"$OUT")"
+# Never through a symlink: the loop writes state.json and its summaries itself, as
+# regular files. A summary that is a symlink is passed over like a FIFO, a
+# state.json that is one is unreadable.
+printf '{"stop": "ledger-leer", "updated": "2026-10-04T06:40:00+02:00"}' > "$SF/state.json"
+printf 'Stop: plchold-marker\n' > "$SF/elsewhere.txt"
+ln -s "$SF/elsewhere.txt" "$SF/summary-2026-10-04-064000.md"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SF/state.json" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(head -n 1 <<<"$OUT")" = 'Worker: stop: ledger-leer 06:40' ] && ! grep -q 'plchold-marker' <<<"$OUT" \
+  && ok "status: a summary that is a symlink is passed over, the first line is there" || bad "status summary symlink: rc=$rc $OUT"
+rm -f "$SF/summary-2026-10-04-064000.md"
+ln -s "$SF/state.json" "$SF/link.json"
+OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$SF/link.json" 2>&1)
+[ "$OUT" = 'Worker: ? (state.json unlesbar)' ] && ok "status: a state.json that is a symlink is unreadable" || bad "status state symlink: $OUT"
+rm -f "$SF/link.json" "$SF/elsewhere.txt"
 printf '{"run": [1], "stop": "infra"}' > "$WORK/s.json"
 OUT=$(bash "$CLONE/scripts/dev/ledger-loop.sh" status --state "$WORK/s.json" 2>&1); rc=$?
 [ $rc -eq 0 ] && grep -q 'Worker: stop: infra' <<<"$OUT" && ! grep -q Traceback <<<"$OUT" && ok "a run field of the wrong type is no traceback" || bad "run list: $OUT"
