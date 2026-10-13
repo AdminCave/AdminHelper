@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Go-Toolchain 1.26: der Agent ohne die neun stdlib-Funde aus go1.25.14, govulncheck wieder grün (R-0348) — Task-Ledger
-Status: bereit · Branch: harness/go-toolchain-126 · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: erledigt · Branch: harness/go-toolchain-126 · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13: Go 1.26 als Naechstes; F1 1.26 wie in der Zeile, F2 go-Direktive bleibt 1.25.0, F3 check-latest mit T2, F4 tauscht die Aufsicht vor T3; Merge des Gate-PRs auf Kevins Wort; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0348 (Kurz-Ledger ohne Spec)
 Heavy: scenario --agents 1 — der Wechsel ändert das ausgelieferte Agent-Binary (anderer Compiler, Runtime und stdlib bei gleicher Quelle und gleicher `go`-Direktive). Nur der Multibox-Lauf baut das .deb mit dem neuen Bootstrap-Go (T3) auf der Server-Box, installiert es über das signierte Repo (:8445) auf einer zweiten Box, provisioniert über :8444 mit mTLS gegen nginx, wartet auf den Monitoring-Push und startet das statische Binary in debian:9; und nur er ruft das neue Tarball-Pin samt SHA-256 in bootstrap_linux.sh wirklich ab. Die CI-Jobs `agent`/`agent-windows` testen gegen Go-eigene httptest-Server, nie gegen nginx/OpenSSL oder eine alte glibc. Kein `--rpm`/`--tunnel`: Paketformate und frpc ändern sich nicht. Läuft nach T3, ask-first, ein VM-Lauf.
