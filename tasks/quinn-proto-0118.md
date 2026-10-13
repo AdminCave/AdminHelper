@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Backend: quinn-proto 0.11.18 im Lockfile, cargo audit wieder grün (R-0357) — Task-Ledger
-Status: aktiv · Branch: feature/quinn-proto-0118 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/quinn-proto-0118 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13: sofort; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0357 (Kurz-Ledger ohne Spec)
 Heavy: none — nur `apps/desktop/src-tauri/Cargo.lock` (Patch im selben Minor, kein Code, kein Feature-Wechsel); kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -15,8 +15,10 @@ Geplant 2026-10-13 von der Aufsicht (adminhelper-ac). Kevin hat die Zeile am 202
 Stand origin/main@23539b81. Läufe des Desktop-Backends nur mit totem Session-Bus
 (`DBUS_SESSION_BUS_ADDRESS=unix:path=<eigener Pfad>/no-bus`).
 
-### T1 — Cargo.lock: quinn-proto 0.11.15 → 0.11.18 (R-0357)  [ ]
+### T1 — Cargo.lock: quinn-proto 0.11.15 → 0.11.18 (R-0357)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/Cargo.lock, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped · contracts: 1 ok @39816691 2026-10-13T14:26:09+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - In `apps/desktop/src-tauri`: `cargo update -p quinn-proto --precise 0.11.18`, sonst nichts. Kein volles
   `cargo update`, kein anderes `-p`, kein `Cargo.toml`-Edit.
