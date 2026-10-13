@@ -51,8 +51,10 @@ Semantik: `builder-home.sh:101-104`: „pg psql|createdb <args…> — on the se
 connected to that database, with its credentials. The password travels in PGPASSWORD and not in an argument … (lane.sh
 lane_db).“ Was nicht die Form hat, die `:107` herstellt, ist keine, die `pg` kennt.
 
-### T2 — pg liest die URL byteweise, unabhängig von der Locale des Aufrufers  [ ]
+### T2 — pg liest die URL byteweise, unabhängig von der Locale des Aufrufers  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8846e977 2026-10-13T11:06:39+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `pg` setzt am Anfang `local LC_ALL=C`, wie `lane_db` (`lane.sh:75-78`). Die Muster der Funktion lesen damit Bytes,

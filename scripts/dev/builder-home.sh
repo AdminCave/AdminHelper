@@ -103,6 +103,10 @@ db_url() {
 # PGPASSWORD and not in an argument: every local user can read a process's
 # arguments, only its owner its environment (lane.sh lane_db).
 pg() {
+  # Bytes, not the caller's characters: the patterns below must find the same @
+  # and : under any locale, and a multibyte one can read a byte after a character
+  # as part of it (lane.sh lane_db).
+  local LC_ALL=C
   local prog="$1" url pass=""; shift
   url="$(main_db_url | sed -E 's#^postgres(ql)?(\+[a-z0-9]+)?://#postgresql://#')"
   if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then

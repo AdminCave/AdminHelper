@@ -292,6 +292,24 @@ for pair in "the key=value form|host=localhost user=ah password=$PW_URL dbname=a
     && ok "${pair%%|*} stops setup, no database program runs" \
     || bad "${pair%%|*}: rc=$rc log=$(sed 's/ PGPASSWORD=.*$//' "$FIXTURE_LOG")"
 done
+# pg reads the URL byte by byte, whatever the caller's locale: under GBK the byte
+# after a character like 中 can read as part of it, and the @ behind it with it. A
+# GBK locale, built into the test directory; glibc reads LOCPATH from the
+# environment the process starts with, so setup runs under /usr/bin/env.
+LOC="$WORK/locale"; mkdir -p "$LOC"
+if localedef -i zh_CN -f GBK "$LOC/zh_CN.GBK" >/dev/null 2>&1; then
+  printf 'export AH_TEST_DB="postgresql+psycopg://ah:%s中@localhost/adminhelper_test"\n' "$PW_URL" > "$MAIN/.devenv.sh"
+  for loc in C zh_CN.GBK; do
+    : > "$FIXTURE_LOG"
+    OUT=$(cd "$MAIN" && /usr/bin/env LOCPATH="$LOC" LC_ALL="$loc" AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+    pgline="$(grep -m1 '^psql ' "$FIXTURE_LOG")"
+    [ $rc -eq 0 ] && [[ "$pgline" == "psql -X --dbname=postgresql://ah@localhost/adminhelper_test "*" PGPASSWORD=${PW_RAW}中" ]] \
+      && ok "under LC_ALL=$loc psql gets the password in PGPASSWORD and the URL without it" \
+      || bad "LC_ALL=$loc: rc=$rc psql=$(sed "s/$PW_URL/<pw>/g; s/$PW_RAW/<pw>/g" <<<"$pgline")"
+  done
+else
+  bad "localedef could not build zh_CN.GBK in $LOC: the locale case is not verified"
+fi
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 # With an XDG git config of the caller's and no .gitconfig in a fresh builder HOME
 # yet, git config --global would write the caller's file; the identity still goes
