@@ -1499,9 +1499,26 @@ def require_selected(entry: dict, selectors: list) -> dict:
     return entry
 
 
+def require_no_scenario(entry: dict) -> dict:
+    """reap.sh names its warm slots with --no-scenario: a warm box never carries a
+    scenario tag, and a VMID that a scenario's box took over since is not the slot's."""
+    scenarios = sorted(t for t in tags_of(entry) if t.startswith("sc-"))
+    if scenarios:
+        raise Usage(
+            "%d carries %s, not a warm box — refusing" % (entry["vmid"], ", ".join(scenarios))
+        )
+    return entry
+
+
 def verb_destroy(cfg: Config, api: Api, args) -> int:
     if not (args.vm or args.scenario or args.lane or args.role):
         raise Usage("destroy needs VMs, or one of --scenario/--lane/--role")
+    # It only holds VMs named with it: alone it would select every VM without a
+    # scenario, and next to --scenario it says the opposite.
+    if args.no_scenario and not args.vm:
+        raise Usage("--no-scenario holds named VMs only — name them")
+    if args.no_scenario and args.scenario:
+        raise Usage("--no-scenario and --scenario contradict each other")
     vms = pool_vms(cfg, api)
     chosen = select_vms(cfg, vms, args)
     selectors = destroy_selectors(args) if args.vm else []
@@ -1517,6 +1534,8 @@ def verb_destroy(cfg: Config, api: Api, args) -> int:
             continue
         require_ours(current)
         require_selected(current, selectors)
+        if args.no_scenario:
+            require_no_scenario(current)
         confirmed.append(current)
     failures = []
     for entry in confirmed:
@@ -1955,6 +1974,7 @@ def build_parser() -> argparse.ArgumentParser:
     destroy.add_argument("--scenario")
     destroy.add_argument("--lane")
     destroy.add_argument("--role")
+    destroy.add_argument("--no-scenario", action="store_true")
 
     reap = sub.add_parser("reap", help="destroy expired VMs")
     reap.add_argument("--all", action="store_true", dest="every_lane")
