@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket chef-wording: „Aufsicht“ heißt „Chef“ (R-0272) — Task-Ledger
-Status: bereit · Branch: harness/chef-wording · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: erledigt · Branch: harness/chef-wording · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0272, Triage Kevin 2026-10-10; die Bruecke in CLAUDE.md kuerzt Kevin selbst oder auf sein Wort; Bau nach dem Merge von loop-harness-2; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0272 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Wortlaut in Skills, Doku und einem PR-Text von ledger-loop.sh samt Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
