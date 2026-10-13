@@ -224,6 +224,11 @@ for p in private:
 # The file beside ~/.claude: account and MCP settings.
 for tool in ("Read", "Edit"):
     perm["deny"].append(f"{tool}(/{home}/.claude.json)")
+# The caller's toolchains, which the builder's .devenv.sh puts on PATH: read, never
+# edited (R-0358). For a process of the same UID, a build.rs or a test, that stays a
+# convention until the sandbox (R-0241).
+for p in (".rustup", ".cargo", "sdk"):
+    perm["deny"].append(f"Edit(/{home}/{p}/**)")
 for p in ("**/tasks/private/**", "**/.claude/settings.local.json"):
     for tool in ("Read", "Edit"):
         perm["deny"].append(f"{tool}(//{p})")

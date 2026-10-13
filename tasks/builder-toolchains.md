@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Builder-Profil: cargo und go aus dem HOME des Aufrufers, Caches im Builder-HOME — Task-Ledger
-Status: aktiv · Branch: harness/builder-toolchains · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/builder-toolchains · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 und das Restrisiko Toolchain-Tausch waehrend eines Loops auf Kevins Wort 2026-10-13; Fragen 2-4 wie empfohlen; Bau nach dem Merge von pg-url-helper; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0358 (Kurz-Ledger ohne Spec)
 Heavy: none — `setup`, `status` und `setup_settings` in `scripts/dev/builder-home.sh` mit ihrem hermetischen Test; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Abnahme im echten Builder (`setup`, `status`, ein Messlauf) ist Kevins Schritt.
@@ -117,8 +117,10 @@ Dedup-Key: bug:scripts:builder-home.sh:path-toolchains
 HEAD: bef5d17e
 Semantik: `builder-home.sh:12`: „status    what is missing; exit 1 if anything“.
 
-### T3 — setup_settings: die Session des Builders darf die Toolchain-Bäume des Aufrufers nicht bearbeiten (R-0358)  [ ]
+### T3 — setup_settings: die Session des Builders darf die Toolchain-Bäume des Aufrufers nicht bearbeiten (R-0358)  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4d397123 2026-10-13T18:30:04+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Abhängt von: T1
 Änderung:
 - `setup_settings` (`:246-266`) hängt an die Sperren zu privaten Pfaden (`:254-258`) Edit-Sperren an:

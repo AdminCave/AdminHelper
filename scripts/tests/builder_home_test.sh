@@ -163,6 +163,15 @@ for tool in ("Read", "Edit"):
 assert "Bash(ssh:*)" in deny and "Bash(docker:*)" in deny
 assert home.startswith("/")
 PY
+python3 - "$H/.claude/settings.json" "$HOME" <<'PY' \
+  && ok "settings: the caller's toolchains are readable and denied for editing" \
+  || bad "an edit deny for the caller's toolchains is missing, or one for reading is there"
+import json, sys
+deny, home = json.load(open(sys.argv[1]))["permissions"]["deny"], sys.argv[2]
+for p in (".rustup", ".cargo", "sdk"):
+    assert f"Edit(/{home}/{p}/**)" in deny, p
+    assert f"Read(/{home}/{p}/**)" not in deny, p
+PY
 
 # The wrapper: through it, python3 is the venv's; a symlink there would not be.
 [ -f "$H/.local/bin/python3" ] && [ ! -L "$H/.local/bin/python3" ] \
