@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # builder-home.sh: pg nimmt nur postgresql://-URLs und liest sie unter C — Task-Ledger
-Status: freigegeben · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 bleibt drin; Delegation Kevin 2026-10-05)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
 Heavy: none — `pg` in `scripts/dev/builder-home.sh` und sein hermetischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
