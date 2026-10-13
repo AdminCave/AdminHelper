@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Backend: Tests, die einen abgelehnten Port brauchen, halten ihn, statt ihn freizugeben — Task-Ledger
-Status: bereit · Branch: feature/desktop-tls-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/desktop-tls-flake · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T2 bleibt drin; der Windows-Job der CI entscheidet T1, rot wird [?]; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0341 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Testcode im Desktop-Backend (`#[cfg(test)]`); kein Produktcode, kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -31,7 +31,7 @@ totem Session-Bus (`DBUS_SESSION_BUS_ADDRESS=unix:path=<eigener Pfad>/no-bus`).
 ### T1 — test_tls: `refused_port()` hält einen abgelehnten Port, und der Refused-Test in error.rs nimmt ihn (R-0341)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/test_tls.rs, apps/desktop/src-tauri/src/error.rs
 Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @519c0a70 2026-10-13T10:06:31+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve
 Änderung:
 - `src/test_tls.rs`: neue Funktion `pub fn refused_port() -> (tokio::net::TcpSocket, u16)`.
   - `tokio::net::TcpSocket::new_v4()` setzt kein `SO_REUSEADDR`. Der Socket wird an `127.0.0.1:0` gebunden und lauscht
@@ -80,7 +80,7 @@ dem niemand lauscht.
 ### T2 — enrollment.rs: der Reset-Test ohne erreichbaren Server nimmt denselben Helfer (R-0341)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs
 Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @8684312c 2026-10-13T10:08:06+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve
 Abhängt von: T1
 Änderung:
 - `a_reset_with_the_server_out_of_reach_remembers_the_leaf_and_deletes_the_identity` (`:1458-1481`, `#[tokio::test]`):
