@@ -549,6 +549,9 @@ def tag_safe(value: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", (value or "").lower()).strip("-")
 
 
+GIT_REDIRECTS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+
+
 def own_state(path: str) -> bool:
     """`path` is the checkout's own .vm, the state the guard below is about."""
     return os.path.realpath(path) == os.path.realpath(os.path.join(ROOT, ".vm"))
@@ -560,8 +563,15 @@ def require_untracked_state() -> None:
     lane file, and a git that cannot say counts as tracked. A state dir elsewhere is
     its caller's to vouch for. lib.sh's vm_lane refuses the same way."""
     try:
+        # Without an inherited GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE: git would read
+        # another index, and tracked paths would pass as untracked.
+        env = {k: v for k, v in os.environ.items() if k not in GIT_REDIRECTS}
         listed = subprocess.run(
-            ["git", "-C", ROOT, "ls-files", "--", ".vm"], capture_output=True, text=True, timeout=60
+            ["git", "-C", ROOT, "ls-files", "--", ".vm"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
         )
         tracked = listed.returncode != 0 or bool(listed.stdout.strip())
     except (OSError, subprocess.SubprocessError):

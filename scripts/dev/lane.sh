@@ -172,7 +172,7 @@ lane_inside() {
 # counts as tracked.
 lane_vm_untracked() {
   local tracked
-  tracked="$(git -C "$1" ls-files -- .vm)" || return 1
+  tracked="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "$1" ls-files -- .vm)" || return 1
   [ -z "$tracked" ]
 }
 
