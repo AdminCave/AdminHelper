@@ -345,10 +345,18 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     a no-op on SQLite, so the row lock it covers is only ever executed where
 #     DATABASE_URL points at a Postgres. Skipping it there would leave the one
 #     test of that lock silently unrun.
-# The last two match on *postgres* rather than on "is set": the tests themselves
-# gate on the URL naming a Postgres (a SQLite URL makes FOR UPDATE a no-op), so a
-# run with such a URL skips honestly — and calling that strict-failed would be a
-# red with nothing behind it.
+#   test_db_session_utc       the session's time zone is a Postgres setting (the
+#     stack's runs with TZ=Europe/Berlin); a skip under a Postgres URL leaves the
+#     zone the naive UTC columns depend on unchecked. Two tests carry the name:
+#     monitoring's skips without a Postgres DATABASE_URL, the server's only without
+#     any. The rule reads run.sh's own DATABASE_URL, so it holds the server's copy
+#     only where that is exported; the server step's fallback to AH_TEST_DB stays
+#     out of its sight, as a skip line does not say which suite it came from.
+# test_alembic_builtin, test_check_engine_concurrency and test_db_session_utc
+# match on *postgres* rather than on "is set": the first two and monitoring's
+# test_db_session_utc gate on the URL naming a Postgres (a SQLite URL makes FOR
+# UPDATE a no-op), so a run with such a URL skips honestly — and calling that
+# strict-failed would be a red with nothing behind it.
 # The host and port test_stream_redis.py's REDIS_URL connects to, taken the way
 # redis.from_url takes them: any scheme, credentials dropped, 6379 without a port.
 redis_reachable() {
@@ -367,6 +375,7 @@ test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must n
     *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
     *test_check_engine_concurrency*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
     *test_alembic_builtin*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_db_session_utc*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
     *) return 1 ;;
   esac
 }
@@ -831,7 +840,7 @@ layer_integration() {
   # database is invisible to every other suite here. Needs the network (ghcr +
   # the GitHub API) and self-skips with 75 without it.
   run_step upgrade-path "upgrade_path (last release -> HEAD)" -- bash scripts/tests/upgrade_path_test.sh
-  # The three tests that skip wherever their Postgres or Redis is missing, run
+  # The tests that skip wherever their Postgres or Redis is missing, run
   # against the stack's own — here a skip is a failure (see stack_pytest.sh).
   # They need the venv the unit layer creates: an integration run on its own
   # would otherwise meet a python without the components' deps. Not for a

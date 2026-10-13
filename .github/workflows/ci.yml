@@ -112,8 +112,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
-      # Only consumed by tests/test_migrations_smoke.py (alembic upgrade head
-      # against a fresh DB); all other monitoring tests stay DB-free.
+      # For the tests that need a real Postgres: test_migrations_smoke and
+      # test_alembic_builtin (the migration chain), test_check_engine_concurrency
+      # (the FOR UPDATE row lock) and test_db_session_utc (the session time zone).
+      # The rest of the monitoring suite runs on SQLite.
       postgres:
         image: postgres:17-alpine
         env:
