@@ -281,6 +281,61 @@ printf 'export AH_TEST_DB="postgresql+psycopg://:%s@localhost/adminhelper_test"\
 : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
 [ $rc -eq 1 ] && grep -q 'password cannot be taken out' <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
   && ok "a password it cannot take out of the URL stops setup, no database program runs" || bad "fail closed: rc=$rc out=$OUT log=$(cat "$FIXTURE_LOG")"
+# Only a postgresql:// URL (postgres:// and postgresql+<driver>:// become one) reaches
+# a database program: the key=value form of libpq and a scheme without // stop setup.
+for pair in "the key=value form|host=localhost user=ah password=$PW_URL dbname=adminhelper_test" \
+            "a scheme without //|postgresql+psycopg:ah:$PW_URL@localhost/adminhelper_test"; do
+  printf 'export AH_TEST_DB="%s"\n' "${pair#*|}" > "$MAIN/.devenv.sh"
+  : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+  [ $rc -eq 1 ] && grep -q 'is no postgresql:// URL' <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
+    && ! grep -qF -e "$PW_RAW" -e "$PW_URL" <<<"$OUT" \
+    && ok "${pair%%|*} stops setup, no database program runs" \
+    || bad "${pair%%|*}: rc=$rc log=$(sed 's/ PGPASSWORD=.*$//' "$FIXTURE_LOG")"
+done
+# pg reads the URL byte by byte, whatever the caller's locale: under GBK the byte
+# after a character like 中 can read as part of it, and the @ behind it with it. A
+# GBK locale, built into the test directory; glibc reads LOCPATH from the
+# environment the process starts with, so setup runs under /usr/bin/env.
+LOC="$WORK/locale"; mkdir -p "$LOC"
+if localedef -i zh_CN -f GBK "$LOC/zh_CN.GBK" >/dev/null 2>&1; then
+  printf 'export AH_TEST_DB="postgresql+psycopg://ah:%s中@localhost/adminhelper_test"\n' "$PW_URL" > "$MAIN/.devenv.sh"
+  for loc in C zh_CN.GBK; do
+    # No database yet, so setup calls createdb as well as psql.
+    : > "$FIXTURE_LOG"; rm -f "$FIXTURE_LOG.db"
+    OUT=$(cd "$MAIN" && /usr/bin/env LOCPATH="$LOC" LC_ALL="$loc" AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+    pgline="$(grep -m1 '^psql ' "$FIXTURE_LOG")"; cdline="$(grep -m1 '^createdb ' "$FIXTURE_LOG")"
+    [ $rc -eq 0 ] && [[ "$pgline" == "psql -X --dbname=postgresql://ah@localhost/adminhelper_test "*" PGPASSWORD=${PW_RAW}中" ]] \
+      && [ "$cdline" = "createdb --maintenance-db=postgresql://ah@localhost/adminhelper_test adminhelper_builder PGPASSWORD=${PW_RAW}中" ] \
+      && ok "under LC_ALL=$loc psql and createdb get the password in PGPASSWORD and the URL without it" \
+      || bad "LC_ALL=$loc: rc=$rc psql=$(sed "s/$PW_URL/<pw>/g; s/$PW_RAW/<pw>/g" <<<"$pgline") createdb=$(sed "s/$PW_URL/<pw>/g; s/$PW_RAW/<pw>/g" <<<"$cdline")"
+  done
+else
+  bad "localedef could not build zh_CN.GBK in $LOC: the locale case is not verified"
+fi
+# What lane.sh refuses, pg refuses too: a user with an @ of its own before the
+# password, a password or another secret in the query in any spelling, and a
+# percent-encoded key. label|AH_TEST_DB|what the message says
+for case_ in "a user with an @ of its own|postgresql://ah@corp:$PW_URL@localhost/adminhelper_test|cannot be taken out" \
+             "a user with an @ and a / in the password|postgresql://ah@corp:pass/$PW_URL@localhost/adminhelper_test|cannot be taken out" \
+             "no user and a / in the password|postgresql+psycopg://:pass/$PW_URL@localhost/adminhelper_test|cannot be taken out" \
+             "a password in the query|postgresql://ah@localhost/adminhelper_test?password=$PW_URL|password in the query" \
+             "a secret key in another spelling|postgresql://ah@localhost/adminhelper_test?SSLPassword=$PW_URL|(sslpassword=)" \
+             "a percent-encoded key|postgresql://ah@localhost/adminhelper_test?pass%77ord=$PW_URL|percent-encoded key"; do
+  label="${case_%%|*}"; rest="${case_#*|}"; form="${rest%|*}"; says="${rest##*|}"
+  printf 'export AH_TEST_DB="%s"\n' "$form" > "$MAIN/.devenv.sh"
+  : > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+  [ $rc -eq 1 ] && grep -qF -- "$says" <<<"$OUT" && ! grep -qE '^(psql|createdb) ' "$FIXTURE_LOG" \
+    && ! grep -qF -e "$PW_RAW" -e "$PW_URL" <<<"$OUT" \
+    && ok "$label stops setup, no database program runs" \
+    || bad "$label: rc=$rc log=$(sed "s/$PW_URL/<pw>/g; s/$PW_RAW/<pw>/g" "$FIXTURE_LOG")"
+done
+# After a split the first @ is gone: an @ further on, behind a port, is no password.
+printf 'export AH_TEST_DB="postgresql+psycopg://ah:%s@localhost:5432/adminhelper_test?application_name=me@x"\n' "$PW_URL" > "$MAIN/.devenv.sh"
+: > "$FIXTURE_LOG"; OUT=$(cd "$MAIN" && AH_BUILDER_DIR="$B3" bash "$BH" setup 2>&1); rc=$?; ALL_OUT+="$OUT"
+pgline="$(grep -m1 '^psql ' "$FIXTURE_LOG")"
+[ $rc -eq 0 ] && [[ "$pgline" == "psql -X --dbname=postgresql://ah@localhost:5432/adminhelper_test?application_name=me@x "*" PGPASSWORD=$PW_RAW" ]] \
+  && ok "an @ in the query behind a port and a password that was taken out still reaches psql" \
+  || bad "@ in the query: rc=$rc psql=$(sed "s/$PW_URL/<pw>/g; s/$PW_RAW/<pw>/g" <<<"$pgline")"
 cp "$WORK/devenv.keep" "$MAIN/.devenv.sh"
 # With an XDG git config of the caller's and no .gitconfig in a fresh builder HOME
 # yet, git config --global would write the caller's file; the identity still goes
