@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket chef-wording: „Aufsicht“ heißt „Chef“ (R-0272) — Task-Ledger
-Status: freigegeben · Branch: harness/chef-wording · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/chef-wording · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket aus R-0272, Triage Kevin 2026-10-10; die Bruecke in CLAUDE.md kuerzt Kevin selbst oder auf sein Wort; Bau nach dem Merge von loop-harness-2; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0272 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Wortlaut in Skills, Doku und einem PR-Text von ledger-loop.sh samt Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -38,8 +38,10 @@ Vorab geprüft:
 - Wortregel: „die Aufsicht“ und „die Aufsichts-Session“ werden zu „der Chef“, in der jeweiligen Form („des Chefs“, „dem
   Chef“, „ohne Chef“). Der Satzbau wird dabei nur so weit angepasst, wie die Grammatik es verlangt.
 
-### T1 — Die Skills sagen „Chef“  [ ]
+### T1 — Die Skills sagen „Chef“  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/feature-plan/SKILL.md, .claude/skills/roadmap/SKILL.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c50e918c 2026-10-13T14:58:17+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Die 14 Stellen der Tabelle in den drei Skills werden nach der Wortregel zu „Chef“.
 - Sonst ändert sich kein Wort; an keiner Regel, keinem Ablauf und keinem Beispiel wird etwas umgebaut.

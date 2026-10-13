@@ -1,12 +1,12 @@
 ---
 name: feature-build
-description: Arbeite ein Task-Ledger aus tasks/ autonom ab (tasks/<slug>.md aus /feature-plan ODER tasks/audit-fixes.md aus einem Fable-Report) — jede kleine Task surgical umsetzen, schnelle Tests, frischer Review, pro Task auf einem Feature-Branch committen, am Ende die schwere VM-Suite fahren und an die Aufsichts-Session übergeben (CLAUDE.md §2). Nutzen nach freigegebenem Design-Gate oder zum Abarbeiten eines Fix-Backlogs. Läuft auf Opus.
+description: Arbeite ein Task-Ledger aus tasks/ autonom ab (tasks/<slug>.md aus /feature-plan ODER tasks/audit-fixes.md aus einem Fable-Report) — jede kleine Task surgical umsetzen, schnelle Tests, frischer Review, pro Task auf einem Feature-Branch committen, am Ende die schwere VM-Suite fahren und an den Chef übergeben (CLAUDE.md §2). Nutzen nach freigegebenem Design-Gate oder zum Abarbeiten eines Fix-Backlogs. Läuft auf Opus.
 ---
 
 # Feature / Backlog autonom bauen
 
 Führt eine Task-Ledger **ohne weitere Rückfragen** aus (die Freigabe am Design-Gate liegt
-vor, CLAUDE.md §2) — bis zur Übergabe an die Aufsichts-Session. Modell: Opus. **Loop-tauglich:** großen
+vor, CLAUDE.md §2) — bis zur Übergabe an den Chef. Modell: Opus. **Loop-tauglich:** großen
 Backlog unter `/loop` starten; für ein normales Feature reicht eine Session.
 
 Eingabe: der Ledger-Pfad unter `tasks/` (z. B. `tasks/<slug>.md`, `tasks/audit-fixes.md`).
@@ -40,14 +40,14 @@ Stufe 7).
   ein Worker gibt nie frei (CLAUDE.md §2), dann melden. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu: **keine** Task bauen. Gibt es
   für den Branch schon einen PR (`gh pr view <branch>`, etwa von Kevin geöffnet), fehlen nur Kopf
   und Roadmap aus Abschluss-Schritt 5 und 6: den Kopf auf `erledigt` (bzw. `blockiert`)
-  committen — der Commit muss noch in den PR, pushen tut die Aufsichts-Session —, die Roadmap wie unter
+  committen — der Commit muss noch in den PR, pushen tut der Chef —, die Roadmap wie unter
   „Roadmap mitziehen" (`pr --pr`, ein Teil-Ledger `aktiv --pr`; eine Zeile, die noch auf `aktiv`
   steht, zuerst auf `bereit`), dann melden; sonst war der Abschluss unterbrochen (etwa von einem
   Compact) und geht ab Schritt 1 weiter — den Kopf setzt schon `task-close.sh`, die Roadmap-Zeile
   vielleicht noch nicht, und Schritt 1 ist wiederholbar. `erledigt` →
   **nicht** bauen; gibt es einen PR und steht die Roadmap-Zeile noch auf `bereit` (beim
   Teil-Ledger: seine Nummer fehlt in der Spalte `PR`), Schritt 6 nachholen, dann melden; gibt es
-  keinen PR, melden: Push und PR stehen aus, das ist der Schritt der Aufsichts-Session. `blockiert` → **nicht**
+  keinen PR, melden: Push und PR stehen aus, das ist der Schritt des Chefs. `blockiert` → **nicht**
   bauen, melden.
 - **Roadmap mitziehen:** Nennt der Ledger-Kopf Roadmap-IDs — im `Spec:` (`Roadmap R-nnnn`,
   `docs/features/<slug>.md (Roadmap R-nnnn)`, beim Bündel `Roadmap R-a, R-b, …`) oder in der
@@ -179,8 +179,8 @@ Stufe 7).
    - `nit`-Punkte blockieren nie: in derselben Runde ohne Re-Review miterledigen oder liegen
      lassen.
    - **Kein neuer Umfang mitten im Bau** außer bei einer Sicherheitslücke: neue Funde
-     außerhalb der Task (eine Umgehung, ein Fehlalarm anderer Herkunft) gehen über die
-     Aufsicht als Roadmap-Kandidaten in die Roadmap, nicht als Task in dieses Ledger.
+     außerhalb der Task (eine Umgehung, ein Fehlalarm anderer Herkunft) gehen über den
+     Chef als Roadmap-Kandidaten in die Roadmap, nicht als Task in dieses Ledger.
    (Review-Granularität = Commit-Granularität. Ein **Kurz-Ledger** (≤ 3 Tasks) trägt im Kopf
    `Review: am Ende` — dann entfällt dieser Schritt pro Task und es gibt genau **einen**
    Gesamt-Review im Abschluss.)
@@ -288,8 +288,8 @@ Stufe 7).
    Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn `[?]`-Punkte offen bleiben; ein
    `chore(ledger)`-Commit) — vor dem Push, sonst kommt er nie in den PR und steht nach dem
    Merge auf `main` für immer auf `bereit`. Dann **übergeben**: Branch, Kopf, Evidenz und den
-   Pfad des PR-Texts an die Aufsichts-Session melden; sie prüft, pusht, öffnet den PR und
-   merged (CLAUDE.md §2). Gibt es keine Aufsichts-Session, **nennt** die Session die Befehle
+   Pfad des PR-Texts an den Chef melden; er prüft, pusht, öffnet den PR und
+   merged (CLAUDE.md §2). Gibt es keinen Chef, **nennt** die Session die Befehle
    und Kevin führt sie aus — sie pusht nie selbst: `git push -u origin <branch>`; den PR-Text
    schreibt
    `bash scripts/dev/review.sh pr-body <ledger> > <Scratchpad>/pr-body.md` (mit `Review: auto`
@@ -297,8 +297,8 @@ Stufe 7).
    Heavy-Zeile, je Task Haken mit Evidenz und Review, `[~]`/`[?]` gesondert; eine Task ohne
    Evidenz heißt „unverifiziert"), das VM-Ergebnis kommt von Hand dazu; dann
    `gh pr create --draft --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`.
-   (Diese Befehle führt nie ein Worker aus; die Aufsicht bzw. Kevin.)
-6. **Mit dem PR** (Aufsichts-Session bzw. Kevin): die Roadmap-Zeile wie unter „Roadmap
+   (Diese Befehle führt nie ein Worker aus; der Chef bzw. Kevin.)
+6. **Mit dem PR** (Chef bzw. Kevin): die Roadmap-Zeile wie unter „Roadmap
    mitziehen" (`pr --pr "#<n>"`, ein Teil-Ledger `aktiv --pr`) — dafür braucht es die PR-Nummer. Schluss-Zusammenfassung im Chat;
    die `[?]`-Punkte klar auflisten — die entscheidet der Mensch.
 
