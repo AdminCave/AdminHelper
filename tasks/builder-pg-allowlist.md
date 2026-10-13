@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # builder-home.sh: pg nimmt nur postgresql://-URLs und liest sie unter C — Task-Ledger
-Status: bereit · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/builder-pg-allowlist · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-13 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 bleibt drin; Delegation Kevin 2026-10-05)
 Freigabe T4: Aufsicht adminhelper-ac, 2026-10-13 (Erweiterung auf Kevins Wort 2026-10-13)
 Spec: Kevin 2026-10-13 (Kurz-Ledger ohne Spec)
@@ -24,7 +24,7 @@ Harness-Pfade; den PR merged Kevin oder die Aufsicht auf sein Wort. Alle Werte i
 ### T1 — pg: nur eine URL, die mit `postgresql://` beginnt, erreicht psql/createdb  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4317d020 2026-10-13T10:52:09+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - `pg`: Nach der Prüfung `:115` und vor dem Aufruf (`:116`) nimmt die Funktion nur noch eine URL an, die mit
   `postgresql://` beginnt. Nach `:107` gilt das auch für `postgres://` und `postgresql+<treiber>://`. Jede andere Form
@@ -55,7 +55,7 @@ lane_db).“ Was nicht die Form hat, die `:107` herstellt, ist keine, die `pg` k
 ### T2 — pg liest die URL byteweise, unabhängig von der Locale des Aufrufers  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @8846e977 2026-10-13T11:06:39+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Abhängt von: T1
 Änderung:
 - `pg` setzt am Anfang `local LC_ALL=C`, wie `lane_db` (`lane.sh:75-78`). Die Muster der Funktion lesen damit Bytes,
@@ -80,7 +80,7 @@ locale, and a multibyte one can read a byte after a character as part of it.“ 
 ### T3 — pg lehnt ab, was lane_db ablehnt: einen Nutzer mit @ vor dem Passwort, ein Geheimnis in der Query  [x]
 Komponente: scripts · Dateien: scripts/dev/builder-home.sh, scripts/tests/builder_home_test.sh, DEVELOPMENT.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @66324a99 2026-10-13T12:15:19+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Abhängt von: T1
 Änderung:
 - Die Prüfung `:115` nimmt die Form von `lane.sh:119`: Der Teil vor dem Passwort darf ein eigenes `@` tragen
@@ -113,7 +113,7 @@ the arguments the same way“.
 ### T4 — lane_db: wo das Muster nichts zerlegt hat, lehnt es auch die Lesart von SQLAlchemy ab  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a3dc8118 2026-10-13T12:32:39+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - `lane_db` (`lane.sh:74-160`) merkt sich, ob das Muster in `:92` die URL zerlegt hat.
 - Hat es nichts zerlegt, lehnt `lane_db` nach der Prüfung `:119-122` auch eine URL ab, in der SQLAlchemy ein Passwort
