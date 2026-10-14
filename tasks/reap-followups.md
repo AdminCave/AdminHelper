@@ -46,8 +46,10 @@ Semantik: vm.py `verb_destroy`, Kommentar: „Everything is checked BEFORE the f
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — Der Fake in vm_wrappers_test lehnt nur ab, was vm.py ablehnt  [ ]
+### T2 — Der Fake in vm_wrappers_test lehnt nur ab, was vm.py ablehnt  [x]
 Komponente: scripts · Dateien: scripts/tests/vm_wrappers_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1ebafd84 2026-10-14T05:43:52+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `FAKE_ROLE_OF` lehnt einen Aufruf nur ab, wenn er ein `--role` trägt und das nicht passt. Ohne `--role` nimmt der
   Fake die VM an, wie vm.py.
