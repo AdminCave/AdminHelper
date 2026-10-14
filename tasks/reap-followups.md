@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-followups: Nachzügler aus reap-role — ein Test mehr, ein treuer Fake, AUTONOMOUS.md (R-0349) — Task-Ledger
-Status: geplant · Branch: harness/reap-followups · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/reap-followups · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 nennt auch --expect-name; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0349 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API), der Fake in vm_wrappers_test, ein Satz in AUTONOMOUS.md; keine echte VM, kein echtes destroy.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck/ruff sauber, Doku im selben Commit, SPDX bei neuen Dateien).
