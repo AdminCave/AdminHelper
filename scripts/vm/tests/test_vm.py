@@ -3218,3 +3218,40 @@ def test_list_still_reports_a_box_no_worktree_claims(
     with pytest.raises(vm.Infra) as caught:
         verb("list", cfg, api)
     assert "leaked on lane main: 3000" in str(caught.value)
+
+
+# ── --as-lane before the verb ────────────────────────────────────────────────
+def lane_of_a_main_run(monkeypatch, *argv):
+    """vm.main with `list` swapped for a verb that prints the lane it runs on; no
+    configuration and no API are needed for that."""
+    monkeypatch.setattr(vm.Config, "load", staticmethod(lambda: None))
+    monkeypatch.setattr(vm, "Api", lambda cfg: None)
+    monkeypatch.setitem(vm.VERB_TABLE, "list", lambda cfg, api, args: print(vm.current_lane()) or 0)
+    return vm.main(list(argv))
+
+
+def test_as_lane_lets_a_worktree_without_a_lane_run_on_main(tmp_path, monkeypatch, capsys):
+    linked_checkout(tmp_path, monkeypatch)
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "--as-lane", "main", "list") == 0
+    assert capsys.readouterr().out.strip() == "main"
+
+
+def test_as_lane_stands_for_ah_lane(tmp_path, monkeypatch, capsys):
+    linked_checkout(tmp_path, monkeypatch)
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "--as-lane", "Pilot", "list") == 0
+    assert capsys.readouterr().out.strip() == "pilot"
+
+
+def test_without_as_lane_the_worktree_is_still_refused(tmp_path, monkeypatch, capsys):
+    linked_checkout(tmp_path, monkeypatch)
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "list") == 2
+    assert "this worktree has no .vm/lane" in capsys.readouterr().err
+
+
+def test_an_as_lane_with_nothing_usable_is_a_usage_error(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "--as-lane", "@@", "list") == 2
+    assert "--as-lane '@@' has nothing usable in it" in capsys.readouterr().err

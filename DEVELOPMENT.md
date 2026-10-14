@@ -1804,7 +1804,10 @@ der Lane des Hauptcheckouts, samt dessen Reap und Sweeps. Ein Worker-Lauf aus so
 Multibox, `warm.sh`, `iter.sh`, `reap.sh` und auch `vm.py list`, braucht deshalb `AH_LANE=main`,
 wenn er auf main laufen soll, wie bei go-toolchain-126. `heavy.sh` fragt die Lane im Pre-flight
 zuerst und endet ohne sie UNVERIFIED mit genau diesem Grund („this worktree has no .vm/lane —
-set AH_LANE=…“), bevor es den Hypervisor fragt.
+set AH_LANE=…“), bevor es den Hypervisor fragt. Fuer `vm.py` selbst nennt `--as-lane <lane>` vor
+dem Verb die Lane (`python3 scripts/vm/vm.py --as-lane main list`); das trifft die Allow-Regel
+fuer `vm.py`, ein vorangestelltes `AH_LANE=…` trifft keine. Der Loop (Stufe 7b) braucht das
+nicht: er baut in Worktrees aus `lane.sh new`, mit `.vm/lane`.
 `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
 `scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
 darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Den Zustand im eigenen

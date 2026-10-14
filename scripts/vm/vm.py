@@ -1996,6 +1996,11 @@ def _stub(name):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vm.py", description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--as-lane",
+        metavar="<lane>",
+        help="act as that lane for this call, as AH_LANE=<lane> would (before the verb)",
+    )
     sub = parser.add_subparsers(dest="verb", metavar="<verb>")
 
     doctor = sub.add_parser("doctor", help="check config, rights, templates and capacity")
@@ -2131,6 +2136,18 @@ def split_command(argv: list) -> tuple:
     return argv[:cut], argv[cut + 1 :]
 
 
+def apply_as_lane(args) -> None:
+    """--as-lane <lane> before the verb stands for AH_LANE=<lane> for this call. It is a
+    form an allow rule for `python3 scripts/vm/vm.py` takes, and an AH_LANE=… prefix is
+    not: a worktree made by hand names its lane this way."""
+    if args.as_lane is None:
+        return
+    lane = tag_safe(args.as_lane)
+    if not lane:
+        raise Usage("--as-lane %r has nothing usable in it" % args.as_lane)
+    os.environ["AH_LANE"] = lane
+
+
 def main(argv=None) -> int:
     parser = build_parser()
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -2144,6 +2161,7 @@ def main(argv=None) -> int:
         parser.print_help()
         return 2
     try:
+        apply_as_lane(args)
         cfg = Config.load()
         api = Api(cfg)
         interrupted = False

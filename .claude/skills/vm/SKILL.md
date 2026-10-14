@@ -76,6 +76,10 @@ Die Wrapper reichen den Code unverändert durch.
   Schleife.
 - **Parallele Lanes teilen nichts.** `lane.sh new <slug>` schreibt `.vm/lane`; `reap` und
   `destroy` arbeiten auf der eigenen Lane, `--all` erweitert nur den Ablauf-Sweep.
+- **Ein Worktree ohne `.vm/lane`** (von Hand angelegt) wird abgewiesen, bis er seine Lane nennt:
+  `python3 scripts/vm/vm.py --as-lane main <verb>` (vor dem Verb; trifft die Allow-Regel, ein
+  vorangestelltes `AH_LANE=main` nicht). `warm.sh`, `iter.sh` und `heavy.sh` nehmen `AH_LANE=main`,
+  `reap.sh` auch `--lane main`.
 - **Suiten fährt `/test`, nicht dieser Skill.** Hier steht, wie man an eine Box kommt.
 
 **Hintergrundprozesse auf der Box:** `vm.py run` hat kein pty. Ein Daemon, der im Box-Skript mit `cmd … &` startet und dabei stdout/stderr der ssh-Sitzung erbt (auch über `sudo sh -c`), hält den Kanal offen — der Lauf endet erst am Timeout. Daemons mit `setsid … </dev/null >log 2>&1 &` starten oder systemd übergeben; `scripts/tests/box_scripts_guard_test.sh` prüft das.
