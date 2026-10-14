@@ -151,6 +151,41 @@ mkdir -p "$CU/scripts/vm" "$CU/.vm"; cp "$REPO_ROOT/scripts/vm/lib.sh" "$CU/scri
 # shellcheck source=/dev/null
 out=$( (unset AH_LANE AH_VM_STATE_DIR; . "$CU/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
 [ "$rc" = 0 ] && [ "$out" = "main" ] && ok "an own untracked .vm without a lane file is main" || bad "own plain: rc=$rc out=$out"
+# A worktree that `git worktree add` made, its own .vm and no lane: refused, and
+# vm.py refuses alike. AH_LANE=main or a lane file let it run; the main checkout
+# stays on main.
+CM="$WORK/checkout-main"; CW="$WORK/checkout-wt"
+mkdir -p "$CM/scripts/vm"
+cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/vm.py" "$REPO_ROOT/scripts/vm/profiles.json" "$CM/scripts/vm/"
+git -C "$CM" init -q && git -C "$CM" add scripts \
+  && git -C "$CM" -c user.email=t@example.com -c user.name=t -c commit.gpgsign=false commit -qm fixture
+git -C "$CM" worktree add -q --detach "$CW"
+mkdir -p "$CM/.vm" "$CW/.vm"
+# shellcheck source=/dev/null
+out=$( (unset AH_LANE AH_VM_STATE_DIR; . "$CW/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 2 ] && grep -q 'this worktree has no .vm/lane — set AH_LANE=<lane>' <<<"$out" \
+  && ok "a linked worktree without a lane: vm_lane refuses with exit 2" || bad "linked, no lane: rc=$rc out=$out"
+out=$( (cd "$CW" && unset AH_LANE AH_VM_STATE_DIR && python3 -c '
+import sys
+sys.path.insert(0, "scripts/vm")
+import vm
+try:
+    print(vm.current_lane())
+except vm.Usage as exc:
+    print("refused:", exc)
+') 2>&1)
+grep -q '^refused: this worktree has no .vm/lane' <<<"$out" \
+  && ok "... and vm.py refuses the same worktree" || bad "vm.py, linked, no lane: $out"
+# shellcheck source=/dev/null
+out=$( (unset AH_VM_STATE_DIR; export AH_LANE=main; . "$CW/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "main" ] && ok "with AH_LANE=main the linked worktree runs on main" || bad "linked, AH_LANE=main: rc=$rc out=$out"
+echo "lane-c" > "$CW/.vm/lane"
+# shellcheck source=/dev/null
+out=$( (unset AH_LANE AH_VM_STATE_DIR; . "$CW/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "lane-c" ] && ok "with a lane file the linked worktree runs on it" || bad "linked, lane file: rc=$rc out=$out"
+# shellcheck source=/dev/null
+out=$( (unset AH_LANE AH_VM_STATE_DIR; . "$CM/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "main" ] && ok "the main checkout without a lane stays on main" || bad "main checkout: rc=$rc out=$out"
 # A tree git cannot read, its state in a directory of its own (a box synced from a
 # worktree): the lane is read and git is not asked.
 CB="$WORK/checkout-box"

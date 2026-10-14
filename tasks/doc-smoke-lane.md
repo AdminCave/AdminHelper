@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket doc-smoke-lane: doc-smoke --env ohne Lücken, und ein angehängter Worktree ohne Lane läuft nicht still auf main (R-0215, R-0211) — Task-Ledger
-Status: aktiv · Branch: harness/doc-smoke-lane · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/doc-smoke-lane · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-07; F1 Variante A auf Kevins Wort 2026-10-14: nur angehaengte Worktrees ohne Lane werden abgewiesen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0215, R-0211 (Kurz-Ledger ohne Spec)
 Heavy: none — doc-smoke.py mit doc_smoke_test (Fixture-Repos), vm.py mit test_vm.py (Fixture-Checkouts, git worktree in tmp), lib.sh mit lib_vm_test; keine echte VM.
@@ -106,8 +106,10 @@ Semantik: DEVELOPMENT.md :1792–1796 „… sonst ist sie `main` — der Hauptc
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Lane-Absatz)
 
-### T3 — lib.sh vm_lane folgt derselben Regel, und lib_vm_test hält beide Seiten gleich (R-0211, Ansatz A)  [ ]
-Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/tests/lib_vm_test.sh
+### T3 — lib.sh vm_lane folgt derselben Regel, und lib_vm_test hält beide Seiten gleich (R-0211, Ansatz A)  [x]
+Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/tests/lib_vm_test.sh, scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bd6aedfa 2026-10-14T07:27:14+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `vm_lane` (:82–95) wie T2: eigener Zustand, keine Lane aus `AH_LANE` oder `.vm/lane`, angehängter Worktree → Meldung
   auf stderr, `return 2`. Die Aufrufer (warm.sh :28, reap.sh :36, iter.sh :39) brechen schon heute mit Exit 2 ab.
@@ -116,6 +118,14 @@ Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/tests/lib_vm_test.sh
   - mit `AH_LANE=main` → `main`;
   - der Haupt-Checkout → `main`.
   - Dazu derselbe Fall gegen vm.py (wie der bestehende Abgleich :59–72): beide Seiten weisen ab.
+- Nachtrag (Chef, 2026-10-14, nach der Korrektur am Gate): heavy.sh stoppte in so einem Worktree nicht am
+  `doctor` (das liest die Lane nicht), sondern an `vm_py list --json 2>/dev/null` mit „vm.py list unavailable“, ohne
+  den Grund. Deshalb:
+  - Der preflight von heavy.sh fragt `vm_lane` zuerst, vor dem Hypervisor. Bei einer Ablehnung setzt er `set_infra` mit
+    deren Meldung, Exit 74.
+  - Fall in heavy_test: heavy.sh und lib.sh in einem angehängten Fixture-Worktree ohne Lane → UNVERIFIED mit dem Grund,
+    kein Aufruf von vm.py. Mit `AH_LANE=main` läuft der preflight weiter bis `doctor`.
+  - DEVELOPMENT.md (Lane-Absatz): ein Satz zu diesem Ende.
 Rot vorher: Auf main gibt `vm_lane` im angehängten Worktree ohne Lane `main` aus.
 Beweis: origin/main@26125c5a, lib.sh :94 `printf '%s\n' "${lane:-main}"`.
 Dedup-Key: ref:scripts:vm/lib.sh:vm_lane-default-main

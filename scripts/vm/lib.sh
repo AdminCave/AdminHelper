@@ -79,9 +79,23 @@ vm_py() {
 # this before they touch warm.env. A state dir elsewhere is its caller's to vouch
 # for (lane.sh done, the tests). vm.py's current_lane() refuses the same way, with
 # the same exit code.
+# vm_linked_worktree -> 0 when VM_ROOT is a worktree that `git worktree add` made: its
+# git dir is not the common one. A git that cannot say counts as one, the stricter
+# answer; without an inherited GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, as below.
+vm_linked_worktree() {
+  local dirs git_dir common
+  dirs="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "$VM_ROOT" rev-parse --git-dir --git-common-dir 2>/dev/null)" || return 0
+  git_dir="$(sed -n 1p <<<"$dirs")"; common="$(sed -n 2p <<<"$dirs")"
+  [ -n "$git_dir" ] && [ -n "$common" ] || return 0
+  case "$git_dir" in /*) ;; *) git_dir="$VM_ROOT/$git_dir" ;; esac
+  case "$common" in /*) ;; *) common="$VM_ROOT/$common" ;; esac
+  [ "$(realpath -m -- "$git_dir")" != "$(realpath -m -- "$common")" ]
+}
+
 vm_lane() {
-  local lane="${AH_LANE:-}" tracked
-  if [ "$(realpath -m -- "$AH_VM_STATE_DIR")" = "$(realpath -m -- "$VM_ROOT/.vm")" ] \
+  local lane="${AH_LANE:-}" tracked own=0
+  if [ "$(realpath -m -- "$AH_VM_STATE_DIR")" = "$(realpath -m -- "$VM_ROOT/.vm")" ]; then own=1; fi
+  if [ "$own" = 1 ] \
     && { ! tracked="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "$VM_ROOT" ls-files -- .vm 2>/dev/null)" \
          || [ -n "$tracked" ]; }; then
     echo "vm_lib: this checkout tracks paths under .vm — state there is not read" >&2
@@ -91,6 +105,13 @@ vm_lane() {
   lane="$(printf '%s' "$lane" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
   while [ "${lane#-}" != "$lane" ]; do lane="${lane#-}"; done
   while [ "${lane%-}" != "$lane" ]; do lane="${lane%-}"; done
+  # A worktree made by hand, its own .vm and no lane at all: lane.sh's lanes write
+  # .vm/lane, and this one would otherwise run on the main checkout's lane without
+  # saying so, its reap and sweeps included. vm.py's current_lane refuses alike.
+  if [ -z "$lane" ] && [ "$own" = 1 ] && vm_linked_worktree; then
+    echo "vm_lib: this worktree has no .vm/lane — set AH_LANE=<lane>, or AH_LANE=main to run on the main checkout's lane on purpose" >&2
+    return 2
+  fi
   printf '%s\n' "${lane:-main}"
 }
 
