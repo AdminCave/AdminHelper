@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 4: Scissors im commit-msg-Hook, Kommentar-Grenzen und Ledger-Pfad im diff-scan — Task-Ledger
-Status: geplant · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-07; R-0213 Weg (a2), Restrisiko auf Kevins Wort 2026-10-14; N2 als Code-Fix; T3 mit task-close.sh; --editor; K1 und K2 eigene Zeilen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0213, R-0216, R-0217 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
