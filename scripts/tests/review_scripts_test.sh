@@ -1820,6 +1820,35 @@ def test_other():
 r diff-scan --staged --task tasks/chg.md T1
 [ $rc -eq 3 ] && grep -q "0 assertion(s) added" <<<"$OUT" \
   && ok "nor one in the comment behind code on its line" || bad "trailing comment as added: rc=$rc out=$OUT"
+# No string is parsed (R-0216, N1): a " #" in one starts a comment as well.
+tighten 'def test_shape():
+    out = build()
+    sep = " #"; assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added in its new body, 1 removed" <<<"$OUT" \
+  && ok "a ' #' in a string before the assertion: it does not count, the stricter direction" || bad "hash in a string: rc=$rc out=$OUT"
+# The filters take their prefix with the tab after it (R-0216, N3): a test file named
+# CHANGED_… or DECLARED_… in the root is a finding like any other, with --task or without.
+base CHANGED_test.py 'def test_c():
+    assert c() == 1
+'
+base DECLARED_test.py 'def test_d():
+    assert d() == 1
+'
+for chg_task in "" T1; do
+  printf 'def test_c():\n    c()\n' > "$FIX/CHANGED_test.py"; printf 'def test_d():\n    d()\n' > "$FIX/DECLARED_test.py"
+  stage CHANGED_test.py DECLARED_test.py
+  if [ -n "$chg_task" ]; then r diff-scan --staged --task tasks/chg.md "$chg_task"; else r diff-scan --staged; fi
+  [ $rc -eq 3 ] && grep -q "^CHANGED_test.py:2  removed assertion" <<<"$OUT" && grep -q "^DECLARED_test.py:2  removed assertion" <<<"$OUT" \
+    && ok "CHANGED_test.py and DECLARED_test.py in the root lose an assertion: two findings${chg_task:+ (--task)}" || bad "root CHANGED_/DECLARED_ ${chg_task}: rc=$rc out=$OUT"
+done
+reset_index
+git -C "$FIX" rm -q -- CHANGED_test.py DECLARED_test.py && git -C "$FIX" commit -qm "drop the root tests" >/dev/null 2>&1
 # Only tasks/*.md without README and template is a ledger: a task section written
 # into anything else grants nothing. The way the second review showed: a section
 # with a declaration in the CHANGELOG or in a spec, committed, and an assertion
@@ -1968,6 +1997,13 @@ r diff-scan --staged --task tasks/chg.md T3
 r diff-scan --staged --task tasks/chg.md T2
 [ $rc -eq 3 ] && [ "$(grep -c 'removed assertion' <<<"$OUT")" = 3 ] \
   && ok "and undeclared, all three are findings" || bad "three languages undeclared: rc=$rc out=$OUT"
+# A /* */ behind code is a comment too (R-0216, N2): the assertion in it brings none back.
+reset_index
+printf 'it("keeps shape", () => {\n  const s = shape(); /* expect(s).toStrictEqual({ a: 1 }); */\n});\n' > "$FIX/apps/web/src/c.test.ts"
+stage apps/web/src/c.test.ts
+r diff-scan --staged --task tasks/chg.md T3
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added in its new body, 1 removed" <<<"$OUT" \
+  && ok "an assertion in a /* */ comment behind code is no added assertion" || bad "block comment as added: rc=$rc out=$OUT"
 # A helper in a test file (T2): the anlass of R-0206 sat in one, called by
 # several tests. Modelled on TestUserResponseShape._expected.
 base apps/server/tests/test_h.py 'class TestShape:

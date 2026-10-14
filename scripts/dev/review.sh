@@ -329,6 +329,9 @@ case "$VERB" in
       function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
       # Where a comment starts, or 0. Only a marker at the start of the line or
       # after whitespace counts, so the // in an https:// URL is not a comment.
+      # No string is parsed: a " #" or " //" inside one counts as well, so an
+      # assertion behind it on its line is not counted as added (the stricter
+      # direction, R-0216).
       function comment_at(s,   c, c2) {
         c = 0
         if (match(s, /(^|[ \t])#/))    c = RSTART + RLENGTH - 1
@@ -380,6 +383,9 @@ case "$VERB" in
                         # change has to bring back, counted below.
                         acmt = comment_at(line)
                         acode = acmt ? substr(line, 1, acmt - 1) : line
+                        # A /* */ behind code is a comment too (R-0216), but only here:
+                        # in comment_at it would hide a skip pattern behind it as well.
+                        if (match(acode, /(^|[ \t])\/\*/)) acode = substr(acode, 1, RSTART + RLENGTH - 3)
                         if (is_assert(acode, file) && line !~ /^[ \t]*(\/\*|\*)/)
                           printf "AA\t%s\t%d\t%s\n", file, newno, trim(line)
                         if (line !~ /review: ok/) {

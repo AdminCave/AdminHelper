@@ -172,7 +172,9 @@ Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte 
 5. **Die Assertion gehört zu genau diesem Test:** Ihre alte Zeile liegt in seiner alten Spanne.
 6. **Geändert, nicht weggenommen:** Die neue Spanne trägt mindestens so viele hinzugefügte Assertions,
    wie die alte verliert (n ≥ r; gezählt werden Zeilen mit einer Assertion). Eine Assertion, die nur in
-   einem Kommentar steht, am Zeilenanfang oder hinter Code, zählt nicht.
+   einem Kommentar steht (`#`, `//` oder `/* */`), am Zeilenanfang oder hinter Code, zählt nicht. Ein
+   Kommentar beginnt am Zeilenanfang oder nach Leerraum, auch in einem String: Steht ` #` oder ` //` in
+   einem String vor der Assertion, zählt sie nicht, die strengere Richtung.
 
 **Ein Helfer** in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.py|go|sh`,
 `*.test.*`, `*.spec.*`) darf ebenso angekündigt werden, denn oft steht die Assertion dort und nicht

@@ -70,8 +70,10 @@ the message. Comment lines are read: without an editor (-m, -F) git keeps them i
 „bei `commit -v` zaehlt alles unter der Schnittlinie nicht.“ Alle drei meinen den Diff von `-v`; der Code schneidet
 immer.
 
-### T2 — diff-scan: Kommentar-Grenzen der hinzugefügten Assertions, dokumentiert und an `/*` geschnitten, und die Tab-Bindung der Filter unter Test (R-0216)  [ ]
+### T2 — diff-scan: Kommentar-Grenzen der hinzugefügten Assertions, dokumentiert und an `/*` geschnitten, und die Tab-Bindung der Filter unter Test (R-0216)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @13db4ce1 2026-10-14T06:21:50+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - **(N1)** `comment_at` (`review.sh:326-333`) nimmt ein ` #` bzw. ` //` auch in einem String als Kommentarbeginn. Eine
   Assertion dahinter auf derselben Zeile zählt nicht als hinzugefügt, die strengere Richtung. Ein Satz im Kommentar
