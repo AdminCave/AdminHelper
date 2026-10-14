@@ -414,7 +414,8 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           Guard verrottet. Die zweite Pr&uuml;fung <code>--env</code> meldet einen Namen in Gro&szlig;buchstaben,
           den au&szlig;erhalb der Doku nichts im Repo mehr tr&auml;gt: weder die drei <code>config.py</code> noch
           <code>.env.example</code> noch eine andere getrackte Datei au&szlig;erhalb von <code>docs/</code>,
-          <code>CHANGELOG.md</code> und <code>tasks/</code> (R-0044). Eine Agent-Einstellung, ein CI-Secret, ein
+          <code>CHANGELOG.md</code>, <code>tasks/</code> und Markdown-Dateien (R-0044, R-0215). Eine
+          Agent-Einstellung, ein CI-Secret, ein
           Zustand oder eine HTTP-Methode ist damit kein Fund; ein Name, den nur noch ein Test oder ein Kommentar
           tr&auml;gt, f&auml;llt aber auch nicht mehr auf. Seit R-0044 ist <code>--env</code> Gate wie die
           Pfad-Pr&uuml;fung: der Job <code>ops-scripts</code> f&auml;hrt <code>doc-smoke.py --paths --env --strict</code>

@@ -376,7 +376,7 @@ jedes `<code>`-Fragment in `docs/**/*.html`, das mit `apps/`, `scripts/`, `docs/
 `.github/` oder `.claude/` beginnt, muss eine existierende Datei benennen (`--paths`), und
 ein `<code>`, das ganz aus einem Namen in Grossbuchstaben besteht, muss ausserhalb der Doku
 im Repo vorkommen (`--env`: die drei `config.py`, `.env.example` oder eine getrackte Datei
-ausserhalb von `docs/`, `CHANGELOG.md` und `tasks/`, R-0044).
+ausserhalb von `docs/`, `CHANGELOG.md`, `tasks/` und Markdown, R-0044, R-0215).
 
 ```bash
 python3 scripts/dev/doc-smoke.py                          # nur Pfade, nur berichten (Exit 0)
@@ -1796,7 +1796,16 @@ noch als laufendes Bake (`role-bake`) — eine geleakte VM ist ein Fehler, kein 
 und `reap` (ohne `--all`) wie der Auto-Reap fassen nur die eigene an. Sie kommt aus `--lane`,
 sonst aus `AH_LANE`, sonst aus `.vm/lane` — die Datei ist heute von Hand zu setzen, meist ist
 `AH_LANE` im Worktree einfacher; ab 2b legt `lane.sh new <slug>` sie an —, sonst ist sie
-`main` — der Hauptcheckout. `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
+`main` — der Hauptcheckout. Ein von Hand angelegter Worktree (`git worktree add`, etwa die
+`harness/`-Worktrees unter `~/.cache`) mit eigenem `.vm`, ohne `.vm/lane` und ohne `AH_LANE`
+wird abgewiesen, sobald ein Verb die Lane braucht (Exit 2, „this worktree has no .vm/lane“):
+`clone` nimmt dafuer auch `--lane`, bei `list` filtert `--lane` nur. Er liefe sonst still auf
+der Lane des Hauptcheckouts, samt dessen Reap und Sweeps. Ein Worker-Lauf aus so einem Worktree,
+Multibox, `warm.sh`, `iter.sh`, `reap.sh` und auch `vm.py list`, braucht deshalb `AH_LANE=main`,
+wenn er auf main laufen soll, wie bei go-toolchain-126. `heavy.sh` fragt die Lane im Pre-flight
+zuerst und endet ohne sie UNVERIFIED mit genau diesem Grund („this worktree has no .vm/lane —
+set AH_LANE=…“), bevor es den Hypervisor fragt.
+`vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
 `scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
 darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Den Zustand im eigenen
 `.vm` (Lane-Datei, `warm.env`) lesen `vm.py` und `lib.sh` (und mit ihnen `reap.sh`, `warm.sh`,

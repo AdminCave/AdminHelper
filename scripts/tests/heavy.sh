@@ -159,6 +159,14 @@ for vm in data.get("vms", []):
 
 preflight() {
   echo "== pre-flight =="
+  # The lane first, before the hypervisor is asked anything: in a worktree that
+  # names none, every vm.py verb that reads it refuses, and `list` below would only
+  # answer "unavailable" with the reason dropped.
+  local lane_err
+  if ! lane_err="$(vm_lane 2>&1 >/dev/null)"; then
+    set_infra "${lane_err#vm_lib: }"
+    return 74
+  fi
   vm_load_env || { set_infra "vm.py env not loaded (~/.config/adminhelper/pve.env, .claude/settings.local.json)"; return 74; }
   # --roles: doctor's capacity check needs to know what the run is about to ask
   # for, or it reports "fits" against a single probe box. `all` warms one desktop

@@ -945,6 +945,30 @@ artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a failed clone is infra, in the words vm.py really uses" || bad "clone failed -> rc=$rc"
 
+# ── 5a2: a worktree without a lane stops in the pre-flight, with the reason ──
+# heavy.sh and lib.sh in a worktree that `git worktree add` made, its own .vm and no
+# lane: UNVERIFIED with lib.sh's reason, before vm.py is asked anything. Told
+# AH_LANE=main, the pre-flight goes on to doctor.
+LM="$WORK/lane-main"; LW="$WORK/lane-wt"
+mkdir -p "$LM/scripts/tests" "$LM/scripts/vm"
+cp "$HEAVY" "$LM/scripts/tests/heavy.sh"; cp "$HERE/../vm/lib.sh" "$LM/scripts/vm/lib.sh"
+git -C "$LM" init -q && git -C "$LM" add scripts \
+  && git -C "$LM" -c user.email=t@example.com -c user.name=t -c commit.gpgsign=false commit -qm fixture
+git -C "$LM" worktree add -q --detach "$LW"
+mkdir -p "$LW/.vm"
+mk_case
+out=$(env -u AH_VM_STATE_DIR -u AH_LANE bash "$LW/scripts/tests/heavy.sh" all 2>&1); rc=$?
+h="$(report_of | head -1)"
+[ "$rc" = 74 ] && grep -qF 'UNVERIFIED (this worktree has no .vm/lane — set AH_LANE=<lane>, or AH_LANE=main' <<<"$h" \
+  && ! grep -q '^doctor' "$SHIM_STATE/vmpy.args" 2>/dev/null \
+  && ok "a worktree without a lane: UNVERIFIED with the reason, vm.py not asked" \
+  || bad "no lane: rc=$rc head=$h vm.py=$(tr '\n' ' ' < "$SHIM_STATE/vmpy.args" 2>/dev/null)"
+mk_case
+out=$(env -u AH_VM_STATE_DIR AH_LANE=main bash "$LW/scripts/tests/heavy.sh" all 2>&1); rc=$?
+h="$(report_of | head -1)"
+grep -q '^doctor' "$SHIM_STATE/vmpy.args" 2>/dev/null && ! grep -q 'no .vm/lane' <<<"$h" \
+  && ok "with AH_LANE=main the pre-flight goes on to doctor" || bad "AH_LANE=main: rc=$rc head=$h"
+
 # ── 5b2: doctor is asked for the roles the mode will actually clone ──────────
 # `all` warms one desktop box; the capstone clones seven. Asking for `probe`
 # would let a run start that the hypervisor cannot carry.
