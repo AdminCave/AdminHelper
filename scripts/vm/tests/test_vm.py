@@ -3163,3 +3163,98 @@ def test_the_main_checkout_without_a_lane_stays_on_main(tmp_path, monkeypatch):
 def test_a_linked_worktree_with_its_state_elsewhere_stays_on_main(tmp_path, monkeypatch):
     linked_checkout(tmp_path, monkeypatch, elsewhere=True)
     assert vm.current_lane(environ={}) == "main"
+
+
+# ── list: the warm slots of every worktree of the repository ─────────────────
+def two_checkouts_on_main(tmp_path, monkeypatch, http, warm_in, run_from):
+    """The main checkout and a linked worktree, a warm slot `desktop=3000` in one
+    of them, list run from the other on lane main."""
+    for name in vm.GIT_REDIRECTS:
+        monkeypatch.delenv(name, raising=False)
+    top, wt = tmp_path / "main", tmp_path / "wt"
+    top.mkdir()
+    git = [
+        "git",
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "user.name=t",
+        "-c",
+        "commit.gpgsign=false",
+    ]
+    subprocess.run(git + ["init", "-q", str(top)], check=True)
+    subprocess.run(git + ["-C", str(top), "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+    subprocess.run(git + ["-C", str(top), "worktree", "add", "-q", "--detach", str(wt)], check=True)
+    for root in (top, wt):
+        (root / ".vm").mkdir()
+    if warm_in is not None:
+        (tmp_path / warm_in / ".vm" / "warm.env").write_text("desktop=3000\nserver_sid=4000\n")
+    root = tmp_path / run_from
+    monkeypatch.setattr(vm, "ROOT", str(root))
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(root / ".vm"))
+    monkeypatch.setenv("AH_LANE", "main")
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+
+
+def test_list_from_a_worktree_knows_the_main_checkouts_warm_slot(
+    tmp_path, monkeypatch, cfg, api, http, clock, capsys
+):
+    two_checkouts_on_main(tmp_path, monkeypatch, http, warm_in="main", run_from="wt")
+    assert verb("list", cfg, api) == 0
+
+
+def test_list_from_the_main_checkout_knows_a_worktrees_warm_slot(
+    tmp_path, monkeypatch, cfg, api, http, clock, capsys
+):
+    two_checkouts_on_main(tmp_path, monkeypatch, http, warm_in="wt", run_from="main")
+    assert verb("list", cfg, api) == 0
+
+
+def test_list_still_reports_a_box_no_worktree_claims(
+    tmp_path, monkeypatch, cfg, api, http, clock, capsys
+):
+    two_checkouts_on_main(tmp_path, monkeypatch, http, warm_in=None, run_from="wt")
+    with pytest.raises(vm.Infra) as caught:
+        verb("list", cfg, api)
+    assert "leaked on lane main: 3000" in str(caught.value)
+
+
+# ── --as-lane before the verb ────────────────────────────────────────────────
+def lane_of_a_main_run(monkeypatch, *argv):
+    """vm.main with `list` swapped for a verb that prints the lane it runs on; no
+    configuration and no API are needed for that."""
+    monkeypatch.setattr(vm.Config, "load", staticmethod(lambda: None))
+    monkeypatch.setattr(vm, "Api", lambda cfg: None)
+    monkeypatch.setitem(vm.VERB_TABLE, "list", lambda cfg, api, args: print(vm.current_lane()) or 0)
+    # --as-lane writes os.environ itself, and a delenv of an unset name records no undo:
+    # without this the lane outlives the test (current_lane reads "" as unset).
+    monkeypatch.setenv("AH_LANE", os.environ.get("AH_LANE", ""))
+    return vm.main(list(argv))
+
+
+def test_as_lane_lets_a_worktree_without_a_lane_run_on_main(tmp_path, monkeypatch, capsys):
+    linked_checkout(tmp_path, monkeypatch)
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "--as-lane", "main", "list") == 0
+    assert capsys.readouterr().out.strip() == "main"
+
+
+def test_as_lane_stands_for_ah_lane(tmp_path, monkeypatch, capsys):
+    linked_checkout(tmp_path, monkeypatch)
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "--as-lane", "Pilot", "list") == 0
+    assert capsys.readouterr().out.strip() == "pilot"
+
+
+def test_without_as_lane_the_worktree_is_still_refused(tmp_path, monkeypatch, capsys):
+    linked_checkout(tmp_path, monkeypatch)
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "list") == 2
+    assert "this worktree has no .vm/lane" in capsys.readouterr().err
+
+
+def test_an_as_lane_with_nothing_usable_is_a_usage_error(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("AH_LANE", raising=False)
+    assert lane_of_a_main_run(monkeypatch, "--as-lane", "@@", "list") == 2
+    assert "--as-lane '@@' has nothing usable in it" in capsys.readouterr().err
