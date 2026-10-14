@@ -170,7 +170,9 @@ Mechanik dahinter:
   nicht über eine lokale Ableitung, die zwei Seiten verschieden raten können. (`destroy`
   filtert über `--lane/--scenario/--role`; eine ausdrücklich genannte VMID wird zerstört,
   mit einem Filter daneben nur, wenn sie zu ihm passt — `reap.sh` nennt die VMIDs aus der
-  warm.env mit `--lane` der eigenen Lane, und `vm.py` lehnt eine VMID einer anderen Lane ab.) Klone werden seriell
+  warm.env mit `--lane` der eigenen Lane, ihrer Rolle (`--role`), `--no-scenario` und, wo `warm.sh`
+  ihn gemerkt hat, ihrem Namen (`--expect-name`), und `vm.py` lehnt eine VMID ab, die eine andere
+  Lane oder Rolle, ein Szenario oder einen anderen Namen trägt.) Klone werden seriell
   abgeschickt (ein Linked Clone dauert ~2 s); Bootstrap und Iterationen laufen parallel.
   Aus einem Worktree reist `.git` nur als Zeiger mit, der auf der Box ins Leere zeigt
   (`scripts/vm/rsync-exclude.txt` schließt `.git` nicht aus, aber nichts auf der Box verlässt
