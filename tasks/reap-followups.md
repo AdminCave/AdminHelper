@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-followups: Nachzügler aus reap-role — ein Test mehr, ein treuer Fake, AUTONOMOUS.md (R-0349) — Task-Ledger
-Status: aktiv · Branch: harness/reap-followups · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: bereit · Branch: harness/reap-followups · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 nennt auch --expect-name; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0349 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API), der Fake in vm_wrappers_test, ein Satz in AUTONOMOUS.md; keine echte VM, kein echtes destroy.
@@ -66,8 +66,10 @@ Semantik: vm.py `require_selected`: geprüft wird nur gegen die Selektoren, die 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T3 — AUTONOMOUS.md nennt alle Filter, mit denen reap.sh einen Slot nennt  [ ]
+### T3 — AUTONOMOUS.md nennt alle Filter, mit denen reap.sh einen Slot nennt  [x]
 Komponente: scripts · Dateien: AUTONOMOUS.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2911de5f 2026-10-14T05:56:55+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - :172–173 wird: „`reap.sh` nennt die VMIDs aus der warm.env mit `--lane` der eigenen Lane, ihrer Rolle (`--role`),
   `--no-scenario` und, wo `warm.sh` ihn gemerkt hat, ihrem Namen (`--expect-name`), und `vm.py` lehnt eine VMID ab, die
