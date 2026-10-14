@@ -299,7 +299,8 @@ case "$VERB" in
       # where it lies, like review-run.sh: the declaration comes from HEAD under
       # the written path, so a symlink from outside into tasks/ would read it out
       # of a file that check never sees (R-0217). The spelling is read from ROOT as it
-      # is spelled, so an absolute path through a symlinked checkout still counts.
+      # is spelled: an absolute path has to reach the checkout the way this script
+      # was called, through a symlink or not, or it is refused (as in review-run.sh).
       case "$TASK_LEDGER" in /*) L_ABS="$TASK_LEDGER" ;; *) L_ABS="$ROOT/$TASK_LEDGER" ;; esac
       for L_PATH in "$(realpath -m -s --relative-to="$ROOT" -- "$L_ABS")" "$(realpath -m --relative-to="$ROOT" -- "$TASK_LEDGER")"; do
         case "$L_PATH" in

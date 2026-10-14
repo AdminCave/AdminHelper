@@ -110,7 +110,7 @@ the line or behind code)“.
 
 ### T3 — diff-scan `--task` und task-close nehmen als Ledger nur, was als `tasks/*.md` geschrieben ist und dort liegt (R-0217)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, tasks/README.md
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f0b7c36a 2026-10-14T06:43:12+02:00
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dbedc016 2026-10-14T07:51:15+02:00
 Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - **Heute:** `review.sh:295-299` und `task-close.sh:103-107` prüfen nur den aufgelösten Pfad (`realpath -m`). Ein
