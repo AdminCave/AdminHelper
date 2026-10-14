@@ -1878,6 +1878,39 @@ for L in tasks/README.md ./tasks/./README.md tasks/templates/task.md ./CHANGELOG
   [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ! grep -q "clean" <<<"$OUT" \
     && ok "diff-scan --task $L -> exit 2, it is no ledger" || bad "diff-scan $L: rc=$rc out=$OUT"
 done
+# Judged as written as well (R-0217): docs/l.md is a regular file in HEAD with a
+# section that declares the change, and in the working tree a symlink into tasks/,
+# to a ledger whose T2 declares nothing. The declaration is read from HEAD under
+# the written path, so the allow-list alone stands in the way.
+base docs/l.md '### T2 — x  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — lockerer
+'
+tighten 'def test_shape():
+    out = build()
+    assert True
+
+
+def test_other():
+    assert other() == 1
+'
+rm -f -- "$FIX/docs/l.md"; ln -s ../tasks/chg.md "$FIX/docs/l.md"
+for L in docs/l.md tasks/../docs/l.md; do
+  r diff-scan --staged --task "$L" T2
+  [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ! grep -q "clean" <<<"$OUT" \
+    && ok "diff-scan --task $L, a symlink into tasks/ -> exit 2, it is no ledger" || bad "diff-scan symlink $L: rc=$rc out=$OUT"
+done
+r declared-only server --staged --task docs/l.md T2
+[ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" \
+  && ok "declared-only --task docs/l.md, a symlink into tasks/ -> exit 2" || bad "declared-only symlink: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && ! grep -q "not a ledger" <<<"$OUT" \
+  && ok "the ledger it points to, as written, is still one (and declares nothing)" || bad "symlink target: rc=$rc out=$OUT"
+r diff-scan --staged --task "$FIX/tasks/chg.md" T2
+[ $rc -eq 3 ] && ! grep -q "not a ledger" <<<"$OUT" \
+  && ok "an absolute path to a ledger is still one" || bad "absolute ledger: rc=$rc out=$OUT"
+reset_index
+git -C "$FIX" rm -q -- docs/l.md && git -C "$FIX" commit -qm "drop docs/l.md" >/dev/null 2>&1
 base CHANGELOG.md '# changelog
 '
 git -C "$FIX" rm -q -- docs/features/x.md tasks/README.md/x.md && git -C "$FIX" commit -qm "drop the outside sections" >/dev/null 2>&1

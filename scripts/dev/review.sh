@@ -295,12 +295,19 @@ case "$VERB" in
       # without the README (it shows the syntax of both declarations) and the
       # template. Anything else, the CHANGELOG or a spec, could carry a task
       # section past that check and grant itself an exception (R-0206; for
-      # Test-Löschung that way was open since R-0079).
-      case "$(realpath -m --relative-to=. -- "$TASK_LEDGER")" in
-        tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $TASK_LEDGER" ;;
-        tasks/*.md) ;;
-        *) die "not a ledger: $TASK_LEDGER" ;;
-      esac
+      # Test-Löschung that way was open since R-0079). Judged as written and by
+      # where it lies, like review-run.sh: the declaration comes from HEAD under
+      # the written path, so a symlink from outside into tasks/ would read it out
+      # of a file that check never sees (R-0217). The spelling is read from ROOT as it
+      # is spelled, so an absolute path through a symlinked checkout still counts.
+      case "$TASK_LEDGER" in /*) L_ABS="$TASK_LEDGER" ;; *) L_ABS="$ROOT/$TASK_LEDGER" ;; esac
+      for L_PATH in "$(realpath -m -s --relative-to="$ROOT" -- "$L_ABS")" "$(realpath -m --relative-to="$ROOT" -- "$TASK_LEDGER")"; do
+        case "$L_PATH" in
+          tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $TASK_LEDGER" ;;
+          tasks/*.md) ;;
+          *) die "not a ledger: $TASK_LEDGER" ;;
+        esac
+      done
       [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"

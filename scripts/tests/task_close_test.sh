@@ -174,6 +174,20 @@ c tasks/README.md/x.md T1 -m "feat: something"
 [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ok "tasks/README.md/x.md as the ledger -> exit 2, it is no ledger" \
   || bad "README dir as ledger: rc=$rc out=$OUT"
 reset_repo
+# Judged as written as well (R-0217): docs/l.md is the ledger as a regular file in
+# HEAD and a symlink to it in the working tree. Their declaration lines are the
+# same, so the early look passes; only the allow-list can refuse it.
+mkdir -p "$FIX/docs"
+cp -- "$FIX/tasks/fix.md" "$FIX/docs/l.md"
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "the ledger once more, in docs"
+rm -f -- "$FIX/docs/l.md"; ln -s ../tasks/fix.md "$FIX/docs/l.md"
+H0=$(head_count)
+touch_tool
+c docs/l.md T1 -m "feat: something"
+# task-close says it itself, before its suite: diff-scan refuses the path as well.
+[ $rc -eq 2 ] && grep -q "^task-close: not a ledger: docs/l.md" <<<"$OUT" && [ "$(head_count)" = "$H0" ] \
+  && ok "docs/l.md, a symlink into tasks/, as the ledger -> exit 2, it is no ledger" || bad "symlink as ledger: rc=$rc out=$OUT"
+reset_repo
 
 # ══ what may be committed at all ══════════════════════════════════════════════
 echo "── the staged state ──"

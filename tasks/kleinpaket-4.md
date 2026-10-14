@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 4: Scissors im commit-msg-Hook, Kommentar-Grenzen und Ledger-Pfad im diff-scan — Task-Ledger
-Status: aktiv · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-07; R-0213 Weg (a2), Restrisiko auf Kevins Wort 2026-10-14; N2 als Code-Fix; T3 mit task-close.sh; --editor; K1 und K2 eigene Zeilen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0213, R-0216, R-0217 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -108,8 +108,10 @@ Semantik: `tasks/README.md:174-175`: „Eine Assertion, die nur in einem Komment
 Code, zählt nicht.“ `review.sh:374-376`: „An added assertion, not one that only stands in a comment (at the start of
 the line or behind code)“.
 
-### T3 — diff-scan `--task` und task-close nehmen als Ledger nur, was als `tasks/*.md` geschrieben ist und dort liegt (R-0217)  [ ]
+### T3 — diff-scan `--task` und task-close nehmen als Ledger nur, was als `tasks/*.md` geschrieben ist und dort liegt (R-0217)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f0b7c36a 2026-10-14T06:43:12+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - **Heute:** `review.sh:295-299` und `task-close.sh:103-107` prüfen nur den aufgelösten Pfad (`realpath -m`). Ein
   Symlink `docs/l.md -> ../tasks/fix.md` besteht. Die Ankündigung liest diff-scan aber aus `HEAD:<geschriebener Pfad>`
