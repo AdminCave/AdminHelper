@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 4: Scissors im commit-msg-Hook, Kommentar-Grenzen und Ledger-Pfad im diff-scan — Task-Ledger
-Status: bereit · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-07; R-0213 Weg (a2), Restrisiko auf Kevins Wort 2026-10-14; N2 als Code-Fix; T3 mit task-close.sh; --editor; K1 und K2 eigene Zeilen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0213, R-0216, R-0217 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -21,7 +21,7 @@ Laufzeit zusammen (`review_scripts_test.sh:372-374`).
 ### T1 — commit-msg: an der Schnittlinie schneidet `sec --message` nur, wenn ein Editor die Nachricht schrieb, und nur den Diff darunter (R-0213)  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/commit-msg, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @251bbcd7 2026-10-14T07:37:34+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - **Heute:** `review.sh:1042` (`/^# -+ >8 -+$/ { exit }`) beendet den Scan der Nachricht an jeder Zeile dieser Form, bei
   `-m` und `-F` ebenso wie im Editor, auch an einer kürzeren Linie wie `# --- >8 ---`. git schneidet dort aber nur mit
@@ -73,7 +73,7 @@ immer.
 ### T2 — diff-scan: Kommentar-Grenzen der hinzugefügten Assertions, dokumentiert und an `/*` geschnitten, und die Tab-Bindung der Filter unter Test (R-0216)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, tasks/README.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @13db4ce1 2026-10-14T06:21:50+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - **(N1)** `comment_at` (`review.sh:326-333`) nimmt ein ` #` bzw. ` //` auch in einem String als Kommentarbeginn. Eine
   Assertion dahinter auf derselben Zeile zählt nicht als hinzugefügt, die strengere Richtung. Ein Satz im Kommentar
@@ -111,7 +111,7 @@ the line or behind code)“.
 ### T3 — diff-scan `--task` und task-close nehmen als Ledger nur, was als `tasks/*.md` geschrieben ist und dort liegt (R-0217)  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, tasks/README.md
 Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dbedc016 2026-10-14T07:51:15+02:00
-Review: Review am Ende (Kurz-Ledger, Opus)
+Review: Review am Ende (Kurz-Ledger, Opus): approve in Runde 2
 Änderung:
 - **Heute:** `review.sh:295-299` und `task-close.sh:103-107` prüfen nur den aufgelösten Pfad (`realpath -m`). Ein
   Symlink `docs/l.md -> ../tasks/fix.md` besteht. Die Ankündigung liest diff-scan aber aus `HEAD:<geschriebener Pfad>`
