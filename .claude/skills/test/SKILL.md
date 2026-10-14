@@ -50,8 +50,8 @@ itself (CLAUDE.md §2): no timer, no cron, no "while I'm at it". But once Kevin 
    (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
    `history.csv` and `seen.md` and committed them in `tasks/private/`; a REG/REL row went in
    through `roadmap.py add`, which commits it itself (a refused row — full `neu` cap, open
-   duplicate — is in the report's notes). Nothing is left to commit; the private repo is pushed by
-   the supervisor session (CLAUDE.md §2), otherwise name `git -C tasks/private push` for Kevin.
+   duplicate — is in the report's notes). Nothing is left to commit; the session pushes the
+   private repo (`git -C tasks/private push`, CLAUDE.md §11).
 5. Report to Kevin with the next action: rerun (infra), fix (reg), or nothing (pass). A
    rerun is again Kevin's word, never automatic.
 
@@ -271,7 +271,7 @@ prompts for it (D17), so the restraint is yours.
   verbatim; SKIP = "not verified", not "ok". For a weekly run, quote the report's first line;
   `UNVERIFIED` is never reported as a pass and never as a regression.
 - Pre-approved (auto, D17): every `vm.py` verb, every `scripts/vm/*.sh` wrapper, `multibox.sh`
-  and `heavy.sh`. Inside the pool, cloning, baking and destroying need no prompt (CLAUDE.md §2,
+  and `heavy.sh`. Inside the pool, cloning, baking and destroying need no prompt (CLAUDE.md §5,
   2026-09-08) — what prompts is what reaches outside it: push, PR, merge, publish, deleting a
   template. The one exception in `permissions.ask` is `bootstrap_linux.sh`: it is the only
   script here that rebuilds the machine it runs ON (apt, docker, toolchains), made for a fresh box.
