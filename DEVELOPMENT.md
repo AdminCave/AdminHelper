@@ -1875,7 +1875,7 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   Box `git` voraussetzt, gehoert deshalb nicht auf die Box. `lane.sh done <slug>` zerstoert die
   VMs der Lane und raeumt Worktree + Branch ab — auch dann, wenn der Worktree schon
   von Hand entfernt wurde.
-  Kompletter autonomer Ablauf: `AUTONOMOUS.md` („Parallel-Betrieb").
+  Ablauf eines Vorhabens im eigenen Worktree: `CLAUDE.md` §8.
 - **Verteilt (Multi-Host).** `bash scripts/tests/multibox.sh --agents N [--desktop]`
   klont Server- + Agent-Box(en); mit `--desktop` zusaetzlich eine Box, die die
   echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/

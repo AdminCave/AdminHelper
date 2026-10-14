@@ -11,7 +11,6 @@
 
 # The rules themselves
 CLAUDE.md
-AUTONOMOUS.md
 .claude/**
 
 # The gates: what may run, what counts as green, what closes a task
