@@ -2,9 +2,8 @@
 SPDX-FileCopyrightText: Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 
-Vorlage für einen Task-Eintrag. `bash scripts/dev/ledger.sh new-task <ledger>
---title "…"` hängt alles UNTERHALB dieses Kommentars an das Ledger an und ersetzt
-<ID> durch die nächste freie Task-Nummer und <Titel> durch den Titel.
+Vorlage für einen Task-Eintrag: alles UNTERHALB dieses Kommentars, mit <ID> als
+nächster freier Task-Nummer und <Titel> als Titel.
 
 Pflichtfelder sind die aus tasks/README.md. Die optionalen Zeilen der
 Beweis-Konvention (tasks/README.md) setzt nur, wer sie belegen kann — eine

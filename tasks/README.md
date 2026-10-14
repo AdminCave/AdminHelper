@@ -7,58 +7,48 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 Dieses Verzeichnis ist der **eine Ort für alle Task-Ledger**. Ein Ledger = eine kleine,
 von oben nach unten abarbeitbare Liste mit einem `Verify:`-Ziel pro Aufgabe. `/feature-plan`
-schreibt hier eine Datei pro Vorhaben; `/feature-build` arbeitet sie ab. Der ganze Zyklus
-steht in [`../AUTONOMOUS.md`](../AUTONOMOUS.md).
+schreibt hier eine Datei pro Vorhaben; `/feature-build` arbeitet sie ab. Der Ablauf steht in
+[`../CLAUDE.md`](../CLAUDE.md) §4–§8.
 
 **Eine Datei pro Vorhaben:** `tasks/<slug>.md` (z. B. `connection-note.md`). Kein Anhängen
 an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 
 **Kopf jedes Ledgers** trägt eine Konventions-Zeile, u. a. das Feld **`Status:`**. Die Folge ist
-`geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneben `blockiert`:
+`geplant` → `aktiv` → `bereit` → `erledigt`, daneben `freigegeben` (ältere Ledger) und `blockiert`:
 
 | `Status:` | Bedeutung |
 |---|---|
-| `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Nur auf Kevins eigenes Wort startet `/feature-build` es mit ausdrücklichem Pfad (setzt auf `aktiv`), nie auf Auftrag einer anderen Session (CLAUDE.md §2). |
-| `freigegeben` | am Design-Gate freigegeben (CLAUDE.md §2: Kevin, bei kleinen Fund-Paketen der Chef; die Zeile `Freigabe:` nennt wer): `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
-| `aktiv` | wird gebaut. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
-| `bereit` | alle Tasks sind zu; der Abschluss von `feature-build` (Schnellcheck, schwere Suite, Branch-Review) und der PR stehen aus. |
-| `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. Bleibt als Historie liegen. |
+| `geplant` | von `/feature-plan` erstellt. Die Freigabe ist Kevins `roadmap.py approve` für die Roadmap-Zeile; erst dann setzt `/feature-build` den Kopf im Worktree auf `aktiv` (CLAUDE.md §4). |
+| `freigegeben` | Form älterer Ledger, deren Kopf die Freigabe trug; `/feature-build` behandelt sie wie `geplant` mit freigegebener Roadmap-Zeile. |
+| `aktiv` | wird gebaut, in einem eigenen Worktree — **nie zwei Bauer auf demselben Ledger**. |
+| `bereit` | alle Tasks sind zu; Abschluss (Suite, `tester`, Branch-Review) und PR stehen aus. |
+| `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. |
 | `blockiert` | wartet auf Entscheidung/Abhängigkeit (`[?]`-Punkte) oder ist bewusst nicht für `/feature-build` (z. B. Release-Handarbeit). |
 
-**Invariante:** kein `[ ]` mehr offen ⇒ `Status:` darf nicht `aktiv` bleiben. Der Loop **fragt
-nie interaktiv** — findet er ohne Pfad mehrere/keine `aktiv`, bricht er mit klarer Meldung ab.
+**Invariante:** kein `[ ]` mehr offen ⇒ `Status:` darf nicht `aktiv` bleiben.
 
-Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe), `Commit-Granularität:`
-(pro Task | pro Komponente | pro Abschnitt), `Review:` (**pro Task** | **am Ende** — wann der
-Frischer-Kontext-Review läuft: je Commit-Einheit, oder einmal über den ganzen Branch-Diff.
-`am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks; dann entfällt auch der abschließende
-`/code-review`, weil derselbe Diff sonst zweimal geprüft würde; **auto**, Pilot der Stufe 6b: je
-Task startet `task-close.sh --review auto` den Reviewer als eigenen Prozess, `DEVELOPMENT.md`
-„Reviewer als Prozess"), `Modell:`, `Heavy:`,
-DoD-Verweis auf `CLAUDE.md`.
+Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe, mit der Roadmap-ID), `Review:`
+(**pro Task** | **am Ende** — wann der Reviewer läuft: vor jedem Task-Commit, oder einmal über den
+ganzen Branch-Diff; `am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks) und `Heavy:`.
 
 **`Heavy: none | linux-full | scenario <flags> | windows`** sagt, welche schwere Suite der
 Abschluss braucht: keine, den Linux-Stack auf einer Pool-VM (`run.sh integration`/`e2e`), einen
-Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first; das
-ersetzt auch die Zeile `Abschluss: multibox <flags>`) oder die Windows-VM. Hinter dem Wert darf
-nach ` — ` eine Begründung stehen. Für neue Ledger ersetzt `Heavy:` die älteren Felder
-`Fast-Suite:` (lokal | vm) und `Warm-Profil:` (desktop | pond); `feature-build` und `ledger.sh`
-lesen diese weiter, solange es Ledger mit ihnen gibt; `lane.sh` nennt `Fast-Suite: vm` nur als
-Hinweis. Wo eine Lane mit `Heavy:` ihre Schnellsuite fährt, ist offen (R-0097). `ledger.sh lint`
-prüft den Wert und meldet `Heavy:` neben `Fast-Suite:`/`Warm-Profil:` als Fehler, denn das wären
-zwei Antworten auf eine Frage. Ein freier `Heavy:`-Text neben
-`Fast-Suite:` („nein — …", „keine; …") ist die Form der Ledger vor Stufe 5b und bleibt gültig.
+Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first) oder die
+Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen.
+
+**Task-Felder:** `Komponente:`, `Dateien:` (die Pfade, die `task-close.sh --stage` stagt, durch
+Komma getrennt), `Verify:` (Flag-Form ohne Env-Präfix: `bash scripts/dev/verify.sh <komp> --strict
+[-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten).
 
 **Task-Status im Body:** `[ ]` offen · `[x]` fertig · `[~]` übersprungen (Grund) ·
 `[?]` braucht menschliche Entscheidung.
 
 ## `ledger.sh` — wer den Ledger schreibt
 
-Seit Stufe 4 ändert **`scripts/dev/ledger.sh`** den Status einer Task, nicht mehr der Editor
-der Session. Der Grund steht in der Invariante oben: ein `[x]` ohne den Lauf, der es grün
-gemacht hat, ist eine Behauptung. `mark-done` verweigert deshalb den Haken ohne `--evidence`
-— und die Evidenz-Zeile kommt ab Stufe 4 von [`task-close.sh`](../scripts/dev/task-close.sh),
-das die Suite selbst fährt.
+**`scripts/dev/ledger.sh`** ändert den Status einer Task, nicht der Editor der Session. Ein `[x]`
+ohne den Lauf, der es grün gemacht hat, ist eine Behauptung: `mark-done` verweigert den Haken ohne
+`--evidence`, und die Evidenz-Zeile kommt von [`task-close.sh`](../scripts/dev/task-close.sh), das
+die Suite selbst fährt.
 
 ```bash
 bash scripts/dev/ledger.sh start <ledger> <id>        # .vm/active-task: Ledger, ID, Komponente, Dateien
@@ -68,146 +58,46 @@ bash scripts/dev/ledger.sh mark-question <ledger> <id> "<frage>"  # [?]
 bash scripts/dev/ledger.sh set-files <ledger> <id> <pfad…>        # Dateien: erweitern
 bash scripts/dev/ledger.sh status                                  # Übersicht aller Ledger
 bash scripts/dev/ledger.sh status <ledger> <wert>                  # Kopf-Status setzen
-bash scripts/dev/ledger.sh new-task <ledger> --title "…"           # aus tasks/templates/task.md
 bash scripts/dev/ledger.sh lint <ledger>                           # Verify-Präfix, [x] ohne Evidenz, Invariante,
                                                                    # Reste eines Werkzeugaufrufs in Ledger und Spec
-                                                                   # (auch die Hülle und die zurückgegebene Ausgabe)
 ```
 
-`<ledger>` ist der Pfad oder der reine Slug (`harness-stufe-4`), `<id>` die Task-Kennung aus
-der Überschrift (`### T3 — …` ⇒ `T3`). Neue Tasks entstehen aus
-[`templates/task.md`](templates/task.md); die Vorlage trägt nur die Pflichtfelder — was eine
-Task „autonomietauglich" macht, steht in [`../AUTONOMOUS.md`](../AUTONOMOUS.md).
+`<ledger>` ist der Pfad oder der reine Slug, `<id>` die Task-Kennung aus der Überschrift
+(`### T3 — …` ⇒ `T3`). Neue Tasks entstehen aus [`templates/task.md`](templates/task.md); die
+Vorlage trägt nur die Pflichtfelder.
 
-**`set-files` statt Scope lockern:** braucht eine Task eine Datei, die nicht in ihrem
-`Dateien:` steht, wird die Liste **sichtbar** erweitert — `task-close.sh` prüft die gestagten
-Pfade dagegen.
+**`set-files` statt stiller Zusatzdateien:** braucht eine Task eine Datei, die nicht in ihrem
+`Dateien:` steht, wird die Liste **sichtbar** erweitert — `task-close.sh --stage` stagt genau
+diese Liste.
 
-## `Test-Löschung:` — ein ganzer Test geht mit
+## `Test-Löschung:` — ein Test oder eine Testdatei geht
 
-`task-close.sh` lässt `review.sh diff-scan` über den Diff laufen, und der wertet eine
-gelöschte Assertion dort, wo Tests stehen (eine Testdatei oder die Spanne eines Tests, nie eine
-Import-Zeile; R-0130), als „der Diff kauft sich sein Grün". Den einen Fall, in dem ein Test
-zu Recht verschwindet, kündigt die Task an:
+Löscht eine Task einen ganzen Test oder eine ganze Testdatei, kündigt sie das an:
 
 ```
 Test-Löschung: <datei>::<test> — <Grund>[; <datei>::<test> — <Grund> …]
+Test-Löschung: <datei>::* — <Grund>                  (die ganze Datei)
 ```
 
-Ein `;` trennt nur vor dem nächsten `<datei>::`, im Grund darf es also stehen.
-`<test>` ist der Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die
-Beschreibung aus `it("…")`/`test("…")` (vitest/jest), die `fn` hinter `#[test]` (Rust).
-Übergangen wird eine gelöschte Assertion nur, wenn **alles** gilt, geprüft am Inhalt der
-Dateien, nicht am Diff-Text:
+Ein `;` trennt nur vor dem nächsten `<datei>::`, im Grund darf es also stehen. `<test>` ist der
+Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die Beschreibung aus
+`it("…")`/`test("…")` (vitest/jest), die `fn` hinter `#[test]` (Rust).
 
-1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** `diff-scan` liest
-   sie aus dem Ledger in `HEAD`, nicht aus dem Arbeitsbaum, und `task-close.sh` verweigert
-   (Exit 4), sobald sich die `Test-Löschung:`-Zeilen gegenüber `HEAD` ändern. Sonst könnte ein
-   Builder die Zeile beim Schließen einer Task mitcommitten und in der nächsten benutzen. Sie
-   kommt mit dem Plan-Commit am Gate, den Kevin liest. Wer unterwegs merkt, dass ein Test gehen
-   muss, setzt `[?]` und fragt. Ein Commit von Hand an `task-close` vorbei ist Kevins eigene
-   Entscheidung; der Runner kann ihn nicht machen.
-2. **Sie trägt einen Grund.** Ohne `— <Grund>` zählt sie nicht, auch in `diff-scan`. Mehrere Tests
-   stehen in einer Zeile, getrennt durch `;`: `diff-scan` liest je Task nur die erste Zeile, und
-   `ledger.sh lint` lehnt eine zweite ab.
-3. **Der Name ist eindeutig.** Im alten Stand der Datei gibt es genau einen Test dieses
-   Namens. Teilen sich zwei `describe`-Blöcke einen Namen, kann das Gate sie nicht
-   auseinanderhalten, und die Ankündigung zählt nicht; umbenennen, dann löschen.
-4. **Der Test ist wirklich weg.** Im neuen Stand der Datei steht kein Kopf dieses Namens
-   mehr, und keine andere Datei des Diffs bekommt einen dazu: Ein Test, der wandert, geht
-   nicht. Ein Ersatztest trägt einen eigenen Namen.
-5. **Der ganze Test geht.** Jede nicht leere Zeile seines alten Rumpfs ist im Diff gelöscht.
-   Ein Kopf in einem Kommentar oder String, dessen „Rumpf“ in einen bleibenden Test ragt,
-   fällt daran auf.
-6. **Die Assertion gehört zu genau diesem Test.** Ihre alte Zeilennummer liegt im Rumpf des
-   angekündigten Tests im alten Stand. Eine Assertion aus einem Test, der stehen bleibt,
-   bleibt ein Fund, außer die Task kündigt die Änderung als `Assertion-Änderung:` an (nächster
-   Abschnitt).
+1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** Sie kommt mit dem
+   Plan-Commit, den Kevin liest. `task-close.sh` nimmt einen Commit zurück (Exit 4), der eine
+   `Test-Löschung:`-Zeile ändert. Wer unterwegs merkt, dass ein Test gehen muss, setzt `[?]` und
+   fragt.
+2. **Sie trägt einen Grund.** `ledger.sh lint` prüft die Form `<pfad>::<name> — <Grund>`; ohne Grund
+   ist die Zeile ein Fehler, ebenso eine zweite Zeile in derselben Task.
+3. **Eine gelöschte Testdatei** (`tests/`, `*_test.*`, `test_*`) ohne passende Zeile dieser Task
+   lässt `task-close.sh` nicht durch (Exit 3).
 
-`review.sh` liest jeden Diff mit `--text --no-ext-diff --no-textconv --no-color`: eine
-`.gitattributes` mit `-diff` oder ein Diff-Treiber darf eine Testdatei nicht zu „Binary files
-differ“ machen und damit alle drei Prüfungen blind.
-
-Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared test deletion(s): …)`),
-und bei einem Fund, warum eine Ankündigung nicht zählte.
-
-**Die Probe** (`review-probe.sh`, unter `--review auto`) fragt, ob der neue Test ohne die Änderung
-rot wäre. Eine reine angekündigte Löschung bringt keinen neuen Test mit: Besteht der Test-Diff nur
-aus angekündigten Tests, die nach den Regeln oben zählen, samt den Import- und Leerzeilen, die mit
-ihnen gehen, antwortet sie ohne Lauf `only-declared-deletion` (`review.sh declared-only`, R-0227). Ein
-Import, der selbst Tests mitbringt, geht nicht mit: in Python ein `*` oder ein Name, der mit `test`
-oder `Test` beginnt, in JS/TS ein bloßer Import oder einer einer `.test`/`.spec`-Datei.
-Das approve steht dann, und die Review-Zeile nennt den Grund (`probe: only a declared test
-deletion, not run`). Alles daneben — ein Ersatztest, eine Änderung an einem bleibenden Test, ein
-entfernter Helfer, eine nur gekürzte Import-Zeile — wird weiter geprobt.
+Ob ein Test schwächer geworden ist (`|| true`, `skip`, eine gestrichene oder triviale Assertion),
+prüft der `reviewer` (Kriterium 3 in `.claude/agents/reviewer.md`), kein Skript.
 
 **Passt:** toter Code geht samt seinem Test; ein Test wird durch einen genaueren ersetzt, der
 im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das ist ein Befund
 über den Code und gehört repariert oder als `[?]` vor Kevin, nicht gelöscht.
-`ledger.sh lint` prüft die Form: `<pfad>::<name> — <Grund>`, **der Grund ist Pflicht**. Eine
-Löschung, die niemand begründet, ist genau das, was das Gate verhindern soll.
-
-## `Assertion-Änderung:` — eine Assertion ändert sich in einem Test, der bleibt
-
-Wird eine Assertion in einem bleibenden Test schärfer, oder wechselt ihr Sollwert die Form, sieht
-`diff-scan` eine gelöschte Assertion und eine neue (R-0206). Die Task kündigt das an:
-
-```
-Assertion-Änderung: <datei>::<test> — <Grund>[; <datei>::<test> — <Grund> …]
-```
-
-Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte Assertion nur, wenn
-**alles** gilt, geprüft am Inhalt der Dateien:
-
-1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** Dieselbe Sperre wie bei
-   `Test-Löschung:`: `task-close.sh` verweigert (Exit 4), sobald sich eine der beiden Zeilenarten
-   gegenüber `HEAD` ändert. Die Ankündigung kommt mit dem Plan-Commit ans Gate.
-2. **Sie trägt einen Grund.** `ledger.sh lint` prüft die Form wie bei `Test-Löschung:`; ohne
-   Grund ist die Zeile ein Fehler, ebenso eine zweite Zeile in derselben Task.
-3. **Der Test bleibt, und er ist eindeutig.** Im alten **und** im neuen Stand gibt es genau einen Test
-   dieses Namens. Teilen sich zwei Klassen oder `describe`-Blöcke einen Namen, zählt die Ankündigung
-   nicht.
-4. **Keine Spanne hält einen zweiten Test**, weder im alten noch im neuen Stand, und die Datei wird im
-   selben Diff nicht umbenannt.
-5. **Die Assertion gehört zu genau diesem Test:** Ihre alte Zeile liegt in seiner alten Spanne.
-6. **Geändert, nicht weggenommen:** Die neue Spanne trägt mindestens so viele hinzugefügte Assertions,
-   wie die alte verliert (n ≥ r; gezählt werden Zeilen mit einer Assertion). Eine Assertion, die nur in
-   einem Kommentar steht (`#`, `//` oder `/* */`), am Zeilenanfang oder hinter Code, zählt nicht. Ein
-   Kommentar beginnt am Zeilenanfang oder nach Leerraum, auch in einem String: Steht ` #`, ` //` oder
-   ` /*` in einem String vor der Assertion, zählt sie nicht, die strengere Richtung.
-
-**Ein Helfer** in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.py|go|sh`,
-`*.test.*`, `*.spec.*`) darf ebenso angekündigt werden, denn oft steht die Assertion dort und nicht
-im Test, der ihn ruft:
-- pytest `def <name>(`, auch als Methode;
-- Go `func <name>(` ohne Receiver;
-- Rust `fn <name>` ohne `#[test]`;
-- vitest/jest `function <name>(`.
-
-Pfeil-Funktionen (`const name = … =>`) nicht, ihre Formen sind zu vielfältig für ein Muster. Es
-gelten dieselben Regeln. Der Schutz gegen einen zweiten Test in der Spanne zählt nur Testköpfe, ein
-in den Test geschachtelter Fake stört also nicht. Eine Ankündigung für einen Helfer gilt für jeden
-Test, der ihn ruft; die Clean-Zeile sagt das mit `(helper, …)`, damit der Review den Radius sieht.
-
-Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared assertion change(s):
-<datei>::<test> (1 removed, 1 added))`), und bei einem Fund, warum eine Ankündigung nicht zählte.
-
-**Passt:** Eine Assertion wird schärfer, oder ihr Sollwert wechselt die Form (ein Zeitstempel trägt
-jetzt `Z`). **Passt nicht:** eine rote Assertion abschwächen, damit der Test grün wird. Das ist ein
-Befund über den Code. Mehrere Assertions zu einer zusammenzulegen scheitert an n ≥ r und bleibt ein
-Commit von Hand auf Kevins Wort.
-
-**Was der Scan nicht sieht:** ob die neue Assertion so streng ist wie die alte (auch `assert True`
-zählt als Assertion); das prüft der Review. Und ein Testkopf in einem Kommentar oder String kann eine
-Spanne verschieben: Nennt eine Ankündigung genau diesen Namen, gingen entfernte Assertions des
-Nachbartests durch, sobald dort neue dazukommen. Ebenso kann die Spanne eines Helfers bei schiefer
-Einrückung einen zweiten Helfer schlucken, denn der Schutz gegen eine zu weite Spanne zählt nur
-Testköpfe. Dagegen schützen nur das Gate (die Ankündigung kommt committet aus dem Plan) und der Review.
-Kevin nimmt das Restrisiko hin (2026-10-06). Ein Ledger ist nur `tasks/*.md`, ohne `tasks/README.md` und
-`tasks/templates/`: genau das, was die Commit-Prüfung von `task-close.sh` schützt. `diff-scan --task` und
-`task-close.sh` lehnen alles andere ab (Exit 2), eine Ankündigung in der CHANGELOG oder einer Spec gewährt
-nichts. Geprüft wird der Pfad, wie er geschrieben ist und wohin er zeigt: Ein Symlink von außerhalb nach
-`tasks/` ist kein Ledger (R-0217).
 
 ## Beweis-Konvention — was eine Task belegt
 
@@ -247,7 +137,7 @@ Die Zeilen stehen im Task-Block, jede optional, jede nur, wenn sie etwas trägt:
 | `Semantik:` | **Pflicht bei `/feature-plan --kurz`:** die Stelle unter `docs/`, die das gewollte Verhalten beschreibt, mit Zitat — damit der Fix nicht beseitigt, was Absicht ist | — |
 
 Die Form prüft `ledger.sh lint`, den Inhalt der Reviewer. Die Vorlage `tasks/templates/task.md`
-führt die Zeilen im Kopfkommentar auf; `new-task` hängt sie nicht an.
+führt die Zeilen im Kopfkommentar auf.
 
 ## Aktueller Stand
 
