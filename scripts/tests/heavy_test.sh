@@ -36,6 +36,7 @@ export AH_VM_PY="$BIN/vm.py"
 cat > "$AH_VM_PY" <<'SHIM'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${SHIM_STATE:-/tmp}/vmpy.args"
+[ "${1:-}" = doctor ] && [ -n "${SHIM_DOCTOR_OUT:-}" ] && printf '%s\n' "$SHIM_DOCTOR_OUT"
 case "${1:-}" in
   doctor) echo "doctor: ${SHIM_DOCTOR_RC:-0}"; exit "${SHIM_DOCTOR_RC:-0}" ;;
   list)
@@ -51,6 +52,7 @@ SHIM
 cat > "$WRAP/warm.sh" <<'SHIM'
 #!/usr/bin/env bash
 echo "warm shim: $*"
+[ -n "${SHIM_WARM_OUT:-}" ] && printf '%s\n' "$SHIM_WARM_OUT"
 exit "${SHIM_WARM_RC:-0}"
 SHIM
 # Call-counting: the classification re-runs a red step on the SAME box, so the
@@ -171,6 +173,7 @@ mk_case() {  # mk_case -> fresh AH_OUT_DIR + AH_PRIVATE_DIR for one run
   mkdir -p "$AH_OUT_DIR" "$AH_PRIVATE_DIR" "$SHIM_STATE"
   rm -rf "$AH_VM_STATE_DIR"; mkdir -p "$AH_VM_STATE_DIR"
   unset SHIM_ITER_SEQ SHIM_ITER_OUT1 SHIM_ITER_OUT2 SHIM_ITER_OUT3 SHIM_ITER_OUT4 SHIM_NO_PULL
+  unset SHIM_DOCTOR_OUT SHIM_WARM_OUT
   # Defaults: healthy provider, one own box, everything green.
   export SHIM_DOCTOR_RC=0
   export SHIM_LIST_JSON="$OWN_BOX"
@@ -1261,6 +1264,42 @@ report_of | grep -q 'committed in' \
   || bad "the report does not say whether the private repo got the commit"
 git -C "$AH_PRIVATE_DIR" log --format=%D -1 2>/dev/null | grep -q 'origin/' \
   && bad "the private repo was pushed" || ok "nothing pushed (no remote touched)"
+
+echo "── what heavy.sh prints carries no box address; report and logs keep it ──"
+A="192.0.2.7"
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: no ssh: adminhelper@$A refused for 900s"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ! grep -qF "$A" <<<"$out" \
+  && grep -qF 'infra marker in all.log: vm.py: no ssh: <user>@<host> refused for 900s' <<<"$out" \
+  && ok "all: the note and the tail of all.log go out masked" || bad "all, stdout: rc=$rc $(grep -F "$A" <<<"$out")"
+rep="$(report_of)"; alllog="$(cat "$AH_OUT_DIR"/weekly/*/all.log 2>/dev/null)"
+grep -qF "$A" <<<"$alllog" && grep -qF "infra marker in all.log: vm.py: no ssh: adminhelper@$A" <<<"$rep" \
+  && ok "and all.log and the notes of report.md keep it word for word" || bad "all, files: $(grep -n 'infra marker' <<<"$rep")"
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="  ok   server-box 3001 @ $A
+  FAIL agent-box enrollment
+  multibox: 17 ok, 1 failed, 0 skipped  (server=$A, agents=3002)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 1 ] && ! grep -qF "$A" <<<"$out" && grep -qF '(server=<ip>, agents=3002)' <<<"$out" \
+  && ok "capstone: the tail of multibox.log goes out masked, the VMIDs stay" || bad "capstone, stdout: rc=$rc $(grep -F "$A" <<<"$out")"
+grep -qF "(server=$A, agents=3002)" <<<"$(report_of)" \
+  && ok "and the summary line in report.md stays word for word" || bad "capstone, report: $(report_of | grep -a multibox)"
+mk_case
+export SHIM_DOCTOR_RC=1 SHIM_DOCTOR_OUT="vm.py: cannot reach https://$A:8006/api2/json"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ! grep -qF "$A" <<<"$out" && ok "doctor: its tail goes out masked" || bad "doctor, stdout: rc=$rc $(grep -F "$A" <<<"$out")"
+mk_case
+export SHIM_WARM_RC=1 SHIM_WARM_OUT="vm.py: no ssh: adminhelper@$A refused for 900s"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ! grep -qF "$A" <<<"$out" && ok "warm: its tail goes out masked" || bad "warm, stdout: rc=$rc $(grep -F "$A" <<<"$out")"
+mk_case
+export SHIM_WARM_RC=2 SHIM_WARM_OUT="vm.py: no ssh: adminhelper@$A refused for 900s"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ! grep -qF "$A" <<<"$out" && ok "warm refused (exit 2): its tail goes out masked too" || bad "warm refused, stdout: rc=$rc $(grep -F "$A" <<<"$out")"
 
 echo ""
 echo "heavy_test: $PASS passed, $FAIL failed"
