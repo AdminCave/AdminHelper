@@ -13,7 +13,7 @@ paths:
 
 # Release-Regeln
 
-<!-- Stufe 0 · Quelle: Memory version_locations (rekonstruiert 2026-07-13), release-process, release-testing-depth · Roadmap Stufe 13 -->
+<!-- Stufe 0 · Quelle: Memory version_locations (rekonstruiert 2026-07-13), release-process, release-testing-depth -->
 
 **Kevin taggt, pusht und publiziert.** Claude bereitet vor, prüft und nennt die Befehle.
 
@@ -30,7 +30,7 @@ begleitende FAIL die Evidenz. `--capstone` schließt `--enforce` ein.
 enrollt die Desktop-Etappe seit Stufe 3 vor jedem Spec eine Geräte-Identität über die certlose Ebene :8444.
 Die Einmal-Tokens mintet der Orchestrator kurz vor der Etappe, eines je Spec. Ob das trägt, zeigt erst der
 erste echte Capstone-Lauf.
-Ab Stufe 3 liefert `/test weekly` die Evidenz, ab Stufe 13 prüft `release.sh check` sie mechanisch.
+Die Evidenz liefert `/test weekly`.
 
 ## Bump-Commit `chore(release): bump version to X.Y.Z` — synchron ändern
 
