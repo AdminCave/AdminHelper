@@ -80,8 +80,10 @@ Semantik: doc-smoke.py, Docstring: „Only names nothing else carries are report
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html, DEVELOPMENT.md
 
-### T2 — vm.py: ein angehängter Worktree ohne Lane läuft nicht still auf main (R-0211, Ansatz A)  [ ]
+### T2 — vm.py: ein angehängter Worktree ohne Lane läuft nicht still auf main (R-0211, Ansatz A)  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @85adb55d 2026-10-14T07:11:15+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `current_lane` (:583–595): Ist der Zustand der eigene (`own_state`), kommt die Lane weder aus `--lane` noch aus
   `AH_LANE` noch aus `.vm/lane`, und ist der Checkout ein angehängter Worktree, dann `Usage`.

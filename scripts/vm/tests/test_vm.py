@@ -3100,3 +3100,54 @@ def test_destroy_no_scenario_refuses_the_whole_call_before_the_first_purge(cfg, 
         verb("destroy", cfg, api, "3000", "3001", "--no-scenario")
     assert "3001 carries sc-capstone, not a warm box — refusing" in str(caught.value)
     assert http.paths("DELETE") == []
+
+
+# ── a worktree made by hand names its lane ───────────────────────────────────
+def linked_checkout(tmp_path, monkeypatch, lane=False, main=False):
+    """A real `git worktree add` under tmp_path; ROOT and the state dir point at the
+    worktree, or at the main checkout with main=True."""
+    top = tmp_path / "main"
+    top.mkdir()
+    git = [
+        "git",
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "user.name=t",
+        "-c",
+        "commit.gpgsign=false",
+    ]
+    subprocess.run(git + ["init", "-q", str(top)], check=True)
+    subprocess.run(git + ["-C", str(top), "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+    wt = tmp_path / "wt"
+    subprocess.run(git + ["-C", str(top), "worktree", "add", "-q", "--detach", str(wt)], check=True)
+    root = top if main else wt
+    (root / ".vm").mkdir()
+    if lane:
+        (root / ".vm" / "lane").write_text("lane-a\n")
+    monkeypatch.setattr(vm, "ROOT", str(root))
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(root / ".vm"))
+    return root
+
+
+def test_a_linked_worktree_without_a_lane_is_refused(tmp_path, monkeypatch):
+    linked_checkout(tmp_path, monkeypatch)
+    with pytest.raises(vm.Usage) as caught:
+        vm.current_lane(environ={})
+    assert "this worktree has no .vm/lane — set AH_LANE=<lane>" in str(caught.value)
+
+
+def test_a_linked_worktree_runs_on_main_only_when_told(tmp_path, monkeypatch):
+    linked_checkout(tmp_path, monkeypatch)
+    assert vm.current_lane(environ={"AH_LANE": "main"}) == "main"
+    assert vm.current_lane(override="main", environ={}) == "main"
+
+
+def test_a_linked_worktree_with_a_lane_file_runs_on_it(tmp_path, monkeypatch):
+    linked_checkout(tmp_path, monkeypatch, lane=True)
+    assert vm.current_lane(environ={}) == "lane-a"
+
+
+def test_the_main_checkout_without_a_lane_stays_on_main(tmp_path, monkeypatch):
+    linked_checkout(tmp_path, monkeypatch, main=True)
+    assert vm.current_lane(environ={}) == "main"

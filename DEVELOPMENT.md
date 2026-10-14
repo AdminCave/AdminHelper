@@ -1793,7 +1793,11 @@ noch als laufendes Bake (`role-bake`) — eine geleakte VM ist ein Fehler, kein 
 und `reap` (ohne `--all`) wie der Auto-Reap fassen nur die eigene an. Sie kommt aus `--lane`,
 sonst aus `AH_LANE`, sonst aus `.vm/lane` — die Datei ist heute von Hand zu setzen, meist ist
 `AH_LANE` im Worktree einfacher; ab 2b legt `lane.sh new <slug>` sie an —, sonst ist sie
-`main` — der Hauptcheckout. `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
+`main` — der Hauptcheckout. Ein von Hand angelegter Worktree (`git worktree add`, etwa die
+`harness/`-Worktrees unter `~/.cache`) ohne `.vm/lane`, `AH_LANE` und `--lane` wird abgewiesen
+(Exit 2, „this worktree has no .vm/lane“): Er liefe sonst still auf der Lane des Hauptcheckouts,
+samt dessen Reap und Sweeps. Ein Worker-Multibox-Lauf aus so einem Worktree braucht deshalb
+`AH_LANE=main`, wenn er auf main laufen soll, wie bei go-toolchain-126. `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
 `scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
 darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Den Zustand im eigenen
 `.vm` (Lane-Datei, `warm.env`) lesen `vm.py` und `lib.sh` (und mit ihnen `reap.sh`, `warm.sh`,
