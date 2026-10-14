@@ -99,12 +99,17 @@ case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
 # A ledger is exactly what the commit check below guards: tasks/*.md without the
 # README (it shows the syntax of both declarations) and the template. Anything
 # else, the CHANGELOG or a spec, could carry a task section past that check
-# (R-0206; for Test-Löschung that way was open since R-0079).
-case "$(realpath -m --relative-to=. -- "$LEDGER")" in
-  tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $LEDGER" ;;
-  tasks/*.md) ;;
-  *) die "not a ledger: $LEDGER" ;;
-esac
+# (R-0206; for Test-Löschung that way was open since R-0079). Judged as written
+# and by where it lies, like review-run.sh: a symlink from outside into tasks/
+# would pass under a name that check never sees (R-0217).
+case "$LEDGER" in /*) L_ABS="$LEDGER" ;; *) L_ABS="$ROOT/$LEDGER" ;; esac
+for L_PATH in "$(realpath -m -s --relative-to="$ROOT" -- "$L_ABS")" "$(realpath -m --relative-to="$ROOT" -- "$LEDGER")"; do
+  case "$L_PATH" in
+    tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $LEDGER" ;;
+    tasks/*.md) ;;
+    *) die "not a ledger: $LEDGER" ;;
+  esac
+done
 [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"

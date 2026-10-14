@@ -10,7 +10,7 @@
 #   bash scripts/dev/review.sh declared-only <component> (--staged | --commit <rev>) --task <ledger> <id>
 #                                                       is the test diff a declared deletion alone
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
-#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>] | --message <file>]
+#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>] | --message <file> [--editor]]
 #                                                       what must never be committed or pushed
 #                                                       (names a path or file:line, never a line's
 #                                                       content: its output may stand in a public CI log)
@@ -72,7 +72,9 @@
 #              private roadmap, a security ledger, a finding's dedup key, one
 #              of the two gitignored files that carry credentials, or a line
 #              with a token pattern (Proxmox, GitHub, Anthropic). With --message,
-#              the message of the commit being made (the commit-msg hook).
+#              the message of the commit being made (the commit-msg hook), all of
+#              it; with --editor too (git brought up an editor), the diff that
+#              commit -v puts below the scissors line does not count.
 #   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
 #              scripts/dev/review-verdict.schema.json, be about the tree --tree
 #              names, and say approve without a blocker and without a probe
@@ -170,7 +172,7 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" COMMIT_REV="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" COMMIT_REV="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE="" FROM_EDITOR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
@@ -207,6 +209,7 @@ while [ $# -gt 0 ]; do
       # worktree, which may well say clean.
       [ -n "$2" ] || die "--message needs a file name, got an empty one"
       MESSAGE="$2"; shift ;;
+    --editor) FROM_EDITOR=1 ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
@@ -245,6 +248,7 @@ if [ -n "$MESSAGE" ]; then
   [ "$STAGED" = 0 ] && [ -z "$RANGE" ] || die "--message stands alone, without --staged or --range"
   [ -f "$MESSAGE" ] && [ -r "$MESSAGE" ] || die "--message: no readable file $MESSAGE"
 fi
+[ "$FROM_EDITOR" = 0 ] || [ -n "$MESSAGE" ] || die "--editor goes with --message"
 [ -z "$NOT_ON" ] || [ -n "$RANGE" ] || die "--not-on needs --range"
 if [ -n "$RANGE" ]; then
   # The other verbs judge what is about to be committed; a range is history.
@@ -291,12 +295,20 @@ case "$VERB" in
       # without the README (it shows the syntax of both declarations) and the
       # template. Anything else, the CHANGELOG or a spec, could carry a task
       # section past that check and grant itself an exception (R-0206; for
-      # Test-Löschung that way was open since R-0079).
-      case "$(realpath -m --relative-to=. -- "$TASK_LEDGER")" in
-        tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $TASK_LEDGER" ;;
-        tasks/*.md) ;;
-        *) die "not a ledger: $TASK_LEDGER" ;;
-      esac
+      # Test-Löschung that way was open since R-0079). Judged as written and by
+      # where it lies, like review-run.sh: the declaration comes from HEAD under
+      # the written path, so a symlink from outside into tasks/ would read it out
+      # of a file that check never sees (R-0217). The spelling is read from ROOT as it
+      # is spelled: an absolute path has to reach the checkout the way this script
+      # was called, through a symlink or not, or it is refused (as in review-run.sh).
+      case "$TASK_LEDGER" in /*) L_ABS="$TASK_LEDGER" ;; *) L_ABS="$ROOT/$TASK_LEDGER" ;; esac
+      for L_PATH in "$(realpath -m -s --relative-to="$ROOT" -- "$L_ABS")" "$(realpath -m --relative-to="$ROOT" -- "$TASK_LEDGER")"; do
+        case "$L_PATH" in
+          tasks/README.md|tasks/README.md/*|tasks/templates/*) die "not a ledger: $TASK_LEDGER" ;;
+          tasks/*.md) ;;
+          *) die "not a ledger: $TASK_LEDGER" ;;
+        esac
+      done
       [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"
@@ -325,6 +337,9 @@ case "$VERB" in
       function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
       # Where a comment starts, or 0. Only a marker at the start of the line or
       # after whitespace counts, so the // in an https:// URL is not a comment.
+      # No string is parsed: a " #" or " //" inside one counts as well, so an
+      # assertion behind it on its line is not counted as added (the stricter
+      # direction, R-0216).
       function comment_at(s,   c, c2) {
         c = 0
         if (match(s, /(^|[ \t])#/))    c = RSTART + RLENGTH - 1
@@ -376,6 +391,9 @@ case "$VERB" in
                         # change has to bring back, counted below.
                         acmt = comment_at(line)
                         acode = acmt ? substr(line, 1, acmt - 1) : line
+                        # A /* */ behind code is a comment too (R-0216), but only here:
+                        # in comment_at it would hide a skip pattern behind it as well.
+                        if (match(acode, /(^|[ \t])\/\*/)) acode = substr(acode, 1, RSTART + RLENGTH - 3)
                         if (is_assert(acode, file) && line !~ /^[ \t]*(\/\*|\*)/)
                           printf "AA\t%s\t%d\t%s\n", file, newno, trim(line)
                         if (line !~ /review: ok/) {
@@ -1035,11 +1053,15 @@ $IMPLICIT"
     if [ -n "$MESSAGE" ]; then
       # The message of the commit being made (R-0197): before this, only a span
       # (pre-push, CI) read messages, when the commit already lay in the local
-      # history. With commit -v git puts the diff below a scissors line, and that is
-      # no part of the message. Comment lines are read: without an editor (-m, -F)
-      # git keeps them in the commit.
-      out="$(awk "$SEC_TOKEN_AWK"'
-        /^# -+ >8 -+$/ { exit }
+      # history. Comment lines are read: without an editor (-m, -F) git keeps them
+      # in the commit. git truncates at its scissors line only with commit -v or
+      # with an editor and cleanup=scissors; a scissors line typed into -m, -F or
+      # an editor without -v stays in the commit with all that follows (R-0213).
+      # So only with --editor, and only from the first diff header below the exact
+      # line on: that is the diff commit -v puts there, no part of the message.
+      out="$(awk -v ED="$FROM_EDITOR" "$SEC_TOKEN_AWK"'
+        ED && $0 == "# ------------------------ >8 ------------------------" { cut = 1 }
+        cut && /^diff --git / { exit }
         { if (token($0)) printf "the commit message:%d\ttoken\n", NR }' "$MESSAGE")" \
         || die "sec: could not read the message $MESSAGE"
       sec_hits "" <<< "$out"
