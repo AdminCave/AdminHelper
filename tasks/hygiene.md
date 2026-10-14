@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket hygiene: keine Box-Adresse im Reg-Ledger, list kennt alle Warm-Boxen, eine Lane-Form für die Allow-Regel (R-0365, R-0371, R-0370) — Task-Ledger
-Status: bereit · Branch: harness/hygiene · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: erledigt · Branch: harness/hygiene · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-14; F1 A --as-lane, F2 A warm.env aller Worktrees; T3 nach dem Merge von doc-smoke-lane (#167, gemergt); Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0365, R-0371, R-0370 (Kurz-Ledger ohne Spec)
 Heavy: none — heavy.sh mit heavy_test (Shims), vm.py mit test_vm.py (aufgezeichnete API, Fixture-Worktrees); keine echte VM.
