@@ -72,8 +72,9 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
 6. `gh pr checks <n> --watch --fail-fast`. Produkt-PR, CI im ersten Anlauf grün → Kombinationsprüfung (CLAUDE.md
    §2), dann `gh pr merge <n> --merge` (ohne `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch
    danach mit `git push origin --delete feature/<slug>`). Harness-PR oder rote CI → Übergabe an Kevin.
-7. Nach dem Merge den Lauf auf `main` beobachten (`gh run list --branch main -L 1`, dann
-   `gh run watch <id> --exit-status`): rot → nichts weiter mergen, Revert nach CLAUDE.md §2. Dann
+7. Nach dem Merge den `ci.yml`-Lauf des Merge-Commits beobachten: `gh run list --workflow ci.yml --commit
+   <merge-sha> -L 1` wiederholen, bis er erscheint, dann `gh run watch <id> --exit-status`; rot → nichts weiter
+   mergen, Revert nach CLAUDE.md §2. Dann
    `python3 scripts/dev/roadmap.py sync`, `git -C tasks/private push`,
    `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`, `git worktree list` und
    `python3 scripts/vm/vm.py list` sauber.

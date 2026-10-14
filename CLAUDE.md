@@ -78,8 +78,8 @@ Merge, Datenverlust, Leak), als eigene Task, nie nebenbei. Funde an der Harness 
 - Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test, dann grün; Feature → Test dazu; Refactor →
   Suite grün vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O,
   echte SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.
-- CI nach Push begleiten (`gh pr checks <n> --watch --fail-fast`), nach einem Merge den Lauf auf `main`
-  (`gh run watch <id> --exit-status`); nicht „fertig“ melden, solange CI läuft oder rot ist.
+- CI nach Push begleiten (`gh pr checks <n> --watch --fail-fast`), nach einem Merge den `ci.yml`-Lauf des
+  Merge-Commits auf `main` (`gh run watch <id> --exit-status`); nicht „fertig“ melden, solange CI läuft oder rot ist.
 
 ## 6. Prüfer: Sub-Agenten mit festem Auftrag (`.claude/agents/`)
 Aufruf immer über das Agent-Werkzeug mit `subagent_type` (`builder`, `reviewer`, `tester`, `security`), nie über
