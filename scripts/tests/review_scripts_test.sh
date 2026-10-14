@@ -458,6 +458,12 @@ r sec --message "$MSG"
 r sec --message "$MSG" --editor
 [ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "sec --message --editor: below the scissors line without a diff it counts" || bad "editor no diff: rc=$rc out=$OUT"
+# Without --editor not even a diff header below the line ends the scan: only an
+# editor's commit -v puts one there.
+printf 'subject\n\n%s\ndiff --git a/f b/f\n+below %s\n' "$CUT" "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message without --editor: a diff header typed below the scissors line ends nothing" || bad "message typed diff: rc=$rc out=$OUT"
 printf 'subject\n%s\n# Do not modify or remove the line above.\nnote %s\ndiff --git a/f b/f\n' "$CUT" "$T_GH" > "$MSG"
 r sec --message "$MSG" --editor
 [ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
@@ -2264,6 +2270,20 @@ chmod 755 "$WORK/ed-keep.sh"
 GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
 [ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
   && ok "armed: ... and in -m with GIT_EDITOR set (git hands the hook GIT_EDITOR=:)" || bad "msg scissors -m editor set: rc=$rc out=$OUT"
+# The same with a diff header typed below the line: without an editor the hook
+# says nothing of one, so review.sh reads on.
+TYPED="subject"$'\n\n'"$CUT"$'\n'"diff --git a/f b/f"$'\n'"+below $T_GH"
+hc --allow-empty -m "$TYPED"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "armed: a diff header typed below the scissors line in -m hides nothing" || bad "msg typed diff -m: rc=$rc out=$OUT"
+printf '%s\n' "$TYPED" > "$WORK/typed-diff-msg.txt"
+hc --allow-empty -F "$WORK/typed-diff-msg.txt"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... nor in -F" || bad "msg typed diff -F: rc=$rc out=$OUT"
+rm -f -- "$WORK/typed-diff-msg.txt"
+GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "$TYPED"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... nor in -m with GIT_EDITOR set" || bad "msg typed diff -m editor set: rc=$rc out=$OUT"
 # commit -v with an editor: git puts the diff below its scissors line and drops it,
 # so a diff that removes a token line commits.
 printf 'clean\n' > "$HFIX/docs/old-token.md"; git -C "$HFIX" add -- docs/old-token.md

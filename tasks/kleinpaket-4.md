@@ -20,7 +20,7 @@ Laufzeit zusammen (`review_scripts_test.sh:372-374`).
 
 ### T1 — commit-msg: an der Schnittlinie schneidet `sec --message` nur, wenn ein Editor die Nachricht schrieb, und nur den Diff darunter (R-0213)  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/commit-msg, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md
-Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @053dd108 2026-10-14T06:05:08+02:00
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @251bbcd7 2026-10-14T07:37:34+02:00
 Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - **Heute:** `review.sh:1042` (`/^# -+ >8 -+$/ { exit }`) beendet den Scan der Nachricht an jeder Zeile dieser Form, bei

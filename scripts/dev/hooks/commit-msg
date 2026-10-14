@@ -13,7 +13,8 @@
 # history. git hands over the message file ($1), and review.sh reads all of it.
 # When git brought up an editor, the hook says so (--editor), and only then does
 # the diff that `commit -v` puts below the scissors line not count: a scissors line
-# typed into -m or -F stays in the commit with what follows it (R-0213).
+# typed into -m or -F stays in the commit with what follows it (R-0213). With -v as
+# well git cuts there after all; reading it then is the stricter direction.
 # githooks(5): git runs every commit hook with GIT_EDITOR=: when no editor comes
 # up, whatever the caller set.
 # `git commit --no-verify` skips this hook like pre-commit; the harness guard

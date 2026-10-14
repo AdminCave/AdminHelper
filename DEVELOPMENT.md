@@ -854,7 +854,8 @@ den Commit. Schon beim Commit liest der Hook `scripts/dev/hooks/commit-msg` die 
 (`review.sh sec --message <datei>`, R-0197): ein Token darin bricht den Commit ab, gemeldet wird nur
 die Zeile. Nur wenn git einen Editor geoeffnet hat (sonst setzt es fuer den Hook `GIT_EDITOR=:`),
 zaehlt der Diff nicht, den `commit -v` unter die Schnittlinie setzt, ab seiner ersten `diff --git`-Zeile;
-eine Schnittlinie in `-m` oder `-F` ist Teil der Nachricht (R-0213). Ein Test, der ein solches
+eine Schnittlinie in `-m` oder `-F` bleibt Teil der Nachricht (R-0213). Kuerzt git sie mit `-v -m` doch,
+liest der Hook trotzdem alles, die strengere Richtung. Ein Test, der ein solches
 Muster braucht, setzt es zur Laufzeit zusammen. Was an den lokalen
 Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
 der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
