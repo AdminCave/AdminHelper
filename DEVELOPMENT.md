@@ -225,7 +225,7 @@ auf einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM
 Sperrdatei wählt `run.sh` in dieser Reihenfolge: `AH_PY_LOCK_FILE`, wenn gesetzt; sonst die
 **geteilte** Datei `/var/lib/adminhelper-dev/py.lock` (Pfad über `AH_PY_LOCK_SHARED`), sobald
 ihr Verzeichnis existiert; sonst je Nutzer `~/.cache/adminhelper-py.lock`. Verzeichnis und Datei
-legt `runner-setup.sh` an (Abschnitt „Runner-User"): über sie warten Kevins Läufe und die des
+legt `runner-setup.sh` an: über sie warten Kevins Läufe und die des
 Runners aufeinander. Ohne das Verzeichnis gilt die Sperre nur **je Unix-Nutzer**, über alle seine
 Checkouts. Darf ein Nutzer die geteilte Datei nur lesen, sperrt der Schritt trotzdem, nur ohne
 Halter-Zeile; lässt sie sich gar nicht öffnen (fehlt sie und darf er sie nicht anlegen, oder ist
@@ -447,86 +447,47 @@ feuert auch in `claude -p`). Manuell: `bash scripts/dev/hooks/session-status.sh`
 
 ### Task schliessen: `ledger.sh` und `task-close.sh`
 
-Seit Harness-Stufe 4 setzt **kein Modell mehr selbst einen Haken und macht keinen
-Commit**. Der Weg einer Task ist:
+Kein Modell setzt selbst einen Haken oder macht einen Task-Commit. Der Weg einer Task, im Worktree des
+Vorhabens:
 
 ```bash
 bash scripts/dev/ledger.sh start tasks/<slug>.md T7      # .vm/active-task: Komponente + Dateien
-# ... bauen, gezielt testen, Review ...
-bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage --review-note "approve (sonnet)" -m "feat(...): ..."
+# ... builder baut, reviewer prueft (Urteil in .ah-out/review/<slug>/T7.verdict.json) ...
+bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 ```
 
-`--stage` stagt die Pfade aus der `Dateien:`-Zeile der Task (nur die, nie `git add -A`;
-Verzeichnisse werden abgelehnt, Loeschungen mitgenommen).
-Das ist kein Komfort: beim Runner ist `git add` hart verboten, ein autonomer Lauf, der von
-Hand stagen will, kommt nicht weiter; in Kevins Sessions ist es frei.
+`task-close.sh` laeuft ausserhalb der Modell-Session, ist wiederholbar und geht in dieser Reihenfolge vor:
 
-`task-close.sh` laeuft **ausserhalb** der Modell-Session und macht fuenf Dinge in
-dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
-(halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash und Index merken (aendert sich
-der Index bis zum Commit, Exit 2); (2) die billigen Pruefer, vor der Suite (R-0150): `review.sh diff-scan`
-(abgeschaltete Tests im Diff: Skip-, xfail-, todo-, fixme- und only-Muster von pytest, unittest,
-vitest/jest, Playwright, Rust und Go, auch `fit(`, `.fails(`, `.runIf(` und `pytest.importorskip(`, <!-- review: ok nennt die Muster -->
-`|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
-Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`, gezaehlt nur, wo Tests stehen:
-in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`)
-oder in der Spanne eines Tests, etwa einem inline `#[test]` unter `src/`, auch nach einer
-Umbenennung; eine Import-Zeile nie (R-0130); Helfer in `#[cfg(test)] mod tests` ohne `#[test]`
-bleiben eine Grenze — und ein `return` in einem Test, nackt oder mit dem Wert, den ein Test
-ohnehin liefert (`None`, `undefined`, `Ok(())`), auch in einer Datei mit CRLF-Zeilen (R-0132; andere
-Rueckgabewerte und ein generisches `.fail(` bleiben frei), wenn noch Code des Tests folgt und es
-nicht in einer darin verschachtelten Funktion steht (Stub, Callback; ein Go-`t.Run` ist ein Test); eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine Doku-Zeile,
-die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
-als `Test-Löschung:` ankündigt, eine Assertion in einem bleibenden Test darf sich ändern, wenn die Task das als
-`Assertion-Änderung:` ankündigt und mindestens so viele Assertions zurückbringt — geprüft am Inhalt, siehe
-`tasks/README.md`), `review.sh scope` (Fremd-Pfade),
-`review.sh docs-pairs` (eine Doku-Seite ohne ihre andere Sprache) und `review.sh sec` (was nie ins
-oeffentliche Repo darf); (3) das
-`Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
---strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
-`verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
-Prosa-Zeile faehrt die Komponente der Task, mit Hinweis), danach `review.sh contracts` (die
-Pruefungen, die an den geaenderten Pfaden haengen); (4) das Review-Urteil:
-`--review-note "<text>"`, `--review verdict:<datei>`, die `review.sh check-verdict` gegen Schema und Tree-Hash
-prueft, oder `--review auto`, der Reviewer als eigener Prozess (Stufe 6b, „Reviewer als Prozess"); (5) `ledger.sh
-mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` (sie nennt die gelaufenen
-Komponenten, etwa `run.sh[quick] web desktop-e2e: 2 passed, 0 failed, 16 skipped`, und liefen Vertraege,
-` · contracts: 1 ok`) und **ein** Commit
-mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
-`aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
-`ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
-Eingabefehler (auch ein unlesbares oder schemawidriges Verdict) oder der Index aenderte sich waehrend des
-Laufs, `3` Suite rot, Diff-Scan-Fund, eine Doku-Seite in nur einer Sprache, ein roter Vertrag, kein brauchbares
-approve oder eine dritte Review-Runde, `4` blockiert (Scope/Sec) oder ein Verdict fuer einen anderen Baum oder eine
-andere Task, `74` die Suite, ein Vertrags-Test, die Probe oder der Reviewer-Prozess konnte gar nicht laufen.
+1. **Eingabe:** das Ledger liegt unter `tasks/*.md` (nicht README oder Vorlage, kein Symlink), die Task
+   existiert, der Branch ist nicht `main`/`master` (sonst Exit 2).
+2. **Handarbeit:** eine Task mit `Komponente: —` ist Exit 74; sie wird von Hand geschlossen.
+3. **Staging:** `--stage` stagt genau die Pfade aus `Dateien:` (nie `git add -A`; Verzeichnisse werden
+   abgelehnt, Loeschungen mitgenommen). Eine halb gestagte Datei bricht ab (Exit 2, mit Hinweis auf
+   `ledger.sh set-files`). Der Index wird mit `git write-tree` festgehalten.
+4. **Geloeschte Testdatei** (`tests/`, `*_test.*`, `test_*`): nur mit einer committeten
+   `Test-Löschung:`-Zeile dieser Task (sonst Exit 3; Format in `tasks/README.md`).
+5. **`review.sh sec --staged`:** was nie in dieses oeffentliche Repo darf (Exit 4).
+6. **Verify:** die `Verify:`-Zeile der Task, wie sie dasteht (`verify.sh <komp> --strict [-- <args>]`
+   oder `run.sh <layer> --strict --only <komp>`; nennt sie die `Komponente:` der Task nicht, Exit 2),
+   immer mit `--strict`: rot ist Exit 3, nicht lauffaehig Exit 74. Die Summary-Zeile wird die Evidenz.
+7. **Urteil:** `.ah-out/review/<slug>/<id>.verdict.json` des `reviewer`, juenger als jede gestagte
+   Datei, mit `verdict` = `approve` (sonst Exit 3). Entfaellt bei `Review: am Ende` im Ledger-Kopf.
+8. **Index unveraendert** seit Schritt 3 (sonst Exit 2).
+9. **Haken:** `ledger.sh mark-done` mit der Summary-Zeile als `Evidenz:`; war es die letzte offene Task,
+   geht der Kopf von `aktiv` auf `bereit`.
+10. **Commit** mit Code und Ledger; die Git-Hooks fahren `sec` noch einmal. Aendert der Commit eine
+    `Test-Löschung:`-Zeile, nimmt `task-close.sh` ihn zurueck (`git reset --soft HEAD^`, Exit 4).
 
-`ledger.sh start` schreibt dabei `.vm/active-task` — reine **Anzeige** (wer arbeitet
-gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, und kein Skript liest
-die Datei, auch der Worker (Stufe 7a) nicht.
+Exit-Codes: `0` committet · `2` Eingabe, Staging oder Index · `3` Suite rot, Urteil fehlt, Testdatei
+ohne Ankuendigung · `4` private Datei oder Token im Diff, geaenderte Ankuendigung · `74` Suite nicht
+lauffaehig oder Handarbeits-Task. Nach einem Fehler in Schritt 9 oder 10 setzt ein zweiter Lauf
+dieselbe Zeile neu.
 
-`ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`,
-`mark-skip`, `mark-question`, `set-files`, `status`, `new-task`, `lint`) — Details
-in [`tasks/README.md`](tasks/README.md). Braucht eine Task eine Datei, die nicht in
-ihrem `Dateien:` steht, erweitert `ledger.sh set-files` die Liste **sichtbar**;
-den Scope zu lockern ist nicht vorgesehen. Ohne Eintrag erlaubt sind ohnehin die
-Test-Verzeichnisse der Komponente, `docs/`, `CHANGELOG.md` und der Ledger selbst —
-**ausser** den Dateien aus `scripts/dev/harness-paths.txt`: die muessen benannt werden,
-sonst waere `scripts/tests/run.sh` als „Test der Komponente scripts" eine offene Tuer.
-
-**`--evidence` ist ein Feld, kein Beweis.** `ledger.sh mark-done` nimmt jede Zeichenkette
-entgegen; was die Zeile wahr macht, ist ausschliesslich, dass `task-close.sh` sie aus dem
-Artefakt des Laufs erzeugt, den es selbst gefahren hat. Deshalb steht `mark-done` in Kevins
-Settings unter `ask` und beim Runner im Deny. Eine Zeile mit `# review: ok <grund>`
-nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
-
-`git add`, `git commit`, `git checkout`, `git restore` und `git stash` sind in den
-Runner-Settings (`scripts/dev/runner-settings.json`) hart verboten und in Kevins Sessions
-frei — eine Abfrage, die immer bestaetigt wird, hielt nur den Bau auf (zwei Worker verloren
-daran je 45 Minuten). Unter `permissions.ask` in `.claude/settings.json` stehen nur
-`bootstrap_linux.sh`, `harness.sh off` und `ledger.sh mark-done`, und
-`scripts/tests/hooks_test.sh` haelt fest, dass die Git-Verben dort nicht zurueckkehren. Der Weg
-zum Commit fuehrt ueber `task-close.sh`; die drei Recovery-Verben loeschen im Zweifel
-ungestagte Arbeit.
+`ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`, `mark-skip`,
+`mark-question`, `set-files`, `status`, `lint`); Details in [`tasks/README.md`](tasks/README.md).
+**`--evidence` ist ein Feld, kein Beweis:** `mark-done` nimmt jede Zeichenkette; wahr macht die Zeile
+nur, dass `task-close.sh` sie aus dem eigenen Lauf erzeugt. Deshalb steht `ledger.sh mark-done` in
+`.claude/settings.json` unter `ask`.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
 `## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**
@@ -534,116 +495,44 @@ Seiten. Das dedupliziert aber nichts: legen beide dieselbe Versions-Ueberschrift
 sie hinterher doppelt im File, ohne Konflikt-Marker. Vor einem Release lohnt der Blick in
 den `Unreleased`-Block (`.claude/rules/release.md`).
 
-### Review-Pruefer (Ebene 0)
+### Entwicklung mit Claude Code
 
-Bevor ein Modell einen Diff ansieht, beantworten Skripte die Fragen, die sonst jeder Reviewer
-raten muesste (Stufe 6a; Uebersicht in `docs/developer/cicd.html`, „Review-Pruefer und Verdict"):
+Gearbeitet wird in **einer** interaktiven Claude-Code-Session in tmux (Opus), die Kevin im
+Haupt-Checkout auf `main` startet. Die Regeln stehen in `CLAUDE.md` (§4 Lebenslauf eines Vorhabens,
+§5 Tests, §6 Pruefer, §7 Commit, §8 Roadmap und Worktrees); hier steht, welche Teile es dafuer gibt.
 
-```bash
-bash scripts/dev/review.sh risk                           # xhigh + Pfade | standard: welches Reviewer-Modell
-bash scripts/dev/review.sh docs-pairs --staged            # Doku-Seite ohne ihre andere Sprache -> Exit 3
-bash scripts/dev/review.sh contracts --staged [--list]    # die Pruefungen der geaenderten Pfade
-bash scripts/dev/review.sh check-verdict <datei> --tree <hash> [--task <ledger> <id>]   # 0 | 2 | 3 | 4
-bash scripts/dev/review-probe.sh <komponente> [--staged | --commit <rev>] [-- <test>]
-bash scripts/dev/review-probe.sh <komponente> --commit <rev> --mutate <datei>:<zeile> '<ersatz>'
-bash scripts/dev/review.sh pr-body tasks/<slug>.md [--verdicts <dir>]
-bash scripts/dev/review.sh log [--ledger tasks/<slug>.md]          # jede Reviewer-Runde, mit Summe
-```
-
-- **`risk`** misst ohne Flag alles noch nicht Committete (gestaged, ungestaged, untrackt —
-  feature-build fragt es in Schritt 4, bevor etwas gestaged ist), mit `--staged` nur den Index,
-  mit `--range <a>..<b>` einen Bereich. Es liest `scripts/dev/review-risk.txt` (PKI/mTLS, Auth,
-  SSRF, FRP, Wire-Vertraege, Alembic, CI/Release/Install) und `harness-paths.txt`, jeweils so,
-  wie HEAD, Index und Worktree sie haben: ein Diff, der eine Zeile streicht, wird nicht an
-  seiner eigenen Liste gemessen. Eine Verschiebung zaehlt auch mit ihrem alten Pfad.
-- **`contracts`** liest `scripts/dev/review-contracts.txt`: `<glob> test <komponente> <testdatei>`
-  (laeuft als `verify.sh <komponente> --strict -- <testdatei>`, mit eigenem `AH_OUT_DIR`) oder
-  `<glob> pair <regex> <datei> <datei>` (der erste Capture ist in beiden gleich). Die Liste gilt
-  ebenfalls aus HEAD, Index und Worktree. Wer das Format einer Paar-Stelle aendert, geht deshalb
-  in zwei Schritten: erst ein Regex, der beide Schreibweisen nimmt, dann das neue Format.
-- **`check-verdict`** prueft ein Reviewer-Urteil gegen `scripts/dev/review-verdict.schema.json`
-  (nur mit python3): kein approve mit einem `blocker`, keins, wenn die Probe den neuen Test ohne
-  die Aenderung gruen fand; ein `blocker` ohne Beleg zaehlt als `nit`. Mit `--task` muss das
-  Verdict auch diese Task meinen (sonst Exit 4). Schema-Version 2 (der Reviewer-Prozess) verlangt
-  Runde, Turns, Dauer und den `probe`-Block; eine Probe mit `applicable: false` (etwa
-  `no-test-change`, ein Refactor) ist kein Hindernis, ein ueberlebender Mutant steht in der
-  Review-Zeile, ebenso eine Probe, die nicht lief (`probe not run: toolchain|other-failure|…`).
-  `only-declared-deletion` ist auch kein Hindernis, steht aber sichtbar in der Review-Zeile
-  (`probe: only a declared test deletion, not run`): das lockert ein Gate (R-0227).
-- **`declared-only`** (`<komponente> (--staged | --commit <rev>) --task <ledger> <id>`) sagt, ob
-  der Diff unter den Testpfaden der Komponente nur aus angekuendigten `Test-Löschung:`-Tests
-  besteht: keine Zeile hinzugefuegt, jede entfernte Zeile leer, ein Import, der keine Tests
-  mitbringt (kein `*`, kein Name `test…`/`Test…`, in JS/TS kein blosser Import und keiner einer
-  `.test`/`.spec`-Datei; ein Go-Importblock nur vor der ersten Deklaration), oder in der alten
-  Spanne eines angekuendigten Tests, der nach den Regeln von `diff-scan` zaehlt (derselbe Code).
-  Die Ankuendigung kommt aus dem Ledger vor der Aenderung (`HEAD` bzw. `<rev>^`). Exit 0 ja, 1 nein.
-- **`review-probe.sh`** legt eine eigene Worktree unter dem `TMPDIR` des Aufrufers an, setzt nur
-  die Test-Hunks auf die Basis und faehrt `verify.sh --tree`; die Antwort ist der `probe`-Block
-  des Schemas (`red_without_change`, oder `applicable: false` mit `new-symbol`, `toolchain`,
-  `no-test-change`, `only-test-change`, `only-declared-deletion`, `apply-failed`, `other-failure`;
-  `no-test-change`, `only-test-change` und `only-declared-deletion` ohne Suite-Lauf, der letzte nur mit
-  `--task`, wie es `task-close.sh` uebergibt). `--mutate` setzt genau einen Mutanten in die
-  ganze Aenderung (eine Datei der Worktree, sonst Exit 2); der Ersatz muss lint-sauber sein.
-- **`pr-body`** schreibt den PR-Text aus dem Ledger; eine Task ohne Evidenz heisst
-  „unverifiziert", Adressen, Hostnamen privater Netze und VMIDs fallen heraus. Mit
-  `--verdicts .ah-out/review/<slug>` nimmt es je Task die letzte Runde `<id>.r<n>.verdict.json`
-  (oder `<id>.json`) und prueft sie ueber `check-verdict` selbst: ein schemawidriges Verdict heisst
-  „ungueltig", eines ohne brauchbares approve sagt warum; die Zeile nennt Modell, Runde und
-  Mutanten.
-- **`log`** liest `.ah-out/review/review-log.jsonl`, eine Zeile je Reviewer-Runde (Datum, Ledger,
-  Task, Runde, Modell, Effort, Urteil, Funde, Probe, Mutanten, `cost_usd`, `num_turns`,
-  `duration_s`, Tree), und druckt sie als Tabelle mit der Summe
-  `N runs, A approve, R request_changes, F failed, $X, T turns, S s`. Die Zeilen schreibt
-  `task-close.sh --review auto` (`log --append <verdict>`, eine gescheiterte Runde mit
-  `log --failed "<grund>"`).
-
-### Reviewer als Prozess: `--review auto` (Stufe 6b)
-
-Im Pilot (Ledger-Kopf `Review: auto`) startet `task-close.sh` den Task-Reviewer selbst, statt
-dass die Bau-Session einen Sub-Agent fragt; Prompt und Urteil gehen nicht durch die Session:
-
-```bash
-bash scripts/dev/task-close.sh tasks/<slug>.md T3 --stage --review auto -m "feat(...): ..."
-bash scripts/dev/review.sh log --ledger tasks/<slug>.md      # Runden, Urteile, $, Turns, Sekunden
-```
-
-Nach den billigen Pruefern, der Suite und den Vertraegen:
-
-1. **Runde:** gezaehlt aus den Dateien unter `.ah-out/review/<slug>/`. Liegt fuer genau diesen
-   gestagten Diff, Baum und diese Task schon ein approve (ein Abschluss brach danach ab, etwa am
-   Commit), wird es uebernommen. Eine dritte Runde gibt es nicht (Exit 3 mit Hinweis auf
-   `ledger.sh mark-question`).
-2. **Probe durch den Runner:** `review-probe.sh <komponente> --staged [-- <test aus Verify:>]`;
-   ohne Testdatei oder nur mit Tests antwortet sie `applicable: false`, ohne Suite-Lauf.
-3. **Reviewer:** `scripts/dev/review-run.sh` baut den Prompt (Task-Text, Spec-Pfad, gestagter
-   Diff ohne `tasks/private/`, neue Dateien, Tree-Hash, Probe, Vertraege, Verify-Summary; in
-   Runde 2 der Pfad der Runde 1) und startet aus dem Repo-Wurzelverzeichnis `claude -p` mit dem
-   Reviewer aus `scripts/dev/review-agent.md` (als `--agents`-JSON), `--setting-sources ""` (weder
-   Projekt- noch User-Settings: deren Allow-Regeln deckelt `review-settings.json` nicht),
-   den Settings `scripts/dev/review-settings.json` und dem Schema
-   `scripts/dev/review-output.schema.json`. Das Modell folgt `review.sh risk --staged`:
-   `standard` ist Sonnet/high mit 60 Turns und 5 $, `xhigh` Opus/xhigh mit 80 Turns und 15 $;
-   Timeout 1200 s. Die Deckel werden nach dem Pilot aus den Werten von `review.sh log`
-   nachgestellt.
-4. **Verdict:** aus `structured_output` plus den Feldern des Runners (Task, Tree-Hash, Probe,
-   Verify, Vertraege, Kosten, Turns, Dauer) wird `<id>.r<n>.verdict.json` (Schema-Version 2),
-   daneben liegen `prompt.md`, `raw.json`, `err` (stderr der CLI), `run.err` (stderr von
-   review-run.sh) und `staged` (der Hash des gestagten Diffs, an dem die Uebernahme eines approve
-   haengt) der Runde, alles unter `.ah-out/`, gitignored. `check-verdict --tree --task` entscheidet, ob committet wird; jede Runde geht als
-   Zeile ins Review-Log.
-5. **Scheitern:** kein Start, Timeout, ein `error_*`-Ergebnis, ein Exit ungleich 0 oder ein
-   fehlendes oder schemawidriges `structured_output` sind Exit 74, ohne Verdict und ohne Commit;
-   im Log steht die Runde als `failed` mit Grund. Die Session versucht es einmal neu, danach
-   STOPP; einen Rueckfall auf den Sub-Agent-Review gibt es nicht.
-
-Der Reviewer darf lesen und `git diff|show|log|status`; im Pilot setzt er keine Mutanten (Kevin,
-2026-10-03): ein `review-probe.sh --mutate` laeuft als Code mit den Rechten des Benutzers. Mutanten
-kommen zurueck, sobald es feste Operatoren oder eine Sandbox gibt (Roadmap); von Hand bleibt
-`--mutate` nutzbar. Edit, Write, Netz, `verify.sh` und `run.sh` sind gesperrt. Der
-harness-guard laeuft als PreToolUse-Hook und ist fail-closed: fehlt er, scheitert oder haengt
-er, blockiert der Hook (R-0159). Die Projekt-Settings wirken nicht hinein. Die Aufrufform hat
-`scripts/dev/review-cli-probe.sh` gemessen (CLI 2.1.285); gegen eine neue CLI-Version laesst
-sie sich mit demselben Skript erneut messen.
+- **Sub-Agenten** in `.claude/agents/`: `builder` baut eine Task, `reviewer` prueft einen Task- oder
+  Branch-Diff gegen sieben Kriterien, `tester` prueft vor dem Abschluss, ob die Tests da und echt
+  sind, `security` prueft Risikopfade. Die Session ruft sie ueber das Agent-Werkzeug mit
+  `subagent_type`. Sie laufen im Arbeitsverzeichnis der Session, nicht im Worktree des Vorhabens:
+  jeder Aufruf nennt den absoluten Worktree-Pfad, die Agenten arbeiten mit `git -C <wt>` und
+  `bash <wt>/scripts/…`. Eine neue Agent-Datei sieht eine laufende Session nur, wenn
+  `.claude/agents/` bei ihrem Start schon existierte.
+- **Worktrees:** Jedes Vorhaben baut in `../AdminHelper-<slug>` auf `feature/<slug>`.
+  `bash scripts/dev/worktree-setup.sh <pfad> <slug>` richtet ihn ein (eigene Test-DB, eigenes Venv,
+  `node_modules` als Hardlink-Kopie, frpc-Sidecar, Venv-Links, `.vm/lane`);
+  `bash scripts/dev/worktree-teardown.sh <pfad> <slug>` reapt zuerst die VMs der Lane und raeumt dann
+  Worktree, Test-DB und Venv weg.
+- **Commit einer Task** nur ueber `task-close.sh` (Abschnitt „Task schliessen“).
+- **Token-Hooks:** `git config core.hooksPath scripts/dev/hooks`, einmal im Haupt-Checkout; Worktrees
+  erben es. `pre-commit`, `prepare-commit-msg`, `pre-merge-commit` und `pre-applypatch` fahren
+  `review.sh sec --staged`, `commit-msg` prueft die Nachricht, `pre-push` jeden Commit, den ein Push
+  nach draussen bringt. Gemeldet werden Pfad oder Datei:Zeile, nie der Inhalt. Was an den Hooks
+  vorbeigeht, faengt der CI-Job „Public repo guard (review.sh sec)“. Der PreToolUse-Hook
+  `scripts/dev/hooks/harness-guard.sh` verweigert `git commit --no-verify` und Loeschen per Glob in
+  geteilten Temp-Verzeichnissen.
+- **AH-STATUS** druckt `scripts/dev/hooks/session-status.sh` beim Start (Abschnitt „Session-Status-Hook“).
+- **Roadmap:** `tasks/private/ROADMAP.md` liegt in einem eigenen privaten Repo (Sicherheitsfunde,
+  Homelab-Details) und wird nur ueber `roadmap.py` geschrieben (Abschnitt „Die Roadmap als Skript“).
+- **Lange Laeufe** (Suiten ueber zehn Minuten, `/test`, Wochenlauf) laufen in einem tmux-Fenster ohne
+  Modell, Ausgabe und Exit-Code in Dateien:
+  `tmux new-window -d -n ah-quick "( . ./.devenv.sh; bash scripts/tests/run.sh quick --strict ) > <log> 2>&1; echo \$? > <rc>"`.
+  Die Session wartet auf die `rc`-Datei und liest danach das Log.
+- **Python-Sperre:** `server-pytest` und `schemathesis` warten ueber `/var/lib/adminhelper-dev/py.lock`
+  (ohne das Verzeichnis `~/.cache/adminhelper-py.lock`) aufeinander, ueber alle Worktrees (Abschnitt
+  „Python-Tests lokal“).
+- **Was es bewusst nicht gibt (2026-10-14):** keinen Worker-Loop, keinen Runner-Nutzer, kein
+  Builder-Profil, keine Sandbox und keinen unbeaufsichtigten Betrieb. Jede Session startet Kevin.
 
 ### Die Roadmap als Skript: `roadmap.py`
 
@@ -738,544 +627,6 @@ sie per `--file` oder `AH_ROADMAP` benennen; das Datum fuer Ablauf, Archiv und K
 `--today`. Die Tests unter `scripts/dev/tests/` faehrt
 der `run.sh`-Schritt `scripts/dev pytest` (Id `dev-pytest`, Key `scripts`), gleich gebaut
 wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
-
-### Harness-Schutz und Kill-Switch
-
-`scripts/dev/harness-paths.txt` listet die Dateien, deren Inhalt die **Regeln**
-bestimmt (`CLAUDE.md`, `AUTONOMOUS.md`, `.claude/**`, die Gate-Skripte unter
-`scripts/dev/`, `run.sh`, `heavy.sh`, `vm.py`). Der `PreToolUse`-Hook
-`scripts/dev/hooks/harness-guard.sh` ermittelt vor jedem `Edit`/`Write`/`MultiEdit`/
-`Bash`, welche Datei der Aufruf schreiben wuerde — inklusive `sed -i`, `tee`,
-`>`-Umleitung, `cp`/`mv` und `bash -c` — und verweigert ihn, wenn sie auf der Liste
-steht. Eine Eingabe-Umleitung (`<`, `<<<`, `<&`) verdeckt dabei weder das Kommando noch das
-Ziel von `cp`/`mv` (R-0134), ein gequotetes `"<"` bleibt ein Wort; Grenzen bleiben eine
-Prozess-Substitution `<(…)` und `<<- EOF` mit Leerzeichen. Ein Kommentar (`#` am Wortanfang)
-oeffnet nichts, kein `((`, kein Here-Doc, keine Quote; ein `#` mitten im Wort liest shlex dagegen
-als Kommentarbeginn (Grenze, R-0145). Was ein wegnehmendes Kommando erreicht (`rm`, `rmdir`, `shred`, `unlink`,
-`chmod`/`chown`/`chgrp`, die Quelle von `mv`, der Startpfad eines loeschenden `find`),
-trifft auch, wenn Harness-Pfade **darunter** liegen: `rm -rf .claude`, `rm -rf
-scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, ein Glob mit dem, was er im Baum trifft
-(`rm -rf scripts/dev/*`, auch nach einem `cd` in einen Glob; hinter einer Variablen zaehlt sein
-Verzeichnis), und die Repo-Wurzel samt allem darueber, die alles enthaelt (`rm -rf ./*`,
-`rm -rf ..`; R-0127). Das trifft im autonomen Lauf auch einen harmlos wirkenden Aufraeumer, der
-in der Wurzel startet (`find . -name '*.pyc' -delete`): er startet im Unterverzeichnis
-(`find apps -name '*.pyc' -delete`); `rm -f *.log` bleibt frei, der Glob trifft nur die Logs. Alle anderen Schreibformen
-pruefen nur den Pfad selbst. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
-python/perl heraus, ein zur Laufzeit gebauter Pfad, ein `find … -exec sed -i`,
-`git clean` oder `git rm` kommen durch (der Skript-Kopf zaehlt die Luecken auf). Auch git schreibt
-ueber Ausgabe-Optionen: `--output` jedes git-Aufrufs (auch hinter `--`, das ein Optionswert schlucken
-kann; ein Argument namens `--output…`, Pfad oder Optionswert, ist dafuer ein Fehlalarm), `-o` von archive, das Verzeichnis von
-`format-patch -o`, die Datei von `bundle create` zaehlen als Ziel, und der Befehl hinter `git grep -O`
-wird mit den Dateien geprueft, die er bekommt (R-0158). Im Runner ist der
-Hook **fail-closed** (R-0159): Claude Code laesst einen Aufruf durch, wenn ein command-Hook nicht
-startet (Exit 127) oder in seine Zeitgrenze laeuft; nur Exit 2 sperrt. Der Hook-Befehl in
-`scripts/dev/runner-settings.json` prueft deshalb, dass der Waechter lesbar ist, ruft ihn mit
-`timeout -k 2 10` auf und macht aus jedem Fehler Exit 2 (Feld `timeout` 15 s); der Waechter selbst endet
-immer mit 0 und traegt seine Entscheidung im JSON. Ein Fehler **im** Waechter (kein `python3`, eine
-Ausnahme im Parser) laesst ihn dagegen weiter ohne Entscheidung enden (offen, R-0166). Interaktiv
-bleibt der Hook, wie er ist. Die tragende
-Grenze ist auch hier die Deny-Liste, der Hook ist die zweite Schicht:
-
-```bash
-bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung, pre-commit
-bash scripts/dev/harness.sh off      # Kill-Switch: der Waechter warnt nur noch
-bash scripts/dev/harness.sh on       # wieder scharf
-```
-
-Der Deny fuer Harness-Pfade greift **nur** im autonomen Lauf (`AH_AUTONOMOUS=1`) und nur
-ohne den Marker `.vm/harness.off` (gitignored, kann also nicht in einen Commit reisen).
-Interaktiv warnt der Hook bloss — und diese Warnung sieht man nur mit
-`claude --debug`, weil Claude Code bei Exit 0 ausschliesslich das JSON auf stdout
-liest. Ein Ledger, das den Harness selbst umbaut, ist der Fall fuer `harness.sh off`.
-Der Hook kostet einen `python3`-Start je Tool-Aufruf (auf der Dev-Box ~60 ms) und
-laeuft auch in Kevins interaktiven Sessions.
-
-Zwei Regeln gelten dagegen **in jedem Modus** — interaktiv, im Auto-Modus, in Subagenten,
-im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
-
-- **Kein Loeschen per Glob in einem geteilten Temp-Verzeichnis** (R-0098). Geteilt sind
-  `/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR` und die Verzeichnisse von Claude Code darin:
-  `/tmp/claude-<uid>`, `…/<projekt>` (der kodierte Pfad mit fuehrendem `-`) und
-  `…/<projekt>/<session>` (eine UUID; dort liegen `tasks/` und `scratchpad/` aller Subagenten
-  einer Session), dazu die beiden, die Claude Code je uid fuer alle Sessions fuehrt
-  (`bash-edit-diff/`, `bundled-skills/`). Ein anderer Eintrag dort
-  (`/tmp/claude-<uid>/tmp.XXXX`, eine Datei) ist jemandes eigener. Verweigert werden `rm`,
-  `rmdir`, `unlink` und `shred` mit einem Glob, dessen woertliches Verzeichnis (nach `cd`
-  aufgeloest) ein solches Verzeichnis **ist** (`/tmp/tmp.*`, `cd /tmp && rm -rf tmp.*`, auch
-  `/tmp*` und ein geteiltes Verzeichnis selbst), `find` mit so einem Startpfad samt `-delete`
-  bzw. `-exec rm`, eine Schleife ueber so einen Glob, in deren Rumpf geloescht wird (`for d in
-  /tmp/tmp.*; do …`, `… | while read d; do …`, auch ueber `cd "$d"` oder `bash -c`), und `… |
-  xargs rm` hinter einem Lister (`ls`, `echo`, `printf`, `find`) oder hinter einer solchen
-  Schleife. Ein Glob **ueber** der Wurzel zaehlt in jeder Tiefe (`/t*/claude-1000/*`,
-  `cd /t* && rm -rf claude-1000/*`, R-0109). Frei bleibt ein Glob, der erst eine Ebene
-  tiefer beginnt, also im eigenen Verzeichnis (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis
-  `/tmp/foo.XXXX/*`), dazu Pfade hinter einer Variablen (`rm -rf "$W"/*` — der Hook kann sie
-  nicht aufloesen), Globs im eigenen Checkout und derselbe Text in einer Commit-Message oder
-  einem Here-Doc. Die Grenze ist gemessen:
-  „irgendwo unter `/tmp`" traf in 34 513 echten Befehlen 13 legitime Aufraeumer in
-  Scratchpads. Erkannt werden auch ein Operand nach `--`
-  (`cd /tmp/claude-<uid> && rm -rf -- -home-x*`), `|&` als Pipe,
-  `for d in $(ls -d /tmp/tmp.*); do …`, `… | xargs sh -c 'rm …'` und `grep -l`/`-L` als Lister
-  (R-0109), dazu `[^x]` wie `[!x]`, Klammer-Listen (`/{tmp,x}/tmp.*`, auch verschachtelt) und ein
-  woertlicher Operand nach `cd` in einen Glob (`cd /t* && rm -rf claude-1000`, R-0125). Nicht
-  erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'`, eine
-  Schleife, die ihre Liste per Prozess-Substitution oder `mapfile`/`readarray` bekommt
-  (`done < <(ls …)`), eine Liste ohne Glob mit einem erst zur Laufzeit gebauten Pfad
-  (`ls /tmp | while read d; do rm -rf /tmp/$d`), eine Liste, die ohne xargs in eine Shell geht
-  (`… | sh -c 'xargs rm'`), `cat … | xargs rm` (Dateiinhalt statt Namen), Klammer-Sequenzen
-  (`{1..3}`), eine Variable in einer Klammer-Liste (`/{$X,y}/…`) und die Expansionen nach der
-  32. einer Klammer-Liste. Die Regel dazu
-  fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
-  geloescht wird nur der eigene Pfad, nie per Glob.
-- **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden
-  `git commit --no-verify` und `-n` (auch in `-qn`), `git am -n` und `--no-verify` (fuer <!-- review: ok nennt die verweigerte Umgehung -->
-  `git am` laeuft nur `pre-applypatch`), `git -c core.hooksPath=…` (auch ueber
-  `GIT_CONFIG_*`) und `git config … core.hooksPath`, ausser lesend (`--get`), ebenso das
-  Entfernen der ganzen `core`-Sektion. Kevins eigene Shell bleibt frei: der Hook sieht nur,
-  was das Modell ausfuehrt. Nicht erfasst: ein git-Alias auf `commit -n` oder `am -n`, ein direktes
-  Schreiben von `.git/config` (Edit, `sed -i`, `>>`), ein `core.hooksPath` ueber
-  `include.path`, `git config --edit`, `eval` oder eine Kommando-Substitution und Plumbing
-  (`commit-tree`, `update-ref`). `chmod -x` auf einen Hook zaehlt seit R-0110 als Schreiben
-  eines Harness-Pfads wie `sed -i` (ebenso `chown`, `chgrp`): im autonomen Lauf verweigert,
-  interaktiv gewarnt.
-
-**pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
-`review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
-`sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
-Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Seit R-0183 sperrt `sec`
-auch eine hinzugefuegte Zeile mit einem Token-Muster — ein Proxmox-API-Token
-(`USER@REALM!TOKENID=UUID`, ebenso die PBS-Form mit `:` statt `=`, die URL-kodierte Form mit `%40`, `%21`,
-`%3D` und ein Secret allein hinter einem Schluesselnamen wie `api_token_secret` oder `PVE_TOKEN_SECRET`;
-ein nacktes UUID ohne solchen Namen bleibt erlaubt, R-0196), ein GitHub-Token (`ghp_`, `gho_`, `ghu_`,
-`ghs_`, `ghr_`, `github_pat_`) oder ein `sk-ant-`-Schluessel, je mit einer Mindestlaenge, die Platzhalter durchlaesst (ebenso ein
-Rumpf aus hoechstens zwei verschiedenen Zeichen wie `xxxx…`) — und nennt dabei nur Datei:Zeile; ueber
-eine Spanne (`--range`: pre-push und CI) liest es auch die Nachricht jedes Commits und nennt dann nur
-den Commit. Schon beim Commit liest der Hook `scripts/dev/hooks/commit-msg` die Nachricht
-(`review.sh sec --message <datei>`, R-0197): ein Token darin bricht den Commit ab, gemeldet wird nur
-die Zeile. Nur wenn git einen Editor geoeffnet hat (sonst setzt es fuer den Hook `GIT_EDITOR=:`),
-zaehlt der Diff nicht, den `commit -v` unter die Schnittlinie setzt, ab seiner ersten `diff --git`-Zeile;
-eine Schnittlinie in `-m` oder `-F` bleibt Teil der Nachricht (R-0213). Kuerzt git sie mit `-v -m` doch,
-liest der Hook trotzdem alles, die strengere Richtung. Ein Test, der ein solches
-Muster braucht, setzt es zur Laufzeit zusammen. Was an den lokalen
-Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
-der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
-eines Pull Requests bzw. Pushs (R-0123; ein Commit, der eine private Datei bringt und der naechste,
-der sie wieder loescht, zaehlen beide, denn die Historie wird mit veroeffentlicht). Der Job prueft
-zweimal, mit dem `review.sh` der Basis (ein Worktree von `origin/<base>`, beim Push der Stand vor
-ihm) und mit dem des geaenderten Stands; beide muessen gruen sein (R-0174) — ein Pull Request,
-der `sec` aendert, wird mit der Logik geprueft, die vor ihm galt. Einen Fehlalarm der Basis-Logik
-raeumt ein Pull Request deshalb nicht an ihr vorbei aus, der geht per Admin-Merge. Scharf wird
-der Hook je Klon mit einem Handgriff Kevins:
-
-```bash
-git config core.hooksPath scripts/dev/hooks   # einmal im Haupt-Checkout; die Lanes erben es
-bash scripts/dev/harness.sh status            # pre-commit: armed (core.hooksPath=scripts/dev/hooks)
-```
-
-Der Pfad ist relativ: jeder Worktree faehrt die Hooks **seines** Branches, ein Branch ohne
-die Dateien hat keine (und dessen aelteres `harness.sh` sagt dazu nichts). Seit R-0110 liegen
-dort vier Hooks, alle mit demselben `review.sh sec --staged`: `pre-commit` fuer `git commit`,
-`prepare-commit-msg` fuer `git cherry-pick`, `git revert`, jeden Commit, den ein `rebase`
-mit dem Standard-Backend nachspielt, und den Merge-Commit, `pre-merge-commit` fuer
-`git merge` mit eigenem Commit (githooks(5): bricht ab, bevor der Commit entsteht) und
-`pre-applypatch` fuer `git am` und `git rebase --apply` (auch ueber `rebase.backend=apply`),
-die keinen der drei anderen rufen. Dass der Sequencer `prepare-commit-msg`
-ruft, dokumentiert git nicht; gemessen ist es mit git 2.47.3, und
-`scripts/tests/review_scripts_test.sh` haelt es fest — ein git, das damit aufhoert, macht
-diese Faelle rot. `git commit -n` ueberspringt nur `pre-commit`, nicht `prepare-commit-msg`;
-ein gewoehnlicher Commit faehrt `sec` deshalb zweimal (~20 ms je Lauf). Seit R-0123 kommt ein
-fuenfter dazu: `pre-push` faehrt `review.sh sec --range` ueber jeden Commit, den ein Push nach
-draussen bringt — je Ref vom Stand des Remotes bis zum lokalen Commit (eine neue Ref: die ganze
-Historie), und nur die Commits, die der Remote noch nicht hat (`--not-on <remote>`; ein Branch, der
-main gemergt hat, bringt main nicht als Fund mit). Ein Treffer bricht den Push ab und nennt Pfad bzw.
-Datei:Zeile mit dem Commit, nie den Inhalt; eine Loeschung pusht nichts und geht durch. Erst dieser
-Hook verhindert, dass etwas ueberhaupt oeffentlich wird; die CI faengt, was an ihm vorbeigeht.
-Seit R-0197 ist `commit-msg` der sechste: er faehrt `review.sh sec --message` ueber die Nachricht
-eines `git commit` und eines Merge-Commits von `git merge` — nur die rufen ihn (githooks(5)); die
-Nachrichten von `git cherry-pick`, `git revert`, einem `rebase` und `git am` prueft erst `pre-push`
-bzw. die CI. `git commit -n` ueberspringt ihn wie `pre-commit`.
-Fehlt einer der sechs im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status`
-`NOT armed` und nennt ihn. Nach einer Weigerung geht es mit `--abort` zurueck (`git cherry-pick`, `merge`, `rebase`,
-`am`, `git revert` einer Serie); ein verweigertes `git revert` eines einzelnen Commits
-hinterlaesst dagegen keinen `REVERT_HEAD` und seine Aenderung gestaged, dort hilft
-`git reset --merge`. Die Hooks sperren
-fail-closed — ein kaputtes `review.sh` blockiert jeden Commit, jeden Merge, cherry-pick,
-rebase, `git am` und jeden Push; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
-Nicht abgedeckt: ein Fast-Forward-Merge (er erzeugt keinen Commit), Plumbing (`commit-tree`,
-`update-ref`) und die Wege am Hook vorbei, die der Waechter nicht sieht (oben). Eine Runner-Regel `Edit(./.git/**)` gibt es bewusst nicht: unter
-`dontAsk` ohne passende Allow-Regel wird so ein Edit schon heute verweigert, und die
-Bash-Schreibwege deckt eine Edit-Regel nicht ab.
-
-### Runner-User `adminhelper-runner`
-
-Der Unix-User, unter dem autonome Laeufe arbeiten. Er existiert, damit ein Lauf
-nicht mit Kevins ssh-Schluesseln, seinem `gh`-Login und seinen Bypass-Rechten
-faehrt. Anlegen (einmalig, als root):
-
-```bash
-bash scripts/dev/runner-setup.sh --dry-run        # zeigt den Plan, aendert nichts (kein root noetig)
-sudo bash scripts/dev/runner-setup.sh             # legt User, Klon, DB, Venv, Settings an
-```
-
-Das Skript ist idempotent: ein zweiter Lauf laesst gefuellte Token-Dateien in Ruhe
-und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
-Klon und Datenbank wieder weg. Im Klon setzt es als Runner `core.hooksPath
-scripts/dev/hooks`, damit der pre-commit-Hook auch dort vor jedem Commit
-`review.sh sec` faehrt (R-0102); ein Klon von vorher bekommt es mit einem erneuten
-`sudo bash scripts/dev/runner-setup.sh`. Geklont wird nur in einen Pfad, den es noch nicht
-gibt: steht unter `/srv/ah/repo` schon etwas ohne `.git`, bricht das Skript mit einem Satz ab,
-statt hineinzuklonen; sonst klont es in ein Temp-Verzeichnis in `/srv` (neben `/srv/ah`) und
-benennt danach mit einem einzigen rename um (`mv --no-copy -T`): `/srv` muss root gehoeren und
-darf fuer Gruppe und andere nicht schreibbar sein; liegt `/srv/ah` auf einem anderen Dateisystem
-oder Mount, bricht es ab, statt zu kopieren. Ausserdem legt es die geteilte Python-Sperre
-`/var/lib/adminhelper-dev/py.lock` an (root, `0666`, im Verzeichnis `0755` von root; Abschnitt
-„Die schweren Python-Schritte laufen nacheinander"), `--remove --yes` nimmt sie mit; ein
-bestehender Runner bekommt sie mit einem erneuten `sudo bash scripts/dev/runner-setup.sh`.
-Ebenso installiert es das Red Team root-eigen (R-0152): `runner-redteam.sh`, `runner-env.sh`,
-`runner-settings.json` und `runner-claude.version` aus dem Checkout, aus dem es laeuft, nach
-`/usr/local/lib/adminhelper-dev/` (root, Verzeichnis und Skript `0755`, der Rest `0644`), dazu den
-Harness-Waechter `scripts/dev/hooks/harness-guard.sh` als `harness-guard.sh` (`0755`, R-0164): der
-Hook in den Runner-Settings ruft diese Kopie auf, nicht die im Klon, die der Runner aendern kann. Es
-haelt die sha256 der Runner-CLI in `/var/lib/adminhelper-dev/runner-claude.sha256` fest
-(`0644`); `--remove --yes` nimmt beides mit.
-Danach bleiben **drei Handgriffe** fuer Kevin, die der Runner nicht selbst tun kann:
-
-1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
-   `~adminhelper-runner/.config/adminhelper/oauth.env` (Abo-Token, kein API-Key:
-   `ANTHROPIC_API_KEY` haette Vorrang und wuerde ueber ein API-Konto abrechnen).
-2. `pveum user token add adminhelper-runner@pve run --privsep 1` plus dieselben vier
-   ACL-Pfade der Rolle `AdminHelperVM`, die Kevins eigener Token hat (Abschnitt
-   „VMs mit vm.py") → Werte nach `~adminhelper-runner/.config/adminhelper/pve.env`.
-3. `sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only`, dann der
-   Red-Team-Lauf (unten). Das Red Team laeuft nicht aus diesem Klon, sondern aus seiner
-   root-eigenen Kopie; der Klon ist nur das Ziel seiner Proben.
-
-**`-iu`, nicht `-u`, bei allem, was die CLI des Runners braucht:** ohne `-i` behaelt
-sudo den PATH des Aufrufers, und die CLI in `~adminhelper-runner/.local/bin` ist dann
-unsichtbar (`sudo: claude: Befehl nicht gefunden`, 2026-09-22 verifiziert).
-
-**Modell, Effort und CLI-Version sind festgenagelt, nicht geerbt.** Ein unbeaufsichtigter Lauf
-darf nicht davon abhaengen, was die CLI gerade als Standard mitbringt:
-
-- **Modell:** `scripts/dev/runner-settings.json` nennt `claude-opus-5-5[1m]` — eine volle
-  Kennung, **kein** Alias. Ein Alias wie `opus[1m]` zeigt immer auf das neueste Modell und
-  wechselte beim naechsten Release ohne Review; fuer interaktive Sessions ist das richtig,
-  fuer den Runner nicht.
-- **Effort:** `xhigh`. Wirksam ist der Eintrag unter `modelSettings.claude-opus-5-5`
-  (`effortLevel`, so wie `/effort` ihn schreibt): ein `effortLevel` oben in den
-  User-Settings zaehlt laut Claude-Code-Doku fuer Opus 5.5 **nicht** mehr, nur noch fuer
-  aeltere Modelle — es bleibt stehen, damit ein Rueckfall auf ein aelteres Modell nicht
-  auf dessen Standard faellt. Opus 5.5 hat von sich aus `medium`.
-- **Nichts darf das ueberstimmen:** `ANTHROPIC_MODEL` und `CLAUDE_CODE_EFFORT_LEVEL`
-  haben Vorrang vor den Settings; `runner-env.sh` leert beide, wie schon den API-Key.
-- **CLI-Version:** steht in **einer** Datei, `scripts/dev/runner-claude.version`.
-  `runner-setup.sh` installiert genau diese Fassung (`claude install <version>`),
-  `runner-env.sh` schaltet den Auto-Updater ab (`DISABLE_AUTOUPDATER`) — bewusst nicht die
-  Settings-Datei: die ist oeffentlich und traegt Regeln, nie einen `env`-Block. Aeltere Fassungen kennen neuere
-  Modelle nicht: das Binary von 2.1.278 enthaelt `claude-opus-5-5` nicht in seinem Katalog.
-  Hat der Runner noch gar keine CLI, installiert der offizielle Installer genau diese
-  Fassung (aus dem Repo-Root:
-  `sudo -iu adminhelper-runner bash -c "curl -fsSL https://claude.ai/install.sh | bash -s $(cat scripts/dev/runner-claude.version)"`),
-  danach `runner-setup.sh` erneut. Ein Handgriff als Runner ohne `runner-env.sh` setzt den
-  Schalter selbst (`env DISABLE_AUTOUPDATER=1`, wie bei `setup-token`); wandert die Version
-  trotzdem, meldet das Red Team es, und `runner-setup.sh` setzt sie zurueck.
-
-**Das Red Team liest zurueck, was wirklich lief.** Aus dem `system/init`-Ereignis einer
-Modellprobe nimmt es das tatsaechliche Modell und die tatsaechliche CLI-Version, aus
-`result.modelUsage` das Modell, das wirklich geantwortet hat, und vergleicht alles mit dem
-Soll, das `runner-setup.sh` neben das Red Team installiert hat — nicht mit dem Klon, den der
-Runner aendern kann. Die CLI selbst gehoert dem Runner; dass sie die installierte ist, belegt
-ihre sha256 gegen die festgehaltene (`runner-redteam.sh --claude-sum <datei> <claude>`).
-Abweichung, fehlendes Ereignis, eine Probe ohne Ergebnis oder eine
-fehlende CLI ist ein `FAIL`, kein Hinweis — ein Messgeraet, das nichts misst, darf nicht
-wie ein Ergebnis aussehen. Den Effort liest es **nicht** zurueck: kein Ereignis des
-Protokolls traegt ihn; ihn sichern die Settings und das Leeren von
-`CLAUDE_CODE_EFFORT_LEVEL`.
-
-**Anheben** ist ein bewusster Schritt, kein Nebeneffekt. Das Soll steht im Repo;
-`runner-setup.sh` liest es aus dem Checkout, aus dem es laeuft, und installiert es mit dem
-Red Team. Nach jedem CLI- oder Modellwechsel laeuft deshalb zuerst `runner-setup.sh`: sonst
-misst das Red Team gegen das alte Soll, und die Pruefsumme der neuen CLI meldet es als `FAIL`:
-
-```
-# 1. auf einem Branch: neue Version eintragen und pruefen, dass sie das Modell kennt
-echo 2.1.XXX > scripts/dev/runner-claude.version
-# 2. bei einem Modellwechsel: model und modelSettings in scripts/dev/runner-settings.json
-# 3. PR, Merge; dann aus einem Checkout auf dem neuen main einrichten und beweisen
-sudo bash scripts/dev/runner-setup.sh
-sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only
-sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh
-```
-
-**Getrusteter Workspace — bewusst abgeschaltet.** Claude Code ignoriert die
-Allow-Liste eines Projekts, solange der Workspace nicht getrustet ist, und sagt das
-auch: „Ignoring 38 permissions.allow entries … this workspace has not been trusted".
-Die Richtung ist fail-safe (die **Deny**-Liste gilt weiter), deshalb setzt
-`runner-setup.sh` das Flag nur auf ausdrueckliche Anforderung:
-
-```
-sudo bash scripts/dev/runner-setup.sh --trust
-```
-
-Das schreibt `projects["/srv/ah/repo"].hasTrustDialogAccepted` in
-`~adminhelper-runner/.claude.json`. Die Meldung von 2026-09-22 nennt die Allow-Liste aus
-`.claude/settings.json` des Projekts; ob die Allow-Liste der Runner-Settings ohne Trust gilt, ist
-**nicht verifiziert**. Der Worker (Stufe 7a) laedt die Projekt-Settings gar nicht
-(`--setting-sources user`) und arbeitet in den Lanes `/srv/ah/AdminHelper-<slug>`, die `--trust` nicht
-abdeckt (es trustet nur `/srv/ah/repo`); ob er den Trust braucht, misst der Pilot (Abschnitt „Der
-Worker"). Solange jeder Lauf von Hand gestartet wird, ist der engere Zustand der bessere.
-
-Beide Dateien muessen regulaere `0600`-Dateien in einem Verzeichnis sein, in das
-nur der Runner schreiben darf; `scripts/dev/runner-env.sh` (zum **Sourcen**)
-prueft das und gibt sonst einen Fehler zurueck (`return 1`, die Shell lebt weiter).
-`oauth.env` ist Pflicht, `pve.env` optional — ohne Hypervisor-Token laufen die
-Python- und Shell-Suiten trotzdem, nur keine VM. Es leert ausserdem die geerbten Credentials, die auf dieser Box
-ueberhaupt vorkommen — `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, ein fremdes
-`CLAUDE_CODE_OAUTH_TOKEN`, alle `AH_PVE_*` (`vm.py` laesst die Umgebung ueber seine
-Konfiguration gewinnen), `GH_TOKEN`/`GITHUB_TOKEN`, `SSH_AUTH_SOCK` (ein Agent-Socket ist ein
-Schluessel ohne Schluesseldatei), `DATABASE_URL` sowie **alle** `PG*` und `AWS_*` (als Wildcard, nicht als Handliste — `PGPORT` lenkt eine Verbindung so gut um wie `PGHOST`) — und setzt
-`AH_AUTONOMOUS=1` und `AH_VM_MAX=8`. Die Unsets stehen **vor** allem, was scheitern kann: die
-Datei wird gesourct, ihr Rueckgabewert meist ignoriert. `DATABASE_URL` ist dabei der scharfe
-Fall: `run.sh` bevorzugt sie gegenueber `AH_TEST_DB`, und die Server-Suite legt darauf Tabellen
-an und **loescht sie wieder** — ein geerbter Wert waere ein Drop in einer fremden Datenbank.
-
-**Was die Runner-Settings** (`scripts/dev/runner-settings.json` →
-`~adminhelper-runner/.claude/settings.json`) **verbieten und warum:**
-
-| Deny-Regel | Grund |
-|---|---|
-| `git add`, `git commit`, `git push`, `git switch`, `git branch`, `git revert`, `git checkout`, `git restore`, `git stash` | Der Runner schreibt keine Historie. `revert`/`branch`/`switch` stehen mit drin, weil sie committen bzw. ungestagte Arbeit verwerfen koennen — und weil die Projekt-`settings.json` des Klons sie sonst mitbringt (Listen mergen ueber die Ebenen). |
-| `gh:*`, `sudo:*` | Kein GitHub-Zugang, keine Rechteerhoehung. |
-| `vm.py bake`, `bake.sh`, `heavy.sh`, `multibox.sh`, `run.sh all/e2e/integration` | Teure oder VM-fressende Laeufe startet ein Mensch. `vm.py` ist Verb fuer Verb freigegeben, damit kein breites Praefix `bake` mit abdeckt. |
-| `task-close.sh`, `ledger.sh mark-done` | Die Bau-Session schliesst keine Task. Seit Stufe 7a tut das der Worker (`ledger-loop.sh`) ausserhalb der Session mit `task-close.sh --review auto`; die Session hinterlaesst nur eine Commit-Nachricht. |
-| `Edit(./tasks/**)`, `git grep` | Stufe 7a (R-0108): ein Ledger aendert die Bau-Session nur ueber `ledger.sh` (`start`, `mark-skip`, `mark-question`, `set-files`, alle erlaubt); den Haken setzt `task-close.sh`. `git grep` kann mit `-O` ein Programm starten. |
-| `Edit(./.claude/**)`, `Edit(~/.claude/**)`, `CLAUDE.md`, `AUTONOMOUS.md`, `scripts/dev/**`, `run.sh`, `heavy.sh`, `vm.py` | Der Harness ist nicht sein Arbeitsmaterial. `~/.claude` steht mit drin, weil Claude Code Settings **live** nachlaedt. |
-| `Edit(./tasks/private/**)`, `Read(~/.config/adminhelper/**)` | Privates Repo und die eigenen Token-Dateien. Der `Read`-Deny ist Hygiene, **keine Grenze**: die Token stehen nach `runner-env.sh` ohnehin in der Prozess-Umgebung des Runners, und ein erlaubtes `cat` liest die Datei am `Read`-Tool vorbei. Was wirklich schuetzt, ist `0600` plus die Tatsache, dass es seine **eigenen** Token sind (Pool-gescopt, eigenes Abo). |
-| `Edit(//srv/ah/**/…)` (dieselben Harness-Pfade absolut) | Eine `./`-Regel loest gegen das **Arbeitsverzeichnis** der Session auf: startet ein Lauf in einem Unterverzeichnis des Klons, meint `Edit(./CLAUDE.md)` eine ganz andere Datei. Die absoluten Zwillinge halten ueberall. |
-
-**Was die Regeln nicht koennen** — ehrlich, weil es den Beweis veraendert: der
-Runner darf `Edit(./scripts/**)` (ausser den gesperrten Pfaden) und `bash
-scripts/tests/run.sh quick` — wer eine Testdatei aendert und sie dann startet,
-fuehrt eigenen Code aus. Die gefaehrlichste Form davon ist zu: `scripts/vm/**`
-(die Wrapper laufen mit dem Hypervisor-Token) und `scripts/tests/multibox.sh`
-stehen im Deny **und** auf den Harness-Pfaden; was bleibt, sind die uebrigen
-Test-Dateien, die keinen Token in der Hand haben. Ein Ledger kann die Bau-Session seit Stufe 7a nicht
-mehr direkt editieren (`Edit(./tasks/**)` steht im Deny), wohl aber der Code, den sie ueber
-`verify.sh` startet; was der hinter dem Worker aendert, erkennt der Worker erst danach (Abschnitt
-„Der Worker"). Einen Scratch-Ordner gibt es nur ueber `bash scripts/dev/scratch.sh new|rm` (kein
-`mktemp`, kein `rm` in der Allow-Liste). **Die tragende Grenze ist
-deshalb nicht die Regel-Liste, sondern die Betriebssystem-Ebene:** kein
-`~/.ssh`, kein `gh`-Login, leeres `GH_TOKEN`, `remote.origin.pushurl=/dev/null`,
-eigene DB, eigener Proxmox-Token nur fuer den Pool.
-
-**Red Team.** Der Beweis, dass das haelt, ist ein Lauf als dieser User:
-
-```bash
-sudo -u adminhelper-runner bash /usr/local/lib/adminhelper-dev/runner-redteam.sh
-```
-
-Das Messgeraet liegt ausserhalb dessen, was der gepruefte Nutzer schreiben kann: die
-root-eigene Kopie, die `runner-setup.sh` installiert. Es startet sich einmal unter `env -i` mit
-festem `PATH` neu, sourct keine Datei des Runners (`runner-env.sh` laesst dort `~/.devenv.sh`
-aus) und bricht ab, wenn `runner-env.sh` seine Funktionen, Zaehler oder seinen `PATH`
-veraendert. Laeuft es von woanders, etwa aus dem Klon, ist das ein `FAIL`, der den richtigen
-Aufruf nennt, und der Lauf endet dort.
-
-Jede Probe druckt `ok`, `FAIL` oder `info`; die letzte Zeile ist `N ok, M FAIL`.
-Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,
-`gh`-Login, D-Bus/Keyring, der eigene Proxmox-Token gegen eine VM **ausserhalb**
-des Pools, und `claude -p`-Laeufe, die ausdruecklich nach einem verbotenen Griff fragen
-(erwartet: `permission_denials`): ein harmloses `git stash list`, ein `git push`, eine
-`CLAUDE.md`-Aenderung und, gestartet wie die Bau-Session des Workers (`--setting-sources user`),
-ein Ledger per Umleitung und ein nacktes `mktemp -d` (Stufe 7a). Ohne Modell prueft
-`--build-settings`, dass die Settings den Deny auf `tasks/` und die zwei Allows fuer `scratch.sh`
-wortgleich tragen.
-Die Proben auf git, Proxmox, D-Bus und Settings fuehren keinen Code und keine ausfuehrbare
-Konfiguration des Runners aus (R-0156, R-0160 bis R-0163); die Modellproben starten bewusst die
-CLI des Runners, nachdem Pruefsumme und Settings geprueft sind — ein FAIL dort haelt sie nicht auf
-(ihr Verhindern regelt Stufe 7a).
-Die Push-Proben pushen aus einem eigenen Repository ohne Hooks, ohne git-Konfiguration
-des Nutzers und ohne Credential-Helper an die URLs, die der Klon nennt, und lesen seine
-Konfiguration auf Helper, Extra-Header und URL-Umschreibungen (nur Namen, URLs geschwaerzt); ob eine
-Modellprobe den Klon geaendert hat, zeigt die ctime seiner Dateien, nicht `git status`. Der
-Proxmox-Token wird direkt an der API gemessen (`curl -q` ohne die curlrc des Nutzers, Token ueber
-stdin): `GET /pools?poolid=<pool>` muss den Pool zeigen, der Status einer VM ausserhalb des Pools
-muss abgelehnt werden. Das Ziel (URL, Node, Pool, CA) liest das Red Team aus `pve-target.env`, die
-`runner-setup.sh` root-eigen neben das Red Team schreibt (aus der Umgebung des Aufrufs, sonst aus
-`.claude/settings.local.json` des Checkouts, ohne Token; die CA als Kopie) — ohne sie meldet Probe 4
-`info`. Die D-Bus-Probe sucht den Socket in `/run/user/<uid>` und fragt ihn mit gesetztem
-`XDG_RUNTIME_DIR`; das Runtime-Verzeichnis des Besitzers darf der Runner nicht betreten.
-`~/.claude/settings.json` des Runners muss byte-genau der geprueften `runner-settings.json`
-entsprechen; Claude Code schreibt diese Datei selbst, wenn in einer Session `/config` oder `/model`
-eine Wahl speichert (Claude-Code-Doku, Settings), dann hilft ein erneutes `runner-setup.sh`. Ein
-unbekanntes Argument endet mit Exit 2, bevor eine Probe laeuft; viele Proben gibt es einzeln als
-Schritt ohne den Neustart (die Liste nennt die Meldung bei einem unbekannten Argument) — `--pve` und
-`--git` (zu jeder nicht-lokalen Push-URL des Klons und zu einer angegebenen URL) gehen dabei ins
-Netz. Dazu die
-geteilte Python-Sperre `/var/lib/adminhelper-dev/py.lock`: sie existiert, Datei und
-Verzeichnis gehoeren root, der Runner darf das Verzeichnis nicht schreiben und kann die
-Sperre nehmen (ist sie gerade belegt, ein `info`); einzeln mit
-`runner-redteam.sh --py-lock <absoluter-pfad>`. Und die Runner-CLI gegen ihre festgehaltene
-sha256 (`--claude-sum`).
-Stufe 4 gilt erst mit `0 FAIL` als abgeschlossen; das Ergebnis gehoert in den
-Anhang von `tasks/harness-stufe-4.md`.
-
-### Der Worker: `ledger-loop.sh` (Stufe 7a)
-
-Der Worker baut freigegebene Ledger als `adminhelper-runner` (Ablauf, Deckel und Stopp-Klassen:
-`AUTONOMOUS.md`, „Der Worker"). Vor dem ersten Start und nach **jeder** Aenderung an
-`scripts/dev/runner-settings.json`, an `scripts/dev/hooks/harness-guard.sh` (der Runner ruft die
-root-eigene Kopie, die nur `runner-setup.sh` erneuert), am Red Team oder an
-`scripts/dev/runner-claude.version` laufen die drei Handgriffe von oben: `sudo bash scripts/dev/runner-setup.sh`, `sudo -u adminhelper-runner
-git -C /srv/ah/repo pull --ff-only`, das Red Team als Runner. Der Worker selbst zieht einen `main`
-mit geaenderten Harness-Pfaden nicht nach, sondern endet mit `stop: infra (Harness auf main
-geaendert — Pull + Red Team durch Kevin)`. Dazu muss das Token des Runners gelten:
-
-```bash
-sudo -u adminhelper-runner bash -lc '. /srv/ah/repo/scripts/dev/runner-env.sh && claude auth status'
-```
-
-**Getrusteter Workspace — nicht verifiziert.** Ob die Bau-Session in einer Lane die Allow-Liste der
-Runner-Settings ohne Trust anwendet, hat noch niemand gemessen (oben, „Getrusteter Workspace").
-Endet im Pilot jede Task als `[?] stall` oder mit vielen Verweigerungen im Summary, und steht in
-`/srv/ah/loop/<slug>/<id>.s<n>.err` (oder `.json`) eine Meldung „Ignoring … permissions.allow
-entries", greift der Trust: das entscheidet dann Kevin (der Chef legt es ihm vor), denn `--trust` deckt die Lanes
-nicht ab.
-
-**Starten** (nur Kevin, in tmux; die Ledger in seiner Reihenfolge, die Flags mit ihren Defaults):
-
-```bash
-sudo -u adminhelper-runner tmux new -d -s ah-loop \
-  'cd /srv/ah/repo && bash scripts/dev/ledger-loop.sh --ledger tasks/<a>.md --max-hours 8 --max-budget-usd 200'
-```
-
-**Stand lesen** aus dem eigenen Checkout, nie mit einem Skript des Runners:
-
-```bash
-bash scripts/dev/ledger-loop.sh status --state /srv/ah/loop/state.json
-```
-
-Die erste Zeile ist die Worker-Zeile des AH-STATUS (`AH_LOOP_STATE` zeigt dem Hook eine andere
-Datei), danach Stopp-Grund, Ledger und die letzten Zeilen des neuesten `summary-<datum>.md`. Je
-Ledger liegen unter `/srv/ah/loop/<slug>/` die Session-Ausgaben (`<id>.s<n>.json`), die Close-Logs,
-`<id>.aborted.diff` (was der Loop zuruecknahm, jedes Aufraeumen angehaengt mit Zeitstempel) und bei
-`bereit` `pr-body.md`.
-
-**Bundle holen**, wenn ein Ledger `bereit` ist — in Kevins Checkout, kein `git` im Repo des Runners.
-Das Bundle setzt das `origin/main` voraus, auf dem der Runner es schnitt; deshalb zuerst `origin`:
-
-```bash
-git fetch origin
-git fetch /srv/ah/loop/<slug>.bundle feature/<slug>:feature/<slug>
-```
-
-Push und Draft-PR sind danach Kevins bzw. des Chefs Handgriff (Text aus
-`/srv/ah/loop/<slug>/pr-body.md`).
-
-**Recovery:**
-
-- **`[?]` und `blockiert`:** die Frage steht im `[?]` der Task, im Ledger der Lane
-  (`/srv/ah/AdminHelper-<slug>`) und im Summary; der Loop baut das Ledger nicht weiter, bis Kevin
-  entscheidet. Die Ledger-Commits des Loops liegen nur in der Lane, gepusht wird nichts. Einen Befehl,
-  der ein beantwortetes Ledger in der Lane wieder auf `aktiv` setzt, gibt es in 7a nicht: der Loop baut
-  eine bestehende Lane nur weiter, wenn sie sauber ist und ihr Ledger `freigegeben` oder `aktiv` traegt,
-  und nimmt dort die erste Task mit `[ ]` (eine `[?]`-Task bleibt liegen); bis dahin ist das Kevins
-  Handgriff als Runner.
-- **`blockiert (Lane schmutzig)`:** die Lane traegt Aenderungen, die der Loop nicht committet hat.
-  Der Loop raeumt sie nicht weg (kein `stash`, kein `clean`); ansehen mit
-  `sudo -u adminhelper-runner git -C /srv/ah/AdminHelper-<slug> status`, entscheiden tut Kevin.
-- **`stop: infra`:** der Satz dahinter nennt den Grund (Token, CLI-Pin, Klon nicht sauber, `git`,
-  Harness auf `main`, ein API-Fehler oder eine Session ohne JSON); beheben bzw. den Ausfall abwarten,
-  dann neu starten. Die offene Task bleibt `[ ]`. Ausnahme: sagt der
-  Satz `the claude CLI … is not the one runner-setup.sh recorded`, nachdem schon Sessions liefen, hat
-  vermutlich Code einer Session die CLI ersetzt — das ist dasselbe Signal wie `harness-modified`. Die
-  Lane bleibt dann, wie die Session sie verliess (`stop: infra` raeumt nicht auf): ansehen, dann Setup
-  und Red Team, nicht einfach neu starten.
-- **`stop: usage-limit`:** die Reset-Zeit steht in `state.json` und im Summary; danach neu starten,
-  die Task ist offen und ihre Lane aufgeraeumt.
-- **`stop: harness-modified`:** nicht einfach neu starten. Etwas, das nur Code einer Session tun
-  konnte, ist passiert (ein Harness-Pfad, ein Commit in der Lane, der Klon); `aborted.diff` und die
-  Lane ansehen, dann Setup und Red Team. Der Loop sperrt das Ledger mit der Datei
-  `/srv/ah/loop/<slug>/harness-modified`: erst wenn Kevin sie nach dem Ansehen entfernt, baut ein
-  neuer Lauf es wieder.
-
-#### Das Builder-Profil: der Loop unter Kevins Benutzer
-
-Solange der Runner ruht, laeuft der Loop unter Kevins UID mit einem eigenen HOME, dem Builder unter
-`~/.cache/ah-builder`: `home/` fuer die Sessions, `repo/` als Klon (die Lanes daneben), `loop/` fuer
-den Stand. Einrichten, ohne sudo, einmal und danach nach jeder Aenderung an den Runner-Settings oder an
-der Harness auf `main`; die Stopp-Meldung „Harness auf main geaendert … Pull + Red Team durch Kevin“
-heisst beim Builder: `setup`. Voraussetzung ist, was `sudo bash scripts/dev/runner-setup.sh`
-hinterlegt: die Pruefsumme der CLI (`/var/lib/adminhelper-dev/runner-claude.sha256`), die root-eigene
-Kopie des Waechters, die der Hook der Settings ruft (`/usr/local/lib/adminhelper-dev/harness-guard.sh`),
-und die geteilte Python-Sperre. Nach einer Aenderung an `runner-claude.version` oder an
-`scripts/dev/hooks/harness-guard.sh` deshalb zuerst `runner-setup.sh`, dann `setup`. `setup` kopiert auch das
-frpc-Sidecar (`apps/desktop/src-tauri/binaries/`) aus diesem Checkout in den Klon, wie `lane.sh new` es in eine Lane
-kopiert; ohne es sind Desktop-Tasks nicht loop-tauglich:
-
-```bash
-bash scripts/dev/builder-home.sh setup     # idempotent: was schon stimmt, bleibt
-bash scripts/dev/builder-home.sh token     # claude setup-token, dann das Token verdeckt einfuegen
-bash scripts/dev/builder-home.sh status    # nennt, was fehlt (Exit 1)
-```
-
-`setup` legt die Verzeichnisse mit 0700 an, installiert die CLI aus `runner-claude.version` des
-Checkouts, in dem `setup` laeuft (vorher auf `main` pullen, wie fuer `runner-setup.sh`), ins
-Builder-HOME (mit Abgleich gegen die Pruefsumme, die `runner-setup.sh` schrieb; eine Abweichung ist
-nur eine `note`, der Loop endet dann in der Vorpruefung mit `stop: infra`), zieht den Klon auf
-`origin/main` vor (`pushurl=/dev/null`, `core.hooksPath`), schreibt die Settings aus der
-`runner-settings.json` des Klons, ein Tools-venv (`ruff` wie `runner-setup.sh`, `python3` als Wrapper
-auf das venv), eine eigene Test-DB `adminhelper_builder` auf dem Server des Haupt-Checkouts,
-`.devenv.sh` (0600) und die Git-Identitaet. Fuer die Test-DB nimmt `setup` nur eine URL `postgresql://`
-oder `postgres://`, beide auch mit `+<treiber>`; eine andere Form, etwa die Keyword-Form von libpq
-(`host=… dbname=…`), lehnt es ab. Das Passwort liest es wie SQLAlchemy, mit denselben Regeln wie
-`lane.sh` (`scripts/dev/pg-url.sh`), und eine URL, die kein UTF-8 ist, lehnt es ebenso ab.
-cargo und go nimmt `setup` read-only aus dem HOME, in dem es laeuft (`~/.cargo/bin` mit `RUSTUP_HOME`,
-`~/sdk/go` mit `GOROOT`), die Caches (`CARGO_HOME`, `GOPATH`, `GOCACHE`) legt es ins Builder-HOME; rustup
-installiert in `~/.rustup` nichts nach (`RUSTUP_AUTO_INSTALL=0`), go bleibt bei der eigenen Toolchain
-(`GOTOOLCHAIN=local`). Fehlt eine der beiden, nennt `setup` das und laesst ihre Zeilen weg.
-`oauth.env` schreibt nur `token`, und nur ein Token der Form
-`sk-ant-oat01-…`; der Code, den der Browser unterwegs zeigt, ist keins.
-
-**Starten** (nur Kevin; die Ledger in seiner Reihenfolge, die Deckel wie oben) und **Stand lesen**:
-
-```bash
-bash scripts/dev/ledger-loop.sh start --profile kevin --ledger tasks/<a>.md --max-hours 8 --max-budget-usd 200
-bash scripts/dev/ledger-loop.sh status --profile kevin
-```
-
-Ein Lauf im Builder-Profil steht ausserdem als eigene Zeile `Builder:` im `AH-STATUS`-Block: die
-gesaeuberte erste Zeile von `status` (Stand, Kosten oder Stop-Klasse), `(tmux ah-builder)`, solange die
-Session laeuft, und `fertig rc=<n>` aus `builder.done`. Ohne Spur des Profils fehlt die Zeile; mehr aus
-dem Builder zeigt der Hook nicht. `state.json` und `builder.done` nimmt er nur als regulaere Dateien, und
-jeder Lesezugriff hat ein kurzes Zeitlimit: ein haengender Builder kostet die Zeile, nicht den Block.
-
-`start` prueft `builder-home.sh status`, verweigert neben einer schon laufenden tmux-Session
-`ah-builder` und startet darin den Loop des Klons mit `env -i` (nur `HOME`, `PATH`, `LANG`, `USER`,
-`LOGNAME`, `TERM`, `AH_LOOP_DIR`: kein SSH-Agent, keine D-Bus-Adresse, kein Proxmox-Token) und
-`</dev/null`. Die Ausgabe steht in `~/.cache/ah-builder/loop/builder.log`, der Exit-Code am Ende in
-`builder.done` (`rc=<n>`). Was oben unter `/srv/ah/loop` steht (Logs je Ledger, `pr-body.md`, Bundle),
-liegt beim Builder unter `~/.cache/ah-builder/loop`, die Lanes neben `~/.cache/ah-builder/repo`.
-
-**Die Sperrregeln und ihre Grenze.** Die Settings des Builders sind die des Runners, die Lane-Regeln
-(`//srv/ah/…`) auf das Builder-Verzeichnis umgeschrieben. Dazu kommen absolute Deny-Regeln (`//<pfad>`,
-denn `~/` meint in einer Session das Builder-HOME) fuer die privaten Verzeichnisse in Kevins HOME
-(`~/.ssh`, `~/.config/gh`, `~/.claude` und `~/.claude.json`, `~/.config/adminhelper`, die Keyrings,
-`~/.gnupg`) und fuer `tasks/private` und `.claude/settings.local.json` jedes Checkouts; dazu Deny fuer
-die Befehle `ssh` und `docker`. Sie halten die eingebauten Werkzeuge der Session (Read, Edit, Write,
-Grep, Glob), die Datei-Befehle, die Claude Code in Bash erkennt (`cat`, `head`, `tail`, `sed`, `tee`),
-soweit sie die Datei nennen, und die Ziele von Umleitungen. Sie halten kein Programm, das Dateien
-selbst oeffnet — ein Testskript unter `pytest` oder `npm run` ebenso wie einen Befehl, den Claude Code
-nicht als Datei-Befehl kennt: die Session laeuft unter Kevins UID, und was ein solches Programm tut,
-sieht keine Regel. Dieses Restrisiko hat Kevin hingenommen; eine harte Grenze gaebe erst eine eigene
-UID oder die Sandbox der CLI.
-
-**Wartezeit:** `server-pytest` und `schemathesis` nehmen die gemeinsame Python-Sperre
-(`/var/lib/adminhelper-dev/py.lock`). Laeuft daneben eine andere Server-Suite (Haupt-Checkout, eine
-Lane), wartet schon die Grundlage, der `verify.sh`-Lauf vor der ersten Task, dort
-(`loop/<slug>/fundament.log`: `waiting for the shared python lock`); im ersten Messlauf 10–38 Minuten.
-Nach `AH_PY_LOCK_WAIT` (3600 s) ist der Schritt ein SKIP; bei `server-pytest`, einem Pflicht-Schritt
-des Builders, macht `--strict` die Grundlage rot.
 
 ### Go Toolchain (Agent)
 
