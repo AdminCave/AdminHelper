@@ -78,8 +78,10 @@ Semantik: CLAUDE.md §2 „Claude tut nie von sich aus: … Homelab-Namen … in
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — list kennt die Warm-Slots aller Worktrees des Repos (R-0371, F2 A)  [ ]
+### T2 — list kennt die Warm-Slots aller Worktrees des Repos (R-0371, F2 A)  [x]
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5290d363 2026-10-14T11:50:43+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `warm_vmids` bzw. `verb_list` lesen die Warm-Slots aus dem eigenen `.vm/warm.env` und aus dem jedes anderen Worktrees,
   den `git worktree list --porcelain` nennt. Nur die Schlüssel ohne Unterstrich zählen, wie heute.

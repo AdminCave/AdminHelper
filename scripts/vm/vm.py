@@ -1688,6 +1688,39 @@ def warm_vmids(path: str | None = None) -> set:
     return kept
 
 
+def worktree_warm_vmids() -> set:
+    """The warm slots of the repository's other worktrees (`git worktree list`): a box
+    is no leak while any checkout's warm.env claims it, the main checkout's for a
+    worktree on lane main, a worker's for the main checkout. Read only from the
+    checkout's own .vm: a state dir elsewhere (the tests, lane.sh done) answers for
+    itself. A worktree git cannot list, or a warm.env that cannot be read, adds
+    nothing."""
+    if not own_state(VM_STATE_DIR):
+        return set()
+    env = {k: v for k, v in os.environ.items() if k not in GIT_REDIRECTS}
+    try:
+        out = subprocess.run(
+            ["git", "-C", ROOT, "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if out.returncode != 0:
+        return set()
+    mine = os.path.realpath(os.path.join(VM_STATE_DIR, "warm.env"))
+    kept = set()
+    for line in out.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = os.path.join(line[len("worktree ") :], ".vm", "warm.env")
+        if os.path.realpath(path) != mine:
+            kept |= warm_vmids(path)
+    return kept
+
+
 def left_of(ttl: str, now: int) -> str:
     if not ttl or not ttl.isdigit():
         return "no ttl"
@@ -1703,7 +1736,7 @@ def verb_list(cfg: Config, api: Api, args) -> int:
     lane_filter = tag_safe(args.lane) if args.lane else ""
     mine = current_lane()
     scenario = os.environ.get("AH_VM_SCENARIO", "")
-    warm = warm_vmids()
+    warm = warm_vmids() | worktree_warm_vmids()
 
     rows, strangers, leaks = [], 0, []
     for entry in sorted(pool_vms(cfg, api), key=lambda v: v["vmid"]):
