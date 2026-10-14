@@ -41,7 +41,7 @@ FAKE_LOG="$WORK/curl.log"; : > "$FAKE_LOG"; export FAKE_LOG
 export PATH="$FAKE:$PATH"
 
 # fixture <dir> <go-version-ci> <go-version-release> <go-version-audit> <pin>
-#         [<ruff-ci> <ruff-bootstrap> <ruff-dev>]
+#         [<ruff-ci> <ruff-bootstrap> <ruff-dev> <go-bootstrap>]
 # ci.yml carries go-version TWICE, like the real one (agent + agent-windows) —
 # the single-file drift a per-file check would miss. Each go-version comes with
 # check-latest: true, as the workflows must set it. The ruff pins default to
@@ -50,15 +50,15 @@ export PATH="$FAKE:$PATH"
 # <ruff-bootstrap>.
 fixture() {
   local d="$1" ci="$2" rel="$3" aud="$4" pin="$5"
-  local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_dev="${8:-0.15.20}"
+  local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_dev="${8:-0.15.20}" go_boot="${9:-$2.0}"
   mkdir -p "$d/.github/workflows" "$d/scripts/vm" "$d/scripts/dev" "$d/apps/server"
   printf '#!/usr/bin/env bash\nRUNNER="adminhelper-runner"\nVENV_PKGS="ruff==%s pytest pytest-cov pytest-httpx"\n' \
     "$ruff_boot" > "$d/scripts/dev/runner-setup.sh"
   printf 'required-version = "==%s"\nline-length = 100\n\n[lint]\nextend-select = ["I"]\n' "$ruff_boot" > "$d/ruff.toml"
   printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
-  printf '#!/usr/bin/env bash\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\n' \
-    "$ruff_boot" > "$d/scripts/vm/bootstrap_linux.sh"
+  printf '#!/usr/bin/env bash\nGO_VERSION="${AH_GO_VERSION:-%s}"\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\n' \
+    "$go_boot" "$ruff_boot" > "$d/scripts/vm/bootstrap_linux.sh"
   printf -- '-r requirements.in\n\npytest>=9.0.3\nruff==%s\n' "$ruff_dev" > "$d/apps/server/requirements-dev.txt"
   printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
     "$rel" > "$d/.github/workflows/release.yml"
@@ -260,6 +260,55 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest before go-version, a commen
 BADAWK="$WORK/badawk"; mkdir -p "$BADAWK"
 printf '#!/usr/bin/env bash\nexit 1\n' > "$BADAWK/awk"; chmod +x "$BADAWK/awk"
 PATH="$BADAWK:$PATH" FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "an awk that fails -> exit 1, nothing checked" 1 "did not run to its end — nothing was checked" -- --root "$GOOD"
+
+# ── 8: a comment after the go-version value ──────────────────────────────────
+# A line the pattern skips counts for nothing, so a drift on it passed unseen.
+CMT="$WORK/comment"; fixture "$CMT" 1.25 1.25 1.25 v1.7.0
+for f in ci release audit; do
+  sed -i 's/^\(          go-version: "1.25"\)$/\1  # plchold/' "$CMT/.github/workflows/$f.yml"
+done
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version with a comment after the value is read -> exit 0" 0 "go-version: ci=1.25 ci=1.25 release=1.25 audit=1.25" -- --root "$CMT"
+CMTD="$WORK/commentdrift"; fixture "$CMTD" 1.25 1.25 1.25 v1.7.0
+sed -i '0,/go-version: "1.25"/! s/go-version: "1.25"/go-version: "1.26"  # plchold/' "$CMTD/.github/workflows/ci.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a drift with a comment after the value -> exit 1" 1 "go-version drift" -- --root "$CMTD"
+
+# ── 9: the test boxes' Go on the workflows' minor ────────────────────────────
+GBOOT="$WORK/goboot"; fixture "$GBOOT" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.24.0
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap Go 1.24.0 on go-version 1.25 -> exit 1, named" 1 "scripts/vm/bootstrap_linux.sh installs Go 1.24.0 on the test boxes, the workflows run go-version 1.25" -- --root "$GBOOT"
+FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "installs Go 1.24.0 on the test boxes" -- --root "$GBOOT"
+GPATCH="$WORK/gopatch"; fixture "$GPATCH" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.25.9
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "another patch of the same minor -> exit 0" 0 "bootstrap: GO_VERSION=1.25.9 on go-version 1.25" -- --root "$GPATCH"
+GNONE="$WORK/gonone"; fixture "$GNONE" 1.25 1.25 1.25 v1.7.0
+sed -i '/^GO_VERSION=/d' "$GNONE/scripts/vm/bootstrap_linux.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without a GO_VERSION default -> exit 1" 1 "no plain GO_VERSION" -- --root "$GNONE"
+
+# ── 10: every true spelling setup-go takes, and only the go-version's block ──
+# setup-go reads check-latest with core.getBooleanInput: true, True or TRUE, quoted
+# or not. Anything else it refuses, and so does this check.
+n=0
+for v in '"true"' 'True' "'TRUE'"; do
+  n=$((n + 1)); TV="$WORK/truev$n"; fixture "$TV" 1.25 1.25 1.25 v1.7.0
+  sed -i "s/^          check-latest: true\$/          check-latest: $v/" "$TV/.github/workflows/release.yml"
+  FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest: $v -> exit 0" 0 "check-latest: true beside every go-version" -- --root "$TV"
+done
+TVNO="$WORK/truevno"; fixture "$TVNO" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^          check-latest: true$/          check-latest: yes/' "$TVNO/.github/workflows/release.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest: yes -> exit 1" 1 ".github/workflows/release.yml:7 sets go-version without check-latest: true" -- --root "$TVNO"
+# A check-latest in the next step's block is not the go-version's.
+NEXT="$WORK/nextstep"; fixture "$NEXT" 1.25 1.25 1.25 v1.7.0
+printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "1.25"\n      - name: plchold\n        with:\n          check-latest: true\n' > "$NEXT/.github/workflows/release.yml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "check-latest in the next step does not count -> exit 1" 1 ".github/workflows/release.yml:7 sets go-version without check-latest: true" -- --root "$NEXT"
+
+# ── 11: `#` without a blank before it is part of the value, as in YAML ───────
+n=0
+for v in '1.25#x' '"1.25#x"'; do
+  n=$((n + 1)); HV="$WORK/hashv$n"; fixture "$HV" 1.25 1.25 1.25 v1.7.0
+  sed -i "s/^          go-version: \"1.25\"\$/          go-version: $v/" "$HV/.github/workflows/release.yml"
+  FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version: $v -> exit 1, named" 1 "cannot compare go-version '1.25#x' in .github/workflows/release.yml" -- --root "$HV"
+done
+# 1c refuses a GO_VERSION default that is no X.Y.Z of digits.
+GMM="$WORK/gominor"; fixture "$GMM" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.25
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap GO_VERSION 1.25 (no patch) -> exit 1" 1 "no plain GO_VERSION" -- --root "$GMM"
 
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"

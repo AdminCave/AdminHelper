@@ -185,6 +185,7 @@ MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
 REPO_FP="$(mb MB_REPO_GPG_FP)"
 CAFP="$(mb MB_CA_FP)"
 OLDDPKG="$(mb MB_DEB_OLDDPKG_OK)"
+AGENT_GO="$(mb MB_AGENT_GO)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 # The signed test repo is the backbone of the user install path — its absence
@@ -372,5 +373,7 @@ fi
 echo ""
 echo "──────────────────────────────────────────────"
 echo "  multibox: $PASS ok, $FAIL failed, $SKIPPED skipped  (server=$SRV_IP, agents=${AGENT_VMS[*]:-none})"
+# Beside the verdict, not in it: heavy.sh quotes only the line above.
+echo "  go version (agent .deb, server box): ${AGENT_GO:-unknown (no MB_AGENT_GO marker)}"
 [ "${MB_DEBIAN9_SKIPPED:-0}" = 1 ] && echo "  MB_DEBIAN9_SKIPPED=1"
 [ "$FAIL" -gt 0 ] && exit 1 || exit 0
