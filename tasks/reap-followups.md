@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket reap-followups: Nachzügler aus reap-role — ein Test mehr, ein treuer Fake, AUTONOMOUS.md (R-0349) — Task-Ledger
-Status: freigegeben · Branch: harness/reap-followups · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/reap-followups · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-13; T3 nennt auch --expect-name; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0349 (Kurz-Ledger ohne Spec)
 Heavy: none — vm.py mit test_vm.py (aufgezeichnete API), der Fake in vm_wrappers_test, ein Satz in AUTONOMOUS.md; keine echte VM, kein echtes destroy.
@@ -26,8 +26,10 @@ Vorab geprüft:
   seit warm-slot-identity (#156) dazu `--expect-name`, wo warm.sh den Namen gemerkt hat (DEVELOPMENT.md :1850–1854 sagt
   das schon).
 
-### T1 — Ein Test hält fest, dass --no-scenario den ganzen Aufruf vor der ersten Zerstörung ablehnt  [ ]
+### T1 — Ein Test hält fest, dass --no-scenario den ganzen Aufruf vor der ersten Zerstörung ablehnt  [x]
 Komponente: scripts · Dateien: scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a4b0fdc6 2026-10-14T05:29:54+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - Neue Testfunktion am Dateiende:
   - `destroy 3000 3001 --no-scenario`;
