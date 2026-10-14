@@ -3227,6 +3227,9 @@ def lane_of_a_main_run(monkeypatch, *argv):
     monkeypatch.setattr(vm.Config, "load", staticmethod(lambda: None))
     monkeypatch.setattr(vm, "Api", lambda cfg: None)
     monkeypatch.setitem(vm.VERB_TABLE, "list", lambda cfg, api, args: print(vm.current_lane()) or 0)
+    # --as-lane writes os.environ itself, and a delenv of an unset name records no undo:
+    # without this the lane outlives the test (current_lane reads "" as unset).
+    monkeypatch.setenv("AH_LANE", os.environ.get("AH_LANE", ""))
     return vm.main(list(argv))
 
 
