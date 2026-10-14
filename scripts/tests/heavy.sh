@@ -113,10 +113,14 @@ set_infra() {
 # The reason heads report.md, and AH-STATUS shows that line in every session: no
 # address or host name of the lab in it. vm.py's API errors carry the hypervisor's
 # URL and node. The rest stays word for word, for the triage.
-mask_addr() {  # mask_addr <text> -> URL hosts, /nodes/<name>, user@host and IPv4 masked
-  printf '%s' "$1" | LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#(^|[^A-Za-z0-9_.-])nodes/[^/[:space:]]+#\1nodes/<node>#g; s#UPID[^/[:space:]]*#<upid>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g'
+# What heavy.sh prints goes into the transcript of its tmux run: notes and log tails
+# pass through mask_stream on the way out (R-0351). report.md and the logs under
+# $OUT stay word for word, for the triage.
+mask_stream() {  # mask_stream < text -> URL hosts, /nodes/<name>, UPIDs, user@host and IPv4 masked
+  LC_ALL=C sed -E 's#(https?://)[^/:[:space:]]+#\1<host>#g; s#(^|[^A-Za-z0-9_.-])nodes/[^/[:space:]]+#\1nodes/<node>#g; s#UPID[^/[:space:]]*#<upid>#g; s/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/<user>@<host>/g; s/([0-9]{1,3}[.]){3}[0-9]{1,3}/<ip>/g'
 }
-note()      { NOTES+=("$1"); echo "  $1"; }
+mask_addr() { printf '%s' "$1" | mask_stream; }  # mask_addr <text> -> the same, for one value
+note()      { NOTES+=("$1"); echo "  $(mask_addr "$1")"; }
 
 # ── pre-flight ────────────────────────────────────────────────────────────────
 # Kevin's own warm boxes and other lanes' ponds are none of this run's business:
@@ -166,7 +170,7 @@ preflight() {
   [ "$MODE" = capstone ] && roles="server,agent,moncheck,rpm,tunnel,visitor,desktop"
   if ! vm_py doctor --roles "$roles" >"$OUT/doctor.log" 2>&1; then
     set_infra "vm.py doctor red (see doctor.log)"
-    tail -5 "$OUT/doctor.log" | sed 's/^/  /'
+    tail -5 "$OUT/doctor.log" | mask_stream | sed 's/^/  /'
     return 74
   fi
   note "vm.py doctor ok"
@@ -295,13 +299,13 @@ run_all() {
   fi
   if [ "$warm_rc" = 2 ]; then
     set_infra "warm.sh refused (exit 2), see warm.log"
-    tail -5 "$OUT/warm.log" | sed 's/^/  /'
+    tail -5 "$OUT/warm.log" | mask_stream | sed 's/^/  /'
     FINDINGS+=("all|-|infra|$((SECONDS - t_layer0))|-|warm.sh refused (exit 2)")
     return 74
   fi
   if [ "$warm_rc" != 0 ]; then
     set_infra "warm box could not be leased after a retry (see warm.log)"
-    tail -5 "$OUT/warm.log" | sed 's/^/  /'
+    tail -5 "$OUT/warm.log" | mask_stream | sed 's/^/  /'
     # A row even here: the history must show that a run was attempted and why it
     # produced nothing. Returning silently leaves a hole in history.csv exactly on
     # the days something went wrong — and the --base default reads that file.
@@ -321,7 +325,7 @@ run_all() {
   local t0=$SECONDS
   bash "$WRAPPERS/iter.sh" all --strict >"$log" 2>&1 || rc=$?
   local secs_layer=$((SECONDS - t0))
-  tail -25 "$log" | sed 's/^/  /'
+  tail -25 "$log" | mask_stream | sed 's/^/  /'
   # $log first — iter.sh passes the box's output through — then where it also
   # captured it, but only if that file belongs to THIS run. $BOX_OUT is a fixed
   # path each run overwrites: if the wrapper died before writing it, the previous
@@ -857,7 +861,7 @@ run_capstone() {
   [ -n "$warm_desktop" ] && note "capstone reuses the warm desktop box $warm_desktop"
   AH_DESKTOP_VM="$warm_desktop" bash "$MB_WRAPPERS/multibox.sh" --capstone --strict >"$log" 2>&1 || rc=$?
   secs_layer=$((SECONDS - t0))
-  tail -25 "$log" | sed 's/^/  /'
+  tail -25 "$log" | mask_stream | sed 's/^/  /'
   capture_summary "$log" 'multibox:' || note "no multibox summary line in multibox.log"
   # INFRA first, exactly as in run_all: an unleasable server box prints a
   # "FAIL server lease" line and aborts, so scraping the assertions first would

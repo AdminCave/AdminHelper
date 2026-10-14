@@ -1369,7 +1369,9 @@ beim Installieren scheitert, sagt nichts ueber unsere Dependencies aus. Dieselbe
 Pruefung verlangt neben jeder `go-version` im selben `with:`-Block
 `check-latest: true`: sonst nimmt setup-go den Patch aus dem Toolcache des
 Runner-Images, und der Release liefert womoeglich einen anderen stdlib-Stand aus,
-als der Audit prueft.
+als der Audit prueft. Ebenso muss der Default von `GO_VERSION` in
+`scripts/vm/bootstrap_linux.sh`, das Go der Test-Boxen, dieselbe Minor haben wie
+`go-version`; der Patch ist frei, die SHA-256 zieht beim Heben mit.
 
 ---
 
@@ -1866,6 +1868,8 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/
   Monitoring) — Cross-Host-mTLS, echtes `.deb`, Monitoring ueber den Netz-Hop.
   `--capstone` ist die Release-Kombination (alle Szenarien plus `--enforce`).
+  Unter der Summary nennt der Lauf die Go-Version, mit der die Server-Box das Agent-Binary
+  der Pakete gebaut hat (`go version (agent .deb, server box): …`, aus dem Binary gelesen).
   Die Frist der Warm-Box kommt aus `AH_WARM_TTL` (Default 8h); `iter.sh` verlaengert bei
   jedem Lauf um genau diese Frist (warm.sh merkt sie als `desktop_ttl` in `.vm/warm.env`),
   eine bewusst kurze Box bleibt also kurz.

@@ -56,6 +56,7 @@ case "${1:-}" in
         [ "${FAKE_SERVER_RC:-0}" = 0 ] || exit "$FAKE_SERVER_RC"
         echo "MB_SID=s1 MB_PTOK=p1 MB_ADMIN_PW=pw1 MB_MONITOR_KEY=k1"
         echo "MB_REPO_GPG_FP=fp1 MB_CA_FP=ca1 MB_DEB_OLDDPKG_OK=1 MB_FRPS_UP=1"
+        echo "MB_AGENT_GO=${FAKE_AGENT_GO-go1.26.9}"
         echo "MB_TUN_SID=t1 MB_TUN_PTOK=tp1 MB_VIS_SID=v1 MB_VIS_PTOK=vp1 MB_VISITOR_B64=dmlz" ;;
       *box_tunnelbox.sh*) echo "TUNNEL_FRPC_CONNECTED ${FAKE_TUNNEL_SYNC:-TUNNEL_SYNC_HASH_OK}" ;;
       *box_visitorbox.sh*) echo "VIS_TUNNEL_SSH_OK" ;;
@@ -160,6 +161,16 @@ reset_state
 OUT=$(bash "$MB" --bogus 2>&1); rc=$?
 [ $rc -eq 2 ] && [ ! -s "$FAKE_LOG" ] \
   && ok "an unknown flag is a usage error before any VM is touched" || bad "unknown flag: rc=$rc"
+
+echo "── the Go that built the agent .deb ──"
+reset_state
+OUT=$(bash "$MB" --agents 1 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qxF '  go version (agent .deb, server box): go1.26.9' <<<"$OUT" \
+  && ok "the run names the Go the server box built the agent with" || bad "go line: rc=$rc $(grep -a 'go version' <<<"$OUT")"
+reset_state
+OUT=$(FAKE_AGENT_GO='' bash "$MB" --agents 1 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qxF '  go version (agent .deb, server box): unknown (no MB_AGENT_GO marker)' <<<"$OUT" \
+  && ok "no version from the box reads unknown and fails nothing" || bad "go line without the marker: rc=$rc $(grep -a 'go version' <<<"$OUT")"
 
 echo ""
 echo "multibox_test: $PASS passed, $FAIL failed"
