@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket hygiene: keine Box-Adresse im Reg-Ledger, list kennt alle Warm-Boxen, eine Lane-Form für die Allow-Regel (R-0365, R-0371, R-0370) — Task-Ledger
-Status: freigegeben · Branch: harness/hygiene · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/hygiene · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-14; F1 A --as-lane, F2 A warm.env aller Worktrees; T3 nach dem Merge von doc-smoke-lane (#167, gemergt); Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0365, R-0371, R-0370 (Kurz-Ledger ohne Spec)
 Heavy: none — heavy.sh mit heavy_test (Shims), vm.py mit test_vm.py (aufgezeichnete API, Fixture-Worktrees); keine echte VM.
@@ -57,8 +57,10 @@ Vorab geprüft:
 
 T2 und T3 sind für A geschrieben.
 
-### T1 — Das Reg-Ledger aus heavy.sh trägt den Marker maskiert (R-0365)  [ ]
+### T1 — Das Reg-Ledger aus heavy.sh trägt den Marker maskiert (R-0365)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @504bc9fb 2026-10-14T11:36:42+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - `write_reg_ledger` (:664) nimmt den Marker durch `mask_addr` (:122), bevor er ins Ledger geht. Damit werden
   `user@host`, IPv4, URL-Hosts, `/nodes/<name>` und UPIDs maskiert, wie im Grund. Der Rest des Markers bleibt wörtlich.

@@ -670,7 +670,10 @@ seen_record() {  # seen_record <kind> <key> <marker>
 # Review: am Ende and Heavy:, the proof lines of tasks/README.md), which
 # `/feature-plan --kurz` completes with component, Verify and Semantik.
 write_reg_ledger() {  # write_reg_ledger <name> <step> <marker> <base> <roadmap-id> <slug>
-  local f="$ROOT/tasks/$1.md" step="$2" marker="$3" base="$4" rid="$5" slug="$6" head_line=""
+  local f="$ROOT/tasks/$1.md" step="$2" marker base="$4" rid="$5" slug="$6" head_line=""
+  # The ledger lands in the public tree: the marker goes in masked like the reason,
+  # the rest of it word for word for whoever fixes the step.
+  marker="$(mask_addr "$3")"
   mkdir -p "$ROOT/tasks" 2>/dev/null || return 1
   # HEAD: is linted as a SHA; a run that could not read its commit leaves the
   # line out, newline and all.

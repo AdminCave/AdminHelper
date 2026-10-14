@@ -649,6 +649,23 @@ weekly_sha=$(git -C "$AH_PRIVATE_DIR" log --format=%H --grep='^weekly ' -1)
 [ -z "$(git -C "$AH_PRIVATE_DIR" status --porcelain -- ROADMAP.md)" ] \
   && ok "private repo: ROADMAP.md is committed as written" || bad "ROADMAP.md left uncommitted"
 
+# ── 4i-e: the reg ledger carries the marker masked ────────────────────────────
+# The ledger lands in the public tree: a marker that names a box must not.
+mk_case
+export SHIM_ITER_SEQ="1 1 1 1"
+export SHIM_ITER_OUT="  FAIL  web lint: adminhelper@192.0.2.7 refused"
+export SHIM_ITER_OUT1="  FAIL  web lint: adminhelper@192.0.2.7 refused
+  run.sh[all]: 40 passed, 1 failed, 3 skipped, 0 test-skips, 0 reruns"
+artifact "web lint:fail:19"
+seed_pass_history
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+REG_LINT=$(ls "$FIX"/tasks/reg-*-web-lint.md 2>/dev/null | head -1)
+[ -n "$REG_LINT" ] && grep -qF 'FAIL  web lint: <user>@<host> refused' "$REG_LINT" \
+  && grep -q '^Beweis: ' "$REG_LINT" && ! grep -q '192\.0\.2\.7' "$REG_LINT" \
+  && ok "the reg ledger carries the marker masked, the Beweis: line stays" \
+  || bad "reg ledger marker: rc=$rc $(grep -n 'web lint' "$REG_LINT" 2>/dev/null | head -3)"
+
 # ── 4j: audit.yml ────────────────────────────────────────────────────────────
 mk_case
 artifact "ruff check:pass:3"
