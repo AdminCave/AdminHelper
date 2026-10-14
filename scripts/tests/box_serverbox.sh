@@ -159,6 +159,9 @@ echo "[serverbox] build agent packages + signed test repo for :8445"
 export PATH="$PATH:/usr/local/go/bin"
 REPO_FP=""
 if DEB="$(vm_build_agent_deb serverbox)"; then
+  # The Go that built the binary both packages ship, read from the binary itself:
+  # multibox.sh prints it beside its verdict.
+  echo "MB_AGENT_GO=$(go version apps/agent/bin/adminhelper-agent 2>/dev/null | awk '{print $2}')"
   # Old-Debian regression guard on a debian:9 (Stretch) container — the exact
   # dpkg 1.18 + glibc 2.24 environment that failed on UniFi/appliance firmware.
   # Catches TWO distinct breaks that the all-modern build/test fleet hid, both of
