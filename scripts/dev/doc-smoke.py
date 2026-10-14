@@ -18,7 +18,7 @@ Two checks over every ``<code>…</code>`` in ``docs/**/*.html``:
                       variable is known to the repository outside the
                       documentation: one of the three config.py files,
                       .env.example, or any tracked file outside docs/,
-                      CHANGELOG.md and tasks/ (R-0044). Only names nothing else
+                      CHANGELOG.md, tasks/ and Markdown (R-0044). Only names nothing else
                       carries are reported — a variable read by one service and
                       documented for another is not drift, and neither is an
                       agent setting, a CI secret, a state or an HTTP method.
@@ -66,9 +66,10 @@ _ENV_IN_CODE = re.compile(r'os\.environ(?:\.get)?\(?\[?\s*["\']([A-Z][A-Z0-9_]*)
 _ENV_IN_EXAMPLE = re.compile(r"^\s*#?\s*([A-Z][A-Z0-9_]*)=", re.M)
 # The rest of the repository (R-0044): every ALL_CAPS word of a tracked file, but not
 # the documentation itself, nor the changelog and the ledgers, which keep removed
-# names as history.
+# names as history, nor any other Markdown: README, DEVELOPMENT.md, AUTONOMOUS.md and
+# .claude/ describe the tree as docs/ does, and a name stale in both would not show.
 _REPO_WORD = r"[A-Z][A-Z0-9_]{3,}"
-_REPO_WORD_EXCLUDES = (":!docs", ":!CHANGELOG.md", ":!tasks")
+_REPO_WORD_EXCLUDES = (":!docs", ":!CHANGELOG.md", ":!tasks", ":!*.md")
 
 
 def _unescape(text: str) -> str:
@@ -192,6 +193,11 @@ def _repo_words(root: Path) -> set[str] | None:
             capture_output=True,
         )
     except OSError:
+        # Without git the fallback is the same as outside a repository, and it says so.
+        print(
+            "doc-smoke: git not found; --env falls back to config.py and .env.example",
+            file=sys.stderr,
+        )
         return None
     # 1 is "no line matched", not a failure; anything else (128: no repository) is.
     if proc.returncode not in (0, 1):
@@ -242,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
         "--env",
         action="store_true",
         help="check ALL_CAPS names: a <code> that is one name must be carried by the repository"
-        " outside docs/, CHANGELOG.md and tasks/ (alone, it turns the path check off)",
+        " outside docs/, CHANGELOG.md, tasks/ and Markdown (alone, it turns the path check off)",
     )
     parser.add_argument("--strict", action="store_true", help="findings make the run fail")
     parser.add_argument("--root", default=None, help="operate on another checkout")

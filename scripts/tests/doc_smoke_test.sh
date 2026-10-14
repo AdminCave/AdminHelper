@@ -189,5 +189,46 @@ run_case "multi-line block: later path found" 1 "scripts/gone_b.sh" -- --strict 
 # ── no docs/ at all is a setup error ─────────────────────────────────────────
 run_case "missing docs/ -> exit 2" 2 "no docs/" -- --strict --root "$WORK"
 
+# ── --env: a user's git config, a missing git, Markdown (R-0215) ────────────
+# git grep's output is read as words: a user setting that adds line numbers,
+# columns or colour, or lets grep read untracked files outside a repository, must
+# not reach it.
+printf '[grep]\n\tlineNumber = true\n\tcolumn = true\n\tfallbackToNoIndex = true\n[color]\n\tgrep = always\n\tui = always\n' \
+  > "$WORK/gitconfig"
+REPO="$WORK/r9"; fixture "$REPO"
+mkdir -p "$REPO/scripts/tests"
+printf 'AH_FIXTURE_FLAG=1\n' > "$REPO/scripts/tests/tool.sh"
+git -C "$REPO" add -A; git -C "$REPO" commit -qm "a carrier"
+echo '<p><code>AH_FIXTURE_FLAG</code></p>' >> "$REPO/docs/developer/good.html"
+GIT_CONFIG_GLOBAL="$WORK/gitconfig" GIT_CONFIG_NOSYSTEM=1 \
+  run_case "grep.lineNumber, grep.column and color.grep of the user do not reach the words" 0 "matches the tree" -- --env --strict --root "$REPO"
+REPO="$WORK/r9b"; fixture "$REPO"
+printf 'AH_FIXTURE_FLAG=1\n' > "$REPO/scripts/dev/tool.sh"
+rm -rf -- "$REPO/.git"
+echo '<p><code>AH_FIXTURE_FLAG</code></p>' >> "$REPO/docs/developer/good.html"
+GIT_CONFIG_GLOBAL="$WORK/gitconfig" GIT_CONFIG_NOSYSTEM=1 \
+  run_case "outside a repository grep.fallbackToNoIndex of the user makes no file a carrier" 1 "AH_FIXTURE_FLAG" -- --env --strict --root "$REPO"
+# Without git --env falls back to the old sources, and says so.
+REPO="$WORK/r9c"; fixture "$REPO"
+mkdir -p "$REPO/scripts/tests"
+printf 'AH_FIXTURE_FLAG=1\n' > "$REPO/scripts/tests/tool.sh"
+git -C "$REPO" add -A; git -C "$REPO" commit -qm "a carrier"
+echo '<p><code>AH_FIXTURE_FLAG</code></p>' >> "$REPO/docs/developer/good.html"
+NOGIT="$WORK/nogit"; mkdir -p "$NOGIT"; ln -s "$(command -v python3)" "$NOGIT/python3"
+out=$(PATH="$NOGIT" "$NOGIT/python3" "$CHECK" --env --strict --root "$REPO" 2>&1); rc=$?
+[ "$rc" = 1 ] && grep -q 'git not found; --env falls back to config.py and .env.example' <<<"$out" \
+  && grep -q 'AH_FIXTURE_FLAG' <<<"$out" \
+  && ok "without git --env says it falls back, and a name only a script carries is a finding" \
+  || bad "no git: rc=$rc $out"
+# Markdown outside docs/ describes the tree like docs/ does: it is no carrier.
+REPO="$WORK/r9d"; fixture "$REPO"
+mkdir -p "$REPO/.claude/skills/x"
+printf 'Setze MD_ONLY_NAME.\n' > "$REPO/README.md"
+printf 'MD_SKILL_NAME\n' > "$REPO/.claude/skills/x/SKILL.md"
+git -C "$REPO" add -A; git -C "$REPO" commit -qm "markdown"
+echo '<p><code>MD_ONLY_NAME</code> und <code>MD_SKILL_NAME</code></p>' >> "$REPO/docs/developer/good.html"
+run_case "a name only in README.md -> finding" 1 "MD_ONLY_NAME" -- --env --strict --root "$REPO"
+run_case "a name only in a skill's Markdown -> finding" 1 "MD_SKILL_NAME" -- --env --strict --root "$REPO"
+
 echo "doc_smoke_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

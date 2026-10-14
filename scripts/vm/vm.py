@@ -580,10 +580,36 @@ def require_untracked_state() -> None:
         raise Usage("this checkout tracks paths under .vm — state there is not read")
 
 
+def linked_worktree() -> bool:
+    """The checkout is one that `git worktree add` made: its git dir is not the common
+    one. A git that cannot say counts as linked, the stricter answer."""
+    env = {k: v for k, v in os.environ.items() if k not in GIT_REDIRECTS}
+    try:
+        out = subprocess.run(
+            ["git", "-C", ROOT, "rev-parse", "--git-dir", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    dirs = out.stdout.split("\n")[:2]
+    if out.returncode != 0 or len(dirs) != 2:
+        return True
+    git_dir, common = (os.path.realpath(os.path.join(ROOT, d)) for d in dirs)
+    return git_dir != common
+
+
 def current_lane(override: str | None = None, environ=None) -> str:
-    """--lane, else AH_LANE, else .vm/lane, else `main` (the shared checkout)."""
+    """--lane, else AH_LANE, else .vm/lane, else `main` (the shared checkout).
+
+    A worktree that `git worktree add` made, with its own .vm and no lane at all, is
+    refused: lane.sh's lanes write .vm/lane, and one made by hand would otherwise run
+    on the main checkout's lane without saying so — its reap and sweeps included."""
     environ = os.environ if environ is None else environ
-    if own_state(VM_STATE_DIR):
+    own = own_state(VM_STATE_DIR)
+    if own:
         require_untracked_state()
     lane = override or environ.get("AH_LANE") or ""
     if not lane:
@@ -592,6 +618,11 @@ def current_lane(override: str | None = None, environ=None) -> str:
                 lane = fh.read().strip()
         except OSError:
             lane = ""
+    if not tag_safe(lane) and own and linked_worktree():
+        raise Usage(
+            "this worktree has no .vm/lane — set AH_LANE=<lane>, or AH_LANE=main to run"
+            " on the main checkout's lane on purpose"
+        )
     return tag_safe(lane) or "main"
 
 
