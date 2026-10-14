@@ -10,7 +10,7 @@
 #   bash scripts/dev/review.sh declared-only <component> (--staged | --commit <rev>) --task <ledger> <id>
 #                                                       is the test diff a declared deletion alone
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
-#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>] | --message <file>]
+#   bash scripts/dev/review.sh sec [--staged | --range <a>..<b> [--not-on <remote>] | --message <file> [--editor]]
 #                                                       what must never be committed or pushed
 #                                                       (names a path or file:line, never a line's
 #                                                       content: its output may stand in a public CI log)
@@ -72,7 +72,9 @@
 #              private roadmap, a security ledger, a finding's dedup key, one
 #              of the two gitignored files that carry credentials, or a line
 #              with a token pattern (Proxmox, GitHub, Anthropic). With --message,
-#              the message of the commit being made (the commit-msg hook).
+#              the message of the commit being made (the commit-msg hook), all of
+#              it; with --editor too (git brought up an editor), the diff that
+#              commit -v puts below the scissors line does not count.
 #   check-verdict  is a reviewer's verdict usable for this tree? It has to follow
 #              scripts/dev/review-verdict.schema.json, be about the tree --tree
 #              names, and say approve without a blocker and without a probe
@@ -170,7 +172,7 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" COMMIT_REV="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE=""
+TASK_LEDGER="" TASK_ID="" TREE_ARG="" RANGE="" COMMIT_REV="" NOT_ON="" LIST_ONLY=0 VERDICTS="" APPEND="" FAILED="" FAILED_SET=0 ROUND_ARG="" LOG_LEDGER="" MESSAGE="" FROM_EDITOR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --staged) STAGED=1 ;;
@@ -207,6 +209,7 @@ while [ $# -gt 0 ]; do
       # worktree, which may well say clean.
       [ -n "$2" ] || die "--message needs a file name, got an empty one"
       MESSAGE="$2"; shift ;;
+    --editor) FROM_EDITOR=1 ;;
     --task)
       [ $# -ge 3 ] || die "--task needs <ledger> <id>"
       TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
@@ -245,6 +248,7 @@ if [ -n "$MESSAGE" ]; then
   [ "$STAGED" = 0 ] && [ -z "$RANGE" ] || die "--message stands alone, without --staged or --range"
   [ -f "$MESSAGE" ] && [ -r "$MESSAGE" ] || die "--message: no readable file $MESSAGE"
 fi
+[ "$FROM_EDITOR" = 0 ] || [ -n "$MESSAGE" ] || die "--editor goes with --message"
 [ -z "$NOT_ON" ] || [ -n "$RANGE" ] || die "--not-on needs --range"
 if [ -n "$RANGE" ]; then
   # The other verbs judge what is about to be committed; a range is history.
@@ -1035,11 +1039,15 @@ $IMPLICIT"
     if [ -n "$MESSAGE" ]; then
       # The message of the commit being made (R-0197): before this, only a span
       # (pre-push, CI) read messages, when the commit already lay in the local
-      # history. With commit -v git puts the diff below a scissors line, and that is
-      # no part of the message. Comment lines are read: without an editor (-m, -F)
-      # git keeps them in the commit.
-      out="$(awk "$SEC_TOKEN_AWK"'
-        /^# -+ >8 -+$/ { exit }
+      # history. Comment lines are read: without an editor (-m, -F) git keeps them
+      # in the commit. git truncates at its scissors line only with commit -v or
+      # with an editor and cleanup=scissors; a scissors line typed into -m, -F or
+      # an editor without -v stays in the commit with all that follows (R-0213).
+      # So only with --editor, and only from the first diff header below the exact
+      # line on: that is the diff commit -v puts there, no part of the message.
+      out="$(awk -v ED="$FROM_EDITOR" "$SEC_TOKEN_AWK"'
+        ED && $0 == "# ------------------------ >8 ------------------------" { cut = 1 }
+        cut && /^diff --git / { exit }
         { if (token($0)) printf "the commit message:%d\ttoken\n", NR }' "$MESSAGE")" \
         || die "sec: could not read the message $MESSAGE"
       sec_hits "" <<< "$out"

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinpaket 4: Scissors im commit-msg-Hook, Kommentar-Grenzen und Ledger-Pfad im diff-scan — Task-Ledger
-Status: freigegeben · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/kleinpaket-4 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-07; R-0213 Weg (a2), Restrisiko auf Kevins Wort 2026-10-14; N2 als Code-Fix; T3 mit task-close.sh; --editor; K1 und K2 eigene Zeilen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0213, R-0216, R-0217 (Kurz-Ledger ohne Spec)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -18,8 +18,10 @@ sind Harness-Pfade: Den PR merged Kevin oder die Aufsicht auf sein Wort. Alle dr
 `review_scripts_test.sh` an und laufen nacheinander, ohne Lane. Token-Muster in Tests setzen sich wie bisher zur
 Laufzeit zusammen (`review_scripts_test.sh:372-374`).
 
-### T1 — commit-msg: an der Schnittlinie schneidet `sec --message` nur, wenn ein Editor die Nachricht schrieb, und nur den Diff darunter (R-0213)  [ ]
+### T1 — commit-msg: an der Schnittlinie schneidet `sec --message` nur, wenn ein Editor die Nachricht schrieb, und nur den Diff darunter (R-0213)  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/commit-msg, scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @053dd108 2026-10-14T06:05:08+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung:
 - **Heute:** `review.sh:1042` (`/^# -+ >8 -+$/ { exit }`) beendet den Scan der Nachricht an jeder Zeile dieser Form, bei
   `-m` und `-F` ebenso wie im Editor, auch an einer kürzeren Linie wie `# --- >8 ---`. git schneidet dort aber nur mit

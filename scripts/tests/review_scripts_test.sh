@@ -416,8 +416,8 @@ r sec --staged
 [ $rc -eq 0 ] && ok "placeholders of the new forms, a bare UUID and a longer key name are no token" \
   || bad "new-form placeholders: rc=$rc out=$OUT"
 # sec --message (R-0197): the message of the commit being made, as the commit-msg hook
-# hands it over. With commit -v the diff below the scissors line is no part of it; a
-# comment line is, since git keeps it in a commit made with -m.
+# hands it over. With an editor (--editor) and commit -v, the diff below the scissors
+# line is no part of it; a comment line is, since git keeps it in a commit made with -m.
 MSG="$WORK/commit-msg.txt"
 printf 'subject\n\nbody with %s in it\n' "$T_GH" > "$MSG"
 r sec --message "$MSG"
@@ -426,8 +426,8 @@ r sec --message "$MSG"
 printf 'subject\n\nbody with gh%s only\n' "p_short" > "$MSG"
 r sec --message "$MSG"
 [ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "sec --message: a placeholder is clean" || bad "message placeholder: rc=$rc out=$OUT"
-printf 'subject\n# ------------------------ >8 ------------------------\n-old %s\n' "$T_GH" > "$MSG"
-r sec --message "$MSG"
+printf 'subject\n# ------------------------ >8 ------------------------\ndiff --git a/f b/f\n-old %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG" --editor
 [ $rc -eq 0 ] && ok "sec --message: the diff below the scissors line does not count" \
   || bad "message scissors: rc=$rc out=$OUT"
 printf 'subject\n# %s\n' "$T_GH" > "$MSG"
@@ -446,6 +446,29 @@ r sec --staged --message "$MSG"
 r sec --message ""
 [ $rc -eq 2 ] && grep -q "got an empty one" <<<"$OUT" && ! grep -q "sec: clean" <<<"$OUT" \
   && ok "sec --message with an empty name -> exit 2, no sec over the worktree" || bad "message empty: rc=$rc out=$OUT"
+# R-0213: git truncates at the scissors line only with commit -v or with an editor
+# and cleanup=scissors. Typed into -m, -F or an editor without -v, the line and
+# what follows it stay in the commit — so they are read, with --editor up to the
+# first diff header below the exact line.
+CUT='# ------------------------ >8 ------------------------'
+printf 'subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message: a token below a scissors line typed into -m counts (R-0213)" || bad "message typed scissors: rc=$rc out=$OUT"
+r sec --message "$MSG" --editor
+[ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message --editor: below the scissors line without a diff it counts" || bad "editor no diff: rc=$rc out=$OUT"
+printf 'subject\n%s\n# Do not modify or remove the line above.\nnote %s\ndiff --git a/f b/f\n' "$CUT" "$T_GH" > "$MSG"
+r sec --message "$MSG" --editor
+[ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message --editor: between the scissors line and the diff it counts" || bad "editor above diff: rc=$rc out=$OUT"
+printf 'subject\n\n# --- >8 ---\ndiff --git a/f b/f\n-old %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG" --editor
+[ $rc -eq 4 ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message --editor: only the exact scissors line cuts, not a shorter one" || bad "editor short line: rc=$rc out=$OUT"
+r sec --editor
+[ $rc -eq 2 ] && grep -q "editor goes with --message" <<<"$OUT" \
+  && ok "sec --editor without --message -> exit 2" || bad "editor alone: rc=$rc out=$OUT"
 rm -f -- "$MSG"
 reset_index
 
@@ -2102,6 +2125,8 @@ done
 printf 'plain\n' > "$HFIX/docs/note.md"
 # Tracked before the hook was armed, so `commit -a` has a blocked path to carry.
 printf '# sec\n' > "$HFIX/tasks/sec-old.md"
+# Likewise a token, so that commit -v below has a diff that removes one (R-0213).
+printf 'old %s\n' "$T_GH" > "$HFIX/docs/old-token.md"
 git -C "$HFIX" init -q
 git -C "$HFIX" config user.email test@example.invalid
 git -C "$HFIX" config user.name "Fixture"
@@ -2152,6 +2177,31 @@ hc --allow-empty -m "subject $T_GH"
   && ! grep -qF "$T_GH" <<<"$OUT" && ok "armed: a token in -m is refused, never echoed" || bad "msg token: rc=$rc out=$OUT"
 hc --allow-empty -m "subject with gh""p_short only"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a placeholder in -m is committed" || bad "msg placeholder: rc=$rc out=$OUT"
+# R-0213: a scissors line typed into -m or -F hides nothing; git keeps what follows
+# it. git runs the hook with GIT_EDITOR=: there, even when the caller set an editor.
+CUT='# ------------------------ >8 ------------------------'
+H0=$(heads)
+hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "armed: a token below a scissors line typed into -m is refused (R-0213)" || bad "msg scissors -m: rc=$rc out=$OUT"
+printf 'subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$WORK/scissors-msg.txt"
+hc --allow-empty -F "$WORK/scissors-msg.txt"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... and in -F" || bad "msg scissors -F: rc=$rc out=$OUT"
+rm -f -- "$WORK/scissors-msg.txt"
+# An editor that keeps the template git wrote and types a subject above it.
+printf '#!/bin/sh\n{ echo "typed subject"; cat "$1"; } > "$1.new" && mv "$1.new" "$1"\n' > "$WORK/ed-keep.sh"
+chmod 755 "$WORK/ed-keep.sh"
+GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... and in -m with GIT_EDITOR set (git hands the hook GIT_EDITOR=:)" || bad "msg scissors -m editor set: rc=$rc out=$OUT"
+# commit -v with an editor: git puts the diff below its scissors line and drops it,
+# so a diff that removes a token line commits.
+printf 'clean\n' > "$HFIX/docs/old-token.md"; git -C "$HFIX" add -- docs/old-token.md
+GIT_EDITOR="$WORK/ed-keep.sh" hc -v
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "typed subject" ] \
+  && ok "armed: commit -v with an editor, whose diff removes a token line, is committed" || bad "msg commit -v: rc=$rc out=$OUT"
+rm -f -- "$WORK/ed-keep.sh"
 
 # The relative core.hooksPath is resolved per worktree: a lane runs the hook of
 # ITS branch. Here that branch carries a hook that only leaves a marker behind.

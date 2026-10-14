@@ -852,7 +852,9 @@ Rumpf aus hoechstens zwei verschiedenen Zeichen wie `xxxx…`) — und nennt dab
 eine Spanne (`--range`: pre-push und CI) liest es auch die Nachricht jedes Commits und nennt dann nur
 den Commit. Schon beim Commit liest der Hook `scripts/dev/hooks/commit-msg` die Nachricht
 (`review.sh sec --message <datei>`, R-0197): ein Token darin bricht den Commit ab, gemeldet wird nur
-die Zeile; bei `commit -v` zaehlt alles unter der Schnittlinie nicht. Ein Test, der ein solches
+die Zeile. Nur wenn git einen Editor geoeffnet hat (sonst setzt es fuer den Hook `GIT_EDITOR=:`),
+zaehlt der Diff nicht, den `commit -v` unter die Schnittlinie setzt, ab seiner ersten `diff --git`-Zeile;
+eine Schnittlinie in `-m` oder `-F` ist Teil der Nachricht (R-0213). Ein Test, der ein solches
 Muster braucht, setzt es zur Laufzeit zusammen. Was an den lokalen
 Hooks vorbeigeht (ein Klon ohne `core.hooksPath`, ein Edit im Web-UI, ein anderer Rechner), faengt
 der CI-Job „Public repo guard (review.sh sec)": er faehrt `review.sh sec --range` ueber jeden Commit
