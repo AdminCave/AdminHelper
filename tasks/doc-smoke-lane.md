@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket doc-smoke-lane: doc-smoke --env ohne Lücken, und ein angehängter Worktree ohne Lane läuft nicht still auf main (R-0215, R-0211) — Task-Ledger
-Status: geplant · Branch: harness/doc-smoke-lane · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/doc-smoke-lane · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-07; F1 Variante A auf Kevins Wort 2026-10-14: nur angehaengte Worktrees ohne Lane werden abgewiesen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0215, R-0211 (Kurz-Ledger ohne Spec)
 Heavy: none — doc-smoke.py mit doc_smoke_test (Fixture-Repos), vm.py mit test_vm.py (Fixture-Checkouts, git worktree in tmp), lib.sh mit lib_vm_test; keine echte VM.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck/ruff sauber, Doku DE+EN im selben Commit, SPDX bei neuen Dateien).
