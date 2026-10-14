@@ -63,11 +63,12 @@ case "${1:-}" in
            # for a VM gone from the listing or of another lane.
            case " $* " in *" ${FAKE_DESTROY_FAIL:-none} "*) echo "vm.py: no VM '$FAKE_DESTROY_FAIL' in pool" >&2; exit 2 ;; esac
            # FAKE_ROLE_OF=<vmid>=<role>: that VM carries <role>, and a call that names
-           # it with another --role is refused, as vm.py does.
+           # it with another --role is refused, as vm.py does. A call without --role
+           # is not: vm.py holds a named VM only against the selectors it is given.
            if [ -n "${FAKE_ROLE_OF:-}" ]; then
              prev="" role="" last=""
              for a in "$@"; do [ "$prev" = --role ] && role="$a"; prev="$a"; last="$a"; done
-             if [ "$last" = "${FAKE_ROLE_OF%%=*}" ] && [ "$role" != "${FAKE_ROLE_OF#*=}" ]; then
+             if [ -n "$role" ] && [ "$last" = "${FAKE_ROLE_OF%%=*}" ] && [ "$role" != "${FAKE_ROLE_OF#*=}" ]; then
                echo "vm.py: $last is not --role $role (it carries role-${FAKE_ROLE_OF#*=}) — refusing" >&2; exit 2
              fi
            fi
@@ -306,6 +307,13 @@ OUT=$(FAKE_ROLE_OF=3001=server bash "$REAP" 2>&1); rc=$?
   && ! grep -q 'destroyed --lane main --role desktop' <<<"$OUT" && [ -z "$(slot desktop)" ] && [ -z "$(slot server)" ] \
   && ok "the slot of another role costs only its own call, the server slot still goes, exit 0" \
   || bad "role slot: rc=$rc log=$(grep '^destroy' "$FAKE_LOG") out=$OUT"
+# The fake refuses only what vm.py refuses: another --role, not a call without one.
+OUT=$(FAKE_ROLE_OF=3001=server "$AH_VM_PY" destroy --lane main 3001 2>&1); rc=$?
+[ "$rc" = 0 ] && grep -qx 'destroyed --lane main 3001' <<<"$OUT" \
+  && ok "the fake takes a named VM without --role, as vm.py does" || bad "fake without --role: rc=$rc $OUT"
+OUT=$(FAKE_ROLE_OF=3001=server "$AH_VM_PY" destroy --lane main --role desktop 3001 2>&1); rc=$?
+[ "$rc" = 2 ] && grep -q '3001 is not --role desktop (it carries role-server)' <<<"$OUT" \
+  && ok "the fake refuses a named VM with another --role" || bad "fake other role: rc=$rc $OUT"
 
 echo "── reap.sh --all ──"
 reset_state

@@ -3089,3 +3089,14 @@ def test_destroy_expect_name_holds_exactly_one_named_vm(cfg, api, http, argv):
         verb("destroy", cfg, api, *argv)
     assert "--expect-name holds exactly one named VM" in str(caught.value)
     assert http.calls == []
+
+
+def test_destroy_no_scenario_refuses_the_whole_call_before_the_first_purge(cfg, api, http, clock):
+    # Two named VMs: 3000 carries no scenario, 3001 does. The refusal of 3001 must
+    # come before 3000 is purged, not after.
+    warm = "ah;lane-main;role-probe;tpl-linux-full;ttl-1789558820"
+    purgeable(http, 3000, 3001, now={3000: (warm, POOL_NOW[3000][1]), 3001: POOL_NOW[3001]})
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "3001", "--no-scenario")
+    assert "3001 carries sc-capstone, not a warm box — refusing" in str(caught.value)
+    assert http.paths("DELETE") == []
