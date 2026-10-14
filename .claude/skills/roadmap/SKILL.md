@@ -32,8 +32,8 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
 2. Knapp rendern, in dieser Reihenfolge:
    - **Als Nächstes**: die Punkte, je die erste Zeile, wörtlich.
    - **In Arbeit** mit den Deckeln: die `WIP:`-Zeile. `show` druckt nur die Zähler; ist
-     ein Deckel erreicht (Zähler >= `aktiv` 2 · `bereit` 2 · `pr` 3 · `neu` 20), schreib
-     selbst `Warnung:` mit dem Deckel dahinter (CLAUDE.md §2). Die Zeilen
+     ein Deckel erreicht (Zähler >= `aktiv` 2 · `bereit` 2 · `pr` 3 · `neu` 20), nenn
+     den Deckel dahinter (`add` verweigert ab `neu` 20). Die Zeilen
      von „In Arbeit" mit ID, Klasse, Status.
    - **Neu**: nur die Anzahl gegen den Deckel und `ALT` (abgelaufene Zeilen), keine Liste.
    - Geplant, Zurückgestellt, Blockiert als Anzahl; Abgeschlossen und Archiv weglassen.

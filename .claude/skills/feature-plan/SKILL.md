@@ -47,7 +47,7 @@ Immer eine eigene Datei pro Vorhaben (Format: `tasks/README.md`). Kopf:
 
 ```
 # <Feature> — Task-Ledger
-Status: geplant · Branch: feature/<slug> · Review: pro Task · Modell: Opus
+Status: geplant · Branch: feature/<slug> · Review: pro Task
 Spec: docs/features/<slug>.md (Roadmap R-nnnn)
 Heavy: none — <warum keine schwere Suite>
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -130,7 +130,7 @@ Beim Bündel gilt jeder Roadmap-Schritt des Gates für jede enthaltene Zeile.
   einer anderen Zeile liegt auf ihrem Branch (`git show <branch>:tasks/<slug>.md`). Ergebnis je Zeile:
   „parallel-tauglich zu R-nnnn: ja/nein — <Grund>“; überlappt es, seriell empfehlen.
 - Präsentieren: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify), **alle offenen
-  Fragen** herausgestellt, und den Satz: „Freigabe: `! python3 scripts/dev/roadmap.py approve R-nnnn`;
-  danach `/feature-build tasks/<slug>.md`.“
+  Fragen** herausgestellt, und den Satz: „Freigabe: `! python3 scripts/dev/roadmap.py approve R-nnnn` (beim
+  Bündel je Zeile); danach `/feature-build tasks/<slug>.md`.“
 - **Die Freigabe ist Kevins** `roadmap.py approve` (CLAUDE.md §4); die Session setzt sie nie.
 - **Implementiere nichts.** Kein Produktivcode, kein weiterer Branch, nichts auf `main`.

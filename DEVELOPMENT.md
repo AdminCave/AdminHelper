@@ -571,8 +571,8 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   `<klasse>:<komponente>:<datei>:<symbol>`; ein kurzer wie `reg:<schritt>` nennt keine).
   Das Ledger liest `next` aus dem Arbeitsbaum und von jedem lokalen und Remote-Branch, der
   den Pfad traegt, und vereinigt die Komponenten: ein geplantes Ledger liegt bis zum Merge
-  nur auf seinem Branch (R-0065). `next` fetcht nicht — wer auf `origin/*` angewiesen ist
-  (etwa der Worker-Klon), fuehrt vorher `git fetch --prune` aus; eine veraltete Kopie auf
+  nur auf seinem Branch (R-0065). `next` fetcht nicht — wer auf `origin/*` angewiesen ist,
+  fuehrt vorher `git fetch --prune` aus; eine veraltete Kopie auf
   einem alten Branch schliesst hoechstens zu viel aus. Mit `--exclude-components` gilt
   fail-closed: nennt die Spalte `Ledger` einen Pfad `tasks/….md`, den weder der Baum noch
   ein Branch traegt, wird die Zeile uebersprungen, und stderr sagt es

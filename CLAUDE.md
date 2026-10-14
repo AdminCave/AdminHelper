@@ -33,9 +33,10 @@ Session, wenn die CI im ersten Anlauf grün ist, einen je CI-Zyklus, nach der Ko
 mit `worktree-setup.sh`, `main` + PR gemergt, `bash <wt>/scripts/dev/verify.sh <komp> --strict` je berührter
 Komponente, danach Teardown), weil das Ruleset die Kombination nicht prüft. PRs, die
 `CLAUDE.md`, `.claude/`, `scripts/` oder `.github/` ändern, merged Kevin. Ist `main` rot, wird der letzte Merge
-revertiert; flaky heißt Rerun plus Roadmap-Zeile. Lange Läufe (`/test`, Wochenlauf, Multibox, Suiten über zehn
-Minuten) laufen in einem tmux-Fenster ohne Modell mit `( . ./.devenv.sh; … ) > log; echo $? > rc`; die Session
-wartet mit einem Hintergrund-Wächter auf die `rc`-Datei und liest das Log, nie durch `tail` gepipt.
+revertiert, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile. Lange
+Läufe (`/test`, Wochenlauf, Multibox, Suiten über zehn Minuten) laufen in einem tmux-Fenster ohne Modell mit
+`( . ./.devenv.sh; … ) > log; echo $? > rc`; die Session wartet mit einem Hintergrund-Wächter auf die `rc`-Datei
+und liest das Log, nie durch `tail` gepipt.
 
 ## 3. Vor jeder Arbeit
 Der SessionStart-Hook druckt `AH-STATUS` (Checkout, Tag, Roadmap, Ledger, PRs, VMs). Fehlt er: `git status --short
@@ -69,14 +70,16 @@ Merge, Datenverlust, Leak), als eigene Task, nie nebenbei. Funde an der Harness 
 - Ein Server-Lauf zur Zeit je Test-DB; jeder Worktree hat seine eigene (§8). Revert-Proben nie im Bau-Worktree,
   sondern in einem eigenen.
 - Berührt der Branch-Diff `apps/server`-API, Gateway, CA-Issuer, Agent, Desktop-Tunnel/Enrollment, Compose,
-  Install/Update, FRP oder PKI: schwere Suite auf der VM nach `/test`; Multibox nur nach Kevins Ja. Im Pool
-  `adminhelper-ci` darf die Session VMs klonen, baken und zerstören (Kevin, 2026-09-08); danach
-  `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler, kein Detail. Proxmox-Zugang: Umgebung >
-  `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) > `settings.local.json`.
+  Install/Update, FRP oder PKI: schwere Suite auf der VM nach `/test`; Multibox nur nach Kevins Ja. Höchstens ein
+  VM-Lauf zugleich (eine stehende Warm-Box zählt nicht). Im Pool `adminhelper-ci` darf die Session VMs klonen,
+  baken und zerstören (Kevin, 2026-09-08); danach `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler,
+  kein Detail. Proxmox-Zugang: Umgebung > `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) >
+  `settings.local.json`.
 - Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test, dann grün; Feature → Test dazu; Refactor →
   Suite grün vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O,
   echte SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.
-- CI nach Push begleiten (`gh pr checks <n> --watch --fail-fast`); nicht „fertig“ melden, solange CI läuft oder rot ist.
+- CI nach Push begleiten (`gh pr checks <n> --watch --fail-fast`), nach einem Merge den Lauf auf `main`
+  (`gh run watch <id> --exit-status`); nicht „fertig“ melden, solange CI läuft oder rot ist.
 
 ## 6. Prüfer: Sub-Agenten mit festem Auftrag (`.claude/agents/`)
 Aufruf immer über das Agent-Werkzeug mit `subagent_type` (`builder`, `reviewer`, `tester`, `security`), nie über

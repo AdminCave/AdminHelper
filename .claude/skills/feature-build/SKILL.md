@@ -22,7 +22,8 @@ bash scripts/dev/worktree-setup.sh ../AdminHelper-<slug> <slug>
 ## 2. Kopf und Freigabe
 
 Kopf im Worktree lesen: `Status`, `Branch`, `Spec`, `Review` (`pro Task` | `am Ende`), `Heavy`. Den Roadmap-Status
-der Zeile aus `Spec:` prüfen (`python3 scripts/dev/roadmap.py show R-nnnn`):
+der Zeile aus `Spec:` prüfen (`python3 scripts/dev/roadmap.py show R-nnnn`). Nennt `Spec:` mehrere Zeilen (Bündel),
+gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
 - Roadmap `freigegeben`, Kopf `geplant` (oder `freigegeben`, ältere Form) → Kopf im Worktree auf `aktiv`
   (`bash WT/scripts/dev/ledger.sh status WT/tasks/<slug>.md aktiv`, `git -C WT commit` als `chore(ledger)`) und
   `python3 scripts/dev/roadmap.py status R-nnnn aktiv`.
@@ -71,7 +72,9 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
 6. `gh pr checks <n> --watch --fail-fast`. Produkt-PR, CI im ersten Anlauf grün → Kombinationsprüfung (CLAUDE.md
    §2), dann `gh pr merge <n> --merge` (ohne `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch
    danach mit `git push origin --delete feature/<slug>`). Harness-PR oder rote CI → Übergabe an Kevin.
-7. Nach dem Merge: `python3 scripts/dev/roadmap.py sync`, `git -C tasks/private push`,
+7. Nach dem Merge den Lauf auf `main` beobachten (`gh run list --branch main -L 1`, dann
+   `gh run watch <id> --exit-status`): rot → nichts weiter mergen, Revert nach CLAUDE.md §2. Dann
+   `python3 scripts/dev/roadmap.py sync`, `git -C tasks/private push`,
    `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`, `git worktree list` und
    `python3 scripts/vm/vm.py list` sauber.
 

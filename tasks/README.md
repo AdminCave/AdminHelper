@@ -156,7 +156,7 @@ führt die Zeilen im Kopfkommentar auf.
   `Verify: bash scripts/dev/verify.sh <komponente> --strict`, dazu ein Beweis-Absatz über die
   drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit). Komponente (auch im
   Platzhalter) und `Semantik:` ergänzt `/feature-plan --kurz` aus der Roadmap-Zeile;
-  die Freigabe folgt CLAUDE.md §2 „Entscheidungen“, danach ist es ein Ledger wie jedes andere. Die zugehörige
+  die Freigabe folgt CLAUDE.md §4, danach ist es ein Ledger wie jedes andere. Die zugehörige
   Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
 - **`harness-stufe-1.md`** — `Status: erledigt` (gemergt, PR #11). Stufe 1 der Autonomie-Roadmap („Grün heißt
   Beweis"): SKIP wird Exit 75, `run.sh` bekommt `--strict`/`--only`/`--step`, dazu `verify.sh`,
