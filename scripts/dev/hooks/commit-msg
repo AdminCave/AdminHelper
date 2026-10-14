@@ -10,8 +10,13 @@
 #
 # pre-commit reads only what is staged; the message came into view with pre-push
 # and the CI guard (`--range`, R-0183), when the commit already lay in the local
-# history. git hands over the message file ($1); review.sh reads all of it but,
-# with `commit -v`, the diff below the scissors line.
+# history. git hands over the message file ($1), and review.sh reads all of it.
+# When git brought up an editor, the hook says so (--editor), and only then does
+# the diff that `commit -v` puts below the scissors line not count: a scissors line
+# typed into -m or -F stays in the commit with what follows it (R-0213). With -v as
+# well git cuts there after all; reading it then is the stricter direction.
+# githooks(5): git runs every commit hook with GIT_EDITOR=: when no editor comes
+# up, whatever the caller set.
 # `git commit --no-verify` skips this hook like pre-commit; the harness guard
 # refuses that flag (R-0102).
 #
@@ -21,4 +26,6 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
-exec bash "$ROOT/scripts/dev/review.sh" sec --message "${1:?commit-msg: git passes the message file}"
+MSG="${1:?commit-msg: git passes the message file}"
+[ "${GIT_EDITOR-}" = : ] && exec bash "$ROOT/scripts/dev/review.sh" sec --message "$MSG"
+exec bash "$ROOT/scripts/dev/review.sh" sec --message "$MSG" --editor

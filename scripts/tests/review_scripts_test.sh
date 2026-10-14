@@ -416,8 +416,8 @@ r sec --staged
 [ $rc -eq 0 ] && ok "placeholders of the new forms, a bare UUID and a longer key name are no token" \
   || bad "new-form placeholders: rc=$rc out=$OUT"
 # sec --message (R-0197): the message of the commit being made, as the commit-msg hook
-# hands it over. With commit -v the diff below the scissors line is no part of it; a
-# comment line is, since git keeps it in a commit made with -m.
+# hands it over. With an editor (--editor) and commit -v, the diff below the scissors
+# line is no part of it; a comment line is, since git keeps it in a commit made with -m.
 MSG="$WORK/commit-msg.txt"
 printf 'subject\n\nbody with %s in it\n' "$T_GH" > "$MSG"
 r sec --message "$MSG"
@@ -426,8 +426,8 @@ r sec --message "$MSG"
 printf 'subject\n\nbody with gh%s only\n' "p_short" > "$MSG"
 r sec --message "$MSG"
 [ $rc -eq 0 ] && grep -qx "sec: clean" <<<"$OUT" && ok "sec --message: a placeholder is clean" || bad "message placeholder: rc=$rc out=$OUT"
-printf 'subject\n# ------------------------ >8 ------------------------\n-old %s\n' "$T_GH" > "$MSG"
-r sec --message "$MSG"
+printf 'subject\n# ------------------------ >8 ------------------------\ndiff --git a/f b/f\n-old %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG" --editor
 [ $rc -eq 0 ] && ok "sec --message: the diff below the scissors line does not count" \
   || bad "message scissors: rc=$rc out=$OUT"
 printf 'subject\n# %s\n' "$T_GH" > "$MSG"
@@ -446,6 +446,35 @@ r sec --staged --message "$MSG"
 r sec --message ""
 [ $rc -eq 2 ] && grep -q "got an empty one" <<<"$OUT" && ! grep -q "sec: clean" <<<"$OUT" \
   && ok "sec --message with an empty name -> exit 2, no sec over the worktree" || bad "message empty: rc=$rc out=$OUT"
+# R-0213: git truncates at the scissors line only with commit -v or with an editor
+# and cleanup=scissors. Typed into -m, -F or an editor without -v, the line and
+# what follows it stay in the commit — so they are read, with --editor up to the
+# first diff header below the exact line.
+CUT='# ------------------------ >8 ------------------------'
+printf 'subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message: a token below a scissors line typed into -m counts (R-0213)" || bad "message typed scissors: rc=$rc out=$OUT"
+r sec --message "$MSG" --editor
+[ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message --editor: below the scissors line without a diff it counts" || bad "editor no diff: rc=$rc out=$OUT"
+# Without --editor not even a diff header below the line ends the scan: only an
+# editor's commit -v puts one there.
+printf 'subject\n\n%s\ndiff --git a/f b/f\n+below %s\n' "$CUT" "$T_GH" > "$MSG"
+r sec --message "$MSG"
+[ $rc -eq 4 ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message without --editor: a diff header typed below the scissors line ends nothing" || bad "message typed diff: rc=$rc out=$OUT"
+printf 'subject\n%s\n# Do not modify or remove the line above.\nnote %s\ndiff --git a/f b/f\n' "$CUT" "$T_GH" > "$MSG"
+r sec --message "$MSG" --editor
+[ $rc -eq 4 ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message --editor: between the scissors line and the diff it counts" || bad "editor above diff: rc=$rc out=$OUT"
+printf 'subject\n\n# --- >8 ---\ndiff --git a/f b/f\n-old %s\n' "$T_GH" > "$MSG"
+r sec --message "$MSG" --editor
+[ $rc -eq 4 ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "sec --message --editor: only the exact scissors line cuts, not a shorter one" || bad "editor short line: rc=$rc out=$OUT"
+r sec --editor
+[ $rc -eq 2 ] && grep -q "editor goes with --message" <<<"$OUT" \
+  && ok "sec --editor without --message -> exit 2" || bad "editor alone: rc=$rc out=$OUT"
 rm -f -- "$MSG"
 reset_index
 
@@ -1797,6 +1826,35 @@ def test_other():
 r diff-scan --staged --task tasks/chg.md T1
 [ $rc -eq 3 ] && grep -q "0 assertion(s) added" <<<"$OUT" \
   && ok "nor one in the comment behind code on its line" || bad "trailing comment as added: rc=$rc out=$OUT"
+# No string is parsed (R-0216, N1): a " #" in one starts a comment as well.
+tighten 'def test_shape():
+    out = build()
+    sep = " #"; assert out["at"] == iso_utc(raw)
+
+
+def test_other():
+    assert other() == 1
+'
+r diff-scan --staged --task tasks/chg.md T1
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added in its new body, 1 removed" <<<"$OUT" \
+  && ok "a ' #' in a string before the assertion: it does not count, the stricter direction" || bad "hash in a string: rc=$rc out=$OUT"
+# The filters take their prefix with the tab after it (R-0216, N3): a test file named
+# CHANGED_… or DECLARED_… in the root is a finding like any other, with --task or without.
+base CHANGED_test.py 'def test_c():
+    assert c() == 1
+'
+base DECLARED_test.py 'def test_d():
+    assert d() == 1
+'
+for chg_task in "" T1; do
+  printf 'def test_c():\n    c()\n' > "$FIX/CHANGED_test.py"; printf 'def test_d():\n    d()\n' > "$FIX/DECLARED_test.py"
+  stage CHANGED_test.py DECLARED_test.py
+  if [ -n "$chg_task" ]; then r diff-scan --staged --task tasks/chg.md "$chg_task"; else r diff-scan --staged; fi
+  [ $rc -eq 3 ] && grep -q "^CHANGED_test.py:2  removed assertion" <<<"$OUT" && grep -q "^DECLARED_test.py:2  removed assertion" <<<"$OUT" \
+    && ok "CHANGED_test.py and DECLARED_test.py in the root lose an assertion: two findings${chg_task:+ (--task)}" || bad "root CHANGED_/DECLARED_ ${chg_task}: rc=$rc out=$OUT"
+done
+reset_index
+git -C "$FIX" rm -q -- CHANGED_test.py DECLARED_test.py && git -C "$FIX" commit -qm "drop the root tests" >/dev/null 2>&1
 # Only tasks/*.md without README and template is a ledger: a task section written
 # into anything else grants nothing. The way the second review showed: a section
 # with a declaration in the CHANGELOG or in a spec, committed, and an assertion
@@ -1826,6 +1884,39 @@ for L in tasks/README.md ./tasks/./README.md tasks/templates/task.md ./CHANGELOG
   [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ! grep -q "clean" <<<"$OUT" \
     && ok "diff-scan --task $L -> exit 2, it is no ledger" || bad "diff-scan $L: rc=$rc out=$OUT"
 done
+# Judged as written as well (R-0217): docs/l.md is a regular file in HEAD with a
+# section that declares the change, and in the working tree a symlink into tasks/,
+# to a ledger whose T2 declares nothing. The declaration is read from HEAD under
+# the written path, so the allow-list alone stands in the way.
+base docs/l.md '### T2 — x  [ ]
+Komponente: server · Dateien: apps/server/tests/test_chg.py
+Assertion-Änderung: apps/server/tests/test_chg.py::test_shape — lockerer
+'
+tighten 'def test_shape():
+    out = build()
+    assert True
+
+
+def test_other():
+    assert other() == 1
+'
+rm -f -- "$FIX/docs/l.md"; ln -s ../tasks/chg.md "$FIX/docs/l.md"
+for L in docs/l.md tasks/../docs/l.md; do
+  r diff-scan --staged --task "$L" T2
+  [ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" && ! grep -q "clean" <<<"$OUT" \
+    && ok "diff-scan --task $L, a symlink into tasks/ -> exit 2, it is no ledger" || bad "diff-scan symlink $L: rc=$rc out=$OUT"
+done
+r declared-only server --staged --task docs/l.md T2
+[ $rc -eq 2 ] && grep -q "not a ledger" <<<"$OUT" \
+  && ok "declared-only --task docs/l.md, a symlink into tasks/ -> exit 2" || bad "declared-only symlink: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/chg.md T2
+[ $rc -eq 3 ] && ! grep -q "not a ledger" <<<"$OUT" \
+  && ok "the ledger it points to, as written, is still one (and declares nothing)" || bad "symlink target: rc=$rc out=$OUT"
+r diff-scan --staged --task "$FIX/tasks/chg.md" T2
+[ $rc -eq 3 ] && ! grep -q "not a ledger" <<<"$OUT" \
+  && ok "an absolute path to a ledger is still one" || bad "absolute ledger: rc=$rc out=$OUT"
+reset_index
+git -C "$FIX" rm -q -- docs/l.md && git -C "$FIX" commit -qm "drop docs/l.md" >/dev/null 2>&1
 base CHANGELOG.md '# changelog
 '
 git -C "$FIX" rm -q -- docs/features/x.md tasks/README.md/x.md && git -C "$FIX" commit -qm "drop the outside sections" >/dev/null 2>&1
@@ -1945,6 +2036,13 @@ r diff-scan --staged --task tasks/chg.md T3
 r diff-scan --staged --task tasks/chg.md T2
 [ $rc -eq 3 ] && [ "$(grep -c 'removed assertion' <<<"$OUT")" = 3 ] \
   && ok "and undeclared, all three are findings" || bad "three languages undeclared: rc=$rc out=$OUT"
+# A /* */ behind code is a comment too (R-0216, N2): the assertion in it brings none back.
+reset_index
+printf 'it("keeps shape", () => {\n  const s = shape(); /* expect(s).toStrictEqual({ a: 1 }); */\n});\n' > "$FIX/apps/web/src/c.test.ts"
+stage apps/web/src/c.test.ts
+r diff-scan --staged --task tasks/chg.md T3
+[ $rc -eq 3 ] && grep -q "0 assertion(s) added in its new body, 1 removed" <<<"$OUT" \
+  && ok "an assertion in a /* */ comment behind code is no added assertion" || bad "block comment as added: rc=$rc out=$OUT"
 # A helper in a test file (T2): the anlass of R-0206 sat in one, called by
 # several tests. Modelled on TestUserResponseShape._expected.
 base apps/server/tests/test_h.py 'class TestShape:
@@ -2102,6 +2200,8 @@ done
 printf 'plain\n' > "$HFIX/docs/note.md"
 # Tracked before the hook was armed, so `commit -a` has a blocked path to carry.
 printf '# sec\n' > "$HFIX/tasks/sec-old.md"
+# Likewise a token, so that commit -v below has a diff that removes one (R-0213).
+printf 'old %s\n' "$T_GH" > "$HFIX/docs/old-token.md"
 git -C "$HFIX" init -q
 git -C "$HFIX" config user.email test@example.invalid
 git -C "$HFIX" config user.name "Fixture"
@@ -2152,6 +2252,45 @@ hc --allow-empty -m "subject $T_GH"
   && ! grep -qF "$T_GH" <<<"$OUT" && ok "armed: a token in -m is refused, never echoed" || bad "msg token: rc=$rc out=$OUT"
 hc --allow-empty -m "subject with gh""p_short only"
 [ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a placeholder in -m is committed" || bad "msg placeholder: rc=$rc out=$OUT"
+# R-0213: a scissors line typed into -m or -F hides nothing; git keeps what follows
+# it. git runs the hook with GIT_EDITOR=: there, even when the caller set an editor.
+CUT='# ------------------------ >8 ------------------------'
+H0=$(heads)
+hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "armed: a token below a scissors line typed into -m is refused (R-0213)" || bad "msg scissors -m: rc=$rc out=$OUT"
+printf 'subject\n\n%s\nbelow %s\n' "$CUT" "$T_GH" > "$WORK/scissors-msg.txt"
+hc --allow-empty -F "$WORK/scissors-msg.txt"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... and in -F" || bad "msg scissors -F: rc=$rc out=$OUT"
+rm -f -- "$WORK/scissors-msg.txt"
+# An editor that keeps the template git wrote and types a subject above it.
+printf '#!/bin/sh\n{ echo "typed subject"; cat "$1"; } > "$1.new" && mv "$1.new" "$1"\n' > "$WORK/ed-keep.sh"
+chmod 755 "$WORK/ed-keep.sh"
+GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "subject"$'\n\n'"$CUT"$'\n'"below $T_GH"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:4 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... and in -m with GIT_EDITOR set (git hands the hook GIT_EDITOR=:)" || bad "msg scissors -m editor set: rc=$rc out=$OUT"
+# The same with a diff header typed below the line: without an editor the hook
+# says nothing of one, so review.sh reads on.
+TYPED="subject"$'\n\n'"$CUT"$'\n'"diff --git a/f b/f"$'\n'"+below $T_GH"
+hc --allow-empty -m "$TYPED"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "armed: a diff header typed below the scissors line in -m hides nothing" || bad "msg typed diff -m: rc=$rc out=$OUT"
+printf '%s\n' "$TYPED" > "$WORK/typed-diff-msg.txt"
+hc --allow-empty -F "$WORK/typed-diff-msg.txt"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... nor in -F" || bad "msg typed diff -F: rc=$rc out=$OUT"
+rm -f -- "$WORK/typed-diff-msg.txt"
+GIT_EDITOR="$WORK/ed-keep.sh" hc --allow-empty -m "$TYPED"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q "the commit message:5 (a token pattern)" <<<"$OUT" \
+  && ok "armed: ... nor in -m with GIT_EDITOR set" || bad "msg typed diff -m editor set: rc=$rc out=$OUT"
+# commit -v with an editor: git puts the diff below its scissors line and drops it,
+# so a diff that removes a token line commits.
+printf 'clean\n' > "$HFIX/docs/old-token.md"; git -C "$HFIX" add -- docs/old-token.md
+GIT_EDITOR="$WORK/ed-keep.sh" hc -v
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && [ "$(git -C "$HFIX" log -1 --format=%s)" = "typed subject" ] \
+  && ok "armed: commit -v with an editor, whose diff removes a token line, is committed" || bad "msg commit -v: rc=$rc out=$OUT"
+rm -f -- "$WORK/ed-keep.sh"
 
 # The relative core.hooksPath is resolved per worktree: a lane runs the hook of
 # ITS branch. Here that branch carries a hook that only leaves a marker behind.

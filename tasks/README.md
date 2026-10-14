@@ -172,7 +172,9 @@ Trenner und `<test>` wie bei `Test-Löschung:`. Übergangen wird eine entfernte 
 5. **Die Assertion gehört zu genau diesem Test:** Ihre alte Zeile liegt in seiner alten Spanne.
 6. **Geändert, nicht weggenommen:** Die neue Spanne trägt mindestens so viele hinzugefügte Assertions,
    wie die alte verliert (n ≥ r; gezählt werden Zeilen mit einer Assertion). Eine Assertion, die nur in
-   einem Kommentar steht, am Zeilenanfang oder hinter Code, zählt nicht.
+   einem Kommentar steht (`#`, `//` oder `/* */`), am Zeilenanfang oder hinter Code, zählt nicht. Ein
+   Kommentar beginnt am Zeilenanfang oder nach Leerraum, auch in einem String: Steht ` #`, ` //` oder
+   ` /*` in einem String vor der Assertion, zählt sie nicht, die strengere Richtung.
 
 **Ein Helfer** in einer Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.py|go|sh`,
 `*.test.*`, `*.spec.*`) darf ebenso angekündigt werden, denn oft steht die Assertion dort und nicht
@@ -204,7 +206,8 @@ Testköpfe. Dagegen schützen nur das Gate (die Ankündigung kommt committet aus
 Kevin nimmt das Restrisiko hin (2026-10-06). Ein Ledger ist nur `tasks/*.md`, ohne `tasks/README.md` und
 `tasks/templates/`: genau das, was die Commit-Prüfung von `task-close.sh` schützt. `diff-scan --task` und
 `task-close.sh` lehnen alles andere ab (Exit 2), eine Ankündigung in der CHANGELOG oder einer Spec gewährt
-nichts.
+nichts. Geprüft wird der Pfad, wie er geschrieben ist und wohin er zeigt: Ein Symlink von außerhalb nach
+`tasks/` ist kein Ledger (R-0217).
 
 ## Beweis-Konvention — was eine Task belegt
 
