@@ -569,6 +569,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Removed
 
+- **Worker-Loop, Builder-Profil, Runner-Nutzer, Harness-Waechter-Parser, diff-scan (Dev-Werkzeuge, Team v3):**
+  Der Bau laeuft in einer Session mit Sub-Agenten; die Gates, die den autonomen Lauf absichern sollten, entfallen
+  mit ihm. Den Token-Scan (`review.sh sec`, Git-Hooks, CI-Guard) gibt es weiter.
+
 - **crabbox (Harness Stufe 2b):** Das externe Binary und alles, was nur fuer es da war —
   `.crabbox.yaml`, der Workflow `crabbox.yml`, die Agent-Skill `.agents/skills/crabbox/`,
   `scripts/tests/crabbox_lib.sh` und die Wrapper `crabbox_warm|iter|reap|bake|multibox.sh`.
@@ -584,6 +588,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
 
 ### Changed
+
+- **Entwicklungsablauf (Team v3, Dev-Werkzeuge):** eine Claude-Code-Session mit Sub-Agenten (`.claude/agents/`:
+  `builder`, `reviewer`, `tester`, `security`) statt Chef, Worker und Loop; die Regeln stehen in `CLAUDE.md`.
+  `AUTONOMOUS.md` und der Skill `feature-review` entfallen, das Ledger-Format steht in `tasks/README.md`.
 
 - **Desktop: Zuruecksetzen widerruft das Geraet am Server (R-0224):** "Geraete-Identitaet zuruecksetzen" widerruft das
   Geraet zuerst am Server, ausgewiesen durch sein Zertifikat, und loescht es dann lokal. Widerruft der Server es
