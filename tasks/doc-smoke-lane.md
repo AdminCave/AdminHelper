@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Paket doc-smoke-lane: doc-smoke --env ohne Lücken, und ein angehängter Worktree ohne Lane läuft nicht still auf main (R-0215, R-0211) — Task-Ledger
-Status: freigegeben · Branch: harness/doc-smoke-lane · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
+Status: aktiv · Branch: harness/doc-smoke-lane · Commit-Granularität: pro Task · Review: am Ende (Opus) · Modell: Opus
 Freigabe: Aufsicht adminhelper-ac, 2026-10-14 (kleines Fund-Paket, Triage Kevin 2026-10-07; F1 Variante A auf Kevins Wort 2026-10-14: nur angehaengte Worktrees ohne Lane werden abgewiesen; Review am Ende Opus; Delegation Kevin 2026-10-05)
 Spec: Roadmap R-0215, R-0211 (Kurz-Ledger ohne Spec)
 Heavy: none — doc-smoke.py mit doc_smoke_test (Fixture-Repos), vm.py mit test_vm.py (Fixture-Checkouts, git worktree in tmp), lib.sh mit lib_vm_test; keine echte VM.
@@ -52,8 +52,10 @@ Vorab geprüft:
 
 T2 und T3 sind für A geschrieben. Bei B ändert sich in beiden nur die Bedingung, bei C entfallen beide.
 
-### T1 — doc-smoke --env: Tests für die git-Optionen, ein lauter Rückfall ohne git, Markdown trägt keine Namen (R-0215)  [ ]
+### T1 — doc-smoke --env: Tests für die git-Optionen, ein lauter Rückfall ohne git, Markdown trägt keine Namen (R-0215)  [x]
 Komponente: scripts · Dateien: scripts/dev/doc-smoke.py, scripts/tests/doc_smoke_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @74028c1d 2026-10-14T06:55:10+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung:
 - (a) Fälle in doc_smoke_test, mit `GIT_CONFIG_GLOBAL` auf eine Datei im Arbeitsverzeichnis des Tests und
   `GIT_CONFIG_NOSYSTEM=1`:

@@ -376,7 +376,7 @@ jedes `<code>`-Fragment in `docs/**/*.html`, das mit `apps/`, `scripts/`, `docs/
 `.github/` oder `.claude/` beginnt, muss eine existierende Datei benennen (`--paths`), und
 ein `<code>`, das ganz aus einem Namen in Grossbuchstaben besteht, muss ausserhalb der Doku
 im Repo vorkommen (`--env`: die drei `config.py`, `.env.example` oder eine getrackte Datei
-ausserhalb von `docs/`, `CHANGELOG.md` und `tasks/`, R-0044).
+ausserhalb von `docs/`, `CHANGELOG.md`, `tasks/` und Markdown, R-0044, R-0215).
 
 ```bash
 python3 scripts/dev/doc-smoke.py                          # nur Pfade, nur berichten (Exit 0)
