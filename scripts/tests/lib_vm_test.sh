@@ -186,6 +186,13 @@ out=$( (unset AH_LANE AH_VM_STATE_DIR; . "$CW/scripts/vm/lib.sh"; vm_lane) 2>&1)
 # shellcheck source=/dev/null
 out=$( (unset AH_LANE AH_VM_STATE_DIR; . "$CM/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
 [ "$rc" = 0 ] && [ "$out" = "main" ] && ok "the main checkout without a lane stays on main" || bad "main checkout: rc=$rc out=$out"
+# The rule is about the checkout's own .vm: with its state elsewhere, the linked
+# worktree without a lane is main as before.
+rm -f "$CW/.vm/lane"; mkdir -p "$WORK/linked-elsewhere"
+# shellcheck source=/dev/null
+out=$( (unset AH_LANE; export AH_VM_STATE_DIR="$WORK/linked-elsewhere"; . "$CW/scripts/vm/lib.sh"; vm_lane) 2>&1); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "main" ] && ok "a linked worktree with its state elsewhere and no lane is main" \
+  || bad "linked, state elsewhere: rc=$rc out=$out"
 # A tree git cannot read, its state in a directory of its own (a box synced from a
 # worktree): the lane is read and git is not asked.
 CB="$WORK/checkout-box"

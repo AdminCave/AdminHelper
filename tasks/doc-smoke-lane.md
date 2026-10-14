@@ -134,3 +134,21 @@ Semantik: wie T2; lib_vm_test :59–64 „the two implementations have to agree�
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (DEVELOPMENT.md zieht T2 mit)
 Abhängt von: T2
+
+### T4 — Nachbesserung aus dem Review am Ende: die Bedingung eigener Zustand im Test, die Fixture, die Doku genau  [x]
+Komponente: scripts · Dateien: scripts/vm/lib.sh, scripts/tests/lib_vm_test.sh, scripts/vm/tests/test_vm.py, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @412738fe 2026-10-14T08:12:30+02:00
+Review: Review am Ende (Kurz-Ledger)
+Änderung: Angelegt 2026-10-14 aus dem Review am Ende.
+- nit 1: Kein Fall hielt die Bedingung „eigener Zustand“ fest; ohne sie blieb lib_vm_test aus einem Haupt-Checkout
+  grün. Neu: je ein Fall „angehängter Worktree, Zustand anderswo, keine Lane → main“ in lib_vm_test und test_vm.py.
+- nit 2: Die Fixture `linked_checkout` in test_vm.py entfernt geerbte GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, wie
+  `checkout_with_lane`.
+- nit 3: `vm_linked_worktree` steht hinter `vm_lane`, der Doku-Block von `vm_lane` wieder direkt über ihr.
+- nit 4: DEVELOPMENT.md (Lane-Absatz) sagt genau, wann abgewiesen wird: eigenes `.vm`, keine Lane aus `.vm/lane` oder
+  `AH_LANE`, und ein Verb, das die Lane braucht. `clone` nimmt auch `--lane`, bei `list` filtert `--lane` nur. Dazu,
+  dass auch `vm.py list` dann `AH_LANE=main` braucht.
+- nit 5: lange Zeilen in DEVELOPMENT.md und in den geänderten Zeilen von cicd.html DE+EN neu umbrochen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md, docs/developer/cicd.html + docs/en/developer/cicd.html (nur Umbruch)
+Abhängt von: T3

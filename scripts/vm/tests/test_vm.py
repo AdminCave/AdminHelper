@@ -3103,9 +3103,14 @@ def test_destroy_no_scenario_refuses_the_whole_call_before_the_first_purge(cfg, 
 
 
 # ── a worktree made by hand names its lane ───────────────────────────────────
-def linked_checkout(tmp_path, monkeypatch, lane=False, main=False):
+def linked_checkout(tmp_path, monkeypatch, lane=False, main=False, elsewhere=False):
     """A real `git worktree add` under tmp_path; ROOT and the state dir point at the
-    worktree, or at the main checkout with main=True."""
+    worktree, or at the main checkout with main=True. With elsewhere=True the state
+    dir is outside the checkout."""
+    # The fixtures are repositories of their own: an inherited GIT_DIR would make the
+    # commit and the worktree land in somebody else's repository.
+    for name in vm.GIT_REDIRECTS:
+        monkeypatch.delenv(name, raising=False)
     top = tmp_path / "main"
     top.mkdir()
     git = [
@@ -3126,7 +3131,9 @@ def linked_checkout(tmp_path, monkeypatch, lane=False, main=False):
     if lane:
         (root / ".vm" / "lane").write_text("lane-a\n")
     monkeypatch.setattr(vm, "ROOT", str(root))
-    monkeypatch.setattr(vm, "VM_STATE_DIR", str(root / ".vm"))
+    state = tmp_path / "elsewhere" if elsewhere else root / ".vm"
+    state.mkdir(exist_ok=True)
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(state))
     return root
 
 
@@ -3150,4 +3157,9 @@ def test_a_linked_worktree_with_a_lane_file_runs_on_it(tmp_path, monkeypatch):
 
 def test_the_main_checkout_without_a_lane_stays_on_main(tmp_path, monkeypatch):
     linked_checkout(tmp_path, monkeypatch, main=True)
+    assert vm.current_lane(environ={}) == "main"
+
+
+def test_a_linked_worktree_with_its_state_elsewhere_stays_on_main(tmp_path, monkeypatch):
+    linked_checkout(tmp_path, monkeypatch, elsewhere=True)
     assert vm.current_lane(environ={}) == "main"

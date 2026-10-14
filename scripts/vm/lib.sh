@@ -79,19 +79,6 @@ vm_py() {
 # this before they touch warm.env. A state dir elsewhere is its caller's to vouch
 # for (lane.sh done, the tests). vm.py's current_lane() refuses the same way, with
 # the same exit code.
-# vm_linked_worktree -> 0 when VM_ROOT is a worktree that `git worktree add` made: its
-# git dir is not the common one. A git that cannot say counts as one, the stricter
-# answer; without an inherited GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, as below.
-vm_linked_worktree() {
-  local dirs git_dir common
-  dirs="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "$VM_ROOT" rev-parse --git-dir --git-common-dir 2>/dev/null)" || return 0
-  git_dir="$(sed -n 1p <<<"$dirs")"; common="$(sed -n 2p <<<"$dirs")"
-  [ -n "$git_dir" ] && [ -n "$common" ] || return 0
-  case "$git_dir" in /*) ;; *) git_dir="$VM_ROOT/$git_dir" ;; esac
-  case "$common" in /*) ;; *) common="$VM_ROOT/$common" ;; esac
-  [ "$(realpath -m -- "$git_dir")" != "$(realpath -m -- "$common")" ]
-}
-
 vm_lane() {
   local lane="${AH_LANE:-}" tracked own=0
   if [ "$(realpath -m -- "$AH_VM_STATE_DIR")" = "$(realpath -m -- "$VM_ROOT/.vm")" ]; then own=1; fi
@@ -113,6 +100,19 @@ vm_lane() {
     return 2
   fi
   printf '%s\n' "${lane:-main}"
+}
+
+# vm_linked_worktree -> 0 when VM_ROOT is a worktree that `git worktree add` made: its
+# git dir is not the common one. A git that cannot say counts as one, the stricter
+# answer; without an inherited GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE, as below.
+vm_linked_worktree() {
+  local dirs git_dir common
+  dirs="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "$VM_ROOT" rev-parse --git-dir --git-common-dir 2>/dev/null)" || return 0
+  git_dir="$(sed -n 1p <<<"$dirs")"; common="$(sed -n 2p <<<"$dirs")"
+  [ -n "$git_dir" ] && [ -n "$common" ] || return 0
+  case "$git_dir" in /*) ;; *) git_dir="$VM_ROOT/$git_dir" ;; esac
+  case "$common" in /*) ;; *) common="$VM_ROOT/$common" ;; esac
+  [ "$(realpath -m -- "$git_dir")" != "$(realpath -m -- "$common")" ]
 }
 
 # --- warm-slot persistence (.vm/warm.env: one KEY=value line per slot) -------
