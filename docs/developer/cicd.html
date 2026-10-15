@@ -282,6 +282,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <thead><tr><th>Gate</th><th>Wahrheit A</th><th>Wahrheit B</th><th>wo es l&auml;uft</th></tr></thead>
             <tbody>
               <tr><td>Monitoring-Proxy-Allowlist</td><td><code>monitoring_proxy/router.py</code> <code>_ALLOWED_PATH_PREFIXES</code></td><td>Routen-Decorators in <code>apps/monitoring/app/routers/*.py</code></td><td>Job <code>server</code></td></tr>
+              <tr><td>Monitoring-Proxy-Doku</td><td><code>monitoring_proxy/router.py</code> <code>_ALLOWED_PATH_PREFIXES</code></td><td>Pr&auml;fix-Aufz&auml;hlung in <code>docs/developer/monitoring.html</code> und <code>docs/en/developer/monitoring.html</code></td><td>Job <code>server</code></td></tr>
               <tr><td>Identity-Header</td><td><code>apps/gateway/identity-headers.conf</code> + Strips der Enroll-Plane</td><td><code>core/identity.py</code>, <code>ca-issuer/app/config.py</code></td><td>Job <code>server</code></td></tr>
               <tr><td>Enrollment-Hash</td><td><code>core/auth.py</code> <code>hash_api_key</code></td><td><code>ca-issuer/app/db.py</code> <code>_hash</code></td><td>Job <code>server</code></td></tr>
               <tr><td>Transition-Pipeline</td><td><code>check_engine.apply_result</code></td><td>Textscan &uuml;ber <code>apps/monitoring/app/**</code></td><td>Job <code>monitoring</code></td></tr>

@@ -53,7 +53,7 @@
           <ul>
             <li><code>POST /api/monitoring/agent/{server_id}/report</code> &ndash; <strong>&ouml;ffentlich</strong> (X-API-Key), reicht 1:1 an den Service</li>
             <li><code>GET/POST/PUT/DELETE /api/monitoring/{path:path}</code> &ndash; admin-only, intern erweitert um <code>X-Internal-Key: $MONITOR_API_KEY</code></li>
-            <li>SSRF-Schutz: erlaubte Pfad-Prefixe sind <code>checks</code>, <code>alerts</code>, <code>log</code>, <code>metrics</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>; Path-Traversal (<code>..</code>) wird blockiert</li>
+            <li>SSRF-Schutz: erlaubte Pfad-Prefixe sind <code>checks</code>, <code>alerts</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>; Path-Traversal (<code>..</code>) wird blockiert</li>
             <li>Beim Server-Delete im AdminHelper wird <code>DELETE /servers/{id}/cleanup</code> am Monitoring-Service gefeuert &ndash; verwaiste Checks/Alerts werden so automatisch aufger&auml;umt</li>
           </ul>
 

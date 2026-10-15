@@ -15,6 +15,9 @@ X-Internal-Key straight against the monitoring service, never through the proxy
 (provisioning/helpers.py, servers/router.py). Only `routers/*.py` is scanned —
 a route defined on the app itself (today just main.py's /health) is not
 proxyable and deliberately outside this contract.
+
+The developer docs (monitoring.html, DE + EN) enumerate the same prefixes, and
+that enumeration drifted the same way (R-0382), so it is pinned to the tuple too.
 """
 
 import re
@@ -22,7 +25,8 @@ from pathlib import Path
 
 from app.modules.monitoring_proxy.router import _ALLOWED_PATH_PREFIXES
 
-_ROUTERS_DIR = Path(__file__).resolve().parents[3] / "apps" / "monitoring" / "app" / "routers"
+_REPO = Path(__file__).resolve().parents[3]
+_ROUTERS_DIR = _REPO / "apps" / "monitoring" / "app" / "routers"
 # \s* spans newlines, so a decorator broken across lines by ruff format counts too.
 _ROUTE = re.compile(r'@router\.(?:get|post|put|delete|patch)\(\s*"([^"]+)"')
 # Every route decorator, whatever its shape. A route the scan above cannot read —
@@ -33,6 +37,16 @@ _ANY_ROUTE_DECORATOR = re.compile(r"@router\.\w+\(")
 
 # Reached directly via X-Internal-Key, not through the browser-facing proxy.
 _INTERNAL_ONLY = {"agent-keys", "servers"}
+
+# The words that introduce the prefix enumeration on each page. Only the
+# comma-separated <code> run right after them is read: the page names `status`
+# and `maintenance` elsewhere too, so a prefix dropped from this one list would
+# still be found somewhere on the page.
+_PREFIX_DOCS = {
+    "docs/developer/monitoring.html": "erlaubte Pfad-Prefixe sind",
+    "docs/en/developer/monitoring.html": "allowed path prefixes are",
+}
+_CODE_RUN = re.compile(r"\s*((?:<code>[^<]+</code>(?:,\s*)?)+)")
 
 
 def _monitoring_first_segments() -> set[str]:
@@ -80,4 +94,27 @@ def test_internal_only_exclusions_still_exist():
     assert _INTERNAL_ONLY <= segments, (
         f"exclusions name routes the monitoring service no longer has: "
         f"{sorted(_INTERNAL_ONLY - segments)}"
+    )
+
+
+def _documented_prefixes(page: str, anchor: str) -> list[str]:
+    text = (_REPO / page).read_text(encoding="utf-8")
+    # Exactly once: a reworded sentence must fail here, not leave nothing to compare.
+    assert text.count(anchor) == 1, (
+        f"{page}: expected the prefix sentence {anchor!r} once, found {text.count(anchor)}"
+    )
+    run = _CODE_RUN.match(text, text.index(anchor) + len(anchor))
+    assert run, f"{page}: no <code> list after {anchor!r}"
+    return re.findall(r"<code>([^<]+)</code>", run.group(1))
+
+
+def test_docs_enumerate_exactly_the_allowlist():
+    """Sorted, not as sets: a prefix listed twice is drift as well."""
+    expected = sorted(_ALLOWED_PATH_PREFIXES)
+    documented = {
+        page: sorted(_documented_prefixes(page, anchor)) for page, anchor in _PREFIX_DOCS.items()
+    }
+    assert documented == {page: expected for page in _PREFIX_DOCS}, (
+        f"prefix list in the developer docs drifted from _ALLOWED_PATH_PREFIXES {expected}: "
+        f"{documented}"
     )

@@ -64,7 +64,7 @@
               <tr><td><code>/api/servers/{id}/provision</code></td><td><code>modules/provisioning/</code></td><td>Server-zentrisches Provisioning: Token-Lifecycle und Activate (FRP-unabhaengig). Liefert Server-API-Key, optional Monitor-Key, optional FRP-Bundle.</td></tr>
               <tr><td><code>/api/enrollment</code></td><td><code>modules/enrollment/router.py</code></td><td>Einmal-Token fürs Enrollment: <code>POST /token</code> für den angemeldeten Benutzer (Selbstbedienung), <code>POST /token/for</code> stellt ein Admin für einen anderen Benutzer aus (ADR 0003). <code>POST /self/revoke</code>: ein Gerät widerruft sich selbst, ausgewiesen durch sein Client-Zertifikat, ohne JWT.</td></tr>
               <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>4 Sub-Router: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> fuer den laufenden FRPC-Sync.</td></tr>
-              <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy.py</code></td><td>Reverse-Proxy zum Monitoring-Microservice; öffentlicher Agent-Push-Endpoint <code>/agent/{id}/report</code>.</td></tr>
+              <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy/router.py</code></td><td>Reverse-Proxy zum Monitoring-Microservice; öffentlicher Agent-Push-Endpoint <code>/agent/{id}/report</code>.</td></tr>
             </tbody>
           </table>
 
