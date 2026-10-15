@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Provisionierung und Erneuerung teilen keine Temp-Dateien mehr — Task-Ledger
-Status: geplant · Branch: feature/agent-enroll-tmp · Review: am Ende
+Status: aktiv · Branch: feature/agent-enroll-tmp · Review: am Ende
 Spec: Roadmap R-0308
 Heavy: linux-full — `apps/agent/internal/enroll` (Store, Renew, CheckStorable) ist Agent-Enrollment; läuft im Sammellauf (`/feature-build` §5); Windows ohne VM: kein Build-Tag, `agent-windows` fährt `go test` nativ
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
