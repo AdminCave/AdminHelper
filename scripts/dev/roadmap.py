@@ -24,7 +24,7 @@ The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
 Quelle / Beweis | Ledger | Hängt ab von | PR | Ablauf | Kevin-min); everything
 else — prose, "Als Nächstes", blank lines, a row it cannot read — passes
-through byte for byte (spec: docs/features/harness-stufe-5.md).
+through byte for byte.
 
 The file is --file, else $AH_ROADMAP, else tasks/private/ROADMAP.md. Tests
 always name a fixture: the real file is Kevin's. --today pins the date that

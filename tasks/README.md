@@ -142,10 +142,10 @@ führt die Zeilen im Kopfkommentar auf.
 
 ## Aktueller Stand
 
-- **`harness-stufe-3.md`** — `Status: aktiv`. Stufe 3 der Autonomie-Roadmap („Ausführung
-  zuerst"): Artefakt-Assertionen im Release-Workflow, `check-versions.sh`, `-race`, der
-  Wochenlauf `heavy.sh` mit Klassifikation und Historie, der Upgrade-Pfad und die fünf
-  verwaisten Desktop-Specs. Spec: `docs/features/harness-stufe-3.md`.
+Die Ledger bis Team v3 sind gelöscht (2026-10-15); ihre Geschichte steht in git und in den
+abgeschlossenen Roadmap-Zeilen. Neben denen aus `/feature-plan` entsteht eine Art von Ledger
+durch ein Skript:
+
 - **`reg-<datum>-<schritt>.md`** — von `scripts/tests/heavy.sh` geschrieben, nicht von
   `/feature-plan`: eine bestätigte Regression aus einem Wochenlauf (Schritt auf zwei
   Boxen rot, auf dem letzten PASS-Commit grün). Ein Entwurf in der Form von
@@ -159,11 +159,3 @@ führt die Zeilen im Kopfkommentar auf.
   Platzhalter) und `Semantik:` ergänzt `/feature-plan --kurz` aus der Roadmap-Zeile;
   die Freigabe folgt CLAUDE.md §4, danach ist es ein Ledger wie jedes andere. Die zugehörige
   Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
-- **`harness-stufe-1.md`** — `Status: erledigt` (gemergt, PR #11). Stufe 1 der Autonomie-Roadmap („Grün heißt
-  Beweis"): SKIP wird Exit 75, `run.sh` bekommt `--strict`/`--only`/`--step`, dazu `verify.sh`,
-  der Session-Status-Hook und der CI-Job `agent-windows`. Spec: `docs/features/harness-stufe-1.md`.
-- **`audit-fixes.md`** — `Status: erledigt`, gitignored (der Report enumeriert ungefixte Funde
-  inkl. ausnutzbarer Lücken; dieses Repo ist öffentlich). Die 681 Funde aus dem Fable-Audit;
-  Fix-Detail je Fund in der Quelle, auf die das `Spec:`-Feld zeigt (gleiche IDs).
-- **`test-infra-capstone-release.md`** — `Status: erledigt`. Test-Infrastruktur/Capstone/
-  Release komplett (Phasen A–E), **Release v0.39.0 ist raus** (2026-07-04). Bleibt als Historie.
