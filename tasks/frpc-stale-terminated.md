@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # Desktop meldet frpc-terminated nur für die laufende Generation — Task-Ledger
 Status: bereit · Branch: feature/frpc-stale-terminated · Review: am Ende
 Spec: Roadmap R-0247
-Heavy: none — nur ob ein UI-Event gesendet wird; FRP-Konfiguration, Visitor-TOML und Datenpfad bleiben unberührt, kein Stack-, Gateway-, PKI- oder Install-Pfad
+Heavy: linux-full — `frpc.rs` ist Desktop-Tunnel (CLAUDE.md §5), läuft im Sammellauf; nur ob ein UI-Event gesendet wird, FRP-Konfiguration, Visitor-TOML und Datenpfad bleiben unberührt, daher kein `scenario`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
