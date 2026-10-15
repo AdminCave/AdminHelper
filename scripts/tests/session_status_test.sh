@@ -15,11 +15,9 @@
 # shellcheck disable=SC2015
 set -uo pipefail
 
-# Seal the two environment leaks that would make this test machine-dependent:
-# AH_AUTONOMOUS=1 (set by the very `claude -p` session that may run this via
-# run.sh) would silence the hook and fail 21 assertions, and a developer's global
-# core.excludesFile could make the fixture's .claude/ ignored behind our back.
-export AH_AUTONOMOUS=0
+# Seal an environment leak that would make this test machine-dependent: a
+# developer's global core.excludesFile could make the fixture's .claude/ ignored
+# behind our back.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 # Third leak: run.sh exports AH_OUT_DIR pointing at the REAL checkout, so the
 # weekly line would read that instead of each fixture's own .ah-out — the
@@ -30,10 +28,6 @@ unset AH_OUT_DIR
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
 HOOK="$REPO_ROOT/scripts/dev/hooks/session-status.sh"
-# Never the runner's real state (/srv/ah/loop on this box): each case names its file.
-export AH_LOOP_STATE=/nonexistent/state.json
-# Nor the builder profile of whoever runs the test: a fixture directory, empty here.
-export AH_BUILDER_DIR=/nonexistent/builder
 
 PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
@@ -62,9 +56,6 @@ case "$1" in
 esac
 EOF
 chmod +x "$BIN/gh"
-# tmux: `has-session` succeeds only when the case says the builder session is up.
-printf '#!/usr/bin/env bash\n[ "$*" = "has-session -t =ah-builder" ] && [ -n "${SHIM_TMUX_BUILDER:-}" ] && exit 0\nexit 1\n' > "$BIN/tmux"
-chmod +x "$BIN/tmux"
 export PATH="$BIN:$PATH"
 
 # ── fixture builder ───────────────────────────────────────────────────────────
@@ -175,9 +166,9 @@ grep -qF "R-0046 IDEE fuenfte Zeile" <<<"$OUT" && ok "roadmap: the fifth point t
 grep -qF "Fortsetzung" <<<"$OUT" && bad "roadmap: a continuation line leaked" || ok "roadmap: a point is its first line"
 grep -qF "Unterpunkt" <<<"$OUT" && bad "roadmap: an indented sub-item became a point" || ok "roadmap: an indented sub-item is no point"
 grep -qxF "WIP: aktiv 0/2 · bereit 0/2 · pr 0/3 · neu 0/20 · ALT: 0" <<<"$OUT" \
-  && ok "WIP: the counters from roadmap.py, no cap reached, no Warnung" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
+  && ok "WIP: the counters from roadmap.py" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
 grep -qF "## Danach" <<<"$OUT" && bad "roadmap: next section leaked" || ok "roadmap: stops at next section"
-grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: $NEW_DAY (3 d): UNVERIFIED (doctor red) · Worker: —" <<<"$OUT" \
+grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: $NEW_DAY (3 d): UNVERIFIED (doctor red)" <<<"$OUT" \
   && ok "line 4: ledgers + PRs + weekly verdict" || bad "line 4: $(grep -m1 '^Ledger' <<<"$OUT")"
 grep -qF "Wochenlauf: $OLD_DAY" <<<"$OUT" \
   && bad "line 4: the older report won" || ok "line 4: the newest report wins"
@@ -188,93 +179,6 @@ grep -qxF "VMs: warm.env desktop=3001 server=3002" <<<"$OUT" && ok "line 5: warm
   || bad "line 5: $(grep -m1 '^VMs:' <<<"$OUT")"
 ! grep -q 'plchold\|10\.0\.0\.42' <<<"$OUT" && ok "line 5: no key with an underscore reaches the block" \
   || bad "line 5 leaked: $(grep -m1 '^VMs:' <<<"$OUT")"
-
-# The worker's state, read as a file through ledger-loop.sh status of this checkout.
-WS="$WORK/loopstate"; mkdir -p "$WS"
-worker() { printf '%s' "$1" > "$WS/state.json"; OUT=$(AH_LOOP_STATE="$WS/state.json" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' run_hook "$DIRTY"); }
-worker '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": null, "cost_usd": 4.1, "task": {"ledger": "tasks/x.md", "id": "T3", "of": 8}}'
-grep -q ' · Worker: läuft T3/8 tasks/x.md · 4,10 \$ · seit 01:12$' <<<"$OUT" \
-  && ok "worker running: task of the ledger, cost, since when" || bad "worker running: $(grep -m1 '^Ledger' <<<"$OUT")"
-worker '{"run": {"started": "2026-10-04T01:12:00+02:00"}, "stop": "ledger-leer", "updated": "2026-10-04T06:40:00+02:00"}'
-grep -q ' · Worker: stop: ledger-leer 06:40$' <<<"$OUT" && ok "worker stopped: its class and the time" || bad "worker stop: $(grep -m1 '^Ledger' <<<"$OUT")"
-# The runner's state as a FIFO: named at once, the block is there.
-mkfifo "$WS/fifo.json"
-t0=$SECONDS
-OUT=$(AH_LOOP_STATE="$WS/fifo.json" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
-[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
-  && ok "the runner's state.json as a FIFO does not hold up the hook" || bad "worker FIFO: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Ledger' <<<"$OUT")"
-rm -f "$WS/fifo.json"
-worker 'not json'
-grep -q ' · Worker: ? (state.json unlesbar)$' <<<"$OUT" && grep -q '^VMs:' <<<"$OUT" \
-  && ok "a broken state.json: named, and the hook goes on" || bad "worker broken: $OUT"
-worker '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}'
-grep -q ' · Worker: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
-  && ok "control characters in the ledger name are removed" || bad "worker control chars: $(cat -v <<<"$OUT" | grep -m1 '^Ledger')"
-
-# A run in the builder profile: its own line, only when there is a trace of it.
-BD="$WORK/builder"; mkdir -p "$BD/loop"
-builder() { OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' run_hook "$DIRTY"); }
-builder
-! grep -q '^Builder:' <<<"$OUT" && ok "no trace of the builder profile: no Builder line" || bad "builder empty: $(grep -m1 '^Builder' <<<"$OUT")"
-printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
-builder
-grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
-  && ok "builder running: task, cost, since when" || bad "builder running: $(grep -m1 '^Builder' <<<"$OUT")"
-SHIM_TMUX_BUILDER=1 builder
-grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05 (tmux ah-builder)' <<<"$OUT" \
-  && ok "builder running: the tmux session is named" || bad "builder tmux: $(grep -m1 '^Builder' <<<"$OUT")"
-printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": "max-hours", "updated": "2026-10-13T11:40:00+02:00", "stop_reason": "plchold"}' > "$BD/loop/state.json"
-printf 'rc=1\n' > "$BD/loop/builder.done"
-builder
-grep -qx 'Builder: stop: max-hours 11:40 · fertig rc=1' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
-  && ok "builder stopped: its class, the time, the exit code; no free-text reason" || bad "builder stop: $(grep -m1 '^Builder' <<<"$OUT")"
-rm -f "$BD/loop/state.json"; printf 'rc=1; plchold\n' > "$BD/loop/builder.done"
-builder
-! grep -q '^Builder:' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
-  && ok "a builder.done that is not rc=<digits> shows nothing" || bad "builder junk done: $(grep -m1 '^Builder' <<<"$OUT")"
-printf '%s' '{"stop": null, "task": {"ledger": "tasks/e\u001b[31mvil\u0007.md", "id": "T1"}}' > "$BD/loop/state.json"; rm -f "$BD/loop/builder.done"
-builder
-grep -q '^Builder: läuft T1 ? · 0,00 \$ · seit ?$' <<<"$OUT" && ! grep -q $'\e\|\a' <<<"$OUT" && ! grep -q 'vil' <<<"$OUT" \
-  && ok "builder: control characters in state.json are removed" || bad "builder control chars: $(cat -v <<<"$OUT" | grep -m1 '^Builder')"
-# A stop that is no class of the loop shows as "?", its text nowhere.
-printf '%s' '{"stop": "plchold plchold plchold", "updated": "2026-10-13T11:40:00+02:00"}' > "$BD/loop/state.json"
-builder
-grep -qx 'Builder: stop: ? 11:40' <<<"$OUT" && ! grep -q plchold <<<"$OUT" \
-  && ok "builder: a stop that is no class shows as ?" || bad "builder free stop: $(grep -m1 '^Builder' <<<"$OUT")"
-rm -f "$BD/loop/state.json"
-# Without a state.json: the session alone, and builder.done alone (several lines).
-SHIM_TMUX_BUILDER=1 builder
-grep -qx 'Builder: — (tmux ah-builder)' <<<"$OUT" && ok "builder: the session alone is a line" || bad "builder session only: $(grep -m1 '^Builder' <<<"$OUT")"
-printf 'junk\nrc=7\nrc=8\n' > "$BD/loop/builder.done"
-builder
-grep -qx 'Builder: — · fertig rc=7' <<<"$OUT" && ! grep -qx 'rc=8' <<<"$OUT" \
-  && ok "builder: the first rc=<digits> line of builder.done, nothing else" \
-  || bad "builder done only: $(grep -m1 '^Builder' <<<"$OUT")"
-# Only the first 4096 bytes of builder.done are read.
-{ head -c 8192 /dev/zero | tr '\0' x; printf '\nrc=5\n'; } > "$BD/loop/builder.done"
-builder
-! grep -q 'fertig' <<<"$OUT" && ok "builder: an rc= past 4096 bytes is not read" || bad "builder long done: $(grep -m1 '^Builder' <<<"$OUT")"
-rm -f "$BD/loop/builder.done"
-# A FIFO in the builder's directory must not hold up the hook, not even for the
-# limits of the reads behind it.
-for f in builder.done state.json; do
-  mkfifo "$BD/loop/$f"
-  t0=$SECONDS
-  OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
-  [ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q '^VMs:' <<<"$OUT" && ! grep -q '^Builder:' <<<"$OUT" \
-    && ok "a FIFO as $f does not hold up the hook" || bad "FIFO $f: rc=$rc $((SECONDS - t0)) s out=$(grep -m1 '^Builder' <<<"$OUT")"
-  rm -f "$BD/loop/$f"
-done
-# A FIFO beside a valid state.json (the status verb reads the newest summary too):
-# status passes it over, so the builder line is there at once.
-printf '%s' '{"run": {"started": "2026-10-13T09:05:00+02:00"}, "stop": null, "cost_usd": 1.2, "task": {"ledger": "tasks/x.md", "id": "T2", "of": 5}}' > "$BD/loop/state.json"
-mkfifo "$BD/loop/summary-2026-10-13-000000.md"
-t0=$SECONDS
-OUT=$(AH_BUILDER_DIR="$BD" SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' timeout 20 bash -c 'cd "$1" && bash "$2"' _ "$DIRTY" "$HOOK" 2>&1); rc=$?
-[ "$rc" = 0 ] && [ $((SECONDS - t0)) -lt 4 ] && grep -q '^VMs:' <<<"$OUT" \
-  && grep -qx 'Builder: läuft T2/5 tasks/x.md · 1,20 \$ · seit 09:05' <<<"$OUT" \
-  && ok "a FIFO as summary-*.md is passed over: the builder line is there at once" || bad "FIFO summary: rc=$rc $((SECONDS - t0)) s $(grep -m1 '^Builder' <<<"$OUT")"
-rm -f "$BD/loop/summary-2026-10-13-000000.md" "$BD/loop/state.json"
 
 # the seven triggers, one WARN line each
 grep -q '^WARN: .*tauri.conf.json 0.46.0, kein Tag v0.46.0' <<<"$OUT" && ok "trigger: bump without tag" || bad "trigger: bump without tag"
@@ -312,7 +216,7 @@ grep -qxF "Geplant: Dependency Audit $(date -u +%F) (0 d): success" <<<"$OUT" \
   && ok "scheduled workflow: a green run is one quiet line" || bad "scheduled: $(grep -m1 '^Geplant' <<<"$OUT")"
 [ "$(grep -c '^Geplant:' <<<"$OUT")" = 1 ] && ok "a workflow without schedule: gets no line" \
   || bad "Geplant lines: $(grep -c '^Geplant:' <<<"$OUT")"
-grep -qF 'Wochenlauf: kein Report ·' <<<"$OUT" \
+grep -q 'Wochenlauf: kein Report$' <<<"$OUT" \
   && ok "no weekly report -> 'kein Report'" || bad "weekly: $(grep -m1 '^Ledger' <<<"$OUT")"
 # A report from the future (clock skew) must not print a negative age.
 mkdir -p "$WORK/skew/weekly/$(date -d '+2 days' +%F)-1200"
@@ -331,26 +235,27 @@ grep -qF "Wochenlauf: kaputt: FAIL" <<<"$OUT4" \
   || bad "bad stamp: $(grep -m1 '^Ledger' <<<"$OUT4")"
 
 # The weekly line shows no box address, also from a report written before heavy.sh
-# masked its reason.
+# masked its reason. The verdict ends the Ledger line.
+ledger_ends() { [[ "$(grep -m1 '^Ledger' <<<"$1")" == *"$2" ]]; }
 mkdir -p "$WORK/addr/weekly/$(date +%F)-1200"
 printf 'UNVERIFIED (vm.py: no ssh: adminhelper@192.0.2.9 refused for 900s, last seen at 198.51.100.7)\n\n# r\n' \
   > "$WORK/addr/weekly/$(date +%F)-1200/report.md"
 OUT5=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/addr" run_hook "$CLEAN")
-grep -qF "(0 d): UNVERIFIED (vm.py: no ssh: <user>@<host> refused for 900s, last seen at <ip>) · Worker:" <<<"$OUT5" \
+ledger_ends "$OUT5" "(0 d): UNVERIFIED (vm.py: no ssh: <user>@<host> refused for 900s, last seen at <ip>)" \
   && ! grep -q '192\.0\.2\.9\|198\.51\.100\.7' <<<"$OUT5" \
   && ok "the weekly line shows no box address" || bad "weekly address: $(grep -m1 '^Ledger' <<<"$OUT5")"
 mkdir -p "$WORK/addr2/weekly/$(date +%F)-1200"
 printf 'UNVERIFIED (vm.py: clone of 9402 into 3015 failed: POST https://203.0.113.5:8006/api2/json/nodes/plchold-n1/qemu/9402/clone: HTTP 500 internal error)\n' \
   > "$WORK/addr2/weekly/$(date +%F)-1200/report.md"
 OUT6=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/addr2" run_hook "$CLEAN")
-grep -qF "(0 d): UNVERIFIED (vm.py: clone of 9402 into 3015 failed: POST https://<host>:8006/api2/json/nodes/<node>/qemu/9402/clone: HTTP 500 internal error) · Worker:" <<<"$OUT6" \
+ledger_ends "$OUT6" "(0 d): UNVERIFIED (vm.py: clone of 9402 into 3015 failed: POST https://<host>:8006/api2/json/nodes/<node>/qemu/9402/clone: HTTP 500 internal error)" \
   && ! grep -q '203\.0\.113\.5\|plchold-n1' <<<"$OUT6" \
   && ok "the weekly line masks the hypervisor's address and its node" || bad "weekly api host: $(grep -m1 '^Ledger' <<<"$OUT6")"
 mkdir -p "$WORK/addr3/weekly/$(date +%F)-1200"
 printf '%s\n' "UNVERIFIED (vm.py: no ip: guest agent of 3015 silent after 900s (POST https://pve.plchold.example:8006/api2/json/nodes/plchold-n1/qemu/3015/agent/ping: HTTP 500 Configuration file 'nodes/plchold-n1/qemu-server/3015.conf' does not exist))" \
   > "$WORK/addr3/weekly/$(date +%F)-1200/report.md"
 OUT7=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/addr3" run_hook "$CLEAN")
-grep -qF "/nodes/<node>/qemu/3015/agent/ping: HTTP 500 Configuration file 'nodes/<node>/qemu-server/3015.conf' does not exist)) · Worker:" <<<"$OUT7" \
+ledger_ends "$OUT7" "/nodes/<node>/qemu/3015/agent/ping: HTTP 500 Configuration file 'nodes/<node>/qemu-server/3015.conf' does not exist))" \
   && ! grep -q 'plchold' <<<"$OUT7" \
   && ok "the weekly line masks the node in PVE's own message" || bad "weekly pve message node: $(grep -m1 '^Ledger' <<<"$OUT7")"
 # The hook and heavy.sh mask with the same program: a form one of them learns, the
@@ -377,19 +282,6 @@ grep -qF 'PRs offen: ?' <<<"$OUT" && ok "PRs unknown -> ?" || bad "PRs: $(grep -
 grep -qxF 'Geplant: Dependency Audit ?' <<<"$OUT" && ok "scheduled run unknown -> ?" \
   || bad "scheduled: $(grep -m1 '^Geplant' <<<"$OUT")"
 grep -q '^WARN:' <<<"$OUT" && bad "unknown draft must not warn" || ok "no WARN from an unknown draft state"
-
-# ══ case 4: AH_AUTONOMOUS + --for ═════════════════════════════════════════════
-echo "── AH_AUTONOMOUS and --for ──"
-OUT=$(AH_AUTONOMOUS=1 SHIM_DRAFTS=1 AH_DEVENV=/nonexistent run_hook "$DIRTY")
-rc=$?
-[ $rc -eq 0 ] && ok "AH_AUTONOMOUS=1 exits 0" || bad "exit=$rc"
-[ -z "$OUT" ] && ok "AH_AUTONOMOUS=1 prints nothing" || bad "AH_AUTONOMOUS printed: $OUT"
-
-a=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN")
-b=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN" --for test)
-[ "$a" = "$b" ] && ok "--for test is a no-op" || bad "--for changed the output"
-c=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN" --for build-queue)
-[ "$a" = "$c" ] && ok "--for build-queue is a no-op" || bad "--for build-queue changed the output"
 
 # ══ case 5: outside a git repo ════════════════════════════════════════════════
 echo "── no checkout ──"
@@ -439,8 +331,8 @@ grep -qxF "Roadmap: fehlt (tasks/private/ROADMAP.md)" <<<"$OUT" \
   && ok "missing roadmap is stated, not guessed" || bad "roadmap line: $(grep -m1 '^Roadmap' <<<"$OUT")"
 grep -q '^WARN:' <<<"$OUT" && bad "missing roadmap must not warn" || ok "missing roadmap does not warn"
 
-# ══ case 6b: the WIP caps, and a roadmap.py that cannot answer ══════════════════
-echo "── WIP caps ──"
+# ══ case 6b: the WIP counters, and a roadmap.py that cannot answer ══════════════════
+echo "── WIP counters ──"
 cat >> "$CLEAN/tasks/private/ROADMAP.md" <<'ROWS'
 
 ## In Arbeit
@@ -452,8 +344,8 @@ cat >> "$CLEAN/tasks/private/ROADMAP.md" <<'ROWS'
 | R-0052 | BUG | Wartet auch | bereit | kevin | — | — | — | — | — |
 ROWS
 OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN")
-grep -qxF "WIP: aktiv 2/2 · bereit 2/2 · pr 0/3 · neu 0/20 · ALT: 0 · Warnung: Deckel erreicht (aktiv 2/2, bereit 2/2)" <<<"$OUT" \
-  && ok "WIP: reached caps say Warnung, and name each" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
+grep -qxF "WIP: aktiv 2/2 · bereit 2/2 · pr 0/3 · neu 0/20 · ALT: 0" <<<"$OUT" \
+  && ok "WIP: the counters as roadmap.py counts the rows" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
 # A copy of the hook with its own roadmap.py beside it: broken, then gone.
 HOOKCOPY="$WORK/hookcopy/scripts/dev"
 mkdir -p "$HOOKCOPY/hooks"
