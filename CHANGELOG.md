@@ -602,6 +602,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Audit des Self-Mints nennt das langlebige Browser-Leaf (R-0204):** `POST /api/enrollment/token?browser=true`
+  vermerkt im Audit-Log (`enrollment.token.minted`) wie `/token/for`, dass das Leaf langlebig und nur unter
+  `MTLS_ENFORCE=true` widerrufbar ist, weiterhin mit `(self)`. Die API-Referenz (DE+EN) beschreibt den Endpunkt als
+  Selbstbedienung fuer ein weiteres eigenes Geraet: unter `MTLS_ENFORCE=true` erreicht ihn nur ein Geraet mit
+  gueltigem Client-Zertifikat, er ist keine Bootstrap-Tuer ohne Zertifikat.
 - **Gezieltes Verify ohne Schemathesis (R-0380):** `verify.sh <komp> --strict -- <test>` laesst den Schritt
   `schemathesis` aus (`SKIP … (AH_ARGS)`, unter `--strict` kein Fehler wie bei `AH_ONLY`); er kostete jede
   Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI.
