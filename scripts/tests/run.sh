@@ -127,8 +127,9 @@ AH_PYTEST_RS=""; [ "$AH_STRICT" = "1" ] && AH_PYTEST_RS="-rs"
 export AH_PYTEST_RS
 
 # AH_ARGS — extra arguments for the suite runner itself, how verify.sh forwards
-# `verify.sh server -- tests/test_x.py`. run.sh does not interpret them; they are
-# word-split by the suite's shell, so a single argument cannot contain spaces.
+# `verify.sh server -- tests/test_x.py`. The suites get them word-split by their shell,
+# so a single argument cannot contain spaces; run.sh itself reads them twice: the
+# scripts step takes them as test names, and a targeted run skips schemathesis.
 AH_ARGS="${AH_ARGS:-}"
 export AH_ARGS
 
@@ -718,9 +719,8 @@ layer_unit() {
           else
             unset DATABASE_URL
           fi
-          # No $AH_ARGS: this step selects by marker, and a caller asking for one
-          # file (verify.sh … -- tests/x.py) would leave it with nothing to collect
-          # — an honest SKIP that under --strict reads as a hole in an unrelated run.
+          # No $AH_ARGS: this step selects by marker, and a targeted run never gets
+          # here (the elif above skips it), so there is nothing to forward.
           # One XML per service: the loop runs pytest three times, and a single
           # file would keep only the cases of the last service.
           python3 -m pytest -q -m schemathesis \
