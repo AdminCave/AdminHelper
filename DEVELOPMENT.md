@@ -258,7 +258,9 @@ desktop-e2e web scripts` und `all` (nur allein). Mehrere Komponenten werden ein 
 `run.sh quick --only <a> <b>`; Argumente nach `--` gibt es nur fuer eine Komponente, sonst
 Exit 2. Bei `scripts` sind es Namen von Script-Tests, etwa
 `verify.sh scripts --strict -- ledger_test`: nur diese laufen, ein Name, der nicht in
-der Liste steht, ist Exit 2. Ein Lauf, der die Suite erreicht, hinterlaesst
+der Liste steht, ist Exit 2. Ein gezielter Lauf (`-- <args>`) laesst den Schritt
+`schemathesis` aus (`SKIP … (AH_ARGS)`, auch unter `--strict` kein Fehler): er kostete jede
+Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI. Ein Lauf, der die Suite erreicht, hinterlaesst
 `.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component` — bei mehreren die
 Liste —, `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und

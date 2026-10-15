@@ -22,7 +22,7 @@ set -uo pipefail
 # results. It WILL be inherited: from T9 on this file runs inside `run.sh unit
 # --strict --only scripts`, which exports AH_ONLY=scripts and AH_STRICT=1.
 unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB \
-      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH
+      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH AH_ARGS
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -440,6 +440,19 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
 [ $rc -eq 1 ] && grep -qF "strict-failed: schemathesis (SKIP)" <<<"$OUT" \
   && ok "a missing schemathesis package strict-fails the step" \
   || bad "schemathesis dep-gate: rc=$rc $(grep -m1 -E 'SKIP|strict-failed' <<<"$OUT")"
+
+# A targeted run (verify.sh … -- <test> exports AH_ARGS) leaves the fuzz suite to the
+# PR CI: the step SKIPs as AH_ARGS and, like an AH_ONLY skip, does not strict-fail,
+# while the suite the caller asked for still runs (R-0380). The check below shows the
+# same strict run without AH_ARGS still fuzzing.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_PY_LOCK=0 \
+      AH_REQUIRED="server-pytest schemathesis" DATABASE_URL="postgresql://x@localhost/y" \
+      AH_ARGS="tests/test_x.py" SHIM_SKIP="" \
+      "$PYSHIM/bash" "$RUN" unit --strict --only server 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qF "SKIP  schemathesis (AH_ARGS)" <<<"$OUT" \
+  && grep -qE '^  PASS  server pytest' <<<"$OUT" && ! grep -q "strict-failed" <<<"$OUT" \
+  && ok "a targeted strict run skips schemathesis and still runs the asked suite" \
+  || bad "targeted schemathesis: rc=$rc $(grep -m1 -E 'schemathesis|strict-failed' <<<"$OUT")"
 
 # With the package present the step runs — otherwise the check above would pass
 # against a run.sh whose step can never do anything at all.
