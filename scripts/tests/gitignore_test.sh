@@ -71,6 +71,19 @@ export GIT_DIR="$WORK/attr/.git" GIT_WORK_TREE="$REPO_ROOT"
   && ok "and git actually resolves that attribute" || bad "git does not see the union attribute"
 unset GIT_DIR GIT_WORK_TREE
 
+echo "── the scripts the rules call exist"
+# CLAUDE.md, the agents and the skills call scripts by path: a script deleted or
+# renamed must not leave a rule behind that cannot run.
+NAMED="$(cd "$REPO_ROOT" && grep -rhoE 'bash (WT/|<wt>/)?scripts/[A-Za-z0-9_./-]+' CLAUDE.md .claude \
+  | sed -E 's#^bash (WT/|<wt>/)?##' | sort -u)"
+n=0; missing=""
+while IFS= read -r p; do
+  [ -n "$p" ] || continue
+  n=$((n + 1)); [ -e "$REPO_ROOT/$p" ] || missing="$missing $p"
+done <<<"$NAMED"
+[ "$n" -ge 10 ] && ok "the rules name $n script paths" || bad "only $n script paths found — the scan is broken"
+[ -z "$missing" ] && ok "every one of them exists" || bad "named but missing:$missing"
+
 # In a variable first: under pipefail, grep -q may end the pipe before sed has written.
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh")"
 grep -qw 'gitignore_test' <<<"$LIST" \
