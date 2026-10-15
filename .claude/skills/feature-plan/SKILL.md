@@ -129,8 +129,10 @@ Beim Bündel gilt jeder Roadmap-Schritt des Gates für jede enthaltene Zeile.
 - **Parallel-Tauglichkeit:** gegen jede `aktiv`- und `freigegeben`-Zeile (`roadmap.py show`) prüfen, ob
   das Vorhaben disjunkt ist — Komponenten und geteilte Contract-Dateien (API-Routen/Schemas,
   Migrationen, FRP-Config, Tauri-Commands, `run.sh`/`ci.yml`, primäre `docs/`-Seiten). Das Ledger
-  einer anderen Zeile liegt auf ihrem Branch (`git show <branch>:tasks/<slug>.md`). Ergebnis je Zeile:
-  „parallel-tauglich zu R-nnnn: ja/nein — <Grund>“; überlappt es, seriell empfehlen.
+  einer anderen Zeile liegt auf ihrem Branch (`git show <branch>:tasks/<slug>.md`). Dazu muss
+  `df -h /` Platz für den zweiten Worktree lassen (Desktop 4–6 GiB). Ergebnis je Zeile: „parallel-tauglich zu R-nnnn:
+  ja/nein — <Grund>“; überlappt es, seriell empfehlen. Danach die nächste offene Roadmap-Zeile ebenso prüfen
+  und, wenn sie passt, vorschlagen („parallel baubar: R-nnnn — <Grund>“), damit Kevin beide freigeben kann.
 - Präsentieren: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify), **alle offenen
   Fragen** herausgestellt, und den Satz: „Freigabe: `! python3 scripts/dev/roadmap.py approve R-nnnn` (beim
   Bündel je Zeile); danach `/feature-build tasks/<slug>.md`.“

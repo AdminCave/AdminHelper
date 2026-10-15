@@ -27,11 +27,11 @@ Ruleset, Repo-Einstellungen, sudo, Tokens, Passwörter. Alles andere innerhalb e
 entscheidet die Session und berichtet danach; Fragen an Kevin gesammelt und mit Empfehlung.
 Eine Session arbeitet ein Vorhaben Task für Task ab: ein Bauer-Sub-Agent baut die Task im Worktree des Vorhabens,
 ein Reviewer-Sub-Agent prüft, `scripts/dev/task-close.sh` fährt das `Verify:`, den Token-Scan und committet Code und
-Ledger. Höchstens zwei Vorhaben laufen parallel (Deckel `aktiv` 2 in `roadmap.py`), je in eigenem Worktree, nur
-auf disjunkten Komponenten; innerhalb eines Vorhabens bauen die Tasks nacheinander. Produkt-PRs merged die
-Session, wenn die CI im ersten Anlauf grün ist, einen je CI-Zyklus, nach der Kombinationsprüfung (Wegwerf-Worktree
-mit `worktree-setup.sh`, `main` + PR gemergt, `bash <wt>/scripts/dev/verify.sh <komp> --strict` je berührter
-Komponente, danach Teardown), weil das Ruleset die Kombination nicht prüft. PRs, die
+Ledger. Zwei freigegebene, disjunkte Vorhaben baut die Session parallel (Deckel `aktiv` 2 in `roadmap.py`), je in
+eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Produkt-PRs
+merged die Session, wenn die CI im ersten Anlauf grün ist, einen je CI-Zyklus, nach der Kombinationsprüfung
+(Wegwerf-Worktree mit `worktree-setup.sh`, `main` + PR gemergt, `bash <wt>/scripts/dev/verify.sh <komp> --strict` je
+berührter Komponente, danach Teardown), weil das Ruleset die Kombination nicht prüft. PRs, die
 `CLAUDE.md`, `.claude/`, `scripts/` oder `.github/` ändern, merged Kevin. Ist `main` rot, wird der letzte Merge
 revertiert, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile. Lange
 Läufe (`/test`, Wochenlauf, Multibox, Suiten über zehn Minuten) laufen in einem tmux-Fenster ohne Modell mit
@@ -70,11 +70,11 @@ Merge, Datenverlust, Leak), als eigene Task, nie nebenbei. Funde an der Harness 
 - Ein Server-Lauf zur Zeit je Test-DB; jeder Worktree hat seine eigene (§8). Revert-Proben nie im Bau-Worktree,
   sondern in einem eigenen.
 - Berührt der Branch-Diff `apps/server`-API, Gateway, CA-Issuer, Agent, Desktop-Tunnel/Enrollment, Compose,
-  Install/Update, FRP oder PKI: schwere Suite auf der VM nach `/test`; Multibox nur nach Kevins Ja. Höchstens ein
-  VM-Lauf zugleich (eine stehende Warm-Box zählt nicht). Im Pool `adminhelper-ci` darf die Session VMs klonen,
-  baken und zerstören (Kevin, 2026-09-08); danach `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler,
-  kein Detail. Proxmox-Zugang: Umgebung > `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) >
-  `settings.local.json`.
+  Install/Update, FRP oder PKI: schwere Suite auf der VM nach `/test`; Multibox nur nach Kevins Ja. VM-Läufe
+  dürfen parallel laufen, je Vorhaben in seiner Lane; `vm.py` prüft vor jedem Klon den RAM des Hosts (Kevin,
+  2026-10-15). Im Pool `adminhelper-ci` darf die Session VMs klonen, baken und zerstören (Kevin, 2026-09-08);
+  danach `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler, kein Detail. Proxmox-Zugang:
+  Umgebung > `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) > `settings.local.json`.
 - Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test, dann grün; Feature → Test dazu; Refactor →
   Suite grün vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O,
   echte SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.

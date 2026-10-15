@@ -31,8 +31,9 @@ gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
 - Roadmap nicht `freigegeben` → melden, nicht bauen. Die Freigabe ist Kevins `roadmap.py approve`.
 - Kopf `bereit` → weiter mit 4; `erledigt` oder `blockiert` → melden.
 
-Höchstens zwei Ledger `aktiv` zugleich (Deckel in `roadmap.py`), auf disjunkten Komponenten, je eigener Worktree.
-Nie zwei Bauer auf demselben Ledger.
+Ist eine zweite Zeile freigegeben und laut Gate parallel-tauglich zu dieser (`/feature-plan` §4), startet die
+Session sie gleich mit: zweiter Worktree, eigener `builder`, derselbe Ablauf. Höchstens zwei Ledger `aktiv` (Deckel in
+`roadmap.py`); die Tasks eines Ledgers bauen nacheinander, nie zwei Bauer auf demselben Ledger.
 
 ## 3. Je offener Task, in Ledger-Reihenfolge
 
@@ -66,7 +67,9 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
    `scenario <flags>` → Kevin fragen. Danach `python3 scripts/vm/vm.py list`.
 4. `tester` über `git -C WT diff main...`, `reviewer` über den Branch (Task-ID `branch`), bei Risikopfad
    `security`. Echte Funde: Task ins Ledger, Kopf und Roadmap zurück auf `aktiv`, bauen wie in 3.
-5. Kopf `erledigt` als `chore(ledger)`; `git -C WT push -u origin feature/<slug>`;
+5. Ist `origin/main` seit dem Abzweigen weiter (etwa durch das parallele Vorhaben): `git -C WT merge origin/main`,
+   Konflikte (`CHANGELOG.md`) von Hand, Schritt 2 erneut. Kopf `erledigt` als `chore(ledger)`;
+   `git -C WT push -u origin feature/<slug>`;
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, die Urteile von `tester`
    und `reviewer` dazu; `gh pr create --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`;
    `roadmap.py status R-nnnn pr --pr "#<n>"`.
