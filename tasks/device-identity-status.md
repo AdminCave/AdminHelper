@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Einstellungen: Statuszeile „Registriert als X bis Y“ — Task-Ledger
-Status: aktiv · Branch: feature/device-identity-status · Review: pro Task
+Status: bereit · Branch: feature/device-identity-status · Review: pro Task
 Spec: docs/features/device-identity-status.md (Roadmap R-0240)
 Heavy: linux-full — Desktop-Journey: `settings-enroll.live.js` prüft die neue Zeile gegen den echten Issuer und Keyring; läuft im Sammellauf (`/feature-build` §5)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -27,8 +27,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/benutzer.html (`:97`) + docs/en/admin/users.html (`:91`) · CHANGELOG (Added)
 Abhängt von: T1
 
-### T3 — Live-E2E: die Zeile zeigt den echten Namen und ein künftiges Datum  [ ]
+### T3 — Live-E2E: die Zeile zeigt den echten Namen und ein künftiges Datum  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/settings-enroll.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @3498bb6c 2026-10-15T15:18:47+02:00
+Review: approve (.ah-out/review/device-identity-status/T3.verdict.json)
 Änderung: Nach `registerInSettings` (`:41`) prüfen, dass die Zeile „admin“ und ein Datum in der Zukunft zeigt; nach Zurücksetzen und erneutem Registrieren (`:128`) noch einmal. Der echte Beweis (Issuer-CN, Keyring, Parsen zusammen) kommt aus dem Sammellauf; das Verify hier ist der Lint der E2E-Specs.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
