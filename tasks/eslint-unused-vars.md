@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # ESLint meldet tote `_`-Stores wieder — Task-Ledger
-Status: geplant · Branch: feature/eslint-unused-vars · Review: am Ende
+Status: aktiv · Branch: feature/eslint-unused-vars · Review: am Ende
 Spec: Roadmap R-0028
 Heavy: none — nur Lint-Konfiguration beider Frontends; kein Laufzeitcode, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
