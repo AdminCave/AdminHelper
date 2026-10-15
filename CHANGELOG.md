@@ -310,6 +310,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: eine Provisionierung waehrend einer Erneuerung beschaedigt die Identitaet nicht mehr (R-0308):** Die
+  Pruefung vor dem Enroll-Antrag (`adminhelper-agent provision`) und die Erneuerung im Dienst schrieben dieselben
+  Temp-Dateien `agent.key.tmp`, `agent.crt.tmp` und `ca.crt.tmp`. Lief die Pruefung zwischen dem Schreiben und dem
+  Umbenennen einer Erneuerung, aktivierte die Erneuerung die Platzhalter der Pruefung als `agent.key`, `agent.crt`
+  und `ca.crt`, und der Agent hatte keine brauchbare Identitaet mehr. Jeder Schreibvorgang legt jetzt eine eigene
+  Temp-Datei an (`agent.key.<zufall>.tmp`), und die Pruefung raeumt genau ihre eigenen.
 - **Funde des ersten Messlaufs im Worker:** Der Preflight fragt `claude --version` und `auth status`
   mit stdin `/dev/null` und einer Frist (R-0230); ein geerbtes `AH_LOOP_*` lenkt `ledger_loop_test`
   nicht mehr auf den echten Klon (R-0231); was eine Bau-Session oder ein Close an Prozessen
