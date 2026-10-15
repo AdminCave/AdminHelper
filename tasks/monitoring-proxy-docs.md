@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entwickler-Doku zum Monitoring-Proxy folgt der Allowlist — Task-Ledger
-Status: bereit · Branch: feature/monitoring-proxy-docs · Review: am Ende
+Status: aktiv · Branch: feature/monitoring-proxy-docs · Review: am Ende
 Spec: Roadmap R-0382
 Heavy: none — Doku und ein statischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -22,3 +22,9 @@ Orakel: contract — Abgleich Doku ↔ `_ALLOWED_PATH_PREFIXES`
 Dedup-Key: bug:docs:monitoring.html:proxy-prefixes
 HEAD: c18098a4
 Semantik: docs/ ist hier selbst der Fehler; das Soll steht im Code (`router.py:44` „Allowed path prefixes for the monitoring proxy (SSRF protection)“) und in `.claude/rules/docs.md` — „Falsche Doku ist ein Bug“
+
+### T2 — Auch die API-Referenz nennt die echten Präfixe, Abgleich deckt sie mit  [ ]
+Komponente: server · Dateien: docs/developer/api-reference.html, docs/en/developer/api-reference.html, apps/server/tests/test_monitoring_proxy_allowlist.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Branch-Review-Fund: `api-reference.html:171` (DE+EN) beschreibt `/api/monitoring/{path:path}` noch mit `log` und `metrics`, `maintenance` fehlt. Beide Listen auf `_ALLOWED_PATH_PREFIXES` setzen; der Abgleich aus T1 nimmt beide Seiten auf (Anker DE „Erlaubt sind nur die Pfad-Prefixe“, EN „Allowed path prefixes:“, je genau einmal) und ist vor der Korrektur rot; Docstring des Tests und die Gate-Zeile in `cicd.html` (DE+EN) nennen danach beide Seiten.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_monitoring_proxy_allowlist.py
+Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html
