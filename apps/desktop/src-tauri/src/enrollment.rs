@@ -27,6 +27,7 @@ use url::Url;
 
 use crate::error::AppError;
 use crate::keyring_store;
+use crate::models::DeviceIdentity;
 
 // Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
 // is the only secret; cert/ca are public but kept in the same secure store so
@@ -234,6 +235,61 @@ fn ca_fingerprint_of_chain(chain_pem: &str) -> Option<String> {
 /// SHA-256 (lowercase hex) of the stored leaf: the fullchain begins with it.
 fn leaf_fingerprint() -> Option<String> {
     ca_fingerprint_of_chain(&keyring_store::get(KEYRING_CERT)?)
+}
+
+/// What the settings and the renewal read from a leaf: its common name, if it
+/// carries a readable one, and its validity in seconds since the epoch.
+struct Leaf {
+    common_name: Option<String>,
+    not_before: i64,
+    not_after: i64,
+}
+
+/// Parse the leaf, the first certificate of `cert_pem` (a fullchain begins with it).
+fn parse_leaf(cert_pem: &str) -> Result<Leaf, AppError> {
+    let leaf = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+        .next()
+        .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
+        .map_err(|e| AppError::Validation(format!("Zertifikat nicht lesbar: {e}")))?;
+    let (_, cert) = x509_parser::parse_x509_certificate(&leaf)
+        .map_err(|e| AppError::Validation(format!("Zertifikat parsen: {e}")))?;
+    let common_name = cert
+        .subject()
+        .iter_common_name()
+        .next()
+        .and_then(|cn| cn.as_str().ok())
+        .map(str::to_owned);
+    Ok(Leaf {
+        common_name,
+        not_before: cert.validity().not_before.timestamp(),
+        not_after: cert.validity().not_after.timestamp(),
+    })
+}
+
+/// Name and expiry of the device certificate in `cert_pem`. The name is the
+/// leaf's CN, which the issuer sets to the enrolled subject.
+fn identity_of(cert_pem: &str) -> Result<DeviceIdentity, AppError> {
+    let leaf = parse_leaf(cert_pem)?;
+    let name = leaf
+        .common_name
+        .ok_or_else(|| AppError::Validation("device certificate has no common name".to_string()))?;
+    let not_after = chrono::DateTime::from_timestamp(leaf.not_after, 0)
+        .ok_or_else(|| AppError::Validation("device certificate expiry out of range".to_string()))?
+        .to_rfc3339();
+    Ok(DeviceIdentity { name, not_after })
+}
+
+/// Name and expiry of this device's enrolled certificate for the settings.
+/// `None` without key or cert (the rule of `is_enrolled`); an error when the
+/// stored cert does not parse or has no CN.
+pub fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
+    let (Some(_), Some(cert_pem)) = (
+        keyring_store::get(KEYRING_KEY),
+        keyring_store::get(KEYRING_CERT),
+    ) else {
+        return Ok(None);
+    };
+    identity_of(&cert_pem).map(Some)
 }
 
 /// What an enrollment is for: this device's own identity, or a browser
@@ -489,14 +545,11 @@ async fn redeem(
 /// `now_unix` (seconds since the epoch). `now` is a parameter so the decision is
 /// deterministically testable.
 fn needs_renewal(cert_pem: &str, fraction: f64, now_unix: i64) -> Result<bool, AppError> {
-    let leaf = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
-        .next()
-        .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
-        .map_err(|e| AppError::Validation(format!("Zertifikat nicht lesbar: {e}")))?;
-    let (_, cert) = x509_parser::parse_x509_certificate(&leaf)
-        .map_err(|e| AppError::Validation(format!("Zertifikat parsen: {e}")))?;
-    let not_before = cert.validity().not_before.timestamp();
-    let not_after = cert.validity().not_after.timestamp();
+    let Leaf {
+        not_before,
+        not_after,
+        ..
+    } = parse_leaf(cert_pem)?;
     let total = not_after - not_before;
     if total <= 0 {
         return Ok(true); // malformed / already expired -> renew
@@ -1475,5 +1528,92 @@ mod tests {
         for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
             assert_eq!(keyring_store::get(entry), None, "{entry}");
         }
+    }
+
+    // The identity line of the settings (R-0240), against the in-memory keyring.
+
+    /// A fullchain as the issuer returns it: a leaf for `cn` (no CN at all for
+    /// `None`) that expires on 2027-01-13, then the intermediate that signed it.
+    fn fullchain(cn: Option<&str>) -> String {
+        use rcgen::{
+            date_time_ymd, BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa,
+            KeyPair, PKCS_ECDSA_P256_SHA256,
+        };
+        let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut ca = CertificateParams::new(vec![]).unwrap();
+        ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        ca.distinguished_name.push(DnType::CommonName, "Access CA");
+        let ca = ca.self_signed(&ca_key).unwrap();
+
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut params = CertificateParams::new(vec![]).unwrap();
+        params.distinguished_name = DistinguishedName::new();
+        if let Some(cn) = cn {
+            params.distinguished_name.push(DnType::CommonName, cn);
+        }
+        params.not_after = date_time_ymd(2027, 1, 13);
+        let leaf = params.signed_by(&key, &ca, &ca_key).unwrap();
+        format!("{}{}", leaf.pem(), ca.pem())
+    }
+
+    /// Store `cert` next to a key, as an enrollment does.
+    fn enrolled_with(cert: &str) {
+        let (_, key, _) = leaf();
+        keyring_store::set(KEYRING_KEY, &key).unwrap();
+        keyring_store::set(KEYRING_CERT, cert).unwrap();
+    }
+
+    #[test]
+    fn the_identity_is_the_name_and_expiry_of_the_leaf_not_the_intermediate() {
+        let _keyring = keyring_store::memory();
+        enrolled_with(&fullchain(Some("admin")));
+
+        let identity = device_identity().unwrap().expect("enrolled");
+
+        assert_eq!(identity.name, "admin");
+        assert_eq!(identity.not_after, "2027-01-13T00:00:00+00:00");
+    }
+
+    #[test]
+    fn a_leaf_without_a_common_name_is_an_error() {
+        let _keyring = keyring_store::memory();
+        enrolled_with(&fullchain(None));
+        assert!(matches!(device_identity(), Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn a_stored_cert_that_does_not_parse_is_an_error() {
+        let _keyring = keyring_store::memory();
+        enrolled_with("-----BEGIN CERTIFICATE-----\nZ2FyYmFnZQ==\n-----END CERTIFICATE-----\n");
+        assert!(matches!(device_identity(), Err(AppError::Validation(_))));
+        enrolled_with("kein pem");
+        assert!(matches!(device_identity(), Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn without_a_key_there_is_no_identity() {
+        let _keyring = keyring_store::memory();
+        keyring_store::set(KEYRING_CERT, &fullchain(Some("admin"))).unwrap();
+        assert!(matches!(device_identity(), Ok(None)));
+    }
+
+    #[test]
+    fn without_a_cert_there_is_no_identity() {
+        let _keyring = keyring_store::memory();
+        let (_, key, _) = leaf();
+        keyring_store::set(KEYRING_KEY, &key).unwrap();
+        assert!(matches!(device_identity(), Ok(None)));
+    }
+
+    #[test]
+    fn the_identity_reaches_the_ui_in_camel_case() {
+        let identity = DeviceIdentity {
+            name: "admin".to_string(),
+            not_after: "2027-01-13T00:00:00+00:00".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(identity).unwrap(),
+            serde_json::json!({ "name": "admin", "notAfter": "2027-01-13T00:00:00+00:00" })
+        );
     }
 }

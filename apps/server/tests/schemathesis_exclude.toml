@@ -50,6 +50,10 @@
 # monitoring_stub in tests/test_schemathesis.py ersetzt ihn je Test durch einen
 # httpx.MockTransport mit fester 200-Antwort. Ohne Stub und ohne die Eintraege:
 # `4 failed, 304 passed` (proxy_agent_report in allen vier Kontexten).
+# NACHTRAG (2026-10-15, R-0376): Der Lifespan-Start legt einen geschlossenen Client neu an
+# (open_client in app/modules/monitoring_proxy/router.py), ein offener bleibt stehen. Der
+# Grund oben ist damit behoben; die Fixture bleibt unveraendert, weil neben der Suite kein
+# Monitoring-Dienst laeuft und jeder Forward ohne Stub ins Netz ginge.
 #
 # RANDVALIDIERUNG (2026-09-22/23, Vorhaben input-boundary-validation). Bilanz, gegen
 # `git show main:` nachgezaehlt: 27 Eintraege vorher, 29 nachher — zwei entfernt, acht
@@ -77,7 +81,8 @@
 #
 # HINZUGEKOMMEN (4): die Catch-all-Routen des Monitoring-Proxys. Kein Produktfehler auf diesen
 # Routen, sondern eine Eigenschaft der Fixture: ein prozessweiter Client, ein Lifespan, und wer
-# nach dem Shutdown drankommt, bekommt keine Response mehr.
+# nach dem Shutdown drankommt, bekommt keine Response mehr. (Die vier sind mit R-0063 wieder
+# gefallen, der Grund mit R-0376 behoben, siehe PROXY-STUB oben.)
 #
 # ZURUECKGEHOLT (8) — die Lehre dieses Vorhabens: beim ersten Aufraeumen wurden Eintraege
 # anhand ihrer DOKUMENTIERTEN Begruendung entfernt statt anhand der Route. Die alte Begruendung

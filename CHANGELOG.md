@@ -9,6 +9,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Statuszeile der Geraete-Identitaet (R-0240):** Ist das Geraet registriert, zeigen die
+  Einstellungen im Modus `server` den Namen und den Ablauf des Geraete-Zertifikats, etwa „Registriert als
+  admin bis 13.01.2027“. Bleiben 14 Tage oder weniger, sagt die Zeile dazu, dass die automatische Erneuerung
+  beim Anmelden bisher nicht gelungen ist; ein abgelaufenes oder nicht lesbares Zertifikat meldet sie als
+  Warnung mit dem Weg ueber Zuruecksetzen und neuen Token. Dafuer liefert der neue Command `device_identity`
+  Name (CN) und Ablauf.
 - **Geraete einzeln widerrufen (R-0224):** Ein Admin listet die Geraete eines Benutzers mit
   `GET /api/users/{id}/devices` und widerruft eines mit `DELETE /api/users/{id}/devices/{device_id}`; die uebrigen
   Geraete des Benutzers bleiben. Ein Geraet widerruft sich selbst mit `POST /api/enrollment/self/revoke`, ausgewiesen
@@ -310,6 +316,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: eine Provisionierung waehrend einer Erneuerung beschaedigt die Identitaet nicht mehr (R-0308):** Die
+  Pruefung vor dem Enroll-Antrag (`adminhelper-agent provision`) und die Erneuerung im Dienst schrieben dieselben
+  Temp-Dateien `agent.key.tmp`, `agent.crt.tmp` und `ca.crt.tmp`. Lief die Pruefung zwischen dem Schreiben und dem
+  Umbenennen einer Erneuerung, aktivierte die Erneuerung die Platzhalter der Pruefung als `agent.key`, `agent.crt`
+  und `ca.crt`, und der Agent hatte keine brauchbare Identitaet mehr. Jeder Schreibvorgang legt jetzt eine eigene
+  Temp-Datei an (`agent.key.<zufall>.tmp`), und die Pruefung raeumt genau ihre eigenen.
 - **Funde des ersten Messlaufs im Worker:** Der Preflight fragt `claude --version` und `auth status`
   mit stdin `/dev/null` und einer Frist (R-0230); ein geerbtes `AH_LOOP_*` lenkt `ledger_loop_test`
   nicht mehr auf den echten Klon (R-0231); was eine Bau-Session oder ein Close an Prozessen
@@ -590,6 +602,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Gezieltes Verify ohne Schemathesis (R-0380):** `verify.sh <komp> --strict -- <test>` laesst den Schritt
+  `schemathesis` aus (`SKIP … (AH_ARGS)`, unter `--strict` kein Fehler wie bei `AH_ONLY`); er kostete jede
+  Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI.
 - **Schwere Suite als Sammellauf, PR-CI statt lokaler Wiederholung:** `Heavy: linux-full` laeuft nicht mehr je
   Vorhaben vor dem Merge, sondern als Sammellauf `/test all` ueber `main`, faellig nach drei solchen Vorhaben,
   sieben Tagen oder vor einem Release; rot sperrt weitere Merges mit Heavy bis auf Fix, Revert und SEC.
