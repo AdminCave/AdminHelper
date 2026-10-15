@@ -177,6 +177,15 @@ pub struct PasswordState {
     pub can_store: bool,
 }
 
+/// The enrolled device certificate as the settings show it: the leaf's CN and
+/// its expiry as RFC 3339 in UTC.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceIdentity {
+    pub name: String,
+    pub not_after: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RdpErrorPayload {

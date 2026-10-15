@@ -205,9 +205,11 @@ def _run_startup_tasks():
 async def lifespan(app: FastAPI):
     from app.core.config import REDIS_URL
     from app.core.events import fire_event
+    from app.modules.monitoring_proxy import router as monitoring_proxy_mod
     from app.modules.notifications import stream_hub
 
     _run_startup_tasks()
+    monitoring_proxy_mod.open_client()
     # The APScheduler runs in a DEDICATED process (app.scheduler_main), NOT in the
     # web workers: with uvicorn --workers N each worker would start its own
     # scheduler and every job would run N times (duplicate e-mails from the outbox
@@ -226,8 +228,6 @@ async def lifespan(app: FastAPI):
     yield
     await stream_hub.stop()
     # Close the process-wide proxy client's connection pool (5.30).
-    from app.modules.monitoring_proxy import router as monitoring_proxy_mod
-
     await monitoring_proxy_mod._client.aclose()
 
 

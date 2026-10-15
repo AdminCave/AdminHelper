@@ -7,8 +7,10 @@
 The desktop (and later the browser) authenticates with its JWT and mints a
 one-time, access-scoped enrollment token, then redeems it at the ca-issuer to
 get its mTLS client cert. This is the human counterpart to provision/activate
-(which mints a tunnel-scoped token for agents). Deliberately JWT-gated, NOT
-cert-gated: the client has no cert yet — this is its bootstrap door.
+(which mints a tunnel-scoped token for agents). JWT-gated, no cert guard of its
+own; but under MTLS_ENFORCE=true (the default) the gateway lets only a device
+with a valid client cert reach :443, so the self-mint registers a further own
+device; a device without a cert registers with a token from /token/for (ADR 0003).
 """
 
 from __future__ import annotations
@@ -50,6 +52,16 @@ def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
     }
 
 
+def _browser_detail(browser: bool) -> str:
+    # A browser leaf is long-lived (LEAF_DAYS_BROWSER, ~1 year) and never renews, so
+    # the issuer never re-checks is_active — it is only revocable via data-plane
+    # enforcement (MTLS_ENFORCE=true). Flag that in the audit trail so every long-lived
+    # grant, self-minted or for another user, is greppable (3.32, R-0204).
+    if browser:
+        return "browser=True (long-lived leaf, revocable only under MTLS_ENFORCE=true)"
+    return "browser=False"
+
+
 @router.post("/token")
 def mint_self_enrollment_token(
     request: Request,
@@ -67,7 +79,7 @@ def mint_self_enrollment_token(
         "enrollment.token.minted",
         object_type="user",
         object_id=current_user.username,
-        detail=f"browser={browser} (self)",
+        detail=f"{_browser_detail(browser)} (self)",
         actor=actor_from_request(request),
     )
     return res
@@ -102,15 +114,7 @@ def mint_enrollment_token_for(
         "enrollment.token.minted_for",
         object_type="user",
         object_id=target.username,
-        # A browser leaf is long-lived (LEAF_DAYS_BROWSER, ~1 year) and never
-        # renews, so the issuer never re-checks is_active — it is only revocable via
-        # data-plane enforcement (MTLS_ENFORCE=true). Flag that in the audit trail so
-        # a for-another long-lived grant is greppable (3.32).
-        detail=(
-            "browser=True (long-lived leaf, revocable only under MTLS_ENFORCE=true)"
-            if data.browser
-            else "browser=False"
-        ),
+        detail=_browser_detail(data.browser),
         actor=actor_from_request(request),
     )
     return res

@@ -17,6 +17,7 @@ import type { ResetOutcome } from '$lib/bridge';
 
 const h = vi.hoisted(() => ({
   isDeviceEnrolled: vi.fn(async () => false),
+  deviceIdentity: vi.fn(async () => null),
   enrollWithToken: vi.fn(async () => undefined),
   resetDeviceIdentity: vi.fn(async (_serverUrl: string): Promise<ResetOutcome> => 'revoked'),
   startIfServerMode: vi.fn(async () => undefined),
@@ -29,6 +30,7 @@ const h = vi.hoisted(() => ({
 vi.mock('$lib/bridge', () => {
   const known: Record<string, unknown> = {
     isDeviceEnrolled: h.isDeviceEnrolled,
+    deviceIdentity: h.deviceIdentity,
     enrollWithToken: h.enrollWithToken,
     resetDeviceIdentity: h.resetDeviceIdentity,
   };
