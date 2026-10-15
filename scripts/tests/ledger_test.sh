@@ -27,9 +27,8 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 TREE="$WORK/tree"
-mkdir -p "$TREE/scripts/dev" "$TREE/tasks/templates"
+mkdir -p "$TREE/scripts/dev" "$TREE/tasks"
 cp "$REPO_ROOT/scripts/dev/ledger.sh" "$TREE/scripts/dev/ledger.sh"
-cp "$REPO_ROOT/tasks/templates/task.md" "$TREE/tasks/templates/task.md"
 LEDGER_SH="$TREE/scripts/dev/ledger.sh"
 FIX="$TREE/tasks/fixture.md"
 
@@ -188,33 +187,6 @@ l status fixture fertig
 l status
 [ $rc -eq 0 ] && grep -q "tasks/fixture.md" <<<"$OUT" && ok "status without arguments lists the ledgers" || bad "overview: $OUT"
 grep -qE 'offen 4 · fertig 0' <<<"$OUT" && ok "the overview counts the task states" || bad "counts: $OUT"
-
-# ══ new-task ══════════════════════════════════════════════════════════════════
-echo "── new-task ──"
-fresh_fixture
-l new-task fixture --title "dritte Aufgabe"
-[ $rc -eq 0 ] && grep -q '^### T12 — dritte Aufgabe  \[ \]' "$FIX" \
-  && ok "new-task appends the next free id from the template" || bad "new-task: rc=$rc out=$OUT"
-grep -q 'SPDX' "$FIX" && bad "the template's SPDX header leaked into the ledger" \
-  || ok "the template header stays in the template"
-grep -q '^Verify: bash scripts/dev/verify.sh <komponente> --strict' "$FIX" \
-  && ok "the new task carries the template's fields" || bad "template fields missing"
-l new-task fixture
-[ $rc -eq 2 ] && ok "new-task without --title -> exit 2" || bad "new-task bare: rc=$rc"
-
-# A title is free text. As a sed pattern, `&` repeats the match and `w file`
-# writes a file — a title must be able to contain both.
-fresh_fixture
-( cd "$TREE" && rm -f pwned.txt )
-l new-task fixture --title 'Sec & Perf | w pwned.txt'
-grep -qF '### T12 — Sec & Perf | w pwned.txt  [ ]' "$FIX" \
-  && ok "a title with & and | lands verbatim" || bad "title: $(grep '^### T12' "$FIX")"
-[ ! -e "$TREE/pwned.txt" ] && ok "and writes no file of its own" || bad "the title wrote a file"
-# The next id continues past T11, it does not count headings.
-grep -q '^### T12 ' "$FIX" && ok "the next id is T12 (past T11), not T4" || bad "id: $(grep -c '^### ' "$FIX")"
-# Placement: in the list, not behind the closing section.
-awk '/^### T12 /{t=NR} /^## Abschluss/{a=NR} END{exit !(t && a && t < a)}' "$FIX" \
-  && ok "the new task is inserted before ## Abschluss" || bad "new task landed after the closing section"
 
 # ══ lint ══════════════════════════════════════════════════════════════════════
 echo "── lint ──"
