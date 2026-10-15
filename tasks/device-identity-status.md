@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Einstellungen: Statuszeile „Registriert als X bis Y“ — Task-Ledger
-Status: bereit · Branch: feature/device-identity-status · Review: pro Task
+Status: erledigt · Branch: feature/device-identity-status · Review: pro Task
 Spec: docs/features/device-identity-status.md (Roadmap R-0240)
 Heavy: linux-full — Desktop-Journey: `settings-enroll.live.js` prüft die neue Zeile gegen den echten Issuer und Keyring; läuft im Sammellauf (`/feature-build` §5)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
