@@ -596,6 +596,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Gezieltes Verify ohne Schemathesis (R-0380):** `verify.sh <komp> --strict -- <test>` laesst den Schritt
+  `schemathesis` aus (`SKIP … (AH_ARGS)`, unter `--strict` kein Fehler wie bei `AH_ONLY`); er kostete jede
+  Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI.
 - **Schwere Suite als Sammellauf, PR-CI statt lokaler Wiederholung:** `Heavy: linux-full` laeuft nicht mehr je
   Vorhaben vor dem Merge, sondern als Sammellauf `/test all` ueber `main`, faellig nach drei solchen Vorhaben,
   sieben Tagen oder vor einem Release; rot sperrt weitere Merges mit Heavy bis auf Fix, Revert und SEC.
