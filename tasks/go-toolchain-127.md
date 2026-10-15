@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Go-Toolchain auf 1.27 vor dem Support-Ende von 1.26 — Task-Ledger
-Status: geplant · Branch: feature/go-toolchain-127 · Review: am Ende
+Status: aktiv · Branch: feature/go-toolchain-127 · Review: am Ende
 Spec: Roadmap R-0352
 Heavy: linux-full — der Agent baut mit neuem Toolchain, und die Boxen backen Go aus `scripts/vm/bootstrap_linux.sh`; läuft im Sammellauf (`/feature-build` §5)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
