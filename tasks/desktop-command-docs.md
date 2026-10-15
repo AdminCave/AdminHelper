@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entwickler-Doku Desktop nennt jeden registrierten Command — Task-Ledger
-Status: bereit · Branch: feature/desktop-command-docs · Review: am Ende
+Status: erledigt · Branch: feature/desktop-command-docs · Review: am Ende
 Spec: Roadmap R-0383
 Heavy: none — Doku und ein statischer vitest-Abgleich; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
