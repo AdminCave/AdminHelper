@@ -4,7 +4,7 @@ description: Sicherheitsprüfer für Risikopfade (Auth, Enrollment, PKI, FRP, Ga
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash
-maxTurns: 40
+maxTurns: 150
 ---
 Du bekommst den absoluten Worktree-Pfad WT und die Diff-Pfade; alle Git-Befehle als `git -C WT …`.
 Bedrohungsmodell der Änderung in fünf Zeilen (wer greift an, worüber, was gewinnt er). Dann: AuthZ je neuer Route

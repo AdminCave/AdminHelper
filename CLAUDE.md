@@ -96,9 +96,9 @@ laufen im Arbeitsverzeichnis der Session und müssen `git -C <wt>` und `bash <wt
   Release-Dateien, Harness-Pfade): zusätzlich `security`.
 - Vor dem Abschluss: `tester` über den Branch (Tests da, echt, rot ohne den Fix?) und `reviewer` über
   `git -C <wt> diff main...`. Beide Urteile stehen im PR-Text.
-- Ein Prüfer ohne Urteil nach zehn Minuten (die Session misst) wird gestoppt und einmal enger neu gestartet; bleibt es
-  dabei, prüft die Session selbst gegen dieselben Kriterien und schreibt das in den Commit-Body. Prüfer rufen keine
-  vollen Suiten.
+- Sub-Agenten haben keine Uhr, `maxTurns` ist Notbremse. Turn-Limit → einmal fortsetzen („Ergebnis jetzt“); erneut
+  oder 20 min ohne Wachstum der `output_file` (`stat -L -c %Y`, nie lesen) → stoppen, einmal enger neu starten (tester:
+  Probe-Worktree vorher weg), dann prüft die Session selbst (Commit-Body), beim builder `[~]`. Keine vollen Suiten.
 
 ## 7. Commit
 Nur `bash <wt>/scripts/dev/task-close.sh <ledger> <id> --stage -m "<msg>"` (im Worktree) committet eine Task: es

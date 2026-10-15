@@ -48,7 +48,8 @@ Nie zwei Bauer auf demselben Ledger.
    - `approve` → Schritt 5.
    - `request_changes` mit `blocker` oder belegtem `wichtig` → `builder` mit den Funden, einmal; dann `reviewer`
      noch einmal. Danach Schritt 5 oder `[?]`. Nits blockieren nie, eine dritte Runde gibt es nicht.
-   - Kein Urteil nach zehn Minuten → stoppen, einmal enger neu starten; dann selbst prüfen (CLAUDE.md §6).
+   - Turn-Limit → einmal fortsetzen; erneut oder Hänger → stoppen, einmal enger neu starten; dann selbst prüfen
+     (CLAUDE.md §6).
 5. `bash WT/scripts/dev/task-close.sh WT/tasks/<slug>.md <id> --stage -m "<msg>"`. Exit 0 → nächste Task;
    2 → stagen bzw. Eingabe reparieren, erneut; 3 → `builder` mit dem Grund, einmal, dann erneut schließen; 4 →
    STOPP, Kevin; 74 → STOPP, berichten. Wiederholbar.
