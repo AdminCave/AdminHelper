@@ -163,8 +163,7 @@ Zeit, als er nur `scripts/vm` abdeckte) — und findet ruff auch dann, wenn es n
 im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job `python-lint`
 prueft genau diese vier Pfade mit dem gepinnten ruff. `apps/server/requirements-dev.txt`
 pinnt mit `ruff==` dieselbe Version wie `ci.yml` und `scripts/vm/bootstrap_linux.sh`
-(kein Boden), ebenso `VENV_PKGS` in `scripts/dev/runner-setup.sh` fuer das Tool-Venv des
-Runners; `scripts/dev/toolchain-lockstep.sh` prueft die Gleichheit. Ein anderes
+(kein Boden); `scripts/dev/toolchain-lockstep.sh` prueft die Gleichheit. Ein anderes
 ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf diese
 Version zurueck. `ruff.toml` verlangt sie zusaetzlich per `required-version`: jedes
 andere ruff bricht in diesem Baum mit Exit 2 ab, statt still andere Regeln anzuwenden —
@@ -225,8 +224,8 @@ auf einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM
 Sperrdatei wählt `run.sh` in dieser Reihenfolge: `AH_PY_LOCK_FILE`, wenn gesetzt; sonst die
 **geteilte** Datei `/var/lib/adminhelper-dev/py.lock` (Pfad über `AH_PY_LOCK_SHARED`), sobald
 ihr Verzeichnis existiert; sonst je Nutzer `~/.cache/adminhelper-py.lock`. Verzeichnis und Datei
-legt `runner-setup.sh` an: über sie warten Kevins Läufe und die des
-Runners aufeinander. Ohne das Verzeichnis gilt die Sperre nur **je Unix-Nutzer**, über alle seine
+legte bis 2026-10 `runner-setup.sh` an: über sie warten die Läufe mehrerer Unix-Nutzer
+aufeinander. Ohne das Verzeichnis gilt die Sperre nur **je Unix-Nutzer**, über alle seine
 Checkouts. Darf ein Nutzer die geteilte Datei nur lesen, sperrt der Schritt trotzdem, nur ohne
 Halter-Zeile; lässt sie sich gar nicht öffnen (fehlt sie und darf er sie nicht anlegen, oder ist
 das Verzeichnis für ihn nicht durchsuchbar), ist der Schritt ein SKIP mit Grund und Abhilfe — kein Rückfall auf die Datei je
@@ -262,7 +261,7 @@ Komponenten: `server monitoring ca-issuer agent desktop desktop-rs desktop-ui
 desktop-e2e web scripts` und `all` (nur allein). Mehrere Komponenten werden ein Lauf
 `run.sh quick --only <a> <b>`; Argumente nach `--` gibt es nur fuer eine Komponente, sonst
 Exit 2. Bei `scripts` sind es Namen von Script-Tests, etwa
-`verify.sh scripts --strict -- ledger_loop_test`: nur diese laufen, ein Name, der nicht in
+`verify.sh scripts --strict -- ledger_test`: nur diese laufen, ein Name, der nicht in
 der Liste steht, ist Exit 2. Ein Lauf, der die Suite erreicht, hinterlaesst
 `.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component` — bei mehreren die
 Liste —, `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
@@ -433,17 +432,16 @@ Box-Menge explizit). Ein gesetztes `AH_REQUIRED` gewinnt immer unveraendert.
 `scripts/dev/hooks/session-status.sh` laeuft als `SessionStart`-Hook
 (`.claude/settings.json`) und druckt einen `AH-STATUS`-Block: Checkout und
 Dirty-Stand, `tauri.conf.json`-Version gegen den letzten Tag, alle Punkte von „Als
-Naechstes" (je die erste Zeile) und darunter die WIP-Zeile aus `roadmap.py show --wip`, an den
-Deckeln aus `CLAUDE.md` gemessen und bei einem erreichten Deckel mit `Warnung:`, dann aktive
-Ledger, offene PRs und warme Boxen. Je Workflow mit `schedule:` folgt eine Zeile
+Naechstes" (je die erste Zeile) und darunter die WIP-Zeile aus `roadmap.py show --wip`, dann
+aktive Ledger, offene PRs, das Urteil des letzten Wochenlaufs und warme Boxen. Je Workflow mit `schedule:` folgt eine Zeile
 `Geplant: <name> <Tag> (<n> d): <conclusion>` fuer den neuesten abgeschlossenen Lauf auf
 `main`, Cron oder `workflow_dispatch` — ein per Dispatch bestaetigter Fix schliesst einen roten
 Cron wie in `heavy.sh`; `WARN:` bei `failure`, `timed_out` oder `startup_failure` (mit
 `gh run view <id> --log-failed`) und bei einem Lauf aelter als 8 Tage, wobei ein toter Cron erst
 8 Tage nach dem letzten Dispatch auffaellt. Ohne `gh` steht dort `?`, ohne `WARN:`. Er ist rein lesend,
 endet immer mit 0 und warnt nur bei den Triggern aus `CLAUDE.md` §3 und bei einem roten oder
-veralteten geplanten Workflow — kein Trigger, keine `WARN:`-Zeile. `AH_AUTONOMOUS=1` schaltet ihn stumm (der Hook
-feuert auch in `claude -p`). Manuell: `bash scripts/dev/hooks/session-status.sh`.
+veralteten geplanten Workflow — kein Trigger, keine `WARN:`-Zeile. Manuell:
+`bash scripts/dev/hooks/session-status.sh`.
 
 ### Task schliessen: `ledger.sh` und `task-close.sh`
 
