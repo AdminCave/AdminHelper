@@ -27,7 +27,7 @@ mod validation;
 
 use commands::{
     ansible_generate_inventory, ansible_launch, ansible_write_playbook, api_proxy,
-    check_server_cert, delete_password, enroll_with_token, export_browser_p12,
+    check_server_cert, delete_password, device_identity, enroll_with_token, export_browser_p12,
     fetch_connections_jwt, fetch_tunnels, generate_diagnostics, is_device_enrolled,
     load_connections, load_settings, login, logout, open_connection, open_connection_stored,
     password_state, pinned_ca_fingerprint, reset_device_identity, reset_server_cert_pin,
@@ -110,6 +110,7 @@ fn main() {
             check_server_cert,
             reset_server_cert_pin,
             is_device_enrolled,
+            device_identity,
             pinned_ca_fingerprint,
             reset_device_identity,
             enroll_with_token,

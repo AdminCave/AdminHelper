@@ -10,8 +10,10 @@ Heavy: linux-full — Desktop-Journey: `settings-enroll.live.js` prüft die neue
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-### T1 — Command `device_identity`: Name und Ablauf aus dem Geräte-Zertifikat  [ ]
+### T1 — Command `device_identity`: Name und Ablauf aus dem Geräte-Zertifikat  [x]
 Komponente: desktop · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/ui/src/lib/bridge/index.ts, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop: 3 passed, 0 failed, 15 skipped @5bab8800 2026-10-15T14:44:28+02:00
+Review: approve (.ah-out/review/device-identity-status/T1.verdict.json)
 Änderung: `enrollment.rs` liest den Leaf aus `enroll|cert` (wie `leaf_fingerprint` `:235`) und gibt CN und `not_after` (RFC 3339, UTC) zurück; `None` ohne Schlüssel oder Zertifikat wie `is_enrolled` (`:211`), Fehler bei unlesbarem PEM oder fehlendem CN; `needs_renewal` (`:491`) nutzt denselben Leaf-Helfer. Struct `DeviceIdentity` (serde camelCase, `pub`-Felder) in `models.rs`, Command `device_identity` in `commands.rs` nach dem Vorbild `pinned_ca_fingerprint` (`:75`), registriert in `main.rs` (`:31`, `:112`); TS-Interface und Wrapper `deviceIdentity()` in `bridge/`. cargo-Tests mit rcgen-Zertifikaten und In-Memory-Keyring: CN und `not_after` aus einer Fullchain, kein CN und Müll-PEM → Fehler, fehlender Schlüssel oder fehlendes Zertifikat → `None`, camelCase auf der Leitung. IPC-Inventar und Parität laufen in der vitest-Suite mit.
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Command-Tabelle `:86`)
