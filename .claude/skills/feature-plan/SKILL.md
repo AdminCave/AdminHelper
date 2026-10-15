@@ -69,11 +69,13 @@ passenden Flags, bleibt ask-first); `windows` (die Windows-VM).
 - Steckt in einer Task eine Design-Entscheidung, gehört sie als offene Frage in die Spec.
 - Neue Datei ⇒ die Task nennt den SPDX-Header. Neuer Flow ⇒ die Task enthält den Test.
 - `Doku:` nach Augenmaß; die meisten Tasks sind `Doku: keine (intern)`.
+- `Komponente:` ist der Name aus `verify.sh` (`server`, `web`, `desktop-ui` …), kein Pfad: `task-close.sh`
+  vergleicht ihn wörtlich mit den Komponenten des `Verify:`.
 
 Task-Schema:
 ```
 ### T<n> — <Titel>  [ ]
-Komponente: apps/… · Dateien: …
+Komponente: <komponente> · Dateien: …
 Änderung: <was genau, 1–3 Sätze>
 Verify: bash scripts/dev/verify.sh <komponente> --strict
 Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
@@ -127,8 +129,13 @@ Beim Bündel gilt jeder Roadmap-Schritt des Gates für jede enthaltene Zeile.
 - **Parallel-Tauglichkeit:** gegen jede `aktiv`- und `freigegeben`-Zeile (`roadmap.py show`) prüfen, ob
   das Vorhaben disjunkt ist — Komponenten und geteilte Contract-Dateien (API-Routen/Schemas,
   Migrationen, FRP-Config, Tauri-Commands, `run.sh`/`ci.yml`, primäre `docs/`-Seiten). Das Ledger
-  einer anderen Zeile liegt auf ihrem Branch (`git show <branch>:tasks/<slug>.md`). Ergebnis je Zeile:
-  „parallel-tauglich zu R-nnnn: ja/nein — <Grund>“; überlappt es, seriell empfehlen.
+  einer anderen Zeile liegt auf ihrem Branch (`git show <branch>:tasks/<slug>.md`). Dazu muss
+  `df -h /` Platz für den zweiten Worktree lassen (Desktop 4–6 GiB). Ergebnis je Zeile: „parallel-tauglich zu
+  R-nnnn: ja/nein — <Grund>“; überlappt es, seriell empfehlen. Danach einen Partner suchen:
+  `python3 scripts/dev/roadmap.py next --status geplant --exclude-components <Komponenten dieses Ledgers>`, ohne
+  Treffer dasselbe mit `--status neu` (SEC ausgenommen); Contract-Dateien und Platz selbst prüfen. Vorschlag:
+  „parallel baubar: R-nnnn — <Grund>“ (`geplant`, Kevin kann beide freigeben) oder „parallel planbar:
+  R-nnnn“ (`neu`, erst planen).
 - Präsentieren: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify), **alle offenen
   Fragen** herausgestellt, und den Satz: „Freigabe: `! python3 scripts/dev/roadmap.py approve R-nnnn` (beim
   Bündel je Zeile); danach `/feature-build tasks/<slug>.md`.“

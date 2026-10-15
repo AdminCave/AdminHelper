@@ -31,8 +31,10 @@ gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
 - Roadmap nicht `freigegeben` → melden, nicht bauen. Die Freigabe ist Kevins `roadmap.py approve`.
 - Kopf `bereit` → weiter mit 4; `erledigt` oder `blockiert` → melden.
 
-Höchstens zwei Ledger `aktiv` zugleich (Deckel in `roadmap.py`), auf disjunkten Komponenten, je eigener Worktree.
-Nie zwei Bauer auf demselben Ledger.
+Ist eine zweite Zeile freigegeben und erfüllt sie beim Start die Kriterien aus `/feature-plan` §4 (neu geprüft, auch
+`df -h /`), startet die Session sie gleich mit: zweiter Worktree, eigener `builder`, derselbe Ablauf. Höchstens zwei
+Ledger `aktiv` (Deckel in `roadmap.py`); die Tasks eines Ledgers bauen nacheinander, nie zwei Bauer auf demselben
+Ledger.
 
 ## 3. Je offener Task, in Ledger-Reihenfolge
 
@@ -66,13 +68,17 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
    `scenario <flags>` → Kevin fragen. Danach `python3 scripts/vm/vm.py list`.
 4. `tester` über `git -C WT diff main...`, `reviewer` über den Branch (Task-ID `branch`), bei Risikopfad
    `security`. Echte Funde: Task ins Ledger, Kopf und Roadmap zurück auf `aktiv`, bauen wie in 3.
-5. Kopf `erledigt` als `chore(ledger)`; `git -C WT push -u origin feature/<slug>`;
+5. Basis nachziehen: `git -C WT fetch origin`; scheitert `git -C WT merge-base --is-ancestor origin/main HEAD`
+   (etwa nach dem Merge des parallelen Vorhabens): `git -C WT merge origin/main`, das Union-Ergebnis in
+   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften), Schritt 2 erneut. Kopf `erledigt` als
+   `chore(ledger)`; `git -C WT push -u origin feature/<slug>`;
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, die Urteile von `tester`
    und `reviewer` dazu; `gh pr create --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`;
    `roadmap.py status R-nnnn pr --pr "#<n>"`.
-6. `gh pr checks <n> --watch --fail-fast`. Produkt-PR, CI im ersten Anlauf grün → Kombinationsprüfung (CLAUDE.md
-   §2), dann `gh pr merge <n> --merge` (ohne `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch
-   danach mit `git push origin --delete feature/<slug>`). Harness-PR oder rote CI → Übergabe an Kevin.
+6. `gh pr checks <n> --watch --fail-fast`. Produkt-PR, CI im ersten Anlauf grün → Basis wie in 5 prüfen (zieht sie
+   nach: Push, neue CI) → Kombinationsprüfung (CLAUDE.md §2), dann `gh pr merge <n> --merge` (ohne
+   `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch danach mit `git push origin --delete
+   feature/<slug>`). Harness-PR oder rote CI → Übergabe an Kevin.
 7. Nach dem Merge den `ci.yml`-Lauf des Merge-Commits beobachten: `gh run list --workflow ci.yml --commit
    <merge-sha> -L 1` wiederholen, bis er erscheint, dann `gh run watch <id> --exit-status`; rot → nichts weiter
    mergen, Revert nach CLAUDE.md §2. Dann

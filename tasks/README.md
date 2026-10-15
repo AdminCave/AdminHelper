@@ -36,9 +36,9 @@ Abschluss braucht: keine, den Linux-Stack auf einer Pool-VM (`run.sh integration
 Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first) oder die
 Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen.
 
-**Task-Felder:** `Komponente:`, `Dateien:` (die Pfade, die `task-close.sh --stage` stagt, durch
-Komma getrennt), `Verify:` (Flag-Form ohne Env-Präfix: `bash scripts/dev/verify.sh <komp> --strict
-[-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten).
+**Task-Felder:** `Komponente:` (der Name aus `verify.sh`, etwa `server`, kein Pfad), `Dateien:` (die
+Pfade, die `task-close.sh --stage` stagt, durch Komma getrennt), `Verify:` (Flag-Form ohne Env-Präfix:
+`bash scripts/dev/verify.sh <komp> --strict [-- <test>]`), `Doku:`, bei Bedarf `Test-Löschung:` (unten).
 
 **Task-Status im Body:** `[ ]` offen · `[x]` fertig · `[~]` übersprungen (Grund) ·
 `[?]` braucht menschliche Entscheidung.
