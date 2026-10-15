@@ -1,6 +1,5 @@
-# Risk paths. A diff that touches one of them gets the xhigh reviewer (Opus),
-# every other diff the standard one (Sonnet). Read by `review.sh risk` together
-# with scripts/dev/harness-paths.txt, whose paths are risk paths as well.
+# Risk paths. A diff that touches one of them gets the `security` sub-agent next
+# to the reviewer (CLAUDE.md §6). Read by `review.sh risk`.
 # Shell `case` patterns, one per line: `*` crosses `/`, an entry ending in `/` is
 # a directory. Every line has to match something in the tree
 # (review_scripts_test.sh checks it), so a rename cannot drop a path out of this
@@ -63,3 +62,11 @@ apps/monitoring/alembic/versions/*
 scripts/install.sh
 scripts/update.sh
 docker-compose*.yml
+
+# The harness: the rules, the gates and the scripts that prove a run (CLAUDE.md §4)
+CLAUDE.md
+.claude/*
+scripts/dev/*
+scripts/tests/run.sh
+scripts/tests/heavy.sh
+scripts/vm/*
