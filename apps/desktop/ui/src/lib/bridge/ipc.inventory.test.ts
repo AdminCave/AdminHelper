@@ -14,6 +14,10 @@
  * without registration fails at runtime with "command not found" — in the
  * packaged app, in front of a user.
  *
+ * The developer page (`docs/…/developer/desktop.html`, DE + EN) lists the
+ * registered commands as well; a command missing there is a doc bug nobody
+ * notices, so the registered set is checked against both pages too.
+ *
  * The parsers read source text, so each one carries a minimum count: an empty
  * parse would make every set comparison below trivially true.
  */
@@ -26,6 +30,9 @@ import { dirname, join } from 'path';
 // src/lib/bridge -> the desktop component root
 const DESKTOP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const read = (...p: string[]): string => readFileSync(join(DESKTOP, ...p), 'utf-8');
+
+/** The developer pages whose command table has to name every registered command. */
+const COMMAND_DOCS = ['docs/developer/desktop.html', 'docs/en/developer/desktop.html'];
 
 /** Commands not called from the UI, with the reason each one may stay. */
 const UNCALLED_ALLOWLIST: Record<string, string> = {};
@@ -102,5 +109,16 @@ describe('tauri IPC inventory', () => {
     const invoked = invokedCommands();
     const uncalled = [...registeredCommands()].filter((c) => !invoked.has(c)).sort();
     expect(uncalled).toEqual(Object.keys(UNCALLED_ALLOWLIST).sort());
+  });
+
+  it('names every registered command in the developer docs (DE + EN)', () => {
+    const registered = [...registeredCommands()].sort();
+    const missing = Object.fromEntries(
+      COMMAND_DOCS.map((page) => {
+        const html = read('..', '..', ...page.split('/'));
+        return [page, registered.filter((c) => !html.includes(`<code>${c}</code>`))];
+      }),
+    );
+    expect(missing).toEqual(Object.fromEntries(COMMAND_DOCS.map((page) => [page, []])));
   });
 });

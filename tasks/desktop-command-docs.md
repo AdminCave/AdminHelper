@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entwickler-Doku Desktop nennt jeden registrierten Command — Task-Ledger
-Status: aktiv · Branch: feature/desktop-command-docs · Review: am Ende
+Status: bereit · Branch: feature/desktop-command-docs · Review: am Ende
 Spec: Roadmap R-0383
 Heavy: none — Doku und ein statischer vitest-Abgleich; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Baut erst nach dem Merge von R-0240 (`device-identity-status`): beide sind `desktop-ui`, und R-0240 trägt
 `device_identity` in dieselbe Tabelle ein.
 
-### T1 — Command-Tabelle vollständig, Zahlen raus, Abgleich im IPC-Inventar  [ ]
+### T1 — Command-Tabelle vollständig, Zahlen raus, Abgleich im IPC-Inventar  [x]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/developer/index.html, apps/desktop/ui/src/lib/bridge/ipc.inventory.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8f08bb0c 2026-10-15T15:57:14+02:00
+Review: am Ende (Branch-Review)
 Änderung: Die Command-Tabelle (`desktop.html:82` ff., DE+EN) nennt jeden Command aus `generate_handler!` (`apps/desktop/src-tauri/src/main.rs`), heute fehlen `pinned_ca_fingerprint`, `enroll_with_token`, `export_browser_p12`, `generate_diagnostics`, `start_notification_stream`, `stop_notification_stream`. Die festen Zahlen, die schon veraltet sind, fallen weg: „invoke_handler mit 24 Commands“ (`desktop.html:41`, DE+EN) und „32 Tauri-Commands“ (`docs/developer/index.html:78`). `ipc.inventory.test.ts` (liest `generate_handler!` schon, `:42-44`) prüft zusätzlich, dass jeder registrierte Command in beiden `desktop.html` als `<code>name</code>` vorkommt; der Abgleich ist vor der Doku-Korrektur rot, das zeigt der builder.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/bridge/ipc.inventory.test.ts
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html, docs/developer/index.html (EN-Gegenstück nennt keine Zahl)
