@@ -247,6 +247,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # The server's Alembic migration creates the tables this service works on, and the
+      # server turns healthy only after `alembic upgrade head` (its healthcheck above). Waiting
+      # on service_healthy keeps /enroll and /renew from racing Alembic into a 500 on a missing
+      # table (R-0288). depends_on needs no shared network; the ca-issuer stays on pki only.
+      server:
+        condition: service_healthy
     # ONLY pki — deliberately NOT on the default net, so no other service (above all
     # the internet-facing frps) can reach :8090 to forge the gateway's mTLS headers
     # and mint certs. gateway + postgres are its only pki peers (1.1).
