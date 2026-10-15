@@ -602,6 +602,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **ca-issuer startet erst nach der Server-Migration (R-0288):** In `docker-compose.yml` wartet der `ca-issuer` per
+  `depends_on` auf den healthy `server`, und healthy wird der Server erst nach `alembic upgrade head`. Vorher konnten
+  `/enroll` und `/renew` bei einem Teil-Start auf ein Schema ohne ihre Tabellen treffen und mit 500 antworten; im
+  normalen Start schloss nur das Warten des Gateways auf den Server dieses Fenster. Die Installationsanleitung (DE+EN)
+  nennt die Reihenfolge.
 - **Audit des Self-Mints nennt das langlebige Browser-Leaf (R-0204):** `POST /api/enrollment/token?browser=true`
   vermerkt im Audit-Log (`enrollment.token.minted`) wie `/token/for`, dass das Leaf langlebig und nur unter
   `MTLS_ENFORCE=true` widerrufbar ist, weiterhin mit `(self)`. Die API-Referenz (DE+EN) beschreibt den Endpunkt als

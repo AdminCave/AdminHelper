@@ -166,6 +166,8 @@ docker compose up -d</code></pre>
             </div>
           </div>
 
+          <p>Database migrations run automatically on container start via <strong>Alembic</strong> (see <code>apps/server/alembic/versions/</code>). The entrypoint first waits for <code>pg_isready</code>, then runs <code>alembic upgrade head</code>, and only then starts uvicorn. Compose starts the <code>ca-issuer</code> only once the server is healthy, i.e. after the migration: <code>/enroll</code> and <code>/renew</code> thus never hit a schema without their tables. The agent has its own release cycle — see <a href="./agent-deployment.html">Agent Deployment</a>.</p>
+
           <h2 id="uninstall">Uninstall</h2>
           <p><code>scripts/uninstall.sh</code> removes a server install <strong>completely</strong>. By default it is <strong>interactive</strong>: it asks per category, and only deletes once every question has been answered. Run it from the install directory (where <code>docker-compose.yml</code> lives):</p>
           <div class="code-header"><span>bash</span></div>

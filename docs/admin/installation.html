@@ -218,7 +218,7 @@ docker compose up -d</code></pre>
 <pre><code>docker compose pull server
 docker compose up -d server</code></pre>
 
-          <p>Datenbank-Migrationen laufen automatisch beim Container-Start via <strong>Alembic</strong> (siehe <code>server/alembic/versions/</code>). Der Entrypoint wartet erst auf <code>pg_isready</code>, führt dann <code>alembic upgrade head</code> aus, dann erst startet uvicorn. Der Agent hat einen eigenen Release-Zyklus – siehe <a href="./agent-deployment.html">Agent-Deployment</a>.</p>
+          <p>Datenbank-Migrationen laufen automatisch beim Container-Start via <strong>Alembic</strong> (siehe <code>apps/server/alembic/versions/</code>). Der Entrypoint wartet erst auf <code>pg_isready</code>, führt dann <code>alembic upgrade head</code> aus, dann erst startet uvicorn. Den <code>ca-issuer</code> startet Compose erst, wenn der Server healthy ist, also nach der Migration: <code>/enroll</code> und <code>/renew</code> treffen so nie auf ein Schema ohne ihre Tabellen. Der Agent hat einen eigenen Release-Zyklus – siehe <a href="./agent-deployment.html">Agent-Deployment</a>.</p>
 
           <h2 id="deinstallation">Deinstallation</h2>
           <p><code>scripts/uninstall.sh</code> entfernt eine Server-Installation <strong>restlos</strong>. Standardmässig <strong>interaktiv</strong>: das Script fragt für jede Kategorie einzeln nach — gelöscht wird erst, nachdem alle Fragen beantwortet sind. Aus dem Install-Verzeichnis (dort, wo die <code>docker-compose.yml</code> liegt) ausführen:</p>
