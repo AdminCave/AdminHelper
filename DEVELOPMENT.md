@@ -200,23 +200,19 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
   apps/server/.venv/bin/python -m pytest -q
 ```
 
-**Eine Lane hat ihre eigene Test-DB.** `bash scripts/dev/lane.sh new <slug>` legt auf demselben
-Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt der Lane eine eigene
-`.devenv.sh`: Sie sourct die des Haupt-Checkouts und biegt danach `AH_TEST_DB` auf diese DB und
-`AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
-braucht dafür `CREATEDB`, die sie oben ohnehin hat. Steht das Passwort als `Benutzer:Passwort@` in der
-URL, reist es in `PGPASSWORD`, nicht in einem Argument von `createdb`/`dropdb`; kann `lane.sh` es dort
-nicht herauslösen, legt es keine Lane an. Ein Passwort oder ein anderes Geheimnis in der Query
-(`password`, `sslpassword`, `oauth_client_secret`, `scram_client_key`, `scram_server_key`, in jeder
-Schreibweise) lehnt `lane.sh` ebenso ab, auch einen prozentkodierten Schlüssel der Query (libpq
-dekodiert auch Schlüssel). Eine andere Form als eine URL `postgresql://` oder `postgresql+<treiber>://`, etwa
-die Keyword-Form von libpq (`host=… dbname=…`), nimmt `lane.sh` nicht an.
-Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
-und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
-angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
-weil `dropdb` scheitert), bleibt die Marke, und `new <slug>` verweigert den Slug als „never closed".
-Ausweg: `done <slug>` erneut aufrufen, sobald die Ursache weg ist, oder die DB von Hand löschen und
-die Marke entfernen.
+**Ein Worktree hat seine eigene Test-DB.** `bash scripts/dev/worktree-setup.sh <pfad> <slug>` legt
+auf demselben Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt dem
+Worktree eine eigene `.devenv.sh`: Sie sourct die des Haupt-Checkouts und biegt danach `AH_TEST_DB`
+auf diese DB und `AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `worktree-teardown.sh <pfad> <slug>`
+löscht beides wieder. Die Rolle braucht dafür `CREATEDB`, die sie oben ohnehin hat. Steht das
+Passwort als `Benutzer:Passwort@` in der URL, reist es in `PGPASSWORD`, nicht in einem Argument von
+`createdb`/`dropdb` (`scripts/dev/pg-url.sh`); kann das Skript es dort nicht herauslösen, legt es
+keine DB an. Ein Passwort oder ein anderes Geheimnis in der Query (`password`, `sslpassword`,
+`oauth_client_secret`, `scram_client_key`, `scram_server_key`, in jeder Schreibweise) lehnt es ebenso
+ab, auch einen prozentkodierten Schlüssel der Query (libpq dekodiert auch Schlüssel). Eine andere Form
+als eine URL `postgresql://` oder `postgresql+<treiber>://`, etwa die Keyword-Form von libpq
+(`host=… dbname=…`), nimmt es nicht an. Eine Besitzmarke gibt es nicht (Kevin, 2026-10-14): der
+Teardown löscht die DB und das Venv, die zum Slug gehören.
 
 **Die schweren Python-Schritte laufen nacheinander.** `server-pytest` und `schemathesis` holen
 in `run.sh` vor dem Start eine Sperre (`flock`), gleich aus welchem Checkout: zwei Server-Suiten
@@ -462,7 +458,8 @@ bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 3. **Staging:** `--stage` stagt genau die Pfade aus `Dateien:` (nie `git add -A`; Verzeichnisse werden
    abgelehnt, Loeschungen mitgenommen). Eine halb gestagte Datei bricht ab (Exit 2, mit Hinweis auf
    `ledger.sh set-files`). Der Index wird mit `git write-tree` festgehalten.
-4. **Geloeschte Testdatei** (`tests/`, `*_test.*`, `test_*`): nur mit einer committeten
+4. **Geloeschte Testdatei** (unter `tests/` oder `test/`, oder `*_test.*`, `test_*`, `*.test.*`, `*.spec.*`,
+   `*.e2e.*`, `*.live.*`; eine Umbenennung zaehlt als Loeschung): nur mit einer committeten
    `Test-Löschung:`-Zeile dieser Task (sonst Exit 3; Format in `tasks/README.md`).
 5. **`review.sh sec --staged`:** was nie in dieses oeffentliche Repo darf (Exit 4).
 6. **Verify:** die `Verify:`-Zeile der Task, wie sie dasteht (`verify.sh <komp> --strict [-- <args>]`
@@ -1023,9 +1020,9 @@ Gruppe und Andere nicht schreiben — sonst bricht `vm.py` mit Exit 2 und dem pa
 **Umzug des Tokens (einmal):** Der Befehl schreibt `AH_PVE_TOKEN` aus der settings-Datei nach
 `pve.env` (Datei 600, Verzeichnis 700) und nimmt es dort heraus, ohne den Wert auszugeben; eine
 vorhandene `pve.env` liest er wie `vm.py`, und ein Symlink an ihrer Stelle bricht ab, bevor er etwas
-schreibt. Im Haupt-Checkout ausfuehren und danach in jeder Lane (`../AdminHelper-<slug>`), denn
-`lane.sh new` legt jeder Lane eine eigene Kopie der settings-Datei an; dort steht das Token schon in
-`pve.env`, und der Befehl nimmt nur die Kopie heraus.
+schreibt. Im Haupt-Checkout ausfuehren und danach in jedem Worktree (`../AdminHelper-<slug>`), der
+noch eine Kopie der settings-Datei traegt: `worktree-setup.sh` legt sie nur an, solange `pve.env`
+fehlt; dort steht das Token dann schon in `pve.env`, und der Befehl nimmt nur die Kopie heraus.
 
 ```bash
 python3 - .claude/settings.local.json <<'PY'
@@ -1143,20 +1140,19 @@ noch als laufendes Bake (`role-bake`) — eine geleakte VM ist ein Fehler, kein 
 
 **Die Lane** ist das, was parallele Worktrees auseinanderhaelt: jede VM traegt sie als Tag,
 und `reap` (ohne `--all`) wie der Auto-Reap fassen nur die eigene an. Sie kommt aus `--lane`,
-sonst aus `AH_LANE`, sonst aus `.vm/lane` — die Datei ist heute von Hand zu setzen, meist ist
-`AH_LANE` im Worktree einfacher; ab 2b legt `lane.sh new <slug>` sie an —, sonst ist sie
+sonst aus `AH_LANE`, sonst aus `.vm/lane` — `worktree-setup.sh` schreibt sie als Erstes —, sonst ist sie
 `main` — der Hauptcheckout. Ein von Hand angelegter Worktree (`git worktree add`, etwa die
 `harness/`-Worktrees unter `~/.cache`) mit eigenem `.vm`, ohne `.vm/lane` und ohne `AH_LANE`
 wird abgewiesen, sobald ein Verb die Lane braucht (Exit 2, „this worktree has no .vm/lane“):
 `clone` nimmt dafuer auch `--lane`, bei `list` filtert `--lane` nur. Er liefe sonst still auf
-der Lane des Hauptcheckouts, samt dessen Reap und Sweeps. Ein Worker-Lauf aus so einem Worktree,
+der Lane des Hauptcheckouts, samt dessen Reap und Sweeps. Ein Lauf aus so einem Worktree,
 Multibox, `warm.sh`, `iter.sh`, `reap.sh` und auch `vm.py list`, braucht deshalb `AH_LANE=main`,
 wenn er auf main laufen soll, wie bei go-toolchain-126. `heavy.sh` fragt die Lane im Pre-flight
 zuerst und endet ohne sie UNVERIFIED mit genau diesem Grund („this worktree has no .vm/lane —
 set AH_LANE=…“), bevor es den Hypervisor fragt. Fuer `vm.py` selbst nennt `--as-lane <lane>` vor
 dem Verb die Lane (`python3 scripts/vm/vm.py --as-lane main list`); das trifft die Allow-Regel
-fuer `vm.py`, ein vorangestelltes `AH_LANE=…` trifft keine. Der Loop (Stufe 7b) braucht das
-nicht: er baut in Worktrees aus `lane.sh new`, mit `.vm/lane`.
+fuer `vm.py`, ein vorangestelltes `AH_LANE=…` trifft keine. Ein Worktree aus `worktree-setup.sh`
+braucht das nicht: er hat seine `.vm/lane`.
 `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
 `scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
 darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde. Den Zustand im eigenen
@@ -1203,12 +1199,12 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   auf der warmen Box. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf. Bei Fehler
   bleibt die Box stehen (`python3 scripts/vm/vm.py ssh <vmid>`) und Screenshots/Logs
   landen automatisch lokal unter `.ah-out/`.
-- **Parallele Lanes.** `bash scripts/dev/lane.sh new <slug>` legt fuer ein Vorhaben
-  einen Git-Worktree `../AdminHelper-<slug>` an (Branch `feature/<slug>` von `main`;
-  `.devenv.sh` als Symlink, `.claude/settings.local.json` als **Kopie** — Claude Code
-  schreibt die Datei bei Permission-Grants, ein Symlink waere ein geteiltes
-  Write-Target aller Lanes). Jede Lane bekommt ihre **eigene Lane-Kennung**: `lane.sh
-  new` schreibt den Slug nach `.vm/lane`, jede VM traegt den Tag `lane-<slug>`, und
+- **Parallele Lanes.** Jedes Vorhaben baut in einem eigenen Git-Worktree
+  `../AdminHelper-<slug>` (`git worktree add`, dann `bash scripts/dev/worktree-setup.sh
+  <pfad> <slug>`: eigene Test-DB und `.devenv.sh`, Sidecar und Venv-Links,
+  `node_modules` als Hardlinks, `.claude/settings.local.json` als **Kopie**, solange
+  `~/.config/adminhelper/pve.env` fehlt). Jede Lane bekommt ihre **eigene Lane-Kennung**:
+  das Setup schreibt den Slug nach `.vm/lane`, jede VM traegt den Tag `lane-<slug>`, und
   `reap`, der Auto-Sweep am Ende jedes Verbs und die Leak-Pruefung in `list` arbeiten
   auf der eigenen Lane — Reap einer Lane laesst die anderen stehen. `destroy` filtert
   ueber `--lane/--scenario/--role`; eine ausdruecklich genannte VMID wird zerstoert,
@@ -1221,9 +1217,9 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
   auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
   2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der
-  Box `git` voraussetzt, gehoert deshalb nicht auf die Box. `lane.sh done <slug>` zerstoert die
-  VMs der Lane und raeumt Worktree + Branch ab — auch dann, wenn der Worktree schon
-  von Hand entfernt wurde.
+  Box `git` voraussetzt, gehoert deshalb nicht auf die Box. `worktree-teardown.sh <pfad> <slug>`
+  zerstoert die VMs der Lane und raeumt Worktree, Test-DB, Venv und den gemergten Branch ab —
+  auch dann, wenn der Worktree schon von Hand entfernt wurde.
   Ablauf eines Vorhabens im eigenen Worktree: `CLAUDE.md` §8.
 - **Verteilt (Multi-Host).** `bash scripts/tests/multibox.sh --agents N [--desktop]`
   klont Server- + Agent-Box(en); mit `--desktop` zusaetzlich eine Box, die die

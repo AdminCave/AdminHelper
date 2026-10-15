@@ -4,11 +4,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # pg_url_test.sh — hermetic test for scripts/dev/pg-url.sh, the one reading of
-# AH_TEST_DB that lane.sh (lane_db) and builder-home.sh (pg) share. One table of
-# URLs: the ones it takes, with the URL and password it must hand on, and the ones
-# it refuses, with the reason and without the value. Every password it takes is
-# held against urllib.parse.unquote, the decoding SQLAlchemy uses. All values are
-# placeholders; nothing reaches a database.
+# AH_TEST_DB that worktree-setup.sh (createdb) and worktree-teardown.sh (dropdb)
+# share. One table of URLs: the ones it takes, with the URL and password it must
+# hand on, and the ones it refuses, with the reason and without the value. Every
+# password it takes is held against urllib.parse.unquote, the decoding SQLAlchemy
+# uses. All values are placeholders; nothing reaches a database.
 #
 # Run: bash scripts/tests/pg_url_test.sh
 
@@ -106,12 +106,6 @@ if localedef -i zh_CN -f GBK "$LOC/zh_CN.GBK" >/dev/null 2>&1; then
 else
   bad "localedef could not build zh_CN.GBK in $LOC: the locale case is not verified"
 fi
-
-echo "── a harness path ──"
-grep -qxF 'scripts/dev/pg-url.sh' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
-  && grep -qxF 'scripts/tests/pg_url_test.sh' "$REPO_ROOT/scripts/dev/harness-paths.txt" \
-  && ok "the helper and its test are harness paths (builder-home.sh reads AH_TEST_DB through it)" \
-  || bad "missing from harness-paths.txt"
 
 echo ""
 echo "pg_url_test: $PASS passed, $FAIL failed"

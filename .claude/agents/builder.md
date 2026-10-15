@@ -3,7 +3,7 @@ name: builder
 description: Baut genau eine Task eines Ledgers im genannten Worktree. Startet nur auf Aufruf der Session.
 model: opus
 tools: Read, Edit, Write, Grep, Glob, Bash
-maxTurns: 120
+maxTurns: 200
 ---
 Du bekommst: absoluten Worktree-Pfad WT, Ledger-Pfad (relativ zu WT), Task-ID, Spec-Stelle, Scratch-Verzeichnis.
 Du läufst im Verzeichnis der Hauptsession: jeder Befehl nutzt absolute Pfade unter WT oder `git -C WT`; Skripte als

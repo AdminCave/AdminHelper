@@ -571,7 +571,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 - **Worker-Loop, Builder-Profil, Runner-Nutzer, Harness-Waechter-Parser, diff-scan (Dev-Werkzeuge, Team v3):**
   Der Bau laeuft in einer Session mit Sub-Agenten; die Gates, die den autonomen Lauf absichern sollten, entfallen
-  mit ihm. Den Token-Scan (`review.sh sec`, Git-Hooks, CI-Guard) gibt es weiter.
+  mit ihm, ebenso der Reviewer-Prozess (`review-run.sh`, `review-probe.sh`, Schemas, Vertragsliste) und
+  `lane.sh`. Den Token-Scan (`review.sh sec`, Git-Hooks, CI-Guard) gibt es weiter.
 
 - **crabbox (Harness Stufe 2b):** Das externe Binary und alles, was nur fuer es da war —
   `.crabbox.yaml`, der Workflow `crabbox.yml`, die Agent-Skill `.agents/skills/crabbox/`,
@@ -592,6 +593,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Entwicklungsablauf (Team v3, Dev-Werkzeuge):** eine Claude-Code-Session mit Sub-Agenten (`.claude/agents/`:
   `builder`, `reviewer`, `tester`, `security`) statt Chef, Worker und Loop; die Regeln stehen in `CLAUDE.md`.
   `AUTONOMOUS.md` und der Skill `feature-review` entfallen, das Ledger-Format steht in `tasks/README.md`.
+  `task-close.sh` prueft das Urteil des `reviewer` als Datei, `review.sh` behaelt `sec`, `risk` und `pr-body`,
+  `scripts/dev/worktree-setup.sh` und `worktree-teardown.sh` ersetzen `lane.sh`. Sub-Agenten haben eine Notbremse
+  (`maxTurns`) statt einer Uhr; `harness-guard.sh` prueft nur noch Bash-Befehle.
 
 - **Desktop: Zuruecksetzen widerruft das Geraet am Server (R-0224):** "Geraete-Identitaet zuruecksetzen" widerruft das
   Geraet zuerst am Server, ausgewiesen durch sein Zertifikat, und loescht es dann lokal. Widerruft der Server es

@@ -89,8 +89,9 @@ Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die Beschreibung au
    fragt.
 2. **Sie trägt einen Grund.** `ledger.sh lint` prüft die Form `<pfad>::<name> — <Grund>`; ohne Grund
    ist die Zeile ein Fehler, ebenso eine zweite Zeile in derselben Task.
-3. **Eine gelöschte Testdatei** (`tests/`, `*_test.*`, `test_*`) ohne passende Zeile dieser Task
-   lässt `task-close.sh` nicht durch (Exit 3).
+3. **Eine gelöschte oder weg-umbenannte Testdatei** (unter `tests/` oder `test/`, oder `*_test.*`,
+   `test_*`, `*.test.*`, `*.spec.*`, `*.e2e.*`, `*.live.*`) ohne passende Zeile dieser Task lässt
+   `task-close.sh` nicht durch (Exit 3).
 
 Ob ein Test schwächer geworden ist (`|| true`, `skip`, eine gestrichene oder triviale Assertion),
 prüft der `reviewer` (Kriterium 3 in `.claude/agents/reviewer.md`), kein Skript.
