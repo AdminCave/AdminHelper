@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entwickler-Doku Desktop nennt jeden registrierten Command — Task-Ledger
-Status: bereit · Branch: feature/desktop-command-docs · Review: am Ende
+Status: aktiv · Branch: feature/desktop-command-docs · Review: am Ende
 Spec: Roadmap R-0383
 Heavy: none — Doku und ein statischer vitest-Abgleich; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -25,3 +25,9 @@ Orakel: contract — Abgleich `generate_handler!` ↔ Command-Tabelle der Doku
 Dedup-Key: bug:docs:desktop.html:command-table
 HEAD: c18098a4
 Semantik: docs/ ist hier selbst der Fehler; das Soll ist `generate_handler!` in `main.rs` und `.claude/rules/docs.md` — „Falsche Doku ist ein Bug“
+
+### T2 — Abgleich nur gegen die Command-Tabelle  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/ipc.inventory.test.ts
+Änderung: Der Abgleich aus T1 sucht `<code>name</code>` auf der ganzen Seite; neun Commands stehen auch im Fließtext (`login`, `api_proxy`, `start_tunnel` …), ein Fehlen in der Tabelle bliebe unbemerkt (tester-Probe: `start_tunnel` nur aus der Tabellenzeile `desktop.html:90` entfernt → grün). Der Test schneidet jede Seite vorher auf den Abschnitt der Command-Tabelle zu (`<h2>Tauri-Commands</h2>` bzw. `<h2>Tauri Commands</h2>`, `desktop.html:80`, bis zum folgenden `</table>`) und scheitert laut, wenn er ihn nicht findet; der Docstring (`:34`) verspricht genau das. Die Mutation „Command nur aus der Tabelle entfernt“ muss rot werden (Probe nur im Scratch).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/bridge/ipc.inventory.test.ts
+Doku: keine (Test)
