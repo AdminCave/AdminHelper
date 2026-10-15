@@ -24,7 +24,7 @@ The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
 Quelle / Beweis | Ledger | Hängt ab von | PR | Ablauf | Kevin-min); everything
 else — prose, "Als Nächstes", blank lines, a row it cannot read — passes
-through byte for byte (spec: docs/features/harness-stufe-5.md).
+through byte for byte.
 
 The file is --file, else $AH_ROADMAP, else tasks/private/ROADMAP.md. Tests
 always name a fixture: the real file is Kevin's. --today pins the date that
@@ -1011,9 +1011,11 @@ def window(since: dt.date, until: dt.date) -> tuple[str, str]:
 
 
 def tasks_closed(since: dt.date, until: dt.date) -> int:
-    """Ledger tasks ticked [x] in this repository's history, net of un-ticks."""
+    """Ledger tasks ticked [x] in this repository's history, net of un-ticks.
+    A deleted ledger takes back no tick (--diff-filter=d): team v3 removed 155
+    finished ledgers at once, which read as 768 un-ticks."""
     log = git_out(
-        ROOT, "log", "-p", *window(since, until), "--format=", "--", "tasks/*.md",
+        ROOT, "log", "-p", "--diff-filter=d", *window(since, until), "--format=", "--", "tasks/*.md",
     )  # fmt: skip
     added = len(re.findall(r"^\+###\s.*\[x\]", log, re.MULTILINE))
     removed = len(re.findall(r"^-###\s.*\[x\]", log, re.MULTILINE))

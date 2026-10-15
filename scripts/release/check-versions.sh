@@ -29,7 +29,7 @@
 # demands that string at all six sites. The old inline step could never pass a
 # prerelease at all (it stripped the suffix from the file but not from the tag),
 # so this loosens nothing — but whether a beta should bump 38 doc footers is an
-# open decision, tracked as T6a in tasks/harness-stufe-3.md.
+# open decision (roadmap R-0014, T6a).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

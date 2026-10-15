@@ -1319,7 +1319,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 - **`--notify`** postet die Urteilszeile und den Report-Pfad an `AH_NOTIFY_URL` (aus
   `.devenv.sh`, gitignored); Default aus, ein fehlgeschlagener POST ist kein Fehler des Laufs.
 
-**Keine offenen Vorbehalte mehr** (Ledger `tasks/harness-stufe-3.md`): **T7a** — `--capstone`
+**Keine offenen Vorbehalte mehr** (Stufe 3): **T7a** — `--capstone`
 setzt seit Stufe 3 `--enforce`, das Gateway verlangt damit ein Client-Zertifikat auf :443; die
 Desktop-Etappe enrollt deshalb vor jedem Spec eine Geraete-Identitaet ueber die certlose
 Ebene :8444 (ein Einmal-Token je Spec, kurz vor der Etappe gemintet) — bewiesen im Capstone
