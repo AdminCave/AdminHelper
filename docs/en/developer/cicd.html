@@ -279,7 +279,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
             <thead><tr><th>Gate</th><th>Truth A</th><th>Truth B</th><th>where it runs</th></tr></thead>
             <tbody>
               <tr><td>Monitoring proxy allowlist</td><td><code>monitoring_proxy/router.py</code> <code>_ALLOWED_PATH_PREFIXES</code></td><td>route decorators in <code>apps/monitoring/app/routers/*.py</code></td><td>job <code>server</code></td></tr>
-              <tr><td>Monitoring proxy docs</td><td><code>monitoring_proxy/router.py</code> <code>_ALLOWED_PATH_PREFIXES</code></td><td>prefix list in <code>docs/developer/monitoring.html</code> and <code>docs/en/developer/monitoring.html</code></td><td>job <code>server</code></td></tr>
+              <tr><td>Monitoring proxy docs</td><td><code>monitoring_proxy/router.py</code> <code>_ALLOWED_PATH_PREFIXES</code></td><td>prefix list in <code>monitoring.html</code> and <code>api-reference.html</code>, each under <code>docs/developer/</code> and <code>docs/en/developer/</code></td><td>job <code>server</code></td></tr>
               <tr><td>Identity headers</td><td><code>apps/gateway/identity-headers.conf</code> + the enrollment plane's strips</td><td><code>core/identity.py</code>, <code>ca-issuer/app/config.py</code></td><td>job <code>server</code></td></tr>
               <tr><td>Enrollment hash</td><td><code>core/auth.py</code> <code>hash_api_key</code></td><td><code>ca-issuer/app/db.py</code> <code>_hash</code></td><td>job <code>server</code></td></tr>
               <tr><td>Transition pipeline</td><td><code>check_engine.apply_result</code></td><td>text scan over <code>apps/monitoring/app/**</code></td><td>job <code>monitoring</code></td></tr>

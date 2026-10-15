@@ -168,7 +168,7 @@
 
           <h2>Monitoring (Reverse-Proxy)</h2>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/monitoring/agent/{server_id}/report</code><p><strong>&Ouml;ffentlich</strong> (X-API-Key). Reicht den Agent-Push 1:1 an den Monitoring-Microservice durch.</p></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/monitoring/{path:path}</code><p>Admin-only Reverse-Proxy. Erlaubt sind nur die Pfad-Prefixe <code>checks</code>, <code>alerts</code>, <code>log</code>, <code>metrics</code>, <code>status</code>, <code>templates</code>, <code>agent</code>. Path-Traversal wird blockiert.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/monitoring/{path:path}</code><p>Admin-only Reverse-Proxy. Erlaubt sind nur die Pfad-Prefixe <code>checks</code>, <code>alerts</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>. Path-Traversal wird blockiert.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/monitoring/{path:path}</code></div>
           <div class="endpoint"><span class="method-put">PUT</span><code>/api/monitoring/{path:path}</code></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/monitoring/{path:path}</code></div>

@@ -16,8 +16,9 @@ X-Internal-Key straight against the monitoring service, never through the proxy
 a route defined on the app itself (today just main.py's /health) is not
 proxyable and deliberately outside this contract.
 
-The developer docs (monitoring.html, DE + EN) enumerate the same prefixes, and
-that enumeration drifted the same way (R-0382), so it is pinned to the tuple too.
+The developer docs (monitoring.html and api-reference.html, DE + EN) enumerate
+the same prefixes, and those enumerations drifted the same way (R-0382), so they
+are pinned to the tuple too.
 """
 
 import re
@@ -39,12 +40,14 @@ _ANY_ROUTE_DECORATOR = re.compile(r"@router\.\w+\(")
 _INTERNAL_ONLY = {"agent-keys", "servers"}
 
 # The words that introduce the prefix enumeration on each page. Only the
-# comma-separated <code> run right after them is read: the page names `status`
-# and `maintenance` elsewhere too, so a prefix dropped from this one list would
-# still be found somewhere on the page.
+# comma-separated <code> run right after them is read: every page names some
+# prefixes elsewhere too (`status` on all four), so a prefix dropped from this
+# one list would still be found somewhere on the page.
 _PREFIX_DOCS = {
     "docs/developer/monitoring.html": "erlaubte Pfad-Prefixe sind",
     "docs/en/developer/monitoring.html": "allowed path prefixes are",
+    "docs/developer/api-reference.html": "Erlaubt sind nur die Pfad-Prefixe",
+    "docs/en/developer/api-reference.html": "Allowed path prefixes:",
 }
 _CODE_RUN = re.compile(r"\s*((?:<code>[^<]+</code>(?:,\s*)?)+)")
 
