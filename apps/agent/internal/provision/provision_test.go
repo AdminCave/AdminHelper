@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -300,11 +301,11 @@ func TestRunEnrollmentRequestsNothingWhenTheIdentityCannotBeStored(t *testing.T)
 	dir := provisionedOnce(t, srv, info)
 	before, _ := os.ReadFile(enroll.CertPath(dir))
 
-	// The staged cert cannot be written: its temp path is taken by a directory. A chmod
-	// would not do, Store and the check set the directory to 0700 themselves.
-	if err := os.Mkdir(enroll.CertPath(dir)+".tmp", 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// The staged cert cannot be written. Every staged write has a temp file of its own
+	// (R-0308), so nothing on disk can be put in its way; the check reports it here.
+	orig := checkStorable
+	checkStorable = func(string) error { return errors.New("stage agent.crt: no space left on device") }
+	t.Cleanup(func() { checkStorable = orig })
 	if err := runEnrollment(srv.URL, info, "", true); err == nil {
 		t.Fatal("erwartet Fehler, wenn die Identität nicht gespeichert werden kann")
 	}
@@ -318,12 +319,7 @@ func TestRunEnrollmentRequestsNothingWhenTheIdentityCannotBeStored(t *testing.T)
 
 func TestRunEnrollmentNamesTheWayOutWhenStoringFailsAfterTheRequest(t *testing.T) {
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
-	block := false
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// The disk gives out between the check and Store: block the staged cert now.
-		if block {
-			_ = os.Mkdir(enroll.CertPath(config.AgentPkiDir())+".tmp", 0o755)
-		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"cert": "c", "fullchain": "fullchain", "chain": "chain"})
 	}))
 	defer srv.Close()
@@ -332,7 +328,12 @@ func TestRunEnrollmentNamesTheWayOutWhenStoringFailsAfterTheRequest(t *testing.T
 	info := &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}
 	provisionedOnce(t, srv, info)
 
-	block = true
+	// The disk gives out between the check and Store.
+	orig := storeIdentity
+	storeIdentity = func(string, *ecdsa.PrivateKey, *enroll.IssueResponse) error {
+		return errors.New("stage agent.crt: no space left on device")
+	}
+	t.Cleanup(func() { storeIdentity = orig })
 	err := runEnrollment(srv.URL, info, "", true)
 	if err == nil {
 		t.Fatal("erwartet Fehler, wenn Store nach dem Antrag scheitert")
