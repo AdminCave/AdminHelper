@@ -18,8 +18,10 @@ Review: approve (.ah-out/review/device-identity-status/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop --strict
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Command-Tabelle `:86`)
 
-### T2 — Statuszeile im Einstellungs-Modal, vier Zustände  [ ]
+### T2 — Statuszeile im Einstellungs-Modal, vier Zustände  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/SettingsModal.identity.test.ts, apps/desktop/ui/src/components/SettingsModal.enroll.test.ts, apps/desktop/ui/src/components/SettingsModal.export.test.ts, docs/admin/benutzer.html, docs/en/admin/users.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c188f5be 2026-10-15T15:09:10+02:00
+Review: approve (.ah-out/review/device-identity-status/T2.verdict.json)
 Änderung: Im Identitäts-Zweig (`SettingsModal.svelte:405`) eine Zeile nach dem Vorbild `sm-session-row` (`:358`) mit den vier Zuständen aus der Spec (gültig, ≤ 14 Tage Rest, abgelaufen als Warnung, unlesbar mit festem Text), Datum per `toLocaleDateString(currentLocale(), …)`; der Aufruf von `deviceIdentity()` steht im try/catch (der Mount-Smoke-Test lässt jede Bridge-Funktion werfen). Neu laden beim Öffnen, nach dem Registrieren (`:158`) und nach dem Zurücksetzen (`:139`). i18n-Schlüssel DE und EN (`dictionaries.ts:222` / `:838`). Neue Datei `SettingsModal.identity.test.ts` (SPDX-Header): die vier Zustände mit `vi.setSystemTime`, keine Zeile ohne Identität, Zeile nach dem Registrieren, weg nach dem Zurücksetzen; die Bridge-Mocks der beiden bestehenden Modal-Tests bekommen `deviceIdentity`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/benutzer.html (`:97`) + docs/en/admin/users.html (`:91`) · CHANGELOG (Added)
