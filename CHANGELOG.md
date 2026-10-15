@@ -602,6 +602,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Audit des Self-Mints nennt das langlebige Browser-Leaf (R-0204):** `POST /api/enrollment/token?browser=true`
+  vermerkt im Audit-Log (`enrollment.token.minted`) wie `/token/for`, dass das Leaf langlebig und nur unter
+  `MTLS_ENFORCE=true` widerrufbar ist, weiterhin mit `(self)`. Die API-Referenz (DE+EN) beschreibt den Endpunkt als
+  Selbstbedienung fuer ein weiteres eigenes Geraet: unter `MTLS_ENFORCE=true` erreicht ihn nur ein Geraet mit
+  gueltigem Client-Zertifikat, er ist keine Bootstrap-Tuer ohne Zertifikat.
 - **Agent und Audit auf Go 1.27 (R-0352):** CI (`agent`, `agent-windows`), Release und der woechentliche Audit bauen
   mit Go 1.27 und `check-latest`, also mit dem neuesten 1.27.x (heute go1.27.2); Go 1.26 faellt mit dem Erscheinen
   von Go 1.28 aus dem Support. Die Test-Boxen (`scripts/vm/bootstrap_linux.sh`) installieren go1.27.2 statt 1.26.9.
