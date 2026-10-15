@@ -63,12 +63,17 @@ impl FrpcProcess {
     /// stale child ("frpc laeuft bereits") — but only if the event belongs to the CURRENT generation,
     /// so a late Terminated from a restarted-away process doesn't wipe the new child (4.29). A pure
     /// state transition, extracted so it is testable without a real sidecar (6.107).
-    fn reconcile_terminated(&mut self, event_generation: u64) {
-        if self.generation == event_generation {
-            self.child = None;
-            self.visitor_name = None;
-            self.connected_since = None;
+    ///
+    /// Returns whether the event belongs to the current generation, i.e. whether the UI should
+    /// hear of it: a stale one would show the running tunnel as disconnected (R-0247).
+    fn reconcile_terminated(&mut self, event_generation: u64) -> bool {
+        if self.generation != event_generation {
+            return false;
         }
+        self.child = None;
+        self.visitor_name = None;
+        self.connected_since = None;
+        true
     }
 }
 
@@ -286,13 +291,17 @@ pub fn start_frpc(
                     // Reconcile the shared state so a stale `child` doesn't block a
                     // later restart with "frpc laeuft bereits". The lock waits for
                     // start_frpc to finish its own guard first (same mutex).
-                    if let Ok(mut guard) = state_for_task.lock() {
-                        // Only reconcile if this is still the current process — a stale
-                        // Terminated event from a restarted-away process must not wipe the new
-                        // child (4.29).
-                        guard.reconcile_terminated(my_gen);
+                    // Only reconcile and announce if this is still the current process — a
+                    // stale Terminated event from a restarted-away process must neither wipe
+                    // the new child (4.29) nor mark the running tunnel disconnected (R-0247).
+                    // A poisoned lock leaves the generation unknown, so it announces as before.
+                    let current = match state_for_task.lock() {
+                        Ok(mut guard) => guard.reconcile_terminated(my_gen),
+                        Err(_) => true,
+                    };
+                    if current {
+                        let _ = app_handle.emit("frpc-terminated", payload.code);
                     }
-                    let _ = app_handle.emit("frpc-terminated", payload.code);
                 }
                 CommandEvent::Error(err) => {
                     log::error!("[frpc error] {}", err);
@@ -457,5 +466,29 @@ bindPort = 6000
         p.reconcile_terminated(5);
         assert!(p.visitor_name.is_none());
         assert!(p.connected_since.is_none());
+    }
+
+    #[test]
+    fn stale_terminated_is_not_announced_while_a_newer_frpc_runs() {
+        // stop→start: the killed process was generation 1, generation 2 runs now.
+        let mut p = FrpcProcess::new();
+        p.generation = 2;
+        p.visitor_name = Some("v".to_string());
+        p.connected_since = Some("2026-01-01T00:00:00Z".to_string());
+
+        // The old process's late Terminated must not reach the UI, which would show the running
+        // tunnel as disconnected; the state stays.
+        assert!(
+            !p.reconcile_terminated(1),
+            "stale generation must not be announced"
+        );
+        assert!(p.visitor_name.is_some());
+        assert!(p.connected_since.is_some());
+
+        // The running process's own Terminated is announced.
+        assert!(
+            p.reconcile_terminated(2),
+            "current generation must be announced"
+        );
     }
 }
