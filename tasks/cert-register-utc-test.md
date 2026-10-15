@@ -14,7 +14,7 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Weg `builder` → `reviewer` → `task-close.sh` samt Urteilsprüfung einmal ganz fahren (Kevin, 2026-10-15).
 
 ### T1 — Migrationstest fährt die Register-Revision in einer Session fern von UTC  [ ]
-Komponente: apps/server · Dateien: apps/server/tests/test_migrations_smoke.py
+Komponente: server · Dateien: apps/server/tests/test_migrations_smoke.py
 Änderung: `test_certificate_register_installs_its_time_and_goes_on_downgrade` (`tests/test_migrations_smoke.py:284`) setzt vor dem ersten Verbindungsaufbau `PGTZ` per `monkeypatch.setenv` auf eine Zone fern von UTC ohne Sommerzeit (`Pacific/Kiritimati`, UTC+14). libpq gibt jeder neuen Verbindung des Tests, auch der von Alembic, diese Session-Zeitzone mit; ein `now()`-Default läge dann 14 h neben `timezone('UTC', now())`. Eine zusätzliche Assertion belegt, dass die Prüfverbindung wirklich in dieser Zone lief, sonst prüfte der Test wieder nichts. Die Abweichungs-Assertion (`:309`, `< 300` s) bleibt unverändert.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_migrations_smoke.py
 Doku: keine (nur Test)
