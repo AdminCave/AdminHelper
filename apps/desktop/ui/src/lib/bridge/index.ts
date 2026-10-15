@@ -19,6 +19,7 @@ import type {
   AuthSession,
   ClientInfo,
   Connection,
+  DeviceIdentity,
   HttpMethod,
   PasswordState,
   ResetOutcome,
@@ -100,6 +101,12 @@ export function resetDeviceIdentity(serverUrl: string): Promise<ResetOutcome> {
 // embedded as the agent's --ca-fp by the provisioning tab. Null until enrolled.
 export function pinnedCaFingerprint(): Promise<string | null> {
   return invoke<string | null>('pinned_ca_fingerprint');
+}
+
+// Name (CN) and expiry of this device's enrolled certificate — the identity line in
+// the settings. Null until enrolled; rejects when the stored certificate is unreadable.
+export function deviceIdentity(): Promise<DeviceIdentity | null> {
+  return invoke<DeviceIdentity | null>('device_identity');
 }
 
 // Decoupled enrollment (ADR 0003): enroll this device with a one-time token an

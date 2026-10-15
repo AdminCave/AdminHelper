@@ -5,6 +5,7 @@
 package enroll
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/hex"
@@ -191,7 +192,32 @@ func TestStoreStagesBeforeCommit(t *testing.T) {
 	}
 }
 
-// TestStageIdentityCleansUpStagedTempsOnWriteError pins the best-effort cleanup (enroll.go 174-177):
+// failWriteOf makes the staged write of the identity file name fail after its temp file
+// was created: createTemp hands that file out opened read-only. It returns the paths of
+// all temp files created meanwhile.
+func failWriteOf(t *testing.T, name string) *[]string {
+	t.Helper()
+	orig := createTemp
+	var created []string
+	createTemp = func(dir, pattern string) (*os.File, error) {
+		f, err := orig(dir, pattern)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, f.Name())
+		if !strings.HasPrefix(pattern, name+".") {
+			return f, nil
+		}
+		if err := f.Close(); err != nil {
+			return nil, err
+		}
+		return os.Open(f.Name())
+	}
+	t.Cleanup(func() { createTemp = orig })
+	return &created
+}
+
+// TestStageIdentityCleansUpStagedTempsOnWriteError pins the best-effort cleanup in stageIdentity:
 // if a later staging write fails, the temps already written must be removed so no .tmp corpses linger
 // to confuse the next renewal (6.98).
 func TestStageIdentityCleansUpStagedTempsOnWriteError(t *testing.T) {
@@ -203,19 +229,23 @@ func TestStageIdentityCleansUpStagedTempsOnWriteError(t *testing.T) {
 	key, _ := GenerateKey()
 	resp := &IssueResponse{Cert: "leaf", Fullchain: "full", Chain: "chain"}
 
-	// Block the SECOND staging write (agent.crt.tmp) by pre-creating its target as a directory, so
-	// OpenFile fails. The first write (agent.key.tmp) succeeds and must then be cleaned up.
-	if err := os.Mkdir(CertPath(dir)+tmpSuffix, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// Fail the SECOND staging write (agent.crt). The first write (agent.key) succeeds and must then
+	// be cleaned up.
+	created := failWriteOf(t, CertFileName)
 
 	if _, err := stageIdentity(dir, key, resp); err == nil {
-		t.Fatal("erwartet Schreibfehler, wenn der cert-Temp-Pfad ein Verzeichnis ist")
+		t.Fatal("erwartet Schreibfehler, wenn agent.crt nicht geschrieben werden kann")
 	}
 
-	// The already-written key temp must be gone — no .tmp leftovers after the aborted staging.
-	if _, statErr := os.Stat(KeyPath(dir) + tmpSuffix); !os.IsNotExist(statErr) {
-		t.Errorf("agent.key.tmp muss nach dem Schreibfehler aufgeraeumt sein, stat err = %v", statErr)
+	// The already-written key temp must be gone — no .tmp leftovers after the aborted staging,
+	// and neither the cert temp whose write failed.
+	if len(*created) != 2 {
+		t.Fatalf("erwartet die Temp-Dateien für agent.key und agent.crt, angelegt: %v", *created)
+	}
+	for _, p := range *created {
+		if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+			t.Errorf("%s muss nach dem Schreibfehler aufgeraeumt sein, stat err = %v", filepath.Base(p), statErr)
+		}
 	}
 }
 
@@ -281,18 +311,77 @@ func TestCheckStorableLeavesNothingBehind(t *testing.T) {
 
 func TestCheckStorableReportsAStagedFileThatCannotBeWritten(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Mkdir(CertPath(dir)+tmpSuffix, 0o755); err != nil {
+	// A file the check did not write, as a renewal stages it.
+	foreign := filepath.Join(dir, CertFileName+".1"+tmpSuffix)
+	mustWrite(t, foreign, []byte("staged"))
+	created := failWriteOf(t, CertFileName)
+	if err := CheckStorable(dir); err == nil {
+		t.Fatal("erwartet Fehler, wenn agent.crt nicht geschrieben werden kann")
+	}
+	if len(*created) != 2 {
+		t.Fatalf("erwartet die Proben für agent.key und agent.crt, angelegt: %v", *created)
+	}
+	for _, p := range *created {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("die Probe %s blieb liegen, stat err = %v", filepath.Base(p), err)
+		}
+	}
+	// What the check did not write is not the check's to remove.
+	if b, err := os.ReadFile(foreign); err != nil || string(b) != "staged" {
+		t.Errorf("die fremde Datei ist weg oder verändert: %q, %v", b, err)
+	}
+}
+
+// R-0308: a provisioning's check and the service's renewal write files of their own, so
+// a check between the staging and the commit of a renewal leaves the renewal intact.
+
+func TestCheckStorableDuringAStagedRenewKeepsTheRenewal(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "identity")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckStorable(dir); err == nil {
-		t.Fatal("erwartet Fehler, wenn agent.crt.tmp nicht geschrieben werden kann")
+	now := time.Now()
+	leaf, _ := selfSigned(t, "srv-1", now.Add(-time.Hour), now.Add(time.Hour))
+	chain, _ := selfSigned(t, "intermediate", now.Add(-time.Hour), now.Add(time.Hour))
+	fullchain := append(append([]byte{}, leaf...), chain...)
+	key, _ := GenerateKey()
+	keyPEM, err := encodeKeyPEM(key)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(KeyPath(dir) + tmpSuffix); !os.IsNotExist(err) {
-		t.Errorf("die Probe für agent.key blieb liegen, stat err = %v", err)
+
+	// The service stages a renewal, a provisioning checks the directory, the renewal commits.
+	commit, err := stageIdentity(dir, key, &IssueResponse{Cert: string(leaf), Fullchain: string(fullchain), Chain: string(chain)})
+	if err != nil {
+		t.Fatalf("stageIdentity: %v", err)
 	}
-	// What blocked the write is not the check's to remove.
-	if fi, err := os.Stat(CertPath(dir) + tmpSuffix); err != nil || !fi.IsDir() {
-		t.Errorf("das blockierende Verzeichnis ist weg: %v", err)
+	if err := CheckStorable(dir); err != nil {
+		t.Fatalf("CheckStorable: %v", err)
+	}
+	if err := commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	head := func(b []byte) []byte { return b[:min(len(b), 24)] }
+	for _, f := range []struct {
+		path string
+		want []byte
+	}{{KeyPath(dir), keyPEM}, {CertPath(dir), fullchain}, {CAPath(dir), chain}} {
+		got, err := os.ReadFile(f.path)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(f.path), err)
+			continue
+		}
+		if !bytes.Equal(got, f.want) {
+			t.Errorf("%s: erwartet die Erneuerung %q, beobachtet %q", filepath.Base(f.path), head(f.want), head(got))
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Errorf("erwartet nur agent.key, agent.crt und ca.crt, im Verzeichnis: %v", entries)
 	}
 }
 

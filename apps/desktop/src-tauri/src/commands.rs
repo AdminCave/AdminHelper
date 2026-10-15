@@ -13,7 +13,8 @@ use crate::enrollment;
 use crate::error::AppError;
 use crate::frpc;
 use crate::models::{
-    AuthSession, ClientInfo, Connection, PasswordState, RdpOptions, Settings, TunnelStatus,
+    AuthSession, ClientInfo, Connection, DeviceIdentity, PasswordState, RdpOptions, Settings,
+    TunnelStatus,
 };
 use crate::password;
 use crate::proxy;
@@ -74,6 +75,14 @@ pub fn reset_server_cert_pin(server_url: String) -> Result<(), AppError> {
 #[tauri::command]
 pub fn pinned_ca_fingerprint() -> Option<String> {
     enrollment::pinned_ca_fingerprint()
+}
+
+/// Name (CN) and expiry of this device's enrolled certificate, for the identity
+/// line in the settings. None until enrolled; an error when the stored
+/// certificate is unreadable — the UI then shows a fixed text, never the error.
+#[tauri::command]
+pub fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
+    enrollment::device_identity()
 }
 
 /// Whether this device currently holds an enrolled mTLS identity. Drives the
