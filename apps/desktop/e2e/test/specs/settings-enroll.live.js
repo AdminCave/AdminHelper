@@ -12,6 +12,8 @@
 // (AH_SETTINGS_REENROLL_TOKEN), so a new frpc has to replace the old one. The reset
 // revokes the device at the server first (R-0224): the admin's device list shows the
 // old line revoked by the device itself and, after registering again, a new one.
+// After each registration the settings name the identity (R-0240): the subject the
+// token was minted for and a date in the future.
 
 import { adminDevices, login, jsClick, SERVER_URL } from '../lib/live.js';
 
@@ -48,6 +50,27 @@ async function registerInSettings(token) {
     timeout: 30000,
     timeoutMsg: 'the settings never offered the reset after the enrollment',
   });
+}
+
+// The line reloads after the enrollment, so wait for it. The issuer names the leaf
+// after the token's subject (minted with `--username admin` in desktop_e2e_tunnel.sh),
+// and a native leaf lives 90 days: "valid", not "soon".
+async function expectIdentityLine() {
+  const line = await $('.sm-panel [data-msg="device-identity"]');
+  await line.waitForExist({
+    timeout: 10000,
+    timeoutMsg: 'the settings never showed the device identity line',
+  });
+  expect(await line.getAttribute('data-state')).toBe('valid');
+  expect(await line.$('strong').getText()).toBe('admin');
+  // Day first in both UI locales: 13.01.2027 (de-DE), 13/01/2027 (en-GB).
+  const text = await line.getText();
+  const m = /(\d{2})[./](\d{2})[./](\d{4})/.exec(text);
+  expect(m).not.toBe(null);
+  const shown = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  expect(shown.getTime()).toBeGreaterThan(today.getTime());
 }
 
 describe('AdminHelper desktop — enroll from the settings, then the tunnel connects', () => {
@@ -93,6 +116,7 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
 
     await openSettings();
     await registerInSettings(TOKEN);
+    await expectIdentityLine();
 
     // The enrollment starts the tunnel again, now with the certificate.
     await browser.waitUntil(
@@ -120,12 +144,15 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
       (d) => activeBefore.has(d.id) && d.revoked_reason === 'self',
     );
     expect(revokedBySelf.length).toBe(1);
+    // Nothing left for the identity line to name.
+    expect(await invoke('device_identity')).toEqual({ value: null });
 
     // The settings read the identity when they open; reopen them for the token field.
     await jsClick(await $('.sm-panel .panel-header button'));
     await $('.sm-panel').waitForExist({ reverse: true, timeout: 10000 });
     await openSettings();
     await registerInSettings(REENROLL_TOKEN);
+    await expectIdentityLine();
 
     // A new frpc runs: start_frpc sets connected_since on every start. The indicator
     // alone proves nothing here, it may still read "connected" from the step before.

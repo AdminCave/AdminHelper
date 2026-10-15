@@ -38,8 +38,24 @@ _MONITOR_BASE = MONITOR_SERVICE_URL.rstrip("/")
 
 # Reuse one async client across proxy forwards instead of a fresh AsyncClient (TCP handshake + pool
 # setup) per request — agent reports arrive every minute per server. httpx binds its pools lazily, so
-# building it at import is safe; it is closed in the app lifespan (5.30).
+# building it at import is safe; the app lifespan closes it on shutdown (5.30) and calls
+# open_client() on startup.
 _client = httpx.AsyncClient(timeout=30)
+
+
+def open_client() -> None:
+    """Replace a closed proxy client with a new one; leave an open one alone.
+
+    A closed client refuses every request, so a second lifespan in the same process (a
+    re-entered TestClient, the schemathesis transport) would otherwise run on the client the
+    previous shutdown closed (R-0376). An open one stays: a test may have installed a stub
+    before the lifespan starts (monitoring_stub in tests/test_schemathesis.py). Production runs
+    one lifespan per process, so there this is a no-op.
+    """
+    global _client
+    if _client.is_closed:
+        _client = httpx.AsyncClient(timeout=30)
+
 
 # Allowed path prefixes for the monitoring proxy (SSRF protection)
 _ALLOWED_PATH_PREFIXES = (
