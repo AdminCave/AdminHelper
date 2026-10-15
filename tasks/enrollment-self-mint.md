@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Self-Mint bleibt: Audit nennt das langlebige Leaf, die API-Referenz stimmt — Task-Ledger
-Status: geplant · Branch: feature/enrollment-self-mint · Review: am Ende
+Status: aktiv · Branch: feature/enrollment-self-mint · Review: am Ende
 Spec: Roadmap R-0204
 Heavy: none — nur der Audit-Detailtext und Doku; Route, Schema, Token und Zertifikat bleiben unverändert, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
