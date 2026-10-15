@@ -127,8 +127,9 @@ AH_PYTEST_RS=""; [ "$AH_STRICT" = "1" ] && AH_PYTEST_RS="-rs"
 export AH_PYTEST_RS
 
 # AH_ARGS — extra arguments for the suite runner itself, how verify.sh forwards
-# `verify.sh server -- tests/test_x.py`. run.sh does not interpret them; they are
-# word-split by the suite's shell, so a single argument cannot contain spaces.
+# `verify.sh server -- tests/test_x.py`. The suites get them word-split by their shell,
+# so a single argument cannot contain spaces; run.sh itself reads them twice: the
+# scripts step takes them as test names, and a targeted run skips schemathesis.
 AH_ARGS="${AH_ARGS:-}"
 export AH_ARGS
 
@@ -194,7 +195,8 @@ _skip() {
   local id="$1" name="$2" reason="$3"
   echo "  SKIP  $name ($reason)"; SKIP=$((SKIP+1)); SKIP_VERDICT="skip"
   [ "$AH_STRICT" = "1" ] || return 0
-  [ "$reason" = "AH_ONLY" ] && return 0
+  # AH_ONLY and AH_ARGS are the caller narrowing the run on purpose, not a hole in it.
+  case "$reason" in AH_ONLY|AH_ARGS) return 0 ;; esac
   # Counted as a SKIP *and* a FAIL on purpose: both are true, so the summary line
   # is informative, not additive. The artifact carries one verdict per step
   # instead ("strict-failed"), which is where a single value belongs.
@@ -697,6 +699,9 @@ layer_unit() {
   only monitoring && sth+=("apps/monitoring")
   only ca-issuer  && sth+=("apps/ca-issuer")
   if [ ${#sth[@]} -eq 0 ]; then skip schemathesis "schemathesis" "AH_ONLY"
+  # A targeted run (verify.sh … -- <test>) is a task's quick Verify: the fuzz suite
+  # added ~5 min to every one of them, and the PR CI runs it in full (R-0380).
+  elif [ -n "$AH_ARGS" ]; then skip schemathesis "schemathesis" "AH_ARGS"
   elif have python3 && python3 -c 'import schemathesis' 2>/dev/null; then
     run_py_step schemathesis "schemathesis" -- bash -c '
       export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-0}"
@@ -714,9 +719,8 @@ layer_unit() {
           else
             unset DATABASE_URL
           fi
-          # No $AH_ARGS: this step selects by marker, and a caller asking for one
-          # file (verify.sh … -- tests/x.py) would leave it with nothing to collect
-          # — an honest SKIP that under --strict reads as a hole in an unrelated run.
+          # No $AH_ARGS: this step selects by marker, and a targeted run never gets
+          # here (the elif above skips it), so there is nothing to forward.
           # One XML per service: the loop runs pytest three times, and a single
           # file would keep only the cases of the last service.
           python3 -m pytest -q -m schemathesis \
