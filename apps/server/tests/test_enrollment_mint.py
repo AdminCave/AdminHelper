@@ -195,6 +195,37 @@ def test_admin_mint_for_browser_flags_long_lived_leaf(
     assert "long-lived" in row.detail and "MTLS_ENFORCE" in row.detail
 
 
+def _self_mint_audit_detail(test_client, db_session, query: str) -> str:
+    from app.modules.audit.models import AuditLog
+
+    token = _login(test_client, "admin", "adminpass")
+    res = test_client.post(
+        f"/api/enrollment/token{query}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    row = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == "enrollment.token.minted", AuditLog.object_id == "admin")
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    return row.detail
+
+
+def test_self_mint_browser_flags_long_lived_leaf(test_client, admin_user, db_session):
+    # R-0204: a self-minted browser grant is the same long-lived (~1y) leaf as one an
+    # admin mints for another user — the audit detail flags it alike, still marked self.
+    detail = _self_mint_audit_detail(test_client, db_session, "?browser=true")
+    assert "long-lived" in detail and "MTLS_ENFORCE" in detail
+    assert detail.endswith("(self)")
+
+
+def test_self_mint_without_browser_has_no_long_lived_flag(test_client, admin_user, db_session):
+    assert _self_mint_audit_detail(test_client, db_session, "") == "browser=False (self)"
+
+
 def test_mint_for_writes_audit(test_client, admin_user, normal_user, db_session):
     # 6.81: the admin-mint /token/for path must leave an audit trail (3.32) — a long-lived for-another
     # grant has to be greppable. The finding described the pre-3.32 state ("it doesn't"); this pins

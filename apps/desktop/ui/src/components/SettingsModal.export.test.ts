@@ -17,15 +17,17 @@ const DEST = '/home/user/adminhelper-browser.p12';
 const h = vi.hoisted(() => ({
   exportBrowserP12: vi.fn(async () => '/home/user/adminhelper-browser.p12'),
   isDeviceEnrolled: vi.fn(async () => false),
+  deviceIdentity: vi.fn(async () => null),
   save: vi.fn(async () => '/home/user/adminhelper-browser.p12'),
 }));
 
-// Everything but the two calls under test fails loudly, as in mount.smoke.test.ts:
+// Everything but the three calls below fails loudly, as in mount.smoke.test.ts:
 // NotificationPrefs catches its own failed loads.
 vi.mock('$lib/bridge', () => {
   const known: Record<string, unknown> = {
     exportBrowserP12: h.exportBrowserP12,
     isDeviceEnrolled: h.isDeviceEnrolled,
+    deviceIdentity: h.deviceIdentity,
   };
   const passthrough = new Set(['then', '__esModule', 'default']);
   return new Proxy(

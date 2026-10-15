@@ -38,7 +38,7 @@
 <pre><code>desktop/
 &#9500;&#9472;&#9472; src-tauri/
 &#9474;   &#9500;&#9472;&#9472; src/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; main.rs           Tauri app setup, invoke_handler with 24 commands
+&#9474;   &#9474;   &#9500;&#9472;&#9472; main.rs           Tauri app setup, invoke_handler with all commands
 &#9474;   &#9474;   &#9500;&#9472;&#9472; commands/         #[tauri::command] (auth, connect, frp, &hellip;)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; connection/       RDP/SSH/VNC/HTTP launcher
 &#9474;   &#9474;   &#9500;&#9472;&#9472; frp/              FRP sidecar management
@@ -78,17 +78,19 @@ apps/desktop/ui/
           <p>These operational pages exist only in server mode; in standalone/local mode the client stays a pure connection launcher. Writes go through <code>api_proxy</code> against the server's REST API (admin session required).</p>
 
           <h2>Tauri Commands</h2>
-          <p>The commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy and Ansible. Each command is typed &ndash; the bridge in <code>apps/desktop/ui/src/lib/bridge/</code> mirrors them 1:1.</p>
+          <p>The commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy, Ansible, diagnostics and notifications. Each command is typed &ndash; the bridge in <code>apps/desktop/ui/src/lib/bridge/</code> mirrors them 1:1.</p>
           <table>
             <thead><tr><th>Area</th><th>Commands</th></tr></thead>
             <tbody>
               <tr><td>Persistence</td><td><code>load_connections</code>, <code>save_connections</code>, <code>load_settings</code>, <code>save_settings</code></td></tr>
-              <tr><td>Auth</td><td><code>login</code>, <code>logout</code>, <code>check_server_cert</code>, <code>reset_server_cert_pin</code>, <code>is_device_enrolled</code>, <code>reset_device_identity</code></td></tr>
+              <tr><td>Auth</td><td><code>login</code>, <code>logout</code>, <code>check_server_cert</code>, <code>reset_server_cert_pin</code>, <code>is_device_enrolled</code>, <code>device_identity</code> (name and expiry of the device certificate, <code>null</code> when not enrolled), <code>reset_device_identity</code>, <code>enroll_with_token</code> (enrollment with a one-time token, no prior login, ADR 0003), <code>pinned_ca_fingerprint</code> (SHA-256 of the CA pinned at enrollment, for <code>--ca-fp</code> in the provisioning tab; <code>null</code> when not enrolled), <code>export_browser_p12</code> (browser certificate as a password-protected PKCS12 file)</td></tr>
               <tr><td>Server API</td><td><code>api_proxy</code>, <code>fetch_connections_jwt</code>, <code>sync_connections</code>, <code>fetch_tunnels</code></td></tr>
               <tr><td>Connect flow</td><td><code>open_connection</code>, <code>open_connection_stored</code>, <code>resolve_connection</code></td></tr>
               <tr><td>Keyring</td><td><code>password_state</code>, <code>save_password</code>, <code>delete_password</code></td></tr>
               <tr><td>Tunnel (frpc)</td><td><code>start_tunnel</code>, <code>stop_tunnel</code>, <code>tunnel_status</code></td></tr>
               <tr><td>Ansible</td><td><code>ansible_generate_inventory</code>, <code>ansible_write_playbook</code>, <code>ansible_launch</code></td></tr>
+              <tr><td>Diagnostics</td><td><code>generate_diagnostics</code> (redacted report with version, OS and log tail for a bug report; returns the file path)</td></tr>
+              <tr><td>Notifications</td><td><code>start_notification_stream</code>, <code>stop_notification_stream</code> (SSE stream for the bell via <code>reqwest</code>; each <code>notification</code> frame reaches the UI as a Tauri event of the same name)</td></tr>
             </tbody>
           </table>
 

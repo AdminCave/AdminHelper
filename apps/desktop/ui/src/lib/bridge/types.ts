@@ -81,6 +81,13 @@ export interface PasswordState {
   canStore: boolean;
 }
 
+// The enrolled device certificate (models.rs DeviceIdentity, R-0240): the leaf's CN and
+// its expiry as RFC 3339 in UTC.
+export interface DeviceIdentity {
+  name: string;
+  notAfter: string;
+}
+
 export interface TunnelMapping {
   id: string;
   serverId: string;
