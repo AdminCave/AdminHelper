@@ -53,7 +53,7 @@
           <ul>
             <li><code>POST /api/monitoring/agent/{server_id}/report</code> &ndash; <strong>public</strong> (X-API-Key), forwarded 1:1 to the service</li>
             <li><code>GET/POST/PUT/DELETE /api/monitoring/{path:path}</code> &ndash; admin-only, internally augmented with <code>X-Internal-Key: $MONITOR_API_KEY</code></li>
-            <li>SSRF guard: allowed path prefixes are <code>checks</code>, <code>alerts</code>, <code>log</code>, <code>metrics</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>; path traversal (<code>..</code>) is blocked</li>
+            <li>SSRF guard: allowed path prefixes are <code>checks</code>, <code>alerts</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>; path traversal (<code>..</code>) is blocked</li>
             <li>Deleting a server in AdminHelper fires <code>DELETE /servers/{id}/cleanup</code> at the monitoring service &ndash; orphaned checks/alerts are pruned automatically</li>
           </ul>
 
