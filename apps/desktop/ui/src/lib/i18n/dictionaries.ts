@@ -222,6 +222,14 @@ export const translations: Translations = {
     'settings.enroll.hint':
       'Dieses Gerät hat noch kein Geräte-Zertifikat. Mit einem Einmal-Token vom Admin registrieren, danach startet der Tunnel.',
     'settings.enroll.done': 'Gerät registriert.',
+    'settings.deviceIdentity.enrolledAs': 'Registriert als',
+    'settings.deviceIdentity.until': 'bis {date}',
+    'settings.deviceIdentity.expiresSoon':
+      'läuft bald ab — die automatische Erneuerung beim Anmelden ist bisher nicht gelungen',
+    'settings.deviceIdentity.expired':
+      'abgelaufen am {date} — zurücksetzen und mit neuem Token registrieren',
+    'settings.deviceIdentity.unreadable':
+      'Geräte-Zertifikat nicht lesbar — zurücksetzen und neu registrieren',
     'settings.serverUrl': 'Server-URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Angemeldet als',
@@ -838,6 +846,12 @@ export const translations: Translations = {
     'settings.enroll.hint':
       'This device has no device certificate yet. Enroll it with a one-time token from your administrator; the tunnel starts afterwards.',
     'settings.enroll.done': 'Device enrolled.',
+    'settings.deviceIdentity.enrolledAs': 'Enrolled as',
+    'settings.deviceIdentity.until': 'until {date}',
+    'settings.deviceIdentity.expiresSoon':
+      'expires soon — the automatic renewal at sign-in has not succeeded yet',
+    'settings.deviceIdentity.expired': 'expired on {date} — reset and enroll with a new token',
+    'settings.deviceIdentity.unreadable': 'Device certificate unreadable — reset and enroll again',
     'settings.serverUrl': 'Server URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Signed in as',
