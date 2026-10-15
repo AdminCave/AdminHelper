@@ -8,12 +8,8 @@
 # SessionStart hook that fails or blocks would break every session, so every
 # fact is best-effort and an unavailable one prints "?" instead of erroring.
 #
-# Run: bash scripts/dev/hooks/session-status.sh [--for test|build-queue|find]
-#
-#   AH_AUTONOMOUS=1  print nothing (settings hooks fire in `claude -p` too)
-#   AH_DEVENV        path to the devenv file (default <root>/.devenv.sh)
-#   AH_LOOP_STATE    the worker's state file (default /srv/ah/loop/state.json)
-#   AH_BUILDER_DIR   the builder profile (default ~/.cache/ah-builder)
+# Run: bash scripts/dev/hooks/session-status.sh   (AH_DEVENV: the devenv file,
+#      default <root>/.devenv.sh)
 #
 # The WARN lines fire ONLY when Kevin's next move would fail or something
 # irreversible looms — plus one that is no CLAUDE.md §3 trigger: a scheduled
@@ -21,10 +17,8 @@
 # trigger, no WARN line.
 #
 # Line 4 carries the weekly run's verdict (addresses masked) from the newest
-# non-empty $AH_OUT_DIR/weekly/<stamp>/report.md (heavy.sh, stage 3); "kein
-# Report" when none exists yet. The WARN trigger "release without a green weekly
-# run" (CLAUDE.md §3 trigger 2) deliberately waits for stage 13 — a FAIL here
-# without a WARN line does not mean the trigger already fired.
+# non-empty $AH_OUT_DIR/weekly/<stamp>/report.md (heavy.sh); "kein Report" when
+# none exists yet.
 #
 # Below line 4, one `Geplant:` line per workflow with a `schedule:` (line 4b):
 # the newest completed run on main, "kein Lauf" without one, "?" without gh.
@@ -33,32 +27,17 @@
 # release · .claude/rules or .claude/agents gitignored · an env block in the public
 # settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing ·
 # a scheduled workflow whose last run on main is red or older than 8 days.
-# Trigger 3 (a WIP cap reached: aktiv 2 · bereit 2 · pr 3 · neu 20) is no WARN
-# line: the WIP line under the roadmap carries `Warnung:` itself, counted by
-# roadmap.py from the rows, not read from the roadmap's own header.
 #
-# NOT yet implemented, so their silence means nothing: CLAUDE.md §3 trigger 1
-# (a stage whose `Hängt ab von` is unmerged), 4 (harness files changed in a
-# feature branch) and 5 (the main checkout not clean while planning or merging).
+# NOT implemented, so their silence means nothing: CLAUDE.md §3 trigger 1 (a
+# stage whose `Hängt ab von` is unmerged), 2 for a release without a green weekly
+# run (a FAIL in line 4 raises no WARN line), 3 (harness files changed in a
+# feature branch) and 4 (the main checkout not clean while planning or merging).
 
 set -uo pipefail
-
-[ "${AH_AUTONOMOUS:-0}" = "1" ] && exit 0
-
-# --for <lane> is a preflight hook for later stages (test/build-queue/find get
-# their own probes); accepted and ignored here so callers can already pass it.
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --for) shift 2>/dev/null; [ $# -gt 0 ] && shift ;;
-    --for=*) shift ;;
-    *) shift ;;
-  esac
-done
 
 # roadmap.py comes from the checkout this hook lives in, not from the one it
 # looks at (a test runs it against a fixture repo without scripts/).
 ROADMAP_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/roadmap.py"
-LOOP_SH="${ROADMAP_PY%/roadmap.py}/ledger-loop.sh"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$ROOT" ] || exit 0
 cd "$ROOT" || exit 0
@@ -115,28 +94,15 @@ fi
 
 # ── line 3: roadmap ───────────────────────────────────────────────────────────
 ROADMAP="tasks/private/ROADMAP.md"
-# The WIP caps of CLAUDE.md §3 trigger 3 — the hook measures against these, not
-# against whatever caps a roadmap header prints. skill_consistency_test holds them
-# equal to CLAUDE.md, roadmap.py and the /roadmap skill.
-WIP_CAPS="aktiv:2 bereit:2 pr:3 neu:20"
-wip_line() {  # the counters from roadmap.py, `Warnung:` on a reached cap, or the error
-  local out rc cap name n reached=()
+wip_line() {  # the counters from roadmap.py, or its error
+  local out rc
   [ -f "$ROADMAP_PY" ] || { echo "WIP: ? (roadmap.py fehlt: $ROADMAP_PY)"; return; }
   out="$(timeout 3 python3 "$ROADMAP_PY" --file "$ROADMAP" show --wip 2>&1)"; rc=$?
   if [ "$rc" != 0 ] || [ "${out#WIP: }" = "$out" ]; then
     echo "WIP: ? (roadmap.py show --wip, Exit $rc: $(printf '%s\n' "$out" | tail -1))"
     return
   fi
-  for cap in $WIP_CAPS; do
-    name="${cap%%:*}"
-    n="$(grep -oE "(^|[: ])$name [0-9]+/" <<<"$out" | grep -oE '[0-9]+' | head -1)"
-    [ -n "$n" ] && [ "$n" -ge "${cap#*:}" ] && reached+=("$name $n/${cap#*:}")
-  done
-  if [ "${#reached[@]}" -gt 0 ]; then
-    echo "$out · Warnung: Deckel erreicht ($(IFS=,; echo "${reached[*]}" | sed 's/,/, /g'))"
-  else
-    echo "$out"
-  fi
+  echo "$out"
 }
 if [ -f "$ROADMAP" ]; then
   echo "Roadmap:"
@@ -191,38 +157,7 @@ weekly_line() {
     echo "$day: $head"
   fi
 }
-# The worker (stage 7a): the first line of `ledger-loop.sh status` of THIS checkout,
-# which reads the runner's state file as a file — never git in /srv/ah, never a
-# script of the runner in Kevin's rights.
-worker_line() {
-  local f="${AH_LOOP_STATE:-/srv/ah/loop/state.json}" line
-  [ -e "$f" ] || [ -L "$f" ] || { echo "—"; return 0; }
-  # A regular file only, and under the same short limit as the builder line: the
-  # hook has 10 s for every session start.
-  [ -f "$f" ] || { echo "? (state.json unlesbar)"; return 0; }
-  line="$(timeout 3 bash "$LOOP_SH" status --state "$f" 2>/dev/null | head -n 1)"
-  case "$line" in "Worker: "*) echo "${line#Worker: }" ;; *) echo "?" ;; esac
-}
-echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: $(worker_line)"
-# A run in the builder profile (the team under Kevin's UID): the same cleaned first
-# line of `ledger-loop.sh status`, whether its tmux session is up, and the exit code
-# builder.done recorded, digits only. A line only when the profile has a trace, and
-# it shows nothing else of the builder. state.json and builder.done only as regular
-# files, every read under a short limit: the loop writes this directory, and the
-# hook itself has 10 s for every session start; a stuck builder costs this line.
-builder_line() {
-  local d="${AH_BUILDER_DIR:-${HOME:-}/.cache/ah-builder}/loop" line="" up="" rc=""
-  if [ -f "$d/state.json" ] && [ -r "$d/state.json" ]; then
-    line="$(timeout 3 bash "$LOOP_SH" status --state "$d/state.json" 2>/dev/null | head -n 1)"
-    case "$line" in "Worker: "*) line="${line#Worker: }" ;; *) line="?" ;; esac
-  fi
-  timeout 2 tmux has-session -t "=ah-builder" 2>/dev/null && up=" (tmux ah-builder)"
-  [ ! -f "$d/builder.done" ] \
-    || rc="$(timeout 2 head -c 4096 -- "$d/builder.done" 2>/dev/null | LC_ALL=C grep -m1 -xE 'rc=[0-9]{1,3}')"
-  [ -n "$line$up$rc" ] || return 0
-  echo "Builder: ${line:-—}${up}${rc:+ · fertig $rc}"
-}
-builder_line
+echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line)"
 
 # ── line 4b: scheduled workflows ──────────────────────────────────────────────
 # One line per workflow with a `schedule:`. The newest COMPLETED run on main

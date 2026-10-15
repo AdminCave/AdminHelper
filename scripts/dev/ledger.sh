@@ -11,7 +11,6 @@
 #   bash scripts/dev/ledger.sh mark-question <ledger> <id> "<question>"
 #   bash scripts/dev/ledger.sh set-files <ledger> <id> <path…>
 #   bash scripts/dev/ledger.sh status [<ledger> <value>]
-#   bash scripts/dev/ledger.sh new-task <ledger> --title "…"
 #   bash scripts/dev/ledger.sh lint <ledger>
 #
 # The ledger is the only truth about progress (CLAUDE.md §2), which is why the
@@ -23,10 +22,10 @@
 # as it stands in its heading (`### T3 — …` -> T3). grep/sed/awk only: this runs
 # on the runner user's box, which has no toolchain beyond python, git and shell.
 #
-# Free text (notes, reasons, evidence, titles) reaches awk through the
+# Free text (notes, reasons, evidence) reaches awk through the
 # ENVIRONMENT, never through `-v` or a sed pattern: awk resolves backslash
 # escapes in a -v value, so a Windows path in a question would have torn the
-# heading into two lines, and a `&` or `|` in a title would have been read as
+# heading into two lines, and a `&` or `|` in a note would have been read as
 # sed syntax.
 #
 # Exit: 0 ok · 1 lint found an error · 2 usage, unknown ledger or unknown task
@@ -236,50 +235,6 @@ case "$CMD" in
       !done && /^Status:/ { sub(/^Status:[ \t]*[^ \t·]*/, "Status: " value); done = 1 }
       { print }' || die "could not set the status"
     sed -n '/^Status:/{p;q}' "$LEDGER"
-    ;;
-
-  new-task)
-    LEDGER="$(ledger_path "${1-}")" || exit 2
-    shift
-    TITLE=""
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --title) shift; TITLE="${1-}" ;;
-        *) die "unknown flag for new-task: $1" ;;
-      esac
-      shift 2>/dev/null || break
-    done
-    [ -n "$TITLE" ] || die "new-task needs --title \"…\""
-    TPL="tasks/templates/task.md"
-    [ -f "$TPL" ] || die "no template at $TPL"
-    NEXT="$(awk '
-      /^###[ \t]+T[0-9]+/ { n = $2; sub(/^T/, "", n); if (n + 0 > max) max = n + 0 }
-      END { print "T" (max + 1) }' "$LEDGER")"
-    # The body of the template, with the placeholders replaced as TEXT: a title
-    # is free text, and free text in a sed pattern is a title that can write
-    # files (`s|<Titel>|a|w ./x`).
-    BODY="$(L_ID="$NEXT" L_TITLE="$TITLE" awk '
-      BEGIN { id = ENVIRON["L_ID"]; title = ENVIRON["L_TITLE"]; skip = 1 }
-      skip { if ($0 == "-->") skip = 0; next }
-      {
-        line = $0
-        p = index(line, "<ID>");    if (p) line = substr(line, 1, p - 1) id substr(line, p + 4)
-        p = index(line, "<Titel>"); if (p) line = substr(line, 1, p - 1) title substr(line, p + 7)
-        print line
-      }' "$TPL")"
-    [ -n "$BODY" ] || die "the template has no body below its comment"
-    # In front of the closing section if there is one — a new task belongs to the
-    # list, not behind the summary.
-    if grep -qE '^## Abschluss' "$LEDGER"; then
-      L_BODY="$BODY" apply "$LEDGER" '
-        BEGIN { body = ENVIRON["L_BODY"] }
-        !done && /^## Abschluss/ { print body; print ""; done = 1 }
-        { print }
-        END { if (!done) { print ""; print body } }' || die "could not append the task"
-    else
-      { printf '\n'; printf '%s\n' "$BODY"; } >> "$LEDGER" || die "could not append the task"
-    fi
-    echo "$NEXT — $TITLE appended to $LEDGER"
     ;;
 
   lint)

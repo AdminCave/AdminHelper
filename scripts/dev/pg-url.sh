@@ -3,8 +3,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# pg-url.sh — one reading of AH_TEST_DB for the two scripts that hand it to libpq:
-# lane.sh (lane_db) and builder-home.sh (pg). Sourced, never run. Each caller
+# pg-url.sh — one reading of AH_TEST_DB for the scripts that hand it to libpq:
+# lane.sh (lane_db). Sourced, never run. Each caller
 # rewrites the scheme its own way first and prints the reason with its own prefix.
 #
 #   pg_url_split <url> <forms>   -> 0: PG_URL_OUT (the URL without the password)

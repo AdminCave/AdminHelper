@@ -10,7 +10,7 @@
 # or a finding's dedup key on its way into this public repo.
 #
 # Armed per clone, once: `git config core.hooksPath scripts/dev/hooks`
-# (`bash scripts/dev/harness.sh status` shows it). The path is relative, so every
+# (`git config core.hooksPath` shows it). The path is relative, so every
 # worktree runs the hook of its OWN branch, and a branch without this file has
 # none. For `git commit -a` git hands the hook a temporary index through
 # GIT_INDEX_FILE; `git diff --staged` inside review.sh reads that one.

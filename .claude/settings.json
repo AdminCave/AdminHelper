@@ -35,14 +35,10 @@
       "Bash(bash scripts/dev/ledger.sh set-files:*)",
       "Bash(bash scripts/dev/ledger.sh status:*)",
       "Bash(bash scripts/dev/ledger.sh lint:*)",
-      "Bash(bash scripts/dev/ledger.sh new-task:*)",
-      "Bash(bash scripts/dev/review.sh:*)",
-      "Bash(bash scripts/dev/harness.sh status:*)",
-      "Bash(bash scripts/dev/harness.sh on:*)"
+      "Bash(bash scripts/dev/review.sh:*)"
     ],
     "ask": [
       "Bash(bash scripts/vm/bootstrap_linux.sh:*)",
-      "Bash(bash scripts/dev/harness.sh off:*)",
       "Bash(bash scripts/dev/ledger.sh mark-done:*)"
     ],
     "deny": []
@@ -50,7 +46,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|Bash",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
