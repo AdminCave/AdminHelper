@@ -316,6 +316,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: ein neu gestarteter Tunnel steht nicht mehr auf getrennt (R-0247):** Startete der Tunnel neu (Stop,
+  dann Start), endete der alte frpc-Prozess oft erst, als der neue schon lief. Sein Ende ging trotzdem ans Fenster,
+  und die Anzeige stand auf „Tunnel getrennt“, obwohl der Tunnel lief. Jetzt meldet nur der laufende frpc-Prozess
+  sein Ende.
 - **Agent: eine Provisionierung waehrend einer Erneuerung beschaedigt die Identitaet nicht mehr (R-0308):** Die
   Pruefung vor dem Enroll-Antrag (`adminhelper-agent provision`) und die Erneuerung im Dienst schrieben dieselben
   Temp-Dateien `agent.key.tmp`, `agent.crt.tmp` und `ca.crt.tmp`. Lief die Pruefung zwischen dem Schreiben und dem
