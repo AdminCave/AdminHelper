@@ -16,7 +16,8 @@
  *
  * The developer page (`docs/…/developer/desktop.html`, DE + EN) lists the
  * registered commands as well; a command missing there is a doc bug nobody
- * notices, so the registered set is checked against both pages too.
+ * notices, so the registered set is checked against the command table of both
+ * pages too.
  *
  * The parsers read source text, so each one carries a minimum count: an empty
  * parse would make every set comparison below trivially true.
@@ -31,8 +32,11 @@ import { dirname, join } from 'path';
 const DESKTOP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const read = (...p: string[]): string => readFileSync(join(DESKTOP, ...p), 'utf-8');
 
-/** The developer pages whose command table has to name every registered command. */
-const COMMAND_DOCS = ['docs/developer/desktop.html', 'docs/en/developer/desktop.html'];
+/** The developer pages whose command table has to name every registered command → its heading. */
+const COMMAND_DOCS: Record<string, string> = {
+  'docs/developer/desktop.html': 'Tauri-Commands',
+  'docs/en/developer/desktop.html': 'Tauri Commands',
+};
 
 /** Commands not called from the UI, with the reason each one may stay. */
 const UNCALLED_ALLOWLIST: Record<string, string> = {};
@@ -65,6 +69,20 @@ function uiSources(dir: string, acc: string[] = []): string[] {
     else if (full.endsWith('.ts') || full.endsWith('.svelte')) acc.push(full);
   }
   return acc;
+}
+
+/**
+ * One page cut to its command table: from the heading to the first `</table>`,
+ * without running into the next section. The prose names several commands too
+ * (`login`, `api_proxy`, `start_tunnel` …), so a whole-page match would miss a
+ * dropped table row.
+ */
+function commandTable(page: string): string {
+  const html = read('..', '..', ...page.split('/'));
+  const heading = `<h2>${COMMAND_DOCS[page]}</h2>`;
+  const table = new RegExp(`${heading}(?:(?!<h2)[\\s\\S])*?</table>`).exec(html);
+  if (!table) throw new Error(`${page}: no table under ${heading}`);
+  return table[0];
 }
 
 function invokedCommands(): Set<string> {
@@ -111,14 +129,15 @@ describe('tauri IPC inventory', () => {
     expect(uncalled).toEqual(Object.keys(UNCALLED_ALLOWLIST).sort());
   });
 
-  it('names every registered command in the developer docs (DE + EN)', () => {
+  it('names every registered command in the command table of the developer docs (DE + EN)', () => {
     const registered = [...registeredCommands()].sort();
+    const pages = Object.keys(COMMAND_DOCS);
     const missing = Object.fromEntries(
-      COMMAND_DOCS.map((page) => {
-        const html = read('..', '..', ...page.split('/'));
-        return [page, registered.filter((c) => !html.includes(`<code>${c}</code>`))];
+      pages.map((page) => {
+        const table = commandTable(page);
+        return [page, registered.filter((c) => !table.includes(`<code>${c}</code>`))];
       }),
     );
-    expect(missing).toEqual(Object.fromEntries(COMMAND_DOCS.map((page) => [page, []])));
+    expect(missing).toEqual(Object.fromEntries(pages.map((page) => [page, []])));
   });
 });
