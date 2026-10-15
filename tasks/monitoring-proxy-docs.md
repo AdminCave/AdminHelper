@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Entwickler-Doku zum Monitoring-Proxy folgt der Allowlist — Task-Ledger
-Status: geplant · Branch: feature/monitoring-proxy-docs · Review: am Ende
+Status: aktiv · Branch: feature/monitoring-proxy-docs · Review: am Ende
 Spec: Roadmap R-0382
 Heavy: none — Doku und ein statischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
