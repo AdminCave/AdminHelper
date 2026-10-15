@@ -224,7 +224,7 @@ auf einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM
 Sperrdatei wählt `run.sh` in dieser Reihenfolge: `AH_PY_LOCK_FILE`, wenn gesetzt; sonst die
 **geteilte** Datei `/var/lib/adminhelper-dev/py.lock` (Pfad über `AH_PY_LOCK_SHARED`), sobald
 ihr Verzeichnis existiert; sonst je Nutzer `~/.cache/adminhelper-py.lock`. Verzeichnis und Datei
-legte bis 2026-10 `runner-setup.sh` an: über sie warten die Läufe mehrerer Unix-Nutzer
+gibt es nur, wo sie jemand per sudo angelegt hat: über sie warten die Läufe mehrerer Unix-Nutzer
 aufeinander. Ohne das Verzeichnis gilt die Sperre nur **je Unix-Nutzer**, über alle seine
 Checkouts. Darf ein Nutzer die geteilte Datei nur lesen, sperrt der Schritt trotzdem, nur ohne
 Halter-Zeile; lässt sie sich gar nicht öffnen (fehlt sie und darf er sie nicht anlegen, oder ist
