@@ -69,11 +69,13 @@ passenden Flags, bleibt ask-first); `windows` (die Windows-VM).
 - Steckt in einer Task eine Design-Entscheidung, gehört sie als offene Frage in die Spec.
 - Neue Datei ⇒ die Task nennt den SPDX-Header. Neuer Flow ⇒ die Task enthält den Test.
 - `Doku:` nach Augenmaß; die meisten Tasks sind `Doku: keine (intern)`.
+- `Komponente:` ist der Name aus `verify.sh` (`server`, `web`, `desktop-ui` …), kein Pfad: `task-close.sh`
+  vergleicht ihn wörtlich mit den Komponenten des `Verify:`.
 
 Task-Schema:
 ```
 ### T<n> — <Titel>  [ ]
-Komponente: apps/… · Dateien: …
+Komponente: <komponente> · Dateien: …
 Änderung: <was genau, 1–3 Sätze>
 Verify: bash scripts/dev/verify.sh <komponente> --strict
 Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
