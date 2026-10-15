@@ -7,7 +7,8 @@
 # root that must never be tracked. `.vm/` matches a directory only; a `.vm` that
 # is a symlink (to a state directory outside the checkout) needs `/.vm` (R-0326).
 # Hermetic: throwaway repositories with a copy of the real .gitignore. The check
-# first proves on a .gitignore with `.vm/` alone that it can fail at all.
+# first proves on a .gitignore with `.vm/` alone that it can fail at all. Also
+# the union merge .gitattributes sets for CHANGELOG.md.
 #
 # Run: bash scripts/tests/gitignore_test.sh
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
@@ -53,6 +54,22 @@ ignored "$G" dir .vm; rc=$?
 [ "$rc" = 0 ] && ok ".vm as a directory is ignored" || bad ".vm as a directory: check-ignore rc=$rc"
 ignored "$G" dir .vm/lane; rc=$?
 [ "$rc" = 0 ] && ok "and what lies in it (.vm/lane)" || bad ".vm/lane: check-ignore rc=$rc"
+
+echo "── .gitattributes"
+# Every branch appends to the same CHANGELOG section; union merge is what keeps
+# that from being a conflict per PR.
+grep -qE '^/?CHANGELOG\.md[[:space:]]+merge=union$' "$REPO_ROOT/.gitattributes" \
+  && ok "CHANGELOG.md is merged with merge=union" || bad "no union merge for CHANGELOG.md"
+# `git check-attr` needs a repository, and a box synced from a worktree has none:
+# its .git points at a path on the dev box. A throwaway git dir over this very
+# work tree answers the same question anywhere — what git makes of the
+# .gitattributes that is here.
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git init -q "$WORK/attr" \
+  || bad "cannot create the throwaway repo for check-attr"
+export GIT_DIR="$WORK/attr/.git" GIT_WORK_TREE="$REPO_ROOT"
+[ "$(git -C "$REPO_ROOT" check-attr merge -- CHANGELOG.md 2>/dev/null)" = "CHANGELOG.md: merge: union" ] \
+  && ok "and git actually resolves that attribute" || bad "git does not see the union attribute"
+unset GIT_DIR GIT_WORK_TREE
 
 # In a variable first: under pipefail, grep -q may end the pipe before sed has written.
 LIST="$(sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh")"
