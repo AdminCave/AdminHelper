@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # compose: ca-issuer startet erst nach der Server-Migration — Task-Ledger
-Status: bereit · Branch: feature/ca-issuer-after-migration · Review: am Ende
+Status: erledigt · Branch: feature/ca-issuer-after-migration · Review: am Ende
 Spec: Roadmap R-0288
 Heavy: linux-full — `docker-compose.yml` (Startkette ca-issuer/server); läuft im Sammellauf (`/feature-build` §5); kein install-/update-Skript ändert sich, daher kein `scenario`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
