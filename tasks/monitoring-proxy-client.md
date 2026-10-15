@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Proxy-Client übersteht einen zweiten Lifespan — Task-Ledger
-Status: bereit · Branch: feature/monitoring-proxy-client · Review: am Ende
+Status: erledigt · Branch: feature/monitoring-proxy-client · Review: am Ende
 Spec: Roadmap R-0376
 Heavy: none — Lifespan-Hygiene im Prozess: in Produktion läuft je uvicorn-Prozess genau ein Lifespan, der neue Zweig ist dort ein No-op; kein Stack-, Gateway-, PKI- oder Install-Pfad, die API ändert sich nicht
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
