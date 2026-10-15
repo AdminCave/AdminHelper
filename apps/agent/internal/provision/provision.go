@@ -235,6 +235,13 @@ func monitorBaseURL(adminHelperURL string, monitorURL *string) string {
 	return adminHelperURL + path
 }
 
+// checkStorable and storeIdentity are enroll.CheckStorable and enroll.Store; tests swap
+// them to make the identity directory give out.
+var (
+	checkStorable = enroll.CheckStorable
+	storeIdentity = enroll.Store
+)
+
 // runEnrollment generates an on-device key + CSR and redeems the enrollment
 // token at the gateway's enroll plane, persisting the issued identity.
 func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, insecure bool) error {
@@ -270,7 +277,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	}
 	// The request below lets the issuer revoke the earlier line at once: ask only for an
 	// identity this host can store (R-0293).
-	if err := enroll.CheckStorable(dir); err != nil {
+	if err := checkStorable(dir); err != nil {
 		return fmt.Errorf("the identity cannot be stored, nothing was requested: %w", err)
 	}
 	// The identity of an earlier provisioning is still on disk until Store replaces it:
@@ -284,7 +291,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	if err != nil {
 		return err
 	}
-	if err := enroll.Store(dir, key, issued); err != nil {
+	if err := storeIdentity(dir, key, issued); err != nil {
 		return fmt.Errorf("store the new identity: %w; provision again with a new token: %s", err, enroll.ReprovisionHint)
 	}
 	return nil
