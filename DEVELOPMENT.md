@@ -628,12 +628,13 @@ wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 ### Go Toolchain (Agent)
 
 ```bash
-# Go 1.26.9 oder neuer installieren (https://go.dev/dl/). go.mod verlangt nur 1.25, CI und
-# Release bauen aber mit dem neuesten 1.26.x: ein Bau mit 1.25.x traegt stdlib-Luecken, die
-# erst go1.26.9 schliesst. Das Debian-Paket golang-go ist dafuer zu alt (trixie: 1.24), also
-# manuell (Version von https://go.dev/dl/ einsetzen):
-# wget https://go.dev/dl/go1.26.x.linux-amd64.tar.gz
-# sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.26.x.linux-amd64.tar.gz
+# Go 1.27.2 oder neuer installieren (https://go.dev/dl/). go.mod verlangt nur 1.25, CI und
+# Release bauen aber mit dem neuesten 1.27.x: ein aelterer Patch traegt stdlib-Luecken, die
+# erst der neueste schliesst, und 1.26 faellt mit Go 1.28 aus dem Support. Das Debian-Paket
+# golang-go ist dafuer zu alt (trixie: 1.24), also manuell (Version von https://go.dev/dl/
+# einsetzen):
+# wget https://go.dev/dl/go1.27.x.linux-amd64.tar.gz
+# sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.27.x.linux-amd64.tar.gz
 ```
 
 ### Node.js + npm (Desktop-UI und Web-Frontend)
@@ -707,8 +708,8 @@ ohne das Flag wuerde pip-audit ihn zum Aufloesen installieren wollen.
 
 `govulncheck` meldet auch stdlib-Funde und bewertet sie im Quelltext-Modus gegen
 die Version des `go` im PATH. Die Dev-Box muss deshalb dieselbe Minor fahren wie
-`go-version` in den Workflows (heute `1.26`), und zwar wie CI mit `check-latest`
-den neuesten Patch (1.26.9 oder neuer), sonst weicht der lokale Befund von CI ab.
+`go-version` in den Workflows (heute `1.27`), und zwar wie CI mit `check-latest`
+den neuesten Patch (1.27.2 oder neuer), sonst weicht der lokale Befund von CI ab.
 Gewechselt wird per Tarball-Swap unter `~/sdk/go` — `.devenv.sh` legt
 `~/sdk/go/bin` vor das System-Go. Dass der govulncheck-Pin ueberhaupt noch zur
 `go-version` passt, prueft `bash scripts/dev/toolchain-lockstep.sh` (in CI ein
