@@ -607,6 +607,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `MTLS_ENFORCE=true` widerrufbar ist, weiterhin mit `(self)`. Die API-Referenz (DE+EN) beschreibt den Endpunkt als
   Selbstbedienung fuer ein weiteres eigenes Geraet: unter `MTLS_ENFORCE=true` erreicht ihn nur ein Geraet mit
   gueltigem Client-Zertifikat, er ist keine Bootstrap-Tuer ohne Zertifikat.
+- **Agent und Audit auf Go 1.27 (R-0352):** CI (`agent`, `agent-windows`), Release und der woechentliche Audit bauen
+  mit Go 1.27 und `check-latest`, also mit dem neuesten 1.27.x (heute go1.27.2); Go 1.26 faellt mit dem Erscheinen
+  von Go 1.28 aus dem Support. Die Test-Boxen (`scripts/vm/bootstrap_linux.sh`) installieren go1.27.2 statt 1.26.9.
+  `govulncheck` bleibt auf v1.9.0, die `go`-Direktive in `apps/agent/go.mod` bleibt `1.25.0`.
 - **Gezieltes Verify ohne Schemathesis (R-0380):** `verify.sh <komp> --strict -- <test>` laesst den Schritt
   `schemathesis` aus (`SKIP … (AH_ARGS)`, unter `--strict` kein Fehler wie bei `AH_ONLY`); er kostete jede
   Task-Verify gut fuenf Minuten, voll laeuft er in der PR-CI.
