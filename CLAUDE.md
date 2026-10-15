@@ -29,9 +29,9 @@ Eine Session arbeitet ein Vorhaben Task für Task ab: ein Bauer-Sub-Agent baut d
 ein Reviewer-Sub-Agent prüft, `scripts/dev/task-close.sh` fährt das `Verify:`, den Token-Scan und committet Code und
 Ledger. Zwei freigegebene, disjunkte Vorhaben baut die Session parallel (Deckel `aktiv` 2 in `roadmap.py`), je in
 eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Produkt-PRs
-merged die Session, wenn die CI im ersten Anlauf grün ist, einen je CI-Zyklus, nach der Kombinationsprüfung
-(Wegwerf-Worktree mit `worktree-setup.sh`, `main` + PR gemergt, `bash <wt>/scripts/dev/verify.sh <komp> --strict` je
-berührter Komponente, danach Teardown), weil das Ruleset die Kombination nicht prüft. PRs, die
+merged die Session, wenn die CI im ersten Anlauf grün ist, einen je CI-Zyklus, und nur, wenn der Branch `origin/main`
+enthält (`git fetch`, `merge-base --is-ancestor`; sonst mergen, pushen, neue CI): Das Ruleset prüft die Kombination
+nicht, die PR-CI testet dann genau `main` + PR (Kevin, 2026-10-15). PRs, die
 `CLAUDE.md`, `.claude/`, `scripts/` oder `.github/` ändern, merged Kevin. Ist `main` rot, wird der letzte Merge
 revertiert, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile. Lange
 Läufe (`/test`, Wochenlauf, Multibox, Suiten über zehn Minuten) laufen in einem tmux-Fenster ohne Modell mit
@@ -62,19 +62,19 @@ Merge, Datenverlust, Leak), als eigene Task, nie nebenbei. Funde an der Harness 
 
 ## 5. Tests sind Beweis
 - Je Task nur das `Verify:` der Task mit gezieltem Testpfad (`bash scripts/dev/verify.sh <komp> --strict -- <test>`;
-  `verify.sh` sourct `.devenv.sh` selbst, `run.sh` nicht). Die Komponenten-Suite einmal vor dem Abschluss des
-  Vorhabens, `bash scripts/tests/run.sh quick --strict` als Gesamt-Schnellcheck. Verify-Zeilen in Flag-Form ohne
-  Env-Präfix.
+  `verify.sh` sourct `.devenv.sh` selbst, `run.sh` nicht). Die Komponenten-Suiten fährt nur die PR-CI;
+  `bash scripts/tests/run.sh quick --strict` lokal vor einem Release. Verify-Zeilen in Flag-Form ohne Env-Präfix.
 - Die Summary-Zeile (`N passed, M failed, K skipped`) ist die Evidenz und steht neben jedem `[x]`. Ein SKIP, ein
   fehlendes Werkzeug, ein abgebrochener Lauf oder ein Befehl ohne Ausgabe ist rot. Erst rot, dann grün ist `flaky`.
 - Ein Server-Lauf zur Zeit je Test-DB; jeder Worktree hat seine eigene (§8). Revert-Proben nie im Bau-Worktree,
   sondern in einem eigenen.
 - Berührt der Branch-Diff `apps/server`-API, Gateway, CA-Issuer, Agent, Desktop-Tunnel/Enrollment, Compose,
-  Install/Update, FRP oder PKI: schwere Suite auf der VM nach `/test`; Multibox nur nach Kevins Ja. VM-Läufe
-  dürfen parallel laufen, je Vorhaben in seiner Lane; `vm.py` prüft vor jedem Klon den RAM des Hosts (Kevin,
-  2026-10-15). Im Pool `adminhelper-ci` darf die Session VMs klonen, baken und zerstören (Kevin, 2026-09-08);
-  danach `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler, kein Detail. Proxmox-Zugang:
-  Umgebung > `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) > `settings.local.json`.
+  Install/Update, FRP oder PKI: `linux-full` im Sammellauf über `main` (`/test all`; ob er fällig ist, prüft die
+  Session beim Start und nach jedem Merge und startet ihn selbst, `/feature-build` §5, Kevin 2026-10-15), `scenario`
+  und `windows` vor dem Merge, Multibox nur nach Kevins Ja. VM-Läufe dürfen parallel laufen, je Vorhaben in seiner
+  Lane; `vm.py` prüft vor jedem Klon den RAM des Hosts. Im Pool `adminhelper-ci` darf die Session VMs klonen, baken
+  und zerstören (Kevin, 2026-09-08); danach `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler.
+  Proxmox-Zugang: Umgebung > `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) > `settings.local.json`.
 - Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test, dann grün; Feature → Test dazu; Refactor →
   Suite grün vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O,
   echte SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.

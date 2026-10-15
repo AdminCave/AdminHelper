@@ -26,23 +26,27 @@ about the suites.
 | `weekly`   | same for `heavy.sh weekly` |
 | `status`   | read the newest weekly report and quote its first line |
 
-**`all`, `capstone` and `weekly` start only on Kevin's explicit ask — and then the session
-runs them SUPERVISED, never fire-and-forget (Kevin, 2026-09-15).** Nothing here starts by
-itself (CLAUDE.md §2): no timer, no cron, no "while I'm at it". But once Kevin says
+**`capstone` and `weekly` start only on Kevin's explicit ask, `all` also as the due Sammellauf
+(`/feature-build` §5, Kevin 2026-10-15) — and then the session runs them SUPERVISED, never
+fire-and-forget (Kevin, 2026-09-15).** Nothing here starts by itself (CLAUDE.md §2): no
+timer, no cron, no "while I'm at it". But once Kevin says
 `/test weekly`, the tmux line is not handed back to him — the session does this:
 
 1. Pre-flight, and stop on any red: `python3 scripts/vm/vm.py list` shows nothing of another
    lane and nothing leaked on ours (a foreign box aborts the run with 74 in its first
    minute); no `Status: aktiv` build touching `scripts/tests/heavy.sh` or
    `scripts/tests/multibox.sh` (a running bash script must never be edited in the same
-   checkout); the checkout is the tree that should be measured (`git status --short --branch`).
+   checkout); the checkout is the tree that should be measured (`git status --short --branch`) — for the
+   Sammellauf the clean main checkout pulled to `origin/main` (`git fetch origin`, `git merge --ff-only
+   origin/main`), or it measures an old main.
 2. Start it detached, so it survives the session:
    ```
    tmux new -d -s ah-<mode> 'bash scripts/tests/heavy.sh <mode>'
    ```
 3. Watch it with a background waiter (a `tmux has-session` poll every 2–5 min, or the
    Monitor tool on `.ah-out/weekly/*/report.md`). Do not poll by hand, do not end the
-   task early, do not start anything else that leases VMs meanwhile. `all` takes ~1.5 h,
+   task early; other lanes may lease VMs meanwhile (`vm.py` checks the host's RAM before every
+   clone). `all` takes ~1.5 h,
    `capstone` ~3 h, `weekly` both. If the session is compacted or resumed, re-attach the
    waiter first (`tmux has-session -t ah-<mode>`); the run itself is not affected.
 4. When it ends: quote the report's FIRST line verbatim (the verdict), the two summary
