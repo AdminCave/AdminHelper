@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Migrationstest des Zertifikats-Registers trennt now() von timezone('UTC', now()) — Task-Ledger
-Status: aktiv · Branch: feature/cert-register-utc-test · Review: pro Task
+Status: bereit · Branch: feature/cert-register-utc-test · Review: pro Task
 Spec: Roadmap R-0289
 Heavy: none — nur ein Server-Test, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 `Review: pro Task` statt der Kurz-Ledger-Regel `am Ende`: Das Vorhaben ist die Abnahme von Team v3 und soll den
 Weg `builder` → `reviewer` → `task-close.sh` samt Urteilsprüfung einmal ganz fahren (Kevin, 2026-10-15).
 
-### T1 — Migrationstest fährt die Register-Revision in einer Session fern von UTC  [ ]
+### T1 — Migrationstest fährt die Register-Revision in einer Session fern von UTC  [x]
 Komponente: server · Dateien: apps/server/tests/test_migrations_smoke.py
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @e8c9a809 2026-10-15T12:30:16+02:00
+Review: approve (.ah-out/review/cert-register-utc-test/T1.verdict.json)
 Änderung: `test_certificate_register_installs_its_time_and_goes_on_downgrade` (`tests/test_migrations_smoke.py:284`) setzt vor dem ersten Verbindungsaufbau `PGTZ` per `monkeypatch.setenv` auf eine Zone fern von UTC ohne Sommerzeit (`Pacific/Kiritimati`, UTC+14). libpq gibt jeder neuen Verbindung des Tests, auch der von Alembic, diese Session-Zeitzone mit; ein `now()`-Default läge dann 14 h neben `timezone('UTC', now())`. Eine zusätzliche Assertion belegt, dass die Prüfverbindung wirklich in dieser Zone lief, sonst prüfte der Test wieder nichts. Die Abweichungs-Assertion (`:309`, `< 300` s) bleibt unverändert.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_migrations_smoke.py
 Doku: keine (nur Test)
