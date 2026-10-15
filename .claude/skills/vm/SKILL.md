@@ -74,8 +74,8 @@ Die Wrapper reichen den Code unverändert durch.
   Detail; `list` endet mit Exit 74, wenn auf dieser Lane etwas läuft, das niemand beansprucht.
 - **`bake` nur bewusst** — es provisioniert eine VM und läuft ~45 min. Kein Bestandteil einer
   Schleife.
-- **Parallele Lanes teilen nichts.** `lane.sh new <slug>` schreibt `.vm/lane`; `reap` und
-  `destroy` arbeiten auf der eigenen Lane, `--all` erweitert nur den Ablauf-Sweep.
+- **Parallele Lanes teilen nichts.** `bash scripts/dev/worktree-setup.sh <pfad> <slug>` schreibt
+  `.vm/lane`; `reap` und `destroy` arbeiten auf der eigenen Lane, `--all` erweitert nur den Ablauf-Sweep.
 - **Ein Worktree ohne `.vm/lane`** (von Hand angelegt) wird abgewiesen, bis er seine Lane nennt:
   `python3 scripts/vm/vm.py --as-lane main <verb>` (vor dem Verb; trifft die Allow-Regel, ein
   vorangestelltes `AH_LANE=main` nicht). `warm.sh`, `iter.sh` und `heavy.sh` nehmen `AH_LANE=main`,

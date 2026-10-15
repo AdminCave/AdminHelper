@@ -10,15 +10,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # `/roadmap` — der rote Faden, gezeigt und triagiert
 
 `tasks/private/ROADMAP.md` ist Kevins Datei im privaten Repo und die einzige
-Reihenfolge-Wahrheit (CLAUDE.md §2). Dieser Skill **liest** sie über `roadmap.py` und
+Reihenfolge-Wahrheit (CLAUDE.md §4). Dieser Skill **liest** sie über `roadmap.py` und
 **ändert** sie nur über `roadmap.py`: flock, `.bak`, Zeilenzahl-Prüfung und ein lokaler
 Commit je Schritt kommen von dort (DEVELOPMENT.md, „Die Roadmap als Skript").
 
 **Nie:** `Edit`/`Write` auf die Datei · „Als Nächstes" umschreiben (das kuratiert Kevin von
-Hand; der Skill darf einen Vorschlag machen, nicht schreiben) · `approve` ohne Kevins
-ausdrückliches Wort (die Freigabe ist der Pflicht-Checkpoint; Ausnahme: der Chef
-bei kleinen Fund-Paketen, CLAUDE.md §2) · das private Repo pushen (den Befehl nennen, Kevin
-führt ihn aus; der Chef pusht es selbst, CLAUDE.md §2).
+Hand; der Skill darf einen Vorschlag machen, nicht schreiben) · `approve` (die Freigabe tippt
+Kevin selbst, CLAUDE.md §4). Nach jeder Änderung pusht die Session das private Repo
+(`git -C tasks/private push`, CLAUDE.md §11).
 
 Alle Aufrufe ohne `--file`: der Default ist die echte Datei. Exit-Codes von `roadmap.py`
 sind Anweisungen: **2** Aufruf oder Übergang falsch (Meldung zeigen, nicht umgehen) ·
@@ -33,8 +32,8 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
 2. Knapp rendern, in dieser Reihenfolge:
    - **Als Nächstes**: die Punkte, je die erste Zeile, wörtlich.
    - **In Arbeit** mit den Deckeln: die `WIP:`-Zeile. `show` druckt nur die Zähler; ist
-     ein Deckel erreicht (Zähler >= `aktiv` 2 · `bereit` 2 · `pr` 3 · `neu` 20), schreib
-     selbst `Warnung:` mit dem Deckel dahinter (CLAUDE.md §3, Warn-Trigger 3). Die Zeilen
+     ein Deckel erreicht (Zähler >= `aktiv` 2 · `bereit` 2 · `pr` 3 · `neu` 20), nenn
+     den Deckel dahinter (`add` verweigert ab `neu` 20). Die Zeilen
      von „In Arbeit" mit ID, Klasse, Status.
    - **Neu**: nur die Anzahl gegen den Deckel und `ALT` (abgelaufene Zeilen), keine Liste.
    - Geplant, Zurückgestellt, Blockiert als Anzahl; Abgeschlossen und Archiv weglassen.
@@ -74,12 +73,11 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
    Dann die nächste Runde, bis keine `neu`-Zeile mehr offen ist oder Kevin aufhört; die
    letzte Runde darf eine einzige Zeile haben.
 5. **Abschluss.** `roadmap.py show --wip` und eine Zeile je Entscheidung (ID → Status). Dann
-   den Push des privaten Repos **nennen**, nicht ausführen: `git -C tasks/private push`
-   (der Chef führt ihn selbst aus, CLAUDE.md §2).
+   das private Repo pushen: `git -C tasks/private push` (CLAUDE.md §11).
 
 ## Was dieser Skill nicht tut
 
-Er gibt nichts frei (`approve` sagt Kevin selbst: „R-nnnn freigeben" → dann und nur dann
-`roadmap.py approve R-nnnn`; kleine Fund-Pakete gibt der Chef frei, CLAUDE.md §2),
-plant nichts (das ist `/feature-plan`), schreibt kein
-„Als Nächstes" und legt keine Zeilen an (`add` gehört den Findern, `heavy.sh` und Kevin).
+Er gibt nichts frei (`approve` tippt Kevin selbst: `! python3 scripts/dev/roadmap.py approve
+R-nnnn`, CLAUDE.md §4), plant nichts (das ist `/feature-plan`), schreibt kein
+„Als Nächstes" und legt keine Zeilen an (`add` gehört `heavy.sh`, dem Gate von `/feature-plan`
+und Kevin).
