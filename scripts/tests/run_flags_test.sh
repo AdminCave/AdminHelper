@@ -441,6 +441,19 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
   && ok "a missing schemathesis package strict-fails the step" \
   || bad "schemathesis dep-gate: rc=$rc $(grep -m1 -E 'SKIP|strict-failed' <<<"$OUT")"
 
+# A targeted run (verify.sh … -- <test> exports AH_ARGS) leaves the fuzz suite to the
+# PR CI: the step SKIPs as AH_ARGS and, like an AH_ONLY skip, does not strict-fail,
+# while the suite the caller asked for still runs (R-0380). The check below shows the
+# same strict run without AH_ARGS still fuzzing.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_PY_LOCK=0 \
+      AH_REQUIRED="server-pytest schemathesis" DATABASE_URL="postgresql://x@localhost/y" \
+      AH_ARGS="tests/test_x.py" SHIM_SKIP="" \
+      "$PYSHIM/bash" "$RUN" unit --strict --only server 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qF "SKIP  schemathesis (AH_ARGS)" <<<"$OUT" \
+  && grep -qE '^  PASS  server pytest' <<<"$OUT" && ! grep -q "strict-failed" <<<"$OUT" \
+  && ok "a targeted strict run skips schemathesis and still runs the asked suite" \
+  || bad "targeted schemathesis: rc=$rc $(grep -m1 -E 'schemathesis|strict-failed' <<<"$OUT")"
+
 # With the package present the step runs — otherwise the check above would pass
 # against a run.sh whose step can never do anything at all.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="schemathesis" \

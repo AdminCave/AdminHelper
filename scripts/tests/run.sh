@@ -194,7 +194,8 @@ _skip() {
   local id="$1" name="$2" reason="$3"
   echo "  SKIP  $name ($reason)"; SKIP=$((SKIP+1)); SKIP_VERDICT="skip"
   [ "$AH_STRICT" = "1" ] || return 0
-  [ "$reason" = "AH_ONLY" ] && return 0
+  # AH_ONLY and AH_ARGS are the caller narrowing the run on purpose, not a hole in it.
+  case "$reason" in AH_ONLY|AH_ARGS) return 0 ;; esac
   # Counted as a SKIP *and* a FAIL on purpose: both are true, so the summary line
   # is informative, not additive. The artifact carries one verdict per step
   # instead ("strict-failed"), which is where a single value belongs.
@@ -697,6 +698,9 @@ layer_unit() {
   only monitoring && sth+=("apps/monitoring")
   only ca-issuer  && sth+=("apps/ca-issuer")
   if [ ${#sth[@]} -eq 0 ]; then skip schemathesis "schemathesis" "AH_ONLY"
+  # A targeted run (verify.sh … -- <test>) is a task's quick Verify: the fuzz suite
+  # added ~5 min to every one of them, and the PR CI runs it in full (R-0380).
+  elif [ -n "$AH_ARGS" ]; then skip schemathesis "schemathesis" "AH_ARGS"
   elif have python3 && python3 -c 'import schemathesis' 2>/dev/null; then
     run_py_step schemathesis "schemathesis" -- bash -c '
       export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-0}"
