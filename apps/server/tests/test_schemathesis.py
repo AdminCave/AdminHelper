@@ -175,11 +175,13 @@ def api_db(db_session, monkeypatch):
     db_session rolls everything the fuzzer wrote back at the end of the test.
 
     Unlike a TestClient the schemathesis transport DOES run the application
-    lifespan — on the first request, once per process. Its startup would create
-    the default admin through the real engine, outside this transaction and
-    therefore past the rollback: the next test's admin_user fixture then dies on
-    the unique username. The fixtures below own the test data, so startup has
-    nothing left to set up here.
+    lifespan — once per test: the first request starts it, the plugin's test
+    teardown ends it, and the next test's first request starts a new one
+    (pytest_runtest_teardown -> shutdown_lifespans in the pinned schemathesis).
+    Its startup would create the default admin through the real engine, outside
+    this transaction and therefore past the rollback: the next test's admin_user
+    fixture then dies on the unique username. The fixtures below own the test
+    data, so startup has nothing left to set up here.
     """
     monkeypatch.setattr("app.main._run_startup_tasks", lambda: None)
 
@@ -200,12 +202,12 @@ def api_db(db_session, monkeypatch):
 def monitoring_stub(monkeypatch):
     """A stand-in for the monitoring service behind the server's proxy routes.
 
-    The proxy forwards through one process-wide httpx client that the app lifespan
-    closes, and the schemathesis transport runs that lifespan once per process: every
-    proxy call after it died in the transport (`client has been closed`) before a
-    check saw a response. What the fuzzer tests is the server's own handling, not the
-    proxy's contract, so a fresh client per test answers every forward with a fixed
-    200 JSON body; monkeypatch puts the original back.
+    No monitoring service runs next to this suite; without a stub every proxy forward
+    would go out to the network (MONITOR_SERVICE_URL). What the fuzzer tests is the
+    server's own handling, not the proxy's contract, so a fresh client
+    per test answers every forward with a fixed 200 JSON body; monkeypatch puts the
+    original back. The lifespan's startup keeps an open client (open_client), so the
+    stub installed here is the one the proxy uses; its shutdown closes the stub.
     """
     from app.modules.monitoring_proxy import router as monitoring_proxy_mod
 

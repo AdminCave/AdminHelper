@@ -64,7 +64,7 @@
               <tr><td><code>/api/servers/{id}/provision</code></td><td><code>modules/provisioning/</code></td><td>Server-centric provisioning: token lifecycle and activate (FRP-independent). Returns server API key, optional monitor key, optional FRP bundle.</td></tr>
               <tr><td><code>/api/enrollment</code></td><td><code>modules/enrollment/router.py</code></td><td>One-time enrollment tokens: <code>POST /token</code> for the logged-in user (self-service), <code>POST /token/for</code> issued by an admin for another user (ADR 0003). <code>POST /self/revoke</code>: a device revokes itself, identified by its client certificate, without a JWT.</td></tr>
               <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Four sub-routers: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> for the running FRPC sync.</td></tr>
-              <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy.py</code></td><td>Reverse proxy to the monitoring microservice; public agent push endpoint <code>/agent/{id}/report</code>.</td></tr>
+              <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy/router.py</code></td><td>Reverse proxy to the monitoring microservice; public agent push endpoint <code>/agent/{id}/report</code>.</td></tr>
             </tbody>
           </table>
 
