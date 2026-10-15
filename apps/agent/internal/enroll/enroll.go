@@ -125,6 +125,9 @@ func Submit(client *http.Client, endpoint string, body any) (*IssueResponse, err
 // tmpSuffix marks the staging copies written before the atomic rename.
 const tmpSuffix = ".tmp"
 
+// createTemp is os.CreateTemp; tests swap it to make a staged write fail.
+var createTemp = os.CreateTemp
+
 // Store persists the issued identity under dir: key 0600, cert (the fullchain we
 // present) and the pinned trust bundle. Renewal mints a NEW key, so the write
 // must be crash-atomic: writing the key in place and then the cert would, if
@@ -155,28 +158,26 @@ var storableProbe = bytes.Repeat([]byte("x"), 4096)
 // CheckStorable reports whether dir can take a new identity: the staged writes Store
 // does, with placeholders of their size, fsynced and removed again. A provisioning runs
 // it before the enrollment request, because that request already names the earlier
-// certificate as replaced and the issuer revokes its line at once (R-0293). It removes
-// the files it created; whatever stood at a probe path before stays.
+// certificate as replaced and the issuer revokes its line at once (R-0293). Each probe
+// is a file of its own, so a renewal the service stages meanwhile keeps its files
+// (R-0308); the check removes exactly its probes.
 func CheckStorable(dir string) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create the identity directory: %w", err)
 	}
 	_ = config.SecureDir(dir)
-	var created []string
+	var probes []string
 	defer func() {
-		for _, p := range created {
+		for _, p := range probes {
 			_ = os.Remove(p)
 		}
 	}()
-	for _, p := range []string{KeyPath(dir) + tmpSuffix, CertPath(dir) + tmpSuffix, CAPath(dir) + tmpSuffix} {
-		// Remove only what the check itself puts there, also when the write fails after
-		// the file was created; whatever stood at the path before stays.
-		if _, err := os.Lstat(p); os.IsNotExist(err) {
-			created = append(created, p)
-		}
-		if err := writeFileSync(p, storableProbe, 0600); err != nil {
+	for _, name := range []string{KeyFileName, CertFileName, CAFileName} {
+		p, err := writeTemp(dir, name, storableProbe, 0600)
+		if err != nil {
 			return err
 		}
+		probes = append(probes, p)
 	}
 	return nil
 }
@@ -199,18 +200,20 @@ func stageIdentity(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) (func
 		return nil, err
 	}
 	items := []staged{
-		{KeyPath(dir) + tmpSuffix, KeyPath(dir), 0600},
-		{CertPath(dir) + tmpSuffix, CertPath(dir), 0644},
-		{CAPath(dir) + tmpSuffix, CAPath(dir), 0644},
+		{final: KeyPath(dir), perm: 0600},
+		{final: CertPath(dir), perm: 0644},
+		{final: CAPath(dir), perm: 0644},
 	}
 	contents := [][]byte{keyPEM, []byte(resp.Fullchain), []byte(resp.Chain)}
-	for i, it := range items {
-		if err := writeFileSync(it.tmp, contents[i], it.perm); err != nil {
-			for _, done := range items[:i+1] { // best-effort cleanup of staged temps
+	for i := range items {
+		tmp, err := writeTemp(dir, filepath.Base(items[i].final), contents[i], items[i].perm)
+		if err != nil {
+			for _, done := range items[:i] { // best-effort cleanup of staged temps
 				_ = os.Remove(done.tmp)
 			}
 			return nil, err
 		}
+		items[i].tmp = tmp
 	}
 	return func() error {
 		for _, it := range items {
@@ -278,27 +281,32 @@ func RemoveIdentity(dir string) error {
 	return nil
 }
 
-// writeFileSync writes data to path with the given mode and fsyncs it, so the
-// bytes are durable before the rename that activates the staged file.
-func writeFileSync(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+// writeTemp writes data to a new file <name>.*.tmp in dir with the given mode and
+// fsyncs it, so the bytes are durable before the rename that activates the staged
+// file, and returns its path. Every call gets a file of its own: a provisioning's
+// check and the service's renewal never write into each other's files (R-0308). On
+// an error the file is removed again.
+func writeTemp(dir, name string, data []byte, perm os.FileMode) (string, error) {
+	f, err := createTemp(dir, name+".*"+tmpSuffix)
 	if err != nil {
-		return fmt.Errorf("%s schreiben: %w", filepath.Base(path), err)
+		return "", fmt.Errorf("stage %s: %w", name, err)
 	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return fmt.Errorf("%s schreiben: %w", filepath.Base(path), err)
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
 	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return fmt.Errorf("%s synchronisieren: %w", filepath.Base(path), err)
+	// CreateTemp creates the file 0600; the certificate and the CA are 0644.
+	if err == nil {
+		err = f.Chmod(perm)
 	}
-	// O_CREAT keeps an existing file's mode, so re-assert it on overwrite.
-	if err := f.Chmod(perm); err != nil {
-		f.Close()
-		return fmt.Errorf("%s chmod: %w", filepath.Base(path), err)
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
-	return f.Close()
+	if err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("stage %s: %w", name, err)
+	}
+	return f.Name(), nil
 }
 
 // syncDir fsyncs a directory so the renames within it are durable.

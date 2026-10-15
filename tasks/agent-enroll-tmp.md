@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Provisionierung und Erneuerung teilen keine Temp-Dateien mehr — Task-Ledger
-Status: aktiv · Branch: feature/agent-enroll-tmp · Review: am Ende
+Status: bereit · Branch: feature/agent-enroll-tmp · Review: am Ende
 Spec: Roadmap R-0308
 Heavy: linux-full — `apps/agent/internal/enroll` (Store, Renew, CheckStorable) ist Agent-Enrollment; läuft im Sammellauf (`/feature-build` §5); Windows ohne VM: kein Build-Tag, `agent-windows` fährt `go test` nativ
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Risikopfad (`apps/agent/internal/enroll/*`, PKI/mTLS): Branch-Review zusätzlich mit `security`.
 
-### T1 — Staging und CheckStorable mit eigenen Temp-Namen je Aufruf  [ ]
-Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/enroll_test.go, CHANGELOG.md
+### T1 — Staging und CheckStorable mit eigenen Temp-Namen je Aufruf  [x]
+Komponente: agent · Dateien: apps/agent/internal/enroll/enroll.go, apps/agent/internal/enroll/enroll_test.go, CHANGELOG.md, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @43cf549a 2026-10-15T15:24:03+02:00
+Review: am Ende (Branch-Review)
 Änderung: `stageIdentity` (`enroll.go:196`) und `CheckStorable` (`enroll.go:160`) schreiben heute dieselben festen Namen `agent.key.tmp`, `agent.crt.tmp`, `ca.crt.tmp` (`tmpSuffix` `:126`); läuft eine Provisionierung (`adminhelper-agent provision` → `CheckStorable`) zwischen Staging und Commit einer Erneuerung (Dienst → `Renew` → `Store`), überschreibt die Probe die gestagten Dateien, und die Erneuerung benennt die Probe-Bytes als `agent.key`/`agent.crt`/`ca.crt` ein. Ein Helfer legt jede Temp-Datei per `os.CreateTemp` im Zielverzeichnis an (Muster `<name>.*.tmp`, write, Sync, Chmod, Close, bei Fehler Remove); `stageIdentity` und `CheckStorable` nutzen ihn, `CheckStorable` räumt genau seine eigenen Dateien. Neuer Test `TestCheckStorableDuringAStagedRenewKeepsTheRenewal` (Beweis unten). Die Tests, die heute ein Verzeichnis am festen `.tmp`-Pfad als Blocker nutzen (`TestStageIdentityCleansUpStagedTempsOnWriteError` `enroll_test.go:197`, `TestCheckStorableReportsAStagedFileThatCannotBeWritten` `:282`), bekommen einen Seam (`createTemp`) statt des Blockers; Namen und Zusicherungen bleiben. CHANGELOG unter Fixed.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: CHANGELOG (Fixed)
