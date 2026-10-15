@@ -31,8 +31,9 @@ Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe, mit der Roadmap-I
 (**pro Task** | **am Ende** — wann der Reviewer läuft: vor jedem Task-Commit, oder einmal über den
 ganzen Branch-Diff; `am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks) und `Heavy:`.
 
-**`Heavy: none | linux-full | scenario <flags> | windows`** sagt, welche schwere Suite der
-Abschluss braucht: keine, den Linux-Stack auf einer Pool-VM (`run.sh integration`/`e2e`), einen
+**`Heavy: none | linux-full | scenario <flags> | windows`** sagt, welche schwere Suite das
+Vorhaben braucht (sie läuft im Sammellauf über `main`, `/feature-build` §4): keine, den
+Linux-Stack auf einer Pool-VM (`run.sh integration`/`e2e`), einen
 Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first) oder die
 Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen.
 

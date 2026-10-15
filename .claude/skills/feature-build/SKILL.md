@@ -62,22 +62,26 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
 
 1. Kopf steht auf `bereit` (setzt `task-close.sh` mit der letzten Task); sonst `ledger.sh status … bereit` als
    `chore(ledger)`. `roadmap.py status R-nnnn bereit`.
-2. `bash WT/scripts/dev/verify.sh <komp> --strict` je berührter Komponente; lange Läufe im tmux-Fenster
-   (CLAUDE.md §2).
-3. Heavy am realen Diff entscheiden (`Heavy:` im Kopf, CLAUDE.md §5): `none` → nichts; `linux-full` → `/test`;
-   `scenario <flags>` → Kevin fragen. Danach `python3 scripts/vm/vm.py list`.
-4. `tester` über `git -C WT diff main...`, `reviewer` über den Branch (Task-ID `branch`), bei Risikopfad
-   `security`. Echte Funde: Task ins Ledger, Kopf und Roadmap zurück auf `aktiv`, bauen wie in 3.
+2. Keine volle Komponenten-Suite lokal: die fährt die PR-CI (CLAUDE.md §5).
+3. Heavy am realen Diff entscheiden (`Heavy:` im Kopf, CLAUDE.md §5): `none` → nichts. Sonst kein Lauf hier, das
+   Vorhaben geht in den Sammellauf (`/test all` über `main`); der PR-Text sagt „Heavy: Sammellauf“, `scenario
+   <flags>` bleiben ask-first. Fällig ist er, sobald nach dem letzten grünen Lauf (`tasks/private/history.csv`, Zeile
+   `all,-,pass`) drei Vorhaben mit `Heavy:` ≠ `none` gemergt sind, das erste davon sieben Tage alt ist oder ein
+   Release ansteht; die Session startet ihn dann selbst. Rot → Verursacher über die Merge-Commits suchen, REG-Zeile,
+   Revert, wenn er andere blockiert; bis er wieder grün ist, merged sie kein weiteres Vorhaben mit `Heavy:` ≠ `none`.
+4. `tester` über `git -C WT diff main...` und `reviewer` über den Branch (Task-ID `branch`) parallel starten (der
+   `tester` probt in seinem eigenen Probe-Worktree), bei Risikopfad `security`. Echte Funde: Task ins Ledger, Kopf und
+   Roadmap zurück auf `aktiv`, bauen wie in 3.
 5. Basis nachziehen: `git -C WT fetch origin`; scheitert `git -C WT merge-base --is-ancestor origin/main HEAD`
    (etwa nach dem Merge des parallelen Vorhabens): `git -C WT merge origin/main`, das Union-Ergebnis in
-   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften); die Suite dazu fährt die Kombinationsprüfung in
-   6 auf demselben Baum. Kopf `erledigt` als `chore(ledger)`; `git -C WT push -u origin feature/<slug>`;
+   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften); die Suiten dazu fährt die PR-CI. Kopf `erledigt`
+   als `chore(ledger)`; `git -C WT push -u origin feature/<slug>`;
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, die Urteile von `tester`
    und `reviewer` dazu; `gh pr create --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`;
    `roadmap.py status R-nnnn pr --pr "#<n>"`.
 6. `gh pr checks <n> --watch --fail-fast`. Produkt-PR, CI im ersten Anlauf grün → Basis wie in 5 prüfen (zieht sie
-   nach: Push, neue CI) → Kombinationsprüfung (CLAUDE.md §2), dann `gh pr merge <n> --merge` (ohne
-   `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch danach mit `git push origin --delete
+   nach: Push, neue CI abwarten; die PR-CI testet dann `main` + PR, CLAUDE.md §2), dann `gh pr merge <n> --merge`
+   (ohne `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch danach mit `git push origin --delete
    feature/<slug>`). Harness-PR oder rote CI → Übergabe an Kevin.
 7. Nach dem Merge den `ci.yml`-Lauf des Merge-Commits beobachten: `gh run list --workflow ci.yml --commit
    <merge-sha> -L 1` wiederholen, bis er erscheint, dann `gh run watch <id> --exit-status`; rot → nichts weiter

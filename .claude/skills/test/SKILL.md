@@ -26,9 +26,10 @@ about the suites.
 | `weekly`   | same for `heavy.sh weekly` |
 | `status`   | read the newest weekly report and quote its first line |
 
-**`all`, `capstone` and `weekly` start only on Kevin's explicit ask — and then the session
-runs them SUPERVISED, never fire-and-forget (Kevin, 2026-09-15).** Nothing here starts by
-itself (CLAUDE.md §2): no timer, no cron, no "while I'm at it". But once Kevin says
+**`capstone` and `weekly` start only on Kevin's explicit ask, `all` also as the due Sammellauf
+(`/feature-build` §4, Kevin 2026-10-15) — and then the session runs them SUPERVISED, never
+fire-and-forget (Kevin, 2026-09-15).** Nothing here starts by itself (CLAUDE.md §2): no
+timer, no cron, no "while I'm at it". But once Kevin says
 `/test weekly`, the tmux line is not handed back to him — the session does this:
 
 1. Pre-flight, and stop on any red: `python3 scripts/vm/vm.py list` shows nothing of another
