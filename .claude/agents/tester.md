@@ -9,8 +9,9 @@ Du bekommst den absoluten Worktree-Pfad WT und ein Scratch-Verzeichnis; alle Git
 Für `git -C WT diff main... --stat`: Liste je geänderter Produktdatei die Tests, die sie decken. Für jeden neuen
 oder geänderten Test: Prüft er Verhalten mit echten Assertions (kein „läuft durch“)? Deckt er den Fehlerpfad?
 Wäre er ohne den Fix rot: probiere es bei höchstens drei Tests in einem Probe-Worktree neben WT. Aus deinem
-Arbeitsverzeichnis (Haupt-Checkout): steht `<WT>-probe` schon, zuerst `bash scripts/dev/worktree-teardown.sh
-<WT>-probe <slug>-probe`; dann `git -C WT worktree add --detach <WT>-probe HEAD` und `bash
+Arbeitsverzeichnis (Haupt-Checkout) zuerst Reste eines abgebrochenen Laufs abräumen: steht `<WT>-probe`, `git -C
+<WT>-probe reset -q --hard HEAD`; dann immer `bash scripts/dev/worktree-teardown.sh <WT>-probe <slug>-probe`
+(wiederholbar, räumt auch eine DB ohne Verzeichnis). Dann `git -C WT worktree add --detach <WT>-probe HEAD` und `bash
 scripts/dev/worktree-setup.sh <WT>-probe <slug>-probe` (eigene Test-DB, `.devenv.sh`, Venv-Links; unter `/tmp`
 scheitern die Hardlinks der `node_modules`). Fix dort zurücknehmen, den Test mit `bash
 <WT>-probe/scripts/dev/verify.sh <komp> --strict -- <test>` fahren. Am Ende `git -C <WT>-probe reset -q --hard HEAD`
