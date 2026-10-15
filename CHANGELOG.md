@@ -9,6 +9,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Statuszeile der Geraete-Identitaet (R-0240):** Ist das Geraet registriert, zeigen die
+  Einstellungen im Modus `server` den Namen und den Ablauf des Geraete-Zertifikats, etwa „Registriert als
+  admin bis 13.01.2027“. Bleiben 14 Tage oder weniger, sagt die Zeile dazu, dass die automatische Erneuerung
+  beim Anmelden bisher nicht gelungen ist; ein abgelaufenes oder nicht lesbares Zertifikat meldet sie als
+  Warnung mit dem Weg ueber Zuruecksetzen und neuen Token. Dafuer liefert der neue Command `device_identity`
+  Name (CN) und Ablauf.
 - **Geraete einzeln widerrufen (R-0224):** Ein Admin listet die Geraete eines Benutzers mit
   `GET /api/users/{id}/devices` und widerruft eines mit `DELETE /api/users/{id}/devices/{device_id}`; die uebrigen
   Geraete des Benutzers bleiben. Ein Geraet widerruft sich selbst mit `POST /api/enrollment/self/revoke`, ausgewiesen
