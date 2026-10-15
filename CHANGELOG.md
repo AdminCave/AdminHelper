@@ -965,7 +965,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `tmux` und wacht mit einem Hintergrund-Waechter bis zum Report, statt Kevin die tmux-Zeile
   zurueckzugeben; Verdict-Zeile, Summary-Zeilen, VM-Liste und die Roadmap-Zeilen des Laufs
   kommen als Meldung. Start und Abbruch bleiben Kevins Zuruf; die Ebene `all` startet die Session seit
-  2026-10-15 ausserdem selbst als faelligen Sammellauf (siehe unten).
+  2026-10-15 ausserdem selbst als faelligen Sammellauf (siehe „Schwere Suite als Sammellauf“).
 
 - **Audit-Hygiene:** `audit.yml` installiert `pip-audit` und `cargo-audit` jetzt gepinnt
   (2.10.1 bzw. 0.22.2, wie `govulncheck@v1.7.0` seit dem letzten Update-Lauf) — ein Job

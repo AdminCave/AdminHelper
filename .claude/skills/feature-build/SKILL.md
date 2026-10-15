@@ -97,7 +97,8 @@ jedem Merge (§4.7) und startet ihn dann selbst (Kevin, 2026-10-15): Haupt-Check
 origin`, `git merge --ff-only origin/main`, dann `/test all`. Rot → Verursacher über die Merge-Commits suchen,
 REG-Zeile; bis er wieder grün ist, merged die Session kein weiteres Vorhaben mit `Heavy: linux-full`, außer dem Fix
 oder Revert des roten Schritts und SEC auf Kevins Wort. Ein REG-Ledger aus dem Sammellauf beweist seinen Fix vor
-dem Merge mit dem `--step`-Lauf aus seinem `Heavy:`.
+dem Merge mit dem `--step`-Lauf aus seinem `Heavy:`. `UNVERIFIED` (Infrastruktur) ist weder grün noch rot: melden,
+keine Merge-Sperre, und die Session startet ihn nicht von selbst neu; die Wiederholung ist Kevins Wort (`/test`).
 
 ## Recovery
 

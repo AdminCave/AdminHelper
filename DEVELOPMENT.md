@@ -1237,8 +1237,8 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 Der schwere Tier laeuft nicht mehr „wenn man daran denkt", sondern als ein Lauf mit
 Report und Historie. Kevin startet ihn von Hand in `tmux` oder mit `/test weekly`; die Ebene
 `all` startet die Claude-Session ausserdem selbst als faelligen Sammellauf ueber `main`
-(`/feature-build` §5, seit 2026-10-15). Die Session startet denselben tmux-Lauf, ihn
-bis zum Report ueberwacht und das Ergebnis samt VM-Liste meldet (Regeln im `/test`-Skill):
+(`/feature-build` §5, seit 2026-10-15). Die Session startet denselben tmux-Lauf, ueberwacht
+ihn bis zum Report und meldet das Ergebnis samt VM-Liste (Regeln im `/test`-Skill):
 
 ```bash
 tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
