@@ -63,18 +63,18 @@ Merge, Datenverlust, Leak), als eigene Task, nie nebenbei. Funde an der Harness 
 ## 5. Tests sind Beweis
 - Je Task nur das `Verify:` der Task mit gezieltem Testpfad (`bash scripts/dev/verify.sh <komp> --strict -- <test>`;
   `verify.sh` sourct `.devenv.sh` selbst, `run.sh` nicht). Die Komponenten-Suiten fährt nur die PR-CI;
-  `bash scripts/tests/run.sh quick --strict` als Gesamt-Schnellcheck. Verify-Zeilen in Flag-Form ohne Env-Präfix.
+  `bash scripts/tests/run.sh quick --strict` lokal vor einem Release. Verify-Zeilen in Flag-Form ohne Env-Präfix.
 - Die Summary-Zeile (`N passed, M failed, K skipped`) ist die Evidenz und steht neben jedem `[x]`. Ein SKIP, ein
   fehlendes Werkzeug, ein abgebrochener Lauf oder ein Befehl ohne Ausgabe ist rot. Erst rot, dann grün ist `flaky`.
 - Ein Server-Lauf zur Zeit je Test-DB; jeder Worktree hat seine eigene (§8). Revert-Proben nie im Bau-Worktree,
   sondern in einem eigenen.
 - Berührt der Branch-Diff `apps/server`-API, Gateway, CA-Issuer, Agent, Desktop-Tunnel/Enrollment, Compose,
-  Install/Update, FRP oder PKI: schwere Suite als Sammellauf über `main` (`/test all`, die Session startet ihn,
-  wenn er fällig ist; Regeln in `/feature-build` §4, Kevin 2026-10-15); Multibox nur nach Kevins Ja. VM-Läufe
-  dürfen parallel laufen, je Vorhaben in seiner Lane; `vm.py` prüft vor jedem Klon den RAM des Hosts. Im Pool
-  `adminhelper-ci` darf die Session VMs klonen, baken und zerstören (Kevin, 2026-09-08); danach `python3
-  scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler, kein Detail. Proxmox-Zugang: Umgebung >
-  `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) > `settings.local.json`.
+  Install/Update, FRP oder PKI: `linux-full` im Sammellauf über `main` (`/test all`; ob er fällig ist, prüft die
+  Session beim Start und nach jedem Merge und startet ihn selbst, `/feature-build` §5, Kevin 2026-10-15), `scenario`
+  und `windows` vor dem Merge, Multibox nur nach Kevins Ja. VM-Läufe dürfen parallel laufen, je Vorhaben in seiner
+  Lane; `vm.py` prüft vor jedem Klon den RAM des Hosts. Im Pool `adminhelper-ci` darf die Session VMs klonen, baken
+  und zerstören (Kevin, 2026-09-08); danach `python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler.
+  Proxmox-Zugang: Umgebung > `~/.config/adminhelper/pve.env` (0600, gelesen, nie gesourct) > `settings.local.json`.
 - Neue Funktion ohne Test ist nicht fertig: Bug → erst der rote Test, dann grün; Feature → Test dazu; Refactor →
   Suite grün vorher und nachher. Ausnahmen mit Begründung: triviale Getter, Framework-Wiring, reines Plattform-I/O,
   echte SSH/RDP/Ansible-Ausführung. Plattform-Code wird auf der Plattform verifiziert und das Ergebnis genannt.

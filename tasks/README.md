@@ -21,7 +21,7 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 | `geplant` | von `/feature-plan` erstellt. Die Freigabe ist Kevins `roadmap.py approve` für die Roadmap-Zeile; erst dann setzt `/feature-build` den Kopf im Worktree auf `aktiv` (CLAUDE.md §4). |
 | `freigegeben` | Form älterer Ledger, deren Kopf die Freigabe trug; `/feature-build` behandelt sie wie `geplant` mit freigegebener Roadmap-Zeile. |
 | `aktiv` | wird gebaut, in einem eigenen Worktree — **nie zwei Bauer auf demselben Ledger**. |
-| `bereit` | alle Tasks sind zu; Abschluss (Suite, `tester`, Branch-Review) und PR stehen aus. |
+| `bereit` | alle Tasks sind zu; Abschluss (`tester`, Branch-Review) und PR stehen aus. |
 | `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. |
 | `blockiert` | wartet auf Entscheidung/Abhängigkeit (`[?]`-Punkte) oder ist bewusst nicht für `/feature-build` (z. B. Release-Handarbeit). |
 
@@ -32,7 +32,8 @@ Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe, mit der Roadmap-I
 ganzen Branch-Diff; `am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks) und `Heavy:`.
 
 **`Heavy: none | linux-full | scenario <flags> | windows`** sagt, welche schwere Suite das
-Vorhaben braucht (sie läuft im Sammellauf über `main`, `/feature-build` §4): keine, den
+Vorhaben braucht (`linux-full` im Sammellauf über `main`, `scenario` und `windows` vor dem Merge;
+`/feature-build` §3–§5): keine, den
 Linux-Stack auf einer Pool-VM (`run.sh integration`/`e2e`), einen
 Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first) oder die
 Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen.

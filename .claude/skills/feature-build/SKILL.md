@@ -63,12 +63,10 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
 1. Kopf steht auf `bereit` (setzt `task-close.sh` mit der letzten Task); sonst `ledger.sh status … bereit` als
    `chore(ledger)`. `roadmap.py status R-nnnn bereit`.
 2. Keine volle Komponenten-Suite lokal: die fährt die PR-CI (CLAUDE.md §5).
-3. Heavy am realen Diff entscheiden (`Heavy:` im Kopf, CLAUDE.md §5): `none` → nichts. Sonst kein Lauf hier, das
-   Vorhaben geht in den Sammellauf (`/test all` über `main`); der PR-Text sagt „Heavy: Sammellauf“, `scenario
-   <flags>` bleiben ask-first. Fällig ist er, sobald nach dem letzten grünen Lauf (`tasks/private/history.csv`, Zeile
-   `all,-,pass`) drei Vorhaben mit `Heavy:` ≠ `none` gemergt sind, das erste davon sieben Tage alt ist oder ein
-   Release ansteht; die Session startet ihn dann selbst. Rot → Verursacher über die Merge-Commits suchen, REG-Zeile,
-   Revert, wenn er andere blockiert; bis er wieder grün ist, merged sie kein weiteres Vorhaben mit `Heavy:` ≠ `none`.
+3. Heavy am realen Diff entscheiden (`Heavy:` im Kopf, CLAUDE.md §5): `none` → nichts; `linux-full` → kein Lauf
+   hier, das Vorhaben geht in den Sammellauf (§5), der PR-Text sagt „Heavy: Sammellauf“ (Ausnahme: der Fix eines
+   REG-Ledgers aus dem Sammellauf, §5); `scenario <flags>` und `windows` → vor dem Merge, Kevin fragen. Danach
+   `python3 scripts/vm/vm.py list`.
 4. `tester` über `git -C WT diff main...` und `reviewer` über den Branch (Task-ID `branch`) parallel starten (der
    `tester` probt in seinem eigenen Probe-Worktree), bei Risikopfad `security`. Echte Funde: Task ins Ledger, Kopf und
    Roadmap zurück auf `aktiv`, bauen wie in 3.
@@ -88,7 +86,18 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
    mergen, Revert nach CLAUDE.md §2. Dann
    `python3 scripts/dev/roadmap.py sync`, `git -C tasks/private push`,
    `bash scripts/dev/worktree-teardown.sh ../AdminHelper-<slug> <slug>`, `git worktree list` und
-   `python3 scripts/vm/vm.py list` sauber.
+   `python3 scripts/vm/vm.py list` sauber. Dann §5: ist der Sammellauf jetzt fällig?
+
+## 5. Sammellauf (schwere Suite über `main`)
+
+Fällig, sobald seit dem letzten grünen Lauf (`tasks/private/history.csv`, letzte Zeile mit `all,-,pass`, ihr
+Commit `C`) drei Vorhaben mit `Heavy: linux-full` auf `main` gemergt sind (`git log --merges C..origin/main`, deren
+Ledger), das erste davon sieben Tage alt ist oder ein Release ansteht. Die Session prüft das beim Start und nach
+jedem Merge (§4.7) und startet ihn dann selbst (Kevin, 2026-10-15): Haupt-Checkout sauber auf `main`, `git fetch
+origin`, `git merge --ff-only origin/main`, dann `/test all`. Rot → Verursacher über die Merge-Commits suchen,
+REG-Zeile; bis er wieder grün ist, merged die Session kein weiteres Vorhaben mit `Heavy: linux-full`, außer dem Fix
+oder Revert des roten Schritts und SEC auf Kevins Wort. Ein REG-Ledger aus dem Sammellauf beweist seinen Fix vor
+dem Merge mit dem `--step`-Lauf aus seinem `Heavy:`.
 
 ## Recovery
 

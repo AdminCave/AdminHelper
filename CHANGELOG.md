@@ -590,6 +590,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Schwere Suite als Sammellauf, PR-CI statt lokaler Wiederholung:** `Heavy: linux-full` laeuft nicht mehr je
+  Vorhaben vor dem Merge, sondern als Sammellauf `/test all` ueber `main`, faellig nach drei solchen Vorhaben,
+  sieben Tagen oder vor einem Release; rot sperrt weitere Merges mit Heavy bis auf Fix, Revert und SEC.
+  `scenario` und `windows` bleiben vor dem Merge. Die lokale Komponenten-Suite vor dem PR und die
+  Kombinationspruefung entfallen: die PR-CI testet `main` + PR, sobald der Branch `origin/main` enthaelt
+  (`/feature-build` §4–§5, CLAUDE.md §2 und §5).
 - **Entwicklungsablauf (Team v3, Dev-Werkzeuge):** eine Claude-Code-Session mit Sub-Agenten (`.claude/agents/`:
   `builder`, `reviewer`, `tester`, `security`) statt Chef, Worker und Loop; die Regeln stehen in `CLAUDE.md`.
   `AUTONOMOUS.md` und der Skill `feature-review` entfallen, das Ledger-Format steht in `tasks/README.md`.
@@ -958,7 +964,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Lange Laeufe ueberwacht:** `/test weekly|all|capstone` startet `heavy.sh` jetzt selbst in
   `tmux` und wacht mit einem Hintergrund-Waechter bis zum Report, statt Kevin die tmux-Zeile
   zurueckzugeben; Verdict-Zeile, Summary-Zeilen, VM-Liste und die Roadmap-Zeilen des Laufs
-  kommen als Meldung. Start und Abbruch bleiben Kevins Zuruf, nichts startet von selbst.
+  kommen als Meldung. Start und Abbruch bleiben Kevins Zuruf; die Ebene `all` startet die Session seit
+  2026-10-15 ausserdem selbst als faelligen Sammellauf (siehe unten).
 
 - **Audit-Hygiene:** `audit.yml` installiert `pip-audit` und `cargo-audit` jetzt gepinnt
   (2.10.1 bzw. 0.22.2, wie `govulncheck@v1.7.0` seit dem letzten Update-Lauf) — ein Job
