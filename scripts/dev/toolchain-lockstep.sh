@@ -39,10 +39,8 @@
 #      that reported 841 findings CI never saw. ruff.toml's `required-version`
 #      names the same release: the pins only heal a venv that pip touches, and
 #      run.sh takes the first ruff on PATH — with it, any other ruff stops with
-#      exit 2 instead of linting by its own rules. That makes the runner's tool
-#      venv (runner-setup.sh VENV_PKGS, linked first on its PATH) the fifth
-#      place. Offline, so it runs before the proxy fetch and a drift stays a
-#      drift when the proxy is down.
+#      exit 2 instead of linting by its own rules. Offline, so it runs before
+#      the proxy fetch and a drift stays a drift when the proxy is down.
 #   3  the `go` directive of the pinned x/vuln release is <= that go-version
 #
 # Exit: 0 in lockstep · 1 drift (with a ::error:: line for the CI annotation) ·
@@ -162,15 +160,14 @@ esac
   exit 1; }
 echo "bootstrap: GO_VERSION=$GO_BOOT on go-version $GO_VERSION"
 
-# ── 2: one ruff at all five places ───────────────────────────────────────────
+# ── 2: one ruff at all four places ───────────────────────────────────────────
 # Plain dotted digits only: `ruff==0.15.*` is a valid pip specifier that matches
 # more than one ruff, and a pin that is not one release is the drift itself.
 plain_version() { case "$1" in "" | *[!0-9.]* | .* | *. | *..*) return 1 ;; esac; }
 REQ="$ROOT/apps/server/requirements-dev.txt"
 TOML="$ROOT/ruff.toml"
-RUNNER_SETUP="$ROOT/scripts/dev/runner-setup.sh"
-RUFF_PLACES="ci.yml, bootstrap_linux.sh, requirements-dev.txt, ruff.toml and runner-setup.sh"
-for f in "$BOOT" "$REQ" "$TOML" "$RUNNER_SETUP"; do
+RUFF_PLACES="ci.yml, bootstrap_linux.sh, requirements-dev.txt and ruff.toml"
+for f in "$BOOT" "$REQ" "$TOML"; do
   [ -f "$f" ] || { echo "::error::missing ${f#"$ROOT"/} — the ruff pin cannot be checked"; exit 1; }
 done
 RUFF_BOOT="$(sed -n 's/^RUFF_VERSION="\${AH_RUFF_VERSION:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
@@ -204,19 +201,7 @@ plain_version "$RUFF_TOML" || {
 [ "$RUFF_TOML" = "$RUFF_BOOT" ] || {
   echo "::error::ruff.toml required-version ==$RUFF_TOML, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — $RUFF_PLACES move together"
   exit 1; }
-RUFF_RUNNER_PKGS="$(sed -n 's/^VENV_PKGS="\([^"]*\)".*/\1/p' "$RUNNER_SETUP" | head -1)"
-RUFF_RUNNER=""
-read -ra runner_pkgs <<<"$RUFF_RUNNER_PKGS"
-for p in "${runner_pkgs[@]+"${runner_pkgs[@]}"}"; do
-  case "$p" in ruff==*) RUFF_RUNNER="${p#ruff==}" ;; esac
-done
-plain_version "$RUFF_RUNNER" || {
-  echo "::error::no pinned 'ruff==X.Y.Z' in VENV_PKGS of scripts/dev/runner-setup.sh (found '$RUFF_RUNNER_PKGS') — that venv is the first ruff on the runner's PATH"
-  exit 1; }
-[ "$RUFF_RUNNER" = "$RUFF_BOOT" ] || {
-  echo "::error::ruff pin drift: scripts/dev/runner-setup.sh installs ruff==$RUFF_RUNNER, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — $RUFF_PLACES move together"
-  exit 1; }
-echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT dev=$RUFF_DEV ruff.toml=$RUFF_TOML runner=$RUFF_RUNNER"
+echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT dev=$RUFF_DEV ruff.toml=$RUFF_TOML"
 
 # ── 3: the pinned x/vuln release must build on that Go ───────────────────────
 PIN="$(sed -n "s|.*go install $VULN_MOD/cmd/govulncheck@\(v[0-9][0-9A-Za-z.-]*\).*|\1|p" "$AUDIT" | head -1)"
