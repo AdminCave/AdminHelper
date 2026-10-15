@@ -69,16 +69,16 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "1.26"
-          # The runner image's toolcache holds an older patch (20261004: 1.26.8), and
-          # the stdlib fixes the agent needs came with 1.26.9. Without check-latest,
+          go-version: "1.27"
+          # The runner image's toolcache can lag behind the newest patch, and the
+          # stdlib fixes the agent needs ship in patch releases. Without check-latest,
           # setup-go takes the cached one.
           check-latest: true
           cache-dependency-path: apps/agent/go.sum
       - name: Install govulncheck
         # Pinned, not @latest: setup-go defaults to GOTOOLCHAIN=local, so `@latest`
         # stops building the moment upstream's go directive outruns our toolchain.
-        # v1.9.0 declares `go 1.26.0` and builds on Go 1.26 — the version release.yml
+        # v1.9.0 declares `go 1.26.0` and builds on Go 1.27 — the version release.yml
         # ships the agent with, so the scan keeps reporting against the stdlib we
         # actually publish. Raise this together with go-version, never on its own.
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
