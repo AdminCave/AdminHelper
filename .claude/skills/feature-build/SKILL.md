@@ -70,8 +70,8 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
    `security`. Echte Funde: Task ins Ledger, Kopf und Roadmap zurück auf `aktiv`, bauen wie in 3.
 5. Basis nachziehen: `git -C WT fetch origin`; scheitert `git -C WT merge-base --is-ancestor origin/main HEAD`
    (etwa nach dem Merge des parallelen Vorhabens): `git -C WT merge origin/main`, das Union-Ergebnis in
-   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften), Schritt 2 erneut. Kopf `erledigt` als
-   `chore(ledger)`; `git -C WT push -u origin feature/<slug>`;
+   `CHANGELOG.md` von Hand prüfen (keine doppelten Überschriften); die Suite dazu fährt die Kombinationsprüfung in
+   6 auf demselben Baum. Kopf `erledigt` als `chore(ledger)`; `git -C WT push -u origin feature/<slug>`;
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, die Urteile von `tester`
    und `reviewer` dazu; `gh pr create --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`;
    `roadmap.py status R-nnnn pr --pr "#<n>"`.
