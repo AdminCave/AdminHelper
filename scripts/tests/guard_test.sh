@@ -58,16 +58,25 @@ expect deny Bash "bash -c 'rm -rf /tmp/*'"
 GUARD_TMPDIR=/scratch/t expect deny Bash 'rm -rf /scratch/t/x*'
 expect deny Bash 'pushd /tmp && rm -rf tmp.*'
 expect deny Bash 'rm -rf /t*/claude-1000/*'
+# A list reaches the delete through a pipe, a loop, a file or the arguments.
+expect deny Bash 'ls -d /tmp/tmp.* | while read d; do rm -rf "$d"; done'
+expect deny Bash "printf '%s\n' /tmp/tmp.* | sort | xargs rm -rf"
+expect deny Bash 'cd /tmp && ls tmp.* | head | xargs rm -rf'
+expect deny Bash 'set -- /tmp/tmp.*; rm -rf "$@"'
+expect deny Bash 'ls -d /tmp/tmp.* > list; xargs rm -rf < list'
+expect deny Bash 'while read d; do rm -rf "$d"; done < <(ls -d /tmp/tmp.*)'
+expect deny Bash 'ls /tmp/tmp.* | tee x | xargs rm -rf'
+expect deny Bash 'rm -rf $(ls -d /tmp/tmp.*)'
+# The price: a delete and a temp glob on one line are refused together.
+expect deny Bash 'rm -rf build && ls /tmp/claude-*'
 expect pass Bash 'rm -rf /tmp/claude-1000/proj/session/scratchpad/work'
 expect pass Bash 'rm -f build/*.o'
 expect pass Bash 'ls /tmp/claude-*'
 expect pass Bash 'rm -rf /scratch/t/x*'
 expect pass Bash 'git commit -m "never rm -rf /tmp/*"'
-# A glob counts only where it reaches the delete: not in a test bracket, not in
-# another command of the same line.
+# A test bracket is no glob, and a glob outside the temp roots counts for nothing.
 expect pass Bash 'cd /tmp/claude-1000/p/s/scratchpad/w && [ -f a.log ] && rm a.log'
 expect pass Bash 'rm -f out.txt; grep -E "passed|failed?" x.log'
-expect pass Bash 'rm -rf build && ls /tmp/claude-*'
 
 echo "── rule 2: ways past the git hooks"
 expect deny Bash 'git commit --no-verify -m wip'

@@ -5,12 +5,14 @@
 #
 # harness-guard.sh — PreToolUse hook for Bash calls. Two rules on the command
 # text, in every session:
-#   1. No glob delete in a shared temp directory (R-0098): a deleting command (rm,
-#      rmdir, unlink, shred, also behind xargs) with a glob below /tmp, /var/tmp,
-#      /dev/shm or $TMPDIR among its words, in what pipes into it or in the head
-#      of a for loop, or a relative glob there after a cd/pushd into one; and a
-#      deleting find that starts there. On 2026-09-25 a reviewer cleaned up with
-#      `rm -rf /tmp/tmp.*` and took every other session's fixtures along.
+#   1. No glob delete in a shared temp directory (R-0098): a command line that
+#      deletes (rm, rmdir, unlink, shred, also behind xargs or in a loop) and
+#      carries a glob below /tmp, /var/tmp, /dev/shm or $TMPDIR anywhere — a list
+#      reaches a delete in too many ways (pipes, loops, files, `set --`) to follow
+#      it — or a relative glob after a cd/pushd into one; and a deleting find that
+#      starts there. A test bracket `[` is no glob. On 2026-09-25 a reviewer
+#      cleaned up with `rm -rf /tmp/tmp.*` and took every other session's
+#      fixtures along.
 #   2. No way past the git hooks (R-0102): `git commit --no-verify`/`-n` (also
 #      inside `-qn`), core.hooksPath set by a git option (`-c`, `--config-env`),
 #      a `git config` that writes core.hooksPath.
@@ -19,7 +21,8 @@
 # prints the documented deny JSON; the exit is 0 either way (exit 2 would block
 # every call), so an error in here fails open.
 # Best effort on the text, false alarms before misses: a quoted word or a
-# here-doc body counts like any other word. Not seen: a path built at runtime
+# here-doc body counts like any other word, and `rm -rf build && ls /tmp/x*` is
+# refused although the glob deletes nothing. Not seen: a path built at runtime
 # (`rm -rf "$D"/*`), eval, a command substitution (`…` or "$(…)"), a git alias,
 # GIT_CONFIG_* and `git am -n`.
 #
@@ -100,7 +103,7 @@ def scan(cmd, depth=0):
     names = [command(seg) for seg, _ in segs]
     deletes = [n in ("rm", "rmdir", "unlink", "shred") or (n == "find" and ("-delete" in a or any(
                os.path.basename(x) == "rm" for x in a))) for n, a in names]
-    for i, ((seg, sep), (name, args)) in enumerate(zip(segs, names)):
+    for (seg, _), (name, args), deleting in zip(segs, names, deletes):
         hit = git_bypass(args) if name == "git" else ""
         if hit:
             return "pre-commit bypass (" + hit + "): the hooks run review.sh sec --staged; fix what it reports instead (R-0102)"
@@ -111,15 +114,11 @@ def scan(cmd, depth=0):
                 return hit
         if name in ("cd", "pushd"):
             in_tmp = bool(args) and under_tmp(args[-1])
-        # Words count where they reach a delete: its own, what pipes into it, a loop head.
-        feeds = deletes[i] or (sep in ("|", "|&") and i + 1 < len(deletes) and deletes[i + 1]) \
-            or (name == "for" and any(deletes[i + 1:]))
-        if feeds:
-            globs += [w for w in seg if re.search(r"[*?\[]", w) and w not in ("[", "[[")
-                      and (under_tmp(w) or (in_tmp and not w.startswith("/")))]
-        if deletes[i] and name == "find":
+        globs += [w for w in seg if re.search(r"[*?\[]", w) and w not in ("[", "[[")
+                  and (under_tmp(w) or (in_tmp and not w.startswith("/")))]
+        if deleting and name == "find":
             globs += [a for a in args if under_tmp(a)]
-    if globs:
+    if globs and any(deletes):
         return "glob delete in a shared temp directory (" + globs[0] + "): delete your own directories by their full path, never with a glob (R-0098)"
     return ""
 

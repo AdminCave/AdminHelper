@@ -376,6 +376,23 @@ WTL="$(g worktree list --porcelain)"
   && ok "destroy --lane nu, worktree prune, so the merged branch can go; the database too" \
   || bad "nu: rc=$rc vm=$(cat "$VM_LOG") list=$WTL $(out)"
 
+echo "── teardown: a path that is not there takes no live worktree's lane ──"
+new_wt omicron
+setup ../AdminHelper-omicron omicron || bad "setup omicron: $(out)"
+mkdir -p "$HOME/.cache/ah-venv-omicron/bin"
+clear_logs
+rc=0; teardown ../AdminHelper-omicorn omicron || rc=$?
+[ "$rc" = 2 ] && [ ! -s "$VM_LOG" ] && [ ! -s "$REAP_LOG" ] && [ ! -s "$PG_LOG" ] && [ -d "$HOME/.cache/ah-venv-omicron" ] \
+  && [ -d "$WORK/AdminHelper-omicron" ] && grep -q "AdminHelper-omicron is lane omicron — nothing taken down" "$WORK/out.log" \
+  && ok "a mistyped path with the slug of a set-up worktree -> 2, nothing taken" || bad "omicron: rc=$rc vm=$(cat "$VM_LOG") $(out)"
+new_wt pi
+clear_logs
+rc=0; teardown ../AdminHelper-ip pi || rc=$?
+[ "$rc" = 2 ] && [ ! -s "$VM_LOG" ] && [ ! -s "$PG_LOG" ] && grep -q "AdminHelper-pi is lane pi" "$WORK/out.log" \
+  && ok "and one whose worktree is on feature/<slug> without a lane file -> 2" || bad "pi: rc=$rc $(out)"
+rc=0; teardown ../AdminHelper-omicron omicron || rc=$?
+[ "$rc" = 0 ] && [ ! -e "$WORK/AdminHelper-omicron" ] && ok "the right path still takes it down" || bad "omicron right: rc=$rc $(out)"
+
 echo "── teardown: an unclean worktree stays ──"
 new_wt xi
 setup ../AdminHelper-xi xi || bad "setup xi: $(out)"

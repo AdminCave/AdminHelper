@@ -74,6 +74,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Komponente: web · Dateien: scripts/dev/tool.sh
 Verify: bash scripts/dev/verify.sh server --strict
 
+### T8 — eine Desktop-Spec  [ ]
+Komponente: scripts · Dateien: apps/desktop/e2e/test/specs/login.live.js
+Verify: bash scripts/dev/verify.sh scripts --strict
+
 ### T7 — fasst ein anderes Ledger an  [ ]
 Komponente: scripts · Dateien: tasks/other.md
 Verify: bash scripts/dev/verify.sh scripts --strict
@@ -85,6 +89,7 @@ printf '.ah-out/\n' > "$FIX/.gitignore"
 printf 'echo hello\n' > "$FIX/scripts/dev/tool.sh"
 printf 'echo old\n' > "$FIX/scripts/tests/old_test.sh"
 printf 'echo keep\n' > "$FIX/scripts/tests/keep_test.sh"
+mkdir -p "$FIX/apps/desktop/e2e/test/specs"; printf 'it("x")\n' > "$FIX/apps/desktop/e2e/test/specs/login.live.js"
 printf 'echo other\n' > "$FIX/scripts/dev/other.sh"
 printf '#!/bin/sh\nexit 1\n' > "$WORK/redhook/pre-commit"; chmod +x "$WORK/redhook/pre-commit"
 git -C "$FIX" init -q -b feature/fixture
@@ -131,6 +136,12 @@ git -C "$FIX" add scripts/dev/tool.sh; edit scripts/dev/tool.sh; c fix T1 -m x
 echo "── test files ──"
 reset_repo; rm "$FIX/scripts/tests/keep_test.sh"; verdict fix T5 approve; c fix T5 --stage -m x
 [ $rc -eq 3 ] && grep -q 'keep_test.sh is a test file' <<<"$OUT" && [ "$(heads)" = 1 ] && ok "a test file deleted without a declaration -> 3" || bad "T5: rc=$rc $OUT"
+# A move to a name no runner collects is a deletion as well.
+reset_repo; git -C "$FIX" mv scripts/tests/keep_test.sh scripts/tests/keep.txt; verdict fix T5 approve
+c fix T5 -m x; [ $rc -eq 3 ] && grep -q 'keep_test.sh is a test file' <<<"$OUT" && ok "a test file renamed away -> 3" || bad "rename: rc=$rc $OUT"
+reset_repo; rm "$FIX/apps/desktop/e2e/test/specs/login.live.js"; verdict fix T8 approve; c fix T8 --stage -m x
+[ $rc -eq 3 ] && grep -q 'login.live.js is a test file' <<<"$OUT" && ok "a desktop spec under test/ deleted -> 3" || bad "spec: rc=$rc $OUT"
+reset_repo; rm "$FIX/scripts/tests/keep_test.sh"
 printf 'Test-Löschung: scripts/tests/keep_test.sh::* — selbst erteilt\n' >> "$FIX/tasks/fix.md"; c fix T5 --stage -m x
 [ $rc -eq 4 ] && grep -q 'differ from the committed ones' <<<"$OUT" && ok "a declaration that is not committed -> 4" || bad "uncommitted decl: rc=$rc $OUT"
 reset_repo; rm "$FIX/scripts/tests/old_test.sh"; verdict fix T3 approve; c fix T3 --stage -m "chore: drop old"

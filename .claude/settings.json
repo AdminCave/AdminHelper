@@ -35,7 +35,10 @@
       "Bash(bash scripts/dev/ledger.sh set-files:*)",
       "Bash(bash scripts/dev/ledger.sh status:*)",
       "Bash(bash scripts/dev/ledger.sh lint:*)",
-      "Bash(bash scripts/dev/review.sh:*)"
+      "Bash(bash scripts/dev/review.sh:*)",
+      "Bash(bash scripts/dev/worktree-setup.sh:*)",
+      "Bash(bash scripts/dev/worktree-teardown.sh:*)",
+      "Bash(python3 scripts/dev/roadmap.py:*)"
     ],
     "ask": [
       "Bash(bash scripts/vm/bootstrap_linux.sh:*)",

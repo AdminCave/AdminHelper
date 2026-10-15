@@ -51,6 +51,19 @@ if [ -d "$WT" ]; then
   if [ -f "$WT/.vm/lane" ] && [ "$(cat "$WT/.vm/lane")" != "$SLUG" ]; then
     echo "$1 is lane $(cat "$WT/.vm/lane"), not $SLUG — nothing taken down" >&2; exit 2
   fi
+else
+  # A path that is not there with the slug of a worktree that is — a typo, or a
+  # relative path from another directory — would take that worktree's lane,
+  # database and venv down and leave the worktree standing.
+  other=""
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) other="${line#worktree }" ;;
+      *) [ -d "$other" ] && { [ "$line" = "branch refs/heads/feature/$SLUG" ] \
+           || [ "$(cat "$other/.vm/lane" 2>/dev/null)" = "$SLUG" ]; } \
+           && { echo "$1 does not exist, but $other is lane $SLUG — nothing taken down" >&2; exit 2; } ;;
+    esac
+  done < <(git -C "$ROOT" worktree list --porcelain)
 fi
 
 # The database's server, read before anything goes: a URL that cannot be used must

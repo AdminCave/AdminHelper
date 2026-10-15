@@ -15,9 +15,10 @@
 #    2. manual task       `Komponente: —` is closed by hand (exit 74)
 #    3. staging           --stage stages exactly the task's `Dateien:`; no file
 #                         half staged; the index is held by git write-tree
-#    4. test files        a deleted file under tests/ or named *_test.*, test_*,
-#                         *.test.*, *.spec.* needs a committed `Test-Löschung:`
-#                         line of this task naming it (exit 3)
+#    4. test files        a deleted (or renamed) file under tests/ or test/, or
+#                         named *_test.*, test_*, *.test.*, *.spec.*, *.e2e.*,
+#                         *.live.*, needs a committed `Test-Löschung:` line of
+#                         this task naming it (exit 3)
 #    5. review.sh sec     what this public repo must never hold (exit 4)
 #    6. Verify:           the task's line, --strict; red exit 3, not runnable 74;
 #                         its summary line is the evidence
@@ -154,7 +155,7 @@ DECLARED="$(sed -n 's/^Test-Löschung:[[:space:]]*//p' <<<"$COMMITTED_TASK" | tr
   | sed -n 's/^[[:space:]]*\([^[:space:]]*\)::.*/\1/p')"
 while IFS= read -r -d '' f; do
   case "/$f" in
-    */tests/*|*/test_*|*_test.*|*.test.*|*.spec.*) ;;
+    */tests/*|*/test/*|*/test_*|*_test.*|*.test.*|*.spec.*|*.e2e.*|*.live.*) ;;
     *) continue ;;
   esac
   grep -qxF -- "$f" <<<"$DECLARED" || {
@@ -162,7 +163,8 @@ while IFS= read -r -d '' f; do
     echo "  'Test-Löschung: $f::<test> — <Grund>' line in task $ID (tasks/README.md)" >&2
     exit 3
   }
-done < <(git diff --staged --name-only --diff-filter=D -z)
+# --no-renames: a test moved to a name no runner collects is a deletion too.
+done < <(git diff --staged --name-only --no-renames --diff-filter=D -z)
 
 # ── 5. sec ───────────────────────────────────────────────────────────────────
 bash scripts/dev/review.sh sec --staged || { rc=$?; [ "$rc" = 2 ] && die "review.sh sec could not run"; exit 4; }

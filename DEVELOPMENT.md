@@ -458,7 +458,8 @@ bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage -m "feat(...): ..."
 3. **Staging:** `--stage` stagt genau die Pfade aus `Dateien:` (nie `git add -A`; Verzeichnisse werden
    abgelehnt, Loeschungen mitgenommen). Eine halb gestagte Datei bricht ab (Exit 2, mit Hinweis auf
    `ledger.sh set-files`). Der Index wird mit `git write-tree` festgehalten.
-4. **Geloeschte Testdatei** (`tests/`, `*_test.*`, `test_*`): nur mit einer committeten
+4. **Geloeschte Testdatei** (unter `tests/` oder `test/`, oder `*_test.*`, `test_*`, `*.test.*`, `*.spec.*`,
+   `*.e2e.*`, `*.live.*`; eine Umbenennung zaehlt als Loeschung): nur mit einer committeten
    `Test-Löschung:`-Zeile dieser Task (sonst Exit 3; Format in `tasks/README.md`).
 5. **`review.sh sec --staged`:** was nie in dieses oeffentliche Repo darf (Exit 4).
 6. **Verify:** die `Verify:`-Zeile der Task, wie sie dasteht (`verify.sh <komp> --strict [-- <args>]`
