@@ -62,7 +62,7 @@ printf '# changelog\n' > "$FIX/CHANGELOG.md"
 git -C "$FIX" init -q
 git -C "$FIX" config user.email test@example.invalid
 git -C "$FIX" config user.name "Fixture"
-# A global core.autocrlf would strip the CRLF case before diff-scan sees it.
+# A global core.autocrlf would change the bytes the checks read.
 git -C "$FIX" config core.autocrlf false
 git -C "$FIX" add -A
 git -C "$FIX" commit -qm "fixture"
