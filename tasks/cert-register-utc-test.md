@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Migrationstest des Zertifikats-Registers trennt now() von timezone('UTC', now()) — Task-Ledger
-Status: geplant · Branch: feature/cert-register-utc-test · Review: pro Task
+Status: aktiv · Branch: feature/cert-register-utc-test · Review: pro Task
 Spec: Roadmap R-0289
 Heavy: none — nur ein Server-Test, kein Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
