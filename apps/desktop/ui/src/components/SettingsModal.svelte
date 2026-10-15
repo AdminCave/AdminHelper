@@ -14,11 +14,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     saveSettings,
     serverLogout,
   } from '$lib/stores/settings';
-  import { t } from '$lib/i18n';
+  import { t, currentLocale } from '$lib/i18n';
   import {
     resetServerCertPin,
     resetDeviceIdentity,
     isDeviceEnrolled,
+    deviceIdentity,
     enrollWithToken,
     exportBrowserP12,
     generateDiagnostics,
@@ -33,6 +34,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     getIntervalMinutes,
   } from '$lib/models/settings';
   import type {
+    DeviceIdentity,
     Settings,
     SyncMode,
     RdpWindowMode,
@@ -56,6 +58,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let osNotifications = $state(false);
   let pinResetMsgKey = $state('');
   let deviceEnrolled = $state(false);
+  // null: no identity, so no line. 'unreadable': the stored certificate does not parse.
+  let deviceIdentityState = $state<DeviceIdentity | 'unreadable' | null>(null);
   let deviceResetMsgKey = $state('');
   // The last reset deleted the identity here only: the server did not revoke it.
   let deviceResetLocal = $state(false);
@@ -94,6 +98,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     diagMsg = '';
     diagBusy = false;
     void refreshDeviceEnrolled();
+    void refreshDeviceIdentity();
   });
 
   async function refreshDeviceEnrolled(): Promise<void> {
@@ -103,6 +108,41 @@ SPDX-License-Identifier: GPL-3.0-or-later
       deviceEnrolled = false;
     }
   }
+
+  async function refreshDeviceIdentity(): Promise<void> {
+    try {
+      deviceIdentityState = await deviceIdentity();
+    } catch {
+      // A fixed line, never the command's error: that text is for the log.
+      deviceIdentityState = 'unreadable';
+    }
+  }
+
+  // Renewal runs at sign-in from half the lifetime on (RENEWAL_FRACTION in
+  // enrollment.rs): a leaf this close to its end has been failing to renew for weeks.
+  const IDENTITY_SOON_MS = 14 * 24 * 60 * 60 * 1000;
+
+  let identityLine = $derived.by(() => {
+    if (deviceIdentityState === null) return null;
+    if (deviceIdentityState === 'unreadable') return { status: 'unreadable' as const };
+    const notAfter = new Date(deviceIdentityState.notAfter);
+    if (Number.isNaN(notAfter.getTime())) return { status: 'unreadable' as const };
+    const left = notAfter.getTime() - Date.now();
+    return {
+      status:
+        left < 0
+          ? ('expired' as const)
+          : left <= IDENTITY_SOON_MS
+            ? ('soon' as const)
+            : ('valid' as const),
+      name: deviceIdentityState.name,
+      date: notAfter.toLocaleDateString(currentLocale(), {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }),
+    };
+  });
 
   async function onResetPin(): Promise<void> {
     const target = (mode === 'sync' ? url : serverUrl).trim();
@@ -137,6 +177,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       const outcome = await resetDeviceIdentity(target);
       deviceEnrolled = false;
+      void refreshDeviceIdentity();
       enrollMsg = '';
       deviceResetLocal = outcome === 'localOnly';
       deviceResetMsgKey = 'settings.resetDeviceId.done';
@@ -156,6 +197,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await enrollWithToken(sess.serverUrl, token, allowSelfSignedCerts);
       deviceEnrolled = true;
+      void refreshDeviceIdentity();
       enrollToken = '';
       enrollMsg = $t('settings.enroll.done');
     } catch (err) {
@@ -403,6 +445,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
            in, and an enrollment then had no session URL and no tunnel to start. -->
       {#if mode === 'server' && $session}
         {#if deviceEnrolled}
+          <!-- One inline sentence, not a flex row: a gap would tear the comma off the name. -->
+          {#if identityLine}
+            <div
+              class="sm-identity-row"
+              data-msg="device-identity"
+              data-state={identityLine.status}
+            >
+              {#if identityLine.status === 'unreadable'}
+                {$t('settings.deviceIdentity.unreadable')}
+              {:else if identityLine.status === 'expired'}
+                {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>,
+                {$t('settings.deviceIdentity.expired', { date: identityLine.date })}
+              {:else}
+                {$t('settings.deviceIdentity.enrolledAs')} <strong>{identityLine.name}</strong>
+                {$t('settings.deviceIdentity.until', {
+                  date: identityLine.date,
+                })}{#if identityLine.status === 'soon'},
+                  <span class="sm-identity-soon">{$t('settings.deviceIdentity.expiresSoon')}</span
+                  >{/if}
+              {/if}
+            </div>
+          {/if}
           <div class="sm-reset-pin">
             <button
               class="btn ghost small danger"
@@ -629,6 +693,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     align-items: center;
     gap: var(--sp-3);
     padding: var(--sp-2) 0;
+  }
+  .sm-identity-row {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-top: var(--sp-2);
+  }
+  .sm-identity-row strong {
+    color: var(--text);
+  }
+  .sm-identity-row[data-state='expired'],
+  .sm-identity-row[data-state='unreadable'],
+  .sm-identity-soon {
+    color: var(--warning);
   }
   .sm-reset-pin {
     display: flex;
