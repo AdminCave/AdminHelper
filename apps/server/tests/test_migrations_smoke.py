@@ -284,6 +284,10 @@ def test_fill_empty_stcp_secrets_gives_each_its_own(pg_engine, monkeypatch):
 def test_certificate_register_installs_its_time_and_goes_on_downgrade(pg_engine, monkeypatch):
     # R-0224: the revision writes the one state row whose install time starts the transition,
     # records no certificate, and its downgrade removes all three tables.
+    # libpq sends PGTZ on every new connection, Alembic's included: in a session at UTC+14
+    # without DST a now() default lands 14 h beside timezone('UTC', now()). In a UTC session
+    # (the CI database) the two are the same and the deviation check below proves nothing.
+    monkeypatch.setenv("PGTZ", "Pacific/Kiritimati")
     admin_url = pg_engine.url
     dbname = f"alembic_certreg_{uuid.uuid4().hex[:8]}"
     admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
@@ -298,12 +302,14 @@ def test_certificate_register_installs_its_time_and_goes_on_downgrade(pg_engine,
     try:
         command.upgrade(cfg, "3f9c2a7e5b1d")
         with engine.connect() as conn:
+            zone = conn.execute(text("SHOW TimeZone")).scalar_one()
             state = conn.execute(
                 text(
                     "SELECT id, timezone('UTC', now()) - installed_at FROM certificate_register_state"
                 )
             ).all()
             certificates = conn.execute(text("SELECT count(*) FROM issued_certificates")).scalar()
+        assert zone == "Pacific/Kiritimati", "die Pruefverbindung lief nicht fern von UTC"
         assert [row[0] for row in state] == [1], "genau eine Zustandszeile"
         # Naive UTC like every other default (F7): a session-timezone default would be hours off.
         assert abs(state[0][1].total_seconds()) < 300
