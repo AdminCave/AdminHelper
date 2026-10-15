@@ -1243,6 +1243,25 @@ def test_stats_on_a_repository_of_three_commits(
     ]
 
 
+def test_tasks_closed_counts_an_untick_but_not_a_deleted_ledger(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = fixture_repo(tmp_path)
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    (repo / "tasks").mkdir()
+    (repo / "tasks" / "x.md").write_text(ledger_text("x", "x"), encoding="utf-8")
+    (repo / "tasks" / "y.md").write_text(ledger_text("x", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-20T10:00:00+02:00", "ticked")
+    since, until = dt.date(2026, 9, 19), dt.date(2026, 9, 30)
+    assert roadmap.tasks_closed(since, until) == 3
+    (repo / "tasks" / "y.md").write_text(ledger_text(" ", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-21T10:00:00+02:00", "unticked")
+    assert roadmap.tasks_closed(since, until) == 2
+    (repo / "tasks" / "x.md").unlink()
+    dated_commit(repo, "2026-09-22T10:00:00+02:00", "a finished ledger deleted")
+    assert roadmap.tasks_closed(since, until) == 2
+
+
 def test_a_refused_duplicate_leaves_one_empty_commit_and_counts(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

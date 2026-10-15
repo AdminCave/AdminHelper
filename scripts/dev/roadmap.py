@@ -1011,9 +1011,11 @@ def window(since: dt.date, until: dt.date) -> tuple[str, str]:
 
 
 def tasks_closed(since: dt.date, until: dt.date) -> int:
-    """Ledger tasks ticked [x] in this repository's history, net of un-ticks."""
+    """Ledger tasks ticked [x] in this repository's history, net of un-ticks.
+    A deleted ledger takes back no tick (--diff-filter=d): team v3 removed 155
+    finished ledgers at once, which read as 768 un-ticks."""
     log = git_out(
-        ROOT, "log", "-p", *window(since, until), "--format=", "--", "tasks/*.md",
+        ROOT, "log", "-p", "--diff-filter=d", *window(since, until), "--format=", "--", "tasks/*.md",
     )  # fmt: skip
     added = len(re.findall(r"^\+###\s.*\[x\]", log, re.MULTILINE))
     removed = len(re.findall(r"^-###\s.*\[x\]", log, re.MULTILINE))
