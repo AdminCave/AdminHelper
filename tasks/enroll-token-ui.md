@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-10-16: nur Web-Panel, Ablaufzeit vom Server (`expiresAt`), kein Browser-Token, Gültigkeit wählbar (10 min / 1 h / 24 h, API 1 bis 1440 Minuten). `mint_enrollment_token` (`service.py:29`) behält Signatur und Rückgabe; `apps/server/app/cli.py` bleibt unberührt (R-0397 baut dort).
 
-### T1 — Server: `ttl_minutes` an `/token/for`, `expiresAt` in beiden Token-Antworten  [ ]
+### T1 — Server: `ttl_minutes` an `/token/for`, `expiresAt` in beiden Token-Antworten  [x]
 Komponente: server · Dateien: apps/server/app/modules/enrollment/router.py, apps/server/app/modules/enrollment/service.py, apps/server/tests/test_enrollment_mint.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @fc5c713e 2026-10-16T11:58:08+02:00
+Review: approve (.ah-out/review/enroll-token-ui/T1.verdict.json)
 Änderung: `EnrollmentTokenForRequest` (`router.py:88-90`) bekommt `ttl_minutes` (Ganzzahl 1 bis 1440, Standard 10; snake_case wie die übrigen Request-Felder, etwa `is_admin`); `mint_enrollment_token_for` mintet mit dieser TTL. `_mint_token` (`:36-52`) gibt zusätzlich `expiresAt` zurück: den gespeicherten `expires_at` der Token-Zeile als UTC mit `Z`, für `/token` und `/token/for`. Den Ablauf liefert eine neue Funktion neben `mint_enrollment_token` (oder die gespeicherte Zeile); deren Signatur bleibt. Das Audit-Detail von `enrollment.token.minted_for` nennt die TTL (`browser=False, ttl=60min`). Tests in `test_enrollment_mint.py`: Standard 10 min (`expiresAt` ≈ jetzt + 10 min, mit `Z`), `ttl_minutes: 60` und `1440` gespeichert und zurückgegeben, `0` und `1441` → 422, Audit-Detail mit TTL, `/token` liefert `expiresAt`. OpenAPI-Snapshot mit dem neuen Request-Feld nachziehen. API-Referenz DE+EN (`api-reference.html:158`): `ttl_minutes` und `expiresAt`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_enrollment_mint.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html

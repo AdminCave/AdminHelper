@@ -532,6 +532,13 @@
             "title": "Browser",
             "type": "boolean"
           },
+          "ttl_minutes": {
+            "default": 10,
+            "maximum": 1440.0,
+            "minimum": 1.0,
+            "title": "Ttl Minutes",
+            "type": "integer"
+          },
           "username": {
             "title": "Username",
             "type": "string"
