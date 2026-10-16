@@ -7,6 +7,9 @@
 package monitor
 
 import (
+	"errors"
+	"os/exec"
+	"sort"
 	"strings"
 )
 
@@ -34,12 +37,14 @@ func collectServiceHealth() map[string]any {
 
 	// The failed/enabled_inactive/all_services derivation lives in assembleServiceHealth (pure) so
 	// it is unit-tested without running systemctl (6.19).
-	return assembleServiceHealth(unitStates, enabledStates, failed)
+	health := assembleServiceHealth(unitStates, enabledStates, failed)
+	health["enabled_inactive"] = filterEnabledInactive(health["enabled_inactive"].([]string))
+	return health
 }
 
 // assembleServiceHealth derives the service-health report from the parsed unit states: all_services
-// is the union of both maps (missing side -> "unknown"), and enabled_inactive is the legacy set of
-// units that are inactive yet enabled.
+// is the union of both maps (missing side -> "unknown"), and enabled_inactive holds the sorted
+// candidates that are inactive yet enabled, before filterEnabledInactive re-checks them.
 func assembleServiceHealth(unitStates, enabledStates map[string]string, failed []string) map[string]any {
 	allUnits := map[string]bool{}
 	for u := range unitStates {
@@ -71,6 +76,8 @@ func assembleServiceHealth(unitStates, enabledStates map[string]string, failed [
 			enabledInactive = append(enabledInactive, unit)
 		}
 	}
+	// Sorted, so the single-query cap of filterEnabledInactive always checks the same units.
+	sort.Strings(enabledInactive)
 
 	if failed == nil {
 		failed = []string{}
@@ -80,6 +87,104 @@ func assembleServiceHealth(unitStates, enabledStates map[string]string, failed [
 		"enabled_inactive": enabledInactive,
 		"all_services":     allServices,
 	}
+}
+
+// enabledInactiveProps are the properties filterEnabledInactive reads per candidate.
+const enabledInactiveProps = "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic"
+
+// maxSingleUnitChecks caps the per-unit fallback after a failed batch (Kevin 2026-10-16); the
+// candidates beyond it stay unchecked.
+const maxSingleUnitChecks = 50
+
+// runSystemctl indirects the systemctl calls of filterEnabledInactive so tests can drive the batch
+// and per-unit paths without systemctl (same reason as serviceHealthCollector, 6.18).
+var runSystemctl = func(args ...string) ([]byte, error) {
+	return runWithTimeout("systemctl", args...)
+}
+
+// filterEnabledInactive re-checks the enabled-but-inactive candidates with one batched
+// `systemctl show` and drops the units that are inactive by design (inactiveByDesign). If systemctl
+// answers the batch with a non-zero exit (one bad name spoils it), up to maxSingleUnitChecks
+// candidates are asked one by one; a unit whose query fails, or beyond the cap, stays a candidate.
+func filterEnabledInactive(candidates []string) []string {
+	if len(candidates) == 0 {
+		return candidates
+	}
+	out, err := runSystemctl(append([]string{"show", "-p", enabledInactiveProps, "--"}, candidates...)...)
+	if err == nil {
+		return parseEnabledInactive(out, candidates)
+	}
+	// Only a systemctl that answered gets the per-unit fallback, and the fallback ends at the first
+	// call that did not: each such call waits pluginTimeout, and 50 of them (750 s) would outlast the
+	// agent unit's TimeoutStartSec=270 and cost the whole report.
+	if !answered(err) {
+		return candidates
+	}
+	kept := make([]string, 0, len(candidates))
+	asking := true
+	for i, unit := range candidates {
+		if asking && i < maxSingleUnitChecks {
+			out, err := runSystemctl("show", "-p", enabledInactiveProps, "--", unit)
+			if err == nil {
+				kept = append(kept, parseEnabledInactive(out, []string{unit})...)
+				continue
+			}
+			asking = answered(err)
+		}
+		kept = append(kept, unit)
+	}
+	return kept
+}
+
+// answered reports whether a failed systemctl call still answered, i.e. exited non-zero on its own,
+// rather than being killed by the timeout (exit code -1) or never started.
+func answered(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() > 0
+}
+
+// parseEnabledInactive keeps the candidates whose blank-line-separated `systemctl show` block does
+// not mark them inactive by design. Blocks are matched by Id and every name in Names, independent
+// of their order; a candidate without a block stays.
+func parseEnabledInactive(out []byte, candidates []string) []string {
+	byName := map[string]map[string]string{}
+	for _, block := range strings.Split(strings.TrimSpace(string(out)), "\n\n") {
+		props := map[string]string{}
+		for _, line := range strings.Split(block, "\n") {
+			if kv := strings.SplitN(strings.TrimSpace(line), "=", 2); len(kv) == 2 {
+				props[kv[0]] = kv[1]
+			}
+		}
+		for _, name := range append(strings.Fields(props["Names"]), props["Id"]) {
+			if name != "" {
+				byName[name] = props
+			}
+		}
+	}
+	kept := make([]string, 0, len(candidates))
+	for _, unit := range candidates {
+		if props, ok := byName[unit]; ok && inactiveByDesign(props) {
+			continue
+		}
+		kept = append(kept, unit)
+	}
+	return kept
+}
+
+// inactiveByDesign reports a unit that is not running on purpose: one started by a timer, socket or
+// path unit, or, if systemd tried to start it, a oneshot that finished successfully
+// (RemainAfterExit= defaults to no, systemd.service(5)) or a unit whose conditions did not hold.
+// Result=success and ConditionResult=no are also the defaults of a unit systemd never tried to
+// start (ConditionTimestampMonotonic=0), e.g. one whose start job failed on a dependency or whose
+// target was never reached; such a unit stays a candidate. A missing or empty property drops nothing.
+func inactiveByDesign(props map[string]string) bool {
+	if props["TriggeredBy"] != "" {
+		return true
+	}
+	if ts := props["ConditionTimestampMonotonic"]; ts == "" || ts == "0" {
+		return false
+	}
+	return (props["Type"] == "oneshot" && props["Result"] == "success") || props["ConditionResult"] == "no"
 }
 
 // parseSystemctlColumns runs `systemctl <args>` and maps each unit (field 0) to

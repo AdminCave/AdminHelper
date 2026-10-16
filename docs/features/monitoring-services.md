@@ -109,18 +109,30 @@ und Windows), der Server legt sie als `active_count`/`total` in `_details`. Alte
 Fehlen die Zähler (alter Agent), zeigt der Desktop nur die Problemzahl bzw. „OK“.
 
 **(b) Fehlalarme.** Der Agent prüft die Kandidaten aus `list-units` (`active == inactive && enabled == enabled`) mit
-**einem** gebündelten Aufruf `systemctl show -p Id,Names,Type,Result,ConditionResult,TriggeredBy -- <kandidaten>`
+**einem** gebündelten Aufruf
+`systemctl show -p Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic -- <kandidaten>`
 nach und verwirft eine Unit, wenn eines gilt:
-- `Type=oneshot` und `Result=success` (regulär beendet; `RemainAfterExit=no` ist Standard, systemd.service(5));
-- `ConditionResult=no` (per Condition übersprungen; Property in org.freedesktop.systemd1(5));
-- `TriggeredBy` nicht leer (Start durch Timer/Socket/Pfad; org.freedesktop.systemd1(5)).
-Fehlt eine Property oder ist ihr Wert leer, wird nichts verworfen. Scheitert der Sammelaufruf (Exit ≠ 0, z. B. ein
-ungültiger Name), fragt der Agent höchstens 50 Kandidaten einzeln ab; scheitert eine Einzelabfrage,
-bleibt die Unit Kandidat. Der Server übernimmt `systemd.enabled_inactive` unverändert und berechnet es nicht mehr
+- `Type=oneshot` und `Result=success` (regulär beendet; `RemainAfterExit=no` ist Standard, systemd.service(5)),
+  nur wenn der Start versucht wurde (`ConditionTimestampMonotonic` ≠ 0);
+- `ConditionResult=no` (per Condition übersprungen; Property in org.freedesktop.systemd1(5)), nur wenn der Start
+  versucht wurde (`ConditionTimestampMonotonic` ≠ 0);
+- `TriggeredBy` nicht leer (Start durch Timer/Socket/Pfad; org.freedesktop.systemd1(5)), ohne weitere Bedingung.
+`Result=success` und `ConditionResult=no` sind auch die Vorgabewerte einer Unit, deren Start nie versucht wurde;
+`ConditionTimestampMonotonic` ist dann 0 (org.freedesktop.systemd1(5): „0 if they have never been checked.
+Conditions are checked when a unit is requested to start.“). Beispiel: ein enabled Dienst, dessen Start-Job an einer
+fehlenden Abhängigkeit scheitert, bleibt `inactive (dead)` und steht nicht in `--failed`; er bleibt Kandidat.
+Fehlt eine Property oder ist ihr Wert leer, wird nichts verworfen (fehlt `ConditionTimestampMonotonic`, greifen die
+ersten beiden Regeln nicht). Scheitert der Sammelaufruf mit Exit > 0 (z. B. ein ungültiger Name), fragt der Agent
+höchstens 50 Kandidaten einzeln ab; scheitert eine Einzelabfrage, bleibt die Unit Kandidat. Ein Aufruf, der am
+Timeout abgebrochen wurde oder nicht startete, beendet die Nachprüfung, und die noch ungeprüften Units bleiben
+Kandidat: 50 Einzelabfragen à 15 s Timeout überschritten das `TimeoutStartSec=270` der Agent-Unit und kosteten den
+ganzen Report. Der Server übernimmt `systemd.enabled_inactive` unverändert und berechnet es nicht mehr
 aus `all_services`; `failed` = `systemd.failed` ∪ `failed` aus dem (sortierten, auf 500 gekappten) Inventar.
 
 Lokal geprüft (systemd 257): `e2scrub_reap` → `Type=oneshot, Result=success`; `systemd-pstore` →
-`ConditionResult=no`; `anacron` → `TriggeredBy=anacron.timer`; `sshd.service` → `Id=ssh.service,
+`ConditionResult=no`; `anacron` → `TriggeredBy=anacron.timer`; alle sechs Kandidaten der Box mit
+`ConditionTimestampMonotonic` ≠ 0; nie gestartete Units (`alsa-restore`, `alsa-state`) → `Result=success,
+ConditionResult=no, ConditionTimestampMonotonic=0`; `sshd.service` → `Id=ssh.service,
 Names=ssh.service sshd.service`; eine nicht vorhandene Unit → `Type=` leer, `ConditionResult=no`; `getty@.service` im
 Batch → `Failed to get properties: … neither a valid invocation ID nor unit name.` und Exit 1. Achtung: eine
 `not-found`-Unit erfüllt `ConditionResult=no` — sie ist aber nie Kandidat, weil `list-unit-files` sie nicht als
@@ -153,7 +165,8 @@ down|nodata`); „x/y aktiv“ nur mit `active_count`/`total`.
 ## Externe Integrationen
 
 - systemd: `systemctl show -p …` (Properties `Id`, `Names`, `Type`, `Result`, `ConditionResult`, `TriggeredBy`,
-  dokumentiert in org.freedesktop.systemd1(5)); Unit-File-Zustand `alias` (systemctl(1), Tabelle zu `is-enabled`);
+  `ConditionTimestampMonotonic`, dokumentiert in org.freedesktop.systemd1(5)); Unit-File-Zustand `alias`
+  (systemctl(1), Tabelle zu `is-enabled`);
   `RemainAfterExit=` Standard `no` (systemd.service(5)). Geprüft gegen die lokal installierten Manpages von
   systemd 257 (Debian 13); freedesktop.org war per WebFetch nicht erreichbar (403) — **gegen die Web-Version nicht
   verifiziert**. Ab welcher systemd-Version `TriggeredBy` existiert: **nicht verifiziert**; fehlt die Property,
@@ -176,6 +189,10 @@ down|nodata`); „x/y aktiv“ nur mit `active_count`/`total`.
 
 - **Zu viel verworfen:** Ein Dienst, der per Timer läuft *und* dauerhaft laufen soll, fällt aus `enabled_inactive`.
   Gegenmittel: `failed` bleibt unverändert; wer einen bestimmten Dienst erzwingen will, nutzt den Listen-Modus.
+- **Zu wenig verworfen:** Eine enabled Unit, deren Start nie versucht wurde, bleibt Kandidat, auch wenn sie
+  harmlos ist, z. B. weil ihr Ziel-Target nie erreicht wurde (`WantedBy=` eines nicht aktiven Targets).
+  Gegenmittel: `ignore` (mit Glob). Der Preis dafür, dass ein Dienst, dessen Start an einer Abhängigkeit scheiterte,
+  weiter gemeldet wird.
 - **Alte Agents** liefern weiter ungefilterte `enabled_inactive` und keine Zähler; der Desktop zeigt dann die
   Problemzahl ohne „x/y“. Kein Fehlbild, nur weniger Information.
 - **Wechsel der `_details`-Form** im Listen-Modus: abgedeckt durch das Lesen beider Formen.

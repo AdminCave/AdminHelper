@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-10-16: additive Report-Felder freigegeben (`systemd.counts`, `systemd.error`, `alias_of` im Inventar); keine Agent-Konfig-Synchronisation, der Listen-Modus wird serverseitig ausgewertet; ein Name ohne Daten im Listen-Modus zählt nicht als down und wird neutral als „nicht gefunden“ angezeigt; höchstens 50 Einzelabfragen nach einem gescheiterten Sammelaufruf; die deutschen Server-Meldungstexte sind eine eigene Roadmap-Zeile, nicht dieses Vorhaben. Gemeinsame Vertragsdateien mit R-0419/R-0420 (`report.go`, Report-Auswertung in `routers/agent.py`): wer zuerst merged, die anderen mergen `origin/main` vor dem Push.
 
-### T1 — Agent: enabled-aber-inaktive Kandidaten nachprüfen (oneshot, Condition, Timer)  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_linux_test.go
+### T1 — Agent: enabled-aber-inaktive Kandidaten nachprüfen (oneshot, Condition, Timer)  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_linux_test.go, docs/features/monitoring-services.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @93cc22d1 2026-10-16T15:07:17+02:00
+Review: approve (.ah-out/review/monitoring-services/T1.verdict.json)
 Änderung: Die Kandidaten aus `assembleServiceHealth` (`services_linux.go:68-73`) werden mit einem gebündelten `systemctl show -p Id,Names,Type,Result,ConditionResult,TriggeredBy -- <kandidaten>` nachgeprüft; verworfen wird eine Unit bei `Type=oneshot` und `Result=success`, bei `ConditionResult=no` oder bei nicht leerem `TriggeredBy`; fehlende oder leere Properties verwerfen nichts. Scheitert der Sammelaufruf, fragt der Agent höchstens 50 Kandidaten einzeln ab; eine gescheiterte Einzelabfrage lässt die Unit Kandidat. Die Auswertung der `show`-Blöcke ist eine reine Funktion (Muster `parseWatchedServices`, `:132-161`), der Prozessaufruf über einen Seam wie `runWithTimeout`. Tests zuerst rot, Namen mit Präfix `TestFilterEnabledInactive`: echte systemd-257-Blöcke (Spec, Abschnitt b: `e2scrub_reap` oneshot/success, `systemd-pstore` ConditionResult=no, `anacron` TriggeredBy=anacron.timer, ein normaler `Type=simple`-Dienst bleibt Kandidat); fehlende Property → bleibt; Batch-Fehler → Einzelabfrage über den Seam; mehr als 50 Kandidaten → Rest ungeprüft.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestFilterEnabledInactive
 Doku: keine (intern; sichtbar mit T8)
