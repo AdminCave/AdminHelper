@@ -25,11 +25,13 @@ Dedup-Key: bug:desktop:tunnel.ts:stop-then-terminated
 HEAD: b84b9495
 Semantik: docs/developer/desktop.html:146 — „<code>frpc-terminated</code> meldet nur der laufende frpc-Prozess“
 
-### T2 — frpc-error nur für die laufende Generation (R-0390)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+### T2 — frpc-error nur für die laufende Generation (R-0390)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c2da85dd 2026-10-16T13:37:11+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T2.verdict.json)
 Änderung: Der Log-Task sendet `frpc-error` (`frpc.rs:306-308`) nur, wenn sein Prozess noch die laufende Generation ist — dieselbe Prüfung wie für `Terminated` (`:289-305`), als reine Methode an `FrpcProcess`; ein vergifteter Lock meldet wie heute. Neuer cargo-Test `stale_error_is_not_announced_while_a_newer_frpc_runs`. Ob ein getöteter Sidecar überhaupt `CommandEvent::Error` liefert, bleibt unbelegt; die Prüfung ist davon unabhängig richtig.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- stale_error
-Doku: keine (intern; T1 beschreibt die Regel für beide Ereignisse)
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:146`, die Regel nennt jetzt beide Ereignisse)
 Beweis: main@b84b9495 · `sed -n 306,309p apps/desktop/src-tauri/src/frpc.rs` → `CommandEvent::Error` ohne Generationsprüfung vor `emit("frpc-error", …)`
 Orakel: mutation-sample — Bedingung entfernt → neuer Test rot
 Dedup-Key: bug:desktop:frpc.rs:error-old-generation

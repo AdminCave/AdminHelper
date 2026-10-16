@@ -67,13 +67,21 @@ impl FrpcProcess {
     /// Returns whether the event belongs to the current generation, i.e. whether the UI should
     /// hear of it: a stale one would show the running tunnel as disconnected (R-0247).
     fn reconcile_terminated(&mut self, event_generation: u64) -> bool {
-        if self.generation != event_generation {
+        if !self.is_current(event_generation) {
             return false;
         }
         self.child = None;
         self.visitor_name = None;
         self.connected_since = None;
         true
+    }
+
+    /// Whether an event from the process spawned as `event_generation` belongs to the running
+    /// process. Every event the UI hears of passes this check: a stale `frpc-error` from a
+    /// stopped or restarted-away process would show the idle or running tunnel as disconnected
+    /// (R-0390), just like a stale Terminated.
+    fn is_current(&self, event_generation: u64) -> bool {
+        self.generation == event_generation
     }
 
     /// Retire the current process for a stop: clear the state and bump the generation, so the
@@ -316,7 +324,15 @@ pub fn start_frpc(
                 }
                 CommandEvent::Error(err) => {
                     log::error!("[frpc error] {}", err);
-                    let _ = app_handle.emit("frpc-error", err);
+                    // Same rule as Terminated: only the current process may announce, and a
+                    // poisoned lock leaves the generation unknown, so it announces as before.
+                    let current = match state_for_task.lock() {
+                        Ok(guard) => guard.is_current(my_gen),
+                        Err(_) => true,
+                    };
+                    if current {
+                        let _ = app_handle.emit("frpc-error", err);
+                    }
                 }
                 _ => {}
             }
@@ -519,5 +535,27 @@ bindPort = 6000
             !p.reconcile_terminated(1),
             "a stopped process's Terminated must be stale"
         );
+    }
+
+    #[test]
+    fn stale_error_is_not_announced_while_a_newer_frpc_runs() {
+        // stop→start: the killed process was generation 1, generation 2 runs now.
+        let mut p = FrpcProcess::new();
+        p.generation = 2;
+        p.visitor_name = Some("v".to_string());
+        p.connected_since = Some("2026-01-01T00:00:00Z".to_string());
+
+        // The old process's late Error must not reach the UI, which would show the running
+        // tunnel as disconnected (R-0390); the check leaves the state alone.
+        assert!(!p.is_current(1), "stale generation must not be announced");
+        assert!(p.visitor_name.is_some());
+        assert!(p.connected_since.is_some());
+
+        // The running process's own Error is announced.
+        assert!(p.is_current(2), "current generation must be announced");
+
+        // After a stop no process is current: even the last one's Error is stale.
+        p.retire();
+        assert!(!p.is_current(2), "a stopped process's Error must be stale");
     }
 }
