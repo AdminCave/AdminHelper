@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Vertrauensdialog beim Erstkontakt sichtbar über dem Login — Task-Ledger
-Status: geplant · Branch: feature/desktop-trust-dialog · Review: am Ende
+Status: aktiv · Branch: feature/desktop-trust-dialog · Review: am Ende
 Spec: Roadmap R-0399
 Heavy: linux-full — die Journey (Erstkontakt gegen das interne PKI-Leaf, Dialog in der echten Tauri-GUI) prüft nur `desktop_e2e_crud.sh` mit `enroll-trust-dialog.live.js` im Sammellauf (`run.sh e2e`); jsdom kennt kein Stacking, der Unit-Test belegt nur die Struktur
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
