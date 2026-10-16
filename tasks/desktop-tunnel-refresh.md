@@ -50,8 +50,10 @@ Dedup-Key: bug:desktop:tunnel.ts:no-refresh-no-retry
 HEAD: b84b9495
 Semantik: docs/developer/desktop.html:145 — „<code>start_tunnel</code> lädt das <em>Visitor-Bundle</em> … und startet anschließend <code>frpc -c &lt;config&gt;</code> als Sidecar“ (nur einmal; das gewollte Verhalten steht in der Spec)
 
-### T4 — Abgleich ausführen: refresh_tunnel mit Reload über die lokale Admin-API  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/models.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+### T4 — Abgleich ausführen: refresh_tunnel mit Reload über die lokale Admin-API  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/models.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @29da0473 2026-10-16T14:31:28+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T4.verdict.json)
 Änderung: `FrpcProcess` hält die zuletzt angewandte Server-TOML und Port/Benutzer/Passwort der Admin-API; ein neuer Command `refresh_tunnel` (`commands.rs` neben `:307`, registriert in `main.rs:103-104`) führt den Plan aus T3 aus, serialisiert über eine Async-Sperre: Start/Neustart mit neuem Kopf (Port per Bind auf `127.0.0.1:0`, 32 Zufallsbytes über `crate::tofu::ring_provider()`), Reload mit altem Kopf per `GET http://127.0.0.1:<port>/api/reload` (eigener reqwest-Client, `no_proxy`, Basic-Auth, Timeout 5 s; scheitert er → Neustart), 404 → Stopp mit Generation +1, jeder andere Fehler lässt den laufenden Prozess unangetastet. `start_tunnel` (`frpc.rs:344`, `commands.rs:307`) läuft über denselben Abgleich. `TunnelStatus` (`models.rs:155`) bekommt `visitors` (Namen der angewandten Visitors). Tests mit Präfix `refresh_`: Reload-Anfrage gegen einen lokalen tokio-Listener (Pfad `/api/reload`, `Authorization: Basic …`), Reload-Fehler führt zum Neustart-Zweig, `visitors` aus einer TOML. Doku: „Tunnel starten“ (`desktop.html:145`, DE+EN) beschreibt den Abgleich, Reload/Neustart und die lokale Admin-API.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- refresh_
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:145`)
