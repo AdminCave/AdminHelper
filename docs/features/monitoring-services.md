@@ -98,8 +98,9 @@ freigegeben; alte Server ignorieren unbekannte Schlüssel, alte Agents liefern s
 
 `_details` des Checks (Postgres `state.details`, vom Desktop gelesen):
 - `auto`: `mode`, `failed`, `enabled_inactive`, NEU `active_count`/`total` (nur wenn `counts` gesendet).
-- `list`: `mode`, `watched: [{name, state}]` mit `state ∈ running | down | nodata` (statt `running: bool`; der
-  Desktop liest beide Formen, damit alte Details nach dem Update nicht falsch rendern).
+- `list`: `mode`, `watched: [{name, state, running}]` mit `state ∈ running | down | nodata`; `running` (= `state ==
+  "running"`) bleibt additiv für Desktops vor diesem Update (Kevin, 2026-10-16). Der Desktop liest `state` und fällt
+  nur bei alten Details ohne `state` auf `running` zurück.
 
 ## Abläufe
 
@@ -146,7 +147,10 @@ Batch → `Failed to get properties: … neither a valid invocation ID nor unit 
    ändert den Hash, `inventory.go:33-41`).
 3. Ohne Daten → `nodata` (z. B. Tippfehler, Unit existiert nicht, Name neu eingetragen, letztes volles Inventar
    älter): zählt nicht als down; die Anzeige nennt den Namen neutral „nicht gefunden“. Status: `critical`, wenn
-   mindestens ein Name `down` ist; `unknown`, wenn kein Name Daten hat; sonst `ok`.
+   mindestens ein Name `down` ist; `unknown`, wenn kein Name Daten hat; sonst `ok`. Eine nicht installierte Unit, die
+   eine andere Unit referenziert, listet `list-units --all` als `not-found inactive`; der Agent lässt solche Einträge
+   aus dem Inventar weg (T9), sonst würde sie `down` statt `nodata`. Eine `not-found`-Unit, die noch läuft oder
+   `failed` ist, bleibt drin.
 Dafür bekommt `service_process` im Push-Pfad `prev_details` wie `agent_resources` (`routers/agent.py:226`). Der
 Agent ergänzt im Inventar Alias-Einträge (`list-unit-files` führt sie mit Zustand `alias`, systemctl(1)) um
 `alias_of`, aufgelöst mit einem gebündelten `systemctl show -p Id,Names -- <aliase>` (Zuordnung über `Names`, unabhängig
@@ -185,7 +189,8 @@ down|nodata`); „x/y aktiv“ nur mit `active_count`/`total`.
    das ohnehin gesendete Inventar plus `prev_details` (M, keine Migration). Nachteil: ein neu eingetragener Name hat
    bis zum nächsten vollen Inventar (≤ 1 h oder bei der nächsten Zustandsänderung) `nodata`. **Empfehlung: Server.**
 3. **Zähler vom Agent vs. nur Problemzahl.** Siehe (a). **Empfehlung: Agent-Zähler.**
-4. **`watched` mit `state` statt `running: bool`.** Nötig für `nodata`; der Desktop liest beide Formen.
+4. **`watched` mit `state`, `running: bool` additiv.** `state` ist nötig für `nodata`; `running` bleibt für Desktops
+   vor diesem Update (Kevin, 2026-10-16). Der Desktop liest beide Formen.
 
 ## Risiken & Rollback
 

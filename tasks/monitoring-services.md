@@ -63,6 +63,16 @@ Beweis: origin/main@af4498a7 · `provision.go:139-143` übergibt keine Dienste, 
 Dedup-Key: bug:monitoring:checkers/agent.py:services-display
 HEAD: af4498a7
 
+### T9 — Agent: nicht installierte, inaktive Units nicht ins Inventar  [ ]
+Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_linux_test.go
+Änderung: `collectServiceHealth` (`services_linux.go:17`) lässt Units mit Load-State `not-found` und Active-State `inactive` aus `all_services` weg: `list-units --all` listet sie nur, weil eine andere Unit sie referenziert, `list-unit-files` kennt sie nicht, und im Inventar wären sie `{inactive, unknown}`, also für den Listen-Modus `down` statt `nodata` (Spec (c)3). Eine `not-found`-Unit, die `active` oder `failed` ist, bleibt; scheitert `list-units`, ändert sich nichts. `failed` und `enabled_inactive` bleiben unberührt. Tests zuerst rot, Namen mit Präfix `TestServiceHealthNotFound`, über den Seam `runSystemctl` mit echten `list-units`-Zeilen: `firewalld.service not-found inactive dead` fehlt im Inventar; `gone.service not-found active running` und `old.service not-found failed failed` bleiben; eine geladene inaktive Unit bleibt.
+Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServiceHealthNotFound
+Doku: keine (intern; sichtbar mit T8)
+Abhängt von: T3
+Beweis: Reviewer T5 (2026-10-16), Inventar aus den echten systemctl-Ausgaben einer Debian-13-Box: `services: ["firewalld"]` (nicht installiert, referenziert) → `critical`, der Tippfehler `["firewalldd"]` → `unknown`/`nodata`
+Dedup-Key: bug:monitoring:checkers/agent.py:services-display
+HEAD: f7f0836e
+
 ### T6 — Desktop: Dienste-Zeile mit ehrlichen Zahlen, neutralem Zustand und Übersetzungen  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/components/monitoring/section/SecServices.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
 Änderung: `info()` (`SecServices.svelte:33-59`) liest `active_count`/`total` nur, wenn vorhanden; ohne Details eine neutrale Pille „Noch keine Daten“ (kein `pill-crit`, `:35`); Pillenfarbe aus `check.state.status` (dieselbe Quelle wie der Punkt), Liste aus `_details`; Listen-Modus liest `watched` in beiden Formen (`running: bool` alt, `state` neu) und zeigt `nodata` neutral als „nicht gefunden“ (`monitoring.services.note.nodata`, EN „not found“); Hinweise `failed`/`inactive`/`down`/`nodata` über neue Schlüssel `monitoring.services.note.*` (DE neben `dictionaries.ts:577-580`, EN neben `:1199-1202`); „x/y aktiv“ nur mit Zählern; `MonitorServiceDetails` (`types.ts:282-287`) um `active_count`, `total` und `state` erweitern. Neue Testdatei mit SPDX-Header (`// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`), zuerst rot: ohne Details neutral; Auto mit Zählern „41/63“; Auto ohne Zähler nur Problemzahl; Status `ok` bei Rohproblemen (gedämpfter erster Fehler) → keine rote Pille; Listen-Modus alt und neu; `nodata` neutral als „nicht gefunden“, nie rot; übersetzte Hinweise in DE und EN.
