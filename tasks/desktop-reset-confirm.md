@@ -47,8 +47,10 @@ Dedup-Key: bug:desktop:capabilities/default.json:dialog-allow-message
 
 Branch-Review 2026-10-16: reviewer approve (Nits: `asking` hält einen zweiten Aufruf nicht aus, belegt mit roter Probe; CHANGELOG nennt den Pin-Knopf falsch), tester request_changes (wichtig: kein Test wird ohne die Ebene `.confirm-layer` rot; Nit: Beschriftung im Pin-Pfad ungeprüft). Eine Nachbesserungsrunde (T4, T5).
 
-### T4 — Live-Test prüft, dass die Rückfrage oben liegt  [ ]
+### T4 — Live-Test prüft, dass die Rückfrage oben liegt  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/settings-enroll.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @a935087d 2026-10-16T12:12:54+02:00
+Review: am Ende (Branch-Review)
 Änderung: Vor dem `jsClick(confirmButton)` (`settings-enroll.live.js:155`) prüft der Test per `browser.execute` mit `document.elementFromPoint` in der Mitte des Bestätigungsknopfs, dass der getroffene Knoten im Knopf liegt; sonst scheitert er mit einer Meldung, welches Element darüber liegt. `jsClick` umgeht den Hit-Test von WebDriver (`live.js:238`), ohne diese Prüfung bliebe eine verdeckte Rückfrage (fehlende Ebene `.confirm-layer`, `App.svelte:32-40`) im Sammellauf grün. Deckt den Einstellungsfall (Ebene über `.sm-overlay`); den Login-Screen deckt nur ein Live-Lauf über den Login-Reset, der nicht Teil dieser Task ist.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (intern)

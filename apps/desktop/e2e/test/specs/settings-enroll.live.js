@@ -74,6 +74,21 @@ async function expectIdentityLine() {
   expect(shown.getTime()).toBeGreaterThan(today.getTime());
 }
 
+// jsClick skips WebDriver's hit test (lib/live.js), so it also clicks an element that
+// something else covers. The point a user clicks, the element's centre, has to hit the
+// element itself; otherwise the test names what lies above it.
+async function expectOnTop(el, what) {
+  const problem = await browser.execute((node) => {
+    const r = node.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (hit && node.contains(hit)) return null;
+    if (!hit) return 'its centre lies outside the viewport';
+    const classes = [...hit.classList].filter((c) => !c.startsWith('svelte-'));
+    return `${[hit.tagName.toLowerCase(), ...classes].join('.')} lies above it`;
+  }, el);
+  if (problem !== null) throw new Error(`${what} is not on top: ${problem}`);
+}
+
 describe('AdminHelper desktop — enroll from the settings, then the tunnel connects', () => {
   it('starts without a device identity', async () => {
     for (const [name, value] of Object.entries({
@@ -152,6 +167,9 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
       timeoutMsg: 'the reset never asked in the app dialog',
     });
     expect(await confirmButton.getText()).toBe(resetLabel);
+    // The question has to lie above the settings that ask it (.confirm-layer over
+    // .sm-overlay, App.svelte); a covered one would still take the jsClick.
+    await expectOnTop(confirmButton, 'the confirm button');
     await jsClick(confirmButton);
     // A message after the confirmation is the done one: the missing-URL message comes
     // before the question, and a failed reset clears the message.
