@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Tunnel übernimmt Änderungen selbst — Task-Ledger
-Status: bereit · Branch: feature/desktop-tunnel-refresh · Review: pro Task
+Status: aktiv · Branch: feature/desktop-tunnel-refresh · Review: pro Task
 Spec: docs/features/desktop-tunnel-refresh.md (Roadmap R-0402, R-0389, R-0390)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Tunnel (CLAUDE.md §5): `desktop_e2e_tunnel.sh` mit dem erweiterten `tunnel-start.live.js` im Sammellauf (`run.sh e2e`, beweist Reload ohne Neustart gegen echtes frps); `scenario` vor dem Merge, weil der Desktop-Tunnel den FRP-Datenpfad berührt (der GUI-Visitor selbst läuft dort nicht; Kevin 2026-10-16: reicht, der Desktop-Beweis ist T9; Multibox erlaubt); `windows` für Sidecar und lokale Admin-API auf 127.0.0.1 (Firewall-Abfrage nicht verifiziert)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -157,3 +157,19 @@ Review: approve (.ah-out/review/desktop-tunnel-refresh/T14.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- visitor
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html
 Abhängt von: T12
+
+Session 2026-10-16 (Branch-Review): Funde als Tasks T15 und T16.
+
+### T15 — authenticated_get: eine Sitzung als Schnappschuss, Erneuerung nur für dieselbe Sitzung  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs
+Änderung: `authenticated_get` (`auth.rs:161`) prüft heute das Ziel gegen die Sitzung, liest das Access-Token getrennt davon (T5) und liest im 401-Zweig den Refresh-Token erneut aus dem Keyring (`load_session_from_keyring` `:274`), erneuert gegen `server_url` (`try_refresh` `:132`) und speichert das Ergebnis (`save_session_to_keyring` `:267`). Zwischen Senden und 401 kann die Sitzung gewechselt haben (Abmelden, Anmelden bei einem anderen Server), während ein Abgleich noch auf die Antwort wartet. Neu: Die Sitzung wird einmal als Schnappschuss gelesen (URL, Access-, Refresh-Token); gegen genau diese URL wird das Ziel geprüft und genau dieses Access-Token gesendet. Im 401-Zweig wird nur erneuert, wenn der Keyring noch denselben Schnappschuss hält (URL und Refresh-Token gleich); sonst wird die 401 zurückgegeben. Vor dem Speichern dieselbe Prüfung erneut. Der Rückfall auf das übergebene Token entfällt, wenn er nach dem Pin nicht mehr erreichbar ist (toter Code). Test mit `keyring_store::memory()` und dem vorhandenen Ein-Antwort-Server-Muster, zuerst rot: der Server hält die Antwort, der Test tauscht die Sitzung im Keyring gegen eine andere, dann antwortet der Server 401 → keine zweite Anfrage an diesen Server, der Keyring hält weiter die neue Sitzung, Ergebnis ist die 401. Bestehende Tests (Pin vor dem Token, Erneuerung bei gleicher Sitzung) bleiben grün. Risikopfad Auth: `security`-Prüfer.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- auth::
+Doku: keine (intern)
+Abhängt von: T5
+
+### T16 — Visitor-TOML: bindAddr nur Loopback, Parsefehler ohne Zeileninhalt  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: Der Server-Generator schreibt für jeden Visitor `bindAddr = "127.0.0.1"` (`config_generator.py:258`); die Allow-List (`frpc.rs:279`) lässt heute jeden Wert zu. Neu: `bindAddr` nur mit dem Wert `127.0.0.1`, sonst abgewiesen wie ein unbekannter Schlüssel. Der Fehler „visitor.toml nicht parsebar“ (`frpc.rs:255`) gibt heute den Text des Parsers aus, der die betroffene Zeile zitieren kann; neu nennt er nur Zeile und Spalte. Tests, zuerst rot: `bindAddr = "0.0.0.0"` und `"::"` abgewiesen, `127.0.0.1` angenommen (alle Generator-Formen aus T12 weiter grün); eine kaputte TOML mit einem Geheimnis in der Fehlerzeile → die Fehlermeldung enthält das Geheimnis nicht. Doku DE+EN (`desktop.html`, Absatz zur Allow-List): Visitors lauschen nur auf `127.0.0.1`.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- visitor
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html
+Abhängt von: T14
