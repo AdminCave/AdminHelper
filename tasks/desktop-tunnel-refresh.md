@@ -1,0 +1,90 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Desktop-Tunnel übernimmt Änderungen selbst — Task-Ledger
+Status: geplant · Branch: feature/desktop-tunnel-refresh · Review: pro Task
+Spec: docs/features/desktop-tunnel-refresh.md (Roadmap R-0402, R-0389, R-0390)
+Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Tunnel (CLAUDE.md §5): `desktop_e2e_tunnel.sh` mit dem erweiterten `tunnel-start.live.js` im Sammellauf (`run.sh e2e`, beweist Reload ohne Neustart gegen echtes frps); `scenario` vor dem Merge, weil der Desktop-Tunnel den FRP-Datenpfad berührt (der GUI-Visitor selbst läuft dort nicht, offene Frage 1 der Spec; Multibox von Kevin am 2026-10-16 erlaubt); `windows` für Sidecar und lokale Admin-API auf 127.0.0.1 (Firewall-Abfrage nicht verifiziert)
+DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+Kevin 2026-10-16: Desktop fragt alle 60 s ab; 404 von `visitor-bundle` heißt „keine Tunnel“ (kein neuer API-Vertrag); Reload für Visitors, Neustart für Common; Restrisiko Token-Rotation hingenommen; R-0389 und R-0390 vor dem automatischen Neustart.
+
+### T1 — Ein Stopp macht das spätere Terminated alt (R-0389)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: `stop_frpc` (`frpc.rs:323`) erhöht die Generation wie `start_frpc` (`:273`), über eine reine Methode an `FrpcProcess` (`:43`), damit das späte `Terminated` des gestoppten Prozesses als alte Generation gilt und `frpc-terminated` (`:303`) nicht mehr ans UI geht. Neuer cargo-Test `stop_makes_a_late_terminated_stale`: nach dem Stopp liefert `reconcile_terminated` (`:69`) für die vorige Generation `false`; der bestehende Test `reconcile_terminated_clears_state_only_for_the_current_generation` (`:449`) bleibt. Doku: im Abschnitt „Status & Events“ (`desktop.html:146`, DE+EN) ein Halbsatz, dass auch ein Stopp den alten Prozess verstummen lässt.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- late_terminated
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:146`)
+Beweis: main@b84b9495 · `sed -n 323,330p apps/desktop/src-tauri/src/frpc.rs` → `stop_frpc` ohne `generation += 1`; `tunnel.ts:64-69` setzt `idle`, `markTerminated` (`:72`) überschreibt ohne Zustandsprüfung
+Orakel: mutation-sample — nach dem Fix macht das Entfernen der Erhöhung im Stopp den neuen Test rot
+Dedup-Key: bug:desktop:tunnel.ts:stop-then-terminated
+HEAD: b84b9495
+Semantik: docs/developer/desktop.html:146 — „<code>frpc-terminated</code> meldet nur der laufende frpc-Prozess“
+
+### T2 — frpc-error nur für die laufende Generation (R-0390)  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+Änderung: Der Log-Task sendet `frpc-error` (`frpc.rs:306-308`) nur, wenn sein Prozess noch die laufende Generation ist — dieselbe Prüfung wie für `Terminated` (`:289-305`), als reine Methode an `FrpcProcess`; ein vergifteter Lock meldet wie heute. Neuer cargo-Test `stale_error_is_not_announced_while_a_newer_frpc_runs`. Ob ein getöteter Sidecar überhaupt `CommandEvent::Error` liefert, bleibt unbelegt; die Prüfung ist davon unabhängig richtig.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- stale_error
+Doku: keine (intern; T1 beschreibt die Regel für beide Ereignisse)
+Beweis: main@b84b9495 · `sed -n 306,309p apps/desktop/src-tauri/src/frpc.rs` → `CommandEvent::Error` ohne Generationsprüfung vor `emit("frpc-error", …)`
+Orakel: mutation-sample — Bedingung entfernt → neuer Test rot
+Dedup-Key: bug:desktop:frpc.rs:error-old-generation
+HEAD: b84b9495
+Semantik: docs/developer/desktop.html:146 (wie T1)
+
+### T3 — Abgleich entscheiden: 404, Vergleich, lokaler Kopf  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+Änderung: Drei reine Bausteine, noch ohne Aufrufer im Ablauf: (a) `fetch_visitor_bundle` (`frpc.rs:90`) unterscheidet 404 („keine Tunnel“, beide Server-Fälle `generate_router.py:35` und `:150`) von jedem anderen Fehler; (b) eine Entscheidungsfunktion über die geparste Server-TOML (`toml::Value`): frpc läuft nicht → Start; Wurzeltabelle ohne `visitors` verschieden → Neustart; nur `visitors` verschieden → Reload; sonst unverändert; (c) der lokale Kopf (`loginFailExit = false`, `webServer.addr = "127.0.0.1"`, `webServer.port`, `webServer.user`, `webServer.password`), der **nach** `validate_visitor_toml` (`:151`) vor die Server-TOML gestellt wird. Tests mit dem Präfix `refresh_`: alle Entscheidungsfälle (Visitor neu, weg, Secret/Port geändert; Token, `serverAddr`, `serverPort`, `user`, `transport` geändert; gleiche TOML anders formatiert → unverändert), Kopf + Server-TOML parsen mit `loginFailExit = false` und gesetztem Passwort in der Wurzel, eine Server-TOML mit `webServer` oder `loginFailExit` wird weiter abgewiesen (Allow-List unverändert), 404 → „keine Tunnel“, 500 → Fehler.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- refresh_
+Doku: keine (intern; der Ablauf kommt mit T4)
+Beweis: main@b84b9495 · `sed -n 90,106p apps/desktop/src-tauri/src/frpc.rs` → jede Nicht-2xx-Antwort wird „Visitor-Bundle konnte nicht geladen werden“; `git grep -n loginFailExit apps/` → kein Treffer
+Dedup-Key: bug:desktop:tunnel.ts:no-refresh-no-retry
+HEAD: b84b9495
+Semantik: docs/developer/desktop.html:145 — „<code>start_tunnel</code> lädt das <em>Visitor-Bundle</em> … und startet anschließend <code>frpc -c &lt;config&gt;</code> als Sidecar“ (nur einmal; das gewollte Verhalten steht in der Spec)
+
+### T4 — Abgleich ausführen: refresh_tunnel mit Reload über die lokale Admin-API  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/src/models.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: `FrpcProcess` hält die zuletzt angewandte Server-TOML und Port/Benutzer/Passwort der Admin-API; ein neuer Command `refresh_tunnel` (`commands.rs` neben `:307`, registriert in `main.rs:103-104`) führt den Plan aus T3 aus, serialisiert über eine Async-Sperre: Start/Neustart mit neuem Kopf (Port per Bind auf `127.0.0.1:0`, 32 Zufallsbytes über `crate::tofu::ring_provider()`), Reload mit altem Kopf per `GET http://127.0.0.1:<port>/api/reload` (eigener reqwest-Client, `no_proxy`, Basic-Auth, Timeout 5 s; scheitert er → Neustart), 404 → Stopp mit Generation +1, jeder andere Fehler lässt den laufenden Prozess unangetastet. `start_tunnel` (`frpc.rs:344`, `commands.rs:307`) läuft über denselben Abgleich. `TunnelStatus` (`models.rs:155`) bekommt `visitors` (Namen der angewandten Visitors). Tests mit Präfix `refresh_`: Reload-Anfrage gegen einen lokalen tokio-Listener (Pfad `/api/reload`, `Authorization: Basic …`), Reload-Fehler führt zum Neustart-Zweig, `visitors` aus einer TOML. Doku: „Tunnel starten“ (`desktop.html:145`, DE+EN) beschreibt den Abgleich, Reload/Neustart und die lokale Admin-API.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- refresh_
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:145`)
+Abhängt von: T1, T3
+Beweis: main@b84b9495 · `sed -n 344,355p apps/desktop/src-tauri/src/frpc.rs` → Bundle einmal holen, schreiben, starten; kein zweiter Weg
+Dedup-Key: bug:desktop:tunnel.ts:no-refresh-no-retry
+HEAD: b84b9495
+
+### T5 — Der Takt nimmt das aktuelle Access-Token aus dem Keyring  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/frpc.rs
+Änderung: Ein kleiner Leser in `auth.rs` liefert das Access-Token aus dem Keyring (`KEYRING_JWT_KEY`, `auth.rs:11`; `load_session_from_keyring` `:260`); `refresh_tunnel` verwendet es, wenn vorhanden, sonst das übergebene. Hintergrund: `authenticated_get` erneuert bei 401 (`auth.rs:183-203`) und speichert das neue Token nur im Keyring; ohne diesen Leser liefe nach acht Stunden jeder 60-s-Takt in einen Refresh mit Rotation. Test mit `keyring_store::memory()`: Keyring-Token gesetzt → es wird verwendet; leer → das übergebene. Risikopfad Auth: `security`-Prüfer.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- access_token
+Doku: keine (intern)
+Abhängt von: T4
+
+### T6 — Tunnel-Store: Takt alle 60 s, Single-Flight, Leerlauf ohne Tunnel  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts
+Änderung: `refreshTunnel` in der Bridge (`index.ts` neben `:213`, Typen `types.ts:67`). `startIfServerMode` (`tunnel.ts:36`) wird zur Aktivierung: sofort ein Abgleich, dann alle 60 s, mit Generationszähler gegen überholte Aktivierungen wie `notifications.ts:100-132`; `stop()` (`:64`) beendet den Takt. Ein laufender Abgleich lässt den nächsten Takt aus; `refreshNow()` hängt sich an ihn an. Nach jedem Abgleich werden die Mappings neu geladen (Fehler → alte bleiben). `stopped` → „idle“, Mappings leer, keine Meldung; Fehler → Anzeige bleibt, eine Meldung je Fehlerserie. Die Aufrufer (`AppShell.svelte:134`, `SettingsModal.svelte:226`, `stores/settings.ts:113`) bleiben unverändert; jede Abmeldung und jeder Moduswechsel läuft über `stop()` (`settings.ts:117`, `:130`, `:150`). Vitest mit Fake-Timern: erster Abgleich sofort, nächster nach 60 s, kein Überlappen bei langsamem Abgleich, `stopped` ohne Meldung, Fehler ohne Abbau, `stop()` beendet den Takt, überholte Aktivierung räumt sich auf.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
+Doku: keine (intern; sichtbare Doku in T8)
+Abhängt von: T4
+
+### T7 — Unerwartetes Ende: Neustart mit Backoff 5–60 s  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts
+Änderung: `markTerminated` (`tunnel.ts:72`) und `markError` (`:76`) setzen bei aktivem Takt „disconnected“ und planen einen Abgleich nach 5 s, dann 10, 20, 40, 60 s (Deckel); ein Abgleich mit `started`/`restarted` setzt die Pause zurück; `stop()` und das Ende des Takts brechen den geplanten Neustart ab. Vitest mit Fake-Timern: Folge der Pausen, Rücksetzen nach Erfolg, kein Neustart nach `stop()`, eine Meldung je Serie.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
+Doku: keine (intern; sichtbare Doku in T8)
+Abhängt von: T2, T6
+
+### T8 — Tunnel-Dialog fragt sofort ab; Admin-Doku und CHANGELOG  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/TunnelModal.svelte, apps/desktop/ui/src/components/infra/TunnelModal.test.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md
+Änderung: Nach erfolgreichem Anlegen, Ändern und Löschen (`TunnelModal.svelte:76-78`, `:100-106`) ruft der Dialog `refreshNow()` aus dem Tunnel-Store; ein Fehler dort ändert das Speichern-Ergebnis nicht. Test: je Aktion genau ein `refreshNow`, auch bei dessen Fehler schließt der Dialog. Doku DE+EN: `frp-tunnel.html:71` (Token-Rotation: Desktop übernimmt innerhalb von 60 s mit kurzem Abbruch, kein Handgriff) und `:92` (Secret-Rotation: kein Neustart im Desktop mehr nötig); CHANGELOG-Eintrag.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/TunnelModal.test.ts
+Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (`:71`, `:92`) · CHANGELOG
+Abhängt von: T6
+
+### T9 — Live-E2E: ein neuer Tunnel wird ohne Neustart übernommen  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-start.live.js
+Änderung: Nach „connected“ liest die Spec `tunnel_status` (`connectedSince`, `visitors`), legt über die GUI (`gotoInfrastructure`, `openServerTab('tunnels')` aus `test/lib/live.js:223`/`:233`, wie `tunnel-create.live.js`) einen zweiten STCP-Tunnel am gesäten Server an und wartet bis 20 s, bis `visitors` dessen Visitor enthält; `connectedSince` bleibt gleich (Reload, kein Neustart), die Anzeige bleibt „connected“. Der Orchestrator `scripts/tests/desktop_e2e_tunnel.sh` bleibt unverändert. Der Live-Lauf gehört zu `Heavy:`.
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (Test)
+Abhängt von: T4, T6, T8
