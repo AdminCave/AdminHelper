@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-CLI schreibt Audit-Einträge — Task-Ledger
-Status: geplant · Branch: feature/cli-audit · Review: am Ende
+Status: aktiv · Branch: feature/cli-audit · Review: am Ende
 Spec: Roadmap R-0397
 Heavy: linux-full — `apps/server/app/cli.py` ist der Bootstrap-Weg von `scripts/install.sh` (`create-admin`, `mint-enroll-token`, `install.sh:287-289`); Install läuft im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
