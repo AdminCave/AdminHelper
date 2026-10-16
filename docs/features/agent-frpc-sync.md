@@ -88,9 +88,14 @@ Dazu kommen drei Schwächen am selben Ablauf:
   200 `{"hash": null}` statt 404.
   - Unverändert bleibt: 404 „Server nicht gefunden“ (der Agent wertet das zu Recht als dauerhaft), die 403 der
     Scope-Prüfung und die Hash-Semantik bei vorhandener Config.
-  - Bei 0 Tunneln bleibt der Hash der leeren TOML. Grund: Ein alter Agent mit Hash-Datei würde bei `null`
-    jedes Mal neu laden und am Vergleich „passt nicht zum Hash“ scheitern.
-  - `GET …/config` bleibt, wie er ist, also 404 ohne Config. Der neue Agent fragt ihn nur bei einem Hash ≠ null ab.
+  - Ohne aktiven Tunnel (die Tunnel, die der Generator als `[[proxies]]` ausgibt) gilt dasselbe: `{"hash": null}`,
+    und `GET …/config` antwortet 404; das Provisionierungs-Paket enthält dann kein FRP-Paket (T8, Kevin
+    2026-10-16 nach dem Branch-Review: ein Host ohne Tunnel bekommt keine frps-Zugangsdaten). Das ersetzt
+    die frühere Festlegung „bei 0 Tunneln bleibt der Hash der leeren TOML“. Preis: Ein alter Agent, dessen
+    letzter Tunnel gelöscht wird, liest `null` als `""`, lädt `/config` und bekommt 404 (dauerhafter Fehler
+    bis zum Update; gleiche Version wird angenommen, siehe Kompatibilität).
+  - `GET …/config` antwortet 404 ohne Config oder ohne aktiven Tunnel. Der neue Agent fragt ihn nur bei einem
+    Hash ≠ null ab.
   - Das OpenAPI-Schema der Route ist heute `{}` (`apps/server/tests/openapi.snapshot.json`) und bleibt so. Ändert
     sich der Snapshot, ist das eine Vertragsänderung und gehört zurück an Kevin.
 - **Generator-Vertrag (neu, durch Test fixiert):** `generate_frpc_toml` setzt weder `loginFailExit` noch
@@ -108,7 +113,7 @@ Dazu kommen drei Schwächen am selben Ablauf:
 | Kombination | Verhalten |
 |---|---|
 | alter Agent, neuer Server, ohne FRP-Config | `hash: null` wird zu `""`. Ohne Hash-Datei gleich, also kein Fehler (heute 404). |
-| alter Agent, neuer Server, mit Config | unverändert |
+| alter Agent, neuer Server, mit Config | unverändert, solange der Host einen aktiven Tunnel hat; fällt der letzte weg: 404 bis zum Update (T8) |
 | neuer Agent, alter Server, ohne FRP-Config | 404 → dauerhafter Fehler bei jedem Lauf. Annahme: Agents kommen aus dem Paket-Repo desselben Servers (`:8445`), also gleiche Version. Für manuell installierte Pakete **nicht verifiziert**. |
 | Rollback auf alten Agent | Der alte Sync überschreibt `frpc.toml` beim nächsten Hash-Wechsel mit dem Server-Text ohne Vorspann. `admin.conf` bleibt ungenutzt liegen. |
 
@@ -176,7 +181,9 @@ gebündelte Version (`FRP_VERSION` in `.github/workflows/*.yml`).
 - **Token-Rotation** (frps übernimmt nach ≤10 s, eigenes Vorhaben): Agents haben bis zum nächsten Timer-Lauf
   keinen Tunnel. Das hat Kevin hingenommen, die Mitteilung nennt es.
 - **Rollback:** Revert des Branches. Bestandshosts bleiben funktionsfähig (siehe Kompatibilität), `admin.conf`
-  bleibt ungenutzt.
+  bleibt ungenutzt. Hat der neue Agent frpc deaktiviert und kommt nach dem Rollback ein Tunnel dazu, startet
+  der alte Sync frpc nur per `systemctl restart` ohne `enable`; nach einem Reboot bleibt frpc dann aus, bis neu
+  provisioniert wird oder ein Paket-Update läuft.
 
 ## Doku-Impact
 
