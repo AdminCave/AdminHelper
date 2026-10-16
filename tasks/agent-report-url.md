@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent-Report-Proxy kodiert die Server-ID — Task-Ledger
-Status: aktiv · Branch: feature/agent-report-url · Review: am Ende
+Status: bereit · Branch: feature/agent-report-url · Review: am Ende
 Spec: Roadmap R-0391
 Heavy: linux-full — Server-API (`monitoring_proxy/router.py`); REG aus dem Sammellauf 2026-10-15-1606: der Fix beweist sich vor dem Merge auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step schemathesis`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-10-16: `/feature-plan --kurz R-0391`. Einziger roter Schritt des Sammellaufs; bis er grün ist, gilt die Merge-Sperre für `linux-full` (`/feature-build` §5).
 
-### T1 — Agent-Report-Proxy setzt die Server-ID kodiert in die Ziel-URL  [ ]
+### T1 — Agent-Report-Proxy setzt die Server-ID kodiert in die Ziel-URL  [x]
 Komponente: server · Dateien: apps/server/app/modules/monitoring_proxy/router.py, apps/server/tests/test_monitoring_ingest_ratelimit.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3bda0efb 2026-10-16T08:35:28+02:00
+Review: am Ende (Branch-Review)
 Änderung: `proxy_agent_report` (`router.py:84-85`) setzt `server_id` mit `quote(server_id, safe="")` in `f"{_MONITOR_BASE}/agent/{…}/report"` ein (`quote` ist schon importiert, `router.py:14`). Heute steht dort der von Starlette dekodierte Wert: ein Steuerzeichen (`%1F`) lässt httpx mit `InvalidURL` abbrechen (unbehandelt, 500), ein `?` oder `#` (`%3F`, `%23`) schneidet die Ziel-URL ab und trifft eine andere Monitoring-Route. Die Monitoring-Route (`apps/monitoring/app/routers/agent.py:68`) dekodiert den Pfad wieder, sie sieht dieselbe `server_id` wie heute. Neuer Test in `test_monitoring_ingest_ratelimit.py` neben dem T41-Test (`:105`): ein echter `httpx.AsyncClient` mit `MockTransport` als `_client` (nicht `_client.post` ersetzen, sonst greift die URL-Prüfung von httpx nicht), parametrisiert über `%1F`, `web%3Fx` und `web%231`; erwartet 200 und den kodierten Pfad `/agent/<wie gesendet>/report` am Transport. Auf HEAD rot: `%1F` mit `httpx.InvalidURL`, die beiden anderen mit abgeschnittenem Pfad. CHANGELOG unter `### Fixed`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_monitoring_ingest_ratelimit.py
 Doku: CHANGELOG.md (Fixed); docs/ keine (die Route reicht weiter „1:1“ durch, wie dokumentiert)
