@@ -345,6 +345,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   dort der Server-API-Key fuer den Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das
   Agent-Log diesen Weg. Die Admin-Doku (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN)
   beschreiben es.
+- **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
+  `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
+  `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
+  gestartete Units als „Inaktiv (autostart)“ meldete. Der Agent prueft diese Kandidaten jetzt mit einem gebuendelten
+  `systemctl show` nach und laesst sie weg; der Monitoring-Dienst uebernimmt seine Liste, statt sie bei vollem Inventar
+  selbst zu berechnen, sodass volle und gedrosselte Pushes dasselbe Ergebnis geben. Der Modus `list` meldete nach
+  normaler Provisionierung jeden Namen als ausgefallen, weil der Agent ohne `monitor init --services` keine Dienste
+  schickt. Jetzt wertet der Monitoring-Dienst die Namen selbst aus dem Inventar des Agents aus, mit oder ohne
+  `.service` und ueber Aliase (`sshd` fuer `ssh.service`); ein Name ohne Daten zaehlt nicht als ausgefallen und steht
+  neutral als „nicht gefunden“ da, ein neu eingetragener hat bis zu einer Stunde noch keine Daten. Der Desktop zeigte
+  „Alle 0 OK“ oder „0/N laufen“ und ohne Daten eine rote Pille; jetzt zeigt er die Zahl der Probleme in der Farbe des
+  Check-Status, „x/y aktiv“ nur, wenn der Agent Zaehler schickt, ohne Daten „Noch keine Daten“, jeden Dienst einmal
+  und uebersetzte Hinweise. `ignore` versteht Glob-Muster (`drkonqi-coredump-processor@*`), und scheitert `systemctl`,
+  ist der Check `unknown` mit Grund statt „Alle systemd-Units OK“. Der Check-Editor erklaert die Felder Dienste und
+  Ignorieren und entfernt doppelte Eintraege. Der Report traegt dafuer additiv `systemd.counts`, `systemd.error` und
+  `alias_of` im Inventar; `all_services` ist nach Unit sortiert und laesst nicht installierte, nur referenzierte Units
+  weg. Im Modus `list` traegt `_details.watched` je Name `state` (`running`, `down`, `nodata`) neben `running`.
 - **Desktop: der Vertrauensdialog beim ersten Kontakt liegt ueber dem Login-Screen (R-0399):** Praesentiert der
   Server beim ersten Login oder bei der ersten Registrierung ein Zertifikat der internen CA, fragt der Desktop in
   einem Dialog, ob dem Server vertraut werden soll. Dieser Dialog war vom Login-Screen verdeckt: Anmelden und
