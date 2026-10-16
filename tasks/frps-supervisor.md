@@ -107,9 +107,9 @@ Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (
 Abhängt von: T8
 
 ### T19 — frps unter eigener UID, Supervisor bleibt root  [ ]
-Komponente: server · Dateien: apps/frps/Dockerfile, apps/frps/frps-supervisor.sh, docker-compose.yml, apps/server/tests/test_frps_supervisor.py, apps/server/tests/test_compose_frps.py
+Komponente: server · Dateien: apps/frps/Dockerfile, apps/frps/frps-supervisor.sh, docker-compose.yml, apps/server/tests/test_frps_supervisor.py, apps/server/tests/test_compose_frps.py, apps/server/app/modules/frp/supervisor_status.py, apps/server/tests/test_frp_supervisor_status.py, apps/server/app/modules/frp/supervisor_watch.py, apps/server/tests/test_frp_supervisor_watch.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html
 Änderung: Das Image legt einen eigenen Nutzer für frps an; der Supervisor (root) startet frps per `su-exec` unter dieser UID (Kevin, 2026-10-16). frps kann `current/`, `frps-active` und `frps-state` nur lesen, wo nötig (Arbeitskopie über Gruppe lesbar, z. B. `current/` 0750 root:frps, Dateien 0640; T18-Rechte entsprechend anpassen), und nirgends schreiben. Compose: `cap_add` um genau die Capabilities, die der Supervisor dafür braucht (laut Probe in T9: SETUID, SETGID, KILL, ggf. CHOWN oder `group_add`), weiter ohne MKNOD; frps selbst hat keine Capabilities. Der Start per `su-exec` ist per Env abschaltbar, damit die sh-Tests ohne root laufen. Tests zuerst rot: im Docker-Fall läuft frps mit UID ≠ 0 und CapEff 0, kann weder `current/frps.toml` noch `status.json` schreiben, liest Konfiguration und Schlüssel, Neustart und Stopp (TERM/KILL über UIDs hinweg) funktionieren; Compose-Test prüft die Capability-Liste.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py tests/test_compose_frps.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py tests/test_compose_frps.py tests/test_frp_supervisor_status.py tests/test_frp_supervisor_watch.py tests/test_openapi_snapshot.py
 Doku: keine (intern; Betrieb in T17)
 Abhängt von: T9, T18
 
