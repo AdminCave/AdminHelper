@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sy
 Doku: keine (intern)
 Abhängt von: T2
 
-### T4 — Zurücksetzen und Wiederherstellen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_templates_router.py, apps/monitoring/tests/openapi.snapshot.json
+### T4 — Zurücksetzen und Wiederherstellen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_templates_router.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/app/template_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d84b16d8 2026-10-16T15:40:33+02:00
+Review: approve (.ah-out/review/monitoring-templates/T4.verdict.json)
 Änderung: `POST /checks/{check_id}/reset`: 404 bei unbekanntem Check, 409 bei manuellem Check oder fehlender Definition; sonst `overridden_fields = []`, aufgelöste Template-Werte setzen, Scheduler wie in `update_check`, Antwort wie `to_dict`. `POST /templates/{template_id}/assign/{server_id}/restore`: 404 ohne Zuweisung; löscht die Tombstones des Paars, synchronisiert genau diesen Server, Antwort `{"restored": n}`. `GET /templates/assignments/{server_id}` (`templates.py:80`) liefert je Zuweisung `removedChecks` (Anzahl Tombstones). Beide Pfade liegen unter den Proxy-Präfixen `checks`/`templates` (`apps/server/app/modules/monitoring_proxy/router.py:59-66`), der Server bleibt unverändert. Tests zuerst rot (Statuscodes, Wirkung, `removedChecks`); OpenAPI-Snapshot nachziehen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_templates_router.py tests/test_openapi_snapshot.py
 Doku: keine (intern; sichtbar mit T9/T10, beschrieben in T12)

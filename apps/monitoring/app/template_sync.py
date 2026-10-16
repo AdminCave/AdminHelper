@@ -7,11 +7,13 @@ Template sync — live link between templates and checks/alerts.
 
 Core functions:
   sync_template()   — Updates all checks/alerts when a template changes
+  sync_assignment() — The same for one assignment, i.e. one server
   apply_template()  — Assigns a template to a server + creates checks
   remove_template() — Removes the assignment + deletes the associated checks
   cleanup_server()  — Deletes all monitoring data of a server
   mark_overrides()  — Records which fields of a template check a user changed
   tombstone_check() — Keeps a deleted template check from being created again
+  restore_checks()  — Creates the deleted template checks of a server again
 """
 
 from __future__ import annotations
@@ -216,6 +218,14 @@ def tombstone_check(db: Session, check: MonitorCheck) -> None:
         )
 
 
+def check_def_ids(template: MonitorTemplate) -> set[str]:
+    """The def_ids of a template's check definitions. A tombstone stands for a
+    deleted check only while its def_id is among them: once the definition has
+    left the template, the sync would not create that check anyway."""
+    check_defs = json.loads(template.check_definitions) if template.check_definitions else []
+    return {d["def_id"] for d in check_defs if d.get("def_id")}
+
+
 def _create_check(
     db: Session, template_id: str, server_id: str, def_id: str, resolved: dict
 ) -> MonitorCheck:
@@ -313,6 +323,21 @@ def sync_template(db: Session, template: MonitorTemplate) -> dict:
         "deleted": total_deleted,
         "servers": len(assignments),
     }
+
+
+def sync_assignment(
+    db: Session, template: MonitorTemplate, assignment: MonitorTemplateAssignment
+) -> None:
+    """Synchronizes the checks/alerts of one assignment, leaving the template's
+    other servers alone."""
+    check_defs = json.loads(template.check_definitions) if template.check_definitions else []
+    alert_defs = json.loads(template.alert_definitions) if template.alert_definitions else []
+    variables = _build_variables(assignment)
+    actions: list[SchedulerAction] = []
+    _sync_checks_for_server(db, template.id, assignment.server_id, check_defs, variables, actions)
+    _sync_alerts_for_server(db, template.id, assignment.server_id, alert_defs, variables)
+    db.commit()
+    _apply_scheduler_actions(actions)
 
 
 def _sync_checks_for_server(
@@ -566,6 +591,33 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
         len(alerts),
     )
     return {"checksDeleted": len(checks), "alertsDeleted": len(alerts)}
+
+
+# ---------------------------------------------------------------------------
+# Restore: the template checks a user deleted on a server
+# ---------------------------------------------------------------------------
+
+
+def restore_checks(
+    db: Session, template: MonitorTemplate, assignment: MonitorTemplateAssignment
+) -> int:
+    """Drops the tombstones of an assignment and syncs its server, which creates
+    the deleted checks again. Returns how many: a tombstone whose definition has
+    left the template is dropped as well, but restores nothing."""
+    tombstones = db.query(MonitorCheckTombstone).filter(
+        MonitorCheckTombstone.template_id == template.id,
+        MonitorCheckTombstone.server_id == assignment.server_id,
+    )
+    restored = len({t.def_id for t in tombstones} & check_def_ids(template))
+    tombstones.delete()
+    sync_assignment(db, template, assignment)
+    logger.info(
+        "Template '%s' on server %s: %d deleted checks restored",
+        template.name,
+        assignment.server_id,
+        restored,
+    )
+    return restored
 
 
 # ---------------------------------------------------------------------------

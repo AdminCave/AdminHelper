@@ -19,6 +19,7 @@ from app.core.database import get_db
 from app.models import (
     MonitorAlertRule,
     MonitorCheck,
+    MonitorCheckTombstone,
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
@@ -26,7 +27,13 @@ from app.models import (
 from app.scheduler import remove_check
 from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
 from app.tag_sync import sync_tag_assignments
-from app.template_sync import apply_template, remove_template, sync_template
+from app.template_sync import (
+    apply_template,
+    check_def_ids,
+    remove_template,
+    restore_checks,
+    sync_template,
+)
 
 logger = logging.getLogger("monitor.templates")
 
@@ -79,7 +86,8 @@ def list_templates(db: Session = Depends(get_db)):
 
 @router.get("/templates/assignments/{server_id}", dependencies=[Depends(require_internal)])
 def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
-    """Returns all template assignments of a server."""
+    """Returns all template assignments of a server, each with the number of its
+    template checks deleted on the server (removedChecks)."""
     assignments = (
         db.query(MonitorTemplateAssignment)
         .filter(MonitorTemplateAssignment.server_id == server_id)
@@ -94,10 +102,20 @@ def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
         if template_ids
         else {}
     )
+    tombstoned: dict[str, set[str]] = {}
+    for template_id, def_id in db.query(
+        MonitorCheckTombstone.template_id, MonitorCheckTombstone.def_id
+    ).filter(MonitorCheckTombstone.server_id == server_id):
+        tombstoned.setdefault(template_id, set()).add(def_id)
     return [
         {
             **a.to_dict(),
             "templateName": templates[a.template_id].name if a.template_id in templates else None,
+            "removedChecks": len(
+                tombstoned.get(a.template_id, set()) & check_def_ids(templates[a.template_id])
+            )
+            if a.template_id in templates
+            else 0,
         }
         for a in assignments
     ]
@@ -268,6 +286,27 @@ def unassign_template(template_id: str, server_id: str, db: Session = Depends(ge
         raise HTTPException(404, "Zuweisung nicht gefunden")
 
     remove_template(db, template_id, server_id)
+
+
+@router.post(
+    "/templates/{template_id}/assign/{server_id}/restore",
+    dependencies=[Depends(require_internal)],
+)
+def restore_template_checks(template_id: str, server_id: str, db: Session = Depends(get_db)):
+    """Creates the template checks deleted on this server again."""
+    assignment = (
+        db.query(MonitorTemplateAssignment)
+        .filter(
+            MonitorTemplateAssignment.template_id == template_id,
+            MonitorTemplateAssignment.server_id == server_id,
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(404, "Assignment not found")
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).one()
+
+    return {"restored": restore_checks(db, template, assignment)}
 
 
 # ---------------------------------------------------------------------------

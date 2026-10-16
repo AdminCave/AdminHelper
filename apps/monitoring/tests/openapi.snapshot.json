@@ -1268,7 +1268,7 @@
     },
     "/checks/{check_id}": {
       "delete": {
-        "description": "Deletes a check.",
+        "description": "Deletes a check. A template check stays deleted on the next template sync.",
         "operationId": "delete_check_checks__check_id__delete",
         "parameters": [
           {
@@ -1428,6 +1428,44 @@
           }
         },
         "summary": "Get Check Metrics"
+      }
+    },
+    "/checks/{check_id}/reset": {
+      "post": {
+        "description": "Drops the user's changes to a template check: every template field gets\nthe template's value again.",
+        "operationId": "reset_check_checks__check_id__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Check"
       }
     },
     "/checks/{check_id}/run": {
@@ -1859,7 +1897,7 @@
     },
     "/templates/assignments/{server_id}": {
       "get": {
-        "description": "Returns all template assignments of a server.",
+        "description": "Returns all template assignments of a server, each with the number of its\ntemplate checks deleted on the server (removedChecks).",
         "operationId": "get_server_assignments_templates_assignments__server_id__get",
         "parameters": [
           {
@@ -2205,6 +2243,53 @@
           }
         },
         "summary": "Unassign Template"
+      }
+    },
+    "/templates/{template_id}/assign/{server_id}/restore": {
+      "post": {
+        "description": "Creates the template checks deleted on this server again.",
+        "operationId": "restore_template_checks_templates__template_id__assign__server_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Template Checks"
       }
     }
   }

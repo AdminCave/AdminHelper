@@ -29,7 +29,7 @@ from app.schemas import (
     CheckCreate,
     CheckUpdate,
 )
-from app.template_sync import mark_overrides, tombstone_check
+from app.template_sync import mark_overrides, resolve_template_check, tombstone_check
 
 # Moved to core/victoria.py (shared with the forecast checker); alias kept so
 # the existing call sites and tests stay untouched.
@@ -281,6 +281,36 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
     check.enabled = not check.enabled
     mark_overrides(db, check, {"enabled": check.enabled})
     db.commit()
+
+    if check.enabled:
+        add_check(check.id, check.interval, check.check_type)
+    else:
+        remove_check(check.id)
+
+    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    return check.to_dict(state=state)
+
+
+@router.post("/checks/{check_id}/reset", dependencies=[Depends(require_internal)])
+def reset_check(check_id: str, db: Session = Depends(get_db)):
+    """Drops the user's changes to a template check: every template field gets
+    the template's value again."""
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    if not check:
+        raise HTTPException(404, "Check not found")
+    if not check.template_id or not check.template_def_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Check was not created by a template")
+    template_values = resolve_template_check(db, check)
+    if template_values is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "The check's template no longer defines it for this server"
+        )
+
+    for field, value in template_values.items():
+        setattr(check, field, json.dumps(value) if field == "config" else value)
+    check.overridden_fields = "[]"
+    db.commit()
+    db.refresh(check)
 
     if check.enabled:
         add_check(check.id, check.interval, check.check_type)

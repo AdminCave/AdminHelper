@@ -5,7 +5,10 @@
 """Template-assignment router (6.57): the template_sync functions are well tested, but the router on
 top was not. Pins the read-then-insert duplicate -> 409 and, critically, the IntegrityError -> 409
 mapping for the concurrent-assign race (per models.py the only race-free safeguard) — a slip there
-would surface as a 500 at the server module, not a 409."""
+would surface as a 500 at the server module, not a 409. Also the routes that undo a user's changes
+to template checks (R-0420): resetting a check to its template and restoring deleted ones."""
+
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +18,13 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import Base, MonitorTemplate
+from app.models import (
+    Base,
+    MonitorCheck,
+    MonitorCheckTombstone,
+    MonitorTemplate,
+    MonitorTemplateAssignment,
+)
 
 
 @pytest.fixture()
@@ -37,6 +46,9 @@ def client(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[require_internal] = lambda: None
+    # The scheduler is not under test; keep jobs out of the process-wide one.
+    monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+    monkeypatch.setattr("app.template_sync.add_check", lambda *a, **k: None)
     yield TestClient(app), factory
     app.dependency_overrides.clear()
 
@@ -207,3 +219,197 @@ class TestTagAssignments:
         tid = self._mk_template(client)
         assert client.post(f"/templates/{tid}/assign-tag", json={"tag": "web"}).status_code == 201
         assert client.delete(f"/templates/{tid}/assign-tag/web").status_code == 204
+
+
+# --- Reset and restore of template checks (R-0420) -------------------------------
+
+_PING_DEF = {
+    "def_id": "def-ping",
+    "name": "Ping {{server_name}}",
+    "check_type": "ping",
+    "config": {"target": "{{hostname}}"},
+}
+# Its config is valid for disk_forecast too, so a type switch needs no new config.
+_HEARTBEAT_DEF = {
+    "def_id": "def-heartbeat",
+    "name": "Heartbeat",
+    "check_type": "agent_ping",
+    "config": {"server_id": "{{server_id}}"},
+}
+
+
+def _template(c, *check_defs) -> str:
+    r = c.post("/templates", json={"name": "T", "check_definitions": list(check_defs)})
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def _assign(c, tid, server_id="srv-1"):
+    body = {"server_id": server_id, "hostname": f"{server_id}.example", "server_name": server_id}
+    assert c.post(f"/templates/{tid}/assign", json=body).status_code == 200
+
+
+def _checks(c, server_id="srv-1") -> dict[str, dict]:
+    """The checks of a server by their template def_id."""
+    listed = c.get("/checks", params={"server_id": server_id}).json()
+    return {ch["templateDefId"]: ch for ch in listed}
+
+
+def _removed_checks(c, server_id="srv-1") -> dict[str, int]:
+    """removedChecks of each assignment of a server, by template id."""
+    listed = c.get(f"/templates/assignments/{server_id}").json()
+    return {a["templateId"]: a["removedChecks"] for a in listed}
+
+
+def _set_check_definitions(factory, tid, check_defs):
+    """Change a template's definitions behind the router's back: no sync runs."""
+    with factory() as db:
+        db.get(MonitorTemplate, tid).check_definitions = json.dumps(check_defs)
+        db.commit()
+
+
+def test_reset_puts_the_template_values_back_and_clears_the_overrides(client, monkeypatch):
+    c, _factory = client
+    tid = _template(c, _PING_DEF)
+    _assign(c, tid)
+    cid = _checks(c)["def-ping"]["id"]
+    changed = {"name": "Mine", "interval": "15m", "severity": "warning", "config": {"target": "x"}}
+    assert c.put(f"/checks/{cid}", json=changed).status_code == 200
+    assert c.post(f"/checks/{cid}/toggle").json()["enabled"] is False
+
+    scheduled = []
+    monkeypatch.setattr("app.routers.checks.add_check", lambda cid_, *a: scheduled.append(cid_))
+    r = c.post(f"/checks/{cid}/reset")
+
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert {k: got[k] for k in ("name", "config", "enabled", "interval", "severity")} == {
+        "name": "Ping srv-1",
+        "config": {"target": "srv-1.example"},
+        "enabled": True,
+        "interval": "5m",
+        "severity": "critical",
+    }
+    assert got["overriddenFields"] == []
+    # Enabled again, so scheduled again, as after a PUT
+    assert scheduled == [cid]
+    # The answer is the stored check, as GET returns it
+    assert got == c.get(f"/checks/{cid}").json()
+
+
+def test_reset_undoes_a_type_switch(client):
+    c, _factory = client
+    tid = _template(c, _HEARTBEAT_DEF)
+    _assign(c, tid)
+    cid = _checks(c)["def-heartbeat"]["id"]
+    assert c.put(f"/checks/{cid}", json={"check_type": "disk_forecast"}).status_code == 200
+
+    r = c.post(f"/checks/{cid}/reset")
+    assert r.status_code == 200, r.text
+    assert (r.json()["checkType"], r.json()["config"], r.json()["overriddenFields"]) == (
+        "agent_ping",
+        {"server_id": "srv-1"},
+        [],
+    )
+
+
+def test_reset_of_an_unknown_check_is_404(client):
+    c, _factory = client
+    assert c.post("/checks/does-not-exist/reset").status_code == 404
+
+
+def test_reset_of_a_manual_check_is_409(client):
+    c, _factory = client
+    r = c.post(
+        "/checks",
+        json={"server_id": "srv-1", "name": "p", "check_type": "ping", "config": {"target": "h"}},
+    )
+    assert c.post(f"/checks/{r.json()['id']}/reset").status_code == 409
+
+
+def test_reset_without_the_definition_is_409_and_changes_nothing(client):
+    c, factory = client
+    tid = _template(c, _PING_DEF, _HEARTBEAT_DEF)
+    _assign(c, tid)
+    cid = _checks(c)["def-ping"]["id"]
+    c.put(f"/checks/{cid}", json={"interval": "15m"})
+    _set_check_definitions(factory, tid, [_HEARTBEAT_DEF])
+
+    assert c.post(f"/checks/{cid}/reset").status_code == 409
+    got = c.get(f"/checks/{cid}").json()
+    assert (got["interval"], got["overriddenFields"]) == ("15m", ["interval"])
+
+
+def test_reset_without_the_assignment_is_409(client):
+    c, factory = client
+    tid = _template(c, _PING_DEF)
+    _assign(c, tid)
+    cid = _checks(c)["def-ping"]["id"]
+    with factory() as db:
+        db.query(MonitorTemplateAssignment).delete()
+        db.commit()
+
+    assert c.post(f"/checks/{cid}/reset").status_code == 409
+
+
+def test_restore_without_the_assignment_is_404(client):
+    c, _factory = client
+    tid = _template(c, _PING_DEF)
+    assert c.post(f"/templates/{tid}/assign/srv-1/restore").status_code == 404
+    assert c.post("/templates/does-not-exist/assign/srv-1/restore").status_code == 404
+
+
+def test_deleted_template_checks_are_counted_and_restored(client):
+    c, factory = client
+    tid = _template(c, _PING_DEF, _HEARTBEAT_DEF)
+    other = _template(c, {**_PING_DEF, "def_id": "def-other"})
+    _assign(c, tid)
+    _assign(c, other)
+    _assign(c, tid, "srv-2")
+    assert _removed_checks(c) == {tid: 0, other: 0}
+
+    c.delete(f"/checks/{_checks(c)['def-ping']['id']}")
+    c.delete(f"/checks/{_checks(c)['def-heartbeat']['id']}")
+    c.delete(f"/checks/{_checks(c, 'srv-2')['def-ping']['id']}")
+    assert _removed_checks(c) == {tid: 2, other: 0}
+
+    r = c.post(f"/templates/{tid}/assign/srv-1/restore")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"restored": 2}
+    assert sorted(_checks(c)) == ["def-heartbeat", "def-other", "def-ping"]
+    assert _removed_checks(c) == {tid: 0, other: 0}
+    # srv-2's deleted check stays deleted
+    assert _removed_checks(c, "srv-2") == {tid: 1}
+    assert sorted(_checks(c, "srv-2")) == ["def-heartbeat"]
+
+
+def test_restore_syncs_only_this_server(client):
+    c, factory = client
+    tid = _template(c, _PING_DEF, _HEARTBEAT_DEF)
+    _assign(c, tid)
+    _assign(c, tid, "srv-2")
+    c.delete(f"/checks/{_checks(c)['def-ping']['id']}")
+    _set_check_definitions(factory, tid, [_PING_DEF, {**_HEARTBEAT_DEF, "interval": "15m"}])
+
+    assert c.post(f"/templates/{tid}/assign/srv-1/restore").json() == {"restored": 1}
+    assert _checks(c)["def-heartbeat"]["interval"] == "15m"
+    assert _checks(c, "srv-2")["def-heartbeat"]["interval"] == "5m"
+
+
+def test_a_tombstone_whose_definition_left_the_template_counts_and_restores_nothing(client):
+    c, factory = client
+    tid = _template(c, _PING_DEF, _HEARTBEAT_DEF)
+    _assign(c, tid)
+    c.delete(f"/checks/{_checks(c)['def-ping']['id']}")
+    c.delete(f"/checks/{_checks(c)['def-heartbeat']['id']}")
+    # The heartbeat definition leaves the template; its tombstone stays behind.
+    r = c.put(f"/templates/{tid}", json={"check_definitions": [_PING_DEF]})
+    assert r.status_code == 200, r.text
+    assert _removed_checks(c) == {tid: 1}
+
+    assert c.post(f"/templates/{tid}/assign/srv-1/restore").json() == {"restored": 1}
+    assert sorted(_checks(c)) == ["def-ping"]
+    assert _removed_checks(c) == {tid: 0}
+    with factory() as db:
+        assert db.query(MonitorCheckTombstone).count() == 0
+        assert db.query(MonitorCheck).count() == 1
