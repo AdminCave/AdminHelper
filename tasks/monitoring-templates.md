@@ -83,8 +83,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/monitoring
 Doku: keine (intern)
 Abhängt von: T4, T6
 
-### T9 — Desktop: Badge „angepasst“ und „Auf Template zurücksetzen“ am Check  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/MonCheckLine.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/MonCheckLine.template.test.ts
+### T9 — Desktop: Badge „angepasst“ und „Auf Template zurücksetzen“ am Check  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/MonCheckLine.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/MonCheckLine.template.test.ts, apps/desktop/ui/src/lib/stores/monitoring.ts, apps/desktop/ui/src/components/monitoring/section/MonSectionIcon.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @872cfcc5 2026-10-16T16:59:17+02:00
+Review: approve (.ah-out/review/monitoring-templates/T9.verdict.json)
 Änderung: `MonCheckLine.svelte` zeigt bei Checks mit `templateId` und nichtleerem `overriddenFields` ein Badge „angepasst“ (Tooltip: übersetzte Feldnamen) und neben den Aktionen (`:84-103`) „Auf Template zurücksetzen“ mit Rückfrage im App-Dialog (nicht `@tauri-apps/plugin-dialog`); nach Erfolg wird die Zeile mit der Antwort aktualisiert, ein Fehler erscheint wie bei den anderen Aktionen. Texte DE + EN. Neue Testdatei (SPDX-Header `// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`), zuerst rot: Badge nur bei angepasstem Template-Check, Zurücksetzen ruft `resetCheck` genau einmal nach Bestätigung, Abbrechen ruft nichts.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonCheckLine.template.test.ts
 Doku: keine (intern; beschrieben in T12)

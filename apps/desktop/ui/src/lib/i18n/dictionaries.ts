@@ -592,6 +592,13 @@ export const translations: Translations = {
     'monitoring.check.runPushOnly':
       'Wird nur per Agent-Push aktualisiert und lässt sich nicht manuell auslösen',
     'monitoring.check.runDisabled': 'Check ist deaktiviert',
+    'monitoring.check.overridden': 'angepasst',
+    'monitoring.check.overriddenHint': 'Weicht vom Template ab: {fields}',
+    'monitoring.check.resetToTemplate': 'Auf Template zurücksetzen',
+    'monitoring.check.resetConfirm':
+      'Die Anpassungen ({fields}) verwerfen und die Werte des Templates übernehmen?',
+    'monitoring.check.field.config': 'Konfiguration',
+    'monitoring.check.field.enabled': 'Aktiviert',
     'monitoring.server.noServer': 'Ohne Server',
     'monitoring.serverList.search': 'Server suchen…',
     'monitoring.serverList.empty': 'Keine Server',
@@ -1215,6 +1222,13 @@ export const translations: Translations = {
     'monitoring.check.runNow': 'Run now',
     'monitoring.check.runPushOnly': 'Updated only by the agent push — cannot be triggered manually',
     'monitoring.check.runDisabled': 'Check is disabled',
+    'monitoring.check.overridden': 'customized',
+    'monitoring.check.overriddenHint': 'Differs from the template: {fields}',
+    'monitoring.check.resetToTemplate': 'Reset to template',
+    'monitoring.check.resetConfirm':
+      'Discard the changes ({fields}) and use the values of the template again?',
+    'monitoring.check.field.config': 'Configuration',
+    'monitoring.check.field.enabled': 'Enabled',
     'monitoring.server.noServer': 'No server',
     'monitoring.serverList.search': 'Search server…',
     'monitoring.serverList.empty': 'No servers',
