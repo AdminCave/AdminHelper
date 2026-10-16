@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent-Report-Proxy kodiert die Server-ID — Task-Ledger
-Status: bereit · Branch: feature/agent-report-url · Review: am Ende
+Status: erledigt · Branch: feature/agent-report-url · Review: am Ende
 Spec: Roadmap R-0391
 Heavy: linux-full — Server-API (`monitoring_proxy/router.py`); REG aus dem Sammellauf 2026-10-15-1606: der Fix beweist sich vor dem Merge auf einer Box (`/test`: `bash scripts/tests/run.sh all --strict --step schemathesis`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
