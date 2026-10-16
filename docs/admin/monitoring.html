@@ -144,12 +144,12 @@
           </ul>
           <p>Gibt es Server, für die noch kein einziger Check existiert, zeigt die Übersicht ein Banner („N Server ohne Monitoring") mit direktem <strong>Bulk-Zuweisungs-Dialog</strong>: Server vorausgewählt, Template wählbar (Standard-Templates zuerst). Die Ansicht aktualisiert sich automatisch alle 30 Sekunden.</p>
 
-          <h2>Templates</h2>
+          <h2 id="templates">Templates</h2>
           <p>Ein <strong>Monitoring-Template</strong> bündelt mehrere Check- und Alert-Definitionen und wird einem Server zugewiesen, statt jeden Check einzeln anzulegen. Beim Zuweisen werden aus den Definitionen echte Checks und Alert-Regeln für den Server erzeugt.</p>
           <ol>
             <li>Desktop-Client → <em>Monitoring → Templates</em> → Template anlegen, Check- und Alert-Definitionen hinzufügen</li>
             <li>Template einem Server zuweisen – AdminHelper erstellt alle enthaltenen Checks und Alert-Regeln</li>
-            <li>Wird das Template später geändert, läuft ein <strong>Live-Sync</strong>: alle zugewiesenen Server werden automatisch aktualisiert (Checks erstellt, geändert oder gelöscht). Jede Definition trägt eine stabile <code>def_id</code>, über die der Sync zuordnet.</li>
+            <li>Wird das Template später geändert, läuft ein <strong>Live-Sync</strong>: alle zugewiesenen Server werden automatisch aktualisiert (Checks erstellt, geändert oder gelöscht). Jede Definition trägt eine stabile <code>def_id</code>, über die der Sync zuordnet. Felder, die an einem einzelnen Check angepasst wurden, und gelöschte Template-Checks lässt der Sync aus (siehe <a href="#template-anpassungen">Anpassungen an Template-Checks</a>).</li>
           </ol>
           <p>In Definitionen lassen sich Platzhalter verwenden, die beim Zuweisen pro Server ersetzt werden:</p>
           <table>
@@ -160,7 +160,23 @@
               <tr><td><code>{{server_id}}</code></td><td>Interne Server-ID</td></tr>
             </tbody>
           </table>
+          <p>Hostname und Anzeigename hält jede Zuweisung fest. Ändert sich einer davon am Server, übernimmt der Abgleich, der auch die <a href="#tag-zuweisung">Tag-Zuweisungen</a> pflegt (sofort nach der Server-Änderung und alle 15 Minuten), die neuen Werte in jede Zuweisung des Servers, manuell wie per Tag, und synchronisiert deren Checks und Alert-Regeln neu; angepasste Check-Felder bleiben.</p>
           <p>Eine Zuweisung entfernen löscht die daraus erzeugten Checks und Alerts wieder. Ein Template zu löschen entfernt diese auf <em>allen</em> zugewiesenen Servern.</p>
+
+          <h3 id="template-anpassungen">Anpassungen an Template-Checks</h3>
+          <p>Ein Check, den ein Template erzeugt hat, lässt sich wie jeder andere bearbeiten, ein- und ausschalten oder löschen. Setzt man eines der Felder Name, Beschreibung, Typ, Konfiguration, Aktiviert, Intervall, Schweregrad oder Fehlversuche bis Alarm auf einen anderen Wert als das Template, merkt sich der Check dieses Feld als <strong>angepasst</strong>: Kein Sync überschreibt es mehr, alle übrigen Felder folgen weiter dem Template. Ein Sync läuft, wenn sich das Template ändert (auch durch das Update eines Standard-Templates, siehe unten), wenn sich Hostname oder Anzeigename des Servers ändern (siehe oben) und beim Wiederherstellen gelöschter Checks; jeder setzt alle nicht angepassten Felder auf die Werte des Templates. Wer ein Feld wieder auf den Wert des Templates setzt, hebt die Anpassung auf. Typ und Konfiguration gehören zusammen: Ein geänderter Typ zählt auch als geänderte Konfiguration, und bei angepasster Konfiguration übernimmt der Sync auch den Typ des Templates nicht. Entfernt jemand die Definition aus dem Template, löscht der Sync den Check trotzdem, auch wenn er angepasst ist.</p>
+          <ul>
+            <li><strong>Erkennen und zurücksetzen:</strong> Im Dashboard eines Servers (<em>Monitoring</em>, Ansicht <em>Liste</em>) trägt ein angepasster Check das Badge „angepasst“, der Tooltip nennt die Felder. Die Aktion „Auf Template zurücksetzen“ in derselben Zeile setzt nach einer Rückfrage alle Felder auf die Werte des Templates und hebt alle Anpassungen des Checks auf.</li>
+            <li><strong>Gelöschte Template-Checks:</strong> Ein gelöschter Template-Check bleibt gelöscht, der Sync legt ihn nicht wieder an. Im Monitoring-Tab des Servers steht dann an der Zuweisung „N gelöschte Checks wiederherstellen“ (bei einem Check „1 gelöschten Check wiederherstellen“); der Klick legt diese Checks mit den Werten des Templates neu an. Wer die Zuweisung entfernt und neu anlegt, bekommt ebenfalls alle Checks zurück.</li>
+          </ul>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">Anpassungen von vor dem Update</div><p>Beim ersten Start nach dem Update vergleicht der Monitoring-Dienst einmal jeden Template-Check mit seinem Template und markiert jedes abweichende Feld als angepasst, nach denselben Regeln wie oben. Das Template löst er dabei mit dem Hostnamen und Anzeigenamen auf, mit denen der Check angelegt wurde: Ein seither umbenannter Server zählt nicht als Anpassung, seine Checks folgen beim nächsten Abgleich dem neuen Namen. Das geschieht vor jedem Sync; ist es beim Start gescheitert, holt der nächste Sync es vorher nach, und gelingt es auch dort nicht, unterbleibt dieser Sync, bis die Erkennung gelingt. Ein Check, der sich nicht vergleichen lässt (unlesbare Konfiguration oder Template-Definition), gilt in allen Feldern als angepasst; der Dienst nennt ihn im Log.</p></div>
+          </div>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Grenzen</div><p>Wurde eine Template-Änderung vor dem Update nie auf einen Check synchronisiert, erscheint sie dort nach dem ersten Start als Anpassung; „Auf Template zurücksetzen“ übernimmt die Werte des Templates. Der Schutz gilt nur für Checks: Alert-Regeln aus einem Template setzt jeder Sync auf die Werte des Templates, und eine gelöschte Alert-Regel legt der nächste Sync neu an.</p></div>
+          </div>
 
           <h3>Standard-Templates</h3>
           <p>Beim ersten Start seedet der Monitoring-Dienst fünf englischsprachige Standard-Templates. Die Schwellwerte folgen dem Konsens gängiger Werkzeuge (Zabbix, Netdata, Checkmk) plus Backblaze-SMART-Statistiken:</p>
@@ -174,19 +190,25 @@
               <tr><td><strong>ZFS Storage</strong></td><td>ZFS Health (Pool-State + Kapazität 80/90)</td></tr>
             </tbody>
           </table>
-          <p>Das Seeding ist <strong>einmalig</strong> pro Template: Wer ein Standard-Template löscht, umbenennt oder anpasst, behält diesen Stand – ein späterer Neustart stellt nichts wieder her und überschreibt nichts. Die Plugin-Templates (Proxmox/Docker/ZFS) sind bewusst getrennt: auf einem Host ohne das Subsystem stünde der Check dauerhaft auf <code>unknown</code>.</p>
+          <p>Das Seeding ist <strong>einmalig</strong> pro Template: Ein gelöschtes Standard-Template legt ein späterer Neustart nicht wieder an. Die Plugin-Templates (Proxmox/Docker/ZFS) sind bewusst getrennt: auf einem Host ohne das Subsystem stünde der Check dauerhaft auf <code>unknown</code>.</p>
+          <p>Jedes Standard-Template trägt eine <strong>Version</strong>. Bringt ein Update von AdminHelper eine neuere Version mit, gilt beim Start des Monitoring-Dienstes:</p>
+          <ul>
+            <li><strong>Unverändert</strong> (Check- und Alert-Definitionen wie zuletzt ausgeliefert): Der Dienst übernimmt die neuen Definitionen und synchronisiert alle zugewiesenen Server; angepasste Felder einzelner Checks bleiben. Name und Beschreibung des Templates zählen dabei nicht: Ein nur umbenanntes Standard-Template wird aktualisiert und behält seinen Namen.</li>
+            <li><strong>Angepasst</strong> (Definitionen geändert): Das Template bleibt, wie es ist. In <em>Monitoring → Templates</em> steht neben seinem Namen „Update verfügbar“. Der Klick öffnet einen Vergleich der aktuellen mit den mitgelieferten Check- und Alert-Definitionen: je Definition „neu“, „entfernt“ oder „geändert“, bei geänderten die Felder mit den Spalten „Aktuell“ und „Mitgeliefert“. „Übernehmen“ ersetzt alle Definitionen des Templates, auch die Alert-Definitionen, durch die mitgelieferten und synchronisiert die Server. Eigene Änderungen an den Definitionen gehen dabei verloren; angepasste Felder einzelner Checks bleiben, Checks entfernter Definitionen werden gelöscht, Alert-Regeln bekommen die mitgelieferten Werte.</li>
+          </ul>
+          <p>Ein Standard-Template, das vor der Einführung der Versionen angelegt wurde, gilt als Version 1; weichen seine Definitionen von den mitgelieferten ab, gilt es als angepasst.</p>
 
           <h3>Templates zuweisen</h3>
           <p>Vier Wege führen zur Zuweisung:</p>
           <ul>
             <li><strong>Template-Modal</strong> (<em>Monitoring → Templates</em>): Server-Mehrfachauswahl zum Bulk-Zuweisen, Entfernen per Klick auf die Zuweisungs-Pille.</li>
             <li><strong>Server-Anlege-Dialog</strong>: optionales Template-Dropdown – beim Anlegen eines Servers direkt ein Standard-Template mitgeben (Opt-in, keine Automatik nach OS-Typ).</li>
-            <li><strong>Server → Monitoring-Tab</strong>: Zuweisungen des einzelnen Servers ansehen, hinzufügen, entfernen.</li>
+            <li><strong>Server → Monitoring-Tab</strong>: Zuweisungen des einzelnen Servers ansehen, hinzufügen, entfernen und dort gelöschte Template-Checks wiederherstellen.</li>
             <li><strong>Übersichts-Banner</strong>: der Bulk-Dialog für alle Server ohne Checks (siehe oben).</li>
           </ul>
 
-          <h3>Tag-Zuweisung</h3>
-          <p>Ein Template lässt sich zusätzlich an einen <strong>Server-Tag</strong> binden (im Template-Modal): Jeder Server, der den Tag trägt, bekommt das Template automatisch – auch Server, die den Tag erst später erhalten. Der Abgleich läuft sofort bei Server-Änderungen und zusätzlich alle 15 Minuten. Verliert ein Server den Tag, wird die via Tag entstandene Zuweisung (samt erzeugter Checks) wieder entfernt. Via Tag zugewiesene Server sind im Template-Modal als „via Tag" markiert; eine <em>manuell</em> angelegte Zuweisung bleibt manuell und wird vom Tag-Sync nie angefasst.</p>
+          <h3 id="tag-zuweisung">Tag-Zuweisung</h3>
+          <p>Ein Template lässt sich zusätzlich an einen <strong>Server-Tag</strong> binden (im Template-Modal): Jeder Server, der den Tag trägt, bekommt das Template automatisch – auch Server, die den Tag erst später erhalten. Der Abgleich läuft sofort bei Server-Änderungen und zusätzlich alle 15 Minuten. Verliert ein Server den Tag, wird die via Tag entstandene Zuweisung (samt erzeugter Checks) wieder entfernt. Via Tag zugewiesene Server sind im Template-Modal als „via Tag" markiert; eine <em>manuell</em> angelegte Zuweisung bleibt manuell: Der Tag-Sync entfernt sie nie, er frischt an ihr nur Hostname und Anzeigename auf, wenn sich diese am Server geändert haben (siehe <a href="#templates">Templates</a>).</p>
 
           <h2>Benachrichtigungen &amp; Alerting</h2>
           <p>Alert-Regeln feuern, wenn ein Check seinen Status <strong>wechselt</strong> (z. B. <code>ok → critical</code>). Jede Regel filtert optional nach <code>severity</code> und Server und versendet über einen Kanal.</p>

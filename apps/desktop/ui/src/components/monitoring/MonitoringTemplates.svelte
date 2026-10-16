@@ -9,10 +9,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { monitoringTemplates, loadTemplates } from '$lib/stores/monitoring';
   import type { MonitoringTemplateFull } from '$lib/api/types';
   import MonitoringTemplateModal from './MonitoringTemplateModal.svelte';
+  import BuiltinUpdateModal from './BuiltinUpdateModal.svelte';
   import { t } from '$lib/i18n';
 
   let modalOpen = $state(false);
   let editing = $state<MonitoringTemplateFull | null>(null);
+  let updating = $state<MonitoringTemplateFull | null>(null);
 
   onMount(() => {
     void loadTemplates();
@@ -39,7 +41,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {#each $monitoringTemplates as tpl (tpl.id)}
       <div class="mon-tpl-card">
         <div class="mon-tpl-info">
-          <div class="mon-tpl-name">{tpl.name}</div>
+          <div class="mon-tpl-name">
+            {tpl.name}
+            {#if tpl.builtinUpdateAvailable}
+              <button class="mon-tpl-update" onclick={() => (updating = tpl)}
+                >{$t('monitoring.builtinUpdate.badge')}</button
+              >
+            {/if}
+          </div>
           <div class="mon-tpl-meta">
             {$t('monitoring.tplEdit.checkDefs')}: {tpl.checkDefinitions?.length ?? 0}
             · {$t('monitoring.tplEdit.alertDefs')}: {tpl.alertDefinitions?.length ?? 0}
@@ -55,6 +64,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </div>
 
 <MonitoringTemplateModal open={modalOpen} {editing} onClose={() => (modalOpen = false)} />
+<BuiltinUpdateModal template={updating} onClose={() => (updating = null)} />
 
 <style>
   .mon-tpl-toolbar {
@@ -80,6 +90,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .mon-tpl-name {
     font-weight: 600;
     font-size: 14px;
+  }
+  .mon-tpl-update {
+    margin-left: var(--sp-2);
+    background: var(--warning);
+    color: var(--bg-panel);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0 var(--sp-2);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
   }
   .mon-tpl-meta {
     font-size: 12px;

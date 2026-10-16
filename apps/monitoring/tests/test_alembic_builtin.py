@@ -3,13 +3,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The monitoring migration chain, checked by pytest-alembic's four built-in
-tests plus one seeded data migration.
+tests plus two seeded data migrations.
 
-Same shape as the server's variant. The seeded test covers b1a2c3d4e5f6, which
+Same shape as the server's variant. The first seeded test covers b1a2c3d4e5f6, which
 deletes content-identical duplicate template assignments before it can add the
 unique constraint — "the lexicographically smaller id survives" is a decision
 that only shows itself with duplicates in the table, and an empty database makes
-its DELETE a no-op.
+its DELETE a no-op. The second covers a7c9e1b3d5f7, which deletes the key of the
+first-start override baseline from monitor_seed_state, again a no-op on an empty
+table.
 
 The fixtures live here rather than in conftest.py: alembic_engine has to point at
 an EMPTY database, and env.py opens its own connection from
@@ -32,6 +34,8 @@ from pytest_alembic.tests import (  # noqa: F401
     test_upgrade,
 )
 from sqlalchemy import create_engine, text
+
+from app.template_sync import OVERRIDE_BASELINE_KEY
 
 MONITORING_DIR = Path(__file__).resolve().parents[1]
 DB_URL = (os.environ.get("DATABASE_URL") or "").strip()
@@ -131,3 +135,22 @@ def test_duplicate_assignments_are_deduplicated_smaller_id_wins(alembic_runner, 
             ).all()
         ]
     assert "uq_assignment_template_server" in constraints
+
+
+def test_override_baseline_key_goes_when_overridden_fields_comes(alembic_runner, alembic_engine):
+    """a7c9e1b3d5f7 adds overridden_fields with [] for every check, so the key saying
+    that a first start marked the changes from before the update has to go with it.
+    After a downgrade and upgrade it would stand for marks the downgrade dropped, and
+    no start would mark them again. The seeded slugs next to it stay."""
+    alembic_runner.migrate_up_before("a7c9e1b3d5f7")
+    for slug in ("linux-base", OVERRIDE_BASELINE_KEY):
+        alembic_runner.insert_into("monitor_seed_state", {"slug": slug})
+
+    alembic_runner.migrate_up_one()
+
+    with alembic_engine.connect() as conn:
+        slugs = [
+            row[0]
+            for row in conn.execute(text("SELECT slug FROM monitor_seed_state ORDER BY slug")).all()
+        ]
+    assert slugs == ["linux-base"]

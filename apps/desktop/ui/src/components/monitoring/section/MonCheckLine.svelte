@@ -18,11 +18,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
     monitoring,
     toggleCheck,
     runCheck,
+    resetCheck,
     openCheckEditor,
   } from '$lib/stores/monitoring';
   import MonSectionIcon from './MonSectionIcon.svelte';
   import ExpandChart from './ExpandChart.svelte';
+  import { confirmDialog } from '../../ui/ConfirmDialog.svelte';
   import { t } from '$lib/i18n';
+
+  // The editor's words for the template fields a user can change; overriddenFields
+  // names them as the request body does.
+  const FIELD_LABELS = new Map<string, string>([
+    ['name', 'infra.field.name'],
+    ['description', 'monitoring.checkEdit.description'],
+    ['check_type', 'monitoring.checkEdit.type'],
+    ['config', 'monitoring.check.field.config'],
+    ['enabled', 'monitoring.check.field.enabled'],
+    ['interval', 'monitoring.checkEdit.interval'],
+    ['severity', 'monitoring.checkEdit.severity'],
+    ['consecutive_fails', 'monitoring.checkEdit.consecutiveFails'],
+  ]);
 
   interface Props {
     check: MonitorCheck;
@@ -44,6 +59,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
       : $t('monitoring.check.runDisabled'),
   );
   let expanded = $derived($monitoring.expandedCheckId === check.id);
+  // Only a template check can differ from its template. A field this UI does not
+  // know yet shows by its raw name rather than as a gap.
+  let overridden = $derived(check.templateId ? (check.overriddenFields ?? []) : []);
+  let overriddenNames = $derived(
+    overridden
+      .map((field) => {
+        const key = FIELD_LABELS.get(field);
+        return key ? $t(key) : field;
+      })
+      .join(', '),
+  );
 
   function onClick(): void {
     toggleExpanded(check.id);
@@ -63,6 +89,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     e.stopPropagation();
     void runCheck(check.id);
   }
+
+  async function onReset(e: MouseEvent): Promise<void> {
+    e.stopPropagation();
+    const id = check.id;
+    const ok = await confirmDialog(
+      $t('monitoring.check.resetConfirm', { fields: overriddenNames }),
+      { confirmLabel: $t('monitoring.check.resetToTemplate') },
+    );
+    if (ok) await resetCheck(id);
+  }
 </script>
 
 <div class="mon-line-wrapper" class:open={expanded} class:disabled={!check.enabled}>
@@ -75,7 +111,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     onkeydown={(e) => e.key === 'Enter' && onClick()}
   >
     <span class="mon-dot {statusClass(status)}"></span>
-    <span class="mon-line-label">{@render label()}</span>
+    <span class="mon-line-label">
+      {@render label()}
+      {#if overridden.length > 0}
+        <span
+          class="mon-line-pill mon-line-badge"
+          title={$t('monitoring.check.overriddenHint', { fields: overriddenNames })}
+        >
+          {$t('monitoring.check.overridden')}
+        </span>
+      {/if}
+    </span>
     {#if value}
       <span class="mon-line-value">{@render value()}</span>
     {/if}
@@ -90,6 +136,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
       >
         <MonSectionIcon name="edit" />
       </button>
+      {#if overridden.length > 0}
+        <!-- Enter clicks a button by itself; the key only must not reach the row,
+             which would expand. -->
+        <button
+          class="mon-line-action"
+          onclick={onReset}
+          onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}
+          title={$t('monitoring.check.resetToTemplate')}
+          aria-label={$t('monitoring.check.resetToTemplate')}
+        >
+          <MonSectionIcon name="reset" />
+        </button>
+      {/if}
       <button
         class="mon-line-action"
         onclick={onRun}

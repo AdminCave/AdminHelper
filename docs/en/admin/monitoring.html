@@ -144,12 +144,12 @@
           </ul>
           <p>If servers exist that have no check at all, the overview shows a banner ("N servers without monitoring") with a direct <strong>bulk-assign dialog</strong>: servers preselected, template selectable (standard templates first). The view refreshes automatically every 30 seconds.</p>
 
-          <h2>Templates</h2>
+          <h2 id="templates">Templates</h2>
           <p>A <strong>monitoring template</strong> bundles several check and alert definitions and is assigned to a server instead of creating each check by hand. On assignment the definitions are materialized into real checks and alert rules for that server.</p>
           <ol>
             <li>Desktop client → <em>Monitoring → Templates</em> → create a template, add check and alert definitions</li>
             <li>Assign the template to a server – AdminHelper creates all contained checks and alert rules</li>
-            <li>When the template is edited later, a <strong>live sync</strong> runs: every assigned server is updated automatically (checks created, updated or deleted). Each definition carries a stable <code>def_id</code> the sync uses to match.</li>
+            <li>When the template is edited later, a <strong>live sync</strong> runs: every assigned server is updated automatically (checks created, updated or deleted). Each definition carries a stable <code>def_id</code> the sync uses to match. Fields customized on a single check and deleted template checks are left out by the sync (see <a href="#template-overrides">Customizing template checks</a>).</li>
           </ol>
           <p>Definitions may use placeholders that are substituted per server at assignment time:</p>
           <table>
@@ -160,7 +160,23 @@
               <tr><td><code>{{server_id}}</code></td><td>Internal server ID</td></tr>
             </tbody>
           </table>
+          <p>Each assignment keeps the hostname and display name. When either changes on the server, the reconciliation that also maintains the <a href="#tag-assignment">tag assignments</a> (immediately after the server change and every 15 minutes) writes the new values into every assignment of the server, manual and tag-based alike, and syncs its checks and alert rules again; customized check fields stay.</p>
           <p>Removing an assignment deletes the checks and alerts it created. Deleting a template removes them on <em>all</em> assigned servers.</p>
+
+          <h3 id="template-overrides">Customizing template checks</h3>
+          <p>A check created by a template can be edited, switched on and off or deleted like any other. Setting one of the fields name, description, type, configuration, enabled, interval, severity or consecutive fails before alarm to a value other than the template's marks that field on the check as <strong>customized</strong>: no sync overwrites it any more, all other fields keep following the template. A sync runs when the template changes (also through the update of a standard template, see below), when the server's hostname or display name changes (see above) and when deleted checks are restored; each one sets every field that is not customized to the template's value. Setting a field back to the template's value lifts the customization. Type and configuration belong together: a changed type also counts as a changed configuration, and with a customized configuration the sync does not take the template's type either. If the definition is removed from the template, the sync still deletes the check, customized or not.</p>
+          <ul>
+            <li><strong>Spot and reset:</strong> in a server's dashboard (<em>Monitoring</em>, view <em>List</em>) a customized check carries the badge "customized", its tooltip names the fields. The action "Reset to template" on the same line asks for confirmation, then sets every field to the template's value and lifts all customizations of the check.</li>
+            <li><strong>Deleted template checks:</strong> a deleted template check stays deleted, the sync does not create it again. The server's Monitoring tab then shows "Restore N deleted checks" at the assignment ("Restore 1 deleted check" for one); the click creates these checks again with the template's values. Removing and re-adding the assignment brings all checks back as well.</li>
+          </ul>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">Customizations from before the update</div><p>On the first start after the update the monitoring service compares every template check with its template once and marks every field that differs as customized, by the same rules as above. It resolves the template with the hostname and display name the check was created with: a server renamed since does not count as a customization, its checks follow the new name on the next reconciliation. This happens before any sync; if it failed at startup, the next sync catches up on it first, and if it fails there too, that sync does not happen until the detection succeeds. A check that cannot be compared (unreadable configuration or template definition) counts as customized in all fields; the service names it in the log.</p></div>
+          </div>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Limits</div><p>If a template change was never synced to a check before the update, it shows there as a customization after the first start; "Reset to template" takes the template's values. The protection covers checks only: every sync sets alert rules from a template to the template's values, and the next sync creates a deleted alert rule again.</p></div>
+          </div>
 
           <h3>Standard templates</h3>
           <p>On first startup the monitoring service seeds five standard templates (English names). The thresholds distill the consensus of common tools (Zabbix, Netdata, Checkmk) plus Backblaze SMART statistics:</p>
@@ -174,19 +190,25 @@
               <tr><td><strong>ZFS Storage</strong></td><td>ZFS Health (pool state + capacity 80/90)</td></tr>
             </tbody>
           </table>
-          <p>Seeding is <strong>one-time</strong> per template: if you delete, rename or tune a standard template, that state sticks – a later restart restores nothing and overwrites nothing. The plugin templates (Proxmox/Docker/ZFS) are deliberately separate: on a host without the subsystem the check would sit at <code>unknown</code> forever.</p>
+          <p>Seeding is <strong>one-time</strong> per template: a later restart does not create a deleted standard template again. The plugin templates (Proxmox/Docker/ZFS) are deliberately separate: on a host without the subsystem the check would sit at <code>unknown</code> forever.</p>
+          <p>Every standard template carries a <strong>version</strong>. When an AdminHelper update ships a newer version, the monitoring service does this at startup:</p>
+          <ul>
+            <li><strong>Unedited</strong> (check and alert definitions as last shipped): the service takes the new definitions and syncs all assigned servers; customized fields of single checks stay. The template's name and description do not count: a standard template that was only renamed is updated and keeps its name.</li>
+            <li><strong>Edited</strong> (definitions changed): the template stays as it is. <em>Monitoring → Templates</em> shows "Update available" next to its name. The click opens a comparison of the current with the shipped check and alert definitions: "new", "removed" or "changed" per definition, for changed ones the fields in the columns "Current" and "Shipped". "Apply" replaces all definitions of the template, the alert definitions included, with the shipped ones and syncs the servers. Your own changes to the definitions are lost; customized fields of single checks stay, checks of removed definitions are deleted, alert rules get the shipped values.</li>
+          </ul>
+          <p>A standard template created before versions were introduced counts as version 1; if its definitions differ from the shipped ones, it counts as edited.</p>
 
           <h3>Assigning templates</h3>
           <p>There are four ways to assign:</p>
           <ul>
             <li><strong>Template modal</strong> (<em>Monitoring → Templates</em>): server multi-select for bulk assignment, removal via the assignment pill.</li>
             <li><strong>Server-create dialog</strong>: optional template dropdown – hand a standard template to a server right at creation (opt-in, no automatic assignment by OS type).</li>
-            <li><strong>Server → Monitoring tab</strong>: view, add and remove the assignments of a single server.</li>
+            <li><strong>Server → Monitoring tab</strong>: view, add and remove the assignments of a single server, and restore deleted template checks there.</li>
             <li><strong>Overview banner</strong>: the bulk dialog for all servers without checks (see above).</li>
           </ul>
 
-          <h3>Tag assignment</h3>
-          <p>A template can additionally be bound to a <strong>server tag</strong> (in the template modal): every server carrying the tag gets the template automatically – including servers that receive the tag later. The sync runs immediately on server changes and additionally every 15 minutes. When a server loses the tag, the tag-created assignment (and its materialized checks) is removed again. Tag-assigned servers are marked "via tag" in the template modal; a <em>manually</em> created assignment stays manual and is never touched by the tag sync.</p>
+          <h3 id="tag-assignment">Tag assignment</h3>
+          <p>A template can additionally be bound to a <strong>server tag</strong> (in the template modal): every server carrying the tag gets the template automatically – including servers that receive the tag later. The sync runs immediately on server changes and additionally every 15 minutes. When a server loses the tag, the tag-created assignment (and its materialized checks) is removed again. Tag-assigned servers are marked "via tag" in the template modal; a <em>manually</em> created assignment stays manual: the tag sync never removes it, it only refreshes its hostname and display name when these changed on the server (see <a href="#templates">Templates</a>).</p>
 
           <h2>Notifications &amp; alerting</h2>
           <p>Alert rules fire when a check <strong>changes</strong> status (e.g. <code>ok → critical</code>). Each rule optionally filters by <code>severity</code> and server and dispatches over one channel.</p>

@@ -123,6 +123,13 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     undefined,
   ],
   [
+    'resetCheck',
+    () => monitoringApi.resetCheck(session, 'c1'),
+    'POST',
+    '/api/monitoring/checks/c1/reset',
+    undefined,
+  ],
+  [
     'createAlert',
     () => monitoringApi.createAlert(session, alertInput),
     'POST',
@@ -190,6 +197,28 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     () => monitoringApi.unassignTemplate(session, 't1', 's1'),
     'DELETE',
     '/api/monitoring/templates/t1/assign/s1',
+    undefined,
+  ],
+  [
+    'restoreTemplateChecks',
+    () => monitoringApi.restoreTemplateChecks(session, 't1', 's/1'),
+    'POST',
+    // Server id with a slash: encoded, so it stays one path segment.
+    '/api/monitoring/templates/t1/assign/s%2F1/restore',
+    undefined,
+  ],
+  [
+    'fetchBuiltinUpdate',
+    () => monitoringApi.fetchBuiltinUpdate(session, 't1'),
+    'GET',
+    '/api/monitoring/templates/t1/builtin-update',
+    undefined,
+  ],
+  [
+    'applyBuiltinUpdate',
+    () => monitoringApi.applyBuiltinUpdate(session, 't1'),
+    'POST',
+    '/api/monitoring/templates/t1/builtin-update',
     undefined,
   ],
   [
