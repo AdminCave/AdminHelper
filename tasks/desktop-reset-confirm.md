@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Rückfragen zum Zurücksetzen im App-Dialog — Task-Ledger
-Status: bereit · Branch: feature/desktop-reset-confirm · Review: am Ende
+Status: aktiv · Branch: feature/desktop-reset-confirm · Review: am Ende
 Spec: Roadmap R-0395
 Heavy: linux-full — Desktop-Journeys (Geräte-Identität und Pin zurücksetzen, Login-Screen); `settings-enroll.live.js` läuft im Sammellauf (`desktop_e2e_tunnel.sh`); keine Plattform- oder Rust-Änderung, daher kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -44,3 +44,17 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (intern)
 Abhängt von: T2
 Dedup-Key: bug:desktop:capabilities/default.json:dialog-allow-message
+
+Branch-Review 2026-10-16: reviewer approve (Nits: `asking` hält einen zweiten Aufruf nicht aus, belegt mit roter Probe; CHANGELOG nennt den Pin-Knopf falsch), tester request_changes (wichtig: kein Test wird ohne die Ebene `.confirm-layer` rot; Nit: Beschriftung im Pin-Pfad ungeprüft). Eine Nachbesserungsrunde (T4, T5).
+
+### T4 — Live-Test prüft, dass die Rückfrage oben liegt  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/settings-enroll.live.js
+Änderung: Vor dem `jsClick(confirmButton)` (`settings-enroll.live.js:155`) prüft der Test per `browser.execute` mit `document.elementFromPoint` in der Mitte des Bestätigungsknopfs, dass der getroffene Knoten im Knopf liegt; sonst scheitert er mit einer Meldung, welches Element darüber liegt. `jsClick` umgeht den Hit-Test von WebDriver (`live.js:238`), ohne diese Prüfung bliebe eine verdeckte Rückfrage (fehlende Ebene `.confirm-layer`, `App.svelte:32-40`) im Sammellauf grün. Deckt den Einstellungsfall (Ebene über `.sm-overlay`); den Login-Screen deckt nur ein Live-Lauf über den Login-Reset, der nicht Teil dieser Task ist.
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (intern)
+
+### T5 — Rückfrage hält einen zweiten Aufruf aus; Beschriftung im Pin-Pfad geprüft; CHANGELOG-Knopfname  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.dialog.test.ts, apps/desktop/ui/src/components/Login.pin.test.ts, CHANGELOG.md
+Änderung: `asking` (`SettingsModal.svelte:70`, gesetzt `:177`/`:181`) wird ein Zähler (oder ein Aufruf-Token): Ein zweiter Klick auf den Reset-Knopf, während die Rückfrage offen ist, ersetzt die erste (`prev.resolve(false)`); deren Abschluss darf den Escape-Schutz der zweiten nicht aufheben. Neuer Fall in `SettingsModal.dialog.test.ts`: Reset zweimal auslösen, dann Escape → nur die Rückfrage schließt, die Einstellungen bleiben offen. `Login.pin.test.ts` (`:108`, `:149`) prüft die Beschriftung des Bestätigungsknopfs in beiden Zweigen (`caPinError` → `login.resetDeviceId`, sonst `login.resetPin`) über die Argumente des gemockten `confirmDialog`. CHANGELOG (`:320`): der Login-Knopf heißt „Gepinntes Server-Zertifikat zuruecksetzen“ (`login.resetPin`), nicht „Pin zuruecksetzen“.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.dialog.test.ts src/components/Login.pin.test.ts
+Doku: CHANGELOG.md (Fixed, Wortlaut)
