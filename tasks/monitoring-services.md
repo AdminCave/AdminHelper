@@ -41,8 +41,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestAliasAndWatch
 Doku: keine (intern; sichtbar mit T8)
 Abhängt von: T2
 
-### T4 — Monitoring: Auto-Modus nimmt die Agent-Liste, Zähler, Glob-ignore, systemctl-Fehler  [ ]
+### T4 — Monitoring: Auto-Modus nimmt die Agent-Liste, Zähler, Glob-ignore, systemctl-Fehler  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_service_process_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @914247cc 2026-10-16T15:52:53+02:00
+Review: approve (.ah-out/review/monitoring-services/T4.verdict.json)
 Änderung: `_evaluate_auto` (`checkers/agent.py:374-442`) übernimmt `systemd.enabled_inactive` unverändert und berechnet es nicht mehr aus `all_services` (`:401-405`); `failed` = `systemd.failed` ∪ failed aus dem gekappten Inventar wie heute. `counts` → `_details.active_count`/`total` (nur wenn vorhanden und ganzzahlig ≥ 0). `systemd.error` → `unknown` mit Grund statt „Alle systemd-Units OK“. `_is_ignored` (`:364-372`) vergleicht per `fnmatch.fnmatchcase`, mit derselben `.service`-Normalisierung. Tests zuerst rot: voller und gedrosselter Push liefern dasselbe Ergebnis (Agent-Liste maßgeblich, auch wenn `all_services` mehr inaktive Units enthält); Zähler landen in `_details`; ungültige Zähler werden ignoriert; `error` → `unknown`; `ignore: ["drkonqi-coredump-processor@*"]` blendet eine Instanz aus; der bestehende Test `test_auto_mode_full_and_throttled_report_agree` bleibt grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py
 Doku: keine (intern; sichtbar mit T8)

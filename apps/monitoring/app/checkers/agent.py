@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta
+from fnmatch import fnmatchcase
 
 from app.core.time import utcnow_naive
 
@@ -322,10 +323,10 @@ class ServiceProcessChecker:
     - "auto": Automatically detects failed and enabled-but-inactive units
     - "list": Only checks explicitly named services (previous behavior)
 
-    Config example (auto):
+    Config example (auto; ignore entries are glob patterns):
     {
         "mode": "auto",
-        "ignore": ["ModemManager.service", "udisks2.service"]
+        "ignore": ["ModemManager.service", "drkonqi-coredump-processor@*"]
     }
 
     Config example (list):
@@ -361,29 +362,65 @@ class ServiceProcessChecker:
             return result
         return set()
 
+    # Unit type suffixes (systemd.unit(5)). A name with one of them is never read as
+    # <name>.service, or "*.service" would also hide a failed data.mount.
+    _UNIT_TYPES = (
+        ".service",
+        ".socket",
+        ".device",
+        ".mount",
+        ".automount",
+        ".swap",
+        ".target",
+        ".path",
+        ".timer",
+        ".slice",
+        ".scope",
+    )
+
     @staticmethod
     def _is_ignored(unit: str, ignore: set) -> bool:
-        """Checks whether a unit should be ignored (with/without .service suffix)."""
-        if unit in ignore:
-            return True
+        """Checks whether a unit matches an ignore glob (with/without .service suffix)."""
         # "nginx" should also match "nginx.service" and vice versa
         if unit.endswith(".service"):
-            return unit[:-8] in ignore
-        return f"{unit}.service" in ignore
+            names = (unit, unit[:-8])
+        elif unit.endswith(ServiceProcessChecker._UNIT_TYPES):
+            names = (unit,)
+        else:
+            names = (unit, f"{unit}.service")
+        return any(fnmatchcase(n, p) for n in names for p in ignore)
+
+    @staticmethod
+    def _capped(raw) -> list:
+        """Caps a unit list from the report so a huge/hostile array can't drive a DoS through
+        the glob matching (3.76); a non-list value is treated as empty."""
+        return raw[:500] if isinstance(raw, list) else []
+
+    @staticmethod
+    def _parse_counts(raw) -> tuple[int, int] | None:
+        """The agent's (active, total) service counts, or None unless both are integers with
+        0 <= active <= total. Old agents send none; a failed list-units/sc query leaves them out."""
+        if not isinstance(raw, dict):
+            return None
+        active, total = raw.get("active"), raw.get("total")
+        # bool is an int subclass: JSON true is no count.
+        if not all(isinstance(n, int) and not isinstance(n, bool) for n in (active, total)):
+            return None
+        return (active, total) if 0 <= active <= total else None
 
     def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         """Auto mode: checks systemd health from the report.
 
-        Supports two report formats:
-        - New (v2): systemd.all_services with raw data → server filters itself
-        - Old (v1): systemd.failed / systemd.enabled_inactive (agent pre-filtered)
+        failed and enabled_inactive are always sent. enabled_inactive is taken as the agent
+        sends it: only the agent re-checks its candidates (oneshot units that finished,
+        Condition skips, Timer/Socket activation) with properties the inventory lacks, so
+        the server must not re-derive the list from all_services.
 
-        The key-presence check below is load-bearing: v2 agents throttle the
-        large, mostly-static all_services inventory and OMIT the key on most
-        pushes, while failed/enabled_inactive are always sent — a missing key
-        means "fall back to the legacy keys", only an empty list means
-        "genuinely no services". The inventory is not persisted server-side,
-        so nothing is lost by a throttled push.
+        all_services, the large, mostly-static inventory, is throttled: v2 agents OMIT the
+        key on most pushes. It only adds failed services systemd.failed lacks, after
+        systemd.failed, so a full and a throttled push of the same state give the same
+        result. The inventory is not persisted server-side, so nothing is lost by a
+        throttled push.
         """
         systemd = report.get("systemd")
         if not systemd:
@@ -391,26 +428,11 @@ class ServiceProcessChecker:
 
         ignore = self._parse_ignore(config.get("ignore", []))
 
-        if "all_services" in systemd:
-            # New format: raw data from agent, server filters. Cap the inventory length
-            # so a huge/hostile all_services array can't drive a DoS (3.76); a non-list
-            # value is treated as empty.
-            raw_all = systemd["all_services"]
-            all_svcs = raw_all[:500] if isinstance(raw_all, list) else []
-            failed_raw = [s["unit"] for s in all_svcs if s.get("active_state") == "failed"]
-            enabled_inactive_raw = [
-                s["unit"]
-                for s in all_svcs
-                if s.get("enabled_state") == "enabled" and s.get("active_state") == "inactive"
-            ]
-            # Also include non-service failed units (e.g. .mount, .socket)
-            for u in systemd.get("failed", []):
-                if u not in failed_raw:
-                    failed_raw.append(u)
-        else:
-            # Old format: agent has already filtered
-            failed_raw = systemd.get("failed", [])
-            enabled_inactive_raw = systemd.get("enabled_inactive", [])
+        failed_raw = self._capped(systemd.get("failed"))
+        for s in self._capped(systemd.get("all_services")):
+            if s.get("active_state") == "failed" and s["unit"] not in failed_raw:
+                failed_raw.append(s["unit"])
+        enabled_inactive_raw = self._capped(systemd.get("enabled_inactive"))
 
         failed = [u for u in failed_raw if not self._is_ignored(u, ignore)]
         enabled_inactive = [u for u in enabled_inactive_raw if not self._is_ignored(u, ignore)]
@@ -425,6 +447,9 @@ class ServiceProcessChecker:
             "failed": failed,
             "enabled_inactive": enabled_inactive,
         }
+        counts = self._parse_counts(systemd.get("counts"))
+        if counts is not None:
+            metrics["_details"]["active_count"], metrics["_details"]["total"] = counts
 
         if failed:
             msg = f"Failed: {', '.join(failed)}"
@@ -438,6 +463,13 @@ class ServiceProcessChecker:
                 f"Inaktiv (autostart): {', '.join(enabled_inactive)}",
                 metrics,
             )
+
+        # The agent could not list the services (systemctl list-units / sc query failed): its
+        # empty lists prove nothing. On Linux failed comes from a call of its own (list-units
+        # --state=failed), so a failed unit still makes the check critical above.
+        error = systemd.get("error")
+        if error:
+            return "unknown", f"Dienste nicht abfragbar: {error}", metrics
 
         return "ok", "Alle systemd-Units OK", metrics
 
