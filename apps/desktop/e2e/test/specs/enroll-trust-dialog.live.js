@@ -12,6 +12,9 @@
 // server-side rejection of the bogus token, not the unknown-issuer error. The
 // decline path and persist-before-retry ordering are covered by the Vitest
 // component tests (Login.trust.test.ts). Run by scripts/tests/desktop_e2e_crud.sh.
+//
+// Only this spec sees whether the dialog is on top of the login screen: jsdom in
+// the Vitest tests has no stacking.
 
 import { SERVER_URL, jsClick } from '../lib/live.js';
 
@@ -29,11 +32,29 @@ describe('AdminHelper desktop — first-contact trust dialog', () => {
     if (await $('.login-card .login-error').isExisting()) {
       throw new Error('inline error shown although the trust dialog should have replaced it');
     }
+
+    // Existing is not seeing: the dialog sat in the DOM under the opaque login screen.
+    // The point a user clicks, the accept button's centre, has to hit the button
+    // itself; otherwise the test names what lies above it.
+    const accept = await $('[data-action="trust-accept"]');
+    if (!(await accept.isDisplayed())) {
+      throw new Error('trust dialog accept button is not displayed');
+    }
+    const problem = await browser.execute((node) => {
+      const r = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (hit && node.contains(hit)) return null;
+      if (!hit) return 'accept button centre lies outside the viewport';
+      const classes = [...hit.classList].filter((c) => !c.startsWith('svelte-'));
+      return `covered by ${[hit.tagName.toLowerCase(), ...classes].join('.')}`;
+    }, accept);
+    if (problem !== null) throw new Error(`trust dialog ${problem}`);
   });
 
   it('accepting trusts the server (TOFU) and retries through the TLS layer', async () => {
-    // jsClick: the WebDriver hit-test rejects the coordinate click on the
-    // modal's action row (same interception the editor modals hit, see live.js).
+    // jsClick skips WebDriver's hit test. That test once rejected the coordinate click
+    // because the login screen covered the dialog, not a status bar (there is none
+    // before login); the check above now proves the button is on top.
     await jsClick(await $('[data-action="trust-accept"]'));
     await $('[data-testid="trust-dialog"]').waitForExist({ reverse: true, timeout: 20000 });
 

@@ -48,13 +48,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const v = config[key];
     return Array.isArray(v) ? v.join(', ') : '';
   }
-  function setCsvStr(key: string, raw: string): void {
+  // unique keeps each entry once (SecServices keys its rows by service name).
+  // Only on change, never per keystroke: the field re-renders from config, so
+  // collapsing "nginx, nginx" on the way to "nginx, nginx-exporter" would eat
+  // the typing. Save is a button, and its click blurs the field first.
+  function setCsvStr(key: string, raw: string, unique = false): void {
     const arr = raw
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    if (arr.length === 0) delete config[key];
-    else config[key] = arr;
+    const vals = unique ? [...new Set(arr)] : arr;
+    if (vals.length === 0) delete config[key];
+    else config[key] = vals;
   }
   function setCsvNum(key: string, raw: string): void {
     const arr = raw
@@ -287,7 +292,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
         placeholder="sshd, nginx"
         value={csvStrVal('services')}
         oninput={(e) => setCsvStr('services', e.currentTarget.value)}
+        onchange={(e) => setCsvStr('services', e.currentTarget.value, true)}
       />
+      <span class="field-hint">{$t('monitoring.checkCfg.servicesHint')}</span>
     </label>
   {:else}
     <label class="field" style="grid-column: span 2;">
@@ -296,7 +303,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
         type="text"
         value={csvStrVal('ignore')}
         oninput={(e) => setCsvStr('ignore', e.currentTarget.value)}
+        onchange={(e) => setCsvStr('ignore', e.currentTarget.value, true)}
       />
+      <span class="field-hint">{$t('monitoring.checkCfg.ignoreHint')}</span>
     </label>
   {/if}
 {:else if checkType === 'proxmox_backup'}
@@ -392,6 +401,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .field-label {
     font-size: 12px;
+    color: var(--text-muted);
+  }
+  .field-hint {
+    font-size: 11px;
     color: var(--text-muted);
   }
   .cfg-hint {
