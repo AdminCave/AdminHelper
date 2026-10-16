@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import { setLanguage } from '$lib/i18n';
+import { setLanguage, tNow } from '$lib/i18n';
 import { withoutErrorCodes } from '$lib/utils/errors';
 import type { ResetOutcome } from '$lib/bridge';
 
@@ -25,7 +25,7 @@ const h = vi.hoisted(() => ({
   enrollWithToken: vi.fn(),
   resetServerCertPin: vi.fn(),
   resetDeviceIdentity: vi.fn(async (_serverUrl: string): Promise<ResetOutcome> => 'revoked'),
-  confirm: vi.fn(async () => true),
+  confirmDialog: vi.fn(async () => true),
 }));
 
 vi.mock('$lib/stores/session', async () => {
@@ -47,7 +47,7 @@ vi.mock('$lib/bridge', () => ({
   resetServerCertPin: h.resetServerCertPin,
   resetDeviceIdentity: h.resetDeviceIdentity,
 }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: h.confirm }));
+vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: h.confirmDialog }));
 
 import Login from './Login.svelte';
 
@@ -99,6 +99,31 @@ describe('Login — device certificate no longer valid (ERR_CERT_REVOKED)', () =
     await waitFor(() => expect(h.resetDeviceIdentity).toHaveBeenCalledWith('https://srv.example'));
     await waitFor(() => expect(container.textContent).toContain('mit einem Einmal-Token neu'));
     expect(container.textContent).not.toContain('Nur auf diesem Gerät');
+  });
+
+  it('asks in the app dialog first, the reset on its confirm button', async () => {
+    h.login.mockRejectedValueOnce(new Error(REVOKED));
+    const { container } = render(Login);
+    await submitLogin(container);
+    await fireEvent.click(await button(container, 'cert-revoked-reset'));
+
+    await waitFor(() => expect(h.resetDeviceIdentity).toHaveBeenCalledWith('https://srv.example'));
+    expect(h.confirmDialog).toHaveBeenCalledTimes(1);
+    expect(h.confirmDialog).toHaveBeenCalledWith(tNow('login.certRevoked.confirm'), {
+      confirmLabel: tNow('login.resetDeviceId'),
+    });
+  });
+
+  it('a cancelled question resets nothing and keeps the hint', async () => {
+    h.login.mockRejectedValueOnce(new Error(REVOKED));
+    h.confirmDialog.mockResolvedValueOnce(false);
+    const { container } = render(Login);
+    await submitLogin(container);
+    await fireEvent.click(await button(container, 'cert-revoked-reset'));
+
+    await waitFor(() => expect(h.confirmDialog).toHaveBeenCalledTimes(1));
+    expect(h.resetDeviceIdentity).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-msg="cert-revoked"]')).not.toBeNull();
   });
 });
 

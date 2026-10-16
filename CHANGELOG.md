@@ -324,6 +324,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   haelt jede der beiden die Sperrdatei `agent.lock` im Identitaetsverzeichnis vom ersten Lesen der Identitaet bis
   zum Speichern der neuen: Eine Provisionierung wartet hoechstens eine laufende Erneuerung ab und nennt deren
   Zertifikat als ersetzt, eine wartende Erneuerung findet das frische Zertifikat und erneuert nicht.
+- **Desktop: Geraete-Identitaet und Pin lassen sich wieder zuruecksetzen (R-0395):** Die Rueckfragen vor dem
+  Zuruecksetzen, auf dem Login-Screen („Geraete-Identitaet zuruecksetzen“, „Gepinntes Server-Zertifikat
+  zuruecksetzen“) und in den Einstellungen, liefen ueber den nativen Dialog von `@tauri-apps/plugin-dialog`. Den
+  erlaubten die Capabilities nicht (nur `dialog:allow-save`), die Ablehnung ging verloren, und die Knoepfe taten
+  nichts. Jetzt fragt der App-eigene Dialog, wie beim Loeschen im Monitoring; sein Bestaetigungsknopf traegt die
+  Aktion. Escape schliesst darin nur die Rueckfrage, nicht die Einstellungen darunter. Ein Vertragstest prueft,
+  dass jede Funktion, die die Oberflaeche aus dem Dialog-Plugin nutzt, in `capabilities/default.json` erlaubt ist.
+  Ein gescheiterter Export des Browser-Zertifikats nennt jetzt hinter der Meldung seine Ursache.
 - **Server: die Server-CLI schreibt Audit-Eintraege (R-0397):** `python -m app.cli create-admin`, `reset-admin` und
   `mint-enroll-token` liessen keine Spur im Audit-Log, obwohl derselbe Vorgang ueber die API protokolliert wird. Jetzt
   schreibt jeder erfolgreiche Aufruf einen Eintrag (`user.created`, `user.password_reset`,
