@@ -88,7 +88,7 @@ freigegeben; alte Server ignorieren unbekannte Schlüssel, alte Agents liefern s
 "systemd": {
   "failed": [...],                 // wie bisher, immer gesendet
   "enabled_inactive": [...],       // NEU gefiltert (oneshot/Condition/Timer verworfen), immer gesendet
-  "counts": {"active": 41, "total": 63},   // NEU, immer gesendet: nur .service, active_state == "active"
+  "counts": {"active": 41, "total": 63},   // NEU: active_state == "active" / geladene Units (Linux: list-units ohne not-found und masked; Windows: sc query); fehlt, wenn list-units bzw. sc query scheitert
   "error": "systemctl list-units failed: …",  // NEU, nur wenn systemctl scheitert
   "all_services": [                // wie bisher gedrosselt; NEU: nach unit sortiert
     {"unit": "sshd.service", "active_state": "unknown", "enabled_state": "alias", "alias_of": "ssh.service"}
