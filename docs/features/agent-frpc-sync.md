@@ -76,7 +76,7 @@ Dazu kommen drei Schwächen am selben Ablauf:
 | agent | `apps/agent/internal/frpc/apply.go` | `WriteSyncConfig` herauslösen; `Apply` nutzt den gemeinsamen Anwende-Pfad und speichert den Server-Hash |
 | agent | `apps/agent/internal/frpc/sync.go` | Ablauf nach Tabelle unten; lokaler Vorspann (`loginFailExit`, später `webServer.*`) |
 | agent | `apps/agent/internal/frpc/platform_linux.go` / `platform_windows.go` | Seams: aktiv?, aktivieren, deaktivieren und stoppen, Reload; Windows No-ops |
-| agent | neu `apps/agent/internal/frpc/admin.go` (+ Test) | `admin.conf` (Port, Passwort, 0600), freier Port, `/healthz` |
+| agent | neu `apps/agent/internal/frpc/admin.go` (+ Test) | `admin.conf` (Port, Hex-Passwort, 0600), freier Port, Prüfung des eigenen Listeners über `/proc/net/tcp` |
 | agent | `apps/agent/internal/provision/provision.go` | schreibt die Sync-Config immer; `frp=null` → Ablauf „nichts zu tun“ |
 | scripts | `scripts/tests/box_tunnelbox.sh`, `multibox.sh`, `multibox_test.sh` | Szenario: Tunnel nach dem Provisionieren; zweiter Tunnel bei offener Sitzung |
 | docs | `docs/admin/agent-deployment.html`, `docs/developer/agent.html`, `docs/developer/server.html:99`, `docs/developer/api-reference.html:163` (je DE+EN), `CHANGELOG.md` | siehe Doku-Impact |
@@ -100,6 +100,8 @@ Dazu kommen drei Schwächen am selben Ablauf:
   - `/etc/frp/frpc.toml`: lokaler Vorspann + Server-Text, 0600. Gelöscht bei 0 Tunneln oder ohne FRP-Config.
   - `/etc/frp/.config-hash`: Hash des **Server**-Texts, nicht der lokal ergänzten Datei.
   - neu `/etc/frp/admin.conf` (0600): Port und Passwort der lokalen frpc-Admin-API.
+  - neu `/etc/frp/.started-hash`: Common-Teil, mit dem frpc zuletzt gestartet wurde; vor jedem Start gelöscht,
+    damit auf einen gescheiterten Neustart kein Reload folgt.
 
 **Kompatibilität**
 
@@ -116,14 +118,15 @@ Dazu kommen drei Schwächen am selben Ablauf:
 |---|---|
 | `adminhelper.conf` fehlt (Bestandshost) | Info mit dem Ausweg „einmal neu provisionieren“, Exit 0 |
 | `hash: null` | frpc stoppen und deaktivieren, `frpc.toml` und Hash löschen, Exit 0 |
-| Hash gleich, frpc soll laufen und läuft | nichts. Mit T6: `/healthz` prüfen. |
-| Hash gleich, frpc soll laufen, läuft aber nicht (z. B. Admin-Port nach Reboot belegt) | mit T6: neuen Port wählen, Datei neu schreiben, starten |
+| Hash gleich, frpc soll laufen und läuft | nichts (`systemctl is-active`, kein `/healthz`) |
+| Hash gleich, frpc soll laufen, läuft aber nicht (z. B. Admin-Port nach Reboot belegt) | neuen Port und neues Passwort wählen, Datei neu schreiben, starten |
 | Hash neu, TOML ohne `[[proxies]]` | frpc stoppen und deaktivieren, `frpc.toml` löschen, Hash speichern |
 | Hash neu, mit Proxies, frpc aus | schreiben, `enable --now` |
-| Hash neu, mit Proxies, frpc läuft, Common-Teil gleich | schreiben, Reload (mit T6). Scheitert er, Neustart. |
+| Hash neu, mit Proxies, frpc läuft, Common-Teil gleich | schreiben, Reload, wenn frpc mit diesem Common-Teil gestartet wurde (`.started-hash`) und der Admin-Port einem Listener von root gehört; sonst oder wenn der Reload scheitert, Neustart |
 | Hash neu, mit Proxies, Common-Teil anders (Token, Adresse, `user`, TLS) | schreiben, Neustart |
-| Provision mit FRP-Paket | Sync-Config schreiben, dann derselbe Anwende-Pfad wie oben mit dem Paket-Text |
+| Provision mit FRP-Paket | Sync-Config schreiben, dann derselbe Anwende-Pfad wie oben mit dem Paket-Text, aber immer Neustart statt Reload |
 | Provision ohne FRP-Paket | Sync-Config schreiben, dann wie `hash: null` (stoppt einen frpc aus einer früheren Provisionierung) |
+| Server-Text setzt `webServer` oder `loginFailExit` (Schlüssel oder Tabelle, gleich welche Schreibweise) | Fehler, nichts schreiben, starten oder speichern; den lokalen Kopf setzt nur der Agent |
 
 Der Hash wird erst nach erfolgreichem Anwenden gespeichert (wie heute `sync.go:107`). Ein gescheiterter Schritt
 wird beim nächsten Lauf wiederholt.
@@ -160,7 +163,8 @@ gebündelte Version (`FRP_VERSION` in `.github/workflows/*.yml`).
   Nutzen. Scheitert der Reload, folgt ein Neustart.
 - **Admin-API auf Agent-Hosts (Kevin: ja, letzte Task).** Ein zusätzlicher Listener auf 127.0.0.1. Ohne Passwort
   käme jeder lokale Prozess an das frps-Token (`GET /api/config`) und könnte frpc stoppen. Deshalb ist ein
-  zufälliges Passwort mit 32 Byte in einer 0600-Datei Pflicht.
+  zufälliges Passwort mit 32 Byte (hex) in einer 0600-Datei Pflicht. Wechselt der Port, wechselt auch das
+  Passwort; der Reload geht nur an den Listener von root auf diesem Port.
 
 ## Risiken & Rollback
 
