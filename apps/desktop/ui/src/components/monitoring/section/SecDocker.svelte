@@ -25,18 +25,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ok: number;
     warn: number;
     crit: number;
+    running: number;
     allOk: boolean;
+    allRunning: boolean;
   }
 
   function info(check: MonitorCheck): Info {
     const list = (check.state?.details as MonitorContainerDetails | undefined)?.containers ?? [];
     let ok = 0,
       warn = 0,
-      crit = 0;
+      crit = 0,
+      running = 0;
     for (const c of list) {
       if (c.category === 'critical') crit++;
       else if (c.category === 'warning') warn++;
       else ok++;
+      // The server rates exited/created/paused containers as ok too; the
+      // category alone does not say "running".
+      if (c.state === 'running') running++;
     }
     return {
       containers: list,
@@ -44,7 +50,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       ok,
       warn,
       crit,
+      running,
       allOk: crit === 0 && warn === 0,
+      allRunning: running === list.length,
     };
   }
 </script>
@@ -66,10 +74,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/snippet}
         {#snippet value()}
           {#if i.total === 0}
-            <span class="mon-line-pill">—</span>
+            {#if check.state?.status === 'unknown'}
+              <span class="mon-line-pill" title={check.state?.message}
+                >{$t('monitoring.docker.noData')}</span
+              >
+            {:else}
+              <span class="mon-line-pill">—</span>
+            {/if}
           {:else if i.allOk}
             <span class="mon-line-pill pill-ok"
-              >{$t('monitoring.docker.allOk', { count: i.total })}</span
+              >{i.allRunning
+                ? $t('monitoring.docker.allOk', { count: i.total })
+                : $t('monitoring.docker.okRunning', { running: i.running, total: i.total })}</span
             >
           {:else}
             {#if i.crit > 0}
@@ -85,7 +101,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {#if i.allOk && i.total > 0}
             <div class="mon-expand-list">
               <div class="mon-expand-hint">
-                {$t('monitoring.docker.allOkHint', { count: i.total })}
+                {i.allRunning
+                  ? $t('monitoring.docker.allOkHint', { count: i.total })
+                  : $t('monitoring.docker.okRunning', { running: i.running, total: i.total })}
               </div>
               {#each i.containers as c (c.name)}
                 <div class="mon-expand-row level-ok">
