@@ -103,7 +103,7 @@ Abhängt von: T4, T6, T8
 
 ### T10 — Tunnel-Store: `reconnectNow()` verwirft den geplanten Neustart und gleicht sofort ab  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts
-Änderung: Neue exportierte Funktion `reconnectNow()` im Tunnel-Store: bei aktivem Takt verwirft sie einen geplanten Backoff-Neustart (T7), setzt die Pause auf 5 s zurück und ruft `refreshNow()` (T6, hängt sich an einen laufenden Abgleich an); ohne aktiven Takt (abgemeldet, lokaler Modus) tut sie nichts. Vitest mit Fake-Timern, zuerst rot: nach `markTerminated` und `reconnectNow()` genau ein sofortiger Abgleich und kein weiterer zum alten Backoff-Zeitpunkt; scheitert dieser, beginnt die Pause wieder bei 5 s; nach `stop()` löst `reconnectNow()` nichts aus.
+Änderung: Neue exportierte Funktion `reconnectNow()` im Tunnel-Store: bei aktivem Takt verwirft sie einen geplanten Backoff-Neustart (T7), setzt die Pause auf 5 s zurück und ruft `refreshNow()` (T6, reiht während eines laufenden Abgleichs genau einen Folgelauf ein); ohne aktiven Takt (abgemeldet, lokaler Modus) tut sie nichts. Vitest mit Fake-Timern, zuerst rot: nach `markTerminated` und `reconnectNow()` genau ein sofortiger Abgleich und kein weiterer zum alten Backoff-Zeitpunkt; scheitert dieser, beginnt die Pause wieder bei 5 s; nach `stop()` löst `reconnectNow()` nichts aus.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
 Doku: keine (intern; sichtbar mit T11)
 Abhängt von: T7
@@ -123,3 +123,12 @@ Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/deve
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- visitor
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:145`)
 Abhängt von: T4
+
+Kevin 2026-10-16 (nach dem Review von T6): Der Abmelde-Knopf der Kopfzeile stoppt den Tunnel, als eigene Task im Bündel (T13).
+
+### T13 — Abmelden über die Kopfzeile stoppt den Tunnel  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/components/AppShell.svelte
+Änderung: Der Abmelde-Knopf der Kopfzeile (`AppShell.svelte:276`) ruft `logout()` aus `stores/session.ts` (`:114`) und läuft an `stop()` des Tunnel-Stores vorbei: frpc läuft nach dem Abmelden weiter, die Mappings der vorigen Sitzung bleiben im Store. Neue exportierte Funktion in `stores/settings.ts` neben `serverLogout` (`:148`): zuerst `tunnelStore.stop()` (ein Fehler wird ignoriert wie dort), dann `logout()` aus `session.ts`; `connections.json` bleibt unberührt (kein `reloadForMode`). `AppShell.svelte:276` ruft sie. `session.ts` importiert den Tunnel-Store nicht (`tunnel.ts` importiert `session.ts`). Tests in `settings.test.ts`, zuerst rot: `stopTunnel` vor `bridge.logout`; ein Fehler beim Stoppen verhindert das Abmelden nicht; danach steht der Tunnel-Store auf „idle“ ohne Mappings, und nach 60 s Fake-Timer folgt kein weiterer `refreshTunnel`.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/settings.test.ts
+Doku: keine (intern)
+Abhängt von: T6

@@ -83,8 +83,8 @@ Dazu zwei Ereignis-Lücken, die ein automatischer Neustart verschärfen würde:
 - `apps/desktop/src-tauri/src/commands.rs` — Command `refresh_tunnel` (neben `start_tunnel` `:307`).
 - `apps/desktop/src-tauri/src/main.rs` — Registrierung (`:103-104`).
 - `apps/desktop/src-tauri/src/models.rs` — `TunnelStatus` (`:155`) um die Namen der aktiven Visitors.
-- `apps/desktop/src-tauri/src/auth.rs` — kleiner Leser für das aktuelle Access-Token aus dem Keyring
-  (`load_session_from_keyring` `:260`), siehe Trade-offs.
+- `apps/desktop/src-tauri/src/auth.rs` — `authenticated_get` sendet nach dem Pin das Access-Token der
+  aktiven Sitzung aus dem Keyring, für alle Aufrufer (T5), siehe Trade-offs.
 
 **Desktop-UI (Svelte/TS)**
 - `apps/desktop/ui/src/lib/stores/tunnel.ts` — Takt (aktivieren/deaktivieren nach dem Muster von
@@ -175,8 +175,9 @@ einen eigenen reqwest-Client ohne Proxy (`no_proxy`), mit Basic-Auth und kurzem 
 - `activateTunnel()` beim Eintritt in den Server-Modus mit Session: sofort ein Abgleich, dann alle 60 s;
   `deactivateTunnel()` beim Abmelden, Moduswechsel und Zerstören der App-Shell, mit Generationszähler wie
   `notifications.ts:100` gegen überholte Aktivierungen.
-- **Single-Flight:** läuft ein Abgleich, wird der nächste Takt übersprungen; `refreshNow()` (aus
-  `TunnelModal`) hängt sich an den laufenden an.
+- **Single-Flight:** läuft ein Abgleich, wird der nächste Takt übersprungen. `refreshNow()` (aus
+  `TunnelModal`) reiht während eines laufenden Abgleichs genau einen Folgelauf ein (weitere Aufrufe teilen
+  ihn, `stop()` oder eine neue Aktivierung verwerfen ihn), damit eine gespeicherte Änderung sofort ankommt.
 - Nach jedem Abgleich werden die Mappings (`fetch_tunnels`) neu geladen, damit auch HTTPS-Tunnel aktuell
   sind; ein Fehler dabei lässt die alten Mappings stehen.
 - `stopped` → Anzeige „idle“, Mappings leer, keine Meldung. Fehler → Anzeige bleibt, höchstens eine Meldung
@@ -195,9 +196,10 @@ einen eigenen reqwest-Client ohne Proxy (`no_proxy`), mit Basic-Auth und kurzem 
 3. **Token für den Takt.** Das UI hält das Access-Token vom Login; `authenticated_get` erneuert es bei 401
    transparent und speichert das neue nur im Keyring (`auth.rs:183-203`). Nach acht Stunden liefe sonst
    **jeder Takt** in einen Refresh mit Rotation; zwei gleichzeitige Refreshes mit demselben Refresh-Token
-   lösen die Reuse-Erkennung aus und melden den Nutzer ab. **Empfehlung:** `refresh_tunnel` nimmt das
-   Access-Token aus dem Keyring, wenn vorhanden (nur der übergebene Wert als Rückfall), und die Abgleiche
-   laufen nacheinander. Berührt `auth.rs` (Risikopfad).
+   lösen die Reuse-Erkennung aus und melden den Nutzer ab. **Gewählt (T5):** `authenticated_get` sendet
+   nach dem Pin das Access-Token der aktiven Sitzung aus dem Keyring, für alle Aufrufer (Visitor-Bundle,
+   Mappings, Verbindungs-Sync); nur ohne Sitzung gilt der übergebene Wert. Die Abgleiche laufen nacheinander.
+   Berührt `auth.rs` (Risikopfad).
 4. **Vergleich per TOML-Parser vs. Textvergleich.** `toml` ist schon Abhängigkeit (`Cargo.toml:57`); der
    Parser macht den Vergleich unabhängig von Formatierung. **Empfehlung: Parser.**
 5. **Lokaler Kopf im Server-Generator vs. im Desktop.** Im Desktop: der Server kennt Port und Passwort nicht
