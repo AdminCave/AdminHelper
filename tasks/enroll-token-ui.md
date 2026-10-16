@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Registrierungs-Token im Web-Panel — Task-Ledger
-Status: geplant · Branch: feature/enroll-token-ui · Review: pro Task
+Status: aktiv · Branch: feature/enroll-token-ui · Review: pro Task
 Spec: docs/features/enroll-token-ui.md (Roadmap R-0396)
 Heavy: linux-full — Server-API (`/api/enrollment/token/for`: neuer Parameter, neues Antwortfeld) und eine neue Web-Journey; `web-live`/`web-playwright` laufen im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
