@@ -89,8 +89,10 @@ Beweis: origin/main@af4498a7 · Lab-Render „17 Probleme“ (rot) und „0/17 l
 Dedup-Key: bug:monitoring:checkers/agent.py:services-display
 HEAD: af4498a7
 
-### T7 — Desktop: Platzhalter und Hinweis im Check-Editor  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T7 — Desktop: Platzhalter und Hinweis im Check-Editor  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/components/monitoring/section/SecServices.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @985a5f0e 2026-10-16T16:58:14+02:00
+Review: approve (.ah-out/review/monitoring-services/T7.verdict.json)
 Änderung: Im Listen-Modus (`CheckConfigFields.svelte:282-291`) ein kurzer übersetzter Hinweis unter dem Feld (Namen mit oder ohne `.service`, Aliase erlaubt, Daten spätestens mit dem nächsten vollen Inventar); beim Ignorieren (`:292-300`) Hinweis „Glob-Muster wie `foo@*` erlaubt“. `setCsvStr` entfernt Dubletten (doppelte Namen ergäben doppelte Keys im `{#each … (s.name)}` von `SecServices`). Test zuerst rot in der bestehenden `CheckConfigFields.test.ts`: Hinweise erscheinen je Modus; doppelte Einträge werden einmal gespeichert.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/CheckConfigFields.test.ts
 Doku: keine (intern; sichtbar mit T8)

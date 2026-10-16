@@ -44,6 +44,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     count: { n: number; of: number; key: string } | null;
   }
 
+  // Rows are keyed by name, so each name once, the first entry winning. Older
+  // configurations may list a name twice, and the agent's failed and
+  // enabled_inactive come from two systemctl calls a unit can fail between.
+  function uniqueByName<T extends { name: string }>(list: T[]): T[] {
+    return list.filter((x, i) => list.findIndex((y) => y.name === x.name) === i);
+  }
+
   function info(check: MonitorCheck): Info {
     const d = (check.state?.details ?? null) as MonitorServiceDetails | null;
     if (!d) return { neutral: 'monitoring.services.noData', rows: [], problems: 0, count: null };
@@ -52,14 +59,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
       problems === 0 && status !== 'ok' ? 'monitoring.services.unknown' : null;
 
     if (d.mode === 'auto') {
-      const rows: Svc[] = [
+      const rows = uniqueByName<Svc>([
         ...(d.failed ?? []).map<Svc>((n) => ({ name: n, level: 'crit', note: 'failed' })),
         ...(d.enabled_inactive ?? []).map<Svc>((n) => ({
           name: n,
           level: 'warn',
           note: 'inactive',
         })),
-      ];
+      ]);
       // Agents before R-0418 send no counts: then the problem count alone, no "x/y".
       const { active_count: n, total: of } = d;
       return {
@@ -74,10 +81,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
 
     // Details written before R-0418 carry running alone; false meant down then.
-    const watched = (d.watched ?? []).map((s) => ({
-      name: s.name,
-      state: s.state ?? (s.running ? 'running' : 'down'),
-    }));
+    const watched = uniqueByName(
+      (d.watched ?? []).map((s) => ({
+        name: s.name,
+        state: s.state ?? (s.running ? 'running' : 'down'),
+      })),
+    );
     const down = watched
       .filter((s) => s.state === 'down')
       .map<Svc>((s) => ({ name: s.name, level: 'crit', note: 'down' }));

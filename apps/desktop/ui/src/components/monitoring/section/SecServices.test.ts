@@ -297,6 +297,53 @@ describe('SecServices list mode', () => {
     const rows = await expand(el);
     expect(rows.map(row)).toEqual([{ name: 'nginx', note: 'nicht gefunden' }]);
   });
+
+  // monitoring-services T7: a configuration saved before the editor dropped
+  // duplicates still carries them, and the server copies them into watched; a
+  // duplicate {#each} key made Svelte throw and the list did not render.
+  it('shows a name watched twice once and counts it once', async () => {
+    setLanguage('de');
+    const twice = check({
+      status: 'critical',
+      details: {
+        mode: 'list',
+        watched: [
+          { name: 'sshd', state: 'down', running: false },
+          { name: 'nginx', state: 'running', running: true },
+          { name: 'sshd', state: 'down', running: false },
+        ],
+      },
+    });
+    const { container: el } = render(SecServices, { props: { checks: [twice] } });
+    const rows = await expand(el);
+    expect(rows.map(row)).toEqual([{ name: 'sshd', note: 'läuft nicht' }]);
+    // The pill counts what the list shows.
+    expect(texts(pills(el))).toEqual(['1 Probleme', '1/2 laufen']);
+  });
+});
+
+describe('SecServices auto mode duplicates', () => {
+  // failed and enabled_inactive come from two systemctl calls in the agent: a
+  // unit that fails in between stands in both. The first entry, failed, wins.
+  it('shows a unit in failed and enabled_inactive once, as failed', async () => {
+    setLanguage('de');
+    const both = check({
+      status: 'critical',
+      details: {
+        mode: 'auto',
+        failed: ['foo.service'],
+        enabled_inactive: ['foo.service', 'bar.service'],
+      },
+    });
+    const { container: el } = render(SecServices, { props: { checks: [both] } });
+    const rows = await expand(el);
+    expect(rows.map(row)).toEqual([
+      { name: 'foo.service', note: 'fehlgeschlagen' },
+      { name: 'bar.service', note: 'inaktiv (Autostart)' },
+    ]);
+    expect(rows[0].classList.contains('level-crit')).toBe(true);
+    expect(texts(pills(el))).toEqual(['2 Probleme']);
+  });
 });
 
 describe('SecServices translations', () => {

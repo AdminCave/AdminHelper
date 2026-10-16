@@ -541,7 +541,10 @@ export const translations: Translations = {
     'monitoring.checkCfg.modeAuto': 'Automatisch',
     'monitoring.checkCfg.modeList': 'Liste',
     'monitoring.checkCfg.services': 'Dienste (kommagetrennt)',
+    'monitoring.checkCfg.servicesHint':
+      'Mit oder ohne .service, Aliase erlaubt. Daten spätestens mit dem nächsten vollen Inventar (≤ 1 h).',
     'monitoring.checkCfg.ignore': 'Ignorieren (kommagetrennt)',
+    'monitoring.checkCfg.ignoreHint': 'Glob-Muster wie foo@* erlaubt.',
     'monitoring.checkCfg.maxBackupAgeHours': 'Max. Backup-Alter (Stunden)',
     'monitoring.checkCfg.excludeVmids': 'VMIDs ausschließen (kommagetrennt)',
     'monitoring.checkCfg.excludeStopped': 'Gestoppte VMs ausschließen',
@@ -1172,7 +1175,10 @@ export const translations: Translations = {
     'monitoring.checkCfg.modeAuto': 'Automatic',
     'monitoring.checkCfg.modeList': 'List',
     'monitoring.checkCfg.services': 'Services (comma-separated)',
+    'monitoring.checkCfg.servicesHint':
+      'With or without .service, aliases allowed. Data with the next full inventory (≤ 1 h) at the latest.',
     'monitoring.checkCfg.ignore': 'Ignore (comma-separated)',
+    'monitoring.checkCfg.ignoreHint': 'Glob patterns like foo@* allowed.',
     'monitoring.checkCfg.maxBackupAgeHours': 'Max. backup age (hours)',
     'monitoring.checkCfg.excludeVmids': 'Exclude VMIDs (comma-separated)',
     'monitoring.checkCfg.excludeStopped': 'Exclude stopped VMs',
