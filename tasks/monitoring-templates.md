@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Templates: Anpassungen erhalten, Standard-Templates aktualisieren — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-templates · Review: pro Task
+Status: bereit · Branch: feature/monitoring-templates · Review: pro Task
 Spec: docs/features/monitoring-templates.md (Roadmap R-0420)
 Heavy: linux-full — ändert die Monitoring-API (neue Routen, Alembic-Revision, Sync-Verhalten) und Desktop-Journeys (Template-UI): `run.sh integration`/`e2e` im Sammellauf auf einer Pool-VM; kein Agent, kein Cross-Host-Pfad, darum kein `scenario`/`windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -119,8 +119,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_ov
 Doku: keine (intern; beschrieben in T12)
 Abhängt von: T3, T5, T7
 
-### T12 — Doku und CHANGELOG  [ ]
+### T12 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1aa811fb 2026-10-16T19:13:41+02:00
+Review: approve (.ah-out/review/monitoring-templates/T12.verdict.json)
 Änderung: Admin-Doku DE + EN, Abschnitt Templates (`monitoring.html:139-181`): angepasste Felder bleiben beim Sync, Badge und „Auf Template zurücksetzen“, gelöschte Template-Checks bleiben gelöscht und lassen sich wiederherstellen, Standard-Templates mit Version (unverändert → automatisch aktualisiert, angepasst → „Update verfügbar“), neuer Name/Hostname erreicht bestehende Zuweisungen; ausdrücklich: Anpassungen von vor dem Update erkennt der erste Start einmal (T13). Den Satz zum einmaligen Seeding (`:169`) entsprechend ändern. Entwickler-Doku DE + EN (`developer/monitoring.html:155`): `overridden_fields`, Tombstones, Built-in-Version/-Hash, neue Routen. CHANGELOG unter `### Changed` bzw. `### Added`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html · CHANGELOG.md
