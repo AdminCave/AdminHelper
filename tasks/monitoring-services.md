@@ -53,8 +53,10 @@ Beweis: origin/main@af4498a7 · `git grep -n active_count origin/main -- apps` �
 Dedup-Key: bug:monitoring:checkers/agent.py:services-display
 HEAD: af4498a7
 
-### T5 — Monitoring: Listen-Modus serverseitig aus Inventar und letztem Stand  [ ]
+### T5 — Monitoring: Listen-Modus serverseitig aus Inventar und letztem Stand  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_service_process_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @18fef8b0 2026-10-16T16:14:00+02:00
+Review: approve (.ah-out/review/monitoring-services/T5.verdict.json)
 Änderung: `_evaluate_list` (`checkers/agent.py:444-478`) bekommt `prev_details` und wertet je Name nach Spec (c): normalisieren (`.service`), Quelle `report["services"]` → `systemd.all_services` (über `unit` oder `alias_of`) → `prev_details.watched`, sonst `nodata`; `_details.watched` = `[{name, state}]` mit `state ∈ running|down|nodata`; Status `critical` bei mindestens einem `down`, `unknown`, wenn kein Name Daten hat, sonst `ok`. Der Push-Pfad (`routers/agent.py:226-238`) reicht `prev_details` auch an `service_process` (Menge statt Einzelvergleich mit `agent_resources`). Tests zuerst rot: Agent ohne `--services` und Name im Inventar → `running`; Alias `sshd` über `alias_of`; gedrosselter Push übernimmt den letzten Stand; neuer Name ohne Inventar → `nodata`, kein `critical`; Legacy `report["services"]` hat Vorrang; über den TestClient (Fixture `client_db`) erreicht `prev_details` den Checker; `test_list_mode_unaffected_by_throttling` bleibt grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py
 Doku: keine (intern; sichtbar mit T8)

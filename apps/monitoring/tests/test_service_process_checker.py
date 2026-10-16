@@ -267,6 +267,233 @@ def test_list_mode_unaffected_by_throttling():
     assert "nginx" in message
 
 
+def _inventory_report(*, error: str | None = None) -> dict:
+    """Full push of an agent started without --services: no report["services"]. With error,
+    list-units failed: the inventory comes from list-unit-files alone, every state unknown."""
+    entries = [
+        {"unit": "cron.service", "active_state": "inactive", "enabled_state": "enabled"},
+        {"unit": "nginx.service", "active_state": "active", "enabled_state": "enabled"},
+        {"unit": "ssh.service", "active_state": "active", "enabled_state": "enabled"},
+        {
+            "unit": "sshd.service",
+            "active_state": "unknown",
+            "enabled_state": "alias",
+            "alias_of": "ssh.service",
+        },
+    ]
+    systemd = {"failed": [], "enabled_inactive": [], "all_services": entries}
+    if error:
+        for e in entries:
+            e["active_state"] = "unknown"
+        systemd["error"] = error
+    return {"systemd": systemd}
+
+
+def _throttled_inventory_report() -> dict:
+    report = _inventory_report()
+    del report["systemd"]["all_services"]
+    return report
+
+
+def _watched(metrics: dict) -> dict:
+    return {w["name"]: w["state"] for w in metrics["_details"]["watched"]}
+
+
+def test_list_mode_reads_the_inventory_without_an_agent_watch_list():
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx", "cron.service"]}, _inventory_report()
+    )
+    assert status == "critical"
+    assert metrics["_details"] == {
+        "mode": "list",
+        "watched": [
+            {"name": "nginx", "state": "running", "running": True},
+            {"name": "cron.service", "state": "down", "running": False},
+        ],
+    }
+    assert metrics["services_up"] == 1
+    assert metrics["services_down"] == 1
+    assert "cron.service" in message
+
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx"]}, _inventory_report()
+    )
+    assert status == "ok"
+    assert _watched(metrics) == {"nginx": "running"}
+
+
+def test_list_mode_keeps_running_beside_state():
+    # Kevin 2026-10-16: desktops before state read running alone; true only for state running.
+    _, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx", "cron", "nginxx"]}, _inventory_report()
+    )
+    assert metrics["_details"]["watched"] == [
+        {"name": "nginx", "state": "running", "running": True},
+        {"name": "cron", "state": "down", "running": False},
+        {"name": "nginxx", "state": "nodata", "running": False},
+    ]
+
+
+@pytest.mark.parametrize("name", ["sshd", "sshd.service", "ssh"])
+def test_list_mode_resolves_an_alias_through_alias_of(name):
+    status, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": [name]}, _inventory_report()
+    )
+    assert status == "ok"
+    assert _watched(metrics) == {name: "running"}
+
+
+def test_list_mode_alias_takes_the_state_of_its_target():
+    report = _inventory_report()
+    report["systemd"]["all_services"][2]["active_state"] = "failed"
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["sshd"]}, report
+    )
+    assert status == "critical"
+    assert _watched(metrics) == {"sshd": "down"}
+    assert "sshd" in message
+
+    # The agent could not resolve the alias: the alias entry's own state says nothing.
+    del report["systemd"]["all_services"][3]["alias_of"]
+    status, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["sshd"]}, report
+    )
+    assert status == "unknown"
+    assert _watched(metrics) == {"sshd": "nodata"}
+
+
+def test_list_mode_unit_file_that_list_units_does_not_list_is_down():
+    # list-units --all lists every loaded unit; a unit file it lacks is not loaded, so not running.
+    report = _inventory_report()
+    report["systemd"]["all_services"].append(
+        {"unit": "apache2.service", "active_state": "unknown", "enabled_state": "disabled"}
+    )
+    status, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["apache2"]}, report
+    )
+    assert status == "critical"
+    assert _watched(metrics) == {"apache2": "down"}
+
+
+def test_list_mode_systemctl_error_is_no_data():
+    # list-units failed: every state is unknown, which is no data, not down.
+    error = "systemctl list-units failed: exit status 1"
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx", "sshd"]}, _inventory_report(error=error)
+    )
+    assert status == "unknown"
+    assert _watched(metrics) == {"nginx": "nodata", "sshd": "nodata"}
+    assert error in message
+
+
+def test_list_mode_name_without_data_is_not_down():
+    # Kevin 2026-10-16: a typo, a unit that does not exist or a name added since the last full
+    # inventory is shown as not found and never counts as down.
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx", "nginxx"]}, _inventory_report()
+    )
+    assert status == "ok"
+    assert _watched(metrics) == {"nginx": "running", "nginxx": "nodata"}
+    assert metrics["services_down"] == 0
+    assert "nginxx" in message
+
+    # Only data for no name at all makes the check unknown, never critical.
+    prev = {"mode": "list", "watched": [{"name": "nginx", "state": "running"}]}
+    status, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["redis"]}, _throttled_inventory_report(), prev
+    )
+    assert status == "unknown"
+    assert _watched(metrics) == {"redis": "nodata"}
+    assert metrics["services_down"] == 0
+
+
+def test_list_mode_throttled_push_keeps_the_last_state():
+    checker = ServiceProcessChecker()
+    config = {"mode": "list", "services": ["nginx", "cron", "sshd"]}
+    full = checker.evaluate(config, _inventory_report())
+    assert full[0] == "critical"
+
+    # Unchanged inventory, so the agent left it out: the last full evaluation still holds.
+    throttled = checker.evaluate(config, _throttled_inventory_report(), full[2]["_details"])
+    assert throttled == full
+
+    # Without the stored state there is nothing to go by.
+    status, _, metrics = checker.evaluate(config, _throttled_inventory_report(), None)
+    assert status == "unknown"
+    assert set(_watched(metrics).values()) == {"nodata"}
+
+
+def test_list_mode_ignores_unusable_last_states():
+    # Details of the old server (running: bool) marked every name down while the agent sent no
+    # watch list; carrying them over would keep that false alarm.
+    prev = {
+        "mode": "list",
+        "watched": [
+            {"name": "nginx", "running": False},
+            {"name": "cron", "state": "bogus"},
+            "sshd",
+        ],
+    }
+    status, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx", "cron", "sshd"]},
+        _throttled_inventory_report(),
+        prev,
+    )
+    assert status == "unknown"
+    assert _watched(metrics) == {"nginx": "nodata", "cron": "nodata", "sshd": "nodata"}
+
+    for prev in ({"watched": "nginx"}, {"watched": {"nginx": "running"}}, {}):
+        status, _, _ = ServiceProcessChecker().evaluate(
+            {"mode": "list", "services": ["nginx"]}, _throttled_inventory_report(), prev
+        )
+        assert status == "unknown"
+
+
+def test_list_mode_full_inventory_outranks_the_last_state():
+    # A full push is the current truth: a unit gone from it is nodata, not its stale last state.
+    prev = {
+        "mode": "list",
+        "watched": [{"name": "gone", "state": "running"}, {"name": "nginx", "state": "down"}],
+    }
+    status, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["gone", "nginx"]}, _inventory_report(), prev
+    )
+    assert status == "ok"
+    assert _watched(metrics) == {"gone": "nodata", "nginx": "running"}
+
+
+def test_list_mode_agent_watch_list_takes_precedence():
+    report = _inventory_report()
+    report["services"] = [
+        {"name": "nginx.service", "running": False, "pid": None},
+        {"name": "cron", "running": True, "pid": "42"},
+    ]
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["nginx", "cron.service", "sshd"]}, report
+    )
+    assert status == "critical"
+    assert _watched(metrics) == {"nginx": "down", "cron.service": "running", "sshd": "running"}
+    assert "nginx" in message
+
+
+def test_list_mode_finds_windows_services_without_suffix():
+    report = {
+        "systemd": {
+            "failed": [],
+            "enabled_inactive": [],
+            "all_services": [
+                {"unit": "W32Time", "active_state": "active", "enabled_state": "unknown"},
+                {"unit": "Spooler", "active_state": "inactive", "enabled_state": "unknown"},
+            ],
+        }
+    }
+    status, _, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "list", "services": ["W32Time", "Spooler"]}, report
+    )
+    assert status == "critical"
+    assert _watched(metrics) == {"W32Time": "running", "Spooler": "down"}
+
+
 @pytest.fixture()
 def client_db(monkeypatch):
     """TestClient against the real app with sqlite, auth bypassed and
@@ -336,3 +563,39 @@ def test_throttled_push_keeps_stored_state(client_db):
         assert state.status == "critical"
         assert json.loads(state.details)["failed"] == ["nginx.service"]
         assert json.loads(state.details)["enabled_inactive"] == ["cron.service"]
+
+
+def test_list_mode_push_hands_the_stored_state_to_the_checker(client_db):
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-list",
+                server_id="srv-1",
+                name="Watched services",
+                check_type="service_process",
+                config=json.dumps({"mode": "list", "services": ["nginx", "sshd"]}),
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.commit()
+
+    expected = [
+        {"name": "nginx", "state": "running", "running": True},
+        {"name": "sshd", "state": "running", "running": True},
+    ]
+    r = client.post("/agent/srv-1/report", json=_inventory_report())
+    assert r.status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-list").one()
+        assert state.status == "ok"
+        assert json.loads(state.details)["watched"] == expected
+
+    # Throttled push: only the stored details know the states.
+    r = client.post("/agent/srv-1/report", json=_throttled_inventory_report())
+    assert r.status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-list").one()
+        assert state.status == "ok"
+        assert json.loads(state.details)["watched"] == expected

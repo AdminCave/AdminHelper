@@ -321,7 +321,7 @@ class ServiceProcessChecker:
 
     Two modes:
     - "auto": Automatically detects failed and enabled-but-inactive units
-    - "list": Only checks explicitly named services (previous behavior)
+    - "list": Only checks explicitly named services (bare names mean <name>.service)
 
     Config example (auto; ignore entries are glob patterns):
     {
@@ -339,13 +339,18 @@ class ServiceProcessChecker:
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         return "unknown", "Wartet auf Agent-Daten", None
 
-    def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """Evaluates the service data from the agent report."""
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
+        """Evaluates the service data from the agent report.
+
+        `prev_details` is this check's previous `_details` blob (state.details); only the
+        list mode reads it, on a push without the inventory."""
         mode = config.get("mode", "list")
 
         if mode == "auto":
             return self._evaluate_auto(config, report)
-        return self._evaluate_list(config, report)
+        return self._evaluate_list(config, report, prev_details)
 
     @staticmethod
     def _parse_ignore(raw) -> set:
@@ -389,6 +394,14 @@ class ServiceProcessChecker:
         else:
             names = (unit, f"{unit}.service")
         return any(fnmatchcase(n, p) for n in names for p in ignore)
+
+    @staticmethod
+    def _unit_name(name: str) -> str:
+        """The unit a name stands for: a bare "nginx" is "nginx.service". Applied to both sides
+        of a lookup, so a Windows service (no suffix) still finds itself."""
+        if name.endswith(ServiceProcessChecker._UNIT_TYPES):
+            return name
+        return f"{name}.service"
 
     @staticmethod
     def _capped(raw) -> list:
@@ -473,35 +486,105 @@ class ServiceProcessChecker:
 
         return "ok", "Alle systemd-Units OK", metrics
 
-    def _evaluate_list(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """List mode: checks explicitly named services."""
+    @staticmethod
+    def _inventory_state(entry: dict, inventory: dict, error) -> str | None:
+        """running or down from an all_services entry, None if the entry says nothing."""
+        if entry.get("enabled_state") == "alias":
+            # list-units knows a unit by its own name only: an alias has the state of its
+            # target, and without alias_of (the agent could not resolve it) none at all.
+            target = entry.get("alias_of")
+            if not isinstance(target, str):
+                return None
+            entry = inventory.get(ServiceProcessChecker._unit_name(target))
+            if entry is None:
+                return None
+        active = entry.get("active_state")
+        if active == "active":
+            return "running"
+        # unknown: a unit file list-units does not list. Normally that unit is not loaded, so not
+        # running; after a failed list-units every state is unknown and proves nothing.
+        if active == "unknown" and error:
+            return None
+        return "down"
+
+    def _evaluate_list(
+        self, config: dict, report: dict, prev_details: dict | None
+    ) -> tuple[str, str, dict | None]:
+        """List mode: checks explicitly named services, evaluated here, not by the agent.
+
+        Provisioned agents have no watch list of their own (monitor init --services), so per
+        name the first source that knows it decides: the agent's watch list
+        (report["services"]), then the inventory of this push (systemd.all_services, an alias
+        through its alias_of), and on a push without the inventory the state of the last
+        evaluation (prev_details): the agent leaves the inventory out only while its hash,
+        which covers every state, is unchanged. A full inventory is the current truth, so its
+        gaps are not filled from prev_details. A name no source knows is nodata (a typo, no
+        such unit, added since the last full inventory) and not down (Kevin 2026-10-16); only
+        without data for any name is the check unknown.
+        """
         expected = config.get("services", [])
         if not expected:
             return "ok", "Keine Services konfiguriert", None
 
-        reported = {s["name"]: s for s in report.get("services", [])}
-        down = []
-        up = []
+        systemd = report.get("systemd")
+        if not isinstance(systemd, dict):
+            systemd = {}
+        error = systemd.get("error")
 
+        # Lowest precedence first, so each later source overwrites what it knows.
+        states: dict[str, str] = {}
+        if "all_services" in systemd:
+            inventory = {
+                self._unit_name(s["unit"]): s
+                for s in self._capped(systemd["all_services"])
+                if isinstance(s, dict) and isinstance(s.get("unit"), str)
+            }
+            for unit, entry in inventory.items():
+                state = self._inventory_state(entry, inventory, error)
+                if state:
+                    states[unit] = state
+        else:
+            for w in self._capped((prev_details or {}).get("watched")):
+                # Old details (running alone, no state) were written while a missing watch
+                # list meant down for every name; carrying them over would keep that false alarm.
+                if (
+                    isinstance(w, dict)
+                    and isinstance(w.get("name"), str)
+                    and w.get("state") in ("running", "down")
+                ):
+                    states[self._unit_name(w["name"])] = w["state"]
+        for s in self._capped(report.get("services")):
+            if isinstance(s, dict) and isinstance(s.get("name"), str):
+                states[self._unit_name(s["name"])] = "running" if s.get("running") else "down"
+
+        watched = []
         for name in expected:
-            svc = reported.get(name)
-            if svc and svc.get("running"):
-                up.append(name)
-            else:
-                down.append(name)
+            state = states.get(self._unit_name(name), "nodata")
+            # running beside state: desktops before state read running alone (Kevin 2026-10-16).
+            watched.append({"name": name, "state": state, "running": state == "running"})
+        down = [w["name"] for w in watched if w["state"] == "down"]
+        up = [w["name"] for w in watched if w["state"] == "running"]
+        nodata = [w["name"] for w in watched if w["state"] == "nodata"]
 
         metrics = {"services_down": len(down), "services_up": len(up)}
-        metrics["_details"] = {
-            "mode": "list",
-            "watched": [{"name": n, "running": n not in down} for n in expected],
-        }
+        metrics["_details"] = {"mode": "list", "watched": watched}
+        no_data = f"; ohne Daten: {', '.join(nodata)}" if nodata else ""
 
         if down:
             return (
                 "critical",
-                f"Services nicht aktiv: {', '.join(down)}",
+                f"Services nicht aktiv: {', '.join(down)}{no_data}",
                 metrics,
             )
+
+        if not up:
+            message = f"Services ohne Daten: {', '.join(nodata)}"
+            if error:
+                message += f"; Dienste nicht abfragbar: {error}"
+            return "unknown", message, metrics
+
+        if nodata:
+            return "ok", f"{len(up)} Services aktiv{no_data}", metrics
 
         return (
             "ok",
