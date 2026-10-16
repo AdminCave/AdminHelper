@@ -36,8 +36,10 @@ Review: approve (.ah-out/review/frps-supervisor/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py
 Doku: keine (intern)
 
-### T3 — Server: Statusdatei des Supervisors streng lesen  [ ]
+### T3 — Server: Statusdatei des Supervisors streng lesen  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/supervisor_status.py, apps/server/app/core/config.py, apps/server/tests/test_frp_supervisor_status.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f00f0a14 2026-10-16T14:30:45+02:00
+Review: approve (.ah-out/review/frps-supervisor/T3.verdict.json)
 Änderung: Neues Modul (SPDX-Header) `read_supervisor_status(path)` liest `status.json` aus `FRPS_STATE_DIR` (neu in `core/config.py` neben `FRP_CONFIG_DIR`, `:72`; dazu `FRP_BIND_PORT`, Default 7000): höchstens 4096 Bytes, JSON-Objekt mit genau den Schlüsseln `v, boot, heartbeat, state, reason, since, appliedHash, rejectedHash, events`; Enums für `state` (`waiting|running|degraded|stopped|crashloop`), `reason` und `event` (`started|applied|rejected|stopped|crashed`), `boot` 16 hex, Hashes 64 hex oder `null`, ISO-UTC-Zeiten, höchstens 8 Ereignisse mit `seq`, `event`, `at`, `reason`, `tokenChanged`. Jede Abweichung, fehlende oder zu große Datei ergibt einen Zustand `unreadable` bzw. `missing`, nie eine Ausnahme; `heartbeat` älter als 60 s setzt `stale`. Tests: gültige Datei, jede Regel einzeln verletzt, 4097 Bytes, fehlende Datei, Herzschlag zu alt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_supervisor_status.py
 Doku: keine (intern)
