@@ -737,7 +737,8 @@ fn start_fresh(
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
 /// reload or leave it; no tunnels stop it. A failure before that (network, 5xx, a 401 the refresh
-/// could not cure) leaves the running frpc alone.
+/// could not cure) leaves the running frpc alone. `token` is only the fallback: the fetch sends the
+/// session's current access token from the keyring (see [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
     app: tauri::AppHandle,
     state: FrpcState,
@@ -749,6 +750,9 @@ pub async fn refresh_tunnel(
 ) -> Result<TunnelRefresh, AppError> {
     let _serial = lock.0.lock().await;
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
+    // Fetched under the lock: authenticated_get reads the keyring token only now, so a
+    // reconciliation queued behind one that renewed it sends the renewed one and does not
+    // refresh again.
     let bundle = fetch_visitor_bundle(server_url, token, allow_self_signed).await?;
     let sidecar = AppSidecar {
         app: &app,

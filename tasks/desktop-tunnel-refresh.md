@@ -62,8 +62,10 @@ Beweis: main@b84b9495 · `sed -n 344,355p apps/desktop/src-tauri/src/frpc.rs` �
 Dedup-Key: bug:desktop:tunnel.ts:no-refresh-no-retry
 HEAD: b84b9495
 
-### T5 — Der Takt nimmt das aktuelle Access-Token aus dem Keyring  [ ]
+### T5 — Der Takt nimmt das aktuelle Access-Token aus dem Keyring  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @5a2cf0bd 2026-10-16T14:56:34+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T5.verdict.json)
 Änderung: Ein kleiner Leser in `auth.rs` liefert das Access-Token aus dem Keyring (`KEYRING_JWT_KEY`, `auth.rs:11`; `load_session_from_keyring` `:260`); `refresh_tunnel` verwendet es, wenn vorhanden, sonst das übergebene. Hintergrund: `authenticated_get` erneuert bei 401 (`auth.rs:183-203`) und speichert das neue Token nur im Keyring; ohne diesen Leser liefe nach acht Stunden jeder 60-s-Takt in einen Refresh mit Rotation. Test mit `keyring_store::memory()`: Keyring-Token gesetzt → es wird verwendet; leer → das übergebene. Risikopfad Auth: `security`-Prüfer.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- access_token
 Doku: keine (intern)
