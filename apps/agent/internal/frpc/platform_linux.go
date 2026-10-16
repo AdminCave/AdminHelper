@@ -32,3 +32,8 @@ func enableFrpcService() error {
 func restartFrpc() error {
 	return exec.Command("systemctl", "restart", "frpc.service").Run()
 }
+
+// disableFrpc stops the frpc service and keeps it from starting at boot.
+func disableFrpc() error {
+	return exec.Command("systemctl", "disable", "--now", "frpc.service").Run()
+}

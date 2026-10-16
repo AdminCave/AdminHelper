@@ -5,8 +5,10 @@
 package frpc
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -16,8 +18,12 @@ import (
 	"adminhelper-agent/internal/enroll"
 )
 
-// restartService is a seam so tests can stub the frpc restart (which shells out to systemctl).
-var restartService = restartFrpc
+// restartService and disableService are seams so tests can stub the frpc service actions
+// (which shell out to systemctl).
+var (
+	restartService = restartFrpc
+	disableService = disableFrpc
+)
 
 // Sync checks for config changes and updates frpc (port of do_sync).
 func Sync() error {
@@ -56,6 +62,9 @@ func Sync() error {
 		return fmt.Errorf("Config-Hash abfragen: %w", err)
 	}
 	remoteHash, err := parseConfigHash(hashBody)
+	if errors.Is(err, errNoFrpConfig) {
+		return syncWithoutFrpConfig()
+	}
 	if err != nil {
 		return fmt.Errorf("Hash-Antwort parsen: %w", err)
 	}
@@ -87,6 +96,18 @@ func Sync() error {
 		return fmt.Errorf("gelieferte Config passt nicht zum Hash (erwartet %s, erhalten %s)", remoteHash, got)
 	}
 
+	// The server sends the common part also with no tunnel left; frpc must not run without one.
+	if !hasProxies(newConfig) {
+		if err := stopFrpc(); err != nil {
+			return err
+		}
+		if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
+			return fmt.Errorf("Hash schreiben: %w", err)
+		}
+		logger.Infof("No tunnel for this host, frpc stopped and disabled.")
+		return nil
+	}
+
 	// Write the config atomically (0600: contains the frp auth token). A plain in-place WriteFile
 	// truncates first, so a crash/kill between truncate and write would leave a partial frpc.toml
 	// that frpc.service crash-loops on (Restart=on-failure) until the next sync ~5 min later. Stage
@@ -114,15 +135,70 @@ func Sync() error {
 	return nil
 }
 
+// syncWithoutFrpConfig stops frpc and removes frpc.toml and the hash. Neither file left means
+// a former run already stopped it; returning early keeps systemctl out of every timer run.
+func syncWithoutFrpConfig() error {
+	_, confErr := os.Stat(config.FrpConfigFile())
+	_, hashErr := os.Stat(config.FrpHashFile())
+	if os.IsNotExist(confErr) && os.IsNotExist(hashErr) {
+		return nil
+	}
+	if err := stopFrpc(); err != nil {
+		return err
+	}
+	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove the config hash: %w", err)
+	}
+	logger.Infof("No FRP config for this host on the server, frpc stopped and disabled.")
+	return nil
+}
+
+// stopFrpc stops and disables frpc, then removes frpc.toml: it holds the frps token. The
+// order keeps the file for the retry when the stop fails.
+func stopFrpc() error {
+	if err := disableService(); err != nil {
+		return fmt.Errorf("stop and disable frpc: %w", err)
+	}
+	if err := os.Remove(config.FrpConfigFile()); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove frpc.toml: %w", err)
+	}
+	return nil
+}
+
+// hasProxies reports whether a server-built frpc.toml has a tunnel: the generator writes
+// each one as a [[proxies]] table.
+func hasProxies(toml []byte) bool {
+	for _, line := range bytes.Split(toml, []byte("\n")) {
+		if string(bytes.TrimSpace(line)) == "[[proxies]]" {
+			return true
+		}
+	}
+	return false
+}
+
+// errNoFrpConfig is parseConfigHash's answer to `{"hash": null}`: the server has no FRP
+// config for this host (R-0398). A missing field stays "" as before.
+var errNoFrpConfig = errors.New("no FRP config for this host on the server")
+
 // parseConfigHash reads the hash value from the server response (`{"hash": "..."}`).
 func parseConfigHash(body []byte) (string, error) {
 	var hashResp struct {
-		Hash string `json:"hash"`
+		Hash json.RawMessage `json:"hash"`
 	}
 	if err := json.Unmarshal(body, &hashResp); err != nil {
 		return "", err
 	}
-	return hashResp.Hash, nil
+	if hashResp.Hash == nil {
+		return "", nil
+	}
+	if string(hashResp.Hash) == "null" {
+		return "", errNoFrpConfig
+	}
+	var hash string
+	if err := json.Unmarshal(hashResp.Hash, &hash); err != nil {
+		return "", err
+	}
+	return hash, nil
 }
 
 // hashConfig computes the hex-encoded SHA256 hash of the config bytes.

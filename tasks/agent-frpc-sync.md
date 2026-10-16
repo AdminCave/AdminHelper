@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run SyncConfig
 Doku: keine (intern; sichtbar wird es mit T4)
 Abhängt von: T1
 
-### T3 — Agent: „nichts zu tun“ ohne Fehler (Hash `null`, TOML ohne Proxies)  [ ]
+### T3 — Agent: „nichts zu tun“ ohne Fehler (Hash `null`, TOML ohne Proxies)  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/frpc/platform_linux.go, apps/agent/internal/frpc/platform_windows.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @eb565d6a 2026-10-16T13:48:08+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T3.verdict.json)
 Änderung: `Sync` liest `hash: null` → frpc stoppen und deaktivieren (neuer Seam `disableService`, Linux `systemctl disable --now frpc.service`, Windows No-op), `frpc.toml` und `.config-hash` löschen, nil. Neuer Hash mit TOML ohne `[[proxies]]`-Zeile → stoppen und deaktivieren, `frpc.toml` löschen (enthält das frps-Token), Hash speichern, nil. Seams wie `restartService` (`sync.go:20`) als Paketvariablen, im Test gestubbt. Tests zuerst rot in `sync_flow_test.go` (Namen mit `TestSync`): `null` → disable gerufen, Dateien weg, kein Fehler; leere TOML → disable, `frpc.toml` weg, Hash gespeichert; zweiter Lauf mit gleichem Hash → kein weiterer Aufruf.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSync
 Doku: keine (intern; sichtbar wird es mit T4)

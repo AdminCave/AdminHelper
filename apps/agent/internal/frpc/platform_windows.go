@@ -11,7 +11,7 @@ package frpc
 // there is no `sc create frpc`. Firing `sc start frpc` / `sc stop frpc` at a
 // non-existent service made every config change abort the whole FRP sync
 // (sync.go treats a restart error as a hard return). Until frpc is integrated
-// with the Windows Service Manager, both hooks skip cleanly (warn + nil) so the
+// with the Windows Service Manager, these hooks skip cleanly (warn + nil) so the
 // rest of the sync (config + hash already written to disk) is not lost.
 
 // enableFrpcService is a no-op on Windows: no frpc service is registered.
@@ -23,5 +23,11 @@ func enableFrpcService() error {
 // restartFrpc is a no-op on Windows: no frpc service is registered.
 func restartFrpc() error {
 	logger.Warnf("frpc-Dienst wird unter Windows nicht verwaltet — Neustart uebersprungen")
+	return nil
+}
+
+// disableFrpc is a no-op on Windows: no frpc service is registered.
+func disableFrpc() error {
+	logger.Warnf("frpc service is not managed on Windows, skipping the stop")
 	return nil
 }
