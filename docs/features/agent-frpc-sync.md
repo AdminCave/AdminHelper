@@ -185,12 +185,12 @@ Sichtbar, also DE + EN:
 
 ## Offene Fragen
 
+Keine. Entschieden von Kevin am 2026-10-16:
+
 1. **Reihenfolge zu R-0384** (Status `pr`, `feature/agent-identity-lock`): Beide ändern
-   `apps/agent/internal/provision/provision.go` und `provision_test.go`. Empfehlung: R-0398 nach dem Merge von
-   R-0384 bauen.
-2. **Multibox-Flags** für den Beweis: `scenario --agents 1 --tunnel --enforce` (Kevin hat einen
-   `--tunnel`-Lauf vor dem Merge erlaubt; `--enforce`, weil der Abgleich unter erzwungenem mTLS über die an den
-   Server gebundene Route läuft, R-0315).
-3. **Neuer Agent gegen alten Server:** Reicht die Annahme „Agents kommen aus dem Repo des Servers“, oder soll
-   der Agent 404 „Keine FRP-Config vorhanden“ übergangsweise wie `null` lesen? Empfehlung: nein. Das wäre
-   Prosa-Matching, und die Versionen kommen gemeinsam.
+   `apps/agent/internal/provision/provision.go` und `provision_test.go`. R-0398 wird nach dem Merge von R-0384
+   gebaut.
+2. **Multibox-Flags** für den Beweis: `scenario --agents 1 --tunnel --enforce` (`--enforce`, weil der Abgleich
+   unter erzwungenem mTLS über die an den Server gebundene Route läuft, R-0315).
+3. **Neuer Agent gegen alten Server:** hingenommen. Agents kommen aus dem Paket-Repo des Servers, die Versionen
+   kommen gemeinsam; der Agent liest 404 „Keine FRP-Config vorhanden“ nicht über den Meldungstext als `null`.
