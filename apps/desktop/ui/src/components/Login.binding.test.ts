@@ -24,7 +24,7 @@ const h = vi.hoisted(() => ({
   enrollWithToken: vi.fn(),
   resetServerCertPin: vi.fn(),
   resetDeviceIdentity: vi.fn(async (_serverUrl: string): Promise<ResetOutcome> => 'revoked'),
-  confirm: vi.fn(async () => true),
+  confirmDialog: vi.fn(async () => true),
 }));
 
 vi.mock('$lib/stores/session', async () => {
@@ -46,7 +46,7 @@ vi.mock('$lib/bridge', () => ({
   resetServerCertPin: h.resetServerCertPin,
   resetDeviceIdentity: h.resetDeviceIdentity,
 }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: h.confirm }));
+vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: h.confirmDialog }));
 
 import Login from './Login.svelte';
 
@@ -94,14 +94,14 @@ describe('Login — device certificate of another user (ERR_CERT_USER_MISMATCH)'
     await fireEvent.click(reset);
 
     await waitFor(() => expect(h.resetDeviceIdentity).toHaveBeenCalledWith('https://srv.example'));
-    expect(h.confirm).toHaveBeenCalledTimes(1);
+    expect(h.confirmDialog).toHaveBeenCalledTimes(1);
     expect(h.resetServerCertPin).not.toHaveBeenCalled();
     await waitFor(() => expect(container.textContent).toContain('Geräte-Identität zurückgesetzt'));
   });
 
   it('a declined confirmation resets nothing and keeps the hint', async () => {
     h.login.mockRejectedValueOnce(new Error(MISMATCH));
-    h.confirm.mockResolvedValueOnce(false);
+    h.confirmDialog.mockResolvedValueOnce(false);
     const { container } = render(Login);
     await submitLogin(container);
     const reset = await waitFor(() => {
@@ -112,7 +112,7 @@ describe('Login — device certificate of another user (ERR_CERT_USER_MISMATCH)'
 
     await fireEvent.click(reset);
 
-    await waitFor(() => expect(h.confirm).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(h.confirmDialog).toHaveBeenCalledTimes(1));
     expect(h.resetDeviceIdentity).not.toHaveBeenCalled();
     expect(container.querySelector('[data-msg="cert-user-mismatch"]')).not.toBeNull();
   });

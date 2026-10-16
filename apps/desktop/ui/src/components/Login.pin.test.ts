@@ -28,7 +28,7 @@ const h = vi.hoisted(() => ({
   enrollWithToken: vi.fn(),
   resetServerCertPin: vi.fn(async (_serverUrl: string) => {}),
   resetDeviceIdentity: vi.fn(async (_serverUrl: string): Promise<ResetOutcome> => 'revoked'),
-  confirm: vi.fn(async (_message: string, _options?: unknown) => true),
+  confirmDialog: vi.fn(async (_message: string, _options?: unknown) => true),
 }));
 
 vi.mock('$lib/stores/session', async () => {
@@ -50,7 +50,7 @@ vi.mock('$lib/bridge', () => ({
   resetServerCertPin: h.resetServerCertPin,
   resetDeviceIdentity: h.resetDeviceIdentity,
 }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: h.confirm }));
+vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: h.confirmDialog }));
 
 import Login from './Login.svelte';
 
@@ -105,7 +105,7 @@ describe('Login — a changed self-signed server certificate (ERR_TOFU_PIN_MISMA
     await fireEvent.click(button);
 
     await waitFor(() => expect(h.resetServerCertPin).toHaveBeenCalledWith('https://srv.example'));
-    expect(h.confirm.mock.calls[0][0]).toContain('MITM');
+    expect(h.confirmDialog.mock.calls[0][0]).toContain('MITM');
     expect(h.resetDeviceIdentity).not.toHaveBeenCalled();
     await waitFor(() => expect(container.textContent).toContain('Vertrauen zurückgesetzt'));
   });
@@ -122,12 +122,12 @@ describe('Login — a changed self-signed server certificate (ERR_TOFU_PIN_MISMA
 
   it('resets nothing when the warning is declined', async () => {
     h.login.mockRejectedValueOnce(new Error(TOFU));
-    h.confirm.mockResolvedValueOnce(false);
+    h.confirmDialog.mockResolvedValueOnce(false);
     const { container } = render(Login);
     await submitLogin(container);
 
     await fireEvent.click(await reset(container, RESET_PIN));
-    await waitFor(() => expect(h.confirm).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(h.confirmDialog).toHaveBeenCalledTimes(1));
     expect(h.resetServerCertPin).not.toHaveBeenCalled();
     expect(h.resetDeviceIdentity).not.toHaveBeenCalled();
     expect(buttonsLabelled(container, RESET_PIN)).toHaveLength(1);
@@ -146,7 +146,7 @@ describe('Login — a server certificate the enrolled CA no longer covers (ERR_C
     await fireEvent.click(button);
 
     await waitFor(() => expect(h.resetDeviceIdentity).toHaveBeenCalledWith('https://srv.example'));
-    expect(h.confirm.mock.calls[0][0]).toContain('MITM');
+    expect(h.confirmDialog.mock.calls[0][0]).toContain('MITM');
     expect(h.resetServerCertPin).not.toHaveBeenCalled();
   });
 });
