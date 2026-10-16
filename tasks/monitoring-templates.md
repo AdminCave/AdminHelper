@@ -74,8 +74,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: keine (intern; beschrieben in T12)
 Abhängt von: T3
 
-### T8 — Desktop: Typen und API-Aufrufe für Anpassungen, Wiederherstellen und Updates  [ ]
+### T8 — Desktop: Typen und API-Aufrufe für Anpassungen, Wiederherstellen und Updates  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/api/monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a37d4a70 2026-10-16T16:37:07+02:00
+Review: approve (.ah-out/review/monitoring-templates/T8.verdict.json)
 Änderung: `MonitorCheck` (`types.ts:363`) um `templateDefId?: string | null` und `overriddenFields?: string[]`, `TemplateAssignment` (`:50`) um `removedChecks?: number`, `MonitoringTemplateFull` (`:556`) um `builtinVersion?`, `builtinEdited?`, `builtinUpdateAvailable?`; neuer Typ für die Antwort von `builtin-update`. In `monitoring.ts` (neben `:109-184`): `resetCheck`, `restoreTemplateChecks`, `fetchBuiltinUpdate`, `applyBuiltinUpdate` mit `encodeURIComponent` wie die Nachbarn. Tests zuerst rot: Methode und Pfad je Aufruf.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/api/monitoring.test.ts
 Doku: keine (intern)
