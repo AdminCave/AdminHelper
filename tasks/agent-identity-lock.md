@@ -25,8 +25,10 @@ Dedup-Key: bug:agent:enroll:store-commit-race
 HEAD: aa7decf6
 Semantik: docs/adr/0001-unified-pki-and-secure-deployment.md:167 — „Native: automatisch bei ~50 % Laufzeit + Überlappung → ein kurzzeitig nicht erreichbarer Issuer sperrt niemanden aus.“ Das Paar aus Key und Cert selbst beschreibt nur der Code-Kommentar an `Store` (`enroll.go:130-138`: ein neuer Key mit altem Cert „locks the agent out until it is re-provisioned“); unter docs/ steht zu gleichzeitiger Erneuerung und Provisionierung nichts.
 
-### T2 — Erneuerung hält die Sperre von der Prüfung bis zum Commit  [ ]
+### T2 — Erneuerung hält die Sperre von der Prüfung bis zum Commit  [x]
 Komponente: agent · Dateien: apps/agent/internal/enroll/renew.go, apps/agent/internal/enroll/renew_test.go, apps/agent/internal/enroll/enroll.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @a85922fc 2026-10-16T11:27:12+02:00
+Review: am Ende (Branch-Review)
 Änderung: `MaybeRenew` (`renew.go:90`) prüft zuerst wie heute `Provisioned` (nicht provisioniert: No-op, keine Sperrdatei, kein Verzeichnis), nimmt dann `LockIdentity(dir)`, prüft unter der Sperre erneut und hält sie über das Lesen des Zertifikats, `NeedsRenewal` und `renewFunc` (also `Renew` bis zu dessen `Store`, `renew.go:85`) hinweg. `Store` selbst sperrt nicht: Ein zweiter Deskriptor im selben Prozess würde sich an der Sperre des Aufrufers selbst blockieren. Der Kommentar an `Store` (`enroll.go:130-138`) nennt die Sperre als Vorbedingung der Aufrufer. Test in `renew_test.go`: Der Test hält `LockIdentity`; `MaybeRenew` in einer Goroutine (`renewFunc` ersetzt, Identität fällig) ruft `renewFunc` nicht, solange die Sperre gehalten wird, und ruft es nach `unlock`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run MaybeRenew
 Doku: keine (intern)

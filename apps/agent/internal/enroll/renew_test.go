@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -219,12 +220,17 @@ func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
 	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
 	t.Cleanup(func() { renewFunc = orig })
 
-	done, err := MaybeRenew(t.TempDir(), "https://x", time.Second)
+	dir := filepath.Join(t.TempDir(), "identity")
+	done, err := MaybeRenew(dir, "https://x", time.Second)
 	if err != nil || done {
 		t.Fatalf("not provisioned -> (false, nil), got (%v, %v)", done, err)
 	}
 	if called {
 		t.Error("renewFunc darf bei nicht-provisioniert nicht laufen")
+	}
+	// No lock either: taking it would create the directory and the lock file.
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("not provisioned -> no identity directory, Stat: %v", err)
 	}
 }
 
@@ -269,6 +275,113 @@ func TestMaybeRenewRenewsWhenDue(t *testing.T) {
 	}
 	if !called {
 		t.Error("renewFunc muss bei faelligem Cert laufen")
+	}
+}
+
+// R-0384: MaybeRenew holds the identity lock from reading the certificate to the
+// commit, so it never interleaves with a provisioning and sees what one stored first.
+
+type renewResult struct {
+	done bool
+	err  error
+}
+
+// maybeRenewBehindLock stores a due identity in dir, takes the identity lock and starts
+// MaybeRenew, which must neither renew nor return while the lock is held. It returns
+// MaybeRenew's result, the calls of renewFunc and the unlock of the held lock.
+func maybeRenewBehindLock(t *testing.T, dir string) (<-chan renewResult, <-chan struct{}, func()) {
+	t.Helper()
+	orig := renewFunc
+	renewed := make(chan struct{}, 1)
+	renewFunc = func(string, string, time.Duration) error { renewed <- struct{}{}; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+
+	now := time.Now()
+	day := 24 * time.Hour
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-80*day), now.Add(10*day)) // due
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	unlock, err := LockIdentity(dir)
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	res := make(chan renewResult, 1)
+	go func() {
+		done, err := MaybeRenew(dir, "https://x", time.Second)
+		res <- renewResult{done, err}
+	}()
+	select {
+	case <-renewed:
+		unlock()
+		t.Fatal("MaybeRenew renewed while the identity lock was held")
+	case r := <-res:
+		unlock()
+		t.Fatalf("MaybeRenew returned (%v, %v) while the identity lock was held", r.done, r.err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	return res, renewed, unlock
+}
+
+func awaitRenewResult(t *testing.T, res <-chan renewResult) renewResult {
+	t.Helper()
+	select {
+	case r := <-res:
+		return r
+	case <-time.After(10 * time.Second):
+		t.Fatal("MaybeRenew did not return after the identity lock was released")
+		return renewResult{}
+	}
+}
+
+func TestMaybeRenewWaitsForTheIdentityLock(t *testing.T) {
+	res, renewed, unlock := maybeRenewBehindLock(t, t.TempDir())
+	unlock()
+	if r := awaitRenewResult(t, res); r.err != nil || !r.done {
+		t.Fatalf("after unlock -> (true, nil), got (%v, %v)", r.done, r.err)
+	}
+	select {
+	case <-renewed:
+	default:
+		t.Fatal("MaybeRenew reported a renewal without calling renewFunc")
+	}
+}
+
+// What a provisioning that holds the lock first leaves behind is what MaybeRenew
+// checks: it reads the identity only under the lock.
+func TestMaybeRenewChecksTheIdentityUnderTheLock(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(t *testing.T, dir string)
+	}{
+		{"a fresh identity was stored", func(t *testing.T, dir string) {
+			now := time.Now()
+			day := 24 * time.Hour
+			certPEM, keyPEM := selfSigned(t, "agent", now.Add(-10*day), now.Add(80*day)) // not due
+			mustWrite(t, CertPath(dir), certPEM)
+			mustWrite(t, KeyPath(dir), keyPEM)
+		}},
+		{"the identity was removed", func(t *testing.T, dir string) {
+			if err := RemoveIdentity(dir); err != nil {
+				t.Fatalf("RemoveIdentity: %v", err)
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			res, renewed, unlock := maybeRenewBehindLock(t, dir)
+			tc.change(t, dir)
+			unlock()
+			if r := awaitRenewResult(t, res); r.err != nil || r.done {
+				t.Fatalf("after unlock -> (false, nil), got (%v, %v)", r.done, r.err)
+			}
+			select {
+			case <-renewed:
+				t.Fatal("MaybeRenew renewed an identity it had read before the lock")
+			default:
+			}
+		})
 	}
 }
 
