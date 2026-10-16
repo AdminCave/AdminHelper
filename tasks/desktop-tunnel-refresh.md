@@ -160,8 +160,10 @@ Abhängt von: T12
 
 Session 2026-10-16 (Branch-Review): Funde als Tasks T15 und T16.
 
-### T15 — authenticated_get: eine Sitzung als Schnappschuss, Erneuerung nur für dieselbe Sitzung  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs
+### T15 — authenticated_get: eine Sitzung als Schnappschuss, Erneuerung nur für dieselbe Sitzung  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c8b8cf5a 2026-10-16T19:33:29+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T15.verdict.json)
 Änderung: `authenticated_get` (`auth.rs:161`) prüft heute das Ziel gegen die Sitzung, liest das Access-Token getrennt davon (T5) und liest im 401-Zweig den Refresh-Token erneut aus dem Keyring (`load_session_from_keyring` `:274`), erneuert gegen `server_url` (`try_refresh` `:132`) und speichert das Ergebnis (`save_session_to_keyring` `:267`). Zwischen Senden und 401 kann die Sitzung gewechselt haben (Abmelden, Anmelden bei einem anderen Server), während ein Abgleich noch auf die Antwort wartet. Neu: Die Sitzung wird einmal als Schnappschuss gelesen (URL, Access-, Refresh-Token); gegen genau diese URL wird das Ziel geprüft und genau dieses Access-Token gesendet. Im 401-Zweig wird nur erneuert, wenn der Keyring noch denselben Schnappschuss hält (URL und Refresh-Token gleich); sonst wird die 401 zurückgegeben. Vor dem Speichern dieselbe Prüfung erneut. Der Rückfall auf das übergebene Token entfällt, wenn er nach dem Pin nicht mehr erreichbar ist (toter Code). Test mit `keyring_store::memory()` und dem vorhandenen Ein-Antwort-Server-Muster, zuerst rot: der Server hält die Antwort, der Test tauscht die Sitzung im Keyring gegen eine andere, dann antwortet der Server 401 → keine zweite Anfrage an diesen Server, der Keyring hält weiter die neue Sitzung, Ergebnis ist die 401. Bestehende Tests (Pin vor dem Token, Erneuerung bei gleicher Sitzung) bleiben grün. Risikopfad Auth: `security`-Prüfer.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- auth::
 Doku: keine (intern)

@@ -810,7 +810,7 @@ fn start_fresh(
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
 /// reload or leave it; no tunnels stop it. A failure before that (network, 5xx, a 401 the refresh
-/// could not cure) leaves the running frpc alone. `token` is only the fallback: the fetch sends the
+/// could not cure) leaves the running frpc alone. `token` is not sent: the fetch sends the
 /// session's current access token from the keyring (see [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
     app: tauri::AppHandle,
