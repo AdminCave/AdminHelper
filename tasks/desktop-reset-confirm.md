@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Rückfragen zum Zurücksetzen im App-Dialog — Task-Ledger
-Status: geplant · Branch: feature/desktop-reset-confirm · Review: am Ende
+Status: aktiv · Branch: feature/desktop-reset-confirm · Review: am Ende
 Spec: Roadmap R-0395
 Heavy: linux-full — Desktop-Journeys (Geräte-Identität und Pin zurücksetzen, Login-Screen); `settings-enroll.live.js` läuft im Sammellauf (`desktop_e2e_tunnel.sh`); keine Plattform- oder Rust-Änderung, daher kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
