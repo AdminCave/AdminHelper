@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Erneuerung und Provisionierung sperren die Identität — Task-Ledger
-Status: bereit · Branch: feature/agent-identity-lock · Review: am Ende
+Status: erledigt · Branch: feature/agent-identity-lock · Review: am Ende
 Spec: Roadmap R-0384
 Heavy: linux-full — `apps/agent/internal/enroll` und `internal/provision` sind Agent-Enrollment und -Erneuerung; läuft im Sammellauf (`/feature-build` §5); Windows ohne VM: `lock_windows.go` prüft der CI-Job `agent-windows` nativ (`go test ./...`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
