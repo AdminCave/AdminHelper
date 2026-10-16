@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Registrierungs-Token im Web-Panel — Task-Ledger
-Status: bereit · Branch: feature/enroll-token-ui · Review: pro Task
+Status: aktiv · Branch: feature/enroll-token-ui · Review: pro Task
 Spec: docs/features/enroll-token-ui.md (Roadmap R-0396)
 Heavy: linux-full — Server-API (`/api/enrollment/token/for`: neuer Parameter, neues Antwortfeld) und eine neue Web-Journey; `web-live`/`web-playwright` laufen im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -46,3 +46,11 @@ Review: approve (.ah-out/review/enroll-token-ui/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: keine (intern)
 Abhängt von: T3
+
+Branch-Review 2026-10-16: tester, reviewer und security approve. security meldet einen Fund `wichtig` (aus dem Code abgeleitet): Wechselt `enrollFor` bei offenem Dialog auf einen anderen Benutzer (Tab auf den Knopf einer anderen Zeile, Enter), bleibt `open` wahr, der Dialog setzt sich nicht zurück und zeigt das Token des vorigen Benutzers unter dem neuen Namen. Nachbesserung in T5.
+
+### T5 — Dialog setzt sich zurück, wenn der Benutzer wechselt  [ ]
+Komponente: web · Dateien: apps/web/src/modals/EnrollTokenModal.svelte, apps/web/src/modals/EnrollTokenModal.test.ts, apps/web/src/lib/api/users.ts
+Änderung: Der Rücksetz-`$effect` in `EnrollTokenModal.svelte` hängt heute nur an `open` (`:34-44`); er hängt künftig auch an `username`, sodass ein Wechsel des Benutzers bei offenem Dialog wie Schließen und Öffnen wirkt: Token, Fehler und Auswahl verworfen, `mintGen` weitergezählt, eine noch laufende Antwort für den vorigen Benutzer wird nicht angezeigt. Neuer Test: Dialog für alice offen, Token ausgestellt, `username` wechselt auf bob → das Token von alice ist weg, „Ausstellen“ erscheint; und eine Antwort für alice, die nach dem Wechsel ankommt, erscheint nicht. Nebenbei der Kommentar in `users.ts:23-24`: Browser-Tokens bleiben der API vorbehalten (die Server-CLI kann keine).
+Verify: bash scripts/dev/verify.sh web --strict -- src/modals/EnrollTokenModal.test.ts
+Doku: keine (intern)
