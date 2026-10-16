@@ -172,9 +172,10 @@ ring-Provider (`crate::tofu::ring_provider()`), keine neue Abhängigkeit. Der Re
 einen eigenen reqwest-Client ohne Proxy (`no_proxy`), mit Basic-Auth und kurzem Timeout.
 
 **UI-Takt (`stores/tunnel.ts`):**
-- `activateTunnel()` beim Eintritt in den Server-Modus mit Session: sofort ein Abgleich, dann alle 60 s;
-  `deactivateTunnel()` beim Abmelden, Moduswechsel und Zerstören der App-Shell, mit Generationszähler wie
-  `notifications.ts:100` gegen überholte Aktivierungen.
+- `startIfServerMode()` beim Eintritt in den Server-Modus mit Session: sofort ein Abgleich, dann alle 60 s;
+  `stop()` beim Abmelden (Kopfzeile über `signOut()`, T13; Einstellungen über `serverLogout()`) und beim
+  Moduswechsel, mit Generationszähler wie `notifications.ts:100` gegen überholte Aktivierungen. Endet die
+  Sitzung ohne `stop()`, beendet der nächste Lauf den Takt selbst.
 - **Single-Flight:** läuft ein Abgleich, wird der nächste Takt übersprungen. `refreshNow()` (aus
   `TunnelModal`) reiht während eines laufenden Abgleichs genau einen Folgelauf ein (weitere Aufrufe teilen
   ihn, `stop()` oder eine neue Aktivierung verwerfen ihn), damit eine gespeicherte Änderung sofort ankommt.
@@ -183,7 +184,8 @@ einen eigenen reqwest-Client ohne Proxy (`no_proxy`), mit Basic-Auth und kurzem 
 - `stopped` → Anzeige „idle“, Mappings leer, keine Meldung. Fehler → Anzeige bleibt, höchstens eine Meldung
   je Fehlerserie.
 - `frpc-terminated` (nur noch laufende Generation) während der Takt aktiv ist → „disconnected“ und Neustart
-  mit Backoff; `stop()` und `deactivateTunnel()` beenden Takt und Backoff.
+  mit Backoff (5–60 s; eine Serie endet erst, wenn frpc einen ganzen Takt hielt; eine Meldung je Serie);
+  `stop()` beendet Takt und Backoff.
 
 ## Trade-offs & Alternativen
 
@@ -198,7 +200,9 @@ einen eigenen reqwest-Client ohne Proxy (`no_proxy`), mit Basic-Auth und kurzem 
    **jeder Takt** in einen Refresh mit Rotation; zwei gleichzeitige Refreshes mit demselben Refresh-Token
    lösen die Reuse-Erkennung aus und melden den Nutzer ab. **Gewählt (T5):** `authenticated_get` sendet
    nach dem Pin das Access-Token der aktiven Sitzung aus dem Keyring, für alle Aufrufer (Visitor-Bundle,
-   Mappings, Verbindungs-Sync); nur ohne Sitzung gilt der übergebene Wert. Die Abgleiche laufen nacheinander.
+   Mappings, Verbindungs-Sync). Seit T15 liest es die Sitzung einmal als Schnappschuss (Ziel-Pin, Access- und
+   Refresh-Token) und erneuert bzw. speichert nur, solange der Keyring noch dieselbe Sitzung hält; ohne
+   Sitzung wird nichts gesendet. Die Abgleiche laufen nacheinander.
    Berührt `auth.rs` (Risikopfad).
 4. **Vergleich per TOML-Parser vs. Textvergleich.** `toml` ist schon Abhängigkeit (`Cargo.toml:57`); der
    Parser macht den Vergleich unabhängig von Formatierung. **Empfehlung: Parser.**
