@@ -21,8 +21,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run Docker
 Doku: keine (intern; Doku in T13)
 Test-Löschung: apps/agent/internal/monitor/plugins_test.go::TestParseRestartPolicies — parseRestartPolicies entfällt, die Restart-Policy kommt aus dem inspect-JSON; ersetzt durch die neuen Docker-Tests dieser Task
 
-### T2 — Agent: ZFS-Block mit `available`/`error`  [ ]
+### T2 — Agent: ZFS-Block mit `available`/`error`  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0923ee03 2026-10-16T20:06:57+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T2.verdict.json)
 Änderung: `collectZFS` (`plugins.go:242-271`) liefert bei vorhandenem `zpool` immer einen Block: Fehler oder Timeout von `zpool list` → `available=false`, `error` (`timeout` | `cli_failed`), `pools: []`; sonst `available=true`, `error=null`, `pools` und ggf. `errors` wie heute. `zpool`-Aufrufe über einen Seam. Tests zuerst rot (Namen mit `ZFS`): zpool fehlt → `nil`; `zpool list` mit Fehler → Block mit `cli_failed`; Timeout → `timeout`; 0 Pools → `available=true`, leere Liste.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run ZFS
 Doku: keine (intern; Doku in T13)

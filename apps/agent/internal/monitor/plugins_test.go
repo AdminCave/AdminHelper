@@ -395,3 +395,145 @@ func TestParseZpoolList(t *testing.T) {
 		t.Errorf("line with too few columns should be skipped: %v", short)
 	}
 }
+
+// stubZpool swaps zpoolCLI for a fake zpool that is on the PATH and answers each call by its
+// subcommand (list, status) from replies, like stubDocker. It returns the recorded calls; a
+// subcommand without a reply fails the test.
+func stubZpool(t *testing.T, replies map[string]dockerReply) *[][]string {
+	t.Helper()
+	old := zpoolCLI
+	t.Cleanup(func() { zpoolCLI = old })
+	var calls [][]string
+	zpoolCLI.lookPath = func(file string) (string, error) { return "/usr/sbin/" + file, nil }
+	zpoolCLI.run = func(args ...string) ([]byte, error) {
+		calls = append(calls, args)
+		reply, ok := replies[args[0]]
+		if !ok {
+			t.Errorf("unexpected zpool call %v", args)
+			return nil, errors.New("unexpected call")
+		}
+		return []byte(reply.out), reply.err
+	}
+	return &calls
+}
+
+var zpoolListArgs = []string{"list", "-H", "-o", "name,size,alloc,free,cap,health"}
+
+func assertZFSUnavailable(t *testing.T, wire map[string]any, code string) {
+	t.Helper()
+	if wire["available"] != false || wire["error"] != code {
+		t.Errorf("available/error = %v/%v, want false/%s", wire["available"], wire["error"], code)
+	}
+	if p, ok := wire["pools"].([]any); !ok || len(p) != 0 {
+		t.Errorf("pools = %#v, want an empty list", wire["pools"])
+	}
+	if msg, _ := wire["error_message"].(string); msg == "" || strings.Contains(msg, "/") {
+		t.Errorf("error_message = %q, want a short text without paths", msg)
+	}
+}
+
+func TestCollectZFSCLIMissing(t *testing.T) {
+	calls := stubZpool(t, nil)
+	zpoolCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	if got := collectZFS(); got != nil {
+		t.Errorf("collectZFS() = %v, want nil (zpool not installed is not an outage)", got)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("zpool was called without a zpool binary: %v", *calls)
+	}
+}
+
+func TestCollectZFSListFailed(t *testing.T) {
+	calls := stubZpool(t, map[string]dockerReply{
+		"list": {err: &exec.Error{Name: "/opt/some-path/zpool", Err: exec.ErrNotFound}},
+	})
+	block := collectZFS()
+	if block == nil {
+		t.Fatal("collectZFS() = nil, want an unavailable block")
+	}
+	assertZFSUnavailable(t, dockerWire(t, block), "cli_failed")
+	if len(*calls) != 1 {
+		t.Errorf("calls = %v, want only zpool list", *calls)
+	}
+}
+
+func TestCollectZFSTimeout(t *testing.T) {
+	stubZpool(t, map[string]dockerReply{"list": {err: context.DeadlineExceeded}})
+	wire := dockerWire(t, collectZFS())
+	assertZFSUnavailable(t, wire, "timeout")
+	if msg, _ := wire["error_message"].(string); !strings.Contains(msg, "timed out") {
+		t.Errorf("error_message = %q, want it to say the call timed out", msg)
+	}
+}
+
+func TestCollectZFSRealZpoolCall(t *testing.T) {
+	// The stubs above hand collectZFS a ready error; here a real child process goes through runTimed,
+	// the runner runZpool uses, with only the binary and the timeout swapped: a hung zpool the timeout
+	// killed (exec: "signal: killed") must be timeout, one that fails on its own cli_failed.
+	stubZpool(t, nil)
+	zpoolCLI.run = func(...string) ([]byte, error) {
+		return nil, runHelperDocker(t, "hang", 100*time.Millisecond)
+	}
+	assertZFSUnavailable(t, dockerWire(t, collectZFS()), "timeout")
+
+	zpoolCLI.run = func(...string) ([]byte, error) { return nil, runHelperDocker(t, "fail", time.Minute) }
+	wire := dockerWire(t, collectZFS())
+	assertZFSUnavailable(t, wire, "cli_failed")
+	if wire["error_message"] != "zpool list failed: exit status 3" {
+		t.Errorf("error_message = %q, want the exit status", wire["error_message"])
+	}
+}
+
+func TestCollectZFSNoPools(t *testing.T) {
+	calls := stubZpool(t, map[string]dockerReply{"list": {out: ""}})
+	got := dockerWire(t, collectZFS())
+	want := wantDockerWire(t, `{"available": true, "error": null, "pools": []}`)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("block = %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(*calls, [][]string{zpoolListArgs}) {
+		t.Errorf("calls = %v, want only %v", *calls, zpoolListArgs)
+	}
+}
+
+func TestCollectZFSPools(t *testing.T) {
+	const list = "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\nbackup\t1T\t900G\t100G\t90%\tDEGRADED\n"
+	const status = "  pool: backup\n state: DEGRADED\n"
+	calls := stubZpool(t, map[string]dockerReply{"list": {out: list}, "status": {out: status}})
+	got := dockerWire(t, collectZFS())
+	want := wantDockerWire(t, `{"available": true, "error": null, "pools": [
+		{"name": "tank", "size": "3.62T", "allocated": "1.2T", "free": "2.4T", "capacity_percent": 33,
+		 "health": "ONLINE"},
+		{"name": "backup", "size": "1T", "allocated": "900G", "free": "100G", "capacity_percent": 90,
+		 "health": "DEGRADED"}
+	], "errors": "pool: backup\n state: DEGRADED"}`)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("block =\n%v\nwant\n%v", got, want)
+	}
+	if !reflect.DeepEqual(*calls, [][]string{zpoolListArgs, {"status", "-x"}}) {
+		t.Errorf("calls = %v, want zpool list and zpool status -x", *calls)
+	}
+
+	t.Run("all online", func(t *testing.T) {
+		calls := stubZpool(t, map[string]dockerReply{"list": {out: "tank\t3.62T\t1.2T\t2.4T\t33%\tONLINE\n"}})
+		got := dockerWire(t, collectZFS())
+		if got["available"] != true || got["error"] != nil || len(got["pools"].([]any)) != 1 {
+			t.Errorf("block = %v, want one available pool", got)
+		}
+		if _, ok := got["errors"]; ok || len(*calls) != 1 {
+			t.Errorf("errors = %v, calls = %v, want neither errors nor zpool status", got["errors"], *calls)
+		}
+	})
+
+	t.Run("status fails", func(t *testing.T) {
+		// As before: without zpool status -x the pools still go out, only the error details are missing.
+		stubZpool(t, map[string]dockerReply{"list": {out: list}, "status": {err: context.DeadlineExceeded}})
+		got := dockerWire(t, collectZFS())
+		if got["available"] != true || got["error"] != nil || len(got["pools"].([]any)) != 2 {
+			t.Errorf("block = %v, want both pools available", got)
+		}
+		if _, ok := got["errors"]; ok {
+			t.Errorf("errors = %v, want none without zpool status", got["errors"])
+		}
+	})
+}

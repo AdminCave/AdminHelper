@@ -28,7 +28,9 @@ const dockerTimeout = 10 * time.Second
 const pluginTimeout = 15 * time.Second
 
 // runWithTimeout runs a plugin command under pluginTimeout, mirroring the docker
-// path, so a hung external tool can never block the report cycle.
+// path, so a hung external tool can never block the report cycle. Unlike runTimed, a
+// killed call stays exec's ExitError: the systemctl and sc reasons (commandFailure) name
+// its status ("signal: killed"), where context.DeadlineExceeded would read "did not start".
 func runWithTimeout(name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), pluginTimeout)
 	defer cancel()
@@ -333,29 +335,40 @@ func buildBackupIndex(nodeName string) map[int]int64 {
 	return index
 }
 
-// collectZFS collects ZFS pool information (Linux only).
+// zpoolCLI indirects collectZFS's zpool lookup and calls so tests can drive every path without zpool
+// (same reason as dockerCLI).
+var zpoolCLI = struct {
+	lookPath func(file string) (string, error)
+	run      func(args ...string) ([]byte, error)
+}{exec.LookPath, runZpool}
+
+// runZpool runs one zpool call under pluginTimeout; runTimed, so a hung zpool is a timeout.
+func runZpool(args ...string) ([]byte, error) {
+	return runTimed(pluginTimeout, "zpool", args...)
+}
+
+// collectZFS collects ZFS pool information (Linux only). No zpool binary means ZFS is not installed
+// and stays silent (nil). With the CLI present the block is always sent: a failing or hanging
+// `zpool list` is available=false with an error code, so the monitoring service can raise it instead
+// of seeing no data.
 func collectZFS() map[string]any {
-	if _, err := exec.LookPath("zpool"); err != nil {
+	if _, err := zpoolCLI.lookPath("zpool"); err != nil {
 		return nil
 	}
 
-	out, err := runWithTimeout("zpool", "list", "-H", "-o",
+	out, err := zpoolCLI.run("list", "-H", "-o",
 		"name,size,alloc,free,cap,health")
 	if err != nil {
-		return nil
+		return zfsUnavailable(err)
 	}
 
 	pools := parseZpoolList(out)
-	if len(pools) == 0 {
-		return nil
-	}
-
-	result := map[string]any{"pools": pools}
+	result := map[string]any{"available": true, "error": nil, "pools": pools}
 
 	// Error details for non-ONLINE pools
 	for _, p := range pools {
 		if p["health"] != "ONLINE" {
-			statusOut, err := runWithTimeout("zpool", "status", "-x")
+			statusOut, err := zpoolCLI.run("status", "-x")
 			if err == nil {
 				result["errors"] = strings.TrimSpace(string(statusOut))
 			}
@@ -365,11 +378,28 @@ func collectZFS() map[string]any {
 	return result
 }
 
+// zfsUnavailable is the block for an installed zpool whose `zpool list` failed: error is timeout for
+// a call the timeout killed, cli_failed otherwise; error_message names the exit status, never stderr
+// or a path (as dockerUnavailable).
+func zfsUnavailable(err error) map[string]any {
+	code, text := "cli_failed", "zpool list failed: "+commandFailure("zpool", err)
+	if errors.Is(err, context.DeadlineExceeded) {
+		code, text = "timeout", fmt.Sprintf("zpool list timed out after %s", pluginTimeout)
+	}
+	logger.Warnf("%s, zfs reported as unavailable (%s)", text, code)
+	return map[string]any{
+		"available":     false,
+		"error":         code,
+		"error_message": text,
+		"pools":         []map[string]any{},
+	}
+}
+
 // parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health` (tab-separated) into pool
 // maps, skipping lines with too few columns and stripping the % from the capacity column — the
 // positional parsing, testable without running zpool (6.16).
 func parseZpoolList(out []byte) []map[string]any {
-	var pools []map[string]any
+	pools := []map[string]any{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		parts := strings.Split(line, "\t")
 		if len(parts) < 6 {
