@@ -98,8 +98,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/T
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (`:71`, `:92`) · CHANGELOG
 Abhängt von: T6
 
-### T9 — Live-E2E: ein neuer Tunnel wird ohne Neustart übernommen  [ ]
+### T9 — Live-E2E: ein neuer Tunnel wird ohne Neustart übernommen  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-start.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @a24303c8 2026-10-16T17:25:47+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T9.verdict.json)
 Änderung: Nach „connected“ liest die Spec `tunnel_status` (`connectedSince`, `visitors`), legt über die GUI (`gotoInfrastructure`, `openServerTab('tunnels')` aus `test/lib/live.js:223`/`:233`, wie `tunnel-create.live.js`) einen zweiten STCP-Tunnel am gesäten Server an und wartet bis 20 s, bis `visitors` dessen Visitor enthält; `connectedSince` bleibt gleich (Reload, kein Neustart), die Anzeige bleibt „connected“. Der Orchestrator `scripts/tests/desktop_e2e_tunnel.sh` bleibt unverändert. Der Live-Lauf gehört zu `Heavy:`.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
