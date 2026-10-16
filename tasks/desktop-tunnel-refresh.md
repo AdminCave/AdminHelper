@@ -6,11 +6,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # Desktop-Tunnel übernimmt Änderungen selbst — Task-Ledger
 Status: geplant · Branch: feature/desktop-tunnel-refresh · Review: pro Task
 Spec: docs/features/desktop-tunnel-refresh.md (Roadmap R-0402, R-0389, R-0390)
-Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Tunnel (CLAUDE.md §5): `desktop_e2e_tunnel.sh` mit dem erweiterten `tunnel-start.live.js` im Sammellauf (`run.sh e2e`, beweist Reload ohne Neustart gegen echtes frps); `scenario` vor dem Merge, weil der Desktop-Tunnel den FRP-Datenpfad berührt (der GUI-Visitor selbst läuft dort nicht, offene Frage 1 der Spec; Multibox von Kevin am 2026-10-16 erlaubt); `windows` für Sidecar und lokale Admin-API auf 127.0.0.1 (Firewall-Abfrage nicht verifiziert)
+Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Tunnel (CLAUDE.md §5): `desktop_e2e_tunnel.sh` mit dem erweiterten `tunnel-start.live.js` im Sammellauf (`run.sh e2e`, beweist Reload ohne Neustart gegen echtes frps); `scenario` vor dem Merge, weil der Desktop-Tunnel den FRP-Datenpfad berührt (der GUI-Visitor selbst läuft dort nicht; Kevin 2026-10-16: reicht, der Desktop-Beweis ist T9; Multibox erlaubt); `windows` für Sidecar und lokale Admin-API auf 127.0.0.1 (Firewall-Abfrage nicht verifiziert)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Kevin 2026-10-16: Desktop fragt alle 60 s ab; 404 von `visitor-bundle` heißt „keine Tunnel“ (kein neuer API-Vertrag); Reload für Visitors, Neustart für Common; Restrisiko Token-Rotation hingenommen; R-0389 und R-0390 vor dem automatischen Neustart.
+Kevin 2026-10-16: Desktop fragt alle 60 s ab; 404 von `visitor-bundle` heißt „keine Tunnel“ (kein neuer API-Vertrag); Reload für Visitors, Neustart für Common; Restrisiko Token-Rotation hingenommen; R-0389 und R-0390 vor dem automatischen Neustart; Knopf „Neu verbinden“ an der Tunnel-Anzeige, nur bei getrenntem Tunnel (T10, T11); `scenario` ohne GUI-Visitor reicht, der Desktop-Beweis ist T9.
 
 ### T1 — Ein Stopp macht das spätere Terminated alt (R-0389)  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
@@ -88,3 +88,17 @@ Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-start.liv
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T4, T6, T8
+
+### T10 — Tunnel-Store: `reconnectNow()` verwirft den geplanten Neustart und gleicht sofort ab  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts
+Änderung: Neue exportierte Funktion `reconnectNow()` im Tunnel-Store: bei aktivem Takt verwirft sie einen geplanten Backoff-Neustart (T7), setzt die Pause auf 5 s zurück und ruft `refreshNow()` (T6, hängt sich an einen laufenden Abgleich an); ohne aktiven Takt (abgemeldet, lokaler Modus) tut sie nichts. Vitest mit Fake-Timern, zuerst rot: nach `markTerminated` und `reconnectNow()` genau ein sofortiger Abgleich und kein weiterer zum alten Backoff-Zeitpunkt; scheitert dieser, beginnt die Pause wieder bei 5 s; nach `stop()` löst `reconnectNow()` nichts aus.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
+Doku: keine (intern; sichtbar mit T11)
+Abhängt von: T7
+
+### T11 — Tunnel-Anzeige: Knopf „Neu verbinden“, nur bei getrenntem Tunnel  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/TunnelIndicator.svelte, apps/desktop/ui/src/components/TunnelIndicator.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Änderung: `TunnelIndicator.svelte` (Anzeige `:28-33`, Zustände `:15-25`) zeigt bei `$tunnel.ui === 'disconnected'` neben „Tunnel getrennt“ einen kleinen Knopf „Neu verbinden“ (`tunnel.reconnect`, DE neben `dictionaries.ts:191`, EN neben `:815`), der `reconnectNow()` (T10) ruft; in jedem anderen Zustand gibt es keinen Knopf, während eines Abgleichs (`connecting`) erst recht nicht. Neue Testdatei mit SPDX-Header (`// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`), zuerst rot: Knopf nur bei `disconnected`; ein Klick ruft `reconnectNow` genau einmal; bei `connected`, `connecting`, `idle` kein Knopf. Doku DE+EN: ein Satz in der Fehlerbehebung (`frp-tunnel.html:113-114`, EN an der entsprechenden Stelle), dass der Desktop sich selbst wieder verbindet und „Neu verbinden“ das sofort anstößt.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/TunnelIndicator.test.ts
+Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (Fehlerbehebung)
+Abhängt von: T10

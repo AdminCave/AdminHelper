@@ -59,12 +59,14 @@ Dazu zwei Ereignis-Lücken, die ein automatischer Neustart verschärfen würde:
 - **Netzwerkfehler, 401 nach gescheitertem Refresh, 5xx:** der laufende Tunnel bleibt unangetastet; der
   nächste Takt versucht es neu.
 - Stopp durch den Nutzer, Abmelden, Wechsel in den lokalen oder Sync-Modus: kein Neustart, kein Takt.
+- **Knopf „Neu verbinden“** an der Tunnel-Anzeige (Kevin 2026-10-16), nur sichtbar, solange die Anzeige
+  „getrennt“ ist: verwirft einen geplanten Backoff-Neustart, setzt die Pause auf 5 s zurück und stößt sofort
+  einen Abgleich an. Bei verbundenem Tunnel gibt es ihn nicht, damit kein Klick laufende Sitzungen trennt.
 
 **Nicht-Ziele (YAGNI)**
 - Anstoß über den Benachrichtigungs-Stream (SSE). Heute ungeeignet: `frp.tunnel.created` ist `info`, das
   Standard-Abo der Admins `warning+`; Zuweisungen, Token-Rotation und Umbenennungen erzeugen kein
   Ereignis. Erst nötig, wenn 60 s zu langsam sind.
-- Ein Knopf „Tunnel neu verbinden“: der automatische Neustart macht ihn überflüssig.
 - Agent-Seite (Vorhaben agent-frpc-sync) und frps selbst (Vorhaben frps-supervisor).
 - Übernahme eines erneuerten Geräte-Zertifikats in den laufenden frpc.
 - HTTPS-Tunnel: sie haben keinen Visitor; ihre Mappings kommen weiter über `fetch_tunnels`.
@@ -92,6 +94,8 @@ Dazu zwei Ereignis-Lücken, die ein automatischer Neustart verschärfen würde:
   (`:226`), `lib/stores/settings.ts` (`:113`) — Aufrufer von `startIfServerMode`.
 - `apps/desktop/ui/src/components/infra/TunnelModal.svelte` (`:76-78`, `:100-106`) — sofort abfragen nach
   Anlegen, Ändern, Löschen.
+- `apps/desktop/ui/src/components/TunnelIndicator.svelte` (`:15-25`, `:28-33`) — Knopf „Neu verbinden“ bei
+  getrenntem Tunnel; Texte in `apps/desktop/ui/src/lib/i18n/dictionaries.ts` (`:191`, `:815`).
 
 **Live-E2E:** `apps/desktop/e2e/test/specs/tunnel-start.live.js` (erweitert, läuft über
 `scripts/tests/desktop_e2e_tunnel.sh`, das unverändert bleibt).
@@ -215,14 +219,16 @@ einen eigenen reqwest-Client ohne Proxy (`no_proxy`), mit Basic-Auth und kurzem 
 Sichtbare Änderung, DE + EN: `docs/admin/frp-tunnel.html` (`:71`, `:92`, EN gleiche Zeilen: Desktop
 übernimmt Änderungen selbst innerhalb von 60 s, bei Token-Rotation mit kurzem Abbruch),
 `docs/developer/desktop.html` und `docs/en/developer/desktop.html` (`:145-149`: Abgleich, Reload/Neustart,
-lokale Admin-API, Backoff), `CHANGELOG.md`.
+lokale Admin-API, Backoff), Knopf „Neu verbinden“ in der Fehlerbehebung von `frp-tunnel.html` (DE `:113-114`,
+EN an der entsprechenden Stelle), `CHANGELOG.md`.
 
 ## Offene Fragen
 
-1. **Scenario-Flags:** CLAUDE.md §5 verlangt für Desktop-Tunnel `scenario` vor dem Merge. Vorgeschlagen ist
-   `--agents 1 --tunnel --desktop`; die Desktop-Box dort fährt aber nur `server-crud` und `monitoring-check`
-   (`scripts/tests/multibox.sh`, `DESK_SPECS`), den GUI-Visitor prüft der Lauf nicht. Den eigentlichen
-   Beweis trägt das Single-Host-E2E. Reicht das, oder soll eine eigene Harness-Task die Desktop-Box um
-   `tunnel-start.live.js` erweitern (dann merged Kevin den PR)? **Empfehlung: reicht.**
+Keine. Entschieden von Kevin am 2026-10-16:
+
+1. **Scenario-Flags:** `--agents 1 --tunnel --desktop` reicht. Die Desktop-Box dort fährt nur `server-crud`
+   und `monitoring-check` (`scripts/tests/multibox.sh`, `DESK_SPECS`), den GUI-Visitor prüft der Lauf nicht;
+   den Beweis für den Desktop trägt das Live-E2E (T9).
 2. **Sitzungserhalt beim Reload Ende-zu-Ende** wird hier nicht geprüft; für unveränderte Visitors folgt er aus
-   dem frp-Code, für die Agent-Seite plant agent-frpc-sync den `scenario`-Beweis. **Empfehlung: so lassen.**
+   dem frp-Code, den `scenario`-Beweis für eine offene Sitzung liefert agent-frpc-sync.
+3. **Knopf „Neu verbinden“:** ja, als eigene Tasks (T10, T11), siehe Ziele.
