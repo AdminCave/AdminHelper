@@ -690,7 +690,8 @@ func TestAliasAndWatchAliasShowFails(t *testing.T) {
 func TestAliasAndWatchCountsSkipUnloaded(t *testing.T) {
 	// list-units --all also lists units without a unit file (not-found, here one still running after
 	// its file was removed) and masked units something still references. Neither is a loaded
-	// service, so neither counts, in active or in total; the inventory keeps them.
+	// service, so neither counts, in active or in total; the inventory keeps the running and the
+	// masked one and leaves the not-found inactive one out (TestServiceHealthNotFoundInactiveDropped).
 	unitsOut := collectorListUnits +
 		"auditd.service           not-found inactive dead    auditd.service\n" +
 		"gone.service             not-found active   running gone.service\n" +
@@ -707,9 +708,127 @@ func TestAliasAndWatchCountsSkipUnloaded(t *testing.T) {
 		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got["counts"])
 	}
 	all := strings.Join(units(got["all_services"].([]ServiceEntry)), " ")
-	for _, u := range []string{"auditd.service", "gone.service", "hwclock.service"} {
+	for _, u := range []string{"gone.service", "hwclock.service"} {
 		if !strings.Contains(all, u) {
 			t.Errorf("all_services lacks %s: %s", u, all)
+		}
+	}
+	if strings.Contains(all, "auditd.service") {
+		t.Errorf("all_services has the not-found inactive auditd.service: %s", all)
+	}
+}
+
+// notFoundListUnits are real systemd 257 `list-units` lines (Debian 13): firewalld is not installed,
+// but another unit references it, so list-units --all lists it without a unit file; modprobe@fuse is
+// a loaded, inactive instance that list-unit-files does not list either.
+const notFoundListUnits = `firewalld.service        not-found inactive dead    firewalld.service
+modprobe@fuse.service    loaded    inactive dead    Load Kernel Module fuse
+`
+
+func TestServiceHealthNotFoundInactiveDropped(t *testing.T) {
+	// In the inventory firewalld would be {inactive, unknown}, i.e. down for the list mode instead of
+	// nodata like a name that does not exist (spec (c)3): the collector leaves it out. A loaded
+	// inactive unit stays, even one list-unit-files does not know; counts, re-check candidates and
+	// aliases are those of the report without firewalld.
+	calls := stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {out: collectorListUnits + notFoundListUnits},
+		listUnitFilesArgs: {out: collectorListUnitFiles},
+		listFailedArgs:    {},
+		recheckShow:       {out: showBlocks257},
+		aliasShow:         {out: aliasBlocks},
+	})
+	got := collectServiceHealth()
+
+	all := got["all_services"].([]ServiceEntry)
+	wantUnits := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
+		"getty@tty1.service", "modprobe@fuse.service", "smartd.service", "smartmontools.service",
+		"ssh.service", "sshd.service", "systemd-pstore.service"}
+	if u := units(all); !reflect.DeepEqual(u, wantUnits) {
+		t.Errorf("all_services = %q, want %q without firewalld.service", u, wantUnits)
+	}
+	byUnit := map[string]ServiceEntry{}
+	for _, e := range all {
+		byUnit[e["unit"]] = e
+	}
+	for _, want := range []ServiceEntry{
+		{"unit": "cron.service", "active_state": "inactive", "enabled_state": "enabled"},
+		{"unit": "modprobe@fuse.service", "active_state": "inactive", "enabled_state": "unknown"},
+	} {
+		if e := byUnit[want["unit"]]; !reflect.DeepEqual(e, want) {
+			t.Errorf("%s = %v, want %v", want["unit"], e, want)
+		}
+	}
+	wantAlias := map[string]string{"smartd.service": "smartmontools.service", "sshd.service": "ssh.service"}
+	if a := aliasOf(all); !reflect.DeepEqual(a, wantAlias) {
+		t.Errorf("alias_of = %v, want %v", a, wantAlias)
+	}
+	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 8}) {
+		t.Errorf("counts = %v, want active 2 of the 8 loaded units", got["counts"])
+	}
+	if !reflect.DeepEqual(got["enabled_inactive"], []string{"cron.service"}) {
+		t.Errorf("enabled_inactive = %q, want [cron.service]", got["enabled_inactive"])
+	}
+	wantCalls := []string{listUnitsArgs, listUnitFilesArgs, listFailedArgs,
+		"show -p " + enabledInactiveProps + " -- anacron.service cron.service e2scrub_reap.service systemd-pstore.service",
+		aliasShow + " -- smartd.service sshd.service"}
+	if !reflect.DeepEqual(*calls, wantCalls) {
+		t.Errorf("calls = %q, want %q", *calls, wantCalls)
+	}
+}
+
+func TestServiceHealthNotFoundActiveOrFailedKept(t *testing.T) {
+	// A not-found unit still running after its unit file was removed, or one that failed, has a state
+	// worth reporting: both stay in the inventory with their active state, and neither counts.
+	stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs: {out: collectorListUnits +
+			"gone.service             not-found active   running gone.service\n" +
+			"old.service              not-found failed   failed  old.service\n"},
+		listUnitFilesArgs: {out: collectorListUnitFiles},
+		listFailedArgs:    {out: "old.service not-found failed failed old.service\n"},
+		recheckShow:       {out: showBlocks257},
+		aliasShow:         {out: aliasBlocks},
+	})
+	got := collectServiceHealth()
+
+	byUnit := map[string]ServiceEntry{}
+	for _, e := range got["all_services"].([]ServiceEntry) {
+		byUnit[e["unit"]] = e
+	}
+	for _, want := range []ServiceEntry{
+		{"unit": "gone.service", "active_state": "active", "enabled_state": "unknown"},
+		{"unit": "old.service", "active_state": "failed", "enabled_state": "unknown"},
+	} {
+		if e := byUnit[want["unit"]]; !reflect.DeepEqual(e, want) {
+			t.Errorf("%s = %v, want %v", want["unit"], e, want)
+		}
+	}
+	if !reflect.DeepEqual(got["failed"], []string{"old.service"}) {
+		t.Errorf("failed = %q, want [old.service]", got["failed"])
+	}
+	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
+		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got["counts"])
+	}
+}
+
+func TestServiceHealthNotFoundListUnitsFails(t *testing.T) {
+	// Without list-units there is no load state: nothing is left out, all_services is list-unit-files
+	// with every active state unknown, as before.
+	stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {err: exitError(t, "exit 1")},
+		listUnitFilesArgs: {out: collectorListUnitFiles},
+		listFailedArgs:    {},
+		aliasShow:         {out: aliasBlocks},
+	})
+	got := collectServiceHealth()
+	all := got["all_services"].([]ServiceEntry)
+	want := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
+		"smartd.service", "smartmontools.service", "ssh.service", "sshd.service", "systemd-pstore.service"}
+	if !reflect.DeepEqual(units(all), want) {
+		t.Errorf("all_services = %q, want the units of list-unit-files %q", units(all), want)
+	}
+	for _, e := range all {
+		if e["active_state"] != "unknown" {
+			t.Errorf("%s: active_state = %q, want unknown", e["unit"], e["active_state"])
 		}
 	}
 }

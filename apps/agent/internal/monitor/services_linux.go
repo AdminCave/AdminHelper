@@ -22,6 +22,15 @@ func collectServiceHealth() map[string]any {
 	if unitsErr == nil {
 		unitStates = parseSystemctlColumnsOutput(string(listUnits), 2)
 		loadStates = parseSystemctlColumnsOutput(string(listUnits), 1)
+		// list-units --all also lists a unit that is not installed, only because another unit
+		// references it (not-found inactive). In the inventory it would be inactive, i.e. down for the
+		// server's list mode, where a name with no unit at all is nodata. One still running or failed
+		// stays.
+		for unit, load := range loadStates {
+			if load == "not-found" && unitStates[unit] == "inactive" {
+				delete(unitStates, unit)
+			}
+		}
 	}
 
 	// 2) Enabled state for all unit files (col 1 = UNIT STATE)

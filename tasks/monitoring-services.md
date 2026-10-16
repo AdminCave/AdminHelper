@@ -65,8 +65,10 @@ Beweis: origin/main@af4498a7 · `provision.go:139-143` übergibt keine Dienste, 
 Dedup-Key: bug:monitoring:checkers/agent.py:services-display
 HEAD: af4498a7
 
-### T9 — Agent: nicht installierte, inaktive Units nicht ins Inventar  [ ]
+### T9 — Agent: nicht installierte, inaktive Units nicht ins Inventar  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @4f91399d 2026-10-16T16:20:27+02:00
+Review: approve (.ah-out/review/monitoring-services/T9.verdict.json)
 Änderung: `collectServiceHealth` (`services_linux.go:17`) lässt Units mit Load-State `not-found` und Active-State `inactive` aus `all_services` weg: `list-units --all` listet sie nur, weil eine andere Unit sie referenziert, `list-unit-files` kennt sie nicht, und im Inventar wären sie `{inactive, unknown}`, also für den Listen-Modus `down` statt `nodata` (Spec (c)3). Eine `not-found`-Unit, die `active` oder `failed` ist, bleibt; scheitert `list-units`, ändert sich nichts. `failed` und `enabled_inactive` bleiben unberührt. Tests zuerst rot, Namen mit Präfix `TestServiceHealthNotFound`, über den Seam `runSystemctl` mit echten `list-units`-Zeilen: `firewalld.service not-found inactive dead` fehlt im Inventar; `gone.service not-found active running` und `old.service not-found failed failed` bleiben; eine geladene inaktive Unit bleibt.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServiceHealthNotFound
 Doku: keine (intern; sichtbar mit T8)
