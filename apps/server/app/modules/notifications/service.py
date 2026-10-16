@@ -7,7 +7,9 @@
 ingest_event() is the single entry point for every event source — the HTTP
 ingress (/api/internal/events, used by the monitoring service) and, later, the
 in-process event bus. It resolves who should be notified and writes the bell
-feed rows plus outbox rows for the external channels.
+feed rows plus outbox rows for the external channels. notify_users() is the
+exception for system notices whose recipients the caller has already chosen:
+bell rows only, no subscription resolution, no outbox.
 
 Recipient resolution enforces least privilege: a user is only notified about a
 server they may see (admin, or assigned via user_servers). "All servers" therefore
@@ -16,6 +18,7 @@ means "all servers the user may see", not the whole inventory.
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -205,6 +208,39 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
 
         stream_hub.publish(notified_user_ids, max_id)
     return notified
+
+
+def notify_users(db: Session, users: Iterable[User], event: IncomingEvent) -> int:
+    """Write one bell row per given user, return the number written.
+
+    Bypasses resolve_recipients: non-admins usually have no subscription and
+    would never be reached through it. Queues no outbox rows, so nothing leaves
+    by e-mail or Telegram. A user listed twice gets one row. Commits once, and
+    only when there is a row to write."""
+    rows = [
+        Notification(
+            user_id=user_id,
+            severity=event.severity,
+            category=event.category,
+            event_type=event.event_type,
+            title=event.title,
+            body=event.body,
+            source_type=event.source_type,
+            source_id=event.source_id,
+        )
+        for user_id in dict.fromkeys(user.id for user in users)
+    ]
+    if not rows:
+        return 0
+    db.add_all(rows)
+    db.flush()  # assign the ids for the SSE nudge before commit expires them
+    user_ids = [row.user_id for row in rows]
+    max_id = max(row.id for row in rows)
+    db.commit()
+    from app.modules.notifications import stream_hub
+
+    stream_hub.publish(user_ids, max_id)
+    return len(rows)
 
 
 def cleanup_old_notifications(db: Session, retention_days: int) -> int:

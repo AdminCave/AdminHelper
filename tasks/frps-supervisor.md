@@ -53,8 +53,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_supervisor_
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html
 Abhängt von: T3
 
-### T5 — Server: Mitteilung direkt an bestimmte Nutzer  [ ]
+### T5 — Server: Mitteilung direkt an bestimmte Nutzer  [x]
 Komponente: server · Dateien: apps/server/app/modules/notifications/service.py, apps/server/tests/test_notifications.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @00b36fd6 2026-10-16T14:51:28+02:00
+Review: approve (.ah-out/review/frps-supervisor/T5.verdict.json)
 Änderung: Neue Funktion `notify_users(db, users, event)` neben `ingest_event` (`service.py:157`): schreibt je Nutzer eine Glocken-Zeile ohne Abo-Auflösung und ohne Outbox (keine E-Mail/Telegram), danach den SSE-Anstoß wie `ingest_event` (`:203-206`). Tests: genau die übergebenen Nutzer erhalten eine Zeile, keine Outbox-Zeile, leere Liste schreibt nichts.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notifications.py
 Doku: keine (intern)
