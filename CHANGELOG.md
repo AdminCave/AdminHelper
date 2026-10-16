@@ -316,6 +316,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
+  Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
+  Schreibvorgaenge, lag danach der Schluessel der einen neben dem Zertifikat der anderen. Kam eine Erneuerung vor
+  der Provisionierung beim Issuer an und speicherte ihr Zertifikat danach, war es eines, dessen Linie die
+  Provisionierung hatte widerrufen lassen. Beides sperrte den Agent aus, bis er neu provisioniert wurde. Jetzt
+  haelt jede der beiden die Sperrdatei `agent.lock` im Identitaetsverzeichnis vom ersten Lesen der Identitaet bis
+  zum Speichern der neuen: Eine Provisionierung wartet hoechstens eine laufende Erneuerung ab und nennt deren
+  Zertifikat als ersetzt, eine wartende Erneuerung findet das frische Zertifikat und erneuert nicht.
 - **Server: der Agent-Report-Proxy reicht jede Server-ID durch (R-0391):**
   `POST /api/monitoring/agent/{server_id}/report` setzte die dekodierte `server_id` unkodiert in die Ziel-URL zum
   Monitoring-Dienst. Ein Steuerzeichen (`%1F`) endete mit 500, ein `?` oder `#` (`%3F`, `%23`) schnitt die Ziel-URL

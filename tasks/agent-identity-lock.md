@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Erneuerung und Provisionierung sperren die Identität — Task-Ledger
-Status: aktiv · Branch: feature/agent-identity-lock · Review: am Ende
+Status: bereit · Branch: feature/agent-identity-lock · Review: am Ende
 Spec: Roadmap R-0384
 Heavy: linux-full — `apps/agent/internal/enroll` und `internal/provision` sind Agent-Enrollment und -Erneuerung; läuft im Sammellauf (`/feature-build` §5); Windows ohne VM: `lock_windows.go` prüft der CI-Job `agent-windows` nativ (`go test ./...`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -35,8 +35,10 @@ Doku: keine (intern)
 Abhängt von: T1
 Dedup-Key: bug:agent:enroll:store-commit-race
 
-### T3 — Provisionierung hält die Sperre vom Lesen der alten Identität bis zum Commit  [ ]
+### T3 — Provisionierung hält die Sperre vom Lesen der alten Identität bis zum Commit  [x]
 Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @0e883e5d 2026-10-16T11:34:02+02:00
+Review: am Ende (Branch-Review)
 Änderung: `runEnrollment` (`provision.go:247`) nimmt `enroll.LockIdentity(dir)` vor dem Verwerfen einer fremden Identität (`:272`) und hält sie über `checkStorable` (`:280`), das Lesen von `Replaces` (`:288`), `enroll.Submit` und `storeIdentity` (`:294`). Tests in `provision_test.go` mit dem vorhandenen Issuer-Fake: (a) Hält der Test die Sperre, schickt `runEnrollment` keine Anfrage, bis sie frei ist. (b) Speichert der Test, während er die Sperre hält, eine neue Identität (eine Erneuerung, die vorher fertig wird), nennt die Anfrage danach genau deren Fingerprint als `Replaces`, nicht den der alten. CHANGELOG unter `### Fixed`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run RunEnrollment
 Doku: CHANGELOG.md (Fixed); docs/ keine

@@ -23,6 +23,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -413,5 +414,178 @@ func TestRunEnrollmentKeepsTheIdentityOfTheSameServerWhenEnrollmentFails(t *test
 	}
 	if got := enroll.LeafCommonName(dir); got != "srv-1" {
 		t.Fatalf("die eigene Identität muss bleiben, CN = %q", got)
+	}
+}
+
+// R-0384: a provisioning holds the identity lock from its first read of the identity to
+// the commit, so it never interleaves with a renewal and names what one stored first.
+
+// recordingIssuer answers every enrollment like the issuer and passes each request body
+// on to the returned channel.
+func recordingIssuer(t *testing.T) (*httptest.Server, int, <-chan map[string]any) {
+	t.Helper()
+	bodies := make(chan map[string]any, 8)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies <- body
+		_ = json.NewEncoder(w).Encode(map[string]string{"cert": "c", "fullchain": "fullchain", "chain": "chain"})
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	return srv, port, bodies
+}
+
+// runEnrollmentBehindLock takes the identity lock and starts runEnrollment, which must
+// neither ask the issuer nor return while the lock is held. It returns runEnrollment's
+// result and the unlock of the held lock, which the cleanup calls too.
+func runEnrollmentBehindLock(t *testing.T, srvURL string, info *enrollmentInfo, bodies <-chan map[string]any) (<-chan error, func()) {
+	t.Helper()
+	unlock, err := enroll.LockIdentity(config.AgentPkiDir())
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	var once sync.Once
+	release := func() { once.Do(unlock) }
+	t.Cleanup(release)
+	res := make(chan error, 1)
+	go func() { res <- runEnrollment(srvURL, info, "", true) }()
+	select {
+	case body := <-bodies:
+		t.Fatalf("runEnrollment asked the issuer while the identity lock was held: %v", body)
+	case err := <-res:
+		t.Fatalf("runEnrollment returned (%v) while the identity lock was held", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	return res, release
+}
+
+// awaitEnrollment waits for runEnrollment to succeed and returns the one request it sent.
+func awaitEnrollment(t *testing.T, res <-chan error, bodies <-chan map[string]any) map[string]any {
+	t.Helper()
+	select {
+	case err := <-res:
+		if err != nil {
+			t.Fatalf("runEnrollment: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("runEnrollment did not return after the identity lock was released")
+	}
+	select {
+	case body := <-bodies:
+		return body
+	default:
+		t.Fatal("runEnrollment returned without asking the issuer")
+		return nil
+	}
+}
+
+func TestRunEnrollmentWaitsForTheIdentityLock(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	dir := config.AgentPkiDir()
+	// The identity of another server, which runEnrollment drops: only under the lock.
+	storeIdentityOf(t, dir, "srv-1")
+	srv, port, bodies := recordingIssuer(t)
+
+	res, unlock := runEnrollmentBehindLock(t, srv.URL, &enrollmentInfo{Token: "t", SubjectID: "srv-2", EnrollPort: port}, bodies)
+	if got := enroll.LeafCommonName(dir); got != "srv-1" {
+		t.Fatalf("runEnrollment dropped the identity while the identity lock was held, CN = %q", got)
+	}
+	unlock()
+	awaitEnrollment(t, res, bodies)
+}
+
+func TestRunEnrollmentReplacesTheIdentityARenewalStoredFirst(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	srv, port, bodies := recordingIssuer(t)
+	info := &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}
+	dir := provisionedOnce(t, srv, info)
+	<-bodies // the earlier provisioning's request
+	earlier := sha256.Sum256(srv.Certificate().Raw)
+
+	res, unlock := runEnrollmentBehindLock(t, srv.URL, info, bodies)
+	// A renewal that holds the lock first stores its certificate while runEnrollment waits.
+	storeIdentityOf(t, dir, "srv-1")
+	certPEM, err := os.ReadFile(enroll.CertPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	renewed := sha256.Sum256(block.Bytes)
+	unlock()
+
+	body := awaitEnrollment(t, res, bodies)
+	if got, want := body["replaces"], hex.EncodeToString(renewed[:]); got != want {
+		t.Fatalf("replaces = %v, want the renewed leaf %q, not the earlier %q", got, want, hex.EncodeToString(earlier[:]))
+	}
+}
+
+// A renewal that starts while the provisioning waits for the issuer finds the new
+// identity stored, not the one whose line the request has the issuer revoke.
+func TestRunEnrollmentHoldsTheIdentityLockUntilItStored(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	dir := config.AgentPkiDir()
+	storeIdentityOf(t, dir, "srv-1")
+	asked := make(chan struct{}, 1)
+	answer := make(chan struct{})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked <- struct{}{}
+		<-answer
+		_ = json.NewEncoder(w).Encode(map[string]string{"cert": "c", "fullchain": "fullchain", "chain": "chain"})
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(answer) })
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+
+	res := make(chan error, 1)
+	go func() {
+		res <- runEnrollment(srv.URL, &enrollmentInfo{Token: "t", SubjectID: "srv-1", EnrollPort: port}, "", true)
+	}()
+	select {
+	case <-asked:
+	case err := <-res:
+		t.Fatalf("runEnrollment returned (%v) without asking the issuer", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("runEnrollment did not ask the issuer")
+	}
+
+	// What a renewal that gets the lock reads first.
+	seen := make(chan []byte, 1)
+	go func() {
+		unlock, err := enroll.LockIdentity(dir)
+		if err != nil {
+			t.Errorf("LockIdentity: %v", err)
+			seen <- nil
+			return
+		}
+		cert, _ := os.ReadFile(enroll.CertPath(dir))
+		// Before the send: Windows cannot remove the temp dir while the lock file is open.
+		unlock()
+		seen <- cert
+	}()
+	select {
+	case <-seen:
+		t.Fatal("the identity lock was free while runEnrollment waited for the issuer")
+	case <-time.After(500 * time.Millisecond):
+	}
+	answer <- struct{}{}
+
+	select {
+	case err := <-res:
+		if err != nil {
+			t.Fatalf("runEnrollment: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("runEnrollment did not return after the issuer answered")
+	}
+	select {
+	case cert := <-seen:
+		if string(cert) != "fullchain" {
+			t.Fatalf("the lock was free before the new identity was stored, a renewal read %q", cert)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the identity lock was not free after runEnrollment returned")
 	}
 }
