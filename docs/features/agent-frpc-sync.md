@@ -78,7 +78,7 @@ Dazu kommen drei Schwächen am selben Ablauf:
 | agent | `apps/agent/internal/frpc/platform_linux.go` / `platform_windows.go` | Seams: aktiv?, aktivieren, deaktivieren und stoppen, Reload; Windows No-ops |
 | agent | neu `apps/agent/internal/frpc/admin.go` (+ Test) | `admin.conf` (Port, Hex-Passwort, 0600), freier Port, Prüfung des eigenen Listeners über `/proc/net/tcp` |
 | agent | `apps/agent/internal/provision/provision.go` | schreibt die Sync-Config immer; `frp=null` → Ablauf „nichts zu tun“ |
-| scripts | `scripts/tests/box_tunnelbox.sh`, `multibox.sh`, `multibox_test.sh` | Szenario: Tunnel nach dem Provisionieren; zweiter Tunnel bei offener Sitzung |
+| scripts | `scripts/tests/box_tunnelbox.sh`, `box_visitorbox.sh`, `multibox.sh`, `multibox_test.sh` | Szenario: Tunnel nach dem Provisionieren; zweiter Tunnel bei offener Sitzung |
 | docs | `docs/admin/agent-deployment.html`, `docs/developer/agent.html`, `docs/developer/server.html:99`, `docs/developer/api-reference.html:163` (je DE+EN), `CHANGELOG.md` | siehe Doku-Impact |
 
 ## Datenmodell / API / Migrationen
