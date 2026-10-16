@@ -92,8 +92,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (intern; beschrieben in T12)
 Abhängt von: T8
 
-### T10 — Desktop: gelöschte Template-Checks wiederherstellen  [ ]
+### T10 — Desktop: gelöschte Template-Checks wiederherstellen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/MonitoringTab.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @33405a0f 2026-10-16T17:14:52+02:00
+Review: approve (.ah-out/review/monitoring-templates/T10.verdict.json)
 Änderung: Im Template-Abschnitt (`MonitoringTab.svelte:171-206`) zeigt jede Zuweisung mit `removedChecks > 0` „N gelöschte Checks wiederherstellen“; der Klick ruft `restoreTemplateChecks` und lädt Zuweisungen und Checks neu. Texte DE + EN (Plural). Tests zuerst rot: Link nur bei `removedChecks > 0`, Klick ruft den Aufruf mit Template und Server, danach neu geladen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/MonitoringTab.test.ts
 Doku: keine (intern; beschrieben in T12)
