@@ -110,8 +110,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (intern; beschrieben in T12)
 Abhängt von: T8
 
-### T13 — Monitoring: Anpassungen von vor dem Update beim ersten Start erkennen  [ ]
+### T13 — Monitoring: Anpassungen von vor dem Update beim ersten Start erkennen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/app/main.py, apps/monitoring/tests/test_template_overrides.py, apps/monitoring/alembic/versions/a7c9e1b3d5f7_template_overrides_versions.py, apps/monitoring/tests/test_alembic_builtin.py, apps/monitoring/app/models.py, apps/monitoring/app/builtin_templates.py, apps/monitoring/app/tag_sync.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_templates_router.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9c10dba5 2026-10-16T19:02:46+02:00
+Review: approve (.ah-out/review/monitoring-templates/T13.verdict.json)
 Änderung: Einmal je Installation, beim Start nach dem Seed und vor `reconcile_builtin_templates` und vor dem ersten Tag-Sync (best effort wie der Seed), bekommt jeder Template-Check mit Definition im Template eine Merkliste aus dem Vergleich mit dem Template: die Definition aufgelöst mit den gespeicherten Namen seiner Zuweisung (`server_hostname`/`server_name`, also den Werten der Materialisierung); jedes Feld aus `TEMPLATE_CHECK_FIELDS`, das abweicht, gilt als angepasst (dieselbe Regel wie `mark_overrides`, inklusive Kopplung Typ/Config) (Kevin, 2026-10-16). Läuft genau einmal (persistente Markierung erst nach Erfolg; scheitert der Lauf, beim nächsten Start erneut), ist idempotent und zählt die markierten Checks ins Log. Tests zuerst rot: Check mit geändertem Intervall → `["interval"]`; unveränderter Check → `[]`; deaktivierter Check → `["enabled"]`; `{{hostname}}`-Config mit seither umbenanntem Server (Inventar anders, Zuweisung alt) → nicht als angepasst; zweiter Start ändert nichts, auch nicht nach späteren Änderungen; danach überschreibt weder Template-Sync noch Namensabgleich das angepasste Feld.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_overrides.py tests/test_seed.py tests/test_tag_sync.py tests/test_template_sync.py tests/test_templates_router.py
 Doku: keine (intern; beschrieben in T12)

@@ -22,6 +22,7 @@ from app.models import (
     MonitorAlertRule,
     MonitorCheck,
     MonitorCheckTombstone,
+    MonitorSeedState,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
@@ -71,6 +72,12 @@ def db(monkeypatch):
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
+    # After the first start: it marked the changes from before the update. Without
+    # the key every sync would mark first, against the template a test just changed
+    # (test_template_overrides covers that path).
+    with factory() as setup:
+        setup.add(MonitorSeedState(slug=template_sync.OVERRIDE_BASELINE_KEY))
+        setup.commit()
 
     # Record scheduler interactions instead of touching the real scheduler.
     # scheduled = check_ids; scheduled_calls = (check_id, check_type) so a test can

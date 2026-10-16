@@ -42,12 +42,15 @@ async def lifespan(app: FastAPI):
         schedule_tag_sync,
         scheduler,
     )
+    from app.template_sync import record_override_baseline
 
     # Rehydrate agent liveness before the scheduler starts: without this, every
     # restart made agent_ping report 'unknown' until the next push. Then seed
-    # the built-in standard templates and move the unedited ones to the shipped
-    # version (tombstone-guarded, best-effort — a seed failure must not keep the
-    # service down). Both before load_all_checks, which schedules what they sync.
+    # the built-in standard templates, mark once what users changed on template
+    # checks before the update (before the first sync, which would overwrite it),
+    # and move the unedited built-ins to the shipped version (tombstone-guarded,
+    # best-effort — a seed failure must not keep the service down). All before
+    # load_all_checks, which schedules what they sync.
     db = SessionLocal()
     try:
         hydrate_agent_liveness(
@@ -58,6 +61,11 @@ async def lifespan(app: FastAPI):
         except Exception:
             db.rollback()
             logger.exception("Seeding der Standard-Templates fehlgeschlagen")
+        try:
+            record_override_baseline(db)
+        except Exception:
+            db.rollback()
+            logger.exception("Marking the changes made before the update failed")
         try:
             reconcile_builtin_templates(db)
         except Exception:

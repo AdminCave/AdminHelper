@@ -10,8 +10,10 @@ Create Date: 2026-10-16
 
 R-0420 (docs/features/monitoring-templates.md): ``monitor_checks.overridden_fields``
 lists the fields a user changed on a template check, so the template sync keeps
-them; existing checks start with ``[]`` (nothing counts as changed before this
-revision). ``monitor_check_tombstones`` records a deleted template check per
+them; existing checks start with ``[]``, and the first start marks what differs
+from the template (``template_sync.record_override_baseline``) under a key in
+``monitor_seed_state``. That key is deleted here: it must not outlive the marks a
+downgrade drops. ``monitor_check_tombstones`` records a deleted template check per
 (template, server, def_id) so the sync does not create it again.
 ``monitor_templates.builtin_version``/``builtin_hash`` record which shipped
 version of a standard template was last rolled out. Metadata only: the
@@ -35,6 +37,11 @@ def upgrade() -> None:
         "monitor_checks",
         sa.Column("overridden_fields", sa.Text(), nullable=False, server_default="[]"),
     )
+    # Every check now says "nothing changed", so a first start has to mark the changes
+    # again, also after a downgrade and upgrade: the value of
+    # template_sync.OVERRIDE_BASELINE_KEY (a migration does not import app code).
+    seed_state = sa.table("monitor_seed_state", sa.column("slug", sa.String()))
+    op.execute(seed_state.delete().where(seed_state.c.slug == "baseline:overridden-fields"))
     op.add_column("monitor_templates", sa.Column("builtin_version", sa.Integer(), nullable=True))
     op.add_column("monitor_templates", sa.Column("builtin_hash", sa.String(), nullable=True))
     op.create_table(

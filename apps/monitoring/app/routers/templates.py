@@ -31,6 +31,7 @@ from app.tag_sync import sync_tag_assignments
 from app.template_sync import (
     apply_template,
     check_def_ids,
+    record_override_baseline,
     remove_template,
     restore_checks,
     sync_template,
@@ -180,6 +181,8 @@ def update_template(template_id: str, data: TemplateUpdate, db: Session = Depend
     if not template:
         raise HTTPException(404, "Template nicht gefunden")
 
+    # Compared with the template as it is, before this change reaches it.
+    record_override_baseline(db)
     sent = data.model_fields_set
     if "name" in sent:
         template.name = data.name

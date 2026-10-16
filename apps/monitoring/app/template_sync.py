@@ -12,6 +12,7 @@ Core functions:
   remove_template() — Removes the assignment + deletes the associated checks
   cleanup_server()  — Deletes all monitoring data of a server
   mark_overrides()  — Records which fields of a template check a user changed
+  record_override_baseline() — Once: marks the fields changed before the update
   tombstone_check() — Keeps a deleted template check from being created again
   restore_checks()  — Creates the deleted template checks of a server again
 """
@@ -31,6 +32,7 @@ from app.models import (
     MonitorCheck,
     MonitorCheckTombstone,
     MonitorMaintenance,
+    MonitorSeedState,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
@@ -182,6 +184,64 @@ def mark_overrides(db: Session, check: MonitorCheck, changed: dict) -> None:
     check.overridden_fields = json.dumps([f for f in TEMPLATE_CHECK_FIELDS if f in fields])
 
 
+# Key in monitor_seed_state, committed together with the marks of
+# record_override_baseline; the colon keeps it apart from the built-in slugs there.
+# Migration a7c9e1b3d5f7 deletes it when it adds overridden_fields, so a downgrade
+# and upgrade, which starts every check at [] again, takes the baseline again.
+OVERRIDE_BASELINE_KEY = "baseline:overridden-fields"
+
+
+def record_override_baseline(db: Session) -> int:
+    """Once per install: mark the fields users changed on template checks before
+    overridden_fields existed, i.e. every field that differs from the template, by
+    the rule of mark_overrides. The template is resolved with the names its
+    assignment holds, those the check was built from, so a server renamed since is
+    no change of the user's. A check that cannot be compared (unreadable config or
+    definitions) gets every field marked, so no sync touches it.
+
+    Has to run before anything syncs a template, as a sync writes every field not
+    marked: the startup runs it, and so does every path to a sync, before it changes
+    the template or the assignment, since it compares with them (restore_checks
+    before it drops the tombstones, which a failed run keeps that way).
+    sync_template and sync_assignment run it as well. The key is committed with the
+    marks (and with whatever the session holds): a run that fails is rolled back by
+    the caller and repeated by the next one, and a sync whose run failed does not
+    happen. Returns the number of checks marked, 0 once the key is there."""
+    if db.get(MonitorSeedState, OVERRIDE_BASELINE_KEY) is not None:
+        return 0
+    checks = db.query(MonitorCheck).filter(MonitorCheck.template_id.isnot(None)).all()
+    marked = 0
+    not_comparable = 0
+    for check in checks:
+        try:
+            current = {field: getattr(check, field) for field in TEMPLATE_CHECK_FIELDS}
+            current["config"] = json.loads(check.config) if check.config else {}
+            mark_overrides(db, check, current)
+        except (ValueError, TypeError, AttributeError) as exc:
+            # Bad data in this row or its template, not a database error: those
+            # fail the run.
+            logger.warning(
+                "Template check %s could not be compared with its template (%s);"
+                " all its fields count as changed",
+                check.id,
+                type(exc).__name__,
+            )
+            check.overridden_fields = json.dumps(list(TEMPLATE_CHECK_FIELDS))
+            not_comparable += 1
+        if _read_overrides(check):
+            marked += 1
+    db.add(MonitorSeedState(slug=OVERRIDE_BASELINE_KEY))
+    db.commit()
+    logger.info(
+        "Changes made before the update: %d of %d template check(s) marked as changed,"
+        " %d not comparable",
+        marked,
+        len(checks),
+        not_comparable,
+    )
+    return marked
+
+
 def tombstone_check(db: Session, check: MonitorCheck) -> None:
     """Record a template check the user is deleting, so the sync does not create
     it on this server again. Only while the server has the template: without the
@@ -275,7 +335,10 @@ def _create_alert(
 
 
 def sync_template(db: Session, template: MonitorTemplate) -> dict:
-    """Synchronizes all checks/alerts for all servers that use this template."""
+    """Synchronizes all checks/alerts for all servers that use this template.
+    A caller that changes the template first takes the baseline before that
+    change (record_override_baseline); here it is only a lookup then."""
+    record_override_baseline(db)
     assignments = (
         db.query(MonitorTemplateAssignment)
         .filter(MonitorTemplateAssignment.template_id == template.id)
@@ -329,7 +392,9 @@ def sync_assignment(
     db: Session, template: MonitorTemplate, assignment: MonitorTemplateAssignment
 ) -> None:
     """Synchronizes the checks/alerts of one assignment, leaving the template's
-    other servers alone."""
+    other servers alone. A caller that changes the assignment first takes the
+    baseline before that change, as for sync_template."""
+    record_override_baseline(db)
     check_defs = json.loads(template.check_definitions) if template.check_definitions else []
     alert_defs = json.loads(template.alert_definitions) if template.alert_definitions else []
     variables = _build_variables(assignment)
@@ -604,6 +669,8 @@ def restore_checks(
     """Drops the tombstones of an assignment and syncs its server, which creates
     the deleted checks again. Returns how many: a tombstone whose definition has
     left the template is dropped as well, but restores nothing."""
+    # Before the tombstones go: the baseline commits, and a failed one leaves them.
+    record_override_baseline(db)
     tombstones = db.query(MonitorCheckTombstone).filter(
         MonitorCheckTombstone.template_id == template.id,
         MonitorCheckTombstone.server_id == assignment.server_id,

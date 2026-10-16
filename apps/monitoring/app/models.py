@@ -38,7 +38,8 @@ class MonitorCheck(Base):
     template_id = Column(String, nullable=True, index=True)
     template_def_id = Column(String, nullable=True)  # stable def_id from the template
     # JSON list of the fields a user changed on a template check, which the template
-    # sync must not overwrite. Checks from before the column start with [].
+    # sync must not overwrite. Checks from before the column start with [] until the
+    # first start marks what differs from the template (record_override_baseline).
     overridden_fields = Column(Text, nullable=False, default="[]", server_default="[]")
     created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
@@ -321,7 +322,9 @@ class MonitorAgentKey(Base):
 class MonitorSeedState(Base):
     """Tombstone for built-in template seeding: a slug recorded here has been
     seeded once and is never re-created — user deletions and edits win over
-    re-seeding (see app/builtin_templates.py)."""
+    re-seeding (see app/builtin_templates.py). One key is no slug:
+    template_sync.OVERRIDE_BASELINE_KEY records that the first start marked the
+    changes made to template checks before overridden_fields existed."""
 
     __tablename__ = "monitor_seed_state"
 

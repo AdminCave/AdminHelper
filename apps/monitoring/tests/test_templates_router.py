@@ -25,9 +25,11 @@ from app.models import (
     Base,
     MonitorCheck,
     MonitorCheckTombstone,
+    MonitorSeedState,
     MonitorTemplate,
     MonitorTemplateAssignment,
 )
+from app.template_sync import OVERRIDE_BASELINE_KEY
 
 
 @pytest.fixture()
@@ -39,6 +41,12 @@ def client(monkeypatch):
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
+    # After the first start: it marked the changes from before the update. Without
+    # the key a restore would mark first, against the template a test just changed
+    # (test_template_overrides covers that path).
+    with factory() as setup:
+        setup.add(MonitorSeedState(slug=OVERRIDE_BASELINE_KEY))
+        setup.commit()
 
     def override_get_db():
         db = factory()

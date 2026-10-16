@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.models import MonitorSeedState, MonitorTemplate
 from app.schemas import TemplateAlertDef, TemplateCheckDef
-from app.template_sync import sync_template
+from app.template_sync import record_override_baseline, sync_template
 
 logger = logging.getLogger("monitor.seed")
 
@@ -337,7 +337,11 @@ def reconcile_builtin_templates(db: Session) -> int:
     description stay as well. Returns the number of templates updated.
 
     A row seeded before built-ins had versions gets version 1 and the hash of the
-    shipped definitions first; where its definitions differ, it counts as edited."""
+    shipped definitions first; where its definitions differ, it counts as edited.
+    Without the override baseline nothing is rolled out (it raises)."""
+    # Before the row lock: the baseline commits, and it has to compare with the
+    # definitions from before the rollout.
+    record_override_baseline(db)
     template_ids = [
         template_id
         for (template_id,) in db.query(MonitorTemplate.id)
@@ -370,6 +374,7 @@ def apply_builtin_update(db: Session, template_id: str) -> dict | None:
     not; the definitions the user changed on the template go, the fields changed
     on a check stay. Returns the result of sync_template, or None when no newer
     version ships, also when a concurrent rollout got there first."""
+    record_override_baseline(db)  # before the row lock, as in reconcile
     template = _lock_builtin(db, template_id)
     tpl = shipped_builtin(template.builtin_slug) if template is not None else None
     if tpl is None or not builtin_update_available(template):

@@ -28,7 +28,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import INTERNAL_API_KEY, SERVER_HUB_URL
 from app.models import MonitorTemplate, MonitorTemplateAssignment, MonitorTemplateTagAssignment
-from app.template_sync import apply_template, remove_template, sync_assignment
+from app.template_sync import (
+    apply_template,
+    record_override_baseline,
+    remove_template,
+    sync_assignment,
+)
 
 logger = logging.getLogger("monitor.tag_sync")
 
@@ -153,6 +158,9 @@ def _refresh_names(db: Session, assignment: MonitorTemplateAssignment, srv: dict
     if template is None:
         return False
     try:
+        # With the names the checks were built from: compared with the new ones,
+        # the old name and config would count as the user's.
+        record_override_baseline(db)
         assignment.server_hostname = hostname
         assignment.server_name = server_name
         sync_assignment(db, template, assignment)
