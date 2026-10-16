@@ -201,6 +201,57 @@ describe('tunnel store: polling (R-0402)', () => {
     expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
   });
 
+  // The follow-up is a reconciliation like any other: one at a time holds for it too.
+  it('a tick during the follow-up skips instead of overlapping', async () => {
+    const first = deferred<TunnelRefresh>();
+    const second = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const activation = startIfServerMode();
+    const now = refreshNow();
+    first.resolve(refreshed('started'));
+    await activation;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(60_000); // the tick while the follow-up runs
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    second.resolve(refreshed('reloaded'));
+    await now;
+  });
+
+  it('refreshNow during the follow-up queues one more after it', async () => {
+    const first = deferred<TunnelRefresh>();
+    const second = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const activation = startIfServerMode();
+    const now = refreshNow();
+    first.resolve(refreshed('started'));
+    await activation;
+    await vi.advanceTimersByTimeAsync(0);
+
+    const again = refreshNow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    second.resolve(refreshed('reloaded'));
+    await Promise.all([now, again]);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+  });
+
+  it('an overtaken run that ends during the newer one does not let the next tick overlap', async () => {
+    const old = deferred<TunnelRefresh>();
+    const newer = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(old.promise).mockReturnValueOnce(newer.promise);
+    const first = startIfServerMode();
+    const second = startIfServerMode();
+    old.resolve(refreshed('started'));
+    await first;
+
+    await vi.advanceTimersByTimeAsync(60_000); // the tick while the newer run is in flight
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    newer.resolve(refreshed('started'));
+    await second;
+  });
+
   it('stop() drops the follow-up refreshNow queued', async () => {
     const slow = deferred<TunnelRefresh>();
     h.refreshTunnel.mockReturnValueOnce(slow.promise);
@@ -356,4 +407,380 @@ describe('tunnel store: polling (R-0402)', () => {
       expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
     },
   );
+});
+
+describe('tunnel store: restart after an unexpected end (R-0402)', () => {
+  // The backend as the store sees it: a reconciliation starts frpc unless it runs. `end()` is
+  // frpc ending on its own, `fail()` the same with frpc-error; `starts` holds when it started,
+  // in ms since the test began.
+  function frpcBackend(outcome: 'started' | 'restarted' = 'started') {
+    const t0 = Date.now();
+    const starts: number[] = [];
+    let running = false;
+    h.refreshTunnel.mockImplementation(async () => {
+      if (running) return refreshed('unchanged');
+      running = true;
+      starts.push(Date.now() - t0);
+      return refreshed(outcome);
+    });
+    return {
+      starts,
+      end: () => {
+        running = false;
+        markTerminated();
+      },
+      fail: () => {
+        running = false;
+        markError('frpc crashed');
+      },
+    };
+  }
+
+  it('restarts a frpc that ended after 5, 10, 20, then 40 s while each restart fails', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockRejectedValue(new Error('502'));
+    markTerminated();
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); // 5 s
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1); // 15 s
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+
+    // This restart outlasts the tick at 60 s, which skips; otherwise the tick would pull the
+    // 40 s restart forward.
+    const slow = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(slow.promise);
+    await vi.advanceTimersByTimeAsync(20_000); // 35 s
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(26_000); // 61 s
+    slow.reject(new Error('502'));
+    await vi.advanceTimersByTimeAsync(39_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(1); // 101 s
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(5);
+    expect(get(tunnelUi)).toBe('disconnected');
+    expect(h.stopTunnel).not.toHaveBeenCalled();
+  });
+
+  it('a frpc that ends 1 s after each restart is restarted after 5, 10, 20, 40, 60, 60 s', async () => {
+    const timeouts = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const frpc = frpcBackend();
+      await startIfServerMode();
+      for (let restart = 1; restart <= 6; restart++) {
+        await vi.advanceTimersByTimeAsync(1_000);
+        frpc.end();
+        for (let n = 0; frpc.starts.length <= restart && n < 5; n++) {
+          await vi.advanceTimersToNextTimerAsync();
+        }
+      }
+      expect(timeouts.mock.calls.map(([, ms]) => ms)).toEqual([
+        5_000, 10_000, 20_000, 40_000, 60_000, 60_000,
+      ]);
+      // From the 40 s pause on, the tick at 60, 120, 180 s comes first and is the restart.
+      expect(frpc.starts).toEqual([0, 6_000, 17_000, 38_000, 60_000, 120_000, 180_000]);
+    } finally {
+      timeouts.mockRestore();
+    }
+  });
+
+  it.each([
+    ['started', 61_000, 5_000],
+    ['restarted', 61_000, 5_000],
+    ['started', 60_000, 5_000],
+    ['started', 59_999, 20_000],
+  ] as const)(
+    'frpc back by %s that ends %i ms later: the next pause is %i ms',
+    async (outcome, ran, pause) => {
+      const frpc = frpcBackend(outcome);
+      await startIfServerMode();
+      await vi.advanceTimersByTimeAsync(1_000);
+      frpc.end(); // 1 s
+      await vi.advanceTimersByTimeAsync(6_000);
+      frpc.end(); // 7 s, 1 s after the restart at 6 s
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(frpc.starts).toEqual([0, 6_000, 17_000]);
+
+      await vi.advanceTimersByTimeAsync(ran); // the tick at 60 s finds it running
+      frpc.end();
+      await vi.advanceTimersByTimeAsync(pause - 1);
+      expect(frpc.starts).toHaveLength(3);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(frpc.starts).toEqual([0, 6_000, 17_000, 17_000 + ran + pause]);
+    },
+  );
+
+  it('a restarted frpc that ran a whole tick ends the restarts: a failed tick is a new series without a restart', async () => {
+    const frpc = frpcBackend();
+    await startIfServerMode();
+    await vi.advanceTimersByTimeAsync(1_000);
+    frpc.fail();
+    await vi.advanceTimersByTimeAsync(5_000); // back at 6 s
+    expect(frpc.starts).toEqual([0, 6_000]);
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(113_000); // the tick at 60 s finds it running
+    h.refreshTunnel.mockRejectedValueOnce(new Error('502'));
+    await vi.advanceTimersByTimeAsync(1_000); // the tick at 120 s fails
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+    expect(h.reportError).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+  });
+
+  it('a frpc that keeps ending with frpc-error is one message until it holds for a tick', async () => {
+    const frpc = frpcBackend();
+    await startIfServerMode();
+    await vi.advanceTimersByTimeAsync(1_000);
+    frpc.fail(); // 1 s
+    await vi.advanceTimersByTimeAsync(6_000);
+    frpc.fail(); // 7 s, 1 s after the restart at 6 s
+    await vi.advanceTimersByTimeAsync(11_000);
+    frpc.fail(); // 18 s, 1 s after the restart at 17 s
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(frpc.starts).toEqual([0, 6_000, 17_000, 38_000]);
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(61_000); // it holds: the tick at 60 s finds it running
+    frpc.fail(); // 99 s: a new series
+    expect(h.reportError).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(6_000);
+    frpc.fail(); // 105 s, 1 s after the restart at 104 s
+    expect(frpc.starts).toEqual([0, 6_000, 17_000, 38_000, 104_000]);
+    expect(h.reportError).toHaveBeenCalledTimes(2);
+  });
+
+  it('failures that begin within a tick of a start stay one message', async () => {
+    await startIfServerMode(); // starts frpc at 0 s
+    h.refreshTunnel.mockRejectedValue(new Error('502'));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await refreshNow(); // fails at 10 s
+    await vi.advanceTimersByTimeAsync(50_000); // the tick at 60 s fails as well
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+  });
+
+  // A frpc-error need not end frpc: the restart then finds it running.
+  it('a frpc that survives its frpc-error ends the series once it held: a failed tick is a new series', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockResolvedValue(refreshed('unchanged'));
+    markError('pipe read error');
+    await vi.advanceTimersByTimeAsync(5_000); // the restart finds frpc running
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    expect(get(tunnelUi)).toBe('connected');
+
+    await vi.advanceTimersByTimeAsync(114_000); // the tick at 60 s finds it running
+    h.refreshTunnel.mockRejectedValueOnce(new Error('502'));
+    await vi.advanceTimersByTimeAsync(1_000); // the tick at 120 s fails
+    expect(h.reportError).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(59_999); // and plans no restart
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+  });
+
+  it('a frpc that survives its frpc-error and ends after a tick is restarted after 5 s', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockResolvedValue(refreshed('unchanged'));
+    markError('pipe read error');
+    await vi.advanceTimersByTimeAsync(66_000); // found running at 5 s, held past 65 s
+    markTerminated();
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1); // 71 s
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+  });
+
+  it('a restart that finds no tunnels ends the restarts', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockResolvedValueOnce(refreshed('stopped'));
+    markTerminated();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(get(tunnelUi)).toBe('idle');
+
+    h.refreshTunnel.mockRejectedValue(new Error('502'));
+    await vi.advanceTimersByTimeAsync(55_000); // the tick at 60 s fails
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(59_999); // no restart until the next tick
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+  });
+
+  it('a tick during the pause is the restart; the planned one does not follow', async () => {
+    await startIfServerMode();
+    await vi.advanceTimersByTimeAsync(58_000);
+    markTerminated(); // the restart is due at 63 s
+    await vi.advanceTimersByTimeAsync(2_000); // the tick at 60 s
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    expect(get(tunnelUi)).toBe('connected');
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshNow during the pause is the restart; the planned one does not follow', async () => {
+    await startIfServerMode();
+    markTerminated();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await refreshNow();
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(57_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+  });
+
+  it('a run that started before frpc ended is no restart: the restart follows it', async () => {
+    await startIfServerMode();
+    const slow = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(slow.promise);
+    await vi.advanceTimersByTimeAsync(60_000); // the tick at 60 s hangs
+    markTerminated(); // the restart is due at 65 s
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2); // not beside the running one
+
+    // It compared against the frpc that ended since: the series goes on.
+    h.refreshTunnel.mockRejectedValueOnce(new Error('502'));
+    slow.resolve({ status: { running: false, visitors: [] }, outcome: 'unchanged' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3); // the restart, right after it
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1); // 10 s after the failed restart
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ['unchanged', 'before the restart is due', 0],
+    ['unchanged', 'with the restart queued behind it', 6_000],
+    ['started', 'before the restart is due', 0],
+    ['started', 'with the restart queued behind it', 6_000],
+  ] as const)(
+    'a run that saw frpc (%s) before it ended starts no hold time and shows no connection (it returns %s)',
+    async (outcome, _, after) => {
+      await startIfServerMode();
+      const slow = deferred<TunnelRefresh>();
+      h.refreshTunnel.mockReturnValueOnce(slow.promise);
+      await vi.advanceTimersByTimeAsync(60_000); // the tick at 60 s hangs
+      markTerminated(); // the restart is due at 65 s
+      await vi.advanceTimersByTimeAsync(after);
+      h.refreshTunnel.mockRejectedValue(new Error('502'));
+      slow.resolve(refreshed(outcome)); // it still saw frpc running
+      await vi.advanceTimersByTimeAsync(120_000 - after); // two minutes of failed runs: one series
+      expect(h.reportError).toHaveBeenCalledTimes(1);
+      expect(get(tunnelUi)).toBe('disconnected');
+    },
+  );
+
+  it('a run that saw frpc before it ended leaves "disconnected" until the restart brings it back', async () => {
+    await startIfServerMode();
+    const slow = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(slow.promise);
+    await vi.advanceTimersByTimeAsync(60_000); // the tick at 60 s hangs
+    markTerminated(); // the restart is due at 65 s
+    const saved = [MAPPING, { ...MAPPING, id: 'm2', name: 'web' }];
+    h.fetchTunnels.mockResolvedValueOnce(saved);
+    slow.resolve(refreshed('unchanged')); // it still saw frpc running
+    await vi.advanceTimersByTimeAsync(0);
+    expect(get(tunnelUi)).toBe('disconnected');
+    expect(getMappings()).toEqual(saved); // the mappings it fetched are current all the same
+    await vi.advanceTimersByTimeAsync(5_000); // the restart starts frpc
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    expect(get(tunnelUi)).toBe('connected');
+  });
+
+  it('a run with a follow-up queued behind it leaves a connected display as it is', async () => {
+    await startIfServerMode();
+    const slow = deferred<TunnelRefresh>();
+    const follow = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(slow.promise).mockReturnValueOnce(follow.promise);
+    await vi.advanceTimersByTimeAsync(60_000); // the tick at 60 s hangs
+    const now = refreshNow(); // say a tunnel was saved
+    slow.resolve(refreshed('reloaded'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3); // the follow-up runs
+    expect(get(tunnelUi)).toBe('connected');
+    follow.resolve(refreshed('reloaded'));
+    await now;
+    expect(get(tunnelUi)).toBe('connected');
+  });
+
+  it('a frpc restarted in the middle of a series starts its hold time anew', async () => {
+    const frpc = frpcBackend();
+    await startIfServerMode();
+    await vi.advanceTimersByTimeAsync(1_000);
+    frpc.end(); // 1 s
+    await vi.advanceTimersByTimeAsync(5_000); // back at 6 s
+    h.refreshTunnel.mockResolvedValueOnce(refreshed('restarted'));
+    await vi.advanceTimersByTimeAsync(61_000); // the tick at 60 s restarts it, say for a new token
+    frpc.end(); // 67 s: 61 s after the start at 6 s, 7 s after the restart at 60 s
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(frpc.starts).toEqual([0, 6_000]);
+    await vi.advanceTimersByTimeAsync(1); // the series goes on: 10 s
+    expect(frpc.starts).toEqual([0, 6_000, 77_000]);
+  });
+
+  it('a restart queued behind a run that fails keeps the pause sequence', async () => {
+    await startIfServerMode();
+    const t0 = Date.now();
+    const slow = deferred<TunnelRefresh>();
+    h.refreshTunnel.mockReturnValueOnce(slow.promise);
+    await vi.advanceTimersByTimeAsync(60_000); // the tick at 60 s hangs
+    markTerminated(); // the restart, due at 65 s, queues behind it
+    await vi.advanceTimersByTimeAsync(6_000);
+    const restarts: number[] = [];
+    h.refreshTunnel.mockImplementation(async () => {
+      restarts.push(Date.now() - t0);
+      throw new Error('502');
+    });
+    slow.reject(new Error('502')); // 66 s
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(restarts).toEqual([66_000, 76_000, 96_000]);
+  });
+
+  it('frpc-error and frpc-terminated of one end plan a single restart', async () => {
+    await startIfServerMode();
+    markError('frpc crashed');
+    markTerminated();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(54_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(2);
+  });
+
+  it('a frpc-error and the failed restarts after it are one message', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockRejectedValueOnce(new Error('502')).mockRejectedValueOnce(new Error('502'));
+    markError('frpc crashed');
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(15_000); // the restarts at 5 s and 15 s fail
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    markError('frpc crashed');
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(20_000); // the restart at 35 s brings frpc back
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+    expect(get(tunnelUi)).toBe('connected');
+    markError('frpc crashed'); // it did not hold: still the same series
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+  });
+
+  it('after stop() an ended frpc is not restarted', async () => {
+    await startIfServerMode();
+    markTerminated(); // the restart is due at 5 s
+    await stop();
+    markTerminated(); // a late event plans none either
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(1);
+  });
+
+  it('a new activation ends the restarts of the previous one', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockRejectedValue(new Error('502'));
+    markTerminated();
+    await vi.advanceTimersByTimeAsync(5_000); // the restart fails, the next one is due at 15 s
+    await startIfServerMode(); // fails as well, but is no restart
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1); // its first tick
+    expect(h.refreshTunnel).toHaveBeenCalledTimes(4);
+  });
 });

@@ -80,8 +80,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.
 Doku: keine (intern; sichtbare Doku in T8)
 Abhängt von: T4
 
-### T7 — Unerwartetes Ende: Neustart mit Backoff 5–60 s  [ ]
+### T7 — Unerwartetes Ende: Neustart mit Backoff 5–60 s  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @50c07562 2026-10-16T16:50:31+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T7.verdict.json)
 Änderung: `markTerminated` (`tunnel.ts:72`) und `markError` (`:76`) setzen bei aktivem Takt „disconnected“ und planen einen Abgleich nach 5 s, dann 10, 20, 40, 60 s (Deckel); ein Abgleich mit `started`/`restarted` setzt die Pause zurück; `stop()` und das Ende des Takts brechen den geplanten Neustart ab. Vitest mit Fake-Timern: Folge der Pausen, Rücksetzen nach Erfolg, kein Neustart nach `stop()`, eine Meldung je Serie.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
 Doku: keine (intern; sichtbare Doku in T8)

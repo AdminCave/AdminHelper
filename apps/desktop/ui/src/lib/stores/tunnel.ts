@@ -6,7 +6,9 @@
 // the visitor bundle. While a server session is active it reconciles right away and
 // then every 60 s (refresh_tunnel starts, reloads, restarts or stops frpc) and
 // reloads the mappings after each run. Activated by AppShell on login/mode switch,
-// ended by stop(); reacts to the Tauri events frpc-terminated / frpc-error.
+// ended by stop(). The Tauri events frpc-terminated / frpc-error (the running frpc
+// ended) bring a reconciliation that restarts it after 5 s, doubled up to 60 s for
+// every restart that fails or does not hold for a tick.
 
 import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
@@ -25,6 +27,10 @@ interface TunnelStoreState {
 }
 
 const REFRESH_INTERVAL_MS = 60_000;
+const RESTART_FIRST_MS = 5_000;
+const RESTART_MAX_MS = 60_000;
+// A frpc that has run this long since its start ends a restart series: one tick.
+const RESTART_HELD_MS = REFRESH_INTERVAL_MS;
 
 const initial: TunnelStoreState = { ui: 'idle', status: null, mappings: [] };
 const _state = writable<TunnelStoreState>(initial);
@@ -44,8 +50,17 @@ let activationGen = 0;
 // The reconciliation in flight: a tick skips while it runs; refreshNow() queues one
 // follow-up after it (`next`), as the running one may have fetched the bundle before the change.
 let inFlight: { gen: number; done: Promise<void>; next: Promise<void> | null } | null = null;
-// One status-bar message per series of failed reconciliations; a success ends the series.
+// One status-bar message per series of failures (failed reconciliations, frpc-error); a
+// successful reconciliation ends the series, inside a restart series only its end does.
 let errorReported = false;
+// A frpc that ended unexpectedly waits for the restart planned in `restartTimer`; the next
+// pause is `restartDelay`, null outside a restart series. Any reconciliation that starts in
+// the meantime is that restart and drops the timer. `startedAt` is when the running frpc
+// was started: only one that held for RESTART_HELD_MS ends the series, so a frpc that dies
+// right after each start keeps backing off.
+let restartTimer: ReturnType<typeof setTimeout> | null = null;
+let restartDelay: number | null = null;
+let startedAt: number | null = null;
 
 function serverSession() {
   const { session, settings } = get(sessionStore);
@@ -56,6 +71,50 @@ function stopPolling(): void {
   activationGen++;
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  cancelRestart();
+  endRestarts();
+}
+
+function cancelRestart(): void {
+  if (restartTimer) clearTimeout(restartTimer);
+  restartTimer = null;
+}
+
+/** End the restart series and, with it, its series of failures. */
+function endRestarts(): void {
+  restartDelay = null;
+  startedAt = null;
+  errorReported = false;
+}
+
+/** A frpc that has held for a tick since it was started ends an open restart series. */
+function settleRestarts(): void {
+  // Only an open one: outside it, a tick passing must not split a series of failed runs.
+  if (restartDelay === null || startedAt === null) return;
+  if (Date.now() - startedAt >= RESTART_HELD_MS) endRestarts();
+}
+
+function frpcEnded(): void {
+  settleRestarts();
+  startedAt = null;
+  scheduleRestart();
+}
+
+/** A restart is planned or queued behind the run in flight: that run is not the restart. */
+function restartDue(): boolean {
+  return restartTimer !== null || !!inFlight?.next;
+}
+
+/** Plan the restart of a frpc that ended, unless one is planned or nothing polls. */
+function scheduleRestart(): void {
+  if (!pollTimer || restartTimer) return;
+  const delay = restartDelay ?? RESTART_FIRST_MS;
+  restartDelay = Math.min(delay * 2, RESTART_MAX_MS);
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    // A reconciliation still in flight may have looked at frpc before it ended: queue after it.
+    void refreshNow();
+  }, delay);
 }
 
 export async function startIfServerMode(): Promise<void> {
@@ -65,7 +124,6 @@ export async function startIfServerMode(): Promise<void> {
     return;
   }
   const gen = activationGen;
-  errorReported = false;
   _state.update((s) => ({ ...s, ui: 'connecting' }));
   pollTimer = setInterval(() => void reconcile(gen), REFRESH_INTERVAL_MS);
   await reconcile(gen);
@@ -84,6 +142,7 @@ export function refreshNow(): Promise<void> {
 
 function reconcile(gen: number): Promise<void> {
   if (inFlight?.gen === gen) return inFlight.done;
+  cancelRestart();
   const done: Promise<void> = reconcileOnce(gen).finally(() => {
     if (inFlight?.done === done) inFlight = null;
   });
@@ -108,10 +167,14 @@ async function reconcileOnce(gen: number): Promise<void> {
     _state.update((s) =>
       s.ui === 'connecting' ? { ...s, ui: 'disconnected', status: { running: false } } : s,
     );
+    // A failed tick while the restarted frpc holds is a new series and plans no restart; a
+    // failed restart plans the next one after a longer pause, unless one already waits.
+    settleRestarts();
     if (!errorReported) {
       errorReported = true;
       reportError(tNow('error.tunnel', { message: errMsg(err) }));
     }
+    if (restartDelay !== null && !restartDue()) scheduleRestart();
     return;
   }
   if (gen !== activationGen) {
@@ -120,8 +183,17 @@ async function reconcileOnce(gen: number): Promise<void> {
     if (!pollTimer && refresh.status.running) void bridge.stopTunnel().catch(() => {});
     return;
   }
-  errorReported = false;
+  // A frpc that dies right after each start is one series, with one message.
+  if (restartDelay === null) errorReported = false;
+  // A run that sees frpc running starts its hold time: a new process always, any other only
+  // without a known start (it survived a frpc-error). Not with a restart still due: then this
+  // run may have seen frpc before it ended.
+  const fresh = refresh.outcome === 'started' || refresh.outcome === 'restarted';
+  if (refresh.status.running && !restartDue() && (fresh || startedAt === null)) {
+    startedAt = Date.now();
+  }
   if (refresh.outcome === 'stopped') {
+    endRestarts(); // no tunnel wants frpc: nothing left to restart
     _state.set({ ui: 'idle', status: refresh.status, mappings: [] });
     return;
   }
@@ -132,6 +204,12 @@ async function reconcileOnce(gen: number): Promise<void> {
     mappings = get(_state).mappings;
   }
   if (gen !== activationGen) return;
+  if (restartDue()) {
+    // Its status may predate an end of frpc: the run due next brings the current one, and
+    // until then "disconnected" stays.
+    _state.update((s) => ({ ...s, mappings }));
+    return;
+  }
   _state.set({
     ui: refresh.status.running ? 'connected' : 'disconnected',
     status: refresh.status,
@@ -150,9 +228,15 @@ export async function stop(): Promise<void> {
 
 export function markTerminated(): void {
   _state.update((s) => ({ ...s, ui: 'disconnected', status: { running: false } }));
+  frpcEnded();
 }
 
+// Taken as an end, too: should frpc run on after it, the restart finds it `unchanged`.
 export function markError(message: string): void {
   _state.update((s) => ({ ...s, ui: 'disconnected', status: { running: false } }));
-  reportError(tNow('error.tunnel', { message }));
+  frpcEnded(); // first: a frpc that held starts a new series, with a message of its own
+  if (!errorReported) {
+    errorReported = true;
+    reportError(tNow('error.tunnel', { message }));
+  }
 }
