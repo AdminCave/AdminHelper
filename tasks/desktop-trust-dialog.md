@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Vertrauensdialog beim Erstkontakt sichtbar über dem Login — Task-Ledger
-Status: aktiv · Branch: feature/desktop-trust-dialog · Review: am Ende
+Status: bereit · Branch: feature/desktop-trust-dialog · Review: am Ende
 Spec: Roadmap R-0399
 Heavy: linux-full — die Journey (Erstkontakt gegen das interne PKI-Leaf, Dialog in der echten Tauri-GUI) prüft nur `desktop_e2e_crud.sh` mit `enroll-trust-dialog.live.js` im Sammellauf (`run.sh e2e`); jsdom kennt kein Stacking, der Unit-Test belegt nur die Struktur
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -29,8 +29,10 @@ Dedup-Key: bug:desktop:Login.svelte:trust-overlay-zindex
 HEAD: 0f43781a
 Semantik: docs/admin/troubleshooting.html:71 — „der allererste Login- bzw. Enrollment-Versuch mit Standard-Einstellungen öffnet deshalb einen Dialog, ob dem Server dennoch vertraut werden soll“
 
-### T2 — Live-Spec: der Vertrauensdialog ist wirklich sichtbar und anklickbar  [ ]
+### T2 — Live-Spec: der Vertrauensdialog ist wirklich sichtbar und anklickbar  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/enroll-trust-dialog.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @be5356e7 2026-10-16T15:39:10+02:00
+Review: am Ende (Branch-Review)
 Änderung: Nach `waitForExist` des Dialogs (`enroll-trust-dialog.live.js:27`) prüft die Spec per `browser.execute`, dass `document.elementFromPoint` am Mittelpunkt des Knopfs `[data-action="trust-accept"]` diesen Knopf (oder ein Kind) liefert, sonst Fehler mit klarer Meldung („trust dialog covered by …“ mit der Klasse des getroffenen Elements); dazu `isDisplayed()`. Der Klick (`:35-37`) bleibt `jsClick`, der Kommentar wird richtiggestellt (der Hit-Test scheiterte am verdeckenden Login-Screen, nicht an der Statusleiste — die gibt es vor dem Login nicht). Ohne T1 ist die neue Prüfung in der echten GUI rot (Beleg im Heavy-Lauf).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
