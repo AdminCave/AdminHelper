@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Erneuerung und Provisionierung sperren die Identität — Task-Ledger
-Status: aktiv · Branch: feature/agent-identity-lock · Review: am Ende
+Status: bereit · Branch: feature/agent-identity-lock · Review: am Ende
 Spec: Roadmap R-0384
 Heavy: linux-full — `apps/agent/internal/enroll` und `internal/provision` sind Agent-Enrollment und -Erneuerung; läuft im Sammellauf (`/feature-build` §5); Windows ohne VM: `lock_windows.go` prüft der CI-Job `agent-windows` nativ (`go test ./...`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -57,8 +57,10 @@ Doku: keine (intern; der CHANGELOG-Eintrag aus T3 deckt das Verhalten)
 Abhängt von: T3
 Dedup-Key: bug:agent:enroll:store-commit-race
 
-### T5 — Box-Prüfung verlangt das Zertifikat, nicht irgendeine Datei  [ ]
+### T5 — Box-Prüfung verlangt das Zertifikat, nicht irgendeine Datei  [x]
 Komponente: scripts · Dateien: scripts/tests/box_agentbox.sh, scripts/tests/box_agentbox_rpm.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d499446a 2026-10-16T12:09:36+02:00
+Review: am Ende (Branch-Review)
 Änderung: `box_agentbox.sh:56` und `box_agentbox_rpm.sh:38` prüfen `test -f …/agent.crt || ls …/identity/ | grep -q .`; seit T1 liegt nach jeder Provisionierung `agent.lock` im Verzeichnis, und ein gescheitertes Enrollment (best-effort, `provision` endet trotzdem mit `AGENT_PROVISION_OK`) meldet dann `AGENT_CERT_OK` bzw. `RPM_CERT_OK` (`multibox.sh:219`, `:237`). Der `|| ls`-Zweig fällt in beiden weg, geprüft wird `test -s …/agent.crt`. Vorher in der Geschichte der Zeile nachsehen (`git log --follow -S`), ob der Fallback einen Grund hatte, und ihn im Commit nennen. Die Box-Skripte laufen nur auf einer VM; der hermetische Teil ist `multibox_test.sh`.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
