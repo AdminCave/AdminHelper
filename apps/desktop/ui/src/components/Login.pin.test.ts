@@ -106,6 +106,8 @@ describe('Login — a changed self-signed server certificate (ERR_TOFU_PIN_MISMA
 
     await waitFor(() => expect(h.resetServerCertPin).toHaveBeenCalledWith('https://srv.example'));
     expect(h.confirmDialog.mock.calls[0][0]).toContain('MITM');
+    // The confirm button names the action of the button that raised the question.
+    expect(h.confirmDialog.mock.calls[0][1]).toEqual({ confirmLabel: RESET_PIN });
     expect(h.resetDeviceIdentity).not.toHaveBeenCalled();
     await waitFor(() => expect(container.textContent).toContain('Vertrauen zurückgesetzt'));
   });
@@ -147,6 +149,7 @@ describe('Login — a server certificate the enrolled CA no longer covers (ERR_C
 
     await waitFor(() => expect(h.resetDeviceIdentity).toHaveBeenCalledWith('https://srv.example'));
     expect(h.confirmDialog.mock.calls[0][0]).toContain('MITM');
+    expect(h.confirmDialog.mock.calls[0][1]).toEqual({ confirmLabel: RESET_IDENTITY });
     expect(h.resetServerCertPin).not.toHaveBeenCalled();
   });
 });

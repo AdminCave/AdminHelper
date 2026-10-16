@@ -66,8 +66,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let deviceResetLocal = $state(false);
   // The reset question sits in App's layer, outside this overlay, but the focus stays
   // on the reset button in here: its Escape reaches the overlay's handler before the
-  // dialog's own and would close the settings under the question.
-  let asking = false;
+  // dialog's own and would close the settings under the question. A count, not a flag:
+  // a second click replaces the open question, and the first one's end must not lift
+  // the guard the second one holds.
+  let asking = 0;
   let enrollToken = $state('');
   let enrollMsg = $state('');
   let enrollBusy = $state(false);
@@ -174,11 +176,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
     // Destructive: drops the mTLS device cert (re-enrollment required). Confirm
     // with an explicit danger warning before doing it.
-    asking = true;
+    asking += 1;
     const ok = await confirmDialog($t('settings.resetDeviceId.confirm'), {
       confirmLabel: $t('settings.resetDeviceId'),
     });
-    asking = false;
+    asking -= 1;
     if (!ok) return;
     try {
       const outcome = await resetDeviceIdentity(target);

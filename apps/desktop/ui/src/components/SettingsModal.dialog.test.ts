@@ -163,6 +163,27 @@ describe('SettingsModal — the reset question in the app dialog (R-0395)', () =
     expect(settings.querySelector('.sm-overlay')).not.toBeNull();
   });
 
+  it('a second reset replaces the question, and Escape still closes only that one', async () => {
+    const { settings, layer } = open();
+    await ask(settings, layer);
+
+    // The focus is still on the reset button: Enter clicks it again under the question.
+    // The second question cancels the first, and the first one's end must not lift the
+    // guard the second one holds.
+    const second = await ask(settings, layer);
+    expect(second.textContent).toContain(tNow('settings.resetDeviceId.confirm'));
+    await fireEvent.keyDown(await resetButton(settings), { key: 'Escape' });
+
+    await waitFor(() => expect(question(layer)).toBeNull());
+    expect(h.resetDeviceIdentity).not.toHaveBeenCalled();
+    expect(get(settingsModalOpen)).toBe(true);
+    expect(settings.querySelector('.sm-overlay')).not.toBeNull();
+
+    // Both questions are settled: the next Escape is the settings' own again.
+    await fireEvent.keyDown(await resetButton(settings), { key: 'Escape' });
+    expect(get(settingsModalOpen)).toBe(false);
+  });
+
   it('Escape without a question still closes the settings', async () => {
     const { settings } = open();
 

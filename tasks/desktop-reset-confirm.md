@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Rückfragen zum Zurücksetzen im App-Dialog — Task-Ledger
-Status: aktiv · Branch: feature/desktop-reset-confirm · Review: am Ende
+Status: bereit · Branch: feature/desktop-reset-confirm · Review: am Ende
 Spec: Roadmap R-0395
 Heavy: linux-full — Desktop-Journeys (Geräte-Identität und Pin zurücksetzen, Login-Screen); `settings-enroll.live.js` läuft im Sammellauf (`desktop_e2e_tunnel.sh`); keine Plattform- oder Rust-Änderung, daher kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -55,8 +55,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (intern)
 
-### T5 — Rückfrage hält einen zweiten Aufruf aus; Beschriftung im Pin-Pfad geprüft; CHANGELOG-Knopfname  [ ]
+### T5 — Rückfrage hält einen zweiten Aufruf aus; Beschriftung im Pin-Pfad geprüft; CHANGELOG-Knopfname  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.dialog.test.ts, apps/desktop/ui/src/components/Login.pin.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c6db61da 2026-10-16T12:18:16+02:00
+Review: am Ende (Branch-Review)
 Änderung: `asking` (`SettingsModal.svelte:70`, gesetzt `:177`/`:181`) wird ein Zähler (oder ein Aufruf-Token): Ein zweiter Klick auf den Reset-Knopf, während die Rückfrage offen ist, ersetzt die erste (`prev.resolve(false)`); deren Abschluss darf den Escape-Schutz der zweiten nicht aufheben. Neuer Fall in `SettingsModal.dialog.test.ts`: Reset zweimal auslösen, dann Escape → nur die Rückfrage schließt, die Einstellungen bleiben offen. `Login.pin.test.ts` (`:108`, `:149`) prüft die Beschriftung des Bestätigungsknopfs in beiden Zweigen (`caPinError` → `login.resetDeviceId`, sonst `login.resetPin`) über die Argumente des gemockten `confirmDialog`. CHANGELOG (`:320`): der Login-Knopf heißt „Gepinntes Server-Zertifikat zuruecksetzen“ (`login.resetPin`), nicht „Pin zuruecksetzen“.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.dialog.test.ts src/components/Login.pin.test.ts
 Doku: CHANGELOG.md (Fixed, Wortlaut)
