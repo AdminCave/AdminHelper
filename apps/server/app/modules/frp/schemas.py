@@ -8,6 +8,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, field_validator
 
 from app.core.bounds import IntColumn, RequestModel
+from app.core.time import UtcDatetime
 
 # These string fields are interpolated verbatim into the generated frps/frpc/
 # visitor TOML (config_generator.py). Reject the characters that could break out
@@ -264,3 +265,15 @@ class FrpStatus(BaseModel):
     total: int
     # Only on the answer for an unreachable dashboard; the route drops it when unset.
     error: Optional[str] = None
+
+
+class FrpSupervisorStatus(BaseModel):
+    # Codes, times and a flag only, as supervisor_status.py hands them out. reason and
+    # since are null for "missing"/"unreadable", lastEvent/lastEventAt without an event.
+    state: str
+    reason: Optional[str]
+    since: Optional[UtcDatetime]
+    stale: bool
+    lastEvent: Optional[str]
+    lastEventAt: Optional[UtcDatetime]
+    publishedBindPort: int

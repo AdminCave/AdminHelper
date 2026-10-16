@@ -44,8 +44,10 @@ Review: approve (.ah-out/review/frps-supervisor/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_supervisor_status.py
 Doku: keine (intern)
 
-### T4 — Server: `GET /api/frp/supervisor-status`  [ ]
+### T4 — Server: `GET /api/frp/supervisor-status`  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/status_router.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_supervisor_status.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @545a2c3f 2026-10-16T14:41:57+02:00
+Review: approve (.ah-out/review/frps-supervisor/T4.verdict.json)
 Änderung: Neue Admin-Route neben `/status` (`status_router.py:39`) mit Antwortmodell `FrpSupervisorStatus` (`state`, `reason`, `since`, `stale`, `lastEvent`, `lastEventAt`, `publishedBindPort` aus `FRP_BIND_PORT`). Tests: Admin sieht den Zustand, Nicht-Admin 403, fehlende Datei → `missing`, `publishedBindPort` aus der Umgebung. OpenAPI-Snapshot nachziehen; API-Referenz DE+EN.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_supervisor_status.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html

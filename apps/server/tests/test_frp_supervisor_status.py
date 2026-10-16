@@ -5,12 +5,18 @@
 """The status file of the frps supervisor is read strictly: a valid file yields its state, reason
 and events; every single deviation from the format, a file over 4096 bytes or anything but a
 regular file yields "unreadable", a missing file "missing", and the reader never raises. A
-heartbeat older than 60 s marks the status stale."""
+heartbeat older than 60 s marks the status stale.
+
+GET /api/frp/supervisor-status hands an admin the state with its last event and the published
+bind port (FRP_BIND_PORT), codes and times only; anyone else gets 403."""
 
 import json
 import os
 import signal
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -351,3 +357,103 @@ def test_without_now_the_clock_decides_staleness(tmp_path):
     assert read_supervisor_status(path).stale is False
     path.write_text(json.dumps(_doc(heartbeat="2020-01-01T00:00:00Z")))
     assert read_supervisor_status(path).stale is True
+
+
+# --- GET /api/frp/supervisor-status ---
+
+_URL = "/api/frp/supervisor-status"
+
+
+def _login(client, username, password):
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+@pytest.fixture()
+def route(tmp_path, monkeypatch):
+    """The router module with its status file in tmp_path (not yet written)."""
+    import app.modules.frp.status_router as sr
+
+    monkeypatch.setattr(sr, "STATUS_FILE", tmp_path / "status.json")
+    return sr
+
+
+def _fresh() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_an_admin_sees_the_state_and_the_newest_event(test_client, admin_user, route, monkeypatch):
+    monkeypatch.setattr(route, "FRP_BIND_PORT", 7100)
+    route.STATUS_FILE.write_text(json.dumps(_doc(heartbeat=_fresh(), since="2026-05-04T11:59:10Z")))
+
+    resp = test_client.get(_URL, headers=_login(test_client, "admin", "adminpass"))
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "state": "running",
+        "reason": "none",
+        "since": "2026-05-04T11:59:10Z",
+        "stale": False,
+        "lastEvent": "applied",
+        "lastEventAt": "2026-05-04T11:58:00Z",
+        "publishedBindPort": 7100,
+    }
+
+
+def test_an_old_heartbeat_is_reported_stale(test_client, admin_user, route):
+    route.STATUS_FILE.write_text(json.dumps(_doc(heartbeat="2020-01-01T00:00:00Z")))
+    resp = test_client.get(_URL, headers=_login(test_client, "admin", "adminpass"))
+    assert (resp.json()["state"], resp.json()["stale"]) == ("running", True)
+
+
+def test_a_non_admin_gets_403(test_client, normal_user, route):
+    route.STATUS_FILE.write_text(json.dumps(_doc(heartbeat=_fresh())))
+    resp = test_client.get(_URL, headers=_login(test_client, "viewer", "viewerpass"))
+    assert resp.status_code == 403
+    assert "running" not in resp.text
+
+
+def test_without_a_status_file_the_state_is_missing(test_client, admin_user, route):
+    resp = test_client.get(_URL, headers=_login(test_client, "admin", "adminpass"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "state": "missing",
+        "reason": None,
+        "since": None,
+        "stale": False,
+        "lastEvent": None,
+        "lastEventAt": None,
+        "publishedBindPort": route.FRP_BIND_PORT,
+    }
+
+
+def test_text_from_a_file_off_the_format_never_reaches_the_response(test_client, admin_user, route):
+    route.STATUS_FILE.write_text(json.dumps(_doc(reason="see frps.example.invalid")))
+    resp = test_client.get(_URL, headers=_login(test_client, "admin", "adminpass"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "unreadable"
+    assert "example.invalid" not in resp.text
+
+
+_SERVER_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize(("value", "port"), [(None, 7000), ("7100", 7100)])
+def test_the_published_bind_port_is_read_from_frp_bind_port(tmp_path, value, port):
+    # config reads the environment once at import, so a fresh interpreter is the only way to
+    # see it read a value this process did not start with.
+    env = {k: v for k, v in os.environ.items() if k != "FRP_BIND_PORT"}
+    env["DATA_DIR"] = str(tmp_path)
+    if value is not None:
+        env["FRP_BIND_PORT"] = value
+    proc = subprocess.run(
+        [sys.executable, "-c", "from app.core.config import FRP_BIND_PORT; print(FRP_BIND_PORT)"],
+        cwd=_SERVER_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == str(port)

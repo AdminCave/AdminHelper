@@ -1224,6 +1224,79 @@
         "title": "FrpStatusProxy",
         "type": "object"
       },
+      "FrpSupervisorStatus": {
+        "properties": {
+          "lastEvent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastevent"
+          },
+          "lastEventAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasteventat"
+          },
+          "publishedBindPort": {
+            "title": "Publishedbindport",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "reason",
+          "since",
+          "stale",
+          "lastEvent",
+          "lastEventAt",
+          "publishedBindPort"
+        ],
+        "title": "FrpSupervisorStatus",
+        "type": "object"
+      },
       "FrpTunnelCreate": {
         "properties": {
           "auto_connection_username": {
@@ -4693,6 +4766,33 @@
           }
         ],
         "summary": "Frps Status",
+        "tags": [
+          "frp"
+        ]
+      }
+    },
+    "/api/frp/supervisor-status": {
+      "get": {
+        "description": "State of the frps supervisor from its status file, and the host port compose\npublishes for frps (FRP_BIND_PORT).",
+        "operationId": "frps_supervisor_status_api_frp_supervisor_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrpSupervisorStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Frps Supervisor Status",
         "tags": [
           "frp"
         ]
