@@ -44,8 +44,8 @@ pub struct FrpcProcess {
     child: Option<tauri_plugin_shell::process::CommandChild>,
     visitor_name: Option<String>,
     connected_since: Option<String>,
-    // Bumped on every spawn so a log task's Terminated handler only reconciles state if it is
-    // still the current process (4.29).
+    // Bumped on every spawn and every stop so a log task's Terminated handler only reconciles
+    // state if it is still the current process (4.29, R-0389).
     generation: u64,
 }
 
@@ -74,6 +74,17 @@ impl FrpcProcess {
         self.visitor_name = None;
         self.connected_since = None;
         true
+    }
+
+    /// Retire the current process for a stop: clear the state and bump the generation, so the
+    /// stopped process's late Terminated counts as stale and does not reach the UI — it would
+    /// turn the idle indicator into "disconnected" (R-0389). Returns the child for the caller to
+    /// kill.
+    fn retire(&mut self) -> Option<tauri_plugin_shell::process::CommandChild> {
+        self.generation += 1;
+        self.visitor_name = None;
+        self.connected_since = None;
+        self.child.take()
     }
 }
 
@@ -322,11 +333,9 @@ pub fn start_frpc(
 /// Stop the running frpc process.
 pub fn stop_frpc(state: &FrpcState) -> Result<(), AppError> {
     let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
-    if let Some(child) = guard.child.take() {
+    if let Some(child) = guard.retire() {
         let _ = child.kill();
     }
-    guard.visitor_name = None;
-    guard.connected_since = None;
     Ok(())
 }
 
@@ -489,6 +498,26 @@ bindPort = 6000
         assert!(
             p.reconcile_terminated(2),
             "current generation must be announced"
+        );
+    }
+
+    #[test]
+    fn stop_makes_a_late_terminated_stale() {
+        // Generation 1 runs; the user stops it.
+        let mut p = FrpcProcess::new();
+        p.generation = 1;
+        p.visitor_name = Some("v".to_string());
+        p.connected_since = Some("2026-01-01T00:00:00Z".to_string());
+
+        assert!(p.retire().is_none(), "no child in a unit test");
+        assert!(p.visitor_name.is_none());
+        assert!(p.connected_since.is_none());
+
+        // The stopped process's Terminated arrives after the stop: it must not reach the UI,
+        // which would turn the idle indicator into "disconnected" (R-0389).
+        assert!(
+            !p.reconcile_terminated(1),
+            "a stopped process's Terminated must be stale"
         );
     }
 }

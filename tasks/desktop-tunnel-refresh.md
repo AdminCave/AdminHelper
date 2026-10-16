@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-10-16: Desktop fragt alle 60 s ab; 404 von `visitor-bundle` heißt „keine Tunnel“ (kein neuer API-Vertrag); Reload für Visitors, Neustart für Common; Restrisiko Token-Rotation hingenommen; R-0389 und R-0390 vor dem automatischen Neustart; Knopf „Neu verbinden“ an der Tunnel-Anzeige, nur bei getrenntem Tunnel (T10, T11); `scenario` ohne GUI-Visitor reicht, der Desktop-Beweis ist T9.
 
-### T1 — Ein Stopp macht das spätere Terminated alt (R-0389)  [ ]
+### T1 — Ein Stopp macht das spätere Terminated alt (R-0389)  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @d7b11995 2026-10-16T13:26:12+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T1.verdict.json)
 Änderung: `stop_frpc` (`frpc.rs:323`) erhöht die Generation wie `start_frpc` (`:273`), über eine reine Methode an `FrpcProcess` (`:43`), damit das späte `Terminated` des gestoppten Prozesses als alte Generation gilt und `frpc-terminated` (`:303`) nicht mehr ans UI geht. Neuer cargo-Test `stop_makes_a_late_terminated_stale`: nach dem Stopp liefert `reconcile_terminated` (`:69`) für die vorige Generation `false`; der bestehende Test `reconcile_terminated_clears_state_only_for_the_current_generation` (`:449`) bleibt. Doku: im Abschnitt „Status & Events“ (`desktop.html:146`, DE+EN) ein Halbsatz, dass auch ein Stopp den alten Prozess verstummen lässt.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- late_terminated
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:146`)
