@@ -14,11 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.builtin_templates import apply_builtin_update, canonical_definitions, shipped_builtin
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import (
     MonitorAlertRule,
     MonitorCheck,
+    MonitorCheckTombstone,
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
@@ -26,7 +28,14 @@ from app.models import (
 from app.scheduler import remove_check
 from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
 from app.tag_sync import sync_tag_assignments
-from app.template_sync import apply_template, remove_template, sync_template
+from app.template_sync import (
+    apply_template,
+    check_def_ids,
+    record_override_baseline,
+    remove_template,
+    restore_checks,
+    sync_template,
+)
 
 logger = logging.getLogger("monitor.templates")
 
@@ -79,7 +88,8 @@ def list_templates(db: Session = Depends(get_db)):
 
 @router.get("/templates/assignments/{server_id}", dependencies=[Depends(require_internal)])
 def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
-    """Returns all template assignments of a server."""
+    """Returns all template assignments of a server, each with the number of its
+    template checks deleted on the server (removedChecks)."""
     assignments = (
         db.query(MonitorTemplateAssignment)
         .filter(MonitorTemplateAssignment.server_id == server_id)
@@ -94,10 +104,20 @@ def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
         if template_ids
         else {}
     )
+    tombstoned: dict[str, set[str]] = {}
+    for template_id, def_id in db.query(
+        MonitorCheckTombstone.template_id, MonitorCheckTombstone.def_id
+    ).filter(MonitorCheckTombstone.server_id == server_id):
+        tombstoned.setdefault(template_id, set()).add(def_id)
     return [
         {
             **a.to_dict(),
             "templateName": templates[a.template_id].name if a.template_id in templates else None,
+            "removedChecks": len(
+                tombstoned.get(a.template_id, set()) & check_def_ids(templates[a.template_id])
+            )
+            if a.template_id in templates
+            else 0,
         }
         for a in assignments
     ]
@@ -161,6 +181,8 @@ def update_template(template_id: str, data: TemplateUpdate, db: Session = Depend
     if not template:
         raise HTTPException(404, "Template nicht gefunden")
 
+    # Compared with the template as it is, before this change reaches it.
+    record_override_baseline(db)
     sent = data.model_fields_set
     if "name" in sent:
         template.name = data.name
@@ -216,6 +238,54 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Standard-template updates (app/builtin_templates.py)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/templates/{template_id}/builtin-update", dependencies=[Depends(require_internal)])
+def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
+    """Compares a standard template's definitions with those of its shipped version.
+
+    Both sides leave out the keys at their schema default, as the hash does: the
+    editor stores every key, the shipped definitions only those they set, and a
+    definition saved unchanged has to look like the shipped one."""
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
+    shipped = shipped_builtin(template.builtin_slug) if template else None
+    if shipped is None:
+        raise HTTPException(404, "Standard template not found")
+    current_checks, current_alerts = canonical_definitions(
+        json.loads(template.check_definitions or "[]"),
+        json.loads(template.alert_definitions or "[]"),
+    )
+    shipped_checks, shipped_alerts = canonical_definitions(
+        shipped["check_definitions"], shipped["alert_definitions"]
+    )
+    return {
+        "currentVersion": template.builtin_version,
+        "shippedVersion": shipped["version"],
+        "current": {"checkDefinitions": current_checks, "alertDefinitions": current_alerts},
+        "shipped": {"checkDefinitions": shipped_checks, "alertDefinitions": shipped_alerts},
+    }
+
+
+@router.post("/templates/{template_id}/builtin-update", dependencies=[Depends(require_internal)])
+def take_builtin_update(template_id: str, db: Session = Depends(get_db)):
+    """Takes the shipped version of a standard template, edited or not — triggers a
+    live sync to all assigned servers; the fields a user changed on a check stay."""
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
+    if not template or shipped_builtin(template.builtin_slug) is None:
+        raise HTTPException(404, "Standard template not found")
+
+    sync_result = apply_builtin_update(db, template_id)
+    if sync_result is None:
+        raise HTTPException(409, "No update available")
+
+    result = template.to_dict()
+    result["syncResult"] = sync_result
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Template Assignment
 # ---------------------------------------------------------------------------
 
@@ -268,6 +338,27 @@ def unassign_template(template_id: str, server_id: str, db: Session = Depends(ge
         raise HTTPException(404, "Zuweisung nicht gefunden")
 
     remove_template(db, template_id, server_id)
+
+
+@router.post(
+    "/templates/{template_id}/assign/{server_id}/restore",
+    dependencies=[Depends(require_internal)],
+)
+def restore_template_checks(template_id: str, server_id: str, db: Session = Depends(get_db)):
+    """Creates the template checks deleted on this server again."""
+    assignment = (
+        db.query(MonitorTemplateAssignment)
+        .filter(
+            MonitorTemplateAssignment.template_id == template_id,
+            MonitorTemplateAssignment.server_id == server_id,
+        )
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(404, "Assignment not found")
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).one()
+
+    return {"restored": restore_checks(db, template, assignment)}
 
 
 # ---------------------------------------------------------------------------

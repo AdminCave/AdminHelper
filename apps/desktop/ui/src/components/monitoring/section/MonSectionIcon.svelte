@@ -182,4 +182,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   >
     <path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.8 0" />
   </svg>
+{:else if name === 'reset'}
+  <svg
+    viewBox="0 0 24 24"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </svg>
 {/if}

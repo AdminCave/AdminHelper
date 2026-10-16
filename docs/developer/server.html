@@ -111,7 +111,7 @@
           </table>
           <p>Nur Tunnel mit <code>enabled = true</code> werden gerendert. Zwei Tunnel-Typen sind speziell behandelt:</p>
           <ul>
-            <li><strong>STCP</strong> (<code>type = "stcp"</code>): bekommt <code>secretKey</code> und <code>allowUsers</code> (Default <code>["ops-admin"]</code>, sonst die uebergebenen <code>allow_users</code>). Der zugehoerige <code>[[visitors]]</code>-Block setzt <code>serverName</code>, <code>serverUser</code> (= Agent-User, weil FRP Proxies als <code>{user}.{name}</code> registriert) und denselben <code>secretKey</code>.</li>
+            <li><strong>STCP</strong> (<code>type = "stcp"</code>): bekommt <code>secretKey</code> und <code>allowUsers</code> (Default <code>["ops-admin"]</code>, sonst die uebergebenen <code>allow_users</code>). <code>allow_users</code> sind die Namen aller dem Host zugeordneten Nutzer und aller Admins (<code>frp/_helpers.py::get_allow_users</code>), je einmal und aufsteigend sortiert, damit Config und Config-Hash nach einem Neustart und in jedem Worker gleich bleiben. Der zugehoerige <code>[[visitors]]</code>-Block setzt <code>serverName</code>, <code>serverUser</code> (= Agent-User, weil FRP Proxies als <code>{user}.{name}</code> registriert) und denselben <code>secretKey</code>.</li>
             <li><strong>HTTPS</strong> (<code>type = "https"</code>): rendert <code>customDomains</code> aus dem komma-getrennten Feld <code>custom_domains</code>.</li>
           </ul>
           <p><code>extra_config</code> (JSON) wird je Tunnel typ-erhaltend angehaengt: Strings gequotet, Bools als <code>true</code>/<code>false</code>, Zahlen roh.</p>
