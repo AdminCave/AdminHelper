@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Linux-Dienste richtig zählen und melden — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-services · Review: pro Task
+Status: bereit · Branch: feature/monitoring-services · Review: pro Task
 Spec: docs/features/monitoring-services.md (Roadmap R-0418)
 Heavy: linux-full + windows — Agent-Report, Monitoring-Auswertung und Desktop-Anzeige im echten Stack (`run.sh integration` mit Agent-Push, `run.sh e2e` mit `desktop_e2e_monitoring.sh`) auf einer Pool-VM; `windows`, weil sich der gemeinsame Report-Pfad und `services_windows.go` (Zähler) ändern und die Go-Suite dort nativ läuft
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -98,8 +98,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (intern; sichtbar mit T8)
 Abhängt von: T6
 
-### T8 — Doku und CHANGELOG  [ ]
+### T8 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @54c5b5b2 2026-10-16T17:21:32+02:00
+Review: approve (.ah-out/review/monitoring-services/T8.verdict.json)
 Änderung: Admin-Doku DE+EN: Tabellenzeile `service_process` (`monitoring.html:46`) und Standard-Template (`:162`): `auto` meldet failed und enabled-aber-inaktive Units, nicht aber regulär beendete oneshot-, per Condition übersprungene oder per Timer/Socket gestartete Dienste; `ignore` mit Glob; Listen-Modus ohne `--services` am Agent, Namen mit/ohne `.service`, Aliase, Daten spätestens mit dem nächsten vollen Inventar (≤ 1 h). Entwickler-Doku DE+EN: Report-Felder `systemd.counts`, `systemd.error`, `alias_of`, sortiertes Inventar, gefiltertes `enabled_inactive` (`agent.html:101`, `:112`; `monitoring.html:112`, `:122`). CHANGELOG unter `### Fixed`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/agent.html + docs/en/developer/agent.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html · CHANGELOG.md (Fixed)
