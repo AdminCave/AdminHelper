@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Feste Reihenfolge von allowUsers — Task-Ledger
-Status: geplant · Branch: feature/allow-users-order · Review: am Ende
+Status: aktiv · Branch: feature/allow-users-order · Review: am Ende
 Spec: Roadmap R-0435
 Heavy: linux-full — Server erzeugt die frpc-Config der Agents (`frp/_helpers.py`, über `generate_frpc_toml` in `config`, `config-hash` und dem Provisionierungs-Paket); läuft im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
