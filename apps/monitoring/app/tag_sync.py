@@ -8,8 +8,11 @@ The server DB is the only source of tag membership (GET /api/internal/servers
 on the hub). ``sync_tag_assignments()`` computes the desired (template, server)
 set from all tag bindings and reconciles: missing pairs are created via
 ``apply_template`` with ``source='tag'``, stale ``source='tag'`` rows are
-removed via ``remove_template``. Manual assignments are never touched — an
-existing manual assignment for a desired pair simply wins.
+removed via ``remove_template``. Tag membership never touches manual
+assignments — an existing manual assignment for a desired pair simply wins.
+A server whose hostname or name in the inventory differs from an assignment
+(manual or tag) gets the new values in that assignment, and its checks/alerts
+are synced again via ``sync_assignment``, except the fields a user changed.
 
 Best-effort by design: triggered after tag-binding CRUD, by the server's
 notify hook (POST /templates/tag-sync after inventory changes) and by a
@@ -25,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import INTERNAL_API_KEY, SERVER_HUB_URL
 from app.models import MonitorTemplate, MonitorTemplateAssignment, MonitorTemplateTagAssignment
-from app.template_sync import apply_template, remove_template
+from app.template_sync import apply_template, remove_template, sync_assignment
 
 logger = logging.getLogger("monitor.tag_sync")
 
@@ -57,17 +60,19 @@ def fetch_inventory() -> list[dict] | None:
 def sync_tag_assignments(db: Session, inventory: list[dict] | None = None) -> dict | None:
     """Reconcile materialized tag assignments against the server inventory.
 
-    Returns {"created": n, "removed": m} or None when the inventory was
-    unavailable (nothing is changed in that case)."""
+    Returns {"created": n, "removed": m, "refreshed": k} or None when the
+    inventory was unavailable (nothing is changed in that case)."""
     if inventory is None:
         inventory = fetch_inventory()
     if inventory is None:
         return None
 
+    servers_by_id: dict[str, dict] = {}
     servers_by_tag: dict[str, list[dict]] = {}
     for srv in inventory:
         if not isinstance(srv, dict) or not srv.get("id"):
             continue
+        servers_by_id[srv["id"]] = srv
         for tag in srv.get("tags") or []:
             servers_by_tag.setdefault(tag, []).append(srv)
 
@@ -106,6 +111,7 @@ def sync_tag_assignments(db: Session, inventory: list[dict] | None = None) -> di
             )
 
     removed = 0
+    refreshed = 0
     for (template_id, server_id), assignment in existing.items():
         if assignment.source == "tag" and (template_id, server_id) not in desired:
             try:
@@ -118,7 +124,42 @@ def sync_tag_assignments(db: Session, inventory: list[dict] | None = None) -> di
                     template_id,
                     server_id,
                 )
+        elif _refresh_names(db, assignment, servers_by_id.get(server_id)):
+            refreshed += 1
 
-    if created or removed:
-        logger.info("Tag-sync: %d assignment(s) created, %d removed", created, removed)
-    return {"created": created, "removed": removed}
+    if created or removed or refreshed:
+        logger.info(
+            "Tag-sync: %d assignment(s) created, %d removed, %d refreshed",
+            created,
+            removed,
+            refreshed,
+        )
+    return {"created": created, "removed": removed, "refreshed": refreshed}
+
+
+def _refresh_names(db: Session, assignment: MonitorTemplateAssignment, srv: dict | None) -> bool:
+    """Bring an assignment's hostname/name in line with the inventory and sync
+    its pair again, so {{hostname}}/{{server_name}} follow a rename. False when
+    the server is not in the inventory, nothing changed, or the sync failed
+    (then rolled back: the old names stay with the checks built from them)."""
+    if srv is None:
+        return False
+    hostname = srv.get("hostname", "")
+    server_name = srv.get("name", "")
+    if (assignment.server_hostname, assignment.server_name) == (hostname, server_name):
+        return False
+    template_id, server_id = assignment.template_id, assignment.server_id
+    template = db.get(MonitorTemplate, template_id)
+    if template is None:
+        return False
+    try:
+        assignment.server_hostname = hostname
+        assignment.server_name = server_name
+        sync_assignment(db, template, assignment)
+        return True
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Tag-sync: refreshing template %s on server %s failed", template_id, server_id
+        )
+        return False

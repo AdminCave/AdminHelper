@@ -65,8 +65,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_templates_r
 Doku: keine (intern; beschrieben in T12)
 Abhängt von: T5
 
-### T7 — Neuer Hostname oder Servername erreicht bestehende Zuweisungen  [ ]
+### T7 — Neuer Hostname oder Servername erreicht bestehende Zuweisungen  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/tag_sync.py, apps/monitoring/app/template_sync.py, apps/monitoring/tests/test_tag_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b4747129 2026-10-16T16:29:58+02:00
+Review: approve (.ah-out/review/monitoring-templates/T7.verdict.json)
 Änderung: `sync_tag_assignments` (`tag_sync.py:57-124`) prüft zusätzlich jede Zuweisung (Quelle `manual` und `tag`) gegen das Inventar: weichen `hostname`/`name` von `server_hostname`/`server_name` ab, werden die Spalten aktualisiert und genau dieses (Template, Server)-Paar über eine neue Funktion in `template_sync.py` neu synchronisiert (nur nicht angepasste Felder, T3). Rückgabe um `"refreshed": n` erweitern. Der Server meldet Umbenennungen schon (`apps/server/app/modules/servers/router.py:172-177`); dort ändert sich nichts. Tests zuerst rot: Umbenennung im Inventar → Zuweisung und `{{hostname}}`-Config des Checks neu; angepasster Name bleibt; Server nicht im Inventar → unverändert; kein Inventar → nichts geändert (wie heute).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py tests/test_template_sync.py
 Doku: keine (intern; beschrieben in T12)
