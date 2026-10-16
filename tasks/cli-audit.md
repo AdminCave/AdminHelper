@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-CLI schreibt Audit-Einträge — Task-Ledger
-Status: aktiv · Branch: feature/cli-audit · Review: am Ende
+Status: bereit · Branch: feature/cli-audit · Review: am Ende
 Spec: Roadmap R-0397
 Heavy: linux-full — `apps/server/app/cli.py` ist der Bootstrap-Weg von `scripts/install.sh` (`create-admin`, `mint-enroll-token`, `install.sh:287-289`); Install läuft im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Kevin 2026-10-16: `/feature-plan --kurz R-0397`. Am Gate entschieden: Die CLI protokolliert als `Actor("system", None, "cli", None)`, also actor_type `system` mit dem Label `cli`. Kein neuer Actor-Typ, der Filter im Web-Panel (`Audit.svelte:95-100`) findet die Einträge unter `system`; Web und Modell bleiben unverändert. Nicht-Ziel: Webhooks und Benachrichtigungen (`fire_event`) für CLI-Aktionen.
 
-### T1 — Die drei CLI-Befehle schreiben einen Audit-Eintrag  [ ]
+### T1 — Die drei CLI-Befehle schreiben einen Audit-Eintrag  [x]
 Komponente: server · Dateien: apps/server/app/cli.py, apps/server/tests/test_cli.py, CHANGELOG.md, docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b8f974cc 2026-10-16T11:42:23+02:00
+Review: am Ende (Branch-Review)
 Änderung: Eine Modul-Konstante `_CLI_ACTOR = Actor("system", None, "cli", None)`; jeder erfolgreiche Befehl ruft `audit.record` mit diesem Actor:
 - `create_admin` (`cli.py:48`): `user.created`, wie der API-Weg (`users/router.py:86-93`), `object_type="user"`, `object_id`/`object_label` des neuen Benutzers, vor dem einen `db.commit()`, damit Benutzer und Eintrag gemeinsam landen.
 - `reset_admin` (`cli.py:67`): `user.password_reset`, gleiche Objektfelder, ebenfalls vor dem `db.commit()`.

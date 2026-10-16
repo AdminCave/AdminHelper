@@ -316,6 +316,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: die Server-CLI schreibt Audit-Eintraege (R-0397):** `python -m app.cli create-admin`, `reset-admin` und
+  `mint-enroll-token` liessen keine Spur im Audit-Log, obwohl derselbe Vorgang ueber die API protokolliert wird. Jetzt
+  schreibt jeder erfolgreiche Aufruf einen Eintrag (`user.created`, `user.password_reset`,
+  `enrollment.token.minted_for`) mit dem Actor `system` und dem Label `cli`; abgelehnte Aufrufe schreiben keinen.
 - **Server: der Agent-Report-Proxy reicht jede Server-ID durch (R-0391):**
   `POST /api/monitoring/agent/{server_id}/report` setzte die dekodierte `server_id` unkodiert in die Ziel-URL zum
   Monitoring-Dienst. Ein Steuerzeichen (`%1F`) endete mit 500, ein `?` oder `#` (`%3F`, `%23`) schnitt die Ziel-URL

@@ -15,6 +15,7 @@ import app.cli as cli
 from app.cli import create_admin, mint_enroll_token, reset_admin
 from app.core.auth import hash_api_key, verify_password
 from app.core.identity import SCOPE_ACCESS
+from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
 from app.modules.notifications.models import NotificationSubscription
 from app.modules.users.models import User
@@ -119,3 +120,78 @@ def test_create_admin_gets_default_subscription(db_session):
     assert sub.enabled is True
     assert sub.channel_email is False
     assert sub.channel_telegram is False
+
+
+def _audit_rows(db):
+    return db.query(AuditLog).order_by(AuditLog.id).all()
+
+
+def _assert_cli_actor(row):
+    # R-0397: CLI actions are logged as actor system with the label cli.
+    assert (row.actor_type, row.actor_id, row.actor_label, row.source_ip) == (
+        "system",
+        None,
+        "cli",
+        None,
+    )
+
+
+def test_create_admin_writes_one_audit_entry(db_session):
+    assert create_admin(db_session, "kevin", "supersecret") == 0
+    user = db_session.query(User).filter_by(username="kevin").one()
+    [row] = _audit_rows(db_session)
+    _assert_cli_actor(row)
+    assert (row.action, row.object_type, row.object_id, row.object_label, row.status) == (
+        "user.created",
+        "user",
+        str(user.id),
+        "kevin",
+        "success",
+    )
+
+
+def test_reset_admin_writes_one_audit_entry(db_session, admin_user):
+    assert reset_admin(db_session, "admin", "brandneu99") == 0
+    [row] = _audit_rows(db_session)
+    _assert_cli_actor(row)
+    assert (row.action, row.object_type, row.object_id, row.object_label, row.status) == (
+        "user.password_reset",
+        "user",
+        str(admin_user.id),
+        "admin",
+        "success",
+    )
+
+
+def test_mint_enroll_token_writes_one_audit_entry(db_session, admin_user):
+    assert mint_enroll_token(db_session, "admin", ttl_minutes=60)
+    [row] = _audit_rows(db_session)
+    _assert_cli_actor(row)
+    assert (row.action, row.object_type, row.object_id, row.status) == (
+        "enrollment.token.minted_for",
+        "user",
+        "admin",
+        "success",
+    )
+
+
+@pytest.mark.parametrize(
+    ("refused", "expected"),
+    [
+        (lambda db: create_admin(db, "kev", "short"), 1),
+        (lambda db: create_admin(db, "admin", "password1"), 1),
+        (lambda db: reset_admin(db, "nobody", "brandneu99"), 1),
+        (lambda db: reset_admin(db, "admin", "kurz"), 1),
+        (lambda db: mint_enroll_token(db, "ghost", ttl_minutes=60), None),
+    ],
+    ids=[
+        "create-short-password",
+        "create-existing-user",
+        "reset-unknown-user",
+        "reset-short-password",
+        "mint-unknown-user",
+    ],
+)
+def test_refused_cli_call_writes_no_audit_entry(db_session, admin_user, refused, expected):
+    assert refused(db_session) == expected
+    assert _audit_rows(db_session) == []

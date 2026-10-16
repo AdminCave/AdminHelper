@@ -38,11 +38,16 @@ import app.modules.users.models  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS
+from app.core.request_context import Actor
+from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.users.models import User
 
 _MIN_PASSWORD_LEN = 8
+# No request, no principal: the operator at the container shell. The web panel
+# lists these rows under the actor filter `system`.
+_CLI_ACTOR = Actor("system", None, "cli", None)
 
 
 def create_admin(db, username: str, password: str) -> int:
@@ -60,6 +65,14 @@ def create_admin(db, username: str, password: str) -> int:
     db.flush()
     db.add(default_admin_subscription(user.id))
     db.commit()
+    audit.record(
+        db,
+        "user.created",
+        actor=_CLI_ACTOR,
+        object_type="user",
+        object_id=user.id,
+        object_label=user.username,
+    )
     print(f"Admin '{username}' angelegt.", file=sys.stderr)
     return 0
 
@@ -78,6 +91,14 @@ def reset_admin(db, username: str, password: str) -> int:
         return 1
     user.hashed_password = hash_password(password)
     db.commit()
+    audit.record(
+        db,
+        "user.password_reset",
+        actor=_CLI_ACTOR,
+        object_type="user",
+        object_id=user.id,
+        object_label=user.username,
+    )
     print(f"Passwort fuer '{username}' zurueckgesetzt.", file=sys.stderr)
     return 0
 
@@ -87,9 +108,17 @@ def mint_enroll_token(db, username: str, ttl_minutes: int) -> str | None:
     raw token, or None if the user does not exist."""
     if db.query(User).filter(User.username == username).first() is None:
         return None
-    return mint_enrollment_token(
+    token = mint_enrollment_token(
         db, username, SCOPE_ACCESS, ttl=datetime.timedelta(minutes=ttl_minutes)
     )
+    audit.record(
+        db,
+        "enrollment.token.minted_for",
+        actor=_CLI_ACTOR,
+        object_type="user",
+        object_id=username,
+    )
+    return token
 
 
 def main(argv: list[str] | None = None) -> int:
