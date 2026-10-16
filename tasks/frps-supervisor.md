@@ -88,8 +88,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor
 Doku: keine (intern)
 Abhängt von: T7
 
-### T9 — Compose: frps aus eigenem Image, Status- und Arbeits-Volume  [ ]
+### T9 — Compose: frps aus eigenem Image, Status- und Arbeits-Volume  [x]
 Komponente: server · Dateien: docker-compose.yml, docker-compose.test.yml, .env.example, apps/server/tests/test_compose_frps.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @da64d93c 2026-10-16T17:44:45+02:00
+Review: approve (.ah-out/review/frps-supervisor/T9.verdict.json)
 Änderung: Dienst `frps` (`docker-compose.yml:276-306`): `image: ${FRPS_IMAGE:-ghcr.io/admincave/adminhelper/frps:latest}`, `frp-config` im Langformat mit `read_only: true` und `volume: { nocopy: true }`, `frps-certs` ro wie bisher, neu `frps-state` (rw) und `frps-active` (rw, nur frps), Healthcheck über `frps-supervisor.sh health`. `server` und `scheduler`: `frps-state` ro unter `/app/frps-state`, Env `FRPS_STATE_DIR` und `FRP_BIND_PORT=${FRP_BIND_PORT:-7000}`. Volumes anlegen (`:408-416`). `docker-compose.test.yml`: `frps` mit `image: adminhelper-test/frps:latest` und `build: { context: apps/frps }` (Muster gateway, `:43-52`). `.env.example`: `FRPS_IMAGE` neben `GATEWAY_IMAGE` (`:8`). Neue Testdatei (SPDX, Muster `tests/test_compose_startup_order.py`): die Mounts und Rechte je Dienst, `frps-active` nur in frps, `nocopy`, Env im Server und Scheduler.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py
 Doku: keine (intern)

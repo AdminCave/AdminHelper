@@ -4,7 +4,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.test.yml ...
 #
 # It does four things, all test-only:
-#   - build the three first-party images from THIS checkout (so tests run the
+#   - build the first-party images from THIS checkout (so tests run the
 #     current code, not a published tag) under throwaway local tags;
 #   - publish the gateway on high, per-run host ports (ITEST_*_PORT) instead of
 #     the fixed 443/8444 — `!override` REPLACES the base ports (a plain merge
@@ -55,6 +55,12 @@ services:
     image: adminhelper-test/ca-issuer:latest
     build:
       context: apps/ca-issuer
+
+  # The supervisor of this checkout, not a published tag.
+  frps:
+    image: adminhelper-test/frps:latest
+    build:
+      context: apps/frps
 
   # Built locally too, so the monitoring-pipeline tests (agent push -> check
   # evaluation) run THIS checkout's monitoring service, not a published tag.
