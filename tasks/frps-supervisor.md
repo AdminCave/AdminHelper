@@ -28,8 +28,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_docker_mana
 Doku: keine (intern)
 Test-Löschung: apps/server/tests/test_config_generator.py::test_write_frps_config_warns_only_on_runtime_change — gewolltes Verhalten geändert (Info statt Warnung), ersetzt durch test_frp_docker_manager.py::test_a_runtime_change_logs_that_frps_applies_it_itself (Kevin 2026-10-16)
 
-### T2 — Server: leeres `auth_token` im PUT lässt das Token unverändert  [ ]
+### T2 — Server: leeres `auth_token` im PUT lässt das Token unverändert  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_router.py, apps/server/tests/test_frp_config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b72fd28a 2026-10-16T14:18:21+02:00
+Review: approve (.ah-out/review/frps-supervisor/T2.verdict.json)
 Änderung: In `update_server_config` (`config_router.py:118-132`) wird `auth_token` nur übernommen, wenn es gesendet und nicht leer ist; `""` und `null` lassen das gespeicherte Token stehen. Tests in `test_frp_config.py`, erst rot: PUT mit `auth_token: ""` und mit `null` ändert das Token nicht, ein neues Token ≥ 16 Zeichen wird übernommen, ein kurzes bleibt 422.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py
 Doku: keine (intern)
