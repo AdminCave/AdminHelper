@@ -3,11 +3,11 @@ SPDX-FileCopyrightText: Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# Desktop: vier Fehler vor den Workspaces
+# Desktop: fünf Fehler vor den Workspaces
 
 Roadmap R-0429 (BUG) · Fund aus dem Workspace-Konzept vom 2026-10-16 (Code-Lesung auf main@af4498a7, von der
-Session nachgeprüft); Entscheidungen Kevin 2026-10-16. Nichts davon ist zur Laufzeit gefahren; den Beweis liefert
-je Fehler ein roter Test in der Task.
+Session nachgeprüft); Entscheidungen Kevin 2026-10-16. Die Fehler 1–4 sind nicht zur Laufzeit gefahren; den Beweis
+liefert je Fehler ein roter Test in der Task. Fehler 5 ist auf der Desktop-VM reproduziert (Spike vom 2026-10-16).
 
 ## Problem / Motivation
 
@@ -37,6 +37,15 @@ je Fehler ein roter Test in der Task.
    `desktop.html:130` beschreibt das heutige Verhalten („läuft jeder Request über `enrolled_client`“); die Doku
    ändert sich mit.
 
+5. **Unter Linux bringt ein zweiter Start die laufende App zum Absturz.** Mit `app.enableGTKAppId: true`
+   (`tauri.conf.json:13`) registriert tao eine `GApplication`; ein zweiter Prozess gibt sein `activate` per D-Bus an
+   den ersten weiter und beendet sich (tao 0.35.3 `event_loop.rs:1057`). Der erste läuft daraufhin das Setup erneut
+   und stirbt mit `Failed to setup app: a webview with label 'main' already exists` (tauri 2.11.5 `app.rs:1425`).
+   Laufende Tunnel und die Session sind weg. Reproduziert auf der Desktop-VM (Ubuntu 24.04) unter Xvfb und unter
+   sway (Wayland), je mit gemeinsamem Session-Bus: mit der heutigen Einstellung sind danach beide Prozesse weg; ohne
+   GTK-App-ID laufen beide, und `WM_CLASS` bzw. `app_id` bleiben in beiden Fällen `adminhelper`, passend zur
+   ausgelieferten `adminhelper.desktop` (`StartupWMClass=adminhelper`).
+
 ## Ziel & Nicht-Ziele
 
 **Ziel:**
@@ -48,6 +57,8 @@ je Fehler ein roter Test in der Task.
   demselben Schlüssel, unter dem `handleRdpAuth` prüft und speichert.
 - Sync nimmt die Geräte-Identität nur, wenn die Sync-URL dieselbe Origin (Schema, Host, Port) hat wie die
   gespeicherte `serverUrl`; sonst denselben Client wie ein unregistriertes Gerät (TOFU oder öffentliche CA).
+- Ein zweiter Start der App holt das laufende Fenster nach vorn und beendet sich; die laufende Instanz bleibt
+  unberührt (`tauri-plugin-single-instance`, GTK-App-ID aus).
 
 **Nicht-Ziele (Kevin 2026-10-16):**
 - RDP unter Windows für Tunnelziele: mstsc sucht `TERMSRV/<gewählte Adresse>` = `127.0.0.1:<Port>`, gespeichert
@@ -68,7 +79,9 @@ je Fehler ein roter Test in der Task.
 - **desktop-rs:** `commands.rs` (`open_connection_stored` `:241`, `sync_connections` `:177`),
   `connection/mod.rs` (`open_connection_stored` `:39`, `open_rdp_with_stored_password` `:64`), `sync.rs` (`:18`),
   `http_client.rs` (`build_client` `:40`).
-- **desktop-e2e:** `apps/desktop/e2e/test/specs/tunnel-start.live.js`.
+- **desktop-rs (Fehler 5):** `main.rs` (Plugin-Registrierung `:54-72`), `Cargo.toml`, `Cargo.lock`,
+  `tauri.conf.json` (`:13`), `THIRD_PARTY_LICENSES.md` (`:121-125`).
+- **desktop-e2e:** `apps/desktop/e2e/test/specs/tunnel-start.live.js`, `apps/desktop/e2e/test/specs/smoke.e2e.js`.
 - **Doku:** `docs/developer/desktop.html` + `docs/en/developer/desktop.html` (`:130`, `:156`), `CHANGELOG.md`.
 
 ## Datenmodell / API / Migrationen
@@ -82,7 +95,11 @@ behält seine Signatur und liest `serverUrl` selbst aus `settings.json`, so wie 
 
 ## Externe Integrationen
 
-Keine. Das Neuladen ist `window.location.reload()` im Webview. Dass die WebDriver-Session das Neuladen übersteht,
+`tauri-plugin-single-instance` (<https://v2.tauri.app/plugin/single-instance/>): muss als erstes Plugin registriert
+werden; der Callback bekommt `app`, `args`, `cwd` und ruft hier `set_focus()` auf dem Fenster `main`. Unter Linux
+über D-Bus (Dienst `org.com_admincave_adminhelper.SingleInstance`); deb, rpm und AppImage gehen ohne Zusatz, Snap und
+Flatpak bräuchten Manifest-Einträge (liefern wir nicht aus). Keine Capability nötig, das Plugin hat keine JS-API.
+Laut Doku Rust ≥ 1.90 (CI: stable). Das Neuladen ist `window.location.reload()` im Webview. Dass die WebDriver-Session das Neuladen übersteht,
 ist nicht verifiziert; T6 zeigt es im Sammellauf.
 
 ## Trade-offs & Alternativen
@@ -99,19 +116,26 @@ ist nicht verifiziert; T6 zeigt es im Sammellauf.
   gegen den eigenen Server unter `MTLS_ENFORCE`. Grenzfall: Ein Alias-Hostname des eigenen Servers bekommt keine
   Identität; dort hilft derselbe Hostname wie in der Server-URL.
 
+- **Fehler 5: Single-Instance-Plugin statt nur GTK-App-ID aus (gewählt):** Ohne GTK-App-ID allein liefen zwei
+  vollständige Instanzen nebeneinander und teilten `settings.json`, Verbindungsdateien, Keyring und Visitor-Ports.
+  Mit dem Plugin bleibt es bei einer Instanz, bis die Workspaces kommen; R-0431 registriert es dann nur noch im
+  Launcher.
+
 ## Risiken & Rollback
 
 - Scheitert der Tunnel-Stopp beim Abmelden, laufen Abmelden und Neuladen trotzdem (wie heute in `serverLogout`);
   frpc kann dann weiterlaufen. Der Normalfall ist durch T6 belegt.
 - Der Origin-Vergleich ist reine Logik mit Tests für Standard-Port, Groß-/Kleinschreibung, Schrägstrich am Ende,
   Pfad und Query.
+- Das Plugin braucht unter Linux einen Session-Bus. Auf einem normalen Desktop ist er da; ob die E2E-Umgebung einen
+  hat (heute läuft die App dort mit `GApplication`, das ebenfalls D-Bus nutzt), ist nicht verifiziert und zeigt T8.
 - Rollback: Revert des Merges; keine Daten ändern sich.
 
 ## Doku-Impact
 
-`desktop.html` DE+EN: der Connect-Flow (`:156`) nennt den Schlüssel vor der Tunnel-Auflösung, der Absatz zum
+`desktop.html` DE+EN: ein Satz zum Verhalten beim zweiten Start; der Connect-Flow (`:156`) nennt den Schlüssel vor der Tunnel-Auflösung, der Absatz zum
 registrierten Zustand (`:130`) die Ausnahme für Sync gegen eine andere Origin. `CHANGELOG.md` je Fehler eine
-Zeile unter Fixed.
+Zeile unter Fixed; `THIRD_PARTY_LICENSES.md` nennt das neue Plugin.
 
 ## Offene Fragen
 
