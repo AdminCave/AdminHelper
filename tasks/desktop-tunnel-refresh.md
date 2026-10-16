@@ -110,3 +110,12 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/TunnelIndicato
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/TunnelIndicator.test.ts
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (Fehlerbehebung)
 Abhängt von: T10
+
+Kevin 2026-10-16 (nach dem Review von T4): Die Prüfung der Visitor-TOML im Desktop wird enger, als eigene Task im Bündel (T12); der Server-Teil (Zeichen in Tunnel- und Servernamen) folgt später.
+
+### T12 — Visitor-TOML: nur die vom Server erzeugten Schlüssel, keine Template-Ausdrücke  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: `validate_visitor_table` (`frpc.rs:263`) lässt unter `auth` und `transport` nur genau die Schlüssel zu, die der Server erzeugt (`generate_visitor_toml`, `_tls_client_block` in `apps/server/app/modules/frp/config_generator.py:218`, `:81`): `auth.method` nur mit dem Wert `token`, `auth.token`, die dort erzeugten `transport.tls.*`-Schlüssel; jeder weitere Schlüssel unter diesen Tabellen wird abgewiesen wie ein unbekannter Wurzelschlüssel. frp rendert Config-Dateien als Go-Template, deshalb darf die fertige Config (`frpc_config`, Kopf plus Server-TOML) kein `{{` enthalten. Tests: jede vom Server erzeugte Form besteht (Fixtures nach dem Generator, mit und ohne TLS-Block); ein zusätzlicher Schlüssel unter `auth` oder `transport`, `auth.method` ungleich `token` und ein `{{` in einem beliebigen Wert werden abgewiesen. Mutationsprobe in einer Kopie: Jede gelockerte Prüfung macht einen Test rot. Doku: der Satz zur Allow-List in `desktop.html:145` (DE+EN) nennt die engere Prüfung.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- visitor
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:145`)
+Abhängt von: T4
