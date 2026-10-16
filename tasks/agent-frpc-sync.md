@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent übernimmt FRP-Tunnel selbst — Task-Ledger
-Status: bereit · Branch: feature/agent-frpc-sync · Review: pro Task
+Status: aktiv · Branch: feature/agent-frpc-sync · Review: pro Task
 Spec: docs/features/agent-frpc-sync.md (Roadmap R-0398)
 Heavy: linux-full + scenario --agents 1 --tunnel --enforce + windows — Server-API (`config-hash`) und Agent-Paket im Stack (`run.sh integration`, `upgrade_path`); vor dem Merge der Multibox-Lauf, weil nur er den Datenpfad über frps mit echtem mTLS zeigt: Tunnel nach dem Provisionieren, Reload bei offener SSH-Sitzung, `run --once` ohne Tunnel grün (Kevin hat den `--tunnel`-Lauf vor dem Merge erlaubt); `windows`, weil sich Agent-Plattformcode und der Provisionier-Pfad unter Windows ändern (No-ops, Sync-Config immer)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -110,3 +110,10 @@ Review: approve (.ah-out/review/agent-frpc-sync/T11.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run 'Apply|Provision|Reprovision'
 Doku: docs/developer/server.html + docs/en/developer/server.html (`:99`)
 Abhängt von: T10
+
+### T12 — Agent: laufender frpc mit einer Config ohne Tunnel wird gestoppt; Kommentare  [ ]
+Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/provision/provision.go
+Änderung: Funde aus der zweiten Branch-Prüfung. (1) Hat ein älterer Agent `frpc.toml` mit dem Text ohne Tunnel geschrieben und läuft frpc noch (der Hash passt dann zum Server), tut `Sync` heute nichts, solange frpc läuft. Neu: Bei gleichem Hash prüft `Sync`, ob die `frpc.toml` auf der Platte `[[proxies]]` enthält; enthält sie keine, aber frpc läuft oder die Datei liegt noch da, geht der Lauf in den bestehenden Stopp-Pfad (`applyConfig` ohne Proxies: stoppen, deaktivieren, `frpc.toml` löschen, Hash speichern). Tests in `sync_flow_test.go`, zuerst rot: gleicher Hash, `frpc.toml` ohne `[[proxies]]`, frpc aktiv → disable 1, Datei weg, kein enable/restart/reload; gleicher Hash, Datei mit Proxies, frpc aktiv → nichts (wie bisher). Dazu der bisher ungetestete Fehlerpfad von `renewAdminAPI` im Zweig „frpc hängt“ (`sync.go:118`): Fehler beim Schreiben von `admin.conf` → Fehler, kein Start, Hash nicht gespeichert. (2) Der Kommentar an `checkServerHead` (`sync.go:274-276`) nennt Formen, die die Prüfung nicht erfasst; neutral fassen als „deckt die Formen ab, die der Generator des Servers schreibt, in Groß- und Kleinschreibung“. (3) `provision.go:13-15`: Satzbezug „without one“ eindeutig („without an FRP config …“).
+Verify: bash scripts/dev/verify.sh agent --strict -- -run 'Sync|Stuck|Reload|AdminAPI'
+Doku: keine (Verhalten wie dokumentiert: ohne Tunnel läuft kein frpc)
+Abhängt von: T9, T10
