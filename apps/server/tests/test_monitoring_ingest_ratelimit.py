@@ -4,6 +4,9 @@
 
 """The public (JWT-free) agent-ingest proxy is rate-limited per IP (audit #8/#16)."""
 
+import httpx
+import pytest
+
 from app.core.rate_limit import get_backend, reset_backend_for_tests
 
 
@@ -128,3 +131,27 @@ def test_monitoring_proxy_preserves_percent_encoding(
     )
     assert resp.status_code == 200
     assert captured["url"].endswith("/templates/tpl-1/assign-tag/web%231%3Fx")
+
+
+@pytest.mark.parametrize("wire_id", ["%1F", "web%3Fx", "web%231"])
+def test_agent_report_forwards_encoded_server_id(test_client, monkeypatch, wire_id):
+    # R-0391: `server_id` arrives decoded; re-embedded raw, a control character made httpx raise
+    # InvalidURL (500) and a '?'/'#' cut the target URL short. A real AsyncClient on a
+    # MockTransport, not a stubbed `post`, so httpx's own URL parsing runs.
+    from app.modules.monitoring_proxy import router as mp
+
+    reset_backend_for_tests()  # ensure this request isn't rate-limited
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.raw_path)
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(mp, "_client", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    r = test_client.post(
+        f"/api/monitoring/agent/{wire_id}/report",
+        content=b"{}",
+        headers={"X-API-Key": "k", "Content-Type": "application/json"},
+    )
+    assert r.status_code == 200, r.text
+    assert seen == [f"/agent/{wire_id}/report".encode()]

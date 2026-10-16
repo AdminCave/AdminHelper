@@ -81,8 +81,10 @@ async def proxy_agent_report(
     count = await run_in_threadpool(get_backend().increment, f"agent_ingest:{ip}", _INGEST_WINDOW)
     if count > _INGEST_MAX:
         raise HTTPException(status_code=429, detail="Zu viele Agent-Reports")
+    # `server_id` is percent-DECODED by Starlette: re-encode it, or a '?'/'#' truncates the
+    # target URL (another monitoring route) and a control character makes httpx raise InvalidURL.
     resp = await _client.post(
-        f"{_MONITOR_BASE}/agent/{server_id}/report",
+        f"{_MONITOR_BASE}/agent/{quote(server_id, safe='')}/report",
         content=await request.body(),
         headers={
             "X-API-Key": request.headers.get("x-api-key", ""),

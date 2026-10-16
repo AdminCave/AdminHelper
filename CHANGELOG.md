@@ -316,6 +316,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: der Agent-Report-Proxy reicht jede Server-ID durch (R-0391):**
+  `POST /api/monitoring/agent/{server_id}/report` setzte die dekodierte `server_id` unkodiert in die Ziel-URL zum
+  Monitoring-Dienst. Ein Steuerzeichen (`%1F`) endete mit 500, ein `?` oder `#` (`%3F`, `%23`) schnitt die Ziel-URL
+  ab und traf eine andere Route des Dienstes. Der Proxy kodiert die `server_id` jetzt wieder; der Monitoring-Dienst
+  sieht dieselbe ID wie der Server.
 - **Desktop: ein neu gestarteter Tunnel steht nicht mehr auf getrennt (R-0247):** Startete der Tunnel neu (Stop,
   dann Start), endete der alte frpc-Prozess oft erst, als der neue schon lief. Sein Ende ging trotzdem ans Fenster,
   und die Anzeige stand auf „Tunnel getrennt“, obwohl der Tunnel lief. Jetzt meldet nur der laufende frpc-Prozess
