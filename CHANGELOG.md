@@ -339,6 +339,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Ignorieren und entfernt doppelte Eintraege. Der Report traegt dafuer additiv `systemd.counts`, `systemd.error` und
   `alias_of` im Inventar; `all_services` ist nach Unit sortiert und laesst nicht installierte, nur referenzierte Units
   weg. Im Modus `list` traegt `_details.watched` je Name `state` (`running`, `down`, `nodata`) neben `running`.
+- **Desktop: der Vertrauensdialog beim ersten Kontakt liegt ueber dem Login-Screen (R-0399):** Praesentiert der
+  Server beim ersten Login oder bei der ersten Registrierung ein Zertifikat der internen CA, fragt der Desktop in
+  einem Dialog, ob dem Server vertraut werden soll. Dieser Dialog war vom Login-Screen verdeckt: Anmelden und
+  Registrieren blieben ohne Rueckmeldung stehen. Jetzt liegt er sichtbar darueber.
 - **Agent: Docker-Container werden mit aktueller Docker-CLI wieder erfasst (R-0417):** Ab Docker 28.2 gibt
   `docker ps -a --format '{{json .}}'` das Feld `Platform` als Objekt aus. Der Agent las jede Zeile als reine
   Zeichenketten, verwarf damit jede Zeile und schickte keine Container mehr; `docker_health` stand auf „Keine
