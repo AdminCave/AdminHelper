@@ -3,23 +3,40 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# frps-supervisor.sh — starts frps only from a configuration that passed every check.
+# frps-supervisor.sh — runs frps only from a configuration that passed every check, and takes
+# over changes to it.
+#
+#   frps-supervisor.sh          supervise frps (the image's entrypoint)
+#   frps-supervisor.sh health   exit 0 while the state is waiting, running or stopped
 #
 # The input, frps.toml from the server and the TLS material from the ca-issuer, lives in
 # volumes other containers write. A candidate is copied into next/ of the supervisor's own
 # working directory (FRPS_ACTIVE_DIR, mounted by frps alone), checked there, its TLS paths
 # pointed at current/, and swapped in as current/. frps always runs from current/, so a
-# half-written or invalid input never reaches it:
+# half-written or invalid input never reaches it. At the start, and after that whenever the
+# input has changed and then stayed the same for two polls in a row (FRPS_POLL_SECONDS apart,
+# one second while a start of frps is due; a file still being written is not taken for a new
+# one):
 #
-#   valid                        frps starts from the new current/          running
-#   invalid, current/ exists     frps starts from the last valid current/   degraded
+#   valid                        frps (re)starts from the new current/      running
+#   invalid, current/ exists     frps runs on from the last valid current/  degraded
 #   invalid, no current/         nothing starts                             waiting
-#   frps.toml missing or empty   current/ is removed, nothing starts        stopped
+#   frps.toml missing or empty   frps stops, current/ is removed            stopped
 #     (and no current/ to remove)                                           waiting
 #
-# The state goes to $FRPS_STATE_DIR/status.json; its format is the contract the server reads,
-# apps/server/app/modules/frp/supervisor_status.py. Log lines carry codes and paths, never
-# the token.
+# Events: started (frps started where none ran from a current/: at the start, or after
+# waiting or stopped), applied (a change restarted frps; tokenChanged compares hashes of the
+# token line), rejected (once per rejected input), stopped, crashed (once per crash loop).
+# A valid input equal to the one frps runs from restarts nothing.
+#
+# frps exiting on its own is started again from current/ after 2, 4, 8 … FRPS_BACKOFF_MAX
+# seconds; the third exit within FRPS_CRASH_WINDOW seconds makes the state crashloop, until
+# frps has run that long again. TERM or INT stop frps (KILL after FRPS_STOP_SECONDS) and end
+# the supervisor with 0.
+#
+# The state goes to $FRPS_STATE_DIR/status.json, rewritten at every poll as a heartbeat; its
+# format is the contract the server reads, apps/server/app/modules/frp/supervisor_status.py.
+# Log lines carry codes and paths, never the token.
 
 set -u
 export LC_ALL=C
@@ -30,6 +47,11 @@ FRPS_PKI_DIR="${FRPS_PKI_DIR:-/etc/frp-pki}"
 FRPS_ACTIVE_DIR="${FRPS_ACTIVE_DIR:-/var/lib/frps-active}"
 FRPS_STATE_DIR="${FRPS_STATE_DIR:-/var/lib/frps-state}"
 FRPS_BIN="${FRPS_BIN:-frps}"
+# Whole seconds, as POSIX sleep takes them.
+FRPS_POLL_SECONDS="${FRPS_POLL_SECONDS:-5}"
+FRPS_BACKOFF_MAX="${FRPS_BACKOFF_MAX:-60}"
+FRPS_STOP_SECONDS="${FRPS_STOP_SECONDS:-10}"
+FRPS_CRASH_WINDOW="${FRPS_CRASH_WINDOW:-60}"
 
 NEXT="$FRPS_ACTIVE_DIR/next"
 CURRENT="$FRPS_ACTIVE_DIR/current"
@@ -47,10 +69,21 @@ log() { echo "[frps-supervisor] $*"; }
 
 die() {
     log "error: $*" >&2
+    stop_frps
     exit 1
 }
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# epoch — seconds since 1970, computed from fields every date prints rather than from %s.
+epoch() {
+    date -u '+%Y %m %d %H %M %S' | awk '{
+        y = $1; m = $2
+        if (m <= 2) { y--; m += 12 }
+        days = 365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + $3
+        print (days - 719469) * 86400 + $4 * 3600 + $5 * 60 + $6
+    }'
+}
 
 is_hash() { printf '%s' "$1" | grep -Eqx '[0-9a-f]{64}'; }
 
@@ -60,6 +93,13 @@ content_hash() {
         if [ -f "$file" ]; then sha256sum < "$file"; else echo -; fi
     done | cut -d ' ' -f 1 | sha256sum | cut -d ' ' -f 1
 }
+
+input_hash() {
+    content_hash "$FRPS_CONFIG" "$FRPS_PKI_DIR/frps.crt" "$FRPS_PKI_DIR/frps.key" "$FRPS_PKI_DIR/ca.crt"
+}
+
+# token_hash <toml> — a hash of the token line; the token itself stays in the file.
+token_hash() { grep '^auth\.token = ' "$1" | sha256sum | cut -d ' ' -f 1; }
 
 # check_config <toml> — prints the first rule the file breaks as a reason code, or none.
 #
@@ -226,7 +266,138 @@ applied_hash_of_current() {
 start_frps() {
     "$FRPS_BIN" -c "$CURRENT/frps.toml" &
     FRPS_PID=$!
+    STARTED_AT=$(epoch)
     log "frps started from $CURRENT (pid $FRPS_PID)"
+}
+
+# stop_frps — TERM, KILL after FRPS_STOP_SECONDS; either way frps is waited for.
+stop_frps() {
+    [ -n "${FRPS_PID:-}" ] || return 0
+    kill -TERM "$FRPS_PID" 2>/dev/null
+    waited=0
+    # The shell reaps an ended child while it runs the next foreground command, the sleep;
+    # kill -0 fails from then on.
+    while kill -0 "$FRPS_PID" 2>/dev/null; do
+        if [ "$waited" -ge "$FRPS_STOP_SECONDS" ]; then
+            log "frps did not stop within ${FRPS_STOP_SECONDS}s, killing it"
+            kill -KILL "$FRPS_PID" 2>/dev/null
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    wait "$FRPS_PID" 2>/dev/null
+    log "frps stopped"
+    FRPS_PID=""
+}
+
+# end_series — forgets the exits of frps so far: the next one waits 2 s again.
+end_series() {
+    BACKOFF=0
+    CRASHLOOP=0
+    EXIT_1=""
+    EXIT_2=""
+    RESTART_AT=""
+}
+
+# check_frps — notices frps ending on its own and schedules its next start from current/.
+check_frps() {
+    [ -n "$FRPS_PID" ] || return 0
+    if kill -0 "$FRPS_PID" 2>/dev/null; then
+        if [ "$BACKOFF" -gt 0 ] && [ $(($(epoch) - STARTED_AT)) -ge "$FRPS_CRASH_WINDOW" ]; then
+            log "frps has run for ${FRPS_CRASH_WINDOW}s again"
+            end_series
+        fi
+        return 0
+    fi
+    wait "$FRPS_PID"
+    rc=$?
+    FRPS_PID=""
+    t=$(epoch)
+    if [ "$BACKOFF" -eq 0 ]; then BACKOFF=2; else BACKOFF=$((BACKOFF * 2)); fi
+    if [ "$BACKOFF" -gt "$FRPS_BACKOFF_MAX" ]; then BACKOFF=$FRPS_BACKOFF_MAX; fi
+    RESTART_AT=$((t + BACKOFF))
+    log "frps exited ($rc), restarting it in ${BACKOFF}s"
+    # EXIT_1 and EXIT_2: the two exits before this one.
+    if [ "$CRASHLOOP" = 0 ] && [ -n "$EXIT_1" ] && [ $((t - EXIT_1)) -lt "$FRPS_CRASH_WINDOW" ]; then
+        CRASHLOOP=1
+        add_event crashed none false
+    fi
+    EXIT_1=$EXIT_2
+    EXIT_2=$t
+}
+
+restart_due() {
+    if [ -n "$RESTART_AT" ] && [ "$(epoch)" -ge "$RESTART_AT" ]; then
+        RESTART_AT=""
+        start_frps
+    fi
+}
+
+# set_config <state> <reason> — the state as the input makes it; a crash loop shows over it.
+set_config() {
+    CONFIG_STATE=$1
+    CONFIG_REASON=$2
+}
+
+# take_over <start|change> — checks the input and acts on the outcome (see the table above).
+take_over() {
+    HANDLED=$INPUT
+    stage
+    case $REASON in
+    none)
+        if [ "$1" = change ] && [ "$CANDIDATE_HASH" = "$APPLIED_HASH" ] \
+            && { [ -n "$FRPS_PID" ] || [ -n "$RESTART_AT" ]; }; then
+            rm -rf "$NEXT"
+        else
+            event=started
+            token_changed=false
+            if [ "$1" = change ] && [ -d "$CURRENT" ]; then
+                event=applied
+                if [ "$(token_hash "$CURRENT/frps.toml")" != "$(token_hash "$NEXT/frps.toml")" ]; then
+                    token_changed=true
+                fi
+                log "configuration changed, restarting frps"
+            fi
+            stop_frps
+            activate || die "cannot swap $NEXT in as $CURRENT"
+            APPLIED_HASH=$CANDIDATE_HASH
+            end_series
+            start_frps
+            add_event "$event" none "$token_changed"
+        fi
+        REJECTED_HASH=""
+        set_config running none
+        ;;
+    config_missing)
+        rm -rf "$NEXT"
+        REJECTED_HASH=""
+        if [ -d "$CURRENT" ]; then
+            stop_frps
+            end_series
+            rm -rf "$CURRENT" || die "cannot remove $CURRENT"
+            APPLIED_HASH=""
+            set_config stopped config_missing
+            add_event stopped config_missing false
+        elif [ "$CONFIG_STATE" != stopped ]; then
+            set_config waiting config_missing
+        fi
+        ;;
+    *)
+        rm -rf "$NEXT"
+        log "configuration rejected: $REASON"
+        if [ -d "$CURRENT" ]; then
+            if [ -z "$FRPS_PID" ] && [ -z "$RESTART_AT" ]; then start_frps; fi
+            set_config degraded "$REASON"
+            if [ "$CANDIDATE_HASH" != "$REJECTED_HASH" ]; then
+                add_event rejected "$REASON" false
+            fi
+        else
+            set_config waiting "$REASON"
+        fi
+        REJECTED_HASH=$CANDIDATE_HASH
+        ;;
+    esac
 }
 
 # set_state <state> <reason>
@@ -264,6 +435,76 @@ write_status() {
     log "cannot write $STATUS" >&2
 }
 
+report() {
+    if [ "$CRASHLOOP" = 1 ]; then
+        set_state crashloop none
+    else
+        set_state "$CONFIG_STATE" "$CONFIG_REASON"
+    fi
+    write_status
+}
+
+# poll — one round of the loop. An input that differs from the one the last poll saw is only
+# noted; the next poll that finds it unchanged takes it over.
+poll() {
+    check_frps
+    INPUT=$(input_hash)
+    if [ "$INPUT" != "$SEEN" ]; then
+        SEEN=$INPUT
+        if [ "$INPUT" != "$HANDLED" ]; then
+            log "input changed, taking it over once it stays the same"
+        fi
+    elif [ "$INPUT" != "$HANDLED" ]; then
+        take_over change
+    fi
+    restart_due
+    report
+}
+
+# pause <seconds> — a sleep that TERM and INT cut short: a trapped signal ends wait at once.
+pause() {
+    sleep "$1" &
+    PAUSE_PID=$!
+    wait "$PAUSE_PID" && PAUSE_PID=""
+}
+
+on_signal() {
+    trap '' TERM INT
+    log "stopping"
+    if [ -n "$PAUSE_PID" ]; then
+        kill "$PAUSE_PID" 2>/dev/null
+        wait "$PAUSE_PID" 2>/dev/null
+    fi
+    stop_frps
+    exit 0
+}
+
+# health — the container's health check; reads the status file and nothing else.
+health() {
+    state=$(sed -n 's/.*"state": *"\([a-z]*\)".*/\1/p' "$STATUS" 2>/dev/null)
+    echo "${state:-no status}"
+    case $state in
+    waiting | running | stopped) exit 0 ;;
+    esac
+    exit 1
+}
+
+if [ "${1:-}" = health ]; then
+    health
+fi
+
+# whole_seconds <name> <value> — anything else would make the loop spin or the shell's
+# arithmetic fail (a leading 0 reads as octal).
+whole_seconds() {
+    case $2 in
+    0* | *[!0-9]*) die "$1 must be a whole number of seconds above 0" ;;
+    esac
+}
+whole_seconds FRPS_POLL_SECONDS "$FRPS_POLL_SECONDS"
+whole_seconds FRPS_BACKOFF_MAX "$FRPS_BACKOFF_MAX"
+whole_seconds FRPS_STOP_SECONDS "$FRPS_STOP_SECONDS"
+whole_seconds FRPS_CRASH_WINDOW "$FRPS_CRASH_WINDOW"
+
 if ! { mkdir -p "$FRPS_ACTIVE_DIR" && chmod 0700 "$FRPS_ACTIVE_DIR"; }; then
     die "cannot set up $FRPS_ACTIVE_DIR"
 fi
@@ -279,48 +520,23 @@ EVENTS=""
 STATE=""
 STATE_REASON=none
 SINCE=""
+CONFIG_STATE=""
+CONFIG_REASON=none
 APPLIED_HASH=$(applied_hash_of_current)
 REJECTED_HASH=""
 FRPS_PID=""
+STARTED_AT=0
+PAUSE_PID=""
+end_series
+trap on_signal TERM INT
 
-stage
-if [ "$REASON" = none ]; then
-    activate || die "cannot swap $NEXT in as $CURRENT"
-    APPLIED_HASH=$CANDIDATE_HASH
-    start_frps
-    set_state running none
-    add_event started none false
-else
-    rm -rf "$NEXT"
-    if [ "$REASON" = config_missing ]; then
-        if [ -d "$CURRENT" ]; then
-            rm -rf "$CURRENT" || die "cannot remove $CURRENT"
-            APPLIED_HASH=""
-            set_state stopped config_missing
-            add_event stopped config_missing false
-        else
-            set_state waiting config_missing
-        fi
-    else
-        REJECTED_HASH=$CANDIDATE_HASH
-        log "configuration rejected: $REASON"
-        if [ -d "$CURRENT" ]; then
-            start_frps
-            set_state degraded "$REASON"
-            add_event rejected "$REASON" false
-        else
-            set_state waiting "$REASON"
-        fi
-    fi
-fi
-write_status
+INPUT=$(input_hash)
+SEEN=$INPUT
+take_over start
+report
 
-if [ -n "$FRPS_PID" ]; then
-    wait "$FRPS_PID"
-    rc=$?
-    log "frps exited ($rc)"
-    exit "$rc"
-fi
 while :; do
-    sleep 3600
+    # While a start of frps is due, every second, so that its delay holds.
+    if [ -n "$RESTART_AT" ]; then pause 1; else pause "$FRPS_POLL_SECONDS"; fi
+    poll
 done

@@ -11,9 +11,15 @@ directory with its TLS paths pointed there, and frps runs from current/. An inva
 nothing, or frps from the last valid current/ (degraded); a missing frps.toml removes current/.
 Every status file it writes passes the server's reader.
 
-The script runs under sh with a stub frps on PATH. One test runs it in the frps image with the
-real frps; it skips when Docker or the pinned base image is not at hand."""
+After the start it polls the input: a change that stayed the same for two polls is taken over
+like at the start, restarting frps only for a new valid input; frps exiting on its own is
+restarted after a growing delay, three exits in a row make a crash loop; TERM and INT stop frps
+and leave no process behind; `health` judges the state.
 
+The script runs under sh with a stub frps on PATH. Some tests run it in the frps image with the
+real frps; they skip when Docker or the pinned base image is not at hand."""
+
+import contextlib
 import json
 import os
 import re
@@ -39,19 +45,33 @@ from app.modules.frp.supervisor_status import SupervisorStatus, read_supervisor_
 FRPS_DIR = Path(__file__).resolve().parents[2] / "frps"
 SCRIPT = FRPS_DIR / "frps-supervisor.sh"
 TOKEN = "test-token-0123456789abcdef"
+NEW_TOKEN = "next-token-fedcba9876543210"
 PEMS = ("frps.crt", "frps.key", "ca.crt")
 WAIT = 10.0
 HEX64 = re.compile(r"[0-9a-f]{64}")
+# The log line of a poll that sees an input it has not taken over yet.
+CHANGED = "input changed"
 
 STUB = """#!/bin/sh
 # Stands in for frps: records every call; verify keeps a copy of the file it was given and fails
-# while $STUB_DIR/verify-fails exists; a run stays up until it is killed.
+# while $STUB_DIR/verify-fails exists. A run exits at once while $STUB_DIR/crashes counts down;
+# otherwise it ignores TERM while $STUB_DIR/ignore-term exists, records its pid and stays up
+# until it is stopped.
 printf '%s\\n' "$*" >> "$STUB_DIR/calls"
 if [ "$1" = verify ]; then
     cp "$3" "$STUB_DIR/verified.toml"
     [ ! -e "$STUB_DIR/verify-fails" ]
     exit
 fi
+crashes=$(cat "$STUB_DIR/crashes" 2>/dev/null || echo 0)
+if [ "$crashes" -gt 0 ]; then
+    echo $((crashes - 1)) > "$STUB_DIR/crashes"
+    exit 3
+fi
+if [ -e "$STUB_DIR/ignore-term" ]; then
+    trap '' TERM
+fi
+echo $$ >> "$STUB_DIR/pids"
 exec sleep 600
 """
 
@@ -91,6 +111,7 @@ def pems() -> dict[str, bytes]:
         "ca.crt": _cert_pem(ca_key, "test ca", ca_key, "test ca", days=(-1, 30), ca=True),
         "frps.crt": _cert_pem(leaf_key, "frps", ca_key, "test ca", days=(-1, 30), ca=False),
         "frps.key": _key_pem(leaf_key),
+        "renewed.crt": _cert_pem(leaf_key, "frps", ca_key, "test ca", days=(-1, 60), ca=False),
         "expired.crt": _cert_pem(leaf_key, "frps", ca_key, "test ca", days=(-10, -1), ca=False),
         "other.key": _key_pem(_key()),
         "other.crt": _cert_pem(_key(), "other ca", ca_key, "test ca", days=(-1, 30), ca=True),
@@ -131,6 +152,7 @@ class Box:
         self.stub = root / "stub"
         self.log = root / "supervisor.log"
         self.procs: list[subprocess.Popen] = []
+        self.supervisor: subprocess.Popen | None = None
         bin_dir = root / "bin"
         for directory in (self.config.parent, self.pki, self.stub, bin_dir):
             directory.mkdir()
@@ -143,6 +165,9 @@ class Box:
             "FRPS_ACTIVE_DIR": str(self.active),
             "FRPS_STATE_DIR": str(self.state),
             "STUB_DIR": str(self.stub),
+            # One poll an hour, so a test of the start sees the start alone; the tests of
+            # the loop poll every second (see _polling).
+            "FRPS_POLL_SECONDS": "3600",
         }
 
     def write_input(self, toml: str | None = None, pems: dict[str, bytes] | None = None):
@@ -169,6 +194,7 @@ class Box:
                 start_new_session=True,
             )
         self.procs.append(proc)
+        self.supervisor = proc
         deadline = time.monotonic() + WAIT
         while not (self.status_file.exists() and (self.frps_runs() or not frps)):
             assert proc.poll() is None, f"supervisor exited ({proc.returncode}):\n{self._log()}"
@@ -190,12 +216,69 @@ class Box:
         assert status.state not in ("missing", "unreadable"), self.status_file.read_text()
         return status
 
+    def doc(self) -> dict:
+        return json.loads(self.status_file.read_text())
+
+    def wait_until(self, check, what: str, timeout: float = WAIT):
+        """Polls check() until it holds; the supervisor has to stay up meanwhile."""
+        deadline = time.monotonic() + timeout
+        while not check():
+            assert self.supervisor.poll() is None, (
+                f"supervisor exited ({self.supervisor.returncode}):\n{self._log()}"
+            )
+            assert time.monotonic() < deadline, f"not {what} within {timeout}s:\n{self._log()}"
+            time.sleep(0.05)
+
+    def wait_state(self, state: str, timeout: float = WAIT) -> SupervisorStatus:
+        self.wait_until(lambda: self.read().state == state, state, timeout)
+        return self.read()
+
+    def wait_events(self, count: int, timeout: float = WAIT) -> SupervisorStatus:
+        self.wait_until(lambda: len(self.read().events) >= count, f"{count} events", timeout)
+        return self.read()
+
+    def wait_polls(self, count: int = 3):
+        """Returns once count more polls wrote the status: each one a new heartbeat, as the
+        loop polls once a second at the most."""
+        seen = {self.doc()["heartbeat"]}
+
+        def polled() -> bool:
+            seen.add(self.doc()["heartbeat"])
+            return len(seen) > count
+
+        self.wait_until(polled, f"{count} polls", WAIT + 2 * count)
+
     def calls(self) -> list[str]:
         calls = self.stub / "calls"
         return calls.read_text().splitlines() if calls.exists() else []
 
     def frps_runs(self) -> bool:
         return any(call.startswith("-c ") for call in self.calls())
+
+    def runs(self) -> int:
+        return self.calls().count(f"-c {self.current}/frps.toml")
+
+    def pids(self) -> list[int]:
+        """The frps runs that stayed up, oldest first."""
+        pids = self.stub / "pids"
+        return [int(pid) for pid in pids.read_text().split()] if pids.exists() else []
+
+    def health(self) -> int:
+        return self.once("health").returncode
+
+    def once(self, *args: str) -> subprocess.CompletedProcess:
+        """Runs the script to its end, in a session the teardown kills should it not end."""
+        proc = subprocess.Popen(
+            ["/bin/sh", str(SCRIPT), *args],
+            env=self.env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        self.procs.append(proc)
+        out, err = proc.communicate(timeout=WAIT)
+        return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
 
     def _log(self) -> str:
         return self.log.read_text() if self.log.exists() else ""
@@ -546,6 +629,318 @@ def test_a_swap_cut_short_between_its_two_renames_is_rolled_back_at_the_next_sta
     assert box.calls()[-1] == f"-c {box.current}/frps.toml"
 
 
+def _polling(box: Box, *, valid: bool = True, **env: str) -> dict:
+    """Starts a supervisor that polls every second, from a valid input or from none."""
+    box.env.update({"FRPS_POLL_SECONDS": "1", **env})
+    if valid:
+        box.write_input()
+    return box.run(frps=valid)
+
+
+def _alive(pid: int) -> bool:
+    """Whether the process exists, a zombie included (a child nobody has waited for)."""
+    return Path(f"/proc/{pid}").exists()
+
+
+def _session(sid: int) -> list[str]:
+    """/proc/<pid>/stat of every process in the session; Box starts each supervisor in one of
+    its own, and only a process that calls setsid leaves it."""
+    found = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            line = (entry / "stat").read_text()
+        except OSError:
+            continue
+        # pid (comm) state ppid pgrp session …; comm may hold spaces and parentheses.
+        if int(line.rsplit(")", 1)[1].split()[3]) == sid:
+            found.append(line)
+    return found
+
+
+def _wait_gone(sid: int):
+    deadline = time.monotonic() + WAIT
+    while left := _session(sid):
+        assert time.monotonic() < deadline, f"still running:\n{''.join(left)}"
+        time.sleep(0.05)
+
+
+def _verify_then_run(box: Box) -> list[str]:
+    return [f"verify -c {box.active}/next/frps.toml", f"-c {box.current}/frps.toml"]
+
+
+STARTED = (1, "started", "none", False)
+
+
+def test_a_valid_input_that_shows_up_later_starts_frps(box):
+    _polling(box, valid=False)
+    assert (box.read().state, box.read().reason) == ("waiting", "config_missing")
+    assert box.health() == 0
+
+    box.write_input()
+
+    status = box.wait_state("running")
+    assert _events(status) == [STARTED]
+    assert box.calls() == _verify_then_run(box)
+    assert box.health() == 0
+
+
+def test_an_input_written_again_unchanged_restarts_nothing(box):
+    first = _polling(box)
+
+    box.write_input()
+    box.wait_polls(3)
+
+    assert box.calls() == _verify_then_run(box)
+    assert _events(box.read()) == [STARTED]
+    assert box.doc()["appliedHash"] == first["appliedHash"]
+    assert box.pids() and _alive(box.pids()[0])
+
+
+CHANGES = {
+    "new token": (lambda box: box.write_input(_toml(box.pki, auth_token=NEW_TOKEN)), True),
+    "other port limit": (
+        lambda box: box.write_input(_toml(box.pki, max_ports_per_client=8)),
+        False,
+    ),
+    "renewed certificate": (
+        lambda box: box.write_input(pems={"frps.crt": box.pems["renewed.crt"]}),
+        False,
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(CHANGES))
+def test_a_valid_change_restarts_frps_once_from_the_new_copy(box, case):
+    change, token_changed = CHANGES[case]
+    first = _polling(box)
+
+    change(box)
+    box.wait_events(2)
+    box.wait_polls(2)
+
+    status = box.read()
+    assert (status.state, status.reason) == ("running", "none")
+    assert _events(status) == [STARTED, (2, "applied", "none", token_changed)]
+    assert box.calls() == _verify_then_run(box) * 2
+    old, new = box.pids()
+    assert not _alive(old) and _alive(new)
+    doc = box.doc()
+    assert HEX64.fullmatch(doc["appliedHash"]) and doc["appliedHash"] != first["appliedHash"]
+    expected = box.config.read_text().replace(f'"{box.pki}/', f'"{box.current}/')
+    assert (box.current / "frps.toml").read_text() == expected
+    for name in PEMS:
+        assert (box.current / name).read_bytes() == (box.pki / name).read_bytes()
+    assert [p.name for p in box.active.iterdir()] == ["current"]
+    # The token goes nowhere but into the copy for frps: not into the log, the status or an
+    # argument of frps.
+    seen = box._log() + box.status_file.read_text() + "\n".join(box.calls())
+    assert TOKEN not in seen and NEW_TOKEN not in seen
+
+
+def test_a_half_written_input_is_taken_over_only_once_it_stays_the_same(box):
+    # Two seconds between polls: the time the test has to finish the file once the supervisor
+    # saw the first half.
+    _polling(box, FRPS_POLL_SECONDS="2")
+    full = _toml(box.pki, auth_token=NEW_TOKEN)
+    changes = box._log().count(CHANGED)
+
+    box.config.write_text(full[: full.index(TABLE)])
+    box.wait_until(lambda: box._log().count(CHANGED) > changes, "the first half seen")
+    box.config.write_text(full)
+
+    status = box.wait_events(2, timeout=3 * WAIT)
+    assert _events(status) == [STARTED, (2, "applied", "none", True)]
+    assert box.calls() == _verify_then_run(box) * 2
+
+
+def test_an_invalid_change_is_rejected_once_and_frps_runs_on(box):
+    first = _polling(box)
+
+    box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
+    box.wait_state("degraded")
+    rejected = box.doc()["rejectedHash"]
+    box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
+    box.wait_polls(3)
+
+    status = box.read()
+    assert status.reason == "cert_expired"
+    assert _events(status) == [STARTED, (2, "rejected", "cert_expired", False)]
+    assert HEX64.fullmatch(rejected) and box.doc()["rejectedHash"] == rejected
+    assert box.doc()["appliedHash"] == first["appliedHash"]
+    assert box.health() == 1
+
+    box.write_input(_toml(box.pki, auth_token="k" * 15))
+    box.wait_events(3)
+    status = box.read()
+    assert (status.state, status.reason) == ("degraded", "token_invalid")
+    assert _events(status)[2:] == [(3, "rejected", "token_invalid", False)]
+
+    # Back to the input frps runs from: nothing to restart.
+    box.write_input()
+    box.wait_state("running")
+    box.wait_polls(2)
+
+    assert len(box.read().events) == 3
+    assert box.runs() == 1
+    assert len(box.pids()) == 1 and _alive(box.pids()[0])
+    assert (box.doc()["appliedHash"], box.doc()["rejectedHash"]) == (first["appliedHash"], None)
+    assert box.health() == 0
+
+
+@pytest.mark.parametrize("removal", ["deleted", "emptied"])
+def test_a_removed_input_stops_frps_and_a_new_one_starts_it_again(box, removal):
+    _polling(box)
+
+    if removal == "deleted":
+        box.config.unlink()
+    else:
+        box.config.write_text("")
+    status = box.wait_state("stopped")
+
+    assert status.reason == "config_missing"
+    assert _events(status) == [STARTED, (2, "stopped", "config_missing", False)]
+    (pid,) = box.pids()
+    assert not _alive(pid)
+    assert list(box.active.iterdir()) == []
+    assert box.doc()["appliedHash"] is None
+    assert box.health() == 0
+
+    box.write_input()
+    status = box.wait_state("running")
+
+    assert _events(status)[2:] == [(3, "started", "none", False)]
+    assert _alive(box.pids()[-1])
+
+
+def _delays(log: str) -> list[int]:
+    return [int(d) for d in re.findall(r"restarting it in (\d+)s", log)]
+
+
+def test_frps_that_keeps_exiting_is_restarted_ever_later_until_it_is_a_crash_loop(box):
+    (box.stub / "crashes").write_text("99")
+    box.env["FRPS_BACKOFF_MAX"] = "4"
+
+    _polling(box)
+    status = box.wait_state("crashloop", timeout=3 * WAIT)
+
+    # 2, 4, then capped at 4: the third exit within the window makes the crash loop.
+    log = box._log()
+    assert _delays(log[: log.index("state crashloop")]) == [2, 4, 4]
+    assert (status.reason, _events(status)) == ("none", [STARTED, (2, "crashed", "none", False)])
+    assert box.pids() == []
+    assert box.health() == 1
+
+
+def test_a_crash_loop_ends_once_frps_stays_up_for_the_window(box):
+    # Four exits, the fourth within the crash loop; the fifth run stays up.
+    (box.stub / "crashes").write_text("4")
+    box.env.update(FRPS_BACKOFF_MAX="1", FRPS_CRASH_WINDOW="10")
+
+    _polling(box)
+    box.wait_state("crashloop", timeout=2 * WAIT)
+    status = box.wait_state("running", timeout=4 * WAIT)
+
+    assert _events(status) == [STARTED, (2, "crashed", "none", False)]
+    assert _delays(box._log()) == [1, 1, 1, 1]
+    assert box.runs() == 5
+    assert _alive(box.pids()[-1])
+    assert box.health() == 0
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT], ids=["TERM", "INT"])
+@pytest.mark.parametrize("valid", [True, False], ids=["frps running", "waiting"])
+def test_a_signal_stops_frps_and_leaves_no_process_behind(box, sig, valid):
+    # The hourly poll of Box: a sleep the supervisor left behind would still be there.
+    if valid:
+        box.write_input()
+    box.run(frps=valid)
+    if valid:
+        box.wait_until(box.pids, "frps up")
+
+    box.supervisor.send_signal(sig)
+
+    assert box.supervisor.wait(timeout=WAIT) == 0
+    _wait_gone(box.supervisor.pid)
+    assert box.runs() == (1 if valid else 0)
+
+
+def test_frps_that_ignores_term_is_killed(box):
+    (box.stub / "ignore-term").touch()
+    box.env["FRPS_STOP_SECONDS"] = "1"
+    box.write_input()
+    box.run(frps=True)
+    box.wait_until(box.pids, "frps up")
+
+    box.supervisor.send_signal(signal.SIGTERM)
+
+    assert box.supervisor.wait(timeout=WAIT) == 0
+    _wait_gone(box.supervisor.pid)
+    assert "killing it" in box._log()
+
+
+@pytest.mark.parametrize(
+    ("knob", "value"),
+    [
+        ("FRPS_POLL_SECONDS", "0"),
+        ("FRPS_POLL_SECONDS", "0.5"),
+        ("FRPS_BACKOFF_MAX", "x"),
+        ("FRPS_STOP_SECONDS", "-1"),
+        ("FRPS_CRASH_WINDOW", "08"),
+    ],
+)
+def test_a_time_that_is_no_whole_number_of_seconds_stops_the_supervisor(box, knob, value):
+    box.write_input()
+    box.env[knob] = value
+
+    result = box.once()
+
+    assert result.returncode == 1 and knob in result.stderr
+    assert box.calls() == [] and not box.status_file.exists()
+
+
+def _status_doc(state: str) -> str:
+    """A status file as the supervisor writes it: compact, one line."""
+    stamp = "2026-10-16T12:00:00Z"
+    doc = {
+        "v": 1,
+        "boot": "0123456789abcdef",
+        "heartbeat": stamp,
+        "state": state,
+        "reason": "none",
+        "since": stamp,
+        "appliedHash": None,
+        "rejectedHash": None,
+        "events": [
+            {"seq": 1, "event": "started", "at": stamp, "reason": "none", "tokenChanged": False}
+        ],
+    }
+    return json.dumps(doc, separators=(",", ":")) + "\n"
+
+
+@pytest.mark.parametrize(
+    ("state", "healthy"),
+    [
+        ("waiting", True),
+        ("running", True),
+        ("stopped", True),
+        ("degraded", False),
+        ("crashloop", False),
+        (None, False),
+    ],
+)
+def test_health_is_good_while_waiting_running_or_stopped(box, state, healthy):
+    box.state.mkdir()
+    if state:
+        box.status_file.write_text(_status_doc(state))
+        assert box.read().state == state
+
+    assert (box.health() == 0) is healthy
+    assert not box.active.exists()
+    assert box.calls() == []
+
+
 def test_the_supervisor_expects_the_tls_files_where_the_server_points_frps():
     assert f'FRPS_PKI_DIR="${{FRPS_PKI_DIR:-{_FRPS_CERT_DIR}}}"' in SCRIPT.read_text()
 
@@ -560,54 +955,115 @@ def _image() -> tuple[str, str, list[str]]:
     return base[1], target[1], json.loads(entrypoint[1])
 
 
-@pytest.mark.parametrize("case", ["generator output", "template", "key not on the list"])
-def test_in_the_frps_image_frps_starts_only_from_a_checked_copy(tmp_path, pems, case):
+class Container:
+    """A container of the frps base image that runs the supervisor as the Dockerfile sets it
+    up, its input and working directories bind-mounted from the test's directory."""
+
+    def __init__(self, docker: str, root: Path, entrypoint: list[str]):
+        self.docker = docker
+        self.name = f"frps-supervisor-test-{uuid.uuid4().hex[:12]}"
+        self.frp, self.pki, self.state, self.active = (
+            root / name for name in ("frp", "pki", "state", "active")
+        )
+        self.status_file = self.state / "status.json"
+        self.health = [docker, "exec", self.name, *entrypoint, "health"]
+
+    def logs(self) -> str:
+        return subprocess.run(
+            [self.docker, "logs", self.name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).stdout
+
+    def read(self) -> SupervisorStatus:
+        return read_supervisor_status(self.status_file)
+
+    def wait_until(self, check, what: str):
+        deadline = time.monotonic() + WAIT * 3
+        while not check():
+            assert time.monotonic() < deadline, f"not {what}:\n{self.logs()}"
+            time.sleep(0.2)
+
+
+@contextlib.contextmanager
+def _container(root: Path, pems: dict[str, bytes], toml: str, **env: str):
+    """Runs the supervisor in the frps base image on toml and the test's certificates; skips
+    when Docker or the pinned base image is not at hand."""
     base, target, entrypoint = _image()
     docker = shutil.which("docker")
     if docker is None:
         pytest.skip("docker is not available")
     if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
         pytest.skip(f"no docker daemon or {base} not present locally")
-    frp, pki, state, active = (tmp_path / name for name in ("frp", "pki", "state", "active"))
-    for directory in (frp, pki, state, active):
+    box = Container(docker, root, entrypoint)
+    for directory in (box.frp, box.pki, box.state, box.active):
         directory.mkdir()
+    (box.frp / "frps.toml").write_text(toml, encoding="utf-8")
+    for name in PEMS:
+        (box.pki / name).write_bytes(pems[name])
+    run = [docker, "run", "-d", "--name", box.name, "--network", "none"]
+    run += ["--user", f"{os.getuid()}:{os.getgid()}"]
+    run += ["-v", f"{box.frp}:/etc/frp:ro", "-v", f"{box.pki}:{_FRPS_CERT_DIR}:ro"]
+    run += ["-v", f"{box.state}:/var/lib/frps-state", "-v", f"{box.active}:/var/lib/frps-active"]
+    for key, value in env.items():
+        run += ["-e", f"{key}={value}"]
+    run += ["-v", f"{SCRIPT}:{target}:ro", "--entrypoint", entrypoint[0], base, *entrypoint[1:]]
+    try:
+        subprocess.run(run, check=True, capture_output=True)
+        yield box
+    finally:
+        subprocess.run([docker, "rm", "-f", box.name], capture_output=True)
+
+
+STARTED_SUCCESSFULLY = "frps started successfully"
+
+
+@pytest.mark.parametrize("case", ["generator output", "template", "key not on the list"])
+def test_in_the_frps_image_frps_starts_only_from_a_checked_copy(tmp_path, pems, case):
     # Verbatim from the generator: the default paths of the supervisor are those of the image.
     extra = {**EXTRA, "sshTunnelGateway.bindPort": 7022} if case == "key not on the list" else EXTRA
     toml = generate_frps_toml(_cfg(**FULL, extra_config=json.dumps(extra)))
     if case == "template":
         toml = toml.replace(f'"{TOKEN}"', '"{{print}}{{print}}{{print}}"')
     accepted = case == "generator output"
-    (frp / "frps.toml").write_text(toml, encoding="utf-8")
-    for name in PEMS:
-        (pki / name).write_bytes(pems[name])
-    container = f"frps-supervisor-test-{uuid.uuid4().hex[:12]}"
-    run = [docker, "run", "-d", "--name", container, "--network", "none"]
-    run += ["--user", f"{os.getuid()}:{os.getgid()}"]
-    run += ["-v", f"{frp}:/etc/frp:ro", "-v", f"{pki}:{_FRPS_CERT_DIR}:ro"]
-    run += ["-v", f"{state}:/var/lib/frps-state", "-v", f"{active}:/var/lib/frps-active"]
-    run += ["-v", f"{SCRIPT}:{target}:ro", "--entrypoint", entrypoint[0], base, *entrypoint[1:]]
-    try:
-        subprocess.run(run, check=True, capture_output=True)
-        deadline = time.monotonic() + WAIT * 3
-        while True:
-            logs = subprocess.run(
-                [docker, "logs", container],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            ).stdout
-            started = "frps started successfully" in logs
-            if (state / "status.json").exists() and (started or not accepted):
-                break
-            assert time.monotonic() < deadline, logs
-            time.sleep(0.2)
-        status = read_supervisor_status(state / "status.json")
+    with _container(tmp_path, pems, toml) as box:
+        box.wait_until(
+            lambda: (
+                box.status_file.exists() and (STARTED_SUCCESSFULLY in box.logs() or not accepted)
+            ),
+            "started",
+        )
+        logs = box.logs()
+        status = box.read()
         if accepted:
             assert (status.state, status.reason) == ("running", "none"), logs
             assert "frps uses config file: /var/lib/frps-active/current/frps.toml" in logs
         else:
             assert (status.state, status.reason) == ("waiting", "verify_failed"), logs
             assert "frps started" not in logs
-            assert list(active.iterdir()) == []
-    finally:
-        subprocess.run([docker, "rm", "-f", container], capture_output=True)
+            assert list(box.active.iterdir()) == []
+
+
+def test_in_the_frps_image_a_new_token_restarts_frps_and_term_ends_the_supervisor(tmp_path, pems):
+    with _container(tmp_path, pems, generate_frps_toml(_cfg()), FRPS_POLL_SECONDS="1") as box:
+        box.wait_until(
+            lambda: box.logs().count(STARTED_SUCCESSFULLY) == 1 and box.read().state == "running",
+            "frps up",
+        )
+
+        toml = generate_frps_toml(_cfg(auth_token=NEW_TOKEN))
+        (box.frp / "frps.toml").write_text(toml, encoding="utf-8")
+        box.wait_until(
+            lambda: box.logs().count(STARTED_SUCCESSFULLY) == 2 and len(box.read().events) == 2,
+            "frps restarted",
+        )
+
+        assert _events(box.read()) == [STARTED, (2, "applied", "none", True)], box.logs()
+        assert subprocess.run(box.health, capture_output=True).returncode == 0
+        subprocess.run([box.docker, "stop", "-t", "20", box.name], check=True, capture_output=True)
+        inspect = [box.docker, "inspect", "--format", "{{.State.ExitCode}}", box.name]
+        exit_code = subprocess.run(inspect, capture_output=True, text=True).stdout.strip()
+        logs = box.logs()
+        assert exit_code == "0", logs
+        assert TOKEN not in logs and NEW_TOKEN not in logs

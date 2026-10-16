@@ -79,8 +79,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor
 Doku: keine (intern)
 Abhängt von: T3
 
-### T8 — Supervisor: Änderungen übernehmen, Neustart, Abbruch, Signale  [ ]
+### T8 — Supervisor: Änderungen übernehmen, Neustart, Abbruch, Signale  [x]
 Komponente: server · Dateien: apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @620b4265 2026-10-16T17:01:07+02:00
+Review: approve (.ah-out/review/frps-supervisor/T8.verdict.json)
 Änderung: Schleife alle `FRPS_POLL_SECONDS` (Default 5): `sha256` über `frps.toml` und die drei PEM-Dateien; gehandelt wird erst, wenn ein neuer Wert zwei Abfragen lang gleich bleibt. Gültig → übernehmen, frps beenden (TERM, nach 10 s KILL) und neu starten, Ereignis `applied` mit `tokenChanged` (Vergleich des Hashes der Token-Zeile, nie das Token selbst); ungültig → frps läuft weiter, Ereignis `rejected` einmal je abgelehntem Hash; `frps.toml` fehlt oder ist leer → frps stoppen, `current/` löschen, Ereignis `stopped`. frps endet unerwartet → Neustart mit `current/` nach 2, 4, 8 … ≤ 60 s, ab drei Abbrüchen in 60 s Zustand `crashloop` und einmal `crashed`. TERM/INT an den Supervisor wird an frps weitergereicht, Exit 0. Unterbefehl `health`: gesund bei `waiting|running|stopped`. Herzschlag in jeder Abfrage. Tests mit kurzem Intervall: identisch neu geschriebene Dateien → kein Neustart; Token geändert → genau ein Neustart mit `tokenChanged`; halb geschriebene Datei → erst nach Stabilität; ungültig → kein Neustart, `rejected` einmal; gelöscht → gestoppt; Stub-frps stirbt → Backoff, `crashloop`; TERM → Kind beendet.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
 Doku: keine (intern)
