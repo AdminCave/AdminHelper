@@ -124,7 +124,7 @@ Dazu kommen drei Schwächen am selben Ablauf:
 | `adminhelper.conf` fehlt (Bestandshost) | Info mit dem Ausweg „einmal neu provisionieren“, Exit 0 |
 | `hash: null` | frpc stoppen und deaktivieren, `frpc.toml` und Hash löschen, Exit 0 |
 | Hash gleich, frpc soll laufen und läuft | nichts (`systemctl is-active`, kein `/healthz`) |
-| Hash gleich, frpc soll laufen, läuft aber nicht (z. B. Admin-Port nach Reboot belegt) | neuen Port und neues Passwort wählen, Datei neu schreiben, starten |
+| frpc soll laufen, läuft aber nicht (z. B. Admin-Port nach Reboot belegt), Hash gleich oder neu mit Proxies (T9) | neuen Port und neues Passwort wählen, Datei neu schreiben, starten |
 | Hash neu, TOML ohne `[[proxies]]` | frpc stoppen und deaktivieren, `frpc.toml` löschen, Hash speichern |
 | Hash neu, mit Proxies, frpc aus | schreiben, `enable --now` |
 | Hash neu, mit Proxies, frpc läuft, Common-Teil gleich | schreiben, Reload, wenn frpc mit diesem Common-Teil gestartet wurde (`.started-hash`) und der Admin-Port einem Listener von root gehört; sonst oder wenn der Reload scheitert, Neustart |
