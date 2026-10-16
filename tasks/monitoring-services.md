@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Linux-Dienste richtig zählen und melden — Task-Ledger
-Status: bereit · Branch: feature/monitoring-services · Review: pro Task
+Status: erledigt · Branch: feature/monitoring-services · Review: pro Task
 Spec: docs/features/monitoring-services.md (Roadmap R-0418)
 Heavy: linux-full + windows — Agent-Report, Monitoring-Auswertung und Desktop-Anzeige im echten Stack (`run.sh integration` mit Agent-Push, `run.sh e2e` mit `desktop_e2e_monitoring.sh`) auf einer Pool-VM; `windows`, weil sich der gemeinsame Report-Pfad und `services_windows.go` (Zähler) ändern und die Go-Suite dort nativ läuft
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
