@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Template-Checks zuruecksetzen und wiederherstellen, Updates der Standard-Templates (R-0420):** Im
+  Dashboard eines Servers traegt ein angepasster Template-Check das Badge „angepasst“ (Tooltip: die Felder) und die
+  Aktion „Auf Template zuruecksetzen“, die nach einer Rueckfrage alle Felder auf die Template-Werte setzt
+  (`POST /checks/{id}/reset`). Der Monitoring-Tab des Servers zeigt je Zuweisung „N geloeschte Checks
+  wiederherstellen“ und legt sie auf Klick neu an (`POST /templates/{id}/assign/{server_id}/restore`, Zaehler
+  `removedChecks` in `GET /templates/assignments/{server_id}`). Bringt ein Release eine neuere Version eines
+  Standard-Templates mit, dessen Definitionen angepasst sind, zeigt die Template-Liste dort „Update verfuegbar“
+  (heute tragen alle Version 1, das Badge erscheint also noch nirgends); das oeffnet einen Vergleich der aktuellen
+  mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des Templates,
+  auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
+  `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable`). Doku:
+  Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
   „Registrierungs-Token“ ein Einmal-Token aus: Gueltigkeit waehlen (10 Minuten, 1 Stunde oder 24 Stunden;
   voreingestellt 10 Minuten), dann zeigt der Dialog das Token genau einmal mit Kopieren, seinem Ablauf in
@@ -333,6 +345,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Knopf „Neu verbinden“ an der Tunnel-Anzeige stoesst das sofort an. Wer keinen STCP-Tunnel sieht, bekommt beim
   Anmelden keine Fehlermeldung mehr. Ein gestoppter Tunnel (etwa nach einem Moduswechsel) meldet sich nicht mehr
   nachtraeglich als „Tunnel getrennt“, und Abmelden ueber die Kopfzeile beendet jetzt auch den Tunnel.
+- **FRP: die frpc-Config eines Hosts bleibt nach einem Server-Neustart gleich (R-0435):** Bei zwei oder mehr
+  berechtigten Nutzern stand `allowUsers` in der frpc-Config nach jedem Neustart des Servers, mit
+  `WEB_CONCURRENCY` > 1 auch je Worker, in anderer Reihenfolge. Damit aenderte sich der Config-Hash, ohne dass sich
+  etwas geaendert hatte, und der Agent schrieb die frpc-Config neu und startete frpc neu. Jetzt steht `allowUsers`
+  aufsteigend sortiert in der Config. Nach dem Update aendert sich der Config-Hash von Hosts mit mehreren
+  berechtigten Nutzern einmal, und der Agent holt die Config einmal neu.
 - **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
   `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
   `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
@@ -677,6 +695,34 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Template-Sync behaelt Anpassungen und geloeschte Checks (R-0420):** Aendert man an einem vom Template
+  erzeugten Check Name, Beschreibung, Typ, Konfiguration, Aktiviert, Intervall, Schweregrad oder Fehlversuche, merkt
+  sich der Check das Feld als angepasst, und kein Sync ueberschreibt es mehr, weder nach einer Template-Aenderung
+  (auch dem Update eines Standard-Templates) noch nach einer Umbenennung des Servers noch beim Wiederherstellen; die
+  uebrigen Felder folgen weiter dem Template, ein Feld zurueck auf dem Template-Wert gilt nicht mehr als angepasst.
+  Ein geaenderter Typ zaehlt auch als geaenderte Konfiguration. Ein geloeschter Template-Check entsteht beim naechsten
+  Sync nicht neu, bis er wiederhergestellt oder die Zuweisung neu angelegt wird. Steht eine Definition nicht mehr im
+  Template, loescht der Sync ihren Check weiterhin. Anpassungen von vor dem Update erkennt der erste Start einmal:
+  Jedes Feld, das vom Template abweicht, gilt als angepasst, aufgeloest mit den Namen, mit denen der Check angelegt
+  wurde (ein seither umbenannter Server zaehlt nicht als Anpassung); ein Check, der sich nicht vergleichen laesst,
+  gilt ganz als angepasst. Das geschieht vor jedem Sync; scheitert es, unterbleibt der Sync, bis es gelingt.
+  Restrisiko: Eine Template-Aenderung, die vor dem Update nie auf einen Check synchronisiert wurde, erscheint dort als
+  angepasst. Alert-Regeln aus Templates setzt jeder Sync weiter auf die Template-Werte. Checks liefern dafuer additiv
+  `templateDefId` und `overriddenFields`; neue Alembic-Revision `a7c9e1b3d5f7` (Spalte
+  `monitor_checks.overridden_fields`, Tabelle `monitor_check_tombstones`; sie loescht beim Upgrade den Merker der
+  Erkennung in `monitor_seed_state`).
+- **Monitoring: unveraenderte Standard-Templates folgen neuen Versionen (R-0420):** Jedes Standard-Template traegt
+  eine Version und den Hash der zuletzt ausgerollten Definitionen (`builtin_version`, `builtin_hash`). Liefert ein
+  Release eine neuere Version, hebt der Monitoring-Dienst beim Start jedes Standard-Template mit unveraenderten
+  Definitionen darauf und synchronisiert dessen Server; angepasste Check-Felder sowie Name und Beschreibung des
+  Templates bleiben. Ein Template mit angepassten Definitionen bleibt, wie es ist, und bietet das Update an (siehe
+  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Heute tragen alle Version 1;
+  ein bestehendes, dessen Definitionen davon abweichen, gilt als angepasst.
+- **Monitoring: neuer Hostname oder Servername erreicht bestehende Zuweisungen (R-0420):** Der Tag-Sync gleicht jetzt
+  fuer jede Zuweisung, auch fuer manuelle, Hostname und Servername mit dem Server-Inventar ab und synchronisiert bei
+  einer Abweichung genau dieses Paar neu, sodass `{{hostname}}` und `{{server_name}}` einer Umbenennung folgen;
+  angepasste Check-Felder bleiben, Alert-Regeln werden neu gesetzt. Bisher galten die Werte vom Anlegen der
+  Zuweisung. `POST /templates/tag-sync` liefert zusaetzlich `refreshed`.
 - **ca-issuer startet erst nach der Server-Migration (R-0288):** In `docker-compose.yml` wartet der `ca-issuer` per
   `depends_on` auf den healthy `server`, und healthy wird der Server erst nach `alembic upgrade head`. Vorher konnten
   `/enroll` und `/renew` bei einem Teil-Start auf ein Schema ohne ihre Tabellen treffen und mit 500 antworten; im
