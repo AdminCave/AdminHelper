@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run Reprovision
 Doku: keine (intern; CHANGELOG-Eintrag aus T4 deckt es)
 Abhängt von: T4
 
-### T6 — Agent: Tunnel-Änderungen per Reload über die lokale frpc-Admin-API  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/admin.go, apps/agent/internal/frpc/admin_test.go, apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go, docs/developer/agent.html, docs/en/developer/agent.html
+### T6 — Agent: Tunnel-Änderungen per Reload über die lokale frpc-Admin-API  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/admin.go, apps/agent/internal/frpc/admin_test.go, apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go, docs/developer/agent.html, docs/en/developer/agent.html, apps/agent/internal/frpc/platform_linux.go, apps/agent/internal/frpc/platform_windows.go, apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @bba41d1e 2026-10-16T15:16:38+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T6.verdict.json)
 Änderung: Neue `admin.go` + `admin_test.go` (SPDX-Header `// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`): `/etc/frp/admin.conf` (0600) mit Port und Passwort (32 Zufallsbytes, base64url); Port über `net.Listen("tcp", "127.0.0.1:0")`. Der Vorspann aus T4 bekommt `webServer.addr = "127.0.0.1"`, `webServer.port`, `webServer.user`, `webServer.password`. `Sync`: Common-Teil (Text vor dem ersten `[[proxies]]`) alt = neu und frpc aktiv → Reload (Seam, Linux `frpc reload -c /etc/frp/frpc.toml`), Fehler → Neustart; Common-Teil anders → Neustart. frpc soll laufen, ist aber nicht aktiv (Admin-Port nach Reboot belegt) → neuer Port, Datei neu, enable/Neustart. Reload-Semantik vorher per WebFetch gegen frp v0.69.1 prüfen (README „Hot-Reloading“, `client/service.go`). Windows: No-op. Tests zuerst rot, Namen mit `Reload`: `admin.conf` 0600 und stabil über Läufe; nur Proxies geändert → Reload, kein Restart; Token geändert → Restart; Reload-Fehler → Restart; inaktiv trotz Proxies → neuer Port.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Reload
 Doku: docs/developer/agent.html + docs/en/developer/agent.html (Ablauf des Abgleichs, lokale Admin-API: nur 127.0.0.1, Passwort in 0600-Datei, Reload statt Neustart)

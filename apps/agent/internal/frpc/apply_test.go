@@ -249,9 +249,26 @@ func TestReprovisionRestartsRunningFrpcOnTheNewConfig(t *testing.T) {
 		t.Errorf("restarts = %d, enables = %d, disables = %d, want 1, 0 and 0", calls.restarts, calls.enables, calls.disables)
 	}
 	identity := filepath.ToSlash(config.AgentPkiDir()) + "/"
-	want := "loginFailExit = false\n" + strings.ReplaceAll(string(bundleToml), "/etc/adminhelper/identity/", identity)
+	want := localHead(t) + strings.ReplaceAll(string(bundleToml), "/etc/adminhelper/identity/", identity)
 	if got, _ := os.ReadFile(config.FrpConfigFile()); string(got) != want {
 		t.Errorf("frpc.toml = %q, want %q", got, want)
+	}
+}
+
+// R-0398: the provisioning restarts a running frpc also when its common part stays: it may have
+// enrolled a new identity, and a reload does not connect to frps anew, only a restart does.
+func TestReprovisionRestartsRatherThanReload(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	serveToml(t, bundleToml)
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync with the tunnel: %v", err)
+	}
+
+	if err := applyBundle(bundleToml); err != nil {
+		t.Fatalf("Apply with unchanged tunnels: %v", err)
+	}
+	if calls.restarts != 1 || calls.reloads != 0 {
+		t.Errorf("restarts = %d, reloads = %d, want 1 and 0", calls.restarts, calls.reloads)
 	}
 }
 

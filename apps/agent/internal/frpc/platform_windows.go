@@ -36,3 +36,20 @@ func disableFrpc() error {
 func frpcActive() bool {
 	return false
 }
+
+// frpcDown is always false on Windows: no frpc service is registered that the sync could start.
+func frpcDown() bool {
+	return false
+}
+
+// frpcOwnsAdminPort is always false on Windows: no frpc service is registered that the sync
+// could reload.
+func frpcOwnsAdminPort(int) bool {
+	return false
+}
+
+// reloadFrpc is a no-op on Windows: no frpc service is registered.
+func reloadFrpc() error {
+	logger.Warnf("frpc service is not managed on Windows, skipping the reload")
+	return nil
+}

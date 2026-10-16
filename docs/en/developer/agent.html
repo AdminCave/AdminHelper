@@ -43,7 +43,7 @@
 &#9500;&#9472;&#9472; internal/
 &#9474;   &#9500;&#9472;&#9472; config/             paths_linux.go / paths_windows.go, key=value parser
 &#9474;   &#9500;&#9472;&#9472; provision/          activate via <code>/api/servers/{id}/provision/activate</code>, orchestrates frpc.Apply + monitor.Init
-&#9474;   &#9500;&#9472;&#9472; frpc/               Apply (file + service) + Sync, zip-slip safe
+&#9474;   &#9500;&#9472;&#9472; frpc/               Apply (file + service) + Sync with reload over the local admin API, zip-slip safe
 &#9474;   &#9500;&#9472;&#9472; monitor/            collector + plugins (10 files, OS-specific splits)
 &#9474;   &#9492;&#9472;&#9472; service/            service_linux.go (systemd) / service_windows.go (SCM)
 &#9500;&#9472;&#9472; systemd/                .service + .timer units
@@ -62,7 +62,7 @@
               <tr><td><code>version</code></td><td>Emit version + git commit (set via <code>-ldflags</code>).</td></tr>
               <tr><td><code>run</code></td><td>Standalone mode: run one full cycle (monitor push + FRP sync).</td></tr>
               <tr><td><code>provision</code></td><td>Initial setup: redeem token against <code>/api/servers/{id}/provision/activate</code>, install server API key + optional monitor key + optional FRP bundle in a single call.</td></tr>
-              <tr><td><code>frpc sync</code></td><td>Periodic config sync via hash compare; only writes when the server-side hash changed.</td></tr>
+              <tr><td><code>frpc sync</code></td><td>Periodic config sync via hash compare; only writes when the server-side hash changed or frpc does not run despite a tunnel (flow under <em>FRP sync</em>).</td></tr>
               <tr><td><code>monitor init</code></td><td>Create the monitor config (URL, API key, services list).</td></tr>
               <tr><td><code>monitor push</code></td><td>One metric collection + push run.</td></tr>
               <tr><td><code>service install</code> / <code>uninstall</code></td><td>Install/remove the systemd unit (Linux) or Windows service (SCM).</td></tr>
@@ -77,6 +77,23 @@
           </ul>
           <p>The secret-bearing directories are hardened on creation: <code>0700</code> on Linux, and on Windows an ACL reset to SYSTEM + Administrators only (SID-based via <code>icacls</code>, since mode bits are ignored there) &mdash; so the API key and mTLS private key are not readable by other local users.</p>
           <p><code>FrpcConfig</code> fields: <code>ADMINHELPER_URL</code>, <code>API_KEY</code>, <code>SERVER_ID</code>, <code>CACERT</code>, <code>INSECURE</code>. <code>MonitorConfig</code> additionally carries <code>MONITOR_URL</code> and <code>SERVICES</code> (comma-separated).</p>
+
+          <h2>FRP sync</h2>
+          <p>On every run (<code>run</code> or <code>frpc sync</code>) the agent fetches <code>config-hash</code> and compares it with <code>/etc/frp/.config-hash</code>. Only on a mismatch does it fetch the server's <code>frpc.toml</code>, which must match the advertised hash. It stores the hash of the server's text, and only once frpc has taken the config; a failed step is retried on the next run. Provisioning (<code>frpc.Apply</code>) takes the same path with the text from the bundle.</p>
+          <table>
+            <thead><tr><th>Situation (Linux)</th><th>Flow</th></tr></thead>
+            <tbody>
+              <tr><td><code>{"hash": null}</code> (no FRP config)</td><td>Stop and disable frpc, delete <code>frpc.toml</code> and the hash.</td></tr>
+              <tr><td>Server text without <code>[[proxies]]</code></td><td>Stop and disable frpc, delete <code>frpc.toml</code>, store the hash.</td></tr>
+              <tr><td>frpc not running</td><td>Write, <code>systemctl enable --now frpc.service</code>.</td></tr>
+              <tr><td>frpc running, common part as at its start</td><td>Write, reload over the local admin API (<code>/usr/bin/frpc reload -c /etc/frp/frpc.toml</code>, 15&nbsp;s timeout). If the agent's own frpc does not listen there or the reload fails, restart.</td></tr>
+              <tr><td>frpc running, common part changed (frps address, token, <code>user</code>, TLS)</td><td>Write, <code>systemctl restart frpc.service</code>.</td></tr>
+              <tr><td>Same hash, <code>frpc.toml</code> in place, but frpc not running</td><td>Renew the admin API (new port, new password), fetch and write the config again, start frpc.</td></tr>
+            </tbody>
+          </table>
+          <p><strong>Reload instead of restart:</strong> the common part is the text before the first <code>[[proxies]]</code>. frp takes it only at start; a reload swaps only the proxies, and unchanged tunnels and their connections stay up. The agent compares with the common part frpc last started on (its hash in <code>/etc/frp/.started-hash</code>). Before every start it deletes that record and writes it again only on success, so after a failed start the next run restarts instead of reloading. The agent sends the reload only to its own frpc: <code>/proc/net/tcp</code> must show a socket of root listening on <code>127.0.0.1</code> at the admin port (<code>frpc.service</code> runs as root) and none of another user, otherwise it restarts frpc. Provisioning always restarts a running frpc: it may have set up a new identity, and a reload does not connect to frps anew, only a restart does.</p>
+          <p><strong>Local admin API:</strong> the agent puts a local head in front of the server's text: <code>loginFailExit = false</code> (frpc keeps trying while frps is unreachable), then <code>webServer.addr = "127.0.0.1"</code>, <code>webServer.port</code>, <code>webServer.user = "adminhelper"</code> and <code>webServer.password</code>. The API listens on <code>127.0.0.1</code> only and never without a password: without one, every local process would get the frps token through <code>GET /api/config</code>. Port and password (32 random bytes, hex) live in <code>/etc/frp/admin.conf</code> with <code>0600</code>, protected like <code>frpc.toml</code>: the agent runs as a oneshot, and a reload has to reach the frpc that started with these values. An <code>admin.conf</code> that is not as the agent writes it gets new values. The kernel assigns the port (<code>127.0.0.1:0</code>). If another process holds it after a reboot, frpc does not start; the next run then picks a new port and a new password (last table row). The server does not set the local head: the agent refuses a server text with a <code>webServer</code> or <code>loginFailExit</code> key or table, in any case, with an error; it then writes nothing and starts nothing, and the next run tries again.</p>
+          <p>On Windows the agent manages no frpc service: start, stop and reload are no-ops there.</p>
 
           <h2>Monitor Collector</h2>
           <p>Central collection in <code>internal/monitor/collector.go</code>. Every collector returns <code>map[string]any</code>, which is JSON-serialised on push:</p>

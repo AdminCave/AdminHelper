@@ -327,13 +327,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Sync-Config `/etc/frp/adminhelper.conf` samt Server-API-Key nur mit FRP-Paket, und der Abgleich endete still.
   Jetzt schreibt jede Provisionierung sie, und der naechste Agent-Lauf (Linux) richtet einen neuen Tunnel ein: Er
   schreibt die `frpc.toml` und aktiviert `frpc.service` dauerhaft (`systemctl enable --now`, also auch ueber einen
-  Reboot); ein laufender frpc uebernimmt die neue Config. Ohne Tunnel laeuft kein frpc mehr: Faellt der letzte
-  Tunnel weg oder hat der Server fuer den Host keine FRP-Config, stoppt und deaktiviert der Agent `frpc.service`,
-  loescht die `frpc.toml` (sie enthaelt das frps-Token) und endet ohne Fehler. Vor die `frpc.toml` des Servers
-  setzt der Agent `loginFailExit = false`: Ist frps beim Start nicht erreichbar, versucht frpc es weiter, statt sich
-  zu beenden und von systemd alle 5 s neu gestartet zu werden. Hat ein aelterer Agent den Host ohne Tunnel
-  provisioniert, fehlt dort der Server-API-Key fuer den Abgleich; solche Hosts werden einmal neu provisioniert, bis
-  dahin nennt das Agent-Log diesen Weg. Die Admin-Doku (Agent-Deployment, DE+EN) beschreibt es.
+  Reboot); ein laufender frpc uebernimmt die neue Config. Aendern sich nur Tunnel, laedt er sie per Reload ueber
+  seine lokale Admin-API nach (nur `127.0.0.1`, zufaelliges Passwort in `/etc/frp/admin.conf`, `0600`; der Reload
+  geht nur an den eigenen frpc), und offene Sitzungen ueber unveraenderte Tunnel bleiben bestehen; bisher trennte
+  jede Tunnel-Aenderung per Neustart alle Sitzungen zum Host. Aendern sich frps-Adresse, Token oder TLS, startet der
+  Agent frpc neu, ebenso bei jeder Neu-Provisionierung. Laeuft frpc trotz Tunnel nicht, etwa weil nach einem Reboot
+  ein anderer Prozess den Admin-Port belegt, legt der naechste Lauf die Admin-API auf einen neuen Port mit neuem
+  Passwort. Ohne Tunnel laeuft kein frpc mehr: Faellt der letzte Tunnel weg oder hat der Server fuer den Host keine
+  FRP-Config, stoppt und deaktiviert der Agent `frpc.service`, loescht die `frpc.toml` (sie enthaelt das frps-Token)
+  und endet ohne Fehler. Vor die `frpc.toml` des Servers setzt der Agent `loginFailExit = false`: Ist frps beim Start
+  nicht erreichbar, versucht frpc es weiter, statt sich zu beenden und von systemd alle 5 s neu gestartet zu werden.
+  Diesen lokalen Kopf setzt der Server nicht; einen Server-Text mit `webServer` oder `loginFailExit` wendet der Agent
+  nicht an. Hat ein aelterer Agent den Host ohne Tunnel provisioniert, fehlt dort der Server-API-Key fuer den
+  Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das Agent-Log diesen Weg. Die Admin-Doku
+  (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN) beschreiben es.
 - **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
   Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
   Schreibvorgaenge, lag danach der Schluessel der einen neben dem Zertifikat der anderen. Kam eine Erneuerung vor

@@ -101,9 +101,9 @@ func WriteSyncConfig(p SyncConfigParams) error {
 
 // Apply writes the sync config (WriteSyncConfig) and the PKI bundle from a provisioning
 // response, then applies the bundle's frpc.toml the way Sync does (applyConfig): a running frpc
-// restarts onto it, a stopped one is enabled. NO HTTP call happens here anymore — the
-// token-activate call has been centralized since v0.23.0 in the `provision` subcommand, which
-// invokes `Apply` with the already-decoded values.
+// restarts onto it (never a reload, see startFrpc), a stopped one is enabled. NO HTTP call happens
+// here anymore — the token-activate call has been centralized since v0.23.0 in the `provision`
+// subcommand, which invokes `Apply` with the already-decoded values.
 func Apply(p ApplyParams) error {
 	if err := WriteSyncConfig(SyncConfigParams{
 		AdminHelperURL: p.AdminHelperURL,
@@ -131,7 +131,7 @@ func Apply(p ApplyParams) error {
 		logger.Infof("PKI-Zertifikate installiert")
 	}
 
-	return warnOnServiceFailure(applyConfig(serverToml))
+	return warnOnServiceFailure(applyConfig(serverToml, false))
 }
 
 // ApplyWithoutBundle is Apply for a provisioning without an FRP bundle (no FRP config or no
