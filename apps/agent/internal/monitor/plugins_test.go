@@ -44,7 +44,7 @@ func TestParseDockerPS(t *testing.T) {
 {"ID":"def456","Names":"db","Image":"postgres","State":"exited","Status":"Exited (0)"}
 
 not-json`)
-	containers, ids := parseDockerPS(out)
+	containers, ids, skipped := parseDockerPS(out)
 	if len(containers) != 2 {
 		t.Fatalf("want 2 containers (blank + non-json skipped), got %d: %v", len(containers), containers)
 	}
@@ -57,6 +57,29 @@ not-json`)
 	if !reflect.DeepEqual(ids, []string{"abc123", "def456"}) {
 		t.Errorf("ids = %v", ids)
 	}
+	if skipped != 1 {
+		t.Errorf("skipped = %d, want 1 (the non-json line; blank lines are not counted)", skipped)
+	}
+
+	t.Run("docker CLI 29 line with nested Platform", func(t *testing.T) {
+		// A real `docker ps -a --format '{{json .}}'` line of Docker CLI 29 (anonymized). Since 28.2 the
+		// CLI prints Platform as an object; decoding into map[string]string dropped every line.
+		out := []byte(`{"Command":"\"docker-entrypoint.s…\"","CreatedAt":"2026-09-25 09:28:43 +0000 UTC","HealthStatus":"none","ID":"0123456789ab","Image":"example/app:1.0","Labels":"com.docker.compose.project=demo,com.docker.compose.service=app","LocalVolumes":"0","Mounts":"demo_data","Names":"demo-app-1","Networks":"demo_default","Platform":{"architecture":"amd64","os":"linux"},"Ports":"80/tcp","RunningFor":"3 weeks ago","Size":"1.41MB (virtual 829MB)","State":"running","Status":"Up 3 weeks"}`)
+		containers, ids, skipped := parseDockerPS(out)
+		want := []map[string]string{{
+			"id": "0123456789ab", "name": "demo-app-1", "image": "example/app:1.0",
+			"state": "running", "status": "Up 3 weeks",
+		}}
+		if !reflect.DeepEqual(containers, want) {
+			t.Errorf("containers = %v, want %v", containers, want)
+		}
+		if !reflect.DeepEqual(ids, []string{"0123456789ab"}) {
+			t.Errorf("ids = %v", ids)
+		}
+		if skipped != 0 {
+			t.Errorf("skipped = %d, want 0", skipped)
+		}
+	})
 }
 
 func TestParseRestartPolicies(t *testing.T) {
