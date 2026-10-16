@@ -10,8 +10,8 @@ fail every timer run. A host with a config but without an active tunnel (none th
 generator writes as `[[proxies]]`) gets the common part without the frps
 credentials and without proxies, and its hash: it needs no frps credentials, and
 every agent that applies the text leaves no tunnel up (the current one stops frpc).
-The provisioning bundle carries no FRP part for such a host. The 403 of the scope
-check and the 404 for an unknown server stay.
+The provisioning bundle carries the same text. The 403 of the scope check and the
+404 for an unknown server stay.
 
 The agent puts its own top-level keys (`loginFailExit`, `webServer.*`) in front of
 the server text and compares the text before the first `[[proxies]]` to choose
@@ -292,8 +292,8 @@ def test_frpc_toml_without_an_active_tunnel_is_the_common_part_without_the_token
     ],
 )
 def test_active_tunnels_are_the_proxies_the_generator_writes(make_tunnels):
-    # Hash, download and provisioning bundle decide by active_tunnels whether a
-    # host gets a config at all; it has to pick what the generator writes.
+    # The generator writes the frps token only when active_tunnels finds a tunnel;
+    # it has to pick what the generator writes as proxies.
     tunnels = make_tunnels()
     text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"])
     proxies = tomllib.loads(text).get("proxies", [])

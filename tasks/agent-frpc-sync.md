@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent übernimmt FRP-Tunnel selbst — Task-Ledger
-Status: aktiv · Branch: feature/agent-frpc-sync · Review: pro Task
+Status: bereit · Branch: feature/agent-frpc-sync · Review: pro Task
 Spec: docs/features/agent-frpc-sync.md (Roadmap R-0398)
 Heavy: linux-full + scenario --agents 1 --tunnel --enforce + windows — Server-API (`config-hash`) und Agent-Paket im Stack (`run.sh integration`, `upgrade_path`); vor dem Merge der Multibox-Lauf, weil nur er den Datenpfad über frps mit echtem mTLS zeigt: Tunnel nach dem Provisionieren, Reload bei offener SSH-Sitzung, `run --once` ohne Tunnel grün (Kevin hat den `--tunnel`-Lauf vor dem Merge erlaubt); `windows`, weil sich Agent-Plattformcode und der Provisionier-Pfad unter Windows ändern (No-ops, Sync-Config immer)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -93,8 +93,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run 'Reload|Stuck|AdminAPI
 Doku: docs/admin/agent-deployment.html + docs/en/admin/agent-deployment.html · docs/developer/agent.html + docs/en/developer/agent.html · CHANGELOG.md
 Abhängt von: T6
 
-### T10 — Server: Provisionierungs-Paket ohne aktiven Tunnel trägt den Text ohne Zugangsdaten  [ ]
-Komponente: server · Dateien: apps/server/app/modules/provisioning/helpers.py, apps/server/app/modules/provisioning/router.py, apps/server/tests/test_provisioning.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md
+### T10 — Server: Provisionierungs-Paket ohne aktiven Tunnel trägt den Text ohne Zugangsdaten  [x]
+Komponente: server · Dateien: apps/server/app/modules/provisioning/helpers.py, apps/server/app/modules/provisioning/router.py, apps/server/tests/test_provisioning.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/developer/server.html, docs/en/developer/server.html, CHANGELOG.md, apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_frp_provision_sync.py, apps/server/tests/openapi.snapshot.json, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @afbadb61 2026-10-16T17:55:13+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T10.verdict.json)
 Änderung: Heute ist das FRP-Paket der Provisionierung ohne aktiven Tunnel `null` (`build_frp_bundle`, `provisioning/helpers.py`). Ein Agent älter als dieser Branch überspringt dann FRP: er schreibt keine neue Sync-Config (behält den bei der Aktivierung widerrufenen Key) und lässt frpc mit dem bisherigen Tunnel laufen. Neu (Kevin 2026-10-16): Mit FRP-Config trägt das Paket ohne aktiven Tunnel denselben Text wie `GET …/config` (Common-Teil ohne `auth.token`, ohne `[[proxies]]`, aus `generate_frpc_toml` mit denselben Eingaben); ohne FRP-Config bleibt es `null`. Der neue Agent stoppt frpc auf diesen Text (Provisionierungs-Pfad aus T5, `applyConfig` ohne Proxies), ein alter schreibt die Sync-Config mit dem neuen Key und startet frpc ohne Tunnel neu. Tests in `test_provisioning.py`, zuerst rot: nur deaktivierte Tunnel bzw. STCP ohne Secret bzw. kein Tunnel → `frp` gesetzt, dekodierte Config byte-gleich mit `GET …/config`, ohne `[[proxies]]`, ohne Token-Wert und `auth.token`; ohne FRP-Config → `frp is None`; mit aktivem Tunnel unverändert. Den Test aus T8 („ohne aktiven Tunnel kein FRP-Paket“) ersetzen (gewollte Vertragsänderung, keine Test-Löschung). Prüfen und im Bericht nennen, ob das Paket außer der Config weitere Felder trägt, die ohne Tunnel nicht hingehören. Doku DE+EN (`api-reference.html` bei `activate`, `server.html` Provisionierung) und CHANGELOG (R-0398-Eintrag) neutral nachziehen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning.py tests/test_frp_provision_sync.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html · docs/developer/server.html + docs/en/developer/server.html · CHANGELOG.md
