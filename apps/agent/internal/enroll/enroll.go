@@ -136,6 +136,11 @@ var createTemp = os.CreateTemp
 // is re-provisioned (ADR 0001 §3.3). Instead the new material is fully staged to
 // temp files and then renamed into place, so an interrupted renew leaves the
 // previous consistent pair untouched.
+//
+// The caller holds LockIdentity(dir) from its first read of the identity to this
+// commit (R-0384): the renames run one after another, and two Stores that
+// interleave leave the key of one with the cert of the other. Store does not lock
+// itself, because a second lock in the same process would wait for the caller's.
 func Store(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("Identity-Verzeichnis anlegen: %w", err)

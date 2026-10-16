@@ -62,7 +62,8 @@ func leafExpired(certPEM []byte) (bool, time.Time, error) {
 
 // Renew submits a fresh CSR to <baseURL>/ca/renew using the CURRENT identity for
 // mTLS (the issuer derives CN + scope from that presented cert, not the CSR) and
-// atomically swaps the stored identity to the new key + cert on success.
+// atomically swaps the stored identity to the new key + cert on success. The
+// caller holds LockIdentity, as for Store.
 func Renew(dir, baseURL string, timeout time.Duration) error {
 	client, err := httpclient.NewMTLS(CertPath(dir), KeyPath(dir), CAPath(dir), timeout)
 	if err != nil {
@@ -87,7 +88,34 @@ func Renew(dir, baseURL string, timeout time.Duration) error {
 
 // MaybeRenew renews the enrolled identity if it is due. Returns whether a
 // renewal happened. A no-op when the agent is not enrolled.
+//
+// It takes LockIdentity only for a due identity: a lock that is not released holds
+// up no service cycle with nothing to renew, and one with a due identity gets the
+// error of LockIdentity once its wait is over. The lock is held from reading the
+// certificate to the commit in Store (R-0384). A provisioning that held the lock
+// before it may have dropped or replaced the identity, and the issuer has revoked
+// the line of the old one: so the check runs again under the lock, and a fresh
+// certificate is not renewed.
 func MaybeRenew(dir, baseURL string, timeout time.Duration) (bool, error) {
+	if due, err := renewalDue(dir); err != nil || !due {
+		return false, err
+	}
+	unlock, err := LockIdentity(dir)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	if due, err := renewalDue(dir); err != nil || !due {
+		return false, err
+	}
+	if err := renewFunc(dir, baseURL, timeout); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// renewalDue reports whether dir holds an enrolled identity that is due for renewal.
+func renewalDue(dir string) (bool, error) {
 	if !Provisioned(dir) {
 		return false, nil
 	}
@@ -95,14 +123,7 @@ func MaybeRenew(dir, baseURL string, timeout time.Duration) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	due, err := NeedsRenewal(certPEM, RenewalFraction)
-	if err != nil || !due {
-		return false, err
-	}
-	if err := renewFunc(dir, baseURL, timeout); err != nil {
-		return false, err
-	}
-	return true, nil
+	return NeedsRenewal(certPEM, RenewalFraction)
 }
 
 // renewFunc is the seam MaybeRenew uses for the network renewal, so tests can drive the
