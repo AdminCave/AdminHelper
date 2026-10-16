@@ -89,7 +89,7 @@ func Sync() error {
 	// Checked whatever the hash says: a changed config does not free a held admin port.
 	stuck := frpcStuck()
 	if remoteHash == localHash {
-		if !stuck {
+		if !stuck && !configWithoutTunnel() {
 			return nil
 		}
 	} else {
@@ -129,6 +129,14 @@ func frpcStuck() bool {
 		return false
 	}
 	return isDown()
+}
+
+// configWithoutTunnel reports whether frpc.toml is in place without a tunnel. An older agent may
+// have written the server's text without one and left frpc running on it; the stored hash then
+// matches the server's, and only the file shows that frpc must stop.
+func configWithoutTunnel() bool {
+	data, err := os.ReadFile(config.FrpConfigFile())
+	return err == nil && !hasProxies(data)
 }
 
 // errFrpcService marks a failure to start or stop frpc, apart from a failure to write or remove
@@ -270,10 +278,9 @@ var localHeadKeys = []string{"webserver", "loginfailexit"}
 
 // checkServerHead refuses a server text that sets a key or table of the local head: the server
 // sets none of them, the agent puts them in front. frp reads keys without regard to case, and a
-// table header after the proxies is a root table again, so every line counts, in upper or lower
-// case. A line counts when it starts with such a key after blanks, quotes and brackets: that
-// covers bare and quoted keys and table headers, not every way TOML can write a key (an escape
-// inside a quoted key, for one).
+// table header after the proxies is a root table again, so every line counts. A line counts when
+// it starts with such a key after blanks, quotes and brackets: that covers the forms the server's
+// generator writes, in upper or lower case.
 func checkServerHead(serverToml []byte) error {
 	for _, line := range strings.Split(string(serverToml), "\n") {
 		key := strings.ToLower(strings.TrimLeft(line, "[\"' \t"))

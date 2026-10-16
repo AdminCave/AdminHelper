@@ -677,6 +677,108 @@ func TestSyncStuckFrpcWithoutATunnelOnlyStops(t *testing.T) {
 	}
 }
 
+// R-0398: an older agent may have written the server's text without a tunnel to frpc.toml and
+// left frpc running on it; the stored hash then matches the server's. The sync stops frpc all the
+// same, as on a hash change: stopped and disabled, frpc.toml removed, the hash stored, and neither
+// a new admin API nor a start. With frpc down the file alone counts. The next run has nothing to do.
+func TestSyncStopsFrpcOnAConfigWithoutATunnel(t *testing.T) {
+	toml := []byte("serverAddr = \"1.2.3.4\"\nserverPort = 7000\n\nauth.method = \"token\"\nauth.token = \"frps-token\"\n")
+	for name, active := range map[string]bool{"frpc running": true, "frpc down": false} {
+		t.Run(name, func(t *testing.T) {
+			calls := setupSyncTest(t, "https://unused.example")
+			fetches := serveToml(t, toml)
+			if err := os.WriteFile(config.FrpConfigFile(), toml, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(config.FrpHashFile(), []byte(hashConfig(toml)), 0644); err != nil {
+				t.Fatal(err)
+			}
+			calls.active = active
+
+			if err := Sync(); err != nil {
+				t.Fatalf("Sync with the same hash and frpc.toml without a tunnel: %v", err)
+			}
+			if calls.disables != 1 || calls.enables != 0 || calls.restarts != 0 || calls.reloads != 0 {
+				t.Errorf("disables = %d, enables = %d, restarts = %d, reloads = %d, want 1, 0, 0 and 0",
+					calls.disables, calls.enables, calls.restarts, calls.reloads)
+			}
+			if _, err := os.Stat(config.FrpConfigFile()); !os.IsNotExist(err) {
+				t.Errorf("frpc.toml is still there (stat: %v), want it removed", err)
+			}
+			if _, err := os.Stat(filepath.Join(config.FrpDir(), "admin.conf")); !os.IsNotExist(err) {
+				t.Errorf("admin.conf stat: %v, want none written without a tunnel", err)
+			}
+			if got := readFile(t, config.FrpHashFile()); got != hashConfig(toml) {
+				t.Errorf("hash file = %q, want %q", got, hashConfig(toml))
+			}
+
+			if err := Sync(); err != nil {
+				t.Fatalf("second Sync with the same hash: %v", err)
+			}
+			if calls.disables != 1 || *fetches != 1 {
+				t.Errorf("after the second run disables = %d, config fetches = %d, want 1 and 1", calls.disables, *fetches)
+			}
+		})
+	}
+}
+
+// The common run: the hash is the same and frpc runs on a frpc.toml with a tunnel. Reading the
+// file changes nothing there: no fetch, no service action, the file stays as it is.
+func TestSyncLeavesRunningFrpcWithATunnelAlone(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	fetches := serveToml(t, tunnelToml)
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync with the first tunnel: %v", err)
+	}
+	before := readFile(t, config.FrpConfigFile())
+
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync with the same hash: %v", err)
+	}
+	if *fetches != 1 || calls.enables != 1 || calls.restarts != 0 || calls.reloads != 0 || calls.disables != 0 {
+		t.Errorf("config fetches = %d, enables = %d, restarts = %d, reloads = %d, disables = %d, want 1, 1, 0, 0 and 0",
+			*fetches, calls.enables, calls.restarts, calls.reloads, calls.disables)
+	}
+	if got := readFile(t, config.FrpConfigFile()); got != before {
+		t.Errorf("frpc.toml = %q, want it unchanged %q", got, before)
+	}
+}
+
+// frpc hangs and a tunnel is added. When admin.conf cannot be written, the run fails at the
+// renewal: frpc does not start, frpc.toml stays, and the old hash stays, so the next run retries.
+func TestSyncStuckFrpcFailsWhenRenewingTheAdminAPIFails(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	serveToml(t, tunnelToml)
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync with the first tunnel: %v", err)
+	}
+	adminConf := filepath.Join(config.FrpDir(), "admin.conf")
+	// A directory in its place fails the write also for root, which a read-only file would not.
+	if err := os.Remove(adminConf); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(adminConf, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	oldConfig, oldHash := readFile(t, config.FrpConfigFile()), readFile(t, config.FrpHashFile())
+	calls.active = false
+
+	serveToml(t, twoTunnelsToml)
+	err := Sync()
+	if err == nil || !strings.Contains(err.Error(), "write "+adminConf) {
+		t.Fatalf("Sync = %v, want the failed write of %s", err, adminConf)
+	}
+	if calls.enables != 1 || calls.restarts != 0 || calls.reloads != 0 {
+		t.Errorf("enables = %d, restarts = %d, reloads = %d, want 1, 0 and 0", calls.enables, calls.restarts, calls.reloads)
+	}
+	if got := readFile(t, config.FrpConfigFile()); got != oldConfig {
+		t.Errorf("frpc.toml = %q, want the old %q", got, oldConfig)
+	}
+	if got := readFile(t, config.FrpHashFile()); got != oldHash {
+		t.Errorf("hash file = %q, want the old %q", got, oldHash)
+	}
+}
+
 // The reload goes only to the agent's own frpc: a root-owned socket listening on 127.0.0.1 at the
 // admin port from admin.conf. Without one, frpc restarts instead.
 func TestReloadOnlyWhenFrpcHoldsTheAdminPort(t *testing.T) {

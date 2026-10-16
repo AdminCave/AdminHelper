@@ -11,7 +11,7 @@
 //     so a tunnel created later reaches the host with the next sync),
 //   - with an available monitor service: monitor.Init with the returned key,
 //   - with an FRP config on the server: frpc.Apply with the returned bundle (without an
-//     active tunnel its text has no proxies and frpc stops), without one
+//     active tunnel its text has no proxies and frpc stops); without an FRP config
 //     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning).
 //
 // This way a single command on the target server suffices, regardless of which
