@@ -39,7 +39,7 @@ Doku: docs/admin/benutzer.html + docs/en/admin/users.html · CHANGELOG.md (Added
 Abhängt von: T2
 
 ### T4 — Playwright: Token ausstellen, einmal sehen  [ ]
-Komponente: web · Dateien: apps/web/tests/e2e/crud.spec.ts, apps/web/tests/e2e/mocks.ts
+Komponente: web · Dateien: apps/web/tests/e2e/crud.spec.ts, apps/web/tests/e2e/mocks.ts, apps/web/tests/e2e/smoke.spec.ts-snapshots/users-chromium-linux.png
 Änderung: Neuer Fall in `crud.spec.ts` nach dem Muster „API-Key anlegen -> Secret einmalig sichtbar“ (`:53`): Benutzerliste → „Registrierungs-Token“ → 1 h wählen → ausstellen → Token und Ablaufzeit sichtbar, der Request trug `ttl_minutes: 60` → schließen → Token nicht mehr im DOM. Mock für `POST enrollment/token/for` in `mocks.ts`; `mocks.contract.test.ts` prüft ihn gegen den OpenAPI-Snapshot aus T1. Die Playwright-Suite fährt die PR-CI (`ci.yml`, `npx playwright test`).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: keine (intern)
