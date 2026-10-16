@@ -82,6 +82,35 @@ test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
     await expect(page.locator('tbody tr', { hasText: 'e2e-key' })).toHaveCount(0);
   });
 
+  test('Registrierungs-Token ausstellen -> einmalig sichtbar -> schliessen verwirft es', async ({
+    page,
+  }) => {
+    await mockApi(page);
+    await gotoAuthenticated(page, '#/users');
+
+    const row = page.locator('tbody tr', { hasText: 'admin' });
+    await row.getByRole('button', { name: 'Registrierungs-Token' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.locator('#etTtl').selectOption({ label: '1 Stunde' });
+    const minted = page.waitForRequest(api('enrollment/token/for'));
+    await modal.getByRole('button', { name: 'Ausstellen' }).click();
+    expect((await minted).postDataJSON()).toEqual({ username: 'admin', ttl_minutes: 60 });
+
+    // The mock counts expiresAt from 2026-01-01T00:00Z; the page renders it in
+    // Europe/Berlin (playwright.config.ts), so one hour reads as 02:00.
+    await expect(modal.locator('.key-reveal')).toHaveText('enr_e2e_admin');
+    await expect(modal).toContainText('Gültig bis 1.1.2026, 02:00:00');
+
+    await modal.getByRole('button', { name: 'Schließen' }).click();
+    await expect(modal).toBeHidden();
+    await expect(page.getByText('enr_e2e_admin')).toHaveCount(0);
+
+    // Reopening starts over at the validity choice; the token stays gone.
+    await row.getByRole('button', { name: 'Registrierungs-Token' }).click();
+    await expect(modal.getByRole('button', { name: 'Ausstellen' })).toBeVisible();
+    await expect(page.getByText('enr_e2e_admin')).toHaveCount(0);
+  });
+
   test('Hook anlegen -> Token einmalig -> in Liste -> loeschen', async ({ page }) => {
     await mockApi(page);
     await gotoAuthenticated(page, '#/hooks');

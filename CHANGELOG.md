@@ -9,6 +9,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
+  „Registrierungs-Token“ ein Einmal-Token aus: Gueltigkeit waehlen (10 Minuten, 1 Stunde oder 24 Stunden;
+  voreingestellt 10 Minuten), dann zeigt der Dialog das Token genau einmal mit Kopieren, seinem Ablauf in
+  Ortszeit und dem Hinweis, dass es im Desktop unter „Geraet mit Token registrieren“ eingeloest wird.
+  Schliessen verwirft das Token. `POST /api/enrollment/token/for` nimmt dafuer `ttl_minutes` (1 bis 1440,
+  Standard 10), beide Token-Routen liefern `expiresAt`.
 - **Desktop: Statuszeile der Geraete-Identitaet (R-0240):** Ist das Geraet registriert, zeigen die
   Einstellungen im Modus `server` den Namen und den Ablauf des Geraete-Zertifikats, etwa „Registriert als
   admin bis 13.01.2027“. Bleiben 14 Tage oder weniger, sagt die Zeile dazu, dass die automatische Erneuerung
@@ -316,6 +322,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
+  Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
+  Schreibvorgaenge, lag danach der Schluessel der einen neben dem Zertifikat der anderen. Kam eine Erneuerung vor
+  der Provisionierung beim Issuer an und speicherte ihr Zertifikat danach, war es eines, dessen Linie die
+  Provisionierung hatte widerrufen lassen. Beides sperrte den Agent aus, bis er neu provisioniert wurde. Jetzt
+  haelt jede der beiden die Sperrdatei `agent.lock` im Identitaetsverzeichnis vom ersten Lesen der Identitaet bis
+  zum Speichern der neuen: Eine Provisionierung wartet hoechstens eine laufende Erneuerung ab und nennt deren
+  Zertifikat als ersetzt, eine wartende Erneuerung findet das frische Zertifikat und erneuert nicht.
 - **Desktop: Geraete-Identitaet und Pin lassen sich wieder zuruecksetzen (R-0395):** Die Rueckfragen vor dem
   Zuruecksetzen, auf dem Login-Screen („Geraete-Identitaet zuruecksetzen“, „Gepinntes Server-Zertifikat
   zuruecksetzen“) und in den Einstellungen, liefen ueber den nativen Dialog von `@tauri-apps/plugin-dialog`. Den

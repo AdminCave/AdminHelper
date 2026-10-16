@@ -7,7 +7,12 @@ access-scoped token to redeem at the ca-issuer for its mTLS client cert."""
 
 from __future__ import annotations
 
+import datetime
+
+import pytest
+
 from app.core.auth import hash_api_key
+from app.core.time import utcnow_naive
 from app.modules.enrollment.models import EnrollmentToken
 
 
@@ -15,6 +20,23 @@ def _login(test_client, username: str, password: str) -> str:
     resp = test_client.post("/api/auth/login", json={"username": username, "password": password})
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
+
+
+def _expires_at(body: dict) -> datetime.datetime:
+    """``expiresAt`` of a grant as naive UTC, after checking it is UTC with ``Z``."""
+    value = body["expiresAt"]
+    assert value.endswith("Z"), value
+    parsed = datetime.datetime.fromisoformat(value.removesuffix("Z"))
+    assert parsed.tzinfo is None, value
+    return parsed
+
+
+def _row(db_session, raw_token: str) -> EnrollmentToken:
+    return (
+        db_session.query(EnrollmentToken)
+        .filter(EnrollmentToken.hashed_token == hash_api_key(raw_token))
+        .one()
+    )
 
 
 def test_mint_returns_access_scoped_token(test_client, admin_user, db_session):
@@ -241,3 +263,77 @@ def test_mint_for_writes_audit(test_client, admin_user, normal_user, db_session)
     assert res.status_code == 200, res.text
     n = db_session.query(AuditLog).filter(AuditLog.action == "enrollment.token.minted_for").count()
     assert n == 1, f"expected exactly one enrollment audit row, got {n}"
+
+
+# ── ttl_minutes and expiresAt (R-0396: the web panel shows the server's expiry) ──
+
+
+def _mint_for(test_client, json: dict):
+    token = _login(test_client, "admin", "adminpass")
+    return test_client.post(
+        "/api/enrollment/token/for",
+        json=json,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def test_mint_for_defaults_to_ten_minutes(test_client, admin_user, normal_user, db_session):
+    before = utcnow_naive()
+    res = _mint_for(test_client, {"username": "viewer"})
+    after = utcnow_naive()
+    assert res.status_code == 200, res.text
+    expires = _expires_at(res.json())
+    ttl = datetime.timedelta(minutes=10)
+    assert before + ttl <= expires <= after + ttl
+    # What the client is told is what the issuer will check: the stored row.
+    assert expires == _row(db_session, res.json()["token"]).expires_at
+
+
+@pytest.mark.parametrize("minutes", [60, 1440])
+def test_mint_for_stores_the_chosen_ttl(test_client, admin_user, normal_user, db_session, minutes):
+    before = utcnow_naive()
+    res = _mint_for(test_client, {"username": "viewer", "ttl_minutes": minutes})
+    after = utcnow_naive()
+    assert res.status_code == 200, res.text
+    ttl = datetime.timedelta(minutes=minutes)
+    stored = _row(db_session, res.json()["token"]).expires_at
+    assert before + ttl <= stored <= after + ttl
+    assert _expires_at(res.json()) == stored
+
+
+@pytest.mark.parametrize("minutes", [0, 1441])
+def test_mint_for_rejects_a_ttl_out_of_range(
+    test_client, admin_user, normal_user, db_session, minutes
+):
+    res = _mint_for(test_client, {"username": "viewer", "ttl_minutes": minutes})
+    assert res.status_code == 422, res.text
+    assert res.json()["detail"][0]["loc"][-1] == "ttl_minutes"
+    assert db_session.query(EnrollmentToken).filter_by(subject_id="viewer").count() == 0
+
+
+def test_mint_for_audit_names_the_ttl(test_client, admin_user, normal_user, db_session):
+    from app.modules.audit.models import AuditLog
+
+    res = _mint_for(test_client, {"username": "viewer", "ttl_minutes": 60})
+    assert res.status_code == 200, res.text
+    row = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.action == "enrollment.token.minted_for",
+            AuditLog.object_id == "viewer",
+        )
+        .one()
+    )
+    assert row.detail == "browser=False, ttl=60min"
+
+
+def test_self_mint_returns_expires_at(test_client, admin_user, db_session):
+    token = _login(test_client, "admin", "adminpass")
+    before = utcnow_naive()
+    res = test_client.post("/api/enrollment/token", headers={"Authorization": f"Bearer {token}"})
+    after = utcnow_naive()
+    assert res.status_code == 200, res.text
+    expires = _expires_at(res.json())
+    ttl = datetime.timedelta(minutes=10)
+    assert before + ttl <= expires <= after + ttl
+    assert expires == _row(db_session, res.json()["token"]).expires_at
