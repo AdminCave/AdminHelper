@@ -204,5 +204,5 @@ Keine. Entschieden von Kevin am 2026-10-16:
 1. **Ein oder zwei Vorhaben:** zwei — dieses (Phase A) jetzt, der Discovery-Vorschlag als monitoring-discovery
    nach R-0417, R-0418 und R-0419.
 2. **Migration und Routen** wie oben: freigegeben.
-3. **Anpassungen von vor dem Update** sind danach nicht als „angepasst“ erkennbar: hingenommen, in CHANGELOG und
-   Doku genannt.
+3. **Anpassungen von vor dem Update:** zuerst als nicht erkennbar hingenommen; nach dem Review von T12 erkennt sie
+   der erste Start einmal (T13, Kevin 2026-10-16), siehe Risiken.

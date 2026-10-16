@@ -4,13 +4,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Templates: Anpassungen erhalten, Standard-Templates aktualisieren — Task-Ledger
-Status: bereit · Branch: feature/monitoring-templates · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-templates · Review: pro Task
 Spec: docs/features/monitoring-templates.md (Roadmap R-0420)
 Heavy: linux-full — ändert die Monitoring-API (neue Routen, Alembic-Revision, Sync-Verhalten) und Desktop-Journeys (Template-UI): `run.sh integration`/`e2e` im Sammellauf auf einer Pool-VM; kein Agent, kein Cross-Host-Pfad, darum kein `scenario`/`windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Kevin 2026-10-16: zwei Vorhaben — dieses ist Phase A (Anpassungen, Tombstones, Versionierung der Standard-Templates, Umbenennung); der Discovery-Vorschlag folgt als `tasks/monitoring-discovery.md` nach R-0417/R-0418/R-0419. Alembic-Migration und die vier neuen Routen sind freigegeben. Anpassungen von vor dem Update gelten nicht als „angepasst“ (hingenommen, in CHANGELOG und Doku genannt). Nicht in diesem Ledger: Linux-Basis v2 und Alert-Qualität (Folgezeilen, Notiz an R-0420). Zeilenangaben: origin/main@af4498a7. Alembic-Kopf heute `c1d3e5f7a9b1`.
+Kevin 2026-10-16: zwei Vorhaben — dieses ist Phase A (Anpassungen, Tombstones, Versionierung der Standard-Templates, Umbenennung); der Discovery-Vorschlag folgt als `tasks/monitoring-discovery.md` nach R-0417/R-0418/R-0419. Alembic-Migration und die vier neuen Routen sind freigegeben. Anpassungen von vor dem Update erkennt der erste Start einmal (T13, Kevin 2026-10-16; zuerst hingenommen). Nicht in diesem Ledger: Linux-Basis v2 und Alert-Qualität (Folgezeilen, Notiz an R-0420). Zeilenangaben: origin/main@af4498a7. Alembic-Kopf heute `c1d3e5f7a9b1`.
 
 ### T1 — Schema: angepasste Felder, Tombstones, Version der Standard-Templates  [x]
 Komponente: monitoring · Dateien: apps/monitoring/alembic/versions/a7c9e1b3d5f7_template_overrides_versions.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_template_overrides.py
@@ -127,3 +127,10 @@ Review: approve (.ah-out/review/monitoring-templates/T12.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html · CHANGELOG.md
 Abhängt von: T7, T9, T10, T11, T13
+
+### T14 — Tests: Umbenennung nur des Namens oder nur des Hostnamens, Abgleich läuft nach einem Fehler weiter  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_tag_sync.py
+Änderung: Nur Tests, Fund des testers (Branch-Abschluss, 2026-10-16): Alle Umbenennungen ändern heute Hostname und Name zusammen, eine Mutante `if assignment.server_hostname == hostname: return False` (`tag_sync.py:154`) besteht. Neu: parametrisiert nur `name` bzw. nur `hostname` geändert → je `refreshed == 1`, neuer Check-Name bzw. neue `{{hostname}}`-Config; eine zweite bestehende, umbenannte Zuweisung nach einem scheiternden Paar wird trotzdem aufgefrischt. Beleg: beide Mutanten (nur Hostname vergleichen; Abbruch nach dem Fehler) werden rot, im eigenen Scratch, nicht im Worktree.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
+Doku: keine (intern)
+Abhängt von: T7
