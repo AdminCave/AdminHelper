@@ -61,8 +61,10 @@ Review: approve (.ah-out/review/frps-supervisor/T5.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notifications.py
 Doku: keine (intern)
 
-### T6 — Server: Scheduler-Job meldet Ereignisse des Supervisors  [ ]
+### T6 — Server: Scheduler-Job meldet Ereignisse des Supervisors  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/supervisor_watch.py, apps/server/app/modules/hooks/scheduler.py, apps/server/app/scheduler_main.py, apps/server/tests/test_frp_supervisor_watch.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c4c667d9 2026-10-16T15:11:48+02:00
+Review: approve (.ah-out/review/frps-supervisor/T6.verdict.json)
 Änderung: Neues Modul (SPDX-Header): liest den Status (T3) und schreibt für jedes Ereignis im Ring, das noch keine Mitteilung hat (Schlüssel `source_type="frps"`, `source_id="<boot>:<seq>"`), eine Mitteilung: `applied` → Admins und Nutzer mit Tunnel-Zugriff (Admins ∪ per `user_servers` einem Server mit mindestens einem aktiven Tunnel zugewiesen, vgl. `get_allow_users`, `frp/_helpers.py:80`), Schwere `info`, bei `tokenChanged` mit dem Agent-Hinweis (~5 min); `rejected` und `crashed` → Admins, `warning`; `stopped` → Admins, `info`; `started` → keine. Registrierung wie `schedule_hook_reconcile` (`hooks/scheduler.py:236-247`), alle 15 s, Aufruf in `scheduler_main.py:68-90`. Tests: jedes Ereignis erreicht die richtigen Nutzer, zweiter Lauf schreibt nichts doppelt, `unreadable`/`missing` schreibt nichts, Texte enthalten keinen Wert aus der Datei außer Codes.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_supervisor_watch.py
 Doku: keine (intern)

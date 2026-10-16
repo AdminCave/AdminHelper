@@ -71,6 +71,7 @@ def main() -> None:
         schedule_blacklist_cleanup,
         schedule_certificate_register_cleanup,
         schedule_enrollment_token_cleanup,
+        schedule_frps_supervisor_watch,
         schedule_hook_reconcile,
         schedule_notification_cleanup,
         schedule_outbox_drain,
@@ -86,6 +87,7 @@ def main() -> None:
     schedule_audit_cleanup()
     schedule_outbox_drain()
     schedule_notification_cleanup()
+    schedule_frps_supervisor_watch()
     schedule_hook_reconcile()
     reconcile_scheduled_hooks()  # initial sync of scheduled hooks
     scheduler.start()
