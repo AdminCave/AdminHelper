@@ -178,10 +178,12 @@ Keine Wire-Protokolle. Vorbild, nur als Begründung: Zabbix aktualisiert mitgeli
 
 ## Risiken & Rollback
 
-- **Bestandsdaten:** Die Migration ändert keine bestehenden Werte (`overridden_fields` = `[]`). Eine Anpassung,
-  die vor dem Update von Hand gemacht wurde, ist danach nicht als angepasst bekannt; die nächste Template-Änderung
-  überschreibt sie wie heute. Gemerkt wird erst jede Änderung nach dem Update. Von Kevin so hingenommen
-  (2026-10-16); es steht in CHANGELOG und Doku.
+- **Bestandsdaten:** Die Migration ändert keine bestehenden Werte (`overridden_fields` = `[]`). Weil seit T7 auch
+  ein Namensabgleich (und das Wiederherstellen) ein Paar neu synchronisiert, gingen ungemerkte Anpassungen von vor
+  dem Update sonst schon beim ersten Tag-Sync verloren. Deshalb erkennt T13 sie einmal beim ersten Start: Vergleich
+  mit dem Template, aufgelöst mit den gespeicherten Namen der Zuweisung; abweichende Felder gelten als angepasst
+  (Kevin, 2026-10-16). Restrisiko: Ein Template, dessen Änderung vor dem Update nie auf einen Check synchronisiert
+  wurde, erscheint dort als angepasst.
 - **Auto-Update eines Built-ins** ändert Checks auf vielen Servern auf einmal. Begrenzung: nur unveränderte
   Templates, nur nicht angepasste Felder; Logzeile mit Anzahl. In diesem Vorhaben gibt es keine neue
   mitgelieferte Version (alle bleiben `1`), der Pfad ist nur per Test belegt; ausgelöst wird er erst von
