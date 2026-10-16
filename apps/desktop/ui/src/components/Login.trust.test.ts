@@ -49,7 +49,7 @@ vi.mock('$lib/bridge', () => ({
   resetServerCertPin: h.resetServerCertPin,
   resetDeviceIdentity: h.resetDeviceIdentity,
 }));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(async () => true) }));
+vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: vi.fn(async () => true) }));
 
 import Login from './Login.svelte';
 

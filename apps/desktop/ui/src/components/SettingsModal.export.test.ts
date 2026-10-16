@@ -65,7 +65,7 @@ vi.mock('$lib/stores/session', async () => {
   };
 });
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({ save: h.save, confirm: vi.fn(async () => true) }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: h.save }));
 
 import SettingsModal from './SettingsModal.svelte';
 
@@ -124,5 +124,22 @@ describe('SettingsModal — browser-certificate export password (R-0219)', () =>
     await waitFor(() => expect(message(container)).toContain('12 Zeichen'));
     expect(h.save).not.toHaveBeenCalled();
     expect(h.exportBrowserP12).not.toHaveBeenCalled();
+  });
+});
+
+describe('SettingsModal — a failed browser-certificate export (R-0395)', () => {
+  it('names its cause after the generic message, without the code', async () => {
+    h.exportBrowserP12.mockRejectedValueOnce(
+      new Error(
+        'ERR_TLS_UNKNOWN_ISSUER: AdminHelper: Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA.',
+      ),
+    );
+    const container = await exportWith('d'.repeat(12));
+
+    await waitFor(() =>
+      expect(message(container)).toBe(
+        'Export fehlgeschlagen — angemeldet und Server erreichbar? AdminHelper: Das Server-Zertifikat stammt nicht von einer öffentlich vertrauenswürdigen CA.',
+      ),
+    );
   });
 });
