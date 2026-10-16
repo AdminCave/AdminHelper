@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Tunnel übernimmt Änderungen selbst — Task-Ledger
-Status: bereit · Branch: feature/desktop-tunnel-refresh · Review: pro Task
+Status: erledigt · Branch: feature/desktop-tunnel-refresh · Review: pro Task
 Spec: docs/features/desktop-tunnel-refresh.md (Roadmap R-0402, R-0389, R-0390)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Tunnel (CLAUDE.md §5): `desktop_e2e_tunnel.sh` mit dem erweiterten `tunnel-start.live.js` im Sammellauf (`run.sh e2e`, beweist Reload ohne Neustart gegen echtes frps); `scenario` vor dem Merge, weil der Desktop-Tunnel den FRP-Datenpfad berührt (der GUI-Visitor selbst läuft dort nicht; Kevin 2026-10-16: reicht, der Desktop-Beweis ist T9; Multibox erlaubt); `windows` für Sidecar und lokale Admin-API auf 127.0.0.1 (Firewall-Abfrage nicht verifiziert)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
