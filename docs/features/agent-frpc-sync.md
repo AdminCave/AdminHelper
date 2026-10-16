@@ -94,7 +94,9 @@ Dazu kommen drei Schwächen am selben Ablauf:
     frps-Zugangsdaten, und jeder Agent schließt damit den letzten Tunnel, fail-closed). Der neue Agent stoppt
     frpc auf diesen Text; ein alter startet frpc damit neu, frpc meldet sich ohne Token nicht an und wird von
     systemd neu gestartet, bis der Agent aktualisiert ist. Das Provisionierungs-Paket trägt mit Config denselben
-    Text (T10), damit auch eine Neu-Provisionierung mit altem Agent den Tunnel schließt.
+    Text (T10): Eine Neu-Provisionierung mit altem Agent schreibt damit den neuen Key; einen gestoppten frpc
+    startet sie ohne Tunnel, ein laufender frpc behält seinen Tunnel bis zu seinem nächsten Neustart (von Kevin
+    hingenommen).
   - `GET …/config` antwortet 404 nur ohne Config. Der neue Agent fragt ihn nur bei einem Hash ≠ null ab.
   - Das OpenAPI-Schema der Route ist heute `{}` (`apps/server/tests/openapi.snapshot.json`) und bleibt so. Ändert
     sich der Snapshot, ist das eine Vertragsänderung und gehört zurück an Kevin.
@@ -114,6 +116,8 @@ Dazu kommen drei Schwächen am selben Ablauf:
 |---|---|
 | alter Agent, neuer Server, ohne FRP-Config | `hash: null` wird zu `""`. Ohne Hash-Datei gleich, also kein Fehler (heute 404). |
 | alter Agent, neuer Server, mit Config | unverändert, solange der Host einen aktiven Tunnel hat; fällt der letzte weg: Text ohne Token und Tunnel, frpc startet neu und meldet sich nicht an (Neustart-Schleife von systemd bis zum Update, Tunnel zu; T8) |
+| alter Agent, neuer Server, Neu-Provisionierung ohne aktiven Tunnel | Paket mit dem Text ohne Token und Tunnel: neuer Key in der Sync-Config; nur `enable --now`, ein laufender frpc behält seinen Tunnel bis zum nächsten Neustart (T10, hingenommen) |
+| neuer Agent, alter Server, mit Config | wie bisher; ohne Tunnel liefert der alte Server einen Text mit Token, aber ohne Proxies, und der neue Agent stoppt frpc |
 | neuer Agent, alter Server, ohne FRP-Config | 404 → dauerhafter Fehler bei jedem Lauf. Annahme: Agents kommen aus dem Paket-Repo desselben Servers (`:8445`), also gleiche Version. Für manuell installierte Pakete **nicht verifiziert**. |
 | Rollback auf alten Agent | Der alte Sync überschreibt `frpc.toml` beim nächsten Hash-Wechsel mit dem Server-Text ohne Vorspann. `admin.conf` bleibt ungenutzt liegen. |
 
@@ -131,7 +135,7 @@ Dazu kommen drei Schwächen am selben Ablauf:
 | Hash neu, mit Proxies, Common-Teil anders (Token, Adresse, `user`, TLS) | schreiben, Neustart |
 | Provision mit FRP-Paket | Sync-Config schreiben, dann derselbe Anwende-Pfad wie oben mit dem Paket-Text, aber immer Neustart statt Reload |
 | Provision ohne FRP-Paket | Sync-Config schreiben, dann wie `hash: null` (stoppt einen frpc aus einer früheren Provisionierung) |
-| Server-Text setzt `webServer` oder `loginFailExit` (Schlüssel oder Tabelle, gleich welche Schreibweise) | Fehler, nichts schreiben, starten oder speichern; den lokalen Kopf setzt nur der Agent |
+| Server-Text setzt `webServer` oder `loginFailExit` (Schlüssel oder Tabelle, groß oder klein geschrieben) | Fehler, nichts schreiben, starten oder speichern; den lokalen Kopf setzt nur der Agent |
 
 Der Hash wird erst nach erfolgreichem Anwenden gespeichert (wie heute `sync.go:107`). Ein gescheiterter Schritt
 wird beim nächsten Lauf wiederholt.
