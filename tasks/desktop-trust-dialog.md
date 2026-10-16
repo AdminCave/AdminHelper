@@ -16,8 +16,10 @@ Befund (origin/main@0f43781a): `.trust-overlay` (`Login.svelte:403-439`, `z-inde
 Die Live-Spec sieht es nicht: sie wartet nur auf Existenz und klickt per `jsClick` (umgeht den Hit-Test).
 Vorbild für die Ebene: `ConfirmDialog` liegt seit R-0395 in `App.svelte` in `.confirm-layer` (`z-index: 310`).
 
-### T1 — Login: der Vertrauensdialog liegt über dem Login-Screen  [ ]
+### T1 — Login: der Vertrauensdialog liegt über dem Login-Screen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/components/Login.trust.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @8ba6b908 2026-10-16T15:36:09+02:00
+Review: am Ende (Branch-Review)
 Änderung: Den Trust-Dialog in den Stacking-Kontext des Login-Screens holen: den `{#if trustPrompt}`-Block (`Login.svelte:403-439`) als letztes Kind in `.login-screen` (`:241`) verschieben, sodass sein `z-index: 60` innerhalb der Ebene 300 über `.login-card` liegt (Alternative, falls das Layout bricht: `.trust-overlay` auf eine Ebene über 300 heben wie `.confirm-layer` in `App.svelte`, mit Kommentar fürs Warum). Test zuerst rot in `Login.trust.test.ts` (Beschreibung „the trust dialog lies in the login screen layer“): nach `submitEnroll` mit `UNKNOWN_ISSUER` ist `container.querySelector('.login-screen [data-testid="trust-dialog"]')` nicht null; die bestehenden Trust-Tests (`:71` ff.) bleiben grün. CHANGELOG unter `[Unreleased]` → `### Fixed`: der Vertrauensdialog beim ersten Kontakt war vom Login-Screen verdeckt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login.trust.test.ts
 Doku: CHANGELOG.md (Fixed); keine Doku-Änderung, das Verhalten stand schon so in docs/admin/troubleshooting.html:71
