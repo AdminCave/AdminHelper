@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Docker-Container mit aktueller Docker-CLI erfassen — Task-Ledger
-Status: bereit · Branch: feature/monitoring-docker-parse · Review: am Ende
+Status: erledigt · Branch: feature/monitoring-docker-parse · Review: am Ende
 Spec: Roadmap R-0417
 Heavy: linux-full — Agent-Code (`apps/agent`) und eine Desktop-Monitoring-Sektion; der Sammellauf fährt Agent-Monitoring und die Desktop-GUI. Ein echter Docker-Lauf ist hier nicht Pflicht: der Fix ist ein Parser, den der Regressionstest mit einer echten Docker-29-Zeile belegt; der schwere Test mit echtem Docker-Daemon gehört zu R-0419 (Kevin 2026-10-16)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
