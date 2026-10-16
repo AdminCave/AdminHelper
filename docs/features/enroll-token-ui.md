@@ -24,7 +24,7 @@ genau einmal mit Kopier-Knopf, die Ablaufzeit in Ortszeit und einen Hinweis, wo 
 
 **Nicht-Ziele (Entscheidungen am Gate, Kevin 2026-10-16):**
 - Kein Knopf im Desktop-Client; der hat keine Benutzerverwaltung.
-- Kein Browser-Token (`browser: true`, langlebiges Zertifikat) aus dem Web-Panel; das bleibt API und CLI vorbehalten.
+- Kein Browser-Token (`browser: true`, langlebiges Zertifikat) aus dem Web-Panel; das bleibt der API vorbehalten (die Server-CLI stellt keine Browser-Tokens aus).
 - Keine Liste offener Tokens und kein Widerruf eines Tokens; es ist einmalig und läuft ab.
 - `POST /api/enrollment/token` (Selbst-Registrierung) bekommt keine wählbare Gültigkeit.
 
