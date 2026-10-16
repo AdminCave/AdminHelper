@@ -613,3 +613,46 @@ func TestRunEnrollmentHoldsTheIdentityLockUntilItStored(t *testing.T) {
 		t.Fatal("the identity lock was not free after runEnrollment returned")
 	}
 }
+
+// R-0398: a provisioning stores the sync config also without an FRP bundle, so a tunnel
+// created later reaches the host with the next sync instead of never.
+func TestRunWritesTheSyncConfigWithoutAnFRPBundle(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/servers/srv-1/provision/activate" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"serverName": "s", "apiKey": "k", "frp": nil})
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	orig := activatePort
+	activatePort = port
+	t.Cleanup(func() { activatePort = orig })
+
+	if err := Run(srv.URL, "tok", "srv-1", "", true, ""); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	cfg, err := config.LoadFrpcConfig()
+	if err != nil {
+		t.Fatalf("no sync config after a provisioning without an FRP bundle: %v", err)
+	}
+	if cfg.AdminHelperURL != srv.URL || cfg.APIKey != "k" || cfg.ServerID != "srv-1" {
+		t.Fatalf("sync config = %+v, want URL %q, key k, server srv-1", cfg, srv.URL)
+	}
+	// The blind --insecure is TOFU-pinned for the syncs to come, not stored as INSECURE.
+	if cfg.Insecure || cfg.CACert != config.FrpCACert() {
+		t.Fatalf("sync config trust = CACERT %q, INSECURE %v; want the pinned %q", cfg.CACert, cfg.Insecure, config.FrpCACert())
+	}
+	pinned, err := os.ReadFile(config.FrpCACert())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if block, _ := pem.Decode(pinned); block == nil || !bytes.Equal(block.Bytes, srv.Certificate().Raw) {
+		t.Fatal("ca.crt is not the certificate the server presented")
+	}
+}

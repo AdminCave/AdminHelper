@@ -18,6 +18,15 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
+// SyncConfigParams is what every later Sync needs to reach the server: its URL, this
+// host's server ID, the server API key and the trust for the connection.
+type SyncConfigParams struct {
+	AdminHelperURL string
+	ServerID       string
+	APIKey         string
+	TLS            config.TLSOpts
+}
+
 // ApplyParams groups frpc.Apply's arguments — 7 same-typed positionals before,
 // where a swapped serverID/apiKey only surfaced at runtime as an HTTP 401.
 type ApplyParams struct {
@@ -29,21 +38,15 @@ type ApplyParams struct {
 	TLS            config.TLSOpts
 }
 
-// Apply writes the FRP config + PKI bundle from a provisioning response
-// to disk and activates the service. NO HTTP call happens here anymore —
-// the token-activate call has been centralized since v0.23.0 in the
-// `provision` subcommand, which invokes `Apply` with the already-decoded
-// values.
-func Apply(p ApplyParams) error {
-	adminHelperURL := p.AdminHelperURL
+// WriteSyncConfig writes adminhelper.conf, the config every later Sync runs on, and the
+// CA copy it names. Provisioning writes it with and without an FRP bundle: a host
+// without it never gets a tunnel created after its provisioning (R-0398).
+func WriteSyncConfig(p SyncConfigParams) error {
+	adminHelperURL := strings.TrimRight(p.AdminHelperURL, "/")
 	serverID := p.ServerID
 	apiKey := p.APIKey
-	frpConfigB64 := p.FrpConfigB64
-	pkiBundleB64 := p.PkiBundleB64
 	cacert := p.TLS.CACert
 	insecure := p.TLS.Insecure
-
-	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 
 	frpDir := config.FrpDir()
 	pkiDir := config.FrpPkiDir()
@@ -92,6 +95,26 @@ func Apply(p ApplyParams) error {
 		return fmt.Errorf("Config schreiben: %w", err)
 	}
 	logger.Infof("Config geschrieben: %s", config.FrpAdminHelperConf())
+	return nil
+}
+
+// Apply writes the sync config (WriteSyncConfig), the FRP config and the PKI bundle
+// from a provisioning response to disk and activates the service. NO HTTP call
+// happens here anymore — the token-activate call has been centralized since v0.23.0
+// in the `provision` subcommand, which invokes `Apply` with the already-decoded
+// values.
+func Apply(p ApplyParams) error {
+	if err := WriteSyncConfig(SyncConfigParams{
+		AdminHelperURL: p.AdminHelperURL,
+		ServerID:       p.ServerID,
+		APIKey:         p.APIKey,
+		TLS:            p.TLS,
+	}); err != nil {
+		return err
+	}
+	frpConfigB64 := p.FrpConfigB64
+	pkiBundleB64 := p.PkiBundleB64
+	frpDir := config.FrpDir()
 
 	// Write frpc.toml (base64-decoded)
 	if frpConfigB64 != "" {

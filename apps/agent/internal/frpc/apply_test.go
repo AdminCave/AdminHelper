@@ -11,9 +11,12 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+
+	"adminhelper-agent/internal/config"
 )
 
 // makeBundle builds a base64-encoded tar.gz from the given (name -> content)
@@ -130,5 +133,84 @@ func TestExtractPkiBundleRejectsCumulativeOverLimit(t *testing.T) {
 
 	if err := extractPkiBundle(bundle, dest); err == nil {
 		t.Fatal("kumulative Summe > maxBundleBytes haette abgelehnt werden muessen")
+	}
+}
+
+// R-0398: the sync config is what every later sync runs on (URL, API key, server ID,
+// trust). It carries the server API key, so it and its directory are root's alone.
+func TestWriteSyncConfigStoresKeyAndPinnedCA(t *testing.T) {
+	// Not created yet: WriteSyncConfig makes the directory itself.
+	t.Setenv("ADMINHELPER_FRP_DIR", filepath.Join(t.TempDir(), "frp"))
+	pinned := filepath.Join(t.TempDir(), "pinned.crt")
+	if err := os.WriteFile(pinned, []byte("PINNED-CA"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WriteSyncConfig(SyncConfigParams{
+		AdminHelperURL: "https://srv.example/",
+		ServerID:       "srv-1",
+		APIKey:         "key-1",
+		TLS:            config.TLSOpts{CACert: pinned},
+	}); err != nil {
+		t.Fatalf("WriteSyncConfig: %v", err)
+	}
+
+	kv, err := config.LoadKeyValue(config.FrpAdminHelperConf())
+	if err != nil {
+		t.Fatalf("sync config: %v", err)
+	}
+	want := map[string]string{
+		"ADMINHELPER_URL": "https://srv.example",
+		"API_KEY":         "key-1",
+		"SERVER_ID":       "srv-1",
+		"CACERT":          config.FrpCACert(),
+	}
+	if !reflect.DeepEqual(kv, want) {
+		t.Fatalf("sync config = %v, want %v", kv, want)
+	}
+	if got, _ := os.ReadFile(config.FrpCACert()); string(got) != "PINNED-CA" {
+		t.Fatalf("ca.crt = %q, want the pinned CA copied", got)
+	}
+	// Mode bits mean nothing on Windows, SecureDir sets the ACL there.
+	if runtime.GOOS != "windows" {
+		for path, want := range map[string]os.FileMode{config.FrpAdminHelperConf(): 0o600, config.FrpDir(): 0o700} {
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if perm := info.Mode().Perm(); perm != want {
+				t.Errorf("%s mode = %o, want %o", path, perm, want)
+			}
+		}
+	}
+}
+
+func TestWriteSyncConfigStoresInsecureWithoutCA(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+
+	if err := WriteSyncConfig(SyncConfigParams{
+		AdminHelperURL: "https://srv.example",
+		ServerID:       "srv-1",
+		APIKey:         "key-1",
+		TLS:            config.TLSOpts{Insecure: true},
+	}); err != nil {
+		t.Fatalf("WriteSyncConfig: %v", err)
+	}
+
+	kv, err := config.LoadKeyValue(config.FrpAdminHelperConf())
+	if err != nil {
+		t.Fatalf("sync config: %v", err)
+	}
+	want := map[string]string{
+		"ADMINHELPER_URL": "https://srv.example",
+		"API_KEY":         "key-1",
+		"SERVER_ID":       "srv-1",
+		"INSECURE":        "1",
+	}
+	if !reflect.DeepEqual(kv, want) {
+		t.Fatalf("sync config = %v, want %v", kv, want)
+	}
+	if _, err := os.Stat(config.FrpCACert()); !os.IsNotExist(err) {
+		t.Fatalf("ca.crt written without a CA to copy (%v)", err)
 	}
 }

@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/agent-frpc-sync/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_provision_sync.py tests/test_provisioning.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (`:163`, `null` ohne FRP-Config) · docs/developer/server.html + docs/en/developer/server.html (`:99`, Abgleich auch ohne FRP-Config ohne Fehler)
 
-### T2 — Agent: Sync-Config bei jeder Provisionierung  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go
+### T2 — Agent: Sync-Config bei jeder Provisionierung  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go, apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @cad7599c 2026-10-16T13:38:20+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T2.verdict.json)
 Änderung: Das Schreiben von `/etc/frp/adminhelper.conf` samt Verzeichnissen und CA-Kopie (`apply.go:52-95`, `WriteKeyValue` `:91`) wird als exportierte `frpc.WriteSyncConfig(SyncConfigParams)` herausgelöst; `Apply` ruft sie weiter. `provision.Run` ruft `WriteSyncConfig` nach der Aktivierung immer, auch ohne FRP-Paket (`provision.go:152`); der Paketkommentar (`:10`) stimmt danach. Die Meldung bei fehlender Sync-Config (`sync.go:26`) nennt den Ausweg („vor dieser Version ohne Tunnel provisioniert? Für Tunnel einmal neu provisionieren“), bleibt Info und Exit 0. Tests zuerst rot, Namen mit `SyncConfig`: `WriteSyncConfig` schreibt URL, Key, Server-ID, CA/INSECURE mit 0600; `provision.Run` gegen einen httptest-TLS-Server mit `frp: null` hinterlässt `adminhelper.conf` (Temp-Verzeichnisse über `ADMINHELPER_FRP_DIR`/`ADMINHELPER_MONITOR_DIR`, systemctl über Seams).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run SyncConfig
 Doku: keine (intern; sichtbar wird es mit T4)

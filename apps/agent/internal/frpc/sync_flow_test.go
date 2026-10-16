@@ -5,6 +5,9 @@
 package frpc
 
 import (
+	"bytes"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -129,5 +132,26 @@ func TestSyncErrorsOnConfigEndpoint500LeavesOldConfig(t *testing.T) {
 	}
 	if *restarts != 0 {
 		t.Errorf("restarts = %d, want 0", *restarts)
+	}
+}
+
+// R-0398: a host provisioned without a tunnel before this version has no sync config and
+// never gets a tunnel created later. The sync stays green and tells how to get one.
+func TestSyncWithoutSyncConfigNamesReprovisioning(t *testing.T) {
+	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
+	var buf bytes.Buffer
+	prev, prevOut, prevFlags := slog.Default(), log.Writer(), log.Flags()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	// SetDefault also redirects the log package, which restoring the slog default does not undo.
+	t.Cleanup(func() { slog.SetDefault(prev); log.SetOutput(prevOut); log.SetFlags(prevFlags) })
+
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync without a sync config: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"level=INFO", "adminhelper-agent provision"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log %q is missing %q", out, want)
+		}
 	}
 }

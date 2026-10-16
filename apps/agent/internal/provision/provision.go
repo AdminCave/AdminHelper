@@ -7,7 +7,8 @@
 // As of v0.23.0, provisioning is no longer coupled to FRP. A single
 // `adminhelper-agent provision` call:
 //   - redeems the provision token via POST /api/servers/{id}/provision/activate,
-//   - writes the server API key (always),
+//   - writes the server API key to the FRP sync config (always: frpc.WriteSyncConfig,
+//     so a tunnel created later reaches the host with the next sync),
 //   - with an available monitor service: monitor.Init with the returned key,
 //   - with a configured FRP tunnel: frpc.Apply with the returned bundle.
 //
@@ -60,6 +61,10 @@ type activateResponse struct {
 	Enrollment    *enrollmentInfo `json:"enrollment"`
 }
 
+// activatePort is the gateway's certless enroll plane, which the activate call
+// goes to; tests point it at an httptest server.
+var activatePort = 8444
+
 // Run redeems a provision token against the server endpoint and
 // installs the returned bundles in a platform-appropriate way. A non-empty
 // caFP (SHA-256 of the internal CA, handed over out-of-band via the desktop's
@@ -89,7 +94,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		fingerprint = &fp
 	}
 
-	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, fingerprint, 8444)
+	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, fingerprint, activatePort)
 	if err != nil {
 		return err
 	}
@@ -148,7 +153,9 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		fmt.Println("→ Monitor-Service nicht konfiguriert oder nicht erreichbar — Monitor wird uebersprungen.")
 	}
 
-	// 2. FRP apply only if the server has an FRP tunnel.
+	// 2. The sync config always (Apply writes it along with frpc's config), FRP apply
+	// only if the server has an FRP tunnel. Without the sync config the API key is lost
+	// and a tunnel created later never reaches this host (R-0398).
 	if resp.FRP != nil {
 		fmt.Println("→ FRP-Client wird eingerichtet...")
 		if err := frpc.Apply(frpc.ApplyParams{
@@ -162,6 +169,14 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
 		}
 	} else {
+		if err := frpc.WriteSyncConfig(frpc.SyncConfigParams{
+			AdminHelperURL: adminHelperURL,
+			ServerID:       serverID,
+			APIKey:         resp.APIKey,
+			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
+		}); err != nil {
+			return fmt.Errorf("write the FRP sync config: %w", err)
+		}
 		fmt.Println("→ Keine FRP-Tunnel fuer diesen Server konfiguriert — FRP wird uebersprungen.")
 	}
 

@@ -24,7 +24,10 @@ func Sync() error {
 	cfg, err := config.LoadFrpcConfig()
 	if err != nil {
 		if os.IsNotExist(err) {
-			logger.Infof("Keine Konfiguration gefunden. Ueberspringe.")
+			// Every provisioning writes it since R-0398; a host provisioned without a tunnel
+			// before has none and no API key to sync with.
+			logger.Infof("No sync config at %s, skipping. Provisioned without a tunnel before this agent version? "+
+				"To get its tunnels, provision this host once more: %s", config.FrpAdminHelperConf(), enroll.ReprovisionHint)
 			return nil
 		}
 		return fmt.Errorf("Config laden: %w", err)
