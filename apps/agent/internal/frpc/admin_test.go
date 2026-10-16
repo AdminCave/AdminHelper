@@ -81,7 +81,7 @@ func TestReloadAdminConfIsPrivateAndStable(t *testing.T) {
 	}
 }
 
-// The values of admin.conf go into frpc.toml unquoted by the agent: a file not as the agent
+// The values of admin.conf go into frpc.toml unescaped by the agent: a file not as the agent
 // writes it (cut off, edited) gets a new port and password instead of reaching frpc.toml.
 func TestReloadAdminConfReplacesABrokenOne(t *testing.T) {
 	cases := map[string]string{

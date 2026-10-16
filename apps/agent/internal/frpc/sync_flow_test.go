@@ -594,6 +594,89 @@ func TestReloadAdminPortMovesWhenFrpcIsDown(t *testing.T) {
 	}
 }
 
+// R-0398: frpc hangs on its held admin port, and the hash changes before the next run (a tunnel
+// added). That run renews the admin API as well and starts frpc on the new file; on the old port
+// frpc would stay down for one run more. frpc does not run, so it starts, it does not reload.
+func TestSyncStuckFrpcGetsANewAdminPortWhenTheHashChanges(t *testing.T) {
+	calls := setupSyncTest(t, "https://unused.example")
+	serveToml(t, tunnelToml)
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync with the first tunnel: %v", err)
+	}
+	adminConf := filepath.Join(config.FrpDir(), "admin.conf")
+	before, err := config.LoadKeyValue(adminConf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, err := net.Listen("tcp", "127.0.0.1:"+before["PORT"]); err == nil {
+		t.Cleanup(func() { _ = l.Close() })
+	}
+	calls.active = false
+
+	serveToml(t, twoTunnelsToml)
+	if err := Sync(); err != nil {
+		t.Fatalf("Sync with a second tunnel and frpc down: %v", err)
+	}
+	after, err := config.LoadKeyValue(adminConf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after["PORT"] == before["PORT"] || after["PASSWORD"] == before["PASSWORD"] {
+		t.Errorf("admin.conf port %s -> %s, password kept = %v; want a new port and a new password",
+			before["PORT"], after["PORT"], after["PASSWORD"] == before["PASSWORD"])
+	}
+	if got, want := readFile(t, config.FrpConfigFile()), localHead(t)+string(twoTunnelsToml); got != want {
+		t.Errorf("frpc.toml = %q, want %q", got, want)
+	}
+	if calls.enables != 2 || calls.restarts != 0 || calls.reloads != 0 {
+		t.Errorf("enables = %d, restarts = %d, reloads = %d, want 2, 0 and 0", calls.enables, calls.restarts, calls.reloads)
+	}
+	if got := readFile(t, config.FrpHashFile()); got != hashConfig(twoTunnelsToml) {
+		t.Errorf("hash file = %q, want the hash of the new text %q", got, hashConfig(twoTunnelsToml))
+	}
+}
+
+// A hung frpc on a host without a tunnel left only stops, for a server text without [[proxies]]
+// as for a null hash: the admin API stays as it is, and frpc does not start.
+func TestSyncStuckFrpcWithoutATunnelOnlyStops(t *testing.T) {
+	empty := []byte("serverAddr = \"1.2.3.4\"\n")
+	cases := map[string]struct {
+		hashJSON string
+		toml     []byte
+	}{
+		"without proxies": {`{"hash":"` + hashConfig(empty) + `"}`, empty},
+		"null hash":       {`{"hash": null}`, nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			calls := setupSyncTest(t, "https://unused.example")
+			serveToml(t, tunnelToml)
+			if err := Sync(); err != nil {
+				t.Fatalf("Sync with the first tunnel: %v", err)
+			}
+			adminConf := filepath.Join(config.FrpDir(), "admin.conf")
+			before := readFile(t, adminConf)
+			calls.active = false
+
+			srv, _ := hashServer(t, tc.hashJSON, tc.toml)
+			pointSyncAt(t, srv.URL)
+			if err := Sync(); err != nil {
+				t.Fatalf("Sync without a tunnel and frpc down: %v", err)
+			}
+			if calls.disables != 1 || calls.enables != 1 || calls.restarts != 0 || calls.reloads != 0 {
+				t.Errorf("disables = %d, enables = %d, restarts = %d, reloads = %d, want 1, 1, 0 and 0",
+					calls.disables, calls.enables, calls.restarts, calls.reloads)
+			}
+			if got := readFile(t, adminConf); got != before {
+				t.Errorf("admin.conf = %q, want it unchanged %q", got, before)
+			}
+			if _, err := os.Stat(config.FrpConfigFile()); !os.IsNotExist(err) {
+				t.Errorf("frpc.toml is still there (stat: %v), want it removed", err)
+			}
+		})
+	}
+}
+
 // The reload goes only to the agent's own frpc: a root-owned socket listening on 127.0.0.1 at the
 // admin port from admin.conf. Without one, frpc restarts instead.
 func TestReloadOnlyWhenFrpcHoldsTheAdminPort(t *testing.T) {

@@ -333,14 +333,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jede Tunnel-Aenderung per Neustart alle Sitzungen zum Host. Aendern sich frps-Adresse, Token oder TLS, startet der
   Agent frpc neu, ebenso bei jeder Neu-Provisionierung. Laeuft frpc trotz Tunnel nicht, etwa weil nach einem Reboot
   ein anderer Prozess den Admin-Port belegt, legt der naechste Lauf die Admin-API auf einen neuen Port mit neuem
-  Passwort. Ohne Tunnel laeuft kein frpc mehr: Faellt der letzte Tunnel weg oder hat der Server fuer den Host keine
-  FRP-Config, stoppt und deaktiviert der Agent `frpc.service`, loescht die `frpc.toml` (sie enthaelt das frps-Token)
-  und endet ohne Fehler. Vor die `frpc.toml` des Servers setzt der Agent `loginFailExit = false`: Ist frps beim Start
-  nicht erreichbar, versucht frpc es weiter, statt sich zu beenden und von systemd alle 5 s neu gestartet zu werden.
-  Diesen lokalen Kopf setzt der Server nicht; einen Server-Text mit `webServer` oder `loginFailExit` wendet der Agent
-  nicht an. Hat ein aelterer Agent den Host ohne Tunnel provisioniert, fehlt dort der Server-API-Key fuer den
-  Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das Agent-Log diesen Weg. Die Admin-Doku
-  (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN) beschreiben es.
+  Passwort. Einen lokal gestoppten oder deaktivierten frpc startet der naechste Lauf ebenso wieder, solange der Host
+  Tunnel hat; dauerhaft aus bleibt er, wenn die Tunnel des Hosts auf dem Server geloescht oder deaktiviert sind. Ohne
+  Tunnel laeuft kein frpc mehr: Faellt der letzte Tunnel weg oder hat der Server fuer den Host keine FRP-Config,
+  stoppt und deaktiviert der Agent `frpc.service`, loescht die `frpc.toml` (sie enthaelt das frps-Token) und endet
+  ohne Fehler. Vor die `frpc.toml` des Servers setzt der Agent `loginFailExit = false`: Ist frps beim Start nicht
+  erreichbar, versucht frpc es weiter, statt sich zu beenden und von systemd alle 5 s neu gestartet zu werden. Diesen
+  lokalen Kopf setzt der Server nicht; einen Server-Text mit `webServer` oder `loginFailExit` wendet der Agent nicht
+  an. Auf Hosts, deren frpc beim Update schon laeuft, kommen der lokale Kopf und der Reload mit der naechsten
+  Config-Aenderung, die frpc einmal neu startet. Hat ein aelterer Agent den Host ohne Tunnel provisioniert, fehlt
+  dort der Server-API-Key fuer den Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das
+  Agent-Log diesen Weg. Die Admin-Doku (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN)
+  beschreiben es.
 - **Desktop: der Vertrauensdialog beim ersten Kontakt liegt ueber dem Login-Screen (R-0399):** Praesentiert der
   Server beim ersten Login oder bei der ersten Registrierung ein Zertifikat der internen CA, fragt der Desktop in
   einem Dialog, ob dem Server vertraut werden soll. Dieser Dialog war vom Login-Screen verdeckt: Anmelden und

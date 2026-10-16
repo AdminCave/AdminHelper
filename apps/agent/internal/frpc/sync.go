@@ -86,14 +86,11 @@ func Sync() error {
 		localHash = strings.TrimSpace(string(data))
 	}
 
+	// Checked whatever the hash says: a changed config does not free a held admin port.
+	stuck := frpcStuck()
 	if remoteHash == localHash {
-		if !frpcStuck() {
+		if !stuck {
 			return nil
-		}
-		logger.Warnf("frpc is not running although %s is in place; renewing its admin API (new port and "+
-			"password, after a reboot another process may hold the old port) and starting it again.", config.FrpConfigFile())
-		if _, err := renewAdminAPI(); err != nil {
-			return err
 		}
 	} else {
 		logger.Infof("Config-Aenderung erkannt. Aktualisiere...")
@@ -113,6 +110,14 @@ func Sync() error {
 	// self-repair, since localHash would then equal remoteHash.
 	if got := hashConfig(newConfig); got != remoteHash {
 		return fmt.Errorf("gelieferte Config passt nicht zum Hash (erwartet %s, erhalten %s)", remoteHash, got)
+	}
+	// Without a tunnel applyConfig stops frpc, which needs no admin API.
+	if stuck && hasProxies(newConfig) {
+		logger.Warnf("frpc is not running although %s is in place; renewing its admin API (new port and "+
+			"password, after a reboot another process may hold the old port) and starting it again.", config.FrpConfigFile())
+		if _, err := renewAdminAPI(); err != nil {
+			return err
+		}
 	}
 	return applyConfig(newConfig, true)
 }
@@ -265,7 +270,10 @@ var localHeadKeys = []string{"webserver", "loginfailexit"}
 
 // checkServerHead refuses a server text that sets a key or table of the local head: the server
 // sets none of them, the agent puts them in front. frp reads keys without regard to case, and a
-// table header after the proxies is a root table again, so every line counts, in any case.
+// table header after the proxies is a root table again, so every line counts, in upper or lower
+// case. A line counts when it starts with such a key after blanks, quotes and brackets: that
+// covers bare and quoted keys and table headers, not every way TOML can write a key (an escape
+// inside a quoted key, for one).
 func checkServerHead(serverToml []byte) error {
 	for _, line := range strings.Split(string(serverToml), "\n") {
 		key := strings.ToLower(strings.TrimLeft(line, "[\"' \t"))

@@ -74,7 +74,7 @@ func renewAdminAPI() (adminAPI, error) {
 }
 
 // parseAdminAPI accepts admin.conf only as the agent writes it. Its values go into frpc.toml
-// unquoted, so the password must be hex of the full length.
+// unescaped, so the password must be hex of the full length.
 func parseAdminAPI(kv map[string]string) (adminAPI, bool) {
 	port, err := strconv.Atoi(kv["PORT"])
 	if err != nil || port < 1 || port > 65535 {
