@@ -258,6 +258,28 @@ def test_rename_keeps_a_name_the_user_changed(db):
     assert json.loads(check.overridden_fields) == ["name"]
 
 
+@pytest.mark.parametrize(
+    ("hostname", "name", "check_name", "config"),
+    [
+        ("old.example", "New", "Ping New", {"host": "old.example"}),
+        ("new.example", "Old", "Ping Old", {"host": "new.example"}),
+    ],
+    ids=["name-only", "hostname-only"],
+)
+def test_rename_of_one_field_alone_refreshes_the_assignment(db, hostname, name, check_name, config):
+    tid = _template(db, defs=[PING_DEF])
+    _apply(db, tid, "srv-1", "old.example", "Old")
+
+    inventory = [{"id": "srv-1", "hostname": hostname, "name": name, "tags": []}]
+    assert sync_tag_assignments(db, inventory) == {"created": 0, "removed": 0, "refreshed": 1}
+
+    row = _assignments(db)[(tid, "srv-1")]
+    assert (row.server_hostname, row.server_name) == (hostname, name)
+    check = db.query(MonitorCheck).one()
+    assert check.name == check_name
+    assert json.loads(check.config) == config
+
+
 def test_assignment_of_a_server_missing_from_the_inventory_stays(db):
     tid = _template(db, defs=[PING_DEF])
     _apply(db, tid, "srv-9", "old.example", "Old")
@@ -306,3 +328,41 @@ def test_failed_refresh_keeps_the_old_names_and_the_sync_goes_on(db, monkeypatch
         "Old",
     )
     assert (tid, "srv-2") in rows
+
+
+def test_failed_refresh_does_not_stop_the_refresh_of_the_next_assignment(db, monkeypatch):
+    import app.tag_sync as tag_sync_mod
+
+    tid = _template(db, defs=[PING_DEF])
+    old = {"srv-1": ("old1.example", "Old 1"), "srv-2": ("old2.example", "Old 2")}
+    new = {"srv-1": ("new1.example", "New 1"), "srv-2": ("new2.example", "New 2")}
+    for sid, (hostname, name) in old.items():
+        _apply(db, tid, sid, hostname, name)
+
+    real_sync = tag_sync_mod.sync_assignment
+    failed = []
+
+    def fail_first(db_, template, assignment):
+        if not failed:
+            failed.append(assignment.server_id)
+            raise RuntimeError("sync failed")
+        real_sync(db_, template, assignment)
+
+    monkeypatch.setattr(tag_sync_mod, "sync_assignment", fail_first)
+    inventory = [{"id": sid, "hostname": h, "name": n, "tags": []} for sid, (h, n) in new.items()]
+    assert sync_tag_assignments(db, inventory) == {"created": 0, "removed": 0, "refreshed": 1}
+
+    # Whichever pair the sync reaches first fails and keeps its old names and
+    # checks; the one after it is refreshed all the same.
+    (failed_sid,) = failed
+    (refreshed_sid,) = set(old) - {failed_sid}
+    rows = _assignments(db)
+    for sid, (hostname, name) in (
+        (failed_sid, old[failed_sid]),
+        (refreshed_sid, new[refreshed_sid]),
+    ):
+        row = rows[(tid, sid)]
+        assert (row.server_hostname, row.server_name) == (hostname, name)
+        check = db.query(MonitorCheck).filter_by(server_id=sid).one()
+        assert check.name == f"Ping {name}"
+        assert json.loads(check.config) == {"host": hostname}

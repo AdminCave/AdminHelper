@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Templates: Anpassungen erhalten, Standard-Templates aktualisieren — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-templates · Review: pro Task
+Status: bereit · Branch: feature/monitoring-templates · Review: pro Task
 Spec: docs/features/monitoring-templates.md (Roadmap R-0420)
 Heavy: linux-full — ändert die Monitoring-API (neue Routen, Alembic-Revision, Sync-Verhalten) und Desktop-Journeys (Template-UI): `run.sh integration`/`e2e` im Sammellauf auf einer Pool-VM; kein Agent, kein Cross-Host-Pfad, darum kein `scenario`/`windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -128,8 +128,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html · CHANGELOG.md
 Abhängt von: T7, T9, T10, T11, T13
 
-### T14 — Tests: Umbenennung nur des Namens oder nur des Hostnamens, Abgleich läuft nach einem Fehler weiter  [ ]
+### T14 — Tests: Umbenennung nur des Namens oder nur des Hostnamens, Abgleich läuft nach einem Fehler weiter  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_tag_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4992300d 2026-10-16T19:30:48+02:00
+Review: approve (.ah-out/review/monitoring-templates/T14.verdict.json)
 Änderung: Nur Tests, Fund des testers (Branch-Abschluss, 2026-10-16): Alle Umbenennungen ändern heute Hostname und Name zusammen, eine Mutante `if assignment.server_hostname == hostname: return False` (`tag_sync.py:154`) besteht. Neu: parametrisiert nur `name` bzw. nur `hostname` geändert → je `refreshed == 1`, neuer Check-Name bzw. neue `{{hostname}}`-Config; eine zweite bestehende, umbenannte Zuweisung nach einem scheiternden Paar wird trotzdem aufgefrischt. Beleg: beide Mutanten (nur Hostname vergleichen; Abbruch nach dem Fehler) werden rot, im eigenen Scratch, nicht im Worktree.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_tag_sync.py
 Doku: keine (intern)
