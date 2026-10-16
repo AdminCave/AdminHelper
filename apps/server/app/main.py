@@ -167,17 +167,21 @@ def _emit_bootstrap_token():
 
 
 def _ensure_frps_config(db):
-    """Write frps.toml from the DB config on startup. The frps TLS material now
-    comes from the ca-issuer under the tunnel intermediate (A7) — the server no
-    longer runs its own FRP CA (D6/F3): no CA generation, no cert minting, no
-    publish. Only the non-secret frps.toml (ports, auth token, TLS file paths
-    pointing at /etc/frp-pki) is regenerated here."""
+    """Reconcile frps.toml with the DB on startup, in both directions: the DB
+    config is written, and without one a frps.toml still in the shared volume is
+    removed (the DB is the source of truth; a removal after a delete is only best
+    effort). The frps TLS material now comes from the ca-issuer under the tunnel
+    intermediate (A7) — the server no longer runs its own FRP CA (D6/F3): no CA
+    generation, no cert minting, no publish. Only the non-secret frps.toml
+    (ports, auth token, TLS file paths pointing at /etc/frp-pki) is regenerated
+    here."""
     from app.modules.frp._helpers import get_frp_config
-    from app.modules.frp.docker_manager import write_frps_config
+    from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
 
     try:
         config = get_frp_config(db)
         if not config:
+            remove_frps_config()
             return
         write_frps_config(config)
         logger.info("frps.toml neu geschrieben")

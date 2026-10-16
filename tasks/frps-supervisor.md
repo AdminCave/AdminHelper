@@ -19,8 +19,10 @@ Agent-Tunnel bis zu ~5 min brauchen); die Web-Maske sagt es vor dem Speichern. E
 Compose-Mapping passt, ist nur ein Warnhinweis. Leeres `auth_token` im PUT heißt „unverändert“.
 **PR merged Kevin:** T10–T12 und T15/T16 ändern `.github/` und `scripts/` (CLAUDE.md §2).
 
-### T1 — Server: frps.toml atomar schreiben, beim Start in beide Richtungen abgleichen  [ ]
+### T1 — Server: frps.toml atomar schreiben, beim Start in beide Richtungen abgleichen  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/docker_manager.py, apps/server/app/main.py, apps/server/tests/test_frp_docker_manager.py, apps/server/tests/test_config_generator.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @b2a95925 2026-10-16T13:36:00+02:00
+Review: approve (.ah-out/review/frps-supervisor/T1.verdict.json)
 Änderung: `write_frps_config` (`docker_manager.py:17-47`) schreibt in eine Temp-Datei im selben Verzeichnis (0600, `fsync`) und tauscht per `os.replace`; die `warn_restart`-Warnung (`:40-46`) wird eine Info-Zeile, dass frps die Änderung selbst übernimmt. `remove_frps_config` (`:50-55`) ist best effort: ein `OSError` wird geloggt, nie geworfen (die DB ist die Quelle). `_ensure_frps_config` (`main.py:169-185`) löscht eine vorhandene `frps.toml`, wenn keine FRP-Config in der DB existiert. Neue Testdatei (SPDX-Header), test-first: Austausch atomar (kein Leser sieht eine halbe Datei, Modus 0600), Löschen mit `OSError` wirft nicht, Start ohne DB-Config entfernt die Datei, mit DB-Config schreibt er sie.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_docker_manager.py
 Doku: keine (intern)
