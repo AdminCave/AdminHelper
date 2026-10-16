@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Template-Checks zuruecksetzen und wiederherstellen, Updates der Standard-Templates (R-0420):** Im
+  Dashboard eines Servers traegt ein angepasster Template-Check das Badge „angepasst“ (Tooltip: die Felder) und die
+  Aktion „Auf Template zuruecksetzen“, die nach einer Rueckfrage alle Felder auf die Template-Werte setzt
+  (`POST /checks/{id}/reset`). Der Monitoring-Tab des Servers zeigt je Zuweisung „N geloeschte Checks
+  wiederherstellen“ und legt sie auf Klick neu an (`POST /templates/{id}/assign/{server_id}/restore`, Zaehler
+  `removedChecks` in `GET /templates/assignments/{server_id}`). Bringt ein Release eine neuere Version eines
+  Standard-Templates mit, dessen Definitionen angepasst sind, zeigt die Template-Liste dort „Update verfuegbar“
+  (heute tragen alle Version 1, das Badge erscheint also noch nirgends); das oeffnet einen Vergleich der aktuellen
+  mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des Templates,
+  auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
+  `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable`). Doku:
+  Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
   „Registrierungs-Token“ ein Einmal-Token aus: Gueltigkeit waehlen (10 Minuten, 1 Stunde oder 24 Stunden;
   voreingestellt 10 Minuten), dann zeigt der Dialog das Token genau einmal mit Kopieren, seinem Ablauf in
@@ -322,6 +334,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
+  `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
+  `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
+  gestartete Units als „Inaktiv (autostart)“ meldete. Der Agent prueft diese Kandidaten jetzt mit einem gebuendelten
+  `systemctl show` nach und laesst sie weg; der Monitoring-Dienst uebernimmt seine Liste, statt sie bei vollem Inventar
+  selbst zu berechnen, sodass volle und gedrosselte Pushes dasselbe Ergebnis geben. Der Modus `list` meldete nach
+  normaler Provisionierung jeden Namen als ausgefallen, weil der Agent ohne `monitor init --services` keine Dienste
+  schickt. Jetzt wertet der Monitoring-Dienst die Namen selbst aus dem Inventar des Agents aus, mit oder ohne
+  `.service` und ueber Aliase (`sshd` fuer `ssh.service`); ein Name ohne Daten zaehlt nicht als ausgefallen und steht
+  neutral als „nicht gefunden“ da, ein neu eingetragener hat bis zu einer Stunde noch keine Daten. Der Desktop zeigte
+  „Alle 0 OK“ oder „0/N laufen“ und ohne Daten eine rote Pille; jetzt zeigt er die Zahl der Probleme in der Farbe des
+  Check-Status, „x/y aktiv“ nur, wenn der Agent Zaehler schickt, ohne Daten „Noch keine Daten“, jeden Dienst einmal
+  und uebersetzte Hinweise. `ignore` versteht Glob-Muster (`drkonqi-coredump-processor@*`), und scheitert `systemctl`,
+  ist der Check `unknown` mit Grund statt „Alle systemd-Units OK“. Der Check-Editor erklaert die Felder Dienste und
+  Ignorieren und entfernt doppelte Eintraege. Der Report traegt dafuer additiv `systemd.counts`, `systemd.error` und
+  `alias_of` im Inventar; `all_services` ist nach Unit sortiert und laesst nicht installierte, nur referenzierte Units
+  weg. Im Modus `list` traegt `_details.watched` je Name `state` (`running`, `down`, `nodata`) neben `running`.
+- **Desktop: der Vertrauensdialog beim ersten Kontakt liegt ueber dem Login-Screen (R-0399):** Praesentiert der
+  Server beim ersten Login oder bei der ersten Registrierung ein Zertifikat der internen CA, fragt der Desktop in
+  einem Dialog, ob dem Server vertraut werden soll. Dieser Dialog war vom Login-Screen verdeckt: Anmelden und
+  Registrieren blieben ohne Rueckmeldung stehen. Jetzt liegt er sichtbar darueber.
+- **Agent: Docker-Container werden mit aktueller Docker-CLI wieder erfasst (R-0417):** Ab Docker 28.2 gibt
+  `docker ps -a --format '{{json .}}'` das Feld `Platform` als Objekt aus. Der Agent las jede Zeile als reine
+  Zeichenketten, verwarf damit jede Zeile und schickte keine Container mehr; `docker_health` stand auf „Keine
+  Docker-Daten im Report“. Jetzt liest er nur die genutzten Felder (`ID`, `Names`, `Image`, `State`, `Status`) und
+  uebergeht alle anderen; das Report-Format bleibt gleich. Ist Docker installiert, der Daemon aber nicht erreichbar,
+  scheitert `docker ps` oder sind Zeilen nicht lesbar, schreibt der Agent eine Warnung ins Log, die auch der Bericht
+  von `adminhelper-agent diagnose` zeigt. Die Docker-Sektion im Desktop sagt „Alle N Container laufen“ nur noch,
+  wenn alle laufen, sonst „X von N laufen“, und ohne Docker-Daten im Report „keine Daten“ statt „—“.
 - **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
   Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
   Schreibvorgaenge, lag danach der Schluessel der einen neben dem Zertifikat der anderen. Kam eine Erneuerung vor
@@ -637,6 +678,34 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Template-Sync behaelt Anpassungen und geloeschte Checks (R-0420):** Aendert man an einem vom Template
+  erzeugten Check Name, Beschreibung, Typ, Konfiguration, Aktiviert, Intervall, Schweregrad oder Fehlversuche, merkt
+  sich der Check das Feld als angepasst, und kein Sync ueberschreibt es mehr, weder nach einer Template-Aenderung
+  (auch dem Update eines Standard-Templates) noch nach einer Umbenennung des Servers noch beim Wiederherstellen; die
+  uebrigen Felder folgen weiter dem Template, ein Feld zurueck auf dem Template-Wert gilt nicht mehr als angepasst.
+  Ein geaenderter Typ zaehlt auch als geaenderte Konfiguration. Ein geloeschter Template-Check entsteht beim naechsten
+  Sync nicht neu, bis er wiederhergestellt oder die Zuweisung neu angelegt wird. Steht eine Definition nicht mehr im
+  Template, loescht der Sync ihren Check weiterhin. Anpassungen von vor dem Update erkennt der erste Start einmal:
+  Jedes Feld, das vom Template abweicht, gilt als angepasst, aufgeloest mit den Namen, mit denen der Check angelegt
+  wurde (ein seither umbenannter Server zaehlt nicht als Anpassung); ein Check, der sich nicht vergleichen laesst,
+  gilt ganz als angepasst. Das geschieht vor jedem Sync; scheitert es, unterbleibt der Sync, bis es gelingt.
+  Restrisiko: Eine Template-Aenderung, die vor dem Update nie auf einen Check synchronisiert wurde, erscheint dort als
+  angepasst. Alert-Regeln aus Templates setzt jeder Sync weiter auf die Template-Werte. Checks liefern dafuer additiv
+  `templateDefId` und `overriddenFields`; neue Alembic-Revision `a7c9e1b3d5f7` (Spalte
+  `monitor_checks.overridden_fields`, Tabelle `monitor_check_tombstones`; sie loescht beim Upgrade den Merker der
+  Erkennung in `monitor_seed_state`).
+- **Monitoring: unveraenderte Standard-Templates folgen neuen Versionen (R-0420):** Jedes Standard-Template traegt
+  eine Version und den Hash der zuletzt ausgerollten Definitionen (`builtin_version`, `builtin_hash`). Liefert ein
+  Release eine neuere Version, hebt der Monitoring-Dienst beim Start jedes Standard-Template mit unveraenderten
+  Definitionen darauf und synchronisiert dessen Server; angepasste Check-Felder sowie Name und Beschreibung des
+  Templates bleiben. Ein Template mit angepassten Definitionen bleibt, wie es ist, und bietet das Update an (siehe
+  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Heute tragen alle Version 1;
+  ein bestehendes, dessen Definitionen davon abweichen, gilt als angepasst.
+- **Monitoring: neuer Hostname oder Servername erreicht bestehende Zuweisungen (R-0420):** Der Tag-Sync gleicht jetzt
+  fuer jede Zuweisung, auch fuer manuelle, Hostname und Servername mit dem Server-Inventar ab und synchronisiert bei
+  einer Abweichung genau dieses Paar neu, sodass `{{hostname}}` und `{{server_name}}` einer Umbenennung folgen;
+  angepasste Check-Felder bleiben, Alert-Regeln werden neu gesetzt. Bisher galten die Werte vom Anlegen der
+  Zuweisung. `POST /templates/tag-sync` liefert zusaetzlich `refreshed`.
 - **ca-issuer startet erst nach der Server-Migration (R-0288):** In `docker-compose.yml` wartet der `ca-issuer` per
   `depends_on` auf den healthy `server`, und healthy wird der Server erst nach `alembic upgrade head`. Vorher konnten
   `/enroll` und `/renew` bei einem Teil-Start auf ein Schema ohne ihre Tabellen treffen und mit 500 antworten; im
