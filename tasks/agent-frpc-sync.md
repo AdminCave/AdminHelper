@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSync
 Doku: keine (intern; sichtbar wird es mit T4)
 Abhängt von: T2
 
-### T4 — Agent: erster Tunnel startet frpc dauerhaft, `loginFailExit = false`  [ ]
+### T4 — Agent: erster Tunnel startet frpc dauerhaft, `loginFailExit = false`  [x]
 Komponente: agent · Dateien: apps/agent/internal/frpc/sync.go, apps/agent/internal/frpc/sync_flow_test.go, apps/agent/internal/frpc/platform_linux.go, apps/agent/internal/frpc/platform_windows.go, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @672e6725 2026-10-16T13:59:20+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T4.verdict.json)
 Änderung: Neuer Hash mit Proxies: der Agent stellt dem Server-Text `loginFailExit = false` als erste Zeile voran (Top-Level, vor jeder Tabelle; frp v0.69.1 `pkg/config/v1/client.go` ~Z. 54–57/88 vorher per WebFetch gegenprüfen), schreibt atomar (0600, wie `sync.go:91-96`); frpc nicht aktiv (Seam `isActive`, Linux `systemctl is-active --quiet frpc.service`) → `enableFrpcService` (`platform_linux.go:15`, `enable --now`, überlebt Reboot); aktiv → Neustart wie heute (`sync.go:100`). Hash erst nach Erfolg (`:107`). Windows: Seams No-op. Tests zuerst rot (Namen mit `TestSync`): erste Config bei inaktivem frpc → enable statt restart; Datei beginnt mit `loginFailExit = false`, Rest byte-gleich zum Server-Text; Hash = Hash des Server-Texts; aktiver frpc → restart.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSync
 Doku: docs/admin/agent-deployment.html + docs/en/admin/agent-deployment.html (später angelegter Tunnel greift beim nächsten Agent-Lauf, ohne Tunnel kein frpc, Bestandshosts ohne Tunnel einmal neu provisionieren; Abschnitt um `:149` „Neu provisionieren“) · CHANGELOG.md (Fixed)

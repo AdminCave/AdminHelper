@@ -31,3 +31,8 @@ func disableFrpc() error {
 	logger.Warnf("frpc service is not managed on Windows, skipping the stop")
 	return nil
 }
+
+// frpcActive is always false on Windows: no frpc service is registered that could run.
+func frpcActive() bool {
+	return false
+}

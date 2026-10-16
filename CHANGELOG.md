@@ -322,6 +322,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: ein spaeter angelegter Tunnel greift ohne Neu-Provisionieren (R-0398):** Ein Agent-Host, der ohne
+  FRP-Tunnel provisioniert wurde, bekam einen spaeter angelegten Tunnel nie: Die Provisionierung schrieb die
+  Sync-Config `/etc/frp/adminhelper.conf` samt Server-API-Key nur mit FRP-Paket, und der Abgleich endete still.
+  Jetzt schreibt jede Provisionierung sie, und der naechste Agent-Lauf (Linux) richtet einen neuen Tunnel ein: Er
+  schreibt die `frpc.toml` und aktiviert `frpc.service` dauerhaft (`systemctl enable --now`, also auch ueber einen
+  Reboot); ein laufender frpc uebernimmt die neue Config. Ohne Tunnel laeuft kein frpc mehr: Faellt der letzte
+  Tunnel weg oder hat der Server fuer den Host keine FRP-Config, stoppt und deaktiviert der Agent `frpc.service`,
+  loescht die `frpc.toml` (sie enthaelt das frps-Token) und endet ohne Fehler. Vor die `frpc.toml` des Servers
+  setzt der Agent `loginFailExit = false`: Ist frps beim Start nicht erreichbar, versucht frpc es weiter, statt sich
+  zu beenden und von systemd alle 5 s neu gestartet zu werden. Hat ein aelterer Agent den Host ohne Tunnel
+  provisioniert, fehlt dort der Server-API-Key fuer den Abgleich; solche Hosts werden einmal neu provisioniert, bis
+  dahin nennt das Agent-Log diesen Weg. Die Admin-Doku (Agent-Deployment, DE+EN) beschreibt es.
 - **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
   Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
   Schreibvorgaenge, lag danach der Schluessel der einen neben dem Zertifikat der anderen. Kam eine Erneuerung vor

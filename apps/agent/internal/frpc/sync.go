@@ -18,12 +18,18 @@ import (
 	"adminhelper-agent/internal/enroll"
 )
 
-// restartService and disableService are seams so tests can stub the frpc service actions
-// (which shell out to systemctl).
+// The frpc service actions are seams so tests can stub them (they shell out to systemctl).
 var (
 	restartService = restartFrpc
 	disableService = disableFrpc
+	enableService  = enableFrpcService
+	isActive       = frpcActive
 )
+
+// localPreamble goes in front of the server's frpc.toml. frp defaults loginFailExit to true:
+// frpc then exits when frps is unreachable at its first login, and systemd restarts it every
+// 5 s. The server's generator sets no loginFailExit, so the key is never doubled.
+const localPreamble = "loginFailExit = false\n"
 
 // Sync checks for config changes and updates frpc (port of do_sync).
 func Sync() error {
@@ -102,7 +108,7 @@ func Sync() error {
 			return err
 		}
 		if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
-			return fmt.Errorf("Hash schreiben: %w", err)
+			return fmt.Errorf("write the config hash: %w", err)
 		}
 		logger.Infof("No tunnel for this host, frpc stopped and disabled.")
 		return nil
@@ -113,25 +119,34 @@ func Sync() error {
 	// that frpc.service crash-loops on (Restart=on-failure) until the next sync ~5 min later. Stage
 	// to a temp file + rename, like enroll.stageIdentity (4.82).
 	tmp := config.FrpConfigFile() + ".tmp"
-	if err := os.WriteFile(tmp, rewriteIdentityPaths(newConfig), 0600); err != nil {
+	if err := os.WriteFile(tmp, append([]byte(localPreamble), rewriteIdentityPaths(newConfig)...), 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
 	}
 	if err := os.Rename(tmp, config.FrpConfigFile()); err != nil {
 		return fmt.Errorf("frpc.toml aktivieren: %w", err)
 	}
 
-	// Restart frpc
-	if err := restartService(); err != nil {
-		return fmt.Errorf("frpc neustarten: %w", err)
+	// frpc is stopped on the first tunnel and after a former run stopped it: enable it, so it
+	// also runs after a reboot. A running frpc restarts onto the new file.
+	started := "restarted"
+	if isActive() {
+		if err := restartService(); err != nil {
+			return fmt.Errorf("restart frpc: %w", err)
+		}
+	} else {
+		if err := enableService(); err != nil {
+			return fmt.Errorf("enable and start frpc: %w", err)
+		}
+		started = "enabled and started"
 	}
 
-	// Persist the hash only AFTER a successful restart (4.11): a failed restart then leaves the
-	// hash mismatch standing, so the next run retries the sync instead of freezing the old
+	// Persist the hash only AFTER frpc started on the new file (4.11): a failed start then leaves
+	// the hash mismatch standing, so the next run retries the sync instead of freezing the old
 	// config on disk until the next server-side change.
 	if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 		return fmt.Errorf("Hash schreiben: %w", err)
 	}
-	logger.Infof("frpc.toml aktualisiert und frpc neugestartet.")
+	logger.Infof("frpc.toml updated, frpc %s.", started)
 	return nil
 }
 

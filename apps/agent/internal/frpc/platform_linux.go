@@ -37,3 +37,8 @@ func restartFrpc() error {
 func disableFrpc() error {
 	return exec.Command("systemctl", "disable", "--now", "frpc.service").Run()
 }
+
+// frpcActive reports whether frpc.service runs; `is-active` exits non-zero for every other state.
+func frpcActive() bool {
+	return exec.Command("systemctl", "is-active", "--quiet", "frpc.service").Run() == nil
+}
