@@ -357,64 +357,91 @@ const ADMIN_API_USER: &str = "adminhelper";
 /// How long frpc may take to answer a reload before the reconciliation restarts it instead.
 const RELOAD_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The config frpc runs: the allow-listed server TOML behind the desktop's local head.
-/// `loginFailExit = false` keeps frpc retrying while frps is unreachable (frp's default ends it
-/// after the first failed login); `webServer.*` opens frpc's admin API on loopback for the
-/// reload. The head goes on only after `validate_visitor_toml`, so the allow-list stays as it is
-/// and still rejects a server that sends `webServer` or `loginFailExit` itself. It stands before
-/// every table header, so its keys land in the root. The password is never optional — without
-/// user and password frp serves the admin API, `GET /api/config` with the frps token and every
-/// `secretKey` included, to every local process. `password` goes in unescaped, so anything but
-/// hex is refused.
+/// The config frpc runs: the allow-listed server TOML with the desktop's local head in its root,
+/// as the text frpc reads. `loginFailExit = false` keeps frpc retrying while frps is unreachable
+/// (frp's default ends it after the first failed login); `webServer.*` opens frpc's admin API on
+/// loopback for the reload. The head goes in only after `validate_visitor_toml`, so the allow-list
+/// stays as it is and still rejects a server that sends `webServer` or `loginFailExit` itself. The
+/// password is never optional — without user and password frp serves the admin API,
+/// `GET /api/config` with the frps token and every `secretKey` included, to every local process —
+/// and it is the desktop's own hex; anything else is refused.
+///
+/// frpc gets exactly what was checked: the text is generated from the checked table, not taken
+/// from the server, and every string in it stands on one line. toml writes a string with a line
+/// break over several lines, so such a value is refused.
 fn with_local_head(server_toml: &str, port: u16, password: &str) -> Result<String, AppError> {
-    validate_visitor_toml(server_toml)?;
+    let server = validate_visitor_toml(server_toml)?;
     if password.is_empty() || !password.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(AppError::Validation(
             "frpc admin API password is not hex".to_string(),
         ));
     }
-    Ok(format!(
-        "loginFailExit = false\n\
-         webServer.addr = \"127.0.0.1\"\n\
-         webServer.port = {port}\n\
-         webServer.user = \"{ADMIN_API_USER}\"\n\
-         webServer.password = \"{password}\"\n\
-         \n\
-         {server_toml}"
-    ))
+    single_line_strings(&server)?;
+    let mut root = server.as_table().cloned().unwrap_or_default();
+    root.insert("loginFailExit".to_string(), false.into());
+    root.insert(
+        "webServer".to_string(),
+        toml::Value::Table(admin_api(port, password)),
+    );
+    toml::to_string(&root)
+        .map_err(|e| AppError::Validation(format!("frpc config does not serialize: {e}")))
 }
 
-/// The text frpc runs: the server TOML with `identity_dir` filled in, behind `head`. The identity
-/// dir goes in after the allow-list, so the filled-in TOML is checked again, and so is the whole:
-/// its root holds the head exactly as written and otherwise only what the allow-list admits.
-/// frp renders the config file as a Go template before it reads the TOML (`pkg/config/load.go`,
-/// `RenderWithTemplate`), so the finished text, the identity dir filled in, holds no `{{`.
+/// The `webServer` table of the local head: frpc's admin API on loopback.
+fn admin_api(port: u16, password: &str) -> toml::Table {
+    let mut web_server = toml::Table::new();
+    web_server.insert("addr".to_string(), "127.0.0.1".into());
+    web_server.insert("port".to_string(), i64::from(port).into());
+    web_server.insert("user".to_string(), ADMIN_API_USER.into());
+    web_server.insert("password".to_string(), password.into());
+    web_server
+}
+
+/// Refuse a string with a line break anywhere in `value`.
+fn single_line_strings(value: &toml::Value) -> Result<(), AppError> {
+    match value {
+        toml::Value::String(s) if s.contains('\n') => Err(AppError::Validation(
+            "visitor.toml: a value holds a line break".to_string(),
+        )),
+        toml::Value::Array(items) => items.iter().try_for_each(single_line_strings),
+        toml::Value::Table(table) => table.values().try_for_each(single_line_strings),
+        _ => Ok(()),
+    }
+}
+
+/// Refuse a text that holds `{{`.
+fn no_template_delimiter(text: &str) -> Result<(), AppError> {
+    if text.contains("{{") {
+        return Err(AppError::Validation(
+            "frpc config: '{{' is not allowed".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// The text frpc runs: the server TOML with `identity_dir` filled in and `head` in its root, as
+/// [`with_local_head`] generates it. The identity dir goes in after the allow-list, so the
+/// filled-in TOML is checked again, and so is the generated text: its root holds the head exactly
+/// as set and otherwise only what the allow-list admits. frp renders the config file as a Go
+/// template before it reads the TOML (`pkg/config/load.go`, `RenderWithTemplate`), so neither the
+/// server TOML with the identity dir filled in nor the generated text holds `{{` — an escape in
+/// the server TOML can spell it in a value.
 fn frpc_config(
     server_toml: &str,
     identity_dir: &str,
     head: &LocalHead,
 ) -> Result<String, AppError> {
-    let config = with_local_head(
-        &rewrite_identity_paths(server_toml, identity_dir),
-        head.port,
-        &head.password,
-    )?;
-    if config.contains("{{") {
-        return Err(AppError::Validation(
-            "frpc config: '{{' is not allowed".to_string(),
-        ));
-    }
+    let server_toml = rewrite_identity_paths(server_toml, identity_dir);
+    no_template_delimiter(&server_toml)?;
+    let config = with_local_head(&server_toml, head.port, &head.password)?;
+    no_template_delimiter(&config)?;
     let parsed: toml::Value = toml::from_str(&config)
         .map_err(|e| AppError::Validation(format!("frpc config does not parse: {e}")))?;
     let mut root = parsed.as_table().cloned().unwrap_or_default();
 
-    let mut web_server = toml::Table::new();
-    web_server.insert("addr".to_string(), "127.0.0.1".into());
-    web_server.insert("port".to_string(), i64::from(head.port).into());
-    web_server.insert("user".to_string(), ADMIN_API_USER.into());
-    web_server.insert("password".to_string(), head.password.as_str().into());
     if root.remove("loginFailExit") != Some(toml::Value::Boolean(false))
-        || root.remove("webServer") != Some(toml::Value::Table(web_server))
+        || root.remove("webServer")
+            != Some(toml::Value::Table(admin_api(head.port, &head.password)))
     {
         return Err(AppError::Validation(
             "frpc config: the local head is not as written".to_string(),
@@ -1744,12 +1771,143 @@ method = "token"
                 SERVER_TOML.to_string(),
                 "/data/{{app/identity",
             ),
+            (
+                "an escape that spells it in a value",
+                server_toml_with("\"ops-admin\"", "\"ops\\u007B\\u007Badmin\""),
+                identity_dir,
+            ),
         ] {
             // The allow-list itself admits it: only the delimiter may refuse it.
             assert!(validate_visitor_toml(&server).is_ok(), "allow-list: {case}");
             assert!(
                 frpc_config(&server, identity_dir, &head(7400, "c0ffee")).is_err(),
                 "accepted a template delimiter in {case}"
+            );
+        }
+    }
+
+    /// Whether every non-empty line of `text` is a table header or a key with its value, complete
+    /// on its own: no string spans lines, and no line stems from anything but the table — a
+    /// comment parses to nothing.
+    fn every_line_is_complete(text: &str) -> bool {
+        text.lines().all(|line| {
+            line.is_empty()
+                || toml::from_str::<toml::Table>(line).is_ok_and(|table| !table.is_empty())
+        })
+    }
+
+    #[test]
+    fn visitor_config_is_the_checked_table_with_every_string_on_one_line() {
+        let identity_dir = "/data/app/identity";
+        // The generator's values in other forms TOML allows for them: strings over several lines
+        // without a line break in the value, an escape, a comment.
+        let mut other_forms = SERVER_TOML.to_string();
+        for (from, to) in [
+            ("user = \"ops-admin\"", "user = \"\"\"\nops-admin\"\"\""),
+            ("auth.token = \"sekret\"", "auth.token = '''sekret'''"),
+            (
+                "secretKey = \"s3cr3t\"",
+                "secretKey = \"\"\"s3\\\n    cr3t\"\"\"",
+            ),
+            ("\"frps.example.net\"", "\"frps\\u002Eexample.net\""),
+        ] {
+            assert!(other_forms.contains(from), "fixture lacks {from:?}");
+            other_forms = other_forms.replacen(from, to, 1);
+        }
+        other_forms.insert_str(0, "# a comment\n");
+        let no_visitors = &SERVER_TOML[..SERVER_TOML.find("\n[[visitors]]").unwrap()];
+        let without_tls = server_toml_with(TLS_BLOCK, "");
+        let without_server_user = server_toml_with("serverUser = \"srv-a\"\n", "");
+
+        let mut web_server = toml::Table::new();
+        web_server.insert("addr".to_string(), "127.0.0.1".into());
+        web_server.insert("port".to_string(), toml::Value::Integer(7400));
+        web_server.insert("user".to_string(), "adminhelper".into());
+        web_server.insert("password".to_string(), "c0ffee".into());
+
+        for (case, form, values) in [
+            ("TLS block and two visitors", SERVER_TOML, SERVER_TOML),
+            (
+                "without the TLS block",
+                without_tls.as_str(),
+                without_tls.as_str(),
+            ),
+            (
+                "a visitor without serverUser",
+                without_server_user.as_str(),
+                without_server_user.as_str(),
+            ),
+            ("no visitors", no_visitors, no_visitors),
+            (
+                "other forms of the same values",
+                other_forms.as_str(),
+                SERVER_TOML,
+            ),
+        ] {
+            let config = frpc_config(form, identity_dir, &head(7400, "c0ffee"))
+                .unwrap_or_else(|e| panic!("{case}: {e:?}"));
+
+            assert!(
+                every_line_is_complete(&config),
+                "{case}: a line is not complete on its own:\n{config}"
+            );
+            let mut root = parse(&config).as_table().unwrap().clone();
+            assert_eq!(
+                root.remove("loginFailExit"),
+                Some(toml::Value::Boolean(false)),
+                "{case}"
+            );
+            assert_eq!(
+                root.remove("webServer"),
+                Some(toml::Value::Table(web_server.clone())),
+                "{case}"
+            );
+            assert_eq!(
+                toml::Value::Table(root),
+                parse(&rewrite_identity_paths(values, identity_dir)),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn visitor_config_refuses_a_value_with_a_line_break() {
+        // toml writes a string with a line break over several lines; in the text frpc reads every
+        // string stands on one line, so such a value is refused.
+        let mut table = toml::Table::new();
+        table.insert("user".to_string(), "ops\nadmin".into());
+        assert!(toml::to_string(&table).unwrap().contains("\"\"\"\n"));
+
+        for (case, server) in [
+            (
+                "a string over several lines",
+                server_toml_with("\"ops-admin\"", "\"\"\"ops\nadmin\"\"\""),
+            ),
+            (
+                "an escaped line break",
+                server_toml_with("\"s3cr3t\"", "\"s3\\ncr3t\""),
+            ),
+            (
+                "a literal string over several lines",
+                server_toml_with("\"sekret\"", "'''sek\nret'''"),
+            ),
+            (
+                "a string in an array",
+                server_toml_with("serverName = \"db\"", "serverName = [\"d\\nb\"]"),
+            ),
+            (
+                "a string in a table",
+                server_toml_with(
+                    "serverAddr = \"frps.example.net\"",
+                    "serverAddr = { host = \"frps\\nexample.net\" }",
+                ),
+            ),
+        ] {
+            // The allow-list itself admits it: only the line break may refuse it.
+            assert!(validate_visitor_toml(&server).is_ok(), "allow-list: {case}");
+            assert!(
+                frpc_config(&server, "/data/app/identity", &head(7400, "c0ffee")).is_err(),
+                "accepted a line break in {case}"
             );
         }
     }

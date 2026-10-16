@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Tunnel übernimmt Änderungen selbst — Task-Ledger
-Status: aktiv · Branch: feature/desktop-tunnel-refresh · Review: pro Task
+Status: bereit · Branch: feature/desktop-tunnel-refresh · Review: pro Task
 Spec: docs/features/desktop-tunnel-refresh.md (Roadmap R-0402, R-0389, R-0390)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Tunnel (CLAUDE.md §5): `desktop_e2e_tunnel.sh` mit dem erweiterten `tunnel-start.live.js` im Sammellauf (`run.sh e2e`, beweist Reload ohne Neustart gegen echtes frps); `scenario` vor dem Merge, weil der Desktop-Tunnel den FRP-Datenpfad berührt (der GUI-Visitor selbst läuft dort nicht; Kevin 2026-10-16: reicht, der Desktop-Beweis ist T9; Multibox erlaubt); `windows` für Sidecar und lokale Admin-API auf 127.0.0.1 (Firewall-Abfrage nicht verifiziert)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -149,8 +149,10 @@ Abhängt von: T6
 
 Session 2026-10-16 (nach dem Review von T12, im Rahmen von Kevins „im Desktop-Tunnel mitbauen“): frpc bekommt nur noch Text, den der Desktop selbst aus der geprüften Tabelle erzeugt (T14).
 
-### T14 — Visitor-TOML: frpc bekommt den aus der geprüften Tabelle erzeugten Text  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+### T14 — Visitor-TOML: frpc bekommt den aus der geprüften Tabelle erzeugten Text  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @2e4378e7 2026-10-16T19:04:05+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T14.verdict.json)
 Änderung: `frpc_config` gibt heute nach den Prüfungen den Rohtext (lokaler Kopf plus Server-TOML mit eingesetztem Identitätspfad) zurück, und dieser Rohtext landet in `visitor.toml`. Geprüft wird aber der geparste Baum; Rohtext und geprüfte Tabelle können sich in der Form unterscheiden, in der frpc die Datei liest. Neu: Nach `validate_visitor_table` wird die geprüfte Wurzeltabelle selbst serialisiert (`toml`-Crate) und dieser Text geschrieben; die Prüfung auf `{{` und die Prüfung des lokalen Kopfs laufen auf dem serialisierten Text. Jeder String-Wert steht danach einzeilig (Zeilenumbrüche escaped). Der Vergleich für Reload/Neustart (T3/T4) und die Generationslogik bleiben unverändert. Tests, zuerst rot: der geschriebene Text enthält keinen mehrzeiligen String und keine rohe Zeile, die nicht aus der Tabelle stammt, auch wenn ein erlaubter Wert im Server-Text als mehrzeiliger String mit Zeilenumbrüchen kommt; jede Generator-Form (Fixtures aus T12) ergibt nach dem Serialisieren dieselbe geparste Tabelle; der lokale Kopf steht unverändert im Text. Mutationsprobe: Rohtext statt Serialisierung → rot. Doku DE+EN (`desktop.html`, Absatz zur Allow-List): frpc bekommt den vom Desktop aus der geprüften Tabelle erzeugten Text.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- visitor
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html
