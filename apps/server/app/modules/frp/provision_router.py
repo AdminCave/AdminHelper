@@ -46,7 +46,8 @@ def _load_sync_inputs(db: Session, server_id: str, auth):
     hash): scope check, server + config lookup, the tunnels scoped to this server
     AND this config, and the allow-users. Extracted so the sync semantics can't
     drift between the two — a hash computed over a different tunnel set than the
-    download would trigger endless agent resyncs (2.45)."""
+    download would trigger endless agent resyncs (2.45). None without an FRP
+    config: the two endpoints answer that differently."""
     _require_server_scope(auth, server_id)
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
@@ -54,7 +55,7 @@ def _load_sync_inputs(db: Session, server_id: str, auth):
 
     config = get_frp_config(db)
     if not config:
-        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+        return None
 
     tunnels = (
         db.query(FrpTunnel)
@@ -74,7 +75,10 @@ def get_provision_config(
     auth=Depends(read_dep),
 ):
     """Returns the current frpc.toml for the sync agent."""
-    config, tunnels, server_name, allow_users = _load_sync_inputs(db, server_id, auth)
+    inputs = _load_sync_inputs(db, server_id, auth)
+    if inputs is None:
+        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+    config, tunnels, server_name, allow_users = inputs
     toml_content = generate_frpc_toml(config, tunnels, server_name, allow_users)
     return PlainTextResponse(toml_content, media_type="application/toml")
 
@@ -86,6 +90,13 @@ def get_provision_config_hash(
     auth=Depends(read_dep),
 ):
     """Returns the SHA256 hash of the current frpc.toml."""
-    config, tunnels, server_name, allow_users = _load_sync_inputs(db, server_id, auth)
+    inputs = _load_sync_inputs(db, server_id, auth)
+    if inputs is None:
+        # Without an FRP config the hash is null: nothing to sync, which is not an
+        # error. The agent reads a 404 as permanent and would fail every timer run
+        # on a host without FRP (R-0398). With a config but no tunnel the hash of
+        # that TOML stays: an older agent checks the downloaded config against it.
+        return {"hash": None}
+    config, tunnels, server_name, allow_users = inputs
     config_hash = provisioner.get_config_hash(config, tunnels, server_name, allow_users=allow_users)
     return {"hash": config_hash}

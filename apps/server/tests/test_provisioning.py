@@ -281,8 +281,10 @@ class TestProvisionActivate:
 
         hash_url = f"/api/frp/provision/{srv.id}/config-hash"
         assert test_client.get(hash_url, headers={"X-API-Key": old_key}).status_code == 401
-        # Accepted: without an FRP config the route answers 404, past the key check.
-        assert test_client.get(hash_url, headers={"X-API-Key": new_key}).status_code == 404
+        # Accepted: without an FRP config the route answers a null hash, past the key check.
+        accepted = test_client.get(hash_url, headers={"X-API-Key": new_key})
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["hash"] is None
         assert db_session.query(ApiKey).filter(ApiKey.server_id == srv.id).count() == 1
         rows = db_session.query(AuditLog).filter(AuditLog.action == "apikey.deleted").all()
         assert [row.object_id for row in rows] == [str(old_id)]

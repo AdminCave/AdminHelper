@@ -160,7 +160,7 @@
 
           <h2>FRP &ndash; Sync (laufender Betrieb)</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/provision/{server_id}/config</code><p>Aktueller <code>frpc.toml</code>-Plaintext (JWT oder API-Key) &ndash; nur fuer den laufenden Sync.</p></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/provision/{server_id}/config-hash</code><p>SHA-256 zur drift-freien Synchronisation.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/provision/{server_id}/config-hash</code><p>SHA-256 der <code>frpc.toml</code> zur drift-freien Synchronisation: <code>{ hash }</code>. Ohne FRP-Config ist <code>hash</code> <code>null</code> statt eines Fehlers (nichts abzugleichen); ohne Tunnel bleibt es der Hash der <code>frpc.toml</code> ohne Proxies. <code>GET &hellip;/config</code> antwortet ohne FRP-Config weiter mit <code>404</code>.</p></div>
 
           <h2>FRP &ndash; Status</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/status</code><p>Merged frps-Dashboard mit DB-Tunneln.</p></div>
