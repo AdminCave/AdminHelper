@@ -35,6 +35,15 @@ export interface UserUpdate {
   password?: string;
 }
 
+export interface EnrollmentGrant {
+  token: string;
+  subjectId: string;
+  scope: string;
+  browser: boolean;
+  enrollPort: number;
+  expiresAt: string;
+}
+
 export type ApiKeyPermission = 'read' | 'read_write';
 
 export interface ApiKey {

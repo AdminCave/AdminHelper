@@ -15,7 +15,10 @@ device; a device without a cert registers with a token from /token/for (ADR 0003
 
 from __future__ import annotations
 
+import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user
@@ -25,22 +28,31 @@ from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, ClientIdentity, require_scope
 from app.core.middleware import resolve_client_ip
 from app.core.request_context import Actor, actor_from_request
+from app.core.time import iso_utc
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import line_of, revoke_line
-from app.modules.enrollment.service import mint_enrollment_token
+from app.modules.enrollment.service import DEFAULT_TTL, mint_enrollment_grant
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/enrollment", tags=["enrollment"])
 
+# Upper bound of an admin-chosen validity: a token handed over by mail or chat
+# needs longer than DEFAULT_TTL, but the single-use secret should not outlive a day.
+MAX_TTL_MINUTES = 24 * 60
 
-def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
+
+def _mint_token(
+    db: Session, subject_id: str, browser: bool, ttl: datetime.timedelta = DEFAULT_TTL
+) -> dict:
     """Persist a one-time access-scoped enrollment token for ``subject_id`` and
     return the redeemable grant. Identity (the cert CN) is issuer-dictated to
     ``subject_id``, never taken from the client's CSR; hashed at rest with the
     same SHA-256 the ca-issuer consumes by. ``browser=true`` flags a long-lived
     leaf (D5): the browser cannot auto-renew, so it gets a long cert + manual
     re-import; the desktop exports it as a PKCS12 for the browser cert store (A5c)."""
-    raw_token = mint_enrollment_token(db, subject_id, SCOPE_ACCESS, browser=browser)
+    raw_token, expires_at = mint_enrollment_grant(
+        db, subject_id, SCOPE_ACCESS, browser=browser, ttl=ttl
+    )
     return {
         "token": raw_token,
         "subjectId": subject_id,
@@ -49,6 +61,7 @@ def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
         # The client derives the enroll host from its own (already-trusted) server
         # URL + this port (the gateway's certless enroll plane).
         "enrollPort": ENROLL_PORT,
+        "expiresAt": iso_utc(expires_at),
     }
 
 
@@ -88,6 +101,7 @@ def mint_self_enrollment_token(
 class EnrollmentTokenForRequest(RequestModel):
     username: str
     browser: bool = False
+    ttl_minutes: int = Field(DEFAULT_TTL // datetime.timedelta(minutes=1), ge=1, le=MAX_TTL_MINUTES)
 
 
 @router.post("/token/for")
@@ -108,13 +122,16 @@ def mint_enrollment_token_for(
     target = db.query(User).filter(User.username == data.username).first()
     if target is None:
         raise HTTPException(status_code=404, detail="Unbekannter Benutzer")
-    res = _mint_token(db, target.username, data.browser)
+    res = _mint_token(
+        db, target.username, data.browser, datetime.timedelta(minutes=data.ttl_minutes)
+    )
     audit.record(
         db,
         "enrollment.token.minted_for",
         object_type="user",
         object_id=target.username,
-        detail=_browser_detail(data.browser),
+        # The validity is admin-chosen here, so a longer-lived grant stays greppable.
+        detail=f"{_browser_detail(data.browser)}, ttl={data.ttl_minutes}min",
         actor=actor_from_request(request),
     )
     return res

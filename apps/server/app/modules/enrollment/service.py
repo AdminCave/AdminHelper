@@ -26,6 +26,33 @@ from app.modules.enrollment.models import EnrollmentToken
 DEFAULT_TTL = datetime.timedelta(minutes=10)
 
 
+def mint_enrollment_grant(
+    db: Session,
+    subject_id: str,
+    scope: str,
+    *,
+    browser: bool = False,
+    ttl: datetime.timedelta = DEFAULT_TTL,
+) -> tuple[str, datetime.datetime]:
+    """Persist a one-time enrollment token for ``subject_id``/``scope`` and return
+    the raw (un-hashed) token to hand to the client together with the stored
+    ``expires_at`` (naive UTC). Commits the row."""
+    raw_token = generate_api_key()
+    expires_at = utcnow_naive() + ttl
+    db.add(
+        EnrollmentToken(
+            id=str(uuid.uuid4()),
+            hashed_token=hash_api_key(raw_token),
+            subject_id=subject_id,
+            scope=scope,
+            browser=browser,
+            expires_at=expires_at,
+        )
+    )
+    db.commit()
+    return raw_token, expires_at
+
+
 def mint_enrollment_token(
     db: Session,
     subject_id: str,
@@ -36,16 +63,5 @@ def mint_enrollment_token(
 ) -> str:
     """Persist a one-time enrollment token for ``subject_id``/``scope`` and return
     the raw (un-hashed) token to hand to the client. Commits the row."""
-    raw_token = generate_api_key()
-    db.add(
-        EnrollmentToken(
-            id=str(uuid.uuid4()),
-            hashed_token=hash_api_key(raw_token),
-            subject_id=subject_id,
-            scope=scope,
-            browser=browser,
-            expires_at=utcnow_naive() + ttl,
-        )
-    )
-    db.commit()
+    raw_token, _ = mint_enrollment_grant(db, subject_id, scope, browser=browser, ttl=ttl)
     return raw_token

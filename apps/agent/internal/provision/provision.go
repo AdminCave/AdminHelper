@@ -266,6 +266,15 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 		return err
 	}
 	dir := config.AgentPkiDir()
+	// Held from the first read of the identity to the commit of the new one (R-0384): a
+	// renewal that finished first is the identity Replaces names, and one that waits
+	// finds the new certificate fresh, instead of storing a renewal of the line this
+	// request has the issuer revoke.
+	unlock, err := enroll.LockIdentity(dir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	// An identity issued for another server is one this server never accepts (R-0283):
 	// drop it before asking, so a failed enrollment leaves the agent on its API key, as
 	// the best-effort enrollment promises (R-0312).

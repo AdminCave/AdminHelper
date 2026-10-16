@@ -35,5 +35,5 @@ sudo docker run --rm --network host \
     command -v adminhelper-agent >/dev/null || { echo "rpm did not install the binary"; exit 1; }
     adminhelper-agent provision --url "https://$SRV_IP" --token "$PTOK" --server-id "$SID" --insecure && echo RPM_PROVISION_OK
     adminhelper-agent run --once && echo RPM_RUN_OK
-    { test -f /etc/adminhelper/identity/agent.crt || ls /etc/adminhelper/identity/ 2>/dev/null | grep -q .; } && echo RPM_CERT_OK
+    test -s /etc/adminhelper/identity/agent.crt && echo RPM_CERT_OK
   ' && echo "RPM_ALL_OK" || { echo "RPM_FAILED"; exit 1; }

@@ -117,6 +117,20 @@ const makeHookCreated = (body: Record<string, unknown>, id: string): Record<stri
   token: body.hook_type === 'webhook' ? `whk_${id}` : null,
 });
 
+// The grant POST /api/enrollment/token/for answers with (router.py _mint_token).
+// expiresAt counts from a fixed instant, not from now, so a spec can assert the
+// rendered expiry of the validity it picked.
+const makeEnrollmentGrant = (body: Record<string, unknown>): Record<string, unknown> => ({
+  token: `enr_e2e_${body.username}`,
+  subjectId: body.username,
+  scope: 'access',
+  browser: body.browser ?? false,
+  enrollPort: 8444,
+  expiresAt: new Date(Date.UTC(2026, 0, 1) + Number(body.ttl_minutes ?? 10) * 60_000)
+    .toISOString()
+    .replace('.000Z', 'Z'),
+});
+
 // FrpServerConfigOut — every key the server sends, the unset ones as null. GET never
 // returns the stored secret (`_token`).
 const frpPub = (c: Record<string, unknown>): Record<string, unknown> => ({
@@ -212,6 +226,12 @@ export const MOCK_FIXTURES: MockFixture[] = [
   },
   { method: 'GET', path: 'audit', status: 200, body: AUDIT_ROWS },
   { method: 'GET', path: 'frp/status', status: 200, body: { proxies: [], total: 0 } },
+  {
+    method: 'POST',
+    path: 'enrollment/token/for',
+    status: 200,
+    body: makeEnrollmentGrant({ username: 'bob', ttl_minutes: 10 }),
+  },
 ];
 
 export async function mockApi(page: Page): Promise<void> {
@@ -353,6 +373,10 @@ export async function mockApi(page: Page): Promise<void> {
   await page.route(api('frp/status*'), async (route) =>
     route.fulfill(json({ body: { proxies: [], total: 0 } })),
   );
+  await page.route(api('enrollment/token/for'), async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    return route.fulfill(json({ body: makeEnrollmentGrant(body) }));
+  });
 }
 
 // Note: there is no seedAuth() helper anymore. The access token lives only in
