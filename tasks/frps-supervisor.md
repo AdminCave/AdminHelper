@@ -95,6 +95,13 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py
 Doku: keine (intern)
 Abhängt von: T7
 
+### T18 — Supervisor: Dateirechte, Prüfung vor jedem Start, veröffentlichter Port  [ ]
+Komponente: server · Dateien: apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor.py
+Änderung: `umask 077` am Skriptanfang (Arbeitskopien nur für den Supervisor lesbar; `status.json` bleibt ausdrücklich 0644 für den Server). Vor jedem `start_frps`, auch beim Neustart nach einem Abbruch, läuft `check_config` erneut auf `current/`; besteht die Kopie nicht, startet nichts, Zustand und Grund wie bei einer ungültigen Eingabe ohne gültige Kopie. Eingaben (`frps.toml`, die drei PEM-Dateien) werden nur als reguläre Dateien gelesen, Symlinks und andere Dateitypen gelten als ungültig; Kopieren und Hashen mit Zeitlimit. Neue Env `FRP_BIND_PORT` (aus Compose, T9): ist sie gesetzt, darf `webServer.port` auch diesen Wert nicht belegen. Tests zuerst rot: geänderte `current/frps.toml` + Abbruch → kein Start mit der geänderten Kopie; Symlink als `frps.toml` → ungültig; FIFO als PEM-Datei → kein Hänger (Zeitlimit); `webServer.port = FRP_BIND_PORT` → `verify_failed`; Rechte der Arbeitskopien 0600/0700, `status.json` 0644.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
+Doku: keine (intern)
+Abhängt von: T8
+
 ### T10 — Pipeline: frps-Image bauen und veröffentlichen  [ ]
 Komponente: server · Dateien: .github/workflows/ci.yml, .github/workflows/docker.yml, .github/workflows/release.yml, apps/server/tests/test_release_images.py
 Änderung: `frps` in die Build-Matrix von `ci.yml` (`:635-646`) und `docker.yml` (`:31-42`), in die Manifest-Prüfung von `release.yml` (`:510`); `frp-consistency` (`ci.yml:664-690`, heute `:676` aus `docker-compose.yml`) liest die frps-Version künftig aus `apps/frps/Dockerfile`. Neue Testdatei (SPDX): die Image-Listen in `ci.yml`, `docker.yml`, `release.yml` stimmen überein und enthalten `frps`; die frps-Version im Dockerfile ist gleich `FRP_VERSION` in `ci.yml` und `release.yml`. **Harness-Pfad: PR merged Kevin.**
