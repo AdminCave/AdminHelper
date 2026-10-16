@@ -4,7 +4,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { flushSync, tick } from 'svelte';
+import { SvelteMap } from 'svelte/reactivity';
 
 vi.mock('$lib/api/users', () => ({ mintEnrollToken: vi.fn() }));
 
@@ -29,6 +30,28 @@ const noop = () => {};
 
 function renderOpen() {
   return render(EnrollTokenModal, { props: { open: true, username: 'alice', onClose: noop } });
+}
+
+// The user list passes `open` and `username` as two memoized expressions, so a click on another
+// row's button changes `username` while `open` stays true and does not fire. `rerender` cannot
+// show that: it swaps one signal holding the whole props object, which re-runs every effect.
+function renderSwitchable() {
+  const live = new SvelteMap([['username', 'alice']]);
+  const view = render(EnrollTokenModal, {
+    props: {
+      open: true,
+      get username() {
+        return live.get('username') ?? '';
+      },
+      onClose: noop,
+    },
+  });
+  const switchTo = (username: string) => {
+    flushSync(() => {
+      live.set('username', username);
+    });
+  };
+  return { ...view, switchTo };
 }
 
 async function issue(getByRole: ReturnType<typeof renderOpen>['getByRole']) {
@@ -114,6 +137,40 @@ describe('EnrollTokenModal', () => {
     await issue(getByRole);
     await rerender({ open: false });
     await rerender({ open: true, username: 'bob' });
+    resolve(GRANT);
+    // The dialog's own continuation was queued on `pending` first, so it has run by now.
+    await pending;
+    await tick();
+
+    expect(queryByText('enr_secret_once')).toBeNull();
+    expect((getByRole('button', { name: 'Ausstellen' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('starts over when the user changes while the dialog is open', async () => {
+    vi.mocked(mintEnrollToken).mockResolvedValue(GRANT);
+    const { getByRole, getByLabelText, queryByText, switchTo } = renderSwitchable();
+
+    await fireEvent.change(getByLabelText('Gültigkeit'), { target: { value: '60' } });
+    await issue(getByRole);
+    await waitFor(() => expect(queryByText('enr_secret_once')).not.toBeNull());
+
+    switchTo('bob');
+
+    expect(queryByText('enr_secret_once')).toBeNull();
+    expect((getByLabelText('Gültigkeit') as HTMLSelectElement).value).toBe('10');
+    await issue(getByRole);
+    await waitFor(() => expect(mintEnrollToken).toHaveBeenLastCalledWith('bob', 10));
+  });
+
+  it('does not show a token for the previous user that arrives after the switch', async () => {
+    let resolve: (g: EnrollmentGrant) => void = noop;
+    const pending = new Promise<EnrollmentGrant>((r) => (resolve = r));
+    vi.mocked(mintEnrollToken).mockReturnValue(pending);
+    const { getByRole, queryByText, switchTo } = renderSwitchable();
+
+    await issue(getByRole);
+    await waitFor(() => expect(mintEnrollToken).toHaveBeenCalledWith('alice', 10));
+    switchTo('bob');
     resolve(GRANT);
     // The dialog's own continuation was queued on `pending` first, so it has run by now.
     await pending;

@@ -22,7 +22,7 @@ export function remove(id: number): Promise<void> {
 }
 
 // No `browser` flag on purpose: the web panel never mints a long-lived browser leaf; that stays
-// with the API and the server CLI (R-0396).
+// with the API (R-0396). The server CLI cannot mint one either.
 export function mintEnrollToken(username: string, ttlMinutes: number): Promise<EnrollmentGrant> {
   return http.post<EnrollmentGrant>('/api/enrollment/token/for', {
     username,

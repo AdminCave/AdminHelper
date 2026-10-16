@@ -33,10 +33,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let submitting = $state(false);
   let mintGen = 0;
 
-  // Every open and close starts over: closing drops the token, and a response still in flight
-  // must not land in the next dialog, which may be for another user — handing that token on
-  // would enroll the device as the wrong user.
+  // Every open, close and change of user starts over: closing drops the token, and a response
+  // still in flight must not land in a dialog for another user — handing that token on would
+  // enroll the device as the wrong user. The parent can switch `username` while the dialog
+  // stays open (the row button of another user), so the effect must track it too.
   $effect(() => {
+    void username;
     if (open) ttlMinutes = 10;
     mintGen += 1;
     grant = null;
