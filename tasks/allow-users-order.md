@@ -18,7 +18,7 @@ Komponente: server · Dateien: apps/server/app/modules/frp/_helpers.py, apps/ser
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions.py
 Doku: docs/developer/server.html + docs/en/developer/server.html (`:114`) · CHANGELOG.md (Fixed)
 Beweis: main@e995bba6 · `apps/server/app/modules/frp/_helpers.py:92` `names = list({u.username for u in [*assigned, *admins]})`; dreimal identisch: `for seed in 1 2 3; do PYTHONHASHSEED=$seed python3 -c 'print(list({u for u in ["admin","alice","bob","carol"]}))'; done` → seed 1 `['alice', 'carol', 'bob', 'admin']`, seed 2 `['admin', 'carol', 'alice', 'bob']`, seed 3 `['admin', 'alice', 'bob', 'carol']`; `grep -rn PYTHONHASHSEED apps/server docker-compose*.yml` → kein Treffer
-Orakel: Determinismus — gleiche Eingabe, verschiedene Ausgabe je Prozess
+Orakel: property — gleiche Eingabe ergibt in jedem Prozess dieselbe Liste
 Dedup-Key: bug:server:frp/_helpers.py:allow-users-order
 HEAD: e995bba6
 Semantik: docs/developer/agent.html:65 — „Periodischer Config-Sync per Hash-Vergleich; schreibt nur, wenn sich der Server-seitige Hash ge&auml;ndert hat.“ (EN `docs/en/developer/agent.html:65`): der Hash soll sich nur mit der Config ändern
