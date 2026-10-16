@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/monitoring-templates/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_overrides.py tests/test_alembic_builtin.py
 Doku: keine (intern)
 
-### T2 — Änderungen an Template-Checks als „angepasst“ merken  [ ]
+### T2 — Änderungen an Template-Checks als „angepasst“ merken  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_template_overrides.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c9893895 2026-10-16T15:17:42+02:00
+Review: approve (.ah-out/review/monitoring-templates/T2.verdict.json)
 Änderung: Neue Hilfsfunktion in `template_sync.py`, die für einen Check mit `template_id` und `template_def_id` die aufgelöste Template-Definition liefert (Zuweisung des Servers → `_build_variables` `:76-82` → `substitute_variables`), oder `None`, wenn Zuweisung oder Definition fehlen. `update_check` (`checks.py:180-253`) und `toggle_check` (`:271-287`) vergleichen für Template-Checks jedes gesendete Feld aus `{name, description, check_type, config, enabled, interval, severity, consecutive_fails}` mit dem aufgelösten Template-Wert: anders → in `overridden_fields`, gleich → heraus; ein Wechsel von `check_type` markiert `check_type` und `config`. Manuelle Checks bleiben unverändert. Tests zuerst rot: PUT `interval` auf einem Template-Check → `overriddenFields == ["interval"]`; PUT zurück auf den Template-Wert → `[]`; `toggle` → `["enabled"]`; Typwechsel → `check_type` und `config`; manueller Check → `[]`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_overrides.py tests/test_checks_crud.py
 Doku: keine (intern)

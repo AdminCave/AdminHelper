@@ -29,6 +29,7 @@ from app.schemas import (
     CheckCreate,
     CheckUpdate,
 )
+from app.template_sync import mark_overrides
 
 # Moved to core/victoria.py (shared with the forecast checker); alias kept so
 # the existing call sites and tests stay untouched.
@@ -239,6 +240,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
             setattr(check, field, getattr(data, field))
     if "config" in sent:
         check.config = json.dumps(data.config)
+    mark_overrides(db, check, {field: getattr(data, field) for field in sent})
 
     db.commit()
     db.refresh(check)
@@ -276,6 +278,7 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Check nicht gefunden")
 
     check.enabled = not check.enabled
+    mark_overrides(db, check, {"enabled": check.enabled})
     db.commit()
 
     if check.enabled:

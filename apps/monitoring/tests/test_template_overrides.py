@@ -4,12 +4,14 @@
 
 """Template overrides and check tombstones (R-0420): the schema that lets the
 template sync keep a user's change per field (``monitor_checks.overridden_fields``)
-and keep a deleted template check deleted (``monitor_check_tombstones``).
+and keep a deleted template check deleted (``monitor_check_tombstones``), and the
+check routes that mark a changed field as overridden.
 
 The engine enforces foreign keys: SQLite ignores ON DELETE unless the pragma is on,
 and the cascade from a deleted template to its tombstones is DB-side only (no ORM
 relationship), exactly as on Postgres."""
 
+import json
 import uuid
 
 import pytest
@@ -180,3 +182,151 @@ def test_deleting_the_template_removes_its_tombstones(client):
     with factory() as db:
         left = [(t.template_id, t.def_id) for t in db.query(MonitorCheckTombstone)]
     assert left == [("tpl-2", "def-ping")]
+
+
+# --- marking user changes as overridden (update_check, toggle_check) -------------
+
+# Deliberately without "enabled" and "description", like the built-in definitions.
+_PING_DEF = {
+    "def_id": "def-ping",
+    "name": "Ping {{server_name}}",
+    "check_type": "ping",
+    "config": {"target": "{{hostname}}"},
+    "interval": "5m",
+    "severity": "critical",
+    "consecutive_fails": 3,
+}
+_ASSIGN = {"server_id": "srv-1", "hostname": "web01.example", "server_name": "web01"}
+
+
+def _template_check(c, check_def=_PING_DEF) -> str:
+    """Create a template with one check definition, assign it to srv-1 and return
+    the id of the check the assignment created."""
+    r = c.post("/templates", json={"name": "T", "check_definitions": [check_def]})
+    assert r.status_code == 201, r.text
+    assert c.post(f"/templates/{r.json()['id']}/assign", json=_ASSIGN).status_code == 200
+    (check,) = c.get("/checks", params={"server_id": "srv-1"}).json()
+    return check["id"]
+
+
+def test_changing_a_field_marks_it_overridden(client):
+    c, _factory = client
+    cid = _template_check(c)
+    r = c.put(f"/checks/{cid}", json={"interval": "15m"})
+    assert r.status_code == 200, r.text
+    assert r.json()["overriddenFields"] == ["interval"]
+
+
+def test_setting_a_field_back_to_the_template_value_clears_it(client):
+    c, _factory = client
+    cid = _template_check(c)
+    c.put(f"/checks/{cid}", json={"interval": "15m"})
+    r = c.put(f"/checks/{cid}", json={"interval": "5m"})
+    assert r.status_code == 200, r.text
+    assert r.json()["overriddenFields"] == []
+
+
+def test_toggle_marks_enabled_and_toggling_back_clears_it(client):
+    c, _factory = client
+    cid = _template_check(c)
+    r = c.post(f"/checks/{cid}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (False, ["enabled"])
+    r = c.post(f"/checks/{cid}/toggle")
+    assert (r.json()["enabled"], r.json()["overriddenFields"]) == (True, [])
+
+
+def test_type_switch_marks_type_and_config_even_with_the_template_config(client):
+    # {"server_id": ...} is a valid config for both types: the config still equals
+    # the template's, but it now belongs to another type, so the sync must not
+    # write the template's config either.
+    c, _factory = client
+    cid = _template_check(
+        c,
+        {
+            "def_id": "def-heartbeat",
+            "name": "Heartbeat",
+            "check_type": "agent_ping",
+            "config": {"server_id": "{{server_id}}"},
+        },
+    )
+    r = c.put(f"/checks/{cid}", json={"check_type": "disk_forecast"})
+    assert r.status_code == 200, r.text
+    assert r.json()["overriddenFields"] == ["check_type", "config"]
+
+
+def test_full_resend_compares_with_the_resolved_template_values(client):
+    # The check editor resends every field; name and config carry the substituted
+    # variables, so only the really changed severity counts.
+    c, _factory = client
+    cid = _template_check(c)
+    r = c.put(
+        f"/checks/{cid}",
+        json={
+            "server_id": "srv-1",
+            "name": "Ping web01",
+            "description": None,
+            "check_type": "ping",
+            "config": {"target": "web01.example"},
+            "enabled": True,
+            "interval": "5m",
+            "severity": "warning",
+            "consecutive_fails": 3,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["overriddenFields"] == ["severity"]
+
+
+def test_a_field_the_stored_definition_leaves_out_compares_with_its_default(client):
+    # The API stores every field of a definition, the built-in seed does not: their
+    # checks got the default, so the default is the template value.
+    c, factory = client
+    with factory() as db:
+        db.add(MonitorTemplate(id="tpl-1", name="T", check_definitions=json.dumps([_PING_DEF])))
+        db.commit()
+    assert c.post("/templates/tpl-1/assign", json=_ASSIGN).status_code == 200
+    (check,) = c.get("/checks", params={"server_id": "srv-1"}).json()
+
+    assert c.post(f"/checks/{check['id']}/toggle").json()["overriddenFields"] == ["enabled"]
+    assert c.post(f"/checks/{check['id']}/toggle").json()["overriddenFields"] == []
+    r = c.put(f"/checks/{check['id']}", json={"description": None})
+    assert r.json()["overriddenFields"] == []
+
+
+def test_manual_check_is_never_marked(client):
+    c, _factory = client
+    r = c.post(
+        "/checks",
+        json={
+            "server_id": "srv-1",
+            "name": "ping",
+            "check_type": "ping",
+            "config": {"target": "192.0.2.10"},
+        },
+    )
+    cid = r.json()["id"]
+    assert c.put(f"/checks/{cid}", json={"interval": "15m"}).json()["overriddenFields"] == []
+    assert c.post(f"/checks/{cid}/toggle").json()["overriddenFields"] == []
+
+
+def test_only_known_field_names_are_stored_as_a_json_list(client):
+    # to_dict parses the column unguarded, so the writer must never store anything
+    # but a JSON list of overridable field names: a client-sent list is ignored,
+    # server_id is no template field, and an unreadable stored value is replaced.
+    c, factory = client
+    cid = _template_check(c)
+    with factory() as db:
+        db.get(MonitorCheck, cid).overridden_fields = "not json"
+        db.commit()
+
+    r = c.put(
+        f"/checks/{cid}",
+        json={"interval": "15m", "server_id": "srv-1", "overridden_fields": ["evil"]},
+    )
+    assert r.status_code == 200, r.text
+
+    with factory() as db:
+        raw = db.execute(
+            text("SELECT overridden_fields FROM monitor_checks WHERE id = :id"), {"id": cid}
+        ).scalar()
+    assert json.loads(raw) == ["interval"]

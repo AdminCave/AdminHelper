@@ -10,6 +10,7 @@ Core functions:
   apply_template()  — Assigns a template to a server + creates checks
   remove_template() — Removes the assignment + deletes the associated checks
   cleanup_server()  — Deletes all monitoring data of a server
+  mark_overrides()  — Records which fields of a template check a user changed
 """
 
 from __future__ import annotations
@@ -82,25 +83,116 @@ def _build_variables(assignment: MonitorTemplateAssignment) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Overrides: fields a user changed on a template check (R-0420)
+# ---------------------------------------------------------------------------
+
+# The check fields a template definition sets. A user change to one of them is
+# kept in MonitorCheck.overridden_fields, always as a JSON list of these names in
+# this order: to_dict parses the column without a guard.
+TEMPLATE_CHECK_FIELDS = (
+    "name",
+    "description",
+    "check_type",
+    "config",
+    "enabled",
+    "interval",
+    "severity",
+    "consecutive_fails",
+)
+
+
+def _template_check_values(resolved: dict) -> dict:
+    """The value of each template check field for a resolved template def, with
+    the default a check gets where the def leaves the field out (the built-in
+    defs carry no "enabled"). Config stays a dict."""
+    return {
+        "name": resolved.get("name", ""),
+        "description": resolved.get("description"),
+        "check_type": resolved.get("check_type", "ping"),
+        "config": resolved.get("config", {}),
+        "enabled": resolved.get("enabled", True),
+        "interval": resolved.get("interval", "5m"),
+        "severity": resolved.get("severity", "critical"),
+        "consecutive_fails": resolved.get("consecutive_fails", 3),
+    }
+
+
+def resolve_template_check(db: Session, check: MonitorCheck) -> dict | None:
+    """The template values for a template check: its definition with the
+    variables of its server's assignment substituted, as _template_check_values.
+    None for a manual check, or when the assignment or the definition is gone."""
+    if not check.template_id or not check.template_def_id:
+        return None
+    assignment = (
+        db.query(MonitorTemplateAssignment)
+        .filter(
+            MonitorTemplateAssignment.template_id == check.template_id,
+            MonitorTemplateAssignment.server_id == check.server_id,
+        )
+        .first()
+    )
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == check.template_id).first()
+    if assignment is None or template is None:
+        return None
+    check_defs = json.loads(template.check_definitions) if template.check_definitions else []
+    for check_def in check_defs:
+        if check_def.get("def_id") == check.template_def_id:
+            return _template_check_values(
+                substitute_variables(check_def, _build_variables(assignment))
+            )
+    return None
+
+
+def _read_overrides(check: MonitorCheck) -> set[str]:
+    """The overridden fields of a check; anything but a list of known names in
+    the column counts as nothing overridden."""
+    try:
+        stored = json.loads(check.overridden_fields or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return set()
+    if not isinstance(stored, list):
+        return set()
+    return {f for f in stored if f in TEMPLATE_CHECK_FIELDS}
+
+
+def mark_overrides(db: Session, check: MonitorCheck, changed: dict) -> None:
+    """Record which of the `changed` template check fields (name -> new value,
+    config as a dict) now differ from the template: a different value is
+    overridden, the template value is not. Manual checks are left alone."""
+    template_values = resolve_template_check(db, check)
+    if template_values is None:
+        return
+    fields = _read_overrides(check)
+    for field in TEMPLATE_CHECK_FIELDS:
+        if field not in changed:
+            continue
+        if changed[field] == template_values[field]:
+            fields.discard(field)
+        else:
+            fields.add(field)
+    # A config belongs to its check type: as long as the type is the user's, the
+    # sync must not write the template's config either, even an equal one.
+    if "check_type" in fields:
+        fields.add("config")
+    check.overridden_fields = json.dumps([f for f in TEMPLATE_CHECK_FIELDS if f in fields])
+
+
 def _create_check(
     db: Session, template_id: str, server_id: str, def_id: str, resolved: dict
 ) -> MonitorCheck:
     """Create a MonitorCheck (+ its pending state) from a resolved template def.
     Shared by apply_template and _sync_checks_for_server so their column defaults
-    ("ping", "5m", "critical", 3, ...) cannot drift apart (2.35)."""
+    ("ping", "5m", "critical", 3, ...) cannot drift apart (2.35); the defaults
+    live in _template_check_values, which the override comparison uses too."""
+    values = _template_check_values(resolved)
+    values["config"] = json.dumps(values["config"])
     check = MonitorCheck(
         id=str(uuid.uuid4()),
         server_id=server_id,
-        name=resolved.get("name", ""),
-        description=resolved.get("description"),
-        check_type=resolved.get("check_type", "ping"),
-        config=json.dumps(resolved.get("config", {})),
-        enabled=resolved.get("enabled", True),
-        interval=resolved.get("interval", "5m"),
-        severity=resolved.get("severity", "critical"),
-        consecutive_fails=resolved.get("consecutive_fails", 3),
         template_id=template_id,
         template_def_id=def_id,
+        **values,
     )
     db.add(check)
     db.add(MonitorState(check_id=check.id, status="pending"))
