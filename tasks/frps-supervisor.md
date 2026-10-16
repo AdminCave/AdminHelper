@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # frps-Supervisor: Konfiguration und Zertifikate selbst übernehmen — Task-Ledger
-Status: geplant · Branch: feature/frps-supervisor · Review: pro Task
+Status: aktiv · Branch: feature/frps-supervisor · Review: pro Task
 Spec: Roadmap R-0411
 Heavy: linux-full + scenario --tunnel --enforce — neues frps-Image mit Supervisor, neue Compose-Volumes und das Übernehmen von Konfiguration und Zertifikaten lassen sich nur im echten Stack belegen (`run.sh integration`); der Tunnel-Datenpfad über Hosts mit einem frps-Neustart mitten im Lauf nur im Multibox-Lauf `--tunnel --enforce` (vor dem Merge, Kevin 2026-10-16)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
