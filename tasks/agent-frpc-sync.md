@@ -47,8 +47,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestSync
 Doku: docs/admin/agent-deployment.html + docs/en/admin/agent-deployment.html (später angelegter Tunnel greift beim nächsten Agent-Lauf, ohne Tunnel kein frpc, Bestandshosts ohne Tunnel einmal neu provisionieren; Abschnitt um `:149` „Neu provisionieren“) · CHANGELOG.md (Fixed)
 Abhängt von: T3
 
-### T5 — Agent: Neu-Provisionieren übernimmt die neue Config sofort  [ ]
-Komponente: agent · Dateien: apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/frpc/sync.go, apps/agent/internal/provision/provision.go
+### T5 — Agent: Neu-Provisionieren übernimmt die neue Config sofort  [x]
+Komponente: agent · Dateien: apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, apps/agent/internal/frpc/sync.go, apps/agent/internal/provision/provision.go, apps/agent/internal/provision/provision_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @562f571f 2026-10-16T14:31:45+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T5.verdict.json)
 Änderung: `Apply` schreibt `frpc.toml` nicht mehr selbst und ruft nicht nur `enableFrpcService` (`apply.go:102`, `:120`, `:125`), sondern nutzt denselben Anwende-Pfad wie `Sync` (aus T3/T4 als gemeinsame Funktion in `sync.go`): Vorspann, enable bzw. Neustart bei laufendem frpc, leere TOML → stoppen. Gespeichert wird der Hash des Server-Texts statt `writeConfigHash` über die lokal geschriebene Datei (`sync.go:131`; heute weicht er unter Windows durch `rewriteIdentityPaths` ab). `provision.Run` ohne FRP-Paket ruft nach `WriteSyncConfig` den Pfad „nichts zu tun“ (stoppt einen frpc aus einer früheren Provisionierung). Tests zuerst rot, Namen mit `Reprovision`: laufender frpc + neues Paket → Neustart und neue Datei; gespeicherter Hash = Hash des Paket-Texts; Provision ohne Paket bei vorhandenem frpc → disable, Dateien weg.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Reprovision
 Doku: keine (intern; CHANGELOG-Eintrag aus T4 deckt es)

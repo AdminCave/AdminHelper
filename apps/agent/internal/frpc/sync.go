@@ -101,9 +101,21 @@ func Sync() error {
 	if got := hashConfig(newConfig); got != remoteHash {
 		return fmt.Errorf("gelieferte Config passt nicht zum Hash (erwartet %s, erhalten %s)", remoteHash, got)
 	}
+	return applyConfig(newConfig)
+}
+
+// errFrpcService marks a failure to start or stop frpc, apart from a failure to write or remove
+// its files: the provisioning only warns about it, since the next run retries.
+var errFrpcService = errors.New("frpc service action failed")
+
+// applyConfig puts a server-built frpc.toml in place and frpc in the matching state; Sync and
+// the provisioning (Apply) share it. The stored hash is the one of the server's text, not of the
+// file written (preamble, identity paths), so it matches the server's config-hash.
+func applyConfig(serverToml []byte) error {
+	remoteHash := hashConfig(serverToml)
 
 	// The server sends the common part also with no tunnel left; frpc must not run without one.
-	if !hasProxies(newConfig) {
+	if !hasProxies(serverToml) {
 		if err := stopFrpc(); err != nil {
 			return err
 		}
@@ -119,23 +131,26 @@ func Sync() error {
 	// that frpc.service crash-loops on (Restart=on-failure) until the next sync ~5 min later. Stage
 	// to a temp file + rename, like enroll.stageIdentity (4.82).
 	tmp := config.FrpConfigFile() + ".tmp"
-	if err := os.WriteFile(tmp, append([]byte(localPreamble), rewriteIdentityPaths(newConfig)...), 0600); err != nil {
+	if err := os.WriteFile(tmp, append([]byte(localPreamble), rewriteIdentityPaths(serverToml)...), 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
 	}
 	if err := os.Rename(tmp, config.FrpConfigFile()); err != nil {
 		return fmt.Errorf("frpc.toml aktivieren: %w", err)
 	}
+	// German like before, logged before frpc starts: the desktop tunnel E2E greps the
+	// provisioning output for it, and its container has no systemctl to start frpc.
+	logger.Infof("frpc.toml geschrieben")
 
 	// frpc is stopped on the first tunnel and after a former run stopped it: enable it, so it
 	// also runs after a reboot. A running frpc restarts onto the new file.
 	started := "restarted"
 	if isActive() {
 		if err := restartService(); err != nil {
-			return fmt.Errorf("restart frpc: %w", err)
+			return fmt.Errorf("%w: restart frpc: %w", errFrpcService, err)
 		}
 	} else {
 		if err := enableService(); err != nil {
-			return fmt.Errorf("enable and start frpc: %w", err)
+			return fmt.Errorf("%w: enable and start frpc: %w", errFrpcService, err)
 		}
 		started = "enabled and started"
 	}
@@ -150,8 +165,9 @@ func Sync() error {
 	return nil
 }
 
-// syncWithoutFrpConfig stops frpc and removes frpc.toml and the hash. Neither file left means
-// a former run already stopped it; returning early keeps systemctl out of every timer run.
+// syncWithoutFrpConfig stops frpc and removes frpc.toml and the hash, on a null hash and for a
+// provisioning without an FRP bundle. Neither file left means a former run already stopped it;
+// returning early keeps systemctl out of every timer run.
 func syncWithoutFrpConfig() error {
 	_, confErr := os.Stat(config.FrpConfigFile())
 	_, hashErr := os.Stat(config.FrpHashFile())
@@ -164,7 +180,7 @@ func syncWithoutFrpConfig() error {
 	if err := os.Remove(config.FrpHashFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove the config hash: %w", err)
 	}
-	logger.Infof("No FRP config for this host on the server, frpc stopped and disabled.")
+	logger.Infof("No FRP config or tunnel for this host on the server, frpc stopped and disabled.")
 	return nil
 }
 
@@ -172,7 +188,7 @@ func syncWithoutFrpConfig() error {
 // order keeps the file for the retry when the stop fails.
 func stopFrpc() error {
 	if err := disableService(); err != nil {
-		return fmt.Errorf("stop and disable frpc: %w", err)
+		return fmt.Errorf("%w: stop and disable frpc: %w", errFrpcService, err)
 	}
 	if err := os.Remove(config.FrpConfigFile()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove frpc.toml: %w", err)
@@ -219,13 +235,4 @@ func parseConfigHash(body []byte) (string, error) {
 // hashConfig computes the hex-encoded SHA256 hash of the config bytes.
 func hashConfig(data []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(data))
-}
-
-// writeConfigHash computes the SHA256 hash of the current frpc.toml.
-func writeConfigHash() error {
-	data, err := os.ReadFile(config.FrpConfigFile())
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(config.FrpHashFile(), []byte(hashConfig(data)), 0644)
 }

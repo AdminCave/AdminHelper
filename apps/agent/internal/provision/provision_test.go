@@ -615,7 +615,8 @@ func TestRunEnrollmentHoldsTheIdentityLockUntilItStored(t *testing.T) {
 }
 
 // R-0398: a provisioning stores the sync config also without an FRP bundle, so a tunnel
-// created later reaches the host with the next sync instead of never.
+// created later reaches the host with the next sync instead of never. It then stops a frpc of an
+// earlier provisioning (frpc.ApplyWithoutBundle).
 func TestRunWritesTheSyncConfigWithoutAnFRPBundle(t *testing.T) {
 	t.Setenv("ADMINHELPER_FRP_DIR", t.TempDir())
 	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
@@ -632,9 +633,22 @@ func TestRunWritesTheSyncConfigWithoutAnFRPBundle(t *testing.T) {
 	orig := activatePort
 	activatePort = port
 	t.Cleanup(func() { activatePort = orig })
+	stops := 0
+	origApply := applyWithoutBundle
+	applyWithoutBundle = func() error {
+		stops++
+		if _, err := os.Stat(config.FrpAdminHelperConf()); err != nil {
+			t.Errorf("frpc stopped before the sync config was written (%v)", err)
+		}
+		return nil
+	}
+	t.Cleanup(func() { applyWithoutBundle = origApply })
 
 	if err := Run(srv.URL, "tok", "srv-1", "", true, ""); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if stops != 1 {
+		t.Errorf("frpc.ApplyWithoutBundle calls = %d, want 1", stops)
 	}
 
 	cfg, err := config.LoadFrpcConfig()

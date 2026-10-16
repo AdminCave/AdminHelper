@@ -10,7 +10,8 @@
 //   - writes the server API key to the FRP sync config (always: frpc.WriteSyncConfig,
 //     so a tunnel created later reaches the host with the next sync),
 //   - with an available monitor service: monitor.Init with the returned key,
-//   - with a configured FRP tunnel: frpc.Apply with the returned bundle.
+//   - with a configured FRP tunnel: frpc.Apply with the returned bundle, without one
+//     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning).
 //
 // This way a single command on the target server suffices, regardless of which
 // components (FRP / monitor / server-read only) are configured.
@@ -64,6 +65,9 @@ type activateResponse struct {
 // activatePort is the gateway's certless enroll plane, which the activate call
 // goes to; tests point it at an httptest server.
 var activatePort = 8444
+
+// applyWithoutBundle is frpc.ApplyWithoutBundle; tests swap it, the real one runs systemctl.
+var applyWithoutBundle = frpc.ApplyWithoutBundle
 
 // Run redeems a provision token against the server endpoint and
 // installs the returned bundles in a platform-appropriate way. A non-empty
@@ -155,7 +159,8 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 
 	// 2. The sync config always (Apply writes it along with frpc's config), FRP apply
 	// only if the server has an FRP tunnel. Without the sync config the API key is lost
-	// and a tunnel created later never reaches this host (R-0398).
+	// and a tunnel created later never reaches this host (R-0398). Without a tunnel no
+	// frpc runs, also not one an earlier provisioning set up.
 	if resp.FRP != nil {
 		fmt.Println("→ FRP-Client wird eingerichtet...")
 		if err := frpc.Apply(frpc.ApplyParams{
@@ -176,6 +181,9 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
 		}); err != nil {
 			return fmt.Errorf("write the FRP sync config: %w", err)
+		}
+		if err := applyWithoutBundle(); err != nil {
+			return fmt.Errorf("stop the frpc of an earlier provisioning: %w", err)
 		}
 		fmt.Println("→ Keine FRP-Tunnel fuer diesen Server konfiguriert — FRP wird uebersprungen.")
 	}
