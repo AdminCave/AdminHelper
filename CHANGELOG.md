@@ -322,6 +322,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: Docker-Container werden mit aktueller Docker-CLI wieder erfasst (R-0417):** Ab Docker 28.2 gibt
+  `docker ps -a --format '{{json .}}'` das Feld `Platform` als Objekt aus. Der Agent las jede Zeile als reine
+  Zeichenketten, verwarf damit jede Zeile und schickte keine Container mehr; `docker_health` stand auf „Keine
+  Docker-Daten im Report“. Jetzt liest er nur die genutzten Felder (`ID`, `Names`, `Image`, `State`, `Status`) und
+  uebergeht alle anderen; das Report-Format bleibt gleich. Ist Docker installiert, der Daemon aber nicht erreichbar,
+  scheitert `docker ps` oder sind Zeilen nicht lesbar, schreibt der Agent eine Warnung ins Log, die auch der Bericht
+  von `adminhelper-agent diagnose` zeigt. Die Docker-Sektion im Desktop sagt „Alle N Container laufen“ nur noch,
+  wenn alle laufen, sonst „X von N laufen“, und ohne Docker-Daten im Report „keine Daten“ statt „—“.
 - **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
   Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
   Schreibvorgaenge, lag danach der Schluessel der einen neben dem Zertifikat der anderen. Kam eine Erneuerung vor
