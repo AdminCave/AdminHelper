@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck } from '$lib/api/types';
+  import type { MonitorCheck, MonitorServiceDetails } from '$lib/api/types';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -18,44 +18,91 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
+  // Spelled out: the i18n "no unused keys" guard only sees quoted keys.
+  const NOTE_KEY = {
+    failed: 'monitoring.services.note.failed',
+    inactive: 'monitoring.services.note.inactive',
+    down: 'monitoring.services.note.down',
+    nodata: 'monitoring.services.note.nodata',
+  } as const;
+  const DOT = { crit: 'mon-critical', warn: 'mon-warning', none: 'mon-unknown' } as const;
+
   interface Svc {
     name: string;
-    status: 'ok' | 'warn' | 'crit';
-    note: string;
+    // none: a watched name without data, neither down nor running.
+    level: keyof typeof DOT;
+    note: keyof typeof NOTE_KEY;
   }
+  type Neutral = 'monitoring.services.noData' | 'monitoring.services.unknown';
   interface Info {
-    total: number;
-    problems: Svc[];
-    running: number;
-    allOk: boolean;
+    // The text of a neutral pill instead of the counts: noData without details,
+    // unknown without a problem in a status other than ok (systemctl failed, no
+    // watched name has data). Nothing honest to count in either case.
+    neutral: Neutral | null;
+    rows: Svc[];
+    problems: number;
+    count: { n: number; of: number; key: string } | null;
   }
 
   function info(check: MonitorCheck): Info {
-    const d = (check.state?.details ?? null) as Record<string, unknown> | null;
-    if (!d) return { total: 0, problems: [], running: 0, allOk: false };
+    const d = (check.state?.details ?? null) as MonitorServiceDetails | null;
+    if (!d) return { neutral: 'monitoring.services.noData', rows: [], problems: 0, count: null };
+    const status = check.state?.status;
+    const neutral = (problems: number): Neutral | null =>
+      problems === 0 && status !== 'ok' ? 'monitoring.services.unknown' : null;
 
     if (d.mode === 'auto') {
-      const failed = (d.failed ?? []) as string[];
-      const inactive = (d.enabled_inactive ?? []) as string[];
-      const problems: Svc[] = [
-        ...failed.map<Svc>((n) => ({ name: n, status: 'crit', note: 'failed' })),
-        ...inactive.map<Svc>((n) => ({ name: n, status: 'warn', note: 'inactive' })),
+      const rows: Svc[] = [
+        ...(d.failed ?? []).map<Svc>((n) => ({ name: n, level: 'crit', note: 'failed' })),
+        ...(d.enabled_inactive ?? []).map<Svc>((n) => ({
+          name: n,
+          level: 'warn',
+          note: 'inactive',
+        })),
       ];
-      const countActive = Number(d.active_count ?? 0);
+      // Agents before R-0418 send no counts: then the problem count alone, no "x/y".
+      const { active_count: n, total: of } = d;
       return {
-        total: countActive + problems.length,
-        problems,
-        running: countActive,
-        allOk: problems.length === 0,
+        neutral: neutral(rows.length),
+        rows,
+        problems: rows.length,
+        count:
+          typeof n === 'number' && typeof of === 'number'
+            ? { n, of, key: 'monitoring.services.active' }
+            : null,
       };
     }
 
-    const watched = (d.watched ?? []) as Array<{ name: string; running: boolean }>;
-    const running = watched.filter((s) => s.running).length;
-    const problems: Svc[] = watched
-      .filter((s) => !s.running)
-      .map<Svc>((s) => ({ name: s.name, status: 'crit', note: 'down' }));
-    return { total: watched.length, problems, running, allOk: problems.length === 0 };
+    // Details written before R-0418 carry running alone; false meant down then.
+    const watched = (d.watched ?? []).map((s) => ({
+      name: s.name,
+      state: s.state ?? (s.running ? 'running' : 'down'),
+    }));
+    const down = watched
+      .filter((s) => s.state === 'down')
+      .map<Svc>((s) => ({ name: s.name, level: 'crit', note: 'down' }));
+    const nodata = watched
+      .filter((s) => s.state === 'nodata')
+      .map<Svc>((s) => ({ name: s.name, level: 'none', note: 'nodata' }));
+    return {
+      neutral: neutral(down.length),
+      rows: [...down, ...nodata],
+      problems: down.length,
+      count: {
+        n: watched.filter((s) => s.state === 'running').length,
+        of: watched.length,
+        key: 'monitoring.services.running',
+      },
+    };
+  }
+
+  // The dot's source, the effective status: the raw problems of a first, still
+  // damped failure leave it ok, and then the pill must not turn red either.
+  function problemPill(check: MonitorCheck): string {
+    const status = check.state?.status;
+    if (status === 'critical') return 'pill-crit';
+    if (status === 'warning') return 'pill-warn';
+    return '';
   }
 </script>
 
@@ -75,35 +122,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="mon-line-name">{check.name}</span>
         {/snippet}
         {#snippet value()}
-          {#if i.allOk}
-            <span class="mon-line-pill pill-ok"
-              >{$t('monitoring.services.allOk', { count: i.running })}</span
-            >
+          {#if i.neutral}
+            <span class="mon-line-pill" title={check.state?.message}>{$t(i.neutral)}</span>
           {:else}
-            <span class="mon-line-pill pill-crit"
-              >{i.problems.length} {$t('monitoring.services.problems')}</span
-            >
-            <span class="mon-line-pill"
-              >{i.running}/{i.total} {$t('monitoring.services.running')}</span
-            >
+            {#if i.problems > 0}
+              <span class="mon-line-pill {problemPill(check)}"
+                >{i.problems} {$t('monitoring.services.problems')}</span
+              >
+            {:else}
+              <span class="mon-line-pill pill-ok">{$t('monitoring.services.allOk')}</span>
+            {/if}
+            {#if i.count}
+              <span class="mon-line-pill">{i.count.n}/{i.count.of} {$t(i.count.key)}</span>
+            {/if}
           {/if}
         {/snippet}
         {#snippet extraBody()}
-          {#if i.allOk}
+          {#if i.rows.length > 0}
             <div class="mon-expand-list">
-              <div class="mon-expand-hint">
-                {$t('monitoring.services.allOkHint', { count: i.running })}
-              </div>
-            </div>
-          {:else}
-            <div class="mon-expand-list">
-              {#each i.problems as s (s.name)}
-                <div class="mon-expand-row level-{s.status}">
-                  <span class="mon-dot mon-{s.status === 'crit' ? 'critical' : 'warning'}"></span>
+              {#each i.rows as s (s.name)}
+                <div class="mon-expand-row level-{s.level}">
+                  <span class="mon-dot {DOT[s.level]}"></span>
                   <span class="mon-expand-name">{s.name}</span>
-                  <span class="mon-expand-note">{s.note}</span>
+                  <span class="mon-expand-note">{$t(NOTE_KEY[s.note])}</span>
                 </div>
               {/each}
+            </div>
+          {:else if !i.neutral}
+            <div class="mon-expand-list">
+              <div class="mon-expand-hint">{$t('monitoring.services.allOkHint')}</div>
             </div>
           {/if}
         {/snippet}

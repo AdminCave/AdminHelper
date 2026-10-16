@@ -283,7 +283,11 @@ export interface MonitorServiceDetails {
   mode?: 'auto' | 'list';
   failed?: string[];
   enabled_inactive?: string[];
-  watched?: { name: string; running: boolean }[];
+  // Only with the agent's service counts; agents before R-0418 send none.
+  active_count?: number;
+  total?: number;
+  // Details written before R-0418 carry running alone, without state.
+  watched?: { name: string; state?: 'running' | 'down' | 'nodata'; running?: boolean }[];
 }
 
 export interface MonitorContainerDetails {
