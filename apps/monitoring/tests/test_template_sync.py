@@ -4,7 +4,8 @@
 
 """template_sync (audit gap: most complex monitoring logic, previously
 untested): variable substitution, the create/update/delete diffing across
-servers, assignment removal and full server cleanup."""
+servers, assignment removal and full server cleanup, and the user's changes and
+deleted template checks the sync keeps (R-0420)."""
 
 import json
 import uuid
@@ -20,10 +21,13 @@ from app.models import (
     MonitorAgentKey,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorCheckTombstone,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
 )
+from app.routers import checks as checks_router
+from app.schemas import CheckUpdate
 from app.template_sync import (
     apply_template,
     cleanup_server,
@@ -80,6 +84,9 @@ def db(monkeypatch):
 
     monkeypatch.setattr(template_sync, "add_check", _record_add)
     monkeypatch.setattr(template_sync, "remove_check", lambda cid: removed.append(cid))
+    # The check routes a user's change goes through schedule the same way.
+    monkeypatch.setattr(checks_router, "add_check", _record_add)
+    monkeypatch.setattr(checks_router, "remove_check", lambda cid: removed.append(cid))
 
     session = factory()
     session.scheduled = scheduled
@@ -351,3 +358,174 @@ def test_cleanup_server_removes_everything_for_server(db):
     assert db.query(MonitorAgentKey).count() == 0
     assert db.query(MonitorAgentLiveness).count() == 0
     assert [m.id for m in db.query(MonitorMaintenance).all()] == ["m-global"]
+
+
+# --- user changes and deleted template checks survive the sync (R-0420) --------
+
+
+def _tombstones(db):
+    return sorted((t.server_id, t.def_id) for t in db.query(MonitorCheckTombstone))
+
+
+def test_sync_keeps_an_overridden_field_and_updates_the_others(db):
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    checks_router.update_check(cid, CheckUpdate(interval="15m"), db)
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "interval": "1m", "severity": "warning"}])
+    db.commit()
+    result = sync_template(db, tpl)
+
+    assert result["updated"] == 1
+    check = db.get(MonitorCheck, cid)
+    assert (check.interval, check.severity) == ("15m", "warning")
+    assert json.loads(check.overridden_fields) == ["interval"]
+
+
+def test_sync_keeps_a_check_the_user_disabled_disabled(db):
+    # PING_DEF carries no "enabled": the sync used to write True and so switched
+    # the check on again with every template change.
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    checks_router.toggle_check(cid, db)
+    db.scheduled.clear()
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "severity": "warning"}])
+    db.commit()
+    sync_template(db, tpl)
+
+    check = db.get(MonitorCheck, cid)
+    assert (check.enabled, check.severity) == (False, "warning")
+    assert cid not in db.scheduled
+
+
+def test_sync_keeps_the_type_of_a_check_whose_config_the_user_changed(db):
+    # The template's new type with the user's ping config would be a pair nobody
+    # validated; type and config stay together, the other fields still follow.
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    checks_router.update_check(cid, CheckUpdate(config={"target": "192.0.2.10"}), db)
+
+    tpl.check_definitions = json.dumps(
+        [
+            {
+                **PING_DEF,
+                "check_type": "tcp",
+                "config": {"target": "{{hostname}}", "port": 22},
+                "severity": "warning",
+            }
+        ]
+    )
+    db.commit()
+    sync_template(db, tpl)
+
+    check = db.get(MonitorCheck, cid)
+    assert (check.check_type, json.loads(check.config), check.severity) == (
+        "ping",
+        {"target": "192.0.2.10"},
+        "warning",
+    )
+    assert json.loads(check.overridden_fields) == ["config"]
+
+
+def test_deleted_template_check_is_not_created_again_by_the_sync(db):
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    apply_template(db, tpl, "srv-2", "db01.example", "DB 01")
+    deleted_id = db.query(MonitorCheck).filter_by(server_id="srv-1").one().id
+    checks_router.delete_check(deleted_id, db)
+    assert _tombstones(db) == [("srv-1", "ping")]
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "interval": "1m"}])
+    db.commit()
+    result = sync_template(db, tpl)
+
+    # The tombstone holds for its server only; srv-2 keeps following the template.
+    assert result == {"created": 0, "updated": 1, "deleted": 0, "servers": 2}
+    assert [(c.server_id, c.interval) for c in db.query(MonitorCheck)] == [("srv-2", "1m")]
+
+
+def test_deleting_a_manual_or_unassigned_check_leaves_no_tombstone(db):
+    tpl = _template(db, [PING_DEF])
+    db.add(
+        MonitorCheck(
+            id="manual-1", server_id="srv-1", name="Manuell", check_type="ping", config="{}"
+        )
+    )
+    # A template check whose server no longer has the template: nothing could
+    # create it again, so there is nothing to keep deleted.
+    db.add(
+        MonitorCheck(
+            id="orphan-1",
+            server_id="srv-1",
+            name="Ping",
+            check_type="ping",
+            config="{}",
+            template_id=tpl.id,
+            template_def_id="ping",
+        )
+    )
+    db.commit()
+
+    checks_router.delete_check("manual-1", db)
+    checks_router.delete_check("orphan-1", db)
+
+    assert db.query(MonitorCheck).count() == 0
+    assert _tombstones(db) == []
+
+
+def test_overridden_check_is_deleted_when_its_definition_leaves_the_template(db):
+    # The template owns its checks: dropping a definition removes the check even
+    # where a user adjusted it.
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    checks_router.update_check(cid, CheckUpdate(interval="15m"), db)
+
+    tpl.check_definitions = json.dumps([])
+    db.commit()
+    result = sync_template(db, tpl)
+
+    assert result["deleted"] == 1
+    assert db.query(MonitorCheck).count() == 0
+    assert cid in db.removed
+
+
+def test_remove_and_assign_again_creates_a_deleted_check_again(db):
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    apply_template(db, tpl, "srv-2", "db01.example", "DB 01")
+    for check in db.query(MonitorCheck).all():
+        checks_router.delete_check(check.id, db)
+    assert _tombstones(db) == [("srv-1", "ping"), ("srv-2", "ping")]
+
+    remove_template(db, tpl.id, "srv-1")
+    assert _tombstones(db) == [("srv-2", "ping")]
+
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    result = sync_template(db, tpl)
+
+    assert result["created"] == 0
+    assert [c.server_id for c in db.query(MonitorCheck)] == ["srv-1"]
+
+
+def test_cleanup_server_removes_the_servers_tombstones(db):
+    # Tombstones carry no foreign key to the server (it lives in the server's
+    # database), so cleanup_server has to drop them itself.
+    tpl_a = _template(db, [PING_DEF])
+    tpl_b = _template(db, [PING_DEF])
+    for tpl in (tpl_a, tpl_b):
+        apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    apply_template(db, tpl_a, "srv-2", "db01.example", "DB 01")
+    for check in db.query(MonitorCheck).all():
+        checks_router.delete_check(check.id, db)
+    assert len(_tombstones(db)) == 3
+
+    cleanup_server(db, "srv-1")
+
+    assert [(t.template_id, t.server_id) for t in db.query(MonitorCheckTombstone)] == [
+        (tpl_a.id, "srv-2")
+    ]

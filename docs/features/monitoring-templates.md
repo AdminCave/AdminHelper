@@ -140,8 +140,10 @@ neuen Pfade; bestehende Pfade bleiben (ihre Antworten sind untypisiert `{}`).
   mit dem **aufgelösten Template-Wert** verglichen (Variablen substituiert): anders → in `overridden_fields`,
   gleich → heraus. Ein Wechsel von `check_type` markiert `check_type` und `config`. Manuelle Checks bleiben
   unberührt.
-- *Sync*: angepasste Felder werden nicht geschrieben, alle anderen wie heute. Steht eine Definition nicht mehr
-  im Template, wird ihr Check weiterhin gelöscht — auch wenn er angepasst ist (das Template ist Eigentümer).
+- *Sync*: angepasste Felder werden nicht geschrieben, alle anderen wie heute. Ist `config` angepasst, schreibt
+  der Sync auch `check_type` nicht (Gegenstück zum Typwechsel oben): Ein neuer Template-Typ neben der Config des
+  Nutzers wäre ein ungeprüftes Paar (Session 2026-10-16). Steht eine Definition nicht mehr im Template, wird ihr
+  Check weiterhin gelöscht — auch wenn er angepasst ist (das Template ist Eigentümer).
 - *Tombstone*: `DELETE /checks/{id}` auf einem Template-Check mit bestehender Zuweisung legt einen Tombstone an.
   `remove_template`, `cleanup_server` und das Löschen des Templates (Cascade) räumen die Tombstones mit ab;
   ein erneutes Zuweisen legt also wieder alles an.

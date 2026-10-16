@@ -11,6 +11,7 @@ Core functions:
   remove_template() — Removes the assignment + deletes the associated checks
   cleanup_server()  — Deletes all monitoring data of a server
   mark_overrides()  — Records which fields of a template check a user changed
+  tombstone_check() — Keeps a deleted template check from being created again
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from app.models import (
     MonitorAgentLiveness,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorCheckTombstone,
     MonitorMaintenance,
     MonitorState,
     MonitorTemplate,
@@ -178,6 +180,42 @@ def mark_overrides(db: Session, check: MonitorCheck, changed: dict) -> None:
     check.overridden_fields = json.dumps([f for f in TEMPLATE_CHECK_FIELDS if f in fields])
 
 
+def tombstone_check(db: Session, check: MonitorCheck) -> None:
+    """Record a template check the user is deleting, so the sync does not create
+    it on this server again. Only while the server has the template: without the
+    assignment nothing would create it again anyway."""
+    if not check.template_id or not check.template_def_id:
+        return
+    assigned = (
+        db.query(MonitorTemplateAssignment)
+        .filter(
+            MonitorTemplateAssignment.template_id == check.template_id,
+            MonitorTemplateAssignment.server_id == check.server_id,
+        )
+        .first()
+    )
+    if assigned is None:
+        return
+    known = (
+        db.query(MonitorCheckTombstone)
+        .filter(
+            MonitorCheckTombstone.template_id == check.template_id,
+            MonitorCheckTombstone.server_id == check.server_id,
+            MonitorCheckTombstone.def_id == check.template_def_id,
+        )
+        .first()
+    )
+    if known is None:
+        db.add(
+            MonitorCheckTombstone(
+                id=str(uuid.uuid4()),
+                template_id=check.template_id,
+                server_id=check.server_id,
+                def_id=check.template_def_id,
+            )
+        )
+
+
 def _create_check(
     db: Session, template_id: str, server_id: str, def_id: str, resolved: dict
 ) -> MonitorCheck:
@@ -293,6 +331,13 @@ def _sync_checks_for_server(
         .all()
     )
     existing_by_def_id = {c.template_def_id: c for c in existing if c.template_def_id}
+    tombstoned_def_ids = {
+        def_id
+        for (def_id,) in db.query(MonitorCheckTombstone.def_id).filter(
+            MonitorCheckTombstone.template_id == template_id,
+            MonitorCheckTombstone.server_id == server_id,
+        )
+    }
 
     target_def_ids = set()
     created = 0
@@ -307,22 +352,36 @@ def _sync_checks_for_server(
         resolved = substitute_variables(check_def, variables)
 
         if def_id in existing_by_def_id:
-            # Update
+            # Update, except the fields the user changed on this check
             check = existing_by_def_id[def_id]
-            check.name = resolved.get("name", check.name)
-            check.check_type = resolved.get("check_type", check.check_type)
-            check.config = json.dumps(resolved.get("config", {}))
-            check.interval = resolved.get("interval", check.interval)
-            check.severity = resolved.get("severity", check.severity)
-            check.consecutive_fails = resolved.get("consecutive_fails", check.consecutive_fails)
-            check.enabled = resolved.get("enabled", True)
-            check.description = resolved.get("description")
+            template_values = {
+                "name": resolved.get("name", check.name),
+                "description": resolved.get("description"),
+                "check_type": resolved.get("check_type", check.check_type),
+                "config": json.dumps(resolved.get("config", {})),
+                "enabled": resolved.get("enabled", True),
+                "interval": resolved.get("interval", check.interval),
+                "severity": resolved.get("severity", check.severity),
+                "consecutive_fails": resolved.get("consecutive_fails", check.consecutive_fails),
+            }
+            overridden = _read_overrides(check)
+            # The counterpart of mark_overrides tying a user's type to its config:
+            # the template's type next to the user's config is a pair nobody
+            # validated, so a changed config keeps its type too.
+            if "config" in overridden:
+                overridden.add("check_type")
+            for field, value in template_values.items():
+                if field not in overridden:
+                    setattr(check, field, value)
 
             if check.enabled:
                 actions.append(("add", check.id, check.interval, check.check_type))
             else:
                 actions.append(("remove", check.id, None, None))
             updated += 1
+        elif def_id in tombstoned_def_ids:
+            # The user deleted this template check on this server
+            continue
         else:
             # Create
             check = _create_check(db, template_id, server_id, def_id, resolved)
@@ -487,10 +546,14 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
     for alert in alerts:
         db.delete(alert)
 
-    # Delete assignment
+    # Delete assignment and its tombstones: assigning again creates every check
     db.query(MonitorTemplateAssignment).filter(
         MonitorTemplateAssignment.template_id == template_id,
         MonitorTemplateAssignment.server_id == server_id,
+    ).delete()
+    db.query(MonitorCheckTombstone).filter(
+        MonitorCheckTombstone.template_id == template_id,
+        MonitorCheckTombstone.server_id == server_id,
     ).delete()
 
     db.commit()
@@ -524,10 +587,12 @@ def cleanup_server(db: Session, server_id: str) -> dict:
     for alert in alerts:
         db.delete(alert)
 
-    # Delete assignments
+    # Delete assignments, and their tombstones: those have no foreign key to the
+    # server, which lives in the server's database
     db.query(MonitorTemplateAssignment).filter(
         MonitorTemplateAssignment.server_id == server_id,
     ).delete()
+    db.query(MonitorCheckTombstone).filter(MonitorCheckTombstone.server_id == server_id).delete()
 
     # Delete agent key
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()

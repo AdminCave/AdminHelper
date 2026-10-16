@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_ov
 Doku: keine (intern)
 Abhängt von: T1
 
-### T3 — Sync behält Anpassungen, gelöschte Template-Checks bleiben gelöscht  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_template_sync.py
+### T3 — Sync behält Anpassungen, gelöschte Template-Checks bleiben gelöscht  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_template_sync.py, docs/features/monitoring-templates.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e2cdccd9 2026-10-16T15:29:44+02:00
+Review: approve (.ah-out/review/monitoring-templates/T3.verdict.json)
 Änderung: `_sync_checks_for_server` (`template_sync.py:188-249`) schreibt beim Aktualisieren (`:217-233`) nur Felder, die nicht in `overridden_fields` stehen, und legt keine Definition an (`:234-239`), für die ein Tombstone (Template, Server, def_id) existiert. Eine Definition, die nicht mehr im Template steht, löscht ihren Check weiterhin (`:241-247`), auch wenn er angepasst ist. `delete_check` (`checks.py:255-268`) legt für einen Template-Check mit bestehender Zuweisung einen Tombstone an. `remove_template` (`:373-413`) und `cleanup_server` (`:421-455`) löschen die Tombstones des Paars bzw. Servers. Tests zuerst rot: angepasstes Intervall bleibt beim Sync, die nicht angepasste Severity folgt dem Template; ein deaktivierter (angepasster) Check bleibt deaktiviert; ein gelöschter Template-Check entsteht beim Sync nicht neu; Entfernen und erneutes Zuweisen legt ihn wieder an. Die bestehenden Tests in `test_template_sync.py` (`:213-325`) bleiben grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py tests/test_template_overrides.py
 Doku: keine (intern)

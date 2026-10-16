@@ -29,7 +29,7 @@ from app.schemas import (
     CheckCreate,
     CheckUpdate,
 )
-from app.template_sync import mark_overrides
+from app.template_sync import mark_overrides, tombstone_check
 
 # Moved to core/victoria.py (shared with the forecast checker); alias kept so
 # the existing call sites and tests stay untouched.
@@ -260,12 +260,13 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     dependencies=[Depends(require_internal)],
 )
 def delete_check(check_id: str, db: Session = Depends(get_db)):
-    """Deletes a check."""
+    """Deletes a check. A template check stays deleted on the next template sync."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
         raise HTTPException(404, "Check nicht gefunden")
 
     remove_check(check.id)
+    tombstone_check(db, check)
     db.delete(check)
     db.commit()
 
