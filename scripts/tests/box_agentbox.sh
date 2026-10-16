@@ -53,7 +53,7 @@ echo "[agentbox] one monitoring collection run"
 sudo adminhelper-agent run --once && echo "AGENT_RUN_OK" || echo "AGENT_RUN_FAIL"
 
 echo "[agentbox] assert enrolled mTLS identity present"
-if sudo test -f /etc/adminhelper/identity/agent.crt || sudo ls /etc/adminhelper/identity/ 2>/dev/null | grep -q .; then
+if sudo test -s /etc/adminhelper/identity/agent.crt; then
   echo "AGENT_CERT_OK"
 else
   echo "AGENT_CERT_MISSING"
