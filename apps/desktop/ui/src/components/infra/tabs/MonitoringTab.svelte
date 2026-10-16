@@ -135,6 +135,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  async function onRestoreChecks(templateId: string): Promise<void> {
+    const s = $session;
+    if (!s || assignBusy) return;
+    assignBusy = true;
+    try {
+      await monitoringApi.restoreTemplateChecks(s, templateId, server.id);
+      // Restoring creates the checks again and clears the assignment's count.
+      await Promise.all([loadAssignments(), load()]);
+    } catch (err) {
+      reportError(errMsg(err));
+    } finally {
+      assignBusy = false;
+    }
+  }
+
+  function restoreLabel(count: number): string {
+    return $t(
+      count === 1 ? 'infra.monTab.restoreRemovedCheck' : 'infra.monTab.restoreRemovedChecks',
+      { count },
+    );
+  }
+
   async function loadMaintenance(): Promise<void> {
     const s = $session;
     if (!s) return;
@@ -178,6 +200,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {a.templateName ?? a.templateId}
             {#if builtinById.get(a.templateId)}
               <span class="tpl-badge">{$t('infra.monTab.builtin')}</span>
+            {/if}
+            {#if a.removedChecks}
+              <button
+                class="tpl-restore"
+                disabled={assignBusy}
+                onclick={() => onRestoreChecks(a.templateId)}
+                >{restoreLabel(a.removedChecks)}</button
+              >
             {/if}
             {#if a.source === 'tag'}
               <span class="tpl-via-tag">{$t('monitoring.tplEdit.viaTag')}</span>
@@ -364,6 +394,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .tpl-remove:hover:not(:disabled) {
     color: var(--danger);
+  }
+  .tpl-restore {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+    text-decoration: underline;
+  }
+  .tpl-restore:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .tpl-assign {
     display: flex;
