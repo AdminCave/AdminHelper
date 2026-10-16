@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Templates: Anpassungen erhalten, Standard-Templates aktualisieren — Task-Ledger
-Status: geplant · Branch: feature/monitoring-templates · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-templates · Review: pro Task
 Spec: docs/features/monitoring-templates.md (Roadmap R-0420)
 Heavy: linux-full — ändert die Monitoring-API (neue Routen, Alembic-Revision, Sync-Verhalten) und Desktop-Journeys (Template-UI): `run.sh integration`/`e2e` im Sammellauf auf einer Pool-VM; kein Agent, kein Cross-Host-Pfad, darum kein `scenario`/`windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
