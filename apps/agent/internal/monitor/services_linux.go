@@ -16,17 +16,16 @@ import (
 // collectServiceHealth collects systemd service status (port of collect_systemd_health).
 func collectServiceHealth() map[string]any {
 	// 1) All service units with active_state (col 2 = UNIT LOAD ACTIVE SUB)
-	unitStates := parseSystemctlColumns(2, "list-units", "--type=service", "--all",
+	unitStates, unitsErr := parseSystemctlColumns(2, "list-units", "--type=service", "--all",
 		"--no-legend", "--plain", "--no-pager")
 
 	// 2) Enabled state for all unit files (col 1 = UNIT STATE)
-	enabledStates := parseSystemctlColumns(1, "list-unit-files", "--type=service",
+	enabledStates, _ := parseSystemctlColumns(1, "list-unit-files", "--type=service",
 		"--no-legend", "--no-pager")
 
 	// 3) Failed units
 	failed := []string{}
-	out, err := runWithTimeout("systemctl", "list-units", "--state=failed",
-		"--no-legend", "--plain")
+	out, err := runSystemctl("list-units", "--state=failed", "--no-legend", "--plain")
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if parts := strings.Fields(line); len(parts) > 0 && parts[0] != "" {
@@ -39,12 +38,35 @@ func collectServiceHealth() map[string]any {
 	// it is unit-tested without running systemctl (6.19).
 	health := assembleServiceHealth(unitStates, enabledStates, failed)
 	health["enabled_inactive"] = filterEnabledInactive(health["enabled_inactive"].([]string))
+	// Without list-units every active state is unknown and no unit is a candidate: counts would
+	// claim zero active units, and without the error the server would report "all OK".
+	if unitsErr != nil {
+		health["error"] = "systemctl list-units failed: " + systemctlFailure(unitsErr)
+	} else {
+		loaded := make([]ServiceEntry, 0, len(unitStates))
+		for _, e := range health["all_services"].([]ServiceEntry) {
+			if _, ok := unitStates[e["unit"]]; ok {
+				loaded = append(loaded, e)
+			}
+		}
+		health["counts"] = serviceCounts(loaded)
+	}
 	return health
 }
 
+// systemctlFailure is the short reason for a failed systemctl call: its exit status or signal, or
+// that it did not start. Never stderr or the error text, which can name paths (fork/exec <path>).
+func systemctlFailure(err error) string {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.Error()
+	}
+	return "systemctl did not start"
+}
+
 // assembleServiceHealth derives the service-health report from the parsed unit states: all_services
-// is the union of both maps (missing side -> "unknown"), and enabled_inactive holds the sorted
-// candidates that are inactive yet enabled, before filterEnabledInactive re-checks them.
+// is the union of both maps (missing side -> "unknown") sorted by unit, and enabled_inactive holds
+// the sorted candidates that are inactive yet enabled, before filterEnabledInactive re-checks them.
 func assembleServiceHealth(unitStates, enabledStates map[string]string, failed []string) map[string]any {
 	allUnits := map[string]bool{}
 	for u := range unitStates {
@@ -69,6 +91,8 @@ func assembleServiceHealth(unitStates, enabledStates map[string]string, failed [
 			"enabled_state": enabled,
 		})
 	}
+	// Sorted, so the server's cap on the inventory always keeps the same units.
+	sort.Slice(allServices, func(i, j int) bool { return allServices[i]["unit"] < allServices[j]["unit"] })
 
 	enabledInactive := []string{}
 	for unit, active := range unitStates {
@@ -96,8 +120,9 @@ const enabledInactiveProps = "Id,Names,Type,Result,ConditionResult,TriggeredBy,C
 // candidates beyond it stay unchecked.
 const maxSingleUnitChecks = 50
 
-// runSystemctl indirects the systemctl calls of filterEnabledInactive so tests can drive the batch
-// and per-unit paths without systemctl (same reason as serviceHealthCollector, 6.18).
+// runSystemctl indirects the systemctl calls of collectServiceHealth and filterEnabledInactive so
+// tests can drive the collector, the batch and the per-unit paths without systemctl (same reason as
+// serviceHealthCollector, 6.18).
 var runSystemctl = func(args ...string) ([]byte, error) {
 	return runWithTimeout("systemctl", args...)
 }
@@ -188,13 +213,13 @@ func inactiveByDesign(props map[string]string) bool {
 }
 
 // parseSystemctlColumns runs `systemctl <args>` and maps each unit (field 0) to
-// its column `col`, skipping lines too short to hold it. Empty map on any error.
-func parseSystemctlColumns(col int, args ...string) map[string]string {
-	out, err := runWithTimeout("systemctl", args...)
+// its column `col`, skipping lines too short to hold it. Empty map and the error if systemctl failed.
+func parseSystemctlColumns(col int, args ...string) (map[string]string, error) {
+	out, err := runSystemctl(args...)
 	if err != nil {
-		return map[string]string{}
+		return map[string]string{}, err
 	}
-	return parseSystemctlColumnsOutput(string(out), col)
+	return parseSystemctlColumnsOutput(string(out), col), nil
 }
 
 // parseSystemctlColumnsOutput maps each unit (field 0) to its column `col`, skipping lines too short

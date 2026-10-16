@@ -23,8 +23,10 @@ Beweis: origin/main@af4498a7 · Lab Ubuntu 24.04: frische Box `warning` mit 17 U
 Dedup-Key: bug:monitoring:checkers/agent.py:services-display
 HEAD: af4498a7
 
-### T2 — Agent: Zähler, sortiertes Inventar, systemctl-Fehler sichtbar  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/services_test.go, apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_windows.go
+### T2 — Agent: Zähler, sortiertes Inventar, systemctl-Fehler sichtbar  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/services_test.go, apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/services_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @d5224fc9 2026-10-16T15:21:21+02:00
+Review: approve (.ah-out/review/monitoring-services/T2.verdict.json)
 Änderung: Neuer reiner Helfer in `services.go` (ohne Build-Tag): `serviceCounts(entries)` zählt `.service`-Einträge mit `active_state == "active"` und gesamt; `collectServiceHealth` (Linux `services_linux.go:14-38`, Windows `services_windows.go:24-41`) legt `counts: {"active", "total"}` in den `systemd`-Block. `assembleServiceHealth` sortiert `all_services` nach `unit` (heute Map-Reihenfolge, `:51-66`). Scheitert `systemctl list-units` (`parseSystemctlColumns` verschluckt den Fehler, `:87-93`), setzt der Linux-Collector `error` mit kurzem Grund (ohne Pfade/Secrets). Neue Testdatei `services_test.go` mit SPDX-Header (`// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`); Tests zuerst rot, Namen mit Präfix `TestServiceHealth` (z. B. `TestServiceHealthCounts`, `TestServiceHealthSorted`, `TestServiceHealthSystemctlError`).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServiceHealth
 Doku: keine (intern; sichtbar mit T8)

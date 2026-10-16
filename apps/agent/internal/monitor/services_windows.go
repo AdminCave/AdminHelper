@@ -36,7 +36,9 @@ func collectServiceHealth() map[string]any {
 
 	// The sc-query parsing lives in parseScQuery (no build tag) so it is unit-tested on any
 	// platform — see scquery.go / scquery_test.go (6.20).
-	result["all_services"] = parseScQuery(string(out))
+	services := parseScQuery(string(out))
+	result["all_services"] = services
+	result["counts"] = serviceCounts(services)
 	return result
 }
 

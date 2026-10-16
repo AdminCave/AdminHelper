@@ -9,9 +9,11 @@ package monitor
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os/exec"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -426,5 +428,168 @@ func TestFilterEnabledInactiveCandidatesSorted(t *testing.T) {
 	got := assembleServiceHealth(unitStates, enabledStates, nil)
 	if !reflect.DeepEqual(got["enabled_inactive"], want) {
 		t.Errorf("enabled_inactive = %q, want sorted %q", got["enabled_inactive"], want)
+	}
+}
+
+// The exact argument lists collectServiceHealth hands runSystemctl.
+const (
+	listUnitsArgs     = "list-units --type=service --all --no-legend --plain --no-pager"
+	listUnitFilesArgs = "list-unit-files --type=service --no-legend --no-pager"
+	listFailedArgs    = "list-units --state=failed --no-legend --plain"
+)
+
+// collectorListUnits is real systemd 257 `list-units` output (cron stopped by hand, smartmontools
+// failed); collectorListUnitFiles the matching `list-unit-files` lines, with the template getty@
+// and the aliases smartd and sshd that list-units never shows.
+const collectorListUnits = `anacron.service          loaded    inactive dead    Run anacron jobs
+cron.service             loaded    inactive dead    Regular background program processing daemon
+e2scrub_reap.service     loaded    inactive dead    Remove Stale Online ext4 Metadata Check Snapshots
+getty@tty1.service       loaded    active   running Getty on tty1
+smartmontools.service    loaded    failed   failed  Self Monitoring and Reporting Technology (SMART) Daemon
+ssh.service              loaded    active   running OpenBSD Secure Shell server
+systemd-pstore.service   loaded    inactive dead    Platform Persistent Storage Archival
+`
+
+const collectorListUnitFiles = `anacron.service              enabled         enabled
+cron.service                 enabled         enabled
+e2scrub_reap.service         enabled         enabled
+getty@.service               enabled         enabled
+smartd.service               alias           -
+smartmontools.service        enabled         enabled
+ssh.service                  enabled         enabled
+sshd.service                 alias           -
+systemd-pstore.service       enabled         enabled
+`
+
+type systemctlReply struct {
+	out string
+	err error
+}
+
+// stubCollector swaps runSystemctl for a fake systemctl that answers every call from replies, keyed
+// by its space-joined arguments (any `show` re-check by "show"), and records the calls; a call
+// without a reply fails the test.
+func stubCollector(t *testing.T, replies map[string]systemctlReply) *[]string {
+	t.Helper()
+	old := runSystemctl
+	t.Cleanup(func() { runSystemctl = old })
+	calls := &[]string{}
+	runSystemctl = func(args ...string) ([]byte, error) {
+		call := strings.Join(args, " ")
+		*calls = append(*calls, call)
+		key := call
+		if args[0] == "show" {
+			key = "show"
+		}
+		reply, ok := replies[key]
+		if !ok {
+			t.Fatalf("unexpected systemctl call %q", call)
+		}
+		return []byte(reply.out), reply.err
+	}
+	return calls
+}
+
+// units lists the unit names of an all_services inventory in its order.
+func units(entries []ServiceEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e["unit"])
+	}
+	return names
+}
+
+func TestServiceHealthCollector(t *testing.T) {
+	// The collector end to end against a fake systemctl: list-units, list-unit-files and the failed
+	// list feed the report, the sorted enabled-inactive candidates reach the show re-check, and the
+	// counts cover the seven loaded units of list-units, not the template and the aliases only
+	// list-unit-files knows.
+	calls := stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {out: collectorListUnits},
+		listUnitFilesArgs: {out: collectorListUnitFiles},
+		listFailedArgs:    {out: "smartmontools.service loaded failed failed Self Monitoring and Reporting Technology (SMART) Daemon\n"},
+		"show":            {out: showBlocks257},
+	})
+	got := collectServiceHealth()
+
+	wantUnits := []string{"anacron.service", "cron.service", "e2scrub_reap.service", "getty@.service",
+		"getty@tty1.service", "smartd.service", "smartmontools.service", "ssh.service", "sshd.service",
+		"systemd-pstore.service"}
+	if all := units(got["all_services"].([]ServiceEntry)); !reflect.DeepEqual(all, wantUnits) {
+		t.Errorf("all_services = %q, want sorted %q", all, wantUnits)
+	}
+	if !reflect.DeepEqual(got["enabled_inactive"], []string{"cron.service"}) {
+		t.Errorf("enabled_inactive = %q, want [cron.service] after the re-check", got["enabled_inactive"])
+	}
+	if !reflect.DeepEqual(got["failed"], []string{"smartmontools.service"}) {
+		t.Errorf("failed = %q, want [smartmontools.service]", got["failed"])
+	}
+	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
+		t.Errorf("counts = %v, want active 2 of 7 loaded units", got["counts"])
+	}
+	if e, ok := got["error"]; ok {
+		t.Errorf("error = %q, want none when systemctl answered", e)
+	}
+	wantCalls := []string{listUnitsArgs, listUnitFilesArgs, listFailedArgs,
+		"show -p " + enabledInactiveProps + " -- anacron.service cron.service e2scrub_reap.service systemd-pstore.service"}
+	if !reflect.DeepEqual(*calls, wantCalls) {
+		t.Errorf("calls = %q, want %q", *calls, wantCalls)
+	}
+}
+
+func TestServiceHealthSorted(t *testing.T) {
+	// all_services is sorted by unit, so the server's 500-entry cap always keeps the same units.
+	// Thirty units spread over both maps: map order is never sorted by chance.
+	unitStates := map[string]string{}
+	enabledStates := map[string]string{}
+	want := []string{}
+	for i := range 30 {
+		unit := fmt.Sprintf("unit-%02d.service", i)
+		if i%3 != 0 {
+			unitStates[unit] = "active"
+		}
+		if i%3 != 1 {
+			enabledStates[unit] = "enabled"
+		}
+		want = append(want, unit)
+	}
+	got := assembleServiceHealth(unitStates, enabledStates, nil)
+	if all := units(got["all_services"].([]ServiceEntry)); !reflect.DeepEqual(all, want) {
+		t.Errorf("all_services = %q, want sorted %q", all, want)
+	}
+}
+
+func TestServiceHealthSystemctlError(t *testing.T) {
+	// A failed list-units leaves no active state to report: the report says so in a short reason
+	// (exit status or that systemctl did not start, never stderr or a path) and carries no counts,
+	// which would claim zero active units.
+	for name, tc := range map[string]struct {
+		err  error
+		want string
+	}{
+		"exit status": {exitError(t, "exit 1"), "systemctl list-units failed: exit status 1"},
+		"killed":      {exitError(t, "kill -9 $$"), "systemctl list-units failed: signal: killed"},
+		"not found": {&exec.Error{Name: "systemctl", Err: exec.ErrNotFound},
+			"systemctl list-units failed: systemctl did not start"},
+		"not executable": {&fs.PathError{Op: "fork/exec", Path: "/usr/bin/systemctl", Err: syscall.EACCES},
+			"systemctl list-units failed: systemctl did not start"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubCollector(t, map[string]systemctlReply{
+				listUnitsArgs:     {err: tc.err},
+				listUnitFilesArgs: {out: collectorListUnitFiles},
+				listFailedArgs:    {},
+			})
+			got := collectServiceHealth()
+			if got["error"] != tc.want {
+				t.Errorf("error = %q, want %q", got["error"], tc.want)
+			}
+			if c, ok := got["counts"]; ok {
+				t.Errorf("counts = %v, want none without list-units", c)
+			}
+			if !reflect.DeepEqual(got["enabled_inactive"], []string{}) {
+				t.Errorf("enabled_inactive = %q, want []", got["enabled_inactive"])
+			}
+		})
 	}
 }
