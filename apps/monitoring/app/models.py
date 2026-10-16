@@ -191,11 +191,17 @@ class MonitorTemplate(Base):
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self, assignments: list | None = None, tag_assignments: list | None = None) -> dict:
+        # Imported here: builtin_templates imports this module.
+        from app.builtin_templates import builtin_edited, builtin_update_available
+
         d = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
             "builtinSlug": self.builtin_slug,
+            "builtinVersion": self.builtin_version,
+            "builtinEdited": builtin_edited(self),
+            "builtinUpdateAvailable": builtin_update_available(self),
             "checkDefinitions": json.loads(self.check_definitions)
             if self.check_definitions
             else [],

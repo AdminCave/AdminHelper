@@ -47,8 +47,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_templates_r
 Doku: keine (intern; sichtbar mit T9/T10, beschrieben in T12)
 Abhängt von: T3
 
-### T5 — Standard-Templates versionieren, unveränderte automatisch aktualisieren  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/app/main.py, apps/monitoring/tests/test_seed.py
+### T5 — Standard-Templates versionieren, unveränderte automatisch aktualisieren  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/app/main.py, apps/monitoring/tests/test_seed.py, apps/monitoring/app/models.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @220a0203 2026-10-16T16:02:28+02:00
+Review: approve (.ah-out/review/monitoring-templates/T5.verdict.json)
 Änderung: Jeder Eintrag in `BUILTIN_TEMPLATES` (`builtin_templates.py:93-178`) bekommt `"version": 1`; Hash = sha256 über das kanonische JSON (`sort_keys=True`, `separators=(",", ":")`) von `[check_definitions, alert_definitions]`. `seed_builtin_templates` (`:181-207`) setzt `builtin_version` und `builtin_hash`. Neue Funktion `reconcile_builtin_templates(db)`, aufgerufen im Lifespan direkt nach dem Seed (`main.py:56`, ebenfalls best effort): Zeile mit `builtin_slug` ohne `builtin_hash` → `builtin_version = 1`, Hash der mitgelieferten Definitionen; mitgelieferte Version > `builtin_version` und Hash der aktuellen Definitionen == `builtin_hash` → Definitionen ersetzen (Name/Beschreibung bleiben), Version und Hash setzen, `sync_template`; sonst nichts. `MonitorTemplate.to_dict` liefert `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable` (dafür liest `to_dict` die mitgelieferte Version aus `BUILTIN_TEMPLATES`). Tests zuerst rot, mit per monkeypatch auf Version 2 gehobenem `BUILTIN_TEMPLATES`: unverändert → aktualisiert und synchronisiert (angepasstes Feld eines Checks bleibt); angepasst → unverändert, `builtinUpdateAvailable`; Bestandszeile ohne Hash → Baseline; gelöscht → bleibt gelöscht; Wiederholung idempotent.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_seed.py tests/test_template_sync.py
 Doku: keine (intern; beschrieben in T12)
