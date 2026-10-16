@@ -383,9 +383,9 @@ func TestReprovisionFailsWhenWritingTheConfigFails(t *testing.T) {
 	}
 }
 
-// R-0398: provisioning again without an FRP bundle (no FRP config or no tunnel for the host)
-// stops and disables the frpc of an earlier provisioning and removes frpc.toml, which holds the
-// frps token, and the hash.
+// R-0398: provisioning again without an FRP bundle (no FRP config; from an older server also no
+// tunnel for the host) stops and disables the frpc of an earlier provisioning and removes
+// frpc.toml, which holds the frps token, and the hash.
 func TestReprovisionWithoutBundleStopsFrpcAndRemovesItsFiles(t *testing.T) {
 	calls := setupSyncTest(t, "https://srv.example")
 	writeFrpcState(t)

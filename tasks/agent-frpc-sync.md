@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent übernimmt FRP-Tunnel selbst — Task-Ledger
-Status: aktiv · Branch: feature/agent-frpc-sync · Review: pro Task
+Status: bereit · Branch: feature/agent-frpc-sync · Review: pro Task
 Spec: docs/features/agent-frpc-sync.md (Roadmap R-0398)
 Heavy: linux-full + scenario --agents 1 --tunnel --enforce + windows — Server-API (`config-hash`) und Agent-Paket im Stack (`run.sh integration`, `upgrade_path`); vor dem Merge der Multibox-Lauf, weil nur er den Datenpfad über frps mit echtem mTLS zeigt: Tunnel nach dem Provisionieren, Reload bei offener SSH-Sitzung, `run --once` ohne Tunnel grün (Kevin hat den `--tunnel`-Lauf vor dem Merge erlaubt); `windows`, weil sich Agent-Plattformcode und der Provisionier-Pfad unter Windows ändern (No-ops, Sync-Config immer)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -102,8 +102,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_provisioning.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html · docs/developer/server.html + docs/en/developer/server.html · CHANGELOG.md
 Abhängt von: T8
 
-### T11 — Kommentare und Server-Doku an den Paket-Vertrag aus T10  [ ]
+### T11 — Kommentare und Server-Doku an den Paket-Vertrag aus T10  [x]
 Komponente: agent · Dateien: apps/agent/internal/provision/provision.go, apps/agent/internal/frpc/apply.go, apps/agent/internal/frpc/apply_test.go, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @c5ccac31 2026-10-16T18:01:55+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T11.verdict.json)
 Änderung: Nits aus dem Review von T10. Seit T10 fehlt das FRP-Paket der Provisionierung nur noch ohne FRP-Config; ein Host ohne aktiven Tunnel bekommt den Sync-Text ohne Tunnel und läuft über `frpc.Apply` (Stopp-Pfad ohne Proxies). Die Kommentare beschreiben noch den alten Vertrag: `provision.go:13-14` und `:160-163` („with a configured FRP tunnel … without one ApplyWithoutBundle“, „only if the server has an FRP tunnel“), `apply.go:137-138` (`ApplyWithoutBundle`: „no FRP config or no tunnel for the host“), `apply_test.go:386`. Nur Kommentare, kein Verhalten. `docs/developer/server.html:99` (DE+EN): „und der Agent speichert dessen Hash“ eindeutig auf einen Agent dieser Version beziehen (der ältere hasht seine eigene Datei).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run 'Apply|Provision|Reprovision'
 Doku: docs/developer/server.html + docs/en/developer/server.html (`:99`)

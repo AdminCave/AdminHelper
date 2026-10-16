@@ -101,8 +101,9 @@ func WriteSyncConfig(p SyncConfigParams) error {
 
 // Apply writes the sync config (WriteSyncConfig) and the PKI bundle from a provisioning
 // response, then applies the bundle's frpc.toml the way Sync does (applyConfig): a running frpc
-// restarts onto it (never a reload, see startFrpc), a stopped one is enabled. NO HTTP call happens
-// here anymore — the token-activate call has been centralized since v0.23.0 in the `provision`
+// restarts onto it (never a reload, see startFrpc), a stopped one is enabled, and a text without
+// proxies (no active tunnel for the host) stops and disables it. NO HTTP call happens here
+// anymore — the token-activate call has been centralized since v0.23.0 in the `provision`
 // subcommand, which invokes `Apply` with the already-decoded values.
 func Apply(p ApplyParams) error {
 	if err := WriteSyncConfig(SyncConfigParams{
@@ -134,9 +135,10 @@ func Apply(p ApplyParams) error {
 	return warnOnServiceFailure(applyConfig(serverToml, false))
 }
 
-// ApplyWithoutBundle is Apply for a provisioning without an FRP bundle (no FRP config or no
-// tunnel for the host): a frpc of an earlier provisioning stops, like on a null hash in Sync,
-// and the next sync sets up a tunnel created later (R-0398).
+// ApplyWithoutBundle is Apply for a provisioning without an FRP bundle: the server has no FRP
+// config (an older server sends none also for a host without a tunnel; a current one sends a
+// text without proxies, on which Apply stops frpc). A frpc of an earlier provisioning stops,
+// like on a null hash in Sync, and the next sync sets up a tunnel created later (R-0398).
 func ApplyWithoutBundle() error {
 	return warnOnServiceFailure(syncWithoutFrpConfig())
 }

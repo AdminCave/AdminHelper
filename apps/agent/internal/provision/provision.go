@@ -10,7 +10,8 @@
 //   - writes the server API key to the FRP sync config (always: frpc.WriteSyncConfig,
 //     so a tunnel created later reaches the host with the next sync),
 //   - with an available monitor service: monitor.Init with the returned key,
-//   - with a configured FRP tunnel: frpc.Apply with the returned bundle, without one
+//   - with an FRP config on the server: frpc.Apply with the returned bundle (without an
+//     active tunnel its text has no proxies and frpc stops), without one
 //     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning).
 //
 // This way a single command on the target server suffices, regardless of which
@@ -157,10 +158,12 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		fmt.Println("→ Monitor-Service nicht konfiguriert oder nicht erreichbar — Monitor wird uebersprungen.")
 	}
 
-	// 2. The sync config always (Apply writes it along with frpc's config), FRP apply
-	// only if the server has an FRP tunnel. Without the sync config the API key is lost
-	// and a tunnel created later never reaches this host (R-0398). Without a tunnel no
-	// frpc runs, also not one an earlier provisioning set up.
+	// 2. The sync config always (Apply writes it along with frpc's config): without it the
+	// API key is lost and a tunnel created later never reaches this host (R-0398). The
+	// bundle is missing only without an FRP config (from an older server also without a
+	// tunnel); a host without an active tunnel gets a text without proxies, on which
+	// Apply stops frpc. Without a tunnel no frpc runs, also not one an earlier
+	// provisioning set up.
 	if resp.FRP != nil {
 		fmt.Println("→ FRP-Client wird eingerichtet...")
 		if err := frpc.Apply(frpc.ApplyParams{
