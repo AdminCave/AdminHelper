@@ -101,8 +101,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/t
 Doku: keine (intern; beschrieben in T12)
 Abhängt von: T8
 
-### T11 — Desktop: „Update verfügbar“ bei Standard-Templates mit Vergleich und Übernehmen  [ ]
+### T11 — Desktop: „Update verfügbar“ bei Standard-Templates mit Vergleich und Übernehmen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitoringTemplates.svelte, apps/desktop/ui/src/components/monitoring/BuiltinUpdateModal.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/BuiltinUpdateModal.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @cb0e00d6 2026-10-16T17:51:20+02:00
+Review: approve (.ah-out/review/monitoring-templates/T11.verdict.json)
 Änderung: Die Template-Liste (`MonitoringTemplates.svelte`) zeigt bei `builtinUpdateAvailable` ein Badge „Update verfügbar“; es öffnet ein neues Modal (SPDX-Kommentar wie in `TunnelIndicator.svelte`), das aktuelle und mitgelieferte Check-Definitionen je `def_id` nebeneinander zeigt (neu, entfernt, geändert mit Feldnamen) und „Übernehmen“ anbietet (`applyBuiltinUpdate`, danach Liste neu laden) mit dem Hinweis, dass angepasste Felder einzelner Checks erhalten bleiben. Texte DE + EN. Neue Testdatei (SPDX), zuerst rot: Badge nur bei verfügbarem Update, Vergleich zeigt neue/entfernte/geänderte Definitionen, Übernehmen ruft den Aufruf genau einmal.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/BuiltinUpdateModal.test.ts
 Doku: keine (intern; beschrieben in T12)
