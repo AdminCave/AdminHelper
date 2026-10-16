@@ -15,7 +15,9 @@
 #       [--desktop] [--moncheck] [--enforce] [--capstone] [--keep] [--strict]
 #   --strict   a guard that could not run fails the capstone (release gate)
 #   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
-#   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel)
+#   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel); the
+#              tunnel comes after the provisioning, a second one by a reload while the
+#              visitor holds an SSH session over the first (R-0398)
 #   --desktop  + the real Tauri GUI vs the remote server     (S3)
 #   --moncheck + pull ping-checks + a closed-loop email alert (S5)
 #   --enforce  + MTLS_ENFORCE=true: the certless data plane must be rejected
@@ -177,9 +179,9 @@ SID2="$(mb MB_SID2)"
 PTOK2="$(mb MB_PTOK2)"
 TUN_SID="$(mb MB_TUN_SID)"
 TUN_PTOK="$(mb MB_TUN_PTOK)"
+TUN_CFG="$(mb MB_CFG)"
 VIS_SID="$(mb MB_VIS_SID)"
 VIS_PTOK="$(mb MB_VIS_PTOK)"
-VIS_B64="$(mb MB_VISITOR_B64)"
 MC_OK_STATUS="$(mb MC_OK_STATUS)"
 MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
 REPO_FP="$(mb MB_REPO_GPG_FP)"
@@ -219,6 +221,11 @@ for a in "${AGENT_VMS[@]:-}"; do
   printf '%s' "$AOUT" | grep -q AGENT_PROVISION_OK && printf '%s' "$AOUT" | grep -q AGENT_CERT_OK \
     && ok "agent $a: provisioned + mTLS-enrolled over the network hop" \
     || bad "agent $a: provision/enroll (see output above; check IP-SAN + firewall)"
+  # This host has no tunnel: with --tunnel the server has an FRP config, without it none.
+  # Either way the agent run ends without an error (R-0398).
+  grep -q AGENT_RUN_OK <<<"$AOUT" \
+    && ok "agent $a: run --once green without a tunnel (frpc sync + monitor push)" \
+    || bad "agent $a: run --once failed (AGENT_RUN_OK missing, see output above)"
   if [ -n "$REPO_FP" ]; then
     printf '%s' "$AOUT" | grep -q AGENT_REPO_OK && printf '%s' "$AOUT" | grep -q AGENT_CAFLIP_OK \
       && ok "agent $a: installed from the :8445 repo via agent-install.sh, CA-pinned steady state" \
@@ -240,37 +247,158 @@ if [ "$RPM" = 1 ]; then
   else bad "rpm-agent lease"; fi
 fi
 
+# srv_api <clear|add> <server-id> [<frp-config-id> <tunnel>] — the admin API of the server
+# box, called ON that box: under --enforce only it holds the admin client certificate
+# (box_serverbox.sh enrolls it into /tmp). clear deletes the tunnels of a host; add creates
+# an STCP tunnel to its sshd and prints the visitor.toml that has it. The program travels
+# base64-encoded: vm.py joins the command into one `bash -lc` string.
+srv_api_py() {
+  cat <<'PY'
+import base64, json, os, ssl, sys, urllib.request
+
+action, password, server_id = sys.argv[1:4]
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+if os.path.exists("/tmp/mb-admin-fullchain.pem"):  # --enforce: :443 wants the admin cert
+    ctx.load_cert_chain("/tmp/mb-admin-fullchain.pem", "/tmp/mb-admin.key")
+
+
+def call(method, path, token=None, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request("https://localhost" + path, data=data, method=method,
+                                 headers={"Content-Type": "application/json"})
+    if token:
+        req.add_header("Authorization", "Bearer " + token)
+    return urllib.request.urlopen(req, context=ctx, timeout=20).read()
+
+
+login = {"username": "admin", "password": password}
+token = json.loads(call("POST", "/api/auth/login", body=login))["access_token"]
+listed = "/api/frp/tunnels?server_id=" + server_id
+if action == "clear":
+    tunnels = json.loads(call("GET", listed, token))
+    for tunnel in tunnels:
+        call("DELETE", "/api/frp/tunnels/" + tunnel["id"], token)
+    if json.loads(call("GET", listed, token)):
+        sys.exit("tunnels of server %s left after the delete" % server_id)
+    print("MB_API_CLEARED=%d" % len(tunnels))
+elif action == "add":
+    config_id, name = sys.argv[4:6]
+    call("POST", "/api/frp/tunnels", token, {"server_id": server_id, "frp_config_id": config_id,
+                                             "name": name, "tunnel_type": "stcp",
+                                             "protocol": "ssh", "local_port": 22})
+    print("MB_API_TUNNEL=" + name)
+    print("MB_VISITOR_B64=" + base64.b64encode(call("GET", "/api/frp/generate/visitor-toml", token)).decode())
+else:
+    sys.exit("unknown action " + action)
+PY
+}
+srv_api() {
+  local action="$1"; shift
+  ask "$SRV_VM" 300 "printf %s $(srv_api_py | base64 -w0) | base64 -d | python3 -I - $action $ADMIN_PW $*"
+}
+# frps_registered <tunnel> — frps logged the STCP registration of this tunnel; frp v0.69.1
+# writes "new proxy [<frpc user>.<tunnel>] type [stcp] success" (server/control.go).
+frps_registered() {
+  local log
+  log="$(ask "$SRV_VM" 300 'mb-dc logs --no-color frps 2>/dev/null | grep -F "new proxy ["' 2>/dev/null)"
+  grep -qE "new proxy \[[^]]*\.$1\] type \[stcp\] success" <<<"$log"
+}
+
 if [ "$TUNNEL" = 1 ]; then
   echo "== tunnel (S4): agent frpc STCP server over the hop to frps on $SRV_IP =="
   printf '%s' "$SRVOUT" | grep -q 'MB_FRPS_UP=1' && ok "frps up on the server box" || bad "frps did not start on the server"
-  if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && read -r T_VM T_IP < <(lease tunnel linux-server); then
+  LATE_TUNNEL=mb-ssh-late; RELOAD_TUNNEL=mb-ssh-reload
+  if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && [ -n "$TUN_CFG" ] && read -r T_VM T_IP < <(lease tunnel linux-server); then
     ok "tunnel-agent-box $T_VM @ $T_IP"
+    # R-0398, goal 2: the host is provisioned BEFORE its tunnel exists, and its own agent
+    # run has to set frpc up for the tunnel created afterwards. box_serverbox.sh seeds a
+    # tunnel with the host, so that one goes first.
+    API="$(srv_api clear "$TUN_SID" 2>&1)"
+    [ -n "$(vm_marker MB_API_CLEARED "$API")" ] \
+      && ok "the seeded tunnel is deleted over the API before the host is provisioned" \
+      || { echo "$API" | tail -5; bad "could not delete the seeded tunnel over the API (see output above)"; }
     TOUT="$(box "$T_VM" 3000 bash scripts/tests/box_tunnelbox.sh "$SRV_IP" "$TUN_SID" "$TUN_PTOK" 2>&1)"
     echo "$TOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
-    printf '%s' "$TOUT" | grep -q TUNNEL_FRPC_CONNECTED \
+    grep -q TUNNEL_BEFORE_OK <<<"$TOUT" \
+      && ok "tunnel agent: provisioned before its tunnel existed (sync config written, no frpc)" \
+      || bad "tunnel agent: provisioning without a tunnel (TUNNEL_BEFORE_OK missing, see output above)"
+    API="$(srv_api add "$TUN_SID" "$TUN_CFG" "$LATE_TUNNEL" 2>&1)"
+    LATE_VIS_B64=""
+    if [ "$(vm_marker MB_API_TUNNEL "$API")" = "$LATE_TUNNEL" ]; then
+      ok "tunnel $LATE_TUNNEL created over the API after the provisioning"
+      LATE_VIS_B64="$(vm_marker MB_VISITOR_B64 "$API")"
+    else
+      echo "$API" | tail -5; bad "could not create tunnel $LATE_TUNNEL over the API (see output above)"
+    fi
+    LOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh late "$LATE_TUNNEL" 2>&1)"
+    echo "$LOUT" | tail -40
+    grep -q TUNNEL_FRPC_CONNECTED <<<"$LOUT" \
       && ok "tunnel agent: frpc STCP server connected to the remote frps" \
       || bad "tunnel agent: frpc did not connect (see output above)"
+    LATE_MARK="$(grep -oE 'TUNNEL_LATE_[A-Z_]+' <<<"$LOUT" | head -1)"
+    [ "$LATE_MARK" = TUNNEL_LATE_OK ] \
+      && ok "tunnel agent: one agent run set frpc up for the later tunnel (active, enabled)" \
+      || bad "tunnel agent: the agent run did not take the later tunnel: ${LATE_MARK:-no marker} (see output above)"
     # The agent's own sync over the route bound to its server, with its certificate:
     # under --enforce nothing else gets through the gateway (R-0315).
-    SYNC_MARK="$(printf '%s' "$TOUT" | grep -oE 'TUNNEL_SYNC_[A-Z_]+' | head -1)"
+    SYNC_MARK="$(printf '%s' "$LOUT" | grep -oE 'TUNNEL_SYNC_[A-Z_]+' | head -1)"
     SYNC_CERT=""; [ "$ENFORCE" = 1 ] && SYNC_CERT=", with its certificate (enforced)"
     [ "$SYNC_MARK" = TUNNEL_SYNC_HASH_OK ] \
-      && ok "tunnel agent: frpc sync got config-hash over its server's route, the provisioned hash$SYNC_CERT" \
+      && ok "tunnel agent: frpc sync got config-hash over its server's route, the hash its run applied$SYNC_CERT" \
       || bad "tunnel agent: frpc sync over its server's route: ${SYNC_MARK:-no marker} (see output above)"
     # Independent check on the server: frps logged the STCP registration cross-host.
-    FRPSLOG="$(ask "$SRV_VM" 300 'mb-dc logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
-    printf '%s' "$FRPSLOG" | grep -qiE 'new proxy|start proxy success|stcp' \
-      && ok "frps registered the agent's STCP tunnel (cross-host)" \
-      || bad "frps shows no STCP registration from the agent"
+    frps_registered "$LATE_TUNNEL" \
+      && ok "frps registered the agent's STCP tunnel $LATE_TUNNEL (cross-host)" \
+      || bad "frps shows no STCP registration of $LATE_TUNNEL from the agent"
     # Phase 2: a visitor on a THIRD box completes the data path (visitor -> frps ->
-    # agent frpc -> the agent's sshd), proving the full cross-host tunnel.
-    if [ -n "$VIS_SID" ] && [ -n "$VIS_B64" ] && read -r V_VM V_IP < <(lease visitor linux-server); then
+    # agent frpc -> the agent's sshd), proving the full cross-host tunnel. Its visitor.toml
+    # is the one from after the late tunnel: the seeded one names the deleted tunnel.
+    if [ -n "$VIS_SID" ] && [ -n "$LATE_VIS_B64" ] && read -r V_VM V_IP < <(lease visitor linux-server); then
       ok "visitor-box $V_VM @ $V_IP"
-      VOUT="$(box "$V_VM" 3000 bash scripts/tests/box_visitorbox.sh "$SRV_IP" "$VIS_SID" "$VIS_PTOK" "$VIS_B64" 2>&1)"
+      VOUT="$(box "$V_VM" 3000 bash scripts/tests/box_visitorbox.sh "$SRV_IP" "$VIS_SID" "$VIS_PTOK" "$LATE_VIS_B64" 2>&1)"
       echo "$VOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
       printf '%s' "$VOUT" | grep -q VIS_TUNNEL_SSH_OK \
         && ok "visitor reached the agent's sshd THROUGH the tunnel (3-host data path)" \
         || bad "visitor could not reach the agent's sshd through the tunnel"
+      # R-0398, goal 3: a second tunnel comes by a reload of frpc, and the tunnels it leaves
+      # unchanged keep their connections. The visitor holds an SSH session over the first
+      # meanwhile; a restart of frpc would end it.
+      VIS_PUB="$(vm_marker VIS_SSH_PUB_B64 "$VOUT")"
+      MOUT="$(ask "$T_VM" 300 bash scripts/tests/box_tunnelbox.sh mark "${VIS_PUB:-none}" 2>&1)"
+      echo "$MOUT" | tail -10
+      T_USER="$(vm_marker TUNNEL_SSH_USER "$MOUT")"
+      HOUT="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh hold "${T_USER:-none}" 2>&1)"
+      echo "$HOUT" | tail -20
+      HOLD_MARK="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$HOUT" | head -1)"
+      [ "$HOLD_MARK" = VIS_SESSION_OPEN ] \
+        && ok "visitor holds an SSH session open through $LATE_TUNNEL" \
+        || bad "visitor could not open an SSH session through $LATE_TUNNEL: ${HOLD_MARK:-no marker} (see output above)"
+      API="$(srv_api add "$TUN_SID" "$TUN_CFG" "$RELOAD_TUNNEL" 2>&1)"
+      [ "$(vm_marker MB_API_TUNNEL "$API")" = "$RELOAD_TUNNEL" ] \
+        && ok "second tunnel $RELOAD_TUNNEL created over the API" \
+        || { echo "$API" | tail -5; bad "could not create tunnel $RELOAD_TUNNEL over the API (see output above)"; }
+      RLOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh reload "$RELOAD_TUNNEL" 2>&1)"
+      echo "$RLOUT" | tail -40
+      RELOAD_MARK="$(grep -oE 'TUNNEL_RELOAD_[A-Z_]+' <<<"$RLOUT" | head -1)"
+      [ "$RELOAD_MARK" = TUNNEL_RELOAD_OK ] \
+        && ok "tunnel agent: frpc took $RELOAD_TUNNEL by a reload, no restart (same frpc PID, agent log)" \
+        || bad "tunnel agent: $RELOAD_TUNNEL without a clean reload: ${RELOAD_MARK:-no marker} (see output above)"
+      frps_registered "$RELOAD_TUNNEL" \
+        && ok "frps registered the second tunnel $RELOAD_TUNNEL" \
+        || bad "frps shows no STCP registration of $RELOAD_TUNNEL from the agent"
+      if [ "$HOLD_MARK" = VIS_SESSION_OPEN ]; then
+        COUT="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh check 2>&1)"
+        echo "$COUT" | tail -10
+        CHECK_MARK="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$COUT" | head -1)"
+        [ "$CHECK_MARK" = VIS_SESSION_SURVIVED ] \
+          && ok "the visitor's SSH session through $LATE_TUNNEL lived through the reload" \
+          || bad "the visitor's SSH session through $LATE_TUNNEL did not live through the reload: ${CHECK_MARK:-no marker}"
+      else
+        # On top of the FAIL above, not instead of it: without a session goal 3 is unverified.
+        skipped "the SSH session through the reload (none was open) — goal 3 of R-0398 is unverified"
+      fi
     else bad "visitor lease or missing visitor config"; fi
   else bad "tunnel-agent lease or missing tunnel seed"; fi
 fi

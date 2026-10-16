@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent übernimmt FRP-Tunnel selbst — Task-Ledger
-Status: aktiv · Branch: feature/agent-frpc-sync · Review: pro Task
+Status: bereit · Branch: feature/agent-frpc-sync · Review: pro Task
 Spec: docs/features/agent-frpc-sync.md (Roadmap R-0398)
 Heavy: linux-full + scenario --agents 1 --tunnel --enforce + windows — Server-API (`config-hash`) und Agent-Paket im Stack (`run.sh integration`, `upgrade_path`); vor dem Merge der Multibox-Lauf, weil nur er den Datenpfad über frps mit echtem mTLS zeigt: Tunnel nach dem Provisionieren, Reload bei offener SSH-Sitzung, `run --once` ohne Tunnel grün (Kevin hat den `--tunnel`-Lauf vor dem Merge erlaubt); `windows`, weil sich Agent-Plattformcode und der Provisionier-Pfad unter Windows ändern (No-ops, Sync-Config immer)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -65,8 +65,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run Reload
 Doku: docs/developer/agent.html + docs/en/developer/agent.html (Ablauf des Abgleichs, lokale Admin-API: nur 127.0.0.1, Passwort in 0600-Datei, Reload statt Neustart)
 Abhängt von: T5
 
-### T7 — Szenario: Tunnel nach dem Provisionieren, Reload bei offener Sitzung  [ ]
-Komponente: scripts · Dateien: scripts/tests/box_tunnelbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh
+### T7 — Szenario: Tunnel nach dem Provisionieren, Reload bei offener Sitzung  [x]
+Komponente: scripts · Dateien: scripts/tests/box_tunnelbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh, scripts/tests/box_visitorbox.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @bf30b0f4 2026-10-16T16:06:44+02:00
+Review: approve (.ah-out/review/agent-frpc-sync/T7.verdict.json)
 Änderung: Der Multibox-`--tunnel`-Ablauf belegt Ziel 2 und 3 auf echten Boxen: (a) der Tunnel-Agent wird provisioniert, bevor sein Tunnel existiert; der Orchestrator legt den Tunnel danach über die API an (ohne `box_serverbox.sh` zu ändern, das frps-Vorhaben ändert dort den frps-Start), `adminhelper-agent run --once` → `frpc.service` aktiv und `enabled`, frps meldet die Registrierung; (b) der Visitor hält eine SSH-Sitzung über den Tunnel offen, der Orchestrator legt einen zweiten Tunnel an, `adminhelper-agent frpc sync` → Journal zeigt Reload, kein Neustart, die Sitzung lebt (neue Marker, z. B. `TUNNEL_LATE_OK`, `VIS_SESSION_SURVIVED`). `run --once` auf der Agent-Box ohne Tunnel bleibt `AGENT_RUN_OK` (bestehender Marker). `multibox_test.sh` (hermetisch) prüft die neuen Marker-Auswertungen. Hinweis: Änderungen unter `scripts/` machen den PR zu einem, den Kevin merged (CLAUDE.md §2).
 Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: keine (Test-Harness; `docs/developer/` nur, falls die Szenario-Beschreibung dort die Schritte aufzählt — vorher greppen)
