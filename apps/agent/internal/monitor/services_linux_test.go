@@ -204,15 +204,20 @@ func showBlockFor(unit string) []byte {
 	return nil
 }
 
-// stubSystemctl swaps runSystemctl for fn and records the unit operands of every call; it fails the
-// test on any call that is not the enabled-inactive re-check.
+// stubSystemctl is stubShow for the enabled-inactive re-check.
 func stubSystemctl(t *testing.T, fn func(units []string) ([]byte, error)) *[][]string {
+	t.Helper()
+	return stubShow(t, "Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic", fn)
+}
+
+// stubShow swaps runSystemctl for fn and records the unit operands of every call; it fails the test
+// on any call that is not `systemctl show -p <props> -- <units>`.
+func stubShow(t *testing.T, props string, fn func(units []string) ([]byte, error)) *[][]string {
 	t.Helper()
 	old := runSystemctl
 	t.Cleanup(func() { runSystemctl = old })
 	calls := &[][]string{}
-	prefix := []string{"show", "-p",
-		"Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic", "--"}
+	prefix := []string{"show", "-p", props, "--"}
 	runSystemctl = func(args ...string) ([]byte, error) {
 		if len(args) <= len(prefix) || !reflect.DeepEqual(args[:len(prefix)], prefix) {
 			t.Fatalf("unexpected systemctl call %q", args)
@@ -431,12 +436,24 @@ func TestFilterEnabledInactiveCandidatesSorted(t *testing.T) {
 	}
 }
 
-// The exact argument lists collectServiceHealth hands runSystemctl.
+// The exact argument lists collectServiceHealth hands runSystemctl; the show calls without their
+// units, as stubCollector keys them.
 const (
 	listUnitsArgs     = "list-units --type=service --all --no-legend --plain --no-pager"
 	listUnitFilesArgs = "list-unit-files --type=service --no-legend --no-pager"
 	listFailedArgs    = "list-units --state=failed --no-legend --plain"
+	recheckShow       = "show -p Id,Names,Type,Result,ConditionResult,TriggeredBy,ConditionTimestampMonotonic"
+	aliasShow         = "show -p Id,Names"
 )
+
+// aliasBlocks is real systemd 257 `systemctl show -p Id,Names -- smartd.service sshd.service`
+// output for the aliases of collectorListUnitFiles: the alias stands in Names, the target in Id.
+const aliasBlocks = `Id=smartmontools.service
+Names=smartmontools.service smartd.service
+
+Id=ssh.service
+Names=ssh.service sshd.service
+`
 
 // collectorListUnits is real systemd 257 `list-units` output (cron stopped by hand, smartmontools
 // failed); collectorListUnitFiles the matching `list-unit-files` lines, with the template getty@
@@ -467,8 +484,8 @@ type systemctlReply struct {
 }
 
 // stubCollector swaps runSystemctl for a fake systemctl that answers every call from replies, keyed
-// by its space-joined arguments (any `show` re-check by "show"), and records the calls; a call
-// without a reply fails the test.
+// by its space-joined arguments (a `show` by "show -p <props>", without its units), and records the
+// calls; a call without a reply fails the test.
 func stubCollector(t *testing.T, replies map[string]systemctlReply) *[]string {
 	t.Helper()
 	old := runSystemctl
@@ -478,8 +495,8 @@ func stubCollector(t *testing.T, replies map[string]systemctlReply) *[]string {
 		call := strings.Join(args, " ")
 		*calls = append(*calls, call)
 		key := call
-		if args[0] == "show" {
-			key = "show"
+		if args[0] == "show" && len(args) > 2 {
+			key = strings.Join(args[:3], " ")
 		}
 		reply, ok := replies[key]
 		if !ok {
@@ -508,7 +525,8 @@ func TestServiceHealthCollector(t *testing.T) {
 		listUnitsArgs:     {out: collectorListUnits},
 		listUnitFilesArgs: {out: collectorListUnitFiles},
 		listFailedArgs:    {out: "smartmontools.service loaded failed failed Self Monitoring and Reporting Technology (SMART) Daemon\n"},
-		"show":            {out: showBlocks257},
+		recheckShow:       {out: showBlocks257},
+		aliasShow:         {out: aliasBlocks},
 	})
 	got := collectServiceHealth()
 
@@ -531,7 +549,8 @@ func TestServiceHealthCollector(t *testing.T) {
 		t.Errorf("error = %q, want none when systemctl answered", e)
 	}
 	wantCalls := []string{listUnitsArgs, listUnitFilesArgs, listFailedArgs,
-		"show -p " + enabledInactiveProps + " -- anacron.service cron.service e2scrub_reap.service systemd-pstore.service"}
+		"show -p " + enabledInactiveProps + " -- anacron.service cron.service e2scrub_reap.service systemd-pstore.service",
+		aliasShow + " -- smartd.service sshd.service"}
 	if !reflect.DeepEqual(*calls, wantCalls) {
 		t.Errorf("calls = %q, want %q", *calls, wantCalls)
 	}
@@ -579,6 +598,7 @@ func TestServiceHealthSystemctlError(t *testing.T) {
 				listUnitsArgs:     {err: tc.err},
 				listUnitFilesArgs: {out: collectorListUnitFiles},
 				listFailedArgs:    {},
+				aliasShow:         {out: aliasBlocks},
 			})
 			got := collectServiceHealth()
 			if got["error"] != tc.want {
@@ -592,4 +612,224 @@ func TestServiceHealthSystemctlError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// aliasOf maps every inventory entry that carries alias_of to it.
+func aliasOf(entries []ServiceEntry) map[string]string {
+	m := map[string]string{}
+	for _, e := range entries {
+		if a, ok := e["alias_of"]; ok {
+			m[e["unit"]] = a
+		}
+	}
+	return m
+}
+
+func TestAliasAndWatchAliasOf(t *testing.T) {
+	// The aliases list-unit-files reports get alias_of from one batched show, matched through Names.
+	// The template alias autovt@ stays out of the batch (systemctl rejects a template name and fails
+	// the whole call); an alias whose block has its own name as Id resolves to nothing.
+	files := collectorListUnitFiles +
+		"autovt@.service              alias           -\n" +
+		"ghost.service                alias           -\n"
+	calls := stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {out: collectorListUnits},
+		listUnitFilesArgs: {out: files},
+		listFailedArgs:    {},
+		recheckShow:       {out: showBlocks257},
+		aliasShow:         {out: aliasBlocks + "\nId=ghost.service\nNames=ghost.service\n"},
+	})
+	got := collectServiceHealth()
+
+	want := map[string]string{"smartd.service": "smartmontools.service", "sshd.service": "ssh.service"}
+	if a := aliasOf(got["all_services"].([]ServiceEntry)); !reflect.DeepEqual(a, want) {
+		t.Errorf("alias_of = %v, want %v", a, want)
+	}
+	aliasCalls := []string{}
+	for _, c := range *calls {
+		if strings.HasPrefix(c, aliasShow+" ") {
+			aliasCalls = append(aliasCalls, c)
+		}
+	}
+	wantCalls := []string{aliasShow + " -- ghost.service smartd.service sshd.service"}
+	if !reflect.DeepEqual(aliasCalls, wantCalls) {
+		t.Errorf("alias calls = %q, want one batch without the template %q", aliasCalls, wantCalls)
+	}
+}
+
+func TestAliasAndWatchAliasShowFails(t *testing.T) {
+	// A failed alias lookup resolves nothing, not even from the blocks printed before the failure (a
+	// call killed by the timeout can end in a truncated Id); the rest of the report stands.
+	partial := "Id=smartmontools.service\nNames=smartmontools.service smartd.service\n\nId=ssh.ser"
+	for name, err := range map[string]error{
+		"exit status": exitError(t, "exit 1"),
+		"killed":      exitError(t, "kill -9 $$"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubCollector(t, map[string]systemctlReply{
+				listUnitsArgs:     {out: collectorListUnits},
+				listUnitFilesArgs: {out: collectorListUnitFiles},
+				listFailedArgs:    {},
+				recheckShow:       {out: showBlocks257},
+				aliasShow:         {out: partial, err: err},
+			})
+			got := collectServiceHealth()
+			if a := aliasOf(got["all_services"].([]ServiceEntry)); len(a) != 0 {
+				t.Errorf("alias_of = %v, want none after a failed show", a)
+			}
+			if _, ok := got["error"]; ok {
+				t.Errorf("error = %q, want none: list-units answered", got["error"])
+			}
+			if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
+				t.Errorf("counts = %v, want active 2 of 7", got["counts"])
+			}
+		})
+	}
+}
+
+func TestAliasAndWatchCountsSkipUnloaded(t *testing.T) {
+	// list-units --all also lists units without a unit file (not-found, here one still running after
+	// its file was removed) and masked units something still references. Neither is a loaded
+	// service, so neither counts, in active or in total; the inventory keeps them.
+	unitsOut := collectorListUnits +
+		"auditd.service           not-found inactive dead    auditd.service\n" +
+		"gone.service             not-found active   running gone.service\n" +
+		"hwclock.service          masked    inactive dead    hwclock.service\n"
+	stubCollector(t, map[string]systemctlReply{
+		listUnitsArgs:     {out: unitsOut},
+		listUnitFilesArgs: {out: collectorListUnitFiles + "hwclock.service              masked          enabled\n"},
+		listFailedArgs:    {},
+		recheckShow:       {out: showBlocks257},
+		aliasShow:         {out: aliasBlocks},
+	})
+	got := collectServiceHealth()
+	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 2, "total": 7}) {
+		t.Errorf("counts = %v, want active 2 of the 7 loaded units", got["counts"])
+	}
+	all := strings.Join(units(got["all_services"].([]ServiceEntry)), " ")
+	for _, u := range []string{"auditd.service", "gone.service", "hwclock.service"} {
+		if !strings.Contains(all, u) {
+			t.Errorf("all_services lacks %s: %s", u, all)
+		}
+	}
+}
+
+// watchedBlocks is real systemd 257 `systemctl show -p Id,Names,ActiveState,MainPID -- <name>`
+// output: sshd (an alias of ssh.service), cron, and nginx, which is not installed.
+var watchedBlocks = map[string]string{
+	"sshd":         "MainPID=1022\nId=ssh.service\nNames=ssh.service sshd.service\nActiveState=active\n",
+	"cron.service": "MainPID=912\nId=cron.service\nNames=cron.service\nActiveState=active\n",
+	"nginx":        "MainPID=0\nId=nginx.service\nNames=nginx.service\nActiveState=inactive\n",
+}
+
+func TestAliasAndWatchNames(t *testing.T) {
+	// A watched alias finds its unit's block through Names: sshd and sshd.service are ssh.service on
+	// Debian and Ubuntu, whose Id alone left them not running.
+	got := parseWatchedServices([]byte(watchedBlocks["sshd"]), []string{"sshd", "sshd.service", "ssh"})
+	for _, svc := range got {
+		if svc["running"] != true || svc["pid"] != "1022" {
+			t.Errorf("%s: want running pid 1022, got %v", svc["name"], svc)
+		}
+	}
+}
+
+func TestAliasAndWatchTemplateSingly(t *testing.T) {
+	// A template name makes systemctl fail the whole batch (exit 1 after the blocks before it): every
+	// name is asked on its own, and only the template stays not running.
+	batchErr := exitError(t, "exit 1")
+	singleErr := exitError(t, "exit 1")
+	names := []string{"sshd", "getty@.service", "nginx", "cron.service"}
+	calls := stubShow(t, "Id,Names,ActiveState,MainPID", func(units []string) ([]byte, error) {
+		if len(units) > 1 {
+			return []byte(watchedBlocks["sshd"]), batchErr
+		}
+		if units[0] == "getty@.service" {
+			return nil, singleErr
+		}
+		return []byte(watchedBlocks[units[0]]), nil
+	})
+	got := collectWatchedServices(names)
+	want := []map[string]any{
+		{"name": "sshd", "running": true, "pid": "1022"},
+		{"name": "getty@.service", "running": false, "pid": nil},
+		{"name": "nginx", "running": false, "pid": nil},
+		{"name": "cron.service", "running": true, "pid": "912"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("watched = %v, want %v", got, want)
+	}
+	wantCalls := [][]string{names, {"sshd"}, {"getty@.service"}, {"nginx"}, {"cron.service"}}
+	if !reflect.DeepEqual(*calls, wantCalls) {
+		t.Errorf("calls = %q, want the batch, then one call per name", *calls)
+	}
+}
+
+func TestAliasAndWatchFallbackLimits(t *testing.T) {
+	// The per-name fallback keeps the limits of the enabled-inactive re-check: none after a batch
+	// that did not answer, none after a single query killed by the timeout, at most 50 queries. A
+	// name not asked is reported not running, as every name was before the fallback existed.
+	down := func(name string) map[string]any { return map[string]any{"name": name, "running": false, "pid": nil} }
+	for name, batchErr := range map[string]error{
+		"batch killed":      exitError(t, "kill -9 $$"),
+		"batch not started": errors.New("exec: \"systemctl\": executable file not found in $PATH"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := stubShow(t, "Id,Names,ActiveState,MainPID", func(units []string) ([]byte, error) {
+				return nil, batchErr
+			})
+			got := collectWatchedServices([]string{"sshd", "cron.service"})
+			if want := []map[string]any{down("sshd"), down("cron.service")}; !reflect.DeepEqual(got, want) {
+				t.Errorf("watched = %v, want %v", got, want)
+			}
+			if len(*calls) != 1 {
+				t.Errorf("calls = %q, want only the batch", *calls)
+			}
+		})
+	}
+	t.Run("single killed", func(t *testing.T) {
+		batchErr := exitError(t, "exit 1")
+		killed := exitError(t, "kill -9 $$")
+		calls := stubShow(t, "Id,Names,ActiveState,MainPID", func(units []string) ([]byte, error) {
+			switch {
+			case len(units) > 1:
+				return nil, batchErr
+			case units[0] == "sshd":
+				return nil, killed
+			}
+			return []byte(watchedBlocks[units[0]]), nil
+		})
+		got := collectWatchedServices([]string{"cron.service", "sshd", "nginx"})
+		want := []map[string]any{{"name": "cron.service", "running": true, "pid": "912"}, down("sshd"), down("nginx")}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("watched = %v, want %v", got, want)
+		}
+		wantCalls := [][]string{{"cron.service", "sshd", "nginx"}, {"cron.service"}, {"sshd"}}
+		if !reflect.DeepEqual(*calls, wantCalls) {
+			t.Errorf("calls = %q, want none after the killed one", *calls)
+		}
+	})
+	t.Run("cap", func(t *testing.T) {
+		batchErr := exitError(t, "exit 1")
+		singles := 0
+		stubShow(t, "Id,Names,ActiveState,MainPID", func(units []string) ([]byte, error) {
+			if len(units) > 1 {
+				return nil, batchErr
+			}
+			singles++
+			return []byte("MainPID=7\nId=" + units[0] + "\nNames=" + units[0] + "\nActiveState=active\n"), nil
+		})
+		names := make([]string, 60)
+		for i := range names {
+			names[i] = fmt.Sprintf("unit-%02d.service", i)
+		}
+		got := collectWatchedServices(names)
+		if singles != 50 {
+			t.Errorf("single queries = %d, want 50", singles)
+		}
+		for i, svc := range got {
+			if want := i < 50; svc["running"] != want {
+				t.Errorf("%s: running = %v, want %v", names[i], svc["running"], want)
+			}
+		}
+	})
 }

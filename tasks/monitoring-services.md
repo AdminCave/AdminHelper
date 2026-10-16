@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run TestServiceHealth
 Doku: keine (intern; sichtbar mit T8)
 Abhängt von: T1
 
-### T3 — Agent: Aliase im Inventar (`alias_of`) und robuster Legacy-Watch-Pfad  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_linux_test.go, apps/agent/internal/monitor/inventory.go
+### T3 — Agent: Aliase im Inventar (`alias_of`) und robuster Legacy-Watch-Pfad  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/services_linux_test.go, apps/agent/internal/monitor/inventory.go, apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/services_windows.go, apps/agent/internal/monitor/scquery.go, apps/agent/internal/monitor/scquery_test.go, apps/agent/internal/monitor/inventory_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @fe8891ec 2026-10-16T15:37:54+02:00
+Review: approve (.ah-out/review/monitoring-services/T3.verdict.json)
 Änderung: Einträge aus `list-unit-files` mit Zustand `alias` (ohne Template-Namen `*@.service`) werden mit einem gebündelten `systemctl show -p Id -- <aliase>` aufgelöst und bekommen `alias_of`; `inventoryHash` (`inventory.go:33-41`) bezieht `alias_of` ein. `collectWatchedServices` (`services_linux.go:108-126`) fragt nach einem Batch-Fehler jeden Namen einzeln ab statt alle als down zu melden; `parseWatchedServices` (`:132-161`) ordnet zusätzlich über `Names` zu (`sshd` → Block mit `Id=ssh.service`, `Names=ssh.service sshd.service`), dafür `-p Id,Names,ActiveState,MainPID`. Tests zuerst rot, Namen mit Präfix `TestAliasAndWatch`: Alias-Auflösung; Template-Name im Batch → Einzelabfrage, die übrigen Namen korrekt; `sshd` läuft über `Names`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run TestAliasAndWatch
 Doku: keine (intern; sichtbar mit T8)

@@ -4,7 +4,12 @@
 
 package monitor
 
-import "testing"
+import (
+	"io/fs"
+	"os/exec"
+	"reflect"
+	"testing"
+)
 
 // Realistic `sc query state= all` output: CRLF line endings, indented property lines, two records.
 const scFixture = "SERVICE_NAME: Dnscache\r\n" +
@@ -47,5 +52,39 @@ func TestMapWindowsServiceStates(t *testing.T) {
 		if got := mapWindowsService("svc", state)["active_state"]; got != want {
 			t.Errorf("%s -> %s, want %s", state, got, want)
 		}
+	}
+}
+
+func TestAliasAndWatchScQueryError(t *testing.T) {
+	// A failed `sc query` must not read as all OK: the block names the failure in a short reason
+	// (never the error text, which can carry the sc path), ignores any output and carries no counts,
+	// which would claim 0 of 0. The exit-status reason is the same helper the Linux tests cover.
+	for name, err := range map[string]error{
+		"not found":      &exec.Error{Name: "sc", Err: exec.ErrNotFound},
+		"not executable": &fs.PathError{Op: "fork/exec", Path: `C:\Windows\System32\sc.exe`, Err: fs.ErrPermission},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := scServiceHealth([]byte(scFixture), err)
+			if got["error"] != "sc query failed: sc did not start" {
+				t.Errorf("error = %q, want %q", got["error"], "sc query failed: sc did not start")
+			}
+			if c, ok := got["counts"]; ok {
+				t.Errorf("counts = %v, want none without sc query", c)
+			}
+			if all := got["all_services"].([]ServiceEntry); len(all) != 0 {
+				t.Errorf("all_services = %v, want none", all)
+			}
+		})
+	}
+	// sc answered: inventory and counts, no error.
+	got := scServiceHealth([]byte(scFixture), nil)
+	if _, ok := got["error"]; ok {
+		t.Errorf("error = %q, want none", got["error"])
+	}
+	if !reflect.DeepEqual(got["counts"], map[string]int{"active": 1, "total": 2}) {
+		t.Errorf("counts = %v, want active 1 of 2", got["counts"])
+	}
+	if all := got["all_services"].([]ServiceEntry); len(all) != 2 {
+		t.Errorf("all_services = %v, want both services", all)
 	}
 }

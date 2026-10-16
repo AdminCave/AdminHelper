@@ -15,9 +15,14 @@ import (
 
 // collectServiceHealth collects systemd service status (port of collect_systemd_health).
 func collectServiceHealth() map[string]any {
-	// 1) All service units with active_state (col 2 = UNIT LOAD ACTIVE SUB)
-	unitStates, unitsErr := parseSystemctlColumns(2, "list-units", "--type=service", "--all",
+	// 1) All service units with load state (col 1) and active_state (col 2 = UNIT LOAD ACTIVE SUB)
+	unitStates, loadStates := map[string]string{}, map[string]string{}
+	listUnits, unitsErr := runSystemctl("list-units", "--type=service", "--all",
 		"--no-legend", "--plain", "--no-pager")
+	if unitsErr == nil {
+		unitStates = parseSystemctlColumnsOutput(string(listUnits), 2)
+		loadStates = parseSystemctlColumnsOutput(string(listUnits), 1)
+	}
 
 	// 2) Enabled state for all unit files (col 1 = UNIT STATE)
 	enabledStates, _ := parseSystemctlColumns(1, "list-unit-files", "--type=service",
@@ -38,14 +43,18 @@ func collectServiceHealth() map[string]any {
 	// it is unit-tested without running systemctl (6.19).
 	health := assembleServiceHealth(unitStates, enabledStates, failed)
 	health["enabled_inactive"] = filterEnabledInactive(health["enabled_inactive"].([]string))
+	resolveAliases(health["all_services"].([]ServiceEntry))
 	// Without list-units every active state is unknown and no unit is a candidate: counts would
 	// claim zero active units, and without the error the server would report "all OK".
 	if unitsErr != nil {
-		health["error"] = "systemctl list-units failed: " + systemctlFailure(unitsErr)
+		health["error"] = "systemctl list-units failed: " + commandFailure("systemctl", unitsErr)
 	} else {
+		// list-units --all also lists units without a unit file (not-found) and masked units that
+		// something still references; neither is a loaded service.
 		loaded := make([]ServiceEntry, 0, len(unitStates))
 		for _, e := range health["all_services"].([]ServiceEntry) {
-			if _, ok := unitStates[e["unit"]]; ok {
+			_, listed := unitStates[e["unit"]]
+			if load := loadStates[e["unit"]]; listed && load != "not-found" && load != "masked" {
 				loaded = append(loaded, e)
 			}
 		}
@@ -54,14 +63,37 @@ func collectServiceHealth() map[string]any {
 	return health
 }
 
-// systemctlFailure is the short reason for a failed systemctl call: its exit status or signal, or
-// that it did not start. Never stderr or the error text, which can name paths (fork/exec <path>).
-func systemctlFailure(err error) string {
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.Error()
+// aliasProps are the properties resolveAliases reads per alias: the alias stands in Names, its
+// target in Id.
+const aliasProps = "Id,Names"
+
+// resolveAliases sets alias_of on the inventory entries list-unit-files reports as alias, from one
+// batched `systemctl show`, so the server can match a watched alias (sshd) against its unit
+// (ssh.service). Templates (name@.service) stay out: systemctl rejects a template name and fails the
+// whole call. A failed call resolves nothing, since a call killed by the timeout can end in a
+// truncated Id; an alias whose Id is its own name (no target) gets no alias_of.
+func resolveAliases(entries []ServiceEntry) {
+	aliases := map[string]ServiceEntry{}
+	names := []string{}
+	for _, e := range entries {
+		if e["enabled_state"] == "alias" && !strings.HasSuffix(e["unit"], "@.service") {
+			aliases[e["unit"]] = e
+			names = append(names, e["unit"])
+		}
 	}
-	return "systemctl did not start"
+	if len(names) == 0 {
+		return
+	}
+	out, err := runSystemctl(append([]string{"show", "-p", aliasProps, "--"}, names...)...)
+	if err != nil {
+		return
+	}
+	blocks := parseShowBlocks(out)
+	for name, e := range aliases {
+		if id := blocks[name]["Id"]; id != "" && id != name {
+			e["alias_of"] = id
+		}
+	}
 }
 
 // assembleServiceHealth derives the service-health report from the parsed unit states: all_services
@@ -120,9 +152,8 @@ const enabledInactiveProps = "Id,Names,Type,Result,ConditionResult,TriggeredBy,C
 // candidates beyond it stay unchecked.
 const maxSingleUnitChecks = 50
 
-// runSystemctl indirects the systemctl calls of collectServiceHealth and filterEnabledInactive so
-// tests can drive the collector, the batch and the per-unit paths without systemctl (same reason as
-// serviceHealthCollector, 6.18).
+// runSystemctl indirects every systemctl call of this file so tests can drive the collector, the
+// batch and the per-unit paths without systemctl (same reason as serviceHealthCollector, 6.18).
 var runSystemctl = func(args ...string) ([]byte, error) {
 	return runWithTimeout("systemctl", args...)
 }
@@ -168,10 +199,10 @@ func answered(err error) bool {
 	return errors.As(err, &exitErr) && exitErr.ExitCode() > 0
 }
 
-// parseEnabledInactive keeps the candidates whose blank-line-separated `systemctl show` block does
-// not mark them inactive by design. Blocks are matched by Id and every name in Names, independent
-// of their order; a candidate without a block stays.
-func parseEnabledInactive(out []byte, candidates []string) []string {
+// parseShowBlocks maps the blank-line-separated blocks of `systemctl show` to their properties,
+// each block under its Id and under every name in its Names, so a lookup depends neither on the
+// block order nor on which of a unit's names was asked for (an alias).
+func parseShowBlocks(out []byte) map[string]map[string]string {
 	byName := map[string]map[string]string{}
 	for _, block := range strings.Split(strings.TrimSpace(string(out)), "\n\n") {
 		props := map[string]string{}
@@ -186,6 +217,13 @@ func parseEnabledInactive(out []byte, candidates []string) []string {
 			}
 		}
 	}
+	return byName
+}
+
+// parseEnabledInactive keeps the candidates whose `systemctl show` block (parseShowBlocks) does not
+// mark them inactive by design; a candidate without a block stays.
+func parseEnabledInactive(out []byte, candidates []string) []string {
+	byName := parseShowBlocks(out)
 	kept := make([]string, 0, len(candidates))
 	for _, unit := range candidates {
 		if props, ok := byName[unit]; ok && inactiveByDesign(props) {
@@ -243,41 +281,43 @@ func collectWatchedServices(names []string) []map[string]any {
 	// process spawns + D-Bus roundtrips per cycle become one (5.7). `--` terminates option parsing
 	// so a server-supplied name beginning with '-' is treated as an operand, not a systemctl flag
 	// (argument/flag-confusion hardening; runWithTimeout runs exec directly, no shell).
-	args := append([]string{"show", "-p", "Id,ActiveState,MainPID", "--"}, names...)
-	out, err := runWithTimeout("systemctl", args...)
-	if err != nil {
-		services := make([]map[string]any, 0, len(names))
-		for _, name := range names {
-			services = append(services, map[string]any{"name": name, "running": false, "pid": nil})
-		}
-		return services
+	out, err := runSystemctl(append([]string{"show", "-p", watchedProps, "--"}, names...)...)
+	if err == nil {
+		return parseWatchedServices(out, names)
 	}
-	return parseWatchedServices(out, names)
+	// One bad name (a template such as getty@.service) fails the whole batch: ask name by name, with
+	// the limits of filterEnabledInactive. A name whose query fails, or that is not asked, is
+	// reported not running, as every name was before.
+	services := make([]map[string]any, 0, len(names))
+	asking := answered(err)
+	for i, name := range names {
+		if asking && i < maxSingleUnitChecks {
+			out, err := runSystemctl("show", "-p", watchedProps, "--", name)
+			if err == nil {
+				services = append(services, parseWatchedServices(out, []string{name})...)
+				continue
+			}
+			asking = answered(err)
+		}
+		services = append(services, map[string]any{"name": name, "running": false, "pid": nil})
+	}
+	return services
 }
 
-// parseWatchedServices maps each requested name to its status from the blank-line-separated
-// `systemctl show -p Id,ActiveState,MainPID` blocks. Keyed by the canonical Id so it doesn't rely on
-// block order, and matches a bare "nginx" against "nginx.service" too. A name with no block stays
-// not-running.
+// watchedProps are the properties collectWatchedServices reads per watched name.
+const watchedProps = "Id,Names,ActiveState,MainPID"
+
+// parseWatchedServices maps each requested name to its status from the `systemctl show` blocks
+// (parseShowBlocks), so an alias (sshd -> ssh.service) finds its unit through Names, and a bare
+// "nginx" matches "nginx.service" too. A name with no block stays not-running.
 func parseWatchedServices(out []byte, names []string) []map[string]any {
-	byID := map[string]map[string]string{}
-	for _, block := range strings.Split(strings.TrimSpace(string(out)), "\n\n") {
-		props := map[string]string{}
-		for _, line := range strings.Split(block, "\n") {
-			if kv := strings.SplitN(strings.TrimSpace(line), "=", 2); len(kv) == 2 {
-				props[kv[0]] = kv[1]
-			}
-		}
-		if id := props["Id"]; id != "" {
-			byID[id] = props
-		}
-	}
+	byName := parseShowBlocks(out)
 	services := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		svc := map[string]any{"name": name, "running": false, "pid": nil}
-		props, ok := byID[name]
+		props, ok := byName[name]
 		if !ok {
-			props, ok = byID[name+".service"]
+			props, ok = byName[name+".service"]
 		}
 		if ok && props["ActiveState"] == "active" {
 			svc["running"] = true
