@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 
@@ -36,6 +37,9 @@ class MonitorCheck(Base):
     consecutive_fails = Column(Integer, default=3)
     template_id = Column(String, nullable=True, index=True)
     template_def_id = Column(String, nullable=True)  # stable def_id from the template
+    # JSON list of the fields a user changed on a template check, which the template
+    # sync must not overwrite. Checks from before the column start with [].
+    overridden_fields = Column(Text, nullable=False, default="[]", server_default="[]")
     created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
@@ -52,6 +56,10 @@ class MonitorCheck(Base):
             "severity": self.severity,
             "consecutiveFails": self.consecutive_fails,
             "templateId": self.template_id,
+            "templateDefId": self.template_def_id,
+            "overriddenFields": json.loads(self.overridden_fields)
+            if self.overridden_fields
+            else [],
             "createdAt": iso_utc(self.created_at),
             "updatedAt": iso_utc(self.updated_at),
         }
@@ -173,6 +181,10 @@ class MonitorTemplate(Base):
     # Origin marker for shipped standard templates (app/builtin_templates.py).
     # Informational after creation — built-ins stay fully editable/deletable.
     builtin_slug = Column(String, nullable=True, unique=True, index=True)
+    # Shipped version and sha256 of the shipped definitions last rolled out to this
+    # row; NULL on user templates.
+    builtin_version = Column(Integer, nullable=True)
+    builtin_hash = Column(String, nullable=True)
     check_definitions = Column(String, nullable=False, default="[]")
     alert_definitions = Column(String, nullable=False, default="[]")
     created_at = Column(DateTime, server_default=utc_now_sql())
@@ -230,6 +242,27 @@ class MonitorTemplateAssignment(Base):
             "serverName": self.server_name,
             "source": self.source,
         }
+
+
+class MonitorCheckTombstone(Base):
+    """A template check a user deleted on one server, so the template sync does not
+    create (template, server, def_id) again. Deleting the template drops its
+    tombstones in the database (ON DELETE CASCADE, no ORM relationship)."""
+
+    __tablename__ = "monitor_check_tombstones"
+    __table_args__ = (
+        UniqueConstraint(
+            "template_id", "server_id", "def_id", name="uq_check_tombstone_template_server_def"
+        ),
+    )
+
+    id = Column(String, primary_key=True)
+    template_id = Column(
+        String, ForeignKey("monitor_templates.id", ondelete="CASCADE"), nullable=False
+    )
+    server_id = Column(String, nullable=False, index=True)
+    def_id = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
 
 class MonitorTemplateTagAssignment(Base):
