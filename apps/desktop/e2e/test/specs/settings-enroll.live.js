@@ -8,7 +8,8 @@
 // against the same permissive stack and seeded STCP tunnel, with a one-time
 // token of its own (AH_SETTINGS_ENROLL_TOKEN): every token is single-use.
 // The third step (R-0246) starts where the second ends: it resets the identity
-// while the tunnel runs and registers again with a third token
+// while the tunnel runs, through the settings' button and the app's own confirm
+// dialog (R-0395), and registers again with a third token
 // (AH_SETTINGS_REENROLL_TOKEN), so a new frpc has to replace the old one. The reset
 // revokes the device at the server first (R-0224): the admin's device list shows the
 // old line revoked by the device itself and, after registering again, a new one.
@@ -87,7 +88,7 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
     }
     await $('.login-card').waitForExist({ timeout: 20000 });
     // Setup, not the flow under test: clear whatever identity the keyring holds
-    // through the bridge, not through the native confirm dialog of the settings.
+    // through the bridge: the settings need a session.
     const err = await browser.executeAsync(
       (url, done) => {
         window.__TAURI__.core
@@ -126,7 +127,8 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
   });
 
   it('registers again after a reset while the tunnel runs, and a new frpc takes over (R-0246)', async () => {
-    // Where the second step ends: signed in, identity from the settings, tunnel connected.
+    // Where the second step ends: signed in, identity from the settings, tunnel connected,
+    // the settings still open.
     const before = (await invoke('tunnel_status')).value;
     expect(before && before.running).toBe(true);
     expect(before.connectedSince).toBeTruthy();
@@ -136,10 +138,29 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
 
     // The reset clears the keyring, not the frpc process: the tunnel keeps running on
     // the old identity, the case onEnroll stops before it starts (#102, T7).
-    const reset = await invoke('reset_device_identity', { serverUrl: SERVER_URL });
-    expect(reset.error).toBeUndefined();
-    // First revoked at the server, with this very certificate (R-0224).
-    expect(reset.value).toBe('revoked');
+    // Through the button, as a user does (R-0395): a reset through the bridge never saw
+    // that the button's question failed without a dialog permission.
+    const resetMsg = await $('.sm-panel [data-msg="device-reset"]');
+    expect(await resetMsg.isExisting()).toBe(false);
+    const resetButton = await $('.sm-panel [data-action="device-reset"]');
+    const resetLabel = await resetButton.getText();
+    await jsClick(resetButton);
+    // The question opens in the app's own dialog; its confirm button repeats the label.
+    const confirmButton = await $('.confirm-layer .modal-panel .btn.danger');
+    await confirmButton.waitForExist({
+      timeout: 10000,
+      timeoutMsg: 'the reset never asked in the app dialog',
+    });
+    expect(await confirmButton.getText()).toBe(resetLabel);
+    await jsClick(confirmButton);
+    // A message after the confirmation is the done one: the missing-URL message comes
+    // before the question, and a failed reset clears the message.
+    await resetMsg.waitForExist({
+      timeout: 30000,
+      timeoutMsg: 'the settings never reported the reset as done',
+    });
+    // First revoked at the server, with this very certificate (R-0224): no local-only note.
+    expect(await $('.sm-panel [data-msg="device-reset-local"]').isExisting()).toBe(false);
     const revokedBySelf = adminDevices().filter(
       (d) => activeBefore.has(d.id) && d.revoked_reason === 'self',
     );
@@ -147,10 +168,7 @@ describe('AdminHelper desktop — enroll from the settings, then the tunnel conn
     // Nothing left for the identity line to name.
     expect(await invoke('device_identity')).toEqual({ value: null });
 
-    // The settings read the identity when they open; reopen them for the token field.
-    await jsClick(await $('.sm-panel .panel-header button'));
-    await $('.sm-panel').waitForExist({ reverse: true, timeout: 10000 });
-    await openSettings();
+    // The reset turns the block into the token field in place, as its message asks.
     await registerInSettings(REENROLL_TOKEN);
     await expectIdentityLine();
 

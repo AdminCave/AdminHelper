@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Rückfragen zum Zurücksetzen im App-Dialog — Task-Ledger
-Status: aktiv · Branch: feature/desktop-reset-confirm · Review: am Ende
+Status: bereit · Branch: feature/desktop-reset-confirm · Review: am Ende
 Spec: Roadmap R-0395
 Heavy: linux-full — Desktop-Journeys (Geräte-Identität und Pin zurücksetzen, Login-Screen); `settings-enroll.live.js` läuft im Sammellauf (`desktop_e2e_tunnel.sh`); keine Plattform- oder Rust-Änderung, daher kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -35,8 +35,10 @@ Abhängt von: T1
 Orakel: contract — genutzte Dialog-Befehle gegen die Capability
 Dedup-Key: bug:desktop:capabilities/default.json:dialog-allow-message
 
-### T3 — Live-Test setzt die Identität über den Knopf zurück  [ ]
+### T3 — Live-Test setzt die Identität über den Knopf zurück  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/settings-enroll.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @e2f759b8 2026-10-16T11:48:17+02:00
+Review: am Ende (Branch-Review)
 Änderung: Der dritte Schritt von `settings-enroll.live.js` (`:128`) setzt die Identität heute per `invoke('reset_device_identity')` zurück (`:139`), am Knopf vorbei; deshalb fiel der Fehler im Sammellauf nie auf. Neu: Einstellungen öffnen, „Geräte-Identität zurücksetzen“ klicken, im App-Dialog bestätigen, die Meldung `settings.resetDeviceId.done` abwarten. Die bisherigen Assertions bleiben: Widerruf durch das Gerät selbst (`revoked_reason === 'self'`), `device_identity` leer, erneute Registrierung, neuer frpc. `scripts/` bleibt unberührt.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (intern)
