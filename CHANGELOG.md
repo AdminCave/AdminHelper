@@ -316,6 +316,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: Geraete-Identitaet und Pin lassen sich wieder zuruecksetzen (R-0395):** Die Rueckfragen vor dem
+  Zuruecksetzen, auf dem Login-Screen („Geraete-Identitaet zuruecksetzen“, „Pin zuruecksetzen“) und in den
+  Einstellungen, liefen ueber den nativen Dialog von `@tauri-apps/plugin-dialog`. Den erlaubten die Capabilities
+  nicht (nur `dialog:allow-save`), die Ablehnung ging verloren, und die Knoepfe taten nichts. Jetzt fragt der
+  App-eigene Dialog, wie beim Loeschen im Monitoring; sein Bestaetigungsknopf traegt die Aktion. Escape schliesst
+  darin nur die Rueckfrage, nicht die Einstellungen darunter. Ein Vertragstest prueft, dass jede Funktion, die die
+  Oberflaeche aus dem Dialog-Plugin nutzt, in `capabilities/default.json` erlaubt ist. Ein gescheiterter Export des
+  Browser-Zertifikats nennt jetzt hinter der Meldung seine Ursache.
 - **Server: der Agent-Report-Proxy reicht jede Server-ID durch (R-0391):**
   `POST /api/monitoring/agent/{server_id}/report` setzte die dekodierte `server_id` unkodiert in die Ziel-URL zum
   Monitoring-Dienst. Ein Steuerzeichen (`%1F`) endete mit 500, ein `?` oder `#` (`%3F`, `%23`) schnitt die Ziel-URL

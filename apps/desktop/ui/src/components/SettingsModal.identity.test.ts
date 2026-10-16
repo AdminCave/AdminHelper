@@ -85,10 +85,8 @@ vi.mock('$lib/stores/tunnel', () => ({
   stop: vi.fn(async () => undefined),
 }));
 
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  save: vi.fn(async () => null),
-  confirm: vi.fn(async () => true),
-}));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn(async () => null) }));
+vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: vi.fn(async () => true) }));
 
 import SettingsModal from './SettingsModal.svelte';
 
