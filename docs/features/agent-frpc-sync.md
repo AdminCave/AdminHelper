@@ -129,6 +129,7 @@ Dazu kommen drei Schwächen am selben Ablauf:
 | `hash: null` | frpc stoppen und deaktivieren, `frpc.toml` und Hash löschen, Exit 0 |
 | Hash gleich, frpc soll laufen und läuft | nichts (`systemctl is-active`, kein `/healthz`) |
 | frpc soll laufen, läuft aber nicht (z. B. Admin-Port nach Reboot belegt), Hash gleich oder neu mit Proxies (T9) | neuen Port und neues Passwort wählen, Datei neu schreiben, starten |
+| Hash gleich, `frpc.toml` ohne `[[proxies]]` (von einem älteren Agent geschrieben, frpc läuft womöglich noch) | Server-Text holen und prüfen, dann wie „Hash neu, TOML ohne `[[proxies]]`“ (T12) |
 | Hash neu, TOML ohne `[[proxies]]` | frpc stoppen und deaktivieren, `frpc.toml` löschen, Hash speichern |
 | Hash neu, mit Proxies, frpc aus | schreiben, `enable --now` |
 | Hash neu, mit Proxies, frpc läuft, Common-Teil gleich | schreiben, Reload, wenn frpc mit diesem Common-Teil gestartet wurde (`.started-hash`) und der Admin-Port einem Listener von root gehört; sonst oder wenn der Reload scheitert, Neustart |
