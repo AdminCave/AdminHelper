@@ -116,8 +116,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.
 Doku: keine (intern; sichtbar mit T11)
 Abhängt von: T7
 
-### T11 — Tunnel-Anzeige: Knopf „Neu verbinden“, nur bei getrenntem Tunnel  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/TunnelIndicator.svelte, apps/desktop/ui/src/components/TunnelIndicator.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+### T11 — Tunnel-Anzeige: Knopf „Neu verbinden“, nur bei getrenntem Tunnel  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/TunnelIndicator.svelte, apps/desktop/ui/src/components/TunnelIndicator.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @53dc2470 2026-10-16T18:10:26+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T11.verdict.json)
 Änderung: `TunnelIndicator.svelte` (Anzeige `:28-33`, Zustände `:15-25`) zeigt bei `$tunnel.ui === 'disconnected'` neben „Tunnel getrennt“ einen kleinen Knopf „Neu verbinden“ (`tunnel.reconnect`, DE neben `dictionaries.ts:191`, EN neben `:815`), der `reconnectNow()` (T10) ruft; in jedem anderen Zustand gibt es keinen Knopf, während eines Abgleichs (`connecting`) erst recht nicht. Neue Testdatei mit SPDX-Header (`// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`), zuerst rot: Knopf nur bei `disconnected`; ein Klick ruft `reconnectNow` genau einmal; bei `connected`, `connecting`, `idle` kein Knopf. Doku DE+EN: ein Satz in der Fehlerbehebung (`frp-tunnel.html:113-114`, EN an der entsprechenden Stelle), dass der Desktop sich selbst wieder verbindet und „Neu verbinden“ das sofort anstößt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/TunnelIndicator.test.ts
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (Fehlerbehebung)

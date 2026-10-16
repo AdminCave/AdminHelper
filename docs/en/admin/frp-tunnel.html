@@ -112,6 +112,7 @@
             <li><strong>Agent does not connect</strong>: check the cert expiry (<code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>), server reachability via <code>nc -vz srm.example.com 7000</code>.</li>
             <li><strong>"Tunnel not found"</strong>: is the tunnel enabled in the desktop client (<em>Infrastructure → Server → Tunnel tab</em>)? FRP logs: <code>docker compose logs -f frps</code>.</li>
             <li><strong>STCP does not work</strong>: visitor port already taken? Check the desktop client log.</li>
+            <li><strong>Desktop shows "Tunnel disconnected"</strong>: the desktop reconnects by itself and tries again at least every 60&nbsp;s; the <em>Reconnect</em> button next to the indicator at the bottom of the expanded sidebar does it right away.</li>
           </ul>
 
           <div class="page-nav">
