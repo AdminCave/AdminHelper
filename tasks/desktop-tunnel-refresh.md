@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Tunnel übernimmt Änderungen selbst — Task-Ledger
-Status: aktiv · Branch: feature/desktop-tunnel-refresh · Review: pro Task
+Status: bereit · Branch: feature/desktop-tunnel-refresh · Review: pro Task
 Spec: docs/features/desktop-tunnel-refresh.md (Roadmap R-0402, R-0389, R-0390)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Tunnel (CLAUDE.md §5): `desktop_e2e_tunnel.sh` mit dem erweiterten `tunnel-start.live.js` im Sammellauf (`run.sh e2e`, beweist Reload ohne Neustart gegen echtes frps); `scenario` vor dem Merge, weil der Desktop-Tunnel den FRP-Datenpfad berührt (der GUI-Visitor selbst läuft dort nicht; Kevin 2026-10-16: reicht, der Desktop-Beweis ist T9; Multibox erlaubt); `windows` für Sidecar und lokale Admin-API auf 127.0.0.1 (Firewall-Abfrage nicht verifiziert)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -169,8 +169,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- auth::
 Doku: keine (intern)
 Abhängt von: T5
 
-### T16 — Visitor-TOML: bindAddr nur Loopback, Parsefehler ohne Zeileninhalt  [ ]
+### T16 — Visitor-TOML: bindAddr nur Loopback, Parsefehler ohne Zeileninhalt  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c8734e3d 2026-10-16T19:47:11+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T16.verdict.json)
 Änderung: Der Server-Generator schreibt für jeden Visitor `bindAddr = "127.0.0.1"` (`config_generator.py:258`); die Allow-List (`frpc.rs:279`) lässt heute jeden Wert zu. Neu: `bindAddr` nur mit dem Wert `127.0.0.1`, sonst abgewiesen wie ein unbekannter Schlüssel. Der Fehler „visitor.toml nicht parsebar“ (`frpc.rs:255`) gibt heute den Text des Parsers aus, der die betroffene Zeile zitieren kann; neu nennt er nur Zeile und Spalte. Tests, zuerst rot: `bindAddr = "0.0.0.0"` und `"::"` abgewiesen, `127.0.0.1` angenommen (alle Generator-Formen aus T12 weiter grün); eine kaputte TOML mit einem Geheimnis in der Fehlerzeile → die Fehlermeldung enthält das Geheimnis nicht. Doku DE+EN (`desktop.html`, Absatz zur Allow-List): Visitors lauschen nur auf `127.0.0.1`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- visitor
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html

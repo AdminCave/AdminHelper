@@ -249,10 +249,11 @@ fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
 /// `generate_visitor_toml` and `_tls_client_block`
 /// (apps/server/app/modules/frp/config_generator.py): adding a server-side key without
 /// listing it here would reject real tunnels. Under `auth` and `transport` too, only the keys
-/// those two emit are allowed, and `auth.method` only as `token`.
+/// those two emit are allowed, `auth.method` only as `token`, and a visitor's `bindAddr` only as
+/// `127.0.0.1`.
 fn validate_visitor_toml(toml_str: &str) -> Result<toml::Value, AppError> {
-    let value: toml::Value = toml::from_str(toml_str)
-        .map_err(|e| AppError::Validation(format!("visitor.toml nicht parsebar: {e}")))?;
+    let value: toml::Value =
+        toml::from_str(toml_str).map_err(|e| parse_error("visitor.toml", toml_str, &e))?;
     let table = value
         .as_table()
         .ok_or_else(|| AppError::Validation("visitor.toml: kein TOML-Table".to_string()))?;
@@ -329,9 +330,35 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
                     )));
                 }
             }
+            if vt
+                .get("bindAddr")
+                .is_some_and(|addr| addr.as_str() != Some("127.0.0.1"))
+            {
+                return Err(AppError::Validation(
+                    "visitor.toml: a visitor's bindAddr must be \"127.0.0.1\"".to_string(),
+                ));
+            }
         }
     }
     Ok(())
+}
+
+/// A TOML parse error of `text` that names only line and column (1-based, columns in characters),
+/// not the parser's text: that quotes the line, and a line here can hold a token or a secretKey.
+fn parse_error(what: &str, text: &str, error: &toml::de::Error) -> AppError {
+    let position = error
+        .span()
+        .and_then(|span| text.get(..span.start))
+        .map(|before| {
+            let line_start = before.rfind('\n').map_or(0, |nl| nl + 1);
+            format!(
+                " (line {}, column {})",
+                before.matches('\n').count() + 1,
+                before[line_start..].chars().count() + 1
+            )
+        })
+        .unwrap_or_default();
+    AppError::Validation(format!("{what} does not parse{position}"))
 }
 
 /// `value` as a table that holds no key but `keys`; `name` is its path in the visitor TOML.
@@ -435,8 +462,8 @@ fn frpc_config(
     no_template_delimiter(&server_toml)?;
     let config = with_local_head(&server_toml, head.port, &head.password)?;
     no_template_delimiter(&config)?;
-    let parsed: toml::Value = toml::from_str(&config)
-        .map_err(|e| AppError::Validation(format!("frpc config does not parse: {e}")))?;
+    let parsed: toml::Value =
+        toml::from_str(&config).map_err(|e| parse_error("frpc config", &config, &e))?;
     let mut root = parsed.as_table().cloned().unwrap_or_default();
 
     if root.remove("loginFailExit") != Some(toml::Value::Boolean(false))
@@ -1002,6 +1029,61 @@ bindPort = 6000
                 "accepted: auth.method = {method}"
             );
         }
+    }
+
+    #[test]
+    fn validate_visitor_toml_admits_only_loopback_as_bind_addr() {
+        let loopback = "bindAddr = \"127.0.0.1\"";
+        let last = SERVER_TOML.rfind(loopback).unwrap();
+        for bind_addr in [
+            "\"0.0.0.0\"",
+            "\"::\"",
+            "\"127.0.0.2\"",
+            "\"localhost\"",
+            "\"\"",
+            "1",
+        ] {
+            let other = format!("bindAddr = {bind_addr}");
+            let mut second = SERVER_TOML.to_string();
+            second.replace_range(last..last + loopback.len(), &other);
+            for (visitor, evil) in [
+                ("the first visitor", server_toml_with(loopback, &other)),
+                ("the second visitor", second),
+            ] {
+                parse(&evil);
+                assert!(
+                    validate_visitor_toml(&evil).is_err(),
+                    "accepted {other} in {visitor}"
+                );
+                assert!(
+                    frpc_config(&evil, "/data/app/identity", &head(7400, "c0ffee")).is_err(),
+                    "frpc_config accepted {other} in {visitor}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn visitor_toml_parse_error_names_line_and_column_not_the_line() {
+        // The ü puts the column in characters one before the column in bytes.
+        let secret = "ünique-secret-5e1d";
+        let broken = server_toml_with(
+            "secretKey = \"s3cr3t\"",
+            &format!("secretKey = \"{secret}\" junk"),
+        );
+        // The parser's own text quotes the line: the instrument can fail.
+        let parser = toml::from_str::<toml::Value>(&broken)
+            .unwrap_err()
+            .to_string();
+        assert!(parser.contains(secret), "{parser}");
+        assert!(
+            parser.starts_with("TOML parse error at line 19, column 34\n"),
+            "{parser}"
+        );
+
+        let message = validate_visitor_toml(&broken).unwrap_err().to_string();
+        assert!(!message.contains(secret), "{message}");
+        assert_eq!(message, "visitor.toml does not parse (line 19, column 34)");
     }
 
     #[test]
