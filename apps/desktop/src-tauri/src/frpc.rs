@@ -245,10 +245,11 @@ fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
 /// or a visitor plugin (static_file/http_proxy) that would expose local files/network
 /// through the frpc process (3.59). Returns the parsed TOML.
 ///
-/// Keep TOP_KEYS/VISITOR_KEYS in sync with the server's `generate_visitor_toml`
+/// Keep the key lists of [`validate_visitor_table`] in sync with the server's
+/// `generate_visitor_toml` and `_tls_client_block`
 /// (apps/server/app/modules/frp/config_generator.py): adding a server-side key without
-/// listing it here would reject real tunnels. auth/transport sub-keys are intentionally
-/// not deep-validated — they configure TLS/token, not a resource-exposing plugin.
+/// listing it here would reject real tunnels. Under `auth` and `transport` too, only the keys
+/// those two emit are allowed, and `auth.method` only as `token`.
 fn validate_visitor_toml(toml_str: &str) -> Result<toml::Value, AppError> {
     let value: toml::Value = toml::from_str(toml_str)
         .map_err(|e| AppError::Validation(format!("visitor.toml nicht parsebar: {e}")))?;
@@ -278,12 +279,33 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
         "bindAddr",
         "bindPort",
     ];
+    const AUTH_KEYS: &[&str] = &["method", "token"];
+    const TRANSPORT_KEYS: &[&str] = &["tls"];
+    const TLS_KEYS: &[&str] = &["enable", "trustedCaFile", "certFile", "keyFile"];
 
     for key in table.keys() {
         if !TOP_KEYS.contains(&key.as_str()) {
             return Err(AppError::Validation(format!(
                 "visitor.toml: unerlaubter Top-Level-Key '{key}'"
             )));
+        }
+    }
+
+    if let Some(auth) = table.get("auth") {
+        let auth = allowed_table(auth, "auth", AUTH_KEYS)?;
+        if auth
+            .get("method")
+            .is_some_and(|method| method.as_str() != Some("token"))
+        {
+            return Err(AppError::Validation(
+                "visitor.toml: auth.method must be \"token\"".to_string(),
+            ));
+        }
+    }
+    if let Some(transport) = table.get("transport") {
+        let transport = allowed_table(transport, "transport", TRANSPORT_KEYS)?;
+        if let Some(tls) = transport.get("tls") {
+            allowed_table(tls, "transport.tls", TLS_KEYS)?;
         }
     }
 
@@ -310,6 +332,23 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
         }
     }
     Ok(())
+}
+
+/// `value` as a table that holds no key but `keys`; `name` is its path in the visitor TOML.
+fn allowed_table<'a>(
+    value: &'a toml::Value,
+    name: &str,
+    keys: &[&str],
+) -> Result<&'a toml::Table, AppError> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| AppError::Validation(format!("visitor.toml: {name} is not a table")))?;
+    match table.keys().find(|key| !keys.contains(&key.as_str())) {
+        Some(key) => Err(AppError::Validation(format!(
+            "visitor.toml: key '{name}.{key}' is not allowed"
+        ))),
+        None => Ok(table),
+    }
 }
 
 /// User of frpc's local admin API; the generated password is the secret.
@@ -348,6 +387,8 @@ fn with_local_head(server_toml: &str, port: u16, password: &str) -> Result<Strin
 /// The text frpc runs: the server TOML with `identity_dir` filled in, behind `head`. The identity
 /// dir goes in after the allow-list, so the filled-in TOML is checked again, and so is the whole:
 /// its root holds the head exactly as written and otherwise only what the allow-list admits.
+/// frp renders the config file as a Go template before it reads the TOML (`pkg/config/load.go`,
+/// `RenderWithTemplate`), so the finished text, the identity dir filled in, holds no `{{`.
 fn frpc_config(
     server_toml: &str,
     identity_dir: &str,
@@ -358,6 +399,11 @@ fn frpc_config(
         head.port,
         &head.password,
     )?;
+    if config.contains("{{") {
+        return Err(AppError::Validation(
+            "frpc config: '{{' is not allowed".to_string(),
+        ));
+    }
     let parsed: toml::Value = toml::from_str(&config)
         .map_err(|e| AppError::Validation(format!("frpc config does not parse: {e}")))?;
     let mut root = parsed.as_table().cloned().unwrap_or_default();
@@ -852,6 +898,86 @@ bindPort = 6000
     }
 
     #[test]
+    fn validate_visitor_toml_accepts_every_form_the_server_generates() {
+        let no_visitors = &SERVER_TOML[..SERVER_TOML.find("\n[[visitors]]").unwrap()];
+        for (case, form) in [
+            ("TLS block and two visitors", SERVER_TOML.to_string()),
+            ("without the TLS block", server_toml_with(TLS_BLOCK, "")),
+            (
+                "a visitor without serverUser",
+                server_toml_with("serverUser = \"srv-a\"\n", ""),
+            ),
+            ("no visitors", no_visitors.to_string()),
+        ] {
+            assert!(validate_visitor_toml(&form).is_ok(), "rejected: {case}");
+            let config = frpc_config(&form, "/data/app/identity", &head(7400, "c0ffee"));
+            assert!(config.is_ok(), "frpc_config rejected: {case}");
+        }
+    }
+
+    #[test]
+    fn validate_visitor_toml_rejects_any_other_key_under_auth_and_transport() {
+        let auth = "auth.token = \"sekret\"\n";
+        let auth_lines = "auth.method = \"token\"\nauth.token = \"sekret\"\n";
+        let tls = "keyFile = \"{{IDENTITY_DIR}}/key.pem\"\n";
+        let without_tls = server_toml_with(TLS_BLOCK, "");
+        let plus = |at: &str, extra: &str| server_toml_with(at, &format!("{at}{extra}\n"));
+        let plus_without_tls =
+            |extra: &str| without_tls.replacen(auth, &format!("{auth}{extra}\n"), 1);
+        for (case, evil) in [
+            (
+                "auth.additionalScopes",
+                plus(auth, "auth.additionalScopes = [\"HeartBeats\"]"),
+            ),
+            ("auth.oidc", plus(auth, "auth.oidc.clientID = \"x\"")),
+            (
+                "transport.protocol",
+                plus(auth, "transport.protocol = \"tcp\""),
+            ),
+            ("transport.poolCount", plus(auth, "transport.poolCount = 5")),
+            (
+                "transport.tls.serverName",
+                plus(tls, "serverName = \"frps\""),
+            ),
+            (
+                "transport.tls.disableCustomTLSFirstByte",
+                plus(tls, "disableCustomTLSFirstByte = true"),
+            ),
+            (
+                "auth as a value",
+                server_toml_with(auth_lines, "auth = \"sekret\"\n"),
+            ),
+            (
+                "transport as a value",
+                plus_without_tls("transport = \"tcp\""),
+            ),
+            (
+                "transport.tls as a value",
+                plus_without_tls("transport.tls = true"),
+            ),
+        ] {
+            // The TOML itself is valid: only the allow-list may refuse it.
+            parse(&evil);
+            assert!(validate_visitor_toml(&evil).is_err(), "accepted: {case}");
+        }
+    }
+
+    #[test]
+    fn validate_visitor_toml_rejects_an_auth_method_other_than_token() {
+        for method in ["\"oidc\"", "\"Token\"", "\"\"", "1"] {
+            let evil = server_toml_with(
+                "auth.method = \"token\"",
+                &format!("auth.method = {method}"),
+            );
+            parse(&evil);
+            assert!(
+                validate_visitor_toml(&evil).is_err(),
+                "accepted: auth.method = {method}"
+            );
+        }
+    }
+
+    #[test]
     fn rewrites_identity_placeholder_to_absolute() {
         let toml = "[transport.tls]\n\
              certFile = \"{{IDENTITY_DIR}}/cert.pem\"\n\
@@ -994,11 +1120,24 @@ bindPort = 6001
         toml::from_str(toml).unwrap()
     }
 
+    /// The `[transport.tls]` block of the server's `_tls_client_block`, as it stands in
+    /// SERVER_TOML.
+    const TLS_BLOCK: &str = "\n[transport.tls]\n\
+         enable = true\n\
+         trustedCaFile = \"{{IDENTITY_DIR}}/ca.crt\"\n\
+         certFile = \"{{IDENTITY_DIR}}/cert.pem\"\n\
+         keyFile = \"{{IDENTITY_DIR}}/key.pem\"\n";
+
     /// SERVER_TOML with the first `from` replaced; a fixture without `from` fails the test
     /// instead of silently comparing two equal configs.
-    fn changed(from: &str, to: &str) -> toml::Value {
+    fn server_toml_with(from: &str, to: &str) -> String {
         assert!(SERVER_TOML.contains(from), "fixture lacks {from:?}");
-        parse(&SERVER_TOML.replacen(from, to, 1))
+        SERVER_TOML.replacen(from, to, 1)
+    }
+
+    /// [`server_toml_with`], parsed.
+    fn changed(from: &str, to: &str) -> toml::Value {
+        parse(&server_toml_with(from, to))
     }
 
     #[test]
@@ -1552,6 +1691,65 @@ method = "token"
             assert!(
                 frpc_config(SERVER_TOML, identity_dir, &head(7400, "c0ffee")).is_err(),
                 "accepted: {identity_dir:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn visitor_config_holds_no_template_delimiter() {
+        let identity_dir = "/data/app/identity";
+        for (case, server, identity_dir) in [
+            (
+                "serverAddr",
+                server_toml_with("frps.example.net", "frps{{.example.net"),
+                identity_dir,
+            ),
+            (
+                "user",
+                server_toml_with("\"ops-admin\"", "\"ops{{admin\""),
+                identity_dir,
+            ),
+            (
+                "auth.token",
+                server_toml_with("\"sekret\"", "\"se{{kret\""),
+                identity_dir,
+            ),
+            (
+                "a TLS path",
+                server_toml_with("{{IDENTITY_DIR}}/ca.crt", "{{IDENTITY_DIR}}/{{ca.crt"),
+                identity_dir,
+            ),
+            (
+                "a placeholder other than the identity dir",
+                server_toml_with("{{IDENTITY_DIR}}/ca.crt", "{{IDENTITY}}/ca.crt"),
+                identity_dir,
+            ),
+            (
+                "a visitor name",
+                server_toml_with("\"db-visitor\"", "\"db{{-visitor\""),
+                identity_dir,
+            ),
+            (
+                "a visitor secretKey",
+                server_toml_with("\"s3cr3t\"", "\"s3{{cr3t\""),
+                identity_dir,
+            ),
+            (
+                "a comment",
+                "# a {{ b\n".to_string() + SERVER_TOML,
+                identity_dir,
+            ),
+            (
+                "the identity dir",
+                SERVER_TOML.to_string(),
+                "/data/{{app/identity",
+            ),
+        ] {
+            // The allow-list itself admits it: only the delimiter may refuse it.
+            assert!(validate_visitor_toml(&server).is_ok(), "allow-list: {case}");
+            assert!(
+                frpc_config(&server, identity_dir, &head(7400, "c0ffee")).is_err(),
+                "accepted a template delimiter in {case}"
             );
         }
     }
