@@ -27,13 +27,14 @@ type inventoryState struct {
 }
 
 // inventoryHash computes a SHA-256 over a normalized, deterministically
-// sorted representation of all_services. The entry order from
-// collectServiceHealth is map-iteration order (random), so the hash must be
-// order-independent.
+// sorted representation of all_services, alias_of included. The Linux
+// collector sends the entries sorted by unit, the Windows one in sc query
+// order; sorting here keeps the hash independent of either.
 func inventoryHash(services []ServiceEntry) string {
 	lines := make([]string, 0, len(services))
 	for _, svc := range services {
-		lines = append(lines, svc["unit"]+"\t"+svc["active_state"]+"\t"+svc["enabled_state"])
+		lines = append(lines, svc["unit"]+"\t"+svc["active_state"]+"\t"+svc["enabled_state"]+
+			"\t"+svc["alias_of"])
 	}
 	sort.Strings(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))

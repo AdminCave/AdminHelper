@@ -58,6 +58,9 @@ def _num(v):
 # The body-size cap itself belongs at the gateway (client_max_body_size) (3.76).
 _MAX_REPORT_ITEMS = 500
 
+# Push checkers whose evaluate() takes the check's previous _details as a third argument.
+_PREV_DETAILS_TYPES = frozenset({"agent_resources", "service_process"})
+
 
 def _capped(value: object) -> list:
     """The first _MAX_REPORT_ITEMS entries of a list value, or [] for anything else
@@ -211,7 +214,8 @@ def agent_report(
             checker = get_checker(check.check_type)
 
             # Lock the state row BEFORE evaluating: agent_resources needs the
-            # previous _details for per-metric hysteresis (T6), and the lock has
+            # previous _details for per-metric hysteresis (T6), service_process
+            # for the list mode on a push without the inventory, and the lock has
             # to cover the read-modify-write anyway — two near-simultaneous
             # pushes must not clobber fail_count or double-alert (4.46).
             # Evaluate is pure CPU, so holding the lock across it is harmless.
@@ -223,7 +227,7 @@ def agent_report(
                 .first()
             )
 
-            if check.check_type == "agent_resources":
+            if check.check_type in _PREV_DETAILS_TYPES:
                 try:
                     prev_details = json.loads(state.details) if state and state.details else None
                 except (json.JSONDecodeError, TypeError):
