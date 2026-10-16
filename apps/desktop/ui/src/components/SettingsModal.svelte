@@ -25,7 +25,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     generateDiagnostics,
   } from '$lib/bridge';
   import { startIfServerMode, stop as stopTunnel } from '$lib/stores/tunnel';
-  import { save, confirm } from '@tauri-apps/plugin-dialog';
+  import { save } from '@tauri-apps/plugin-dialog';
+  import { confirmDialog } from './ui/ConfirmDialog.svelte';
   import {
     RDP_WINDOW_MODES,
     RDP_PERFORMANCE_PROFILES,
@@ -63,6 +64,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let deviceResetMsgKey = $state('');
   // The last reset deleted the identity here only: the server did not revoke it.
   let deviceResetLocal = $state(false);
+  // The reset question sits in App's layer, outside this overlay, but the focus stays
+  // on the reset button in here: its Escape reaches the overlay's handler before the
+  // dialog's own and would close the settings under the question. A count, not a flag:
+  // a second click replaces the open question, and the first one's end must not lift
+  // the guard the second one holds.
+  let asking = 0;
   let enrollToken = $state('');
   let enrollMsg = $state('');
   let enrollBusy = $state(false);
@@ -169,10 +176,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
     // Destructive: drops the mTLS device cert (re-enrollment required). Confirm
     // with an explicit danger warning before doing it.
-    const ok = await confirm($t('settings.resetDeviceId.confirm'), {
-      title: $t('settings.resetDeviceId'),
-      kind: 'warning',
+    asking += 1;
+    const ok = await confirmDialog($t('settings.resetDeviceId.confirm'), {
+      confirmLabel: $t('settings.resetDeviceId'),
     });
+    asking -= 1;
     if (!ok) return;
     try {
       const outcome = await resetDeviceIdentity(target);
@@ -245,8 +253,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       );
       browserCertMsg = `${$t('settings.browserCert.done')} ${path}`;
       browserCertPassword = '';
-    } catch {
-      browserCertMsg = $t('settings.browserCert.error');
+    } catch (err) {
+      browserCertMsg = `${$t('settings.browserCert.error')} ${errMsg(err)}`;
     } finally {
       browserCertBusy = false;
     }
@@ -332,7 +340,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       if (e.target === e.currentTarget) closeSettings();
     }}
     onkeydown={(e) => {
-      if (e.key === 'Escape') closeSettings();
+      if (e.key === 'Escape' && !asking) closeSettings();
     }}
     tabindex="-1"
   >

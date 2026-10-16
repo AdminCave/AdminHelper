@@ -15,7 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     type ResetOutcome,
   } from '$lib/bridge';
   import { t } from '$lib/i18n';
-  import { confirm } from '@tauri-apps/plugin-dialog';
+  import { confirmDialog } from './ui/ConfirmDialog.svelte';
 
   // Pre-fill the server URL + username from the last successful login so only
   // the password has to be entered on each start (a password is required every
@@ -78,9 +78,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     // A pin mismatch is exactly the signature of an active MITM, and this is where
     // it actually surfaces — require the same explicit warning the settings modal
     // does before pinning whatever cert the server currently presents (3.20).
-    const ok = await confirm($t('login.resetPin.confirmMitm'), {
-      title: caPinError ? $t('login.resetDeviceId') : $t('login.resetPin'),
-      kind: 'warning',
+    const ok = await confirmDialog($t('login.resetPin.confirmMitm'), {
+      confirmLabel: caPinError ? $t('login.resetDeviceId') : $t('login.resetPin'),
     });
     if (!ok) return;
     busy = true;
@@ -117,10 +116,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       error = $t('login.resetPin.missingUrl');
       return;
     }
-    const ok = await confirm($t(confirmKey), {
-      title: $t('login.resetDeviceId'),
-      kind: 'warning',
-    });
+    const ok = await confirmDialog($t(confirmKey), { confirmLabel: $t('login.resetDeviceId') });
     if (!ok) return;
     busy = true;
     try {
