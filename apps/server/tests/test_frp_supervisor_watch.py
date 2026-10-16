@@ -185,6 +185,22 @@ def test_a_new_token_adds_that_agent_tunnels_take_up_to_five_minutes(
             "Der FRP-Server läuft mit der letzten gültigen Konfiguration weiter.",
         ),
         (
+            "rejected",
+            "input_unreadable",
+            "warning",
+            "Neue FRP-Konfiguration nicht übernommen",
+            "Grund: Konfigurations- oder Zertifikatsdatei nicht lesbar. "
+            "Der FRP-Server läuft mit der letzten gültigen Konfiguration weiter.",
+        ),
+        (
+            "rejected",
+            "input_unstable",
+            "warning",
+            "Neue FRP-Konfiguration nicht übernommen",
+            "Grund: Konfiguration ändert sich laufend. "
+            "Die Konfiguration wird erst übernommen, sobald sie sich nicht mehr ändert.",
+        ),
+        (
             "crashed",
             "none",
             "warning",
@@ -217,6 +233,27 @@ def test_rejected_crashed_and_stopped_reach_the_admins_only(
         body,
     )
     assert (row.source_type, row.source_id) == ("frps", f"{BOOT}:5")
+
+
+RUNS_ON = "Der FRP-Server läuft mit der letzten gültigen Konfiguration weiter."
+UNTIL_STABLE = "Die Konfiguration wird erst übernommen, sobald sie sich nicht mehr ändert."
+
+
+@pytest.mark.parametrize("reason", sorted(REASONS))
+def test_only_an_unstable_input_does_not_claim_that_frps_runs_on(
+    db_session, people, status_file, reason
+):
+    # The supervisor reports an unstable input also when no frps runs (no valid copy).
+    now = _now()
+    _write(status_file, [_event(6, "rejected", now, reason=reason)], now)
+
+    notify_supervisor_events(db_session, now=now)
+
+    (row,) = _rows(db_session)
+    if reason == "input_unstable":
+        assert UNTIL_STABLE in row.body and RUNS_ON not in row.body
+    else:
+        assert RUNS_ON in row.body and UNTIL_STABLE not in row.body
 
 
 def test_started_tells_nobody(db_session, people, status_file):

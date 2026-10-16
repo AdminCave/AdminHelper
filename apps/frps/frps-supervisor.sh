@@ -10,13 +10,15 @@
 #   frps-supervisor.sh health   exit 0 while the state is waiting, running or stopped
 #
 # The input, frps.toml from the server and the TLS material from the ca-issuer, lives in
-# volumes other containers write. A candidate is copied into next/ of the supervisor's own
-# working directory (FRPS_ACTIVE_DIR, mounted by frps alone), checked there, its TLS paths
-# pointed at current/, and swapped in as current/. frps always runs from current/, so a
-# half-written or invalid input never reaches it. At the start, and after that whenever the
-# input has changed and then stayed the same for two polls in a row (FRPS_POLL_SECONDS apart,
-# one second while a start of frps is due; a file still being written is not taken for a new
-# one):
+# volumes other containers write. Only regular files are read from there, each within
+# FRPS_READ_SECONDS; a symlink or any other kind of file is invalid (input_unreadable), as is
+# one that cannot be read. A candidate is copied into next/ of the supervisor's own working
+# directory (FRPS_ACTIVE_DIR, mounted by frps alone; directories 0700, files 0600), checked
+# there, its TLS paths pointed at current/, and swapped in as current/. frps always runs from
+# current/, so a half-written or invalid input never reaches it. At the start, and after that
+# whenever the input has changed and then stayed the same for two polls in a row
+# (FRPS_POLL_SECONDS apart, one second while a start of frps is due; a file still being
+# written is not taken for a new one):
 #
 #   valid                        frps (re)starts from the new current/      running
 #   invalid, current/ exists     frps runs on from the last valid current/  degraded
@@ -24,9 +26,18 @@
 #   frps.toml missing or empty   frps stops, current/ is removed            stopped
 #     (and no current/ to remove)                                           waiting
 #
+# An input that keeps changing for FRPS_UNSTABLE_SECONDS is not taken over: input_unstable,
+# degraded while frps runs, waiting while it does not, until the input stays the same.
+#
+# Every start of frps, a restart after it exited included, checks current/frps.toml again
+# (check_config), since frps can write there. A copy that fails starts nothing and is removed;
+# before a restart the input is then taken over anew as at the start, so frps starts from a
+# fresh copy of a valid input, and an invalid one leaves the state as without a valid copy.
+#
 # Events: started (frps started where none ran from a current/: at the start, or after
 # waiting or stopped), applied (a change restarted frps; tokenChanged compares hashes of the
-# token line), rejected (once per rejected input), stopped, crashed (once per crash loop).
+# token line), rejected (once per rejected input, and once per series of changes that made
+# the input unstable), stopped, crashed (once per crash loop).
 # A valid input equal to the one frps runs from restarts nothing.
 #
 # frps exiting on its own is started again from current/ after 2, 4, 8 … FRPS_BACKOFF_MAX
@@ -52,6 +63,11 @@ FRPS_POLL_SECONDS="${FRPS_POLL_SECONDS:-5}"
 FRPS_BACKOFF_MAX="${FRPS_BACKOFF_MAX:-60}"
 FRPS_STOP_SECONDS="${FRPS_STOP_SECONDS:-10}"
 FRPS_CRASH_WINDOW="${FRPS_CRASH_WINDOW:-60}"
+FRPS_READ_SECONDS="${FRPS_READ_SECONDS:-5}"
+# Seconds rather than polls: polls come one second apart while a start of frps is due.
+FRPS_UNSTABLE_SECONDS="${FRPS_UNSTABLE_SECONDS:-30}"
+# The host port compose publishes for frps; webServer.port must not take it.
+FRP_BIND_PORT="${FRP_BIND_PORT:-}"
 
 NEXT="$FRPS_ACTIVE_DIR/next"
 CURRENT="$FRPS_ACTIVE_DIR/current"
@@ -87,11 +103,34 @@ epoch() {
 
 is_hash() { printf '%s' "$1" | grep -Eqx '[0-9a-f]{64}'; }
 
-# content_hash <file>... — one sha256 over the contents of the files; a missing one counts too.
+# file_kind <file> — 0 for a regular file, 1 for none, 2 for a symlink or any other kind.
+file_kind() {
+    if [ -L "$1" ]; then return 2; fi
+    [ -e "$1" ] || return 1
+    [ -f "$1" ] || return 2
+}
+
+# Reads of a file below are bounded by FRPS_READ_SECONDS: one swapped for a FIFO after
+# file_kind would block them for good.
+
+# content_hash <file>... — one sha256 over the contents of the files. A missing file counts
+# too, and apart from that one that is no regular file or cannot be read.
 content_hash() {
     for file in "$@"; do
-        if [ -f "$file" ]; then sha256sum < "$file"; else echo -; fi
+        file_kind "$file"
+        case $? in
+        0) timeout "$FRPS_READ_SECONDS" sha256sum "$file" 2>/dev/null || echo '!' ;;
+        1) echo - ;;
+        *) echo '!' ;;
+        esac
     done | cut -d ' ' -f 1 | sha256sum | cut -d ' ' -f 1
+}
+
+# take_input <file> <copy> — copies an input file: 1 when it is missing, 2 when it is no
+# regular file or cannot be read.
+take_input() {
+    file_kind "$1" || return
+    timeout "$FRPS_READ_SECONDS" cat "$1" > "$2" 2>/dev/null || return 2
 }
 
 input_hash() {
@@ -101,23 +140,24 @@ input_hash() {
 # token_hash <toml> — a hash of the token line; the token itself stays in the file.
 token_hash() { grep '^auth\.token = ' "$1" | sha256sum | cut -d ' ' -f 1; }
 
-# check_config <toml> — prints the first rule the file breaks as a reason code, or none.
+# check_config <toml> <tls dir> — prints the first rule the file breaks as a reason code, or
+# none.
 #
 # Only the layout the server generates passes (config_generator.py), so that frps reads the
 # file exactly as these line checks do: every line is empty, the one table [transport.tls], or
 # `key = value` with true, false, a number or a one-line string without quotes, backslashes
 # or braces; every key once per table, in any case; no control characters. At top level only
 # the keys in TOP_KEYS, compared exactly, and bindPort among them; webServer.port neither 443
-# nor bindPort. Anything else is verify_failed. Then: at top level auth.method "token", a token
-# of at least 16 characters and no other auth key, and a [transport.tls] table with nothing
-# but force = true and the three files in FRPS_PKI_DIR.
+# nor bindPort nor FRP_BIND_PORT. Anything else is verify_failed. Then: at top level
+# auth.method "token", a token of at least 16 characters and no other auth key, and a
+# [transport.tls] table with nothing but force = true and the three files in <tls dir>.
 check_config() {
     # NUL included, at which some awks split a line.
     if [ "$(tr -d '\n\040-\176\200-\377' < "$1" | wc -c)" -ne 0 ]; then
         echo verify_failed
         return
     fi
-    PKI="$FRPS_PKI_DIR" TOP_KEYS="$TOP_KEYS" awk '
+    PKI="$2" PUBLISHED="$FRP_BIND_PORT" TOP_KEYS="$TOP_KEYS" awk '
         BEGIN {
             n = split(ENVIRON["TOP_KEYS"], keys, " ")
             for (i = 1; i <= n; i++) top[keys[i]] = 1
@@ -157,7 +197,9 @@ check_config() {
         END {
             # Numbers, since frps reads +443.0 as 443 as well.
             if (bind_port == "") bad = 1
-            if (web_port != "" && (web_port + 0 == 443 || web_port + 0 == bind_port + 0)) bad = 1
+            published = ENVIRON["PUBLISHED"]
+            if (web_port != "" && (web_port + 0 == 443 || web_port + 0 == bind_port + 0 ||
+                (published != "" && web_port + 0 == published + 0))) bad = 1
             if (bad) print "verify_failed"
             else if (method != "\"token\"" || !token || other_auth) print "token_invalid"
             else if (!forced) print "tls_not_forced"
@@ -189,23 +231,36 @@ point_at_current() {
 
 # stage — copies the input into next/ and checks the copy, so what is checked is what runs.
 # Sets REASON (none, or the code of the first failed check) and CANDIDATE_HASH (over the
-# copied input; empty without a frps.toml). A valid candidate is left in next/, ready for
-# activate, with its TLS paths pointed at current/.
+# copied input; over the input as the poll saw it when a file of it cannot be read; empty
+# without a frps.toml). A valid candidate is left in next/, ready for activate, with its TLS
+# paths pointed at current/.
 stage() {
     CANDIDATE_HASH=""
     rm -rf "$NEXT"
     mkdir "$NEXT" || die "cannot create $NEXT"
-    if ! { [ -f "$FRPS_CONFIG" ] && cp "$FRPS_CONFIG" "$NEXT/frps.toml" 2>/dev/null; } \
-        || [ ! -s "$NEXT/frps.toml" ]; then
-        REASON=config_missing
-        return
+    take_input "$FRPS_CONFIG" "$NEXT/frps.toml"
+    case $? in
+    0) REASON=none ;;
+    1) REASON=config_missing ;;
+    *) REASON=input_unreadable ;;
+    esac
+    if [ "$REASON" = none ] && [ ! -s "$NEXT/frps.toml" ]; then REASON=config_missing; fi
+    if [ "$REASON" = none ]; then
+        for pem in $PEMS; do
+            take_input "$FRPS_PKI_DIR/$pem" "$NEXT/$pem"
+            [ $? -lt 2 ] || REASON=input_unreadable
+        done
     fi
-    for pem in $PEMS; do
-        [ -f "$FRPS_PKI_DIR/$pem" ] && cp "$FRPS_PKI_DIR/$pem" "$NEXT/$pem" 2>/dev/null
-    done
+    case $REASON in
+    config_missing) return ;;
+    input_unreadable)
+        CANDIDATE_HASH=$INPUT
+        return
+        ;;
+    esac
     CANDIDATE_HASH=$(content_hash "$NEXT/frps.toml" "$NEXT/frps.crt" "$NEXT/frps.key" "$NEXT/ca.crt")
 
-    REASON=$(check_config "$NEXT/frps.toml") || die "cannot read $NEXT/frps.toml"
+    REASON=$(check_config "$NEXT/frps.toml" "$FRPS_PKI_DIR") || die "cannot read $NEXT/frps.toml"
     [ "$REASON" = none ] || return
     for pem in $PEMS; do
         if [ ! -s "$NEXT/$pem" ]; then
@@ -263,7 +318,27 @@ applied_hash_of_current() {
     if is_hash "$stored"; then printf '%s' "$stored"; fi
 }
 
+# start_frps — starts frps from current/ once current/frps.toml has passed check_config again.
+# A copy that fails starts nothing and is removed, the state is set as an invalid input without
+# a valid copy would (waiting), and start_frps returns 1.
 start_frps() {
+    file_kind "$CURRENT/frps.toml"
+    case $? in
+    0)
+        reason=$(check_config "$CURRENT/frps.toml" "$CURRENT" 2>/dev/null) \
+            || reason=input_unreadable
+        ;;
+    1) reason=config_missing ;;
+    *) reason=input_unreadable ;;
+    esac
+    if [ "$reason" != none ]; then
+        log "frps not started, the copy in $CURRENT fails the check and goes: $reason"
+        rm -rf "$CURRENT" || die "cannot remove $CURRENT"
+        APPLIED_HASH=""
+        end_series
+        set_config waiting "$reason"
+        return 1
+    fi
     "$FRPS_BIN" -c "$CURRENT/frps.toml" &
     FRPS_PID=$!
     STARTED_AT=$(epoch)
@@ -327,10 +402,12 @@ check_frps() {
     EXIT_2=$t
 }
 
+# restart_due — starts frps again once its delay is over. Should current/ fail its check and
+# be gone, the input this poll saw is taken over at once, as at the start.
 restart_due() {
     if [ -n "$RESTART_AT" ] && [ "$(epoch)" -ge "$RESTART_AT" ]; then
         RESTART_AT=""
-        start_frps
+        start_frps || take_over start
     fi
 }
 
@@ -363,7 +440,7 @@ take_over() {
             activate || die "cannot swap $NEXT in as $CURRENT"
             APPLIED_HASH=$CANDIDATE_HASH
             end_series
-            start_frps
+            start_frps || return
             add_event "$event" none "$token_changed"
         fi
         REJECTED_HASH=""
@@ -386,8 +463,7 @@ take_over() {
     *)
         rm -rf "$NEXT"
         log "configuration rejected: $REASON"
-        if [ -d "$CURRENT" ]; then
-            if [ -z "$FRPS_PID" ] && [ -z "$RESTART_AT" ]; then start_frps; fi
+        if [ -d "$CURRENT" ] && { [ -n "$FRPS_PID" ] || [ -n "$RESTART_AT" ] || start_frps; }; then
             set_config degraded "$REASON"
             if [ "$CANDIDATE_HASH" != "$REJECTED_HASH" ]; then
                 add_event rejected "$REASON" false
@@ -438,6 +514,12 @@ write_status() {
 report() {
     if [ "$CRASHLOOP" = 1 ]; then
         set_state crashloop none
+    elif [ "$UNSTABLE" = 1 ]; then
+        if [ -n "$FRPS_PID" ] || [ -n "$RESTART_AT" ]; then
+            set_state degraded input_unstable
+        else
+            set_state waiting input_unstable
+        fi
     else
         set_state "$CONFIG_STATE" "$CONFIG_REASON"
     fi
@@ -445,17 +527,28 @@ report() {
 }
 
 # poll — one round of the loop. An input that differs from the one the last poll saw is only
-# noted; the next poll that finds it unchanged takes it over.
+# noted; the next poll that finds it unchanged takes it over. CHANGING_SINCE: when the polls
+# began to see the input change, logged once; after FRPS_UNSTABLE_SECONDS of that the input
+# counts as unstable, with one rejected event for the series.
 poll() {
     check_frps
     INPUT=$(input_hash)
     if [ "$INPUT" != "$SEEN" ]; then
         SEEN=$INPUT
-        if [ "$INPUT" != "$HANDLED" ]; then
+        t=$(epoch)
+        if [ -z "$CHANGING_SINCE" ]; then
+            CHANGING_SINCE=$t
             log "input changed, taking it over once it stays the same"
+        elif [ "$UNSTABLE" = 0 ] && [ $((t - CHANGING_SINCE)) -ge "$FRPS_UNSTABLE_SECONDS" ]; then
+            UNSTABLE=1
+            add_event rejected input_unstable false
         fi
-    elif [ "$INPUT" != "$HANDLED" ]; then
-        take_over change
+    else
+        CHANGING_SINCE=""
+        UNSTABLE=0
+        if [ "$INPUT" != "$HANDLED" ]; then
+            take_over change
+        fi
     fi
     restart_due
     report
@@ -504,6 +597,14 @@ whole_seconds FRPS_POLL_SECONDS "$FRPS_POLL_SECONDS"
 whole_seconds FRPS_BACKOFF_MAX "$FRPS_BACKOFF_MAX"
 whole_seconds FRPS_STOP_SECONDS "$FRPS_STOP_SECONDS"
 whole_seconds FRPS_CRASH_WINDOW "$FRPS_CRASH_WINDOW"
+whole_seconds FRPS_READ_SECONDS "$FRPS_READ_SECONDS"
+whole_seconds FRPS_UNSTABLE_SECONDS "$FRPS_UNSTABLE_SECONDS"
+# Unset or a port: anything else would compare as some other number.
+case $FRP_BIND_PORT in
+'') ;;
+0* | *[!0-9]* | ??????*) die "FRP_BIND_PORT must be a port number" ;;
+*) [ "$FRP_BIND_PORT" -le 65535 ] || die "FRP_BIND_PORT must be a port number" ;;
+esac
 
 if ! { mkdir -p "$FRPS_ACTIVE_DIR" && chmod 0700 "$FRPS_ACTIVE_DIR"; }; then
     die "cannot set up $FRPS_ACTIVE_DIR"
@@ -527,6 +628,8 @@ REJECTED_HASH=""
 FRPS_PID=""
 STARTED_AT=0
 PAUSE_PID=""
+CHANGING_SINCE=""
+UNSTABLE=0
 end_series
 trap on_signal TERM INT
 

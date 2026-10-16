@@ -55,6 +55,8 @@ _REASON_TEXTS = {
     "cert_expired": "Zertifikat abgelaufen",
     "cert_key_mismatch": "Zertifikat passt nicht zum Schlüssel",
     "verify_failed": "frps hat die Konfiguration bei der Prüfung abgelehnt",
+    "input_unreadable": "Konfigurations- oder Zertifikatsdatei nicht lesbar",
+    "input_unstable": "Konfiguration ändert sich laufend",
 }
 
 
@@ -69,11 +71,15 @@ def _notice(event: SupervisorEvent) -> tuple[str, str, str] | None:
             body += _AGENT_HINT
         return "info", "FRP-Server neu gestartet", body
     if event.event == "rejected":
+        # An unstable input is reported whether or not frps runs (it may have no valid copy).
+        if event.reason == "input_unstable":
+            then = "Die Konfiguration wird erst übernommen, sobald sie sich nicht mehr ändert."
+        else:
+            then = "Der FRP-Server läuft mit der letzten gültigen Konfiguration weiter."
         return (
             "warning",
             "Neue FRP-Konfiguration nicht übernommen",
-            f"Grund: {_REASON_TEXTS[event.reason]}. "
-            "Der FRP-Server läuft mit der letzten gültigen Konfiguration weiter.",
+            f"Grund: {_REASON_TEXTS[event.reason]}. {then}",
         )
     if event.event == "stopped":
         return "info", "FRP-Server gestoppt", "Es gibt keine FRP-Konfiguration mehr."

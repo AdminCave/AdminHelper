@@ -115,6 +115,13 @@ def test_every_reason_is_accepted_for_the_state_and_an_event(tmp_path, reason):
     assert status.events[0].reason == reason
 
 
+@pytest.mark.parametrize("reason", ["input_unreadable", "input_unstable"])
+def test_an_input_that_cannot_be_read_or_keeps_changing_is_a_reason(tmp_path, reason):
+    doc = _doc(state="degraded", reason=reason, events=[_event(event="rejected", reason=reason)])
+    status = _read(tmp_path, doc)
+    assert (status.state, status.reason, status.events[0].reason) == ("degraded", reason, reason)
+
+
 @pytest.mark.parametrize("event", sorted(EVENTS))
 def test_every_event_is_accepted(tmp_path, event):
     assert _read(tmp_path, _doc(events=[_event(event=event)])).events[0].event == event

@@ -5,21 +5,27 @@
 """The frps supervisor (apps/frps/frps-supervisor.sh) starts frps only from a configuration that
 passed every check: a non-empty frps.toml in the layout the server generates, with auth.method
 token, a token of at least 16 characters, TLS forced and the three TLS paths pointing into the
-PKI directory; the three files there, the certificate files intact, the leaf not expired and
-matching its key; frps verify green. A valid input is copied into current/ of the working
-directory with its TLS paths pointed there, and frps runs from current/. An invalid input starts
-nothing, or frps from the last valid current/ (degraded); a missing frps.toml removes current/.
-Every status file it writes passes the server's reader.
+PKI directory, webServer.port off the published bind port; the three files there, the
+certificate files intact, the leaf not expired and matching its key; frps verify green. Input
+files are read only as regular files and within a time limit; a symlink or anything else is
+unreadable. A valid input is copied into current/ of the working directory (0700, files 0600)
+with its TLS paths pointed there, and frps runs from current/, each time only once the copy has
+passed the check again. An invalid input starts nothing, or frps from the last valid current/
+(degraded); a missing frps.toml removes current/. Every status file it writes (0644) passes the
+server's reader.
 
 After the start it polls the input: a change that stayed the same for two polls is taken over
-like at the start, restarting frps only for a new valid input; frps exiting on its own is
-restarted after a growing delay, three exits in a row make a crash loop; TERM and INT stop frps
-and leave no process behind; `health` judges the state.
+like at the start, restarting frps only for a new valid input, and one that keeps changing shows
+as unstable; frps exiting on its own is restarted after a growing delay, three exits in a row
+make a crash loop; TERM and INT stop frps and leave no process behind; `health` judges the
+state.
 
 The script runs under sh with a stub frps on PATH. Some tests run it in the frps image with the
 real frps; they skip when Docker or the pinned base image is not at hand."""
 
 import contextlib
+import hashlib
+import itertools
 import json
 import os
 import re
@@ -27,6 +33,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -54,15 +61,16 @@ CHANGED = "input changed"
 
 STUB = """#!/bin/sh
 # Stands in for frps: records every call; verify keeps a copy of the file it was given and fails
-# while $STUB_DIR/verify-fails exists. A run exits at once while $STUB_DIR/crashes counts down;
-# otherwise it ignores TERM while $STUB_DIR/ignore-term exists, records its pid and stays up
-# until it is stopped.
+# while $STUB_DIR/verify-fails exists. A run records the sha256 of the file it was started with
+# and exits at once while $STUB_DIR/crashes counts down; otherwise it ignores TERM while
+# $STUB_DIR/ignore-term exists, records its pid and stays up until it is stopped.
 printf '%s\\n' "$*" >> "$STUB_DIR/calls"
 if [ "$1" = verify ]; then
     cp "$3" "$STUB_DIR/verified.toml"
     [ ! -e "$STUB_DIR/verify-fails" ]
     exit
 fi
+sha256sum < "$2" | cut -d ' ' -f 1 >> "$STUB_DIR/ran"
 crashes=$(cat "$STUB_DIR/crashes" 2>/dev/null || echo 0)
 if [ "$crashes" -gt 0 ]; then
     echo $((crashes - 1)) > "$STUB_DIR/crashes"
@@ -258,6 +266,11 @@ class Box:
     def runs(self) -> int:
         return self.calls().count(f"-c {self.current}/frps.toml")
 
+    def ran(self) -> list[str]:
+        """The sha256 of the file each frps run was started with."""
+        ran = self.stub / "ran"
+        return ran.read_text().split() if ran.exists() else []
+
     def pids(self) -> list[int]:
         """The frps runs that stayed up, oldest first."""
         pids = self.stub / "pids"
@@ -301,6 +314,10 @@ def _mode(path: Path) -> int:
 
 def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
     box.write_input()
+    # Modes the copies must not take over.
+    box.config.chmod(0o644)
+    for name in PEMS:
+        (box.pki / name).chmod(0o755)
     # Modes the supervisor has to correct: the server reads the status under another UID, the
     # working directory holds the token and the key.
     box.state.mkdir(mode=0o700)
@@ -325,7 +342,10 @@ def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
         assert (box.current / name).read_bytes() == box.pems[name]
     assert [p.name for p in box.active.iterdir()] == ["current"]
     assert _mode(box.active) == 0o700
-    assert all(_mode(p) & 0o077 == 0 for p in box.current.iterdir())
+    assert _mode(box.current) == 0o700
+    assert {p.name: _mode(p) for p in box.current.iterdir()} == {
+        name: 0o600 for name in (*PEMS, "frps.toml", "applied.sha256")
+    }
     assert _mode(box.state) == 0o755
     assert _mode(box.status_file) == 0o644
     assert [p.name for p in box.state.iterdir()] == ["status.json"]
@@ -400,6 +420,94 @@ def test_an_input_that_breaks_a_rule_starts_nothing(box, case):
         assert doc["rejectedHash"] is None
     else:
         assert HEX64.fullmatch(doc["rejectedHash"])
+
+
+def _skip_as_root():
+    if os.geteuid() == 0:
+        pytest.skip("root reads a file without read permission")
+
+
+def _symlink(name: str):
+    """The input file replaced by a symlink to a file with the same, valid content."""
+
+    def damage(box):
+        path = box.config if name == "frps.toml" else box.pki / name
+        target = box.root / f"elsewhere-{name}"
+        target.write_bytes(path.read_bytes())
+        path.unlink()
+        path.symlink_to(target)
+
+    return damage
+
+
+def _unreadable(box):
+    _skip_as_root()
+    box.config.chmod(0)
+
+
+def _fifo(name: str):
+    def damage(box):
+        (box.pki / name).unlink()
+        os.mkfifo(box.pki / name)
+
+    return damage
+
+
+def _directory(name: str):
+    def damage(box):
+        (box.pki / name).unlink()
+        (box.pki / name).mkdir()
+
+    return damage
+
+
+# Stands in for cat or sha256sum: blocks on one file, as reading a FIFO swapped in after the
+# check of the file type would; any other call goes to the real program.
+HANGS = """#!/bin/sh
+for arg in "$@"; do
+    if [ "$arg" = "{path}" ]; then exec sleep 600; fi
+done
+exec {real} "$@"
+"""
+
+
+def _hanging(name: str):
+    def damage(box):
+        box.env["FRPS_READ_SECONDS"] = "1"
+        for program in ("cat", "sha256sum"):
+            real = shutil.which(program)
+            assert real, program
+            stub = box.root / "bin" / program
+            stub.write_text(HANGS.format(path=box.pki / name, real=real))
+            stub.chmod(0o755)
+
+    return damage
+
+
+UNREADABLE = {
+    "frps.toml a symlink": _symlink("frps.toml"),
+    "frps.key a symlink": _symlink("frps.key"),
+    "frps.toml without read permission": _unreadable,
+    "frps.crt a FIFO": _fifo("frps.crt"),
+    "ca.crt a directory": _directory("ca.crt"),
+    "a read of frps.crt that does not end": _hanging("frps.crt"),
+}
+
+
+@pytest.mark.parametrize("case", list(UNREADABLE))
+def test_an_input_file_that_cannot_be_read_as_a_regular_file_starts_nothing(box, case):
+    box.write_input()
+    UNREADABLE[case](box)
+
+    doc = box.run(frps=False)
+
+    status = box.read()
+    assert (status.state, status.reason, status.events) == ("waiting", "input_unreadable", ())
+    assert not box.frps_runs()
+    assert list(box.active.iterdir()) == []
+    assert doc["appliedHash"] is None and HEX64.fullmatch(doc["rejectedHash"])
+    # Nothing but the supervisor's own lines: no error of a tool that tried to read the file.
+    assert all(line.startswith("[frps-supervisor] ") for line in box._log().splitlines())
 
 
 def _edit(change):
@@ -518,6 +626,20 @@ def test_only_the_layout_the_server_generates_is_accepted(box, case):
     assert box.calls() == []
 
 
+@pytest.mark.parametrize(("published", "accepted"), [("7100", False), ("7101", True)])
+def test_webserver_port_does_not_take_the_published_bind_port_either(box, published, accepted):
+    # FRP_BIND_PORT: the port compose publishes on the host, also when bindPort is another.
+    box.env["FRP_BIND_PORT"] = published
+    box.write_input(_toml(box.pki, dashboard_port=7100))
+
+    box.run(frps=accepted)
+
+    status = box.read()
+    expected = ("running", "none") if accepted else ("waiting", "verify_failed")
+    assert (status.state, status.reason) == expected
+    assert box.frps_runs() is accepted
+
+
 # Every field the generator writes, extra_config with a value of each allowed type.
 FULL = {
     "vhost_https_port": 8443,
@@ -627,6 +749,36 @@ def test_a_swap_cut_short_between_its_two_renames_is_rolled_back_at_the_next_sta
     assert (box.read().state, box.read().reason) == ("degraded", "token_invalid")
     assert [p.name for p in box.active.iterdir()] == ["current"]
     assert box.calls()[-1] == f"-c {box.current}/frps.toml"
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _change_copy(box: Box) -> str:
+    """Changes the copy frps runs from (frps can write there): TLS no longer forced. Returns
+    the sha256 of the changed file."""
+    copy = box.current / "frps.toml"
+    text = copy.read_text()
+    assert text.count("force = true") == 1
+    copy.write_text(text.replace("force = true", "force = false"))
+    return _sha256(copy.read_text())
+
+
+def test_a_changed_copy_is_dropped_and_not_started_for_an_invalid_input_either(box):
+    box.write_input()
+    box.run(frps=True)
+    box.stop()
+    _change_copy(box)
+    box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
+
+    box.run(frps=False)
+
+    # As for an invalid input without a valid copy.
+    status = box.read()
+    assert (status.state, status.reason, status.events) == ("waiting", "cert_expired", ())
+    assert not box.frps_runs()
+    assert list(box.active.iterdir()) == []
 
 
 def _polling(box: Box, *, valid: bool = True, **env: str) -> dict:
@@ -748,6 +900,9 @@ def test_a_half_written_input_is_taken_over_only_once_it_stays_the_same(box):
 
     box.config.write_text(full[: full.index(TABLE)])
     box.wait_until(lambda: box._log().count(CHANGED) > changes, "the first half seen")
+    # Well inside the two seconds: a supervisor that took the first half over at once has
+    # copied it by now.
+    time.sleep(0.5)
     box.config.write_text(full)
 
     status = box.wait_events(2, timeout=3 * WAIT)
@@ -787,6 +942,102 @@ def test_an_invalid_change_is_rejected_once_and_frps_runs_on(box):
     assert len(box.pids()) == 1 and _alive(box.pids()[0])
     assert (box.doc()["appliedHash"], box.doc()["rejectedHash"]) == (first["appliedHash"], None)
     assert box.health() == 0
+
+
+def test_an_input_that_turns_unreadable_is_rejected_and_logged_once(box):
+    _skip_as_root()
+    _polling(box)
+    lines = len(box._log().splitlines())
+
+    box.config.chmod(0)
+    box.wait_state("degraded")
+    box.wait_polls(3)
+
+    status = box.read()
+    assert status.reason == "input_unreadable"
+    assert _events(status) == [STARTED, (2, "rejected", "input_unreadable", False)]
+    assert box._log().splitlines()[lines:] == [
+        "[frps-supervisor] input changed, taking it over once it stays the same",
+        "[frps-supervisor] configuration rejected: input_unreadable",
+        "[frps-supervisor] state degraded (input_unreadable)",
+    ]
+    assert box.runs() == 1 and _alive(box.pids()[0])
+
+    # Readable again, the input frps runs from: nothing to restart.
+    box.config.chmod(0o600)
+    status = box.wait_state("running")
+    assert (status.reason, len(status.events)) == ("none", 2)
+    assert box.runs() == 1
+
+
+def _replace(path: Path, text: str):
+    """Writes path in one go, so that every poll sees a whole file."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+@contextlib.contextmanager
+def _changing(box: Box):
+    """Rewrites frps.toml faster than the polls, so that each of them sees another input."""
+    stop = threading.Event()
+
+    def change():
+        for limit in itertools.count(1):
+            if stop.is_set():
+                return
+            _replace(box.config, _toml(box.pki, max_ports_per_client=limit))
+            time.sleep(0.3)
+
+    changer = threading.Thread(target=change)
+    changer.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        changer.join()
+
+
+def _unstable(box: Box) -> SupervisorStatus:
+    """The status once the input counts as unstable and two more polls saw it change."""
+    box.wait_until(lambda: box.read().reason == "input_unstable", "unstable", 2 * WAIT)
+    box.wait_polls(2)
+    return box.read()
+
+
+@pytest.mark.parametrize("running", [True, False], ids=["frps running", "no copy"])
+def test_an_input_that_keeps_changing_is_unstable_until_it_stays_the_same(box, running):
+    if not running:
+        for name in PEMS:
+            (box.pki / name).write_bytes(box.pems[name])
+    _polling(box, valid=running, FRPS_UNSTABLE_SECONDS="3")
+    events, calls = _events(box.read()), box.calls()
+    changes = box._log().count(CHANGED)
+    unstable = (len(events) + 1, "rejected", "input_unstable", False)
+
+    with _changing(box):
+        status = _unstable(box)
+        assert status.state == ("degraded" if running else "waiting")
+        # One event for the series, nothing taken over, one log line for the change.
+        assert (_events(status), box.calls()) == ([*events, unstable], calls)
+        assert box._log().count(CHANGED) == changes + 1
+        assert box.health() == (1 if running else 0)
+
+    _replace(box.config, _toml(box.pki, auth_token=NEW_TOKEN))
+    status = box.wait_events(len(events) + 2)
+
+    assert (status.state, status.reason) == ("running", "none")
+    taken = ("applied", "none", True) if running else ("started", "none", False)
+    assert _events(status)[len(events) + 1 :] == [(len(events) + 2, *taken)]
+    assert 'auth.token = "' + NEW_TOKEN + '"' in (box.current / "frps.toml").read_text()
+
+    # Once the input stayed the same, the next series is one event again.
+    with _changing(box):
+        status = _unstable(box)
+        assert status.state == "degraded"
+        assert _events(status)[len(events) + 2 :] == [
+            (len(events) + 3, "rejected", "input_unstable", False)
+        ]
 
 
 @pytest.mark.parametrize("removal", ["deleted", "emptied"])
@@ -849,6 +1100,45 @@ def test_a_crash_loop_ends_once_frps_stays_up_for_the_window(box):
     assert box.health() == 0
 
 
+def test_frps_that_exits_starts_again_from_the_input_never_from_a_changed_copy(box):
+    _polling(box)
+    box.wait_until(box.pids, "frps up")
+    changed = _change_copy(box)
+
+    os.kill(box.pids()[0], signal.SIGKILL)
+
+    # The copy fails the check before the restart and goes; the input is taken over anew.
+    status = box.wait_events(2)
+    assert (status.state, status.reason) == ("running", "none")
+    assert _events(status) == [STARTED, (2, "started", "none", False)]
+    box.wait_until(lambda: len(box.pids()) == 2, "frps up again")
+    assert box.calls() == _verify_then_run(box) * 2
+    expected = box.config.read_text().replace(f'"{box.pki}/', f'"{box.current}/')
+    assert (box.current / "frps.toml").read_text() == expected
+    assert box.ran() == [_sha256(expected)] * 2 and changed not in box.ran()
+    assert _alive(box.pids()[-1])
+
+
+def test_frps_that_exits_stays_down_with_a_changed_copy_and_an_invalid_input(box):
+    _polling(box)
+    box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
+    box.wait_state("degraded")
+    changed = _change_copy(box)
+
+    os.kill(box.pids()[0], signal.SIGKILL)
+
+    # As for an invalid input without a valid copy.
+    status = box.wait_state("waiting")
+    assert (status.reason, _events(status)) == (
+        "cert_expired",
+        [STARTED, (2, "rejected", "cert_expired", False)],
+    )
+    box.wait_polls(3)
+    assert box.runs() == 1 and changed not in box.ran()
+    assert list(box.active.iterdir()) == []
+    assert box.health() == 0
+
+
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT], ids=["TERM", "INT"])
 @pytest.mark.parametrize("valid", [True, False], ids=["frps running", "waiting"])
 def test_a_signal_stops_frps_and_leaves_no_process_behind(box, sig, valid):
@@ -888,6 +1178,8 @@ def test_frps_that_ignores_term_is_killed(box):
         ("FRPS_BACKOFF_MAX", "x"),
         ("FRPS_STOP_SECONDS", "-1"),
         ("FRPS_CRASH_WINDOW", "08"),
+        ("FRPS_READ_SECONDS", "0"),
+        ("FRPS_UNSTABLE_SECONDS", "30s"),
     ],
 )
 def test_a_time_that_is_no_whole_number_of_seconds_stops_the_supervisor(box, knob, value):
@@ -897,6 +1189,17 @@ def test_a_time_that_is_no_whole_number_of_seconds_stops_the_supervisor(box, kno
     result = box.once()
 
     assert result.returncode == 1 and knob in result.stderr
+    assert box.calls() == [] and not box.status_file.exists()
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "7000x", "65536"])
+def test_a_published_bind_port_that_is_no_port_stops_the_supervisor(box, value):
+    box.write_input()
+    box.env["FRP_BIND_PORT"] = value
+
+    result = box.once()
+
+    assert result.returncode == 1 and "FRP_BIND_PORT" in result.stderr
     assert box.calls() == [] and not box.status_file.exists()
 
 

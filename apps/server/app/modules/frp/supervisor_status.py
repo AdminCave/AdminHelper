@@ -55,6 +55,8 @@ REASONS = frozenset(
         "cert_expired",
         "cert_key_mismatch",
         "verify_failed",
+        "input_unreadable",
+        "input_unstable",
     }
 )
 EVENTS = frozenset({"started", "applied", "rejected", "stopped", "crashed"})
