@@ -33,7 +33,8 @@ func runWithTimeout(name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
 }
 
-// collectDocker collects Docker container status (cross-platform).
+// collectDocker collects Docker container status (cross-platform). No docker binary means Docker is
+// not installed and stays silent; every later abort is logged, so `diagnose` shows the reason.
 func collectDocker() map[string]any {
 	if _, err := exec.LookPath("docker"); err != nil {
 		return nil
@@ -42,6 +43,7 @@ func collectDocker() map[string]any {
 	ctxInfo, cancelInfo := context.WithTimeout(context.Background(), dockerTimeout)
 	defer cancelInfo()
 	if err := exec.CommandContext(ctxInfo, "docker", "info").Run(); err != nil {
+		logger.Warnf("Docker daemon not reachable (docker info: %v), no docker data in this report", err)
 		return nil
 	}
 
@@ -49,10 +51,14 @@ func collectDocker() map[string]any {
 	defer cancelPs()
 	out, err := exec.CommandContext(ctxPs, "docker", "ps", "-a", "--format", "{{json .}}").Output()
 	if err != nil {
+		logger.Warnf("docker ps failed (%v), no docker data in this report", err)
 		return nil
 	}
 
-	containers, ids := parseDockerPS(out)
+	containers, ids, skipped := parseDockerPS(out)
+	if skipped > 0 {
+		logger.Warnf("docker ps: %d unreadable line(s) skipped", skipped)
+	}
 	if len(containers) == 0 {
 		return nil
 	}
@@ -82,27 +88,40 @@ func inspectRestartPolicies(ids []string) map[string]string {
 	return parseRestartPolicies(out)
 }
 
+// dockerPSLine holds only the `docker ps` fields the report uses. A struct, not map[string]string:
+// encoding/json then ignores every other field whatever its type — the CLI prints Platform as an
+// object since 28.2, which made the map decode fail for every line.
+type dockerPSLine struct {
+	ID     string
+	Names  string
+	Image  string
+	State  string
+	Status string
+}
+
 // parseDockerPS parses `docker ps -a --format {{json .}}` (one JSON object per line) into container
-// maps and their IDs, skipping blank/unparseable lines — the parsing, testable without docker (6.16).
-func parseDockerPS(out []byte) (containers []map[string]string, ids []string) {
+// maps and their IDs, skipping blank lines and counting unparseable ones in skipped — the parsing,
+// testable without docker (6.16).
+func parseDockerPS(out []byte) (containers []map[string]string, ids []string, skipped int) {
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if line == "" {
 			continue
 		}
-		var c map[string]string
+		var c dockerPSLine
 		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			skipped++
 			continue
 		}
 		containers = append(containers, map[string]string{
-			"id":     c["ID"],
-			"name":   c["Names"],
-			"image":  c["Image"],
-			"state":  c["State"],
-			"status": c["Status"],
+			"id":     c.ID,
+			"name":   c.Names,
+			"image":  c.Image,
+			"state":  c.State,
+			"status": c.Status,
 		})
-		ids = append(ids, c["ID"])
+		ids = append(ids, c.ID)
 	}
-	return containers, ids
+	return containers, ids, skipped
 }
 
 // parseRestartPolicies parses the batched `docker inspect` output ("{{.Id}} {{.Name}}" per line),
