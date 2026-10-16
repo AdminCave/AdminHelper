@@ -341,6 +341,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nicht an. Hat ein aelterer Agent den Host ohne Tunnel provisioniert, fehlt dort der Server-API-Key fuer den
   Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das Agent-Log diesen Weg. Die Admin-Doku
   (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN) beschreiben es.
+- **Desktop: der Vertrauensdialog beim ersten Kontakt liegt ueber dem Login-Screen (R-0399):** Praesentiert der
+  Server beim ersten Login oder bei der ersten Registrierung ein Zertifikat der internen CA, fragt der Desktop in
+  einem Dialog, ob dem Server vertraut werden soll. Dieser Dialog war vom Login-Screen verdeckt: Anmelden und
+  Registrieren blieben ohne Rueckmeldung stehen. Jetzt liegt er sichtbar darueber.
+- **Agent: Docker-Container werden mit aktueller Docker-CLI wieder erfasst (R-0417):** Ab Docker 28.2 gibt
+  `docker ps -a --format '{{json .}}'` das Feld `Platform` als Objekt aus. Der Agent las jede Zeile als reine
+  Zeichenketten, verwarf damit jede Zeile und schickte keine Container mehr; `docker_health` stand auf „Keine
+  Docker-Daten im Report“. Jetzt liest er nur die genutzten Felder (`ID`, `Names`, `Image`, `State`, `Status`) und
+  uebergeht alle anderen; das Report-Format bleibt gleich. Ist Docker installiert, der Daemon aber nicht erreichbar,
+  scheitert `docker ps` oder sind Zeilen nicht lesbar, schreibt der Agent eine Warnung ins Log, die auch der Bericht
+  von `adminhelper-agent diagnose` zeigt. Die Docker-Sektion im Desktop sagt „Alle N Container laufen“ nur noch,
+  wenn alle laufen, sonst „X von N laufen“, und ohne Docker-Daten im Report „keine Daten“ statt „—“.
 - **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
   Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
   Schreibvorgaenge, lag danach der Schluessel der einen neben dem Zertifikat der anderen. Kam eine Erneuerung vor

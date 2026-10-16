@@ -105,7 +105,7 @@
             <li><code>collectUptime()</code></li>
             <li><code>collectTemperatures()</code> &ndash; lm-sensors / Windows WMI</li>
             <li><code>collectServiceHealth()</code> + <code>collectWatchedServices(names)</code></li>
-            <li><code>collectDocker()</code> &ndash; container list via the Docker socket</li>
+            <li><code>collectDocker()</code> &ndash; container list via the <code>docker</code> CLI (<code>docker info</code>, <code>docker ps -a --format '{{json .}}'</code>, one batched <code>docker inspect</code> for the restart policies); from each line the agent reads only <code>ID</code>, <code>Names</code>, <code>Image</code>, <code>State</code> and <code>Status</code>. If the daemon is unreachable, <code>docker ps</code> fails or lines are unreadable, it logs a warning; a missing <code>docker</code> binary stays silent</li>
             <li><code>collectZFS()</code> &ndash; <code>zpool status -p</code></li>
             <li><code>collectProxmox()</code> &ndash; <code>pveversion</code> + API (PVE hosts only)</li>
             <li><code>collectSmart()</code> &ndash; <code>smartctl --scan-open</code> + <code>--all --json=cv</code>; ATA and NVMe paths parsed separately</li>
