@@ -174,7 +174,7 @@ function reconcile(gen: number): Promise<void> {
 async function reconcileOnce(gen: number): Promise<void> {
   const session = serverSession();
   if (!session) {
-    // The logout button drops the session without stop(): end the polling here.
+    // A session that ended without stop() (a logout that bypasses it): end the polling here.
     if (gen === activationGen) stopPolling();
     return;
   }

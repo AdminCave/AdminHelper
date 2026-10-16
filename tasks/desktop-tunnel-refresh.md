@@ -138,8 +138,10 @@ Abhängt von: T4
 
 Kevin 2026-10-16 (nach dem Review von T6): Der Abmelde-Knopf der Kopfzeile stoppt den Tunnel, als eigene Task im Bündel (T13).
 
-### T13 — Abmelden über die Kopfzeile stoppt den Tunnel  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/components/AppShell.svelte
+### T13 — Abmelden über die Kopfzeile stoppt den Tunnel  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/lib/stores/tunnel.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @75a66e04 2026-10-16T18:43:14+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T13.verdict.json)
 Änderung: Der Abmelde-Knopf der Kopfzeile (`AppShell.svelte:276`) ruft `logout()` aus `stores/session.ts` (`:114`) und läuft an `stop()` des Tunnel-Stores vorbei: frpc läuft nach dem Abmelden weiter, die Mappings der vorigen Sitzung bleiben im Store. Neue exportierte Funktion in `stores/settings.ts` neben `serverLogout` (`:148`): zuerst `tunnelStore.stop()` (ein Fehler wird ignoriert wie dort), dann `logout()` aus `session.ts`; `connections.json` bleibt unberührt (kein `reloadForMode`). `AppShell.svelte:276` ruft sie. `session.ts` importiert den Tunnel-Store nicht (`tunnel.ts` importiert `session.ts`). Tests in `settings.test.ts`, zuerst rot: `stopTunnel` vor `bridge.logout`; ein Fehler beim Stoppen verhindert das Abmelden nicht; danach steht der Tunnel-Store auf „idle“ ohne Mappings, und nach 60 s Fake-Timer folgt kein weiterer `refreshTunnel`.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/settings.test.ts
 Doku: keine (intern)
