@@ -1,0 +1,196 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Agent übernimmt FRP-Tunnel selbst — Spec
+
+Roadmap: R-0398 (BUG). Entscheidungen: Kevin, 2026-10-16 (Planungsgespräch, Fragen per Rückfrage beantwortet).
+Stand: `origin/main@b84b9495`. Ledger: `tasks/agent-frpc-sync.md`.
+
+## Problem / Motivation
+
+Ein Agent-Host, der provisioniert wurde, bevor es für ihn einen FRP-Tunnel gab, bekommt einen später
+angelegten Tunnel nie. Erst ein erneutes Provisionieren richtet frpc ein. Im Feld so beobachtet
+(Installation v0.45.0, 2026-10-16).
+
+Ursachen im Code:
+
+- `apps/agent/internal/provision/provision.go:152` ruft `frpc.Apply` nur, wenn die Aktivierung ein FRP-Paket
+  liefert. Der Server liefert es nur bei FRP-Config **und** mindestens einem Tunnel
+  (`apps/server/app/modules/provisioning/helpers.py`, `build_frp_bundle`). Ohne Paket fehlt `/etc/frp/adminhelper.conf`
+  (geschrieben nur in `apps/agent/internal/frpc/apply.go:91`). Damit wird der Server-API-Key gar nicht gespeichert,
+  entgegen dem Paketkommentar `provision.go:10` („writes the server API key (always)“), und `frpc.service` bleibt
+  aus.
+- `apps/agent/internal/frpc/sync.go:26` endet dann bei jedem Timer-Lauf still mit „Keine Konfiguration gefunden“.
+- Würde der Agent die Sync-Config immer schreiben, liefe er in das nächste Problem: ohne FRP-Config antwortet
+  `GET /api/frp/provision/{id}/config-hash` mit 404 „Keine FRP-Config vorhanden“
+  (`apps/server/app/modules/frp/provision_router.py:57`). 404 ist im Agent ein dauerhafter Fehler
+  (`apps/agent/internal/httpclient/httpclient.go:36`). `runOnce` (`cmd/adminhelper-agent/run.go:86`) gibt ihn zurück,
+  und der Oneshot-Dienst endet bei jedem Lauf rot.
+
+Dazu kommen drei Schwächen am selben Ablauf:
+
+- **Neu-Provisionieren bei laufendem frpc.** `Apply` schreibt die neue `frpc.toml`, speichert deren Hash
+  (`apply.go:120`) und ruft nur `systemctl enable --now frpc.service` (`platform_linux.go:22`). Ein laufender frpc
+  wird dabei nicht neu gestartet und läuft mit der alten Config weiter. Der gespeicherte Hash passt schon zum
+  Server, also korrigiert auch der nächste Abgleich nichts (aus dem Code gelesen).
+- **Jede Tunnel-Änderung startet frpc neu** (`sync.go:100`, `systemctl restart`). Alle Sitzungen zu diesem Host
+  brechen ab, auch über unveränderte Tunnel.
+- **`loginFailExit` ist in frp standardmäßig `true`.** Ist frps beim ersten Login nicht erreichbar, beendet sich
+  frpc. systemd startet ihn alle 5 s neu (`Restart=on-failure`, `RestartSec=5` in `apps/agent/systemd/frpc.service`),
+  im Journal steht eine Neustartschleife.
+
+## Ziel & Nicht-Ziele
+
+**Ziele**
+
+1. Ohne Tunnel läuft kein frpc. Der Agent-Lauf endet ohne Fehler (Exit 0), auch wenn auf dem Server gar keine
+   FRP-Config existiert.
+2. Ein später angelegter Tunnel greift beim nächsten Timer-Lauf ohne Handarbeit. frpc wird dabei dauerhaft
+   aktiviert (`enable --now`), also auch nach einem Reboot.
+3. Ändern sich nur Tunnel (`[[proxies]]`), übernimmt frpc das per Reload. Unveränderte Tunnel und ihre offenen
+   Verbindungen bleiben stehen.
+4. Neu-Provisionieren übernimmt die neue Config sofort, auch wenn frpc schon läuft.
+5. frpc gibt bei nicht erreichbarem frps nicht auf, sondern versucht es selbst weiter.
+6. Fällt der letzte Tunnel weg, wird frpc gestoppt und deaktiviert. Die `frpc.toml` mit dem frps-Token wird
+   gelöscht.
+
+**Nicht-Ziele (YAGNI)**
+
+- Ein schnellerer Abgleich als der 5-Minuten-Timer (`adminhelper-agent.timer`: `OnUnitActiveSec=300`,
+  `RandomizedDelaySec=30`). Das wird eine eigene Roadmap-Zeile.
+- frpc als Dienst unter Windows. `platform_windows.go` bleibt bei No-ops, Windows bekommt nur die neuen
+  Seams als No-op.
+- Desktop-Tunnel (R-0402) und frps-Seite (frps-Supervisor) sind eigene Vorhaben.
+- Bestandshosts heilen, die ohne Tunnel provisioniert wurden. Ihnen fehlt der Server-API-Key, ohne den kein
+  Abgleich möglich ist. Sie werden einmal neu provisioniert (CHANGELOG, Doku).
+
+## Betroffene Komponenten & Dateien
+
+| Komponente | Datei | Änderung |
+|---|---|---|
+| server | `apps/server/app/modules/frp/provision_router.py` (`_load_sync_inputs` :44, 404 :57, `get_provision_config_hash` :83) | config-hash ohne FRP-Config → 200 `{"hash": null}` |
+| server | `apps/server/tests/test_provisioning.py:283-284` | erwartet heute 404 ohne FRP-Config → 200 mit `hash: null` |
+| server | neu `apps/server/tests/test_frp_provision_sync.py` | Vertrag config-hash; Generator setzt kein `loginFailExit`/`webServer`, Common-Teil vor dem ersten `[[proxies]]` (`config_generator.py:156`, :178, :184) |
+| agent | `apps/agent/internal/frpc/apply.go` | `WriteSyncConfig` herauslösen; `Apply` nutzt den gemeinsamen Anwende-Pfad und speichert den Server-Hash |
+| agent | `apps/agent/internal/frpc/sync.go` | Ablauf nach Tabelle unten; lokaler Vorspann (`loginFailExit`, später `webServer.*`) |
+| agent | `apps/agent/internal/frpc/platform_linux.go` / `platform_windows.go` | Seams: aktiv?, aktivieren, deaktivieren und stoppen, Reload; Windows No-ops |
+| agent | neu `apps/agent/internal/frpc/admin.go` (+ Test) | `admin.conf` (Port, Passwort, 0600), freier Port, `/healthz` |
+| agent | `apps/agent/internal/provision/provision.go` | schreibt die Sync-Config immer; `frp=null` → Ablauf „nichts zu tun“ |
+| scripts | `scripts/tests/box_tunnelbox.sh`, `multibox.sh`, `multibox_test.sh` | Szenario: Tunnel nach dem Provisionieren; zweiter Tunnel bei offener Sitzung |
+| docs | `docs/admin/agent-deployment.html`, `docs/developer/agent.html`, `docs/developer/server.html:99`, `docs/developer/api-reference.html:163` (je DE+EN), `CHANGELOG.md` | siehe Doku-Impact |
+
+## Datenmodell / API / Migrationen
+
+- **Keine Alembic-Migration.**
+- **API-Vertrag (Kevins Entscheidung):** `GET /api/frp/provision/{id}/config-hash` antwortet ohne FRP-Config mit
+  200 `{"hash": null}` statt 404.
+  - Unverändert bleibt: 404 „Server nicht gefunden“ (der Agent wertet das zu Recht als dauerhaft), die 403 der
+    Scope-Prüfung und die Hash-Semantik bei vorhandener Config.
+  - Bei 0 Tunneln bleibt der Hash der leeren TOML. Grund: Ein alter Agent mit Hash-Datei würde bei `null`
+    jedes Mal neu laden und am Vergleich „passt nicht zum Hash“ scheitern.
+  - `GET …/config` bleibt, wie er ist, also 404 ohne Config. Der neue Agent fragt ihn nur bei einem Hash ≠ null ab.
+  - Das OpenAPI-Schema der Route ist heute `{}` (`apps/server/tests/openapi.snapshot.json`) und bleibt so. Ändert
+    sich der Snapshot, ist das eine Vertragsänderung und gehört zurück an Kevin.
+- **Generator-Vertrag (neu, durch Test fixiert):** `generate_frpc_toml` setzt weder `loginFailExit` noch
+  `webServer.*`, die stellt der Agent lokal voran. Der Common-Teil steht vor dem ersten `[[proxies]]`.
+- **Dateien auf dem Agent-Host (Linux):**
+  - `/etc/frp/adminhelper.conf`: jetzt immer vorhanden.
+  - `/etc/frp/frpc.toml`: lokaler Vorspann + Server-Text, 0600. Gelöscht bei 0 Tunneln oder ohne FRP-Config.
+  - `/etc/frp/.config-hash`: Hash des **Server**-Texts, nicht der lokal ergänzten Datei.
+  - neu `/etc/frp/admin.conf` (0600): Port und Passwort der lokalen frpc-Admin-API.
+
+**Kompatibilität**
+
+| Kombination | Verhalten |
+|---|---|
+| alter Agent, neuer Server, ohne FRP-Config | `hash: null` wird zu `""`. Ohne Hash-Datei gleich, also kein Fehler (heute 404). |
+| alter Agent, neuer Server, mit Config | unverändert |
+| neuer Agent, alter Server, ohne FRP-Config | 404 → dauerhafter Fehler bei jedem Lauf. Annahme: Agents kommen aus dem Paket-Repo desselben Servers (`:8445`), also gleiche Version. Für manuell installierte Pakete **nicht verifiziert**. |
+| Rollback auf alten Agent | Der alte Sync überschreibt `frpc.toml` beim nächsten Hash-Wechsel mit dem Server-Text ohne Vorspann. `admin.conf` bleibt ungenutzt liegen. |
+
+## Ablauf des Abgleichs (Linux)
+
+| Lage | Ablauf |
+|---|---|
+| `adminhelper.conf` fehlt (Bestandshost) | Info mit dem Ausweg „einmal neu provisionieren“, Exit 0 |
+| `hash: null` | frpc stoppen und deaktivieren, `frpc.toml` und Hash löschen, Exit 0 |
+| Hash gleich, frpc soll laufen und läuft | nichts. Mit T6: `/healthz` prüfen. |
+| Hash gleich, frpc soll laufen, läuft aber nicht (z. B. Admin-Port nach Reboot belegt) | mit T6: neuen Port wählen, Datei neu schreiben, starten |
+| Hash neu, TOML ohne `[[proxies]]` | frpc stoppen und deaktivieren, `frpc.toml` löschen, Hash speichern |
+| Hash neu, mit Proxies, frpc aus | schreiben, `enable --now` |
+| Hash neu, mit Proxies, frpc läuft, Common-Teil gleich | schreiben, Reload (mit T6). Scheitert er, Neustart. |
+| Hash neu, mit Proxies, Common-Teil anders (Token, Adresse, `user`, TLS) | schreiben, Neustart |
+| Provision mit FRP-Paket | Sync-Config schreiben, dann derselbe Anwende-Pfad wie oben mit dem Paket-Text |
+| Provision ohne FRP-Paket | Sync-Config schreiben, dann wie `hash: null` (stoppt einen frpc aus einer früheren Provisionierung) |
+
+Der Hash wird erst nach erfolgreichem Anwenden gespeichert (wie heute `sync.go:107`). Ein gescheiterter Schritt
+wird beim nächsten Lauf wiederholt.
+
+## Externe Integrationen (frp v0.69.1)
+
+| Behauptung | Quelle | Stand |
+|---|---|---|
+| Reload übernimmt Proxies/Visitors, globale Parameter nicht („global client parameters won't be modified except 'start'“) | [README v0.69.1](https://github.com/fatedier/frp/blob/v0.69.1/README.md), Abschnitt „Hot-Reloading frpc configuration“ | per WebFetch geprüft, 2026-10-16 |
+| `webServer.addr/port/user/password` aktivieren die Admin-API, `frpc reload -c <datei>` | README, Abschnitte „Hot-Reloading“ und „Client Admin UI“ | per WebFetch geprüft |
+| `loginFailExit` ist standardmäßig `true` und steht als Top-Level-Schlüssel in der TOML | [`pkg/config/v1/client.go`](https://github.com/fatedier/frp/blob/v0.69.1/pkg/config/v1/client.go) ~Z. 54–57 (Feld), ~Z. 88 (`Complete()`) | per WebFetch geprüft |
+| Unveränderte Proxies bleiben beim Reload laufen (Vergleich per `reflect.DeepEqual`), offene Verbindungen eines geänderten Proxys laufen aus | `client/proxy/proxy_manager.go` Z. 139–182, `client/proxy/proxy.go` Z. 120, `client/service.go` Z. 381–408 | aus dem Code gelesen (Planungs-Agent), **nicht Ende-zu-Ende geprüft**; der Szenario-Test in T7 belegt es |
+| Nach dem ersten erfolgreichen Login verbindet frpc unbegrenzt neu, unabhängig von `loginFailExit` | `client/service.go` Z. 258–300 | aus dem Code gelesen (Planungs-Agent) |
+| Basic-Auth der Admin-API nur mit gesetztem `user`/`password`; `/healthz` ohne Auth; `GET /api/config` liefert Token und Secrets | `pkg/util/net/http.go` Z. 45–50, `client/api_router.go` | aus dem Code gelesen (Planungs-Agent) |
+| Ist der Admin-Port belegt, startet frpc nicht | `client/service.go` Z. 187–192 | aus dem Code gelesen (Planungs-Agent) |
+| Kein Reload per Signal | `cmd/frpc/sub/root.go` Z. 116–118 | aus dem Code gelesen (Planungs-Agent) |
+
+Der Builder prüft die mit „aus dem Code gelesen“ markierten Stellen vor T4 und T6 per WebFetch gegen die
+gebündelte Version (`FRP_VERSION` in `.github/workflows/*.yml`).
+
+## Trade-offs & Alternativen
+
+- **`hash: null` auch bei 0 Tunneln.** Verworfen: Alte Agents mit Hash-Datei würden bei jedem Lauf am
+  Hash-Vergleich scheitern. Der neue Agent erkennt „leer“ selbst an der TOML.
+- **Agent nur mit Neustart.** Einfacher, aber jede Tunnel- oder `allowUsers`-Änderung trennt alle Sitzungen
+  zum Host. Kevin wählt Reload, als letzte Task (T6). Bis dahin startet der Agent bei Änderungen neu wie heute.
+- **Ein frpc je Tunnel.** Keine Admin-API nötig, aber N Verbindungen zu frps und eine aufgeteilte TOML.
+  Verworfen.
+- **Common-Vergleich:** Text vor dem ersten `[[proxies]]`, gestützt durch den Generator-Test in T1. Die
+  Alternative wäre eine TOML-Bibliothek als neue Abhängigkeit im Agent. Nicht nötig, solange der Server das
+  Layout festhält.
+- **Reload-Weg:** `frpc reload -c /etc/frp/frpc.toml` als Kindprozess. Er liest die Zugangsdaten aus der Datei,
+  der Agent braucht keinen eigenen HTTP-Client. Die Alternative `GET /api/reload` aus Go wäre mehr Code, ohne
+  Nutzen. Scheitert der Reload, folgt ein Neustart.
+- **Admin-API auf Agent-Hosts (Kevin: ja, letzte Task).** Ein zusätzlicher Listener auf 127.0.0.1. Ohne Passwort
+  käme jeder lokale Prozess an das frps-Token (`GET /api/config`) und könnte frpc stoppen. Deshalb ist ein
+  zufälliges Passwort mit 32 Byte in einer 0600-Datei Pflicht.
+
+## Risiken & Rollback
+
+- **Neuer Agent gegen alten Server** ohne FRP-Config: dauerhafter Fehler, siehe Kompatibilität.
+- **Admin-Port nach Reboot belegt:** frpc startet bis zum nächsten Agent-Lauf (≤ ~5,5 min) nicht. Danach wählt
+  der Agent einen neuen Port. Restrisiko: Tunnel des Hosts fehlen in diesem Fenster.
+- **Reload trennt doch offene Verbindungen:** Das widerlegt der Szenario-Test in T7, sonst greift der Neustart wie
+  heute. Kein Datenverlust.
+- **Token-Rotation** (frps übernimmt nach ≤10 s, eigenes Vorhaben): Agents haben bis zum nächsten Timer-Lauf
+  keinen Tunnel. Das hat Kevin hingenommen, die Mitteilung nennt es.
+- **Rollback:** Revert des Branches. Bestandshosts bleiben funktionsfähig (siehe Kompatibilität), `admin.conf`
+  bleibt ungenutzt.
+
+## Doku-Impact
+
+Sichtbar, also DE + EN:
+- `admin/agent-deployment.html`: Ein später angelegter Tunnel greift beim nächsten Agent-Lauf. Ohne Tunnel läuft
+  kein frpc. Wer vor diesem Release ohne Tunnel provisioniert hat, provisioniert einmal neu.
+- `developer/agent.html`: Ablauf des Abgleichs, lokale Admin-API.
+- `developer/server.html:99` und `developer/api-reference.html:163`: config-hash mit `null`.
+- `CHANGELOG.md`: Fixed und Changed (API).
+
+## Offene Fragen
+
+1. **Reihenfolge zu R-0384** (Status `pr`, `feature/agent-identity-lock`): Beide ändern
+   `apps/agent/internal/provision/provision.go` und `provision_test.go`. Empfehlung: R-0398 nach dem Merge von
+   R-0384 bauen.
+2. **Multibox-Flags** für den Beweis: `scenario --agents 1 --tunnel --enforce` (Kevin hat einen
+   `--tunnel`-Lauf vor dem Merge erlaubt; `--enforce`, weil der Abgleich unter erzwungenem mTLS über die an den
+   Server gebundene Route läuft, R-0315).
+3. **Neuer Agent gegen alten Server:** Reicht die Annahme „Agents kommen aus dem Repo des Servers“, oder soll
+   der Agent 404 „Keine FRP-Config vorhanden“ übergangsweise wie `null` lesen? Empfehlung: nein. Das wäre
+   Prosa-Matching, und die Versionen kommen gemeinsam.
