@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent: Erneuerung und Provisionierung sperren die Identität — Task-Ledger
-Status: bereit · Branch: feature/agent-identity-lock · Review: am Ende
+Status: aktiv · Branch: feature/agent-identity-lock · Review: am Ende
 Spec: Roadmap R-0384
 Heavy: linux-full — `apps/agent/internal/enroll` und `internal/provision` sind Agent-Enrollment und -Erneuerung; läuft im Sammellauf (`/feature-build` §5); Windows ohne VM: `lock_windows.go` prüft der CI-Job `agent-windows` nativ (`go test ./...`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -43,4 +43,21 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run RunEnrollment
 Doku: CHANGELOG.md (Fixed); docs/ keine
 Abhängt von: T1
+Dedup-Key: bug:agent:enroll:store-commit-race
+
+Branch-Review 2026-10-16 (security, reviewer, tester): request_changes. Kevin am selben Tag: Wartezeit der Sperre begrenzen und die Erneuerung erst nach der Fälligkeitsprüfung sperren (T4); die Box-Prüfung auf das Zertifikat als eigene Task im Branch verschärfen (T5, Harness-Pfad auf Kevins Wort, den PR merged Kevin).
+
+### T4 — Sperre mit Frist; Erneuerung sperrt erst, wenn sie fällig ist  [ ]
+Komponente: agent · Dateien: apps/agent/internal/enroll/lock.go, apps/agent/internal/enroll/lock_linux.go, apps/agent/internal/enroll/lock_windows.go, apps/agent/internal/enroll/lock_test.go, apps/agent/internal/enroll/renew.go, apps/agent/internal/enroll/renew_test.go, apps/agent/internal/provision/provision_test.go
+Änderung: Eine Sperre, die ein anderer Prozess nicht freigibt, darf weder die Provisionierung noch den Dienst-Zyklus unbegrenzt anhalten. `LockIdentity` wartet höchstens eine Frist (Paket-Variable, 60 s; Tests verkürzen sie): unter Linux `flock(LOCK_EX|LOCK_NB)` in einer Schleife mit kurzer Pause, unter Windows `LockFileEx` mit `LOCKFILE_FAIL_IMMEDIATELY`; nach Ablauf ein Fehler, der die Sperrdatei nennt. Unter Windows nimmt `LockIdentity` nur eine Sperrdatei, deren Eigentümer SYSTEM oder die Administratoren sind (`GetSecurityInfo`), sonst ein klarer Fehler; die Entscheidung über den Eigentümer-SID ist eine eigene, testbare Funktion. `MaybeRenew` (`renew.go`) prüft `Provisioned` und die Fälligkeit zuerst ohne Sperre (nicht fällig: keine Sperre), nimmt dann die Sperre und prüft beides unter ihr erneut; ein Fehler der Sperre kommt als Fehler zurück, `maybeRenewIdentity` (`run.go:111-128`) protokolliert ihn und der Zyklus läuft weiter. Tests: die Frist läuft ab, wenn ein zweiter Deskriptor die Sperre hält (Fehler statt Hängen); `MaybeRenew` mit gehaltener Sperre kehrt innerhalb der Frist mit Fehler zurück, ohne `renewFunc`; eine nicht fällige Identität nimmt keine Sperre; Fehlerpfade (`agent.lock` als Verzeichnis: `LockIdentity` liefert einen Fehler, `MaybeRenew` gibt `(false, err)` ohne `renewFunc`, `runEnrollment` schickt keine Anfrage); die Eigentümer-Entscheidung mit SYSTEM, Administratoren und einem fremden SID (Windows, CI-Job `agent-windows`). Die bestehenden Tests aus T1 bis T3 bleiben grün.
+Verify: bash scripts/dev/verify.sh agent --strict -- -run Lock|MaybeRenew|RunEnrollment
+Doku: keine (intern; der CHANGELOG-Eintrag aus T3 deckt das Verhalten)
+Abhängt von: T3
+Dedup-Key: bug:agent:enroll:store-commit-race
+
+### T5 — Box-Prüfung verlangt das Zertifikat, nicht irgendeine Datei  [ ]
+Komponente: scripts · Dateien: scripts/tests/box_agentbox.sh, scripts/tests/box_agentbox_rpm.sh
+Änderung: `box_agentbox.sh:56` und `box_agentbox_rpm.sh:38` prüfen `test -f …/agent.crt || ls …/identity/ | grep -q .`; seit T1 liegt nach jeder Provisionierung `agent.lock` im Verzeichnis, und ein gescheitertes Enrollment (best-effort, `provision` endet trotzdem mit `AGENT_PROVISION_OK`) meldet dann `AGENT_CERT_OK` bzw. `RPM_CERT_OK` (`multibox.sh:219`, `:237`). Der `|| ls`-Zweig fällt in beiden weg, geprüft wird `test -s …/agent.crt`. Vorher in der Geschichte der Zeile nachsehen (`git log --follow -S`), ob der Fallback einen Grund hatte, und ihn im Commit nennen. Die Box-Skripte laufen nur auf einer VM; der hermetische Teil ist `multibox_test.sh`.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
 Dedup-Key: bug:agent:enroll:store-commit-race
