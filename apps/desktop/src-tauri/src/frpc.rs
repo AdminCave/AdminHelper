@@ -105,23 +105,38 @@ struct VisitorBundle {
 }
 
 /// Fetch the visitor bundle from the server. TOML only — the server no longer
-/// ships PKI (D6); the identity comes from enrollment.
+/// ships PKI (D6); the identity comes from enrollment. `None` means the user has
+/// no tunnels (see [`carries_bundle`]).
 async fn fetch_visitor_bundle(
     server_url: &str,
     token: &str,
     allow_self_signed: bool,
-) -> Result<VisitorBundle, AppError> {
+) -> Result<Option<VisitorBundle>, AppError> {
     let path = "/api/frp/generate/visitor-bundle";
     let response = auth::authenticated_get(server_url, token, path, allow_self_signed).await?;
 
-    if !response.status().is_success() {
+    if !carries_bundle(response.status())? {
+        return Ok(None);
+    }
+
+    let bundle: VisitorBundle = response.json().await.map_err(AppError::Network)?;
+    Ok(Some(bundle))
+}
+
+/// Whether a visitor-bundle reply with this status carries a bundle. 404 is no error but "no
+/// tunnels": the server answers it both without an FRP config and when the user sees no usable
+/// STCP tunnel (generate_router.py). Every other non-2xx — a 401 the refresh could not cure
+/// included — is an error.
+fn carries_bundle(status: reqwest::StatusCode) -> Result<bool, AppError> {
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    if !status.is_success() {
         return Err(AppError::Validation(
             "Visitor-Bundle konnte nicht geladen werden".to_string(),
         ));
     }
-
-    let bundle: VisitorBundle = response.json().await.map_err(AppError::Network)?;
-    Ok(bundle)
+    Ok(true)
 }
 
 /// The placeholder the server's visitor generator emits in place of the identity
@@ -223,6 +238,73 @@ fn validate_visitor_toml(toml_str: &str) -> Result<(), AppError> {
         }
     }
     Ok(())
+}
+
+// Not called outside the tests yet: the reconciliation (refresh_tunnel) takes these over.
+/// User of frpc's local admin API; the generated password is the secret.
+#[cfg_attr(not(test), allow(dead_code))]
+const ADMIN_API_USER: &str = "adminhelper";
+
+/// The config frpc runs: the allow-listed server TOML behind the desktop's local head.
+/// `loginFailExit = false` keeps frpc retrying while frps is unreachable (frp's default ends it
+/// after the first failed login); `webServer.*` opens frpc's admin API on loopback for the
+/// reload. The head goes on only after `validate_visitor_toml`, so the allow-list stays as it is
+/// and still rejects a server that sends `webServer` or `loginFailExit` itself. It stands before
+/// every table header, so its keys land in the root. The password is never optional — without
+/// user and password frp serves the admin API, `GET /api/config` with the frps token and every
+/// `secretKey` included, to every local process. `password` goes in unescaped, so it is hex.
+#[cfg_attr(not(test), allow(dead_code))]
+fn with_local_head(server_toml: &str, port: u16, password: &str) -> Result<String, AppError> {
+    validate_visitor_toml(server_toml)?;
+    Ok(format!(
+        "loginFailExit = false\n\
+         webServer.addr = \"127.0.0.1\"\n\
+         webServer.port = {port}\n\
+         webServer.user = \"{ADMIN_API_USER}\"\n\
+         webServer.password = \"{password}\"\n\
+         \n\
+         {server_toml}"
+    ))
+}
+
+/// What a reconciliation does with the server TOML it fetched.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, PartialEq, Eq)]
+enum RefreshPlan {
+    /// No frpc runs: start one.
+    Start,
+    /// The common part changed (`serverAddr`, `serverPort`, `user`, `auth`, `transport`): frp
+    /// reads it only at start, so stop and start again.
+    Restart,
+    /// Only the visitors changed: frpc reloads them, unchanged visitors keep their connections.
+    Reload,
+    /// Nothing changed.
+    Unchanged,
+}
+
+/// Decide what to do with the server TOML `next`. `running` is the server TOML the running frpc
+/// applied, `None` when no frpc runs. Both are compared parsed, so a reformatted TOML is
+/// unchanged.
+#[cfg_attr(not(test), allow(dead_code))]
+fn plan_refresh(running: Option<&toml::Value>, next: &toml::Value) -> RefreshPlan {
+    let Some(running) = running else {
+        return RefreshPlan::Start;
+    };
+    if common_part(running) != common_part(next) {
+        RefreshPlan::Restart
+    } else if running.get("visitors") != next.get("visitors") {
+        RefreshPlan::Reload
+    } else {
+        RefreshPlan::Unchanged
+    }
+}
+
+/// The root table without `visitors`: everything frp takes only at start.
+#[cfg_attr(not(test), allow(dead_code))]
+fn common_part(config: &toml::Value) -> Option<toml::Table> {
+    let mut root = config.as_table()?.clone();
+    root.remove("visitors");
+    Some(root)
 }
 
 fn write_visitor_bundle(
@@ -374,7 +456,12 @@ pub async fn start_tunnel(
     username: &str,
     allow_self_signed: bool,
 ) -> Result<TunnelStatus, AppError> {
-    let bundle = fetch_visitor_bundle(server_url, token, allow_self_signed).await?;
+    // No tunnels still fails the start as before; the reconciliation will stop instead.
+    let bundle = fetch_visitor_bundle(server_url, token, allow_self_signed)
+        .await?
+        .ok_or_else(|| {
+            AppError::Validation("Visitor-Bundle konnte nicht geladen werden".to_string())
+        })?;
     let config_path = write_visitor_bundle(&app, &bundle)?;
     start_frpc(&app, &config_path, &state, username.to_string())?;
     Ok(tunnel_status(&state))
@@ -382,7 +469,10 @@ pub async fn start_tunnel(
 
 #[cfg(test)]
 mod tests {
-    use super::{rewrite_identity_paths, validate_visitor_toml, FrpcProcess, NO_IDENTITY_HINT};
+    use super::{
+        carries_bundle, plan_refresh, rewrite_identity_paths, validate_visitor_toml,
+        with_local_head, FrpcProcess, RefreshPlan, NO_IDENTITY_HINT,
+    };
 
     const LEGIT_VISITOR: &str = r#"
 serverAddr = "frps.example.net"
@@ -557,5 +647,214 @@ bindPort = 6000
         // After a stop no process is current: even the last one's Error is stale.
         p.retire();
         assert!(!p.is_current(2), "a stopped process's Error must be stale");
+    }
+
+    /// What the server's generate_visitor_toml sends: dotted auth keys, the TLS table, two
+    /// visitors.
+    const SERVER_TOML: &str = r#"serverAddr = "frps.example.net"
+serverPort = 7000
+user = "ops-admin"
+
+auth.method = "token"
+auth.token = "sekret"
+
+[transport.tls]
+enable = true
+trustedCaFile = "{{IDENTITY_DIR}}/ca.crt"
+certFile = "{{IDENTITY_DIR}}/cert.pem"
+keyFile = "{{IDENTITY_DIR}}/key.pem"
+
+[[visitors]]
+name = "db-visitor"
+type = "stcp"
+serverName = "db"
+serverUser = "srv-a"
+secretKey = "s3cr3t"
+bindAddr = "127.0.0.1"
+bindPort = 6000
+
+[[visitors]]
+name = "web-visitor"
+type = "stcp"
+serverName = "web"
+serverUser = "srv-b"
+secretKey = "w3b"
+bindAddr = "127.0.0.1"
+bindPort = 6001
+"#;
+
+    fn parse(toml: &str) -> toml::Value {
+        toml::from_str(toml).unwrap()
+    }
+
+    /// SERVER_TOML with the first `from` replaced; a fixture without `from` fails the test
+    /// instead of silently comparing two equal configs.
+    fn changed(from: &str, to: &str) -> toml::Value {
+        assert!(SERVER_TOML.contains(from), "fixture lacks {from:?}");
+        parse(&SERVER_TOML.replacen(from, to, 1))
+    }
+
+    #[test]
+    fn refresh_starts_when_no_frpc_runs() {
+        assert_eq!(plan_refresh(None, &parse(SERVER_TOML)), RefreshPlan::Start);
+    }
+
+    #[test]
+    fn refresh_reloads_when_only_visitors_change() {
+        let running = parse(SERVER_TOML);
+        let added = format!(
+            "{SERVER_TOML}\n[[visitors]]\nname = \"ssh-visitor\"\ntype = \"stcp\"\n\
+             serverName = \"ssh\"\nsecretKey = \"k\"\nbindAddr = \"127.0.0.1\"\nbindPort = 6002\n"
+        );
+        let second = SERVER_TOML
+            .find("[[visitors]]\nname = \"web-visitor\"")
+            .unwrap();
+        for (case, next) in [
+            ("visitor added", parse(&added)),
+            ("visitor gone", parse(&SERVER_TOML[..second])),
+            (
+                "secret changed",
+                changed("secretKey = \"s3cr3t\"", "secretKey = \"n3w\""),
+            ),
+            (
+                "port changed",
+                changed("bindPort = 6000", "bindPort = 6100"),
+            ),
+            (
+                "server user changed",
+                changed("serverUser = \"srv-a\"", "serverUser = \"srv-c\""),
+            ),
+        ] {
+            assert_eq!(
+                plan_refresh(Some(&running), &next),
+                RefreshPlan::Reload,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn refresh_restarts_when_the_common_part_changes() {
+        let running = parse(SERVER_TOML);
+        let token_and_visitor = SERVER_TOML
+            .replacen("auth.token = \"sekret\"", "auth.token = \"rotated\"", 1)
+            .replacen("bindPort = 6000", "bindPort = 6100", 1);
+        for (case, next) in [
+            (
+                "token rotated",
+                changed("auth.token = \"sekret\"", "auth.token = \"rotated\""),
+            ),
+            (
+                "serverAddr",
+                changed(
+                    "serverAddr = \"frps.example.net\"",
+                    "serverAddr = \"frps2.example.net\"",
+                ),
+            ),
+            (
+                "serverPort",
+                changed("serverPort = 7000", "serverPort = 7001"),
+            ),
+            (
+                "user",
+                changed("user = \"ops-admin\"", "user = \"other-admin\""),
+            ),
+            ("transport", changed("enable = true", "enable = false")),
+            // A restart applies the visitors too; a reload would miss the token.
+            ("token and a visitor", parse(&token_and_visitor)),
+        ] {
+            assert_eq!(
+                plan_refresh(Some(&running), &next),
+                RefreshPlan::Restart,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn refresh_leaves_the_same_config_unchanged_however_it_is_formatted() {
+        let running = parse(SERVER_TOML);
+        assert_eq!(
+            plan_refresh(Some(&running), &parse(SERVER_TOML)),
+            RefreshPlan::Unchanged
+        );
+
+        // The same values: tables instead of dotted keys and the other way round, an inline
+        // array, other key order and spacing, a comment.
+        let reformatted = r#"# reformatted
+user="ops-admin"
+serverPort=7000
+serverAddr="frps.example.net"
+transport.tls.keyFile = "{{IDENTITY_DIR}}/key.pem"
+transport.tls.certFile = "{{IDENTITY_DIR}}/cert.pem"
+transport.tls.trustedCaFile = "{{IDENTITY_DIR}}/ca.crt"
+transport.tls.enable = true
+visitors = [
+  { bindPort = 6000, bindAddr = "127.0.0.1", secretKey = "s3cr3t", serverUser = "srv-a", serverName = "db", type = "stcp", name = "db-visitor" },
+  { name = "web-visitor", type = "stcp", serverName = "web", serverUser = "srv-b", secretKey = "w3b", bindAddr = "127.0.0.1", bindPort = 6001 },
+]
+
+[auth]
+token = "sekret"
+method = "token"
+"#;
+        assert_eq!(
+            plan_refresh(Some(&running), &parse(reformatted)),
+            RefreshPlan::Unchanged
+        );
+    }
+
+    #[test]
+    fn refresh_head_puts_login_retry_and_the_admin_password_in_the_root() {
+        let config = parse(&with_local_head(SERVER_TOML, 7400, "c0ffee").unwrap());
+
+        assert_eq!(
+            config.get("loginFailExit"),
+            Some(&toml::Value::Boolean(false))
+        );
+        let web = config.get("webServer").expect("webServer in the root");
+        assert_eq!(web.get("addr").and_then(|v| v.as_str()), Some("127.0.0.1"));
+        assert_eq!(web.get("port").and_then(|v| v.as_integer()), Some(7400));
+        assert_eq!(
+            web.get("user").and_then(|v| v.as_str()),
+            Some("adminhelper")
+        );
+        // Without a password frp serves the admin API, frps token and secretKeys included,
+        // to every local process.
+        assert_eq!(web.get("password").and_then(|v| v.as_str()), Some("c0ffee"));
+
+        // Apart from the head, the server TOML arrives as sent: nothing slid into a table.
+        let mut rest = config.as_table().unwrap().clone();
+        rest.remove("loginFailExit");
+        rest.remove("webServer");
+        assert_eq!(toml::Value::Table(rest), parse(SERVER_TOML));
+    }
+
+    #[test]
+    fn refresh_head_keeps_rejecting_a_server_that_sends_its_own() {
+        for evil in [
+            format!("loginFailExit = true\n{SERVER_TOML}"),
+            format!("webServer.port = 7500\n{SERVER_TOML}"),
+            format!("{SERVER_TOML}\n[webServer]\naddr = \"0.0.0.0\"\npassword = \"\"\n"),
+        ] {
+            assert!(
+                with_local_head(&evil, 7400, "c0ffee").is_err(),
+                "accepted: {evil}"
+            );
+        }
+    }
+
+    #[test]
+    fn refresh_404_means_no_tunnels() {
+        assert!(!carries_bundle(reqwest::StatusCode::NOT_FOUND).unwrap());
+        assert!(carries_bundle(reqwest::StatusCode::OK).unwrap());
+    }
+
+    #[test]
+    fn refresh_500_and_every_other_failure_is_an_error() {
+        for code in [500, 502, 503, 401, 403] {
+            let status = reqwest::StatusCode::from_u16(code).unwrap();
+            assert!(carries_bundle(status).is_err(), "{status}");
+        }
     }
 }

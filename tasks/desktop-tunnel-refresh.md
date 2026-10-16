@@ -38,8 +38,10 @@ Dedup-Key: bug:desktop:frpc.rs:error-old-generation
 HEAD: b84b9495
 Semantik: docs/developer/desktop.html:146 (wie T1)
 
-### T3 — Abgleich entscheiden: 404, Vergleich, lokaler Kopf  [ ]
+### T3 — Abgleich entscheiden: 404, Vergleich, lokaler Kopf  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @9be606ef 2026-10-16T13:50:18+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T3.verdict.json)
 Änderung: Drei reine Bausteine, noch ohne Aufrufer im Ablauf: (a) `fetch_visitor_bundle` (`frpc.rs:90`) unterscheidet 404 („keine Tunnel“, beide Server-Fälle `generate_router.py:35` und `:150`) von jedem anderen Fehler; (b) eine Entscheidungsfunktion über die geparste Server-TOML (`toml::Value`): frpc läuft nicht → Start; Wurzeltabelle ohne `visitors` verschieden → Neustart; nur `visitors` verschieden → Reload; sonst unverändert; (c) der lokale Kopf (`loginFailExit = false`, `webServer.addr = "127.0.0.1"`, `webServer.port`, `webServer.user`, `webServer.password`), der **nach** `validate_visitor_toml` (`:151`) vor die Server-TOML gestellt wird. Tests mit dem Präfix `refresh_`: alle Entscheidungsfälle (Visitor neu, weg, Secret/Port geändert; Token, `serverAddr`, `serverPort`, `user`, `transport` geändert; gleiche TOML anders formatiert → unverändert), Kopf + Server-TOML parsen mit `loginFailExit = false` und gesetztem Passwort in der Wurzel, eine Server-TOML mit `webServer` oder `loginFailExit` wird weiter abgewiesen (Allow-List unverändert), 404 → „keine Tunnel“, 500 → Fehler.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- refresh_
 Doku: keine (intern; der Ablauf kommt mit T4)
