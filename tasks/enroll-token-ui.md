@@ -20,8 +20,10 @@ Review: approve (.ah-out/review/enroll-token-ui/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_enrollment_mint.py tests/test_openapi_snapshot.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html
 
-### T2 — Web-API: Token für einen Benutzer ausstellen  [ ]
+### T2 — Web-API: Token für einen Benutzer ausstellen  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/users.ts, apps/web/src/lib/api/types.ts, apps/web/src/lib/api/users.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @c8f0887f 2026-10-16T12:02:19+02:00
+Review: approve (.ah-out/review/enroll-token-ui/T2.verdict.json)
 Änderung: `mintEnrollToken(username, ttlMinutes)` in `users.ts` ruft `POST /api/enrollment/token/for` mit `{ username, ttl_minutes }`; Typ `EnrollmentGrant` (`token`, `subjectId`, `expiresAt`, …) in `types.ts`. Neuer Test `users.test.ts` (SPDX-Header) nach dem Muster von `audit.test.ts`: Pfad, Methode und Body.
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/users.test.ts
 Doku: keine (intern)
