@@ -107,8 +107,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T4, T6, T8
 
-### T10 — Tunnel-Store: `reconnectNow()` verwirft den geplanten Neustart und gleicht sofort ab  [ ]
+### T10 — Tunnel-Store: `reconnectNow()` verwirft den geplanten Neustart und gleicht sofort ab  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ad3bc89d 2026-10-16T17:50:59+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T10.verdict.json)
 Änderung: Neue exportierte Funktion `reconnectNow()` im Tunnel-Store: bei aktivem Takt verwirft sie einen geplanten Backoff-Neustart (T7), setzt die Pause auf 5 s zurück und ruft `refreshNow()` (T6, reiht während eines laufenden Abgleichs genau einen Folgelauf ein); ohne aktiven Takt (abgemeldet, lokaler Modus) tut sie nichts. Vitest mit Fake-Timern, zuerst rot: nach `markTerminated` und `reconnectNow()` genau ein sofortiger Abgleich und kein weiterer zum alten Backoff-Zeitpunkt; scheitert dieser, beginnt die Pause wieder bei 5 s; nach `stop()` löst `reconnectNow()` nichts aus.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
 Doku: keine (intern; sichtbar mit T11)

@@ -8,7 +8,8 @@
 // reloads the mappings after each run. Activated by AppShell on login/mode switch,
 // ended by stop(). The Tauri events frpc-terminated / frpc-error (the running frpc
 // ended) bring a reconciliation that restarts it after 5 s, doubled up to 60 s for
-// every restart that fails or does not hold for a tick.
+// every restart that fails or does not hold for a tick. reconnectNow() (the reconnect
+// button) brings that restart forward and lets the pauses begin at 5 s again.
 
 import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
@@ -49,7 +50,13 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let activationGen = 0;
 // The reconciliation in flight: a tick skips while it runs; refreshNow() queues one
 // follow-up after it (`next`), as the running one may have fetched the bundle before the change.
-let inFlight: { gen: number; done: Promise<void>; next: Promise<void> | null } | null = null;
+// `restart`: frpc ended while it ran, and the restart planned for that is the follow-up.
+let inFlight: {
+  gen: number;
+  done: Promise<void>;
+  next: Promise<void> | null;
+  restart: boolean;
+} | null = null;
 // One status-bar message per series of failures (failed reconciliations, frpc-error); a
 // successful reconciliation ends the series, inside a restart series only its end does.
 let errorReported = false;
@@ -100,9 +107,12 @@ function frpcEnded(): void {
   scheduleRestart();
 }
 
-/** A restart is planned or queued behind the run in flight: that run is not the restart. */
+/**
+ * A restart is planned or queued behind the run in flight: frpc ended while it ran, so that
+ * run is not the restart. A refreshNow() queued behind it says nothing about frpc.
+ */
 function restartDue(): boolean {
-  return restartTimer !== null || !!inFlight?.next;
+  return restartTimer !== null || !!inFlight?.restart;
 }
 
 /** Plan the restart of a frpc that ended, unless one is planned or nothing polls. */
@@ -113,6 +123,7 @@ function scheduleRestart(): void {
   restartTimer = setTimeout(() => {
     restartTimer = null;
     // A reconciliation still in flight may have looked at frpc before it ended: queue after it.
+    if (inFlight) inFlight.restart = true;
     void refreshNow();
   }, delay);
 }
@@ -140,13 +151,23 @@ export function refreshNow(): Promise<void> {
   return running.next;
 }
 
+/**
+ * Reconnect now: the run this starts, or queues behind the one in flight, is the restart and
+ * drops the planned one; should it fail, the next pause is 5 s. An open restart series stays
+ * open, so its failures bring no second message. Without polling, nothing.
+ */
+export function reconnectNow(): Promise<void> {
+  if (restartDelay !== null) restartDelay = RESTART_FIRST_MS;
+  return refreshNow();
+}
+
 function reconcile(gen: number): Promise<void> {
   if (inFlight?.gen === gen) return inFlight.done;
   cancelRestart();
   const done: Promise<void> = reconcileOnce(gen).finally(() => {
     if (inFlight?.done === done) inFlight = null;
   });
-  inFlight = { gen, done, next: null };
+  inFlight = { gen, done, next: null, restart: false };
   return done;
 }
 
@@ -168,13 +189,14 @@ async function reconcileOnce(gen: number): Promise<void> {
       s.ui === 'connecting' ? { ...s, ui: 'disconnected', status: { running: false } } : s,
     );
     // A failed tick while the restarted frpc holds is a new series and plans no restart; a
-    // failed restart plans the next one after a longer pause, unless one already waits.
+    // failed restart plans the next one after a longer pause, unless one already waits: a
+    // planned one, or any run queued behind this one, which is then the restart.
     settleRestarts();
     if (!errorReported) {
       errorReported = true;
       reportError(tNow('error.tunnel', { message: errMsg(err) }));
     }
-    if (restartDelay !== null && !restartDue()) scheduleRestart();
+    if (restartDelay !== null && !inFlight?.next) scheduleRestart();
     return;
   }
   if (gen !== activationGen) {
