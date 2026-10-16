@@ -88,14 +88,14 @@ Dazu kommen drei Schwächen am selben Ablauf:
   200 `{"hash": null}` statt 404.
   - Unverändert bleibt: 404 „Server nicht gefunden“ (der Agent wertet das zu Recht als dauerhaft), die 403 der
     Scope-Prüfung und die Hash-Semantik bei vorhandener Config.
-  - Ohne aktiven Tunnel (die Tunnel, die der Generator als `[[proxies]]` ausgibt) gilt dasselbe: `{"hash": null}`,
-    und `GET …/config` antwortet 404; das Provisionierungs-Paket enthält dann kein FRP-Paket (T8, Kevin
-    2026-10-16 nach dem Branch-Review: ein Host ohne Tunnel bekommt keine frps-Zugangsdaten). Das ersetzt
-    die frühere Festlegung „bei 0 Tunneln bleibt der Hash der leeren TOML“. Preis: Ein alter Agent, dessen
-    letzter Tunnel gelöscht wird, liest `null` als `""`, lädt `/config` und bekommt 404 (dauerhafter Fehler
-    bis zum Update; gleiche Version wird angenommen, siehe Kompatibilität).
-  - `GET …/config` antwortet 404 ohne Config oder ohne aktiven Tunnel. Der neue Agent fragt ihn nur bei einem
-    Hash ≠ null ab.
+  - Mit Config, aber ohne aktiven Tunnel (die Tunnel, die der Generator als `[[proxies]]` ausgibt,
+    `active_tunnels`): `GET …/config` liefert den Common-Teil ohne `auth.token` und ohne `[[proxies]]`, der Hash
+    ist der dieses Texts (T8, Kevin 2026-10-16 nach dem Branch-Review: ein Host ohne Tunnel bekommt keine
+    frps-Zugangsdaten, und jeder Agent schließt damit den letzten Tunnel, fail-closed). Der neue Agent stoppt
+    frpc auf diesen Text; ein alter startet frpc damit neu, frpc meldet sich ohne Token nicht an und wird von
+    systemd neu gestartet, bis der Agent aktualisiert ist. Das Provisionierungs-Paket trägt mit Config denselben
+    Text (T10), damit auch eine Neu-Provisionierung mit altem Agent den Tunnel schließt.
+  - `GET …/config` antwortet 404 nur ohne Config. Der neue Agent fragt ihn nur bei einem Hash ≠ null ab.
   - Das OpenAPI-Schema der Route ist heute `{}` (`apps/server/tests/openapi.snapshot.json`) und bleibt so. Ändert
     sich der Snapshot, ist das eine Vertragsänderung und gehört zurück an Kevin.
 - **Generator-Vertrag (neu, durch Test fixiert):** `generate_frpc_toml` setzt weder `loginFailExit` noch
@@ -113,7 +113,7 @@ Dazu kommen drei Schwächen am selben Ablauf:
 | Kombination | Verhalten |
 |---|---|
 | alter Agent, neuer Server, ohne FRP-Config | `hash: null` wird zu `""`. Ohne Hash-Datei gleich, also kein Fehler (heute 404). |
-| alter Agent, neuer Server, mit Config | unverändert, solange der Host einen aktiven Tunnel hat; fällt der letzte weg: 404 bis zum Update (T8) |
+| alter Agent, neuer Server, mit Config | unverändert, solange der Host einen aktiven Tunnel hat; fällt der letzte weg: Text ohne Token und Tunnel, frpc startet neu und meldet sich nicht an (Neustart-Schleife von systemd bis zum Update, Tunnel zu; T8) |
 | neuer Agent, alter Server, ohne FRP-Config | 404 → dauerhafter Fehler bei jedem Lauf. Annahme: Agents kommen aus dem Paket-Repo desselben Servers (`:8445`), also gleiche Version. Für manuell installierte Pakete **nicht verifiziert**. |
 | Rollback auf alten Agent | Der alte Sync überschreibt `frpc.toml` beim nächsten Hash-Wechsel mit dem Server-Text ohne Vorspann. `admin.conf` bleibt ungenutzt liegen. |
 
@@ -154,8 +154,9 @@ gebündelte Version (`FRP_VERSION` in `.github/workflows/*.yml`).
 
 ## Trade-offs & Alternativen
 
-- **`hash: null` auch bei 0 Tunneln.** Verworfen: Alte Agents mit Hash-Datei würden bei jedem Lauf am
-  Hash-Vergleich scheitern. Der neue Agent erkennt „leer“ selbst an der TOML.
+- **`hash: null` auch bei 0 Tunneln.** Verworfen (in T8 kurz gebaut, im Review verworfen): Ein alter Agent
+  liest `null` als Änderung, bekommt 404 von `/config` und ließe frpc mit dem letzten Tunnel laufen. Gewählt:
+  Text ohne Token und ohne Tunnel (fail-closed, siehe API-Vertrag).
 - **Agent nur mit Neustart.** Einfacher, aber jede Tunnel- oder `allowUsers`-Änderung trennt alle Sitzungen
   zum Host. Kevin wählt Reload, als letzte Task (T6). Bis dahin startet der Agent bei Änderungen neu wie heute.
 - **Ein frpc je Tunnel.** Keine Admin-API nötig, aber N Verbindungen zu frps und eine aufgeteilte TOML.
