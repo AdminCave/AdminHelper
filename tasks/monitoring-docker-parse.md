@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Docker-Container mit aktueller Docker-CLI erfassen — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-docker-parse · Review: am Ende
+Status: bereit · Branch: feature/monitoring-docker-parse · Review: am Ende
 Spec: Roadmap R-0417
 Heavy: linux-full — Agent-Code (`apps/agent`) und eine Desktop-Monitoring-Sektion; der Sammellauf fährt Agent-Monitoring und die Desktop-GUI. Ein echter Docker-Lauf ist hier nicht Pflicht: der Fix ist ein Parser, den der Regressionstest mit einer echten Docker-29-Zeile belegt; der schwere Test mit echtem Docker-Daemon gehört zu R-0419 (Kevin 2026-10-16)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -25,8 +25,10 @@ Dedup-Key: bug:agent:monitor/plugins.go:docker-platform-object
 HEAD: af4498a7
 Semantik: docs/admin/monitoring.html:49 und :64 — „docker_health — Container-State + unhealthy-Erkennung“; „Die Plugin-Checks proxmox_backup, zfs_health und docker_health werten nur dann Daten aus, wenn der Agent das jeweilige Subsystem (Proxmox, ZFS, Docker) auf dem Host findet.“ (Docker vorhanden ⇒ Daten werden ausgewertet)
 
-### T2 — Desktop: Docker-Sektion zählt ehrlich und zeigt „keine Daten“  [ ]
+### T2 — Desktop: Docker-Sektion zählt ehrlich und zeigt „keine Daten“  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecDocker.svelte, apps/desktop/ui/src/components/monitoring/section/SecDocker.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @816dc682 2026-10-16T14:24:50+02:00
+Review: am Ende (Branch-Review)
 Änderung: `info()` (`SecDocker.svelte:31-48`) zählt zusätzlich die laufenden Container (`state === 'running'`). Die grüne Pille (`:70-73`) sagt „Alle {count} Container laufen“ nur, wenn wirklich alle laufen; sonst bei ok-Bewertung „{running} von {total} laufen“ (neuer Schlüssel `monitoring.docker.okRunning`, DE `dictionaries.ts` neben `:581`, EN neben `:1203`), ebenso der Hinweis im ausgeklappten Teil (`:85-89`, `monitoring.docker.allOkHint`). Ohne Container-Liste (`total === 0`, `:68-69`) zeigt die Pille bei Status `unknown` „keine Daten“ (`monitoring.docker.noData`, Tooltip = `check.state.message`) statt „—“. Die Bewertung selbst (Kategorien) bleibt unverändert — die liefert der Server (R-0419). Neue Testdatei mit SPDX-Header (`// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`), Vitest, zuerst rot: 4 Container der Kategorie ok, davon 1 `running` und 3 `exited`/`created`/`paused` → Pille „1 von 4 laufen“, nicht „Alle 4 Container laufen“; alle `running` → „Alle 2 Container laufen“; leere Liste + `unknown` → „keine Daten“ mit der Meldung als Tooltip; leere Liste ohne `unknown` → „—“ wie heute.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecDocker.test.ts
 Doku: keine (Anzeige folgt der Doku `docs/admin/monitoring.html:49`; CHANGELOG-Eintrag aus T1 nennt die Anzeige mit)
