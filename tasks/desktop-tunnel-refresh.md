@@ -89,8 +89,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.
 Doku: keine (intern; sichtbare Doku in T8)
 Abhängt von: T2, T6
 
-### T8 — Tunnel-Dialog fragt sofort ab; Admin-Doku und CHANGELOG  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/TunnelModal.svelte, apps/desktop/ui/src/components/infra/TunnelModal.test.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md
+### T8 — Tunnel-Dialog fragt sofort ab; Admin-Doku und CHANGELOG  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/TunnelModal.svelte, apps/desktop/ui/src/components/infra/TunnelModal.test.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @096e606b 2026-10-16T17:15:17+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T8.verdict.json)
 Änderung: Nach erfolgreichem Anlegen, Ändern und Löschen (`TunnelModal.svelte:76-78`, `:100-106`) ruft der Dialog `refreshNow()` aus dem Tunnel-Store; ein Fehler dort ändert das Speichern-Ergebnis nicht. Test: je Aktion genau ein `refreshNow`, auch bei dessen Fehler schließt der Dialog. Doku DE+EN: `frp-tunnel.html:71` (Token-Rotation: Desktop übernimmt innerhalb von 60 s mit kurzem Abbruch, kein Handgriff) und `:92` (Secret-Rotation: kein Neustart im Desktop mehr nötig); CHANGELOG-Eintrag.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/TunnelModal.test.ts
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (`:71`, `:92`) · CHANGELOG

@@ -68,7 +68,7 @@
           <ol>
             <li>Neues <code>auth.token</code> in der FRP-Server-Config setzen (<code>PUT /api/frp/server-config/{id}</code>).</li>
             <li>frps <strong>manuell neu starten</strong> (z.&nbsp;B. <code>docker compose restart frps</code>): Der Server schreibt zwar die neue <code>frps.toml</code>, lädt frps aber nicht selbst neu — bis zum Restart läuft frps mit dem <em>alten</em> Token weiter.</li>
-            <li>Alle Agents neu synchronisieren lassen (der nächste Sync zieht die neue <code>frpc.toml</code>) und alle Desktop-Visitor das Tunnel-Bundle neu laden.</li>
+            <li>Alle Agents neu synchronisieren lassen (der nächste Sync zieht die neue <code>frpc.toml</code>). Die angemeldeten Desktop-Clients brauchen keinen Handgriff: Sie holen das neue Token innerhalb von 60&nbsp;s selbst und starten dafür ihren frpc neu; der Tunnel ist dabei kurz unterbrochen, offene Sitzungen darüber brechen ab. Bis frps das neue Token kennt, versucht frpc es weiter.</li>
           </ol>
 
           <p><strong>Gilt für jede FRP-Server-Config-Änderung:</strong> Nicht nur die Token-Rotation — auch geänderte Dashboard-Credentials, Ports oder <code>vhost</code>-Einstellungen schreiben zwar sofort die neue <code>frps.toml</code>, werden aber erst nach <code>docker compose restart frps</code> wirksam (frps kennt kein Config-Hot-Reload, und der Server-Container hat keinen Docker-Socket zum Neustart). Der Server protokolliert bei jeder Laufzeit-Änderung eine entsprechende Warnung ins Log.</p>
@@ -89,7 +89,7 @@
               <tr><td><code>stcp</code></td><td>Secure-TCP: nur ein Visitor mit passendem <code>secretKey</code> kommt durch. Der Visitor läuft auf der Client-Seite – der Desktop-Client löst das automatisch.</td><td>SSH, RDP, VNC, beliebige TCP-Services als private Tunnel – kein öffentlicher Port.</td></tr>
             </tbody>
           </table>
-          <p>Das Feld <strong>Secret-Key</strong> eines STCP-Tunnels: leer beim Anlegen erzeugt der Server ein Secret; leer beim Bearbeiten bleibt das gespeicherte unverändert (der Server liefert es nie zurück, das Feld startet deshalb leer). Zum Rotieren einen neuen Wert eintragen (mindestens 16 Zeichen) und danach den Tunnel im Desktop neu starten. Der Wechsel auf HTTPS löscht das Secret; zurück auf STCP gibt es ein neues.</p>
+          <p>Das Feld <strong>Secret-Key</strong> eines STCP-Tunnels: leer beim Anlegen erzeugt der Server ein Secret; leer beim Bearbeiten bleibt das gespeicherte unverändert (der Server liefert es nie zurück, das Feld startet deshalb leer). Zum Rotieren einen neuen Wert eintragen (mindestens 16 Zeichen); einen Neustart im Desktop braucht es dafür nicht. Neue, geänderte und gelöschte STCP-Tunnel übernimmt jeder angemeldete Desktop-Client selbst, nach dem Speichern im eigenen Tunnel-Dialog sofort, sonst innerhalb von 60&nbsp;s; die übrigen Tunnel und ihre offenen Verbindungen bleiben dabei stehen. Der Wechsel auf HTTPS löscht das Secret; zurück auf STCP gibt es ein neues.</p>
 
           <h2>Visitor-Ports</h2>
           <p>STCP-Tunnel brauchen auf dem Admin-PC einen lokalen Port für den Visitor, der ihn an <code>127.0.0.1</code> bindet. Der Server vergibt ihn beim Anlegen des Tunnels, wenn keiner angegeben ist: den ersten freien Port aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Der Port bleibt dem Tunnel zugeordnet; zwei STCP-Tunnel teilen sich nie einen. Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
