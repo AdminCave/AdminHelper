@@ -15,7 +15,7 @@ Activate response schema:
   "monitorApiKey": "..." | null,    // if monitor service is reachable
   "monitorUrl": "/api/monitoring" | null,  // server-relative path; the agent
                                     // joins it to its own trusted server URL
-  "frp": {                          // if the server has FRP tunnels configured
+  "frp": {                          // if the server has an active FRP tunnel
     "config": "<base64 frpc.toml>",
     "pkiBundle": "<base64 tar.gz>"
   } | null,
@@ -172,7 +172,7 @@ def activate_provision(
     # key per server and replaces it here; it does not call back into this database.
     monitor_key = fetch_or_skip_monitor_key(server_id)
 
-    # 3. FRP bundle (only if FRP is configured + tunnels exist)
+    # 3. FRP bundle (only if FRP is configured + the server has an active tunnel)
     frp_bundle = build_frp_bundle(server_id, db)
 
     # 4. One-time enrollment token (tunnel scope = agent, ADR 0001 §3.1 / A3).

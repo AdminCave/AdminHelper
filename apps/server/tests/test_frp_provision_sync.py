@@ -6,10 +6,12 @@
 
 `GET /api/frp/provision/{id}/config-hash` answers `{"hash": null}` when no FRP
 config exists: the agent reads a 404 as permanent, so a host without FRP would
-fail every timer run. With a config but no tunnel the hash stays the one of the
-TOML without proxies, because an older agent with a stored hash would read null
-as "" and fetch the config again on every run. The 403 of the scope check and
-the 404 for an unknown server stay.
+fail every timer run. A host with a config but without an active tunnel (none the
+generator writes as `[[proxies]]`) gets the common part without the frps
+credentials and without proxies, and its hash: it needs no frps credentials, and
+every agent that applies the text leaves no tunnel up (the current one stops frpc).
+The provisioning bundle carries no FRP part for such a host. The 403 of the scope
+check and the 404 for an unknown server stay.
 
 The agent puts its own top-level keys (`loginFailExit`, `webServer.*`) in front of
 the server text and compares the text before the first `[[proxies]]` to choose
@@ -27,7 +29,7 @@ import pytest
 
 from app.core.auth import hash_api_key
 from app.modules.api_keys.models import ApiKey
-from app.modules.frp.config_generator import generate_frpc_toml
+from app.modules.frp.config_generator import active_tunnels, generate_frpc_toml
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
 
@@ -71,6 +73,24 @@ def _frp_config(db) -> FrpServerConfig:
     return cfg
 
 
+def _add_tunnel(db, cfg: FrpServerConfig, name: str, **kw) -> None:
+    """An stcp tunnel of srv-sync under cfg, active unless kw says otherwise."""
+    fields = dict(
+        id=f"t-{name}",
+        server_id="srv-sync",
+        frp_config_id=cfg.id,
+        name=name,
+        tunnel_type="stcp",
+        protocol="ssh",
+        local_port=22,
+        secret_key=f"{name}-stcp-secret",
+        enabled=True,
+    )
+    fields.update(kw)
+    db.add(FrpTunnel(**fields))
+    db.commit()
+
+
 def _admin_jwt(client) -> dict[str, str]:
     login = client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
@@ -91,18 +111,51 @@ class TestConfigHash:
         assert res.status_code == 404, res.text
         assert res.json()["detail"] == "Keine FRP-Config vorhanden"
 
-    def test_a_config_without_tunnels_hashes_the_toml_without_proxies(
-        self, test_client, db_session
+    @pytest.mark.parametrize(
+        "inactive",
+        [
+            pytest.param([], id="no-tunnel"),
+            pytest.param([{"enabled": False}], id="disabled"),
+            pytest.param([{"secret_key": None}], id="stcp-without-secret"),
+            pytest.param([{"enabled": False}, {"secret_key": None}], id="both"),
+        ],
+    )
+    def test_without_an_active_tunnel_the_config_has_no_tunnel_and_no_frps_credentials(
+        self, test_client, db_session, inactive
     ):
         _server(db_session)
-        _frp_config(db_session)
+        cfg = _frp_config(db_session)
+        for i, kw in enumerate(inactive):
+            _add_tunnel(db_session, cfg, f"inactive-{i}", **kw)
         key = _agent_key(db_session, "srv-sync")
         toml = test_client.get("/api/frp/provision/srv-sync/config", headers=key)
         assert toml.status_code == 200, toml.text
-        assert "[[proxies]]" not in toml.text
+        assert "[[proxies]]" not in toml.text.splitlines()
+        assert "sync-frps-auth-token" not in toml.text
+        assert "auth.token" not in toml.text
+        assert "stcp-secret" not in toml.text
+        parsed = tomllib.loads(toml.text)
+        assert "proxies" not in parsed
+        assert "token" not in parsed.get("auth", {})
         res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
         assert res.status_code == 200, res.text
-        assert res.json()["hash"] is not None
+        assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
+
+    def test_an_active_tunnel_next_to_inactive_ones_is_served_and_hashed(
+        self, test_client, db_session
+    ):
+        _server(db_session)
+        cfg = _frp_config(db_session)
+        _add_tunnel(db_session, cfg, "off-ssh", enabled=False)
+        _add_tunnel(db_session, cfg, "bare-ssh", secret_key=None)
+        _add_tunnel(db_session, cfg, "on-ssh")
+        key = _agent_key(db_session, "srv-sync")
+        toml = test_client.get("/api/frp/provision/srv-sync/config", headers=key)
+        assert toml.status_code == 200, toml.text
+        assert [p["name"] for p in tomllib.loads(toml.text)["proxies"]] == ["on-ssh"]
+        assert 'auth.token = "sync-frps-auth-token"' in toml.text.splitlines()
+        res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
+        assert res.status_code == 200, res.text
         assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
 
     def test_a_config_with_a_tunnel_hashes_the_served_toml(self, test_client, db_session):
@@ -195,6 +248,56 @@ def test_frpc_toml_without_an_active_tunnel_has_no_proxies_line(make_tunnels):
     text = generate_frpc_toml(_config(), make_tunnels(), "host", allow_users=["admin"])
     assert "[[proxies]]" not in text.splitlines()
     assert "proxies" not in tomllib.loads(text)
+
+
+@pytest.mark.parametrize(
+    "make_tunnels",
+    [
+        pytest.param(list, id="no-tunnel"),
+        pytest.param(lambda: [_tunnel("off-ssh", enabled=False)], id="disabled"),
+        pytest.param(lambda: [_tunnel("bare-ssh", secret_key=None)], id="stcp-without-secret"),
+    ],
+)
+def test_frpc_toml_without_an_active_tunnel_is_the_common_part_without_the_token(make_tunnels):
+    text = generate_frpc_toml(_config(), make_tunnels(), "host", allow_users=["admin"])
+    assert "0123456789abcdef" not in text
+    assert "stcp-secret-0123" not in text
+    assert "auth.token" not in text
+    # Everything else of the common part stays as with a tunnel, so the text is
+    # still a frpc.toml an agent can write.
+    one = generate_frpc_toml(_config(), [_tunnel("one-ssh")], "host", allow_users=["admin"])
+    expected = tomllib.loads(one)
+    assert expected["auth"].pop("token") == "0123456789abcdef"
+    del expected["proxies"]
+    assert tomllib.loads(text) == expected
+
+
+@pytest.mark.parametrize(
+    "make_tunnels",
+    [
+        pytest.param(list, id="no-tunnel"),
+        pytest.param(lambda: [_tunnel("off-ssh", enabled=False)], id="disabled"),
+        pytest.param(lambda: [_tunnel("bare-ssh", secret_key=None)], id="stcp-without-secret"),
+        pytest.param(_three_tunnels, id="three-tunnels"),
+        pytest.param(
+            lambda: [
+                _tunnel("mix-off", enabled=False),
+                _tunnel("mix-ssh"),
+                _tunnel("mix-bare", secret_key=None),
+                _tunnel("mix-web", "https"),
+                _tunnel("mix-web-off", "https", enabled=False),
+            ],
+            id="mixed",
+        ),
+    ],
+)
+def test_active_tunnels_are_the_proxies_the_generator_writes(make_tunnels):
+    # Hash, download and provisioning bundle decide by active_tunnels whether a
+    # host gets a config at all; it has to pick what the generator writes.
+    tunnels = make_tunnels()
+    text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"])
+    proxies = tomllib.loads(text).get("proxies", [])
+    assert [t.name for t in active_tunnels(tunnels)] == [p["name"] for p in proxies]
 
 
 @pytest.mark.parametrize(

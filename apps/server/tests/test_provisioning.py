@@ -7,13 +7,14 @@
 Depending on the configuration, the activate endpoint returns:
 - apiKey (always): server read API key
 - monitorApiKey (if the monitor service is reachable)
-- frp (if FRP tunnels are configured)
+- frp (if the server has an active FRP tunnel)
 
 Mocks the HTTP call to the monitoring service via pytest-httpx.
 """
 
 from __future__ import annotations
 
+import base64
 import datetime
 import secrets
 import uuid
@@ -25,6 +26,7 @@ from app.core.config import MONITOR_SERVICE_URL
 from app.modules.api_keys.models import ApiKey
 from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
+from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.provisioning import helpers as prov_helpers
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.servers.models import Server
@@ -312,6 +314,71 @@ class TestProvisionActivate:
         assert res.status_code == 200, res.text
         names = sorted(k.name for k in db_session.query(ApiKey).all())
         assert names == ["agent-mine", "agent-other", "global"]
+
+    @pytest.mark.parametrize(
+        "inactive,active",
+        [
+            pytest.param({"enabled": False}, {"enabled": True}, id="disabled"),
+            pytest.param(
+                {"secret_key": None}, {"secret_key": "prov-stcp-secret"}, id="stcp-without-secret"
+            ),
+        ],
+    )
+    def test_without_an_active_tunnel_the_provisioning_carries_no_frp_bundle(
+        self, test_client, db_session, inactive, active
+    ):
+        # R-0398: the bundle picks the tunnels like the frpc sync. With only an inactive
+        # tunnel it has no FRP part; once the tunnel is active it carries the config the
+        # sync serves.
+        srv = _make_server(db_session, sid="srv-frp", name="frp-host")
+        db_session.add(
+            FrpServerConfig(
+                id="cfg-prov",
+                name="Default",
+                server_addr="frps.example.test",
+                bind_port=7000,
+                auth_token="prov-frps-auth-token",
+            )
+        )
+        tunnel = FrpTunnel(
+            **{
+                "id": "t-prov",
+                "server_id": srv.id,
+                "frp_config_id": "cfg-prov",
+                "name": "prov-ssh",
+                "tunnel_type": "stcp",
+                "protocol": "ssh",
+                "local_port": 22,
+                "secret_key": "prov-stcp-secret",
+                "enabled": True,
+                **inactive,
+            }
+        )
+        db_session.add(tunnel)
+        db_session.commit()
+
+        off = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": _make_token(db_session, server_id=srv.id)},
+        )
+        assert off.status_code == 200, off.text
+        assert off.json()["frp"] is None
+
+        for attr, value in active.items():
+            setattr(tunnel, attr, value)
+        db_session.commit()
+        on = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": _make_token(db_session, server_id=srv.id)},
+        )
+        assert on.status_code == 200, on.text
+        frp = on.json()["frp"]
+        assert frp is not None
+        served = test_client.get(
+            f"/api/frp/provision/{srv.id}/config", headers={"X-API-Key": on.json()["apiKey"]}
+        )
+        assert served.status_code == 200, served.text
+        assert base64.b64decode(frp["config"]) == served.content
 
 
 class TestProvisionActivateConcurrency:

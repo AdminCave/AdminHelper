@@ -94,8 +94,9 @@ def get_provision_config_hash(
     if inputs is None:
         # Without an FRP config the hash is null: nothing to sync, which is not an
         # error. The agent reads a 404 as permanent and would fail every timer run
-        # on a host without FRP (R-0398). With a config but no tunnel the hash of
-        # that TOML stays: an older agent checks the downloaded config against it.
+        # on a host without FRP (R-0398). With a config but no active tunnel the
+        # hash is the one of the generator's text without a tunnel and without the
+        # frps credentials, so every agent that applies it keeps no tunnel up.
         return {"hash": None}
     config, tunnels, server_name, allow_users = inputs
     config_hash = provisioner.get_config_hash(config, tunnels, server_name, allow_users=allow_users)

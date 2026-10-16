@@ -668,11 +668,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
-- **Server: `config-hash` ohne FRP-Config ohne Fehler (R-0398):** `GET /api/frp/provision/{id}/config-hash`
-  antwortet ohne FRP-Config mit `200` und `{"hash": null}` statt mit `404` „Keine FRP-Config vorhanden“; fuer den
-  Agent-Abgleich gibt es dann nichts zu tun. Mit FRP-Config, aber ohne Tunnel bleibt es der Hash der `frpc.toml`
-  ohne Proxies. `GET …/config` antwortet ohne FRP-Config weiter mit `404`; die `403` der Scope-Pruefung und die `404`
-  fuer einen unbekannten Server bleiben. Die API-Referenz und die Server-Doku (DE+EN) nennen es.
+- **Server: FRP-Abgleich ohne FRP-Config ohne Fehler, ohne aktiven Tunnel ohne frps-Zugangsdaten (R-0398):**
+  `GET /api/frp/provision/{id}/config-hash` antwortet ohne FRP-Config mit `200` und `{"hash": null}` statt mit `404`
+  „Keine FRP-Config vorhanden“; fuer den Agent-Abgleich gibt es dann nichts zu tun, `GET …/config` bleibt `404`. Ein
+  Host ohne aktiven Tunnel (eingeschaltet, STCP nur mit Secret) bekommt ueber `GET …/config` eine Config ohne Tunnel
+  und ohne frps-Zugangsdaten, `config-hash` liefert deren Hash; die Provisionierung liefert ihm kein FRP-Paket (`frp`
+  ist `null`). Ein Agent dieser Version stoppt und deaktiviert frpc darauf. Ein aelterer Agent startet frpc damit neu;
+  frpc meldet sich dann nicht an und wird von systemd neu gestartet, bis der Agent aktualisiert ist. Die `403` der
+  Scope-Pruefung und die `404` fuer einen unbekannten Server bleiben. Die API-Referenz und die Server-Doku (DE+EN)
+  nennen es.
 - **ca-issuer startet erst nach der Server-Migration (R-0288):** In `docker-compose.yml` wartet der `ca-issuer` per
   `depends_on` auf den healthy `server`, und healthy wird der Server erst nach `alembic upgrade head`. Vorher konnten
   `/enroll` und `/renew` bei einem Teil-Start auf ein Schema ohne ihre Tabellen treffen und mit 500 antworten; im
