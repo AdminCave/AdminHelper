@@ -149,8 +149,10 @@ Batch → `Failed to get properties: … neither a valid invocation ID nor unit 
    mindestens ein Name `down` ist; `unknown`, wenn kein Name Daten hat; sonst `ok`.
 Dafür bekommt `service_process` im Push-Pfad `prev_details` wie `agent_resources` (`routers/agent.py:226`). Der
 Agent ergänzt im Inventar Alias-Einträge (`list-unit-files` führt sie mit Zustand `alias`, systemctl(1)) um
-`alias_of`, aufgelöst mit einem gebündelten `systemctl show -p Id -- <aliase>` (ohne Template-Namen `*@.service`).
-Der Legacy-Pfad `collectWatchedServices` fragt bei einem Batch-Fehler einzeln nach und löst über `Names` auf.
+`alias_of`, aufgelöst mit einem gebündelten `systemctl show -p Id,Names -- <aliase>` (Zuordnung über `Names`, unabhängig
+von der Reihenfolge der Blöcke; ohne Template-Namen `*@.service`; scheitert der Aufruf, gibt es kein `alias_of`).
+Der Legacy-Pfad `collectWatchedServices` fragt bei einem Batch-Fehler einzeln nach (Grenzen wie in (b): höchstens 50,
+nur nach einem beantworteten Batch, Abbruch nach dem ersten gekillten Aufruf) und löst über `Names` auf.
 
 **(d) `ignore` und Kappung.** `ignore`-Einträge sind Glob-Muster (`fnmatch.fnmatchcase`) mit derselben
 `.service`-Normalisierung wie heute. Der Agent sortiert `all_services` nach `unit`; die Kappung auf 500 im Checker
