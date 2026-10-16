@@ -9,8 +9,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -53,6 +55,86 @@ func TestLockIdentityWaitsUntilTheHolderUnlocks(t *testing.T) {
 		r.unlock()
 	case <-time.After(10 * time.Second):
 		t.Fatal("the second LockIdentity did not return after the first unlocked")
+	}
+}
+
+// shortenLockWait sets how long LockIdentity waits for the lock, for the test.
+func shortenLockWait(t *testing.T, wait time.Duration) {
+	t.Helper()
+	orig := identityLockWait
+	identityLockWait = wait
+	t.Cleanup(func() { identityLockWait = orig })
+}
+
+// A lock that is not released holds up LockIdentity for its wait, not for good.
+func TestLockIdentityGivesUpAfterItsWait(t *testing.T) {
+	const wait = 300 * time.Millisecond
+	shortenLockWait(t, wait)
+	dir := t.TempDir()
+	unlock, err := LockIdentity(dir)
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	defer unlock()
+
+	start := time.Now()
+	second := make(chan error, 1)
+	go func() {
+		u, err := LockIdentity(dir)
+		if err == nil {
+			u()
+		}
+		second <- err
+	}()
+	select {
+	case err := <-second:
+		if err == nil {
+			t.Fatal("a second LockIdentity took the lock while the first held it")
+		}
+		if elapsed := time.Since(start); elapsed < wait {
+			t.Fatalf("LockIdentity gave up after %s, before its wait of %s", elapsed, wait)
+		}
+		if lockFile := filepath.Join(dir, LockFileName); !strings.Contains(err.Error(), lockFile) {
+			t.Fatalf("the error does not name the lock file %s: %v", lockFile, err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("LockIdentity did not give up after its wait")
+	}
+}
+
+func TestLockIdentityFailsWhenTheLockFileCannotBeOpened(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, LockFileName), 0700); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := LockIdentity(dir)
+	if err == nil {
+		unlock()
+		t.Fatal("LockIdentity took a lock on a directory named like the lock file")
+	}
+}
+
+// On Windows LockIdentity takes only a lock file that SYSTEM or the Administrators own.
+func TestLockOwnerAllowed(t *testing.T) {
+	cases := []struct {
+		name string
+		sid  string
+		want bool
+	}{
+		{"SYSTEM", "S-1-5-18", true},
+		{"Administrators", "S-1-5-32-544", true},
+		{"Users", "S-1-5-32-545", false},
+		{"a local user", "S-1-5-21-1111111111-2222222222-3333333333-1001", false},
+		{"Everyone", "S-1-1-0", false},
+		{"Administrators with a suffix", "S-1-5-32-5440", false},
+		{"no owner", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := lockOwnerAllowed(tc.sid); got != tc.want {
+				t.Fatalf("lockOwnerAllowed(%q) = %v, want %v", tc.sid, got, tc.want)
+			}
+		})
 	}
 }
 

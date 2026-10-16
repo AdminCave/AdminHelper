@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -494,6 +495,29 @@ func TestRunEnrollmentWaitsForTheIdentityLock(t *testing.T) {
 	}
 	unlock()
 	awaitEnrollment(t, res, bodies)
+}
+
+// Without the identity lock runEnrollment neither touches the identity nor asks.
+func TestRunEnrollmentRequestsNothingWithoutTheIdentityLock(t *testing.T) {
+	t.Setenv("ADMINHELPER_MONITOR_DIR", t.TempDir())
+	dir := config.AgentPkiDir()
+	storeIdentityOf(t, dir, "srv-1")
+	if err := os.Mkdir(filepath.Join(dir, enroll.LockFileName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	srv, port, bodies := recordingIssuer(t)
+
+	if err := runEnrollment(srv.URL, &enrollmentInfo{Token: "t", SubjectID: "srv-2", EnrollPort: port}, "", true); err == nil {
+		t.Fatal("expected an error when the identity lock cannot be taken")
+	}
+	select {
+	case body := <-bodies:
+		t.Fatalf("runEnrollment asked the issuer without the identity lock: %v", body)
+	default:
+	}
+	if got := enroll.LeafCommonName(dir); got != "srv-1" {
+		t.Fatalf("runEnrollment changed the identity without the identity lock, CN = %q", got)
+	}
 }
 
 func TestRunEnrollmentReplacesTheIdentityARenewalStoredFirst(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -382,6 +383,104 @@ func TestMaybeRenewChecksTheIdentityUnderTheLock(t *testing.T) {
 			default:
 			}
 		})
+	}
+}
+
+// A lock that is not released holds up the service cycle for the wait of
+// LockIdentity at most, and only when the identity is due.
+
+// recordRenewals swaps renewFunc for one that counts its calls; read the count only
+// after MaybeRenew has returned.
+func recordRenewals(t *testing.T) *int {
+	t.Helper()
+	orig := renewFunc
+	calls := new(int)
+	renewFunc = func(string, string, time.Duration) error { *calls++; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+	return calls
+}
+
+// storeIdentityAt writes a key and a cert into dir that is due for renewal or not.
+func storeIdentityAt(t *testing.T, dir string, due bool) {
+	t.Helper()
+	now := time.Now()
+	day := 24 * time.Hour
+	notBefore, notAfter := now.Add(-10*day), now.Add(80*day) // 11% through -> not due
+	if due {
+		notBefore, notAfter = now.Add(-80*day), now.Add(10*day)
+	}
+	certPEM, keyPEM := selfSigned(t, "agent", notBefore, notAfter)
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+}
+
+func TestMaybeRenewDoesNotLockAnIdentityThatIsNotDue(t *testing.T) {
+	shortenLockWait(t, 300*time.Millisecond)
+	renewals := recordRenewals(t)
+	dir := t.TempDir()
+	storeIdentityAt(t, dir, false)
+	unlock, err := LockIdentity(dir)
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	defer unlock()
+
+	// Had it waited for the held lock, it would return the error of LockIdentity.
+	done, err := MaybeRenew(dir, "https://x", time.Second)
+	if err != nil || done {
+		t.Fatalf("not due, lock held -> (false, nil), got (%v, %v)", done, err)
+	}
+	if *renewals != 0 {
+		t.Errorf("renewFunc ran %d times for an identity that is not due", *renewals)
+	}
+}
+
+func TestMaybeRenewGivesUpOnAnIdentityLockThatIsNotReleased(t *testing.T) {
+	shortenLockWait(t, 300*time.Millisecond)
+	renewals := recordRenewals(t)
+	dir := t.TempDir()
+	storeIdentityAt(t, dir, true)
+	unlock, err := LockIdentity(dir)
+	if err != nil {
+		t.Fatalf("LockIdentity: %v", err)
+	}
+	defer unlock()
+
+	res := make(chan renewResult, 1)
+	go func() {
+		done, err := MaybeRenew(dir, "https://x", time.Second)
+		res <- renewResult{done, err}
+	}()
+	select {
+	case r := <-res:
+		if r.err == nil || r.done {
+			t.Fatalf("lock not released -> (false, error), got (%v, %v)", r.done, r.err)
+		}
+		if lockFile := filepath.Join(dir, LockFileName); !strings.Contains(r.err.Error(), lockFile) {
+			t.Fatalf("the error does not name the lock file %s: %v", lockFile, r.err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("MaybeRenew did not give up on the held identity lock")
+	}
+	if *renewals != 0 {
+		t.Errorf("renewFunc ran %d times without the identity lock", *renewals)
+	}
+}
+
+func TestMaybeRenewReportsAnIdentityLockItCannotTake(t *testing.T) {
+	renewals := recordRenewals(t)
+	dir := t.TempDir()
+	storeIdentityAt(t, dir, true)
+	if err := os.Mkdir(filepath.Join(dir, LockFileName), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	done, err := MaybeRenew(dir, "https://x", time.Second)
+	if err == nil || done {
+		t.Fatalf("lock file unusable -> (false, error), got (%v, %v)", done, err)
+	}
+	if *renewals != 0 {
+		t.Errorf("renewFunc ran %d times without the identity lock", *renewals)
 	}
 }
 
