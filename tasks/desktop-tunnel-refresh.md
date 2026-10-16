@@ -144,3 +144,12 @@ Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, a
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/settings.test.ts
 Doku: keine (intern)
 Abhängt von: T6
+
+Session 2026-10-16 (nach dem Review von T12, im Rahmen von Kevins „im Desktop-Tunnel mitbauen“): frpc bekommt nur noch Text, den der Desktop selbst aus der geprüften Tabelle erzeugt (T14).
+
+### T14 — Visitor-TOML: frpc bekommt den aus der geprüften Tabelle erzeugten Text  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Änderung: `frpc_config` gibt heute nach den Prüfungen den Rohtext (lokaler Kopf plus Server-TOML mit eingesetztem Identitätspfad) zurück, und dieser Rohtext landet in `visitor.toml`. Geprüft wird aber der geparste Baum; Rohtext und geprüfte Tabelle können sich in der Form unterscheiden, in der frpc die Datei liest. Neu: Nach `validate_visitor_table` wird die geprüfte Wurzeltabelle selbst serialisiert (`toml`-Crate) und dieser Text geschrieben; die Prüfung auf `{{` und die Prüfung des lokalen Kopfs laufen auf dem serialisierten Text. Jeder String-Wert steht danach einzeilig (Zeilenumbrüche escaped). Der Vergleich für Reload/Neustart (T3/T4) und die Generationslogik bleiben unverändert. Tests, zuerst rot: der geschriebene Text enthält keinen mehrzeiligen String und keine rohe Zeile, die nicht aus der Tabelle stammt, auch wenn ein erlaubter Wert im Server-Text als mehrzeiliger String mit Zeilenumbrüchen kommt; jede Generator-Form (Fixtures aus T12) ergibt nach dem Serialisieren dieselbe geparste Tabelle; der lokale Kopf steht unverändert im Text. Mutationsprobe: Rohtext statt Serialisierung → rot. Doku DE+EN (`desktop.html`, Absatz zur Allow-List): frpc bekommt den vom Desktop aus der geprüften Tabelle erzeugten Text.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- visitor
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html
+Abhängt von: T12
