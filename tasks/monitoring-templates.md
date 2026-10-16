@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_seed.py tes
 Doku: keine (intern; beschrieben in T12)
 Abhängt von: T3
 
-### T6 — Update eines angepassten Standard-Templates anzeigen und übernehmen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_templates_router.py, apps/monitoring/tests/openapi.snapshot.json
+### T6 — Update eines angepassten Standard-Templates anzeigen und übernehmen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_templates_router.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/app/builtin_templates.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @969c52de 2026-10-16T16:20:03+02:00
+Review: approve (.ah-out/review/monitoring-templates/T6.verdict.json)
 Änderung: `GET /templates/{template_id}/builtin-update` → 404 ohne `builtin_slug`; sonst `{currentVersion, shippedVersion, current: {checkDefinitions, alertDefinitions}, shipped: {checkDefinitions, alertDefinitions}}`. `POST /templates/{template_id}/builtin-update` → 409, wenn kein Update verfügbar; sonst mitgelieferte Definitionen übernehmen, Version und Hash setzen, `sync_template` (Anpassungen je Check bleiben, T3), Antwort `to_dict` plus `syncResult` wie `update_template` (`templates.py:157-193`). Tests zuerst rot; OpenAPI-Snapshot nachziehen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_templates_router.py tests/test_openapi_snapshot.py
 Doku: keine (intern; beschrieben in T12)

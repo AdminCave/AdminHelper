@@ -6,8 +6,10 @@
 top was not. Pins the read-then-insert duplicate -> 409 and, critically, the IntegrityError -> 409
 mapping for the concurrent-assign race (per models.py the only race-free safeguard) — a slip there
 would surface as a 500 at the server module, not a 409. Also the routes that undo a user's changes
-to template checks (R-0420): resetting a check to its template and restoring deleted ones."""
+to template checks (R-0420): resetting a check to its template and restoring deleted ones, and
+taking over a newer version of an edited standard template."""
 
+import copy
 import json
 
 import pytest
@@ -16,6 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import builtin_templates
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import (
@@ -413,3 +416,200 @@ def test_a_tombstone_whose_definition_left_the_template_counts_and_restores_noth
     with factory() as db:
         assert db.query(MonitorCheckTombstone).count() == 0
         assert db.query(MonitorCheck).count() == 1
+
+
+# --- Update of a standard template (R-0420) ---------------------------------------
+
+
+def _builtin(factory, slug="linux-base") -> str:
+    """Seed the standard templates; the id of one of them."""
+    with factory() as db:
+        builtin_templates.seed_builtin_templates(db)
+        return db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == slug).one().id
+
+
+def _ship_version_2(monkeypatch, slug="linux-base") -> dict:
+    """Ship version 2 of one standard template: system-resources warns every minute."""
+    shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
+    tpl = next(t for t in shipped if t["slug"] == slug)
+    tpl["version"] = 2
+    tpl["check_definitions"] = [
+        {**d, "severity": "warning", "interval": "1m"} if d["def_id"] == "system-resources" else d
+        for d in tpl["check_definitions"]
+    ]
+    monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
+    return tpl
+
+
+def _edit_builtin(c, tid) -> list[dict]:
+    """Rename a standard template, drop its SMART check and add a ping; returns
+    the definitions it holds afterwards."""
+    defs = c.get(f"/templates/{tid}").json()["checkDefinitions"]
+    edited = [d for d in defs if d["def_id"] != "smart-health"] + [_PING_DEF]
+    r = c.put(f"/templates/{tid}", json={"name": "Our Linux", "check_definitions": edited})
+    assert r.status_code == 200, r.text
+    return r.json()["checkDefinitions"]
+
+
+_MISSING = object()
+
+
+def _differing_keys(current: list[dict], shipped: list[dict]) -> dict[str, set[str]]:
+    """For each def_id on both sides, the keys whose values differ; a key on one
+    side only counts as differing."""
+    cur = {d["def_id"]: d for d in current}
+    shp = {d["def_id"]: d for d in shipped}
+    differing = {}
+    for def_id in cur.keys() & shp.keys():
+        keys = {
+            k
+            for k in cur[def_id].keys() | shp[def_id].keys()
+            if cur[def_id].get(k, _MISSING) != shp[def_id].get(k, _MISSING)
+        }
+        if keys:
+            differing[def_id] = keys
+    return differing
+
+
+def test_builtin_update_compares_current_and_shipped_definitions(client, monkeypatch):
+    c, factory = client
+    tid = _builtin(factory)
+    _edit_builtin(c, tid)
+    _ship_version_2(monkeypatch)
+
+    r = c.get(f"/templates/{tid}/builtin-update")
+
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert (got["currentVersion"], got["shippedVersion"]) == (1, 2)
+    assert (got["current"]["alertDefinitions"], got["shipped"]["alertDefinitions"]) == ([], [])
+    current = got["current"]["checkDefinitions"]
+    shipped = got["shipped"]["checkDefinitions"]
+    common = ["agent-heartbeat", "disk-forecast", "service-health", "system-resources"]
+    assert sorted(d["def_id"] for d in current) == sorted([*common, "def-ping"])
+    assert sorted(d["def_id"] for d in shipped) == sorted([*common, "smart-health"])
+    # Only version 2 differs; the definitions the editor saved unchanged do not
+    assert _differing_keys(current, shipped) == {"system-resources": {"severity", "interval"}}
+
+
+def test_a_builtin_saved_unchanged_in_the_editor_shows_no_difference(client):
+    # The editor sends every key of a definition back and the router stores them
+    # all (model_dump); the shipped definitions leave the schema defaults out.
+    # Unedited means nothing to compare, exactly as builtinEdited says.
+    c, factory = client
+    tid = _builtin(factory)
+    defs = c.get(f"/templates/{tid}").json()["checkDefinitions"]
+    r = c.put(f"/templates/{tid}", json={"name": "Our Linux", "check_definitions": defs})
+    assert r.status_code == 200, r.text
+    assert r.json()["builtinEdited"] is False
+    assert all("enabled" in d for d in r.json()["checkDefinitions"])
+
+    got = c.get(f"/templates/{tid}/builtin-update").json()
+
+    assert got["current"] == got["shipped"]
+
+
+def test_a_field_changed_to_or_from_its_schema_default_stays_visible(client):
+    # Leaving out the keys at their schema default must not hide a change: a
+    # shipped value the user set to the default, or a default the user changed.
+    c, factory = client
+    tid = _builtin(factory)
+    defs = c.get(f"/templates/{tid}").json()["checkDefinitions"]
+    changed = {
+        "agent-heartbeat": {"consecutive_fails": 3},  # shipped 1
+        "disk-forecast": {"severity": "critical"},  # shipped warning
+        "smart-health": {"enabled": False},  # shipped without, so the default
+    }
+    edited = [{**d, **changed.get(d["def_id"], {})} for d in defs]
+    r = c.put(f"/templates/{tid}", json={"check_definitions": edited})
+    assert r.status_code == 200, r.text
+    assert r.json()["builtinEdited"] is True
+
+    got = c.get(f"/templates/{tid}/builtin-update").json()
+
+    assert _differing_keys(
+        got["current"]["checkDefinitions"], got["shipped"]["checkDefinitions"]
+    ) == {
+        "agent-heartbeat": {"consecutive_fails"},
+        "disk-forecast": {"severity"},
+        "smart-health": {"enabled"},
+    }
+
+
+def test_builtin_update_of_an_unknown_or_own_template_is_404(client):
+    c, _factory = client
+    own = _template(c, _PING_DEF)
+    for tid in ("does-not-exist", own):
+        for r in (
+            c.get(f"/templates/{tid}/builtin-update"),
+            c.post(f"/templates/{tid}/builtin-update"),
+        ):
+            # The route's own 404, not the one of a path no route matches
+            assert (r.status_code, r.json()) == (404, {"detail": "Standard template not found"})
+
+
+def test_taking_the_update_replaces_the_definitions_and_keeps_check_overrides(client, monkeypatch):
+    c, factory = client
+    tid = _builtin(factory)
+    _edit_builtin(c, tid)
+    _assign(c, tid)
+    resources = _checks(c)["system-resources"]["id"]
+    assert c.put(f"/checks/{resources}", json={"interval": "15m"}).status_code == 200
+    v2 = _ship_version_2(monkeypatch)
+    before = c.get(f"/templates/{tid}").json()
+    assert (before["builtinEdited"], before["builtinUpdateAvailable"]) == (True, True)
+
+    r = c.post(f"/templates/{tid}/builtin-update")
+
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["checkDefinitions"] == v2["check_definitions"]
+    assert (got["name"], got["builtinVersion"], got["builtinEdited"]) == ("Our Linux", 2, False)
+    assert got["builtinUpdateAvailable"] is False
+    # SMART comes back, the ping the user added goes, the other four follow v2
+    assert got["syncResult"] == {"created": 1, "updated": 4, "deleted": 1, "servers": 1}
+    # The answer is the stored template, as PUT /templates returns it
+    stored = c.get(f"/templates/{tid}").json()
+    assert {k: v for k, v in got.items() if k != "syncResult"} == {
+        k: v for k, v in stored.items() if k not in ("assignments", "tagAssignments")
+    }
+    checks = _checks(c)
+    assert sorted(checks) == sorted(d["def_id"] for d in v2["check_definitions"])
+    # The severity follows the template, the user's interval stays
+    assert (checks["system-resources"]["severity"], checks["system-resources"]["interval"]) == (
+        "warning",
+        "15m",
+    )
+    assert checks["system-resources"]["overriddenFields"] == ["interval"]
+
+    # Taken: nothing left to take
+    assert c.post(f"/templates/{tid}/builtin-update").status_code == 409
+
+
+def test_taking_without_a_newer_version_is_409_and_changes_nothing(client):
+    c, factory = client
+    tid = _builtin(factory)
+    current = _edit_builtin(c, tid)
+
+    assert c.post(f"/templates/{tid}/builtin-update").status_code == 409
+    got = c.get(f"/templates/{tid}").json()
+    assert (got["checkDefinitions"], got["builtinVersion"]) == (current, 1)
+
+
+def test_taking_the_update_decides_on_the_row_a_startup_reconcile_committed(client, monkeypatch):
+    # The startup reconcile and the POST can meet. On Postgres the row lock lets
+    # the second one wait (a no-op on sqlite); it then has to decide on the row
+    # the first one committed, not on its copy loaded before the lock, or it
+    # syncs the same update a second time.
+    _c, factory = client
+    tid = _builtin(factory)
+    _ship_version_2(monkeypatch)
+    with factory() as stale, factory() as other:
+        # Held on purpose: the identity map keeps an unchanged row only weakly,
+        # without this reference the next query would load it fresh anyway.
+        loaded = stale.get(MonitorTemplate, tid)
+        assert loaded.builtin_version == 1
+        assert builtin_templates.reconcile_builtin_templates(other) == 1
+
+        assert builtin_templates.apply_builtin_update(stale, tid) is None
+        assert loaded.builtin_version == 2

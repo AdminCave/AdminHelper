@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.builtin_templates import apply_builtin_update, canonical_definitions, shipped_builtin
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.models import (
@@ -231,6 +232,54 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
 
     db.delete(template)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Standard-template updates (app/builtin_templates.py)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/templates/{template_id}/builtin-update", dependencies=[Depends(require_internal)])
+def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
+    """Compares a standard template's definitions with those of its shipped version.
+
+    Both sides leave out the keys at their schema default, as the hash does: the
+    editor stores every key, the shipped definitions only those they set, and a
+    definition saved unchanged has to look like the shipped one."""
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
+    shipped = shipped_builtin(template.builtin_slug) if template else None
+    if shipped is None:
+        raise HTTPException(404, "Standard template not found")
+    current_checks, current_alerts = canonical_definitions(
+        json.loads(template.check_definitions or "[]"),
+        json.loads(template.alert_definitions or "[]"),
+    )
+    shipped_checks, shipped_alerts = canonical_definitions(
+        shipped["check_definitions"], shipped["alert_definitions"]
+    )
+    return {
+        "currentVersion": template.builtin_version,
+        "shippedVersion": shipped["version"],
+        "current": {"checkDefinitions": current_checks, "alertDefinitions": current_alerts},
+        "shipped": {"checkDefinitions": shipped_checks, "alertDefinitions": shipped_alerts},
+    }
+
+
+@router.post("/templates/{template_id}/builtin-update", dependencies=[Depends(require_internal)])
+def take_builtin_update(template_id: str, db: Session = Depends(get_db)):
+    """Takes the shipped version of a standard template, edited or not — triggers a
+    live sync to all assigned servers; the fields a user changed on a check stay."""
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
+    if not template or shipped_builtin(template.builtin_slug) is None:
+        raise HTTPException(404, "Standard template not found")
+
+    sync_result = apply_builtin_update(db, template_id)
+    if sync_result is None:
+        raise HTTPException(409, "No update available")
+
+    result = template.to_dict()
+    result["syncResult"] = sync_result
+    return result
 
 
 # ---------------------------------------------------------------------------

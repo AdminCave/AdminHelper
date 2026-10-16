@@ -2291,6 +2291,80 @@
         },
         "summary": "Restore Template Checks"
       }
+    },
+    "/templates/{template_id}/builtin-update": {
+      "get": {
+        "description": "Compares a standard template's definitions with those of its shipped version.\n\nBoth sides leave out the keys at their schema default, as the hash does: the\neditor stores every key, the shipped definitions only those they set, and a\ndefinition saved unchanged has to look like the shipped one.",
+        "operationId": "get_builtin_update_templates__template_id__builtin_update_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Builtin Update"
+      },
+      "post": {
+        "description": "Takes the shipped version of a standard template, edited or not — triggers a\nlive sync to all assigned servers; the fields a user changed on a check stay.",
+        "operationId": "take_builtin_update_templates__template_id__builtin_update_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Take Builtin Update"
+      }
     }
   }
 }

@@ -21,7 +21,8 @@ Each built-in carries a version; a changed definition ships as a new version.
 A row remembers the version and the hash of the definitions last rolled out to
 it: if its definitions still match that hash, the startup moves it to a newer
 shipped version and syncs it (reconcile_builtin_templates); an edited row keeps
-its definitions and only shows the update."""
+its definitions and only shows the update until the user takes it
+(apply_builtin_update)."""
 
 from __future__ import annotations
 
@@ -206,6 +207,18 @@ def _without_defaults(schema: type[BaseModel], definition: dict) -> dict:
     return {k: v for k, v in definition.items() if not (k in defaults and v == defaults[k])}
 
 
+def canonical_definitions(
+    check_definitions: list[dict], alert_definitions: list[dict]
+) -> list[list[dict]]:
+    """[check_definitions, alert_definitions] without the keys at their schema
+    default: the form the hash covers and the update comparison shows, so two
+    definitions look the same exactly when they hash the same."""
+    return [
+        [_without_defaults(TemplateCheckDef, d) for d in check_definitions],
+        [_without_defaults(TemplateAlertDef, d) for d in alert_definitions],
+    ]
+
+
 def definitions_hash(check_definitions: list[dict], alert_definitions: list[dict]) -> str:
     """sha256 over the canonical JSON of [check_definitions, alert_definitions].
 
@@ -214,10 +227,7 @@ def definitions_hash(check_definitions: list[dict], alert_definitions: list[dict
     must keep its hash. Name and description are not part of it, a renamed
     built-in keeps following new versions."""
     canonical = json.dumps(
-        [
-            [_without_defaults(TemplateCheckDef, d) for d in check_definitions],
-            [_without_defaults(TemplateAlertDef, d) for d in alert_definitions],
-        ],
+        canonical_definitions(check_definitions, alert_definitions),
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -228,7 +238,8 @@ def _shipped_hash(tpl: dict) -> str:
     return definitions_hash(tpl["check_definitions"], tpl["alert_definitions"])
 
 
-def _shipped(slug: str | None) -> dict | None:
+def shipped_builtin(slug: str | None) -> dict | None:
+    """The shipped built-in with this slug; None for a user template."""
     return next((tpl for tpl in BUILTIN_TEMPLATES if tpl["slug"] == slug), None)
 
 
@@ -245,7 +256,7 @@ def builtin_edited(template: MonitorTemplate) -> bool:
 
 def builtin_update_available(template: MonitorTemplate) -> bool:
     """Whether a newer version of a built-in ships than the one rolled out to it."""
-    tpl = _shipped(template.builtin_slug)
+    tpl = shipped_builtin(template.builtin_slug)
     return (
         tpl is not None
         and template.builtin_version is not None
@@ -284,6 +295,42 @@ def seed_builtin_templates(db: Session) -> int:
     return created
 
 
+def _lock_builtin(db: Session, template_id: str) -> MonitorTemplate | None:
+    """The template row under its row lock, read fresh from the database.
+
+    Every rollout decides on this: a second one at the same time (a second
+    monitoring instance starting, a user taking the update during a startup)
+    waits for the lock and then sees the version the first one rolled out,
+    instead of syncing the same update again and creating the new checks twice.
+    with_for_update is a no-op on sqlite (tests); the real lock is on Postgres."""
+    return (
+        db.query(MonitorTemplate)
+        .filter(MonitorTemplate.id == template_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+
+
+def _roll_out(db: Session, template: MonitorTemplate, tpl: dict) -> dict:
+    """Give a built-in the shipped definitions, version and hash and sync it to
+    its servers (commits, which releases the row lock); the fields a user changed
+    on a check stay (template_sync). Name and description stay as well. Returns
+    the result of sync_template."""
+    template.check_definitions = json.dumps(tpl["check_definitions"])
+    template.alert_definitions = json.dumps(tpl["alert_definitions"])
+    template.builtin_version = tpl["version"]
+    template.builtin_hash = _shipped_hash(tpl)
+    result = sync_template(db, template)
+    logger.info(
+        "Standard template '%s' updated to version %d on %d server(s)",
+        tpl["slug"],
+        tpl["version"],
+        result["servers"],
+    )
+    return result
+
+
 def reconcile_builtin_templates(db: Session) -> int:
     """Move every unedited built-in to its shipped version and sync it to its
     servers; the fields a user changed on a check stay (template_sync). Name and
@@ -299,18 +346,8 @@ def reconcile_builtin_templates(db: Session) -> int:
     ]
     updated = 0
     for template_id in template_ids:
-        # Decide under the row lock on fresh data: a second monitoring instance
-        # starting at the same time would otherwise sync the same update again and
-        # create the new checks twice. with_for_update is a no-op on sqlite (tests);
-        # the real lock is on Postgres.
-        template = (
-            db.query(MonitorTemplate)
-            .filter(MonitorTemplate.id == template_id)
-            .with_for_update()
-            .populate_existing()
-            .first()
-        )
-        tpl = _shipped(template.builtin_slug) if template is not None else None
+        template = _lock_builtin(db, template_id)
+        tpl = shipped_builtin(template.builtin_slug) if template is not None else None
         if tpl is None:
             db.rollback()
             continue
@@ -323,16 +360,19 @@ def reconcile_builtin_templates(db: Session) -> int:
         if not builtin_update_available(template) or builtin_edited(template):
             db.commit()
             continue
-        template.check_definitions = json.dumps(tpl["check_definitions"])
-        template.alert_definitions = json.dumps(tpl["alert_definitions"])
-        template.builtin_version = tpl["version"]
-        template.builtin_hash = _shipped_hash(tpl)
-        result = sync_template(db, template)
-        logger.info(
-            "Standard template '%s' updated to version %d on %d server(s)",
-            tpl["slug"],
-            tpl["version"],
-            result["servers"],
-        )
+        _roll_out(db, template, tpl)
         updated += 1
     return updated
+
+
+def apply_builtin_update(db: Session, template_id: str) -> dict | None:
+    """Move a built-in to its shipped version on the user's request, edited or
+    not; the definitions the user changed on the template go, the fields changed
+    on a check stay. Returns the result of sync_template, or None when no newer
+    version ships, also when a concurrent rollout got there first."""
+    template = _lock_builtin(db, template_id)
+    tpl = shipped_builtin(template.builtin_slug) if template is not None else None
+    if tpl is None or not builtin_update_available(template):
+        db.rollback()
+        return None
+    return _roll_out(db, template, tpl)
