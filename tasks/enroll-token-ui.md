@@ -29,8 +29,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/users.test.ts
 Doku: keine (intern)
 Abhängt von: T1
 
-### T3 — Web-Oberfläche: Knopf in der Benutzerliste und Token-Dialog  [ ]
+### T3 — Web-Oberfläche: Knopf in der Benutzerliste und Token-Dialog  [x]
 Komponente: web · Dateien: apps/web/src/pages/Users.svelte, apps/web/src/modals/EnrollTokenModal.svelte, apps/web/src/modals/EnrollTokenModal.test.ts, apps/web/src/lib/i18n/dictionaries.ts, docs/admin/benutzer.html, docs/en/admin/users.html, CHANGELOG.md
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @85618c7a 2026-10-16T12:16:32+02:00
+Review: approve (.ah-out/review/enroll-token-ui/T3.verdict.json)
 Änderung: Je Zeile in `Users.svelte` (neben Bearbeiten/Löschen, `:104-110`) ein Knopf „Registrierungs-Token“. Er öffnet das neue `EnrollTokenModal.svelte` (SPDX-Header): zuerst die Gültigkeit wählen (10 min, 1 h, 24 h; voreingestellt 10 min) und „Ausstellen“; danach das Token genau einmal (Monospace), Kopieren wie in `KeyRevealModal.svelte`, „gültig bis <Ortszeit>“ aus `expiresAt` und der Hinweis, dass es einmalig ist und im Desktop unter „Gerät mit Token registrieren“ eingelöst wird. Ein Fehler der API erscheint als Fehler im Modal. Schließen verwirft das Token. Texte DE+EN in `dictionaries.ts`. Tests in `EnrollTokenModal.test.ts`: gewählte TTL geht an `mintEnrollToken`, Token und Ablaufzeit erscheinen, Kopieren schreibt das Token, ein API-Fehler wird angezeigt. Doku: Onboarding-Schritt 2 (`benutzer.html:91`, `users.html:85`) nennt den Knopf und die Gültigkeit; CHANGELOG unter `### Added`.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/EnrollTokenModal.test.ts
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html · CHANGELOG.md (Added)

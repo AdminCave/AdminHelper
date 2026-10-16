@@ -64,6 +64,18 @@ export const translations: Translations = {
     'page.users.serverLoadFailed': 'Serverliste konnte nicht geladen werden.',
     'page.users.username': 'Benutzername',
     'page.users.role': 'Rolle',
+    'page.users.enrollToken': 'Registrierungs-Token',
+
+    // ── Enrollment Token Modal ────────────────────────────────────────
+    'modal.enrollToken.title': 'Registrierungs-Token für {username}',
+    'modal.enrollToken.validity': 'Gültigkeit',
+    'modal.enrollToken.ttl10m': '10 Minuten',
+    'modal.enrollToken.ttl1h': '1 Stunde',
+    'modal.enrollToken.ttl24h': '24 Stunden',
+    'modal.enrollToken.issue': 'Ausstellen',
+    'modal.enrollToken.hint':
+      'Das Token gilt einmalig und wird nur jetzt angezeigt. Der Benutzer löst es im Desktop-Client unter „Gerät mit Token registrieren“ ein.',
+    'modal.enrollToken.validUntil': 'Gültig bis {time}',
 
     // ── User Modal ────────────────────────────────────────────────────
     'modal.user.title': 'Benutzer bearbeiten',
@@ -295,6 +307,18 @@ export const translations: Translations = {
     'page.users.serverLoadFailed': 'Could not load the server list.',
     'page.users.username': 'Username',
     'page.users.role': 'Role',
+    'page.users.enrollToken': 'Enrollment token',
+
+    // ── Enrollment Token Modal ────────────────────────────────────────
+    'modal.enrollToken.title': 'Enrollment token for {username}',
+    'modal.enrollToken.validity': 'Valid for',
+    'modal.enrollToken.ttl10m': '10 minutes',
+    'modal.enrollToken.ttl1h': '1 hour',
+    'modal.enrollToken.ttl24h': '24 hours',
+    'modal.enrollToken.issue': 'Issue',
+    'modal.enrollToken.hint':
+      'The token works once and is shown only now. The user redeems it in the desktop client under “Enroll this device with a token”.',
+    'modal.enrollToken.validUntil': 'Valid until {time}',
 
     // ── User Modal ────────────────────────────────────────────────────
     'modal.user.title': 'Edit user',

@@ -15,10 +15,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import { confirmDialog } from '$lib/components/ui/ConfirmDialog.svelte';
   import UserModal from '$modals/UserModal.svelte';
+  import EnrollTokenModal from '$modals/EnrollTokenModal.svelte';
   import type { User } from '$lib/api/types';
 
   let modalOpen = $state(false);
   let editing = $state<User | null>(null);
+  let enrollFor = $state<User | null>(null);
 
   onMount(() => {
     load();
@@ -104,6 +106,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   <button class="btn small" onclick={() => openEdit(u)}>
                     {$t('action.edit')}
                   </button>
+                  <button class="btn small" onclick={() => (enrollFor = u)}>
+                    {$t('page.users.enrollToken')}
+                  </button>
                   {#if !isMe}
                     <button class="btn small ghost" onclick={() => removeUser(u)}>
                       {$t('action.delete')}
@@ -120,3 +125,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </div>
 
 <UserModal open={modalOpen} {editing} onClose={handleClose} />
+<EnrollTokenModal
+  open={enrollFor !== null}
+  username={enrollFor?.username ?? ''}
+  onClose={() => (enrollFor = null)}
+/>
