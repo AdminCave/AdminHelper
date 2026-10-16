@@ -65,7 +65,8 @@ Reine Monitoring-Dienst- und Desktop-UI-Arbeit; Agent und Server bleiben unverä
 - Linux-Basis v2 (Swap, Inodes, Zeit-Sync, Reboot nötig …) und Alert-Qualität (Haltezeit, Cooldown, Host-down
   ohne Agent): eigene Folgezeilen (Notiz an R-0420). Erst nach diesem Vorhaben erreichen neue Template-Inhalte auch
   bestehende Installationen; Linux-Basis v2 setzt also hierauf auf.
-- Keine Erkennung früherer Handanpassungen beim Migrieren (siehe Risiken; Kevin 2026-10-16).
+- Keine Erkennung früherer Handanpassungen in der Migration selbst; das übernimmt einmal der erste Start (T13, siehe
+  Risiken; Kevin 2026-10-16).
 
 ## Betroffene Komponenten & Dateien
 
@@ -109,8 +110,7 @@ Migration und neue Routen sind von Kevin freigegeben (2026-10-16).
 **Eine Revision `…_template_overrides_versions` (down_revision `c1d3e5f7a9b1`)**
 - `monitor_checks.overridden_fields` — `Text`, `NOT NULL`, `server_default '[]'`: JSON-Liste der angepassten
   Felder aus `{name, description, check_type, config, enabled, interval, severity, consecutive_fails}`.
-  Bestandschecks bekommen `[]` (heute gilt nichts als angepasst; das Verhalten ändert sich erst mit der
-  nächsten Nutzeränderung).
+  Bestandschecks bekommen `[]`; der erste Start markiert einmal, was vom Template abweicht (T13).
 - `monitor_templates.builtin_version` — `Integer NULL`; `monitor_templates.builtin_hash` — `String NULL`
   (sha256 der zuletzt ausgerollten mitgelieferten Definitionen).
 - Neue Tabelle `monitor_check_tombstones`: `id String PK`, `template_id String FK monitor_templates.id ON DELETE
