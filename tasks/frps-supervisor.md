@@ -70,8 +70,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_supervisor_
 Doku: keine (intern)
 Abhängt von: T3, T5
 
-### T7 — frps-Image mit Supervisor: Start nur mit vollständiger Konfiguration  [ ]
+### T7 — frps-Image mit Supervisor: Start nur mit vollständiger Konfiguration  [x]
 Komponente: server · Dateien: apps/frps/Dockerfile, apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a63b124d 2026-10-16T16:07:11+02:00
+Review: approve (.ah-out/review/frps-supervisor/T7.verdict.json)
 Änderung: Neues Image (SPDX-Header in beiden Dateien): `FROM snowdreamtech/frps:0.69.1@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a`, entfernt die mitgelieferte Beispielkonfiguration (der Supervisor verwaltet die Konfiguration allein), Entrypoint `/bin/sh /usr/local/bin/frps-supervisor.sh`. Der Supervisor prüft eine Kandidaten-Konfiguration: `frps.toml` nicht leer, `auth.token` ≥ 16 Zeichen, `[transport.tls] force = true`, die drei TLS-Pfade zeigen auf `/etc/frp-pki/{frps.crt,frps.key,ca.crt}`, die Dateien existieren, das Leaf ist nicht abgelaufen und passt zum Schlüssel (`openssl`), `frps verify` grün. Gültig → Kopie mit umgeschriebenen Pfaden nach `$FRPS_ACTIVE_DIR/current/` (atomar über `next/`), frps startet immer von dort; ungültig ohne `current/` → `waiting`, nichts startet; ungültig mit `current/` → frps startet mit `current/`, Zustand `degraded`. Statusdatei (Schema wie T3) atomar schreiben, Pfade per Env überschreibbar. Test (pytest treibt das Skript mit einem Stub-`frps` auf `PATH`, Zertifikate per `cryptography` erzeugt): jede Prüfregel einzeln, Start mit gültiger, ungültiger und fehlender Konfiguration, Statusdatei besteht den Leser aus T3.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
 Doku: keine (intern)
