@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Registrierungs-Token im Web-Panel — Task-Ledger
-Status: aktiv · Branch: feature/enroll-token-ui · Review: pro Task
+Status: bereit · Branch: feature/enroll-token-ui · Review: pro Task
 Spec: docs/features/enroll-token-ui.md (Roadmap R-0396)
 Heavy: linux-full — Server-API (`/api/enrollment/token/for`: neuer Parameter, neues Antwortfeld) und eine neue Web-Journey; `web-live`/`web-playwright` laufen im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -38,8 +38,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/modals/EnrollTokenModal.t
 Doku: docs/admin/benutzer.html + docs/en/admin/users.html · CHANGELOG.md (Added)
 Abhängt von: T2
 
-### T4 — Playwright: Token ausstellen, einmal sehen  [ ]
-Komponente: web · Dateien: apps/web/tests/e2e/crud.spec.ts, apps/web/tests/e2e/mocks.ts, apps/web/tests/e2e/smoke.spec.ts-snapshots/users-chromium-linux.png
+### T4 — Playwright: Token ausstellen, einmal sehen  [x]
+Komponente: web · Dateien: apps/web/tests/e2e/crud.spec.ts, apps/web/tests/e2e/mocks.ts, apps/web/tests/e2e/smoke.spec.ts-snapshots/users-chromium-linux.png, apps/web/src/lib/api/mocks.contract.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @d668276f 2026-10-16T12:28:04+02:00
+Review: approve (.ah-out/review/enroll-token-ui/T4.verdict.json)
 Änderung: Neuer Fall in `crud.spec.ts` nach dem Muster „API-Key anlegen -> Secret einmalig sichtbar“ (`:53`): Benutzerliste → „Registrierungs-Token“ → 1 h wählen → ausstellen → Token und Ablaufzeit sichtbar, der Request trug `ttl_minutes: 60` → schließen → Token nicht mehr im DOM. Mock für `POST enrollment/token/for` in `mocks.ts`; `mocks.contract.test.ts` prüft ihn gegen den OpenAPI-Snapshot aus T1. Die Playwright-Suite fährt die PR-CI (`ci.yml`, `npx playwright test`).
 Verify: bash scripts/dev/verify.sh web --strict -- src/lib/api/mocks.contract.test.ts
 Doku: keine (intern)
