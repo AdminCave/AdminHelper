@@ -71,8 +71,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- access_token
 Doku: keine (intern)
 Abhängt von: T4
 
-### T6 — Tunnel-Store: Takt alle 60 s, Single-Flight, Leerlauf ohne Tunnel  [ ]
+### T6 — Tunnel-Store: Takt alle 60 s, Single-Flight, Leerlauf ohne Tunnel  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @edfab4a0 2026-10-16T15:31:51+02:00
+Review: approve (.ah-out/review/desktop-tunnel-refresh/T6.verdict.json)
 Änderung: `refreshTunnel` in der Bridge (`index.ts` neben `:213`, Typen `types.ts:67`). `startIfServerMode` (`tunnel.ts:36`) wird zur Aktivierung: sofort ein Abgleich, dann alle 60 s, mit Generationszähler gegen überholte Aktivierungen wie `notifications.ts:100-132`; `stop()` (`:64`) beendet den Takt. Ein laufender Abgleich lässt den nächsten Takt aus; `refreshNow()` hängt sich an ihn an. Nach jedem Abgleich werden die Mappings neu geladen (Fehler → alte bleiben). `stopped` → „idle“, Mappings leer, keine Meldung; Fehler → Anzeige bleibt, eine Meldung je Fehlerserie. Die Aufrufer (`AppShell.svelte:134`, `SettingsModal.svelte:226`, `stores/settings.ts:113`) bleiben unverändert; jede Abmeldung und jeder Moduswechsel läuft über `stop()` (`settings.ts:117`, `:130`, `:150`). Vitest mit Fake-Timern: erster Abgleich sofort, nächster nach 60 s, kein Überlappen bei langsamem Abgleich, `stopped` ohne Meldung, Fehler ohne Abbau, `stop()` beendet den Takt, überholte Aktivierung räumt sich auf.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
 Doku: keine (intern; sichtbare Doku in T8)
