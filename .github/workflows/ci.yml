@@ -704,7 +704,7 @@ jobs:
           tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
             echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
-      - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff)
+      - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff, oasdiff)
         # audit.yml builds govulncheck from source under GOTOOLCHAIN=local, so the
         # pin only compiles while x/vuln's own `go` directive stays at or below the
         # go-version the workflows set — the coupling that made `@latest` stop
@@ -725,10 +725,6 @@ jobs:
     name: OpenAPI breaking changes (oasdiff)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      OASDIFF_VERSION: "1.32.0"
-      # sha256 of oasdiff_1.32.0_linux_amd64.tar.gz from the release's checksums.txt.
-      OASDIFF_SHA256_LINUX_AMD64: "5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -737,13 +733,22 @@ jobs:
           # commit — and openapi-breaking.sh refuses an unresolvable ref rather than
           # reporting "nothing to compare", so a missing one is red, not silently green.
           fetch-depth: 0
-      - name: Install oasdiff
+      # Anchored: ops-scripts runs this very step (*install-oasdiff), so version and
+      # hash live here once. The alias has to stay below this job in the file. The
+      # test boxes install the same pair (scripts/vm/bootstrap_linux.sh), and
+      # scripts/dev/toolchain-lockstep.sh holds the two places together.
+      - &install-oasdiff
+        name: Install oasdiff
         # Release tarball, not `go install`: every oasdiff from v1.24.0 on declares
         # `go 1.26` in its go.mod, and these workflows run with GOTOOLCHAIN=local, so
         # a source build breaks the day oasdiff outruns our go-version — exactly the
         # way govulncheck did (PR #14). A prebuilt tarball needs no toolchain at all;
-        # the SHA-256 above is the pin, so a swapped asset is a failure, not a
+        # the SHA-256 below is the pin, so a swapped asset is a failure, not a
         # surprise binary.
+        env:
+          OASDIFF_VERSION: "1.32.0"
+          # sha256 of oasdiff_1.32.0_linux_amd64.tar.gz from the release's checksums.txt.
+          OASDIFF_SHA256_LINUX_AMD64: "5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad"
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
           url="https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
@@ -850,6 +855,10 @@ jobs:
       # deprecation behaviour and would red every open PR with no code change.
       - name: Install pytest
         run: pip install pytest==9.1.1
+      # openapi_breaking_test checks the ERR exception file against the real
+      # oasdiff matcher; without the binary it exits 75, and --strict turns that
+      # into a failure. The same step as openapi-compat (anchor above): one pin.
+      - *install-oasdiff
       # One aggregator call instead of eight lines: the same block a developer
       # runs locally, so CI and the dev box cannot drift apart. --strict makes a
       # skipped test a failure here, where every precondition is available.

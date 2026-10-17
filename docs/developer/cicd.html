@@ -315,7 +315,34 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <code>openapi-breaking.sh</code> per <code>--severity-levels</code> mitgibt. Alles andere bleibt
           <code>ERR</code>, und fehlt die Datei, bleibt das Gate streng, statt still zu lockern. Die Datei
           selbst tr&auml;gt keine Begr&uuml;ndung: <code>oasdiff</code> verlangt genau zwei Felder je Zeile
-          und lehnt Kommentare und Leerzeilen ab. <code>oasdiff</code> kommt als <strong>Release-Tarball
+          und lehnt Kommentare und Leerzeilen ab.</p>
+          <p><strong>Einzelne Ausnahmen, je &Auml;nderung benannt:</strong> eine versch&auml;rfte Grenze
+          (<code>maximum</code> gesenkt, <code>minimum</code> angehoben) oder eine Typliste, die
+          <code>null</code> verliert, bleibt als Regel <code>ERR</code> &ndash; anders als eine neue Grenze war
+          die alte ver&ouml;ffentlicht, und ein Client kann von den Werten leben, die wegfallen. Einzelne solche
+          &Auml;nderungen nennt <code>scripts/dev/oasdiff-err-ignore.txt</code>, das
+          <code>openapi-breaking.sh</code> per <code>--err-ignore</code> mitgibt; fehlt die Datei, bleibt das
+          Gate auch hier streng. Eine Zeile kommt nur auf Kevins Entscheidung hinein, eine je &Auml;nderung, mit
+          Datum und Grund:
+          <code>&lt;Datum&gt; &lt;Roadmap-ID&gt; &lt;Grund&gt;: &lt;METHODE&gt; &lt;Pfad&gt; &lt;Text&gt;</code>,
+          den Text w&ouml;rtlich aus der Ausgabe von <code>openapi-breaking.sh</code>. <code>oasdiff</code>
+          l&auml;sst einen Fund nur fallen, wenn die Zeile seine Methode und seinen genauen Pfad nennt und seinen
+          ganzen Text samt neuem Wert enth&auml;lt, ohne R&uuml;cksicht auf Gro&szlig;- und Kleinschreibung: Eine
+          Zeile deckt genau diese &Auml;nderung, keine andere Grenze am selben Endpunkt, dieselbe &Auml;nderung
+          an keinem anderen und keinen anderen Wert am selben Feld. Sie greift, solange die Basis die alte Grenze
+          tr&auml;gt; danach trifft sie nur noch eine sp&auml;tere &Auml;nderung mit w&ouml;rtlich demselben
+          Text. Kommentar- und Leerzeilen duldet <code>oasdiff</code> hier, die Datei hat trotzdem keine, weil
+          jede Zeile Datum und Grund selbst tr&auml;gt; <code>scripts/tests/openapi_breaking_test.sh</code>
+          pr&uuml;ft das Format, die geschlossene Liste Zeile f&uuml;r Zeile und den Abgleich mit dem echten
+          <code>oasdiff</code> &ndash; ohne das Binary endet er mit <code>75</code>, unter <code>--strict</code>
+          rot. Deshalb installiert der Job <code>ops-scripts</code> dasselbe <code>oasdiff</code> wie
+          <code>openapi-compat</code>, mit demselben Schritt (YAML-Anker in
+          <code>.github/workflows/ci.yml</code>), und die Test-Boxen holen es per
+          <code>scripts/vm/bootstrap_linux.sh</code>; <code>scripts/dev/toolchain-lockstep.sh</code> h&auml;lt
+          Version und SHA-256 an beiden Stellen gleich. Heute stehen dort die dreizehn &Auml;nderungen der
+          engeren Grenzen f&uuml;r Ports an <code>POST /api/frp/server-config</code> und
+          <code>PUT /api/frp/server-config/{config_id}</code> (R-0411, Kevin 2026-10-17).</p>
+          <p><code>oasdiff</code> kommt als <strong>Release-Tarball
           v1.32.0 mit gepinnter SHA-256</strong>, nicht per <code>go install</code>: jede Version ab v1.24.0
           verlangt <code>go 1.26</code>, und die Workflows laufen mit <code>GOTOOLCHAIN=local</code> &ndash; ein
           Bau aus Quellen bricht, sobald <code>oasdiff</code> die <code>go-version</code> der Workflows

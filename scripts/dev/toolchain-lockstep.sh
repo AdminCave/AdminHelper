@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # toolchain-lockstep.sh — assert the govulncheck pin still builds on our Go.
-# Since R-0046 it also holds the ruff pins together.
+# Since R-0046 it also holds the ruff pins together, since R-0411 the oasdiff pin.
 #
 #   bash scripts/dev/toolchain-lockstep.sh [--root <dir>]
 #
@@ -16,7 +16,7 @@
 # looking like an ordinary red run. The pin's comment says "raise this together
 # with go-version"; this is that sentence as a check.
 #
-# Five assertions:
+# Six assertions:
 #   1  every `go-version:` in ci.yml, release.yml and audit.yml is the same
 #      (the pin is chosen against one Go version — three different ones make
 #      "the Go version" meaningless before the third assertion can mean
@@ -41,6 +41,11 @@
 #      run.sh takes the first ruff on PATH — with it, any other ruff stops with
 #      exit 2 instead of linting by its own rules. Offline, so it runs before
 #      the proxy fetch and a drift stays a drift when the proxy is down.
+#   2b the oasdiff that ci.yml installs — OASDIFF_VERSION and
+#      OASDIFF_SHA256_LINUX_AMD64, every occurrence — is the default of the same
+#      two in scripts/vm/bootstrap_linux.sh. run.sh's scripts block needs the real
+#      binary (openapi_breaking_test exits 75 without it), so CI and the boxes
+#      must measure with the same release. Offline, like 2.
 #   3  the `go` directive of the pinned x/vuln release is <= that go-version
 #
 # Exit: 0 in lockstep · 1 drift (with a ::error:: line for the CI annotation) ·
@@ -202,6 +207,41 @@ plain_version "$RUFF_TOML" || {
   echo "::error::ruff.toml required-version ==$RUFF_TOML, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — $RUFF_PLACES move together"
   exit 1; }
 echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT dev=$RUFF_DEV ruff.toml=$RUFF_TOML"
+
+# ── 2b: one oasdiff in CI and on the boxes ───────────────────────────────────
+# ci.yml holds the pair once (an anchored step that ops-scripts aliases), but
+# every occurrence is read, like the ruff pins: copies instead of the anchor
+# must not hide a lagging one. A value is read quoted or bare, up to a blank.
+sha256_hex() { [ "${#1}" -eq 64 ] && case "$1" in *[!0123456789abcdef]*) return 1 ;; esac; }
+OAS_BOOT="$(sed -n 's/^OASDIFF_VERSION="\${AH_OASDIFF_VERSION:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
+plain_version "$OAS_BOOT" || {
+  echo "::error::no plain OASDIFF_VERSION=\"\${AH_OASDIFF_VERSION:-X.Y.Z}\" default in scripts/vm/bootstrap_linux.sh (found '$OAS_BOOT')"
+  exit 1; }
+OAS_SHA_BOOT="$(sed -n 's/^OASDIFF_SHA256_LINUX_AMD64="\${AH_OASDIFF_SHA256:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
+sha256_hex "$OAS_SHA_BOOT" || {
+  echo "::error::no plain OASDIFF_SHA256_LINUX_AMD64=\"\${AH_OASDIFF_SHA256:-<64 hex>}\" default in scripts/vm/bootstrap_linux.sh (found '$OAS_SHA_BOOT')"
+  exit 1; }
+oas_ci=""
+while IFS= read -r v; do
+  [ "$v" = "$OAS_BOOT" ] || {
+    echo "::error::oasdiff pin drift: .github/workflows/ci.yml installs oasdiff $v, scripts/vm/bootstrap_linux.sh defaults to $OAS_BOOT — ci.yml and bootstrap_linux.sh move together"
+    exit 1; }
+  oas_ci="$v"
+done < <(sed -n 's/^[[:space:]]*OASDIFF_VERSION:[[:space:]]*"\{0,1\}\([^"[:space:]]*\)"\{0,1\}.*/\1/p' "$WF/ci.yml")
+[ -n "$oas_ci" ] || {
+  echo "::error::no OASDIFF_VERSION in .github/workflows/ci.yml — the oasdiff run.sh's scripts block needs cannot be held to the boxes' one"
+  exit 1; }
+oas_sha_ci=""
+while IFS= read -r s; do
+  [ "$s" = "$OAS_SHA_BOOT" ] || {
+    echo "::error::oasdiff SHA-256 drift: .github/workflows/ci.yml pins $s, scripts/vm/bootstrap_linux.sh defaults to $OAS_SHA_BOOT — ci.yml and bootstrap_linux.sh move together"
+    exit 1; }
+  oas_sha_ci="$s"
+done < <(sed -n 's/^[[:space:]]*OASDIFF_SHA256_LINUX_AMD64:[[:space:]]*"\{0,1\}\([^"[:space:]]*\)"\{0,1\}.*/\1/p' "$WF/ci.yml")
+[ -n "$oas_sha_ci" ] || {
+  echo "::error::no OASDIFF_SHA256_LINUX_AMD64 in .github/workflows/ci.yml — an unpinned oasdiff tarball is the drift this check exists to prevent"
+  exit 1; }
+echo "oasdiff: ci.yml=$oas_ci bootstrap=$OAS_BOOT sha256=${OAS_SHA_BOOT:0:12}"
 
 # ── 3: the pinned x/vuln release must build on that Go ───────────────────────
 PIN="$(sed -n "s|.*go install $VULN_MOD/cmd/govulncheck@\(v[0-9][0-9A-Za-z.-]*\).*|\1|p" "$AUDIT" | head -1)"

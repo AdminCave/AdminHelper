@@ -311,7 +311,32 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <code>scripts/dev/oasdiff-severity.levels</code>, which <code>openapi-breaking.sh</code> hands over
           with <code>--severity-levels</code>. Everything else stays <code>ERR</code>, and if the file is
           missing the gate stays strict instead of quietly loosening. The file carries no reasons of its own:
-          <code>oasdiff</code> wants exactly two fields per line and rejects comments and blank lines. <code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
+          <code>oasdiff</code> wants exactly two fields per line and rejects comments and blank lines.</p>
+          <p><strong>Single exceptions, named one change at a time:</strong> a bound that gets tighter
+          (<code>maximum</code> lowered, <code>minimum</code> raised) or a type list that loses
+          <code>null</code> stays <code>ERR</code> as a rule &ndash; unlike a new bound, the old one was
+          published, and a client may live off the values that go. Single changes of that kind are named in
+          <code>scripts/dev/oasdiff-err-ignore.txt</code>, which <code>openapi-breaking.sh</code> hands over
+          with <code>--err-ignore</code>; if the file is missing, the gate stays strict here too. A line goes in
+          only on Kevin's decision, one per change, with date and reason:
+          <code>&lt;date&gt; &lt;roadmap id&gt; &lt;reason&gt;: &lt;METHOD&gt; &lt;path&gt; &lt;text&gt;</code>,
+          the text verbatim from the output of <code>openapi-breaking.sh</code>. <code>oasdiff</code> drops a
+          finding only when the line names its method and its exact path and contains its whole text, new
+          value included, regardless of case: a line covers exactly that change &ndash; no other bound at the
+          same endpoint, the same change at no other endpoint, no other value at the same field. It applies
+          while the base still carries the old bound; after that it only matches a later change with literally
+          the same text. <code>oasdiff</code> tolerates comment and blank lines here, but the file has none,
+          because every line carries its own date and reason; <code>scripts/tests/openapi_breaking_test.sh</code>
+          checks the format, the closed list line by line and the matching against the real
+          <code>oasdiff</code> &ndash; without the binary it exits <code>75</code>, red under
+          <code>--strict</code>. So the <code>ops-scripts</code> job installs the same <code>oasdiff</code> as
+          <code>openapi-compat</code> with the same step (a YAML anchor in
+          <code>.github/workflows/ci.yml</code>), the test boxes get it from
+          <code>scripts/vm/bootstrap_linux.sh</code>, and <code>scripts/dev/toolchain-lockstep.sh</code> holds
+          version and SHA-256 equal at both places. Today it names the thirteen changes of the tighter port
+          bounds at <code>POST /api/frp/server-config</code> and
+          <code>PUT /api/frp/server-config/{config_id}</code> (R-0411, Kevin 2026-10-17).</p>
+          <p><code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
           SHA-256</strong>, not via <code>go install</code>: every release from v1.24.0 on requires
           <code>go 1.26</code> and the workflows run with <code>GOTOOLCHAIN=local</code>, so a source build
           breaks as soon as <code>oasdiff</code> outruns the workflows' <code>go-version</code>, exactly the way
