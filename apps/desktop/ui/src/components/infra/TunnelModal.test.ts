@@ -37,6 +37,18 @@ vi.mock('$lib/stores/session', async () => {
     }),
   };
 });
+const h = vi.hoisted(() => ({
+  refreshNow: vi.fn(),
+  refreshResult: (): Promise<void> => Promise.resolve(),
+}));
+vi.mock('$lib/stores/tunnel', () => ({
+  // A plain function around the spy: vi.fn handles every promise it returns itself (it
+  // records how it settled), which would hide a rejection the dialog leaves unhandled.
+  refreshNow: (): Promise<void> => {
+    h.refreshNow();
+    return h.refreshResult();
+  },
+}));
 
 import TunnelModal from './TunnelModal.svelte';
 import { frpApi } from '$lib/api/frp';
@@ -52,6 +64,19 @@ afterEach(() => {
 const configs: FrpConfig[] = [
   { id: 'cfg-1', name: 'FRP A', serverAddr: 'frp.example', bindPort: 7000 },
 ];
+const stored: FrpTunnel = {
+  id: 'tun-1',
+  serverId: 'srv-1',
+  frpConfigId: 'cfg-1',
+  name: 'k01-ssh',
+  tunnelType: 'stcp',
+  protocol: 'ssh',
+  localIp: '127.0.0.1',
+  localPort: 22,
+  secretKey: null,
+  visitorPort: 6001,
+  enabled: true,
+};
 
 function openModal(props: Record<string, unknown> = {}) {
   const onClose = vi.fn();
@@ -150,19 +175,6 @@ describe('TunnelModal secret hint', () => {
   // The server never hands the secret back, so an edit starts with an empty field:
   // there it means "keep the stored secret", on create "generate one".
   const secretInput = (c: HTMLElement) => c.querySelector('.secret-row input') as HTMLInputElement;
-  const stored: FrpTunnel = {
-    id: 'tun-1',
-    serverId: 'srv-1',
-    frpConfigId: 'cfg-1',
-    name: 'k01-ssh',
-    tunnelType: 'stcp',
-    protocol: 'ssh',
-    localIp: '127.0.0.1',
-    localPort: 22,
-    secretKey: null,
-    visitorPort: 6001,
-    enabled: true,
-  };
 
   it('says the secret is generated when creating', async () => {
     const { container } = openModal();
@@ -191,5 +203,101 @@ describe('TunnelModal secret hint', () => {
     await fireEvent.change(typeSelect(container), { target: { value: 'stcp' } });
     await tick();
     expect(secretInput(container).placeholder).toContain('automatisch generiert');
+  });
+});
+
+describe('TunnelModal hands a saved change to the tunnel', () => {
+  // The desktop's own frpc takes the change now, not at the next 60 s tick. The dialog
+  // does not wait for it: behind a running reconciliation it takes two.
+  const deleteBtn = (c: HTMLElement) => c.querySelector('.btn.danger') as HTMLButtonElement;
+  const actions = {
+    create: {
+      api: () => frpApi.createTunnel,
+      async run() {
+        const m = openModal();
+        await tick();
+        await fireEvent.input(nameInput(m.container), { target: { value: 'k01-ssh' } });
+        await fireEvent.input(numberInputs(m.container)[0], { target: { value: '22' } });
+        await fireEvent.click(saveBtn(m.container));
+        await tick();
+        return m;
+      },
+    },
+    update: {
+      api: () => frpApi.updateTunnel,
+      async run() {
+        const m = openModal({ editing: stored });
+        await tick();
+        await fireEvent.click(saveBtn(m.container));
+        await tick();
+        return m;
+      },
+    },
+    delete: {
+      api: () => frpApi.removeTunnel,
+      async run() {
+        const m = openModal({ editing: stored });
+        await tick();
+        await fireEvent.click(deleteBtn(m.container)); // first click asks to confirm
+        await fireEvent.click(deleteBtn(m.container));
+        await tick();
+        return m;
+      },
+    },
+  };
+  const kinds = ['create', 'update', 'delete'] as const;
+  afterEach(() => {
+    h.refreshResult = () => Promise.resolve();
+  });
+
+  it.each(kinds)('%s: asks for one reconciliation and closes', async (kind) => {
+    const { onSaved, onClose } = await actions[kind].run();
+
+    expect(actions[kind].api()).toHaveBeenCalledTimes(1);
+    expect(h.refreshNow).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(kinds)('%s: closes while the reconciliation still runs', async (kind) => {
+    h.refreshResult = () => new Promise<void>(() => {});
+
+    const { onSaved, onClose } = await actions[kind].run();
+
+    expect(h.refreshNow).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(kinds)('%s: closes when the reconciliation fails, nothing unhandled', async (kind) => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      h.refreshResult = () => Promise.reject(new Error('reconcile failed'));
+
+      const { onSaved, onClose } = await actions[kind].run();
+      // Node reports an unhandled rejection after the microtasks of a task have run.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(h.refreshNow).toHaveBeenCalledTimes(1);
+      expect(onSaved).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(unhandled).toEqual([]);
+      expect(reportError).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it.each(kinds)('%s: a failed save asks for none and stays open', async (kind) => {
+    vi.mocked(actions[kind].api()).mockRejectedValueOnce(new Error('500'));
+
+    const { onSaved, onClose } = await actions[kind].run();
+
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect(h.refreshNow).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

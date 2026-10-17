@@ -26,6 +26,7 @@ import type {
   ResolvedConnection,
   Settings,
   TunnelMapping,
+  TunnelRefresh,
   TunnelStatus,
 } from './types';
 
@@ -216,6 +217,14 @@ export function startTunnel(
   username: string,
 ): Promise<TunnelStatus> {
   return invoke<TunnelStatus>('start_tunnel', { serverUrl, token, username });
+}
+
+export function refreshTunnel(
+  serverUrl: string,
+  token: string,
+  username: string,
+): Promise<TunnelRefresh> {
+  return invoke<TunnelRefresh>('refresh_tunnel', { serverUrl, token, username });
 }
 
 export function stopTunnel(): Promise<void> {

@@ -156,6 +156,27 @@ pub struct TunnelStatus {
     pub running: bool,
     pub visitor_name: Option<String>,
     pub connected_since: Option<String>,
+    /// Names of the visitors the running frpc applied; empty while none runs.
+    pub visitors: Vec<String>,
+}
+
+/// What a tunnel reconciliation did with the visitor bundle it fetched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RefreshOutcome {
+    Started,
+    Restarted,
+    Reloaded,
+    Unchanged,
+    /// No tunnels, or a stop came in meanwhile: no frpc runs.
+    Stopped,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelRefresh {
+    pub status: TunnelStatus,
+    pub outcome: RefreshOutcome,
 }
 
 fn default_sync_interval_minutes() -> u32 {

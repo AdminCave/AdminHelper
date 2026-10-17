@@ -30,9 +30,10 @@ use commands::{
     check_server_cert, delete_password, device_identity, enroll_with_token, export_browser_p12,
     fetch_connections_jwt, fetch_tunnels, generate_diagnostics, is_device_enrolled,
     load_connections, load_settings, login, logout, open_connection, open_connection_stored,
-    password_state, pinned_ca_fingerprint, reset_device_identity, reset_server_cert_pin,
-    resolve_connection, save_connections, save_password, save_settings, start_notification_stream,
-    start_tunnel, stop_notification_stream, stop_tunnel, sync_connections, tunnel_status,
+    password_state, pinned_ca_fingerprint, refresh_tunnel, reset_device_identity,
+    reset_server_cert_pin, resolve_connection, save_connections, save_password, save_settings,
+    start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
+    sync_connections, tunnel_status,
 };
 use tauri::Manager;
 
@@ -71,6 +72,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(frpc_state)
+        .manage(frpc::RefreshLock::default())
         .manage(stream_state)
         .setup(|app| {
             // Ensure a concrete runtime window icon in dev and production.
@@ -101,6 +103,7 @@ fn main() {
             logout,
             fetch_connections_jwt,
             start_tunnel,
+            refresh_tunnel,
             stop_tunnel,
             tunnel_status,
             fetch_tunnels,

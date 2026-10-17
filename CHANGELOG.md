@@ -334,6 +334,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: der Tunnel uebernimmt Aenderungen selbst (R-0402, R-0389, R-0390):** Der Desktop lud das
+  Tunnel-Bundle nur beim Anmelden. Ein spaeter angelegter, geaenderter oder geloeschter Tunnel und eine Rotation
+  des frps-Tokens kamen erst nach einem Neustart der App an, und ein frpc, der endete (etwa weil frps beim
+  Anmelden nicht erreichbar war), blieb weg. Jetzt gleicht der Desktop im Modus `server` alle 60 s ab, nach dem
+  Speichern im eigenen Tunnel-Dialog sofort. Aendern sich nur Tunnel, laedt frpc sie nach, ohne die uebrigen
+  Tunnel und ihre offenen Verbindungen zu trennen; nur ein neues Token oder eine neue Adresse des FRP-Servers
+  startet frpc neu, offene Sitzungen brechen dann ab. Ist frps nicht erreichbar, versucht frpc es weiter; endet
+  frpc unerwartet, verbindet sich der Desktop selbst wieder (nach 5 s, dann mit wachsender Pause bis 60 s); der
+  Knopf „Neu verbinden“ an der Tunnel-Anzeige stoesst das sofort an. Wer keinen STCP-Tunnel sieht, bekommt beim
+  Anmelden keine Fehlermeldung mehr. Ein gestoppter Tunnel (etwa nach einem Moduswechsel) meldet sich nicht mehr
+  nachtraeglich als „Tunnel getrennt“, und Abmelden ueber die Kopfzeile beendet jetzt auch den Tunnel.
 - **Agent: ein spaeter angelegter Tunnel greift ohne Neu-Provisionieren (R-0398):** Ein Agent-Host, der ohne
   FRP-Tunnel provisioniert wurde, bekam einen spaeter angelegten Tunnel nie: Die Provisionierung schrieb die
   Sync-Config `/etc/frp/adminhelper.conf` samt Server-API-Key nur mit FRP-Paket, und der Abgleich endete still.

@@ -21,6 +21,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { frpApi } from '$lib/api/frp';
   import { session } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
+  import { refreshNow } from '$lib/stores/tunnel';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -64,6 +65,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  // The desktop's own frpc takes a saved change now, not at the next 60 s tick. Not
+  // awaited: behind a running reconciliation it takes two, and the save stands either way.
+  function refreshTunnel(): void {
+    void refreshNow().catch(() => {});
+  }
+
   async function onDelete(): Promise<void> {
     const s = $session;
     if (!s || !form.id) return;
@@ -75,6 +82,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await frpApi.removeTunnel(s, form.id);
       showStatus($t('infra.tun.deleted'));
+      refreshTunnel();
       onSaved();
       onClose();
     } catch (err) {
@@ -103,6 +111,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         await frpApi.createTunnel(s, input);
         showStatus($t('infra.tun.created'));
       }
+      refreshTunnel();
       onSaved();
       onClose();
     } catch (err) {
