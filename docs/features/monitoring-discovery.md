@@ -79,8 +79,8 @@ Migration und Routen sind von Kevin freigegeben (2026-10-16).
 **Neue Routen (alle `require_internal`, nur über den Admin-Proxy erreichbar)**
 | Methode | Pfad | Zweck | Fehler |
 |---|---|---|---|
-| GET | `/templates/suggestions/{server_id}` | `[{slug, templateId, templateName, reason}]` | — (leer, wenn nichts bekannt) |
-| POST | `/templates/suggestions/{server_id}/dismiss` | Body `{"slug": "<builtin_slug>"}`, idempotent | 422 unbekannter Slug |
+| GET | `/templates/suggestions/{server_id}` | `[{slug, templateId, templateName, reason}]`, `reason` = `os:<os>` bzw. `subsystem:<name>` | 422 `server_id` länger als 36 Zeichen (sonst leer, wenn nichts bekannt) |
+| POST | `/templates/suggestions/{server_id}/dismiss` | Body `{"slug": "<builtin_slug>"}`, idempotent, 204 ohne Body | 422 unbekannter Slug oder `server_id` länger als 36 Zeichen; 404 Server ohne Host-Fakten (nur Server mit gemeldeten Fakten können einen Vorschlag haben) |
 
 Der OpenAPI-Snapshot des Monitoring-Dienstes wächst um die beiden Pfade.
 
