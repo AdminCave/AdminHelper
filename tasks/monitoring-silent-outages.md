@@ -30,8 +30,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run ZFS
 Doku: keine (intern; Doku in T13)
 Abhängt von: T1
 
-### T3 — Agent: Grund, wenn SMART fehlt  [ ]
+### T3 — Agent: Grund, wenn SMART fehlt  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/smart.go, apps/agent/internal/monitor/smart_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f25f3f83 2026-10-17T03:32:07+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T3.verdict.json)
 Änderung: `collectSmart` (`smart.go:50-124`) gibt neben den Platten einen Grund zurück, wenn es keine gibt: `not_installed` (smartctl fehlt, `:53`), `scan_failed` (Scan scheitert oder liefert kein JSON, `:61`, `:72`), `no_devices` (Scan leer). `BuildReport` (`report.go:61-73`) setzt dann `smart_absent: {"reason": …}`; `smart` bleibt die Liste wie heute. `pluginCollectors.smart` (`report.go:84-89`) passt sich an. Tests zuerst rot (Namen mit `Smart`): je Grund der richtige Code im Report; mit Platten kein `smart_absent`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Smart
 Doku: keine (intern; Doku in T13)
