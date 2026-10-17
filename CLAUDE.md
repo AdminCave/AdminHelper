@@ -28,10 +28,12 @@ entscheidet die Session und berichtet danach; Fragen an Kevin gesammelt und mit 
 Eine Session arbeitet ein Vorhaben Task für Task ab: ein Bauer-Sub-Agent baut die Task im Worktree des Vorhabens,
 ein Reviewer-Sub-Agent prüft, `scripts/dev/task-close.sh` fährt das `Verify:`, den Token-Scan und committet Code und
 Ledger. Zwei freigegebene, disjunkte Vorhaben baut die Session parallel (Deckel `aktiv` 2 in `roadmap.py`), je in
-eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Jeden PR
-merged die Session selbst, auch einen, der `CLAUDE.md`, `.claude/`, `scripts/` oder `.github/` ändert, sobald er grün
-ist und alle Prüfer `approve` gesagt haben (Kevin, 2026-10-17). Grün heißt: die CI im ersten Anlauf grün und die
-Läufe, die §5 vor dem Merge verlangt, grün. Einen je CI-Zyklus, und nur, wenn der Branch `origin/main` enthält
+eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Jeden eigenen
+PR merged die Session selbst, auch einen, der `CLAUDE.md`, `.claude/` oder `scripts/` ändert, sobald er grün ist und
+alle Prüfer `approve` gesagt haben (Kevin, 2026-10-17). Grün heißt: die CI im ersten Anlauf grün und die Läufe, die §5
+vor dem Merge verlangt, grün; eine Ersatzprüfung der Session (§6) ist kein `approve`. Kevin merged fremde PRs und PRs,
+die `.github/workflows/`, `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` ändern: Diese
+wirken ohne Release auf Nutzer oder Secrets. Einen je CI-Zyklus, und nur, wenn der Branch `origin/main` enthält
 (`git fetch`, `merge-base --is-ancestor`; sonst mergen, pushen, neue CI): Das Ruleset prüft die Kombination nicht, die
 PR-CI testet dann genau `main` + PR (Kevin, 2026-10-15). Ist `main` rot, wird der letzte Merge
 revertiert, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile. Lange
