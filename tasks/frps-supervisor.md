@@ -169,8 +169,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: keine (intern)
 Abhängt von: T7
 
-### T13 — Web: Zustand des frps auf der FRP-Seite  [ ]
+### T13 — Web: Zustand des frps auf der FRP-Seite  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/frp.ts, apps/web/src/pages/Frp.svelte, apps/web/src/lib/i18n/dictionaries.ts, apps/web/src/pages/Frp.test.ts, apps/web/tests/e2e/mocks.ts, apps/web/src/lib/api/mocks.contract.test.ts, apps/web/tests/e2e/smoke.spec.ts-snapshots/frp-chromium-linux.png
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @53ea3171 2026-10-17T07:10:19+02:00
+Review: approve (.ah-out/review/frps-supervisor/T13.verdict.json)
 Änderung: `supervisorStatus()` in `frp.ts` (Muster `status()`, `:49`); `Frp.svelte` zeigt einen Statusblock (Zustand, Grund als übersetzter Text je Code, seit wann, „antwortet nicht“ bei `stale`), Aktualisierung beim Öffnen und alle 30 s. Texte DE+EN in `dictionaries.ts`, nur aus Codes. Neue Testdatei (SPDX): jeder Zustand und `stale` erzeugen den erwarteten Text, unbekannter Code fällt auf einen allgemeinen Text.
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Frp.test.ts
 Doku: keine (intern)
