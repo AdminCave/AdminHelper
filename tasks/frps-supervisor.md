@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # frps-Supervisor: Konfiguration und Zertifikate selbst übernehmen — Task-Ledger
-Status: aktiv · Branch: feature/frps-supervisor · Review: pro Task
+Status: bereit · Branch: feature/frps-supervisor · Review: pro Task
 Spec: Roadmap R-0411
 Heavy: linux-full + scenario --tunnel --enforce — neues frps-Image mit Supervisor, neue Compose-Volumes und das Übernehmen von Konfiguration und Zertifikaten lassen sich nur im echten Stack belegen (`run.sh integration`); der Tunnel-Datenpfad über Hosts mit einem frps-Neustart mitten im Lauf nur im Multibox-Lauf `--tunnel --enforce` (vor dem Merge, Kevin 2026-10-16)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -273,8 +273,10 @@ Review: approve (.ah-out/review/frps-supervisor/T29.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_config.py tests/test_frp_input_hardening.py
 Doku: CHANGELOG und Betrieb in T30
 
-### T30 — Doku: Prüfliste vor dem Update, Glocke und Surrogate  [ ]
+### T30 — Doku: Prüfliste vor dem Update, Glocke und Surrogate  [x]
 Komponente: scripts · Dateien: CHANGELOG.md, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d42583ac 2026-10-17T17:12:36+02:00
+Review: approve (.ah-out/review/frps-supervisor/T30.verdict.json)
 Änderung: „Vor dem Update prüfen“ in Betrieb (DE+EN) und im CHANGELOG nennt zusätzlich: Auth Token mindestens 16 Zeichen; Dashboard-Port weder 443 noch Bind Port noch `FRP_BIND_PORT`; die Startprüfung meldet beides in der Glocke (T29). CHANGELOG: Der Grund einer abgelehnten Konfiguration steht auf der FRP-Seite; in der Glocke nur, solange frps mit der letzten gültigen Kopie weiterläuft (Betrieb sagt es schon so). API-Referenz (DE+EN): Werte mit einzelnen Surrogaten → 422 (T29).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: CHANGELOG.md · docs/admin/betrieb.html + docs/en/admin/operations.html · docs/developer/api-reference.html + docs/en/developer/api-reference.html

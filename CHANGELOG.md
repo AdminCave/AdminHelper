@@ -789,8 +789,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   FRP-Server-Konfiguration oder ein erneuertes frps-Zertifikat uebernimmt frps nach wenigen Sekunden selbst und startet
   neu; ein Neustart von Hand ist dafuer nicht noetig. Alle Tunnel sind dabei kurz getrennt; Admins und Nutzer mit
   Tunnel-Zugriff bekommen eine Mitteilung in der Glocke, bei neuem Token mit dem Hinweis, dass Agent-Tunnel bis zu ~5
-  Minuten brauchen. Eine Konfiguration, die die Pruefung nicht besteht, wird nicht uebernommen; Admins sehen den Grund
-  auf der FRP-Seite und in der Glocke. Wird die FRP-Server-Konfiguration geloescht, stoppt frps. Neu auf der FRP-Seite
+  Minuten brauchen. Eine Konfiguration, die die Pruefung nicht besteht, wird nicht uebernommen; den Grund zeigt die
+  FRP-Seite, und solange frps mit der letzten gueltigen Kopie weiterlaeuft, bekommen Admins dazu eine Mitteilung in der
+  Glocke. Ohne gueltige Kopie (etwa direkt nach dem Update) startet frps nicht, bis die Konfiguration die Pruefung
+  besteht. Wird die FRP-Server-Konfiguration geloescht, stoppt frps. Neu auf der FRP-Seite
   ist der Block „Zustand des frps“ (Zustand, Grund, seit wann, letztes Ereignis; aktualisiert alle 30 s, solange der Tab
   sichtbar ist) ueber `GET /api/frp/supervisor-status` (nur Admins). Vor dem Speichern einer Aenderung, die frps neu
   startet, fragt die Maske nach; weicht der Bind Port vom veroeffentlichten `FRP_BIND_PORT` ab, warnt sie am Feld,
@@ -816,12 +818,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `transport.tcpMuxKeepaliveInterval`, `transport.heartbeatTimeout`, `transport.tcpKeepalive`, `userConnTimeout`,
   `log.level` und `log.maxDays` an, mit `true`, `false`, einer endlichen Zahl oder einem String ohne Anfuehrungszeichen,
   Backslash, geschweifte Klammern und Steuerzeichen, sonst `422`; `{` oder `}` in `subdomain_host`, `dashboard_user`,
-  `dashboard_password` oder `auth_token` ist ebenfalls `422`. Die Tunnel-Configs (frpc) betrifft das nicht. **Vor dem
-  Update pruefen:** `extra_config` und diese vier Felder der FRP-Server-Config. Beim Start entfernt der Server
-  `extra_config`-Eintraege ausserhalb dieser Regeln (etwa `proxyBindAddr` oder `log.to`) aus der gespeicherten
-  Konfiguration und meldet die entfernten Schluessel den Admins in der Glocke. Ein Feld mit einem Wert, den frps nicht
-  annimmt, aendert er nicht; er meldet den Admins einmal, welche Felder neu zu setzen sind, und bis dahin startet frps
-  ohne gueltige Arbeitskopie nicht (Zustand `waiting`). Log und Mitteilungen nennen Schluessel und Felder, nie Werte.
+  `dashboard_password` oder `auth_token` ist ebenfalls `422`. Die Tunnel-Configs (frpc) betrifft das nicht. Ein
+  einzelnes Surrogat (U+D800 bis U+DFFF) ist `422` in den Textfeldern und `extra_config`-Werten der FRP-Server-Config,
+  in `name`, `local_ip`, `secret_key`, `custom_domains`, `auto_connection_username` und `extra_config`-Werten der
+  Tunnel und im Server-Namen. **Vor dem Update pruefen:** `extra_config` und diese vier Felder der FRP-Server-Config;
+  das Auth Token hat mindestens 16 Zeichen; ein gesetzter Dashboard Port ist weder 443 noch der Bind Port noch
+  `FRP_BIND_PORT`. Beim Start entfernt der Server `extra_config`-Eintraege ausserhalb dieser Regeln (etwa
+  `proxyBindAddr` oder `log.to`) aus der gespeicherten Konfiguration und meldet die entfernten Schluessel den Admins in
+  der Glocke. Ein Feld mit einem Wert, den frps nicht annimmt (unzulaessige Zeichen, ein Auth Token unter 16 Zeichen,
+  ein Dashboard Port gleich 443, dem Bind Port oder `FRP_BIND_PORT`), aendert er nicht; er meldet den Admins in der
+  Glocke, welche Felder neu zu setzen sind, je Feld mit der Regel (einmal, solange dieselben Felder betroffen sind),
+  und bis dahin startet frps ohne gueltige Arbeitskopie nicht (Zustand `waiting`). Log und Mitteilungen nennen
+  Schluessel und Felder, nie Werte.
   Doku: Betrieb und API-Referenz (DE+EN).
 - **Web: Rueckfragen enden mit Escape und mit der Sitzung (R-0411):** Escape bricht eine angezeigte Rueckfrage ab und
   schliesst nur sie, nicht den Dialog darunter. Endet die Sitzung (Abmelden oder Ablauf), endet eine angezeigte
