@@ -213,8 +213,10 @@ Review: approve (.ah-out/review/frps-supervisor/T25.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_model_registry.py tests/test_scheduler_schema_gate.py
 Doku: CHANGELOG in T17 (Fixed: Scheduler-Jobs mit DB-Zugriff)
 
-### T26 — Server: alter Outbox-Rückstau verfällt beim Update  [ ]
+### T26 — Server: alter Outbox-Rückstau verfällt beim Update  [x]
 Komponente: server · Dateien: apps/server/alembic/versions/c3e5a7b9d1f2_expire_stale_outbox.py, apps/server/tests/test_outbox_expiry_migration.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4489945a 2026-10-17T13:00:06+02:00
+Review: approve (.ah-out/review/frps-supervisor/T26.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-17 (Folge aus T25): Der Scheduler hat seit v0.38.0 nichts aus `notification_outbox` zugestellt; mit T25 ginge der Rückstau (bis ~4 Monate, an damals gespeicherte Adressen) beim ersten Drain raus. Neue Alembic-Revision (SPDX, `down_revision` = aktueller Kopf per `alembic heads`): ausstehende Einträge (`status = 'pending'`), deren `created_at` älter als 7 Tage ist, werden `failed` mit `last_error` „expired before delivery“; neuere bleiben `pending` und gehen normal raus; `downgrade()` ist ein No-op (Daten-Revision, nicht umkehrbar — im Docstring begründet). Die Glocke (Notifications) bleibt unberührt. Test zuerst rot (neue Datei, SPDX): Upgrade auf einer DB mit alten, neuen und schon `sent`/`failed`-Einträgen → nur die alten `pending` werden `failed`, `attempts` unverändert; zweites Upgrade-Szenario ohne Einträge läuft durch; Kette: `test_alembic_builtin.py` (PR-CI). Auf Postgres prüfen (Zeitvergleich mit timezone-aware `created_at`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_outbox_expiry_migration.py tests/test_alembic_builtin.py
 Doku: CHANGELOG in T17
