@@ -197,6 +197,7 @@ Keine. Entschieden von Kevin am 2026-10-16:
    `DockerHealthConfig`, `check_configs.py:113`) bleibt toleriert und ungenutzt.
 2. **`exited` mit Exit ≠ 0 ohne Restart-Policy:** critical; Ausweg `ignore_containers`.
 3. **`smartmontools`:** als `Recommends` (nicht `Depends`) im deb (`apps/agent/deb/DEBIAN/control`) und im rpm
-   (`apps/agent/rpm/adminhelper-agent.spec`), eigene Task (T12). RPM-Weak-Dependencies brauchen rpm ≥ 4.12
-   (nicht verifiziert, welche Zielsysteme älter sind).
+   (`apps/agent/rpm/adminhelper-agent.spec`), eigene Task (T12). RPM-Weak-Dependencies brauchen rpm ≥ 4.12;
+   Rocky Linux 8, 9 und 10 bringen es mit (T12). Ein Paket-Upgrade installiert neue `Recommends` auf bestehenden
+   Hosts nicht nach (apt `upgrade`, `dpkg -i`): Hinweis in Doku und CHANGELOG (T13).
 4. **Proxmox-Plugin** (`pvesh` hängt bei Quorum-Verlust) mit demselben Fehlerblock: eigene Folgezeile, nicht hier.
