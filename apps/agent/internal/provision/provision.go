@@ -7,9 +7,12 @@
 // As of v0.23.0, provisioning is no longer coupled to FRP. A single
 // `adminhelper-agent provision` call:
 //   - redeems the provision token via POST /api/servers/{id}/provision/activate,
-//   - writes the server API key (always),
+//   - writes the server API key to the FRP sync config (always: frpc.WriteSyncConfig,
+//     so a tunnel created later reaches the host with the next sync),
 //   - with an available monitor service: monitor.Init with the returned key,
-//   - with a configured FRP tunnel: frpc.Apply with the returned bundle.
+//   - with an FRP config on the server: frpc.Apply with the returned bundle (without an
+//     active tunnel its text has no proxies and frpc stops); without an FRP config
+//     frpc.ApplyWithoutBundle (stops the frpc of an earlier provisioning).
 //
 // This way a single command on the target server suffices, regardless of which
 // components (FRP / monitor / server-read only) are configured.
@@ -60,6 +63,13 @@ type activateResponse struct {
 	Enrollment    *enrollmentInfo `json:"enrollment"`
 }
 
+// activatePort is the gateway's certless enroll plane, which the activate call
+// goes to; tests point it at an httptest server.
+var activatePort = 8444
+
+// applyWithoutBundle is frpc.ApplyWithoutBundle; tests swap it, the real one runs systemctl.
+var applyWithoutBundle = frpc.ApplyWithoutBundle
+
 // Run redeems a provision token against the server endpoint and
 // installs the returned bundles in a platform-appropriate way. A non-empty
 // caFP (SHA-256 of the internal CA, handed over out-of-band via the desktop's
@@ -89,7 +99,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		fingerprint = &fp
 	}
 
-	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, fingerprint, 8444)
+	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, fingerprint, activatePort)
 	if err != nil {
 		return err
 	}
@@ -148,7 +158,12 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 		fmt.Println("→ Monitor-Service nicht konfiguriert oder nicht erreichbar — Monitor wird uebersprungen.")
 	}
 
-	// 2. FRP apply only if the server has an FRP tunnel.
+	// 2. The sync config always (Apply writes it along with frpc's config): without it the
+	// API key is lost and a tunnel created later never reaches this host (R-0398). The
+	// bundle is missing only without an FRP config (from an older server also without a
+	// tunnel); a host without an active tunnel gets a text without proxies, on which
+	// Apply stops frpc. Without a tunnel no frpc runs, also not one an earlier
+	// provisioning set up.
 	if resp.FRP != nil {
 		fmt.Println("→ FRP-Client wird eingerichtet...")
 		if err := frpc.Apply(frpc.ApplyParams{
@@ -162,6 +177,17 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP str
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
 		}
 	} else {
+		if err := frpc.WriteSyncConfig(frpc.SyncConfigParams{
+			AdminHelperURL: adminHelperURL,
+			ServerID:       serverID,
+			APIKey:         resp.APIKey,
+			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
+		}); err != nil {
+			return fmt.Errorf("write the FRP sync config: %w", err)
+		}
+		if err := applyWithoutBundle(); err != nil {
+			return fmt.Errorf("stop the frpc of an earlier provisioning: %w", err)
+		}
 		fmt.Println("→ Keine FRP-Tunnel fuer diesen Server konfiguriert — FRP wird uebersprungen.")
 	}
 
