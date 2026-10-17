@@ -358,6 +358,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   RDP-Client bei einer Verbindung hinter einem FRP-Tunnel ohne das gespeicherte Passwort, weil der Desktop es unter
   der lokalen Tunnel-Adresse (`127.0.0.1:<Port>`) suchte statt unter der Verbindung aus der Liste, unter der es
   gespeichert ist. Unter Windows fragt mstsc bei Tunnelzielen vorerst weiter selbst nach dem Passwort.
+- **Desktop: Sync von einer fremden URL auch auf einem registrierten Geraet (R-0429):** Bisher scheiterte auf einem
+  registrierten Geraet jeder Sync von einer URL ausserhalb des eigenen Servers mit `ERR_CA_PIN_MISMATCH`, weil der
+  Desktop auch dort die Geraete-Identitaet nahm und das Server-Zertifikat gegen die bei der Registrierung gepinnte CA
+  pruefte. Die Geraete-Identitaet nimmt er jetzt nur, wenn die Sync-URL dieselbe Origin (Schema, Host, Port) hat wie
+  die gespeicherte Server-URL; jede andere Sync-URL laedt er wie ein nicht registriertes Geraet. Ein zweiter
+  Hostname des eigenen Servers zaehlt dabei als andere Origin.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.

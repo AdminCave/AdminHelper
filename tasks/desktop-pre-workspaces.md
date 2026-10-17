@@ -67,8 +67,10 @@ Dedup-Key: bug:desktop:connectFlow.ts:stored-password-resolved-key
 HEAD: af4498a7
 Semantik: docs/developer/desktop.html:153-156 (wie T3)
 
-### T5 — Sync nimmt die Geräte-Identität nur für die eigene Server-Origin  [ ]
+### T5 — Sync nimmt die Geräte-Identität nur für die eigene Server-Origin  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/sync.rs, apps/desktop/src-tauri/src/http_client.rs, apps/desktop/src-tauri/src/commands.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @164a6c99 2026-10-17T14:28:09+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T5.verdict.json)
 Änderung: `sync_connections` (`commands.rs:177`) liest neben `allowSelfSignedCerts` auch `serverUrl` aus den Einstellungen und gibt sie an `sync::sync_connections` (`sync.rs:10`) weiter. Eine reine Funktion `sync_uses_identity(sync_url, server_url)` vergleicht die Origins (Schema, Host ohne Groß-/Kleinschreibung, Port mit Standard-Port wie `tofu::pin_identity`, `tofu.rs:55`; Pfad und Query zählen nicht); nur bei Gleichheit baut Sync den Client wie heute über `build_client`, sonst über eine Variante in `http_client.rs` ohne Geräte-Identität (TOFU bei erlaubten selbstsignierten Zertifikaten, sonst öffentliche CA). Der Client-Cache (`http_client.rs:52`) trägt die Wahl im Schlüssel. Neue cargo-Tests `sync_identity_*` (zuerst rot): gleiche Origin auch mit Standard-Port, anderer Schreibweise und Schrägstrich am Ende → mit Identität; anderer Host, Port oder Schema → ohne; keine `serverUrl` → ohne. Doku DE+EN: der Absatz zum registrierten Zustand (`desktop.html:130`, „läuft jeder Request über <code>enrolled_client</code>“) nennt die Ausnahme. CHANGELOG Fixed.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- sync_identity
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:130`) · CHANGELOG.md

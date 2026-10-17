@@ -179,7 +179,8 @@ pub async fn sync_connections(
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
     let allow_self_signed = self_signed_setting(&app, None);
-    sync::sync_connections(app, url, allow_self_signed).await
+    let server_url = storage::load_settings(&app).ok().and_then(|s| s.server_url);
+    sync::sync_connections(app, url, allow_self_signed, server_url).await
 }
 
 #[tauri::command]
