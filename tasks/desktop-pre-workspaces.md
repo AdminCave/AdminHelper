@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: fünf Fehler vor den Workspaces — Task-Ledger
-Status: geplant · Branch: feature/desktop-pre-workspaces · Review: pro Task
+Status: aktiv · Branch: feature/desktop-pre-workspaces · Review: pro Task
 Spec: docs/features/desktop-pre-workspaces.md (Roadmap R-0429)
 Heavy: linux-full + windows — Desktop-Journey Abmelden mit laufendem Tunnel (`tunnel-start.live.js` im Sammellauf über `desktop_e2e_tunnel.sh`) und zweiter Start (`smoke.e2e.js`, Schritt `desktop-e2e-smoke` von `run.sh e2e`); `windows` für die Rust-Änderungen an `open_connection_stored` und am Sync-Client; kein `scenario`, weil FRP-Datenpfad, Visitor-TOML und die mTLS-Pfade von Login und Tunnel unberührt bleiben
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
