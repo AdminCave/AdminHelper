@@ -80,7 +80,9 @@ def next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int:
 def get_allow_users(db: Session, server_id: str) -> list[str]:
     """Determine all usernames that have access to this server.
 
-    Admins are automatically authorized for all servers.
+    Admins are automatically authorized for all servers. Sorted: the list ends up
+    in allowUsers and the agent's config hash, and a set's order follows the
+    per-process hash seed, so the hash would change on every restart.
     """
     assigned = (
         db.query(User)
@@ -89,7 +91,7 @@ def get_allow_users(db: Session, server_id: str) -> list[str]:
         .all()
     )
     admins = db.query(User).filter(User.is_admin.is_(True)).all()
-    names = list({u.username for u in [*assigned, *admins]})
+    names = sorted({u.username for u in [*assigned, *admins]})
     # Fail CLOSED: if nobody resolves (no assigned users AND no admins — only
     # reachable if all admins were demoted, which update_user now also blocks),
     # return an empty allow-list (the config_generator then falls back to the
