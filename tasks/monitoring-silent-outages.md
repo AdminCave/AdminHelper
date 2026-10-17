@@ -99,8 +99,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (intern; Doku in T13)
 Abhängt von: T5
 
-### T11 — Desktop: ZFS-Ausfall anzeigen, Schalter im Check-Formular  [ ]
+### T11 — Desktop: ZFS-Ausfall anzeigen, Schalter im Check-Formular  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecZfs.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/components/monitoring/section/SecZfs.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @c94c2ad8 2026-10-17T05:45:40+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T11.verdict.json)
 Änderung: `SecZfs.svelte` (`:21-22`, `:58`) zeigt `available=false` mit übersetztem Fehler statt „keine Pools“ (`MonitorZfsDetails` `types.ts:308-314` bekommt `available`, `error` — falls `types.ts` dafür nötig, per `ledger.sh set-files` ergänzen). `CheckConfigFields.svelte` bekommt für `zfs_health` (`:330`) und `docker_health` (`:351-361`) die Checkbox „Ausfall melden“ (`alert_on_unavailable`, Default an). Texte DE+EN. Tests in `CheckConfigFields.test.ts`, zuerst rot: Checkbox bei beiden Typen, Default an, Abwahl schreibt `false`; der Test „no longer renders the dead check_restarts checkbox“ (`:58`) bleibt grün.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/CheckConfigFields.test.ts src/components/monitoring/section/SecZfs.test.ts
 Doku: keine (intern; Doku in T13)

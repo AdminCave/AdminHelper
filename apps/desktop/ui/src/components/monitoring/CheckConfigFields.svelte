@@ -43,6 +43,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   function setBool(key: string, checked: boolean): void {
     config[key] = checked;
   }
+  // Back at the default the key goes: a template's check whose config gained
+  // the default value would differ from the template's and count as changed by
+  // the user (mark_overrides on the server).
+  function setBoolDefault(key: string, checked: boolean, fallback: boolean): void {
+    if (checked === fallback) delete config[key];
+    else config[key] = checked;
+  }
 
   function csvStrVal(key: keyof MonitorCheckConfig): string {
     const v = config[key];
@@ -154,6 +161,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
       value={numVal(f.key)}
       oninput={(e) => setNum(f.key, e.currentTarget.value)}
     />
+  </label>
+{/snippet}
+
+{#snippet outageField()}
+  <label class="field checkbox">
+    <input
+      type="checkbox"
+      checked={boolVal('alert_on_unavailable', true)}
+      onchange={(e) => setBoolDefault('alert_on_unavailable', e.currentTarget.checked, true)}
+    />
+    <span>{$t('monitoring.checkCfg.alertOnUnavailable')}</span>
   </label>
 {/snippet}
 
@@ -357,6 +375,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setNum('capacity_crit', e.currentTarget.value)}
     />
   </label>
+  {@render outageField()}
 {:else if checkType === 'docker_health'}
   <label class="field" style="grid-column: span 2;">
     <span class="field-label">{$t('monitoring.checkCfg.ignoreContainers')}</span>
@@ -367,6 +386,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setCsvStr('ignore_containers', e.currentTarget.value)}
     />
   </label>
+  {@render outageField()}
 {:else if checkType === 'disk_forecast'}
   {#each FORECAST_NUM_FIELDS as f (f.key)}{@render numField(f)}{/each}
 {:else if checkType === 'smart_health'}
