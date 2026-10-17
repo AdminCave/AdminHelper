@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # HTTPS-Tunnel-Mappings ohne STCP-Visitor — Task-Ledger
-Status: aktiv · Branch: feature/desktop-https-mappings · Review: am Ende
+Status: bereit · Branch: feature/desktop-https-mappings · Review: am Ende
 Spec: Roadmap R-0432
 Heavy: linux-full — Desktop-Tunnel-Store (Desktop-Journey im Sammellauf, `run.sh e2e`); keine neue Live-Spec: die HTTPS-Auflösung selbst (`resolve_connection`) bleibt unverändert, die Store-Logik belegt Vitest
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -12,8 +12,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Hängt ab von: R-0402 (desktop-tunnel-refresh, aktiv in der anderen Session; tunnel.ts/tunnel.rs/frpc.rs werden dort umgebaut — Zeilenangaben vor dem Bau frisch greppen). Erst nach dessen Merge bauen; der Fix sitzt im Abgleich-Pfad, den R-0402 T6 einführt.
 
-### T1 — Tunnel-Store lädt die Mappings auch ohne STCP-Visitor  [ ]
+### T1 — Tunnel-Store lädt die Mappings auch ohne STCP-Visitor  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/tunnel.ts, apps/desktop/ui/src/lib/stores/tunnel.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f45daf41 2026-10-17T06:38:34+02:00
+Review: am Ende (Branch-Review)
 Änderung: Liefert der Abgleich `stopped` (Visitor-Bundle 404 = der Nutzer sieht keinen STCP-Tunnel), stoppt das nur frpc: der Store lädt die Mappings trotzdem über `bridge.fetchTunnels` und setzt sie, die Anzeige bleibt „idle“ ohne Fehlermeldung; scheitert `fetchTunnels`, bleiben die bisherigen Mappings (wie im übrigen Abgleich-Pfad von R-0402 T6). Nur ein Logout oder Moduswechsel (`stop()`) leert die Mappings. Vitest mit Fake-Bridge, zuerst rot: `refreshTunnel` → `stopped`, `fetchTunnels` → eine HTTPS-Mapping-Zeile → `getMappings()` enthält sie, keine Meldung; `stopped` und `fetchTunnels` wirft → Mappings unverändert, keine Meldung; `stop()` leert weiter. Doku DE+EN: im Absatz „Tunnel-Auflösung“ (`desktop.html:147`) ein Halbsatz, dass die Mappings auch ohne STCP-Tunnel geladen werden. CHANGELOG unter Fixed.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/tunnel.test.ts
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:147`) · CHANGELOG.md (Fixed)
