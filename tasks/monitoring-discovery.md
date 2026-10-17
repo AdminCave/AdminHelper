@@ -57,8 +57,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/t
 Doku: keine (intern; beschrieben in T7)
 Abhängt von: T4
 
-### T6 — Live-E2E: Vorschlag annehmen legt die Standard-Checks an  [ ]
+### T6 — Live-E2E: Vorschlag annehmen legt die Standard-Checks an  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/monitoring-check.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @099de7d0 2026-10-17T12:44:23+02:00
+Review: approve (.ah-out/review/monitoring-discovery/T6.verdict.json)
 Änderung: Die bestehende Spec (der Orchestrator `scripts/tests/desktop_e2e_monitoring.sh:59-66` fährt genau sie, bleibt also unverändert) prüft zusätzlich: Nach dem ersten Push des Agents zeigt der Monitoring-Tab des Servers den Vorschlag „Linux Server — Standard“; Zuweisen legt dessen Checks an (Heartbeat, System Resources), der Vorschlag verschwindet. Die bisherigen Schritte der Spec bleiben unverändert und laufen vorher; wenn sie selbst schon ein Template zuweisen, den neuen Schritt so legen, dass er auf einem Server ohne Zuweisung läuft. Live-Lauf über `Heavy:`.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
