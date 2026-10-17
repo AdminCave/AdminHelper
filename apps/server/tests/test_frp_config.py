@@ -306,7 +306,7 @@ class TestConfigResponseShape:
             name="shape",
             server_addr="frps.example.net",
             auth_token="a-stored-token-that-is-masked",
-            extra_config='{"log.level": "debug", "transport.tls.force": true}',
+            extra_config='{"log.level": "debug", "transport.tcpMux": true}',
         )
         db.add(cfg)
         db.flush()
@@ -343,7 +343,7 @@ class TestConfigResponseShape:
                 "name": "shape",
                 "server_addr": "frps.example.net",
                 "dashboard_port": 7500,
-                "extra_config": {"log.level": "debug", "transport.tls.force": True},
+                "extra_config": {"log.level": "debug", "transport.tcpMux": True},
             },
             headers=h,
         )
@@ -382,7 +382,7 @@ class TestConfigResponseShape:
         )
         assert updated.status_code == 200, updated.text
         assert updated.json() == self._expected(db_session, cid, mask_secrets=True)
-        assert updated.json()["extraConfig"] == {"log.level": "debug", "transport.tls.force": True}
+        assert updated.json()["extraConfig"] == {"log.level": "debug", "transport.tcpMux": True}
 
     def test_timestamps_are_rfc3339_utc(self, test_client, db_session, admin_user, monkeypatch):
         # format: date-time promises an offset (R-0064): the API writes UTC with Z.

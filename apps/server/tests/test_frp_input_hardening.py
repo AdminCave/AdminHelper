@@ -92,7 +92,7 @@ def test_dashboard_password_requires_entropy_floor():
 def test_server_extra_config_rejects_breakers():
     with pytest.raises(ValidationError):
         FrpServerConfigCreate(
-            name="n", server_addr="a.example", extra_config={"k": 'v"\ninjected = 1'}
+            name="n", server_addr="a.example", extra_config={"log.level": 'v"\ninjected = 1'}
         )
 
 

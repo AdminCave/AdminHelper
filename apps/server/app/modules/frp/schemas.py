@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.bounds import IntColumn, RequestModel
 from app.core.time import UtcDatetime
+from app.modules.frp.extra_config import ALLOWED_KEYS, value_allowed
 
 # These string fields are interpolated verbatim into the generated frps/frpc/
 # visitor TOML (config_generator.py). Reject the characters that could break out
@@ -63,6 +64,34 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
             _reject_toml_breakers(value)
         elif not isinstance(value, (bool, int, float)):
             raise ValueError(f"extra_config-Wert für '{key}' muss str, bool, int oder float sein")
+    return v
+
+
+def _check_frps_extra_config(v: Optional[dict]) -> Optional[dict]:
+    """The server config's extra_config goes into frps.toml, and the frps supervisor starts
+    frps only with the keys and values of frp/extra_config.py (R-0411)."""
+    v = _check_extra_config(v)
+    for key, value in (v or {}).items():
+        if key not in ALLOWED_KEYS:
+            raise ValueError(
+                f"extra_config key '{key}' is not allowed (allowed: "
+                + ", ".join(sorted(ALLOWED_KEYS))
+                + ")"
+            )
+        if not value_allowed(value):
+            raise ValueError(
+                f"extra_config value for '{key}' must be true, false, a finite number or a "
+                "string without quotes, backslashes, braces or control characters"
+            )
+    return v
+
+
+def _check_frps_string(v: Optional[str]) -> Optional[str]:
+    """A string field the generator writes into frps.toml (STRING_FIELDS of
+    frp/extra_config.py): on top of _reject_toml_breakers no brace, which the frps
+    supervisor refuses anywhere in a line."""
+    if v is not None and not value_allowed(v):
+        raise ValueError("must not contain quotes, backslashes, braces or control characters")
     return v
 
 
@@ -127,7 +156,10 @@ class FrpServerConfigCreate(RequestModel):
     # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
     # by the router when a dashboard port is set) (3.35).
     _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_frps_extra_config)
+    _v_frps = field_validator(
+        "subdomain_host", "dashboard_user", "dashboard_password", "auth_token"
+    )(_check_frps_string)
 
 
 class FrpServerConfigUpdate(RequestModel):
@@ -154,7 +186,10 @@ class FrpServerConfigUpdate(RequestModel):
     # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
     # by the router when a dashboard port is set) (3.35).
     _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_frps_extra_config)
+    _v_frps = field_validator(
+        "subdomain_host", "dashboard_user", "dashboard_password", "auth_token"
+    )(_check_frps_string)
 
 
 # --- FRP Tunnel ---
