@@ -140,3 +140,10 @@ Komponente: scripts · Dateien: scripts/tests/multibox.sh, scripts/tests/multibo
 Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: .claude/skills/test/SKILL.md · .claude/rules/testing.md
 Abhängt von: T14
+
+### T16 — `heavy.sh capstone_scan`: Docker-Etappe ohne Agent-Box der Rolle `agent` zuordnen  [ ]
+Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Änderung: Folge aus T15 (Fund des Bauers): `capstone_scan` ordnet den Abschnitt „== docker (R-0419) … ==“ der Rolle `other` zu. Bricht das Setup der Agent-Box ab, zählt der folgende `FAIL strict: the Docker stage (no provisioned agent box)` deshalb als Produktfehler statt als Folge des Agent-Abbruchs. `role_of_lease_fail` (`heavy.sh:814ff`) bekommt das Gegenstück zur Desktop-Regel (`:818`, `(no desktop box)` → desktop): der Docker-FAIL ohne provisionierte Agent-Box → `agent`. Ein echter Docker-FAIL bei laufender Agent-Box bleibt ein Produktfehler. `heavy_test.sh` prüft zuerst rot beide Fälle. **Harness-Pfad** (Kevin 2026-10-17: Capstone fährt `--docker`; diese Einordnung gehört dazu).
+Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
+Doku: keine (Test-Harness)
+Abhängt von: T15
