@@ -6,7 +6,9 @@
 # real curl/checksum/extract/swap logic runs unchanged, and stubs `docker` so no
 # real stack is touched. Covers: upgrade, --check, up-to-date no-op, the downgrade
 # guard, --ref force, health-fail rollback, additive .env migration, the
-# self-update re-exec hand-off, and a failed image pull (rollback, --redeploy).
+# self-update re-exec hand-off, a failed image pull (rollback, --redeploy), a
+# health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
+# what --no-rollback names as the way on, a restore that fails, and a missing .env.
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign)
 
@@ -38,7 +40,9 @@ command -v minisign >/dev/null 2>&1 \
 TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 
 # --- a docker stub: succeeds at everything; health probe honours AH_TEST_HEALTH,
-# the pull AH_TEST_PULL; AH_TEST_DOCKER_LOG records every call, one per line ---
+# the pull AH_TEST_PULL; AH_TEST_UP_FAIL_ONCE=<marker> fails the first `compose
+# up` (and creates the marker), AH_TEST_UP_FAIL=always every one;
+# AH_TEST_DOCKER_LOG records every call, one per line ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
@@ -47,10 +51,28 @@ cat > "$BIN/docker" <<'EOF'
 case "$*" in
   *create_connection*) [ "${AH_TEST_HEALTH:-0}" = 0 ] && exit 0 || exit 1 ;;
   "compose pull"*) [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0 || { echo "stub: pull failed" >&2; exit 1; } ;;
+  "compose up"*)
+    [ "${AH_TEST_UP_FAIL:-}" != always ] || { echo "stub: up failed" >&2; exit 1; }
+    if [ -n "${AH_TEST_UP_FAIL_ONCE:-}" ] && [ ! -e "$AH_TEST_UP_FAIL_ONCE" ]; then
+      : > "$AH_TEST_UP_FAIL_ONCE"; echo "stub: up failed" >&2; exit 1
+    fi
+    exit 0 ;;
   *) exit 0 ;;
 esac
 EOF
 chmod +x "$BIN/docker"
+# --- a curl wrapper: real curl for everything, except that AH_TEST_REPO_HTTP=<code>
+# fails the agent-repo asset with that HTTP status (file:// has no HTTP layer) ---
+AH_TEST_REAL_CURL=$(command -v curl); export AH_TEST_REAL_CURL
+cat > "$BIN/curl" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *adminhelper-agent-repo-*)
+    [ -z "${AH_TEST_REPO_HTTP:-}" ] || { printf '%s' "$AH_TEST_REPO_HTTP"; exit 22; } ;;
+esac
+exec "$AH_TEST_REAL_CURL" "$@"
+EOF
+chmod +x "$BIN/curl"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -100,6 +122,19 @@ make_release() {
   [ -n "$latest" ] && printf '{"tag_name": "%s", "prerelease": false, "draft": false}\n' "$latest" \
     > "$apiroot/repos/$REPO/releases/latest"
   rm -rf "$stage"
+}
+
+# --- add file $2 as release $1's agent-repo asset, listed in the signed
+# SHA256SUMS; with $3=tamper a byte is appended after the checksum is taken ---
+publish_agent_repo() {
+  local ver="$1" file="$2" tamper="${3:-}"
+  local assetdir="$DL/$REPO/releases/download/v$ver" asset="adminhelper-agent-repo-v$ver.tar.gz"
+  cp "$file" "$assetdir/$asset"
+  ( cd "$assetdir" && sha256sum "$asset" >> SHA256SUMS )
+  [ -z "$tamper" ] || printf 'x' >> "$assetdir/$asset"
+  minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
+    -x "$assetdir/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1 \
+    || { echo "FATAL: minisign cannot sign the agent-repo fixture"; exit 1; }
 }
 
 # --- seed an install dir pinned to version $1 from source $2 ------------------
@@ -313,6 +348,9 @@ out=$(AH_TEST_PULL=1 run_update "$INST" --no-rollback 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*--no-rollback' <<<"$out" \
     && grep -q 'server:0.34.0' "$INST/.env"; } \
   && ok "--no-rollback keeps the new state after a pull failure" || bad "--no-rollback pull failure: rc=$rc"
+# A bare re-run would now call 0.34.0 current, so the message has to name the way on.
+grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*--no-rollback.*--redeploy.*--ref v0\.34\.0' <<<"$out" \
+  && ok "--no-rollback pull failure names --redeploy and --ref v0.34.0" || bad "--no-rollback message: $out"
 
 # ── 18. --redeploy: nothing is swapped, a failed pull only needs a message ───
 INST="$WORK/inst18"; make_install 0.34.0 "$SRC_NEW" "$INST"
@@ -326,6 +364,183 @@ out=$(AH_TEST_PULL=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --redeploy 2>
 out=$(run_update "$INST" --redeploy 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Re-Deploy fertig' <<<"$out"; } \
   && ok "--redeploy with a working pull still recreates" || bad "--redeploy: rc=$rc"
+
+# ── 19. health-fail on a floating tag: the old pins come back, the rest stays ─
+# installed_version is "unknown" for :main, so there is no version to re-pin from:
+# left on 0.34.0, the next run called the install current while the old images
+# ran on. The containers did run, so only the pin lines go back; the keys the
+# migration added stay. An install from before the frps image has no FRPS_IMAGE
+# line, and the rollback must not invent one.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst19"; make_install main "$SRC_OLD" "$INST"
+sed -i '/^FRPS_IMAGE=/d' "$INST/.env"
+grep -E '_IMAGE=' "$INST/.env" | sort > "$WORK/inst19.pins"
+out=$(AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+[ $rc -ne 0 ] && ok "health-fail on :main exits non-zero" || bad "health-fail on :main exit $rc"
+grep -E '_IMAGE=' "$INST/.env" | sort | cmp -s - "$WORK/inst19.pins" \
+  && ok "health-fail on :main restored the floating pins (none added)" \
+  || bad "floating pins after health-fail: $(grep -E '_IMAGE=' "$INST/.env" | tr '\n' ';')"
+grep -q '^NEW_FEATURE_FLAG=on' "$INST/.env" \
+  && ok "health-fail kept the keys the migration added" || bad "health-fail dropped the migrated keys"
+{ [ "$(stat -c %a "$INST/.env")" = 600 ] && [ ! -e "$INST/.env.ah-new" ]; } \
+  && ok "the pin restore left .env at 0600 and no copy behind" \
+  || bad "pin restore: .env mode $(stat -c %a "$INST/.env"), copy left: $([ -e "$INST/.env.ah-new" ] && echo yes || echo no)"
+grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+  && ok "health-fail on :main rolled back compose" || bad "compose not rolled back on :main"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && ! grep -q 'Bereits auf der neuesten' <<<"$out" \
+    && grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.34.0' "$INST/.env"; } \
+  && ok "after a floating health-fail the next run retries and lands on 0.34.0" \
+  || bad "no retry after a floating health-fail: rc=$rc"
+
+# ── 20. agent-repo refresh fails after the re-pin → rolled back like a pull ──
+# update_agent_repo runs after every image is re-pinned and before the pull. Each
+# way it can fail (HTTP error, checksum, unpack) stopped update.sh with .env on
+# 0.34.0, and the next run called the install current. Nothing has run yet, so
+# the whole .env comes back, and ./repo keeps the installed packages.
+REPO_GOOD="$WORK/agent-repo-good.tar.gz"
+tar czf "$REPO_GOOD" -C "$WORK/repostage" .
+printf 'not a tarball\n' > "$WORK/agent-repo-garbage.tar.gz"
+for how in http checksum unpack; do
+  make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+  http=""
+  case $how in
+    http)     publish_agent_repo 0.34.0 "$REPO_GOOD"; http=500 ;;
+    checksum) publish_agent_repo 0.34.0 "$REPO_GOOD" tamper ;;
+    unpack)   publish_agent_repo 0.34.0 "$WORK/agent-repo-garbage.tar.gz" ;;
+  esac
+  INST="$WORK/inst20-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  mkdir -p "$INST/repo/dists"; printf 'repo-marker-0.33.0\n' > "$INST/repo/dists/Release"
+  cp "$INST/.env" "$WORK/inst20-$how.env"
+  DLOG="$WORK/inst20-$how.docker"; : > "$DLOG"
+  out=$(AH_TEST_REPO_HTTP="$http" AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+  echo "$out" | sed 's/^/    │ /'
+  { [ $rc -ne 0 ] && grep -q 'FEHLER: .*zurueckgerollt' <<<"$out"; } \
+    && ok "agent-repo failure ($how) exits with the rollback message" || bad "agent-repo failure ($how): rc=$rc"
+  { cmp -s "$WORK/inst20-$how.env" "$INST/.env" && [ ! -e "$INST/.env.ah-new" ]; } \
+    && ok "agent-repo failure ($how) restored .env" || bad "agent-repo failure ($how) left .env changed"
+  grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+    && ok "agent-repo failure ($how) rolled back the runtime files" || bad "agent-repo failure ($how): compose not rolled back"
+  grep -qx 'repo-marker-0.33.0' "$INST/repo/dists/Release" 2>/dev/null \
+    && ok "agent-repo failure ($how) kept the installed ./repo" || bad "agent-repo failure ($how) changed ./repo"
+  # The preflight's `compose version` proves the log is written at all.
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+    && ok "agent-repo failure ($how) touched no container" || bad "agent-repo failure ($how): docker calls $(tr '\n' ';' < "$DLOG")"
+done
+# Once the asset can be had, the next run retries instead of calling 0.34.0 current.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+publish_agent_repo 0.34.0 "$REPO_GOOD"
+out=$(run_update "$WORK/inst20-http" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Update 0.33.0 -> 0.34.0' <<<"$out" \
+    && grep -q 'repo-marker-0.34.0' "$WORK/inst20-http/repo/dists/Release"; } \
+  && ok "after an agent-repo failure the next run retries and lands on 0.34.0" \
+  || bad "no retry after an agent-repo failure: rc=$rc"
+
+# ── 21. --no-rollback: an agent-repo failure leaves the new state, names the way on
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst21"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_REPO_HTTP=500 run_update "$INST" --no-rollback 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env"; } \
+  && ok "--no-rollback keeps the new state after an agent-repo failure" \
+  || bad "--no-rollback agent-repo failure: rc=$rc $out"
+# --redeploy never calls update_agent_repo: it would start 0.34.0 on the old ./repo.
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ grep -q -- '--no-rollback.*\./repo.*--ref v0\.34\.0' <<<"$msg" && ! grep -q -- '--redeploy' <<<"$msg"; } \
+  && ok "--no-rollback agent-repo failure names only --ref v0.34.0 and the ./repo state" \
+  || bad "--no-rollback agent-repo message: $msg"
+
+# ── 22. no .env: abort before the backup and the snapshot ────────────────────
+INST="$WORK/inst22"; make_install 0.33.0 "$SRC_OLD" "$INST"
+rm "$INST/.env"
+out=$(run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: .env fehlt' <<<"$out"; } \
+  && ok "missing .env aborts with its own message" || bad "missing .env: rc=$rc"
+{ ! ls "$INST"/backups/*.tar.gz >/dev/null 2>&1 && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+    && [ ! -e "$INST/.env" ]; } \
+  && ok "missing .env: no backup, no snapshot, nothing swapped" \
+  || bad "missing .env: backups/ holds $(find "$INST/backups" -mindepth 1 -printf '%f ')"
+
+# ── 23. the recreate fails → rolled back like a failed health check ─────────
+# A failed `compose up` ended update.sh with .env on 0.34.0 and nothing rolled
+# back: the next run called the install current. Some containers may have
+# started on 0.34.0, so this takes the health-fail rollback (pins only, restart).
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst23"; make_install 0.33.0 "$SRC_OLD" "$INST"
+DLOG="$WORK/inst23.docker"; : > "$DLOG"
+out=$(AH_TEST_UP_FAIL_ONCE="$WORK/inst23.upfail" AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: Stack-Neustart fehlgeschlagen.*zurueckgerollt auf 0.33.0' <<<"$out"; } \
+  && ok "a failed recreate exits with the rollback message" || bad "failed recreate: rc=$rc"
+{ grep -qx 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server:0.33.0' "$INST/.env" \
+    && grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.33.0' "$INST/.env" \
+    && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
+  && ok "a failed recreate rolled back the pins and the runtime files" || bad "failed recreate: not rolled back"
+[ "$(grep -c '^compose up' "$DLOG")" = 2 ] \
+  && ok "a failed recreate restarts the installed state" || bad "failed recreate: docker calls $(tr '\n' ';' < "$DLOG")"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Update 0.33.0 -> 0.34.0' <<<"$out" && grep -q 'server:0.34.0' "$INST/.env"; } \
+  && ok "after a failed recreate the next run retries and lands on 0.34.0" \
+  || bad "no retry after a failed recreate: rc=$rc"
+
+# ── 24. --no-rollback: a failed recreate stays, the message names the way on ─
+# A bare re-run calls 0.34.0 current; --ref skips the downgrade guard.
+INST="$WORK/inst24"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_UP_FAIL_ONCE="$WORK/inst24.upfail" run_update "$INST" --no-rollback 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env" \
+    && grep -q 'FEHLER: Stack-Neustart fehlgeschlagen.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
+  && ok "--no-rollback after a failed recreate keeps the state, names --redeploy and --ref v0.33.0" \
+  || bad "--no-rollback failed recreate: rc=$rc $out"
+
+# ── 25. --no-rollback after a failed health check names the way on ──────────
+INST="$WORK/inst25"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_HEALTH=1 run_update "$INST" --no-rollback 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env" \
+    && grep -q 'FEHLER: Server nicht rechtzeitig bereit.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
+  && ok "--no-rollback health-fail names --redeploy and --ref v0.33.0" || bad "--no-rollback health-fail: rc=$rc $out"
+# A floating tag has no release to name: --ref would pin a version, not :main.
+INST="$WORK/inst25b"; make_install main "$SRC_OLD" "$INST"
+out=$(AH_TEST_HEALTH=1 run_update "$INST" --no-rollback 2>&1); rc=$?
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q -- '--no-rollback.*--redeploy.*von Hand' <<<"$msg" && ! grep -q -- '--ref' <<<"$msg"; } \
+  && ok "--no-rollback health-fail on :main names --redeploy and no --ref" || bad "--no-rollback health-fail on :main: $msg"
+
+# ── 26. a restore that fails is not reported as a rollback ──────────────────
+# A directory in the way of the .env copy makes the restore fail; the closing
+# message must say the rollback is incomplete, not "zurueckgerollt".
+for how in pull health; do
+  INST="$WORK/inst26-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  mkdir "$INST/.env.ah-new"
+  if [ "$how" = pull ]; then
+    out=$(AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
+  else
+    out=$(AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
+  fi
+  echo "$out" | sed 's/^/    │ /'
+  msg=$(grep 'FEHLER: ' <<<"$out")
+  { [ $rc -ne 0 ] && grep -q 'WARN: .*UNVOLLSTAENDIG' <<<"$out" \
+      && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+    && ok "failed .env restore ($how): the closing message says incomplete" \
+    || bad "failed .env restore ($how): rc=$rc $msg"
+done
+
+# ── 27. the installed state does not start again: the rollback is incomplete ─
+# Every `compose up` fails, the rollback's restart of 0.33.0 too. Files and pins
+# are back, but the old stack is not running, so that is no rollback either.
+INST="$WORK/inst27"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_UP_FAIL=always run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env" \
+    && grep -q 'WARN: Start des Stands 0.33.0 fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$out"; } \
+  && ok "a failed restart of the installed state warns" || bad "failed restart of 0.33.0: rc=$rc"
+{ grep -q 'Stack-Neustart fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+  && ok "a failed restart of the installed state: the closing message says incomplete" \
+  || bad "failed restart of 0.33.0: closing message '$msg'"
+# The restart's own reason reaches the operator, as the first recreate's does.
+[ "$(grep -c 'stub: up failed' <<<"$out")" = 2 ] \
+  && ok "both failed starts show docker's reason" || bad "docker's reason swallowed: $out"
 
 echo
 echo "──────────────────────────────────────────"

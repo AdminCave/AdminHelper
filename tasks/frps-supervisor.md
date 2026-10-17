@@ -151,8 +151,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (intern; Betrieb in T17)
 Abhängt von: T11
 
-### T22 — update.sh: Rollback auch bei Floating-Tags und nach einem gescheiterten Agent-Repo-Abgleich  [ ]
+### T22 — update.sh: Rollback auch bei Floating-Tags und nach einem gescheiterten Agent-Repo-Abgleich  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5f4a9ebb 2026-10-17T06:24:29+02:00
+Review: approve (.ah-out/review/frps-supervisor/T22.verdict.json)
 Änderung: Aus den Reviews von T21 (2026-10-17): (1) Der Rollback nach gescheitertem Health-Check stellt bei `INSTALLED=unknown` (Floating-Tag, z. B. `:latest`/`:main`) die Image-Pins aus der in T21 angelegten Kopie der alten `.env` wieder her, sonst meldet der nächste Lauf „bereits aktuell“ und der alte Stand läuft still weiter; übrige neue Keys und Secrets bleiben, weil Container schon gelaufen sind. (2) Scheitert `update_agent_repo` nach dem Neu-Pinnen, rollt `update.sh` wie beim Pull-Fehler zurück. (3) Fehlt `.env`, bricht `update.sh` mit eigener Meldung vor Backup und Snapshot ab. (4) Die alte `.env` wird atomar zurückgespielt (Kopie daneben, dann `mv`). (5) `--no-rollback` mit Pull-Fehler nennt in der Meldung den Ausweg (`--redeploy` bzw. `--ref <tag>`). Tests zuerst rot in `update_test.sh`: Health-Fail mit Floating-Tag → Pins zurück, nächster Lauf versucht erneut; Agent-Repo-Fehler → Rollback; fehlende `.env` → Abbruch ohne Backup; Meldung bei `--no-rollback`. **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (intern; Betrieb in T17)
