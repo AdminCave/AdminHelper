@@ -155,22 +155,33 @@ async fn try_refresh(
     })
 }
 
-/// Authenticated GET with automatic token refresh on 401.
+/// Authenticated GET with automatic token refresh on 401. It reads the active session
+/// from the keyring once and sends that session's access token; `_token`, the one the
+/// caller holds from its login, is not sent: a token renewed after a 401 lives only in
+/// the keyring, and with the login one every poll after its expiry would refresh and
+/// rotate the refresh token again.
 pub async fn authenticated_get(
     server_url: &str,
-    token: &str,
+    _token: &str,
     path: &str,
     allow_self_signed: bool,
 ) -> Result<reqwest::Response, AppError> {
+    // One read of the session for the whole call: the session can change (logout, a
+    // login elsewhere) while this request waits for its answer, so the pin, the access
+    // token sent and a renewal all belong to the session read here.
+    let session = load_session_from_keyring();
     // Same token-destination pin as api_proxy: refuse to send the JWT if the
     // FINAL composed URL (a `path` with a leading `@`/`\`/`://` can rewrite the
-    // authority) drifts off the logged-in server. server_url and token both
-    // originate from frontend commands, so this is a real boundary.
+    // authority) drifts off the logged-in server. server_url originates from
+    // frontend commands, so this is a real boundary.
     crate::validation::require_pinned_destination(
         server_url,
         path,
-        stored_server_url().as_deref(),
+        session.as_ref().ok().map(|(url, _, _)| url.as_str()),
     )?;
+    // The pin has refused already without a session, so this `?` never fires; the
+    // tokens are used only behind the pin.
+    let (stored_url, token, refresh_token) = session?;
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 
@@ -180,12 +191,14 @@ pub async fn authenticated_get(
         .send()
         .await?;
 
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        // Load the refresh token from the keyring and try to refresh
-        if let Ok((_, _, refresh_token)) = load_session_from_keyring() {
-            if let Ok(new_session) =
-                try_refresh(server_url, &refresh_token, allow_self_signed).await
-            {
+    // Renew and store only for the session this request was sent with; if the keyring
+    // holds another one by now, the caller gets the 401.
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED
+        && holds_session(&stored_url, &refresh_token)
+    {
+        if let Ok(new_session) = try_refresh(server_url, &refresh_token, allow_self_signed).await {
+            // Checked again: the session can also change while the renewal is under way.
+            if holds_session(&stored_url, &refresh_token) {
                 if let Err(e) = save_session_to_keyring(&new_session) {
                     // The server has already rotated the refresh token, so the new one lives
                     // only in this retry — the keyring still holds the old, now-invalidated
@@ -250,6 +263,12 @@ pub fn stored_server_url() -> Option<String> {
     load_session_from_keyring().ok().map(|(url, _, _)| url)
 }
 
+/// Whether the keyring still holds the session with this server URL and refresh token.
+fn holds_session(server_url: &str, refresh_token: &str) -> bool {
+    load_session_from_keyring()
+        .is_ok_and(|(url, _, refresh)| url == server_url && refresh == refresh_token)
+}
+
 fn save_session_to_keyring(session: &AuthSession) -> Result<(), AppError> {
     keyring_store::set(KEYRING_JWT_KEY, &session.token)?;
     keyring_store::set(KEYRING_REFRESH_KEY, &session.refresh_token)?;
@@ -279,6 +298,7 @@ fn clear_keyring() -> Result<(), AppError> {
 mod tests {
     use super::*;
     use reqwest::StatusCode;
+    use std::sync::{Arc, Mutex};
 
     /// The body nginx sends for its error 496, as in ngx_http_special_response.c.
     const NGINX_496_PAGE: &str = "<html>\r\n<head><title>400 No required SSL certificate was sent</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>No required SSL certificate was sent</center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n";
@@ -320,5 +340,322 @@ mod tests {
         let msg = login_failure(StatusCode::UNAUTHORIZED, &format!("token {jwt}")).to_string();
         assert!(msg.contains("<redacted-jwt>"), "{msg}");
         assert!(!msg.contains(jwt), "{msg}");
+    }
+
+    const SERVER: &str = "https://adminhelper.example:8443";
+
+    fn session(server_url: &str, token: &str) -> AuthSession {
+        AuthSession {
+            server_url: server_url.to_string(),
+            token: token.to_string(),
+            refresh_token: "refresh".to_string(),
+            username: "ops-admin".to_string(),
+            is_admin: true,
+        }
+    }
+
+    /// The session a user signs in to while an older request still waits for its answer.
+    fn next_session(server_url: &str) -> AuthSession {
+        AuthSession {
+            server_url: server_url.to_string(),
+            token: "next".to_string(),
+            refresh_token: "next-refresh".to_string(),
+            username: "ops-admin".to_string(),
+            is_admin: true,
+        }
+    }
+
+    fn stored(session: &AuthSession) -> (String, String, String) {
+        (
+            session.server_url.clone(),
+            session.token.clone(),
+            session.refresh_token.clone(),
+        )
+    }
+
+    const RENEWED: &str = r#"{"access_token":"renewed","refresh_token":"refresh-2"}"#;
+    const ME: &str = r#"{"username":"ops-admin","is_admin":true}"#;
+
+    fn reply(status: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    /// Read one request: the head and as many body bytes as its `content-length` names.
+    async fn read_request(tcp: &mut tokio::net::TcpStream) -> String {
+        use tokio::io::AsyncReadExt;
+
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+                if request.len() >= end + 4 + length {
+                    break;
+                }
+            }
+            let n = tcp.read(&mut buf).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
+    /// Serve HTTP on a fresh loopback port, one request per connection: every request lands
+    /// in the log, then `answer` returns the whole response to it. The server runs on the
+    /// test's thread, so `answer` sees and changes the test's in-memory keyring.
+    async fn serve(
+        mut answer: impl FnMut(&str) -> String + Send + 'static,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&log);
+        tokio::spawn(async move {
+            loop {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut tcp).await;
+                seen.lock().unwrap().push(request.clone());
+                tcp.write_all(answer(&request).as_bytes()).await.unwrap();
+                let _ = tcp.shutdown().await;
+            }
+        });
+        (url, log)
+    }
+
+    /// The request lines in the order the requests arrived.
+    fn request_lines(log: &Mutex<Vec<String>>) -> Vec<String> {
+        let log = log.lock().unwrap();
+        log.iter()
+            .map(|request| request.lines().next().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn authenticated_get_sends_nothing_without_a_session() {
+        let _keyring = keyring_store::memory();
+        let (server, log) = serve(|_| reply("200 OK", "")).await;
+
+        // The caller still holds its login token; the keyring holds no session.
+        assert!(
+            authenticated_get(&server, "from-login", "/api/frp/tunnels", false)
+                .await
+                .is_err()
+        );
+        assert_eq!(request_lines(&log), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn a_401_renews_the_session_the_request_was_sent_with() {
+        let _keyring = keyring_store::memory();
+        let (server, log) = serve(|request| {
+            if request.starts_with("POST /api/auth/refresh ") {
+                reply("200 OK", RENEWED)
+            } else if request.starts_with("GET /api/auth/me ") {
+                reply("200 OK", ME)
+            } else if request
+                .to_ascii_lowercase()
+                .contains("\r\nauthorization: bearer renewed\r\n")
+            {
+                reply("200 OK", "")
+            } else {
+                reply("401 Unauthorized", "")
+            }
+        })
+        .await;
+        save_session_to_keyring(&session(&server, "expired")).unwrap();
+
+        let response = authenticated_get(&server, "from-login", "/api/frp/tunnels", false)
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            request_lines(&log),
+            [
+                "GET /api/frp/tunnels HTTP/1.1",
+                "POST /api/auth/refresh HTTP/1.1",
+                "GET /api/auth/me HTTP/1.1",
+                "GET /api/frp/tunnels HTTP/1.1",
+            ]
+        );
+        let refresh = log.lock().unwrap()[1].clone();
+        assert!(
+            refresh.ends_with(r#"{"refresh_token":"refresh"}"#),
+            "{refresh}"
+        );
+        assert_eq!(
+            load_session_from_keyring().unwrap(),
+            (server, "renewed".to_string(), "refresh-2".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_changed_while_the_request_waits_is_neither_renewed_nor_overwritten() {
+        /// The session after the change, given the server the request went to.
+        type Next = fn(&str) -> Option<AuthSession>;
+        let cases: [(&str, Next); 3] = [
+            ("signed out", |_| None),
+            ("signed in to another server", |_| {
+                Some(next_session(SERVER))
+            }),
+            ("signed in again on this server", |here| {
+                Some(next_session(here))
+            }),
+        ];
+        for (case, next) in cases {
+            let _keyring = keyring_store::memory();
+            let mut waiting = true;
+            let (server, log) = serve(move |request| {
+                if request.starts_with("POST /api/auth/refresh ") {
+                    reply("200 OK", RENEWED)
+                } else if request.starts_with("GET /api/auth/me ") {
+                    reply("200 OK", ME)
+                } else {
+                    if waiting {
+                        // The session changes while the first request waits for its answer.
+                        waiting = false;
+                        let (here, _, _) = load_session_from_keyring().unwrap();
+                        match next(&here) {
+                            Some(session) => save_session_to_keyring(&session).unwrap(),
+                            None => clear_keyring().unwrap(),
+                        }
+                    }
+                    reply("401 Unauthorized", "")
+                }
+            })
+            .await;
+            save_session_to_keyring(&session(&server, "expired")).unwrap();
+
+            let response = authenticated_get(&server, "from-login", "/api/frp/tunnels", false)
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{case}");
+            // No renewal and no retry: the request stays the only one this server sees.
+            assert_eq!(
+                request_lines(&log),
+                ["GET /api/frp/tunnels HTTP/1.1"],
+                "{case}"
+            );
+            assert_eq!(
+                load_session_from_keyring().ok(),
+                next(&server).as_ref().map(stored),
+                "{case}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_session_changed_while_the_renewal_runs_is_not_overwritten() {
+        let _keyring = keyring_store::memory();
+        let (server, log) = serve(|request| {
+            if request.starts_with("POST /api/auth/refresh ") {
+                reply("200 OK", RENEWED)
+            } else if request.starts_with("GET /api/auth/me ") {
+                // The refresh is answered; the session changes before the renewal is stored.
+                save_session_to_keyring(&next_session(SERVER)).unwrap();
+                reply("200 OK", ME)
+            } else {
+                reply("401 Unauthorized", "")
+            }
+        })
+        .await;
+        save_session_to_keyring(&session(&server, "expired")).unwrap();
+
+        let response = authenticated_get(&server, "from-login", "/api/frp/tunnels", false)
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        // No retry with the renewed token.
+        assert_eq!(
+            request_lines(&log),
+            [
+                "GET /api/frp/tunnels HTTP/1.1",
+                "POST /api/auth/refresh HTTP/1.1",
+                "GET /api/auth/me HTTP/1.1",
+            ]
+        );
+        assert_eq!(
+            load_session_from_keyring().unwrap(),
+            stored(&next_session(SERVER))
+        );
+    }
+
+    /// Answer one HTTP request on a fresh loopback port with 200; the task yields the request
+    /// head as received.
+    async fn serve_one() -> (String, tokio::task::JoinHandle<String>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let task = tokio::spawn(async move {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = tcp.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                head.extend_from_slice(&buf[..n]);
+            }
+            tcp.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            let _ = tcp.shutdown().await;
+            String::from_utf8_lossy(&head).into_owned()
+        });
+        (url, task)
+    }
+
+    #[tokio::test]
+    async fn authenticated_get_sends_the_keyring_access_token() {
+        let _keyring = keyring_store::memory();
+        let (server, request) = serve_one().await;
+        // The keyring holds a renewed token, the caller still the one from its login.
+        save_session_to_keyring(&session(&server, "renewed")).unwrap();
+
+        let response = authenticated_get(&server, "from-login", "/api/frp/tunnels", false)
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let request = request.await.unwrap();
+        assert!(
+            request.starts_with("GET /api/frp/tunnels HTTP/1.1\r\n"),
+            "{request}"
+        );
+        let authorization = request.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("authorization")
+                .then_some(value.trim())
+        });
+        assert_eq!(authorization, Some("Bearer renewed"));
+    }
+
+    #[tokio::test]
+    async fn authenticated_get_sends_no_access_token_off_the_logged_in_server() {
+        let _keyring = keyring_store::memory();
+        let (foreign, _request) = serve_one().await;
+        save_session_to_keyring(&session(SERVER, "renewed")).unwrap();
+
+        // The foreign server would answer 200; the pin refuses before any request.
+        assert!(
+            authenticated_get(&foreign, "from-login", "/api/frp/tunnels", false)
+                .await
+                .is_err()
+        );
     }
 }

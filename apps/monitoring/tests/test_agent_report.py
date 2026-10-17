@@ -446,3 +446,105 @@ def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
     assert [
         r for r in caplog.records if r.name == "monitor.engine" and "->" in r.getMessage()
     ] == []
+
+
+def _add_docker_check(factory, consecutive_fails: int) -> str:
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-d",
+                server_id="srv-1",
+                name="Docker",
+                check_type="docker_health",
+                config=json.dumps({}),
+                enabled=True,
+                consecutive_fails=consecutive_fails,
+            )
+        )
+        db.commit()
+    return "chk-d"
+
+
+def _docker_report(restart_count: int) -> dict:
+    """A running container as the agent reports it since R-0419."""
+    container = {
+        "id": "abc123def456",
+        "name": "web",
+        "image": "nginx:1.27",
+        "state": "running",
+        "status": "Up 2 hours",
+        "restart_policy": "always",
+        "exit_code": 0,
+        "oom_killed": False,
+        "restart_count": restart_count,
+        "health": "",
+    }
+    return {"docker": {"available": True, "error": None, "containers": [container]}}
+
+
+def _stored_docker(factory) -> tuple[MonitorState, dict]:
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-d").one()
+        db.expunge(state)
+    return state, json.loads(state.details)
+
+
+def test_report_feeds_previous_details_to_docker_health(client_db):
+    # R-0419 T6: the restart counter is compared per container id with the stored
+    # details of the previous push. Without them every push sees a first report and
+    # a container that restarted between two pushes stays ok.
+    client, factory = client_db
+    _add_docker_check(factory, consecutive_fails=1)
+
+    assert client.post("/agent/srv-1/report", json=_docker_report(0)).status_code == 200
+    _, details = _stored_docker(factory)
+    assert details["containers"][0]["category"] == "ok"
+
+    assert client.post("/agent/srv-1/report", json=_docker_report(1)).status_code == 200
+    _, details = _stored_docker(factory)
+    row = details["containers"][0]
+    assert (row["category"], row["reason"], row["restart_count"]) == ("warning", "restarted", 1)
+
+
+def test_report_without_docker_block_clears_stored_containers(client_db):
+    # The push path keeps stored details when a result carries none (T38); the
+    # docker checker sends an empty list instead, so a stale container list from an
+    # older push must not survive a report without the block.
+    client, factory = client_db
+    _add_docker_check(factory, consecutive_fails=1)
+
+    assert client.post("/agent/srv-1/report", json=_docker_report(0)).status_code == 200
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    state, details = _stored_docker(factory)
+    assert state.status == "unknown"
+    assert details == {"containers": []}
+
+
+def test_single_restart_stays_damped_crash_loop_alerts(client_db):
+    # Kevin 2026-10-17: the damping over consecutive_fails stays. One restart is
+    # visible in the details only; a container restarting on every push (crash
+    # loop) reaches the threshold and turns the check warning.
+    client, factory = client_db
+    _add_docker_check(factory, consecutive_fails=2)  # the "Docker Host" template
+
+    assert client.post("/agent/srv-1/report", json=_docker_report(0)).status_code == 200
+
+    # One restart: reason restarted in the details, the status stays ok.
+    assert client.post("/agent/srv-1/report", json=_docker_report(1)).status_code == 200
+    state, details = _stored_docker(factory)
+    assert details["containers"][0]["reason"] == "restarted"
+    assert (state.status, state.fail_count) == ("ok", 1)
+
+    # No further restart: the counter resets, nothing was ever alerted.
+    assert client.post("/agent/srv-1/report", json=_docker_report(1)).status_code == 200
+    state, details = _stored_docker(factory)
+    assert details["containers"][0]["reason"] is None
+    assert (state.status, state.fail_count) == ("ok", 0)
+
+    # Crash loop: a restart on each of consecutive_fails pushes -> warning.
+    assert client.post("/agent/srv-1/report", json=_docker_report(2)).status_code == 200
+    assert _stored_docker(factory)[0].status == "ok"
+    assert client.post("/agent/srv-1/report", json=_docker_report(3)).status_code == 200
+    state, details = _stored_docker(factory)
+    assert details["containers"][0]["reason"] == "restarted"
+    assert (state.status, state.fail_count) == ("warning", 2)

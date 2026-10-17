@@ -9,8 +9,11 @@ surfacing as a permanently-unknown or mis-thresholded check at runtime."""
 import pytest
 from pydantic import ValidationError
 
-from app.check_configs import validate_check_config
+from app.builtin_templates import seed_builtin_templates
+from app.check_configs import CONFIG_MODELS, validate_check_config
+from app.models import MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
+from app.template_sync import record_override_baseline
 
 
 class TestValidateCheckConfig:
@@ -70,6 +73,122 @@ class TestValidateCheckConfig:
         # The desktop docker_health form writes check_restarts on every toggle;
         # product-generated configs must keep passing (UI cleanup: T20).
         validate_check_config("docker_health", {"check_restarts": True})
+
+
+_UNAVAILABLE_TYPES = ("docker_health", "zfs_health")
+
+
+class TestAlertOnUnavailable:
+    """R-0419: an unreachable Docker daemon or a failing zpool alerts as warning
+    unless the check opts out with alert_on_unavailable (default on)."""
+
+    @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
+    def test_defaults_to_on(self, check_type):
+        assert CONFIG_MODELS[check_type]().alert_on_unavailable is True
+
+    @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
+    def test_off_is_accepted(self, check_type):
+        validate_check_config(check_type, {"alert_on_unavailable": False})
+
+    @pytest.mark.parametrize(
+        ("check_type", "stored"),
+        [
+            ("docker_health", {"ignore_containers": ["watchtower"], "check_restarts": True}),
+            ("zfs_health", {"capacity_warn": 80, "capacity_crit": 90}),
+        ],
+    )
+    def test_config_from_before_the_key_validates_and_alerts(self, check_type, stored):
+        # No migration: a check stored without the key gets the default.
+        validate_check_config(check_type, stored)
+        assert CONFIG_MODELS[check_type].model_validate(stored).alert_on_unavailable is True
+
+    # A lax bool would take "false", 0 and 1 and store them as sent.
+    @pytest.mark.parametrize("value", ["sometimes", "false", 0, 1])
+    @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
+    def test_non_bool_is_422(self, client_db, check_type, value):
+        client, _ = client_db
+        r = client.post(
+            "/checks",
+            json={
+                "name": "c",
+                "check_type": check_type,
+                "config": {"alert_on_unavailable": value},
+            },
+        )
+        assert r.status_code == 422
+        assert "valid boolean" in r.text
+
+
+class TestAlertOnUnavailableTemplates:
+    """The key must not make a docker/zfs template check or a built-in look changed
+    (R-0420): configs are stored as sent, never filled with the schema defaults, so
+    a check without the key still equals its definition and an unedited built-in
+    keeps its hash (pinned in test_seed)."""
+
+    _SHIPPED = {
+        "docker_health": {},
+        "zfs_health": {"capacity_warn": 80, "capacity_crit": 90},
+    }
+
+    @pytest.fixture()
+    def builtins(self, client_db, monkeypatch):
+        """docker-host and zfs-storage seeded and assigned to srv-1: the client, the
+        factory, the template ids by slug and the created checks by type."""
+        # The scheduler is not under test; keep jobs out of the process-wide one.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        monkeypatch.setattr("app.template_sync.add_check", lambda *a, **k: None)
+        client, factory = client_db
+        with factory() as db:
+            seed_builtin_templates(db)
+            ids = {t.builtin_slug: t.id for t in db.query(MonitorTemplate)}
+        assign = {"server_id": "srv-1", "hostname": "h", "server_name": "n"}
+        for slug in ("docker-host", "zfs-storage"):
+            r = client.post(f"/templates/{ids[slug]}/assign", json=assign)
+            assert r.status_code == 200, r.text
+        checks = {c["checkType"]: c for c in client.get("/checks").json()}
+        return client, factory, ids, checks
+
+    def test_builtin_checks_hold_the_shipped_config_and_the_first_start_marks_nothing(
+        self, builtins
+    ):
+        client, factory, _, checks = builtins
+        assert {t: checks[t]["config"] for t in _UNAVAILABLE_TYPES} == self._SHIPPED
+
+        with factory() as db:
+            assert record_override_baseline(db) == 0
+
+        after = {c["checkType"]: c for c in client.get("/checks").json()}
+        assert {t: after[t]["overriddenFields"] for t in _UNAVAILABLE_TYPES} == {
+            "docker_health": [],
+            "zfs_health": [],
+        }
+
+    @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
+    def test_switching_it_off_is_a_config_override_and_back_clears_it(self, builtins, check_type):
+        client, _, _, checks = builtins
+        cid = checks[check_type]["id"]
+        off = {**self._SHIPPED[check_type], "alert_on_unavailable": False}
+
+        r = client.put(f"/checks/{cid}", json={"config": off})
+        assert r.status_code == 200, r.text
+        assert (r.json()["config"], r.json()["overriddenFields"]) == (off, ["config"])
+
+        r = client.put(f"/checks/{cid}", json={"config": self._SHIPPED[check_type]})
+        assert r.status_code == 200, r.text
+        assert r.json()["overriddenFields"] == []
+
+    @pytest.mark.parametrize("slug", ["docker-host", "zfs-storage"])
+    def test_builtin_saved_unchanged_in_the_editor_stays_unedited(self, builtins, slug):
+        # The editor sends every definition back; each config passes the schema
+        # but must be stored as sent, or the hash would move.
+        client, _, ids, _ = builtins
+        defs = client.get(f"/templates/{ids[slug]}").json()["checkDefinitions"]
+
+        r = client.put(f"/templates/{ids[slug]}", json={"check_definitions": defs})
+
+        assert r.status_code == 200, r.text
+        assert r.json()["builtinEdited"] is False
+        assert [d["config"] for d in r.json()["checkDefinitions"]] == [d["config"] for d in defs]
 
 
 class TestSchemaBoundary:

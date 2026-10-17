@@ -12,6 +12,7 @@ which activates the plugins based on installed binaries.
 
 from __future__ import annotations
 
+import re
 import time
 
 
@@ -108,7 +109,8 @@ class ZfsHealthChecker:
     Config example:
     {
         "capacity_warn": 80,
-        "capacity_crit": 90
+        "capacity_crit": 90,
+        "alert_on_unavailable": true
     }
     """
 
@@ -118,11 +120,27 @@ class ZfsHealthChecker:
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         zfs = report.get("zfs")
         if not zfs:
-            return "unknown", "Keine ZFS-Daten im Report", None
+            # An empty list, not None: the push path keeps the stored details of a
+            # result without any, and the desktop would go on showing the old pools.
+            return "unknown", "Keine ZFS-Daten im Report", {"_details": {"pools": []}}
+
+        if not zfs.get("available", True) or zfs.get("error"):
+            code = zfs.get("error")
+            msg = f"ZFS unavailable ({code})" if code else "ZFS unavailable"
+            if zfs.get("error_message"):
+                msg += f": {zfs['error_message']}"
+            # Only a real False switches the alert off; anything else keeps the default.
+            alert = config.get("alert_on_unavailable", True) is not False
+            details = {"available": False, "error": code, "pools": []}
+            return ("warning" if alert else "unknown"), msg, {"_details": details}
 
         pools = zfs.get("pools", [])
         if not pools:
-            return "ok", "Keine ZFS-Pools gefunden", None
+            return (
+                "ok",
+                "Keine ZFS-Pools gefunden",
+                {"_details": {"available": True, "error": None, "pools": []}},
+            )
 
         cap_warn = config.get("capacity_warn", 80)
         cap_crit = config.get("capacity_crit", 90)
@@ -150,6 +168,8 @@ class ZfsHealthChecker:
                     status = "warning"
 
         metrics["_details"] = {
+            "available": True,
+            "error": None,
             "pools": [
                 {
                     "name": p.get("name", "?"),
@@ -157,7 +177,7 @@ class ZfsHealthChecker:
                     "capacityPercent": p.get("capacity_percent", 0),
                 }
                 for p in pools
-            ]
+            ],
         }
 
         if problems:
@@ -167,32 +187,135 @@ class ZfsHealthChecker:
         return "ok", f"Alle Pools ONLINE: {pool_summary}", metrics
 
 
+# docker ps prints the exit code into the status text: "Exited (3) 2 minutes ago".
+_PS_EXITED = re.compile(r"exited \((-?\d+)\)", re.IGNORECASE)
+
+# 128+SIGTERM and 128+SIGKILL: how docker stop ends an app that does not exit 0 on
+# TERM, or ignores it until the stop timeout kills it. A stop, not a crash (Kevin
+# 2026-10-17); an OOM kill also ends in 137 and is caught by oom_killed first.
+_STOP_SIGNAL_EXITS = (137, 143)
+
+
+def _container_exit_code(c: dict) -> int | None:
+    if "exit_code" in c:
+        return c["exit_code"]
+    # Agents before R-0419 send no exit_code; their ps status text carries it.
+    m = _PS_EXITED.match(c.get("status", ""))
+    return int(m.group(1)) if m else None
+
+
+def _rate_container(c: dict, state: str, prev_restart_count: int | None) -> tuple[str, str | None]:
+    """(category, reason code) of one container, after the table "Bewertung je
+    Container" of docs/features/monitoring-silent-outages.md: the end decides, the
+    restart policy only tells a deliberate stop from a crash."""
+    if state == "running":
+        if "health" in c:
+            unhealthy = c["health"] == "unhealthy"
+        else:  # agent before R-0419: only the ps status text carries it
+            unhealthy = "unhealthy" in c.get("status", "").lower()
+        if unhealthy:
+            return "warning", "unhealthy"
+        # A restart between two pushes raises the count; a manual start resets it to 0.
+        count = c.get("restart_count")
+        if (
+            isinstance(count, int)
+            and isinstance(prev_restart_count, int)
+            and count > prev_restart_count
+        ):
+            return "warning", "restarted"
+        return "ok", None
+    if state in ("restarting", "dead"):
+        return "critical", state
+    if state == "paused":
+        return "warning", "paused"
+    if state == "created":
+        # A failed first start leaves the container created, with the runtime's exit
+        # code (127 for a missing command, Docker 29.8.1); never started is exit 0.
+        if _container_exit_code(c):
+            return "critical", "start_failed"
+        return "stopped", "created"
+    if state == "removing":
+        return "stopped", "stopped"
+    if state == "exited":
+        if c.get("oom_killed"):
+            return "critical", "oom"
+        # always/unless-stopped restart a crashed container, so exited there means
+        # stopped by hand (Docker ignores the policy until the next manual start).
+        if c.get("restart_policy") in ("always", "unless-stopped"):
+            return "stopped", "stopped"
+        exit_code = _container_exit_code(c)
+        if exit_code and exit_code not in _STOP_SIGNAL_EXITS:
+            return "critical", f"exit:{exit_code}"
+        return "stopped", "stopped"
+    return "warning", "unknown_state"
+
+
+def _problem_text(name: str, reason: str, state: str) -> str:
+    if reason.startswith("exit:"):
+        return f"{name}: exited with code {reason[5:]}"
+    if reason == "oom":
+        return f"{name}: OOM-killed"
+    if reason == "start_failed":
+        return f"{name}: failed to start"
+    if reason == "unknown_state":
+        return f"{name}: unknown state {state!r}"
+    return f"{name}: {reason}"
+
+
 class DockerHealthChecker:
     """Checks Docker container status.
 
     Config example:
     {
-        "ignore_containers": ["watchtower"]
+        "ignore_containers": ["watchtower"],
+        "alert_on_unavailable": true
     }
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         return "unknown", "Wartet auf Agent-Daten", None
 
-    def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
+        """`prev_details` is this check's previous `_details` blob (state.details): a
+        container whose restart_count rose since then restarted between two pushes."""
         docker = report.get("docker")
         if not docker:
-            return "unknown", "Keine Docker-Daten im Report", None
+            # An empty list, not None: the push path keeps the stored details of a
+            # result without any, and the desktop would go on showing the old list.
+            return "unknown", "No Docker data in report", {"_details": {"containers": []}}
+
+        if not docker.get("available", True) or docker.get("error"):
+            code = docker.get("error")
+            msg = f"Docker unavailable ({code})" if code else "Docker unavailable"
+            if docker.get("error_message"):
+                msg += f": {docker['error_message']}"
+            # Only a real False switches the alert off; anything else keeps the default.
+            alert = config.get("alert_on_unavailable", True) is not False
+            details = {"available": False, "error": code, "containers": []}
+            return ("warning" if alert else "unknown"), msg, {"_details": details}
 
         containers = docker.get("containers", [])
         if not containers:
-            return "ok", "Keine Container gefunden", None
+            return (
+                "ok",
+                "No containers found",
+                {"_details": {"available": True, "error": None, "containers": []}},
+            )
 
         ignore = set(config.get("ignore_containers", []))
+        prev_restarts = {
+            p.get("id"): p.get("restart_count")
+            for p in (prev_details or {}).get("containers") or []
+            if p.get("id")
+        }
 
         critical_problems = []
         warning_problems = []
         ok_count = 0
+        running = 0
+        stopped = 0
         container_details = []
 
         for c in containers:
@@ -201,29 +324,28 @@ class DockerHealthChecker:
                 continue
 
             state = c.get("state", "").lower()
-            status_text = c.get("status", "").lower()
-            restart_policy = c.get("restart_policy", "no")
-            category = "ok"
-
-            # Containers with a restart policy that are not running
-            if restart_policy not in ("no", "") and state != "running":
-                if state in ("dead", "restarting"):
-                    critical_problems.append(f"{name}: {state}")
-                else:
-                    critical_problems.append(f"{name}: nicht aktiv (policy={restart_policy})")
-                category = "critical"
-            elif "unhealthy" in status_text:
-                warning_problems.append(f"{name}: unhealthy")
-                category = "warning"
-            elif state == "running":
+            category, reason = _rate_container(c, state, prev_restarts.get(c.get("id")))
+            if state == "running":
+                running += 1
+            if category == "critical":
+                critical_problems.append(_problem_text(name, reason, state))
+            elif category == "warning":
+                warning_problems.append(_problem_text(name, reason, state))
+            elif category == "stopped":
+                stopped += 1
+            else:
                 ok_count += 1
 
             container_details.append(
                 {
+                    "id": c.get("id"),
                     "name": name,
+                    "image": c.get("image", ""),
                     "state": state,
                     "category": category,
-                    "image": c.get("image", ""),
+                    "reason": reason,
+                    "exit_code": _container_exit_code(c),
+                    "restart_count": c.get("restart_count"),
                 }
             )
 
@@ -232,15 +354,22 @@ class DockerHealthChecker:
             "docker_critical": len(critical_problems),
             "docker_warning": len(warning_problems),
         }
-        metrics["_details"] = {"containers": container_details}
+        metrics["_details"] = {"available": True, "error": None, "containers": container_details}
 
+        counts = f"{running} running, {stopped} stopped"
         if critical_problems:
-            msg = "Container-Probleme: " + ", ".join(critical_problems)
+            msg = "Container problems: " + ", ".join(critical_problems)
             if warning_problems:
-                msg += "; Warnung: " + ", ".join(warning_problems)
-            return "critical", msg, metrics
+                msg += "; warnings: " + ", ".join(warning_problems)
+            return "critical", f"{msg} ({counts})", metrics
 
         if warning_problems:
-            return "warning", "Container-Warnungen: " + ", ".join(warning_problems), metrics
+            return (
+                "warning",
+                f"Container warnings: {', '.join(warning_problems)} ({counts})",
+                metrics,
+            )
 
-        return "ok", f"Alle {ok_count} Container laufen", metrics
+        if stopped or not running:
+            return "ok", counts, metrics
+        return "ok", f"All {running} containers running", metrics

@@ -104,6 +104,13 @@ def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     return kept
 
 
+def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, and stcp only
+    with a secret. Without one, the text carries no frps token; config-hash, config
+    download and provisioning bundle all come from that text, so they can't drift."""
+    return without_secretless_stcp([t for t in tunnels if t.enabled])
+
+
 def _tls_server_block(
     server_name: str = "frps",
     pki_base_path: str = _FRPS_CERT_DIR,
@@ -214,25 +221,30 @@ def generate_frpc_toml(
 ) -> str:
     """Generates a frpc.toml for a target host.
 
+    Without an active tunnel (active_tunnels) the result is the common part without
+    the frps token and without [[proxies]]: such a host needs no frps credentials,
+    and an agent that applies the text keeps no tunnel up. Config hash and config
+    download of the sync both come from here, so they carry the same text.
+
     Args:
         config: The central frps configuration.
         tunnels: All tunnels belonging to this host.
         frpc_user: The frpc user identifier (e.g. "k01-lnx1").
     """
+    active = active_tunnels(tunnels)
     lines = [
         f'serverAddr = "{config.server_addr}"',
         f"serverPort = {_bind_port(config)}",
         f'user = "{frpc_user}"',
         "",
         'auth.method = "token"',
-        f'auth.token = "{config.auth_token}"',
     ]
+    if active:
+        lines.append(f'auth.token = "{config.auth_token}"')
 
     lines.extend(_tls_agent_block())
 
-    active_tunnels = without_secretless_stcp([t for t in tunnels if t.enabled])
-
-    for tunnel in active_tunnels:
+    for tunnel in active:
         lines.append("")
         lines.append("[[proxies]]")
         lines.append(f'name = "{tunnel.name}"')

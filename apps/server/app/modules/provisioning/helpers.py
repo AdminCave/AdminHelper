@@ -11,7 +11,7 @@ Two tasks that must work independently of each other:
   a provisioning request should never fail because of a downed monitor
   service.
 - build_frp_bundle: builds frpc.toml + PKI bundle (base64) for a server
-  if FRP is configured AND the server has tunnels. Otherwise None.
+  if FRP is configured (the frpc.toml the sync serves). Otherwise None.
 """
 
 from __future__ import annotations
@@ -77,7 +77,14 @@ def fetch_or_skip_monitor_key(server_id: str, timeout: float = 5.0) -> Optional[
 
 def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
     """Builds frpc.toml + PKI bundle for a server. Optional — if no FRP
-    config exists OR the server has no tunnels, None is returned."""
+    config exists, None is returned.
+
+    The frpc.toml is the text the sync serves, from the same inputs to
+    generate_frpc_toml as provision_router._load_sync_inputs, so bundle, config-hash
+    and download are equal and the agent's next sync has nothing to do. Without an
+    active tunnel it carries no tunnel and no frps token. It is not None then: an
+    agent older than R-0398 writes its sync config, with the new API key, only along
+    with a bundle."""
     config = get_frp_config(db)
     if not config:
         return None
@@ -90,8 +97,6 @@ def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
         )
         .all()
     )
-    if not tunnels:
-        return None
 
     # Look up the server again in the helper so callers do not have to pass
     # a server instance

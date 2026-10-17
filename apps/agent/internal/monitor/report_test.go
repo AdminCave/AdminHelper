@@ -8,22 +8,25 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestBuildReportBasics(t *testing.T) {
-	// Stub the collectors that do real, slow, host-dependent I/O so this exercises the report assembly,
-	// not the host (6.18): the 1s CPU sample and the docker/pvesh/zpool/smartctl subprocess calls.
-	// Without this the "unit" test sleeps >=1s and its result/duration depend on the host.
+// stubReportHost stubs the collectors that do real, slow, host-dependent I/O so a test exercises the
+// report assembly, not the host (6.18): the 1s CPU sample and the docker/pvesh/zpool/smartctl
+// subprocess calls. Without this the "unit" test sleeps >=1s and its result/duration depend on the host.
+func stubReportHost(t *testing.T) {
+	t.Helper()
 	oldInterval := cpuSampleInterval
 	cpuSampleInterval = 0
 	oldPlugins := pluginCollectors
 	pluginCollectors.docker = func() map[string]any { return nil }
 	pluginCollectors.proxmox = func() map[string]any { return nil }
 	pluginCollectors.zfs = func() map[string]any { return nil }
-	pluginCollectors.smart = func() []SmartDisk { return nil }
+	pluginCollectors.smart = func() ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
 	serviceHealthCollector = func() map[string]any { return map[string]any{} }
 	t.Cleanup(func() {
@@ -31,6 +34,10 @@ func TestBuildReportBasics(t *testing.T) {
 		pluginCollectors = oldPlugins
 		serviceHealthCollector = oldSvc
 	})
+}
+
+func TestBuildReportBasics(t *testing.T) {
+	stubReportHost(t)
 
 	report := BuildReport(nil)
 
@@ -63,6 +70,63 @@ func TestBuildReportBasics(t *testing.T) {
 	// Without watched services there must be no legacy "services" key.
 	if _, ok := report["services"]; ok {
 		t.Error("services gesetzt, obwohl keine Service-Namen uebergeben wurden")
+	}
+}
+
+// smartWire is the report's smart and smart_absent keys as the monitoring service receives them (see
+// dockerWire); only those, so the host's own resource values cannot break the encoding.
+func smartWire(t *testing.T, report map[string]any) map[string]any {
+	t.Helper()
+	keys := map[string]any{}
+	for _, k := range []string{"smart", "smart_absent"} {
+		if v, ok := report[k]; ok {
+			keys[k] = v
+		}
+	}
+	return dockerWire(t, keys)
+}
+
+func TestBuildReportSmartAbsent(t *testing.T) {
+	// Through the real collectSmart with only smartctl faked: the reason it finds is what the
+	// monitoring service receives as smart_absent.reason, and there is no smart key.
+	cases := []struct {
+		reason string
+		stub   func(t *testing.T)
+	}{
+		{"not_installed", func(t *testing.T) {
+			stubSmartctl(t, dockerReply{}, nil)
+			smartctlCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+		}},
+		{"scan_failed", func(t *testing.T) { stubSmartctl(t, dockerReply{err: context.DeadlineExceeded}, nil) }},
+		{"no_devices", func(t *testing.T) { stubSmartctl(t, dockerReply{out: `{"devices":[]}`}, nil) }},
+	}
+	for _, c := range cases {
+		t.Run(c.reason, func(t *testing.T) {
+			stubReportHost(t)
+			pluginCollectors.smart = collectSmart
+			c.stub(t)
+			got := smartWire(t, BuildReport(nil))
+			want := map[string]any{"smart_absent": map[string]any{"reason": c.reason}}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("report smart keys = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestBuildReportSmartDisks(t *testing.T) {
+	stubReportHost(t)
+	pluginCollectors.smart = collectSmart
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {out: ataFixture},
+		"/dev/nvme0": {out: nvmeFixture},
+	})
+	got := smartWire(t, BuildReport(nil))
+	if disks, _ := got["smart"].([]any); len(disks) != 2 {
+		t.Errorf("smart = %#v, want both disks", got["smart"])
+	}
+	if absent, ok := got["smart_absent"]; ok {
+		t.Errorf("smart_absent = %v, want none with disks", absent)
 	}
 }
 

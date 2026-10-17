@@ -6197,7 +6197,7 @@
     },
     "/api/servers/{server_id}/provision/activate": {
       "post": {
-        "description": "Redeems a provision token. Returns the server API key (always),\nmonitor agent key (if service is available), FRP bundle (if tunnels exist).\n\nDeliberately NO mTLS scope guard: this is a bootstrap door — the agent has no\ncert yet (it gets its identity here / via enroll). It stays token-gated +\ncertless even under enforcement (A8), like the ca-issuer enroll plane.",
+        "description": "Redeems a provision token. Returns the server API key (always),\nmonitor agent key (if service is available), FRP bundle (if FRP is configured).\n\nDeliberately NO mTLS scope guard: this is a bootstrap door — the agent has no\ncert yet (it gets its identity here / via enroll). It stays token-gated +\ncertless even under enforcement (A8), like the ca-issuer enroll plane.",
         "operationId": "activate_provision_api_servers__server_id__provision_activate_post",
         "parameters": [
           {

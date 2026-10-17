@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 
 
 class _StrictConfig(BaseModel):
@@ -103,10 +103,14 @@ class ProxmoxBackupConfig(_StrictConfig):
 class ZfsHealthConfig(_StrictConfig):
     capacity_warn: float = Field(80, ge=0, le=100)
     capacity_crit: float = Field(90, ge=0, le=100)
+    # Strict: configs are stored as sent, and a lax "false" or 0 would reach the
+    # checker and the desktop checkbox as values each reads differently.
+    alert_on_unavailable: StrictBool = True
 
 
 class DockerHealthConfig(_StrictConfig):
     ignore_containers: list[str] = []
+    alert_on_unavailable: StrictBool = True
     # Dead key, deliberately tolerated: the checker never reads it, but the
     # desktop UI's docker_health form writes it on every toggle — rejecting it
     # would 422 product-generated configs. UI cleanup happens in T20.

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,15 @@ import (
 
 	"adminhelper-agent/internal/config"
 )
+
+// SyncConfigParams is what every later Sync needs to reach the server: its URL, this
+// host's server ID, the server API key and the trust for the connection.
+type SyncConfigParams struct {
+	AdminHelperURL string
+	ServerID       string
+	APIKey         string
+	TLS            config.TLSOpts
+}
 
 // ApplyParams groups frpc.Apply's arguments — 7 same-typed positionals before,
 // where a swapped serverID/apiKey only surfaced at runtime as an HTTP 401.
@@ -29,21 +39,15 @@ type ApplyParams struct {
 	TLS            config.TLSOpts
 }
 
-// Apply writes the FRP config + PKI bundle from a provisioning response
-// to disk and activates the service. NO HTTP call happens here anymore —
-// the token-activate call has been centralized since v0.23.0 in the
-// `provision` subcommand, which invokes `Apply` with the already-decoded
-// values.
-func Apply(p ApplyParams) error {
-	adminHelperURL := p.AdminHelperURL
+// WriteSyncConfig writes adminhelper.conf, the config every later Sync runs on, and the
+// CA copy it names. Provisioning writes it with and without an FRP bundle: a host
+// without it never gets a tunnel created after its provisioning (R-0398).
+func WriteSyncConfig(p SyncConfigParams) error {
+	adminHelperURL := strings.TrimRight(p.AdminHelperURL, "/")
 	serverID := p.ServerID
 	apiKey := p.APIKey
-	frpConfigB64 := p.FrpConfigB64
-	pkiBundleB64 := p.PkiBundleB64
 	cacert := p.TLS.CACert
 	insecure := p.TLS.Insecure
-
-	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 
 	frpDir := config.FrpDir()
 	pkiDir := config.FrpPkiDir()
@@ -92,43 +96,65 @@ func Apply(p ApplyParams) error {
 		return fmt.Errorf("Config schreiben: %w", err)
 	}
 	logger.Infof("Config geschrieben: %s", config.FrpAdminHelperConf())
+	return nil
+}
 
-	// Write frpc.toml (base64-decoded)
-	if frpConfigB64 != "" {
-		decoded, err := base64.StdEncoding.DecodeString(frpConfigB64)
-		if err != nil {
-			return fmt.Errorf("Config base64 decodieren: %w", err)
-		}
-		if err := os.WriteFile(config.FrpConfigFile(), rewriteIdentityPaths(decoded), 0600); err != nil {
-			return fmt.Errorf("frpc.toml schreiben: %w", err)
-		}
-		logger.Infof("frpc.toml geschrieben")
+// Apply writes the sync config (WriteSyncConfig) and the PKI bundle from a provisioning
+// response, then applies the bundle's frpc.toml the way Sync does (applyConfig): a running frpc
+// restarts onto it (never a reload, see startFrpc), a stopped one is enabled, and a text without
+// proxies (no active tunnel for the host) stops and disables it. NO HTTP call happens here
+// anymore — the token-activate call has been centralized since v0.23.0 in the `provision`
+// subcommand, which invokes `Apply` with the already-decoded values.
+func Apply(p ApplyParams) error {
+	if err := WriteSyncConfig(SyncConfigParams{
+		AdminHelperURL: p.AdminHelperURL,
+		ServerID:       p.ServerID,
+		APIKey:         p.APIKey,
+		TLS:            p.TLS,
+	}); err != nil {
+		return err
 	}
 
-	// Extract the PKI bundle (base64-encoded tar.gz). The PKI is essential for the FRP mTLS
-	// handshake — fail hard instead of warning (4.9): otherwise provisioning reports "OK" while
-	// the STCP tunnel silently never establishes (cryptic TLS errors in the frpc log), and since
-	// the provision token is one-time it takes manual diagnosis to recover.
-	if pkiBundleB64 != "" {
-		if err := extractPkiBundle(pkiBundleB64, frpDir); err != nil {
+	serverToml, err := base64.StdEncoding.DecodeString(p.FrpConfigB64)
+	if err != nil {
+		return fmt.Errorf("Config base64 decodieren: %w", err)
+	}
+
+	// Extract the PKI bundle (base64-encoded tar.gz) before frpc starts on the new config. The PKI
+	// is essential for the FRP mTLS handshake — fail hard instead of warning (4.9): otherwise
+	// provisioning reports "OK" while the STCP tunnel silently never establishes (cryptic TLS
+	// errors in the frpc log), and since the provision token is one-time it takes manual
+	// diagnosis to recover.
+	if p.PkiBundleB64 != "" {
+		if err := extractPkiBundle(p.PkiBundleB64, config.FrpDir()); err != nil {
 			return fmt.Errorf("PKI-Bundle entpacken: %w", err)
 		}
 		logger.Infof("PKI-Zertifikate installiert")
 	}
 
-	// Compute the initial hash
-	if err := writeConfigHash(); err != nil {
-		logger.Warnf("Hash konnte nicht geschrieben werden: %v", err)
-	}
+	return warnOnServiceFailure(applyConfig(serverToml, false))
+}
 
-	// Activate the service (platform-specific)
-	if err := enableFrpcService(); err != nil {
-		logger.Warnf("Service konnte nicht aktiviert werden: %v", err)
-		logger.Warnf("Bitte manuell aktivieren")
-	} else {
-		logger.Infof("FRP-Setup abgeschlossen. frpc und sync sind aktiv.")
-	}
+// ApplyWithoutBundle is Apply for a provisioning without an FRP bundle: the server has no FRP
+// config (an older server sends none also for a host without a tunnel; a current one sends a
+// text without proxies, on which Apply stops frpc). A frpc of an earlier provisioning stops,
+// like on a null hash in Sync, and the next sync sets up a tunnel created later (R-0398).
+func ApplyWithoutBundle() error {
+	return warnOnServiceFailure(syncWithoutFrpConfig())
+}
 
+// warnOnServiceFailure turns a failed start or stop of frpc at provisioning into a warning, as
+// before for the start: the provision token is spent by now. Removing the hash makes the next
+// agent run apply the config again, also when the stored hash already matched the bundle's
+// (provisioned again with unchanged tunnels). A failed write stays an error.
+func warnOnServiceFailure(err error) error {
+	if !errors.Is(err, errFrpcService) {
+		return err
+	}
+	if rmErr := os.Remove(config.FrpHashFile()); rmErr != nil && !os.IsNotExist(rmErr) {
+		return fmt.Errorf("remove the config hash: %w", rmErr)
+	}
+	logger.Warnf("%v. The next agent run tries again; if it keeps failing, see systemctl status frpc.", err)
 	return nil
 }
 
