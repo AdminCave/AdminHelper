@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/monitoring-discovery/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run 'HostFacts|BuildReport'
 Doku: keine (intern; beschrieben in T7)
 
-### T2 — Schema: Host-Fakten und ignorierte Vorschläge  [ ]
+### T2 — Schema: Host-Fakten und ignorierte Vorschläge  [x]
 Komponente: monitoring · Dateien: apps/monitoring/alembic/versions/b9d1f3a5c7e9_host_facts_suggestions.py, apps/monitoring/app/models.py, apps/monitoring/app/template_sync.py, apps/monitoring/tests/test_template_suggestions.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @7c800b38 2026-10-17T11:06:52+02:00
+Review: approve (.ah-out/review/monitoring-discovery/T2.verdict.json)
 Änderung: Neue Revision (SPDX-Header `# SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `#` / `# SPDX-License-Identifier: GPL-3.0-or-later`, `down_revision` = die Revision aus monitoring-templates T1, nach deren Merge per `alembic heads` prüfen): Tabellen `monitor_host_facts` (server_id PK, os, platform, platform_version, virt_system, virt_role, subsystems Text NOT NULL server_default `'[]'`, updated_at) und `monitor_template_suggestion_dismissals` (id PK, server_id NOT NULL mit Index, builtin_slug NOT NULL, dismissed_at, `UniqueConstraint(server_id, builtin_slug)`); Modelle dazu. `cleanup_server` (`template_sync.py:421-455`) löscht beide Zeilenarten des Servers. Neue Testdatei `test_template_suggestions.py` (SPDX wie oben; T3 und T4 erweitern sie), zuerst rot: `cleanup_server` entfernt Fakten und Ablehnungen; doppelte Ablehnung verletzt die Eindeutigkeit. Kette: `test_alembic_builtin.py` (PR-CI).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_suggestions.py tests/test_alembic_builtin.py
 Doku: keine (intern)

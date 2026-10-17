@@ -383,3 +383,35 @@ class MonitorAgentLiveness(Base):
 
     server_id = Column(String, primary_key=True)
     last_report_at = Column(DateTime, nullable=False)
+
+
+class MonitorHostFacts(Base):
+    """What a server's agent last reported about its host (the report's ``host``
+    block), from which the service suggests standard templates. One row per
+    server."""
+
+    __tablename__ = "monitor_host_facts"
+
+    server_id = Column(String, primary_key=True)
+    os = Column(String, nullable=True)
+    platform = Column(String, nullable=True)
+    platform_version = Column(String, nullable=True)
+    virt_system = Column(String, nullable=True)
+    virt_role = Column(String, nullable=True)
+    subsystems = Column(Text, nullable=False, default="[]", server_default="[]")  # JSON list
+    updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
+
+
+class MonitorTemplateSuggestionDismissal(Base):
+    """A suggested standard template an admin ignored on one server, by built-in
+    slug, so it is not suggested there again."""
+
+    __tablename__ = "monitor_template_suggestion_dismissals"
+    __table_args__ = (
+        UniqueConstraint("server_id", "builtin_slug", name="uq_suggestion_dismissal_server_slug"),
+    )
+
+    id = Column(String, primary_key=True)
+    server_id = Column(String, nullable=False, index=True)
+    builtin_slug = Column(String, nullable=False)
+    dismissed_at = Column(DateTime, server_default=utc_now_sql())
