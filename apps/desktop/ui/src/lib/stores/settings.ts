@@ -13,6 +13,7 @@ import { reloadForMode, connectionsStore } from './connections';
 import { reportError, showStatus } from './statusBar';
 import { getIntervalMinutes, getSettingsDefaults, validateSettings } from '$lib/models/settings';
 import { setLanguage, tNow } from '$lib/i18n';
+import { reloadWindow } from '$lib/utils/reloadWindow';
 import type { Settings } from '$lib/bridge/types';
 
 export const settingsModalOpen = writable<boolean>(false);
@@ -86,12 +87,19 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
   const previous = get(sessionStore).settings;
   const serverUrlChanged =
     previous?.mode === 'server' && next.mode === 'server' && previous.serverUrl !== next.serverUrl;
-  if (serverUrlChanged && get(sessionStore).session) {
+  const forcedLogout = serverUrlChanged && get(sessionStore).session !== null;
+  if (forcedLogout) {
     await serverLogout();
   }
 
   try {
     await bridge.saveSettings(next);
+    if (forcedLogout) {
+      // The other stores (infrastructure, monitoring, Ansible) still hold the old server's
+      // data; the reload empties them and comes up on the login screen for the new URL.
+      reloadWindow();
+      return { ok: true };
+    }
     await refreshSettings();
     setLanguage(next.language);
 
@@ -163,15 +171,21 @@ export async function serverLogout(): Promise<void> {
 }
 
 /**
- * The logout button of the app shell: stops the tunnel, then logs out. It lives here, not in
+ * The logout buttons of the app shell and the settings: stops the tunnel, logs out, then
+ * reloads the window, so no store keeps the previous user's data. It lives here, not in
  * session.ts, because tunnel.ts imports session.ts. Unlike serverLogout it reloads no
  * connections: logout() leaves connections.json alone.
  */
-export async function signOut(): Promise<void> {
+export async function logoutAndReload(): Promise<void> {
   try {
     await tunnelStore.stop();
   } catch {
     /* ignore */
   }
-  await logout();
+  try {
+    await logout();
+  } catch {
+    /* logout() has dropped the session either way; the reload must not depend on it */
+  }
+  reloadWindow();
 }

@@ -14,8 +14,10 @@ Kevin 2026-10-16 (`/feature-plan` auf R-0429): voller Weg mit Spec statt Kurz-Le
 
 Kevin 2026-10-16 (nach dem Spike auf der Desktop-VM): Der Absturz beim zweiten Start unter Linux kommt als T7 (Code) und T8 (Live-Beweis) in dieses Vorhaben, statt eine eigene Zeile zu belegen (`neu` 20/20). Die Freigabe von R-0429 gilt für die erweiterte Liste.
 
-### T1 — Jedes Abmelden stoppt den Tunnel und lädt das Fenster neu  [ ]
+### T1 — Jedes Abmelden stoppt den Tunnel und lädt das Fenster neu  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/lib/utils/reloadWindow.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @19c4be99 2026-10-17T13:45:54+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T1.verdict.json)
 Änderung: Neu `logoutAndReload()` in `settings.ts`: Tunnel stoppen (`tunnelStore.stop()`, Fehler ignoriert wie in `serverLogout`, `:148-153`), dann `logout()` aus `session.ts:114` (Keyring-Session und Verbindungsliste, unverändert), danach Neuladen des Fensters, auch wenn das Abmelden am Server scheitert. Das Neuladen kapselt der neue Helfer `lib/utils/reloadWindow.ts` (SPDX-Header; ruft `window.location.reload()`, damit Tests ihn mocken). Der Header-Knopf (`AppShell.svelte:276`) und `SettingsModal.onLogout` (`:294`, heute `serverLogout`) rufen `logoutAndReload()`. `serverLogout` bleibt für den erzwungenen Logout bei geänderter Server-URL (`settings.ts:86-91`); dieser Weg lädt nach erfolgreichem Speichern neu. Neue Vitest-Fälle in `settings.test.ts` (zuerst rot): `logoutAndReload` ruft `bridge.stopTunnel` vor `bridge.logout` und danach den Helfer; ein scheiternder Tunnel-Stopp oder ein scheiterndes `bridge.logout` verhindert das Neuladen nicht; Speichern mit geänderter Server-URL bei laufender Session lädt nach dem Speichern neu, ohne Session nicht. CHANGELOG Fixed: Abmelden im Header beendet jetzt auch den Tunnel und zeigt danach keine Daten des vorigen Benutzers mehr.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/settings.test.ts
 Doku: CHANGELOG.md (Fixed); `docs/` beschreibt das Abmelden nicht

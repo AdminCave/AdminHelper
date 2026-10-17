@@ -346,6 +346,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
+  Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
+  zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
+  einem Login unter anderem Benutzer. Ebenso laedt der Desktop neu, wenn eine geaenderte Server-URL bei laufender
+  Sitzung gespeichert wird; danach steht der Login-Bildschirm mit der neuen Adresse da.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
