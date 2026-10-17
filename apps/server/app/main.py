@@ -12,52 +12,36 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
+# Every ORM model before the first query (the lifespan's), see app/model_registry.py.
+# Not `import app.model_registry`: that would bind `app`, the name of the FastAPI app.
+from app import model_registry  # noqa: F401
 from app.core.auth import hash_api_key, hash_password
 from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
-from app.modules.ansible.models import Playbook  # noqa: F401
 from app.modules.ansible.router import router as ansible_router
-from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.api_keys.router import router as api_keys_router
-from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.audit.router import router as audit_router
-from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.connections.router import router as connections_router
 from app.modules.enrollment.router import router as enrollment_router
-from app.modules.frp.models import FrpServerConfig, FrpTunnel  # noqa: F401
 from app.modules.frp.router import router as frp_router
-from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.hooks.router import router as hooks_router
 from app.modules.hooks.router import trigger_router as hooks_trigger_router
 from app.modules.monitoring_proxy.router import router as monitoring_proxy_router
-from app.modules.notifications.models import (  # noqa: F401
-    Notification,
-    NotificationOutbox,
-    NotificationSubscription,
-)
 from app.modules.notifications.router import feed_router as notifications_feed_router
 from app.modules.notifications.router import internal_router as notifications_internal_router
 from app.modules.notifications.router import prefs_router as notifications_prefs_router
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.notifications.stream import stream_router as notifications_stream_router
-from app.modules.provisioning.models import ProvisionToken  # noqa: F401
 from app.modules.provisioning.router import router as provisioning_router
-from app.modules.servers.models import Server  # noqa: F401
 from app.modules.servers.router import internal_router as servers_internal_router
 from app.modules.servers.router import router as servers_router
 
 # Import routers
 from app.modules.users.auth_router import router as auth_router
-
-# Import models so Base.metadata knows about them (even though schema creation
-# is now handled by Alembic — important for ORM queries in the lifespan).
-from app.modules.users.models import (
-    User,  # noqa: F401
-    user_server_assoc,  # noqa: F401
-)
+from app.modules.users.models import User
 from app.modules.users.router import router as users_router
 
 logger = logging.getLogger(__name__)

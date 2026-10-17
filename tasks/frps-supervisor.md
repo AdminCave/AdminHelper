@@ -205,8 +205,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test too
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html
 Abhängt von: T23
 
-### T25 — Server: der Scheduler-Prozess lädt alle ORM-Modelle  [ ]
+### T25 — Server: der Scheduler-Prozess lädt alle ORM-Modelle  [x]
 Komponente: server · Dateien: apps/server/app/model_registry.py, apps/server/app/main.py, apps/server/app/scheduler_main.py, apps/server/tests/test_model_registry.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @31d9a1e9 2026-10-17T12:42:00+02:00
+Review: approve (.ah-out/review/frps-supervisor/T25.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-17 (Fund aus T15, besteht auf main und in v0.45.0): Der Scheduler-Prozess importiert nur die Module seiner Jobs; die Modell-Importe stehen als Nebenwirkung in `app/main.py` (`:21-57`). Mit den Scheduler-Importen scheitert `configure_mappers()` (`'Connection' has no attribute 'server_id'` bzw. `ProvisionToken` → `'Server'`), damit jeder Job mit DB-Zugriff; APScheduler loggt das nur. Neue Datei `app/model_registry.py` (SPDX) importiert alle ORM-Modelle an einer Stelle; `main.py` und `scheduler_main.py` importieren sie, bevor Jobs geplant werden. Test zuerst rot (neue Datei, SPDX): in einem frischen Interpreter (Subprozess) mit genau den Scheduler-Importen läuft `configure_mappers()` durch; jedes `app/modules/*/models.py` ist in der Registry (gegen Drift). Der Stack-Test aus T15 belegt die Mitteilung über den Scheduler.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_model_registry.py tests/test_scheduler_schema_gate.py
 Doku: CHANGELOG in T17 (Fixed: Scheduler-Jobs mit DB-Zugriff)
