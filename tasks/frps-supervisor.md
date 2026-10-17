@@ -230,8 +230,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (intern)
 Abhängt von: T6, T9, T25
 
-### T16 — Multibox: frps-Neustart im Tunnel-Szenario  [ ]
+### T16 — Multibox: frps-Neustart im Tunnel-Szenario  [x]
 Komponente: scripts · Dateien: scripts/tests/box_serverbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2a01016b 2026-10-17T14:19:31+02:00
+Review: approve (.ah-out/review/frps-supervisor/T16.verdict.json)
 Änderung: `box_serverbox.sh` baut frps mit (`:59` in die `--build`-Liste, `:235` ohne eigenes `up`); im `--tunnel`-Szenario nach dem ersten erfolgreichen Visitor-Durchgang die FRP-Konfiguration ändern (z. B. `max_ports_per_client`), dann prüfen: frps startet genau einmal neu, der Agent verbindet sich ohne Eingriff wieder, eine neue Visitor-Verbindung geht durch. `multibox_test.sh` deckt die neue Etappe hermetisch ab. **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: keine (intern)
