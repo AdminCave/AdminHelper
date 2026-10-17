@@ -58,7 +58,12 @@ case "${1:-}" in
         echo "MB_SID=s1 MB_PTOK=p1 MB_ADMIN_PW=pw1 MB_MONITOR_KEY=k1"
         echo "MB_REPO_GPG_FP=fp1 MB_CA_FP=ca1 MB_DEB_OLDDPKG_OK=1 MB_FRPS_UP=1"
         echo "MB_AGENT_GO=${FAKE_AGENT_GO-go1.26.9}"
+        echo "MB_ENFORCE_CERTLESS_REJECTED=1 MC_OK_STATUS=ok MC_CRIT_STATUS=critical"
         echo "MB_TUN_SID=t1 MB_TUN_PTOK=tp1 MB_CFG=c1 MB_VIS_SID=v1 MB_VIS_PTOK=vp1 MB_VISITOR_B64=dmlz" ;;
+      # --enforce: one enrollment token per desktop spec, each on a line of its own.
+      *mint-enroll-token*) printf '%s\n' mb-fake-enroll-token-0001 mb-fake-enroll-token-0002 ;;
+      *box_desktopbox.sh*) echo "DESKTOP_ALL_OK" ;;
+      *box_agentbox_rpm.sh*) echo "RPM_ALL_OK" ;;
       # The admin API on the server box (srv_api); the tunnel name is the last word.
       *"python3 -I - clear "*) echo "${FAKE_API_CLEAR:-MB_API_CLEARED=1}" ;;
       *"python3 -I - add "*)
@@ -91,7 +96,8 @@ case "${1:-}" in
         echo "${FAKE_AGENT_PROVISION:-AGENT_PROVISION_OK} ${FAKE_AGENT_RUN:-AGENT_RUN_OK} AGENT_CERT_OK AGENT_REPO_OK AGENT_CAFLIP_OK" ;;
       *box_moncheckbox.sh*start*) echo "MC_MAILHOG_UP=1 MC_CA_B64=Y2E=" ;;
       *box_moncheckbox.sh*assert*) echo "MC_MAIL_COUNT=1 MC_ALERT_RECEIVED=1" ;;
-      *POST\ /agent*) echo "1" ;;
+      # Two: the capstone expects a report from the .deb and from the rpm agent.
+      *POST\ /agent*) echo "2" ;;
     esac ;;
 esac
 exit 0
@@ -495,6 +501,34 @@ reset_state
 OUT=$(AH_DESKTOP_ID=3999 FAKE_DOCTOR_RC=74 bash "$MB" --capstone 2>&1)
 grep -q "AH_DESKTOP_ID is the old name" <<<"$OUT" \
   && ok "the old env name still works and says so" || bad "alias: $OUT"
+
+echo "── --capstone --strict: the Docker stage belongs to the release gate ──"
+reset_state
+OUT=$(bash "$MB" --capstone --strict 2>&1); rc=$?
+missing=""
+for want in "the Docker Host template is assigned to the host of agent 3002 over the API" \
+            "docker: a running container -> ok (DOCKER_OK;" \
+            "docker: the second report -> critical, reason exit:1 (DOCKER_EXIT_CRIT;" \
+            "docker: the stopped daemon -> warning, error daemon_unreachable (DOCKER_UNAVAIL_WARN;"; do
+  grep -qF "  ok   $want" <<<"$OUT" || missing="$missing [$want]"
+done
+[ $rc -eq 0 ] && grep -qE '^ +multibox: [0-9]+ ok, 0 failed, 0 skipped  \(' <<<"$OUT" && [ -z "$missing" ] \
+  && ok "--capstone runs the Docker stage, and a strict capstone with it is green with nothing skipped" \
+  || bad "capstone docker: rc=$rc, missing:$missing; $(grep -aE '^  (FAIL|SKIP)|multibox:' <<<"$OUT")"
+on_agent="$(grep -c '^run 3002 --timeout 900 -- bash scripts/tests/box_agentbox.sh docker ' "$FAKE_LOG")"
+[ "$(docker_steps)" = "assign start state exit state rerun state down state " ] && [ "$on_agent" = 4 ] \
+  && ok "the capstone runs every Docker step on the .deb agent box" \
+  || bad "capstone docker steps: $(docker_steps); $(grep 'box_agentbox.sh docker' "$FAKE_LOG")"
+reset_state
+OUT=$(FAKE_API_DOCKER_ASSIGN=NONE bash "$MB" --capstone --strict 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q '^  FAIL strict: the three Docker states (no Docker Host check)' <<<"$OUT" \
+  && ok "a strict capstone whose Docker stage was skipped is red and names the stage" \
+  || bad "capstone, docker skipped: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$OUT")"
+reset_state
+OUT=$(FAKE_DOCKER_STATES=NONE bash "$MB" --capstone --strict 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -qF '  FAIL docker: a running container -> ok: no marker (expected DOCKER_OK' <<<"$OUT" \
+  && ok "a strict capstone without a Docker result is red" \
+  || bad "capstone, no docker result: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$OUT")"
 
 echo "── an unknown flag ──"
 reset_state

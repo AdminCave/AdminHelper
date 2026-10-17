@@ -24,7 +24,7 @@
 #   --desktop  + the real Tauri GUI vs the remote server     (S3)
 #   --moncheck + pull ping-checks + a closed-loop email alert (S5)
 #   --enforce  + MTLS_ENFORCE=true: the certless data plane must be rejected
-#   --capstone = --agents 1 --rpm --tunnel --desktop --moncheck --enforce
+#   --capstone = --agents 1 --rpm --tunnel --docker --desktop --moncheck --enforce
 #              (S6: all in one run — the release gate)
 #   --keep     leave the VMs up after the run (still bounded by their ttl)
 #
@@ -51,8 +51,9 @@ while [ $# -gt 0 ]; do case "$1" in
   --docker) DOCKER=1 ;;
   # S6: everything, one run. --enforce included (R-0022): without it the
   # MTLS_ENFORCE guard never ran in a release capstone, which is the one place
-  # the cert-gated data plane is supposed to be proven.
-  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1; ENFORCE=1 ;;
+  # the cert-gated data plane is supposed to be proven. --docker likewise (R-0419):
+  # only a box with real Docker shows a container outage arriving at the server.
+  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DOCKER=1; DESKTOP=1; MONCHECK=1; ENFORCE=1 ;;
   # A flag, not just the env: AH_STRICT is set by run.sh alone, which never
   # starts this script, and a `AH_STRICT=1 multibox.sh` prefix is what
   # .claude/rules/testing.md forbids ("Env-Bedarf loest das Skript auf").

@@ -134,8 +134,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: keine (Test-Harness)
 Abhängt von: T1, T5, T6
 
-### T15 — Capstone mit `--docker`, Skill `/test` und Testregel nachziehen  [ ]
+### T15 — Capstone mit `--docker`, Skill `/test` und Testregel nachziehen  [x]
 Komponente: scripts · Dateien: scripts/tests/multibox.sh, scripts/tests/multibox_test.sh, .claude/skills/test/SKILL.md, .claude/rules/testing.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ac958fe9 2026-10-17T07:31:57+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T15.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-17: `--capstone` setzt zusätzlich `--docker` (`multibox.sh`, Flag-Parsing und Kopfkommentar `:15`/`:27`); unter `--strict` gehört `--docker` damit zum vollen Flag-Satz, ein fehlender Docker-Lauf ist im Capstone ein Fehler. `multibox_test.sh` prüft zuerst rot: `--capstone` setzt DOCKER, der Flag-Satz des Capstone nennt `--docker`. `.claude/skills/test/SKILL.md` (Flag-Liste `:203ff`, Capstone-Zeile `:208`) nennt `--docker`; `.claude/rules/testing.md:22` nennt das Docker-Monitoring im Capstone. Keine Docker-Mindestversion (Kevin 2026-10-17): die Version steht in der ok-Zeile. **Harness-Pfad** (Kevin 2026-10-17: eigene Task); die Session merged den PR selbst (§2 seit #200).
 Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: .claude/skills/test/SKILL.md · .claude/rules/testing.md
