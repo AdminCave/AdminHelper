@@ -46,8 +46,10 @@ Review: approve (.ah-out/review/monitoring-silent-outages/T4.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_configs.py
 Doku: keine (intern; Doku in T13)
 
-### T5 — Monitoring: Docker-Checker bewertet Ausfall und Container-Ende  [ ]
+### T5 — Monitoring: Docker-Checker bewertet Ausfall und Container-Ende  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c1814318 2026-10-17T04:10:09+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T5.verdict.json)
 Änderung: `DockerHealthChecker.evaluate` (`plugins.py:182-246`) bekommt `prev_details=None`. Block fehlt → `unknown`, Details `{"containers": []}` (statt `None`, damit die alte Liste verschwindet). `available=false` oder `error` → `warning` mit Meldung, bei `alert_on_unavailable=false` `unknown`; Details `{"available": false, "error": <code>, "containers": []}`. Sonst Bewertung nach der Tabelle der Spec (Abschnitt „Bewertung je Container“): `category` ∈ ok/warning/critical/stopped, `reason`-Code, `exit_code`, `restart_count`; ein `restart_count` größer als der Vorwert derselben ID aus `prev_details` → warning `restarted`. Meldung zählt laufende, gestoppte und problematische Container ehrlich. Neue Meldungstexte englisch (Konvention), die Anzeige übersetzt aus den Codes. Tests zuerst rot: je Zeile der Tabelle ein Fall (u. a. `Exited (3)` ohne Policy → critical, `always` von Hand gestoppt → stopped, `on-failure` Exit 0 → stopped, OOM → critical, `paused` → warning, `created` → stopped, Restart-Zähler steigt → warning), Daemon weg → warning bzw. unknown mit Schalter aus, Block fehlt → unknown mit leerer Liste, 0 Container → ok.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: keine (intern; Doku in T13)
