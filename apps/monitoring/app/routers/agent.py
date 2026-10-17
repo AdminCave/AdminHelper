@@ -59,7 +59,7 @@ def _num(v):
 _MAX_REPORT_ITEMS = 500
 
 # Push checkers whose evaluate() takes the check's previous _details as a third argument.
-_PREV_DETAILS_TYPES = frozenset({"agent_resources", "service_process"})
+_PREV_DETAILS_TYPES = frozenset({"agent_resources", "service_process", "docker_health"})
 
 
 def _capped(value: object) -> list:
@@ -215,9 +215,10 @@ def agent_report(
 
             # Lock the state row BEFORE evaluating: agent_resources needs the
             # previous _details for per-metric hysteresis (T6), service_process
-            # for the list mode on a push without the inventory, and the lock has
-            # to cover the read-modify-write anyway — two near-simultaneous
-            # pushes must not clobber fail_count or double-alert (4.46).
+            # for the list mode on a push without the inventory, docker_health for
+            # the restart counter per container, and the lock has to cover the
+            # read-modify-write anyway — two near-simultaneous pushes must not
+            # clobber fail_count or double-alert (4.46).
             # Evaluate is pure CPU, so holding the lock across it is harmless.
             # with_for_update is a no-op on sqlite (tests).
             state = (

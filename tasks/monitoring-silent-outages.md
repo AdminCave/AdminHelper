@@ -56,8 +56,10 @@ Doku: keine (intern; Doku in T13)
 Abhängt von: T4
 Test-Löschung: apps/monitoring/tests/test_plugin_checkers.py::test_docker_stopped_with_restart_policy_is_critical — nach der Spec-Tabelle ist ein von Hand gestoppter `always`-Container stopped statt critical; ersetzt durch den Tabellenfall `exited-always-stopped-by-hand`
 
-### T6 — Monitoring: Push-Pfad reicht Vorwerte auch an `docker_health`  [ ]
+### T6 — Monitoring: Push-Pfad reicht Vorwerte auch an `docker_health`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @135177c9 2026-10-17T04:19:43+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T6.verdict.json)
 Änderung: Die Vorwert-Details (`routers/agent.py:226-236`, heute nur `agent_resources`) gehen auch an `docker_health` (gleiche Absicherung gegen ungültiges JSON). Test zuerst rot: zwei Pushes nacheinander, im zweiten ist `restart_count` eines Containers gestiegen → die gespeicherten Details tragen für den Container `category=warning`, `reason=restarted` (der Status bleibt über `consecutive_fails` gedämpft, Kevin 2026-10-17; eine Crash-Schleife über `consecutive_fails` Pushes wird warning); ein Push ohne `docker`-Block leert die gespeicherten Container.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py
 Doku: keine (intern)
