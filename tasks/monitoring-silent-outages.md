@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring meldet Ausfälle von Docker, ZFS und SMART — Task-Ledger
-Status: bereit · Branch: feature/monitoring-silent-outages · Review: pro Task
+Status: erledigt · Branch: feature/monitoring-silent-outages · Review: pro Task
 Spec: docs/features/monitoring-silent-outages.md (Roadmap R-0419)
 Heavy: linux-full + scenario --agents 1 --docker — Agent-Plugins und Push-Auswertung im echten Stack (`run.sh integration`, Agent-Monitoring-Pipeline); vor dem Merge der Multibox-Lauf mit der neuen Etappe `--docker` (T14), weil nur eine Box mit echtem Docker 29 und nativem Agent zeigt, dass ok → critical (`exit 1`) → warning (Daemon gestoppt) über den echten Push-Pfad ankommt; ask-first, Kevin hat Multibox am 2026-10-16 für die Monitoring-Pakete erlaubt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
