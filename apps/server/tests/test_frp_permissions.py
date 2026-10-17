@@ -197,6 +197,53 @@ def test_frpc_toml_endpoint_wires_allow_users(
     assert "ops-admin" not in r.text
 
 
+def test_get_allow_users_is_sorted_and_unique(db_session, admin_user):
+    # R-0435: allowUsers and the agent's config-hash are built from this list. A set of strings
+    # iterates in the order of the per-process hash seed, so an unsorted list changed both after
+    # every server restart (and per worker) without any change in the data. Twelve names make a
+    # sorted order by chance practically impossible (1 in 12!).
+    from app.modules.frp._helpers import get_allow_users
+    from app.modules.users.models import User
+
+    srv = _make_server(db_session, sid="srv-order", name="orderhost")
+    # (name, is_admin, assigned to srv); the assigned admins come back from both queries.
+    for name, is_admin, assigned in (
+        ("zoe", True, True),
+        ("yusuf", False, True),
+        ("mallory", True, True),
+        ("bob", False, True),
+        ("xena", False, True),
+        ("victor", True, False),
+        ("carol", False, True),
+        ("wendy", False, True),
+        ("dave", False, True),
+        ("frank", False, True),
+        ("erin", False, True),
+    ):
+        user = User(username=name, hashed_password="unused", is_admin=is_admin)
+        if assigned:
+            user.servers.append(srv)
+        db_session.add(user)
+    db_session.commit()
+
+    first = get_allow_users(db_session, srv.id)
+    assert first == [
+        "admin",
+        "bob",
+        "carol",
+        "dave",
+        "erin",
+        "frank",
+        "mallory",
+        "victor",
+        "wendy",
+        "xena",
+        "yusuf",
+        "zoe",
+    ]
+    assert get_allow_users(db_session, srv.id) == first
+
+
 def test_bulk_zip_contains_per_server_configs(
     test_client, db_session, admin_user, two_servers_with_tunnels
 ):

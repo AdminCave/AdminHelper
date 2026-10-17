@@ -7,7 +7,7 @@
 import { errMsg } from '$lib/utils/errors';
 import { writable, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import { sessionStore, refreshSettings, dropSession } from './session';
+import { sessionStore, refreshSettings, dropSession, logout } from './session';
 import * as tunnelStore from './tunnel';
 import { reloadForMode, connectionsStore } from './connections';
 import { reportError, showStatus } from './statusBar';
@@ -160,4 +160,18 @@ export async function serverLogout(): Promise<void> {
     await reloadForMode(current.settings, null);
   }
   closeSettings();
+}
+
+/**
+ * The logout button of the app shell: stops the tunnel, then logs out. It lives here, not in
+ * session.ts, because tunnel.ts imports session.ts. Unlike serverLogout it reloads no
+ * connections: logout() leaves connections.json alone.
+ */
+export async function signOut(): Promise<void> {
+  try {
+    await tunnelStore.stop();
+  } catch {
+    /* ignore */
+  }
+  await logout();
 }

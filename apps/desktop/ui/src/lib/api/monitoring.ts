@@ -15,6 +15,7 @@ import type {
   AlertRuleInput,
   MonitorCheck,
   MonitorCheckInput,
+  MonitoringBuiltinUpdate,
   MonitoringMetricsResponse,
   MonitoringTemplateFull,
   MonitoringTemplateInput,
@@ -78,6 +79,15 @@ export const monitoringApi = {
       session,
       'POST',
       `/api/monitoring/checks/${encodeURIComponent(checkId)}/run`,
+    );
+  },
+  // Drops the user's changes to a template check; the server answers with the check
+  // as it is now, with the template's values.
+  resetCheck(session: AuthSession, checkId: string): Promise<MonitorCheck> {
+    return apiRequest<MonitorCheck>(
+      session,
+      'POST',
+      `/api/monitoring/checks/${encodeURIComponent(checkId)}/reset`,
     );
   },
 
@@ -163,6 +173,34 @@ export const monitoringApi = {
       session,
       'DELETE',
       `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign/${encodeURIComponent(serverId)}`,
+    );
+  },
+  // Creates the template checks deleted on this server again (removedChecks).
+  restoreTemplateChecks(
+    session: AuthSession,
+    templateId: string,
+    serverId: string,
+  ): Promise<{ restored: number }> {
+    return apiRequest<{ restored: number }>(
+      session,
+      'POST',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign/${encodeURIComponent(serverId)}/restore`,
+    );
+  },
+  fetchBuiltinUpdate(session: AuthSession, templateId: string): Promise<MonitoringBuiltinUpdate> {
+    return apiRequest<MonitoringBuiltinUpdate>(
+      session,
+      'GET',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/builtin-update`,
+    );
+  },
+  // Takes the shipped version of a standard template; the fields a user changed
+  // on single checks stay. 409 when there is no newer version.
+  applyBuiltinUpdate(session: AuthSession, templateId: string): Promise<MonitoringTemplateFull> {
+    return apiRequest<MonitoringTemplateFull>(
+      session,
+      'POST',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/builtin-update`,
     );
   },
   assignTemplateTag(

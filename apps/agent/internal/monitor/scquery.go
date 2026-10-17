@@ -6,6 +6,26 @@ package monitor
 
 import "strings"
 
+// scServiceHealth builds the Windows service-health block from the result of `sc query state= all`,
+// in the format of the systemd block; no build tag, so it is tested on any platform. A failed sc
+// query sets error and leaves the inventory empty and the counts out: without error the server would
+// read the empty block as all OK, and counts would claim 0 of 0.
+func scServiceHealth(out []byte, err error) map[string]any {
+	result := map[string]any{
+		"failed":           []string{},
+		"enabled_inactive": []string{},
+		"all_services":     []ServiceEntry{},
+	}
+	if err != nil {
+		result["error"] = "sc query failed: " + commandFailure("sc", err)
+		return result
+	}
+	services := parseScQuery(string(out))
+	result["all_services"] = services
+	result["counts"] = serviceCounts(services)
+	return result
+}
+
 // parseScQuery parses the output of `sc query state= all` into systemd-compatible service entries.
 // Extracted from the Windows collector (no build tag) so this pure string-parsing logic — the
 // STATE-line detection and the flush that keeps the LAST service — is unit-tested on any platform;

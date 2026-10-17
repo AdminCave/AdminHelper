@@ -297,6 +297,22 @@ export async function runCheck(checkId: string): Promise<void> {
   }
 }
 
+// Drops the user's changes to a template check. The answer is the check as it is now,
+// so its line shows the template's values without waiting for the next status load.
+export async function resetCheck(checkId: string): Promise<void> {
+  const session = currentSession();
+  if (!session) return;
+  try {
+    const updated = await monitoringApi.resetCheck(session, checkId);
+    _state.update((s) => ({
+      ...s,
+      checks: s.checks.map((c) => (c.id === updated.id ? updated : c)),
+    }));
+  } catch (err) {
+    reportError(errMsg(err));
+  }
+}
+
 export async function toggleAlert(ruleId: string): Promise<void> {
   const session = currentSession();
   if (!session) return;

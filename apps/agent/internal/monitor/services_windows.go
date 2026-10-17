@@ -22,22 +22,10 @@ var reWinServiceName = regexp.MustCompile(`^[A-Za-z0-9._$-]+$`)
 // collectServiceHealth collects Windows service status.
 // The format is compatible with the systemd format for the monitoring server.
 func collectServiceHealth() map[string]any {
-	result := map[string]any{
-		"failed":           []string{},
-		"enabled_inactive": []string{},
-		"all_services":     []ServiceEntry{},
-	}
-
-	// Run sc query state= all
+	// The block is built in scServiceHealth (no build tag) so it is unit-tested on any platform —
+	// see scquery.go / scquery_test.go (6.20).
 	out, err := runWithTimeout("sc", "query", "state=", "all")
-	if err != nil {
-		return result
-	}
-
-	// The sc-query parsing lives in parseScQuery (no build tag) so it is unit-tested on any
-	// platform — see scquery.go / scquery_test.go (6.20).
-	result["all_services"] = parseScQuery(string(out))
-	return result
+	return scServiceHealth(out, err)
 }
 
 // collectWatchedServices checks the status of specific Windows services.
