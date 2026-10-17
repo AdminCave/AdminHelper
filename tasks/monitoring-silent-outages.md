@@ -58,7 +58,7 @@ Test-Löschung: apps/monitoring/tests/test_plugin_checkers.py::test_docker_stopp
 
 ### T6 — Monitoring: Push-Pfad reicht Vorwerte auch an `docker_health`  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py
-Änderung: Die Vorwert-Details (`routers/agent.py:226-236`, heute nur `agent_resources`) gehen auch an `docker_health` (gleiche Absicherung gegen ungültiges JSON). Test zuerst rot: zwei Pushes nacheinander, im zweiten ist `restart_count` eines Containers gestiegen → der gespeicherte Zustand ist `warning` mit `reason=restarted`; ein Push ohne `docker`-Block leert die gespeicherten Container.
+Änderung: Die Vorwert-Details (`routers/agent.py:226-236`, heute nur `agent_resources`) gehen auch an `docker_health` (gleiche Absicherung gegen ungültiges JSON). Test zuerst rot: zwei Pushes nacheinander, im zweiten ist `restart_count` eines Containers gestiegen → die gespeicherten Details tragen für den Container `category=warning`, `reason=restarted` (der Status bleibt über `consecutive_fails` gedämpft, Kevin 2026-10-17; eine Crash-Schleife über `consecutive_fails` Pushes wird warning); ein Push ohne `docker`-Block leert die gespeicherten Container.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py
 Doku: keine (intern)
 Abhängt von: T5
