@@ -856,6 +856,16 @@ def test_clone_picks_the_lowest_free_vmid_and_tags_the_lease(keyed, api, http, c
     assert "ciuser" not in put.body
 
 
+def test_a_lease_boots_on_the_templates_packages(keyed, api, http, clock):
+    clone_ready(http)
+    clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    put = next(c for c in http.calls if c.method == "PUT")
+    # PVE's default upgrades on first boot, and a newer openssh-server took ssh
+    # away ~40 s after `wait` had seen it: the first rsync of a multibox run
+    # died at 255. The bake is where the packages get current.
+    assert put.body["ciupgrade"] == "0"
+
+
 def test_the_public_key_is_sent_url_encoded(keyed, api, http, clock):
     clone_ready(http)
     clone(keyed, api, "--profile", "linux-full", "--role", "probe")
@@ -2709,7 +2719,7 @@ def test_bake_builds_a_template_in_the_template_band(keyed, api, http, clock, sh
 def test_bake_runs_bootstrap_then_the_warmup_then_the_clean(keyed, api, http, clock, shell):
     bakeable(http)
     verb("bake", keyed, api, "--profile", "linux-server")
-    runs = shell.of("ssh")[1:]  # [0] is wait_for's own reachability probe
+    runs = shell.of("ssh")[2:]  # [0] is wait_for's reachability probe, [1] the cloud-init wait
     commands = [r["argv"][-1] for r in runs]
     assert "AH_BOOTSTRAP_PROFILE=server bash scripts/vm/bootstrap_linux.sh" in commands[0]
     assert "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit" in commands[1]
@@ -2735,7 +2745,7 @@ def test_the_bootstrap_installs_the_guest_agent():
 def test_a_failed_step_takes_the_half_baked_vm_with_it(keyed, api, http, clock, shell, failing):
     bakeable(http)
     bake_cleanup(http)
-    shell.ssh_codes = [0] + [0] * failing + [1]  # the probe, then the step that fails
+    shell.ssh_codes = [0, 0] + [0] * failing + [1]  # probe, cloud-init, then the step that fails
     with pytest.raises(vm.Infra) as caught:
         verb("bake", keyed, api, "--profile", "linux-full")
     assert "VM 3900 was removed again" in str(caught.value)
@@ -2748,11 +2758,46 @@ def test_a_flaky_unit_test_does_not_throw_away_the_bootstrap(
     # the old bake ran the same step with `|| true`. Half an hour of
     # bootstrap is not worth one red unit test — but it has to be visible.
     bakeable(http)
-    shell.ssh_codes = [0, 0, 1]  # probe, bootstrap, warm-up
+    shell.ssh_codes = [0, 0, 0, 1]  # probe, cloud-init, bootstrap, warm-up
     assert verb("bake", keyed, api, "--profile", "linux-full") == 0
     out = capsys.readouterr().out
     assert "warm the caches exited 1" in out
     assert "the template is just colder" in out
+
+
+def test_the_bake_upgrades_and_waits_for_cloud_init_before_the_sync(keyed, api, http, clock, shell):
+    bakeable(http)
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    lease = next(c for c in http.calls if c.method == "PUT").body
+    assert lease["ciupgrade"] == "1"  # templates are baked current; leases inherit that
+    argvs = [r["argv"] for r in shell.runs]
+    waited = next(
+        i for i, a in enumerate(argvs) if a[0] == "ssh" and a[-1] == "cloud-init status --wait"
+    )
+    synced = next(i for i, a in enumerate(argvs) if a[0] == "rsync")
+    # The upgrade restarts sshd: a sync that does not wait for it is the rsync
+    # that died at 255.
+    assert waited < synced
+    assert shell.runs[waited]["timeout"] == 1800
+
+
+def test_a_degraded_cloud_init_counts_as_done(keyed, api, http, clock, shell):
+    bakeable(http)
+    shell.ssh_codes = [0, 2]  # probe, cloud-init: finished, with a recoverable error
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    assert shell.of("rsync")
+
+
+@pytest.mark.parametrize("code", [1, 255])  # cloud-init's own error; ssh down or out of time
+def test_a_cloud_init_that_did_not_finish_stops_the_bake(keyed, api, http, clock, shell, code):
+    bakeable(http)
+    bake_cleanup(http)
+    shell.ssh_codes = [0, code]
+    with pytest.raises(vm.Infra) as caught:
+        verb("bake", keyed, api, "--profile", "linux-full")
+    assert "cloud-init status --wait exited %d" % code in str(caught.value)
+    assert "VM 3900 was removed again" in str(caught.value)
+    assert not shell.of("rsync")  # nothing is pushed onto a box mid-upgrade
 
 
 def test_a_base_image_is_not_something_to_bake(keyed, api, http):
