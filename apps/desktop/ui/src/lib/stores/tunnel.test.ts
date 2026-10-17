@@ -64,6 +64,18 @@ const MAPPING: TunnelMapping = {
   enabled: true,
   name: 'db',
 };
+// An HTTPS tunnel needs no frpc: the visitor bundle leaves it out, the mappings carry it.
+const HTTPS: TunnelMapping = {
+  ...MAPPING,
+  id: 'm2',
+  tunnelType: 'https',
+  protocol: 'web',
+  localPort: 443,
+  visitorPort: null,
+  customDomains: 'web.example.com',
+  connectionId: 'c1',
+  name: 'web',
+};
 
 function refreshed(outcome: RefreshOutcome): TunnelRefresh {
   const running = outcome !== 'stopped';
@@ -114,11 +126,12 @@ describe('tunnel store: activation', () => {
     expect(getMappings()).toEqual([]);
   });
 
-  it('no tunnels (stopped) on login -> idle without a message', async () => {
+  it('no STCP tunnels (stopped) on login -> idle without a message, the mappings loaded', async () => {
     h.refreshTunnel.mockResolvedValueOnce(refreshed('stopped'));
+    h.fetchTunnels.mockResolvedValueOnce([HTTPS]);
     await startIfServerMode();
     expect(get(tunnelUi)).toBe('idle');
-    expect(getMappings()).toEqual([]);
+    expect(getMappings()).toEqual([HTTPS]);
     expect(h.reportError).not.toHaveBeenCalled();
   });
 
@@ -286,14 +299,50 @@ describe('tunnel store: polling (R-0402)', () => {
     expect(h.refreshTunnel).not.toHaveBeenCalled();
   });
 
-  it('stopped (the last tunnel is gone) -> idle, no mappings, no message', async () => {
+  it('stopped (the last STCP tunnel is gone) -> idle without a message, the mappings reloaded', async () => {
     await startIfServerMode();
     h.refreshTunnel.mockResolvedValueOnce(refreshed('stopped'));
+    h.fetchTunnels.mockResolvedValueOnce([HTTPS]);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(get(tunnelUi)).toBe('idle');
-    expect(getMappings()).toEqual([]);
-    expect(h.fetchTunnels).toHaveBeenCalledTimes(1);
+    expect(getMappings()).toEqual([HTTPS]);
+    expect(h.fetchTunnels).toHaveBeenCalledTimes(2);
     expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('stopped and a failed mappings reload keep the previous mappings, without a message', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockResolvedValueOnce(refreshed('stopped'));
+    h.fetchTunnels.mockRejectedValueOnce(new Error('502'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.fetchTunnels).toHaveBeenCalledTimes(2);
+    expect(get(tunnelUi)).toBe('idle');
+    expect(getMappings()).toEqual([MAPPING]);
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('stop() still clears the mappings a stopped run loaded', async () => {
+    h.refreshTunnel.mockResolvedValueOnce(refreshed('stopped'));
+    h.fetchTunnels.mockResolvedValueOnce([HTTPS]);
+    await startIfServerMode();
+    expect(getMappings()).toEqual([HTTPS]);
+    await stop();
+    expect(get(tunnelUi)).toBe('idle');
+    expect(getMappings()).toEqual([]);
+  });
+
+  it('stop() during the mappings reload of a stopped run leaves no mappings', async () => {
+    await startIfServerMode();
+    h.refreshTunnel.mockResolvedValueOnce(refreshed('stopped'));
+    const reload = deferred<TunnelMapping[]>();
+    h.fetchTunnels.mockReturnValueOnce(reload.promise);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await stop();
+
+    reload.resolve([HTTPS]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(get(tunnelUi)).toBe('idle');
+    expect(getMappings()).toEqual([]);
   });
 
   it('an error leaves the tunnel as it is and is reported once per series', async () => {
