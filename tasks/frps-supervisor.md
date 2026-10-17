@@ -170,7 +170,7 @@ Doku: keine (intern)
 Abhängt von: T7
 
 ### T13 — Web: Zustand des frps auf der FRP-Seite  [ ]
-Komponente: web · Dateien: apps/web/src/lib/api/frp.ts, apps/web/src/pages/Frp.svelte, apps/web/src/lib/i18n/dictionaries.ts, apps/web/src/pages/Frp.test.ts
+Komponente: web · Dateien: apps/web/src/lib/api/frp.ts, apps/web/src/pages/Frp.svelte, apps/web/src/lib/i18n/dictionaries.ts, apps/web/src/pages/Frp.test.ts, apps/web/tests/e2e/mocks.ts, apps/web/src/lib/api/mocks.contract.test.ts, apps/web/tests/e2e/smoke.spec.ts-snapshots/frp-chromium-linux.png
 Änderung: `supervisorStatus()` in `frp.ts` (Muster `status()`, `:49`); `Frp.svelte` zeigt einen Statusblock (Zustand, Grund als übersetzter Text je Code, seit wann, „antwortet nicht“ bei `stale`), Aktualisierung beim Öffnen und alle 30 s. Texte DE+EN in `dictionaries.ts`, nur aus Codes. Neue Testdatei (SPDX): jeder Zustand und `stale` erzeugen den erwarteten Text, unbekannter Code fällt auf einen allgemeinen Text.
 Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Frp.test.ts
 Doku: keine (intern)
