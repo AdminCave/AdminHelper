@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Klone ohne Paket-Upgrade beim ersten Boot — Task-Ledger
-Status: geplant · Branch: feature/vm-ciupgrade · Review: am Ende
+Status: aktiv · Branch: feature/vm-ciupgrade · Review: am Ende
 Spec: Roadmap R-0416
 Heavy: none — Test-Harness (`scripts/vm/vm.py`); belegt durch einen Multibox-Lauf nach dem Merge (R-0398 `--agents 1 --tunnel --enforce`)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
