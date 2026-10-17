@@ -53,8 +53,10 @@ Dedup-Key: bug:desktop:connectFlow.ts:stored-password-resolved-key
 HEAD: af4498a7
 Semantik: docs/developer/desktop.html:153-156 — „Rust-Backend resolved den FRP-Tunnel (lokaler Visitor-Port)“, danach „Passwort wird aus dem Keyring geholt oder via <code>PasswordPrompt</code>-Modal abgefragt“
 
-### T4 — Connect-Flow übergibt die Verbindung vor der Auflösung  [ ]
+### T4 — Connect-Flow übergibt die Verbindung vor der Auflösung  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/index.ts, apps/desktop/ui/src/lib/stores/connectFlow.ts, apps/desktop/ui/src/lib/stores/connectFlow.test.ts, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @fa274ef8 2026-10-17T14:15:51+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T4.verdict.json)
 Änderung: `openConnectionStored` (`bridge/index.ts:182`) nimmt optional `credentialConnection` und gibt es an `invoke` weiter. `performConnect` (`connectFlow.ts:202`) übergibt an beiden Stellen (`:225`, `:232`) die unaufgelöste `connection` als `credentialConnection`. Neuer Vitest-Fall in `connectFlow.test.ts` (zuerst rot): Ein Mapping löst eine RDP-Verbindung auf `127.0.0.1:6000` auf, das Passwort ist gespeichert → `open_connection_stored` bekommt die aufgelöste Verbindung als `connection` und die ursprüngliche als `credentialConnection`. Doku DE+EN: der Connect-Flow (`desktop.html:156`) sagt, dass das Passwort unter der Verbindung vor der Tunnel-Auflösung im Keyring steht (unter Windows liest mstsc `TERMSRV` selbst, für Tunnelziele noch ohne gespeichertes Passwort). CHANGELOG Fixed (Linux/macOS).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connectFlow.test.ts
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:156`) · CHANGELOG.md

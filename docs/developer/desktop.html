@@ -153,7 +153,7 @@ async fn connect_rdp(
             <li>User klickt <em>Connect</em> → <code>connectFlow</code>-Store setzt <code>state = 'connecting'</code></li>
             <li>Bridge ruft <code>connect_rdp</code> auf (mit Race-Guard-UUID)</li>
             <li>Rust-Backend resolved den FRP-Tunnel (lokaler Visitor-Port)</li>
-            <li>Passwort wird aus dem Keyring geholt oder via <code>PasswordPrompt</code>-Modal abgefragt</li>
+            <li>Passwort wird aus dem Keyring geholt oder via <code>PasswordPrompt</code>-Modal abgefragt. Ein gespeichertes RDP-Passwort steht unter der Verbindung vor der Tunnel-Auflösung, also unter Host und Port aus der Liste, nicht unter <code>127.0.0.1:&lt;Visitor-Port&gt;</code>; <code>open_connection_stored</code> bekommt diese Verbindung deshalb als <code>credentialConnection</code> neben der aufgelösten. Unter Windows liest mstsc das Passwort selbst (<code>TERMSRV/&lt;Adresse&gt;</code>); für Tunnelziele findet es dort noch keins, weil es unter <code>127.0.0.1:&lt;Visitor-Port&gt;</code> sucht.</li>
             <li>RDP/SSH/VNC-Client wird mit temporärer Config gestartet</li>
             <li>Nach Exit wird der Tunnel wieder abgebaut</li>
           </ol>
