@@ -240,10 +240,11 @@ Doku: keine (intern)
 Abhängt von: T9
 
 ### T28 — Server: `extra_config` der FRP-Server-Config nur mit zulässigen Schlüsseln, Altwerte beim Start bereinigt  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/extra_config.py, apps/server/app/modules/frp/schemas.py, apps/server/app/main.py, apps/server/tests/test_frp_extra_config.py
+Komponente: server · Dateien: apps/server/app/modules/frp/extra_config.py, apps/server/app/modules/frp/schemas.py, apps/server/app/main.py, apps/server/tests/test_frp_extra_config.py, apps/server/tests/test_frp_input_hardening.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_frp_toml_roundtrip.py
 Änderung: Entscheidung Kevin 2026-10-17 (Review T17): Der Supervisor lässt oben nur die Schlüssel aus `TOP_KEYS` (`apps/frps/frps-supervisor.sh`) zu; der Server schrieb bisher jeden `extra_config`-Schlüssel ungefiltert, sodass eine Installation mit z. B. `log.to` nach dem Update keinen frps startet. Neue Datei `extra_config.py` (SPDX): die zulässigen `extra_config`-Schlüssel der FRP-Server-Config (die `TOP_KEYS`, die der Generator nicht selbst schreibt); `FrpServerConfigCreate`/`Update` lehnen andere Schlüssel mit 422 ab (die Tunnel-Schemas bleiben unverändert, das ist frpc). Beim Start (`main.py`, vor `_ensure_frps_config`) entfernt der Server unzulässige Schlüssel aus bestehenden Zeilen, loggt Feldnamen (keine Werte) und schickt Admins eine Mitteilung in der Glocke mit den entfernten Schlüsseln; idempotent. Tests zuerst rot (neue Datei, SPDX): 422 für einen unzulässigen Schlüssel, zulässige gehen durch; Startbereinigung entfernt nur unzulässige, schreibt genau eine Mitteilung, zweiter Start ändert nichts; die Liste stimmt mit `TOP_KEYS` im Supervisor überein (Drift-Test liest das Skript).
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_config.py tests/test_frp_input_hardening.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_config.py tests/test_frp_input_hardening.py tests/test_frp_config.py tests/test_frp_toml_roundtrip.py
 Doku: CHANGELOG und Betrieb in T17
+Test-Löschung: apps/server/tests/test_frp_toml_roundtrip.py::test_extra_config_may_collide_with_the_generators_own_keys — das strict-xfail hielt fest, dass `extra_config` mit Generator-Schlüsseln kollidieren kann; T28 lehnt solche Schlüssel im Schema ab, ein Positivtest (Schema lehnt `auth`/Generator-Schlüssel ab) ersetzt ihn
 
 ### T27 — Kommentare: frps-Image und Compose neutral  [ ]
 Komponente: server · Dateien: apps/frps/Dockerfile, docker-compose.yml, apps/server/tests/test_compose_frps.py
