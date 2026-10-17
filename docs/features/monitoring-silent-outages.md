@@ -137,10 +137,12 @@ the container is manually restarted“; `always`/`unless-stopped` starten nach e
 | `restarting` | — | critical | `restarting` |
 | `dead` | — | critical | `dead` |
 | `paused` | — | warning | `paused` |
-| `created` | — | stopped | `created` |
+| `created` | Exit 0 (nie gestartet) | stopped | `created` |
+| `created` | Exit ≠ 0 (Start gescheitert) | critical | `start_failed` (Kevin 2026-10-17; Docker-Verhalten im Bau belegt) |
 | `exited` | `oom_killed` | critical | `oom` |
 | `exited` | Policy `always`/`unless-stopped` | stopped | `stopped` (ein Absturz würde neu starten; exited heißt von Hand gestoppt) |
 | `exited` | Policy `on-failure`, Exit ≠ 0 | critical | `exit:<code>` (Versuche erschöpft) |
+| `exited` | Exit 143 oder 137 ohne `oom_killed` (Signal, typisch `docker stop`) | stopped | `stopped` bzw. eigener Code (Kevin 2026-10-17) |
 | `exited` | Policy `no`/leer, Exit ≠ 0 | critical | `exit:<code>` (Kevin 2026-10-16) |
 | `exited` | Exit 0 | stopped | `stopped` |
 
