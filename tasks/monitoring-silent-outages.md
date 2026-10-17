@@ -108,8 +108,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (intern; Doku in T13)
 Abhängt von: T4
 
-### T12 — Agent-Paket empfiehlt `smartmontools`  [ ]
+### T12 — Agent-Paket empfiehlt `smartmontools`  [x]
 Komponente: agent · Dateien: apps/agent/deb/DEBIAN/control, apps/agent/rpm/adminhelper-agent.spec, apps/agent/cmd/adminhelper-agent/packaging_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3bba8b75 2026-10-17T06:01:05+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T12.verdict.json)
 Änderung: `apps/agent/deb/DEBIAN/control` bekommt nach `Depends: systemd` (`:5`) die Zeile `Recommends: smartmontools`; `apps/agent/rpm/adminhelper-agent.spec` nach `Requires: systemd` (`:17`) die Zeile `Recommends:     smartmontools` (Weak Dependency, kein `Depends`/`Requires`: der Agent läuft auch ohne, der SMART-Check nennt dann den Grund aus T3). Neue Testdatei mit SPDX-Header (`// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`) im Paket `main` von `cmd/adminhelper-agent`, zuerst rot: liest `../../deb/DEBIAN/control` und `../../rpm/adminhelper-agent.spec` und prüft, dass genau eine `Recommends:`-Zeile `smartmontools` nennt und `smartmontools` in keiner `Depends:`/`Requires:`-Zeile steht. Ob die Ziel-Distributionen rpm ≥ 4.12 haben (Weak Dependencies), ist nicht verifiziert — `box_agentbox_rpm.sh` im Sammellauf installiert das echte Paket.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Packag
 Doku: keine (intern; der CHANGELOG-Eintrag in T13 nennt es)
