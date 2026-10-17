@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # HTTPS-Tunnel-Mappings ohne STCP-Visitor — Task-Ledger
-Status: bereit · Branch: feature/desktop-https-mappings · Review: am Ende
+Status: erledigt · Branch: feature/desktop-https-mappings · Review: am Ende
 Spec: Roadmap R-0432
 Heavy: linux-full — Desktop-Tunnel-Store (Desktop-Journey im Sammellauf, `run.sh e2e`); keine neue Live-Spec: die HTTPS-Auflösung selbst (`resolve_connection`) bleibt unverändert, die Store-Logik belegt Vitest
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
