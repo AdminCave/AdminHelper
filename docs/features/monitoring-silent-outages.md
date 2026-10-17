@@ -107,7 +107,7 @@ auf der Serverseite ein freies `dict` (`routers/agent.py`, `report: dict`).
   eines Go-Templates (ein Template auf `.State.Health.Status` scheitert an Containern ohne Healthcheck): `Id`,
   `RestartCount`, `State.Status`, `State.ExitCode`, `State.OOMKilled`, `State.Health.Status`,
   `HostConfig.RestartPolicy.Name` — Feldnamen der Docker Engine API, gegen
-  <https://docs.docker.com/reference/api/engine/> zu prüfen (**nicht verifiziert**). Unbekannte Felder werden
+  <https://docs.docker.com/reference/api/engine/> geprüft (T1: Engine-API v1.56, Fixture aus echter Ausgabe von Docker 29.8.1; im Multibox-Lauf mit Docker 29.8.1 bestätigt). Unbekannte Felder werden
   ignoriert (Struct, kein `map[string]string`).
 - `smart_absent` erscheint nur, wenn `smart` fehlt. `smart` selbst bleibt die Liste wie heute.
 
@@ -152,8 +152,8 @@ Gesamtstatus: schlechteste Kategorie; `stopped` zählt als ok. `ignore_container
 
 - Docker Restart-Policies: <https://docs.docker.com/engine/containers/start-containers-automatically/> (per WebFetch
   am 2026-10-16 gelesen, Zitate oben).
-- Docker Engine API / `docker inspect`-JSON-Feldnamen: <https://docs.docker.com/reference/api/engine/> — **nicht
-  verifiziert**, vom Builder vor T1 zu prüfen.
+- Docker Engine API / `docker inspect`-JSON-Feldnamen: <https://docs.docker.com/reference/api/engine/> — in T1
+  gegen Engine-API v1.56 geprüft (Docker 29.8.1); ältere API-Versionen nicht einzeln.
 - `zpool list`: Format unverändert (`-H -o name,size,alloc,free,cap,health`); nur Fehlerpfad neu.
 
 ## Trade-offs & Alternativen
