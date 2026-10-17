@@ -192,23 +192,28 @@ tag, prints one `N ok, M failed, K skipped` summary, and destroys the whole scen
 (`--keep` to inspect). It runs `vm.py doctor` over all planned roles BEFORE the first clone,
 so a scenario the hypervisor cannot carry costs nothing:
 - `--strict`    a guard that could not run fails the run instead of passing as a note.
-                Since stage 3 the six conditional guards report through `skipped()` (debian:9,
-                agent-repo/CA-flip without `REPO_FP`, desktop lease, moncheck lease,
-                `--enforce`, monitoring hop), so `0 failed, 0 skipped` means "every
-                REQUESTED check ran". A failed lease (agent, tunnel, visitor, rpm, moncheck)
-                still drops its follow-up checks without a SKIP — there the accompanying
-                FAIL is the evidence.
+                The conditional guards report through `skipped()` (debian:9, agent-repo/CA-flip
+                without `REPO_FP`, `--enforce`, the SSH session through the tunnel reload, the
+                Docker stage without a provisioned agent box or without its Docker Host check,
+                desktop lease or too few enrollment tokens, moncheck lease, monitoring hop), so
+                `0 failed, 0 skipped` means "every REQUESTED check ran". A failed lease of the
+                rpm, tunnel or visitor box, or of the agent box without `--docker`, still drops
+                its follow-up checks without a SKIP — there the accompanying FAIL is the evidence.
 - `--agents N`  N agent-boxes: real `.deb` install + provision over the hop (cross-host mTLS).
 - `--rpm`       + a cross-distro rpm agent in a `rockylinux:8` container (box_agentbox_rpm.sh).
 - `--tunnel`    + frps + an agent frpc STCP server + a visitor: full 3-host FRP tunnel data path.
+- `--docker`    + real Docker on the agent box and the Docker Host template on its host: a running
+                container → ok, `exit 1` → critical, the stopped daemon → warning. No box of its own.
 - `--desktop`   + the real Tauri GUI headless vs the remote server (login/CRUD/monitoring).
                 `AH_DESKTOP_VM=<vmid>` reuses a warm desktop box (skips ~30 min re-bootstrap+build).
 - `--moncheck`  + a mailhog sink box: pull ping-checks + a closed-loop email alert over the hop.
 - `--enforce`   `MTLS_ENFORCE=true`: cert-based admin seed (enroll on :8444) + assert certless :443 → 400.
-- `--capstone`  = `--agents 1 --rpm --tunnel --desktop --moncheck --enforce` (everything,
-                one run — 7 boxes). `--enforce` is included since stage 3: without it the
-                MTLS_ENFORCE guard never ran in a release capstone. `heavy.sh capstone`
-                runs exactly this, with `--strict`. **Partial runs — anything short of the
+- `--capstone`  = `--agents 1 --rpm --tunnel --docker --desktop --moncheck --enforce`
+                (everything, one run — 7 boxes; `--docker` adds none). `--enforce` is included
+                since stage 3: without it the MTLS_ENFORCE guard never ran in a release
+                capstone. `--docker` since R-0419: a Docker stage that could not run is a SKIP,
+                a missing state a FAIL, so a strict capstone without its Docker result is red.
+                `heavy.sh capstone` runs exactly this, with `--strict`. **Partial runs — anything short of the
                 capstone flag set — run WITHOUT `--strict`:** a missing `--enforce` reports
                 SKIP, and a SKIP fails a strict run, so `--agents 1 --desktop --strict` is
                 red before it tests anything. **T7a:** because the enforced gateway demands

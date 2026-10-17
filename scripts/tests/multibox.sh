@@ -11,17 +11,20 @@
 #   agent-box(s)= real .deb install + `adminhelper-agent provision` over a network hop
 # Then asserts each agent enrolled an mTLS identity and pushed a monitoring report.
 #
-#   bash scripts/tests/multibox.sh [--agents N] [--rpm] [--tunnel]
+#   bash scripts/tests/multibox.sh [--agents N] [--rpm] [--tunnel] [--docker]
 #       [--desktop] [--moncheck] [--enforce] [--capstone] [--keep] [--strict]
 #   --strict   a guard that could not run fails the capstone (release gate)
 #   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
 #   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel); the
 #              tunnel comes after the provisioning, a second one by a reload while the
 #              visitor holds an SSH session over the first (R-0398)
+#   --docker   + the Docker Host template on the agent's host and real Docker on its
+#              box: a running container -> ok, a container with exit 1 -> critical,
+#              the daemon stopped -> warning (R-0419); no box of its own
 #   --desktop  + the real Tauri GUI vs the remote server     (S3)
 #   --moncheck + pull ping-checks + a closed-loop email alert (S5)
 #   --enforce  + MTLS_ENFORCE=true: the certless data plane must be rejected
-#   --capstone = --agents 1 --rpm --tunnel --desktop --moncheck --enforce
+#   --capstone = --agents 1 --rpm --tunnel --docker --desktop --moncheck --enforce
 #              (S6: all in one run — the release gate)
 #   --keep     leave the VMs up after the run (still bounded by their ttl)
 #
@@ -40,15 +43,17 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/../vm/lib.sh"
 cd "$VM_ROOT" || exit 1
 
-AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0; ENFORCE=0
+AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0; ENFORCE=0; DOCKER=0
 SKIPPED=0; MB_DEBIAN9_SKIPPED=0
 while [ $# -gt 0 ]; do case "$1" in
   --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
   --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;; --enforce) ENFORCE=1 ;;  # D2: MTLS_ENFORCE=true
+  --docker) DOCKER=1 ;;
   # S6: everything, one run. --enforce included (R-0022): without it the
   # MTLS_ENFORCE guard never ran in a release capstone, which is the one place
-  # the cert-gated data plane is supposed to be proven.
-  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1; ENFORCE=1 ;;
+  # the cert-gated data plane is supposed to be proven. --docker likewise (R-0419):
+  # only a box with real Docker shows a container outage arriving at the server.
+  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DOCKER=1; DESKTOP=1; MONCHECK=1; ENFORCE=1 ;;
   # A flag, not just the env: AH_STRICT is set by run.sh alone, which never
   # starts this script, and a `AH_STRICT=1 multibox.sh` prefix is what
   # .claude/rules/testing.md forbids ("Env-Bedarf loest das Skript auf").
@@ -215,9 +220,13 @@ else
 fi
 
 echo "== provision each agent against https://$SRV_IP =="
+# The box that holds host $SID: its provision token is single-use, so it is the first that
+# provisioned. --docker works on it.
+DOCK_VM=""
 for a in "${AGENT_VMS[@]:-}"; do
   [ -n "$a" ] || continue
   AOUT="$(box "$a" 3000 bash scripts/tests/box_agentbox.sh "$SRV_IP" "$SID" "$PTOK" "$REPO_FP" "$CAFP" 2>&1)"; echo "$AOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -50
+  [ -z "$DOCK_VM" ] && grep -q AGENT_PROVISION_OK <<<"$AOUT" && DOCK_VM="$a"
   printf '%s' "$AOUT" | grep -q AGENT_PROVISION_OK && printf '%s' "$AOUT" | grep -q AGENT_CERT_OK \
     && ok "agent $a: provisioned + mTLS-enrolled over the network hop" \
     || bad "agent $a: provision/enroll (see output above; check IP-SAN + firewall)"
@@ -247,11 +256,14 @@ if [ "$RPM" = 1 ]; then
   else bad "rpm-agent lease"; fi
 fi
 
-# srv_api <clear|add> <server-id> [<frp-config-id> <tunnel>] — the admin API of the server
-# box, called ON that box: under --enforce only it holds the admin client certificate
-# (box_serverbox.sh enrolls it into /tmp). clear deletes the tunnels of a host; add creates
-# an STCP tunnel to its sshd and prints the visitor.toml that has it. The program travels
-# base64-encoded: vm.py joins the command into one `bash -lc` string.
+# srv_api <clear|add|docker-assign|docker-state> <server-id> [<frp-config-id> <tunnel>] — the
+# admin API of the server box, called ON that box: under --enforce only it holds the admin
+# client certificate (box_serverbox.sh enrolls it into /tmp). clear deletes the tunnels of a
+# host; add creates an STCP tunnel to its sshd and prints the visitor.toml that has it.
+# docker-assign gives a host the standard template Docker Host; docker-state names the state
+# of its Docker Health check, the monitoring service answering through the proxy of the
+# server as it does for the desktop. The program travels base64-encoded: vm.py joins the
+# command into one `bash -lc` string.
 srv_api_py() {
   cat <<'PY'
 import base64, json, os, ssl, sys, urllib.request
@@ -290,6 +302,47 @@ elif action == "add":
                                              "protocol": "ssh", "local_port": 22})
     print("MB_API_TUNNEL=" + name)
     print("MB_VISITOR_B64=" + base64.b64encode(call("GET", "/api/frp/generate/visitor-toml", token)).decode())
+elif action == "docker-assign":
+    # By its slug: a user may rename a standard template.
+    found = [t for t in json.loads(call("GET", "/api/monitoring/templates", token))
+             if t.get("builtinSlug") == "docker-host"]
+    if len(found) != 1:
+        sys.exit("%d standard templates docker-host, want 1" % len(found))
+    server = json.loads(call("GET", "/api/servers/" + server_id, token))
+    body = {"server_id": server_id, "hostname": server["hostname"], "server_name": server["name"]}
+    created = json.loads(call("POST", "/api/monitoring/templates/%s/assign" % found[0]["id"], token, body))
+    if not created.get("checksCreated"):
+        sys.exit("the Docker Host template created no check on server %s" % server_id)
+    print("MB_API_TEMPLATE=docker-host")
+elif action == "docker-state":
+    checks = [c for c in json.loads(call("GET", "/api/monitoring/checks?server_id=" + server_id, token))
+              if c.get("checkType") == "docker_health"]
+    if len(checks) != 1:
+        sys.exit("%d docker_health checks on server %s, want 1" % (len(checks), server_id))
+    need = checks[0].get("consecutiveFails")
+    state = checks[0].get("state") or {}
+    status, fails = state.get("status"), state.get("failCount")
+    details = state.get("details") or {}
+    rated = {c.get("name"): "%s/%s" % (c.get("category"), c.get("reason") or "-")
+             for c in details.get("containers") or []}
+    run, ended = rated.get("mb-dock-run"), rated.get("mb-dock-exit")
+    counted = isinstance(fails, int) and isinstance(need, int)
+    up = details.get("available") is True and details.get("error") is None and run == "ok/-"
+    # An ok status alone proves nothing: a first warning or critical of a new check reads ok
+    # until consecutive_fails (check_engine.effective_status). The counter tells them apart.
+    marker = "DOCKER_STATE_OTHER"
+    if up and ended is None and status == "ok" and fails == 0:
+        marker = "DOCKER_OK"
+    elif up and ended == "critical/exit:1" and counted and status == "ok" and 0 < fails < need:
+        marker = "DOCKER_EXIT_DAMPED"
+    elif up and ended == "critical/exit:1" and counted and status == "critical" and fails >= need:
+        marker = "DOCKER_EXIT_CRIT"
+    elif details.get("available") is False and details.get("error") == "daemon_unreachable" \
+            and status == "warning":
+        marker = "DOCKER_UNAVAIL_WARN"
+    print("MB_DOCKER_STATE=" + marker)
+    print("MB_DOCKER_SEEN=status:%s,fails:%s/%s,available:%s,error:%s,mb-dock-run:%s,mb-dock-exit:%s"
+          % (status, fails, need, details.get("available"), details.get("error"), run or "-", ended or "-"))
 else:
     sys.exit("unknown action " + action)
 PY
@@ -401,6 +454,57 @@ if [ "$TUNNEL" = 1 ]; then
       fi
     else bad "visitor lease or missing visitor config"; fi
   else bad "tunnel-agent lease or missing tunnel seed"; fi
+fi
+
+# docker_step <step> <what> — one step of box_agentbox.sh docker on the agent box: it changes
+# Docker as the step says, then one agent run pushes the report. The start step names the
+# engine and the image, which the verdict carries.
+docker_step() {
+  local out verdict engine image what="$2"
+  out="$(ask "$DOCK_VM" 900 bash scripts/tests/box_agentbox.sh docker "$1" 2>&1)"
+  echo "$out" | tail -15
+  verdict="$(vm_marker AGENT_DOCKER_STEP "$out")"
+  engine="$(vm_marker AGENT_DOCKER_ENGINE "$out")"; image="$(vm_marker AGENT_DOCKER_IMAGE "$out")"
+  [ -n "$engine" ] && what="$what (Docker $engine, image ${image:-none})"
+  [ "$verdict" = OK ] && ok "docker agent box: $what" || bad "docker agent box: $what: ${verdict:-no marker} (see output above)"
+}
+# docker_state <marker> <what> — the Docker Health check of host $SID, read on the server box
+# after the push of the step before.
+docker_state() {
+  local out mark seen
+  out="$(srv_api docker-state "$SID" 2>&1)"
+  mark="$(vm_marker MB_DOCKER_STATE "$out")"; seen="$(vm_marker MB_DOCKER_SEEN "$out")"
+  if [ "$mark" = "$1" ]; then
+    ok "$2 ($1; $seen)"
+  else
+    echo "$out" | tail -5; bad "$2: ${mark:-no marker} (expected $1; ${seen:-nothing seen})"
+  fi
+}
+
+if [ "$DOCKER" = 1 ]; then
+  echo "== docker (R-0419): real Docker on the agent box, the Docker Host template, three states =="
+  if [ -n "$DOCK_VM" ]; then
+    API="$(srv_api docker-assign "$SID" 2>&1)"
+    if [ "$(vm_marker MB_API_TEMPLATE "$API")" = docker-host ]; then
+      ok "the Docker Host template is assigned to the host of agent $DOCK_VM over the API"
+      docker_step start "the agent timer is stopped, a container keeps running, one agent run"
+      docker_state DOCKER_OK "docker: a running container -> ok"
+      # consecutive_fails 2 (Docker Host, builtin_templates.py): the first critical result
+      # keeps the status ok and counts 1 of 2, the second turns it critical. The stopped
+      # daemon continues that count, so its warning stands after one run.
+      docker_step exit "a second container ended with exit 1, no restart policy, one agent run"
+      docker_state DOCKER_EXIT_DAMPED "docker: the first report of the exit 1 -> critical exit:1 in the details, the status damped"
+      docker_step rerun "one more agent run"
+      docker_state DOCKER_EXIT_CRIT "docker: the second report -> critical, reason exit:1"
+      docker_step down "Docker daemon and socket stopped, one agent run"
+      docker_state DOCKER_UNAVAIL_WARN "docker: the stopped daemon -> warning, error daemon_unreachable"
+    else
+      echo "$API" | tail -5; bad "could not assign the Docker Host template over the API (see output above)"
+      skipped "the three Docker states (no Docker Host check) — ok, exit 1 and the stopped daemon are unverified"
+    fi
+  else
+    skipped "the Docker stage (no provisioned agent box) — ok, exit 1 and the stopped daemon are unverified"
+  fi
 fi
 
 if [ "$DESKTOP" = 1 ]; then

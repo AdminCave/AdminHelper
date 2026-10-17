@@ -5,8 +5,15 @@
 package monitor
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"os/exec"
+	"reflect"
+	"sort"
+	"sync"
 	"testing"
+	"time"
 )
 
 // Abbreviated but structurally realistic `smartctl --all --json=c` output of an
@@ -182,5 +189,160 @@ func TestDetermineKind(t *testing.T) {
 			t.Errorf("determineKind(%q, %d) = %q, erwartet %q",
 				c.protocol, c.rotationRate, got, c.want)
 		}
+	}
+}
+
+// `smartctl --scan --json=c` of a host with one SATA disk and one NVMe SSD (smartctl 7.x).
+const smartScanFixture = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"exit_status":0},` +
+	`"devices":[{"name":"/dev/sda","info_name":"/dev/sda [SAT]","type":"sat","protocol":"ATA"},` +
+	`{"name":"/dev/nvme0","info_name":"/dev/nvme0","type":"nvme","protocol":"NVMe"}]}`
+
+// smartctlCall is one recorded call of the fake smartctl.
+type smartctlCall struct {
+	timeout time.Duration
+	args    []string
+}
+
+// stubSmartctl swaps smartctlCLI for a fake smartctl that is on the PATH: it answers the scan with
+// scan and the query of a device with devices[device]. It returns the recorded calls; a device
+// without a reply fails the test. The queries run in parallel, hence the lock.
+func stubSmartctl(t *testing.T, scan dockerReply, devices map[string]dockerReply) *[]smartctlCall {
+	t.Helper()
+	old := smartctlCLI
+	t.Cleanup(func() { smartctlCLI = old })
+	var (
+		mu    sync.Mutex
+		calls []smartctlCall
+	)
+	smartctlCLI.lookPath = func(file string) (string, error) { return "/usr/sbin/" + file, nil }
+	smartctlCLI.run = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		mu.Lock()
+		calls = append(calls, smartctlCall{timeout, args})
+		mu.Unlock()
+		if name != "/usr/sbin/smartctl" {
+			t.Errorf("ran %q, want the smartctl found on the PATH", name)
+		}
+		if args[0] == "--scan" {
+			return []byte(scan.out), scan.err
+		}
+		reply, ok := devices[args[len(args)-1]]
+		if !ok {
+			t.Errorf("unexpected smartctl call %v", args)
+			return nil, errors.New("unexpected call")
+		}
+		return []byte(reply.out), reply.err
+	}
+	return &calls
+}
+
+func assertSmartAbsent(t *testing.T, disks []SmartDisk, reason, want string) {
+	t.Helper()
+	if disks != nil || reason != want {
+		t.Errorf("collectSmart() = %v, %q; want nil, %q", disks, reason, want)
+	}
+}
+
+func TestCollectSmartNotInstalled(t *testing.T) {
+	calls := stubSmartctl(t, dockerReply{}, nil)
+	smartctlCLI.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	disks, reason := collectSmart()
+	assertSmartAbsent(t, disks, reason, "not_installed")
+	if len(*calls) != 0 {
+		t.Errorf("smartctl was called without a smartctl binary: %v", *calls)
+	}
+}
+
+func TestCollectSmartScanFailed(t *testing.T) {
+	cases := map[string]dockerReply{
+		"scan fails":     {err: &exec.Error{Name: "/usr/sbin/smartctl", Err: exec.ErrNotFound}},
+		"scan times out": {err: context.DeadlineExceeded},
+		// The plain-text scan of a smartctl that ignores --json.
+		"scan prints no JSON": {out: "/dev/sda -d sat # /dev/sda [SAT], ATA device\n"},
+		"scan prints nothing": {out: ""},
+	}
+	for name, scan := range cases {
+		t.Run(name, func(t *testing.T) {
+			calls := stubSmartctl(t, scan, nil)
+			disks, reason := collectSmart()
+			assertSmartAbsent(t, disks, reason, "scan_failed")
+			if len(*calls) != 1 {
+				t.Errorf("calls = %v, want only the scan", *calls)
+			}
+		})
+	}
+}
+
+func TestCollectSmartNoDevices(t *testing.T) {
+	cases := map[string]string{
+		// smartctl leaves the devices key out when the scan finds none.
+		"devices missing": `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"exit_status":0}}`,
+		"devices empty":   `{"json_format_version":[1,0],"devices":[]}`,
+	}
+	for name, out := range cases {
+		t.Run(name, func(t *testing.T) {
+			calls := stubSmartctl(t, dockerReply{out: out}, nil)
+			disks, reason := collectSmart()
+			assertSmartAbsent(t, disks, reason, "no_devices")
+			if len(*calls) != 1 {
+				t.Errorf("calls = %v, want only the scan", *calls)
+			}
+		})
+	}
+}
+
+func TestCollectSmartNoDeviceReadable(t *testing.T) {
+	// The scan found disks but not one query gave readable SMART data (hung, did not start, no JSON):
+	// that is a failed read, not a host without SMART-capable devices.
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {err: context.DeadlineExceeded},
+		"/dev/nvme0": {out: "not json"},
+	})
+	disks, reason := collectSmart()
+	assertSmartAbsent(t, disks, reason, "scan_failed")
+}
+
+func TestCollectSmartDisks(t *testing.T) {
+	calls := stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {out: ataFixture},
+		"/dev/nvme0": {out: nvmeFixture},
+	})
+	disks, reason := collectSmart()
+	if reason != "" {
+		t.Errorf("reason = %q, want none with disks", reason)
+	}
+	var devices []string
+	for _, d := range disks {
+		devices = append(devices, d.Device+" "+d.Kind)
+	}
+	sort.Strings(devices)
+	if want := []string{"/dev/nvme0 NVMe", "/dev/sda HDD"}; !reflect.DeepEqual(devices, want) {
+		t.Errorf("disks = %v, want %v", devices, want)
+	}
+
+	// The scan keeps its 15s cap, every device query its own 30s one.
+	want := map[string]time.Duration{"--scan": 15 * time.Second, "/dev/sda": 30 * time.Second,
+		"/dev/nvme0": 30 * time.Second}
+	got := map[string]time.Duration{}
+	for _, c := range *calls {
+		if c.args[0] == "--scan" {
+			got["--scan"] = c.timeout
+		} else {
+			got[c.args[len(c.args)-1]] = c.timeout
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("timeouts = %v, want %v", got, want)
+	}
+}
+
+func TestCollectSmartSomeDisksReadable(t *testing.T) {
+	// One readable disk is SMART data: the unreadable one drops out, there is no absence reason.
+	stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+		"/dev/sda":   {err: context.DeadlineExceeded},
+		"/dev/nvme0": {out: nvmeFixture},
+	})
+	disks, reason := collectSmart()
+	if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/nvme0" {
+		t.Errorf("collectSmart() = %v, %q; want only /dev/nvme0 and no reason", disks, reason)
 	}
 }

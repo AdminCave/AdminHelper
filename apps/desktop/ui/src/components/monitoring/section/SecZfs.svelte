@@ -18,8 +18,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
+  // Spelled out: the i18n "no unused keys" guard only sees quoted keys.
+  const ERROR_KEY = new Map<string, string>([
+    ['timeout', 'monitoring.zfs.error.timeout'],
+    ['cli_failed', 'monitoring.zfs.error.cli_failed'],
+  ]);
+  // The colour comes from the status the line's dot shows: an outage is a
+  // warning, and with the outage alert off (unknown) the pill stays grey.
+  const OUTAGE_PILL = new Map<string, string>([
+    ['critical', 'pill-crit'],
+    ['warning', 'pill-warn'],
+  ]);
+
   function poolsOf(check: MonitorCheck) {
     return (check.state?.details as MonitorZfsDetails | undefined)?.pools ?? [];
+  }
+  // The error's text key when the agent could not read zpool; no pools then.
+  function unavailableOf(check: MonitorCheck): string | null {
+    const d = check.state?.details as MonitorZfsDetails | undefined;
+    if (d?.available !== false) return null;
+    // A code this UI does not know yet (a newer agent) still says something.
+    return ERROR_KEY.get(d.error ?? '') ?? 'monitoring.zfs.error.unknown';
   }
   function cfgOf(check: MonitorCheck): Record<string, unknown> {
     return (check.config ?? {}) as Record<string, unknown>;
@@ -47,6 +66,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <div class="mon-section-body">
     {#each checks as check (check.id)}
       {@const pools = poolsOf(check)}
+      {@const unavailable = unavailableOf(check)}
       {@const cfg = cfgOf(check)}
       {@const capWarn = Number(cfg.capacity_warn ?? 80)}
       {@const capCrit = Number(cfg.capacity_crit ?? 90)}
@@ -55,7 +75,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="mon-line-name">{check.name}</span>
         {/snippet}
         {#snippet value()}
-          {#if pools.length === 0}
+          {#if unavailable}
+            <span
+              class="mon-line-pill {OUTAGE_PILL.get(check.state?.status ?? '') ?? ''}"
+              title={check.state?.message}>{$t(unavailable)}</span
+            >
+          {:else if pools.length === 0}
             <span class="mon-line-pill">—</span>
           {:else}
             {#each pools as p (p.name)}

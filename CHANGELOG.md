@@ -334,6 +334,29 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
+  Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
+  Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
+  Pool-Liste. Jetzt schickt der Agent den Docker- und den ZFS-Block, sobald `docker` bzw.
+  `zpool` installiert ist, bei einem Ausfall mit `available: false`, einem Fehler-Code (`daemon_unreachable`,
+  `timeout`, `cli_failed`, `parse_failed`) und einem kurzen Text ohne stderr; `docker_health` und `zfs_health` stehen
+  dann auf `warning` und benachrichtigen. Fehlt der Block, leert der Check die gespeicherte Liste. `docker_health`
+  bewertete nach der Restart-Policy: Ein abgestuerzter Container (`Exited (3)`) ohne Policy, `paused` und `created`
+  galten als ok, ein von Hand gestoppter mit `always` als critical. Jetzt entscheidet das Ende: Exit ≠ 0, OOM, ein
+  gescheiterter Start (`created` mit Exit ≠ 0), `restarting` und `dead` sind critical, ein steigender
+  Neustart-Zaehler, `unhealthy` und `paused` warning; ein gewollter Stopp (Exit 0, Exit 143 oder 137 ohne OOM,
+  `exited` mit `always`/`unless-stopped`, nie gestartet) gilt als gestoppt und zaehlt als ok. Exit-Code, OOM,
+  Neustart-Zaehler, Healthcheck und Restart-Policy holt der Agent aus einem gebuendelten `docker inspect` als JSON. Im
+  Standard-Template „Docker Host“ (`consecutive_fails` 2) ist ein einzelner Neustart nur in der Container-Liste zu
+  sehen (Grund `restarted`); Status und Alarm folgen erst bei wiederholten Neustarts. Ein neuer Check, dessen erstes
+  Ergebnis `unknown` ist, stand gruen; jetzt steht er auf `unknown`. `smart_health` liess einen Host ohne `smartctl`
+  wie eine VM ohne Platten aussehen; jetzt nennt die Meldung den Grund (`smart_absent`: `not_installed` „No SMART
+  data: smartctl is not installed“, `scan_failed` „No SMART data: the SMART query failed“, `no_devices` „No SMART
+  data: no SMART-capable devices found“), der Status bleibt ok. Der Desktop zeigt einen Docker- oder ZFS-Ausfall mit
+  uebersetztem Fehler statt „—“, zaehlt gestoppte Container getrennt („3 laufen · 1 gestoppt“) und nennt je Container
+  den Grund (Exit-Code, OOM, Neustarts, Healthcheck, pausiert, gestoppt). Der Report traegt dafuer additiv
+  `available`, `error`, `error_message`, je Container `exit_code`, `oom_killed`, `restart_count` und `health` sowie
+  `smart_absent`; die Check-Details tragen je Container `category` und `reason`.
 - **Desktop: der Tunnel mit Geraete-Zertifikat startet unter Windows (R-0425):** Der Desktop setzte den Pfad seiner
   exportierten Geraete-Identitaet (unter `%APPDATA%`) unveraendert in die Tunnel-Config ein. Dort steht er in einem
   TOML-String, in dem ein Backslash ein Escape einleitet: Ein Windows-Pfad wie `C:\Users\…` machte die Config
@@ -411,7 +434,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Docker-Daten im Report“. Jetzt liest er nur die genutzten Felder (`ID`, `Names`, `Image`, `State`, `Status`) und
   uebergeht alle anderen; das Report-Format bleibt gleich. Ist Docker installiert, der Daemon aber nicht erreichbar,
   scheitert `docker ps` oder sind Zeilen nicht lesbar, schreibt der Agent eine Warnung ins Log, die auch der Bericht
-  von `adminhelper-agent diagnose` zeigt. Die Docker-Sektion im Desktop sagt „Alle N Container laufen“ nur noch,
+  von `adminhelper-agent diagnostics` zeigt. Die Docker-Sektion im Desktop sagt „Alle N Container laufen“ nur noch,
   wenn alle laufen, sonst „X von N laufen“, und ohne Docker-Daten im Report „keine Daten“ statt „—“.
 - **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
   Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
@@ -728,6 +751,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: neue Warnungen fuer Docker und ZFS nach dem Update (R-0419):** Ein Host mit gestopptem Docker-Daemon
+  oder mit einem `zpool`, dessen `zpool list` scheitert oder haengt (etwa ein LXC-Container ohne ZFS-Modul), meldet
+  `docker_health` bzw. `zfs_health` jetzt als `warning` mit Benachrichtigung, alte mit Exit ≠ 0 beendete Container
+  ohne Restart-Policy erstmals als `critical`. Das ist gewollt. Ausweg je Check: `alert_on_unavailable: false` (neu in
+  der Konfiguration von `docker_health` und `zfs_health`, Default `true`, nur echte Booleans; im Check-Editor die
+  Checkbox „Ausfall melden“) laesst einen Ausfall auf `unknown` ohne Benachrichtigung stehen, `ignore_containers`
+  blendet einzelne Container aus, auch solche, die geplant neu starten.
+- **Agent: das Paket empfiehlt `smartmontools` (R-0419):** deb und rpm tragen `Recommends: smartmontools`, ohne das
+  Paket vorauszusetzen: Ohne `smartctl` laeuft der Agent weiter, `smart_health` meldet dann „No SMART data: smartctl
+  is not installed“. Eine Neuinstallation mit `apt-get install` oder `dnf install` zieht es mit, sofern Empfehlungen
+  nicht abgeschaltet sind. Auf bestehenden Hosts kommt es mit einem Upgrade des Agents nicht sicher mit
+  (`apt-get upgrade` und `dpkg -i` installieren neue Empfehlungen nicht nach): Dort bei Bedarf `smartmontools` von
+  Hand installieren.
 - **Server: FRP-Abgleich ohne FRP-Config ohne Fehler, ohne aktiven Tunnel ohne frps-Zugangsdaten (R-0398):**
   `GET /api/frp/provision/{id}/config-hash` antwortet ohne FRP-Config mit `200` und `{"hash": null}` statt mit `404`
   „Keine FRP-Config vorhanden“; fuer den Agent-Abgleich gibt es dann nichts zu tun, `GET …/config` bleibt `404`. Ein
