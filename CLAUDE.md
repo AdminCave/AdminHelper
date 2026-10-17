@@ -31,11 +31,12 @@ Ledger. Zwei freigegebene, disjunkte Vorhaben baut die Session parallel (Deckel 
 eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Jeden eigenen
 PR merged die Session selbst, auch einen, der `CLAUDE.md`, `.claude/` oder `scripts/` ändert, sobald er grün ist und
 alle Prüfer `approve` gesagt haben (Kevin, 2026-10-17). Grün heißt: die CI im ersten Anlauf grün und die Läufe, die §5
-vor dem Merge verlangt, grün; eine Ersatzprüfung der Session (§6) ist kein `approve`. Kevin merged fremde PRs und PRs,
-die `.github/workflows/`, `scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` ändern: Diese
-wirken ohne Release auf Nutzer oder Secrets. Einen je CI-Zyklus, und nur, wenn der Branch `origin/main` enthält
-(`git fetch`, `merge-base --is-ancestor`; sonst mergen, pushen, neue CI): Das Ruleset prüft die Kombination nicht, die
-PR-CI testet dann genau `main` + PR (Kevin, 2026-10-15). Ist `main` rot, wird der letzte Merge
+vor dem Merge verlangt, grün; eine Ersatzprüfung der Session (§6, auch in einem Task-Commit) ist kein `approve`. Die
+Session merged einen je CI-Zyklus, und nur, wenn der Branch `origin/main` enthält (`git fetch`,
+`merge-base --is-ancestor`; sonst mergen, pushen, neue CI): Das Ruleset prüft die Kombination nicht, die PR-CI testet
+dann genau `main` + PR (Kevin, 2026-10-15). Kevin merged fremde PRs und PRs, die `.github/workflows/`,
+`scripts/install.sh`, `scripts/agent-install.sh` oder `scripts/update.sh` ändern: Diese wirken ohne Release auf Nutzer
+oder Secrets. Ist `main` rot, wird der letzte Merge
 revertiert, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile. Lange
 Läufe (`/test`, Wochenlauf, Multibox, Suiten über zehn Minuten) laufen in einem tmux-Fenster ohne Modell mit
 `( . ./.devenv.sh; … ) > log; echo $? > rc`; die Session wartet mit einem Hintergrund-Wächter auf die `rc`-Datei
