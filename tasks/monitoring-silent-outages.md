@@ -52,6 +52,7 @@ Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: keine (intern; Doku in T13)
 Abhängt von: T4
+Test-Löschung: apps/monitoring/tests/test_plugin_checkers.py::test_docker_stopped_with_restart_policy_is_critical — nach der Spec-Tabelle ist ein von Hand gestoppter `always`-Container stopped statt critical; ersetzt durch den Tabellenfall `exited-always-stopped-by-hand`
 
 ### T6 — Monitoring: Push-Pfad reicht Vorwerte auch an `docker_health`  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py
