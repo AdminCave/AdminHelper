@@ -23,9 +23,10 @@
 # Flags: --skip-backup  --with-victoria  --no-rollback  --yes
 #
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
-# runtime files before the swap; on a failed health check it auto-rolls-back the
-# runtime files + image pins (use --no-rollback to inspect the broken state). The
-# updater updates ITSELF: if the release ships a newer update.sh it re-execs into it.
+# runtime files + .env before the swap; on a failed image pull or health check it
+# auto-rolls-back the runtime files + image pins (use --no-rollback to inspect the
+# broken state). The updater updates ITSELF: if the release ships a newer update.sh
+# it re-execs into it.
 #
 # Advanced overrides (mirrors / GitHub Enterprise / tests):
 #   AH_API_BASE (default https://api.github.com), AH_DL_BASE (default https://github.com),
@@ -235,7 +236,7 @@ wait_for_server() {
 if [ "$REDEPLOY" = 1 ]; then
     if [ "$SKIP_BACKUP" != 1 ]; then log "Backup-first..."; ./scripts/backup.sh "${BACKUP_ARGS[@]}"; fi
     log "Ziehe die gepinnten Images neu..."
-    docker compose pull
+    docker compose pull || die "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit?) — Re-Deploy abgebrochen, Container unveraendert."
     log "Starte den Stack neu..."
     docker compose up -d
     wait_for_server || die "Server nicht rechtzeitig bereit. Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
@@ -314,6 +315,10 @@ SNAP_FILES=(docker-compose.yml .env.example scripts)
 tar czf "$SNAP" "${SNAP_FILES[@]}" || die "Laufzeit-Snapshot fehlgeschlagen — Abbruch (noch nichts veraendert)."
 chmod 600 "$SNAP" 2>/dev/null || true
 log "Laufzeit-Snapshot: ${SNAP}"
+# .env as it was, for the pull-failure rollback below. Kept in $TMP (0700, removed
+# on exit), not in the snapshot: rollback() restores the snapshot after a failed
+# health check too, where only the image pins go back.
+cp -p .env "${TMP}/env.prev" || die "Kopie der .env fehlgeschlagen — Abbruch (noch nichts veraendert)."
 
 # --- Atomic-ish swap: place every manifest file, drop obsolete ops scripts ---
 # Paths come from the bundle's MANIFEST.sha256 (col 2). Each file is moved into
@@ -385,7 +390,20 @@ rollback() {
 }
 
 log "Ziehe die Images..."
-docker compose pull
+# A failed pull (registry down, rate limit, an image the release did not publish)
+# has not touched a container yet, so nothing of the new version ever ran: the
+# installed state is the snapshot plus the old .env, pins of a floating tag
+# included, which rollback() cannot rebuild from INSTALLED. No recreate needed.
+if ! docker compose pull; then
+    if [ "$NO_ROLLBACK" = 1 ]; then
+        die "Ziehen der Images fehlgeschlagen. --no-rollback gesetzt: neue Laufzeit-Dateien + Image-Pins bleiben stehen, Container unveraendert."
+    fi
+    echo >&2
+    log "Rolle Laufzeit-Dateien + .env auf ${INSTALLED} zurueck (Snapshot ${SNAP})..."
+    tar xzf "$SNAP" || log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."
+    cp -p "${TMP}/env.prev" .env || log "WARN: .env-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."
+    die "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit/Image nicht veroeffentlicht?) — zurueckgerollt auf ${INSTALLED}, Container unveraendert. Update danach erneut ausfuehren."
+fi
 log "Starte den Stack neu..."
 docker compose up -d
 

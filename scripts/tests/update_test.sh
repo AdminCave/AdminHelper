@@ -5,8 +5,8 @@
 # Serves a fake "GitHub release" over file:// (AH_API_BASE / AH_DL_BASE) so the
 # real curl/checksum/extract/swap logic runs unchanged, and stubs `docker` so no
 # real stack is touched. Covers: upgrade, --check, up-to-date no-op, the downgrade
-# guard, --ref force, health-fail rollback, additive .env migration, and the
-# self-update re-exec hand-off.
+# guard, --ref force, health-fail rollback, additive .env migration, the
+# self-update re-exec hand-off, and a failed image pull (rollback, --redeploy).
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign)
 
@@ -37,13 +37,16 @@ command -v minisign >/dev/null 2>&1 \
   || { echo "SKIP: minisign missing or unusable — the signature path cannot be verified"; exit 75; }
 TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 
-# --- a docker stub: succeeds at everything; health probe honours AH_TEST_HEALTH -
+# --- a docker stub: succeeds at everything; health probe honours AH_TEST_HEALTH,
+# the pull AH_TEST_PULL; AH_TEST_DOCKER_LOG records every call, one per line ---
 BIN="$WORK/bin"
 mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
+[ -z "${AH_TEST_DOCKER_LOG:-}" ] || printf '%s\n' "$*" >> "$AH_TEST_DOCKER_LOG"
 case "$*" in
   *create_connection*) [ "${AH_TEST_HEALTH:-0}" = 0 ] && exit 0 || exit 1 ;;
+  "compose pull"*) [ "${AH_TEST_PULL:-0}" = 0 ] && exit 0 || { echo "stub: pull failed" >&2; exit 1; } ;;
   *) exit 0 ;;
 esac
 EOF
@@ -261,6 +264,68 @@ out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
   && ok "unarmed pubkey still rejects a tampered bundle (checksum)" \
   || bad "unarmed path accepted a tampered bundle: rc=$rc"
+
+# ── 14. pull fails after the swap → rollback to the installed state ──────────
+# The pull runs after the files are swapped and every image is re-pinned. Stopping
+# there left .env on the new version: the next run reported "up to date" while the
+# containers still ran the old images. The stub fails the pull as a whole, so the
+# rollback cannot depend on which image was missing.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst14"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp "$INST/.env" "$WORK/inst14.env"
+DLOG="$WORK/inst14.docker"
+out=$(AH_TEST_PULL=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+[ $rc -ne 0 ] && ok "pull failure exits non-zero" || bad "pull failure exit $rc"
+cmp -s "$WORK/inst14.env" "$INST/.env" \
+  && ok "pull failure restored .env (every image pin back on 0.33.0)" || bad "pull failure left .env changed"
+{ grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && cmp -s "$SRC_OLD/.env.example" "$INST/.env.example"; } \
+  && ok "pull failure rolled back the runtime files" || bad "runtime files not rolled back"
+grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*zurueckgerollt' <<<"$out" \
+  && ok "pull failure message names the rollback" || bad "no rollback message"
+{ grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up' "$DLOG"; } \
+  && ok "pull failure recreated no container" || bad "pull failure: docker calls $(tr '\n' ';' < "$DLOG")"
+
+# ── 15. ...and the next run tries the update again ──────────────────────────
+: > "$DLOG"
+out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && ! grep -q 'Bereits auf der neuesten' <<<"$out" && grep -q 'Update 0.33.0 -> 0.34.0' <<<"$out"; } \
+  && ok "after a pull failure the next run retries the update" || bad "no retry after a pull failure: rc=$rc"
+{ grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.34.0' "$INST/.env" \
+    && grep -q 'marker: 0.34.0' "$INST/docker-compose.yml"; } \
+  && ok "the retry lands on 0.34.0" || bad "the retry did not land on 0.34.0"
+# A working pull keeps today's order: pull, then recreate.
+[ "$(grep -E '^compose (pull|up)' "$DLOG" | tr '\n' ';')" = "compose pull;compose up -d;" ] \
+  && ok "a working pull is followed by the recreate" || bad "docker calls: $(tr '\n' ';' < "$DLOG")"
+
+# ── 16. pull failure on a floating tag: the pins come back too ──────────────
+# installed_version is "unknown" for :main, so no version to re-pin from — unless
+# .env itself returns, the next run would call 0.34.0 current.
+INST="$WORK/inst16"; make_install main "$SRC_OLD" "$INST"
+cp "$INST/.env" "$WORK/inst16.env"
+out=$(AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && cmp -s "$WORK/inst16.env" "$INST/.env"; } \
+  && ok "pull failure on :main restored the floating pins" || bad "floating pins not restored: rc=$rc"
+
+# ── 17. --no-rollback: a pull failure leaves the new files for inspection ────
+INST="$WORK/inst17"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_PULL=1 run_update "$INST" --no-rollback 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen.*--no-rollback' <<<"$out" \
+    && grep -q 'server:0.34.0' "$INST/.env"; } \
+  && ok "--no-rollback keeps the new state after a pull failure" || bad "--no-rollback pull failure: rc=$rc"
+
+# ── 18. --redeploy: nothing is swapped, a failed pull only needs a message ───
+INST="$WORK/inst18"; make_install 0.34.0 "$SRC_NEW" "$INST"
+cp "$INST/.env" "$WORK/inst18.env"
+DLOG="$WORK/inst18.docker"
+out=$(AH_TEST_PULL=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --redeploy 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: Ziehen der Images fehlgeschlagen' <<<"$out"; } \
+  && ok "--redeploy pull failure exits with a message" || bad "--redeploy pull failure: rc=$rc"
+{ cmp -s "$WORK/inst18.env" "$INST/.env" && grep -q '^compose pull' "$DLOG" && ! grep -q '^compose up' "$DLOG"; } \
+  && ok "--redeploy pull failure recreated nothing" || bad "--redeploy pull failure: docker calls $(tr '\n' ';' < "$DLOG")"
+out=$(run_update "$INST" --redeploy 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Re-Deploy fertig' <<<"$out"; } \
+  && ok "--redeploy with a working pull still recreates" || bad "--redeploy: rc=$rc"
 
 echo
 echo "──────────────────────────────────────────"

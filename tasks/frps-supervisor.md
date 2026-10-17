@@ -142,8 +142,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py
 Doku: keine (intern; Betrieb in T17)
 Abhängt von: T19
 
-### T21 — update.sh: Rollback, wenn das Ziehen der Images scheitert  [ ]
+### T21 — update.sh: Rollback, wenn das Ziehen der Images scheitert  [x]
 Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0e9ddb5b 2026-10-17T05:40:06+02:00
+Review: approve (.ah-out/review/frps-supervisor/T21.verdict.json)
 Änderung: Scheitert `docker compose pull` nach dem Austausch der Dateien und dem Neu-Pinnen (Netz, Rate-Limit, nicht veröffentlichtes Image), rollt `update.sh` auf den installierten Stand zurück und endet mit einer klaren Meldung, statt abzubrechen und `.env`/Compose auf dem neuen Stand zu lassen (Kevin, 2026-10-17). Gilt für alle Images. Test zuerst rot in `update_test.sh`: Pull-Stub scheitert → Dateien und Pins wieder auf dem alten Stand, Exit ≠ 0, Meldung nennt den Rollback; ein folgendes `update.sh` versucht das Update erneut statt „bereits aktuell“ zu melden. **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (intern; Betrieb in T17)
