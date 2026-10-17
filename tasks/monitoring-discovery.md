@@ -48,8 +48,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_su
 Doku: keine (intern; beschrieben in T7)
 Abhängt von: T3
 
-### T5 — Desktop: Vorschlag im Monitoring-Tab annehmen oder ignorieren  [ ]
+### T5 — Desktop: Vorschlag im Monitoring-Tab annehmen oder ignorieren  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/tabs/MonitoringTab.svelte, apps/desktop/ui/src/lib/api/monitoring.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/infra/tabs/MonitoringTab.test.ts, apps/desktop/ui/src/lib/api/monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7bea48b0 2026-10-17T12:31:44+02:00
+Review: approve (.ah-out/review/monitoring-discovery/T5.verdict.json)
 Änderung: `fetchTemplateSuggestions` und `dismissTemplateSuggestion` in `monitoring.ts` (Typ in `types.ts` nur, wenn nötig — dann `set-files`). Über dem Template-Abschnitt (`MonitoringTab.svelte:171`) steht bei vorhandenen Vorschlägen ein Hinweis „Vorgeschlagen: …“ mit je einem Kontrollkästchen (vorausgewählt), **Zuweisen** (vorhandenes `assignTemplate` mit Hostname und Name des Servers, je ausgewähltem Template) und **Ignorieren** (Ablehnung je ausgewähltem Slug); danach Vorschläge, Zuweisungen und Checks neu laden. Ohne Vorschläge kein Hinweis. Texte DE + EN. Tests zuerst rot: Hinweis nur mit Vorschlägen; Zuweisen ruft `assignTemplate` je ausgewähltem Template; Ignorieren ruft die Ablehnung je Slug; abgewähltes Template bleibt unberührt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/infra/tabs/MonitoringTab.test.ts src/lib/api/monitoring.test.ts
 Doku: keine (intern; beschrieben in T7)
