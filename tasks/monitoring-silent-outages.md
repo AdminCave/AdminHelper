@@ -116,8 +116,10 @@ Review: approve (.ah-out/review/monitoring-silent-outages/T12.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Packag
 Doku: keine (intern; der CHANGELOG-Eintrag in T13 nennt es)
 
-### T13 — Doku und CHANGELOG  [ ]
+### T13 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @b8eef697 2026-10-17T06:28:30+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T13.verdict.json)
 Änderung: `docs/admin/monitoring.html` DE+EN: Check-Tabelle (`:48-49`), Plugin-Hinweis (`:64`: „ohne Daten kein Fehler“ nur noch bei fehlender CLI; ein nicht erreichbares Subsystem ist warning), Defaults (`:86-87`: `alert_on_unavailable`), Abschnitt „unknown benachrichtigt nie“ (`:95-96`: die Ausnahme), SMART (`:106ff`: Gründe), Template-Zeile Docker (`:165`: Bewertung nach Exit-Code/OOM/Neustarts). `docs/developer/agent.html` DE+EN (`:91-92`: CLI statt Socket, Fehlerblock; `:102`). `docs/developer/monitoring.html` DE+EN (Report-Format `:115`, `:121`: `available`/`error`, `smart_absent`). CHANGELOG: Fixed (stumme Ausfälle, Bewertung) und Changed (neue Warnungen nach dem Update, Ausweg `alert_on_unavailable`/`ignore_containers`; das Agent-Paket empfiehlt `smartmontools`).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/agent.html + EN · docs/developer/monitoring.html + EN · CHANGELOG.md
