@@ -318,11 +318,15 @@ services:
     # The supervisor runs as root and starts frps as the image's user frps, which keeps no
     # capability. The supervisor's: DAC_OVERRIDE to read frps.toml and frps.key, which the
     # server and the ca-issuer write 0600 under their own UID; SETUID and SETGID to switch
-    # to frps (su-exec); KILL to stop frps across the UID. Port 443 inside needs no
-    # NET_BIND_SERVICE: Docker opens every port to unprivileged processes in a container's
-    # own network namespace (net.ipv4.ip_unprivileged_port_start=0).
+    # to frps (su-exec); KILL to stop frps across the UID.
     cap_drop: [ALL]
     cap_add: [DAC_OVERRIDE, SETUID, SETGID, KILL]
+    # Port 443 inside without NET_BIND_SERVICE: every port of the container's own network
+    # namespace is open to unprivileged processes. Docker's default since 20.10, set here so
+    # that it does not depend on the engine: an engine or a kernel that cannot set it fails
+    # at `up`, rather than frps at its bind.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
     # No process gains privileges on exec (setuid bits, file capabilities).
     security_opt:
       - no-new-privileges:true

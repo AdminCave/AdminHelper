@@ -1355,6 +1355,27 @@ def test_a_process_of_the_frps_user_that_does_not_go_away_keeps_frps_from_starti
     assert (box.read().state, box.read().reason) == ("running", "none")
 
 
+def test_a_process_of_the_frps_user_left_shows_over_an_invalid_input_and_its_last_valid_copy(box):
+    _as_user(box)
+    box.write_input()
+    box.run(frps=True)
+    box.stop()
+    box.env["FRPS_KILL_SECONDS"] = "1"
+    _process(box, NO_PID, os.getuid())
+    box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
+
+    box.run(frps=False)
+
+    # The status says why frps does not run from the last valid copy, the log what the input
+    # breaks.
+    status = box.read()
+    assert (status.state, status.reason) == ("waiting", "processes_left")
+    assert _events(status) == [(1, "start_refused", "processes_left", False)]
+    assert not box.frps_runs()
+    assert list(box.active.iterdir()) == []
+    assert "configuration rejected: cert_expired" in box._log()
+
+
 def test_a_process_of_the_frps_user_left_after_frps_ended_keeps_it_from_starting_again(box):
     _as_user(box)
     box.env["FRPS_KILL_SECONDS"] = "1"
@@ -1492,10 +1513,13 @@ def _compose_frps() -> dict:
 
 
 def _security_args(frps: dict) -> list[str]:
-    """docker run arguments for the capabilities and security options compose gives frps."""
+    """docker run arguments for the capabilities, security options and sysctls compose gives
+    frps."""
     args = [arg for cap in frps["cap_drop"] for arg in ("--cap-drop", cap)]
     args += [arg for cap in frps["cap_add"] for arg in ("--cap-add", cap)]
     args += [arg for option in frps.get("security_opt", []) for arg in ("--security-opt", option)]
+    sysctls = frps.get("sysctls", {}).items()
+    args += [arg for key, value in sysctls for arg in ("--sysctl", f"{key}={value}")]
     return args
 
 
@@ -1533,9 +1557,9 @@ done"""
 
 
 class Container:
-    """A container of the frps image as compose runs it (capabilities, security options): its
-    input bind-mounted read-only from the test's directory, the state and the working directory
-    in volumes of its own."""
+    """A container of the frps image as compose runs it (capabilities, security options,
+    sysctls): its input bind-mounted read-only from the test's directory, the state and the
+    working directory in volumes of its own."""
 
     def __init__(self, docker: str, root: Path, entrypoint: list[str]):
         self.docker = docker

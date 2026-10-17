@@ -133,8 +133,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: keine (intern)
 Abhängt von: T9
 
-### T20 — Compose: Port 443 ohne Engine-Default, Grund bei verweigertem Start bleibt sichtbar  [ ]
+### T20 — Compose: Port 443 ohne Engine-Default, Grund bei verweigertem Start bleibt sichtbar  [x]
 Komponente: server · Dateien: docker-compose.yml, apps/server/tests/test_compose_frps.py, apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @f94b0358 2026-10-17T05:23:01+02:00
+Review: approve (.ah-out/review/frps-supervisor/T20.verdict.json)
 Änderung: Der frps-Dienst bekommt `sysctls: { net.ipv4.ip_unprivileged_port_start: 0 }` (Kevin, 2026-10-17): frps bindet 443 ohne Capability unabhängig vom Default der Engine; eine zu alte Engine oder ein zu alter Kernel scheitert laut bei `up` statt still. Der Compose-Test prüft den Eintrag, der Docker-Fall bindet 443 mit genau den Compose-Einstellungen. Außerdem: Verweigert `start_frps` bei ungültiger Eingabe und vorhandener Kopie den Start (`processes_left`), überschreibt `take_over` den Grund nicht mehr mit dem der Eingabe; der Status zeigt `processes_left`, wie die API-Referenz sagt. Tests zuerst rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py tests/test_frps_supervisor.py
 Doku: keine (intern; Betrieb in T17)

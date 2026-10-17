@@ -13,10 +13,11 @@ The supervisor runs as root and starts frps under a user of the image's own, who
 service uses. It keeps four capabilities, frps none: DAC_OVERRIDE to read frps.toml and
 frps.key, which the server and the ca-issuer write 0600 under their own UID; SETUID and SETGID
 to switch to the user of frps; KILL to stop frps across the UID. No process in the container
-gains privileges on exec (no-new-privileges). Port 443 inside needs no capability, since Docker
-opens every port to unprivileged processes in a container's own network namespace
-(net.ipv4.ip_unprivileged_port_start=0). The server and the scheduler run as the app user of
-their image, so they read the status through the bits the supervisor grants everyone.
+gains privileges on exec (no-new-privileges). Port 443 inside needs no capability, since compose
+opens every port of the container's own network namespace to unprivileged processes
+(net.ipv4.ip_unprivileged_port_start=0), whatever the engine defaults to. The server and the
+scheduler run as the app user of their image, so they read the status through the bits the
+supervisor grants everyone.
 
 A TERM while the supervisor stops frps waits for frps a second time, so the grace period
 outlasts two stops. The health check runs the supervisor's health subcommand, nothing else.
@@ -178,6 +179,10 @@ def test_the_supervisor_keeps_only_the_capabilities_to_read_the_input_and_run_fr
 
 def test_no_process_in_the_frps_container_gains_privileges_on_exec():
     assert _services()["frps"]["security_opt"] == ["no-new-privileges:true"]
+
+
+def test_frps_binds_443_without_a_capability_whatever_the_engine_defaults_to():
+    assert _services()["frps"]["sysctls"] == {"net.ipv4.ip_unprivileged_port_start": 0}
 
 
 def test_frps_runs_under_a_uid_no_other_service_uses():

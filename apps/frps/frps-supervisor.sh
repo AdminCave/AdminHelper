@@ -588,12 +588,17 @@ take_over() {
     *)
         rm -rf "$NEXT"
         log "configuration rejected: $REASON"
-        if [ -d "$CURRENT" ] && { [ -n "$FRPS_PID" ] || [ -n "$RESTART_AT" ] || start_frps; }; then
+        started=0
+        if [ -d "$CURRENT" ] && [ -z "$FRPS_PID" ] && [ -z "$RESTART_AT" ]; then
+            start_frps || started=$?
+        fi
+        if [ "$started" -eq 0 ] && [ -d "$CURRENT" ]; then
             set_config degraded "$REASON"
             if [ "$CANDIDATE_HASH" != "$REJECTED_HASH" ]; then
                 add_event rejected "$REASON" false
             fi
-        else
+        elif [ "$started" -ne 2 ]; then
+            # 2: refuse_start has set the state, processes_left.
             set_config waiting "$REASON"
         fi
         REJECTED_HASH=$CANDIDATE_HASH
