@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Identitätspfad im Desktop-frpc TOML-sicher einsetzen — Task-Ledger
-Status: geplant · Branch: feature/desktop-identity-path-escape · Review: am Ende
+Status: aktiv · Branch: feature/desktop-identity-path-escape · Review: am Ende
 Spec: Roadmap R-0425
 Heavy: linux-full + windows — Desktop-Tunnel (CLAUDE.md §5): der Sammellauf fährt die Desktop-Tunnel-E2E unter Linux (dort ändert sich nichts, der Pfad hat keine Backslashes); `windows`, weil der Fehler nur mit Windows-Pfaden auftritt: dort läuft `cargo test` nativ (CI-Job `rust-windows`) und, soweit die Windows-Lane es hergibt, `frpc.exe verify -c` auf einer mit einem echten `%APPDATA%`-Pfad erzeugten Config. Die Desktop-GUI unter Windows bleibt laut `.claude/rules/testing.md` „nicht verifiziert“.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
