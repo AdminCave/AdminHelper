@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # frps-Supervisor: Konfiguration und Zertifikate selbst übernehmen — Task-Ledger
-Status: aktiv · Branch: feature/frps-supervisor · Review: pro Task
+Status: bereit · Branch: feature/frps-supervisor · Review: pro Task
 Spec: Roadmap R-0411
 Heavy: linux-full + scenario --tunnel --enforce — neues frps-Image mit Supervisor, neue Compose-Volumes und das Übernehmen von Konfiguration und Zertifikaten lassen sich nur im echten Stack belegen (`run.sh integration`); der Tunnel-Datenpfad über Hosts mit einem frps-Neustart mitten im Lauf nur im Multibox-Lauf `--tunnel --enforce` (vor dem Merge, Kevin 2026-10-16)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -256,8 +256,10 @@ Review: approve (.ah-out/review/frps-supervisor/T27.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py
 Doku: keine (intern)
 
-### T17 — Doku und CHANGELOG  [ ]
+### T17 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/installation.html, docs/en/admin/installation.html, CHANGELOG.md, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7f57fde3 2026-10-17T16:08:09+02:00
+Review: approve (.ah-out/review/frps-supervisor/T17.verdict.json)
 Änderung: `frp-tunnel.html` DE+EN: Architektur (`:41-48`) mit frps-Image und Supervisor; „FRP `auth.token` rotieren“ (`:65-74`): kein manueller Neustart mehr, frps übernimmt nach wenigen Sekunden, alle Tunnel sind kurz getrennt, Mitteilung an Admins und Tunnel-Nutzer, Agent-Tunnel bis ~5 min, eine abgelehnte Konfiguration steht auf der FRP-Seite und in der Glocke; Status-Dashboard (`:107`) mit dem neuen Statusblock. `installation.html` DE+EN: frps lauscht, sobald FRP im Web-Interface eingerichtet ist; Voraussetzung Docker-Engine einheitlich in DE und EN (frps bindet 443 ohne root, `ip_unprivileged_port_start` per Compose, T20). Betriebsdoku (`docs/admin/betrieb.html`, `docs/en/admin/operations.html`): Volumes `frps-state`/`frps-active` (nicht im Backup), zulässige `extra_config`-Schlüssel, Gründe und Ereignisse des Supervisors (inkl. `copy_changed`, `start_refused`, `input_unreadable`, `input_unstable`), Update rollt bei Pull-, Paket-Repo- oder Stack-Neustart-Fehler zurück, auch bei Floating-Tags, und bricht ohne `.env` vor dem Backup ab (T21, T22; `installation.html` DE `:211`/EN `:164` nennt den Rollback bisher nur für den Health-Check); nach dem ersten Release das ghcr-Paket `frps` öffentlich. CHANGELOG unter `### Changed`; unter `### Fixed` ein eigener Absatz (Kevin 2026-10-17, Grundlage des Release-Hinweises): der Scheduler-Prozess lud nicht alle Modelle, seit v0.38.0 liefen seine DB-Jobs nicht (E-Mail-Benachrichtigungen, geplante Hooks, Aufbewahrungsfristen); nach dem Update laufen geplante Hooks wieder — vor dem Update prüfen; ausstehende Mails älter als 7 Tage verfallen (T25, T26); Hinweis an Admins: Benutzerliste und Audit-Log (`user.created`) für die Zeit seit v0.38.0 prüfen, weil E-Mail-Hinweise auf neue Admin-Konten nicht zugestellt wurden (Review T26); dazu: die FRP-Server-Config nimmt Ports nur im Bereich 1–65535 und `max_ports_per_client` nur ≥ 0 an (422), gespeicherte Werte außerhalb ersetzt der Generator mit einer Warnung im Log (T23).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html · docs/admin/installation.html + docs/en/admin/installation.html · CHANGELOG.md (Changed)
