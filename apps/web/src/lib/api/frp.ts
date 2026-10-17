@@ -49,19 +49,3 @@ export function getBulkZip(): Promise<Blob> {
 export function status(): Promise<FrpStatus> {
   return http.get<FrpStatus>('/api/frp/status');
 }
-
-// Codes, times and a flag only (FrpSupervisorStatus). reason and since are null for the
-// states missing and unreadable, lastEvent and lastEventAt without an event.
-export interface FrpSupervisorStatus {
-  state: string;
-  reason: string | null;
-  since: string | null;
-  stale: boolean;
-  lastEvent: string | null;
-  lastEventAt: string | null;
-  publishedBindPort: number;
-}
-
-export function supervisorStatus(): Promise<FrpSupervisorStatus> {
-  return http.get<FrpSupervisorStatus>('/api/frp/supervisor-status');
-}

@@ -10,8 +10,6 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from app.modules.frp.schemas import PORT_MAX, PORT_MIN
-
 if TYPE_CHECKING:
     from app.modules.frp.models import FrpServerConfig, FrpTunnel
 
@@ -32,59 +30,6 @@ _AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
 # hinging on a substring match. frps trusts the access intermediate (ca-issuer
 # extra_trust) so this access cert is accepted.
 _VISITOR_IDENTITY_DIR = "{{IDENTITY_DIR}}"
-# frps' own bindPort default (ServerConfig.Complete, v0.69.1) and the schema's.
-_DEFAULT_BIND_PORT = 7000
-# Always cap ports per client: without it frps defaults to unlimited, so a
-# compromised/malicious enrolled agent could register arbitrarily many proxies.
-# 16 is generous for a normal host (SSH/RDP/web + a few services) yet bounds the
-# blast radius; an operator can raise it per config (3.34).
-_DEFAULT_MAX_PORTS_PER_CLIENT = 16
-
-
-# The schema keeps new values in range (R-0411), but rows written before that
-# were never checked and are not migrated. frps exits on a port outside 0..65535
-# (validation.ValidatePort, v0.69.1), `bindPort = None` is no TOML at all, and a
-# negative maxPortsPerClient lifts the cap (frps enforces it only while > 0). So
-# the generator reads these fields through the guards below and logs each
-# replacement; the stored row stays as it is.
-def _is_port(value: int | None) -> bool:
-    return value is not None and PORT_MIN <= value <= PORT_MAX
-
-
-def _bind_port(config: FrpServerConfig) -> int:
-    if _is_port(config.bind_port):
-        return config.bind_port
-    logger.warning(
-        "FRP server config: bind_port %r is outside %d-%d, using %d",
-        config.bind_port,
-        PORT_MIN,
-        PORT_MAX,
-        _DEFAULT_BIND_PORT,
-    )
-    return _DEFAULT_BIND_PORT
-
-
-def _optional_port(config: FrpServerConfig, field: str) -> int | None:
-    """A port that may be unset (None = its line is left out)."""
-    value = getattr(config, field)
-    if value is None or _is_port(value):
-        return value
-    logger.warning(
-        "FRP server config: %s %r is outside %d-%d, left out", field, value, PORT_MIN, PORT_MAX
-    )
-    return None
-
-
-def _max_ports_per_client(config: FrpServerConfig) -> int:
-    value = config.max_ports_per_client
-    if value is not None and value < 0:
-        logger.warning(
-            "FRP server config: max_ports_per_client %r is negative, using %d",
-            value,
-            _DEFAULT_MAX_PORTS_PER_CLIENT,
-        )
-        return _DEFAULT_MAX_PORTS_PER_CLIENT
-    return value or _DEFAULT_MAX_PORTS_PER_CLIENT
 
 
 def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
@@ -159,31 +104,33 @@ def _tls_client_block() -> list[str]:
 def generate_frps_toml(config: FrpServerConfig) -> str:
     """Generates a complete frps.toml from the DB configuration."""
     lines = [
-        f"bindPort = {_bind_port(config)}",
+        f"bindPort = {config.bind_port}",
     ]
 
-    vhost_https_port = _optional_port(config, "vhost_https_port")
-    if vhost_https_port:
-        lines.append(f"vhostHTTPSPort = {vhost_https_port}")
+    if config.vhost_https_port:
+        lines.append(f"vhostHTTPSPort = {config.vhost_https_port}")
 
     if config.subdomain_host:
         lines.append(f'subDomainHost = "{config.subdomain_host}"')
 
-    lines.append(f"maxPortsPerClient = {_max_ports_per_client(config)}")
+    # Always cap ports per client: without it frps defaults to unlimited, so a
+    # compromised/malicious enrolled agent could register arbitrarily many proxies.
+    # 16 is generous for a normal host (SSH/RDP/web + a few services) yet bounds the
+    # blast radius; an operator can raise it per config (3.34).
+    lines.append(f"maxPortsPerClient = {config.max_ports_per_client or 16}")
 
     lines.append("detailedErrorsToClient = false")
     lines.append("")
 
     # Dashboard
-    dashboard_port = _optional_port(config, "dashboard_port")
-    if dashboard_port:
+    if config.dashboard_port:
         # Bind all interfaces, not loopback: the server container polls the dashboard over
         # the compose bridge (http://frps:<port>), so 127.0.0.1 would listen only inside the
         # frps container and every /api/frp/status probe would fail. The dashboard port is
         # never published in compose, so it stays reachable only from the compose network,
         # not the host or the public internet (4.6).
         lines.append('webServer.addr = "0.0.0.0"')
-        lines.append(f"webServer.port = {dashboard_port}")
+        lines.append(f"webServer.port = {config.dashboard_port}")
         if config.dashboard_user:
             lines.append(f'webServer.user = "{config.dashboard_user}"')
         if config.dashboard_password:
@@ -194,9 +141,9 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
     lines.append('auth.method = "token"')
     lines.append(f'auth.token = "{config.auth_token}"')
 
-    # Operator-supplied extra frps.toml fields: keys of extra_config.ALLOWED_KEYS with values
-    # that pass value_allowed. _check_frps_extra_config holds the API to that and the startup
-    # check in main.py the stored rows, so they can be emitted verbatim.
+    # Operator-supplied extra frps.toml fields (e.g. maxPoolCount, transport.*).
+    # _check_extra_config already validated the keys as TOML bare keys and the
+    # values as str/bool/int/float, so they can be emitted verbatim.
     extra = json.loads(config.extra_config) if config.extra_config else None
     if extra:
         lines.append("")
@@ -234,7 +181,7 @@ def generate_frpc_toml(
     active = active_tunnels(tunnels)
     lines = [
         f'serverAddr = "{config.server_addr}"',
-        f"serverPort = {_bind_port(config)}",
+        f"serverPort = {config.bind_port}",
         f'user = "{frpc_user}"',
         "",
         'auth.method = "token"',
@@ -292,7 +239,7 @@ def generate_visitor_toml(
     """
     lines = [
         f'serverAddr = "{config.server_addr}"',
-        f"serverPort = {_bind_port(config)}",
+        f"serverPort = {config.bind_port}",
         f'user = "{visitor_user}"',
         "",
         'auth.method = "token"',

@@ -121,6 +121,7 @@ def update_server_config(
         "server_addr",
         "bind_port",
         "vhost_https_port",
+        "auth_token",
         "subdomain_host",
         "max_ports_per_client",
         "dashboard_port",
@@ -129,11 +130,6 @@ def update_server_config(
     ]:
         if field in sent:
             setattr(config, field, getattr(data, field))
-
-    # The GET paths mask the token, so a blank or null auth_token from a client means
-    # "keep the stored one"; a new value has already passed the schema's length floor.
-    if data.auth_token:
-        config.auth_token = data.auth_token
 
     if "extra_config" in sent:
         config.extra_config = json.dumps(data.extra_config) if data.extra_config else None

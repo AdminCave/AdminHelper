@@ -46,11 +46,7 @@ export PATH="$FAKE:$PATH"
 # the single-file drift a per-file check would miss. Each go-version comes with
 # check-latest: true, as the workflows must set it. The ruff pins default to
 # agreeing ones, so the go cases below see a tree that is in lockstep there;
-# ruff.toml's required-version follows <ruff-bootstrap>. The oasdiff pins agree
-# too: ci.yml carries them once, in the anchored step openapi-compat shares with
-# ops-scripts, as the real one does; a case that wants a drift edits the copy.
-OAS_V="1.32.0"
-OAS_SHA="5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad"
+# ruff.toml's required-version follows <ruff-bootstrap>.
 fixture() {
   local d="$1" ci="$2" rel="$3" aud="$4" pin="$5"
   local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_dev="${8:-0.15.20}" go_boot="${9:-$2.0}"
@@ -58,10 +54,8 @@ fixture() {
   printf 'required-version = "==%s"\nline-length = 100\n\n[lint]\nextend-select = ["I"]\n' "$ruff_boot" > "$d/ruff.toml"
   printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
-  printf '  openapi-compat:\n    steps:\n      - &install-oasdiff\n        name: Install oasdiff\n        env:\n          OASDIFF_VERSION: "%s"\n          OASDIFF_SHA256_LINUX_AMD64: "%s"\n        run: echo plchold\n  ops-scripts:\n    steps:\n      - *install-oasdiff\n' \
-    "$OAS_V" "$OAS_SHA" >> "$d/.github/workflows/ci.yml"
-  printf '#!/usr/bin/env bash\nGO_VERSION="${AH_GO_VERSION:-%s}"\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\nOASDIFF_VERSION="${AH_OASDIFF_VERSION:-%s}"\nOASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-%s}"\n' \
-    "$go_boot" "$ruff_boot" "$OAS_V" "$OAS_SHA" > "$d/scripts/vm/bootstrap_linux.sh"
+  printf '#!/usr/bin/env bash\nGO_VERSION="${AH_GO_VERSION:-%s}"\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\n' \
+    "$go_boot" "$ruff_boot" > "$d/scripts/vm/bootstrap_linux.sh"
   printf -- '-r requirements.in\n\npytest>=9.0.3\nruff==%s\n' "$ruff_dev" > "$d/apps/server/requirements-dev.txt"
   printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n          check-latest: true\n' \
     "$rel" > "$d/.github/workflows/release.yml"
@@ -300,34 +294,6 @@ done
 # 1c refuses a GO_VERSION default that is no X.Y.Z of digits.
 GMM="$WORK/gominor"; fixture "$GMM" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.20 1.25
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap GO_VERSION 1.25 (no patch) -> exit 1" 1 "no plain GO_VERSION" -- --root "$GMM"
-
-# ── 12: one oasdiff in CI and on the boxes ───────────────────────────────────
-# run.sh's scripts block needs the real oasdiff (openapi_breaking_test): ci.yml
-# installs it, the boxes get it from bootstrap_linux.sh. A version or a hash
-# moved at one place only is the drift.
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing oasdiff pins are named in the output" 0 "oasdiff: ci.yml=1.32.0 bootstrap=1.32.0" -- --root "$GOOD"
-OVER="$WORK/oasver"; fixture "$OVER" 1.25 1.25 1.25 v1.7.0
-sed -i 's/AH_OASDIFF_VERSION:-1.32.0/AH_OASDIFF_VERSION:-1.33.0/' "$OVER/scripts/vm/bootstrap_linux.sh"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap oasdiff bumped alone -> exit 1" 1 "oasdiff pin drift: .github/workflows/ci.yml installs oasdiff 1.32.0, scripts/vm/bootstrap_linux.sh defaults to 1.33.0" -- --root "$OVER"
-OSHA="$WORK/oassha"; fixture "$OSHA" 1.25 1.25 1.25 v1.7.0
-sed -i 's/OASDIFF_SHA256_LINUX_AMD64: "5b20/OASDIFF_SHA256_LINUX_AMD64: "6b20/' "$OSHA/.github/workflows/ci.yml"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml hash differs from the boxes' -> exit 1" 1 "oasdiff SHA-256 drift: .github/workflows/ci.yml pins 6b2050787cfe" -- --root "$OSHA"
-# Offline, like the ruff pins: a drift is a finding even when the proxy is down.
-FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "oasdiff SHA-256 drift" -- --root "$OSHA"
-# A second install step in ci.yml that lags behind: every pin there counts, so
-# replacing the anchor by copies cannot hide one.
-OTWO="$WORK/oastwo"; fixture "$OTWO" 1.25 1.25 1.25 v1.7.0
-printf '  other:\n    steps:\n      - name: Install oasdiff\n        env:\n          OASDIFF_VERSION: "1.31.0"\n          OASDIFF_SHA256_LINUX_AMD64: "%s"\n' "$OAS_SHA" >> "$OTWO/.github/workflows/ci.yml"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a second ci.yml copy on 1.31.0 -> exit 1" 1 "oasdiff pin drift: .github/workflows/ci.yml installs oasdiff 1.31.0" -- --root "$OTWO"
-ONOCI="$WORK/oasnoci"; fixture "$ONOCI" 1.25 1.25 1.25 v1.7.0
-sed -i '/OASDIFF_VERSION:/d' "$ONOCI/.github/workflows/ci.yml"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml without OASDIFF_VERSION -> exit 1" 1 "no OASDIFF_VERSION in .github/workflows/ci.yml" -- --root "$ONOCI"
-ONOBOOT="$WORK/oasnoboot"; fixture "$ONOBOOT" 1.25 1.25 1.25 v1.7.0
-sed -i '/^OASDIFF_VERSION=/d' "$ONOBOOT/scripts/vm/bootstrap_linux.sh"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without an OASDIFF_VERSION default -> exit 1" 1 "no plain OASDIFF_VERSION" -- --root "$ONOBOOT"
-OSHORT="$WORK/oasshort"; fixture "$OSHORT" 1.25 1.25 1.25 v1.7.0
-sed -i 's/AH_OASDIFF_SHA256:-5b2050787cfe[0-9a-f]*/AH_OASDIFF_SHA256:-5b2050787cfe/' "$OSHORT/scripts/vm/bootstrap_linux.sh"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap hash that is no SHA-256 -> exit 1" 1 "no plain OASDIFF_SHA256_LINUX_AMD64" -- --root "$OSHORT"
 
 echo ""
 echo "toolchain_lockstep_test: $PASS passed, $FAIL failed"

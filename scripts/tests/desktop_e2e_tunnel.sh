@@ -53,9 +53,8 @@ e2e_api "$TOKEN" tunnel "$SERVER_ID" "$CONFIG_ID" e2e-ssh 22 >/dev/null || { bad
 ok "seeded a server + FRP config + STCP tunnel"
 
 # Creating the FRP config wrote frps.toml into the shared volume; bring frps up
-# now so it reads that config + its ca-issuer-provisioned (tunnel-signed) cert. Built from
-# apps/frps (the supervisor), so --build: a local image from an earlier run would be stale.
-e2e_dc up -d --build frps >/dev/null 2>&1 && ok "frps started" || { bad "frps failed to start"; e2e_dc logs --tail 30 frps; exit 1; }
+# now so it reads that config + its ca-issuer-provisioned (tunnel-signed) cert.
+e2e_dc up -d frps >/dev/null 2>&1 && ok "frps started" || { bad "frps failed to start"; e2e_dc logs --tail 30 frps; exit 1; }
 
 # One-time enrollment token (redeemed by the app over the certless :8444 plane).
 ENROLL_TOKEN=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')

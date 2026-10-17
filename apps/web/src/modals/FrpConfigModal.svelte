@@ -7,11 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import { confirmDialog } from '$lib/components/ui/ConfirmDialog.svelte';
   import { t } from '$lib/i18n';
   import { frpConfig } from '$lib/stores/frp';
   import { showToast, showError } from '$lib/stores/notifications';
-  import { supervisorStatus } from '$lib/api/frp';
   import type { FrpConfig, FrpConfigInput } from '$lib/api/types';
 
   interface Props {
@@ -22,23 +20,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let { open, editing, onClose }: Props = $props();
 
-  // '' until typed into; Svelte binds an emptied number input as null, not '' (to_number in its
-  // input bindings).
-  type NumberField = number | '' | null;
-
   let name = $state('');
   let serverAddr = $state('');
-  let bindPort = $state<NumberField>(7000);
-  let vhostPort = $state<NumberField>('');
+  let bindPort = $state<number | ''>(7000);
+  let vhostPort = $state<number | ''>('');
   let authToken = $state('');
   let subdomainHost = $state('');
-  let maxPorts = $state<NumberField>('');
-  let dashboardPort = $state<NumberField>('');
+  let maxPorts = $state<number | ''>('');
+  let dashboardPort = $state<number | ''>('');
   let dashboardUser = $state('');
   let dashboardPassword = $state('');
   let submitting = $state(false);
-  // The host port the stack publishes for frps; null while unknown, and then nothing is warned.
-  let publishedBindPort = $state<number | null>(null);
 
   $effect(() => {
     if (open) {
@@ -58,47 +50,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   });
 
-  $effect(() => {
-    if (open) void loadPublishedBindPort();
-  });
-
-  async function loadPublishedBindPort() {
-    try {
-      publishedBindPort = (await supervisorStatus()).publishedBindPort ?? null;
-    } catch {
-      // Network, 403, or 404 from a server without the route: no warning, no toast.
-      publishedBindPort = null;
-    }
-  }
-
-  function num(v: NumberField): number | null {
-    return v === '' || v === null ? null : Number(v);
-  }
-
-  const portMismatch = $derived(
-    publishedBindPort !== null && (num(bindPort) ?? 7000) !== publishedBindPort,
-  );
-
-  // Every field but name and server_addr lands in frps.toml, and frps restarts once that file
-  // changes. Compared as sent against the stored values, an empty text and null alike; the
-  // secrets count once typed, since the stored ones come back masked.
-  function restartsFrps(data: FrpConfigInput, stored: FrpConfig): boolean {
-    return (
-      data.bind_port !== stored.bindPort ||
-      data.vhost_https_port !== (stored.vhostHttpsPort ?? null) ||
-      data.subdomain_host !== (stored.subdomainHost || null) ||
-      data.max_ports_per_client !== (stored.maxPortsPerClient ?? null) ||
-      data.dashboard_port !== (stored.dashboardPort ?? null) ||
-      data.dashboard_user !== (stored.dashboardUser || null) ||
-      data.auth_token !== undefined ||
-      data.dashboard_password !== undefined
-    );
-  }
-
-  function confirmRestart(newToken: boolean): Promise<boolean> {
-    let message = $t('modal.frpConfig.confirm.restart');
-    if (newToken) message += ` ${$t('modal.frpConfig.confirm.newToken')}`;
-    return confirmDialog(message, { confirmLabel: $t('action.save') });
+  function num(v: number | ''): number | null {
+    return v === '' ? null : Number(v);
   }
 
   async function onSubmit(e: SubmitEvent) {
@@ -130,9 +83,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
       } else if (!editing) {
         data.dashboard_password = null;
       }
-      if (editing && restartsFrps(data, editing) && !(await confirmRestart(!!data.auth_token))) {
-        return;
-      }
       await frpConfig.save(data, editing);
       showToast(editing ? $t('toast.frpConfig.saved') : $t('toast.frpConfig.created'));
       onClose();
@@ -161,21 +111,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </div>
     <div class="field">
       <label for="fcBindPort">{$t('modal.frpConfig.bindPort')}</label>
-      <input
-        id="fcBindPort"
-        type="number"
-        aria-describedby={portMismatch ? 'fcBindPortWarning' : undefined}
-        bind:value={bindPort}
-      />
-      {#if portMismatch}
-        <small
-          id="fcBindPortWarning"
-          style="color:var(--warning)"
-          data-testid="frp-bind-port-warning"
-        >
-          {$t('modal.frpConfig.bindPortMismatch', { port: publishedBindPort })}
-        </small>
-      {/if}
+      <input id="fcBindPort" type="number" bind:value={bindPort} />
     </div>
     <div class="field">
       <label for="fcVhostPort">{$t('modal.frpConfig.vhostPort')}</label>

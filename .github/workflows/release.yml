@@ -501,14 +501,13 @@ jobs:
         # release.yml and docker.yml run independently on tag push, but install.sh/
         # update.sh pin ghcr.io/...:X.Y.Z hard. Creating the draft before docker.yml has
         # pushed the images means a human publishing it ships a release whose
-        # `install.sh --ref` and `update.sh` fail with 'manifest unknown'. Poll for every
-        # image docker.yml publishes (public images, no login); a red/still-running
-        # docker.yml fails THIS workflow instead, so no draft with missing images is ever
-        # offered (4.25).
+        # `install.sh --ref` and `update.sh` fail with 'manifest unknown'. Poll for all
+        # four (public images, no login); a red/still-running docker.yml fails THIS
+        # workflow instead, so no draft with missing images is ever offered (4.25).
         run: |
           set -euo pipefail
           VER="${GITHUB_REF_NAME#v}"
-          for img in server gateway ca-issuer monitoring frps; do
+          for img in server gateway ca-issuer monitoring; do
             ok=0
             for _ in $(seq 1 20); do
               if docker manifest inspect "ghcr.io/admincave/adminhelper/${img}:${VER}" >/dev/null 2>&1; then ok=1; break; fi

@@ -229,7 +229,6 @@ if [ -n "$REF" ]; then
     IMAGE_TAG="${REF#v}"
     upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${IMAGE_TAG}"
     upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${IMAGE_TAG}"
-    upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${IMAGE_TAG}"
     upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${IMAGE_TAG}"
     upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${IMAGE_TAG}"
 fi

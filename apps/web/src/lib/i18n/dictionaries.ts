@@ -223,45 +223,6 @@ export const translations: Translations = {
     'page.frp.bulkZip': 'Alle als ZIP',
     'page.frp.status': 'Status',
 
-    // ── FRP Supervisor (one text per code the server sends) ──────────
-    'page.frp.supervisor.title': 'Zustand des frps',
-    'page.frp.supervisor.label.state': 'Zustand',
-    'page.frp.supervisor.label.reason': 'Grund',
-    'page.frp.supervisor.label.since': 'Seit',
-    'page.frp.supervisor.label.lastEvent': 'Letztes Ereignis',
-    'page.frp.supervisor.stale':
-      'Der frps-Supervisor antwortet nicht, die Angaben können veraltet sein.',
-    'page.frp.supervisor.unavailable': 'Zustand nicht verfügbar.',
-    'page.frp.supervisor.state.waiting': 'Wartet, frps läuft nicht',
-    'page.frp.supervisor.state.running': 'Läuft',
-    'page.frp.supervisor.state.degraded': 'Läuft mit der letzten gültigen Konfiguration',
-    'page.frp.supervisor.state.stopped': 'Gestoppt',
-    'page.frp.supervisor.state.crashloop': 'Bricht wiederholt ab',
-    'page.frp.supervisor.state.missing': 'Kein Status vorhanden',
-    'page.frp.supervisor.state.unreadable': 'Status nicht lesbar',
-    'page.frp.supervisor.state.unknown': 'Unbekannter Zustand',
-    'page.frp.supervisor.reason.none': 'Kein Fehler',
-    'page.frp.supervisor.reason.config_missing': 'Keine FRP-Konfiguration',
-    'page.frp.supervisor.reason.token_invalid': 'Auth-Token-Einstellung ungültig',
-    'page.frp.supervisor.reason.tls_not_forced': 'TLS ist nicht erzwungen',
-    'page.frp.supervisor.reason.cert_paths': 'Zertifikatspfade stimmen nicht',
-    'page.frp.supervisor.reason.cert_missing': 'Zertifikat fehlt oder ist unvollständig',
-    'page.frp.supervisor.reason.cert_expired': 'Zertifikat abgelaufen',
-    'page.frp.supervisor.reason.cert_key_mismatch': 'Zertifikat passt nicht zum Schlüssel',
-    'page.frp.supervisor.reason.verify_failed': 'Konfiguration ungültig',
-    'page.frp.supervisor.reason.input_unreadable': 'Eingabedatei nicht lesbar oder zu groß',
-    'page.frp.supervisor.reason.input_unstable': 'Eingabe ändert sich laufend',
-    'page.frp.supervisor.reason.processes_left': 'Frühere frps-Prozesse laufen noch',
-    'page.frp.supervisor.reason.unknown': 'Unbekannter Grund',
-    'page.frp.supervisor.event.started': 'Gestartet',
-    'page.frp.supervisor.event.applied': 'Änderung übernommen, neu gestartet',
-    'page.frp.supervisor.event.rejected': 'Änderung abgelehnt',
-    'page.frp.supervisor.event.stopped': 'Gestoppt, Konfiguration entfernt',
-    'page.frp.supervisor.event.crashed': 'Wiederholt abgebrochen',
-    'page.frp.supervisor.event.copy_changed': 'Arbeitskopie verändert, verworfen',
-    'page.frp.supervisor.event.start_refused': 'Start verweigert, frühere Prozesse laufen noch',
-    'page.frp.supervisor.event.unknown': 'Unbekanntes Ereignis',
-
     // ── FRP Config Modal ──────────────────────────────────────────────
     'modal.frpConfig.title': 'FRP-Server bearbeiten',
     'modal.frpConfig.titleNew': 'Neue FRP-Server Konfiguration',
@@ -275,12 +236,6 @@ export const translations: Translations = {
     'modal.frpConfig.dashPort': 'Dashboard Port',
     'modal.frpConfig.dashUser': 'Dashboard User',
     'modal.frpConfig.dashPass': 'Dashboard Passwort',
-    'modal.frpConfig.bindPortMismatch':
-      'Der Stack veröffentlicht frps auf Port {port} (FRP_BIND_PORT). Mit einem anderen Bind Port ist frps von außen nicht erreichbar.',
-    'modal.frpConfig.confirm.restart':
-      'Speichern startet den FRP-Server neu, alle Tunnel sind einige Sekunden getrennt.',
-    'modal.frpConfig.confirm.newToken':
-      'Mit dem neuen Token verbinden sich Agent-Tunnel erst nach bis zu ~5 Minuten wieder.',
 
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP-Config gespeichert',
@@ -509,45 +464,6 @@ export const translations: Translations = {
     'page.frp.bulkZip': 'All as ZIP',
     'page.frp.status': 'Status',
 
-    // ── FRP Supervisor (one text per code the server sends) ──────────
-    'page.frp.supervisor.title': 'frps state',
-    'page.frp.supervisor.label.state': 'State',
-    'page.frp.supervisor.label.reason': 'Reason',
-    'page.frp.supervisor.label.since': 'Since',
-    'page.frp.supervisor.label.lastEvent': 'Last event',
-    'page.frp.supervisor.stale':
-      'The frps supervisor is not responding; the details may be out of date.',
-    'page.frp.supervisor.unavailable': 'State not available.',
-    'page.frp.supervisor.state.waiting': 'Waiting, frps is not running',
-    'page.frp.supervisor.state.running': 'Running',
-    'page.frp.supervisor.state.degraded': 'Running on the last valid configuration',
-    'page.frp.supervisor.state.stopped': 'Stopped',
-    'page.frp.supervisor.state.crashloop': 'Exits repeatedly',
-    'page.frp.supervisor.state.missing': 'No status available',
-    'page.frp.supervisor.state.unreadable': 'Status unreadable',
-    'page.frp.supervisor.state.unknown': 'Unknown state',
-    'page.frp.supervisor.reason.none': 'No error',
-    'page.frp.supervisor.reason.config_missing': 'No FRP configuration',
-    'page.frp.supervisor.reason.token_invalid': 'Auth token setting invalid',
-    'page.frp.supervisor.reason.tls_not_forced': 'TLS is not enforced',
-    'page.frp.supervisor.reason.cert_paths': 'Certificate paths do not match',
-    'page.frp.supervisor.reason.cert_missing': 'Certificate missing or incomplete',
-    'page.frp.supervisor.reason.cert_expired': 'Certificate expired',
-    'page.frp.supervisor.reason.cert_key_mismatch': 'Certificate does not match the key',
-    'page.frp.supervisor.reason.verify_failed': 'Configuration invalid',
-    'page.frp.supervisor.reason.input_unreadable': 'Input file unreadable or too large',
-    'page.frp.supervisor.reason.input_unstable': 'Input keeps changing',
-    'page.frp.supervisor.reason.processes_left': 'Earlier frps processes are still running',
-    'page.frp.supervisor.reason.unknown': 'Unknown reason',
-    'page.frp.supervisor.event.started': 'Started',
-    'page.frp.supervisor.event.applied': 'Change applied, restarted',
-    'page.frp.supervisor.event.rejected': 'Change rejected',
-    'page.frp.supervisor.event.stopped': 'Stopped, configuration removed',
-    'page.frp.supervisor.event.crashed': 'Exited repeatedly',
-    'page.frp.supervisor.event.copy_changed': 'Working copy changed, discarded',
-    'page.frp.supervisor.event.start_refused': 'Start refused, earlier processes still running',
-    'page.frp.supervisor.event.unknown': 'Unknown event',
-
     // ── FRP Config Modal ──────────────────────────────────────────────
     'modal.frpConfig.title': 'Edit FRP server',
     'modal.frpConfig.titleNew': 'New FRP server configuration',
@@ -561,12 +477,6 @@ export const translations: Translations = {
     'modal.frpConfig.dashPort': 'Dashboard port',
     'modal.frpConfig.dashUser': 'Dashboard user',
     'modal.frpConfig.dashPass': 'Dashboard password',
-    'modal.frpConfig.bindPortMismatch':
-      'The stack publishes frps on port {port} (FRP_BIND_PORT). With a different bind port, frps cannot be reached from outside.',
-    'modal.frpConfig.confirm.restart':
-      'Saving restarts the FRP server; all tunnels are disconnected for a few seconds.',
-    'modal.frpConfig.confirm.newToken':
-      'With the new token, agent tunnels take up to ~5 minutes to reconnect.',
 
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP config saved',

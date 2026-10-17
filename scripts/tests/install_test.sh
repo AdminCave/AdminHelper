@@ -105,8 +105,6 @@ echo "$out" | sed 's/^/    │ /'
 [ -f "$INST/docker-compose.yml" ] && ok "runtime files extracted" || bad "no compose extracted"
 grep -q '^DOMAIN=test.example' "$INST/.env" && ok "DOMAIN written to .env" || bad "DOMAIN not in .env"
 grep -q 'server:0.34.0' "$INST/.env" && ok "images pinned to ref" || bad "images not pinned to ref"
-grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.34.0' "$INST/.env" \
-  && ok "frps image pinned to ref" || bad "frps image not pinned to ref"
 [ "$(cat "$WORK/admin.stdin" 2>/dev/null)" = sikrit123 ] \
   && ok "admin password reached create-admin on stdin" || bad "create-admin got no password on stdin"
 # The summary names the desktop button by its German label, folded to ae/oe/ue like
