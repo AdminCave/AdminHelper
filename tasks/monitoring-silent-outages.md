@@ -74,8 +74,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_chec
 Doku: keine (intern; Doku in T13)
 Abhängt von: T4
 
-### T8 — Monitoring: SMART-Meldung nennt den Grund  [ ]
+### T8 — Monitoring: SMART-Meldung nennt den Grund  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/smart.py, apps/monitoring/tests/test_smart_checker.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d907a6d2 2026-10-17T04:53:48+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T8.verdict.json)
 Änderung: `SmartHealthChecker.evaluate` (`smart.py:69-73`): fehlt `smart`, liest der Checker `smart_absent.reason` und meldet ok mit unterscheidbarem Text und Details `{"absent": <reason>}` (`not_installed`, `scan_failed`, `no_devices`; ohne Feld wie heute „keine Daten“). Tests zuerst rot: je Grund Meldung und Detail-Code, Status bleibt ok.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py
 Doku: keine (intern; Doku in T13)
