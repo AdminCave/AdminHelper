@@ -456,6 +456,10 @@ frps_takeover() {
     if ! e2e_dc up -d --build frps scheduler >"$E2E_WORK/frps-up.log" 2>&1; then
         bad "frps/scheduler did not come up"; tail -20 "$E2E_WORK/frps-up.log"; return
     fi
+    echo "[diag] docker $(docker version --format '{{.Server.Version}}' 2>&1), compose $(docker compose version --short 2>&1)"
+    echo "[diag] driver: $(docker info --format '{{.Driver}} {{json .DriverStatus}}' 2>&1)"
+    sed 's/^/[diag] up: /' "$E2E_WORK/frps-up.log"
+    e2e_dc ps -a --format '{{.Service}} {{.State}} {{.Status}} {{.Image}}' | sed 's/^/[diag] ps: /'
     e2e_dc exec -T ca-issuer cat /app/frps-certs/ca.crt >"$E2E_WORK/frps-ca.crt" 2>/dev/null
     FRPS_LEAF=$(e2e_dc exec -T ca-issuer cat /app/frps-certs/frps.crt 2>/dev/null \
         | openssl x509 -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1) || FRPS_LEAF=""
@@ -467,6 +471,12 @@ frps_takeover() {
     FRPS_PORT=$(e2e_dc port frps "${bind:-none}" 2>/dev/null | head -1)
     FRPS_PORT=${FRPS_PORT##*:}
     if [ -z "$bind" ] || [ -z "$FRPS_PORT" ]; then
+        echo "[diag] supervisor-status http $(curl -k -s -o /dev/null -w '%{http_code}' "${CERT3[@]}" -H "Authorization: Bearer $JWT3" --max-time 10 "$E2E_SERVER_URL/api/frp/supervisor-status" 2>&1)"
+        e2e_dc logs --no-color --tail 15 server 2>&1 | sed 's/^/[diag] server: /'
+        e2e_dc logs --no-color --tail 8 gateway 2>&1 | sed 's/^/[diag] gateway: /'
+        sleep 30
+        echo "[diag] after 30 s: http $(curl -k -s -o /dev/null -w '%{http_code}' "${CERT3[@]}" -H "Authorization: Bearer $JWT3" --max-time 10 "$E2E_SERVER_URL/api/frp/supervisor-status" 2>&1), body $(api GET /api/frp/supervisor-status | head -c 200)"
+        e2e_dc ps -a --format '{{.Service}} {{.State}} {{.Status}}' | sed 's/^/[diag] ps: /'
         bad "frps: bind port '$bind' not published (host port '$FRPS_PORT')"; return
     fi
 
