@@ -6,10 +6,19 @@
 generated frps/frpc/visitor configs, a secret entropy floor, and a fail-closed
 allow-list default."""
 
+import logging
+import tomllib
+
 import pytest
 from pydantic import ValidationError
 
 from app.modules.frp._helpers import get_allow_users
+from app.modules.frp.config_generator import (
+    generate_frpc_toml,
+    generate_frps_toml,
+    generate_visitor_toml,
+)
+from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.schemas import (
     FrpServerConfigCreate,
     FrpServerConfigUpdate,
@@ -54,6 +63,27 @@ def test_tunnel_name_rejects_del():
         FrpTunnelUpdate(name="ok\x7fname")
 
 
+@pytest.mark.parametrize("value", ["ok\ud800name", "\udfff", "\udc80" + "x" * 20], ids=repr)
+def test_toml_strings_reject_a_lone_surrogate(value):
+    # A lone surrogate has no UTF-8 form, so no generated config can carry it.
+    with pytest.raises(ValidationError, match="surrogate"):
+        _tunnel(name=value)
+    with pytest.raises(ValidationError, match="surrogate"):
+        FrpTunnelUpdate(custom_domains=value)
+    with pytest.raises(ValidationError, match="surrogate"):
+        _tunnel(secret_key=value + "x" * 16)
+    with pytest.raises(ValidationError, match="surrogate"):
+        FrpServerConfigCreate(name="n", server_addr=value)
+    with pytest.raises(ValidationError, match="surrogate"):
+        ServerCreate(name=value, hostname="h")
+
+
+def test_toml_strings_take_the_neighbours_of_the_surrogates():
+    for value in ("ok\ud7ffname", "ok\ue000name"):
+        assert _tunnel(name=value).name == value
+        assert ServerCreate(name=value, hostname="h").name == value
+
+
 def test_custom_domains_rejects_newline():
     with pytest.raises(ValidationError):
         _tunnel(custom_domains="ok.example\nvhostHTTPSPort = 1")
@@ -83,7 +113,7 @@ def test_dashboard_password_requires_entropy_floor():
 def test_server_extra_config_rejects_breakers():
     with pytest.raises(ValidationError):
         FrpServerConfigCreate(
-            name="n", server_addr="a.example", extra_config={"k": 'v"\ninjected = 1'}
+            name="n", server_addr="a.example", extra_config={"log.level": 'v"\ninjected = 1'}
         )
 
 
@@ -175,17 +205,11 @@ def _build(model, **over):
     return model(**over)
 
 
+# The integer fields of the server config are narrower than their column since
+# T23; the port-range and max-ports tests below hold them.
 @pytest.mark.parametrize(
     "model,field",
     [
-        (FrpServerConfigCreate, "bind_port"),
-        (FrpServerConfigCreate, "vhost_https_port"),
-        (FrpServerConfigCreate, "dashboard_port"),
-        (FrpServerConfigCreate, "max_ports_per_client"),
-        (FrpServerConfigUpdate, "bind_port"),
-        (FrpServerConfigUpdate, "vhost_https_port"),
-        (FrpServerConfigUpdate, "dashboard_port"),
-        (FrpServerConfigUpdate, "max_ports_per_client"),
         (FrpTunnelCreate, "local_port"),
         (FrpTunnelCreate, "visitor_port"),
         (FrpTunnelUpdate, "local_port"),
@@ -204,6 +228,282 @@ def test_integer_body_fields_hold_at_both_edges(model, field):
     for past in (INT_COLUMN_MIN - 1, INT_COLUMN_MAX + 1):
         with pytest.raises(ValidationError):
             _build(model, **{field: past})
+
+
+# T23 (R-0411): bindPort, vhostHTTPSPort and webServer.port of the generated
+# frps.toml. A value outside 1-65535 fit the INTEGER column, so it was stored and
+# written into frps.toml as is.
+SERVER_CONFIG_PORTS = ("bind_port", "vhost_https_port", "dashboard_port")
+PORTS_OUT_OF_RANGE = (0, -1, 65536)
+
+
+@pytest.mark.parametrize("field", SERVER_CONFIG_PORTS)
+@pytest.mark.parametrize("model", [FrpServerConfigCreate, FrpServerConfigUpdate])
+def test_server_config_ports_hold_the_port_range(model, field):
+    for edge in (1, 65535):
+        assert getattr(_build(model, **{field: edge}), field) == edge
+
+    for bad in PORTS_OUT_OF_RANGE:
+        with pytest.raises(ValidationError):
+            _build(model, **{field: bad})
+
+
+@pytest.mark.parametrize("field", SERVER_CONFIG_PORTS)
+@pytest.mark.parametrize("model", [FrpServerConfigCreate, FrpServerConfigUpdate])
+def test_server_config_ports_publish_the_port_range(model, field):
+    """The bound is part of the contract, so it has to reach the schema — a
+    constraint lost on the way through an alias validates nothing and says
+    nothing. Optional ports carry it in the integer branch of their anyOf."""
+    prop = model.model_json_schema()["properties"][field]
+    branches = prop.get("anyOf", [prop])
+    integers = [b for b in branches if b.get("type") == "integer"]
+    assert len(integers) == 1, prop
+    assert (integers[0]["minimum"], integers[0]["maximum"]) == (1, 65535), prop
+
+    nullable = any(b.get("type") == "null" for b in branches)
+    # bind_port is never null: the generator would write `bindPort = None`.
+    # The other two are null for "off".
+    assert nullable == (field != "bind_port"), prop
+
+
+@pytest.mark.parametrize("model", [FrpServerConfigCreate, FrpServerConfigUpdate])
+def test_max_ports_per_client_takes_no_negative_value(model):
+    """frps enforces maxPortsPerClient only while it is > 0, so a negative value
+    lifts the cap the generator always sets (T23). 0 and null stay the default."""
+    for ok in (0, 16, INT_COLUMN_MAX, None):
+        assert _build(model, max_ports_per_client=ok).max_ports_per_client == ok
+
+    for bad in (-1, INT_COLUMN_MIN, INT_COLUMN_MAX + 1):
+        with pytest.raises(ValidationError):
+            _build(model, max_ports_per_client=bad)
+
+    prop = model.model_json_schema()["properties"]["max_ports_per_client"]
+    integers = [b for b in prop["anyOf"] if b.get("type") == "integer"]
+    assert [(b["minimum"], b["maximum"]) for b in integers] == [(0, INT_COLUMN_MAX)], prop
+
+
+def _login(client):
+    r = client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def _create_config_via_api(client, monkeypatch, **fields):
+    import app.modules.frp.config_router as cr
+
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+    h = _login(client)
+    created = client.post(
+        "/api/frp/server-config",
+        json={"name": "test-frps", "server_addr": "frps.example.net", **fields},
+        headers=h,
+    )
+    assert created.status_code == 201, created.text
+    return h, created.json()["id"]
+
+
+def _stored(db_session, config_id):
+    stored = db_session.get(FrpServerConfig, config_id)
+    db_session.refresh(stored)
+    return stored
+
+
+@pytest.mark.parametrize("field", SERVER_CONFIG_PORTS)
+def test_server_config_create_answers_422_outside_the_port_range(
+    test_client, db_session, admin_user, monkeypatch, field
+):
+    import app.modules.frp.config_router as cr
+
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+    h = _login(test_client)
+    for bad in PORTS_OUT_OF_RANGE:
+        r = test_client.post(
+            "/api/frp/server-config",
+            json={"name": "test-frps", "server_addr": "frps.example.net", field: bad},
+            headers=h,
+        )
+        assert r.status_code == 422, (bad, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", field], r.text
+    assert db_session.query(FrpServerConfig).count() == 0
+
+
+@pytest.mark.parametrize("field", SERVER_CONFIG_PORTS)
+def test_server_config_update_holds_the_port_range(
+    test_client, db_session, admin_user, monkeypatch, field
+):
+    h, cid = _create_config_via_api(test_client, monkeypatch, **{field: 7443})
+    for bad in PORTS_OUT_OF_RANGE:
+        r = test_client.put(f"/api/frp/server-config/{cid}", json={field: bad}, headers=h)
+        assert r.status_code == 422, (bad, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", field], r.text
+        assert getattr(_stored(db_session, cid), field) == 7443
+
+    for edge in (1, 65535):
+        r = test_client.put(f"/api/frp/server-config/{cid}", json={field: edge}, headers=h)
+        assert r.status_code == 200, (edge, r.text)
+        assert getattr(_stored(db_session, cid), field) == edge
+
+
+def test_server_config_update_rejects_a_null_bind_port(
+    test_client, db_session, admin_user, monkeypatch
+):
+    h, cid = _create_config_via_api(test_client, monkeypatch, bind_port=7100)
+    r = test_client.put(
+        f"/api/frp/server-config/{cid}", json={"name": "renamed", "bind_port": None}, headers=h
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "bind_port"], r.text
+    stored = _stored(db_session, cid)
+    assert (stored.bind_port, stored.name) == (7100, "test-frps")
+
+
+def test_server_config_update_without_bind_port_keeps_it(
+    test_client, db_session, admin_user, monkeypatch
+):
+    """The other half of the null rejection: the update stays partial. A client
+    that leaves bind_port out must neither lose it nor be refused."""
+    h, cid = _create_config_via_api(test_client, monkeypatch, bind_port=7100)
+    r = test_client.put(f"/api/frp/server-config/{cid}", json={"name": "renamed"}, headers=h)
+    assert r.status_code == 200, r.text
+    stored = _stored(db_session, cid)
+    assert (stored.bind_port, stored.name) == (7100, "renamed")
+
+
+@pytest.mark.parametrize("field", ["vhost_https_port", "dashboard_port"])
+def test_server_config_update_null_still_turns_a_port_off(
+    test_client, db_session, admin_user, monkeypatch, field
+):
+    h, cid = _create_config_via_api(test_client, monkeypatch, **{field: 7443})
+    r = test_client.put(f"/api/frp/server-config/{cid}", json={field: None}, headers=h)
+    assert r.status_code == 200, r.text
+    assert getattr(_stored(db_session, cid), field) is None
+
+
+def test_server_config_routes_answer_422_for_negative_max_ports(
+    test_client, db_session, admin_user, monkeypatch
+):
+    h = _login(test_client)
+    r = test_client.post(
+        "/api/frp/server-config",
+        json={"name": "test-frps", "server_addr": "frps.example.net", "max_ports_per_client": -1},
+        headers=h,
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "max_ports_per_client"], r.text
+
+    h, cid = _create_config_via_api(test_client, monkeypatch, max_ports_per_client=8)
+    r = test_client.put(
+        f"/api/frp/server-config/{cid}", json={"max_ports_per_client": -1}, headers=h
+    )
+    assert r.status_code == 422, r.text
+    assert _stored(db_session, cid).max_ports_per_client == 8
+
+
+# Rows written before T23 never met these bounds; there is no data migration, so
+# the generator guards what it reads (Kevin 2026-10-17). frps exits on a port
+# outside 0..65535 (pkg/config/v1/validation/common.go ValidatePort, v0.69.1), and
+# `bindPort = None` is no TOML at all.
+_GENERATOR_LOGGER = "app.modules.frp.config_generator"
+_TOKEN = "stored-token-" + "x" * 16
+_DASH_PASSWORD = "stored-dash-" + "y" * 16
+
+
+def _legacy_row(**over):
+    """A FrpServerConfig as the DB may still hold it — the schema never saw it."""
+    base = dict(
+        id="legacy",
+        name="legacy",
+        server_addr="frps.example.net",
+        bind_port=7000,
+        auth_token=_TOKEN,
+    )
+    base.update(over)
+    return FrpServerConfig(**base)
+
+
+def _warnings(caplog, field):
+    messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    for m in messages:
+        assert _TOKEN not in m and _DASH_PASSWORD not in m, m
+    return [m for m in messages if field in m]
+
+
+@pytest.mark.parametrize("stored", [None, 0, -1, 65536, 70000])
+def test_generator_falls_back_to_7000_for_a_stored_bind_port_out_of_range(stored, caplog):
+    cfg = _legacy_row(bind_port=stored)
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        frps = tomllib.loads(generate_frps_toml(cfg))
+        frpc = tomllib.loads(generate_frpc_toml(cfg, [], "srv1"))
+        visitor = tomllib.loads(generate_visitor_toml(cfg, []))
+
+    assert frps["bindPort"] == 7000
+    assert frpc["serverPort"] == 7000
+    assert visitor["serverPort"] == 7000
+    # One line per generated file, each naming the field and the value used instead.
+    warned = _warnings(caplog, "bind_port")
+    assert len(warned) == 3, warned
+    assert all("7000" in m for m in warned), warned
+
+
+@pytest.mark.parametrize("stored", [0, -1, 65536, 70000])
+@pytest.mark.parametrize(
+    "field,key", [("vhost_https_port", "vhostHTTPSPort"), ("dashboard_port", "webServer")]
+)
+def test_generator_leaves_out_a_stored_optional_port_out_of_range(field, key, stored, caplog):
+    cfg = _legacy_row(**{field: stored}, dashboard_user="admin", dashboard_password=_DASH_PASSWORD)
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        frps = tomllib.loads(generate_frps_toml(cfg))
+
+    assert key not in frps, frps
+    warned = _warnings(caplog, field)
+    assert len(warned) == 1, warned
+
+
+@pytest.mark.parametrize("stored", [-1, -16])
+def test_generator_uses_the_default_for_a_negative_max_ports_per_client(stored, caplog):
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        frps = tomllib.loads(generate_frps_toml(_legacy_row(max_ports_per_client=stored)))
+
+    assert frps["maxPortsPerClient"] == 16
+    warned = _warnings(caplog, "max_ports_per_client")
+    assert len(warned) == 1 and "16" in warned[0], warned
+
+
+def test_generator_replaces_all_stored_values_of_one_row(caplog):
+    cfg = _legacy_row(
+        bind_port=70000,
+        vhost_https_port=-443,
+        dashboard_port=70000,
+        dashboard_password=_DASH_PASSWORD,
+        max_ports_per_client=-1,
+    )
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        frps = tomllib.loads(generate_frps_toml(cfg))
+
+    assert frps["bindPort"] == 7000
+    assert frps["maxPortsPerClient"] == 16
+    assert "vhostHTTPSPort" not in frps and "webServer" not in frps
+    for field in ("bind_port", "vhost_https_port", "dashboard_port", "max_ports_per_client"):
+        assert len(_warnings(caplog, field)) == 1, field
+
+
+def test_generator_stays_quiet_for_valid_and_unset_values(caplog):
+    """The guard must not turn the normal cases into noise: null ports are "off",
+    a null or zero max_ports_per_client is the default, and the edges pass."""
+    cfg = _legacy_row(
+        bind_port=1,
+        vhost_https_port=65535,
+        dashboard_port=None,
+        max_ports_per_client=0,
+    )
+    with caplog.at_level(logging.WARNING, logger=_GENERATOR_LOGGER):
+        frps = tomllib.loads(generate_frps_toml(cfg))
+        frpc = tomllib.loads(generate_frpc_toml(cfg, [], "srv1"))
+
+    assert (frps["bindPort"], frps["vhostHTTPSPort"], frps["maxPortsPerClient"]) == (1, 65535, 16)
+    assert "webServer" not in frps
+    assert frpc["serverPort"] == 1
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 # The raw values a mode="before" validator can be handed. Each one used to reach

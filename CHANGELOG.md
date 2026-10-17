@@ -346,6 +346,25 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
+  eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
+  scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:
+  E-Mail-Benachrichtigungen gingen nicht raus, geplante Hooks liefen nicht, und die Aufbewahrungs- und Aufraeum-Jobs
+  (etwa fuer Audit-Log und Glocke) blieben aus. Jetzt laden Web- und Scheduler-Prozess alle Modelle aus
+  `apps/server/app/model_registry.py`. **Vor dem Update pruefen:** Nach dem Update laufen geplante Hooks wieder nach
+  Plan; Hooks, die nicht mehr laufen sollen, vorher deaktivieren oder loeschen. Die Aufbewahrungs-Jobs holen beim ersten
+  Lauf nach. Ausstehende E-Mails, die aelter als 7 Tage sind, verfallen beim Update (Alembic-Revision `c3e5a7b9d1f2`:
+  Status `failed`, `last_error` „expired before delivery“); juengere gehen normal raus, die Glocke bleibt unberuehrt.
+  E-Mail-Hinweise auf neu angelegte Admin-Konten wurden seit v0.38.0 nicht zugestellt: Admins pruefen Benutzerliste und
+  Audit-Log (Aktion `user.created`) fuer diese Zeit. Doku: Betrieb (DE+EN) nennt die Logs des `scheduler`-Dienstes.
+- **Update: Rollback bei Pull-, Paket-Repo- und Stack-Neustart-Fehlern (R-0411):** Scheitert das Ziehen der Images
+  (Netz, Rate-Limit, nicht veroeffentlichtes Image), das Aktualisieren des Agent-Paket-Repos, `docker compose up -d`
+  oder der Healthcheck danach, rollt `update.sh` Laufzeit-Dateien und Image-Pins auf den installierten Stand zurueck,
+  auch bei einem Floating-Tag (`:latest`, `:main`): Die Pins kommen aus einer Kopie der alten `.env`, sodass der
+  naechste Lauf das Update erneut versucht. Scheitert es vor dem Neustart, kommt die alte `.env` ganz zurueck, und die
+  Container bleiben unveraendert. `--no-rollback` nennt den Weg zurueck (`--redeploy` bzw. `--ref`). Fehlt die `.env`,
+  bricht `update.sh` vor Backup und Snapshot ab; scheitert das Ziehen bei `--redeploy`, endet es mit eigener Meldung,
+  und die Container bleiben unveraendert. Doku: Installation (DE+EN).
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
@@ -763,6 +782,58 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
+  Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft
+  `frps.toml` und das TLS-Material vor jedem Start (Regeln und Gruende: Betrieb → frps-Supervisor) und startet frps aus
+  einer geprueften Arbeitskopie unter dem eigenen Nutzer `frps` (UID 10002) ohne Capabilities. Eine geaenderte
+  FRP-Server-Konfiguration oder ein erneuertes frps-Zertifikat uebernimmt frps nach wenigen Sekunden selbst und startet
+  neu; ein Neustart von Hand ist dafuer nicht noetig. Alle Tunnel sind dabei kurz getrennt; Admins und Nutzer mit
+  Tunnel-Zugriff bekommen eine Mitteilung in der Glocke, bei neuem Token mit dem Hinweis, dass Agent-Tunnel bis zu ~5
+  Minuten brauchen. Eine Konfiguration, die die Pruefung nicht besteht, wird nicht uebernommen; den Grund zeigt die
+  FRP-Seite, und solange frps mit der letzten gueltigen Kopie weiterlaeuft, bekommen Admins dazu eine Mitteilung in der
+  Glocke. Ohne gueltige Kopie (etwa direkt nach dem Update) startet frps nicht, bis die Konfiguration die Pruefung
+  besteht. Wird die FRP-Server-Konfiguration geloescht, stoppt frps. Neu auf der FRP-Seite
+  ist der Block „Zustand des frps“ (Zustand, Grund, seit wann, letztes Ereignis; aktualisiert alle 30 s, solange der Tab
+  sichtbar ist) ueber `GET /api/frp/supervisor-status` (nur Admins). Vor dem Speichern einer Aenderung, die frps neu
+  startet, fragt die Maske nach; weicht der Bind Port vom veroeffentlichten `FRP_BIND_PORT` ab, warnt sie am Feld,
+  Speichern bleibt moeglich. Compose: neue Volumes `frps-state` (Statusdatei; `server` und `scheduler` lesen sie
+  read-only) und `frps-active` (Arbeitskopie, nur frps), beide nicht im Backup; `cap_drop: [ALL]` plus `DAC_OVERRIDE`,
+  `SETUID`, `SETGID` und `KILL` fuer den Supervisor; `net.ipv4.ip_unprivileged_port_start: 0`, damit frps Port 443 ohne
+  root bindet. `install.sh` und `update.sh` pinnen `FRPS_IMAGE` wie die uebrigen Images, CI und Release bauen und
+  veroeffentlichen das Image mit. Doku: FRP-Tunnel, Installation und Betrieb (DE+EN), API-Referenz.
+- **Server: Grenzen und Token-Feld der FRP-Server-Config (R-0411):** `POST`/`PUT /api/frp/server-config` nehmen
+  `bind_port`, `vhost_https_port` und `dashboard_port` nur im Bereich 1–65535 und `max_ports_per_client` nur ab 0 an (0
+  oder leer: Standard 16), sonst `422`; ein ausdrueckliches `"bind_port": null` im `PUT` ist ebenfalls `422`, fehlt das
+  Feld, bleibt der Wert. **Vor dem Update pruefen:** die Ports und `max_ports_per_client` der FRP-Server-Config.
+  Gespeicherte Werte ausserhalb dieser Grenzen bleiben in der Datenbank; der Generator ersetzt sie beim Schreiben der
+  Konfigurationen (`bindPort`/`serverPort` 7000, vHost- und Dashboard-Port fallen weg, `max_ports_per_client` 16) und
+  schreibt je Fall eine Warnung ins Log. Ein leeres oder `null`-`auth_token` im `PUT` laesst das gespeicherte Token
+  unveraendert; ein neues braucht mindestens 16 Zeichen. Der Pflicht-Check `openapi-compat` nimmt genau diese engeren
+  Grenzen ueber die Ausnahme-Datei `scripts/dev/oasdiff-err-ignore.txt` (oasdiff `--err-ignore`) hin; ohne die Datei
+  bleibt er streng, jede andere Verengung bleibt ein Fehler. Der CI-Job `ops-scripts` und das Bootstrap der Test-VMs
+  installieren dafuer oasdiff 1.32.0 mit gepinnter SHA-256. Doku: FRP-Tunnel und API-Referenz (DE+EN), CI/CD (DE+EN),
+  `DEVELOPMENT.md`.
+- **Server: `extra_config` und Textfelder der FRP-Server-Config nach den Regeln des frps-Supervisors (R-0411):**
+  `POST`/`PUT /api/frp/server-config` nehmen in `extra_config` nur `transport.maxPoolCount`, `transport.tcpMux`,
+  `transport.tcpMuxKeepaliveInterval`, `transport.heartbeatTimeout`, `transport.tcpKeepalive`, `userConnTimeout`,
+  `log.level` und `log.maxDays` an, mit `true`, `false`, einer endlichen Zahl oder einem String ohne Anfuehrungszeichen,
+  Backslash, geschweifte Klammern und Steuerzeichen, sonst `422`; `{` oder `}` in `subdomain_host`, `dashboard_user`,
+  `dashboard_password` oder `auth_token` ist ebenfalls `422`. Die Tunnel-Configs (frpc) betrifft das nicht. Ein
+  einzelnes Surrogat (U+D800 bis U+DFFF) ist `422` in den Textfeldern und `extra_config`-Werten der FRP-Server-Config,
+  in `name`, `local_ip`, `secret_key`, `custom_domains`, `auto_connection_username` und `extra_config`-Werten der
+  Tunnel und im Server-Namen. **Vor dem Update pruefen:** `extra_config` und diese vier Felder der FRP-Server-Config;
+  das Auth Token hat mindestens 16 Zeichen; ein gesetzter Dashboard Port ist weder 443 noch der Bind Port noch
+  `FRP_BIND_PORT`. Beim Start entfernt der Server `extra_config`-Eintraege ausserhalb dieser Regeln (etwa
+  `proxyBindAddr` oder `log.to`) aus der gespeicherten Konfiguration und meldet die entfernten Schluessel den Admins in
+  der Glocke. Ein Feld mit einem Wert, den frps nicht annimmt (unzulaessige Zeichen, ein Auth Token unter 16 Zeichen,
+  ein Dashboard Port gleich 443, dem Bind Port oder `FRP_BIND_PORT`), aendert er nicht; er meldet den Admins in der
+  Glocke, welche Felder neu zu setzen sind, je Feld mit der Regel (einmal, solange dieselben Felder betroffen sind),
+  und bis dahin startet frps ohne gueltige Arbeitskopie nicht (Zustand `waiting`). Log und Mitteilungen nennen
+  Schluessel und Felder, nie Werte.
+  Doku: Betrieb und API-Referenz (DE+EN).
+- **Web: Rueckfragen enden mit Escape und mit der Sitzung (R-0411):** Escape bricht eine angezeigte Rueckfrage ab und
+  schliesst nur sie, nicht den Dialog darunter. Endet die Sitzung (Abmelden oder Ablauf), endet eine angezeigte
+  Rueckfrage mit „Abbrechen“, damit die Aktion nicht nach einer neuen Anmeldung mit der neuen Sitzung laeuft.
 - **Monitoring: neue Warnungen fuer Docker und ZFS nach dem Update (R-0419):** Ein Host mit gestopptem Docker-Daemon
   oder mit einem `zpool`, dessen `zpool list` scheitert oder haengt (etwa ein LXC-Container ohne ZFS-Modul), meldet
   `docker_health` bzw. `zfs_health` jetzt als `warning` mit Benachrichtigung, alte mit Exit ≠ 0 beendete Container
