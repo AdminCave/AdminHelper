@@ -95,10 +95,16 @@ def effective_status(
 
     As long as a non-OK result has not yet reached the required number of
     consecutive failures, the previous status is kept ('pending' is treated
-    as 'ok' here). Otherwise the raw result applies.
+    as 'ok' here, except for an 'unknown' result). Otherwise the raw result
+    applies.
     """
     if is_suppressed(result_status, new_fail_count, consecutive_fails):
-        return old_status if old_status != "pending" else "ok"
+        if old_status != "pending":
+            return old_status
+        # A new check without data must not stand green (R-0419). Passing unknown
+        # through costs no alert — unknown never notifies; a first warning or
+        # critical stays damped.
+        return "unknown" if result_status == "unknown" else "ok"
     return result_status
 
 

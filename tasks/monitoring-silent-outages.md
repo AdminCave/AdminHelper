@@ -82,8 +82,10 @@ Review: approve (.ah-out/review/monitoring-silent-outages/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_smart_checker.py
 Doku: keine (intern; Doku in T13)
 
-### T9 — Monitoring: ein neuer Check ohne Daten steht nicht grün  [ ]
+### T9 — Monitoring: ein neuer Check ohne Daten steht nicht grün  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_check_engine.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8afb38da 2026-10-17T05:07:20+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T9.verdict.json)
 Änderung: `effective_status` (`check_engine.py:88-101`): Ist das Ergebnis `unknown` und der alte Status `pending`, gilt `unknown` statt `ok`. Warning/critical beim ersten Ergebnis bleiben gedämpft wie heute; `unknown` benachrichtigt weiter nie (`alerter.py:58-78` unverändert). Tests zuerst rot: neuer Check, erstes Ergebnis `unknown` bei `consecutive_fails=2` → Status `unknown`, keine Benachrichtigung; erstes Ergebnis `critical` → weiter `ok` (gedämpft); bestehender `ok`-Check mit einem `unknown` → bleibt `ok` (gedämpft).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py
 Doku: keine (intern; Doku in T13)
