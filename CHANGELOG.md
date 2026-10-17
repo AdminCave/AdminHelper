@@ -334,6 +334,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: der Tunnel mit Geraete-Zertifikat startet unter Windows (R-0425):** Der Desktop setzte den Pfad seiner
+  exportierten Geraete-Identitaet (unter `%APPDATA%`) unveraendert in die Tunnel-Config ein. Dort steht er in einem
+  TOML-String, in dem ein Backslash ein Escape einleitet: Ein Windows-Pfad wie `C:\Users\…` machte die Config
+  unlesbar, und der Tunnel startete nicht. Jetzt setzt der Desktop den Pfad TOML-korrekt ein (Backslash,
+  Anfuehrungszeichen und Steuerzeichen escaped), auch mit `'`, `"` oder Leerzeichen im Pfad.
 - **Desktop: der Tunnel uebernimmt Aenderungen selbst (R-0402, R-0389, R-0390):** Der Desktop lud das
   Tunnel-Bundle nur beim Anmelden. Ein spaeter angelegter, geaenderter oder geloeschter Tunnel und eine Rotation
   des frps-Tokens kamen erst nach einem Neustart der App an, und ein frpc, der endete (etwa weil frps beim
