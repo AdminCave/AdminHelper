@@ -160,8 +160,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (intern; Betrieb in T17)
 Abhängt von: T21
 
-### T12 — Risikopfade: `apps/frps/` aufnehmen  [ ]
+### T12 — Risikopfade: `apps/frps/` aufnehmen  [x]
 Komponente: scripts · Dateien: scripts/dev/review-risk.txt
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @4388d54f 2026-10-17T06:34:54+02:00
+Review: approve (.ah-out/review/frps-supervisor/T12.verdict.json)
 Änderung: `apps/frps/*` unter „FRP tunnels“ (`review-risk.txt:42`). **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh scripts --strict -- review_scripts_test
 Doku: keine (intern)
