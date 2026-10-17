@@ -65,8 +65,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_repor
 Doku: keine (intern)
 Abhängt von: T5
 
-### T7 — Monitoring: ZFS-Checker meldet einen hängenden oder fehlerhaften `zpool`  [ ]
+### T7 — Monitoring: ZFS-Checker meldet einen hängenden oder fehlerhaften `zpool`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2755da12 2026-10-17T04:27:51+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T7.verdict.json)
 Änderung: `ZfsHealthChecker.evaluate` (`plugins.py:118-167`): Block fehlt → `unknown`, Details `{"pools": []}`; `available=false`/`error` → `warning` (bei `alert_on_unavailable=false` `unknown`), Details mit `available`, `error`; sonst wie heute, Details zusätzlich `available: true`. Tests zuerst rot: Timeout → warning, Schalter aus → unknown, Block fehlt → leere Pools, gesunde Pools unverändert ok.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: keine (intern; Doku in T13)

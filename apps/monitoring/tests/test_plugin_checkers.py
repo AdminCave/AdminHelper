@@ -30,6 +30,85 @@ def test_zfs_healthy_pool_is_ok():
     assert status == "ok"
 
 
+def _zfs(*pools, **block):
+    """The zfs block as the agent reports it since R-0419 (available/error always set)."""
+    return {"zfs": {"available": True, "error": None, "pools": list(pools), **block}}
+
+
+def _pool(name="tank", health="ONLINE", capacity_percent=20):
+    return {"name": name, "health": health, "capacity_percent": capacity_percent}
+
+
+def test_zfs_healthy_pools_stay_ok_and_details_carry_available():
+    status, msg, metrics = ZfsHealthChecker().evaluate(
+        {}, _zfs(_pool(), _pool("backup", capacity_percent=55))
+    )
+    assert status == "ok"
+    assert msg == "Alle Pools ONLINE: tank 20%, backup 55%"
+    assert metrics["zfs_capacity_tank"] == 20 and metrics["zfs_capacity_backup"] == 55
+    assert metrics["_details"] == {
+        "available": True,
+        "error": None,
+        "pools": [
+            {"name": "tank", "health": "ONLINE", "capacityPercent": 20},
+            {"name": "backup", "health": "ONLINE", "capacityPercent": 55},
+        ],
+    }
+
+
+def test_zfs_old_agent_block_without_available_is_rated_as_before():
+    # Agents before R-0419 send the block only after a good zpool list, without available.
+    report = {"zfs": {"pools": [_pool(health="DEGRADED")]}}
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, report)
+    assert status == "critical" and msg == "tank: DEGRADED"
+    assert metrics["_details"]["available"] is True
+
+
+@pytest.mark.parametrize("code", ["timeout", "cli_failed"])
+def test_zfs_unavailable_is_warning_without_pools(code):
+    report = _zfs(
+        _pool(name="stale"), available=False, error=code, error_message="zpool list timed out"
+    )
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, report)
+    assert status == "warning"
+    assert code in msg and "zpool list timed out" in msg
+    assert metrics == {"_details": {"available": False, "error": code, "pools": []}}
+
+
+def test_zfs_error_with_available_true_is_still_unavailable():
+    status, _, metrics = ZfsHealthChecker().evaluate({}, _zfs(error="cli_failed"))
+    assert status == "warning"
+    assert metrics["_details"] == {"available": False, "error": "cli_failed", "pools": []}
+
+
+def test_zfs_unavailable_with_alert_off_is_unknown_with_same_message():
+    report = _zfs(available=False, error="timeout", error_message="zpool list timed out")
+    _, warn_msg, warn_metrics = ZfsHealthChecker().evaluate({}, report)
+    status, msg, metrics = ZfsHealthChecker().evaluate({"alert_on_unavailable": False}, report)
+    assert status == "unknown"
+    assert msg == warn_msg
+    assert metrics == warn_metrics
+
+
+def test_zfs_unavailable_alert_is_only_off_for_a_real_false():
+    report = _zfs(available=False, error="timeout")
+    status, _, _ = ZfsHealthChecker().evaluate({"alert_on_unavailable": "false"}, report)
+    assert status == "warning"
+
+
+def test_zfs_block_missing_is_unknown_and_clears_pools():
+    status, _, metrics = ZfsHealthChecker().evaluate({}, {"resources": {}})
+    assert status == "unknown"
+    # Details, not None: the push path keeps stored details when a result has none.
+    assert metrics == {"_details": {"pools": []}}
+
+
+def test_zfs_zero_pools_is_ok_with_empty_list():
+    status, _, metrics = ZfsHealthChecker().evaluate({}, _zfs())
+    assert status == "ok"
+    assert metrics == {"_details": {"available": True, "error": None, "pools": []}}
+
+
 # --- ProxmoxBackupChecker ---
 def test_proxmox_missing_backup_is_critical():
     r = {"proxmox": {"vms": [{"vmid": 100, "status": "running", "last_backup_ts": None}]}}

@@ -109,7 +109,8 @@ class ZfsHealthChecker:
     Config example:
     {
         "capacity_warn": 80,
-        "capacity_crit": 90
+        "capacity_crit": 90,
+        "alert_on_unavailable": true
     }
     """
 
@@ -119,11 +120,27 @@ class ZfsHealthChecker:
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         zfs = report.get("zfs")
         if not zfs:
-            return "unknown", "Keine ZFS-Daten im Report", None
+            # An empty list, not None: the push path keeps the stored details of a
+            # result without any, and the desktop would go on showing the old pools.
+            return "unknown", "Keine ZFS-Daten im Report", {"_details": {"pools": []}}
+
+        if not zfs.get("available", True) or zfs.get("error"):
+            code = zfs.get("error")
+            msg = f"ZFS unavailable ({code})" if code else "ZFS unavailable"
+            if zfs.get("error_message"):
+                msg += f": {zfs['error_message']}"
+            # Only a real False switches the alert off; anything else keeps the default.
+            alert = config.get("alert_on_unavailable", True) is not False
+            details = {"available": False, "error": code, "pools": []}
+            return ("warning" if alert else "unknown"), msg, {"_details": details}
 
         pools = zfs.get("pools", [])
         if not pools:
-            return "ok", "Keine ZFS-Pools gefunden", None
+            return (
+                "ok",
+                "Keine ZFS-Pools gefunden",
+                {"_details": {"available": True, "error": None, "pools": []}},
+            )
 
         cap_warn = config.get("capacity_warn", 80)
         cap_crit = config.get("capacity_crit", 90)
@@ -151,6 +168,8 @@ class ZfsHealthChecker:
                     status = "warning"
 
         metrics["_details"] = {
+            "available": True,
+            "error": None,
             "pools": [
                 {
                     "name": p.get("name", "?"),
@@ -158,7 +177,7 @@ class ZfsHealthChecker:
                     "capacityPercent": p.get("capacity_percent", 0),
                 }
                 for p in pools
-            ]
+            ],
         }
 
         if problems:
