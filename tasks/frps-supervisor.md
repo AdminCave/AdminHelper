@@ -221,8 +221,10 @@ Review: approve (.ah-out/review/frps-supervisor/T26.verdict.json)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_outbox_expiry_migration.py tests/test_alembic_builtin.py
 Doku: CHANGELOG in T17
 
-### T15 — Stack-Test: Übernahme im echten Stack  [ ]
+### T15 — Stack-Test: Übernahme im echten Stack  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts/tests/desktop_e2e_tunnel.sh, scripts/tests/desktop_e2e_connect_tunnel.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @04db3d8a 2026-10-17T13:24:32+02:00
+Review: approve (.ah-out/review/frps-supervisor/T15.verdict.json)
 Änderung: Neuer Abschnitt in `integration_stack_test.sh` (vor Abschnitt 12, `:279`): frps läuft vor jeder FRP-Konfiguration und antwortet auf `:7000` nicht per TLS (TLS-Probe, nicht `nc -z`); nach dem Anlegen erscheint innerhalb von 20 s die PKI-Kette; identisches PUT löst keinen Neustart aus (Ereignis-`seq` unverändert); neues Token → genau ein Neustart und eine Mitteilung; eine ungültige Zertifikatsdatei im Volume → frps bleibt erreichbar, Zustand `degraded`; Löschen → `:7000` antwortet nicht mehr. `desktop_e2e_tunnel.sh:57` und `desktop_e2e_connect_tunnel.sh:119`: `up -d --build frps`. **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (intern)
