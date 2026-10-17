@@ -97,7 +97,8 @@ behält seine Signatur und liest `serverUrl` selbst aus `settings.json`, so wie 
 
 `tauri-plugin-single-instance` (<https://v2.tauri.app/plugin/single-instance/>): muss als erstes Plugin registriert
 werden; der Callback bekommt `app`, `args`, `cwd` und ruft hier `set_focus()` auf dem Fenster `main`. Unter Linux
-über D-Bus (Dienst `org.com_admincave_adminhelper.SingleInstance`); deb, rpm und AppImage gehen ohne Zusatz, Snap und
+über D-Bus (Dienst `com.admincave.adminhelper.SingleInstance`, der Identifier plus `.SingleInstance` ab Plugin 2.4.0, laut
+`src/platform_impl/linux.rs` von 2.4.5; die offizielle Doku nennt noch die ältere Form); deb, rpm und AppImage gehen ohne Zusatz, Snap und
 Flatpak bräuchten Manifest-Einträge (liefern wir nicht aus). Keine Capability nötig, das Plugin hat keine JS-API.
 Laut Doku Rust ≥ 1.90 (CI: stable). Das Neuladen ist `window.location.reload()` im Webview. Dass die WebDriver-Session das Neuladen übersteht,
 ist nicht verifiziert; T6 zeigt es im Sammellauf.
