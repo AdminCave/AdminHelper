@@ -30,8 +30,10 @@ Review: approve (.ah-out/review/monitoring-discovery/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_suggestions.py tests/test_alembic_builtin.py
 Doku: keine (intern)
 
-### T3 — Report speichert die Host-Fakten, geprüft und begrenzt  [ ]
+### T3 — Report speichert die Host-Fakten, geprüft und begrenzt  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/template_suggestions.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @2eb412f9 2026-10-17T11:49:22+02:00
+Review: approve (.ah-out/review/monitoring-discovery/T3.verdict.json)
 Änderung: Neue Datei `template_suggestions.py` (SPDX-Header wie T2) mit `store_host_facts(db, server_id, host)`: `os` nur aus `{linux, windows, darwin}` (kleingeschrieben), Strings auf 64 Zeichen, `subsystems` nur aus `{docker, zfs, proxmox}`, Rest verworfen; Upsert, eigener Commit, Fehler nur geloggt — wie die Liveness (`agent.py:86-91`), damit ein Problem dort nie den Report kostet. `agent_report` (`agent.py:68-299`) ruft sie nach der NUL-Prüfung (`:96-109`), wenn `host` ein Objekt ist. Tests zuerst rot: gültiger Block gespeichert; unbekanntes OS/Subsystem verworfen; überlange Strings gekürzt; Block fehlt oder ist kein Objekt → nichts gespeichert, Report trotzdem `ok`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py tests/test_template_suggestions.py
 Doku: keine (intern)

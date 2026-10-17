@@ -25,6 +25,7 @@ from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, safe_metric_part, victoria
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
+from app.template_suggestions import store_host_facts
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,13 @@ def agent_report(
                 }
             ]
         )
+
+    # No host block (an agent before R-0421) or not an object: stored facts stay.
+    # Before the check loop: on failure store_host_facts rolls back the request's
+    # session, which would drop check states not yet committed.
+    host = report.get("host")
+    if isinstance(host, dict):
+        store_host_facts(db, server_id, host)
 
     ts = int(time.time())
     base_tags = {"server_id": server_id}
