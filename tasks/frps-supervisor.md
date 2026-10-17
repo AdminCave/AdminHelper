@@ -178,8 +178,10 @@ Verify: bash scripts/dev/verify.sh web --strict -- src/pages/Frp.test.ts
 Doku: keine (intern)
 Abhängt von: T4
 
-### T14 — Web: Hinweis vor dem Speichern, Port-Warnung  [ ]
+### T14 — Web: Hinweis vor dem Speichern, Port-Warnung  [x]
 Komponente: web · Dateien: apps/web/src/modals/FrpConfigModal.svelte, apps/web/src/lib/i18n/dictionaries.ts, apps/web/src/modals/FrpConfigModal.test.ts, apps/web/src/lib/components/ui/ConfirmDialog.svelte, apps/web/src/lib/components/ui/ConfirmDialog.test.ts
+Evidenz: run.sh[quick] web: 1 passed, 0 failed, 17 skipped @bf7c6c74 2026-10-17T07:48:09+02:00
+Review: approve (.ah-out/review/frps-supervisor/T14.verdict.json)
 Änderung: Beim Bearbeiten (`FrpConfigModal.svelte:57-93`) fragt die Maske vor dem Speichern nach, wenn sich ein Feld außer `name` und `server_addr` ändert oder ein Token eingetippt ist: Speichern startet den FRP-Server neu, alle Tunnel sind einige Sekunden getrennt; bei neuem Token zusätzlich, dass Agent-Tunnel bis zu ~5 Minuten brauchen. Weicht `bind_port` von `publishedBindPort` (T4) ab, steht eine Warnung am Feld; Speichern bleibt möglich. Texte DE+EN. Neue Testdatei (SPDX): Rückfrage nur bei relevanten Änderungen, Token-Hinweis nur mit Token, Port-Warnung bei Abweichung, Abbrechen sendet nichts. Entscheidungen Kevin 2026-10-17: Escape bricht jede Rückfrage ab und schließt immer die oberste Ebene; eine offene Rückfrage endet mit „Abbrechen“, wenn die Sitzung endet — beides app-weit in `ConfirmDialog.svelte`.
 Verify: bash scripts/dev/verify.sh web --strict -- src/modals/FrpConfigModal.test.ts src/lib/components/ui/ConfirmDialog.test.ts
 Doku: keine (intern)

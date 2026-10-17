@@ -275,6 +275,12 @@ export const translations: Translations = {
     'modal.frpConfig.dashPort': 'Dashboard Port',
     'modal.frpConfig.dashUser': 'Dashboard User',
     'modal.frpConfig.dashPass': 'Dashboard Passwort',
+    'modal.frpConfig.bindPortMismatch':
+      'Der Stack veröffentlicht frps auf Port {port} (FRP_BIND_PORT). Mit einem anderen Bind Port ist frps von außen nicht erreichbar.',
+    'modal.frpConfig.confirm.restart':
+      'Speichern startet den FRP-Server neu, alle Tunnel sind einige Sekunden getrennt.',
+    'modal.frpConfig.confirm.newToken':
+      'Mit dem neuen Token verbinden sich Agent-Tunnel erst nach bis zu ~5 Minuten wieder.',
 
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP-Config gespeichert',
@@ -555,6 +561,12 @@ export const translations: Translations = {
     'modal.frpConfig.dashPort': 'Dashboard port',
     'modal.frpConfig.dashUser': 'Dashboard user',
     'modal.frpConfig.dashPass': 'Dashboard password',
+    'modal.frpConfig.bindPortMismatch':
+      'The stack publishes frps on port {port} (FRP_BIND_PORT). With a different bind port, frps cannot be reached from outside.',
+    'modal.frpConfig.confirm.restart':
+      'Saving restarts the FRP server; all tunnels are disconnected for a few seconds.',
+    'modal.frpConfig.confirm.newToken':
+      'With the new token, agent tunnels take up to ~5 minutes to reconnect.',
 
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP config saved',
