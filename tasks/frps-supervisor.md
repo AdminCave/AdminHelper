@@ -74,7 +74,7 @@ Abhängt von: T3, T5
 Komponente: server · Dateien: apps/frps/Dockerfile, apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor.py
 Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a63b124d 2026-10-16T16:07:11+02:00
 Review: approve (.ah-out/review/frps-supervisor/T7.verdict.json)
-Änderung: Neues Image (SPDX-Header in beiden Dateien): `FROM snowdreamtech/frps:0.69.1@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a`, entfernt die mitgelieferte Beispielkonfiguration (der Supervisor verwaltet die Konfiguration allein), Entrypoint `/bin/sh /usr/local/bin/frps-supervisor.sh`. Der Supervisor prüft eine Kandidaten-Konfiguration: `frps.toml` nicht leer, `auth.token` ≥ 16 Zeichen, `[transport.tls] force = true`, die drei TLS-Pfade zeigen auf `/etc/frp-pki/{frps.crt,frps.key,ca.crt}`, die Dateien existieren, das Leaf ist nicht abgelaufen und passt zum Schlüssel (`openssl`), `frps verify` grün. Gültig → Kopie mit umgeschriebenen Pfaden nach `$FRPS_ACTIVE_DIR/current/` (atomar über `next/`), frps startet immer von dort; ungültig ohne `current/` → `waiting`, nichts startet; ungültig mit `current/` → frps startet mit `current/`, Zustand `degraded`. Statusdatei (Schema wie T3) atomar schreiben, Pfade per Env überschreibbar. Test (pytest treibt das Skript mit einem Stub-`frps` auf `PATH`, Zertifikate per `cryptography` erzeugt): jede Prüfregel einzeln, Start mit gültiger, ungültiger und fehlender Konfiguration, Statusdatei besteht den Leser aus T3.
+Änderung: Neues Image (SPDX-Header in beiden Dateien): `FROM snowdreamtech/frps:0.69.1@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a`, der Supervisor verwaltet `/etc/frp` allein, Entrypoint `/bin/sh /usr/local/bin/frps-supervisor.sh`. Der Supervisor prüft eine Kandidaten-Konfiguration: `frps.toml` nicht leer, `auth.token` ≥ 16 Zeichen, `[transport.tls] force = true`, die drei TLS-Pfade zeigen auf `/etc/frp-pki/{frps.crt,frps.key,ca.crt}`, die Dateien existieren, das Leaf ist nicht abgelaufen und passt zum Schlüssel (`openssl`), `frps verify` grün. Gültig → Kopie mit umgeschriebenen Pfaden nach `$FRPS_ACTIVE_DIR/current/` (atomar über `next/`), frps startet immer von dort; ungültig ohne `current/` → `waiting`, nichts startet; ungültig mit `current/` → frps startet mit `current/`, Zustand `degraded`. Statusdatei (Schema wie T3) atomar schreiben, Pfade per Env überschreibbar. Test (pytest treibt das Skript mit einem Stub-`frps` auf `PATH`, Zertifikate per `cryptography` erzeugt): jede Prüfregel einzeln, Start mit gültiger, ungültiger und fehlender Konfiguration, Statusdatei besteht den Leser aus T3.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
 Doku: keine (intern)
 Abhängt von: T3
@@ -238,6 +238,18 @@ Review: approve (.ah-out/review/frps-supervisor/T16.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: keine (intern)
 Abhängt von: T9
+
+### T28 — Server: `extra_config` der FRP-Server-Config nur mit zulässigen Schlüsseln, Altwerte beim Start bereinigt  [ ]
+Komponente: server · Dateien: apps/server/app/modules/frp/extra_config.py, apps/server/app/modules/frp/schemas.py, apps/server/app/main.py, apps/server/tests/test_frp_extra_config.py
+Änderung: Entscheidung Kevin 2026-10-17 (Review T17): Der Supervisor lässt oben nur die Schlüssel aus `TOP_KEYS` (`apps/frps/frps-supervisor.sh`) zu; der Server schrieb bisher jeden `extra_config`-Schlüssel ungefiltert, sodass eine Installation mit z. B. `log.to` nach dem Update keinen frps startet. Neue Datei `extra_config.py` (SPDX): die zulässigen `extra_config`-Schlüssel der FRP-Server-Config (die `TOP_KEYS`, die der Generator nicht selbst schreibt); `FrpServerConfigCreate`/`Update` lehnen andere Schlüssel mit 422 ab (die Tunnel-Schemas bleiben unverändert, das ist frpc). Beim Start (`main.py`, vor `_ensure_frps_config`) entfernt der Server unzulässige Schlüssel aus bestehenden Zeilen, loggt Feldnamen (keine Werte) und schickt Admins eine Mitteilung in der Glocke mit den entfernten Schlüsseln; idempotent. Tests zuerst rot (neue Datei, SPDX): 422 für einen unzulässigen Schlüssel, zulässige gehen durch; Startbereinigung entfernt nur unzulässige, schreibt genau eine Mitteilung, zweiter Start ändert nichts; die Liste stimmt mit `TOP_KEYS` im Supervisor überein (Drift-Test liest das Skript).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_config.py tests/test_frp_input_hardening.py
+Doku: CHANGELOG und Betrieb in T17
+
+### T27 — Kommentare: frps-Image und Compose neutral  [ ]
+Komponente: server · Dateien: apps/frps/Dockerfile, docker-compose.yml, apps/server/tests/test_compose_frps.py
+Änderung: Review T17 (Wortlaut): Kommentare und Docstrings beschreiben, was der Supervisor tut („verwaltet `/etc/frp` allein“, „das Volume enthält, was der Server schreibt“), nicht, was das Basis-Image mitbringt. Nur Kommentare und Docstrings, kein Verhalten.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py
+Doku: keine (intern)
 
 ### T17 — Doku und CHANGELOG  [ ]
 Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/installation.html, docs/en/admin/installation.html, CHANGELOG.md, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/developer/api-reference.html, docs/en/developer/api-reference.html
