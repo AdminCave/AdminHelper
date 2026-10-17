@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Vorschlag passender Standard-Templates — Task-Ledger
-Status: geplant · Branch: feature/monitoring-discovery · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-discovery · Review: pro Task
 Spec: docs/features/monitoring-discovery.md (Roadmap R-0421)
 Heavy: linux-full + scenario --agents 1 + windows — ändert den Agent-Report (`host`-Block) und die Monitoring-API (Alembic-Revision, zwei Routen) sowie eine Desktop-Journey (`monitoring-check.live.js` im Sammellauf); `scenario --agents 1` vor dem Merge, weil erst ein echter Agent über das Gateway den Vorschlag im Desktop auslöst (Multibox von Kevin am 2026-10-16 für die Monitoring-Pakete erlaubt); `windows` für `host.Info`/`LookPath` unter Windows
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
