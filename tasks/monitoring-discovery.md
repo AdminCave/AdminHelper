@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Vorschlag passender Standard-Templates — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-discovery · Review: pro Task
+Status: bereit · Branch: feature/monitoring-discovery · Review: pro Task
 Spec: docs/features/monitoring-discovery.md (Roadmap R-0421)
 Heavy: linux-full + scenario --agents 1 + windows — ändert den Agent-Report (`host`-Block) und die Monitoring-API (Alembic-Revision, zwei Routen) sowie eine Desktop-Journey (`monitoring-check.live.js` im Sammellauf); `scenario --agents 1` vor dem Merge, weil erst ein echter Agent über das Gateway den Vorschlag im Desktop auslöst (Multibox von Kevin am 2026-10-16 für die Monitoring-Pakete erlaubt); `windows` für `host.PlatformInformation`/`LookPath` unter Windows
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -66,8 +66,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T1, T5
 
-### T7 — Doku und CHANGELOG  [ ]
+### T7 — Doku und CHANGELOG  [x]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md, apps/desktop/e2e/README.md, docs/developer/agent.html, docs/en/developer/agent.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @836deded 2026-10-17T13:01:57+02:00
+Review: approve (.ah-out/review/monitoring-discovery/T7.verdict.json)
 Änderung: Admin-Doku DE + EN (`monitoring.html:171-181`, „Templates zuweisen“): Vorschlag im Monitoring-Tab nach erkanntem OS und Subsystemen, Zuweisen/Ignorieren, keine Auto-Zuweisung; Agents vor dieser Version liefern keinen Vorschlag. Entwickler-Doku DE + EN: Report-Beispiel (`developer/monitoring.html:95-121`) um `host`, Satz zu optionalen Feldern (`:121`), Routen der Vorschläge. CHANGELOG unter `### Added`. `apps/desktop/e2e/README.md` (Abschnitt `monitoring-check.live.js`): der Vorschlag-Schritt aus T6. Dort auch: der Schritt braucht einen Server mit Agenten aus diesem Baum (host-Block); ein Multibox-Teillauf `--agents 0 --desktop` hat keinen und wird an diesem Schritt rot (Review T6).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html · CHANGELOG.md

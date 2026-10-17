@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
+  Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
+  `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter
+  „Vorgeschlagen:“ passende Standard-Templates (Linux: „Linux Server — Standard“, Windows: „Windows Server —
+  Standard“, dazu „Docker Host“, „ZFS Storage“, „Proxmox Host“), je mit Kontrollkaestchen. „Zuweisen“ weist die
+  ausgewaehlten zu, „Ignorieren“ merkt sich die Ablehnung je Server und Template; das ist vorerst nicht rueckgaengig
+  zu machen, von Hand zuweisen laesst sich das Template weiter. Vorgeschlagen wird nur ein vorhandenes, dem Server
+  nicht zugewiesenes und nicht ignoriertes Standard-Template; automatisch zugewiesen wird nichts. Agents vor dieser
+  Version liefern keinen Vorschlag. Neu: `GET /templates/suggestions/{server_id}` und
+  `POST /templates/suggestions/{server_id}/dismiss` (204), Tabellen `monitor_host_facts` und
+  `monitor_template_suggestion_dismissals` (Migration `b9d1f3a5c7e9`). Doku: Admin- und Entwickler-Doku Monitoring
+  (DE+EN).
 - **Desktop: Template-Checks zuruecksetzen und wiederherstellen, Updates der Standard-Templates (R-0420):** Im
   Dashboard eines Servers traegt ein angepasster Template-Check das Badge „angepasst“ (Tooltip: die Felder) und die
   Aktion „Auf Template zuruecksetzen“, die nach einer Rueckfrage alle Felder auf die Template-Werte setzt

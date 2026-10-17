@@ -252,9 +252,26 @@
           <ul>
             <li><strong>Template modal</strong> (<em>Monitoring → Templates</em>): server multi-select for bulk assignment, removal via the assignment pill.</li>
             <li><strong>Server-create dialog</strong>: optional template dropdown – hand a standard template to a server right at creation (opt-in, no automatic assignment by OS type).</li>
-            <li><strong>Server → Monitoring tab</strong>: view, add and remove the assignments of a single server, and restore deleted template checks there.</li>
+            <li><strong>Server → Monitoring tab</strong>: view, add and remove the assignments of a single server, and restore deleted template checks there; also assign or ignore suggested standard templates (see below).</li>
             <li><strong>Overview banner</strong>: the bulk dialog for all servers without checks (see above).</li>
           </ul>
+          <p id="template-suggestion"><strong>Suggestion in the Monitoring tab:</strong> with every report the agent sends its host's operating system and the subsystems whose program it finds on the search path: Docker (<code>docker</code>), ZFS (<code>zpool</code>) and Proxmox (<code>pvesh</code>). From these the server's Monitoring tab suggests matching standard templates. The top of the tab then shows "Suggested:" with a checkbox per template, its name and the reason (such as "detected: Docker"); all of them start checked. The tab fetches the suggestions when it opens.</p>
+          <table>
+            <thead><tr><th>Detected</th><th>Suggested standard template</th></tr></thead>
+            <tbody>
+              <tr><td>Operating system Linux</td><td>Linux Server — Standard</td></tr>
+              <tr><td>Operating system Windows</td><td>Windows Server — Standard</td></tr>
+              <tr><td>Docker</td><td>Docker Host</td></tr>
+              <tr><td>ZFS</td><td>ZFS Storage</td></tr>
+              <tr><td>Proxmox</td><td>Proxmox Host</td></tr>
+            </tbody>
+          </table>
+          <ul>
+            <li><strong>Assign</strong> assigns the checked templates like an assignment by hand: their checks and alert rules are created right away, and their suggestion goes away.</li>
+            <li><strong>Ignore</strong> remembers the refusal per server and template; that template is not suggested to the server again. This cannot be undone for now. The template can still be assigned by hand at any time.</li>
+            <li>A standard template is suggested only if it exists, is not assigned to the server yet (manually or via a tag) and was not ignored there. So a deleted standard template is not suggested, even when it fits. Removing the assignment of a standard template again brings its suggestion back.</li>
+          </ul>
+          <p>Nothing happens unasked: AdminHelper assigns no template automatically, not by the detected operating system either. The suggestion appears only in the server's Monitoring tab, not in the monitoring overview. Agents before this version do not report the operating system and subsystems; their server gets no suggestion until the updated agent has reported once.</p>
 
           <h3 id="tag-assignment">Tag assignment</h3>
           <p>A template can additionally be bound to a <strong>server tag</strong> (in the template modal): every server carrying the tag gets the template automatically – including servers that receive the tag later. The sync runs immediately on server changes and additionally every 15 minutes. When a server loses the tag, the tag-created assignment (and its materialized checks) is removed again. Tag-assigned servers are marked "via tag" in the template modal; a <em>manually</em> created assignment stays manual: the tag sync never removes it, it only refreshes its hostname and display name when these changed on the server (see <a href="#templates">Templates</a>).</p>
