@@ -62,6 +62,7 @@ apps/desktop/ui/
 &#9474;   &#9500;&#9472;&#9472; pages/                5 Pages: Dashboard, Infrastructure, Connections, Monitoring, Ansible
 &#9474;   &#9492;&#9472;&#9472; main.ts
 &#9492;&#9472;&#9472; vitest.setup.ts           ~41 Vitest-Unit-Tests in stores/ + models/</code></pre>
+          <p>Es läuft immer nur eine Instanz: Ein zweiter Start holt nur das Fenster der laufenden App nach vorn und beendet sich dann (<code>tauri-plugin-single-instance</code>, als erstes Plugin in <code>main.rs</code> registriert, unter Linux über den D-Bus-Session-Bus). Dafür bleibt <code>enableGTKAppId</code> in <code>tauri.conf.json</code> auf <code>false</code>: Mit GTK-App-ID reicht GApplication den zweiten Start selbst an die laufende Instanz weiter, die daraufhin ihr Setup erneut ausführt und abstürzt.</p>
 
           <h2>Seiten &amp; Infrastruktur-Hub (Server-Modus)</h2>
           <p>Im Server-Modus ist der Client das operative Cockpit. Fünf Seiten:</p>

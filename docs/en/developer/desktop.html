@@ -62,6 +62,7 @@ apps/desktop/ui/
 &#9474;   &#9500;&#9472;&#9472; pages/                5 pages: Dashboard, Infrastructure, Connections, Monitoring, Ansible
 &#9474;   &#9492;&#9472;&#9472; main.ts
 &#9492;&#9472;&#9472; vitest.setup.ts           ~41 Vitest unit tests in stores/ + models/</code></pre>
+          <p>Only one instance runs at a time: a second launch only brings the window of the running app to the front and then exits (<code>tauri-plugin-single-instance</code>, registered as the first plugin in <code>main.rs</code>, on Linux through the D-Bus session bus). For this, <code>enableGTKAppId</code> in <code>tauri.conf.json</code> stays <code>false</code>: with a GTK app id, GApplication itself forwards the second launch to the running instance, which then runs its setup again and crashes.</p>
 
           <h2>Pages &amp; Infrastructure hub (server mode)</h2>
           <p>In server mode the client is the operational cockpit. Five pages:</p>

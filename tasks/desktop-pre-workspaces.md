@@ -87,8 +87,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T1
 
-### T7 — Ein zweiter Start holt das laufende Fenster nach vorn, statt es abstürzen zu lassen  [ ]
+### T7 — Ein zweiter Start holt das laufende Fenster nach vorn, statt es abstürzen zu lassen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/tauri.conf.json, THIRD_PARTY_LICENSES.md, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @0f01332b 2026-10-17T14:48:03+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T7.verdict.json)
 Änderung: `tauri-plugin-single-instance` (Version 2, nur Desktop-Ziele wie in der Plugin-Doku) wird als **erstes** Plugin registriert (`main.rs:54`, vor `tauri_plugin_log`); der Callback holt das Fenster `main` nach vorn (`unminimize`, `show`, `set_focus`, Fehler ignoriert). `app.enableGTKAppId` (`tauri.conf.json:13`) wird `false`, sonst beendet `GApplication` den zweiten Prozess, bevor das Plugin greift, und lässt den ersten das Setup erneut laufen. Kein Unit-Test möglich (Framework-Wiring, Plattform-I/O); den roten Beweis liefert T8. `THIRD_PARTY_LICENSES.md` (`:121-125`) nennt das Plugin. Doku DE+EN: ein Satz im Abschnitt Architektur (`desktop.html:36`), dass ein zweiter Start nur das laufende Fenster nach vorn holt. CHANGELOG Fixed: Linux — ein zweiter Start ließ die laufende App abstürzen.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:36`) · CHANGELOG.md · THIRD_PARTY_LICENSES.md

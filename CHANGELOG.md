@@ -364,6 +364,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   pruefte. Die Geraete-Identitaet nimmt er jetzt nur, wenn die Sync-URL dieselbe Origin (Schema, Host, Port) hat wie
   die gespeicherte Server-URL; jede andere Sync-URL laedt er wie ein nicht registriertes Geraet. Ein zweiter
   Hostname des eigenen Servers zaehlt dabei als andere Origin.
+- **Desktop: ein zweiter Start laesst die laufende App nicht mehr abstuerzen (Linux, R-0429):** Bisher beendete ein
+  zweiter Start unter Linux die laufende App samt Sitzung und Tunnel, und auch der zweite Start blieb nicht offen.
+  Jetzt holt ein zweiter Start nur das Fenster der laufenden App nach vorn und beendet sich. Das gilt auch unter
+  Windows und macOS: Es laeuft immer nur eine Instanz der App.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
