@@ -80,7 +80,7 @@ und im Code:
 | Desktop | `apps/desktop/ui/src/components/monitoring/section/SecDocker.svelte` (`info` `:31-49`, Anzeige `:66-120`), `SecZfs.svelte` (`:21-22`, `:58`), `CheckConfigFields.svelte` (zfs `:330`, docker `:351-361`), `apps/desktop/ui/src/lib/api/types.ts` (`MonitorContainerDetails` `:289-296`, `MonitorZfsDetails` `:308-314`), `apps/desktop/ui/src/lib/i18n/dictionaries.ts` (`monitoring.docker.*` DE `:581-582`, EN `:1203-1204`) |
 | Paket | `apps/agent/deb/DEBIAN/control` (`Depends: systemd` `:5`), `apps/agent/rpm/adminhelper-agent.spec` (`Requires: systemd` `:17`) | `Recommends: smartmontools` |
 | Doku | `docs/admin/monitoring.html` + EN (`:48-49`, `:64`, `:86-87`, `:95-96`, `:106ff`, `:165`), `docs/developer/agent.html` + EN (`:91-92`, `:102`), `docs/developer/monitoring.html` + EN (`:115`, `:121`), `CHANGELOG.md` |
-| Heavy | `scripts/tests/multibox.sh`, `scripts/tests/box_agentbox.sh`, `scripts/tests/multibox_test.sh` | neue Etappe `--docker` (Harness, PR merged Kevin) |
+| Heavy | `scripts/tests/multibox.sh`, `scripts/tests/box_agentbox.sh`, `scripts/tests/multibox_test.sh` | neue Etappe `--docker`, im `--capstone` (Harness; die Session merged den PR, CLAUDE.md §2 seit #200) |
 
 ## Datenmodell / API / Migrationen
 
