@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import re
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.bounds import IntColumn, RequestModel
 from app.core.time import UtcDatetime
@@ -96,16 +96,26 @@ def _validate_tags(tags: list[str] | None) -> list[str] | None:
 
 # --- FRP Server Config ---
 
+# bindPort, vhostHTTPSPort and webServer.port of the generated frps.toml: a port,
+# so narrower than the IntColumn of the column it lands in (R-0411). The bounds
+# sit inside Annotated so Optional[Port] keeps them on its integer branch. The
+# generator guards rows from before this bound with the same range.
+PORT_MIN, PORT_MAX = 1, 65535
+Port = Annotated[int, Field(ge=PORT_MIN, le=PORT_MAX)]
+# maxPortsPerClient: frps enforces it only while it is > 0, so a negative value
+# would lift the cap the generator always sets; 0 and null mean its default.
+PortCount = Annotated[IntColumn, Field(ge=0)]
+
 
 class FrpServerConfigCreate(RequestModel):
     name: str
     server_addr: str  # e.g. "frps.example.net"
-    bind_port: IntColumn = 7000
-    vhost_https_port: Optional[IntColumn] = None
+    bind_port: Port = 7000
+    vhost_https_port: Optional[Port] = None
     auth_token: Optional[str] = None  # auto-generated if empty
     subdomain_host: Optional[str] = None
-    max_ports_per_client: Optional[IntColumn] = None
-    dashboard_port: Optional[IntColumn] = None
+    max_ports_per_client: Optional[PortCount] = None
+    dashboard_port: Optional[Port] = None
     dashboard_user: Optional[str] = None
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
@@ -123,12 +133,16 @@ class FrpServerConfigCreate(RequestModel):
 class FrpServerConfigUpdate(RequestModel):
     name: Optional[str] = None
     server_addr: Optional[str] = None
-    bind_port: Optional[IntColumn] = None
-    vhost_https_port: Optional[IntColumn] = None
+    # Not Optional: an explicit null is a 422, else the row stores NULL and frps
+    # gets the generator's fallback. The None default only marks "not sent" —
+    # pydantic does not validate defaults, and the router applies only the fields
+    # that were sent.
+    bind_port: Port = None
+    vhost_https_port: Optional[Port] = None
     auth_token: Optional[str] = None
     subdomain_host: Optional[str] = None
-    max_ports_per_client: Optional[IntColumn] = None
-    dashboard_port: Optional[IntColumn] = None
+    max_ports_per_client: Optional[PortCount] = None
+    dashboard_port: Optional[Port] = None
     dashboard_user: Optional[str] = None
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
