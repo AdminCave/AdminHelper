@@ -127,6 +127,19 @@ def test_every_event_is_accepted(tmp_path, event):
     assert _read(tmp_path, _doc(events=[_event(event=event)])).events[0].event == event
 
 
+def test_a_copy_that_changed_since_it_was_taken_over_is_an_event(tmp_path):
+    event = _event(event="copy_changed", reason="none", tokenChanged=False)
+    status = _read(tmp_path, _doc(state="waiting", reason="cert_expired", events=[event]))
+    assert (status.state, status.events[0].event) == ("waiting", "copy_changed")
+
+
+def test_frps_not_started_while_processes_of_its_user_are_left_is_an_event_and_a_reason(tmp_path):
+    event = _event(event="start_refused", reason="processes_left", tokenChanged=False)
+    status = _read(tmp_path, _doc(state="waiting", reason="processes_left", events=[event]))
+    assert (status.state, status.reason) == ("waiting", "processes_left")
+    assert (status.events[0].event, status.events[0].reason) == ("start_refused", "processes_left")
+
+
 def test_without_an_applied_config_both_hashes_may_be_null_or_only_the_rejected_one_set(tmp_path):
     waiting = _read(tmp_path, _doc(state="waiting", appliedHash=None, events=[]))
     assert (waiting.state, waiting.events) == ("waiting", ())

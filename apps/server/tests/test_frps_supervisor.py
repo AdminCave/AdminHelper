@@ -7,12 +7,14 @@ passed every check: a non-empty frps.toml in the layout the server generates, wi
 token, a token of at least 16 characters, TLS forced and the three TLS paths pointing into the
 PKI directory, webServer.port off the published bind port; the three files there, the
 certificate files intact, the leaf not expired and matching its key; frps verify green. Input
-files are read only as regular files and within a time limit; a symlink or anything else is
-unreadable. A valid input is copied into current/ of the working directory (0700, files 0600)
-with its TLS paths pointed there, and frps runs from current/, each time only once the copy has
-passed the check again. An invalid input starts nothing, or frps from the last valid current/
-(degraded); a missing frps.toml removes current/. Every status file it writes (0644) passes the
-server's reader.
+files are read only as regular files of at most 1 MiB and within a time limit; a symlink,
+anything else or a larger file is unreadable. A valid input is copied into current/ of the
+working directory (the directory 0711, current/ 0755, files 0644: frps reads the copy under a
+user of its own and writes none of it) with its TLS paths pointed there, and frps runs from
+current/, each time only while the copy is still the one the supervisor took over (one that
+changed goes, with the event copy_changed) and has passed the check again. An invalid input
+starts nothing, or frps from the last valid current/ (degraded); a missing frps.toml removes
+current/. Every status file it writes (0644) passes the server's reader.
 
 After the start it polls the input: a change that stayed the same for two polls is taken over
 like at the start, restarting frps only for a new valid input, and one that keeps changing shows
@@ -20,14 +22,17 @@ as unstable; frps exiting on its own is restarted after a growing delay, three e
 make a crash loop; TERM and INT stop frps and leave no process behind; `health` judges the
 state.
 
-The script runs under sh with a stub frps on PATH. Some tests run it in the frps image with the
-real frps; they skip when Docker or the pinned base image is not at hand."""
+The script runs under sh with a stub frps on PATH, without root and so with su-exec switched
+off (FRPS_USER empty; one test puts a stub su-exec in its place). Some tests run the frps image
+built from apps/frps, with the capabilities and security options compose gives it and the real
+frps under its own user; they skip when Docker or the pinned base image is not at hand."""
 
 import contextlib
 import hashlib
 import itertools
 import json
 import os
+import pwd
 import re
 import shutil
 import signal
@@ -40,6 +45,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+import yaml
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -51,6 +57,7 @@ from app.modules.frp.supervisor_status import SupervisorStatus, read_supervisor_
 
 FRPS_DIR = Path(__file__).resolve().parents[2] / "frps"
 SCRIPT = FRPS_DIR / "frps-supervisor.sh"
+COMPOSE = FRPS_DIR.parents[1] / "docker-compose.yml"
 TOKEN = "test-token-0123456789abcdef"
 NEW_TOKEN = "next-token-fedcba9876543210"
 PEMS = ("frps.crt", "frps.key", "ca.crt")
@@ -58,6 +65,8 @@ WAIT = 10.0
 HEX64 = re.compile(r"[0-9a-f]{64}")
 # The log line of a poll that sees an input it has not taken over yet.
 CHANGED = "input changed"
+# The most the supervisor reads of an input file.
+INPUT_MAX = 1024 * 1024
 
 STUB = """#!/bin/sh
 # Stands in for frps: records every call; verify keeps a copy of the file it was given and fails
@@ -158,11 +167,12 @@ class Box:
         self.state = root / "state"
         self.status_file = self.state / "status.json"
         self.stub = root / "stub"
+        self.proc = root / "proc"
         self.log = root / "supervisor.log"
         self.procs: list[subprocess.Popen] = []
         self.supervisor: subprocess.Popen | None = None
         bin_dir = root / "bin"
-        for directory in (self.config.parent, self.pki, self.stub, bin_dir):
+        for directory in (self.config.parent, self.pki, self.stub, self.proc, bin_dir):
             directory.mkdir()
         (bin_dir / "frps").write_text(STUB)
         (bin_dir / "frps").chmod(0o755)
@@ -176,6 +186,11 @@ class Box:
             # One poll an hour, so a test of the start sees the start alone; the tests of
             # the loop poll every second (see _polling).
             "FRPS_POLL_SECONDS": "3600",
+            # su-exec off: without root, frps runs as the test's user.
+            "FRPS_USER": "",
+            # Where the supervisor looks for processes of the user of frps: never the real
+            # /proc, whose processes of the test's user it would KILL.
+            "FRPS_PROC_ROOT": str(self.proc),
         }
 
     def write_input(self, toml: str | None = None, pems: dict[str, bytes] | None = None):
@@ -315,11 +330,11 @@ def _mode(path: Path) -> int:
 def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
     box.write_input()
     # Modes the copies must not take over.
-    box.config.chmod(0o644)
+    box.config.chmod(0o600)
     for name in PEMS:
         (box.pki / name).chmod(0o755)
-    # Modes the supervisor has to correct: the server reads the status under another UID, the
-    # working directory holds the token and the key.
+    # Modes the supervisor has to correct: the server reads the status under another UID, frps
+    # the copy under one of its own, and no one but frps lists the working directory.
     box.state.mkdir(mode=0o700)
     box.state.chmod(0o700)
     box.active.mkdir()
@@ -341,10 +356,10 @@ def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
     for name in PEMS:
         assert (box.current / name).read_bytes() == box.pems[name]
     assert [p.name for p in box.active.iterdir()] == ["current"]
-    assert _mode(box.active) == 0o700
-    assert _mode(box.current) == 0o700
+    assert _mode(box.active) == 0o711
+    assert _mode(box.current) == 0o755
     assert {p.name: _mode(p) for p in box.current.iterdir()} == {
-        name: 0o600 for name in (*PEMS, "frps.toml", "applied.sha256")
+        name: 0o644 for name in (*PEMS, "frps.toml", "applied.sha256")
     }
     assert _mode(box.state) == 0o755
     assert _mode(box.status_file) == 0o644
@@ -461,7 +476,7 @@ def _directory(name: str):
     return damage
 
 
-# Stands in for cat or sha256sum: blocks on one file, as reading a FIFO swapped in after the
+# Stands in for head or sha256sum: blocks on one file, as reading a FIFO swapped in after the
 # check of the file type would; any other call goes to the real program.
 HANGS = """#!/bin/sh
 for arg in "$@"; do
@@ -474,7 +489,7 @@ exec {real} "$@"
 def _hanging(name: str):
     def damage(box):
         box.env["FRPS_READ_SECONDS"] = "1"
-        for program in ("cat", "sha256sum"):
+        for program in ("head", "sha256sum"):
             real = shutil.which(program)
             assert real, program
             stub = box.root / "bin" / program
@@ -508,6 +523,49 @@ def test_an_input_file_that_cannot_be_read_as_a_regular_file_starts_nothing(box,
     assert doc["appliedHash"] is None and HEX64.fullmatch(doc["rejectedHash"])
     # Nothing but the supervisor's own lines: no error of a tool that tried to read the file.
     assert all(line.startswith("[frps-supervisor] ") for line in box._log().splitlines())
+
+
+def _pad(box: Box, name: str, size: int):
+    """Fills an input file up to size bytes with empty lines, which leave it valid."""
+    path = box.config if name == "frps.toml" else box.pki / name
+    content = path.read_bytes()
+    path.write_bytes(content + b"\n" * (size - len(content)))
+
+
+@pytest.mark.parametrize("name", ["frps.toml", "frps.key", "ca.crt"])
+@pytest.mark.parametrize("size", [INPUT_MAX, INPUT_MAX + 1], ids=["1 MiB", "a byte more"])
+def test_an_input_file_over_1_mib_is_unreadable(box, name, size):
+    box.write_input()
+    _pad(box, name, size)
+
+    doc = box.run(frps=size <= INPUT_MAX)
+
+    status = box.read()
+    if size <= INPUT_MAX:
+        assert (status.state, status.reason) == ("running", "none")
+        # Copied whole.
+        expected = (box.config if name == "frps.toml" else box.pki / name).read_bytes()
+        if name == "frps.toml":
+            expected = expected.replace(f'"{box.pki}/'.encode(), f'"{box.current}/'.encode())
+        assert (box.current / name).read_bytes() == expected
+    else:
+        assert (status.state, status.reason, status.events) == ("waiting", "input_unreadable", ())
+        assert not box.frps_runs()
+        assert list(box.active.iterdir()) == []
+        assert doc["appliedHash"] is None and HEX64.fullmatch(doc["rejectedHash"])
+
+
+def test_an_input_file_is_hashed_no_further_than_it_is_read(box):
+    # A sparse file of 64 GiB: hashed whole, within a time limit of ten minutes, it would hold
+    # up every poll for many seconds.
+    box.env["FRPS_READ_SECONDS"] = "600"
+    box.write_input()
+    os.truncate(box.pki / "frps.key", 64 * 2**30)
+
+    box.run(frps=False)
+
+    status = box.read()
+    assert (status.state, status.reason) == ("waiting", "input_unreadable")
 
 
 def _edit(change):
@@ -755,21 +813,31 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _change_copy(box: Box) -> str:
-    """Changes the copy frps runs from (frps can write there): TLS no longer forced. Returns
-    the sha256 of the changed file."""
-    copy = box.current / "frps.toml"
-    text = copy.read_text()
-    assert text.count("force = true") == 1
-    copy.write_text(text.replace("force = true", "force = false"))
-    return _sha256(copy.read_text())
+def _edit_copy(old: str, new: str):
+    def change(box: Box):
+        copy = box.current / "frps.toml"
+        text = copy.read_text()
+        assert text.count(old) == 1, old
+        copy.write_text(text.replace(old, new))
+
+    return change
 
 
-def test_a_changed_copy_is_dropped_and_not_started_for_an_invalid_input_either(box):
+# Changes to the copy in current/ after the supervisor took it over: one that passes the check
+# of frps.toml, one that does not, and one of a PEM file, which that check does not read.
+COPY_CHANGES = {
+    "another token": _edit_copy(f'"{TOKEN}"', f'"{NEW_TOKEN}"'),
+    "TLS not forced": _edit_copy("force = true", "force = false"),
+    "ca.crt of another CA": lambda box: (box.current / "ca.crt").write_bytes(box.pems["other.crt"]),
+}
+
+
+def test_a_copy_from_an_earlier_run_that_fails_the_check_goes_for_an_invalid_input_too(box):
     box.write_input()
     box.run(frps=True)
     box.stop()
-    _change_copy(box)
+    # A new supervisor knows no hash of the copy it finds: the check alone decides on it.
+    COPY_CHANGES["TLS not forced"](box)
     box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
 
     box.run(frps=False)
@@ -1100,22 +1168,32 @@ def test_a_crash_loop_ends_once_frps_stays_up_for_the_window(box):
     assert box.health() == 0
 
 
-def test_frps_that_exits_starts_again_from_the_input_never_from_a_changed_copy(box):
+COPY_CHANGED = ("copy_changed", "none", False)
+
+
+@pytest.mark.parametrize("case", list(COPY_CHANGES))
+def test_frps_that_exits_starts_again_from_the_input_never_from_a_changed_copy(box, case):
     _polling(box)
     box.wait_until(box.pids, "frps up")
-    changed = _change_copy(box)
+    COPY_CHANGES[case](box)
+    changed = _sha256((box.current / "frps.toml").read_text())
 
     os.kill(box.pids()[0], signal.SIGKILL)
 
-    # The copy fails the check before the restart and goes; the input is taken over anew.
-    status = box.wait_events(2)
+    # The copy is no longer the one taken over: it goes before the restart, with an event,
+    # and the input is taken over anew.
+    status = box.wait_events(3)
     assert (status.state, status.reason) == ("running", "none")
-    assert _events(status) == [STARTED, (2, "started", "none", False)]
+    assert _events(status) == [STARTED, (2, *COPY_CHANGED), (3, "started", "none", False)]
     box.wait_until(lambda: len(box.pids()) == 2, "frps up again")
     assert box.calls() == _verify_then_run(box) * 2
     expected = box.config.read_text().replace(f'"{box.pki}/', f'"{box.current}/')
     assert (box.current / "frps.toml").read_text() == expected
-    assert box.ran() == [_sha256(expected)] * 2 and changed not in box.ran()
+    for name in PEMS:
+        assert (box.current / name).read_bytes() == box.pems[name]
+    assert box.ran() == [_sha256(expected)] * 2
+    if case != "ca.crt of another CA":
+        assert changed not in box.ran()
     assert _alive(box.pids()[-1])
 
 
@@ -1123,15 +1201,17 @@ def test_frps_that_exits_stays_down_with_a_changed_copy_and_an_invalid_input(box
     _polling(box)
     box.write_input(pems={"frps.crt": box.pems["expired.crt"]})
     box.wait_state("degraded")
-    changed = _change_copy(box)
+    # A change the check of frps.toml lets pass.
+    COPY_CHANGES["another token"](box)
+    changed = _sha256((box.current / "frps.toml").read_text())
 
     os.kill(box.pids()[0], signal.SIGKILL)
 
-    # As for an invalid input without a valid copy.
+    # The copy goes, with an event; then as for an invalid input without a valid copy.
     status = box.wait_state("waiting")
     assert (status.reason, _events(status)) == (
         "cert_expired",
-        [STARTED, (2, "rejected", "cert_expired", False)],
+        [STARTED, (2, "rejected", "cert_expired", False), (3, *COPY_CHANGED)],
     )
     box.wait_polls(3)
     assert box.runs() == 1 and changed not in box.ran()
@@ -1170,6 +1250,128 @@ def test_frps_that_ignores_term_is_killed(box):
     assert "killing it" in box._log()
 
 
+SU_EXEC = """#!/bin/sh
+# Stands in for su-exec: records the user and the command, and runs frps as it is, nothing
+# else.
+printf '%s\\n' "$*" >> "$STUB_DIR/su-exec"
+[ "$2" = frps ] || exit 0
+shift
+exec "$@"
+"""
+
+
+def _as_user(box: Box):
+    """frps as the test's own user, through a stub su-exec; the processes of that user the
+    supervisor sees are those in box.proc alone."""
+    su_exec = box.root / "bin" / "su-exec"
+    su_exec.write_text(SU_EXEC)
+    su_exec.chmod(0o755)
+    box.env["FRPS_USER"] = pwd.getpwuid(os.getuid()).pw_name
+
+
+def _process(box: Box, pid: int, uid: int, state: str = "S (sleeping)"):
+    """A process as box.proc shows it to the supervisor, without one behind it."""
+    (box.proc / str(pid)).mkdir()
+    (box.proc / str(pid) / "status").write_text(
+        f"Name:\tsleep\nUmask:\t0022\nState:\t{state}\nTgid:\t{pid}\nPid:\t{pid}\n"
+        f"PPid:\t1\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t{uid}\t{uid}\t{uid}\t{uid}\n"
+    )
+
+
+# No process ever has it (PID_MAX_LIMIT is 4194304): a KILL to it reaches nothing.
+NO_PID = 99999999
+
+
+def test_frps_runs_as_its_user_through_su_exec_and_verify_does_not(box):
+    _as_user(box)
+    user = box.env["FRPS_USER"]
+
+    _polling(box)
+    box.wait_until(box.pids, "frps up")
+    os.kill(box.pids()[0], signal.SIGKILL)
+    box.wait_until(lambda: len(box.pids()) == 2, "frps up again")
+    # frps runs as the process su-exec became: TERM reaches it, nothing stays behind.
+    box.supervisor.send_signal(signal.SIGTERM)
+    assert box.supervisor.wait(timeout=WAIT) == 0
+    _wait_gone(box.supervisor.pid)
+
+    assert box.calls() == [*_verify_then_run(box), f"-c {box.current}/frps.toml"]
+    # su-exec runs frps alone; no KILL is sent as the user of frps.
+    run = f"{user} frps -c {box.current}/frps.toml"
+    assert (box.stub / "su-exec").read_text().splitlines() == [run, run]
+
+
+def test_processes_of_the_frps_user_are_killed_before_frps_starts_and_after_it_ended(box):
+    _as_user(box)
+    uid = os.getuid()
+    left = subprocess.Popen(["sleep", "600"], start_new_session=True)
+    box.procs.append(left)
+    (box.proc / str(left.pid)).symlink_to(f"/proc/{left.pid}")
+    # Never counted: PID 1, a zombie, a process of another user.
+    _process(box, 1, uid)
+    _process(box, NO_PID - 1, uid, state="Z (zombie)")
+    _process(box, NO_PID, uid + 1)
+
+    _polling(box)
+
+    assert left.wait(timeout=WAIT) == -signal.SIGKILL
+    assert (box.read().state, box.read().reason) == ("running", "none")
+
+    # The supervisor itself is never hit: after frps ended, it goes on to start it again.
+    another = subprocess.Popen(["sleep", "600"], start_new_session=True)
+    box.procs.append(another)
+    for pid in (box.supervisor.pid, another.pid):
+        (box.proc / str(pid)).symlink_to(f"/proc/{pid}")
+    box.wait_until(box.pids, "frps up")
+    os.kill(box.pids()[0], signal.SIGKILL)
+
+    assert another.wait(timeout=WAIT) == -signal.SIGKILL
+    box.wait_until(lambda: len(box.pids()) == 2, "frps up again")
+    assert box.supervisor.poll() is None
+    assert _events(box.read()) == [STARTED]
+
+
+def test_a_process_of_the_frps_user_that_does_not_go_away_keeps_frps_from_starting(box):
+    _as_user(box)
+    box.env["FRPS_KILL_SECONDS"] = "1"
+    _process(box, NO_PID, os.getuid())
+    box.write_input()
+
+    doc = box.run(frps=False)
+
+    status = box.read()
+    assert (status.state, status.reason) == ("waiting", "processes_left")
+    assert _events(status) == [(1, "start_refused", "processes_left", False)]
+    assert box.calls() == [f"verify -c {box.active}/next/frps.toml"]
+    assert list(box.active.iterdir()) == []
+    assert doc["appliedHash"] is None
+    assert "processes of" in box._log()
+
+    # Gone: the next input starts frps.
+    (box.proc / str(NO_PID) / "status").unlink()
+    (box.proc / str(NO_PID)).rmdir()
+    box.stop()
+    box.run(frps=True)
+    assert (box.read().state, box.read().reason) == ("running", "none")
+
+
+def test_a_process_of_the_frps_user_left_after_frps_ended_keeps_it_from_starting_again(box):
+    _as_user(box)
+    box.env["FRPS_KILL_SECONDS"] = "1"
+    _polling(box)
+    box.wait_until(box.pids, "frps up")
+    _process(box, NO_PID, os.getuid())
+
+    os.kill(box.pids()[0], signal.SIGKILL)
+
+    status = box.wait_state("waiting", timeout=2 * WAIT)
+    assert status.reason == "processes_left"
+    assert _events(status) == [STARTED, (2, "start_refused", "processes_left", False)]
+    box.wait_polls(2)
+    assert box.runs() == 1
+    assert list(box.active.iterdir()) == []
+
+
 @pytest.mark.parametrize(
     ("knob", "value"),
     [
@@ -1180,6 +1382,7 @@ def test_frps_that_ignores_term_is_killed(box):
         ("FRPS_CRASH_WINDOW", "08"),
         ("FRPS_READ_SECONDS", "0"),
         ("FRPS_UNSTABLE_SECONDS", "30s"),
+        ("FRPS_KILL_SECONDS", "0"),
     ],
 )
 def test_a_time_that_is_no_whole_number_of_seconds_stops_the_supervisor(box, knob, value):
@@ -1200,6 +1403,17 @@ def test_a_published_bind_port_that_is_no_port_stops_the_supervisor(box, value):
     result = box.once()
 
     assert result.returncode == 1 and "FRP_BIND_PORT" in result.stderr
+    assert box.calls() == [] and not box.status_file.exists()
+
+
+@pytest.mark.parametrize("user", ["root", "no-such-user-for-frps"])
+def test_a_frps_user_that_is_root_or_no_user_stops_the_supervisor(box, user):
+    box.write_input()
+    box.env["FRPS_USER"] = user
+
+    result = box.once()
+
+    assert result.returncode == 1 and "FRPS_USER" in result.stderr
     assert box.calls() == [] and not box.status_file.exists()
 
 
@@ -1248,6 +1462,20 @@ def test_the_supervisor_expects_the_tls_files_where_the_server_points_frps():
     assert f'FRPS_PKI_DIR="${{FRPS_PKI_DIR:-{_FRPS_CERT_DIR}}}"' in SCRIPT.read_text()
 
 
+def _frps_user() -> tuple[str, int]:
+    """Name and UID of the user the image creates for frps."""
+    dockerfile = (FRPS_DIR / "Dockerfile").read_text()
+    found = re.search(r"\badduser\b.* -u (\d+) .*-G \w+ (\w+)", dockerfile)
+    assert found, dockerfile
+    return found[2], int(found[1])
+
+
+def test_the_supervisor_runs_frps_as_the_user_the_image_creates_for_it():
+    name, uid = _frps_user()
+    assert uid != 0
+    assert f'FRPS_USER="${{FRPS_USER-{name}}}"' in SCRIPT.read_text()
+
+
 def _image() -> tuple[str, str, list[str]]:
     """Base image, the script's place in the image and the entrypoint, as in the Dockerfile."""
     dockerfile = (FRPS_DIR / "Dockerfile").read_text()
@@ -1258,18 +1486,69 @@ def _image() -> tuple[str, str, list[str]]:
     return base[1], target[1], json.loads(entrypoint[1])
 
 
+def _compose_frps() -> dict:
+    """The frps service of docker-compose.yml."""
+    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]["frps"]
+
+
+def _security_args(frps: dict) -> list[str]:
+    """docker run arguments for the capabilities and security options compose gives frps."""
+    args = [arg for cap in frps["cap_drop"] for arg in ("--cap-drop", cap)]
+    args += [arg for cap in frps["cap_add"] for arg in ("--cap-add", cap)]
+    args += [arg for option in frps.get("security_opt", []) for arg in ("--security-opt", option)]
+    return args
+
+
+def _built_frps_image():
+    """Builds the image from apps/frps, yields (docker, tag) and removes the image again; skips
+    when Docker or the pinned base image is not at hand."""
+    base, _, _ = _image()
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("docker is not available")
+    if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
+        pytest.skip(f"no docker daemon or {base} not present locally")
+    tag = f"adminhelper-test/frps-supervisor:{uuid.uuid4().hex[:12]}"
+    build = subprocess.run(
+        [docker, "build", "-q", "-t", tag, str(FRPS_DIR)], capture_output=True, text=True
+    )
+    assert build.returncode == 0, build.stderr
+    try:
+        yield docker, tag
+    finally:
+        subprocess.run([docker, "image", "rm", "-f", tag], capture_output=True)
+
+
+@pytest.fixture(scope="module")
+def frps_image():
+    yield from _built_frps_image()
+
+
+STATE_DIR = "/var/lib/frps-state"
+ACTIVE_DIR = "/var/lib/frps-active"
+# Name, state, pid and UID of every process, one line each.
+_PROCESSES = r"""for status in /proc/[0-9]*/status; do
+    awk '/^(Name|State|Pid|Uid):/ { printf "%s ", $2 } END { print "" }' "$status" 2>/dev/null
+done"""
+
+
 class Container:
-    """A container of the frps base image that runs the supervisor as the Dockerfile sets it
-    up, its input and working directories bind-mounted from the test's directory."""
+    """A container of the frps image as compose runs it (capabilities, security options): its
+    input bind-mounted read-only from the test's directory, the state and the working directory
+    in volumes of its own."""
 
     def __init__(self, docker: str, root: Path, entrypoint: list[str]):
         self.docker = docker
         self.name = f"frps-supervisor-test-{uuid.uuid4().hex[:12]}"
-        self.frp, self.pki, self.state, self.active = (
-            root / name for name in ("frp", "pki", "state", "active")
-        )
-        self.status_file = self.state / "status.json"
+        self.frp, self.pki, self.probe = root / "frp", root / "pki", root / "probe"
+        self.status_copy = root / "status.json"
+        self.volumes = {STATE_DIR: f"{self.name}-state", ACTIVE_DIR: f"{self.name}-active"}
         self.health = [docker, "exec", self.name, *entrypoint, "health"]
+
+    def exec(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [self.docker, "exec", self.name, *args], capture_output=True, text=True
+        )
 
     def logs(self) -> str:
         return subprocess.run(
@@ -1280,7 +1559,41 @@ class Container:
         ).stdout
 
     def read(self) -> SupervisorStatus:
-        return read_supervisor_status(self.status_file)
+        """The status file through the server's reader; missing while there is none."""
+        result = self.exec("cat", f"{STATE_DIR}/status.json")
+        if result.returncode != 0:
+            return SupervisorStatus(state="missing")
+        self.status_copy.write_text(result.stdout)
+        return read_supervisor_status(self.status_copy)
+
+    def frps(self) -> dict[str, str]:
+        """Identity and capabilities of the running frps, from its /proc status."""
+        result = self.exec("sh", "-c", 'cat "/proc/$(pidof frps)/status"')
+        assert result.returncode == 0, result.stderr
+        fields = dict(line.split(":", 1) for line in result.stdout.splitlines() if ":" in line)
+        keys = ("Uid", "Gid", "CapPrm", "CapEff", "NoNewPrivs")
+        return {key: " ".join(fields[key].split()) for key in keys}
+
+    def processes(self, uid: int) -> list[tuple[str, str, int]]:
+        """(name, state, pid) of every process of uid, zombies included, from /proc: busybox
+        ps leaves out those it cannot read."""
+        result = self.exec("sh", "-c", _PROCESSES)
+        found = []
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if len(fields) == 4 and fields[3] == str(uid):
+                name, state, pid, _ = fields
+                found.append((name, state, int(pid)))
+        return sorted(found)
+
+    def stop(self) -> str:
+        """docker stop within the grace period compose gives frps; returns the exit code."""
+        grace = _compose_frps()["stop_grace_period"].removesuffix("s")
+        subprocess.run(
+            [self.docker, "stop", "-t", grace, self.name], check=True, capture_output=True
+        )
+        inspect = [self.docker, "inspect", "--format", "{{.State.ExitCode}}", self.name]
+        return subprocess.run(inspect, capture_output=True, text=True).stdout.strip()
 
     def wait_until(self, check, what: str):
         deadline = time.monotonic() + WAIT * 3
@@ -1290,50 +1603,57 @@ class Container:
 
 
 @contextlib.contextmanager
-def _container(root: Path, pems: dict[str, bytes], toml: str, **env: str):
-    """Runs the supervisor in the frps base image on toml and the test's certificates; skips
-    when Docker or the pinned base image is not at hand."""
-    base, target, entrypoint = _image()
-    docker = shutil.which("docker")
-    if docker is None:
-        pytest.skip("docker is not available")
-    if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
-        pytest.skip(f"no docker daemon or {base} not present locally")
+def _container(image, root: Path, pems, toml: str, *, frps_bin: str | None = None, **env: str):
+    """Runs the frps image (frps_image) on toml and the test's certificates. frps_bin, a
+    script, stands in for frps."""
+    docker, tag = image
+    _, _, entrypoint = _image()
     box = Container(docker, root, entrypoint)
-    for directory in (box.frp, box.pki, box.state, box.active):
+    for directory in (box.frp, box.pki):
         directory.mkdir()
     (box.frp / "frps.toml").write_text(toml, encoding="utf-8")
     for name in PEMS:
         (box.pki / name).write_bytes(pems[name])
     run = [docker, "run", "-d", "--name", box.name, "--network", "none"]
-    run += ["--user", f"{os.getuid()}:{os.getgid()}"]
+    run += _security_args(_compose_frps())
     run += ["-v", f"{box.frp}:/etc/frp:ro", "-v", f"{box.pki}:{_FRPS_CERT_DIR}:ro"]
-    run += ["-v", f"{box.state}:/var/lib/frps-state", "-v", f"{box.active}:/var/lib/frps-active"]
+    for target, volume in box.volumes.items():
+        run += ["--mount", f"type=volume,src={volume},dst={target}"]
+    if frps_bin is not None:
+        # Run under the UID of frps, which has to read it.
+        box.probe.mkdir()
+        box.probe.chmod(0o755)
+        (box.probe / "frps").write_text(frps_bin)
+        (box.probe / "frps").chmod(0o755)
+        run += ["-v", f"{box.probe}:/probe:ro", "-e", "FRPS_BIN=/probe/frps"]
     for key, value in env.items():
         run += ["-e", f"{key}={value}"]
-    run += ["-v", f"{SCRIPT}:{target}:ro", "--entrypoint", entrypoint[0], base, *entrypoint[1:]]
+    run.append(tag)
     try:
         subprocess.run(run, check=True, capture_output=True)
         yield box
     finally:
         subprocess.run([docker, "rm", "-f", box.name], capture_output=True)
+        for volume in box.volumes.values():
+            subprocess.run([docker, "volume", "rm", volume], capture_output=True)
 
 
 STARTED_SUCCESSFULLY = "frps started successfully"
 
 
 @pytest.mark.parametrize("case", ["generator output", "template", "key not on the list"])
-def test_in_the_frps_image_frps_starts_only_from_a_checked_copy(tmp_path, pems, case):
+def test_in_the_frps_image_frps_starts_only_from_a_checked_copy(tmp_path, pems, frps_image, case):
     # Verbatim from the generator: the default paths of the supervisor are those of the image.
     extra = {**EXTRA, "sshTunnelGateway.bindPort": 7022} if case == "key not on the list" else EXTRA
     toml = generate_frps_toml(_cfg(**FULL, extra_config=json.dumps(extra)))
     if case == "template":
         toml = toml.replace(f'"{TOKEN}"', '"{{print}}{{print}}{{print}}"')
     accepted = case == "generator output"
-    with _container(tmp_path, pems, toml) as box:
+    with _container(frps_image, tmp_path, pems, toml) as box:
         box.wait_until(
             lambda: (
-                box.status_file.exists() and (STARTED_SUCCESSFULLY in box.logs() or not accepted)
+                box.read().state != "missing"
+                and (STARTED_SUCCESSFULLY in box.logs() or not accepted)
             ),
             "started",
         )
@@ -1341,15 +1661,88 @@ def test_in_the_frps_image_frps_starts_only_from_a_checked_copy(tmp_path, pems, 
         status = box.read()
         if accepted:
             assert (status.state, status.reason) == ("running", "none"), logs
-            assert "frps uses config file: /var/lib/frps-active/current/frps.toml" in logs
+            assert f"frps uses config file: {ACTIVE_DIR}/current/frps.toml" in logs
         else:
             assert (status.state, status.reason) == ("waiting", "verify_failed"), logs
             assert "frps started" not in logs
-            assert list(box.active.iterdir()) == []
+            assert box.exec("ls", "-A", ACTIVE_DIR).stdout == ""
 
 
-def test_in_the_frps_image_a_new_token_restarts_frps_and_term_ends_the_supervisor(tmp_path, pems):
-    with _container(tmp_path, pems, generate_frps_toml(_cfg()), FRPS_POLL_SECONDS="1") as box:
+# Stands in for frps: verify goes to frps as it is; a run first notes what it may do with the
+# identity the supervisor gives frps, then becomes frps.
+PROBE = r"""#!/bin/sh
+if [ "$1" = verify ]; then exec frps "$@"; fi
+try() {
+    if sh -c "$2" >/dev/null 2>&1; then echo "$1: yes"; else echo "$1: no"; fi
+}
+current=/var/lib/frps-active/current
+{
+    echo "uid: $(id -u)"
+    awk '/^(CapEff|NoNewPrivs):/ { print $1, $2 }' /proc/self/status
+    for name in frps.toml frps.crt frps.key ca.crt; do
+        try "read $name" "cat $current/$name"
+    done
+    for file in $current/frps.toml $current/frps.crt $current/frps.key $current/ca.crt \
+        $current/applied.sha256 /var/lib/frps-state/status.json \
+        /usr/local/bin/frps-supervisor.sh; do
+        try "write $file" ": >> $file"
+    done
+    for dir in $current /var/lib/frps-active /var/lib/frps-state /usr/local/bin; do
+        try "create in $dir" ": > $dir/probe"
+    done
+    try "signal the supervisor" "kill -0 1"
+} > /tmp/probe.new
+mv /tmp/probe.new /tmp/probe
+exec frps "$@"
+"""
+
+
+def test_in_the_frps_image_frps_runs_as_its_user_and_changes_nothing_it_runs_from(
+    tmp_path, pems, frps_image
+):
+    _, uid = _frps_user()
+    _, script, _ = _image()
+    with _container(frps_image, tmp_path, pems, generate_frps_toml(_cfg()), frps_bin=PROBE) as box:
+        box.wait_until(
+            lambda: STARTED_SUCCESSFULLY in box.logs() and box.read().state == "running",
+            "frps up",
+        )
+
+        probe = box.exec("cat", "/tmp/probe")
+        assert probe.returncode == 0, box.logs()
+        current = f"{ACTIVE_DIR}/current"
+        files = [f"{current}/{name}" for name in ("frps.toml", *PEMS, "applied.sha256")]
+        files += [f"{STATE_DIR}/status.json", script]
+        dirs = [current, ACTIVE_DIR, STATE_DIR, str(Path(script).parent)]
+        # It reads the copy, the key included, and writes none of it, nor the status or the
+        # supervisor, and cannot signal the supervisor.
+        assert dict(line.split(": ", 1) for line in probe.stdout.splitlines()) == {
+            "uid": str(uid),
+            "CapEff": "0" * 16,
+            "NoNewPrivs": "1",
+            **{f"read {name}": "yes" for name in ("frps.toml", *PEMS)},
+            **{f"write {file}": "no" for file in files},
+            **{f"create in {directory}": "no" for directory in dirs},
+            "signal the supervisor": "no",
+        }
+        # The process the probe became: frps.
+        assert box.frps() == {
+            "Uid": f"{uid} {uid} {uid} {uid}",
+            "Gid": f"{uid} {uid} {uid} {uid}",
+            "CapPrm": "0" * 16,
+            "CapEff": "0" * 16,
+            "NoNewPrivs": "1",
+        }
+        # No program in the image leads back to root.
+        found = box.exec("find", "/", "-xdev", "-type", "f", "-perm", "/6000")
+        assert (found.returncode, found.stdout) == (0, "")
+
+
+def test_in_the_frps_image_a_new_token_restarts_frps_and_term_ends_the_supervisor(
+    tmp_path, pems, frps_image
+):
+    toml = generate_frps_toml(_cfg())
+    with _container(frps_image, tmp_path, pems, toml, FRPS_POLL_SECONDS="1") as box:
         box.wait_until(
             lambda: box.logs().count(STARTED_SUCCESSFULLY) == 1 and box.read().state == "running",
             "frps up",
@@ -1364,9 +1757,158 @@ def test_in_the_frps_image_a_new_token_restarts_frps_and_term_ends_the_superviso
 
         assert _events(box.read()) == [STARTED, (2, "applied", "none", True)], box.logs()
         assert subprocess.run(box.health, capture_output=True).returncode == 0
-        subprocess.run([box.docker, "stop", "-t", "20", box.name], check=True, capture_output=True)
-        inspect = [box.docker, "inspect", "--format", "{{.State.ExitCode}}", box.name]
-        exit_code = subprocess.run(inspect, capture_output=True, text=True).stdout.strip()
+        exit_code = box.stop()
         logs = box.logs()
         assert exit_code == "0", logs
         assert TOKEN not in logs and NEW_TOKEN not in logs
+
+
+# Stands in for frps: verify goes to frps as it is; a run notes its UID and ignores TERM.
+STUBBORN = """#!/bin/sh
+if [ "$1" = verify ]; then exec frps "$@"; fi
+id -u >> /tmp/runs
+trap '' TERM
+exec sleep 600
+"""
+
+
+def test_in_the_frps_image_frps_that_ignores_term_is_killed_across_its_uid(
+    tmp_path, pems, frps_image
+):
+    _, uid = _frps_user()
+    toml = generate_frps_toml(_cfg())
+    env = {"FRPS_POLL_SECONDS": "1", "FRPS_STOP_SECONDS": "1"}
+    with _container(frps_image, tmp_path, pems, toml, frps_bin=STUBBORN, **env) as box:
+        box.wait_until(lambda: box.read().state == "running", "frps up")
+
+        # A change restarts frps: TERM, then KILL.
+        toml = generate_frps_toml(_cfg(auth_token=NEW_TOKEN))
+        (box.frp / "frps.toml").write_text(toml, encoding="utf-8")
+        box.wait_until(lambda: len(box.read().events) == 2, "frps restarted")
+        assert _events(box.read()) == [STARTED, (2, "applied", "none", True)], box.logs()
+        box.wait_until(
+            lambda: box.exec("cat", "/tmp/runs").stdout.split() == [str(uid)] * 2, "frps again"
+        )
+        assert box.logs().count("killing it") == 1
+
+        # So does docker stop.
+        exit_code = box.stop()
+        logs = box.logs()
+        assert exit_code == "0", logs
+        assert logs.count("killing it") == 2
+
+
+# Stands in for frps: verify goes to frps as it is; the first run leaves a process behind under
+# the UID of frps, then becomes frps.
+FORKS = """#!/bin/sh
+if [ "$1" = verify ]; then exec frps "$@"; fi
+if [ ! -e /tmp/forked ]; then
+    : > /tmp/forked
+    sleep 600 &
+fi
+exec frps "$@"
+"""
+
+
+@pytest.mark.parametrize("end", ["new token", "frps exits"])
+def test_in_the_frps_image_no_process_of_frps_outlives_it(tmp_path, pems, frps_image, end):
+    _, uid = _frps_user()
+    toml = generate_frps_toml(_cfg())
+    env = {"FRPS_POLL_SECONDS": "1"}
+    with _container(frps_image, tmp_path, pems, toml, frps_bin=FORKS, **env) as box:
+        box.wait_until(
+            lambda: box.logs().count(STARTED_SUCCESSFULLY) == 1 and box.read().state == "running",
+            "frps up",
+        )
+        box.wait_until(lambda: len(box.processes(uid)) == 2, "the process frps left")
+        (old,) = [pid for name, _, pid in box.processes(uid) if name == "frps"]
+
+        if end == "new token":
+            toml = generate_frps_toml(_cfg(auth_token=NEW_TOKEN))
+            (box.frp / "frps.toml").write_text(toml, encoding="utf-8")
+        else:
+            box.exec("kill", "-KILL", str(old))
+        box.wait_until(lambda: box.logs().count(STARTED_SUCCESSFULLY) == 2, "frps again")
+
+        _wait_frps_alone(box, uid, but_not=old)
+
+
+def _wait_frps_alone(box: Container, uid: int, but_not: int | None = None) -> list:
+    """Waits until the one process of uid is a frps (other than but_not): no other process,
+    not even a zombie. Returns the processes of uid."""
+    seen = []
+
+    def alone() -> bool:
+        seen[:] = box.processes(uid)
+        names = [name for name, _, _ in seen]
+        return names == ["frps"] and seen[0][1] != "Z" and seen[0][2] != but_not
+
+    try:
+        box.wait_until(alone, "the new frps alone")
+    except AssertionError as failed:
+        raise AssertionError(f"processes of {uid}: {seen}\n{failed}") from None
+    return seen
+
+
+# Stands in for frps: verify goes to frps as it is; the first run leaves a process behind under
+# the UID of frps that fights its end (CHILD), then becomes frps.
+FEND = """#!/bin/sh
+if [ "$1" = verify ]; then exec frps "$@"; fi
+if [ ! -e /tmp/forked ]; then
+    : > /tmp/forked
+    sh -c 'CHILD' &
+fi
+exec frps "$@"
+"""
+FENDS = {
+    # Every process of its UID named kill or su-exec, as soon as it shows up.
+    "kills kill and su-exec": "while :; do for d in /proc/[0-9]*; do"
+    ' { read -r c < "$d/comm"; } 2>/dev/null || continue;'
+    ' case $c in kill | su-exec) kill -9 "${d#/proc/}" 2>/dev/null ;; esac;'
+    " done; done",
+    # Every process of its UID but itself, frps included.
+    "kills its whole UID": "while :; do kill -9 -1 2>/dev/null; done",
+}
+# A UID of another service, in the container through docker exec.
+OTHER_UID = 10001
+
+
+@pytest.mark.parametrize("child", list(FENDS))
+def test_in_the_frps_image_a_process_frps_left_cannot_fend_off_its_end(
+    tmp_path, pems, frps_image, child
+):
+    _, uid = _frps_user()
+    toml = generate_frps_toml(_cfg())
+    frps_bin = FEND.replace("CHILD", FENDS[child])
+    env = {"FRPS_POLL_SECONDS": "1"}
+    with _container(frps_image, tmp_path, pems, toml, frps_bin=frps_bin, **env) as box:
+        box.wait_until(lambda: box.read().state == "running", "frps up")
+        exec_other = [box.docker, "exec", "-d", "-u", str(OTHER_UID), box.name, "sleep", "600"]
+        subprocess.run(exec_other, check=True, capture_output=True)
+
+        toml = generate_frps_toml(_cfg(auth_token=NEW_TOKEN))
+        (box.frp / "frps.toml").write_text(toml, encoding="utf-8")
+        box.wait_until(
+            lambda: "applied" in [event.event for event in box.read().events], "new token"
+        )
+
+        # Of the user of frps, the frps started last alone is left; another user's process
+        # stays.
+        (frps,) = _wait_frps_alone(box, uid)
+        started = re.findall(r"frps started from \S+ \(pid (\d+)\)", box.logs())
+        assert frps[2] == int(started[-1])
+        assert box.read().state == "running"
+        assert [name for name, _, _ in box.processes(OTHER_UID)] == ["sleep"]
+
+
+def test_in_the_frps_image_the_supervisor_does_not_run_frps_as_root(frps_image):
+    docker, tag = frps_image
+    name = f"frps-supervisor-test-{uuid.uuid4().hex[:12]}"
+    run = [docker, "run", "--name", name, "--network", "none", *_security_args(_compose_frps())]
+    run += ["-e", "FRPS_USER=", tag]
+    try:
+        result = subprocess.run(run, capture_output=True, text=True, timeout=WAIT * 3)
+    finally:
+        subprocess.run([docker, "rm", "-f", name], capture_output=True)
+
+    assert result.returncode == 1 and "FRPS_USER" in result.stderr, result.stderr

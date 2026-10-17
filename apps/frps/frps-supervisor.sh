@@ -9,16 +9,23 @@
 #   frps-supervisor.sh          supervise frps (the image's entrypoint)
 #   frps-supervisor.sh health   exit 0 while the state is waiting, running or stopped
 #
+# The supervisor runs as root, frps as FRPS_USER through su-exec (empty: as the supervisor,
+# for tests without root; root refuses that). frps then holds no capability and owns no file
+# it runs from. After every end of frps, before a new copy is swapped in and before every
+# start, the supervisor KILLs every process of FRPS_USER, so that nothing frps forked outlives
+# it; should one be left, frps does not start and no copy is left (waiting, processes_left).
+#
 # The input, frps.toml from the server and the TLS material from the ca-issuer, lives in
-# volumes other containers write. Only regular files are read from there, each within
-# FRPS_READ_SECONDS; a symlink or any other kind of file is invalid (input_unreadable), as is
-# one that cannot be read. A candidate is copied into next/ of the supervisor's own working
-# directory (FRPS_ACTIVE_DIR, mounted by frps alone; directories 0700, files 0600), checked
-# there, its TLS paths pointed at current/, and swapped in as current/. frps always runs from
-# current/, so a half-written or invalid input never reaches it. At the start, and after that
-# whenever the input has changed and then stayed the same for two polls in a row
-# (FRPS_POLL_SECONDS apart, one second while a start of frps is due; a file still being
-# written is not taken for a new one):
+# volumes other containers write. Only regular files of at most 1 MiB are read from there,
+# each within FRPS_READ_SECONDS; a symlink, any other kind of file or a larger one is invalid
+# (input_unreadable), as is one that cannot be read. A candidate is copied into next/ of the
+# supervisor's own working directory (FRPS_ACTIVE_DIR, mounted by frps alone), checked there
+# while only the supervisor may read it, its TLS paths pointed at current/, and swapped in as
+# current/, which frps reads and cannot write (FRPS_ACTIVE_DIR 0711, current/ 0755, its files
+# 0644, all the supervisor's). frps always runs from current/, so a half-written or invalid
+# input never reaches it. At the start, and after that whenever the input has changed and
+# then stayed the same for two polls in a row (FRPS_POLL_SECONDS apart, one second while a
+# start of frps is due; a file still being written is not taken for a new one):
 #
 #   valid                        frps (re)starts from the new current/      running
 #   invalid, current/ exists     frps runs on from the last valid current/  degraded
@@ -29,15 +36,19 @@
 # An input that keeps changing for FRPS_UNSTABLE_SECONDS is not taken over: input_unstable,
 # degraded while frps runs, waiting while it does not, until the input stays the same.
 #
-# Every start of frps, a restart after it exited included, checks current/frps.toml again
-# (check_config), since frps can write there. A copy that fails starts nothing and is removed;
-# before a restart the input is then taken over anew as at the start, so frps starts from a
-# fresh copy of a valid input, and an invalid one leaves the state as without a valid copy.
+# Every start of frps, a restart after it exited included, first compares current/ with the
+# copy the supervisor took over (a sha256 over frps.toml and the PEM files, kept in memory;
+# a copy found at the start counts as taken over then), and checks current/frps.toml again
+# (check_config). A copy that changed (event copy_changed) or fails starts nothing and is
+# removed; before a restart the input is then taken over anew as at the start, so frps starts
+# from a fresh copy of a valid input, and an invalid one leaves the state as without a valid
+# copy.
 #
 # Events: started (frps started where none ran from a current/: at the start, or after
 # waiting or stopped), applied (a change restarted frps; tokenChanged compares hashes of the
 # token line), rejected (once per rejected input, and once per series of changes that made
-# the input unstable), stopped, crashed (once per crash loop).
+# the input unstable), stopped, crashed (once per crash loop), copy_changed, start_refused
+# (processes of FRPS_USER left).
 # A valid input equal to the one frps runs from restarts nothing.
 #
 # frps exiting on its own is started again from current/ after 2, 4, 8 … FRPS_BACKOFF_MAX
@@ -58,6 +69,8 @@ FRPS_PKI_DIR="${FRPS_PKI_DIR:-/etc/frp-pki}"
 FRPS_ACTIVE_DIR="${FRPS_ACTIVE_DIR:-/var/lib/frps-active}"
 FRPS_STATE_DIR="${FRPS_STATE_DIR:-/var/lib/frps-state}"
 FRPS_BIN="${FRPS_BIN:-frps}"
+# Set but empty switches su-exec off.
+FRPS_USER="${FRPS_USER-frps}"
 # Whole seconds, as POSIX sleep takes them.
 FRPS_POLL_SECONDS="${FRPS_POLL_SECONDS:-5}"
 FRPS_BACKOFF_MAX="${FRPS_BACKOFF_MAX:-60}"
@@ -66,6 +79,10 @@ FRPS_CRASH_WINDOW="${FRPS_CRASH_WINDOW:-60}"
 FRPS_READ_SECONDS="${FRPS_READ_SECONDS:-5}"
 # Seconds rather than polls: polls come one second apart while a start of frps is due.
 FRPS_UNSTABLE_SECONDS="${FRPS_UNSTABLE_SECONDS:-30}"
+# How long KILL goes on to processes of FRPS_USER that do not end (kill_left).
+FRPS_KILL_SECONDS="${FRPS_KILL_SECONDS:-5}"
+# Where kill_left finds the processes; for tests only.
+FRPS_PROC_ROOT="${FRPS_PROC_ROOT:-/proc}"
 # The host port compose publishes for frps; webServer.port must not take it.
 FRP_BIND_PORT="${FRP_BIND_PORT:-}"
 
@@ -74,6 +91,8 @@ CURRENT="$FRPS_ACTIVE_DIR/current"
 PREV="$FRPS_ACTIVE_DIR/prev"
 STATUS="$FRPS_STATE_DIR/status.json"
 PEMS="frps.crt frps.key ca.crt"
+# Bytes; the server's frps.toml and the PEM files are a few KiB.
+INPUT_MAX=1048576
 # The only top-level keys frps gets: those config_generator.py writes, then a few for
 # extra_config (frps 0.69.1 field names, none of them a listener).
 TOP_KEYS="bindPort vhostHTTPSPort subDomainHost maxPortsPerClient detailedErrorsToClient
@@ -113,13 +132,17 @@ file_kind() {
 # Reads of a file below are bounded by FRPS_READ_SECONDS: one swapped for a FIFO after
 # file_kind would block them for good.
 
-# content_hash <file>... — one sha256 over the contents of the files. A missing file counts
-# too, and apart from that one that is no regular file or cannot be read.
+# content_hash <file>... — one sha256 over the contents of the files, of each no more than
+# take_input reads. A missing file counts too, and apart from that one that is no regular
+# file or cannot be read.
 content_hash() {
     for file in "$@"; do
         file_kind "$file"
         case $? in
-        0) timeout "$FRPS_READ_SECONDS" sha256sum "$file" 2>/dev/null || echo '!' ;;
+        0)
+            { timeout "$FRPS_READ_SECONDS" head -c $((INPUT_MAX + 1)) "$file" 2>/dev/null \
+                || echo '!'; } | sha256sum
+            ;;
         1) echo - ;;
         *) echo '!' ;;
         esac
@@ -127,10 +150,12 @@ content_hash() {
 }
 
 # take_input <file> <copy> — copies an input file: 1 when it is missing, 2 when it is no
-# regular file or cannot be read.
+# regular file, cannot be read or is larger than INPUT_MAX. Of a larger one the copy gets a
+# byte more than that, no matter how large it is.
 take_input() {
     file_kind "$1" || return
-    timeout "$FRPS_READ_SECONDS" cat "$1" > "$2" 2>/dev/null || return 2
+    timeout "$FRPS_READ_SECONDS" head -c $((INPUT_MAX + 1)) "$1" > "$2" 2>/dev/null || return 2
+    [ "$(wc -c < "$2")" -le "$INPUT_MAX" ] || return 2
 }
 
 input_hash() {
@@ -292,9 +317,14 @@ stage() {
     printf '%s\n' "$CANDIDATE_HASH" > "$NEXT/applied.sha256" || die "cannot write $NEXT"
 }
 
-# activate — swaps next/ in as current/. Two renames: a crash between them leaves prev/,
-# which recover renames back on the next start.
+# activate — opens next/ to frps for reading and swaps it in as current/; COPY_HASH is then
+# the hash of the copy frps runs from. Two renames: a crash between them leaves prev/, which
+# recover renames back on the next start.
 activate() {
+    for file in frps.toml applied.sha256 $PEMS; do
+        chmod 0644 "$NEXT/$file" || return 1
+    done
+    chmod 0755 "$NEXT" || return 1
     rm -rf "$PREV"
     if [ -d "$CURRENT" ]; then
         mv "$CURRENT" "$PREV" || return 1
@@ -304,6 +334,12 @@ activate() {
         return 1
     fi
     rm -rf "$PREV"
+    COPY_HASH=$(copy_hash)
+}
+
+# copy_hash — the sha256 over the copy in current/, as content_hash makes it.
+copy_hash() {
+    content_hash "$CURRENT/frps.toml" "$CURRENT/frps.crt" "$CURRENT/frps.key" "$CURRENT/ca.crt"
 }
 
 recover() {
@@ -318,9 +354,11 @@ applied_hash_of_current() {
     if is_hash "$stored"; then printf '%s' "$stored"; fi
 }
 
-# start_frps — starts frps from current/ once current/frps.toml has passed check_config again.
-# A copy that fails starts nothing and is removed, the state is set as an invalid input without
-# a valid copy would (waiting), and start_frps returns 1.
+# start_frps — starts frps from current/ as FRPS_USER, as long as current/ is still the copy
+# the supervisor took over (COPY_HASH), current/frps.toml passes check_config again and no
+# process of FRPS_USER is left (kill_left). A copy that changed (event copy_changed) or fails
+# starts nothing and is removed (drop_copy), and start_frps returns 1; with processes left, 2
+# (refuse_start).
 start_frps() {
     file_kind "$CURRENT/frps.toml"
     case $? in
@@ -331,18 +369,46 @@ start_frps() {
     1) reason=config_missing ;;
     *) reason=input_unreadable ;;
     esac
-    if [ "$reason" != none ]; then
+    if [ "$(copy_hash)" != "$COPY_HASH" ]; then
+        log "frps not started, the copy in $CURRENT changed since it was taken over and goes"
+        add_event copy_changed none false
+    elif [ "$reason" != none ]; then
         log "frps not started, the copy in $CURRENT fails the check and goes: $reason"
-        rm -rf "$CURRENT" || die "cannot remove $CURRENT"
-        APPLIED_HASH=""
-        end_series
-        set_config waiting "$reason"
-        return 1
+    elif ! kill_left; then
+        refuse_start
+        return 2
+    else
+        if [ -n "$FRPS_USER" ]; then
+            su-exec "$FRPS_USER" "$FRPS_BIN" -c "$CURRENT/frps.toml" &
+        else
+            "$FRPS_BIN" -c "$CURRENT/frps.toml" &
+        fi
+        FRPS_PID=$!
+        STARTED_AT=$(epoch)
+        log "frps started from $CURRENT (pid $FRPS_PID)"
+        return 0
     fi
-    "$FRPS_BIN" -c "$CURRENT/frps.toml" &
-    FRPS_PID=$!
-    STARTED_AT=$(epoch)
-    log "frps started from $CURRENT (pid $FRPS_PID)"
+    drop_copy "$reason"
+    return 1
+}
+
+# drop_copy <reason> — removes current/; the state is set as an invalid input without a valid
+# copy would (waiting).
+drop_copy() {
+    rm -rf "$CURRENT" || die "cannot remove $CURRENT"
+    APPLIED_HASH=""
+    COPY_HASH=""
+    end_series
+    set_config waiting "$1"
+}
+
+# refuse_start — processes of FRPS_USER are left: frps does not start, and no copy is left for
+# them to read (event start_refused), until the input changes or the container starts anew.
+refuse_start() {
+    log "frps not started, processes of $FRPS_USER are left; the copy in $CURRENT goes"
+    rm -rf "$NEXT"
+    drop_copy processes_left
+    add_event start_refused processes_left false
 }
 
 # stop_frps — TERM, KILL after FRPS_STOP_SECONDS; either way frps is waited for.
@@ -362,8 +428,56 @@ stop_frps() {
         waited=$((waited + 1))
     done
     wait "$FRPS_PID" 2>/dev/null
+    kill_left
     log "frps stopped"
     FRPS_PID=""
+}
+
+# frps_left — the pids of the processes of FRPS_USER that have not ended (a zombie has), from
+# FRPS_PROC_ROOT; never PID 1 or this shell.
+frps_left() {
+    for status in "$FRPS_PROC_ROOT"/[0-9]*/status; do
+        pid=${status%/status}
+        pid=${pid##*/}
+        case $pid in 1 | "$$") continue ;; esac
+        state=""
+        uid=""
+        # A process that ended in the meantime has no file left to read.
+        {
+            while read -r key value _; do
+                case $key in
+                State:) state=$value ;;
+                Uid:)
+                    uid=$value
+                    break
+                    ;;
+                esac
+            done < "$status"
+        } 2>/dev/null
+        if [ "$uid" = "$FRPS_UID" ] && [ "$state" != Z ]; then echo "$pid"; fi
+    done
+}
+
+# kill_left — KILL to every process of FRPS_USER: one frps forked would outlive it and could
+# read the copy of the next start. The supervisor sends it as root, so that none of them can
+# fend it off, and to them alone. Again a tenth of a second later (busybox and GNU sleep take
+# fractions) while one is left, for FRPS_KILL_SECONDS at the most; 1 if one is left then. The
+# shell reaps those that fall to PID 1.
+kill_left() {
+    [ -n "$FRPS_USER" ] || return 0
+    rounds=0
+    deadline=$(($(epoch) + FRPS_KILL_SECONDS))
+    while left=$(frps_left) && [ -n "$left" ]; do
+        if [ "$rounds" -ge $((FRPS_KILL_SECONDS * 10)) ] || [ "$(epoch)" -ge "$deadline" ]; then
+            log "processes of $FRPS_USER left: $(printf '%s' "$left" | tr '\n' ' ')"
+            return 1
+        fi
+        # shellcheck disable=SC2086 # one pid a word
+        kill -KILL $left 2>/dev/null
+        rounds=$((rounds + 1))
+        sleep 0.1
+    done
+    return 0
 }
 
 # end_series — forgets the exits of frps so far: the next one waits 2 s again.
@@ -387,6 +501,7 @@ check_frps() {
     fi
     wait "$FRPS_PID"
     rc=$?
+    kill_left
     FRPS_PID=""
     t=$(epoch)
     if [ "$BACKOFF" -eq 0 ]; then BACKOFF=2; else BACKOFF=$((BACKOFF * 2)); fi
@@ -403,11 +518,14 @@ check_frps() {
 }
 
 # restart_due — starts frps again once its delay is over. Should current/ fail its check and
-# be gone, the input this poll saw is taken over at once, as at the start.
+# be gone, the input this poll saw is taken over at once, as at the start; should processes of
+# FRPS_USER be left, nothing starts.
 restart_due() {
     if [ -n "$RESTART_AT" ] && [ "$(epoch)" -ge "$RESTART_AT" ]; then
         RESTART_AT=""
-        start_frps || take_over start
+        started=0
+        start_frps || started=$?
+        if [ "$started" -eq 1 ]; then take_over start; fi
     fi
 }
 
@@ -437,6 +555,12 @@ take_over() {
                 log "configuration changed, restarting frps"
             fi
             stop_frps
+            # Nothing of FRPS_USER may see the new copy before the new frps does.
+            if ! kill_left; then
+                refuse_start
+                REJECTED_HASH=""
+                return
+            fi
             activate || die "cannot swap $NEXT in as $CURRENT"
             APPLIED_HASH=$CANDIDATE_HASH
             end_series
@@ -454,6 +578,7 @@ take_over() {
             end_series
             rm -rf "$CURRENT" || die "cannot remove $CURRENT"
             APPLIED_HASH=""
+            COPY_HASH=""
             set_config stopped config_missing
             add_event stopped config_missing false
         elif [ "$CONFIG_STATE" != stopped ]; then
@@ -599,14 +724,24 @@ whole_seconds FRPS_STOP_SECONDS "$FRPS_STOP_SECONDS"
 whole_seconds FRPS_CRASH_WINDOW "$FRPS_CRASH_WINDOW"
 whole_seconds FRPS_READ_SECONDS "$FRPS_READ_SECONDS"
 whole_seconds FRPS_UNSTABLE_SECONDS "$FRPS_UNSTABLE_SECONDS"
+whole_seconds FRPS_KILL_SECONDS "$FRPS_KILL_SECONDS"
 # Unset or a port: anything else would compare as some other number.
 case $FRP_BIND_PORT in
 '') ;;
 0* | *[!0-9]* | ??????*) die "FRP_BIND_PORT must be a port number" ;;
 *) [ "$FRP_BIND_PORT" -le 65535 ] || die "FRP_BIND_PORT must be a port number" ;;
 esac
+FRPS_UID=""
+if [ -n "$FRPS_USER" ]; then
+    FRPS_UID=$(id -u "$FRPS_USER" 2>/dev/null) || die "FRPS_USER $FRPS_USER is no user"
+    # kill_left would hit root's processes, the health check's among them.
+    [ "$FRPS_UID" != 0 ] || die "FRPS_USER must not be root"
+elif [ "$(id -u)" -eq 0 ]; then
+    die "FRPS_USER must name the user frps runs as, not be empty under root"
+fi
 
-if ! { mkdir -p "$FRPS_ACTIVE_DIR" && chmod 0700 "$FRPS_ACTIVE_DIR"; }; then
+# frps passes through to current/ and lists nothing.
+if ! { mkdir -p "$FRPS_ACTIVE_DIR" && chmod 0711 "$FRPS_ACTIVE_DIR"; }; then
     die "cannot set up $FRPS_ACTIVE_DIR"
 fi
 # The server and the scheduler read the status file under another UID.
@@ -624,6 +759,9 @@ SINCE=""
 CONFIG_STATE=""
 CONFIG_REASON=none
 APPLIED_HASH=$(applied_hash_of_current)
+# A copy left from an earlier run counts as taken over now.
+COPY_HASH=""
+if [ -d "$CURRENT" ]; then COPY_HASH=$(copy_hash); fi
 REJECTED_HASH=""
 FRPS_PID=""
 STARTED_AT=0

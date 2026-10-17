@@ -9,7 +9,7 @@ source_id="<boot>:<seq>", so a later run leaves it alone. Who is told:
 
 - applied: admins and the users with tunnel access (assigned via user_servers to a server with
   at least one enabled tunnel), info; with a new token also that agent tunnels take a while
-- rejected, crashed: admins, warning
+- rejected, crashed, copy_changed, start_refused: admins, warning
 - stopped: admins, info
 - started: nobody (container start, update, reboot)
 
@@ -55,8 +55,9 @@ _REASON_TEXTS = {
     "cert_expired": "Zertifikat abgelaufen",
     "cert_key_mismatch": "Zertifikat passt nicht zum Schlüssel",
     "verify_failed": "frps hat die Konfiguration bei der Prüfung abgelehnt",
-    "input_unreadable": "Konfigurations- oder Zertifikatsdatei nicht lesbar",
+    "input_unreadable": "Konfigurations- oder Zertifikatsdatei nicht lesbar oder zu groß",
     "input_unstable": "Konfiguration ändert sich laufend",
+    "processes_left": "Prozesse des FRP-Servers ließen sich nicht beenden",
 }
 
 
@@ -88,6 +89,21 @@ def _notice(event: SupervisorEvent) -> tuple[str, str, str] | None:
             "warning",
             "FRP-Server startet wiederholt neu",
             "Der FRP-Server bricht wiederholt ab und wird automatisch neu gestartet.",
+        )
+    if event.event == "copy_changed":
+        return (
+            "warning",
+            "Geprüfte Kopie der FRP-Konfiguration verändert",
+            "Die geprüfte Kopie, aus der der FRP-Server startet, hat sich nach ihrer Übernahme "
+            "verändert. Sie wurde verworfen; der FRP-Server startet nur aus einer neu geprüften "
+            "Kopie der Konfiguration.",
+        )
+    if event.event == "start_refused":
+        return (
+            "warning",
+            "FRP-Server nicht gestartet",
+            f"Grund: {_REASON_TEXTS[event.reason]}. Der FRP-Server bleibt gestoppt, bis sich die "
+            "Konfiguration ändert oder der frps-Container neu startet.",
         )
     return None
 

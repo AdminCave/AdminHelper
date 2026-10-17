@@ -315,12 +315,17 @@ services:
       - frps-active:/var/lib/frps-active
     environment:
       - FRP_BIND_PORT=${FRP_BIND_PORT:-7000}
-    # DAC_OVERRIDE alone: the supervisor runs as root and reads frps.toml and frps.key,
-    # which the server and the ca-issuer write 0600 under their own UID. Port 443 inside
-    # needs no NET_BIND_SERVICE: Docker opens every port to unprivileged processes in a
-    # container's own network namespace (net.ipv4.ip_unprivileged_port_start=0).
+    # The supervisor runs as root and starts frps as the image's user frps, which keeps no
+    # capability. The supervisor's: DAC_OVERRIDE to read frps.toml and frps.key, which the
+    # server and the ca-issuer write 0600 under their own UID; SETUID and SETGID to switch
+    # to frps (su-exec); KILL to stop frps across the UID. Port 443 inside needs no
+    # NET_BIND_SERVICE: Docker opens every port to unprivileged processes in a container's
+    # own network namespace (net.ipv4.ip_unprivileged_port_start=0).
     cap_drop: [ALL]
-    cap_add: [DAC_OVERRIDE]
+    cap_add: [DAC_OVERRIDE, SETUID, SETGID, KILL]
+    # No process gains privileges on exec (setuid bits, file capabilities).
+    security_opt:
+      - no-new-privileges:true
     # A TERM while the supervisor stops frps for a change waits for frps a second time,
     # each up to FRPS_STOP_SECONDS (10 s): Docker's KILL must not come first.
     stop_grace_period: 30s

@@ -5,11 +5,13 @@
 """The scheduler job turns the events of the frps supervisor into bell notifications.
 
 applied reaches the admins and the users with tunnel access (assigned to a server with at least
-one enabled tunnel), nobody else; rejected and crashed reach the admins as a warning, stopped as
-info, started nobody. Each event is told once (source_type "frps", source_id "<boot>:<seq>"), a
-missing or unreadable status file tells nothing, and the texts carry no value from the file. A
-file that shows new boots or sequence numbers on every read gets at most LIMIT notifications per
-hour, and an event older than an hour is no news."""
+one enabled tunnel), nobody else; rejected, crashed, copy_changed and start_refused reach the
+admins as a warning, stopped as info, started nobody; every other event the reader knows
+reaches someone.
+Each event is told once (source_type "frps", source_id "<boot>:<seq>"), a missing or unreadable
+status file tells nothing, and the texts carry no value from the file. A file that shows new
+boots or sequence numbers on every read gets at most LIMIT notifications per hour, and an event
+older than an hour is no news."""
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -20,7 +22,7 @@ import pytest
 from app.core.auth import hash_password
 from app.modules.frp import supervisor_watch
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
-from app.modules.frp.supervisor_status import REASONS
+from app.modules.frp.supervisor_status import EVENTS, REASONS
 from app.modules.frp.supervisor_watch import LIMIT, WINDOW, notify_supervisor_events
 from app.modules.hooks import scheduler as sched
 from app.modules.notifications.models import Notification
@@ -189,7 +191,7 @@ def test_a_new_token_adds_that_agent_tunnels_take_up_to_five_minutes(
             "input_unreadable",
             "warning",
             "Neue FRP-Konfiguration nicht übernommen",
-            "Grund: Konfigurations- oder Zertifikatsdatei nicht lesbar. "
+            "Grund: Konfigurations- oder Zertifikatsdatei nicht lesbar oder zu groß. "
             "Der FRP-Server läuft mit der letzten gültigen Konfiguration weiter.",
         ),
         (
@@ -214,9 +216,26 @@ def test_a_new_token_adds_that_agent_tunnels_take_up_to_five_minutes(
             "FRP-Server gestoppt",
             "Es gibt keine FRP-Konfiguration mehr.",
         ),
+        (
+            "copy_changed",
+            "none",
+            "warning",
+            "Geprüfte Kopie der FRP-Konfiguration verändert",
+            "Die geprüfte Kopie, aus der der FRP-Server startet, hat sich nach ihrer Übernahme "
+            "verändert. Sie wurde verworfen; der FRP-Server startet nur aus einer neu geprüften "
+            "Kopie der Konfiguration.",
+        ),
+        (
+            "start_refused",
+            "processes_left",
+            "warning",
+            "FRP-Server nicht gestartet",
+            "Grund: Prozesse des FRP-Servers ließen sich nicht beenden. Der FRP-Server bleibt "
+            "gestoppt, bis sich die Konfiguration ändert oder der frps-Container neu startet.",
+        ),
     ],
 )
-def test_rejected_crashed_and_stopped_reach_the_admins_only(
+def test_every_event_but_applied_and_started_reaches_the_admins_only(
     db_session, people, status_file, event, reason, severity, title, body
 ):
     now = _now()
@@ -254,6 +273,15 @@ def test_only_an_unstable_input_does_not_claim_that_frps_runs_on(
         assert UNTIL_STABLE in row.body and RUNS_ON not in row.body
     else:
         assert RUNS_ON in row.body and UNTIL_STABLE not in row.body
+
+
+@pytest.mark.parametrize("event", sorted(EVENTS - {"started"}))
+def test_every_event_the_reader_knows_but_started_tells_someone(
+    db_session, people, status_file, event
+):
+    now = _now()
+    _write(status_file, [_event(7, event, now)], now)
+    assert notify_supervisor_events(db_session, now=now) >= 1
 
 
 def test_started_tells_nobody(db_session, people, status_file):

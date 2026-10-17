@@ -9,9 +9,12 @@ writes and nothing else, and frps-certs. It writes two volumes of its own: frps-
 the server and the scheduler mount read-only to read the status file, and frps-active, which
 holds the checked copy with token and key and which no other service mounts.
 
-frps keeps a single capability: the supervisor runs as root and reads frps.toml and frps.key,
-which the server and the ca-issuer write 0600 under their own UID. Port 443 inside needs none,
-since Docker opens every port to unprivileged processes in a container's own network namespace
+The supervisor runs as root and starts frps under a user of the image's own, whose UID no other
+service uses. It keeps four capabilities, frps none: DAC_OVERRIDE to read frps.toml and
+frps.key, which the server and the ca-issuer write 0600 under their own UID; SETUID and SETGID
+to switch to the user of frps; KILL to stop frps across the UID. No process in the container
+gains privileges on exec (no-new-privileges). Port 443 inside needs no capability, since Docker
+opens every port to unprivileged processes in a container's own network namespace
 (net.ipv4.ip_unprivileged_port_start=0). The server and the scheduler run as the app user of
 their image, so they read the status through the bits the supervisor grants everyone.
 
@@ -19,14 +22,13 @@ A TERM while the supervisor stops frps waits for frps a second time, so the grac
 outlasts two stops. The health check runs the supervisor's health subcommand, nothing else.
 
 Only docker-compose.test.yml needs a loader of its own: it carries `!override`, which
-`yaml.safe_load` refuses. One test runs the frps image with the settings compose gives it; it
-skips when Docker or the pinned base image is not at hand.
+`yaml.safe_load` refuses. One test runs the frps image, built from apps/frps, with the settings
+compose gives it; it skips when Docker or the pinned base image is not at hand.
 """
 
 import contextlib
 import os
 import re
-import shutil
 import signal
 import stat
 import subprocess
@@ -46,11 +48,14 @@ from .test_frps_supervisor import (
     STARTED_SUCCESSFULLY,
     TOKEN,
     WAIT,
+    _built_frps_image,
     _cert_pem,
     _cfg,
+    _frps_user,
     _image,
     _key,
     _key_pem,
+    _security_args,
 )
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -165,10 +170,20 @@ def test_server_and_scheduler_read_the_status_and_know_the_published_port():
     assert f"{_BIND_PORT}:{_BIND_PORT}" in services["frps"]["ports"]
 
 
-def test_frps_keeps_only_the_capability_to_read_its_input():
+def test_the_supervisor_keeps_only_the_capabilities_to_read_the_input_and_run_frps_as_its_user():
     frps = _services()["frps"]
     assert frps["cap_drop"] == ["ALL"]
-    assert frps["cap_add"] == ["DAC_OVERRIDE"]
+    assert sorted(frps["cap_add"]) == ["DAC_OVERRIDE", "KILL", "SETGID", "SETUID"]
+
+
+def test_no_process_in_the_frps_container_gains_privileges_on_exec():
+    assert _services()["frps"]["security_opt"] == ["no-new-privileges:true"]
+
+
+def test_frps_runs_under_a_uid_no_other_service_uses():
+    _, uid = _frps_user()
+    images = ("Dockerfile", "apps/ca-issuer/Dockerfile", "apps/monitoring/Dockerfile")
+    assert uid != 0 and str(uid) not in {_uid(_ROOT / image) for image in images}
 
 
 def test_the_grace_period_outlasts_a_term_while_frps_is_being_stopped():
@@ -215,6 +230,9 @@ def test_everyone_may_read_the_status_file_the_supervisor_writes(tmp_path):
         "FRPS_STATE_DIR": str(state),
         "FRPS_BIN": "false",
         "FRPS_POLL_SECONDS": "3600",
+        # Without root, no user to switch to, and no process of one to look for.
+        "FRPS_USER": "",
+        "FRPS_PROC_ROOT": str(tmp_path / "proc"),
     }
     supervisor = subprocess.Popen(
         ["/bin/sh", str(SCRIPT)],
@@ -274,15 +292,17 @@ def _uid(dockerfile: Path) -> str:
     return found[1]
 
 
+@pytest.fixture(scope="module")
+def frps_image():
+    yield from _built_frps_image()
+
+
 def test_in_the_frps_image_under_the_compose_settings_frps_runs_and_the_server_reads_the_status(
-    tmp_path, pems
+    tmp_path, pems, frps_image
 ):
-    base, target, entrypoint = _image()
-    docker = shutil.which("docker")
-    if docker is None:
-        pytest.skip("docker is not available")
-    if subprocess.run([docker, "image", "inspect", base], capture_output=True).returncode != 0:
-        pytest.skip(f"no docker daemon or {base} not present locally")
+    docker, image = frps_image
+    # Base of the image: a shell for the containers that fill and read the volumes.
+    base, _, _ = _image()
     services = _services()
     frps = services["frps"]
     server_uid = _uid(_ROOT / "Dockerfile")
@@ -329,9 +349,7 @@ def test_in_the_frps_image_under_the_compose_settings_frps_runs_and_the_server_r
             capture_output=True,
         )
 
-        run = ["-d", "--name", run_id]
-        run += [arg for cap in frps["cap_drop"] for arg in ("--cap-drop", cap)]
-        run += [arg for cap in frps["cap_add"] for arg in ("--cap-add", cap)]
+        run = ["-d", "--name", run_id, *_security_args(frps)]
         for key, value in _environment(frps).items():
             run += ["-e", f"{key}={_at_default(value)}"]
         for mount, (volume, read_only, nocopy) in _mounts(frps).items():
@@ -341,8 +359,7 @@ def test_in_the_frps_image_under_the_compose_settings_frps_runs_and_the_server_r
             if nocopy:
                 spec += ",volume-nocopy"
             run += ["--mount", spec]
-        run += ["-v", f"{SCRIPT}:{target}:ro", "--entrypoint", entrypoint[0], base, *entrypoint[1:]]
-        docker_run(*run, check=True, capture_output=True)
+        docker_run(*run, image, check=True, capture_output=True)
 
         # The server's view: its UID, a group other than root's, the volume read-only where
         # compose mounts it.
@@ -370,6 +387,16 @@ def test_in_the_frps_image_under_the_compose_settings_frps_runs_and_the_server_r
             [docker, "exec", run_id, "id", "-u"], capture_output=True, text=True
         )
         assert whoami.stdout.strip() == "0"
+        # frps itself: the user of its own, without a capability.
+        _, frps_uid = _frps_user()
+        proc = subprocess.run(
+            [docker, "exec", run_id, "sh", "-c", 'cat "/proc/$(pidof frps)/status"'],
+            capture_output=True,
+            text=True,
+        )
+        fields = dict(line.split(":", 1) for line in proc.stdout.splitlines() if ":" in line)
+        assert fields["Uid"].split() == [str(frps_uid)] * 4, proc.stdout + proc.stderr
+        assert (fields["CapEff"].strip(), fields["NoNewPrivs"].strip()) == ("0" * 16, "1")
         health = subprocess.run(
             [docker, "exec", run_id, *frps["healthcheck"]["test"][1:]], capture_output=True
         )

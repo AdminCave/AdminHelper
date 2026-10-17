@@ -57,9 +57,12 @@ REASONS = frozenset(
         "verify_failed",
         "input_unreadable",
         "input_unstable",
+        "processes_left",
     }
 )
-EVENTS = frozenset({"started", "applied", "rejected", "stopped", "crashed"})
+EVENTS = frozenset(
+    {"started", "applied", "rejected", "stopped", "crashed", "copy_changed", "start_refused"}
+)
 
 _KEYS = frozenset(
     {"v", "boot", "heartbeat", "state", "reason", "since", "appliedHash", "rejectedHash", "events"}
