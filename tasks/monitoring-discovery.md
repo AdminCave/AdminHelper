@@ -65,8 +65,8 @@ Doku: keine (Test)
 Abhängt von: T1, T5
 
 ### T7 — Doku und CHANGELOG  [ ]
-Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
-Änderung: Admin-Doku DE + EN (`monitoring.html:171-181`, „Templates zuweisen“): Vorschlag im Monitoring-Tab nach erkanntem OS und Subsystemen, Zuweisen/Ignorieren, keine Auto-Zuweisung; Agents vor dieser Version liefern keinen Vorschlag. Entwickler-Doku DE + EN: Report-Beispiel (`developer/monitoring.html:95-121`) um `host`, Satz zu optionalen Feldern (`:121`), Routen der Vorschläge. CHANGELOG unter `### Added`.
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md, apps/desktop/e2e/README.md
+Änderung: Admin-Doku DE + EN (`monitoring.html:171-181`, „Templates zuweisen“): Vorschlag im Monitoring-Tab nach erkanntem OS und Subsystemen, Zuweisen/Ignorieren, keine Auto-Zuweisung; Agents vor dieser Version liefern keinen Vorschlag. Entwickler-Doku DE + EN: Report-Beispiel (`developer/monitoring.html:95-121`) um `host`, Satz zu optionalen Feldern (`:121`), Routen der Vorschläge. CHANGELOG unter `### Added`. `apps/desktop/e2e/README.md` (Abschnitt `monitoring-check.live.js`): der Vorschlag-Schritt aus T6.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html · CHANGELOG.md
 Abhängt von: T5, T6
