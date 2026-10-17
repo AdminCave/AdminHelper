@@ -39,8 +39,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_repor
 Doku: keine (intern)
 Abhängt von: T2
 
-### T4 — Vorschläge berechnen und ignorieren (Routen)  [ ]
+### T4 — Vorschläge berechnen und ignorieren (Routen)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/template_suggestions.py, apps/monitoring/app/routers/templates.py, apps/monitoring/tests/test_template_suggestions.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @25b3470b 2026-10-17T12:04:52+02:00
+Review: approve (.ah-out/review/monitoring-discovery/T4.verdict.json)
 Änderung: `suggest_templates(db, server_id)`: `linux` → `linux-base`, `windows` → `windows-base`, `docker` → `docker-host`, `zfs` → `zfs-storage`, `proxmox` → `proxmox-host`; nur Slugs, deren Template existiert, die dem Server nicht zugewiesen sind (jede Quelle) und nicht ignoriert wurden; Ergebnis `[{slug, templateId, templateName, reason}]` mit `reason` `os:<os>` bzw. `subsystem:<name>`. Routen in `templates.py`: `GET /templates/suggestions/{server_id}` und `POST /templates/suggestions/{server_id}/dismiss` mit Body `{"slug": …}` (422 bei unbekanntem Slug, idempotent). Die Pfade liegen unter dem Proxy-Präfix `templates` (`monitoring_proxy/router.py:59-66`) und kollidieren nicht mit `/templates/{template_id}` (drei Segmente, wie `/templates/assignments/{server_id}` `:80`). Tests zuerst rot: Linux mit Docker → beide Vorschläge; zugewiesen/ignoriert/gelöschtes Built-in → kein Vorschlag; ohne Fakten → leer. OpenAPI-Snapshot nachziehen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_suggestions.py tests/test_openapi_snapshot.py
 Doku: keine (intern; beschrieben in T7)
