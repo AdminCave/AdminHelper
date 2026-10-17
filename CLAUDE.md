@@ -28,11 +28,12 @@ entscheidet die Session und berichtet danach; Fragen an Kevin gesammelt und mit 
 Eine Session arbeitet ein Vorhaben Task für Task ab: ein Bauer-Sub-Agent baut die Task im Worktree des Vorhabens,
 ein Reviewer-Sub-Agent prüft, `scripts/dev/task-close.sh` fährt das `Verify:`, den Token-Scan und committet Code und
 Ledger. Zwei freigegebene, disjunkte Vorhaben baut die Session parallel (Deckel `aktiv` 2 in `roadmap.py`), je in
-eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Produkt-PRs
-merged die Session, wenn die CI im ersten Anlauf grün ist, einen je CI-Zyklus, und nur, wenn der Branch `origin/main`
-enthält (`git fetch`, `merge-base --is-ancestor`; sonst mergen, pushen, neue CI): Das Ruleset prüft die Kombination
-nicht, die PR-CI testet dann genau `main` + PR (Kevin, 2026-10-15). PRs, die
-`CLAUDE.md`, `.claude/`, `scripts/` oder `.github/` ändern, merged Kevin. Ist `main` rot, wird der letzte Merge
+eigenem Worktree (Kriterien `/feature-plan` §4); innerhalb eines Vorhabens bauen die Tasks nacheinander. Jeden PR
+merged die Session selbst, auch einen, der `CLAUDE.md`, `.claude/`, `scripts/` oder `.github/` ändert, sobald er grün
+ist und alle Prüfer `approve` gesagt haben (Kevin, 2026-10-17). Grün heißt: die CI im ersten Anlauf grün und die
+Läufe, die §5 vor dem Merge verlangt, grün. Einen je CI-Zyklus, und nur, wenn der Branch `origin/main` enthält
+(`git fetch`, `merge-base --is-ancestor`; sonst mergen, pushen, neue CI): Das Ruleset prüft die Kombination nicht, die
+PR-CI testet dann genau `main` + PR (Kevin, 2026-10-15). Ist `main` rot, wird der letzte Merge
 revertiert, und bis `main` grün ist, wird nichts weiter gemergt; flaky heißt Rerun plus Roadmap-Zeile. Lange
 Läufe (`/test`, Wochenlauf, Multibox, Suiten über zehn Minuten) laufen in einem tmux-Fenster ohne Modell mit
 `( . ./.devenv.sh; … ) > log; echo $? > rc`; die Session wartet mit einem Hintergrund-Wächter auf die `rc`-Datei

@@ -77,10 +77,11 @@ Neue Funde außerhalb der Task werden Roadmap-Zeilen, keine Tasks in diesem Ledg
    `bash WT/scripts/dev/review.sh pr-body WT/tasks/<slug>.md > <Scratchpad>/pr-body.md`, die Urteile von `tester`
    und `reviewer` dazu; `gh pr create --title "<type>: <feature>" --body-file <Scratchpad>/pr-body.md`;
    `roadmap.py status R-nnnn pr --pr "#<n>"`.
-6. `gh pr checks <n> --watch --fail-fast`. Produkt-PR, CI im ersten Anlauf grün → Basis wie in 5 prüfen (zieht sie
-   nach: Push, neue CI abwarten; die PR-CI testet dann `main` + PR, CLAUDE.md §2), dann `gh pr merge <n> --merge`
-   (ohne `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch danach mit `git push origin --delete
-   feature/<slug>`). Harness-PR oder rote CI → Übergabe an Kevin.
+6. `gh pr checks <n> --watch --fail-fast`. CI im ersten Anlauf grün, die Läufe aus 3 grün und alle Urteile aus 4
+   `approve`, auch bei einem Harness-PR (CLAUDE.md §2) → Basis wie in 5 prüfen (zieht sie nach: Push, neue CI
+   abwarten; die PR-CI testet dann `main` + PR, CLAUDE.md §2), dann `gh pr merge <n> --merge` (ohne
+   `--delete-branch`: gh entfernt sonst den Worktree; den Remote-Branch danach mit `git push origin --delete
+   feature/<slug>`). Rote CI → Übergabe an Kevin.
 7. Nach dem Merge den `ci.yml`-Lauf des Merge-Commits beobachten: `gh run list --workflow ci.yml --commit
    <merge-sha> -L 1` wiederholen, bis er erscheint, dann `gh run watch <id> --exit-status`; rot → nichts weiter
    mergen, Revert nach CLAUDE.md §2. Dann
