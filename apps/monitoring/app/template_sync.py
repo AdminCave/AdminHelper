@@ -31,11 +31,13 @@ from app.models import (
     MonitorAlertRule,
     MonitorCheck,
     MonitorCheckTombstone,
+    MonitorHostFacts,
     MonitorMaintenance,
     MonitorSeedState,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
+    MonitorTemplateSuggestionDismissal,
 )
 from app.scheduler import add_check, remove_check
 
@@ -722,6 +724,12 @@ def cleanup_server(db: Session, server_id: str) -> dict:
     # (server_id NULL) stay.
     db.query(MonitorMaintenance).filter(MonitorMaintenance.server_id == server_id).delete()
     db.query(MonitorAgentLiveness).filter(MonitorAgentLiveness.server_id == server_id).delete()
+
+    # Host facts and ignored template suggestions: no foreign key to the server either
+    db.query(MonitorHostFacts).filter(MonitorHostFacts.server_id == server_id).delete()
+    db.query(MonitorTemplateSuggestionDismissal).filter(
+        MonitorTemplateSuggestionDismissal.server_id == server_id,
+    ).delete()
 
     db.commit()
     _apply_scheduler_actions(actions)

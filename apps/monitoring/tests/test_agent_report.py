@@ -11,13 +11,13 @@ import logging
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.auth import require_agent
 from app.core.database import get_db
-from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorState
+from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorHostFacts, MonitorState
 
 
 @pytest.fixture()
@@ -548,3 +548,241 @@ def test_single_restart_stays_damped_crash_loop_alerts(client_db):
     state, details = _stored_docker(factory)
     assert details["containers"][0]["reason"] == "restarted"
     assert (state.status, state.fail_count) == ("warning", 2)
+
+
+# --- host facts (R-0421) ----------------------------------------------------------
+
+
+def _host(**overrides) -> dict:
+    """The report's host block as the agent sends it since R-0421."""
+    return {
+        "os": "linux",
+        "platform": "ubuntu",
+        "platform_version": "24.04",
+        "virtualization": {"system": "kvm", "role": "guest"},
+        "subsystems": ["docker", "zfs"],
+        **overrides,
+    }
+
+
+# What _host() leaves in monitor_host_facts, in the shape of _stored_facts.
+_STORED = {
+    "os": "linux",
+    "platform": "ubuntu",
+    "platform_version": "24.04",
+    "virt_system": "kvm",
+    "virt_role": "guest",
+    "subsystems": ["docker", "zfs"],
+}
+
+
+def _stored_facts(factory) -> dict | None:
+    """The stored host facts of srv-1, one key per column, subsystems decoded."""
+    with factory() as db:
+        row = db.get(MonitorHostFacts, "srv-1")
+        if row is None:
+            return None
+        return {
+            "os": row.os,
+            "platform": row.platform,
+            "platform_version": row.platform_version,
+            "virt_system": row.virt_system,
+            "virt_role": row.virt_role,
+            "subsystems": json.loads(row.subsystems),
+        }
+
+
+def _facts_updated_at(factory):
+    with factory() as db:
+        return db.get(MonitorHostFacts, "srv-1").updated_at
+
+
+def test_report_stores_the_host_facts(client_db):
+    client, factory = client_db
+    r = client.post("/agent/srv-1/report", json={"host": _host()})
+    assert r.status_code == 200, r.text
+    assert _stored_facts(factory) == _STORED
+
+
+def test_report_drops_unknown_os_and_subsystems(client_db):
+    # Only values a suggestion can be made from are kept; the rest of the block counts.
+    client, factory = client_db
+    host = _host(os="freebsd", subsystems=["kubernetes", "docker", "lxc"])
+    assert client.post("/agent/srv-1/report", json={"host": host}).status_code == 200
+    assert _stored_facts(factory) == {**_STORED, "os": None, "subsystems": ["docker"]}
+
+
+def test_report_cuts_host_strings_to_64_chars(client_db):
+    client, factory = client_db
+    host = _host(
+        platform="p" * 1000,
+        platform_version="9" * 65,
+        virtualization={"system": "s" * 64, "role": "r" * 5000},
+    )
+    assert client.post("/agent/srv-1/report", json={"host": host}).status_code == 200
+    assert _stored_facts(factory) == {
+        **_STORED,
+        "platform": "p" * 64,
+        "platform_version": "9" * 64,
+        "virt_system": "s" * 64,
+        "virt_role": "r" * 64,
+    }
+
+
+def test_report_bounds_a_flooded_subsystem_list(client_db):
+    # subsystems is a Text column without a limit. Whatever list the agent sends, what
+    # lands there is at most the three known names, each once, in a fixed order —
+    # long names that merely start with one, and entries that are lists or objects,
+    # included.
+    client, factory = client_db
+    flood = [f"docker{'x' * 100}{i}" for i in range(9_990)]
+    flood += ["proxmox", "zfs", "docker", "zfs", "proxmox", "docker", ["docker"], {"zfs": 1}]
+    flood += [None, 7]
+    assert len(flood) == 10_000
+
+    r = client.post("/agent/srv-1/report", json={"host": _host(subsystems=flood)})
+    assert r.status_code == 200, r.text
+    with factory() as db:
+        assert db.get(MonitorHostFacts, "srv-1").subsystems == '["docker", "zfs", "proxmox"]'
+
+
+def test_report_stores_empty_host_strings_as_null(client_db):
+    # Bare metal and Windows report "" for the virtualization (agent, T1): unknown,
+    # not a value.
+    client, factory = client_db
+    host = _host(os="", platform="", platform_version="", virtualization={"system": "", "role": ""})
+    assert client.post("/agent/srv-1/report", json={"host": host}).status_code == 200
+    assert _stored_facts(factory) == {
+        **_STORED,
+        "os": None,
+        "platform": None,
+        "platform_version": None,
+        "virt_system": None,
+        "virt_role": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "overrides,dropped",
+    [
+        ({"os": ["linux"]}, {"os": None}),
+        ({"platform": 42}, {"platform": None}),
+        ({"platform_version": {"v": "24.04"}}, {"platform_version": None}),
+        ({"virtualization": ["kvm", "guest"]}, {"virt_system": None, "virt_role": None}),
+        ({"virtualization": {"system": True, "role": "guest"}}, {"virt_system": None}),
+        # Neither a string nor an object is a list, though `in` works on both: on
+        # the string as a substring test, on the object as a key test.
+        ({"subsystems": "docker zfs proxmox"}, {"subsystems": []}),
+        ({"subsystems": {"docker": True}}, {"subsystems": []}),
+    ],
+)
+def test_wrong_host_field_type_drops_only_that_field(client_db, overrides, dropped):
+    client, factory = client_db
+    r = client.post("/agent/srv-1/report", json={"host": _host(**overrides)})
+    assert r.status_code == 200, r.text
+    assert _stored_facts(factory) == {**_STORED, **dropped}
+
+
+@pytest.mark.parametrize(
+    "report", [{}, {"host": None}, {"host": "linux"}, {"host": ["linux"]}, {"host": 1}]
+)
+def test_report_without_a_host_object_stores_nothing(client_db, report):
+    client, factory = client_db
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "ok"
+    assert _stored_facts(factory) is None
+
+
+def test_every_report_moves_host_facts_updated_at(client_db, monkeypatch):
+    # updated_at is when the agent last reported, not when the facts last changed,
+    # so it is set on every report: the column's onupdate only fires with an UPDATE,
+    # and unchanged facts would not emit one.
+    from datetime import datetime, timedelta
+
+    import app.template_suggestions as suggestions
+
+    client, factory = client_db
+    t1 = datetime(2026, 10, 17, 12, 0, 0)
+    monkeypatch.setattr(suggestions, "utcnow_naive", lambda: t1)
+    assert client.post("/agent/srv-1/report", json={"host": _host()}).status_code == 200
+    assert _facts_updated_at(factory) == t1
+
+    t2 = t1 + timedelta(minutes=5)
+    monkeypatch.setattr(suggestions, "utcnow_naive", lambda: t2)
+    assert client.post("/agent/srv-1/report", json={"host": _host()}).status_code == 200
+    assert _stored_facts(factory) == _STORED
+    assert _facts_updated_at(factory) == t2
+
+    # Changed facts replace the stored ones.
+    t3 = t2 + timedelta(minutes=5)
+    monkeypatch.setattr(suggestions, "utcnow_naive", lambda: t3)
+    host = _host(platform_version="26.04", subsystems=[])
+    assert client.post("/agent/srv-1/report", json={"host": host}).status_code == 200
+    changed = {**_STORED, "platform_version": "26.04", "subsystems": []}
+    assert _stored_facts(factory) == changed
+    assert _facts_updated_at(factory) == t3
+
+    # A report without the block (an older agent) leaves them as they are.
+    monkeypatch.setattr(suggestions, "utcnow_naive", lambda: t3 + timedelta(minutes=5))
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    assert _stored_facts(factory) == changed
+    assert _facts_updated_at(factory) == t3
+
+
+def test_failed_host_facts_store_is_only_logged(client_db, caplog):
+    # Like the liveness: its own commit, rolled back and logged on failure, so it
+    # costs the report nothing — the same session still evaluates the checks after.
+    # The failure has to come from the flush: a failed flush leaves the session
+    # unusable until the rollback (PendingRollbackError on the check query), where a
+    # failed SELECT on SQLite would not.
+    from app.models import MonitorAgentLiveness
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    with factory() as db:
+        db.execute(
+            text(
+                "CREATE TRIGGER refuse_host_facts BEFORE INSERT ON monitor_host_facts "
+                "BEGIN SELECT RAISE(ABORT, 'refused'); END"
+            )
+        )
+        db.commit()
+
+    with caplog.at_level(logging.ERROR, logger="app.template_suggestions"):
+        r = client.post("/agent/srv-1/report", json={**_report(cpu=5), "host": _host()})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "ok"
+    assert r.json()["checksUpdated"] == 1
+    failures = [rec for rec in caplog.records if rec.name == "app.template_suggestions"]
+    assert len(failures) == 1, caplog.messages
+    # The type and the server, no traceback: an agent can trigger this on every report.
+    assert "srv-1" in failures[0].getMessage()
+    assert "IntegrityError" in failures[0].getMessage()
+    assert failures[0].exc_info is None
+    assert _stored_facts(factory) is None
+    with factory() as db:
+        assert db.get(MonitorAgentLiveness, "srv-1") is not None
+        assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "ok"
+
+
+def test_report_refused_for_a_nul_leaves_host_facts_alone(client_db, monkeypatch):
+    # The store runs after the NUL check: a refused report is no report, its host
+    # block included. The NUL sits in an entry the filter drops anyway, so a store
+    # run before the check would succeed and change the facts.
+    from datetime import datetime, timedelta
+
+    import app.template_suggestions as suggestions
+
+    client, factory = client_db
+    t1 = datetime(2026, 10, 17, 12, 0, 0)
+    monkeypatch.setattr(suggestions, "utcnow_naive", lambda: t1)
+    assert client.post("/agent/srv-1/report", json={"host": _host()}).status_code == 200
+
+    monkeypatch.setattr(suggestions, "utcnow_naive", lambda: t1 + timedelta(minutes=5))
+    host = _host(platform_version="26.04", subsystems=["zfs\x00"])
+    r = client.post("/agent/srv-1/report", json={"host": host})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "host", "subsystems", 0]
+    assert _stored_facts(factory) == _STORED
+    assert _facts_updated_at(factory) == t1

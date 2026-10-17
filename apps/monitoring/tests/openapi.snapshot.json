@@ -438,6 +438,19 @@
         "title": "MaintenanceInput",
         "type": "object"
       },
+      "SuggestionDismiss": {
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "title": "SuggestionDismiss",
+        "type": "object"
+      },
       "TemplateAlertDef": {
         "properties": {
           "channel": {
@@ -1931,6 +1944,91 @@
           }
         },
         "summary": "Get Server Assignments"
+      }
+    },
+    "/templates/suggestions/{server_id}": {
+      "get": {
+        "description": "Lists the standard templates the server's host facts suggest; empty for a\nserver whose agent has not reported them (yet).",
+        "operationId": "get_template_suggestions_templates_suggestions__server_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Template Suggestions"
+      }
+    },
+    "/templates/suggestions/{server_id}/dismiss": {
+      "post": {
+        "description": "Ignores a suggested standard template on this server; idempotent. No undo\nyet, the template can still be assigned by hand.",
+        "operationId": "dismiss_template_suggestion_templates_suggestions__server_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionDismiss"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Template Suggestion"
       }
     },
     "/templates/tag-sync": {
