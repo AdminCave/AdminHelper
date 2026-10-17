@@ -298,8 +298,7 @@ services:
       - "${FRP_BIND_PORT:-7000}:${FRP_BIND_PORT:-7000}"
       - "${FRP_HTTPS_PORT:-7443}:443"
     volumes:
-      # The frps.toml the server writes; nocopy: the volume holds what the server writes
-      # and nothing else.
+      # The frps.toml the server writes; nocopy: the volume holds only what the server writes.
       - type: volume
         source: frp-config
         target: /etc/frp

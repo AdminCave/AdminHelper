@@ -4,8 +4,8 @@
 
 """Compose runs frps from its own image (apps/frps) under the supervisor.
 
-frps mounts its input read-only: frp-config with nocopy, so that it holds what the server
-writes and nothing else, and frps-certs. It writes two volumes of its own: frps-state, which
+frps mounts its input read-only: frp-config with nocopy, so that it holds only what the server
+writes, and frps-certs. It writes two volumes of its own: frps-state, which
 the server and the scheduler mount read-only to read the status file, and frps-active, which
 holds the checked copy with token and key and which no other service mounts.
 

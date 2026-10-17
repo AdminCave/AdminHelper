@@ -194,9 +194,9 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
     lines.append('auth.method = "token"')
     lines.append(f'auth.token = "{config.auth_token}"')
 
-    # Operator-supplied extra frps.toml fields (e.g. maxPoolCount, transport.*).
-    # _check_extra_config already validated the keys as TOML bare keys and the
-    # values as str/bool/int/float, so they can be emitted verbatim.
+    # Operator-supplied extra frps.toml fields: keys of extra_config.ALLOWED_KEYS with values
+    # that pass value_allowed. _check_frps_extra_config holds the API to that and the startup
+    # check in main.py the stored rows, so they can be emitted verbatim.
     extra = json.loads(config.extra_config) if config.extra_config else None
     if extra:
         lines.append("")

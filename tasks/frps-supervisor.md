@@ -248,8 +248,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_confi
 Doku: CHANGELOG und Betrieb in T17
 Test-Löschung: apps/server/tests/test_frp_toml_roundtrip.py::test_extra_config_may_collide_with_the_generators_own_keys — das strict-xfail hielt fest, dass `extra_config` mit Generator-Schlüsseln kollidieren kann; T28 lehnt solche Schlüssel im Schema ab, ein Positivtest (Schema lehnt `auth`/Generator-Schlüssel ab) ersetzt ihn
 
-### T27 — Kommentare: frps-Image und Compose neutral  [ ]
+### T27 — Kommentare: frps-Image und Compose neutral  [x]
 Komponente: server · Dateien: apps/frps/Dockerfile, docker-compose.yml, apps/server/tests/test_compose_frps.py, apps/server/app/modules/frp/config_generator.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @d0e719ae 2026-10-17T15:56:43+02:00
+Review: approve (.ah-out/review/frps-supervisor/T27.verdict.json)
 Änderung: Kommentare und Docstrings beschreiben, was Supervisor und Volume tun („liest `frps.toml` aus `/etc/frp`, das nur enthält, was der Server schreibt“). Nur Kommentare und Docstrings, kein Verhalten. Dazu der veraltete Kommentar in `config_generator.py` (`:197-199`, „e.g. maxPoolCount“, „_check_extra_config already validated“) nach T28.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_compose_frps.py
 Doku: keine (intern)
