@@ -8,6 +8,8 @@ critical, the smartctl exit-code bit flags map to the right severity, the
 temperature threshold depends on the disk kind, and an ignored device is
 skipped. (ATA/SATA disks only, to stay clear of the NVMe-spare specifics.)"""
 
+import pytest
+
 from app.checkers.smart import SmartHealthChecker
 
 CHECKER = SmartHealthChecker()
@@ -32,6 +34,40 @@ def _report(*disks):
 def test_no_smart_data_is_ok_not_an_error():
     # A VM / a host without smartctl sends no "smart" key.
     assert CHECKER.evaluate({}, {})[0] == "ok"
+
+
+# The result of a report without smart and without a readable reason (agents before R-0419).
+_NO_DATA = ("ok", "Keine SMART-Daten (VM oder smartctl nicht verfuegbar)", None)
+
+
+@pytest.mark.parametrize(
+    ("reason", "message"),
+    [
+        ("not_installed", "No SMART data: smartctl is not installed"),
+        # scan_failed also covers found devices of which none gave readable SMART data.
+        ("scan_failed", "No SMART data: the SMART query failed"),
+        ("no_devices", "No SMART data: no SMART-capable devices found"),
+    ],
+)
+def test_smart_absent_names_the_reason_and_stays_ok(reason, message):
+    # Agents since R-0419 send smart_absent instead of smart when there is no disk.
+    report = {"smart_absent": {"reason": reason}}
+    assert CHECKER.evaluate({}, report) == ("ok", message, {"_details": {"absent": reason}})
+
+
+@pytest.mark.parametrize(
+    "absent",
+    [
+        {"reason": "vm_detected"},
+        {"reason": ["not_installed"]},
+        {},
+        "not_installed",
+        ["not_installed"],
+        None,
+    ],
+)
+def test_smart_absent_unknown_or_malformed_falls_back_to_no_data(absent):
+    assert CHECKER.evaluate({}, {"smart_absent": absent}) == _NO_DATA
 
 
 def test_clean_disk_is_ok():

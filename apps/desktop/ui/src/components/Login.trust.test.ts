@@ -82,6 +82,19 @@ describe('Login — trust dialog (ERR_TLS_UNKNOWN_ISSUER)', () => {
     expect(container.querySelector('.login-error')).toBeNull();
   });
 
+  it('the trust dialog lies in the login screen layer', async () => {
+    // `.login-screen` is fixed with z-index 300 and an opaque background; as a
+    // sibling the dialog's z-index 60 sat below it. jsdom has no stacking, so
+    // the structure is the contract; the live spec checks the real hit-test.
+    h.enrollWithToken.mockRejectedValueOnce(UNKNOWN_ISSUER);
+    const { container, queryByTestId } = render(Login);
+
+    await submitEnroll(container);
+    await waitFor(() => expect(queryByTestId('trust-dialog')).not.toBeNull());
+
+    expect(container.querySelector('.login-screen [data-testid="trust-dialog"]')).not.toBeNull();
+  });
+
   it('persists the opt-in, then retries the enrollment with self-signed allowed', async () => {
     h.enrollWithToken.mockRejectedValueOnce(UNKNOWN_ISSUER).mockResolvedValueOnce(undefined);
     const { container, queryByTestId } = render(Login);

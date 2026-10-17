@@ -1201,6 +1201,102 @@ history_of | grep -q 'visitor lease or missing visitor config,infra,' \
   && ok "the visitor failure is filed as infra, not as an assertion" \
   || bad "visitor row: $(history_of | grep visitor)"
 
+# ── 7l: a lost AGENT box files the strict Docker follow-up under agent ───────
+# The Docker stage (R-0419) runs on the agent box that provisioned. Without one,
+# multibox prints the stage header and then only the SKIP and its strict FAIL:
+# that FAIL follows the lost box, not the stage it falls in. The excerpt runs
+# from the clone to the end of the Docker stage.
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== clone 1 server + 1 agent box(es) (scenario mb-4711) ==
+  ok   server-box 3001 @ 192.0.2.5
+clone failed for role agent
+  FAIL agent1 lease
+== provision each agent against https://192.0.2.5 ==
+== docker (R-0419): real Docker on the agent box, the Docker Host template, three states ==
+  SKIP the Docker stage (no provisioned agent box) — ok, exit 1 and the stopped daemon are unverified
+  FAIL strict: the Docker stage (no provisioned agent box) — ok, exit 1 and the stopped daemon are unverified
+  multibox: 17 ok, 2 failed, 1 skipped  (server=192.0.2.5, agents=none)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+rows="$(history_of)"; reason="$(report_of | head -1)"
+[ "$rc" = 74 ] && ok "a lost agent box and the Docker stage it took along -> UNVERIFIED, not FAIL" \
+  || bad "agent lease + docker stage -> rc=$rc: $reason"
+grep -qF 'durch (agent); multibox: 17 ok, 2 failed, 1 skipped' <<<"$reason" \
+  && ok "the reason names agent, not the Docker section" || bad "reason: $reason"
+grep -qF 'strict: the Docker stage (no provisioned agent box) — ok, exit 1 and the stopped daemon are unverified",infra,0,multibox' <<<"$rows" \
+  && ok "the strict Docker follow-up of the lost agent box is infra" || bad "docker row: $(grep -F 'Docker stage' <<<"$rows")"
+
+# ── 7m: a real Docker failure on a provisioned agent box stays a product failure ──
+# The setup of the agent box was cut short AFTER it provisioned: the agent role
+# counts as aborted, and the Docker stage still runs on that box. The Docker Host
+# template is assigned over the server API — that failure and the strict line it
+# leads to are no consequence of the agent abort.
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== clone 1 server + 1 agent box(es) (scenario mb-4711) ==
+  ok   server-box 3001 @ 192.0.2.5
+  ok   agent-box1 3002 @ 192.0.2.7
+== provision each agent against https://192.0.2.5 ==
+AGENT_PROVISION_OK
+vm.py: timeout: bash scripts/tests/box_agentbox.sh 192.0.2.5 exceeded 3000s on adminhelper@192.0.2.7
+  FAIL agent 3002: provision/enroll (see output above; check IP-SAN + firewall)
+== docker (R-0419): real Docker on the agent box, the Docker Host template, three states ==
+0 standard templates docker-host, want 1
+  FAIL could not assign the Docker Host template over the API (see output above)
+  SKIP the three Docker states (no Docker Host check) — ok, exit 1 and the stopped daemon are unverified
+  FAIL strict: the three Docker states (no Docker Host check) — ok, exit 1 and the stopped daemon are unverified
+  multibox: 18 ok, 3 failed, 1 skipped  (server=192.0.2.5, agents=3002)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+rows="$(history_of)"
+[ "$rc" = 1 ] && ok "a Docker failure next to an agent abort -> FAIL (1), not UNVERIFIED" \
+  || bad "agent abort + docker failure -> rc=$rc: $(report_of | head -1)"
+grep -qF 'agent 3002: provision/enroll (see output above; check IP-SAN + firewall),infra,0,multibox' <<<"$rows" \
+  && ok "the cut-short agent setup is infra" || bad "agent row: $(grep -F 'agent 3002' <<<"$rows")"
+grep -qF 'could not assign the Docker Host template over the API (see output above),fail,0,multibox' <<<"$rows" \
+  && ok "the failed template assignment stays a product failure" || bad "template row: $(grep -F 'template' <<<"$rows")"
+grep -qF 'strict: the three Docker states (no Docker Host check) — ok, exit 1 and the stopped daemon are unverified",fail,0,multibox' <<<"$rows" \
+  && ok "its strict follow-up (no Docker Host check) stays a product failure" || bad "strict row: $(grep -F 'strict:' <<<"$rows")"
+
+# ── 7n: an abort inside the Docker stage excuses the Docker failures after it, nothing else ──
+# The Docker stage is a role of its own. The vm.py line that cut it short makes
+# the Docker failures after it consequences; the Docker failures before it (a
+# step not OK, a wrong state) and the ingest assertion of the next section stay
+# product failures.
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== clone 1 server + 1 agent box(es) (scenario mb-4711) ==
+  ok   server-box 3001 @ 192.0.2.5
+  ok   agent-box1 3002 @ 192.0.2.7
+== provision each agent against https://192.0.2.5 ==
+  ok   agent 3002: provisioned + mTLS-enrolled over the network hop
+== docker (R-0419): real Docker on the agent box, the Docker Host template, three states ==
+  ok   the Docker Host template is assigned to the host of agent 3002 over the API
+AGENT_DOCKER_ENGINE=29.0.1
+AGENT_DOCKER_IMAGE=busybox
+AGENT_DOCKER_STEP=RUN_FAILED
+  FAIL docker agent box: the agent timer is stopped, a container keeps running, one agent run (Docker 29.0.1, image busybox): RUN_FAILED (see output above)
+MB_DOCKER_STATE=DOCKER_STATE_OTHER
+  FAIL docker: a running container -> ok: DOCKER_STATE_OTHER (expected DOCKER_OK; status:None,fails:None/2,available:None,error:None,mb-dock-run:-,mb-dock-exit:-)
+vm.py: ssh to adminhelper@192.0.2.7 failed (255) while running: bash scripts/tests/box_agentbox.sh docker exit
+  FAIL docker agent box: a second container ended with exit 1, no restart policy, one agent run: no marker (see output above)
+== assert monitoring ingested a report from the remote agent(s) ==
+  FAIL monitoring saw 0 reports (expected >= 1)
+  multibox: 20 ok, 4 failed, 0 skipped  (server=192.0.2.5, agents=3002)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+rows="$(history_of)"; report="$(report_of)"
+[ "$rc" = 1 ] && ok "real Docker failures next to an abort in the stage -> FAIL (1)" \
+  || bad "docker stage abort -> rc=$rc: $(report_of | head -1)"
+grep -qF 'docker agent box: the agent timer is stopped, a container keeps running, one agent run (Docker 29.0.1, image busybox): RUN_FAILED (see output above)",fail,0,multibox' <<<"$rows" \
+  && ok "a Docker step not OK stays a product failure" || bad "step row: $(grep -F 'timer is stopped' <<<"$rows")"
+grep -qF 'docker: a running container -> ok: DOCKER_STATE_OTHER (expected DOCKER_OK; status:None,fails:None/2,available:None,error:None,mb-dock-run:-,mb-dock-exit:-)",fail,0,multibox' <<<"$rows" \
+  && ok "a wrong Docker state stays a product failure" || bad "state row: $(grep -F 'DOCKER_STATE_OTHER' <<<"$rows")"
+grep -qF 'docker agent box: a second container ended with exit 1, no restart policy, one agent run: no marker (see output above)",infra,0,multibox' <<<"$rows" \
+  && ok "the Docker failure after the abort is infra" || bad "exit row: $(grep -F 'second container' <<<"$rows")"
+grep -qF 'monitoring saw 0 reports (expected >= 1),fail,0,multibox' <<<"$rows" \
+  && ok "the ingest assertion is not excused by the Docker abort" || bad "ingest row: $(grep -F 'monitoring saw' <<<"$rows")"
+grep -qF 'setup abort: docker' <<<"$report" \
+  && ok "the step table names the Docker stage as the aborted role" || bad "abort detail: $(grep -F 'setup abort' <<<"$report")"
+
 # ── 8b: the weekly hands its warm desktop box to the capstone, capstone does not ─
 # The `all` layer leaves a 6 GB box running and the capstone checks capacity for
 # seven roles before its first clone — without the handover the run can fail on

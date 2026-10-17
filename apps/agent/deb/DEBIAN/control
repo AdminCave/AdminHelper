@@ -3,6 +3,7 @@ Version: __VERSION__
 Architecture: amd64
 Maintainer: Admin Cave <packages@admincave.com>
 Depends: systemd
+Recommends: smartmontools
 Replaces: srm-frpc-client, srm-monitor-agent, srm-agent
 Conflicts: srm-frpc-client, srm-monitor-agent, srm-agent
 Section: net

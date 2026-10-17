@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
-  import { session, settings, logout } from '$lib/stores/session';
+  import { session, settings } from '$lib/stores/session';
   import { searchTerm } from '$lib/stores/connections';
   import { markRdpError } from '$lib/stores/connectFlow';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
@@ -26,7 +26,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import StatusBar from './StatusBar.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
-  import { openSettings, startSyncTimer, stopSyncTimer } from '$lib/stores/settings';
+  import { openSettings, signOut, startSyncTimer, stopSyncTimer } from '$lib/stores/settings';
   import {
     activateNotifications,
     deactivateNotifications,
@@ -273,7 +273,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <span style="color: var(--text-muted); margin: 0 var(--sp-3);">
           {$session.username}
         </span>
-        <button class="btn ghost small" onclick={() => logout()}>{$t('nav.logout')}</button>
+        <button class="btn ghost small" onclick={() => signOut()}>{$t('nav.logout')}</button>
       {/if}
     </div>
   </header>

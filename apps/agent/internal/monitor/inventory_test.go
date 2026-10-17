@@ -46,6 +46,22 @@ func TestInventoryHashChangesOnContent(t *testing.T) {
 	}
 }
 
+func TestAliasAndWatchInventoryHash(t *testing.T) {
+	// The server matches watched names against alias_of: an alias that gets resolved, or resolved to
+	// another unit, has to reach it with the next push like any other inventory change.
+	unresolved := []ServiceEntry{svcEntry("sshd.service", "unknown", "alias")}
+	resolved := []ServiceEntry{{"unit": "sshd.service", "active_state": "unknown", "enabled_state": "alias",
+		"alias_of": "ssh.service"}}
+	moved := []ServiceEntry{{"unit": "sshd.service", "active_state": "unknown", "enabled_state": "alias",
+		"alias_of": "openssh-server.service"}}
+	if inventoryHash(unresolved) == inventoryHash(resolved) {
+		t.Error("hash unchanged although alias_of was added")
+	}
+	if inventoryHash(resolved) == inventoryHash(moved) {
+		t.Error("hash unchanged although alias_of changed")
+	}
+}
+
 func TestShouldSendFullInventory(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	recent := &inventoryState{Hash: "h1", LastFullSentUnix: now.Add(-5 * time.Minute).Unix()}
