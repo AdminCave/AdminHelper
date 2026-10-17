@@ -14,8 +14,10 @@ Hängt ab von: R-0417, R-0418, R-0419 (alle ändern `apps/agent/internal/monitor
 
 Kevin 2026-10-16: Phase B von R-0420 als eigenes Vorhaben; keine Auto-Zuweisung, sondern ein Vorschlag im Monitoring-Tab des Servers (Zuweisen/Ignorieren, Ignorieren wird je Server und Template gemerkt und ist vorerst nicht rückgängig zu machen); kein Fallback auf `os_type` für Agents ohne `host`-Block; additive Report-Felder, Alembic-Migration und die zwei neuen Routen freigegeben. Zeilenangaben: origin/main@af4498a7.
 
-### T1 — Agent meldet den Block `host`  [ ]
+### T1 — Agent meldet den Block `host`  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/hostfacts.go, apps/agent/internal/monitor/hostfacts_test.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e2aece24 2026-10-17T08:43:35+02:00
+Review: approve (.ah-out/review/monitoring-discovery/T1.verdict.json)
 Änderung: Neue Datei `hostfacts.go` (SPDX-Header `// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`): `collectHostFacts()` liefert `{"os", "platform", "platform_version", "virtualization": {"system", "role"}, "subsystems": [...]}` (`os` aus `runtime.GOOS`, `platform`/`platform_version` aus gopsutil `host.PlatformInformation`, `virtualization` aus `host.Virtualization`; ein Fehler kostet nur die Felder seines Teils, „not implemented“ unter Windows zählt als leer) und `exec.LookPath` für `docker`, `zpool`, `pvesh` (Reihenfolge fest, nur gefundene); Info- und LookPath-Aufrufe über Paketvariablen, damit Tests sie ersetzen (Muster `pluginCollectors`, `report.go:84-89`). Ein Fehler kostet nie den Report. `BuildReport` (`report.go:43-48`) setzt `report["host"]`. Signaturen an der eingebundenen gopsutil-Version (v4.26.5) prüfen. Neue Testdatei (SPDX), zuerst rot: mit ersetzten Aufrufen erscheinen alle Felder; nur gefundene Subsysteme; Fehler eines Teils → kein Fehler, Block ohne dessen Felder; `BuildReport` enthält `host`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run 'HostFacts|BuildReport'
 Doku: keine (intern; beschrieben in T7)

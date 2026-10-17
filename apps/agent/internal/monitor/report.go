@@ -45,6 +45,7 @@ func BuildReport(serviceNames []string) map[string]any {
 		"timestamp":      time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		"resources":      resources,
 		"uptime_seconds": collectUptime(),
+		"host":           collectHostFacts(),
 	}
 
 	// Service health (platform-specific)
