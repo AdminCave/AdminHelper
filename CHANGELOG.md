@@ -345,6 +345,29 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Knopf „Neu verbinden“ an der Tunnel-Anzeige stoesst das sofort an. Wer keinen STCP-Tunnel sieht, bekommt beim
   Anmelden keine Fehlermeldung mehr. Ein gestoppter Tunnel (etwa nach einem Moduswechsel) meldet sich nicht mehr
   nachtraeglich als „Tunnel getrennt“, und Abmelden ueber die Kopfzeile beendet jetzt auch den Tunnel.
+- **Agent: ein spaeter angelegter Tunnel greift ohne Neu-Provisionieren (R-0398):** Ein Agent-Host, der ohne
+  FRP-Tunnel provisioniert wurde, bekam einen spaeter angelegten Tunnel nie: Die Provisionierung schrieb die
+  Sync-Config `/etc/frp/adminhelper.conf` samt Server-API-Key nur mit FRP-Paket, und der Abgleich endete still.
+  Jetzt schreibt jede Provisionierung sie, und der naechste Agent-Lauf (Linux) richtet einen neuen Tunnel ein: Er
+  schreibt die `frpc.toml` und aktiviert `frpc.service` dauerhaft (`systemctl enable --now`, also auch ueber einen
+  Reboot); ein laufender frpc uebernimmt die neue Config. Aendern sich nur Tunnel, laedt er sie per Reload ueber
+  seine lokale Admin-API nach (nur `127.0.0.1`, zufaelliges Passwort in `/etc/frp/admin.conf`, `0600`; der Reload
+  geht nur an den eigenen frpc), und offene Sitzungen ueber unveraenderte Tunnel bleiben bestehen; bisher trennte
+  jede Tunnel-Aenderung per Neustart alle Sitzungen zum Host. Aendern sich frps-Adresse, Token oder TLS, startet der
+  Agent frpc neu, ebenso bei jeder Neu-Provisionierung. Laeuft frpc trotz Tunnel nicht, etwa weil nach einem Reboot
+  ein anderer Prozess den Admin-Port belegt, legt der naechste Lauf die Admin-API auf einen neuen Port mit neuem
+  Passwort. Einen lokal gestoppten oder deaktivierten frpc startet der naechste Lauf ebenso wieder, solange der Host
+  Tunnel hat; dauerhaft aus bleibt er, wenn die Tunnel des Hosts auf dem Server geloescht oder deaktiviert sind. Ohne
+  Tunnel laeuft kein frpc mehr: Faellt der letzte Tunnel weg oder hat der Server fuer den Host keine FRP-Config,
+  stoppt und deaktiviert der Agent `frpc.service`, loescht die `frpc.toml` (sie enthaelt das frps-Token) und endet
+  ohne Fehler. Vor die `frpc.toml` des Servers setzt der Agent `loginFailExit = false`: Ist frps beim Start nicht
+  erreichbar, versucht frpc es weiter, statt sich zu beenden und von systemd alle 5 s neu gestartet zu werden. Diesen
+  lokalen Kopf setzt der Server nicht; einen Server-Text mit `webServer` oder `loginFailExit` wendet der Agent nicht
+  an. Auf Hosts, deren frpc beim Update schon laeuft, kommen der lokale Kopf und der Reload mit der naechsten
+  Config-Aenderung, die frpc einmal neu startet. Hat ein aelterer Agent den Host ohne Tunnel provisioniert, fehlt
+  dort der Server-API-Key fuer den Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das
+  Agent-Log diesen Weg. Die Admin-Doku (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN)
+  beschreiben es.
 - **FRP: die frpc-Config eines Hosts bleibt nach einem Server-Neustart gleich (R-0435):** Bei zwei oder mehr
   berechtigten Nutzern stand `allowUsers` in der frpc-Config nach jedem Neustart des Servers, mit
   `WEB_CONCURRENCY` > 1 auch je Worker, in anderer Reihenfolge. Damit aenderte sich der Config-Hash, ohne dass sich
@@ -695,6 +718,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server: FRP-Abgleich ohne FRP-Config ohne Fehler, ohne aktiven Tunnel ohne frps-Zugangsdaten (R-0398):**
+  `GET /api/frp/provision/{id}/config-hash` antwortet ohne FRP-Config mit `200` und `{"hash": null}` statt mit `404`
+  „Keine FRP-Config vorhanden“; fuer den Agent-Abgleich gibt es dann nichts zu tun, `GET …/config` bleibt `404`. Ein
+  Host ohne aktiven Tunnel (eingeschaltet, STCP nur mit Secret) bekommt ueber `GET …/config` eine Config ohne Tunnel
+  und ohne frps-Zugangsdaten, `config-hash` liefert deren Hash, und die Provisionierung liefert ihm denselben Text als
+  FRP-Paket (`frp` ist nur ohne FRP-Config `null`). Ein Agent dieser Version stoppt und deaktiviert frpc darauf. Ein
+  aelterer Agent startet frpc damit neu; frpc meldet sich dann nicht an und wird von systemd neu gestartet, bis der
+  Agent aktualisiert ist. Bei der Provisionierung schreibt ein aelterer Agent damit auch die Sync-Config mit dem neuen
+  API-Key; einen schon laufenden frpc startet er dabei nicht neu, der uebernimmt die Config erst bei seinem naechsten
+  Neustart. Die `403` der Scope-Pruefung und die `404` fuer einen unbekannten Server bleiben. Die API-Referenz und die
+  Server-Doku (DE+EN) nennen es.
 - **Monitoring: Template-Sync behaelt Anpassungen und geloeschte Checks (R-0420):** Aendert man an einem vom Template
   erzeugten Check Name, Beschreibung, Typ, Konfiguration, Aktiviert, Intervall, Schweregrad oder Fehlversuche, merkt
   sich der Check das Feld als angepasst, und kein Sync ueberschreibt es mehr, weder nach einer Template-Aenderung
