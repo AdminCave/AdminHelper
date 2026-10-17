@@ -68,6 +68,16 @@ export interface TunnelStatus {
   running: boolean;
   visitorName?: string | null;
   connectedSince?: string | null;
+  /** Names of the visitors the running frpc applied. */
+  visitors?: string[];
+}
+
+/** What a tunnel reconciliation did with the visitor bundle; `stopped`: no tunnels. */
+export type RefreshOutcome = 'started' | 'restarted' | 'reloaded' | 'unchanged' | 'stopped';
+
+export interface TunnelRefresh {
+  status: TunnelStatus;
+  outcome: RefreshOutcome;
 }
 
 export interface ClientInfo {

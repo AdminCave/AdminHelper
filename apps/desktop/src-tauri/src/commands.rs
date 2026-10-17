@@ -14,7 +14,7 @@ use crate::error::AppError;
 use crate::frpc;
 use crate::models::{
     AuthSession, ClientInfo, Connection, DeviceIdentity, PasswordState, RdpOptions, Settings,
-    TunnelStatus,
+    TunnelRefresh, TunnelStatus,
 };
 use crate::password;
 use crate::proxy;
@@ -303,19 +303,35 @@ pub async fn fetch_connections_jwt(
     sync::fetch_connections_jwt(app, &server_url, &token, allow_self_signed).await
 }
 
+/// The reconciliation of `refresh_tunnel`, reporting only the status.
 #[tauri::command]
 pub async fn start_tunnel(
     app: tauri::AppHandle,
     state: State<'_, frpc::FrpcState>,
+    lock: State<'_, frpc::RefreshLock>,
     server_url: String,
     token: String,
     username: String,
 ) -> Result<TunnelStatus, AppError> {
+    let refresh = refresh_tunnel(app, state, lock, server_url, token, username).await?;
+    Ok(refresh.status)
+}
+
+#[tauri::command]
+pub async fn refresh_tunnel(
+    app: tauri::AppHandle,
+    state: State<'_, frpc::FrpcState>,
+    lock: State<'_, frpc::RefreshLock>,
+    server_url: String,
+    token: String,
+    username: String,
+) -> Result<TunnelRefresh, AppError> {
     let allow_self_signed = self_signed_setting(&app, None);
     let frpc_state = state.inner().clone();
-    frpc::start_tunnel(
+    frpc::refresh_tunnel(
         app,
         frpc_state,
+        lock.inner(),
         &server_url,
         &token,
         &username,

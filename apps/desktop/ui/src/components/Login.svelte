@@ -398,46 +398,46 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </button>
     {/if}
   </div>
-</div>
-
-{#if trustPrompt}
-  <div
-    class="trust-overlay"
-    role="dialog"
-    aria-modal="true"
-    data-testid="trust-dialog"
-    tabindex="-1"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) declineServerCert();
-    }}
-    onkeydown={(e) => {
-      if (e.key === 'Escape') declineServerCert();
-    }}
-  >
-    <div class="trust-panel">
-      <h3 class="trust-title">{$t('login.trust.title')}</h3>
-      <p class="trust-body">{$t('login.trust.body')}</p>
-      <div class="trust-actions">
-        <button
-          type="button"
-          class="btn ghost"
-          data-action="trust-cancel"
-          onclick={declineServerCert}
-        >
-          {$t('action.cancel')}
-        </button>
-        <button
-          type="button"
-          class="btn accent"
-          data-action="trust-accept"
-          onclick={trustServerCert}
-        >
-          {$t('login.trust.accept')}
-        </button>
+  <!-- Inside .login-screen on purpose: its z-index 300 and opaque background cover any sibling. -->
+  {#if trustPrompt}
+    <div
+      class="trust-overlay"
+      role="dialog"
+      aria-modal="true"
+      data-testid="trust-dialog"
+      tabindex="-1"
+      onclick={(e) => {
+        if (e.target === e.currentTarget) declineServerCert();
+      }}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') declineServerCert();
+      }}
+    >
+      <div class="trust-panel">
+        <h3 class="trust-title">{$t('login.trust.title')}</h3>
+        <p class="trust-body">{$t('login.trust.body')}</p>
+        <div class="trust-actions">
+          <button
+            type="button"
+            class="btn ghost"
+            data-action="trust-cancel"
+            onclick={declineServerCert}
+          >
+            {$t('action.cancel')}
+          </button>
+          <button
+            type="button"
+            class="btn accent"
+            data-action="trust-accept"
+            onclick={trustServerCert}
+          >
+            {$t('login.trust.accept')}
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .trust-overlay {

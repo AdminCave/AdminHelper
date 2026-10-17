@@ -1026,6 +1026,7 @@ def create_vm(
     cores: int,
     key: str,
     ciuser: str | None = None,
+    upgrade: bool = False,
 ) -> None:
     """Clone, tag, key and start one VM — and leave nothing behind if it fails.
 
@@ -1082,6 +1083,12 @@ def create_vm(
             # PVE stores this value url-encoded and decodes it once on the way
             # into cloud-init; urlencode's own escaping is the second layer.
             "sshkeys": urllib.parse.quote(key, safe=""),
+            # Explicit both ways: PVE's default 1 writes `package_upgrade: true`
+            # into every clone's cloud-init, and a newer openssh-server unpacked
+            # by that first-boot upgrade takes ssh away for ~50 s, well after
+            # `wait` has already seen it. Leases run on the template's packages;
+            # only a bake upgrades, and it waits for cloud-init to finish.
+            "ciupgrade": 1 if upgrade else 0,
         }
         if ciuser:
             config["ciuser"] = ciuser
@@ -1800,6 +1807,7 @@ def verb_list(cfg: Config, api: Api, args) -> int:
 # ── bake ─────────────────────────────────────────────────────────────────────
 BAKE_USER = "adminhelper"  # the guest user every template we build from now on has
 BAKE_TTL = 4 * 3600  # generous: a full bake measured ~45 min, and a reaped bake is a lost hour
+CLOUD_INIT_LIMIT = 1800  # the first-boot upgrade of a base image months behind takes minutes
 BOOTSTRAP_LIMIT = 2700
 WARMUP_LIMIT = 1800
 CLEAN_LIMIT = 600
@@ -1868,12 +1876,27 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
         # other path reads ciuser off the VM (never from a config value), which
         # is what made the change a template swap and not a config sweep.
         ciuser=BAKE_USER,
+        # The template is where the packages get current; every lease off it
+        # boots without an upgrade of its own.
+        upgrade=True,
     )
     print("baking %s from %d in VM %d" % (args.profile, source["vmid"], newid))
 
     try:
         wait_for(cfg, api, newid, WAIT_TIMEOUT)
         target = Target(cfg, api, str(newid))
+        # Before the sync: the upgrade restarts sshd, and the rsync and every
+        # step below open a new connection. Exit 2 is "degraded" — finished,
+        # with a recoverable error — and counts as done.
+        print("--- cloud-init")
+        code = run_ssh(
+            cfg, target.user, target.ip, ["cloud-init status --wait"], timeout=CLOUD_INIT_LIMIT
+        )
+        if code not in (0, 2):
+            raise Infra(
+                "cloud-init did not finish on %d (cloud-init status --wait exited %d)"
+                % (newid, code)
+            )
         _sync(cfg, target, delete=True)
         steps = [
             (

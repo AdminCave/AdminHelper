@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Template-Checks zuruecksetzen und wiederherstellen, Updates der Standard-Templates (R-0420):** Im
+  Dashboard eines Servers traegt ein angepasster Template-Check das Badge „angepasst“ (Tooltip: die Felder) und die
+  Aktion „Auf Template zuruecksetzen“, die nach einer Rueckfrage alle Felder auf die Template-Werte setzt
+  (`POST /checks/{id}/reset`). Der Monitoring-Tab des Servers zeigt je Zuweisung „N geloeschte Checks
+  wiederherstellen“ und legt sie auf Klick neu an (`POST /templates/{id}/assign/{server_id}/restore`, Zaehler
+  `removedChecks` in `GET /templates/assignments/{server_id}`). Bringt ein Release eine neuere Version eines
+  Standard-Templates mit, dessen Definitionen angepasst sind, zeigt die Template-Liste dort „Update verfuegbar“
+  (heute tragen alle Version 1, das Badge erscheint also noch nirgends); das oeffnet einen Vergleich der aktuellen
+  mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des Templates,
+  auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
+  `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable`). Doku:
+  Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
   „Registrierungs-Token“ ein Einmal-Token aus: Gueltigkeit waehlen (10 Minuten, 1 Stunde oder 24 Stunden;
   voreingestellt 10 Minuten), dann zeigt der Dialog das Token genau einmal mit Kopieren, seinem Ablauf in
@@ -322,6 +334,67 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: der Tunnel uebernimmt Aenderungen selbst (R-0402, R-0389, R-0390):** Der Desktop lud das
+  Tunnel-Bundle nur beim Anmelden. Ein spaeter angelegter, geaenderter oder geloeschter Tunnel und eine Rotation
+  des frps-Tokens kamen erst nach einem Neustart der App an, und ein frpc, der endete (etwa weil frps beim
+  Anmelden nicht erreichbar war), blieb weg. Jetzt gleicht der Desktop im Modus `server` alle 60 s ab, nach dem
+  Speichern im eigenen Tunnel-Dialog sofort. Aendern sich nur Tunnel, laedt frpc sie nach, ohne die uebrigen
+  Tunnel und ihre offenen Verbindungen zu trennen; nur ein neues Token oder eine neue Adresse des FRP-Servers
+  startet frpc neu, offene Sitzungen brechen dann ab. Ist frps nicht erreichbar, versucht frpc es weiter; endet
+  frpc unerwartet, verbindet sich der Desktop selbst wieder (nach 5 s, dann mit wachsender Pause bis 60 s); der
+  Knopf „Neu verbinden“ an der Tunnel-Anzeige stoesst das sofort an. Wer keinen STCP-Tunnel sieht, bekommt beim
+  Anmelden keine Fehlermeldung mehr. Ein gestoppter Tunnel (etwa nach einem Moduswechsel) meldet sich nicht mehr
+  nachtraeglich als „Tunnel getrennt“, und Abmelden ueber die Kopfzeile beendet jetzt auch den Tunnel.
+- **Agent: ein spaeter angelegter Tunnel greift ohne Neu-Provisionieren (R-0398):** Ein Agent-Host, der ohne
+  FRP-Tunnel provisioniert wurde, bekam einen spaeter angelegten Tunnel nie: Die Provisionierung schrieb die
+  Sync-Config `/etc/frp/adminhelper.conf` samt Server-API-Key nur mit FRP-Paket, und der Abgleich endete still.
+  Jetzt schreibt jede Provisionierung sie, und der naechste Agent-Lauf (Linux) richtet einen neuen Tunnel ein: Er
+  schreibt die `frpc.toml` und aktiviert `frpc.service` dauerhaft (`systemctl enable --now`, also auch ueber einen
+  Reboot); ein laufender frpc uebernimmt die neue Config. Aendern sich nur Tunnel, laedt er sie per Reload ueber
+  seine lokale Admin-API nach (nur `127.0.0.1`, zufaelliges Passwort in `/etc/frp/admin.conf`, `0600`; der Reload
+  geht nur an den eigenen frpc), und offene Sitzungen ueber unveraenderte Tunnel bleiben bestehen; bisher trennte
+  jede Tunnel-Aenderung per Neustart alle Sitzungen zum Host. Aendern sich frps-Adresse, Token oder TLS, startet der
+  Agent frpc neu, ebenso bei jeder Neu-Provisionierung. Laeuft frpc trotz Tunnel nicht, etwa weil nach einem Reboot
+  ein anderer Prozess den Admin-Port belegt, legt der naechste Lauf die Admin-API auf einen neuen Port mit neuem
+  Passwort. Einen lokal gestoppten oder deaktivierten frpc startet der naechste Lauf ebenso wieder, solange der Host
+  Tunnel hat; dauerhaft aus bleibt er, wenn die Tunnel des Hosts auf dem Server geloescht oder deaktiviert sind. Ohne
+  Tunnel laeuft kein frpc mehr: Faellt der letzte Tunnel weg oder hat der Server fuer den Host keine FRP-Config,
+  stoppt und deaktiviert der Agent `frpc.service`, loescht die `frpc.toml` (sie enthaelt das frps-Token) und endet
+  ohne Fehler. Vor die `frpc.toml` des Servers setzt der Agent `loginFailExit = false`: Ist frps beim Start nicht
+  erreichbar, versucht frpc es weiter, statt sich zu beenden und von systemd alle 5 s neu gestartet zu werden. Diesen
+  lokalen Kopf setzt der Server nicht; einen Server-Text mit `webServer` oder `loginFailExit` wendet der Agent nicht
+  an. Auf Hosts, deren frpc beim Update schon laeuft, kommen der lokale Kopf und der Reload mit der naechsten
+  Config-Aenderung, die frpc einmal neu startet. Hat ein aelterer Agent den Host ohne Tunnel provisioniert, fehlt
+  dort der Server-API-Key fuer den Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das
+  Agent-Log diesen Weg. Die Admin-Doku (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN)
+  beschreiben es.
+- **FRP: die frpc-Config eines Hosts bleibt nach einem Server-Neustart gleich (R-0435):** Bei zwei oder mehr
+  berechtigten Nutzern stand `allowUsers` in der frpc-Config nach jedem Neustart des Servers, mit
+  `WEB_CONCURRENCY` > 1 auch je Worker, in anderer Reihenfolge. Damit aenderte sich der Config-Hash, ohne dass sich
+  etwas geaendert hatte, und der Agent schrieb die frpc-Config neu und startete frpc neu. Jetzt steht `allowUsers`
+  aufsteigend sortiert in der Config. Nach dem Update aendert sich der Config-Hash von Hosts mit mehreren
+  berechtigten Nutzern einmal, und der Agent holt die Config einmal neu.
+- **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
+  `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
+  `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
+  gestartete Units als „Inaktiv (autostart)“ meldete. Der Agent prueft diese Kandidaten jetzt mit einem gebuendelten
+  `systemctl show` nach und laesst sie weg; der Monitoring-Dienst uebernimmt seine Liste, statt sie bei vollem Inventar
+  selbst zu berechnen, sodass volle und gedrosselte Pushes dasselbe Ergebnis geben. Der Modus `list` meldete nach
+  normaler Provisionierung jeden Namen als ausgefallen, weil der Agent ohne `monitor init --services` keine Dienste
+  schickt. Jetzt wertet der Monitoring-Dienst die Namen selbst aus dem Inventar des Agents aus, mit oder ohne
+  `.service` und ueber Aliase (`sshd` fuer `ssh.service`); ein Name ohne Daten zaehlt nicht als ausgefallen und steht
+  neutral als „nicht gefunden“ da, ein neu eingetragener hat bis zu einer Stunde noch keine Daten. Der Desktop zeigte
+  „Alle 0 OK“ oder „0/N laufen“ und ohne Daten eine rote Pille; jetzt zeigt er die Zahl der Probleme in der Farbe des
+  Check-Status, „x/y aktiv“ nur, wenn der Agent Zaehler schickt, ohne Daten „Noch keine Daten“, jeden Dienst einmal
+  und uebersetzte Hinweise. `ignore` versteht Glob-Muster (`drkonqi-coredump-processor@*`), und scheitert `systemctl`,
+  ist der Check `unknown` mit Grund statt „Alle systemd-Units OK“. Der Check-Editor erklaert die Felder Dienste und
+  Ignorieren und entfernt doppelte Eintraege. Der Report traegt dafuer additiv `systemd.counts`, `systemd.error` und
+  `alias_of` im Inventar; `all_services` ist nach Unit sortiert und laesst nicht installierte, nur referenzierte Units
+  weg. Im Modus `list` traegt `_details.watched` je Name `state` (`running`, `down`, `nodata`) neben `running`.
+- **Desktop: der Vertrauensdialog beim ersten Kontakt liegt ueber dem Login-Screen (R-0399):** Praesentiert der
+  Server beim ersten Login oder bei der ersten Registrierung ein Zertifikat der internen CA, fragt der Desktop in
+  einem Dialog, ob dem Server vertraut werden soll. Dieser Dialog war vom Login-Screen verdeckt: Anmelden und
+  Registrieren blieben ohne Rueckmeldung stehen. Jetzt liegt er sichtbar darueber.
 - **Agent: Docker-Container werden mit aktueller Docker-CLI wieder erfasst (R-0417):** Ab Docker 28.2 gibt
   `docker ps -a --format '{{json .}}'` das Feld `Platform` als Objekt aus. Der Agent las jede Zeile als reine
   Zeichenketten, verwarf damit jede Zeile und schickte keine Container mehr; `docker_health` stand auf „Keine
@@ -645,6 +718,45 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server: FRP-Abgleich ohne FRP-Config ohne Fehler, ohne aktiven Tunnel ohne frps-Zugangsdaten (R-0398):**
+  `GET /api/frp/provision/{id}/config-hash` antwortet ohne FRP-Config mit `200` und `{"hash": null}` statt mit `404`
+  „Keine FRP-Config vorhanden“; fuer den Agent-Abgleich gibt es dann nichts zu tun, `GET …/config` bleibt `404`. Ein
+  Host ohne aktiven Tunnel (eingeschaltet, STCP nur mit Secret) bekommt ueber `GET …/config` eine Config ohne Tunnel
+  und ohne frps-Zugangsdaten, `config-hash` liefert deren Hash, und die Provisionierung liefert ihm denselben Text als
+  FRP-Paket (`frp` ist nur ohne FRP-Config `null`). Ein Agent dieser Version stoppt und deaktiviert frpc darauf. Ein
+  aelterer Agent startet frpc damit neu; frpc meldet sich dann nicht an und wird von systemd neu gestartet, bis der
+  Agent aktualisiert ist. Bei der Provisionierung schreibt ein aelterer Agent damit auch die Sync-Config mit dem neuen
+  API-Key; einen schon laufenden frpc startet er dabei nicht neu, der uebernimmt die Config erst bei seinem naechsten
+  Neustart. Die `403` der Scope-Pruefung und die `404` fuer einen unbekannten Server bleiben. Die API-Referenz und die
+  Server-Doku (DE+EN) nennen es.
+- **Monitoring: Template-Sync behaelt Anpassungen und geloeschte Checks (R-0420):** Aendert man an einem vom Template
+  erzeugten Check Name, Beschreibung, Typ, Konfiguration, Aktiviert, Intervall, Schweregrad oder Fehlversuche, merkt
+  sich der Check das Feld als angepasst, und kein Sync ueberschreibt es mehr, weder nach einer Template-Aenderung
+  (auch dem Update eines Standard-Templates) noch nach einer Umbenennung des Servers noch beim Wiederherstellen; die
+  uebrigen Felder folgen weiter dem Template, ein Feld zurueck auf dem Template-Wert gilt nicht mehr als angepasst.
+  Ein geaenderter Typ zaehlt auch als geaenderte Konfiguration. Ein geloeschter Template-Check entsteht beim naechsten
+  Sync nicht neu, bis er wiederhergestellt oder die Zuweisung neu angelegt wird. Steht eine Definition nicht mehr im
+  Template, loescht der Sync ihren Check weiterhin. Anpassungen von vor dem Update erkennt der erste Start einmal:
+  Jedes Feld, das vom Template abweicht, gilt als angepasst, aufgeloest mit den Namen, mit denen der Check angelegt
+  wurde (ein seither umbenannter Server zaehlt nicht als Anpassung); ein Check, der sich nicht vergleichen laesst,
+  gilt ganz als angepasst. Das geschieht vor jedem Sync; scheitert es, unterbleibt der Sync, bis es gelingt.
+  Restrisiko: Eine Template-Aenderung, die vor dem Update nie auf einen Check synchronisiert wurde, erscheint dort als
+  angepasst. Alert-Regeln aus Templates setzt jeder Sync weiter auf die Template-Werte. Checks liefern dafuer additiv
+  `templateDefId` und `overriddenFields`; neue Alembic-Revision `a7c9e1b3d5f7` (Spalte
+  `monitor_checks.overridden_fields`, Tabelle `monitor_check_tombstones`; sie loescht beim Upgrade den Merker der
+  Erkennung in `monitor_seed_state`).
+- **Monitoring: unveraenderte Standard-Templates folgen neuen Versionen (R-0420):** Jedes Standard-Template traegt
+  eine Version und den Hash der zuletzt ausgerollten Definitionen (`builtin_version`, `builtin_hash`). Liefert ein
+  Release eine neuere Version, hebt der Monitoring-Dienst beim Start jedes Standard-Template mit unveraenderten
+  Definitionen darauf und synchronisiert dessen Server; angepasste Check-Felder sowie Name und Beschreibung des
+  Templates bleiben. Ein Template mit angepassten Definitionen bleibt, wie es ist, und bietet das Update an (siehe
+  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Heute tragen alle Version 1;
+  ein bestehendes, dessen Definitionen davon abweichen, gilt als angepasst.
+- **Monitoring: neuer Hostname oder Servername erreicht bestehende Zuweisungen (R-0420):** Der Tag-Sync gleicht jetzt
+  fuer jede Zuweisung, auch fuer manuelle, Hostname und Servername mit dem Server-Inventar ab und synchronisiert bei
+  einer Abweichung genau dieses Paar neu, sodass `{{hostname}}` und `{{server_name}}` einer Umbenennung folgen;
+  angepasste Check-Felder bleiben, Alert-Regeln werden neu gesetzt. Bisher galten die Werte vom Anlegen der
+  Zuweisung. `POST /templates/tag-sync` liefert zusaetzlich `refreshed`.
 - **ca-issuer startet erst nach der Server-Migration (R-0288):** In `docker-compose.yml` wartet der `ca-issuer` per
   `depends_on` auf den healthy `server`, und healthy wird der Server erst nach `alembic upgrade head`. Vorher konnten
   `/enroll` und `/renew` bei einem Teil-Start auf ein Schema ohne ihre Tabellen treffen und mit 500 antworten; im
