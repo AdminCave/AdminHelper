@@ -105,7 +105,7 @@ dem Server nicht zugewiesen ist (gleich welche Quelle) und nicht ignoriert wurde
 
 ## Externe Integrationen
 
-- gopsutil v4 `host.Info()` (`OS`, `Platform`, `PlatformVersion`, `VirtualizationSystem`, `VirtualizationRole`) —
+- gopsutil v4.26.5 `host.PlatformInformation()` und `host.Virtualization()` (`os` aus `runtime.GOOS`; `host.Info()` bricht bei jedem Teilfehler ganz ab) —
   Felder per Quelle der eingebundenen Version (`go.mod`) beim Bau gegenprüfen; unter Windows liefert `Platform`
   den Produktnamen. Nicht verifiziert: Werte unter Proxmox-Hosts (`role: host`).
 - Vorbild, nur als Begründung: Checkmk legt neu gefundene Dienste als „undecided“ ab und lässt den Admin
