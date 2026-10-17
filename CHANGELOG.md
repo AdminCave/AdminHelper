@@ -357,6 +357,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   den Grund (Exit-Code, OOM, Neustarts, Healthcheck, pausiert, gestoppt). Der Report traegt dafuer additiv
   `available`, `error`, `error_message`, je Container `exit_code`, `oom_killed`, `restart_count` und `health` sowie
   `smart_absent`; die Check-Details tragen je Container `category` und `reason`.
+- **Desktop: der Tunnel mit Geraete-Zertifikat startet unter Windows (R-0425):** Der Desktop setzte den Pfad seiner
+  exportierten Geraete-Identitaet (unter `%APPDATA%`) unveraendert in die Tunnel-Config ein. Dort steht er in einem
+  TOML-String, in dem ein Backslash ein Escape einleitet: Ein Windows-Pfad wie `C:\Users\…` machte die Config
+  unlesbar, und der Tunnel startete nicht. Jetzt setzt der Desktop den Pfad TOML-korrekt ein (Backslash,
+  Anfuehrungszeichen und Steuerzeichen escaped), auch mit `'`, `"` oder Leerzeichen im Pfad.
+- **Desktop: HTTPS-Tunnel greifen auch ohne STCP-Tunnel (R-0432):** Wer keinen STCP-Tunnel sieht, fuer den stoppt
+  der Desktop frpc, und dabei verwarf er auch die Tunnel-Zuordnungen. Verbindungen mit einem HTTPS-Tunnel oeffneten
+  dann ihre eigene Adresse statt `https://<Custom-Domain>`. Jetzt laedt der Desktop die Zuordnungen auch ohne
+  STCP-Tunnel; scheitert das Laden, bleiben die bisherigen, und nur Abmelden oder ein Moduswechsel leert sie. Doku:
+  Entwickler-Doku Desktop (DE+EN).
 - **Desktop: der Tunnel uebernimmt Aenderungen selbst (R-0402, R-0389, R-0390):** Der Desktop lud das
   Tunnel-Bundle nur beim Anmelden. Ein spaeter angelegter, geaenderter oder geloeschter Tunnel und eine Rotation
   des frps-Tokens kamen erst nach einem Neustart der App an, und ein frpc, der endete (etwa weil frps beim
