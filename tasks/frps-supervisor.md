@@ -124,8 +124,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.
 Doku: keine (intern)
 Abhängt von: T7
 
-### T11 — Install und Update pinnen das frps-Image  [ ]
-Komponente: scripts · Dateien: scripts/install.sh, scripts/update.sh, scripts/tests/update_test.sh
+### T11 — Install und Update pinnen das frps-Image  [x]
+Komponente: scripts · Dateien: scripts/install.sh, scripts/update.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e56a6186 2026-10-17T04:54:54+02:00
+Review: approve (.ah-out/review/frps-supervisor/T11.verdict.json)
 Änderung: `install.sh` (`:231`) und `update.sh` (`:358-362`, Rollback `:375-380`) setzen `FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:<Version>` wie `GATEWAY_IMAGE`. `update_test.sh` (`:111`) bekommt den Key in der Ausgangs-`.env` und prüft Pin und Rollback. Test zuerst rot. **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh scripts --strict -- install_test update_test
 Doku: keine (intern)

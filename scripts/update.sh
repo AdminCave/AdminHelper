@@ -358,6 +358,7 @@ fi
 # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
 upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}"
 upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}"
+upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${TARGET_VER}"
 upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}"
 upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}"
 chmod 600 .env 2>/dev/null || true
@@ -376,6 +377,7 @@ rollback() {
     if [ "$INSTALLED" != "unknown" ]; then
         upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${INSTALLED}"
         upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${INSTALLED}"
+        upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${INSTALLED}"
         upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${INSTALLED}"
         upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${INSTALLED}"
     fi

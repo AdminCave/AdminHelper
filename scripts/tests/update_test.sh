@@ -109,6 +109,7 @@ make_install() {
   {
     printf 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server:%s\n' "$ver"
     printf 'GATEWAY_IMAGE=ghcr.io/admincave/adminhelper/gateway:%s\n' "$ver"
+    printf 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:%s\n' "$ver"
     printf 'CA_ISSUER_IMAGE=ghcr.io/admincave/adminhelper/ca-issuer:%s\n' "$ver"
     printf 'MONITORING_IMAGE=ghcr.io/admincave/adminhelper/monitoring:%s\n' "$ver"
     printf 'DOMAIN=localhost\nSECRET_KEY=already-set\nMONITOR_API_KEY=already-set\n'
@@ -134,6 +135,8 @@ out=$(run_update "$INST" 2>&1); rc=$?
 echo "$out" | sed 's/^/    │ /'
 [ $rc -eq 0 ] && ok "upgrade exit 0" || bad "upgrade exit $rc"
 grep -q 'server:0.34.0' "$INST/.env" && ok "image re-pinned to 0.34.0" || bad "image not re-pinned"
+grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.34.0' "$INST/.env" \
+  && ok "frps image re-pinned to 0.34.0" || bad "frps image not re-pinned"
 grep -q 'marker: 0.34.0' "$INST/docker-compose.yml" && ok "compose swapped" || bad "compose not swapped"
 ls "$INST"/backups/runtime-prev-*.tar.gz >/dev/null 2>&1 && ok "runtime snapshot written" || bad "no snapshot"
 
@@ -168,6 +171,8 @@ out=$(AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
 echo "$out" | sed 's/^/    │ /'
 [ $rc -ne 0 ] && ok "health-fail exits non-zero" || bad "health-fail exit $rc"
 grep -q 'server:0.33.0' "$INST/.env" && ok "rolled back image pin to 0.33.0" || bad "pin not rolled back"
+grep -qx 'FRPS_IMAGE=ghcr.io/admincave/adminhelper/frps:0.33.0' "$INST/.env" \
+  && ok "rolled back frps image pin to 0.33.0" || bad "frps pin not rolled back"
 grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && ok "rolled back compose to 0.33.0" || bad "compose not rolled back"
 
 # ── 7. additive .env migration brings the new key over ───────────────────────
