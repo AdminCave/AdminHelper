@@ -34,6 +34,7 @@ export AH_OUT_DIR="$WORK/out"
 export AH_PVE_URL="https://multibox-test.invalid"
 export FAKE_LOG="$WORK/calls.log"
 export FAKE_SEQ="$WORK/vmid.n"
+export FAKE_DOCKER_N="$WORK/docker.n"
 
 # The recorder. Answers each verb in vm.py's real shape and hands every role
 # script the markers multibox greps for, so a green run is green for the same
@@ -73,8 +74,21 @@ case "${1:-}" in
       *box_visitorbox.sh*) echo "VIS_TUNNEL_SSH_OK VIS_SSH_PUB_B64=cHVi" ;;
       *"logs --no-color frps"*)
         for t in ${FAKE_FRPS_TUNNELS:-mb-ssh-late mb-ssh-reload}; do echo "new proxy [mb-tunnel.$t] type [stcp] success"; done ;;
+      # --docker: the template and the check state over the admin API, the n-th query
+      # answering with the n-th word of FAKE_DOCKER_STATES (NONE: no marker).
+      *"python3 -I - docker-assign "*) echo "${FAKE_API_DOCKER_ASSIGN:-MB_API_TEMPLATE=docker-host}" ;;
+      *"python3 -I - docker-state "*)
+        n=$(cat "$FAKE_DOCKER_N" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE_DOCKER_N"
+        read -ra states <<<"${FAKE_DOCKER_STATES:-DOCKER_OK DOCKER_EXIT_DAMPED DOCKER_EXIT_CRIT DOCKER_UNAVAIL_WARN}"
+        s="${states[$((n - 1))]:-NONE}"
+        [ "$s" = NONE ] || echo "MB_DOCKER_STATE=$s MB_DOCKER_SEEN=status:fake,query:$n" ;;
+      # The docker steps on the agent box; FAKE_DOCKER_STEP_<STEP> is the verdict of one.
+      *"box_agentbox.sh docker "*)
+        step="${args##* }"; var="FAKE_DOCKER_STEP_${step^^}"; v="${!var:-OK}"
+        [ "$step" = start ] && echo "AGENT_DOCKER_ENGINE=29.8.1 AGENT_DOCKER_IMAGE=busybox"
+        [ "$v" = NONE ] || echo "AGENT_DOCKER_STEP=$v" ;;
       *box_agentbox.sh*)
-        echo "AGENT_PROVISION_OK ${FAKE_AGENT_RUN:-AGENT_RUN_OK} AGENT_CERT_OK AGENT_REPO_OK AGENT_CAFLIP_OK" ;;
+        echo "${FAKE_AGENT_PROVISION:-AGENT_PROVISION_OK} ${FAKE_AGENT_RUN:-AGENT_RUN_OK} AGENT_CERT_OK AGENT_REPO_OK AGENT_CAFLIP_OK" ;;
       *box_moncheckbox.sh*start*) echo "MC_MAILHOG_UP=1 MC_CA_B64=Y2E=" ;;
       *box_moncheckbox.sh*assert*) echo "MC_MAIL_COUNT=1 MC_ALERT_RECEIVED=1" ;;
       *POST\ /agent*) echo "1" ;;
@@ -84,7 +98,7 @@ exit 0
 FAKE
 chmod +x "$AH_VM_PY"
 
-reset_state() { rm -rf "$AH_VM_STATE_DIR" "$AH_OUT_DIR"; mkdir -p "$AH_VM_STATE_DIR"; : > "$FAKE_LOG"; rm -f "$FAKE_SEQ"; }
+reset_state() { rm -rf "$AH_VM_STATE_DIR" "$AH_OUT_DIR"; mkdir -p "$AH_VM_STATE_DIR"; : > "$FAKE_LOG"; rm -f "$FAKE_SEQ" "$FAKE_DOCKER_N"; }
 verbs() { cut -d' ' -f1 "$FAKE_LOG" | paste -sd, -; }
 
 echo "── a plain run ──"
@@ -230,6 +244,10 @@ import json, os, sys, urllib.request
 prog, argv = sys.argv[1], sys.argv[2:]
 tunnels = [{"id": "x1", "name": "mb-ssh"}]
 keep = os.environ.get("HARNESS_KEEP") == "1"
+templates = json.loads(os.environ.get("HARNESS_TEMPLATES") or json.dumps(
+    [{"id": "z1", "name": "ZFS Storage", "builtinSlug": "zfs-storage"},
+     {"id": "d1", "name": "Docker Host", "builtinSlug": "docker-host"}]))
+checks = json.loads(os.environ.get("HARNESS_CHECKS") or "[]")
 
 
 class Resp:
@@ -258,6 +276,15 @@ def urlopen(req, context=None, timeout=None):
         return Resp(b"{}")
     if method == "GET" and path == "/api/frp/generate/visitor-toml":
         return Resp(b"visitor")
+    if method == "GET" and path == "/api/monitoring/templates":
+        return Resp(json.dumps(templates).encode())
+    if method == "GET" and path == "/api/servers/s1":
+        return Resp(json.dumps({"id": "s1", "name": "mb-agent", "hostname": "mb-agent.local"}).encode())
+    if method == "POST" and path == "/api/monitoring/templates/d1/assign":
+        created = os.environ.get("HARNESS_CREATED", "c2").split()
+        return Resp(json.dumps({"checksCreated": created, "alertsCreated": []}).encode())
+    if method == "GET" and path == "/api/monitoring/checks?server_id=s1":
+        return Resp(json.dumps(checks).encode())
     raise AssertionError("unexpected call " + method + " " + path)
 
 
@@ -278,6 +305,65 @@ OUT=$(python3 -I "$HARNESS" "$PROG" add pw1 t1 c1 mb-ssh-late 2>&1); rc=$?
   && grep -qxF 'CALL POST /api/frp/tunnels {"frp_config_id": "c1", "local_port": 22, "name": "mb-ssh-late", "protocol": "ssh", "server_id": "t1", "tunnel_type": "stcp"}' <<<"$OUT" \
   && grep -qx 'MB_API_TUNNEL=mb-ssh-late' <<<"$OUT" && grep -qx "MB_VISITOR_B64=$(printf visitor | base64)" <<<"$OUT" \
   && ok "add creates an STCP tunnel to the sshd and hands on the visitor.toml that has it" || bad "add: rc=$rc $OUT"
+OUT=$(python3 -I "$HARNESS" "$PROG" docker-assign pw1 s1 2>&1); rc=$?
+[ $rc -eq 0 ] \
+  && grep -qxF 'CALL POST /api/monitoring/templates/d1/assign {"hostname": "mb-agent.local", "server_id": "s1", "server_name": "mb-agent"}' <<<"$OUT" \
+  && grep -qx 'MB_API_TEMPLATE=docker-host' <<<"$OUT" \
+  && ok "docker-assign gives the host the standard template docker-host, with the name and hostname of its record" \
+  || bad "docker-assign: rc=$rc $OUT"
+OUT=$(HARNESS_TEMPLATES='[{"id": "d1", "name": "Docker Host", "builtinSlug": null}]' python3 -I "$HARNESS" "$PROG" docker-assign pw1 s1 2>&1); rc=$?
+[ $rc -ne 0 ] && ! grep -q 'MB_API_TEMPLATE' <<<"$OUT" && ! grep -q 'CALL POST /api/monitoring' <<<"$OUT" \
+  && ok "a template only named Docker Host is not the standard one: no assignment, no marker" || bad "docker-assign by name: rc=$rc $OUT"
+OUT=$(HARNESS_CREATED='' python3 -I "$HARNESS" "$PROG" docker-assign pw1 s1 2>&1); rc=$?
+[ $rc -ne 0 ] && ! grep -q 'MB_API_TEMPLATE' <<<"$OUT" \
+  && ok "an assignment that created no check is an error, not a marker" || bad "docker-assign without a check: rc=$rc $OUT"
+
+# dcheck <status> <failCount> <details> — the checks of host s1 as GET /checks lists them: a
+# check of another type first, which docker-state must pass over.
+dcheck() {
+  printf '[{"id": "c1", "checkType": "agent_resources", "consecutiveFails": 3, "state": {"status": "critical", "failCount": 3}},'
+  printf ' {"id": "c2", "checkType": "docker_health", "consecutiveFails": 2, "state": {"status": "%s", "failCount": %s, "details": %s}}]' "$1" "$2" "$3"
+}
+RUN_OK='{"name": "mb-dock-run", "category": "ok", "reason": null}'
+EXIT_CRIT='{"name": "mb-dock-exit", "category": "critical", "reason": "exit:1"}'
+EXIT_STOPPED='{"name": "mb-dock-exit", "category": "stopped", "reason": "stopped"}'
+declare -A DET=(
+  [UP]="{\"available\": true, \"error\": null, \"containers\": [$RUN_OK]}"
+  [UP_EXIT]="{\"available\": true, \"error\": null, \"containers\": [$RUN_OK, $EXIT_CRIT]}"
+  [UP_STOPPED]="{\"available\": true, \"error\": null, \"containers\": [$RUN_OK, $EXIT_STOPPED]}"
+  [DOWN]='{"available": false, "error": "daemon_unreachable", "containers": []}'
+  [DOWN_TIMEOUT]='{"available": false, "error": "timeout", "containers": []}'
+  [NO_DETAILS]=null
+)
+wrong=""
+while read -r want st fc det; do
+  out="$(HARNESS_CHECKS="$(dcheck "$st" "$fc" "${DET[$det]}")" python3 -I "$HARNESS" "$PROG" docker-state pw1 s1 2>&1)"
+  got="$(sed -n 's/^MB_DOCKER_STATE=//p' <<<"$out")"
+  [ "$got" = "$want" ] || wrong="$wrong [$st $fc $det: ${got:-no marker}, want $want; $out]"
+done <<'CASES'
+DOCKER_OK ok 0 UP
+DOCKER_STATE_OTHER ok 1 UP
+DOCKER_STATE_OTHER pending 0 NO_DETAILS
+DOCKER_EXIT_DAMPED ok 1 UP_EXIT
+DOCKER_STATE_OTHER ok 0 UP_EXIT
+DOCKER_EXIT_CRIT critical 2 UP_EXIT
+DOCKER_STATE_OTHER critical 1 UP_EXIT
+DOCKER_STATE_OTHER critical 2 UP_STOPPED
+DOCKER_STATE_OTHER critical 2 UP
+DOCKER_UNAVAIL_WARN warning 3 DOWN
+DOCKER_STATE_OTHER unknown 3 DOWN
+DOCKER_STATE_OTHER warning 3 DOWN_TIMEOUT
+CASES
+[ -z "$wrong" ] \
+  && ok "docker-state names ok, the damped and the counted exit 1 and the stopped daemon, and nothing else" \
+  || bad "docker-state:$wrong"
+OUT=$(HARNESS_CHECKS="$(dcheck critical 2 "${DET[UP_EXIT]}")" python3 -I "$HARNESS" "$PROG" docker-state pw1 s1 2>&1)
+grep -qxF 'MB_DOCKER_SEEN=status:critical,fails:2/2,available:True,error:None,mb-dock-run:ok/-,mb-dock-exit:critical/exit:1' <<<"$OUT" \
+  && ok "docker-state says what it saw in one word" || bad "docker-state seen: $OUT"
+two="$(dcheck ok 0 "${DET[UP]}" | sed 's/}}]$/}}, {"id": "c3", "checkType": "docker_health", "state": {"status": "ok"}}]/')"
+OUT=$(HARNESS_CHECKS="$two" python3 -I "$HARNESS" "$PROG" docker-state pw1 s1 2>&1); rc=$?
+[ $rc -ne 0 ] && ! grep -q 'MB_DOCKER_STATE' <<<"$OUT" \
+  && ok "two Docker Health checks on the host are an error, not a state" || bad "two checks: rc=$rc $OUT"
 
 echo "── the agent run on a host without a tunnel ──"
 reset_state
@@ -288,6 +374,90 @@ reset_state
 OUT=$(FAKE_AGENT_RUN=AGENT_RUN_FAIL bash "$MB" --agents 1 2>&1); rc=$?
 [ $rc -ne 0 ] && grep -q '^  FAIL agent 3002: run --once failed' <<<"$OUT" \
   && ok "a failed agent run fails the run" || bad "agent run failed: rc=$rc; $(grep -a 'agent 3002' <<<"$OUT")"
+
+echo "── --docker: real Docker on the agent box, three states of the Docker Host check ──"
+# The docker steps in the order the run asked for them: the API calls on the server box and
+# the steps on the agent box.
+docker_steps() {
+  local l
+  while IFS= read -r l; do
+    case "$l" in
+      *"python3 -I - docker-assign "*) printf 'assign ' ;;
+      *"python3 -I - docker-state "*) printf 'state ' ;;
+      *"box_agentbox.sh docker "*) printf '%s ' "${l##* }" ;;
+    esac
+  done < "$FAKE_LOG"
+}
+reset_state
+OUT=$(bash "$MB" --docker 2>&1); rc=$?
+missing=""
+for want in "the Docker Host template is assigned to the host of agent 3002 over the API" \
+            "docker agent box: the agent timer is stopped, a container keeps running, one agent run (Docker 29.8.1, image busybox)" \
+            "docker: a running container -> ok (DOCKER_OK; status:fake,query:1)" \
+            "docker agent box: a second container ended with exit 1, no restart policy, one agent run" \
+            "docker: the first report of the exit 1 -> critical exit:1 in the details, the status damped (DOCKER_EXIT_DAMPED;" \
+            "docker agent box: one more agent run" \
+            "docker: the second report -> critical, reason exit:1 (DOCKER_EXIT_CRIT;" \
+            "docker agent box: Docker daemon and socket stopped, one agent run" \
+            "docker: the stopped daemon -> warning, error daemon_unreachable (DOCKER_UNAVAIL_WARN;"; do
+  grep -qF "  ok   $want" <<<"$OUT" || missing="$missing [$want]"
+done
+[ $rc -eq 0 ] && [ -z "$missing" ] \
+  && ok "a green --docker run has an ok of its own for each step and each of the three states" \
+  || bad "--docker: rc=$rc, missing:$missing"
+[ "$(docker_steps)" = "assign start state exit state rerun state down state " ] \
+  && ok "assign the template, then per step: change Docker, one agent run, the state on the server" \
+  || bad "docker order: $(docker_steps)"
+grep -q '^run 3002 --timeout 900 -- bash scripts/tests/box_agentbox.sh docker start$' "$FAKE_LOG" \
+  && grep -qE '^run 3001 --timeout 300 -- printf %s [[:alnum:]+/=]+ \| base64 -d \| python3 -I - docker-assign pw1 s1$' "$FAKE_LOG" \
+  && grep -qE '^run 3001 --timeout 300 -- printf %s [[:alnum:]+/=]+ \| base64 -d \| python3 -I - docker-state pw1 s1$' "$FAKE_LOG" \
+  && ok "the docker steps run on the provisioned agent box, the API calls on the server box for its host" \
+  || bad "docker calls: $(grep -E 'docker-|box_agentbox.sh docker' "$FAKE_LOG")"
+grep -q '^doctor --roles server,agent$' "$FAKE_LOG" \
+  && ok "--docker asks for no box of its own" || bad "docker roles: $(grep '^doctor' "$FAKE_LOG")"
+
+# expect_docker_fail <what> <FAIL line> <VAR=value…> — a --docker run with that fake answer
+# is red and names what it saw.
+expect_docker_fail() {
+  local what="$1" want="$2" out rc; shift 2
+  reset_state
+  out=$(env "$@" bash "$MB" --docker 2>&1); rc=$?
+  [ $rc -ne 0 ] && grep -qF "  FAIL $want" <<<"$out" \
+    && ok "$what" || bad "$what: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$out")"
+}
+expect_docker_fail "a first state other than ok fails the run and names it" \
+  "docker: a running container -> ok: DOCKER_STATE_OTHER (expected DOCKER_OK" \
+  FAKE_DOCKER_STATES="DOCKER_STATE_OTHER DOCKER_EXIT_DAMPED DOCKER_EXIT_CRIT DOCKER_UNAVAIL_WARN"
+expect_docker_fail "an exit 1 counted on its first report fails the run (consecutive_fails 2 damps it)" \
+  "docker: the first report of the exit 1 -> critical exit:1 in the details, the status damped: DOCKER_EXIT_CRIT (expected DOCKER_EXIT_DAMPED" \
+  FAKE_DOCKER_STATES="DOCKER_OK DOCKER_EXIT_CRIT DOCKER_EXIT_CRIT DOCKER_UNAVAIL_WARN"
+expect_docker_fail "an exit 1 still damped on its second report fails the run" \
+  "docker: the second report -> critical, reason exit:1: DOCKER_EXIT_DAMPED (expected DOCKER_EXIT_CRIT" \
+  FAKE_DOCKER_STATES="DOCKER_OK DOCKER_EXIT_DAMPED DOCKER_EXIT_DAMPED DOCKER_UNAVAIL_WARN"
+expect_docker_fail "a state query without a marker fails the run" \
+  "docker: the stopped daemon -> warning, error daemon_unreachable: no marker (expected DOCKER_UNAVAIL_WARN" \
+  FAKE_DOCKER_STATES="DOCKER_OK DOCKER_EXIT_DAMPED DOCKER_EXIT_CRIT"
+expect_docker_fail "a daemon still up after the stop fails the run and names the verdict" \
+  "docker agent box: Docker daemon and socket stopped, one agent run: STILL_UP" FAKE_DOCKER_STEP_DOWN=STILL_UP
+expect_docker_fail "a docker step without a verdict fails the run" \
+  "docker agent box: a second container ended with exit 1, no restart policy, one agent run: no marker" FAKE_DOCKER_STEP_EXIT=NONE
+reset_state
+OUT=$(FAKE_API_DOCKER_ASSIGN=NONE bash "$MB" --docker 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q '^  FAIL could not assign the Docker Host template' <<<"$OUT" \
+  && grep -q '^  SKIP the three Docker states (no Docker Host check)' <<<"$OUT" \
+  && ! grep -q 'box_agentbox.sh docker' "$FAKE_LOG" \
+  && ok "without the template no docker step runs, and the three states are named unverified" \
+  || bad "no template: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$OUT"); $(grep 'box_agentbox.sh docker' "$FAKE_LOG")"
+reset_state
+OUT=$(FAKE_AGENT_PROVISION=AGENT_PROVISION_FAIL bash "$MB" --docker 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q '^  SKIP the Docker stage (no provisioned agent box)' <<<"$OUT" \
+  && ! grep -qE 'docker-assign|box_agentbox.sh docker' "$FAKE_LOG" \
+  && ok "an agent box that never provisioned gets no docker step, and the stage is named unverified" \
+  || bad "no provisioned box: rc=$rc; $(grep -aE '^  (FAIL|SKIP)' <<<"$OUT")"
+reset_state
+OUT=$(bash "$MB" --agents 1 2>&1)
+! grep -qE 'docker-assign|docker-state|box_agentbox.sh docker' "$FAKE_LOG" && ! grep -q 'Docker' <<<"$OUT" \
+  && ok "without --docker there is no docker step" || bad "docker without the flag: $(grep -E 'docker' "$FAKE_LOG")"
 
 echo "── the teardown ──"
 reset_state

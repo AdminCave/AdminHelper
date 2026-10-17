@@ -125,8 +125,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html · docs/developer/agent.html + EN · docs/developer/monitoring.html + EN · CHANGELOG.md
 Abhängt von: T1, T2, T3, T5, T7, T8, T9, T10, T11, T12
 
-### T14 — Multibox: Etappe `--docker` mit echtem Docker auf der Agent-Box  [ ]
+### T14 — Multibox: Etappe `--docker` mit echtem Docker auf der Agent-Box  [x]
 Komponente: scripts · Dateien: scripts/tests/multibox.sh, scripts/tests/box_agentbox.sh, scripts/tests/multibox_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @2576d126 2026-10-17T07:07:51+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T14.verdict.json)
 Änderung: Neuer Flag `--docker` in `multibox.sh`: die Agent-Box installiert Docker (Paket der Distribution oder docker-ce, aktuelle Version), der Orchestrator weist dem Server das Template „Docker Host“ zu, dann drei Stufen mit je einem `adminhelper-agent run --once` und Abfrage des Check-Zustands über den Monitoring-Dienst der Server-Box: (1) ein laufender Container → `ok` (`DOCKER_OK`), (2) zusätzlich ein Container mit `exit 1` ohne Policy → `critical` mit `reason=exit:1` (`DOCKER_EXIT_CRIT`), (3) Docker-Daemon gestoppt → `warning` mit `error=daemon_unreachable` (`DOCKER_UNAVAIL_WARN`). `multibox_test.sh` (hermetisch) prüft Flag-Parsing und Marker-Auswertung. **Harness-Pfad: PR merged Kevin.** Nicht gleichzeitig mit frps-supervisor T16 / agent-frpc-sync T7 (beide ändern `multibox.sh`); vorher `origin/main` hineinmergen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: keine (Test-Harness)
