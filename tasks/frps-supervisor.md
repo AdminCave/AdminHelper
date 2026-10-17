@@ -115,8 +115,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor
 Doku: keine (intern; Betrieb in T17)
 Abhängt von: T9, T18
 
-### T10 — Pipeline: frps-Image bauen und veröffentlichen  [ ]
-Komponente: server · Dateien: .github/workflows/ci.yml, .github/workflows/docker.yml, .github/workflows/release.yml, apps/server/tests/test_release_images.py
+### T10 — Pipeline: frps-Image bauen und veröffentlichen  [x]
+Komponente: server · Dateien: .github/workflows/ci.yml, .github/workflows/docker.yml, .github/workflows/release.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @486026d3 2026-10-17T04:23:20+02:00
+Review: approve (.ah-out/review/frps-supervisor/T10.verdict.json)
 Änderung: `frps` in die Build-Matrix von `ci.yml` (`:635-646`) und `docker.yml` (`:31-42`), in die Manifest-Prüfung von `release.yml` (`:510`); `frp-consistency` (`ci.yml:664-690`, heute `:676` aus `docker-compose.yml`) liest die frps-Version künftig aus `apps/frps/Dockerfile`. Neue Testdatei (SPDX): die Image-Listen in `ci.yml`, `docker.yml`, `release.yml` stimmen überein und enthalten `frps`; die frps-Version im Dockerfile ist gleich `FRP_VERSION` in `ci.yml` und `release.yml`. **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: keine (intern)
