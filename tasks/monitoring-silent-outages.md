@@ -90,8 +90,10 @@ Review: approve (.ah-out/review/monitoring-silent-outages/T9.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py
 Doku: keine (intern; Doku in T13)
 
-### T10 — Desktop: Docker-Sektion zeigt Ausfall, Gründe und gestoppte Container  [ ]
+### T10 — Desktop: Docker-Sektion zeigt Ausfall, Gründe und gestoppte Container  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecDocker.svelte, apps/desktop/ui/src/components/monitoring/section/SecDocker.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @d6d85cc9 2026-10-17T05:29:51+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T10.verdict.json)
 Änderung: `MonitorContainerDetails` (`types.ts:289-296`) bekommt `available`, `error`, `category` inkl. `stopped`, `reason`, `exit_code`, `restart_count`. `SecDocker.svelte` (`info` `:31-49`, Anzeige `:66-120`): `available=false` → deutlicher Hinweis mit übersetztem Fehler statt „—“; gestoppte Container getrennt gezählt („3 laufen · 1 gestoppt“ statt „Alle 4 Container laufen“), je Container der übersetzte Grund (Exit-Code, OOM, n Neustarts, unhealthy, pausiert, gestoppt); auf dem Stand von R-0417 aufbauen, falls dort die Zählung schon angepasst wurde. Texte DE+EN in `dictionaries.ts` (neben `monitoring.docker.*`, DE `:581-582`, EN `:1203-1204`), nur aus Codes. Neue Testdatei mit SPDX-Header (`// SPDX-FileCopyrightText: 2026 Kevin Stenzel` / `//` / `// SPDX-License-Identifier: GPL-3.0-or-later`), zuerst rot: Ausfall-Hinweis, getrennte Zählung, Gründe je Kategorie, leere Liste ohne veraltete Einträge.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecDocker.test.ts
 Doku: keine (intern; Doku in T13)
