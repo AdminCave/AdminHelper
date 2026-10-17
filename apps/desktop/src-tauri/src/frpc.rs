@@ -222,8 +222,25 @@ const NO_IDENTITY_HINT: &str = "No mTLS certificate on this device — enroll it
 
 /// Replace the server's `{{IDENTITY_DIR}}` placeholder in a visitor TOML with the
 /// absolute identity dir the desktop exported its mTLS material into.
+///
+/// The server writes `_VISITOR_IDENTITY_DIR` only inside basic strings (`"…"`), so the dir goes
+/// in escaped for one (TOML v1.0.0, String): unescaped, the backslashes of a Windows path start
+/// escapes that are invalid (`\U` of `C:\Users`) or reserved (`\A` of `\AppData`). A literal
+/// string (`'…'`) needs no escape but cannot hold the `'` a Windows user name may contain.
 fn rewrite_identity_paths(toml: &str, abs_identity_dir: &str) -> String {
-    toml.replace(IDENTITY_DIR_PLACEHOLDER, abs_identity_dir)
+    let mut escaped = String::with_capacity(abs_identity_dir.len());
+    for c in abs_identity_dir.chars() {
+        match c {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\t' => escaped.push(c),
+            c if c <= '\u{1f}' || c == '\u{7f}' => {
+                escaped.push_str(&format!("\\u{:04X}", u32::from(c)));
+            }
+            c => escaped.push(c),
+        }
+    }
+    toml.replace(IDENTITY_DIR_PLACEHOLDER, &escaped)
 }
 
 /// Export the enrolled identity (key 0600 + cert + CA) into `identity_dir` so the
@@ -1100,6 +1117,56 @@ bindPort = 6000
             !out.contains("{{IDENTITY_DIR}}"),
             "no placeholder may remain"
         );
+    }
+
+    /// The three TLS paths of `config` as frpc reads them.
+    fn tls_paths(config: &toml::Value) -> [Option<&str>; 3] {
+        let tls = &config["transport"]["tls"];
+        ["certFile", "keyFile", "trustedCaFile"].map(|key| tls[key].as_str())
+    }
+
+    /// `identity_dir` filled into SERVER_TOML parses back to exactly `<identity_dir>/cert.pem`
+    /// and so on, both in the server TOML and in the config frpc runs.
+    fn assert_identity_path_round_trips(identity_dir: &str) {
+        let expected =
+            ["cert.pem", "key.pem", "ca.crt"].map(|file| format!("{identity_dir}/{file}"));
+        let expected = expected.each_ref().map(|path| Some(path.as_str()));
+
+        let rewritten = rewrite_identity_paths(SERVER_TOML, identity_dir);
+        let rewritten = toml::from_str::<toml::Value>(&rewritten)
+            .unwrap_or_else(|e| panic!("{identity_dir:?}: server TOML does not parse: {e}"));
+        assert_eq!(
+            tls_paths(&rewritten),
+            expected,
+            "server TOML: {identity_dir:?}"
+        );
+
+        let config = frpc_config(SERVER_TOML, identity_dir, &head(7400, "c0ffee"))
+            .unwrap_or_else(|e| panic!("{identity_dir:?}: frpc_config refused: {e}"));
+        assert_eq!(
+            tls_paths(&parse(&config)),
+            expected,
+            "frpc config: {identity_dir:?}"
+        );
+    }
+
+    #[test]
+    fn identity_path_from_windows_app_data_round_trips() {
+        // `\U` and `\O` are an invalid and a reserved escape in a basic string; the `'` rules out
+        // a literal string.
+        assert_identity_path_round_trips(
+            r"C:\Users\O'Brien Test\AppData\Roaming\com.admincave.adminhelper\identity",
+        );
+    }
+
+    #[test]
+    fn identity_path_with_quote_space_or_control_character_round_trips() {
+        for identity_dir in [
+            "/home/o\"brien test/.local/share/com.admincave.adminhelper/identity",
+            "/data/tab\there/del\u{7f}and\u{1}soh/identity",
+        ] {
+            assert_identity_path_round_trips(identity_dir);
+        }
     }
 
     #[test]

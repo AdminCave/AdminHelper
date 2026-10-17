@@ -334,6 +334,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: der Tunnel mit Geraete-Zertifikat startet unter Windows (R-0425):** Der Desktop setzte den Pfad seiner
+  exportierten Geraete-Identitaet (unter `%APPDATA%`) unveraendert in die Tunnel-Config ein. Dort steht er in einem
+  TOML-String, in dem ein Backslash ein Escape einleitet: Ein Windows-Pfad wie `C:\Users\…` machte die Config
+  unlesbar, und der Tunnel startete nicht. Jetzt setzt der Desktop den Pfad TOML-korrekt ein (Backslash,
+  Anfuehrungszeichen und Steuerzeichen escaped), auch mit `'`, `"` oder Leerzeichen im Pfad.
 - **Desktop: HTTPS-Tunnel greifen auch ohne STCP-Tunnel (R-0432):** Wer keinen STCP-Tunnel sieht, fuer den stoppt
   der Desktop frpc, und dabei verwarf er auch die Tunnel-Zuordnungen. Verbindungen mit einem HTTPS-Tunnel oeffneten
   dann ihre eigene Adresse statt `https://<Custom-Domain>`. Jetzt laedt der Desktop die Zuordnungen auch ohne
