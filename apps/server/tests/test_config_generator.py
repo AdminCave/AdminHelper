@@ -277,3 +277,23 @@ class TestStcpWithoutSecret:
         assert toml == generate_visitor_toml(_make_config(), [tunnels[2]])
         warned = " ".join(r.getMessage() for r in caplog.records)
         assert "no-secret" in warned and "empty-secret" in warned
+
+
+def test_write_frps_config_warns_only_on_runtime_change(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from app.modules.frp import docker_manager
+
+    monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
+    config = _make_config(auth_token="tok")
+
+    # 4.7: a runtime change (create/update) logs the restart requirement — frps has no
+    # config hot-reload — while a startup write stays quiet.
+    with caplog.at_level(logging.WARNING):
+        docker_manager.write_frps_config(config, warn_restart=True)
+    assert any("docker compose restart frps" in r.getMessage() for r in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        docker_manager.write_frps_config(config)
+    assert not any("restart frps" in r.getMessage() for r in caplog.records)

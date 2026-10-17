@@ -49,11 +49,7 @@ case "$COMPONENT" in
   *)  echo "unknown component: $COMPONENT (expected server or monitoring)" >&2; exit 2 ;;
 esac
 
-# Absolute before the cd below: a relative $0 (called from another directory)
-# would otherwise point nowhere, and both files next to this script would read
-# as missing — the gate then runs without its exceptions.
-HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="${ROOT:-$(cd "$HERE/../.." && pwd)}"
+ROOT="${ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$ROOT" || { echo "no such tree: $ROOT" >&2; exit 2; }
 
 REL="apps/$COMPONENT/tests/openapi.snapshot.json"
@@ -113,7 +109,7 @@ grep -q '"openapi"' "$BASE_FILE" || {
 # The file carries no reasons of its own: oasdiff's parser wants exactly two fields
 # per line and rejects comments and blank lines (checker/level.go:42 @v1.32.0).
 # If it is missing, the gate stays strict rather than quietly loosening.
-SEVERITY="$HERE/oasdiff-severity.levels"
+SEVERITY="$(dirname "$0")/oasdiff-severity.levels"
 SEV_ARGS=()
 if [ -r "$SEVERITY" ]; then
   SEV_ARGS=(--severity-levels "$SEVERITY")
@@ -121,34 +117,15 @@ else
   echo "note: $SEVERITY is missing — running without the narrowing exception" >&2
 fi
 
-# A bound that gets tighter (max decreased, min increased) or a type list that
-# loses `null` stays ERR as a rule: unlike a bound that is new, the old one was
-# published, and a client may live off the values that go. The single changes of
-# that kind Kevin accepted are named one by one in oasdiff-err-ignore.txt — the
-# tighter port bounds of the FRP server config (R-0411). oasdiff drops an ERR
-# finding only for a line that names its method and exact path and carries its
-# whole text, value included, case-insensitive (checker/ignore.go,
-# api_change.go:131 @v1.32.0): a line covers that one change, not the rule and not
-# the endpoint. Missing file: strict, as above.
-IGNORE="$HERE/oasdiff-err-ignore.txt"
-IGNORE_ARGS=()
-if [ -r "$IGNORE" ]; then
-  IGNORE_ARGS=(--err-ignore "$IGNORE")
-else
-  echo "note: $IGNORE is missing — running without the named ERR exceptions" >&2
-fi
-
 echo "oasdiff breaking $BASE:$REL -> working tree"
-oasdiff breaking "$BASE_FILE" "$REL" --fail-on ERR --format text ${SEV_ARGS[@]+"${SEV_ARGS[@]}"} \
-  ${IGNORE_ARGS[@]+"${IGNORE_ARGS[@]}"}
+oasdiff breaking "$BASE_FILE" "$REL" --fail-on ERR --format text ${SEV_ARGS[@]+"${SEV_ARGS[@]}"}
 rc=$?
 case "$rc" in
   0) echo "$COMPONENT: no breaking changes against $BASE" ;;
   1) echo "::error::$COMPONENT OpenAPI has breaking changes against $BASE (see above)" >&2 ;;
-  # Anything else is oasdiff itself failing (102 = cannot load a spec, 121 = cannot
-  # read the ignore file). Reporting that as a breaking change would be a lie, and
-  # passing 75 through would claim the SKIP semantics run.sh reserves for "not
-  # verified".
+  # Anything else is oasdiff itself failing (102 = cannot load a spec). Reporting
+  # that as a breaking change would be a lie, and passing 75 through would claim
+  # the SKIP semantics run.sh reserves for "not verified".
   *) echo "::error::oasdiff failed with exit $rc — the check did not run" >&2; rc=1 ;;
 esac
 exit "$rc"

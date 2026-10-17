@@ -34,12 +34,6 @@ RUFF_VERSION="${AH_RUFF_VERSION:-0.15.20}"
 # it here, `run.sh --only scripts` on a box SKIPs the step and --strict calls
 # that a failure — on a box where nothing is wrong. Pinned like ci.yml's.
 PYTEST_VERSION="${AH_PYTEST_VERSION:-9.1.1}"
-# oasdiff for run.sh's scripts block: openapi_breaking_test checks the ERR
-# exception file against the real matcher and exits 75 without the binary, which
-# --strict calls a failure. The release tarball and SHA-256 ci.yml pins (step
-# "Install oasdiff"); scripts/dev/toolchain-lockstep.sh holds the two together.
-OASDIFF_VERSION="${AH_OASDIFF_VERSION:-1.32.0}"
-OASDIFF_SHA256_LINUX_AMD64="${AH_OASDIFF_SHA256:-5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # Profile: full (default — everything, for the single-box run.sh incl. desktop GUI
 # E2E) | server (docker stack only) | agent (Go agent + packaging). server/agent
@@ -153,17 +147,6 @@ $SUDO pip3 install --break-system-packages -q "ruff==$RUFF_VERSION" \
 log "pytest $PYTEST_VERSION (used by run.sh unit's vm-pytest step)"
 $SUDO pip3 install --break-system-packages -q "pytest==$PYTEST_VERSION" \
   || pipx install "pytest==$PYTEST_VERSION"
-# Every profile, like pytest: the bake warms each template with `run.sh unit`,
-# and that runs the scripts block. The version is read into a variable, not piped
-# into grep -q: under pipefail an early grep exit can fail the pipe.
-log "oasdiff ${OASDIFF_VERSION} (used by run.sh's scripts block)"
-if [ "$(oasdiff --version 2>/dev/null || true)" != "oasdiff version ${OASDIFF_VERSION}" ]; then
-  curl -fsSL --retry 3 --retry-connrefused -o /tmp/oasdiff.tgz \
-    "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
-  echo "${OASDIFF_SHA256_LINUX_AMD64}  /tmp/oasdiff.tgz" | sha256sum -c -
-  tar -C /tmp -xzf /tmp/oasdiff.tgz oasdiff
-  $SUDO install -m 0755 /tmp/oasdiff /usr/local/bin/oasdiff
-fi
 
 log "docker engine + compose v2 plugin"
 if ! command -v docker >/dev/null 2>&1; then

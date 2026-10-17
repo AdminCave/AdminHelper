@@ -448,23 +448,3 @@ def schedule_notification_cleanup(hours: int = 24) -> None:
     """Register the periodic bell-feed retention cleanup (idempotent). Runs once
     at start and then every `hours` hours."""
     _register_system_job(_run_notification_cleanup, _NOTIFICATION_CLEANUP_JOB_ID, hours=hours)
-
-
-_FRPS_SUPERVISOR_WATCH_JOB_ID = "system:frps-supervisor-watch"
-
-
-def _run_frps_supervisor_watch() -> None:
-    """Turn new events of the frps supervisor (its status file) into bell notifications."""
-    from app.modules.frp.supervisor_watch import notify_supervisor_events
-
-    def work(db):
-        written = notify_supervisor_events(db)
-        return f"frps supervisor watch: {written} notifications written" if written else None
-
-    _run_in_session("frps supervisor watch", work)
-
-
-def schedule_frps_supervisor_watch(seconds: int = 15) -> None:
-    """Register the periodic frps supervisor watch (idempotent). Runs once at
-    start and then every `seconds` seconds."""
-    _register_system_job(_run_frps_supervisor_watch, _FRPS_SUPERVISOR_WATCH_JOB_ID, seconds=seconds)

@@ -65,17 +65,12 @@ def main() -> None:
     configure_logging()
     # Import after logging is configured. Importing the scheduler module pulls in
     # app.core.config (DATA_DIR, DATABASE_URL) the same way the web process does.
-    # The registry loads every ORM model before the first job queries: a job imports
-    # only its own modules, and a relationship to a model none of them reached fails
-    # the mapper configuration, so the job does too (R-0411).
-    from app import model_registry  # noqa: F401
     from app.modules.hooks.scheduler import (
         reconcile_scheduled_hooks,
         schedule_audit_cleanup,
         schedule_blacklist_cleanup,
         schedule_certificate_register_cleanup,
         schedule_enrollment_token_cleanup,
-        schedule_frps_supervisor_watch,
         schedule_hook_reconcile,
         schedule_notification_cleanup,
         schedule_outbox_drain,
@@ -91,7 +86,6 @@ def main() -> None:
     schedule_audit_cleanup()
     schedule_outbox_drain()
     schedule_notification_cleanup()
-    schedule_frps_supervisor_watch()
     schedule_hook_reconcile()
     reconcile_scheduled_hooks()  # initial sync of scheduled hooks
     scheduler.start()

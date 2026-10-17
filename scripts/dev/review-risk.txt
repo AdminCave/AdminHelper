@@ -40,7 +40,6 @@ apps/server/app/modules/provisioning/helpers.py
 apps/server/app/modules/servers/router.py
 
 # FRP tunnels
-apps/frps/*
 apps/server/app/modules/frp/*
 apps/agent/internal/frpc/*
 apps/agent/internal/provision/*

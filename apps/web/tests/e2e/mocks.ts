@@ -158,30 +158,6 @@ const FRP_EXAMPLE = {
   _token: 'secret',
 };
 
-// FrpSupervisorStatus as GET /api/frp/supervisor-status answers it: without an FRP
-// config the supervisor waits, with one it runs it. Fixed instants, not now, so
-// the rendered times and the screenshot stay the same.
-const makeSupervisorStatus = (hasConfig: boolean): Record<string, unknown> =>
-  hasConfig
-    ? {
-        state: 'running',
-        reason: 'none',
-        since: '2026-01-01T00:00:05Z',
-        stale: false,
-        lastEvent: 'started',
-        lastEventAt: '2026-01-01T00:00:05Z',
-        publishedBindPort: 7000,
-      }
-    : {
-        state: 'waiting',
-        reason: 'config_missing',
-        since: '2026-01-01T00:00:00Z',
-        stale: false,
-        lastEvent: null,
-        lastEventAt: null,
-        publishedBindPort: 7000,
-      };
-
 export interface MockFixture {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   /** Path below /api, in OpenAPI template form where it carries an id. */
@@ -250,8 +226,6 @@ export const MOCK_FIXTURES: MockFixture[] = [
   },
   { method: 'GET', path: 'audit', status: 200, body: AUDIT_ROWS },
   { method: 'GET', path: 'frp/status', status: 200, body: { proxies: [], total: 0 } },
-  { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(false) },
-  { method: 'GET', path: 'frp/supervisor-status', status: 200, body: makeSupervisorStatus(true) },
   {
     method: 'POST',
     path: 'enrollment/token/for',
@@ -398,9 +372,6 @@ export async function mockApi(page: Page): Promise<void> {
   });
   await page.route(api('frp/status*'), async (route) =>
     route.fulfill(json({ body: { proxies: [], total: 0 } })),
-  );
-  await page.route(api('frp/supervisor-status'), async (route) =>
-    route.fulfill(json({ body: makeSupervisorStatus(db.frp.length > 0) })),
   );
   await page.route(api('enrollment/token/for'), async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;

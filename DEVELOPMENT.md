@@ -297,17 +297,14 @@ Unified-Diff. Der Test braucht keine Datenbank (der App-Import reicht), `info.ve
 wird auf `0.0.0` normalisiert und ein `servers`-Feld entfernt — sonst waere jeder Release
 ein Snapshot-Diff ohne Vertragsaenderung.
 
-`oasdiff` braucht der Pflicht-Schritt `scripts` von `run.sh`: `scripts/tests/openapi_breaking_test.sh`
-prueft die Ausnahme-Datei `scripts/dev/oasdiff-err-ignore.txt` gegen das echte oasdiff und endet
-ohne Binary mit Exit 75 — unter `--strict` also rot. CI (Jobs `openapi-compat` und `ops-scripts`)
-und die Test-Boxen (`scripts/vm/bootstrap_linux.sh`) installieren es; auf der Dev-Box einmal das
-fertige Release-Binary holen:
+`oasdiff` gehoert zu keiner Pflicht-Suite — fehlt das Binary, meldet der Check Exit 75 (SKIP)
+statt rot zu werden. Wer das Gate vor dem Push selbst sehen will, holt sich das fertige
+Release-Binary:
 
 ```bash
-# Stand 2026-10-17. Massgeblich ist .github/workflows/ci.yml (Schritt "Install oasdiff"
-# im Job openapi-compat, OASDIFF_VERSION und OASDIFF_SHA256_LINUX_AMD64);
-# scripts/dev/toolchain-lockstep.sh haelt scripts/vm/bootstrap_linux.sh gleich. Von dort
-# uebernehmen, damit Dev-Box, CI und Boxen dieselbe Fassung messen.
+# Stand 2026-09-23. Massgeblich ist .github/workflows/ci.yml (Job openapi-compat,
+# OASDIFF_VERSION und OASDIFF_SHA256_LINUX_AMD64) — von dort uebernehmen, damit
+# lokal und CI dieselbe Fassung messen.
 V=1.32.0
 S=5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad
 curl -sSfL -o /tmp/oasdiff.tgz \

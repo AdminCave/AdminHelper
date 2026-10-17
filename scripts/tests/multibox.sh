@@ -17,9 +17,7 @@
 #   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
 #   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel); the
 #              tunnel comes after the provisioning, a second one by a reload while the
-#              visitor holds an SSH session over the first (R-0398); then a change of the
-#              FRP config restarts frps once, and the agent's frpc and a new visitor
-#              connection come back without a hand on them (R-0411)
+#              visitor holds an SSH session over the first (R-0398)
 #   --docker   + the Docker Host template on the agent's host and real Docker on its
 #              box: a running container -> ok, a container with exit 1 -> critical,
 #              the daemon stopped -> warning (R-0419); no box of its own
@@ -262,7 +260,6 @@ fi
 # admin API of the server box, called ON that box: under --enforce only it holds the admin
 # client certificate (box_serverbox.sh enrolls it into /tmp). clear deletes the tunnels of a
 # host; add creates an STCP tunnel to its sshd and prints the visitor.toml that has it.
-# `srv_api frps-config <frp-config-id> <n>` sets max_ports_per_client of an FRP config.
 # docker-assign gives a host the standard template Docker Host; docker-state names the state
 # of its Docker Health check, the monitoring service answering through the proxy of the
 # server as it does for the desktop. The program travels base64-encoded: vm.py joins the
@@ -305,16 +302,6 @@ elif action == "add":
                                              "protocol": "ssh", "local_port": 22})
     print("MB_API_TUNNEL=" + name)
     print("MB_VISITOR_B64=" + base64.b64encode(call("GET", "/api/frp/generate/visitor-toml", token)).decode())
-elif action == "frps-config":
-    # The third word names an FRP config here. max_ports_per_client goes into frps.toml
-    # (maxPortsPerClient) and into no frpc.toml: a change frps alone has to take over.
-    config_id, value = server_id, int(sys.argv[4])
-    body = {"max_ports_per_client": value}
-    changed = json.loads(call("PUT", "/api/frp/server-config/" + config_id, token, body))
-    if changed.get("maxPortsPerClient") != value:
-        sys.exit("FRP config %s has max_ports_per_client %r after the PUT, want %d"
-                 % (config_id, changed.get("maxPortsPerClient"), value))
-    print("MB_API_FRPS_CONFIG=%d" % value)
 elif action == "docker-assign":
     # By its slug: a user may rename a standard template.
     found = [t for t in json.loads(call("GET", "/api/monitoring/templates", token))
@@ -372,62 +359,10 @@ frps_registered() {
   grep -qE "new proxy \[[^]]*\.$1\] type \[stcp\] success" <<<"$log"
 }
 
-# frps_restart <tunnel…> — R-0411, once the visitor got through: a change of the FRP config over
-# the API. The supervisor in the frps container takes it over and restarts frps exactly once;
-# the agent's frpc logs in again by itself, so frps registers each tunnel anew; and a new
-# visitor connection goes through the first. box_serverbox.sh watches frps on the server box,
-# every wait there bounded and ending in a verdict.
-frps_restart() {
-  local out mark api verdict seen back hold check
-  echo "== tunnel (R-0411): a config change restarts frps once, the agent and a visitor come back =="
-  out="$(ask "$SRV_VM" 300 bash scripts/tests/box_serverbox.sh frps-mark 2>&1)"
-  mark="$(vm_marker MB_FRPS_MARK "$out")"
-  if [ -z "$mark" ]; then
-    echo "$out" | tail -5; bad "frps: no supervisor mark before the config change (see output above)"
-    skipped "the frps restart for a config change (no mark) — R-0411 is unverified"; return
-  fi
-  api="$(srv_api frps-config "$TUN_CFG" "$FRPS_MAX_PORTS" 2>&1)"
-  if [ "$(vm_marker MB_API_FRPS_CONFIG "$api")" != "$FRPS_MAX_PORTS" ]; then
-    echo "$api" | tail -5; bad "could not set max_ports_per_client of the FRP config over the API (see output above)"
-    skipped "the frps restart for a config change (the config did not change) — R-0411 is unverified"; return
-  fi
-  ok "max_ports_per_client of the FRP config set to $FRPS_MAX_PORTS over the API"
-  out="$(ask "$SRV_VM" 900 bash scripts/tests/box_serverbox.sh frps-restart "$mark" "$@" 2>&1)"
-  echo "$out" | tail -25
-  verdict="$(vm_marker MB_FRPS_RESTART "$out")"; seen="$(vm_marker MB_FRPS_SEEN "$out")"
-  [ "$verdict" = OK ] \
-    && ok "frps restarted exactly once for the change: one event, applied, one start and no exit in its log, a new frps process ($seen)" \
-    || bad "frps did not restart exactly once for the change: ${verdict:-no marker} (${seen:-nothing seen})"
-  back="$(vm_marker MB_FRPS_TUNNELS "$out")"
-  if [ "$back" != OK ]; then
-    bad "the agent's frpc did not log in again after the restart: ${back:-no marker} (see output above)"
-    skipped "a new visitor connection after the restart (the agent's tunnels are not back) — R-0411 is unverified"
-    return
-  fi
-  ok "the agent's frpc logged in again by itself: frps registered $* anew after the restart"
-  out="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh hold "${T_USER:-none}" 2>&1)"
-  echo "$out" | tail -20
-  hold="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$out" | head -1)"
-  if [ "$hold" != VIS_SESSION_OPEN ]; then
-    bad "no new visitor connection through $1 after the restart: ${hold:-no marker} (see output above)"; return
-  fi
-  ok "a new visitor connection after the restart: an SSH session through $1 carries data"
-  out="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh check 2>&1)"
-  echo "$out" | tail -10
-  check="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$out" | head -1)"
-  [ "$check" = VIS_SESSION_SURVIVED ] \
-    && ok "the new SSH session through $1 still carries data seconds later" \
-    || bad "the new SSH session through $1 broke off: ${check:-no marker}"
-}
-
 if [ "$TUNNEL" = 1 ]; then
   echo "== tunnel (S4): agent frpc STCP server over the hop to frps on $SRV_IP =="
-  printf '%s' "$SRVOUT" | grep -q 'MB_FRPS_UP=1' && ok "frps up on the server box, run by its supervisor from the seeded config" \
-    || bad "frps did not start on the server"
+  printf '%s' "$SRVOUT" | grep -q 'MB_FRPS_UP=1' && ok "frps up on the server box" || bad "frps did not start on the server"
   LATE_TUNNEL=mb-ssh-late; RELOAD_TUNNEL=mb-ssh-reload
-  # The seeded config leaves max_ports_per_client unset, which frps.toml writes as 16: any other
-  # value above 0 changes frps.toml (0 means the default as well).
-  FRPS_MAX_PORTS=32
   if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && [ -n "$TUN_CFG" ] && read -r T_VM T_IP < <(lease tunnel linux-server); then
     ok "tunnel-agent-box $T_VM @ $T_IP"
     # R-0398, goal 2: the host is provisioned BEFORE its tunnel exists, and its own agent
@@ -516,13 +451,6 @@ if [ "$TUNNEL" = 1 ]; then
       else
         # On top of the FAIL above, not instead of it: without a session goal 3 is unverified.
         skipped "the SSH session through the reload (none was open) — goal 3 of R-0398 is unverified"
-      fi
-      # After R-0398, whose check stops the visitor's frpc: the visitor after the restart is a
-      # new frpc and a new SSH session.
-      if grep -q VIS_TUNNEL_SSH_OK <<<"$VOUT"; then
-        frps_restart "$LATE_TUNNEL" "$RELOAD_TUNNEL"
-      else
-        skipped "the frps restart for a config change (the visitor never got through before it) — R-0411 is unverified"
       fi
     else bad "visitor lease or missing visitor config"; fi
   else bad "tunnel-agent lease or missing tunnel seed"; fi

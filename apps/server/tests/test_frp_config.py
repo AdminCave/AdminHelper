@@ -8,8 +8,6 @@ deterministically (oldest first, id tiebreaker) instead of a non-deterministic
 
 from datetime import datetime
 
-import pytest
-
 from app.modules.frp._helpers import get_frp_config
 from app.modules.frp.models import FrpServerConfig
 
@@ -195,64 +193,6 @@ def test_create_autogenerates_a_strong_auth_token(test_client, db_session, admin
     assert token and len(token) >= 16, f"auto-generated token too weak: {token!r}"
 
 
-def _create_via_api(client, monkeypatch):
-    import app.modules.frp.config_router as cr
-
-    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
-    h = _login(client)
-    created = client.post(
-        "/api/frp/server-config",
-        json={"name": "test-frps", "server_addr": "frps.example.net"},
-        headers=h,
-    )
-    assert created.status_code == 201, created.text
-    return h, created.json()["id"], created.json()["authToken"]
-
-
-@pytest.mark.parametrize("blank", ["", None])
-def test_update_with_a_blank_auth_token_keeps_the_stored_one(
-    test_client, db_session, admin_user, monkeypatch, blank
-):
-    # The GET paths mask the token, so a client sending the field back blank or null means
-    # "unchanged"; the other fields of the same PUT still apply.
-    h, cid, token = _create_via_api(test_client, monkeypatch)
-    updated = test_client.put(
-        f"/api/frp/server-config/{cid}",
-        json={"name": "renamed", "auth_token": blank},
-        headers=h,
-    )
-    assert updated.status_code == 200, updated.text
-    stored = db_session.get(FrpServerConfig, cid)
-    db_session.refresh(stored)
-    assert stored.auth_token == token
-    assert stored.name == "renamed"
-
-
-def test_update_with_a_new_auth_token_stores_it(test_client, db_session, admin_user, monkeypatch):
-    h, cid, _ = _create_via_api(test_client, monkeypatch)
-    new_token = "a-new-token-of-sufficient-length"
-    updated = test_client.put(
-        f"/api/frp/server-config/{cid}", json={"auth_token": new_token}, headers=h
-    )
-    assert updated.status_code == 200, updated.text
-    stored = db_session.get(FrpServerConfig, cid)
-    db_session.refresh(stored)
-    assert stored.auth_token == new_token
-
-
-def test_update_with_a_short_auth_token_is_rejected(
-    test_client, db_session, admin_user, monkeypatch
-):
-    h, cid, token = _create_via_api(test_client, monkeypatch)
-    updated = test_client.put(
-        f"/api/frp/server-config/{cid}", json={"auth_token": "x" * 15}, headers=h
-    )
-    assert updated.status_code == 422, updated.text
-    stored = db_session.get(FrpServerConfig, cid)
-    db_session.refresh(stored)
-    assert stored.auth_token == token
-
-
 def _frps_cfg() -> FrpServerConfig:
     return FrpServerConfig(
         id="c1", name="c1", server_addr="frps.example.net", bind_port=7000, auth_token="tok"
@@ -270,9 +210,8 @@ def test_write_frps_config_enforces_0600(tmp_path, monkeypatch):
 
 
 def test_write_frps_config_tightens_an_existing_world_readable_file(tmp_path, monkeypatch):
-    # An in-place write keeps an existing file's mode; the 0600 temp file (fchmod) swapped in via
-    # os.replace must leave no pre-existing 0644 behind — pinned so a refactor back to an in-place
-    # write or without the fchmod is caught (6.147).
+    # O_CREAT leaves an existing file's mode unchanged, so the explicit chmod must tighten a
+    # pre-existing 0644 file — pinned so a "redundant chmod" refactor is caught (6.147).
     from app.modules.frp import docker_manager
 
     monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
@@ -306,7 +245,7 @@ class TestConfigResponseShape:
             name="shape",
             server_addr="frps.example.net",
             auth_token="a-stored-token-that-is-masked",
-            extra_config='{"log.level": "debug", "transport.tcpMux": true}',
+            extra_config='{"log.level": "debug", "transport.tls.force": true}',
         )
         db.add(cfg)
         db.flush()
@@ -343,7 +282,7 @@ class TestConfigResponseShape:
                 "name": "shape",
                 "server_addr": "frps.example.net",
                 "dashboard_port": 7500,
-                "extra_config": {"log.level": "debug", "transport.tcpMux": True},
+                "extra_config": {"log.level": "debug", "transport.tls.force": True},
             },
             headers=h,
         )
@@ -382,7 +321,7 @@ class TestConfigResponseShape:
         )
         assert updated.status_code == 200, updated.text
         assert updated.json() == self._expected(db_session, cid, mask_secrets=True)
-        assert updated.json()["extraConfig"] == {"log.level": "debug", "transport.tcpMux": True}
+        assert updated.json()["extraConfig"] == {"log.level": "debug", "transport.tls.force": True}
 
     def test_timestamps_are_rfc3339_utc(self, test_client, db_session, admin_user, monkeypatch):
         # format: date-time promises an offset (R-0064): the API writes UTC with Z.
