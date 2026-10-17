@@ -194,6 +194,13 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_harde
 Doku: keine (CHANGELOG in T17)
 Abhängt von: T14
 
+### T24 — openapi-compat: genaue Ausnahme für die verengten FRP-Ports (`--err-ignore`)  [ ]
+Komponente: scripts · Dateien: scripts/dev/openapi-breaking.sh, scripts/dev/oasdiff-err-ignore.txt, scripts/tests/openapi_breaking_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Entscheidung Kevin 2026-10-17: T23 verengt die Grenzen von `bind_port`/`vhost_https_port`/`dashboard_port` (oasdiff `request-property-max-decreased`/`-min-increased`) und nimmt `null` für `bind_port` im PUT heraus (`request-property-list-of-types-narrowed`) — 11 ERR im Pflicht-Check `openapi-compat`. Statt die Regeln global herunterzustufen, bekommt `openapi-breaking.sh` eine Ignore-Datei (`--err-ignore`, offizielle oasdiff-Option), die genau diese Änderungen an POST/PUT `/api/frp/server-config` nennt (Zeilenformat gegen oasdiff 1.32.0 belegen: wie Methode/Pfad und Beschreibung verglichen werden). Fehlt die Datei, bleibt das Gate streng. `openapi_breaking_test.sh` prüft zuerst rot: die 11 Änderungen sind mit der Datei grün, eine zusätzliche verengte Grenze an einem anderen Feld oder Endpunkt bleibt ERR, ohne Datei ist alles ERR. `cicd.html` DE+EN beschreibt die Ausnahme-Datei neben der WARN-Liste. **Harness-Pfad** (Kevin 2026-10-17).
+Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test
+Doku: docs/developer/cicd.html + docs/en/developer/cicd.html
+Abhängt von: T23
+
 ### T15 — Stack-Test: Übernahme im echten Stack  [ ]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts/tests/desktop_e2e_tunnel.sh, scripts/tests/desktop_e2e_connect_tunnel.sh
 Änderung: Neuer Abschnitt in `integration_stack_test.sh` (vor Abschnitt 12, `:279`): frps läuft vor jeder FRP-Konfiguration und antwortet auf `:7000` nicht per TLS (TLS-Probe, nicht `nc -z`); nach dem Anlegen erscheint innerhalb von 20 s die PKI-Kette; identisches PUT löst keinen Neustart aus (Ereignis-`seq` unverändert); neues Token → genau ein Neustart und eine Mitteilung; eine ungültige Zertifikatsdatei im Volume → frps bleibt erreichbar, Zustand `degraded`; Löschen → `:7000` antwortet nicht mehr. `desktop_e2e_tunnel.sh:57` und `desktop_e2e_connect_tunnel.sh:119`: `up -d --build frps`. **Harness-Pfad: PR merged Kevin.**
