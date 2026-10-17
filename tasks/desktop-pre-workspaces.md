@@ -40,8 +40,10 @@ Dedup-Key: bug:desktop:SettingsModal.svelte:save-drops-lastusername
 HEAD: af4498a7
 Semantik: docs/developer/desktop.html:143 — „Server-URL und Benutzername werden vorausgewählt, gespeichert in <code>settings.json</code> als <code>serverUrl</code>/<code>lastUsername</code>“
 
-### T3 — open_connection_stored lädt das Passwort unter der Verbindung vor der Auflösung  [ ]
+### T3 — open_connection_stored lädt das Passwort unter der Verbindung vor der Auflösung  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/connection/mod.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @51c85cb9 2026-10-17T14:04:57+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T3.verdict.json)
 Änderung: `open_connection_stored` (`commands.rs:241`) nimmt zusätzlich `credential_connection: Option<Connection>` (JS `credentialConnection`) und reicht es an `connection::open_connection_stored` (`connection/mod.rs:39`) weiter; ist es gesetzt, wird es wie die Verbindung an der Grenze geprüft (`validate_connection_input`). `open_rdp_with_stored_password` (`:64`) lädt unter Unix das Passwort unter dieser Verbindung statt unter der aufgelösten (`:76`); fehlt sie, gilt wie heute die übergebene. Dafür eine reine Funktion, die die Quelle des Schlüssels wählt. Neue cargo-Tests `stored_password_key_*` (zuerst rot): mit Credential-Verbindung ist der Schlüssel `rdp_storage_key` der logischen Verbindung, nicht der von `127.0.0.1:<Port>`; ohne bleibt er der der übergebenen. Windows unverändert (gibt kein Passwort weiter, `:77-78`).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- stored_password_key
 Doku: keine (intern; die Doku folgt mit T4)

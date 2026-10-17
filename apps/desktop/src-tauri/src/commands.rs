@@ -241,6 +241,7 @@ pub async fn open_connection(
 pub async fn open_connection_stored(
     app: tauri::AppHandle,
     connection: Connection,
+    credential_connection: Option<Connection>,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
@@ -251,6 +252,7 @@ pub async fn open_connection_stored(
         connection::open_connection_stored(
             &app,
             &connection,
+            credential_connection.as_ref(),
             client.as_ref(),
             rdp,
             settings.language.as_deref(),
