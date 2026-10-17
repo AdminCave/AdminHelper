@@ -38,8 +38,10 @@ Review: approve (.ah-out/review/monitoring-silent-outages/T3.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Smart
 Doku: keine (intern; Doku in T13)
 
-### T4 — Monitoring: Schalter `alert_on_unavailable` für Docker und ZFS  [ ]
+### T4 — Monitoring: Schalter `alert_on_unavailable` für Docker und ZFS  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @35f17e9f 2026-10-17T03:46:30+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T4.verdict.json)
 Änderung: `ZfsHealthConfig` (`check_configs.py:103-105`) und `DockerHealthConfig` (`:108-113`) bekommen `alert_on_unavailable: bool = True`. `check_restarts` bleibt toleriert. Tests zuerst rot: Default `True`, `False` wird angenommen, ein Nicht-Bool wird 422, eine bestehende Config ohne den Schlüssel validiert weiter.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_configs.py
 Doku: keine (intern; Doku in T13)
