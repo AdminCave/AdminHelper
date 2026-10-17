@@ -16,8 +16,9 @@ import (
 )
 
 // stubReportHost stubs the collectors that do real, slow, host-dependent I/O so a test exercises the
-// report assembly, not the host (6.18): the 1s CPU sample and the docker/pvesh/zpool/smartctl
-// subprocess calls. Without this the "unit" test sleeps >=1s and its result/duration depend on the host.
+// report assembly, not the host (6.18): the 1s CPU sample, the docker/pvesh/zpool/smartctl
+// subprocess calls and the host facts lookups. Without this the "unit" test sleeps >=1s and its
+// result/duration depend on the host.
 func stubReportHost(t *testing.T) {
 	t.Helper()
 	oldInterval := cpuSampleInterval
@@ -29,10 +30,15 @@ func stubReportHost(t *testing.T) {
 	pluginCollectors.smart = func() ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
 	serviceHealthCollector = func() map[string]any { return map[string]any{} }
+	oldHostFacts := hostFactsCalls
+	hostFactsCalls.platform = func() (string, string, string, error) { return "", "", "", nil }
+	hostFactsCalls.virtualization = func() (string, string, error) { return "", "", nil }
+	hostFactsCalls.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	t.Cleanup(func() {
 		cpuSampleInterval = oldInterval
 		pluginCollectors = oldPlugins
 		serviceHealthCollector = oldSvc
+		hostFactsCalls = oldHostFacts
 	})
 }
 

@@ -208,6 +208,20 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     undefined,
   ],
   [
+    'fetchTemplateSuggestions',
+    () => monitoringApi.fetchTemplateSuggestions(session, 's/1'),
+    'GET',
+    '/api/monitoring/templates/suggestions/s%2F1',
+    undefined,
+  ],
+  [
+    'dismissTemplateSuggestion',
+    () => monitoringApi.dismissTemplateSuggestion(session, 's/1', 'docker-host'),
+    'POST',
+    '/api/monitoring/templates/suggestions/s%2F1/dismiss',
+    JSON.stringify({ slug: 'docker-host' }),
+  ],
+  [
     'fetchBuiltinUpdate',
     () => monitoringApi.fetchBuiltinUpdate(session, 't1'),
     'GET',

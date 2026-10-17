@@ -26,6 +26,15 @@ import type {
   TemplateAssignment,
 } from '$lib/api/types';
 
+// A standard template the server's host facts suggest; `reason` is `os:<os>` or
+// `subsystem:<name>`.
+export interface TemplateSuggestion {
+  slug: string;
+  templateId: string;
+  templateName: string;
+  reason: string;
+}
+
 export const monitoringApi = {
   // ── Reads ────────────────────────────────────────────────────────────────
   fetchServers(session: AuthSession): Promise<Server[]> {
@@ -185,6 +194,23 @@ export const monitoringApi = {
       session,
       'POST',
       `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign/${encodeURIComponent(serverId)}/restore`,
+    );
+  },
+  fetchTemplateSuggestions(session: AuthSession, serverId: string): Promise<TemplateSuggestion[]> {
+    return apiRequest<TemplateSuggestion[]>(
+      session,
+      'GET',
+      `/api/monitoring/templates/suggestions/${encodeURIComponent(serverId)}`,
+    );
+  },
+  // Remembered per server and template; no undo yet, the template can still be
+  // assigned by hand.
+  dismissTemplateSuggestion(session: AuthSession, serverId: string, slug: string): Promise<void> {
+    return apiRequest<void>(
+      session,
+      'POST',
+      `/api/monitoring/templates/suggestions/${encodeURIComponent(serverId)}/dismiss`,
+      { slug },
     );
   },
   fetchBuiltinUpdate(session: AuthSession, templateId: string): Promise<MonitoringBuiltinUpdate> {

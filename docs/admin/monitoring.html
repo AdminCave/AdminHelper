@@ -252,9 +252,26 @@
           <ul>
             <li><strong>Template-Modal</strong> (<em>Monitoring → Templates</em>): Server-Mehrfachauswahl zum Bulk-Zuweisen, Entfernen per Klick auf die Zuweisungs-Pille.</li>
             <li><strong>Server-Anlege-Dialog</strong>: optionales Template-Dropdown – beim Anlegen eines Servers direkt ein Standard-Template mitgeben (Opt-in, keine Automatik nach OS-Typ).</li>
-            <li><strong>Server → Monitoring-Tab</strong>: Zuweisungen des einzelnen Servers ansehen, hinzufügen, entfernen und dort gelöschte Template-Checks wiederherstellen.</li>
+            <li><strong>Server → Monitoring-Tab</strong>: Zuweisungen des einzelnen Servers ansehen, hinzufügen, entfernen und dort gelöschte Template-Checks wiederherstellen; außerdem vorgeschlagene Standard-Templates zuweisen oder ignorieren (siehe unten).</li>
             <li><strong>Übersichts-Banner</strong>: der Bulk-Dialog für alle Server ohne Checks (siehe oben).</li>
           </ul>
+          <p id="template-vorschlag"><strong>Vorschlag im Monitoring-Tab:</strong> Der Agent meldet mit jedem Report das Betriebssystem seines Hosts und die Subsysteme, deren Programm er im Suchpfad findet: Docker (<code>docker</code>), ZFS (<code>zpool</code>) und Proxmox (<code>pvesh</code>). Daraus schlägt der Monitoring-Tab des Servers passende Standard-Templates vor. Oben im Tab steht dann „Vorgeschlagen:“ mit einem Kontrollkästchen je Template, seinem Namen und dem Grund (etwa „erkannt: Docker“); alle sind vorausgewählt. Der Tab fragt die Vorschläge beim Öffnen ab.</p>
+          <table>
+            <thead><tr><th>Erkannt</th><th>Vorgeschlagenes Standard-Template</th></tr></thead>
+            <tbody>
+              <tr><td>Betriebssystem Linux</td><td>Linux Server — Standard</td></tr>
+              <tr><td>Betriebssystem Windows</td><td>Windows Server — Standard</td></tr>
+              <tr><td>Docker</td><td>Docker Host</td></tr>
+              <tr><td>ZFS</td><td>ZFS Storage</td></tr>
+              <tr><td>Proxmox</td><td>Proxmox Host</td></tr>
+            </tbody>
+          </table>
+          <ul>
+            <li><strong>Zuweisen</strong> weist die ausgewählten Templates zu wie eine Zuweisung von Hand: Ihre Checks und Alert-Regeln entstehen sofort, und ihr Vorschlag verschwindet.</li>
+            <li><strong>Ignorieren</strong> merkt sich die Ablehnung je Server und Template; dieses Template wird dem Server nicht wieder vorgeschlagen. Rückgängig machen lässt sich das vorerst nicht. Von Hand zuweisen lässt sich das Template trotzdem jederzeit.</li>
+            <li>Vorgeschlagen wird ein Standard-Template nur, wenn es existiert, dem Server noch nicht zugewiesen ist (gleich ob manuell oder per Tag) und dort nicht ignoriert wurde. Ein gelöschtes Standard-Template wird also nicht vorgeschlagen, auch wenn es passt. Entfernt man die Zuweisung eines Standard-Templates wieder, erscheint sein Vorschlag erneut.</li>
+          </ul>
+          <p>Nichts geschieht ungefragt: AdminHelper weist kein Template automatisch zu, auch nicht nach dem erkannten Betriebssystem. Den Vorschlag gibt es nur im Monitoring-Tab des Servers, nicht in der Monitoring-Übersicht. Agents vor dieser Version melden Betriebssystem und Subsysteme nicht; ihr Server bekommt keinen Vorschlag, bis der aktualisierte Agent einmal gemeldet hat.</p>
 
           <h3 id="tag-zuweisung">Tag-Zuweisung</h3>
           <p>Ein Template lässt sich zusätzlich an einen <strong>Server-Tag</strong> binden (im Template-Modal): Jeder Server, der den Tag trägt, bekommt das Template automatisch – auch Server, die den Tag erst später erhalten. Der Abgleich läuft sofort bei Server-Änderungen und zusätzlich alle 15 Minuten. Verliert ein Server den Tag, wird die via Tag entstandene Zuweisung (samt erzeugter Checks) wieder entfernt. Via Tag zugewiesene Server sind im Template-Modal als „via Tag" markiert; eine <em>manuell</em> angelegte Zuweisung bleibt manuell: Der Tag-Sync entfernt sie nie, er frischt an ihr nur Hostname und Anzeigename auf, wenn sich diese am Server geändert haben (siehe <a href="#templates">Templates</a>).</p>
