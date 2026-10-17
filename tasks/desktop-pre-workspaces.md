@@ -27,8 +27,10 @@ Dedup-Key: bug:desktop:AppShell.svelte:logout-keeps-tunnel
 HEAD: af4498a7
 Semantik: keine Stelle in docs/ — gesucht: Abmelden/Logout in `docs/developer/desktop.html`, `docs/admin/frp-tunnel.html` und `README.md`; Annahme im Ledger von R-0402 (T6): „jede Abmeldung und jeder Moduswechsel läuft über `stop()`“
 
-### T2 — Speichern der Einstellungen behält den gemerkten Benutzernamen  [ ]
+### T2 — Speichern der Einstellungen behält den gemerkten Benutzernamen  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.save.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @f484a502 2026-10-17T13:54:38+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T2.verdict.json)
 Änderung: `onSave` (`SettingsModal.svelte:276`) baut `next` auf den aktuellen Einstellungen auf (`{ ...$settings, … }` oder gleichwertig), sodass jedes Feld, das der Dialog nicht bearbeitet, erhalten bleibt; heute geht `lastUsername` verloren. Neue Testdatei `SettingsModal.save.test.ts` (SPDX-Header, zuerst rot): Einstellungen mit `lastUsername: 'kevin'` laden, Dialog öffnen, Sprache ändern, speichern → `bridge.saveSettings` bekommt `lastUsername: 'kevin'` und die neue Sprache. CHANGELOG Fixed.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/SettingsModal.save.test.ts
 Doku: CHANGELOG.md (Fixed)

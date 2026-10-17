@@ -351,6 +351,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
   einem Login unter anderem Benutzer. Ebenso laedt der Desktop neu, wenn eine geaenderte Server-URL bei laufender
   Sitzung gespeichert wird; danach steht der Login-Bildschirm mit der neuen Adresse da.
+- **Desktop: Speichern der Einstellungen vergisst den Benutzernamen nicht mehr (R-0429):** Bisher loeschte jedes
+  Speichern im Einstellungsdialog den gemerkten Benutzernamen, und der Login-Bildschirm fuellte beim naechsten
+  Start nur noch die Server-URL vor. Felder, die der Dialog nicht bearbeitet, bleiben jetzt erhalten.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.

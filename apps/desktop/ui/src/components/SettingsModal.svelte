@@ -274,7 +274,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onSave(): Promise<void> {
+    // Rust writes settings.json whole: a field this dialog does not edit (lastUsername)
+    // has to come from the current settings, or saving drops it.
     const next: Settings = {
+      ...$settings,
       mode,
       url: url.trim(),
       intervalMinutes,
