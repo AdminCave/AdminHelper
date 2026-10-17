@@ -205,12 +205,18 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- openapi_breaking_test too
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html
 Abhängt von: T23
 
+### T25 — Server: der Scheduler-Prozess lädt alle ORM-Modelle  [ ]
+Komponente: server · Dateien: apps/server/app/model_registry.py, apps/server/app/main.py, apps/server/app/scheduler_main.py, apps/server/tests/test_model_registry.py
+Änderung: Entscheidung Kevin 2026-10-17 (Fund aus T15, besteht auf main und in v0.45.0): Der Scheduler-Prozess importiert nur die Module seiner Jobs; die Modell-Importe stehen als Nebenwirkung in `app/main.py` (`:21-57`). Mit den Scheduler-Importen scheitert `configure_mappers()` (`'Connection' has no attribute 'server_id'` bzw. `ProvisionToken` → `'Server'`), damit jeder Job mit DB-Zugriff; APScheduler loggt das nur. Neue Datei `app/model_registry.py` (SPDX) importiert alle ORM-Modelle an einer Stelle; `main.py` und `scheduler_main.py` importieren sie, bevor Jobs geplant werden. Test zuerst rot (neue Datei, SPDX): in einem frischen Interpreter (Subprozess) mit genau den Scheduler-Importen läuft `configure_mappers()` durch; jedes `app/modules/*/models.py` ist in der Registry (gegen Drift). Der Stack-Test aus T15 belegt die Mitteilung über den Scheduler.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_model_registry.py tests/test_scheduler_schema_gate.py
+Doku: CHANGELOG in T17 (Fixed: Scheduler-Jobs mit DB-Zugriff)
+
 ### T15 — Stack-Test: Übernahme im echten Stack  [ ]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh, scripts/tests/desktop_e2e_tunnel.sh, scripts/tests/desktop_e2e_connect_tunnel.sh
 Änderung: Neuer Abschnitt in `integration_stack_test.sh` (vor Abschnitt 12, `:279`): frps läuft vor jeder FRP-Konfiguration und antwortet auf `:7000` nicht per TLS (TLS-Probe, nicht `nc -z`); nach dem Anlegen erscheint innerhalb von 20 s die PKI-Kette; identisches PUT löst keinen Neustart aus (Ereignis-`seq` unverändert); neues Token → genau ein Neustart und eine Mitteilung; eine ungültige Zertifikatsdatei im Volume → frps bleibt erreichbar, Zustand `degraded`; Löschen → `:7000` antwortet nicht mehr. `desktop_e2e_tunnel.sh:57` und `desktop_e2e_connect_tunnel.sh:119`: `up -d --build frps`. **Harness-Pfad: PR merged Kevin.**
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (intern)
-Abhängt von: T6, T9
+Abhängt von: T6, T9, T25
 
 ### T16 — Multibox: frps-Neustart im Tunnel-Szenario  [ ]
 Komponente: scripts · Dateien: scripts/tests/box_serverbox.sh, scripts/tests/multibox.sh, scripts/tests/multibox_test.sh
