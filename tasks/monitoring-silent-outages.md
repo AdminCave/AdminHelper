@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring meldet Ausfälle von Docker, ZFS und SMART — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-silent-outages · Review: pro Task
+Status: bereit · Branch: feature/monitoring-silent-outages · Review: pro Task
 Spec: docs/features/monitoring-silent-outages.md (Roadmap R-0419)
 Heavy: linux-full + scenario --agents 1 --docker — Agent-Plugins und Push-Auswertung im echten Stack (`run.sh integration`, Agent-Monitoring-Pipeline); vor dem Merge der Multibox-Lauf mit der neuen Etappe `--docker` (T14), weil nur eine Box mit echtem Docker 29 und nativem Agent zeigt, dass ok → critical (`exit 1`) → warning (Daemon gestoppt) über den echten Push-Pfad ankommt; ask-first, Kevin hat Multibox am 2026-10-16 für die Monitoring-Pakete erlaubt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -143,8 +143,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- multibox_test
 Doku: .claude/skills/test/SKILL.md · .claude/rules/testing.md
 Abhängt von: T14
 
-### T16 — `heavy.sh capstone_scan`: Docker-Etappe ohne Agent-Box der Rolle `agent` zuordnen  [ ]
+### T16 — `heavy.sh capstone_scan`: Docker-Etappe ohne Agent-Box der Rolle `agent` zuordnen  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0514de72 2026-10-17T07:55:39+02:00
+Review: approve (.ah-out/review/monitoring-silent-outages/T16.verdict.json)
 Änderung: Folge aus T15 (Fund des Bauers): `capstone_scan` ordnet den Abschnitt „== docker (R-0419) … ==“ der Rolle `other` zu. Bricht das Setup der Agent-Box ab, zählt der folgende `FAIL strict: the Docker stage (no provisioned agent box)` deshalb als Produktfehler statt als Folge des Agent-Abbruchs. `role_of_lease_fail` (`heavy.sh:814ff`) bekommt das Gegenstück zur Desktop-Regel (`:818`, `(no desktop box)` → desktop): der Docker-FAIL ohne provisionierte Agent-Box → `agent`. Ein echter Docker-FAIL bei laufender Agent-Box bleibt ein Produktfehler. `heavy_test.sh` prüft zuerst rot beide Fälle. **Harness-Pfad** (Kevin 2026-10-17: Capstone fährt `--docker`; diese Einordnung gehört dazu).
 Verify: bash scripts/dev/verify.sh scripts --strict -- heavy_test
 Doku: keine (Test-Harness)
