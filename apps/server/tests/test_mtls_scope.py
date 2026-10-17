@@ -378,9 +378,9 @@ def test_an_agent_report_without_a_certificate_stays_as_it_is_in_permissive_mode
     assert len(monitoring.forwarded) == 1
 
 
-@pytest.mark.parametrize("route", ["config", "config-hash"])
+@pytest.mark.parametrize("route,past", [("config", 404), ("config-hash", 200)])
 def test_the_frpc_config_takes_only_the_agent_certificate_of_its_server(
-    test_client, db_session, monkeypatch, route
+    test_client, db_session, monkeypatch, route, past
 ):
     monkeypatch.setattr(config, "MTLS_ENFORCE", True)
     key = {"X-API-Key": _agent_server(db_session)}
@@ -390,8 +390,8 @@ def test_the_frpc_config_takes_only_the_agent_certificate_of_its_server(
     )
     assert other.status_code == 403, other.text
     assert other.json()["detail"].startswith("ERR_CERT_SERVER_MISMATCH: "), other.text
-    # Past the binding the route answers 404: the server has no FRP config.
+    # Past the binding the server has no FRP config: the config is 404, its hash null.
     own = test_client.get(url, headers={**key, **_gateway_headers(cn="srv-own", ou=SCOPE_AGENT)})
-    assert own.status_code == 404, own.text
+    assert own.status_code == past, own.text
     admin = test_client.get(url, headers={**key, **_gateway_headers(cn="admin", ou=SCOPE_ACCESS)})
-    assert admin.status_code == 404, admin.text
+    assert admin.status_code == past, admin.text
