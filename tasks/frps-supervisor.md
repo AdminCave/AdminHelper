@@ -151,6 +151,13 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
 Doku: keine (intern; Betrieb in T17)
 Abhängt von: T11
 
+### T22 — update.sh: Rollback auch bei Floating-Tags und nach einem gescheiterten Agent-Repo-Abgleich  [ ]
+Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Änderung: Aus den Reviews von T21 (2026-10-17): (1) Der Rollback nach gescheitertem Health-Check stellt bei `INSTALLED=unknown` (Floating-Tag, z. B. `:latest`/`:main`) die Image-Pins aus der in T21 angelegten Kopie der alten `.env` wieder her, sonst meldet der nächste Lauf „bereits aktuell“ und der alte Stand läuft still weiter; übrige neue Keys und Secrets bleiben, weil Container schon gelaufen sind. (2) Scheitert `update_agent_repo` nach dem Neu-Pinnen, rollt `update.sh` wie beim Pull-Fehler zurück. (3) Fehlt `.env`, bricht `update.sh` mit eigener Meldung vor Backup und Snapshot ab. (4) Die alte `.env` wird atomar zurückgespielt (Kopie daneben, dann `mv`). (5) `--no-rollback` mit Pull-Fehler nennt in der Meldung den Ausweg (`--redeploy` bzw. `--ref <tag>`). Tests zuerst rot in `update_test.sh`: Health-Fail mit Floating-Tag → Pins zurück, nächster Lauf versucht erneut; Agent-Repo-Fehler → Rollback; fehlende `.env` → Abbruch ohne Backup; Meldung bei `--no-rollback`. **Harness-Pfad: PR merged Kevin.**
+Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
+Doku: keine (intern; Betrieb in T17)
+Abhängt von: T21
+
 ### T12 — Risikopfade: `apps/frps/` aufnehmen  [ ]
 Komponente: scripts · Dateien: scripts/dev/review-risk.txt
 Änderung: `apps/frps/*` unter „FRP tunnels“ (`review-risk.txt:42`). **Harness-Pfad: PR merged Kevin.**
@@ -191,4 +198,4 @@ Komponente: scripts · Dateien: docs/admin/frp-tunnel.html, docs/en/admin/frp-tu
 Änderung: `frp-tunnel.html` DE+EN: Architektur (`:41-48`) mit frps-Image und Supervisor; „FRP `auth.token` rotieren“ (`:65-74`): kein manueller Neustart mehr, frps übernimmt nach wenigen Sekunden, alle Tunnel sind kurz getrennt, Mitteilung an Admins und Tunnel-Nutzer, Agent-Tunnel bis ~5 min, eine abgelehnte Konfiguration steht auf der FRP-Seite und in der Glocke; Status-Dashboard (`:107`) mit dem neuen Statusblock. `installation.html` DE+EN: frps lauscht, sobald FRP im Web-Interface eingerichtet ist; Voraussetzung Docker-Engine einheitlich in DE und EN (frps bindet 443 ohne root, `ip_unprivileged_port_start` per Compose, T20). Betriebsdoku (`docs/admin/betrieb.html`, `docs/en/admin/operations.html`): Volumes `frps-state`/`frps-active` (nicht im Backup), zulässige `extra_config`-Schlüssel, Gründe und Ereignisse des Supervisors (inkl. `copy_changed`, `start_refused`, `input_unreadable`, `input_unstable`), Update bricht bei Pull-Fehler mit Rollback ab (T21); nach dem ersten Release das ghcr-Paket `frps` öffentlich. CHANGELOG unter `### Changed`.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html · docs/admin/installation.html + docs/en/admin/installation.html · CHANGELOG.md (Changed)
-Abhängt von: T8, T13, T14, T20, T21
+Abhängt von: T8, T13, T14, T20, T21, T22
