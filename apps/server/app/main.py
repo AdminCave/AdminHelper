@@ -9,7 +9,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
@@ -17,7 +20,12 @@ from sqlalchemy.exc import IntegrityError
 # Not `import app.model_registry`: that would bind `app`, the name of the FastAPI app.
 from app import model_registry  # noqa: F401
 from app.core.auth import hash_api_key, hash_password
-from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
+from app.core.config import (
+    ADMIN_PASSWORD,
+    BOOTSTRAP_SETUP_FILE,
+    BOOTSTRAP_TOKEN_FILE,
+    FRP_BIND_PORT,
+)
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
@@ -156,13 +164,18 @@ def _emit_bootstrap_token():
     logger.warning(bar)
 
 
-# The fields of extra_config.STRING_FIELDS as the web interface names them.
+# The fields _report_rejected_fields names, as the web interface labels them.
 _FRPS_FIELD_LABELS = {
     "subdomain_host": "Subdomain Host",
     "dashboard_user": "Dashboard User",
     "dashboard_password": "Dashboard Passwort",
     "auth_token": "Auth Token",
+    "dashboard_port": "Dashboard Port",
 }
+# The rules of check_config (apps/frps/frps-supervisor.sh) _report_rejected_fields names.
+_FRPS_RULE_CHARACTERS = "ohne Anführungszeichen, Backslash, geschweifte Klammern und Steuerzeichen"
+_FRPS_RULE_TOKEN = "mindestens 16 Zeichen"
+_FRPS_RULE_DASHBOARD_PORT = "weder 443 noch der Bind Port noch FRP_BIND_PORT"
 
 
 def _tell_admins(db, event_type, title, body, source_id):
@@ -207,16 +220,33 @@ def _remove_rejected_extra_config(db, config):
 
 
 def _report_rejected_fields(db, config):
-    """Name the string fields frps.toml carries with a value frps is not started with. A
-    token or password has no sensible replacement, so the row stays as it is: the field
-    names (never the values) are logged at every start, and the admins are told once for
-    as long as the same fields stay so."""
-    written = {line.split(" = ")[0] for line in generate_frps_toml(config).split("\n")}
-    fields = [
-        field
+    """Name the fields frps.toml carries with a value frps is not started with: a string
+    field with a character check_config refuses, an auth token under 16 bytes and a
+    dashboard port that is 443, the bind port or FRP_BIND_PORT. A token or password has no
+    sensible replacement and a port no obvious one, so the row stays as it is: the field
+    names (never the values) are logged at every start, and the admins are told once, each
+    field with its rule, for as long as the same fields stay so."""
+    written = {}
+    for line in generate_frps_toml(config).split("\n"):
+        if line == "[transport.tls]":
+            break
+        key, _, value = line.partition(" = ")
+        written[key] = value
+    rules = {
+        field: _FRPS_RULE_CHARACTERS
         for key, field in STRING_FIELDS.items()
         if key in written and not value_allowed(getattr(config, field))
-    ]
+    }
+    # check_config runs under LC_ALL=C, so it counts the token in bytes.
+    if "auth_token" not in rules and len(config.auth_token.encode()) < 16:
+        rules["auth_token"] = _FRPS_RULE_TOKEN
+    if "webServer.port" in written and int(written["webServer.port"]) in (
+        443,
+        int(written["bindPort"]),
+        FRP_BIND_PORT,
+    ):
+        rules["dashboard_port"] = _FRPS_RULE_DASHBOARD_PORT
+    fields = list(rules)
     if not fields:
         return
     logger.warning(
@@ -237,10 +267,8 @@ def _report_rejected_fields(db, config):
         db,
         "lifecycle.frp.config.field_rejected",
         "FRP-Server-Konfiguration: Felder neu setzen",
-        "Der FRP-Server übernimmt die Konfiguration so nicht: Diese Felder enthalten Zeichen, "
-        "die er nicht annimmt (Anführungszeichen, Backslash, geschweifte Klammern oder "
-        "Steuerzeichen). Bitte neu setzen: "
-        + ", ".join(_FRPS_FIELD_LABELS[field] for field in fields)
+        "Der FRP-Server übernimmt die Konfiguration so nicht. Bitte neu setzen: "
+        + ", ".join(f"{_FRPS_FIELD_LABELS[field]} ({rule})" for field, rule in rules.items())
         + ".",
         source_id,
     )
@@ -355,6 +383,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 install_exact_int_bounds(app)
+
+
+async def _validation_error(request, exc):
+    """FastAPI's 422. The input it echoes may hold a lone surrogate (JSON spells one as
+    \\ud800), which has no UTF-8 form; that answer escapes every non-ASCII character, as
+    JSON allows."""
+    try:
+        return await request_validation_exception_handler(request, exc)
+    except UnicodeEncodeError:
+        content = json.dumps(
+            {"detail": jsonable_encoder(exc.errors())}, allow_nan=False, separators=(",", ":")
+        )
+        return Response(content, status_code=422, media_type="application/json")
+
+
+app.add_exception_handler(RequestValidationError, _validation_error)
 
 # Middleware — the one added last runs first. IPFilterMiddleware stays outside
 # the NUL guard, so a refused IP gets its 403 whatever its path carries.

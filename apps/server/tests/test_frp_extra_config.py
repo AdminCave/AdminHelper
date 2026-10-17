@@ -15,7 +15,13 @@ changes nothing.
 The string fields the generator writes into frps.toml (subdomain host, dashboard user and
 password, auth token) follow the same value rule; the API answers 422 for a brace there too.
 A stored value that breaks it cannot be cleaned (a token has no sensible replacement): the
-start tells the admins once which fields to set anew, naming the field, never the value."""
+start tells the admins once which fields to set anew, naming the field, never the value.
+
+A lone surrogate (U+D800 to U+DFFF) has no UTF-8 form, so no frps.toml can carry it: the API
+answers 422 for one in extra_config or in a string field, and the start removes such an
+extra_config value. The start also names the other values check_config refuses and the start
+does not change: an auth token under 16 bytes and a dashboard port that is 443, the bind port
+or FRP_BIND_PORT. The bell names each field with its rule, never the value."""
 
 import json
 import logging
@@ -163,6 +169,9 @@ VALUES = [
     "info",
     "",
     "ü",
+    # The neighbours of the surrogates.
+    "\ud7ff",
+    "\ue000",
     "a b = c",
     "[x] # y",
     "a\x85b",
@@ -186,6 +195,17 @@ def test_a_value_is_allowed_exactly_when_its_line_passes_check_config(value):
     toml = generate_frps_toml(_config(extra_config=json.dumps({"log.level": value})))
     assert _passes_check_config_lines(generate_frps_toml(_config()))
     assert value_allowed(value) is _passes_check_config_lines(toml)
+
+
+SURROGATES = ["\ud800", "a\udfffb", "\udc80" + "a" * 16]
+
+
+@pytest.mark.parametrize("value", SURROGATES, ids=repr)
+def test_a_lone_surrogate_is_not_allowed_as_no_frps_toml_can_carry_it(value):
+    assert value_allowed(value) is False
+    toml = generate_frps_toml(_config(extra_config=json.dumps({"log.level": value})))
+    with pytest.raises(UnicodeEncodeError):
+        toml.encode("utf-8")
 
 
 # --- the schema ---
@@ -230,6 +250,16 @@ def test_the_schema_rejects_a_brace_in_a_string_field_of_frps_toml(model, field)
     # Nothing more than check_config refuses.
     fine = "\u00fc [x] # y = z " + "a" * 16
     assert getattr(_build(model, **{field: fine}), field) == fine
+
+
+@pytest.mark.parametrize("value", SURROGATES, ids=repr)
+@pytest.mark.parametrize("model", MODELS)
+def test_the_schema_rejects_a_lone_surrogate(model, value):
+    with pytest.raises(ValidationError, match="surrogate"):
+        _build(model, extra_config={"log.level": value})
+    for field in STRING_FIELDS.values():
+        with pytest.raises(ValidationError, match="surrogate"):
+            _build(model, **{field: value + "a" * 16})
 
 
 def _login(client):
@@ -304,6 +334,40 @@ def test_put_answers_422_for_a_key_or_value_not_allowed(api, db_session):
     r = api.client.put(url, json={"extra_config": ALLOWED}, headers=api.headers)
     assert r.status_code == 200, r.text
     assert _stored_extra(db_session, created.json()["id"]) == ALLOWED
+
+
+def test_post_and_put_answer_422_for_a_lone_surrogate(api, db_session):
+    def send(method, url, body):
+        # Only a JSON escape spells a lone surrogate on the wire; it has no UTF-8 form.
+        content = json.dumps(body)
+        assert "\\ud800" in content
+        headers = {**api.headers, "Content-Type": "application/json"}
+        return api.client.request(method, url, content=content, headers=headers)
+
+    url = "/api/frp/server-config"
+    bad = [
+        {"extra_config": {"log.level": "a\ud800b"}},
+        *({field: "\ud800" + "a" * 16} for field in STRING_FIELDS.values()),
+    ]
+    for fields in bad:
+        r = send("POST", url, {"name": "frps", "server_addr": "frps.example.net", **fields})
+        assert r.status_code == 422, (fields, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", *fields], r.text
+    assert db_session.query(FrpServerConfig).count() == 0
+
+    created = _post(api, {"log.level": "info"})
+    assert created.status_code == 201, created.text
+    config_id = created.json()["id"]
+    for fields in bad:
+        r = send("PUT", f"{url}/{config_id}", fields)
+        assert r.status_code == 422, (fields, r.text)
+        assert r.json()["detail"][0]["loc"] == ["body", *fields], r.text
+    assert _stored_extra(db_session, config_id) == {"log.level": "info"}
+
+    # A 422 whose input has a UTF-8 form carries it unescaped.
+    r = api.client.put(f"{url}/{config_id}", json={"subdomain_host": "ü{x}"}, headers=api.headers)
+    assert r.status_code == 422, r.text
+    assert "ü{x}".encode() in r.content
 
 
 # --- the start of the server ---
@@ -409,6 +473,26 @@ def test_startup_goes_on_when_a_config_cannot_be_read(db_session, admin_user, ca
     assert [n.source_id for n in _notices(db_session)] == ["cfg-other", "cfg-other:subdomain_host"]
 
 
+def test_startup_removes_an_extra_config_value_no_frps_toml_can_carry(
+    db_session, admin_user, caplog
+):
+    # extra_config is stored as JSON text, which spells a lone surrogate as an escape.
+    stored = json.dumps({"log.level": "a\ud800b", "transport.tcpMux": True})
+    assert "\\ud800" in stored
+    db_session.add(_config(id="cfg-surrogate", extra_config=stored))
+    db_session.commit()
+
+    log = _clean(db_session, caplog)
+
+    assert _stored_extra(db_session, "cfg-surrogate") == {"transport.tcpMux": True}
+    toml = generate_frps_toml(db_session.get(FrpServerConfig, "cfg-surrogate"))
+    assert _passes_check_config_lines(toml)
+    notices = _notices(db_session)
+    assert [n.source_id for n in notices] == ["cfg-surrogate"]
+    assert "log.level" in notices[0].body
+    assert "log.level" in log
+
+
 def test_startup_tells_the_admins_once_which_fields_to_set_anew(
     db_session, admin_user, normal_user, caplog
 ):
@@ -459,14 +543,101 @@ def test_startup_tells_the_admins_once_which_fields_to_set_anew(
     _clean(db_session, caplog)
     notices = _notices(db_session)
     assert [n.source_id for n in notices][2:] == ["cfg-fields:dashboard_user"]
-    assert "Bitte neu setzen: Dashboard User." in notices[2].body
+    assert notices[2].body.endswith(f"Bitte neu setzen: Dashboard User ({CHARACTERS}).")
+
+
+# The rules as the bell names them.
+CHARACTERS = "ohne Anführungszeichen, Backslash, geschweifte Klammern und Steuerzeichen"
+TOKEN = "mindestens 16 Zeichen"
+DASHBOARD = "weder 443 noch der Bind Port noch FRP_BIND_PORT"
+
+
+def test_startup_tells_the_admins_once_about_a_token_frps_is_not_started_with(
+    db_session, admin_user, caplog
+):
+    short = "s" * 15
+    db_session.add_all(
+        [
+            _config(id="cfg-short", auth_token=short),
+            _config(id="cfg-16", auth_token="t" * 16),
+            # check_config counts bytes (LC_ALL=C): eight two-byte characters are 16.
+            _config(id="cfg-bytes", auth_token="é" * 8),
+        ]
+    )
+    db_session.commit()
+
+    log = _clean(db_session, caplog)
+
+    notices = _notices(db_session)
+    assert [(n.user_id, n.source_id, n.severity) for n in notices] == [
+        (admin_user.id, "cfg-short:auth_token", "warning")
+    ]
+    assert notices[0].body.endswith(f"Bitte neu setzen: Auth Token ({TOKEN}).")
+    assert "auth_token" in log
+    assert short not in notices[0].body + notices[0].title + log
+    assert db_session.get(FrpServerConfig, "cfg-short").auth_token == short
+
+    _clean(db_session, caplog)
+
+    assert len(_notices(db_session)) == 1
+
+
+@pytest.mark.parametrize("dashboard_port", [443, 7100, 7200], ids=["443", "bind", "published"])
+def test_startup_tells_the_admins_once_about_a_dashboard_port_frps_refuses(
+    dashboard_port, db_session, admin_user, caplog, monkeypatch
+):
+    import app.main as m
+
+    monkeypatch.setattr(m, "FRP_BIND_PORT", 7200)
+    db_session.add_all(
+        [
+            _config(id="cfg-port", bind_port=7100, dashboard_port=dashboard_port),
+            _config(id="cfg-fine", bind_port=7100, dashboard_port=7500),
+            # Without a dashboard port frps.toml has no webServer.port.
+            _config(id="cfg-none", bind_port=7100),
+        ]
+    )
+    db_session.commit()
+
+    log = _clean(db_session, caplog)
+    _clean(db_session, caplog)
+
+    notices = _notices(db_session)
+    assert [(n.user_id, n.source_id, n.severity) for n in notices] == [
+        (admin_user.id, "cfg-port:dashboard_port", "warning")
+    ]
+    assert notices[0].body.endswith(f"Bitte neu setzen: Dashboard Port ({DASHBOARD}).")
+    assert "dashboard_port" in log
+    for value in ("7100", "7200"):
+        assert value not in notices[0].body + notices[0].title + log
+
+
+def test_startup_names_every_field_with_its_rule_in_one_notice(
+    db_session, admin_user, caplog, monkeypatch
+):
+    import app.main as m
+
+    monkeypatch.setattr(m, "FRP_BIND_PORT", 7000)
+    db_session.add(
+        _config(id="cfg-all", subdomain_host=BRACED, auth_token="short", dashboard_port=7000)
+    )
+    db_session.commit()
+
+    _clean(db_session, caplog)
+
+    notices = _notices(db_session)
+    assert [n.source_id for n in notices] == ["cfg-all:subdomain_host,auth_token,dashboard_port"]
+    assert notices[0].body.endswith(
+        f"Bitte neu setzen: Subdomain Host ({CHARACTERS}), Auth Token ({TOKEN}), "
+        f"Dashboard Port ({DASHBOARD})."
+    )
 
 
 def test_every_string_field_has_its_label_for_the_bell():
     import app.main as m
 
     # A field without one would end the check with a KeyError, and nobody would be told.
-    assert set(m._FRPS_FIELD_LABELS) == set(STRING_FIELDS.values())
+    assert set(m._FRPS_FIELD_LABELS) == set(STRING_FIELDS.values()) | {"dashboard_port"}
 
 
 def test_startup_checks_the_configs_before_it_writes_frps_toml(monkeypatch):

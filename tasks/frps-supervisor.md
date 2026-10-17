@@ -265,8 +265,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html · docs/admin/installation.html + docs/en/admin/installation.html · CHANGELOG.md (Changed)
 Abhängt von: T8, T13, T14, T20, T21, T22
 
-### T29 — Server: Startprüfung meldet auch Token-Länge und Dashboard-Port, Surrogate abgelehnt  [ ]
+### T29 — Server: Startprüfung meldet auch Token-Länge und Dashboard-Port, Surrogate abgelehnt  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/extra_config.py, apps/server/app/modules/frp/schemas.py, apps/server/app/main.py, apps/server/tests/test_frp_extra_config.py, apps/server/tests/test_frp_input_hardening.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @229fbf96 2026-10-17T16:58:01+02:00
+Review: approve (.ah-out/review/frps-supervisor/T29.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-17 (Branch-Review): (1) `value_allowed` (`extra_config.py`) und `_reject_toml_breakers` (`schemas.py:23`) lehnen auch einzelne Surrogate (U+D800–U+DFFF) ab, denn sie lassen sich nicht als UTF-8 in `frps.toml` schreiben; damit antwortet das Schema mit 422, und die Startbereinigung entfernt solche `extra_config`-Werte. (2) `_report_rejected_fields` (`main.py:209`) meldet zusätzlich, was der Supervisor sonst ablehnt und der Start nicht ändert: ein geschriebenes `auth.token` unter 16 Zeichen (`token_invalid`) und ein `webServer.port` gleich 443, dem Bind Port oder `FRP_BIND_PORT` (`verify_failed`, Regel in `apps/frps/frps-supervisor.sh` `check_config`). Die Mitteilung nennt je Feld den Namen und die Regel, nie den Wert, und kommt wie bisher einmal je Feldsatz. Tests zuerst rot: 422 für ein Surrogat in `extra_config` und in den vier Textfeldern; die Startbereinigung entfernt einen Surrogat-Wert; die Startprüfung meldet ein kurzes Token und jede der drei Port-Kollisionen genau einmal; ein zulässiger Dashboard-Port bleibt ohne Mitteilung.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_extra_config.py tests/test_frp_input_hardening.py
 Doku: CHANGELOG und Betrieb in T30

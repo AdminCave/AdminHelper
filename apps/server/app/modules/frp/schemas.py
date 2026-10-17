@@ -25,6 +25,9 @@ def _reject_toml_breakers(v: Optional[str]) -> Optional[str]:
         return v
     if any(c in _TOML_BREAKERS for c in v) or any(ord(c) < 0x20 or c == "\x7f" for c in v):
         raise ValueError("enthält unzulässige Zeichen (Anführungszeichen/Backslash/Steuerzeichen)")
+    # JSON can spell one as \ud800, and it has no UTF-8 form: no config file carries it.
+    if any("\ud800" <= c <= "\udfff" for c in v):
+        raise ValueError("must not contain a lone surrogate (U+D800 to U+DFFF)")
     return v
 
 

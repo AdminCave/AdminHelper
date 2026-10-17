@@ -45,14 +45,17 @@ STRING_FIELDS = {
 def value_allowed(value: object) -> bool:
     """Whether the line the generator writes for value follows check_config's grammar:
     true, false, a number, or a string without quotes, backslashes, braces or control
-    characters."""
+    characters. A string with a lone surrogate (U+D800 to U+DFFF) has no UTF-8 form, so
+    frps.toml cannot carry its line at all."""
     if isinstance(value, (bool, int)):
         return True
     if isinstance(value, float):
         # The generator writes nan and inf as such, and the grammar has no place for them.
         return math.isfinite(value)
     if isinstance(value, str):
-        return not any(c in '"\\{}' or ord(c) < 0x20 or c == "\x7f" for c in value)
+        return not any(
+            c in '"\\{}' or ord(c) < 0x20 or c == "\x7f" or "\ud800" <= c <= "\udfff" for c in value
+        )
     return False
 
 

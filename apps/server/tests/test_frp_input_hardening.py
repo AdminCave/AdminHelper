@@ -63,6 +63,27 @@ def test_tunnel_name_rejects_del():
         FrpTunnelUpdate(name="ok\x7fname")
 
 
+@pytest.mark.parametrize("value", ["ok\ud800name", "\udfff", "\udc80" + "x" * 20], ids=repr)
+def test_toml_strings_reject_a_lone_surrogate(value):
+    # A lone surrogate has no UTF-8 form, so no generated config can carry it.
+    with pytest.raises(ValidationError, match="surrogate"):
+        _tunnel(name=value)
+    with pytest.raises(ValidationError, match="surrogate"):
+        FrpTunnelUpdate(custom_domains=value)
+    with pytest.raises(ValidationError, match="surrogate"):
+        _tunnel(secret_key=value + "x" * 16)
+    with pytest.raises(ValidationError, match="surrogate"):
+        FrpServerConfigCreate(name="n", server_addr=value)
+    with pytest.raises(ValidationError, match="surrogate"):
+        ServerCreate(name=value, hostname="h")
+
+
+def test_toml_strings_take_the_neighbours_of_the_surrogates():
+    for value in ("ok\ud7ffname", "ok\ue000name"):
+        assert _tunnel(name=value).name == value
+        assert ServerCreate(name=value, hostname="h").name == value
+
+
 def test_custom_domains_rejects_newline():
     with pytest.raises(ValidationError):
         _tunnel(custom_domains="ok.example\nvhostHTTPSPort = 1")
