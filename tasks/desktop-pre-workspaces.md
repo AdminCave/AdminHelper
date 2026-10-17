@@ -99,8 +99,10 @@ Dedup-Key: bug:desktop:tauri.conf.json:second-start-crash
 HEAD: af4498a7
 Semantik: keine Stelle in docs/ — gesucht: zweiter Start, Single-Instance, Instanz in `docs/developer/desktop.html`, `docs/admin/troubleshooting.html`, `README.md`
 
-### T8 — Smoke-E2E: ein zweiter Start lässt das laufende Fenster leben  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/smoke.e2e.js
+### T8 — Smoke-E2E: ein zweiter Start lässt das laufende Fenster leben  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/smoke.e2e.js, apps/desktop/e2e/README.md
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @014038dd 2026-10-17T15:09:38+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T8.verdict.json)
 Änderung: Ein dritter Fall in `smoke.e2e.js`: Der Spec startet das App-Binary, das auch tauri-driver startet (`wdio.conf.js:25`, `src-tauri/target/debug/adminhelper`), per `node:child_process` ein zweites Mal mit derselben Umgebung, wartet auf dessen Ende (höchstens 20 s; mit dem Fix Exit 0) und prüft danach, dass die erste Instanz weiter antwortet (`browser.getTitle()` ist `AdminHelper`, `#app` existiert). Auf dem Stand vor T7 stirbt die erste Instanz, und die WebDriver-Sitzung bricht ab: der Builder zeigt auf der Desktop-VM in einem Probe-Worktree ohne T7, dass der Fall rot ist, und mit T7, dass er grün ist (beide Läufe im Commit-Body). Hat die E2E-Umgebung keinen Session-Bus, endet der Fall mit einer klaren Meldung dazu, statt still grün zu werden. Das Verify hier ist der Lint der E2E-Specs; der echte Beweis kommt aus dem Sammellauf (`desktop-e2e-smoke`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
