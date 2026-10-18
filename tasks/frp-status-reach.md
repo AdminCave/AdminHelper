@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Statusansicht erreicht frps über den Supervisor — Task-Ledger
-Status: aktiv · Branch: feature/frp-status-reach · Review: am Ende
+Status: bereit · Branch: feature/frp-status-reach · Review: am Ende
 Spec: Roadmap R-0408
 Heavy: linux-full — frps-Image (`apps/frps`), Admin-Route `GET /api/frp/status` und der Stack-Test `integration-stack`. Der Job läuft nicht auf PRs, deshalb vor dem Merge `gh workflow run ci.yml --ref feature/frp-status-reach`. Kein `scenario`: kein Tunnel-Datenpfad, kein Cross-Host
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -58,8 +58,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py tests/test_frp_status.py
 Doku: keine
 
-### T5 — Leser: kein offener fd bei einem Nicht-Regulär-Eintrag, Volume-Tabelle  [ ]
+### T5 — Leser: kein offener fd bei einem Nicht-Regulär-Eintrag, Volume-Tabelle  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/proxy_status.py, apps/server/tests/test_frp_status.py, docs/admin/betrieb.html, docs/en/admin/operations.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3744436c 2026-10-18T10:13:22+02:00
+Review: am Ende (Branch-Review)
 Änderung: Fund des reviewer im Branch-Review (2026-10-18): `os.open(..., O_RDONLY|O_NOFOLLOW|O_NONBLOCK)` gelingt auf einem Verzeichnis, danach wirft `open(fd, "rb")` `IsADirectoryError`, FileIO schließt den übergebenen fd nicht, `read_proxy_list` fängt den OSError ab — der fd bleibt offen (Probe: 50 Aufrufe → 50 offene fds). Fix: zuerst `os.fstat(fd)` auf dem rohen fd, alles außer einer regulären Datei ablehnen und den fd in jedem Fehlerpfad schließen, bevor er gewrappt wird. Test zuerst rot: nach dem Lesen eines Verzeichnisses (und eines FIFO) ist die Zahl der Einträge in `/proc/self/fd` unverändert. Dazu nennt die Volume-Tabelle in Betrieb (DE) / Operations (EN) für `frps-state` neben `status.json` auch die `proxy-<typ>.json`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_status.py
 Doku: docs/admin/betrieb.html + docs/en/admin/operations.html

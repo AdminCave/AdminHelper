@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from app.modules.frp.models import FrpServerConfig
+from app.modules.frp.proxy_status import read_proxy_list
 
 
 def _login(test_client):
@@ -450,3 +451,16 @@ def test_status_with_dashboard_url_reports_a_dashboard_that_rejects_the_request(
 
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"proxies": [], "total": 0, "error": "frps-Dashboard: HTTP 401"}
+
+
+@pytest.mark.parametrize("kind", ["a directory", "a FIFO"])
+def test_reading_a_list_that_is_no_regular_file_leaves_no_fd_open(tmp_path, kind):
+    # open() on the fd of a directory raises without closing that fd.
+    path = tmp_path / "proxy-stcp.json"
+    path.mkdir() if kind == "a directory" else os.mkfifo(path)
+    before = len(os.listdir("/proc/self/fd"))
+
+    for _ in range(20):
+        assert read_proxy_list(tmp_path, "stcp") is None
+
+    assert len(os.listdir("/proc/self/fd")) == before
