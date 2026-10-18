@@ -8,7 +8,8 @@
 # guard, --ref force, health-fail rollback, additive .env migration, the
 # self-update re-exec hand-off, a failed image pull (rollback, --redeploy), a
 # health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
-# what --no-rollback names as the way on, a restore that fails, and a missing .env.
+# what --no-rollback names as the way on, a restore that fails, a missing .env, a
+# .env write error in the migration, and what a rollback removes.
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign)
 
@@ -73,6 +74,18 @@ esac
 exec "$AH_TEST_REAL_CURL" "$@"
 EOF
 chmod +x "$BIN/curl"
+# --- a grep wrapper: real grep for everything, except that AH_TEST_GREP_ENOSPC=1
+# sends upsert_env's filter of the SERVER_IMAGE line to /dev/full (a real ENOSPC) ---
+AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
+cat > "$BIN/grep" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"-vE ^#?[[:space:]]*SERVER_IMAGE="*)
+    [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
+esac
+exec "$AH_TEST_REAL_GREP" "$@"
+EOF
+chmod +x "$BIN/grep"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -523,6 +536,10 @@ for how in pull health; do
       && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
     && ok "failed .env restore ($how): the closing message says incomplete" \
     || bad "failed .env restore ($how): rc=$rc $msg"
+  # The directory takes no copy of the old .env (a plain cp -p put env.prev into it).
+  { [ -d "$INST/.env.ah-new" ] && [ -z "$(find "$INST/.env.ah-new" -mindepth 1)" ]; } \
+    && ok "failed .env restore ($how): nothing landed in the directory in the way" \
+    || bad "failed .env restore ($how): .env.ah-new holds $(find "$INST/.env.ah-new" -mindepth 1 -printf '%f ' 2>&1)"
 done
 
 # ── 27. the installed state does not start again: the rollback is incomplete ─
@@ -541,6 +558,77 @@ msg=$(grep 'FEHLER: ' <<<"$out")
 # The restart's own reason reaches the operator, as the first recreate's does.
 [ "$(grep -c 'stub: up failed' <<<"$out")" = 2 ] \
   && ok "both failed starts show docker's reason" || bad "docker's reason swallowed: $out"
+
+# ── 28. a .env write error in the migration → rolled back, .env as it was ────
+# upsert_env filtered .env into a temp file with `|| true` and moved the result
+# over .env: a grep that hit a full disk left a .env with nothing but the pins,
+# and the update went on to "Fertig". Nothing has run yet, so the whole .env
+# comes back and no container is touched.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst28"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp "$INST/.env" "$WORK/inst28.env"
+DLOG="$WORK/inst28.docker"; : > "$DLOG"
+out=$(AH_TEST_GREP_ENOSPC=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+  && ok "a .env write error exits with the rollback message" || bad ".env write error: rc=$rc"
+cmp -s "$WORK/inst28.env" "$INST/.env" \
+  && ok "a .env write error restored .env byte for byte" || bad ".env write error left .env changed"
+left=$(find "$INST" -maxdepth 1 -name '.env*' ! -name .env ! -name .env.example -printf '%f ')
+[ -z "$left" ] && ok "a .env write error left no copy of .env behind" || bad ".env write error left: $left"
+grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+  && ok "a .env write error rolled back the runtime files" || bad ".env write error: compose not rolled back"
+{ grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+  && ok "a .env write error touched no container" || bad ".env write error: docker calls $(tr '\n' ';' < "$DLOG")"
+# --no-rollback: .env may be half migrated, so only --ref re-applies the release.
+INST="$WORK/inst28b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_GREP_ENOSPC=1 run_update "$INST" --no-rollback 2>&1); rc=$?
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q -- '\.env-Migration fehlgeschlagen.*--no-rollback.*--ref v0\.34\.0' <<<"$msg" \
+    && ! grep -q -- '--redeploy' <<<"$msg"; } \
+  && ok "--no-rollback .env write error names only --ref v0.34.0" || bad "--no-rollback .env write error: $msg"
+
+# ── 29. a rollback removes what only the new release brought ────────────────
+# tar only adds and overwrites: after a rollback from 0.36.0 a script only 0.36.0
+# ships was still there, and so was an agent-repo file the installed ./repo never
+# had. ./repo goes back in place, its inode (the gateway's bind mount) unchanged.
+SRC_X="$WORK/src-0.36.0"; make_src 0.36.0 "$SRC_X"
+printf '#!/usr/bin/env bash\necho new\n' > "$SRC_X/scripts/added-in-036.sh"
+make_release 0.36.0 "$SRC_X" "$DL" "$API"
+mkdir -p "$WORK/repo036/dists"
+printf 'repo-marker-0.36.0\n' > "$WORK/repo036/dists/Release"; printf 'new\n' > "$WORK/repo036/dists/InRelease"
+tar czf "$WORK/repo036.tar.gz" -C "$WORK/repo036" .
+publish_agent_repo 0.36.0 "$WORK/repo036.tar.gz"
+for how in health pull; do
+  INST="$WORK/inst29-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  mkdir -p "$INST/repo/dists"; printf 'repo-marker-0.33.0\n' > "$INST/repo/dists/Release"
+  files=$(cd "$INST" && find repo -type f | sort); inode=$(stat -c %i "$INST/repo")
+  if [ "$how" = pull ]; then
+    out=$(AH_TEST_PULL=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+  else
+    out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+  fi
+  echo "$out" | sed 's/^/    │ /'
+  # The repo refresh in the output: the swap and the new ./repo did happen.
+  { [ $rc -ne 0 ] && grep -q 'Aktualisiere Paket-Repo' <<<"$out" \
+      && grep -q 'FEHLER: .*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+    && ok "$how failure after the swap to 0.36.0 exits with the rollback message" || bad "$how failure on 0.36.0: rc=$rc"
+  [ ! -e "$INST/scripts/added-in-036.sh" ] \
+    && ok "$how rollback removed the script only 0.36.0 ships" || bad "$how rollback left scripts/added-in-036.sh"
+  { [ "$(cd "$INST" && find repo -type f | sort)" = "$files" ] \
+      && grep -qx 'repo-marker-0.33.0' "$INST/repo/dists/Release"; } \
+    && ok "$how rollback put ./repo back as it was" \
+    || bad "$how rollback: ./repo holds $(cd "$INST" && find repo -type f | sort | tr '\n' ' ')"
+  [ "$(stat -c %i "$INST/repo")" = "$inode" ] \
+    && ok "$how rollback kept the inode of ./repo" || bad "$how rollback replaced ./repo"
+done
+# Without a ./repo before the update, the one the update created stays empty.
+INST="$WORK/inst29-norepo"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'Aktualisiere Paket-Repo' <<<"$out" \
+    && [ -d "$INST/repo" ] && [ -z "$(find "$INST/repo" -mindepth 1)" ]; } \
+  && ok "a rollback leaves the ./repo the update created empty" \
+  || bad "rollback without a prior ./repo: rc=$rc, ./repo holds $(find "$INST/repo" -mindepth 1 -printf '%P ' 2>&1)"
 
 echo
 echo "──────────────────────────────────────────"

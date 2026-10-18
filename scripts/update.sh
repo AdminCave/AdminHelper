@@ -23,10 +23,10 @@
 # Flags: --skip-backup  --with-victoria  --no-rollback  --yes
 #
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
-# runtime files + .env before the swap; on a failed agent-repo refresh, image pull,
-# recreate or health check it auto-rolls-back the runtime files + image pins (use
-# --no-rollback to inspect the broken state). The updater updates ITSELF: if the
-# release ships a newer update.sh it re-execs into it.
+# runtime files + .env before the swap; on a failed .env migration, agent-repo
+# refresh, image pull, recreate or health check it auto-rolls-back the runtime files
+# + image pins (use --no-rollback to inspect the broken state). The updater updates
+# ITSELF: if the release ships a newer update.sh it re-execs into it.
 #
 # Advanced overrides (mirrors / GitHub Enterprise / tests):
 #   AH_API_BASE (default https://api.github.com), AH_DL_BASE (default https://github.com),
@@ -76,7 +76,8 @@ command -v docker >/dev/null 2>&1 || die "docker fehlt."
 docker compose version >/dev/null 2>&1 || die "'docker compose' fehlt."
 command -v curl >/dev/null 2>&1 || die "curl fehlt."
 
-# Set or replace KEY=value in .env (idempotent), un-commenting if needed.
+# Set or replace KEY=value in .env (idempotent), un-commenting if needed. Returns 1,
+# with .env unchanged, if the new file cannot be written.
 upsert_env() {
     local key="$1" value="$2" tmp
     # Reject a value with newlines: it would inject extra .env lines (3.79).
@@ -85,11 +86,15 @@ upsert_env() {
     esac
     # Delete any existing (possibly commented) line for the key, then append the
     # literal value. No sed replacement, so |, & or \1 in the value aren't
-    # interpreted (3.79). grep -v exits 1 when it filters every line — tolerate it.
-    tmp=$(mktemp)
-    grep -vE "^#?[[:space:]]*${key}=" .env > "$tmp" 2>/dev/null || true
-    mv "$tmp" .env
-    printf '%s=%s\n' "$key" "$value" >> .env
+    # interpreted (3.79). grep -v exits 1 when it filters every line, which is
+    # fine; 2 is an error (a write error too). The copy sits next to .env (mktemp:
+    # 0600, same file system, so mv is a rename) and replaces it only once both
+    # steps worked: a full disk must not leave a cut-down .env in its place.
+    tmp=$(mktemp .env.ah-XXXXXX) || return 1
+    { { grep -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
+        && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
+        && mv "$tmp" .env; } \
+        || { rm -f "$tmp"; return 1; }
 }
 
 # Currently installed version = the tag pinned on SERVER_IMAGE in .env (X.Y.Z),
@@ -331,11 +336,15 @@ cp -p .env "${TMP}/env.prev" || die "Kopie der .env fehlgeschlagen — Abbruch (
 
 # --- Atomic-ish swap: place every manifest file, drop obsolete ops scripts ---
 # Paths come from the bundle's MANIFEST.sha256 (col 2). Each file is moved into
-# place from the already-verified extract dir; scripts/* get the exec bit.
+# place from the already-verified extract dir; scripts/* get the exec bit. A path
+# that does not exist yet is noted in ADDED_PATHS first: the snapshot cannot bring
+# back its absence, so a rollback removes it (restore_snapshot).
 MANIFEST_PATHS=$(awk '{print $2}' "${EXTRACT}/MANIFEST.sha256")
+ADDED_PATHS=""
 while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     rel="${rel#./}"
+    [ -e "$rel" ] || [ -L "$rel" ] || ADDED_PATHS+="${rel}"$'\n'
     mkdir -p "$(dirname "$rel")"
     cp "${EXTRACT}/${rel}" "${rel}.ah-new"
     mv "${rel}.ah-new" "$rel"
@@ -353,38 +362,29 @@ for f in scripts/*.sh; do
     fi
 done
 
-# --- .env migration: add new keys, fill new secrets, re-pin images ----------
-# Additive only: append active KEY=value from the new .env.example that .env is
-# missing — never overwrite an existing value (no clobbering of secrets/config).
-if [ -f .env.example ]; then
-    while IFS= read -r line; do
-        case "$line" in
-            [A-Z_]*=*)
-                key="${line%%=*}"
-                grep -qE "^#?[[:space:]]*${key}=" .env || { printf '%s\n' "$line" >> .env; log ".env: neuen Key ${key} ergaenzt"; }
-                ;;
-        esac
-    done < .env.example
-fi
-# Fill any newly-added empty secrets (idempotent — leaves set values alone).
-./scripts/init-secrets.sh >/dev/null
-
-# Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
-upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}"
-upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}"
-upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${TARGET_VER}"
-upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}"
-upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}"
-chmod 600 .env 2>/dev/null || true
-log "Images gepinnt auf :${TARGET_VER}"
+# --- Both rollbacks: the runtime files as the snapshot holds them -----------
+# tar only adds and overwrites, so the paths the swap added go first, and ./repo is
+# emptied IN PLACE (the dir inode stays, so the gateway's live bind mount stays
+# valid): afterwards ./repo holds exactly the snapshot's tree, or stays empty if the
+# update created it. Every step runs; returns 1 if any of them failed.
+restore_snapshot() {
+    local rel rc=0
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        rm -f "$rel" || rc=1
+    done <<< "$ADDED_PATHS"
+    if [ -d repo ]; then find repo -mindepth 1 -delete || rc=1; fi
+    tar xzf "$SNAP" || rc=1
+    return "$rc"
+}
 
 # --- Rollback while no container has been touched yet ------------------------
-# A failed agent-repo refresh or pull (registry down, rate limit, an image the
-# release did not publish) comes before the recreate, so nothing of the new
-# version ever ran: the installed state is the snapshot plus the old .env as a
-# whole, pins of a floating tag included. No recreate needed. $1 says what failed,
-# $2 is the way on that --no-rollback names: .env stays pinned on the target, so a
-# bare re-run would call the install current.
+# A failed .env migration, agent-repo refresh or pull (registry down, rate limit,
+# an image the release did not publish) comes before the recreate, so nothing of
+# the new version ever ran: the installed state is the snapshot plus the old .env
+# as a whole, pins of a floating tag included. No recreate needed. $1 says what
+# failed, $2 is the way on that --no-rollback names: .env stays pinned on the
+# target, so a bare re-run would call the install current.
 rollback_before_deploy() {
     if [ "$NO_ROLLBACK" = 1 ]; then
         die "$1. --no-rollback gesetzt: neue Laufzeit-Dateien + Image-Pins bleiben stehen, Container unveraendert. $2"
@@ -392,14 +392,52 @@ rollback_before_deploy() {
     local incomplete=0
     echo >&2
     log "Rolle Laufzeit-Dateien + .env auf ${INSTALLED} zurueck (Snapshot ${SNAP})..."
-    tar xzf "$SNAP" || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # Copy next to .env, then rename: an interrupted restore leaves no half .env.
-    { cp -p "${TMP}/env.prev" .env.ah-new && mv .env.ah-new .env; } \
+    # -T: a directory .env.ah-new in the way fails the restore, it takes no copy.
+    { cp -pT "${TMP}/env.prev" .env.ah-new && mv -T .env.ah-new .env; } \
         || { log "WARN: .env-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
         || die "$1 — Rollback auf ${INSTALLED} UNVOLLSTAENDIG (siehe WARN), Container unveraendert. Bitte manuell pruefen."
     die "$1 — zurueckgerollt auf ${INSTALLED}, Container unveraendert. Update danach erneut ausfuehren."
 }
+
+# --- .env migration: add new keys, fill new secrets, re-pin images ----------
+# One step: the caller tests the status, which turns set -e off in here, so every
+# part that can fail returns 1 itself, and the caller rolls the whole .env back.
+# Additive only: append active KEY=value from the new .env.example that .env is
+# missing — never overwrite an existing value (no clobbering of secrets/config).
+migrate_env() {
+    local line key rc
+    if [ -f .env.example ]; then
+        while IFS= read -r line; do
+            case "$line" in
+                [A-Z_]*=*)
+                    key="${line%%=*}"
+                    rc=0; grep -qE "^#?[[:space:]]*${key}=" .env || rc=$?
+                    case $rc in
+                        0) ;;
+                        1) printf '%s\n' "$line" >> .env || return 1; log ".env: neuen Key ${key} ergaenzt" ;;
+                        *) return 1 ;;
+                    esac
+                    ;;
+            esac
+        done < .env.example || return 1
+    fi
+    # Fill any newly-added empty secrets (idempotent — leaves set values alone).
+    ./scripts/init-secrets.sh >/dev/null || return 1
+
+    # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
+    upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}" || return 1
+    upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}" || return 1
+    upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${TARGET_VER}" || return 1
+    upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}" || return 1
+    upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}" || return 1
+    chmod 600 .env 2>/dev/null || true
+    log "Images gepinnt auf :${TARGET_VER}"
+}
+migrate_env || rollback_before_deploy ".env-Migration fehlgeschlagen" \
+    ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
 
 # --- Refresh the gateway's agent package repo --------------------------------
 # --redeploy never calls update_agent_repo, so only --ref re-applies the repo.
@@ -423,7 +461,7 @@ rollback_after_deploy() {
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED} zurueck (Snapshot ${SNAP})..." >&2
     # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
-    tar xzf "$SNAP" || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # The containers ran, so only the pin lines of the old .env go back: a key the
     # migration added or a secret init-secrets.sh filled (CA_ROOT_PASSPHRASE) may
     # be in use already. Taken from env.prev, not rebuilt from INSTALLED, which is
@@ -434,7 +472,7 @@ rollback_after_deploy() {
     { ( umask 077
         { grep -vE "$pins" .env || [ $? -eq 1 ]; } > .env.ah-new \
             && { grep -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
-      ) && mv .env.ah-new .env; } \
+      ) && mv -T .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     docker compose up -d >/dev/null \
         || { log "WARN: Start des Stands ${INSTALLED} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
