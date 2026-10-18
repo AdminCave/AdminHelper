@@ -108,6 +108,21 @@ installed_version() {
     esac
 }
 
+# The installed state as messages name it: the version, or for a floating tag the
+# tag of SERVER_IMAGE itself (":main"; without the line ":latest", the compose
+# default), never "unknown".
+installed_label() {
+    local ver ref=""
+    ver=$(installed_version)
+    if [ "$ver" != unknown ]; then printf '%s' "$ver"; return 0; fi
+    [ -f .env ] && ref=$(grep -E '^SERVER_IMAGE=' .env | head -1)
+    ref="${ref##*/}"
+    case "$ref" in
+        *:*) printf ':%s' "${ref##*:}" ;;
+        *) printf ':latest' ;;
+    esac
+}
+
 # Resolve the latest published, non-prerelease, non-draft release tag via the API.
 # (releases/latest excludes prereleases and drafts by definition.) No jq on hosts.
 gh_curl() {
@@ -250,12 +265,13 @@ if [ "$REDEPLOY" = 1 ]; then
     log "Starte den Stack neu..."
     docker compose up -d
     wait_for_server || die "Server nicht rechtzeitig bereit. Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
-    log "Re-Deploy fertig (Version unveraendert: $(installed_version))."
+    log "Re-Deploy fertig (Version unveraendert: $(installed_label))."
     exit 0
 fi
 
 # --- Resolve target + guard rails -------------------------------------------
 INSTALLED=$(installed_version)
+INSTALLED_LABEL=$(installed_label)
 if [ -n "$REF" ]; then
     TARGET="$REF"
 else
@@ -275,7 +291,7 @@ if [ -z "$REF" ]; then
 fi
 
 if [ "$CHECK" = 1 ]; then
-    log "Installiert: ${INSTALLED}   Ziel: ${TARGET_VER} (${TARGET})"
+    log "Installiert: ${INSTALLED_LABEL}   Ziel: ${TARGET_VER} (${TARGET})"
     if [ "$INSTALLED" = "$TARGET_VER" ]; then log "Aktuell — kein Update noetig."; else log "Update verfuegbar."; fi
     exit 0
 fi
@@ -284,11 +300,18 @@ fi
 # backup and the snapshot, so a broken install dir gets neither.
 [ -f .env ] || die ".env fehlt im Install-Verzeichnis — kein Stand zum Zurueckrollen. Abbruch (nichts veraendert)."
 
-log "Update ${INSTALLED} -> ${TARGET_VER}"
+log "Update ${INSTALLED_LABEL} -> ${TARGET_VER}"
 
 # --- Fetch + verify the bundle (before touching anything) -------------------
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+# A re-exec'd updater also removes the TMP of the run that handed off to it (its
+# exec skipped its own EXIT trap), but only when it runs from exactly that dir: the
+# variable alone never makes this script delete a directory.
+PARENT_TMP=""
+if [ -n "${AH_UPDATE_PARENT_TMP:-}" ] && [ "$0" = "${AH_UPDATE_PARENT_TMP}/update-new.sh" ]; then
+    PARENT_TMP="$AH_UPDATE_PARENT_TMP"
+fi
+trap 'rm -rf "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}' EXIT
 EXTRACT=$(fetch_bundle "$TARGET" "$TMP")
 
 # --- Self-update: hand off to the release's update.sh if it differs ----------
@@ -304,8 +327,8 @@ if [ "${AH_UPDATE_REEXECED:-0}" != 1 ] && ! cmp -s "${EXTRACT}/scripts/update.sh
     [ "$ASSUME_YES" = 1 ] && pass+=(--yes)
     [ ${#BACKUP_ARGS[@]} -gt 0 ] && pass+=("${BACKUP_ARGS[@]}")
     # exec replaces this process: the EXIT trap won't fire, so $TMP survives for
-    # the new updater to read; it lives under mktemp's dir and is cleaned by the OS.
-    exec env AH_UPDATE_REEXECED=1 bash "${TMP}/update-new.sh" "${pass[@]}"
+    # the new updater to run from; AH_UPDATE_PARENT_TMP has it remove $TMP at its end.
+    exec env AH_UPDATE_REEXECED=1 AH_UPDATE_PARENT_TMP="$TMP" bash "${TMP}/update-new.sh" "${pass[@]}"
 fi
 
 # --- Backup-first (data) + snapshot the current runtime files ---------------
@@ -391,15 +414,15 @@ rollback_before_deploy() {
     fi
     local incomplete=0
     echo >&2
-    log "Rolle Laufzeit-Dateien + .env auf ${INSTALLED} zurueck (Snapshot ${SNAP})..."
+    log "Rolle Laufzeit-Dateien + .env auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..."
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     # Copy next to .env, then rename: an interrupted restore leaves no half .env.
     # -T: a directory .env.ah-new in the way fails the restore, it takes no copy.
     { cp -pT "${TMP}/env.prev" .env.ah-new && mv -T .env.ah-new .env; } \
         || { log "WARN: .env-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
-        || die "$1 — Rollback auf ${INSTALLED} UNVOLLSTAENDIG (siehe WARN), Container unveraendert. Bitte manuell pruefen."
-    die "$1 — zurueckgerollt auf ${INSTALLED}, Container unveraendert. Update danach erneut ausfuehren."
+        || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), Container unveraendert. Bitte manuell pruefen."
+    die "$1 — zurueckgerollt auf ${INSTALLED_LABEL}, Container unveraendert. Update danach erneut ausfuehren."
 }
 
 # --- .env migration: add new keys, fill new secrets, re-pin images ----------
@@ -454,11 +477,11 @@ rollback_after_deploy() {
     if [ "$NO_ROLLBACK" = 1 ]; then
         local back="zurueck mit ./scripts/update.sh --ref v${INSTALLED}"
         [ "$INSTALLED" != "unknown" ] || back="zurueck auf den vorigen Floating-Tag nur von Hand (Image-Pins in .env)"
-        die "$1. --no-rollback gesetzt: kaputter Stand bleibt zum Debuggen stehen, .env auf ${TARGET_VER} gepinnt. Danach: ./scripts/update.sh --redeploy (gepinnte Images neu starten); ${back}."
+        die "$1. --no-rollback gesetzt: kaputter Stand bleibt zum Debuggen stehen, .env auf ${TARGET_VER} gepinnt. Danach: ./scripts/update.sh --redeploy (gepinnte Images neu starten); ${back}. Alembic kann die Datenbank beim Start schon migriert haben; Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
     fi
     local incomplete=0
     echo >&2
-    log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED} zurueck (Snapshot ${SNAP})..." >&2
+    log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..." >&2
     # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
     # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
     restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
@@ -475,10 +498,10 @@ rollback_after_deploy() {
       ) && mv -T .env.ah-new .env; } \
         || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     docker compose up -d >/dev/null \
-        || { log "WARN: Start des Stands ${INSTALLED} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+        || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
     [ "$incomplete" = 0 ] \
-        || die "$1 — Rollback auf ${INSTALLED} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
-    die "$1 — zurueckgerollt auf ${INSTALLED}. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+        || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+    die "$1 — zurueckgerollt auf ${INSTALLED_LABEL}. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
 }
 
 # --- Deploy + health check, with automatic rollback on failure --------------

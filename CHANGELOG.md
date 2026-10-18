@@ -372,7 +372,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   rollt `update.sh` wie bei einem Pull-Fehler zurueck: Laufzeit-Dateien und die ganze alte `.env` kommen zurueck, die
   Container bleiben unveraendert; mit `--no-rollback` nennt die Meldung `--ref` als Weg weiter. Ein Rollback entfernt
   jetzt auch die Dateien, die erst das neue Release mitgebracht hat, und stellt `./repo` genau auf den Stand vor dem
-  Update; ein Verzeichnis `.env.ah-new` im Weg nimmt keine Kopie der alten `.env` mehr auf.
+  Update; ein Verzeichnis `.env.ah-new` im Weg nimmt keine Kopie der alten `.env` mehr auf. Bei einem Floating-Tag
+  nennen `--check`, `--redeploy`, die Update-Meldung und die Rollbacks den Tag (etwa `:main`, ohne `SERVER_IMAGE`
+  `:latest`) statt `unknown`. Scheitert mit `--no-rollback` der Neustart oder der Healthcheck, sagt die Meldung jetzt
+  auch, dass Alembic die Datenbank beim Start schon migriert haben kann, und nennt `restore.sh`. Nach einem
+  Selbst-Update entfernt die neue `update.sh` auch das temporaere Verzeichnis des abgebenden Laufs; ist dieser noch
+  eine `update.sh` vor diesem Stand, bleibt es beim ersten Update noch liegen.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.

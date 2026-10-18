@@ -9,7 +9,8 @@
 # self-update re-exec hand-off, a failed image pull (rollback, --redeploy), a
 # health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
 # what --no-rollback names as the way on, a restore that fails, a missing .env, a
-# .env write error in the migration, and what a rollback removes.
+# .env write error in the migration, what a rollback removes, what the texts name
+# for a floating tag, and the temp dir a self-update leaves.
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign)
 
@@ -196,6 +197,19 @@ INST="$WORK/inst2"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(run_update "$INST" --check 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Update verfuegbar' <<<"$out"; } && ok "--check reports update" || bad "--check output: $out"
 grep -q 'server:0.33.0' "$INST/.env" && ok "--check left .env untouched" || bad "--check mutated .env"
+# A floating tag has no version: the texts name the tag (":main"; without a
+# SERVER_IMAGE line ":latest", the compose default), never "unknown".
+INST="$WORK/inst2b"; make_install main "$SRC_OLD" "$INST"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Installiert: :main ' <<<"$out" && ! grep -q unknown <<<"$out"; } \
+  && ok "--check on :main names :main" || bad "--check on :main: rc=$rc $out"
+out=$(run_update "$INST" --redeploy --skip-backup 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Version unveraendert: :main)' <<<"$out" && ! grep -q unknown <<<"$out"; } \
+  && ok "--redeploy on :main names :main" || bad "--redeploy on :main: rc=$rc $out"
+sed -i '/^SERVER_IMAGE=/d' "$INST/.env"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Installiert: :latest ' <<<"$out" && ! grep -q unknown <<<"$out"; } \
+  && ok "--check without a SERVER_IMAGE line names :latest" || bad "--check without SERVER_IMAGE: rc=$rc $out"
 
 # ── 3. already up to date → no-op ────────────────────────────────────────────
 INST="$WORK/inst3"; make_install 0.34.0 "$SRC_NEW" "$INST"
@@ -234,10 +248,24 @@ out=$(run_update "$INST" 2>&1); rc=$?
 # ── 8. self-update: on-disk update.sh differs → re-exec into the release's one ─
 INST="$WORK/inst8"; make_install 0.33.0 "$SRC_OLD" "$INST"
 printf '\n# stale local marker — forces a self-update hand-off\n' >> "$INST/scripts/update.sh"
-out=$(run_update "$INST" 2>&1); rc=$?
+# Its own TMPDIR, so the temp dirs of both runs are where the test can see them.
+mkdir -p "$WORK/tmp8"
+out=$(TMPDIR="$WORK/tmp8" run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'uebergebe an die neue Version' <<<"$out"; } && ok "self-update re-exec triggered" || bad "no re-exec: rc=$rc"
 { grep -q 'server:0.34.0' "$INST/.env" && ! grep -q 'stale local marker' "$INST/scripts/update.sh"; } \
   && ok "re-exec completed + canonical update.sh placed" || bad "re-exec did not complete cleanly"
+# The exec skips the first run's EXIT trap: its TMP (the new update.sh, the bundle)
+# stayed behind. The new updater removes it with its own.
+[ -z "$(find "$WORK/tmp8" -mindepth 1)" ] \
+  && ok "the self-update left nothing in TMPDIR" \
+  || bad "the self-update left in TMPDIR: $(find "$WORK/tmp8" -mindepth 1 -maxdepth 2 -printf '%P ')"
+# Gegenprobe: the variable alone removes nothing. A normal run from
+# ./scripts/update.sh leaves the directory it names, update-new.sh and all.
+INST="$WORK/inst8b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$WORK/foreign8"; : > "$WORK/foreign8/update-new.sh"
+out=$(AH_UPDATE_PARENT_TMP="$WORK/foreign8" run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && ! grep -q 'uebergebe an die neue Version' <<<"$out" && [ -e "$WORK/foreign8/update-new.sh" ]; } \
+  && ok "AH_UPDATE_PARENT_TMP without the re-exec removes nothing" || bad "foreign dir: rc=$rc, left: $(ls -A "$WORK/foreign8" 2>&1)"
 
 # ── 9. tampered bundle → checksum mismatch → fail-closed abort, install intact ─
 # The supply-chain defence CLAUDE.md calls out as fail-closed must actually abort;
@@ -354,6 +382,8 @@ cp "$INST/.env" "$WORK/inst16.env"
 out=$(AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
 { [ $rc -ne 0 ] && cmp -s "$WORK/inst16.env" "$INST/.env"; } \
   && ok "pull failure on :main restored the floating pins" || bad "floating pins not restored: rc=$rc"
+{ ! grep -q unknown <<<"$out" && grep -q 'FEHLER: .*zurueckgerollt auf :main,' <<<"$out"; } \
+  && ok "pull failure on :main names :main, not unknown" || bad "pull failure on :main: $out"
 
 # ── 17. --no-rollback: a pull failure leaves the new files for inspection ────
 INST="$WORK/inst17"; make_install 0.33.0 "$SRC_OLD" "$INST"
@@ -391,6 +421,9 @@ grep -E '_IMAGE=' "$INST/.env" | sort > "$WORK/inst19.pins"
 out=$(AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
 echo "$out" | sed 's/^/    │ /'
 [ $rc -ne 0 ] && ok "health-fail on :main exits non-zero" || bad "health-fail on :main exit $rc"
+{ ! grep -q unknown <<<"$out" && grep -q 'Update :main -> 0.34.0' <<<"$out" \
+    && grep -q 'Image-Pins auf :main zurueck' <<<"$out" && grep -q 'FEHLER: .*zurueckgerollt auf :main\.' <<<"$out"; } \
+  && ok "health-fail on :main names :main, not unknown" || bad "health-fail on :main: $out"
 grep -E '_IMAGE=' "$INST/.env" | sort | cmp -s - "$WORK/inst19.pins" \
   && ok "health-fail on :main restored the floating pins (none added)" \
   || bad "floating pins after health-fail: $(grep -E '_IMAGE=' "$INST/.env" | tr '\n' ';')"
@@ -505,6 +538,10 @@ out=$(AH_TEST_UP_FAIL_ONCE="$WORK/inst24.upfail" run_update "$INST" --no-rollbac
     && grep -q 'FEHLER: Stack-Neustart fehlgeschlagen.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
   && ok "--no-rollback after a failed recreate keeps the state, names --redeploy and --ref v0.33.0" \
   || bad "--no-rollback failed recreate: rc=$rc $out"
+# The containers ran, so Alembic may have migrated the database already.
+msg=$(grep 'FEHLER: ' <<<"$out")
+grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$msg" \
+  && ok "--no-rollback after a failed recreate names Alembic and restore.sh" || bad "--no-rollback failed recreate: $msg"
 
 # ── 25. --no-rollback after a failed health check names the way on ──────────
 INST="$WORK/inst25"; make_install 0.33.0 "$SRC_OLD" "$INST"
@@ -512,12 +549,17 @@ out=$(AH_TEST_HEALTH=1 run_update "$INST" --no-rollback 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env" \
     && grep -q 'FEHLER: Server nicht rechtzeitig bereit.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
   && ok "--no-rollback health-fail names --redeploy and --ref v0.33.0" || bad "--no-rollback health-fail: rc=$rc $out"
+msg=$(grep 'FEHLER: ' <<<"$out")
+grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$msg" \
+  && ok "--no-rollback health-fail names Alembic and restore.sh" || bad "--no-rollback health-fail: $msg"
 # A floating tag has no release to name: --ref would pin a version, not :main.
 INST="$WORK/inst25b"; make_install main "$SRC_OLD" "$INST"
 out=$(AH_TEST_HEALTH=1 run_update "$INST" --no-rollback 2>&1); rc=$?
 msg=$(grep 'FEHLER: ' <<<"$out")
 { [ $rc -ne 0 ] && grep -q -- '--no-rollback.*--redeploy.*von Hand' <<<"$msg" && ! grep -q -- '--ref' <<<"$msg"; } \
   && ok "--no-rollback health-fail on :main names --redeploy and no --ref" || bad "--no-rollback health-fail on :main: $msg"
+grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$msg" \
+  && ok "--no-rollback health-fail on :main names Alembic and restore.sh" || bad "--no-rollback health-fail on :main: $msg"
 
 # ── 26. a restore that fails is not reported as a rollback ──────────────────
 # A directory in the way of the .env copy makes the restore fail; the closing
