@@ -101,14 +101,14 @@ env_template_ok() {
 
 # A quoted value as compose reads it: $2 is the text after the opening quote $1. A
 # backslash escapes the next character, and in double quotes \$ is a literal '$'
-# (passed on as '$$'). Leaves the text up to the closing quote in QUOTED; returns
-# 1 if $2 holds no closing quote.
+# (passed on as '$$'). Leaves the text up to the closing quote in QUOTED and the
+# text after it in QUOTED_REST; returns 1 if $2 holds no closing quote.
 read_quoted() {
     local q="$1" s="$2" c i=0
     QUOTED=""
     while [ "$i" -lt "${#s}" ]; do
         c=${s:i:1}
-        [ "$c" != "$q" ] || return 0
+        if [ "$c" = "$q" ]; then QUOTED_REST=${s:i+1}; return 0; fi
         if [ "$c" = "\\" ]; then
             i=$((i + 1)); c=${s:i:1}
             case $c in
@@ -128,35 +128,41 @@ read_quoted() {
 # backup, swap and re-pin rather than after. Reads .env as compose does: blank and
 # '#' lines drop, "export " may lead, '=' or ':' separates; a quoted value runs to
 # its closing quote, over several lines if need be, and is literal in single
-# quotes; an unquoted one ends at " #". The message names
+# quotes, and the text after that quote is read as a line of its own; an unquoted
+# value ends at " #". The message names
 # the key, never the value: it may be a secret.
 check_env_templates() {
-    local line key val more q QUOTED
+    local line key val more q rest QUOTED QUOTED_REST
     [ -f .env ] || return 0
     while IFS= read -r line || [ -n "$line" ]; do
-        line=${line#"${line%%[![:space:]]*}"}
-        case $line in ''|'#'*) continue ;; esac
-        case $line in
-            export[[:space:]]*) line=${line#export}; line=${line#"${line%%[![:space:]]*}"} ;;
-        esac
-        case $line in *[=:]*) ;; *) continue ;; esac
-        key=${line%%[=:]*}; key=${key%"${key##*[![:space:]]}"}
-        val=${line#*[=:]}; val=${val#"${val%%[![:space:]]*}"}
-        case $val in
-            "'"*|'"'*)
-                # The lines up to the closing quote are part of this value, not
-                # keys of their own. A quote never closed is compose's to report.
-                q=${val:0:1}; val=${val:1}
-                until read_quoted "$q" "$val"; do
-                    IFS= read -r more || [ -n "$more" ] || return 0
-                    val+=$'\n'$more
-                done
-                [ "$q" = '"' ] || continue
-                val=$QUOTED ;;
-            *) val=${val%% #*} ;;
-        esac
-        env_template_ok "$val" \
-            || die ".env: der Wert von ${key} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
+        # One assignment per pass: after a closing quote, compose reads on.
+        while [ -n "$line" ]; do
+            line=${line#"${line%%[![:space:]]*}"}
+            case $line in ''|'#'*) break ;; esac
+            case $line in
+                export[[:space:]]*) line=${line#export}; line=${line#"${line%%[![:space:]]*}"} ;;
+            esac
+            case $line in *[=:]*) ;; *) break ;; esac
+            key=${line%%[=:]*}; key=${key%"${key##*[![:space:]]}"}
+            val=${line#*[=:]}; val=${val#"${val%%[![:space:]]*}"}
+            rest=""
+            case $val in
+                "'"*|'"'*)
+                    # The lines up to the closing quote are part of this value, not
+                    # keys of their own. A quote never closed is compose's to report.
+                    q=${val:0:1}; val=${val:1}
+                    until read_quoted "$q" "$val"; do
+                        IFS= read -r more || [ -n "$more" ] || return 0
+                        val+=$'\n'$more
+                    done
+                    rest=$QUOTED_REST
+                    if [ "$q" = '"' ]; then val=$QUOTED; else val=""; fi ;;
+                *) val=${val%% #*} ;;
+            esac
+            env_template_ok "$val" \
+                || die ".env: der Wert von ${key} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
+            line=$rest
+        done
     done < .env
 }
 
@@ -199,19 +205,17 @@ installed_version() {
     esac
 }
 
-# The installed state as messages name it: the version, or for a floating tag the
-# tag of SERVER_IMAGE itself (":main"; without the line ":latest", the compose
-# default), never "unknown".
+# The installed state as messages name it: the version, or else what follows the
+# image name in SERVER_IMAGE (a floating ":main", a digest "@sha256:…"; without a
+# tag or without the line ":latest", the default), never "unknown".
 installed_label() {
-    local ver ref=""
+    local ver ref="" tag
     ver=$(installed_version)
     if [ "$ver" != unknown ]; then printf '%s' "$ver"; return 0; fi
     [ -f .env ] && ref=$(grep -E '^SERVER_IMAGE=' .env | head -1)
-    ref="${ref##*/}"
-    case "$ref" in
-        *:*) printf ':%s' "${ref##*:}" ;;
-        *) printf ':latest' ;;
-    esac
+    ref="${ref#SERVER_IMAGE=}"; ref="${ref##*/}"
+    tag="${ref#"${ref%%[:@]*}"}"
+    printf '%s' "${tag:-:latest}"
 }
 
 # Resolve the latest published, non-prerelease, non-draft release tag via the API.

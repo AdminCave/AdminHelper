@@ -83,17 +83,33 @@ exec "$AH_TEST_REAL_CURL" "$@"
 EOF
 chmod +x "$BIN/curl"
 # --- a grep wrapper: real grep for everything, except that AH_TEST_GREP_ENOSPC=1
-# sends upsert_env's filter of the SERVER_IMAGE line to /dev/full (a real ENOSPC) ---
+# sends upsert_env's filter of the SERVER_IMAGE line to /dev/full (a real ENOSPC),
+# and AH_TEST_GREP_KEY_FAIL=1 fails the migration's check for NEW_FEATURE_FLAG
+# with exit 2, grep's "error" ---
 AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
 cat > "$BIN/grep" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
   *"-vE ^#?[[:space:]]*SERVER_IMAGE="*)
     [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
+  *"-qE ^#?[[:space:]]*NEW_FEATURE_FLAG="*)
+    [ "${AH_TEST_GREP_KEY_FAIL:-}" != 1 ] || { echo "stub: grep failed" >&2; exit 2; } ;;
 esac
 exec "$AH_TEST_REAL_GREP" "$@"
 EOF
 chmod +x "$BIN/grep"
+# --- a find wrapper: real find for everything, except that AH_TEST_FIND_FAIL=1
+# fails the `find repo -mindepth 1 -delete` that empties ./repo ---
+AH_TEST_REAL_FIND=$(command -v find); export AH_TEST_REAL_FIND
+cat > "$BIN/find" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  "repo -mindepth 1 -delete")
+    [ "${AH_TEST_FIND_FAIL:-}" != 1 ] || { echo "stub: find failed" >&2; exit 1; } ;;
+esac
+exec "$AH_TEST_REAL_FIND" "$@"
+EOF
+chmod +x "$BIN/find"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -217,6 +233,18 @@ sed -i '/^SERVER_IMAGE=/d' "$INST/.env"
 out=$(run_update "$INST" --check 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Installiert: :latest ' <<<"$out" && ! grep -q unknown <<<"$out"; } \
   && ok "--check without a SERVER_IMAGE line names :latest" || bad "--check without SERVER_IMAGE: rc=$rc $out"
+# An image without a tag is :latest as well; one pinned by digest is named by the
+# digest, not by the hex after its last ':'.
+printf 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server\n' >> "$INST/.env"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Installiert: :latest ' <<<"$out"; } \
+  && ok "--check with an untagged SERVER_IMAGE names :latest" || bad "--check untagged: rc=$rc $out"
+sed -i '/^SERVER_IMAGE=/d' "$INST/.env"
+DIGEST="sha256:$(printf '0123456789abcdef%.0s' 1 2 3 4)"
+printf 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server@%s\n' "$DIGEST" >> "$INST/.env"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q "Installiert: @$DIGEST " <<<"$out"; } \
+  && ok "--check with a digest-pinned SERVER_IMAGE names the digest" || bad "--check digest: rc=$rc $out"
 
 # ── 3. already up to date → no-op ────────────────────────────────────────────
 INST="$WORK/inst3"; make_install 0.34.0 "$SRC_NEW" "$INST"
@@ -687,8 +715,8 @@ out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
 make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
 # The '${' is the point: literal .env lines, not expansions.
 # shellcheck disable=SC2016
-ENV_BAD=('SMTP_PASSWORD=zz9probe${q' 'SMTP_PASSWORD=ab${}cd' 'SMTP_PASSWORD=ab${1x}cd'
-  'SMTP_PASSWORD=ab${cd}${' 'SMTP_PASSWORD=ab#${' 'export X=ab${' 'X: ab${')
+ENV_BAD=('SMTP_PASSWORD=zz9probe${q' 'SMTP_PASSWORD=zz9probe${}cd' 'SMTP_PASSWORD=zz9probe${1x}cd'
+  'SMTP_PASSWORD=zz9probe${cd}${' 'SMTP_PASSWORD=zz9probe#${' 'export X=zz9probe${' 'X: zz9probe${')
 # The line goes at the end of a fresh 0.33.0 install, the update runs in $2 mode;
 # leaves out=, rc=, msg= (the FEHLER line) and DLOG= for the assertions.
 run_env_case() {
@@ -743,18 +771,21 @@ done
 # Differential: for every line, update.sh --check fails iff `docker compose config
 # -q` fails in the same install dir. The extra lines are forms compose was probed
 # with: a space or '/' in the name, an open default, a double-quoted '${', a key
-# with blanks, a backslash (escapes in double quotes only), more '$$' runs. The
+# with blanks, a backslash (escapes in double quotes only), more '$$' runs, text
+# after a closing quote (compose reads it as the next assignment). The
 # DOCKER_HOST is a dead socket: compose judges the .env without a daemon.
 # shellcheck disable=SC2016
 ENV_MORE=('X=ab${a b}cd' 'X=ab${x/y/z}cd' 'X=ab${cd:-${ef}' 'X="ab${cd"' '  X = ab${ '
   'X=ab\${' 'X="ab\\${"' 'X= #${' 'X="ab${cd" # c'
   'X=ab$${cd' 'X=ab$$$${' 'X=ab${ZZ:-$DOMAIN}' 'X=ab$1cd' 'X=ab$' 'X="ab\${cd"' 'X="ab\"\${"'
-  'X=ab${ZZ:-$${}' "X='ab\${cd' # c" 'X="ab" #${')
+  'X=ab${ZZ:-$${}' "X='ab\${cd' # c" 'X="ab" #${'
+  'X="ab" Y=${' "X='ab' Y=\${" 'X="ab"Y=${' 'X="ab" Y=${DOMAIN}' 'X="ab" Y="a" Z=${')
 # A quoted value runs over several lines up to its closing quote. Its next lines
 # are part of it, not keys of their own: `zz9frag: ab${q` is literal text in single
 # quotes, a '${' of P in double quotes. A placeholder ends at the line end.
 ENV_MULTI=($'P=\'line1\nzz9frag: ab${q\n\'' $'P="line1\nzz9frag=ab${q\n"' $'P="line1\nzz9frag=${DOMAIN}\n"'
-  $'P=\'a\\\'b\nzz9frag: ab${q\n\'' $'P="a ${ZZ:-\nb}"' $'P=\'a\n  b\'\nQ=ab${q')
+  $'P=\'a\\\'b\nzz9frag: ab${q\n\'' $'P="a ${ZZ:-\nb}"' $'P=\'a\n  b\'\nQ=ab${q'
+  $'P=\'a\nb\' Q=ab${q' $'P="a\nb" Q=${DOMAIN}')
 n=0
 for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}"; do
   n=$((n + 1)); shown=${line//$'\n'/\\n}
@@ -763,7 +794,9 @@ for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}";
   out=$(run_update "$INST" --check 2>&1); ours=$?
   ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
     >/dev/null 2>"$INST.compose"; theirs=$?
-  [ "$((ours != 0))" = "$((theirs != 0))" ] \
+  # A refusal has to be the check's own, not --check failing for another reason.
+  { [ "$((ours != 0))" = "$((theirs != 0))" ] \
+      && { [ "$ours" -eq 0 ] || grep -q 'FEHLER: \.env: der Wert von' <<<"$out"; }; } \
     && ok "[$shown]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
     || bad "[$shown]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
   # A refusal names the key of the value's first line, and nothing of the lines
@@ -773,6 +806,53 @@ for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}";
       { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q 'der Wert von P enthaelt' <<<"$out"; }; } \
         && ok "[$shown]: the output holds nothing of the value's next lines" || bad "[$shown]: $out" ;;
   esac
+done
+
+# ── 33. a failing part of the .env migration rolls back like the re-pin (28) ──
+# Only the re-pin had a test: an init-secrets.sh that fails, or a key check whose
+# grep fails (exit 2), went unchecked, so dropping the `|| return 1` or the
+# `*) return 1` behind them left the suite green.
+SRC_IS="$WORK/src-0.37.0"; make_src 0.37.0 "$SRC_IS"
+printf '#!/usr/bin/env bash\necho "stub: init-secrets failed" >&2; exit 1\n' > "$SRC_IS/scripts/init-secrets.sh"
+make_release 0.37.0 "$SRC_IS" "$DL" "$API"
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+for how in init-secrets key-check; do
+  INST="$WORK/inst33-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  cp "$INST/.env" "$INST.env"; DLOG="$INST.docker"; : > "$DLOG"
+  if [ "$how" = init-secrets ]; then
+    out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.37.0 2>&1); rc=$?
+  else
+    out=$(AH_TEST_GREP_KEY_FAIL=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1); rc=$?
+  fi
+  echo "$out" | sed 's/^/    │ /'
+  { [ $rc -ne 0 ] && grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+    && ok "a failing $how exits with the rollback message" || bad "failing $how: rc=$rc"
+  { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
+    && ok "a failing $how restored .env and the runtime files" || bad "failing $how: not rolled back"
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+    && ok "a failing $how touched no container" || bad "failing $how: docker calls $(tr '\n' ';' < "$DLOG")"
+done
+
+# ── 34. a failed step of the snapshot restore makes the rollback incomplete ──
+# restore_snapshot counts each failed step (rm, find -delete, tar). Nothing tested
+# that count, so a dropped `|| rc=1` would report a rollback that left the new
+# ./repo in place. The release has no agent-repo asset, so the only `find -delete`
+# is the restore's.
+for how in pull health; do
+  INST="$WORK/inst34-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  mkdir -p "$INST/repo/dists"; printf 'repo-marker-0.33.0\n' > "$INST/repo/dists/Release"
+  if [ "$how" = pull ]; then
+    out=$(AH_TEST_FIND_FAIL=1 AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
+  else
+    out=$(AH_TEST_FIND_FAIL=1 AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
+  fi
+  echo "$out" | sed 's/^/    │ /'
+  msg=$(grep 'FEHLER: ' <<<"$out")
+  { [ $rc -ne 0 ] && grep -q 'stub: find failed' <<<"$out" \
+      && grep -q 'WARN: Snapshot-Restore fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$out" \
+      && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+    && ok "a failed find -delete in the $how rollback: the closing message says incomplete" \
+    || bad "failed find -delete ($how): rc=$rc $msg"
 done
 
 echo
