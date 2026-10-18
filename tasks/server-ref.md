@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-REF-Bündel — Task-Ledger
-Status: bereit · Branch: feature/server-ref · Review: am Ende
+Status: erledigt · Branch: feature/server-ref · Review: am Ende
 Spec: Roadmap R-0473, R-0474
 Heavy: linux-full — `docker-compose.test.yml` (Scheduler-Mount, den der Stack-Test und `run.sh integration`/`e2e` hochfahren) und der Server-Start (`_ensure_frps_config` räumt im Volume `frp-config` auf); der Stack-Job läuft auf PRs nicht, vor dem Merge `gh workflow run ci.yml --ref feature/server-ref`. Kein `scenario`: weder FRP-Tunnel-Datenpfad noch Provisionierung noch PKI geändert
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
