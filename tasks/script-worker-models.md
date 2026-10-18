@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hook-Worker, CLI, Alembic und Test-Bootstrap laden die Modelle aus app/model_registry.py — Task-Ledger
-Status: aktiv · Branch: feature/script-worker-models · Review: am Ende
+Status: bereit · Branch: feature/script-worker-models · Review: am Ende
 Spec: Roadmap R-0469
 Heavy: linux-full — T2 ändert `apps/server/app/cli.py` (Install-Bootstrap: `scripts/install.sh:288,290` ruft `python -m app.cli create-admin`/`mint-enroll-token` im Container) und `apps/server/alembic/env.py` (`apps/server/docker-entrypoint.sh:44` fährt `alembic upgrade head` bei jedem Containerstart). Beide laufen nur im Stack als eigener Prozess mit dem Import-Satz des Containers (`integration-stack` ruft `app.cli mint-enroll-token`, `scripts/tests/integration_stack_test.sh:54`); die Unit-Suite lädt sie in-process mit dem vollen Modellsatz von conftest und sieht genau diesen Fehlertyp nicht. Kein `scenario`: kein FRP-Datenpfad, kein Provisioning, keine Änderung an install/update-Skripten. Der Stack-Job läuft nicht auf PRs: vor dem Merge `gh workflow run ci.yml --ref feature/script-worker-models`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -39,8 +39,10 @@ Dedup-Key: bug:server:script_worker.py:model-registry
 HEAD: 5855a9b5
 Semantik: keine Stelle in docs/ — gesucht: `model_registry`, „alle Modelle“/„every model“/„all models“, `models.py`, `env.py`, `conftest` in docs/, README.md, DEVELOPMENT.md; `docs/developer/server.html:147` sagt nur „docker-entrypoint.sh führt vor dem Start alembic upgrade head aus“. Die Regel steht im Docstring `apps/server/app/model_registry.py:5-11` („A new models.py belongs here (tests/test_model_registry.py).“)
 
-### T3 — Test-Bootstrap lädt die Modelle aus app/model_registry.py  [ ]
+### T3 — Test-Bootstrap lädt die Modelle aus app/model_registry.py  [x]
 Komponente: server · Dateien: apps/server/tests/conftest.py, apps/server/tests/test_conftest_models.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @1b60dfbb 2026-10-18T09:46:25+02:00
+Review: am Ende (Branch-Review)
 Änderung: `conftest.py:26-37` (zehn `import app.modules.*.models` samt Kommentar) wird `from app import model_registry  # noqa: F401`, an derselben Stelle nach den `os.environ.setdefault`-Zeilen; `from app.modules.users.models import User` (`:41`) bleibt, die Fixtures brauchen `User`. `test_conftest_imports_every_model_module` (`test_conftest_models.py:28`) behält Namen und Stärke und folgt einer Stufe mehr: conftest importiert das Registry auf Modulebene, und das Registry importiert auf Modulebene `app.modules.<m>.models` für jede `*/models.py` (derselbe Glob ohne Mapper-Filter, dieselbe Untergrenze ≥ 10, weiter per `ast` statt über geladene Module). Verhaltensneutral: dieselben elf Module in derselben Reihenfolge vor `create_all`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_conftest_models.py tests/test_provisioning.py
 Doku: keine (intern)
