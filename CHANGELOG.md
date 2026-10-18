@@ -346,6 +346,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
+  `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
+  dem Node und ohne VMs, und der Check `proxmox_backup` las ihn als „Keine VMs/CTs gefunden“ = ok. Jetzt fehlt der Block,
+  `proxmox_backup` bleibt ohne Daten, und das Log nennt den Grund (etwa
+  `pvesh get /cluster/resources failed: timed out after 15s`, nie stderr). Eine leere VM-Liste bleibt „keine VMs“.
+  Doku: Agent-Entwicklerseite (DE+EN).
 - **Agent: SMART liest Platten hinter einem MegaRAID-Controller (R-0455):** Der Agent fragte jede Platte aus
   `smartctl --scan` ohne ihren Geraetetyp ab. Eine Platte hinter einem MegaRAID-Controller (Scan: `/dev/bus/N` mit
   Typ `megaraid,N`) kann smartctl so nicht erkennen: Sie kam ohne Modell und SMART-Status in den Report, und der

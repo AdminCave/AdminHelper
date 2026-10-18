@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent-Checks: Timeout-Text, SMART-Gerätetyp, Proxmox-VM-Aufruf — Task-Ledger
-Status: aktiv · Branch: feature/agent-check-fixes · Review: am Ende
+Status: bereit · Branch: feature/agent-check-fixes · Review: am Ende
 Spec: Roadmap R-0454, R-0455, R-0471
 Heavy: linux-full + windows — `apps/agent` (Monitoring-Collector: Dienste, SMART, Proxmox); `linux-full` läuft im Sammellauf (`/feature-build` §5). `windows` ist der CI-Job `agent-windows` (keine Windows-Box im Pool): der sc-Pfad (`scquery.go`, `runWithTimeout`/`runTimed`, `commandFailure`) hat kein Build-Tag, der neue Test aus T1 beendet dort einen echten Kindprozess über das Timeout (`TerminateProcess`, „exit status 1“) und läuft mit `go test ./...` nativ. Kein `scenario`: weder FRP noch PKI noch Install. Echte MegaRAID- oder PVE-Hardware hat der Pool nicht; T2 und T3 sind gegen Stubs, die smartmontools-Quelle (RELEASE_7_4) und die PVE-API-Doku belegt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -39,8 +39,10 @@ Dedup-Key: bug:agent:smart.go:query_device_type
 HEAD: 5855a9b5
 Semantik: docs/admin/monitoring.html:154 — „Der Agent erkennt automatisch SATA-, SAS- und NVMe-Festplatten (smartctl --scan).“ (EN :154 „The agent auto-detects SATA, SAS and NVMe disks (smartctl --scan).“); SAS-Platten an einem MegaRAID-Controller gehören dazu. docs/developer/agent.html:111 beschreibt den Aufruf „smartctl --all --json=c“ je Gerät, nennt den Gerätetyp aber nicht und erklärt das Fehlen von `-d` nicht zur Absicht
 
-### T3 — Agent Proxmox: scheitert der VM-Aufruf, fehlt der Proxmox-Block (R-0471)  [ ]
+### T3 — Agent Proxmox: scheitert der VM-Aufruf, fehlt der Proxmox-Block (R-0471)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go, docs/developer/agent.html, docs/en/developer/agent.html, CHANGELOG.md
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @21d305a1 2026-10-18T07:31:57+02:00
+Review: am Ende (Branch-Review)
 Änderung: `collectProxmox` (`plugins.go:220-287`) und `buildBackupIndex` (`:293-336`) rufen `pvesh` über eine Indirektion `pveshCLI` (`lookPath`, `run`) wie `zpoolCLI` (`:340-348`), `run` = `runWithTimeout("pvesh", args...)`. Scheitert `pvesh get /cluster/resources --type vm` (`:257-258`) oder ist seine Ausgabe kein JSON-Array, gibt `collectProxmox` `nil` zurück (kein `proxmox`-Block, `proxmox_backup` bleibt ohne Daten) und loggt mit `logger.Warnf` einen kurzen englischen Grund ohne stderr (`commandFailure("pvesh", err)` bzw. „output unreadable“), damit `adminhelper-agent diagnose` ihn zeigt. Heute bleibt nach `:281` ein Block `{"node":{…},"vms":null}`, den der Server als „Keine VMs/CTs gefunden“ = ok liest (`apps/monitoring/app/checkers/plugins.py:38-40`). Ein leeres Array `[]` bleibt „keine VMs“ (Block mit `node`); der Fall „nur der Node-Aufruf scheitert“ bleibt wie heute. Tests, zuerst rot, in `plugins_test.go` mit einem `stubPvesh` nach dem Muster von `stubZpool` (`:402`), Antwort je API-Pfad: neu `TestCollectProxmoxVMCallFails` — Node-Status gültig, `/storage` `[]`, `/cluster/resources` (a) scheitert (ExitError), (b) `context.DeadlineExceeded`, (c) „not json“ → je `collectProxmox() == nil`; Gegenprobe neu `TestCollectProxmoxNoVMs` — `/cluster/resources` `[]` → Block mit `node`, ohne VMs. Doku DE+EN: `docs/developer/agent.html:110` — scheitert der VM-Aufruf oder ist seine Ausgabe unlesbar, fehlt der Block; CHANGELOG `### Fixed` unter `[Unreleased]`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run 'CollectProxmox'
 Doku: docs/developer/agent.html + docs/en/developer/agent.html (`:110`) · CHANGELOG.md (Fixed)

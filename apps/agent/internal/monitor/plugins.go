@@ -216,9 +216,21 @@ type dockerInspect struct {
 	}
 }
 
+// pveshCLI indirects collectProxmox's pvesh lookup and calls so tests can drive every path without
+// pvesh (same reason as dockerCLI).
+var pveshCLI = struct {
+	lookPath func(file string) (string, error)
+	run      func(args ...string) ([]byte, error)
+}{exec.LookPath, runPvesh}
+
+// runPvesh runs one pvesh call under pluginTimeout (runWithTimeout).
+func runPvesh(args ...string) ([]byte, error) {
+	return runWithTimeout("pvesh", args...)
+}
+
 // collectProxmox collects Proxmox metrics (Linux with pvesh only).
 func collectProxmox() map[string]any {
-	if _, err := exec.LookPath("pvesh"); err != nil {
+	if _, err := pveshCLI.lookPath("pvesh"); err != nil {
 		return nil
 	}
 
@@ -230,8 +242,7 @@ func collectProxmox() map[string]any {
 		return nil
 	}
 	nodeName, _, _ := strings.Cut(host, ".") // FQDN -> short name (pvesh nodes are short)
-	nodeOut, err := runWithTimeout("pvesh", "get", "/nodes/"+nodeName+"/status",
-		"--output-format", "json")
+	nodeOut, err := pveshCLI.run("get", "/nodes/"+nodeName+"/status", "--output-format", "json")
 	if err == nil {
 		var nd map[string]any
 		if json.Unmarshal(nodeOut, &nd) == nil {
@@ -251,31 +262,37 @@ func collectProxmox() map[string]any {
 	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages))
 	backupIndex := buildBackupIndex(nodeName)
 
-	// VMs + LXC containers
+	// VMs + LXC containers. Only an array is a VM list (null decodes without error, to a nil slice):
+	// without one the block stays out, since the server reads a block without VMs as "no VMs" (ok).
+	// Logged, so `diagnose` shows the reason.
+	vmsOut, err := pveshCLI.run("get", "/cluster/resources", "--type", "vm", "--output-format", "json")
+	if err != nil {
+		logger.Warnf("pvesh get /cluster/resources failed: %s, proxmox left out of the report",
+			commandFailure("pvesh", err))
+		return nil
+	}
+	var vms []map[string]any
+	if json.Unmarshal(vmsOut, &vms) != nil || vms == nil {
+		logger.Warnf("pvesh get /cluster/resources output unreadable, proxmox left out of the report")
+		return nil
+	}
 	var vmList []map[string]any
-	vmsOut, err := runWithTimeout("pvesh", "get", "/cluster/resources", "--type", "vm",
-		"--output-format", "json")
-	if err == nil {
-		var vms []map[string]any
-		if json.Unmarshal(vmsOut, &vms) == nil {
-			for _, vm := range vms {
-				vmid := int(getFloat(vm, "vmid", 0))
-				if vmid == 0 {
-					continue
-				}
-				var lastBackup any
-				if ts, ok := backupIndex[vmid]; ok {
-					lastBackup = ts
-				}
-				vmList = append(vmList, map[string]any{
-					"vmid":           vmid,
-					"name":           vm["name"],
-					"status":         vm["status"],
-					"type":           vm["type"],
-					"last_backup_ts": lastBackup,
-				})
-			}
+	for _, vm := range vms {
+		vmid := int(getFloat(vm, "vmid", 0))
+		if vmid == 0 {
+			continue
 		}
+		var lastBackup any
+		if ts, ok := backupIndex[vmid]; ok {
+			lastBackup = ts
+		}
+		vmList = append(vmList, map[string]any{
+			"vmid":           vmid,
+			"name":           vm["name"],
+			"status":         vm["status"],
+			"type":           vm["type"],
+			"last_backup_ts": lastBackup,
+		})
 	}
 	result["vms"] = vmList
 
@@ -292,8 +309,7 @@ func collectProxmox() map[string]any {
 func buildBackupIndex(nodeName string) map[int]int64 {
 	index := make(map[int]int64)
 
-	storagesOut, err := runWithTimeout("pvesh", "get", "/storage",
-		"--output-format", "json")
+	storagesOut, err := pveshCLI.run("get", "/storage", "--output-format", "json")
 	if err != nil {
 		return index
 	}
@@ -310,8 +326,7 @@ func buildBackupIndex(nodeName string) map[int]int64 {
 		sid, _ := storage["storage"].(string)
 
 		// Fetch all backups of this storage at once (without the --vmid filter)
-		backupsOut, err := runWithTimeout("pvesh", "get",
-			"/nodes/"+nodeName+"/storage/"+sid+"/content",
+		backupsOut, err := pveshCLI.run("get", "/nodes/"+nodeName+"/storage/"+sid+"/content",
 			"--content", "backup", "--output-format", "json")
 		if err != nil {
 			continue
