@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Feste Reihenfolge der Tunnel in der frpc-Config — Task-Ledger
-Status: geplant · Branch: feature/provision-tunnels · Review: am Ende
+Status: aktiv · Branch: feature/provision-tunnels · Review: am Ende
 Spec: Roadmap R-0452
 Heavy: linux-full — der Server erzeugt die frpc-Config der Agents (`frp/config_generator.py`, über `generate_frpc_toml` in `config`, `config-hash`, dem Provisionierungs-Paket und `generate/frpc-toml`); läuft im Sammellauf. Kein `scenario --tunnel`: Schlüssel, Proxy-Tabellen und Antwortform bleiben gleich, nur die Reihenfolge der `[[proxies]]` wird fest; frp v0.69.1 ordnet Proxies beim Reload nach Name zu (`client/proxy/proxy_manager.go` `UpdateAll`: `lo.KeyBy` auf den Namen, unveränderte Proxies laufen weiter), und der Multibox-Host hat zu wenige Tunnel, um feste von zufälliger Reihenfolge zu unterscheiden
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
