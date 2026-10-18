@@ -346,6 +346,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: Hook-Skripte speichern Verbindungen mit `save_connections` (R-0469):** Jeder Hook, der
+  `save_connections` aufrief, endete mit `success: false` und dem Fehler „Foreign key associated with column
+  'connections.server_id' could not find table 'servers' …“ und schrieb nichts, etwa die Beispiele
+  `webhook_add_connection.py`, `webhook_http_import.py` und `schedule_hook_cleanup.py` unter `docs/examples/`. Der
+  Worker-Prozess der Hooks lud nur das Modell der Verbindungen; jetzt laedt er wie Web- und Scheduler-Prozess alle
+  Modelle aus `apps/server/app/model_registry.py`. Nach dem Update schreiben solche Hooks bei ihrem naechsten Lauf;
+  einen, der das nicht mehr soll, vorher deaktivieren oder loeschen.
 - **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
   eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
   scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:
