@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # extra_config-Schlüssel eines Tunnels ohne abschließenden Zeilenumbruch — Task-Ledger
-Status: bereit · Branch: feature/frp-bare-key · Review: am Ende
+Status: erledigt · Branch: feature/frp-bare-key · Review: am Ende
 Spec: Roadmap R-0468
 Heavy: linux-full — Boundary-Validierung von `POST`/`PUT /api/frp/tunnels` im frp-Modul (`frp/schemas.py`), deren Werte in die frpc-Config der Agents gehen; kein Datenpfad, kein Cross-Host, keine Antwortform geändert; läuft im Sammellauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
