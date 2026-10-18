@@ -2,62 +2,60 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
+# Every ORM model before the first query (the lifespan's), see app/model_registry.py.
+# Not `import app.model_registry`: that would bind `app`, the name of the FastAPI app.
+from app import model_registry  # noqa: F401
 from app.core.auth import hash_api_key, hash_password
-from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
+from app.core.config import (
+    ADMIN_PASSWORD,
+    BOOTSTRAP_SETUP_FILE,
+    BOOTSTRAP_TOKEN_FILE,
+    FRP_BIND_PORT,
+)
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.core.openapi import install_exact_int_bounds
-from app.modules.ansible.models import Playbook  # noqa: F401
 from app.modules.ansible.router import router as ansible_router
-from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.api_keys.router import router as api_keys_router
-from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.audit.router import router as audit_router
-from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.connections.router import router as connections_router
 from app.modules.enrollment.router import router as enrollment_router
-from app.modules.frp.models import FrpServerConfig, FrpTunnel  # noqa: F401
+from app.modules.frp.config_generator import generate_frps_toml
+from app.modules.frp.extra_config import STRING_FIELDS, rejected_keys, value_allowed
+from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.router import router as frp_router
-from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.hooks.router import router as hooks_router
 from app.modules.hooks.router import trigger_router as hooks_trigger_router
 from app.modules.monitoring_proxy.router import router as monitoring_proxy_router
-from app.modules.notifications.models import (  # noqa: F401
-    Notification,
-    NotificationOutbox,
-    NotificationSubscription,
-)
+from app.modules.notifications.models import Notification
 from app.modules.notifications.router import feed_router as notifications_feed_router
 from app.modules.notifications.router import internal_router as notifications_internal_router
 from app.modules.notifications.router import prefs_router as notifications_prefs_router
-from app.modules.notifications.service import default_admin_subscription
+from app.modules.notifications.schemas import IncomingEvent
+from app.modules.notifications.service import default_admin_subscription, notify_users
 from app.modules.notifications.stream import stream_router as notifications_stream_router
-from app.modules.provisioning.models import ProvisionToken  # noqa: F401
 from app.modules.provisioning.router import router as provisioning_router
-from app.modules.servers.models import Server  # noqa: F401
 from app.modules.servers.router import internal_router as servers_internal_router
 from app.modules.servers.router import router as servers_router
 
 # Import routers
 from app.modules.users.auth_router import router as auth_router
-
-# Import models so Base.metadata knows about them (even though schema creation
-# is now handled by Alembic — important for ORM queries in the lifespan).
-from app.modules.users.models import (
-    User,  # noqa: F401
-    user_server_assoc,  # noqa: F401
-)
+from app.modules.users.models import User
 from app.modules.users.router import router as users_router
 
 logger = logging.getLogger(__name__)
@@ -166,18 +164,169 @@ def _emit_bootstrap_token():
     logger.warning(bar)
 
 
+# The fields _report_rejected_fields names, as the web interface labels them.
+_FRPS_FIELD_LABELS = {
+    "subdomain_host": "Subdomain Host",
+    "dashboard_user": "Dashboard User",
+    "dashboard_password": "Dashboard Passwort",
+    "auth_token": "Auth Token",
+    "dashboard_port": "Dashboard Port",
+}
+# The rules of check_config (apps/frps/frps-supervisor.sh) _report_rejected_fields names.
+_FRPS_RULE_CHARACTERS = "ohne Anführungszeichen, Backslash, geschweifte Klammern und Steuerzeichen"
+_FRPS_RULE_TOKEN = "mindestens 16 Zeichen"
+_FRPS_RULE_DASHBOARD_PORT = "weder 443 noch der Bind Port noch FRP_BIND_PORT"
+
+
+def _tell_admins(db, event_type, title, body, source_id):
+    admins = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id).all()
+    notify_users(
+        db,
+        admins,
+        IncomingEvent(
+            event_type=event_type,
+            severity="warning",
+            category="lifecycle",
+            title=title,
+            body=body,
+            source_type="frp_config",
+            source_id=source_id,
+        ),
+    )
+
+
+def _remove_rejected_extra_config(db, config):
+    """Remove the extra_config entries frps is not started with. Logs the keys, never the
+    values, and tells the admins; a second start finds nothing left to remove."""
+    extra = json.loads(config.extra_config or "null") or {}
+    removed = rejected_keys(extra)
+    if not removed:
+        return
+    kept = {key: value for key, value in extra.items() if key not in removed}
+    config.extra_config = json.dumps(kept) if kept else None
+    logger.warning(
+        "FRP server config %s: extra_config keys removed, frps is not started with them: %s",
+        config.id,
+        removed,
+    )
+    _tell_admins(
+        db,
+        "lifecycle.frp.config.extra_config_removed",
+        "Zusätzliche FRP-Einstellungen entfernt",
+        "Der FRP-Server übernimmt diese zusätzlichen Einstellungen (extra_config) nicht; sie "
+        "wurden beim Start aus der FRP-Server-Konfiguration entfernt: " + ", ".join(removed) + ".",
+        config.id,
+    )
+
+
+def _report_rejected_fields(db, config):
+    """Name the fields frps.toml carries with a value frps is not started with: a string
+    field with a character check_config refuses, an auth token under 16 bytes and a
+    dashboard port that is 443, the bind port or FRP_BIND_PORT. A token or password has no
+    sensible replacement and a port no obvious one, so the row stays as it is: the field
+    names (never the values) are logged at every start, and the admins are told once, each
+    field with its rule, for as long as the same fields stay so."""
+    written = {}
+    for line in generate_frps_toml(config).split("\n"):
+        if line == "[transport.tls]":
+            break
+        key, _, value = line.partition(" = ")
+        written[key] = value
+    rules = {
+        field: _FRPS_RULE_CHARACTERS
+        for key, field in STRING_FIELDS.items()
+        if key in written and not value_allowed(getattr(config, field))
+    }
+    # check_config runs under LC_ALL=C, so it counts the token in bytes.
+    if "auth_token" not in rules and len(config.auth_token.encode()) < 16:
+        rules["auth_token"] = _FRPS_RULE_TOKEN
+    if "webServer.port" in written and int(written["webServer.port"]) in (
+        443,
+        int(written["bindPort"]),
+        FRP_BIND_PORT,
+    ):
+        rules["dashboard_port"] = _FRPS_RULE_DASHBOARD_PORT
+    fields = list(rules)
+    if not fields:
+        return
+    logger.warning(
+        "FRP server config %s: frps is not started with the values of these fields, they "
+        "need to be set anew: %s",
+        config.id,
+        fields,
+    )
+    source_id = f"{config.id}:{','.join(fields)}"
+    told = (
+        db.query(Notification.id)
+        .filter(Notification.source_type == "frp_config", Notification.source_id == source_id)
+        .first()
+    )
+    if told:
+        return
+    _tell_admins(
+        db,
+        "lifecycle.frp.config.field_rejected",
+        "FRP-Server-Konfiguration: Felder neu setzen",
+        "Der FRP-Server übernimmt die Konfiguration so nicht. Bitte neu setzen: "
+        + ", ".join(f"{_FRPS_FIELD_LABELS[field]} ({rule})" for field, rule in rules.items())
+        + ".",
+        source_id,
+    )
+
+
+def _check_frps_server_configs(db):
+    """Bring the stored FRP server configs in line with what the frps supervisor starts frps
+    with (frp/extra_config.py, R-0411): a row stored before those checks would otherwise
+    leave frps without a config after an update. Best effort, like _ensure_frps_config, and
+    each check on its own: a failed one is logged with the type of the error only (a
+    database error quotes the connection, password included)."""
+    try:
+        ids = [config_id for (config_id,) in db.query(FrpServerConfig.id).all()]
+    except Exception as exc:
+        db.rollback()
+        logger.warning("FRP server configs not checked (%s)", type(exc).__name__)
+        return
+    for config_id in ids:
+        for check in (_remove_rejected_extra_config, _report_rejected_fields):
+            try:
+                # Every uvicorn worker runs this at its start: the lock, held until the
+                # check commits, lets one of them act on the row and tell the admins, and
+                # the others then find it done.
+                config = (
+                    db.query(FrpServerConfig)
+                    .filter(FrpServerConfig.id == config_id)
+                    .with_for_update()
+                    .populate_existing()
+                    .one()
+                )
+                check(db, config)
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                logger.warning(
+                    "FRP server config %s: %s failed (%s)",
+                    config_id,
+                    check.__name__,
+                    type(exc).__name__,
+                )
+
+
 def _ensure_frps_config(db):
-    """Write frps.toml from the DB config on startup. The frps TLS material now
-    comes from the ca-issuer under the tunnel intermediate (A7) — the server no
-    longer runs its own FRP CA (D6/F3): no CA generation, no cert minting, no
-    publish. Only the non-secret frps.toml (ports, auth token, TLS file paths
-    pointing at /etc/frp-pki) is regenerated here."""
+    """Reconcile frps.toml with the DB on startup, in both directions: the DB
+    config is written, and without one a frps.toml still in the shared volume is
+    removed (the DB is the source of truth; a removal after a delete is only best
+    effort). The frps TLS material now comes from the ca-issuer under the tunnel
+    intermediate (A7) — the server no longer runs its own FRP CA (D6/F3): no CA
+    generation, no cert minting, no publish. Only the non-secret frps.toml
+    (ports, auth token, TLS file paths pointing at /etc/frp-pki) is regenerated
+    here."""
     from app.modules.frp._helpers import get_frp_config
-    from app.modules.frp.docker_manager import write_frps_config
+    from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
 
     try:
         config = get_frp_config(db)
         if not config:
+            remove_frps_config()
             return
         write_frps_config(config)
         logger.info("frps.toml neu geschrieben")
@@ -196,6 +345,7 @@ def _run_startup_tasks():
     db = SessionLocal()
     try:
         _ensure_admin(db)
+        _check_frps_server_configs(db)
         _ensure_frps_config(db)
     finally:
         db.close()
@@ -233,6 +383,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 install_exact_int_bounds(app)
+
+
+async def _validation_error(request, exc):
+    """FastAPI's 422. The input it echoes may hold a lone surrogate (JSON spells one as
+    \\ud800), which has no UTF-8 form; that answer escapes every non-ASCII character, as
+    JSON allows."""
+    try:
+        return await request_validation_exception_handler(request, exc)
+    except UnicodeEncodeError:
+        content = json.dumps(
+            {"detail": jsonable_encoder(exc.errors())}, allow_nan=False, separators=(",", ":")
+        )
+        return Response(content, status_code=422, media_type="application/json")
+
+
+app.add_exception_handler(RequestValidationError, _validation_error)
 
 # Middleware — the one added last runs first. IPFilterMiddleware stays outside
 # the NUL guard, so a refused IP gets its 403 whatever its path carries.

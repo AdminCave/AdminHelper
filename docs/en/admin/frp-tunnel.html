@@ -41,7 +41,7 @@
           <h2>Architecture</h2>
           <p>Three components:</p>
           <ul>
-            <li><strong>frps</strong> – runs in the server stack, exposes port 7000 (control channel) and 7443 (HTTPS tunnels).</li>
+            <li><strong>frps</strong> – runs in the server stack from its own image (<code>ghcr.io/admincave/adminhelper/frps</code>, source <code>apps/frps/</code>) under a supervisor and exposes port 7000 (control channel) and 7443 (HTTPS tunnels); it runs on the FRP server configuration from the web interface. The supervisor takes over changes to the configuration and to the frps certificates by itself, checks the configuration before every start and starts frps as a user of its own (details under <a href="./operations.html#frps-supervisor">Operations → frps supervisor</a>).</li>
             <li><strong>frpc</strong> – runs on every agent host, connects to <code>frps</code> and registers services.</li>
             <li><strong>PKI</strong> – the <code>ca-issuer</code>'s internal <code>tunnel</code> intermediate signs the frps server cert and the agent tunnel certs; every <code>frpc</code> authenticates via mTLS (as of A7 a single trust root instead of a frps-run CA).</li>
           </ul>
@@ -64,14 +64,24 @@
 
           <h2>Rotating the FRP <code>auth.token</code></h2>
           <p><strong>Caution — breaking change:</strong> the global <code>auth.token</code> (in the FRP server config) flows identically into <code>frps.toml</code>, every agent <code>frpc.toml</code> and every desktop <code>visitor.toml</code>. In token mode frps knows exactly <em>one</em> token; there is no overlap/dual-token mechanism. A rotation therefore <strong>breaks all</strong> agents and visitors at once, until each has re-synced / re-downloaded its bundle. The actual tunnel security is enforced mTLS (<code>transport.tls.force</code>) plus the STCP <code>secretKey</code> anyway — the token is only the weaker second factor.</p>
-          <p>So rotate only deliberately, in a maintenance window, in this mandatory sequence:</p>
+          <p>So rotate only deliberately, in a maintenance window:</p>
           <ol>
-            <li>Set the new <code>auth.token</code> in the FRP server config (<code>PUT /api/frp/server-config/{id}</code>).</li>
-            <li><strong>Restart frps manually</strong> (e.g. <code>docker compose restart frps</code>): the server writes the new <code>frps.toml</code> but does not reload frps itself — until the restart frps keeps running with the <em>old</em> token.</li>
-            <li>Let all agents re-sync (the next sync pulls the new <code>frpc.toml</code>). Signed-in desktop clients need no action: they fetch the new token themselves within 60&nbsp;s and restart their frpc for it; the tunnel drops briefly, and open sessions over it end. Until frps knows the new token, frpc keeps trying.</li>
+            <li>Set the new <code>auth.token</code> in the FRP server config (web interface, <em>FRP</em> page → Edit, or <code>PUT /api/frp/server-config/{id}</code>). An empty or missing <code>auth_token</code> in the <code>PUT</code> leaves the stored token unchanged; a new one needs at least 16 characters. The form asks before saving and points out that agent tunnels take up to ~5 minutes.</li>
+            <li>frps takes the new configuration over by itself after a few seconds (about 5–10&nbsp;s) and restarts; no manual restart is needed. All tunnels drop briefly. Admins and users with tunnel access get a bell notification that the FRP server restarted, with a new token also the hint about agent tunnels.</li>
+            <li>The agents pull the new <code>frpc.toml</code> on their next run (about every 5 minutes) and restart frpc with it; their tunnels stay down until then, so up to ~5 minutes. Signed-in desktop clients need no action: they fetch the new token themselves within 60&nbsp;s and restart their frpc for it; the tunnel drops briefly, and open sessions over it end. Until frps knows the new token, frpc keeps trying.</li>
           </ol>
+          <p><strong>Rejected configuration:</strong> if the new configuration fails the supervisor's check, frps does not take it over and keeps running on the last valid one, i.e. with the previous token. The <em>frps state</em> block on the FRP page then shows "Running on the last valid configuration" with the reason, and admins get a bell notification that the new FRP configuration was not taken over. Agents and desktops that already have the new token reconnect only once frps has taken over a valid configuration with that token. Reasons and events are explained under <a href="./operations.html#frps-supervisor">Operations → frps supervisor</a>.</p>
 
-          <p><strong>Applies to every FRP server-config change:</strong> not only token rotation — changed dashboard credentials, ports or <code>vhost</code> settings also write the new <code>frps.toml</code> immediately but only take effect after <code>docker compose restart frps</code> (frps has no config hot-reload, and the server container has no docker socket to restart it). The server logs a warning on every runtime change.</p>
+          <p><strong>Applies to every change to <code>frps.toml</code> and to the frps certificates:</strong> not only token rotation — changed ports, dashboard credentials, <code>vhost</code> settings, <code>max_ports_per_client</code> or <code>extra_config</code> and an frps certificate the <code>ca-issuer</code> renewed are taken over by frps the same way: a short restart, all tunnels down for a few seconds, a notification to admins and users with tunnel access. Name and server address are not in <code>frps.toml</code>; changing them, or saving the configuration unchanged, does not restart frps. If the FRP server configuration is deleted, frps stops (admins get a notification that the FRP server stopped).</p>
+
+          <h2 id="server-config">Editing the FRP server configuration</h2>
+          <p>You maintain the FRP server configuration in the web interface on the <em>FRP</em> page. When editing:</p>
+          <ul>
+            <li><strong>Question before the restart:</strong> if saving changes anything that ends up in <code>frps.toml</code> (everything but name and server address), or a new token or dashboard password has been typed in, the form asks first: "Saving restarts the FRP server; all tunnels are disconnected for a few seconds." With a new token it adds that agent tunnels take up to ~5 minutes to reconnect. <em>Cancel</em> or Escape saves nothing.</li>
+            <li><strong>Port warning:</strong> if the <em>Bind port</em> differs from the port the stack publishes for frps (<code>FRP_BIND_PORT</code>, default 7000), a warning shows at the field: with a different bind port, frps cannot be reached from outside. Saving stays possible.</li>
+            <li><strong>Bounds:</strong> <em>Bind port</em>, <em>vHost HTTPS port</em> and <em>Dashboard port</em> take 1–65535 only, <em>Max ports/client</em> (<code>max_ports_per_client</code>) only values from 0 (0 or empty: default 16); the server rejects other values with <code>422</code>, as well as an explicit <code>"bind_port": null</code> in the <code>PUT</code>. A value outside these bounds that is already stored stays in the database; the generator replaces it when it writes the configuration (bind port 7000, vHost and dashboard port left out, <code>max_ports_per_client</code> 16) and logs a warning in the server log.</li>
+            <li><strong>Dashboard port:</strong> not 443, not the bind port and not <code>FRP_BIND_PORT</code>; frps does not take such a configuration over (reason <code>verify_failed</code>).</li>
+          </ul>
 
           <h2>Provision Token</h2>
           <p>Every new agent gets a one-time token when it is registered. Token properties:</p>
@@ -106,10 +116,12 @@
 
           <h2>Status Dashboard</h2>
           <p>The tunnel status view queries the frps dashboard. By default the server reaches it via the Compose service name (<code>http://frps:PORT</code>, with a <code>127.0.0.1</code> fallback). If frps runs in a different topology (its own host), set the base URL via <code>FRPS_DASHBOARD_URL</code> in <code>.env</code> instead of editing the code.</p>
+          <p>The FRP page also shows the <strong>frps state</strong> block with the supervisor's state, reason, since when and its last event (source <code>GET /api/frp/supervisor-status</code>, admins only). It refreshes when the page opens and every 30&nbsp;s while the tab is visible. "Running on the last valid configuration" means a newer configuration was not taken over; the reason is shown next to it. If the supervisor has not responded for more than 60&nbsp;s, the block says the details may be out of date. The codes are explained under <a href="./operations.html#frps-supervisor">Operations → frps supervisor</a>.</p>
 
           <h2>Troubleshooting</h2>
           <ul>
             <li><strong>Agent does not connect</strong>: check the cert expiry (<code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>), server reachability via <code>nc -vz srm.example.com 7000</code>.</li>
+            <li><strong>frps does not answer on port 7000</strong>: check the <em>frps state</em> block on the FRP page. With "Waiting, frps is not running" the reason is shown next to it; the codes are explained under <a href="./operations.html#frps-supervisor">Operations → frps supervisor</a>. Log: <code>docker compose logs frps</code> (lines with <code>[frps-supervisor]</code>).</li>
             <li><strong>"Tunnel not found"</strong>: is the tunnel enabled in the desktop client (<em>Infrastructure → Server → Tunnel tab</em>)? FRP logs: <code>docker compose logs -f frps</code>.</li>
             <li><strong>STCP does not work</strong>: visitor port already taken? Check the desktop client log.</li>
             <li><strong>Desktop shows "Tunnel disconnected"</strong>: the desktop reconnects by itself and tries again at least every 60&nbsp;s; the <em>Reconnect</em> button next to the indicator at the bottom of the expanded sidebar does it right away.</li>

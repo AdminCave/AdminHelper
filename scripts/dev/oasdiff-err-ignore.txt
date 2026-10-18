@@ -1,0 +1,13 @@
+2026-10-17 R-0411 tighter port bounds: POST /api/frp/server-config the `bind_port` request property's max was decreased to `65535.00`
+2026-10-17 R-0411 tighter port bounds: POST /api/frp/server-config the `bind_port` request property's min was increased to `1.00`
+2026-10-17 R-0411 tighter port bounds: POST /api/frp/server-config the `dashboard_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
+2026-10-17 R-0411 tighter port bounds: POST /api/frp/server-config the `dashboard_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
+2026-10-17 R-0411 tighter port bounds: POST /api/frp/server-config the `vhost_https_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
+2026-10-17 R-0411 tighter port bounds: POST /api/frp/server-config the `vhost_https_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
+2026-10-17 R-0411 tighter port bounds: POST /api/frp/server-config the `max_ports_per_client/anyOf[subschema #1]/` request property's min was increased to `0.00`
+2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} request property `bind_port` list-of-types was narrowed by removing types `null` from media type `application/json`
+2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `dashboard_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
+2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `dashboard_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
+2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `vhost_https_port/anyOf[subschema #1]/` request property's max was decreased to `65535.00`
+2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `vhost_https_port/anyOf[subschema #1]/` request property's min was increased to `1.00`
+2026-10-17 R-0411 tighter port bounds: PUT /api/frp/server-config/{config_id} the `max_ports_per_client/anyOf[subschema #1]/` request property's min was increased to `0.00`

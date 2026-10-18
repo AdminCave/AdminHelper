@@ -803,6 +803,10 @@ capstone_scan() {  # capstone_scan <logfile>
       if (h ~ /cross-distro|rpm/)          return "rpm"
       if (h ~ /desktop|gui/)               return "desktop"
       if (h ~ /provision each agent/)      return "agent"
+      # A role of its own, not agent and not other: an agent abort does not
+      # excuse a Docker failure on the box that did provision, and an abort
+      # inside the stage does not excuse the ingest assertion (other) after it.
+      if (h ~ /^== docker /)               return "docker"
       if (h ~ /server|stack/)              return "server"
       return "other"
     }
@@ -816,6 +820,9 @@ capstone_scan() {  # capstone_scan <logfile>
       # header of its own (the GUI header sits in the success branch); it
       # belongs to that box, not to the section it happens to fall in.
       if (t ~ /^strict: .*\(no desktop box\)/)  return "desktop"
+      # The Docker stage prints its header either way, but without a
+      # provisioned agent box its strict follow-up belongs to that box.
+      if (t ~ /^strict: .*\(no provisioned agent box\)/)  return "agent"
       if (t ~ /^server lease/)        return "server"
       if (t ~ /^agent[0-9]* lease/)   return "agent"
       if (t ~ /^moncheck-box lease/)  return "moncheck"

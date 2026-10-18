@@ -214,11 +214,8 @@ async function reconcileOnce(gen: number): Promise<void> {
   if (refresh.status.running && !restartDue() && (fresh || startedAt === null)) {
     startedAt = Date.now();
   }
-  if (refresh.outcome === 'stopped') {
-    endRestarts(); // no tunnel wants frpc: nothing left to restart
-    _state.set({ ui: 'idle', status: refresh.status, mappings: [] });
-    return;
-  }
+  const stopped = refresh.outcome === 'stopped';
+  if (stopped) endRestarts(); // no STCP tunnel wants frpc: nothing left to restart
   let mappings: TunnelMapping[];
   try {
     mappings = await bridge.fetchTunnels(session.serverUrl, session.token);
@@ -226,6 +223,11 @@ async function reconcileOnce(gen: number): Promise<void> {
     mappings = get(_state).mappings;
   }
   if (gen !== activationGen) return;
+  if (stopped) {
+    // An HTTPS tunnel runs without frpc: the connect flow resolves it through the mappings.
+    _state.set({ ui: 'idle', status: refresh.status, mappings });
+    return;
+  }
   if (restartDue()) {
     // Its status may predate an end of frpc: the run due next brings the current one, and
     // until then "disconnected" stays.

@@ -7,7 +7,8 @@ SMART disk health checker.
 
 Evaluates SMART data from the agent report (push-only).
 Supports ATA (HDD + SSD) and NVMe protocols.
-On VMs without smartctl the agent provides no smart key — that's OK, not an error.
+Without disks the agent sends smart_absent with the reason instead of a smart key
+— that's OK, not an error; the message names the reason.
 """
 
 from __future__ import annotations
@@ -40,6 +41,15 @@ def _worse(a: str, b: str) -> str:
     return a if _SEVERITY_RANK[a] >= _SEVERITY_RANK[b] else b
 
 
+# smart_absent.reason codes of the agent (R-0419). scan_failed also covers found
+# devices of which none gave readable SMART data, hence "query", not "scan".
+_ABSENT_MESSAGES = {
+    "not_installed": "No SMART data: smartctl is not installed",
+    "scan_failed": "No SMART data: the SMART query failed",
+    "no_devices": "No SMART data: no SMART-capable devices found",
+}
+
+
 class SmartHealthChecker:
     """Checks the SMART health of all disks.
 
@@ -69,7 +79,15 @@ class SmartHealthChecker:
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         smart = report.get("smart")
         if not smart:
-            # VM or smartctl not installed — not an error
+            # No disk — not an error; smart_absent says why.
+            absent = report.get("smart_absent")
+            reason = absent.get("reason") if isinstance(absent, dict) else None
+            # The str check keeps an unhashable reason (a list) out of the dict lookup.
+            if isinstance(reason, str) and reason in _ABSENT_MESSAGES:
+                # Details, not None: the push path keeps stored details of a result
+                # without any, and the desktop would go on showing the old disks.
+                return "ok", _ABSENT_MESSAGES[reason], {"_details": {"absent": reason}}
+            # An agent before R-0419 or an unknown reason.
             return "ok", "Keine SMART-Daten (VM oder smartctl nicht verfuegbar)", None
 
         ignore = set(config.get("ignore_devices", []))

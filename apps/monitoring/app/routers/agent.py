@@ -25,6 +25,7 @@ from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, safe_metric_part, victoria
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
+from app.template_suggestions import store_host_facts
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def _num(v):
 _MAX_REPORT_ITEMS = 500
 
 # Push checkers whose evaluate() takes the check's previous _details as a third argument.
-_PREV_DETAILS_TYPES = frozenset({"agent_resources", "service_process"})
+_PREV_DETAILS_TYPES = frozenset({"agent_resources", "service_process", "docker_health"})
 
 
 def _capped(value: object) -> list:
@@ -110,6 +111,13 @@ def agent_report(
                 }
             ]
         )
+
+    # No host block (an agent before R-0421) or not an object: stored facts stay.
+    # Before the check loop: on failure store_host_facts rolls back the request's
+    # session, which would drop check states not yet committed.
+    host = report.get("host")
+    if isinstance(host, dict):
+        store_host_facts(db, server_id, host)
 
     ts = int(time.time())
     base_tags = {"server_id": server_id}
@@ -215,9 +223,10 @@ def agent_report(
 
             # Lock the state row BEFORE evaluating: agent_resources needs the
             # previous _details for per-metric hysteresis (T6), service_process
-            # for the list mode on a push without the inventory, and the lock has
-            # to cover the read-modify-write anyway — two near-simultaneous
-            # pushes must not clobber fail_count or double-alert (4.46).
+            # for the list mode on a push without the inventory, docker_health for
+            # the restart counter per container, and the lock has to cover the
+            # read-modify-write anyway — two near-simultaneous pushes must not
+            # clobber fail_count or double-alert (4.46).
             # Evaluate is pure CPU, so holding the lock across it is harmless.
             # with_for_update is a no-op on sqlite (tests).
             state = (

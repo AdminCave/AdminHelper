@@ -565,8 +565,8 @@
           },
           "bind_port": {
             "default": 7000,
-            "maximum": 2147483647.0,
-            "minimum": -2147483648.0,
+            "maximum": 65535.0,
+            "minimum": 1.0,
             "title": "Bind Port",
             "type": "integer"
           },
@@ -584,8 +584,8 @@
           "dashboard_port": {
             "anyOf": [
               {
-                "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -621,7 +621,7 @@
             "anyOf": [
               {
                 "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -652,8 +652,8 @@
           "vhost_https_port": {
             "anyOf": [
               {
-                "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -1004,17 +1004,10 @@
             "title": "Auth Token"
           },
           "bind_port": {
-            "anyOf": [
-              {
-                "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bind Port"
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Bind Port",
+            "type": "integer"
           },
           "dashboard_password": {
             "anyOf": [
@@ -1030,8 +1023,8 @@
           "dashboard_port": {
             "anyOf": [
               {
-                "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -1067,7 +1060,7 @@
             "anyOf": [
               {
                 "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1112,8 +1105,8 @@
           "vhost_https_port": {
             "anyOf": [
               {
-                "maximum": 2147483647.0,
-                "minimum": -2147483648.0,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -1222,6 +1215,79 @@
           "tunnel"
         ],
         "title": "FrpStatusProxy",
+        "type": "object"
+      },
+      "FrpSupervisorStatus": {
+        "properties": {
+          "lastEvent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastevent"
+          },
+          "lastEventAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasteventat"
+          },
+          "publishedBindPort": {
+            "title": "Publishedbindport",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "reason",
+          "since",
+          "stale",
+          "lastEvent",
+          "lastEventAt",
+          "publishedBindPort"
+        ],
+        "title": "FrpSupervisorStatus",
         "type": "object"
       },
       "FrpTunnelCreate": {
@@ -4693,6 +4759,33 @@
           }
         ],
         "summary": "Frps Status",
+        "tags": [
+          "frp"
+        ]
+      }
+    },
+    "/api/frp/supervisor-status": {
+      "get": {
+        "description": "State of the frps supervisor from its status file, and the host port compose\npublishes for frps (FRP_BIND_PORT).",
+        "operationId": "frps_supervisor_status_api_frp_supervisor_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrpSupervisorStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Frps Supervisor Status",
         "tags": [
           "frp"
         ]

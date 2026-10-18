@@ -228,6 +228,9 @@ export interface MonitorCheckConfig {
   capacity_warn?: number;
   capacity_crit?: number;
 
+  // zfs_health and docker_health; absent means true.
+  alert_on_unavailable?: boolean;
+
   // docker_health
   ignore_containers?: string[];
   check_restarts?: boolean;
@@ -293,11 +296,21 @@ export interface MonitorServiceDetails {
 }
 
 export interface MonitorContainerDetails {
+  // Details written before R-0419 carry neither. available false: the agent could
+  // not read docker (error is the code), and containers is empty.
+  available?: boolean;
+  error?: string | null;
   containers?: {
+    // id, reason, exit_code and restart_count also come with R-0419.
+    id?: string | null;
     name: string;
     image?: string;
     state: string;
-    category: 'ok' | 'warning' | 'critical';
+    // stopped: ended on purpose; the server counts it as ok.
+    category: 'ok' | 'warning' | 'critical' | 'stopped';
+    reason?: string | null;
+    exit_code?: number | null;
+    restart_count?: number | null;
   }[];
 }
 
@@ -312,6 +325,10 @@ export interface MonitorBackupDetails {
 }
 
 export interface MonitorZfsDetails {
+  // Details written before R-0419 carry neither. available false: the agent could
+  // not read zpool (error is the code), and pools is empty.
+  available?: boolean;
+  error?: string | null;
   pools?: {
     name: string;
     health: string;

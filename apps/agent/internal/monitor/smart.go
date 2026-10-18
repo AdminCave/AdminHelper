@@ -5,7 +5,6 @@
 package monitor
 
 import (
-	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -45,20 +44,28 @@ type SmartDisk struct {
 	CriticalWarning   int `json:"critical_warning"`
 }
 
-// collectSmart collects SMART data of all detected devices via smartctl.
-// Returns nil if smartctl is not installed (e.g. on VMs).
-func collectSmart() []SmartDisk {
-	smartctl, err := exec.LookPath("smartctl")
+// smartctlCLI indirects collectSmart's smartctl lookup and calls so tests can drive every path without
+// smartctl (same reason as dockerCLI).
+var smartctlCLI = struct {
+	lookPath func(file string) (string, error)
+	run      func(timeout time.Duration, name string, args ...string) ([]byte, error)
+}{exec.LookPath, runTimed}
+
+// collectSmart collects SMART data of all detected devices via smartctl. Without a single disk it
+// returns why instead, which the report sends as smart_absent, so a host without smartctl does not
+// pass for one without disks: not_installed (no smartctl, e.g. on VMs), scan_failed (the scan failed,
+// hung or printed no JSON, or no device it found gave readable SMART data) or no_devices (the scan
+// found none).
+func collectSmart() ([]SmartDisk, string) {
+	smartctl, err := smartctlCLI.lookPath("smartctl")
 	if err != nil {
-		return nil
+		return nil, "not_installed"
 	}
 
 	// Scan all SMART-capable devices (with a timeout in case the controller hangs)
-	ctxScan, cancelScan := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancelScan()
-	scanOut, err := exec.CommandContext(ctxScan, smartctl, "--scan", "--json=c").Output()
+	scanOut, err := smartctlCLI.run(15*time.Second, smartctl, "--scan", "--json=c")
 	if err != nil {
-		return nil
+		return nil, "scan_failed"
 	}
 
 	var scanResult struct {
@@ -68,8 +75,11 @@ func collectSmart() []SmartDisk {
 			Protocol string `json:"protocol"`
 		} `json:"devices"`
 	}
-	if json.Unmarshal(scanOut, &scanResult) != nil || len(scanResult.Devices) == 0 {
-		return nil
+	if json.Unmarshal(scanOut, &scanResult) != nil {
+		return nil, "scan_failed"
+	}
+	if len(scanResult.Devices) == 0 {
+		return nil, "no_devices"
 	}
 
 	// Query devices in parallel: querySmartDevice has a 30s per-device timeout, so a serial loop
@@ -94,16 +104,15 @@ func collectSmart() []SmartDisk {
 	wg.Wait()
 
 	if len(disks) == 0 {
-		return nil
+		// querySmartDevice drops only a query without usable JSON (did not start, hung, no or
+		// unreadable output), so no disk at all is a failed read, not a host without devices.
+		return nil, "scan_failed"
 	}
-	return disks
+	return disks, ""
 }
 
 func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, smartctl, "--all", "--json=c", device)
-	out, err := cmd.Output()
+	out, err := smartctlCLI.run(30*time.Second, smartctl, "--all", "--json=c", device)
 
 	// smartctl uses bit flags in the exit code. We keep the full code
 	// so the server can evaluate bit 0x10 (prefail) as critical.

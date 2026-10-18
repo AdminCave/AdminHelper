@@ -9,7 +9,10 @@ next_fail_count / effective_status / is_suppressed — the consecutive_fails
 damping, without DB, scheduler or VictoriaMetrics.
 """
 
+import json
 from types import SimpleNamespace
+
+import pytest
 
 from app.check_engine import (
     effective_status,
@@ -76,6 +79,18 @@ class TestEffectiveStatus:
     def test_recovery_when_ok(self):
         # OK again after failures: next_fail_count is 0, status becomes OK.
         assert effective_status("ok", 0, 3, "critical") == "ok"
+
+    def test_fresh_check_without_data_shows_unknown(self):
+        # R-0419 T9: a new check whose first result is unknown (no agent data
+        # yet) must not stand green while it is damped.
+        assert effective_status("unknown", 1, 2, "pending") == "unknown"
+
+    def test_fresh_check_still_damps_warning_and_critical(self):
+        assert effective_status("critical", 1, 2, "pending") == "ok"
+        assert effective_status("warning", 1, 2, "pending") == "ok"
+
+    def test_unknown_on_an_ok_check_stays_damped(self):
+        assert effective_status("unknown", 1, 2, "ok") == "ok"
 
 
 class TestTransitionSequence:
@@ -353,3 +368,112 @@ def test_push_keeps_stored_details_only_when_the_block_is_absent():
     assert _details_case(None, keep=True) == '{"problems": ["cpu"]}'
     # An empty block is information ("nothing wrong"), not an absent one.
     assert _details_case({}, keep=True) == "{}"
+
+
+@pytest.mark.parametrize("row", [True, False], ids=["pending-row", "no-row"])
+def test_new_check_without_data_shows_unknown_then_damps_as_before(row):
+    # R-0419 T9 over the pipeline the push path calls: a freshly assigned
+    # "Docker Host" check (consecutive_fails 2) whose first report carries no
+    # docker block stood green. template_sync/checks create a 'pending' row; a
+    # missing row is created by apply_result — both start from 'pending'.
+    from app.check_engine import apply_result
+    from app.models import MonitorCheck, MonitorState
+
+    check = MonitorCheck(
+        id="c1", name="c1", check_type="docker_health", config="{}", consecutive_fails=2
+    )
+    db = _DummyDb()
+    state = MonitorState(check_id="c1", status="pending", fail_count=0) if row else None
+
+    def push(status, details):
+        nonlocal state
+        result = apply_result(
+            db,
+            check,
+            state,
+            status,
+            "msg",
+            details,
+            utcnow_naive(),
+            keep_previous_details_when_absent=True,
+        )
+        if state is None:
+            state = db.added[0]
+        return result
+
+    # unknown never notifies (alerter.resolve_notification) — "skip", nothing booked.
+    assert push("unknown", {"containers": []}) == ("pending", "unknown", "skip")
+    assert (state.status, state.fail_count, state.notified_status) == ("unknown", 1, None)
+    assert json.loads(state.details) == {"containers": []}
+
+    # Data arrives: ok without a recovery notification, nothing was ever reported.
+    web = {"id": "abc123", "category": "ok", "reason": None, "restart_count": 0}
+    assert push("ok", {"containers": [web]}) == ("unknown", "ok", "silent_ack")
+
+    # T6 (Kevin 2026-10-17): a single restart afterwards stays damped.
+    web = {**web, "category": "warning", "reason": "restarted", "restart_count": 1}
+    assert push("warning", {"containers": [web]}) == ("ok", "ok", "skip")
+    assert (state.status, state.fail_count) == ("ok", 1)
+
+
+def test_new_check_first_critical_stays_damped():
+    from app.check_engine import apply_result
+    from app.models import MonitorCheck, MonitorState
+
+    check = MonitorCheck(id="c1", name="c1", check_type="ping", config="{}", consecutive_fails=2)
+    state = MonitorState(check_id="c1", status="pending", fail_count=0)
+    _, eff, decision = apply_result(
+        _DummyDb(), check, state, "critical", "down", None, utcnow_naive()
+    )
+    assert (eff, decision) == ("ok", "silent_ack")
+    assert (state.status, state.fail_count) == ("ok", 1)
+    assert "(Fehler 1/2)" in state.message
+
+
+def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
+    # R-0419 T9, scheduler path: a new check waiting for its first data shows
+    # unknown, and the transition dispatches nothing (unknown policy).
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    import app.core.database as database_mod
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                name="c1",
+                check_type="ping",
+                config="{}",
+                enabled=True,
+                consecutive_fails=2,
+            )
+        )
+        db.add(MonitorState(check_id="c1", status="pending"))
+        db.commit()
+
+    class _Waiting:
+        def run(self, config):
+            return "unknown", "Wartet auf Agent-Daten", None
+
+    submitted = []
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(ce, "get_checker", lambda _ct: _Waiting())
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: submitted.append(a)))
+
+    ce.execute_check("c1")
+
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="c1").one()
+        assert (state.status, state.fail_count, state.notified_status) == ("unknown", 1, None)
+    assert submitted == []

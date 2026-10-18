@@ -277,6 +277,310 @@ else
     bad "segmentation check failed: server reached ca-issuer:8090, or the redis control failed"
 fi
 
+# ── 11b. frps takes its configuration over by itself (R-0411) ─────────────────
+# frps runs under a supervisor (apps/frps) that starts it only from a checked copy of the
+# frps.toml the server writes and the PEM files in frps-certs, and takes a change over once it
+# stayed the same for two polls (5 s apart). Seen from outside: whether frps answers TLS on its
+# published bind port — a TLS handshake, since docker's port proxy accepts a bare TCP connect
+# with nothing listening behind it —, the state admins see over the API, and the event sequence
+# of the status file the server reads. Every wait ends in a FAIL at its deadline; "nothing
+# happened" is checked only after the supervisor has polled often enough to have acted.
+CERT3=(--cert "$E2E_WORK/client3-fullchain.pem" --key "$E2E_WORK/client3.key")
+JWT3=""
+FRPS_PORT=""   # the host port compose publishes the bind port on
+FRPS_LEAF=""   # sha256 of the leaf in frps-certs/frps.crt, which frps must present
+LAST=""        # what the last probe saw, for its FAIL line
+
+# enroll <token> <name> — redeems the token for E2E_WORK/<name>.csr into <name>-fullchain.pem.
+enroll() {
+    python3 - "$E2E_WORK" "$ENROLL" "$1" "$2" <<'PY'
+import json, ssl, sys, urllib.request
+work, enroll, token, name = sys.argv[1:5]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+body = json.dumps({"token": token, "csr": open(f"{work}/{name}.csr").read()})
+req = urllib.request.Request(f"{enroll}/enroll", data=body.encode(),
+    headers={"Content-Type": "application/json"})
+data = json.load(urllib.request.urlopen(req, context=ctx, timeout=15))
+open(f"{work}/{name}-fullchain.pem", "w").write(data["fullchain"])
+PY
+}
+
+# api <method> <path> [<json>] — the response body; non-zero unless the status is 2xx.
+api() {
+    local data=() resp
+    [ $# -lt 3 ] || data=(-d "$3")
+    resp=$(curl -k -s "${CERT3[@]}" -H "Authorization: Bearer $JWT3" -H 'Content-Type: application/json' \
+        -X "$1" "${data[@]}" -w '\n%{http_code}' --max-time 10 "$E2E_SERVER_URL$2" 2>/dev/null)
+    printf '%s\n' "${resp%$'\n'*}"
+    [[ "${resp##*$'\n'}" == 2?? ]]
+}
+
+# json_get <key> — a top-level value of the JSON object on stdin; empty for null or no JSON.
+json_get() {
+    python3 -c 'import json, sys; v = json.load(sys.stdin).get(sys.argv[1]); print("" if v is None else v)' \
+        "$1" 2>/dev/null
+}
+
+# sv_api — "<state> <reason> <stale>" as GET /api/frp/supervisor-status shows them to admins.
+sv_api() {
+    api GET /api/frp/supervisor-status | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+print(s["state"], s["reason"], str(s["stale"]).lower())' 2>/dev/null
+}
+sv_api_is() { LAST=$(sv_api); [ "$LAST" = "$1" ]; }
+
+# sv_file mark | since <mark> | heartbeat — from the supervisor's status file, read where the
+# server reads it. mark: "<boot> <last seq>"; since: "=" followed by the events after the mark
+# as <event>:<reason>:<tokenChanged>, or "rebooted" when the supervisor has started anew since.
+# Empty when the file cannot be read, so that no comparison passes on it.
+sv_file() {
+    e2e_dc exec -T server cat /app/frps-state/status.json 2>/dev/null | python3 -c '
+import json, sys
+s, what = json.load(sys.stdin), sys.argv[1]
+events = s["events"]
+if what == "mark":
+    print(s["boot"], events[-1]["seq"] if events else 0)
+elif what == "since":
+    boot, seq = sys.argv[2].split()
+    new = ["%s:%s:%s" % (e["event"], e["reason"], str(e["tokenChanged"]).lower())
+           for e in events if e["seq"] > int(seq)]
+    print("rebooted" if boot != s["boot"] else "=" + " ".join(new))
+else:
+    print(s[what])' "$@" 2>/dev/null
+}
+sv_has_new() { LAST=$(sv_file since "$1"); [ -n "$LAST" ] && [ "$LAST" != "=" ]; }
+
+# tls_probe <port> — "ok <sha256 of the leaf>" when a TLS handshake on the port completes with a
+# certificate that chains to frps-certs/ca.crt; "no <error>" when the connection is refused,
+# reset, closed or times out; "bad <error>" for a handshake that fails otherwise.
+tls_probe() {
+    python3 - "$1" "$E2E_WORK/frps-ca.crt" "$E2E_WORK/client3-fullchain.pem" "$E2E_WORK/client3.key" <<'PY'
+import hashlib, socket, ssl, sys
+port, ca, chain, key = sys.argv[1:5]
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ctx.check_hostname = False
+ctx.load_verify_locations(ca)
+ctx.load_cert_chain(chain, key)
+try:
+    with socket.create_connection(("127.0.0.1", int(port)), timeout=5) as raw:
+        with ctx.wrap_socket(raw) as conn:
+            print("ok", hashlib.sha256(conn.getpeercert(binary_form=True)).hexdigest())
+except (ConnectionError, socket.timeout, ssl.SSLEOFError, ssl.SSLZeroReturnError) as e:
+    print("no", type(e).__name__)
+except OSError as e:
+    print("bad", type(e).__name__)
+PY
+}
+tls_answers() { LAST=$(tls_probe "$FRPS_PORT"); [ "$LAST" = "ok $FRPS_LEAF" ]; }
+tls_silent()  { LAST=$(tls_probe "$FRPS_PORT"); [ "${LAST%% *}" = no ]; }
+
+# frps_pid — the pid of frps in its container, empty when none runs (pidof exits 1); non-zero
+# when pidof fails otherwise or the exec does, so that "no process" never rests on an error.
+frps_pid() {
+    local out
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    out=$(e2e_dc exec -T frps sh -c 'pids=$(pidof frps); echo "rc=$? $pids"' 2>/dev/null) || return 2
+    case $out in
+    "rc=0 "?*) echo "${out#rc=0 }" ;;
+    "rc=1 ") ;;
+    *) return 2 ;;
+    esac
+}
+
+# toml_id — "<inode> <sha256>" of the frps.toml the server wrote; empty without one.
+toml_id() {
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    e2e_dc exec -T server sh -c 'stat -c "%i" "$1" && sha256sum "$1"' _ /app/frp-config/frps.toml 2>/dev/null \
+        | awk 'NR == 1 { inode = $1 } NR == 2 { print inode, $1 }'
+}
+
+# frps_notices — "<sourceId> <eventType> <agent-hint|->" for each frps notification of the
+# admin; agent-hint: the text says that agent tunnels take a while (a new token).
+frps_notices() {
+    api GET '/api/notifications?limit=1000' | python3 -c '
+import json, sys
+for n in json.load(sys.stdin):
+    if n["sourceType"] == "frps":
+        print(n["sourceId"], n["eventType"], "agent-hint" if "Agent-Tunnel" in n["body"] else "-")' 2>/dev/null
+}
+notice_for() { LAST=$(frps_notices); grep -q "^$1 " <<<"$LAST"; }
+
+# watch_runs — how many runs of the scheduler's frps watch job have ended so far, by its log.
+watch_runs() {
+    e2e_dc logs --no-color scheduler 2>/dev/null | grep -c '_run_frps_supervisor_watch .* executed successfully'
+}
+watch_runs_reach() { LAST=$(watch_runs); [ "$LAST" -ge "$1" ] 2>/dev/null; }
+
+# until_ok <seconds> <command...> — the command once a second until it succeeds; 1 at the deadline.
+until_ok() {
+    local deadline=$((SECONDS + $1))
+    shift
+    until "$@"; do
+        [ "$SECONDS" -lt "$deadline" ] || return 1
+        sleep 1
+    done
+}
+
+# wait_polls <n> — until the supervisor has rewritten its status n more times (once a poll); 1 at
+# the deadline. A change written before the call is taken over by the third poll at the latest:
+# the first may have read the input before the change, the second notes it, the third acts.
+wait_polls() {
+    local last now seen=0 deadline=$((SECONDS + 10 * $1 + 10))
+    last=$(sv_file heartbeat)
+    while [ "$seen" -lt "$1" ]; do
+        [ "$SECONDS" -lt "$deadline" ] || return 1
+        sleep 1
+        now=$(sv_file heartbeat)
+        if [ -n "$now" ] && [ "$now" != "$last" ]; then seen=$((seen + 1)); last=$now; fi
+    done
+}
+
+frps_takeover() {
+    local token bind body config_id t0 mark pid toml new notices source_id runs
+
+    # A device certificate of its own: 8b replaced the first one and revoked the second.
+    token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
+    openssl ecparam -name prime256v1 -genkey -noout -out "$E2E_WORK/client3.key" 2>/dev/null
+    openssl req -new -key "$E2E_WORK/client3.key" -subj "/CN=itest" -out "$E2E_WORK/client3.csr" 2>/dev/null
+    if [ -z "$token" ] || ! enroll "$token" client3; then
+        bad "frps: could not enroll a device for the API calls"; return
+    fi
+    JWT3=$(curl -k -s "${CERT3[@]}" --max-time 5 -X POST "$E2E_SERVER_URL/api/auth/login" \
+        -H 'Content-Type: application/json' \
+        -d "{\"username\":\"admin\",\"password\":\"$E2E_ADMIN_PW\"}" 2>/dev/null | json_get access_token)
+    [ -n "$JWT3" ] || { bad "frps: login with the new device failed"; return; }
+
+    # frps as built from apps/frps, and the scheduler, whose job turns supervisor events into
+    # notifications.
+    if ! e2e_dc up -d --build frps scheduler >"$E2E_WORK/frps-up.log" 2>&1; then
+        bad "frps/scheduler did not come up"; tail -20 "$E2E_WORK/frps-up.log"; return
+    fi
+    e2e_dc exec -T ca-issuer cat /app/frps-certs/ca.crt >"$E2E_WORK/frps-ca.crt" 2>/dev/null
+    FRPS_LEAF=$(e2e_dc exec -T ca-issuer cat /app/frps-certs/frps.crt 2>/dev/null \
+        | openssl x509 -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1) || FRPS_LEAF=""
+    if [ ! -s "$E2E_WORK/frps-ca.crt" ] || [ -z "$FRPS_LEAF" ]; then
+        bad "frps: no TLS material in frps-certs"; return
+    fi
+    # The bind port the server reports (FRP_BIND_PORT), and where compose publishes it.
+    bind=$(api GET /api/frp/supervisor-status | json_get publishedBindPort)
+    FRPS_PORT=$(e2e_dc port frps "${bind:-none}" 2>/dev/null | head -1)
+    FRPS_PORT=${FRPS_PORT##*:}
+    if [ -z "$bind" ] || [ -z "$FRPS_PORT" ]; then
+        bad "frps: bind port '$bind' not published (host port '$FRPS_PORT')"; return
+    fi
+
+    # a. Up before any FRP config: the supervisor waits, frps itself does not run.
+    if until_ok 60 sv_api_is "waiting config_missing false"; then
+        ok "frps container up before any FRP config, supervisor waiting (config_missing)"
+    else
+        bad "frps supervisor not waiting before any FRP config (saw '$LAST')"
+        e2e_dc logs --tail 20 frps; return
+    fi
+    tls_silent && ok "before any FRP config nothing answers TLS on :$FRPS_PORT ($LAST)" \
+        || bad "TLS on :$FRPS_PORT before any FRP config ('$LAST')"
+    pid=$(frps_pid) || pid="pidof-failed"
+    [ -z "$pid" ] && ok "no frps process before any FRP config" || bad "frps runs before any FRP config (pid $pid)"
+
+    # b. The config created: within 20 s frps answers TLS with the leaf of frps-certs, run from
+    #    the checked copy of the chain in frps-active.
+    body="{\"name\":\"itest-frps\",\"server_addr\":\"localhost\",\"bind_port\":$bind}"
+    config_id=$(api POST /api/frp/server-config "$body" | json_get id)
+    [ -n "$config_id" ] || { bad "frps: creating the FRP config failed"; return; }
+    t0=$SECONDS
+    if until_ok 20 tls_answers; then
+        ok "frps answers TLS on :$FRPS_PORT $((SECONDS - t0)) s after the config, leaf of frps-certs, chain to its ca.crt"
+    else
+        bad "frps did not answer TLS within 20 s of the config ('$LAST')"
+        e2e_dc logs --tail 20 frps; return
+    fi
+    # shellcheck disable=SC2016 # expanded by the container's sh
+    e2e_dc exec -T frps sh -c 'cd /var/lib/frps-active/current \
+        && for f in frps.crt frps.key ca.crt; do cmp -s "$f" "/etc/frp-pki/$f" || exit 1; done \
+        && grep -qx "certFile = \"/var/lib/frps-active/current/frps.crt\"" frps.toml' >/dev/null 2>&1 \
+        && ok "the checked copy in frps-active holds the PEM chain of frps-certs, frps.toml points at it" \
+        || bad "frps-active/current does not hold the PEM chain of frps-certs"
+    until_ok 10 sv_api_is "running none false" && ok "supervisor state running" \
+        || bad "supervisor state after the config: '$LAST'"
+
+    # c. The same config again: the server rewrites frps.toml (new inode, same bytes), and over
+    #    the polls that would take a change over frps keeps running, without an event.
+    mark=$(sv_file mark); pid=$(frps_pid); toml=$(toml_id)
+    api PUT "/api/frp/server-config/$config_id" "$body" >/dev/null || { bad "frps: identical PUT failed"; return; }
+    new=$(toml_id)
+    [ -n "$toml" ] && [ -n "$new" ] && [ "${new#* }" = "${toml#* }" ] && [ "${new%% *}" != "${toml%% *}" ] \
+        && ok "identical PUT rewrote frps.toml with the same content" \
+        || bad "identical PUT: frps.toml '$toml' -> '$new' (expected a new inode, the same sha256)"
+    wait_polls 3 || { bad "frps supervisor stopped polling"; return; }
+    LAST=$(sv_file since "$mark"); new=$(frps_pid)
+    [ -n "$mark" ] && [ "$LAST" = "=" ] && [ -n "$pid" ] && [ "$new" = "$pid" ] \
+        && ok "identical PUT: no restart (event seq unchanged, frps pid $pid)" \
+        || bad "identical PUT restarted frps (events since '$mark': '$LAST', pid $pid -> $new)"
+
+    # d. A new token: exactly one restart (one event, applied with tokenChanged) and one
+    #    notification for it, which says that agent tunnels take a while.
+    mark=$(sv_file mark); pid=$(frps_pid)
+    notices=$(frps_notices) || { bad "frps: notifications not readable"; return; }
+    api PUT "/api/frp/server-config/$config_id" "{\"auth_token\":\"$(openssl rand -hex 16)\"}" >/dev/null \
+        || { bad "frps: PUT with a new token failed"; return; }
+    until_ok 30 sv_has_new "$mark" || { bad "no supervisor event within 30 s of the new token"; return; }
+    source_id="${mark% *}:$((${mark#* } + 1))"
+    if until_ok 45 notice_for "$source_id"; then
+        ok "a notification for the restart ($source_id) reached the admin"
+    else
+        bad "no notification for $source_id within 45 s (frps notices: '$LAST')"
+        e2e_dc logs --tail 20 scheduler
+    fi
+    wait_polls 2 || { bad "frps supervisor stopped polling"; return; }
+    LAST=$(sv_file since "$mark"); new=$(frps_pid)
+    [ "$LAST" = "=applied:none:true" ] && [ -n "$new" ] && [ "$new" != "$pid" ] \
+        && ok "new token: exactly one restart (applied, tokenChanged; pid $pid -> $new)" \
+        || bad "new token: events since '$mark': '$LAST' (expected one applied with tokenChanged), pid $pid -> $new"
+    # Still one after a further run of the watch job, which would write a second. The run that
+    # wrote the row may not have logged its end yet, hence two more ends than now.
+    runs=$(watch_runs)
+    until_ok 45 watch_runs_reach $((runs + 2)) \
+        || bad "the frps watch job did not run again within 45 s (ended runs: $runs, then '$LAST')"
+    new=$(comm -13 <(sort <<<"$notices") <(frps_notices | sort))
+    [ "$new" = "$source_id lifecycle.frp.server.applied agent-hint" ] \
+        && ok "new token: exactly one notification, with the agent tunnel hint" \
+        || bad "new token: new frps notifications '$new'"
+    until_ok 10 tls_answers && ok "frps answers TLS again after the restart" \
+        || bad "frps does not answer TLS after the restart ('$LAST')"
+
+    # e. An invalid certificate file in frps-certs: rejected, frps runs on from its last valid
+    #    copy (degraded), still answers TLS with that leaf, as the same process.
+    mark=$(sv_file mark); pid=$(frps_pid)
+    e2e_dc exec -T ca-issuer sh -c 'printf "%s\n" "-----BEGIN CERTIFICATE-----" "bm90IGEgY2VydGlmaWNhdGU=" \
+        "-----END CERTIFICATE-----" > /app/frps-certs/frps.crt' \
+        || { bad "frps: could not write the invalid certificate"; return; }
+    if until_ok 40 sv_api_is "degraded cert_missing false"; then
+        ok "invalid frps.crt in frps-certs: supervisor degraded (cert_missing)"
+    else
+        bad "invalid frps.crt: supervisor state '$LAST', expected degraded cert_missing"
+    fi
+    wait_polls 2 || { bad "frps supervisor stopped polling"; return; }
+    LAST=$(sv_file since "$mark")
+    [ "$LAST" = "=rejected:cert_missing:false" ] && ok "invalid frps.crt: rejected once, no restart" \
+        || bad "invalid frps.crt: events since '$mark': '$LAST'"
+    tls_answers && [ -n "$pid" ] && [ "$(frps_pid)" = "$pid" ] \
+        && ok "frps still answers TLS with the last valid leaf, same process (pid $pid)" \
+        || bad "frps after the invalid frps.crt: TLS '$LAST', pid $pid -> $(frps_pid)"
+
+    # f. The config deleted: frps stops, the bind port answers no more.
+    mark=$(sv_file mark)
+    api DELETE "/api/frp/server-config/$config_id" >/dev/null || { bad "frps: deleting the FRP config failed"; return; }
+    until_ok 30 tls_silent && ok "after the delete nothing answers TLS on :$FRPS_PORT ($LAST)" \
+        || bad "frps still answers on :$FRPS_PORT 30 s after the delete ('$LAST')"
+    until_ok 10 sv_api_is "stopped config_missing false" && ok "supervisor state stopped (config_missing)" \
+        || bad "supervisor state after the delete: '$LAST'"
+    wait_polls 2 || { bad "frps supervisor stopped polling"; return; }
+    LAST=$(sv_file since "$mark"); pid=$(frps_pid) || pid="pidof-failed"
+    [ "$LAST" = "=stopped:config_missing:false" ] && [ -z "$pid" ] && ok "delete: one stopped event, no frps process" \
+        || bad "delete: events since '$mark': '$LAST', frps pid '$pid'"
+}
+frps_takeover
+
 # ── 12. frps is fenced off the internal net (3.28) ────────────────────────────
 # frps sits on its own frpedge net; redis:6379 + victoria:8428 (both auth-less) are on
 # the default net. A compromised frps must not reach them. redis is already up (server

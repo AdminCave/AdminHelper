@@ -115,8 +115,9 @@ curl -s -m 5 "$1" >/dev/null 2>&1 || true
 SHIM
 chmod +x "$SHIM_DIR/xdg-open"
 
-# frps reads the frps.toml the config wrote into the shared volume.
-e2e_dc up -d frps >/dev/null 2>&1 && ok "frps started" || { bad "frps failed"; e2e_dc logs --tail 30 frps; exit 1; }
+# frps reads the frps.toml the config wrote into the shared volume. Built from apps/frps (the
+# supervisor), so --build: a local image from an earlier run would be stale.
+e2e_dc up -d --build frps >/dev/null 2>&1 && ok "frps started" || { bad "frps failed"; e2e_dc logs --tail 30 frps; exit 1; }
 
 # Provision an agent WITH FRP -> writes /etc/frp/frpc.toml + tunnel PKI to a volume.
 # Two volumes: /etc/frp (frpc.toml) and /etc/adminhelper (the enrolled mTLS

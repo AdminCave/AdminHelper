@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
-from app.core.config import FRPS_DASHBOARD_URL
+from app.core.config import FRP_BIND_PORT, FRPS_DASHBOARD_URL
 from app.core.database import get_db
 from app.modules.frp._helpers import get_frp_config
 from app.modules.frp.models import FrpTunnel
-from app.modules.frp.schemas import FrpStatus
+from app.modules.frp.schemas import FrpStatus, FrpSupervisorStatus
+from app.modules.frp.supervisor_status import STATUS_FILE, read_supervisor_status
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
@@ -116,3 +117,20 @@ def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)
         )
 
     return {"proxies": result, "total": len(result)}
+
+
+@router.get("/supervisor-status", response_model=FrpSupervisorStatus)
+def frps_supervisor_status(_admin=Depends(get_current_admin)):
+    """State of the frps supervisor from its status file, and the host port compose
+    publishes for frps (FRP_BIND_PORT)."""
+    status = read_supervisor_status(STATUS_FILE)
+    last = status.events[-1] if status.events else None
+    return FrpSupervisorStatus(
+        state=status.state,
+        reason=status.reason,
+        since=status.since,
+        stale=status.stale,
+        lastEvent=last.event if last else None,
+        lastEventAt=last.at if last else None,
+        publishedBindPort=FRP_BIND_PORT,
+    )

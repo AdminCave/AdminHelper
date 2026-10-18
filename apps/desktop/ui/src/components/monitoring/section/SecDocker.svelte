@@ -18,42 +18,122 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
+  // Spelled out: the i18n "no unused keys" guard only sees quoted keys.
+  const ERROR_KEY = new Map<string, string>([
+    ['daemon_unreachable', 'monitoring.docker.error.daemon_unreachable'],
+    ['timeout', 'monitoring.docker.error.timeout'],
+    ['cli_failed', 'monitoring.docker.error.cli_failed'],
+    ['parse_failed', 'monitoring.docker.error.parse_failed'],
+  ]);
+  const REASON_KEY = new Map<string, string>([
+    ['oom', 'monitoring.docker.reason.oom'],
+    ['start_failed', 'monitoring.docker.reason.start_failed'],
+    ['restarting', 'monitoring.docker.reason.restarting'],
+    ['dead', 'monitoring.docker.reason.dead'],
+    ['unhealthy', 'monitoring.docker.reason.unhealthy'],
+    ['paused', 'monitoring.docker.reason.paused'],
+    ['created', 'monitoring.docker.reason.created'],
+    ['stopped', 'monitoring.docker.reason.stopped'],
+    ['unknown_state', 'monitoring.docker.reason.unknown_state'],
+  ]);
+  // stopped is neutral: ended on purpose, neither green nor a problem.
+  const LEVEL = { critical: 'crit', warning: 'warn', ok: 'ok', stopped: 'none' } as const;
+  const DOT = {
+    crit: 'mon-critical',
+    warn: 'mon-warning',
+    ok: 'mon-ok',
+    none: 'mon-unknown',
+  } as const;
+  // Problems first in their own order, as before; stopped containers last.
+  const ORDER = { crit: 0, warn: 0, ok: 1, none: 2 } as const;
+
   type Container = NonNullable<MonitorContainerDetails['containers']>[number];
+  type Level = keyof typeof DOT;
+  interface Note {
+    key: string;
+    vars: Record<string, unknown>;
+  }
+  interface Row {
+    key: string;
+    c: Container;
+    level: Level;
+    // null without a reason: the raw state, as before R-0419.
+    note: Note | null;
+  }
   interface Info {
-    containers: Container[];
+    // The error's text key when the agent could not read docker; no rows then.
+    unavailable: string | null;
+    rows: Row[];
     total: number;
-    ok: number;
-    warn: number;
     crit: number;
+    warn: number;
     running: number;
+    stopped: number;
     allOk: boolean;
-    allRunning: boolean;
+  }
+
+  function note(c: Container): Note | null {
+    const reason = c.reason;
+    if (!reason) return null;
+    const exit = /^exit:(-?\d+)$/.exec(reason);
+    if (exit) return { key: 'monitoring.docker.reason.exit', vars: { code: exit[1] } };
+    if (reason === 'restarted' && typeof c.restart_count === 'number') {
+      return { key: 'monitoring.docker.reason.restarted', vars: { count: c.restart_count } };
+    }
+    // A code this UI does not know yet (a newer server) still says something.
+    const key = REASON_KEY.get(reason) ?? 'monitoring.docker.reason.other';
+    return { key, vars: { state: c.state } };
   }
 
   function info(check: MonitorCheck): Info {
-    const list = (check.state?.details as MonitorContainerDetails | undefined)?.containers ?? [];
-    let ok = 0,
-      warn = 0,
-      crit = 0,
-      running = 0;
-    for (const c of list) {
-      if (c.category === 'critical') crit++;
-      else if (c.category === 'warning') warn++;
-      else ok++;
-      // The server rates exited/created/paused containers as ok too; the
-      // category alone does not say "running".
-      if (c.state === 'running') running++;
-    }
+    const d = check.state?.details as MonitorContainerDetails | undefined;
+    // Rows are keyed by the container id (by name in details before R-0419), so
+    // each container once, the first entry winning.
+    const keyed = (d?.containers ?? []).map((c) => ({
+      key: c.id ? `id:${c.id}` : `name:${c.name}`,
+      c,
+    }));
+    const rows = keyed
+      .filter((x, n) => keyed.findIndex((y) => y.key === x.key) === n)
+      // A category this UI does not know yet stays neutral.
+      .map<Row>(({ key, c }) => ({ key, c, level: LEVEL[c.category] ?? 'none', note: note(c) }))
+      .sort((a, b) => ORDER[a.level] - ORDER[b.level]);
+    const crit = rows.filter((r) => r.level === 'crit').length;
+    const warn = rows.filter((r) => r.level === 'warn').length;
     return {
-      containers: list,
-      total: list.length,
-      ok,
-      warn,
+      unavailable:
+        d?.available === false
+          ? (ERROR_KEY.get(d.error ?? '') ?? 'monitoring.docker.error.unknown')
+          : null,
+      rows,
+      total: rows.length,
       crit,
-      running,
+      warn,
+      // The server rates exited/created containers as ok in details before
+      // R-0419; the category alone does not say "running".
+      running: rows.filter((r) => r.c.state === 'running').length,
+      stopped: rows.filter((r) => r.c.category === 'stopped').length,
       allOk: crit === 0 && warn === 0,
-      allRunning: running === list.length,
     };
+  }
+
+  function countText(i: Info, all: 'monitoring.docker.allOk' | 'monitoring.docker.allOkHint') {
+    if (i.stopped > 0) {
+      return $t('monitoring.docker.runningStopped', { running: i.running, stopped: i.stopped });
+    }
+    if (i.running === i.total) return $t(all, { count: i.total });
+    return $t('monitoring.docker.okRunning', { running: i.running, total: i.total });
+  }
+
+  // The colour comes from the effective status the line's dot shows, never above
+  // the pill's own level: a first, damped failure and a single restart (details
+  // only, Kevin 2026-10-17) leave the status ok, and then no pill turns yellow.
+  function pill(check: MonitorCheck, level: 'ok' | 'warn' | 'crit'): string {
+    const status = check.state?.status;
+    if (level === 'ok') return status === 'ok' ? 'pill-ok' : '';
+    if (status === 'critical') return level === 'crit' ? 'pill-crit' : 'pill-warn';
+    if (status === 'warning') return 'pill-warn';
+    return '';
   }
 </script>
 
@@ -73,7 +153,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="mon-line-name">{check.name}</span>
         {/snippet}
         {#snippet value()}
-          {#if i.total === 0}
+          {#if i.unavailable}
+            <span class="mon-line-pill {pill(check, 'crit')}" title={check.state?.message}
+              >{$t(i.unavailable)}</span
+            >
+          {:else if i.total === 0}
             {#if check.state?.status === 'unknown'}
               <span class="mon-line-pill" title={check.state?.message}
                 >{$t('monitoring.docker.noData')}</span
@@ -82,60 +166,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
               <span class="mon-line-pill">—</span>
             {/if}
           {:else if i.allOk}
-            <span class="mon-line-pill pill-ok"
-              >{i.allRunning
-                ? $t('monitoring.docker.allOk', { count: i.total })
-                : $t('monitoring.docker.okRunning', { running: i.running, total: i.total })}</span
+            <span class="mon-line-pill {pill(check, 'ok')}"
+              >{countText(i, 'monitoring.docker.allOk')}</span
             >
           {:else}
             {#if i.crit > 0}
-              <span class="mon-line-pill pill-crit">{i.crit} ✗</span>
+              <span class="mon-line-pill {pill(check, 'crit')}">{i.crit} ✗</span>
             {/if}
             {#if i.warn > 0}
-              <span class="mon-line-pill pill-warn">{i.warn} ⚠</span>
+              <span class="mon-line-pill {pill(check, 'warn')}">{i.warn} ⚠</span>
             {/if}
-            <span class="mon-line-pill">{i.ok}/{i.total}</span>
+            <span class="mon-line-pill">{countText(i, 'monitoring.docker.allOk')}</span>
           {/if}
         {/snippet}
         {#snippet extraBody()}
-          {#if i.allOk && i.total > 0}
+          {#if i.total > 0}
             <div class="mon-expand-list">
-              <div class="mon-expand-hint">
-                {i.allRunning
-                  ? $t('monitoring.docker.allOkHint', { count: i.total })
-                  : $t('monitoring.docker.okRunning', { running: i.running, total: i.total })}
-              </div>
-              {#each i.containers as c (c.name)}
-                <div class="mon-expand-row level-ok">
-                  <span class="mon-dot mon-ok"></span>
-                  {#if c.image}
-                    <span class="mon-expand-badge">{c.image.split(':')[0].split('/').pop()}</span>
+              {#if i.allOk}
+                <div class="mon-expand-hint">{countText(i, 'monitoring.docker.allOkHint')}</div>
+              {/if}
+              {#each i.rows as r (r.key)}
+                <div class="mon-expand-row level-{r.level}">
+                  <span class="mon-dot {DOT[r.level]}"></span>
+                  {#if r.c.image}
+                    <span class="mon-expand-badge">{r.c.image.split(':')[0].split('/').pop()}</span>
                   {/if}
-                  <span class="mon-expand-name">{c.name}</span>
-                  <span class="mon-expand-note">{c.state}</span>
-                </div>
-              {/each}
-            </div>
-          {:else}
-            <div class="mon-expand-list">
-              {#each i.containers.filter((c) => c.category !== 'ok') as c (c.name)}
-                <div class="mon-expand-row level-{c.category === 'critical' ? 'crit' : 'warn'}">
-                  <span class="mon-dot mon-{c.category}"></span>
-                  {#if c.image}
-                    <span class="mon-expand-badge">{c.image.split(':')[0].split('/').pop()}</span>
-                  {/if}
-                  <span class="mon-expand-name">{c.name}</span>
-                  <span class="mon-expand-note">{c.state}</span>
-                </div>
-              {/each}
-              {#each i.containers.filter((c) => c.category === 'ok') as c (c.name)}
-                <div class="mon-expand-row level-ok">
-                  <span class="mon-dot mon-ok"></span>
-                  {#if c.image}
-                    <span class="mon-expand-badge">{c.image.split(':')[0].split('/').pop()}</span>
-                  {/if}
-                  <span class="mon-expand-name">{c.name}</span>
-                  <span class="mon-expand-note">{c.state}</span>
+                  <span class="mon-expand-name">{r.c.name}</span>
+                  <span class="mon-expand-note"
+                    >{r.note ? $t(r.note.key, r.note.vars) : r.c.state}</span
+                  >
                 </div>
               {/each}
             </div>

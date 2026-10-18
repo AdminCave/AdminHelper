@@ -9,8 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,7 @@ from app.models import (
 from app.scheduler import remove_check
 from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
 from app.tag_sync import sync_tag_assignments
+from app.template_suggestions import SuggestionDismiss, dismiss_suggestion, suggest_templates
 from app.template_sync import (
     apply_template,
     check_def_ids,
@@ -40,6 +42,10 @@ from app.template_sync import (
 logger = logging.getLogger("monitor.templates")
 
 router = APIRouter()
+
+# The server hands out uuid4 strings as server ids, 36 characters. A longer id is
+# no server's, refused before a dismissal could store a row for it.
+ServerIdPath = Annotated[str, Path(min_length=1, max_length=36)]
 
 
 def _tag_sync_best_effort(db: Session) -> None:
@@ -235,6 +241,34 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
 
     db.delete(template)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Template suggestions (app/template_suggestions.py)
+# ---------------------------------------------------------------------------
+# Declared ahead of GET /templates/{template_id}/builtin-update, which has as many
+# segments: after it, that route would answer for a server named "builtin-update".
+
+
+@router.get("/templates/suggestions/{server_id}", dependencies=[Depends(require_internal)])
+def get_template_suggestions(server_id: ServerIdPath, db: Session = Depends(get_db)):
+    """Lists the standard templates the server's host facts suggest; empty for a
+    server whose agent has not reported them (yet)."""
+    return suggest_templates(db, server_id)
+
+
+@router.post(
+    "/templates/suggestions/{server_id}/dismiss",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal)],
+)
+def dismiss_template_suggestion(
+    server_id: ServerIdPath, data: SuggestionDismiss, db: Session = Depends(get_db)
+):
+    """Ignores a suggested standard template on this server; idempotent. No undo
+    yet, the template can still be assigned by hand."""
+    if not dismiss_suggestion(db, server_id, data.slug):
+        raise HTTPException(404, "No host facts for this server")
 
 
 # ---------------------------------------------------------------------------
