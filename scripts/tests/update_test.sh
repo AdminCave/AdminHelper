@@ -750,17 +750,29 @@ ENV_MORE=('X=ab${a b}cd' 'X=ab${x/y/z}cd' 'X=ab${cd:-${ef}' 'X="ab${cd"' '  X = 
   'X=ab\${' 'X="ab\\${"' 'X= #${' 'X="ab${cd" # c'
   'X=ab$${cd' 'X=ab$$$${' 'X=ab${ZZ:-$DOMAIN}' 'X=ab$1cd' 'X=ab$' 'X="ab\${cd"' 'X="ab\"\${"'
   'X=ab${ZZ:-$${}' "X='ab\${cd' # c" 'X="ab" #${')
+# A quoted value runs over several lines up to its closing quote. Its next lines
+# are part of it, not keys of their own: `zz9frag: ab${q` is literal text in single
+# quotes, a '${' of P in double quotes. A placeholder ends at the line end.
+ENV_MULTI=($'P=\'line1\nzz9frag: ab${q\n\'' $'P="line1\nzz9frag=ab${q\n"' $'P="line1\nzz9frag=${DOMAIN}\n"'
+  $'P=\'a\\\'b\nzz9frag: ab${q\n\'' $'P="a ${ZZ:-\nb}"' $'P=\'a\n  b\'\nQ=ab${q')
 n=0
-for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}"; do
-  n=$((n + 1))
+for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}"; do
+  n=$((n + 1)); shown=${line//$'\n'/\\n}
   INST="$WORK/inst32-$n"; make_install 0.33.0 "$SRC_OLD" "$INST"
   printf '%s\n' "$line" >> "$INST/.env"
   out=$(run_update "$INST" --check 2>&1); ours=$?
   ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
     >/dev/null 2>"$INST.compose"; theirs=$?
   [ "$((ours != 0))" = "$((theirs != 0))" ] \
-    && ok "[$line]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
-    || bad "[$line]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
+    && ok "[$shown]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
+    || bad "[$shown]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
+  # A refusal names the key of the value's first line, and nothing of the lines
+  # after it shows up in the output.
+  case $line in
+    *zz9frag*)
+      { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q 'der Wert von P enthaelt' <<<"$out"; }; } \
+        && ok "[$shown]: the output holds nothing of the value's next lines" || bad "[$shown]: $out" ;;
+  esac
 done
 
 echo

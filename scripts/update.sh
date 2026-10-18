@@ -71,9 +71,10 @@ log() { echo "[update] $*" >&2; }
 die() { echo "FEHLER: $*" >&2; exit 1; }
 
 # 0 if every '${' in $1 that is not part of a '$$' starts a placeholder compose
-# accepts: ${NAME}, or ${NAME followed by :- - :? ? :+ or + and a closing '}',
-# nested ones included. The classes are spelled out: under de_DE.UTF-8 a range
-# like [A-Z] in =~ matches umlauts too, and compose takes ASCII names only.
+# accepts: ${NAME}, or ${NAME followed by :- - :? ? :+ or + and a closing '}' on
+# the same line, nested ones included. The classes are spelled out: under
+# de_DE.UTF-8 a range like [A-Z] in =~ matches umlauts too, and compose takes ASCII
+# names only.
 env_template_ok() {
     local s="$1" open=0
     local name='^[_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ][_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]*'
@@ -91,22 +92,46 @@ env_template_ok() {
                     *) return 1 ;;
                 esac ;;
             '}'*) [ "$open" -eq 0 ] || open=$((open - 1)); s=${s:1} ;;
+            $'\n'*) [ "$open" -eq 0 ] || return 1; s=${s:1} ;;
             *) s=${s:1} ;;
         esac
     done
     [ "$open" -eq 0 ]
 }
 
+# A quoted value as compose reads it: $2 is the text after the opening quote $1. A
+# backslash escapes the next character, and in double quotes \$ is a literal '$'
+# (passed on as '$$'). Leaves the text up to the closing quote in QUOTED; returns
+# 1 if $2 holds no closing quote.
+read_quoted() {
+    local q="$1" s="$2" c i=0
+    QUOTED=""
+    while [ "$i" -lt "${#s}" ]; do
+        c=${s:i:1}
+        [ "$c" != "$q" ] || return 0
+        if [ "$c" = "\\" ]; then
+            i=$((i + 1)); c=${s:i:1}
+            case $c in
+                '$') c='$$' ;;
+                "\\"|"$q") ;;
+                *) c="\\$c" ;;
+            esac
+        fi
+        QUOTED+=$c; i=$((i + 1))
+    done
+    return 1
+}
+
 # compose reads the values in .env as templates, and a '${' that starts no valid
 # placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
 # template". Checked before the first one, so such a value stops the update before
-# backup, swap and re-pin rather than after. Reads each line as compose does:
-# blank and '#' lines drop, "export " may lead, '=' or ':' separates; a single-
-# quoted value is literal, in a double-quoted one a backslash escapes the next
-# character (\$ is a literal '$'), an unquoted one ends at " #". The message names
+# backup, swap and re-pin rather than after. Reads .env as compose does: blank and
+# '#' lines drop, "export " may lead, '=' or ':' separates; a quoted value runs to
+# its closing quote, over several lines if need be, and is literal in single
+# quotes; an unquoted one ends at " #". The message names
 # the key, never the value: it may be a secret.
 check_env_templates() {
-    local line key val out c i
+    local line key val more q QUOTED
     [ -f .env ] || return 0
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line#"${line%%[![:space:]]*}"}
@@ -118,23 +143,16 @@ check_env_templates() {
         key=${line%%[=:]*}; key=${key%"${key##*[![:space:]]}"}
         val=${line#*[=:]}; val=${val#"${val%%[![:space:]]*}"}
         case $val in
-            "'"*) continue ;;
-            '"'*)
-                out=""; i=1
-                while [ "$i" -lt "${#val}" ]; do
-                    c=${val:i:1}
-                    [ "$c" != '"' ] || break
-                    if [ "$c" = "\\" ]; then
-                        i=$((i + 1)); c=${val:i:1}
-                        case $c in
-                            '$') c='$$' ;;
-                            "\\"|'"') ;;
-                            *) c="\\$c" ;;
-                        esac
-                    fi
-                    out+=$c; i=$((i + 1))
+            "'"*|'"'*)
+                # The lines up to the closing quote are part of this value, not
+                # keys of their own. A quote never closed is compose's to report.
+                q=${val:0:1}; val=${val:1}
+                until read_quoted "$q" "$val"; do
+                    IFS= read -r more || [ -n "$more" ] || return 0
+                    val+=$'\n'$more
                 done
-                val=$out ;;
+                [ "$q" = '"' ] || continue
+                val=$QUOTED ;;
             *) val=${val%% #*} ;;
         esac
         env_template_ok "$val" \
@@ -384,7 +402,7 @@ PARENT_TMP=""
 if [ -n "${AH_UPDATE_PARENT_TMP:-}" ] && [ "$0" = "${AH_UPDATE_PARENT_TMP}/update-new.sh" ]; then
     PARENT_TMP="$AH_UPDATE_PARENT_TMP"
 fi
-trap 'rm -rf "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}' EXIT
+trap 'rm -rf -- "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}' EXIT
 EXTRACT=$(fetch_bundle "$TARGET" "$TMP")
 
 # --- Self-update: hand off to the release's update.sh if it differs ----------
