@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Statusansicht erreicht frps über den Supervisor — Task-Ledger
-Status: bereit · Branch: feature/frp-status-reach · Review: am Ende
+Status: aktiv · Branch: feature/frp-status-reach · Review: am Ende
 Spec: Roadmap R-0408
 Heavy: linux-full — frps-Image (`apps/frps`), Admin-Route `GET /api/frp/status` und der Stack-Test `integration-stack`. Der Job läuft nicht auf PRs, deshalb vor dem Merge `gh workflow run ci.yml --ref feature/frp-status-reach`. Kein `scenario`: kein Tunnel-Datenpfad, kein Cross-Host
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -49,3 +49,9 @@ Abhängt von: T2
 Dedup-Key: bug:server:frp/status_router.py:frps-unreachable
 HEAD: 5855a9b5
 Semantik: docs/admin/frp-tunnel.html:118 — „Die Tunnel-Statusansicht fragt das frps-Dashboard ab.“ (EN `docs/en/admin/frp-tunnel.html:118`)
+
+### T4 — Tests: argv von curl wirklich prüfen, Frische-Grenze ohne Wettlauf  [ ]
+Komponente: server · Dateien: apps/server/tests/test_frps_supervisor.py, apps/server/tests/test_frp_status.py
+Änderung: Funde des tester im Branch-Review (2026-10-18). (a) `test_no_process_carries_the_password_of_the_dashboard_on_its_command_line` sucht das rohe Passwort in `/proc/*/cmdline` erst, wenn die Anfrage am Dashboard ankommt; curl hat dann `-u u:pw` schon überschrieben, und `-H "Authorization: Basic <b64>"` trüge nur das base64. Ein Rückbau von `curl --config -` auf `-u`/`-H` bliebe grün. Neu: ein `curl`-Shim im `bin_dir` der Box schreibt `"$@"` nach `$STUB_DIR` und startet das echte curl (`shutil.which`) per `exec`; der Test verlangt mindestens 4 protokollierte Aufrufe und dass kein argv das Passwort oder `base64(user:password)` enthält. Gegenprobe im Scratch: mit `-u` statt `--config -` wird der Test rot. (b) Der Fall „59 s old“ in `test_frp_status.py` altert die Datei vor `_login()`; bis `STALE_AFTER` bleibt 1 s für bcrypt und die Anfrage. Die Datei wird erst nach dem Login gealtert (oder auf 55 s), die Grenze bleibt geprüft. (c) Ein Test für den Zweig `frps-Dashboard: HTTP <status>` (z. B. 401) in `_from_dashboard`.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py tests/test_frp_status.py
+Doku: keine
