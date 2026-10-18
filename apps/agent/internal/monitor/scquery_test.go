@@ -6,9 +6,11 @@ package monitor
 
 import (
 	"io/fs"
+	"os"
 	"os/exec"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // Realistic `sc query state= all` output: CRLF line endings, indented property lines, two records.
@@ -86,5 +88,30 @@ func TestAliasAndWatchScQueryError(t *testing.T) {
 	}
 	if all := got["all_services"].([]ServiceEntry); len(all) != 2 {
 		t.Errorf("all_services = %v, want both services", all)
+	}
+}
+
+func TestScServiceHealthTimedOut(t *testing.T) {
+	// A hung sc that the timeout ends must say so: exec reports the ended call as an ExitError
+	// ("exit status 1" on Windows, "signal: killed" on Linux), which would pass a hang off as a
+	// failing sc. A real child process goes through runWithTimeout, the runner the collector uses.
+	old := pluginTimeout
+	t.Cleanup(func() { pluginTimeout = old })
+	pluginTimeout = 100 * time.Millisecond
+	t.Setenv(dockerHelperEnv, "hang")
+	start := time.Now()
+	out, err := runWithTimeout(os.Args[0], "-test.run=^TestHelperDockerProcess$")
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Errorf("runWithTimeout returned after %s, the timeout did not stop the hung call", elapsed)
+	}
+	got := scServiceHealth(out, err)
+	if want := "sc query failed: timed out after 100ms"; got["error"] != want {
+		t.Errorf("error = %q, want %q", got["error"], want)
+	}
+	if c, ok := got["counts"]; ok {
+		t.Errorf("counts = %v, want none without sc query", c)
+	}
+	if all := got["all_services"].([]ServiceEntry); len(all) != 0 {
+		t.Errorf("all_services = %v, want none", all)
 	}
 }

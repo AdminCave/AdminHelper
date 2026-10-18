@@ -72,6 +72,7 @@ func collectSmart() ([]SmartDisk, string) {
 		Devices []struct {
 			Name     string `json:"name"`
 			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
 			Protocol string `json:"protocol"`
 		} `json:"devices"`
 	}
@@ -92,14 +93,14 @@ func collectSmart() ([]SmartDisk, string) {
 	)
 	for _, dev := range scanResult.Devices {
 		wg.Add(1)
-		go func(name, proto string) {
+		go func(name, devType, proto string) {
 			defer wg.Done()
-			if d := querySmartDevice(smartctl, name, proto); d != nil {
+			if d := querySmartDevice(smartctl, name, devType, proto); d != nil {
 				mu.Lock()
 				disks = append(disks, *d)
 				mu.Unlock()
 			}
-		}(dev.Name, dev.Protocol)
+		}(dev.Name, dev.Type, dev.Protocol)
 	}
 	wg.Wait()
 
@@ -111,8 +112,17 @@ func collectSmart() ([]SmartDisk, string) {
 	return disks, ""
 }
 
-func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
-	out, err := smartctlCLI.run(30*time.Second, smartctl, "--all", "--json=c", device)
+func querySmartDevice(smartctl, device, devType, protocol string) *SmartDisk {
+	// The scan type goes along as -d: some types only the scan knows (megaraid,N on /dev/bus/N, which
+	// a query without -d cannot detect), the others it detects from the name as the query would. Not
+	// scsi: the scan names every /dev/sdX without a USB bridge scsi without opening it, a SATA disk
+	// too, and -d scsi switches off the SAT detection on open (smartmontools os_linux.cpp,
+	// linux_scsi_device::autodetect_open), so the disk would come without its ATA attributes.
+	args := []string{"--all", "--json=c"}
+	if devType != "" && devType != "scsi" {
+		args = append(args, "-d", devType)
+	}
+	out, err := smartctlCLI.run(30*time.Second, smartctl, append(args, device)...)
 
 	// smartctl uses bit flags in the exit code. We keep the full code
 	// so the server can evaluate bit 0x10 (prefail) as critical.

@@ -346,6 +346,38 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: Schalter der Check-Konfiguration nehmen nur `true` oder `false` (R-0456):** `verify_ssl` (`http`),
+  `exclude_stopped` (`proxmox_backup`) und `check_restarts` (`docker_health`) nahmen auch `"false"`, `"no"`, `0` oder
+  `1` an und speicherten sie so. Der Check-Editor zeigte dann den Default, der Checker las den Wert anders: Ein
+  `verify_ssl: 0` schaltete die TLS-Pruefung ab, ein `exclude_stopped: 0` nahm gestoppte VMs mit. Jetzt lehnen
+  `POST /checks`, `PUT /checks/{id}` mit geaenderter Konfiguration und Template-Definitionen solche Werte mit 422 ab,
+  wie schon bei `alert_on_unavailable`. Keine Migration: Ein gespeicherter Nicht-Bool-Wert gilt als Default, wie ihn
+  der Check-Editor zeigt, nur ein echtes `false` schaltet ab; ein altes `verify_ssl: 0` prueft TLS also wieder. Doku:
+  Monitoring-Administration (DE+EN).
+
+- **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
+  `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
+  dem Node und ohne VMs, und der Check `proxmox_backup` las ihn als „Keine VMs/CTs gefunden“ = ok. Jetzt fehlt der Block,
+  `proxmox_backup` bleibt ohne Daten, und das Log nennt den Grund (etwa
+  `pvesh get /cluster/resources failed: timed out after 15s`, nie stderr). Eine leere VM-Liste bleibt „keine VMs“.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Agent: SMART liest Platten hinter einem MegaRAID-Controller (R-0455):** Der Agent fragte jede Platte aus
+  `smartctl --scan` ohne ihren Geraetetyp ab. Eine Platte hinter einem MegaRAID-Controller (Scan: `/dev/bus/N` mit
+  Typ `megaraid,N`) kann smartctl so nicht erkennen: Sie kam ohne Modell und SMART-Status in den Report, und der
+  Check `smart_health` meldete sie als „SMART FAILED“. Jetzt gibt der Agent den Typ aus dem Scan als `-d` weiter,
+  ausser `scsi`, damit eine SATA-Platte an `/dev/sdX` ihre ATA-Attribute behaelt. Doku: Agent-Entwicklerseite
+  (DE+EN).
+- **Agent: ein Timeout von `systemctl` und `sc` heisst „timed out after 15s“ (R-0454):** Beendete das 15-s-Timeout
+  einen haengenden Aufruf, las sich der Grund im Dienste-Block wie ein gescheiterter Aufruf: unter Linux
+  `systemctl list-units failed: signal: killed`, unter Windows `sc query failed: exit status 1`. Jetzt lautet er
+  `systemctl list-units failed: timed out after 15s` bzw. `sc query failed: timed out after 15s`; ein von aussen
+  beendeter Aufruf behaelt sein Signal. Auch ein `pvesh`-Aufruf, den das Timeout beendet, gilt intern als Timeout.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Server: FRP-Tunnel lehnen einen `extra_config`-Schluessel mit Zeilenumbruch am Ende ab (R-0468):**
+  `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` nahmen einen `extra_config`-Schluessel wie `"abc\n"` an,
+  weil die Pruefung einen abschliessenden Zeilenumbruch uebersah. Der Generator schreibt die Schluessel ungequotet in
+  die frpc-Config, die danach kein gueltiges TOML mehr war. Jetzt muss der ganze Schluessel aus `A-Z a-z 0-9 _ . -`
+  bestehen, sonst `422`. Doku: API-Referenz (DE+EN).
 - **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
   eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
   scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:
@@ -438,6 +470,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   etwas geaendert hatte, und der Agent schrieb die frpc-Config neu und startete frpc neu. Jetzt steht `allowUsers`
   aufsteigend sortiert in der Config. Nach dem Update aendert sich der Config-Hash von Hosts mit mehreren
   berechtigten Nutzern einmal, und der Agent holt die Config einmal neu.
+- **FRP: die Tunnel stehen in der frpc-Config in fester Reihenfolge (R-0452):** Die `[[proxies]]` standen in der
+  Reihenfolge, in der die Datenbank die Tunnel lieferte. Wurde einem Tunnel eine Verbindung zugeordnet oder seine
+  Verbindung geloescht, konnte er darin hinter die uebrigen Tunnel rutschen; damit aenderte sich der Config-Hash, ohne
+  dass sich die Config geaendert hatte, und der Agent holte die Config neu. Jetzt stehen die `[[proxies]]` ueberall,
+  wo der Server eine frpc-Config erzeugt (Sync, Provisionierungs-Paket, Downloads), nach Tunnel-Name sortiert. Nach
+  dem Update aendert sich der Config-Hash von Hosts mit mehreren Tunneln einmal, sofern ihre Tunnel bisher anders
+  standen, und der Agent laedt frpc einmal neu. Doku: Entwickler-Doku Server (DE+EN).
 - **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
   `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
   `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
@@ -781,6 +820,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
 
 ### Changed
+
+- **Monitoring: Die Checks melden englisch (R-0422):** Die Push-Checker (`agent_ping`, `agent_resources`,
+  `service_process`, `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health`), die Pull-Checker (`http`,
+  `ping`, `tcp`) und die Check-Engine meldeten teils deutsch, und diesen Text zeigen Dashboard, Glocke und
+  Benachrichtigungen unveraendert, auch in der englischen Oberflaeche. Jetzt sind die Meldungen englisch, mit denselben
+  Werten wie vorher, etwa „Waiting for agent data“, „All services OK“, „No backup: …“ oder „Timeout after 10s“. Ein
+  gedaempfter Fehlschlag endet auf „(failure 1/2)“ statt „(Fehler 1/2)“, ein HTTP-Check ohne TLS-Pruefung auf
+  „[TLS verification disabled]“. `service_process` spricht von „services“ statt von systemd-Units, weil der
+  Windows-Agent seine Dienste im selben Block meldet. Status, `_details` und Metriken bleiben gleich; eine gespeicherte
+  deutsche Meldung ersetzt die naechste Auswertung. Unveraendert bleiben die Fehlertexte der API und der Rahmentext der
+  Alert-Mail. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
+  Entwickler und Administration (DE+EN).
 
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft

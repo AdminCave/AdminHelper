@@ -427,7 +427,7 @@ def test_new_check_first_critical_stays_damped():
     )
     assert (eff, decision) == ("ok", "silent_ack")
     assert (state.status, state.fail_count) == ("ok", 1)
-    assert "(Fehler 1/2)" in state.message
+    assert "(failure 1/2)" in state.message
 
 
 def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
@@ -463,7 +463,7 @@ def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
 
     class _Waiting:
         def run(self, config):
-            return "unknown", "Wartet auf Agent-Daten", None
+            return "unknown", "Waiting for agent data", None
 
     submitted = []
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
