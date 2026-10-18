@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # update.sh: Rollback vollständig, Meldungen, Prüfung der .env — Task-Ledger
-Status: bereit · Branch: feature/update-hardening · Review: am Ende
+Status: aktiv · Branch: feature/update-hardening · Review: am Ende
 Spec: Roadmap R-0470
 Heavy: linux-full — `scripts/update.sh` ist Install-/Update-Pfad. Kein `multibox.sh`-Flag fährt `update.sh` (`box_*.sh` und `multibox.sh` rufen es nicht auf), ein `scenario` brächte keine Abdeckung. `upgrade_path_test.sh` Schritt 4 (`run.sh integration`, `:206-293`) startet die `update.sh` dieses Stands in einer echten Installation mit echter `.env` und echtem `docker compose` bis zur Übergabe an den Updater des Release (`--ref <letztes Release>`): Die Prüfung der `.env` aus T3 und die Elternseite der TMP-Übergabe aus T2 laufen dort real. Die übrige Logik prüft `update_test.sh` hermetisch, die Prüfung aus T3 zusätzlich gegen das echte `docker compose config`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -55,3 +55,9 @@ Refuter: Planer 2026-10-18 → die Wertetabelle oben; keine Form gefunden, bei d
 Dedup-Key: bug:install:update.sh:env-preflight
 HEAD: 5855a9b5
 Semantik: keine Stelle in docs/ — gesucht in `docs/**/*.html` (DE+EN), README.md und DEVELOPMENT.md nach `Invalid template`, `interpolat`, `$$`, `Anführungszeichen`/`quote`; `.env`-Werte mit `$` beschreibt die Doku nirgends. Maßgeblich ist die Compose-Doku (Zitate unter Doku); die Task trägt die Regel in die Installations-Doku nach.
+
+### T4 — Prüfung der .env: mehrzeilige Werte wie compose lesen  [ ]
+Komponente: scripts · Dateien: scripts/update.sh, scripts/tests/update_test.sh
+Änderung: Fund im Branch-Review (2026-10-18): `check_env_templates` liest die `.env` Zeile für Zeile, compose erlaubt aber Werte in einfachen und doppelten Anführungszeichen über mehrere Zeilen. Eine Folgezeile eines solchen Werts gilt heute als eigene Zeile; steht darin `=` oder `:` und danach ein `${`, bricht das Update ab, obwohl compose die `.env` annimmt (Wert in einfachen Anführungszeichen), und die Meldung nennt einen falschen Schlüssel. Die Prüfung schlägt künftig die Folgezeilen eines nicht geschlossenen Werts in Anführungszeichen diesem Wert zu, bis zum schließenden Zeichen, und prüft ihn dann wie einen einzeiligen (einfache Anführungszeichen literal, doppelte mit den bestehenden Regeln); die Meldung nennt den Schlüssel der ersten Zeile. Ein nie geschlossener Wert bleibt, wie heute, compose überlassen. Dazu im EXIT-Trap `rm -rf -- …`. Test zuerst rot: in Test 32 (Abgleich mit dem echten `docker compose config -q`) je ein mehrzeiliger Fall in einfachen und in doppelten Anführungszeichen, mit `${` in einer Folgezeile hinter `x:` bzw. `x=`; die Prüfung entscheidet wie compose, und die Ausgabe enthält das Folgezeilen-Fragment nicht.
+Verify: bash scripts/dev/verify.sh scripts --strict -- update_test
+Doku: keine (CHANGELOG-Eintrag aus T3 gilt)
