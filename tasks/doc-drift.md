@@ -23,8 +23,10 @@ T3 baut erst nach dem Merge von R-0429 (`feature/desktop-pre-workspaces`): R-042
 `desktop.html` (Absatz nach dem Baum, Connect-Flow Schritt 4) und mit `connectFlow.ts` die Wahrheit des
 Connect-Flows. T1 und T2 hängen nicht daran.
 
-### T1 — R-0442: Agent-Deployment nennt das Tunnel-Zertifikat aus dem Enrollment  [ ]
+### T1 — R-0442: Agent-Deployment nennt das Tunnel-Zertifikat aus dem Enrollment  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f18dfbb1 2026-10-18T07:18:50+02:00
+Review: am Ende (Branch-Review)
 Änderung: EN `:148` („a client certificate signed by the FRP CA“) sagt stattdessen, dass frpc das Client-Zertifikat nutzt, das der Agent beim mTLS-Enrollment vom `ca-issuer` holt (Absatz darunter, `:149`, `/etc/adminhelper/identity/`); eine server-eigene FRP-CA gibt es nicht mehr. DE `:136` („weder einen Server-URL noch ein FRP-Client-Zertifikat“) nennt das Client-Zertifikat ohne „FRP-“. Beifang DE `:39` („lädt beim Erst-Start mit einem Provision-Token sein Client-Zertifikat und startet `frpc.service`“): beim Provisionieren, das Zertifikat aus dem Enrollment, `frpc.service` nur mit aktivem Tunnel (wie DE `:147`). Nichts Neues über das Enrollment hinaus, was EN `:149` und DE `:148` schon sagen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/agent-deployment.html + docs/en/admin/agent-deployment.html (die Task ist die Doku)
