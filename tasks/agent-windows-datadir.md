@@ -16,8 +16,10 @@ Vererbung geschützten ACL. Ein vorhandenes Verzeichnis mit anderem Eigentümer 
 Ein bestehendes Verzeichnis von SYSTEM oder Administratoren (Update) bleibt erhalten und bekommt die geschützte ACL neu.
 Linux bleibt unverändert (`0700`). Zeilenangaben: main@b2091886.
 
-### T1 — Gemeinsamer Helfer `EnsureSecureDir` und die Eigentümer-Entscheidung  [ ]
+### T1 — Gemeinsamer Helfer `EnsureSecureDir` und die Eigentümer-Entscheidung  [x]
 Komponente: agent · Dateien: apps/agent/internal/config/securedir.go, apps/agent/internal/config/securedir_linux.go, apps/agent/internal/config/securedir_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @6650b190 2026-10-18T07:26:00+02:00
+Review: approve (.ah-out/review/agent-windows-datadir/T1.verdict.json)
 Änderung: Neuer plattformneutraler Einstieg `EnsureSecureDir(dir string) error`, der das Verzeichnis sicher herstellt, und eine eigene, testbare Funktion `trustedOwner(sid string) bool` (SYSTEM `S-1-5-18` oder Administratoren `S-1-5-32-544`, wie `lockOwnerAllowed` in `enroll/lock.go:84`). Die Linux-Implementierung (`securedir_linux.go`, heute `SecureDir`) bleibt im Verhalten gleich: `MkdirAll(dir, 0o700)` und `Chmod(0o700)`; die Windows-Seite kommt in T2. `securedir.go` ist neu (SPDX-Header). Test in `securedir_linux_test.go`: `EnsureSecureDir` auf einem neuen und auf einem offen angelegten Verzeichnis ergibt `0700`; `trustedOwner` mit SYSTEM, Administratoren und einer anderen SID.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern)
