@@ -24,17 +24,16 @@ const dockerTimeout = 10 * time.Second
 // tools really do hang: `zpool list` blocks indefinitely on a suspended pool and
 // `pvesh` on quorum loss — exactly when monitoring matters most. Without a cap the
 // whole report cycle stalls and systemd kills the oneshot at its TimeoutStartSec
-// (no push, no FRPC sync for that run).
-const pluginTimeout = 15 * time.Second
+// (no push, no FRPC sync for that run). A var only so tests can shorten it.
+var pluginTimeout = 15 * time.Second
 
 // runWithTimeout runs a plugin command under pluginTimeout, mirroring the docker
-// path, so a hung external tool can never block the report cycle. Unlike runTimed, a
-// killed call stays exec's ExitError: the systemctl and sc reasons (commandFailure) name
-// its status ("signal: killed"), where context.DeadlineExceeded would read "did not start".
+// path, so a hung external tool can never block the report cycle. Through runTimed, a
+// call the timeout ended returns context.DeadlineExceeded, which the systemctl and sc
+// reasons (commandFailure) name as a timeout instead of the ExitError exec reports
+// ("signal: killed" on Linux, "exit status 1" on Windows).
 func runWithTimeout(name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), pluginTimeout)
-	defer cancel()
-	return exec.CommandContext(ctx, name, args...).Output()
+	return runTimed(pluginTimeout, name, args...)
 }
 
 // dockerCLI indirects collectDocker's docker lookup and calls so tests can drive every path without
