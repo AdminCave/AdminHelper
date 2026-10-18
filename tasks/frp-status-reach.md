@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Statusansicht erreicht frps über den Supervisor — Task-Ledger
-Status: geplant · Branch: feature/frp-status-reach · Review: am Ende
+Status: aktiv · Branch: feature/frp-status-reach · Review: am Ende
 Spec: Roadmap R-0408
 Heavy: linux-full — frps-Image (`apps/frps`), Admin-Route `GET /api/frp/status` und der Stack-Test `integration-stack`. Der Job läuft nicht auf PRs, deshalb vor dem Merge `gh workflow run ci.yml --ref feature/frp-status-reach`. Kein `scenario`: kein Tunnel-Datenpfad, kein Cross-Host
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
