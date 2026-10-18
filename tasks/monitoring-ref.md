@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Texte und Listen aus dem Agent-Report begrenzen — Task-Ledger
-Status: geplant · Branch: feature/monitoring-ref · Review: am Ende
+Status: aktiv · Branch: feature/monitoring-ref · Review: am Ende
 Spec: Roadmap R-0437, R-0459, R-0472
 Heavy: none — nur die reinen `evaluate`-Funktionen unter `apps/monitoring/app/checkers/` und die Entwickler-Doku; keine Route, kein Schema, keine OpenAPI- oder Alembic-Änderung, kein Agent-, Desktop-, Gateway-, Compose-, PKI- oder Install-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Der Agent-Push im Integrations-Stack schickt wohlgeformte Reports und erreicht die geänderten Zweige nicht; die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
