@@ -356,6 +356,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Mit `FRPS_DASHBOARD_URL` fragt der Server das Dashboard weiter selbst; die Variable wirkt nur in der Umgebung des
   Dienstes `server` (etwa ueber eine `docker-compose.override.yml`), nicht ueber die `.env`. Doku: Admin-Doku
   FRP-Tunnel (DE+EN).
+- **Server: FRP-Tunnel lehnen einen `extra_config`-Schluessel mit Zeilenumbruch am Ende ab (R-0468):**
+  `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` nahmen einen `extra_config`-Schluessel wie `"abc\n"` an,
+  weil die Pruefung einen abschliessenden Zeilenumbruch uebersah. Der Generator schreibt die Schluessel ungequotet in
+  die frpc-Config, die danach kein gueltiges TOML mehr war. Jetzt muss der ganze Schluessel aus `A-Z a-z 0-9 _ . -`
+  bestehen, sonst `422`. Doku: API-Referenz (DE+EN).
 - **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
   eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
   scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:
