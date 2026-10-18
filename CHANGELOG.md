@@ -356,6 +356,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Mit `FRPS_DASHBOARD_URL` fragt der Server das Dashboard weiter selbst; die Variable wirkt nur in der Umgebung des
   Dienstes `server` (etwa ueber eine `docker-compose.override.yml`), nicht ueber die `.env`. Doku: Admin-Doku
   FRP-Tunnel (DE+EN).
+- **Server: Hook-Skripte speichern Verbindungen mit `save_connections` (R-0469):** Jeder Hook, der
+  `save_connections` aufrief, endete mit `success: false` und dem Fehler „Foreign key associated with column
+  'connections.server_id' could not find table 'servers' …“ und schrieb nichts, etwa die Beispiele
+  `webhook_add_connection.py`, `webhook_http_import.py` und `schedule_hook_cleanup.py` unter `docs/examples/`. Der
+  Worker-Prozess der Hooks lud nur das Modell der Verbindungen; jetzt laedt er wie Web- und Scheduler-Prozess alle
+  Modelle aus `apps/server/app/model_registry.py`. Nach dem Update schreiben solche Hooks bei ihrem naechsten Lauf;
+  einen, der das nicht mehr soll, vorher deaktivieren oder loeschen.
 - **Monitoring: Schalter der Check-Konfiguration nehmen nur `true` oder `false` (R-0456):** `verify_ssl` (`http`),
   `exclude_stopped` (`proxmox_backup`) und `check_restarts` (`docker_health`) nahmen auch `"false"`, `"no"`, `0` oder
   `1` an und speicherten sie so. Der Check-Editor zeigte dann den Default, der Checker las den Wert anders: Ein

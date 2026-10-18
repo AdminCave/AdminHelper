@@ -24,23 +24,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool, text
 
-import app.modules.ansible.models  # noqa: F401
-import app.modules.api_keys.models  # noqa: F401
-import app.modules.audit.models  # noqa: F401
-import app.modules.connections.models  # noqa: F401
-import app.modules.enrollment.models  # noqa: F401
-import app.modules.frp.models  # noqa: F401
-import app.modules.hooks.models  # noqa: F401
-import app.modules.notifications.models  # noqa: F401
-import app.modules.provisioning.models  # noqa: F401
-import app.modules.servers.models  # noqa: F401
-
-# Explicitly import all modules with __tablename__, otherwise they are
-# missing from Base.metadata for autogenerate.
-import app.modules.users.models  # noqa: F401
-
-# App imports — must come before target_metadata so Base.metadata
-# knows about all tables.
+# Every ORM model (app/model_registry.py), so that target_metadata below knows every
+# table; autogenerate and `alembic check` would take any table it misses for one to drop.
+from app import model_registry  # noqa: F401
 from app.core.config import DATABASE_URL
 from app.core.database import Base
 
