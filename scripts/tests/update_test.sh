@@ -10,9 +10,11 @@
 # health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
 # what --no-rollback names as the way on, a restore that fails, a missing .env, a
 # .env write error in the migration, what a rollback removes, what the texts name
-# for a floating tag, and the temp dir a self-update leaves.
+# for a floating tag, the temp dir a self-update leaves, and the check of .env
+# values before the first compose call, held against the real `docker compose`.
 #
-# Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign)
+# Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign,
+#      docker compose; no daemon)
 
 # ok()/bad() never fail, so the `cond && ok || bad` assertions are deliberate
 # (not if-then-else); the │-prefix sed is a readability nicety.
@@ -40,6 +42,11 @@ command -v minisign >/dev/null 2>&1 \
   && minisign -G -W -p "$WORK/test.pub" -s "$WORK/test.key" >/dev/null 2>&1 \
   || { echo "SKIP: minisign missing or unusable — the signature path cannot be verified"; exit 75; }
 TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
+# The .env check is held against the real `docker compose config` (test 32), so
+# compose is a precondition too; its path is taken before the stub below takes
+# the name. It needs no daemon.
+AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose version >/dev/null 2>&1 \
+  || { echo "SKIP: docker compose missing — the .env check cannot be held against it"; exit 75; }
 
 # --- a docker stub: succeeds at everything; health probe honours AH_TEST_HEALTH,
 # the pull AH_TEST_PULL; AH_TEST_UP_FAIL_ONCE=<marker> fails the first `compose
@@ -671,6 +678,90 @@ out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
     && [ -d "$INST/repo" ] && [ -z "$(find "$INST/repo" -mindepth 1)" ]; } \
   && ok "a rollback leaves the ./repo the update created empty" \
   || bad "rollback without a prior ./repo: rc=$rc, ./repo holds $(find "$INST/repo" -mindepth 1 -printf '%P ' 2>&1)"
+
+# ── 30. a '${' compose cannot read stops update.sh before anything changes ───
+# compose ends every call that reads .env with "Invalid template" when a value
+# holds a '${' that starts no valid placeholder. update.sh ran on through backup,
+# swap and re-pin and failed only at the pull; now it stops before the first
+# compose call, names the key and keeps the value (it may be a secret) out.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+# The '${' is the point: literal .env lines, not expansions.
+# shellcheck disable=SC2016
+ENV_BAD=('SMTP_PASSWORD=zz9probe${q' 'SMTP_PASSWORD=ab${}cd' 'SMTP_PASSWORD=ab${1x}cd'
+  'SMTP_PASSWORD=ab${cd}${' 'SMTP_PASSWORD=ab#${' 'export X=ab${' 'X: ab${')
+# The line goes at the end of a fresh 0.33.0 install, the update runs in $2 mode;
+# leaves out=, rc=, msg= (the FEHLER line) and DLOG= for the assertions.
+run_env_case() {
+  local line="$1" dir="$2"; shift 2
+  INST="$dir"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  printf '%s\n' "$line" >> "$INST/.env"; cp "$INST/.env" "$INST.env"
+  DLOG="$INST.docker"; : > "$DLOG"
+  out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" "$@" 2>&1); rc=$?
+  msg=$(grep 'FEHLER: ' <<<"$out")
+}
+# Exit, message, nothing of the value, nothing changed, no backup or snapshot,
+# no compose call that reads .env.
+assert_env_stop() {
+  local line="$1" key="$2" what="$3"
+  { [ $rc -ne 0 ] && grep -q "FEHLER: \.env: der Wert von $key enthaelt ein '\\\${' ohne gueltigen Platzhalter" <<<"$msg" \
+      && grep -q "Invalid template" <<<"$msg"; } \
+    && ok "$what [$line] stops with the key in the message" || bad "$what [$line]: rc=$rc $out"
+  ! grep -q zz9probe <<<"$out" \
+    && ok "$what [$line] keeps the value out of the output" || bad "$what [$line] printed the value: $out"
+  { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+      && ! ls "$INST"/backups/*.tar.gz >/dev/null 2>&1 && ! grep -qE '^compose (pull|up|exec)' "$DLOG"; } \
+    && ok "$what [$line] changed nothing: no backup, no snapshot, no compose call" \
+    || bad "$what [$line]: backups/ holds $(find "$INST/backups" -mindepth 1 -printf '%f ') docker calls $(tr '\n' ';' < "$DLOG")"
+}
+n=0
+for line in "${ENV_BAD[@]}"; do
+  n=$((n + 1)); key=${line#export }; key=${key%%[=:]*}
+  run_env_case "$line" "$WORK/inst30-$n"
+  assert_env_stop "$line" "$key" "update"
+done
+for mode in --redeploy --check; do
+  run_env_case "${ENV_BAD[0]}" "$WORK/inst30${mode#-}" "$mode"
+  assert_env_stop "${ENV_BAD[0]}" SMTP_PASSWORD "$mode"
+done
+
+# ── 31. a '$' compose can read does not stop the update ─────────────────────
+# shellcheck disable=SC2016
+ENV_GOOD=('SMTP_PASSWORD=ab$$cd' "SMTP_PASSWORD='ab\${cd'" 'SMTP_PASSWORD="ab$$"' 'SMTP_PASSWORD=ab${DOMAIN}x'
+  'SMTP_PASSWORD=ab${ZZ:-${DOMAIN}}' 'SMTP_PASSWORD=ab #${' '# X=${')
+n=0
+for line in "${ENV_GOOD[@]}"; do
+  n=$((n + 1))
+  run_env_case "$line" "$WORK/inst31-$n"
+  # The pull and the recreate in the docker log: the log the stops above are
+  # checked against does record compose calls.
+  { [ $rc -eq 0 ] && grep -q 'server:0.34.0' "$INST/.env" && grep -q '^compose pull' "$DLOG" \
+      && grep -q '^compose up' "$DLOG"; } \
+    && ok "update with [$line] runs through" || bad "update with [$line]: rc=$rc $out"
+done
+
+# ── 32. the check says no exactly where the real `docker compose` says no ────
+# Differential: for every line, update.sh --check fails iff `docker compose config
+# -q` fails in the same install dir. The extra lines are forms compose was probed
+# with: a space or '/' in the name, an open default, a double-quoted '${', a key
+# with blanks, a backslash (escapes in double quotes only), more '$$' runs. The
+# DOCKER_HOST is a dead socket: compose judges the .env without a daemon.
+# shellcheck disable=SC2016
+ENV_MORE=('X=ab${a b}cd' 'X=ab${x/y/z}cd' 'X=ab${cd:-${ef}' 'X="ab${cd"' '  X = ab${ '
+  'X=ab\${' 'X="ab\\${"' 'X= #${' 'X="ab${cd" # c'
+  'X=ab$${cd' 'X=ab$$$${' 'X=ab${ZZ:-$DOMAIN}' 'X=ab$1cd' 'X=ab$' 'X="ab\${cd"' 'X="ab\"\${"'
+  'X=ab${ZZ:-$${}' "X='ab\${cd' # c" 'X="ab" #${')
+n=0
+for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}"; do
+  n=$((n + 1))
+  INST="$WORK/inst32-$n"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  printf '%s\n' "$line" >> "$INST/.env"
+  out=$(run_update "$INST" --check 2>&1); ours=$?
+  ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
+    >/dev/null 2>"$INST.compose"; theirs=$?
+  [ "$((ours != 0))" = "$((theirs != 0))" ] \
+    && ok "[$line]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
+    || bad "[$line]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
+done
 
 echo
 echo "──────────────────────────────────────────"

@@ -365,19 +365,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Container bleiben unveraendert. `--no-rollback` nennt den Weg zurueck (`--redeploy` bzw. `--ref`). Fehlt die `.env`,
   bricht `update.sh` vor Backup und Snapshot ab; scheitert das Ziehen bei `--redeploy`, endet es mit eigener Meldung,
   und die Container bleiben unveraendert. Doku: Installation (DE+EN).
-- **Update: Rollback stellt den installierten Stand vollstaendig her (R-0470):** Scheiterte beim Neu-Pinnen der Images
-  das Schreiben der `.env` (etwa bei voller Platte), ersetzte `update.sh` die `.env` durch eine gekuerzte Datei mit nur
-  den Image-Pins und meldete das Update als fertig. Jetzt schreibt es die neue `.env` in eine Kopie daneben und tauscht
-  sie erst, wenn alles geschrieben ist. Scheitert ein Teil der `.env`-Migration (neue Keys, neue Secrets, Image-Pins),
-  rollt `update.sh` wie bei einem Pull-Fehler zurueck: Laufzeit-Dateien und die ganze alte `.env` kommen zurueck, die
-  Container bleiben unveraendert; mit `--no-rollback` nennt die Meldung `--ref` als Weg weiter. Ein Rollback entfernt
-  jetzt auch die Dateien, die erst das neue Release mitgebracht hat, und stellt `./repo` genau auf den Stand vor dem
-  Update; ein Verzeichnis `.env.ah-new` im Weg nimmt keine Kopie der alten `.env` mehr auf. Bei einem Floating-Tag
-  nennen `--check`, `--redeploy`, die Update-Meldung und die Rollbacks den Tag (etwa `:main`, ohne `SERVER_IMAGE`
-  `:latest`) statt `unknown`. Scheitert mit `--no-rollback` der Neustart oder der Healthcheck, sagt die Meldung jetzt
-  auch, dass Alembic die Datenbank beim Start schon migriert haben kann, und nennt `restore.sh`. Nach einem
-  Selbst-Update entfernt die neue `update.sh` auch das temporaere Verzeichnis des abgebenden Laufs; ist dieser noch
-  eine `update.sh` vor diesem Stand, bleibt es beim ersten Update noch liegen.
+- **Update: Rollback stellt den installierten Stand vollstaendig her, die `.env` wird vorab geprueft (R-0470):**
+  Scheiterte beim Neu-Pinnen der Images das Schreiben der `.env` (etwa bei voller Platte), ersetzte `update.sh` die
+  `.env` durch eine gekuerzte Datei mit nur den Image-Pins und meldete das Update als fertig. Jetzt schreibt es die
+  neue `.env` in eine Kopie daneben und tauscht sie erst, wenn alles geschrieben ist. Scheitert ein Teil der
+  `.env`-Migration (neue Keys, neue Secrets, Image-Pins), rollt `update.sh` wie bei einem Pull-Fehler zurueck:
+  Laufzeit-Dateien und die ganze alte `.env` kommen zurueck, die Container bleiben unveraendert; mit `--no-rollback`
+  nennt die Meldung `--ref` als Weg weiter. Ein Rollback entfernt jetzt auch die Dateien, die erst das neue Release
+  mitgebracht hat, und stellt `./repo` genau auf den Stand vor dem Update; ein Verzeichnis `.env.ah-new` im Weg nimmt
+  keine Kopie der alten `.env` mehr auf. Bei einem Floating-Tag nennen `--check`, `--redeploy`, die Update-Meldung und
+  die Rollbacks den Tag (etwa `:main`, ohne `SERVER_IMAGE` `:latest`) statt `unknown`. Scheitert mit `--no-rollback`
+  der Neustart oder der Healthcheck, sagt die Meldung jetzt auch, dass Alembic die Datenbank beim Start schon migriert
+  haben kann, und nennt `restore.sh`. Nach einem Selbst-Update entfernt die neue `update.sh` auch das temporaere
+  Verzeichnis des abgebenden Laufs; ist dieser noch eine `update.sh` vor diesem Stand, bleibt es beim ersten Update
+  noch liegen. Vor dem ersten `docker compose`-Aufruf prueft `update.sh` jetzt die `.env`: Enthaelt ein unquotierter
+  oder doppelt gequoteter Wert ein `${` ohne gueltigen Platzhalter, an dem Compose jeden Aufruf mit „Invalid template“
+  abbricht, endet `update.sh` mit dem Namen des Schluessels (ohne den Wert), bevor es etwas aendert, auch bei
+  `--check` und `--redeploy`. Bisher scheiterte das Update daran erst nach Backup, Tausch und Neu-Pinnen. Doku:
+  Installation und Betrieb (DE+EN) beschreiben, wie ein `$` in einem `.env`-Wert zu schreiben ist.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.

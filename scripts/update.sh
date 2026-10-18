@@ -70,8 +70,81 @@ done
 log() { echo "[update] $*" >&2; }
 die() { echo "FEHLER: $*" >&2; exit 1; }
 
+# 0 if every '${' in $1 that is not part of a '$$' starts a placeholder compose
+# accepts: ${NAME}, or ${NAME followed by :- - :? ? :+ or + and a closing '}',
+# nested ones included. The classes are spelled out: under de_DE.UTF-8 a range
+# like [A-Z] in =~ matches umlauts too, and compose takes ASCII names only.
+env_template_ok() {
+    local s="$1" open=0
+    local name='^[_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ][_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]*'
+    while [ -n "$s" ]; do
+        case $s in
+            '$$'*) s=${s:2} ;;
+            "\${"*)
+                s=${s:2}
+                [[ $s =~ $name ]] || return 1
+                s=${s:${#BASH_REMATCH[0]}}
+                case $s in
+                    '}'*) s=${s:1} ;;
+                    ':-'*|':?'*|':+'*) open=$((open + 1)); s=${s:2} ;;
+                    '-'*|'?'*|'+'*) open=$((open + 1)); s=${s:1} ;;
+                    *) return 1 ;;
+                esac ;;
+            '}'*) [ "$open" -eq 0 ] || open=$((open - 1)); s=${s:1} ;;
+            *) s=${s:1} ;;
+        esac
+    done
+    [ "$open" -eq 0 ]
+}
+
+# compose reads the values in .env as templates, and a '${' that starts no valid
+# placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
+# template". Checked before the first one, so such a value stops the update before
+# backup, swap and re-pin rather than after. Reads each line as compose does:
+# blank and '#' lines drop, "export " may lead, '=' or ':' separates; a single-
+# quoted value is literal, in a double-quoted one a backslash escapes the next
+# character (\$ is a literal '$'), an unquoted one ends at " #". The message names
+# the key, never the value: it may be a secret.
+check_env_templates() {
+    local line key val out c i
+    [ -f .env ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line#"${line%%[![:space:]]*}"}
+        case $line in ''|'#'*) continue ;; esac
+        case $line in
+            export[[:space:]]*) line=${line#export}; line=${line#"${line%%[![:space:]]*}"} ;;
+        esac
+        case $line in *[=:]*) ;; *) continue ;; esac
+        key=${line%%[=:]*}; key=${key%"${key##*[![:space:]]}"}
+        val=${line#*[=:]}; val=${val#"${val%%[![:space:]]*}"}
+        case $val in
+            "'"*) continue ;;
+            '"'*)
+                out=""; i=1
+                while [ "$i" -lt "${#val}" ]; do
+                    c=${val:i:1}
+                    [ "$c" != '"' ] || break
+                    if [ "$c" = "\\" ]; then
+                        i=$((i + 1)); c=${val:i:1}
+                        case $c in
+                            '$') c='$$' ;;
+                            "\\"|'"') ;;
+                            *) c="\\$c" ;;
+                        esac
+                    fi
+                    out+=$c; i=$((i + 1))
+                done
+                val=$out ;;
+            *) val=${val%% #*} ;;
+        esac
+        env_template_ok "$val" \
+            || die ".env: der Wert von ${key} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
+    done < .env
+}
+
 # --- Preflight --------------------------------------------------------------
 [ -f docker-compose.yml ] || die "aus dem Install-Verzeichnis ausfuehren (docker-compose.yml fehlt)."
+check_env_templates
 command -v docker >/dev/null 2>&1 || die "docker fehlt."
 docker compose version >/dev/null 2>&1 || die "'docker compose' fehlt."
 command -v curl >/dev/null 2>&1 || die "curl fehlt."
