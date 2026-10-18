@@ -586,3 +586,72 @@ def test_docker_ignored_container_is_skipped():
     status, _, metrics = DockerHealthChecker().evaluate({"ignore_containers": ["watchtower"]}, r)
     assert status == "ok"  # the only problem container is ignored
     assert _rows(metrics) == []
+
+
+# --- Outage branch of ZfsHealthChecker and DockerHealthChecker (R-0472) ---
+# Only the agent's codes and a capped error_message reach the message, which goes unchanged
+# into MonitorState.message, webhook and mail; available is down only as a JSON false.
+def _outage_case(kind, **block):
+    """(checker, report with one healthy pool or container, message prefix, list key)."""
+    if kind == "zfs":
+        return ZfsHealthChecker(), _zfs(_pool(), **block), "ZFS unavailable", "pools"
+    return DockerHealthChecker(), _docker(_ctr(), **block), "Docker unavailable", "containers"
+
+
+@pytest.mark.parametrize(
+    ("kind", "error"),
+    [
+        ("zfs", "disk_full"),
+        ("zfs", "x" * 300),
+        ("zfs", "daemon_unreachable"),
+        ("zfs", ["timeout"]),
+        ("docker", "disk_full"),
+        ("docker", "x" * 300),
+        ("docker", ["timeout"]),
+    ],
+    ids=[
+        "zfs-disk_full",
+        "zfs-300-chars",
+        "zfs-docker-code",
+        "zfs-list",
+        "docker-disk_full",
+        "docker-300-chars",
+        "docker-list",
+    ],
+)
+def test_unknown_error_code_is_an_outage_without_code(kind, error):
+    checker, report, prefix, key = _outage_case(kind, available=False, error=error)
+    status, msg, metrics = checker.evaluate({}, report)
+    assert status == "warning"
+    assert msg == prefix
+    assert metrics == {"_details": {"available": False, "error": None, key: []}}
+
+
+@pytest.mark.parametrize("kind", ["zfs", "docker"])
+def test_error_message_is_capped(kind):
+    checker, report, prefix, _ = _outage_case(
+        kind, available=False, error="timeout", error_message="y" * 10_000
+    )
+    _, msg, _ = checker.evaluate({}, report)
+    # 500 characters of agent text, the ellipsis included.
+    assert msg == f"{prefix} (timeout): " + "y" * 499 + "…"
+
+
+@pytest.mark.parametrize("kind", ["zfs", "docker"])
+@pytest.mark.parametrize("error_message", [42, ["zpool list failed"]], ids=["int", "list"])
+def test_error_message_that_is_no_string_is_left_out(kind, error_message):
+    checker, report, prefix, _ = _outage_case(
+        kind, available=False, error="timeout", error_message=error_message
+    )
+    status, msg, _ = checker.evaluate({}, report)
+    assert status == "warning"
+    assert msg == f"{prefix} (timeout)"
+
+
+@pytest.mark.parametrize("kind", ["zfs", "docker"])
+@pytest.mark.parametrize("available", ["false", 0, None], ids=["str-false", "zero", "null"])
+def test_available_is_down_only_as_a_real_false(kind, available):
+    checker, healthy, _, _ = _outage_case(kind, available=True)
+    checker, report, _, _ = _outage_case(kind, available=available)
+    assert checker.evaluate({}, report) == checker.evaluate({}, healthy)
+    assert checker.evaluate({}, report)[0] == "ok"

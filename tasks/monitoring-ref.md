@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Texte und Listen aus dem Agent-Report begrenzen — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-ref · Review: am Ende
+Status: bereit · Branch: feature/monitoring-ref · Review: am Ende
 Spec: Roadmap R-0437, R-0459, R-0472
 Heavy: none — nur die reinen `evaluate`-Funktionen unter `apps/monitoring/app/checkers/` und die Entwickler-Doku; keine Route, kein Schema, keine OpenAPI- oder Alembic-Änderung, kein Agent-, Desktop-, Gateway-, Compose-, PKI- oder Install-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Der Agent-Push im Integrations-Stack schickt wohlgeformte Reports und erreicht die geänderten Zweige nicht; die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -41,8 +41,10 @@ Metrik: Probe oben (Python 3.13.5): Einträge in `_details.containers` bei 2000 
 Dedup-Key: ref:monitoring:plugins.py:docker_containers_cap
 HEAD: 5855a9b5
 
-### T3 — Docker/ZFS: Fehler-Code allowlisten, `error_message` kappen, `available` nur bei echtem `false` (R-0472)  [ ]
+### T3 — Docker/ZFS: Fehler-Code allowlisten, `error_message` kappen, `available` nur bei echtem `false` (R-0472)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @46ad5122 2026-10-18T09:45:41+02:00
+Review: am Ende (Branch-Review)
 Änderung: Beide Ausfall-Zweige (`ZfsHealthChecker` `plugins.py:127-135`, `DockerHealthChecker` `:289-297`): (a) ein Ausfall nur noch bei `available is False` oder gesetztem `error`; heute zählen `null` und `0` als Ausfall, der String `"false"` als verfügbar. (b) `error` geht nur als Code aus der Allowlist in Meldung und `_details.error`: Docker `daemon_unreachable`, `timeout`, `cli_failed`, `parse_failed`, ZFS `timeout`, `cli_failed` (die Codes des Agents, `apps/agent/internal/monitor/plugins.go:145-149` und `:380-384`). Ein anderer gesetzter Wert bleibt ein Ausfall, aber ohne Code: Meldung „Docker unavailable“ bzw. „ZFS unavailable“, `_details.error` `null`; der Desktop zeigt für unbekannte Codes und `null` schon heute denselben Text (`SecDocker.svelte:104-106`, `SecZfs.svelte:37-41`). (c) `error_message` läuft durch `cap_agent_text` aus T1 (500 Zeichen samt „…“); ist er kein String, fällt er weg und die Meldung endet ohne „: …“. Test zuerst rot, je Checker: unbekannter Code (`disk_full`, 300 × „x“, für ZFS auch `daemon_unreachable`) → warning, Meldung ohne Code, `_details.error` `None`; `error_message` aus 10 000 Zeichen → Text in der Meldung höchstens 500 Zeichen, endet auf „…“; `error_message` als Zahl → Meldung ohne Doppelpunkt; `available` als `"false"`, `0` und `null` ohne `error`, mit gesunden Containern bzw. Pools → `ok` wie verfügbar. Die bestehenden Fälle (`test_*_unavailable_is_warning_without_*` mit den bekannten Codes, `test_*_error_with_available_true_is_still_unavailable`, `alert_on_unavailable`) bleiben grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: docs/developer/monitoring.html + docs/en/developer/monitoring.html (`:134` die Codes je Block: Docker vier, ZFS zwei; `:157` „Ausfall (available: false oder error gesetzt)“: nur JSON-`false`, Code nur aus der Allowlist, sonst ohne Code, `error_message` auf 500 Zeichen gekürzt) · kein CHANGELOG (ein regulärer Agent schickt Bools und bekannte Codes)
