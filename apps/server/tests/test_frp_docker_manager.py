@@ -4,10 +4,12 @@
 
 """frps.toml in the volume shared with the frps container: written atomically (temp file in the
 same directory, fsync, os.replace, 0600), removed best effort, and reconciled with the DB in both
-directions when the server starts."""
+directions when the server starts, which also removes the temp files a killed write left behind."""
 
+import errno
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +24,18 @@ from app.modules.frp.models import FrpServerConfig
 def frp_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
     return tmp_path
+
+
+def _aged(path: Path, seconds: float) -> Path:
+    then = time.time() - seconds
+    os.utime(path, (then, then), follow_symlinks=False)
+    return path
+
+
+def _temp_file(directory: Path, name: str, *, age: float) -> Path:
+    path = directory / f".frps.toml.{name}.tmp"
+    path.write_text("# config of a killed write\n")
+    return _aged(path, age)
 
 
 def _cfg(**fields) -> FrpServerConfig:
@@ -184,3 +198,84 @@ def test_startup_with_a_db_config_writes_frps_toml(db_session, frp_dir):
     path = frp_dir / "frps.toml"
     assert path.read_text() == generate_frps_toml(config)
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("with_db_config", [False, True])
+def test_startup_removes_old_temp_files_and_keeps_fresh_ones(db_session, frp_dir, with_db_config):
+    # A SIGKILL or OOM between mkstemp and os.replace leaves the 0600 temp file, with the token of
+    # its time, in the volume. Every uvicorn worker runs the startup: a temp file younger than a
+    # minute may be the one another worker is writing right now, so it stays.
+    import app.main as m
+
+    if with_db_config:
+        db_session.add(_cfg(id="cfg-start", name="cfg-start", created_at=datetime(2020, 1, 1)))
+        db_session.commit()
+    old = _temp_file(frp_dir, "k1lled", age=3600)
+    fresh = _temp_file(frp_dir, "wr1ting", age=0)
+
+    m._ensure_frps_config(db_session)
+
+    assert not old.exists()
+    assert fresh.exists()
+    assert (frp_dir / "frps.toml").exists() is with_db_config
+
+
+def test_the_cleanup_leaves_frps_toml_other_names_and_symlinks_alone(frp_dir, tmp_path_factory):
+    target = tmp_path_factory.mktemp("elsewhere") / "kept"
+    target.write_text("# not ours\n")
+    _aged(target, 3600)
+    link = frp_dir / ".frps.toml.l1nk.tmp"
+    link.symlink_to(target)
+    kept = [link]
+    for name in ("frps.toml", "frps.toml.tmp", ".frps.toml.x.bak"):
+        (frp_dir / name).write_text("# keep\n")
+        kept.append(_aged(frp_dir / name, 3600))
+    _aged(link, 3600)
+    old = _temp_file(frp_dir, "k1lled", age=3600)
+
+    assert docker_manager.remove_stale_temp_files() == 1
+
+    assert not old.exists()
+    assert all(os.path.lexists(path) for path in kept)
+    assert link.is_symlink() and target.read_text() == "# not ours\n"
+
+
+def test_a_failed_removal_is_logged_and_the_rest_goes_on(db_session, frp_dir, monkeypatch, caplog):
+    import app.main as m
+
+    config = _cfg(id="cfg-start", name="cfg-start", created_at=datetime(2020, 1, 1))
+    db_session.add(config)
+    db_session.commit()
+    stuck = _temp_file(frp_dir, "stuck", age=3600)
+    gone = _temp_file(frp_dir, "g0ne", age=3600)
+    rest = [_temp_file(frp_dir, name, age=3600) for name in ("a1", "b2")]
+    real_unlink = os.unlink
+
+    def unlink(path, *args, **kwargs):
+        if os.fspath(path) == os.fspath(stuck):
+            raise PermissionError(errno.EACCES, "Permission denied", os.fspath(path))
+        if os.fspath(path) == os.fspath(gone):
+            # Another worker removed it first.
+            real_unlink(path, *args, **kwargs)
+            raise FileNotFoundError(errno.ENOENT, "No such file or directory", os.fspath(path))
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+    with caplog.at_level(logging.INFO, logger=docker_manager.logger.name):
+        m._ensure_frps_config(db_session)
+
+    assert stuck.exists()
+    assert not gone.exists() and not any(path.exists() for path in rest)
+    assert (frp_dir / "frps.toml").read_text() == generate_frps_toml(config)
+    records = [r for r in caplog.records if r.name == docker_manager.logger.name]
+    warnings = [r.getMessage() for r in records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "PermissionError" in warnings[0]
+    assert "Permission denied" not in warnings[0]
+    assert "stale frps temp files removed: 2" in [r.getMessage() for r in records]
+
+
+def test_an_unlistable_directory_is_logged_not_raised(frp_dir, monkeypatch, caplog):
+    monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", frp_dir / "missing")
+    with caplog.at_level(logging.WARNING, logger=docker_manager.logger.name):
+        assert docker_manager.remove_stale_temp_files() == 0
+    assert any("FileNotFoundError" in r.getMessage() for r in caplog.records)

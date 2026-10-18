@@ -12,8 +12,14 @@
 #   - publish Postgres and Redis on 127.0.0.1 only (ITEST_PG_PORT,
 #     ITEST_REDIS_PORT), for the tests that need a real database or Redis and run
 #     on the host (stack_pytest.sh). Production keeps them network-internal;
-#   - swap the server's ./data host bind for a named volume, so `down -v` cleans
-#     it and no container-UID-owned files are left in the repo.
+#   - swap the ./data host bind of the server and the scheduler for the named
+#     volume test-data, so `down -v` cleans it and no container-UID-owned files
+#     are left in the repo; the two share it as they share ./data in production.
+#
+# frps keeps the fixed host ports 7000/7443 of the base, as the gateway keeps
+# its enroll and repo ports below: the desktop E2E connects to localhost:7000
+# and the multibox server box serves the tunnel boxes on :7000 (only the stack
+# test asks compose for the published port).
 services:
   # Loopback only: Redis has no auth at all, and nothing but tests on the same
   # host needs either. The base defines no ports for them, so a plain list adds these.
@@ -39,6 +45,8 @@ services:
   # unavailable image and the whole up fails (6.64).
   scheduler:
     image: adminhelper-test/server:latest
+    volumes:
+      - test-data:/app/data
 
   gateway:
     image: adminhelper-test/gateway:latest

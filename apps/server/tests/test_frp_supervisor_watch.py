@@ -14,6 +14,7 @@ boots or sequence numbers on every read gets at most LIMIT notifications per hou
 older than an hour is no news."""
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -54,6 +55,12 @@ def _event(seq, event, at, *, reason="none", token_changed=False) -> dict:
         "reason": reason,
         "tokenChanged": token_changed,
     }
+
+
+@pytest.fixture(autouse=True)
+def _no_warning_yet(monkeypatch):
+    # The watch remembers between its runs how many events it last warned about.
+    monkeypatch.setattr(supervisor_watch, "_last_skipped", 0)
 
 
 @pytest.fixture()
@@ -404,6 +411,41 @@ def test_over_the_limit_the_newest_events_are_told(db_session, people, status_fi
     notify_supervisor_events(db_session, now=now)
 
     assert {row.source_id for row in _rows(db_session)} == {f"{BOOT}:3", f"{BOOT}:4"}
+
+
+def test_an_overflow_warns_once_until_its_count_changes(
+    db_session, people, status_file, monkeypatch, caplog
+):
+    # The watch runs every 15 s, and events over the limit stay in the ring and the window for up
+    # to an hour: the warning is told when the count appears or changes, not on every run.
+    monkeypatch.setattr(supervisor_watch, "LIMIT", 2)
+    now = _now()
+    four = [_event(seq, "crashed", now) for seq in range(1, 5)]
+    five = [*four, _event(5, "crashed", now)]
+
+    def warned() -> list[str]:
+        return [
+            r.getMessage()
+            for r in caplog.records
+            if r.levelno == logging.WARNING and r.name == supervisor_watch.logger.name
+        ]
+
+    with caplog.at_level(logging.WARNING, logger=supervisor_watch.logger.name):
+        _write(status_file, four, now)
+        for _ in range(4):
+            notify_supervisor_events(db_session, now=now)
+        assert warned() == ["frps supervisor: 2 events not notified, limit of 2 per hour reached"]
+
+        _write(status_file, five, now)
+        for _ in range(2):
+            notify_supervisor_events(db_session, now=now)
+        assert [m.split()[2] for m in warned()] == ["2", "3"]
+
+        _write(status_file, [], now)
+        notify_supervisor_events(db_session, now=now)
+        _write(status_file, five, now)
+        notify_supervisor_events(db_session, now=now)
+        assert [m.split()[2] for m in warned()] == ["2", "3", "3"]
 
 
 def test_the_limit_holds_for_an_hour_and_then_frees_again(db_session, people, status_file):

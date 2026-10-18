@@ -5,9 +5,11 @@
 package monitor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"reflect"
@@ -536,4 +538,96 @@ func TestCollectZFSPools(t *testing.T) {
 			t.Errorf("errors = %v, want none without zpool status", got["errors"])
 		}
 	})
+}
+
+// stubPvesh swaps pveshCLI for a fake pvesh that is on the PATH and answers each `pvesh get` by its
+// API path from replies, like stubZpool; a path without a reply fails the test.
+func stubPvesh(t *testing.T, replies map[string]dockerReply) {
+	t.Helper()
+	old := pveshCLI
+	t.Cleanup(func() { pveshCLI = old })
+	pveshCLI.lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
+	pveshCLI.run = func(args ...string) ([]byte, error) {
+		var reply dockerReply
+		ok := len(args) > 1 && args[0] == "get"
+		if ok {
+			reply, ok = replies[args[1]]
+		}
+		if !ok {
+			t.Errorf("unexpected pvesh call %v", args)
+			return nil, errors.New("unexpected call")
+		}
+		return []byte(reply.out), reply.err
+	}
+}
+
+// pveshNodeStatus is the API path collectProxmox asks for the local node's status.
+func pveshNodeStatus(t *testing.T) string {
+	t.Helper()
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatalf("hostname: %v", err)
+	}
+	node, _, _ := strings.Cut(host, ".")
+	return "/nodes/" + node + "/status"
+}
+
+// captureWarnings routes the package logger into a buffer for the duration of the test.
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+const pveshNodeStatusFixture = `{"cpu":0.05,"memory":{"total":1000,"used":250}}`
+
+func TestCollectProxmoxVMCallFails(t *testing.T) {
+	// A VM call that failed, hung or printed no JSON array is no "no VMs": a block with the node alone
+	// reads on the server as "Keine VMs/CTs gefunden" = ok. Without it proxmox_backup has no data, and
+	// the log (diagnose) names the reason, short and without stderr.
+	for name, tc := range map[string]struct {
+		reply dockerReply
+		log   string
+	}{
+		"fails": {dockerReply{err: runHelperDocker(t, "fail", time.Minute)},
+			"pvesh get /cluster/resources failed: exit status 3"},
+		"times out": {dockerReply{err: context.DeadlineExceeded},
+			"pvesh get /cluster/resources failed: timed out after 15s"},
+		"not json": {dockerReply{out: "not json"}, "pvesh get /cluster/resources output unreadable"},
+		"null":     {dockerReply{out: "null"}, "pvesh get /cluster/resources output unreadable"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubPvesh(t, map[string]dockerReply{
+				pveshNodeStatus(t):   {out: pveshNodeStatusFixture},
+				"/storage":           {out: "[]"},
+				"/cluster/resources": tc.reply,
+			})
+			logs := captureWarnings(t)
+			if got := collectProxmox(); got != nil {
+				t.Errorf("collectProxmox() = %v, want no block", got)
+			}
+			if !strings.Contains(logs.String(), tc.log) {
+				t.Errorf("log = %q, want it to name %q", logs.String(), tc.log)
+			}
+		})
+	}
+}
+
+func TestCollectProxmoxNoVMs(t *testing.T) {
+	// The counter-check: an empty list is a node without VMs, and the block goes out with the node.
+	stubPvesh(t, map[string]dockerReply{
+		pveshNodeStatus(t):   {out: pveshNodeStatusFixture},
+		"/storage":           {out: "[]"},
+		"/cluster/resources": {out: "[]"},
+	})
+	wire := dockerWire(t, collectProxmox())
+	if node, _ := wire["node"].(map[string]any); node["cpu"] != 5.0 || node["memory_percent"] != 25.0 {
+		t.Errorf("block = %v, want the node at 5%% CPU and 25%% memory", wire)
+	}
+	if vms, _ := wire["vms"].([]any); len(vms) != 0 {
+		t.Errorf("vms = %v, want none", vms)
+	}
 }
