@@ -407,10 +407,12 @@ def test_status_takes_a_list_just_inside_the_limits(
 ):
     _supervisor(monkeypatch, tmp_path)
     _config(db_session, dashboard_port=7500)
+    # Logged in first: of the second left to the limit, the login would take its share.
+    headers = _login(test_client)
     path = tmp_path / "proxy-stcp.json"
     (_stale(59) if case == "59 s old" else _padded(1024 * 1024))(path)
 
-    resp = test_client.get("/api/frp/status", headers=_login(test_client))
+    resp = test_client.get("/api/frp/status", headers=headers)
 
     assert resp.status_code == 200, resp.text
     assert "error" not in resp.json()
@@ -432,3 +434,19 @@ def test_status_with_dashboard_url_asks_the_dashboard_not_the_files(
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["error"] == "frps-Dashboard: nicht erreichbar (ConnectError)"
+
+
+def test_status_with_dashboard_url_reports_a_dashboard_that_rejects_the_request(
+    test_client, admin_user, db_session, httpx_mock, monkeypatch
+):
+    """A dashboard that answers, but not with 200 (wrong credentials), is no unreachable one."""
+    import app.modules.frp.status_router as sr
+
+    monkeypatch.setattr(sr, "FRPS_DASHBOARD_URL", _DASHBOARD)
+    _config(db_session, dashboard_port=7500)
+    httpx_mock.add_response(url=f"{_DASHBOARD}/api/proxy/stcp", status_code=401)
+
+    resp = test_client.get("/api/frp/status", headers=_login(test_client))
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"proxies": [], "total": 0, "error": "frps-Dashboard: HTTP 401"}

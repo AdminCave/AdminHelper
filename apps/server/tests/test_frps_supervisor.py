@@ -1400,11 +1400,34 @@ def test_while_frps_runs_every_poll_puts_the_answers_of_its_dashboard_into_the_s
     assert _state(box, in_flight=True) == ALL_LISTS
 
 
+# Stands in for curl: records the arguments of each call, one line a call, then becomes the
+# real curl, stdin and all. curl blanks the value of -u in its argv once it runs; the record is
+# taken before that.
+CURL = """#!/bin/sh
+printf '%s\\n' "$*" >> "$STUB_DIR/curl"
+exec {real} "$@"
+"""
+
+
 def test_no_process_carries_the_password_of_the_dashboard_on_its_command_line(box, dashboard):
+    real = shutil.which("curl")
+    assert real, "curl"
+    (box.root / "bin" / "curl").write_text(CURL.format(real=real))
+    (box.root / "bin" / "curl").chmod(0o755)
+
     _with_dashboard(box, dashboard)
     box.wait_until(lambda: len(dashboard.requests) >= 3 * len(PROXY_TYPES), "three polls")
 
-    # Looked for while curl waited for the answer, and found curl then.
+    # Neither as it is nor as an Authorization header would carry it.
+    credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
+    calls = (box.stub / "curl").read_text(encoding="utf-8").splitlines()
+    assert len(calls) >= len(PROXY_TYPES)
+    assert all(f"127.0.0.1:{dashboard.port}/api/proxy/" in call for call in calls), calls
+    assert [c for c in calls if DASHBOARD_PASSWORD in c or credentials in c] == []
+    # The credentials reached the dashboard all the same.
+    assert {auth for _, auth in dashboard.requests} == {f"Basic {credentials}"}
+    # Nor any other process while a request was open; looked for while curl waited for the
+    # answer, and found curl then.
     assert dashboard.clients >= len(dashboard.requests) > 0
     assert dashboard.leaks == []
 
