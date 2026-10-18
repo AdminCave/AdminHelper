@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # update.sh: Rollback vollständig, Meldungen, Prüfung der .env — Task-Ledger
-Status: bereit · Branch: feature/update-hardening · Review: am Ende
+Status: erledigt · Branch: feature/update-hardening · Review: am Ende
 Spec: Roadmap R-0470
 Heavy: linux-full — `scripts/update.sh` ist Install-/Update-Pfad. Kein `multibox.sh`-Flag fährt `update.sh` (`box_*.sh` und `multibox.sh` rufen es nicht auf), ein `scenario` brächte keine Abdeckung. `upgrade_path_test.sh` Schritt 4 (`run.sh integration`, `:206-293`) startet die `update.sh` dieses Stands in einer echten Installation mit echter `.env` und echtem `docker compose` bis zur Übergabe an den Updater des Release (`--ref <letztes Release>`): Die Prüfung der `.env` aus T3 und die Elternseite der TMP-Übergabe aus T2 laufen dort real. Die übrige Logik prüft `update_test.sh` hermetisch, die Prüfung aus T3 zusätzlich gegen das echte `docker compose config`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
