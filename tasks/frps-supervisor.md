@@ -281,3 +281,11 @@ Review: approve (.ah-out/review/frps-supervisor/T30.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: CHANGELOG.md · docs/admin/betrieb.html + docs/en/admin/operations.html · docs/developer/api-reference.html + docs/en/developer/api-reference.html
 Abhängt von: T29
+
+### T31 — Stack-Test: frps und Scheduler ohne Abhängigkeiten starten  [x]
+Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @3d8d232e 2026-10-18T07:10:36+02:00
+Review: approve (.ah-out/review/frps-supervisor/T31.verdict.json)
+Änderung: Beleg: CI-Lauf 39047422935 auf `main` zweimal rot („frps: bind port '' not published“), Diagnose-Lauf 39048719239: `e2e_dc up -d --build frps scheduler` (`integration_stack_test.sh:456`) baut auf dem Runner auch `server` und `ca-issuer` neu und legt beide Container neu an; das Gateway löst Upstreams nur alle 30 s neu auf (`apps/gateway`, `resolver 127.0.0.11 valid=30s`), die nächste API-Abfrage kann die alte Adresse treffen. Fix: `up -d --no-deps --build frps scheduler`, damit baut und startet compose nur diese zwei; `server` und `ca-issuer` laufen weiter. Dazu prüft der Abschnitt, dass `server` und `ca-issuer` nach dem `up` dieselben Container-IDs haben wie davor, sonst `bad` mit Klartext; so belegt jeder Lauf den Fix. Harness-Pfad wegen belegtem Produktschaden (roter Produkttest auf `main`, CLAUDE.md §4). Beweis vor dem Merge: `gh workflow run ci.yml --ref feature/frps-supervisor` zweimal grün, Gegenprobe ohne `--no-deps` rot an der neuen Prüfung.
+Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
+Doku: keine (intern)

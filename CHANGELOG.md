@@ -346,6 +346,29 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
+  `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
+  dem Node und ohne VMs, und der Check `proxmox_backup` las ihn als „Keine VMs/CTs gefunden“ = ok. Jetzt fehlt der Block,
+  `proxmox_backup` bleibt ohne Daten, und das Log nennt den Grund (etwa
+  `pvesh get /cluster/resources failed: timed out after 15s`, nie stderr). Eine leere VM-Liste bleibt „keine VMs“.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Agent: SMART liest Platten hinter einem MegaRAID-Controller (R-0455):** Der Agent fragte jede Platte aus
+  `smartctl --scan` ohne ihren Geraetetyp ab. Eine Platte hinter einem MegaRAID-Controller (Scan: `/dev/bus/N` mit
+  Typ `megaraid,N`) kann smartctl so nicht erkennen: Sie kam ohne Modell und SMART-Status in den Report, und der
+  Check `smart_health` meldete sie als „SMART FAILED“. Jetzt gibt der Agent den Typ aus dem Scan als `-d` weiter,
+  ausser `scsi`, damit eine SATA-Platte an `/dev/sdX` ihre ATA-Attribute behaelt. Doku: Agent-Entwicklerseite
+  (DE+EN).
+- **Agent: ein Timeout von `systemctl` und `sc` heisst „timed out after 15s“ (R-0454):** Beendete das 15-s-Timeout
+  einen haengenden Aufruf, las sich der Grund im Dienste-Block wie ein gescheiterter Aufruf: unter Linux
+  `systemctl list-units failed: signal: killed`, unter Windows `sc query failed: exit status 1`. Jetzt lautet er
+  `systemctl list-units failed: timed out after 15s` bzw. `sc query failed: timed out after 15s`; ein von aussen
+  beendeter Aufruf behaelt sein Signal. Auch ein `pvesh`-Aufruf, den das Timeout beendet, gilt intern als Timeout.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Server: FRP-Tunnel lehnen einen `extra_config`-Schluessel mit Zeilenumbruch am Ende ab (R-0468):**
+  `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` nahmen einen `extra_config`-Schluessel wie `"abc\n"` an,
+  weil die Pruefung einen abschliessenden Zeilenumbruch uebersah. Der Generator schreibt die Schluessel ungequotet in
+  die frpc-Config, die danach kein gueltiges TOML mehr war. Jetzt muss der ganze Schluessel aus `A-Z a-z 0-9 _ . -`
+  bestehen, sonst `422`. Doku: API-Referenz (DE+EN).
 - **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
   eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
   scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:
@@ -456,6 +479,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   etwas geaendert hatte, und der Agent schrieb die frpc-Config neu und startete frpc neu. Jetzt steht `allowUsers`
   aufsteigend sortiert in der Config. Nach dem Update aendert sich der Config-Hash von Hosts mit mehreren
   berechtigten Nutzern einmal, und der Agent holt die Config einmal neu.
+- **FRP: die Tunnel stehen in der frpc-Config in fester Reihenfolge (R-0452):** Die `[[proxies]]` standen in der
+  Reihenfolge, in der die Datenbank die Tunnel lieferte. Wurde einem Tunnel eine Verbindung zugeordnet oder seine
+  Verbindung geloescht, konnte er darin hinter die uebrigen Tunnel rutschen; damit aenderte sich der Config-Hash, ohne
+  dass sich die Config geaendert hatte, und der Agent holte die Config neu. Jetzt stehen die `[[proxies]]` ueberall,
+  wo der Server eine frpc-Config erzeugt (Sync, Provisionierungs-Paket, Downloads), nach Tunnel-Name sortiert. Nach
+  dem Update aendert sich der Config-Hash von Hosts mit mehreren Tunneln einmal, sofern ihre Tunnel bisher anders
+  standen, und der Agent laedt frpc einmal neu. Doku: Entwickler-Doku Server (DE+EN).
 - **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
   `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
   `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
