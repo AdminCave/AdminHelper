@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Hook-Worker, CLI, Alembic und Test-Bootstrap laden die Modelle aus app/model_registry.py — Task-Ledger
-Status: geplant · Branch: feature/script-worker-models · Review: am Ende
+Status: aktiv · Branch: feature/script-worker-models · Review: am Ende
 Spec: Roadmap R-0469
 Heavy: linux-full — T2 ändert `apps/server/app/cli.py` (Install-Bootstrap: `scripts/install.sh:288,290` ruft `python -m app.cli create-admin`/`mint-enroll-token` im Container) und `apps/server/alembic/env.py` (`apps/server/docker-entrypoint.sh:44` fährt `alembic upgrade head` bei jedem Containerstart). Beide laufen nur im Stack als eigener Prozess mit dem Import-Satz des Containers (`integration-stack` ruft `app.cli mint-enroll-token`, `scripts/tests/integration_stack_test.sh:54`); die Unit-Suite lädt sie in-process mit dem vollen Modellsatz von conftest und sieht genau diesen Fehlertyp nicht. Kein `scenario`: kein FRP-Datenpfad, kein Provisioning, keine Änderung an install/update-Skripten. Der Stack-Job läuft nicht auf PRs: vor dem Merge `gh workflow run ci.yml --ref feature/script-worker-models`.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
