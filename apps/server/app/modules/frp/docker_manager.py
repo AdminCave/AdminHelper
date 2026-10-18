@@ -6,13 +6,21 @@
 
 import logging
 import os
+import stat
 import tempfile
+import time
 from pathlib import Path
 
 from app.core.config import FRP_CONFIG_DIR
 from app.modules.frp.config_generator import generate_frps_toml
 
 logger = logging.getLogger(__name__)
+
+_TEMP_PREFIX = ".frps.toml."
+_TEMP_SUFFIX = ".tmp"
+# Every uvicorn worker cleans up at its start: a younger temp file may be one another worker
+# is writing right now.
+STALE_TEMP_AGE = 60  # seconds
 
 
 def write_frps_config(config, *, warn_restart: bool = False) -> Path:
@@ -29,7 +37,7 @@ def write_frps_config(config, *, warn_restart: bool = False) -> Path:
     # frps.toml carries the global auth.token + dashboard password and lives in
     # the volume shared with the internet-facing frps container -> 0600
     # (umask-robust, no brief world-readable window). frps reads it as root.
-    fd, tmp = tempfile.mkstemp(dir=FRP_CONFIG_DIR, prefix=".frps.toml.", suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=FRP_CONFIG_DIR, prefix=_TEMP_PREFIX, suffix=_TEMP_SUFFIX)
     try:
         with os.fdopen(fd, "wb") as f:
             os.fchmod(f.fileno(), 0o600)
@@ -44,6 +52,38 @@ def write_frps_config(config, *, warn_restart: bool = False) -> Path:
     if warn_restart:
         logger.info("frps.toml changed at runtime (%s); frps applies the change by itself", path)
     return path
+
+
+def remove_stale_temp_files() -> int:
+    """Removes the temp files of write_frps_config older than STALE_TEMP_AGE from
+    FRP_CONFIG_DIR; returns how many. A write killed between mkstemp and os.replace (SIGKILL,
+    OOM) leaves its 0600 temp file, with the token of its time, in the volume shared with the
+    frps container. Only regular files go, a symlink is neither followed nor removed. Best
+    effort: an error is logged with its type, never raised."""
+    try:
+        names = os.listdir(FRP_CONFIG_DIR)
+    except OSError as exc:
+        logger.warning("frps temp files not cleaned up (%s)", type(exc).__name__)
+        return 0
+    now = time.time()
+    removed = 0
+    for name in names:
+        if not (name.startswith(_TEMP_PREFIX) and name.endswith(_TEMP_SUFFIX)):
+            continue
+        path = FRP_CONFIG_DIR / name
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or now - info.st_mtime <= STALE_TEMP_AGE:
+                continue
+            path.unlink()
+        except FileNotFoundError:
+            continue  # another worker removed it first
+        except OSError as exc:
+            logger.warning("frps temp file %s not removed (%s)", name, type(exc).__name__)
+            continue
+        removed += 1
+    logger.info("stale frps temp files removed: %d", removed)
+    return removed
 
 
 def remove_frps_config() -> None:

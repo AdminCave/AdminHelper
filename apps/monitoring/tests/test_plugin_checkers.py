@@ -44,7 +44,7 @@ def test_zfs_healthy_pools_stay_ok_and_details_carry_available():
         {}, _zfs(_pool(), _pool("backup", capacity_percent=55))
     )
     assert status == "ok"
-    assert msg == "Alle Pools ONLINE: tank 20%, backup 55%"
+    assert msg == "All pools ONLINE: tank 20%, backup 55%"
     assert metrics["zfs_capacity_tank"] == 20 and metrics["zfs_capacity_backup"] == 55
     assert metrics["_details"] == {
         "available": True,
@@ -139,6 +139,15 @@ def test_proxmox_excludes_stopped_and_listed_vmids():
     }
     status, _, _ = ProxmoxBackupChecker().evaluate({"exclude_vmids": [999]}, r)
     assert status == "ok"  # both excluded -> no missing backups reported
+
+
+@pytest.mark.parametrize(("stored", "expected"), [(0, "ok"), ("false", "ok"), (False, "critical")])
+def test_proxmox_exclude_stopped_off_only_for_real_false(stored, expected):
+    # R-0456: a stored non-bool (from before the strict boundary) counts as the
+    # default, as the check editor shows it; only a real False includes stopped VMs.
+    r = {"proxmox": {"vms": [{"vmid": 101, "status": "stopped", "last_backup_ts": None}]}}
+    status, _, _ = ProxmoxBackupChecker().evaluate({"exclude_stopped": stored}, r)
+    assert status == expected
 
 
 # --- DockerHealthChecker ---

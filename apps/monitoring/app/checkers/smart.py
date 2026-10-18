@@ -74,7 +74,7 @@ class SmartHealthChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         smart = report.get("smart")
@@ -88,7 +88,7 @@ class SmartHealthChecker:
                 # without any, and the desktop would go on showing the old disks.
                 return "ok", _ABSENT_MESSAGES[reason], {"_details": {"absent": reason}}
             # An agent before R-0419 or an unknown reason.
-            return "ok", "Keine SMART-Daten (VM oder smartctl nicht verfuegbar)", None
+            return "ok", "No SMART data (VM or smartctl not available)", None
 
         ignore = set(config.get("ignore_devices", []))
         thresholds = {
@@ -144,21 +144,19 @@ class SmartHealthChecker:
             ec = int(disk.get("smartctl_status", 0) or 0)
             if ec & 0x10:
                 critical_problems.append(
-                    f"{label}: Prefail-Attribut unter Schwelle (smartctl 0x10)"
+                    f"{label}: prefail attribute below threshold (smartctl 0x10)"
                 )
                 category = "critical"
             if ec & 0x20:
-                warning_problems.append(
-                    f"{label}: Threshold in Vergangenheit ueberschritten (smartctl 0x20)"
-                )
+                warning_problems.append(f"{label}: threshold exceeded in the past (smartctl 0x20)")
                 if category != "critical":
                     category = "warning"
             if ec & 0x40:
-                warning_problems.append(f"{label}: Eintraege im Fehler-Log (smartctl 0x40)")
+                warning_problems.append(f"{label}: error log entries (smartctl 0x40)")
                 if category != "critical":
                     category = "warning"
             if ec & 0x80:
-                warning_problems.append(f"{label}: Self-Test fehlgeschlagen (smartctl 0x80)")
+                warning_problems.append(f"{label}: self-test failed (smartctl 0x80)")
                 if category != "critical":
                     category = "warning"
 
@@ -232,15 +230,15 @@ class SmartHealthChecker:
         metrics["_details"] = {"disks": disk_details}
 
         if critical_problems:
-            msg = "SMART-Probleme: " + ", ".join(critical_problems)
+            msg = "SMART problems: " + ", ".join(critical_problems)
             if warning_problems:
-                msg += "; Warnung: " + ", ".join(warning_problems)
+                msg += "; warnings: " + ", ".join(warning_problems)
             return "critical", msg, metrics
 
         if warning_problems:
-            return "warning", "SMART-Warnungen: " + ", ".join(warning_problems), metrics
+            return "warning", "SMART warnings: " + ", ".join(warning_problems), metrics
 
-        return "ok", f"Alle {ok_count} Disks SMART OK", metrics
+        return "ok", f"All {ok_count} disks SMART OK", metrics
 
     @staticmethod
     def _check_ata(disk, label, th: dict) -> tuple[str, list[str], list[str]]:
