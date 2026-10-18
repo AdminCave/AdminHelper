@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-REF-Bündel — Task-Ledger
-Status: aktiv · Branch: feature/server-ref · Review: am Ende
+Status: bereit · Branch: feature/server-ref · Review: am Ende
 Spec: Roadmap R-0473, R-0474
 Heavy: linux-full — `docker-compose.test.yml` (Scheduler-Mount, den der Stack-Test und `run.sh integration`/`e2e` hochfahren) und der Server-Start (`_ensure_frps_config` räumt im Volume `frp-config` auf); der Stack-Job läuft auf PRs nicht, vor dem Merge `gh workflow run ci.yml --ref feature/server-ref`. Kein `scenario`: weder FRP-Tunnel-Datenpfad noch Provisionierung noch PKI geändert
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -25,8 +25,10 @@ Dedup-Key: ref:server:supervisor_watch.py:warn-spam
 Metrik: pytest/caplog: Warnzeilen bei gleichbleibendem Überlauf über n Läufe n → 1; liegengebliebene `.frps.toml.*.tmp` älter als 60 s nach dem Start: alle → 0
 HEAD: 5855a9b5
 
-### T2 — Round-Trip-Property ohne nacktes `return`, Scheduler im Test-Overlay auf `test-data` (R-0474)  [ ]
+### T2 — Round-Trip-Property ohne nacktes `return`, Scheduler im Test-Overlay auf `test-data` (R-0474)  [x]
 Komponente: server · Dateien: apps/server/tests/test_frp_toml_roundtrip.py, apps/server/tests/test_compose_frps.py, docker-compose.test.yml
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @c576ac32 2026-10-18T07:43:51+02:00
+Review: am Ende (Branch-Review)
 Änderung: (a) `test_frps_toml_round_trips` (`test_frp_toml_roundtrip.py:123`) endet bei jedem Beispiel, das das Schema abweist, mit nacktem `return` (`:135-136`), und hypothesis zählt es als bestanden. Neu: eigene Strategien für die vom Schema geprüften Felder, die genau erzeugen, was `FrpServerConfigCreate` annimmt: ohne geschweifte Klammern für `auth_token` und `subdomain_host` (`_check_frps_string`, `schemas.py:92`), ohne einzelne Surrogate U+D800 bis U+DFFF für `server_addr`, `auth_token`, `subdomain_host` und die Text-Werte von `extra` (`schemas.py:29`). `SAFE_TEXT` und `SECRET` (`:46`, `:71`) bleiben für die frpc- und Visitor-Tests, wie sie sind. Das `try`/`except ValidationError: return` fällt weg: das Schema wird weiter aufgerufen, eine Abweisung ist jetzt rot; die drei `@example` bleiben. (b) `docker-compose.test.yml`: `scheduler` (`:40-41`) bekommt `volumes: - test-data:/app/data` wie `server` (`:33-34`). Heute behält er `./data:/app/data` aus `docker-compose.yml:167`, und jeder Stack-Lauf, der ihn startet, legt `data/` im Checkout an; Server und Scheduler teilen danach weiter dasselbe DATA_DIR (`docker-compose.yml:166`). Der Kopfkommentar (`:15`) nennt beide Dienste und, nach der Empfehlung zu F1, warum frps seine Host-Ports 7000/7443 behält (der Desktop-E2E verbindet auf `localhost:7000`, `desktop_e2e_tunnel.sh:51`, die Server-Box des Multibox-Laufs auf `:7000`; der Stack-Test fragt compose nach dem veröffentlichten Port, `integration_stack_test.sh:467`; Enroll- und Repo-Port bleiben ebenso fest, `lib_e2e_stack.sh:97`). Test zuerst rot in `test_compose_frps.py` neben `test_the_test_overlay_builds_frps_from_this_checkout` (`:265`), mit `_TestLoader` (`:72`) und `_mounts` (`:95`): jeder Dienst, den `docker-compose.yml` mit `./data` an `/app/data` bindet, bekommt im Overlay `test-data` an genau diesem Ziel (heute rot für `scheduler`), und die Liste dieser Dienste ist nicht leer.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_toml_roundtrip.py tests/test_compose_frps.py
 Doku: keine (intern; `DEVELOPMENT.md:918` „das `./data`-Volume isoliert“ stimmt danach)
