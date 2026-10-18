@@ -24,17 +24,8 @@ import argparse
 import datetime
 import sys
 
-# Import every model module so SQLAlchemy can resolve cross-module relationships
-# (mapper configuration) before we touch the ORM — same set the test bootstrap
-# imports; missing one raises "failed to locate a name" at query time.
-import app.modules.ansible.models  # noqa: F401
-import app.modules.api_keys.models  # noqa: F401
-import app.modules.connections.models  # noqa: F401
-import app.modules.enrollment.models  # noqa: F401
-import app.modules.frp.models  # noqa: F401
-import app.modules.hooks.models  # noqa: F401
-import app.modules.servers.models  # noqa: F401
-import app.modules.users.models  # noqa: F401
+# Every ORM model before the first query, see app/model_registry.py.
+from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS

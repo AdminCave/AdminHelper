@@ -75,6 +75,8 @@
               <tr><td><code>data/.bootstrap_token</code></td><td>Einmaliger Setup-Token-Hash für den ersten Admin (siehe Erstanmeldung in der Installations-Doku).</td></tr>
               <tr><td><code>data/.secret_key</code></td><td>Auto-generierter JWT-Key (sofern <code>SECRET_KEY</code> nicht gesetzt).</td></tr>
               <tr><td><code>frp-config</code> (Docker-Volume)</td><td>Nur die generierte <code>frps.toml</code> (kein Cert-Material mehr). Die FRP-TLS-Materialien liefert der <code>ca-issuer</code> (Volume <code>frps-certs</code>, wiederherstellbar). Die alte server-eigene FRP-Master-PKI (Volume <code>frp-pki</code>) ist entfernt — siehe <code>ca-pki</code> unten.</td></tr>
+              <tr><td><code>frps-state</code> (Docker-Volume)</td><td>Statusdatei <code>status.json</code> des <a href="#frps-supervisor">frps-Supervisors</a> (Zustand, Grund, Herzschlag, die letzten 8 Ereignisse) und, solange frps mit Dashboard-Port läuft, je Proxy-Typ die Liste des frps-Dashboards als <code>proxy-&lt;typ&gt;.json</code> (<code>stcp</code>, <code>https</code>, <code>tcp</code>, <code>udp</code>) für die Tunnel-Statusansicht (siehe <a href="./frp-tunnel.html">FRP-Tunnel</a>). Der Supervisor im frps-Container schreibt sie, <code>server</code> und <code>scheduler</code> lesen sie read-only, die Proxy-Listen nur der Server. Nicht im Backup: Der Supervisor schreibt sie bei jeder Abfrage neu.</td></tr>
+              <tr><td><code>frps-active</code> (Docker-Volume)</td><td>Die geprüfte Arbeitskopie von <code>frps.toml</code> und TLS-Material, aus der frps startet (enthält wie <code>frp-config</code> und <code>frps-certs</code> Token und Schlüssel); nur im frps-Container gemountet. Nicht im Backup: Der Supervisor übernimmt sie aus <code>frp-config</code> und <code>frps-certs</code> neu.</td></tr>
               <tr><td><code>ca-pki</code> (Docker-Volume)</td><td><strong>PKI-Hierarchie des <code>ca-issuer</code></strong>: Root (passphrase-verschlüsselt) + Intermediates (<code>tunnel</code>/<code>access</code>/<code>internal</code>). Das zentrale Backup-Ziel der internen CA — Verlust bedeutet, dass alle Clients neu enrollen müssen. Issuer-privat, nie ins Gateway/frps gemountet.</td></tr>
               <tr><td><code>gateway-certs</code> (Docker-Volume)</td><td>TLS-Material des Gateways (access-signiertes Leaf + Key + CA-Trust-Bundle), vom <code>ca-issuer</code> bereitgestellt. Wiederherstellbar — der Issuer provisioniert es neu.</td></tr>
               <tr><td><code>victoria-data</code> (Docker-Volume)</td><td>VictoriaMetrics-Speicher – Retention 90&nbsp;Tage (eigenes Volume, nicht Teil dieses Datenverzeichnisses).</td></tr>
@@ -86,7 +88,7 @@
           <div class="code-header"><span>bash</span></div>
 <pre><code>./scripts/backup.sh                 # -> ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz
 ./scripts/backup.sh --with-victoria # zusätzlich die (große) Metrik-Historie</code></pre>
-          <p>Enthalten: <code>ca-pki</code> (Root + Intermediates), <code>pg_dump</code> beider DBs, <code>monitoring-data</code>, optional <code>victoria-data</code> und die <code>.env</code>. <strong>Nicht</strong> enthalten — und auch nicht nötig — sind <code>gateway-certs</code>/<code>frps-certs</code>: der <code>ca-issuer</code> regeneriert sie beim Start aus <code>ca-pki</code>.</p>
+          <p>Enthalten: <code>ca-pki</code> (Root + Intermediates), <code>pg_dump</code> beider DBs, <code>monitoring-data</code>, optional <code>victoria-data</code> und die <code>.env</code>. <strong>Nicht</strong> enthalten — und auch nicht nötig — sind <code>gateway-certs</code>/<code>frps-certs</code>: der <code>ca-issuer</code> regeneriert sie beim Start aus <code>ca-pki</code>. Ebenso wenig <code>frps-state</code> und <code>frps-active</code>, die der frps-Supervisor selbst neu anlegt.</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
@@ -104,7 +106,8 @@
           <p>Die Container schreiben Plain-Text-Zeilen <strong>mit Zeitstempel</strong> auf stderr (stdout bleibt für Subprozess-IPC frei); <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg. Format: <code>2026-06-15 11:25:53 INFO     adminhelper.auth …</code> (Datum, Uhrzeit, Level, Logger, Meldung).</p>
 
           <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose logs -f server            # FastAPI + Scheduler
+<pre><code>docker compose logs -f server            # FastAPI
+docker compose logs -f scheduler         # periodische Jobs (E-Mail-Versand, Aufräumen, geplante Hooks)
 docker compose logs -f monitoring        # Check-Ausführungen
 docker compose logs -f frps              # FRP-Server
 docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</code></pre>
@@ -116,7 +119,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             <li><code>adminhelper.provisioning</code> – Server-Provisionierung</li>
             <li><code>adminhelper.servers</code> / <code>adminhelper.ansible</code> – Server- und Ansible-Aktionen</li>
             <li><code>app.modules.frp.pki</code> / <code>app.modules.frp.docker_manager</code> – PKI-Aktionen und FRP-Container</li>
-            <li><code>app.modules.hooks.scheduler</code> – Hook-Ausführungen inkl. Subprozess-Exitcodes</li>
+            <li><code>app.modules.hooks.scheduler</code> – Hook-Ausführungen inkl. Subprozess-Exitcodes, im Log des <code>scheduler</code>-Dienstes</li>
           </ul>
           <p>Der Monitoring-Container loggt unter dem Präfix <code>monitor.*</code> (z.&nbsp;B. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Beide Container schreiben Plain-Text-Zeilen nach stderr, kein JSON.</p>
 
@@ -136,7 +139,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             <tbody>
               <tr><td><code>SMTP_HOST</code></td><td>Hostname des Relays. <strong>Leer = E-Mail-Kanal aus</strong> (Glocke + Desktop-Hinweise bleiben aktiv).</td></tr>
               <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS).</td></tr>
-              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Zugangsdaten des Relays (optional, wenn der Relay ohne Auth annimmt).</td></tr>
+              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Zugangsdaten des Relays (optional, wenn der Relay ohne Auth annimmt). Ein <code>$</code> im Passwort als <code>$$</code> schreiben oder den Wert in einfache Anführungszeichen setzen (siehe <a href="./installation.html#env">Umgebungsvariablen</a>).</td></tr>
               <tr><td><code>SMTP_FROM</code></td><td>Absenderadresse (Default <code>adminhelper@localhost</code>).</td></tr>
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Zustellversuche pro E-Mail mit linearem Backoff, danach „fehlgeschlagen" (Default 5).</td></tr>
             </tbody>
@@ -165,7 +168,7 @@ docker compose up -d server</code></pre>
           <p><code>TZ</code> wird an alle Container weitergegeben. Voreinstellung <code>Europe/Berlin</code>. Die API gibt Zeitstempel davon unabhängig in UTC mit <code>Z</code> aus (Web und Desktop zeigen sie in der Ortszeit des Browsers bzw. Rechners), und geplante Hooks rechnen in UTC.</p>
 
           <h2>Zertifikate erneuern</h2>
-          <p>Das TLS-Zertifikat des Gateways stellt der <code>ca-issuer</code> aus (access-signiert, 365&nbsp;Tage). Es wird beim ersten Start ins <code>gateway-certs</code>-Volume provisioniert; ein Redeploy/Neustart des <code>ca-issuer</code> erneuert es bei Bedarf. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation.</p>
+          <p>Das TLS-Zertifikat des Gateways stellt der <code>ca-issuer</code> aus (access-signiert, 365&nbsp;Tage). Es wird beim ersten Start ins <code>gateway-certs</code>-Volume provisioniert; ein Redeploy/Neustart des <code>ca-issuer</code> erneuert es bei Bedarf. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation. Ein vom <code>ca-issuer</code> erneuertes frps-Zertifikat übernimmt frps selbst, ohne Neustart des Containers (siehe <a href="#frps-supervisor">frps-Supervisor</a>).</p>
 
           <h2>Zertifikats-Register und Übergang</h2>
           <p>Der <code>ca-issuer</code> hält jedes Client-Zertifikat, das er ausstellt oder erneuert, in einem Register fest; der Server nimmt nur erfasste Zertifikate an, auch bei <code>MTLS_ENFORCE=false</code> (siehe <a href="./benutzer.html">Benutzer &amp; Zugriff → Geräte und Widerruf</a>). Zertifikate, die vor dem Update auf das Register ausgestellt wurden, kennt es noch nicht. Für sie gilt ein Übergang:</p>
@@ -176,6 +179,82 @@ docker compose up -d server</code></pre>
             <li>Ein Restore (<code>restore.sh</code>, <code>pg-restore.sh</code>) beginnt den Übergang neu, 90 Tage ab dem Restore, für die Zertifikate, die die zurückgespielte Datenbank nicht kennt.</li>
           </ul>
           <p>Nach den 90 Tagen gilt nur noch, was im Register steht.</p>
+
+          <h2 id="frps-supervisor">frps-Supervisor</h2>
+          <p>frps läuft aus dem Image <code>ghcr.io/admincave/adminhelper/frps</code> (Quelle <code>apps/frps/</code>) unter einem Supervisor (<code>apps/frps/frps-supervisor.sh</code>). Der Supervisor läuft als root mit den Capabilities <code>DAC_OVERRIDE</code>, <code>SETUID</code>, <code>SETGID</code> und <code>KILL</code>; frps startet er unter dem Nutzer <code>frps</code> (UID 10002) ohne Capabilities. Er liest die vom Server geschriebene <code>frps.toml</code> (Volume <code>frp-config</code>, read-only) und das TLS-Material des <code>ca-issuer</code> (Volume <code>frps-certs</code>, read-only), prüft beides und startet frps nur aus einer geprüften Arbeitskopie im Volume <code>frps-active</code>, die frps lesen, aber nicht ändern kann. Seinen Zustand schreibt er nach <code>frps-state</code>; daraus zeigt die FRP-Seite den Block <em>Zustand des frps</em> (siehe <a href="./frp-tunnel.html">FRP-Tunnel</a>).</p>
+          <ul>
+            <li><strong>Übernahme:</strong> Der Supervisor fragt die Eingabe alle 5&nbsp;s ab und übernimmt eine Änderung, sobald sie zwei Abfragen lang gleich bleibt, also nach etwa 5–10&nbsp;s. Gültig: frps startet aus der neuen Kopie neu. Ungültig: frps läuft mit der letzten gültigen Kopie weiter; gibt es keine, startet es nicht (<code>waiting</code>). Eine unveränderte Eingabe startet nichts neu. <code>docker compose restart frps</code> ist für Änderungen nicht nötig.</li>
+            <li><strong>Prüfung vor jedem Start</strong>, auch beim Neustart nach einem Abbruch: Die Arbeitskopie muss unverändert sein und die Prüfung erneut bestehen; sonst wird sie verworfen (bei einer veränderten Kopie mit dem Ereignis <code>copy_changed</code>), und vor einem Neustart übernimmt der Supervisor die Eingabe neu.</li>
+            <li><strong>Abbrüche:</strong> Endet frps von selbst, startet der Supervisor es nach 2, 4, 8 … höchstens 60&nbsp;s neu; ab dem dritten Abbruch innerhalb von 60&nbsp;s steht der Zustand auf <code>crashloop</code>, bis frps wieder 60&nbsp;s läuft.</li>
+            <li><strong>Healthcheck:</strong> <code>docker compose ps</code> zeigt frps in den Zuständen <code>waiting</code>, <code>running</code> und <code>stopped</code> als <em>healthy</em>, in <code>degraded</code> und <code>crashloop</code> als <em>unhealthy</em>.</li>
+            <li><strong>Log:</strong> <code>docker compose logs frps</code>; die Zeilen des Supervisors beginnen mit <code>[frps-supervisor]</code> und nennen Codes und Pfade, nie das Token.</li>
+          </ul>
+
+          <h3>Zustände</h3>
+          <table>
+            <thead><tr><th>Zustand</th><th>Bedeutung</th></tr></thead>
+            <tbody>
+              <tr><td><code>waiting</code></td><td>frps läuft nicht; der Grund steht daneben.</td></tr>
+              <tr><td><code>running</code></td><td>frps läuft mit der zuletzt übernommenen Konfiguration.</td></tr>
+              <tr><td><code>degraded</code></td><td>frps läuft mit der letzten gültigen Konfiguration; eine neuere wurde nicht übernommen (Grund daneben).</td></tr>
+              <tr><td><code>stopped</code></td><td>Die FRP-Server-Konfiguration wurde gelöscht, frps ist gestoppt.</td></tr>
+              <tr><td><code>crashloop</code></td><td>frps endet wiederholt; der Supervisor startet es mit wachsender Pause neu.</td></tr>
+            </tbody>
+          </table>
+          <p>Dazu meldet der Server <code>missing</code>, solange es keine Statusdatei gibt, und <code>unreadable</code>, wenn sie nicht dem erwarteten Format entspricht. Ist der letzte Herzschlag älter als 60&nbsp;s, gelten die Angaben als veraltet (<code>stale</code>).</p>
+
+          <h3>Gründe</h3>
+          <table>
+            <thead><tr><th>Grund</th><th>Bedeutung</th></tr></thead>
+            <tbody>
+              <tr><td><code>none</code></td><td>Kein Fehler.</td></tr>
+              <tr><td><code>config_missing</code></td><td>Keine <code>frps.toml</code> oder eine leere: Im Web-Interface ist keine FRP-Server-Konfiguration angelegt.</td></tr>
+              <tr><td><code>token_invalid</code></td><td><code>auth.method</code> ist nicht <code>token</code>, <code>auth.token</code> ist nicht gesetzt oder kürzer als 16 Zeichen, oder ein weiterer <code>auth.*</code>-Schlüssel steht in der Datei.</td></tr>
+              <tr><td><code>tls_not_forced</code></td><td><code>[transport.tls]</code> setzt <code>force = true</code> nicht.</td></tr>
+              <tr><td><code>cert_paths</code></td><td>Die TLS-Pfade zeigen nicht auf <code>/etc/frp-pki/frps.crt</code>, <code>/etc/frp-pki/frps.key</code> und <code>/etc/frp-pki/ca.crt</code>.</td></tr>
+              <tr><td><code>cert_missing</code></td><td>Zertifikat, Schlüssel oder CA-Datei fehlt, ist leer oder unvollständig.</td></tr>
+              <tr><td><code>cert_expired</code></td><td>Das frps-Zertifikat ist abgelaufen.</td></tr>
+              <tr><td><code>cert_key_mismatch</code></td><td>Das Zertifikat passt nicht zum Schlüssel.</td></tr>
+              <tr><td><code>verify_failed</code></td><td>Die Datei weicht vom Aufbau ab, den der Server erzeugt (unbekannter oder doppelter Schlüssel, unzulässiger Wert, <code>webServer.port</code> gleich 443, <code>bindPort</code> oder <code>FRP_BIND_PORT</code>), oder <code>frps verify</code> lehnt sie ab.</td></tr>
+              <tr><td><code>input_unreadable</code></td><td>Eine Eingabedatei ist da, aber nicht lesbar, keine reguläre Datei, ein Symlink oder größer als 1&nbsp;MiB.</td></tr>
+              <tr><td><code>input_unstable</code></td><td>Die Eingabe ändert sich 30&nbsp;s lang bei jeder Abfrage; sie wird erst übernommen, wenn sie gleich bleibt.</td></tr>
+              <tr><td><code>processes_left</code></td><td>Prozesse des Nutzers <code>frps</code> ließen sich nicht beenden; frps startet nicht, bis sich die Eingabe ändert oder der Container neu startet (<code>docker compose restart frps</code>).</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Ereignisse und Mitteilungen</h3>
+          <p>Der <code>scheduler</code> liest die Statusdatei alle 15&nbsp;s und schreibt zu jedem neuen Ereignis eine Mitteilung in die Glocke (höchstens 10 Ereignisse je Stunde; ein Ereignis, das älter als eine Stunde ist, gilt nicht mehr als neu). „Nutzer mit Tunnel-Zugriff“ sind die Admins und die Nutzer, denen ein Server mit mindestens einem eingeschalteten Tunnel zugewiesen ist.</p>
+          <table>
+            <thead><tr><th>Ereignis</th><th>Bedeutung</th><th>Mitteilung an</th></tr></thead>
+            <tbody>
+              <tr><td><code>started</code></td><td>frps gestartet, wo vorher keins lief (Container-Start, nach <code>waiting</code> oder <code>stopped</code>).</td><td>niemanden</td></tr>
+              <tr><td><code>applied</code></td><td>Eine Änderung übernommen, frps neu gestartet; mit neuem Token zusätzlich der Hinweis, dass Agent-Tunnel bis zu ~5 Minuten brauchen.</td><td>Admins und Nutzer mit Tunnel-Zugriff, Info</td></tr>
+              <tr><td><code>rejected</code></td><td>Eine neue Eingabe nicht übernommen, frps läuft mit der letzten gültigen Konfiguration weiter (einmal je abgelehnter Eingabe); außerdem einmal je Folge von Änderungen, die die Eingabe instabil macht (<code>input_unstable</code>), ob frps läuft oder nicht. Ohne gültige Kopie (Zustand <code>waiting</code>) steht der Grund nur im Block auf der FRP-Seite.</td><td>Admins, Warnung</td></tr>
+              <tr><td><code>stopped</code></td><td>Die FRP-Server-Konfiguration ist entfernt, frps gestoppt.</td><td>Admins, Info</td></tr>
+              <tr><td><code>crashed</code></td><td>frps bricht wiederholt ab (einmal je Folge von Abbrüchen).</td><td>Admins, Warnung</td></tr>
+              <tr><td><code>copy_changed</code></td><td>Die geprüfte Arbeitskopie hat sich nach ihrer Übernahme verändert; sie wurde verworfen, frps startet nur aus einer neu geprüften Kopie.</td><td>Admins, Warnung</td></tr>
+              <tr><td><code>start_refused</code></td><td>frps nicht gestartet, weil Prozesse des Nutzers <code>frps</code> übrig waren (Grund <code>processes_left</code>).</td><td>Admins, Warnung</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Zulässige Schlüssel in <code>extra_config</code></h3>
+          <p>Der Supervisor übernimmt nur eine <code>frps.toml</code> im Aufbau, den der Server erzeugt. Auf oberster Ebene schreibt der Server aus den Feldern der Maske <code>bindPort</code>, <code>vhostHTTPSPort</code>, <code>subDomainHost</code>, <code>maxPortsPerClient</code>, <code>detailedErrorsToClient</code>, <code>webServer.addr</code>, <code>webServer.port</code>, <code>webServer.user</code>, <code>webServer.password</code>, <code>auth.method</code> und <code>auth.token</code>. Über <code>extra_config</code> der FRP-Server-Konfiguration kommen dazu nur:</p>
+          <p><code>transport.maxPoolCount</code>, <code>transport.tcpMux</code>, <code>transport.tcpMuxKeepaliveInterval</code>, <code>transport.heartbeatTimeout</code>, <code>transport.tcpKeepalive</code>, <code>userConnTimeout</code>, <code>log.level</code>, <code>log.maxDays</code></p>
+          <p>Schlüssel werden exakt verglichen. Werte sind <code>true</code>, <code>false</code>, endliche Zahlen oder Strings ohne Anführungszeichen, Backslash, geschweifte Klammern, Steuerzeichen und einzelne Surrogate (U+D800 bis U+DFFF); dieselbe Zeichenregel gilt für die Felder <em>Subdomain Host</em>, <em>Dashboard User</em>, <em>Dashboard Passwort</em> und <em>Auth Token</em>. Andere Schlüssel und Werte lehnt der Server beim Speichern mit <code>422</code> ab (<code>POST</code>/<code>PUT /api/frp/server-config</code>); gespeicherte bereinigt er beim Start (siehe unten).</p>
+
+          <h3>Vor dem Update</h3>
+          <p>Vor dem Update in der FRP-Server-Konfiguration prüfen:</p>
+          <ul>
+            <li><code>extra_config</code> und die Felder <em>Subdomain Host</em>, <em>Dashboard User</em>, <em>Dashboard Passwort</em> und <em>Auth Token</em> folgen den Regeln oben.</li>
+            <li>Das <em>Auth Token</em> hat mindestens 16 Zeichen.</li>
+            <li>Ein gesetzter <em>Dashboard Port</em> ist weder 443 noch der <em>Bind Port</em> noch <code>FRP_BIND_PORT</code>.</li>
+          </ul>
+          <p>Beim Start gleicht der Server die gespeicherte Konfiguration mit diesen Regeln ab, bevor er <code>frps.toml</code> schreibt:</p>
+          <ul>
+            <li><code>extra_config</code>-Einträge mit einem anderen Schlüssel (etwa <code>proxyBindAddr</code> oder <code>log.to</code>) oder einem unzulässigen Wert entfernt er aus der gespeicherten Konfiguration und meldet die entfernten Schlüssel den Admins in der Glocke („Zusätzliche FRP-Einstellungen entfernt“).</li>
+            <li>Ein Feld, das in <code>frps.toml</code> landet und gegen eine dieser Regeln verstößt (unzulässige Zeichen, ein <em>Auth Token</em> unter 16 Zeichen, ein <em>Dashboard Port</em> gleich 443, dem <em>Bind Port</em> oder <code>FRP_BIND_PORT</code>), ändert er nicht. Er meldet den Admins in der Glocke, welche Felder neu zu setzen sind („FRP-Server-Konfiguration: Felder neu setzen“), einmal, solange dieselben Felder betroffen sind. Die Mitteilung nennt je Feld den Namen aus der Maske und in Klammern die Regel, etwa: „Der FRP-Server übernimmt die Konfiguration so nicht. Bitte neu setzen: Auth Token (mindestens 16 Zeichen), Dashboard Port (weder 443 noch der Bind Port noch FRP_BIND_PORT).“</li>
+          </ul>
+          <p>Log und Mitteilungen nennen Schlüssel und Felder, nie Werte. Besteht die Konfiguration die Prüfung des Supervisors nicht, läuft frps mit der letzten gültigen Kopie weiter, sofern es eine gibt. Ohne gültige Kopie, etwa direkt nach dem Update mit leerem Volume <code>frps-active</code>, startet frps nicht (Zustand <code>waiting</code>, Grund auf der FRP-Seite), bis die Konfiguration die Prüfung besteht.</p>
 
           <h2>mTLS scharfschalten (CERT_REQUIRED)</h2>
           <p>Die Datenebene (<code>:443</code>) läuft seit 0.29.0 per Default <strong>scharf</strong> (<code>MTLS_ENFORCE=true</code>): das Gateway verlangt am TLS-Handshake ein gültiges Client-Zertifikat (<code>CERT_REQUIRED</code>) <em>und</em> der Server weist geschützte Routen ohne gültigen Scope mit <code>403</code> ab. Ein frischer Install ist via <code>scripts/install.sh</code> sofort enforced nutzbar (es besorgt dem Erst-Admin sein Cert out-of-band). <strong>Permissiv</strong> (<code>MTLS_ENFORCE=false</code>) lässt certlose Clients durch und loggt nur — nötig nur für einen manuellen Erst-Bootstrap. Beides steuert <strong>eine</strong> Variable: <code>MTLS_ENFORCE</code>.</p>

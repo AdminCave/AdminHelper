@@ -7,6 +7,7 @@
 package monitor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -398,9 +399,11 @@ func TestFilterEnabledInactiveSingleKilledStops(t *testing.T) {
 }
 
 func TestFilterEnabledInactiveBatchKilledKeepsAll(t *testing.T) {
-	// A batch that did not answer — killed by the timeout or not started at all — gets no per-unit
-	// fallback: 50 more timeouts would outlast the agent unit's TimeoutStartSec. All stay candidates.
+	// A batch that did not answer — ended by the timeout, killed or not started at all — gets no
+	// per-unit fallback: 50 more timeouts would outlast the agent unit's TimeoutStartSec. All stay
+	// candidates.
 	for name, batchErr := range map[string]error{
+		"timed out":   context.DeadlineExceeded,
 		"killed":      exitError(t, "kill -9 $$"),
 		"not started": errors.New("exec: \"systemctl\": executable file not found in $PATH"),
 	} {
@@ -580,13 +583,15 @@ func TestServiceHealthSorted(t *testing.T) {
 
 func TestServiceHealthSystemctlError(t *testing.T) {
 	// A failed list-units leaves no active state to report: the report says so in a short reason
-	// (exit status or that systemctl did not start, never stderr or a path) and carries no counts,
-	// which would claim zero active units.
+	// (exit status, timeout or that systemctl did not start, never stderr or a path) and carries no
+	// counts, which would claim zero active units. A call killed from outside, not by the timeout,
+	// keeps its signal.
 	for name, tc := range map[string]struct {
 		err  error
 		want string
 	}{
 		"exit status": {exitError(t, "exit 1"), "systemctl list-units failed: exit status 1"},
+		"timed out":   {context.DeadlineExceeded, "systemctl list-units failed: timed out after 15s"},
 		"killed":      {exitError(t, "kill -9 $$"), "systemctl list-units failed: signal: killed"},
 		"not found": {&exec.Error{Name: "systemctl", Err: exec.ErrNotFound},
 			"systemctl list-units failed: systemctl did not start"},

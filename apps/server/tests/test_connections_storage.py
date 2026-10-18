@@ -6,11 +6,15 @@
 that relies on the semantics — and replaced the earlier DELETE-ALL+INSERT-ALL. A regression back to
 'wipe everything' (or losing the delete-of-missing) would go unnoticed without this."""
 
+import uuid
+
+from sqlalchemy import delete, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core import database
 from app.modules.connections import storage
 from app.modules.connections.models import Connection
+from app.modules.hooks.script_runner import run_hook_script
 
 
 def _bind_sessionlocal(db_session, monkeypatch):
@@ -50,6 +54,33 @@ def test_save_connections_empty_list_clears_all(db_session, monkeypatch):
     storage.save_connections([])
 
     assert db_session.query(Connection).count() == 0
+
+
+def test_a_hook_script_saves_connections_to_the_database(pg_engine, monkeypatch):
+    # The real worker process (R-0469): it imports only what the hook helpers need, so the
+    # in-process tests above, which run with every model conftest loaded, never saw that its
+    # flush could not resolve connections.server_id -> servers. The worker commits through its
+    # own engine, outside db_session's SAVEPOINT, so the row is removed explicitly.
+    monkeypatch.setenv("DATABASE_URL", pg_engine.url.render_as_string(hide_password=False))
+    cid = str(uuid.uuid4())
+    script = (
+        "save_connections(load_connections() + "
+        f"[{{'id': {cid!r}, 'name': 'hook-made', 'kind': 'ssh'}}])"
+    )
+    try:
+        res = run_hook_script(script, "webhook", {})
+        shown = str(res)
+        if pg_engine.url.password:
+            shown = shown.replace(pg_engine.url.password, "***")
+        assert res["success"] is True, shown
+        with pg_engine.connect() as conn:
+            row = conn.execute(
+                select(Connection.name, Connection.kind).where(Connection.id == cid)
+            ).one_or_none()
+        assert tuple(row or ()) == ("hook-made", "ssh"), shown
+    finally:
+        with pg_engine.begin() as conn:
+            conn.execute(delete(Connection).where(Connection.id == cid))
 
 
 # Only the API fields map to columns; any other key — a column name such as extra_data or

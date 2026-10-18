@@ -34,6 +34,7 @@ from app.modules.frp.config_generator import (
     generate_frps_toml,
     generate_visitor_toml,
 )
+from app.modules.frp.extra_config import ALLOWED_KEYS
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import _TOML_BREAKERS, FrpServerConfigCreate
 from app.modules.users.schemas import UserCreate
@@ -49,19 +50,30 @@ SAFE_TEXT = st.text(
     min_size=1,
     max_size=40,
 )
-# Keys are emitted unquoted, so the schema demands TOML bare keys. Two shapes are
-# kept out of the round-trip property on purpose: a dot nests the key
-# ({"a": {"b": …}}), and a name the generator also writes itself collides with that
-# fixed line — the collision is a finding in its own right and has its own pinned
-# test below, rather than being re-derived as a random failure here.
-_RESERVED = {"auth", "webServer", "transport", "bindPort", "serverAddr", "serverPort", "user"}
-EXTRA_KEY = st.text(
-    alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="_-"),
+# What FrpServerConfigCreate takes for the fields of test_frps_toml_round_trips, so every
+# example reaches the assertions: on top of SAFE_TEXT no lone surrogate (U+D800 to U+DFFF has
+# no UTF-8 form, codec="utf-8" leaves it out), and in a string the frps supervisor checks
+# (auth_token, subdomain_host, a text value of extra_config) no brace either: check_config
+# refuses one anywhere in a line.
+FRPS_ADDR = st.text(
+    alphabet=st.characters(
+        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20, codec="utf-8"
+    ),
     min_size=1,
-    max_size=20,
-).filter(lambda k: k not in _RESERVED)
+    max_size=40,
+)
+_FRPS_CHAR = st.characters(
+    blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f", "{", "}"],
+    min_codepoint=0x20,
+    codec="utf-8",
+)
+FRPS_TEXT = st.text(alphabet=_FRPS_CHAR, min_size=1, max_size=40)
+FRPS_SECRET = st.text(alphabet=_FRPS_CHAR, min_size=16, max_size=40)
+# The schema takes only the extra_config keys the frps supervisor starts frps with
+# (frp/extra_config.py).
+EXTRA_KEY = st.sampled_from(sorted(ALLOWED_KEYS))
 EXTRA_VALUE = st.one_of(
-    SAFE_TEXT,
+    FRPS_TEXT,
     st.booleans(),
     st.integers(min_value=-(2**53), max_value=2**53),
     st.floats(allow_nan=False, allow_infinity=False, width=32),
@@ -97,10 +109,10 @@ def _config(**kw) -> FrpServerConfig:
 
 
 @given(
-    server_addr=SAFE_TEXT,
-    auth_token=SECRET,
+    server_addr=FRPS_ADDR,
+    auth_token=FRPS_SECRET,
     bind_port=PORT,
-    subdomain_host=st.one_of(st.none(), SAFE_TEXT),
+    subdomain_host=st.one_of(st.none(), FRPS_TEXT),
     extra=st.dictionaries(EXTRA_KEY, EXTRA_VALUE, max_size=5),
 )
 @example(server_addr="a", auth_token="0123456789abcdef", bind_port=1, subdomain_host="", extra={})
@@ -109,30 +121,28 @@ def _config(**kw) -> FrpServerConfig:
     auth_token="0123456789abcdef",
     bind_port=7000,
     subdomain_host="[section]",
-    extra={"k": "v = 2"},
+    extra={"log.level": "v = 2"},
 )
 @example(
     server_addr="hö…ß",
     auth_token="0123456789abcdef",
     bind_port=7000,
     subdomain_host="ü",
-    extra={"a": " "},
+    extra={"log.level": " "},
 )
 @settings(max_examples=100, deadline=None)
 def test_frps_toml_round_trips(server_addr, auth_token, bind_port, subdomain_host, extra):
-    # Only values the API would actually accept: the schema is the gate the
-    # generator trusts, so a value it rejects says nothing about the generator.
-    try:
-        FrpServerConfigCreate(
-            name="frps",
-            server_addr=server_addr,
-            bind_port=bind_port,
-            auth_token=auth_token,
-            subdomain_host=subdomain_host,
-            extra_config=extra or None,
-        )
-    except ValidationError:
-        return
+    # Only values the API would actually accept: the schema is the gate the generator
+    # trusts. The strategies generate nothing else, so a rejection is red: it means they
+    # and the schema have drifted apart, and the example would assert nothing.
+    FrpServerConfigCreate(
+        name="frps",
+        server_addr=server_addr,
+        bind_port=bind_port,
+        auth_token=auth_token,
+        subdomain_host=subdomain_host,
+        extra_config=extra or None,
+    )
 
     cfg = _config(
         server_addr=server_addr,
@@ -151,7 +161,11 @@ def test_frps_toml_round_trips(server_addr, auth_token, bind_port, subdomain_hos
     else:
         assert "subDomainHost" not in parsed
     for key, value in extra.items():
-        assert parsed[key] == value, (key, parsed[key], value)
+        # A dotted key nests: log.level comes back as parsed["log"]["level"].
+        found = parsed
+        for part in key.split("."):
+            found = found[part]
+        assert found == value, (key, found, value)
 
 
 def _tunnel(**kw) -> FrpTunnel:
@@ -260,32 +274,9 @@ def test_visitor_toml_round_trips(name, visitor_port, secret):
     assert visitor["bindPort"] == visitor_port
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=tomllib.TOMLDecodeError,
-    reason="an extra_config key that the generator also writes itself (auth, webServer, "
-    "transport) is emitted a second time and TOML refuses the duplicate — the schema "
-    "accepts the key, so the generated frps.toml simply does not parse",
-)
-def test_extra_config_may_collide_with_the_generators_own_keys():
-    """extra_config lets an operator add frps.toml fields verbatim.
-
-    _check_extra_config validates the key as a TOML bare key and the value as a
-    scalar, but knows nothing about the lines config_generator writes itself. "auth"
-    is one of them (auth.method / auth.token), so the file ends up defining `auth`
-    twice: once as a table, once as a string. Availability, not injection — but the
-    server then ships a config frps cannot read.
-    """
-    accepted = FrpServerConfigCreate(
-        name="frps",
-        server_addr="frps.example.test",
-        auth_token="0123456789abcdef",
-        extra_config={"auth": "hijack"},
-    )
-    assert accepted.extra_config == {"auth": "hijack"}  # the schema let it through
-
-    toml = generate_frps_toml(_config(extra_config=json.dumps(accepted.extra_config)))
-    tomllib.loads(toml)  # raises TOMLDecodeError -> the xfail
+# An extra_config key that collides with a line the generator writes itself ("auth",
+# bindPort, webServer.*) is refused by the schema since R-0411:
+# test_frp_extra_config.py::test_the_schema_rejects_every_key_the_generator_writes.
 
 
 def test_allow_users_is_only_safe_because_usernames_are_validated():
