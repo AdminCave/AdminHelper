@@ -346,6 +346,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
+  `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
+  dem Node und ohne VMs, und der Check `proxmox_backup` las ihn als „Keine VMs/CTs gefunden“ = ok. Jetzt fehlt der Block,
+  `proxmox_backup` bleibt ohne Daten, und das Log nennt den Grund (etwa
+  `pvesh get /cluster/resources failed: timed out after 15s`, nie stderr). Eine leere VM-Liste bleibt „keine VMs“.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Agent: SMART liest Platten hinter einem MegaRAID-Controller (R-0455):** Der Agent fragte jede Platte aus
+  `smartctl --scan` ohne ihren Geraetetyp ab. Eine Platte hinter einem MegaRAID-Controller (Scan: `/dev/bus/N` mit
+  Typ `megaraid,N`) kann smartctl so nicht erkennen: Sie kam ohne Modell und SMART-Status in den Report, und der
+  Check `smart_health` meldete sie als „SMART FAILED“. Jetzt gibt der Agent den Typ aus dem Scan als `-d` weiter,
+  ausser `scsi`, damit eine SATA-Platte an `/dev/sdX` ihre ATA-Attribute behaelt. Doku: Agent-Entwicklerseite
+  (DE+EN).
+- **Agent: ein Timeout von `systemctl` und `sc` heisst „timed out after 15s“ (R-0454):** Beendete das 15-s-Timeout
+  einen haengenden Aufruf, las sich der Grund im Dienste-Block wie ein gescheiterter Aufruf: unter Linux
+  `systemctl list-units failed: signal: killed`, unter Windows `sc query failed: exit status 1`. Jetzt lautet er
+  `systemctl list-units failed: timed out after 15s` bzw. `sc query failed: timed out after 15s`; ein von aussen
+  beendeter Aufruf behaelt sein Signal. Auch ein `pvesh`-Aufruf, den das Timeout beendet, gilt intern als Timeout.
+  Doku: Agent-Entwicklerseite (DE+EN).
 - **Server: FRP-Tunnel lehnen einen `extra_config`-Schluessel mit Zeilenumbruch am Ende ab (R-0468):**
   `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` nahmen einen `extra_config`-Schluessel wie `"abc\n"` an,
   weil die Pruefung einen abschliessenden Zeilenumbruch uebersah. Der Generator schreibt die Schluessel ungequotet in
