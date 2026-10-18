@@ -436,8 +436,16 @@ wait_polls() {
     done
 }
 
+# dep_ids — "server=<id> ca-issuer=<id>", the running containers of both; "-" for one not running.
+dep_ids() {
+    local s c
+    s=$(e2e_dc ps -q server 2>/dev/null); c=$(e2e_dc ps -q ca-issuer 2>/dev/null)
+    s=${s:0:12}; c=${c:0:12}
+    echo "server=${s:--} ca-issuer=${c:--}"
+}
+
 frps_takeover() {
-    local token bind body config_id t0 mark pid toml new notices source_id runs
+    local token bind body config_id t0 mark pid toml new notices source_id runs deps
 
     # A device certificate of its own: 8b replaced the first one and revoked the second.
     token=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')
@@ -452,9 +460,18 @@ frps_takeover() {
     [ -n "$JWT3" ] || { bad "frps: login with the new device failed"; return; }
 
     # frps as built from apps/frps, and the scheduler, whose job turns supervisor events into
-    # notifications.
-    if ! e2e_dc up -d --build frps scheduler >"$E2E_WORK/frps-up.log" 2>&1; then
+    # notifications. --no-deps: without it compose rebuilds server and ca-issuer and may recreate
+    # both, and the gateway re-resolves its upstreams only every 30 s, so the next API call can
+    # hit the old address. Everything both need already runs since the gateway came up.
+    deps=$(dep_ids)
+    [[ $deps != *=-* ]] || { bad "frps: server or ca-issuer not running before frps starts ($deps)"; return; }
+    if ! e2e_dc up -d --no-deps --build frps scheduler >"$E2E_WORK/frps-up.log" 2>&1; then
         bad "frps/scheduler did not come up"; tail -20 "$E2E_WORK/frps-up.log"; return
+    fi
+    new=$(dep_ids)
+    if [ "$new" != "$deps" ]; then
+        bad "frps: starting frps and the scheduler recreated or stopped server or ca-issuer ($deps -> $new)"
+        tail -20 "$E2E_WORK/frps-up.log"; return
     fi
     e2e_dc exec -T ca-issuer cat /app/frps-certs/ca.crt >"$E2E_WORK/frps-ca.crt" 2>/dev/null
     FRPS_LEAF=$(e2e_dc exec -T ca-issuer cat /app/frps-certs/frps.crt 2>/dev/null \
