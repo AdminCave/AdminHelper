@@ -346,6 +346,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Server: Die Tunnel-Statusansicht zeigt wieder die Proxies von frps (R-0408):** Seit v0.40.0 haengt frps in
+  Compose allein im Netz `frpedge`, das der Server nicht erreicht; `GET /api/frp/status` fragte weiter
+  `http://frps:<Port>` und meldete deshalb immer „frps-Dashboard: nicht erreichbar“. Jetzt fragt der frps-Supervisor
+  das Dashboard im frps-Container ueber Loopback ab, alle 5 s, solange frps laeuft, und legt die Proxy-Listen je Typ
+  im Volume `frps-state` ab (`proxy-<typ>.json`, hoechstens 1 MiB). Der Server liest sie dort und nimmt nur aktuelle
+  (hoechstens 60 s alte), gueltige Listen; ohne eine solche antwortet die Route mit dem `error` „frps dashboard: no
+  current data from the frps supervisor“. Die Adressen `http://frps:<Port>` und `http://127.0.0.1:<Port>` entfallen.
+  Mit `FRPS_DASHBOARD_URL` fragt der Server das Dashboard weiter selbst; die Variable wirkt nur in der Umgebung des
+  Dienstes `server` (etwa ueber eine `docker-compose.override.yml`), nicht ueber die `.env`. Doku: Admin-Doku
+  FRP-Tunnel (DE+EN).
 - **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
   eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
   scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:

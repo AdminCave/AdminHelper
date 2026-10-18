@@ -72,9 +72,9 @@ BOOTSTRAP_SETUP_FILE = DATA_DIR / ".bootstrap_setup"
 FRP_CONFIG_DIR = Path(os.environ.get("FRP_CONFIG_DIR", str(DATA_DIR / "frp-config")))
 FRP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-# State directory the frps supervisor writes its status.json to (shared with the frps
-# container, mounted read-only here). Not created: the server only reads it, and a missing
-# directory reads as "no status yet".
+# State directory the frps supervisor writes its status.json and the proxy lists of the frps
+# dashboard to (shared with the frps container, mounted read-only here). Not created: the
+# server only reads it, and a missing directory reads as "no status yet".
 FRPS_STATE_DIR = Path(os.environ.get("FRPS_STATE_DIR", str(DATA_DIR / "frps-state")))
 
 # Host port compose publishes for frps (its ${FRP_BIND_PORT} mapping).
@@ -84,9 +84,10 @@ FRP_BIND_PORT = int(os.environ.get("FRP_BIND_PORT", "7000"))
 VISITOR_PORT_START = int(os.environ.get("VISITOR_PORT_START", "6000"))
 VISITOR_PORT_END = int(os.environ.get("VISITOR_PORT_END", "6999"))
 
-# frps dashboard base URL for the status endpoint. Empty = the compose default
-# (the "frps" service name, then loopback); set it for any other topology
-# (frps on another host) instead of editing the code.
+# frps dashboard base URL for the status endpoint. Empty = the compose default: the
+# endpoint reads the proxy lists the frps supervisor puts into FRPS_STATE_DIR, since the
+# server cannot reach the dashboard; set it for any other topology (frps on another host)
+# instead of editing the code.
 FRPS_DASHBOARD_URL = os.environ.get("FRPS_DASHBOARD_URL", "").strip()
 
 # IP access restriction
