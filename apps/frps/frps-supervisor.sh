@@ -59,6 +59,13 @@
 # The state goes to $FRPS_STATE_DIR/status.json, rewritten at every poll as a heartbeat; its
 # format is the contract the server reads, apps/server/app/modules/frp/supervisor_status.py.
 # Log lines carry codes and paths, never the token.
+#
+# The server's tunnel status view (GET /api/frp/status) cannot reach the dashboard of frps,
+# which sits in a network of its own. So, after the status, every poll fetches the proxy lists
+# of the dashboard over loopback while frps runs from a current/ with a webServer.port, and
+# puts each answer as frps gave it into $FRPS_STATE_DIR/proxy-<type>.json (fetch_proxies);
+# a failed request or an answer over 1 MiB removes the file of its type, frps not running or
+# no webServer.port all of them.
 
 set -u
 export LC_ALL=C
@@ -91,8 +98,11 @@ CURRENT="$FRPS_ACTIVE_DIR/current"
 PREV="$FRPS_ACTIVE_DIR/prev"
 STATUS="$FRPS_STATE_DIR/status.json"
 PEMS="frps.crt frps.key ca.crt"
-# Bytes; the server's frps.toml and the PEM files are a few KiB.
+# Bytes, the most of an input file and of an answer of the dashboard; the server's frps.toml
+# and the PEM files are a few KiB.
 INPUT_MAX=1048576
+# The proxy types the server's status view lists (status_router.py).
+PROXY_TYPES="stcp https tcp udp"
 # The only top-level keys frps gets: those config_generator.py writes, then a few for
 # extra_config (frps 0.69.1 field names, none of them a listener).
 TOP_KEYS="bindPort vhostHTTPSPort subDomainHost maxPortsPerClient detailedErrorsToClient
@@ -656,6 +666,83 @@ report() {
     write_status
 }
 
+# top_value <toml> <key> — the value of a top-level key of a checked copy, a string without
+# its quotes; empty without the key.
+top_value() {
+    KEY="$2" awk '
+        /^\[/ { exit }
+        index($0, ENVIRON["KEY"] " = ") == 1 {
+            value = substr($0, length(ENVIRON["KEY"]) + 4)
+            if (value ~ /^"/) value = substr(value, 2, length(value) - 2)
+            print value
+            exit
+        }
+    ' "$1" 2>/dev/null
+}
+
+# dashboard_port — the port of the dashboard of the frps that runs, as frps reads the number
+# (+7500.0 is 7500); empty while frps does not run or current/ has no webServer.port.
+dashboard_port() {
+    [ -n "$FRPS_PID" ] || return 0
+    top_value "$CURRENT/frps.toml" webServer.port | awk '
+        { port = $0 + 0 }
+        port == int(port) && port >= 1 && port <= 65535 { printf "%d\n", port }
+    '
+}
+
+# fetch_proxies — the proxy lists of the dashboard, http://127.0.0.1:<port>/api/proxy/<type>
+# for each of PROXY_TYPES, with webServer.user and webServer.password of current/frps.toml,
+# which go to curl on stdin, never on a command line. The requests run side by side, each for
+# FRPS_READ_SECONDS at the most, and TERM or INT ends them at once (on_signal), so that a
+# dashboard that does not answer holds up a poll no longer than that. The answers are not
+# parsed: the name and the mtime of a file are the supervisor's (keep_proxy).
+fetch_proxies() {
+    port=$(dashboard_port)
+    if [ -z "$port" ]; then
+        drop_proxies
+        return
+    fi
+    user=$(top_value "$CURRENT/frps.toml" webServer.user)
+    password=$(top_value "$CURRENT/frps.toml" webServer.password)
+    for type in $PROXY_TYPES; do
+        # -q first: no curlrc is read. No proxy from the environment gets the credentials.
+        curl -q --config - --silent --fail --noproxy '*' --max-time "$FRPS_READ_SECONDS" \
+            --max-filesize "$INPUT_MAX" "http://127.0.0.1:$port/api/proxy/$type" \
+            > "$FRPS_STATE_DIR/.proxy-$type.json.tmp" <<EOF &
+user = "$user:$password"
+EOF
+        FETCH_PIDS="$FETCH_PIDS $!"
+    done
+    # shellcheck disable=SC2086 # one pid a word
+    set -- $FETCH_PIDS
+    for type in $PROXY_TYPES; do
+        rc=0
+        wait "$1" || rc=$?
+        FETCH_PIDS=${FETCH_PIDS#" $1"}
+        shift
+        keep_proxy "$type" "$rc"
+    done
+}
+
+# keep_proxy <type> <rc> — swaps the answer in as proxy-<type>.json, as write_status does
+# (0644, the server reads it under another UID); after a failed request or with an answer
+# larger than INPUT_MAX the file of the type goes instead.
+keep_proxy() {
+    tmp="$FRPS_STATE_DIR/.proxy-$1.json.tmp"
+    if [ "$2" -eq 0 ] && [ "$(wc -c < "$tmp")" -le "$INPUT_MAX" ] \
+        && chmod 0644 "$tmp" && mv -f "$tmp" "$FRPS_STATE_DIR/proxy-$1.json"; then
+        return
+    fi
+    rm -f "$tmp" "$FRPS_STATE_DIR/proxy-$1.json"
+}
+
+# drop_proxies — removes the proxy lists, and what a request cut short left.
+drop_proxies() {
+    for type in $PROXY_TYPES; do
+        rm -f "$FRPS_STATE_DIR/proxy-$type.json" "$FRPS_STATE_DIR/.proxy-$type.json.tmp"
+    done
+}
+
 # poll — one round of the loop. An input that differs from the one the last poll saw is only
 # noted; the next poll that finds it unchanged takes it over. CHANGING_SINCE: when the polls
 # began to see the input change, logged once; after FRPS_UNSTABLE_SECONDS of that the input
@@ -682,6 +769,7 @@ poll() {
     fi
     restart_due
     report
+    fetch_proxies
 }
 
 # pause <seconds> — a sleep that TERM and INT cut short: a trapped signal ends wait at once.
@@ -698,7 +786,14 @@ on_signal() {
         kill "$PAUSE_PID" 2>/dev/null
         wait "$PAUSE_PID" 2>/dev/null
     fi
+    if [ -n "$FETCH_PIDS" ]; then
+        # shellcheck disable=SC2086 # one pid a word
+        kill $FETCH_PIDS 2>/dev/null
+        # shellcheck disable=SC2086
+        wait $FETCH_PIDS 2>/dev/null
+    fi
     stop_frps
+    drop_proxies
     exit 0
 }
 
@@ -754,6 +849,8 @@ if ! { mkdir -p "$FRPS_STATE_DIR" && chmod 0755 "$FRPS_STATE_DIR"; }; then
     log "cannot set up $FRPS_STATE_DIR" >&2
 fi
 recover
+# No frps runs yet: proxy lists of an earlier run go.
+drop_proxies
 
 BOOT=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 SEQ=0
@@ -771,6 +868,7 @@ REJECTED_HASH=""
 FRPS_PID=""
 STARTED_AT=0
 PAUSE_PID=""
+FETCH_PIDS=""
 CHANGING_SINCE=""
 UNSTABLE=0
 end_series

@@ -82,8 +82,8 @@ class TestGenerateFrpsToml:
     def test_dashboard_included(self):
         config = _make_config(dashboard_port=7500, dashboard_user="admin", dashboard_password="pw")
         toml = generate_frps_toml(config)
-        # Bind all interfaces so the server container can reach the dashboard over the
-        # compose bridge; 127.0.0.1 would make /api/frp/status unreachable (4.6).
+        # All interfaces: the supervisor asks over loopback inside the frps container, the
+        # server with FRPS_DASHBOARD_URL over the network (4.6).
         assert 'webServer.addr = "0.0.0.0"' in toml
         assert "webServer.port = 7500" in toml
         assert 'webServer.user = "admin"' in toml
