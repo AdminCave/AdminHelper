@@ -319,10 +319,15 @@ def _ensure_frps_config(db):
     intermediate (A7) — the server no longer runs its own FRP CA (D6/F3): no CA
     generation, no cert minting, no publish. Only the non-secret frps.toml
     (ports, auth token, TLS file paths pointing at /etc/frp-pki) is regenerated
-    here."""
+    here. First go the temp files a killed write left behind, with or without a config."""
     from app.modules.frp._helpers import get_frp_config
-    from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
+    from app.modules.frp.docker_manager import (
+        remove_frps_config,
+        remove_stale_temp_files,
+        write_frps_config,
+    )
 
+    remove_stale_temp_files()
     try:
         config = get_frp_config(db)
         if not config:

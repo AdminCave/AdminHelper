@@ -81,11 +81,11 @@ class AgentPingChecker:
         stale_minutes = config.get("stale_minutes", 15)
 
         if not server_id:
-            return "unknown", "Keine server_id konfiguriert", None
+            return "unknown", "No server_id configured", None
 
         last = _last_report.get(server_id)
         if last is None:
-            return "unknown", "Noch kein Agent-Report empfangen", None
+            return "unknown", "No agent report received yet", None
 
         now = utcnow_naive()
         age_seconds = (now - last).total_seconds()
@@ -128,13 +128,13 @@ class AgentPingChecker:
         if age_minutes > stale_minutes:
             return (
                 "critical",
-                f"Agent seit {age_minutes:.0f} Min. nicht erreichbar (Limit: {stale_minutes} Min.)",
+                f"Agent unreachable for {age_minutes:.0f} min (limit: {stale_minutes} min)",
                 {"agent_last_seen_seconds": round(age_seconds)},
             )
 
         return (
             "ok",
-            f"Agent aktiv (letzter Report vor {age_seconds:.0f}s)",
+            f"Agent active (last report {age_seconds:.0f}s ago)",
             {"agent_last_seen_seconds": round(age_seconds)},
         )
 
@@ -185,7 +185,7 @@ class AgentResourcesChecker:
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         # Not called by the scheduler, but directly on agent push
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(
         self, config: dict, report: dict, prev_details: dict | None = None
@@ -196,7 +196,7 @@ class AgentResourcesChecker:
         its "problems" map {metric_key: level} drives the per-metric hysteresis."""
         resources = report.get("resources", {})
         if not resources:
-            return "unknown", "Keine Ressourcen-Daten", None
+            return "unknown", "No resource data", None
 
         problems = []
         status = "ok"
@@ -337,7 +337,7 @@ class ServiceProcessChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(
         self, config: dict, report: dict, prev_details: dict | None = None
@@ -437,7 +437,7 @@ class ServiceProcessChecker:
         """
         systemd = report.get("systemd")
         if not systemd:
-            return "unknown", "Keine systemd-Daten im Report", None
+            return "unknown", "No service data in report", None
 
         ignore = self._parse_ignore(config.get("ignore", []))
 
@@ -467,13 +467,13 @@ class ServiceProcessChecker:
         if failed:
             msg = f"Failed: {', '.join(failed)}"
             if enabled_inactive:
-                msg += f"; Inaktiv (autostart): {', '.join(enabled_inactive)}"
+                msg += f"; Inactive (autostart): {', '.join(enabled_inactive)}"
             return "critical", msg, metrics
 
         if enabled_inactive:
             return (
                 "warning",
-                f"Inaktiv (autostart): {', '.join(enabled_inactive)}",
+                f"Inactive (autostart): {', '.join(enabled_inactive)}",
                 metrics,
             )
 
@@ -482,9 +482,9 @@ class ServiceProcessChecker:
         # --state=failed), so a failed unit still makes the check critical above.
         error = systemd.get("error")
         if error:
-            return "unknown", f"Dienste nicht abfragbar: {error}", metrics
+            return "unknown", f"Services not queryable: {error}", metrics
 
-        return "ok", "Alle systemd-Units OK", metrics
+        return "ok", "All services OK", metrics
 
     @staticmethod
     def _inventory_state(entry: dict, inventory: dict, error) -> str | None:
@@ -524,7 +524,7 @@ class ServiceProcessChecker:
         """
         expected = config.get("services", [])
         if not expected:
-            return "ok", "Keine Services konfiguriert", None
+            return "ok", "No services configured", None
 
         systemd = report.get("systemd")
         if not isinstance(systemd, dict):
@@ -568,26 +568,26 @@ class ServiceProcessChecker:
 
         metrics = {"services_down": len(down), "services_up": len(up)}
         metrics["_details"] = {"mode": "list", "watched": watched}
-        no_data = f"; ohne Daten: {', '.join(nodata)}" if nodata else ""
+        no_data = f"; no data: {', '.join(nodata)}" if nodata else ""
 
         if down:
             return (
                 "critical",
-                f"Services nicht aktiv: {', '.join(down)}{no_data}",
+                f"Services not active: {', '.join(down)}{no_data}",
                 metrics,
             )
 
         if not up:
-            message = f"Services ohne Daten: {', '.join(nodata)}"
+            message = f"Services without data: {', '.join(nodata)}"
             if error:
-                message += f"; Dienste nicht abfragbar: {error}"
+                message += f"; Services not queryable: {error}"
             return "unknown", message, metrics
 
         if nodata:
-            return "ok", f"{len(up)} Services aktiv{no_data}", metrics
+            return "ok", f"{len(up)} services active{no_data}", metrics
 
         return (
             "ok",
-            f"Alle {len(up)} Services aktiv",
+            f"All {len(up)} services active",
             metrics,
         )

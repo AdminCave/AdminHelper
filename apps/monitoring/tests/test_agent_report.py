@@ -4,7 +4,7 @@
 
 """Agent push path (audit gap): the report endpoint must apply the same
 consecutive-fails damping as the scheduler path — including the
-"(Fehler n/m)" suppression suffix that the inline copy used to lack."""
+"(failure n/m)" suppression suffix that the inline copy used to lack."""
 
 import json
 import logging
@@ -89,7 +89,7 @@ def test_report_applies_consecutive_fails_damping(client_db):
         state = db.query(MonitorState).filter_by(check_id="chk-1").one()
         assert state.status == "ok"
         assert state.fail_count == 1
-        assert "(Fehler 1/2)" in state.message
+        assert "(failure 1/2)" in state.message
 
     # 2nd failing push: threshold reached -> critical.
     client.post("/agent/srv-1/report", json=_report(cpu=99))

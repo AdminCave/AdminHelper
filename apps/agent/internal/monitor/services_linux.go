@@ -202,7 +202,8 @@ func filterEnabledInactive(candidates []string) []string {
 }
 
 // answered reports whether a failed systemctl call still answered, i.e. exited non-zero on its own,
-// rather than being killed by the timeout (exit code -1) or never started.
+// rather than being ended by the timeout (context.DeadlineExceeded from runWithTimeout), killed by a
+// signal (exit code -1) or never started.
 func answered(err error) bool {
 	var exitErr *exec.ExitError
 	return errors.As(err, &exitErr) && exitErr.ExitCode() > 0

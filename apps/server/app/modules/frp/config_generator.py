@@ -107,8 +107,12 @@ def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, and stcp only
     with a secret. Without one, the text carries no frps token; config-hash, config
-    download and provisioning bundle all come from that text, so they can't drift."""
-    return without_secretless_stcp([t for t in tunnels if t.enabled])
+    download and provisioning bundle all come from that text, so they can't drift.
+
+    Sorted by name (unique): the callers query without ORDER BY, and Postgres
+    returns rows in physical order, which an UPDATE of a column outside the config
+    (connection_id) changes. Unsorted, the hash would change with the same config."""
+    return sorted(without_secretless_stcp([t for t in tunnels if t.enabled]), key=lambda t: t.name)
 
 
 def _tls_server_block(
