@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: strikte Bool-Schalter und englische Checker-Meldungen — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-bugs · Review: am Ende
+Status: bereit · Branch: feature/monitoring-bugs · Review: am Ende
 Spec: Roadmap R-0456, R-0422
 Heavy: none — nur `apps/monitoring` (Config-Validierung, Lesart der Checker, Meldungstexte) und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Route, kein Alembic, keine OpenAPI-Änderung (`config` bleibt im Schema ein `dict`, `schemas.py:24`). Der Desktop schreibt die Schalter als echte Booleans (`CheckConfigFields.svelte:43-45`) und zeigt `message` nur durch (`MonCheckLine.svelte:180-181`); kein Skript unter `scripts/tests/` prüft einen Checker-Text. Die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -54,8 +54,10 @@ Dedup-Key: bug:monitoring:checkers:german-messages
 HEAD: 5855a9b5
 Semantik: docs/admin/monitoring.html:111 — „Die Meldung ist englisch und nennt Code und Aufruf“ (Docker/ZFS-Ausfall); docs/features/monitoring-services.md:54-56 wie T2
 
-### T4 — PUT /checks vergleicht die Config typgenau  [ ]
+### T4 — PUT /checks vergleicht die Config typgenau  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @9b7e3fe5 2026-10-18T08:07:00+02:00
+Review: am Ende (Branch-Review)
 Änderung: Fund des tester im Branch-Review (2026-10-18): `PUT /checks/{id}` prüft eine Config nur, wenn sie sich von der gespeicherten unterscheidet (`routers/checks.py:221`, `effective_config == stored_config`), und in Python gilt `0 == False`, `1 == True`. Ein `0` statt eines gespeicherten `false` zählt so als unverändert, wird nicht geprüft und gespeichert; die Checker lesen es seit T1 als Default (an). Der Vergleich unterscheidet künftig `bool` von Zahlen (nur diese Trennung, `26` und `26.0` bleiben gleich), damit ein geänderter Schalter durch `validate_check_config` läuft und 422 bekommt. Test zuerst rot: in `TestStrictBoolSwitches` ein PUT-Fall je Schalter (`verify_ssl`, `exclude_stopped`, `check_restarts`) — mit echtem `false`/`true` anlegen, `0`/`1` senden, 422 erwarten und prüfen, dass die gespeicherte Config gleich bleibt; dazu ein PUT mit unverändertem echtem Bool → 200.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_configs.py
 Doku: keine (CHANGELOG aus T1 sagt es schon so)
