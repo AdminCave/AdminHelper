@@ -98,7 +98,7 @@
             <tbody>
               <tr><td><code>SMTP_HOST</code></td><td>Relay hostname. <strong>Empty = e-mail channel off</strong> (bell + desktop toasts stay active).</td></tr>
               <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, default) or <code>465</code> (implicit TLS / SMTPS).</td></tr>
-              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Relay credentials (optional, if the relay accepts without auth).</td></tr>
+              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Relay credentials (optional, if the relay accepts without auth). Write a <code>$</code> in the password as <code>$$</code> or put the value in single quotes (see <a href="./installation.html#env">Environment Variables</a>).</td></tr>
               <tr><td><code>SMTP_FROM</code></td><td>Sender address (default <code>adminhelper@localhost</code>).</td></tr>
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Delivery attempts per e-mail with linear backoff, then "failed" (default 5).</td></tr>
             </tbody>
