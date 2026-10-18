@@ -43,6 +43,21 @@ _last_report_mono: dict[str, float] = {}
 # constant only decides WHEN to prefer monotonic, never whether to alert.
 _CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
 
+# Longest text from the report a checker copies into its message. The message goes unchanged
+# into MonitorState.message (no length limit) and from there into webhook and mail, so a
+# broken or hijacked agent must not push an unbounded text through it (R-0437).
+MAX_AGENT_TEXT = 500
+
+
+def cap_agent_text(value: object) -> str | None:
+    """A text from the report as it may go into a message: a non-empty string, cut to
+    MAX_AGENT_TEXT characters including the trailing "…"; None for anything else."""
+    if not isinstance(value, str) or not value:
+        return None
+    if len(value) <= MAX_AGENT_TEXT:
+        return value
+    return value[: MAX_AGENT_TEXT - 1] + "…"
+
 
 def record_agent_report(server_id: str) -> None:
     """Called on agent push to store the timestamp."""
@@ -421,6 +436,13 @@ class ServiceProcessChecker:
             return None
         return (active, total) if 0 <= active <= total else None
 
+    @staticmethod
+    def _not_queryable(error) -> str:
+        """Message part for a failed list-units/sc query. The raw error already decided that
+        listing failed; the agent's reason goes in only as a capped string."""
+        reason = cap_agent_text(error)
+        return f"Services not queryable: {reason}" if reason else "Services not queryable"
+
     def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         """Auto mode: checks systemd health from the report.
 
@@ -482,7 +504,7 @@ class ServiceProcessChecker:
         # --state=failed), so a failed unit still makes the check critical above.
         error = systemd.get("error")
         if error:
-            return "unknown", f"Services not queryable: {error}", metrics
+            return "unknown", self._not_queryable(error), metrics
 
         return "ok", "All services OK", metrics
 
@@ -580,7 +602,7 @@ class ServiceProcessChecker:
         if not up:
             message = f"Services without data: {', '.join(nodata)}"
             if error:
-                message += f"; Services not queryable: {error}"
+                message += f"; {self._not_queryable(error)}"
             return "unknown", message, metrics
 
         if nodata:
