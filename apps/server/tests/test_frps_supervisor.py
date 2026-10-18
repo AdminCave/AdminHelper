@@ -20,13 +20,19 @@ After the start it polls the input: a change that stayed the same for two polls 
 like at the start, restarting frps only for a new valid input, and one that keeps changing shows
 as unstable; frps exiting on its own is restarted after a growing delay, three exits in a row
 make a crash loop; TERM and INT stop frps and leave no process behind; `health` judges the
-state.
+state. While frps runs from a copy with a webServer.port, every poll puts the proxy lists of
+its dashboard, fetched over loopback with the credentials kept off every command line, into
+the state directory (proxy-<type>.json, 0644), each answer as it came; a failed request or an
+answer over 1 MiB leaves no file of its type, and without frps or a webServer.port none is
+left.
 
 The script runs under sh with a stub frps on PATH, without root and so with su-exec switched
-off (FRPS_USER empty; one test puts a stub su-exec in its place). Some tests run the frps image
-built from apps/frps, with the capabilities and security options compose gives it and the real
-frps under its own user; they skip when Docker or the pinned base image is not at hand."""
+off (FRPS_USER empty; one test puts a stub su-exec in its place); a local HTTP server stands in
+for the dashboard. Some tests run the frps image built from apps/frps, with the capabilities and
+security options compose gives it and the real frps under its own user; they skip when Docker
+or the pinned base image is not at hand."""
 
+import base64
 import contextlib
 import hashlib
 import itertools
@@ -42,6 +48,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -1250,6 +1257,255 @@ def test_frps_that_ignores_term_is_killed(box):
     assert "killing it" in box._log()
 
 
+PROXY_TYPES = ("stcp", "https", "tcp", "udp")
+DASHBOARD_USER = "admin-\u00fc"
+# What a shell or curl's config would make something else of, were it not passed on as it is.
+DASHBOARD_PASSWORD = f"pw:$HOME `id` # {uuid.uuid4().hex}"
+
+
+def _answer(proxy_type: str) -> bytes:
+    return f'{{"proxies": [{{"name": "srv1.{proxy_type}", "status": "online"}}]}}\n'.encode()
+
+
+class Dashboard:
+    """Stands in for the dashboard of frps on 127.0.0.1: answers GET /api/proxy/<type> with
+    answers[type] (status, body, whether with a Content-Length), or, while hang is set, holds
+    the request until the test ends. Notes every request with its Authorization header and,
+    while it is open, every process with the password on its command line (leaks), next to
+    the number of times a process asking the dashboard was seen at all (clients)."""
+
+    def __init__(self):
+        self.answers = {t: (200, _answer(t), True) for t in PROXY_TYPES}
+        self.hang = False
+        self.held = 0
+        self.requests: list[tuple[str, str | None]] = []
+        self.leaks: list[str] = []
+        self.clients = 0
+        self.release = threading.Event()
+        dashboard = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                dashboard._serve(self)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def _serve(self, request: BaseHTTPRequestHandler):
+        self._scan()
+        self.requests.append((request.path, request.headers.get("Authorization")))
+        if self.hang:
+            self.held += 1
+            self.release.wait()
+            return
+        status, body, length = self.answers.get(request.path.rsplit("/", 1)[-1], (404, b"", True))
+        request.send_response(status)
+        if length:
+            request.send_header("Content-Length", str(len(body)))
+        request.end_headers()
+        # Without a length, the end of the connection ends the body (HTTP/1.0).
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            request.wfile.write(body)
+
+    def _scan(self):
+        password, asking = DASHBOARD_PASSWORD.encode(), f":{self.port}/api/proxy/".encode()
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                line = (entry / "cmdline").read_bytes()
+            except OSError:
+                continue
+            if password in line:
+                self.leaks.append(line.replace(b"\0", b" ").decode(errors="replace"))
+            if asking in line:
+                self.clients += 1
+
+    def close(self):
+        self.release.set()
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture()
+def dashboard():
+    dashboard = Dashboard()
+    yield dashboard
+    dashboard.close()
+
+
+def _dashboard_toml(box: Box, dashboard: Dashboard) -> str:
+    return _toml(
+        box.pki,
+        dashboard_port=dashboard.port,
+        dashboard_user=DASHBOARD_USER,
+        dashboard_password=DASHBOARD_PASSWORD,
+    )
+
+
+def _with_dashboard(box: Box, dashboard: Dashboard, **env: str):
+    """A supervisor that polls every second, frps running with webServer on the dashboard;
+    returns once the four proxy lists are there."""
+    box.write_input(_dashboard_toml(box, dashboard))
+    box.env.update({"FRPS_POLL_SECONDS": "1", **env})
+    box.run(frps=True)
+    box.wait_until(lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists")
+
+
+def _proxy_files(box: Box) -> dict[str, bytes]:
+    """The proxy lists in the state directory, by type."""
+    found = {}
+    for proxy_type in PROXY_TYPES:
+        with contextlib.suppress(FileNotFoundError):
+            found[proxy_type] = (box.state / f"proxy-{proxy_type}.json").read_bytes()
+    return found
+
+
+def _state(box: Box, *, in_flight: bool = False) -> list[str]:
+    """The files in the state directory; with in_flight, but for the temp files of requests
+    under way, which a poll swaps in or removes once they are done."""
+    names = sorted(p.name for p in box.state.iterdir())
+    return [n for n in names if not (in_flight and n.startswith(".proxy-"))]
+
+
+ALL_LISTS = sorted(["status.json", *(f"proxy-{t}.json" for t in PROXY_TYPES)])
+
+
+def test_while_frps_runs_every_poll_puts_the_answers_of_its_dashboard_into_the_state(
+    box, dashboard
+):
+    # As frps gave it, unparsed: this one is no JSON at all.
+    dashboard.answers["udp"] = (200, b"no json \xff\n", True)
+
+    _with_dashboard(box, dashboard)
+
+    assert _proxy_files(box) == {t: dashboard.answers[t][1] for t in PROXY_TYPES}
+    assert _state(box, in_flight=True) == ALL_LISTS
+    assert {_mode(box.state / f"proxy-{t}.json") for t in PROXY_TYPES} == {0o644}
+    credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
+    assert {path for path, _ in dashboard.requests} == {f"/api/proxy/{t}" for t in PROXY_TYPES}
+    assert {auth for _, auth in dashboard.requests} == {f"Basic {credentials}"}
+
+    # Every poll writes them anew, and a new answer shows.
+    mtimes = {t: (box.state / f"proxy-{t}.json").stat().st_mtime_ns for t in PROXY_TYPES}
+    dashboard.answers["stcp"] = (200, _answer("another"), True)
+    box.wait_polls(2)
+    box.wait_until(lambda: _proxy_files(box).get("stcp") == _answer("another"), "the new answer")
+    for proxy_type in PROXY_TYPES:
+        assert (box.state / f"proxy-{proxy_type}.json").stat().st_mtime_ns > mtimes[proxy_type]
+    assert _state(box, in_flight=True) == ALL_LISTS
+
+
+def test_no_process_carries_the_password_of_the_dashboard_on_its_command_line(box, dashboard):
+    _with_dashboard(box, dashboard)
+    box.wait_until(lambda: len(dashboard.requests) >= 3 * len(PROXY_TYPES), "three polls")
+
+    # Looked for while curl waited for the answer, and found curl then.
+    assert dashboard.clients >= len(dashboard.requests) > 0
+    assert dashboard.leaks == []
+
+
+def test_without_webserver_port_no_proxy_list_is_left_not_even_one_of_an_earlier_run(box):
+    box.state.mkdir()
+    for proxy_type in PROXY_TYPES:
+        (box.state / f"proxy-{proxy_type}.json").write_bytes(_answer(proxy_type))
+    (box.state / ".proxy-tcp.json.tmp").write_bytes(b"cut short")
+
+    _polling(box)
+    assert _state(box) == ["status.json"]
+    box.wait_polls(2)
+
+    assert box.read().state == "running"
+    assert _state(box) == ["status.json"]
+
+
+def test_without_frps_its_dashboard_is_not_asked(box, dashboard):
+    box.write_input(_dashboard_toml(box, dashboard), pems={"frps.crt": box.pems["expired.crt"]})
+    box.env["FRPS_POLL_SECONDS"] = "1"
+
+    box.run(frps=False)
+    box.wait_polls(2)
+
+    assert (box.read().state, box.read().reason) == ("waiting", "cert_expired")
+    assert dashboard.requests == []
+    assert _state(box) == ["status.json"]
+
+
+def test_once_frps_stops_its_proxy_lists_go(box, dashboard):
+    _with_dashboard(box, dashboard)
+
+    box.config.unlink()
+    box.wait_state("stopped")
+    box.wait_until(lambda: not _proxy_files(box), "no proxy list")
+    asked = len(dashboard.requests)
+    box.wait_polls(2)
+
+    assert len(dashboard.requests) == asked
+    assert _state(box) == ["status.json"]
+
+
+# An answer for stcp, and whether it is kept; without a length, the end of the connection
+# ends the answer, so curl learns the size only as it reads it.
+ANSWERS = {
+    "1 MiB": ((200, b"x" * INPUT_MAX, True), True),
+    "1 MiB without a length": ((200, b"x" * INPUT_MAX, False), True),
+    "a byte more": ((200, b"x" * (INPUT_MAX + 1), True), False),
+    "a byte more without a length": ((200, b"x" * (INPUT_MAX + 1), False), False),
+    "HTTP 401": ((401, _answer("stcp"), True), False),
+}
+
+
+@pytest.mark.parametrize("case", list(ANSWERS))
+def test_an_answer_over_1_mib_or_a_failed_request_leaves_no_file_of_its_type(box, dashboard, case):
+    answer, kept = ANSWERS[case]
+    _with_dashboard(box, dashboard)
+
+    dashboard.answers["stcp"] = answer
+    if kept:
+        box.wait_until(lambda: _proxy_files(box).get("stcp") == answer[1], "the answer")
+    else:
+        box.wait_until(lambda: "stcp" not in _proxy_files(box), "no stcp list")
+    box.wait_polls(2)
+
+    files = _proxy_files(box)
+    assert files.pop("stcp", None) == (answer[1] if kept else None)
+    assert files == {t: _answer(t) for t in PROXY_TYPES if t != "stcp"}
+    lists = ALL_LISTS if kept else [f for f in ALL_LISTS if "stcp" not in f]
+    assert _state(box, in_flight=True) == lists
+
+
+def test_a_dashboard_that_does_not_answer_leaves_no_file_and_the_polls_go_on(box, dashboard):
+    _with_dashboard(box, dashboard, FRPS_READ_SECONDS="1")
+
+    dashboard.hang = True
+    box.wait_until(lambda: not _proxy_files(box), "no proxy list")
+    # A poll a second, each held up for FRPS_READ_SECONDS at the most by its requests.
+    held = dashboard.held
+    box.wait_polls(3)
+
+    assert dashboard.held >= held + len(PROXY_TYPES)
+    assert box.read().state == "running"
+    assert _state(box, in_flight=True) == ["status.json"]
+
+
+def test_term_cuts_short_a_request_the_dashboard_does_not_answer(box, dashboard):
+    # Requests far longer than frps gets to stop: only cut short do they let TERM end the
+    # supervisor in time.
+    _with_dashboard(box, dashboard, FRPS_READ_SECONDS="60", FRPS_STOP_SECONDS="5")
+    dashboard.hang = True
+    box.wait_until(lambda: dashboard.held >= len(PROXY_TYPES), "the requests of a poll held")
+
+    box.supervisor.send_signal(signal.SIGTERM)
+
+    assert box.supervisor.wait(timeout=5) == 0
+    _wait_gone(box.supervisor.pid)
+    assert _state(box) == ["status.json"]
+
+
 SU_EXEC = """#!/bin/sh
 # Stands in for su-exec: records the user and the command, and runs frps as it is, nothing
 # else.
@@ -1936,3 +2192,24 @@ def test_in_the_frps_image_the_supervisor_does_not_run_frps_as_root(frps_image):
         subprocess.run([docker, "rm", "-f", name], capture_output=True)
 
     assert result.returncode == 1 and "FRPS_USER" in result.stderr, result.stderr
+
+
+def test_in_the_frps_image_the_supervisor_puts_the_proxy_lists_of_frps_into_the_state(
+    tmp_path, pems, frps_image
+):
+    config = _cfg(
+        dashboard_port=7500, dashboard_user=DASHBOARD_USER, dashboard_password=DASHBOARD_PASSWORD
+    )
+    lists = [f"{STATE_DIR}/proxy-{t}.json" for t in PROXY_TYPES]
+    with _container(
+        frps_image, tmp_path, pems, generate_frps_toml(config), FRPS_POLL_SECONDS="1"
+    ) as box:
+        box.wait_until(lambda: box.exec("cat", *lists).returncode == 0, "the proxy lists")
+
+        # curl of the image, the dashboard of the real frps over loopback, its credentials.
+        for path in lists:
+            result = box.exec("cat", path)
+            assert json.loads(result.stdout) == {"proxies": []}, result.stdout
+        modes = box.exec("stat", "-c", "%a %u", *lists).stdout.split("\n")
+        assert modes[: len(lists)] == ["644 0"] * len(lists)
+        assert DASHBOARD_PASSWORD not in box.logs()
