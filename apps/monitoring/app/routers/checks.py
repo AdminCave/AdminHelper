@@ -51,6 +51,19 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
     return [c.to_dict(state=states.get(c.id)) for c in checks]
 
 
+def _same_config(a, b) -> bool:
+    """== on parsed JSON, except that a bool never equals a number: 0 == False would
+    let a 0 sent for a stored false count as unchanged and skip the strict boundary.
+    Numbers still compare by value (26 == 26.0)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same_config(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same_config(x, y) for x, y in zip(a, b))
+    return a == b
+
+
 router = APIRouter()
 
 # Type-specific metrics written to VictoriaMetrics.
@@ -218,7 +231,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         unchanged = (
             effective_type == check.check_type
             and stored_config is not None
-            and effective_config == stored_config
+            and _same_config(effective_config, stored_config)
         )
         if not unchanged:
             try:

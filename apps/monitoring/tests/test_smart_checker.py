@@ -37,7 +37,7 @@ def test_no_smart_data_is_ok_not_an_error():
 
 
 # The result of a report without smart and without a readable reason (agents before R-0419).
-_NO_DATA = ("ok", "Keine SMART-Daten (VM oder smartctl nicht verfuegbar)", None)
+_NO_DATA = ("ok", "No SMART data (VM or smartctl not available)", None)
 
 
 @pytest.mark.parametrize(
