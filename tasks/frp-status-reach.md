@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Statusansicht erreicht frps über den Supervisor — Task-Ledger
-Status: aktiv · Branch: feature/frp-status-reach · Review: am Ende
+Status: bereit · Branch: feature/frp-status-reach · Review: am Ende
 Spec: Roadmap R-0408
 Heavy: linux-full — frps-Image (`apps/frps`), Admin-Route `GET /api/frp/status` und der Stack-Test `integration-stack`. Der Job läuft nicht auf PRs, deshalb vor dem Merge `gh workflow run ci.yml --ref feature/frp-status-reach`. Kein `scenario`: kein Tunnel-Datenpfad, kein Cross-Host
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -38,8 +38,10 @@ Dedup-Key: bug:server:frp/status_router.py:frps-unreachable
 HEAD: 5855a9b5
 Semantik: docs/admin/frp-tunnel.html:118 — „Standardmäßig erreicht der Server es über den Compose-Servicenamen (<code>http://frps:PORT</code>, mit <code>127.0.0.1</code>-Fallback). Läuft frps in einer anderen Topologie (eigener Host), die Basis-URL über <code>FRPS_DASHBOARD_URL</code> in der <code>.env</code> setzen, statt den Code zu ändern.“ (EN `docs/en/admin/frp-tunnel.html:118`)
 
-### T3 — Stack-Test: die Statusansicht liefert Daten von frps  [ ]
+### T3 — Stack-Test: die Statusansicht liefert Daten von frps  [x]
 Komponente: scripts · Dateien: scripts/tests/integration_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @fdb4034a 2026-10-18T09:43:44+02:00
+Review: am Ende (Branch-Review)
 Änderung: In `frps_takeover` (`integration_stack_test.sh:439`) bekommt die FRP-Konfiguration (`:486`) einen `dashboard_port` mit Benutzer und Passwort. Danach wartet der Test bis zu 20 s, bis `GET /api/frp/status` kein `error` mehr trägt und `total` eine Zahl ist (`until_ok`, wie die Schritte daneben); sonst `bad` mit dem `error`-Text. Ohne T1/T2 wäre der Schritt rot mit „frps-Dashboard: nicht erreichbar (ConnectError)“, das ist der Befund im echten Stack. Die übrigen Schritte von `frps_takeover` bleiben unverändert. Erst nach dem Merge von R-0411 bauen (T31 ändert dieselbe Datei).
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (intern)

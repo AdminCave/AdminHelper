@@ -330,6 +330,19 @@ print(s["state"], s["reason"], str(s["stale"]).lower())' 2>/dev/null
 }
 sv_api_is() { LAST=$(sv_api); [ "$LAST" = "$1" ]; }
 
+# frp_status — "total <n>" from GET /api/frp/status as admins see it, or "error <text>" while it
+# reports one; empty when it gives neither.
+frp_status() {
+    api GET /api/frp/status | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+if s.get("error"):
+    print("error", s["error"])
+elif type(s["total"]) is int:
+    print("total", s["total"])' 2>/dev/null
+}
+frp_status_ok() { LAST=$(frp_status); [ "${LAST%% *}" = total ]; }
+
 # sv_file mark | since <mark> | heartbeat — from the supervisor's status file, read where the
 # server reads it. mark: "<boot> <last seq>"; since: "=" followed by the events after the mark
 # as <event>:<reason>:<tokenChanged>, or "rebooted" when the supervisor has started anew since.
@@ -499,9 +512,11 @@ frps_takeover() {
     pid=$(frps_pid) || pid="pidof-failed"
     [ -z "$pid" ] && ok "no frps process before any FRP config" || bad "frps runs before any FRP config (pid $pid)"
 
-    # b. The config created: within 20 s frps answers TLS with the leaf of frps-certs, run from
-    #    the checked copy of the chain in frps-active.
-    body="{\"name\":\"itest-frps\",\"server_addr\":\"localhost\",\"bind_port\":$bind}"
+    # b. The config created, with the dashboard: within 20 s frps answers TLS with the leaf of
+    #    frps-certs, run from the checked copy of the chain in frps-active, and within 20 s more
+    #    the status view has the proxy lists the supervisor fetched from the dashboard.
+    body="{\"name\":\"itest-frps\",\"server_addr\":\"localhost\",\"bind_port\":$bind"
+    body+=",\"dashboard_port\":7500,\"dashboard_user\":\"itest\",\"dashboard_password\":\"$(openssl rand -hex 16)\"}"
     config_id=$(api POST /api/frp/server-config "$body" | json_get id)
     [ -n "$config_id" ] || { bad "frps: creating the FRP config failed"; return; }
     t0=$SECONDS
@@ -519,6 +534,14 @@ frps_takeover() {
         || bad "frps-active/current does not hold the PEM chain of frps-certs"
     until_ok 10 sv_api_is "running none false" && ok "supervisor state running" \
         || bad "supervisor state after the config: '$LAST'"
+    # The server cannot reach the dashboard on frpedge: the supervisor fetches the lists over
+    # loopback every poll, the server reads them from frps-state while they are fresh.
+    t0=$SECONDS
+    if until_ok 20 frp_status_ok; then
+        ok "GET /api/frp/status without an error $((SECONDS - t0)) s after frps runs ($LAST)"
+    else
+        bad "GET /api/frp/status 20 s after frps runs: '$LAST'"
+    fi
 
     # c. The same config again: the server rewrites frps.toml (new inode, same bytes), and over
     #    the polls that would take a change over frps keeps running, without an event.
