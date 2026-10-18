@@ -6,12 +6,14 @@
 out-of-range values must fail at create/update/template time instead of
 surfacing as a permanently-unknown or mis-thresholded check at runtime."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from app.builtin_templates import seed_builtin_templates
 from app.check_configs import CONFIG_MODELS, validate_check_config
-from app.models import MonitorTemplate
+from app.models import MonitorCheck, MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
 from app.template_sync import record_override_baseline
 
@@ -117,6 +119,92 @@ class TestAlertOnUnavailable:
         )
         assert r.status_code == 422
         assert "valid boolean" in r.text
+
+
+_BOOL_SWITCHES = [
+    ("http", {"url": "http://93.184.216.34/"}, "verify_ssl"),
+    ("proxmox_backup", {}, "exclude_stopped"),
+    ("docker_health", {}, "check_restarts"),
+]
+
+
+class TestStrictBoolSwitches:
+    """R-0456: the check editor reads only a real boolean and anything else as the
+    default; a lax bool stored "false" or 0 as sent, and checker and editor could
+    read it differently."""
+
+    @pytest.mark.parametrize("value", ["false", "no", "0", 0, 1], ids=repr)
+    @pytest.mark.parametrize(("check_type", "base", "key"), _BOOL_SWITCHES)
+    def test_non_bool_is_422(self, client_db, monkeypatch, check_type, base, key, value):
+        # Should the boundary let it through, keep the check's job out of the
+        # process-wide scheduler.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        r = client.post(
+            "/checks",
+            json={"name": "c", "check_type": check_type, "config": {**base, key: value}},
+        )
+        assert r.status_code == 422
+        assert "valid boolean" in r.text
+
+    @pytest.mark.parametrize("value", [True, False])
+    @pytest.mark.parametrize(("check_type", "base", "key"), _BOOL_SWITCHES)
+    def test_real_bool_is_accepted(self, check_type, base, key, value):
+        validate_check_config(check_type, {**base, key: value})
+
+    @staticmethod
+    def _create(client, monkeypatch, check_type, config):
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        r = client.post("/checks", json={"name": "c", "check_type": check_type, "config": config})
+        assert r.status_code == 201
+        return r.json()["id"]
+
+    @staticmethod
+    def _stored(factory, check_id):
+        # The raw JSON, not json.loads(): 0 == False would hide the very change.
+        with factory() as db:
+            return db.get(MonitorCheck, check_id).config
+
+    # In Python 0 == False and 1 == True: compared plainly, the number counted as the
+    # unchanged stored bool, skipped the boundary and was stored.
+    @pytest.mark.parametrize(("stored", "sent"), [(False, 0), (True, 1)])
+    @pytest.mark.parametrize(("check_type", "base", "key"), _BOOL_SWITCHES)
+    def test_put_number_for_stored_bool_is_422(
+        self, client_db, monkeypatch, check_type, base, key, stored, sent
+    ):
+        client, factory = client_db
+        config = {**base, key: stored}
+        check_id = self._create(client, monkeypatch, check_type, config)
+        r = client.put(f"/checks/{check_id}", json={"config": {**base, key: sent}})
+        assert r.status_code == 422
+        assert "valid boolean" in r.text
+        assert self._stored(factory, check_id) == json.dumps(config)
+
+    @pytest.mark.parametrize("stored", [True, False])
+    @pytest.mark.parametrize(("check_type", "base", "key"), _BOOL_SWITCHES)
+    def test_put_unchanged_bool_is_200(self, client_db, monkeypatch, check_type, base, key, stored):
+        client, factory = client_db
+        config = {**base, key: stored}
+        check_id = self._create(client, monkeypatch, check_type, config)
+        r = client.put(f"/checks/{check_id}", json={"config": config})
+        assert r.status_code == 200
+        assert self._stored(factory, check_id) == json.dumps(config)
+
+    @pytest.mark.parametrize(("check_type", "base", "key"), _BOOL_SWITCHES)
+    def test_put_unchanged_legacy_number_stays_saveable(
+        self, client_db, monkeypatch, check_type, base, key
+    ):
+        # A number stored before the strict boundary, sent back unchanged, still
+        # skips it: telling bools from numbers must not make 0 differ from 0.
+        client, factory = client_db
+        check_id = self._create(client, monkeypatch, check_type, {**base, key: True})
+        legacy = {**base, key: 0}
+        with factory() as db:
+            db.get(MonitorCheck, check_id).config = json.dumps(legacy)
+            db.commit()
+        r = client.put(f"/checks/{check_id}", json={"config": legacy})
+        assert r.status_code == 200
+        assert self._stored(factory, check_id) == json.dumps(legacy)
 
 
 class TestAlertOnUnavailableTemplates:

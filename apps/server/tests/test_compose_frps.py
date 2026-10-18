@@ -270,6 +270,23 @@ def test_the_test_overlay_builds_frps_from_this_checkout():
     assert (_ROOT / frps["build"]["context"] / "Dockerfile").is_file()
 
 
+def test_the_test_overlay_keeps_the_data_dir_out_of_the_checkout():
+    # A bind of ./data leaves container-UID-owned files in the checkout on every stack run. In
+    # the overlay the services that bind it share the named volume test-data instead, as they
+    # share ./data in production (the scheduler needs the server's SECRET_KEY).
+    bound = sorted(
+        name
+        for name, service in _services().items()
+        if _mounts(service).get("/app/data", (None,))[0] == "./data"
+    )
+    assert bound, "docker-compose.yml binds ./data to /app/data in no service"
+    overlay = yaml.load(_COMPOSE_TEST.read_text(encoding="utf-8"), Loader=_TestLoader)
+    assert {
+        name: _mounts(overlay["services"].get(name, {})).get("/app/data") for name in bound
+    } == {name: ("test-data", False, False) for name in bound}
+    assert "test-data" in overlay["volumes"]
+
+
 def test_env_example_names_the_frps_image():
     default = _FRPS_IMAGE.removeprefix("${FRPS_IMAGE:-").removesuffix("}")
     lines = _ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()

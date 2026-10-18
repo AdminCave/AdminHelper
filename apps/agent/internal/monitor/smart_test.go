@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -344,5 +345,42 @@ func TestCollectSmartSomeDisksReadable(t *testing.T) {
 	disks, reason := collectSmart()
 	if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/nvme0" {
 		t.Errorf("collectSmart() = %v, %q; want only /dev/nvme0 and no reason", disks, reason)
+	}
+}
+
+func TestCollectSmartPassesScanType(t *testing.T) {
+	// Two disks behind a MegaRAID controller share /dev/bus/0, and only the type from the scan
+	// (megaraid,N) tells smartctl which one to read: without -d it cannot detect the device type.
+	// scsi is the exception, the scan line smartctl 7.4 prints for a plain /dev/sdX: -d scsi would
+	// switch off the SAT detection on open, and a SATA disk would come without its ATA attributes.
+	const scan = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"exit_status":0},"devices":[` +
+		`{"name":"/dev/bus/0","info_name":"/dev/bus/0 [megaraid_disk_00]","type":"megaraid,0","protocol":"SCSI"},` +
+		`{"name":"/dev/bus/0","info_name":"/dev/bus/0 [megaraid_disk_01]","type":"megaraid,1","protocol":"SCSI"},` +
+		`{"name":"/dev/sda","info_name":"/dev/sda","type":"scsi","protocol":"SCSI"},` +
+		`{"name":"/dev/nvme0","info_name":"/dev/nvme0","type":"nvme","protocol":"NVMe"}]}`
+	calls := stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
+		"/dev/bus/0": {out: ataFixture},
+		"/dev/sda":   {out: ataFixture},
+		"/dev/nvme0": {out: nvmeFixture},
+	})
+	disks, reason := collectSmart()
+	if reason != "" || len(disks) != 4 {
+		t.Errorf("collectSmart() = %v, %q; want four disks and no reason", disks, reason)
+	}
+	var queries []string
+	for _, c := range *calls {
+		if c.args[0] != "--scan" {
+			queries = append(queries, strings.Join(c.args, " "))
+		}
+	}
+	sort.Strings(queries)
+	want := []string{
+		"--all --json=c -d megaraid,0 /dev/bus/0",
+		"--all --json=c -d megaraid,1 /dev/bus/0",
+		"--all --json=c -d nvme /dev/nvme0",
+		"--all --json=c /dev/sda",
+	}
+	if !reflect.DeepEqual(queries, want) {
+		t.Errorf("queries = %q, want %q", queries, want)
 	}
 }

@@ -142,6 +142,16 @@ def test_extra_config_rejects_non_bare_keys():
         _tunnel(extra_config={'k"': "v"})
 
 
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_extra_config_rejects_key_with_trailing_newline(model):
+    # In Python `$` also matches before a trailing "\n", so an anchored .match let
+    # "abc\n" through; the generator writes it unquoted and frpc.toml no longer parses.
+    build = _tunnel if model is FrpTunnelCreate else model
+    with pytest.raises(ValidationError) as exc:
+        build(extra_config={"abc\n": 1})
+    assert "'abc\n'" in exc.value.errors()[0]["msg"]
+
+
 def test_extra_config_accepts_clean_scalars():
     t = _tunnel(
         extra_config={"transport.useEncryption": True, "retries": 3, "bandwidthLimit": "1MB"}

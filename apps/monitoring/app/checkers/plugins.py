@@ -28,20 +28,22 @@ class ProxmoxBackupChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         proxmox = report.get("proxmox")
         if not proxmox:
-            return "unknown", "Keine Proxmox-Daten im Report", None
+            return "unknown", "No Proxmox data in report", None
 
         vms = proxmox.get("vms", [])
         if not vms:
-            return "ok", "Keine VMs/CTs gefunden", None
+            return "ok", "No VMs/CTs found", None
 
         max_age_hours = config.get("max_backup_age_hours", 26)
         exclude_vmids = set(config.get("exclude_vmids", []))
-        exclude_stopped = config.get("exclude_stopped", True)
+        # Only a real False includes stopped VMs: a non-bool stored before the strict
+        # boundary is the default, as the check editor shows it.
+        exclude_stopped = config.get("exclude_stopped", True) is not False
         max_age_seconds = max_age_hours * 3600
         now = time.time()
 
@@ -70,7 +72,7 @@ class ProxmoxBackupChecker:
             elif (now - last_ts) > max_age_seconds:
                 vm_status = "outdated"
                 age_hours = round((now - last_ts) / 3600)
-                outdated.append(f"{label}: {age_hours}h alt")
+                outdated.append(f"{label}: {age_hours}h old")
             else:
                 ok_count += 1
 
@@ -92,15 +94,15 @@ class ProxmoxBackupChecker:
         }
 
         if no_backup:
-            msg = "Kein Backup: " + ", ".join(no_backup)
+            msg = "No backup: " + ", ".join(no_backup)
             if outdated:
-                msg += "; Veraltet: " + ", ".join(outdated)
+                msg += "; Outdated: " + ", ".join(outdated)
             return "critical", msg, metrics
 
         if outdated:
-            return "warning", "Veraltete Backups: " + ", ".join(outdated), metrics
+            return "warning", "Outdated backups: " + ", ".join(outdated), metrics
 
-        return "ok", f"Alle {ok_count} VMs/CTs haben aktuelle Backups", metrics
+        return "ok", f"All {ok_count} VMs/CTs have up-to-date backups", metrics
 
 
 class ZfsHealthChecker:
@@ -115,14 +117,14 @@ class ZfsHealthChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         zfs = report.get("zfs")
         if not zfs:
             # An empty list, not None: the push path keeps the stored details of a
             # result without any, and the desktop would go on showing the old pools.
-            return "unknown", "Keine ZFS-Daten im Report", {"_details": {"pools": []}}
+            return "unknown", "No ZFS data in report", {"_details": {"pools": []}}
 
         if not zfs.get("available", True) or zfs.get("error"):
             code = zfs.get("error")
@@ -138,7 +140,7 @@ class ZfsHealthChecker:
         if not pools:
             return (
                 "ok",
-                "Keine ZFS-Pools gefunden",
+                "No ZFS pools found",
                 {"_details": {"available": True, "error": None, "pools": []}},
             )
 
@@ -160,10 +162,10 @@ class ZfsHealthChecker:
                 status = "critical"
 
             if cap >= cap_crit:
-                problems.append(f"{name}: {cap}% voll (>={cap_crit}%)")
+                problems.append(f"{name}: {cap}% full (>={cap_crit}%)")
                 status = "critical"
             elif cap >= cap_warn:
-                problems.append(f"{name}: {cap}% voll (>={cap_warn}%)")
+                problems.append(f"{name}: {cap}% full (>={cap_warn}%)")
                 if status != "critical":
                     status = "warning"
 
@@ -184,7 +186,7 @@ class ZfsHealthChecker:
             return status, "; ".join(problems), metrics
 
         pool_summary = ", ".join(f"{p['name']} {p.get('capacity_percent', 0)}%" for p in pools)
-        return "ok", f"Alle Pools ONLINE: {pool_summary}", metrics
+        return "ok", f"All pools ONLINE: {pool_summary}", metrics
 
 
 # docker ps prints the exit code into the status text: "Exited (3) 2 minutes ago".
@@ -273,7 +275,7 @@ class DockerHealthChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(
         self, config: dict, report: dict, prev_details: dict | None = None

@@ -139,7 +139,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             <tbody>
               <tr><td><code>SMTP_HOST</code></td><td>Hostname des Relays. <strong>Leer = E-Mail-Kanal aus</strong> (Glocke + Desktop-Hinweise bleiben aktiv).</td></tr>
               <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS).</td></tr>
-              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Zugangsdaten des Relays (optional, wenn der Relay ohne Auth annimmt).</td></tr>
+              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Zugangsdaten des Relays (optional, wenn der Relay ohne Auth annimmt). Ein <code>$</code> im Passwort als <code>$$</code> schreiben oder den Wert in einfache Anführungszeichen setzen (siehe <a href="./installation.html#env">Umgebungsvariablen</a>).</td></tr>
               <tr><td><code>SMTP_FROM</code></td><td>Absenderadresse (Default <code>adminhelper@localhost</code>).</td></tr>
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Zustellversuche pro E-Mail mit linearem Backoff, danach „fehlgeschlagen" (Default 5).</td></tr>
             </tbody>
