@@ -45,7 +45,7 @@ def _check_secret(v: Optional[str]) -> Optional[str]:
 # The generator emits extra_config keys unquoted (`{key} = ...`), so they must
 # be TOML bare keys (dotted keys allowed). Anything else would break — or worse,
 # extend — the generated config.
-_TOML_BARE_KEY = re.compile(r"^[A-Za-z0-9_.-]+$")
+_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
@@ -58,7 +58,7 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
     if v is None:
         return v
     for key, value in v.items():
-        if not _TOML_BARE_KEY.match(str(key)):
+        if not _TOML_BARE_KEY.fullmatch(str(key)):
             raise ValueError(
                 f"extra_config-Schlüssel '{key}' ist kein gültiger TOML-Key "
                 "(erlaubt: A-Z a-z 0-9 _ . -)"
