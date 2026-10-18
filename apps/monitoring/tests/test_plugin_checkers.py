@@ -379,6 +379,49 @@ def test_docker_unhealthy_wins_over_restart_as_reason():
     assert _rows(metrics)[0]["reason"] == "unhealthy"
 
 
+def test_docker_previous_values_skip_malformed_entries():
+    # A malformed entry must not make evaluate raise (the push path then drops the check and
+    # its state stands still); the valid previous value still counts (R-0459).
+    prev = {
+        "containers": [
+            {"id": ["a"]},
+            "no-dict",
+            {"id": "abc123def456", "restart_count": 1},
+        ]
+    }
+    status, _, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(restart_count=2)), prev)
+    assert status == "warning"
+    assert _rows(metrics)[0]["reason"] == "restarted"
+
+    # A containers value that is no list has no previous values.
+    status, _, _ = DockerHealthChecker().evaluate(
+        {}, _docker(_ctr(restart_count=2)), {"containers": 42}
+    )
+    assert status == "ok"
+
+
+def test_docker_container_id_that_is_no_string_has_no_previous_value():
+    prev = {"containers": [{"id": "abc123def456", "restart_count": 0}]}
+    status, _, metrics = DockerHealthChecker().evaluate(
+        {}, _docker(_ctr(id=["abc123def456"], restart_count=3)), prev
+    )
+    assert status == "ok"
+    assert _rows(metrics)[0]["reason"] is None
+
+
+def test_docker_container_without_name_falls_back_to_a_string_id_only():
+    c = _ctr()
+    del c["name"]
+    _, _, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert _rows(metrics)[0]["name"] == "abc123def456"
+
+    # Any other ID gives the neutral "?" instead of failing at the ignore lookup.
+    c["id"] = ["abc123def456"]
+    status, _, metrics = DockerHealthChecker().evaluate({"ignore_containers": ["db"]}, _docker(c))
+    assert status == "ok"
+    assert _rows(metrics)[0]["name"] == "?"
+
+
 @pytest.mark.parametrize("code", ["daemon_unreachable", "timeout", "cli_failed", "parse_failed"])
 def test_docker_unavailable_is_warning_without_containers(code):
     report = _docker(
@@ -426,6 +469,26 @@ def test_docker_block_missing_is_unknown_and_clears_containers():
 def test_docker_zero_containers_is_ok_with_empty_list():
     status, _, metrics = DockerHealthChecker().evaluate({}, _docker())
     assert status == "ok"
+    assert metrics["_details"] == {"available": True, "error": None, "containers": []}
+
+
+def test_docker_caps_the_container_list():
+    # Like the router's per-report arrays, only the first 500 containers are rated, so a
+    # broken agent cannot flood the details and the message (R-0459).
+    ids = [f"{i:012x}" for i in range(2000)]
+    report = _docker(*(_ctr(id=cid, name=f"c{cid}") for cid in ids))
+    status, _, metrics = DockerHealthChecker().evaluate({}, report)
+    assert status == "ok"
+    assert [row["id"] for row in _rows(metrics)] == ids[:500]
+    assert metrics["docker_ok"] == 500
+
+
+@pytest.mark.parametrize(
+    "containers", ["abc", {"id": "abc123def456"}, 42], ids=["str", "dict", "int"]
+)
+def test_docker_containers_that_are_no_list_count_as_empty(containers):
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(containers=containers))
+    assert (status, msg) == ("ok", "No containers found")
     assert metrics["_details"] == {"available": True, "error": None, "containers": []}
 
 
@@ -523,3 +586,72 @@ def test_docker_ignored_container_is_skipped():
     status, _, metrics = DockerHealthChecker().evaluate({"ignore_containers": ["watchtower"]}, r)
     assert status == "ok"  # the only problem container is ignored
     assert _rows(metrics) == []
+
+
+# --- Outage branch of ZfsHealthChecker and DockerHealthChecker (R-0472) ---
+# Only the agent's codes and a capped error_message reach the message, which goes unchanged
+# into MonitorState.message, webhook and mail; available is down only as a JSON false.
+def _outage_case(kind, **block):
+    """(checker, report with one healthy pool or container, message prefix, list key)."""
+    if kind == "zfs":
+        return ZfsHealthChecker(), _zfs(_pool(), **block), "ZFS unavailable", "pools"
+    return DockerHealthChecker(), _docker(_ctr(), **block), "Docker unavailable", "containers"
+
+
+@pytest.mark.parametrize(
+    ("kind", "error"),
+    [
+        ("zfs", "disk_full"),
+        ("zfs", "x" * 300),
+        ("zfs", "daemon_unreachable"),
+        ("zfs", ["timeout"]),
+        ("docker", "disk_full"),
+        ("docker", "x" * 300),
+        ("docker", ["timeout"]),
+    ],
+    ids=[
+        "zfs-disk_full",
+        "zfs-300-chars",
+        "zfs-docker-code",
+        "zfs-list",
+        "docker-disk_full",
+        "docker-300-chars",
+        "docker-list",
+    ],
+)
+def test_unknown_error_code_is_an_outage_without_code(kind, error):
+    checker, report, prefix, key = _outage_case(kind, available=False, error=error)
+    status, msg, metrics = checker.evaluate({}, report)
+    assert status == "warning"
+    assert msg == prefix
+    assert metrics == {"_details": {"available": False, "error": None, key: []}}
+
+
+@pytest.mark.parametrize("kind", ["zfs", "docker"])
+def test_error_message_is_capped(kind):
+    checker, report, prefix, _ = _outage_case(
+        kind, available=False, error="timeout", error_message="y" * 10_000
+    )
+    _, msg, _ = checker.evaluate({}, report)
+    # 500 characters of agent text, the ellipsis included.
+    assert msg == f"{prefix} (timeout): " + "y" * 499 + "…"
+
+
+@pytest.mark.parametrize("kind", ["zfs", "docker"])
+@pytest.mark.parametrize("error_message", [42, ["zpool list failed"]], ids=["int", "list"])
+def test_error_message_that_is_no_string_is_left_out(kind, error_message):
+    checker, report, prefix, _ = _outage_case(
+        kind, available=False, error="timeout", error_message=error_message
+    )
+    status, msg, _ = checker.evaluate({}, report)
+    assert status == "warning"
+    assert msg == f"{prefix} (timeout)"
+
+
+@pytest.mark.parametrize("kind", ["zfs", "docker"])
+@pytest.mark.parametrize("available", ["false", 0, None], ids=["str-false", "zero", "null"])
+def test_available_is_down_only_as_a_real_false(kind, available):
+    checker, healthy, _, _ = _outage_case(kind, available=True)
+    checker, report, _, _ = _outage_case(kind, available=available)
+    assert checker.evaluate({}, report) == checker.evaluate({}, healthy)
+    assert checker.evaluate({}, report)[0] == "ok"
