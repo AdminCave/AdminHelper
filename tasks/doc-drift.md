@@ -35,8 +35,10 @@ Dedup-Key: bug:docs:agent-deployment:frp-ca-cert-wording
 HEAD: 5855a9b5
 Semantik: Soll ist der Code — `apps/server/app/modules/frp/config_generator.py:23-26` („The frp tunnel reuses that single tunnel-scoped identity rather than a separate server-minted client cert“), `_tls_agent_block` `:129-140` (`certFile = "{_AGENT_IDENTITY_DIR}/agent.crt"`), `apps/agent/internal/enroll/enroll.go:37-38`; dazu `docs/developer/server.html:142` — „Der Server signiert keine FRP-Zertifikate mehr (D6, F3).“
 
-### T2 — R-0388, R-0444, R-0386 (Notiz): README und DEVELOPMENT auf dem Stand des Codes  [ ]
+### T2 — R-0388, R-0444, R-0386 (Notiz): README und DEVELOPMENT auf dem Stand des Codes  [x]
 Komponente: scripts · Dateien: README.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @ce8af910 2026-10-18T07:26:45+02:00
+Review: am Ende (Branch-Review)
 Änderung: (1) R-0388: Die Router-Zeile im Monitoring-Block (README `:441`, DEVELOPMENT `:1398`) nennt auch `maintenance`. (2) R-0444: README `:106` sagt Seitenleiste statt Header; README `:109` ersetzt „Session is persisted — no re-login needed on restart“ durch: im Server-Modus bei jedem Start Anmeldung mit Passwort, Server-URL und Benutzername vorausgefüllt; „Local and Sync modes remain fully functional“ bleibt. (3) Notiz zu R-0386: „32 Tauri commands“ (README `:463`, DEVELOPMENT `:1421`; registriert sind heute 34) wird zahlenlos („all Tauri commands“ bzw. „alle Tauri-Commands“). Beifang im selben Baum: `checkers/` ohne `forecast` (README `:440`, DEVELOPMENT `:1397`), und die Zählwerte des Desktop-UI-Blocks (README `:476`, `:477`, `:480`; DEVELOPMENT `:1434`, `:1435`, `:1437`, `:1439`; heute u. a. 13 Stores, 54 Komponenten, 76 Testdateien, die neben dem Code liegen, nicht in `vitest.setup.ts`) werden zahlenlos. Server- und Web-Block bleiben unberührt.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: README.md, DEVELOPMENT.md (die Task ist die Doku; README gibt es nur englisch, DEVELOPMENT nur deutsch)
