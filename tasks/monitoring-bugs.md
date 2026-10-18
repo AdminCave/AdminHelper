@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: strikte Bool-Schalter und englische Checker-Meldungen — Task-Ledger
-Status: geplant · Branch: feature/monitoring-bugs · Review: am Ende
+Status: aktiv · Branch: feature/monitoring-bugs · Review: am Ende
 Spec: Roadmap R-0456, R-0422
 Heavy: none — nur `apps/monitoring` (Config-Validierung, Lesart der Checker, Meldungstexte) und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Route, kein Alembic, keine OpenAPI-Änderung (`config` bleibt im Schema ein `dict`, `schemas.py:24`). Der Desktop schreibt die Schalter als echte Booleans (`CheckConfigFields.svelte:43-45`) und zeigt `message` nur durch (`MonCheckLine.svelte:180-181`); kein Skript unter `scripts/tests/` prüft einen Checker-Text. Die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
