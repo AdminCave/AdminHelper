@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent-Checks: Timeout-Text, SMART-Gerätetyp, Proxmox-VM-Aufruf — Task-Ledger
-Status: geplant · Branch: feature/agent-check-fixes · Review: am Ende
+Status: aktiv · Branch: feature/agent-check-fixes · Review: am Ende
 Spec: Roadmap R-0454, R-0455, R-0471
 Heavy: linux-full + windows — `apps/agent` (Monitoring-Collector: Dienste, SMART, Proxmox); `linux-full` läuft im Sammellauf (`/feature-build` §5). `windows` ist der CI-Job `agent-windows` (keine Windows-Box im Pool): der sc-Pfad (`scquery.go`, `runWithTimeout`/`runTimed`, `commandFailure`) hat kein Build-Tag, der neue Test aus T1 beendet dort einen echten Kindprozess über das Timeout (`TerminateProcess`, „exit status 1“) und läuft mit `go test ./...` nativ. Kein `scenario`: weder FRP noch PKI noch Install. Echte MegaRAID- oder PVE-Hardware hat der Pool nicht; T2 und T3 sind gegen Stubs, die smartmontools-Quelle (RELEASE_7_4) und die PVE-API-Doku belegt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
