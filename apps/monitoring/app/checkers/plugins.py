@@ -41,7 +41,9 @@ class ProxmoxBackupChecker:
 
         max_age_hours = config.get("max_backup_age_hours", 26)
         exclude_vmids = set(config.get("exclude_vmids", []))
-        exclude_stopped = config.get("exclude_stopped", True)
+        # Only a real False includes stopped VMs: a non-bool stored before the strict
+        # boundary is the default, as the check editor shows it.
+        exclude_stopped = config.get("exclude_stopped", True) is not False
         max_age_seconds = max_age_hours * 3600
         now = time.time()
 

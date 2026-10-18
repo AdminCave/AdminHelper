@@ -7,6 +7,7 @@ re-checked against the SSRF guard (3.5), instead of follow_redirects=True lettin
 public URL bounce into the internal network unchecked."""
 
 import httpx
+import pytest
 
 from app.checkers import http as http_mod
 from app.core import ssrf as ssrf_mod
@@ -71,6 +72,25 @@ def test_http_checker_flags_disabled_tls_verify(monkeypatch):
     status2, msg2, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
     assert status2 == "ok"
     assert "[TLS-Verify deaktiviert]" not in msg2
+
+
+@pytest.mark.parametrize(("stored", "verify"), [(0, True), ("false", True), (False, False)])
+def test_http_checker_verify_ssl_off_only_for_real_false(monkeypatch, stored, verify):
+    # R-0456: a stored non-bool (from before the strict boundary) counts as the
+    # default, as the check editor shows it; only a real False turns TLS
+    # verification off.
+    seen = []
+
+    def fake_request(method, url, **kwargs):
+        seen.append(kwargs["verify"])
+        return httpx.Response(200, text="ok", request=httpx.Request(method, url))
+
+    monkeypatch.setattr(http_mod.httpx, "request", fake_request)
+    status, _, _ = http_mod.HttpChecker().run(
+        {"url": "http://93.184.216.34/", "verify_ssl": stored}
+    )
+    assert status == "ok"
+    assert seen == [verify]
 
 
 def test_http_checker_blocks_private_initial_url(monkeypatch):

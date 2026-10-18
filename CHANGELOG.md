@@ -346,6 +346,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: Schalter der Check-Konfiguration nehmen nur `true` oder `false` (R-0456):** `verify_ssl` (`http`),
+  `exclude_stopped` (`proxmox_backup`) und `check_restarts` (`docker_health`) nahmen auch `"false"`, `"no"`, `0` oder
+  `1` an und speicherten sie so. Der Check-Editor zeigte dann den Default, der Checker las den Wert anders: Ein
+  `verify_ssl: 0` schaltete die TLS-Pruefung ab, ein `exclude_stopped: 0` nahm gestoppte VMs mit. Jetzt lehnen
+  `POST /checks`, `PUT /checks/{id}` mit geaenderter Konfiguration und Template-Definitionen solche Werte mit 422 ab,
+  wie schon bei `alert_on_unavailable`. Keine Migration: Ein gespeicherter Nicht-Bool-Wert gilt als Default, wie ihn
+  der Check-Editor zeigt, nur ein echtes `false` schaltet ab; ein altes `verify_ssl: 0` prueft TLS also wieder. Doku:
+  Monitoring-Administration (DE+EN).
+
 - **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
   eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
   scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:

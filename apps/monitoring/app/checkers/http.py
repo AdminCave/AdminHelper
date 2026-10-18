@@ -23,7 +23,9 @@ class HttpChecker:
         method = config.get("method", "GET").upper()
         expected_status = config.get("expected_status", 200)
         timeout = config.get("timeout", 10)
-        verify_ssl = bool(config.get("verify_ssl", True))
+        # Only a real False turns TLS verification off: a non-bool stored before the
+        # strict boundary is the default, as the check editor shows it.
+        verify_ssl = config.get("verify_ssl", True) is not False
         search_string = config.get("search_string", "")
 
         if not url:

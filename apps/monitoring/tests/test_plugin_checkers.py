@@ -141,6 +141,15 @@ def test_proxmox_excludes_stopped_and_listed_vmids():
     assert status == "ok"  # both excluded -> no missing backups reported
 
 
+@pytest.mark.parametrize(("stored", "expected"), [(0, "ok"), ("false", "ok"), (False, "critical")])
+def test_proxmox_exclude_stopped_off_only_for_real_false(stored, expected):
+    # R-0456: a stored non-bool (from before the strict boundary) counts as the
+    # default, as the check editor shows it; only a real False includes stopped VMs.
+    r = {"proxmox": {"vms": [{"vmid": 101, "status": "stopped", "last_backup_ts": None}]}}
+    status, _, _ = ProxmoxBackupChecker().evaluate({"exclude_stopped": stored}, r)
+    assert status == expected
+
+
 # --- DockerHealthChecker ---
 def _ctr(**fields):
     """One container as the agent reports it since R-0419 (inspect fields included)."""

@@ -119,6 +119,38 @@ class TestAlertOnUnavailable:
         assert "valid boolean" in r.text
 
 
+_BOOL_SWITCHES = [
+    ("http", {"url": "http://93.184.216.34/"}, "verify_ssl"),
+    ("proxmox_backup", {}, "exclude_stopped"),
+    ("docker_health", {}, "check_restarts"),
+]
+
+
+class TestStrictBoolSwitches:
+    """R-0456: the check editor reads only a real boolean and anything else as the
+    default; a lax bool stored "false" or 0 as sent, and checker and editor could
+    read it differently."""
+
+    @pytest.mark.parametrize("value", ["false", "no", "0", 0, 1], ids=repr)
+    @pytest.mark.parametrize(("check_type", "base", "key"), _BOOL_SWITCHES)
+    def test_non_bool_is_422(self, client_db, monkeypatch, check_type, base, key, value):
+        # Should the boundary let it through, keep the check's job out of the
+        # process-wide scheduler.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        r = client.post(
+            "/checks",
+            json={"name": "c", "check_type": check_type, "config": {**base, key: value}},
+        )
+        assert r.status_code == 422
+        assert "valid boolean" in r.text
+
+    @pytest.mark.parametrize("value", [True, False])
+    @pytest.mark.parametrize(("check_type", "base", "key"), _BOOL_SWITCHES)
+    def test_real_bool_is_accepted(self, check_type, base, key, value):
+        validate_check_config(check_type, {**base, key: value})
+
+
 class TestAlertOnUnavailableTemplates:
     """The key must not make a docker/zfs template check or a built-in look changed
     (R-0420): configs are stored as sent, never filled with the schema defaults, so
