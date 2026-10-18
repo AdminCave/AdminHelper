@@ -25,8 +25,10 @@ Dedup-Key: bug:server:script_worker.py:model-registry
 HEAD: 5855a9b5
 Semantik: docs/examples/webhook_add_connection.py:5 — „# Hook example (type: webhook): create or update a connection“, dort `:107` „save_connections(connections)“; ebenso `docs/examples/schedule_hook_cleanup.py:34` „save_connections(unique)“ und `docs/examples/webhook_http_import.py:99` „save_connections(connections)“
 
-### T2 — CLI und Alembic laden die Modelle aus app/model_registry.py  [ ]
+### T2 — CLI und Alembic laden die Modelle aus app/model_registry.py  [x]
 Komponente: server · Dateien: apps/server/app/cli.py, apps/server/alembic/env.py, apps/server/tests/test_model_registry.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @02c7f775 2026-10-18T07:38:09+02:00
+Review: am Ende (Branch-Review)
 Änderung: `cli.py:27-37` (Kommentar und acht `import app.modules.*.models`; es fehlen `audit`, `notifications` und `provisioning`, die ersten beiden kommen heute über `audit.service`/`notifications.service` herein) und `env.py:27-40` (elf Imports samt verrutschtem Kommentar) werden je zu `from app import model_registry  # noqa: F401` (Form wie `main.py:21`); der Kommentar in `env.py` sagt, dass `target_metadata` dadurch jede Tabelle kennt. Tests in `test_model_registry.py`: (a) ein Probe-Interpreter wie `_REGISTRY_PROBE` (`:61`) über `_run` (`:70`) importiert `app.cli` und gibt jedes Modell-Modul aus, das danach fehlt; auf HEAD rot mit `app.modules.provisioning.models`. (b) ein `ast`-Test, dass `alembic/env.py` das Registry auf Modulebene importiert; env.py lässt sich nicht importieren, ohne Migrationen zu starten. Verhaltensneutral: die CLI lädt zusätzlich nur `provisioning.models` (kein Objekt des CLI-Wegs verweist dorthin), env.py lädt dieselben elf Module wie heute.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_model_registry.py tests/test_cli.py tests/test_migrations_smoke.py
 Doku: keine (intern)
