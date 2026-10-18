@@ -5,7 +5,9 @@
 package monitor
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 )
 
@@ -32,10 +34,13 @@ func serviceCounts(entries []ServiceEntry) map[string]int {
 	return map[string]int{"active": active, "total": len(entries)}
 }
 
-// commandFailure is the short reason for a failed systemctl or sc call: its exit status or signal,
-// or that the command did not start. Never stderr or the error text, which can name paths
-// (fork/exec <path>).
+// commandFailure is the short reason for a failed systemctl or sc call: that the timeout ended it
+// (runWithTimeout), its exit status or signal, or that the command did not start. Never stderr or
+// the error text, which can name paths (fork/exec <path>).
 func commandFailure(name string, err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("timed out after %s", pluginTimeout)
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return exitErr.Error()
