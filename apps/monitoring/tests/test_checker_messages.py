@@ -4,18 +4,34 @@
 
 """The checker messages are English (R-0422): `message` goes as it is into the
 dashboard, the bell and the notifications, and the desktop shows it untranslated.
-One case per message path, compared exactly; status rides along so a case cannot
-pass on the wrong path."""
+The same holds for what the check engine writes into MonitorState.message. One
+case per message path, compared exactly; status rides along so a case cannot pass
+on the wrong path."""
 
+import socket
+import subprocess
 import time
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
+import httpx
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
+import app.check_engine as ce
+import app.core.database as database_mod
 from app.checkers import agent
+from app.checkers import http as http_mod
+from app.checkers import ping as ping_mod
+from app.checkers import tcp as tcp_mod
 from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
 from app.checkers.smart import SmartHealthChecker
+from app.core.ssrf import UrlVerdict
+from app.core.time import utcnow_naive
+from app.models import Base, MonitorCheck, MonitorState
 
 NOW = datetime(2026, 7, 19, 12, 0, 0)
 
@@ -317,3 +333,247 @@ CASES = [
 def test_push_checker_message_is_english(call, status, message):
     got_status, got_message, _ = call()
     assert (got_status, got_message) == (status, message)
+
+
+# --- pull checkers: the network is faked in each case ---
+
+# A public IP literal: the SSRF guard lets it through without DNS.
+_PUBLIC = "http://93.184.216.34/"
+
+
+def _reply(status_code, text="", location=None):
+    headers = {"location": location} if location else {}
+
+    def respond(method, url, **kwargs):
+        return httpx.Response(
+            status_code, text=text, headers=headers, request=httpx.Request(method, url)
+        )
+
+    return respond
+
+
+def _raise(exc):
+    def respond(*args, **kwargs):
+        raise exc
+
+    return respond
+
+
+def _http(mp, respond, **config):
+    mp.setattr(http_mod.httpx, "request", respond)
+    return http_mod.HttpChecker().run({"url": _PUBLIC, **config})
+
+
+def _icmp(mp, run, target="host.example"):
+    mp.setattr(
+        ping_mod,
+        "subprocess",
+        SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    return ping_mod.PingChecker().run({"target": target, "timeout": 5})
+
+
+def _ping_result(returncode, stdout=""):
+    return lambda *args, **kwargs: SimpleNamespace(returncode=returncode, stdout=stdout)
+
+
+class _Conn:
+    def close(self):
+        pass
+
+
+def _tcp(mp, connect):
+    clock = iter([0.0, 0.0125])
+    mp.setattr(
+        tcp_mod, "socket", SimpleNamespace(create_connection=connect, timeout=socket.timeout)
+    )
+    mp.setattr(tcp_mod, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    return tcp_mod.TcpChecker().run({"target": "db.example", "port": 5432, "timeout": 5})
+
+
+def _private(mp):
+    mp.setattr(http_mod, "classify_url", lambda url: UrlVerdict.PRIVATE)
+    return http_mod.HttpChecker().run({"url": _PUBLIC})
+
+
+PULL_CASES = [
+    # http
+    pytest.param(
+        lambda mp: http_mod.HttpChecker().run({}), "unknown", "No URL given", id="http-no-url"
+    ),
+    pytest.param(
+        _private,
+        "unknown",
+        "URL points to a private/reserved address, rejected by the SSRF guard",
+        id="http-private-url",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _reply(302, location="http://127.0.0.1:8428/")),
+        "critical",
+        "Redirect to a private/reserved address, rejected by the SSRF guard",
+        id="http-private-redirect",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _reply(302, location="http://93.184.216.35/")),
+        "critical",
+        "Too many redirects (>5)",
+        id="http-too-many-redirects",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _reply(500), verify_ssl=False),
+        "critical",
+        "Status 500 (expected 200) [TLS verification disabled]",
+        id="http-status-tls-off",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _reply(200, text="hello"), search_string="goodbye"),
+        "critical",
+        "Text 'goodbye' not found in response",
+        id="http-text-missing",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _raise(httpx.TimeoutException("t"))),
+        "critical",
+        "Timeout after 10s",
+        id="http-timeout",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _raise(httpx.ConnectError("refused"))),
+        "critical",
+        "Connection failed: refused",
+        id="http-connect-error",
+    ),
+    pytest.param(
+        lambda mp: _http(mp, _raise(ValueError("weird"))),
+        "unknown",
+        "Error: weird",
+        id="http-other-error",
+    ),
+    # ping
+    pytest.param(
+        lambda mp: ping_mod.PingChecker().run({}), "unknown", "No target given", id="ping-no-target"
+    ),
+    pytest.param(
+        lambda mp: ping_mod.PingChecker().run({"target": "a;b"}),
+        "unknown",
+        "Invalid target (only hostnames and IPs allowed)",
+        id="ping-invalid-target",
+    ),
+    pytest.param(
+        lambda mp: _icmp(mp, _ping_result(0, "64 bytes from h: icmp_seq=1 time=12.5 ms")),
+        "ok",
+        "Reachable (12.5 ms)",
+        id="ping-reachable-rtt",
+    ),
+    pytest.param(lambda mp: _icmp(mp, _ping_result(0)), "ok", "Reachable", id="ping-reachable"),
+    pytest.param(
+        lambda mp: _icmp(mp, _ping_result(1)),
+        "critical",
+        "host.example unreachable",
+        id="ping-unreachable",
+    ),
+    pytest.param(
+        lambda mp: _icmp(mp, _raise(subprocess.TimeoutExpired("ping", 7))),
+        "critical",
+        "Timeout after 5s",
+        id="ping-timeout",
+    ),
+    pytest.param(
+        lambda mp: _icmp(mp, _raise(OSError("ping missing"))),
+        "unknown",
+        "Error: ping missing",
+        id="ping-error",
+    ),
+    # tcp
+    pytest.param(
+        lambda mp: tcp_mod.TcpChecker().run({"target": "db.example"}),
+        "unknown",
+        "Target or port missing",
+        id="tcp-missing",
+    ),
+    pytest.param(
+        lambda mp: _tcp(mp, lambda *args, **kwargs: _Conn()),
+        "ok",
+        "Port 5432 open (12.5 ms)",
+        id="tcp-open",
+    ),
+    pytest.param(
+        lambda mp: _tcp(mp, _raise(socket.timeout("timed out"))),
+        "critical",
+        "Port 5432: timeout after 5s",
+        id="tcp-timeout",
+    ),
+    pytest.param(
+        lambda mp: _tcp(mp, _raise(ConnectionRefusedError())),
+        "critical",
+        "Port 5432: connection refused",
+        id="tcp-refused",
+    ),
+]
+
+
+@pytest.mark.parametrize(("call", "status", "message"), PULL_CASES)
+def test_pull_checker_message_is_english(monkeypatch, call, status, message):
+    got_status, got_message, _ = call(monkeypatch)
+    assert (got_status, got_message) == (status, message)
+
+
+# --- check engine: what it writes into MonitorState.message itself ---
+
+
+class _AddOnlyDb:
+    """apply_result only calls db.add() on the create path."""
+
+    def add(self, obj):
+        pass
+
+
+def test_damping_suffix_is_english():
+    check = MonitorCheck(id="c1", name="c1", check_type="ping", config="{}", consecutive_fails=2)
+    state = MonitorState(check_id="c1", status="ok", fail_count=0)
+    ce.apply_result(_AddOnlyDb(), check, state, "critical", "down", None, utcnow_naive())
+    assert (state.status, state.message) == ("ok", "down (failure 1/2)")
+
+
+class _Boom:
+    def run(self, config):
+        raise RuntimeError("boom")
+
+
+@pytest.mark.parametrize(
+    ("check_type", "config", "checker", "message"),
+    [
+        pytest.param("ping", "{not json", None, "Invalid check configuration", id="bad-config"),
+        pytest.param("no_such_type", "{}", None, "Unknown check type", id="unknown-type"),
+        pytest.param("ping", "{}", _Boom(), "Unexpected error: boom", id="checker-raises"),
+    ],
+)
+def test_engine_message_is_english(monkeypatch, check_type, config, checker, message):
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                name="c1",
+                check_type=check_type,
+                config=config,
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.commit()
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(ce.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+    if checker is not None:
+        monkeypatch.setattr(ce, "get_checker", lambda _check_type: checker)
+
+    ce.execute_check("c1")
+
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="c1").one()
+        assert (state.status, state.message) == ("unknown", message)

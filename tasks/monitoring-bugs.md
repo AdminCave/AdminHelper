@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: strikte Bool-Schalter und englische Checker-Meldungen — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-bugs · Review: am Ende
+Status: bereit · Branch: feature/monitoring-bugs · Review: am Ende
 Spec: Roadmap R-0456, R-0422
 Heavy: none — nur `apps/monitoring` (Config-Validierung, Lesart der Checker, Meldungstexte) und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine Route, kein Alembic, keine OpenAPI-Änderung (`config` bleibt im Schema ein `dict`, `schemas.py:24`). Der Desktop schreibt die Schalter als echte Booleans (`CheckConfigFields.svelte:43-45`) und zeigt `message` nur durch (`MonCheckLine.svelte:180-181`); kein Skript unter `scripts/tests/` prüft einen Checker-Text. Die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -40,8 +40,10 @@ Dedup-Key: bug:monitoring:checkers:german-messages
 HEAD: 5855a9b5
 Semantik: docs/developer/monitoring.html:158 — „Die Meldungen sind englisch, der Desktop übersetzt aus den Codes.“ (docker_health); docs/features/monitoring-services.md:54-56 — „Sprache der Server-Meldungstexte (`message`, gehen auch in Glocke/Mail/Telegram): bleiben wie sie sind; die Desktop-Liste rendert aus `_details`-Codes. Die Übersetzung der Meldungstexte aller Checker wird eine eigene Roadmap-Zeile (Kevin 2026-10-16).“
 
-### T3 — Pull-Checker und Check-Engine melden englisch: http, ping, tcp, Dämpfung (R-0422)  [ ]
+### T3 — Pull-Checker und Check-Engine melden englisch: http, ping, tcp, Dämpfung (R-0422)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/http.py, apps/monitoring/app/checkers/ping.py, apps/monitoring/app/checkers/tcp.py, apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_checker_messages.py, apps/monitoring/tests/test_http_checker.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_agent_report.py, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @be713a15 2026-10-18T07:39:04+02:00
+Review: am Ende (Branch-Review)
 Änderung: Dieselbe Regel wie T2 für `http.py:30,40,85,90,100,107,114,116,118` (die Notiz „[TLS-Verify deaktiviert]“ wird „[TLS verification disabled]“), `ping.py:21,24,51,54,56`, `tcp.py:20,40,42` und die Texte der Engine, die in `MonitorState.message` landen: das Dämpfungs-Suffix `check_engine.py:170` („(Fehler n/m)“ → „(failure n/m)“) sowie `:254`, `:256`, `:262`. Nicht Teil von R-0422 und unverändert: API-Fehlertexte der Router (`HTTPException`), der Rahmentext der Alert-Mail (`alerter.py:337-342`) und Log-Zeilen. Tests: `test_checker_messages.py` bekommt die Fälle der Pull-Checker und des Suffixes, zuerst rot (dreimal identisch auf HEAD); `test_http_checker.py:69`, `:73`, `:110`, `test_check_engine.py:430` und `test_agent_report.py:92` ziehen mit; der Fake-Checker `test_check_engine.py:466` darf englisch werden.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checker_messages.py tests/test_http_checker.py tests/test_check_engine.py tests/test_agent_report.py tests/test_ping.py tests/test_tcp.py tests/test_execute_check.py
 Doku: CHANGELOG.md (der Eintrag aus T2 nennt Pull-Checker und Suffix mit) · sonst keine (keine Stelle in docs/ zitiert diese Texte, `grep -rn 'TLS-Verify\|(Fehler ' docs` leer)

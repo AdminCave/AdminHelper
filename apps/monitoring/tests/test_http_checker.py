@@ -67,11 +67,11 @@ def test_http_checker_flags_disabled_tls_verify(monkeypatch):
         {"url": "http://93.184.216.34/", "verify_ssl": False}
     )
     assert status == "ok"
-    assert "[TLS-Verify deaktiviert]" in msg
+    assert "[TLS verification disabled]" in msg
 
     status2, msg2, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
     assert status2 == "ok"
-    assert "[TLS-Verify deaktiviert]" not in msg2
+    assert "[TLS verification disabled]" not in msg2
 
 
 @pytest.mark.parametrize(("stored", "verify"), [(0, True), ("false", True), (False, False)])
@@ -127,7 +127,7 @@ def test_http_checker_search_string_missing_is_critical(monkeypatch):
         {"url": "http://93.184.216.34/", "search_string": "goodbye"}
     )
     assert status == "critical"
-    assert "nicht" in msg.lower()
+    assert "not found" in msg
 
 
 def test_http_checker_timeout_maps_to_critical(monkeypatch):

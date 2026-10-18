@@ -791,13 +791,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
-- **Monitoring: Die Push-Checker melden englisch (R-0422):** `agent_ping`, `agent_resources`, `service_process`,
-  `proxmox_backup`, `zfs_health`, `docker_health` und `smart_health` meldeten teils deutsch, und diesen Text zeigen
-  Dashboard, Glocke und Benachrichtigungen unveraendert, auch in der englischen Oberflaeche. Jetzt sind ihre Meldungen
-  englisch, mit denselben Werten wie vorher, etwa „Waiting for agent data“, „All services OK“ oder „No backup: …“.
-  `service_process` spricht von „services“ statt von systemd-Units, weil der Windows-Agent seine Dienste im selben Block
-  meldet. Status, `_details` und Metriken bleiben gleich; eine gespeicherte deutsche Meldung ersetzt die naechste
-  Auswertung. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
+- **Monitoring: Die Checks melden englisch (R-0422):** Die Push-Checker (`agent_ping`, `agent_resources`,
+  `service_process`, `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health`), die Pull-Checker (`http`,
+  `ping`, `tcp`) und die Check-Engine meldeten teils deutsch, und diesen Text zeigen Dashboard, Glocke und
+  Benachrichtigungen unveraendert, auch in der englischen Oberflaeche. Jetzt sind die Meldungen englisch, mit denselben
+  Werten wie vorher, etwa „Waiting for agent data“, „All services OK“, „No backup: …“ oder „Timeout after 10s“. Ein
+  gedaempfter Fehlschlag endet auf „(failure 1/2)“ statt „(Fehler 1/2)“, ein HTTP-Check ohne TLS-Pruefung auf
+  „[TLS verification disabled]“. `service_process` spricht von „services“ statt von systemd-Units, weil der
+  Windows-Agent seine Dienste im selben Block meldet. Status, `_details` und Metriken bleiben gleich; eine gespeicherte
+  deutsche Meldung ersetzt die naechste Auswertung. Unveraendert bleiben die Fehlertexte der API und der Rahmentext der
+  Alert-Mail. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
   Entwickler und Administration (DE+EN).
 
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen

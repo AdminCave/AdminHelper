@@ -29,7 +29,7 @@ class HttpChecker:
         search_string = config.get("search_string", "")
 
         if not url:
-            return "unknown", "Keine URL angegeben", None
+            return "unknown", "No URL given", None
 
         verdict = classify_url(url)
         if verdict is UrlVerdict.UNRESOLVED:
@@ -39,7 +39,11 @@ class HttpChecker:
                 None,
             )
         if verdict is not UrlVerdict.ALLOWED:
-            return "unknown", "URL zeigt auf eine private/reservierte Adresse (SSRF-Schutz)", None
+            return (
+                "unknown",
+                "URL points to a private/reserved address, rejected by the SSRF guard",
+                None,
+            )
 
         try:
             start = time.monotonic()
@@ -72,7 +76,7 @@ class HttpChecker:
                 if hop is not UrlVerdict.ALLOWED:
                     return (
                         "critical",
-                        "Redirect auf private/reservierte Adresse abgelehnt (SSRF-Schutz)",
+                        "Redirect to a private/reserved address, rejected by the SSRF guard",
                         None,
                     )
                 resp = httpx.request(
@@ -84,12 +88,12 @@ class HttpChecker:
                 )
                 redirects += 1
             if resp.is_redirect:
-                return "critical", f"Zu viele Redirects (>{_MAX_REDIRECTS})", None
+                return "critical", f"Too many redirects (>{_MAX_REDIRECTS})", None
             duration_ms = round((time.monotonic() - start) * 1000, 2)
             # A check that reached the endpoint with cert verification off must say so
             # in its result: an "ok" here validated the status code, NOT the TLS cert,
             # so a MITM / expired cert would otherwise pass unnoticed (3.72).
-            tls_note = "" if verify_ssl else " [TLS-Verify deaktiviert]"
+            tls_note = "" if verify_ssl else " [TLS verification disabled]"
 
             metrics = {
                 "http_response_ms": duration_ms,
@@ -99,22 +103,22 @@ class HttpChecker:
             if resp.status_code != expected_status:
                 return (
                     "critical",
-                    f"Status {resp.status_code} (erwartet {expected_status}){tls_note}",
+                    f"Status {resp.status_code} (expected {expected_status}){tls_note}",
                     metrics,
                 )
 
             if search_string and search_string not in resp.text:
                 return (
                     "critical",
-                    f"Text '{search_string}' nicht in Antwort gefunden{tls_note}",
+                    f"Text '{search_string}' not found in response{tls_note}",
                     metrics,
                 )
 
             return "ok", f"HTTP {resp.status_code} ({duration_ms:.0f} ms){tls_note}", metrics
 
         except httpx.TimeoutException:
-            return "critical", f"Timeout nach {timeout}s", None
+            return "critical", f"Timeout after {timeout}s", None
         except httpx.ConnectError as exc:
-            return "critical", f"Verbindung fehlgeschlagen: {exc}", None
+            return "critical", f"Connection failed: {exc}", None
         except Exception as exc:
-            return "unknown", f"Fehler: {exc}", None
+            return "unknown", f"Error: {exc}", None
