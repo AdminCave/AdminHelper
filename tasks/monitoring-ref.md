@@ -28,8 +28,10 @@ Dedup-Key: ref:monitoring:checkers/agent.py:error_message_cap
 HEAD: 5855a9b5
 Semantik: docs/developer/monitoring.html:135 — „Scheitert systemctl list-units bzw. sc query, trägt error einen kurzen Grund.“
 
-### T2 — docker_health: Container-Liste kappen, Vorwerte nur mit String-ID (R-0459)  [ ]
+### T2 — docker_health: Container-Liste kappen, Vorwerte nur mit String-ID (R-0459)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @275b530b 2026-10-18T09:41:17+02:00
+Review: am Ende (Branch-Review)
 Änderung: `DockerHealthChecker.evaluate` (`plugins.py:299`) wertet höchstens die ersten 500 Einträge von `docker.containers` aus, ein Wert, der keine Liste ist, gilt als leer — wie `_MAX_REPORT_ITEMS` (`routers/agent.py:57-69`) und `ServiceProcessChecker._capped` (`agent.py:407-410`). Eigene Konstante in `plugins.py`, nicht aus dem Router importiert: `routers/agent.py` importiert `app.checkers`, das wäre ein Importzyklus. `prev_restarts` (`:308-312`) nimmt nur Einträge aus `prev_details["containers"]`, die Dicts mit einer `id` vom Typ `str` sind; der Nachschlag je Container (`:327`) geht nur mit einer `str`-ID, sonst gibt es keinen Vorwert. Der Agent schickt die 12-stellige Kurz-ID als String (`apps/agent/internal/monitor/plugins.go:130`). Test zuerst rot: 2000 laufende Container → `_details.containers` hat 500 Einträge, `docker_ok` ist 500; `prev_details` `{"containers": [{"id": ["a"]}, "kein-dict", {"id": "abc123def456", "restart_count": 1}]}` mit dem Container `abc123def456` bei `restart_count` 2 → kein Fehler, warning `restarted` (der gültige Vorwert zählt weiter); ein Container mit `id` als Liste → kein Fehler, kein Vorwert.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: docs/developer/monitoring.html + docs/en/developer/monitoring.html (`:158`, `docker_health`: höchstens 500 Container je Report, Vorwerte je Container-ID als String) · kein CHANGELOG (kein regulärer Host meldet über 500 Container)

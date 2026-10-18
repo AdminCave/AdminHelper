@@ -197,6 +197,10 @@ _PS_EXITED = re.compile(r"exited \((-?\d+)\)", re.IGNORECASE)
 # 2026-10-17); an OOM kill also ends in 137 and is caught by oom_killed first.
 _STOP_SIGNAL_EXITS = (137, 143)
 
+# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
+# that router imports app.checkers (R-0459).
+_MAX_CONTAINERS = 500
+
 
 def _container_exit_code(c: dict) -> int | None:
     if "exit_code" in c:
@@ -298,7 +302,8 @@ class DockerHealthChecker:
             details = {"available": False, "error": code, "containers": []}
             return ("warning" if alert else "unknown"), msg, {"_details": details}
 
-        containers = docker.get("containers", [])
+        raw = docker.get("containers")
+        containers = raw[:_MAX_CONTAINERS] if isinstance(raw, list) else []
         if not containers:
             return (
                 "ok",
@@ -307,10 +312,13 @@ class DockerHealthChecker:
             )
 
         ignore = set(config.get("ignore_containers", []))
+        # The agent sends the 12-char short ID as a string; any other entry or ID (a list is
+        # not even hashable) has no previous value instead of failing the whole evaluation.
+        prev = (prev_details or {}).get("containers")
         prev_restarts = {
-            p.get("id"): p.get("restart_count")
-            for p in (prev_details or {}).get("containers") or []
-            if p.get("id")
+            p["id"]: p.get("restart_count")
+            for p in (prev if isinstance(prev, list) else [])
+            if isinstance(p, dict) and isinstance(p.get("id"), str) and p["id"]
         }
 
         critical_problems = []
@@ -321,12 +329,14 @@ class DockerHealthChecker:
         container_details = []
 
         for c in containers:
-            name = c.get("name", c.get("id", "?"))
+            cid = c.get("id")
+            name = c.get("name", cid if isinstance(cid, str) else "?")
             if name in ignore:
                 continue
 
             state = c.get("state", "").lower()
-            category, reason = _rate_container(c, state, prev_restarts.get(c.get("id")))
+            prev_count = prev_restarts.get(cid) if isinstance(cid, str) else None
+            category, reason = _rate_container(c, state, prev_count)
             if state == "running":
                 running += 1
             if category == "critical":
