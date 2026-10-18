@@ -791,6 +791,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Die Push-Checker melden englisch (R-0422):** `agent_ping`, `agent_resources`, `service_process`,
+  `proxmox_backup`, `zfs_health`, `docker_health` und `smart_health` meldeten teils deutsch, und diesen Text zeigen
+  Dashboard, Glocke und Benachrichtigungen unveraendert, auch in der englischen Oberflaeche. Jetzt sind ihre Meldungen
+  englisch, mit denselben Werten wie vorher, etwa „Waiting for agent data“, „All services OK“ oder „No backup: …“.
+  `service_process` spricht von „services“ statt von systemd-Units, weil der Windows-Agent seine Dienste im selben Block
+  meldet. Status, `_details` und Metriken bleiben gleich; eine gespeicherte deutsche Meldung ersetzt die naechste
+  Auswertung. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
+  Entwickler und Administration (DE+EN).
+
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft
   `frps.toml` und das TLS-Material vor jedem Start (Regeln und Gruende: Betrieb → frps-Supervisor) und startet frps aus
