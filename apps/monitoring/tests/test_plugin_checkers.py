@@ -109,6 +109,39 @@ def test_zfs_zero_pools_is_ok_with_empty_list():
     assert metrics == {"_details": {"available": True, "error": None, "pools": []}}
 
 
+def test_zfs_caps_the_pool_list():
+    # Like the containers, only the first 500 pools are rated, so a broken agent cannot
+    # flood the details and the message (R-0486).
+    names = [f"p{i}" for i in range(2000)]
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs(*(_pool(name=n) for n in names)))
+    assert status == "ok"
+    assert msg == "All pools ONLINE: " + ", ".join(f"{n} 20%" for n in names[:500])
+    assert [p["name"] for p in metrics["_details"]["pools"]] == names[:500]
+    assert sum(k.startswith("zfs_capacity_") for k in metrics) == 500
+
+
+@pytest.mark.parametrize("pools", ["abc", {"name": "tank"}, 42], ids=["str", "dict", "int"])
+def test_zfs_pools_that_are_no_list_count_as_empty(pools):
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs(pools=pools))
+    assert (status, msg) == ("ok", "No ZFS pools found")
+    assert metrics == {"_details": {"available": True, "error": None, "pools": []}}
+
+
+def test_zfs_pool_that_is_no_object_is_skipped():
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs("x", _pool(health="DEGRADED")))
+    assert (status, msg) == ("critical", "tank: DEGRADED")
+    assert metrics["_details"]["pools"] == [
+        {"name": "tank", "health": "DEGRADED", "capacityPercent": 20}
+    ]
+
+
+def test_zfs_pool_without_name_is_named_by_a_question_mark():
+    pool = _pool()
+    del pool["name"]
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(pool))
+    assert (status, msg) == ("ok", "All pools ONLINE: ? 20%")
+
+
 # --- ProxmoxBackupChecker ---
 def test_proxmox_missing_backup_is_critical():
     r = {"proxmox": {"vms": [{"vmid": 100, "status": "running", "last_backup_ts": None}]}}
@@ -148,6 +181,28 @@ def test_proxmox_exclude_stopped_off_only_for_real_false(stored, expected):
     r = {"proxmox": {"vms": [{"vmid": 101, "status": "stopped", "last_backup_ts": None}]}}
     status, _, _ = ProxmoxBackupChecker().evaluate({"exclude_stopped": stored}, r)
     assert status == expected
+
+
+def test_proxmox_caps_the_vm_list(monkeypatch):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: 1_000_000.0)
+    vms = [{"vmid": i, "status": "running", "last_backup_ts": 1_000_000.0} for i in range(2000)]
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": vms}})
+    assert (status, msg) == ("ok", "All 500 VMs/CTs have up-to-date backups")
+    assert [vm["vmid"] for vm in metrics["_details"]["vms"]] == list(range(500))
+    assert metrics["proxmox_backup_ok"] == 500
+
+
+@pytest.mark.parametrize("vms", ["abc", {"vmid": 100}, 42], ids=["str", "dict", "int"])
+def test_proxmox_vms_that_are_no_list_count_as_empty(vms):
+    result = ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": vms}})
+    assert result == ("ok", "No VMs/CTs found", None)
+
+
+def test_proxmox_vm_that_is_no_object_is_skipped():
+    r = {"proxmox": {"vms": ["x", {"vmid": 100, "status": "running", "last_backup_ts": None}]}}
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, r)
+    assert (status, msg) == ("critical", "No backup: VM 100 (?)")
+    assert [vm["vmid"] for vm in metrics["_details"]["vms"]] == [100]
 
 
 # --- DockerHealthChecker ---
@@ -492,6 +547,12 @@ def test_docker_containers_that_are_no_list_count_as_empty(containers):
     assert metrics["_details"] == {"available": True, "error": None, "containers": []}
 
 
+def test_docker_container_that_is_no_object_is_skipped():
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker("x", _ctr()))
+    assert (status, msg) == ("ok", "All 1 containers running")
+    assert [row["id"] for row in _rows(metrics)] == ["abc123def456"]
+
+
 def test_docker_message_counts_running_stopped_and_problems():
     report = _docker(
         _ctr(id="000000000001", name="web"),
@@ -655,3 +716,27 @@ def test_available_is_down_only_as_a_real_false(kind, available):
     checker, report, _, _ = _outage_case(kind, available=available)
     assert checker.evaluate({}, report) == checker.evaluate({}, healthy)
     assert checker.evaluate({}, report)[0] == "ok"
+
+
+# --- Malformed blocks and lists from a broken agent (R-0486) ---
+_PLUGIN_CHECKERS = {
+    "proxmox": ProxmoxBackupChecker,
+    "zfs": ZfsHealthChecker,
+    "docker": DockerHealthChecker,
+}
+
+
+@pytest.mark.parametrize("block", [[{}], "x", 1], ids=["list", "str", "int"])
+@pytest.mark.parametrize("kind", ["proxmox", "zfs", "docker"])
+def test_plugin_block_that_is_no_object_counts_as_missing(kind, block):
+    checker = _PLUGIN_CHECKERS[kind]()
+    result = checker.evaluate({}, {kind: block})
+    assert result == checker.evaluate({}, {"resources": {}})
+    assert result[0] == "unknown"
+
+
+def test_plugin_list_is_capped_before_entries_that_are_no_object_are_skipped():
+    # The cap bounds the work on a flooded list, so it counts every entry: a valid
+    # container behind 500 junk entries is not rated.
+    report = _docker(*(["x"] * 500), _ctr())
+    assert DockerHealthChecker().evaluate({}, report)[:2] == ("ok", "No containers found")
