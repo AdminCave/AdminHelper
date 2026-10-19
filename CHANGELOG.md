@@ -951,6 +951,26 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server: Datenbankfehler eines Hooks nur mit ihrem Typ:** Bricht ein Hook mit einem Fehler der
+  Datenbankanbindung ab (`sqlalchemy.exc.SQLAlchemyError` oder `psycopg.Error`), nennen `error` und die Log-Zeile
+  `Fehler: …` in `logs` nur den Typ des Fehlers, etwa `OperationalError`, nicht mehr den Text des Treibers. Jeder
+  andere Fehler eines Hooks erscheint weiter mit seinem Text. Doku: Entwickler-Doku Hooks (DE+EN).
+- **Server: Geheimnisse der FRP-Konfiguration zaehlen ohne Leerzeichen am Rand:** Ein neues `auth_token` oder
+  `dashboard_password` der FRP-Server-Konfiguration und ein neuer `secret_key` eines STCP-Tunnels brauchen mindestens
+  16 Zeichen ohne Leerzeichen am Anfang und Ende, sonst antwortet der Server mit `422` („must have at least 16
+  characters besides leading and trailing whitespace“). Ein Wert nur aus Leerzeichen gilt damit nicht mehr als
+  Geheimnis. Gespeichert wird der Wert so, wie er gesendet wurde; leer oder `null` wirkt wie bisher. Schon
+  gespeicherte Werte bleiben unveraendert. Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
+- **Server: die API lehnt einen Dashboard-Port ab, den frps nicht uebernimmt:** Ein `dashboard_port` der
+  FRP-Server-Konfiguration gleich 443, gleich dem Bind Port oder gleich `FRP_BIND_PORT` ist beim Anlegen und beim
+  Aendern ein `422` („the dashboard port must be neither 443 nor the bind port nor FRP_BIND_PORT (…)“), statt dass
+  frps die Konfiguration erst beim Uebernehmen verwirft. `POST` prueft gegen den gesendeten Bind Port (ohne ihn
+  7000); `PUT` prueft, sobald `dashboard_port` oder `bind_port` gesendet wird, den Stand nach dem Update mit dem Bind
+  Port, den frps bekommt (ein gespeicherter `bind_port` `null` oder ausserhalb 1 bis 65535: 7000), meldet den
+  Fehler auf dem gesendeten Feld und speichert nichts davon. Eine schon gespeicherte Konfiguration mit solchem Port
+  bleibt unveraendert, ein `PUT` ohne beide Felder geht weiter durch, und die Pruefung beim Start meldet sie wie
+  bisher. Die Web-Maske sendet beide Ports immer mit; dort ist ein solcher Port also vor dem Speichern zu aendern.
+  Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
 - **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
