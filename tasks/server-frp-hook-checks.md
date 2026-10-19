@@ -10,7 +10,7 @@ Heavy: linux-full — T2 ändert den Vertrag der FRP-API (`422` für einen Dashb
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
-Hängt ab von: desktop-hardening (`feature/desktop-hardening`) wegen `apps/server/app/modules/frp/schemas.py` (dort T6, `_reject_toml_breakers`, direkt über `_check_secret`). Gebaut wird nach dessen Merge; Zeilenangaben gelten für `main@5481b316` und werden beim Baustart neu gegreppt. Risikopfad FRP: `security`-Prüfer nach `review.sh risk`.
+Hängt ab von: desktop-hardening (`feature/desktop-hardening`) wegen `apps/server/app/modules/frp/schemas.py` (dort T6, `_reject_toml_breakers`, direkt über `_check_secret`). Nachtrag (Session 2026-10-19): T1/T2 bauen schon vorher, weil die Server-Änderung von desktop-hardening an `schemas.py` committet und abgeschlossen ist; beim Hereinmergen von `origin/main` nach dessen Merge die Hunks in `schemas.py` und `test_frp_extra_config.py` prüfen. Zeilenangaben gelten für `main@5481b316` und werden beim Baustart neu gegreppt. Risikopfad FRP: `security`-Prüfer nach `review.sh risk`.
 
 Ziel: (1) Ein Geheimnis der FRP-Konfiguration (`auth_token`, `dashboard_password`, `secret_key`) braucht 16 Zeichen ohne Leerzeichen am Anfang und Ende; ein Wert aus Leerzeichen ist kein Geheimnis. (2) Einen Dashboard-Port, den frps nicht übernimmt (443, der Bind Port, `FRP_BIND_PORT`), weist schon die API mit `422` ab, nicht erst der Start von frps. (3) Bricht ein Hook mit einem Datenbankfehler ab, nennen `error` und das Hook-Log nur den Fehlertyp, nicht den Text des Treibers.
 
