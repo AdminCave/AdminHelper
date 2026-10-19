@@ -293,6 +293,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zusaetzlich fuenf `windows-sys`-Kanten (errno, os_pipe, rustix, tempfile, winapi-util)
   auf bereits gelockte Versionen um — Windows-only, vom CI-Job `rust-windows` gebaut.
 
+- **Desktop-Backend: `rustls` 0.23.45 → 0.23.46 (R-0547):** schliesst RUSTSEC-2026-0346 (die `Debug`-Ausgabe
+  der Client-Session-Werte enthielt das TLS-1.2-Master-Secret bzw. den TLS-1.3-Resumption-PSK; medium),
+  -0347 (nach abgelehntem ECH gingen gepufferte Anwendungsdaten an den aeusseren Server; low), -0348 (die
+  Brotli-Dekompression von Zertifikaten konnte vor der Authentisierung bis zu 1 GiB allokieren; low) und -0349
+  (ein nicht authentisierter ServerHello konnte spaetere Verbindungen auf klassischen Schluesselaustausch
+  herabstufen; low) — nur der Lockfile-Stand, `Cargo.toml` und alle anderen Pakete bleiben. Das Desktop-Backend
+  schaltet das `rustls`-Feature `brotli` nicht ein und nutzt weder ECH noch einen eigenen `ClientSessionStore`.
+  Gefunden vom woechentlichen Dependency-Audit; `cargo audit` meldet jetzt nur noch die erlaubten Warnungen.
+
 - **Desktop-Backend:** `quinn-proto` 0.11.15 → 0.11.18 (RUSTSEC-2026-0338, -0339, -0340, -0341,
   -0342: ein QUIC-Peer konnte quinn-proto in einen Panic treiben oder Speicher unbegrenzt wachsen
   lassen; zwei davon high) — nur der Lockfile-Stand, keine Verhaltensaenderung. Das Paket haengt
