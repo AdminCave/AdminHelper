@@ -43,10 +43,11 @@ fn sync_uses_identity(sync_url: &str, server_url: Option<&str>) -> bool {
     server_url.is_some_and(|server| same_server_destination(sync_url, server))
 }
 
-/// The desktop launcher only understands ssh/rdp/web connections; the server may
-/// also hold vnc/custom ones (managed in the infrastructure hub). Parse leniently
-/// so a single unsupported entry can't fail the whole fetch: keep the kinds we can
-/// launch and skip the rest. serverId rides along via the Connection struct.
+/// The desktop launcher only understands ssh/rdp/web connections, the only kinds
+/// the server accepts too (connections/schemas.py); a list from a sync URL may
+/// still hold others, or a malformed row. Parse leniently so a single unsupported
+/// entry can't fail the whole fetch: keep the kinds we can launch and skip the
+/// rest. serverId rides along via the Connection struct.
 fn parse_launchable_connections(raw: Vec<serde_json::Value>) -> Vec<Connection> {
     raw.into_iter()
         .filter(|v| {

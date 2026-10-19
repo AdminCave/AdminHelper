@@ -291,24 +291,25 @@ const IDENTITY_DIR_PLACEHOLDER: &str = "{{IDENTITY_DIR}}";
 const NO_IDENTITY_HINT: &str = "No mTLS certificate on this device — enroll it with a one-time \
      enrollment token from your administrator first, then start the tunnel.";
 
-/// Replace the server's `{{IDENTITY_DIR}}` placeholder in every string of a parsed visitor TOML
-/// with the absolute identity dir the desktop exported its mTLS material into.
+/// Replace the server's `{{IDENTITY_DIR}}` placeholder in the three file paths of
+/// `transport.tls` of a parsed visitor TOML with the absolute identity dir the desktop exported
+/// its mTLS material into. Every other value stays as it is, a placeholder in it included.
 ///
 /// In the value, not the text: the serializer then writes the dir as a valid TOML string, the
 /// backslashes of a Windows path (`\U` of `C:\Users`, `\A` of `\AppData`) and a `'` of a Windows
 /// user name included.
 fn rewrite_identity_paths(config: &mut toml::Value, abs_identity_dir: &str) {
-    match config {
-        toml::Value::String(s) if s.contains(IDENTITY_DIR_PLACEHOLDER) => {
-            *s = s.replace(IDENTITY_DIR_PLACEHOLDER, abs_identity_dir);
+    let Some(tls) = config
+        .get_mut("transport")
+        .and_then(|transport| transport.get_mut("tls"))
+        .and_then(toml::Value::as_table_mut)
+    else {
+        return;
+    };
+    for key in ["trustedCaFile", "certFile", "keyFile"] {
+        if let Some(toml::Value::String(path)) = tls.get_mut(key) {
+            *path = path.replace(IDENTITY_DIR_PLACEHOLDER, abs_identity_dir);
         }
-        toml::Value::Array(items) => items
-            .iter_mut()
-            .for_each(|item| rewrite_identity_paths(item, abs_identity_dir)),
-        toml::Value::Table(table) => table
-            .iter_mut()
-            .for_each(|(_, value)| rewrite_identity_paths(value, abs_identity_dir)),
-        _ => {}
     }
 }
 
@@ -337,7 +338,7 @@ fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
 /// listing it here would reject real tunnels. Under `auth` and `transport` too, only the keys
 /// those two emit are allowed, `auth.method` only as `token`. A visitor needs a `name` no other
 /// visitor has, its `bindAddr` may only be `127.0.0.1`, and its `bindPort` must be a port from 1
-/// to 65535.
+/// to 65535 that no other visitor has.
 fn validate_visitor_toml(toml_str: &str) -> Result<toml::Value, AppError> {
     let value: toml::Value =
         toml::from_str(toml_str).map_err(|e| parse_error("visitor.toml", toml_str, &e))?;
@@ -402,6 +403,7 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
             AppError::Validation("visitor.toml: [[visitors]] ist kein Array".to_string())
         })?;
         let mut names = std::collections::HashSet::new();
+        let mut ports = std::collections::HashSet::new();
         for v in arr {
             let vt = v.as_table().ok_or_else(|| {
                 AppError::Validation("visitor.toml: ein [[visitors]]-Eintrag ist kein Table".into())
@@ -437,13 +439,19 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
                     "visitor.toml: a visitor's bindAddr must be \"127.0.0.1\"".to_string(),
                 ));
             }
-            if !vt
+            let Some(port) = vt
                 .get("bindPort")
                 .and_then(toml::Value::as_integer)
-                .is_some_and(|port| (1..=65535).contains(&port))
-            {
+                .filter(|port| (1..=65535).contains(port))
+            else {
                 return Err(AppError::Validation(
                     "visitor.toml: a visitor's bindPort must be a port from 1 to 65535".to_string(),
+                ));
+            };
+            // A target on loopback at the port resolves to its visitor (tunnel.rs).
+            if !ports.insert(port) {
+                return Err(AppError::Validation(
+                    "visitor.toml: two visitors have the same bindPort".to_string(),
                 ));
             }
         }
@@ -566,7 +574,8 @@ fn frpc_config(
     identity_dir: &str,
     head: &LocalHead,
 ) -> Result<String, AppError> {
-    // The placeholder is the one `{{` the server TOML may hold; it is gone once filled in.
+    // The placeholder is the one `{{` the server TOML may hold; filled in, it is gone from the TLS
+    // paths, and one anywhere else fails the check of the generated text below.
     no_template_delimiter(&server_toml.replace(IDENTITY_DIR_PLACEHOLDER, ""))?;
     let mut server = validate_visitor_toml(server_toml)?;
     rewrite_identity_paths(&mut server, identity_dir);
@@ -1286,15 +1295,30 @@ bindPort = 6000
                 Some("/data/app/identity/ca.crt"),
             ]
         );
+        // Only the three TLS paths take the identity dir; anywhere else the placeholder stays.
         assert_eq!(
             config["visitors"][0]["serverName"].as_str(),
-            Some("/data/app/identity/in-an-array")
+            Some("{{IDENTITY_DIR}}/in-an-array")
         );
-        let out = toml::to_string(&config).unwrap();
-        assert!(
-            !out.contains("{{IDENTITY_DIR}}"),
-            "no placeholder may remain"
-        );
+
+        // A placeholder that stays is a `{{` frp would render as a template: frpc never runs it.
+        for (from, to) in [
+            (
+                "serverName = \"db\"",
+                "serverName = \"{{IDENTITY_DIR}}/db\"",
+            ),
+            (
+                "auth.token = \"sekret\"",
+                "auth.token = \"{{IDENTITY_DIR}}\"",
+            ),
+        ] {
+            let elsewhere = server_toml_with(from, to);
+            assert!(validate_visitor_toml(&elsewhere).is_ok(), "{to}");
+            assert!(
+                frpc_config(&elsewhere, "/data/app/identity", &head(7400, "c0ffee")).is_err(),
+                "frpc_config accepted {to}"
+            );
+        }
     }
 
     /// The three TLS paths of `config` as frpc reads them.
@@ -2330,6 +2354,32 @@ method = "token"
             process.applied.as_ref().unwrap().server,
             parse(&at_ports(SERVER_TOML, running.locals))
         );
+    }
+
+    #[tokio::test]
+    async fn refresh_rejects_two_visitors_with_one_server_port() {
+        // A target on loopback at that port would name two visitors at once.
+        let twins = server_toml_with("bindPort = 6001", "bindPort = 6000");
+        parse(&twins);
+        let message = validate_visitor_toml(&twins).unwrap_err().to_string();
+        assert!(!message.contains("6000"), "{message}");
+        assert!(frpc_config(&twins, "/data/app/identity", &head(7400, "c0ffee")).is_err());
+
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
+        let sidecar = FakeSidecar::default();
+        assert!(
+            reconcile(state, &sidecar, &running.ports.registry, Some(&twins), 1)
+                .await
+                .is_err()
+        );
+        assert!(sidecar.writes.borrow().is_empty());
+        let process = lock(state);
+        assert_eq!(
+            process.applied.as_ref().unwrap().server,
+            parse(&at_ports(SERVER_TOML, running.locals))
+        );
+        assert_eq!(process.bindings(), bindings_at(running.locals));
     }
 
     #[test]

@@ -104,8 +104,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- refresh_
 Doku: keine (intern; Doku mit T11)
 Abhängt von: T7, T8
 
-### T10 — Rust löst Tunnel-Ziele mit der Portkarte auf  [ ]
+### T10 — Rust löst Tunnel-Ziele mit der Portkarte auf  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/sync.rs, apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f1828cd6 2026-10-19T11:08:59+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T10.verdict.json)
 Änderung: `resolve_connection` (`commands.rs:381`) nimmt die Zuordnungen des laufenden frpc aus `FrpcState`; die reine Funktion in `tunnel.rs` (`:55`) übersetzt (1) über `connection_id` und Admin-Mapping wie heute, der `visitor_port` wird dabei auf den lokalen Port abgebildet, (2) wörtlich: Host `127.0.0.1`/`localhost` und Port gleich einem Server-Port der Zuordnungen → lokaler Port (und `url` bei Web wie heute). Ohne laufenden Tunnel bleibt die Verbindung unverändert. Die neun bestehenden Tests in `tunnel.rs` bleiben gültig (lokal = Server-Port); neue Tests: Mapping-Pfad mit abweichendem lokalen Port; wörtlicher Pfad ohne Mapping (Nicht-Admin); Port nicht in der Karte → unverändert. Dazu der Kommentar in `sync.rs` (~:45-48), der VNC und eigene Verbindungsarten nennt; der Server kennt nur ssh, rdp und web (`connections/schemas.py`). Dazu (Prüfer-Hinweise zu T9, `frpc.rs`): Die Allow-List weist zwei Visitors mit demselben Server-`bindPort` ab (der Server erzeugt eindeutige; sonst wäre die wörtliche Auflösung mehrdeutig); `rewrite_identity_paths` ersetzt den Platzhalter nur in `transport.tls.trustedCaFile`, `certFile` und `keyFile`, andere Werte bleiben unverändert. Tests: doppelter `bindPort` abgewiesen; Platzhalter in `serverName` bleibt stehen (der bestehende Test erwartet das bisher anders).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- tunnel::
 Doku: keine (intern; Doku mit T11)

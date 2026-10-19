@@ -361,12 +361,16 @@ pub async fn fetch_tunnels(
     tunnel::fetch_tunnels(session.inner()).await
 }
 
+/// Resolves against where the visitors of the running frpc listen; while none runs, a tunnel
+/// target stays as it is.
 #[tauri::command]
 pub fn resolve_connection(
+    state: State<'_, frpc::FrpcState>,
     connection: Connection,
     tunnels: Vec<tunnel::TunnelMapping>,
 ) -> tunnel::ResolvedConnection {
-    tunnel::resolve_connection(&connection, &tunnels)
+    let bindings = frpc::tunnel_status(state.inner()).bindings;
+    tunnel::resolve_connection(&connection, &tunnels, &bindings)
 }
 
 #[tauri::command]
