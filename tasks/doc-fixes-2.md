@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes 2: Agent-Deployment EN, Web-Panel- und Server-Doku, VNC — Task-Ledger
-Status: geplant · Branch: feature/doc-fixes-2 · Review: pro Task
+Status: aktiv · Branch: feature/doc-fixes-2 · Review: pro Task
 Spec: Roadmap R-0521, R-0522, R-0523
 Heavy: none — nur Doku unter `docs/` und der Beschreibungstext `bundle.longDescription` in `tauri.conf.json`; keine API-, Gateway-, PKI-, Agent-, Compose-, Install- oder Desktop-Journey-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
