@@ -100,8 +100,10 @@ Dedup-Key: bug:docs:webui.html:stale-tree
 HEAD: 81764c43
 Semantik: Soll ist der Code: `apps/server/app/main.py:450-471` (18 `include_router`, darunter `audit_router` `:454`, die Notification-Router `:466-469`, `servers_internal_router` `:470`), `apps/server/app/modules/notifications/router.py:39-41`, `apps/server/app/modules/notifications/stream.py:26`, `apps/server/app/modules/servers/router.py:66`, `git ls-files apps/server/app/modules` (12 Module). Doku: `docs/developer/server.html:190` — „Clients holen den Feed über <code>GET /api/notifications</code>“, `:185` — „<code>POST /api/internal/events</code> (Auth <code>X-Internal-Key</code>“, `:61` (`/api/audit`). Falsche Doku-Stellen: `:52` — „12 Top-Level-Router unter <code>apps/server/app/modules/</code>“, `:73` — „Ein dedizierter Audit-Log-Router existiert (Stand v0.23.2) nicht“.
 
-### T4 — R-0523: Doku nennt nur SSH, RDP und Web; api/-Zeile in desktop.html vollständig  [ ]
+### T4 — R-0523: Doku nennt nur SSH, RDP und Web; api/-Zeile in desktop.html vollständig  [x]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html, docs/index.html, docs/en/index.html, docs/admin/index.html, docs/en/admin/index.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @e95f312b 2026-10-19T11:42:32+02:00
+Review: approve (.ah-out/review/doc-fixes-2/T4.verdict.json)
 Änderung: Sechs Ein-Zeilen-Korrekturen. `ipc.inventory.test.ts` liest `desktop.html` DE+EN.
 (1) VNC fällt weg; jede Stelle nennt nur die drei Arten, die der Server kennt:
 - `docs/developer/desktop.html:72` DE+EN: „(ssh/rdp/vnc/web/custom, …)“ wird „(ssh/rdp/web, …)“; `custom` gibt es auch nicht.
