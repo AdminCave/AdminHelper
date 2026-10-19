@@ -346,6 +346,28 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
+  Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
+  zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
+  einem Login unter anderem Benutzer. Ebenso laedt der Desktop neu, wenn eine geaenderte Server-URL bei laufender
+  Sitzung gespeichert wird; danach steht der Login-Bildschirm mit der neuen Adresse da.
+- **Desktop: Speichern der Einstellungen vergisst den Benutzernamen nicht mehr (R-0429):** Bisher loeschte jedes
+  Speichern im Einstellungsdialog den gemerkten Benutzernamen, und der Login-Bildschirm fuellte beim naechsten
+  Start nur noch die Server-URL vor. Felder, die der Dialog nicht bearbeitet, bleiben jetzt erhalten.
+- **Desktop: gespeichertes RDP-Passwort auch bei Tunnelzielen (Linux/macOS, R-0429):** Bisher startete der
+  RDP-Client bei einer Verbindung hinter einem FRP-Tunnel ohne das gespeicherte Passwort, weil der Desktop es unter
+  der lokalen Tunnel-Adresse (`127.0.0.1:<Port>`) suchte statt unter der Verbindung aus der Liste, unter der es
+  gespeichert ist. Unter Windows fragt mstsc bei Tunnelzielen vorerst weiter selbst nach dem Passwort.
+- **Desktop: Sync von einer fremden URL auch auf einem registrierten Geraet (R-0429):** Bisher scheiterte auf einem
+  registrierten Geraet jeder Sync von einer URL ausserhalb des eigenen Servers mit `ERR_CA_PIN_MISMATCH`, weil der
+  Desktop auch dort die Geraete-Identitaet nahm und das Server-Zertifikat gegen die bei der Registrierung gepinnte CA
+  pruefte. Die Geraete-Identitaet nimmt er jetzt nur, wenn die Sync-URL dieselbe Origin (Schema, Host, Port) hat wie
+  die gespeicherte Server-URL; jede andere Sync-URL laedt er wie ein nicht registriertes Geraet. Ein zweiter
+  Hostname des eigenen Servers zaehlt dabei als andere Origin.
+- **Desktop: ein zweiter Start laesst die laufende App nicht mehr abstuerzen (Linux, R-0429):** Bisher beendete ein
+  zweiter Start unter Linux die laufende App samt Sitzung und Tunnel, und auch der zweite Start blieb nicht offen.
+  Jetzt holt ein zweiter Start nur das Fenster der laufenden App nach vorn und beendet sich. Das gilt auch unter
+  Windows und macOS: Es laeuft immer nur eine Instanz der App.
 - **Server: Die Tunnel-Statusansicht zeigt wieder die Proxies von frps (R-0408):** Seit v0.40.0 haengt frps in
   Compose allein im Netz `frpedge`, das der Server nicht erreicht; `GET /api/frp/status` fragte weiter
   `http://frps:<Port>` und meldete deshalb immer „frps-Dashboard: nicht erreichbar“. Jetzt fragt der frps-Supervisor

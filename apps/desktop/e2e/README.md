@@ -7,7 +7,10 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
 ## What it covers today
 
 - **`test/specs/smoke.e2e.js`** — the app launches, the window is titled
-  `AdminHelper`, and the Svelte frontend mounts. No backend required (launch +
+  `AdminHelper`, and the Svelte frontend mounts. A second start of the same
+  binary hands over to the running window and exits, and the window stays alive;
+  on Linux that needs a D-Bus session bus (any desktop session has one, a bare
+  shell gets one from `dbus-run-session`). No backend required (launch +
   render happen before any server call). This is the harness's foundation. Run
   it standalone with `npm test` (headless: `xvfb-run -a npm test`).
 
