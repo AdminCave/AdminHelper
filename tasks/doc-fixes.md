@@ -34,8 +34,10 @@ agent-deployment-Gliederung berührt doc-drift-Zeilen und folgt erst nach dessen
 do?“, EN `:148` mit Metrik-Push und Upgrade-Hinweis (DE: `:38`, `:40`), EN `:148` „or the Windows service
 (auto-start)“ (provision registriert unter Windows keinen Dienst, `apps/agent/internal/monitor/platform_windows.go:13-14`).
 
-### T1 — R-0489: Server- und Web-Block in README und DEVELOPMENT wie der Code  [ ]
+### T1 — R-0489: Server- und Web-Block in README und DEVELOPMENT wie der Code  [x]
 Komponente: scripts · Dateien: README.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @6545b606 2026-10-19T09:25:36+02:00
+Review: approve (.ah-out/review/doc-fixes/T1.verdict.json)
 Änderung: (1) DEVELOPMENT `:1391-1392` zählt alle zwölf Module unter `apps/server/app/modules/` auf wie README `:432-433`; es fehlen `audit`, `enrollment`, `notifications`, `provisioning`. „12 Module“ (`:1387`) bleibt, die Zahl stimmt und die vollständige Liste daneben belegt sie. (2) Der Web-Block nennt keine festen Zählwerte und keine unvollständigen Aufzählungen mehr: README `:455` („9 API modules + 6 stores“), `:456` („5 production pages“), `:457` („9 modal components“), `:459` (Playwright mit 2 von 5 Specs); DEVELOPMENT `:1412` („9 Module (client + 7 Domain-Wrapper + types)“), `:1413` („6 Stores“), `:1415` („5 Produktiv-Pages“), `:1416` („9 Modal-Komponenten“), `:1417` (3 von 5 Specs). Heute sind es 7 Stores, 10 Modals und 5 Specs. Alles andere im Server-Block sowie Monitoring-, Agent- und Desktop-Block bleibt unverändert (Monitoring und Desktop gehören doc-drift T2).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: README.md, DEVELOPMENT.md (die Task ist die Doku; README gibt es nur englisch, DEVELOPMENT nur deutsch)
