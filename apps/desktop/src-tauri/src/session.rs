@@ -138,7 +138,9 @@ impl SessionState {
     }
 
     /// The tunnel mappings the session fetched last; none without a session, before the first
-    /// fetch that succeeded, and for a user who may not read them.
+    /// fetch that succeeded, and for a user who may not read them. The app reads them from
+    /// [`SessionState::current`], together with the sign-in they belong to.
+    #[cfg(test)]
     pub async fn tunnels(&self) -> Arc<[TunnelMapping]> {
         self.session
             .lock()
@@ -160,7 +162,9 @@ impl SessionState {
     }
 
     /// The server's connections the session fetched last; none without a session and before
-    /// the first fetch that succeeded.
+    /// the first fetch that succeeded. The app reads them from [`SessionState::current`], like
+    /// [`SessionState::tunnels`].
+    #[cfg(test)]
     pub async fn connections(&self) -> Arc<[Connection]> {
         self.session
             .lock()
