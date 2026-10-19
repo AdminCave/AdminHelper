@@ -19,6 +19,7 @@ import ssl
 from datetime import timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -375,6 +376,16 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
     }
 
 
+def _log_host(url: str) -> str:
+    """The host of a webhook URL for the service log. Many webhook services carry
+    the credential in the path or the query, so nothing else of the URL is logged."""
+    try:
+        return urlparse(url).hostname or "?"
+    except ValueError:
+        # urlparse raises on a malformed IPv6 literal ("http://[::1").
+        return "?"
+
+
 def _send_webhook(
     config: dict,
     rule: MonitorAlertRule,
@@ -391,13 +402,19 @@ def _send_webhook(
     # (same protection the HTTP checker already applies to its targets).
     verdict = classify_url(url)
     if verdict is UrlVerdict.UNRESOLVED:
-        logger.warning("Webhook target rejected (could not be resolved): %s", url)
+        logger.warning(
+            "Webhook target rejected (could not be resolved): %s -> %s",
+            check.name,
+            _log_host(url),
+        )
         return (
             False,
             "Webhook target could not be resolved (DNS error or timeout), rejected by the SSRF guard",
         )
     if verdict is not UrlVerdict.ALLOWED:
-        logger.warning("Webhook-Ziel abgelehnt (privat/reserviert): %s", url)
+        logger.warning(
+            "Webhook target rejected (private/reserved): %s -> %s", check.name, _log_host(url)
+        )
         return False, "Webhook target is private/reserved (not allowed)"
 
     payload = {
@@ -408,7 +425,7 @@ def _send_webhook(
     try:
         resp = httpx.post(url, json=payload, timeout=10, follow_redirects=False)
         if resp.status_code < 300:
-            logger.info("Webhook gesendet: %s -> %s", check.name, url)
+            logger.info("Webhook sent: %s -> %s", check.name, _log_host(url))
             return True, None
         return False, f"HTTP {resp.status_code}"
     except Exception as exc:

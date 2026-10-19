@@ -104,8 +104,10 @@ HEAD: 5481b316
 
 ## Teil D — Alert-Versand
 
-### T9 — Webhook-Logzeilen nennen nur den Host des Ziels  [ ]
+### T9 — Webhook-Logzeilen nennen nur den Host des Ziels  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter.py, apps/monitoring/app/core/logging_config.py, apps/monitoring/tests/test_logging_config.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @97a56b27 2026-10-19T21:20:04+02:00
+Review: approve (.ah-out/review/monitoring-hardening/T9.verdict.json)
 Änderung: Die drei Logzeilen in `_send_webhook` (`alerter.py:394` nicht auflösbar, `:400` abgelehnt, `:411` gesendet) nennen statt der URL nur ihren Host (`urlparse(url).hostname`; eine URL, die sich nicht zerlegen lässt, als `?`) und den Namen des Checks; Pfad, Query, Fragment und Benutzerinfo kommen nicht ins Log, denn bei vielen Webhook-Diensten ist der Pfad selbst die Zugangsangabe. Die geänderten Zeilen sind englisch. Rückgabewerte und Gründe bleiben (die regelt T10). Dazu begrenzt `configure_logging` (`core/logging_config.py`) die Logger `httpx` und `httpcore` auf WARNING: httpx schreibt auf INFO jede Anfrage mit der vollen URL (Ergänzung aus der Prüfung von T9). Tests zuerst rot (dreimal identisch auf HEAD), in `test_alerter.py` neben `test_private_target_rejected_without_request` (`:172`), mit `caplog` (Logger `monitor.alerter`): die URL `https://user:pw-marke@hooks.example.com/services/T0/B0/pfad-marke?token=query-marke#frag-marke`, je mit `classify_url` → `PRIVATE`, `UNRESOLVED` und `ALLOWED` (Antwort 200) → kein Logeintrag enthält eine der Marken, jeder nennt `hooks.example.com`; die URL `http://[::1` → keine Ausnahme, die Logzeile nennt `?`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter.py tests/test_logging_config.py
 Doku: keine (nur Log)
