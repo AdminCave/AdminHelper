@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Session im Rust-Speicher und eigene lokale Visitor-Ports — Task-Ledger
-Status: bereit · Branch: feature/desktop-session-ports · Review: pro Task
+Status: erledigt · Branch: feature/desktop-session-ports · Review: pro Task
 Spec: docs/features/desktop-session-ports.md (Roadmap R-0430)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Auth und -Tunnel (CLAUDE.md §5): Login, Erneuerung, SSE und die Tunnel-Specs laufen im Sammellauf; `scenario`, weil der Desktop die lokalen Visitor-Ports umschreibt (FRP-Datenpfad); `windows` für Sidecar, Datei-Sperre und Keyring-Aufräumen
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
