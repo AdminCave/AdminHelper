@@ -255,6 +255,49 @@ failed "502 page from the gateway" "HTTP 502, curl exit 0, no JSON detail"
 login "200 without access_token" '{"refresh_token":"'"$RTOK"'","detail":"'"$TOK"'"}' 200 0
 failed "200 without access_token" "HTTP 200, curl exit 0, no access_token"
 
+# null is no token: the suite only checks that E2E_JWT is non-empty, and "None" is.
+login "200 with access_token null" '{"access_token":null,"refresh_token":"'"$RTOK"'","token_type":"bearer"}' 200 0
+failed "200 with access_token null" "HTTP 200, curl exit 0, no access_token"
+
+# login_twice <case> <body1> <code1> <body2> <code2> — two e2e_login calls in one shell,
+# as integration_stack_test.sh makes them: the second must not keep what the first set.
+# Sets RC, JWT_OUT and ERR after the second call, JWT1 and ERR1 after the first (so a
+# case can show the first call did leave something behind) and CALLS.
+login_twice() {
+  : > "$STUB_LOG/curl.args"
+  PATH="$SHIM:$PATH" bash -c '
+    . "$1/scripts/tests/lib_e2e_stack.sh"
+    E2E_SERVER_URL=$2; E2E_ADMIN_PW=$3; w=$4
+    STUB_BODY=$5 STUB_CODE=$6 e2e_login --cert "$w/c.pem" --key "$w/c.key" > /dev/null 2>&1
+    printf "%s|" "$E2E_JWT" > "$w/login1.jwt"
+    printf "%s|" "$E2E_LOGIN_ERR" > "$w/login1.err"
+    STUB_BODY=$7 STUB_CODE=$8 e2e_login --cert "$w/c.pem" --key "$w/c.key" > /dev/null 2>&1
+    echo "$?" > "$w/login.rc"
+    printf "%s|" "$E2E_JWT" > "$w/login.jwt"
+    printf "%s|" "$E2E_LOGIN_ERR" > "$w/login.err"
+  ' _ "$REPO_ROOT" "$URL" "$PW" "$WORK" "$2" "$3" "$4" "$5"
+  RC=$(cat "$WORK/login.rc"); JWT_OUT=$(cat "$WORK/login.jwt"); JWT_OUT=${JWT_OUT%|}
+  ERR=$(cat "$WORK/login.err"); ERR=${ERR%|}
+  JWT1=$(cat "$WORK/login1.jwt"); JWT1=${JWT1%|}
+  ERR1=$(cat "$WORK/login1.err"); ERR1=${ERR1%|}
+  CALLS=$(wc -l < "$STUB_LOG/curl.args")
+}
+E401="HTTP 401, curl exit 0, detail: Ungültige Zugangsdaten"
+
+login_twice "200, then 401" '{"access_token":"'"$TOK"'"}' 200 '{"detail":"Ungültige Zugangsdaten"}' 401
+[ "$CALLS" = 2 ] && [ "$JWT1" = "$TOK" ] \
+  && ok "200, then 401: two curl calls, the first set E2E_JWT" \
+  || bad "200, then 401: $CALLS curl call(s), first E2E_JWT '$JWT1'"
+failed "200, then 401" "$E401"
+
+login_twice "401, then 200" '{"detail":"Ungültige Zugangsdaten"}' 401 '{"access_token":"'"$TOK"'"}' 200
+[ "$CALLS" = 2 ] && [ "$ERR1" = "$E401" ] \
+  && ok "401, then 200: two curl calls, the first set E2E_LOGIN_ERR" \
+  || bad "401, then 200: $CALLS curl call(s), first E2E_LOGIN_ERR '$ERR1'"
+[ "$RC" = 0 ] && [ "$JWT_OUT" = "$TOK" ] && [ -z "$ERR" ] \
+  && ok "401, then 200: E2E_JWT is the token, E2E_LOGIN_ERR empty, rc 0" \
+  || bad "401, then 200: rc=$RC JWT='$JWT_OUT' ERR='$ERR'"
+
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

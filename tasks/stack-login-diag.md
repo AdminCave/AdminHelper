@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stack-Suite: ein roter Login nennt HTTP-Code und detail — Task-Ledger
-Status: aktiv · Branch: feature/stack-login-diag · Review: am Ende
+Status: bereit · Branch: feature/stack-login-diag · Review: am Ende
 Spec: Roadmap R-0515
 Heavy: none — nur `scripts/tests/`, kein Produkt-, Gateway-, PKI- oder Install-Pfad. Beweis vor dem Merge: `gh workflow run ci.yml --ref feature/stack-login-diag`, Job `integration-stack` grün (läuft nicht auf PRs); er fährt beide Logins über die neue Funktion auf dem grünen Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -26,8 +26,10 @@ Dedup-Key: bug:scripts:integration_stack_test.sh:frps-login-flaky
 HEAD: a23a4387
 Semantik: docs/developer/api-reference.html:61 — „Body: `{ "username", "password" }`. Antwort: `{ "access_token", "refresh_token", "token_type" }`.“; docs/developer/cicd.html:40 — „… den vollen Pfad prüft – Enrollment-Token, CSR → Enroll-Plane (:8444) → Client-Cert, certless → abgewiesen, Cert+JWT → 200“. Wie ein roter Zweig der Stack-Suiten berichtet: keine Stelle in docs/ — gesucht `integration_stack`, `FAIL`, `auth/login` in docs/ und DEVELOPMENT.md.
 
-### T2 — `e2e_login` setzt den Stand eines Vorlaufs zurück: Test mit zwei Aufrufen in einer Shell  [ ]
+### T2 — `e2e_login` setzt den Stand eines Vorlaufs zurück: Test mit zwei Aufrufen in einer Shell  [x]
 Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @69273195 2026-10-19T09:47:52+02:00
+Review: am Ende (Branch-Review)
 Änderung: Fund des tester aus dem Branch-Review 2026-10-19: jeder Fall in `lib_e2e_stack_test.sh` ruft `e2e_login` in einer frischen `bash -c`-Shell, deshalb ist das Zurücksetzen von `E2E_JWT`/`E2E_LOGIN_ERR` am Anfang von `e2e_login` (`lib_e2e_stack.sh`, Zeile neu greppen) ungetestet; die Mutation „Reset durch `:` ersetzt“ bleibt grün, und `integration_stack_test.sh` ruft `e2e_login` zweimal in derselben Shell (der frps-Zweig prüft nur `[ -n "$JWT3" ]`). Neue Fälle: zwei Aufrufe in einer Shell, erst 200 dann 401 (`E2E_JWT` leer, rc 1), erst 401 dann 200 (`E2E_LOGIN_ERR` leer, rc 0). Dazu der Nit: 200 mit `"access_token": null` ergibt rc 1 und kein `E2E_JWT=None`. Nur der Test ändert sich; `lib_e2e_stack.sh` bleibt, wie T1 es gebaut hat.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (intern)
