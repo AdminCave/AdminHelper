@@ -8,6 +8,8 @@
 // device cert (setup), logs in, and AppShell auto-starts the seeded tunnel; we
 // assert the GUI tunnel indicator reaches "connected". The orchestrator then
 // independently checks the frps log for the frpc login.
+// Then (R-0429) the header's sign-out has to stop the tunnel; the window reloads, and
+// a new login connects again.
 // The last step (R-0402) creates a second STCP tunnel in the GUI while the tunnel
 // runs: the running frpc has to take its visitor over by a reload, not a restart.
 
@@ -30,6 +32,16 @@ function tunnelStatus() {
       .then((status) => done(status))
       .catch((e) => done({ error: String((e && e.message) || e) }));
   });
+}
+
+// The indicator goes connecting → connected once frpc has started.
+async function waitForTunnelConnected() {
+  const indicator = await $('.tunnel-indicator');
+  await indicator.waitForExist({ timeout: 15000 });
+  await browser.waitUntil(
+    async () => (await indicator.getAttribute('data-status')) === 'connected',
+    { timeout: 30000, timeoutMsg: 'the tunnel indicator never reached "connected"' },
+  );
 }
 
 describe('AdminHelper desktop — start a tunnel against live frps', () => {
@@ -57,14 +69,44 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
     // Shared helper — the inline login was duplicated across the tunnel specs (2.16).
     // Login succeeds → app shell, whose onMount auto-starts the seeded tunnel.
     await login();
+    await waitForTunnelConnected();
+  });
 
-    // The indicator goes connecting → connected once frpc has started.
-    const indicator = await $('.tunnel-indicator');
-    await indicator.waitForExist({ timeout: 15000 });
+  it('signs out in the header: the tunnel stops, a new login connects again (R-0429)', async () => {
+    // Running before, or "not running" after the sign-out would prove nothing.
+    expect(await tunnelStatus()).toMatchObject({ running: true });
+
+    // The sign-out reloads the window (logoutAndReload), and the login card can show on
+    // the old document before that. Only the reloaded one lacks this mark.
+    await browser.execute(() => {
+      window.__ahBeforeSignOut = true;
+    });
+    // The "Sign out" button, as in logout.live.js.
+    await $('.content-header-right .btn.ghost.small').click();
     await browser.waitUntil(
-      async () => (await indicator.getAttribute('data-status')) === 'connected',
-      { timeout: 30000, timeoutMsg: 'the tunnel indicator never reached "connected"' },
+      async () => {
+        try {
+          return await browser.execute(
+            () =>
+              window.__ahBeforeSignOut !== true && document.querySelector('.login-card') !== null,
+          );
+        } catch {
+          return false; // the old document went away during the call
+        }
+      },
+      {
+        timeout: 20000,
+        interval: 250,
+        timeoutMsg: 'the sign-out never reloaded the window onto the login screen within 20 s',
+      },
     );
+
+    // The tunnel stop ran before the reload; nothing on the login screen starts frpc.
+    expect(await tunnelStatus()).toMatchObject({ running: false });
+
+    // A new login in the reloaded window: AppShell starts the tunnel again.
+    await login();
+    await waitForTunnelConnected();
   });
 
   it('takes a tunnel created in the GUI over by reload, without a restart (R-0402)', async () => {
