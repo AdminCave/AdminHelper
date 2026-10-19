@@ -20,6 +20,7 @@ use tokio::time::{sleep, timeout, Duration, Instant};
 
 use crate::auth;
 use crate::error::AppError;
+use crate::session::SessionState;
 
 /// Managed state: an epoch counter. Each `start` bumps it and the spawned task
 /// captures the value; the task runs only while its captured epoch is still the
@@ -49,6 +50,7 @@ const MIN_HEALTHY_UPTIME: Duration = Duration::from_secs(30);
 pub async fn start(
     app: tauri::AppHandle,
     state: StreamState,
+    session: &SessionState,
     server_url: String,
     token: String,
     allow_self_signed: bool,
@@ -58,7 +60,7 @@ pub async fn start(
     crate::validation::require_pinned_destination(
         &server_url,
         "/api/notifications/stream",
-        auth::stored_server_url().as_deref(),
+        auth::stored_server_url(session).await.as_deref(),
     )?;
     let my_epoch = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {

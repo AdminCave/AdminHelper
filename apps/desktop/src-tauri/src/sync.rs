@@ -4,6 +4,7 @@
 
 use crate::error::AppError;
 use crate::models::Connection;
+use crate::session::SessionState;
 use crate::storage::write_connections;
 use crate::validation::{same_server_destination, sanitize_synced_connections, validate_https_url};
 
@@ -60,18 +61,28 @@ fn parse_launchable_connections(raw: Vec<serde_json::Value>) -> Vec<Connection> 
 
 pub async fn fetch_connections_jwt(
     app: tauri::AppHandle,
-    server_url: &str,
-    token: &str,
+    session: &SessionState,
     allow_self_signed: bool,
 ) -> Result<Vec<Connection>, AppError> {
-    let response =
-        crate::auth::authenticated_get(server_url, token, "/api/connections", allow_self_signed)
-            .await?
-            .error_for_status()?;
-    let raw: Vec<serde_json::Value> = response.json().await?;
-    let connections = sanitize_synced_connections(parse_launchable_connections(raw));
+    let connections = fetch_server_connections(session, allow_self_signed).await?;
     write_connections(&app, &connections)?;
     Ok(connections)
+}
+
+/// The launchable connections of the signed-in user. A list that arrives after its user
+/// signed out, or after someone else signed in, is refused: it must not replace the
+/// connections of the session that is there now.
+async fn fetch_server_connections(
+    session: &SessionState,
+    allow_self_signed: bool,
+) -> Result<Vec<Connection>, AppError> {
+    let (response, user) =
+        crate::auth::authenticated_get(session, "/api/connections", allow_self_signed).await?;
+    let raw: Vec<serde_json::Value> = response.error_for_status()?.json().await?;
+    session.ensure_signed_in(&user).await?;
+    Ok(sanitize_synced_connections(parse_launchable_connections(
+        raw,
+    )))
 }
 
 #[cfg(test)]
@@ -163,5 +174,72 @@ mod tests {
             "https://ah.example/api/connections",
             Some("")
         ));
+    }
+
+    #[tokio::test]
+    async fn connections_of_a_session_gone_meanwhile_are_refused() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Who signs in while the list is on its way; `None` signs out.
+        for next in [Some("ops-admin"), Some("someone-else"), None] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let server = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+            let session = SessionState::default();
+            session
+                .set(
+                    server.clone(),
+                    "access".to_string(),
+                    "refresh".to_string(),
+                    "ops-admin".to_string(),
+                )
+                .await;
+
+            let serve = async {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = tcp.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                }
+                match next {
+                    Some(user) => {
+                        session
+                            .set(
+                                server.clone(),
+                                "next".to_string(),
+                                "next-refresh".to_string(),
+                                user.to_string(),
+                            )
+                            .await
+                    }
+                    None => drop(session.take().await),
+                }
+                let body = r#"[{"id":"1","name":"a","kind":"ssh","host":"srv.example"}]"#;
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                tcp.write_all(reply.as_bytes()).await.unwrap();
+                let _ = tcp.shutdown().await;
+            };
+            let (fetched, ()) = tokio::join!(fetch_server_connections(&session, false), serve);
+
+            match next {
+                // The same user signed in again: the connections are still theirs.
+                Some("ops-admin") => {
+                    let ids: Vec<String> = fetched
+                        .expect("the connections")
+                        .into_iter()
+                        .map(|c| c.id)
+                        .collect();
+                    assert_eq!(ids, ["1"]);
+                }
+                _ => assert!(fetched.is_err(), "{next:?}"),
+            }
+        }
     }
 }

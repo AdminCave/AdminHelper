@@ -10,6 +10,7 @@
 //! status/body mapping beside the rest of the network code.
 
 use crate::error::AppError;
+use crate::session::SessionState;
 
 /// Map an HTTP method to a request builder, rejecting unknown verbs instead of
 /// silently falling back to GET: a frontend typo ("post") or an unsupported verb
@@ -35,6 +36,7 @@ fn build_request(
 /// Works around WebView TLS restrictions for self-signed certs by going through
 /// the shared reqwest client factory.
 pub async fn forward(
+    session: &SessionState,
     server_url: &str,
     token: &str,
     method: &str,
@@ -51,7 +53,7 @@ pub async fn forward(
     crate::validation::require_pinned_destination(
         server_url,
         path,
-        crate::auth::stored_server_url().as_deref(),
+        crate::auth::stored_server_url(session).await.as_deref(),
     )?;
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);

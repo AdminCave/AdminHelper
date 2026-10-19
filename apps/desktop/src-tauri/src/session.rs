@@ -4,20 +4,19 @@
 
 //! The server session of this process, in memory only: server URL, user and tokens.
 //! Authenticated requests go through [`authed_send`], the one place that renews them.
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "no callers yet, the auth paths move over next (R-0430)"
-    )
-)]
 
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use tokio::sync::Mutex;
 
 use crate::error::AppError;
+use crate::validation::same_server_destination;
+
+/// The longest a renewal may take. It holds the session meanwhile, so every request, sign-in
+/// and sign-out waits for it.
+const RENEWAL_DEADLINE: Duration = Duration::from_secs(30);
 
 /// A signed-in session. `generation` changes with every token pair, from a login or a
 /// renewal, and is never handed out twice.
@@ -27,8 +26,23 @@ pub struct Session {
     pub access: String,
     pub refresh: String,
     pub username: String,
-    pub is_admin: bool,
     pub generation: u64,
+}
+
+impl Session {
+    /// Who is signed in where, without the tokens.
+    fn signed_in(&self) -> SignedIn {
+        SignedIn {
+            server_url: self.server_url.clone(),
+            username: self.username.clone(),
+        }
+    }
+}
+
+/// Who an answer was sent for: the user and the server, not the tokens.
+pub struct SignedIn {
+    pub server_url: String,
+    pub username: String,
 }
 
 /// The tokens a renewal hands back.
@@ -47,21 +61,13 @@ pub struct SessionState {
 
 impl SessionState {
     /// Starts a session, replacing any other.
-    pub async fn set(
-        &self,
-        server_url: String,
-        access: String,
-        refresh: String,
-        username: String,
-        is_admin: bool,
-    ) {
+    pub async fn set(&self, server_url: String, access: String, refresh: String, username: String) {
         let mut session = self.session.lock().await;
         *session = Some(Session {
             server_url,
             access,
             refresh,
             username,
-            is_admin,
             generation: self.next_generation(),
         });
     }
@@ -69,6 +75,24 @@ impl SessionState {
     /// A copy of the current session, if there is one.
     pub async fn current(&self) -> Option<Session> {
         self.session.lock().await.clone()
+    }
+
+    /// Ends the session and hands it back, for the sign-out at the server.
+    pub async fn take(&self) -> Option<Session> {
+        self.session.lock().await.take()
+    }
+
+    /// Refuses the answer of a session that is gone: `who` signed out, or another user or
+    /// server signed in since the request went out. A renewal or a new sign-in of the same
+    /// user on the same server keeps it. A caller that takes an answer over (a tunnel config,
+    /// a sync) checks this first.
+    pub async fn ensure_signed_in(&self, who: &SignedIn) -> Result<(), AppError> {
+        match self.session.lock().await.as_ref() {
+            Some(now) if now.server_url == who.server_url && now.username == who.username => Ok(()),
+            _ => Err(AppError::Validation(
+                "The session changed while the request was under way — answer dropped".to_string(),
+            )),
+        }
     }
 
     fn next_generation(&self) -> u64 {
@@ -83,17 +107,36 @@ fn no_session() -> AppError {
 }
 
 /// Sends the request `build` makes for the session's server with the session's access
-/// token. A 401 renews the session at most once, through `renew` (server URL, refresh
-/// token), and single-flight: under the lock only a request that still sees the generation
-/// it went out with renews, one behind it finds the new generation and only repeats. The
-/// server rotates the refresh token, so a second renewal with the old one would count as
-/// reuse and revoke the whole session. A failed renewal ends the session with
+/// token, and only if the request as built goes to that server. A 401 renews the session at
+/// most once, through `renew` (server URL, refresh token), and single-flight: under the lock
+/// only a request that still sees the generation it went out with renews, one behind it
+/// finds the new generation and only repeats. The server rotates the refresh token, so a
+/// second renewal with the old one would count as reuse and revoke the whole session. A
+/// renewal that fails or outlasts [`RENEWAL_DEADLINE`] ends the session with
 /// [`AppError::SessionExpired`]. Without a session nothing is sent.
+///
+/// The answer comes with the user it was sent for; a caller that takes it over checks
+/// [`SessionState::ensure_signed_in`] first.
 pub async fn authed_send<B, R, F>(
     state: &SessionState,
     build: B,
     renew: R,
-) -> Result<reqwest::Response, AppError>
+) -> Result<(reqwest::Response, SignedIn), AppError>
+where
+    B: Fn(&str) -> Result<reqwest::RequestBuilder, AppError>,
+    R: FnOnce(String, String) -> F,
+    F: Future<Output = Result<Renewed, AppError>>,
+{
+    send_renewing(state, build, renew, RENEWAL_DEADLINE).await
+}
+
+/// [`authed_send`] with the renewal deadline as a parameter.
+async fn send_renewing<B, R, F>(
+    state: &SessionState,
+    build: B,
+    renew: R,
+    deadline: Duration,
+) -> Result<(reqwest::Response, SignedIn), AppError>
 where
     B: Fn(&str) -> Result<reqwest::RequestBuilder, AppError>,
     R: FnOnce(String, String) -> F,
@@ -102,7 +145,7 @@ where
     let seen = state.current().await.ok_or_else(no_session)?;
     let response = send(&build, &seen).await?;
     if response.status() != reqwest::StatusCode::UNAUTHORIZED {
-        return Ok(response);
+        return Ok((response, seen.signed_in()));
     }
     let mut slot = state.session.lock().await;
     // Signed out, or signed in elsewhere or as someone else, while the request was under
@@ -111,10 +154,21 @@ where
         .as_mut()
         .filter(|now| now.server_url == seen.server_url && now.username == seen.username)
     else {
-        return Ok(response);
+        return Ok((response, seen.signed_in()));
     };
     if current.generation == seen.generation {
-        match renew(current.server_url.clone(), current.refresh.clone()).await {
+        let renewal = renew(current.server_url.clone(), current.refresh.clone());
+        // Past the deadline the session ends as on a refusal: the server may have rotated the
+        // refresh token by then, so the one held here could not renew again anyway.
+        let renewed = tokio::time::timeout(deadline, renewal)
+            .await
+            .unwrap_or_else(|_| {
+                Err(AppError::Connection(format!(
+                    "no answer within {} s",
+                    deadline.as_secs_f32()
+                )))
+            });
+        match renewed {
             Ok(renewed) => {
                 current.access = renewed.access;
                 current.refresh = renewed.refresh;
@@ -130,14 +184,24 @@ where
     let retry = current.clone();
     drop(slot);
     drop(response);
-    send(&build, &retry).await
+    Ok((send(&build, &retry).await?, retry.signed_in()))
 }
 
+/// Sends what `build` makes with the session's access token. The pin checks the request as
+/// built, not the URL it was built from: a path can still move the authority (`@host`), and
+/// the token must reach no origin but the session's.
 async fn send<B>(build: &B, session: &Session) -> Result<reqwest::Response, AppError>
 where
     B: Fn(&str) -> Result<reqwest::RequestBuilder, AppError>,
 {
-    Ok(build(&session.server_url)?
+    let (client, request) = build(&session.server_url)?.build_split();
+    let request = request?;
+    if !same_server_destination(request.url().as_str(), &session.server_url) {
+        return Err(AppError::Validation(
+            "The request target is not the signed-in server — request refused".to_string(),
+        ));
+    }
+    Ok(reqwest::RequestBuilder::from_parts(client, request)
         .bearer_auth(&session.access)
         .send()
         .await?)
@@ -224,7 +288,6 @@ mod tests {
                 "expired".to_string(),
                 "refresh".to_string(),
                 "ops-admin".to_string(),
-                true,
             )
             .await;
         state
@@ -298,8 +361,8 @@ mod tests {
         .await
         .expect("both requests should have gone out with the old token");
 
-        assert_eq!(first.unwrap().status(), StatusCode::OK);
-        assert_eq!(second.unwrap().status(), StatusCode::OK);
+        assert_eq!(first.unwrap().0.status(), StatusCode::OK);
+        assert_eq!(second.unwrap().0.status(), StatusCode::OK);
         assert_eq!(
             *renewals.lock().unwrap(),
             [(server.clone(), "refresh".to_string())]
@@ -323,8 +386,8 @@ mod tests {
         assert_ne!(after.generation, before);
         // A renewal changes the tokens, not who is signed in where.
         assert_eq!(
-            (after.server_url, after.username.as_str(), after.is_admin),
-            (server, "ops-admin", true)
+            (after.server_url, after.username.as_str()),
+            (server, "ops-admin")
         );
     }
 
@@ -342,7 +405,7 @@ mod tests {
         assert!(
             matches!(result, Err(AppError::SessionExpired)),
             "{:?}",
-            result.map(|response| response.status())
+            result.map(|(response, _)| response.status())
         );
         assert!(state.current().await.is_none());
         assert_eq!(renewals.lock().unwrap().len(), 1);
@@ -351,12 +414,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_renewal_past_the_deadline_ends_the_session() {
+        let (server, log) = serve(|_| async { "401 Unauthorized" }).await;
+        let state = signed_in(&server).await;
+
+        // A renewal that never answers; the outer limit only keeps a regression from hanging.
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            send_renewing(
+                &state,
+                get,
+                |_, _| std::future::pending::<Result<Renewed, AppError>>(),
+                Duration::from_millis(50),
+            ),
+        )
+        .await
+        .expect("the renewal deadline should have ended the wait");
+
+        assert!(
+            matches!(result, Err(AppError::SessionExpired)),
+            "{:?}",
+            result.map(|(response, _)| response.status())
+        );
+        assert!(state.current().await.is_none());
+        assert_eq!(log_of(&log), ["Bearer expired"]);
+    }
+
+    #[tokio::test]
+    async fn a_request_off_the_signed_in_server_is_not_sent() {
+        let (server, log) = serve(|_| async { "200 OK" }).await;
+        let (foreign, foreign_log) = serve(|_| async { "200 OK" }).await;
+        let state = signed_in(&server).await;
+        let renewals = Renewals::default();
+
+        // The request as built goes elsewhere than the session's server.
+        let result = authed_send(
+            &state,
+            |_: &str| get(&foreign),
+            |url, refresh| granted(Arc::clone(&renewals), url, refresh),
+        )
+        .await;
+
+        let message = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(message.contains("not the signed-in server"), "{message}");
+        assert_eq!(log_of(&foreign_log), Vec::<String>::new());
+        assert_eq!(log_of(&log), Vec::<String>::new());
+        assert!(renewals.lock().unwrap().is_empty());
+        assert_eq!(state.current().await.unwrap().access, "expired");
+    }
+
+    #[tokio::test]
     async fn a_401_after_the_renewal_is_not_renewed_again() {
         let (server, log) = serve(|_| async { "401 Unauthorized" }).await;
         let state = signed_in(&server).await;
         let renewals = Renewals::default();
 
-        let response = authed_send(&state, get, |url, refresh| {
+        let (response, _) = authed_send(&state, get, |url, refresh| {
             granted(Arc::clone(&renewals), url, refresh)
         })
         .await
@@ -432,7 +545,6 @@ mod tests {
                             "next".to_string(),
                             "next-refresh".to_string(),
                             user.to_string(),
-                            true,
                         )
                         .await;
                     "401 Unauthorized"
@@ -445,18 +557,32 @@ mod tests {
                     "expired".to_string(),
                     "refresh".to_string(),
                     "ops-admin".to_string(),
-                    true,
                 )
                 .await;
             let renewals = Renewals::default();
 
-            let response = authed_send(&state, get, |url, refresh| {
+            let (response, answered_for) = authed_send(&state, get, |url, refresh| {
                 granted(Arc::clone(&renewals), url, refresh)
             })
             .await
             .unwrap();
 
             assert!(renewals.lock().unwrap().is_empty(), "{change:?}");
+            // The answer names the user it was sent for, so a caller can tell whether that one
+            // is still signed in before it takes the answer over.
+            assert_eq!(
+                (
+                    answered_for.server_url.as_str(),
+                    answered_for.username.as_str()
+                ),
+                (server.as_str(), "ops-admin"),
+                "{change:?}"
+            );
+            let taken_over = state.ensure_signed_in(&answered_for).await;
+            match change {
+                Change::SameUserAgain => assert!(taken_over.is_ok(), "{change:?}"),
+                _ => assert!(taken_over.is_err(), "{change:?}"),
+            }
             match change {
                 // The same user on the same server: only the token is new, so the request
                 // goes again with it.

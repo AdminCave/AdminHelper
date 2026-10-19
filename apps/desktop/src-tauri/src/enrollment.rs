@@ -28,6 +28,7 @@ use url::Url;
 use crate::error::AppError;
 use crate::keyring_store;
 use crate::models::DeviceIdentity;
+use crate::session::SessionState;
 
 // Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
 // is the only secret; cert/ca are public but kept in the same secure store so
@@ -471,6 +472,7 @@ pub async fn enroll_with_token(
 /// the only token the desktop mints itself; its own identity comes from a
 /// one-time token an admin handed over (`enroll_with_token`, ADR 0003).
 async fn mint_token(
+    session: &SessionState,
     server_url: &str,
     jwt: &str,
     allow_self_signed: bool,
@@ -483,7 +485,7 @@ async fn mint_token(
     crate::validation::require_pinned_destination(
         server_url,
         "/api/enrollment/token",
-        crate::auth::stored_server_url().as_deref(),
+        crate::auth::stored_server_url(session).await.as_deref(),
     )?;
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let base = server_url.trim_end_matches('/');
@@ -796,6 +798,7 @@ fn package_pkcs12(
 /// return it as a PKCS12 blob for the user to import. Does NOT touch the
 /// desktop's own keyring identity — this is a cert FOR the browser.
 pub async fn export_browser_p12(
+    session: &SessionState,
     server_url: &str,
     jwt: &str,
     password: &str,
@@ -803,7 +806,7 @@ pub async fn export_browser_p12(
 ) -> Result<Vec<u8>, AppError> {
     // Fail fast before minting + enrolling a throwaway long-lived cert (3.58).
     check_export_password(password)?;
-    let grant = mint_token(server_url, jwt, allow_self_signed).await?;
+    let grant = mint_token(session, server_url, jwt, allow_self_signed).await?;
     if grant.scope != "access" {
         return Err(AppError::Validation(format!(
             "Unerwarteter Enrollment-Scope '{}' (erwartet 'access')",

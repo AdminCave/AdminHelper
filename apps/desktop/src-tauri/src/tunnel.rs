@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth;
 use crate::error::AppError;
 use crate::models::Connection;
+use crate::session::SessionState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,12 +35,11 @@ pub struct ResolvedConnection {
 
 /// Fetch all tunnels from the server.
 pub async fn fetch_tunnels(
-    server_url: &str,
-    token: &str,
+    session: &SessionState,
     allow_self_signed: bool,
 ) -> Result<Vec<TunnelMapping>, AppError> {
-    let response =
-        auth::authenticated_get(server_url, token, "/api/frp/tunnels", allow_self_signed).await?;
+    let (response, _) =
+        auth::authenticated_get(session, "/api/frp/tunnels", allow_self_signed).await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(

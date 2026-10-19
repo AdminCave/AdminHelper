@@ -102,6 +102,9 @@ fn main() {
             // connections.local.json) once, before any server fetch can
             // overwrite the legacy file. Best-effort: must not block startup.
             let _ = storage::migrate_legacy_local_store(app.handle());
+            // The session lives in the process now; drop what earlier versions left in the
+            // keyring. Off the main thread: a keyring that hangs must not hold the window.
+            tauri::async_runtime::spawn_blocking(auth::forget_keyring_session);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

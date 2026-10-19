@@ -34,6 +34,7 @@ fn write_secret(path: &Path, content: &[u8]) -> std::io::Result<()> {
 use crate::auth;
 use crate::error::AppError;
 use crate::models::{RefreshOutcome, TunnelRefresh, TunnelStatus};
+use crate::session::SessionState;
 
 pub type FrpcState = Arc<Mutex<FrpcProcess>>;
 
@@ -172,15 +173,18 @@ struct VisitorBundle {
 
 /// Fetch the visitor bundle from the server. TOML only — the server no longer
 /// ships PKI (D6); the identity comes from enrollment. `None` means the user has
-/// no tunnels (see [`carries_bundle`]).
+/// no tunnels (see [`carries_bundle`]). Comes with the user it was fetched for; a bundle
+/// that arrives after that user signed out, or after someone else signed in, is refused,
+/// so frpc never takes over the tunnels of a session that is gone.
 async fn fetch_visitor_bundle(
-    server_url: &str,
-    token: &str,
+    session: &SessionState,
     allow_self_signed: bool,
-) -> Result<Option<VisitorBundle>, AppError> {
+) -> Result<(Option<VisitorBundle>, String), AppError> {
     let path = "/api/frp/generate/visitor-bundle";
-    let response = auth::authenticated_get(server_url, token, path, allow_self_signed).await?;
-    bundle_from(response).await
+    let (response, user) = auth::authenticated_get(session, path, allow_self_signed).await?;
+    let bundle = bundle_from(response).await?;
+    session.ensure_signed_in(&user).await?;
+    Ok((bundle, user.username))
 }
 
 /// The bundle a visitor-bundle reply carries; `None` means no tunnels (see [`carries_bundle`]).
@@ -854,27 +858,23 @@ fn start_fresh(
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
 /// reload or leave it; no tunnels stop it. A failure before that (network, 5xx, a 401 the refresh
-/// could not cure) leaves the running frpc alone. `token` is not sent: the fetch sends the
-/// session's current access token from the keyring (see [`auth::authenticated_get`]).
+/// could not cure, a session that changed meanwhile) leaves the running frpc alone. The fetch
+/// goes to the signed-in server with the session's current access token (see
+/// [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
     app: tauri::AppHandle,
     state: FrpcState,
     lock: &RefreshLock,
-    server_url: &str,
-    token: &str,
-    username: &str,
+    session: &SessionState,
     allow_self_signed: bool,
 ) -> Result<TunnelRefresh, AppError> {
     let _serial = lock.0.lock().await;
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
-    // Fetched under the lock: authenticated_get reads the keyring token only now, so a
-    // reconciliation queued behind one that renewed it sends the renewed one and does not
-    // refresh again.
-    let bundle = fetch_visitor_bundle(server_url, token, allow_self_signed).await?;
+    let (bundle, username) = fetch_visitor_bundle(session, allow_self_signed).await?;
     let sidecar = AppSidecar {
         app: &app,
         data_dir: app_data_dir(&app)?,
-        username,
+        username: &username,
     };
     let server_toml = bundle.as_ref().map(|bundle| bundle.toml.as_str());
     let outcome = reconcile(&state, &sidecar, server_toml, since).await?;
@@ -890,13 +890,14 @@ mod tests {
     use std::sync::{Arc, Mutex, MutexGuard};
 
     use super::{
-        bundle_from, carries_bundle, frpc_config, plan_refresh, reconcile, request_reload,
-        rewrite_identity_paths, tunnel_status, validate_visitor_toml, visitor_names,
-        with_local_head, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar,
-        NO_IDENTITY_HINT,
+        bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh, reconcile,
+        request_reload, rewrite_identity_paths, tunnel_status, validate_visitor_toml,
+        visitor_names, with_local_head, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan,
+        Sidecar, NO_IDENTITY_HINT,
     };
     use crate::error::AppError;
     use crate::models::RefreshOutcome;
+    use crate::session::SessionState;
 
     const LEGIT_VISITOR: &str = r#"
 serverAddr = "frps.example.net"
@@ -2077,5 +2078,67 @@ method = "token"
 
         let (port, _request) = serve_one(reply("500 Internal Server Error", "")).await;
         assert!(bundle_from(get(port).await.unwrap()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn refresh_bundle_of_a_session_gone_meanwhile_is_refused() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Who signs in while the bundle is on its way; `None` signs out.
+        for next in [Some("ops-admin"), Some("someone-else"), None] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let server = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+            let session = SessionState::default();
+            session
+                .set(
+                    server.clone(),
+                    "access".to_string(),
+                    "refresh".to_string(),
+                    "ops-admin".to_string(),
+                )
+                .await;
+
+            let serve = async {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = tcp.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                }
+                match next {
+                    Some(user) => {
+                        session
+                            .set(
+                                server.clone(),
+                                "next".to_string(),
+                                "next-refresh".to_string(),
+                                user.to_string(),
+                            )
+                            .await
+                    }
+                    None => drop(session.take().await),
+                }
+                let body = r#"{"toml":"serverAddr = \"f\""}"#;
+                tcp.write_all(reply("200 OK", body).as_bytes())
+                    .await
+                    .unwrap();
+                let _ = tcp.shutdown().await;
+            };
+            let (fetched, ()) = tokio::join!(fetch_visitor_bundle(&session, false), serve);
+
+            match next {
+                // The same user signed in again: the tunnels are still theirs.
+                Some("ops-admin") => {
+                    let (bundle, username) = fetched.expect("the bundle");
+                    assert_eq!(bundle.expect("a bundle").toml, "serverAddr = \"f\"");
+                    assert_eq!(username, "ops-admin");
+                }
+                _ => assert!(fetched.is_err(), "{next:?}"),
+            }
+        }
     }
 }

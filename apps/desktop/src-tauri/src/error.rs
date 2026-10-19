@@ -46,10 +46,6 @@ pub enum AppError {
     Keyring(String),
     Json(serde_json::Error),
     /// The session could not be renewed and is gone (`session::authed_send`).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "authed_send has no callers yet (R-0430)")
-    )]
     SessionExpired,
 }
 
