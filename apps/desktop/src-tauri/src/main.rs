@@ -15,6 +15,7 @@ mod keyring_store;
 mod models;
 mod notifications;
 mod password;
+mod port_registry;
 mod proxy;
 mod session;
 mod storage;

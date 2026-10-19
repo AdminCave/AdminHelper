@@ -87,8 +87,10 @@ Review: approve (.ah-out/review/desktop-session-ports/T7.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- remap_visitors
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Allow-List: Visitor-Name und `bindPort`; Identitäts-Export an der geprüften Tabelle); das Umschreiben mit T11
 
-### T8 — Prozessübergreifende Portkarte mit Sperre  [ ]
+### T8 — Prozessübergreifende Portkarte mit Sperre  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/port_registry.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f578bf24 2026-10-19T10:21:44+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T8.verdict.json)
 Änderung: Neues Modul `port_registry.rs` (SPDX-Header): `app_data_dir/port-registry.json` (0600), geschrieben unter `File::lock` auf eine Sperrdatei daneben, atomar (temp + rename wie `storage.rs`). `assign(owner, visitors: &[(name, server_port)]) -> Vec<(name, local_port)>`: vorhandener Eintrag (owner, name) bleibt ohne Bind-Test; sonst der Server-Port, wenn kein anderer Eintrag ihn hält und ein Bind-Test auf `127.0.0.1` gelingt; sonst der erste freie Port im Ausweichbereich 23000–23999 (Konstante; Offene Frage 1). Einträge des Besitzers, die nicht mehr übergeben werden, gehen. `owner` ist heute `default`. Tests mit Temp-Verzeichnis: klebrige Zuteilung; Server-Port frei → gleich; belegt (Test hält einen Listener) → Ausweichbereich; zwei Besitzer mit demselben Server-Port → verschiedene lokale Ports; zwei Handles nacheinander auf dieselbe Datei sehen sich; kaputte Datei → leer neu begonnen, mit Log.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- port_registry
 Doku: keine (intern; Doku mit T11)
