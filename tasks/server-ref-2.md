@@ -37,8 +37,10 @@ Metrik: git 2.47.3 `git grep -c "FrpTunnel.frp_config_id == config.id"` über `f
 Dedup-Key: ref:server:provision:duplicate-tunnel-query
 HEAD: a23a4387
 
-### T3 — Kommentar zu den Storage-Imports im Hook-Worker stimmt wieder (R-0501)  [ ]
+### T3 — Kommentar zu den Storage-Imports im Hook-Worker stimmt wieder (R-0501)  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_worker.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3e8f77a2 2026-10-19T10:19:47+02:00
+Review: approve (.ah-out/review/server-ref-2/T3.verdict.json)
 Änderung: Der Kommentar `script_worker.py:101` („Lazy imports — only when the script needs connections“) stimmt seit R-0469 T1 nicht mehr. `main()` lädt vorher immer das Registry (`:96-99`) und damit alle Modelle samt `app.core.database`. Der Import in `:102` läuft bei jedem Hook, nicht nur bei einem, der Verbindungen braucht. Der neue Kommentar sagt, was gilt: `load_connections` und `save_connections` kommen in den Namensraum jedes Hooks (`:133-134`) und öffnen eine Datenbank-Session erst beim Aufruf (`connections/storage.py:16`, `:34`). Nur der Kommentar ändert sich, Import und Reihenfolge bleiben.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks_http_ssrf.py tests/test_connections_storage.py
 Doku: keine (intern)
