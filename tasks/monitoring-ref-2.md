@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: deutsche Reste, Feldtypen im Agent-Report, Länge der Check-Meldung — Task-Ledger
-Status: bereit · Branch: feature/monitoring-ref-2 · Review: pro Task
+Status: erledigt · Branch: feature/monitoring-ref-2 · Review: pro Task
 Spec: Roadmap R-0502, R-0517
 Heavy: none — `apps/monitoring` (die reinen `evaluate`-Funktionen unter `app/checkers/`, `get_checker`, `apply_result` in `check_engine.py`) und eine Test-Fixture in `apps/desktop/ui`; keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung, kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP- oder Install-Pfad, keine Desktop-Journey (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Die Monitoring- und die Desktop-UI-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
