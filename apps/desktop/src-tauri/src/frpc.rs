@@ -34,7 +34,7 @@ fn write_secret(path: &Path, content: &[u8]) -> std::io::Result<()> {
 use crate::auth;
 use crate::error::AppError;
 use crate::models::{RefreshOutcome, TunnelRefresh, TunnelStatus, VisitorBinding};
-use crate::port_registry::{PortRegistry, DEFAULT_OWNER};
+use crate::port_registry::PortRegistry;
 use crate::session::SessionState;
 
 pub type FrpcState = Arc<Mutex<FrpcProcess>>;
@@ -867,9 +867,12 @@ async fn assign_ports(
     recheck: bool,
 ) -> Result<Vec<VisitorBinding>, AppError> {
     let wanted = visitor_ports(config);
+    // The ports belong to the workspace of this process; the launcher has none and gets none.
+    // Read here, not on the blocking thread: the workspace of a test lives on its own thread.
+    let workspace_id = crate::workspace::current()?.id.to_string();
     let registry = ports.clone();
     let assigned = tauri::async_runtime::spawn_blocking(move || {
-        registry.assign(DEFAULT_OWNER, &wanted, recheck)
+        registry.assign(&workspace_id, &wanted, recheck)
     })
     .await
     .map_err(|e| AppError::Io(std::io::Error::other(format!("port map: {e}"))))??;
@@ -1068,7 +1071,7 @@ mod tests {
     use crate::error::AppError;
     use crate::keyring_store;
     use crate::models::RefreshOutcome;
-    use crate::port_registry::{PortRegistry, DEFAULT_OWNER, FALLBACK_PORTS};
+    use crate::port_registry::{PortRegistry, FALLBACK_PORTS};
     use crate::session::SessionState;
 
     const LEGIT_VISITOR: &str = r#"
@@ -1951,10 +1954,15 @@ method = "token"
         }
     }
 
-    /// A port map in a fresh directory of its own, removed again on drop.
+    /// The workspace of the tests' reconciliations, so the owner of their visitors' ports.
+    const OWNER: &str = "test";
+
+    /// A port map in a fresh directory of its own, removed again on drop, and the workspace
+    /// [`OWNER`] on this thread for as long: a reconciliation needs one.
     struct TempPorts {
         dir: std::path::PathBuf,
         registry: PortRegistry,
+        _workspace: crate::workspace::EnteredWorkspace,
     }
 
     impl TempPorts {
@@ -1962,7 +1970,11 @@ method = "token"
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let dir = scratch_dir(&format!("ports-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
             let registry = PortRegistry::new(&dir);
-            Self { dir, registry }
+            Self {
+                dir,
+                registry,
+                _workspace: entered(OWNER),
+            }
         }
     }
 
@@ -1970,6 +1982,15 @@ method = "token"
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+
+    /// The workspace `id` on this thread while the guard lives.
+    fn entered(id: &str) -> crate::workspace::EnteredWorkspace {
+        crate::workspace::enter(crate::workspace::Workspace {
+            id: crate::workspace::WorkspaceId::parse(id).unwrap(),
+            name: id.to_string(),
+            legacy_keys: false,
+        })
     }
 
     /// A port someone else listens on while the listener lives.
@@ -2029,7 +2050,7 @@ method = "token"
         let locals = [listeners[0].1, listeners[1].1];
         let ports = TempPorts::new();
         ports.registry.seed(
-            DEFAULT_OWNER,
+            OWNER,
             &[
                 ("db-visitor", 6000, locals[0]),
                 ("web-visitor", 6001, locals[1]),
@@ -2168,7 +2189,7 @@ method = "token"
             [free[0].1, free[1].1]
         };
         ports.registry.seed(
-            DEFAULT_OWNER,
+            OWNER,
             &[
                 ("db-visitor", 6000, locals[0]),
                 ("web-visitor", 6001, locals[1]),
@@ -2283,9 +2304,7 @@ method = "token"
         let server =
             SERVER_TOML[..second].replacen("bindPort = 6000\n", &format!("bindPort = {port}\n"), 1);
         let ports = TempPorts::new();
-        ports
-            .registry
-            .seed(DEFAULT_OWNER, &[("db-visitor", port, port)]);
+        ports.registry.seed(OWNER, &[("db-visitor", port, port)]);
         let state = idle();
         let sidecar = FakeSidecar::default();
 
@@ -2304,6 +2323,61 @@ method = "token"
             written["visitors"][0]["bindPort"].as_integer(),
             Some(i64::from(local))
         );
+    }
+
+    #[tokio::test]
+    async fn refresh_takes_the_port_registry_owner_from_the_workspace() {
+        // Two workspaces with the same visitors on one port map, as two processes run them.
+        let ports = TempPorts::new();
+        let server_ports = {
+            let free = [taken_port(), taken_port()];
+            [free[0].1, free[1].1]
+        };
+        let server = at_ports(SERVER_TOML, server_ports);
+        let mut locals = Vec::new();
+        for id in ["w-0000000a", "w-0000000b"] {
+            let _workspace = entered(id);
+            let state = idle();
+            let sidecar = FakeSidecar::default();
+
+            let outcome = reconcile(&state, &sidecar, &ports.registry, Some(&server), 0)
+                .await
+                .unwrap();
+
+            assert_eq!(outcome, RefreshOutcome::Started, "{id}");
+            let bindings = tunnel_status(&state).bindings;
+            locals.push([bindings[0].local_port, bindings[1].local_port]);
+        }
+
+        assert_eq!(locals[0], server_ports);
+        for local in locals[1] {
+            assert!(FALLBACK_PORTS.contains(&local), "{locals:?}");
+        }
+        let mut others = ports.registry.local_ports_of_others("w-0000000b").unwrap();
+        others.sort_unstable();
+        let mut first = locals[0];
+        first.sort_unstable();
+        assert_eq!(others, first);
+    }
+
+    #[tokio::test]
+    async fn refresh_without_a_workspace_starts_nothing_and_leaves_the_port_registry_alone() {
+        // The launcher has no workspace, so nothing owns the visitors' ports.
+        let dir = scratch_dir("no-workspace");
+        let registry = PortRegistry::new(&dir);
+        let state = idle();
+        let sidecar = FakeSidecar::default();
+
+        let result = reconcile(&state, &sidecar, &registry, Some(SERVER_TOML), 0).await;
+
+        let no_workspace = crate::workspace::current().unwrap_err().to_string();
+        assert_eq!(result.unwrap_err().to_string(), no_workspace);
+        assert!(sidecar.writes.borrow().is_empty());
+        assert_eq!(sidecar.spawns.get(), 0);
+        assert!(lock(&state).applied.is_none());
+        // No entry, for no owner.
+        assert!(registry.local_ports_of_others("").unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

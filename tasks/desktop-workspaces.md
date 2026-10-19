@@ -31,8 +31,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace::
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T1
 
-### T3 — Portkarte je Workspace: Besitzer, Obergrenzen, Verwaltung  [ ]
+### T3 — Portkarte je Workspace: Besitzer, Obergrenzen, Verwaltung  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/port_registry.rs, apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @2dd3f118 2026-10-19T15:05:37+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T3.verdict.json)
 Änderung: `assign_ports` (`frpc.rs:864`) gibt die Workspace-Id (`workspace::current()`) statt `DEFAULT_OWNER` (`:872`) als Besitzer; die Portkarte bleibt im App-Datenordner (`PortRegistry::new`, `:1040`). `PortRegistry::assign` lehnt mehr als 500 Visitors je Besitzer und mehr als 250 Ausweichports (`FALLBACK_PORTS`) je Besitzer ab (Konstanten). Neu unter der Sperre der Karte: `local_ports_of_others(owner)`, `rename_owner(from, to)`, `release(owner)`, `retain_owners(&[ids])`. `DEFAULT_OWNER` bleibt nur für die Migration (T4). Tests: zwei Besitzer mit demselben Visitor-Namen und Server-Port bekommen verschiedene lokale Ports; 501 Visitors → Fehler, Karte unverändert; der 251. Ausweichport eines Besitzers → Fehler, ein anderer Besitzer bekommt weiter einen; `local_ports_of_others` ohne die eigenen; Umbenennen, Freigeben, `retain_owners` lässt nur die genannten; ohne Workspace-Kontext startet kein Abgleich.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- port_registry
 Doku: keine (intern; Doku mit T33)

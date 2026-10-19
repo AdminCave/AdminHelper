@@ -15,12 +15,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
-/// The owner of the visitors of this process, until every workspace brings its own (R-0431).
+/// The owner of every entry from before workspaces (R-0431); the migration hands its entries to
+/// the migrated server workspace. Every other owner is a workspace id.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the migration (R-0431 T4) takes it up")
+)]
 pub const DEFAULT_OWNER: &str = "default";
 
 /// Where a visitor goes whose server port is taken: below the ephemeral ports of Linux
 /// (32768-60999) and Windows (49152-65535), outside the server's visitor ports (6000-6999).
 pub const FALLBACK_PORTS: RangeInclusive<u16> = 23000..=23999;
+
+/// The most visitors one owner gets ports for.
+const MAX_VISITORS: usize = 500;
+
+/// The most ports of [`FALLBACK_PORTS`] one owner holds: the range keeps room for at least four
+/// workspaces, however many visitors a server sends.
+const MAX_FALLBACK_PORTS: usize = 250;
 
 const REGISTRY_FILE: &str = "port-registry.json";
 const LOCK_FILE: &str = "port-registry.lock";
@@ -55,13 +67,21 @@ impl PortRegistry {
     /// The local port of every visitor `owner` runs, given as (name, server port), in the order
     /// given. A visitor that has an entry keeps its port; with `recheck` only if the port still
     /// binds on `127.0.0.1`, for when no frpc of `owner` runs that would hold it. Any other gets
-    /// a port as [`free_port`] picks it. The entries of `owner` for visitors not given go.
+    /// a port as [`free_port`] picks it. The entries of `owner` for visitors not given go. More
+    /// than [`MAX_VISITORS`] visitors, or a visitor that would take `owner` past
+    /// [`MAX_FALLBACK_PORTS`], is an error, and the map stays as it was.
     pub fn assign(
         &self,
         owner: &str,
         visitors: &[(String, u16)],
         recheck: bool,
     ) -> Result<Vec<(String, u16)>, AppError> {
+        if visitors.len() > MAX_VISITORS {
+            return Err(AppError::Validation(format!(
+                "{} visitors, more than the {MAX_VISITORS} a workspace can take",
+                visitors.len()
+            )));
+        }
         let _lock = self.lock()?;
         let loaded = self.load()?;
         let mut entries: Vec<Entry> = loaded
@@ -89,6 +109,25 @@ impl PortRegistry {
                         entries.remove(i);
                     }
                     let local_port = free_port(&entries, *server_port, &binds)?;
+                    // By where the port lies, not how it came: a server port in the range takes
+                    // room from the other owners all the same.
+                    let held = entries
+                        .iter()
+                        .filter(|entry| {
+                            entry.owner == owner && FALLBACK_PORTS.contains(&entry.local_port)
+                        })
+                        .count();
+                    if FALLBACK_PORTS.contains(&local_port) && held >= MAX_FALLBACK_PORTS {
+                        return Err(AppError::Io(io::Error::new(
+                            io::ErrorKind::AddrInUse,
+                            format!(
+                                "no local port for a visitor: this workspace already holds \
+                                 {MAX_FALLBACK_PORTS} of the fallback ports {}-{}",
+                                FALLBACK_PORTS.start(),
+                                FALLBACK_PORTS.end()
+                            ),
+                        )));
+                    }
                     entries.push(Entry {
                         owner: owner.to_string(),
                         visitor: name.clone(),
@@ -105,6 +144,92 @@ impl PortRegistry {
             self.store(&updated)?;
         }
         Ok(assigned)
+    }
+
+    /// The local ports of every owner but `owner`: they lead to the visitors of another
+    /// workspace.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the check of loopback targets (R-0431 T8) takes it up"
+        )
+    )]
+    pub fn local_ports_of_others(&self, owner: &str) -> Result<Vec<u16>, AppError> {
+        let _lock = self.lock()?;
+        Ok(self
+            .load()?
+            .entries
+            .into_iter()
+            .filter(|entry| entry.owner != owner)
+            .map(|entry| entry.local_port)
+            .collect())
+    }
+
+    /// Hands the entries of `from` to `to`, local ports and all. Where `to` has an entry for the
+    /// visitor already, that one stays and the one of `from` goes: one entry per visitor and
+    /// owner.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the migration (R-0431 T4) takes it up")
+    )]
+    pub fn rename_owner(&self, from: &str, to: &str) -> Result<(), AppError> {
+        if from == to {
+            return Ok(());
+        }
+        self.update(|entries| {
+            let held: Vec<String> = entries
+                .iter()
+                .filter(|entry| entry.owner == to)
+                .map(|entry| entry.visitor.clone())
+                .collect();
+            entries.retain(|entry| entry.owner != from || !held.contains(&entry.visitor));
+            for entry in entries.iter_mut().filter(|entry| entry.owner == from) {
+                entry.owner = to.to_string();
+            }
+        })
+    }
+
+    /// Drops every entry of `owner`.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the migration (R-0431 T4) and the purge (T13) take it up"
+        )
+    )]
+    pub fn release(&self, owner: &str) -> Result<(), AppError> {
+        self.update(|entries| entries.retain(|entry| entry.owner != owner))
+    }
+
+    /// Drops the entries of every owner not in `owners`.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the launcher (R-0431 T11) takes it up")
+    )]
+    pub fn retain_owners(&self, owners: &[&str]) -> Result<(), AppError> {
+        self.update(|entries| entries.retain(|entry| owners.contains(&entry.owner.as_str())))
+    }
+
+    /// Applies `change` to the entries under the lock and writes the map if that changed it.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "only the methods above call it, none of them called yet"
+        )
+    )]
+    fn update(&self, change: impl FnOnce(&mut Vec<Entry>)) -> Result<(), AppError> {
+        let _lock = self.lock()?;
+        let loaded = self.load()?;
+        let mut updated = Registry {
+            entries: loaded.entries.clone(),
+        };
+        change(&mut updated.entries);
+        if updated != loaded {
+            self.store(&updated)?;
+        }
+        Ok(())
     }
 
     /// Holds the lock of the map until the returned file drops.
@@ -208,10 +333,13 @@ mod tests {
     use std::cell::RefCell;
     use std::fs;
     use std::net::{Ipv4Addr, TcpListener};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
 
-    use super::{AppError, PortRegistry, DEFAULT_OWNER, FALLBACK_PORTS, LOCK_FILE, REGISTRY_FILE};
+    use super::{
+        AppError, PortRegistry, DEFAULT_OWNER, FALLBACK_PORTS, LOCK_FILE, MAX_FALLBACK_PORTS,
+        MAX_VISITORS, REGISTRY_FILE,
+    };
 
     /// A fresh directory for one test case under the system temp dir.
     fn scratch_dir(case: &str) -> PathBuf {
@@ -547,6 +675,290 @@ mod tests {
             "{result:?}"
         );
         drop(listener);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Make the map in `dir` hold exactly `entries`, each (owner, visitor, server port, local
+    /// port).
+    fn write_map(dir: &Path, entries: &[(&str, &str, u16, u16)]) {
+        let entries: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|&(owner, visitor, server_port, local_port)| {
+                serde_json::json!({
+                    "owner": owner,
+                    "visitor": visitor,
+                    "serverPort": server_port,
+                    "localPort": local_port,
+                })
+            })
+            .collect();
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join(REGISTRY_FILE),
+            serde_json::to_vec(&serde_json::json!({ "entries": entries })).unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// The entries of the map in `dir`, each (owner, visitor, local port), sorted.
+    fn entries_in(dir: &Path) -> Vec<(String, String, u16)> {
+        let map: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.join(REGISTRY_FILE)).unwrap()).unwrap();
+        let mut entries: Vec<(String, String, u16)> = map["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                (
+                    entry["owner"].as_str().unwrap().to_string(),
+                    entry["visitor"].as_str().unwrap().to_string(),
+                    u16::try_from(entry["localPort"].as_u64().unwrap()).unwrap(),
+                )
+            })
+            .collect();
+        entries.sort();
+        entries
+    }
+
+    fn entry(owner: &str, visitor: &str, local_port: u16) -> (String, String, u16) {
+        (owner.to_string(), visitor.to_string(), local_port)
+    }
+
+    #[test]
+    fn port_registry_rejects_more_visitors_than_an_owner_may_have_and_keeps_the_map() {
+        let dir = scratch_dir("many");
+        let visitors: Vec<(String, u16)> = (30000..)
+            .take(MAX_VISITORS + 1)
+            .map(|port| visitor(&format!("v{port}"), port))
+            .collect();
+        // An earlier run gave all but the last their ports; kept, they take no bind test.
+        let mut seeded: Vec<(&str, &str, u16, u16)> = visitors[..MAX_VISITORS]
+            .iter()
+            .map(|(name, port)| ("mine", name.as_str(), *port, *port))
+            .collect();
+        seeded.push(("other", "ssh", 6000, 6000));
+        write_map(&dir, &seeded);
+        let registry = PortRegistry::new(&dir);
+        assert_eq!(
+            registry
+                .assign("mine", &visitors[..MAX_VISITORS], false)
+                .unwrap()
+                .len(),
+            MAX_VISITORS
+        );
+        let before = fs::read(dir.join(REGISTRY_FILE)).unwrap();
+
+        let result = registry.assign("mine", &visitors, false);
+
+        assert!(
+            matches!(&result, Err(AppError::Validation(_))),
+            "{result:?}"
+        );
+        assert_eq!(fs::read(dir.join(REGISTRY_FILE)).unwrap(), before);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_gives_an_owner_no_more_than_its_share_of_fallback_ports() {
+        let dir = scratch_dir("share");
+        // An earlier run gave the owner all but one of its share; kept, they take no bind test.
+        let mut visitors: Vec<(String, u16)> = FALLBACK_PORTS
+            .take(MAX_FALLBACK_PORTS - 1)
+            .map(|port| visitor(&format!("v{port}"), port))
+            .collect();
+        let seeded: Vec<(&str, &str, u16, u16)> = visitors
+            .iter()
+            .map(|(name, port)| ("mine", name.as_str(), *port, *port))
+            .collect();
+        write_map(&dir, &seeded);
+        let registry = PortRegistry::new(&dir);
+        // Someone else listens on the server port of the visitors to come.
+        let holder = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let taken = holder.local_addr().unwrap().port();
+
+        visitors.push(visitor("last", taken));
+        let assigned = registry.assign("mine", &visitors, false).unwrap();
+        let last = assigned[MAX_FALLBACK_PORTS - 1].1;
+        assert!(FALLBACK_PORTS.contains(&last), "{last} is no fallback port");
+
+        visitors.push(visitor("one too many", taken));
+        let before = fs::read(dir.join(REGISTRY_FILE)).unwrap();
+        let result = registry.assign("mine", &visitors, false);
+        assert!(
+            matches!(&result, Err(AppError::Io(e)) if e.kind() == std::io::ErrorKind::AddrInUse),
+            "{result:?}"
+        );
+        assert_eq!(fs::read(dir.join(REGISTRY_FILE)).unwrap(), before);
+
+        // A free server port is no fallback port: the owner still gets it.
+        visitors.pop();
+        let free = free_port();
+        visitors.push(visitor("free", free));
+        let assigned = registry.assign("mine", &visitors, false).unwrap();
+        assert_eq!(assigned.last(), Some(&visitor("free", free)));
+
+        // Another owner still gets a fallback port.
+        let theirs = registry
+            .assign("other", &[visitor("ssh", taken)], false)
+            .unwrap();
+        assert!(FALLBACK_PORTS.contains(&theirs[0].1), "{theirs:?}");
+        drop(holder);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_lists_the_local_ports_of_the_other_owners() {
+        let dir = scratch_dir("others");
+        write_map(
+            &dir,
+            &[
+                ("mine", "ssh", 6000, 6000),
+                ("mine", "rdp", 6001, 23000),
+                ("other", "ssh", 6000, 23001),
+                ("third", "web", 6002, 6002),
+            ],
+        );
+
+        let mut others = PortRegistry::new(&dir)
+            .local_ports_of_others("mine")
+            .unwrap();
+
+        others.sort_unstable();
+        assert_eq!(others, [6002, 23001]);
+        let empty = scratch_dir("others-empty");
+        assert!(PortRegistry::new(&empty)
+            .local_ports_of_others("mine")
+            .unwrap()
+            .is_empty());
+        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(&empty).ok();
+    }
+
+    #[test]
+    fn port_registry_renames_an_owner_and_its_visitors_keep_their_ports() {
+        let dir = scratch_dir("rename");
+        write_map(
+            &dir,
+            &[
+                (DEFAULT_OWNER, "ssh", 6000, 6000),
+                (DEFAULT_OWNER, "rdp", 6001, 23000),
+                ("standard", "rdp", 6001, 23001),
+                ("other", "ssh", 6000, 23002),
+            ],
+        );
+        let registry = PortRegistry::new(&dir);
+
+        registry.rename_owner(DEFAULT_OWNER, "standard").unwrap();
+
+        // Where the new owner has the visitor already, its own entry stays: one entry per
+        // visitor and owner.
+        assert_eq!(
+            entries_in(&dir),
+            [
+                entry("other", "ssh", 23002),
+                entry("standard", "rdp", 23001),
+                entry("standard", "ssh", 6000),
+            ]
+        );
+        let before = fs::read(dir.join(REGISTRY_FILE)).unwrap();
+        registry.rename_owner("nobody", "standard").unwrap();
+        registry.rename_owner("standard", "standard").unwrap();
+        assert_eq!(fs::read(dir.join(REGISTRY_FILE)).unwrap(), before);
+        // Kept, the renamed entries take no bind test.
+        assert_eq!(
+            registry
+                .assign(
+                    "standard",
+                    &[visitor("ssh", 6000), visitor("rdp", 6001)],
+                    false
+                )
+                .unwrap(),
+            [visitor("ssh", 6000), visitor("rdp", 23001)]
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_releases_the_entries_of_an_owner() {
+        let dir = scratch_dir("release");
+        write_map(
+            &dir,
+            &[
+                ("mine", "ssh", 6000, 6000),
+                ("mine", "rdp", 6001, 23000),
+                ("other", "ssh", 6000, 23001),
+            ],
+        );
+        let registry = PortRegistry::new(&dir);
+
+        registry.release("mine").unwrap();
+
+        assert_eq!(entries_in(&dir), [entry("other", "ssh", 23001)]);
+        let before = fs::read(dir.join(REGISTRY_FILE)).unwrap();
+        registry.release("nobody").unwrap();
+        assert_eq!(fs::read(dir.join(REGISTRY_FILE)).unwrap(), before);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_retains_only_the_entries_of_the_owners_named() {
+        let dir = scratch_dir("retain");
+        write_map(
+            &dir,
+            &[
+                ("standard", "ssh", 6000, 6000),
+                ("w-0a1b2c3d", "ssh", 6000, 23000),
+                ("w-deadbeef", "ssh", 6000, 23001),
+                (DEFAULT_OWNER, "rdp", 6001, 6001),
+            ],
+        );
+        let registry = PortRegistry::new(&dir);
+
+        registry
+            .retain_owners(&["standard", "w-0a1b2c3d", "w-00000000"])
+            .unwrap();
+
+        assert_eq!(
+            entries_in(&dir),
+            [
+                entry("standard", "ssh", 6000),
+                entry("w-0a1b2c3d", "ssh", 23000),
+            ]
+        );
+        registry.retain_owners(&[]).unwrap();
+        assert!(entries_in(&dir).is_empty());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_reads_and_changes_owners_under_the_lock() {
+        let dir = scratch_dir("owners-lock");
+        write_map(&dir, &[("mine", "ssh", 6000, 6000)]);
+        let held = PortRegistry::new(&dir).lock().unwrap();
+        let calls: [fn(&PortRegistry) -> Result<(), AppError>; 4] = [
+            |registry| registry.local_ports_of_others("mine").map(drop),
+            |registry| registry.rename_owner("mine", "theirs"),
+            |registry| registry.release("theirs"),
+            |registry| registry.retain_owners(&["mine"]),
+        ];
+
+        let calling: Vec<_> = calls
+            .into_iter()
+            .map(|call| {
+                let registry = PortRegistry::new(&dir);
+                std::thread::spawn(move || call(&registry))
+            })
+            .collect();
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            calling.iter().all(|call| !call.is_finished()),
+            "a call ran past the held lock"
+        );
+
+        drop(held);
+        for call in calling {
+            call.join().unwrap().unwrap();
+        }
         fs::remove_dir_all(&dir).ok();
     }
 }
