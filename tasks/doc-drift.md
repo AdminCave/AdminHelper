@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Drift: Agent-Deployment, README/DEVELOPMENT, Desktop-Entwicklerdoku — Task-Ledger
-Status: bereit · Branch: feature/doc-drift · Review: am Ende
+Status: erledigt · Branch: feature/doc-drift · Review: am Ende
 Spec: Roadmap R-0386, R-0388, R-0442, R-0444
 Heavy: none — nur Doku
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
