@@ -79,8 +79,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- foreign_port
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T3
 
-### T9 — Prozessnamen: Diagnose, Ansible-Temp, RDP-Fenstertitel  [ ]
+### T9 — Prozessnamen: Diagnose, Ansible-Temp, RDP-Fenstertitel  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/diagnostics.rs, apps/desktop/src-tauri/src/ansible.rs, apps/desktop/src-tauri/src/connection/rdp.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @c7fb3f15 2026-10-19T16:26:14+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T9.verdict.json)
 Änderung: Die Diagnose liest die Logdatei des eigenen Prozesses (`workspace::log_name`, heute fest `adminhelper.log`, `diagnostics.rs:24`) und nennt die Workspace-Id im Bericht. `write_playbook_temp` (`ansible.rs:95`) hängt pid und Sequenz an wie `generate_inventory` (`:81-87`); das Präfix `adminhelper_ansible` bleibt für `is_confined_ansible_path` (`:113`). Der xfreerdp-Titel (`rdp.rs:265`) beginnt mit `[<Workspace-Name>] `; der Name wird eigens mit `sanitize_window_title` gesäubert, die Klammern kommen danach. Tests (`per_process_*`): zwei Playbooks gleichen Namens → zwei Pfade, beide von `is_confined_ansible_path` angenommen; RDP-Titel mit und ohne Workspace; Diagnose-Logpfad je Logname.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- per_process
 Doku: keine (intern; Doku mit T33)

@@ -2,16 +2,19 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Redacted desktop diagnostics report for bug reports: version, OS and the tail
-//! of the rotating log file, with secret-looking tokens masked. Written next to
-//! the log file; the path is returned to the UI for the user to attach to an issue.
+//! Redacted desktop diagnostics report for bug reports: version, OS, workspace id and
+//! the tail of this process's rotating log file, with secret-looking tokens masked.
+//! Written next to the log file; the path is returned to the UI for the user to
+//! attach to an issue.
 
 use chrono::Utc;
 use regex::Regex;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tauri::{AppHandle, Manager};
 
 use crate::error::AppError;
+use crate::workspace::{self, Mode, Workspace};
 
 const LOG_TAIL_LINES: usize = 400;
 
@@ -21,16 +24,39 @@ pub fn generate(app: &AppHandle) -> Result<String, AppError> {
         .path()
         .app_log_dir()
         .map_err(|e| AppError::Connection(format!("Log-Verzeichnis: {e}")))?;
-    let log_path = log_dir.join("adminhelper.log");
+    // No workspace is no error here: the launcher has none, and a report must come out anyway.
+    let workspace = workspace::current().ok();
+    let redacted = report(
+        &log_dir,
+        &app.package_info().version.to_string(),
+        workspace.as_ref(),
+    );
+    let out = log_dir.join(format!(
+        "adminhelper-diagnostics-{}.txt",
+        Utc::now().format("%Y%m%dT%H%M%SZ")
+    ));
+    std::fs::write(&out, redacted)?;
+    Ok(out.display().to_string())
+}
+
+/// The redacted report of the process serving `workspace` (none: the launcher), with the tail of
+/// that process's own log in `log_dir`.
+fn report(log_dir: &Path, version: &str, workspace: Option<&Workspace>) -> String {
+    let log_path = log_path(log_dir, workspace);
 
     let mut report = String::new();
     report.push_str("AdminHelper desktop diagnostics\n");
     report.push_str("======================================================================\n\n");
-    report.push_str(&format!("version : {}\n", app.package_info().version));
+    report.push_str(&format!("version : {version}\n"));
     report.push_str(&format!(
         "os/arch : {}/{}\n",
         std::env::consts::OS,
         std::env::consts::ARCH
+    ));
+    // The id, never the name: the report goes into public issues, and a name may be a customer's.
+    report.push_str(&format!(
+        "workspace: {}\n",
+        workspace.map_or_else(|| "none (launcher)".to_string(), |ws| ws.id.to_string())
     ));
     report.push_str(&format!("log file: {}\n\n", log_path.display()));
 
@@ -40,13 +66,14 @@ pub fn generate(app: &AppHandle) -> Result<String, AppError> {
         Err(e) => report.push_str(&format!("(log not available: {e})\n")),
     }
 
-    let redacted = redact(&report);
-    let out = log_dir.join(format!(
-        "adminhelper-diagnostics-{}.txt",
-        Utc::now().format("%Y%m%dT%H%M%SZ")
-    ));
-    std::fs::write(&out, redacted)?;
-    Ok(out.display().to_string())
+    redact(&report)
+}
+
+/// The log file of the process serving `workspace`: every process writes a log of its own, under
+/// the name its start gives the log plugin ([`Mode::log_name`]); the launcher's without one.
+fn log_path(log_dir: &Path, workspace: Option<&Workspace>) -> PathBuf {
+    let name = workspace.map_or_else(|| Mode::Launcher.log_name(), Workspace::log_name);
+    log_dir.join(format!("{name}.log"))
 }
 
 fn tail(content: &str, n: usize) -> String {
@@ -132,6 +159,72 @@ mod tests {
         );
         assert!(out.contains("token=<redacted>"));
         assert!(out.contains("refresh=<redacted>"));
+    }
+
+    /// A directory of its own for one test case under the system temp dir, gone with the guard.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(case: &str) -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("ah-diagnostics-{case}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn kunde_a() -> Workspace {
+        Workspace {
+            id: crate::workspace::WorkspaceId::parse("kunde-a").unwrap(),
+            name: "Kunde A".to_string(),
+            legacy_keys: false,
+        }
+    }
+
+    #[test]
+    fn per_process_log_path_follows_the_log_name_of_the_process() {
+        let dir = Path::new("logs");
+        let ws = kunde_a();
+        // The names the start gives the log plugin (`Mode::log_name`), plus its `.log`.
+        let workspace_log = format!("{}.log", Mode::Workspace(ws.id.clone()).log_name());
+        let launcher_log = format!("{}.log", Mode::Launcher.log_name());
+        assert_eq!(log_path(dir, Some(&ws)), dir.join(&workspace_log));
+        assert_eq!(workspace_log, "adminhelper-kunde-a.log");
+        assert_eq!(log_path(dir, None), dir.join(&launcher_log));
+        assert_eq!(launcher_log, "adminhelper.log", "the log before workspaces");
+    }
+
+    #[test]
+    fn per_process_report_reads_its_own_log_and_names_the_workspace_id() {
+        let scratch = Scratch::new("own-log");
+        std::fs::write(scratch.0.join("adminhelper.log"), "launcher line\n").unwrap();
+        std::fs::write(
+            scratch.0.join("adminhelper-kunde-a.log"),
+            "workspace line\n",
+        )
+        .unwrap();
+
+        let ws = kunde_a();
+        let ours = report(&scratch.0, "1.2.3", Some(&ws));
+        assert!(ours.contains("workspace line"), "{ours}");
+        assert!(!ours.contains("launcher line"), "{ours}");
+        assert!(ours.contains("workspace: kunde-a\n"), "{ours}");
+        assert!(!ours.contains("Kunde A"), "the name stays out: {ours}");
+
+        let launcher = report(&scratch.0, "1.2.3", None);
+        assert!(launcher.contains("launcher line"), "{launcher}");
+        assert!(!launcher.contains("workspace line"), "{launcher}");
+        assert!(
+            launcher.contains("workspace: none (launcher)\n"),
+            "{launcher}"
+        );
     }
 
     #[test]

@@ -98,7 +98,18 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
         .replace("..", "_")
         .trim()
         .to_string();
-    let path = std::env::temp_dir().join(format!("adminhelper_ansible_{}", safe_name));
+    // Pid and sequence as in generate_inventory: by name alone, a second write of the same
+    // playbook (another workspace process or another run) would replace the file a terminal of the
+    // first is about to run, against the first one's inventory. They go before the name, so the
+    // name keeps its extension.
+    static PLAYBOOK_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = PLAYBOOK_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "adminhelper_ansible_{}_{}_{}",
+        std::process::id(),
+        seq,
+        safe_name
+    ));
     let mut file = create_temp_file(&path)?;
     file.write_all(content.as_bytes())?;
 
@@ -237,6 +248,34 @@ mod tests {
         );
         assert!(!path.contains(".."), "'..' not sanitized: {path}");
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn per_process_playbooks_of_one_name_get_a_file_each() {
+        // Two workspace processes (or two runs in one) write the same playbook name: the second
+        // write must not replace the file a terminal of the first is about to run.
+        let first = write_playbook_temp("per_process_site.yml", "- hosts: first\n").unwrap();
+        let second = write_playbook_temp("per_process_site.yml", "- hosts: second\n").unwrap();
+        let contents = (fs::read_to_string(&first), fs::read_to_string(&second));
+        let confined = (
+            is_confined_ansible_path(&first),
+            is_confined_ansible_path(&second),
+        );
+        let _ = fs::remove_file(&first);
+        let _ = fs::remove_file(&second);
+
+        assert_ne!(first, second, "one name, one path");
+        assert!(
+            first.contains(&format!("_{}_", std::process::id())),
+            "no pid in {first}"
+        );
+        assert_eq!(contents.0.unwrap(), "- hosts: first\n");
+        assert_eq!(contents.1.unwrap(), "- hosts: second\n");
+        assert_eq!(confined, (true, true), "{first} / {second}");
+        assert!(
+            first.ends_with("_per_process_site.yml"),
+            "the name stays last: {first}"
+        );
     }
 
     #[test]
