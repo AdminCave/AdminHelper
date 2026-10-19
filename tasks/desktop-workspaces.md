@@ -97,8 +97,10 @@ Abhängt von: T3, T4, T5, T7
 
 ## Block B — Launcher
 
-### T11 — Launcher: Liste, Anlegen, Bearbeiten, Waisen der Portkarte  [ ]
+### T11 — Launcher: Liste, Anlegen, Bearbeiten, Waisen der Portkarte  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @6108bc69 2026-10-19T17:00:28+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T11.verdict.json)
 Änderung: Neues Modul `launcher.rs` (SPDX-Header). `list(base)`: Workspaces mit Name, Farbe, Art, Host (aus der URL) und `open` (Lock-Probe), `lastUsed`; `migratedNotice` kommt einmal mit und wird dabei zurückgesetzt; Registry-Einträge ohne Verzeichnis fallen mit Logzeile heraus. `save(base, draft)`: neu → Id `w-<8 hex>` (aus Zeit, pid und Zähler über `sha2`, eindeutig gegen vorhandene), `<id>.partial/` mit `workspace.json` (`legacyKeys: false`), umbenennen, dann Registry; Bearbeiten nur geschlossen (Lock für die Dauer gehalten), Art fest; Name, Farbe und URL änderbar. Prüfung an der Grenze: Name 1–40 Zeichen ohne Steuerzeichen, Farbe aus der Palette, URL je Art (Server: `validation::validate_server_url_secure`; Sync: https), kein Netzzugriff. Beim Launcher-Start entfernt `retain_owners` (T3) die Portkarten-Einträge von Besitzern ohne Workspace. In `main.rs` nur `mod launcher;` und der Aufruf beim Start. Tests: Liste mit offenem und geschlossenem Workspace; Hinweis genau einmal; Anlegen je Art; ungültige Eingaben; Bearbeiten eines geöffneten → Fehler; Ids eindeutig; Registry-Eintrag ohne Verzeichnis fällt heraus; Waisen der Portkarte weg, Einträge vorhandener Workspaces bleiben. Hinweis (T2): unter Windows schreibt `write_json_pretty` in place; `list` kann eine halb geschriebene `workspace.json` eines offenen Workspace lesen. Dazu (Prüfer zu T4): keine neue `workspaces.json` anlegen, solange keine existiert (die legt nur die Migration an). Nachtrag (Session, Baustart): In `main.rs` nur `mod launcher;`; die Bereinigung der Waisen ist eine Funktion in `launcher.rs` mit Tests, ihren Aufruf beim Start setzt T10. Der Hinweis (T2) zu halb geschriebenen `workspace.json` ist mit T5 erledigt (`Meta::store` schreibt atomar).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher::
 Doku: keine (intern; Doku mit T33)
