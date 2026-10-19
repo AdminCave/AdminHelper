@@ -18,8 +18,10 @@ Entscheidungen am Gate (Kevin): T5 — Schlüsselbestandteil und Übergang bishe
 
 ## Teil A — Desktop
 
-### T1 — Netzwerkfehler ohne URL  [ ]
+### T1 — Netzwerkfehler ohne URL  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/error.rs, apps/desktop/src-tauri/src/proxy.rs, apps/desktop/src-tauri/src/notifications.rs, apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @4cd178cb 2026-10-19T14:47:40+02:00
+Review: approve (.ah-out/review/desktop-hardening/T1.verdict.json)
 Änderung: `From<reqwest::Error>` (`error.rs:107`) entfernt die URL (`reqwest::Error::without_url`), bevor der Fehler in `AppError::Network` geht. Die drei direkten Konstruktionen `AppError::Network(e)` (`proxy.rs:109`, `notifications.rs:204`, `frpc.rs:263`) gehen über `AppError::from`, sodass `AppError::Network(` außerhalb von `error.rs` nicht mehr vorkommt (grep im Review). Ursachenkette (`error.rs:76-84`) und die Erkennung `ERR_TLS_UNKNOWN_ISSUER` (`is_unknown_issuer`) bleiben. Tests in `error.rs` (zuerst rot): ein abgewiesener Verbindungsaufbau zu `https://u:<geheim>@127.0.0.1:<Port>/x?k=<Marke>` (Port aus `test_tls::refused_port`) → `to_string()` und `{:?}` des `AppError` enthalten weder Marke noch Passwort noch den Pfad, die Ursache (ConnectionRefused in der Kette) bleibt; eine 500-Antwort eines lokalen Testservers über `error_for_status` → ebenso ohne URL. `unknown_issuer_maps_to_stable_code_and_names_the_setting` und `non_tls_network_errors_keep_the_raw_chain` bleiben grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- error::
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:114`, nach dem Absatz zu `ERR_TLS_UNKNOWN_ISSUER`: andere Netzwerkfehler erreichen die UI mit ihrer Ursachenkette, ohne URL) · CHANGELOG.md (Changed)

@@ -260,7 +260,7 @@ async fn bundle_from(response: reqwest::Response) -> Result<Option<VisitorBundle
         return Ok(None);
     }
 
-    let bundle: VisitorBundle = response.json().await.map_err(AppError::Network)?;
+    let bundle: VisitorBundle = response.json().await.map_err(AppError::from)?;
     Ok(Some(bundle))
 }
 

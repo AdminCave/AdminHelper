@@ -201,7 +201,7 @@ async fn connect_and_read(
         if state.epoch.load(Ordering::SeqCst) != my_epoch {
             return Ok(StreamEnd::Superseded);
         }
-        let bytes = chunk.map_err(AppError::Network)?;
+        let bytes = chunk.map_err(AppError::from)?;
         for frame in parser.push(&bytes) {
             // A `notification` frame (or a bare default) means "reload the feed".
             // The payload is only a refresh nudge, so emit a bare event.
