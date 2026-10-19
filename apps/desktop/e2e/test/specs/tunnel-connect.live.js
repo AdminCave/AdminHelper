@@ -11,6 +11,9 @@
 // Before the login the spec holds the web tunnel's visitor port on 127.0.0.1 (R-0430):
 // the desktop has to give that visitor a local port of its fallback range, frpc has to
 // listen there, and the web connection has to resolve to it.
+// Last, the sign-out command alone, without the tunnel stop the UI's logout adds
+// (logoutAndReload), ends frpc in the backend: tunnel_status lists no visitor any more, and
+// nothing listens on the local port of the held tunnel's visitor.
 
 import net from 'node:net';
 import { adminTunnels, login, clickItemByName, jsClick } from '../lib/live.js';
@@ -178,5 +181,37 @@ describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
 
     // Let all three traverse their tunnels (verified at the target containers).
     await browser.pause(7000);
+  });
+
+  it('the sign-out alone ends frpc and frees the local port of its visitor', async () => {
+    // frpc runs, and the held tunnel's visitor takes connections. Only its port is probed,
+    // for the reason given at HELD_TUNNEL.
+    const before = await invoke('tunnel_status');
+    expect(before.running).toBe(true);
+    const binding = before.bindings.find((b) => b.serverPort === heldPort);
+    expect(binding).toBeDefined();
+    expect(await accepts(binding.localPort)).toBe(true);
+
+    // The command itself, without the tunnel stop of logoutAndReload.
+    await invoke('logout');
+
+    let status;
+    try {
+      await browser.waitUntil(
+        async () => {
+          status = await invoke('tunnel_status');
+          return status.running === false && status.bindings.length === 0;
+        },
+        { timeout: 20000, interval: 500 },
+      );
+    } catch (error) {
+      throw new Error(`frpc outlived the sign-out: ${JSON.stringify(status)}`, { cause: error });
+    }
+    // The stop kills frpc without waiting for it to end: the port is free once it is gone.
+    await browser.waitUntil(async () => !(await accepts(binding.localPort)), {
+      timeout: 20000,
+      interval: 500,
+      timeoutMsg: `the local port ${binding.localPort} still took connections after the sign-out`,
+    });
   });
 });

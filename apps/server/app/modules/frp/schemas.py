@@ -29,6 +29,10 @@ def _reject_toml_breakers(v: Optional[str]) -> Optional[str]:
     # JSON can spell one as \ud800, and it has no UTF-8 form: no config file carries it.
     if any("\ud800" <= c <= "\udfff" for c in v):
         raise ValueError("must not contain a lone surrogate (U+D800 to U+DFFF)")
+    # frp renders a config file as a Go template before it reads the TOML, so `{{`
+    # would open a template action; a single brace and `}}` stay plain text.
+    if "{{" in v:
+        raise ValueError("must not contain '{{', which frp reads as the start of a template")
     return v
 
 

@@ -105,8 +105,11 @@ impl From<std::io::Error> for AppError {
 }
 
 impl From<reqwest::Error> for AppError {
+    /// The only way a reqwest error becomes an `AppError`: reqwest names the request URL in
+    /// its message, path and query included, and that text reaches the UI and the log, while
+    /// some URLs are user-entered (the sync URL). Only the URL goes; the cause chain stays.
     fn from(err: reqwest::Error) -> Self {
-        AppError::Network(err)
+        AppError::Network(err.without_url())
     }
 }
 
@@ -210,5 +213,104 @@ mod tests {
             !msg.contains("ERR_TLS_UNKNOWN_ISSUER"),
             "False positive: {msg}"
         );
+    }
+
+    const URL_PASSWORD: &str = "pw-9d41c7";
+    const URL_PATH: &str = "private-path-3b8e";
+    const URL_MARKER: &str = "marker-5f2a06";
+
+    /// A request URL with user info, a path and a query, as a user-entered sync URL can carry.
+    fn url_with_secrets(scheme: &str, port: u16) -> String {
+        format!("{scheme}://u:{URL_PASSWORD}@127.0.0.1:{port}/{URL_PATH}?k={URL_MARKER}")
+    }
+
+    /// Neither the message nor the debug form may name any part of the request URL.
+    fn assert_names_no_url(err: &AppError) {
+        for text in [err.to_string(), format!("{err:?}")] {
+            for part in [URL_PASSWORD, URL_PATH, URL_MARKER] {
+                assert!(!text.contains(part), "{part} in the error: {text}");
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn network_errors_name_no_url_but_keep_the_cause() {
+        // Held, not freed: a freed port can go to a parallel test's TLS server.
+        let (_reserved, port) = crate::test_tls::refused_port();
+
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .build()
+            .unwrap();
+        let err = client
+            .get(url_with_secrets("https", port))
+            .send()
+            .await
+            .expect_err("Verbindung auf geschlossenen Port muss scheitern");
+
+        let err = AppError::from(err);
+        assert_names_no_url(&err);
+
+        let AppError::Network(inner) = &err else {
+            panic!("not a network error: {err:?}");
+        };
+        let mut refused = None;
+        let mut source = std::error::Error::source(inner);
+        while let Some(cause) = source {
+            if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+                if io.kind() == std::io::ErrorKind::ConnectionRefused {
+                    refused = Some(io.to_string());
+                }
+            }
+            source = cause.source();
+        }
+        let refused =
+            refused.unwrap_or_else(|| panic!("no ConnectionRefused in the chain: {err:?}"));
+        let msg = err.to_string();
+        assert!(msg.contains(&refused), "cause missing: {msg}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn status_errors_name_no_url() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            // Read the whole request head first: closing on unread bytes resets the
+            // connection, and the client would see that instead of the 500.
+            let mut request = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = tcp.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+            }
+            tcp.write_all(
+                b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+            let _ = tcp.shutdown().await;
+        });
+
+        let client = crate::http_client::with_timeouts(reqwest::Client::builder())
+            .build()
+            .unwrap();
+        let response = client
+            .get(url_with_secrets("http", port))
+            .send()
+            .await
+            .unwrap();
+        let err = response
+            .error_for_status()
+            .expect_err("eine 500-Antwort muss ein Fehler sein");
+
+        let err = AppError::from(err);
+        assert_names_no_url(&err);
+        let msg = err.to_string();
+        assert!(msg.contains("500"), "status missing: {msg}");
     }
 }

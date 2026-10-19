@@ -106,7 +106,7 @@ pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
         // push the user to lower TLS strictness in response to a slow/unreachable server or a
         // typo'd host (4.27).
         Err(e) if e.is_connect() && !e.is_timeout() => Ok(false),
-        Err(e) => Err(AppError::Network(e)),
+        Err(e) => Err(AppError::from(e)),
     }
 }
 

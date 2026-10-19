@@ -14,7 +14,8 @@ pub fn rdp_port(connection: &Connection) -> u16 {
     connection.port.unwrap_or(3389)
 }
 
-pub fn rdp_storage_key(connection: &Connection) -> Option<String> {
+/// Host, port, user and domain of an RDP password's key.
+fn rdp_target(connection: &Connection) -> Option<String> {
     let host = normalized(&connection.host);
     let username = normalized(&connection.username);
     if host.is_empty() || username.is_empty() {
@@ -23,7 +24,7 @@ pub fn rdp_storage_key(connection: &Connection) -> Option<String> {
     let domain = normalized(&connection.domain);
     let port = rdp_port(connection);
     Some(format!(
-        "rdp|{}|{}|{}|{}",
+        "{}|{}|{}|{}",
         host.to_lowercase(),
         port,
         username.to_lowercase(),
@@ -31,66 +32,110 @@ pub fn rdp_storage_key(connection: &Connection) -> Option<String> {
     ))
 }
 
+/// The key of the connection's RDP password, `rdp|<id>|<host>|<port>|<user>|<domain>`.
+/// An empty id, or one with the separator, names no single connection and gets none.
+pub fn rdp_storage_key(connection: &Connection) -> Option<String> {
+    let id = &connection.id;
+    if id.is_empty() || id.contains('|') {
+        return None;
+    }
+    Some(format!("rdp|{id}|{}", rdp_target(connection)?))
+}
+
 pub fn rdp_storage_key_required(connection: &Connection) -> Result<String, AppError> {
-    let host = required(&connection.host, "Host")?;
-    let username = required(&connection.username, "Benutzer")?;
-    let domain = normalized(&connection.domain);
-    let port = rdp_port(connection);
-    Ok(format!(
-        "rdp|{}|{}|{}|{}",
-        host.to_lowercase(),
-        port,
-        username.to_lowercase(),
-        domain.to_lowercase()
-    ))
+    required(&connection.host, "Host")?;
+    required(&connection.username, "Benutzer")?;
+    rdp_storage_key(connection)
+        .ok_or_else(|| AppError::Validation("connection id is empty or contains '|'".to_string()))
+}
+
+/// The connection's key, and the key without the id that RDP passwords were stored
+/// under before, shared by all connections to the same target, user and domain.
+#[cfg(unix)]
+fn rdp_storage_keys(connection: &Connection) -> Option<(String, String)> {
+    let key = rdp_storage_key(connection)?;
+    let legacy = format!("rdp|{}", rdp_target(connection)?);
+    Some((key, legacy))
+}
+
+/// Whether the connection's target is this machine: `localhost` or a name under
+/// `.localhost`, or a loopback or unspecified address, also with a trailing dot,
+/// in brackets or IPv4-mapped. Short and hex forms such as `127.1` are not
+/// recognized.
+#[cfg(unix)]
+fn targets_this_machine(connection: &Connection) -> bool {
+    let host = normalized(&connection.host).to_lowercase();
+    let host = host.strip_suffix('.').unwrap_or(&host);
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host.parse::<std::net::IpAddr>().is_ok_and(|ip| {
+            let ip = ip.to_canonical();
+            ip.is_loopback() || ip.is_unspecified()
+        })
+}
+
+/// The password under the legacy key, read for no target on this machine:
+/// connections of different servers can name the same one, e.g. 127.0.0.1 and
+/// the same port, so such an entry may belong to any of them.
+#[cfg(unix)]
+fn legacy_password(connection: &Connection, legacy: &str) -> Result<Option<String>, AppError> {
+    if targets_this_machine(connection) {
+        return Ok(None);
+    }
+    crate::keyring_store::try_get(legacy)
 }
 
 #[cfg(unix)]
 pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
-    use keyring::{Entry, Error as KeyringError};
+    use crate::keyring_store::{delete, set, try_get};
 
-    let key = match rdp_storage_key(connection) {
-        Some(value) => value,
-        None => return Ok(None),
+    let Some((key, legacy)) = rdp_storage_keys(connection) else {
+        return Ok(None);
     };
-
-    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
-        .map_err(|err| AppError::Keyring(err.to_string()))?;
-    match entry.get_password() {
-        Ok(password) => Ok(Some(password)),
-        Err(KeyringError::NoEntry) => Ok(None),
-        Err(err) => Err(AppError::Keyring(err.to_string())),
+    if let Some(password) = try_get(&key)? {
+        return Ok(Some(password));
     }
+    // The first connection that loads a legacy entry takes it over, so it stops
+    // answering for the other connections to the same target.
+    let Some(password) = legacy_password(connection, &legacy)? else {
+        return Ok(None);
+    };
+    set(&key, &password)?;
+    delete(&legacy)?;
+    Ok(Some(password))
+}
+
+/// Whether a password is stored for the connection, under its key or the legacy
+/// one. Reads only: the legacy entry moves when it is loaded.
+#[cfg(unix)]
+fn password_stored_keyring(connection: &Connection) -> Result<bool, AppError> {
+    use crate::keyring_store::try_get;
+
+    let Some((key, legacy)) = rdp_storage_keys(connection) else {
+        return Ok(false);
+    };
+    Ok(try_get(&key)?.is_some() || legacy_password(connection, &legacy)?.is_some())
 }
 
 #[cfg(unix)]
 pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<(), AppError> {
-    use keyring::Entry;
-
     let key = rdp_storage_key_required(connection)?;
-    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
-        .map_err(|err| AppError::Keyring(err.to_string()))?;
-    entry
-        .set_password(password)
-        .map_err(|err| AppError::Keyring(err.to_string()))?;
-    Ok(())
+    crate::keyring_store::set(&key, password)
 }
 
 #[cfg(unix)]
 pub fn delete_password_keyring(connection: &Connection) -> Result<(), AppError> {
-    use keyring::{Entry, Error as KeyringError};
+    use crate::keyring_store::delete;
 
-    let key = match rdp_storage_key(connection) {
-        Some(value) => value,
-        None => return Ok(()),
+    let Some((key, legacy)) = rdp_storage_keys(connection) else {
+        return Ok(());
     };
-    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
-        .map_err(|err| AppError::Keyring(err.to_string()))?;
-    match entry.delete_credential() {
-        Ok(_) => Ok(()),
-        Err(KeyringError::NoEntry) => Ok(()),
-        Err(err) => Err(AppError::Keyring(err.to_string())),
-    }
+    delete(&key)?;
+    delete(&legacy)
 }
 
 #[cfg(target_os = "windows")]
@@ -296,9 +341,8 @@ pub fn password_state(connection: &Connection) -> Result<PasswordState, AppError
 
     #[cfg(unix)]
     {
-        let password = load_password_keyring(connection)?;
         Ok(PasswordState {
-            stored: password.is_some(),
+            stored: password_stored_keyring(connection)?,
             can_store: true,
         })
     }
@@ -393,6 +437,19 @@ mod tests {
         assert_eq!(rdp_port(&rdp(Some("h"), Some(3390), Some("u"), None)), 3390);
     }
 
+    /// `Host.COM:3390` as `Admin` in `CORP`, under the connection id `id`.
+    fn rdp_with_id(id: &str) -> Connection {
+        Connection {
+            id: id.into(),
+            ..rdp(Some("Host.COM"), Some(3390), Some("Admin"), Some("CORP"))
+        }
+    }
+
+    /// Where an RDP password for `rdp_with_id` was stored before keys carried the
+    /// connection id.
+    #[cfg(unix)]
+    const LEGACY_KEY: &str = "rdp|host.com|3390|admin|corp";
+
     // The storage key is the credential cache key: it must be host/user/domain
     // case-insensitive (so "Host"/"host" don't double-store) and carry the port.
     #[test]
@@ -400,14 +457,44 @@ mod tests {
         let c = rdp(Some("Host.COM"), Some(3390), Some("Admin"), Some("CORP"));
         assert_eq!(
             rdp_storage_key(&c).as_deref(),
-            Some("rdp|host.com|3390|admin|corp")
+            Some("rdp|c1|host.com|3390|admin|corp")
         );
     }
 
     #[test]
     fn storage_key_uses_default_port_and_empty_domain() {
         let c = rdp(Some("h"), None, Some("u"), None);
-        assert_eq!(rdp_storage_key(&c).as_deref(), Some("rdp|h|3389|u|"));
+        assert_eq!(rdp_storage_key(&c).as_deref(), Some("rdp|c1|h|3389|u|"));
+    }
+
+    #[test]
+    fn storage_key_keeps_the_connection_id_as_it_is() {
+        assert_eq!(
+            rdp_storage_key(&rdp_with_id("Conn-A")).as_deref(),
+            Some("rdp|Conn-A|host.com|3390|admin|corp")
+        );
+    }
+
+    // Two connections to the same target, user and domain, e.g. from two servers,
+    // keep their passwords apart.
+    #[test]
+    fn storage_key_differs_by_connection_id() {
+        let a = rdp_storage_key(&rdp_with_id("a"));
+        let b = rdp_storage_key(&rdp_with_id("b"));
+        assert!(a.is_some() && b.is_some());
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn storage_key_is_none_for_an_empty_id_or_one_with_the_separator() {
+        for id in ["", "a|b", "|"] {
+            let c = rdp_with_id(id);
+            assert!(rdp_storage_key(&c).is_none(), "{id:?}");
+            assert!(
+                matches!(rdp_storage_key_required(&c), Err(AppError::Validation(_))),
+                "{id:?}"
+            );
+        }
     }
 
     #[test]
@@ -423,8 +510,219 @@ mod tests {
         assert!(rdp_storage_key_required(&rdp(Some("h"), None, None, None)).is_err());
         assert_eq!(
             rdp_storage_key_required(&rdp(Some("H"), Some(3389), Some("U"), None)).unwrap(),
-            "rdp|h|3389|u|"
+            "rdp|c1|h|3389|u|"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stored_password_belongs_to_one_connection() {
+        let _keyring = crate::keyring_store::memory();
+        let a = rdp_with_id("a");
+        let b = rdp_with_id("b");
+        save_password(&a, "secret-a").unwrap();
+        assert!(password_state(&a).unwrap().stored);
+        assert!(!password_state(&b).unwrap().stored);
+        assert_eq!(
+            load_password_keyring(&a).unwrap().as_deref(),
+            Some("secret-a")
+        );
+        assert_eq!(load_password_keyring(&b).unwrap(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_legacy_password_goes_to_the_first_connection_that_loads_it() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        set(LEGACY_KEY, "old").unwrap();
+        let a = rdp_with_id("a");
+        let b = rdp_with_id("b");
+
+        // The state finds the legacy entry for both and leaves it where it is.
+        assert!(password_state(&a).unwrap().stored);
+        assert!(password_state(&b).unwrap().stored);
+        assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
+
+        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("old"));
+        assert_eq!(
+            try_get("rdp|a|host.com|3390|admin|corp")
+                .unwrap()
+                .as_deref(),
+            Some("old")
+        );
+        assert_eq!(try_get(LEGACY_KEY).unwrap(), None);
+        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("old"));
+
+        assert!(!password_state(&b).unwrap().stored);
+        assert_eq!(load_password_keyring(&b).unwrap(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_connection_key_wins_over_a_legacy_entry() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        let a = rdp_with_id("a");
+        save_password(&a, "new").unwrap();
+        set(LEGACY_KEY, "old").unwrap();
+        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("new"));
+        assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_writes_only_the_connection_key() {
+        use crate::keyring_store::try_get;
+        let _keyring = crate::keyring_store::memory();
+        save_password(&rdp_with_id("a"), "secret").unwrap();
+        assert_eq!(
+            try_get("rdp|a|host.com|3390|admin|corp")
+                .unwrap()
+                .as_deref(),
+            Some("secret")
+        );
+        assert_eq!(try_get(LEGACY_KEY).unwrap(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deleting_removes_the_connection_key_and_the_legacy_entry() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        let a = rdp_with_id("a");
+        save_password(&a, "new").unwrap();
+        set(LEGACY_KEY, "old").unwrap();
+        delete_password(&a).unwrap();
+        assert_eq!(try_get("rdp|a|host.com|3390|admin|corp").unwrap(), None);
+        assert_eq!(try_get(LEGACY_KEY).unwrap(), None);
+        assert!(!password_state(&a).unwrap().stored);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_connection_without_a_key_stores_and_takes_over_nothing() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        set(LEGACY_KEY, "old").unwrap();
+        for id in ["", "a|b"] {
+            let c = rdp_with_id(id);
+            assert!(!password_state(&c).unwrap().stored, "{id:?}");
+            assert_eq!(load_password_keyring(&c).unwrap(), None, "{id:?}");
+            assert!(
+                matches!(save_password(&c, "x"), Err(AppError::Validation(_))),
+                "{id:?}"
+            );
+            delete_password(&c).unwrap();
+        }
+        for key in [
+            "rdp||host.com|3390|admin|corp",
+            "rdp|a|b|host.com|3390|admin|corp",
+        ] {
+            assert_eq!(try_get(key).unwrap(), None, "{key}");
+        }
+        assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
+    }
+
+    /// Hosts that name this machine.
+    #[cfg(unix)]
+    const THIS_MACHINE: &[&str] = &[
+        "127.0.0.1",
+        "localhost",
+        "LocalHost",
+        "::1",
+        "127.0.0.2",
+        "[::1]",
+        "::ffff:127.0.0.1",
+        "[::ffff:127.0.0.1]",
+        "0.0.0.0",
+        "::",
+        "localhost.",
+        "LOCALHOST.",
+        "app.localhost",
+    ];
+
+    /// The connection `a` to `host:3390` as `Admin` in `CORP`, its key and the
+    /// legacy key of its target.
+    #[cfg(unix)]
+    fn rdp_to(host: &str) -> (Connection, String, String) {
+        let connection = Connection {
+            id: "a".into(),
+            ..rdp(Some(host), Some(3390), Some("Admin"), Some("CORP"))
+        };
+        let target = format!("{}|3390|admin|corp", host.to_lowercase());
+        (
+            connection,
+            format!("rdp|a|{target}"),
+            format!("rdp|{target}"),
+        )
+    }
+
+    // Connections of different servers can name the same target on this machine,
+    // e.g. 127.0.0.1 and the same port, so a legacy entry for it may belong to
+    // any of them.
+    #[cfg(unix)]
+    #[test]
+    fn no_connection_takes_over_a_legacy_entry_for_this_machine() {
+        use crate::keyring_store::{delete, set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        for &host in THIS_MACHINE {
+            let (c, key, legacy) = rdp_to(host);
+            set(&legacy, "old").unwrap();
+            assert!(!password_state(&c).unwrap().stored, "{host}");
+            assert_eq!(load_password_keyring(&c).unwrap(), None, "{host}");
+            assert_eq!(try_get(&key).unwrap(), None, "{host}");
+            assert_eq!(try_get(&legacy).unwrap().as_deref(), Some("old"), "{host}");
+
+            // The connection's own key still works for such a target.
+            save_password(&c, "new").unwrap();
+            assert!(password_state(&c).unwrap().stored, "{host}");
+            assert_eq!(
+                load_password_keyring(&c).unwrap().as_deref(),
+                Some("new"),
+                "{host}"
+            );
+            assert_eq!(try_get(&legacy).unwrap().as_deref(), Some("old"), "{host}");
+            delete(&key).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_legacy_entry_for_another_host_is_still_taken_over() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        for host in [
+            "192.0.2.10",
+            "2001:db8::1",
+            "localhost.example.com",
+            "127.example.com",
+            "notlocalhost",
+        ] {
+            let (c, key, legacy) = rdp_to(host);
+            set(&legacy, "old").unwrap();
+            assert!(password_state(&c).unwrap().stored, "{host}");
+            assert_eq!(
+                load_password_keyring(&c).unwrap().as_deref(),
+                Some("old"),
+                "{host}"
+            );
+            assert_eq!(try_get(&key).unwrap().as_deref(), Some("old"), "{host}");
+            assert_eq!(try_get(&legacy).unwrap(), None, "{host}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deleting_removes_a_legacy_entry_for_this_machine() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        for &host in THIS_MACHINE {
+            let (c, _, legacy) = rdp_to(host);
+            set(&legacy, "old").unwrap();
+            delete_password(&c).unwrap();
+            assert_eq!(try_get(&legacy).unwrap(), None, "{host}");
+        }
     }
 
     // Windows-only credential/target formatting. These execute now that the CI
