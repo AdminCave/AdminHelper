@@ -40,8 +40,10 @@ Beweis: Code-Lesung feature/desktop-session-ports@00b031d3 — `Applied` (`frpc.
 Semantik: docs/developer/desktop.html:141 — „Rust öffnet ein gespeichertes Passwort nur für genau das Ziel, das es selbst aus den in der Sitzung gehaltenen Tunnel-Zuordnungen (dem letzten Stand von `fetch_tunnels`) und den laufenden Visitors berechnet“: die Zuordnungen gehören zur Sitzung; die laufenden Visitors sind bisher nicht an sie gebunden
 HEAD: 00b031d3
 
-### T3 — Ende oder Wechsel der Anmeldung beendet frpc im Backend  [ ]
+### T3 — Ende oder Wechsel der Anmeldung beendet frpc im Backend  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/main.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @3f0d75eb 2026-10-19T15:12:01+02:00
+Review: approve (.ah-out/review/desktop-hardening/T3.verdict.json)
 Änderung: `SessionState` bekommt einen zweiten, beim Start einmal gesetzten Hörer (gebaut wie `on_expiry`, `session.rs:193`) für jeden Wechsel, wer angemeldet ist: eine Anmeldung (`set`, `:89`), ein Abmelden (`take`, `:116`) und das Ende durch eine gescheiterte Erneuerung (`send_renewing`, `:290-297`); eine gelungene Erneuerung (gleiche Anmeldung, neue Tokens) ruft ihn nicht. Er läuft außerhalb der Sitzungssperre wie der Hörer von `on_expiry`. `main.rs` (`:111`) setzt ihn auf `frpc::stop_frpc` für den verwalteten `FrpcState`. Ein Abgleich, der dabei läuft, startet nichts mehr (Generation, `reconcile`). Die UI stoppt den Tunnel zusätzlich wie bisher (`logoutAndReload`). Tests in `session.rs` mit Zähler (zuerst rot): Anmelden → 1, Abmelden → 1, gescheiterte Erneuerung → 1 (der `on_expiry`-Hörer weiter genau 1), gelungene Erneuerung → 0, ohne gesetzten Hörer kein Fehler. Die Verdrahtung in `main.rs` belegt T4 live.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- session::
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:130`: Abmelden, eine neue Anmeldung und eine abgelaufene Sitzung beenden frpc im Backend) · CHANGELOG.md (Changed)

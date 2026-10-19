@@ -946,6 +946,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
   etwa „Connection refused“ oder der Status „500 Internal Server Error“. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: frpc laeuft nur fuer die aktuelle Anmeldung:** Abmelden, eine neue Anmeldung und eine abgelaufene
+  Sitzung (gescheiterte Erneuerung) beenden frpc jetzt im Desktop-Prozess selbst, nicht nur ueber die Oberflaeche;
+  ein Abgleich, der dabei laeuft, startet keinen neuen. Kommt ein Visitor-Bundle fuer eine andere Anmeldung
+  (Server-URL oder Benutzer) als die, fuer die frpc laeuft, startet frpc neu, statt die Visitors per Reload zu
+  uebernehmen. Gespeicherte Passwoerter und die Tunnel-Aufloesung nutzen nur die Visitors des frpc der aktuellen
+  Anmeldung. Doku: Desktop fuer Entwickler (DE+EN).
 - **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
   nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
