@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces — Task-Ledger
-Status: geplant · Branch: feature/desktop-workspaces · Review: pro Task
+Status: aktiv · Branch: feature/desktop-workspaces · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — der Desktop startet anders (Launcher, Workspace-Prozess, Migration), alle Live-Specs ziehen mit und die neue Suite `desktop_e2e_workspaces` (zwei Stacks) läuft im e2e-Layer, `docker-compose.test.yml` ändert sich: Sammellauf; `scenario`, weil `box_desktopbox.sh` (Capstone `--desktop`) den Standard-Workspace startet und Tunnel-Laufzeitdateien und Portkarten-Besitzer je Workspace wechseln (FRP-Datenpfad); `windows` = CI-Job `rust-windows` (abgekoppelter Prozessstart, Datei-Locks, Keyring-TargetName, TERMSRV); mstsc selbst ist ohne Windows-Vorlage im Pool nicht verifiziert, dafür die Prüfanleitung aus T33 für Kevin
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
