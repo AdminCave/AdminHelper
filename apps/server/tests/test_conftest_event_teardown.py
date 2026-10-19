@@ -31,6 +31,7 @@ _PROBE = """
 import threading
 from pathlib import Path
 
+import pytest
 from sqlalchemy import event
 
 from app.core import events
@@ -40,6 +41,7 @@ from app.modules.notifications.models import NotificationSubscription
 MARKER = Path(__file__).with_name("marker")
 
 
+@pytest.mark.event_threads
 def test_an_event_task_outlives_the_test(pg_engine, monkeypatch):
     dropped = threading.Event()
     event.listen(Base.metadata, "after_drop", lambda *args, **kw: dropped.set())
