@@ -75,6 +75,10 @@ pub struct Renewed {
 /// event `session-expired` (`main.rs`); in a test a counter.
 type ExpiryListener = Box<dyn Fn() + Send + Sync>;
 
+/// Who hears that who is signed in changed: in the app frpc, which ends then (`main.rs`); in a
+/// test a counter.
+type SignInListener = Box<dyn Fn() + Send + Sync>;
+
 /// The session as managed state. The lock is async because a renewal holds it across its
 /// request: whoever meets a 401 meanwhile waits for it and then takes the new token.
 #[derive(Default)]
@@ -82,10 +86,12 @@ pub struct SessionState {
     session: Mutex<Option<Session>>,
     generations: AtomicU64,
     expiry: OnceLock<ExpiryListener>,
+    sign_in_change: OnceLock<SignInListener>,
 }
 
 impl SessionState {
-    /// Starts a session, replacing any other.
+    /// Starts a session, replacing any other, and tells the listener of
+    /// [`SessionState::on_sign_in_change`].
     pub async fn set(
         &self,
         server_url: String,
@@ -105,6 +111,8 @@ impl SessionState {
             tunnels: Arc::default(),
             connections: Arc::default(),
         });
+        drop(session);
+        self.tell_sign_in_changed();
     }
 
     /// A copy of the current session, if there is one.
@@ -112,9 +120,13 @@ impl SessionState {
         self.session.lock().await.clone()
     }
 
-    /// Ends the session and hands it back, for the sign-out at the server.
+    /// Ends the session and hands it back, for the sign-out at the server, and tells the
+    /// listener of [`SessionState::on_sign_in_change`], also without a session: ending what
+    /// ran for a sign-in twice does no harm.
     pub async fn take(&self) -> Option<Session> {
-        self.session.lock().await.take()
+        let ended = self.session.lock().await.take();
+        self.tell_sign_in_changed();
+        ended
     }
 
     /// Refuses the answer of a session that is gone: `who` signed out, or another user or
@@ -138,7 +150,9 @@ impl SessionState {
     }
 
     /// The tunnel mappings the session fetched last; none without a session, before the first
-    /// fetch that succeeded, and for a user who may not read them.
+    /// fetch that succeeded, and for a user who may not read them. The app reads them from
+    /// [`SessionState::current`], together with the sign-in they belong to.
+    #[cfg(test)]
     pub async fn tunnels(&self) -> Arc<[TunnelMapping]> {
         self.session
             .lock()
@@ -160,7 +174,9 @@ impl SessionState {
     }
 
     /// The server's connections the session fetched last; none without a session and before
-    /// the first fetch that succeeded.
+    /// the first fetch that succeeded. The app reads them from [`SessionState::current`], like
+    /// [`SessionState::tunnels`].
+    #[cfg(test)]
     pub async fn connections(&self) -> Arc<[Connection]> {
         self.session
             .lock()
@@ -196,6 +212,23 @@ impl SessionState {
         }
     }
 
+    /// Sets who hears that who is signed in changed, once, at the start: every sign-in, every
+    /// sign-out and the end of the session by a failed renewal ([`authed_send`]). A renewal
+    /// that succeeds keeps the sign-in and tells nobody.
+    pub fn on_sign_in_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        if self.sign_in_change.set(Box::new(listener)).is_err() {
+            log::warn!("The session already has a sign-in listener; the second one is ignored");
+        }
+    }
+
+    /// Tells the listener of [`SessionState::on_sign_in_change`]. Only outside the session lock:
+    /// whoever hears it may ask the session at once.
+    fn tell_sign_in_changed(&self) {
+        if let Some(listener) = self.sign_in_change.get() {
+            listener();
+        }
+    }
+
     fn next_generation(&self) -> u64 {
         self.generations.fetch_add(1, Ordering::Relaxed) + 1
     }
@@ -215,7 +248,8 @@ pub fn no_session() -> AppError {
 /// generation and only repeats. The server rotates the refresh token, so a second renewal
 /// with the old one would count as reuse and revoke the whole session. A renewal that fails
 /// or outlasts [`RENEWAL_DEADLINE`] ends the session with [`AppError::SessionExpired`] and
-/// tells the listener of [`SessionState::on_expiry`]. Without a session nothing is sent.
+/// tells the listeners of [`SessionState::on_sign_in_change`] and [`SessionState::on_expiry`].
+/// Without a session nothing is sent.
 ///
 /// The answer comes with the user it was sent for; a caller that takes it over checks
 /// [`SessionState::ensure_signed_in`] first.
@@ -291,6 +325,7 @@ where
                 *slot = None;
                 // Outside the lock: whoever hears it may ask the session at once.
                 drop(slot);
+                state.tell_sign_in_changed();
                 if let Some(listener) = state.expiry.get() {
                     listener();
                 }
@@ -956,6 +991,140 @@ mod tests {
         let kept = state.keep_connections(&who, vec![connection("c1")]).await;
         assert!(kept.is_err(), "connections kept without a session");
         assert_eq!(held_ids(&state).await, nothing_held());
+    }
+
+    /// Counts how often `state` tells that who is signed in changed. Whoever hears it may ask
+    /// the session at once, so the session lock has to be free each time.
+    fn sign_in_changes(state: &Arc<SessionState>) -> Arc<AtomicUsize> {
+        let count = Arc::new(AtomicUsize::new(0));
+        let heard = Arc::clone(&count);
+        let state_seen = Arc::downgrade(state);
+        state.on_sign_in_change(move || {
+            let state = state_seen.upgrade().expect("the session state");
+            assert!(
+                state.session.try_lock().is_ok(),
+                "told under the session lock"
+            );
+            heard.fetch_add(1, Ordering::Relaxed);
+        });
+        count
+    }
+
+    /// Counts how often `state` tells that a failed renewal ended it.
+    fn expiries(state: &SessionState) -> Arc<AtomicUsize> {
+        let count = Arc::new(AtomicUsize::new(0));
+        let heard = Arc::clone(&count);
+        state.on_expiry(move || {
+            heard.fetch_add(1, Ordering::Relaxed);
+        });
+        count
+    }
+
+    fn told(count: &AtomicUsize) -> usize {
+        count.load(Ordering::Relaxed)
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_tells_that_the_sign_in_changed() {
+        let server = "https://adminhelper.example:8443";
+        let state = Arc::new(SessionState::default());
+        let changes = sign_in_changes(&state);
+
+        sign_in(&state, server, "ops-admin").await;
+        assert_eq!(told(&changes), 1);
+
+        // A new sign-in replaces the session, even one of the same user on the same server.
+        sign_in(&state, server, "ops-admin").await;
+        assert_eq!(told(&changes), 2);
+    }
+
+    #[tokio::test]
+    async fn a_sign_out_tells_that_the_sign_in_changed() {
+        let state = signed_in("https://adminhelper.example:8443").await;
+        let changes = sign_in_changes(&state);
+
+        assert!(state.take().await.is_some());
+        assert_eq!(told(&changes), 1);
+
+        // A sign-out without a session tells all the same.
+        assert!(state.take().await.is_none());
+        assert_eq!(told(&changes), 2);
+    }
+
+    #[tokio::test]
+    async fn a_failed_renewal_tells_that_the_sign_in_changed_and_that_the_session_expired() {
+        let (server, _log) = serve(|_| async { "401 Unauthorized" }).await;
+        let state = signed_in(&server).await;
+        let (changes, expired) = (sign_in_changes(&state), expiries(&state));
+        let renewals = Renewals::default();
+
+        let result = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| refused(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(AppError::SessionExpired)),
+            "{:?}",
+            result.map(|(response, _)| response.status())
+        );
+        assert!(state.current().await.is_none());
+        assert_eq!((told(&changes), told(&expired)), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn a_renewal_that_succeeds_tells_nobody() {
+        let (server, _log) = serve(|token| async move {
+            if token == "Bearer renewed" {
+                "200 OK"
+            } else {
+                "401 Unauthorized"
+            }
+        })
+        .await;
+        let state = signed_in(&server).await;
+        let (changes, expired) = (sign_in_changes(&state), expiries(&state));
+        let renewals = Renewals::default();
+
+        let (response, _) = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
+        .await
+        .unwrap();
+
+        // The same sign-in with new tokens.
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(state.current().await.unwrap().access, "renewed");
+        assert_eq!((told(&changes), told(&expired)), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn without_listeners_the_sign_in_changes_all_the_same() {
+        let (server, _log) = serve(|_| async { "401 Unauthorized" }).await;
+        let state = SessionState::default();
+        let renewals = Renewals::default();
+
+        sign_in(&state, &server, "ops-admin").await;
+        let result = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| refused(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::SessionExpired)));
+        assert!(state.current().await.is_none());
+
+        sign_in(&state, &server, "ops-admin").await;
+        assert!(state.current().await.is_some());
+        assert!(state.take().await.is_some());
+        assert!(state.current().await.is_none());
     }
 
     const RENEWED: &str = r#"{"access_token":"renewed","refresh_token":"refresh-2"}"#;

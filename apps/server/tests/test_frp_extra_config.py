@@ -234,7 +234,8 @@ def test_the_schema_rejects_every_key_the_generator_writes(model, key):
         _build(model, extra_config={key: "x"})
 
 
-@pytest.mark.parametrize("value", ["{{print}}", "a}", math.nan, math.inf, -math.inf])
+# `{{` is refused earlier, by the guard of every TOML string (test_frp_input_hardening.py).
+@pytest.mark.parametrize("value", ["{print}", "a}", math.nan, math.inf, -math.inf])
 @pytest.mark.parametrize("model", MODELS)
 def test_the_schema_rejects_a_value_check_config_rejects(model, value):
     with pytest.raises(ValidationError, match="extra_config value"):
