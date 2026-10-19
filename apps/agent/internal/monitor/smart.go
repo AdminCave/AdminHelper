@@ -93,14 +93,15 @@ func collectSmart() ([]SmartDisk, string) {
 	)
 	for _, dev := range scanResult.Devices {
 		wg.Add(1)
-		go func(name, devType, proto string) {
+		go func(name, id, devType, proto string) {
 			defer wg.Done()
 			if d := querySmartDevice(smartctl, name, devType, proto); d != nil {
+				d.Device = id
 				mu.Lock()
 				disks = append(disks, *d)
 				mu.Unlock()
 			}
-		}(dev.Name, dev.Type, dev.Protocol)
+		}(dev.Name, smartDiskID(dev.Name, dev.InfoName, dev.Type), dev.Type, dev.Protocol)
 	}
 	wg.Wait()
 
@@ -111,6 +112,19 @@ func collectSmart() ([]SmartDisk, string) {
 		return nil, "scan_failed"
 	}
 	return disks, ""
+}
+
+// smartDiskID names a disk in the report. The scan names all disks behind a MegaRAID or sssraid
+// controller like the controller (/dev/bus/N, /dev/bsg/sssraidN), and only its info_name tells them
+// apart (smartmontools os_linux.cpp: "/dev/bus/0 [megaraid_disk_00]"); the service names the disk's
+// metrics after it and matches ignore_devices against it. The scan's, not the query's: opening the
+// device appends " [SAT]" when smartctl finds a SATA disk behind the controller. Every other disk
+// keeps its name, without a suffix such as [SAT].
+func smartDiskID(name, infoName, devType string) string {
+	if infoName != "" && (strings.HasPrefix(devType, "megaraid,") || strings.HasPrefix(devType, "sssraid,")) {
+		return infoName
+	}
+	return name
 }
 
 func querySmartDevice(smartctl, device, devType, protocol string) *SmartDisk {

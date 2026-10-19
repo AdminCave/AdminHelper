@@ -352,6 +352,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   critical. Jetzt faellt sie aus dem Report; liefert keine Platte lesbare Daten, meldet der Agent wie bei einem
   gescheiterten Scan `scan_failed`. Bei den Bits 2 bis 7 bleibt die Platte wie bisher im Report, `smartctl_status`
   traegt den vollen Exit-Code. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: Platten hinter einem MegaRAID- oder sssraid-Controller tragen eigene Namen (R-0491):** Der Agent meldete
+  alle Platten eines solchen Controllers unter dessen Geraetenamen, etwa `/dev/bus/0` bzw. `/dev/bsg/sssraid0`: Der
+  Check `smart_health` nannte sie gleich, ihre Werte landeten in derselben Messreihe, und ein Eintrag in
+  `ignore_devices` nahm alle zugleich aus. Jetzt heissen sie wie bei smartctl, etwa `/dev/bus/0 [megaraid_disk_00]`
+  oder `/dev/bsg/sssraid0 [sssraid_disk_00_01]`; andere Platten behalten ihren Namen. Nach dem Update des Agents
+  greift ein `ignore_devices`-Eintrag `/dev/bus/N` nicht mehr, dort gehoeren die neuen Namen hin, und die Metriken
+  dieser Platten bekommen neue Namen, etwa `monitor_smart_temp_dev_bus_0__megaraid_disk_00_value` statt
+  `monitor_smart_temp_dev_bus_0_value`. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
 - **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
   Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach

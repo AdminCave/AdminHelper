@@ -465,3 +465,69 @@ func TestCollectSmartPassesScanType(t *testing.T) {
 		t.Errorf("queries = %q, want %q", queries, want)
 	}
 }
+
+func TestCollectSmartControllerDiskIDs(t *testing.T) {
+	// The disks behind a MegaRAID or sssraid controller share the scan name, so the report names them
+	// by the scan's info_name (smartmontools os_linux.cpp), which the service keys metrics and
+	// ignore_devices on. Not by the info_name of the query: ataFixture answers every query with
+	// "/dev/sda [SAT]". Every other disk keeps its name, without a suffix such as [SAT].
+	const scan = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"exit_status":0},"devices":[` +
+		`{"name":"/dev/bus/0","info_name":"/dev/bus/0 [megaraid_disk_00]","type":"megaraid,0","protocol":"SCSI"},` +
+		`{"name":"/dev/bus/0","info_name":"/dev/bus/0 [megaraid_disk_01]","type":"megaraid,1","protocol":"SCSI"},` +
+		`{"name":"/dev/bsg/sssraid0","info_name":"/dev/bsg/sssraid0 [sssraid_disk_00_01]","type":"sssraid,0,1",` +
+		`"protocol":"SCSI"},` +
+		`{"name":"/dev/sda","info_name":"/dev/sda [SAT]","type":"sat","protocol":"ATA"},` +
+		`{"name":"/dev/nvme0","info_name":"/dev/nvme0","type":"nvme","protocol":"NVMe"}]}`
+	calls := stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
+		"/dev/bus/0":        {out: ataFixture},
+		"/dev/bsg/sssraid0": {out: ataFixture},
+		"/dev/sda":          {out: ataFixture},
+		"/dev/nvme0":        {out: nvmeFixture},
+	})
+	disks, reason := collectSmart()
+	var devices []string
+	for _, d := range disks {
+		devices = append(devices, d.Device)
+	}
+	sort.Strings(devices)
+	wantDevices := []string{
+		"/dev/bsg/sssraid0 [sssraid_disk_00_01]",
+		"/dev/bus/0 [megaraid_disk_00]",
+		"/dev/bus/0 [megaraid_disk_01]",
+		"/dev/nvme0",
+		"/dev/sda",
+	}
+	if reason != "" || !reflect.DeepEqual(devices, wantDevices) {
+		t.Errorf("collectSmart() = %q, %q; want %q and no reason", devices, reason, wantDevices)
+	}
+
+	// The queries still go to the device name, the type picks the disk behind the controller.
+	var queries []string
+	for _, c := range *calls {
+		if c.args[0] != "--scan" {
+			queries = append(queries, strings.Join(c.args, " "))
+		}
+	}
+	sort.Strings(queries)
+	wantQueries := []string{
+		"--all --json=c -d megaraid,0 /dev/bus/0",
+		"--all --json=c -d megaraid,1 /dev/bus/0",
+		"--all --json=c -d nvme /dev/nvme0",
+		"--all --json=c -d sat /dev/sda",
+		"--all --json=c -d sssraid,0,1 /dev/bsg/sssraid0",
+	}
+	if !reflect.DeepEqual(queries, wantQueries) {
+		t.Errorf("queries = %q, want %q", queries, wantQueries)
+	}
+
+	t.Run("no info_name", func(t *testing.T) {
+		// A scan line without info_name leaves the device name.
+		const scan = `{"json_format_version":[1,0],"devices":[` +
+			`{"name":"/dev/bus/0","type":"megaraid,0","protocol":"SCSI"}]}`
+		stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{"/dev/bus/0": {out: ataFixture}})
+		disks, reason := collectSmart()
+		if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/bus/0" {
+			t.Errorf("collectSmart() = %v, %q; want only /dev/bus/0 and no reason", disks, reason)
+		}
+	})
+}
