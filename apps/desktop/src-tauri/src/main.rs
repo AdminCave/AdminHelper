@@ -16,6 +16,7 @@ mod models;
 mod notifications;
 mod password;
 mod proxy;
+mod session;
 mod storage;
 mod sync;
 mod terminal;
@@ -88,6 +89,7 @@ fn main() {
         .manage(frpc_state)
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
+        .manage(session::SessionState::default())
         .setup(|app| {
             // Ensure a concrete runtime window icon in dev and production.
             let icon_bytes = include_bytes!("../icons/icon.png");

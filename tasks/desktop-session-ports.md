@@ -14,8 +14,10 @@ Kevin 2026-10-16 (`/feature-plan` auf R-0430, nach dem Spike): ein Vorhaben mit 
 
 ## Block A — Session im Rust-Speicher
 
-### T1 — Session-Zustand und ein Erneuerungsweg (single-flight)  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock
+### T1 — Session-Zustand und ein Erneuerungsweg (single-flight)  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/main.rs, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/error.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @1075bd2c 2026-10-19T07:25:09+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T1.verdict.json)
 Änderung: Neues Modul `session.rs` (SPDX-Header): verwalteter Zustand `SessionState` (async-Sperre um `Option<Session>`; `Session{server_url, access, refresh, username, is_admin, generation}`) und `authed_send`, das eine Anfrage mit dem aktuellen Access-Token schickt und bei 401 genau einmal erneuert: Unter der Sperre wird nur erneuert, wenn die Generation noch die gesehene ist, sonst nur wiederholt; die Erneuerung selbst ist eine übergebene Funktion (später `auth::try_refresh`, `auth.rs:132`). Scheitert sie, ist die Session leer und das Ergebnis ein eigener Fehler `SessionExpired`. In `main.rs` (`:74-76`) registriert, noch ohne Aufrufer. `tokio`-Feature `sync` ausdrücklich in `Cargo.toml` (`:21`; heute nur über Tauri vorhanden). Tests mit dem lokalen Testserver wie in `auth.rs` (`serve_one` `:373`): zwei gleichzeitige 401 → eine Erneuerung, beide Wiederholungen mit dem neuen Token; Erneuerung scheitert → Session leer, `SessionExpired`; ohne Session → Fehler ohne Netzzugriff.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- session::
 Doku: keine (intern, noch ohne Aufrufer)
