@@ -115,7 +115,7 @@ describe('SecZfs with a zpool that answers', () => {
   it('shows a dash for a host without pools', () => {
     const none = check({
       status: 'ok',
-      message: 'Keine ZFS-Pools gefunden',
+      message: 'No ZFS pools found',
       details: { available: true, error: null, pools: [] },
     });
     const { container: el } = render(SecZfs, { props: { checks: [none] } });

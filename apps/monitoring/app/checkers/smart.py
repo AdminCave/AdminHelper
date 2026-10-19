@@ -13,7 +13,7 @@ Without disks the agent sends smart_absent with the reason instead of a smart ke
 
 from __future__ import annotations
 
-from app.checkers.plugins import capped_objects
+from app.checkers.agent import agent_number, capped_objects, entry_number, entry_text, join_capped
 from app.core.victoria import safe_metric_part
 
 # NVMe critical_warning Bit-Feld laut NVMe Base Spec 1.4, Figure 94.
@@ -114,14 +114,14 @@ class SmartHealthChecker:
         disk_details = []
 
         for disk in smart:
-            device = disk.get("device", "?")
+            device = entry_text(disk, "device", "?")
             if device in ignore:
                 continue
 
             model = disk.get("model", "?")
             label = f"{device} ({model})"
             protocol = disk.get("protocol", "ATA")
-            kind = disk.get("kind") or ("NVMe" if protocol == "NVMe" else "HDD")
+            kind = entry_text(disk, "kind", "") or ("NVMe" if protocol == "NVMe" else "HDD")
             category = "ok"
 
             # Universal checks (ATA + NVMe)
@@ -129,20 +129,20 @@ class SmartHealthChecker:
                 critical_problems.append(f"{label}: SMART FAILED")
                 category = "critical"
 
-            if disk.get("reported_uncorrect", 0) > 0:
-                critical_problems.append(
-                    f"{label}: {disk['reported_uncorrect']} reported uncorrectable"
-                )
+            reported_uncorrect = entry_number(disk, "reported_uncorrect", 0)
+            if reported_uncorrect > 0:
+                critical_problems.append(f"{label}: {reported_uncorrect} reported uncorrectable")
                 category = "critical"
 
-            if disk.get("uncorrectable", 0) > 0:
-                critical_problems.append(f"{label}: {disk['uncorrectable']} offline uncorrectable")
+            uncorrectable = entry_number(disk, "uncorrectable", 0)
+            if uncorrectable > 0:
+                critical_problems.append(f"{label}: {uncorrectable} offline uncorrectable")
                 category = "critical"
 
             # Evaluate smartctl exit code (bit flags).
             # Bit 0x10 = prefail attribute below threshold → critical.
             # Bits 0x20 (past), 0x40 (error log), 0x80 (selftest fail) → warning.
-            ec = int(disk.get("smartctl_status", 0) or 0)
+            ec = int(entry_number(disk, "smartctl_status", 0))
             if ec & 0x10:
                 critical_problems.append(
                     f"{label}: prefail attribute below threshold (smartctl 0x10)"
@@ -162,7 +162,8 @@ class SmartHealthChecker:
                     category = "warning"
 
             # Temperature per kind class
-            temp = int(disk.get("temp_c", 0) or 0)
+            temp_c = entry_number(disk, "temp_c", 0)
+            temp = int(temp_c)
             temp_warn, temp_crit = temp_thresholds.get(kind, temp_thresholds["HDD"])
             if temp >= temp_crit:
                 critical_problems.append(f"{label}: {temp}°C (>={temp_crit}°C)")
@@ -186,7 +187,8 @@ class SmartHealthChecker:
             if category == "ok":
                 ok_count += 1
 
-            cw_bits = _decode_nvme_critical_warning(int(disk.get("critical_warning", 0) or 0))
+            critical_warning = entry_number(disk, "critical_warning", 0)
+            cw_bits = _decode_nvme_critical_warning(int(critical_warning))
             disk_details.append(
                 {
                     "device": device,
@@ -195,17 +197,17 @@ class SmartHealthChecker:
                     "kind": kind,
                     "category": category,
                     "smart_passed": disk.get("smart_passed", True),
-                    "temp_c": disk.get("temp_c", 0),
+                    "temp_c": temp_c,
                     "temp_warn": temp_warn,
                     "temp_crit": temp_crit,
-                    "power_on_hours": disk.get("power_on_hours", 0),
-                    "reallocated_sectors": disk.get("reallocated_sectors", 0),
-                    "pending_sectors": disk.get("pending_sectors", 0),
-                    "udma_crc_errors": disk.get("udma_crc_errors", 0),
-                    "available_spare_pct": disk.get("available_spare_pct"),
-                    "percentage_used": disk.get("percentage_used"),
-                    "media_errors": disk.get("media_errors", 0),
-                    "critical_warning": disk.get("critical_warning", 0),
+                    "power_on_hours": entry_number(disk, "power_on_hours", 0),
+                    "reallocated_sectors": entry_number(disk, "reallocated_sectors", 0),
+                    "pending_sectors": entry_number(disk, "pending_sectors", 0),
+                    "udma_crc_errors": entry_number(disk, "udma_crc_errors", 0),
+                    "available_spare_pct": agent_number(disk.get("available_spare_pct")),
+                    "percentage_used": agent_number(disk.get("percentage_used")),
+                    "media_errors": entry_number(disk, "media_errors", 0),
+                    "critical_warning": critical_warning,
                     "critical_warning_bits": cw_bits,
                     "smartctl_status": ec,
                 }
@@ -219,25 +221,26 @@ class SmartHealthChecker:
 
         # Per-disk metrics
         for disk in smart:
-            device = disk.get("device", "?")
+            device = entry_text(disk, "device", "?")
             if device in ignore:
                 continue
             safe_dev = safe_metric_part(device)
-            if disk.get("temp_c", 0) > 0:
-                metrics[f"smart_temp_{safe_dev}"] = disk["temp_c"]
-            metrics[f"smart_reallocated_{safe_dev}"] = disk.get("reallocated_sectors", 0)
-            metrics[f"smart_pending_{safe_dev}"] = disk.get("pending_sectors", 0)
+            temp_c = entry_number(disk, "temp_c", 0)
+            if temp_c > 0:
+                metrics[f"smart_temp_{safe_dev}"] = temp_c
+            metrics[f"smart_reallocated_{safe_dev}"] = entry_number(disk, "reallocated_sectors", 0)
+            metrics[f"smart_pending_{safe_dev}"] = entry_number(disk, "pending_sectors", 0)
 
         metrics["_details"] = {"disks": disk_details}
 
         if critical_problems:
-            msg = "SMART problems: " + ", ".join(critical_problems)
+            msg = "SMART problems: " + join_capped(critical_problems)
             if warning_problems:
-                msg += "; warnings: " + ", ".join(warning_problems)
+                msg += "; warnings: " + join_capped(warning_problems)
             return "critical", msg, metrics
 
         if warning_problems:
-            return "warning", "SMART warnings: " + ", ".join(warning_problems), metrics
+            return "warning", "SMART warnings: " + join_capped(warning_problems), metrics
 
         return "ok", f"All {ok_count} disks SMART OK", metrics
 
@@ -249,33 +252,35 @@ class SmartHealthChecker:
         crit, warn = [], []
 
         # Spin Retry Count — always critical (mechanical failure on HDDs)
-        if disk.get("spin_retry_count", 0) > 0:
-            crit.append(f"{label}: spin_retry_count={disk['spin_retry_count']}")
+        spin_retry_count = entry_number(disk, "spin_retry_count", 0)
+        if spin_retry_count > 0:
+            crit.append(f"{label}: spin_retry_count={spin_retry_count}")
 
         # Reallocated Sectors
-        reallocated = disk.get("reallocated_sectors", 0)
+        reallocated = entry_number(disk, "reallocated_sectors", 0)
         if reallocated >= th["reallocated_crit"]:
             crit.append(f"{label}: {reallocated} reallocated sectors")
         elif reallocated >= th["reallocated_warn"]:
             warn.append(f"{label}: {reallocated} reallocated sectors")
 
         # Reallocation Events
-        realloc_events = disk.get("reallocation_events", 0)
+        realloc_events = entry_number(disk, "reallocation_events", 0)
         if realloc_events >= th["reallocated_crit"]:
             crit.append(f"{label}: {realloc_events} reallocation events")
         elif realloc_events >= th["reallocated_warn"]:
             warn.append(f"{label}: {realloc_events} reallocation events")
 
         # Pending Sectors
-        pending = disk.get("pending_sectors", 0)
+        pending = entry_number(disk, "pending_sectors", 0)
         if pending >= th["pending_crit"]:
             crit.append(f"{label}: {pending} pending sectors")
         elif pending >= th["pending_warn"]:
             warn.append(f"{label}: {pending} pending sectors")
 
         # UDMA CRC Errors
-        if disk.get("udma_crc_errors", 0) > 0:
-            warn.append(f"{label}: {disk['udma_crc_errors']} UDMA CRC errors")
+        udma_crc_errors = entry_number(disk, "udma_crc_errors", 0)
+        if udma_crc_errors > 0:
+            warn.append(f"{label}: {udma_crc_errors} UDMA CRC errors")
 
         category = "critical" if crit else ("warning" if warn else "ok")
         return category, crit, warn
@@ -286,22 +291,23 @@ class SmartHealthChecker:
         warning); evaluate collects the lists and merges the category (2.32)."""
         crit, warn = [], []
 
-        cw = int(disk.get("critical_warning", 0) or 0)
+        cw = int(entry_number(disk, "critical_warning", 0))
         if cw != 0:
             reasons = _decode_nvme_critical_warning(cw)
             detail = ", ".join(reasons) if reasons else f"0x{cw:02x}"
             crit.append(f"{label}: NVMe critical_warning ({detail})")
 
-        if disk.get("media_errors", 0) > 0:
-            crit.append(f"{label}: {disk['media_errors']} media errors")
+        media_errors = entry_number(disk, "media_errors", 0)
+        if media_errors > 0:
+            crit.append(f"{label}: {media_errors} media errors")
 
-        spare = disk.get("available_spare_pct", 100)
+        spare = entry_number(disk, "available_spare_pct", 100)
         if spare < th["nvme_spare_crit"]:
             crit.append(f"{label}: available_spare {spare}% (<{th['nvme_spare_crit']}%)")
         elif spare < th["nvme_spare_warn"]:
             warn.append(f"{label}: available_spare {spare}% (<{th['nvme_spare_warn']}%)")
 
-        used = disk.get("percentage_used", 0)
+        used = entry_number(disk, "percentage_used", 0)
         if used >= th["nvme_used_crit"]:
             crit.append(f"{label}: {used}% used (>={th['nvme_used_crit']}%)")
         elif used >= th["nvme_used_warn"]:
