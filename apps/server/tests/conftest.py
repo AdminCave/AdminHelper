@@ -7,6 +7,7 @@ SAVEPOINT-based transaction-rollback pattern for test isolation."""
 
 import os
 import sys
+from concurrent.futures import Future
 from datetime import timedelta
 
 # Set test defaults BEFORE app modules are imported.
@@ -88,6 +89,34 @@ def _idle_tag_sync_notify_pool():
     barrier()
     yield
     barrier()
+
+
+class _DiscardingExecutor:
+    def submit(self, fn, /, *args, **kwargs):
+        future = Future()
+        future.set_result(None)
+        return future
+
+
+@pytest.fixture(autouse=True)
+def _no_event_threads(request):
+    # fire_event hands its task to a thread pool, and the task opens sessions of its
+    # own on the app engine: outside the rollback of db_session it sees none of the
+    # test's data and commits what it writes, and with DATABASE_URL unset
+    # (testcontainers) that engine points at the dev default (R-0520). Here the pool
+    # runs nothing; tests of the dispatch call _run_event directly on the test
+    # connection, and a test that needs the real pool is marked event_threads.
+    # A context of its own, so that a test's monkeypatch.undo() keeps the stand-in.
+    if request.node.get_closest_marker("event_threads") is not None:
+        yield
+        return
+    # Imported, not looked up in sys.modules: a module first loaded during the test
+    # would otherwise reach the real pool.
+    from app.core import events
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(events, "_executor", _DiscardingExecutor())
+        yield
 
 
 def _seed_register_state(engine) -> None:
@@ -237,6 +266,9 @@ def pytest_configure(config):
     # through this marker alone (harness 8b).
     config.addinivalue_line(
         "markers", "schemathesis: schema-driven API fuzzing, run as its own run.sh step"
+    )
+    config.addinivalue_line(
+        "markers", "event_threads: fire_event keeps its real thread pool (see _no_event_threads)"
     )
 
 

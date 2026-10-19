@@ -346,6 +346,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: die Sitzung haelt laenger als acht Stunden, und eine abgelaufene fuehrt zum Login (R-0430):** Nach
+  Ablauf des Access-Tokens (acht Stunden) scheiterten Infrastruktur, Monitoring, Ansible und die Glocke, weil nur ein
+  Teil der Anfragen die Sitzung erneuerte. Jetzt erneuert der Desktop sie fuer alle Anfragen an einer Stelle und nur
+  einmal zur Zeit; trafen bisher mehrere Erneuerungen zusammen, meldete der Server den Benutzer ueberall ab. Der
+  Benachrichtigungs-Stream nimmt nach einer Erneuerung das neue Token, statt zu verstummen. Laesst sich die Sitzung
+  nicht mehr erneuern, meldet der Desktop ab und zeigt den Login-Bildschirm mit dem Hinweis „Sitzung abgelaufen —
+  bitte neu anmelden.“ Doku: Desktop fuer Entwickler (DE+EN), README.
+- **Desktop: die automatische Web-Verbindung eines STCP-Tunnels oeffnet sich (R-0430):** Der Server legt sie ohne
+  URL an, und der Desktop pruefte die Verbindung vor der Tunnel-Aufloesung: Sie brach fuer alle Benutzer mit „URL
+  darf nicht leer sein“ ab. Jetzt prueft er die aufgeloeste Verbindung; solange der Tunnel laeuft, oeffnet sie
+  `http://127.0.0.1:<lokaler Port>`. Ohne laufenden Tunnel meldet sie weiter die fehlende URL. Doku: Desktop fuer
+  Entwickler (DE+EN).
 - **Desktop: die Paketbeschreibung nennt kein VNC mehr (R-0523):** Die lange Beschreibung des Desktop-Pakets, die
   etwa `apt show` zeigt, nannte VNC unter den Verbindungsarten. Der Client oeffnet SSH-, RDP- und Web-Verbindungen;
   die Beschreibung nennt jetzt nur diese.
@@ -487,6 +499,25 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   abbricht, endet `update.sh` mit dem Namen des Schluessels (ohne den Wert), bevor es etwas aendert, auch bei
   `--check` und `--redeploy`. Bisher scheiterte das Update daran erst nach Backup, Tausch und Neu-Pinnen. Doku:
   Installation und Betrieb (DE+EN) beschreiben, wie ein `$` in einem `.env`-Wert zu schreiben ist.
+- **Update: Rollback auch bei einem gescheiterten Tausch der Laufzeit-Dateien (R-0495):** Scheiterte beim Tausch
+  ein Schritt (etwa eine Kopie bei voller Platte, ein Verzeichnis `<datei>.ah-new` im Weg oder das Entfernen eines
+  nicht mehr ausgelieferten Skripts), endete `update.sh` mit der rohen Meldung des Werkzeugs und liess halb
+  getauschte Dateien neben der alten `.env` stehen. Jetzt meldet es „Tausch der Laufzeit-Dateien fehlgeschlagen“
+  und rollt wie bei einer gescheiterten `.env`-Migration zurueck: Die Laufzeit-Dateien kommen aus dem Snapshot,
+  Dateien, die erst das neue Release mitgebracht hat, verschwinden, keine halbe Kopie bleibt liegen, `.env` und
+  Container bleiben unveraendert. Mit `--no-rollback` bleiben die Dateien stehen, und die Meldung nennt
+  `--ref <Ziel>` als Weg weiter. Doku: Installation (DE+EN).
+- **Install: Die `.env` wird nur durch eine vollstaendig geschriebene ersetzt (R-0496, R-0516):** Scheiterte beim
+  Setzen von `DOMAIN`, `MTLS_ENFORCE` oder den Image-Pins das Schreiben der `.env` (etwa bei voller Platte), ersetzte
+  `install.sh` die `.env` durch eine gekuerzte Datei ohne die Secrets, startete den Stack trotzdem und meldete die
+  Installation als fertig. Jetzt schreibt es wie `update.sh` in eine Kopie neben der `.env` und tauscht sie erst,
+  wenn alles geschrieben ist. Scheitert ein Schritt, bricht `install.sh` mit dem Namen des Schluessels (ohne den
+  Wert) ab, die Kopie verschwindet, die `.env` bleibt beim letzten vollstaendigen Stand, und Stack, Admin und
+  Enroll-Token werden nicht angelegt. Dasselbe galt fuer `init-secrets.sh`, das `install.sh` und `update.sh`
+  aufrufen: Nach einem solchen Schreibfehler hielt es die verlorenen Secrets fuer leer, erzeugte sie still neu und
+  endete erfolgreich, sodass Postgres-Passwort und CA-Passphrase nicht mehr zu den Volumes passten. Es schreibt
+  jetzt ebenso ueber eine Kopie und endet bei einem Fehler mit dem Namen des Schluessels; `install.sh` bricht dann
+  ab, `update.sh` rollt wie bei einer gescheiterten `.env`-Migration zurueck.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
@@ -911,6 +942,25 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
+  nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
+  loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
+  der Anmeldung stand: Eine Aenderung wirkt ab der naechsten Anmeldung, auch fuer den Export des
+  Browser-Zertifikats, der bisher den Haken im offenen Einstellungsdialog nahm.
+- **Desktop: eigene lokale Ports fuer die Tunnel-Visitors (R-0430):** Der Desktop lauschte fuer jeden STCP-Tunnel
+  auf dem Visitor-Port des Servers (Standard 6000–6999). War der Port auf dem Rechner belegt, etwa durch ein anderes
+  Programm oder den Tunnel einer zweiten AdminHelper-Installation, erreichten die Verbindungen dieses Tunnels ihr Ziel
+  nicht. Jetzt ist der Visitor-Port der Wunschport: Ist er belegt oder liegt er unter 1024, nimmt der Desktop einen
+  freien Port aus 23000–23999 und behaelt ihn, solange der Tunnel besteht; nur ein beim Start des Tunnels fremd
+  belegter Port wechselt. Die Zuordnung liegt in `port-registry.json` im App-Data-Verzeichnis, gilt fuer alle
+  AdminHelper-Prozesse des Benutzers und steht in `tunnel_status` als `bindings`. Verbindungen auf einen Tunnel loest
+  der Desktop auf den tatsaechlichen Port auf: eine mit dem Tunnel verknuepfte ueber die Tunnel-Zuordnungen, die nur
+  Admins lesen, und ohne Zuordnung jede Verbindung auf `127.0.0.1` oder `localhost` mit dem Visitor-Port eines
+  laufenden Tunnels. So legt der Server seine automatischen Verbindungen an; sie erreichen damit auch fuer Nicht-Admins
+  den tatsaechlichen Port. Eine von Hand mit einem Tunnel verknuepfte Verbindung loest der Desktop weiter nur fuer
+  Admins auf. Solange ein Tunnel laeuft, geht auch eine selbst angelegte Verbindung auf `127.0.0.1` oder `localhost`
+  mit seinem Visitor-Port durch ihn. Doku: FRP-Tunnel (Administration), Desktop fuer Entwickler (DE+EN), README,
+  DEVELOPMENT.
 - **Server-CLI: `reset-admin` meldet die bestehenden Sitzungen ab:** Setzt `python -m app.cli reset-admin` das
   Passwort eines Benutzers zurueck, gelten danach wie beim Passwortwechsel ueber die API (`PUT /api/users/{id}`) die
   vor dem Reset ausgestellten Access- und Refresh-Tokens nicht mehr; der Benutzer meldet sich mit dem neuen Passwort
@@ -939,6 +989,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   englischen Oberflaeche. Gespeicherte Eintraege behalten ihren Text. Ebenso englisch sind die Fehlertexte der
   Monitoring-API, die der Desktop als „HTTP <Code>: …“ anzeigt, etwa „Check not found“, „Invalid API key“ oder
   „Invalid config for agent_resources: …“; die Status-Codes bleiben. Doku: Monitoring-Administration (DE+EN).
+
+- **Monitoring: Check-Meldungen nennen hoechstens zehn Eintraege einer Liste und sind hoechstens 2000 Zeichen lang
+  (R-0517):** Nennt die Meldung eines Checks eine Liste — VMs ohne oder mit altem Backup, Pools, Container, Platten,
+  Dienste oder Mounts —, stehen dort hoechstens zehn Eintraege und hoechstens 1000 Zeichen davon, jeder Eintrag auf
+  500 Zeichen gekuerzt, die uebrigen als „(+N more)“, etwa „Failed: a.service, …, j.service (+3 more)“. Bisher nannte
+  die Meldung alle, bei einem defekten Agent mit 500 langen Namen bis zu mehreren Millionen Zeichen in Dashboard, Mail
+  und Webhook. Zusaetzlich kuerzt der Dienst jede Meldung fuer Dashboard, Mail und Webhook auf hoechstens 2000 Zeichen
+  samt „…“, etwa eine mit zwei vollen Listen oder dem langen Fehlertext „Unexpected error: …“ eines Checks; ein
+  „(failure n/m)“ eines gedaempften Fehlers steht dahinter und bleibt sichtbar. Status und Metriken bleiben gleich,
+  die Details (die Listen im Desktop) bleiben vollstaendig. Doku: Monitoring fuer Entwickler und Administration
+  (DE+EN).
 
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft

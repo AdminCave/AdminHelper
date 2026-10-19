@@ -57,6 +57,10 @@ export function generateDiagnostics(): Promise<string> {
 
 // ─────────────────────────── Auth ─────────────────────────────────
 
+// Starts the session in the Rust process: server, tokens and the certificate choice stay
+// there. Every command that talks to the server as the user (api_proxy, the tunnel, the
+// notification stream, …) acts for that session and fails with "Keine aktive Sitzung"
+// without one.
 export function login(
   serverUrl: string,
   username: string,
@@ -121,48 +125,22 @@ export function enrollWithToken(
   return invoke('enroll_with_token', { serverUrl, token, allowSelfSigned });
 }
 
-// Enroll a long-lived browser certificate and write it as a password-protected
-// .p12 to `destPath` (chosen via the save dialog); resolves to the absolute path
-// the user imports into their browser's certificate store (needed once mTLS is
-// enforced).
-export function exportBrowserP12(
-  serverUrl: string,
-  token: string,
-  password: string,
-  destPath: string,
-  allowSelfSigned?: boolean,
-): Promise<string> {
-  return invoke<string>('export_browser_p12', {
-    serverUrl,
-    token,
-    password,
-    destPath,
-    allowSelfSigned,
-  });
+// Enroll a long-lived browser certificate at the signed-in server and write it as a
+// password-protected .p12 to `destPath` (chosen via the save dialog); resolves to the
+// absolute path the user imports into their browser's certificate store (needed once
+// mTLS is enforced).
+export function exportBrowserP12(password: string, destPath: string): Promise<string> {
+  return invoke<string>('export_browser_p12', { password, destPath });
 }
 
 // ─────────────────────────── Server API proxy ────────────────────
 
-export function apiProxy<T = unknown>(
-  serverUrl: string,
-  token: string,
-  method: HttpMethod,
-  path: string,
-  body?: string,
-  allowSelfSigned?: boolean,
-): Promise<T> {
-  return invoke<T>('api_proxy', {
-    serverUrl,
-    token,
-    method,
-    path,
-    body,
-    allowSelfSigned,
-  });
+export function apiProxy<T = unknown>(method: HttpMethod, path: string, body?: string): Promise<T> {
+  return invoke<T>('api_proxy', { method, path, body });
 }
 
-export function fetchConnectionsJwt(serverUrl: string, token: string): Promise<Connection[]> {
-  return invoke<Connection[]>('fetch_connections_jwt', { serverUrl, token });
+export function fetchConnectionsJwt(): Promise<Connection[]> {
+  return invoke<Connection[]>('fetch_connections_jwt');
 }
 
 export function syncConnections(url: string): Promise<Connection[]> {
@@ -219,20 +197,12 @@ export function deletePassword(connection: Connection): Promise<void> {
 
 // ─────────────────────────── Tunnel (frpc) ────────────────────────
 
-export function startTunnel(
-  serverUrl: string,
-  token: string,
-  username: string,
-): Promise<TunnelStatus> {
-  return invoke<TunnelStatus>('start_tunnel', { serverUrl, token, username });
+export function startTunnel(): Promise<TunnelStatus> {
+  return invoke<TunnelStatus>('start_tunnel');
 }
 
-export function refreshTunnel(
-  serverUrl: string,
-  token: string,
-  username: string,
-): Promise<TunnelRefresh> {
-  return invoke<TunnelRefresh>('refresh_tunnel', { serverUrl, token, username });
+export function refreshTunnel(): Promise<TunnelRefresh> {
+  return invoke<TunnelRefresh>('refresh_tunnel');
 }
 
 export function stopTunnel(): Promise<void> {
@@ -243,8 +213,8 @@ export function tunnelStatus(): Promise<TunnelStatus> {
   return invoke<TunnelStatus>('tunnel_status');
 }
 
-export function fetchTunnels(serverUrl: string, token: string): Promise<TunnelMapping[]> {
-  return invoke<TunnelMapping[]>('fetch_tunnels', { serverUrl, token });
+export function fetchTunnels(): Promise<TunnelMapping[]> {
+  return invoke<TunnelMapping[]>('fetch_tunnels');
 }
 
 // ─────────────────────────── Ansible ──────────────────────────────
@@ -266,8 +236,8 @@ export function ansibleLaunch(inventoryPath: string, playbookPath: string): Prom
 // Open the long-lived SSE notification stream (tunnelled through Rust because the
 // WebView can't EventSource against the self-signed server). The Rust side emits
 // a `notification` Tauri event whenever a new notification arrives.
-export function startNotificationStream(serverUrl: string, token: string): Promise<void> {
-  return invoke('start_notification_stream', { serverUrl, token });
+export function startNotificationStream(): Promise<void> {
+  return invoke('start_notification_stream');
 }
 
 export function stopNotificationStream(): Promise<void> {

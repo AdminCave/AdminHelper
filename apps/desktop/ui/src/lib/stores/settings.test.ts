@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   fetchTunnels: vi.fn(),
   stopTunnel: vi.fn(),
   reloadWindow: vi.fn(),
+  listen: vi.fn(),
 }));
 
 vi.mock('./connections', () => ({
@@ -60,8 +61,10 @@ vi.mock('$lib/bridge', () => ({
 }));
 vi.mock('./tunnel', () => ({ stop: h.tunnelStop, startIfServerMode: h.tunnelStart }));
 vi.mock('$lib/utils/reloadWindow', () => ({ reloadWindow: h.reloadWindow }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: h.listen }));
 
 import { syncNow, saveSettings, stopSyncTimer } from './settings';
+import { takeLoginNotice } from '$lib/utils/loginNotice';
 
 const base = (over: Partial<Settings> = {}): Settings =>
   ({
@@ -114,7 +117,7 @@ describe('saveSettings mode-switch orchestration (6.6)', () => {
     vi.clearAllMocks();
     h.conn.error = null;
     // Start from an active server session so each switch exercises the logout/teardown paths.
-    h.sess.session = { token: 't' };
+    h.sess.session = {};
     h.sess.settings = { mode: 'server', serverUrl: 'https://alt' };
   });
 
@@ -196,8 +199,6 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
   // counts is that frpc stops before the session goes and that no tick follows.
   const SESSION: AuthSession = {
     serverUrl: 'https://srv',
-    token: 't',
-    refreshToken: 'r',
     username: 'alice',
     isAdmin: false,
   };
@@ -214,6 +215,7 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
     name: 'db',
   };
   let logoutAndReload: () => Promise<void>;
+  let listenForSessionExpiry: () => Promise<() => void>;
   let session: typeof import('./session');
   let tunnel: typeof import('./tunnel');
 
@@ -232,7 +234,7 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
     vi.resetModules();
     vi.doUnmock('./session');
     vi.doUnmock('./tunnel');
-    ({ logoutAndReload } = await import('./settings'));
+    ({ logoutAndReload, listenForSessionExpiry } = await import('./settings'));
     session = await import('./session');
     tunnel = await import('./tunnel');
     await session.hydrate();
@@ -244,6 +246,7 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
 
   afterEach(() => {
     vi.useRealTimers();
+    sessionStorage.clear();
   });
 
   it('stops the tunnel before it logs out and leaves connections.json alone', async () => {
@@ -296,5 +299,33 @@ describe('logoutAndReload: the logout buttons of the app shell and the settings 
     await expect(logoutAndReload()).resolves.toBeUndefined();
     expect(get(session.session)).toBeNull();
     expect(h.reloadWindow).toHaveBeenCalledOnce();
+  });
+
+  it('a logout button leaves the login screen no notice', async () => {
+    await logoutAndReload();
+    expect(takeLoginNotice()).toBe('');
+  });
+
+  it('session-expired logs out like the buttons, and the login screen says why (R-0430)', async () => {
+    const heard = new Map<string, () => void>();
+    h.listen.mockImplementation(async (event: string, handler: () => void) => {
+      heard.set(event, handler);
+      return () => {};
+    });
+    await listenForSessionExpiry();
+    expect(heard.has('session-expired')).toBe(true);
+
+    heard.get('session-expired')?.();
+
+    await vi.waitFor(() => expect(h.reloadWindow).toHaveBeenCalledOnce());
+    expect(h.stopTunnel).toHaveBeenCalledOnce();
+    expect(h.bridgeLogout).toHaveBeenCalledOnce();
+    expect(h.bridgeLogout.mock.invocationCallOrder[0]).toBeLessThan(
+      h.reloadWindow.mock.invocationCallOrder[0],
+    );
+    expect(get(session.session)).toBeNull();
+    expect(get(tunnel.tunnelUi)).toBe('idle');
+    // The notice waits for the login screen after the reload (tNow is the key here).
+    expect(takeLoginNotice()).toBe('login.sessionExpired');
   });
 });

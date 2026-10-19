@@ -23,7 +23,7 @@
 # Flags: --skip-backup  --with-victoria  --no-rollback  --yes
 #
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
-# runtime files + .env before the swap; on a failed .env migration, agent-repo
+# runtime files + .env before the swap; on a failed swap, .env migration, agent-repo
 # refresh, image pull, recreate or health check it auto-rolls-back the runtime files
 # + image pins (use --no-rollback to inspect the broken state). The updater updates
 # ITSELF: if the release ships a newer update.sh it re-execs into it.
@@ -452,34 +452,6 @@ log "Laufzeit-Snapshot: ${SNAP}"
 # (0700, removed on exit), not in the snapshot, which both restore in whole.
 cp -p .env "${TMP}/env.prev" || die "Kopie der .env fehlgeschlagen — Abbruch (noch nichts veraendert)."
 
-# --- Atomic-ish swap: place every manifest file, drop obsolete ops scripts ---
-# Paths come from the bundle's MANIFEST.sha256 (col 2). Each file is moved into
-# place from the already-verified extract dir; scripts/* get the exec bit. A path
-# that does not exist yet is noted in ADDED_PATHS first: the snapshot cannot bring
-# back its absence, so a rollback removes it (restore_snapshot).
-MANIFEST_PATHS=$(awk '{print $2}' "${EXTRACT}/MANIFEST.sha256")
-ADDED_PATHS=""
-while IFS= read -r rel; do
-    [ -n "$rel" ] || continue
-    rel="${rel#./}"
-    [ -e "$rel" ] || [ -L "$rel" ] || ADDED_PATHS+="${rel}"$'\n'
-    mkdir -p "$(dirname "$rel")"
-    cp "${EXTRACT}/${rel}" "${rel}.ah-new"
-    mv "${rel}.ah-new" "$rel"
-    case "$rel" in scripts/*.sh) chmod +x "$rel" ;; esac
-done <<< "$MANIFEST_PATHS"
-
-# Remove ops scripts that this release no longer ships (managed set only: our
-# scripts/*.sh that are absent from the manifest). Never touches non-script files.
-for f in scripts/*.sh; do
-    [ -e "$f" ] || continue
-    if ! printf '%s\n' "$MANIFEST_PATHS" | grep -qx "./$f" && \
-       ! printf '%s\n' "$MANIFEST_PATHS" | grep -qx "$f"; then
-        log "Entferne nicht mehr ausgelieferte Datei: $f"
-        rm -f "$f"
-    fi
-done
-
 # --- Both rollbacks: the runtime files as the snapshot holds them -----------
 # tar only adds and overwrites, so the paths the swap added go first, and ./repo is
 # emptied IN PLACE (the dir inode stays, so the gateway's live bind mount stays
@@ -497,15 +469,16 @@ restore_snapshot() {
 }
 
 # --- Rollback while no container has been touched yet ------------------------
-# A failed .env migration, agent-repo refresh or pull (registry down, rate limit,
-# an image the release did not publish) comes before the recreate, so nothing of
-# the new version ever ran: the installed state is the snapshot plus the old .env
-# as a whole, pins of a floating tag included. No recreate needed. $1 says what
-# failed, $2 is the way on that --no-rollback names: .env stays pinned on the
-# target, so a bare re-run would call the install current.
+# A failed swap, .env migration, agent-repo refresh or pull (registry down, rate
+# limit, an image the release did not publish) comes before the recreate, so
+# nothing of the new version ever ran: the installed state is the snapshot plus the
+# old .env as a whole, pins of a floating tag included. No recreate needed. $1 says
+# what failed, $2 is the way on that --no-rollback names: once .env is pinned on
+# the target, a bare re-run would call the install current. $3 replaces what
+# --no-rollback says stays: a failed swap comes before the re-pin.
 rollback_before_deploy() {
     if [ "$NO_ROLLBACK" = 1 ]; then
-        die "$1. --no-rollback gesetzt: neue Laufzeit-Dateien + Image-Pins bleiben stehen, Container unveraendert. $2"
+        die "$1. --no-rollback gesetzt: ${3:-neue Laufzeit-Dateien + Image-Pins bleiben stehen}, Container unveraendert. $2"
     fi
     local incomplete=0
     echo >&2
@@ -519,6 +492,44 @@ rollback_before_deploy() {
         || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), Container unveraendert. Bitte manuell pruefen."
     die "$1 — zurueckgerollt auf ${INSTALLED_LABEL}, Container unveraendert. Update danach erneut ausfuehren."
 }
+
+# --- Atomic-ish swap: place every manifest file, drop obsolete ops scripts ---
+# Paths come from the bundle's MANIFEST.sha256 (col 2). Each file is copied next to
+# its place from the already-verified extract dir and renamed over it; scripts/*
+# get the exec bit. A path that does not exist yet is noted in ADDED_PATHS first:
+# the snapshot cannot bring back its absence, so a rollback removes it
+# (restore_snapshot). One step, like migrate_env: the caller tests the status,
+# which turns set -e off in here, so every part that can fail returns 1 itself, a
+# copy left half written goes, and the caller rolls back. -T: a directory
+# <path>.ah-new in the way fails the copy, it takes no file.
+MANIFEST_PATHS=$(awk '{print $2}' "${EXTRACT}/MANIFEST.sha256")
+ADDED_PATHS=""
+swap_runtime_files() {
+    local rel f
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        rel="${rel#./}"
+        [ -e "$rel" ] || [ -L "$rel" ] || ADDED_PATHS+="${rel}"$'\n'
+        mkdir -p "$(dirname "$rel")" || return 1
+        { cp -T "${EXTRACT}/${rel}" "${rel}.ah-new" && mv -T "${rel}.ah-new" "$rel"; } \
+            || { rm -f "${rel}.ah-new"; return 1; }
+        case "$rel" in scripts/*.sh) chmod +x "$rel" || return 1 ;; esac
+    done <<< "$MANIFEST_PATHS"
+
+    # Remove ops scripts that this release no longer ships (managed set only: our
+    # scripts/*.sh that are absent from the manifest). Never touches non-script files.
+    for f in scripts/*.sh; do
+        [ -e "$f" ] || continue
+        if ! printf '%s\n' "$MANIFEST_PATHS" | grep -qx "./$f" && \
+           ! printf '%s\n' "$MANIFEST_PATHS" | grep -qx "$f"; then
+            log "Entferne nicht mehr ausgelieferte Datei: $f"
+            rm -f "$f" || return 1
+        fi
+    done
+}
+swap_runtime_files || rollback_before_deploy "Tausch der Laufzeit-Dateien fehlgeschlagen" \
+    "Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)." \
+    "teils getauschte Laufzeit-Dateien bleiben stehen, .env unveraendert"
 
 # --- .env migration: add new keys, fill new secrets, re-pin images ----------
 # One step: the caller tests the status, which turns set -e off in here, so every

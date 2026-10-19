@@ -103,6 +103,7 @@
 
           <h2>Visitor Ports</h2>
           <p>STCP tunnels need a local port on the admin PC for the visitor, which binds it to <code>127.0.0.1</code>. The server assigns it when the tunnel is created, unless one is given: the first free port from the <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> range (default 6000–6999). The port stays assigned to the tunnel; two STCP tunnels never share one. With firewall restrictions, narrow the range via <code>.env</code>.</p>
+          <p>For the desktop client this visitor port is the preferred port. If it is free on the admin PC, the visitor listens there. If it is taken, for instance by another program or by the tunnel of a second AdminHelper installation, or if it is below 1024, the desktop client falls back to a free port from 23000–23999. A visitor keeps a port once assigned as long as the tunnel exists; only if another program holds it when the tunnel starts does it get a new one. The desktop client resolves connections to the actual port: the one created automatically with the tunnel (<code>127.0.0.1:&lt;visitor port&gt;</code>) for every user, one linked to the tunnel by hand for admins only, as only they read the tunnel mappings. While the tunnel runs, every connection to <code>127.0.0.1</code> or <code>localhost</code> at the visitor port of a tunnel goes through that tunnel, one you created yourself too.</p>
 
           <h2>Firewall</h2>
           <table>
@@ -112,7 +113,7 @@
               <tr><td><code>7443/tcp</code></td><td>Inbound</td><td>HTTPS tunnels on the subdomain host (<code>FRP_HTTPS_PORT</code>, frps port 443 inside the container; requires a wildcard cert)</td></tr>
             </tbody>
           </table>
-          <p>The visitor ports (default 6000–6999) bind only locally on the admin PC to <code>127.0.0.1</code> and need no rule on the server.</p>
+          <p>The visitor ports (default 6000–6999, 23000–23999 when taken) bind only locally on the admin PC to <code>127.0.0.1</code> and need no rule on the server.</p>
 
           <h2>Status Dashboard</h2>
           <p>The tunnel status view shows the proxies the frps dashboard reports; for that the FRP configuration needs a dashboard port. In Compose, frps sits in a network of its own that the server cannot reach. So the frps supervisor queries the dashboard inside the frps container over loopback, every 5&nbsp;s while frps runs, and puts the answers into the <code>frps-state</code> volume, from which the server reads them. If they are missing or older than 60&nbsp;s, for instance because frps is not running, the view reports "frps not reachable: frps dashboard: no current data from the frps supervisor".</p>
@@ -124,7 +125,7 @@
             <li><strong>Agent does not connect</strong>: check the cert expiry (<code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>), server reachability via <code>nc -vz srm.example.com 7000</code>.</li>
             <li><strong>frps does not answer on port 7000</strong>: check the <em>frps state</em> block on the FRP page. With "Waiting, frps is not running" the reason is shown next to it; the codes are explained under <a href="./operations.html#frps-supervisor">Operations → frps supervisor</a>. Log: <code>docker compose logs frps</code> (lines with <code>[frps-supervisor]</code>).</li>
             <li><strong>"Tunnel not found"</strong>: is the tunnel enabled in the desktop client (<em>Infrastructure → Server → Tunnel tab</em>)? FRP logs: <code>docker compose logs -f frps</code>.</li>
-            <li><strong>STCP does not work</strong>: visitor port already taken? Check the desktop client log.</li>
+            <li><strong>STCP does not work</strong>: check the tunnel indicator at the bottom of the desktop client's sidebar, then the desktop client log (lines with <code>[frpc</code>). Which local port each visitor has is in <code>port-registry.json</code> in the desktop client's app data directory (<code>serverPort</code> is the visitor port, <code>localPort</code> the actual one). If another program takes the port just as the tunnel starts, the visitor does not listen although the indicator shows the tunnel connected: sign out and sign in again; at the start the desktop client tests the ports again and falls back.</li>
             <li><strong>Desktop shows "Tunnel disconnected"</strong>: the desktop reconnects by itself and tries again at least every 60&nbsp;s; the <em>Reconnect</em> button next to the indicator at the bottom of the expanded sidebar does it right away.</li>
           </ul>
 

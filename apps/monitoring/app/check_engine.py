@@ -33,6 +33,13 @@ logger = logging.getLogger("monitor.engine")
 # the one _dispatch_alert_bg below, each scheduling it its own way (5.3).
 _alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
 
+# Longest message apply_result stores, the "…" included. The checkers cap what they copy
+# from a report (MAX_AGENT_TEXT, join_capped), but a message with two full lists or a
+# scheduler check's "Unexpected error: {exc}" can still be longer, and the message goes
+# from MonitorState.message into the transition log, webhook and mail. Four agent texts
+# of 500 (R-0517).
+MAX_MESSAGE = 2000
+
 
 def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
     """Dispatch one alert (webhook/SMTP) with its own session.
@@ -166,6 +173,9 @@ def apply_result(
     eff_status = effective_status(
         result_status, new_fail_count, check.consecutive_fails, old_status
     )
+    # Cut before the damping suffix, so "(failure n/m)" always stays visible.
+    if len(message) > MAX_MESSAGE:
+        message = message[: MAX_MESSAGE - 1] + "…"
     if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
         message = f"{message} (failure {new_fail_count}/{check.consecutive_fails})"
 

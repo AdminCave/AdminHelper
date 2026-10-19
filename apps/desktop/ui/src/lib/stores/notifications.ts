@@ -109,10 +109,9 @@ export async function activateNotifications(): Promise<void> {
   // Live SSE push: a `notification` Tauri event (emitted by the Rust stream
   // client) means "reload the feed now". We reuse loadFeed instead of merging a
   // payload, keeping a single source of truth (priming, unread-count, OS-notify).
-  const session = currentSession();
-  if (session) {
+  if (currentSession()) {
     try {
-      await bridge.startNotificationStream(session.serverUrl, session.token);
+      await bridge.startNotificationStream();
       const un = await listen('notification', () => void loadFeed());
       // A logout (deactivateNotifications) may have run during the awaits above and bumped
       // activationGen. Registering the listener now would leak it (never removed) and leave the

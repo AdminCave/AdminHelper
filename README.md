@@ -96,17 +96,17 @@ Notes:
 In **Server mode**, the client connects to an AdminHelper server with JWT authentication:
 
 1. Set mode to **Server** in settings, enter the server URL
-2. Login with username/password — JWT is stored in the OS keyring
+2. Login with username/password — the session stays in the client's memory; no token in the OS keyring or in the UI
 3. Connections are loaded from the server API
 4. **frpc** starts automatically as a visitor to establish STCP/HTTPS tunnels
 5. Connections with matching tunnels are resolved transparently:
-   - SSH/RDP (STCP): `host` → `127.0.0.1`, `port` → visitor port
+   - SSH/RDP (STCP): `host` → `127.0.0.1`, `port` → the visitor's local port (the visitor port, or a free one from 23000–23999 if that is taken)
    - Web (HTTPS): URL → custom domain
-   - Web (STCP): URL → `http://127.0.0.1:<visitor_port>`
+   - Web (STCP): URL → `http://127.0.0.1:<local port>`
 6. A tunnel indicator in the sidebar shows connection status
 7. Cards show a green **"via Tunnel"** badge for tunneled connections
 
-In Server mode you sign in with your password on every start; server URL and username are pre-filled. Local and Sync modes remain fully functional.
+In Server mode you sign in with your password on every start; server URL and username are pre-filled. While the app runs, the client renews the session by itself; if that fails, it returns to the login screen with the notice "Session expired". Local and Sync modes remain fully functional.
 
 ---
 
@@ -462,7 +462,8 @@ cargo tauri build
 │     │  ├─ src/
 │     │  │  ├─ main.rs            # invoke_handler with all Tauri commands
 │     │  │  ├─ commands.rs        # IPC interface
-│     │  │  ├─ auth.rs            # JWT login, keyring persistence
+│     │  │  ├─ auth.rs            # JWT login and logout
+│     │  │  ├─ session.rs         # in-memory session, one renewal path
 │     │  │  ├─ frpc.rs            # frpc sidecar process
 │     │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
 │     │  │  ├─ connection/        # SSH/RDP/Web connection logic

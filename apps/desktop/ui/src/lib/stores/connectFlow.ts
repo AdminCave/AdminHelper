@@ -133,7 +133,24 @@ async function markConnectionUsed(connection: Connection): Promise<void> {
   await upsert(updated);
 }
 
-async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): Promise<boolean> {
+/**
+ * Where `connection` is reached: Rust resolves it through a tunnel mapping (admins only) or, at
+ * 127.0.0.1/localhost and the server port of a visitor, to the local port that visitor got.
+ * Unchanged if resolving fails.
+ */
+async function resolveTarget(connection: Connection): Promise<Connection> {
+  try {
+    return (await bridge.resolveConnection(connection, getMappings())).connection;
+  } catch {
+    return connection;
+  }
+}
+
+async function handleRdpAuth(
+  connection: Connection,
+  resolved: Connection,
+  keepEditorOpen: boolean,
+): Promise<boolean> {
   if (!isTauri) return false;
 
   if (passwordStoreEnabled()) {
@@ -141,7 +158,7 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
       const pwState = await bridge.passwordState(connection);
       if (!pwState.canStore) return false;
       if (pwState.stored) {
-        await performConnect(connection, keepEditorOpen, { useStoredPassword: true });
+        await performConnect(connection, resolved, keepEditorOpen, { useStoredPassword: true });
         return true;
       }
       const outcome = await requestPassword(connection, keepEditorOpen, true);
@@ -158,7 +175,11 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
           );
         }
       }
-      await performConnect(updated, keepEditorOpen, { password: outcome.password });
+      // Resolve what the prompt returns: it carries the user and domain typed there, and the
+      // visitors may have moved while the prompt waited.
+      await performConnect(updated, await resolveTarget(updated), keepEditorOpen, {
+        password: outcome.password,
+      });
       return true;
     } catch (err) {
       reportError(`Password-Store: ${errMsg(err)}`);
@@ -169,7 +190,9 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
     const outcome = await requestPassword(connection, keepEditorOpen, false);
     if (outcome.cancelled) return true;
     const updated = outcome.updated ?? connection;
-    await performConnect(updated, keepEditorOpen, { password: outcome.password });
+    await performConnect(updated, await resolveTarget(updated), keepEditorOpen, {
+      password: outcome.password,
+    });
     return true;
   }
 
@@ -180,18 +203,21 @@ export async function initiateConnect(
   connection: Connection,
   keepEditorOpen = false,
 ): Promise<void> {
-  const validation = validateConnection(connection);
+  // Resolve before validating: the server's automatic web connections have no URL until a
+  // visitor gives them one.
+  const resolved = await resolveTarget(connection);
+  const validation = validateConnection(resolved);
   if (!validation.ok) {
     reportError(validation.message ?? tNow('error.invalidConnection'));
     return;
   }
 
   if (connection.kind === 'rdp') {
-    const handled = await handleRdpAuth(connection, keepEditorOpen);
+    const handled = await handleRdpAuth(connection, resolved, keepEditorOpen);
     if (handled) return;
   }
 
-  await performConnect(connection, keepEditorOpen);
+  await performConnect(connection, resolved, keepEditorOpen);
 }
 
 interface PerformOptions {
@@ -199,24 +225,15 @@ interface PerformOptions {
   useStoredPassword?: boolean;
 }
 
+/** Open `resolved`, the target of `connection`, the connection as listed. */
 async function performConnect(
   connection: Connection,
+  resolved: Connection,
   keepEditorOpen: boolean,
   options: PerformOptions = {},
 ): Promise<void> {
   const { password, useStoredPassword = false } = options;
   try {
-    let resolved: Connection = connection;
-    const mappings = getMappings();
-    if (mappings.length > 0) {
-      try {
-        const res = await bridge.resolveConnection(connection, mappings);
-        resolved = res.connection;
-      } catch {
-        // fallback to unresolved
-      }
-    }
-
     let rdpId: string | null = null;
     if (resolved.kind === 'rdp') {
       rdpId = startRdpAttempt();

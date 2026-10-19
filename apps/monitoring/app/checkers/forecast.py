@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+from app.checkers.agent import join_capped
 from app.core.victoria import escape_label_value, victoria
 
 logger = logging.getLogger("monitor.forecast")
@@ -125,5 +126,5 @@ class DiskForecastChecker:
             metrics["disk_forecast_min_hours"] = round(min_hours_left, 1)
 
         if problems:
-            return status, "; ".join(problems), metrics
+            return status, join_capped(problems, "; "), metrics
         return "ok", "All disks stable or filling slowly", metrics
