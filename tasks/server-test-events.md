@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-Tests: der Event-Bus bleibt in der Rollback-Klammer — Task-Ledger
-Status: geplant · Branch: feature/server-test-events · Review: am Ende
+Status: aktiv · Branch: feature/server-test-events · Review: am Ende
 Spec: Roadmap R-0520
 Heavy: none — nur `apps/server/tests/` (`conftest.py` und zwei Testdateien); kein API-, Gateway-, PKI-, Stack- oder Install-Pfad. `app/core/events.py` und das Verhalten von `fire_event` im Produkt bleiben unverändert. Die Fixture wirkt in beiden Zweigen von `pg_engine` gleich. Den testcontainers-Zweig fahren weder `verify.sh` noch die PR-CI; ihn belegt der Planer-Lauf im `Beweis:`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
