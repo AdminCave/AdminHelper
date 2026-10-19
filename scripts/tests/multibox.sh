@@ -11,15 +11,22 @@
 #   agent-box(s)= real .deb install + `adminhelper-agent provision` over a network hop
 # Then asserts each agent enrolled an mTLS identity and pushed a monitoring report.
 #
-#   bash scripts/tests/multibox.sh [--agents N] [--rpm] [--tunnel]
+#   bash scripts/tests/multibox.sh [--agents N] [--rpm] [--tunnel] [--docker]
 #       [--desktop] [--moncheck] [--enforce] [--capstone] [--keep] [--strict]
 #   --strict   a guard that could not run fails the capstone (release gate)
 #   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
-#   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel)
+#   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel); the
+#              tunnel comes after the provisioning, a second one by a reload while the
+#              visitor holds an SSH session over the first (R-0398); then a change of the
+#              FRP config restarts frps once, and the agent's frpc and a new visitor
+#              connection come back without a hand on them (R-0411)
+#   --docker   + the Docker Host template on the agent's host and real Docker on its
+#              box: a running container -> ok, a container with exit 1 -> critical,
+#              the daemon stopped -> warning (R-0419); no box of its own
 #   --desktop  + the real Tauri GUI vs the remote server     (S3)
 #   --moncheck + pull ping-checks + a closed-loop email alert (S5)
 #   --enforce  + MTLS_ENFORCE=true: the certless data plane must be rejected
-#   --capstone = --agents 1 --rpm --tunnel --desktop --moncheck --enforce
+#   --capstone = --agents 1 --rpm --tunnel --docker --desktop --moncheck --enforce
 #              (S6: all in one run — the release gate)
 #   --keep     leave the VMs up after the run (still bounded by their ttl)
 #
@@ -38,15 +45,17 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/../vm/lib.sh"
 cd "$VM_ROOT" || exit 1
 
-AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0; ENFORCE=0
+AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0; ENFORCE=0; DOCKER=0
 SKIPPED=0; MB_DEBIAN9_SKIPPED=0
 while [ $# -gt 0 ]; do case "$1" in
   --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
   --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;; --enforce) ENFORCE=1 ;;  # D2: MTLS_ENFORCE=true
+  --docker) DOCKER=1 ;;
   # S6: everything, one run. --enforce included (R-0022): without it the
   # MTLS_ENFORCE guard never ran in a release capstone, which is the one place
-  # the cert-gated data plane is supposed to be proven.
-  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1; ENFORCE=1 ;;
+  # the cert-gated data plane is supposed to be proven. --docker likewise (R-0419):
+  # only a box with real Docker shows a container outage arriving at the server.
+  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DOCKER=1; DESKTOP=1; MONCHECK=1; ENFORCE=1 ;;
   # A flag, not just the env: AH_STRICT is set by run.sh alone, which never
   # starts this script, and a `AH_STRICT=1 multibox.sh` prefix is what
   # .claude/rules/testing.md forbids ("Env-Bedarf loest das Skript auf").
@@ -177,9 +186,9 @@ SID2="$(mb MB_SID2)"
 PTOK2="$(mb MB_PTOK2)"
 TUN_SID="$(mb MB_TUN_SID)"
 TUN_PTOK="$(mb MB_TUN_PTOK)"
+TUN_CFG="$(mb MB_CFG)"
 VIS_SID="$(mb MB_VIS_SID)"
 VIS_PTOK="$(mb MB_VIS_PTOK)"
-VIS_B64="$(mb MB_VISITOR_B64)"
 MC_OK_STATUS="$(mb MC_OK_STATUS)"
 MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
 REPO_FP="$(mb MB_REPO_GPG_FP)"
@@ -213,12 +222,21 @@ else
 fi
 
 echo "== provision each agent against https://$SRV_IP =="
+# The box that holds host $SID: its provision token is single-use, so it is the first that
+# provisioned. --docker works on it.
+DOCK_VM=""
 for a in "${AGENT_VMS[@]:-}"; do
   [ -n "$a" ] || continue
   AOUT="$(box "$a" 3000 bash scripts/tests/box_agentbox.sh "$SRV_IP" "$SID" "$PTOK" "$REPO_FP" "$CAFP" 2>&1)"; echo "$AOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -50
+  [ -z "$DOCK_VM" ] && grep -q AGENT_PROVISION_OK <<<"$AOUT" && DOCK_VM="$a"
   printf '%s' "$AOUT" | grep -q AGENT_PROVISION_OK && printf '%s' "$AOUT" | grep -q AGENT_CERT_OK \
     && ok "agent $a: provisioned + mTLS-enrolled over the network hop" \
     || bad "agent $a: provision/enroll (see output above; check IP-SAN + firewall)"
+  # This host has no tunnel: with --tunnel the server has an FRP config, without it none.
+  # Either way the agent run ends without an error (R-0398).
+  grep -q AGENT_RUN_OK <<<"$AOUT" \
+    && ok "agent $a: run --once green without a tunnel (frpc sync + monitor push)" \
+    || bad "agent $a: run --once failed (AGENT_RUN_OK missing, see output above)"
   if [ -n "$REPO_FP" ]; then
     printf '%s' "$AOUT" | grep -q AGENT_REPO_OK && printf '%s' "$AOUT" | grep -q AGENT_CAFLIP_OK \
       && ok "agent $a: installed from the :8445 repo via agent-install.sh, CA-pinned steady state" \
@@ -240,39 +258,325 @@ if [ "$RPM" = 1 ]; then
   else bad "rpm-agent lease"; fi
 fi
 
+# srv_api <clear|add|docker-assign|docker-state> <server-id> [<frp-config-id> <tunnel>] — the
+# admin API of the server box, called ON that box: under --enforce only it holds the admin
+# client certificate (box_serverbox.sh enrolls it into /tmp). clear deletes the tunnels of a
+# host; add creates an STCP tunnel to its sshd and prints the visitor.toml that has it.
+# `srv_api frps-config <frp-config-id> <n>` sets max_ports_per_client of an FRP config.
+# docker-assign gives a host the standard template Docker Host; docker-state names the state
+# of its Docker Health check, the monitoring service answering through the proxy of the
+# server as it does for the desktop. The program travels base64-encoded: vm.py joins the
+# command into one `bash -lc` string.
+srv_api_py() {
+  cat <<'PY'
+import base64, json, os, ssl, sys, urllib.request
+
+action, password, server_id = sys.argv[1:4]
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+if os.path.exists("/tmp/mb-admin-fullchain.pem"):  # --enforce: :443 wants the admin cert
+    ctx.load_cert_chain("/tmp/mb-admin-fullchain.pem", "/tmp/mb-admin.key")
+
+
+def call(method, path, token=None, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request("https://localhost" + path, data=data, method=method,
+                                 headers={"Content-Type": "application/json"})
+    if token:
+        req.add_header("Authorization", "Bearer " + token)
+    return urllib.request.urlopen(req, context=ctx, timeout=20).read()
+
+
+login = {"username": "admin", "password": password}
+token = json.loads(call("POST", "/api/auth/login", body=login))["access_token"]
+listed = "/api/frp/tunnels?server_id=" + server_id
+if action == "clear":
+    tunnels = json.loads(call("GET", listed, token))
+    for tunnel in tunnels:
+        call("DELETE", "/api/frp/tunnels/" + tunnel["id"], token)
+    if json.loads(call("GET", listed, token)):
+        sys.exit("tunnels of server %s left after the delete" % server_id)
+    print("MB_API_CLEARED=%d" % len(tunnels))
+elif action == "add":
+    config_id, name = sys.argv[4:6]
+    call("POST", "/api/frp/tunnels", token, {"server_id": server_id, "frp_config_id": config_id,
+                                             "name": name, "tunnel_type": "stcp",
+                                             "protocol": "ssh", "local_port": 22})
+    print("MB_API_TUNNEL=" + name)
+    print("MB_VISITOR_B64=" + base64.b64encode(call("GET", "/api/frp/generate/visitor-toml", token)).decode())
+elif action == "frps-config":
+    # The third word names an FRP config here. max_ports_per_client goes into frps.toml
+    # (maxPortsPerClient) and into no frpc.toml: a change frps alone has to take over.
+    config_id, value = server_id, int(sys.argv[4])
+    body = {"max_ports_per_client": value}
+    changed = json.loads(call("PUT", "/api/frp/server-config/" + config_id, token, body))
+    if changed.get("maxPortsPerClient") != value:
+        sys.exit("FRP config %s has max_ports_per_client %r after the PUT, want %d"
+                 % (config_id, changed.get("maxPortsPerClient"), value))
+    print("MB_API_FRPS_CONFIG=%d" % value)
+elif action == "docker-assign":
+    # By its slug: a user may rename a standard template.
+    found = [t for t in json.loads(call("GET", "/api/monitoring/templates", token))
+             if t.get("builtinSlug") == "docker-host"]
+    if len(found) != 1:
+        sys.exit("%d standard templates docker-host, want 1" % len(found))
+    server = json.loads(call("GET", "/api/servers/" + server_id, token))
+    body = {"server_id": server_id, "hostname": server["hostname"], "server_name": server["name"]}
+    created = json.loads(call("POST", "/api/monitoring/templates/%s/assign" % found[0]["id"], token, body))
+    if not created.get("checksCreated"):
+        sys.exit("the Docker Host template created no check on server %s" % server_id)
+    print("MB_API_TEMPLATE=docker-host")
+elif action == "docker-state":
+    checks = [c for c in json.loads(call("GET", "/api/monitoring/checks?server_id=" + server_id, token))
+              if c.get("checkType") == "docker_health"]
+    if len(checks) != 1:
+        sys.exit("%d docker_health checks on server %s, want 1" % (len(checks), server_id))
+    need = checks[0].get("consecutiveFails")
+    state = checks[0].get("state") or {}
+    status, fails = state.get("status"), state.get("failCount")
+    details = state.get("details") or {}
+    rated = {c.get("name"): "%s/%s" % (c.get("category"), c.get("reason") or "-")
+             for c in details.get("containers") or []}
+    run, ended = rated.get("mb-dock-run"), rated.get("mb-dock-exit")
+    counted = isinstance(fails, int) and isinstance(need, int)
+    up = details.get("available") is True and details.get("error") is None and run == "ok/-"
+    # An ok status alone proves nothing: a first warning or critical of a new check reads ok
+    # until consecutive_fails (check_engine.effective_status). The counter tells them apart.
+    marker = "DOCKER_STATE_OTHER"
+    if up and ended is None and status == "ok" and fails == 0:
+        marker = "DOCKER_OK"
+    elif up and ended == "critical/exit:1" and counted and status == "ok" and 0 < fails < need:
+        marker = "DOCKER_EXIT_DAMPED"
+    elif up and ended == "critical/exit:1" and counted and status == "critical" and fails >= need:
+        marker = "DOCKER_EXIT_CRIT"
+    elif details.get("available") is False and details.get("error") == "daemon_unreachable" \
+            and status == "warning":
+        marker = "DOCKER_UNAVAIL_WARN"
+    print("MB_DOCKER_STATE=" + marker)
+    print("MB_DOCKER_SEEN=status:%s,fails:%s/%s,available:%s,error:%s,mb-dock-run:%s,mb-dock-exit:%s"
+          % (status, fails, need, details.get("available"), details.get("error"), run or "-", ended or "-"))
+else:
+    sys.exit("unknown action " + action)
+PY
+}
+srv_api() {
+  local action="$1"; shift
+  ask "$SRV_VM" 300 "printf %s $(srv_api_py | base64 -w0) | base64 -d | python3 -I - $action $ADMIN_PW $*"
+}
+# frps_registered <tunnel> — frps logged the STCP registration of this tunnel; frp v0.69.1
+# writes "new proxy [<frpc user>.<tunnel>] type [stcp] success" (server/control.go).
+frps_registered() {
+  local log
+  log="$(ask "$SRV_VM" 300 'mb-dc logs --no-color frps 2>/dev/null | grep -F "new proxy ["' 2>/dev/null)"
+  grep -qE "new proxy \[[^]]*\.$1\] type \[stcp\] success" <<<"$log"
+}
+
+# frps_restart <tunnel…> — R-0411, once the visitor got through: a change of the FRP config over
+# the API. The supervisor in the frps container takes it over and restarts frps exactly once;
+# the agent's frpc logs in again by itself, so frps registers each tunnel anew; and a new
+# visitor connection goes through the first. box_serverbox.sh watches frps on the server box,
+# every wait there bounded and ending in a verdict.
+frps_restart() {
+  local out mark api verdict seen back hold check
+  echo "== tunnel (R-0411): a config change restarts frps once, the agent and a visitor come back =="
+  out="$(ask "$SRV_VM" 300 bash scripts/tests/box_serverbox.sh frps-mark 2>&1)"
+  mark="$(vm_marker MB_FRPS_MARK "$out")"
+  if [ -z "$mark" ]; then
+    echo "$out" | tail -5; bad "frps: no supervisor mark before the config change (see output above)"
+    skipped "the frps restart for a config change (no mark) — R-0411 is unverified"; return
+  fi
+  api="$(srv_api frps-config "$TUN_CFG" "$FRPS_MAX_PORTS" 2>&1)"
+  if [ "$(vm_marker MB_API_FRPS_CONFIG "$api")" != "$FRPS_MAX_PORTS" ]; then
+    echo "$api" | tail -5; bad "could not set max_ports_per_client of the FRP config over the API (see output above)"
+    skipped "the frps restart for a config change (the config did not change) — R-0411 is unverified"; return
+  fi
+  ok "max_ports_per_client of the FRP config set to $FRPS_MAX_PORTS over the API"
+  out="$(ask "$SRV_VM" 900 bash scripts/tests/box_serverbox.sh frps-restart "$mark" "$@" 2>&1)"
+  echo "$out" | tail -25
+  verdict="$(vm_marker MB_FRPS_RESTART "$out")"; seen="$(vm_marker MB_FRPS_SEEN "$out")"
+  [ "$verdict" = OK ] \
+    && ok "frps restarted exactly once for the change: one event, applied, one start and no exit in its log, a new frps process ($seen)" \
+    || bad "frps did not restart exactly once for the change: ${verdict:-no marker} (${seen:-nothing seen})"
+  back="$(vm_marker MB_FRPS_TUNNELS "$out")"
+  if [ "$back" != OK ]; then
+    bad "the agent's frpc did not log in again after the restart: ${back:-no marker} (see output above)"
+    skipped "a new visitor connection after the restart (the agent's tunnels are not back) — R-0411 is unverified"
+    return
+  fi
+  ok "the agent's frpc logged in again by itself: frps registered $* anew after the restart"
+  out="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh hold "${T_USER:-none}" 2>&1)"
+  echo "$out" | tail -20
+  hold="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$out" | head -1)"
+  if [ "$hold" != VIS_SESSION_OPEN ]; then
+    bad "no new visitor connection through $1 after the restart: ${hold:-no marker} (see output above)"; return
+  fi
+  ok "a new visitor connection after the restart: an SSH session through $1 carries data"
+  out="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh check 2>&1)"
+  echo "$out" | tail -10
+  check="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$out" | head -1)"
+  [ "$check" = VIS_SESSION_SURVIVED ] \
+    && ok "the new SSH session through $1 still carries data seconds later" \
+    || bad "the new SSH session through $1 broke off: ${check:-no marker}"
+}
+
 if [ "$TUNNEL" = 1 ]; then
   echo "== tunnel (S4): agent frpc STCP server over the hop to frps on $SRV_IP =="
-  printf '%s' "$SRVOUT" | grep -q 'MB_FRPS_UP=1' && ok "frps up on the server box" || bad "frps did not start on the server"
-  if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && read -r T_VM T_IP < <(lease tunnel linux-server); then
+  printf '%s' "$SRVOUT" | grep -q 'MB_FRPS_UP=1' && ok "frps up on the server box, run by its supervisor from the seeded config" \
+    || bad "frps did not start on the server"
+  LATE_TUNNEL=mb-ssh-late; RELOAD_TUNNEL=mb-ssh-reload
+  # The seeded config leaves max_ports_per_client unset, which frps.toml writes as 16: any other
+  # value above 0 changes frps.toml (0 means the default as well).
+  FRPS_MAX_PORTS=32
+  if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && [ -n "$TUN_CFG" ] && read -r T_VM T_IP < <(lease tunnel linux-server); then
     ok "tunnel-agent-box $T_VM @ $T_IP"
+    # R-0398, goal 2: the host is provisioned BEFORE its tunnel exists, and its own agent
+    # run has to set frpc up for the tunnel created afterwards. box_serverbox.sh seeds a
+    # tunnel with the host, so that one goes first.
+    API="$(srv_api clear "$TUN_SID" 2>&1)"
+    [ -n "$(vm_marker MB_API_CLEARED "$API")" ] \
+      && ok "the seeded tunnel is deleted over the API before the host is provisioned" \
+      || { echo "$API" | tail -5; bad "could not delete the seeded tunnel over the API (see output above)"; }
     TOUT="$(box "$T_VM" 3000 bash scripts/tests/box_tunnelbox.sh "$SRV_IP" "$TUN_SID" "$TUN_PTOK" 2>&1)"
     echo "$TOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
-    printf '%s' "$TOUT" | grep -q TUNNEL_FRPC_CONNECTED \
+    grep -q TUNNEL_BEFORE_OK <<<"$TOUT" \
+      && ok "tunnel agent: provisioned before its tunnel existed (sync config written, no frpc)" \
+      || bad "tunnel agent: provisioning without a tunnel (TUNNEL_BEFORE_OK missing, see output above)"
+    API="$(srv_api add "$TUN_SID" "$TUN_CFG" "$LATE_TUNNEL" 2>&1)"
+    LATE_VIS_B64=""
+    if [ "$(vm_marker MB_API_TUNNEL "$API")" = "$LATE_TUNNEL" ]; then
+      ok "tunnel $LATE_TUNNEL created over the API after the provisioning"
+      LATE_VIS_B64="$(vm_marker MB_VISITOR_B64 "$API")"
+    else
+      echo "$API" | tail -5; bad "could not create tunnel $LATE_TUNNEL over the API (see output above)"
+    fi
+    LOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh late "$LATE_TUNNEL" 2>&1)"
+    echo "$LOUT" | tail -40
+    grep -q TUNNEL_FRPC_CONNECTED <<<"$LOUT" \
       && ok "tunnel agent: frpc STCP server connected to the remote frps" \
       || bad "tunnel agent: frpc did not connect (see output above)"
+    LATE_MARK="$(grep -oE 'TUNNEL_LATE_[A-Z_]+' <<<"$LOUT" | head -1)"
+    [ "$LATE_MARK" = TUNNEL_LATE_OK ] \
+      && ok "tunnel agent: one agent run set frpc up for the later tunnel (active, enabled)" \
+      || bad "tunnel agent: the agent run did not take the later tunnel: ${LATE_MARK:-no marker} (see output above)"
     # The agent's own sync over the route bound to its server, with its certificate:
     # under --enforce nothing else gets through the gateway (R-0315).
-    SYNC_MARK="$(printf '%s' "$TOUT" | grep -oE 'TUNNEL_SYNC_[A-Z_]+' | head -1)"
+    SYNC_MARK="$(printf '%s' "$LOUT" | grep -oE 'TUNNEL_SYNC_[A-Z_]+' | head -1)"
     SYNC_CERT=""; [ "$ENFORCE" = 1 ] && SYNC_CERT=", with its certificate (enforced)"
     [ "$SYNC_MARK" = TUNNEL_SYNC_HASH_OK ] \
-      && ok "tunnel agent: frpc sync got config-hash over its server's route, the provisioned hash$SYNC_CERT" \
+      && ok "tunnel agent: frpc sync got config-hash over its server's route, the hash its run applied$SYNC_CERT" \
       || bad "tunnel agent: frpc sync over its server's route: ${SYNC_MARK:-no marker} (see output above)"
     # Independent check on the server: frps logged the STCP registration cross-host.
-    FRPSLOG="$(ask "$SRV_VM" 300 'mb-dc logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
-    printf '%s' "$FRPSLOG" | grep -qiE 'new proxy|start proxy success|stcp' \
-      && ok "frps registered the agent's STCP tunnel (cross-host)" \
-      || bad "frps shows no STCP registration from the agent"
+    frps_registered "$LATE_TUNNEL" \
+      && ok "frps registered the agent's STCP tunnel $LATE_TUNNEL (cross-host)" \
+      || bad "frps shows no STCP registration of $LATE_TUNNEL from the agent"
     # Phase 2: a visitor on a THIRD box completes the data path (visitor -> frps ->
-    # agent frpc -> the agent's sshd), proving the full cross-host tunnel.
-    if [ -n "$VIS_SID" ] && [ -n "$VIS_B64" ] && read -r V_VM V_IP < <(lease visitor linux-server); then
+    # agent frpc -> the agent's sshd), proving the full cross-host tunnel. Its visitor.toml
+    # is the one from after the late tunnel: the seeded one names the deleted tunnel.
+    if [ -n "$VIS_SID" ] && [ -n "$LATE_VIS_B64" ] && read -r V_VM V_IP < <(lease visitor linux-server); then
       ok "visitor-box $V_VM @ $V_IP"
-      VOUT="$(box "$V_VM" 3000 bash scripts/tests/box_visitorbox.sh "$SRV_IP" "$VIS_SID" "$VIS_PTOK" "$VIS_B64" 2>&1)"
+      VOUT="$(box "$V_VM" 3000 bash scripts/tests/box_visitorbox.sh "$SRV_IP" "$VIS_SID" "$VIS_PTOK" "$LATE_VIS_B64" 2>&1)"
       echo "$VOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
       printf '%s' "$VOUT" | grep -q VIS_TUNNEL_SSH_OK \
         && ok "visitor reached the agent's sshd THROUGH the tunnel (3-host data path)" \
         || bad "visitor could not reach the agent's sshd through the tunnel"
+      # R-0398, goal 3: a second tunnel comes by a reload of frpc, and the tunnels it leaves
+      # unchanged keep their connections. The visitor holds an SSH session over the first
+      # meanwhile; a restart of frpc would end it.
+      VIS_PUB="$(vm_marker VIS_SSH_PUB_B64 "$VOUT")"
+      MOUT="$(ask "$T_VM" 300 bash scripts/tests/box_tunnelbox.sh mark "${VIS_PUB:-none}" 2>&1)"
+      echo "$MOUT" | tail -10
+      T_USER="$(vm_marker TUNNEL_SSH_USER "$MOUT")"
+      HOUT="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh hold "${T_USER:-none}" 2>&1)"
+      echo "$HOUT" | tail -20
+      HOLD_MARK="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$HOUT" | head -1)"
+      [ "$HOLD_MARK" = VIS_SESSION_OPEN ] \
+        && ok "visitor holds an SSH session open through $LATE_TUNNEL" \
+        || bad "visitor could not open an SSH session through $LATE_TUNNEL: ${HOLD_MARK:-no marker} (see output above)"
+      API="$(srv_api add "$TUN_SID" "$TUN_CFG" "$RELOAD_TUNNEL" 2>&1)"
+      [ "$(vm_marker MB_API_TUNNEL "$API")" = "$RELOAD_TUNNEL" ] \
+        && ok "second tunnel $RELOAD_TUNNEL created over the API" \
+        || { echo "$API" | tail -5; bad "could not create tunnel $RELOAD_TUNNEL over the API (see output above)"; }
+      RLOUT="$(ask "$T_VM" 600 bash scripts/tests/box_tunnelbox.sh reload "$RELOAD_TUNNEL" 2>&1)"
+      echo "$RLOUT" | tail -40
+      RELOAD_MARK="$(grep -oE 'TUNNEL_RELOAD_[A-Z_]+' <<<"$RLOUT" | head -1)"
+      [ "$RELOAD_MARK" = TUNNEL_RELOAD_OK ] \
+        && ok "tunnel agent: frpc took $RELOAD_TUNNEL by a reload, no restart (same frpc PID, agent log)" \
+        || bad "tunnel agent: $RELOAD_TUNNEL without a clean reload: ${RELOAD_MARK:-no marker} (see output above)"
+      frps_registered "$RELOAD_TUNNEL" \
+        && ok "frps registered the second tunnel $RELOAD_TUNNEL" \
+        || bad "frps shows no STCP registration of $RELOAD_TUNNEL from the agent"
+      if [ "$HOLD_MARK" = VIS_SESSION_OPEN ]; then
+        COUT="$(ask "$V_VM" 300 bash scripts/tests/box_visitorbox.sh check 2>&1)"
+        echo "$COUT" | tail -10
+        CHECK_MARK="$(grep -oE 'VIS_SESSION_[A-Z_]+' <<<"$COUT" | head -1)"
+        [ "$CHECK_MARK" = VIS_SESSION_SURVIVED ] \
+          && ok "the visitor's SSH session through $LATE_TUNNEL lived through the reload" \
+          || bad "the visitor's SSH session through $LATE_TUNNEL did not live through the reload: ${CHECK_MARK:-no marker}"
+      else
+        # On top of the FAIL above, not instead of it: without a session goal 3 is unverified.
+        skipped "the SSH session through the reload (none was open) — goal 3 of R-0398 is unverified"
+      fi
+      # After R-0398, whose check stops the visitor's frpc: the visitor after the restart is a
+      # new frpc and a new SSH session.
+      if grep -q VIS_TUNNEL_SSH_OK <<<"$VOUT"; then
+        frps_restart "$LATE_TUNNEL" "$RELOAD_TUNNEL"
+      else
+        skipped "the frps restart for a config change (the visitor never got through before it) — R-0411 is unverified"
+      fi
     else bad "visitor lease or missing visitor config"; fi
   else bad "tunnel-agent lease or missing tunnel seed"; fi
+fi
+
+# docker_step <step> <what> — one step of box_agentbox.sh docker on the agent box: it changes
+# Docker as the step says, then one agent run pushes the report. The start step names the
+# engine and the image, which the verdict carries.
+docker_step() {
+  local out verdict engine image what="$2"
+  out="$(ask "$DOCK_VM" 900 bash scripts/tests/box_agentbox.sh docker "$1" 2>&1)"
+  echo "$out" | tail -15
+  verdict="$(vm_marker AGENT_DOCKER_STEP "$out")"
+  engine="$(vm_marker AGENT_DOCKER_ENGINE "$out")"; image="$(vm_marker AGENT_DOCKER_IMAGE "$out")"
+  [ -n "$engine" ] && what="$what (Docker $engine, image ${image:-none})"
+  [ "$verdict" = OK ] && ok "docker agent box: $what" || bad "docker agent box: $what: ${verdict:-no marker} (see output above)"
+}
+# docker_state <marker> <what> — the Docker Health check of host $SID, read on the server box
+# after the push of the step before.
+docker_state() {
+  local out mark seen
+  out="$(srv_api docker-state "$SID" 2>&1)"
+  mark="$(vm_marker MB_DOCKER_STATE "$out")"; seen="$(vm_marker MB_DOCKER_SEEN "$out")"
+  if [ "$mark" = "$1" ]; then
+    ok "$2 ($1; $seen)"
+  else
+    echo "$out" | tail -5; bad "$2: ${mark:-no marker} (expected $1; ${seen:-nothing seen})"
+  fi
+}
+
+if [ "$DOCKER" = 1 ]; then
+  echo "== docker (R-0419): real Docker on the agent box, the Docker Host template, three states =="
+  if [ -n "$DOCK_VM" ]; then
+    API="$(srv_api docker-assign "$SID" 2>&1)"
+    if [ "$(vm_marker MB_API_TEMPLATE "$API")" = docker-host ]; then
+      ok "the Docker Host template is assigned to the host of agent $DOCK_VM over the API"
+      docker_step start "the agent timer is stopped, a container keeps running, one agent run"
+      docker_state DOCKER_OK "docker: a running container -> ok"
+      # consecutive_fails 2 (Docker Host, builtin_templates.py): the first critical result
+      # keeps the status ok and counts 1 of 2, the second turns it critical. The stopped
+      # daemon continues that count, so its warning stands after one run.
+      docker_step exit "a second container ended with exit 1, no restart policy, one agent run"
+      docker_state DOCKER_EXIT_DAMPED "docker: the first report of the exit 1 -> critical exit:1 in the details, the status damped"
+      docker_step rerun "one more agent run"
+      docker_state DOCKER_EXIT_CRIT "docker: the second report -> critical, reason exit:1"
+      docker_step down "Docker daemon and socket stopped, one agent run"
+      docker_state DOCKER_UNAVAIL_WARN "docker: the stopped daemon -> warning, error daemon_unreachable"
+    else
+      echo "$API" | tail -5; bad "could not assign the Docker Host template over the API (see output above)"
+      skipped "the three Docker states (no Docker Host check) — ok, exit 1 and the stopped daemon are unverified"
+    fi
+  else
+    skipped "the Docker stage (no provisioned agent box) — ok, exit 1 and the stopped daemon are unverified"
+  fi
 fi
 
 if [ "$DESKTOP" = 1 ]; then

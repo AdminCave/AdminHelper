@@ -56,6 +56,8 @@ export interface TemplateAssignment {
   templateName?: string | null;
   // 'manual' = user-created, 'tag' = materialized by the monitoring tag-sync.
   source?: 'manual' | 'tag';
+  // Template checks deleted on this server; the template sync leaves them deleted.
+  removedChecks?: number;
 }
 
 export interface Playbook {
@@ -226,6 +228,9 @@ export interface MonitorCheckConfig {
   capacity_warn?: number;
   capacity_crit?: number;
 
+  // zfs_health and docker_health; absent means true.
+  alert_on_unavailable?: boolean;
+
   // docker_health
   ignore_containers?: string[];
   check_restarts?: boolean;
@@ -283,15 +288,29 @@ export interface MonitorServiceDetails {
   mode?: 'auto' | 'list';
   failed?: string[];
   enabled_inactive?: string[];
-  watched?: { name: string; running: boolean }[];
+  // Only with the agent's service counts; agents before R-0418 send none.
+  active_count?: number;
+  total?: number;
+  // Details written before R-0418 carry running alone, without state.
+  watched?: { name: string; state?: 'running' | 'down' | 'nodata'; running?: boolean }[];
 }
 
 export interface MonitorContainerDetails {
+  // Details written before R-0419 carry neither. available false: the agent could
+  // not read docker (error is the code), and containers is empty.
+  available?: boolean;
+  error?: string | null;
   containers?: {
+    // id, reason, exit_code and restart_count also come with R-0419.
+    id?: string | null;
     name: string;
     image?: string;
     state: string;
-    category: 'ok' | 'warning' | 'critical';
+    // stopped: ended on purpose; the server counts it as ok.
+    category: 'ok' | 'warning' | 'critical' | 'stopped';
+    reason?: string | null;
+    exit_code?: number | null;
+    restart_count?: number | null;
   }[];
 }
 
@@ -306,6 +325,10 @@ export interface MonitorBackupDetails {
 }
 
 export interface MonitorZfsDetails {
+  // Details written before R-0419 carry neither. available false: the agent could
+  // not read zpool (error is the code), and pools is empty.
+  available?: boolean;
+  error?: string | null;
   pools?: {
     name: string;
     health: string;
@@ -373,6 +396,10 @@ export interface MonitorCheck {
   config?: MonitorCheckConfig;
   state?: MonitorCheckState | null;
   templateId?: string | null;
+  templateDefId?: string | null;
+  // Template fields the user changed, which the template sync keeps; named as in
+  // the request body (snake_case, e.g. 'check_type'), not as the fields above.
+  overriddenFields?: string[];
 }
 
 export interface MonitorCheckInput {
@@ -559,10 +586,37 @@ export interface MonitoringTemplateFull {
   description?: string | null;
   // Set on shipped standard templates (seeded at monitoring startup).
   builtinSlug?: string | null;
+  // Shipped version last rolled out to this standard template; null on user templates.
+  builtinVersion?: number | null;
+  // Definitions changed since that rollout: a newer shipped version is then only
+  // offered (builtinUpdateAvailable), not taken automatically.
+  builtinEdited?: boolean;
+  builtinUpdateAvailable?: boolean;
   checkDefinitions?: TemplateCheckDef[];
   alertDefinitions?: TemplateAlertDef[];
   assignments?: MonitoringTemplateAssignment[];
   tagAssignments?: MonitoringTemplateTagAssignment[];
+}
+
+// A definition as GET /templates/{id}/builtin-update shows it: every key at its
+// schema default is left out (the form the server hashes), so two definitions are
+// the same exactly when their keys and values are.
+export type MonitoringBuiltinCheckDef = Pick<TemplateCheckDef, 'name' | 'check_type'> &
+  Partial<TemplateCheckDef> & { enabled?: boolean; description?: string | null };
+export type MonitoringBuiltinAlertDef = Pick<TemplateAlertDef, 'name' | 'channel'> &
+  Partial<TemplateAlertDef>;
+
+export interface MonitoringBuiltinDefinitions {
+  checkDefinitions: MonitoringBuiltinCheckDef[];
+  alertDefinitions: MonitoringBuiltinAlertDef[];
+}
+
+// Current definitions of a standard template next to those of its shipped version.
+export interface MonitoringBuiltinUpdate {
+  currentVersion: number | null;
+  shippedVersion: number;
+  current: MonitoringBuiltinDefinitions;
+  shipped: MonitoringBuiltinDefinitions;
 }
 
 export interface MonitoringTemplateInput {

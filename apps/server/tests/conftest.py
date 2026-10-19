@@ -23,18 +23,9 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-import app.modules.ansible.models  # noqa: F401
-import app.modules.api_keys.models  # noqa: F401
-import app.modules.audit.models  # noqa: F401
-import app.modules.connections.models  # noqa: F401
-import app.modules.enrollment.models  # noqa: F401
-import app.modules.frp.models  # noqa: F401
-import app.modules.hooks.models  # noqa: F401
-import app.modules.notifications.models  # noqa: F401
-import app.modules.provisioning.models  # noqa: F401
-
-# Explicitly import all models — otherwise Base.metadata does not know about them.
-import app.modules.servers.models  # noqa: F401
+# Every ORM model, otherwise Base.metadata does not know their tables and create_all
+# skips them (app/model_registry.py, tests/test_conftest_models.py).
+from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import Base, _session_utc, get_db
 from app.core.time import utcnow_naive

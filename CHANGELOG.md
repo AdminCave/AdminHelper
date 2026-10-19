@@ -9,6 +9,30 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
+  Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
+  `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter
+  „Vorgeschlagen:“ passende Standard-Templates (Linux: „Linux Server — Standard“, Windows: „Windows Server —
+  Standard“, dazu „Docker Host“, „ZFS Storage“, „Proxmox Host“), je mit Kontrollkaestchen. „Zuweisen“ weist die
+  ausgewaehlten zu, „Ignorieren“ merkt sich die Ablehnung je Server und Template; das ist vorerst nicht rueckgaengig
+  zu machen, von Hand zuweisen laesst sich das Template weiter. Vorgeschlagen wird nur ein vorhandenes, dem Server
+  nicht zugewiesenes und nicht ignoriertes Standard-Template; automatisch zugewiesen wird nichts. Agents vor dieser
+  Version liefern keinen Vorschlag. Neu: `GET /templates/suggestions/{server_id}` und
+  `POST /templates/suggestions/{server_id}/dismiss` (204), Tabellen `monitor_host_facts` und
+  `monitor_template_suggestion_dismissals` (Migration `b9d1f3a5c7e9`). Doku: Admin- und Entwickler-Doku Monitoring
+  (DE+EN).
+- **Desktop: Template-Checks zuruecksetzen und wiederherstellen, Updates der Standard-Templates (R-0420):** Im
+  Dashboard eines Servers traegt ein angepasster Template-Check das Badge „angepasst“ (Tooltip: die Felder) und die
+  Aktion „Auf Template zuruecksetzen“, die nach einer Rueckfrage alle Felder auf die Template-Werte setzt
+  (`POST /checks/{id}/reset`). Der Monitoring-Tab des Servers zeigt je Zuweisung „N geloeschte Checks
+  wiederherstellen“ und legt sie auf Klick neu an (`POST /templates/{id}/assign/{server_id}/restore`, Zaehler
+  `removedChecks` in `GET /templates/assignments/{server_id}`). Bringt ein Release eine neuere Version eines
+  Standard-Templates mit, dessen Definitionen angepasst sind, zeigt die Template-Liste dort „Update verfuegbar“
+  (heute tragen alle Version 1, das Badge erscheint also noch nirgends); das oeffnet einen Vergleich der aktuellen
+  mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des Templates,
+  auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
+  `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable`). Doku:
+  Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
   „Registrierungs-Token“ ein Einmal-Token aus: Gueltigkeit waehlen (10 Minuten, 1 Stunde oder 24 Stunden;
   voreingestellt 10 Minuten), dann zeigt der Dialog das Token genau einmal mit Kopieren, seinem Ablauf in
@@ -322,13 +346,222 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
+  Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
+  zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
+  einem Login unter anderem Benutzer. Ebenso laedt der Desktop neu, wenn eine geaenderte Server-URL bei laufender
+  Sitzung gespeichert wird; danach steht der Login-Bildschirm mit der neuen Adresse da.
+- **Desktop: Speichern der Einstellungen vergisst den Benutzernamen nicht mehr (R-0429):** Bisher loeschte jedes
+  Speichern im Einstellungsdialog den gemerkten Benutzernamen, und der Login-Bildschirm fuellte beim naechsten
+  Start nur noch die Server-URL vor. Felder, die der Dialog nicht bearbeitet, bleiben jetzt erhalten.
+- **Desktop: gespeichertes RDP-Passwort auch bei Tunnelzielen (Linux/macOS, R-0429):** Bisher startete der
+  RDP-Client bei einer Verbindung hinter einem FRP-Tunnel ohne das gespeicherte Passwort, weil der Desktop es unter
+  der lokalen Tunnel-Adresse (`127.0.0.1:<Port>`) suchte statt unter der Verbindung aus der Liste, unter der es
+  gespeichert ist. Unter Windows fragt mstsc bei Tunnelzielen vorerst weiter selbst nach dem Passwort.
+- **Desktop: Sync von einer fremden URL auch auf einem registrierten Geraet (R-0429):** Bisher scheiterte auf einem
+  registrierten Geraet jeder Sync von einer URL ausserhalb des eigenen Servers mit `ERR_CA_PIN_MISMATCH`, weil der
+  Desktop auch dort die Geraete-Identitaet nahm und das Server-Zertifikat gegen die bei der Registrierung gepinnte CA
+  pruefte. Die Geraete-Identitaet nimmt er jetzt nur, wenn die Sync-URL dieselbe Origin (Schema, Host, Port) hat wie
+  die gespeicherte Server-URL; jede andere Sync-URL laedt er wie ein nicht registriertes Geraet. Ein zweiter
+  Hostname des eigenen Servers zaehlt dabei als andere Origin.
+- **Desktop: ein zweiter Start laesst die laufende App nicht mehr abstuerzen (Linux, R-0429):** Bisher beendete ein
+  zweiter Start unter Linux die laufende App samt Sitzung und Tunnel, und auch der zweite Start blieb nicht offen.
+  Jetzt holt ein zweiter Start nur das Fenster der laufenden App nach vorn und beendet sich. Das gilt auch unter
+  Windows und macOS: Es laeuft immer nur eine Instanz der App.
+- **Server: Die Tunnel-Statusansicht zeigt wieder die Proxies von frps (R-0408):** Seit v0.40.0 haengt frps in
+  Compose allein im Netz `frpedge`, das der Server nicht erreicht; `GET /api/frp/status` fragte weiter
+  `http://frps:<Port>` und meldete deshalb immer „frps-Dashboard: nicht erreichbar“. Jetzt fragt der frps-Supervisor
+  das Dashboard im frps-Container ueber Loopback ab, alle 5 s, solange frps laeuft, und legt die Proxy-Listen je Typ
+  im Volume `frps-state` ab (`proxy-<typ>.json`, hoechstens 1 MiB). Der Server liest sie dort und nimmt nur aktuelle
+  (hoechstens 60 s alte), gueltige Listen; ohne eine solche antwortet die Route mit dem `error` „frps dashboard: no
+  current data from the frps supervisor“. Die Adressen `http://frps:<Port>` und `http://127.0.0.1:<Port>` entfallen.
+  Mit `FRPS_DASHBOARD_URL` fragt der Server das Dashboard weiter selbst; die Variable wirkt nur in der Umgebung des
+  Dienstes `server` (etwa ueber eine `docker-compose.override.yml`), nicht ueber die `.env`. Doku: Admin-Doku
+  FRP-Tunnel (DE+EN).
+- **Server: Hook-Skripte speichern Verbindungen mit `save_connections` (R-0469):** Jeder Hook, der
+  `save_connections` aufrief, endete mit `success: false` und dem Fehler „Foreign key associated with column
+  'connections.server_id' could not find table 'servers' …“ und schrieb nichts, etwa die Beispiele
+  `webhook_add_connection.py`, `webhook_http_import.py` und `schedule_hook_cleanup.py` unter `docs/examples/`. Der
+  Worker-Prozess der Hooks lud nur das Modell der Verbindungen; jetzt laedt er wie Web- und Scheduler-Prozess alle
+  Modelle aus `apps/server/app/model_registry.py`. Nach dem Update schreiben solche Hooks bei ihrem naechsten Lauf;
+  einen, der das nicht mehr soll, vorher deaktivieren oder loeschen.
+- **Monitoring: Schalter der Check-Konfiguration nehmen nur `true` oder `false` (R-0456):** `verify_ssl` (`http`),
+  `exclude_stopped` (`proxmox_backup`) und `check_restarts` (`docker_health`) nahmen auch `"false"`, `"no"`, `0` oder
+  `1` an und speicherten sie so. Der Check-Editor zeigte dann den Default, der Checker las den Wert anders: Ein
+  `verify_ssl: 0` schaltete die TLS-Pruefung ab, ein `exclude_stopped: 0` nahm gestoppte VMs mit. Jetzt lehnen
+  `POST /checks`, `PUT /checks/{id}` mit geaenderter Konfiguration und Template-Definitionen solche Werte mit 422 ab,
+  wie schon bei `alert_on_unavailable`. Keine Migration: Ein gespeicherter Nicht-Bool-Wert gilt als Default, wie ihn
+  der Check-Editor zeigt, nur ein echtes `false` schaltet ab; ein altes `verify_ssl: 0` prueft TLS also wieder. Doku:
+  Monitoring-Administration (DE+EN).
+
+- **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
+  `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
+  dem Node und ohne VMs, und der Check `proxmox_backup` las ihn als „Keine VMs/CTs gefunden“ = ok. Jetzt fehlt der Block,
+  `proxmox_backup` bleibt ohne Daten, und das Log nennt den Grund (etwa
+  `pvesh get /cluster/resources failed: timed out after 15s`, nie stderr). Eine leere VM-Liste bleibt „keine VMs“.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Agent: SMART liest Platten hinter einem MegaRAID-Controller (R-0455):** Der Agent fragte jede Platte aus
+  `smartctl --scan` ohne ihren Geraetetyp ab. Eine Platte hinter einem MegaRAID-Controller (Scan: `/dev/bus/N` mit
+  Typ `megaraid,N`) kann smartctl so nicht erkennen: Sie kam ohne Modell und SMART-Status in den Report, und der
+  Check `smart_health` meldete sie als „SMART FAILED“. Jetzt gibt der Agent den Typ aus dem Scan als `-d` weiter,
+  ausser `scsi`, damit eine SATA-Platte an `/dev/sdX` ihre ATA-Attribute behaelt. Doku: Agent-Entwicklerseite
+  (DE+EN).
+- **Agent: ein Timeout von `systemctl` und `sc` heisst „timed out after 15s“ (R-0454):** Beendete das 15-s-Timeout
+  einen haengenden Aufruf, las sich der Grund im Dienste-Block wie ein gescheiterter Aufruf: unter Linux
+  `systemctl list-units failed: signal: killed`, unter Windows `sc query failed: exit status 1`. Jetzt lautet er
+  `systemctl list-units failed: timed out after 15s` bzw. `sc query failed: timed out after 15s`; ein von aussen
+  beendeter Aufruf behaelt sein Signal. Auch ein `pvesh`-Aufruf, den das Timeout beendet, gilt intern als Timeout.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Server: FRP-Tunnel lehnen einen `extra_config`-Schluessel mit Zeilenumbruch am Ende ab (R-0468):**
+  `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` nahmen einen `extra_config`-Schluessel wie `"abc\n"` an,
+  weil die Pruefung einen abschliessenden Zeilenumbruch uebersah. Der Generator schreibt die Schluessel ungequotet in
+  die frpc-Config, die danach kein gueltiges TOML mehr war. Jetzt muss der ganze Schluessel aus `A-Z a-z 0-9 _ . -`
+  bestehen, sonst `422`. Doku: API-Referenz (DE+EN).
+- **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
+  eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
+  scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:
+  E-Mail-Benachrichtigungen gingen nicht raus, geplante Hooks liefen nicht, und die Aufbewahrungs- und Aufraeum-Jobs
+  (etwa fuer Audit-Log und Glocke) blieben aus. Jetzt laden Web- und Scheduler-Prozess alle Modelle aus
+  `apps/server/app/model_registry.py`. **Vor dem Update pruefen:** Nach dem Update laufen geplante Hooks wieder nach
+  Plan; Hooks, die nicht mehr laufen sollen, vorher deaktivieren oder loeschen. Die Aufbewahrungs-Jobs holen beim ersten
+  Lauf nach. Ausstehende E-Mails, die aelter als 7 Tage sind, verfallen beim Update (Alembic-Revision `c3e5a7b9d1f2`:
+  Status `failed`, `last_error` „expired before delivery“); juengere gehen normal raus, die Glocke bleibt unberuehrt.
+  E-Mail-Hinweise auf neu angelegte Admin-Konten wurden seit v0.38.0 nicht zugestellt: Admins pruefen Benutzerliste und
+  Audit-Log (Aktion `user.created`) fuer diese Zeit. Doku: Betrieb (DE+EN) nennt die Logs des `scheduler`-Dienstes.
+- **Update: Rollback bei Pull-, Paket-Repo- und Stack-Neustart-Fehlern (R-0411):** Scheitert das Ziehen der Images
+  (Netz, Rate-Limit, nicht veroeffentlichtes Image), das Aktualisieren des Agent-Paket-Repos, `docker compose up -d`
+  oder der Healthcheck danach, rollt `update.sh` Laufzeit-Dateien und Image-Pins auf den installierten Stand zurueck,
+  auch bei einem Floating-Tag (`:latest`, `:main`): Die Pins kommen aus einer Kopie der alten `.env`, sodass der
+  naechste Lauf das Update erneut versucht. Scheitert es vor dem Neustart, kommt die alte `.env` ganz zurueck, und die
+  Container bleiben unveraendert. `--no-rollback` nennt den Weg zurueck (`--redeploy` bzw. `--ref`). Fehlt die `.env`,
+  bricht `update.sh` vor Backup und Snapshot ab; scheitert das Ziehen bei `--redeploy`, endet es mit eigener Meldung,
+  und die Container bleiben unveraendert. Doku: Installation (DE+EN).
+- **Update: Rollback stellt den installierten Stand vollstaendig her, die `.env` wird vorab geprueft (R-0470):**
+  Scheiterte beim Neu-Pinnen der Images das Schreiben der `.env` (etwa bei voller Platte), ersetzte `update.sh` die
+  `.env` durch eine gekuerzte Datei mit nur den Image-Pins und meldete das Update als fertig. Jetzt schreibt es die
+  neue `.env` in eine Kopie daneben und tauscht sie erst, wenn alles geschrieben ist. Scheitert ein Teil der
+  `.env`-Migration (neue Keys, neue Secrets, Image-Pins), rollt `update.sh` wie bei einem Pull-Fehler zurueck:
+  Laufzeit-Dateien und die ganze alte `.env` kommen zurueck, die Container bleiben unveraendert; mit `--no-rollback`
+  nennt die Meldung `--ref` als Weg weiter. Ein Rollback entfernt jetzt auch die Dateien, die erst das neue Release
+  mitgebracht hat, und stellt `./repo` genau auf den Stand vor dem Update; ein Verzeichnis `.env.ah-new` im Weg nimmt
+  keine Kopie der alten `.env` mehr auf. Bei einem Floating-Tag nennen `--check`, `--redeploy`, die Update-Meldung und
+  die Rollbacks den Tag (etwa `:main`, ohne `SERVER_IMAGE` `:latest`) statt `unknown`. Scheitert mit `--no-rollback`
+  der Neustart oder der Healthcheck, sagt die Meldung jetzt auch, dass Alembic die Datenbank beim Start schon migriert
+  haben kann, und nennt `restore.sh`. Nach einem Selbst-Update entfernt die neue `update.sh` auch das temporaere
+  Verzeichnis des abgebenden Laufs; ist dieser noch eine `update.sh` vor diesem Stand, bleibt es beim ersten Update
+  noch liegen. Vor dem ersten `docker compose`-Aufruf prueft `update.sh` jetzt die `.env`: Enthaelt ein unquotierter
+  oder doppelt gequoteter Wert ein `${` ohne gueltigen Platzhalter, an dem Compose jeden Aufruf mit „Invalid template“
+  abbricht, endet `update.sh` mit dem Namen des Schluessels (ohne den Wert), bevor es etwas aendert, auch bei
+  `--check` und `--redeploy`. Bisher scheiterte das Update daran erst nach Backup, Tausch und Neu-Pinnen. Doku:
+  Installation und Betrieb (DE+EN) beschreiben, wie ein `$` in einem `.env`-Wert zu schreiben ist.
+- **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
+  Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
+  Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
+  Pool-Liste. Jetzt schickt der Agent den Docker- und den ZFS-Block, sobald `docker` bzw.
+  `zpool` installiert ist, bei einem Ausfall mit `available: false`, einem Fehler-Code (`daemon_unreachable`,
+  `timeout`, `cli_failed`, `parse_failed`) und einem kurzen Text ohne stderr; `docker_health` und `zfs_health` stehen
+  dann auf `warning` und benachrichtigen. Fehlt der Block, leert der Check die gespeicherte Liste. `docker_health`
+  bewertete nach der Restart-Policy: Ein abgestuerzter Container (`Exited (3)`) ohne Policy, `paused` und `created`
+  galten als ok, ein von Hand gestoppter mit `always` als critical. Jetzt entscheidet das Ende: Exit ≠ 0, OOM, ein
+  gescheiterter Start (`created` mit Exit ≠ 0), `restarting` und `dead` sind critical, ein steigender
+  Neustart-Zaehler, `unhealthy` und `paused` warning; ein gewollter Stopp (Exit 0, Exit 143 oder 137 ohne OOM,
+  `exited` mit `always`/`unless-stopped`, nie gestartet) gilt als gestoppt und zaehlt als ok. Exit-Code, OOM,
+  Neustart-Zaehler, Healthcheck und Restart-Policy holt der Agent aus einem gebuendelten `docker inspect` als JSON. Im
+  Standard-Template „Docker Host“ (`consecutive_fails` 2) ist ein einzelner Neustart nur in der Container-Liste zu
+  sehen (Grund `restarted`); Status und Alarm folgen erst bei wiederholten Neustarts. Ein neuer Check, dessen erstes
+  Ergebnis `unknown` ist, stand gruen; jetzt steht er auf `unknown`. `smart_health` liess einen Host ohne `smartctl`
+  wie eine VM ohne Platten aussehen; jetzt nennt die Meldung den Grund (`smart_absent`: `not_installed` „No SMART
+  data: smartctl is not installed“, `scan_failed` „No SMART data: the SMART query failed“, `no_devices` „No SMART
+  data: no SMART-capable devices found“), der Status bleibt ok. Der Desktop zeigt einen Docker- oder ZFS-Ausfall mit
+  uebersetztem Fehler statt „—“, zaehlt gestoppte Container getrennt („3 laufen · 1 gestoppt“) und nennt je Container
+  den Grund (Exit-Code, OOM, Neustarts, Healthcheck, pausiert, gestoppt). Der Report traegt dafuer additiv
+  `available`, `error`, `error_message`, je Container `exit_code`, `oom_killed`, `restart_count` und `health` sowie
+  `smart_absent`; die Check-Details tragen je Container `category` und `reason`.
+- **Desktop: der Tunnel mit Geraete-Zertifikat startet unter Windows (R-0425):** Der Desktop setzte den Pfad seiner
+  exportierten Geraete-Identitaet (unter `%APPDATA%`) unveraendert in die Tunnel-Config ein. Dort steht er in einem
+  TOML-String, in dem ein Backslash ein Escape einleitet: Ein Windows-Pfad wie `C:\Users\…` machte die Config
+  unlesbar, und der Tunnel startete nicht. Jetzt setzt der Desktop den Pfad TOML-korrekt ein (Backslash,
+  Anfuehrungszeichen und Steuerzeichen escaped), auch mit `'`, `"` oder Leerzeichen im Pfad.
+- **Desktop: HTTPS-Tunnel greifen auch ohne STCP-Tunnel (R-0432):** Wer keinen STCP-Tunnel sieht, fuer den stoppt
+  der Desktop frpc, und dabei verwarf er auch die Tunnel-Zuordnungen. Verbindungen mit einem HTTPS-Tunnel oeffneten
+  dann ihre eigene Adresse statt `https://<Custom-Domain>`. Jetzt laedt der Desktop die Zuordnungen auch ohne
+  STCP-Tunnel; scheitert das Laden, bleiben die bisherigen, und nur Abmelden oder ein Moduswechsel leert sie. Doku:
+  Entwickler-Doku Desktop (DE+EN).
+- **Desktop: der Tunnel uebernimmt Aenderungen selbst (R-0402, R-0389, R-0390):** Der Desktop lud das
+  Tunnel-Bundle nur beim Anmelden. Ein spaeter angelegter, geaenderter oder geloeschter Tunnel und eine Rotation
+  des frps-Tokens kamen erst nach einem Neustart der App an, und ein frpc, der endete (etwa weil frps beim
+  Anmelden nicht erreichbar war), blieb weg. Jetzt gleicht der Desktop im Modus `server` alle 60 s ab, nach dem
+  Speichern im eigenen Tunnel-Dialog sofort. Aendern sich nur Tunnel, laedt frpc sie nach, ohne die uebrigen
+  Tunnel und ihre offenen Verbindungen zu trennen; nur ein neues Token oder eine neue Adresse des FRP-Servers
+  startet frpc neu, offene Sitzungen brechen dann ab. Ist frps nicht erreichbar, versucht frpc es weiter; endet
+  frpc unerwartet, verbindet sich der Desktop selbst wieder (nach 5 s, dann mit wachsender Pause bis 60 s); der
+  Knopf „Neu verbinden“ an der Tunnel-Anzeige stoesst das sofort an. Wer keinen STCP-Tunnel sieht, bekommt beim
+  Anmelden keine Fehlermeldung mehr. Ein gestoppter Tunnel (etwa nach einem Moduswechsel) meldet sich nicht mehr
+  nachtraeglich als „Tunnel getrennt“, und Abmelden ueber die Kopfzeile beendet jetzt auch den Tunnel.
+- **Agent: ein spaeter angelegter Tunnel greift ohne Neu-Provisionieren (R-0398):** Ein Agent-Host, der ohne
+  FRP-Tunnel provisioniert wurde, bekam einen spaeter angelegten Tunnel nie: Die Provisionierung schrieb die
+  Sync-Config `/etc/frp/adminhelper.conf` samt Server-API-Key nur mit FRP-Paket, und der Abgleich endete still.
+  Jetzt schreibt jede Provisionierung sie, und der naechste Agent-Lauf (Linux) richtet einen neuen Tunnel ein: Er
+  schreibt die `frpc.toml` und aktiviert `frpc.service` dauerhaft (`systemctl enable --now`, also auch ueber einen
+  Reboot); ein laufender frpc uebernimmt die neue Config. Aendern sich nur Tunnel, laedt er sie per Reload ueber
+  seine lokale Admin-API nach (nur `127.0.0.1`, zufaelliges Passwort in `/etc/frp/admin.conf`, `0600`; der Reload
+  geht nur an den eigenen frpc), und offene Sitzungen ueber unveraenderte Tunnel bleiben bestehen; bisher trennte
+  jede Tunnel-Aenderung per Neustart alle Sitzungen zum Host. Aendern sich frps-Adresse, Token oder TLS, startet der
+  Agent frpc neu, ebenso bei jeder Neu-Provisionierung. Laeuft frpc trotz Tunnel nicht, etwa weil nach einem Reboot
+  ein anderer Prozess den Admin-Port belegt, legt der naechste Lauf die Admin-API auf einen neuen Port mit neuem
+  Passwort. Einen lokal gestoppten oder deaktivierten frpc startet der naechste Lauf ebenso wieder, solange der Host
+  Tunnel hat; dauerhaft aus bleibt er, wenn die Tunnel des Hosts auf dem Server geloescht oder deaktiviert sind. Ohne
+  Tunnel laeuft kein frpc mehr: Faellt der letzte Tunnel weg oder hat der Server fuer den Host keine FRP-Config,
+  stoppt und deaktiviert der Agent `frpc.service`, loescht die `frpc.toml` (sie enthaelt das frps-Token) und endet
+  ohne Fehler. Vor die `frpc.toml` des Servers setzt der Agent `loginFailExit = false`: Ist frps beim Start nicht
+  erreichbar, versucht frpc es weiter, statt sich zu beenden und von systemd alle 5 s neu gestartet zu werden. Diesen
+  lokalen Kopf setzt der Server nicht; einen Server-Text mit `webServer` oder `loginFailExit` wendet der Agent nicht
+  an. Auf Hosts, deren frpc beim Update schon laeuft, kommen der lokale Kopf und der Reload mit der naechsten
+  Config-Aenderung, die frpc einmal neu startet. Hat ein aelterer Agent den Host ohne Tunnel provisioniert, fehlt
+  dort der Server-API-Key fuer den Abgleich; solche Hosts werden einmal neu provisioniert, bis dahin nennt das
+  Agent-Log diesen Weg. Die Admin-Doku (Agent-Deployment, DE+EN) und die Entwickler-Doku (Go-Agent, DE+EN)
+  beschreiben es.
+- **FRP: die frpc-Config eines Hosts bleibt nach einem Server-Neustart gleich (R-0435):** Bei zwei oder mehr
+  berechtigten Nutzern stand `allowUsers` in der frpc-Config nach jedem Neustart des Servers, mit
+  `WEB_CONCURRENCY` > 1 auch je Worker, in anderer Reihenfolge. Damit aenderte sich der Config-Hash, ohne dass sich
+  etwas geaendert hatte, und der Agent schrieb die frpc-Config neu und startete frpc neu. Jetzt steht `allowUsers`
+  aufsteigend sortiert in der Config. Nach dem Update aendert sich der Config-Hash von Hosts mit mehreren
+  berechtigten Nutzern einmal, und der Agent holt die Config einmal neu.
+- **FRP: die Tunnel stehen in der frpc-Config in fester Reihenfolge (R-0452):** Die `[[proxies]]` standen in der
+  Reihenfolge, in der die Datenbank die Tunnel lieferte. Wurde einem Tunnel eine Verbindung zugeordnet oder seine
+  Verbindung geloescht, konnte er darin hinter die uebrigen Tunnel rutschen; damit aenderte sich der Config-Hash, ohne
+  dass sich die Config geaendert hatte, und der Agent holte die Config neu. Jetzt stehen die `[[proxies]]` ueberall,
+  wo der Server eine frpc-Config erzeugt (Sync, Provisionierungs-Paket, Downloads), nach Tunnel-Name sortiert. Nach
+  dem Update aendert sich der Config-Hash von Hosts mit mehreren Tunneln einmal, sofern ihre Tunnel bisher anders
+  standen, und der Agent laedt frpc einmal neu. Doku: Entwickler-Doku Server (DE+EN).
+- **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
+  `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
+  `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
+  gestartete Units als „Inaktiv (autostart)“ meldete. Der Agent prueft diese Kandidaten jetzt mit einem gebuendelten
+  `systemctl show` nach und laesst sie weg; der Monitoring-Dienst uebernimmt seine Liste, statt sie bei vollem Inventar
+  selbst zu berechnen, sodass volle und gedrosselte Pushes dasselbe Ergebnis geben. Der Modus `list` meldete nach
+  normaler Provisionierung jeden Namen als ausgefallen, weil der Agent ohne `monitor init --services` keine Dienste
+  schickt. Jetzt wertet der Monitoring-Dienst die Namen selbst aus dem Inventar des Agents aus, mit oder ohne
+  `.service` und ueber Aliase (`sshd` fuer `ssh.service`); ein Name ohne Daten zaehlt nicht als ausgefallen und steht
+  neutral als „nicht gefunden“ da, ein neu eingetragener hat bis zu einer Stunde noch keine Daten. Der Desktop zeigte
+  „Alle 0 OK“ oder „0/N laufen“ und ohne Daten eine rote Pille; jetzt zeigt er die Zahl der Probleme in der Farbe des
+  Check-Status, „x/y aktiv“ nur, wenn der Agent Zaehler schickt, ohne Daten „Noch keine Daten“, jeden Dienst einmal
+  und uebersetzte Hinweise. `ignore` versteht Glob-Muster (`drkonqi-coredump-processor@*`), und scheitert `systemctl`,
+  ist der Check `unknown` mit Grund statt „Alle systemd-Units OK“. Der Check-Editor erklaert die Felder Dienste und
+  Ignorieren und entfernt doppelte Eintraege. Der Report traegt dafuer additiv `systemd.counts`, `systemd.error` und
+  `alias_of` im Inventar; `all_services` ist nach Unit sortiert und laesst nicht installierte, nur referenzierte Units
+  weg. Im Modus `list` traegt `_details.watched` je Name `state` (`running`, `down`, `nodata`) neben `running`.
+- **Desktop: der Vertrauensdialog beim ersten Kontakt liegt ueber dem Login-Screen (R-0399):** Praesentiert der
+  Server beim ersten Login oder bei der ersten Registrierung ein Zertifikat der internen CA, fragt der Desktop in
+  einem Dialog, ob dem Server vertraut werden soll. Dieser Dialog war vom Login-Screen verdeckt: Anmelden und
+  Registrieren blieben ohne Rueckmeldung stehen. Jetzt liegt er sichtbar darueber.
 - **Agent: Docker-Container werden mit aktueller Docker-CLI wieder erfasst (R-0417):** Ab Docker 28.2 gibt
   `docker ps -a --format '{{json .}}'` das Feld `Platform` als Objekt aus. Der Agent las jede Zeile als reine
   Zeichenketten, verwarf damit jede Zeile und schickte keine Container mehr; `docker_health` stand auf „Keine
   Docker-Daten im Report“. Jetzt liest er nur die genutzten Felder (`ID`, `Names`, `Image`, `State`, `Status`) und
   uebergeht alle anderen; das Report-Format bleibt gleich. Ist Docker installiert, der Daemon aber nicht erreichbar,
   scheitert `docker ps` oder sind Zeilen nicht lesbar, schreibt der Agent eine Warnung ins Log, die auch der Bericht
-  von `adminhelper-agent diagnose` zeigt. Die Docker-Sektion im Desktop sagt „Alle N Container laufen“ nur noch,
+  von `adminhelper-agent diagnostics` zeigt. Die Docker-Sektion im Desktop sagt „Alle N Container laufen“ nur noch,
   wenn alle laufen, sonst „X von N laufen“, und ohne Docker-Daten im Report „keine Daten“ statt „—“.
 - **Agent: Erneuerung und Provisionierung ersetzen die Identitaet nacheinander (R-0384):** Die Erneuerung im
   Dienst und `adminhelper-agent provision` konnten die Identitaet gleichzeitig ersetzen. Verschraenkten sich ihre
@@ -645,6 +878,122 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Die Checks melden englisch (R-0422):** Die Push-Checker (`agent_ping`, `agent_resources`,
+  `service_process`, `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health`), die Pull-Checker (`http`,
+  `ping`, `tcp`) und die Check-Engine meldeten teils deutsch, und diesen Text zeigen Dashboard, Glocke und
+  Benachrichtigungen unveraendert, auch in der englischen Oberflaeche. Jetzt sind die Meldungen englisch, mit denselben
+  Werten wie vorher, etwa „Waiting for agent data“, „All services OK“, „No backup: …“ oder „Timeout after 10s“. Ein
+  gedaempfter Fehlschlag endet auf „(failure 1/2)“ statt „(Fehler 1/2)“, ein HTTP-Check ohne TLS-Pruefung auf
+  „[TLS verification disabled]“. `service_process` spricht von „services“ statt von systemd-Units, weil der
+  Windows-Agent seine Dienste im selben Block meldet. Status, `_details` und Metriken bleiben gleich; eine gespeicherte
+  deutsche Meldung ersetzt die naechste Auswertung. Unveraendert bleiben die Fehlertexte der API und der Rahmentext der
+  Alert-Mail. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
+  Entwickler und Administration (DE+EN).
+
+- **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
+  Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft
+  `frps.toml` und das TLS-Material vor jedem Start (Regeln und Gruende: Betrieb → frps-Supervisor) und startet frps aus
+  einer geprueften Arbeitskopie unter dem eigenen Nutzer `frps` (UID 10002) ohne Capabilities. Eine geaenderte
+  FRP-Server-Konfiguration oder ein erneuertes frps-Zertifikat uebernimmt frps nach wenigen Sekunden selbst und startet
+  neu; ein Neustart von Hand ist dafuer nicht noetig. Alle Tunnel sind dabei kurz getrennt; Admins und Nutzer mit
+  Tunnel-Zugriff bekommen eine Mitteilung in der Glocke, bei neuem Token mit dem Hinweis, dass Agent-Tunnel bis zu ~5
+  Minuten brauchen. Eine Konfiguration, die die Pruefung nicht besteht, wird nicht uebernommen; den Grund zeigt die
+  FRP-Seite, und solange frps mit der letzten gueltigen Kopie weiterlaeuft, bekommen Admins dazu eine Mitteilung in der
+  Glocke. Ohne gueltige Kopie (etwa direkt nach dem Update) startet frps nicht, bis die Konfiguration die Pruefung
+  besteht. Wird die FRP-Server-Konfiguration geloescht, stoppt frps. Neu auf der FRP-Seite
+  ist der Block „Zustand des frps“ (Zustand, Grund, seit wann, letztes Ereignis; aktualisiert alle 30 s, solange der Tab
+  sichtbar ist) ueber `GET /api/frp/supervisor-status` (nur Admins). Vor dem Speichern einer Aenderung, die frps neu
+  startet, fragt die Maske nach; weicht der Bind Port vom veroeffentlichten `FRP_BIND_PORT` ab, warnt sie am Feld,
+  Speichern bleibt moeglich. Compose: neue Volumes `frps-state` (Statusdatei; `server` und `scheduler` lesen sie
+  read-only) und `frps-active` (Arbeitskopie, nur frps), beide nicht im Backup; `cap_drop: [ALL]` plus `DAC_OVERRIDE`,
+  `SETUID`, `SETGID` und `KILL` fuer den Supervisor; `net.ipv4.ip_unprivileged_port_start: 0`, damit frps Port 443 ohne
+  root bindet. `install.sh` und `update.sh` pinnen `FRPS_IMAGE` wie die uebrigen Images, CI und Release bauen und
+  veroeffentlichen das Image mit. Doku: FRP-Tunnel, Installation und Betrieb (DE+EN), API-Referenz.
+- **Server: Grenzen und Token-Feld der FRP-Server-Config (R-0411):** `POST`/`PUT /api/frp/server-config` nehmen
+  `bind_port`, `vhost_https_port` und `dashboard_port` nur im Bereich 1–65535 und `max_ports_per_client` nur ab 0 an (0
+  oder leer: Standard 16), sonst `422`; ein ausdrueckliches `"bind_port": null` im `PUT` ist ebenfalls `422`, fehlt das
+  Feld, bleibt der Wert. **Vor dem Update pruefen:** die Ports und `max_ports_per_client` der FRP-Server-Config.
+  Gespeicherte Werte ausserhalb dieser Grenzen bleiben in der Datenbank; der Generator ersetzt sie beim Schreiben der
+  Konfigurationen (`bindPort`/`serverPort` 7000, vHost- und Dashboard-Port fallen weg, `max_ports_per_client` 16) und
+  schreibt je Fall eine Warnung ins Log. Ein leeres oder `null`-`auth_token` im `PUT` laesst das gespeicherte Token
+  unveraendert; ein neues braucht mindestens 16 Zeichen. Der Pflicht-Check `openapi-compat` nimmt genau diese engeren
+  Grenzen ueber die Ausnahme-Datei `scripts/dev/oasdiff-err-ignore.txt` (oasdiff `--err-ignore`) hin; ohne die Datei
+  bleibt er streng, jede andere Verengung bleibt ein Fehler. Der CI-Job `ops-scripts` und das Bootstrap der Test-VMs
+  installieren dafuer oasdiff 1.32.0 mit gepinnter SHA-256. Doku: FRP-Tunnel und API-Referenz (DE+EN), CI/CD (DE+EN),
+  `DEVELOPMENT.md`.
+- **Server: `extra_config` und Textfelder der FRP-Server-Config nach den Regeln des frps-Supervisors (R-0411):**
+  `POST`/`PUT /api/frp/server-config` nehmen in `extra_config` nur `transport.maxPoolCount`, `transport.tcpMux`,
+  `transport.tcpMuxKeepaliveInterval`, `transport.heartbeatTimeout`, `transport.tcpKeepalive`, `userConnTimeout`,
+  `log.level` und `log.maxDays` an, mit `true`, `false`, einer endlichen Zahl oder einem String ohne Anfuehrungszeichen,
+  Backslash, geschweifte Klammern und Steuerzeichen, sonst `422`; `{` oder `}` in `subdomain_host`, `dashboard_user`,
+  `dashboard_password` oder `auth_token` ist ebenfalls `422`. Die Tunnel-Configs (frpc) betrifft das nicht. Ein
+  einzelnes Surrogat (U+D800 bis U+DFFF) ist `422` in den Textfeldern und `extra_config`-Werten der FRP-Server-Config,
+  in `name`, `local_ip`, `secret_key`, `custom_domains`, `auto_connection_username` und `extra_config`-Werten der
+  Tunnel und im Server-Namen. **Vor dem Update pruefen:** `extra_config` und diese vier Felder der FRP-Server-Config;
+  das Auth Token hat mindestens 16 Zeichen; ein gesetzter Dashboard Port ist weder 443 noch der Bind Port noch
+  `FRP_BIND_PORT`. Beim Start entfernt der Server `extra_config`-Eintraege ausserhalb dieser Regeln (etwa
+  `proxyBindAddr` oder `log.to`) aus der gespeicherten Konfiguration und meldet die entfernten Schluessel den Admins in
+  der Glocke. Ein Feld mit einem Wert, den frps nicht annimmt (unzulaessige Zeichen, ein Auth Token unter 16 Zeichen,
+  ein Dashboard Port gleich 443, dem Bind Port oder `FRP_BIND_PORT`), aendert er nicht; er meldet den Admins in der
+  Glocke, welche Felder neu zu setzen sind, je Feld mit der Regel (einmal, solange dieselben Felder betroffen sind),
+  und bis dahin startet frps ohne gueltige Arbeitskopie nicht (Zustand `waiting`). Log und Mitteilungen nennen
+  Schluessel und Felder, nie Werte.
+  Doku: Betrieb und API-Referenz (DE+EN).
+- **Web: Rueckfragen enden mit Escape und mit der Sitzung (R-0411):** Escape bricht eine angezeigte Rueckfrage ab und
+  schliesst nur sie, nicht den Dialog darunter. Endet die Sitzung (Abmelden oder Ablauf), endet eine angezeigte
+  Rueckfrage mit „Abbrechen“, damit die Aktion nicht nach einer neuen Anmeldung mit der neuen Sitzung laeuft.
+- **Monitoring: neue Warnungen fuer Docker und ZFS nach dem Update (R-0419):** Ein Host mit gestopptem Docker-Daemon
+  oder mit einem `zpool`, dessen `zpool list` scheitert oder haengt (etwa ein LXC-Container ohne ZFS-Modul), meldet
+  `docker_health` bzw. `zfs_health` jetzt als `warning` mit Benachrichtigung, alte mit Exit ≠ 0 beendete Container
+  ohne Restart-Policy erstmals als `critical`. Das ist gewollt. Ausweg je Check: `alert_on_unavailable: false` (neu in
+  der Konfiguration von `docker_health` und `zfs_health`, Default `true`, nur echte Booleans; im Check-Editor die
+  Checkbox „Ausfall melden“) laesst einen Ausfall auf `unknown` ohne Benachrichtigung stehen, `ignore_containers`
+  blendet einzelne Container aus, auch solche, die geplant neu starten.
+- **Agent: das Paket empfiehlt `smartmontools` (R-0419):** deb und rpm tragen `Recommends: smartmontools`, ohne das
+  Paket vorauszusetzen: Ohne `smartctl` laeuft der Agent weiter, `smart_health` meldet dann „No SMART data: smartctl
+  is not installed“. Eine Neuinstallation mit `apt-get install` oder `dnf install` zieht es mit, sofern Empfehlungen
+  nicht abgeschaltet sind. Auf bestehenden Hosts kommt es mit einem Upgrade des Agents nicht sicher mit
+  (`apt-get upgrade` und `dpkg -i` installieren neue Empfehlungen nicht nach): Dort bei Bedarf `smartmontools` von
+  Hand installieren.
+- **Server: FRP-Abgleich ohne FRP-Config ohne Fehler, ohne aktiven Tunnel ohne frps-Zugangsdaten (R-0398):**
+  `GET /api/frp/provision/{id}/config-hash` antwortet ohne FRP-Config mit `200` und `{"hash": null}` statt mit `404`
+  „Keine FRP-Config vorhanden“; fuer den Agent-Abgleich gibt es dann nichts zu tun, `GET …/config` bleibt `404`. Ein
+  Host ohne aktiven Tunnel (eingeschaltet, STCP nur mit Secret) bekommt ueber `GET …/config` eine Config ohne Tunnel
+  und ohne frps-Zugangsdaten, `config-hash` liefert deren Hash, und die Provisionierung liefert ihm denselben Text als
+  FRP-Paket (`frp` ist nur ohne FRP-Config `null`). Ein Agent dieser Version stoppt und deaktiviert frpc darauf. Ein
+  aelterer Agent startet frpc damit neu; frpc meldet sich dann nicht an und wird von systemd neu gestartet, bis der
+  Agent aktualisiert ist. Bei der Provisionierung schreibt ein aelterer Agent damit auch die Sync-Config mit dem neuen
+  API-Key; einen schon laufenden frpc startet er dabei nicht neu, der uebernimmt die Config erst bei seinem naechsten
+  Neustart. Die `403` der Scope-Pruefung und die `404` fuer einen unbekannten Server bleiben. Die API-Referenz und die
+  Server-Doku (DE+EN) nennen es.
+- **Monitoring: Template-Sync behaelt Anpassungen und geloeschte Checks (R-0420):** Aendert man an einem vom Template
+  erzeugten Check Name, Beschreibung, Typ, Konfiguration, Aktiviert, Intervall, Schweregrad oder Fehlversuche, merkt
+  sich der Check das Feld als angepasst, und kein Sync ueberschreibt es mehr, weder nach einer Template-Aenderung
+  (auch dem Update eines Standard-Templates) noch nach einer Umbenennung des Servers noch beim Wiederherstellen; die
+  uebrigen Felder folgen weiter dem Template, ein Feld zurueck auf dem Template-Wert gilt nicht mehr als angepasst.
+  Ein geaenderter Typ zaehlt auch als geaenderte Konfiguration. Ein geloeschter Template-Check entsteht beim naechsten
+  Sync nicht neu, bis er wiederhergestellt oder die Zuweisung neu angelegt wird. Steht eine Definition nicht mehr im
+  Template, loescht der Sync ihren Check weiterhin. Anpassungen von vor dem Update erkennt der erste Start einmal:
+  Jedes Feld, das vom Template abweicht, gilt als angepasst, aufgeloest mit den Namen, mit denen der Check angelegt
+  wurde (ein seither umbenannter Server zaehlt nicht als Anpassung); ein Check, der sich nicht vergleichen laesst,
+  gilt ganz als angepasst. Das geschieht vor jedem Sync; scheitert es, unterbleibt der Sync, bis es gelingt.
+  Restrisiko: Eine Template-Aenderung, die vor dem Update nie auf einen Check synchronisiert wurde, erscheint dort als
+  angepasst. Alert-Regeln aus Templates setzt jeder Sync weiter auf die Template-Werte. Checks liefern dafuer additiv
+  `templateDefId` und `overriddenFields`; neue Alembic-Revision `a7c9e1b3d5f7` (Spalte
+  `monitor_checks.overridden_fields`, Tabelle `monitor_check_tombstones`; sie loescht beim Upgrade den Merker der
+  Erkennung in `monitor_seed_state`).
+- **Monitoring: unveraenderte Standard-Templates folgen neuen Versionen (R-0420):** Jedes Standard-Template traegt
+  eine Version und den Hash der zuletzt ausgerollten Definitionen (`builtin_version`, `builtin_hash`). Liefert ein
+  Release eine neuere Version, hebt der Monitoring-Dienst beim Start jedes Standard-Template mit unveraenderten
+  Definitionen darauf und synchronisiert dessen Server; angepasste Check-Felder sowie Name und Beschreibung des
+  Templates bleiben. Ein Template mit angepassten Definitionen bleibt, wie es ist, und bietet das Update an (siehe
+  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Heute tragen alle Version 1;
+  ein bestehendes, dessen Definitionen davon abweichen, gilt als angepasst.
+- **Monitoring: neuer Hostname oder Servername erreicht bestehende Zuweisungen (R-0420):** Der Tag-Sync gleicht jetzt
+  fuer jede Zuweisung, auch fuer manuelle, Hostname und Servername mit dem Server-Inventar ab und synchronisiert bei
+  einer Abweichung genau dieses Paar neu, sodass `{{hostname}}` und `{{server_name}}` einer Umbenennung folgen;
+  angepasste Check-Felder bleiben, Alert-Regeln werden neu gesetzt. Bisher galten die Werte vom Anlegen der
+  Zuweisung. `POST /templates/tag-sync` liefert zusaetzlich `refreshed`.
 - **ca-issuer startet erst nach der Server-Migration (R-0288):** In `docker-compose.yml` wartet der `ca-issuer` per
   `depends_on` auf den healthy `server`, und healthy wird der Server erst nach `alembic upgrade head`. Vorher konnten
   `/enroll` und `/renew` bei einem Teil-Start auf ein Schema ohne ihre Tabellen treffen und mit 500 antworten; im

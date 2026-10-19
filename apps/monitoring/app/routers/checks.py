@@ -29,6 +29,7 @@ from app.schemas import (
     CheckCreate,
     CheckUpdate,
 )
+from app.template_sync import mark_overrides, resolve_template_check, tombstone_check
 
 # Moved to core/victoria.py (shared with the forecast checker); alias kept so
 # the existing call sites and tests stay untouched.
@@ -48,6 +49,19 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
         else {}
     )
     return [c.to_dict(state=states.get(c.id)) for c in checks]
+
+
+def _same_config(a, b) -> bool:
+    """== on parsed JSON, except that a bool never equals a number: 0 == False would
+    let a 0 sent for a stored false count as unchanged and skip the strict boundary.
+    Numbers still compare by value (26 == 26.0)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same_config(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same_config(x, y) for x, y in zip(a, b))
+    return a == b
 
 
 router = APIRouter()
@@ -217,7 +231,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         unchanged = (
             effective_type == check.check_type
             and stored_config is not None
-            and effective_config == stored_config
+            and _same_config(effective_config, stored_config)
         )
         if not unchanged:
             try:
@@ -239,6 +253,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
             setattr(check, field, getattr(data, field))
     if "config" in sent:
         check.config = json.dumps(data.config)
+    mark_overrides(db, check, {field: getattr(data, field) for field in sent})
 
     db.commit()
     db.refresh(check)
@@ -258,12 +273,13 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     dependencies=[Depends(require_internal)],
 )
 def delete_check(check_id: str, db: Session = Depends(get_db)):
-    """Deletes a check."""
+    """Deletes a check. A template check stays deleted on the next template sync."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
         raise HTTPException(404, "Check nicht gefunden")
 
     remove_check(check.id)
+    tombstone_check(db, check)
     db.delete(check)
     db.commit()
 
@@ -276,7 +292,38 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Check nicht gefunden")
 
     check.enabled = not check.enabled
+    mark_overrides(db, check, {"enabled": check.enabled})
     db.commit()
+
+    if check.enabled:
+        add_check(check.id, check.interval, check.check_type)
+    else:
+        remove_check(check.id)
+
+    state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
+    return check.to_dict(state=state)
+
+
+@router.post("/checks/{check_id}/reset", dependencies=[Depends(require_internal)])
+def reset_check(check_id: str, db: Session = Depends(get_db)):
+    """Drops the user's changes to a template check: every template field gets
+    the template's value again."""
+    check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+    if not check:
+        raise HTTPException(404, "Check not found")
+    if not check.template_id or not check.template_def_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Check was not created by a template")
+    template_values = resolve_template_check(db, check)
+    if template_values is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "The check's template no longer defines it for this server"
+        )
+
+    for field, value in template_values.items():
+        setattr(check, field, json.dumps(value) if field == "config" else value)
+    check.overridden_fields = "[]"
+    db.commit()
+    db.refresh(check)
 
     if check.enabled:
         add_check(check.id, check.interval, check.check_type)

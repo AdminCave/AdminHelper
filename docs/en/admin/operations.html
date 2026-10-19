@@ -42,6 +42,8 @@
               <tr><td><code>/data/.bootstrap_token</code></td><td>One-time setup-token hash for the first admin (see installation guide).</td></tr>
               <tr><td><code>/data/.secret_key</code></td><td>Auto-generated 256-bit secret; <strong>never</strong> delete without re-issuing all tokens.</td></tr>
               <tr><td><code>frp-config</code> (volume)</td><td>Only the generated <code>frps.toml</code> (no cert material anymore). The FRP TLS material is provided by the <code>ca-issuer</code> (volume <code>frps-certs</code>, recoverable). The old server-run FRP master PKI (volume <code>frp-pki</code>) has been removed — see <code>ca-pki</code> below.</td></tr>
+              <tr><td><code>frps-state</code> (volume)</td><td>The <a href="#frps-supervisor">frps supervisor</a>'s status file <code>status.json</code> (state, reason, heartbeat, the last 8 events) and, while frps runs with a dashboard port, the list of the frps dashboard for each proxy type as <code>proxy-&lt;type&gt;.json</code> (<code>stcp</code>, <code>https</code>, <code>tcp</code>, <code>udp</code>) for the tunnel status view (see <a href="./frp-tunnel.html">FRP Tunnel</a>). The supervisor in the frps container writes them, <code>server</code> and <code>scheduler</code> read them read-only, the proxy lists only the server. Not backed up: the supervisor rewrites them at every poll.</td></tr>
+              <tr><td><code>frps-active</code> (volume)</td><td>The checked working copy of <code>frps.toml</code> and the TLS material that frps starts from (like <code>frp-config</code> and <code>frps-certs</code> it holds the token and the key); mounted in the frps container only. Not backed up: the supervisor takes it over anew from <code>frp-config</code> and <code>frps-certs</code>.</td></tr>
               <tr><td><code>ca-pki</code> (volume)</td><td><strong>PKI hierarchy of the <code>ca-issuer</code></strong>: root (passphrase-encrypted) + intermediates (<code>tunnel</code>/<code>access</code>/<code>internal</code>). The central backup target of the internal CA — losing it means every client must re-enroll. Issuer-private, never mounted into the gateway/frps.</td></tr>
               <tr><td><code>gateway-certs</code> (volume)</td><td>The gateway's TLS material (access-signed leaf + key + CA trust bundle), provisioned by the <code>ca-issuer</code>. Recoverable — the issuer re-provisions it.</td></tr>
               <tr><td><code>victoria-data</code> (volume)</td><td>VictoriaMetrics storage – 90 d retention (separate, not in this scope).</td></tr>
@@ -53,7 +55,7 @@
           <div class="code-header"><span>bash</span></div>
 <pre><code>./scripts/backup.sh                 # -> ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz
 ./scripts/backup.sh --with-victoria # also the (large) metric history</code></pre>
-          <p>Included: <code>ca-pki</code> (Root + intermediates), <code>pg_dump</code> of both DBs, <code>monitoring-data</code>, optionally <code>victoria-data</code>, and <code>.env</code>. <strong>Not</strong> included — and not needed — are <code>gateway-certs</code>/<code>frps-certs</code>: the <code>ca-issuer</code> re-provisions them from <code>ca-pki</code> on boot.</p>
+          <p>Included: <code>ca-pki</code> (Root + intermediates), <code>pg_dump</code> of both DBs, <code>monitoring-data</code>, optionally <code>victoria-data</code>, and <code>.env</code>. <strong>Not</strong> included — and not needed — are <code>gateway-certs</code>/<code>frps-certs</code>: the <code>ca-issuer</code> re-provisions them from <code>ca-pki</code> on boot. Nor are <code>frps-state</code> and <code>frps-active</code>, which the frps supervisor sets up again itself.</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
@@ -76,7 +78,7 @@
             <li><code>adminhelper.provisioning</code> – server provisioning</li>
             <li><code>adminhelper.servers</code> / <code>adminhelper.ansible</code> – server and Ansible actions</li>
             <li><code>app.modules.frp.pki</code> / <code>app.modules.frp.docker_manager</code> – PKI actions and the FRP container</li>
-            <li><code>app.modules.hooks.scheduler</code> – hook executions incl. subprocess exit codes</li>
+            <li><code>app.modules.hooks.scheduler</code> – hook executions incl. subprocess exit codes, in the log of the <code>scheduler</code> service</li>
           </ul>
           <p>The monitoring container logs under the <code>monitor.*</code> prefix (e.g. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Both containers write plain-text lines to stderr, not JSON.</p>
 
@@ -96,7 +98,7 @@
             <tbody>
               <tr><td><code>SMTP_HOST</code></td><td>Relay hostname. <strong>Empty = e-mail channel off</strong> (bell + desktop toasts stay active).</td></tr>
               <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, default) or <code>465</code> (implicit TLS / SMTPS).</td></tr>
-              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Relay credentials (optional, if the relay accepts without auth).</td></tr>
+              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Relay credentials (optional, if the relay accepts without auth). Write a <code>$</code> in the password as <code>$$</code> or put the value in single quotes (see <a href="./installation.html#env">Environment Variables</a>).</td></tr>
               <tr><td><code>SMTP_FROM</code></td><td>Sender address (default <code>adminhelper@localhost</code>).</td></tr>
               <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Delivery attempts per e-mail with linear backoff, then "failed" (default 5).</td></tr>
             </tbody>
@@ -124,7 +126,7 @@
           <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. The API returns timestamps in UTC with <code>Z</code> regardless (web and desktop show them in the browser's or machine's local time), and scheduled hooks run on UTC.</p>
 
           <h2>Renewing certificates</h2>
-          <p>The gateway's TLS certificate is issued by the <code>ca-issuer</code> (access-signed, 365 days). It is provisioned into the <code>gateway-certs</code> volume on first start; a redeploy/restart of the <code>ca-issuer</code> renews it when needed. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation.</p>
+          <p>The gateway's TLS certificate is issued by the <code>ca-issuer</code> (access-signed, 365 days). It is provisioned into the <code>gateway-certs</code> volume on first start; a redeploy/restart of the <code>ca-issuer</code> renews it when needed. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation. An frps certificate the <code>ca-issuer</code> renewed is taken over by frps itself, without restarting the container (see <a href="#frps-supervisor">frps supervisor</a>).</p>
 
           <h2>Certificate register and transition</h2>
           <p>The <code>ca-issuer</code> records every client certificate it issues or renews in a register; the server accepts recorded certificates only, also with <code>MTLS_ENFORCE=false</code> (see <a href="./users.html">Users &amp; Access → Devices and revocation</a>). Certificates issued before the update to the register are not known to it yet. A transition applies to them:</p>
@@ -135,6 +137,82 @@
             <li>A restore (<code>restore.sh</code>, <code>pg-restore.sh</code>) starts the transition again, 90 days from the restore, for the certificates the restored database does not know.</li>
           </ul>
           <p>After the 90 days, only what is in the register counts.</p>
+
+          <h2 id="frps-supervisor">frps supervisor</h2>
+          <p>frps runs from the image <code>ghcr.io/admincave/adminhelper/frps</code> (source <code>apps/frps/</code>) under a supervisor (<code>apps/frps/frps-supervisor.sh</code>). The supervisor runs as root with the capabilities <code>DAC_OVERRIDE</code>, <code>SETUID</code>, <code>SETGID</code> and <code>KILL</code>; it starts frps as the user <code>frps</code> (UID 10002) without capabilities. It reads the <code>frps.toml</code> the server writes (volume <code>frp-config</code>, read-only) and the <code>ca-issuer</code>'s TLS material (volume <code>frps-certs</code>, read-only), checks both and starts frps only from a checked working copy in the <code>frps-active</code> volume, which frps can read but not change. It writes its state to <code>frps-state</code>; from there the FRP page shows the <em>frps state</em> block (see <a href="./frp-tunnel.html">FRP Tunnel</a>).</p>
+          <ul>
+            <li><strong>Taking changes over:</strong> the supervisor polls the input every 5&nbsp;s and takes a change over once it has stayed the same for two polls, i.e. after about 5–10&nbsp;s. Valid: frps restarts from the new copy. Invalid: frps keeps running on the last valid copy; if there is none, it does not start (<code>waiting</code>). An unchanged input restarts nothing. <code>docker compose restart frps</code> is not needed for changes.</li>
+            <li><strong>Check before every start</strong>, a restart after an exit included: the working copy must be unchanged and pass the check again; otherwise it is dropped (for a changed copy with the event <code>copy_changed</code>), and before a restart the supervisor takes the input over anew.</li>
+            <li><strong>Exits:</strong> if frps ends on its own, the supervisor starts it again after 2, 4, 8 … at most 60&nbsp;s; from the third exit within 60&nbsp;s the state is <code>crashloop</code>, until frps has run for 60&nbsp;s again.</li>
+            <li><strong>Health check:</strong> <code>docker compose ps</code> shows frps as <em>healthy</em> in the states <code>waiting</code>, <code>running</code> and <code>stopped</code>, as <em>unhealthy</em> in <code>degraded</code> and <code>crashloop</code>.</li>
+            <li><strong>Log:</strong> <code>docker compose logs frps</code>; the supervisor's lines start with <code>[frps-supervisor]</code> and carry codes and paths, never the token.</li>
+          </ul>
+
+          <h3>States</h3>
+          <table>
+            <thead><tr><th>State</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>waiting</code></td><td>frps is not running; the reason is shown next to it.</td></tr>
+              <tr><td><code>running</code></td><td>frps runs on the configuration taken over last.</td></tr>
+              <tr><td><code>degraded</code></td><td>frps runs on the last valid configuration; a newer one was not taken over (reason next to it).</td></tr>
+              <tr><td><code>stopped</code></td><td>The FRP server configuration was deleted, frps is stopped.</td></tr>
+              <tr><td><code>crashloop</code></td><td>frps exits repeatedly; the supervisor starts it again with a growing pause.</td></tr>
+            </tbody>
+          </table>
+          <p>On top of these the server reports <code>missing</code> while there is no status file, and <code>unreadable</code> when it does not match the expected format. If the last heartbeat is older than 60&nbsp;s, the details count as out of date (<code>stale</code>).</p>
+
+          <h3>Reasons</h3>
+          <table>
+            <thead><tr><th>Reason</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>none</code></td><td>No error.</td></tr>
+              <tr><td><code>config_missing</code></td><td>No <code>frps.toml</code>, or an empty one: no FRP server configuration has been created in the web interface.</td></tr>
+              <tr><td><code>token_invalid</code></td><td><code>auth.method</code> is not <code>token</code>, <code>auth.token</code> is not set or shorter than 16 characters, or the file holds another <code>auth.*</code> key.</td></tr>
+              <tr><td><code>tls_not_forced</code></td><td><code>[transport.tls]</code> does not set <code>force = true</code>.</td></tr>
+              <tr><td><code>cert_paths</code></td><td>The TLS paths do not point at <code>/etc/frp-pki/frps.crt</code>, <code>/etc/frp-pki/frps.key</code> and <code>/etc/frp-pki/ca.crt</code>.</td></tr>
+              <tr><td><code>cert_missing</code></td><td>Certificate, key or CA file is missing, empty or incomplete.</td></tr>
+              <tr><td><code>cert_expired</code></td><td>The frps certificate has expired.</td></tr>
+              <tr><td><code>cert_key_mismatch</code></td><td>The certificate does not match the key.</td></tr>
+              <tr><td><code>verify_failed</code></td><td>The file differs from the layout the server generates (unknown or repeated key, value not allowed, <code>webServer.port</code> equal to 443, <code>bindPort</code> or <code>FRP_BIND_PORT</code>), or <code>frps verify</code> rejects it.</td></tr>
+              <tr><td><code>input_unreadable</code></td><td>An input file is there but cannot be read, is no regular file, is a symlink or is larger than 1&nbsp;MiB.</td></tr>
+              <tr><td><code>input_unstable</code></td><td>The input changes at every poll for 30&nbsp;s; it is taken over only once it stays the same.</td></tr>
+              <tr><td><code>processes_left</code></td><td>Processes of the user <code>frps</code> could not be ended; frps does not start until the input changes or the container restarts (<code>docker compose restart frps</code>).</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Events and notifications</h3>
+          <p>The <code>scheduler</code> reads the status file every 15&nbsp;s and writes a bell notification for every new event (at most 10 events per hour; an event older than one hour no longer counts as new). "Users with tunnel access" are the admins and the users assigned to a server with at least one enabled tunnel.</p>
+          <table>
+            <thead><tr><th>Event</th><th>Meaning</th><th>Notification to</th></tr></thead>
+            <tbody>
+              <tr><td><code>started</code></td><td>frps started where none ran before (container start, after <code>waiting</code> or <code>stopped</code>).</td><td>nobody</td></tr>
+              <tr><td><code>applied</code></td><td>A change taken over, frps restarted; with a new token also the hint that agent tunnels take up to ~5 minutes.</td><td>admins and users with tunnel access, info</td></tr>
+              <tr><td><code>rejected</code></td><td>A new input not taken over, frps keeps running on the last valid configuration (once per rejected input); also once per series of changes that makes the input unstable (<code>input_unstable</code>), whether frps runs or not. Without a valid copy (state <code>waiting</code>) the reason shows only in the block on the FRP page.</td><td>admins, warning</td></tr>
+              <tr><td><code>stopped</code></td><td>The FRP server configuration is gone, frps stopped.</td><td>admins, info</td></tr>
+              <tr><td><code>crashed</code></td><td>frps exits repeatedly (once per series of exits).</td><td>admins, warning</td></tr>
+              <tr><td><code>copy_changed</code></td><td>The checked working copy changed after it was taken over; it was dropped, and frps starts only from a newly checked copy.</td><td>admins, warning</td></tr>
+              <tr><td><code>start_refused</code></td><td>frps not started because processes of the user <code>frps</code> were left (reason <code>processes_left</code>).</td><td>admins, warning</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Keys allowed in <code>extra_config</code></h3>
+          <p>The supervisor takes over only an <code>frps.toml</code> in the layout the server generates. At top level, the server writes <code>bindPort</code>, <code>vhostHTTPSPort</code>, <code>subDomainHost</code>, <code>maxPortsPerClient</code>, <code>detailedErrorsToClient</code>, <code>webServer.addr</code>, <code>webServer.port</code>, <code>webServer.user</code>, <code>webServer.password</code>, <code>auth.method</code> and <code>auth.token</code> from the fields of the form. Via the FRP server configuration's <code>extra_config</code> only these can be added:</p>
+          <p><code>transport.maxPoolCount</code>, <code>transport.tcpMux</code>, <code>transport.tcpMuxKeepaliveInterval</code>, <code>transport.heartbeatTimeout</code>, <code>transport.tcpKeepalive</code>, <code>userConnTimeout</code>, <code>log.level</code>, <code>log.maxDays</code></p>
+          <p>Keys are compared exactly. Values are <code>true</code>, <code>false</code>, finite numbers or strings without quotes, backslashes, braces, control characters and lone surrogates (U+D800 to U+DFFF); the same character rule applies to the fields <em>Subdomain host</em>, <em>Dashboard user</em>, <em>Dashboard password</em> and <em>Auth token</em>. The server rejects other keys and values on saving with <code>422</code> (<code>POST</code>/<code>PUT /api/frp/server-config</code>); stored ones it cleans up at startup (see below).</p>
+
+          <h3>Before an update</h3>
+          <p>Before an update, check in the FRP server configuration:</p>
+          <ul>
+            <li><code>extra_config</code> and the fields <em>Subdomain host</em>, <em>Dashboard user</em>, <em>Dashboard password</em> and <em>Auth token</em> follow the rules above.</li>
+            <li>The <em>Auth token</em> has at least 16 characters.</li>
+            <li>A <em>Dashboard port</em>, if set, is neither 443 nor the <em>Bind port</em> nor <code>FRP_BIND_PORT</code>.</li>
+          </ul>
+          <p>At startup, before it writes <code>frps.toml</code>, the server checks the stored configuration against these rules:</p>
+          <ul>
+            <li><code>extra_config</code> entries with another key (e.g. <code>proxyBindAddr</code> or <code>log.to</code>) or a value not allowed are removed from the stored configuration, and the admins get a bell notification naming the removed keys.</li>
+            <li>A field that ends up in <code>frps.toml</code> and breaks one of these rules (characters not allowed, an <em>Auth token</em> under 16 characters, a <em>Dashboard port</em> equal to 443, the <em>Bind port</em> or <code>FRP_BIND_PORT</code>) stays as it is. The admins get a bell notification naming the fields to set anew, once for as long as the same fields are affected. Its text is German (title "FRP-Server-Konfiguration: Felder neu setzen") and names each field by its label in the German form, with its rule in parentheses, e.g. "Der FRP-Server übernimmt die Konfiguration so nicht. Bitte neu setzen: Auth Token (mindestens 16 Zeichen), Dashboard Port (weder 443 noch der Bind Port noch FRP_BIND_PORT)." In English: the FRP server does not take the configuration as it is; set anew: Auth Token (at least 16 characters), Dashboard Port (neither 443 nor the bind port nor <code>FRP_BIND_PORT</code>).</li>
+          </ul>
+          <p>Logs and notifications name keys and fields, never values. If the configuration fails the supervisor's check, frps keeps running on the last valid copy, if there is one. Without a valid copy, e.g. right after the update with an empty <code>frps-active</code> volume, frps does not start (state <code>waiting</code>, reason on the FRP page) until the configuration passes the check.</p>
 
           <h2>Enforcing mTLS (CERT_REQUIRED)</h2>
           <p>Since 0.29.0 the data plane (<code>:443</code>) runs <strong>enforced</strong> by default (<code>MTLS_ENFORCE=true</code>): the gateway requires a valid client certificate at the TLS handshake (<code>CERT_REQUIRED</code>) <em>and</em> the server rejects protected routes without a valid scope with <code>403</code>. A fresh install is usable enforced via <code>scripts/install.sh</code> (it fetches the first admin's cert out-of-band). <strong>Permissive</strong> (<code>MTLS_ENFORCE=false</code>) lets certless clients through and only logs — needed only for a manual first bootstrap. Both are driven by <strong>one</strong> variable: <code>MTLS_ENFORCE</code>.</p>

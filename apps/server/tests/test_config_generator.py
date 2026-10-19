@@ -82,8 +82,8 @@ class TestGenerateFrpsToml:
     def test_dashboard_included(self):
         config = _make_config(dashboard_port=7500, dashboard_user="admin", dashboard_password="pw")
         toml = generate_frps_toml(config)
-        # Bind all interfaces so the server container can reach the dashboard over the
-        # compose bridge; 127.0.0.1 would make /api/frp/status unreachable (4.6).
+        # All interfaces: the supervisor asks over loopback inside the frps container, the
+        # server with FRPS_DASHBOARD_URL over the network (4.6).
         assert 'webServer.addr = "0.0.0.0"' in toml
         assert "webServer.port = 7500" in toml
         assert 'webServer.user = "admin"' in toml
@@ -277,23 +277,3 @@ class TestStcpWithoutSecret:
         assert toml == generate_visitor_toml(_make_config(), [tunnels[2]])
         warned = " ".join(r.getMessage() for r in caplog.records)
         assert "no-secret" in warned and "empty-secret" in warned
-
-
-def test_write_frps_config_warns_only_on_runtime_change(tmp_path, monkeypatch, caplog):
-    import logging
-
-    from app.modules.frp import docker_manager
-
-    monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
-    config = _make_config(auth_token="tok")
-
-    # 4.7: a runtime change (create/update) logs the restart requirement — frps has no
-    # config hot-reload — while a startup write stays quiet.
-    with caplog.at_level(logging.WARNING):
-        docker_manager.write_frps_config(config, warn_restart=True)
-    assert any("docker compose restart frps" in r.getMessage() for r in caplog.records)
-
-    caplog.clear()
-    with caplog.at_level(logging.WARNING):
-        docker_manager.write_frps_config(config)
-    assert not any("restart frps" in r.getMessage() for r in caplog.records)

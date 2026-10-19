@@ -14,7 +14,7 @@ use crate::error::AppError;
 use crate::frpc;
 use crate::models::{
     AuthSession, ClientInfo, Connection, DeviceIdentity, PasswordState, RdpOptions, Settings,
-    TunnelStatus,
+    TunnelRefresh, TunnelStatus,
 };
 use crate::password;
 use crate::proxy;
@@ -179,7 +179,8 @@ pub async fn sync_connections(
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
     let allow_self_signed = self_signed_setting(&app, None);
-    sync::sync_connections(app, url, allow_self_signed).await
+    let server_url = storage::load_settings(&app).ok().and_then(|s| s.server_url);
+    sync::sync_connections(app, url, allow_self_signed, server_url).await
 }
 
 #[tauri::command]
@@ -241,6 +242,7 @@ pub async fn open_connection(
 pub async fn open_connection_stored(
     app: tauri::AppHandle,
     connection: Connection,
+    credential_connection: Option<Connection>,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
@@ -251,6 +253,7 @@ pub async fn open_connection_stored(
         connection::open_connection_stored(
             &app,
             &connection,
+            credential_connection.as_ref(),
             client.as_ref(),
             rdp,
             settings.language.as_deref(),
@@ -303,19 +306,35 @@ pub async fn fetch_connections_jwt(
     sync::fetch_connections_jwt(app, &server_url, &token, allow_self_signed).await
 }
 
+/// The reconciliation of `refresh_tunnel`, reporting only the status.
 #[tauri::command]
 pub async fn start_tunnel(
     app: tauri::AppHandle,
     state: State<'_, frpc::FrpcState>,
+    lock: State<'_, frpc::RefreshLock>,
     server_url: String,
     token: String,
     username: String,
 ) -> Result<TunnelStatus, AppError> {
+    let refresh = refresh_tunnel(app, state, lock, server_url, token, username).await?;
+    Ok(refresh.status)
+}
+
+#[tauri::command]
+pub async fn refresh_tunnel(
+    app: tauri::AppHandle,
+    state: State<'_, frpc::FrpcState>,
+    lock: State<'_, frpc::RefreshLock>,
+    server_url: String,
+    token: String,
+    username: String,
+) -> Result<TunnelRefresh, AppError> {
     let allow_self_signed = self_signed_setting(&app, None);
     let frpc_state = state.inner().clone();
-    frpc::start_tunnel(
+    frpc::refresh_tunnel(
         app,
         frpc_state,
+        lock.inner(),
         &server_url,
         &token,
         &username,

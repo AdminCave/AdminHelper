@@ -438,6 +438,19 @@
         "title": "MaintenanceInput",
         "type": "object"
       },
+      "SuggestionDismiss": {
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "title": "SuggestionDismiss",
+        "type": "object"
+      },
       "TemplateAlertDef": {
         "properties": {
           "channel": {
@@ -1268,7 +1281,7 @@
     },
     "/checks/{check_id}": {
       "delete": {
-        "description": "Deletes a check.",
+        "description": "Deletes a check. A template check stays deleted on the next template sync.",
         "operationId": "delete_check_checks__check_id__delete",
         "parameters": [
           {
@@ -1428,6 +1441,44 @@
           }
         },
         "summary": "Get Check Metrics"
+      }
+    },
+    "/checks/{check_id}/reset": {
+      "post": {
+        "description": "Drops the user's changes to a template check: every template field gets\nthe template's value again.",
+        "operationId": "reset_check_checks__check_id__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Check"
       }
     },
     "/checks/{check_id}/run": {
@@ -1859,7 +1910,7 @@
     },
     "/templates/assignments/{server_id}": {
       "get": {
-        "description": "Returns all template assignments of a server.",
+        "description": "Returns all template assignments of a server, each with the number of its\ntemplate checks deleted on the server (removedChecks).",
         "operationId": "get_server_assignments_templates_assignments__server_id__get",
         "parameters": [
           {
@@ -1893,6 +1944,91 @@
           }
         },
         "summary": "Get Server Assignments"
+      }
+    },
+    "/templates/suggestions/{server_id}": {
+      "get": {
+        "description": "Lists the standard templates the server's host facts suggest; empty for a\nserver whose agent has not reported them (yet).",
+        "operationId": "get_template_suggestions_templates_suggestions__server_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Template Suggestions"
+      }
+    },
+    "/templates/suggestions/{server_id}/dismiss": {
+      "post": {
+        "description": "Ignores a suggested standard template on this server; idempotent. No undo\nyet, the template can still be assigned by hand.",
+        "operationId": "dismiss_template_suggestion_templates_suggestions__server_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionDismiss"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Template Suggestion"
       }
     },
     "/templates/tag-sync": {
@@ -2205,6 +2341,127 @@
           }
         },
         "summary": "Unassign Template"
+      }
+    },
+    "/templates/{template_id}/assign/{server_id}/restore": {
+      "post": {
+        "description": "Creates the template checks deleted on this server again.",
+        "operationId": "restore_template_checks_templates__template_id__assign__server_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Template Checks"
+      }
+    },
+    "/templates/{template_id}/builtin-update": {
+      "get": {
+        "description": "Compares a standard template's definitions with those of its shipped version.\n\nBoth sides leave out the keys at their schema default, as the hash does: the\neditor stores every key, the shipped definitions only those they set, and a\ndefinition saved unchanged has to look like the shipped one.",
+        "operationId": "get_builtin_update_templates__template_id__builtin_update_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Builtin Update"
+      },
+      "post": {
+        "description": "Takes the shipped version of a standard template, edited or not — triggers a\nlive sync to all assigned servers; the fields a user changed on a check stay.",
+        "operationId": "take_builtin_update_templates__template_id__builtin_update_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Take Builtin Update"
       }
     }
   }

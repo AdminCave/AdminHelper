@@ -26,6 +26,7 @@ import type {
   ResolvedConnection,
   Settings,
   TunnelMapping,
+  TunnelRefresh,
   TunnelStatus,
 } from './types';
 
@@ -179,12 +180,20 @@ export function openConnection(
   return invoke('open_connection', { connection, password, client, correlationId });
 }
 
+// credentialConnection: the connection as listed, before a tunnel resolved it to
+// 127.0.0.1:<visitor port>. The stored password is keyed by its host and port.
 export function openConnectionStored(
   connection: Connection,
+  credentialConnection?: Connection,
   client?: ClientInfo,
   correlationId?: string,
 ): Promise<void> {
-  return invoke('open_connection_stored', { connection, client, correlationId });
+  return invoke('open_connection_stored', {
+    connection,
+    credentialConnection,
+    client,
+    correlationId,
+  });
 }
 
 export function resolveConnection(
@@ -216,6 +225,14 @@ export function startTunnel(
   username: string,
 ): Promise<TunnelStatus> {
   return invoke<TunnelStatus>('start_tunnel', { serverUrl, token, username });
+}
+
+export function refreshTunnel(
+  serverUrl: string,
+  token: string,
+  username: string,
+): Promise<TunnelRefresh> {
+  return invoke<TunnelRefresh>('refresh_tunnel', { serverUrl, token, username });
 }
 
 export function stopTunnel(): Promise<void> {

@@ -15,6 +15,7 @@ Source0:        %{name}-%{version}.tar.gz
 %global debug_package %{nil}
 
 Requires:       systemd
+Recommends:     smartmontools
 Obsoletes:      srm-frpc-client < %{version}
 Obsoletes:      srm-monitor-agent < %{version}
 Obsoletes:      srm-agent < %{version}

@@ -23,9 +23,10 @@
 # Flags: --skip-backup  --with-victoria  --no-rollback  --yes
 #
 # Safety: backs up first (data, incl. the CA crown jewel) and snapshots the current
-# runtime files before the swap; on a failed health check it auto-rolls-back the
-# runtime files + image pins (use --no-rollback to inspect the broken state). The
-# updater updates ITSELF: if the release ships a newer update.sh it re-execs into it.
+# runtime files + .env before the swap; on a failed .env migration, agent-repo
+# refresh, image pull, recreate or health check it auto-rolls-back the runtime files
+# + image pins (use --no-rollback to inspect the broken state). The updater updates
+# ITSELF: if the release ships a newer update.sh it re-execs into it.
 #
 # Advanced overrides (mirrors / GitHub Enterprise / tests):
 #   AH_API_BASE (default https://api.github.com), AH_DL_BASE (default https://github.com),
@@ -69,13 +70,111 @@ done
 log() { echo "[update] $*" >&2; }
 die() { echo "FEHLER: $*" >&2; exit 1; }
 
+# 0 if every '${' in $1 that is not part of a '$$' starts a placeholder compose
+# accepts: ${NAME}, or ${NAME followed by :- - :? ? :+ or + and a closing '}' on
+# the same line, nested ones included. The classes are spelled out: under
+# de_DE.UTF-8 a range like [A-Z] in =~ matches umlauts too, and compose takes ASCII
+# names only.
+env_template_ok() {
+    local s="$1" open=0
+    local name='^[_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ][_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]*'
+    while [ -n "$s" ]; do
+        case $s in
+            '$$'*) s=${s:2} ;;
+            "\${"*)
+                s=${s:2}
+                [[ $s =~ $name ]] || return 1
+                s=${s:${#BASH_REMATCH[0]}}
+                case $s in
+                    '}'*) s=${s:1} ;;
+                    ':-'*|':?'*|':+'*) open=$((open + 1)); s=${s:2} ;;
+                    '-'*|'?'*|'+'*) open=$((open + 1)); s=${s:1} ;;
+                    *) return 1 ;;
+                esac ;;
+            '}'*) [ "$open" -eq 0 ] || open=$((open - 1)); s=${s:1} ;;
+            $'\n'*) [ "$open" -eq 0 ] || return 1; s=${s:1} ;;
+            *) s=${s:1} ;;
+        esac
+    done
+    [ "$open" -eq 0 ]
+}
+
+# A quoted value as compose reads it: $2 is the text after the opening quote $1. A
+# backslash escapes the next character, and in double quotes \$ is a literal '$'
+# (passed on as '$$'). Leaves the text up to the closing quote in QUOTED and the
+# text after it in QUOTED_REST; returns 1 if $2 holds no closing quote.
+read_quoted() {
+    local q="$1" s="$2" c i=0
+    QUOTED=""
+    while [ "$i" -lt "${#s}" ]; do
+        c=${s:i:1}
+        if [ "$c" = "$q" ]; then QUOTED_REST=${s:i+1}; return 0; fi
+        if [ "$c" = "\\" ]; then
+            i=$((i + 1)); c=${s:i:1}
+            case $c in
+                '$') c='$$' ;;
+                "\\"|"$q") ;;
+                *) c="\\$c" ;;
+            esac
+        fi
+        QUOTED+=$c; i=$((i + 1))
+    done
+    return 1
+}
+
+# compose reads the values in .env as templates, and a '${' that starts no valid
+# placeholder ends EVERY compose call (pull, up, exec, config) with "Invalid
+# template". Checked before the first one, so such a value stops the update before
+# backup, swap and re-pin rather than after. Reads .env as compose does: blank and
+# '#' lines drop, "export " may lead, '=' or ':' separates; a quoted value runs to
+# its closing quote, over several lines if need be, and is literal in single
+# quotes, and the text after that quote is read as a line of its own; an unquoted
+# value ends at " #". The message names
+# the key, never the value: it may be a secret.
+check_env_templates() {
+    local line key val more q rest QUOTED QUOTED_REST
+    [ -f .env ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        # One assignment per pass: after a closing quote, compose reads on.
+        while [ -n "$line" ]; do
+            line=${line#"${line%%[![:space:]]*}"}
+            case $line in ''|'#'*) break ;; esac
+            case $line in
+                export[[:space:]]*) line=${line#export}; line=${line#"${line%%[![:space:]]*}"} ;;
+            esac
+            case $line in *[=:]*) ;; *) break ;; esac
+            key=${line%%[=:]*}; key=${key%"${key##*[![:space:]]}"}
+            val=${line#*[=:]}; val=${val#"${val%%[![:space:]]*}"}
+            rest=""
+            case $val in
+                "'"*|'"'*)
+                    # The lines up to the closing quote are part of this value, not
+                    # keys of their own. A quote never closed is compose's to report.
+                    q=${val:0:1}; val=${val:1}
+                    until read_quoted "$q" "$val"; do
+                        IFS= read -r more || [ -n "$more" ] || return 0
+                        val+=$'\n'$more
+                    done
+                    rest=$QUOTED_REST
+                    if [ "$q" = '"' ]; then val=$QUOTED; else val=""; fi ;;
+                *) val=${val%% #*} ;;
+            esac
+            env_template_ok "$val" \
+                || die ".env: der Wert von ${key} enthaelt ein '\${' ohne gueltigen Platzhalter — docker compose bricht damit jeden Aufruf mit 'Invalid template' ab. '\$' als '\$\$' schreiben oder den Wert in einfache Anfuehrungszeichen setzen. Abbruch (nichts veraendert)."
+            line=$rest
+        done
+    done < .env
+}
+
 # --- Preflight --------------------------------------------------------------
 [ -f docker-compose.yml ] || die "aus dem Install-Verzeichnis ausfuehren (docker-compose.yml fehlt)."
+check_env_templates
 command -v docker >/dev/null 2>&1 || die "docker fehlt."
 docker compose version >/dev/null 2>&1 || die "'docker compose' fehlt."
 command -v curl >/dev/null 2>&1 || die "curl fehlt."
 
-# Set or replace KEY=value in .env (idempotent), un-commenting if needed.
+# Set or replace KEY=value in .env (idempotent), un-commenting if needed. Returns 1,
+# with .env unchanged, if the new file cannot be written.
 upsert_env() {
     local key="$1" value="$2" tmp
     # Reject a value with newlines: it would inject extra .env lines (3.79).
@@ -84,11 +183,15 @@ upsert_env() {
     esac
     # Delete any existing (possibly commented) line for the key, then append the
     # literal value. No sed replacement, so |, & or \1 in the value aren't
-    # interpreted (3.79). grep -v exits 1 when it filters every line — tolerate it.
-    tmp=$(mktemp)
-    grep -vE "^#?[[:space:]]*${key}=" .env > "$tmp" 2>/dev/null || true
-    mv "$tmp" .env
-    printf '%s=%s\n' "$key" "$value" >> .env
+    # interpreted (3.79). grep -v exits 1 when it filters every line, which is
+    # fine; 2 is an error (a write error too). The copy sits next to .env (mktemp:
+    # 0600, same file system, so mv is a rename) and replaces it only once both
+    # steps worked: a full disk must not leave a cut-down .env in its place.
+    tmp=$(mktemp .env.ah-XXXXXX) || return 1
+    { { grep -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
+        && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
+        && mv "$tmp" .env; } \
+        || { rm -f "$tmp"; return 1; }
 }
 
 # Currently installed version = the tag pinned on SERVER_IMAGE in .env (X.Y.Z),
@@ -100,6 +203,19 @@ installed_version() {
         [0-9]*.[0-9]*.[0-9]*) printf '%s' "$tag" ;;
         *) printf 'unknown' ;;
     esac
+}
+
+# The installed state as messages name it: the version, or else what follows the
+# image name in SERVER_IMAGE (a floating ":main", a digest "@sha256:…"; without a
+# tag or without the line ":latest", the default), never "unknown".
+installed_label() {
+    local ver ref="" tag
+    ver=$(installed_version)
+    if [ "$ver" != unknown ]; then printf '%s' "$ver"; return 0; fi
+    [ -f .env ] && ref=$(grep -E '^SERVER_IMAGE=' .env | head -1)
+    ref="${ref#SERVER_IMAGE=}"; ref="${ref##*/}"
+    tag="${ref#"${ref%%[:@]*}"}"
+    printf '%s' "${tag:-:latest}"
 }
 
 # Resolve the latest published, non-prerelease, non-draft release tag via the API.
@@ -181,7 +297,11 @@ fetch_bundle() {
 # Refresh the host ./repo (the gateway's apt/rpm repo mount) from this release's
 # agent-repo asset. Best-effort: a release WITHOUT the asset (signing key not
 # configured, or a pre-repo release) leaves ./repo untouched and never fails the
-# update — but an asset that IS present with a wrong checksum aborts (tampering).
+# update — but an asset that IS present and cannot be fetched, verified (tampering)
+# or unpacked returns 1, and the caller rolls the update back. The caller tests the
+# status, which turns set -e off in here: every step that can fail returns 1 itself,
+# except on purpose a missing asset (404/000) or checksum line (skip, return 0) and
+# the clean-up before the copy (find -delete), which may leave files behind.
 # Reuses the already-downloaded, signature-verified ${tmp}/SHA256SUMS. Updates the
 # tree IN PLACE (keeps the dir inode) so the gateway's live bind mount stays valid.
 update_agent_repo() {
@@ -196,22 +316,23 @@ update_agent_repo() {
         # that must NOT be mistaken for "no asset" (4.58).
         case "$code" in
             404|000) log "Kein Agent-Repo-Asset in ${tag} — ueberspringe Repo-Update (Paket-Repo unveraendert)."; return 0 ;;
-            *) die "Agent-Repo-Asset ${asset} nicht ladbar (HTTP ${code}) — Abbruch." ;;
+            *) log "Agent-Repo-Asset ${asset} nicht ladbar (HTTP ${code})."; return 1 ;;
         esac
     fi
     expected=$(awk -v a="$asset" '$2==a {print $1; exit}' "${tmp}/SHA256SUMS" 2>/dev/null || true)
     [ -n "$expected" ] || { log "Keine Checksumme fuer ${asset} — ueberspringe Repo-Update."; return 0; }
     echo "${expected}  ${tmp}/${asset}" | sha256sum -c - >/dev/null 2>&1 \
-        || die "Checksumme des Agent-Repo-Assets stimmt nicht — Abbruch (moegliche Manipulation)."
+        || { log "Checksumme des Agent-Repo-Assets stimmt nicht (moegliche Manipulation)."; return 1; }
     log "Aktualisiere Paket-Repo unter ./repo ..."
-    # Unpack into staging FIRST: a tar failure (set -e) exits before ./repo is
-    # touched, so a corrupt asset can't leave the gateway serving an empty repo. The
+    # Unpack into staging FIRST: a tar failure returns before ./repo is touched,
+    # so a corrupt asset can't leave the gateway serving an empty repo. The
     # dir inode is kept (content swapped in place) so the live bind mount stays valid (4.59).
-    local staging; staging=$(mktemp -d "${tmp}/repo.XXXXXX")
-    tar xzf "${tmp}/${asset}" -C "$staging"
-    mkdir -p repo
+    local staging; staging=$(mktemp -d "${tmp}/repo.XXXXXX") || return 1
+    tar xzf "${tmp}/${asset}" -C "$staging" \
+        || { log "Agent-Repo-Asset ${asset} nicht entpackbar."; return 1; }
+    mkdir -p repo || return 1
     find repo -mindepth 1 -delete 2>/dev/null || true
-    cp -a "$staging"/. repo/
+    cp -a "$staging"/. repo/ || return 1
 }
 
 # Wait until the server accepts connections (migrations done, uvicorn up).
@@ -235,16 +356,17 @@ wait_for_server() {
 if [ "$REDEPLOY" = 1 ]; then
     if [ "$SKIP_BACKUP" != 1 ]; then log "Backup-first..."; ./scripts/backup.sh "${BACKUP_ARGS[@]}"; fi
     log "Ziehe die gepinnten Images neu..."
-    docker compose pull
+    docker compose pull || die "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit?) — Re-Deploy abgebrochen, Container unveraendert."
     log "Starte den Stack neu..."
     docker compose up -d
     wait_for_server || die "Server nicht rechtzeitig bereit. Restore: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
-    log "Re-Deploy fertig (Version unveraendert: $(installed_version))."
+    log "Re-Deploy fertig (Version unveraendert: $(installed_label))."
     exit 0
 fi
 
 # --- Resolve target + guard rails -------------------------------------------
 INSTALLED=$(installed_version)
+INSTALLED_LABEL=$(installed_label)
 if [ -n "$REF" ]; then
     TARGET="$REF"
 else
@@ -264,16 +386,27 @@ if [ -z "$REF" ]; then
 fi
 
 if [ "$CHECK" = 1 ]; then
-    log "Installiert: ${INSTALLED}   Ziel: ${TARGET_VER} (${TARGET})"
+    log "Installiert: ${INSTALLED_LABEL}   Ziel: ${TARGET_VER} (${TARGET})"
     if [ "$INSTALLED" = "$TARGET_VER" ]; then log "Aktuell — kein Update noetig."; else log "Update verfuegbar."; fi
     exit 0
 fi
 
-log "Update ${INSTALLED} -> ${TARGET_VER}"
+# Without .env there is no installed state to roll back to; checked before the
+# backup and the snapshot, so a broken install dir gets neither.
+[ -f .env ] || die ".env fehlt im Install-Verzeichnis — kein Stand zum Zurueckrollen. Abbruch (nichts veraendert)."
+
+log "Update ${INSTALLED_LABEL} -> ${TARGET_VER}"
 
 # --- Fetch + verify the bundle (before touching anything) -------------------
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+# A re-exec'd updater also removes the TMP of the run that handed off to it (its
+# exec skipped its own EXIT trap), but only when it runs from exactly that dir: the
+# variable alone never makes this script delete a directory.
+PARENT_TMP=""
+if [ -n "${AH_UPDATE_PARENT_TMP:-}" ] && [ "$0" = "${AH_UPDATE_PARENT_TMP}/update-new.sh" ]; then
+    PARENT_TMP="$AH_UPDATE_PARENT_TMP"
+fi
+trap 'rm -rf -- "$TMP" ${PARENT_TMP:+"$PARENT_TMP"}' EXIT
 EXTRACT=$(fetch_bundle "$TARGET" "$TMP")
 
 # --- Self-update: hand off to the release's update.sh if it differs ----------
@@ -289,8 +422,8 @@ if [ "${AH_UPDATE_REEXECED:-0}" != 1 ] && ! cmp -s "${EXTRACT}/scripts/update.sh
     [ "$ASSUME_YES" = 1 ] && pass+=(--yes)
     [ ${#BACKUP_ARGS[@]} -gt 0 ] && pass+=("${BACKUP_ARGS[@]}")
     # exec replaces this process: the EXIT trap won't fire, so $TMP survives for
-    # the new updater to read; it lives under mktemp's dir and is cleaned by the OS.
-    exec env AH_UPDATE_REEXECED=1 bash "${TMP}/update-new.sh" "${pass[@]}"
+    # the new updater to run from; AH_UPDATE_PARENT_TMP has it remove $TMP at its end.
+    exec env AH_UPDATE_REEXECED=1 AH_UPDATE_PARENT_TMP="$TMP" bash "${TMP}/update-new.sh" "${pass[@]}"
 fi
 
 # --- Backup-first (data) + snapshot the current runtime files ---------------
@@ -314,14 +447,22 @@ SNAP_FILES=(docker-compose.yml .env.example scripts)
 tar czf "$SNAP" "${SNAP_FILES[@]}" || die "Laufzeit-Snapshot fehlgeschlagen — Abbruch (noch nichts veraendert)."
 chmod 600 "$SNAP" 2>/dev/null || true
 log "Laufzeit-Snapshot: ${SNAP}"
+# .env as it was, for both rollbacks below: all of it goes back while no container
+# has been touched, only its image pins once containers may have started. Kept in $TMP
+# (0700, removed on exit), not in the snapshot, which both restore in whole.
+cp -p .env "${TMP}/env.prev" || die "Kopie der .env fehlgeschlagen — Abbruch (noch nichts veraendert)."
 
 # --- Atomic-ish swap: place every manifest file, drop obsolete ops scripts ---
 # Paths come from the bundle's MANIFEST.sha256 (col 2). Each file is moved into
-# place from the already-verified extract dir; scripts/* get the exec bit.
+# place from the already-verified extract dir; scripts/* get the exec bit. A path
+# that does not exist yet is noted in ADDED_PATHS first: the snapshot cannot bring
+# back its absence, so a rollback removes it (restore_snapshot).
 MANIFEST_PATHS=$(awk '{print $2}' "${EXTRACT}/MANIFEST.sha256")
+ADDED_PATHS=""
 while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     rel="${rel#./}"
+    [ -e "$rel" ] || [ -L "$rel" ] || ADDED_PATHS+="${rel}"$'\n'
     mkdir -p "$(dirname "$rel")"
     cp "${EXTRACT}/${rel}" "${rel}.ah-new"
     mv "${rel}.ah-new" "$rel"
@@ -339,60 +480,135 @@ for f in scripts/*.sh; do
     fi
 done
 
-# --- .env migration: add new keys, fill new secrets, re-pin images ----------
-# Additive only: append active KEY=value from the new .env.example that .env is
-# missing — never overwrite an existing value (no clobbering of secrets/config).
-if [ -f .env.example ]; then
-    while IFS= read -r line; do
-        case "$line" in
-            [A-Z_]*=*)
-                key="${line%%=*}"
-                grep -qE "^#?[[:space:]]*${key}=" .env || { printf '%s\n' "$line" >> .env; log ".env: neuen Key ${key} ergaenzt"; }
-                ;;
-        esac
-    done < .env.example
-fi
-# Fill any newly-added empty secrets (idempotent — leaves set values alone).
-./scripts/init-secrets.sh >/dev/null
-
-# Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
-upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}"
-upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}"
-upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}"
-upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}"
-chmod 600 .env 2>/dev/null || true
-log "Images gepinnt auf :${TARGET_VER}"
-
-# --- Refresh the gateway's agent package repo (best-effort) -----------------
-update_agent_repo "$TARGET" "$TMP"
-
-# --- Deploy + health check, with automatic rollback on failure --------------
-rollback() {
-    echo >&2
-    log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED} zurueck (Snapshot ${SNAP})..." >&2
-    # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
-    # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
-    tar xzf "$SNAP" || log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."
-    if [ "$INSTALLED" != "unknown" ]; then
-        upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${INSTALLED}"
-        upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${INSTALLED}"
-        upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${INSTALLED}"
-        upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${INSTALLED}"
-    fi
-    docker compose up -d >/dev/null 2>&1 || true
+# --- Both rollbacks: the runtime files as the snapshot holds them -----------
+# tar only adds and overwrites, so the paths the swap added go first, and ./repo is
+# emptied IN PLACE (the dir inode stays, so the gateway's live bind mount stays
+# valid): afterwards ./repo holds exactly the snapshot's tree, or stays empty if the
+# update created it. Every step runs; returns 1 if any of them failed.
+restore_snapshot() {
+    local rel rc=0
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        rm -f "$rel" || rc=1
+    done <<< "$ADDED_PATHS"
+    if [ -d repo ]; then find repo -mindepth 1 -delete || rc=1; fi
+    tar xzf "$SNAP" || rc=1
+    return "$rc"
 }
 
+# --- Rollback while no container has been touched yet ------------------------
+# A failed .env migration, agent-repo refresh or pull (registry down, rate limit,
+# an image the release did not publish) comes before the recreate, so nothing of
+# the new version ever ran: the installed state is the snapshot plus the old .env
+# as a whole, pins of a floating tag included. No recreate needed. $1 says what
+# failed, $2 is the way on that --no-rollback names: .env stays pinned on the
+# target, so a bare re-run would call the install current.
+rollback_before_deploy() {
+    if [ "$NO_ROLLBACK" = 1 ]; then
+        die "$1. --no-rollback gesetzt: neue Laufzeit-Dateien + Image-Pins bleiben stehen, Container unveraendert. $2"
+    fi
+    local incomplete=0
+    echo >&2
+    log "Rolle Laufzeit-Dateien + .env auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..."
+    restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    # Copy next to .env, then rename: an interrupted restore leaves no half .env.
+    # -T: a directory .env.ah-new in the way fails the restore, it takes no copy.
+    { cp -pT "${TMP}/env.prev" .env.ah-new && mv -T .env.ah-new .env; } \
+        || { log "WARN: .env-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    [ "$incomplete" = 0 ] \
+        || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), Container unveraendert. Bitte manuell pruefen."
+    die "$1 — zurueckgerollt auf ${INSTALLED_LABEL}, Container unveraendert. Update danach erneut ausfuehren."
+}
+
+# --- .env migration: add new keys, fill new secrets, re-pin images ----------
+# One step: the caller tests the status, which turns set -e off in here, so every
+# part that can fail returns 1 itself, and the caller rolls the whole .env back.
+# Additive only: append active KEY=value from the new .env.example that .env is
+# missing — never overwrite an existing value (no clobbering of secrets/config).
+migrate_env() {
+    local line key rc
+    if [ -f .env.example ]; then
+        while IFS= read -r line; do
+            case "$line" in
+                [A-Z_]*=*)
+                    key="${line%%=*}"
+                    rc=0; grep -qE "^#?[[:space:]]*${key}=" .env || rc=$?
+                    case $rc in
+                        0) ;;
+                        1) printf '%s\n' "$line" >> .env || return 1; log ".env: neuen Key ${key} ergaenzt" ;;
+                        *) return 1 ;;
+                    esac
+                    ;;
+            esac
+        done < .env.example || return 1
+    fi
+    # Fill any newly-added empty secrets (idempotent — leaves set values alone).
+    ./scripts/init-secrets.sh >/dev/null || return 1
+
+    # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
+    upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}" || return 1
+    upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}" || return 1
+    upsert_env FRPS_IMAGE       "ghcr.io/admincave/adminhelper/frps:${TARGET_VER}" || return 1
+    upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}" || return 1
+    upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}" || return 1
+    chmod 600 .env 2>/dev/null || true
+    log "Images gepinnt auf :${TARGET_VER}"
+}
+migrate_env || rollback_before_deploy ".env-Migration fehlgeschlagen" \
+    ".env kann halb migriert sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release erneut anwenden)."
+
+# --- Refresh the gateway's agent package repo --------------------------------
+# --redeploy never calls update_agent_repo, so only --ref re-applies the repo.
+update_agent_repo "$TARGET" "$TMP" \
+    || rollback_before_deploy "Paket-Repo-Update fehlgeschlagen" \
+        "./repo kann halb gefuellt sein. Weiter mit ./scripts/update.sh --ref ${TARGET} (Release samt Paket-Repo erneut anwenden)."
+
+# --- Rollback once containers may have started -------------------------------
+# A failed recreate or health check: parts of the new version may have run. $1
+# says what failed. With --no-rollback, .env stays pinned on the target and a bare
+# re-run would call the install current; --ref is never stopped by the downgrade
+# guard, but it pins a release, so a floating tag only comes back by hand.
+rollback_after_deploy() {
+    if [ "$NO_ROLLBACK" = 1 ]; then
+        local back="zurueck mit ./scripts/update.sh --ref v${INSTALLED}"
+        [ "$INSTALLED" != "unknown" ] || back="zurueck auf den vorigen Floating-Tag nur von Hand (Image-Pins in .env)"
+        die "$1. --no-rollback gesetzt: kaputter Stand bleibt zum Debuggen stehen, .env auf ${TARGET_VER} gepinnt. Danach: ./scripts/update.sh --redeploy (gepinnte Images neu starten); ${back}. Alembic kann die Datenbank beim Start schon migriert haben; Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+    fi
+    local incomplete=0
+    echo >&2
+    log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED_LABEL} zurueck (Snapshot ${SNAP})..." >&2
+    # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
+    # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
+    restore_snapshot || { log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    # The containers ran, so only the pin lines of the old .env go back: a key the
+    # migration added or a secret init-secrets.sh filled (CA_ROOT_PASSPHRASE) may
+    # be in use already. Taken from env.prev, not rebuilt from INSTALLED, which is
+    # "unknown" for a floating tag (:latest/:main): pins left on the target make
+    # the next run call the install current. A pin the old .env lacked stays
+    # absent. grep exits 1 for "no line selected", which is fine on either side.
+    local pins='^#?[[:space:]]*(SERVER|GATEWAY|FRPS|CA_ISSUER|MONITORING)_IMAGE='
+    { ( umask 077
+        { grep -vE "$pins" .env || [ $? -eq 1 ]; } > .env.ah-new \
+            && { grep -E "$pins" "${TMP}/env.prev" || [ $? -eq 1 ]; } >> .env.ah-new
+      ) && mv -T .env.ah-new .env; } \
+        || { log "WARN: Image-Pin-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    docker compose up -d >/dev/null \
+        || { log "WARN: Start des Stands ${INSTALLED_LABEL} fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."; incomplete=1; }
+    [ "$incomplete" = 0 ] \
+        || die "$1 — Rollback auf ${INSTALLED_LABEL} UNVOLLSTAENDIG (siehe WARN), bitte manuell pruefen. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+    die "$1 — zurueckgerollt auf ${INSTALLED_LABEL}. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+}
+
+# --- Deploy + health check, with automatic rollback on failure --------------
 log "Ziehe die Images..."
-docker compose pull
+docker compose pull \
+    || rollback_before_deploy "Ziehen der Images fehlgeschlagen (Netz/Rate-Limit/Image nicht veroeffentlicht?)" \
+        "Weiter mit ./scripts/update.sh --redeploy (gepinnte Images erneut ziehen und starten) oder --ref ${TARGET} (Release erneut anwenden)."
 log "Starte den Stack neu..."
-docker compose up -d
+docker compose up -d || rollback_after_deploy "Stack-Neustart fehlgeschlagen"
 
 if wait_for_server; then
     log "Fertig. Jetzt auf ${TARGET_VER}. Bei Problemen: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
 else
-    if [ "$NO_ROLLBACK" = 1 ]; then
-        die "Server nicht rechtzeitig bereit. --no-rollback gesetzt: kaputter Stand bleibt zum Debuggen stehen."
-    fi
-    rollback
-    die "Server nicht rechtzeitig bereit — zurueckgerollt auf ${INSTALLED}. Daten-Restore bei Bedarf: ./scripts/restore.sh ./backups/<neuestes>.tar.gz"
+    rollback_after_deploy "Server nicht rechtzeitig bereit"
 fi

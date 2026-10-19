@@ -297,14 +297,17 @@ Unified-Diff. Der Test braucht keine Datenbank (der App-Import reicht), `info.ve
 wird auf `0.0.0` normalisiert und ein `servers`-Feld entfernt — sonst waere jeder Release
 ein Snapshot-Diff ohne Vertragsaenderung.
 
-`oasdiff` gehoert zu keiner Pflicht-Suite — fehlt das Binary, meldet der Check Exit 75 (SKIP)
-statt rot zu werden. Wer das Gate vor dem Push selbst sehen will, holt sich das fertige
-Release-Binary:
+`oasdiff` braucht der Pflicht-Schritt `scripts` von `run.sh`: `scripts/tests/openapi_breaking_test.sh`
+prueft die Ausnahme-Datei `scripts/dev/oasdiff-err-ignore.txt` gegen das echte oasdiff und endet
+ohne Binary mit Exit 75 — unter `--strict` also rot. CI (Jobs `openapi-compat` und `ops-scripts`)
+und die Test-Boxen (`scripts/vm/bootstrap_linux.sh`) installieren es; auf der Dev-Box einmal das
+fertige Release-Binary holen:
 
 ```bash
-# Stand 2026-09-23. Massgeblich ist .github/workflows/ci.yml (Job openapi-compat,
-# OASDIFF_VERSION und OASDIFF_SHA256_LINUX_AMD64) — von dort uebernehmen, damit
-# lokal und CI dieselbe Fassung messen.
+# Stand 2026-10-17. Massgeblich ist .github/workflows/ci.yml (Schritt "Install oasdiff"
+# im Job openapi-compat, OASDIFF_VERSION und OASDIFF_SHA256_LINUX_AMD64);
+# scripts/dev/toolchain-lockstep.sh haelt scripts/vm/bootstrap_linux.sh gleich. Von dort
+# uebernehmen, damit Dev-Box, CI und Boxen dieselbe Fassung messen.
 V=1.32.0
 S=5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad
 curl -sSfL -o /tmp/oasdiff.tgz \
@@ -1084,8 +1087,8 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | Verb | Was es tut |
 |---|---|
 | `doctor [--roles a,b] [--json]` | Prueft API, Rechte, Storage, Templates, deren Guest-Agent und Bridge, die VMID-Baender und die Kapazitaet und druckt je Zeile `ok\|FAIL <check>: <detail>`. |
-| `clone --profile p --role r [--lane l] [--scenario id] [--ttl 8h] [--memory MB] [--cores N] [--name n]` | Klont das Profil-Template, taggt die Lease, injiziert den Schluessel und startet die VM. Druckt `VMID NAME`. |
-| `wait <vm> [--timeout 900]` | Wartet auf Guest-Agent, IPv4 und ssh — alle drei an **einer** Frist. Druckt die Adresse. |
+| `clone --profile p --role r [--lane l] [--scenario id] [--ttl 8h] [--memory MB] [--cores N] [--name n]` | Klont das Profil-Template, taggt die Lease, injiziert den Schluessel und startet die VM. Druckt `VMID NAME`. Der Klon bootet ohne Paket-Upgrade (`ciupgrade=0`): eine Lease laeuft mit dem Paketstand ihres Templates. |
+| `wait <vm> [--timeout 900]` | Wartet auf Guest-Agent, IPv4 und ssh — alle drei an **einer** Frist. Druckt die Adresse. Danach bleibt ssh erreichbar: eine Lease spielt beim ersten Boot kein Paket-Upgrade ein, das sshd neu startet. |
 | `ssh <vm> [-- cmd]` | Ohne Kommando eine interaktive Sitzung im Checkout, sonst der Exit-Code des Kommandos — roh, ohne Login-Shell (siehe `run`). |
 | `sync <vm> [--no-delete]` | `rsync` des Checkouts auf die Box (Ausschlussliste: `scripts/vm/rsync-exclude.txt`). Nur auf eine VM der eigenen Lane, am frischen Zustand geprueft; eine andere mit `AH_LANE=<lane>`. |
 | `run <vm> [--sync] [--timeout S] [--out DIR] [--extend <dauer>] -- <cmd>` | Fuehrt das Kommando in einer **Login-Shell** im Checkout aus und reicht dessen Exit-Code **unveraendert** zurueck. `--out` holt `<remote>/.ah-out/`, `--extend 4h` versetzt vorher den `ttl-`Tag. Wie `sync` nur auf eine VM der eigenen Lane. |
@@ -1094,7 +1097,7 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `destroy <vm>… \| --scenario id \| --lane l \| --role r` | Stoppt und loescht mit Platte. Genannte VMs zusammen mit `--scenario`/`--lane`/`--role`: jede muss zu jedem Filter passen, sonst Abbruch (Exit 2) vor der ersten Zerstoerung; die Filter fuegen dann keine VMs hinzu. |
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
-| `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). |
+| `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). Nur dieser Klon bootet mit Paket-Upgrade (`ciupgrade=1`); `bake` wartet vor dem `sync` auf `cloud-init status --wait` (Exit 0 oder 2 = fertig) und bringt so den Paketstand der Leases auf den neuesten Stand. |
 
 SSH merkt sich **keine** Host-Keys (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`):
 diese VMs leben Minuten, jedes Bake loescht `/etc/ssh/ssh_host_*`, und der Pool vergibt dieselbe

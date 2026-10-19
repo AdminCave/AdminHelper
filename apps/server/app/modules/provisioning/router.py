@@ -15,9 +15,11 @@ Activate response schema:
   "monitorApiKey": "..." | null,    // if monitor service is reachable
   "monitorUrl": "/api/monitoring" | null,  // server-relative path; the agent
                                     // joins it to its own trusted server URL
-  "frp": {                          // if the server has FRP tunnels configured
+  "frp": {                          // if FRP is configured (no tunnel, no frps
+                                    // token without an active tunnel)
     "config": "<base64 frpc.toml>",
-    "pkiBundle": "<base64 tar.gz>"
+    "pkiBundle": ""                 // always empty since A7: the agent enrolls
+                                    // its tunnel cert itself
   } | null,
   "enrollment": {                   // one-time grant for the mTLS client cert
     "token": "...",                 // single-use, redeemed at the ca-issuer /enroll
@@ -110,7 +112,7 @@ def activate_provision(
     db: Session = Depends(get_db),
 ):
     """Redeems a provision token. Returns the server API key (always),
-    monitor agent key (if service is available), FRP bundle (if tunnels exist).
+    monitor agent key (if service is available), FRP bundle (if FRP is configured).
 
     Deliberately NO mTLS scope guard: this is a bootstrap door — the agent has no
     cert yet (it gets its identity here / via enroll). It stays token-gated +
@@ -172,7 +174,7 @@ def activate_provision(
     # key per server and replaces it here; it does not call back into this database.
     monitor_key = fetch_or_skip_monitor_key(server_id)
 
-    # 3. FRP bundle (only if FRP is configured + tunnels exist)
+    # 3. FRP bundle (only if FRP is configured; the frpc.toml the sync serves)
     frp_bundle = build_frp_bundle(server_id, db)
 
     # 4. One-time enrollment token (tunnel scope = agent, ADR 0001 §3.1 / A3).

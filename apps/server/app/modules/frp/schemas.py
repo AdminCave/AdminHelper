@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import re
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.bounds import IntColumn, RequestModel
+from app.core.time import UtcDatetime
+from app.modules.frp.extra_config import ALLOWED_KEYS, value_allowed
 
 # These string fields are interpolated verbatim into the generated frps/frpc/
 # visitor TOML (config_generator.py). Reject the characters that could break out
@@ -23,6 +25,9 @@ def _reject_toml_breakers(v: Optional[str]) -> Optional[str]:
         return v
     if any(c in _TOML_BREAKERS for c in v) or any(ord(c) < 0x20 or c == "\x7f" for c in v):
         raise ValueError("enthält unzulässige Zeichen (Anführungszeichen/Backslash/Steuerzeichen)")
+    # JSON can spell one as \ud800, and it has no UTF-8 form: no config file carries it.
+    if any("\ud800" <= c <= "\udfff" for c in v):
+        raise ValueError("must not contain a lone surrogate (U+D800 to U+DFFF)")
     return v
 
 
@@ -40,7 +45,7 @@ def _check_secret(v: Optional[str]) -> Optional[str]:
 # The generator emits extra_config keys unquoted (`{key} = ...`), so they must
 # be TOML bare keys (dotted keys allowed). Anything else would break — or worse,
 # extend — the generated config.
-_TOML_BARE_KEY = re.compile(r"^[A-Za-z0-9_.-]+$")
+_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
@@ -53,7 +58,7 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
     if v is None:
         return v
     for key, value in v.items():
-        if not _TOML_BARE_KEY.match(str(key)):
+        if not _TOML_BARE_KEY.fullmatch(str(key)):
             raise ValueError(
                 f"extra_config-Schlüssel '{key}' ist kein gültiger TOML-Key "
                 "(erlaubt: A-Z a-z 0-9 _ . -)"
@@ -62,6 +67,34 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
             _reject_toml_breakers(value)
         elif not isinstance(value, (bool, int, float)):
             raise ValueError(f"extra_config-Wert für '{key}' muss str, bool, int oder float sein")
+    return v
+
+
+def _check_frps_extra_config(v: Optional[dict]) -> Optional[dict]:
+    """The server config's extra_config goes into frps.toml, and the frps supervisor starts
+    frps only with the keys and values of frp/extra_config.py (R-0411)."""
+    v = _check_extra_config(v)
+    for key, value in (v or {}).items():
+        if key not in ALLOWED_KEYS:
+            raise ValueError(
+                f"extra_config key '{key}' is not allowed (allowed: "
+                + ", ".join(sorted(ALLOWED_KEYS))
+                + ")"
+            )
+        if not value_allowed(value):
+            raise ValueError(
+                f"extra_config value for '{key}' must be true, false, a finite number or a "
+                "string without quotes, backslashes, braces or control characters"
+            )
+    return v
+
+
+def _check_frps_string(v: Optional[str]) -> Optional[str]:
+    """A string field the generator writes into frps.toml (STRING_FIELDS of
+    frp/extra_config.py): on top of _reject_toml_breakers no brace, which the frps
+    supervisor refuses anywhere in a line."""
+    if v is not None and not value_allowed(v):
+        raise ValueError("must not contain quotes, backslashes, braces or control characters")
     return v
 
 
@@ -95,16 +128,26 @@ def _validate_tags(tags: list[str] | None) -> list[str] | None:
 
 # --- FRP Server Config ---
 
+# bindPort, vhostHTTPSPort and webServer.port of the generated frps.toml: a port,
+# so narrower than the IntColumn of the column it lands in (R-0411). The bounds
+# sit inside Annotated so Optional[Port] keeps them on its integer branch. The
+# generator guards rows from before this bound with the same range.
+PORT_MIN, PORT_MAX = 1, 65535
+Port = Annotated[int, Field(ge=PORT_MIN, le=PORT_MAX)]
+# maxPortsPerClient: frps enforces it only while it is > 0, so a negative value
+# would lift the cap the generator always sets; 0 and null mean its default.
+PortCount = Annotated[IntColumn, Field(ge=0)]
+
 
 class FrpServerConfigCreate(RequestModel):
     name: str
     server_addr: str  # e.g. "frps.example.net"
-    bind_port: IntColumn = 7000
-    vhost_https_port: Optional[IntColumn] = None
+    bind_port: Port = 7000
+    vhost_https_port: Optional[Port] = None
     auth_token: Optional[str] = None  # auto-generated if empty
     subdomain_host: Optional[str] = None
-    max_ports_per_client: Optional[IntColumn] = None
-    dashboard_port: Optional[IntColumn] = None
+    max_ports_per_client: Optional[PortCount] = None
+    dashboard_port: Optional[Port] = None
     dashboard_user: Optional[str] = None
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
@@ -116,18 +159,25 @@ class FrpServerConfigCreate(RequestModel):
     # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
     # by the router when a dashboard port is set) (3.35).
     _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_frps_extra_config)
+    _v_frps = field_validator(
+        "subdomain_host", "dashboard_user", "dashboard_password", "auth_token"
+    )(_check_frps_string)
 
 
 class FrpServerConfigUpdate(RequestModel):
     name: Optional[str] = None
     server_addr: Optional[str] = None
-    bind_port: Optional[IntColumn] = None
-    vhost_https_port: Optional[IntColumn] = None
+    # Not Optional: an explicit null is a 422, else the row stores NULL and frps
+    # gets the generator's fallback. The None default only marks "not sent" —
+    # pydantic does not validate defaults, and the router applies only the fields
+    # that were sent.
+    bind_port: Port = None
+    vhost_https_port: Optional[Port] = None
     auth_token: Optional[str] = None
     subdomain_host: Optional[str] = None
-    max_ports_per_client: Optional[IntColumn] = None
-    dashboard_port: Optional[IntColumn] = None
+    max_ports_per_client: Optional[PortCount] = None
+    dashboard_port: Optional[Port] = None
     dashboard_user: Optional[str] = None
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
@@ -139,7 +189,10 @@ class FrpServerConfigUpdate(RequestModel):
     # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
     # by the router when a dashboard port is set) (3.35).
     _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
-    _v_extra = field_validator("extra_config")(_check_extra_config)
+    _v_extra = field_validator("extra_config")(_check_frps_extra_config)
+    _v_frps = field_validator(
+        "subdomain_host", "dashboard_user", "dashboard_password", "auth_token"
+    )(_check_frps_string)
 
 
 # --- FRP Tunnel ---
@@ -264,3 +317,15 @@ class FrpStatus(BaseModel):
     total: int
     # Only on the answer for an unreachable dashboard; the route drops it when unset.
     error: Optional[str] = None
+
+
+class FrpSupervisorStatus(BaseModel):
+    # Codes, times and a flag only, as supervisor_status.py hands them out. reason and
+    # since are null for "missing"/"unreadable", lastEvent/lastEventAt without an event.
+    state: str
+    reason: Optional[str]
+    since: Optional[UtcDatetime]
+    stale: bool
+    lastEvent: Optional[str]
+    lastEventAt: Optional[UtcDatetime]
+    publishedBindPort: int

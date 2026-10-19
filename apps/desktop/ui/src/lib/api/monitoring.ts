@@ -15,6 +15,7 @@ import type {
   AlertRuleInput,
   MonitorCheck,
   MonitorCheckInput,
+  MonitoringBuiltinUpdate,
   MonitoringMetricsResponse,
   MonitoringTemplateFull,
   MonitoringTemplateInput,
@@ -24,6 +25,15 @@ import type {
   Server,
   TemplateAssignment,
 } from '$lib/api/types';
+
+// A standard template the server's host facts suggest; `reason` is `os:<os>` or
+// `subsystem:<name>`.
+export interface TemplateSuggestion {
+  slug: string;
+  templateId: string;
+  templateName: string;
+  reason: string;
+}
 
 export const monitoringApi = {
   // ── Reads ────────────────────────────────────────────────────────────────
@@ -78,6 +88,15 @@ export const monitoringApi = {
       session,
       'POST',
       `/api/monitoring/checks/${encodeURIComponent(checkId)}/run`,
+    );
+  },
+  // Drops the user's changes to a template check; the server answers with the check
+  // as it is now, with the template's values.
+  resetCheck(session: AuthSession, checkId: string): Promise<MonitorCheck> {
+    return apiRequest<MonitorCheck>(
+      session,
+      'POST',
+      `/api/monitoring/checks/${encodeURIComponent(checkId)}/reset`,
     );
   },
 
@@ -163,6 +182,51 @@ export const monitoringApi = {
       session,
       'DELETE',
       `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign/${encodeURIComponent(serverId)}`,
+    );
+  },
+  // Creates the template checks deleted on this server again (removedChecks).
+  restoreTemplateChecks(
+    session: AuthSession,
+    templateId: string,
+    serverId: string,
+  ): Promise<{ restored: number }> {
+    return apiRequest<{ restored: number }>(
+      session,
+      'POST',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign/${encodeURIComponent(serverId)}/restore`,
+    );
+  },
+  fetchTemplateSuggestions(session: AuthSession, serverId: string): Promise<TemplateSuggestion[]> {
+    return apiRequest<TemplateSuggestion[]>(
+      session,
+      'GET',
+      `/api/monitoring/templates/suggestions/${encodeURIComponent(serverId)}`,
+    );
+  },
+  // Remembered per server and template; no undo yet, the template can still be
+  // assigned by hand.
+  dismissTemplateSuggestion(session: AuthSession, serverId: string, slug: string): Promise<void> {
+    return apiRequest<void>(
+      session,
+      'POST',
+      `/api/monitoring/templates/suggestions/${encodeURIComponent(serverId)}/dismiss`,
+      { slug },
+    );
+  },
+  fetchBuiltinUpdate(session: AuthSession, templateId: string): Promise<MonitoringBuiltinUpdate> {
+    return apiRequest<MonitoringBuiltinUpdate>(
+      session,
+      'GET',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/builtin-update`,
+    );
+  },
+  // Takes the shipped version of a standard template; the fields a user changed
+  // on single checks stay. 409 when there is no newer version.
+  applyBuiltinUpdate(session: AuthSession, templateId: string): Promise<MonitoringTemplateFull> {
+    return apiRequest<MonitoringTemplateFull>(
+      session,
+      'POST',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/builtin-update`,
     );
   },
   assignTemplateTag(

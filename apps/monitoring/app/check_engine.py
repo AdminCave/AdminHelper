@@ -95,10 +95,16 @@ def effective_status(
 
     As long as a non-OK result has not yet reached the required number of
     consecutive failures, the previous status is kept ('pending' is treated
-    as 'ok' here). Otherwise the raw result applies.
+    as 'ok' here, except for an 'unknown' result). Otherwise the raw result
+    applies.
     """
     if is_suppressed(result_status, new_fail_count, consecutive_fails):
-        return old_status if old_status != "pending" else "ok"
+        if old_status != "pending":
+            return old_status
+        # A new check without data must not stand green (R-0419). Passing unknown
+        # through costs no alert — unknown never notifies; a first warning or
+        # critical stays damped.
+        return "unknown" if result_status == "unknown" else "ok"
     return result_status
 
 
@@ -161,7 +167,7 @@ def apply_result(
         result_status, new_fail_count, check.consecutive_fails, old_status
     )
     if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
-        message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
+        message = f"{message} (failure {new_fail_count}/{check.consecutive_fails})"
 
     has_details = (details is not None) if keep_previous_details_when_absent else bool(details)
     details_json = json.dumps(details) if has_details else None
@@ -245,15 +251,15 @@ def execute_check(check_id: str) -> None:
         # looks healthy, with no alert and no dashboard hint) (4.109).
         start = time.monotonic()
         if config is None:
-            result_status, message, metrics = "unknown", "Ungueltige Check-Konfiguration", None
+            result_status, message, metrics = "unknown", "Invalid check configuration", None
         elif checker is None:
-            result_status, message, metrics = "unknown", "Unbekannter Check-Typ", None
+            result_status, message, metrics = "unknown", "Unknown check type", None
         else:
             try:
                 result_status, message, metrics = checker.run(config)
             except Exception as exc:
                 result_status = "unknown"
-                message = f"Unerwarteter Fehler: {exc}"
+                message = f"Unexpected error: {exc}"
                 metrics = None
                 logger.exception("Check %s fehlgeschlagen", check.name)
         duration_ms = int((time.monotonic() - start) * 1000)

@@ -93,6 +93,11 @@ def _safe_http_post(
 def main() -> None:
     import uuid as _uuid
 
+    # Every ORM model before the hook's first query, see app/model_registry.py: this worker
+    # runs as its own script and would load only the connections model, whose
+    # ForeignKey("servers.id") then fails the flush of save_connections (R-0469).
+    from app import model_registry  # noqa: F401
+
     # Lazy imports — only when the script needs connections
     from app.modules.connections.storage import load_connections, save_connections
 
