@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung: Fehlertexte, Tunnel je Anmeldung, Passwortspeicher je Verbindung — Task-Ledger
-Status: bereit · Branch: feature/desktop-hardening · Review: pro Task
+Status: aktiv · Branch: feature/desktop-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full + windows — Desktop-Tunnel und Anmelden/Abmelden (frpc endet mit der Sitzung, Zuordnungen je Anmeldung) laufen in `tunnel-connect.live.js` und `logout.live.js` im Sammellauf über `main`; T6 ändert die Eingabeprüfung der FRP-API (Server-Tests in der PR-CI); `windows` über die CI-Jobs (der Pool hat keine Windows-Vorlage); kein `scenario`, weil der FRP-Datenpfad unverändert bleibt (Kevin 2026-10-19)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -83,3 +83,13 @@ Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (
 Beweis: Code-Lesung main@d9950198 — `_reject_toml_breakers` weist Anführungszeichen, Backslash und Steuerzeichen ab, `{{` nicht; die Werte gehen wörtlich in die frpc- und Visitor-TOML (`apps/server/app/modules/frp/config_generator.py:254`, `:321`, `:323`). frp rendert Config-Dateien als Go-Template, und der Desktop weist eine Config mit `{{` ab (`docs/developer/desktop.html:132`), der Agent liest dieselben Namen. Der erste Test der Task ist auf HEAD rot (Tunnelname mit `{{` angenommen)
 Semantik: docs/developer/api-reference.html:141 und `:100` nennen die `422`-Regeln dieser Felder (einzelnes Surrogat), `{{` fehlt; `:134` schließt geschweifte Klammern für die frps-Felder schon aus; `docs/developer/desktop.html:132` begründet die Ablehnung von `{{` im Desktop
 HEAD: d9950198
+
+### T7 — Bisherige Einträge für Ziele auf dem eigenen Rechner übernimmt keine Verbindung  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/password.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Änderung: Der Übergang aus T5 gilt nicht für einen bisherigen Eintrag, dessen Host ein Ziel auf dem eigenen Rechner ist: `localhost` (ohne Rücksicht auf Groß- und Kleinschreibung) oder eine IP-Adresse mit `is_loopback()` (127.0.0.0/8, `::1`). `load_password_keyring` liest einen solchen Eintrag nicht und übernimmt ihn nicht, `password_state` meldet ihn nicht als gespeichert. Löschen entfernt weiter neuen und bisherigen Schlüssel, so verschwindet ein solcher Eintrag beim Löschen. Andere Ziele wechseln weiter wie in T5. Tests in `password.rs` (zuerst rot, `keyring_store::memory()`): ein bisheriger Eintrag unter `127.0.0.1`, `localhost`, `LocalHost`, `::1` und `127.0.0.2` → Status nicht gespeichert, Laden ohne Passwort, kein Eintrag unter dem neuen Schlüssel angelegt, der bisherige bleibt unverändert; ein bisheriger Eintrag unter einem anderen Host wird weiter übernommen (Gegenprobe); Löschen entfernt auch einen solchen bisherigen Eintrag.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- password::
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:107`, Satz zum Übergang: gilt nicht für Ziele auf dem eigenen Rechner wie die automatischen Verbindungen über 127.0.0.1; deren Passwort wird je Verbindung einmal neu eingegeben) · CHANGELOG.md (den Eintrag aus T5 ergänzen, kein neuer)
+Beweis: Branch-Prüfung desktop-hardening 2026-10-19 — automatische Verbindungen tragen das Ziel `127.0.0.1:<Server-Port>`; der bisherige Schlüssel `rdp|127.0.0.1|<port>|<user>|<domain>` ist für Verbindungen verschiedener Server mit gleichem Port und Benutzer derselbe, und der Übergang aus T5 gibt ihn der ersten Verbindung, die ihn öffnet. Der erste Test der Task ist auf HEAD rot (bisheriger Eintrag unter 127.0.0.1 gilt als gespeichert)
+Semantik: docs/developer/desktop.html:107 (Stand T5) beschreibt den Übergang für jedes Ziel; Kevin 2026-10-19: bisherige Einträge für Ziele auf dem eigenen Rechner nicht übernehmen
+Abhängt von: T5
+HEAD: 9dd48fe8
