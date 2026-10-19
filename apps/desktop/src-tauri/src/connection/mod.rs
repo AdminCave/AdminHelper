@@ -335,7 +335,10 @@ mod tests {
         let listed = rdp("rdp.example.com", 3389);
         let resolved = rdp("127.0.0.1", 6000);
         let key = rdp_storage_key(stored_password_source(&resolved, Some(&listed)));
-        assert_eq!(key.as_deref(), Some("rdp|rdp.example.com|3389|admin|corp"));
+        assert_eq!(
+            key.as_deref(),
+            Some("rdp|c1|rdp.example.com|3389|admin|corp")
+        );
         assert_ne!(key, rdp_storage_key(&resolved));
     }
 
@@ -343,7 +346,7 @@ mod tests {
     fn stored_password_key_without_credential_connection_uses_connection() {
         let direct = rdp("192.0.2.10", 3390);
         let key = rdp_storage_key(stored_password_source(&direct, None));
-        assert_eq!(key.as_deref(), Some("rdp|192.0.2.10|3390|admin|corp"));
+        assert_eq!(key.as_deref(), Some("rdp|c1|192.0.2.10|3390|admin|corp"));
     }
 
     #[test]
@@ -403,7 +406,10 @@ mod tests {
         assert_eq!(target(&resolved), (Some("127.0.0.1"), Some(23000)));
         assert!(held.check(&resolved, &listed).is_ok());
         let key = rdp_storage_key(stored_password_source(&resolved, Some(&listed)));
-        assert_eq!(key.as_deref(), Some("rdp|rdp.example.com|3389|admin|corp"));
+        assert_eq!(
+            key.as_deref(),
+            Some("rdp|c1|rdp.example.com|3389|admin|corp")
+        );
     }
 
     #[test]

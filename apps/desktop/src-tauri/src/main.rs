@@ -114,6 +114,14 @@ fn main() {
             app.state::<session::SessionState>().on_expiry(move || {
                 let _ = handle.emit("session-expired", ());
             });
+            // A sign-in, a sign-out and a failed renewal end the frpc of the sign-in before, here
+            // and not only through the UI. The stop retires its generation, so a reconciliation
+            // under way for that sign-in starts nothing (`frpc::reconcile`).
+            let frpc_state = app.state::<frpc::FrpcState>().inner().clone();
+            app.state::<session::SessionState>()
+                .on_sign_in_change(move || {
+                    let _ = frpc::stop_frpc(&frpc_state);
+                });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

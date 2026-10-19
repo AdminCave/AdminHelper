@@ -35,7 +35,7 @@ use crate::auth;
 use crate::error::AppError;
 use crate::models::{RefreshOutcome, TunnelRefresh, TunnelStatus, VisitorBinding};
 use crate::port_registry::PortRegistry;
-use crate::session::SessionState;
+use crate::session::{SessionState, SignedIn};
 
 pub type FrpcState = Arc<Mutex<FrpcProcess>>;
 
@@ -60,12 +60,14 @@ pub struct FrpcProcess {
 }
 
 /// The config a running frpc applied: the server TOML with its visitors at their local ports,
-/// parsed for the next comparison, where each visitor listens, and the local head it runs with —
-/// a reload keeps the head, frp reads `webServer` only at start.
+/// parsed for the next comparison, where each visitor listens, the local head it runs with —
+/// a reload keeps the head, frp reads `webServer` only at start — and the sign-in its bundle was
+/// fetched for. A bundle of another sign-in never joins it by a reload (see [`reconcile`]).
 struct Applied {
     server: toml::Value,
     bindings: Vec<VisitorBinding>,
     head: LocalHead,
+    who: SignedIn,
 }
 
 /// A server TOML the allow-list admitted, its visitors rewritten to their local ports (see
@@ -241,17 +243,17 @@ struct VisitorBundle {
 
 /// Fetch the visitor bundle from the server. TOML only — the server no longer
 /// ships PKI (D6); the identity comes from enrollment. `None` means the user has
-/// no tunnels (see [`carries_bundle`]). Comes with the user it was fetched for; a bundle
+/// no tunnels (see [`carries_bundle`]). Comes with the sign-in it was fetched for; a bundle
 /// that arrives after that user signed out, or after someone else signed in, is refused,
 /// so frpc never takes over the tunnels of a session that is gone.
 async fn fetch_visitor_bundle(
     session: &SessionState,
-) -> Result<(Option<VisitorBundle>, String), AppError> {
+) -> Result<(Option<VisitorBundle>, SignedIn), AppError> {
     let path = "/api/frp/generate/visitor-bundle";
-    let (response, user) = auth::authenticated_get(session, path).await?;
+    let (response, who) = auth::authenticated_get(session, path).await?;
     let bundle = bundle_from(response).await?;
-    session.ensure_signed_in(&user).await?;
-    Ok((bundle, user.username))
+    session.ensure_signed_in(&who).await?;
+    Ok((bundle, who))
 }
 
 /// The bundle a visitor-bundle reply carries; `None` means no tunnels (see [`carries_bundle`]).
@@ -260,7 +262,7 @@ async fn bundle_from(response: reqwest::Response) -> Result<Option<VisitorBundle
         return Ok(None);
     }
 
-    let bundle: VisitorBundle = response.json().await.map_err(AppError::Network)?;
+    let bundle: VisitorBundle = response.json().await.map_err(AppError::from)?;
     Ok(Some(bundle))
 }
 
@@ -698,7 +700,6 @@ trait Sidecar {
 struct AppSidecar<'a> {
     app: &'a tauri::AppHandle,
     data_dir: PathBuf,
-    username: &'a str,
 }
 
 impl Sidecar for AppSidecar<'_> {
@@ -713,14 +714,7 @@ impl Sidecar for AppSidecar<'_> {
         applied: Applied,
     ) -> Result<(), AppError> {
         let config_path = self.data_dir.join(VISITOR_CONFIG);
-        start_frpc(
-            self.app,
-            &config_path,
-            state,
-            process,
-            self.username.to_string(),
-            applied,
-        )
+        start_frpc(self.app, &config_path, state, process, applied)
     }
 }
 
@@ -731,7 +725,6 @@ fn start_frpc(
     config_path: &std::path::Path,
     state: &FrpcState,
     guard: &mut FrpcProcess,
-    visitor_name: String,
     applied: Applied,
 ) -> Result<(), AppError> {
     if guard.child.is_some() {
@@ -808,7 +801,7 @@ fn start_frpc(
     });
 
     guard.child = Some(child);
-    guard.visitor_name = Some(visitor_name);
+    guard.visitor_name = Some(applied.who.username.clone());
     guard.connected_since = Some(chrono::Utc::now().to_rfc3339());
     guard.applied = Some(applied);
 
@@ -834,6 +827,25 @@ pub fn tunnel_status(state: &FrpcState) -> TunnelStatus {
         visitors: guard.visitors(),
         bindings: guard.bindings(),
     }
+}
+
+/// Where the visitors of the running frpc listen, if it runs for `who`: the bindings a stored
+/// password and the tunnel resolution may use. Empty while none runs and while it runs for
+/// another sign-in.
+pub fn bindings_for(state: &FrpcState, who: &SignedIn) -> Vec<VisitorBinding> {
+    let guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
+    guard
+        .applied
+        .as_ref()
+        .filter(|applied| same_sign_in(&applied.who, who))
+        .map(|applied| applied.bindings.clone())
+        .unwrap_or_default()
+}
+
+/// Whether `a` and `b` are the same user on the same server, as
+/// [`SessionState::ensure_signed_in`] compares them.
+fn same_sign_in(a: &SignedIn, b: &SignedIn) -> bool {
+    a.server_url == b.server_url && a.username == b.username
 }
 
 /// Ask the running frpc to reload its config file through its admin API on loopback.
@@ -890,12 +902,14 @@ async fn assign_ports(
 /// tunnels and stops frpc. `since` is the generation before the fetch: a stop since then wins and
 /// nothing starts. A TOML the allow-list rejects leaves the running frpc alone. frpc gets the
 /// visitors at their local ports from `ports`, and the comparison with the running frpc is on
-/// that rewritten TOML.
+/// that rewritten TOML. `who` is the sign-in the TOML was fetched for: a frpc that runs for
+/// another one restarts, whatever the TOML.
 async fn reconcile(
     state: &FrpcState,
     sidecar: &impl Sidecar,
     ports: &PortRegistry,
     server_toml: Option<&str>,
+    who: SignedIn,
     since: u64,
 ) -> Result<RefreshOutcome, AppError> {
     let Some(server_toml) = server_toml else {
@@ -923,10 +937,12 @@ async fn reconcile(
         if guard.generation != since {
             return Ok(RefreshOutcome::Stopped);
         }
-        let plan = plan_refresh(
-            guard.applied.as_ref().map(|applied| &applied.server),
-            &next.server,
-        );
+        let plan = match guard.applied.as_ref() {
+            // A frpc of another sign-in neither reloads nor stays as it is: `Applied` would then
+            // hold the visitors of `who` under that other sign-in.
+            Some(applied) if !same_sign_in(&applied.who, &who) => RefreshPlan::Restart,
+            applied => plan_refresh(applied.map(|applied| &applied.server), &next.server),
+        };
         if let (RefreshPlan::Unchanged, Some(applied)) = (&plan, guard.applied.as_mut()) {
             // frpc keeps its ports; a server port may have moved behind one.
             applied.bindings = next.bindings;
@@ -941,13 +957,14 @@ async fn reconcile(
     match (plan, head) {
         (RefreshPlan::Unchanged, _) => Ok(RefreshOutcome::Unchanged),
         (RefreshPlan::Reload, Some(head)) => {
-            reload(state, sidecar, &config, next, head, since).await
+            reload(state, sidecar, &config, next, who, head, since).await
         }
         (RefreshPlan::Start, _) => start_fresh(
             state,
             sidecar,
             &config,
             next,
+            who,
             since,
             RefreshOutcome::Started,
         ),
@@ -956,6 +973,7 @@ async fn reconcile(
             sidecar,
             &config,
             next,
+            who,
             since,
             RefreshOutcome::Restarted,
         ),
@@ -964,11 +982,13 @@ async fn reconcile(
 
 /// Write `config`, the rewritten server TOML, behind the running frpc's own head and have it
 /// reload; it takes the visitors from the file. A failed reload restarts frpc with a new head.
+/// The running frpc runs for `who` already ([`reconcile`]).
 async fn reload(
     state: &FrpcState,
     sidecar: &impl Sidecar,
     config: &str,
     next: Remapped,
+    who: SignedIn,
     head: LocalHead,
     since: u64,
 ) -> Result<RefreshOutcome, AppError> {
@@ -980,6 +1000,7 @@ async fn reload(
             sidecar,
             config,
             next,
+            who,
             since,
             RefreshOutcome::Restarted,
         );
@@ -996,13 +1017,14 @@ async fn reload(
     Ok(RefreshOutcome::Reloaded)
 }
 
-/// Stop whatever frpc runs and start one on `config`, the rewritten server TOML, with a new head,
-/// reporting `outcome` — unless a stop came in since `since`, then nothing starts.
+/// Stop whatever frpc runs and start one for `who` on `config`, the rewritten server TOML, with a
+/// new head, reporting `outcome` — unless a stop came in since `since`, then nothing starts.
 fn start_fresh(
     state: &FrpcState,
     sidecar: &impl Sidecar,
     config: &str,
     next: Remapped,
+    who: SignedIn,
     since: u64,
     outcome: RefreshOutcome,
 ) -> Result<RefreshOutcome, AppError> {
@@ -1020,6 +1042,7 @@ fn start_fresh(
         server: next.server,
         bindings: next.bindings,
         head,
+        who,
     };
     sidecar.spawn(state, &mut guard, applied)?;
     Ok(outcome)
@@ -1038,16 +1061,15 @@ pub async fn refresh_tunnel(
 ) -> Result<TunnelRefresh, AppError> {
     let _serial = lock.0.lock().await;
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
-    let (bundle, username) = fetch_visitor_bundle(session).await?;
+    let (bundle, who) = fetch_visitor_bundle(session).await?;
     let data_dir = app_data_dir(&app)?;
     let ports = PortRegistry::new(&data_dir);
     let sidecar = AppSidecar {
         app: &app,
         data_dir,
-        username: &username,
     };
     let server_toml = bundle.as_ref().map(|bundle| bundle.toml.as_str());
-    let outcome = reconcile(&state, &sidecar, &ports, server_toml, since).await?;
+    let outcome = reconcile(&state, &sidecar, &ports, server_toml, who, since).await?;
     Ok(TunnelRefresh {
         status: tunnel_status(&state),
         outcome,
@@ -1062,8 +1084,8 @@ mod tests {
     use std::sync::{Arc, Mutex, MutexGuard};
 
     use super::{
-        bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh, reconcile,
-        remap_visitors, request_reload, rewrite_identity_paths, tunnel_status,
+        bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
+        reconcile, remap_visitors, request_reload, rewrite_identity_paths, tunnel_status,
         validate_visitor_toml, visitor_names, with_local_head, write_visitor_config, Applied,
         FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding, NO_IDENTITY_HINT,
         VISITOR_CONFIG,
@@ -1072,7 +1094,7 @@ mod tests {
     use crate::keyring_store;
     use crate::models::RefreshOutcome;
     use crate::port_registry::{PortRegistry, FALLBACK_PORTS};
-    use crate::session::SessionState;
+    use crate::session::{SessionState, SignedIn};
 
     const LEGIT_VISITOR: &str = r#"
 serverAddr = "frps.example.net"
@@ -2033,6 +2055,21 @@ method = "token"
         ]
     }
 
+    const SERVER_URL: &str = "https://ah.example.net";
+
+    fn signed_in(server_url: &str, username: &str) -> SignedIn {
+        SignedIn {
+            server_url: server_url.to_string(),
+            username: username.to_string(),
+            allow_self_signed: false,
+        }
+    }
+
+    /// The sign-in the bundles of the tests are fetched for, unless one says otherwise.
+    fn ops_admin() -> SignedIn {
+        signed_in(SERVER_URL, "ops-admin")
+    }
+
     /// A frpc of the tests that runs: the state, the port map that gave its visitors their local
     /// ports, and the listeners it holds on them, as a real frpc would.
     struct Running {
@@ -2044,7 +2081,7 @@ method = "token"
     }
 
     /// A state whose frpc, generation 1, applied `server`, SERVER_TOML or a variant, behind `head`,
-    /// with its visitors at local ports of their own.
+    /// with its visitors at local ports of their own, for [`ops_admin`].
     fn running(server: &str, head: LocalHead) -> Running {
         let listeners = [taken_port(), taken_port()];
         let locals = [listeners[0].1, listeners[1].1];
@@ -2063,6 +2100,7 @@ method = "token"
             server: parse(&at_ports(server, locals)),
             bindings: bindings_at(locals),
             head,
+            who: ops_admin(),
         });
         Running {
             state: Arc::new(Mutex::new(process)),
@@ -2127,9 +2165,16 @@ method = "token"
         let sidecar = FakeSidecar::default();
         let next = changed_visitor();
 
-        let outcome = reconcile(state, &sidecar, &running.ports.registry, Some(&next), 1)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&next),
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Reloaded);
         assert!(request.await.unwrap().starts_with("GET /api/reload "));
@@ -2159,9 +2204,16 @@ method = "token"
         let sidecar = FakeSidecar::default();
         let next = changed_visitor();
 
-        let outcome = reconcile(state, &sidecar, &running.ports.registry, Some(&next), 1)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&next),
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Restarted);
         let writes = sidecar.writes.borrow();
@@ -2197,17 +2249,31 @@ method = "token"
         );
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(&state, &sidecar, &ports.registry, Some(SERVER_TOML), 0)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
         assert_eq!(outcome, RefreshOutcome::Started);
 
         let rotated =
             SERVER_TOML.replacen("auth.token = \"sekret\"", "auth.token = \"rotated\"", 1);
         let since = lock(&state).generation;
-        let outcome = reconcile(&state, &sidecar, &ports.registry, Some(&rotated), since)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&rotated),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
         assert_eq!(outcome, RefreshOutcome::Restarted);
 
         assert_eq!(sidecar.spawns.get(), 2);
@@ -2234,6 +2300,7 @@ method = "token"
             &sidecar,
             &running.ports.registry,
             Some(SERVER_TOML),
+            ops_admin(),
             1,
         )
         .await
@@ -2256,9 +2323,16 @@ method = "token"
         let (web_holder, web) = taken_port();
         let server = at_ports(SERVER_TOML, [db, web]);
 
-        let outcome = reconcile(&state, &sidecar, &ports.registry, Some(&server), 0)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&server),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Started);
         let bindings = tunnel_status(&state).bindings;
@@ -2284,9 +2358,16 @@ method = "token"
         // same server TOML changes nothing.
         drop((db_holder, web_holder));
         let since = lock(&state).generation;
-        let outcome = reconcile(&state, &sidecar, &ports.registry, Some(&server), since)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&server),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Unchanged);
         assert_eq!(sidecar.writes.borrow().len(), 1);
@@ -2308,9 +2389,16 @@ method = "token"
         let state = idle();
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(&state, &sidecar, &ports.registry, Some(&server), 0)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&server),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Started);
         let bindings = tunnel_status(&state).bindings;
@@ -2340,9 +2428,16 @@ method = "token"
             let state = idle();
             let sidecar = FakeSidecar::default();
 
-            let outcome = reconcile(&state, &sidecar, &ports.registry, Some(&server), 0)
-                .await
-                .unwrap();
+            let outcome = reconcile(
+                &state,
+                &sidecar,
+                &ports.registry,
+                Some(&server),
+                ops_admin(),
+                0,
+            )
+            .await
+            .unwrap();
 
             assert_eq!(outcome, RefreshOutcome::Started, "{id}");
             let bindings = tunnel_status(&state).bindings;
@@ -2368,7 +2463,15 @@ method = "token"
         let state = idle();
         let sidecar = FakeSidecar::default();
 
-        let result = reconcile(&state, &sidecar, &registry, Some(SERVER_TOML), 0).await;
+        let result = reconcile(
+            &state,
+            &sidecar,
+            &registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            0,
+        )
+        .await;
 
         let no_workspace = crate::workspace::current().unwrap_err().to_string();
         assert_eq!(result.unwrap_err().to_string(), no_workspace);
@@ -2387,9 +2490,16 @@ method = "token"
         let sidecar = FakeSidecar::default();
         let moved = server_toml_with("bindPort = 6000", "bindPort = 6100");
 
-        let outcome = reconcile(state, &sidecar, &running.ports.registry, Some(&moved), 1)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&moved),
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         // frpc's config stays as it is; only the binding learns the new server port.
         assert_eq!(outcome, RefreshOutcome::Unchanged);
@@ -2417,11 +2527,16 @@ method = "token"
         let running = running(SERVER_TOML, head(1, "c0ffee"));
         let state = &running.state;
         let sidecar = FakeSidecar::default();
-        assert!(
-            reconcile(state, &sidecar, &running.ports.registry, Some(&twins), 1)
-                .await
-                .is_err()
-        );
+        assert!(reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&twins),
+            ops_admin(),
+            1
+        )
+        .await
+        .is_err());
         assert!(sidecar.writes.borrow().is_empty());
         let process = lock(state);
         assert_eq!(
@@ -2442,11 +2557,16 @@ method = "token"
         let running = running(SERVER_TOML, head(1, "c0ffee"));
         let state = &running.state;
         let sidecar = FakeSidecar::default();
-        assert!(
-            reconcile(state, &sidecar, &running.ports.registry, Some(&twins), 1)
-                .await
-                .is_err()
-        );
+        assert!(reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&twins),
+            ops_admin(),
+            1
+        )
+        .await
+        .is_err());
         assert!(sidecar.writes.borrow().is_empty());
         let process = lock(state);
         assert_eq!(
@@ -2502,9 +2622,16 @@ method = "token"
         let state = &running.state;
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(state, &sidecar, &running.ports.registry, None, 1)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            None,
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Stopped);
         assert!(sidecar.writes.borrow().is_empty());
@@ -2524,11 +2651,16 @@ method = "token"
         let sidecar = FakeSidecar::default();
         let rejected = format!("{SERVER_TOML}\n[[proxies]]\nname = \"x\"\ntype = \"tcp\"\n");
 
-        assert!(
-            reconcile(state, &sidecar, &running.ports.registry, Some(&rejected), 1)
-                .await
-                .is_err()
-        );
+        assert!(reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&rejected),
+            ops_admin(),
+            1
+        )
+        .await
+        .is_err());
 
         assert!(sidecar.writes.borrow().is_empty());
         assert_eq!(sidecar.spawns.get(), 0);
@@ -2549,9 +2681,16 @@ method = "token"
         let ports = TempPorts::new();
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(&state, &sidecar, &ports.registry, Some(SERVER_TOML), since)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Stopped);
         assert_eq!(sidecar.spawns.get(), 0);
@@ -2601,6 +2740,7 @@ method = "token"
                 &sidecar,
                 &running.ports.registry,
                 Some(&changed_visitor()),
+                ops_admin(),
                 1,
             )
             .await
@@ -2609,6 +2749,85 @@ method = "token"
             assert_eq!(outcome, RefreshOutcome::Stopped, "admin API port {port}");
             assert_eq!(sidecar.inner.spawns.get(), 0);
             assert!(lock(state).applied.is_none());
+        }
+    }
+
+    /// Sign-ins other than [`ops_admin`]: the case, the server URL and the user.
+    const OTHER_SIGN_INS: [(&str, &str, &str); 2] = [
+        ("another user", SERVER_URL, "someone-else"),
+        ("another server", "https://other.example.net", "ops-admin"),
+    ];
+
+    #[test]
+    fn bindings_for_only_the_sign_in_frpc_runs_for() {
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
+
+        assert_eq!(
+            bindings_for(state, &ops_admin()),
+            bindings_at(running.locals)
+        );
+        // The certificate choice is no part of who is signed in where.
+        let self_signed = SignedIn {
+            allow_self_signed: true,
+            ..ops_admin()
+        };
+        assert_eq!(
+            bindings_for(state, &self_signed),
+            bindings_at(running.locals)
+        );
+        for (case, server_url, username) in OTHER_SIGN_INS {
+            let other = signed_in(server_url, username);
+            assert!(bindings_for(state, &other).is_empty(), "{case}");
+        }
+        // The status shows the running frpc all the same.
+        assert_eq!(tunnel_status(state).bindings, bindings_at(running.locals));
+
+        assert!(bindings_for(&idle(), &ops_admin()).is_empty());
+        lock(state).retire();
+        assert!(bindings_for(state, &ops_admin()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn refresh_restarts_for_a_bundle_of_another_sign_in() {
+        for (case, server_url, username) in OTHER_SIGN_INS {
+            // For the sign-in frpc runs for, the first reloads and the second changes nothing.
+            for next in [changed_visitor(), SERVER_TOML.to_string()] {
+                // A reload would get through: only the other sign-in makes it a restart.
+                let (port, _request) = serve_one(reply("200 OK", "")).await;
+                let running = running(SERVER_TOML, head(port, "c0ffee"));
+                let state = &running.state;
+                let sidecar = FakeSidecar::default();
+
+                let outcome = reconcile(
+                    state,
+                    &sidecar,
+                    &running.ports.registry,
+                    Some(&next),
+                    signed_in(server_url, username),
+                    1,
+                )
+                .await
+                .unwrap();
+
+                assert_eq!(outcome, RefreshOutcome::Restarted, "{case}");
+                let writes = sidecar.writes.borrow();
+                assert_eq!(writes.len(), 1, "{case}: the restart's write, no reload's");
+                assert_ne!(writes[0].1.password, "c0ffee", "{case}: a new head");
+                assert_eq!(writes[0].0, written_at(&next, running.locals), "{case}");
+                assert_eq!(sidecar.spawns.get(), 1, "{case}");
+                assert_eq!(
+                    lock(state).generation,
+                    3,
+                    "{case}: retired to 2, spawned as 3"
+                );
+                assert!(bindings_for(state, &ops_admin()).is_empty(), "{case}");
+                assert_eq!(
+                    bindings_for(state, &signed_in(server_url, username)),
+                    bindings_at(running.locals),
+                    "{case}"
+                );
+            }
         }
     }
 
@@ -2954,9 +3173,12 @@ method = "token"
             match next {
                 // The same user signed in again: the tunnels are still theirs.
                 Some("ops-admin") => {
-                    let (bundle, username) = fetched.expect("the bundle");
+                    let (bundle, who) = fetched.expect("the bundle");
                     assert_eq!(bundle.expect("a bundle").toml, "serverAddr = \"f\"");
-                    assert_eq!(username, "ops-admin");
+                    assert_eq!(
+                        (who.server_url.as_str(), who.username.as_str()),
+                        (server.as_str(), "ops-admin")
+                    );
                 }
                 _ => assert!(fetched.is_err(), "{next:?}"),
             }

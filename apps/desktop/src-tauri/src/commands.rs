@@ -235,8 +235,8 @@ pub async fn open_connection(
 
 /// A stored password opens only the target Rust resolves the credential connection (without one,
 /// the opened connection) to, with the tunnel mappings and server connections the session fetched
-/// (not ones the webview sends) and the bindings of the running frpc as they are when the
-/// connection opens.
+/// (not ones the webview sends) and the bindings of the frpc that runs for that sign-in, all read
+/// at one moment as the connection opens. Without a session there are none of them.
 #[tauri::command]
 pub async fn open_connection_stored(
     app: tauri::AppHandle,
@@ -247,14 +247,17 @@ pub async fn open_connection_stored(
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
-    let tunnels = session.tunnels().await;
-    let connections = session.connections().await;
-    let frpc_state = state.inner().clone();
+    let (tunnels, connections, bindings) = match session.current().await {
+        Some(now) => {
+            let bindings = frpc::bindings_for(state.inner(), &now.signed_in());
+            (now.tunnels, now.connections, bindings)
+        }
+        None => Default::default(),
+    };
     run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
         let rdp = rdp_options(&settings);
-        let bindings = frpc::tunnel_status(&frpc_state).bindings;
         let credential = connection::CredentialConnection {
             connection: credential_connection.as_ref(),
             tunnels: &tunnels,
@@ -377,16 +380,20 @@ pub async fn fetch_tunnels(
     tunnel::fetch_tunnels(session.inner()).await
 }
 
-/// Resolves against where the visitors of the running frpc listen; while none runs, a tunnel
-/// target stays as it is.
+/// Resolves against where the visitors of the frpc that runs for the current sign-in listen;
+/// while none runs for it, and without a session, a tunnel target stays as it is.
 #[tauri::command]
-pub fn resolve_connection(
+pub async fn resolve_connection(
     state: State<'_, frpc::FrpcState>,
+    session: State<'_, SessionState>,
     connection: Connection,
     tunnels: Vec<tunnel::TunnelMapping>,
-) -> tunnel::ResolvedConnection {
-    let bindings = frpc::tunnel_status(state.inner()).bindings;
-    tunnel::resolve_connection(&connection, &tunnels, &bindings)
+) -> Result<tunnel::ResolvedConnection, AppError> {
+    let bindings = match session.current().await {
+        Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
+        None => Vec::new(),
+    };
+    Ok(tunnel::resolve_connection(&connection, &tunnels, &bindings))
 }
 
 #[tauri::command]

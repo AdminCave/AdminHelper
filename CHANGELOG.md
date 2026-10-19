@@ -951,6 +951,33 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
+  der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
+  Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
+  etwa „Connection refused“ oder der Status „500 Internal Server Error“. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: frpc laeuft nur fuer die aktuelle Anmeldung:** Abmelden, eine neue Anmeldung und eine abgelaufene
+  Sitzung (gescheiterte Erneuerung) beenden frpc jetzt im Desktop-Prozess selbst, nicht nur ueber die Oberflaeche;
+  ein Abgleich, der dabei laeuft, startet keinen neuen. Kommt ein Visitor-Bundle fuer eine andere Anmeldung
+  (Server-URL oder Benutzer) als die, fuer die frpc laeuft, startet frpc neu, statt die Visitors per Reload zu
+  uebernehmen. Gespeicherte Passwoerter und die Tunnel-Aufloesung nutzen nur die Visitors des frpc der aktuellen
+  Anmeldung. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: ein gespeichertes RDP-Passwort gehoert zu genau einer Verbindung:** Ausser unter Windows lag ein
+  gespeichertes RDP-Passwort im Schluesselbund unter Adresse, Port, Benutzer und Domaene; zwei Verbindungen mit
+  denselben Werten, etwa von zwei Servern, teilten sich ein Passwort. Jetzt traegt der Eintrag auch die `id` der
+  Verbindung. Ein bisher gespeichertes Passwort bleibt nutzbar: Es gilt fuer jede Verbindung zu diesem Ziel als
+  gespeichert, bis die erste es oeffnet; diese uebernimmt es, fuer die anderen ist es danach nicht mehr gespeichert.
+  Das gilt nicht fuer Ziele auf dem eigenen Rechner (`localhost` und Namen unter `.localhost`, Loopback- und
+  unspezifizierte Adressen) wie die automatischen Verbindungen des Servers ueber `127.0.0.1`: Verbindungen
+  verschiedener Server koennen dasselbe solche Ziel nennen, deshalb gilt ein bisheriger Eintrag dafuer fuer keine
+  Verbindung als gespeichert, und das Passwort wird je Verbindung einmal neu eingegeben. Loeschen entfernt auch einen
+  solchen bisherigen Eintrag. Unter Windows bleibt das Passwort im Credential Manager je Adresse
+  (`TERMSRV/<Adresse>`), wo mstsc es liest. Doku: Desktop fuer Entwickler (DE+EN).
+- **Server: `{{` in Feldern der FRP-Configs wird abgewiesen:** frp liest seine Config-Dateien als Go-Template, bevor
+  es die TOML liest; `{{` beginnt dort eine Template-Anweisung. Die API antwortet jetzt mit `422` auf `{{` im
+  Servernamen (`/api/servers`), in `name` und `server_addr` der FRP-Server-Config und in `name`, `local_ip`,
+  `secret_key`, `custom_domains`, `auto_connection_username` und den `extra_config`-Werten eines Tunnels, je beim
+  Anlegen und Aendern. Ein einzelnes `{` und `}}` bleiben erlaubt; bereits gespeicherte Werte bleiben unveraendert.
+  Doku: API-Referenz (DE+EN).
 - **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
   nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei

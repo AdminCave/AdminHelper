@@ -52,16 +52,16 @@ SAFE_TEXT = st.text(
 )
 # What FrpServerConfigCreate takes for the fields of test_frps_toml_round_trips, so every
 # example reaches the assertions: on top of SAFE_TEXT no lone surrogate (U+D800 to U+DFFF has
-# no UTF-8 form, codec="utf-8" leaves it out), and in a string the frps supervisor checks
-# (auth_token, subdomain_host, a text value of extra_config) no brace either: check_config
-# refuses one anywhere in a line.
+# no UTF-8 form, codec="utf-8" leaves it out) and no `{{` (frp would read it as a template),
+# and in a string the frps supervisor checks (auth_token, subdomain_host, a text value of
+# extra_config) no brace either: check_config refuses one anywhere in a line.
 FRPS_ADDR = st.text(
     alphabet=st.characters(
         blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20, codec="utf-8"
     ),
     min_size=1,
     max_size=40,
-)
+).filter(lambda s: "{{" not in s)
 _FRPS_CHAR = st.characters(
     blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f", "{", "}"],
     min_codepoint=0x20,
