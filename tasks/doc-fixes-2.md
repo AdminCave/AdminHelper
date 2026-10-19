@@ -28,8 +28,10 @@ an. Nicht in diesem Ledger: `docs/admin/frp-tunnel.html:99` DE+EN nennt VNC als 
 `CHANGELOG.md:2391` und `tasks/doc-drift.md` sind Geschichte; der Code-Kommentar `apps/desktop/src-tauri/src/sync.rs:45-48`
 („the server may also hold vnc/custom ones“) ist keine Doku und liegt in einer Datei, die R-0430 umbaut.
 
-### T1 — R-0521: Agent-Deployment EN mit „What does the agent do?“, Provisionierung wie DE  [ ]
+### T1 — R-0521: Agent-Deployment EN mit „What does the agent do?“, Provisionierung wie DE  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @192ec608 2026-10-19T11:18:38+02:00
+Review: approve (.ah-out/review/doc-fixes-2/T1.verdict.json)
 Änderung: Nach dem Merge von doc-fixes neu greppen.
 (1) EN bekommt zwischen Lead (`:34`) und Schnell-Rollout (`:36`) den Abschnitt „What does the agent do?“ mit denselben drei Punkten wie DE `:36-41` (Monitoring, FRP-Client, Updates).
 (2) EN `:148` sagt dasselbe wie DE `:147`. Was dort darüber hinausgeht, wandert in die Punkte aus (1):
