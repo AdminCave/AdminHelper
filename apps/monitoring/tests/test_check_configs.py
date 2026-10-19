@@ -7,12 +7,16 @@ out-of-range values must fail at create/update/template time instead of
 surfacing as a permanently-unknown or mis-thresholded check at runtime."""
 
 import json
+import re
+import types
+import typing
 
 import pytest
 from pydantic import ValidationError
+from pydantic.fields import FieldInfo
 
 from app.builtin_templates import seed_builtin_templates
-from app.check_configs import CONFIG_MODELS, validate_check_config
+from app.check_configs import CONFIG_MODELS, _TempOverride, validate_check_config
 from app.models import MonitorCheck, MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
 from app.template_sync import record_override_baseline
@@ -55,9 +59,6 @@ class TestValidateCheckConfig:
         # Unknown types are rejected against VALID_CHECK_TYPES elsewhere — this
         # function must not duplicate that gate.
         validate_check_config("bogus", {"whatever": 1})
-
-    def test_numeric_strings_are_coerced(self):
-        validate_check_config("agent_resources", {"cpu_warn": "85"})
 
     def test_temp_overrides_shape_is_validated(self):
         validate_check_config(
@@ -205,6 +206,145 @@ class TestStrictBoolSwitches:
         r = client.put(f"/checks/{check_id}", json={"config": legacy})
         assert r.status_code == 200
         assert self._stored(factory, check_id) == json.dumps(legacy)
+
+
+def _is_number(annotation) -> bool:
+    union = typing.get_origin(annotation) in (typing.Union, types.UnionType)
+    members = typing.get_args(annotation) if union else (annotation,)
+    return {m for m in members if m is not type(None)} in ({int}, {float})
+
+
+def _number_fields() -> list[tuple[str, tuple[str, ...], FieldInfo]]:
+    """(check type, key path, field) for every number field of every config model,
+    derived from the models so that a new field without strict=True turns red."""
+    owners = [(t, (), m) for t, m in CONFIG_MODELS.items()]
+    owners.append(("agent_resources", ("temp_overrides", "nvme"), _TempOverride))
+    return [
+        (t, (*path, key), field)
+        for t, path, model in owners
+        for key, field in model.model_fields.items()
+        if _is_number(field.annotation)
+    ]
+
+
+_NUMBER_FIELDS = _number_fields()
+_NUMBER_FIELD_IDS = [f"{t}.{'.'.join(path)}" for t, path, _ in _NUMBER_FIELDS]
+_INT_FIELDS = [(t, path, field) for t, path, field in _NUMBER_FIELDS if field.annotation is int]
+_INT_FIELD_IDS = [f"{t}.{'.'.join(path)}" for t, path, _ in _INT_FIELDS]
+_REQUIRED = {
+    "ping": {"target": "192.0.2.1"},
+    "tcp": {"target": "192.0.2.1", "port": 22},
+    "http": {"url": "http://192.0.2.1/"},
+}
+
+
+def _config_with(check_type: str, path: tuple[str, ...], value) -> dict:
+    config = dict(_REQUIRED.get(check_type, {}))
+    node = config
+    for key in path[:-1]:
+        node = node.setdefault(key, {})
+    node[path[-1]] = value
+    return config
+
+
+def _a_number(field: FieldInfo) -> float:
+    # The default where there is one, else the lower bound (tcp port, temp overrides).
+    if isinstance(field.default, (int, float)):
+        return field.default
+    return next(m.ge for m in field.metadata if hasattr(m, "ge"))
+
+
+class TestStrictNumberFields:
+    """R-0487: a lax number field took "85" or true, stored it as sent, and the
+    checker then failed on the string; the check editor reads only real numbers."""
+
+    def test_derivation_finds_the_number_fields(self):
+        # The parametrization below is only as good as the derivation: an empty
+        # or partial list would pass silently.
+        found = {(t, path) for t, path, _ in _NUMBER_FIELDS}
+        owners = {t if len(path) == 1 else f"{t}.{path[0]}" for t, path in found}
+        assert owners == {
+            "ping",
+            "tcp",
+            "http",
+            "agent_ping",
+            "agent_resources",
+            "agent_resources.temp_overrides",
+            "smart_health",
+            "proxmox_backup",
+            "zfs_health",
+            "disk_forecast",
+        }
+        int_fields = {(t, path) for t, path, _ in _INT_FIELDS}
+        assert {("tcp", ("port",)), ("http", ("expected_status",))} <= int_fields <= found
+        assert ("agent_resources", ("temp_overrides", "nvme", "warn")) in found
+
+    @pytest.mark.parametrize("value", ["85", "8.5e1", True], ids=repr)
+    @pytest.mark.parametrize(("check_type", "path", "field"), _NUMBER_FIELDS, ids=_NUMBER_FIELD_IDS)
+    def test_non_number_is_rejected_with_the_field_named(self, check_type, path, field, value):
+        loc = re.escape(".".join(path))
+        with pytest.raises(ValueError, match=rf"\s{loc}: Input should be a valid (number|integer)"):
+            validate_check_config(check_type, _config_with(check_type, path, value))
+
+    @pytest.mark.parametrize(("check_type", "path", "field"), _INT_FIELDS, ids=_INT_FIELD_IDS)
+    def test_int_field_rejects_a_number_with_a_decimal_point(self, check_type, path, field):
+        # 22.0 is a JSON number, but not a whole one for an int field. The field's
+        # own number as a float lies within the bounds, so only strictness rejects it.
+        loc = re.escape(".".join(path))
+        for value in (22.0, float(_a_number(field))):
+            with pytest.raises(ValueError, match=rf"\s{loc}: Input should be a valid integer"):
+                validate_check_config(check_type, _config_with(check_type, path, value))
+
+    @pytest.mark.parametrize(("check_type", "path", "field"), _NUMBER_FIELDS, ids=_NUMBER_FIELD_IDS)
+    def test_number_is_accepted(self, check_type, path, field):
+        n = _a_number(field)
+        # An int stays valid for a float field.
+        values = [n] if field.annotation is int else [int(n), float(n)]
+        for value in values:
+            validate_check_config(check_type, _config_with(check_type, path, value))
+
+    def test_post_number_string_is_422(self, client_db, monkeypatch):
+        # Should the boundary let it through, keep the check's job out of the
+        # process-wide scheduler.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        r = client.post(
+            "/checks",
+            json={"name": "c", "check_type": "agent_resources", "config": {"cpu_warn": "85"}},
+        )
+        assert r.status_code == 422
+        assert "valid number" in r.text
+
+    def test_put_changed_number_string_is_422(self, client_db, monkeypatch):
+        client, factory = client_db
+        config = {"cpu_warn": 85}
+        check_id = TestStrictBoolSwitches._create(client, monkeypatch, "agent_resources", config)
+        r = client.put(f"/checks/{check_id}", json={"config": {"cpu_warn": "85"}})
+        assert r.status_code == 422
+        assert "valid number" in r.text
+        assert TestStrictBoolSwitches._stored(factory, check_id) == json.dumps(config)
+
+    def test_put_unchanged_legacy_number_string_stays_saveable(self, client_db, monkeypatch):
+        # No migration: a string stored before the strict boundary, sent back
+        # unchanged, skips it like any unchanged config.
+        client, factory = client_db
+        check_id = TestStrictBoolSwitches._create(
+            client, monkeypatch, "agent_resources", {"cpu_warn": 85}
+        )
+        legacy = {"cpu_warn": "85"}
+        with factory() as db:
+            db.get(MonitorCheck, check_id).config = json.dumps(legacy)
+            db.commit()
+        r = client.put(f"/checks/{check_id}", json={"config": legacy})
+        assert r.status_code == 200
+        assert TestStrictBoolSwitches._stored(factory, check_id) == json.dumps(legacy)
+
+    def test_template_definition_with_number_string_is_422(self, client_db):
+        client, _ = client_db
+        check_def = {"name": "c", "check_type": "agent_resources", "config": {"cpu_warn": "85"}}
+        r = client.post("/templates", json={"name": "T", "check_definitions": [check_def]})
+        assert r.status_code == 422
+        assert "valid number" in r.text
 
 
 class TestAlertOnUnavailableTemplates:

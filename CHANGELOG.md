@@ -393,6 +393,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   wie schon bei `alert_on_unavailable`. Keine Migration: Ein gespeicherter Nicht-Bool-Wert gilt als Default, wie ihn
   der Check-Editor zeigt, nur ein echtes `false` schaltet ab; ein altes `verify_ssl: 0` prueft TLS also wieder. Doku:
   Monitoring-Administration (DE+EN).
+- **Monitoring: Zahlenfelder der Check-Konfiguration nehmen nur Zahlen (R-0487):** Schwellwerte, Timeouts, Ports und
+  die uebrigen Zahlenfelder nahmen auch Zahl-Strings wie `"85"` oder `"8.5e1"` und `true` an und speicherten sie so.
+  Der Check-Editor zeigte das Feld dann leer, der Checker las den Wert anders: An einem Zahl-String scheiterten
+  `agent_resources`, `smart_health`, `zfs_health` und `proxmox_backup`, und der Check blieb auf seinem letzten Zustand
+  stehen; ein `true` galt als 1, ein `cpu_warn: true` warnte also schon ab 1 % CPU. Jetzt lehnen `POST /checks`,
+  `PUT /checks/{id}` mit geaenderter Konfiguration und Template-Definitionen solche Werte mit 422 ab; eine ganze Zahl
+  bleibt fuer ein Feld mit Nachkommastellen gueltig, Ganzzahl-Felder wie `port` und `expected_status` nehmen nur ganze
+  Zahlen ohne Nachkommastelle (`22`, nicht `22.0`). Keine Migration: Ein gespeicherter Zahl-String bleibt, bis die
+  Konfiguration mit einer Zahl an seiner Stelle gespeichert wird. Doku: Monitoring-Administration (DE+EN).
 
 - **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
   `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
