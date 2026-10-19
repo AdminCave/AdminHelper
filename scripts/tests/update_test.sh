@@ -10,8 +10,9 @@
 # health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
 # what --no-rollback names as the way on, a restore that fails, a missing .env, a
 # .env write error in the migration, what a rollback removes, what the texts name
-# for a floating tag, the temp dir a self-update leaves, and the check of .env
-# values before the first compose call, held against the real `docker compose`.
+# for a floating tag, the temp dir a self-update leaves, the check of .env values
+# before the first compose call, held against the real `docker compose`, and a
+# failed swap of the runtime files.
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign,
 #      docker compose; no daemon)
@@ -110,6 +111,29 @@ esac
 exec "$AH_TEST_REAL_FIND" "$@"
 EOF
 chmod +x "$BIN/find"
+# --- a cp wrapper: real cp for everything, except that AH_TEST_CP_FAIL=<path> fails
+# the copy to <path>.ah-new as a full disk does half way: the copy is there but
+# empty, and cp exits 1 ---
+AH_TEST_REAL_CP=$(command -v cp); export AH_TEST_REAL_CP
+cat > "$BIN/cp" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${AH_TEST_CP_FAIL:-}" ] && [ "${!#}" = "${AH_TEST_CP_FAIL}.ah-new" ]; then
+  : > "${!#}"; echo "stub: cp failed" >&2; exit 1
+fi
+exec "$AH_TEST_REAL_CP" "$@"
+EOF
+chmod +x "$BIN/cp"
+# --- an rm wrapper: real rm for everything, except that AH_TEST_RM_FAIL=<path>
+# fails `rm -f <path>` and leaves the file where it is ---
+AH_TEST_REAL_RM=$(command -v rm); export AH_TEST_REAL_RM
+cat > "$BIN/rm" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${AH_TEST_RM_FAIL:-}" ] && [ "$*" = "-f $AH_TEST_RM_FAIL" ]; then
+  echo "stub: rm failed" >&2; exit 1
+fi
+exec "$AH_TEST_REAL_RM" "$@"
+EOF
+chmod +x "$BIN/rm"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -854,6 +878,68 @@ for how in pull health; do
     && ok "a failed find -delete in the $how rollback: the closing message says incomplete" \
     || bad "failed find -delete ($how): rc=$rc $msg"
 done
+
+# ── 35. a failed swap of the runtime files rolls back like a failed migration ─
+# The swap ran unchecked under set -e: a copy that hit a full disk, a directory in
+# the way of a copy or an rm that failed ended update.sh with the tool's message,
+# half the files swapped and nothing rolled back. 0.38.0 has its own .env.example
+# and a script only it ships; it no longer ships install.sh and uninstall.sh, which
+# the swap removes in that order once every file is placed. The copy of
+# scripts/restore.sh comes after .env.example, the compose and added-in-038.sh.
+SRC_SW="$WORK/src-0.38.0"; make_src 0.38.0 "$SRC_SW"
+printf 'ADDED_IN_038=on\n' >> "$SRC_SW/.env.example"
+printf '#!/usr/bin/env bash\necho new\n' > "$SRC_SW/scripts/added-in-038.sh"
+rm "$SRC_SW/scripts/install.sh" "$SRC_SW/scripts/uninstall.sh"
+make_release 0.38.0 "$SRC_SW" "$DL" "$API"
+for how in cp dir rm; do
+  INST="$WORK/inst35-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  cp "$INST/.env" "$INST.env"; DLOG="$INST.docker"; : > "$DLOG"
+  case $how in
+    cp)  stub='stub: cp failed'
+         out=$(AH_TEST_CP_FAIL=scripts/restore.sh AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+    dir) stub=''; mkdir "$INST/scripts/restore.sh.ah-new"
+         out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+    rm)  stub='stub: rm failed'
+         out=$(AH_TEST_RM_FAIL=scripts/uninstall.sh AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+  esac
+  echo "$out" | sed 's/^/    │ /'
+  { [ $rc -ne 0 ] && { [ -z "$stub" ] || grep -q "$stub" <<<"$out"; } \
+      && grep -q 'FEHLER: Tausch der Laufzeit-Dateien fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+    && ok "a failed swap ($how) exits with the rollback message" || bad "failed swap ($how): rc=$rc"
+  cmp -s "$INST.env" "$INST/.env" \
+    && ok "a failed swap ($how) left .env byte for byte" || bad "failed swap ($how) changed .env"
+  { grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && cmp -s "$SRC_OLD/.env.example" "$INST/.env.example" \
+      && [ ! -e "$INST/scripts/added-in-038.sh" ]; } \
+    && ok "a failed swap ($how) rolled back the runtime files, the script only 0.38.0 ships is gone" \
+    || bad "failed swap ($how): runtime files not rolled back"
+  { cmp -s "$SRC_OLD/scripts/install.sh" "$INST/scripts/install.sh" \
+      && cmp -s "$SRC_OLD/scripts/uninstall.sh" "$INST/scripts/uninstall.sh"; } \
+    && ok "a failed swap ($how) kept the scripts 0.38.0 no longer ships" \
+    || bad "failed swap ($how): scripts/ holds $(find "$INST/scripts" -mindepth 1 -printf '%f ')"
+  # Neither the copy cp left half written nor anything in the directory in the way.
+  left=$(cd "$INST" && find . \( -name '*.ah-new' ! -type d \) -o -path './scripts/restore.sh.ah-new/*' | tr '\n' ' ')
+  [ -z "$left" ] && ok "a failed swap ($how) left no copy behind" || bad "failed swap ($how) left: $left"
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+    && ok "a failed swap ($how) touched no container" || bad "failed swap ($how): docker calls $(tr '\n' ';' < "$DLOG")"
+done
+
+# ── 36. --no-rollback: a failed swap leaves the files, .env was never touched ─
+# The swap comes before the migration, so .env still holds the old pins: the text
+# names no new ones, and only --ref brings the release back (--redeploy would start
+# the old images on the half new compose).
+INST="$WORK/inst36"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp "$INST/.env" "$INST.env"
+out=$(AH_TEST_CP_FAIL=scripts/restore.sh run_update "$INST" --ref v0.38.0 --no-rollback 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'stub: cp failed' <<<"$out" && grep -q 'marker: 0.38.0' "$INST/docker-compose.yml" \
+    && [ -e "$INST/scripts/added-in-038.sh" ] && [ ! -e "$INST/scripts/restore.sh.ah-new" ] \
+    && cmp -s "$INST.env" "$INST/.env"; } \
+  && ok "--no-rollback keeps the files of a failed swap and the old .env" \
+  || bad "--no-rollback failed swap: rc=$rc, compose $(head -1 "$INST/docker-compose.yml")"
+{ grep -q -- 'Tausch der Laufzeit-Dateien fehlgeschlagen.*--no-rollback.*--ref v0\.38\.0' <<<"$msg" \
+    && ! grep -q 'Image-Pins' <<<"$msg" && ! grep -q -- '--redeploy' <<<"$msg"; } \
+  && ok "--no-rollback failed swap names --ref v0.38.0 and no new pins" || bad "--no-rollback failed swap: $msg"
 
 echo
 echo "──────────────────────────────────────────"

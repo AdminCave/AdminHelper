@@ -454,6 +454,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   abbricht, endet `update.sh` mit dem Namen des Schluessels (ohne den Wert), bevor es etwas aendert, auch bei
   `--check` und `--redeploy`. Bisher scheiterte das Update daran erst nach Backup, Tausch und Neu-Pinnen. Doku:
   Installation und Betrieb (DE+EN) beschreiben, wie ein `$` in einem `.env`-Wert zu schreiben ist.
+- **Update: Rollback auch bei einem gescheiterten Tausch der Laufzeit-Dateien (R-0495):** Scheiterte beim Tausch
+  ein Schritt (etwa eine Kopie bei voller Platte, ein Verzeichnis `<datei>.ah-new` im Weg oder das Entfernen eines
+  nicht mehr ausgelieferten Skripts), endete `update.sh` mit der rohen Meldung des Werkzeugs und liess halb
+  getauschte Dateien neben der alten `.env` stehen. Jetzt meldet es „Tausch der Laufzeit-Dateien fehlgeschlagen“
+  und rollt wie bei einer gescheiterten `.env`-Migration zurueck: Die Laufzeit-Dateien kommen aus dem Snapshot,
+  Dateien, die erst das neue Release mitgebracht hat, verschwinden, keine halbe Kopie bleibt liegen, `.env` und
+  Container bleiben unveraendert. Mit `--no-rollback` bleiben die Dateien stehen, und die Meldung nennt
+  `--ref <Ziel>` als Weg weiter. Doku: Installation (DE+EN).
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
