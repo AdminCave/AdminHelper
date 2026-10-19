@@ -54,7 +54,7 @@
     &#9474;   &#9474;   &#9500;&#9472;&#9472; bridge/       index.ts + types.ts mit invoke()-Wrappern
     &#9474;   &#9474;   &#9500;&#9472;&#9472; stores/       Stores (session, settings, connections, connectFlow, tunnel, infra, monitoring, ansible, &hellip;)
     &#9474;   &#9474;   &#9500;&#9472;&#9472; models/       connection / serverConnection / infra / frpTunnel / monitorCheck / monitorTemplate / playbook / settings / ansible / maintenance / monitoring / shared (typisiert)
-    &#9474;   &#9474;   &#9500;&#9472;&#9472; api/          servers.ts, connections.ts, frp.ts, monitoring.ts, ansible.ts, provisioning.ts, types.ts (Auth/Connect l&auml;uft &uuml;ber die Bridge)
+    &#9474;   &#9474;   &#9500;&#9472;&#9472; api/          servers.ts, connections.ts, frp.ts, monitoring.ts, ansible.ts, provisioning.ts, notifications.ts, request.ts, types.ts (Auth/Connect l&auml;uft &uuml;ber die Bridge)
     &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/         DE/EN-Dictionaries
     &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
     &#9474;   &#9500;&#9472;&#9472; components/       AppShell, Login, PasswordPrompt, StatusBar, ConnectionEditor, &hellip;
@@ -69,7 +69,7 @@
             <thead><tr><th>Seite</th><th>Inhalt</th></tr></thead>
             <tbody>
               <tr><td><code>Dashboard</code></td><td>Übersicht/Status nach Login.</td></tr>
-              <tr><td><code>Infrastructure</code></td><td>Server-Inventar (anlegen/bearbeiten/löschen) und pro Server Tabs: <em>Übersicht</em>, <em>Verbindungen</em> (ssh/rdp/vnc/web/custom, server-seitiges CRUD), <em>Tunnel</em> (FRP-Tunnel pro Server; die FRP-Server-Config wird ausgewählt, bleibt aber Web-Admin-Sache), <em>Monitoring</em> (Checks dieses Servers), <em>Provisionierung</em> (Einmal-Token + Agent-Befehl).</td></tr>
+              <tr><td><code>Infrastructure</code></td><td>Server-Inventar (anlegen/bearbeiten/löschen) und pro Server Tabs: <em>Übersicht</em>, <em>Verbindungen</em> (ssh/rdp/web, server-seitiges CRUD), <em>Tunnel</em> (FRP-Tunnel pro Server; die FRP-Server-Config wird ausgewählt, bleibt aber Web-Admin-Sache), <em>Monitoring</em> (Checks dieses Servers), <em>Provisionierung</em> (Einmal-Token + Agent-Befehl).</td></tr>
               <tr><td><code>Connections</code></td><td>Schneller Launcher zum Starten von Sessions; im Server-Modus auch server-seitiges Bearbeiten.</td></tr>
               <tr><td><code>Monitoring</code></td><td>Fleet-weit: Checks-Übersicht, Alert-Regeln (CRUD), Templates (CRUD), Alert-Log.</td></tr>
               <tr><td><code>Ansible</code></td><td>Playbooks anlegen/bearbeiten/löschen UND ausführen (3-Schritt-Assistent).</td></tr>

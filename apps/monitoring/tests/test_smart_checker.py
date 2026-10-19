@@ -121,6 +121,27 @@ def test_ignored_device_is_skipped():
     assert CHECKER.evaluate(cfg, _report(_disk(smart_passed=False)))[0] == "ok"
 
 
+def test_disk_list_is_capped():
+    # Like the plugin lists, only the first 500 disks are rated, so a broken agent cannot
+    # flood the details, the message and the per-disk metrics (R-0486).
+    devices = [f"/dev/sd{i}" for i in range(2000)]
+    status, msg, metrics = CHECKER.evaluate({}, _report(*(_disk(device=d) for d in devices)))
+    assert (status, msg) == ("ok", "All 500 disks SMART OK")
+    assert [d["device"] for d in metrics["_details"]["disks"]] == devices[:500]
+    assert sum(k.startswith("smart_temp_") for k in metrics) == 500
+
+
+@pytest.mark.parametrize("smart", ["abc", {"device": "/dev/sda"}, 42], ids=["str", "dict", "int"])
+def test_smart_that_is_no_list_counts_as_no_data(smart):
+    assert CHECKER.evaluate({}, {"smart": smart}) == _NO_DATA
+
+
+def test_disk_that_is_no_object_is_skipped():
+    status, msg, metrics = CHECKER.evaluate({}, _report("x", _disk(smart_passed=False)))
+    assert (status, msg) == ("critical", "SMART problems: /dev/sda (X): SMART FAILED")
+    assert [d["device"] for d in metrics["_details"]["disks"]] == ["/dev/sda"]
+
+
 def _nvme(**kw):
     # A clean NVMe disk by default (cool, full spare implied by the defaults).
     return {

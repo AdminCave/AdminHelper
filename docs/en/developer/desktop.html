@@ -54,7 +54,7 @@
     &#9474;   &#9474;   &#9500;&#9472;&#9472; bridge/       index.ts + types.ts with invoke() wrappers
     &#9474;   &#9474;   &#9500;&#9472;&#9472; stores/       stores (session, settings, connections, connectFlow, tunnel, infra, monitoring, ansible, &hellip;)
     &#9474;   &#9474;   &#9500;&#9472;&#9472; models/       connection / serverConnection / infra / frpTunnel / monitorCheck / monitorTemplate / playbook / settings / ansible / maintenance / monitoring / shared (typed)
-    &#9474;   &#9474;   &#9500;&#9472;&#9472; api/          servers.ts, connections.ts, frp.ts, monitoring.ts, ansible.ts, provisioning.ts, types.ts (auth/connect via the bridge)
+    &#9474;   &#9474;   &#9500;&#9472;&#9472; api/          servers.ts, connections.ts, frp.ts, monitoring.ts, ansible.ts, provisioning.ts, notifications.ts, request.ts, types.ts (auth/connect via the bridge)
     &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/         DE/EN dictionaries
     &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
     &#9474;   &#9500;&#9472;&#9472; components/       AppShell, Login, PasswordPrompt, StatusBar, ConnectionEditor, &hellip;
@@ -69,7 +69,7 @@
             <thead><tr><th>Page</th><th>Content</th></tr></thead>
             <tbody>
               <tr><td><code>Dashboard</code></td><td>Overview/status after login.</td></tr>
-              <tr><td><code>Infrastructure</code></td><td>Server inventory (create/edit/delete) and, per server, tabs: <em>Overview</em>, <em>Connections</em> (ssh/rdp/vnc/web/custom, server-side CRUD), <em>Tunnel</em> (FRP tunnels per server; the FRP server config is picked but stays a web-admin concern), <em>Monitoring</em> (this server's checks), <em>Provisioning</em> (one-time token + agent command).</td></tr>
+              <tr><td><code>Infrastructure</code></td><td>Server inventory (create/edit/delete) and, per server, tabs: <em>Overview</em>, <em>Connections</em> (ssh/rdp/web, server-side CRUD), <em>Tunnel</em> (FRP tunnels per server; the FRP server config is picked but stays a web-admin concern), <em>Monitoring</em> (this server's checks), <em>Provisioning</em> (one-time token + agent command).</td></tr>
               <tr><td><code>Connections</code></td><td>Quick launcher for starting sessions; in server mode also server-side editing.</td></tr>
               <tr><td><code>Monitoring</code></td><td>Fleet-wide: checks overview, alert rules (CRUD), templates (CRUD), alert log.</td></tr>
               <tr><td><code>Ansible</code></td><td>Create/edit/delete AND run playbooks (3-step wizard).</td></tr>
