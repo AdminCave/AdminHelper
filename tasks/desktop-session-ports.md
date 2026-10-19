@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Session im Rust-Speicher und eigene lokale Visitor-Ports — Task-Ledger
-Status: bereit · Branch: feature/desktop-session-ports · Review: pro Task
+Status: aktiv · Branch: feature/desktop-session-ports · Review: pro Task
 Spec: docs/features/desktop-session-ports.md (Roadmap R-0430)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Auth und -Tunnel (CLAUDE.md §5): Login, Erneuerung, SSE und die Tunnel-Specs laufen im Sammellauf; `scenario`, weil der Desktop die lokalen Visitor-Ports umschreibt (FRP-Datenpfad); `windows` für Sidecar, Datei-Sperre und Keyring-Aufräumen
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -148,3 +148,17 @@ Review: approve (.ah-out/review/desktop-session-ports/T15.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: keine (das Verhalten steht schon in desktop.html)
 Abhängt von: T13
+
+### T16 — Live-E2E Logout: die Ablehnung ohne Session kommt als Wert zurück  [ ]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/logout.live.js
+Änderung: `proxyGet` meldet die Ablehnung von `api_proxy` heute als `{ error }`; der WebDriver-Weg wertet ein Ergebnis mit dem Schlüssel `error` selbst als Fehler (VM-Lauf 2026-10-19: `WebDriverError: Keine aktive Sitzung — Anfrage abgelehnt when running "execute/async"`), die Assertion erreicht den Text nie. Ein anderer Schlüssel (z. B. `{ rejected }`), die Assertion bleibt gleich streng (genau der Text aus `session::no_session()`).
+Verify: bash scripts/dev/verify.sh desktop-e2e --strict
+Doku: keine (Test)
+Abhängt von: T6
+
+### T17 — Wechsel von Server- zu Lokal-Modus in den Einstellungen klappt wieder  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts
+Änderung: VM-Lauf 2026-10-19 auf dem Branch: `settings-mode.live.js` („switches from server to local and the server-only UI goes away“) scheitert mit „the mode badge never changed“; auf main@378a6f65 ist dieselbe Suite im Sammellauf grün, die Ursache liegt also in R-0430. Ursache am Code und an den Artefakten des Laufs (`.ah-out/screenshots`, `.ah-out/logs` im Worktree, falls vorhanden) finden, mit einem Vitest-Fall zuerst rot reproduzieren und beheben; betrifft die Ursache andere Dateien, per `ledger.sh set-files` nachtragen.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: keine (Fehlerbehebung im Branch)
+Abhängt von: T5
