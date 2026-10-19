@@ -22,7 +22,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.check_engine as ce
 import app.core.database as database_mod
-from app.checkers import agent
+from app.checkers import agent, get_checker
 from app.checkers import http as http_mod
 from app.checkers import ping as ping_mod
 from app.checkers import tcp as tcp_mod
@@ -577,3 +577,10 @@ def test_engine_message_is_english(monkeypatch, check_type, config, checker, mes
     with factory() as db:
         state = db.query(MonitorState).filter_by(check_id="c1").one()
         assert (state.status, state.message) == ("unknown", message)
+
+
+def test_get_checker_unknown_type_error_is_english():
+    # The text only reaches the engine's log line; the state message is the case above.
+    with pytest.raises(ValueError) as exc_info:
+        get_checker("no_such_type")
+    assert str(exc_info.value) == "Unknown check_type: 'no_such_type'"

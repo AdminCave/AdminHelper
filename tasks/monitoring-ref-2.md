@@ -29,8 +29,10 @@ Beweis: origin/main@81764c43 · `git grep -nE '\(Fehler [0-9n]+/' 81764c43 -- ap
 Dedup-Key: ref:monitoring:fixtures:german-suffix-leftovers
 HEAD: 81764c43
 
-### T2 — get_checker: Fehlertext für einen unbekannten check_type englisch (R-0502)  [ ]
+### T2 — get_checker: Fehlertext für einen unbekannten check_type englisch (R-0502)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/__init__.py, apps/monitoring/tests/test_checker_messages.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @c758cfc2 2026-10-19T11:30:41+02:00
+Review: approve (.ah-out/review/monitoring-ref-2/T2.verdict.json)
 Änderung: `get_checker` (`checkers/__init__.py:49`) wirft `ValueError(f"Unknown check_type: {check_type!r}")` statt „Unbekannter check_type: …“. Der Text erreicht nur das Log (`check_engine.py:247`, `logger.warning("Check %s: %s", …)`); die Meldung im State ist schon englisch („Unknown check type“, `check_engine.py:256`), der Push-Pfad ruft `get_checker` nur mit Push-Typen (`routers/agent.py:222`). Test zuerst rot (dreimal identisch auf HEAD) in `test_checker_messages.py` neben `test_engine_message_is_english` (`:551`): `get_checker("no_such_type")` wirft `ValueError`, `str()` exakt `"Unknown check_type: 'no_such_type'"`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checker_messages.py
 Doku: keine (nur Log)
