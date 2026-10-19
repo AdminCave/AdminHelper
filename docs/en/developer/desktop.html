@@ -35,33 +35,32 @@
 
           <h2>Architecture</h2>
           <div class="code-header"><span>tree</span></div>
-<pre><code>desktop/
+<pre><code>apps/desktop/
 &#9500;&#9472;&#9472; src-tauri/
 &#9474;   &#9500;&#9472;&#9472; src/
 &#9474;   &#9474;   &#9500;&#9472;&#9472; main.rs           Tauri app setup, invoke_handler with all commands
-&#9474;   &#9474;   &#9500;&#9472;&#9472; commands/         #[tauri::command] (auth, connect, frp, &hellip;)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; connection/       RDP/SSH/VNC/HTTP launcher
-&#9474;   &#9474;   &#9500;&#9472;&#9472; frp/              FRP sidecar management
-&#9474;   &#9474;   &#9500;&#9472;&#9472; keyring/          OS keyring (Linux: secret-service, macOS: Keychain)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; http/             Reqwest client with auto-refresh
-&#9474;   &#9474;   &#9492;&#9472;&#9472; rdp/              Race guard with monotonic UUID
+&#9474;   &#9474;   &#9500;&#9472;&#9472; commands.rs       #[tauri::command] (auth, connect, frp, &hellip;)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; connection/       RDP/SSH/web launcher
+&#9474;   &#9474;   &#9500;&#9472;&#9472; frpc.rs           FRP sidecar management
+&#9474;   &#9474;   &#9500;&#9472;&#9472; keyring_store.rs  OS keyring (Linux: secret-service, macOS: Keychain)
+&#9474;   &#9474;   &#9492;&#9472;&#9472; http_client.rs    Reqwest client per trust anchor (public CA, TOFU pin, mTLS)
+&#9474;   &#9500;&#9472;&#9472; binaries/             frpc sidecar per target triple
 &#9474;   &#9500;&#9472;&#9472; capabilities/         Strictly scoped Tauri capabilities
-&#9474;   &#9500;&#9472;&#9472; tauri.conf.json       <code>beforeBuildCommand</code> &rarr; <code>../apps/desktop/ui</code>
+&#9474;   &#9500;&#9472;&#9472; tauri.conf.json       <code>beforeBuildCommand</code>: <code>npm --prefix ui run build</code>
 &#9474;   &#9492;&#9472;&#9472; Cargo.toml
-&#9492;&#9472;&#9472; binaries/                 frpc sidecar per target triple
-apps/desktop/ui/
-&#9500;&#9472;&#9472; src/
-&#9474;   &#9500;&#9472;&#9472; lib/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; bridge/           index.ts + types.ts with invoke() wrappers
-&#9474;   &#9474;   &#9500;&#9472;&#9472; stores/           stores (session, settings, connections, tunnel, infra, monitoring, ansible, &hellip;)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; models/           connection / serverConnection / infra / frpTunnel / monitorCheck / monitorTemplate / playbook / settings (typed)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; api/              servers.ts, connections.ts, frp.ts, monitoring.ts, ansible.ts, provisioning.ts, types.ts (auth/connect via the bridge)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/             DE/EN dictionaries
-&#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
-&#9474;   &#9500;&#9472;&#9472; components/           AppShell, Login, PasswordPrompt, StatusBar, ConnectionEditor, &hellip;
-&#9474;   &#9500;&#9472;&#9472; pages/                5 pages: Dashboard, Infrastructure, Connections, Monitoring, Ansible
-&#9474;   &#9492;&#9472;&#9472; main.ts
-&#9492;&#9472;&#9472; vitest.setup.ts           ~41 Vitest unit tests in stores/ + models/</code></pre>
+&#9492;&#9472;&#9472; ui/
+    &#9500;&#9472;&#9472; src/
+    &#9474;   &#9500;&#9472;&#9472; lib/
+    &#9474;   &#9474;   &#9500;&#9472;&#9472; bridge/       index.ts + types.ts with invoke() wrappers
+    &#9474;   &#9474;   &#9500;&#9472;&#9472; stores/       stores (session, settings, connections, connectFlow, tunnel, infra, monitoring, ansible, &hellip;)
+    &#9474;   &#9474;   &#9500;&#9472;&#9472; models/       connection / serverConnection / infra / frpTunnel / monitorCheck / monitorTemplate / playbook / settings / ansible / maintenance / monitoring / shared (typed)
+    &#9474;   &#9474;   &#9500;&#9472;&#9472; api/          servers.ts, connections.ts, frp.ts, monitoring.ts, ansible.ts, provisioning.ts, types.ts (auth/connect via the bridge)
+    &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/         DE/EN dictionaries
+    &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
+    &#9474;   &#9500;&#9472;&#9472; components/       AppShell, Login, PasswordPrompt, StatusBar, ConnectionEditor, &hellip;
+    &#9474;   &#9500;&#9472;&#9472; pages/            5 pages: Dashboard, Infrastructure, Connections, Monitoring, Ansible
+    &#9474;   &#9492;&#9472;&#9472; main.ts
+    &#9492;&#9472;&#9472; vitest.setup.ts       Vitest setup; the unit tests sit next to the code (src/**/*.test.ts)</code></pre>
           <p>Only one instance runs at a time: a second launch only brings the window of the running app to the front and then exits (<code>tauri-plugin-single-instance</code>, registered as the first plugin in <code>main.rs</code>, on Linux through the D-Bus session bus). For this, <code>enableGTKAppId</code> in <code>tauri.conf.json</code> stays <code>false</code>: with a GTK app id, GApplication itself forwards the second launch to the running instance, which then runs its setup again and crashes.</p>
 
           <h2>Pages &amp; Infrastructure hub (server mode)</h2>
@@ -95,22 +94,8 @@ apps/desktop/ui/
             </tbody>
           </table>
 
-          <p>Example of a race-guarded connect command:</p>
-
-          <div class="code-header"><span>rust</span></div>
-<pre><code>#[tauri::command]
-async fn connect_rdp(
-    state: tauri::State&lt;'_, AppState&gt;,
-    connection_id: String,
-    password: String,
-) -&gt; Result&lt;ConnectResponse, ConnectError&gt; {
-    // Race guard: monotonic UUID
-    let connect_id = state.next_connect_id();
-    ...
-}</code></pre>
-
           <h2>RDP Race Guard</h2>
-          <p>Clicking <em>Connect</em> several times in quick succession leaves multiple RDP attempts in flight &ndash; and a late <code>rdp-error</code> event from an abandoned one would mark the attempt that is actually running as failed. The Desktop Client therefore assigns a <strong>correlation ID</strong> per attempt (<code>crypto.randomUUID()</code>) and matches every error event back to its attempt; an event with no matching open attempt is discarded. Implementation in <code>apps/desktop/ui/src/lib/stores/connectFlow.ts</code>, tests in <code>apps/desktop/ui/src/lib/stores/connectFlow.test.ts</code>.</p>
+          <p>Clicking <em>Connect</em> several times in quick succession leaves multiple RDP attempts in flight &ndash; and a late <code>rdp-error</code> event from an abandoned one would mark the attempt that is actually running as failed. The Desktop Client therefore assigns a <strong>correlation ID</strong> per attempt (<code>crypto.randomUUID()</code>) and matches every error event back to its attempt; an event with no matching open attempt is discarded. The ID goes to <code>open_connection</code> or <code>open_connection_stored</code> as <code>correlation_id</code>. Implementation in <code>apps/desktop/ui/src/lib/stores/connectFlow.ts</code>, tests in <code>apps/desktop/ui/src/lib/stores/connectFlow.test.ts</code>.</p>
 
           <h2>Keyring Secrets</h2>
           <p>Passwords are stored in the OS keyring, never in the local connection file:</p>
@@ -119,7 +104,7 @@ async fn connect_rdp(
             <li>macOS: Keychain</li>
             <li>Windows: Credential Manager</li>
           </ul>
-          <p>Service prefix <code>adminhelper:</code>, account = <code>&lt;connection-id&gt;</code>.</p>
+          <p>Service <code>com.admincave.adminhelper</code>; an RDP password sits under the account <code>rdp|&lt;host&gt;|&lt;port&gt;|&lt;user&gt;|&lt;domain&gt;</code> (lower-cased). On Windows it sits in the Credential Manager under <code>TERMSRV/&lt;address&gt;</code> instead, where mstsc reads it.</p>
 
           <h2>TLS certificate pinning (TOFU)</h2>
           <p>When the user enables <em>&ldquo;Allow self-signed certificates&rdquo;</em>, TLS verification is <strong>not</strong> turned off (the old <code>danger_accept_invalid_certs(true)</code> disabled chain <em>and</em> hostname checks with no pinning &ndash; open to MITM). Instead <code>tofu.rs</code> pins the server certificate using the <strong>trust-on-first-use</strong> model (like SSH <code>known_hosts</code>):</p>
@@ -151,12 +136,12 @@ async fn connect_rdp(
 
           <h2>Connect Flow</h2>
           <ol>
-            <li>User clicks <em>Connect</em> → <code>connectFlow</code> store sets <code>state = 'connecting'</code></li>
-            <li>Bridge calls <code>connect_rdp</code> (with race-guard UUID)</li>
-            <li>Rust backend resolves the FRP tunnel (local visitor port)</li>
-            <li>Password is fetched from the keyring or prompted via the <code>PasswordPrompt</code> modal. A stored RDP password is kept under the connection before the tunnel resolution, i.e. under the host and port from the list, not under <code>127.0.0.1:&lt;visitor port&gt;</code>; <code>open_connection_stored</code> therefore receives that connection as <code>credentialConnection</code> next to the resolved one. On Windows mstsc reads the password itself (<code>TERMSRV/&lt;address&gt;</code>); for tunnelled targets it finds none there yet, because it looks under <code>127.0.0.1:&lt;visitor port&gt;</code>.</li>
-            <li>RDP/SSH/VNC client is launched with a temporary config</li>
-            <li>After exit the tunnel is torn down</li>
+            <li>User clicks <em>Connect</em> → <code>initiateConnect</code> in the <code>connectFlow</code> store checks the connection (<code>validateConnection</code>); an invalid one is reported in the status bar and not connected.</li>
+            <li>For RDP the password comes first: if <code>storePasswords</code> is on, <code>password_state</code> asks the keyring; a stored password is used, otherwise the <code>PasswordPrompt</code> modal asks (optionally storing it via <code>save_password</code>). Without the password store the modal asks on Linux only. A stored RDP password is kept under the connection before the tunnel resolution, i.e. under the host and port from the list, not under <code>127.0.0.1:&lt;visitor port&gt;</code>; <code>open_connection_stored</code> therefore receives that connection as <code>credentialConnection</code> next to the resolved one. On Windows mstsc reads the password itself (<code>TERMSRV/&lt;address&gt;</code>); for tunnelled targets it finds none there yet, because it looks under <code>127.0.0.1:&lt;visitor port&gt;</code>.</li>
+            <li>If the tunnel store has mappings (<code>getMappings()</code>), <code>resolve_connection</code> resolves the connection with them (see <em>Tunnel resolution</em> above); if that fails, it stays unchanged.</li>
+            <li>For RDP the store assigns a correlation ID (<em>RDP race guard</em>) and calls <code>open_connection</code>, or <code>open_connection_stored</code> for a stored password; SSH and web go to <code>open_connection</code> without a correlation ID.</li>
+            <li>The backend launches the RDP, SSH or web client.</li>
+            <li>Then the store records the use (<code>lastUsed</code>) and reports the start in the status bar. The connect flow neither brings up nor tears down the tunnel: the tunnel store runs frpc.</li>
           </ol>
 
           <h2>Theming &amp; design system</h2>
@@ -166,7 +151,7 @@ async fn connect_rdp(
           <div class="code-header"><span>bash</span></div>
 <pre><code>cd apps/desktop/ui
 npm run check                    # svelte-check
-npm run test                     # vitest (41 tests)
+npm run test                     # vitest
 
 cd ..                            # apps/desktop/
 cargo tauri dev                  # hot-reload dev mode
