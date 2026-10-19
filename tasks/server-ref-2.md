@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-REF-Bündel 2 — Task-Ledger
-Status: bereit · Branch: feature/server-ref-2 · Review: pro Task
+Status: aktiv · Branch: feature/server-ref-2 · Review: pro Task
 Spec: Roadmap R-0509, R-0497, R-0501, R-0510
 Heavy: linux-full — T2 ändert die Stelle, an der der Server die frpc-Config der Agents zusammenstellt (`frp/provision_router.py` für `config` und `config-hash`, `provisioning/helpers.py` für das Provisionierungs-Paket); läuft im Sammellauf. Kein `scenario`: Text, Hash, Antwortform und Routen bleiben gleich, nur die Abfrage liegt an einer Stelle. T1, T3 und T4 berühren keinen Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -60,3 +60,11 @@ Dedup-Key: ref:server:model_registry.py:docstring-users
 - **Warum nur `conftest.py`:** Der Fix zieht `_executor` privat heran, wie die Barriere daneben `router._NOTIFY_POOL`. Eine öffentliche Drain-Funktion in `app/core/events.py` hätte in Produktion keinen Aufrufer; beim Prozessende wartet der Executor über sein eigenes `atexit` auf die Threads.
 - **Verwandt, nicht in diesem Paket:** `docs/features/wochenlauf-gruen.md:344` (N1). Event-Threads schreiben in den Server-Tests über die App-Engine an der Rollback-Klammer vorbei in die Test-Datenbank, im testcontainers-Zweig an die Dev-Default-URL (`app/core/config.py:47-56`). Dafür gibt es keine Roadmap-Zeile; siehe offene Frage am Gate.
 - Weitere Executoren mit Datenbankzugriff gibt es im Server nicht (`grep ThreadPoolExecutor\|threading.Thread( apps/server/app`: nur `events.py`, `servers/router.py` `_NOTIFY_POOL` ohne Datenbank, `ssrf.py` und `script_runner.py` mit Daemon-Threads ohne Datenbank).
+
+### T5 — Test: die frpc-Sync-Eingaben nehmen nur die Tunnel dieses Servers unter der gewählten FRP-Config (R-0497)  [ ]
+Komponente: server · Dateien: apps/server/tests/test_frp_provision_sync.py
+Änderung: Fund des tester aus dem Branch-Review 2026-10-19: die beiden Filter in `frpc_sync_inputs` (`frp/_helpers.py`, `FrpTunnel.server_id == server_id` und `FrpTunnel.frp_config_id == config.id`, Zeilen neu greppen) prüft kein Test; entfernt man beide, bleibt das T2-Verify grün (180 passed). Ein neuer Test in `test_frp_provision_sync.py` legt drei Tunnel an: den eigenen unter der gewählten (ältesten) Config, einen eines zweiten Servers unter derselben Config und einen dieses Servers unter einer zweiten, jüngeren `FrpServerConfig` (`created_at` explizit). `GET /api/frp/provision/<server>/config` liefert nur den eigenen Proxy, `config-hash` ist sha256 dieses Textes. Der Test wird rot, sobald einer der beiden Filter fehlt (beide Mutationen belegen). Nur der Test ändert sich.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_provision_sync.py
+Doku: keine (intern)
+Dedup-Key: ref:server:frp:shared-sync-inputs
+HEAD: 4d703c3c
