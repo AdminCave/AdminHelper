@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 use crate::models::SyncMode;
-use crate::storage::write_json_pretty;
+use crate::storage::{write_json_atomic, write_json_pretty};
 
 /// Every character an id may hold (`^[a-z0-9-]{1,32}$`), spelled out rather than as ranges, so
 /// no reader has to wonder whether a locale widens them.
@@ -349,8 +349,9 @@ impl Meta {
         })
     }
 
+    /// At once on every platform: the launcher lists it while the workspace saves its settings.
     pub fn store(&self, dir: &Path) -> Result<(), AppError> {
-        write_json_pretty(&dir.join(META_FILE), self)
+        write_json_atomic(&dir.join(META_FILE), self)
     }
 }
 

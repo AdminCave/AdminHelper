@@ -49,8 +49,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- migration::
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T2, T3
 
-### T5 — Einstellungen getrennt: global und je Workspace  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/storage.rs
+### T5 — Einstellungen getrennt: global und je Workspace  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/workspace.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @e1aaf918 2026-10-19T16:15:54+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T5.verdict.json)
 Änderung: `load_settings` (`storage.rs:169`) liefert die bisherige `Settings`-Form aus `prefs.json` und `workspace.json` des Kontexts (`mode` = Art); im Launcher `prefs.json` plus Vorgaben. `save_settings` (`:174`) schreibt die globalen Felder unter `prefs.lock`: neu lesen, nur die Felder übernehmen, die sich gegenüber dem zuletzt in diesem Prozess geladenen Stand geändert haben, atomar mit pid im Temp-Namen; Lesen von `prefs.json` ebenfalls unter der Sperre (unter Windows schreibt `write_json_pretty` in place). Die Workspace-Felder gehen in `workspace.json`; `mode` nie; `serverUrl`/`url` nur, solange der Workspace keine hat, ein anderer Wert ist `AppError::Validation`. Verbindungsdateien (`:108-131`) liegen im Datenordner des Workspaces, `current_mode` (`:49`) liest die Art; ohne Workspace-Kontext Fehler. Tests über pfadbasierte Kernfunktionen: Rundreise; zwei Handles ändern verschiedene globale Felder nacheinander aus altem Stand → beide Änderungen bleiben; `mode` bleibt; zweite, andere Server-URL abgewiesen, erste gesetzt; Launcher: Verbindungen laden → Fehler. Hinweis (T2): unter Windows schreibt `write_json_pretty` in place; ein gleichzeitiger Leser (Launcher) kann eine halbe `workspace.json` sehen.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage::
 Doku: keine (intern; Doku mit T33)
