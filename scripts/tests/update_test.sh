@@ -10,11 +10,14 @@
 # health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
 # what --no-rollback names as the way on, a restore that fails, a missing .env, a
 # .env write error in the migration, what a rollback removes, what the texts name
-# for a floating tag, the temp dir a self-update leaves, and the check of .env
-# values before the first compose call, held against the real `docker compose`.
+# for a floating tag, the temp dir a self-update leaves, the check of .env values
+# before the first compose call, held against the real `docker compose`, a failed
+# swap of the runtime files, a failed rm or tar in the snapshot restore, and a
+# migration that cannot append to .env or read the new .env.example.
 #
 # Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign,
-#      docker compose; no daemon)
+#      docker compose; no daemon; a user that file rights bind: as root test 38
+#      cannot run, and the test ends with 75)
 
 # ok()/bad() never fail, so the `cond && ok || bad` assertions are deliberate
 # (not if-then-else); the │-prefix sed is a readability nicety.
@@ -110,6 +113,58 @@ esac
 exec "$AH_TEST_REAL_FIND" "$@"
 EOF
 chmod +x "$BIN/find"
+# --- a cp wrapper: real cp for everything, except that AH_TEST_CP_FAIL=<path> fails
+# the copy to <path>.ah-new as a full disk does half way: the copy is there but
+# empty, and cp exits 1 ---
+AH_TEST_REAL_CP=$(command -v cp); export AH_TEST_REAL_CP
+cat > "$BIN/cp" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${AH_TEST_CP_FAIL:-}" ] && [ "${!#}" = "${AH_TEST_CP_FAIL}.ah-new" ]; then
+  : > "${!#}"; echo "stub: cp failed" >&2; exit 1
+fi
+exec "$AH_TEST_REAL_CP" "$@"
+EOF
+chmod +x "$BIN/cp"
+# --- an rm wrapper: real rm for everything, except that AH_TEST_RM_FAIL=<path>
+# fails `rm -f <path>` and leaves the file where it is ---
+AH_TEST_REAL_RM=$(command -v rm); export AH_TEST_REAL_RM
+cat > "$BIN/rm" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${AH_TEST_RM_FAIL:-}" ] && [ "$*" = "-f $AH_TEST_RM_FAIL" ]; then
+  echo "stub: rm failed" >&2; exit 1
+fi
+exec "$AH_TEST_REAL_RM" "$@"
+EOF
+chmod +x "$BIN/rm"
+# --- a tar wrapper: real tar for everything, except that AH_TEST_TAR_FAIL=1 fails
+# the restore's unpack of the runtime snapshot (`xzf backups/runtime-prev-…`)
+# before it unpacks anything; writing the snapshot and unpacking the bundle or the
+# agent repo go through ---
+AH_TEST_REAL_TAR=$(command -v tar); export AH_TEST_REAL_TAR
+cat > "$BIN/tar" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  "xzf backups/runtime-prev-"*)
+    [ "${AH_TEST_TAR_FAIL:-}" != 1 ] || { echo "stub: tar failed" >&2; exit 1; } ;;
+esac
+exec "$AH_TEST_REAL_TAR" "$@"
+EOF
+chmod +x "$BIN/tar"
+# --- an mv wrapper: real mv for everything; once the swap has put the new
+# .env.example in place, AH_TEST_MV_LOCK=env takes the write right of .env and
+# AH_TEST_MV_LOCK=example the read right of .env.example. The migration appends and
+# reads with the shell's own redirections, which no wrapper reaches ---
+AH_TEST_REAL_MV=$(command -v mv); export AH_TEST_REAL_MV
+cat > "$BIN/mv" <<'EOF'
+#!/usr/bin/env bash
+"$AH_TEST_REAL_MV" "$@" || exit
+[ "$*" = "-T .env.example.ah-new .env.example" ] || exit 0
+case "${AH_TEST_MV_LOCK:-}" in
+  env) chmod a-w .env ;;
+  example) chmod a-r .env.example ;;
+esac
+EOF
+chmod +x "$BIN/mv"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -855,7 +910,144 @@ for how in pull health; do
     || bad "failed find -delete ($how): rc=$rc $msg"
 done
 
+# ── 35. a failed swap of the runtime files rolls back like a failed migration ─
+# The swap ran unchecked under set -e: a copy that hit a full disk, a directory in
+# the way of a copy or an rm that failed ended update.sh with the tool's message,
+# half the files swapped and nothing rolled back. 0.38.0 has its own .env.example
+# and a script only it ships; it no longer ships install.sh and uninstall.sh, which
+# the swap removes in that order once every file is placed. The copy of
+# scripts/restore.sh comes after .env.example, the compose and added-in-038.sh.
+SRC_SW="$WORK/src-0.38.0"; make_src 0.38.0 "$SRC_SW"
+printf 'ADDED_IN_038=on\n' >> "$SRC_SW/.env.example"
+printf '#!/usr/bin/env bash\necho new\n' > "$SRC_SW/scripts/added-in-038.sh"
+rm "$SRC_SW/scripts/install.sh" "$SRC_SW/scripts/uninstall.sh"
+make_release 0.38.0 "$SRC_SW" "$DL" "$API"
+for how in cp dir rm; do
+  INST="$WORK/inst35-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  cp "$INST/.env" "$INST.env"; DLOG="$INST.docker"; : > "$DLOG"
+  case $how in
+    cp)  stub='stub: cp failed'
+         out=$(AH_TEST_CP_FAIL=scripts/restore.sh AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+    dir) stub=''; mkdir "$INST/scripts/restore.sh.ah-new"
+         out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+    rm)  stub='stub: rm failed'
+         out=$(AH_TEST_RM_FAIL=scripts/uninstall.sh AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+  esac
+  echo "$out" | sed 's/^/    │ /'
+  { [ $rc -ne 0 ] && { [ -z "$stub" ] || grep -q "$stub" <<<"$out"; } \
+      && grep -q 'FEHLER: Tausch der Laufzeit-Dateien fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+    && ok "a failed swap ($how) exits with the rollback message" || bad "failed swap ($how): rc=$rc"
+  cmp -s "$INST.env" "$INST/.env" \
+    && ok "a failed swap ($how) left .env byte for byte" || bad "failed swap ($how) changed .env"
+  { grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && cmp -s "$SRC_OLD/.env.example" "$INST/.env.example" \
+      && [ ! -e "$INST/scripts/added-in-038.sh" ]; } \
+    && ok "a failed swap ($how) rolled back the runtime files, the script only 0.38.0 ships is gone" \
+    || bad "failed swap ($how): runtime files not rolled back"
+  { cmp -s "$SRC_OLD/scripts/install.sh" "$INST/scripts/install.sh" \
+      && cmp -s "$SRC_OLD/scripts/uninstall.sh" "$INST/scripts/uninstall.sh"; } \
+    && ok "a failed swap ($how) kept the scripts 0.38.0 no longer ships" \
+    || bad "failed swap ($how): scripts/ holds $(find "$INST/scripts" -mindepth 1 -printf '%f ')"
+  # Neither the copy cp left half written nor anything in the directory in the way.
+  left=$(cd "$INST" && find . \( -name '*.ah-new' ! -type d \) -o -path './scripts/restore.sh.ah-new/*' | tr '\n' ' ')
+  [ -z "$left" ] && ok "a failed swap ($how) left no copy behind" || bad "failed swap ($how) left: $left"
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+    && ok "a failed swap ($how) touched no container" || bad "failed swap ($how): docker calls $(tr '\n' ';' < "$DLOG")"
+done
+
+# ── 36. --no-rollback: a failed swap leaves the files, .env was never touched ─
+# The swap comes before the migration, so .env still holds the old pins: the text
+# names no new ones, and only --ref brings the release back (--redeploy would start
+# the old images on the half new compose).
+INST="$WORK/inst36"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp "$INST/.env" "$INST.env"
+out=$(AH_TEST_CP_FAIL=scripts/restore.sh run_update "$INST" --ref v0.38.0 --no-rollback 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'stub: cp failed' <<<"$out" && grep -q 'marker: 0.38.0' "$INST/docker-compose.yml" \
+    && [ -e "$INST/scripts/added-in-038.sh" ] && [ ! -e "$INST/scripts/restore.sh.ah-new" ] \
+    && cmp -s "$INST.env" "$INST/.env"; } \
+  && ok "--no-rollback keeps the files of a failed swap and the old .env" \
+  || bad "--no-rollback failed swap: rc=$rc, compose $(head -1 "$INST/docker-compose.yml")"
+{ grep -q -- 'Tausch der Laufzeit-Dateien fehlgeschlagen.*--no-rollback.*--ref v0\.38\.0' <<<"$msg" \
+    && ! grep -q 'Image-Pins' <<<"$msg" && ! grep -q -- '--redeploy' <<<"$msg"; } \
+  && ok "--no-rollback failed swap names --ref v0.38.0 and no new pins" || bad "--no-rollback failed swap: $msg"
+
+# ── 37. a failed rm or tar in the snapshot restore: the rollback is incomplete ─
+# Test 34 holds the count to the find -delete only, so dropping the `|| rc=1`
+# behind the rm of a path the update added, or behind the tar that unpacks the
+# snapshot, still reported a rollback. The rm fails for the script only 0.36.0
+# ships (29), which then stays; the tar unpacks nothing, so 0.36.0's files stay.
+for step in rm tar; do
+  for how in pull health; do
+    INST="$WORK/inst37-$step-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+    rmfail=""; tarfail=""; pull=0; health=0
+    case $step in
+      rm)  rmfail=scripts/added-in-036.sh ;;
+      tar) tarfail=1 ;;
+    esac
+    case $how in
+      pull)   pull=1 ;;
+      health) health=1 ;;
+    esac
+    out=$(AH_TEST_RM_FAIL="$rmfail" AH_TEST_TAR_FAIL="$tarfail" AH_TEST_PULL=$pull AH_TEST_HEALTH=$health \
+      run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+    echo "$out" | sed 's/^/    │ /'
+    msg=$(grep 'FEHLER: ' <<<"$out")
+    { [ $rc -ne 0 ] && grep -q "stub: $step failed" <<<"$out" \
+        && grep -q 'WARN: Snapshot-Restore fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$out" \
+        && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+      && ok "a failed $step in the $how rollback: the closing message says incomplete" \
+      || bad "failed $step ($how): rc=$rc $msg"
+    case $step in
+      rm)  [ -e "$INST/scripts/added-in-036.sh" ] ;;
+      tar) grep -q 'marker: 0.36.0' "$INST/docker-compose.yml" ;;
+    esac \
+      && ok "a failed $step in the $how rollback: files of 0.36.0 are still in place, as the message says" \
+      || bad "failed $step ($how): compose $(head -1 "$INST/docker-compose.yml"), scripts/ holds $(find "$INST/scripts" -mindepth 1 -printf '%f ')"
+  done
+done
+
+# ── 38. a migration that cannot append to .env or read .env.example ─────────
+# Only the key check and init-secrets.sh (33) and the re-pin (28) had a test:
+# without the `|| return 1` behind the append of a new key or behind the read of
+# the new .env.example, the migration went on, re-pinned the images and the update
+# ended in "Fertig" without NEW_FEATURE_FLAG. Both are the shell's own redirections,
+# so the mv wrapper takes the right away once the swap has placed .env.example.
+# File rights do not bind root (CAP_DAC_OVERRIDE): there the cases cannot run, and
+# not run is not green, so the test then ends with 75.
+RIGHTS_SKIP=""
+probe="$WORK/rights-probe"; : > "$probe"; chmod 000 "$probe"
+if ( : >> "$probe" ) 2>/dev/null || ( : < "$probe" ) 2>/dev/null; then
+  RIGHTS_SKIP="test 38 (the migration cannot append to .env or read .env.example) needs a user that file rights bind, $(id -un) is not one"
+  echo "  SKIP $RIGHTS_SKIP"
+else
+  for how in append read; do
+    INST="$WORK/inst38-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+    cp "$INST/.env" "$INST.env"; DLOG="$INST.docker"; : > "$DLOG"
+    case $how in
+      append) lock="env";     file=.env;         what="append to .env" ;;
+      read)   lock="example"; file=.env.example; what="read .env.example" ;;
+    esac
+    # LC_ALL=C: the shell's "Permission denied" untranslated. </dev/null: mv without
+    # -f asks before it replaces a read-only .env when stdin is a terminal, and with
+    # the question captured in $out it would wait for an answer forever.
+    out=$(LC_ALL=C AH_TEST_MV_LOCK=$lock AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1 </dev/null); rc=$?
+    echo "$out" | sed 's/^/    │ /'
+    { [ $rc -ne 0 ] && grep -qF ": $file: Permission denied" <<<"$out" \
+        && grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+      && ok "a migration that cannot $what exits with the rollback message" || bad "cannot $what: rc=$rc"
+    { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+        && cmp -s "$SRC_OLD/.env.example" "$INST/.env.example"; } \
+      && ok "a migration that cannot $what restored .env and the runtime files" \
+      || bad "cannot $what: not rolled back"
+    { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+      && ok "a migration that cannot $what touched no container" \
+      || bad "cannot $what: docker calls $(tr '\n' ';' < "$DLOG")"
+  done
+fi
+
 echo
 echo "──────────────────────────────────────────"
 echo "  update_test: ${PASS} passed, ${FAIL} failed"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+[ -z "$RIGHTS_SKIP" ] || { echo "SKIP: $RIGHTS_SKIP"; exit 75; }
