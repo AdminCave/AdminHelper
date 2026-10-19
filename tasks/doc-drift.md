@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Drift: Agent-Deployment, README/DEVELOPMENT, Desktop-Entwicklerdoku — Task-Ledger
-Status: aktiv · Branch: feature/doc-drift · Review: am Ende
+Status: bereit · Branch: feature/doc-drift · Review: am Ende
 Spec: Roadmap R-0386, R-0388, R-0442, R-0444
 Heavy: none — nur Doku
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -47,8 +47,10 @@ Dedup-Key: bug:docs:README.md:monitoring-routers bug:docs:readme:tunnel-indicato
 HEAD: 5855a9b5
 Semantik: Soll ist der Code — `apps/monitoring/app/routers/__init__.py:14-21` (`all_routers` mit `maintenance_router`, `:19`), `apps/monitoring/app/checkers/__init__.py:41` (`disk_forecast`), `apps/desktop/ui/src/components/AppShell.svelte:211` (`<TunnelIndicator />` in `<aside class="sidebar">` `:177-254`, der Header ist `:256-279`), `apps/desktop/ui/src/lib/stores/session.ts:81` (`hydrate` setzt `session: null`), `apps/desktop/src-tauri/src/main.rs:91-126` (`generate_handler!`); dazu `docs/developer/desktop.html:143` — „Aus Sicherheitsgründen stellt der Client beim Start <em>keine</em> gespeicherte Session mehr wieder her“ und `docs/developer/monitoring.html:78` — „routers/ admin.py / agent.py / alerts.py / checks.py / templates.py / maintenance.py“
 
-### T3 — R-0386: desktop.html beschreibt Baum, Connect-Flow und Tests wie der Code  [ ]
+### T3 — R-0386: desktop.html beschreibt Baum, Connect-Flow und Tests wie der Code  [x]
 Komponente: desktop-ui · Dateien: docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @3a1e9f14 2026-10-19T07:13:08+02:00
+Review: am Ende (Branch-Review)
 Änderung: Erst nach dem Merge von R-0429, Zeilen dann neu greppen. (1) Der Baum (`:38-64`, DE+EN) nennt nur, was `git ls-files apps/desktop` zeigt: unter `src-tauri/src/` Dateien statt der Verzeichnisse `commands/`, `frp/`, `keyring/`, `http/`, `rdp/` (`commands.rs`, `frpc.rs`, `keyring_store.rs`, `http_client.rs` …; den Race-Guard trägt `ui/src/lib/stores/connectFlow.ts`), `connection/` als SSH/RDP/Web ohne VNC, `binaries/` unter `src-tauri/`, `tauri.conf.json` mit dem echten `beforeBuildCommand`, die Vitest-Zeile ohne Zahl. (2) Das Rust-Beispiel `connect_rdp` (`:97-109`) entfällt; ein Satz sagt, dass die Correlation-ID als `correlation_id` an `open_connection` bzw. `open_connection_stored` geht. (3) Der Connect-Flow (`:151-159`) folgt `connectFlow.ts`: Prüfung der Verbindung, bei RDP zuerst Keyring oder `PasswordPrompt`, dann `resolve_connection` mit den Mappings des Tunnel-Stores, bei RDP mit Correlation-ID `open_connection` bzw. `open_connection_stored`; kein `state = 'connecting'`, kein VNC, kein Abbau des Tunnels nach dem Ende der Verbindung (den frpc führt der Tunnel-Store). (4) `vitest (41 Tests)` (`:168`) ohne Zahl. (5) Die `models/`-Zeile im Baum (`:57`) nennt alle Dateien unter `ui/src/lib/models/` ohne Tests, also auch `ansible`, `maintenance`, `monitoring` und `shared` (Kevin 2026-10-18). (6) Keyring-Secrets (`:122`): Service ist `com.admincave.adminhelper` statt Prefix `adminhelper:`, der Account eines RDP-Passworts `rdp|<host>|<port>|<user>|<domain>` (kleingeschrieben) statt `<connection-id>` (Fund aus R-0429 T4). Die Command-Tabelle bleibt unverändert; `ipc.inventory.test.ts` liest sie auf beiden Seiten.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/bridge/ipc.inventory.test.ts
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (die Task ist die Doku)
