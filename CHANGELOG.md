@@ -346,6 +346,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent: eine Platte, die smartctl nicht oeffnen kann, meldet kein „SMART FAILED“ mehr (R-0493):** Endete die
+  Abfrage einer Platte mit Exit-Bit 0 oder 1 von smartctl (Befehlszeile nicht gelesen, Geraet nicht geoeffnet), kam
+  sie ohne Modell und SMART-Status in den Report, und der Check `smart_health` meldete sie als „SMART FAILED“,
+  critical. Jetzt faellt sie aus dem Report; liefert keine Platte lesbare Daten, meldet der Agent wie bei einem
+  gescheiterten Scan `scan_failed`. Bei den Bits 2 bis 7 bleibt die Platte wie bisher im Report, `smartctl_status`
+  traegt den vollen Exit-Code. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
 - **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
   Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach

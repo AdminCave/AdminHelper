@@ -106,7 +106,8 @@ func collectSmart() ([]SmartDisk, string) {
 
 	if len(disks) == 0 {
 		// querySmartDevice drops only a query without usable JSON (did not start, hung, no or
-		// unreadable output), so no disk at all is a failed read, not a host without devices.
+		// unreadable output, or exit bit 0 or 1: smartctl did not parse its command line or could not
+		// open the device), so no disk at all is a failed read, not a host without devices.
 		return nil, "scan_failed"
 	}
 	return disks, ""
@@ -128,14 +129,18 @@ func querySmartDevice(smartctl, device, devType, protocol string) *SmartDisk {
 	// so the server can evaluate bit 0x10 (prefail) as critical.
 	exitCode := 0
 	if err != nil {
-		// Bits 0-2 (1,2,4) = real errors (CLI/device/command)
-		// Bits 3-7 (8+)    = warnings, JSON is still usable -> keep the full
-		// exit code so the server can weigh bit 0x10 (prefail).
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok || len(out) == 0 {
 			return nil // no usable JSON
 		}
 		exitCode = exitErr.ExitCode()
+		// smartctl(8), EXIT STATUS: bit 0 (1) = command line did not parse, bit 1 (2) = device open
+		// failed. smartctl read nothing then, and its JSON without smart_status would pass for a
+		// failed SMART check, so the disk drops out. Bits 2-7 come with the data it read: the disk
+		// stays with the full exit code.
+		if exitCode&0x03 != 0 {
+			return nil
+		}
 	}
 
 	var raw smartctlJSON

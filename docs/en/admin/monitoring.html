@@ -168,7 +168,7 @@
             <thead><tr><th>Reason</th><th>Message</th><th>When</th></tr></thead>
             <tbody>
               <tr><td><code>not_installed</code></td><td>No SMART data: smartctl is not installed</td><td><code>smartctl</code> (package <code>smartmontools</code>) is missing, typical on VMs.</td></tr>
-              <tr><td><code>scan_failed</code></td><td>No SMART data: the SMART query failed</td><td>The scan fails, hangs or prints no JSON, or no disk it found gives readable SMART data.</td></tr>
+              <tr><td><code>scan_failed</code></td><td>No SMART data: the SMART query failed</td><td>The scan fails, hangs or prints no JSON, or no disk it found gives readable SMART data, for instance because smartctl cannot open the disk.</td></tr>
               <tr><td><code>no_devices</code></td><td>No SMART data: no SMART-capable devices found</td><td>The scan finds no devices.</td></tr>
             </tbody>
           </table>

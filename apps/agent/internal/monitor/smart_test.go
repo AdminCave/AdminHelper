@@ -8,9 +8,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -346,6 +349,84 @@ func TestCollectSmartSomeDisksReadable(t *testing.T) {
 	if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/nvme0" {
 		t.Errorf("collectSmart() = %v, %q; want only /dev/nvme0 and no reason", disks, reason)
 	}
+}
+
+// What smartctl 7.4 prints for a disk it cannot open (here: run without root), with exit status 2:
+// no smart_status, the reason only in the messages.
+const smartOpenFailedFixture = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"pre_release":false,` +
+	`"svn_revision":"5530","platform_info":"x86_64-linux-6.12.107+deb13-amd64","build_info":"(local build)",` +
+	`"argv":["smartctl","--all","--json=c","/dev/sda"],"messages":[{"string":"Smartctl open device: /dev/sda ` +
+	`failed: Permission denied","severity":"error"}],"exit_status":2},` +
+	`"local_time":{"time_t":1792394492,"asctime":"Mon Oct 19 09:21:32 2026 CEST"}}`
+
+// smartctlHelperEnv tells TestHelperSmartctlProcess, run as a child process, which exit status to end with.
+const smartctlHelperEnv = "AH_SMARTCTL_HELPER_EXIT"
+
+// TestHelperSmartctlProcess is no test of its own: smartctlExit starts the test binary as its child
+// process, which then ends with the exit status smartctlHelperEnv names. Without it, it returns at once.
+func TestHelperSmartctlProcess(t *testing.T) {
+	if code, err := strconv.Atoi(os.Getenv(smartctlHelperEnv)); err == nil {
+		os.Exit(code)
+	}
+}
+
+// smartctlExit returns what runTimed reports for a smartctl that ends with code: the real
+// *exec.ExitError of a child process, which querySmartDevice asserts on, on every platform.
+func smartctlExit(t *testing.T, code int) error {
+	t.Helper()
+	t.Setenv(smartctlHelperEnv, strconv.Itoa(code))
+	_, err := runTimed(time.Minute, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code {
+		t.Fatalf("helper process: err = %v, want an ExitError with status %d", err, code)
+	}
+	return err
+}
+
+func TestCollectSmartOpenFailed(t *testing.T) {
+	// smartctl(8), EXIT STATUS: bit 0 is a command line that did not parse, bit 1 a device that did
+	// not open, so smartctl read nothing, and its JSON without smart_status would pass for a failed
+	// SMART check: the disk drops out. The other bits come with what it read: the disk stays, with the
+	// full exit status.
+	cases := []struct {
+		name string
+		sda  string
+		code int
+		want []string
+	}{
+		{"bit 0", smartOpenFailedFixture, 1, []string{"/dev/nvme0 0"}},
+		{"bit 1", smartOpenFailedFixture, 2, []string{"/dev/nvme0 0"}},
+		{"bit 2", ataFixture, 4, []string{"/dev/nvme0 0", "/dev/sda 4"}},
+		{"bit 6", ataFixture, 64, []string{"/dev/nvme0 0", "/dev/sda 64"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+				"/dev/sda":   {out: c.sda, err: smartctlExit(t, c.code)},
+				"/dev/nvme0": {out: nvmeFixture},
+			})
+			disks, reason := collectSmart()
+			var got []string
+			for _, d := range disks {
+				got = append(got, fmt.Sprintf("%s %d", d.Device, d.SmartctlStatus))
+			}
+			sort.Strings(got)
+			if reason != "" || !reflect.DeepEqual(got, c.want) {
+				t.Errorf("collectSmart() = %v, %q; want %v and no reason", got, reason, c.want)
+			}
+		})
+	}
+
+	t.Run("no other disk", func(t *testing.T) {
+		// The disk smartctl could not open is the only one: no disk gave readable SMART data.
+		const scan = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"exit_status":0},` +
+			`"devices":[{"name":"/dev/sda","info_name":"/dev/sda [SAT]","type":"sat","protocol":"ATA"}]}`
+		stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
+			"/dev/sda": {out: smartOpenFailedFixture, err: smartctlExit(t, 2)},
+		})
+		disks, reason := collectSmart()
+		assertSmartAbsent(t, disks, reason, "scan_failed")
+	})
 }
 
 func TestCollectSmartPassesScanType(t *testing.T) {
