@@ -462,6 +462,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Dateien, die erst das neue Release mitgebracht hat, verschwinden, keine halbe Kopie bleibt liegen, `.env` und
   Container bleiben unveraendert. Mit `--no-rollback` bleiben die Dateien stehen, und die Meldung nennt
   `--ref <Ziel>` als Weg weiter. Doku: Installation (DE+EN).
+- **Install: Die `.env` wird nur durch eine vollstaendig geschriebene ersetzt (R-0496):** Scheiterte beim Setzen von
+  `DOMAIN`, `MTLS_ENFORCE` oder den Image-Pins das Schreiben der `.env` (etwa bei voller Platte), ersetzte
+  `install.sh` die `.env` durch eine gekuerzte Datei ohne die Secrets, startete den Stack trotzdem und meldete die
+  Installation als fertig. Jetzt schreibt es wie `update.sh` in eine Kopie neben der `.env` und tauscht sie erst,
+  wenn alles geschrieben ist. Scheitert ein Schritt, bricht `install.sh` mit dem Namen des Schluessels (ohne den
+  Wert) ab, die Kopie verschwindet, die `.env` bleibt beim letzten vollstaendigen Stand, und Stack, Admin und
+  Enroll-Token werden nicht angelegt.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
