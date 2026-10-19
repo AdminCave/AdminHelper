@@ -79,11 +79,13 @@ Abhängt von: T5
 
 ## Block B — eigene lokale Visitor-Ports
 
-### T7 — Visitor-Ports und -Adressen im geprüften Wert umschreiben  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+### T7 — Visitor-Ports und -Adressen im geprüften Wert umschreiben  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, docs/developer/desktop.html, docs/en/developer/desktop.html
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f2f81045 2026-10-19T10:06:30+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T7.verdict.json)
 Änderung: Reine Funktion `remap_visitors(&mut toml::Value, ports: &dyn Fn(&str, u16) -> u16) -> Vec<VisitorBinding>`: setzt je `[[visitors]]` `bindAddr = "127.0.0.1"` und `bindPort` auf den gelieferten lokalen Port; `VisitorBinding{name, server_port, local_port}`. Server-`bindPort` außerhalb 1–65535 oder ein anderer `bindAddr` als `127.0.0.1` wird abgewiesen, falls R-0428 (T12 von R-0402) das nicht schon tut. Die Config für frpc entsteht aus dem Wert über den `toml`-Serializer statt aus dem Server-Text; die Identitätspfade (`rewrite_identity_paths` `:225`) setzt sie im Wert, sodass der Serializer escaped (behebt R-0425, falls beim Baustart noch offen; Offene Frage 2 der Spec). Tests: Ports und Adressen umgeschrieben, Namen und alle übrigen Schlüssel unverändert; ungültige Server-Werte abgewiesen; ein Windows-Pfad mit `\U` ergibt gültiges TOML. Dazu R-0446: Ob die Geräte-Identität exportiert wird, entscheidet die geprüfte Tabelle (`[transport.tls]` als Tabelle oder in Punkt-Schreibweise), nicht der Rohtext (`write_visitor_config`, heute `server_toml.contains('[transport.tls]')`); Test mit Punkt-Schreibweise.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- remap_visitors
-Doku: keine (intern; Doku mit T11)
+Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Allow-List: Visitor-Name und `bindPort`; Identitäts-Export an der geprüften Tabelle); das Umschreiben mit T11
 
 ### T8 — Prozessübergreifende Portkarte mit Sperre  [ ]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/port_registry.rs, apps/desktop/src-tauri/src/main.rs

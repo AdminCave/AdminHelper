@@ -163,6 +163,61 @@ fn visitor_names(config: &toml::Value) -> Vec<String> {
         .collect()
 }
 
+/// Where a visitor listens: the port the server TOML asked for and the local port frpc binds
+/// instead.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the reconciliation takes it up with the port registry (R-0430)"
+    )
+)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VisitorBinding {
+    name: String,
+    server_port: u16,
+    local_port: u16,
+}
+
+/// Rewrite every visitor of `config`, a server TOML [`validate_visitor_toml`] admitted, to listen
+/// on `127.0.0.1` at the local port `ports` gives for its name and server port. Every other key
+/// stays as the server sent it. Returns where each visitor went.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the reconciliation takes it up with the port registry (R-0430)"
+    )
+)]
+fn remap_visitors(
+    config: &mut toml::Value,
+    ports: &dyn Fn(&str, u16) -> u16,
+) -> Vec<VisitorBinding> {
+    let Some(visitors) = config
+        .get_mut("visitors")
+        .and_then(toml::Value::as_array_mut)
+    else {
+        return Vec::new();
+    };
+    // The allow-list admits a visitor only with a name and a bindPort from 1 to 65535.
+    visitors
+        .iter_mut()
+        .filter_map(toml::Value::as_table_mut)
+        .filter_map(|visitor| {
+            let name = visitor.get("name")?.as_str()?.to_string();
+            let server_port = u16::try_from(visitor.get("bindPort")?.as_integer()?).ok()?;
+            let local_port = ports(&name, server_port);
+            visitor.insert("bindAddr".to_string(), "127.0.0.1".into());
+            visitor.insert("bindPort".to_string(), i64::from(local_port).into());
+            Some(VisitorBinding {
+                name,
+                server_port,
+                local_port,
+            })
+        })
+        .collect()
+}
+
 #[derive(Deserialize)]
 struct VisitorBundle {
     toml: String,
@@ -269,8 +324,8 @@ fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
 /// `generate_visitor_toml` and `_tls_client_block`
 /// (apps/server/app/modules/frp/config_generator.py): adding a server-side key without
 /// listing it here would reject real tunnels. Under `auth` and `transport` too, only the keys
-/// those two emit are allowed, `auth.method` only as `token`, and a visitor's `bindAddr` only as
-/// `127.0.0.1`.
+/// those two emit are allowed, `auth.method` only as `token`. A visitor needs a `name`, its
+/// `bindAddr` may only be `127.0.0.1`, and its `bindPort` must be a port from 1 to 65535.
 fn validate_visitor_toml(toml_str: &str) -> Result<toml::Value, AppError> {
     let value: toml::Value =
         toml::from_str(toml_str).map_err(|e| parse_error("visitor.toml", toml_str, &e))?;
@@ -350,12 +405,26 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
                     )));
                 }
             }
+            if !vt.get("name").is_some_and(toml::Value::is_str) {
+                return Err(AppError::Validation(
+                    "visitor.toml: a visitor needs a name".to_string(),
+                ));
+            }
             if vt
                 .get("bindAddr")
                 .is_some_and(|addr| addr.as_str() != Some("127.0.0.1"))
             {
                 return Err(AppError::Validation(
                     "visitor.toml: a visitor's bindAddr must be \"127.0.0.1\"".to_string(),
+                ));
+            }
+            if !vt
+                .get("bindPort")
+                .and_then(toml::Value::as_integer)
+                .is_some_and(|port| (1..=65535).contains(&port))
+            {
+                return Err(AppError::Validation(
+                    "visitor.toml: a visitor's bindPort must be a port from 1 to 65535".to_string(),
                 ));
             }
         }
@@ -561,7 +630,15 @@ fn write_visitor_config(
     // and executing it (3.59).
     let identity_dir = data_dir.join("identity");
     let config = frpc_config(server_toml, &identity_dir.to_string_lossy(), head)?;
-    if server_toml.contains("[transport.tls]") {
+    // The checked table decides, not the text: TOML may write the TLS table as a header, in
+    // dotted keys or inline.
+    let checked: toml::Value =
+        toml::from_str(&config).map_err(|e| parse_error("frpc config", &config, &e))?;
+    if checked
+        .get("transport")
+        .and_then(|transport| transport.get("tls"))
+        .is_some()
+    {
         export_identity(&identity_dir)?;
     }
 
@@ -889,11 +966,13 @@ mod tests {
 
     use super::{
         bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh, reconcile,
-        request_reload, rewrite_identity_paths, tunnel_status, validate_visitor_toml,
-        visitor_names, with_local_head, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan,
-        Sidecar, NO_IDENTITY_HINT,
+        remap_visitors, request_reload, rewrite_identity_paths, tunnel_status,
+        validate_visitor_toml, visitor_names, with_local_head, write_visitor_config, Applied,
+        FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding, NO_IDENTITY_HINT,
+        VISITOR_CONFIG,
     };
     use crate::error::AppError;
+    use crate::keyring_store;
     use crate::models::RefreshOutcome;
     use crate::session::SessionState;
 
@@ -1166,6 +1245,202 @@ bindPort = 6000
         ] {
             assert_identity_path_round_trips(identity_dir);
         }
+    }
+
+    #[test]
+    fn remap_visitors_binds_every_visitor_on_loopback_at_the_local_port() {
+        // The second visitor without bindAddr: frp binds it on 127.0.0.1 too, the rewrite says so.
+        let loopback = "bindAddr = \"127.0.0.1\"\n";
+        let last = SERVER_TOML.rfind(loopback).unwrap();
+        let mut server = SERVER_TOML.to_string();
+        server.replace_range(last..last + loopback.len(), "");
+        let mut config = validate_visitor_toml(&server).unwrap();
+        let asked = RefCell::new(Vec::new());
+
+        let bindings = remap_visitors(&mut config, &|name, server_port| {
+            asked.borrow_mut().push((name.to_string(), server_port));
+            if name == "db-visitor" {
+                23005
+            } else {
+                23000
+            }
+        });
+
+        assert_eq!(
+            *asked.borrow(),
+            [
+                ("db-visitor".to_string(), 6000),
+                ("web-visitor".to_string(), 6001)
+            ]
+        );
+        assert_eq!(
+            bindings,
+            [
+                VisitorBinding {
+                    name: "db-visitor".to_string(),
+                    server_port: 6000,
+                    local_port: 23005,
+                },
+                VisitorBinding {
+                    name: "web-visitor".to_string(),
+                    server_port: 6001,
+                    local_port: 23000,
+                },
+            ]
+        );
+        // Names and every other key as the server sent them; only the ports moved.
+        let expected = SERVER_TOML
+            .replacen("bindPort = 6000", "bindPort = 23005", 1)
+            .replacen("bindPort = 6001", "bindPort = 23000", 1);
+        assert_eq!(config, parse(&expected));
+
+        let no_visitors = &SERVER_TOML[..SERVER_TOML.find("\n[[visitors]]").unwrap()];
+        let mut config = validate_visitor_toml(no_visitors).unwrap();
+        assert!(remap_visitors(&mut config, &|_, _| 23000).is_empty());
+        assert_eq!(config, parse(no_visitors));
+    }
+
+    #[test]
+    fn remap_visitors_gets_only_visitors_with_a_name_and_a_port_from_1_to_65535() {
+        for port in ["1", "65535"] {
+            let edge = server_toml_with("bindPort = 6000", &format!("bindPort = {port}"));
+            assert!(validate_visitor_toml(&edge).is_ok(), "rejected {port}");
+        }
+
+        let mut evil = Vec::new();
+        for other in [
+            "bindPort = 0",
+            "bindPort = -1",
+            "bindPort = 65536",
+            "bindPort = \"6000\"",
+            "bindPort = 6000.0",
+            "",
+        ] {
+            for (visitor, port) in [("first", "bindPort = 6000"), ("second", "bindPort = 6001")] {
+                evil.push((
+                    format!("{other:?} in the {visitor} visitor"),
+                    server_toml_with(port, other),
+                ));
+            }
+        }
+        for (case, other) in [("no name", ""), ("a name that is no string", "name = 1\n")] {
+            evil.push((
+                case.to_string(),
+                server_toml_with("name = \"db-visitor\"\n", other),
+            ));
+        }
+        for (case, evil) in evil {
+            // The TOML itself is valid: only the allow-list may refuse it.
+            parse(&evil);
+            assert!(validate_visitor_toml(&evil).is_err(), "accepted {case}");
+            assert!(
+                frpc_config(&evil, "/data/app/identity", &head(7400, "c0ffee")).is_err(),
+                "frpc_config accepted {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn remap_visitors_config_with_a_windows_identity_path_is_valid_toml() {
+        // The rewritten value goes to frpc as text: serialized, then the identity dir filled in.
+        let identity_dir =
+            r"C:\Users\O'Brien Test\AppData\Roaming\com.admincave.adminhelper\identity";
+        let mut config = validate_visitor_toml(SERVER_TOML).unwrap();
+        remap_visitors(&mut config, &|_, server_port| server_port + 17000);
+        let rewritten = toml::to_string(&config).unwrap();
+
+        let frpc = frpc_config(&rewritten, identity_dir, &head(7400, "c0ffee"))
+            .unwrap_or_else(|e| panic!("frpc_config refused: {e}"));
+
+        let frpc = parse(&frpc);
+        let expected =
+            ["cert.pem", "key.pem", "ca.crt"].map(|file| format!("{identity_dir}/{file}"));
+        assert_eq!(
+            tls_paths(&frpc),
+            expected.each_ref().map(|path| Some(path.as_str()))
+        );
+        let ports: Vec<_> = frpc["visitors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|visitor| visitor["bindPort"].as_integer())
+            .collect();
+        assert_eq!(ports, [Some(23000), Some(23001)]);
+    }
+
+    /// A fresh directory for one test case under the system temp dir.
+    fn scratch_dir(case: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ah-frpc-{case}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn remap_visitors_config_exports_the_identity_whenever_the_checked_table_has_tls() {
+        let dotted = server_toml_with(
+            TLS_BLOCK,
+            "transport.tls.enable = true\n\
+             transport.tls.trustedCaFile = \"{{IDENTITY_DIR}}/ca.crt\"\n\
+             transport.tls.certFile = \"{{IDENTITY_DIR}}/cert.pem\"\n\
+             transport.tls.keyFile = \"{{IDENTITY_DIR}}/key.pem\"\n",
+        );
+        let inline = server_toml_with(
+            TLS_BLOCK,
+            "transport = { tls = { enable = true, certFile = \"{{IDENTITY_DIR}}/cert.pem\" } }\n",
+        );
+        let without_tls = server_toml_with(TLS_BLOCK, "");
+        // A value that spells the header does not make a TLS table.
+        let header_in_a_value = without_tls.replacen(
+            "secretKey = \"s3cr3t\"",
+            "secretKey = \"[transport.tls]\"",
+            1,
+        );
+        assert_ne!(
+            header_in_a_value, without_tls,
+            "fixture lacks the secretKey"
+        );
+        assert_eq!(
+            parse(&dotted)["transport"],
+            parse(SERVER_TOML)["transport"],
+            "the dotted keys are the same table"
+        );
+
+        let _keyring = keyring_store::memory();
+        for (key, value) in [
+            ("enroll|key", "the key"),
+            ("enroll|cert", "the cert"),
+            ("enroll|ca", "the ca"),
+        ] {
+            keyring_store::set(key, value).unwrap();
+        }
+        for (case, server, exports) in [
+            ("header", SERVER_TOML, true),
+            ("dotted", dotted.as_str(), true),
+            ("inline", inline.as_str(), true),
+            ("without-tls", without_tls.as_str(), false),
+            ("header-in-a-value", header_in_a_value.as_str(), false),
+        ] {
+            let dir = scratch_dir(&format!("identity-{case}"));
+
+            write_visitor_config(&dir, server, &head(7400, "c0ffee"))
+                .unwrap_or_else(|e| panic!("{case}: {e}"));
+
+            assert!(dir.join(VISITOR_CONFIG).is_file(), "{case}");
+            let key = std::fs::read_to_string(dir.join("identity").join("key.pem")).ok();
+            assert_eq!(key.as_deref(), exports.then_some("the key"), "{case}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        // Without an enrolled identity a TLS table in dotted keys stops the start with the hint.
+        keyring_store::delete("enroll|key").unwrap();
+        let dir = scratch_dir("identity-missing");
+        let error = write_visitor_config(&dir, &dotted, &head(7400, "c0ffee")).unwrap_err();
+        assert!(
+            matches!(&error, AppError::Validation(hint) if hint == NO_IDENTITY_HINT),
+            "{error}"
+        );
+        assert!(!dir.join(VISITOR_CONFIG).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
