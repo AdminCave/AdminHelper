@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Push-Checker gegen kaputte Reports härten, Zahlen-Schwellwerte strikt, englische Rahmentexte — Task-Ledger
-Status: bereit · Branch: feature/monitoring-checker-hardening · Review: pro Task
+Status: erledigt · Branch: feature/monitoring-checker-hardening · Review: pro Task
 Spec: Roadmap R-0486, R-0487, R-0488, R-0507, R-0508
 Heavy: none — nur `apps/monitoring` (die reinen `evaluate`-Funktionen unter `app/checkers/`, die Config-Validierung, Texte in `alerter.py`, Routern und Schemas) und Doku; keine Route, kein Response-Schema, keine OpenAPI-Änderung (`config` bleibt `dict`, `schemas.py:24`; der Snapshot `tests/openapi.snapshot.json` trägt keine Fehlertexte), kein Alembic, kein Agent-, Desktop-, Gateway-, Compose-, PKI- oder Install-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Kein Client keyt auf die geänderten Texte: der Desktop prüft bei der Template-Zuweisung nur das Präfix `HTTP 409` (`apps/desktop/ui/src/lib/stores/infra.ts:123`), `scripts/tests/` und der Agent zitieren keinen davon. Die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
