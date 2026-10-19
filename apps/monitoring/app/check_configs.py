@@ -10,7 +10,11 @@ surfaced only as a permanently-unknown or mis-thresholded check at runtime.
 These models reject unknown keys and out-of-range values at create/update time
 and for template definitions. Existing stored rows are never re-validated —
 only payloads crossing the boundary. Defaults here mirror the checker
-defaults but are NOT materialized into storage (validation only)."""
+defaults but are NOT materialized into storage (validation only).
+
+Number fields are strict (R-0487): the config is stored as sent, so a lax
+field let "85" or true through to the checker, which failed on the string and
+read true as 1."""
 
 from __future__ import annotations
 
@@ -25,20 +29,20 @@ class _StrictConfig(BaseModel):
 
 class PingConfig(_StrictConfig):
     target: str = Field(min_length=1)
-    timeout: float = Field(5, ge=1, le=300)
+    timeout: float = Field(5, ge=1, le=300, strict=True)
 
 
 class TcpConfig(_StrictConfig):
     target: str = Field(min_length=1)
-    port: int = Field(ge=1, le=65535)
-    timeout: float = Field(5, ge=1, le=300)
+    port: int = Field(ge=1, le=65535, strict=True)
+    timeout: float = Field(5, ge=1, le=300, strict=True)
 
 
 class HttpConfig(_StrictConfig):
     url: str = Field(min_length=1)
     method: str = Field("GET", min_length=1)
-    expected_status: int = Field(200, ge=100, le=599)
-    timeout: float = Field(10, ge=1, le=300)
+    expected_status: int = Field(200, ge=100, le=599, strict=True)
+    timeout: float = Field(10, ge=1, le=300, strict=True)
     verify_ssl: StrictBool = True
     search_string: str = ""
 
@@ -47,27 +51,27 @@ class AgentPingConfig(_StrictConfig):
     # server_id stays optional: template defs inject it via {{server_id}}, but a
     # hand-created check without it degrades to 'unknown' (visible, not alerting).
     server_id: str = ""
-    stale_minutes: float = Field(15, ge=1, le=1440)
+    stale_minutes: float = Field(15, ge=1, le=1440, strict=True)
 
 
 class _TempOverride(_StrictConfig):
-    warn: float | None = Field(None, ge=0, le=200)
-    crit: float | None = Field(None, ge=0, le=200)
+    warn: float | None = Field(None, ge=0, le=200, strict=True)
+    crit: float | None = Field(None, ge=0, le=200, strict=True)
 
 
 class AgentResourcesConfig(_StrictConfig):
-    cpu_warn: float = Field(80, ge=0, le=100)
-    cpu_crit: float = Field(95, ge=0, le=100)
-    memory_warn: float = Field(80, ge=0, le=100)
-    memory_crit: float = Field(95, ge=0, le=100)
-    disk_warn: float = Field(85, ge=0, le=100)
-    disk_crit: float = Field(95, ge=0, le=100)
-    temp_warn: float = Field(80, ge=0, le=200)
-    temp_crit: float = Field(95, ge=0, le=200)
+    cpu_warn: float = Field(80, ge=0, le=100, strict=True)
+    cpu_crit: float = Field(95, ge=0, le=100, strict=True)
+    memory_warn: float = Field(80, ge=0, le=100, strict=True)
+    memory_crit: float = Field(95, ge=0, le=100, strict=True)
+    disk_warn: float = Field(85, ge=0, le=100, strict=True)
+    disk_crit: float = Field(95, ge=0, le=100, strict=True)
+    temp_warn: float = Field(80, ge=0, le=200, strict=True)
+    temp_crit: float = Field(95, ge=0, le=200, strict=True)
     temp_overrides: dict[str, _TempOverride] = {}
     # Entry/release hysteresis in percentage points (T6): once a metric is
     # warning/critical, its thresholds drop by this much until it clears.
-    hysteresis_pp: float = Field(10, ge=0, le=50)
+    hysteresis_pp: float = Field(10, ge=0, le=50, strict=True)
 
 
 class ServiceProcessConfig(_StrictConfig):
@@ -78,31 +82,31 @@ class ServiceProcessConfig(_StrictConfig):
 
 class SmartHealthConfig(_StrictConfig):
     ignore_devices: list[str] = []
-    reallocated_warn: float = Field(1, ge=0)
-    reallocated_crit: float = Field(10, ge=0)
-    pending_warn: float = Field(1, ge=0)
-    pending_crit: float = Field(5, ge=0)
-    nvme_spare_warn: float = Field(20, ge=0, le=100)
-    nvme_spare_crit: float = Field(10, ge=0, le=100)
-    nvme_used_warn: float = Field(90, ge=0)
-    nvme_used_crit: float = Field(100, ge=0)
-    temp_hdd_warn: float = Field(55, ge=0, le=200)
-    temp_hdd_crit: float = Field(60, ge=0, le=200)
-    temp_ssd_warn: float = Field(60, ge=0, le=200)
-    temp_ssd_crit: float = Field(70, ge=0, le=200)
-    temp_nvme_warn: float = Field(65, ge=0, le=200)
-    temp_nvme_crit: float = Field(75, ge=0, le=200)
+    reallocated_warn: float = Field(1, ge=0, strict=True)
+    reallocated_crit: float = Field(10, ge=0, strict=True)
+    pending_warn: float = Field(1, ge=0, strict=True)
+    pending_crit: float = Field(5, ge=0, strict=True)
+    nvme_spare_warn: float = Field(20, ge=0, le=100, strict=True)
+    nvme_spare_crit: float = Field(10, ge=0, le=100, strict=True)
+    nvme_used_warn: float = Field(90, ge=0, strict=True)
+    nvme_used_crit: float = Field(100, ge=0, strict=True)
+    temp_hdd_warn: float = Field(55, ge=0, le=200, strict=True)
+    temp_hdd_crit: float = Field(60, ge=0, le=200, strict=True)
+    temp_ssd_warn: float = Field(60, ge=0, le=200, strict=True)
+    temp_ssd_crit: float = Field(70, ge=0, le=200, strict=True)
+    temp_nvme_warn: float = Field(65, ge=0, le=200, strict=True)
+    temp_nvme_crit: float = Field(75, ge=0, le=200, strict=True)
 
 
 class ProxmoxBackupConfig(_StrictConfig):
-    max_backup_age_hours: float = Field(26, ge=1, le=8760)
+    max_backup_age_hours: float = Field(26, ge=1, le=8760, strict=True)
     exclude_vmids: list[int | str] = []
     exclude_stopped: StrictBool = True
 
 
 class ZfsHealthConfig(_StrictConfig):
-    capacity_warn: float = Field(80, ge=0, le=100)
-    capacity_crit: float = Field(90, ge=0, le=100)
+    capacity_warn: float = Field(80, ge=0, le=100, strict=True)
+    capacity_crit: float = Field(90, ge=0, le=100, strict=True)
     # Strict: configs are stored as sent, and a lax "false" or 0 would reach the
     # checker and the desktop checkbox as values each reads differently.
     alert_on_unavailable: StrictBool = True
@@ -121,10 +125,10 @@ class DiskForecastConfig(_StrictConfig):
     # server_id via template placeholder {{server_id}}; empty degrades to
     # 'unknown' at runtime like agent_ping.
     server_id: str = ""
-    window_hours: float = Field(24, ge=1, le=168)
-    min_history_hours: float = Field(6, ge=1, le=48)
-    warn_hours: float = Field(24, ge=1, le=8760)
-    crit_hours: float = Field(8, ge=1, le=8760)
+    window_hours: float = Field(24, ge=1, le=168, strict=True)
+    min_history_hours: float = Field(6, ge=1, le=48, strict=True)
+    warn_hours: float = Field(24, ge=1, le=8760, strict=True)
+    crit_hours: float = Field(8, ge=1, le=8760, strict=True)
 
 
 CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
@@ -156,4 +160,4 @@ def validate_check_config(check_type: str, config: dict) -> None:
         details = "; ".join(
             f"{'.'.join(str(p) for p in e['loc']) or 'config'}: {e['msg']}" for e in exc.errors()
         )
-        raise ValueError(f"Ungueltige Config fuer {check_type}: {details}") from exc
+        raise ValueError(f"Invalid config for {check_type}: {details}") from exc

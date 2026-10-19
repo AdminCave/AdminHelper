@@ -17,7 +17,7 @@ func scServiceHealth(out []byte, err error) map[string]any {
 		"all_services":     []ServiceEntry{},
 	}
 	if err != nil {
-		result["error"] = "sc query failed: " + commandFailure("sc", err)
+		result["error"] = "sc query failed: " + commandFailure("sc", pluginTimeout, err)
 		return result
 	}
 	services := parseScQuery(string(out))
