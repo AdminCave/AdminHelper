@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # frps-Status: fd im Statusleser, Dashboard-Abruf als nobody — Task-Ledger
-Status: bereit · Branch: feature/frp-status-fixes · Review: am Ende
+Status: aktiv · Branch: feature/frp-status-fixes · Review: am Ende
 Spec: Roadmap R-0512, R-0511
 Heavy: linux-full — T1 ändert den Leser hinter der Admin-Route `GET /api/frp/supervisor-status` und dem Watch-Job, T2 das frps-Image (`apps/frps/frps-supervisor.sh`) und einen Kommentar in `docker-compose.yml`; läuft im Sammellauf über `main`. Den Abruf als `nobody` im echten Stack mit den Capabilities aus Compose fährt der Job `integration-stack`, Abschnitt 11b (`frps_takeover`, Schritt b: `GET /api/frp/status` ohne `error`, nachdem frps läuft, `scripts/tests/integration_stack_test.sh:515-543`). Er läuft nicht auf PRs, deshalb vor dem Merge `gh workflow run ci.yml --ref feature/frp-status-fixes`. Kein `scenario`: kein Tunnel-Datenpfad, kein Cross-Host, keine PKI-, Provisionierungs- oder Install-Änderung. Kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -35,3 +35,11 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
 Doku: docs/admin/betrieb.html:184 + docs/en/admin/operations.html:142 (ein Halbsatz: Die Proxy-Listen des Dashboards fragt der Supervisor unter dem Nutzer `nobody` ab) · Kommentar `docker-compose.yml:319-320` · CHANGELOG keiner (Supervisor und Abruf kamen mit R-0411/R-0408 nach v0.45.0, unveröffentlicht)
 Dedup-Key: ref:frps:supervisor:curl-as-nobody
+
+### T3 — frps-Supervisor: Abruf-Nutzer mit eigener UID, aktive Kopie nur für root und frps lesbar (R-0511)  [ ]
+Komponente: server · Dateien: apps/frps/Dockerfile, apps/frps/frps-supervisor.sh, apps/server/tests/test_frps_supervisor.py, docker-compose.yml, docs/admin/betrieb.html, docs/en/admin/operations.html
+Änderung: Aus dem Branch-Review (security, 2026-10-19): `nobody` ist eine UID, die sich der Container mit beliebigen anderen Prozessen teilt; der Abruf-Nutzer bekommt deshalb eine eigene. (1) Das Image legt einen Nutzer `frps-fetch` an (UID/GID 10003, nologin, ohne Home, wie `frps` mit 10002), `FRPS_FETCH_USER` hat ihn als Default statt `nobody`; die Startprüfung bleibt (bekannt, nicht 0, nicht die UID von `FRPS_USER`). (2) `activate` legt die aktive Kopie so an, dass nur root und die Gruppe `frps` sie lesen: `current/` 0750 root:frps, die Dateien darin 0640 root:frps; frps liest sie weiter. Kommentare, Kopfkommentar, Compose-Kommentar und Doku (DE+EN) nennen `frps-fetch` statt `nobody`. Tests: der Image-Test erwartet curl unter UID 10003 und keinen unter 0; ein neuer Image-Test zeigt, dass der Abruf-Nutzer `current/` und die Dateien darin nicht lesen kann und frps sie lesen kann; der hermetische Test prüft die Modi, die `activate` setzt.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frps_supervisor.py
+Doku: docs/admin/betrieb.html + docs/en/admin/operations.html (Halbsatz aus T2: Nutzer `frps-fetch`) · Kommentar docker-compose.yml
+Dedup-Key: ref:frps:supervisor:curl-as-nobody
+HEAD: 784e995c
