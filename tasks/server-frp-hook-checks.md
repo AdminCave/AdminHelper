@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Eingaben der FRP-Server-Konfiguration und Fehlertexte der Hooks — Task-Ledger
-Status: aktiv · Branch: feature/server-frp-hook-checks · Review: pro Task
+Status: bereit · Branch: feature/server-frp-hook-checks · Review: pro Task
 Spec: keine eigene Datei (kleines Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full — T2 ändert den Vertrag der FRP-API (`422` für einen Dashboard-Port, den frps nicht übernimmt), T1 die Eingabeprüfung derselben API; Server-Tests in der PR-CI, der Stack im Sammellauf über `main`; kein `scenario`, weil der FRP-Datenpfad unverändert bleibt; kein `windows`, weil nur der Server betroffen ist
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -25,8 +25,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py t
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (`:69`, `:102`: „mindestens 16 Zeichen, Leerzeichen am Anfang und Ende zählen nicht“) · CHANGELOG
 Abhängt von: —
 
-### T2 — Dashboard-Port: 422 statt Startfehler  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/config_router.py, apps/server/app/main.py, apps/server/tests/test_frp_config.py, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md
+### T2 — Dashboard-Port: 422 statt Startfehler  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/config_router.py, apps/server/app/main.py, apps/server/tests/test_frp_config.py, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md, docs/developer/api-reference.html, docs/en/developer/api-reference.html, apps/server/app/modules/frp/config_generator.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @454386a0 2026-10-19T17:09:47+02:00
+Review: approve (.ah-out/review/server-frp-hook-checks/T2.verdict.json)
 Änderung: Eine reine Funktion in `schemas.py` sagt, ob ein Dashboard-Port mit 443, dem Bind Port oder `FRP_BIND_PORT` zusammenfällt; `_report_rejected_fields` (`main.py:243`) nutzt sie statt der eigenen Prüfung. `FrpServerConfigCreate` (`schemas.py:142`) weist einen solchen Port mit `422` ab (Bind Port aus der Anfrage, sonst 7000). `update_server_config` (`config_router.py:107`) prüft nach dem Übernehmen der gesendeten Felder (`:119-131`) und vor dem Commit, wenn `dashboard_port` oder `bind_port` gesendet wurde, gegen den Stand danach und antwortet mit `422` im Format der Schema-Fehler; ein PUT ohne diese beiden Felder auf einer Bestandszeile mit solchem Port geht weiter durch (die Startprüfung meldet sie). Tests: Create mit 443, = Bind Port, = `FRP_BIND_PORT` → `422`, nichts gespeichert; Update nur `dashboard_port` bzw. nur `bind_port` → `422`, Zeile unverändert; Update nur `name` auf solcher Bestandszeile → `200`; ein anderer Port → angenommen; die Starttests aus `test_frp_extra_config.py:585` bleiben grün.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py tests/test_frp_extra_config.py
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (`:83`: die API weist ihn mit `422` ab; eine schon gespeicherte Zeile meldet die Startprüfung) · CHANGELOG

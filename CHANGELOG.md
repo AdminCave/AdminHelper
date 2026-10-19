@@ -961,6 +961,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   characters besides leading and trailing whitespace“). Ein Wert nur aus Leerzeichen gilt damit nicht mehr als
   Geheimnis. Gespeichert wird der Wert so, wie er gesendet wurde; leer oder `null` wirkt wie bisher. Schon
   gespeicherte Werte bleiben unveraendert. Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
+- **Server: die API lehnt einen Dashboard-Port ab, den frps nicht uebernimmt:** Ein `dashboard_port` der
+  FRP-Server-Konfiguration gleich 443, gleich dem Bind Port oder gleich `FRP_BIND_PORT` ist beim Anlegen und beim
+  Aendern ein `422` („the dashboard port must be neither 443 nor the bind port nor FRP_BIND_PORT (…)“), statt dass
+  frps die Konfiguration erst beim Uebernehmen verwirft. `POST` prueft gegen den gesendeten Bind Port (ohne ihn
+  7000); `PUT` prueft, sobald `dashboard_port` oder `bind_port` gesendet wird, den Stand nach dem Update mit dem Bind
+  Port, den frps bekommt (ein gespeicherter `bind_port` `null` oder ausserhalb 1 bis 65535: 7000), meldet den
+  Fehler auf dem gesendeten Feld und speichert nichts davon. Eine schon gespeicherte Konfiguration mit solchem Port
+  bleibt unveraendert, ein `PUT` ohne beide Felder geht weiter durch, und die Pruefung beim Start meldet sie wie
+  bisher. Die Web-Maske sendet beide Ports immer mit; dort ist ein solcher Port also vor dem Speichern zu aendern.
+  Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
 - **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
   nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei

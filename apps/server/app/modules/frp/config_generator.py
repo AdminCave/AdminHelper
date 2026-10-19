@@ -51,17 +51,22 @@ def _is_port(value: int | None) -> bool:
     return value is not None and PORT_MIN <= value <= PORT_MAX
 
 
+def frps_bind_port(config: FrpServerConfig) -> int:
+    """The bindPort the generated files carry for this config, without the warning
+    _bind_port logs where it writes them."""
+    return config.bind_port if _is_port(config.bind_port) else _DEFAULT_BIND_PORT
+
+
 def _bind_port(config: FrpServerConfig) -> int:
-    if _is_port(config.bind_port):
-        return config.bind_port
-    logger.warning(
-        "FRP server config: bind_port %r is outside %d-%d, using %d",
-        config.bind_port,
-        PORT_MIN,
-        PORT_MAX,
-        _DEFAULT_BIND_PORT,
-    )
-    return _DEFAULT_BIND_PORT
+    if not _is_port(config.bind_port):
+        logger.warning(
+            "FRP server config: bind_port %r is outside %d-%d, using %d",
+            config.bind_port,
+            PORT_MIN,
+            PORT_MAX,
+            _DEFAULT_BIND_PORT,
+        )
+    return frps_bind_port(config)
 
 
 def _optional_port(config: FrpServerConfig, field: str) -> int | None:

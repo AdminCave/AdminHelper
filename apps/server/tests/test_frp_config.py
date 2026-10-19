@@ -359,6 +359,195 @@ def test_update_stores_an_auth_token_with_spaces_at_its_ends_as_sent(
     assert stored.auth_token == new_token
 
 
+# --- dashboard port: none frps is not started with ---
+
+# FRP_BIND_PORT is 7200 in these tests (_publish), the bind port 7100.
+DASHBOARD_RULE = "the dashboard port must be neither 443 nor the bind port nor FRP_BIND_PORT (7200)"
+REFUSED = [443, 7100, 7200]
+REFUSED_IDS = ["443", "bind", "published"]
+
+
+def _publish(monkeypatch):
+    import app.modules.frp.config_router as cr
+    import app.modules.frp.schemas as frp_schemas
+
+    monkeypatch.setattr(frp_schemas, "FRP_BIND_PORT", 7200)
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+
+
+def _store_config(db, **fields):
+    db.add(
+        FrpServerConfig(
+            **{
+                "id": "cfg-port",
+                "name": "test-frps",
+                "server_addr": "frps.example.net",
+                "bind_port": 7100,
+                "auth_token": "t" * 32,
+                "dashboard_port": 7500,
+                "dashboard_password": "p" * 24,
+                **fields,
+            }
+        )
+    )
+    db.commit()
+
+
+def _stored_ports(db):
+    stored = db.get(FrpServerConfig, "cfg-port")
+    db.refresh(stored)
+    return stored.name, stored.bind_port, stored.dashboard_port
+
+
+def test_dashboard_port_refused_is_443_the_bind_port_and_frp_bind_port():
+    import app.modules.frp.schemas as frp_schemas
+
+    ports = (1, 442, 443, 444, 7099, 7100, 7101, 7200, 7500, 65535)
+    refused = [port for port in ports if frp_schemas.dashboard_port_refused(port, 7100, 7200)]
+    assert refused == REFUSED
+
+
+@pytest.mark.parametrize("dashboard_port", REFUSED, ids=REFUSED_IDS)
+def test_create_with_a_dashboard_port_frps_is_not_started_with_is_rejected(
+    test_client, db_session, admin_user, monkeypatch, dashboard_port
+):
+    _publish(monkeypatch)
+    body = {"name": "test-frps", "server_addr": "frps.example.net", "bind_port": 7100}
+    created = test_client.post(
+        "/api/frp/server-config",
+        json={**body, "dashboard_port": dashboard_port},
+        headers=_login(test_client),
+    )
+    assert created.status_code == 422, created.text
+    [error] = created.json()["detail"]
+    assert error["loc"] == ["body", "dashboard_port"], created.text
+    assert DASHBOARD_RULE in error["msg"], created.text
+    assert db_session.query(FrpServerConfig).count() == 0
+
+
+def test_create_without_a_bind_port_checks_the_dashboard_port_against_7000(
+    test_client, db_session, admin_user, monkeypatch
+):
+    _publish(monkeypatch)
+    created = test_client.post(
+        "/api/frp/server-config",
+        json={"name": "test-frps", "server_addr": "frps.example.net", "dashboard_port": 7000},
+        headers=_login(test_client),
+    )
+    assert created.status_code == 422, created.text
+    assert created.json()["detail"][0]["loc"] == ["body", "dashboard_port"], created.text
+    assert db_session.query(FrpServerConfig).count() == 0
+
+
+@pytest.mark.parametrize("dashboard_port", REFUSED, ids=REFUSED_IDS)
+def test_update_to_a_dashboard_port_frps_is_not_started_with_is_rejected(
+    test_client, db_session, admin_user, monkeypatch, dashboard_port
+):
+    _publish(monkeypatch)
+    _store_config(db_session)
+    updated = test_client.put(
+        "/api/frp/server-config/cfg-port",
+        json={"dashboard_port": dashboard_port},
+        headers=_login(test_client),
+    )
+    assert updated.status_code == 422, updated.text
+    assert updated.json()["detail"] == [
+        {
+            "type": "value_error",
+            "loc": ["body", "dashboard_port"],
+            "msg": DASHBOARD_RULE,
+            "input": dashboard_port,
+        }
+    ]
+    assert _stored_ports(db_session) == ("test-frps", 7100, 7500)
+
+
+def test_update_of_the_bind_port_onto_the_dashboard_port_is_rejected(
+    test_client, db_session, admin_user, monkeypatch
+):
+    _publish(monkeypatch)
+    _store_config(db_session)
+    updated = test_client.put(
+        "/api/frp/server-config/cfg-port",
+        json={"name": "renamed", "bind_port": 7500},
+        headers=_login(test_client),
+    )
+    assert updated.status_code == 422, updated.text
+    assert updated.json()["detail"] == [
+        {"type": "value_error", "loc": ["body", "bind_port"], "msg": DASHBOARD_RULE, "input": 7500}
+    ]
+    # Nothing of the update is kept, the name sent along with the port neither.
+    assert _stored_ports(db_session) == ("test-frps", 7100, 7500)
+
+
+@pytest.mark.parametrize("bind_port", [None, 70000], ids=["null", "out-of-range"])
+def test_update_checks_the_dashboard_port_against_the_bind_port_frps_gets(
+    test_client, db_session, admin_user, monkeypatch, bind_port
+):
+    # A row from before the port bounds: frps.toml carries bindPort 7000 for it (the generator's
+    # fallback), so 7000 is the bind port the dashboard port must not take.
+    _publish(monkeypatch)
+    _store_config(db_session)
+    # Set by an UPDATE: an INSERT with bind_port=None takes the column default.
+    db_session.get(FrpServerConfig, "cfg-port").bind_port = bind_port
+    db_session.commit()
+    updated = test_client.put(
+        "/api/frp/server-config/cfg-port",
+        json={"dashboard_port": 7000},
+        headers=_login(test_client),
+    )
+    assert updated.status_code == 422, updated.text
+    assert updated.json()["detail"] == [
+        {
+            "type": "value_error",
+            "loc": ["body", "dashboard_port"],
+            "msg": DASHBOARD_RULE,
+            "input": 7000,
+        }
+    ]
+    assert _stored_ports(db_session) == ("test-frps", bind_port, 7500)
+
+
+@pytest.mark.parametrize("dashboard_port", REFUSED, ids=REFUSED_IDS)
+def test_update_without_a_port_keeps_a_stored_dashboard_port_frps_is_not_started_with(
+    test_client, db_session, admin_user, monkeypatch, dashboard_port
+):
+    # A row stored before this check stays editable; the startup check names its port.
+    _publish(monkeypatch)
+    _store_config(db_session, dashboard_port=dashboard_port)
+    updated = test_client.put(
+        "/api/frp/server-config/cfg-port", json={"name": "renamed"}, headers=_login(test_client)
+    )
+    assert updated.status_code == 200, updated.text
+    assert _stored_ports(db_session) == ("renamed", 7100, dashboard_port)
+
+
+def test_a_dashboard_port_frps_is_started_with_is_accepted(
+    test_client, db_session, admin_user, monkeypatch
+):
+    _publish(monkeypatch)
+    h = _login(test_client)
+    created = test_client.post(
+        "/api/frp/server-config",
+        json={
+            "name": "test-frps",
+            "server_addr": "frps.example.net",
+            "bind_port": 7100,
+            "dashboard_port": 7500,
+        },
+        headers=h,
+    )
+    assert created.status_code == 201, created.text
+    cid = created.json()["id"]
+    # Checked against the ports after the update: swapped, neither is the other.
+    for ports in ({"bind_port": 7500, "dashboard_port": 7100}, {"dashboard_port": 8443}):
+        updated = test_client.put(f"/api/frp/server-config/{cid}", json=ports, headers=h)
+        assert updated.status_code == 200, (ports, updated.text)
+    stored = db_session.get(FrpServerConfig, cid)
+    db_session.refresh(stored)
+    assert (stored.bind_port, stored.dashboard_port) == (7500, 8443)
+
+
 def _frps_cfg() -> FrpServerConfig:
     return FrpServerConfig(
         id="c1", name="c1", server_addr="frps.example.net", bind_port=7000, auth_token="tok"
