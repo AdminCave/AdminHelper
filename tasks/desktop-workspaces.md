@@ -22,8 +22,10 @@ Review: approve (.ah-out/review/desktop-workspaces/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace::
 Doku: keine (intern; Doku mit T33)
 
-### T2 — Lock je Workspace, Registry und Metadaten  [ ]
+### T2 — Lock je Workspace, Registry und Metadaten  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/storage.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @88331b95 2026-10-19T14:48:03+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T2.verdict.json)
 Änderung: `instance.lock` als eigene Sperrdatei (geöffnet mit `read`+`write`, `File::try_lock`): `acquire` versucht es bis 2 s (die kurze Probe des Pickers darf einen startenden Prozess nicht abweisen), `is_open` probt und gibt sofort frei. Lesen/Schreiben von `workspaces.json` (`{workspaces:[{id}], lastUsed, migratedNotice}`) und `workspaces/<id>/workspace.json` (`{kind, name, color, url, intervalMinutes, allowSelfSignedCerts, lastUsername, legacyKeys}`; `kind` ist `SyncMode`) über `storage::write_json_pretty` (`storage.rs:66`, wird `pub(crate)`); feste Farbpalette als Konstante. Tests (Temp-Verzeichnis je Test): zweites `acquire` → belegt, nach Drop frei; `is_open` während gehalten true, danach false; eine Probe während eines laufenden `acquire` lässt es nicht scheitern; Rundreise beider Dateien; kaputte Datei → Fehler statt stiller Vorgabe.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace::
 Doku: keine (intern; Doku mit T33)

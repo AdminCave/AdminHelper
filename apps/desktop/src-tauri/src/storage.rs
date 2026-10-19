@@ -63,7 +63,10 @@ fn ensure_parent(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-fn write_json_pretty<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), AppError> {
+pub(crate) fn write_json_pretty<T: Serialize + ?Sized>(
+    path: &Path,
+    value: &T,
+) -> Result<(), AppError> {
     ensure_parent(path)?;
     let serialized = serde_json::to_string_pretty(value)?;
     #[cfg(unix)]
