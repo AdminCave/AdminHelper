@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-CLI reset-admin meldet bestehende Sitzungen ab — Task-Ledger
-Status: bereit · Branch: feature/cli-reset-sessions · Review: am Ende
+Status: erledigt · Branch: feature/cli-reset-sessions · Review: am Ende
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-16)
 Heavy: linux-full — `apps/server/app/cli.py` ist der Bootstrap- und Recovery-Weg (`scripts/install.sh`, `docs/admin/troubleshooting.html`); läuft im Sammellauf über `main` (`/feature-build` §5)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
