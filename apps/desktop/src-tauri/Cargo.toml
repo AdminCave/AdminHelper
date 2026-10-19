@@ -59,6 +59,11 @@ toml = "0.8"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
 
+# A second launch focuses the running window instead of starting a second app.
+# Desktop targets only, as the plugin's docs install it.
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [dev-dependencies]
 # Real-handshake TOFU test: an in-process TLS server presenting a controlled
 # certificate, so we can prove reqwest actually invokes the pinning verifier and
