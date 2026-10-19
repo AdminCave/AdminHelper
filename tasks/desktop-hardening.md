@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung: Fehlertexte, Tunnel je Anmeldung, Passwortspeicher je Verbindung — Task-Ledger
-Status: aktiv · Branch: feature/desktop-hardening · Review: pro Task
+Status: bereit · Branch: feature/desktop-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full + windows — Desktop-Tunnel und Anmelden/Abmelden (frpc endet mit der Sitzung, Zuordnungen je Anmeldung) laufen in `tunnel-connect.live.js` und `logout.live.js` im Sammellauf über `main`; T6 ändert die Eingabeprüfung der FRP-API (Server-Tests in der PR-CI); `windows` über die CI-Jobs (der Pool hat keine Windows-Vorlage); kein `scenario`, weil der FRP-Datenpfad unverändert bleibt (Kevin 2026-10-19)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -73,8 +73,10 @@ HEAD: 00b031d3
 
 ## Teil B — Server
 
-### T6 — `{{` in Feldern der FRP-Config abweisen  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_input_hardening.py, apps/server/tests/test_frp_toml_roundtrip.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+### T6 — `{{` in Feldern der FRP-Config abweisen  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_input_hardening.py, apps/server/tests/test_frp_toml_roundtrip.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md, apps/server/tests/test_frp_extra_config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @7bd15377 2026-10-19T15:50:59+02:00
+Review: approve (.ah-out/review/desktop-hardening/T6.verdict.json)
 Änderung: `_reject_toml_breakers` (`apps/server/app/modules/frp/schemas.py:23-31`) weist zusätzlich die Folge `{{` ab, mit einer englischen Meldung; ein einzelnes `{` und `}}` bleiben erlaubt. Damit gilt es für alle Felder, die es prüft: Tunnel `name`, `custom_domains`, `local_ip`, `auto_connection_username` (`:220`, `:244`), `secret_key` über `_check_secret` (`:34`, `:223`, `:247`), die FRP-Server-Felder (`:155`, `:161`, `:185`, `:191`) und den Servernamen (`apps/server/app/modules/servers/schemas.py:25`). Gespeicherte Werte bleiben unangetastet. Tests in `test_frp_input_hardening.py` (zuerst rot): Tunnelname, Servername, `secret_key` und `server_addr` mit `{{` → `ValidationError`; ein einzelnes `{` und ein `}}` → angenommen. Hypothesis-Strategien in `test_frp_toml_roundtrip.py`, deren Text durch das Schema geht, erzeugen kein `{{` mehr (Erzeugung, keine Assertion).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py tests/test_frp_toml_roundtrip.py
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (`:100` `POST /api/servers`, `:134` `POST /api/frp/server-config`, `:141` `POST /api/frp/tunnels`: `{{` in diesen Feldern → `422`) · CHANGELOG.md (Changed)

@@ -959,6 +959,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   gespeichert, bis die erste es oeffnet; diese uebernimmt es, fuer die anderen ist es danach nicht mehr gespeichert.
   Loeschen entfernt auch einen solchen bisherigen Eintrag. Unter Windows bleibt das Passwort im Credential Manager je
   Adresse (`TERMSRV/<Adresse>`), wo mstsc es liest. Doku: Desktop fuer Entwickler (DE+EN).
+- **Server: `{{` in Feldern der FRP-Configs wird abgewiesen:** frp liest seine Config-Dateien als Go-Template, bevor
+  es die TOML liest; `{{` beginnt dort eine Template-Anweisung. Die API antwortet jetzt mit `422` auf `{{` im
+  Servernamen (`/api/servers`), in `name` und `server_addr` der FRP-Server-Config und in `name`, `local_ip`,
+  `secret_key`, `custom_domains`, `auto_connection_username` und den `extra_config`-Werten eines Tunnels, je beim
+  Anlegen und Aendern. Ein einzelnes `{` und `}}` bleiben erlaubt; bereits gespeicherte Werte bleiben unveraendert.
+  Doku: API-Referenz (DE+EN).
 - **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
   nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
