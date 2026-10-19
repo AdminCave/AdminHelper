@@ -13,7 +13,7 @@
 # Example payload for a chat notification (e.g. Slack, Teams, Mattermost):
 #
 # Available HTTP helpers: http_get(url, headers=None, timeout=10)
-#                         http_post(url, json=None, headers=None, timeout=10)
+#                         http_post(url, json_data=None, headers=None, timeout=10)
 # Return value: {"status": int, "body": str, "json": Any|None}
 
 WEBHOOK_URL = "https://hooks.example.com/services/YOUR/SLACK/WEBHOOK"
@@ -32,7 +32,7 @@ action = action_labels.get(event_type, event_type)
 msg = f"[AdminHelper] Verbindung {action}: *{name}* ({kind}, `{host}`)"
 
 try:
-    r = http_post(WEBHOOK_URL, json={"text": msg}, timeout=5)
+    r = http_post(WEBHOOK_URL, json_data={"text": msg}, timeout=5)
     if r["status"] >= 400:
         raise ValueError(f"HTTP-Fehler {r['status']}: {r['body'][:200]}")
     result["notified"] = True
