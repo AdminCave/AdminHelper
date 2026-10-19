@@ -81,8 +81,10 @@ Semantik: Soll ist der Code:
 - `apps/agent/deb/DEBIAN/postinst:12-18` und `:24-28`, `apps/agent/deb/DEBIAN/control:7-8`, `apps/agent/rpm/adminhelper-agent.spec:19-24` und `%post` `:56-73`.
 Doku-Stellen: `docs/developer/agent.html:159` — „Kopiert die Binary nach <code>%ProgramFiles%\AdminHelper\</code>, registriert via <code>sc create</code> (<code>binPath=&lt;exe&gt; run</code>, <code>start= auto</code>, <code>obj= LocalSystem</code>)“. Für gleiche Inhalte in DE und EN `.claude/rules/docs.md:16` — „zweisprachiges HTML (`docs/…` DE, `docs/en/…` EN)“. Falsch heute: DE `:178` „wird als signiertes MSI verteilt“, EN `:129` „the installer registers the Windows service“, DE `:202` „die Konfig (<code>/etc/adminhelper/agent.toml</code>)“.
 
-### T3 — R-0490: hooks.html nennt die injizierten Helfer  [ ]
+### T3 — R-0490: hooks.html nennt die injizierten Helfer  [x]
 Komponente: scripts · Dateien: docs/developer/hooks.html, docs/en/developer/hooks.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7cc5222a 2026-10-19T09:49:37+02:00
+Review: approve (.ah-out/review/doc-fixes/T3.verdict.json)
 Änderung: Hinter den Absatz `:71` kommt (DE und EN) eine Liste der Namen, die der Worker jedem Script bereitstellt (`apps/server/app/modules/hooks/script_worker.py:125-141`):
 - `load_connections()` liefert die Verbindungen als Liste von Dicts, `save_connections(list)` schreibt sie per Upsert, `uuid4()` liefert einen String.
 - `http_get(url, headers=None, timeout=10)` und `http_post(url, json_data=None, headers=None, timeout=10)` liefern `{"status", "body", "json"}`. Sie lehnen interne und nicht auflösbare Ziele ab (SSRF-Schutz, `:56-62`, `:74-80`), folgen keinem Redirect, und die Antwort ist auf 1 000 000 Bytes begrenzt (`:31`).
