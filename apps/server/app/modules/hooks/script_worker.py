@@ -98,7 +98,8 @@ def main() -> None:
     # ForeignKey("servers.id") then fails the flush of save_connections (R-0469).
     from app import model_registry  # noqa: F401
 
-    # Lazy imports — only when the script needs connections
+    # Imported for every hook, not only one that uses connections: both helpers go into every
+    # hook's namespace below and open a DB session only when called (connections/storage.py).
     from app.modules.connections.storage import load_connections, save_connections
 
     raw = sys.stdin.read()
