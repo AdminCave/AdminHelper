@@ -9,8 +9,9 @@ PKI directory, webServer.port off the published bind port; the three files there
 certificate files intact, the leaf not expired and matching its key; frps verify green. Input
 files are read only as regular files of at most 1 MiB and within a time limit; a symlink,
 anything else or a larger file is unreadable. A valid input is copied into current/ of the
-working directory (the directory 0711, current/ 0755, files 0644: frps reads the copy under a
-user of its own and writes none of it) with its TLS paths pointed there, and frps runs from
+working directory (the directory 0711, current/ 0750 and files 0640, root's and in the group of
+frps: frps reads the copy under a user of its own and writes none of it, no other user reads
+it) with its TLS paths pointed there, and frps runs from
 current/, each time only while the copy is still the one the supervisor took over (one that
 changed goes, with the event copy_changed) and has passed the check again. An invalid input
 starts nothing, or frps from the last valid current/ (degraded); a missing frps.toml removes
@@ -30,8 +31,8 @@ The script runs under sh with a stub frps on PATH, without root and so with su-e
 off (FRPS_USER and FRPS_FETCH_USER empty; some tests put a stub su-exec in its place); a local
 HTTP server stands in for the dashboard. Some tests run the frps image built from apps/frps,
 with the capabilities and security options compose gives it, the real frps under its own user
-and the requests to its dashboard as nobody; they skip when Docker or the pinned base image is
-not at hand."""
+and the requests to its dashboard under another; they skip when Docker or the pinned base image
+is not at hand."""
 
 import base64
 import contextlib
@@ -344,7 +345,8 @@ def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
     for name in PEMS:
         (box.pki / name).chmod(0o755)
     # Modes the supervisor has to correct: the server reads the status under another UID, frps
-    # the copy under one of its own, and no one but frps lists the working directory.
+    # the copy under one of its own through its group, and no one but frps lists the working
+    # directory.
     box.state.mkdir(mode=0o700)
     box.state.chmod(0o700)
     box.active.mkdir()
@@ -367,9 +369,9 @@ def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
         assert (box.current / name).read_bytes() == box.pems[name]
     assert [p.name for p in box.active.iterdir()] == ["current"]
     assert _mode(box.active) == 0o711
-    assert _mode(box.current) == 0o755
+    assert _mode(box.current) == 0o750
     assert {p.name: _mode(p) for p in box.current.iterdir()} == {
-        name: 0o644 for name in (*PEMS, "frps.toml", "applied.sha256")
+        name: 0o640 for name in (*PEMS, "frps.toml", "applied.sha256")
     }
     assert _mode(box.state) == 0o755
     assert _mode(box.status_file) == 0o644
@@ -1831,6 +1833,26 @@ def test_the_supervisor_runs_frps_as_the_user_the_image_creates_for_it():
     assert f'FRPS_USER="${{FRPS_USER-{name}}}"' in SCRIPT.read_text()
 
 
+def _fetch_user() -> tuple[str, int]:
+    """Name and UID of the user the requests to the dashboard run as by default, as the image
+    creates it."""
+    default = re.search(
+        r'^FRPS_FETCH_USER="\$\{FRPS_FETCH_USER-(\S+)\}"$', SCRIPT.read_text(), re.M
+    )
+    assert default, "no default for FRPS_FETCH_USER"
+    dockerfile = (FRPS_DIR / "Dockerfile").read_text()
+    name = re.escape(default[1])
+    found = re.search(rf"\badduser\b.* -u (\d+) -G {name} {name}(?: |$)", dockerfile, re.M)
+    assert found, dockerfile
+    return default[1], int(found[1])
+
+
+def test_the_supervisor_asks_the_dashboard_as_a_user_of_its_own_the_image_creates():
+    # _fetch_user finds it in a group of its own, too.
+    _, uid = _fetch_user()
+    assert uid not in (0, _frps_user()[1])
+
+
 def _image() -> tuple[str, str, list[str]]:
     """Base image, the script's place in the image and the entrypoint, as in the Dockerfile."""
     dockerfile = (FRPS_DIR / "Dockerfile").read_text()
@@ -2285,8 +2307,6 @@ def test_in_the_frps_image_the_supervisor_does_not_ask_the_dashboard_as_root(frp
     assert result.returncode == 1 and "FRPS_FETCH_USER" in result.stderr, result.stderr
 
 
-# nobody of the base image.
-NOBODY_UID = 65534
 # Stands in for frps: verify goes to frps as it is; a run takes the connections to the port of
 # its dashboard (7500, as in the test below), answers none of them and drops what it reads.
 SILENT = """#!/bin/sh
@@ -2295,7 +2315,10 @@ exec nc -dlk 127.0.0.1 7500 > /dev/null
 """
 
 
-def test_in_the_frps_image_the_supervisor_asks_the_dashboard_as_nobody(tmp_path, pems, frps_image):
+def test_in_the_frps_image_the_supervisor_asks_the_dashboard_as_its_user(
+    tmp_path, pems, frps_image
+):
+    _, uid = _fetch_user()
     config = _cfg(
         dashboard_port=7500, dashboard_user=DASHBOARD_USER, dashboard_password=DASHBOARD_PASSWORD
     )
@@ -2303,15 +2326,51 @@ def test_in_the_frps_image_the_supervisor_asks_the_dashboard_as_nobody(tmp_path,
     env = {"FRPS_POLL_SECONDS": "1", "FRPS_READ_SECONDS": "60"}
     toml = generate_frps_toml(config)
     with _container(frps_image, tmp_path, pems, toml, frps_bin=SILENT, **env) as box:
-        # The requests of a poll, all of them under way: curl as nobody, none as root.
+        # The requests of a poll, all of them under way: curl as the user of the requests, none
+        # as root.
         box.wait_until(
-            lambda: [p[0] for p in box.processes(NOBODY_UID)] == ["curl"] * len(PROXY_TYPES),
-            "the requests of a poll as nobody",
+            lambda: [p[0] for p in box.processes(uid)] == ["curl"] * len(PROXY_TYPES),
+            "the requests of a poll as their user",
         )
 
         assert [process for process in box.processes(0) if process[0] == "curl"] == []
         # TERM ends them as before, and with them the supervisor within the grace period.
         assert box.stop() == "0", box.logs()
+
+
+def test_in_the_frps_image_the_copy_is_open_to_frps_alone_not_to_the_user_of_the_requests(
+    tmp_path, pems, frps_image
+):
+    frps, _ = _frps_user()
+    fetch, fetch_uid = _fetch_user()
+    with _container(frps_image, tmp_path, pems, generate_frps_toml(_cfg())) as box:
+        box.wait_until(
+            lambda: STARTED_SUCCESSFULLY in box.logs() and box.read().state == "running",
+            "frps up",
+        )
+
+        current = f"{ACTIVE_DIR}/current"
+        files = [f"{current}/{name}" for name in ("frps.toml", *PEMS, "applied.sha256")]
+        # root's and in the group of frps; nothing for anyone else.
+        group = box.exec("id", "-gn", frps).stdout.strip()
+        modes = box.exec("stat", "-c", "%a %U %G %n", current, *files)
+        assert modes.stdout.splitlines() == [
+            f"750 root {group} {current}",
+            *(f"640 root {group} {file}" for file in files),
+        ], modes.stderr
+
+        def reads(user: str) -> dict[str, bool]:
+            """What user reads of the copy, switched to by su-exec as the supervisor does."""
+            tries = {current: ["ls", current], **{file: ["cat", file] for file in files}}
+            return {
+                path: box.exec("su-exec", user, *args).returncode == 0
+                for path, args in tries.items()
+            }
+
+        assert reads(frps) == dict.fromkeys([current, *files], True)
+        # The switch itself works: what fails is the reading.
+        assert box.exec("su-exec", fetch, "id", "-u").stdout.strip() == str(fetch_uid)
+        assert reads(fetch) == dict.fromkeys([current, *files], False)
 
 
 def test_in_the_frps_image_the_supervisor_puts_the_proxy_lists_of_frps_into_the_state(

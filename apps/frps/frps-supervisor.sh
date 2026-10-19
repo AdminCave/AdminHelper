@@ -22,11 +22,12 @@
 # (input_unreadable), as is one that cannot be read. A candidate is copied into next/ of the
 # supervisor's own working directory (FRPS_ACTIVE_DIR, mounted by frps alone), checked there
 # while only the supervisor may read it, its TLS paths pointed at current/, and swapped in as
-# current/, which frps reads and cannot write (FRPS_ACTIVE_DIR 0711, current/ 0755, its files
-# 0644, all the supervisor's). frps always runs from current/, so a half-written or invalid
-# input never reaches it. At the start, and after that whenever the input has changed and
-# then stayed the same for two polls in a row (FRPS_POLL_SECONDS apart, one second while a
-# start of frps is due; a file still being written is not taken for a new one):
+# current/, which frps reads and cannot write and no other user reads (FRPS_ACTIVE_DIR 0711,
+# current/ 0750, its files 0640, all the supervisor's and in the group of FRPS_USER, which root
+# is in). frps always runs from current/, so a half-written or invalid input never reaches it.
+# At the start, and after that whenever the input has changed and then stayed the same for two
+# polls in a row (FRPS_POLL_SECONDS apart, one second while a start of frps is due; a file
+# still being written is not taken for a new one):
 #
 #   valid                        frps (re)starts from the new current/      running
 #   invalid, current/ exists     frps runs on from the last valid current/  degraded
@@ -66,10 +67,11 @@
 # of the dashboard over loopback while frps runs from a current/ with a webServer.port, and
 # puts each answer as frps gave it into $FRPS_STATE_DIR/proxy-<type>.json (fetch_proxies);
 # a failed request or an answer over 1 MiB removes the file of its type, frps not running or
-# no webServer.port all of them. curl runs as FRPS_FETCH_USER (default nobody), whose UID is
-# neither root nor that of FRPS_USER: it holds no capability, and kill_left, which KILLs the
-# processes of FRPS_USER, never hits a request under way. The supervisor opens the file each
-# answer goes to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
+# no webServer.port all of them. curl runs as FRPS_FETCH_USER (default frps-fetch, a user the
+# image creates for it alone), whose UID is neither root nor that of FRPS_USER: it holds no
+# capability, reads nothing of current/, and kill_left, which KILLs the processes of
+# FRPS_USER, never hits a request under way. The supervisor opens the file each answer goes
+# to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
 
 set -u
 export LC_ALL=C
@@ -84,7 +86,7 @@ FRPS_BIN="${FRPS_BIN:-frps}"
 FRPS_USER="${FRPS_USER-frps}"
 # The user the requests to the dashboard run as (fetch_proxies); set but empty switches su-exec
 # off for them.
-FRPS_FETCH_USER="${FRPS_FETCH_USER-nobody}"
+FRPS_FETCH_USER="${FRPS_FETCH_USER-frps-fetch}"
 # Whole seconds, as POSIX sleep takes them.
 FRPS_POLL_SECONDS="${FRPS_POLL_SECONDS:-5}"
 FRPS_BACKOFF_MAX="${FRPS_BACKOFF_MAX:-60}"
@@ -339,9 +341,9 @@ stage() {
 # recover renames back on the next start.
 activate() {
     for file in frps.toml applied.sha256 $PEMS; do
-        chmod 0644 "$NEXT/$file" || return 1
+        open_to_frps "$NEXT/$file" 0640 || return 1
     done
-    chmod 0755 "$NEXT" || return 1
+    open_to_frps "$NEXT" 0750 || return 1
     rm -rf "$PREV"
     if [ -d "$CURRENT" ]; then
         mv "$CURRENT" "$PREV" || return 1
@@ -352,6 +354,14 @@ activate() {
     fi
     rm -rf "$PREV"
     COPY_HASH=$(copy_hash)
+}
+
+# open_to_frps <path> <mode> — gives a path of the copy to the group of FRPS_USER, then the
+# mode: root and frps read it, no other user does. root changes the group without CAP_CHOWN,
+# as a member of it (Dockerfile). With FRPS_USER empty, frps runs as the owner.
+open_to_frps() {
+    if [ -n "$FRPS_GID" ]; then chgrp "$FRPS_GID" "$1" || return 1; fi
+    chmod "$2" "$1"
 }
 
 # copy_hash — the sha256 over the copy in current/, as content_hash makes it.
@@ -842,10 +852,12 @@ case $FRP_BIND_PORT in
 *) [ "$FRP_BIND_PORT" -le 65535 ] || die "FRP_BIND_PORT must be a port number" ;;
 esac
 FRPS_UID=""
+FRPS_GID=""
 if [ -n "$FRPS_USER" ]; then
     FRPS_UID=$(id -u "$FRPS_USER" 2>/dev/null) || die "FRPS_USER $FRPS_USER is no user"
     # kill_left would hit root's processes, the health check's among them.
     [ "$FRPS_UID" != 0 ] || die "FRPS_USER must not be root"
+    FRPS_GID=$(id -g "$FRPS_USER" 2>/dev/null) || die "FRPS_USER $FRPS_USER has no group"
 elif [ "$(id -u)" -eq 0 ]; then
     die "FRPS_USER must name the user frps runs as, not be empty under root"
 fi

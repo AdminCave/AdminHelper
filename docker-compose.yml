@@ -315,10 +315,11 @@ services:
     environment:
       - FRP_BIND_PORT=${FRP_BIND_PORT:-7000}
     # The supervisor runs as root and starts frps as the image's user frps, which keeps no
-    # capability, and the requests to the dashboard of frps as nobody. The supervisor's:
-    # DAC_OVERRIDE to read frps.toml and frps.key, which the server and the ca-issuer write
-    # 0600 under their own UID; SETUID and SETGID to switch to frps and to nobody (su-exec);
-    # KILL to stop frps across the UID.
+    # capability, and the requests to the dashboard of frps as the image's user frps-fetch.
+    # The supervisor's: DAC_OVERRIDE to read frps.toml and frps.key, which the server and the
+    # ca-issuer write 0600 under their own UID; SETUID and SETGID to switch to frps and to
+    # frps-fetch (su-exec); KILL to stop frps across the UID, and on TERM the requests under
+    # way across theirs (on_signal).
     cap_drop: [ALL]
     cap_add: [DAC_OVERRIDE, SETUID, SETGID, KILL]
     # Port 443 inside without NET_BIND_SERVICE: every port of the container's own network

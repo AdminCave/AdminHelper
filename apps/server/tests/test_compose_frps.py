@@ -10,14 +10,15 @@ the server and the scheduler mount read-only to read the status file, and frps-a
 holds the checked copy with token and key and which no other service mounts.
 
 The supervisor runs as root and starts frps under a user of the image's own, whose UID no other
-service uses. It keeps four capabilities, frps none: DAC_OVERRIDE to read frps.toml and
-frps.key, which the server and the ca-issuer write 0600 under their own UID; SETUID and SETGID
-to switch to the user of frps; KILL to stop frps across the UID. No process in the container
-gains privileges on exec (no-new-privileges). Port 443 inside needs no capability, since compose
-opens every port of the container's own network namespace to unprivileged processes
-(net.ipv4.ip_unprivileged_port_start=0), whatever the engine defaults to. The server and the
-scheduler run as the app user of their image, so they read the status through the bits the
-supervisor grants everyone.
+service uses, and the requests to the dashboard of frps under another such user. It keeps four
+capabilities, frps none: DAC_OVERRIDE to read frps.toml and frps.key, which the server and the
+ca-issuer write 0600 under their own UID; SETUID and SETGID to switch to the user of frps and to
+the user of the requests; KILL to stop frps and to end the requests under way across their UIDs.
+No process in the container gains privileges on exec (no-new-privileges). Port 443 inside needs
+no capability, since compose opens every port of the container's own network namespace to
+unprivileged processes (net.ipv4.ip_unprivileged_port_start=0), whatever the engine defaults
+to. The server and the scheduler run as the app user of their image, so they read the status
+through the bits the supervisor grants everyone.
 
 A TERM while the supervisor stops frps waits for frps a second time, so the grace period
 outlasts two stops. The health check runs the supervisor's health subcommand, nothing else.
@@ -237,6 +238,7 @@ def test_everyone_may_read_the_status_file_the_supervisor_writes(tmp_path):
         "FRPS_POLL_SECONDS": "3600",
         # Without root, no user to switch to, and no process of one to look for.
         "FRPS_USER": "",
+        "FRPS_FETCH_USER": "",
         "FRPS_PROC_ROOT": str(tmp_path / "proc"),
     }
     supervisor = subprocess.Popen(
