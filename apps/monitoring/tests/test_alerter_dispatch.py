@@ -12,6 +12,8 @@ import json
 import ssl
 from types import SimpleNamespace
 
+import pytest
+
 import app.alerter as alerter
 from app.alerter import _dispatch, _send_email
 
@@ -31,7 +33,43 @@ class TestDispatchRouting:
 
     def test_unknown_channel_fails_closed(self):
         ok, err = _dispatch(_rule(channel="carrier-pigeon", config={}), CHECK, MSG)
-        assert not ok and "Unbekannter Kanal" in err
+        assert not ok and "Unknown channel" in err
+
+
+def _no_request(*a, **k):
+    raise AssertionError("no outbound request on a refused dispatch")
+
+
+@pytest.mark.parametrize(
+    ("rule", "error"),
+    [
+        (_rule(raw="{not json"), "Invalid channel_config"),
+        (_rule(channel="carrier-pigeon", config={}), "Unknown channel: carrier-pigeon"),
+        (_rule(config={}), "No webhook URL configured"),
+        (
+            _rule(config={"url": "http://192.0.2.10/hook"}),
+            "Webhook target is private/reserved (not allowed)",
+        ),
+        (_rule("email", config={}), "No recipients configured"),
+        (_rule("email", config={"to": "a@x.de"}), "SMTP not configured (SMTP_HOST missing)"),
+    ],
+    ids=[
+        "broken-channel-config",
+        "unknown-channel",
+        "webhook-without-url",
+        "webhook-private-target",
+        "email-without-recipients",
+        "email-without-smtp-host",
+    ],
+)
+def test_refused_dispatch_writes_english_error(monkeypatch, rule, error):
+    # R-0488: the error lands in the alert log, and the desktop shows it verbatim, also in the
+    # English UI. The real _dispatch routes to each refusal; nothing may go out on the way.
+    monkeypatch.setattr(alerter, "SMTP_HOST", "")
+    monkeypatch.setattr(alerter.httpx, "post", _no_request)
+    monkeypatch.setattr(alerter.smtplib, "SMTP", _no_request)
+    monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", _no_request)
+    assert _dispatch(rule, CHECK, MSG) == (False, error)
 
 
 class TestEmailChannel:
