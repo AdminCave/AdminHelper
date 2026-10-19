@@ -12,6 +12,7 @@ mod error;
 mod frpc;
 mod http_client;
 mod keyring_store;
+mod migration;
 mod models;
 mod notifications;
 mod password;

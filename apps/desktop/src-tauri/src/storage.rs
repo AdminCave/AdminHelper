@@ -6,11 +6,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use crate::error::AppError;
-use crate::models::{Connection, Settings, SyncMode};
+use crate::models::{
+    Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode, Settings, SyncMode,
+};
 
 fn app_data_file(app: &tauri::AppHandle, file_name: &str) -> Result<PathBuf, AppError> {
     let base_dir = app
@@ -35,7 +37,7 @@ pub fn local_data_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
 
 /// The connections file backing a given mode: local mode has its own store,
 /// server and sync share the cache file.
-fn connections_file_name(mode: &SyncMode) -> &'static str {
+pub(crate) fn connections_file_name(mode: &SyncMode) -> &'static str {
     match mode {
         SyncMode::Local => "connections.local.json",
         SyncMode::Server | SyncMode::Sync => "connections.json",
@@ -152,7 +154,11 @@ pub fn migrate_legacy_local_store(app: &tauri::AppHandle) -> Result<(), AppError
 // Copies the legacy store to the local store ONLY when: mode is Local, the local target does not yet
 // exist (never overwrite user data), and the legacy source exists. A sign flip in any of the three
 // guards would silently overwrite the single local connection store or skip the migration (6.34).
-fn migrate_between(legacy: &Path, local: &Path, mode: &SyncMode) -> Result<(), AppError> {
+pub(crate) fn migrate_between(
+    legacy: &Path,
+    local: &Path,
+    mode: &SyncMode,
+) -> Result<(), AppError> {
     if !matches!(mode, SyncMode::Local) {
         return Ok(());
     }
@@ -177,6 +183,39 @@ pub fn load_settings(app: &tauri::AppHandle) -> Result<Settings, AppError> {
 pub fn save_settings(app: &tauri::AppHandle, settings: &Settings) -> Result<(), AppError> {
     let path = settings_path(app)?;
     write_json_pretty(&path, settings)
+}
+
+/// In the app data dir: the [`Prefs`] of the device (R-0431).
+pub(crate) const PREFS_FILE: &str = "prefs.json";
+
+/// The part of [`Settings`] every workspace on the device shares; the rest belongs to a
+/// workspace (`workspace::Meta`).
+///
+/// `pub(crate)`: a `pub` serde type would have to cross the bridge (`types.parity.test.ts`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Prefs {
+    pub language: Option<String>,
+    pub store_passwords: bool,
+    pub rdp_scaling_mode: RdpScalingMode,
+    pub rdp_window_mode: RdpWindowMode,
+    pub rdp_custom_size: Option<String>,
+    pub rdp_performance_profile: RdpPerformanceProfile,
+    pub os_notifications: bool,
+}
+
+impl From<&Settings> for Prefs {
+    fn from(settings: &Settings) -> Self {
+        Self {
+            language: settings.language.clone(),
+            store_passwords: settings.store_passwords,
+            rdp_scaling_mode: settings.rdp_scaling_mode,
+            rdp_window_mode: settings.rdp_window_mode,
+            rdp_custom_size: settings.rdp_custom_size.clone(),
+            rdp_performance_profile: settings.rdp_performance_profile,
+            os_notifications: settings.os_notifications,
+        }
+    }
 }
 
 /// Writes the exported browser PKCS12 (.p12) to the user-chosen destination

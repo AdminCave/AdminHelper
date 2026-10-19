@@ -53,7 +53,7 @@ const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(2);
 const ACQUIRE_RETRY: Duration = Duration::from_millis(50);
 
 /// In the app data dir: which workspaces exist ([`Registry`]).
-const REGISTRY_FILE: &str = "workspaces.json";
+pub(crate) const REGISTRY_FILE: &str = "workspaces.json";
 /// In the data dir of a workspace: what it is ([`Meta`]).
 const META_FILE: &str = "workspace.json";
 

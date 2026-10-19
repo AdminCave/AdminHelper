@@ -19,7 +19,10 @@ use crate::error::AppError;
 /// the migrated server workspace. Every other owner is a workspace id.
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "the migration (R-0431 T4) takes it up")
+    expect(
+        dead_code,
+        reason = "only the migration (R-0431 T4) takes it up, and nothing runs that before T10"
+    )
 )]
 pub const DEFAULT_OWNER: &str = "default";
 
@@ -168,24 +171,52 @@ impl PortRegistry {
 
     /// Hands the entries of `from` to `to`, local ports and all. Where `to` has an entry for the
     /// visitor already, that one stays and the one of `from` goes: one entry per visitor and
-    /// owner.
+    /// owner. `to` ends with no more than [`MAX_VISITORS`] entries and [`MAX_FALLBACK_PORTS`]
+    /// ports of [`FALLBACK_PORTS`]; the entries of `from` past either go, in the order of the
+    /// map, so a map from before the caps cannot keep the fallback ports from the other owners.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "the migration (R-0431 T4) takes it up")
+        expect(
+            dead_code,
+            reason = "only the migration (R-0431 T4) takes it up, and nothing runs that before T10"
+        )
     )]
     pub fn rename_owner(&self, from: &str, to: &str) -> Result<(), AppError> {
         if from == to {
             return Ok(());
         }
         self.update(|entries| {
-            let held: Vec<String> = entries
+            let mut held: Vec<String> = entries
                 .iter()
                 .filter(|entry| entry.owner == to)
                 .map(|entry| entry.visitor.clone())
                 .collect();
-            entries.retain(|entry| entry.owner != from || !held.contains(&entry.visitor));
-            for entry in entries.iter_mut().filter(|entry| entry.owner == from) {
+            let mut fallback = entries
+                .iter()
+                .filter(|entry| entry.owner == to && FALLBACK_PORTS.contains(&entry.local_port))
+                .count();
+            let mut past_share = 0;
+            entries.retain_mut(|entry| {
+                if entry.owner != from {
+                    return true;
+                }
+                if held.contains(&entry.visitor) {
+                    return false;
+                }
+                let in_fallback = FALLBACK_PORTS.contains(&entry.local_port);
+                if held.len() >= MAX_VISITORS || (in_fallback && fallback >= MAX_FALLBACK_PORTS) {
+                    past_share += 1;
+                    return false;
+                }
+                held.push(entry.visitor.clone());
+                fallback += usize::from(in_fallback);
                 entry.owner = to.to_string();
+                true
+            });
+            if past_share > 0 {
+                log::warn!(
+                    "{REGISTRY_FILE}: dropped {past_share} entries of {from} past the share of {to}"
+                );
             }
         })
     }
@@ -879,6 +910,68 @@ mod tests {
     }
 
     #[test]
+    fn port_registry_renames_no_more_than_the_share_of_the_new_owner() {
+        let dir = scratch_dir("rename-share");
+        // A map from before the caps: the old owner holds more visitors and fallback ports than
+        // an owner may. The new owner holds one fallback port already.
+        let count = u16::try_from(MAX_VISITORS + 60).unwrap();
+        let in_fallback = u16::try_from(MAX_FALLBACK_PORTS + 50).unwrap();
+        let names: Vec<String> = (0..count).map(|i| format!("v{i}")).collect();
+        let mut seeded = vec![
+            ("standard", "own", 6000, 23999),
+            ("other", "ssh", 6000, 23998),
+        ];
+        for (i, name) in (0..count).zip(&names) {
+            let local = if i < in_fallback {
+                FALLBACK_PORTS.start() + i
+            } else {
+                30000 + i
+            };
+            seeded.push((DEFAULT_OWNER, name.as_str(), local, local));
+        }
+        write_map(&dir, &seeded);
+
+        PortRegistry::new(&dir)
+            .rename_owner(DEFAULT_OWNER, "standard")
+            .unwrap();
+
+        let entries = entries_in(&dir);
+        let standard: Vec<&(String, String, u16)> = entries
+            .iter()
+            .filter(|(owner, _, _)| owner == "standard")
+            .collect();
+        assert_eq!(standard.len(), MAX_VISITORS);
+        assert_eq!(
+            standard
+                .iter()
+                .filter(|(_, _, port)| FALLBACK_PORTS.contains(port))
+                .count(),
+            MAX_FALLBACK_PORTS
+        );
+        // In the order of the map: the entries before a cap stay, with their ports; the ones past
+        // it go.
+        for (visitor, port, kept) in [
+            ("own", 23999, true),
+            ("v0", 23000, true),
+            ("v248", 23248, true),
+            ("v249", 23249, false),
+            ("v299", 23299, false),
+            ("v300", 30300, true),
+            ("v549", 30549, true),
+            ("v550", 30550, false),
+        ] {
+            assert_eq!(
+                entries.contains(&entry("standard", visitor, port)),
+                kept,
+                "{visitor}"
+            );
+        }
+        assert!(entries.contains(&entry("other", "ssh", 23998)));
+        assert!(entries.iter().all(|(owner, _, _)| owner != DEFAULT_OWNER));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn port_registry_releases_the_entries_of_an_owner() {
         let dir = scratch_dir("release");
         write_map(
@@ -935,7 +1028,8 @@ mod tests {
         let dir = scratch_dir("owners-lock");
         write_map(&dir, &[("mine", "ssh", 6000, 6000)]);
         let held = PortRegistry::new(&dir).lock().unwrap();
-        let calls: [fn(&PortRegistry) -> Result<(), AppError>; 4] = [
+        type Call = fn(&PortRegistry) -> Result<(), AppError>;
+        let calls: [Call; 4] = [
             |registry| registry.local_ports_of_others("mine").map(drop),
             |registry| registry.rename_owner("mine", "theirs"),
             |registry| registry.release("theirs"),
