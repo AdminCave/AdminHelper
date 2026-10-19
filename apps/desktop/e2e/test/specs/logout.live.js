@@ -14,13 +14,15 @@ import { login, gotoInfrastructure } from '../lib/live.js';
 const NO_SESSION = 'Keine aktive Sitzung — Anfrage abgelehnt';
 
 // api_proxy through the bridge as the UI calls it: method and path, no server URL,
-// no token. The rejection comes back as { error }, so its text reaches the assertion.
+// no token. The rejection comes back as { rejected }, so its text reaches the assertion:
+// webdriver reads a script result that carries an `error` key as a failed command and
+// throws (isSuccessfulResponse), so { error } would never come back as a value.
 function proxyGet(path) {
   return browser.executeAsync((p, done) => {
     window.__TAURI__.core
       .invoke('api_proxy', { method: 'GET', path: p })
       .then((value) => done({ value }))
-      .catch((e) => done({ error: String((e && e.message) || e) }));
+      .catch((e) => done({ rejected: String((e && e.message) || e) }));
   }, path);
 }
 
@@ -31,7 +33,7 @@ describe('Logout', () => {
     await gotoInfrastructure();
 
     const servers = await proxyGet('/api/servers');
-    expect(servers.error).toBeUndefined();
+    expect(servers.rejected).toBeUndefined();
     expect(Array.isArray(servers.value)).toBe(true);
     expect(servers.value.length).toBeGreaterThan(0);
   });
@@ -64,6 +66,6 @@ describe('Logout', () => {
     await expect($('.sidebar-nav')).not.toBeExisting();
 
     // The same call as above: Rust dropped the session, so nothing goes out.
-    expect(await proxyGet('/api/servers')).toEqual({ error: NO_SESSION });
+    expect(await proxyGet('/api/servers')).toEqual({ rejected: NO_SESSION });
   });
 });

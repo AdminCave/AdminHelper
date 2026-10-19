@@ -149,8 +149,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
 Doku: keine (das Verhalten steht schon in desktop.html)
 Abhängt von: T13
 
-### T16 — Live-E2E Logout: die Ablehnung ohne Session kommt als Wert zurück  [ ]
+### T16 — Live-E2E Logout: die Ablehnung ohne Session kommt als Wert zurück  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/logout.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @a73f40c6 2026-10-19T13:22:56+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T16.verdict.json)
 Änderung: `proxyGet` meldet die Ablehnung von `api_proxy` heute als `{ error }`; der WebDriver-Weg wertet ein Ergebnis mit dem Schlüssel `error` selbst als Fehler (VM-Lauf 2026-10-19: `WebDriverError: Keine aktive Sitzung — Anfrage abgelehnt when running "execute/async"`), die Assertion erreicht den Text nie. Ein anderer Schlüssel (z. B. `{ rejected }`), die Assertion bleibt gleich streng (genau der Text aus `session::no_session()`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
