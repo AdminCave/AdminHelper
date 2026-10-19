@@ -9,9 +9,16 @@ deterministically (oldest first, id tiebreaker) instead of a non-deterministic
 from datetime import datetime
 
 import pytest
+from pydantic import ValidationError
 
 from app.modules.frp._helpers import get_frp_config
 from app.modules.frp.models import FrpServerConfig
+from app.modules.frp.schemas import (
+    FrpServerConfigCreate,
+    FrpServerConfigUpdate,
+    FrpTunnelCreate,
+    FrpTunnelUpdate,
+)
 
 
 def _cfg(db, cid: str, created: datetime) -> None:
@@ -251,6 +258,105 @@ def test_update_with_a_short_auth_token_is_rejected(
     stored = db_session.get(FrpServerConfig, cid)
     db_session.refresh(stored)
     assert stored.auth_token == token
+
+
+# --- secrets: 16 characters besides whitespace at either end ---
+
+# Every secret field of the FRP schemas, in the create and in the update schema.
+SECRETS = [
+    (FrpServerConfigCreate, "auth_token"),
+    (FrpServerConfigCreate, "dashboard_password"),
+    (FrpServerConfigUpdate, "auth_token"),
+    (FrpServerConfigUpdate, "dashboard_password"),
+    (FrpTunnelCreate, "secret_key"),
+    (FrpTunnelUpdate, "secret_key"),
+]
+SECRET_IDS = [f"{model.__name__}.{field}" for model, field in SECRETS]
+REQUIRED = {
+    FrpServerConfigCreate: {"name": "n", "server_addr": "a.example"},
+    FrpTunnelCreate: {
+        "server_id": "s",
+        "frp_config_id": "c",
+        "name": "n",
+        "tunnel_type": "stcp",
+        "protocol": "ssh",
+        "local_port": 22,
+    },
+}
+SECRET_RULE = "at least 16 characters besides leading and trailing whitespace"
+
+
+def _secret(model, field, value):
+    return model(**REQUIRED.get(model, {}), **{field: value})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [" " * 16, " " + "x" * 15 + " ", "x" * 15 + " " * 4, "\u00a0" * 2 + "x" * 15],
+    ids=repr,
+)
+@pytest.mark.parametrize(("model", "field"), SECRETS, ids=SECRET_IDS)
+def test_a_secret_short_of_16_characters_besides_its_ends_is_rejected(model, field, value):
+    assert len(value) >= 16
+    with pytest.raises(ValidationError, match=SECRET_RULE):
+        _secret(model, field, value)
+
+
+@pytest.mark.parametrize("value", ["abcd efgh ijkl m", "   " + "x" * 16 + " "], ids=repr)
+@pytest.mark.parametrize(("model", "field"), SECRETS, ids=SECRET_IDS)
+def test_a_secret_of_16_characters_besides_its_ends_is_taken_as_sent(model, field, value):
+    assert getattr(_secret(model, field, value), field) == value
+
+
+@pytest.mark.parametrize("value", ["", None])
+@pytest.mark.parametrize(("model", "field"), SECRETS, ids=SECRET_IDS)
+def test_an_empty_secret_still_passes(model, field, value):
+    # Empty or null skips the check: the routes generate a secret or keep the stored one.
+    assert getattr(_secret(model, field, value), field) == value
+
+
+@pytest.mark.parametrize("field", ["auth_token", "dashboard_password"])
+def test_create_with_a_secret_of_spaces_is_rejected(
+    test_client, db_session, admin_user, monkeypatch, field
+):
+    import app.modules.frp.config_router as cr
+
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+    body = {"name": "test-frps", "server_addr": "frps.example.net", "dashboard_port": 7500}
+    created = test_client.post(
+        "/api/frp/server-config", json={**body, field: " " * 16}, headers=_login(test_client)
+    )
+    assert created.status_code == 422, created.text
+    assert created.json()["detail"][0]["loc"] == ["body", field], created.text
+    assert db_session.query(FrpServerConfig).count() == 0
+
+
+@pytest.mark.parametrize("value", [" " * 16, " " + "x" * 15 + " "], ids=repr)
+def test_update_with_an_auth_token_short_of_16_besides_its_ends_is_rejected(
+    test_client, db_session, admin_user, monkeypatch, value
+):
+    h, cid, token = _create_via_api(test_client, monkeypatch)
+    updated = test_client.put(
+        f"/api/frp/server-config/{cid}", json={"auth_token": value}, headers=h
+    )
+    assert updated.status_code == 422, updated.text
+    stored = db_session.get(FrpServerConfig, cid)
+    db_session.refresh(stored)
+    assert stored.auth_token == token
+
+
+def test_update_stores_an_auth_token_with_spaces_at_its_ends_as_sent(
+    test_client, db_session, admin_user, monkeypatch
+):
+    h, cid, _ = _create_via_api(test_client, monkeypatch)
+    new_token = "  a-new-token-of-sufficient-length "
+    updated = test_client.put(
+        f"/api/frp/server-config/{cid}", json={"auth_token": new_token}, headers=h
+    )
+    assert updated.status_code == 200, updated.text
+    stored = db_session.get(FrpServerConfig, cid)
+    db_session.refresh(stored)
+    assert stored.auth_token == new_token
 
 
 def _frps_cfg() -> FrpServerConfig:

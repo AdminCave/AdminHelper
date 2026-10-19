@@ -16,8 +16,10 @@ Ziel: (1) Ein Geheimnis der FRP-Konfiguration (`auth_token`, `dashboard_password
 
 Entscheidungen (Kevin 2026-10-19): Ein gespeichertes leeres `auth_token` bleibt, frps startet damit nicht; die Startprüfung meldet es schon (R-0411), hier kommt nur der Testfall dazu (T1). Der Dashboard-Port wird an der API mit `422` abgewiesen (T2). Bestandswerte bleiben unangetastet (keine Datenmigration).
 
-### T1 — Geheimnisse: 16 Zeichen ohne Leerzeichen am Rand  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_frp_extra_config.py, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md
+### T1 — Geheimnisse: 16 Zeichen ohne Leerzeichen am Rand  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_frp_extra_config.py, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @e44f7022 2026-10-19T16:47:38+02:00
+Review: approve (.ah-out/review/server-frp-hook-checks/T1.verdict.json)
 Änderung: `_check_secret` (`schemas.py:34`) misst die Länge des Werts ohne Leerzeichen am Anfang und Ende; unter 16 Zeichen ist es ein `422` mit englischem Text („must have at least 16 characters besides leading and trailing whitespace“). Der gespeicherte Wert bleibt, wie er gesendet wurde; leer oder `null` bleibt „automatisch erzeugen“ bzw. „unverändert“. Gilt für `auth_token`, `dashboard_password` (`:161`, `:191`) und `secret_key` (`:223`, `:247`). Tests: 16 Leerzeichen, 15 Zeichen plus Leerzeichen am Rand je Feld → `422`; 16 Zeichen mit Leerzeichen innen → angenommen; leer → wie bisher. Zum Starttest `test_startup_tells_the_admins_once_about_a_token_frps_is_not_started_with` (`test_frp_extra_config.py:555`) ein Eintrag mit leerem `auth_token`: gemeldet, Zeile unverändert.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py tests/test_frp_extra_config.py
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (`:69`, `:102`: „mindestens 16 Zeichen, Leerzeichen am Anfang und Ende zählen nicht“) · CHANGELOG

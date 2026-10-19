@@ -955,6 +955,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Datenbankanbindung ab (`sqlalchemy.exc.SQLAlchemyError` oder `psycopg.Error`), nennen `error` und die Log-Zeile
   `Fehler: …` in `logs` nur den Typ des Fehlers, etwa `OperationalError`, nicht mehr den Text des Treibers. Jeder
   andere Fehler eines Hooks erscheint weiter mit seinem Text. Doku: Entwickler-Doku Hooks (DE+EN).
+- **Server: Geheimnisse der FRP-Konfiguration zaehlen ohne Leerzeichen am Rand:** Ein neues `auth_token` oder
+  `dashboard_password` der FRP-Server-Konfiguration und ein neuer `secret_key` eines STCP-Tunnels brauchen mindestens
+  16 Zeichen ohne Leerzeichen am Anfang und Ende, sonst antwortet der Server mit `422` („must have at least 16
+  characters besides leading and trailing whitespace“). Ein Wert nur aus Leerzeichen gilt damit nicht mehr als
+  Geheimnis. Gespeichert wird der Wert so, wie er gesendet wurde; leer oder `null` wirkt wie bisher. Schon
+  gespeicherte Werte bleiben unveraendert. Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
 - **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
   nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei

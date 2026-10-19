@@ -37,8 +37,9 @@ def _check_secret(v: Optional[str]) -> Optional[str]:
     if v is None or v == "":
         return v
     v = _reject_toml_breakers(v)
-    if len(v) < 16:
-        raise ValueError("muss mindestens 16 Zeichen lang sein")
+    # Whitespace at either end adds nothing to guess; the value itself is kept as sent.
+    if len(v.strip()) < 16:
+        raise ValueError("must have at least 16 characters besides leading and trailing whitespace")
     return v
 
 
