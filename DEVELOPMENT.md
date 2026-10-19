@@ -907,7 +907,7 @@ Vollstaendige Integration mit dem AdminHelper-Server:
 - Im Server-Web-Interface: Server + Tunnel + Visitor anlegen
 - Der Desktop-Client holt die Visitor-Config automatisch und startet frpc
 - Verbindungen mit Tunnel zeigen ein gruenes "via Tunnel"-Badge
-- SSH/RDP-Verbindungen werden automatisch ueber `127.0.0.1:<visitor_port>` aufgeloest
+- SSH/RDP-Verbindungen werden automatisch ueber `127.0.0.1:<lokaler Port>` aufgeloest (der Visitor-Port oder, ist er belegt, ein freier aus 23000–23999)
 
 ### Automatisierte Integrations-/E2E-Tests (Docker)
 

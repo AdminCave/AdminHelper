@@ -100,9 +100,9 @@ In **Server mode**, the client connects to an AdminHelper server with JWT authen
 3. Connections are loaded from the server API
 4. **frpc** starts automatically as a visitor to establish STCP/HTTPS tunnels
 5. Connections with matching tunnels are resolved transparently:
-   - SSH/RDP (STCP): `host` → `127.0.0.1`, `port` → visitor port
+   - SSH/RDP (STCP): `host` → `127.0.0.1`, `port` → the visitor's local port (the visitor port, or a free one from 23000–23999 if that is taken)
    - Web (HTTPS): URL → custom domain
-   - Web (STCP): URL → `http://127.0.0.1:<visitor_port>`
+   - Web (STCP): URL → `http://127.0.0.1:<local port>`
 6. A tunnel indicator in the sidebar shows connection status
 7. Cards show a green **"via Tunnel"** badge for tunneled connections
 
