@@ -14,8 +14,10 @@ Kevin 2026-10-16 (Konzept, Spike erledigt) und 2026-10-19 (Antworten auf die Pla
 
 ## Block A — Namensraum, Portkarte, Migration
 
-### T1 — Startmodus, Workspace-Id und Namensraum  [ ]
+### T1 — Startmodus, Workspace-Id und Namensraum  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @b79fc4be 2026-10-19T14:33:48+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T1.verdict.json)
 Änderung: Neues Modul `workspace.rs` (SPDX-Header): `Mode::{Launcher, Workspace(id), Purge(id)}` aus argv (`--workspace <id>`, zusätzlich `--purge`; alles andere → Fehler mit Nutzungszeile), Id gegen `^[a-z0-9-]{1,32}$` mit ausgeschriebener ASCII-Klasse (keine Locale-Bereiche). `Workspace{id, name, legacy_keys}` mit `data_dir(base)` = `base/workspaces/<id>`, `run_dir`, `lock_path`, `keyring_prefix()` (`""` bei `legacy_keys`, sonst `ws:<id>|`, unter Windows `com.admincave.adminhelper/ws:<id>|`), `log_name()` (`adminhelper-<id>`; Launcher `adminhelper`), `window_title()` („<Name> — AdminHelper“). Prozessglobaler Kontext (`OnceLock`); `current()` ohne Kontext (Launcher) ist ein Fehler; für Tests ein thread-lokaler Guard nach dem Muster von `keyring_store::memory()`. In `main.rs` nur `mod workspace;`. Tests: argv-Varianten (fehlende Id, `../x`, Großbuchstaben, Umlaut, 33 Zeichen, unbekannte Flags → Fehler), Präfix legacy/neu, Titel, Logname, `current()` ohne Kontext → Fehler.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace::
 Doku: keine (intern; Doku mit T33)

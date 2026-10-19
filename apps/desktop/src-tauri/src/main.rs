@@ -26,6 +26,7 @@ mod test_tls;
 mod tofu;
 mod tunnel;
 mod validation;
+mod workspace;
 
 use commands::{
     ansible_generate_inventory, ansible_launch, ansible_write_playbook, api_proxy,
