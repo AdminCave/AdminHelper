@@ -2,18 +2,20 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The launcher (R-0431): the workspaces the picker lists, the making and editing of a workspace,
-//! and the port map entries no workspace owns any more. Once the migration made
-//! `workspaces.json`, only the launcher writes it, and it never makes one: without it the
-//! migration has not run, and a registry made here would keep the old data out of the
-//! workspaces for good.
+//! The launcher (R-0431): the workspaces the picker lists, the making, editing and opening of a
+//! workspace, the start of the launcher from a workspace, and the port map entries no workspace
+//! owns any more. Once the migration made `workspaces.json`, only the launcher writes it, and it
+//! never makes one: without it the migration has not run, and a registry made here would keep
+//! the old data out of the workspaces for good.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{mpsc, Mutex, MutexGuard, PoisonError};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -28,6 +30,10 @@ use crate::workspace::{
 
 /// The longest name of a workspace, in characters.
 const NAME_MAX_CHARS: usize = 40;
+
+/// How long [`open`] waits for the workspace it started to hold its lock, and how often it looks.
+const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+const OPEN_PROBE: Duration = Duration::from_millis(200);
 
 /// A workspace as the picker lists it.
 #[cfg_attr(
@@ -205,6 +211,206 @@ pub fn drop_orphan_ports(base: &Path) -> Result<(), AppError> {
     }
     let owners: Vec<&str> = owners.iter().map(String::as_str).collect();
     PortRegistry::new(base).retain_owners(&owners)
+}
+
+/// Opens the workspace `id` of the app data dir `base` in a process of its own, which `spawner`
+/// starts with `--workspace <id>`, and returns once that process holds the workspace's lock, so
+/// the launcher can end without leaving the user with nothing. Blocks for up to
+/// [`OPEN_TIMEOUT`]. An error, with nothing started, for a workspace that is open or that the
+/// registry, its directory or its `workspace.json` does not make whole. Before the start the
+/// registry names it as last used, so the picker selects it again whether it opens or not. An
+/// error, too, if the process ends before it holds the lock or still holds none at the
+/// deadline; such a process is left to run.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the commands of the launcher (R-0431 T14) call it"
+    )
+)]
+pub fn open(base: &Path, id: &WorkspaceId, spawner: &impl Spawner) -> Result<(), AppError> {
+    open_within(base, id, spawner, OPEN_TIMEOUT, OPEN_PROBE)
+}
+
+/// [`open`], waiting up to `timeout` and looking every `probe`.
+fn open_within(
+    base: &Path,
+    id: &WorkspaceId,
+    spawner: &impl Spawner,
+    timeout: Duration,
+    probe: Duration,
+) -> Result<(), AppError> {
+    let lock = mark_opening(base, id)?;
+    let mut child = spawner
+        .spawn(&["--workspace", &id.to_string()])
+        .map_err(|e| {
+            AppError::Io(io::Error::new(
+                e.kind(),
+                format!("the workspace {id} did not start: {e}"),
+            ))
+        })?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if is_open(&lock)? {
+            return Ok(());
+        }
+        if let Some(status) = child.try_wait()? {
+            return Err(AppError::Io(io::Error::other(format!(
+                "the workspace {id} ended before it opened ({status})"
+            ))));
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(AppError::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("the workspace {id} did not open within {timeout:?}"),
+            )));
+        }
+        thread::sleep(probe.min(left));
+    }
+}
+
+/// Checks that the workspace `id` in `base` can be opened, names it as last used and gives the
+/// path of its lock.
+fn mark_opening(base: &Path, id: &WorkspaceId) -> Result<PathBuf, AppError> {
+    let _guard = registry_guard();
+    let mut registry = load_registry(base)?;
+    let ws = paths_of(id);
+    let dir = ws.data_dir(base);
+    if !registry.workspaces.iter().any(|entry| entry.id == *id) || !dir.try_exists()? {
+        return Err(AppError::Validation(format!("there is no workspace {id}")));
+    }
+    // The process would not start it either.
+    if let Err(e) = Meta::load(&dir) {
+        return Err(AppError::Validation(format!(
+            "the workspace.json of the workspace {id} does not load ({}); it does not open",
+            failure(&e)
+        )));
+    }
+    let lock = ws.lock_path(base);
+    if is_open(&lock)? {
+        return Err(AppError::Validation(format!(
+            "the workspace {id} is open already"
+        )));
+    }
+    if registry.last_used.as_ref() != Some(id) {
+        registry.last_used = Some(id.clone());
+        registry.store(base)?;
+    }
+    Ok(lock)
+}
+
+/// Starts the launcher, for "Workspaces…" in a workspace process: `spawner` starts this program
+/// without arguments. If a launcher runs already, the new one hands over to it and ends (the
+/// single-instance plugin), so nothing here waits for it.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the commands of the launcher (R-0431 T14) call it"
+    )
+)]
+pub fn open_launcher(spawner: &impl Spawner) -> Result<(), AppError> {
+    spawner.spawn(&[]).map_err(|e| {
+        AppError::Io(io::Error::new(
+            e.kind(),
+            format!("the launcher did not start: {e}"),
+        ))
+    })?;
+    Ok(())
+}
+
+/// Starts this program anew with the arguments it is given, detached from this process. A
+/// trait, so [`open`] and [`open_launcher`] run in tests without a process.
+pub trait Spawner {
+    type Child: Spawned;
+
+    fn spawn(&self, args: &[&str]) -> io::Result<Self::Child>;
+}
+
+/// A program a [`Spawner`] started.
+pub trait Spawned {
+    /// How it ended, if it has; never waits.
+    fn try_wait(&mut self) -> io::Result<Option<ExitStatus>>;
+}
+
+/// The real one: `program`, detached.
+pub struct AppSpawner {
+    program: PathBuf,
+}
+
+impl AppSpawner {
+    /// The spawner of this program ([`std::env::current_exe`]).
+    #[expect(
+        dead_code,
+        reason = "the commands of the launcher (R-0431 T14) start the workspaces and the launcher with it"
+    )]
+    pub fn new() -> io::Result<Self> {
+        Ok(Self {
+            program: std::env::current_exe()?,
+        })
+    }
+}
+
+/// The process creation flags `DETACHED_PROCESS` and `CREATE_NEW_PROCESS_GROUP`
+/// (`Win32::System::Threading`), spelled out: the `windows` crate of this app leaves that module
+/// out.
+#[cfg(windows)]
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+impl Spawner for AppSpawner {
+    type Child = DetachedChild;
+
+    /// Starts the program so that it outlives this process and shares nothing with it: its stdio
+    /// goes to null, and it gets a process group of its own (on Windows no console either), so
+    /// a Ctrl-C meant for this process does not end it.
+    fn spawn(&self, args: &[&str]) -> io::Result<DetachedChild> {
+        let mut command = Command::new(&self.program);
+        command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(
+            &mut command,
+            DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+        );
+        let mut child = command.spawn()?;
+        let (ended, end) = mpsc::channel();
+        // Waited for on a thread of its own: one that ends while this process runs on (the
+        // launcher a workspace started) leaves no zombie behind, whether anyone asks or not.
+        thread::spawn(move || {
+            let _ = ended.send(child.wait());
+        });
+        Ok(DetachedChild { end, status: None })
+    }
+}
+
+/// A program [`AppSpawner`] started.
+pub struct DetachedChild {
+    end: mpsc::Receiver<io::Result<ExitStatus>>,
+    status: Option<ExitStatus>,
+}
+
+impl Spawned for DetachedChild {
+    fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        if self.status.is_none() {
+            match self.end.try_recv() {
+                Ok(ended) => self.status = Some(ended?),
+                Err(mpsc::TryRecvError::Empty) => {}
+                // The waiter is gone without a word: it panicked.
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err(io::Error::other("lost track of the started program"))
+                }
+            }
+        }
+        Ok(self.status)
+    }
 }
 
 /// The registry in `base`. Without one the migration has not run; the launcher never makes it.
@@ -405,17 +611,22 @@ fn make_private_dir(dir: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::fs;
+    use std::io;
     use std::path::{Path, PathBuf};
+    use std::process::ExitStatus;
+    use std::rc::Rc;
+    use std::time::{Duration, Instant};
 
     use super::{
-        drop_orphan_ports, is_taken, list, new_id, save, WorkspaceDraft, WorkspaceId, WorkspaceList,
+        drop_orphan_ports, is_taken, list, new_id, open, open_launcher, open_within, save, Spawned,
+        Spawner, WorkspaceDraft, WorkspaceId, WorkspaceList,
     };
     use crate::error::AppError;
     use crate::models::{Settings, SyncMode};
     use crate::workspace::{
-        acquire, is_open, Meta, Registry, RegistryEntry, PALETTE, REGISTRY_FILE,
+        acquire, is_open, InstanceLock, Meta, Registry, RegistryEntry, PALETTE, REGISTRY_FILE,
     };
 
     /// A directory of its own for one test case under the system temp dir, gone with the guard.
@@ -1238,5 +1449,351 @@ mod tests {
         );
         assert!(!base.join("workspaces").exists());
         assert_eq!(fs::read(base.join(PORT_MAP)).unwrap(), port_map);
+    }
+
+    /// What a started program does while [`open`] waits for it, counted in the looks it gets.
+    #[derive(Clone, Copy)]
+    enum Course {
+        /// Takes the lock of its workspace at this look and keeps it.
+        TakesLockAt(u32),
+        /// Ends at this look, the lock never held.
+        EndsAt(u32),
+        /// Neither ends nor takes the lock.
+        Hangs,
+    }
+
+    /// Starts no process: notes the arguments of every start and hands out a child that runs
+    /// `course`; without a course, a start fails.
+    struct FakeSpawner {
+        base: PathBuf,
+        course: Option<Course>,
+        starts: RefCell<Vec<Vec<String>>>,
+        /// The looks the child of the last start got.
+        looks: Rc<Cell<u32>>,
+    }
+
+    impl FakeSpawner {
+        fn new(base: &Path, course: Option<Course>) -> Self {
+            Self {
+                base: base.to_path_buf(),
+                course,
+                starts: RefCell::new(Vec::new()),
+                looks: Rc::new(Cell::new(0)),
+            }
+        }
+
+        fn starts(&self) -> Vec<Vec<String>> {
+            self.starts.borrow().clone()
+        }
+    }
+
+    struct FakeChild {
+        /// The lock of the workspace it was started for; the launcher has none.
+        lock: Option<PathBuf>,
+        course: Course,
+        looks: Rc<Cell<u32>>,
+        held: Option<InstanceLock>,
+    }
+
+    impl Spawner for FakeSpawner {
+        type Child = FakeChild;
+
+        fn spawn(&self, args: &[&str]) -> io::Result<FakeChild> {
+            self.starts
+                .borrow_mut()
+                .push(args.iter().map(|arg| arg.to_string()).collect());
+            let course = self
+                .course
+                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+            // As the workspace process does: its lock follows from the id it was given.
+            let lock = match args {
+                ["--workspace", ws] => Some(lock_of(&self.base, ws)),
+                _ => None,
+            };
+            self.looks.set(0);
+            Ok(FakeChild {
+                lock,
+                course,
+                looks: Rc::clone(&self.looks),
+                held: None,
+            })
+        }
+    }
+
+    impl Spawned for FakeChild {
+        fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+            let look = self.looks.get() + 1;
+            self.looks.set(look);
+            match self.course {
+                Course::TakesLockAt(at) if look >= at && self.held.is_none() => {
+                    let lock = self.lock.as_ref().expect("started for a workspace");
+                    self.held = Some(acquire(lock).unwrap().expect("the lock is free"));
+                }
+                Course::EndsAt(at) if look >= at => return Ok(Some(ExitStatus::default())),
+                _ => {}
+            }
+            Ok(None)
+        }
+    }
+
+    /// Short enough for a test, long enough to see each look.
+    const PROBE: Duration = Duration::from_millis(10);
+
+    /// `standard` (last used) and `w-0a1b2c3d`, both closed.
+    fn install_two(base: &Path) {
+        install(
+            base,
+            &[
+                ("standard", meta(SyncMode::Local, "Standard", None)),
+                (
+                    "w-0a1b2c3d",
+                    meta(SyncMode::Server, "Kunde A", Some("https://ah.example.com")),
+                ),
+            ],
+            true,
+        );
+    }
+
+    #[test]
+    fn open_starts_the_workspace_and_returns_once_it_holds_its_lock() {
+        let scratch = Scratch::new("open");
+        let base = &scratch.0;
+        install_two(base);
+        let before = registry_of(base);
+        let spawner = FakeSpawner::new(base, Some(Course::TakesLockAt(3)));
+
+        open_within(
+            base,
+            &id("w-0a1b2c3d"),
+            &spawner,
+            Duration::from_secs(1),
+            PROBE,
+        )
+        .unwrap();
+
+        assert_eq!(spawner.starts(), [["--workspace", "w-0a1b2c3d"]]);
+        // It looked until the lock was held, and no longer.
+        assert_eq!(spawner.looks.get(), 3);
+        assert_eq!(
+            registry_of(base),
+            Registry {
+                last_used: Some(id("w-0a1b2c3d")),
+                ..before
+            }
+        );
+    }
+
+    #[test]
+    fn open_refuses_an_open_workspace_and_starts_nothing() {
+        let scratch = Scratch::new("open-open");
+        let base = &scratch.0;
+        install_two(base);
+        let registry = registry_bytes(base);
+        let held = acquire(&lock_of(base, "w-0a1b2c3d")).unwrap().unwrap();
+        let spawner = FakeSpawner::new(base, Some(Course::TakesLockAt(1)));
+
+        assert_validation_error(open(base, &id("w-0a1b2c3d"), &spawner), "open");
+
+        assert!(spawner.starts().is_empty(), "{:?}", spawner.starts());
+        assert_eq!(registry_bytes(base), registry, "last used changed");
+        assert!(is_open(&lock_of(base, "w-0a1b2c3d")).unwrap());
+        drop(held);
+    }
+
+    #[test]
+    fn open_starts_no_workspace_it_does_not_know_or_that_does_not_load() {
+        let scratch = Scratch::new("open-unknown");
+        let base = &scratch.0;
+        install(
+            base,
+            &[
+                ("standard", meta(SyncMode::Local, "Standard", None)),
+                ("broken", meta(SyncMode::Server, "Broken", None)),
+                ("bare", meta(SyncMode::Local, "Bare", None)),
+            ],
+            false,
+        );
+        fs::write(dir_of(base, "broken").join("workspace.json"), "{not json").unwrap();
+        fs::remove_file(dir_of(base, "bare").join("workspace.json")).unwrap();
+        // Named by the registry, its directory gone.
+        let mut registry = registry_of(base);
+        registry.workspaces.push(RegistryEntry { id: id("gone") });
+        registry.store(base).unwrap();
+        // A directory the registry does not name.
+        meta(SyncMode::Local, "Stray", None)
+            .store(&dir_of(base, "w-00000000"))
+            .unwrap();
+        let registry = registry_bytes(base);
+        let spawner = FakeSpawner::new(base, Some(Course::TakesLockAt(1)));
+
+        for ws in ["broken", "bare", "gone", "w-00000000", "w-11111111"] {
+            assert_validation_error(open(base, &id(ws), &spawner), ws);
+        }
+
+        assert!(spawner.starts().is_empty(), "{:?}", spawner.starts());
+        assert_eq!(registry_bytes(base), registry, "last used changed");
+        assert!(!dir_of(base, "gone").exists());
+        assert!(!dir_of(base, "w-11111111").exists());
+
+        // Without a registry the data has not been moved into workspaces yet.
+        let unmigrated = Scratch::new("open-unmigrated");
+        assert!(open(&unmigrated.0, &id("standard"), &spawner).is_err());
+        assert!(spawner.starts().is_empty(), "{:?}", spawner.starts());
+        assert!(!unmigrated.0.join(REGISTRY_FILE).exists());
+    }
+
+    #[test]
+    fn open_fails_at_once_when_the_workspace_ends_before_it_holds_its_lock() {
+        let scratch = Scratch::new("open-ends");
+        let base = &scratch.0;
+        install_two(base);
+        let spawner = FakeSpawner::new(base, Some(Course::EndsAt(1)));
+        let timeout = Duration::from_millis(900);
+        let started = Instant::now();
+
+        let result = open_within(base, &id("w-0a1b2c3d"), &spawner, timeout, PROBE);
+
+        let waited = started.elapsed();
+        match result {
+            Err(AppError::Io(e)) => assert_ne!(e.kind(), io::ErrorKind::TimedOut, "{e}"),
+            other => panic!("expected the end as an error, got {other:?}"),
+        }
+        assert!(waited < timeout, "waited {waited:?} for the deadline");
+        assert_eq!(spawner.looks.get(), 1);
+        assert_eq!(spawner.starts(), [["--workspace", "w-0a1b2c3d"]]);
+        assert!(!is_open(&lock_of(base, "w-0a1b2c3d")).unwrap());
+    }
+
+    #[test]
+    fn open_gives_up_on_a_workspace_that_holds_no_lock_in_time() {
+        let scratch = Scratch::new("open-hangs");
+        let base = &scratch.0;
+        install_two(base);
+        let spawner = FakeSpawner::new(base, Some(Course::Hangs));
+        let timeout = Duration::from_millis(100);
+        let started = Instant::now();
+
+        let result = open_within(
+            base,
+            &id("w-0a1b2c3d"),
+            &spawner,
+            timeout,
+            Duration::from_millis(20),
+        );
+
+        let waited = started.elapsed();
+        assert!(
+            matches!(&result, Err(AppError::Io(e)) if e.kind() == io::ErrorKind::TimedOut),
+            "{result:?}"
+        );
+        assert!(waited >= timeout, "gave up after {waited:?}");
+        assert!(
+            waited < Duration::from_millis(900),
+            "gave up after {waited:?}"
+        );
+        // It kept looking until the deadline.
+        assert!(spawner.looks.get() >= 2, "{} looks", spawner.looks.get());
+    }
+
+    #[test]
+    fn open_launcher_starts_this_program_without_arguments_and_waits_for_nothing() {
+        let scratch = Scratch::new("open-launcher");
+        let spawner = FakeSpawner::new(&scratch.0, Some(Course::Hangs));
+
+        open_launcher(&spawner).unwrap();
+
+        assert_eq!(spawner.starts(), [Vec::<String>::new()]);
+        assert_eq!(spawner.looks.get(), 0, "it waited for the launcher");
+    }
+
+    #[test]
+    fn a_start_that_fails_is_an_error() {
+        let scratch = Scratch::new("open-fails");
+        let base = &scratch.0;
+        install_two(base);
+        let spawner = FakeSpawner::new(base, None);
+
+        assert!(matches!(
+            open(base, &id("w-0a1b2c3d"), &spawner),
+            Err(AppError::Io(_))
+        ));
+        assert!(matches!(open_launcher(&spawner), Err(AppError::Io(_))));
+        assert_eq!(
+            spawner.starts(),
+            [vec!["--workspace", "w-0a1b2c3d"], Vec::<&str>::new()]
+        );
+    }
+
+    /// Waits for `child` to end, as long as a loaded runner may need, and gives how it ended;
+    /// asked again, the child says the same.
+    #[cfg(any(target_os = "linux", windows))]
+    fn ended(child: &mut impl Spawned) -> ExitStatus {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            assert!(Instant::now() < deadline, "the program did not end");
+            std::thread::sleep(PROBE);
+        };
+        assert_eq!(child.try_wait().unwrap(), Some(status), "asked again");
+        status
+    }
+
+    /// The real start, a shell in place of this program: no app process starts in a test.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_detached_program_leads_a_group_of_its_own_without_stdio_and_its_end_is_seen() {
+        use super::AppSpawner;
+
+        let scratch = Scratch::new("detached");
+        let report = scratch.0.join("report");
+        // The shell writes its /proc stat line and where its stdio goes, then ends with 3. The
+        // links are read before any output goes to the report: dash redirects in the shell
+        // itself while a command runs.
+        let script = r#"stdio="$(readlink /proc/$$/fd/0 /proc/$$/fd/1 /proc/$$/fd/2)"
+read -r stat < /proc/$$/stat
+printf '%s\n%s\n' "$stat" "$stdio" > "$1"
+exit 3"#;
+
+        let spawner = AppSpawner {
+            program: PathBuf::from("/bin/sh"),
+        };
+
+        let mut child = spawner
+            .spawn(&["-c", script, "sh", report.to_str().unwrap()])
+            .unwrap();
+
+        assert_eq!(ended(&mut child).code(), Some(3));
+        let report = fs::read_to_string(&report).unwrap();
+        let mut lines = report.lines();
+        // pid (comm) state ppid pgrp …
+        let stat: Vec<&str> = lines.next().unwrap().split(' ').collect();
+        assert_eq!(stat[4], stat[0], "not a group of its own: {stat:?}");
+        assert_eq!(
+            lines.collect::<Vec<_>>(),
+            ["/dev/null", "/dev/null", "/dev/null"]
+        );
+    }
+
+    /// The real start on Windows, `cmd.exe` in place of this program: CreateProcess takes the
+    /// creation flags, and the end is seen. Runs only in the CI job rust-windows.
+    #[cfg(windows)]
+    #[test]
+    fn a_detached_program_starts_with_the_creation_flags_and_its_end_is_seen() {
+        use super::AppSpawner;
+
+        let program = std::env::var_os("ComSpec")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot is set"))
+                    .join("System32")
+                    .join("cmd.exe")
+            });
+        let spawner = AppSpawner { program };
+
+        let mut child = spawner.spawn(&["/c", "exit", "3"]).unwrap();
+
+        assert_eq!(ended(&mut child).code(), Some(3));
     }
 }

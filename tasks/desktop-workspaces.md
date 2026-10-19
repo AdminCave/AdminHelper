@@ -106,8 +106,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher::
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T2, T3
 
-### T12 — Launcher: Workspace öffnen und Launcher holen  [ ]
+### T12 — Launcher: Workspace öffnen und Launcher holen  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/launcher.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @21ec585e 2026-10-19T17:24:51+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T12.verdict.json)
 Änderung: `open(base, id, spawner)`: geöffnet → Fehler ohne Start; sonst `lastUsed` setzen, `current_exe() --workspace <id>` abgekoppelt starten (Unix `process_group(0)`, Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`, stdio null), warten, bis der Lock gehalten wird (höchstens 10 s, Probe alle 200 ms); endet das Kind vorher oder läuft die Frist ab → Fehler. `open_launcher(spawner)` startet `current_exe()` ohne Argumente abgekoppelt (die Übergabe an einen laufenden Launcher macht das Plugin). Der Spawner ist ein Trait, damit der Ablauf ohne echten Prozess testbar ist. Tests: geöffneter Workspace → Fehler, kein Spawn; Kind hält den Lock → Ok und `lastUsed`; Kind endet sofort → Fehler; Frist (im Test kurz) → Fehler.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- launcher::
 Doku: keine (intern; Doku mit T33)
