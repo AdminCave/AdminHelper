@@ -15,25 +15,12 @@ from __future__ import annotations
 import re
 import time
 
-from app.checkers.agent import cap_agent_text
+from app.checkers.agent import cap_agent_text, capped_objects
 
 # The codes the agent sends for a block it could not read (dockerUnavailable and
 # zfsUnavailable in apps/agent/internal/monitor/plugins.go).
 _ZFS_ERRORS = frozenset({"timeout", "cli_failed"})
 _DOCKER_ERRORS = frozenset({"daemon_unreachable", "timeout", "cli_failed", "parse_failed"})
-
-# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
-# that router imports app.checkers (R-0459).
-_MAX_REPORT_ENTRIES = 500
-
-
-def capped_objects(value: object) -> list[dict]:
-    """The entries of a report list that a checker rates: the objects among the first
-    _MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
-    flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
-    if not isinstance(value, list):
-        return []
-    return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
 
 
 def _outage_message(label: str, block: dict, codes: frozenset[str]) -> tuple[str, str | None]:

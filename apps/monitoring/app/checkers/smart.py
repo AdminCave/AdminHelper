@@ -13,7 +13,7 @@ Without disks the agent sends smart_absent with the reason instead of a smart ke
 
 from __future__ import annotations
 
-from app.checkers.plugins import capped_objects
+from app.checkers.agent import capped_objects
 from app.core.victoria import safe_metric_part
 
 # NVMe critical_warning Bit-Feld laut NVMe Base Spec 1.4, Figure 94.

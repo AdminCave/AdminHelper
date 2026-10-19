@@ -12,6 +12,7 @@ The data comes from the adminhelper-agent via POST /agent/{server_id}/report.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from datetime import datetime, timedelta
 from fnmatch import fnmatchcase
@@ -57,6 +58,45 @@ def cap_agent_text(value: object) -> str | None:
     if len(value) <= MAX_AGENT_TEXT:
         return value
     return value[: MAX_AGENT_TEXT - 1] + "…"
+
+
+def agent_number(value: object) -> int | float | None:
+    """A number from the report as a checker may rate it: an int or float (no bool) that
+    converts to a finite float, unchanged; None for anything else, a numeric string too.
+    None means the field counts as missing (R-0517)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:  # an int beyond float range, e.g. 400 digits
+        return None
+    return value if finite else None
+
+
+# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
+# that router imports app.checkers (R-0459).
+_MAX_REPORT_ENTRIES = 500
+
+
+def capped_objects(value: object) -> list[dict]:
+    """The entries of a report list that a checker rates: the objects among the first
+    _MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
+    flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
+
+
+def _entry_text(entry: dict, key: str, default: str) -> str:
+    """A text field of a report entry; anything but a string counts as missing (R-0517)."""
+    value = entry.get(key)
+    return value if isinstance(value, str) else default
+
+
+def _entry_number(entry: dict, key: str, default: float) -> float:
+    """A number field of a report entry; anything but a JSON number counts as missing."""
+    value = agent_number(entry.get(key))
+    return default if value is None else value
 
 
 def record_agent_report(server_id: str) -> None:
@@ -209,8 +249,9 @@ class AgentResourcesChecker:
 
         `prev_details` is this check's previous `_details` blob (state.details);
         its "problems" map {metric_key: level} drives the per-metric hysteresis."""
-        resources = report.get("resources", {})
-        if not resources:
+        resources = report.get("resources")
+        # Anything but an object (a broken agent) counts as missing, as do the fields below.
+        if not isinstance(resources, dict) or not resources:
             return "unknown", "No resource data", None
 
         problems = []
@@ -238,7 +279,7 @@ class AgentResourcesChecker:
                 problem_levels[key] = level
 
         # CPU
-        cpu = resources.get("cpu_percent")
+        cpu = agent_number(resources.get("cpu_percent"))
         if cpu is not None:
             metrics["agent_cpu_percent"] = cpu
             cpu_crit = config.get("cpu_crit", 95)
@@ -246,7 +287,7 @@ class AgentResourcesChecker:
             grade("cpu", cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%")
 
         # Memory
-        mem = resources.get("memory_percent")
+        mem = agent_number(resources.get("memory_percent"))
         if mem is not None:
             metrics["agent_memory_percent"] = mem
             mem_crit = config.get("memory_crit", 95)
@@ -254,29 +295,29 @@ class AgentResourcesChecker:
             grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
 
         # Disks — filter pseudo filesystems server-side
-        # Old agents send no fstype → default "_real_" passes the filter
-        raw_disks = resources.get("disks", [])
-        disks = [d for d in raw_disks if d.get("fstype", "_real_") not in EXCLUDED_FSTYPES]
+        # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
+        raw_disks = capped_objects(resources.get("disks"))
+        disks = [d for d in raw_disks if _entry_text(d, "fstype", "_real_") not in EXCLUDED_FSTYPES]
 
         disk_crit = config.get("disk_crit", 95)
         disk_warn = config.get("disk_warn", 85)
         for disk in disks:
-            pct = disk.get("percent", 0)
-            mount = disk.get("mount", "?")
+            pct = _entry_number(disk, "percent", 0)
+            mount = _entry_text(disk, "mount", "?")
             # No per-mount metric: the agent router already writes monitor_agent_disk_percent
             # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
             # duplicate series in a second schema (1.18); the value is still graded below.
             grade(f"disk:{mount}", pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%")
 
         # Temperatures (optional — VMs provide no sensor data)
-        temperatures = resources.get("temperatures", [])
+        temperatures = capped_objects(resources.get("temperatures"))
         if temperatures:
             temp_crit = config.get("temp_crit", 95)
             temp_warn = config.get("temp_warn", 80)
             temp_overrides = config.get("temp_overrides", {})
             for sensor in temperatures:
-                temp_c = sensor.get("temp_c", 0)
-                sensor_name = sensor.get("sensor", "?")
+                temp_c = _entry_number(sensor, "temp_c", 0)
+                sensor_name = _entry_text(sensor, "sensor", "?")
                 # Same as disks: the router writes monitor_agent_temp dimensionally (sensor
                 # tag); the name-encoded copy here was the duplicate (1.18). Still graded below.
                 ov = temp_overrides.get(sensor_name, {})
@@ -310,8 +351,8 @@ class AgentResourcesChecker:
             "memory_used_mb": resources.get("memory_used_mb"),
             "disks": [
                 {
-                    "mount": d.get("mount", "/"),
-                    "percent": d.get("percent", 0),
+                    "mount": _entry_text(d, "mount", "/"),
+                    "percent": _entry_number(d, "percent", 0),
                     "total_gb": d.get("total_gb"),
                     "used_gb": d.get("used_gb"),
                 }
@@ -319,8 +360,8 @@ class AgentResourcesChecker:
             ],
             "temperatures": [
                 {
-                    "sensor": s.get("sensor", "?"),
-                    "temp_c": s.get("temp_c", 0),
+                    "sensor": _entry_text(s, "sensor", "?"),
+                    "temp_c": _entry_number(s, "temp_c", 0),
                     "high": s.get("high", 0),
                     "critical": s.get("critical", 0),
                 }
