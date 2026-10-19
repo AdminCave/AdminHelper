@@ -117,7 +117,7 @@ describe('saveSettings mode-switch orchestration (6.6)', () => {
     vi.clearAllMocks();
     h.conn.error = null;
     // Start from an active server session so each switch exercises the logout/teardown paths.
-    h.sess.session = { token: 't' };
+    h.sess.session = {};
     h.sess.settings = { mode: 'server', serverUrl: 'https://alt' };
   });
 

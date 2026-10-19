@@ -94,7 +94,7 @@ describe('markRdpError race guard', () => {
 
 describe('markConnectionUsed mode branches', () => {
   it('server mode falls back to an in-memory patch when touch fails', async () => {
-    state.setSession({ settings: { mode: 'server' }, session: { token: 't' } });
+    state.setSession({ settings: { mode: 'server' }, session: {} });
     (connectionsApi.touch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('offline'));
     const conn = { id: 'c1', name: 'c', kind: 'ssh', host: 'h' } as never;
 

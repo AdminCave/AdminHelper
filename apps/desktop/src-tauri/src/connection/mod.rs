@@ -37,11 +37,12 @@ pub fn open_connection(
     }
 }
 
-/// The connection as listed, whose keyring entry holds the stored password, and what Rust
-/// checks it against: the tunnel mappings and the server's connections the session fetched,
-/// and where the visitors of the running frpc listen, all read when the connection opens.
+/// The connection as listed, whose keyring entry holds the stored password (without one, the
+/// opened connection), and what Rust checks it against: the tunnel mappings and the server's
+/// connections the session fetched, and where the visitors of the running frpc listen, all
+/// read when the connection opens.
 pub struct CredentialConnection<'a> {
-    pub connection: &'a Connection,
+    pub connection: Option<&'a Connection>,
     pub tunnels: &'a [TunnelMapping],
     pub connections: &'a [Connection],
     pub bindings: &'a [VisitorBinding],
@@ -50,29 +51,19 @@ pub struct CredentialConnection<'a> {
 pub fn open_connection_stored(
     app: &tauri::AppHandle,
     connection: &Connection,
-    credential: Option<CredentialConnection<'_>>,
+    credential: CredentialConnection<'_>,
     client: Option<&ClientInfo>,
     rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
-    if let Some(credential) = &credential {
-        validate_connection_input(credential.connection)?;
-        check_credential_connection(
-            connection,
-            credential.connection,
-            credential.tunnels,
-            credential.connections,
-            credential.bindings,
-        )?;
-    }
-    let credential_connection = credential.map(|credential| credential.connection);
+    let source = checked_password_source(connection, &credential)?;
     match connection.kind {
         ConnectionKind::Rdp => open_rdp_with_stored_password(
             app,
             connection,
-            credential_connection,
+            source,
             client,
             rdp,
             ui_language,
@@ -94,12 +85,30 @@ pub fn open_connection_stored(
 /// target arrives resolved to `127.0.0.1:<local port>`, but the UI checks and
 /// saves the password under the connection as listed, so the caller passes
 /// that one separately; without it the opened connection is its own source.
-#[cfg_attr(not(unix), allow(dead_code))]
 fn stored_password_source<'a>(
     connection: &'a Connection,
     credential_connection: Option<&'a Connection>,
 ) -> &'a Connection {
     credential_connection.unwrap_or(connection)
+}
+
+/// The source of the stored password for opening `connection`, once
+/// `check_credential_connection` took it for `connection`. The check runs without a
+/// credential connection, too: the opened one then has to be its own resolution.
+fn checked_password_source<'a>(
+    connection: &'a Connection,
+    credential: &CredentialConnection<'a>,
+) -> Result<&'a Connection, AppError> {
+    let source = stored_password_source(connection, credential.connection);
+    validate_connection_input(source)?;
+    check_credential_connection(
+        connection,
+        source,
+        credential.tunnels,
+        credential.connections,
+        credential.bindings,
+    )?;
+    Ok(source)
 }
 
 /// The credential connection is accepted only as the same connection as the
@@ -151,7 +160,7 @@ fn check_credential_connection(
 fn open_rdp_with_stored_password(
     app: &tauri::AppHandle,
     connection: &Connection,
-    credential_connection: Option<&Connection>,
+    source: &Connection,
     client: Option<&ClientInfo>,
     rdp: RdpOptions,
     ui_language: Option<&str>,
@@ -161,13 +170,10 @@ fn open_rdp_with_stored_password(
     // Windows (.rdp file) and unsupported-OS paths pass none. Both connections
     // are already validated and matched by the sole caller, open_connection_stored.
     #[cfg(unix)]
-    let password = crate::password::load_password_keyring(stored_password_source(
-        connection,
-        credential_connection,
-    ))?;
+    let password = crate::password::load_password_keyring(source)?;
     #[cfg(not(unix))]
     let password: Option<String> = {
-        let _ = credential_connection;
+        let _ = source;
         None
     };
     rdp::open_rdp(
@@ -275,6 +281,24 @@ mod tests {
             )
         }
 
+        /// Where the stored password for opening `connection` comes from, given `credential`
+        /// or none.
+        fn source<'a>(
+            &'a self,
+            connection: &'a Connection,
+            credential: Option<&'a Connection>,
+        ) -> Result<&'a Connection, AppError> {
+            checked_password_source(
+                connection,
+                &CredentialConnection {
+                    connection: credential,
+                    tunnels: &self.tunnels,
+                    connections: &self.connections,
+                    bindings: &self.bindings,
+                },
+            )
+        }
+
         /// Where Rust resolves `connection` to.
         fn resolve(&self, connection: &Connection) -> Connection {
             resolve_connection(connection, &self.tunnels, &self.bindings).connection
@@ -320,6 +344,55 @@ mod tests {
         let direct = rdp("192.0.2.10", 3390);
         let key = rdp_storage_key(stored_password_source(&direct, None));
         assert_eq!(key.as_deref(), Some("rdp|192.0.2.10|3390|admin|corp"));
+    }
+
+    #[test]
+    fn stored_password_key_without_credential_connection_rejects_a_moved_visitor_target() {
+        // frpc runs the visitors for server ports 13389 and 6000 on 23000 and 23005, so the
+        // literal ports reach whatever else listens there. Without a credential connection the
+        // opened one is its source and has to be its own resolution.
+        let held = Held {
+            tunnels: Vec::new(),
+            ..Held::admin()
+        };
+        for (host, port) in [
+            ("127.0.0.1", 6000),
+            ("localhost", 6000),
+            ("127.0.0.1", 13389),
+        ] {
+            let opened = rdp(host, port);
+            assert_ne!(target(&held.resolve(&opened)), target(&opened));
+            assert!(
+                matches!(held.source(&opened, None), Err(AppError::Validation(_))),
+                "{host}:{port}"
+            );
+        }
+    }
+
+    #[test]
+    fn stored_password_key_without_credential_connection_or_frpc_takes_the_connection() {
+        let listed = rdp("rdp.example.com", 3389);
+        let auto = rdp("127.0.0.1", 6000);
+        let direct = rdp("192.0.2.10", 3390);
+        let stopped = || Held {
+            bindings: Vec::new(),
+            ..Held::admin()
+        };
+        let unmapped = || Held {
+            tunnels: Vec::new(),
+            ..stopped()
+        };
+        for (opened, held) in [
+            (&listed, stopped()),
+            (&auto, unmapped()),
+            (&direct, unmapped()),
+            (&direct, Held::nothing()),
+        ] {
+            match held.source(opened, None) {
+                Ok(source) => assert_eq!(rdp_storage_key(source), rdp_storage_key(opened)),
+                Err(err) => panic!("{:?}: {err:?}", target(opened)),
+            }
+        }
     }
 
     #[test]

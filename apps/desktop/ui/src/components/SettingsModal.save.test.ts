@@ -64,7 +64,7 @@ vi.mock('$lib/bridge', () => {
 
 vi.mock('$lib/stores/session', async () => {
   const { readable } = await import('svelte/store');
-  const session = { username: 'kevin', serverUrl: 'https://srv.example', token: 'jwt-1' };
+  const session = { username: 'kevin', serverUrl: 'https://srv.example' };
   return {
     sessionStore: readable({ settings: h.stored, session, ready: true }),
     settings: readable(h.stored),

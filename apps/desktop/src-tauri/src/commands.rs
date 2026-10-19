@@ -233,9 +233,10 @@ pub async fn open_connection(
     .await
 }
 
-/// A stored password opens only the target Rust resolves the credential connection to, with the
-/// tunnel mappings and server connections the session fetched (not ones the webview sends) and
-/// the bindings of the running frpc as they are when the connection opens.
+/// A stored password opens only the target Rust resolves the credential connection (without one,
+/// the opened connection) to, with the tunnel mappings and server connections the session fetched
+/// (not ones the webview sends) and the bindings of the running frpc as they are when the
+/// connection opens.
 #[tauri::command]
 pub async fn open_connection_stored(
     app: tauri::AppHandle,
@@ -254,15 +255,12 @@ pub async fn open_connection_stored(
         let cid = correlation_id.unwrap_or_default();
         let rdp = rdp_options(&settings);
         let bindings = frpc::tunnel_status(&frpc_state).bindings;
-        let credential =
-            credential_connection
-                .as_ref()
-                .map(|listed| connection::CredentialConnection {
-                    connection: listed,
-                    tunnels: &tunnels,
-                    connections: &connections,
-                    bindings: &bindings,
-                });
+        let credential = connection::CredentialConnection {
+            connection: credential_connection.as_ref(),
+            tunnels: &tunnels,
+            connections: &connections,
+            bindings: &bindings,
+        };
         connection::open_connection_stored(
             &app,
             &connection,
