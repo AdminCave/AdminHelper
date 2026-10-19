@@ -5,7 +5,8 @@
 # Pure .env manipulation (openssl-generated secrets + upsert), no docker. Covers:
 # fresh generation, idempotence (a re-run leaves existing secrets stable — the
 # POSTGRES_PASSWORD stability the stale-volume auth guard depends on), placeholder
-# replacement, and quoted-value recognition (audit 6.71).
+# replacement, quoted-value recognition (audit 6.71), and a write that hits a full
+# disk (R-0516).
 #
 # Run: bash scripts/tests/init-secrets_test.sh   (needs bash, openssl, coreutils)
 
@@ -58,6 +59,50 @@ printf 'SECRET_KEY="already-quoted-secret-value"\nMONITOR_API_KEY=y\nPOSTGRES_PA
 bash "$INIT" "$ENV" >/dev/null 2>&1
 grep -q '^SECRET_KEY="already-quoted-secret-value"' "$ENV" \
   && ok "quoted existing value left alone" || bad "quoted value regenerated"
+
+# ── 5. full disk while writing: abort, .env stays whole (R-0516) ─────────────
+# The filter that drops the old SECRET_KEY line hits ENOSPC. A cut-down copy in
+# place of .env would make the checks after it take the lost secrets for empty
+# and regenerate them, so POSTGRES_PASSWORD and CA_ROOT_PASSPHRASE would no
+# longer match the volumes. grep wrapper: real grep for everything, except that
+# AH_TEST_GREP_ENOSPC=1 sends upsert's filter of the SECRET_KEY line to /dev/full
+# (a real ENOSPC). Only this case runs with it on PATH.
+BIN="$WORK/bin"; mkdir -p "$BIN"
+AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
+cat > "$BIN/grep" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"-vE ^#?[[:space:]]*SECRET_KEY="*)
+    [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
+esac
+exec "$AH_TEST_REAL_GREP" "$@"
+EOF
+chmod +x "$BIN/grep"
+ENV="$WORK/env4"
+printf '%s\n' SECRET_KEY= MONITOR_API_KEY=already-set POSTGRES_PASSWORD=already-set \
+  CA_ROOT_PASSPHRASE=already-set DOMAIN=old.example > "$ENV"
+cp "$ENV" "$WORK/env4.orig"
+out=$(PATH="$BIN:$PATH" AH_TEST_GREP_ENOSPC=1 bash "$INIT" "$ENV" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+[ $rc -ne 0 ] && ok "full disk on .env aborts" || bad "full disk on .env: exit $rc"
+{ grep -q '^Fehler: .*SECRET_KEY' <<<"$out" && ! grep -qE '[0-9a-f]{64}' <<<"$out"; } \
+  && ok "error names the key SECRET_KEY, not its value" || bad "no error line naming SECRET_KEY, or a value in the output"
+cmp -s "$WORK/env4.orig" "$ENV" && ok ".env byte-identical after the failed write" \
+  || bad ".env changed by the failed write: $(tr '\n' ' ' < "$ENV")"
+! compgen -G "$ENV.ah-*" >/dev/null && ok "no .env.ah-* copy left behind" \
+  || bad "copies left: $(compgen -G "$ENV.ah-*" | tr '\n' ' ')"
+
+# ── 6. .env holding only the key: grep -v filters every line (exit 1), no error ─
+ENV="$WORK/env5"
+printf 'SECRET_KEY=\n' > "$ENV"
+out=$(bash "$INIT" "$ENV" 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "upsert into a one-key .env exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "one-key .env: exit $rc"; }
+allgen=1
+for k in SECRET_KEY MONITOR_API_KEY POSTGRES_PASSWORD CA_ROOT_PASSPHRASE; do
+  v=$(val "$k" "$ENV"); [ "${#v}" -eq 64 ] || allgen=0
+done
+{ [ "$allgen" = 1 ] && [ "$(grep -c '^SECRET_KEY=' "$ENV")" -eq 1 ]; } \
+  && ok "one-key .env: all four secrets generated, one SECRET_KEY line" || bad "one-key .env: not all four secrets or a duplicate SECRET_KEY line"
 
 echo
 echo "──────────────────────────────────────────"
