@@ -53,8 +53,10 @@ Semantik: Soll ist der Code und die DE-Seite:
 - DE `docs/admin/agent-deployment.html:147` — „er aktiviert <code>adminhelper-agent.timer</code>“ und „Ohne aktiven Tunnel stoppt und deaktiviert er <code>frpc.service</code>“ (er: der Agent); DE `:36` — „Was macht der Agent?“ mit `:38-40`.
 Falsche Doku-Stelle: EN `:148` — „After provisioning the agent enables the <code>adminhelper-agent.timer</code> systemd unit (Linux) or the Windows service (auto-start).“ und „the server no longer runs an FRP CA of its own. Without an active tunnel it stops and disables <code>frpc.service</code>“.
 
-### T2 — R-0522: webui.html beschreibt Baum, Stores und Routen wie der Code  [ ]
+### T2 — R-0522: webui.html beschreibt Baum, Stores und Routen wie der Code  [x]
 Komponente: scripts · Dateien: docs/developer/webui.html, docs/en/developer/webui.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @19b6f381 2026-10-19T11:28:45+02:00
+Review: approve (.ah-out/review/doc-fixes-2/T2.verdict.json)
 Änderung: DE und EN, gleiche Zeilen.
 (1) Der Baum `:38-54` nennt nur, was `git ls-files apps/web` zeigt:
 - `api/` mit `audit` (`:41`).
