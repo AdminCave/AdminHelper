@@ -360,6 +360,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   greift ein `ignore_devices`-Eintrag `/dev/bus/N` nicht mehr, dort gehoeren die neuen Namen hin, und die Metriken
   dieser Platten bekommen neue Namen, etwa `monitor_smart_temp_dev_bus_0__megaraid_disk_00_value` statt
   `monitor_smart_temp_dev_bus_0_value`. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: ein nicht lesbarer Backup-Storage meldet unter Proxmox kein „No backup“ mehr (R-0494):** Scheiterte die
+  Liste der Storages oder der Inhaltsaufruf eines Backup-Storages (etwa ein nicht erreichbares NFS-Ziel), fehlten
+  dessen Backups still im Index, und der Check `proxmox_backup` meldete jede betroffene VM als „No backup“,
+  critical. Jetzt fehlt dann der Proxmox-Block, der Check steht auf `unknown`, und der Grund steht als Warnung im
+  Agent-Log; ebenso, wenn ein Backup-Storage nicht aktiv ist. Die Backup-Storages liest der Agent neu aus
+  `/nodes/<node>/storage --content backup` statt aus `/storage`, das auch abgeschaltete und anderen Nodes
+  zugeordnete Storages listet. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
 - **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
   Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
