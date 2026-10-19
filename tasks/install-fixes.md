@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # install.sh und update.sh: kein halber Stand bei Schreibfehlern — Task-Ledger
-Status: bereit · Branch: feature/install-fixes · Review: pro Task
+Status: erledigt · Branch: feature/install-fixes · Review: pro Task
 Spec: Roadmap R-0495, R-0496, R-0516, R-0506
 Heavy: linux-full — nur nach CLAUDE.md §5 (Install/Update im Diff, Sammellauf über `main`); real deckt er hier fast nichts: `upgrade_path_test.sh` Schritt 4 startet die `update.sh` dieses Stands nur bis zur Übergabe an den Updater des Release (`:34-36`), der Tausch (T1) läuft dann in der Release-Fassung, und `install.sh` (T2) startet kein schwerer Lauf. Kein `scenario`: kein `multibox.sh`-Flag ruft `install.sh` oder `update.sh` auf (`box_*.sh` und `multibox.sh` nennen nur `agent-install.sh`); `init-secrets.sh` (T3) läuft dort nur im Erfolgspfad auf einer frischen `.env` (`box_serverbox.sh:203`), den `init-secrets_test.sh` 1–4 schon am echten Skript fährt. Alle Fehlerpfade sind nur per Fehler-Injektion erreichbar; die fahren `update_test.sh`, `install_test.sh` und `init-secrets_test.sh` am echten Skript (echtes curl über file://, minisign, tar, openssl, coreutils, nur `docker` gestubbt, das die geänderten Zeilen nicht aufrufen), den Erfolgspfad dazu die bestehenden Fälle (update_test 1–34, install_test 1–3, init-secrets_test 1–4)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
