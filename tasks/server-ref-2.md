@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-REF-Bündel 2 — Task-Ledger
-Status: geplant · Branch: feature/server-ref-2 · Review: pro Task
+Status: aktiv · Branch: feature/server-ref-2 · Review: pro Task
 Spec: Roadmap R-0509, R-0497, R-0501, R-0510
 Heavy: linux-full — T2 ändert die Stelle, an der der Server die frpc-Config der Agents zusammenstellt (`frp/provision_router.py` für `config` und `config-hash`, `provisioning/helpers.py` für das Provisionierungs-Paket); läuft im Sammellauf. Kein `scenario`: Text, Hash, Antwortform und Routen bleiben gleich, nur die Abfrage liegt an einer Stelle. T1, T3 und T4 berühren keinen Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
