@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes: Projektbäume, Agent-Deployment, Hook-Helfer — Task-Ledger
-Status: aktiv · Branch: feature/doc-fixes · Review: pro Task
+Status: bereit · Branch: feature/doc-fixes · Review: pro Task
 Spec: Roadmap R-0489, R-0490
 Heavy: none — nur Doku und ein hermetischer Server-Test über `docs/examples`; keine API-, Gateway-, PKI-, Agent-, Compose- oder Install-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -98,8 +98,10 @@ Dedup-Key: bug:docs:hooks.html:injected-helpers
 HEAD: a23a4387
 Semantik: Soll ist der Code. `apps/server/app/modules/hooks/script_worker.py:125-141` bindet im `namespace` `print`, `load_connections`, `save_connections`, `http_get`, `http_post`, `uuid4`, `log`, `result` und `logs`. Dazu die Signaturen `:52` und `:70-71`, `_RESERVED` `:147-157` und der Docstring `apps/server/app/modules/hooks/script_runner.py:19-27`. Falsche Doku-Stelle: `docs/developer/hooks.html:71` — „Ausgaben laufen über das <code>result</code>-Dict und <code>log(...)</code>“, EN `:71` — „output goes through the <code>result</code> dict and <code>log(...)</code>“.
 
-### T4 — Beifang zu R-0490: Hook-Beispiele rufen `http_post` mit `json_data`  [ ]
+### T4 — Beifang zu R-0490: Hook-Beispiele rufen `http_post` mit `json_data`  [x]
 Komponente: server · Dateien: apps/server/tests/test_hook_examples.py, docs/examples/event_hook_notify.py, docs/examples/webhook_http_import.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @64e3c844 2026-10-19T09:56:12+02:00
+Review: approve (.ah-out/review/doc-fixes/T4.verdict.json)
 Änderung: Neuer Test `apps/server/tests/test_hook_examples.py`, SPDX-Header per `reuse annotate`. Der Test:
 - liest jede Datei unter `docs/examples/*.py` (Repo-Wurzel über `Path(__file__).resolve().parents[3]`; eine leere Liste ist ein Fehler),
 - sucht mit `ast` die Aufrufe von `http_get` und `http_post`,
