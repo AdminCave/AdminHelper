@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # Monitoring-Härtung: Agent-Texte und Zahlen, Check-Config, Line-Protocol, Alert-Versand — Task-Ledger
 Status: aktiv · Branch: feature/monitoring-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
-Heavy: none — nur `apps/monitoring` (die `evaluate`-Funktionen unter `app/checkers/`, `check_configs.py`, die `to_dict`-Methoden in `models.py`, `core/victoria.py`, `_num` in `routers/agent.py`, Logzeilen und Fehlertexte in `alerter.py`); keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung (die Config-Modelle stehen nicht im Snapshot), kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Die Monitoring-Suite fährt die PR-CI
+Heavy: none — `apps/monitoring` und im Server nur die Log-Konfiguration (`apps/server/app/core/logging_config.py`, T11; keine API) (die `evaluate`-Funktionen unter `app/checkers/`, `check_configs.py`, die `to_dict`-Methoden in `models.py`, `core/victoria.py`, `_num` in `routers/agent.py`, Logzeilen und Fehlertexte in `alerter.py`); keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung (die Config-Modelle stehen nicht im Snapshot), kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Monitoring- und Server-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
@@ -122,3 +122,13 @@ Abhängt von: T9   (dieselbe Datei)
 Beweis: main@5481b316 · Code-Lesung: `_send_webhook` (`:414-416`), `_send_email` (`:467-469`) und der Regel-Loop (`:186-187`) geben den Text der Ausnahme aus httpx, smtplib, ssl oder dem Socket unverändert als Grund zurück; er nennt Hostnamen, Antworten des Mail-Servers oder Werte aus der Kanal-Config (etwa `invalid literal for int() with base 10: …` aus `smtp_port`, `:433`) und ist kein Grund im Sinn der Doku
 Semantik: docs/admin/monitoring.html:290 — „Jeder Versand wird im Alert-Log mit Erfolg/Fehler protokolliert, ein Fehler mit seinem Grund auf Englisch (etwa `No recipients configured`).“; `apps/monitoring/tests/test_alerter_dispatch.py:66-67` — „the error lands in the alert log, and the desktop shows it verbatim“
 HEAD: 5481b316
+
+### T11 — Server: Anfragen über httpx nicht mit voller URL ins Dienst-Log  [ ]
+Komponente: server · Dateien: apps/server/app/core/logging_config.py, apps/server/tests/test_logging_config.py
+Änderung: Wie T9 für das Monitoring begrenzt `configure_logging` (`apps/server/app/core/logging_config.py:57`, Abschnitt `"loggers"`) die Logger `httpx` und `httpcore` auf WARNING, ohne eigenen Handler: httpx schreibt auf INFO jede Anfrage mit der vollen URL samt Benutzerinfo, Pfad und Query, etwa die Ziele, die Hook-Skripte über `http_get`/`http_post` aufrufen (`modules/hooks/script_worker.py:52-89`). Beide Kopien der Log-Konfiguration bleiben gleich aufgebaut. Tests zuerst rot (dreimal identisch auf HEAD), in `test_logging_config.py`: nach `configure_logging()` haben `httpx` und `httpcore` die Stufe WARNING, auch bei `LOG_LEVEL=DEBUG`; eine Anfrage über einen gestubbten Transport (`httpx.HTTPTransport.handle_request` → `httpx.Response(200, request=request)`) mit einer URL mit Marken in Benutzerinfo, Pfad, Query und Fragment hinterlässt mit der echten Konfiguration keine Marke in der Log-Ausgabe; Logger-Zustand danach zurückgesetzt wie in den bestehenden Tests.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_logging_config.py
+Doku: keine (nur Log)
+Beweis: 9123cbb1 · Probe gegen `apps/server/app/core/logging_config.py`: nach `configure_logging()` ist die wirksame Stufe des Loggers `httpx` INFO; httpx 0.28.1 loggt auf INFO `HTTP Request: <Methode> <volle URL> "<Status>"` (`httpx/_client.py:1025`); im Monitoring mit derselben Konfiguration von zwei Prüfern belegt (T9)
+Semantik: `apps/server/app/core/logging_config.py` Docstring — die Module teilen das Format des Monitorings („deliberately duplicated“); zu Anfrage-Logzeilen keine Stelle in docs/ — gesucht „httpx“, „Log“ in docs/admin/troubleshooting.html und docs/developer/ (DE+EN); Kevin 2026-10-19: als T11 in dieses Paket
+Abhängt von: T9
+HEAD: 9123cbb1
