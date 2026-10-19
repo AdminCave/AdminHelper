@@ -89,7 +89,9 @@ liefert je Fehler ein roter Test in der Task. Fehler 5 ist auf der Desktop-VM re
 Keine Server-API, keine Migration, kein neues Feld in `settings.json`.
 
 Tauri-IPC: `open_connection_stored` nimmt zusätzlich optional `credentialConnection`; fehlt es, gilt wie heute
-die übergebene Verbindung. Der Command-Name bleibt (`ipc.inventory.test.ts` unverändert). `sync_connections`
+die übergebene Verbindung. Rust nimmt es nur für dieselbe Verbindung an (gleiche `id`, `kind`, `username`,
+`domain`; ein abweichender Host nur als Loopback, also in Tunnel-Form), sonst Validation-Fehler (T9). Der
+Command-Name bleibt (`ipc.inventory.test.ts` unverändert). `sync_connections`
 behält seine Signatur und liest `serverUrl` selbst aus `settings.json`, so wie heute schon `allowSelfSignedCerts`
 (`commands.rs:29`).
 
