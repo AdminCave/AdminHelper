@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server-REF-Bündel 2 — Task-Ledger
-Status: aktiv · Branch: feature/server-ref-2 · Review: pro Task
+Status: bereit · Branch: feature/server-ref-2 · Review: pro Task
 Spec: Roadmap R-0509, R-0497, R-0501, R-0510
 Heavy: linux-full — T2 ändert die Stelle, an der der Server die frpc-Config der Agents zusammenstellt (`frp/provision_router.py` für `config` und `config-hash`, `provisioning/helpers.py` für das Provisionierungs-Paket); läuft im Sammellauf. Kein `scenario`: Text, Hash, Antwortform und Routen bleiben gleich, nur die Abfrage liegt an einer Stelle. T1, T3 und T4 berühren keinen Stack-, Gateway-, PKI- oder Install-Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -46,8 +46,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hooks_http_ssrf
 Doku: keine (intern)
 Dedup-Key: ref:server:script_worker.py:lazy-imports-comment
 
-### T4 — Docstring von `model_registry.py` nennt alle, die das Registry laden (R-0510)  [ ]
+### T4 — Docstring von `model_registry.py` nennt alle, die das Registry laden (R-0510)  [x]
 Komponente: server · Dateien: apps/server/app/model_registry.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @a170dca5 2026-10-19T10:24:48+02:00
+Review: approve (.ah-out/review/server-ref-2/T4.verdict.json)
 Änderung: Der Docstring (`model_registry.py:9-11`) nennt nur den Web- und den Scheduler-Prozess. Seit R-0469 laden das Registry vor ihrer ersten Abfrage auch der Hook-Worker (`app/modules/hooks/script_worker.py:99`) und die CLI (`app/cli.py:28`). Dazu laden es `alembic/env.py:29` und `tests/conftest.py:28`, damit `Base.metadata` jede Tabelle kennt (`target_metadata`, `create_all`). Neu nennt der Absatz die vier Prozess-Einstiege: Web (`app/main.py:21`), Scheduler (`app/scheduler_main.py:71`), Hook-Worker und CLI. Getrennt davon nennt er die beiden Metadaten-Nutzer. Der Verweis auf die Tests bleibt und nennt `tests/test_conftest_models.py` mit. Am Code ändert sich nichts.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_model_registry.py tests/test_conftest_models.py
 Doku: keine (intern)
