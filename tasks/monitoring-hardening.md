@@ -127,8 +127,10 @@ Beweis: main@5481b316 · Code-Lesung: `_send_webhook` (`:414-416`), `_send_email
 Semantik: docs/admin/monitoring.html:290 — „Jeder Versand wird im Alert-Log mit Erfolg/Fehler protokolliert, ein Fehler mit seinem Grund auf Englisch (etwa `No recipients configured`).“; `apps/monitoring/tests/test_alerter_dispatch.py:66-67` — „the error lands in the alert log, and the desktop shows it verbatim“
 HEAD: 5481b316
 
-### T11 — Server: Anfragen über httpx nicht mit voller URL ins Dienst-Log  [ ]
+### T11 — Server: Anfragen über httpx nicht mit voller URL ins Dienst-Log  [x]
 Komponente: server · Dateien: apps/server/app/core/logging_config.py, apps/server/tests/test_logging_config.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @386935c9 2026-10-19T21:43:43+02:00
+Review: approve (.ah-out/review/monitoring-hardening/T11.verdict.json)
 Änderung: Wie T9 für das Monitoring begrenzt `configure_logging` (`apps/server/app/core/logging_config.py:57`, Abschnitt `"loggers"`) die Logger `httpx` und `httpcore` auf WARNING, ohne eigenen Handler: httpx schreibt auf INFO jede Anfrage mit der vollen URL samt Benutzerinfo, Pfad und Query, etwa die Ziele, die Hook-Skripte über `http_get`/`http_post` aufrufen (`modules/hooks/script_worker.py:52-89`). Beide Kopien der Log-Konfiguration bleiben gleich aufgebaut. Tests zuerst rot (dreimal identisch auf HEAD), in `test_logging_config.py`: nach `configure_logging()` haben `httpx` und `httpcore` die Stufe WARNING, auch bei `LOG_LEVEL=DEBUG`; eine Anfrage über einen gestubbten Transport (`httpx.HTTPTransport.handle_request` → `httpx.Response(200, request=request)`) mit einer URL mit Marken in Benutzerinfo, Pfad, Query und Fragment hinterlässt mit der echten Konfiguration keine Marke in der Log-Ausgabe; Logger-Zustand danach zurückgesetzt wie in den bestehenden Tests.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_logging_config.py
 Doku: keine (nur Log)
