@@ -45,6 +45,7 @@ func BuildReport(serviceNames []string) map[string]any {
 		"timestamp":      time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		"resources":      resources,
 		"uptime_seconds": collectUptime(),
+		"host":           collectHostFacts(),
 	}
 
 	// Service health (platform-specific)
@@ -69,8 +70,10 @@ func BuildReport(serviceNames []string) map[string]any {
 	if zfs := pluginCollectors.zfs(); zfs != nil {
 		report["zfs"] = zfs
 	}
-	if smart := pluginCollectors.smart(); smart != nil {
+	if smart, absent := pluginCollectors.smart(); smart != nil {
 		report["smart"] = smart
+	} else {
+		report["smart_absent"] = map[string]string{"reason": absent}
 	}
 
 	return report
@@ -85,7 +88,7 @@ var pluginCollectors = struct {
 	docker  func() map[string]any
 	proxmox func() map[string]any
 	zfs     func() map[string]any
-	smart   func() []SmartDisk
+	smart   func() ([]SmartDisk, string)
 }{collectDocker, collectProxmox, collectZFS, collectSmart}
 
 // serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).

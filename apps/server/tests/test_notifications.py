@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 
 from app.core.auth import hash_password
+from app.modules.notifications import stream_hub
 from app.modules.notifications.models import (
     Notification,
     NotificationOutbox,
@@ -23,6 +24,7 @@ from app.modules.notifications.schemas import IncomingEvent
 from app.modules.notifications.service import (
     cleanup_old_notifications,
     ingest_event,
+    notify_users,
     severity_at_least,
 )
 from app.modules.servers.models import Server
@@ -243,6 +245,76 @@ class TestResolver:
         assert ingest_event(db_session, _event(source_id="ghost")) == 1
         assert _count(db_session, admin) == 1
         assert _count(db_session, normal) == 0
+
+
+# --- direct delivery to chosen users ---------------------------------------
+
+
+class TestNotifyUsers:
+    """notify_users skips the subscription resolver: the caller has already
+    chosen the recipients, and only the bell is written."""
+
+    def _direct_event(self):
+        return _event(
+            severity="info",
+            category="lifecycle",
+            source_id=None,
+            event_type="test.direct",
+            title="direct notice",
+        )
+
+    def test_exactly_the_given_users_get_a_row(self, db_session):
+        # Neither recipient has a subscription and the member is assigned to no
+        # server, so ingest_event would reach neither of them.
+        admin = _user(db_session, "boss", is_admin=True)
+        member = _user(db_session, "member")
+        bystander = _user(db_session, "bystander", is_admin=True)
+        _sub(db_session, bystander, scope_type="all", min_severity="info")
+
+        assert notify_users(db_session, [admin, member], self._direct_event()) == 2
+
+        assert _count(db_session, admin) == 1
+        assert _count(db_session, member) == 1
+        assert _count(db_session, bystander) == 0
+        row = db_session.query(Notification).filter(Notification.user_id == member.id).one()
+        assert (row.severity, row.category, row.event_type, row.title) == (
+            "info",
+            "lifecycle",
+            "test.direct",
+            "direct notice",
+        )
+
+    def test_a_user_listed_twice_gets_one_row(self, db_session):
+        admin = _user(db_session, "boss", is_admin=True)
+        assert notify_users(db_session, [admin, admin], self._direct_event()) == 1
+        assert _count(db_session, admin) == 1
+
+    def test_no_outbox_row_even_with_an_external_channel(self, db_session):
+        admin = _user(db_session, "boss", is_admin=True, email="a@b.de")
+        _sub(db_session, admin, scope_type="all", min_severity="info", email=True)
+        notify_users(db_session, [admin], self._direct_event())
+        assert _count(db_session, admin) == 1
+        assert db_session.query(NotificationOutbox).count() == 0
+
+    def test_empty_list_writes_and_publishes_nothing(self, db_session, monkeypatch):
+        calls = []
+        monkeypatch.setattr(stream_hub, "publish", lambda *a: calls.append(a))
+        _user(db_session, "boss", is_admin=True)
+        assert notify_users(db_session, [], self._direct_event()) == 0
+        assert db_session.query(Notification).count() == 0
+        assert calls == []
+
+    def test_publishes_the_sse_nudge_to_the_given_users(self, db_session, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(
+            stream_hub, "publish", lambda uids, mid: seen.update(uids=list(uids), mid=mid)
+        )
+        admin = _user(db_session, "boss", is_admin=True)
+        member = _user(db_session, "member")
+        notify_users(db_session, [admin, member], self._direct_event())
+        assert sorted(seen["uids"]) == sorted([admin.id, member.id])
+        newest = db_session.query(Notification.id).order_by(Notification.id.desc()).first()
+        assert seen["mid"] == newest[0]
 
 
 # --- bell feed API ---------------------------------------------------------

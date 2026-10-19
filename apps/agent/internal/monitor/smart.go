@@ -5,7 +5,6 @@
 package monitor
 
 import (
-	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -45,31 +44,43 @@ type SmartDisk struct {
 	CriticalWarning   int `json:"critical_warning"`
 }
 
-// collectSmart collects SMART data of all detected devices via smartctl.
-// Returns nil if smartctl is not installed (e.g. on VMs).
-func collectSmart() []SmartDisk {
-	smartctl, err := exec.LookPath("smartctl")
+// smartctlCLI indirects collectSmart's smartctl lookup and calls so tests can drive every path without
+// smartctl (same reason as dockerCLI).
+var smartctlCLI = struct {
+	lookPath func(file string) (string, error)
+	run      func(timeout time.Duration, name string, args ...string) ([]byte, error)
+}{exec.LookPath, runTimed}
+
+// collectSmart collects SMART data of all detected devices via smartctl. Without a single disk it
+// returns why instead, which the report sends as smart_absent, so a host without smartctl does not
+// pass for one without disks: not_installed (no smartctl, e.g. on VMs), scan_failed (the scan failed,
+// hung or printed no JSON, or no device it found gave readable SMART data) or no_devices (the scan
+// found none).
+func collectSmart() ([]SmartDisk, string) {
+	smartctl, err := smartctlCLI.lookPath("smartctl")
 	if err != nil {
-		return nil
+		return nil, "not_installed"
 	}
 
 	// Scan all SMART-capable devices (with a timeout in case the controller hangs)
-	ctxScan, cancelScan := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancelScan()
-	scanOut, err := exec.CommandContext(ctxScan, smartctl, "--scan", "--json=c").Output()
+	scanOut, err := smartctlCLI.run(15*time.Second, smartctl, "--scan", "--json=c")
 	if err != nil {
-		return nil
+		return nil, "scan_failed"
 	}
 
 	var scanResult struct {
 		Devices []struct {
 			Name     string `json:"name"`
 			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
 			Protocol string `json:"protocol"`
 		} `json:"devices"`
 	}
-	if json.Unmarshal(scanOut, &scanResult) != nil || len(scanResult.Devices) == 0 {
-		return nil
+	if json.Unmarshal(scanOut, &scanResult) != nil {
+		return nil, "scan_failed"
+	}
+	if len(scanResult.Devices) == 0 {
+		return nil, "no_devices"
 	}
 
 	// Query devices in parallel: querySmartDevice has a 30s per-device timeout, so a serial loop
@@ -82,28 +93,36 @@ func collectSmart() []SmartDisk {
 	)
 	for _, dev := range scanResult.Devices {
 		wg.Add(1)
-		go func(name, proto string) {
+		go func(name, devType, proto string) {
 			defer wg.Done()
-			if d := querySmartDevice(smartctl, name, proto); d != nil {
+			if d := querySmartDevice(smartctl, name, devType, proto); d != nil {
 				mu.Lock()
 				disks = append(disks, *d)
 				mu.Unlock()
 			}
-		}(dev.Name, dev.Protocol)
+		}(dev.Name, dev.Type, dev.Protocol)
 	}
 	wg.Wait()
 
 	if len(disks) == 0 {
-		return nil
+		// querySmartDevice drops only a query without usable JSON (did not start, hung, no or
+		// unreadable output), so no disk at all is a failed read, not a host without devices.
+		return nil, "scan_failed"
 	}
-	return disks
+	return disks, ""
 }
 
-func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, smartctl, "--all", "--json=c", device)
-	out, err := cmd.Output()
+func querySmartDevice(smartctl, device, devType, protocol string) *SmartDisk {
+	// The scan type goes along as -d: some types only the scan knows (megaraid,N on /dev/bus/N, which
+	// a query without -d cannot detect), the others it detects from the name as the query would. Not
+	// scsi: the scan names every /dev/sdX without a USB bridge scsi without opening it, a SATA disk
+	// too, and -d scsi switches off the SAT detection on open (smartmontools os_linux.cpp,
+	// linux_scsi_device::autodetect_open), so the disk would come without its ATA attributes.
+	args := []string{"--all", "--json=c"}
+	if devType != "" && devType != "scsi" {
+		args = append(args, "-d", devType)
+	}
+	out, err := smartctlCLI.run(30*time.Second, smartctl, append(args, device)...)
 
 	// smartctl uses bit flags in the exit code. We keep the full code
 	// so the server can evaluate bit 0x10 (prefail) as critical.

@@ -6,11 +6,186 @@
 #   MB_SID=<server-uuid> MB_PTOK=<provision-token>
 # on stdout for the orchestrator to hand to the agent box.
 #
-# Called by scripts/tests/multibox.sh via `vm.py run`.
+# Called by scripts/tests/multibox.sh via `vm.py run`. After the bring-up, the
+# --tunnel stage of R-0411 watches frps under its supervisor, one mode per step:
+#   box_serverbox.sh frps-mark                      the supervisor before a config change
+#   box_serverbox.sh frps-restart <mark> <tunnel…>  after it: one restart, the tunnels back
 set -uo pipefail
+
+# ── frps under its supervisor (R-0411) ──────────────────────────────────────────
+# Seen as integration_stack_test.sh 11b sees it: the supervisor's status file where the
+# server reads it, and the pid of frps in its container, both through the mb-dc of the
+# bring-up. Every wait is a bounded number of tries a second apart, and ends in a verdict.
+
+# tries <n> <command…> — the command up to n times, a second apart, until it succeeds.
+tries() {
+  local n="$1" i; shift
+  for i in $(seq 1 "$n"); do
+    "$@" && return 0
+    [ "$i" -lt "$n" ] && sleep 1
+  done
+  return 1
+}
+
+# sv_file mark | state | heartbeat | since <boot> <seq> | at <boot> <seq> — from the status
+# file. mark: "<boot>:<last seq>"; since: "=" followed by the events after <seq> as
+# <event>/<reason>/<tokenChanged>, joined by "+", or "rebooted" when the supervisor has
+# started anew; at: one second before the first of those events, for `logs --since`. Empty
+# when the file cannot be read, so that no comparison passes on it.
+sv_file() {
+  mb-dc exec -T server cat /app/frps-state/status.json 2>/dev/null | python3 -c '
+import datetime, json, sys
+s, what = json.load(sys.stdin), sys.argv[1]
+events = s["events"]
+if what == "mark":
+    print("%s:%d" % (s["boot"], events[-1]["seq"] if events else 0))
+elif what in ("since", "at"):
+    boot, seq = sys.argv[2], int(sys.argv[3])
+    new = [e for e in events if e["seq"] > seq]
+    if what == "since":
+        print("rebooted" if boot != s["boot"] else "=" + "+".join(
+            "%s/%s/%s" % (e["event"], e["reason"], str(e["tokenChanged"]).lower()) for e in new))
+    elif boot == s["boot"] and new:
+        at = datetime.datetime.strptime(new[0]["at"], "%Y-%m-%dT%H:%M:%SZ")
+        print((at - datetime.timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+else:
+    print(s[what])' "$@" 2>/dev/null
+}
+
+# frps_pid — the pid of frps in its container, empty when none runs; non-zero when the exec or
+# pidof fails otherwise, so that "no process" never rests on an error.
+frps_pid() {
+  local out
+  # shellcheck disable=SC2016 # expanded by the container's sh
+  out="$(mb-dc exec -T frps sh -c 'pids=$(pidof frps); echo "rc=$? $pids"' 2>/dev/null)" || return 2
+  case "$out" in
+    "rc=0 "?*) echo "${out#rc=0 }" ;;
+    "rc=1 ") ;;
+    *) return 2 ;;
+  esac
+}
+
+frps_running() { [ "$(sv_file state)" = running ] && [ -n "$(frps_pid)" ]; }
+
+# sv_has_new <boot> <seq> — the supervisor wrote an event since then, or started anew.
+sv_has_new() { local s; s="$(sv_file since "$1" "$2")"; [ -n "$s" ] && [ "$s" != "=" ]; }
+
+# wait_polls <n> — until the supervisor has rewritten its status n more times (once a poll,
+# 5 s apart). A change takes one poll to be noted and the next to be taken over, so a second
+# event can only come with a later poll than the first: the events are read after these.
+wait_polls() {
+  local last now seen=0
+  last="$(sv_file heartbeat)"
+  for _ in $(seq 1 $((10 * $1 + 10))); do
+    sleep 1
+    now="$(sv_file heartbeat)"
+    if [ -n "$now" ] && [ -n "$last" ] && [ "$now" != "$last" ]; then seen=$((seen + 1)); fi
+    [ -n "$now" ] && last="$now"
+    [ "$seen" -ge "$1" ] && return 0
+  done
+  return 1
+}
+
+# tunnels_back <since> <tunnel…> — frps logged the STCP registration of every tunnel since
+# then, in the line multibox.sh frps_registered reads; MISSING names the ones it did not.
+tunnels_back() {
+  local since="$1" log t; shift
+  log="$(mb-dc logs --no-color --since "$since" frps 2>/dev/null)"
+  MISSING=""
+  for t in "$@"; do
+    grep -qE "new proxy \[[^]]*\.$t\] type \[stcp\] success" <<<"$log" || MISSING="${MISSING:+$MISSING+}$t"
+  done
+  [ -z "$MISSING" ]
+}
+
+# A boot id as the supervisor writes it and the server's reader (supervisor_status.py) wants it.
+BOOT_ID='^[0123456789abcdef]{16}$'
+
+# step_frps_mark — before the config change: the supervisor runs frps. Prints
+# MB_FRPS_MARK=<boot>:<seq>:<pid>, what step_frps_restart holds the change against.
+step_frps_mark() {
+  local mark state pid
+  mark="$(sv_file mark)"; state="$(sv_file state)"; pid="$(frps_pid)" || pid=""
+  if [[ "${mark%%:*}" =~ $BOOT_ID ]] && [ "$state" = running ] && [[ "$pid" =~ ^[0123456789]+$ ]]; then
+    echo "MB_FRPS_MARK=$mark:$pid"
+  else
+    echo "MB_FRPS_MARK_FAIL"; echo "    supervisor ${mark:-unreadable}, state ${state:-unknown}, frps pid ${pid:-none}"
+  fi
+}
+
+# step_frps_restart <mark> <tunnel…> — after the change. MB_FRPS_RESTART: frps restarted
+# exactly once for it — the supervisor wrote one event since the mark, applied without a new
+# token, read two polls after the first event appeared; its log shows one start of frps since
+# then and no exit (a frps that ends on its own is started again after 2 s without an event,
+# crashed comes only with the third exit in 60 s); and frps runs as a new process, the one
+# that ran when the event appeared. MB_FRPS_TUNNELS: the agent's frpc logged in again by
+# itself, frps registered every tunnel anew after that event. 60 tries for the event, 30 for
+# the polls, 120 for the logins.
+step_frps_restart() {
+  local boot seq pid_before events="" pid_first="" pid_after="" verdict at="" log starts="-" exits="-" back
+  IFS=: read -r boot seq pid_before <<<"$1"; shift
+  if ! [[ "$boot" =~ $BOOT_ID ]] || ! [[ "$seq" =~ ^[0123456789]+$ ]] || ! [[ "$pid_before" =~ ^[0123456789]+$ ]]; then
+    verdict=NO_MARK
+  elif ! tries 60 sv_has_new "$boot" "$seq"; then
+    verdict=NO_EVENT
+  else
+    pid_first="$(frps_pid)" || pid_first=""
+    if ! wait_polls 2; then
+      verdict=NO_POLL
+    else
+      events="$(sv_file since "$boot" "$seq")"
+      at="$(sv_file at "$boot" "$seq")"
+      log=""
+      [ -z "$at" ] || log="$(mb-dc logs --no-color --since "$at" frps 2>/dev/null)"
+      # The supervisor's own lines (frps-supervisor.sh start_frps, check_frps).
+      starts="$(grep -cF '[frps-supervisor] frps started from ' <<<"$log")"
+      exits="$(grep -cF '[frps-supervisor] frps exited (' <<<"$log")"
+      pid_after="$(frps_pid)" || pid_after=""
+      if [ "$events" = rebooted ]; then
+        verdict=REBOOTED
+      elif [ "$events" != "=applied/none/false" ]; then
+        verdict=EVENTS
+      elif [ "$exits" != 0 ] || [ "$starts" -gt 1 ]; then
+        verdict=CRASHED
+      elif [ "$starts" = 0 ]; then
+        verdict=NO_START_LOG
+      elif ! [[ "$pid_after" =~ ^[0123456789]+$ ]]; then
+        verdict=NO_FRPS
+      elif [ "$pid_after" = "$pid_before" ]; then
+        verdict=SAME_PID
+      elif [ "$pid_after" != "$pid_first" ]; then
+        verdict=CRASHED
+      else
+        verdict=OK
+      fi
+    fi
+  fi
+  echo "MB_FRPS_RESTART=$verdict"
+  [ -n "$events" ] || [ "$verdict" = NO_MARK ] || events="$(sv_file since "$boot" "$seq")"
+  events="${events#=}"
+  echo "MB_FRPS_SEEN=events:${events:-none},pid:${pid_before:-none}-${pid_first:-none}-${pid_after:-none},starts:$starts,exits:$exits"
+  [ -n "$at" ] || [ "$verdict" = NO_MARK ] || at="$(sv_file at "$boot" "$seq")"
+  if [ -z "$at" ]; then
+    back=NO_RESTART
+  elif tries 120 tunnels_back "$at" "$@"; then
+    back=OK
+  else
+    back="MISSING:$MISSING"
+  fi
+  echo "MB_FRPS_TUNNELS=$back"
+  if [ "$verdict" != OK ] || [ "$back" != OK ]; then
+    mb-dc logs --no-color --tail 20 frps 2>/dev/null | sed 's/^/    frps: /'
+  fi
+}
+
+case "${1:-}" in
+  frps-mark)    cd "$(dirname "$0")/../.." || exit 1; step_frps_mark; exit 0 ;;
+  frps-restart) cd "$(dirname "$0")/../.." || exit 1; step_frps_restart "${2:?}" "${3:?}" "${@:4}"; exit 0 ;;
+esac
+
 SRV_IP="${1:?usage: box_serverbox.sh <server-ip> [tunnel] [moncheck <SMTP_IP>]}"; shift || true
 # Independent, composable modes (so the S6 capstone can do BOTH at once):
-#   tunnel            S4: seed an STCP tunnel + bring up frps
+#   tunnel            S4: seed an STCP tunnel + wait for frps to run from its config
 #   moncheck <IP>     S5: seed ping checks + an email alert to the mailhog sink <IP>
 DO_TUNNEL=0; DO_MONCHECK=0; DO_ENFORCE=0; SMTP_IP=""; SMTP_CA_B64=""
 while [ $# -gt 0 ]; do case "$1" in
@@ -53,10 +228,11 @@ DC=(sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp
 printf '#!/bin/sh\nexec sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml "$@"\n' \
   | sudo tee /usr/local/bin/mb-dc >/dev/null && sudo chmod +x /usr/local/bin/mb-dc
 echo "[serverbox] build + up (images from checkout, production ports)"
-# Start ONLY the services S1 needs (+their deps auto-start). Excludes `scheduler`
-# and `frps`, whose image: is the ghcr.io/admincave/* tag the test overlay does NOT
-# rebuild — starting them would try to PULL a not-yet-published image (unauthorized).
-"${DC[@]}" up -d --build gateway server ca-issuer monitoring \
+# Start ONLY the services the stages need (+their deps auto-start); `scheduler` stays
+# out. frps is built from apps/frps (the test overlay) and comes up before any FRP
+# config exists: its supervisor waits for one and starts frps from it by itself, so
+# frps has no `up` of its own below (R-0411).
+"${DC[@]}" up -d --build gateway server ca-issuer monitoring frps \
   || { echo "[serverbox] compose up failed"; "${DC[@]}" ps; exit 1; }
 
 echo "[serverbox] wait for the gateway data plane on :443"
@@ -124,8 +300,9 @@ ptok2 = call("POST", f"/api/servers/{sid2}/provision/token", tok, {})["token"]
 print(f"MB_SID={sid} MB_PTOK={ptok} MB_SID2={sid2} MB_PTOK2={ptok2}")
 # Tunnel mode (S4): an FRP config pointing at THIS server's IP + an STCP tunnel
 # exposing the tunnel-agent's own sshd (:22). Creating the config writes frps.toml
-# into the shared volume; the caller then brings frps up. The agent provisions
-# against MB_TUN_* and its frpc.toml (fetched for these tunnels) runs the STCP server.
+# into the shared volume, and the supervisor in the frps container starts frps from
+# it. The agent provisions against MB_TUN_* and its frpc.toml (fetched for these
+# tunnels) runs the STCP server.
 if os.environ.get("DO_TUNNEL") == "1":
     srv_ip = os.environ["SRV_IP"]
     tsid = call("POST", "/api/servers", tok, {"name": "mb-tunnel", "hostname": "mb-tunnel.local"})["id"]
@@ -228,11 +405,16 @@ if openssl x509 -in /tmp/mb-inter.pem -outform der -out /tmp/mb-inter.der 2>/dev
 else
   echo "[serverbox] could not extract the intermediate for MB_CA_FP (agents fall back to TOFU)"
 fi
-# Tunnel mode: the FRP config seed above wrote frps.toml into the shared volume;
-# bring frps up now (its ca-issuer-provisioned leaf carries the DOMAIN=$SRV_IP SAN).
+# Tunnel mode: the FRP config seed above wrote frps.toml into the shared volume, and
+# the supervisor runs frps from it (its ca-issuer-provisioned leaf carries the
+# DOMAIN=$SRV_IP SAN). MB_FRPS_UP once it says running and a frps process runs.
 if [ "$DO_TUNNEL" = 1 ]; then
-  echo "[serverbox] tunnel mode: bring up frps (STCP relay :7000/:7443)"
-  "${DC[@]}" up -d frps >/dev/null 2>&1 && echo "MB_FRPS_UP=1" || { echo "MB_FRPS_UP=0"; "${DC[@]}" logs --tail 20 frps; }
+  echo "[serverbox] tunnel mode: wait for the supervisor to run frps (STCP relay :7000/:7443)"
+  if tries 60 frps_running; then
+    echo "MB_FRPS_UP=1"
+  else
+    echo "MB_FRPS_UP=0"; echo "    supervisor state: $(sv_file state)"; "${DC[@]}" logs --tail 20 frps
+  fi
 fi
 # Moncheck mode (S5): seed pull (ping) checks + an email alert rule via the
 # monitoring internal API (reachable only inside the compose net -> exec), then

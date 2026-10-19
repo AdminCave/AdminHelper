@@ -7,7 +7,8 @@ SMART disk health checker.
 
 Evaluates SMART data from the agent report (push-only).
 Supports ATA (HDD + SSD) and NVMe protocols.
-On VMs without smartctl the agent provides no smart key — that's OK, not an error.
+Without disks the agent sends smart_absent with the reason instead of a smart key
+— that's OK, not an error; the message names the reason.
 """
 
 from __future__ import annotations
@@ -40,6 +41,15 @@ def _worse(a: str, b: str) -> str:
     return a if _SEVERITY_RANK[a] >= _SEVERITY_RANK[b] else b
 
 
+# smart_absent.reason codes of the agent (R-0419). scan_failed also covers found
+# devices of which none gave readable SMART data, hence "query", not "scan".
+_ABSENT_MESSAGES = {
+    "not_installed": "No SMART data: smartctl is not installed",
+    "scan_failed": "No SMART data: the SMART query failed",
+    "no_devices": "No SMART data: no SMART-capable devices found",
+}
+
+
 class SmartHealthChecker:
     """Checks the SMART health of all disks.
 
@@ -64,13 +74,21 @@ class SmartHealthChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         smart = report.get("smart")
         if not smart:
-            # VM or smartctl not installed — not an error
-            return "ok", "Keine SMART-Daten (VM oder smartctl nicht verfuegbar)", None
+            # No disk — not an error; smart_absent says why.
+            absent = report.get("smart_absent")
+            reason = absent.get("reason") if isinstance(absent, dict) else None
+            # The str check keeps an unhashable reason (a list) out of the dict lookup.
+            if isinstance(reason, str) and reason in _ABSENT_MESSAGES:
+                # Details, not None: the push path keeps stored details of a result
+                # without any, and the desktop would go on showing the old disks.
+                return "ok", _ABSENT_MESSAGES[reason], {"_details": {"absent": reason}}
+            # An agent before R-0419 or an unknown reason.
+            return "ok", "No SMART data (VM or smartctl not available)", None
 
         ignore = set(config.get("ignore_devices", []))
         thresholds = {
@@ -126,21 +144,19 @@ class SmartHealthChecker:
             ec = int(disk.get("smartctl_status", 0) or 0)
             if ec & 0x10:
                 critical_problems.append(
-                    f"{label}: Prefail-Attribut unter Schwelle (smartctl 0x10)"
+                    f"{label}: prefail attribute below threshold (smartctl 0x10)"
                 )
                 category = "critical"
             if ec & 0x20:
-                warning_problems.append(
-                    f"{label}: Threshold in Vergangenheit ueberschritten (smartctl 0x20)"
-                )
+                warning_problems.append(f"{label}: threshold exceeded in the past (smartctl 0x20)")
                 if category != "critical":
                     category = "warning"
             if ec & 0x40:
-                warning_problems.append(f"{label}: Eintraege im Fehler-Log (smartctl 0x40)")
+                warning_problems.append(f"{label}: error log entries (smartctl 0x40)")
                 if category != "critical":
                     category = "warning"
             if ec & 0x80:
-                warning_problems.append(f"{label}: Self-Test fehlgeschlagen (smartctl 0x80)")
+                warning_problems.append(f"{label}: self-test failed (smartctl 0x80)")
                 if category != "critical":
                     category = "warning"
 
@@ -214,15 +230,15 @@ class SmartHealthChecker:
         metrics["_details"] = {"disks": disk_details}
 
         if critical_problems:
-            msg = "SMART-Probleme: " + ", ".join(critical_problems)
+            msg = "SMART problems: " + ", ".join(critical_problems)
             if warning_problems:
-                msg += "; Warnung: " + ", ".join(warning_problems)
+                msg += "; warnings: " + ", ".join(warning_problems)
             return "critical", msg, metrics
 
         if warning_problems:
-            return "warning", "SMART-Warnungen: " + ", ".join(warning_problems), metrics
+            return "warning", "SMART warnings: " + ", ".join(warning_problems), metrics
 
-        return "ok", f"Alle {ok_count} Disks SMART OK", metrics
+        return "ok", f"All {ok_count} disks SMART OK", metrics
 
     @staticmethod
     def _check_ata(disk, label, th: dict) -> tuple[str, list[str], list[str]]:

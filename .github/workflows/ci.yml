@@ -81,6 +81,11 @@ jobs:
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the
         # hashed requirements.txt lock the image ships is python-lock-server's.
         run: pip install -r requirements-dev.txt
+      # The tests that run the frps image build it from apps/frps and skip without its
+      # base image at hand. They do not depend on the Python version, so one leg runs them.
+      - name: Pull the base of the frps image
+        if: matrix.python-version == '3.13'
+        run: docker pull "$(sed -n 's/^FROM //p' apps/frps/Dockerfile)"
       - name: Run pytest
         working-directory: apps/server
         # Coverage is report-only (no threshold) — visibility, not a gate.
@@ -644,6 +649,9 @@ jobs:
           - image: gateway
             context: apps/gateway
             dockerfile: apps/gateway/Dockerfile
+          - image: frps
+            context: apps/frps
+            dockerfile: apps/frps/Dockerfile
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up Buildx
@@ -671,16 +679,17 @@ jobs:
         run: |
           ci=$(grep -m1 '^  FRP_VERSION:' .github/workflows/ci.yml | grep -o '[0-9][0-9.]*')
           rel=$(grep -m1 '^  FRP_VERSION:' .github/workflows/release.yml | grep -o '[0-9][0-9.]*')
-          # Extract only the version tag; the image may carry a trailing
-          # @sha256:<digest> pin whose hex would otherwise leak into the match.
-          compose=$(grep -m1 'snowdreamtech/frps:' docker-compose.yml | sed -E 's#.*snowdreamtech/frps:([0-9][0-9.]*).*#\1#')
+          # The frps image builds on the upstream frps image of the same release. Extract
+          # only the version tag; the base carries a trailing @sha256:<digest> pin whose
+          # hex would otherwise leak into the match.
+          frps=$(grep -m1 '^FROM snowdreamtech/frps:' apps/frps/Dockerfile | sed -E 's#^FROM snowdreamtech/frps:([0-9][0-9.]*).*#\1#')
           boot=$(grep -m1 'FRP_VERSION=' scripts/vm/bootstrap_linux.sh | grep -o '[0-9][0-9.]*' | head -1)
           sha_ci=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/ci.yml | grep -o '[0-9a-f]\{64\}')
           sha_rel=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
           sha_boot=$(grep -m1 'FRP_SHA256_LINUX_AMD64=' scripts/vm/bootstrap_linux.sh | grep -o '[0-9a-f]\{64\}')
-          echo "ci.yml=$ci release.yml=$rel docker-compose.yml=$compose bootstrap_linux=$boot"
-          test -n "$ci" && test "$ci" = "$rel" && test "$ci" = "$compose" && test "$ci" = "$boot" || {
-            echo "::error::FRP_VERSION drift (ci=$ci, release=$rel, compose=$compose, bootstrap=$boot)"; exit 1; }
+          echo "ci.yml=$ci release.yml=$rel apps/frps/Dockerfile=$frps bootstrap_linux=$boot"
+          test -n "$ci" && test "$ci" = "$rel" && test "$ci" = "$frps" && test "$ci" = "$boot" || {
+            echo "::error::FRP_VERSION drift (ci=$ci, release=$rel, frps image=$frps, bootstrap=$boot)"; exit 1; }
           test "$sha_ci" = "$sha_rel" && test "$sha_ci" = "$sha_boot" || {
             echo "::error::FRP_SHA256_LINUX_AMD64 differs across ci.yml/release.yml/bootstrap_linux.sh"; exit 1; }
           # Windows SHA (ci vs release): a FRP_VERSION bump that updates only the ci copy
@@ -695,7 +704,7 @@ jobs:
           tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
             echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
-      - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff)
+      - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff, oasdiff)
         # audit.yml builds govulncheck from source under GOTOOLCHAIN=local, so the
         # pin only compiles while x/vuln's own `go` directive stays at or below the
         # go-version the workflows set — the coupling that made `@latest` stop
@@ -716,10 +725,6 @@ jobs:
     name: OpenAPI breaking changes (oasdiff)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      OASDIFF_VERSION: "1.32.0"
-      # sha256 of oasdiff_1.32.0_linux_amd64.tar.gz from the release's checksums.txt.
-      OASDIFF_SHA256_LINUX_AMD64: "5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -728,13 +733,22 @@ jobs:
           # commit — and openapi-breaking.sh refuses an unresolvable ref rather than
           # reporting "nothing to compare", so a missing one is red, not silently green.
           fetch-depth: 0
-      - name: Install oasdiff
+      # Anchored: ops-scripts runs this very step (*install-oasdiff), so version and
+      # hash live here once. The alias has to stay below this job in the file. The
+      # test boxes install the same pair (scripts/vm/bootstrap_linux.sh), and
+      # scripts/dev/toolchain-lockstep.sh holds the two places together.
+      - &install-oasdiff
+        name: Install oasdiff
         # Release tarball, not `go install`: every oasdiff from v1.24.0 on declares
         # `go 1.26` in its go.mod, and these workflows run with GOTOOLCHAIN=local, so
         # a source build breaks the day oasdiff outruns our go-version — exactly the
         # way govulncheck did (PR #14). A prebuilt tarball needs no toolchain at all;
-        # the SHA-256 above is the pin, so a swapped asset is a failure, not a
+        # the SHA-256 below is the pin, so a swapped asset is a failure, not a
         # surprise binary.
+        env:
+          OASDIFF_VERSION: "1.32.0"
+          # sha256 of oasdiff_1.32.0_linux_amd64.tar.gz from the release's checksums.txt.
+          OASDIFF_SHA256_LINUX_AMD64: "5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad"
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
           url="https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
@@ -823,7 +837,11 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: shellcheck
-        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh apps/*/docker-entrypoint.sh
+        # The frps supervisor runs under the busybox sh of its image, so it is checked as
+        # POSIX sh, not as bash.
+        run: |
+          shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh apps/*/docker-entrypoint.sh
+          shellcheck --severity=warning -s sh apps/frps/frps-supervisor.sh
       # minisign lets the sandbox tests exercise the (armed) release-signature
       # verification path end-to-end with a throwaway key. Without it those tests
       # exit 75 = SKIP, and --strict below turns that into a failure — which is
@@ -837,6 +855,10 @@ jobs:
       # deprecation behaviour and would red every open PR with no code change.
       - name: Install pytest
         run: pip install pytest==9.1.1
+      # openapi_breaking_test checks the ERR exception file against the real
+      # oasdiff matcher; without the binary it exits 75, and --strict turns that
+      # into a failure. The same step as openapi-compat (anchor above): one pin.
+      - *install-oasdiff
       # One aggregator call instead of eight lines: the same block a developer
       # runs locally, so CI and the dev box cannot drift apart. --strict makes a
       # skipped test a failure here, where every precondition is available.

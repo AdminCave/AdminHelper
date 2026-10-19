@@ -7,7 +7,10 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
 ## What it covers today
 
 - **`test/specs/smoke.e2e.js`** — the app launches, the window is titled
-  `AdminHelper`, and the Svelte frontend mounts. No backend required (launch +
+  `AdminHelper`, and the Svelte frontend mounts. A second start of the same
+  binary hands over to the running window and exits, and the window stays alive;
+  on Linux that needs a D-Bus session bus (any desktop session has one, a bare
+  shell gets one from `dbus-run-session`). No backend required (launch +
   render happen before any server call). This is the harness's foundation. Run
   it standalone with `npm test` (headless: `xvfb-run -a npm test`).
 
@@ -63,7 +66,16 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   monitoring check through the GUI on a server a real agent has pushed metrics
   for; the check appears after a reload from the monitoring service. Orchestrated
   by **`../../../scripts/tests/desktop_e2e_monitoring.sh`** (boots monitoring +
-  runs a real agent first).
+  runs a real agent first). A second step accepts the template suggestion: the
+  server's Monitoring tab suggests "Linux Server — Standard" (checkbox value
+  `linux-base`; on a host with Docker also "Docker Host", which the step
+  unchecks), assigning it creates "Agent Heartbeat" and "System Resources" and
+  ends the suggestion, then the step removes the assignment again. The step
+  needs a server whose agent was built from this tree: only such an agent
+  reports the `host` block the suggestion comes from, and
+  `desktop_e2e_monitoring.sh` builds it (`make build-linux`). The multibox
+  desktop stage runs this spec too; a partial run
+  `multibox.sh --agents 0 --desktop` has no such server and fails at this step.
 - **`test/specs/ssh-connect.live.js`** / **`web-connect.live.js`** /
   **`rdp-connect.live.js`** — open an SSH / Web / RDP connection through the GUI
   (RDP also drives the password prompt). The desktop spawns `ssh` / the browser /

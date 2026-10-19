@@ -56,11 +56,76 @@ describe('CheckConfigFields guardrails (T20)', () => {
   });
 
   it('docker_health no longer renders the dead check_restarts checkbox', async () => {
+    const config = {} as MonitorCheckConfig;
     const { container } = render(CheckConfigFields, {
-      props: { checkType: 'docker_health', config: {} as MonitorCheckConfig },
+      props: { checkType: 'docker_health', config },
     });
     await tick();
-    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+    // The one checkbox left is the outage switch (R-0419), and it never writes
+    // check_restarts.
+    const boxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(boxes).toHaveLength(1);
+    await fireEvent.click(boxes[0]);
+    expect(config).toEqual({ alert_on_unavailable: false });
+  });
+});
+
+// monitoring-silent-outages T11 (R-0419): a docker or zfs check the agent
+// cannot read is a warning now, switchable per check, and the form had no
+// switch. At the default the key must go: a template's check whose config
+// carried {"alert_on_unavailable": true} would differ from the template's {}
+// and count as changed by the user (mark_overrides).
+describe('CheckConfigFields outage switch (R-0419)', () => {
+  const TYPES = ['zfs_health', 'docker_health'] as const;
+
+  async function outageBox(
+    checkType: (typeof TYPES)[number],
+    config: MonitorCheckConfig,
+    label = 'Ausfall melden',
+  ): Promise<HTMLInputElement> {
+    const { container } = render(CheckConfigFields, { props: { checkType, config } });
+    await tick();
+    const input = inputFor(container, label);
+    expect(input.type).toBe('checkbox');
+    return input;
+  }
+
+  it.each(TYPES)('%s shows the switch, on by default, without writing it', async (type) => {
+    const config = {} as MonitorCheckConfig;
+    expect((await outageBox(type, config)).checked).toBe(true);
+    expect(config).toEqual({});
+  });
+
+  it.each(TYPES)('%s writes false when switched off', async (type) => {
+    const config = {} as MonitorCheckConfig;
+    await fireEvent.click(await outageBox(type, config));
+    expect(config).toEqual({ alert_on_unavailable: false });
+  });
+
+  it.each(TYPES)('%s drops the key instead of writing true when switched back on', async (type) => {
+    const config = {} as MonitorCheckConfig;
+    const box = await outageBox(type, config);
+    await fireEvent.click(box);
+    await fireEvent.click(box);
+    expect(box.checked).toBe(true);
+    expect(config).toEqual({});
+  });
+
+  it('shows a stored false as off and drops it when switched on', async () => {
+    const config = { alert_on_unavailable: false } as MonitorCheckConfig;
+    const box = await outageBox('zfs_health', config);
+    expect(box.checked).toBe(false);
+    await fireEvent.click(box);
+    expect(config).toEqual({});
+  });
+
+  it('labels the switch in English', async () => {
+    setLanguage('en');
+    try {
+      expect((await outageBox('docker_health', {}, 'Report outage')).checked).toBe(true);
+    } finally {
+      setLanguage('de');
+    }
   });
 });
 

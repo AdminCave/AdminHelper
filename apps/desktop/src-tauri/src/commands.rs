@@ -179,7 +179,8 @@ pub async fn sync_connections(
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
     let allow_self_signed = self_signed_setting(&app, None);
-    sync::sync_connections(app, url, allow_self_signed).await
+    let server_url = storage::load_settings(&app).ok().and_then(|s| s.server_url);
+    sync::sync_connections(app, url, allow_self_signed, server_url).await
 }
 
 #[tauri::command]
@@ -241,6 +242,7 @@ pub async fn open_connection(
 pub async fn open_connection_stored(
     app: tauri::AppHandle,
     connection: Connection,
+    credential_connection: Option<Connection>,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
@@ -251,6 +253,7 @@ pub async fn open_connection_stored(
         connection::open_connection_stored(
             &app,
             &connection,
+            credential_connection.as_ref(),
             client.as_ref(),
             rdp,
             settings.language.as_deref(),

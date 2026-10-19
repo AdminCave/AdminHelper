@@ -297,14 +297,17 @@ Unified-Diff. Der Test braucht keine Datenbank (der App-Import reicht), `info.ve
 wird auf `0.0.0` normalisiert und ein `servers`-Feld entfernt — sonst waere jeder Release
 ein Snapshot-Diff ohne Vertragsaenderung.
 
-`oasdiff` gehoert zu keiner Pflicht-Suite — fehlt das Binary, meldet der Check Exit 75 (SKIP)
-statt rot zu werden. Wer das Gate vor dem Push selbst sehen will, holt sich das fertige
-Release-Binary:
+`oasdiff` braucht der Pflicht-Schritt `scripts` von `run.sh`: `scripts/tests/openapi_breaking_test.sh`
+prueft die Ausnahme-Datei `scripts/dev/oasdiff-err-ignore.txt` gegen das echte oasdiff und endet
+ohne Binary mit Exit 75 — unter `--strict` also rot. CI (Jobs `openapi-compat` und `ops-scripts`)
+und die Test-Boxen (`scripts/vm/bootstrap_linux.sh`) installieren es; auf der Dev-Box einmal das
+fertige Release-Binary holen:
 
 ```bash
-# Stand 2026-09-23. Massgeblich ist .github/workflows/ci.yml (Job openapi-compat,
-# OASDIFF_VERSION und OASDIFF_SHA256_LINUX_AMD64) — von dort uebernehmen, damit
-# lokal und CI dieselbe Fassung messen.
+# Stand 2026-10-17. Massgeblich ist .github/workflows/ci.yml (Schritt "Install oasdiff"
+# im Job openapi-compat, OASDIFF_VERSION und OASDIFF_SHA256_LINUX_AMD64);
+# scripts/dev/toolchain-lockstep.sh haelt scripts/vm/bootstrap_linux.sh gleich. Von dort
+# uebernehmen, damit Dev-Box, CI und Boxen dieselbe Fassung messen.
 V=1.32.0
 S=5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad
 curl -sSfL -o /tmp/oasdiff.tgz \
@@ -1391,8 +1394,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ requirements.txt
 │  ├─ monitoring/            # eigenständiger FastAPI-Microservice (eigene DB)
 │  │  ├─ app/
-│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
-│  │  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast
+│  │  │  ├─ routers/             # admin, agent, alerts, checks, maintenance, templates
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks
 │  │  └─ Dockerfile
@@ -1415,7 +1418,7 @@ curl -sk https://localhost/api/frp/tunnels \
 │  └─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
 │     ├─ src-tauri/          # Rust/Tauri-Backend
 │     │  ├─ src/
-│     │  │  ├─ main.rs            # invoke_handler mit 32 Tauri-Commands
+│     │  │  ├─ main.rs            # invoke_handler mit allen Tauri-Commands
 │     │  │  ├─ commands.rs        # IPC-Schnittstelle
 │     │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
 │     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
@@ -1428,12 +1431,12 @@ curl -sk https://localhost/api/frp/tunnels \
 │     │  └─ capabilities/        # Tauri v2 Security Permissions
 │     └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
 │        ├─ src/
-│        │  ├─ lib/bridge/       # 31 typisierte invoke()-Wrapper
-│        │  ├─ lib/stores/       # 12 Stores
+│        │  ├─ lib/bridge/       # typisierte Tauri-IPC-Wrapper
+│        │  ├─ lib/stores/       # Svelte-Stores
 │        │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
-│        │  ├─ components/       # ~46 Components
+│        │  ├─ components/       # Svelte-Components
 │        │  └─ pages/            # 5 Pages (Dashboard, Connections, Infrastructure, Ansible, Monitoring)
-│        └─ vitest.setup.ts      # ~250 Vitest-Unit-Tests
+│        └─ vitest.setup.ts      # Vitest-Setup; die Unit-Tests liegen neben dem Code (src/**/*.test.ts)
 ├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ scripts/                  # Ops-/DB-Skripte (+ tests/: integration_stack_test, desktop_e2e_live, lib_e2e_stack)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)

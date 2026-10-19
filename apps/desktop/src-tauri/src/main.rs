@@ -51,7 +51,21 @@ fn main() {
     let stream_state = notifications::new_stream_state();
     let stream_state_exit = stream_state.clone();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Registered first so a second launch hands over and exits before any other
+    // plugin or the setup runs. On Linux this needs `enableGTKAppId: false`:
+    // with a GTK app id, GApplication forwards the launch itself and makes this
+    // instance re-run its setup, which aborts on the existing `main` window.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .plugin(
             // stdout + a size-rotated file (adminhelper.log) in the OS app-log
             // dir — the diagnostics report reads it back.

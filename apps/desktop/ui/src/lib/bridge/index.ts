@@ -180,12 +180,20 @@ export function openConnection(
   return invoke('open_connection', { connection, password, client, correlationId });
 }
 
+// credentialConnection: the connection as listed, before a tunnel resolved it to
+// 127.0.0.1:<visitor port>. The stored password is keyed by its host and port.
 export function openConnectionStored(
   connection: Connection,
+  credentialConnection?: Connection,
   client?: ClientInfo,
   correlationId?: string,
 ): Promise<void> {
-  return invoke('open_connection_stored', { connection, client, correlationId });
+  return invoke('open_connection_stored', {
+    connection,
+    credentialConnection,
+    client,
+    correlationId,
+  });
 }
 
 export function resolveConnection(

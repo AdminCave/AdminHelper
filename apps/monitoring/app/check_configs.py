@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 
 
 class _StrictConfig(BaseModel):
@@ -39,7 +39,7 @@ class HttpConfig(_StrictConfig):
     method: str = Field("GET", min_length=1)
     expected_status: int = Field(200, ge=100, le=599)
     timeout: float = Field(10, ge=1, le=300)
-    verify_ssl: bool = True
+    verify_ssl: StrictBool = True
     search_string: str = ""
 
 
@@ -97,20 +97,24 @@ class SmartHealthConfig(_StrictConfig):
 class ProxmoxBackupConfig(_StrictConfig):
     max_backup_age_hours: float = Field(26, ge=1, le=8760)
     exclude_vmids: list[int | str] = []
-    exclude_stopped: bool = True
+    exclude_stopped: StrictBool = True
 
 
 class ZfsHealthConfig(_StrictConfig):
     capacity_warn: float = Field(80, ge=0, le=100)
     capacity_crit: float = Field(90, ge=0, le=100)
+    # Strict: configs are stored as sent, and a lax "false" or 0 would reach the
+    # checker and the desktop checkbox as values each reads differently.
+    alert_on_unavailable: StrictBool = True
 
 
 class DockerHealthConfig(_StrictConfig):
     ignore_containers: list[str] = []
+    alert_on_unavailable: StrictBool = True
     # Dead key, deliberately tolerated: the checker never reads it, but the
     # desktop UI's docker_health form writes it on every toggle — rejecting it
     # would 422 product-generated configs. UI cleanup happens in T20.
-    check_restarts: bool = False
+    check_restarts: StrictBool = False
 
 
 class DiskForecastConfig(_StrictConfig):
