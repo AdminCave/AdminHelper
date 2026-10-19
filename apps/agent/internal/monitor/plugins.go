@@ -152,7 +152,7 @@ func dockerUnavailable(call, code string, err error) map[string]any {
 		code = "timeout"
 		text = fmt.Sprintf("docker %s timed out after %s", call, dockerTimeout)
 	case err != nil:
-		text = "docker " + call + " failed: " + commandFailure("docker", err)
+		text = "docker " + call + " failed: " + commandFailure("docker", dockerTimeout, err)
 	}
 	logger.Warnf("%s, docker reported as unavailable (%s)", text, code)
 	return map[string]any{
@@ -274,7 +274,7 @@ func collectProxmox() map[string]any {
 	vmsOut, err := pveshCLI.run("get", "/cluster/resources", "--type", "vm", "--output-format", "json")
 	if err != nil {
 		logger.Warnf("pvesh get /cluster/resources failed: %s, proxmox left out of the report",
-			commandFailure("pvesh", err))
+			commandFailure("pvesh", pluginTimeout, err))
 		return nil
 	}
 	var vms []map[string]any
@@ -322,7 +322,8 @@ func buildBackupIndex(nodeName string) (map[int]int64, error) {
 	storagesPath := "/nodes/" + nodeName + "/storage"
 	storagesOut, err := pveshCLI.run("get", storagesPath, "--content", "backup", "--output-format", "json")
 	if err != nil {
-		return nil, fmt.Errorf("pvesh get %s failed: %s", storagesPath, commandFailure("pvesh", err))
+		return nil, fmt.Errorf("pvesh get %s failed: %s", storagesPath,
+			commandFailure("pvesh", pluginTimeout, err))
 	}
 	// null decodes without error, to a nil slice; only an array is a storage list.
 	var storages []map[string]any
@@ -342,7 +343,8 @@ func buildBackupIndex(nodeName string) (map[int]int64, error) {
 		contentPath := storagesPath + "/" + sid + "/content"
 		backupsOut, err := pveshCLI.run("get", contentPath, "--content", "backup", "--output-format", "json")
 		if err != nil {
-			return nil, fmt.Errorf("pvesh get %s failed: %s", contentPath, commandFailure("pvesh", err))
+			return nil, fmt.Errorf("pvesh get %s failed: %s", contentPath,
+				commandFailure("pvesh", pluginTimeout, err))
 		}
 		var items []map[string]any
 		if json.Unmarshal(backupsOut, &items) != nil || items == nil {
@@ -409,7 +411,7 @@ func collectZFS() map[string]any {
 // a call the timeout killed, cli_failed otherwise; error_message names the exit status, never stderr
 // or a path (as dockerUnavailable).
 func zfsUnavailable(err error) map[string]any {
-	code, text := "cli_failed", "zpool list failed: "+commandFailure("zpool", err)
+	code, text := "cli_failed", "zpool list failed: "+commandFailure("zpool", pluginTimeout, err)
 	if errors.Is(err, context.DeadlineExceeded) {
 		code, text = "timeout", fmt.Sprintf("zpool list timed out after %s", pluginTimeout)
 	}

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent-Checks: SMART-Exit-Bits, MegaRAID-Gerätenamen, Proxmox-Backup-Index, commandFailure-Timeout — Task-Ledger
-Status: aktiv · Branch: feature/agent-smart-proxmox · Review: pro Task
+Status: bereit · Branch: feature/agent-smart-proxmox · Review: pro Task
 Spec: Roadmap R-0491, R-0493, R-0494, R-0499
 Heavy: linux-full + windows — `apps/agent` (Monitoring-Collector: SMART, Proxmox, Dienste); `linux-full` läuft im Sammellauf (`/feature-build` §5). `windows` ist der CI-Job `agent-windows` (keine Windows-Box im Pool): `smart.go`, `plugins.go`, `services.go` und `scquery.go` haben kein Build-Tag, die neuen Tests aus T1 und T4 starten das Testbinary als Kindprozess mit festem Exit-Code und laufen dort nativ; `services_linux.go` (T4) trägt `//go:build linux`, `verify.sh agent` baut zusätzlich mit `GOOS=windows`. Kein `scenario`: weder FRP noch PKI noch Install. Echte MegaRAID- oder PVE-Hardware hat der Pool nicht; T1–T3 sind gegen Stubs, die smartmontools-Quelle (RELEASE_7_4) und die PVE-API-Doku belegt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -53,8 +53,10 @@ Dedup-Key: bug:agent:plugins.go:backup-index-partial-failure
 HEAD: a23a4387
 Semantik: docs/admin/monitoring.html:64 — „Für Proxmox gilt das noch nicht: Scheitert pvesh, bleibt proxmox_backup ohne Daten.“ (EN :64 „This does not apply to Proxmox yet: if pvesh fails, proxmox_backup has no data.“) und docs/developer/monitoring.html:134 — „proxmox erscheint nur mit Daten.“ (EN „proxmox appears only with data.“)
 
-### T4 — Agent: commandFailure nennt den Timeout des Aufrufers (R-0499)  [ ]
+### T4 — Agent: commandFailure nennt den Timeout des Aufrufers (R-0499)  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/services.go, apps/agent/internal/monitor/services_test.go, apps/agent/internal/monitor/services_linux.go, apps/agent/internal/monitor/scquery.go, apps/agent/internal/monitor/plugins.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @e97cf5e3 2026-10-19T10:08:11+02:00
+Review: approve (.ah-out/review/agent-smart-proxmox/T4.verdict.json)
 Änderung: `commandFailure` (`services.go:40-49`) bekommt den Timeout des Aufrufs als Parameter (`commandFailure(name string, timeout time.Duration, err error)`) und nennt ihn bei `context.DeadlineExceeded` statt fest `pluginTimeout` (`:42`). Aufrufer: `services_linux.go:59` (systemctl, `pluginTimeout`), `scquery.go:20` (sc, `pluginTimeout`), `plugins.go:155` (docker, `dockerTimeout`), `plugins.go:271` (pvesh, `pluginTimeout`), `plugins.go:399` (zpool, `pluginTimeout`) und die Log-Zeilen aus T3. Die Texte bleiben gleich (heute erreicht nur ein 15-s-Aufruf diesen Zweig: `dockerUnavailable` `:151-153` und `zfsUnavailable` `:400-401` prüfen `DeadlineExceeded` vorher selbst). Der Kommentar `:37-39` nennt den Parameter. Test (REF: Suite vorher und nachher grün): neu `TestCommandFailure` in `services_test.go` (kein Build-Tag, läuft auch im Job `agent-windows`): `context.DeadlineExceeded` mit 10 s → „timed out after 10s“, mit 15 s → „timed out after 15s“; ExitError aus `runHelperDocker(t, "fail", time.Minute)` → „exit status 3“; `&exec.Error{…}` → „<name> did not start“. `TestScServiceHealthTimedOut` (`scquery_test.go:94`), `TestServiceHealthSystemctlError` (`services_linux_test.go:584`) und `TestCollectProxmoxVMCallFails` bleiben unverändert grün.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run 'CommandFailure|TimedOut|ServiceHealthSystemctlError|CollectProxmox|CollectDocker|CollectZFS'
 Doku: keine (intern; die Meldungstexte bleiben)
