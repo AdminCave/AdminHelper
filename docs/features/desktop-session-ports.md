@@ -51,6 +51,7 @@ Tunnel-Ziele nur über `/api/frp/tunnels` auf (`tunnel.rs:36-52`), das nur Admin
 - Rust löst Verbindungen mit dieser Karte auf: über `connection_id` (Admin-Mappings, wie heute) und wörtlich
   (`127.0.0.1`/`localhost` und ein Server-Port der Karte → lokaler Port). Damit gehen die Auto-Verbindungen auch für
   Nicht-Admins.
+- Ein gespeichertes Passwort öffnet nur die Auflösung derselben Verbindung über diese Karte (T13, Folge aus R-0429 T9).
 
 **Nicht-Ziele (Kevin 2026-10-16):**
 - Kein Workspace-Namensraum (Datenordner, Keyring-Präfix je Prozess); der kommt mit R-0431.

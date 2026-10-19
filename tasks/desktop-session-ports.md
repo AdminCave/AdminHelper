@@ -97,3 +97,10 @@ Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-connect.l
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T10
+
+### T13 — Gespeichertes Passwort nur für die Auflösung über die Portkarte  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/connection/mod.rs
+Änderung: `open_connection_stored` nimmt eine gesetzte `credential_connection` nur an, wenn `connection` in Host und Port genau deren Auflösung über die Zuordnungen des laufenden frpc ist (dieselbe reine Funktion wie `resolve_connection` aus T10), oder ohne laufenden Tunnel ihr gleicht. Die Prüfung aus R-0429 T9 (`check_credential_connection`: gleiche `id`, `kind`, `username`, `domain`) bleibt davor; die heutige Loopback-Regel wird durch den Vergleich mit der Auflösung ersetzt. Sonst `AppError::Validation`, bevor ein Passwort geladen wird. Die Entscheidung ist eine reine Funktion mit den Zuordnungen als Eingabe. cargo-Tests `stored_password_key_*` (zuerst rot): Auflösung über das Mapping und wörtlich → erlaubt; ein Loopback-Port, der nicht der Auflösung entspricht → abgewiesen; ohne laufenden Tunnel nur dieselbe Verbindung.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- stored_password_key
+Doku: keine (intern)
+Abhängt von: T10
