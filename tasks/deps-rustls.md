@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: rustls 0.23.46 — Task-Ledger
-Status: bereit · Branch: feature/deps-rustls · Review: am Ende
+Status: erledigt · Branch: feature/deps-rustls · Review: am Ende
 Spec: Roadmap R-0547
 Heavy: linux-full — der Bump ändert die TLS-Bibliothek des Desktop-Binaries (reqwest `rustls-tls`, TOFU-Verifier, mTLS-Client); die Desktop-Journeys laufen im Sammellauf über `main`. Die Windows-Jobs der PR-CI (`cargo test` unter Windows) laufen ohnehin; kein `scenario`, der FRP-Datenpfad bleibt unverändert
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
