@@ -452,11 +452,11 @@ cargo tauri build
 │  │  └─ Makefile                # build-linux, build-windows, deb, rpm
 │  ├─ web/                   # PRODUCTION: Svelte 5 + TS web admin panel
 │  │  ├─ src/
-│  │  │  ├─ lib/                 # 9 API modules + 6 stores + i18n + hash router
-│  │  │  ├─ pages/               # 5 production pages + Login + placeholder
-│  │  │  ├─ modals/              # 9 modal components
+│  │  │  ├─ lib/                 # API modules + stores + i18n + hash router + UI components + utils
+│  │  │  ├─ pages/               # production pages + Login + placeholder
+│  │  │  ├─ modals/              # modal components
 │  │  │  └─ App.svelte, main.ts
-│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+│  │  └─ tests/e2e/              # Playwright E2E specs (*.spec.ts)
 │  └─ desktop/               # Tauri desktop client (backend + UI together)
 │     ├─ src-tauri/          # Rust/Tauri backend
 │     │  ├─ src/
