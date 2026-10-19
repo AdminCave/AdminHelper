@@ -9,11 +9,12 @@
 #   frps-supervisor.sh          supervise frps (the image's entrypoint)
 #   frps-supervisor.sh health   exit 0 while the state is waiting, running or stopped
 #
-# The supervisor runs as root, frps as FRPS_USER through su-exec (empty: as the supervisor,
-# for tests without root; root refuses that). frps then holds no capability and owns no file
-# it runs from. After every end of frps, before a new copy is swapped in and before every
-# start, the supervisor KILLs every process of FRPS_USER, so that nothing frps forked outlives
-# it; should one be left, frps does not start and no copy is left (waiting, processes_left).
+# The supervisor runs as root, frps as FRPS_USER and the requests to its dashboard (see below)
+# as FRPS_FETCH_USER, each through su-exec (empty: as the supervisor, for tests without root;
+# root refuses that). frps then holds no capability and owns no file it runs from. After every
+# end of frps, before a new copy is swapped in and before every start, the supervisor KILLs
+# every process of FRPS_USER, so that nothing frps forked outlives it; should one be left,
+# frps does not start and no copy is left (waiting, processes_left).
 #
 # The input, frps.toml from the server and the TLS material from the ca-issuer, lives in
 # volumes other containers write. Only regular files of at most 1 MiB are read from there,
@@ -65,7 +66,10 @@
 # of the dashboard over loopback while frps runs from a current/ with a webServer.port, and
 # puts each answer as frps gave it into $FRPS_STATE_DIR/proxy-<type>.json (fetch_proxies);
 # a failed request or an answer over 1 MiB removes the file of its type, frps not running or
-# no webServer.port all of them.
+# no webServer.port all of them. curl runs as FRPS_FETCH_USER (default nobody), whose UID is
+# neither root nor that of FRPS_USER: it holds no capability, and kill_left, which KILLs the
+# processes of FRPS_USER, never hits a request under way. The supervisor opens the file each
+# answer goes to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
 
 set -u
 export LC_ALL=C
@@ -78,6 +82,9 @@ FRPS_STATE_DIR="${FRPS_STATE_DIR:-/var/lib/frps-state}"
 FRPS_BIN="${FRPS_BIN:-frps}"
 # Set but empty switches su-exec off.
 FRPS_USER="${FRPS_USER-frps}"
+# The user the requests to the dashboard run as (fetch_proxies); set but empty switches su-exec
+# off for them.
+FRPS_FETCH_USER="${FRPS_FETCH_USER-nobody}"
 # Whole seconds, as POSIX sleep takes them.
 FRPS_POLL_SECONDS="${FRPS_POLL_SECONDS:-5}"
 FRPS_BACKOFF_MAX="${FRPS_BACKOFF_MAX:-60}"
@@ -692,7 +699,8 @@ dashboard_port() {
 
 # fetch_proxies — the proxy lists of the dashboard, http://127.0.0.1:<port>/api/proxy/<type>
 # for each of PROXY_TYPES, with webServer.user and webServer.password of current/frps.toml,
-# which go to curl on stdin, never on a command line. The requests run side by side, each for
+# which go to curl on stdin, never on a command line; curl runs as FRPS_FETCH_USER, and the
+# supervisor opens the file it writes to. The requests run side by side, each for
 # FRPS_READ_SECONDS at the most, and TERM or INT ends them at once (on_signal), so that a
 # dashboard that does not answer holds up a poll no longer than that. The answers are not
 # parsed: the name and the mtime of a file are the supervisor's (keep_proxy).
@@ -706,8 +714,10 @@ fetch_proxies() {
     password=$(top_value "$CURRENT/frps.toml" webServer.password)
     for type in $PROXY_TYPES; do
         # -q first: no curlrc is read. No proxy from the environment gets the credentials.
-        curl -q --config - --silent --fail --noproxy '*' --max-time "$FRPS_READ_SECONDS" \
-            --max-filesize "$INPUT_MAX" "http://127.0.0.1:$port/api/proxy/$type" \
+        # su-exec execs curl: $! is the pid of curl, which on_signal ends.
+        ${FRPS_FETCH_USER:+su-exec "$FRPS_FETCH_USER"} curl -q --config - --silent --fail \
+            --noproxy '*' --max-time "$FRPS_READ_SECONDS" --max-filesize "$INPUT_MAX" \
+            "http://127.0.0.1:$port/api/proxy/$type" \
             > "$FRPS_STATE_DIR/.proxy-$type.json.tmp" <<EOF &
 user = "$user:$password"
 EOF
@@ -838,6 +848,15 @@ if [ -n "$FRPS_USER" ]; then
     [ "$FRPS_UID" != 0 ] || die "FRPS_USER must not be root"
 elif [ "$(id -u)" -eq 0 ]; then
     die "FRPS_USER must name the user frps runs as, not be empty under root"
+fi
+if [ -n "$FRPS_FETCH_USER" ]; then
+    fetch_uid=$(id -u "$FRPS_FETCH_USER" 2>/dev/null) \
+        || die "FRPS_FETCH_USER $FRPS_FETCH_USER is no user"
+    [ "$fetch_uid" != 0 ] || die "FRPS_FETCH_USER must not be root"
+    # kill_left would hit the requests under way.
+    [ "$fetch_uid" != "$FRPS_UID" ] || die "FRPS_FETCH_USER must not share the UID of FRPS_USER"
+elif [ "$(id -u)" -eq 0 ]; then
+    die "FRPS_FETCH_USER must name the user the dashboard is asked as, not be empty under root"
 fi
 
 # frps passes through to current/ and lists nothing.

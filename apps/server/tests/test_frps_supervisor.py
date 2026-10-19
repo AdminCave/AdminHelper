@@ -21,16 +21,17 @@ like at the start, restarting frps only for a new valid input, and one that keep
 as unstable; frps exiting on its own is restarted after a growing delay, three exits in a row
 make a crash loop; TERM and INT stop frps and leave no process behind; `health` judges the
 state. While frps runs from a copy with a webServer.port, every poll puts the proxy lists of
-its dashboard, fetched over loopback with the credentials kept off every command line, into
-the state directory (proxy-<type>.json, 0644), each answer as it came; a failed request or an
-answer over 1 MiB leaves no file of its type, and without frps or a webServer.port none is
-left.
+its dashboard, fetched over loopback under a user of their own (neither root nor that of frps)
+with the credentials kept off every command line, into the state directory (proxy-<type>.json,
+0644), each answer as it came; a failed request or an answer over 1 MiB leaves no file of its
+type, and without frps or a webServer.port none is left.
 
 The script runs under sh with a stub frps on PATH, without root and so with su-exec switched
-off (FRPS_USER empty; one test puts a stub su-exec in its place); a local HTTP server stands in
-for the dashboard. Some tests run the frps image built from apps/frps, with the capabilities and
-security options compose gives it and the real frps under its own user; they skip when Docker
-or the pinned base image is not at hand."""
+off (FRPS_USER and FRPS_FETCH_USER empty; some tests put a stub su-exec in its place); a local
+HTTP server stands in for the dashboard. Some tests run the frps image built from apps/frps,
+with the capabilities and security options compose gives it, the real frps under its own user
+and the requests to its dashboard as nobody; they skip when Docker or the pinned base image is
+not at hand."""
 
 import base64
 import contextlib
@@ -193,8 +194,10 @@ class Box:
             # One poll an hour, so a test of the start sees the start alone; the tests of
             # the loop poll every second (see _polling).
             "FRPS_POLL_SECONDS": "3600",
-            # su-exec off: without root, frps runs as the test's user.
+            # su-exec off: without root, frps and the requests to its dashboard run as the
+            # test's user.
             "FRPS_USER": "",
+            "FRPS_FETCH_USER": "",
             # Where the supervisor looks for processes of the user of frps: never the real
             # /proc, whose processes of the test's user it would KILL.
             "FRPS_PROC_ROOT": str(self.proc),
@@ -1530,10 +1533,12 @@ def test_term_cuts_short_a_request_the_dashboard_does_not_answer(box, dashboard)
 
 
 SU_EXEC = """#!/bin/sh
-# Stands in for su-exec: records the user and the command, and runs frps as it is, nothing
-# else.
+# Stands in for su-exec: records the user and the command, and runs frps or curl as it is,
+# nothing else, the user in SU_EXEC_USER.
 printf '%s\\n' "$*" >> "$STUB_DIR/su-exec"
-[ "$2" = frps ] || exit 0
+case $2 in frps | curl) ;; *) exit 0 ;; esac
+SU_EXEC_USER=$1
+export SU_EXEC_USER
 shift
 exec "$@"
 """
@@ -1578,6 +1583,42 @@ def test_frps_runs_as_its_user_through_su_exec_and_verify_does_not(box):
     # su-exec runs frps alone; no KILL is sent as the user of frps.
     run = f"{user} frps -c {box.current}/frps.toml"
     assert (box.stub / "su-exec").read_text().splitlines() == [run, run]
+
+
+# Stands in for curl: records the user su-exec ran it as (none without su-exec), then becomes
+# the real curl, stdin and all.
+CURL_AS = """#!/bin/sh
+printf '%s\\n' "${{SU_EXEC_USER:-none}}" >> "$STUB_DIR/curl"
+exec {real} "$@"
+"""
+
+
+def test_every_request_to_the_dashboard_runs_as_its_user_through_su_exec(box, dashboard):
+    su_exec = box.root / "bin" / "su-exec"
+    su_exec.write_text(SU_EXEC)
+    su_exec.chmod(0o755)
+    real = shutil.which("curl")
+    assert real, "curl"
+    (box.root / "bin" / "curl").write_text(CURL_AS.format(real=real))
+    (box.root / "bin" / "curl").chmod(0o755)
+    user = pwd.getpwuid(os.getuid()).pw_name
+    box.env["FRPS_FETCH_USER"] = user
+
+    _with_dashboard(box, dashboard)
+    box.wait_until(lambda: len(dashboard.requests) >= 2 * len(PROXY_TYPES), "two polls")
+
+    # The four lists arrive as without su-exec, the credentials on stdin.
+    assert _proxy_files(box) == {t: _answer(t) for t in PROXY_TYPES}
+    credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
+    assert {auth for _, auth in dashboard.requests} == {f"Basic {credentials}"}
+    # Each request through su-exec as the user, none around it, and no call with the password.
+    calls = (box.stub / "su-exec").read_text(encoding="utf-8").splitlines()
+    url = f" http://127.0.0.1:{dashboard.port}/api/proxy/"
+    assert calls and all(c.startswith(f"{user} curl -q --config - ") for c in calls), calls
+    assert all(url in c for c in calls), calls
+    assert {c.rsplit(url, 1)[1] for c in calls} == set(PROXY_TYPES), calls
+    assert [c for c in calls if DASHBOARD_PASSWORD in c or credentials in c] == []
+    assert set((box.stub / "curl").read_text().split()) == {user}
 
 
 def test_processes_of_the_frps_user_are_killed_before_frps_starts_and_after_it_ended(box):
@@ -1714,6 +1755,20 @@ def test_a_frps_user_that_is_root_or_no_user_stops_the_supervisor(box, user):
     result = box.once()
 
     assert result.returncode == 1 and "FRPS_USER" in result.stderr
+    assert box.calls() == [] and not box.status_file.exists()
+
+
+@pytest.mark.parametrize("user", ["root", "no-such-user-for-the-dashboard", "the user of frps"])
+def test_a_fetch_user_that_is_root_no_user_or_the_user_of_frps_stops_the_supervisor(box, user):
+    box.write_input()
+    if user == "the user of frps":
+        _as_user(box)
+        user = box.env["FRPS_USER"]
+    box.env["FRPS_FETCH_USER"] = user
+
+    result = box.once()
+
+    assert result.returncode == 1 and "FRPS_FETCH_USER" in result.stderr
     assert box.calls() == [] and not box.status_file.exists()
 
 
@@ -2215,6 +2270,48 @@ def test_in_the_frps_image_the_supervisor_does_not_run_frps_as_root(frps_image):
         subprocess.run([docker, "rm", "-f", name], capture_output=True)
 
     assert result.returncode == 1 and "FRPS_USER" in result.stderr, result.stderr
+
+
+def test_in_the_frps_image_the_supervisor_does_not_ask_the_dashboard_as_root(frps_image):
+    docker, tag = frps_image
+    name = f"frps-supervisor-test-{uuid.uuid4().hex[:12]}"
+    run = [docker, "run", "--name", name, "--network", "none", *_security_args(_compose_frps())]
+    run += ["-e", "FRPS_FETCH_USER=", tag]
+    try:
+        result = subprocess.run(run, capture_output=True, text=True, timeout=WAIT * 3)
+    finally:
+        subprocess.run([docker, "rm", "-f", name], capture_output=True)
+
+    assert result.returncode == 1 and "FRPS_FETCH_USER" in result.stderr, result.stderr
+
+
+# nobody of the base image.
+NOBODY_UID = 65534
+# Stands in for frps: verify goes to frps as it is; a run takes the connections to the port of
+# its dashboard (7500, as in the test below), answers none of them and drops what it reads.
+SILENT = """#!/bin/sh
+if [ "$1" = verify ]; then exec frps "$@"; fi
+exec nc -dlk 127.0.0.1 7500 > /dev/null
+"""
+
+
+def test_in_the_frps_image_the_supervisor_asks_the_dashboard_as_nobody(tmp_path, pems, frps_image):
+    config = _cfg(
+        dashboard_port=7500, dashboard_user=DASHBOARD_USER, dashboard_password=DASHBOARD_PASSWORD
+    )
+    # Requests held open longer than the grace period compose gives frps.
+    env = {"FRPS_POLL_SECONDS": "1", "FRPS_READ_SECONDS": "60"}
+    toml = generate_frps_toml(config)
+    with _container(frps_image, tmp_path, pems, toml, frps_bin=SILENT, **env) as box:
+        # The requests of a poll, all of them under way: curl as nobody, none as root.
+        box.wait_until(
+            lambda: [p[0] for p in box.processes(NOBODY_UID)] == ["curl"] * len(PROXY_TYPES),
+            "the requests of a poll as nobody",
+        )
+
+        assert [process for process in box.processes(0) if process[0] == "curl"] == []
+        # TERM ends them as before, and with them the supervisor within the grace period.
+        assert box.stop() == "0", box.logs()
 
 
 def test_in_the_frps_image_the_supervisor_puts_the_proxy_lists_of_frps_into_the_state(
