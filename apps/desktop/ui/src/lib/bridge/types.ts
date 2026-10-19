@@ -69,6 +69,15 @@ export interface TunnelStatus {
   connectedSince?: string | null;
   /** Names of the visitors the running frpc applied. */
   visitors?: string[];
+  /** Where each visitor of the running frpc listens. */
+  bindings?: VisitorBinding[];
+}
+
+/** Where a visitor listens: the server's port and the local port on 127.0.0.1 it got instead. */
+export interface VisitorBinding {
+  name: string;
+  serverPort: number;
+  localPort: number;
 }
 
 /** What a tunnel reconciliation did with the visitor bundle; `stopped`: no tunnels. */

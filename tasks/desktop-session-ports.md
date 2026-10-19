@@ -95,8 +95,10 @@ Review: approve (.ah-out/review/desktop-session-ports/T8.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- port_registry
 Doku: keine (intern; Doku mit T11)
 
-### T9 — Abgleich arbeitet mit der umgeschriebenen Fassung  [ ]
+### T9 — Abgleich arbeitet mit der umgeschriebenen Fassung  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/types.ts, apps/desktop/src-tauri/src/port_registry.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @23b5b9b5 2026-10-19T10:51:12+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T9.verdict.json)
 Änderung: `reconcile` (`frpc.rs:633`) ruft nach `validate_visitor_toml` (`:643`) die Portkarte und `remap_visitors`; `Applied` (`:62`) hält die umgeschriebene Fassung und die Zuordnungen, `plan_refresh` (`:398`) vergleicht Umgeschriebenes mit Umgeschriebenem, `Sidecar::write` (`:455`) bekommt den serialisierten Wert. `TunnelStatus` (`models.rs:155`, `types.ts`) liefert die Zuordnungen (`bindings: [{name, serverPort, localPort}]`; `types.parity.test.ts` zieht mit). Bestehende Tests mit Rohtext-Vergleich (`refresh_reloads_behind_the_running_head_and_keeps_the_process` `:1294`, `refresh_config_fills_in_the_identity_dir_behind_the_head` `:1530`) prüfen künftig die umgeschriebene Fassung. Neue Tests: Server-Port belegt → frpc bekommt den Ausweichport; zweiter Abgleich mit derselben Server-TOML → `Unchanged`, kein Reload (klebrig). Dazu (Prüfer-Hinweise zu T7): Die Allow-List weist doppelte Visitor-Namen ab (der Name ist der Schlüssel der Portkarte; der Server erzeugt eindeutige); entsteht die Config über den Serializer, setzt `rewrite_identity_paths` die Pfade im Wert statt per Textersatz. Tests: doppelter Name abgewiesen; Windows-Pfad mit `\` und `'` über den Serializer. Dazu (Prüfer-Hinweise zu T8): `assign` läuft über `spawn_blocking`; Server-Ports unter 1024 gehen direkt in den Ausweichbereich (sonst lauschte der Desktop je nach System auf 127.0.0.1:80/:445/:22); beim ersten Abgleich ohne laufenden frpc prüft `assign` auch die eigenen Einträge per Bind-Test (`recheck`), damit ein inzwischen fremd belegter Port ausweicht. Tests dazu in `port_registry`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- refresh_
 Doku: keine (intern; Doku mit T11)

@@ -158,6 +158,18 @@ pub struct TunnelStatus {
     pub connected_since: Option<String>,
     /// Names of the visitors the running frpc applied; empty while none runs.
     pub visitors: Vec<String>,
+    /// Where each visitor of the running frpc listens; empty while none runs.
+    pub bindings: Vec<VisitorBinding>,
+}
+
+/// Where a visitor listens: the port the server's visitor TOML asked for and the local port on
+/// `127.0.0.1` it got instead from the port map (`port_registry.rs`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisitorBinding {
+    pub name: String,
+    pub server_port: u16,
+    pub local_port: u16,
 }
 
 /// What a tunnel reconciliation did with the visitor bundle it fetched.

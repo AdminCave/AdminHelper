@@ -5,14 +5,6 @@
 //! The local port every visitor listens on, one map for all AdminHelper processes of the user:
 //! `port-registry.json` in the app data dir, read and written under a lock on a file beside it.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "no callers yet, the reconciliation takes it up next (R-0430)"
-    )
-)]
-
 use std::fs;
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, TcpListener};
@@ -28,7 +20,7 @@ pub const DEFAULT_OWNER: &str = "default";
 
 /// Where a visitor goes whose server port is taken: below the ephemeral ports of Linux
 /// (32768-60999) and Windows (49152-65535), outside the server's visitor ports (6000-6999).
-const FALLBACK_PORTS: RangeInclusive<u16> = 23000..=23999;
+pub const FALLBACK_PORTS: RangeInclusive<u16> = 23000..=23999;
 
 const REGISTRY_FILE: &str = "port-registry.json";
 const LOCK_FILE: &str = "port-registry.lock";
@@ -48,6 +40,7 @@ struct Entry {
 }
 
 /// The port map in one directory. Keeps nothing in memory: every call reads the file.
+#[derive(Clone)]
 pub struct PortRegistry {
     dir: PathBuf,
 }
@@ -60,13 +53,14 @@ impl PortRegistry {
     }
 
     /// The local port of every visitor `owner` runs, given as (name, server port), in the order
-    /// given. A visitor that has an entry keeps its port. A new one gets its server port if no
-    /// entry holds it and it binds on `127.0.0.1`, else the first such port of
-    /// [`FALLBACK_PORTS`]. The entries of `owner` for visitors not given go.
+    /// given. A visitor that has an entry keeps its port; with `recheck` only if the port still
+    /// binds on `127.0.0.1`, for when no frpc of `owner` runs that would hold it. Any other gets
+    /// a port as [`free_port`] picks it. The entries of `owner` for visitors not given go.
     pub fn assign(
         &self,
         owner: &str,
         visitors: &[(String, u16)],
+        recheck: bool,
     ) -> Result<Vec<(String, u16)>, AppError> {
         let _lock = self.lock()?;
         let loaded = self.load()?;
@@ -81,16 +75,20 @@ impl PortRegistry {
         let mut assigned = Vec::with_capacity(visitors.len());
         for (name, server_port) in visitors {
             let own = entries
-                .iter_mut()
-                .find(|entry| entry.owner == owner && entry.visitor == *name);
+                .iter()
+                .position(|entry| entry.owner == owner && entry.visitor == *name);
             let local_port = match own {
-                // No bind test: the visitor's own frpc most likely holds the port.
-                Some(entry) => {
-                    entry.server_port = *server_port;
-                    entry.local_port
+                // No bind test without recheck: the visitor's own frpc most likely holds the port.
+                Some(i) if !recheck || binds(entries[i].local_port) => {
+                    entries[i].server_port = *server_port;
+                    entries[i].local_port
                 }
-                None => {
-                    let local_port = free_port(&entries, *server_port)?;
+                _ => {
+                    // Someone else took the port of an entry while no frpc of the owner ran.
+                    if let Some(i) = own {
+                        entries.remove(i);
+                    }
+                    let local_port = free_port(&entries, *server_port, &binds)?;
                     entries.push(Entry {
                         owner: owner.to_string(),
                         visitor: name.clone(),
@@ -143,14 +141,39 @@ impl PortRegistry {
     }
 }
 
-/// The server port if no entry holds it and it binds, else the first such port of
-/// [`FALLBACK_PORTS`]. No other port leaves here.
-fn free_port(entries: &[Entry], server_port: u16) -> Result<u16, AppError> {
-    // Port 0 always binds: the OS picks one.
-    let free = |port: u16| {
-        port != 0 && !entries.iter().any(|entry| entry.local_port == port) && binds(port)
-    };
-    std::iter::once(server_port)
+#[cfg(test)]
+impl PortRegistry {
+    /// Make the map hold exactly `entries` of `owner`, each (visitor, server port, local port), as
+    /// an earlier run would have left it.
+    pub fn seed(&self, owner: &str, entries: &[(&str, u16, u16)]) {
+        let _lock = self.lock().unwrap();
+        let entries = entries
+            .iter()
+            .map(|&(visitor, server_port, local_port)| Entry {
+                owner: owner.to_string(),
+                visitor: visitor.to_string(),
+                server_port,
+                local_port,
+            })
+            .collect();
+        self.store(&Registry { entries }).unwrap();
+    }
+}
+
+/// The server port if it is 1024 or above, no entry holds it and `binds` says it binds, else the
+/// first such port of [`FALLBACK_PORTS`]. No other port leaves here.
+fn free_port(
+    entries: &[Entry],
+    server_port: u16,
+    binds: &dyn Fn(u16) -> bool,
+) -> Result<u16, AppError> {
+    let free = |port: u16| !entries.iter().any(|entry| entry.local_port == port) && binds(port);
+    // Below 1024 the desktop would listen on the port of a system service (22, 80, 445, ...)
+    // wherever the OS lets a user bind there. Port 0 goes with them: it always binds, the OS
+    // picks one.
+    (server_port >= 1024)
+        .then_some(server_port)
+        .into_iter()
         .chain(FALLBACK_PORTS)
         .find(|&port| free(port))
         .ok_or_else(|| {
@@ -182,6 +205,7 @@ fn open_private(path: &Path, truncate: bool) -> io::Result<fs::File> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::fs;
     use std::net::{Ipv4Addr, TcpListener};
     use std::path::PathBuf;
@@ -221,7 +245,7 @@ mod tests {
         let port = free_port();
 
         let assigned = PortRegistry::new(&dir)
-            .assign(DEFAULT_OWNER, &[visitor("ssh", port)])
+            .assign(DEFAULT_OWNER, &[visitor("ssh", port)], false)
             .unwrap();
 
         assert_eq!(assigned, [visitor("ssh", port)]);
@@ -235,7 +259,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
 
         let assigned = PortRegistry::new(&dir)
-            .assign(DEFAULT_OWNER, &[visitor("ssh", port)])
+            .assign(DEFAULT_OWNER, &[visitor("ssh", port)], false)
             .unwrap();
 
         let local = assigned[0].1;
@@ -254,10 +278,62 @@ mod tests {
         let dir = scratch_dir("zero");
 
         let assigned = PortRegistry::new(&dir)
-            .assign(DEFAULT_OWNER, &[visitor("ssh", 0)])
+            .assign(DEFAULT_OWNER, &[visitor("ssh", 0)], false)
             .unwrap();
 
         assert!(FALLBACK_PORTS.contains(&assigned[0].1));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_sends_a_server_port_below_1024_to_the_fallback_ports() {
+        // Some systems let any user bind there (Windows, Linux with a lowered
+        // ip_unprivileged_port_start): the bind test may not decide.
+        let tested = RefCell::new(Vec::new());
+        let binds = |port: u16| {
+            tested.borrow_mut().push(port);
+            true
+        };
+        for port in [0, 1, 22, 80, 445, 1023] {
+            tested.borrow_mut().clear();
+            assert_eq!(
+                super::free_port(&[], port, &binds).unwrap(),
+                *FALLBACK_PORTS.start(),
+                "{port}"
+            );
+            assert!(!tested.borrow().contains(&port), "bind-tested {port}");
+        }
+        assert_eq!(super::free_port(&[], 1024, &binds).unwrap(), 1024);
+
+        let dir = scratch_dir("privileged");
+        let assigned = PortRegistry::new(&dir)
+            .assign(DEFAULT_OWNER, &[visitor("http", 80)], false)
+            .unwrap();
+        assert!(FALLBACK_PORTS.contains(&assigned[0].1), "{assigned:?}");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn port_registry_recheck_moves_an_own_port_someone_else_took() {
+        let dir = scratch_dir("recheck");
+        let registry = PortRegistry::new(&dir);
+        let port = free_port();
+        let ssh = [visitor("ssh", port)];
+        assert_eq!(registry.assign(DEFAULT_OWNER, &ssh, false).unwrap(), ssh);
+        // A recheck keeps a port that still binds.
+        assert_eq!(registry.assign(DEFAULT_OWNER, &ssh, true).unwrap(), ssh);
+
+        // No frpc of the owner runs, and someone else takes the port.
+        let foreign = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
+        // Without a recheck the entry keeps it: its own frpc would hold it.
+        assert_eq!(registry.assign(DEFAULT_OWNER, &ssh, false).unwrap(), ssh);
+        let moved = registry.assign(DEFAULT_OWNER, &ssh, true).unwrap();
+        assert_ne!(moved[0].1, port);
+        assert!(FALLBACK_PORTS.contains(&moved[0].1), "{moved:?}");
+
+        // The new port sticks, also once the old one is free again.
+        drop(foreign);
+        assert_eq!(registry.assign(DEFAULT_OWNER, &ssh, false).unwrap(), moved);
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -269,20 +345,20 @@ mod tests {
         let name = "a \"quoted\"\nname, ü";
         let port = free_port();
         let first = registry
-            .assign(DEFAULT_OWNER, &[visitor(name, port)])
+            .assign(DEFAULT_OWNER, &[visitor(name, port)], false)
             .unwrap();
         assert_eq!(first, [visitor(name, port)]);
 
         // Its own frpc binds the port; the next round must not see it as taken.
         let frpc = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
         let again = registry
-            .assign(DEFAULT_OWNER, &[visitor(name, port)])
+            .assign(DEFAULT_OWNER, &[visitor(name, port)], false)
             .unwrap();
         assert_eq!(again, first);
 
         // A new server port is no new visitor either.
         let moved = registry
-            .assign(DEFAULT_OWNER, &[visitor(name, free_port())])
+            .assign(DEFAULT_OWNER, &[visitor(name, free_port())], false)
             .unwrap();
         assert_eq!(moved[0].1, port);
         drop(frpc);
@@ -296,9 +372,11 @@ mod tests {
         let port = free_port();
 
         let mine = registry
-            .assign(DEFAULT_OWNER, &[visitor("ssh", port)])
+            .assign(DEFAULT_OWNER, &[visitor("ssh", port)], false)
             .unwrap();
-        let theirs = registry.assign("other", &[visitor("ssh", port)]).unwrap();
+        let theirs = registry
+            .assign("other", &[visitor("ssh", port)], false)
+            .unwrap();
 
         assert_eq!(mine[0].1, port);
         assert_ne!(theirs[0].1, port);
@@ -311,7 +389,7 @@ mod tests {
         let dir = scratch_dir("handles");
         let port = free_port();
         let first = PortRegistry::new(&dir)
-            .assign(DEFAULT_OWNER, &[visitor("ssh", port)])
+            .assign(DEFAULT_OWNER, &[visitor("ssh", port)], false)
             .unwrap();
 
         // A second handle, as another process would open it.
@@ -319,12 +397,14 @@ mod tests {
         let frpc = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
         assert_eq!(
             second
-                .assign(DEFAULT_OWNER, &[visitor("ssh", port)])
+                .assign(DEFAULT_OWNER, &[visitor("ssh", port)], false)
                 .unwrap(),
             first
         );
         drop(frpc);
-        let theirs = second.assign("other", &[visitor("rdp", port)]).unwrap();
+        let theirs = second
+            .assign("other", &[visitor("rdp", port)], false)
+            .unwrap();
         assert_ne!(theirs[0].1, port);
         fs::remove_dir_all(&dir).ok();
     }
@@ -338,14 +418,15 @@ mod tests {
             .assign(
                 DEFAULT_OWNER,
                 &[visitor("kept", kept), visitor("dropped", dropped)],
+                false,
             )
             .unwrap();
         registry
-            .assign("other", &[visitor("other", other)])
+            .assign("other", &[visitor("other", other)], false)
             .unwrap();
 
         registry
-            .assign(DEFAULT_OWNER, &[visitor("kept", kept)])
+            .assign(DEFAULT_OWNER, &[visitor("kept", kept)], false)
             .unwrap();
 
         // The dropped visitor's port is free again; the kept one's and the other owner's are not.
@@ -357,6 +438,7 @@ mod tests {
                     visitor("b", kept),
                     visitor("c", other),
                 ],
+                false,
             )
             .unwrap();
         assert_eq!(third[0], visitor("a", dropped));
@@ -374,7 +456,7 @@ mod tests {
         let port = free_port();
 
         let assigned = PortRegistry::new(&dir)
-            .assign(DEFAULT_OWNER, &[visitor("ssh", port)])
+            .assign(DEFAULT_OWNER, &[visitor("ssh", port)], false)
             .unwrap();
 
         assert_eq!(assigned, [visitor("ssh", port)]);
@@ -388,7 +470,7 @@ mod tests {
         let dir = scratch_dir("file");
         let port = free_port();
         let local = PortRegistry::new(&dir)
-            .assign(DEFAULT_OWNER, &[visitor("ssh", port)])
+            .assign(DEFAULT_OWNER, &[visitor("ssh", port)], false)
             .unwrap()[0]
             .1;
 
@@ -426,7 +508,7 @@ mod tests {
         let port = free_port();
 
         let assigning =
-            std::thread::spawn(move || other.assign(DEFAULT_OWNER, &[visitor("ssh", port)]));
+            std::thread::spawn(move || other.assign(DEFAULT_OWNER, &[visitor("ssh", port)], false));
         std::thread::sleep(Duration::from_millis(200));
         assert!(!assigning.is_finished(), "assign ran past the held lock");
         assert!(!dir.join(REGISTRY_FILE).exists());
@@ -458,7 +540,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = PortRegistry::new(&dir).assign(DEFAULT_OWNER, &[visitor("ssh", port)]);
+        let result = PortRegistry::new(&dir).assign(DEFAULT_OWNER, &[visitor("ssh", port)], false);
 
         assert!(
             matches!(&result, Err(AppError::Io(e)) if e.kind() == std::io::ErrorKind::AddrInUse),
