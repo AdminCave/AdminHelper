@@ -6,6 +6,7 @@
 
 import { errMsg } from '$lib/utils/errors';
 import { writable, get } from 'svelte/store';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import * as bridge from '$lib/bridge';
 import { sessionStore, refreshSettings, dropSession, logout } from './session';
 import * as tunnelStore from './tunnel';
@@ -14,6 +15,7 @@ import { reportError, showStatus } from './statusBar';
 import { getIntervalMinutes, getSettingsDefaults, validateSettings } from '$lib/models/settings';
 import { setLanguage, tNow } from '$lib/i18n';
 import { reloadWindow } from '$lib/utils/reloadWindow';
+import { leaveLoginNotice } from '$lib/utils/loginNotice';
 import type { Settings } from '$lib/bridge/types';
 
 export const settingsModalOpen = writable<boolean>(false);
@@ -159,7 +161,7 @@ export async function serverLogout(): Promise<void> {
   } catch {
     /* ignore */
   }
-  // dropSession clears the keyring tokens AND the in-memory session — the latter
+  // dropSession ends the session in Rust AND the in-memory one — the latter
   // was previously missed here, leaving the UI in a half-logged-in state after
   // an explicit logout from the settings dialog.
   await dropSession();
@@ -174,9 +176,10 @@ export async function serverLogout(): Promise<void> {
  * The logout buttons of the app shell and the settings: stops the tunnel, logs out, then
  * reloads the window, so no store keeps the previous user's data. It lives here, not in
  * session.ts, because tunnel.ts imports session.ts. Unlike serverLogout it reloads no
- * connections: logout() leaves connections.json alone.
+ * connections: logout() leaves connections.json alone. A `notice` is the line the login
+ * screen shows after the reload.
  */
-export async function logoutAndReload(): Promise<void> {
+export async function logoutAndReload(notice?: string): Promise<void> {
   try {
     await tunnelStore.stop();
   } catch {
@@ -187,5 +190,14 @@ export async function logoutAndReload(): Promise<void> {
   } catch {
     /* logout() has dropped the session either way; the reload must not depend on it */
   }
+  if (notice) leaveLoginNotice(notice);
   reloadWindow();
+}
+
+/**
+ * Rust ended the session because it could not renew it (`session-expired`): out as through
+ * the logout buttons, and the login screen says why. AppShell listens while it is mounted.
+ */
+export function listenForSessionExpiry(): Promise<UnlistenFn> {
+  return listen('session-expired', () => void logoutAndReload(tNow('login.sessionExpired')));
 }

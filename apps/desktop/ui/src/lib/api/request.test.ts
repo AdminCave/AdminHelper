@@ -16,8 +16,6 @@ import { apiRequest } from './request';
 
 const session: AuthSession = {
   serverUrl: 'https://srv',
-  token: 'tok',
-  refreshToken: 'r',
   username: 'admin',
   isAdmin: true,
 };
@@ -26,24 +24,25 @@ const proxy = vi.mocked(bridge.apiProxy);
 describe('apiRequest', () => {
   beforeEach(() => proxy.mockClear());
 
-  it('forwards method + path and pins server URL and token', async () => {
+  it('forwards method + path, and the Rust session picks server and token', async () => {
     await apiRequest(session, 'GET', '/api/x');
-    expect(proxy).toHaveBeenCalledWith('https://srv', 'tok', 'GET', '/api/x', undefined, true);
+    expect(proxy).toHaveBeenCalledWith('GET', '/api/x', undefined);
   });
 
   it('serializes a body to JSON', async () => {
     await apiRequest(session, 'POST', '/api/x', { a: 1 });
-    expect(proxy).toHaveBeenCalledWith('https://srv', 'tok', 'POST', '/api/x', '{"a":1}', true);
+    expect(proxy).toHaveBeenCalledWith('POST', '/api/x', '{"a":1}');
   });
 
   it('passes undefined (not the string "undefined") when there is no body', async () => {
     await apiRequest(session, 'DELETE', '/api/x/1');
-    expect(proxy).toHaveBeenCalledWith('https://srv', 'tok', 'DELETE', '/api/x/1', undefined, true);
+    expect(proxy).toHaveBeenCalledWith('DELETE', '/api/x/1', undefined);
   });
 
-  it('reads allowSelfSigned from the session store', async () => {
+  it('sends no certificate choice: the sign-in fixed it in the Rust session (R-0430)', async () => {
+    // Self-signed certificates are allowed in the settings mocked above.
     await apiRequest(session, 'GET', '/api/y');
-    expect(proxy.mock.calls.at(-1)?.[5]).toBe(true);
+    expect(proxy.mock.calls.at(-1)).toEqual(['GET', '/api/y', undefined]);
   });
 
   it('returns the proxy payload unchanged', async () => {

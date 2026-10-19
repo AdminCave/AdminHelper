@@ -15,7 +15,9 @@ mod keyring_store;
 mod models;
 mod notifications;
 mod password;
+mod port_registry;
 mod proxy;
+mod session;
 mod storage;
 mod sync;
 mod terminal;
@@ -35,7 +37,7 @@ use commands::{
     start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
     sync_connections, tunnel_status,
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn main() {
     // Route panics through the log sink (file + stdout) so a crash leaves a
@@ -88,6 +90,7 @@ fn main() {
         .manage(frpc_state)
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
+        .manage(session::SessionState::default())
         .setup(|app| {
             // Ensure a concrete runtime window icon in dev and production.
             let icon_bytes = include_bytes!("../icons/icon.png");
@@ -100,6 +103,14 @@ fn main() {
             // connections.local.json) once, before any server fetch can
             // overwrite the legacy file. Best-effort: must not block startup.
             let _ = storage::migrate_legacy_local_store(app.handle());
+            // The session lives in the process now; drop what earlier versions left in the
+            // keyring. Off the main thread: a keyring that hangs must not hold the window.
+            tauri::async_runtime::spawn_blocking(auth::forget_keyring_session);
+            // A renewal that fails ends the session; the webview hears of it through this event.
+            let handle = app.handle().clone();
+            app.state::<session::SessionState>().on_expiry(move || {
+                let _ = handle.emit("session-expired", ());
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -56,7 +56,7 @@ vi.mock('$lib/stores/session', async () => {
     serverUrl: 'https://srv.example',
     allowSelfSignedCerts: false,
   };
-  const session = { username: 'admin', serverUrl: 'https://srv.example', token: 'jwt-1' };
+  const session = { username: 'admin', serverUrl: 'https://srv.example' };
   return {
     sessionStore: readable({ settings, session, ready: true }),
     settings: readable(settings),
@@ -106,15 +106,7 @@ describe('SettingsModal — browser-certificate export password (R-0219)', () =>
     const password = 'b'.repeat(12);
     await exportWith(password);
 
-    await waitFor(() =>
-      expect(h.exportBrowserP12).toHaveBeenCalledWith(
-        'https://srv.example',
-        'jwt-1',
-        password,
-        DEST,
-        false,
-      ),
-    );
+    await waitFor(() => expect(h.exportBrowserP12).toHaveBeenCalledWith(password, DEST));
     expect(h.save).toHaveBeenCalledTimes(1);
   });
 

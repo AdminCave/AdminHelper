@@ -8,6 +8,8 @@ critical, the smartctl exit-code bit flags map to the right severity, the
 temperature threshold depends on the disk kind, and an ignored device is
 skipped. (ATA/SATA disks only, to stay clear of the NVMe-spare specifics.)"""
 
+import math
+
 import pytest
 
 from app.checkers.smart import SmartHealthChecker
@@ -195,3 +197,102 @@ def test_ata_pending_sectors_at_crit_is_critical():
 
 def test_ata_spin_retry_is_critical():
     assert CHECKER.evaluate({}, _report(_disk(spin_retry_count=1)))[0] == "critical"
+
+
+# --- Fields of the wrong JSON type in a disk entry (R-0517) ---
+# What a broken or hijacked agent can put where a number or a text belongs. A regular agent sends
+# SmartDisk (apps/agent/internal/monitor/smart.go) with Go ints and strings; before R-0517 most of
+# these raised in evaluate (the push path then leaves the check's state as it was) or went raw into
+# message, metrics and _details. A field of the wrong type counts as missing: the result equals
+# the one without the field.
+_BIG_INT = 10**400  # beyond float range: math.isfinite raises OverflowError on it
+_NOT_NUMBERS = [
+    pytest.param("12", id="numeric-str"),
+    pytest.param("abc", id="str"),
+    pytest.param([1], id="list"),
+    pytest.param({}, id="dict"),
+    pytest.param(True, id="bool"),
+    pytest.param(None, id="null"),
+    pytest.param(math.nan, id="nan"),
+    pytest.param(math.inf, id="inf"),
+    pytest.param(-math.inf, id="-inf"),
+    pytest.param(_BIG_INT, id="int-400-digits"),
+]
+# Every int field of SmartDisk in apps/agent/internal/monitor/smart.go.
+_NUMBER_FIELDS = [
+    "temp_c",
+    "power_on_hours",
+    "smartctl_status",
+    "reallocated_sectors",
+    "spin_retry_count",
+    "reallocation_events",
+    "pending_sectors",
+    "uncorrectable",
+    "reported_uncorrect",
+    "udma_crc_errors",
+    "available_spare_pct",
+    "percentage_used",
+    "media_errors",
+    "critical_warning",
+]
+# ATA attributes an NVMe disk neither rates nor lists in _details.
+_ATA_ONLY = ("spin_retry_count", "reallocation_events")
+_DISKS = [pytest.param(_disk, id="ata"), pytest.param(_nvme, id="nvme")]
+
+
+def _without(disk, field):
+    return {key: value for key, value in disk.items() if key != field}
+
+
+def _rate_with(disk, field, value):
+    return CHECKER.evaluate({}, _report({**disk, field: value}))
+
+
+@pytest.mark.parametrize("value", _NOT_NUMBERS)
+@pytest.mark.parametrize("field", _NUMBER_FIELDS)
+@pytest.mark.parametrize("make_disk", _DISKS)
+def test_a_number_field_that_is_no_json_number_counts_as_missing(make_disk, field, value):
+    disk = _without(make_disk(), field)
+    assert _rate_with(disk, field, value) == CHECKER.evaluate({}, _report(disk))
+
+
+@pytest.mark.parametrize(
+    ("make_disk", "field"),
+    [pytest.param(_disk, f, id=f"ata-{f}") for f in _NUMBER_FIELDS]
+    + [pytest.param(_nvme, f, id=f"nvme-{f}") for f in _NUMBER_FIELDS if f not in _ATA_ONLY],
+)
+def test_a_json_number_in_such_a_field_is_read(make_disk, field):
+    # The counterpart of the cases above: the field is read, a JSON number changes the result.
+    disk = _without(make_disk(), field)
+    assert _rate_with(disk, field, 12) != CHECKER.evaluate({}, _report(disk))
+
+
+_NOT_TEXTS = [
+    pytest.param([1], id="list"),
+    pytest.param({"a": 1}, id="dict"),
+    pytest.param(5, id="int"),
+    pytest.param(None, id="null"),
+]
+
+
+@pytest.mark.parametrize("value", _NOT_TEXTS)
+@pytest.mark.parametrize("field", ["device", "kind"])
+@pytest.mark.parametrize("make_disk", _DISKS)
+def test_device_or_kind_that_is_no_string_counts_as_missing(make_disk, field, value):
+    disk = _without(make_disk(), field)
+    assert _rate_with(disk, field, value) == CHECKER.evaluate({}, _report(disk))
+
+
+def test_device_that_is_no_string_is_named_question_mark():
+    disk = _disk(device=["/dev/sda"], smart_passed=False)
+    status, msg, metrics = CHECKER.evaluate({}, _report(disk))
+    assert (status, msg) == ("critical", "SMART problems: ? (X): SMART FAILED")
+    assert metrics["_details"]["disks"][0]["device"] == "?"
+    assert metrics["smart_reallocated_unknown"] == 0  # safe_metric_part("?")
+
+
+def test_kind_that_is_no_string_follows_the_protocol():
+    # 70 °C is a warning by the NVMe thresholds (65/75), critical by the HDD ones (55/60).
+    status, msg, metrics = CHECKER.evaluate({}, _report(_nvme(kind=["HDD"], temp_c=70)))
+    assert (status, msg) == ("warning", "SMART warnings: /dev/nvme0 (N): 70°C (>=65°C)")
+    assert metrics["_details"]["disks"][0]["kind"] == "NVMe"

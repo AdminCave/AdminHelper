@@ -11,18 +11,12 @@ import type { AuthSession } from '$lib/bridge/types';
 import type { NotificationPrefsUpdate } from '$lib/api/types';
 
 vi.mock('$lib/bridge', () => ({ apiProxy: vi.fn(async () => ({})) }));
-vi.mock('$lib/stores/session', async () => {
-  const { writable } = await import('svelte/store');
-  return { sessionStore: writable({ settings: { allowSelfSignedCerts: false } }) };
-});
 
 import * as bridge from '$lib/bridge';
 import { notificationsApi } from './notifications';
 
 const session: AuthSession = {
   serverUrl: 'https://srv',
-  token: 'tok',
-  refreshToken: 'r',
   username: 'admin',
   isAdmin: true,
 };
@@ -92,6 +86,6 @@ describe('notificationsApi', () => {
 
   it.each(cases)('%s', async (_label, invoke, method, path, body) => {
     await invoke();
-    expect(proxy).toHaveBeenCalledWith('https://srv', 'tok', method, path, body, false);
+    expect(proxy).toHaveBeenCalledWith(method, path, body);
   });
 });

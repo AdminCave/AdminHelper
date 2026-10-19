@@ -56,10 +56,9 @@ export interface Settings {
   osNotifications: boolean;
 }
 
+// Who signed in where. The tokens stay in the Rust process (session.rs), never here.
 export interface AuthSession {
   serverUrl: string;
-  token: string;
-  refreshToken: string;
   username: string;
   isAdmin: boolean;
 }
@@ -70,6 +69,15 @@ export interface TunnelStatus {
   connectedSince?: string | null;
   /** Names of the visitors the running frpc applied. */
   visitors?: string[];
+  /** Where each visitor of the running frpc listens. */
+  bindings?: VisitorBinding[];
+}
+
+/** Where a visitor listens: the server's port and the local port on 127.0.0.1 it got instead. */
+export interface VisitorBinding {
+  name: string;
+  serverPort: number;
+  localPort: number;
 }
 
 /** What a tunnel reconciliation did with the visitor bundle; `stopped`: no tunnels. */

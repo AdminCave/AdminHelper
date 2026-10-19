@@ -220,6 +220,24 @@ export function adminDevices() {
   return list(`/api/users/${me.id}/devices`);
 }
 
+// The FRP tunnels as the server lists them to an admin (GET /api/frp/tunnels), each with its
+// name and visitorPort. The Bearer token goes via stdin (`-H @-`), as in adminDevices.
+export function adminTunnels() {
+  const out = execFileSync("curl", ["-sk", `${SERVER_URL}/api/frp/tunnels`, "-H", "@-"], {
+    encoding: "utf8",
+    input: `Authorization: Bearer ${adminToken()}`,
+  });
+  let value;
+  try {
+    value = JSON.parse(out);
+  } catch {
+    value = null;
+  }
+  if (!Array.isArray(value))
+    throw new Error(`adminTunnels: unexpected response: ${out.slice(0, 200)}`);
+  return value;
+}
+
 export async function gotoInfrastructure() {
   // By stable nav id, not a positional index — a reordered sidebar would silently
   // click the wrong section (4.31).

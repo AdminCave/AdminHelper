@@ -6,6 +6,8 @@
 alarms or swallowed alarms if they drift — e.g. a regression dropping DEGRADED from the critical set
 would never be noticed without a test (6.53)."""
 
+import math
+
 import pytest
 
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
@@ -115,7 +117,8 @@ def test_zfs_caps_the_pool_list():
     names = [f"p{i}" for i in range(2000)]
     status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs(*(_pool(name=n) for n in names)))
     assert status == "ok"
-    assert msg == "All pools ONLINE: " + ", ".join(f"{n} 20%" for n in names[:500])
+    # The message names ten of them and counts the other 490 (R-0517).
+    assert msg == "All pools ONLINE: " + ", ".join(f"{n} 20%" for n in names[:10]) + " (+490 more)"
     assert [p["name"] for p in metrics["_details"]["pools"]] == names[:500]
     assert sum(k.startswith("zfs_capacity_") for k in metrics) == 500
 
@@ -519,16 +522,20 @@ def test_docker_long_name_is_capped_in_message_and_details():
         {}, _docker(_ctr(name="n" * 10_000, state="dead"))
     )
     name = "n" * 499 + "…"
+    # The problem text is one entry of the message list, cut to 500 characters again (R-0517).
+    entry = f"{name}: dead"[:499] + "…"
     assert status == "critical"
-    assert msg == f"Container problems: {name}: dead (0 running, 0 stopped)"
+    assert msg == f"Container problems: {entry} (0 running, 0 stopped)"
     assert _rows(metrics)[0]["name"] == name
 
 
 def test_docker_long_state_is_capped_in_message_and_details():
     status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(state="s" * 10_000)))
     state = "s" * 499 + "…"
+    # The problem text is one entry of the message list, cut to 500 characters again (R-0517).
+    entry = f"web: unknown state {state!r}"[:499] + "…"
     assert status == "warning"
-    assert msg == f"Container warnings: web: unknown state {state!r} (0 running, 0 stopped)"
+    assert msg == f"Container warnings: {entry} (0 running, 0 stopped)"
     assert (_rows(metrics)[0]["state"], _rows(metrics)[0]["reason"]) == (state, "unknown_state")
 
 
@@ -687,6 +694,25 @@ def test_docker_old_agent_exit_code_from_status_text(status_text, status, reason
     assert _rows(metrics)[0]["reason"] == reason
 
 
+@pytest.mark.parametrize("digits", [11, 5000])
+def test_docker_status_text_exit_code_of_more_than_10_digits_counts_as_missing(digits):
+    # No exit code has that many digits: a longer one (a broken agent) counts as missing
+    # instead of failing the evaluation, int() refuses more than 4300 digits (R-0517).
+    c = _ctr(state="exited", status=f"Exited ({'9' * digits}) 1 second ago")
+    del c["exit_code"]
+    result = DockerHealthChecker().evaluate({}, _docker(c))
+    del c["status"]
+    assert result == DockerHealthChecker().evaluate({}, _docker(c))
+    assert _rows(result[2])[0]["exit_code"] is None
+
+
+def test_docker_status_text_exit_code_of_10_digits_is_read():
+    c = _ctr(state="exited", status="Exited (9999999999) 1 second ago")
+    del c["exit_code"]
+    status, _, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert (status, _rows(metrics)[0]["exit_code"]) == ("critical", 9_999_999_999)
+
+
 def test_docker_unhealthy_is_warning():
     # Agent before R-0419: no health field, the ps status text carries it.
     r = {
@@ -804,3 +830,156 @@ def test_plugin_list_is_capped_before_entries_that_are_no_object_are_skipped():
     # container behind 500 junk entries is not rated.
     report = _docker(*(["x"] * 500), _ctr())
     assert DockerHealthChecker().evaluate({}, report)[:2] == ("ok", "No containers found")
+
+
+# --- Fields of the wrong JSON type in an entry (R-0517) ---
+# What a broken or hijacked agent can put where a number belongs. A regular agent sends numbers
+# (apps/agent/internal/monitor/plugins.go); before R-0517 most of these raised in evaluate (the
+# push path then leaves the check's state as it was) or went raw into status and message. A field
+# that is no JSON number counts as missing: the result equals the one without the field.
+_NOW = 1_000_000.0
+_BIG_INT = 10**400  # beyond float range: math.isfinite raises OverflowError on it
+_NOT_NUMBERS = [
+    pytest.param("abc", id="str"),
+    pytest.param([1], id="list"),
+    pytest.param({}, id="dict"),
+    pytest.param(True, id="bool"),
+    pytest.param(None, id="null"),
+    pytest.param(math.nan, id="nan"),
+    pytest.param(math.inf, id="inf"),
+    pytest.param(-math.inf, id="-inf"),
+    pytest.param(_BIG_INT, id="int-400-digits"),
+]
+_VM = {"vmid": 100, "name": "web", "type": "qemu", "status": "running", "last_backup_ts": _NOW}
+_RESTART_PREV = {"containers": [{"id": "abc123def456", "restart_count": 0}]}
+
+# (kind, entry with a valid value, field, the value as a numeric string, previous details,
+# (status, message) without the field)
+_NUMBER_FIELDS = [
+    pytest.param(
+        "proxmox",
+        _VM,
+        "last_backup_ts",
+        str(_NOW),
+        None,
+        ("critical", "No backup: QEMU 100 (web)"),
+        id="last_backup_ts",
+    ),
+    pytest.param(
+        "proxmox",
+        {**_VM, "last_backup_ts": None},
+        "vmid",
+        "100",
+        None,
+        ("critical", "No backup: QEMU None (web)"),
+        id="vmid",
+    ),
+    pytest.param(
+        "zfs",
+        _pool(capacity_percent=95),
+        "capacity_percent",
+        "85",
+        None,
+        ("ok", "All pools ONLINE: tank 0%"),
+        id="capacity_percent",
+    ),
+    pytest.param(
+        "docker",
+        _ctr(state="exited", status="Exited (137) 7 seconds ago", exit_code=137),
+        "exit_code",
+        "137",
+        None,
+        ("ok", "0 running, 1 stopped"),
+        id="exit_code-exited",
+    ),
+    pytest.param(
+        "docker",
+        _ctr(state="created", status="Created", exit_code=127),
+        "exit_code",
+        "137",
+        None,
+        ("ok", "0 running, 1 stopped"),
+        id="exit_code-created",
+    ),
+    pytest.param(
+        "docker",
+        _ctr(restart_count=1),
+        "restart_count",
+        "85",
+        _RESTART_PREV,
+        ("ok", "All 1 containers running"),
+        id="restart_count",
+    ),
+]
+# The agent sends these as Go ints: a fraction is no VM ID, exit code or restart count either.
+_WHOLE_NUMBER_FIELDS = [
+    p for p in _NUMBER_FIELDS if p.id not in ("last_backup_ts", "capacity_percent")
+]
+_FIELD_ARGS = ("kind", "entry", "field", "numeric", "prev", "missing")
+
+
+def _rate(kind, entry, prev=None):
+    if kind == "proxmox":
+        return ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": [entry]}})
+    if kind == "zfs":
+        return ZfsHealthChecker().evaluate({}, _zfs(entry))
+    return DockerHealthChecker().evaluate({}, _docker(entry), prev)
+
+
+def _without(entry, field):
+    return {key: value for key, value in entry.items() if key != field}
+
+
+@pytest.mark.parametrize("value", _NOT_NUMBERS)
+@pytest.mark.parametrize(_FIELD_ARGS, _NUMBER_FIELDS)
+def test_a_number_field_that_is_no_json_number_counts_as_missing(
+    monkeypatch, kind, entry, field, numeric, prev, missing, value
+):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
+    without = _rate(kind, _without(entry, field), prev)
+    assert without[:2] == missing
+    assert _rate(kind, {**entry, field: value}, prev) == without
+
+
+@pytest.mark.parametrize(_FIELD_ARGS, _NUMBER_FIELDS)
+def test_a_numeric_string_counts_as_missing(
+    monkeypatch, kind, entry, field, numeric, prev, missing
+):
+    # Unlike the metric path (_num in routers/agent.py), a checker reads no numeric strings.
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
+    assert _rate(kind, {**entry, field: numeric}, prev) == _rate(kind, _without(entry, field), prev)
+
+
+@pytest.mark.parametrize(_FIELD_ARGS, _WHOLE_NUMBER_FIELDS)
+def test_a_fraction_counts_as_missing_where_a_whole_number_belongs(
+    kind, entry, field, numeric, prev, missing
+):
+    assert _rate(kind, {**entry, field: 3.5}, prev) == _rate(kind, _without(entry, field), prev)
+
+
+@pytest.mark.parametrize("vm_type", [5, [1], {}, None], ids=["int", "list", "dict", "null"])
+def test_proxmox_type_that_is_no_string_counts_as_missing(vm_type):
+    vm = {**_VM, "last_backup_ts": None}
+    result = _rate("proxmox", {**vm, "type": vm_type})
+    assert result == _rate("proxmox", _without(vm, "type"))
+    assert result[:2] == ("critical", "No backup: VM 100 (web)")
+    assert result[2]["_details"]["vms"][0]["type"] == "vm"
+
+
+def test_zfs_unreadable_capacity_is_0_and_the_health_still_counts():
+    report = _zfs(_pool(health="DEGRADED", capacity_percent="85"))
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, report)
+    assert (status, msg) == ("critical", "tank: DEGRADED")
+    assert metrics["zfs_capacity_tank"] == 0
+    assert metrics["_details"]["pools"] == [
+        {"name": "tank", "health": "DEGRADED", "capacityPercent": 0}
+    ]
+
+
+def test_docker_long_exit_code_string_stays_out_of_the_message():
+    # The status text still carries the exit code, as for an agent before R-0419.
+    c = _ctr(state="exited", status="Exited (1) 5 seconds ago", exit_code="x" * 10_000)
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert status == "critical"
+    assert msg == "Container problems: web: exited with code 1 (0 running, 0 stopped)"
+    assert _rows(metrics)[0]["exit_code"] == 1

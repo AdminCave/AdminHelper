@@ -45,6 +45,8 @@ pub enum AppError {
     Connection(String),
     Keyring(String),
     Json(serde_json::Error),
+    /// The session could not be renewed and is gone (`session::authed_send`).
+    SessionExpired,
 }
 
 impl std::fmt::Display for AppError {
@@ -85,6 +87,7 @@ impl std::fmt::Display for AppError {
             AppError::Connection(msg) => write!(f, "{msg}"),
             AppError::Keyring(msg) => write!(f, "{msg}"),
             AppError::Json(err) => write!(f, "{err}"),
+            AppError::SessionExpired => write!(f, "Session expired, please sign in again"),
         }
     }
 }

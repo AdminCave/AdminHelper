@@ -140,8 +140,8 @@ pub fn same_server_destination(requested: &str, stored: &str) -> bool {
 /// Validates a request `path` coming from the frontend and confirms that the URL
 /// composed as `server_url + path` still targets `stored` (the logged-in server).
 ///
-/// `api_proxy`/`authenticated_get` build the request URL by naive string
-/// concatenation (`format!("{server_url}{path}")`). A frontend-supplied `path`
+/// `api_proxy` and the callers of `session::authed_send` build the request URL by naive
+/// string concatenation (`format!("{server_url}{path}")`). A frontend-supplied `path`
 /// could break out of that: a leading `@` shoves the host into the userinfo
 /// (RFC 3986: `https://server@evil.com/`), a `\` or `://` injects a new
 /// authority, so the Bearer token would travel to a foreign host even though
@@ -166,24 +166,6 @@ pub fn validate_proxy_path(server_url: &str, path: &str, stored: &str) -> Result
         ));
     }
     Ok(())
-}
-
-/// Enforce the token-destination pin fail-closed: a token may only travel to the
-/// server stored at login. If there is no stored session — e.g. the user logged out
-/// (which clears the stored URL) but the frontend still holds a JWT in memory — refuse
-/// the request rather than send the token to an unpinned, caller-supplied URL. The
-/// previous best-effort guard silently skipped the pin when the URL was absent (3.56).
-pub fn require_pinned_destination(
-    server_url: &str,
-    path: &str,
-    stored: Option<&str>,
-) -> Result<(), AppError> {
-    match stored {
-        Some(stored) => validate_proxy_path(server_url, path, stored),
-        None => Err(AppError::Validation(
-            "Keine aktive Sitzung — Anfrage abgelehnt".to_string(),
-        )),
-    }
 }
 
 /// Sanitizes a connection name for safe use as an RDP window title
@@ -449,27 +431,6 @@ mod tests {
         );
         // scheme downgrade is also a different origin
         assert!(validate_proxy_path("http://adminhelper.example:8443", "/api/x", stored).is_err());
-    }
-
-    #[test]
-    fn require_pinned_destination_fails_closed_without_session() {
-        // 3.56: no stored session -> refuse rather than send the token unpinned.
-        assert!(
-            require_pinned_destination("https://adminhelper.example:8443", "/api/x", None).is_err()
-        );
-    }
-
-    #[test]
-    fn require_pinned_destination_pins_when_session_present() {
-        let stored = "https://adminhelper.example:8443";
-        assert!(require_pinned_destination(stored, "/api/auth/me", Some(stored)).is_ok());
-        // a foreign server_url is still rejected when a session exists
-        assert!(require_pinned_destination(
-            "https://attacker.example:8443",
-            "/api/x",
-            Some(stored)
-        )
-        .is_err());
     }
 
     #[test]
