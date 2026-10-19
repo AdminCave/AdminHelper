@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # frps-Status: fd im Statusleser, Dashboard-Abruf als nobody — Task-Ledger
-Status: bereit · Branch: feature/frp-status-fixes · Review: am Ende
+Status: erledigt · Branch: feature/frp-status-fixes · Review: am Ende
 Spec: Roadmap R-0512, R-0511
 Heavy: linux-full — T1 ändert den Leser hinter der Admin-Route `GET /api/frp/supervisor-status` und dem Watch-Job, T2 das frps-Image (`apps/frps/frps-supervisor.sh`) und einen Kommentar in `docker-compose.yml`; läuft im Sammellauf über `main`. Den Abruf als `nobody` im echten Stack mit den Capabilities aus Compose fährt der Job `integration-stack`, Abschnitt 11b (`frps_takeover`, Schritt b: `GET /api/frp/status` ohne `error`, nachdem frps läuft, `scripts/tests/integration_stack_test.sh:515-543`). Er läuft nicht auf PRs, deshalb vor dem Merge `gh workflow run ci.yml --ref feature/frp-status-fixes`. Kein `scenario`: kein Tunnel-Datenpfad, kein Cross-Host, keine PKI-, Provisionierungs- oder Install-Änderung. Kein `windows`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
