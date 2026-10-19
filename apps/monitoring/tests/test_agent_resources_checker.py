@@ -7,6 +7,11 @@ push (CPU/RAM/disk/temperature). It decides the alert status, so the escalation
 (ok → warning → critical, critical never downgraded), the >= boundary, the
 pseudo-filesystem filter, and per-sensor temperature overrides are worth pinning."""
 
+import math
+
+import pytest
+
+from app.checkers import agent
 from app.checkers.agent import AgentResourcesChecker
 
 CHECKER = AgentResourcesChecker()
@@ -129,3 +134,122 @@ class TestHysteresis:
         assert m["_details"]["problems"] == {"cpu": "warning"}
         _status, _msg, m = CHECKER.evaluate(self.CFG, _report(cpu_percent=50), None)
         assert m["_details"]["problems"] == {}
+
+
+# --- R-0517: a field of the wrong JSON type counts as missing ---
+# What a broken or hijacked agent can put where a number belongs. A regular agent sends
+# numbers; before R-0517 each of these raised in evaluate (the check froze on its old
+# state) or went raw into status and message ("CPU inf%", a 400-digit critical).
+_BIG_INT = 10**400  # beyond float range: math.isfinite raises OverflowError on it
+_NOT_NUMBERS = [
+    pytest.param("85", id="numeric-str"),
+    pytest.param("abc", id="str"),
+    pytest.param([1], id="list"),
+    pytest.param({}, id="dict"),
+    pytest.param(True, id="bool"),
+    pytest.param(None, id="null"),
+    pytest.param(math.nan, id="nan"),
+    pytest.param(math.inf, id="inf"),
+    pytest.param(-math.inf, id="-inf"),
+    pytest.param(_BIG_INT, id="int-400-digits"),
+]
+
+
+@pytest.mark.parametrize("value", [42, 1.5, 0, -3, 0.0, 1e308])
+def test_agent_number_returns_a_json_number_unchanged(value):
+    assert agent.agent_number(value) is value
+
+
+@pytest.mark.parametrize("value", [*_NOT_NUMBERS, pytest.param(False, id="false")])
+def test_agent_number_is_none_for_anything_else(value):
+    assert agent.agent_number(value) is None
+
+
+def _resources() -> dict:
+    """Every rated field set, so dropping one still leaves resources to rate."""
+    return {
+        "cpu_percent": 90,
+        "memory_percent": 85,
+        "disks": [{"mount": "/", "fstype": "ext4", "percent": 90, "total_gb": 100, "used_gb": 90}],
+        "temperatures": [{"sensor": "cpu", "temp_c": 85, "high": 80, "critical": 95}],
+    }
+
+
+def _with(path: tuple, value: object) -> dict:
+    resources = _resources()
+    target = resources
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    return resources
+
+
+def _without(path: tuple) -> dict:
+    resources = _resources()
+    target = resources
+    for key in path[:-1]:
+        target = target[key]
+    del target[path[-1]]
+    return resources
+
+
+@pytest.mark.parametrize("value", _NOT_NUMBERS)
+@pytest.mark.parametrize(
+    "path",
+    [("cpu_percent",), ("memory_percent",), ("disks", 0, "percent"), ("temperatures", 0, "temp_c")],
+    ids=["cpu_percent", "memory_percent", "disk-percent", "temp_c"],
+)
+def test_a_number_field_that_is_no_json_number_counts_as_missing(path, value):
+    broken = CHECKER.evaluate(T, {"resources": _with(path, value)})
+    assert broken == CHECKER.evaluate(T, {"resources": _without(path)})
+
+
+@pytest.mark.parametrize("value", [[1], {"a": 1}, 7, None], ids=["list", "dict", "int", "null"])
+@pytest.mark.parametrize(
+    "path",
+    [("disks", 0, "fstype"), ("disks", 0, "mount"), ("temperatures", 0, "sensor")],
+    ids=["fstype", "mount", "sensor"],
+)
+def test_a_text_field_that_is_no_string_counts_as_missing(path, value):
+    broken = CHECKER.evaluate(T, {"resources": _with(path, value)})
+    assert broken == CHECKER.evaluate(T, {"resources": _without(path)})
+
+
+@pytest.mark.parametrize(
+    "resources", [[{"cpu_percent": 99}], "abc", 42, True], ids=["list", "str", "int", "bool"]
+)
+def test_resources_that_is_no_object_counts_as_missing(resources):
+    assert CHECKER.evaluate(T, {"resources": resources}) == ("unknown", "No resource data", None)
+
+
+@pytest.mark.parametrize("value", [{"mount": "/", "sensor": "cpu"}, "abc"], ids=["dict", "str"])
+@pytest.mark.parametrize("key", ["disks", "temperatures"])
+def test_a_disk_or_sensor_list_that_is_no_list_counts_as_missing(key, value):
+    broken = CHECKER.evaluate(T, {"resources": _with((key,), value)})
+    assert broken == CHECKER.evaluate(T, {"resources": _without((key,))})
+
+
+def test_a_disk_entry_that_is_no_object_is_skipped_and_the_valid_one_counts():
+    report = _report(disks=["x", {"mount": "/", "fstype": "ext4", "percent": 99}])
+    status, msg, metrics = CHECKER.evaluate(T, report)
+    assert (status, msg) == ("critical", "Disk / 99% (>=95%)")
+    assert [d["mount"] for d in metrics["_details"]["disks"]] == ["/"]
+
+
+def test_a_sensor_entry_that_is_no_object_is_skipped_and_the_valid_one_counts():
+    report = _report(temperatures=["x", {"sensor": "cpu", "temp_c": 99}])
+    status, msg, metrics = CHECKER.evaluate(T, report)
+    assert (status, msg) == ("critical", "Temp cpu 99°C (>=95°C)")
+    assert [s["sensor"] for s in metrics["_details"]["temperatures"]] == ["cpu"]
+
+
+def test_at_most_500_disks_and_sensors_are_rated():
+    # The entries past the cap are neither graded (the last one would be critical) nor listed.
+    disks = [{"mount": f"/m{i}", "fstype": "ext4", "percent": 1} for i in range(2000)]
+    disks[-1]["percent"] = 99
+    sensors = [{"sensor": f"s{i}", "temp_c": 1} for i in range(2000)]
+    sensors[-1]["temp_c"] = 99
+    status, _msg, metrics = CHECKER.evaluate(T, _report(disks=disks, temperatures=sensors))
+    assert status == "ok"
+    assert len(metrics["_details"]["disks"]) == 500
+    assert len(metrics["_details"]["temperatures"]) == 500

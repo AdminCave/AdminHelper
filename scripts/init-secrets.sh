@@ -52,11 +52,18 @@ upsert() {
     # Delete any existing (commented or not) line, then append the literal value.
     # No sed replacement means |, & or \ in the value aren't interpreted, and
     # [[:space:]] is POSIX where GNU-only \s breaks on macOS sed — matches install.sh (2.37).
-    local tmp
-    tmp=$(mktemp)
-    grep -vE "^#?[[:space:]]*${key}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true
-    mv "$tmp" "$ENV_FILE"
-    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    # grep -v exits 1 when it filters every line, which is fine; 2 is an error (a
+    # write error too). The copy sits next to the file (mktemp: 0600, same file
+    # system, so mv is a rename) and replaces it only once both steps worked: a full
+    # disk must not leave a cut-down .env in its place, whose lost secrets the checks
+    # below would take for empty and regenerate — a POSTGRES_PASSWORD or
+    # CA_ROOT_PASSPHRASE that no longer matches the volumes. Matches update.sh.
+    local tmp failed="Fehler: ${key} konnte nicht in $ENV_FILE geschrieben werden — Abbruch. $ENV_FILE bleibt beim letzten vollstaendigen Stand."
+    tmp=$(mktemp "${ENV_FILE}.ah-XXXXXX") || { echo "$failed" >&2; exit 1; }
+    { { grep -vE "^#?[[:space:]]*${key}=" "$ENV_FILE" || [ $? -eq 1 ]; } > "$tmp" \
+        && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
+        && mv "$tmp" "$ENV_FILE"; } \
+        || { rm -f "$tmp"; echo "$failed" >&2; exit 1; }
 }
 
 generated=()

@@ -7,7 +7,8 @@
 # — install.sh carries its own copy of that logic (separate from update.sh), so this
 # guards against the two silently drifting (audit 6.8). `docker` is stubbed so no
 # real stack is touched. Covers: signed-bundle bootstrap + .env pinning, the
-# fail-closed abort when a release tag has no bundle (audit 3.29), and tamper detection.
+# fail-closed abort when a release tag has no bundle (audit 3.29), tamper detection,
+# and an .env write that hits a full disk (R-0496).
 #
 # Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils, minisign)
 
@@ -40,10 +41,12 @@ TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 # create-admin takes the password on stdin, like the real `docker compose exec -T`:
 # a stub that exits without reading kills install.sh's printf with SIGPIPE now and
 # then (exit 141 under pipefail). Only that branch reads — in the default branch
-# `cat` would hang on an inherited stdin.
+# `cat` would hang on an inherited stdin. AH_TEST_DOCKER_LOG records every call,
+# one per line.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
+[ -z "${AH_TEST_DOCKER_LOG:-}" ] || printf '%s\n' "$*" >> "$AH_TEST_DOCKER_LOG"
 case "$*" in
   *create_connection*) exit 0 ;;
   *mint-enroll-token*) echo "TESTENROLLTOKEN"; exit 0 ;;
@@ -53,6 +56,18 @@ case "$*" in
 esac
 EOF
 chmod +x "$BIN/docker"
+# grep wrapper: real grep for everything, except that AH_TEST_GREP_ENOSPC=1 sends
+# upsert_env's filter of the DOMAIN line to /dev/full (a real ENOSPC).
+AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
+cat > "$BIN/grep" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"-vE ^#?[[:space:]]*DOMAIN="*)
+    [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
+esac
+exec "$AH_TEST_REAL_GREP" "$@"
+EOF
+chmod +x "$BIN/grep"
 export PATH="$BIN:$PATH" STUB_ADMIN_STDIN="$WORK/admin.stdin"
 
 # install.sh copy pinned to the test key, used as the runner.
@@ -131,6 +146,43 @@ INST="$WORK/inst3"
 out=$(run_install --ref v0.35.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -qE 'Signatur ungueltig|Checksumme' <<<"$out"; } \
   && ok "tampered bundle aborts" || bad "tamper not caught: rc=$rc"
+
+# ── 4. full disk while writing .env: abort, .env stays whole (R-0496) ────────
+# An existing install in checkout mode (compose file present, so no bootstrap)
+# whose .env holds secrets. The filter that drops the old DOMAIN line hits ENOSPC:
+# the cut-down copy must never take the place of .env, and nothing may start.
+INST="$WORK/inst4"; mkdir -p "$INST/scripts"
+cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
+cp "$SRC"/scripts/*.sh "$INST/scripts/"
+printf '%s\n' DOMAIN=old.example SECRET_KEY=already-set MONITOR_API_KEY=already-set \
+  POSTGRES_PASSWORD=already-set CA_ROOT_PASSPHRASE=already-set > "$INST/.env"
+cp "$INST/.env" "$WORK/env4.orig"
+DLOG="$WORK/docker4.log"
+out=$(cd "$INST" && AH_TEST_GREP_ENOSPC=1 AH_TEST_DOCKER_LOG="$DLOG" \
+  bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+[ $rc -ne 0 ] && ok "full disk on .env aborts install" || bad "full disk on .env: exit $rc"
+ferr=$(grep '^FEHLER' <<<"$out")
+{ [[ $ferr == *DOMAIN* ]] && [[ $ferr != *new.example* ]]; } \
+  && ok "error names the key DOMAIN, not its value" || bad "error line: '$ferr'"
+cmp -s "$WORK/env4.orig" "$INST/.env" && ok ".env byte-identical after the failed write" \
+  || bad ".env changed by the failed write: $(tr '\n' ' ' < "$INST/.env")"
+! compgen -G "$INST/.env.ah-*" >/dev/null && ok "no .env.ah-* copy left behind" \
+  || bad "copies left: $(compgen -G "$INST/.env.ah-*" | tr '\n' ' ')"
+dlog=$(cat "$DLOG" 2>/dev/null)
+grep -qx 'compose version' <<<"$dlog" && ok "docker call log written" || bad "no docker call log"
+! grep -qE '^compose (pull|up)' <<<"$dlog" && ok "no compose pull/up after the failed write" \
+  || bad "stack touched: $(grep -E '^compose (pull|up)' <<<"$dlog" | tr '\n' ' ')"
+
+# ── 5. .env holding only the key: grep -v filters every line (exit 1), no error ─
+INST="$WORK/inst5"; mkdir -p "$INST/scripts"
+cp "$SRC/docker-compose.yml" "$SRC/.env.example" "$INST/"
+cp "$SRC"/scripts/*.sh "$INST/scripts/"
+printf 'DOMAIN=old.example\n' > "$INST/.env"
+out=$(cd "$INST" && bash "$INSTALL" --domain new.example --admin-password sikrit123 --yes 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "upsert into a one-key .env exit 0" || { echo "$out" | sed 's/^/    │ /'; bad "one-key .env: exit $rc"; }
+[ "$(cat "$INST/.env")" = DOMAIN=new.example ] && ok "one-key .env rewritten to the new DOMAIN" \
+  || bad "one-key .env: $(tr '\n' ' ' < "$INST/.env")"
 
 echo
 echo "──────────────────────────────────────────"

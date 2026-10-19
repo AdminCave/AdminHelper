@@ -46,5 +46,5 @@ def get_checker(check_type: str) -> Checker:
     """Returns the matching checker for the check_type."""
     checker = _REGISTRY.get(check_type)
     if checker is None:
-        raise ValueError(f"Unbekannter check_type: {check_type!r}")
+        raise ValueError(f"Unknown check_type: {check_type!r}")
     return checker

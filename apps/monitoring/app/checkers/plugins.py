@@ -15,25 +15,19 @@ from __future__ import annotations
 import re
 import time
 
-from app.checkers.agent import cap_agent_text
+from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
 
 # The codes the agent sends for a block it could not read (dockerUnavailable and
 # zfsUnavailable in apps/agent/internal/monitor/plugins.go).
 _ZFS_ERRORS = frozenset({"timeout", "cli_failed"})
 _DOCKER_ERRORS = frozenset({"daemon_unreachable", "timeout", "cli_failed", "parse_failed"})
 
-# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
-# that router imports app.checkers (R-0459).
-_MAX_REPORT_ENTRIES = 500
 
-
-def capped_objects(value: object) -> list[dict]:
-    """The entries of a report list that a checker rates: the objects among the first
-    _MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
-    flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
-    if not isinstance(value, list):
-        return []
-    return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
+def _whole_number(value: object) -> int | None:
+    """A VM ID, exit code or restart count from the report: an int that agent_number accepts
+    (the agent sends Go ints); anything else, a fraction too, counts as missing (R-0517)."""
+    number = agent_number(value)
+    return number if isinstance(number, int) else None
 
 
 def _outage_message(label: str, block: dict, codes: frozenset[str]) -> tuple[str, str | None]:
@@ -88,14 +82,19 @@ class ProxmoxBackupChecker:
         # One pass classifies each VM and builds the UI detail row, so the
         # exclude filters and age calculation live in a single place.
         for vm in vms:
-            vmid = vm.get("vmid")
+            # A field of the wrong JSON type (a broken agent) counts as missing (R-0517); an
+            # unreadable backup time is no backup.
+            vmid = _whole_number(vm.get("vmid"))
             if vmid in exclude_vmids:
                 continue
             if exclude_stopped and vm.get("status") != "running":
                 continue
 
-            label = f"{vm.get('type', 'vm').upper()} {vmid} ({vm.get('name', '?')})"
-            last_ts = vm.get("last_backup_ts")
+            vm_type = vm.get("type")
+            if not isinstance(vm_type, str):
+                vm_type = "vm"
+            label = f"{vm_type.upper()} {vmid} ({vm.get('name', '?')})"
+            last_ts = agent_number(vm.get("last_backup_ts"))
             vm_status = "ok"
             age_hours = None
 
@@ -113,7 +112,7 @@ class ProxmoxBackupChecker:
                 {
                     "vmid": vmid,
                     "name": vm.get("name", "?"),
-                    "type": vm.get("type", "vm"),
+                    "type": vm_type,
                     "backupStatus": vm_status,
                     "ageHours": age_hours,
                 }
@@ -127,15 +126,22 @@ class ProxmoxBackupChecker:
         }
 
         if no_backup:
-            msg = "No backup: " + ", ".join(no_backup)
+            msg = "No backup: " + join_capped(no_backup)
             if outdated:
-                msg += "; Outdated: " + ", ".join(outdated)
+                msg += "; Outdated: " + join_capped(outdated)
             return "critical", msg, metrics
 
         if outdated:
-            return "warning", "Outdated backups: " + ", ".join(outdated), metrics
+            return "warning", "Outdated backups: " + join_capped(outdated), metrics
 
         return "ok", f"All {ok_count} VMs/CTs have up-to-date backups", metrics
+
+
+def _pool_capacity(pool: dict) -> int | float:
+    """capacity_percent of a pool; anything but a JSON number counts as missing, i.e. 0
+    (R-0517). The health still counts."""
+    cap = agent_number(pool.get("capacity_percent"))
+    return 0 if cap is None else cap
 
 
 class ZfsHealthChecker:
@@ -185,7 +191,7 @@ class ZfsHealthChecker:
         for pool in pools:
             name = pool.get("name", "?")
             health = pool.get("health", "UNKNOWN")
-            cap = pool.get("capacity_percent", 0)
+            cap = _pool_capacity(pool)
             metrics[f"zfs_capacity_{name}"] = cap
 
             if health in ("FAULTED", "OFFLINE", "UNAVAIL", "DEGRADED"):
@@ -207,23 +213,23 @@ class ZfsHealthChecker:
                 {
                     "name": p.get("name", "?"),
                     "health": p.get("health", "UNKNOWN"),
-                    "capacityPercent": p.get("capacity_percent", 0),
+                    "capacityPercent": _pool_capacity(p),
                 }
                 for p in pools
             ],
         }
 
         if problems:
-            return status, "; ".join(problems), metrics
+            return status, join_capped(problems, "; "), metrics
 
-        pool_summary = ", ".join(
-            f"{p.get('name', '?')} {p.get('capacity_percent', 0)}%" for p in pools
-        )
+        pool_summary = join_capped([f"{p.get('name', '?')} {_pool_capacity(p)}%" for p in pools])
         return "ok", f"All pools ONLINE: {pool_summary}", metrics
 
 
-# docker ps prints the exit code into the status text: "Exited (3) 2 minutes ago".
-_PS_EXITED = re.compile(r"exited \((-?\d+)\)", re.IGNORECASE)
+# docker ps prints the exit code into the status text: "Exited (3) 2 minutes ago". No exit
+# code has more than 10 digits; a longer one (a broken agent) does not match and counts as
+# missing, instead of failing the evaluation in int() (R-0517).
+_PS_EXITED = re.compile(r"exited \((-?\d{1,10})\)", re.IGNORECASE)
 
 # 128+SIGTERM and 128+SIGKILL: how docker stop ends an app that does not exit 0 on
 # TERM, or ignores it until the stop timeout kills it. A stop, not a crash (Kevin
@@ -238,9 +244,11 @@ def _ps_status(c: dict) -> str:
 
 
 def _container_exit_code(c: dict) -> int | None:
-    if "exit_code" in c:
-        return c["exit_code"]
-    # Agents before R-0419 send no exit_code; their ps status text carries it.
+    exit_code = _whole_number(c.get("exit_code"))
+    if exit_code is not None:
+        return exit_code
+    # Agents before R-0419 send no exit_code; their ps status text carries it. An exit_code
+    # that is no whole JSON number counts as missing (R-0517).
     m = _PS_EXITED.match(_ps_status(c))
     return int(m.group(1)) if m else None
 
@@ -257,12 +265,8 @@ def _rate_container(c: dict, state: str, prev_restart_count: int | None) -> tupl
         if unhealthy:
             return "warning", "unhealthy"
         # A restart between two pushes raises the count; a manual start resets it to 0.
-        count = c.get("restart_count")
-        if (
-            isinstance(count, int)
-            and isinstance(prev_restart_count, int)
-            and count > prev_restart_count
-        ):
+        count = _whole_number(c.get("restart_count"))
+        if count is not None and isinstance(prev_restart_count, int) and count > prev_restart_count:
             return "warning", "restarted"
         return "ok", None
     if state in ("restarting", "dead"):
@@ -397,7 +401,7 @@ class DockerHealthChecker:
                     "category": category,
                     "reason": reason,
                     "exit_code": _container_exit_code(c),
-                    "restart_count": c.get("restart_count"),
+                    "restart_count": _whole_number(c.get("restart_count")),
                 }
             )
 
@@ -410,15 +414,15 @@ class DockerHealthChecker:
 
         counts = f"{running} running, {stopped} stopped"
         if critical_problems:
-            msg = "Container problems: " + ", ".join(critical_problems)
+            msg = "Container problems: " + join_capped(critical_problems)
             if warning_problems:
-                msg += "; warnings: " + ", ".join(warning_problems)
+                msg += "; warnings: " + join_capped(warning_problems)
             return "critical", f"{msg} ({counts})", metrics
 
         if warning_problems:
             return (
                 "warning",
-                f"Container warnings: {', '.join(warning_problems)} ({counts})",
+                f"Container warnings: {join_capped(warning_problems)} ({counts})",
                 metrics,
             )
 

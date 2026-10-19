@@ -499,6 +499,25 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   abbricht, endet `update.sh` mit dem Namen des Schluessels (ohne den Wert), bevor es etwas aendert, auch bei
   `--check` und `--redeploy`. Bisher scheiterte das Update daran erst nach Backup, Tausch und Neu-Pinnen. Doku:
   Installation und Betrieb (DE+EN) beschreiben, wie ein `$` in einem `.env`-Wert zu schreiben ist.
+- **Update: Rollback auch bei einem gescheiterten Tausch der Laufzeit-Dateien (R-0495):** Scheiterte beim Tausch
+  ein Schritt (etwa eine Kopie bei voller Platte, ein Verzeichnis `<datei>.ah-new` im Weg oder das Entfernen eines
+  nicht mehr ausgelieferten Skripts), endete `update.sh` mit der rohen Meldung des Werkzeugs und liess halb
+  getauschte Dateien neben der alten `.env` stehen. Jetzt meldet es „Tausch der Laufzeit-Dateien fehlgeschlagen“
+  und rollt wie bei einer gescheiterten `.env`-Migration zurueck: Die Laufzeit-Dateien kommen aus dem Snapshot,
+  Dateien, die erst das neue Release mitgebracht hat, verschwinden, keine halbe Kopie bleibt liegen, `.env` und
+  Container bleiben unveraendert. Mit `--no-rollback` bleiben die Dateien stehen, und die Meldung nennt
+  `--ref <Ziel>` als Weg weiter. Doku: Installation (DE+EN).
+- **Install: Die `.env` wird nur durch eine vollstaendig geschriebene ersetzt (R-0496, R-0516):** Scheiterte beim
+  Setzen von `DOMAIN`, `MTLS_ENFORCE` oder den Image-Pins das Schreiben der `.env` (etwa bei voller Platte), ersetzte
+  `install.sh` die `.env` durch eine gekuerzte Datei ohne die Secrets, startete den Stack trotzdem und meldete die
+  Installation als fertig. Jetzt schreibt es wie `update.sh` in eine Kopie neben der `.env` und tauscht sie erst,
+  wenn alles geschrieben ist. Scheitert ein Schritt, bricht `install.sh` mit dem Namen des Schluessels (ohne den
+  Wert) ab, die Kopie verschwindet, die `.env` bleibt beim letzten vollstaendigen Stand, und Stack, Admin und
+  Enroll-Token werden nicht angelegt. Dasselbe galt fuer `init-secrets.sh`, das `install.sh` und `update.sh`
+  aufrufen: Nach einem solchen Schreibfehler hielt es die verlorenen Secrets fuer leer, erzeugte sie still neu und
+  endete erfolgreich, sodass Postgres-Passwort und CA-Passphrase nicht mehr zu den Volumes passten. Es schreibt
+  jetzt ebenso ueber eine Kopie und endet bei einem Fehler mit dem Namen des Schluessels; `install.sh` bricht dann
+  ab, `update.sh` rollt wie bei einer gescheiterten `.env`-Migration zurueck.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
@@ -970,6 +989,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   englischen Oberflaeche. Gespeicherte Eintraege behalten ihren Text. Ebenso englisch sind die Fehlertexte der
   Monitoring-API, die der Desktop als „HTTP <Code>: …“ anzeigt, etwa „Check not found“, „Invalid API key“ oder
   „Invalid config for agent_resources: …“; die Status-Codes bleiben. Doku: Monitoring-Administration (DE+EN).
+
+- **Monitoring: Check-Meldungen nennen hoechstens zehn Eintraege einer Liste und sind hoechstens 2000 Zeichen lang
+  (R-0517):** Nennt die Meldung eines Checks eine Liste — VMs ohne oder mit altem Backup, Pools, Container, Platten,
+  Dienste oder Mounts —, stehen dort hoechstens zehn Eintraege und hoechstens 1000 Zeichen davon, jeder Eintrag auf
+  500 Zeichen gekuerzt, die uebrigen als „(+N more)“, etwa „Failed: a.service, …, j.service (+3 more)“. Bisher nannte
+  die Meldung alle, bei einem defekten Agent mit 500 langen Namen bis zu mehreren Millionen Zeichen in Dashboard, Mail
+  und Webhook. Zusaetzlich kuerzt der Dienst jede Meldung fuer Dashboard, Mail und Webhook auf hoechstens 2000 Zeichen
+  samt „…“, etwa eine mit zwei vollen Listen oder dem langen Fehlertext „Unexpected error: …“ eines Checks; ein
+  „(failure n/m)“ eines gedaempften Fehlers steht dahinter und bleibt sichtbar. Status und Metriken bleiben gleich,
+  die Details (die Listen im Desktop) bleiben vollstaendig. Doku: Monitoring fuer Entwickler und Administration
+  (DE+EN).
 
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft
