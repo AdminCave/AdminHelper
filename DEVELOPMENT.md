@@ -1394,8 +1394,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ requirements.txt
 │  ├─ monitoring/            # eigenständiger FastAPI-Microservice (eigene DB)
 │  │  ├─ app/
-│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
-│  │  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast
+│  │  │  ├─ routers/             # admin, agent, alerts, checks, maintenance, templates
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks
 │  │  └─ Dockerfile
@@ -1418,7 +1418,7 @@ curl -sk https://localhost/api/frp/tunnels \
 │  └─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
 │     ├─ src-tauri/          # Rust/Tauri-Backend
 │     │  ├─ src/
-│     │  │  ├─ main.rs            # invoke_handler mit 32 Tauri-Commands
+│     │  │  ├─ main.rs            # invoke_handler mit allen Tauri-Commands
 │     │  │  ├─ commands.rs        # IPC-Schnittstelle
 │     │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
 │     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
@@ -1431,12 +1431,12 @@ curl -sk https://localhost/api/frp/tunnels \
 │     │  └─ capabilities/        # Tauri v2 Security Permissions
 │     └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
 │        ├─ src/
-│        │  ├─ lib/bridge/       # 31 typisierte invoke()-Wrapper
-│        │  ├─ lib/stores/       # 12 Stores
+│        │  ├─ lib/bridge/       # typisierte Tauri-IPC-Wrapper
+│        │  ├─ lib/stores/       # Svelte-Stores
 │        │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
-│        │  ├─ components/       # ~46 Components
+│        │  ├─ components/       # Svelte-Components
 │        │  └─ pages/            # 5 Pages (Dashboard, Connections, Infrastructure, Ansible, Monitoring)
-│        └─ vitest.setup.ts      # ~250 Vitest-Unit-Tests
+│        └─ vitest.setup.ts      # Vitest-Setup; die Unit-Tests liegen neben dem Code (src/**/*.test.ts)
 ├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ scripts/                  # Ops-/DB-Skripte (+ tests/: integration_stack_test, desktop_e2e_live, lib_e2e_stack)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)
