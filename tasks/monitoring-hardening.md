@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Härtung: Agent-Texte und Zahlen, Check-Config, Line-Protocol, Alert-Versand — Task-Ledger
-Status: geplant · Branch: feature/monitoring-hardening · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: none — nur `apps/monitoring` (die `evaluate`-Funktionen unter `app/checkers/`, `check_configs.py`, die `to_dict`-Methoden in `models.py`, `core/victoria.py`, `_num` in `routers/agent.py`, Logzeilen und Fehlertexte in `alerter.py`); keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung (die Config-Modelle stehen nicht im Snapshot), kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Die Monitoring-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
