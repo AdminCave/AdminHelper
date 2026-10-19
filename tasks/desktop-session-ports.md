@@ -68,8 +68,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui desktop-rs --strict
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html · README.md · CHANGELOG.md
 Abhängt von: T14
 
-### T6 — Live-E2E: Login, Seiten und Abmelden ohne Tokens in der Webview  [ ]
+### T6 — Live-E2E: Login, Seiten und Abmelden ohne Tokens in der Webview  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/logout.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @cd454d35 2026-10-19T09:49:50+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T6.verdict.json)
 Änderung: `logout.live.js` ruft nach dem Login `invoke('api_proxy', {method:'GET', path:'/api/servers'})` ohne Token auf und bekommt Daten (die Session liegt in Rust), und nach dem Abmelden scheitert derselbe Aufruf mit „Keine aktive Sitzung“. Das Verify ist der Lint der Specs; der echte Beweis kommt aus dem Sammellauf.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
