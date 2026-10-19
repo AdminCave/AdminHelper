@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Eingaben der FRP-Server-Konfiguration und Fehlertexte der Hooks — Task-Ledger
-Status: bereit · Branch: feature/server-frp-hook-checks · Review: pro Task
+Status: erledigt · Branch: feature/server-frp-hook-checks · Review: pro Task
 Spec: keine eigene Datei (kleines Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full — T2 ändert den Vertrag der FRP-API (`422` für einen Dashboard-Port, den frps nicht übernimmt), T1 die Eingabeprüfung derselben API; Server-Tests in der PR-CI, der Stack im Sammellauf über `main`; kein `scenario`, weil der FRP-Datenpfad unverändert bleibt; kein `windows`, weil nur der Server betroffen ist
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
