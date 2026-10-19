@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stack-Suite: ein roter Login nennt HTTP-Code und detail — Task-Ledger
-Status: geplant · Branch: feature/stack-login-diag · Review: am Ende
+Status: aktiv · Branch: feature/stack-login-diag · Review: am Ende
 Spec: Roadmap R-0515
 Heavy: none — nur `scripts/tests/`, kein Produkt-, Gateway-, PKI- oder Install-Pfad. Beweis vor dem Merge: `gh workflow run ci.yml --ref feature/stack-login-diag`, Job `integration-stack` grün (läuft nicht auf PRs); er fährt beide Logins über die neue Funktion auf dem grünen Pfad
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
