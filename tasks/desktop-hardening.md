@@ -51,8 +51,10 @@ Beweis: Code-Lesung feature/desktop-session-ports@00b031d3 — frpc endet nur ü
 Semantik: docs/developer/desktop.html:130 — „Die UI meldet dann ab wie der Abmelden-Knopf (`logoutAndReload`: Tunnel stoppen, abmelden, Fenster neu laden)“: der Tunnel endet mit der Sitzung; bisher sorgt nur die UI dafür
 HEAD: 00b031d3
 
-### T4 — Live-E2E: Abmelden im Backend beendet frpc  [ ]
+### T4 — Live-E2E: Abmelden im Backend beendet frpc  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-connect.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @8602fb3d 2026-10-19T15:23:35+02:00
+Review: approve (.ah-out/review/desktop-hardening/T4.verdict.json)
 Änderung: Ein neuer letzter Fall im Spec (frpc läuft, Visitors gebunden) ruft `invoke('logout')` direkt, also ohne den Tunnel-Stopp von `logoutAndReload`, und erwartet danach von `invoke('tunnel_status')` `running: false` und leere `bindings`, mit Warten bis zu einer Frist wie die Status-Abfrage des Specs (`bindingAt`, `:70-80`). `scripts/` bleibt unberührt. Das Verify ist der Lint der Specs; der echte Beweis kommt aus dem Sammellauf (`desktop_e2e_connect_tunnel.sh`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
