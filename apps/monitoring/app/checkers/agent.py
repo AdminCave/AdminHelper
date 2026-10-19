@@ -60,6 +60,31 @@ def cap_agent_text(value: object) -> str | None:
     return value[: MAX_AGENT_TEXT - 1] + "…"
 
 
+# A list a checker joins into its message names at most this many entries and characters
+# (entries and separators); the full list is in _details (R-0517).
+_MAX_LIST_ENTRIES = 10
+_MAX_LIST_TEXT = 1000
+
+
+def join_capped(entries: list[str], sep: str = ", ") -> str:
+    """entries joined with sep as they may go into a message: each entry cut like
+    cap_agent_text, appended in order as long as the joined text keeps to _MAX_LIST_ENTRIES
+    entries and _MAX_LIST_TEXT characters (the first always fits), the rest counted as
+    " (+N more)". Up to ten short entries give sep.join(entries)."""
+    named: list[str] = []
+    length = 0
+    for entry in entries[:_MAX_LIST_ENTRIES]:
+        text = cap_agent_text(entry) or ""  # None for an empty entry
+        added = len(text) + (len(sep) if named else 0)
+        if length + added > _MAX_LIST_TEXT:
+            break
+        named.append(text)
+        length += added
+    joined = sep.join(named)
+    rest = len(entries) - len(named)
+    return f"{joined} (+{rest} more)" if rest else joined
+
+
 def agent_number(value: object) -> int | float | None:
     """A number from the report as a checker may rate it: an int or float (no bool) that
     converts to a finite float, unchanged; None for anything else, a numeric string too.
@@ -87,13 +112,13 @@ def capped_objects(value: object) -> list[dict]:
     return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
 
 
-def _entry_text(entry: dict, key: str, default: str) -> str:
+def entry_text(entry: dict, key: str, default: str) -> str:
     """A text field of a report entry; anything but a string counts as missing (R-0517)."""
     value = entry.get(key)
     return value if isinstance(value, str) else default
 
 
-def _entry_number(entry: dict, key: str, default: float) -> float:
+def entry_number(entry: dict, key: str, default: float) -> float:
     """A number field of a report entry; anything but a JSON number counts as missing."""
     value = agent_number(entry.get(key))
     return default if value is None else value
@@ -297,13 +322,13 @@ class AgentResourcesChecker:
         # Disks — filter pseudo filesystems server-side
         # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
         raw_disks = capped_objects(resources.get("disks"))
-        disks = [d for d in raw_disks if _entry_text(d, "fstype", "_real_") not in EXCLUDED_FSTYPES]
+        disks = [d for d in raw_disks if entry_text(d, "fstype", "_real_") not in EXCLUDED_FSTYPES]
 
         disk_crit = config.get("disk_crit", 95)
         disk_warn = config.get("disk_warn", 85)
         for disk in disks:
-            pct = _entry_number(disk, "percent", 0)
-            mount = _entry_text(disk, "mount", "?")
+            pct = entry_number(disk, "percent", 0)
+            mount = entry_text(disk, "mount", "?")
             # No per-mount metric: the agent router already writes monitor_agent_disk_percent
             # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
             # duplicate series in a second schema (1.18); the value is still graded below.
@@ -316,8 +341,8 @@ class AgentResourcesChecker:
             temp_warn = config.get("temp_warn", 80)
             temp_overrides = config.get("temp_overrides", {})
             for sensor in temperatures:
-                temp_c = _entry_number(sensor, "temp_c", 0)
-                sensor_name = _entry_text(sensor, "sensor", "?")
+                temp_c = entry_number(sensor, "temp_c", 0)
+                sensor_name = entry_text(sensor, "sensor", "?")
                 # Same as disks: the router writes monitor_agent_temp dimensionally (sensor
                 # tag); the name-encoded copy here was the duplicate (1.18). Still graded below.
                 ov = temp_overrides.get(sensor_name, {})
@@ -333,7 +358,7 @@ class AgentResourcesChecker:
                 )
 
         if problems:
-            message = "; ".join(problems)
+            message = join_capped(problems, "; ")
         else:
             parts = []
             if cpu is not None:
@@ -351,8 +376,8 @@ class AgentResourcesChecker:
             "memory_used_mb": resources.get("memory_used_mb"),
             "disks": [
                 {
-                    "mount": _entry_text(d, "mount", "/"),
-                    "percent": _entry_number(d, "percent", 0),
+                    "mount": entry_text(d, "mount", "/"),
+                    "percent": entry_number(d, "percent", 0),
                     "total_gb": d.get("total_gb"),
                     "used_gb": d.get("used_gb"),
                 }
@@ -360,8 +385,8 @@ class AgentResourcesChecker:
             ],
             "temperatures": [
                 {
-                    "sensor": _entry_text(s, "sensor", "?"),
-                    "temp_c": _entry_number(s, "temp_c", 0),
+                    "sensor": entry_text(s, "sensor", "?"),
+                    "temp_c": entry_number(s, "temp_c", 0),
                     "high": s.get("high", 0),
                     "critical": s.get("critical", 0),
                 }
@@ -528,15 +553,15 @@ class ServiceProcessChecker:
             metrics["_details"]["active_count"], metrics["_details"]["total"] = counts
 
         if failed:
-            msg = f"Failed: {', '.join(failed)}"
+            msg = f"Failed: {join_capped(failed)}"
             if enabled_inactive:
-                msg += f"; Inactive (autostart): {', '.join(enabled_inactive)}"
+                msg += f"; Inactive (autostart): {join_capped(enabled_inactive)}"
             return "critical", msg, metrics
 
         if enabled_inactive:
             return (
                 "warning",
-                f"Inactive (autostart): {', '.join(enabled_inactive)}",
+                f"Inactive (autostart): {join_capped(enabled_inactive)}",
                 metrics,
             )
 
@@ -631,17 +656,17 @@ class ServiceProcessChecker:
 
         metrics = {"services_down": len(down), "services_up": len(up)}
         metrics["_details"] = {"mode": "list", "watched": watched}
-        no_data = f"; no data: {', '.join(nodata)}" if nodata else ""
+        no_data = f"; no data: {join_capped(nodata)}" if nodata else ""
 
         if down:
             return (
                 "critical",
-                f"Services not active: {', '.join(down)}{no_data}",
+                f"Services not active: {join_capped(down)}{no_data}",
                 metrics,
             )
 
         if not up:
-            message = f"Services without data: {', '.join(nodata)}"
+            message = f"Services without data: {join_capped(nodata)}"
             if error:
                 message += f"; {self._not_queryable(error)}"
             return "unknown", message, metrics

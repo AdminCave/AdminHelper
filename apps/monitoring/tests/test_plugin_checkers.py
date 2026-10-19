@@ -117,7 +117,8 @@ def test_zfs_caps_the_pool_list():
     names = [f"p{i}" for i in range(2000)]
     status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs(*(_pool(name=n) for n in names)))
     assert status == "ok"
-    assert msg == "All pools ONLINE: " + ", ".join(f"{n} 20%" for n in names[:500])
+    # The message names ten of them and counts the other 490 (R-0517).
+    assert msg == "All pools ONLINE: " + ", ".join(f"{n} 20%" for n in names[:10]) + " (+490 more)"
     assert [p["name"] for p in metrics["_details"]["pools"]] == names[:500]
     assert sum(k.startswith("zfs_capacity_") for k in metrics) == 500
 
@@ -521,16 +522,20 @@ def test_docker_long_name_is_capped_in_message_and_details():
         {}, _docker(_ctr(name="n" * 10_000, state="dead"))
     )
     name = "n" * 499 + "…"
+    # The problem text is one entry of the message list, cut to 500 characters again (R-0517).
+    entry = f"{name}: dead"[:499] + "…"
     assert status == "critical"
-    assert msg == f"Container problems: {name}: dead (0 running, 0 stopped)"
+    assert msg == f"Container problems: {entry} (0 running, 0 stopped)"
     assert _rows(metrics)[0]["name"] == name
 
 
 def test_docker_long_state_is_capped_in_message_and_details():
     status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(state="s" * 10_000)))
     state = "s" * 499 + "…"
+    # The problem text is one entry of the message list, cut to 500 characters again (R-0517).
+    entry = f"web: unknown state {state!r}"[:499] + "…"
     assert status == "warning"
-    assert msg == f"Container warnings: web: unknown state {state!r} (0 running, 0 stopped)"
+    assert msg == f"Container warnings: {entry} (0 running, 0 stopped)"
     assert (_rows(metrics)[0]["state"], _rows(metrics)[0]["reason"]) == (state, "unknown_state")
 
 

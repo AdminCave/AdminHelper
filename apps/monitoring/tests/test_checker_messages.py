@@ -23,6 +23,7 @@ from sqlalchemy.pool import StaticPool
 import app.check_engine as ce
 import app.core.database as database_mod
 from app.checkers import agent, get_checker
+from app.checkers import forecast as forecast_mod
 from app.checkers import http as http_mod
 from app.checkers import ping as ping_mod
 from app.checkers import tcp as tcp_mod
@@ -514,6 +515,260 @@ PULL_CASES = [
 
 @pytest.mark.parametrize(("call", "status", "message"), PULL_CASES)
 def test_pull_checker_message_is_english(monkeypatch, call, status, message):
+    got_status, got_message, _ = call(monkeypatch)
+    assert (got_status, got_message) == (status, message)
+
+
+# --- lists in a message: at most 10 entries and 1000 characters, then "(+N more)" (R-0517) ---
+# The limits are written out, not imported, so a changed limit turns these cases red.
+
+_SEPARATORS = pytest.mark.parametrize("sep", [", ", "; "], ids=["comma", "semicolon"])
+
+
+@_SEPARATORS
+@pytest.mark.parametrize(("count", "named"), [(0, 0), (1, 1), (10, 10), (11, 10), (500, 10)])
+def test_join_capped_names_at_most_ten_entries(sep, count, named):
+    entries = [f"e{i}" for i in range(count)]
+    more = f" (+{count - named} more)" if count > named else ""
+    assert agent.join_capped(entries, sep) == sep.join(entries[:named]) + more
+
+
+def test_join_capped_keeps_an_empty_entry():
+    assert agent.join_capped(["", "a"], ", ") == ", a"
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [["a" * 600, "b" * 600, "c" * 600], ["a" * 600, "b" * 600, "c"]],
+    ids=["three-long", "short-behind-long"],
+)
+def test_join_capped_cuts_each_entry_to_500_characters(entries):
+    # The first entry always goes in; a second cut one would make 500 + 2 + 500 = 1002
+    # characters. The order holds: a short entry behind the one that did not fit is counted.
+    assert agent.join_capped(entries, ", ") == "a" * 499 + "… (+2 more)"
+
+
+@_SEPARATORS
+def test_join_capped_names_at_most_1000_characters(sep):
+    # Two entries of 499 and their separator are exactly 1000 characters.
+    entries = ["a" * 499, "b" * 499, "c" * 499, "d" * 499]
+    assert agent.join_capped(entries, sep) == "a" * 499 + sep + "b" * 499 + " (+2 more)"
+
+
+def _first_ten(entries, sep=", "):
+    """Twelve entries as a message names them: the first ten, the other two counted."""
+    return sep.join(entries[:10]) + " (+2 more)"
+
+
+def _vms(first_vmid, last_backup_ts, count):
+    return [_vm(first_vmid + i, "qemu", f"vm{i}", last_backup_ts) for i in range(count)]
+
+
+def _pools(capacity, count):
+    return [(f"p{i}", capacity) for i in range(count)]
+
+
+def _containers(count, *states):
+    containers = [
+        {"id": f"{state}{i}", "name": f"{state}{i}", "state": state}
+        for state in states
+        for i in range(count)
+    ]
+    return DockerHealthChecker().evaluate({}, {"docker": {"containers": containers}})
+
+
+def _smart_disks(smartctl_status, count):
+    disks = [
+        {
+            "device": f"/dev/d{i}",
+            "model": "X",
+            "protocol": "ATA",
+            "kind": "HDD",
+            "temp_c": 30,
+            "smartctl_status": smartctl_status,
+        }
+        for i in range(count)
+    ]
+    return SmartHealthChecker().evaluate({}, {"smart": disks})
+
+
+def _full_disks(count):
+    disks = [{"mount": f"/m{i}", "percent": 95} for i in range(count)]
+    return _resources({"resources": {"disks": disks}})
+
+
+def _filling_mounts(mp, count):
+    # 42 % rising 2 pp/h over 24 h: 90 % now, full in ~5 h, below crit_hours 8.
+    values = [[i * 3600.0, str(42.0 + 2.0 * i)] for i in range(25)]
+    result = [{"metric": {"mount": f"/m{i}"}, "values": values} for i in range(count)]
+    mp.setattr(forecast_mod.victoria, "query_range", lambda **kw: {"data": {"result": result}})
+    return forecast_mod.DiskForecastChecker().run({"server_id": "srv-1"})
+
+
+_NO_BACKUP = [f"QEMU {101 + i} (vm{i})" for i in range(12)]
+_OUTDATED = [f"QEMU {201 + i} (vm{i}): 30h old" for i in range(12)]
+_POOLS_FULL = [f"p{i}: 95% full (>=90%)" for i in range(12)]
+_POOLS_OK = [f"p{i} 20%" for i in range(12)]
+_DEAD = [f"dead{i}: dead" for i in range(12)]
+_PAUSED = [f"paused{i}: paused" for i in range(12)]
+_PREFAIL = [f"/dev/d{i} (X): prefail attribute below threshold (smartctl 0x10)" for i in range(12)]
+_PAST = [f"/dev/d{i} (X): threshold exceeded in the past (smartctl 0x20)" for i in range(12)]
+_DISKS_FULL = [f"Disk /m{i} 95% (>=95%)" for i in range(12)]
+_FAILED = [f"f{i}.service" for i in range(12)]
+_INACTIVE = [f"i{i}.service" for i in range(12)]
+_DOWN = [f"d{i}" for i in range(12)]
+_NODATA = [f"n{i}" for i in range(12)]
+_FILLING = [f"/m{i} full in ~5.0h" for i in range(12)]
+_NOT_RUNNING = "(0 running, 0 stopped)"
+
+# Each place that joins a list into a message: twelve entries name ten and count two, the
+# status stays; exactly ten read as before, without the count.
+LIST_CASES = [
+    # proxmox_backup
+    pytest.param(
+        lambda mp: _proxmox(*_vms(101, None, 12), *_vms(201, _hours_ago(30), 12)),
+        "critical",
+        f"No backup: {_first_ten(_NO_BACKUP)}; Outdated: {_first_ten(_OUTDATED)}",
+        id="proxmox-12-missing-and-outdated",
+    ),
+    pytest.param(
+        lambda mp: _proxmox(*_vms(201, _hours_ago(30), 12)),
+        "warning",
+        f"Outdated backups: {_first_ten(_OUTDATED)}",
+        id="proxmox-12-outdated",
+    ),
+    pytest.param(
+        lambda mp: _proxmox(*_vms(101, None, 10)),
+        "critical",
+        "No backup: " + ", ".join(_NO_BACKUP[:10]),
+        id="proxmox-10-missing",
+    ),
+    # zfs_health
+    pytest.param(
+        lambda mp: _zfs(*_pools(95, 12)),
+        "critical",
+        _first_ten(_POOLS_FULL, "; "),
+        id="zfs-12-problems",
+    ),
+    pytest.param(
+        lambda mp: _zfs(*_pools(20, 12)),
+        "ok",
+        f"All pools ONLINE: {_first_ten(_POOLS_OK)}",
+        id="zfs-12-pools-ok",
+    ),
+    pytest.param(
+        lambda mp: _zfs(*_pools(95, 10)),
+        "critical",
+        "; ".join(_POOLS_FULL[:10]),
+        id="zfs-10-problems",
+    ),
+    # docker_health
+    pytest.param(
+        lambda mp: _containers(12, "dead", "paused"),
+        "critical",
+        f"Container problems: {_first_ten(_DEAD)}; warnings: {_first_ten(_PAUSED)} {_NOT_RUNNING}",
+        id="docker-12-problems-and-warnings",
+    ),
+    pytest.param(
+        lambda mp: _containers(12, "paused"),
+        "warning",
+        f"Container warnings: {_first_ten(_PAUSED)} {_NOT_RUNNING}",
+        id="docker-12-warnings",
+    ),
+    pytest.param(
+        lambda mp: _containers(10, "dead"),
+        "critical",
+        f"Container problems: {', '.join(_DEAD[:10])} {_NOT_RUNNING}",
+        id="docker-10-problems",
+    ),
+    # smart_health
+    pytest.param(
+        lambda mp: _smart_disks(0x10 | 0x20, 12),
+        "critical",
+        f"SMART problems: {_first_ten(_PREFAIL)}; warnings: {_first_ten(_PAST)}",
+        id="smart-12-problems-and-warnings",
+    ),
+    pytest.param(
+        lambda mp: _smart_disks(0x20, 12),
+        "warning",
+        f"SMART warnings: {_first_ten(_PAST)}",
+        id="smart-12-warnings",
+    ),
+    pytest.param(
+        lambda mp: _smart_disks(0x10, 10),
+        "critical",
+        "SMART problems: " + ", ".join(_PREFAIL[:10]),
+        id="smart-10-problems",
+    ),
+    # agent_resources
+    pytest.param(
+        lambda mp: _full_disks(12),
+        "critical",
+        _first_ten(_DISKS_FULL, "; "),
+        id="resources-12-problems",
+    ),
+    pytest.param(
+        lambda mp: _full_disks(10),
+        "critical",
+        "; ".join(_DISKS_FULL[:10]),
+        id="resources-10-problems",
+    ),
+    # service_process, auto mode
+    pytest.param(
+        lambda mp: _auto({"failed": _FAILED, "enabled_inactive": _INACTIVE}),
+        "critical",
+        f"Failed: {_first_ten(_FAILED)}; Inactive (autostart): {_first_ten(_INACTIVE)}",
+        id="auto-12-failed-and-inactive",
+    ),
+    pytest.param(
+        lambda mp: _auto({"failed": [], "enabled_inactive": _INACTIVE}),
+        "warning",
+        f"Inactive (autostart): {_first_ten(_INACTIVE)}",
+        id="auto-12-inactive",
+    ),
+    pytest.param(
+        lambda mp: _auto({"failed": _FAILED[:10], "enabled_inactive": []}),
+        "critical",
+        "Failed: " + ", ".join(_FAILED[:10]),
+        id="auto-10-failed",
+    ),
+    # service_process, list mode
+    pytest.param(
+        lambda mp: _listed(_DOWN + _NODATA, _watch(**dict.fromkeys(_DOWN, False))),
+        "critical",
+        f"Services not active: {_first_ten(_DOWN)}; no data: {_first_ten(_NODATA)}",
+        id="list-12-down-and-no-data",
+    ),
+    pytest.param(
+        lambda mp: _listed(_NODATA, {}),
+        "unknown",
+        f"Services without data: {_first_ten(_NODATA)}",
+        id="list-12-no-data",
+    ),
+    pytest.param(
+        lambda mp: _listed(_DOWN[:10], _watch(**dict.fromkeys(_DOWN[:10], False))),
+        "critical",
+        "Services not active: " + ", ".join(_DOWN[:10]),
+        id="list-10-down",
+    ),
+    # disk_forecast
+    pytest.param(
+        lambda mp: _filling_mounts(mp, 12),
+        "critical",
+        _first_ten(_FILLING, "; "),
+        id="forecast-12-problems",
+    ),
+    pytest.param(
+        lambda mp: _filling_mounts(mp, 10),
+        "critical",
+        "; ".join(_FILLING[:10]),
+        id="forecast-10-problems",
+    ),
+]
+
+
+@pytest.mark.parametrize(("call", "status", "message"), LIST_CASES)
+def test_list_in_message_names_at_most_ten_entries(monkeypatch, call, status, message):
     got_status, got_message, _ = call(monkeypatch)
     assert (got_status, got_message) == (status, message)
 

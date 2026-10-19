@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import time
 
-from app.checkers.agent import agent_number, cap_agent_text, capped_objects
+from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
 
 # The codes the agent sends for a block it could not read (dockerUnavailable and
 # zfsUnavailable in apps/agent/internal/monitor/plugins.go).
@@ -126,13 +126,13 @@ class ProxmoxBackupChecker:
         }
 
         if no_backup:
-            msg = "No backup: " + ", ".join(no_backup)
+            msg = "No backup: " + join_capped(no_backup)
             if outdated:
-                msg += "; Outdated: " + ", ".join(outdated)
+                msg += "; Outdated: " + join_capped(outdated)
             return "critical", msg, metrics
 
         if outdated:
-            return "warning", "Outdated backups: " + ", ".join(outdated), metrics
+            return "warning", "Outdated backups: " + join_capped(outdated), metrics
 
         return "ok", f"All {ok_count} VMs/CTs have up-to-date backups", metrics
 
@@ -220,9 +220,9 @@ class ZfsHealthChecker:
         }
 
         if problems:
-            return status, "; ".join(problems), metrics
+            return status, join_capped(problems, "; "), metrics
 
-        pool_summary = ", ".join(f"{p.get('name', '?')} {_pool_capacity(p)}%" for p in pools)
+        pool_summary = join_capped([f"{p.get('name', '?')} {_pool_capacity(p)}%" for p in pools])
         return "ok", f"All pools ONLINE: {pool_summary}", metrics
 
 
@@ -414,15 +414,15 @@ class DockerHealthChecker:
 
         counts = f"{running} running, {stopped} stopped"
         if critical_problems:
-            msg = "Container problems: " + ", ".join(critical_problems)
+            msg = "Container problems: " + join_capped(critical_problems)
             if warning_problems:
-                msg += "; warnings: " + ", ".join(warning_problems)
+                msg += "; warnings: " + join_capped(warning_problems)
             return "critical", f"{msg} ({counts})", metrics
 
         if warning_problems:
             return (
                 "warning",
-                f"Container warnings: {', '.join(warning_problems)} ({counts})",
+                f"Container warnings: {join_capped(warning_problems)} ({counts})",
                 metrics,
             )
 

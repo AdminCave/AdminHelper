@@ -139,7 +139,7 @@
           </ul>
 
           <h2>Checker im &Uuml;berblick</h2>
-          <p>Jeder Checker liefert ein Tripel <code>(status, message, metrics)</code> mit <code>status &isin; {ok, warning, critical, unknown}</code>. <code>message</code> ist englisch und geht so in Dashboard, Glocke und Benachrichtigungen; der Desktop &uuml;bersetzt, wo er aus <code>_details</code> rendert. Pull-Checker haben eine <code>run(config)</code>-Methode; Agent-/Push-Checker werten in <code>evaluate(config, report)</code> direkt den Push-Report aus.</p>
+          <p>Jeder Checker liefert ein Tripel <code>(status, message, metrics)</code> mit <code>status &isin; {ok, warning, critical, unknown}</code>. <code>message</code> ist englisch und geht so in Dashboard, Glocke und Benachrichtigungen; der Desktop &uuml;bersetzt, wo er aus <code>_details</code> rendert. Nennt die Meldung eine Liste (VMs, Pools, Container, Platten, Dienste, Mounts), geht sie &uuml;ber <code>join_capped</code> in <code>checkers/agent.py</code>: Der Helfer k&uuml;rzt jeden Eintrag auf 500&nbsp;Zeichen (samt &bdquo;&hellip;&ldquo;), nennt der Reihe nach h&ouml;chstens 10 Eintr&auml;ge und h&ouml;chstens 1000&nbsp;Zeichen (Eintr&auml;ge samt Trennern), den ersten immer, und z&auml;hlt die &uuml;brigen als &bdquo;(+N more)&ldquo;. <code>_details</code> tr&auml;gt weiter jeden ausgewerteten Eintrag; Status und Metriken bleiben gleich. Pull-Checker haben eine <code>run(config)</code>-Methode; Agent-/Push-Checker werten in <code>evaluate(config, report)</code> direkt den Push-Report aus.</p>
           <table>
             <thead><tr><th>Checker</th><th>Typ(en)</th><th>Was er tut</th></tr></thead>
             <tbody>
