@@ -15,6 +15,26 @@ from __future__ import annotations
 import re
 import time
 
+from app.checkers.agent import cap_agent_text
+
+# The codes the agent sends for a block it could not read (dockerUnavailable and
+# zfsUnavailable in apps/agent/internal/monitor/plugins.go).
+_ZFS_ERRORS = frozenset({"timeout", "cli_failed"})
+_DOCKER_ERRORS = frozenset({"daemon_unreachable", "timeout", "cli_failed", "parse_failed"})
+
+
+def _outage_message(label: str, block: dict, codes: frozenset[str]) -> tuple[str, str | None]:
+    """(message, code) of a block the agent could not read. The message goes unchanged into
+    MonitorState.message, webhook and mail, so only a known code and a capped error_message
+    get in; any other error is still an outage, just without the agent's text (R-0472)."""
+    error = block.get("error")
+    code = error if isinstance(error, str) and error in codes else None
+    msg = f"{label} unavailable ({code})" if code else f"{label} unavailable"
+    text = cap_agent_text(block.get("error_message"))
+    if text:
+        msg += f": {text}"
+    return msg, code
+
 
 class ProxmoxBackupChecker:
     """Checks whether VMs/CTs have up-to-date backups.
@@ -28,20 +48,22 @@ class ProxmoxBackupChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         proxmox = report.get("proxmox")
         if not proxmox:
-            return "unknown", "Keine Proxmox-Daten im Report", None
+            return "unknown", "No Proxmox data in report", None
 
         vms = proxmox.get("vms", [])
         if not vms:
-            return "ok", "Keine VMs/CTs gefunden", None
+            return "ok", "No VMs/CTs found", None
 
         max_age_hours = config.get("max_backup_age_hours", 26)
         exclude_vmids = set(config.get("exclude_vmids", []))
-        exclude_stopped = config.get("exclude_stopped", True)
+        # Only a real False includes stopped VMs: a non-bool stored before the strict
+        # boundary is the default, as the check editor shows it.
+        exclude_stopped = config.get("exclude_stopped", True) is not False
         max_age_seconds = max_age_hours * 3600
         now = time.time()
 
@@ -70,7 +92,7 @@ class ProxmoxBackupChecker:
             elif (now - last_ts) > max_age_seconds:
                 vm_status = "outdated"
                 age_hours = round((now - last_ts) / 3600)
-                outdated.append(f"{label}: {age_hours}h alt")
+                outdated.append(f"{label}: {age_hours}h old")
             else:
                 ok_count += 1
 
@@ -92,15 +114,15 @@ class ProxmoxBackupChecker:
         }
 
         if no_backup:
-            msg = "Kein Backup: " + ", ".join(no_backup)
+            msg = "No backup: " + ", ".join(no_backup)
             if outdated:
-                msg += "; Veraltet: " + ", ".join(outdated)
+                msg += "; Outdated: " + ", ".join(outdated)
             return "critical", msg, metrics
 
         if outdated:
-            return "warning", "Veraltete Backups: " + ", ".join(outdated), metrics
+            return "warning", "Outdated backups: " + ", ".join(outdated), metrics
 
-        return "ok", f"Alle {ok_count} VMs/CTs haben aktuelle Backups", metrics
+        return "ok", f"All {ok_count} VMs/CTs have up-to-date backups", metrics
 
 
 class ZfsHealthChecker:
@@ -115,20 +137,18 @@ class ZfsHealthChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         zfs = report.get("zfs")
         if not zfs:
             # An empty list, not None: the push path keeps the stored details of a
             # result without any, and the desktop would go on showing the old pools.
-            return "unknown", "Keine ZFS-Daten im Report", {"_details": {"pools": []}}
+            return "unknown", "No ZFS data in report", {"_details": {"pools": []}}
 
-        if not zfs.get("available", True) or zfs.get("error"):
-            code = zfs.get("error")
-            msg = f"ZFS unavailable ({code})" if code else "ZFS unavailable"
-            if zfs.get("error_message"):
-                msg += f": {zfs['error_message']}"
+        # Only a JSON false is an outage: null, 0 or "false" let the pools decide.
+        if zfs.get("available", True) is False or zfs.get("error"):
+            msg, code = _outage_message("ZFS", zfs, _ZFS_ERRORS)
             # Only a real False switches the alert off; anything else keeps the default.
             alert = config.get("alert_on_unavailable", True) is not False
             details = {"available": False, "error": code, "pools": []}
@@ -138,7 +158,7 @@ class ZfsHealthChecker:
         if not pools:
             return (
                 "ok",
-                "Keine ZFS-Pools gefunden",
+                "No ZFS pools found",
                 {"_details": {"available": True, "error": None, "pools": []}},
             )
 
@@ -160,10 +180,10 @@ class ZfsHealthChecker:
                 status = "critical"
 
             if cap >= cap_crit:
-                problems.append(f"{name}: {cap}% voll (>={cap_crit}%)")
+                problems.append(f"{name}: {cap}% full (>={cap_crit}%)")
                 status = "critical"
             elif cap >= cap_warn:
-                problems.append(f"{name}: {cap}% voll (>={cap_warn}%)")
+                problems.append(f"{name}: {cap}% full (>={cap_warn}%)")
                 if status != "critical":
                     status = "warning"
 
@@ -184,7 +204,7 @@ class ZfsHealthChecker:
             return status, "; ".join(problems), metrics
 
         pool_summary = ", ".join(f"{p['name']} {p.get('capacity_percent', 0)}%" for p in pools)
-        return "ok", f"Alle Pools ONLINE: {pool_summary}", metrics
+        return "ok", f"All pools ONLINE: {pool_summary}", metrics
 
 
 # docker ps prints the exit code into the status text: "Exited (3) 2 minutes ago".
@@ -194,6 +214,10 @@ _PS_EXITED = re.compile(r"exited \((-?\d+)\)", re.IGNORECASE)
 # TERM, or ignores it until the stop timeout kills it. A stop, not a crash (Kevin
 # 2026-10-17); an OOM kill also ends in 137 and is caught by oom_killed first.
 _STOP_SIGNAL_EXITS = (137, 143)
+
+# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
+# that router imports app.checkers (R-0459).
+_MAX_CONTAINERS = 500
 
 
 def _container_exit_code(c: dict) -> int | None:
@@ -273,7 +297,7 @@ class DockerHealthChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(
         self, config: dict, report: dict, prev_details: dict | None = None
@@ -286,17 +310,16 @@ class DockerHealthChecker:
             # result without any, and the desktop would go on showing the old list.
             return "unknown", "No Docker data in report", {"_details": {"containers": []}}
 
-        if not docker.get("available", True) or docker.get("error"):
-            code = docker.get("error")
-            msg = f"Docker unavailable ({code})" if code else "Docker unavailable"
-            if docker.get("error_message"):
-                msg += f": {docker['error_message']}"
+        # Only a JSON false is an outage: null, 0 or "false" let the containers decide.
+        if docker.get("available", True) is False or docker.get("error"):
+            msg, code = _outage_message("Docker", docker, _DOCKER_ERRORS)
             # Only a real False switches the alert off; anything else keeps the default.
             alert = config.get("alert_on_unavailable", True) is not False
             details = {"available": False, "error": code, "containers": []}
             return ("warning" if alert else "unknown"), msg, {"_details": details}
 
-        containers = docker.get("containers", [])
+        raw = docker.get("containers")
+        containers = raw[:_MAX_CONTAINERS] if isinstance(raw, list) else []
         if not containers:
             return (
                 "ok",
@@ -305,10 +328,13 @@ class DockerHealthChecker:
             )
 
         ignore = set(config.get("ignore_containers", []))
+        # The agent sends the 12-char short ID as a string; any other entry or ID (a list is
+        # not even hashable) has no previous value instead of failing the whole evaluation.
+        prev = (prev_details or {}).get("containers")
         prev_restarts = {
-            p.get("id"): p.get("restart_count")
-            for p in (prev_details or {}).get("containers") or []
-            if p.get("id")
+            p["id"]: p.get("restart_count")
+            for p in (prev if isinstance(prev, list) else [])
+            if isinstance(p, dict) and isinstance(p.get("id"), str) and p["id"]
         }
 
         critical_problems = []
@@ -319,12 +345,14 @@ class DockerHealthChecker:
         container_details = []
 
         for c in containers:
-            name = c.get("name", c.get("id", "?"))
+            cid = c.get("id")
+            name = c.get("name", cid if isinstance(cid, str) else "?")
             if name in ignore:
                 continue
 
             state = c.get("state", "").lower()
-            category, reason = _rate_container(c, state, prev_restarts.get(c.get("id")))
+            prev_count = prev_restarts.get(cid) if isinstance(cid, str) else None
+            category, reason = _rate_container(c, state, prev_count)
             if state == "running":
                 running += 1
             if category == "critical":

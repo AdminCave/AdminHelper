@@ -18,10 +18,10 @@ class PingChecker:
         timeout = config.get("timeout", 5)
 
         if not target:
-            return "unknown", "Kein Ziel angegeben", None
+            return "unknown", "No target given", None
 
         if not _VALID_TARGET.match(target) or len(target) > 253:
-            return "unknown", "Ungueltiges Ziel (nur Hostnamen und IPs erlaubt)", None
+            return "unknown", "Invalid target (only hostnames and IPs allowed)", None
 
         # NO private/reserved block here (unlike the http checker): monitoring
         # servers on RFC1918 networks IS the product's core use case — a ping
@@ -44,16 +44,16 @@ class PingChecker:
                 rtt = _parse_rtt(result.stdout)
                 return (
                     "ok",
-                    f"Erreichbar ({rtt:.1f} ms)" if rtt else "Erreichbar",
+                    f"Reachable ({rtt:.1f} ms)" if rtt else "Reachable",
                     {"ping_rtt_ms": rtt} if rtt else None,
                 )
             else:
-                return "critical", f"{target} nicht erreichbar", None
+                return "critical", f"{target} unreachable", None
 
         except subprocess.TimeoutExpired:
-            return "critical", f"Timeout nach {timeout}s", None
+            return "critical", f"Timeout after {timeout}s", None
         except Exception as exc:
-            return "unknown", f"Fehler: {exc}", None
+            return "unknown", f"Error: {exc}", None
 
 
 def _parse_rtt(output: str) -> float | None:

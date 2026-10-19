@@ -43,6 +43,12 @@ SOURCE_TYPE = "frps"
 LIMIT = 10
 WINDOW = timedelta(hours=1)
 
+# How many events the last run left unnotified: events over the limit stay in the ring and in
+# the window for up to an hour, and the watch runs every 15 s, so the warning about them is
+# logged when their count changes, not on every run. The scheduler runs in one process
+# (app.scheduler_main); its restart warns once anew.
+_last_skipped = 0
+
 _AGENT_HINT = " Agent-Tunnel verbinden sich innerhalb von bis zu ~5 Minuten neu."
 
 _REASON_TEXTS = {
@@ -127,6 +133,7 @@ def _tunnel_users(db: Session) -> list[User]:
 def notify_supervisor_events(db: Session, *, now: datetime | None = None) -> int:
     """Notify the events of the status file nobody has been told about yet; returns the
     number of bell rows written. now (aware UTC) defaults to the clock."""
+    global _last_skipped
     now = now or datetime.now(timezone.utc)
     status = read_supervisor_status(STATUS_FILE, now=now)
     if status.boot is None:  # missing or unreadable
@@ -152,12 +159,13 @@ def notify_supervisor_events(db: Session, *, now: datetime | None = None) -> int
         if notice and event.at >= now - WINDOW and source_id not in told:
             pending.append((source_id, event.event, notice))
     skipped = max(len(pending) - max(LIMIT - recent, 0), 0)
-    if skipped:
+    if skipped and skipped != _last_skipped:
         logger.warning(
             "frps supervisor: %d events not notified, limit of %d per hour reached",
             skipped,
             LIMIT,
         )
+    _last_skipped = skipped
 
     written = 0
     for source_id, kind, (severity, title, body) in pending[skipped:]:

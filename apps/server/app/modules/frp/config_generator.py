@@ -107,8 +107,12 @@ def without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
 def active_tunnels(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
     """The tunnels generate_frpc_toml writes as [[proxies]]: enabled, and stcp only
     with a secret. Without one, the text carries no frps token; config-hash, config
-    download and provisioning bundle all come from that text, so they can't drift."""
-    return without_secretless_stcp([t for t in tunnels if t.enabled])
+    download and provisioning bundle all come from that text, so they can't drift.
+
+    Sorted by name (unique): the callers query without ORDER BY, and Postgres
+    returns rows in physical order, which an UPDATE of a column outside the config
+    (connection_id) changes. Unsorted, the hash would change with the same config."""
+    return sorted(without_secretless_stcp([t for t in tunnels if t.enabled]), key=lambda t: t.name)
 
 
 def _tls_server_block(
@@ -177,11 +181,11 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
     # Dashboard
     dashboard_port = _optional_port(config, "dashboard_port")
     if dashboard_port:
-        # Bind all interfaces, not loopback: the server container polls the dashboard over
-        # the compose bridge (http://frps:<port>), so 127.0.0.1 would listen only inside the
-        # frps container and every /api/frp/status probe would fail. The dashboard port is
-        # never published in compose, so it stays reachable only from the compose network,
-        # not the host or the public internet (4.6).
+        # Bind all interfaces, not loopback: in compose the frps supervisor asks the dashboard
+        # over loopback inside the frps container, which 0.0.0.0 covers, but with
+        # FRPS_DASHBOARD_URL (frps in another topology) the server asks it over the network.
+        # The dashboard port is never published in compose, and frps sits alone in the
+        # network frpedge, so neither the host nor the public internet reaches it (4.6).
         lines.append('webServer.addr = "0.0.0.0"')
         lines.append(f"webServer.port = {dashboard_port}")
         if config.dashboard_user:

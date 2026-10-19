@@ -50,19 +50,30 @@ SAFE_TEXT = st.text(
     min_size=1,
     max_size=40,
 )
-# The schema takes only the extra_config keys the frps supervisor starts frps with
-# (frp/extra_config.py), and a string value without braces besides: check_config
-# refuses a brace anywhere in a line.
-EXTRA_KEY = st.sampled_from(sorted(ALLOWED_KEYS))
-EXTRA_TEXT = st.text(
+# What FrpServerConfigCreate takes for the fields of test_frps_toml_round_trips, so every
+# example reaches the assertions: on top of SAFE_TEXT no lone surrogate (U+D800 to U+DFFF has
+# no UTF-8 form, codec="utf-8" leaves it out), and in a string the frps supervisor checks
+# (auth_token, subdomain_host, a text value of extra_config) no brace either: check_config
+# refuses one anywhere in a line.
+FRPS_ADDR = st.text(
     alphabet=st.characters(
-        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f", "{", "}"], min_codepoint=0x20
+        blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20, codec="utf-8"
     ),
     min_size=1,
     max_size=40,
 )
+_FRPS_CHAR = st.characters(
+    blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f", "{", "}"],
+    min_codepoint=0x20,
+    codec="utf-8",
+)
+FRPS_TEXT = st.text(alphabet=_FRPS_CHAR, min_size=1, max_size=40)
+FRPS_SECRET = st.text(alphabet=_FRPS_CHAR, min_size=16, max_size=40)
+# The schema takes only the extra_config keys the frps supervisor starts frps with
+# (frp/extra_config.py).
+EXTRA_KEY = st.sampled_from(sorted(ALLOWED_KEYS))
 EXTRA_VALUE = st.one_of(
-    EXTRA_TEXT,
+    FRPS_TEXT,
     st.booleans(),
     st.integers(min_value=-(2**53), max_value=2**53),
     st.floats(allow_nan=False, allow_infinity=False, width=32),
@@ -98,10 +109,10 @@ def _config(**kw) -> FrpServerConfig:
 
 
 @given(
-    server_addr=SAFE_TEXT,
-    auth_token=SECRET,
+    server_addr=FRPS_ADDR,
+    auth_token=FRPS_SECRET,
     bind_port=PORT,
-    subdomain_host=st.one_of(st.none(), SAFE_TEXT),
+    subdomain_host=st.one_of(st.none(), FRPS_TEXT),
     extra=st.dictionaries(EXTRA_KEY, EXTRA_VALUE, max_size=5),
 )
 @example(server_addr="a", auth_token="0123456789abcdef", bind_port=1, subdomain_host="", extra={})
@@ -121,19 +132,17 @@ def _config(**kw) -> FrpServerConfig:
 )
 @settings(max_examples=100, deadline=None)
 def test_frps_toml_round_trips(server_addr, auth_token, bind_port, subdomain_host, extra):
-    # Only values the API would actually accept: the schema is the gate the
-    # generator trusts, so a value it rejects says nothing about the generator.
-    try:
-        FrpServerConfigCreate(
-            name="frps",
-            server_addr=server_addr,
-            bind_port=bind_port,
-            auth_token=auth_token,
-            subdomain_host=subdomain_host,
-            extra_config=extra or None,
-        )
-    except ValidationError:
-        return
+    # Only values the API would actually accept: the schema is the gate the generator
+    # trusts. The strategies generate nothing else, so a rejection is red: it means they
+    # and the schema have drifted apart, and the example would assert nothing.
+    FrpServerConfigCreate(
+        name="frps",
+        server_addr=server_addr,
+        bind_port=bind_port,
+        auth_token=auth_token,
+        subdomain_host=subdomain_host,
+        extra_config=extra or None,
+    )
 
     cfg = _config(
         server_addr=server_addr,

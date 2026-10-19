@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.checkers.agent import ServiceProcessChecker
+from app.checkers.agent import MAX_AGENT_TEXT, ServiceProcessChecker, cap_agent_text
 from app.core.auth import require_agent
 from app.core.database import get_db
 from app.models import Base, MonitorCheck, MonitorState
@@ -384,6 +384,64 @@ def test_list_mode_systemctl_error_is_no_data():
     assert status == "unknown"
     assert _watched(metrics) == {"nginx": "nodata", "sshd": "nodata"}
     assert error in message
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("exit status 1", "exit status 1"),
+        ("x" * 500, "x" * 500),
+        ("x" * 501, "x" * 499 + "…"),
+        ("", None),
+        (None, None),
+        (["a"], None),
+        (42, None),
+    ],
+    ids=["short", "500-chars", "501-chars", "empty", "none", "list", "int"],
+)
+def test_cap_agent_text(value, expected):
+    assert cap_agent_text(value) == expected
+
+
+@pytest.mark.parametrize("mode", ["auto", "list"])
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        ("x" * 10_000, "x" * (MAX_AGENT_TEXT - 1) + "…"),
+        ("y" * MAX_AGENT_TEXT, "y" * MAX_AGENT_TEXT),
+    ],
+    ids=["10000-chars", "500-chars"],
+)
+def test_systemctl_error_text_is_capped(mode, error, expected):
+    # The message goes unchanged into MonitorState.message and from there into webhook and mail:
+    # a broken or hijacked agent must not push an unbounded text through it (R-0437).
+    status, message, _ = ServiceProcessChecker().evaluate(
+        {"mode": mode, "services": ["nginx", "sshd"]}, _inventory_report(error=error)
+    )
+    assert status == "unknown"
+    assert message.endswith(f"Services not queryable: {expected}")
+
+
+@pytest.mark.parametrize(
+    "mode, expected",
+    [
+        ("auto", "Services not queryable"),
+        ("list", "Services without data: nginx, sshd; Services not queryable"),
+    ],
+    ids=["auto", "list"],
+)
+@pytest.mark.parametrize(
+    "error", [["systemctl", "failed"], {"code": 1}, 42], ids=["list", "dict", "int"]
+)
+def test_systemctl_error_without_text_is_unknown_without_reason(mode, expected, error):
+    # The raw value still decides that listing failed; only a string goes into the message.
+    report = _inventory_report(error="x")
+    report["systemd"]["error"] = error
+    status, message, _ = ServiceProcessChecker().evaluate(
+        {"mode": mode, "services": ["nginx", "sshd"]}, report
+    )
+    assert status == "unknown"
+    assert message == expected
 
 
 def test_list_mode_name_without_data_is_not_down():

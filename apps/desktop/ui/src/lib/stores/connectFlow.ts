@@ -222,14 +222,14 @@ async function performConnect(
       rdpId = startRdpAttempt();
       const cid = rdpId;
       const promise = useStoredPassword
-        ? bridge.openConnectionStored(resolved, undefined, cid)
+        ? bridge.openConnectionStored(resolved, connection, undefined, cid)
         : bridge.openConnection(resolved, password, undefined, cid);
       promise.catch((err: unknown) => {
         clearRdpAttempt(cid);
         reportError(errMsg(err));
       });
     } else if (useStoredPassword) {
-      await bridge.openConnectionStored(resolved);
+      await bridge.openConnectionStored(resolved, connection);
     } else {
       await bridge.openConnection(resolved, password);
     }
