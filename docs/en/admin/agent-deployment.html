@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Agent Deployment</h1>
-          <p class="lead">One Go binary, two packages (DEB + RPM), shipped with matching service units. The provision flow redeems a one-time token and installs a persistent client certificate.</p>
+          <p class="lead">The Go agent runs on every monitored server. It handles two jobs: metric collector runs and FRP client auto-provisioning. It ships as DEB, RPM (Linux) or a single <code>.exe</code> (Windows).</p>
 
           <h2 id="quick-rollout">Quick rollout (one command, recommended)</h2>
           <p>The desktop client generates a ready-made one-liner in <em>Infrastructure &rarr; Server &rarr; Provisioning</em>, based on <code>scripts/agent-install.sh</code> &mdash; including the one-time token, the server ID and the installation's <strong>CA fingerprint</strong>:</p>
@@ -42,9 +42,9 @@
   --token &lt;provision-token&gt; \
   --server-id &lt;server-id&gt; \
   --ca-fp &lt;sha256-from-the-tab&gt;</code></pre>
-          <p>The script performs the whole rollout <strong>fail-closed</strong>: it fetches the repo signing key from the <code>:8445</code> plane and <em>hard-compares</em> its OpenPGP fingerprint against the project key pinned in the script (self-built repos: <code>--gpg-fp</code>), writes the apt/dnf source (deb822 with <code>Signed-By</code>, resp. a <code>.repo</code> with a locally verified <code>gpgkey</code>), installs <code>adminhelper-agent</code> and provisions it right away. With <code>--ca-fp</code> (shown in the provisioning tab &mdash; the desktop knows the internal CA from its own enrollment) the first contact is <strong>verified inside the TLS handshake</strong> instead of blindly pinned; the token only leaves the host after the check passes. After a successful mTLS enrollment the script automatically flips the repo source to <strong>CA pinning</strong> (<code>CAInfo</code>/<code>sslcacert</code> to <code>/etc/adminhelper/identity/ca.crt</code>) &mdash; the hardened steady state for <code>apt upgrade</code>/<code>dnf upgrade</code>. Without <code>--token</code>/<code>--server-id</code> it only installs the package; omitting just <code>--token</code> makes it prompt via <code>/dev/tty</code> (keeps the secret out of the shell history). If the server runs without a signed repo (<code>:8445</code> answers 404), <code>--from-github</code> falls back to the minisign-verified release package (apt only). The script also ships in the runtime bundle at <code>/opt/adminhelper/scripts/agent-install.sh</code> &mdash; <code>scp</code>-able for hosts without GitHub access. For fleet rollouts it is the natural Ansible/cloud-init building block (one <code>command:</code>/<code>runcmd:</code> step per host, token minted per host).</p>
+          <p>The script performs the whole rollout <strong>fail-closed</strong>: it fetches the repo signing key from the <code>:8445</code> plane and <em>hard-compares</em> its OpenPGP fingerprint against the project key pinned in the script (self-built repos: <code>--gpg-fp</code>), writes the apt/dnf source (deb822 with <code>Signed-By</code>, resp. a <code>.repo</code> with a locally verified <code>gpgkey</code>), installs <code>adminhelper-agent</code> and provisions it right away. With <code>--ca-fp</code> (shown in the provisioning tab &mdash; the desktop knows the internal CA from its own enrollment) the first contact is <strong>verified inside the TLS handshake</strong> instead of blindly pinned; the token only leaves the host after the check passes. After a successful mTLS enrollment the script automatically flips the repo source to <strong>CA pinning</strong> (<code>CAInfo</code>/<code>sslcacert</code> to <code>/etc/adminhelper/identity/ca.crt</code>) &mdash; the hardened steady state for <code>apt upgrade</code>/<code>dnf upgrade</code>. Without <code>--token</code>/<code>--server-id</code> it only installs the package; omitting just <code>--token</code> makes it prompt via <code>/dev/tty</code> (keeps the secret out of the shell history). If the server runs without a signed repo (<code>:8445</code> answers 404), <code>--from-github</code> falls back to the minisign-verified release package (apt only). The script also ships in the runtime bundle at <code>/opt/adminhelper/scripts/agent-install.sh</code> &mdash; <code>scp</code>-able for hosts without GitHub access.</p>
 
-          <h2>Debian / Ubuntu</h2>
+          <h2>Install the package (Debian/Ubuntu)</h2>
           <p>The DEB and RPM packages are attached as assets to every <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub release</a>. Download the file and install it locally:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>VERSION=0.43.0  # adjust to the current release
@@ -53,7 +53,7 @@ curl -fsSLO "https://github.com/AdminCave/AdminHelper/releases/download/v${VERSI
 # Installs deps and supersedes the old srm-* packages (Replaces/Conflicts):
 sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 
-          <h2>RHEL / Rocky / Fedora</h2>
+          <h2>Install the package (Rocky/Alma/RHEL)</h2>
           <p>Grab the matching <code>.rpm</code> asset from the <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">releases page</a>, then install it locally:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>sudo dnf install ./adminhelper-agent-*.x86_64.rpm</code></pre>
@@ -126,7 +126,11 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
           </div>
 
           <h2>Windows</h2>
-          <p>Grab the latest MSI from the <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub releases page</a> (the Windows MSI is built best-effort and may lag behind the Linux packages). Install with elevated privileges – the installer registers the Windows service.</p>
+          <p>Every <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub release</a> carries the agent as a single file, <code>adminhelper-agent-windows-x86_64.exe</code>, with no MSI and no installer; the MSI on the release page belongs to the desktop client. In a PowerShell as Administrator, <code>service install</code> sets the agent up:</p>
+          <div class="code-header"><span>powershell</span></div>
+<pre><code># PowerShell as Administrator, in the download folder
+.\adminhelper-agent-windows-x86_64.exe service install</code></pre>
+          <p>The command copies the binary to <code>%ProgramFiles%\AdminHelper\adminhelper-agent.exe</code>, registers the service <code>AdminHelper-Agent</code> (auto-start, LocalSystem account, restarted 60&nbsp;s after a failure) and starts it. Then provision the host as in the next section. The agent sets up no frpc service on Windows.</p>
 
           <h2>Provisioning</h2>
           <p>In the desktop client (server mode): <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
@@ -150,6 +154,11 @@ sudo adminhelper-agent provision \
           <p><strong>Provisioning again:</strong> when you provision a server again (a new token from the <em>Provisioning</em> tab, then <code>adminhelper-agent provision …</code> once more), the new agent replaces the previous one. The server deletes the API key of the previous provisioning; only the key the agent gets now counts. Global and manually created keys and the keys of other servers stay. If the agent already ran on this host, its new certificate replaces the previous one. When the host is provisioned for another server, the agent first drops the identity of the previous one, which the new server would not accept; if the enrollment fails after that, it keeps working with the API key for now.</p>
           <p><strong>Tunnels after provisioning (Linux):</strong> on every run (<code>adminhelper-agent.timer</code>, about every 5&nbsp;minutes) the agent syncs the host's tunnels with the server. A tunnel you create after the provisioning takes effect on the next run, without provisioning again: the agent writes <code>frpc.toml</code> and enables <code>frpc.service</code> for good (<code>systemctl enable --now</code>, so frpc also runs after a reboot). A running frpc takes over the new config: when only tunnels change, it loads them by a reload, and open sessions over unchanged tunnels stay up; when the frps address, token or TLS change, the agent restarts frpc, as it does on every provisioning. For the reload frpc opens an admin API on <code>127.0.0.1</code> only, with a random password from <code>/etc/frp/admin.conf</code> (<code>0600</code>, readable by root only). If frpc does not run despite a tunnel, for instance because another process holds its admin port after a reboot, the next run moves the admin API to a new port with a new password and starts frpc. The same goes for an frpc you stop or disable locally (<code>systemctl stop</code> or <code>disable --now</code>): as long as the host has tunnels, the next run starts and enables it again, within about 5.5&nbsp;minutes. Without a tunnel no frpc runs: when the last tunnel is gone (deleted, or all of the host's tunnels disabled) or the server has no FRP config for the host, the agent stops and disables <code>frpc.service</code> and deletes <code>frpc.toml</code>, since it holds the frps token. To keep frpc off on a host for good, delete or disable its tunnels on the server; locally, <code>systemctl mask frpc</code> remains as an emergency stop, and every agent run then logs an frpc error. The agent puts <code>loginFailExit = false</code> in front of the server's <code>frpc.toml</code>: if frps is unreachable at start, frpc does not exit but keeps trying. <em>Older hosts:</em> if an older agent provisioned the host without a tunnel, the host lacks the server API key for the sync, and later tunnels never arrive. Provision it once more; until then the agent log points this out on every run.</p>
 
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Ansible / cloud-init</div><p>For rollouts to many hosts the <a href="#quick-rollout">quick-rollout one-liner</a> is the right building block: one <code>command:</code>/<code>runcmd:</code> step with <code>agent-install.sh --server … --token … --server-id … --ca-fp …</code> per host (mint the token once per host). Idempotent: without a token/server ID the same call only updates the package.</p></div>
+          </div>
+
           <h2>Subcommand reference</h2>
           <p>All subcommands of the agent binary. Required flags are marked with <strong>*</strong>.</p>
           <table>
@@ -170,11 +179,12 @@ sudo adminhelper-agent provision \
           <p><strong><code>--ca-fp &lt;sha256&gt;</code> is the preferred trust anchor for the first contact:</strong> the agent only accepts the connection if the presented certificate chain contains a certificate with exactly this fingerprint <em>and</em> the server leaf cryptographically chains to it &mdash; checked <em>inside</em> the TLS handshake, before the one-time token ever leaves the host. The desktop shows the value in the provisioning tab (the commands generated there already include it). Cannot be combined with <code>--cacert</code>/<code>--insecure</code>.</p>
           <p><strong><code>--insecure</code> applies only to the one-off <code>provision</code> or <code>monitor init</code> call:</strong> the agent captures the certificate the server presents and pins it (trust-on-first-use), so the recurring sync/push loop verifies again &mdash; instead of disabling TLS verification permanently. With <code>--cacert</code> nothing is skipped at all. <strong>Trust-on-first-use trade-off:</strong> if an attacker is already on-path during that first call, <code>--insecure</code> pins <em>the attacker's</em> certificate as the permanent trust anchor. To detect this, <code>provision</code> prints the pinned certificate's SHA-256 fingerprint &mdash; verify it out-of-band against the CA fingerprint shown in the provisioning tab, or use <code>--ca-fp</code>/<code>--cacert</code> to avoid the risk entirely.</p>
 
-          <h2>Verification</h2>
+          <h2>Check that the agent is running</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code>systemctl status adminhelper-agent.timer
-journalctl -u adminhelper-agent.service -n 50
-adminhelper-agent run --once</code></pre>
+<pre><code>systemctl status adminhelper-agent.timer   # Linux – next activation
+systemctl status frpc.service              # only with an active FRP tunnel
+journalctl -u adminhelper-agent.service --since "1 hour ago"
+sudo adminhelper-agent run --once          # one run by hand: sync + push</code></pre>
 
           <h3>Logs</h3>
           <p>The agent <strong>also</strong> writes its logs to a rotating file — independent of the service manager, handy for a bug report:</p>
@@ -185,9 +195,12 @@ adminhelper-agent run --once</code></pre>
           <p>Same format as stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (component: <code>agent</code>, <code>frpc</code> or <code>monitor</code>). Rotates at 10&nbsp;MB, 5 compressed archives. Verbosity is set via <code>LOG_LEVEL</code> (env) or <code>--log-level debug|info|warn|error</code>.</p>
           <p>For a bug report, <code>adminhelper-agent diagnostics</code> writes a <strong>redacted</strong> report (version, OS, config without secrets, log excerpt) to <code>/tmp/</code> — review it and attach it to a GitHub issue.</p>
 
+          <h2>Upgrade</h2>
+          <p>With the package repo set up, <code>apt upgrade</code> or <code>dnf upgrade</code> on every server is enough. During provisioning the agent writes <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> and <code>/etc/frp/frpc.toml</code>; the package does not ship these files, so an upgrade keeps them. On every install and upgrade the package enables <code>adminhelper-agent.timer</code> again, and <code>frpc.service</code> only if <code>/etc/frp/frpc.toml</code> exists.</p>
+
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Migration from legacy agents</div><p>The DEB/RPM packages carry <code>Replaces</code> + <code>Conflicts</code> for <code>srm-frpc-client</code>, <code>srm-monitor-agent</code>, and <code>srm-agent</code>. A single <code>apt install adminhelper-agent</code> removes the old trio and preserves the config.</p></div>
+            <div><div class="callout-title">Migration from legacy agents</div><p>The DEB carries <code>Replaces</code> and <code>Conflicts</code>, the RPM <code>Obsoletes</code> and <code>Conflicts</code> for <code>srm-frpc-client</code>, <code>srm-monitor-agent</code> and <code>srm-agent</code>. A single <code>apt install adminhelper-agent</code> or <code>dnf install adminhelper-agent</code> replaces the three legacy packages; the package's install script (<code>postinst</code> or <code>%post</code>) stops, disables and removes their systemd units.</p></div>
           </div>
 
           <div class="page-nav">
