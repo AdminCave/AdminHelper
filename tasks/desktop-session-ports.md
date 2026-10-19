@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Session im Rust-Speicher und eigene lokale Visitor-Ports — Task-Ledger
-Status: aktiv · Branch: feature/desktop-session-ports · Review: pro Task
+Status: bereit · Branch: feature/desktop-session-ports · Review: pro Task
 Spec: docs/features/desktop-session-ports.md (Roadmap R-0430)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Auth und -Tunnel (CLAUDE.md §5): Login, Erneuerung, SSE und die Tunnel-Specs laufen im Sammellauf; `scenario`, weil der Desktop die lokalen Visitor-Ports umschreibt (FRP-Datenpfad); `windows` für Sidecar, Datei-Sperre und Keyring-Aufräumen
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -122,8 +122,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/connect
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html · docs/developer/desktop.html + docs/en/developer/desktop.html · CHANGELOG.md
 Abhängt von: T10
 
-### T12 — Live-E2E: belegter Visitor-Port, Tunnel verbindet trotzdem  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-connect.live.js
+### T12 — Live-E2E: belegter Visitor-Port, Tunnel verbindet trotzdem  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-connect.live.js, apps/desktop/e2e/test/lib/live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @da2e321c 2026-10-19T12:34:22+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T12.verdict.json)
 Änderung: Vor dem Login belegt der Spec den Visitor-Port eines geseedeten STCP-Tunnels auf `127.0.0.1` mit einem `node:net`-Listener (Port über `adminToken()`, `live.js:129-160`, und `GET /api/frp/tunnels`). Nach dem Login zeigt `invoke('tunnel_status')` für diesen Visitor einen anderen lokalen Port, `invoke('resolve_connection', …)` liefert ihn für die verknüpfte Verbindung, und eine TCP-Verbindung aus Node auf diesen Port wird angenommen (frpc lauscht). `scripts/` bleibt unberührt. Das Verify ist der Lint der Specs; der echte Beweis kommt aus dem Sammellauf (`desktop_e2e_connect_tunnel.sh`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
