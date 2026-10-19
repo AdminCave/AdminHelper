@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Agent-Checks: SMART-Exit-Bits, MegaRAID-Gerätenamen, Proxmox-Backup-Index, commandFailure-Timeout — Task-Ledger
-Status: geplant · Branch: feature/agent-smart-proxmox · Review: pro Task
+Status: aktiv · Branch: feature/agent-smart-proxmox · Review: pro Task
 Spec: Roadmap R-0491, R-0493, R-0494, R-0499
 Heavy: linux-full + windows — `apps/agent` (Monitoring-Collector: SMART, Proxmox, Dienste); `linux-full` läuft im Sammellauf (`/feature-build` §5). `windows` ist der CI-Job `agent-windows` (keine Windows-Box im Pool): `smart.go`, `plugins.go`, `services.go` und `scquery.go` haben kein Build-Tag, die neuen Tests aus T1 und T4 starten das Testbinary als Kindprozess mit festem Exit-Code und laufen dort nativ; `services_linux.go` (T4) trägt `//go:build linux`, `verify.sh agent` baut zusätzlich mit `GOOS=windows`. Kein `scenario`: weder FRP noch PKI noch Install. Echte MegaRAID- oder PVE-Hardware hat der Pool nicht; T1–T3 sind gegen Stubs, die smartmontools-Quelle (RELEASE_7_4) und die PVE-API-Doku belegt
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
