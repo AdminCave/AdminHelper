@@ -61,7 +61,9 @@ fn login_failure(status: reqwest::StatusCode, body: &str) -> AppError {
     ))
 }
 
-/// Signs in and keeps the session in `session`. The answer still carries the token pair:
+/// Signs in and keeps the session in `session`, together with `allow_self_signed`: every
+/// request and renewal of the session builds its client with that choice, so a change of
+/// the setting takes effect at the next sign-in. The answer still carries the token pair:
 /// the webview sends it along until those paths take it from the session too (R-0430).
 pub async fn login(
     session: &SessionState,
@@ -102,6 +104,7 @@ pub async fn login(
             user.token.clone(),
             user.refresh_token.clone(),
             user.username.clone(),
+            allow_self_signed,
         )
         .await;
 
@@ -175,37 +178,31 @@ pub async fn try_refresh(
 }
 
 /// Authenticated GET of `path` on the signed-in server, through
-/// [`crate::session::authed_send`]: the session's access token, at most one renewal on a
-/// 401. The answer comes with the user it was sent for; a caller that takes it over checks
-/// [`SessionState::ensure_signed_in`] first.
+/// [`crate::session::authed_send`]: the session's access token and certificate choice, at
+/// most one renewal on a 401. The answer comes with the user it was sent for; a caller that
+/// takes it over checks [`SessionState::ensure_signed_in`] first.
 pub async fn authenticated_get(
     session: &SessionState,
     path: &str,
-    allow_self_signed: bool,
 ) -> Result<(reqwest::Response, SignedIn), AppError> {
-    crate::session::authed_send(
-        session,
-        |server_url| {
-            let client = crate::http_client::build_client(server_url, allow_self_signed)?;
-            Ok(client.get(format!("{}{}", server_url.trim_end_matches('/'), path)))
-        },
-        |server_url, refresh| async move {
-            try_refresh(&server_url, &refresh, allow_self_signed).await
-        },
-    )
+    crate::session::authed_send(session, |server_url, allow_self_signed| {
+        let client = crate::http_client::build_client(server_url, allow_self_signed)?;
+        Ok(client.get(format!("{}{}", server_url.trim_end_matches('/'), path)))
+    })
     .await
 }
 
 /// Signs out. The session leaves the state first, so no request sends or renews its tokens
-/// any more; then the server blacklists them. That call is best effort (offline, server
-/// down, …): the session is gone either way.
-pub async fn logout(session: &SessionState, allow_self_signed: bool) -> Result<(), AppError> {
+/// any more; then the server blacklists them, reached with the session's certificate
+/// choice. That call is best effort (offline, server down, …): the session is gone either
+/// way.
+pub async fn logout(session: &SessionState) -> Result<(), AppError> {
     if let Some(ended) = session.take().await {
         let _ = notify_server_logout(
             &ended.server_url,
             &ended.access,
             &ended.refresh,
-            allow_self_signed,
+            ended.allow_self_signed,
         )
         .await;
     }
@@ -309,6 +306,7 @@ mod tests {
                 access.to_string(),
                 "refresh".to_string(),
                 "ops-admin".to_string(),
+                false,
             )
             .await;
         session
@@ -452,6 +450,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn login_keeps_the_certificate_choice_in_the_session() {
+        let _keyring = keyring_store::memory();
+        for choice in [false, true] {
+            let (server, _log) = serve(|request| {
+                if request.starts_with("POST /api/auth/login ") {
+                    reply(
+                        "200 OK",
+                        r#"{"access_token":"access-1","refresh_token":"refresh-1"}"#,
+                    )
+                } else {
+                    reply("200 OK", ME)
+                }
+            })
+            .await;
+            let session = SessionState::default();
+
+            login(&session, &server, "ops-admin", "pw", choice)
+                .await
+                .unwrap();
+
+            let now = session.current().await.expect("a session");
+            assert_eq!(now.allow_self_signed, choice);
+        }
+    }
+
+    #[tokio::test]
     async fn a_failed_login_keeps_no_session() {
         let (server, _log) = serve(|_| reply("401 Unauthorized", "")).await;
         let session = SessionState::default();
@@ -467,7 +491,7 @@ mod tests {
         let (server, log) = serve(|_| reply("200 OK", "")).await;
         let session = signed_in(&server, "access").await;
 
-        logout(&session, false).await.unwrap();
+        logout(&session).await.unwrap();
 
         assert!(session.current().await.is_none());
         let requests = log.lock().unwrap().clone();
@@ -486,7 +510,7 @@ mod tests {
         let (_reserved, port) = crate::test_tls::refused_port();
         let session = signed_in(&format!("http://127.0.0.1:{port}"), "access").await;
 
-        logout(&session, false).await.unwrap();
+        logout(&session).await.unwrap();
 
         assert!(session.current().await.is_none());
     }
@@ -515,7 +539,7 @@ mod tests {
     async fn authenticated_get_sends_nothing_without_a_session() {
         let session = SessionState::default();
 
-        let result = authenticated_get(&session, "/api/frp/tunnels", false).await;
+        let result = authenticated_get(&session, "/api/frp/tunnels").await;
 
         let message = result.err().map(|e| e.to_string()).unwrap_or_default();
         assert!(message.starts_with("Keine aktive Sitzung"), "{message}");
@@ -526,7 +550,7 @@ mod tests {
         let (server, log) = serve(|_| reply("200 OK", "")).await;
         let session = signed_in(&server, "current").await;
 
-        let (response, user) = authenticated_get(&session, "/api/frp/tunnels", false)
+        let (response, user) = authenticated_get(&session, "/api/frp/tunnels")
             .await
             .unwrap();
 
@@ -548,7 +572,7 @@ mod tests {
 
         // Behind the session's URL, a path that starts with `@` names another authority.
         let path = format!("@{}/api/frp/tunnels", foreign.trim_start_matches("http://"));
-        let result = authenticated_get(&session, &path, false).await;
+        let result = authenticated_get(&session, &path).await;
 
         let message = result.err().map(|e| e.to_string()).unwrap_or_default();
         assert!(message.contains("not the signed-in server"), "{message}");
@@ -570,7 +594,7 @@ mod tests {
         .await;
         let session = signed_in(&server, "expired").await;
 
-        let (response, user) = authenticated_get(&session, "/api/frp/tunnels", false)
+        let (response, user) = authenticated_get(&session, "/api/frp/tunnels")
             .await
             .unwrap();
 
@@ -624,6 +648,7 @@ mod tests {
                 "next".to_string(),
                 "next-refresh".to_string(),
                 "ops-admin".to_string(),
+                false,
             ));
             assert!(
                 tokio::time::timeout(Duration::from_millis(100), sign_in.as_mut())
@@ -639,10 +664,8 @@ mod tests {
             retry
         };
         let ((response, user), retry) = tokio::time::timeout(Duration::from_secs(10), async {
-            let (fetched, retry) = tokio::join!(
-                authenticated_get(&session, "/api/frp/tunnels", false),
-                serve
-            );
+            let (fetched, retry) =
+                tokio::join!(authenticated_get(&session, "/api/frp/tunnels"), serve);
             (fetched.unwrap(), retry)
         })
         .await

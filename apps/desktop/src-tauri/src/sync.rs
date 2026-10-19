@@ -62,9 +62,8 @@ fn parse_launchable_connections(raw: Vec<serde_json::Value>) -> Vec<Connection> 
 pub async fn fetch_connections_jwt(
     app: tauri::AppHandle,
     session: &SessionState,
-    allow_self_signed: bool,
 ) -> Result<Vec<Connection>, AppError> {
-    let connections = fetch_server_connections(session, allow_self_signed).await?;
+    let connections = fetch_server_connections(session).await?;
     write_connections(&app, &connections)?;
     Ok(connections)
 }
@@ -72,12 +71,8 @@ pub async fn fetch_connections_jwt(
 /// The launchable connections of the signed-in user. A list that arrives after its user
 /// signed out, or after someone else signed in, is refused: it must not replace the
 /// connections of the session that is there now.
-async fn fetch_server_connections(
-    session: &SessionState,
-    allow_self_signed: bool,
-) -> Result<Vec<Connection>, AppError> {
-    let (response, user) =
-        crate::auth::authenticated_get(session, "/api/connections", allow_self_signed).await?;
+async fn fetch_server_connections(session: &SessionState) -> Result<Vec<Connection>, AppError> {
+    let (response, user) = crate::auth::authenticated_get(session, "/api/connections").await?;
     let raw: Vec<serde_json::Value> = response.error_for_status()?.json().await?;
     session.ensure_signed_in(&user).await?;
     Ok(sanitize_synced_connections(parse_launchable_connections(
@@ -191,6 +186,7 @@ mod tests {
                     "access".to_string(),
                     "refresh".to_string(),
                     "ops-admin".to_string(),
+                    false,
                 )
                 .await;
 
@@ -213,6 +209,7 @@ mod tests {
                                 "next".to_string(),
                                 "next-refresh".to_string(),
                                 user.to_string(),
+                                false,
                             )
                             .await
                     }
@@ -226,7 +223,7 @@ mod tests {
                 tcp.write_all(reply.as_bytes()).await.unwrap();
                 let _ = tcp.shutdown().await;
             };
-            let (fetched, ()) = tokio::join!(fetch_server_connections(&session, false), serve);
+            let (fetched, ()) = tokio::join!(fetch_server_connections(&session), serve);
 
             match next {
                 // The same user signed in again: the connections are still theirs.

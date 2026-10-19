@@ -26,7 +26,9 @@ use crate::tunnel;
 
 /// Resolve the "allow self-signed certs" flag: an explicit per-call override, else
 /// the persisted setting (default false on a missing/corrupt settings.json). The
-/// single source so the default semantics can't drift across the many commands.
+/// single source so the default semantics can't drift across the commands. Only for
+/// the calls without a session (login, enrollment with a one-time token, sync from a
+/// URL); every call through the session takes the choice its sign-in made.
 fn self_signed_setting(app: &tauri::AppHandle, explicit: Option<bool>) -> bool {
     explicit.unwrap_or_else(|| {
         storage::load_settings(app)
@@ -131,14 +133,11 @@ pub async fn enroll_with_token(
 /// browser's cert store. Does not affect the desktop's own enrolled identity.
 #[tauri::command]
 pub async fn export_browser_p12(
-    app: tauri::AppHandle,
     session: State<'_, SessionState>,
     password: String,
     dest_path: String,
-    allow_self_signed: Option<bool>,
 ) -> Result<String, AppError> {
-    let self_signed = self_signed_setting(&app, allow_self_signed);
-    let der = enrollment::export_browser_p12(session.inner(), &password, self_signed).await?;
+    let der = enrollment::export_browser_p12(session.inner(), &password).await?;
     storage::write_browser_p12(&dest_path, &der)
 }
 
@@ -146,15 +145,12 @@ pub async fn export_browser_p12(
 /// Works around WebView TLS restrictions for self-signed certs.
 #[tauri::command]
 pub async fn api_proxy(
-    app: tauri::AppHandle,
     session: State<'_, SessionState>,
     method: String,
     path: String,
     body: Option<String>,
-    allow_self_signed: Option<bool>,
 ) -> Result<serde_json::Value, AppError> {
-    let self_signed = self_signed_setting(&app, allow_self_signed);
-    proxy::forward(session.inner(), &method, &path, body, self_signed).await
+    proxy::forward(session.inner(), &method, &path, body).await
 }
 
 #[tauri::command]
@@ -298,12 +294,8 @@ pub async fn login(
 }
 
 #[tauri::command]
-pub async fn logout(
-    app: tauri::AppHandle,
-    session: State<'_, SessionState>,
-) -> Result<(), AppError> {
-    let allow_self_signed = self_signed_setting(&app, None);
-    auth::logout(session.inner(), allow_self_signed).await
+pub async fn logout(session: State<'_, SessionState>) -> Result<(), AppError> {
+    auth::logout(session.inner()).await
 }
 
 #[tauri::command]
@@ -311,8 +303,7 @@ pub async fn fetch_connections_jwt(
     app: tauri::AppHandle,
     session: State<'_, SessionState>,
 ) -> Result<Vec<Connection>, AppError> {
-    let allow_self_signed = self_signed_setting(&app, None);
-    sync::fetch_connections_jwt(app, session.inner(), allow_self_signed).await
+    sync::fetch_connections_jwt(app, session.inner()).await
 }
 
 /// The reconciliation of `refresh_tunnel`, reporting only the status.
@@ -334,16 +325,8 @@ pub async fn refresh_tunnel(
     lock: State<'_, frpc::RefreshLock>,
     session: State<'_, SessionState>,
 ) -> Result<TunnelRefresh, AppError> {
-    let allow_self_signed = self_signed_setting(&app, None);
     let frpc_state = state.inner().clone();
-    frpc::refresh_tunnel(
-        app,
-        frpc_state,
-        lock.inner(),
-        session.inner(),
-        allow_self_signed,
-    )
-    .await
+    frpc::refresh_tunnel(app, frpc_state, lock.inner(), session.inner()).await
 }
 
 #[tauri::command]
@@ -362,9 +345,8 @@ pub async fn start_notification_stream(
     state: State<'_, crate::notifications::StreamState>,
     session: State<'_, SessionState>,
 ) -> Result<(), AppError> {
-    let allow_self_signed = self_signed_setting(&app, None);
     let stream_state = state.inner().clone();
-    crate::notifications::start(app, stream_state, session.inner(), allow_self_signed).await
+    crate::notifications::start(app, stream_state, session.inner()).await
 }
 
 #[tauri::command]
@@ -374,11 +356,9 @@ pub fn stop_notification_stream(state: State<'_, crate::notifications::StreamSta
 
 #[tauri::command]
 pub async fn fetch_tunnels(
-    app: tauri::AppHandle,
     session: State<'_, SessionState>,
 ) -> Result<Vec<tunnel::TunnelMapping>, AppError> {
-    let allow_self_signed = self_signed_setting(&app, None);
-    tunnel::fetch_tunnels(session.inner(), allow_self_signed).await
+    tunnel::fetch_tunnels(session.inner()).await
 }
 
 #[tauri::command]

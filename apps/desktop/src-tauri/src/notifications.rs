@@ -19,7 +19,6 @@ use futures_util::StreamExt;
 use tauri::{Emitter, Manager};
 use tokio::time::{sleep, timeout, Duration, Instant};
 
-use crate::auth;
 use crate::error::AppError;
 use crate::session::{no_session, SessionState, SignedIn};
 
@@ -55,16 +54,11 @@ pub async fn start(
     app: tauri::AppHandle,
     state: StreamState,
     session: &SessionState,
-    allow_self_signed: bool,
 ) -> Result<(), AppError> {
-    let now = session.current().await.ok_or_else(no_session)?;
-    let who = SignedIn {
-        server_url: now.server_url,
-        username: now.username,
-    };
+    let who = session.current().await.ok_or_else(no_session)?.signed_in();
     let my_epoch = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
-        run_loop(app, state, my_epoch, who, allow_self_signed).await;
+        run_loop(app, state, my_epoch, who).await;
     });
     Ok(())
 }
@@ -79,6 +73,8 @@ enum StreamEnd {
     Superseded,
     /// The server refuses the session: a 401 even after the renewal, or a 403.
     Refused,
+    /// The answer came for another session than the one the stream was started for.
+    SessionChanged,
 }
 
 /// What the stream does once a connection ended.
@@ -98,7 +94,8 @@ enum Next {
 fn next_step(end: &Result<StreamEnd, AppError>, signed_in: bool) -> Next {
     let over = matches!(
         end,
-        Ok(StreamEnd::Superseded | StreamEnd::Refused) | Err(AppError::SessionExpired)
+        Ok(StreamEnd::Superseded | StreamEnd::Refused | StreamEnd::SessionChanged)
+            | Err(AppError::SessionExpired)
     );
     if over || !signed_in {
         Next::Stop
@@ -107,13 +104,7 @@ fn next_step(end: &Result<StreamEnd, AppError>, signed_in: bool) -> Next {
     }
 }
 
-async fn run_loop(
-    app: tauri::AppHandle,
-    state: StreamState,
-    my_epoch: u64,
-    who: SignedIn,
-    self_signed: bool,
-) {
+async fn run_loop(app: tauri::AppHandle, state: StreamState, my_epoch: u64, who: SignedIn) {
     let session = app.state::<SessionState>();
     let mut backoff = BASE_BACKOFF;
     // Checked again right before each connection: a sign-in of someone else during the
@@ -122,7 +113,7 @@ async fn run_loop(
         && session.ensure_signed_in(&who).await.is_ok()
     {
         let connected_at = Instant::now();
-        let end = connect_and_read(session.inner(), &state, my_epoch, self_signed, || {
+        let end = connect_and_read(session.inner(), &state, my_epoch, &who, || {
             let _ = app.emit("notification", ());
         })
         .await;
@@ -135,7 +126,7 @@ async fn run_loop(
                     backoff = BASE_BACKOFF;
                 }
             }
-            Ok(StreamEnd::Superseded | StreamEnd::Refused) => {}
+            Ok(StreamEnd::Superseded | StreamEnd::Refused | StreamEnd::SessionChanged) => {}
             Err(e) => log::warn!("[notif-stream] disconnected: {e}"),
         }
         let signed_in = session.ensure_signed_in(&who).await.is_ok();
@@ -150,13 +141,13 @@ async fn run_loop(
     log::info!("[notif-stream] task exited");
 }
 
-/// The stream request on `server_url`, without a token: `authed_send` sets the session's
-/// when the request goes out.
+/// The stream request on `server_url`, with the session's certificate choice and without a
+/// token: `authed_send` sets the session's when the request goes out.
 fn stream_request(
     server_url: &str,
-    self_signed: bool,
+    allow_self_signed: bool,
 ) -> Result<reqwest::RequestBuilder, AppError> {
-    let client = crate::http_client::build_client(server_url, self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let url = format!(
         "{}/api/notifications/stream",
         server_url.trim_end_matches('/')
@@ -167,23 +158,22 @@ fn stream_request(
 /// One connection of the stream, through [`crate::session::authed_send`]: the token the
 /// session holds now, renewed once on a 401. It reads until the server closes, the
 /// connection drops or a newer `start`/`stop` takes over; `notify` hears every frame that
-/// asks the feed to reload.
+/// asks the feed to reload. An answer sent for another session than `who`, the one the
+/// stream was started for, is not read.
 async fn connect_and_read(
     session: &SessionState,
     state: &StreamState,
     my_epoch: u64,
-    self_signed: bool,
+    who: &SignedIn,
     notify: impl Fn(),
 ) -> Result<StreamEnd, AppError> {
-    let (resp, _) =
-        crate::session::authed_send(
-            session,
-            |server_url| stream_request(server_url, self_signed),
-            |server_url, refresh| async move {
-                auth::try_refresh(&server_url, &refresh, self_signed).await
-            },
-        )
-        .await?;
+    let (resp, answered_for) = crate::session::authed_send(session, stream_request).await?;
+    // Someone else signed in, or on another server, between the check in `run_loop` and the
+    // request: the stream belongs to the session it was started for, not to this one.
+    if answered_for.server_url != who.server_url || answered_for.username != who.username {
+        log::info!("[notif-stream] the session changed, the stream stops");
+        return Ok(StreamEnd::SessionChanged);
+    }
 
     let code = resp.status().as_u16();
     if code == 401 || code == 403 {
@@ -398,6 +388,7 @@ mod tests {
                 "expired".to_string(),
                 "refresh".to_string(),
                 "ops-admin".to_string(),
+                false,
             )
             .await;
         session
@@ -413,13 +404,19 @@ mod tests {
         count
     }
 
-    /// One connection of the stream, counting the frames it hands on.
+    /// Who is signed in on `session` now, the one a stream started now is for.
+    async fn started_for(session: &SessionState) -> SignedIn {
+        session.current().await.expect("a session").signed_in()
+    }
+
+    /// One connection of the stream started for `who`, counting the frames it hands on.
     async fn connect_once(
         session: &SessionState,
+        who: &SignedIn,
         frames: &AtomicUsize,
     ) -> Result<StreamEnd, AppError> {
         let stream = new_stream_state();
-        connect_and_read(session, &stream, 0, false, || {
+        connect_and_read(session, &stream, 0, who, || {
             frames.fetch_add(1, Ordering::Relaxed);
         })
         .await
@@ -455,13 +452,14 @@ mod tests {
         })
         .await;
         let session = signed_in(&server).await;
+        let who = started_for(&session).await;
         let expired = expiries(&session);
         let frames = AtomicUsize::new(0);
 
         // The token of the sign-in has expired: the first connection renews it, and the one
         // after the stream dropped takes the new token from the session.
-        let first = connect_once(&session, &frames).await;
-        let second = connect_once(&session, &frames).await;
+        let first = connect_once(&session, &who, &frames).await;
+        let second = connect_once(&session, &who, &frames).await;
 
         assert!(matches!(first, Ok(StreamEnd::Closed)), "{first:?}");
         assert!(matches!(second, Ok(StreamEnd::Closed)), "{second:?}");
@@ -484,10 +482,11 @@ mod tests {
     async fn a_refused_renewal_ends_the_session_and_the_stream() {
         let (server, log) = serve(|_| reply("401 Unauthorized", "")).await;
         let session = signed_in(&server).await;
+        let who = started_for(&session).await;
         let expired = expiries(&session);
         let frames = AtomicUsize::new(0);
 
-        let end = connect_once(&session, &frames).await;
+        let end = connect_once(&session, &who, &frames).await;
 
         assert!(matches!(end, Err(AppError::SessionExpired)), "{end:?}");
         // The webview hears it the way every other request tells it (`session-expired`).
@@ -509,10 +508,11 @@ mod tests {
         })
         .await;
         let session = signed_in(&server).await;
+        let who = started_for(&session).await;
         let expired = expiries(&session);
         let frames = AtomicUsize::new(0);
 
-        let end = connect_once(&session, &frames).await;
+        let end = connect_once(&session, &who, &frames).await;
 
         assert!(matches!(end, Ok(StreamEnd::Refused)), "{end:?}");
         assert_eq!(next_step(&end, true), Next::Stop);
@@ -525,14 +525,15 @@ mod tests {
     async fn after_a_sign_out_the_stream_sends_no_token() {
         let (server, log) = serve(|_| reply("200 OK", FRAME)).await;
         let session = signed_in(&server).await;
+        let who = started_for(&session).await;
         let expired = expiries(&session);
         let frames = AtomicUsize::new(0);
-        let before = connect_once(&session, &frames).await;
+        let before = connect_once(&session, &who, &frames).await;
         assert!(matches!(before, Ok(StreamEnd::Closed)), "{before:?}");
 
         // A sign-out takes the session first (`auth::logout`).
         session.take().await;
-        let after = connect_once(&session, &frames).await;
+        let after = connect_once(&session, &who, &frames).await;
 
         let message = after.as_ref().err().map(|e| e.to_string());
         assert_eq!(
@@ -543,6 +544,40 @@ mod tests {
         assert_eq!(request_lines(&log), [STREAM]);
         // A sign-out is no expiry.
         assert_eq!(expired.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn an_answer_for_another_session_ends_the_stream_unread() {
+        let (server, log) = serve(|_| reply("200 OK", FRAME)).await;
+        let (elsewhere, elsewhere_log) = serve(|_| reply("200 OK", FRAME)).await;
+        // After the stream started, someone else signed in, or the same user on another server.
+        for (url, user) in [(&server, "someone-else"), (&elsewhere, "ops-admin")] {
+            let session = signed_in(&server).await;
+            let who = started_for(&session).await;
+            session
+                .set(
+                    url.clone(),
+                    "theirs".to_string(),
+                    "their-refresh".to_string(),
+                    user.to_string(),
+                    false,
+                )
+                .await;
+            let frames = AtomicUsize::new(0);
+
+            let end = connect_once(&session, &who, &frames).await;
+
+            assert!(
+                matches!(end, Ok(StreamEnd::SessionChanged)),
+                "{url} {user}: {end:?}"
+            );
+            assert_eq!(next_step(&end, true), Next::Stop, "{url} {user}");
+            // Nothing of the other session's stream reaches the bell.
+            assert_eq!(frames.load(Ordering::Relaxed), 0, "{url} {user}");
+        }
+        // Each request went out once, for the session signed in then.
+        assert_eq!(tokens(&log), [Some("Bearer theirs".to_string())]);
+        assert_eq!(tokens(&elsewhere_log), [Some("Bearer theirs".to_string())]);
     }
 
     #[test]
@@ -561,6 +596,8 @@ mod tests {
         // The server refuses the session even after a renewal, or a newer start took over.
         assert_eq!(next_step(&Ok(StreamEnd::Refused), true), Next::Stop);
         assert_eq!(next_step(&Ok(StreamEnd::Superseded), true), Next::Stop);
+        // The answer came for another session than the one the stream was started for.
+        assert_eq!(next_step(&Ok(StreamEnd::SessionChanged), true), Next::Stop);
     }
 
     #[test]

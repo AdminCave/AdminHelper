@@ -50,8 +50,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- notifications::
 Doku: keine (intern; Doku mit T5)
 Abhängt von: T3
 
-### T14 — Die Zertifikatswahl gehört zur Session  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/proxy.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/notifications.rs, apps/desktop/src-tauri/src/enrollment.rs
+### T14 — Die Zertifikatswahl gehört zur Session  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/proxy.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/notifications.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/sync.rs, apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @d6d0b77f 2026-10-19T09:09:19+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T14.verdict.json)
 Änderung: `login` hält die Wahl „selbstsignierte Zertifikate erlauben“ in der `Session` fest; alle Wege über die Session (`authed_send`-Aufrufer, die Erneuerung über `try_refresh`, SSE, Token-Ausgabe) bauen ihren Client mit diesem Wert statt mit einem Wert je Aufruf aus der Webview. Die Commands dieser Wege nehmen den Parameter nicht mehr (die UI schickt ihn bis T5 weiter, Tauri ignoriert ihn). Eine Änderung der Einstellung wirkt ab der nächsten Anmeldung. Eingeschriebene Geräte (mTLS mit gepinnter CA) bleiben unverändert. Tests: Session mit `false` → die Erneuerung nimmt den Client ohne TOFU, auch wenn ein Aufruf `true` wollte; Session mit `true` → TOFU wie heute. Dazu (Prüfer-Hinweis zu T4): Der SSE-Stream vergleicht das `SignedIn`, das `authed_send` zurückgibt, mit der Session, mit der er startete, und endet bei Abweichung; Test dazu.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- session::
 Doku: keine (intern; Doku mit T5)

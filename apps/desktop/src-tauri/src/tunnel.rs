@@ -34,12 +34,8 @@ pub struct ResolvedConnection {
 }
 
 /// Fetch all tunnels from the server.
-pub async fn fetch_tunnels(
-    session: &SessionState,
-    allow_self_signed: bool,
-) -> Result<Vec<TunnelMapping>, AppError> {
-    let (response, _) =
-        auth::authenticated_get(session, "/api/frp/tunnels", allow_self_signed).await?;
+pub async fn fetch_tunnels(session: &SessionState) -> Result<Vec<TunnelMapping>, AppError> {
+    let (response, _) = auth::authenticated_get(session, "/api/frp/tunnels").await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(

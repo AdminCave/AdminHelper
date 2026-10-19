@@ -178,10 +178,9 @@ struct VisitorBundle {
 /// so frpc never takes over the tunnels of a session that is gone.
 async fn fetch_visitor_bundle(
     session: &SessionState,
-    allow_self_signed: bool,
 ) -> Result<(Option<VisitorBundle>, String), AppError> {
     let path = "/api/frp/generate/visitor-bundle";
-    let (response, user) = auth::authenticated_get(session, path, allow_self_signed).await?;
+    let (response, user) = auth::authenticated_get(session, path).await?;
     let bundle = bundle_from(response).await?;
     session.ensure_signed_in(&user).await?;
     Ok((bundle, user.username))
@@ -866,11 +865,10 @@ pub async fn refresh_tunnel(
     state: FrpcState,
     lock: &RefreshLock,
     session: &SessionState,
-    allow_self_signed: bool,
 ) -> Result<TunnelRefresh, AppError> {
     let _serial = lock.0.lock().await;
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
-    let (bundle, username) = fetch_visitor_bundle(session, allow_self_signed).await?;
+    let (bundle, username) = fetch_visitor_bundle(session).await?;
     let sidecar = AppSidecar {
         app: &app,
         data_dir: app_data_dir(&app)?,
@@ -2095,6 +2093,7 @@ method = "token"
                     "access".to_string(),
                     "refresh".to_string(),
                     "ops-admin".to_string(),
+                    false,
                 )
                 .await;
 
@@ -2117,6 +2116,7 @@ method = "token"
                                 "next".to_string(),
                                 "next-refresh".to_string(),
                                 user.to_string(),
+                                false,
                             )
                             .await
                     }
@@ -2128,7 +2128,7 @@ method = "token"
                     .unwrap();
                 let _ = tcp.shutdown().await;
             };
-            let (fetched, ()) = tokio::join!(fetch_visitor_bundle(&session, false), serve);
+            let (fetched, ()) = tokio::join!(fetch_visitor_bundle(&session), serve);
 
             match next {
                 // The same user signed in again: the tunnels are still theirs.

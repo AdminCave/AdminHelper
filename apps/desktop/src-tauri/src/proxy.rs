@@ -33,39 +33,32 @@ fn build_request(
 }
 
 /// Forward a JSON API call to the signed-in server, through
-/// [`crate::session::authed_send`]: the session's access token, at most one renewal
-/// on a 401. Works around WebView TLS restrictions for self-signed certs by going
-/// through the shared reqwest client factory.
+/// [`crate::session::authed_send`]: the session's access token and certificate choice, at
+/// most one renewal on a 401. Works around WebView TLS restrictions for self-signed certs
+/// by going through the shared reqwest client factory.
 pub async fn forward(
     session: &SessionState,
     method: &str,
     path: &str,
     body: Option<String>,
-    allow_self_signed: bool,
 ) -> Result<serde_json::Value, AppError> {
-    let (response, _) = crate::session::authed_send(
-        session,
-        |server_url| {
-            // Token-destination pin: `path` comes from the webview, and one that
-            // rewrites the URL authority (leading `@`, `\`, `://`) would carry the
-            // session JWT to a foreign host; TOFU would happily pin the attacker's
-            // cert on first use for it. Refused here before anything is built;
-            // `authed_send` pins the request as built as well.
-            crate::validation::validate_proxy_path(server_url, path, server_url)?;
-            let client = crate::http_client::build_client(server_url, allow_self_signed)?;
-            let url = format!("{}{}", server_url.trim_end_matches('/'), path);
-            let req = build_request(&client, method, &url)?;
-            Ok(match &body {
-                Some(b) => req
-                    .header("Content-Type", "application/json")
-                    .body(b.clone()),
-                None => req,
-            })
-        },
-        |server_url, refresh| async move {
-            crate::auth::try_refresh(&server_url, &refresh, allow_self_signed).await
-        },
-    )
+    let (response, _) = crate::session::authed_send(session, |server_url, allow_self_signed| {
+        // Token-destination pin: `path` comes from the webview, and one that
+        // rewrites the URL authority (leading `@`, `\`, `://`) would carry the
+        // session JWT to a foreign host; TOFU would happily pin the attacker's
+        // cert on first use for it. Refused here before anything is built;
+        // `authed_send` pins the request as built as well.
+        crate::validation::validate_proxy_path(server_url, path, server_url)?;
+        let client = crate::http_client::build_client(server_url, allow_self_signed)?;
+        let url = format!("{}{}", server_url.trim_end_matches('/'), path);
+        let req = build_request(&client, method, &url)?;
+        Ok(match &body {
+            Some(b) => req
+                .header("Content-Type", "application/json")
+                .body(b.clone()),
+            None => req,
+        })
+    })
     .await?;
     let status = response.status();
 
@@ -205,6 +198,7 @@ mod tests {
                 "expired".to_string(),
                 "refresh".to_string(),
                 "ops-admin".to_string(),
+                false,
             )
             .await;
         session
@@ -240,7 +234,6 @@ mod tests {
             "POST",
             "/api/servers",
             Some(r#"{"name":"web-01"}"#.to_string()),
-            false,
         )
         .await
         .unwrap();
@@ -276,7 +269,7 @@ mod tests {
         let session = signed_in(&server).await;
         let expired = expiries(&session);
 
-        let result = forward(&session, "GET", "/api/servers", None, false).await;
+        let result = forward(&session, "GET", "/api/servers", None).await;
 
         assert!(
             matches!(result, Err(AppError::SessionExpired)),
@@ -308,7 +301,7 @@ mod tests {
             format!("/x://{foreign_host}/api/servers"),
             "api/servers".to_string(),
         ] {
-            let result = forward(&session, "GET", &path, None, false).await;
+            let result = forward(&session, "GET", &path, None).await;
 
             assert!(
                 matches!(result, Err(AppError::Validation(_))),
@@ -326,7 +319,7 @@ mod tests {
         let session = SessionState::default();
         let expired = expiries(&session);
 
-        let result = forward(&session, "GET", "/api/servers", None, false).await;
+        let result = forward(&session, "GET", "/api/servers", None).await;
 
         let message = result.err().map(|e| e.to_string()).unwrap_or_default();
         assert_eq!(message, "Keine aktive Sitzung — Anfrage abgelehnt");

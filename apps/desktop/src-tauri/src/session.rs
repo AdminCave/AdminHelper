@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The server session of this process, in memory only: server URL, user and tokens.
-//! Authenticated requests go through [`authed_send`], the one place that renews them.
+//! The server session of this process, in memory only: server URL, user, tokens and the
+//! certificate choice of the sign-in. Authenticated requests go through [`authed_send`], the
+//! one place that renews them.
 
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,23 +28,31 @@ pub struct Session {
     pub access: String,
     pub refresh: String,
     pub username: String,
+    /// Whether the sign-in allowed a self-signed server certificate (pinned on first use).
+    /// Every request and renewal of the session builds its client with it, never with a
+    /// value of its own; a change of the setting takes effect at the next sign-in. An
+    /// enrolled device uses its pinned CA either way (`http_client::build_client`).
+    pub allow_self_signed: bool,
     pub generation: u64,
 }
 
 impl Session {
     /// Who is signed in where, without the tokens.
-    fn signed_in(&self) -> SignedIn {
+    pub fn signed_in(&self) -> SignedIn {
         SignedIn {
             server_url: self.server_url.clone(),
             username: self.username.clone(),
+            allow_self_signed: self.allow_self_signed,
         }
     }
 }
 
-/// Who an answer was sent for: the user and the server, not the tokens.
+/// Who an answer was sent for: the user, the server and the certificate choice of that
+/// sign-in, not the tokens.
 pub struct SignedIn {
     pub server_url: String,
     pub username: String,
+    pub allow_self_signed: bool,
 }
 
 /// The tokens a renewal hands back.
@@ -67,13 +76,21 @@ pub struct SessionState {
 
 impl SessionState {
     /// Starts a session, replacing any other.
-    pub async fn set(&self, server_url: String, access: String, refresh: String, username: String) {
+    pub async fn set(
+        &self,
+        server_url: String,
+        access: String,
+        refresh: String,
+        username: String,
+        allow_self_signed: bool,
+    ) {
         let mut session = self.session.lock().await;
         *session = Some(Session {
             server_url,
             access,
             refresh,
             username,
+            allow_self_signed,
             generation: self.next_generation(),
         });
     }
@@ -120,32 +137,38 @@ pub fn no_session() -> AppError {
     AppError::Validation("Keine aktive Sitzung — Anfrage abgelehnt".to_string())
 }
 
-/// Sends the request `build` makes for the session's server with the session's access
-/// token, and only if the request as built goes to that server. A 401 renews the session at
-/// most once, through `renew` (server URL, refresh token), and single-flight: under the lock
-/// only a request that still sees the generation it went out with renews, one behind it
-/// finds the new generation and only repeats. The server rotates the refresh token, so a
-/// second renewal with the old one would count as reuse and revoke the whole session. A
-/// renewal that fails or outlasts [`RENEWAL_DEADLINE`] ends the session with
-/// [`AppError::SessionExpired`] and tells the listener of [`SessionState::on_expiry`]. Without
-/// a session nothing is sent.
+/// Sends the request `build` makes for the session's server (URL and certificate choice of
+/// the sign-in) with the session's access token, and only if the request as built goes to
+/// that server. A 401 renews the session at most once, through [`crate::auth::try_refresh`]
+/// with the session's certificate choice, and single-flight: under the lock only a request
+/// that still sees the generation it went out with renews, one behind it finds the new
+/// generation and only repeats. The server rotates the refresh token, so a second renewal
+/// with the old one would count as reuse and revoke the whole session. A renewal that fails
+/// or outlasts [`RENEWAL_DEADLINE`] ends the session with [`AppError::SessionExpired`] and
+/// tells the listener of [`SessionState::on_expiry`]. Without a session nothing is sent.
 ///
 /// The answer comes with the user it was sent for; a caller that takes it over checks
 /// [`SessionState::ensure_signed_in`] first.
-pub async fn authed_send<B, R, F>(
+pub async fn authed_send<B>(
     state: &SessionState,
     build: B,
-    renew: R,
 ) -> Result<(reqwest::Response, SignedIn), AppError>
 where
-    B: Fn(&str) -> Result<reqwest::RequestBuilder, AppError>,
-    R: FnOnce(String, String) -> F,
-    F: Future<Output = Result<Renewed, AppError>>,
+    B: Fn(&str, bool) -> Result<reqwest::RequestBuilder, AppError>,
 {
-    send_renewing(state, build, renew, RENEWAL_DEADLINE).await
+    send_renewing(
+        state,
+        build,
+        |server_url, refresh, allow_self_signed| async move {
+            crate::auth::try_refresh(&server_url, &refresh, allow_self_signed).await
+        },
+        RENEWAL_DEADLINE,
+    )
+    .await
 }
 
-/// [`authed_send`] with the renewal deadline as a parameter.
+/// [`authed_send`] with the renewal (server URL, refresh token, certificate choice) and its
+/// deadline as parameters.
 async fn send_renewing<B, R, F>(
     state: &SessionState,
     build: B,
@@ -153,8 +176,8 @@ async fn send_renewing<B, R, F>(
     deadline: Duration,
 ) -> Result<(reqwest::Response, SignedIn), AppError>
 where
-    B: Fn(&str) -> Result<reqwest::RequestBuilder, AppError>,
-    R: FnOnce(String, String) -> F,
+    B: Fn(&str, bool) -> Result<reqwest::RequestBuilder, AppError>,
+    R: FnOnce(String, String, bool) -> F,
     F: Future<Output = Result<Renewed, AppError>>,
 {
     let seen = state.current().await.ok_or_else(no_session)?;
@@ -172,7 +195,11 @@ where
         return Ok((response, seen.signed_in()));
     };
     if current.generation == seen.generation {
-        let renewal = renew(current.server_url.clone(), current.refresh.clone());
+        let renewal = renew(
+            current.server_url.clone(),
+            current.refresh.clone(),
+            current.allow_self_signed,
+        );
         // Past the deadline the session ends as on a refusal: the server may have rotated the
         // refresh token by then, so the one held here could not renew again anyway.
         let renewed = tokio::time::timeout(deadline, renewal)
@@ -212,9 +239,9 @@ where
 /// the token must reach no origin but the session's.
 async fn send<B>(build: &B, session: &Session) -> Result<reqwest::Response, AppError>
 where
-    B: Fn(&str) -> Result<reqwest::RequestBuilder, AppError>,
+    B: Fn(&str, bool) -> Result<reqwest::RequestBuilder, AppError>,
 {
-    let (client, request) = build(&session.server_url)?.build_split();
+    let (client, request) = build(&session.server_url, session.allow_self_signed)?.build_split();
     let request = request?;
     if !same_server_destination(request.url().as_str(), &session.server_url) {
         return Err(AppError::Validation(
@@ -295,7 +322,10 @@ mod tests {
     }
 
     /// A GET on the session's server.
-    fn get(server_url: &str) -> Result<reqwest::RequestBuilder, AppError> {
+    fn get(
+        server_url: &str,
+        _allow_self_signed: bool,
+    ) -> Result<reqwest::RequestBuilder, AppError> {
         let client = crate::http_client::with_timeouts(reqwest::Client::builder()).build()?;
         Ok(client.get(format!("{server_url}/api/servers")))
     }
@@ -308,6 +338,7 @@ mod tests {
                 "expired".to_string(),
                 "refresh".to_string(),
                 "ops-admin".to_string(),
+                false,
             )
             .await;
         state
@@ -366,16 +397,18 @@ mod tests {
 
         let (first, second) = tokio::time::timeout(Duration::from_secs(10), async {
             tokio::join!(
-                authed_send(&state, get, |url, refresh| granted(
-                    Arc::clone(&renewals),
-                    url,
-                    refresh
-                )),
-                authed_send(&state, get, |url, refresh| granted(
-                    Arc::clone(&renewals),
-                    url,
-                    refresh
-                )),
+                send_renewing(
+                    &state,
+                    get,
+                    |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+                    RENEWAL_DEADLINE
+                ),
+                send_renewing(
+                    &state,
+                    get,
+                    |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+                    RENEWAL_DEADLINE
+                ),
             )
         })
         .await
@@ -417,9 +450,12 @@ mod tests {
         let state = signed_in(&server).await;
         let renewals = Renewals::default();
 
-        let result = authed_send(&state, get, |url, refresh| {
-            refused(Arc::clone(&renewals), url, refresh)
-        })
+        let result = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| refused(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
         .await;
 
         assert!(
@@ -444,7 +480,7 @@ mod tests {
             send_renewing(
                 &state,
                 get,
-                |_, _| std::future::pending::<Result<Renewed, AppError>>(),
+                |_, _, _| std::future::pending::<Result<Renewed, AppError>>(),
                 Duration::from_millis(50),
             ),
         )
@@ -468,10 +504,11 @@ mod tests {
         let renewals = Renewals::default();
 
         // The request as built goes elsewhere than the session's server.
-        let result = authed_send(
+        let result = send_renewing(
             &state,
-            |_: &str| get(&foreign),
-            |url, refresh| granted(Arc::clone(&renewals), url, refresh),
+            |_: &str, allow_self_signed| get(&foreign, allow_self_signed),
+            |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
         )
         .await;
 
@@ -489,9 +526,12 @@ mod tests {
         let state = signed_in(&server).await;
         let renewals = Renewals::default();
 
-        let (response, _) = authed_send(&state, get, |url, refresh| {
-            granted(Arc::clone(&renewals), url, refresh)
-        })
+        let (response, _) = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
         .await
         .unwrap();
 
@@ -508,13 +548,14 @@ mod tests {
         let builds = AtomicUsize::new(0);
         let renewals = Renewals::default();
 
-        let result = authed_send(
+        let result = send_renewing(
             &state,
-            |url: &str| {
+            |url: &str, allow_self_signed| {
                 builds.fetch_add(1, Ordering::Relaxed);
-                get(url)
+                get(url, allow_self_signed)
             },
-            |url, refresh| granted(Arc::clone(&renewals), url, refresh),
+            |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
         )
         .await;
 
@@ -565,6 +606,7 @@ mod tests {
                             "next".to_string(),
                             "next-refresh".to_string(),
                             user.to_string(),
+                            false,
                         )
                         .await;
                     "401 Unauthorized"
@@ -577,13 +619,17 @@ mod tests {
                     "expired".to_string(),
                     "refresh".to_string(),
                     "ops-admin".to_string(),
+                    false,
                 )
                 .await;
             let renewals = Renewals::default();
 
-            let (response, answered_for) = authed_send(&state, get, |url, refresh| {
-                granted(Arc::clone(&renewals), url, refresh)
-            })
+            let (response, answered_for) = send_renewing(
+                &state,
+                get,
+                |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+                RENEWAL_DEADLINE,
+            )
             .await
             .unwrap();
 
@@ -626,5 +672,229 @@ mod tests {
                 _ => assert_eq!(token.as_deref(), Some("next"), "{change:?}"),
             }
         }
+    }
+
+    #[tokio::test]
+    async fn the_request_and_its_renewal_take_the_certificate_choice_of_the_sign_in() {
+        for choice in [false, true] {
+            let (server, log) = serve(|token| async move {
+                if token == "Bearer renewed" {
+                    "200 OK"
+                } else {
+                    "401 Unauthorized"
+                }
+            })
+            .await;
+            let state = SessionState::default();
+            state
+                .set(
+                    server.clone(),
+                    "expired".to_string(),
+                    "refresh".to_string(),
+                    "ops-admin".to_string(),
+                    choice,
+                )
+                .await;
+            let built = StdMutex::new(Vec::new());
+            let renewed = StdMutex::new(Vec::new());
+
+            let (response, answered_for) = send_renewing(
+                &state,
+                |url: &str, allow_self_signed| {
+                    built.lock().unwrap().push(allow_self_signed);
+                    get(url, allow_self_signed)
+                },
+                |_, _, allow_self_signed| {
+                    renewed.lock().unwrap().push(allow_self_signed);
+                    async {
+                        Ok(Renewed {
+                            access: "renewed".to_string(),
+                            refresh: "refresh-2".to_string(),
+                        })
+                    }
+                },
+                RENEWAL_DEADLINE,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK, "{choice}");
+            assert_eq!(
+                log_of(&log),
+                ["Bearer expired", "Bearer renewed"],
+                "{choice}"
+            );
+            // The request, its renewal and its retry: each with the choice of the sign-in.
+            assert_eq!(*built.lock().unwrap(), [choice, choice], "{choice}");
+            assert_eq!(*renewed.lock().unwrap(), [choice], "{choice}");
+            assert_eq!(answered_for.allow_self_signed, choice);
+            assert_eq!(state.current().await.unwrap().allow_self_signed, choice);
+        }
+    }
+
+    const RENEWED: &str = r#"{"access_token":"renewed","refresh_token":"refresh-2"}"#;
+
+    /// Read one request: the head and as many body bytes as its `content-length` names.
+    async fn read_request<S: tokio::io::AsyncRead + Unpin>(stream: &mut S) -> String {
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+                if request.len() >= end + 4 + length {
+                    break;
+                }
+            }
+            let n = stream.read(&mut buf).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
+    /// Serve HTTPS with a self-signed certificate, the way a server of the standard install
+    /// looks to a client that trusts only public roots: the refresh grants a new pair, a
+    /// request with the renewed token gets 200, any other 401. The request line of every
+    /// request that gets through the handshake lands in the log.
+    async fn serve_self_signed() -> (String, Arc<StdMutex<Vec<String>>>) {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+        use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let cert = CertificateParams::new(vec!["localhost".to_string()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der()));
+        let config = rustls::ServerConfig::builder_with_provider(crate::tofu::ring_provider())
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert.der().clone()], key)
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "https://127.0.0.1:{}",
+            listener.local_addr().unwrap().port()
+        );
+        // A pin an earlier test left for this port would decide instead of this server.
+        crate::tofu::forget_pin(&url);
+        let log = Arc::new(StdMutex::new(Vec::new()));
+        let seen = Arc::clone(&log);
+        tokio::spawn(async move {
+            loop {
+                let (tcp, _) = listener.accept().await.unwrap();
+                // A client that refuses the certificate ends the handshake here.
+                let Ok(mut tls) = acceptor.accept(tcp).await else {
+                    continue;
+                };
+                let request = read_request(&mut tls).await;
+                let line = request.lines().next().unwrap_or_default().to_string();
+                let (status, body) = if line.starts_with("POST /api/auth/refresh ") {
+                    ("200 OK", RENEWED)
+                } else if authorization(&request) == "Bearer renewed" {
+                    ("200 OK", "")
+                } else {
+                    ("401 Unauthorized", "")
+                };
+                seen.lock().unwrap().push(line);
+                let reply = format!(
+                    "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = tls.write_all(reply.as_bytes()).await;
+                let _ = tls.shutdown().await;
+            }
+        });
+        (url, log)
+    }
+
+    /// A GET that trusts the server's certificate on first use, whatever the session chose:
+    /// a call that wanted self-signed certificates allowed.
+    fn get_allowing_self_signed(
+        server_url: &str,
+        _session_choice: bool,
+    ) -> Result<reqwest::RequestBuilder, AppError> {
+        let client = crate::http_client::build_client(server_url, true)?;
+        Ok(client.get(format!("{server_url}/api/servers")))
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn without_self_signed_in_the_session_the_renewal_does_not_trust_on_first_use() {
+        let (server, log) = serve_self_signed().await;
+        let state = SessionState::default();
+        state
+            .set(
+                server.clone(),
+                "expired".to_string(),
+                "refresh".to_string(),
+                "ops-admin".to_string(),
+                false,
+            )
+            .await;
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            authed_send(&state, get_allowing_self_signed),
+        )
+        .await
+        .expect("the renewal should have failed at the handshake");
+
+        // The call reached the server through a client of its own choice; the renewal took
+        // the session's, checks the public roots only and fails at the handshake, so the
+        // refresh token is never sent.
+        assert!(
+            matches!(result, Err(AppError::SessionExpired)),
+            "{:?}",
+            result.map(|(response, _)| response.status())
+        );
+        assert_eq!(log_of(&log), ["GET /api/servers HTTP/1.1"]);
+        assert!(state.current().await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn with_self_signed_in_the_session_the_renewal_trusts_the_pinned_certificate() {
+        let (server, log) = serve_self_signed().await;
+        let state = SessionState::default();
+        state
+            .set(
+                server.clone(),
+                "expired".to_string(),
+                "refresh".to_string(),
+                "ops-admin".to_string(),
+                true,
+            )
+            .await;
+
+        let (response, _) = tokio::time::timeout(
+            Duration::from_secs(10),
+            authed_send(&state, get_allowing_self_signed),
+        )
+        .await
+        .expect("the renewal should have answered in time")
+        .unwrap();
+
+        // As before: the sign-in allowed it, so the renewal pins the certificate on first use.
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            log_of(&log),
+            [
+                "GET /api/servers HTTP/1.1",
+                "POST /api/auth/refresh HTTP/1.1",
+                "GET /api/servers HTTP/1.1",
+            ]
+        );
+        let now = state.current().await.unwrap();
+        assert_eq!(
+            (now.access.as_str(), now.refresh.as_str()),
+            ("renewed", "refresh-2")
+        );
     }
 }
