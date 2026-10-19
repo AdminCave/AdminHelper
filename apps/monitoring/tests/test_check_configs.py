@@ -441,7 +441,7 @@ class TestSchemaBoundary:
         TemplateCheckDef(name="c", check_type="ping", config={"target": "{{hostname}}"})
 
     def test_template_alert_def_rejects_bad_channel(self):
-        with pytest.raises(ValidationError, match="Kanal"):
+        with pytest.raises(ValidationError, match="Invalid channel: carrier-pigeon"):
             TemplateAlertDef(name="a", channel="carrier-pigeon")
         TemplateAlertDef(name="a", channel="email")
 

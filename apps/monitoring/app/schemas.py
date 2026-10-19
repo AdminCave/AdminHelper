@@ -87,21 +87,21 @@ class TemplateCheckDef(RequestModel):
     @classmethod
     def _check_type_valid(cls, v: str) -> str:
         if v not in VALID_CHECK_TYPES:
-            raise ValueError(f"Ungueltiger check_type: {v}")
+            raise ValueError(f"Invalid check_type: {v}")
         return v
 
     @field_validator("interval")
     @classmethod
     def _interval_valid(cls, v: str) -> str:
         if v not in VALID_INTERVALS:
-            raise ValueError(f"Ungueltiges Intervall: {v}")
+            raise ValueError(f"Invalid interval: {v}")
         return v
 
     @field_validator("severity")
     @classmethod
     def _severity_valid(cls, v: str) -> str:
         if v not in VALID_SEVERITIES:
-            raise ValueError(f"Ungueltige Severity: {v}")
+            raise ValueError(f"Invalid severity: {v}")
         return v
 
     # Same boundary as CheckCreate: template configs contain pre-substitution
@@ -122,13 +122,13 @@ class TemplateAlertDef(RequestModel):
     enabled: bool = True
 
     # Previously missing: an invalid channel in a template alert def only failed
-    # later at dispatch time ("Unbekannter Kanal" in the alerter) — reject it at
+    # later at dispatch time ("Unknown channel" in the alerter) — reject it at
     # the same boundary the check defs use.
     @field_validator("channel")
     @classmethod
     def _channel_valid(cls, v: str) -> str:
         if v not in VALID_CHANNELS:
-            raise ValueError(f"Ungueltiger Kanal: {v}")
+            raise ValueError(f"Invalid channel: {v}")
         return v
 
 

@@ -160,4 +160,4 @@ def validate_check_config(check_type: str, config: dict) -> None:
         details = "; ".join(
             f"{'.'.join(str(p) for p in e['loc']) or 'config'}: {e['msg']}" for e in exc.errors()
         )
-        raise ValueError(f"Ungueltige Config fuer {check_type}: {details}") from exc
+        raise ValueError(f"Invalid config for {check_type}: {details}") from exc

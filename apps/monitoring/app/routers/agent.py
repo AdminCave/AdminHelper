@@ -80,7 +80,7 @@ def agent_report(
     """Agent pushes metrics directly to the monitoring service."""
     if auth_server_id != "__internal__" and auth_server_id != server_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="API-Key gehoert nicht zu diesem Server"
+            status_code=status.HTTP_403_FORBIDDEN, detail="API key does not belong to this server"
         )
 
     record_agent_report(server_id)
@@ -298,7 +298,7 @@ def agent_report(
             logger.exception("Commit der Agent-Report-Auswertung fehlgeschlagen")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Speichern der Check-Auswertung fehlgeschlagen",
+                detail="Failed to save the check evaluation",
             )
 
     # Flush all collected per-check metrics in a single write (5.20).

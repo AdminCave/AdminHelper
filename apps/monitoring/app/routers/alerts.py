@@ -42,9 +42,9 @@ def list_alert_rules(
 def create_alert_rule(data: AlertRuleCreate, db: Session = Depends(get_db)):
     """Creates a new alert rule."""
     if data.channel not in VALID_CHANNELS:
-        raise HTTPException(400, f"Ungueltiger Kanal. Erlaubt: {', '.join(sorted(VALID_CHANNELS))}")
+        raise HTTPException(400, f"Invalid channel. Allowed: {', '.join(sorted(VALID_CHANNELS))}")
     if data.match_severity and data.match_severity not in VALID_SEVERITIES:
-        raise HTTPException(400, "Ungueltige Severity")
+        raise HTTPException(400, "Invalid severity")
 
     rule = MonitorAlertRule(
         id=str(uuid.uuid4()),
@@ -74,7 +74,7 @@ def get_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     """Returns a single alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
-        raise HTTPException(404, "Alert-Rule nicht gefunden")
+        raise HTTPException(404, "Alert rule not found")
     return rule.to_dict()
 
 
@@ -83,17 +83,17 @@ def update_alert_rule(rule_id: str, data: AlertRuleUpdate, db: Session = Depends
     """Updates an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
-        raise HTTPException(404, "Alert-Rule nicht gefunden")
+        raise HTTPException(404, "Alert rule not found")
 
     sent = data.model_fields_set
     if "channel" in sent and data.channel not in VALID_CHANNELS:
-        raise HTTPException(400, "Ungueltiger Kanal")
+        raise HTTPException(400, "Invalid channel")
     if (
         "match_severity" in sent
         and data.match_severity
         and data.match_severity not in VALID_SEVERITIES
     ):
-        raise HTTPException(400, "Ungueltige Severity")
+        raise HTTPException(400, "Invalid severity")
 
     for field in [
         "name",
@@ -133,7 +133,7 @@ def delete_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     """Deletes an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
-        raise HTTPException(404, "Alert-Rule nicht gefunden")
+        raise HTTPException(404, "Alert rule not found")
     db.delete(rule)
     db.commit()
 
@@ -143,7 +143,7 @@ def toggle_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     """Enables/disables an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
-        raise HTTPException(404, "Alert-Rule nicht gefunden")
+        raise HTTPException(404, "Alert rule not found")
     rule.enabled = not rule.enabled
     db.commit()
     db.refresh(rule)
