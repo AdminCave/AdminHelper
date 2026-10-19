@@ -12,7 +12,7 @@ import { get } from 'svelte/store';
 import type { Playbook, Server } from '$lib/api/types';
 
 const h = vi.hoisted(() => ({
-  session: { serverUrl: 'https://x', token: 't' } as unknown,
+  session: { serverUrl: 'https://x' } as unknown,
   fetchPlaybooks: vi.fn(),
   fetchServers: vi.fn(),
   fetchContent: vi.fn(),

@@ -52,8 +52,6 @@ const baseSettings = (over: Partial<Settings> = {}): Settings => ({
 
 const aSession: AuthSession = {
   serverUrl: 'https://srv.example.com',
-  token: 'tok',
-  refreshToken: 'ref',
   username: 'alice',
   isAdmin: true,
 };
@@ -93,7 +91,7 @@ describe('session store', () => {
   });
 
   describe('dropSession', () => {
-    it('clears the keyring tokens and the in-memory session', async () => {
+    it('ends the session in Rust and clears the in-memory one', async () => {
       vi.mocked(bridge.loadSettings).mockResolvedValue(
         baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
       );

@@ -7,18 +7,12 @@ import type { AuthSession } from '$lib/bridge/types';
 import type { ServerInput } from '$lib/api/types';
 
 vi.mock('$lib/bridge', () => ({ apiProxy: vi.fn(async () => ({})) }));
-vi.mock('$lib/stores/session', async () => {
-  const { writable } = await import('svelte/store');
-  return { sessionStore: writable({ settings: { allowSelfSignedCerts: false } }) };
-});
 
 import * as bridge from '$lib/bridge';
 import { serversApi } from './servers';
 
 const session: AuthSession = {
   serverUrl: 'https://srv',
-  token: 'tok',
-  refreshToken: 'r',
   username: 'admin',
   isAdmin: true,
 };
@@ -36,61 +30,26 @@ describe('serversApi', () => {
 
   it('list → GET /api/servers', async () => {
     await serversApi.list(session);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'GET',
-      '/api/servers',
-      undefined,
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('GET', '/api/servers', undefined);
   });
 
   it('create → POST /api/servers with serialized body', async () => {
     await serversApi.create(session, input);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'POST',
-      '/api/servers',
-      JSON.stringify(input),
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('POST', '/api/servers', JSON.stringify(input));
   });
 
   it('update → PUT /api/servers/:id', async () => {
     await serversApi.update(session, 'id1', input);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'PUT',
-      '/api/servers/id1',
-      JSON.stringify(input),
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('PUT', '/api/servers/id1', JSON.stringify(input));
   });
 
   it('remove → DELETE /api/servers/:id', async () => {
     await serversApi.remove(session, 'id1');
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'DELETE',
-      '/api/servers/id1',
-      undefined,
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('DELETE', '/api/servers/id1', undefined);
   });
 
   it('encodes the id so a slash-bearing value cannot rewrite the path (3.66)', async () => {
     await serversApi.remove(session, '../users/1');
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'DELETE',
-      '/api/servers/..%2Fusers%2F1',
-      undefined,
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('DELETE', '/api/servers/..%2Fusers%2F1', undefined);
   });
 });

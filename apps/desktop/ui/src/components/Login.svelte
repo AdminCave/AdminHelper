@@ -15,6 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     type ResetOutcome,
   } from '$lib/bridge';
   import { t } from '$lib/i18n';
+  import { takeLoginNotice } from '$lib/utils/loginNotice';
   import { confirmDialog } from './ui/ConfirmDialog.svelte';
 
   // Pre-fill the server URL + username from the last successful login so only
@@ -28,7 +29,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let password = $state('');
   let enrollToken = $state('');
   let error = $state('');
-  let info = $state('');
+  // What a reload that ended the session left to say (session expired, R-0430).
+  let info = $state(takeLoginNotice());
   let busy = $state(false);
 
   // Trust dialog for ERR_TLS_UNKNOWN_ISSUER (error.rs): the standard install

@@ -114,9 +114,9 @@ trait PinStore: Send + Sync {
     }
 }
 
-/// Production store: OS keyring (same secure store as the JWT tokens) backed by
-/// a process-wide in-memory cache, so the enforcement path does not hit the
-/// keyring on every single request — only the first read and the first-use write.
+/// Production store: OS keyring backed by a process-wide in-memory cache, so the
+/// enforcement path does not hit the keyring on every single request — only the
+/// first read and the first-use write.
 struct KeyringPinStore;
 
 // A poisoned lock only means another thread panicked mid-access; the map

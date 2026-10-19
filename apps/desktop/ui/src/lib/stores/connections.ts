@@ -112,7 +112,7 @@ export async function reloadForMode(
   try {
     let items: Connection[];
     if (settings.mode === 'server' && session) {
-      items = await bridge.fetchConnectionsJwt(session.serverUrl, session.token);
+      items = await bridge.fetchConnectionsJwt();
     } else if (settings.mode === 'sync' && settings.url) {
       items = await bridge.syncConnections(settings.url);
     } else {

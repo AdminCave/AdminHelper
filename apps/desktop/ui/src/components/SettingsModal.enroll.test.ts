@@ -61,7 +61,7 @@ vi.mock('$lib/stores/session', async () => {
     serverUrl: 'https://srv.example',
     allowSelfSignedCerts: false,
   };
-  const session = { username: 'admin', serverUrl: 'https://srv.example', token: 'jwt-1' };
+  const session = { username: 'admin', serverUrl: 'https://srv.example' };
   const sessionStore = writable<typeof session | null>(session);
   h.setSession = (value) => sessionStore.set(value as typeof session | null);
   return {
@@ -85,7 +85,7 @@ afterEach(() => {
   settingsModalOpen.set(false);
   vi.clearAllMocks();
   h.isDeviceEnrolled.mockImplementation(async () => false);
-  h.setSession({ username: 'admin', serverUrl: 'https://srv.example', token: 'jwt-1' });
+  h.setSession({ username: 'admin', serverUrl: 'https://srv.example' });
 });
 
 function open(): HTMLElement {

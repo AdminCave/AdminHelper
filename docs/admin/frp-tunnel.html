@@ -103,6 +103,7 @@
 
           <h2>Visitor-Ports</h2>
           <p>STCP-Tunnel brauchen auf dem Admin-PC einen lokalen Port für den Visitor, der ihn an <code>127.0.0.1</code> bindet. Der Server vergibt ihn beim Anlegen des Tunnels, wenn keiner angegeben ist: den ersten freien Port aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Der Port bleibt dem Tunnel zugeordnet; zwei STCP-Tunnel teilen sich nie einen. Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
+          <p>Für den Desktop-Client ist dieser Visitor-Port der Wunschport. Ist er auf dem Admin-PC frei, lauscht der Visitor dort. Ist er belegt, etwa durch ein anderes Programm oder den Tunnel einer zweiten AdminHelper-Installation, oder liegt er unter 1024, weicht der Desktop-Client auf einen freien Port aus 23000–23999 aus. Einen einmal vergebenen Port behält der Visitor, solange der Tunnel besteht; nur wenn ihn beim Start des Tunnels ein anderes Programm hält, bekommt er einen neuen. Die Verbindungen löst der Desktop-Client auf den tatsächlichen Port auf: die mit dem Tunnel automatisch angelegte (<code>127.0.0.1:&lt;Visitor-Port&gt;</code>) für alle Benutzer, eine von Hand mit dem Tunnel verknüpfte nur für Admins, denn nur sie lesen die Tunnel-Zuordnungen. Solange der Tunnel läuft, geht jede Verbindung auf <code>127.0.0.1</code> oder <code>localhost</code> mit dem Visitor-Port eines Tunnels durch diesen Tunnel, auch eine selbst angelegte.</p>
 
           <h2>Firewall</h2>
           <table>
@@ -112,7 +113,7 @@
               <tr><td><code>7443/tcp</code></td><td>Eingehend</td><td>HTTPS-Tunnel unter dem Subdomain-Host (<code>FRP_HTTPS_PORT</code>, im Container der frps-Port 443; braucht ein Wildcard-Cert)</td></tr>
             </tbody>
           </table>
-          <p>Die Visitor-Ports (Default 6000–6999) binden nur lokal auf dem Admin-PC an <code>127.0.0.1</code> und brauchen am Server keine Freigabe.</p>
+          <p>Die Visitor-Ports (Default 6000–6999, bei Belegung 23000–23999) binden nur lokal auf dem Admin-PC an <code>127.0.0.1</code> und brauchen am Server keine Freigabe.</p>
 
           <h2>Status-Dashboard</h2>
           <p>Die Tunnel-Statusansicht zeigt die Proxies, die das frps-Dashboard meldet; dafür braucht die FRP-Konfiguration einen Dashboard-Port. frps hängt in Compose in einem eigenen Netz, das der Server nicht erreicht. Deshalb fragt der frps-Supervisor das Dashboard im frps-Container über Loopback ab, alle 5&nbsp;s, solange frps läuft, und legt die Antworten im Volume <code>frps-state</code> ab; daraus liest der Server sie. Fehlen sie oder sind sie älter als 60&nbsp;s, etwa weil frps nicht läuft, meldet die Ansicht „frps nicht erreichbar: frps dashboard: no current data from the frps supervisor“.</p>
@@ -124,7 +125,7 @@
             <li><strong>Agent verbindet sich nicht</strong>: Zertifikats-Ablauf prüfen (<code>openssl x509 -in /etc/adminhelper/identity/agent.crt -noout -enddate</code>), Server-Erreichbarkeit via <code>nc -vz srm.example.com 7000</code>.</li>
             <li><strong>frps antwortet nicht auf Port 7000</strong>: Block <em>Zustand des frps</em> auf der FRP-Seite prüfen. Bei „Wartet, frps läuft nicht“ steht der Grund daneben; die Codes erklärt <a href="./betrieb.html#frps-supervisor">Betrieb → frps-Supervisor</a>. Log: <code>docker compose logs frps</code> (Zeilen mit <code>[frps-supervisor]</code>).</li>
             <li><strong>"Tunnel not found"</strong>: Tunnel im Desktop-Client (<em>Infrastruktur → Server → Tab Tunnel</em>) aktiviert? FRP-Logs: <code>docker compose logs -f frps</code>.</li>
-            <li><strong>STCP klappt nicht</strong>: Visitor-Port bereits belegt? Desktop-Client-Log prüfen.</li>
+            <li><strong>STCP klappt nicht</strong>: Tunnel-Anzeige unten in der Seitenleiste des Desktop-Clients prüfen, dann das Desktop-Client-Log (Zeilen mit <code>[frpc</code>). Welchen lokalen Port jeder Visitor hat, steht in <code>port-registry.json</code> im App-Data-Verzeichnis des Desktop-Clients (<code>serverPort</code> ist der Visitor-Port, <code>localPort</code> der tatsächliche). Nimmt ein anderes Programm den Port gerade beim Start des Tunnels, lauscht der Visitor nicht, obwohl die Anzeige den Tunnel verbunden zeigt: Abmelden und neu anmelden; beim Start prüft der Desktop-Client die Ports erneut und weicht aus.</li>
             <li><strong>Desktop zeigt „Tunnel getrennt“</strong>: Der Desktop verbindet sich selbst wieder und versucht es spätestens alle 60&nbsp;s erneut; der Knopf <em>Neu verbinden</em> neben der Anzeige unten in der aufgeklappten Seitenleiste stößt das sofort an.</li>
           </ul>
 

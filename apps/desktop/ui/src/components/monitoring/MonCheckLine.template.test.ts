@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.mock('uplot', () => ({ default: class {} }));
 
 const h = vi.hoisted(() => ({
-  session: { username: 'admin', serverUrl: 'https://srv.example', token: 'jwt-1' },
+  session: { username: 'admin', serverUrl: 'https://srv.example' },
   resetCheck: vi.fn(),
   fetchStatus: vi.fn(),
 }));

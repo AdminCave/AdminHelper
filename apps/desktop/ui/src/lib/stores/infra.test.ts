@@ -26,8 +26,6 @@ vi.mock('$lib/api/monitoring', () => ({
 vi.mock('./session', () => ({
   currentSession: () => ({
     serverUrl: 'https://srv',
-    token: 't',
-    refreshToken: 'r',
     username: 'a',
     isAdmin: true,
   }),

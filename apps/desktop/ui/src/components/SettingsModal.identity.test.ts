@@ -71,7 +71,7 @@ vi.mock('$lib/stores/session', async () => {
     serverUrl: 'https://srv.example',
     allowSelfSignedCerts: false,
   };
-  const session = { username: 'admin', serverUrl: 'https://srv.example', token: 'jwt-1' };
+  const session = { username: 'admin', serverUrl: 'https://srv.example' };
   return {
     sessionStore: readable({ settings, session, ready: true }),
     settings: readable(settings),

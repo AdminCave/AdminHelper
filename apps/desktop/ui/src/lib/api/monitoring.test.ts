@@ -7,18 +7,12 @@ import type { AuthSession } from '$lib/bridge/types';
 import type { AlertRuleInput, MonitorCheckInput, MonitoringTemplateInput } from '$lib/api/types';
 
 vi.mock('$lib/bridge', () => ({ apiProxy: vi.fn(async () => ({})) }));
-vi.mock('$lib/stores/session', async () => {
-  const { writable } = await import('svelte/store');
-  return { sessionStore: writable({ settings: { allowSelfSignedCerts: false } }) };
-});
 
 import * as bridge from '$lib/bridge';
 import { monitoringApi } from './monitoring';
 
 const session: AuthSession = {
   serverUrl: 'https://srv',
-  token: 'tok',
-  refreshToken: 'r',
   username: 'admin',
   isAdmin: true,
 };
@@ -257,18 +251,15 @@ describe('monitoringApi', () => {
 
   it.each(cases)('%s', async (_label, invoke, method, path, body) => {
     await invoke();
-    expect(proxy).toHaveBeenCalledWith('https://srv', 'tok', method, path, body, false);
+    expect(proxy).toHaveBeenCalledWith(method, path, body);
   });
 
   it('assignTemplate → POST with snake_case body', async () => {
     await monitoringApi.assignTemplate(session, 't1', 's1', 'web.lan', 'web');
     expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
       'POST',
       '/api/monitoring/templates/t1/assign',
       JSON.stringify({ server_id: 's1', hostname: 'web.lan', server_name: 'web' }),
-      false,
     );
   });
 });

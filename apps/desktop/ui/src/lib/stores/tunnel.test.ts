@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   stopTunnel: vi.fn(),
   reportError: vi.fn(),
   session: {
-    session: null as { serverUrl: string; token: string; username: string } | null,
+    session: null as { serverUrl: string; username: string } | null,
     settings: { mode: 'server' },
   },
 }));
@@ -51,7 +51,7 @@ import {
   markError,
 } from './tunnel';
 
-const SESSION = { serverUrl: 'https://x', token: 't', username: 'u' };
+const SESSION = { serverUrl: 'https://x', username: 'u' };
 const MAPPING: TunnelMapping = {
   id: 'm1',
   serverId: 's1',
@@ -151,7 +151,7 @@ describe('tunnel store: polling (R-0402)', () => {
   it('reconciles right away, then every 60 s, and reloads the mappings after each run', async () => {
     await startIfServerMode();
     expect(h.refreshTunnel).toHaveBeenCalledTimes(1);
-    expect(h.refreshTunnel).toHaveBeenCalledWith('https://x', 't', 'u');
+    expect(h.refreshTunnel).toHaveBeenCalledWith();
     expect(get(tunnelUi)).toBe('connected');
     expect(getMappings()).toEqual([MAPPING]);
 

@@ -7,18 +7,12 @@ import type { AuthSession } from '$lib/bridge/types';
 import type { FrpTunnelInput } from '$lib/api/types';
 
 vi.mock('$lib/bridge', () => ({ apiProxy: vi.fn(async () => ({})) }));
-vi.mock('$lib/stores/session', async () => {
-  const { writable } = await import('svelte/store');
-  return { sessionStore: writable({ settings: { allowSelfSignedCerts: false } }) };
-});
 
 import * as bridge from '$lib/bridge';
 import { frpApi } from './frp';
 
 const session: AuthSession = {
   serverUrl: 'https://srv',
-  token: 'tok',
-  refreshToken: 'r',
   username: 'admin',
   isAdmin: true,
 };
@@ -40,73 +34,31 @@ describe('frpApi', () => {
 
   it('listConfigs → GET /api/frp/server-config', async () => {
     await frpApi.listConfigs(session);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'GET',
-      '/api/frp/server-config',
-      undefined,
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('GET', '/api/frp/server-config', undefined);
   });
 
   it('listTunnels → GET /api/frp/tunnels', async () => {
     await frpApi.listTunnels(session);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'GET',
-      '/api/frp/tunnels',
-      undefined,
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('GET', '/api/frp/tunnels', undefined);
   });
 
   it('createTunnel → POST /api/frp/tunnels with serialized body', async () => {
     await frpApi.createTunnel(session, tunnel);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'POST',
-      '/api/frp/tunnels',
-      JSON.stringify(tunnel),
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('POST', '/api/frp/tunnels', JSON.stringify(tunnel));
   });
 
   it('updateTunnel → PUT /api/frp/tunnels/:id', async () => {
     await frpApi.updateTunnel(session, 't1', tunnel);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'PUT',
-      '/api/frp/tunnels/t1',
-      JSON.stringify(tunnel),
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('PUT', '/api/frp/tunnels/t1', JSON.stringify(tunnel));
   });
 
   it('removeTunnel → DELETE /api/frp/tunnels/:id', async () => {
     await frpApi.removeTunnel(session, 't1');
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'DELETE',
-      '/api/frp/tunnels/t1',
-      undefined,
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('DELETE', '/api/frp/tunnels/t1', undefined);
   });
 
   it('status → GET /api/frp/status', async () => {
     await frpApi.status(session);
-    expect(proxy).toHaveBeenCalledWith(
-      'https://srv',
-      'tok',
-      'GET',
-      '/api/frp/status',
-      undefined,
-      false,
-    );
+    expect(proxy).toHaveBeenCalledWith('GET', '/api/frp/status', undefined);
   });
 });
