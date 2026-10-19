@@ -952,6 +952,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (Server-URL oder Benutzer) als die, fuer die frpc laeuft, startet frpc neu, statt die Visitors per Reload zu
   uebernehmen. Gespeicherte Passwoerter und die Tunnel-Aufloesung nutzen nur die Visitors des frpc der aktuellen
   Anmeldung. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: ein gespeichertes RDP-Passwort gehoert zu genau einer Verbindung:** Ausser unter Windows lag ein
+  gespeichertes RDP-Passwort im Schluesselbund unter Adresse, Port, Benutzer und Domaene; zwei Verbindungen mit
+  denselben Werten, etwa von zwei Servern, teilten sich ein Passwort. Jetzt traegt der Eintrag auch die `id` der
+  Verbindung. Ein bisher gespeichertes Passwort bleibt nutzbar: Es gilt fuer jede Verbindung zu diesem Ziel als
+  gespeichert, bis die erste es oeffnet; diese uebernimmt es, fuer die anderen ist es danach nicht mehr gespeichert.
+  Loeschen entfernt auch einen solchen bisherigen Eintrag. Unter Windows bleibt das Passwort im Credential Manager je
+  Adresse (`TERMSRV/<Adresse>`), wo mstsc es liest. Doku: Desktop fuer Entwickler (DE+EN).
 - **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
   nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
