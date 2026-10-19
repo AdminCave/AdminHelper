@@ -41,8 +41,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- proxy::
 Doku: keine (intern; Doku mit T5)
 Abhängt von: T2
 
-### T4 — SSE und Token-Ausgabe aus dem Zustand  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/notifications.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/commands.rs
+### T4 — SSE und Token-Ausgabe aus dem Zustand  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/notifications.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/validation.rs, apps/desktop/src-tauri/src/session.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @b57228c8 2026-10-19T08:43:49+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T4.verdict.json)
 Änderung: `start_notification_stream` (`commands.rs:354`) ohne `server_url`/`token`; der Stream (`notifications.rs:49`, `:80`, `:118`) holt vor jedem (Neu-)Verbinden das aktuelle Token aus dem Zustand und erneuert bei 401 über denselben Weg; scheitert das, `session-expired` statt `notification-stream-auth-failed` (`:104`, entfällt). `export_browser_p12` (`commands.rs:132`) und `mint_token` (`enrollment.rs:473`) nehmen Session-URL und Token aus dem Zustand (`:483-487`). Tests: der SSE-Verbindungsaufbau nimmt nach einer Erneuerung das neue Token (reine Funktion für Header-Bau und Entscheidung „neu verbinden / Session zu Ende“); `mint_token` ohne Session → „Keine aktive Sitzung“.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- notifications::
 Doku: keine (intern; Doku mit T5)

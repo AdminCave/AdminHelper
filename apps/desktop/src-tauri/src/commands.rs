@@ -125,29 +125,20 @@ pub async fn enroll_with_token(
     enrollment::enroll_with_token(&server_url, &token, self_signed).await
 }
 
-/// Enroll a long-lived browser cert (A5c), write it as a password-protected
-/// PKCS12 (.p12) to the `dest_path` the user picked in the frontend's save
-/// dialog, and return the path for them to import into their browser's cert
-/// store. Does not affect the desktop's own enrolled identity.
+/// Enroll a long-lived browser cert (A5c) at the signed-in server, write it as a
+/// password-protected PKCS12 (.p12) to the `dest_path` the user picked in the
+/// frontend's save dialog, and return the path for them to import into their
+/// browser's cert store. Does not affect the desktop's own enrolled identity.
 #[tauri::command]
 pub async fn export_browser_p12(
     app: tauri::AppHandle,
     session: State<'_, SessionState>,
-    server_url: String,
-    token: String,
     password: String,
     dest_path: String,
     allow_self_signed: Option<bool>,
 ) -> Result<String, AppError> {
     let self_signed = self_signed_setting(&app, allow_self_signed);
-    let der = enrollment::export_browser_p12(
-        session.inner(),
-        &server_url,
-        &token,
-        &password,
-        self_signed,
-    )
-    .await?;
+    let der = enrollment::export_browser_p12(session.inner(), &password, self_signed).await?;
     storage::write_browser_p12(&dest_path, &der)
 }
 
@@ -370,20 +361,10 @@ pub async fn start_notification_stream(
     app: tauri::AppHandle,
     state: State<'_, crate::notifications::StreamState>,
     session: State<'_, SessionState>,
-    server_url: String,
-    token: String,
 ) -> Result<(), AppError> {
     let allow_self_signed = self_signed_setting(&app, None);
     let stream_state = state.inner().clone();
-    crate::notifications::start(
-        app,
-        stream_state,
-        session.inner(),
-        server_url,
-        token,
-        allow_self_signed,
-    )
-    .await
+    crate::notifications::start(app, stream_state, session.inner(), allow_self_signed).await
 }
 
 #[tauri::command]

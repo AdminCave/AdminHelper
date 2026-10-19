@@ -114,8 +114,8 @@ impl SessionState {
     }
 }
 
-/// The answer to a request without a session, the one the UI already knows. The only source
-/// of its text; the token pin (`validation::require_pinned_destination`) gives it too.
+/// The answer to a request without a session, the one the UI already knows, and the only
+/// source of its text.
 pub fn no_session() -> AppError {
     AppError::Validation("Keine aktive Sitzung — Anfrage abgelehnt".to_string())
 }

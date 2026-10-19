@@ -235,14 +235,6 @@ async fn notify_server_logout(
     Ok(())
 }
 
-/// The server URL of the active session, if any. Used to pin the token destination of the
-/// paths that still take the token from the webview (notification stream, browser
-/// certificate): the JWT must only ever be sent to the server the user actually logged
-/// into, never to a URL a (compromised) frontend passes instead.
-pub async fn stored_server_url(session: &SessionState) -> Option<String> {
-    session.current().await.map(|now| now.server_url)
-}
-
 /// Removes the session entries earlier versions kept in the keyring; nothing reads them
 /// any more. Best effort, once per start.
 pub fn forget_keyring_session() {

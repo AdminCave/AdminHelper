@@ -6,8 +6,9 @@
 //!
 //! The WebView cannot open an `EventSource` against the self-signed server, so
 //! the stream is tunnelled through `reqwest` here — reusing `http_client::build_client`,
-//! so it inherits the same mTLS / TOFU-pin / public-CA path and JWT bearer that
-//! `api_proxy` uses. Each `notification` SSE frame is forwarded to the UI as a
+//! so it inherits the same mTLS / TOFU-pin / public-CA path as `api_proxy`, and like it
+//! every connection goes through `session::authed_send`: the session's access token,
+//! renewed once on a 401. Each `notification` SSE frame is forwarded to the UI as a
 //! `notification` Tauri event (the UI then reloads the feed), exactly like the
 //! existing `frpc-terminated` event pattern.
 
@@ -15,12 +16,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::time::{sleep, timeout, Duration, Instant};
 
 use crate::auth;
 use crate::error::AppError;
-use crate::session::SessionState;
+use crate::session::{no_session, SessionState, SignedIn};
 
 /// Managed state: an epoch counter. Each `start` bumps it and the spawned task
 /// captures the value; the task runs only while its captured epoch is still the
@@ -47,24 +48,23 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 // proxy that closes SSE immediately traps the client in a fast reconnect loop (4.94).
 const MIN_HEALTHY_UPTIME: Duration = Duration::from_secs(30);
 
+/// Starts the stream for the session signed in now, on its server. Every connection takes
+/// the token the session holds at that moment, so a renewal reaches the next one, and the
+/// stream ends with the session ([`next_step`]). Without a session nothing starts.
 pub async fn start(
     app: tauri::AppHandle,
     state: StreamState,
     session: &SessionState,
-    server_url: String,
-    token: String,
     allow_self_signed: bool,
 ) -> Result<(), AppError> {
-    // Token-destination pin (same guard as api_proxy): never stream the JWT to a
-    // server other than the one stored on login.
-    crate::validation::require_pinned_destination(
-        &server_url,
-        "/api/notifications/stream",
-        auth::stored_server_url(session).await.as_deref(),
-    )?;
+    let now = session.current().await.ok_or_else(no_session)?;
+    let who = SignedIn {
+        server_url: now.server_url,
+        username: now.username,
+    };
     let my_epoch = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
-        run_loop(app, state, my_epoch, server_url, token, allow_self_signed).await;
+        run_loop(app, state, my_epoch, who, allow_self_signed).await;
     });
     Ok(())
 }
@@ -73,25 +73,60 @@ pub fn stop(state: &StreamState) {
     state.epoch.fetch_add(1, Ordering::SeqCst);
 }
 
+#[derive(Debug)]
 enum StreamEnd {
     Closed,
     Superseded,
-    AuthFailed,
+    /// The server refuses the session: a 401 even after the renewal, or a 403.
+    Refused,
+}
+
+/// What the stream does once a connection ended.
+#[derive(Debug, PartialEq)]
+enum Next {
+    Reconnect,
+    Stop,
+}
+
+/// Whether the stream connects again after `end`. `signed_in` tells whether the session it
+/// was started for is still the one signed in. The stream ends with that session: after a
+/// failed renewal (`authed_send` has announced it as `session-expired`), a sign-out or a
+/// sign-in of someone else no connection asks for a token any more; a new sign-in starts a
+/// stream of its own. It ends, too, when the server refuses the session even after a
+/// renewal, or a newer `start`/`stop` took over; the bell keeps polling. A connection of
+/// the session that closed or dropped comes back.
+fn next_step(end: &Result<StreamEnd, AppError>, signed_in: bool) -> Next {
+    let over = matches!(
+        end,
+        Ok(StreamEnd::Superseded | StreamEnd::Refused) | Err(AppError::SessionExpired)
+    );
+    if over || !signed_in {
+        Next::Stop
+    } else {
+        Next::Reconnect
+    }
 }
 
 async fn run_loop(
     app: tauri::AppHandle,
     state: StreamState,
     my_epoch: u64,
-    server_url: String,
-    token: String,
+    who: SignedIn,
     self_signed: bool,
 ) {
+    let session = app.state::<SessionState>();
     let mut backoff = BASE_BACKOFF;
-    while state.epoch.load(Ordering::SeqCst) == my_epoch {
+    // Checked again right before each connection: a sign-in of someone else during the
+    // backoff must not lend this stream the new session's token.
+    while state.epoch.load(Ordering::SeqCst) == my_epoch
+        && session.ensure_signed_in(&who).await.is_ok()
+    {
         let connected_at = Instant::now();
-        match connect_and_read(&app, &state, my_epoch, &server_url, &token, self_signed).await {
-            Ok(StreamEnd::Superseded) => break,
+        let end = connect_and_read(session.inner(), &state, my_epoch, self_signed, || {
+            let _ = app.emit("notification", ());
+        })
+        .await;
+        match &end {
             Ok(StreamEnd::Closed) => {
                 // Only a connection that lived a while is "healthy" enough to reset the backoff; a
                 // proxy that closes SSE instantly would otherwise never let the backoff grow and
@@ -100,15 +135,13 @@ async fn run_loop(
                     backoff = BASE_BACKOFF;
                 }
             }
-            Ok(StreamEnd::AuthFailed) => {
-                // 401/403: token expired. Stop and let the UI fall back to
-                // polling; a fresh login restarts the stream.
-                let _ = app.emit("notification-stream-auth-failed", ());
-                break;
-            }
+            Ok(StreamEnd::Superseded | StreamEnd::Refused) => {}
             Err(e) => log::warn!("[notif-stream] disconnected: {e}"),
         }
-        if state.epoch.load(Ordering::SeqCst) != my_epoch {
+        let signed_in = session.ensure_signed_in(&who).await.is_ok();
+        if next_step(&end, signed_in) == Next::Stop
+            || state.epoch.load(Ordering::SeqCst) != my_epoch
+        {
             break;
         }
         sleep(backoff).await;
@@ -117,29 +150,45 @@ async fn run_loop(
     log::info!("[notif-stream] task exited");
 }
 
-async fn connect_and_read(
-    app: &tauri::AppHandle,
-    state: &StreamState,
-    my_epoch: u64,
+/// The stream request on `server_url`, without a token: `authed_send` sets the session's
+/// when the request goes out.
+fn stream_request(
     server_url: &str,
-    token: &str,
     self_signed: bool,
-) -> Result<StreamEnd, AppError> {
+) -> Result<reqwest::RequestBuilder, AppError> {
     let client = crate::http_client::build_client(server_url, self_signed)?;
     let url = format!(
         "{}/api/notifications/stream",
         server_url.trim_end_matches('/')
     );
-    let resp = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Accept", "text/event-stream")
-        .send()
+    Ok(client.get(url).header("Accept", "text/event-stream"))
+}
+
+/// One connection of the stream, through [`crate::session::authed_send`]: the token the
+/// session holds now, renewed once on a 401. It reads until the server closes, the
+/// connection drops or a newer `start`/`stop` takes over; `notify` hears every frame that
+/// asks the feed to reload.
+async fn connect_and_read(
+    session: &SessionState,
+    state: &StreamState,
+    my_epoch: u64,
+    self_signed: bool,
+    notify: impl Fn(),
+) -> Result<StreamEnd, AppError> {
+    let (resp, _) =
+        crate::session::authed_send(
+            session,
+            |server_url| stream_request(server_url, self_signed),
+            |server_url, refresh| async move {
+                auth::try_refresh(&server_url, &refresh, self_signed).await
+            },
+        )
         .await?;
 
     let code = resp.status().as_u16();
     if code == 401 || code == 403 {
-        return Ok(StreamEnd::AuthFailed);
+        log::warn!("[notif-stream] HTTP {code}: the server refuses the session, the stream stops");
+        return Ok(StreamEnd::Refused);
     }
     if !resp.status().is_success() {
         return Err(AppError::Validation(format!("SSE HTTP {code}")));
@@ -167,7 +216,7 @@ async fn connect_and_read(
             // A `notification` frame (or a bare default) means "reload the feed".
             // The payload is only a refresh nudge, so emit a bare event.
             if frame.event.as_deref() == Some("notification") || frame.event.is_none() {
-                let _ = app.emit("notification", ());
+                notify();
             }
         }
     }
@@ -253,6 +302,266 @@ impl SseParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Mutex;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    const RENEWED: &str = r#"{"access_token":"renewed","refresh_token":"refresh-2"}"#;
+    const STREAM: &str = "GET /api/notifications/stream HTTP/1.1";
+    const REFRESH: &str = "POST /api/auth/refresh HTTP/1.1";
+    const FRAME: &str = "event: notification\ndata: {}\n\n";
+
+    fn reply(status: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    /// Read one request: the head and as many body bytes as its `content-length` names.
+    async fn read_request(tcp: &mut tokio::net::TcpStream) -> String {
+        let mut request = Vec::new();
+        let mut buf = [0u8; 1024];
+        loop {
+            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+                if request.len() >= end + 4 + length {
+                    break;
+                }
+            }
+            let n = tcp.read(&mut buf).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
+    /// Serve HTTP on a fresh loopback port, one request per connection: every request lands
+    /// in the log, then `answer` returns the whole response to it.
+    async fn serve(
+        mut answer: impl FnMut(&str) -> String + Send + 'static,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&log);
+        tokio::spawn(async move {
+            loop {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut tcp).await;
+                seen.lock().unwrap().push(request.clone());
+                tcp.write_all(answer(&request).as_bytes()).await.unwrap();
+                let _ = tcp.shutdown().await;
+            }
+        });
+        (url, log)
+    }
+
+    /// The request lines in the order the requests arrived.
+    fn request_lines(log: &Mutex<Vec<String>>) -> Vec<String> {
+        let log = log.lock().unwrap();
+        log.iter()
+            .map(|request| request.lines().next().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// The Authorization header of a request, if it has one.
+    fn authorization(request: &str) -> Option<&str> {
+        request.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("authorization")
+                .then_some(value.trim())
+        })
+    }
+
+    /// The Authorization headers in the order the requests arrived.
+    fn tokens(log: &Mutex<Vec<String>>) -> Vec<Option<String>> {
+        let log = log.lock().unwrap();
+        log.iter()
+            .map(|request| authorization(request).map(str::to_string))
+            .collect()
+    }
+
+    /// `ops-admin` signed in on `server_url` with an access token the server no longer takes.
+    async fn signed_in(server_url: &str) -> SessionState {
+        let session = SessionState::default();
+        session
+            .set(
+                server_url.to_string(),
+                "expired".to_string(),
+                "refresh".to_string(),
+                "ops-admin".to_string(),
+            )
+            .await;
+        session
+    }
+
+    /// Counts how often `session` announces that it ended.
+    fn expiries(session: &SessionState) -> Arc<AtomicUsize> {
+        let count = Arc::new(AtomicUsize::new(0));
+        let heard = Arc::clone(&count);
+        session.on_expiry(move || {
+            heard.fetch_add(1, Ordering::Relaxed);
+        });
+        count
+    }
+
+    /// One connection of the stream, counting the frames it hands on.
+    async fn connect_once(
+        session: &SessionState,
+        frames: &AtomicUsize,
+    ) -> Result<StreamEnd, AppError> {
+        let stream = new_stream_state();
+        connect_and_read(session, &stream, 0, false, || {
+            frames.fetch_add(1, Ordering::Relaxed);
+        })
+        .await
+    }
+
+    #[test]
+    fn the_stream_request_asks_for_events_and_carries_no_token_of_its_own() {
+        let request = stream_request("https://adminhelper.example:8443/", false)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(request.method(), reqwest::Method::GET);
+        assert_eq!(
+            request.url().as_str(),
+            "https://adminhelper.example:8443/api/notifications/stream"
+        );
+        assert_eq!(request.headers()["accept"], "text/event-stream");
+        // The token is the session's, set by authed_send when the request goes out.
+        assert!(request.headers().get("authorization").is_none());
+    }
+
+    #[tokio::test]
+    async fn after_a_renewal_the_stream_connects_with_the_new_token() {
+        let (server, log) = serve(|request| {
+            if request.starts_with(REFRESH) {
+                reply("200 OK", RENEWED)
+            } else if authorization(request) == Some("Bearer renewed") {
+                reply("200 OK", FRAME)
+            } else {
+                reply("401 Unauthorized", "")
+            }
+        })
+        .await;
+        let session = signed_in(&server).await;
+        let expired = expiries(&session);
+        let frames = AtomicUsize::new(0);
+
+        // The token of the sign-in has expired: the first connection renews it, and the one
+        // after the stream dropped takes the new token from the session.
+        let first = connect_once(&session, &frames).await;
+        let second = connect_once(&session, &frames).await;
+
+        assert!(matches!(first, Ok(StreamEnd::Closed)), "{first:?}");
+        assert!(matches!(second, Ok(StreamEnd::Closed)), "{second:?}");
+        assert_eq!(frames.load(Ordering::Relaxed), 2);
+        assert_eq!(request_lines(&log), [STREAM, REFRESH, STREAM, STREAM]);
+        assert_eq!(
+            tokens(&log),
+            [
+                Some("Bearer expired".to_string()),
+                None,
+                Some("Bearer renewed".to_string()),
+                Some("Bearer renewed".to_string()),
+            ]
+        );
+        assert_eq!(session.current().await.unwrap().access, "renewed");
+        assert_eq!(expired.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn a_refused_renewal_ends_the_session_and_the_stream() {
+        let (server, log) = serve(|_| reply("401 Unauthorized", "")).await;
+        let session = signed_in(&server).await;
+        let expired = expiries(&session);
+        let frames = AtomicUsize::new(0);
+
+        let end = connect_once(&session, &frames).await;
+
+        assert!(matches!(end, Err(AppError::SessionExpired)), "{end:?}");
+        // The webview hears it the way every other request tells it (`session-expired`).
+        assert_eq!(expired.load(Ordering::Relaxed), 1);
+        assert!(session.current().await.is_none());
+        assert_eq!(next_step(&end, false), Next::Stop);
+        // No retry without a token.
+        assert_eq!(request_lines(&log), [STREAM, REFRESH]);
+    }
+
+    #[tokio::test]
+    async fn a_401_after_the_renewal_stops_the_stream_and_keeps_the_session() {
+        let (server, log) = serve(|request| {
+            if request.starts_with(REFRESH) {
+                reply("200 OK", RENEWED)
+            } else {
+                reply("401 Unauthorized", "")
+            }
+        })
+        .await;
+        let session = signed_in(&server).await;
+        let expired = expiries(&session);
+        let frames = AtomicUsize::new(0);
+
+        let end = connect_once(&session, &frames).await;
+
+        assert!(matches!(end, Ok(StreamEnd::Refused)), "{end:?}");
+        assert_eq!(next_step(&end, true), Next::Stop);
+        assert_eq!(request_lines(&log), [STREAM, REFRESH, STREAM]);
+        assert_eq!(session.current().await.unwrap().access, "renewed");
+        assert_eq!(expired.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn after_a_sign_out_the_stream_sends_no_token() {
+        let (server, log) = serve(|_| reply("200 OK", FRAME)).await;
+        let session = signed_in(&server).await;
+        let expired = expiries(&session);
+        let frames = AtomicUsize::new(0);
+        let before = connect_once(&session, &frames).await;
+        assert!(matches!(before, Ok(StreamEnd::Closed)), "{before:?}");
+
+        // A sign-out takes the session first (`auth::logout`).
+        session.take().await;
+        let after = connect_once(&session, &frames).await;
+
+        let message = after.as_ref().err().map(|e| e.to_string());
+        assert_eq!(
+            message.as_deref(),
+            Some("Keine aktive Sitzung — Anfrage abgelehnt")
+        );
+        assert_eq!(next_step(&after, false), Next::Stop);
+        assert_eq!(request_lines(&log), [STREAM]);
+        // A sign-out is no expiry.
+        assert_eq!(expired.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn the_stream_comes_back_after_a_drop_and_ends_with_its_session() {
+        let dropped = || Err(AppError::Validation("SSE idle timeout".into()));
+
+        // A connection of the session still signed in that closed or dropped comes back.
+        assert_eq!(next_step(&Ok(StreamEnd::Closed), true), Next::Reconnect);
+        assert_eq!(next_step(&dropped(), true), Next::Reconnect);
+        // The session is over: the renewal failed (announced by authed_send), the user signed
+        // out, or someone else signed in.
+        assert_eq!(next_step(&Err(AppError::SessionExpired), false), Next::Stop);
+        assert_eq!(next_step(&Err(AppError::SessionExpired), true), Next::Stop);
+        assert_eq!(next_step(&Ok(StreamEnd::Closed), false), Next::Stop);
+        assert_eq!(next_step(&dropped(), false), Next::Stop);
+        // The server refuses the session even after a renewal, or a newer start took over.
+        assert_eq!(next_step(&Ok(StreamEnd::Refused), true), Next::Stop);
+        assert_eq!(next_step(&Ok(StreamEnd::Superseded), true), Next::Stop);
+    }
 
     #[test]
     fn parses_a_simple_frame() {
