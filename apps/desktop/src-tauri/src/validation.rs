@@ -140,8 +140,8 @@ pub fn same_server_destination(requested: &str, stored: &str) -> bool {
 /// Validates a request `path` coming from the frontend and confirms that the URL
 /// composed as `server_url + path` still targets `stored` (the logged-in server).
 ///
-/// `api_proxy`/`authenticated_get` build the request URL by naive string
-/// concatenation (`format!("{server_url}{path}")`). A frontend-supplied `path`
+/// `api_proxy` and the callers of `session::authed_send` build the request URL by naive
+/// string concatenation (`format!("{server_url}{path}")`). A frontend-supplied `path`
 /// could break out of that: a leading `@` shoves the host into the userinfo
 /// (RFC 3986: `https://server@evil.com/`), a `\` or `://` injects a new
 /// authority, so the Bearer token would travel to a foreign host even though
@@ -180,9 +180,7 @@ pub fn require_pinned_destination(
 ) -> Result<(), AppError> {
     match stored {
         Some(stored) => validate_proxy_path(server_url, path, stored),
-        None => Err(AppError::Validation(
-            "Keine aktive Sitzung — Anfrage abgelehnt".to_string(),
-        )),
+        None => Err(crate::session::no_session()),
     }
 }
 

@@ -144,7 +144,7 @@ async fn fetch_me(
 /// stays the one who signed in, and a `/me` failing after the server has rotated would
 /// throw the new pair away. The error lands in the log (`session::authed_send`), so it names
 /// the status at most, never the answer.
-async fn try_refresh(
+pub async fn try_refresh(
     server_url: &str,
     refresh_token: &str,
     allow_self_signed: bool,
@@ -235,8 +235,9 @@ async fn notify_server_logout(
     Ok(())
 }
 
-/// The server URL of the active session, if any. Used to pin `api_proxy`'s token
-/// destination: the JWT must only ever be sent to the server the user actually logged
+/// The server URL of the active session, if any. Used to pin the token destination of the
+/// paths that still take the token from the webview (notification stream, browser
+/// certificate): the JWT must only ever be sent to the server the user actually logged
 /// into, never to a URL a (compromised) frontend passes instead.
 pub async fn stored_server_url(session: &SessionState) -> Option<String> {
     session.current().await.map(|now| now.server_url)

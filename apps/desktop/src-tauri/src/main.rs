@@ -36,7 +36,7 @@ use commands::{
     start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
     sync_connections, tunnel_status,
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn main() {
     // Route panics through the log sink (file + stdout) so a crash leaves a
@@ -105,6 +105,11 @@ fn main() {
             // The session lives in the process now; drop what earlier versions left in the
             // keyring. Off the main thread: a keyring that hangs must not hold the window.
             tauri::async_runtime::spawn_blocking(auth::forget_keyring_session);
+            // A renewal that fails ends the session; the webview hears of it through this event.
+            let handle = app.handle().clone();
+            app.state::<session::SessionState>().on_expiry(move || {
+                let _ = handle.emit("session-expired", ());
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

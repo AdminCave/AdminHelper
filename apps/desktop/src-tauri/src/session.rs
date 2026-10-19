@@ -7,6 +7,7 @@
 
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use tokio::sync::Mutex;
@@ -51,12 +52,17 @@ pub struct Renewed {
     pub refresh: String,
 }
 
+/// Who hears that a failed renewal ended the session: in the app the webview, through the
+/// event `session-expired` (`main.rs`); in a test a counter.
+type ExpiryListener = Box<dyn Fn() + Send + Sync>;
+
 /// The session as managed state. The lock is async because a renewal holds it across its
 /// request: whoever meets a 401 meanwhile waits for it and then takes the new token.
 #[derive(Default)]
 pub struct SessionState {
     session: Mutex<Option<Session>>,
     generations: AtomicU64,
+    expiry: OnceLock<ExpiryListener>,
 }
 
 impl SessionState {
@@ -95,14 +101,22 @@ impl SessionState {
         }
     }
 
+    /// Sets who hears that a failed renewal ended the session, once, at the start. A sign-out
+    /// is no such end and tells nobody.
+    pub fn on_expiry(&self, listener: impl Fn() + Send + Sync + 'static) {
+        if self.expiry.set(Box::new(listener)).is_err() {
+            log::warn!("The session already has an expiry listener; the second one is ignored");
+        }
+    }
+
     fn next_generation(&self) -> u64 {
         self.generations.fetch_add(1, Ordering::Relaxed) + 1
     }
 }
 
-/// The token pin's answer without a session (`validation::require_pinned_destination`),
-/// the one the UI already knows.
-fn no_session() -> AppError {
+/// The answer to a request without a session, the one the UI already knows. The only source
+/// of its text; the token pin (`validation::require_pinned_destination`) gives it too.
+pub fn no_session() -> AppError {
     AppError::Validation("Keine aktive Sitzung — Anfrage abgelehnt".to_string())
 }
 
@@ -113,7 +127,8 @@ fn no_session() -> AppError {
 /// finds the new generation and only repeats. The server rotates the refresh token, so a
 /// second renewal with the old one would count as reuse and revoke the whole session. A
 /// renewal that fails or outlasts [`RENEWAL_DEADLINE`] ends the session with
-/// [`AppError::SessionExpired`]. Without a session nothing is sent.
+/// [`AppError::SessionExpired`] and tells the listener of [`SessionState::on_expiry`]. Without
+/// a session nothing is sent.
 ///
 /// The answer comes with the user it was sent for; a caller that takes it over checks
 /// [`SessionState::ensure_signed_in`] first.
@@ -177,6 +192,11 @@ where
             Err(e) => {
                 log::warn!("Session renewal failed, the session ends: {e}");
                 *slot = None;
+                // Outside the lock: whoever hears it may ask the session at once.
+                drop(slot);
+                if let Some(listener) = state.expiry.get() {
+                    listener();
+                }
                 return Err(AppError::SessionExpired);
             }
         }

@@ -151,34 +151,19 @@ pub async fn export_browser_p12(
     storage::write_browser_p12(&dest_path, &der)
 }
 
-/// Generic API proxy: forwards requests to the server via reqwest.
+/// Generic API proxy: forwards requests to the signed-in server via reqwest.
 /// Works around WebView TLS restrictions for self-signed certs.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "server_url and token leave with T3 of R-0430, the session holds both"
-)]
 #[tauri::command]
 pub async fn api_proxy(
     app: tauri::AppHandle,
     session: State<'_, SessionState>,
-    server_url: String,
-    token: String,
     method: String,
     path: String,
     body: Option<String>,
     allow_self_signed: Option<bool>,
 ) -> Result<serde_json::Value, AppError> {
     let self_signed = self_signed_setting(&app, allow_self_signed);
-    proxy::forward(
-        session.inner(),
-        &server_url,
-        &token,
-        &method,
-        &path,
-        body,
-        self_signed,
-    )
-    .await
+    proxy::forward(session.inner(), &method, &path, body, self_signed).await
 }
 
 #[tauri::command]

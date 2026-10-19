@@ -32,8 +32,10 @@ Doku: keine (intern; Doku mit T5)
 Abhängt von: T1
 Test-Löschung: apps/desktop/src-tauri/src/auth.rs::the_keyring_access_token_wins_over_the_passed_one — Keyring-Session entfällt, ersetzt durch die Tests am Session-Zustand (T1, T2); apps/desktop/src-tauri/src/auth.rs::without_a_session_the_passed_access_token_is_used — es gibt kein übergebenes Token mehr; apps/desktop/src-tauri/src/auth.rs::authenticated_get_sends_the_keyring_access_token — ersetzt durch „GET nimmt das Token aus dem Zustand“; apps/desktop/src-tauri/src/auth.rs::authenticated_get_sends_no_access_token_off_the_logged_in_server — gleichwertig ersetzt mit Zustand statt Keyring
 
-### T3 — api_proxy erneuert und meldet das Ende der Session  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/proxy.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/validation.rs
+### T3 — api_proxy erneuert und meldet das Ende der Session  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/proxy.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/session.rs, apps/desktop/src-tauri/src/validation.rs, apps/desktop/src-tauri/src/auth.rs, apps/desktop/src-tauri/src/main.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @f5f00ac3 2026-10-19T08:17:50+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T3.verdict.json)
 Änderung: `api_proxy` (`commands.rs:148`) nimmt nur noch `method`, `path`, `body`; `proxy::forward` (`:37-91`) baut die URL aus `session.server_url + path` (`validate_proxy_path`, `validation.rs:151`, bleibt; `require_pinned_destination` `:176` bekommt die Session-URL) und schickt über `authed_send`, erneuert also bei 401. Ohne Session: der bekannte Fehler „Keine aktive Sitzung“ (`validation.rs:184`). Endet die Session (`SessionExpired`), sendet Rust das Event `session-expired`. Tests: 401 → Erneuerung → Wiederholung erfolgreich; Erneuerung scheitert → Fehler und Event-Aufruf (über eine austauschbare Senke); Pfad-Injection weiter abgewiesen. Dazu (Prüfer-Hinweise zu T1/T2): `#[expect(clippy::too_many_arguments)]` an `api_proxy` entfällt; der Text „Keine aktive Sitzung — Anfrage abgelehnt“ hat nur noch eine Quelle (heute in `session.rs` und `validation.rs`); der Kommentar in `validation.rs` beim Pfad-Pin nennt `authed_send` statt `authenticated_get`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- proxy::
 Doku: keine (intern; Doku mit T5)
