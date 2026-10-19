@@ -26,7 +26,7 @@
 # ]
 #
 # Available HTTP helpers: http_get(url, headers=None, timeout=10)
-#                         http_post(url, json=None, headers=None, timeout=10)
+#                         http_post(url, json_data=None, headers=None, timeout=10)
 # Return value: {"status": int, "body": str, "json": Any|None}
 # Both helpers reject private/internal/metadata targets (SSRF guard) and do NOT
 # follow redirects; the reflected body is capped at 1 MB.
