@@ -337,3 +337,7 @@ Dämpfung `:124`, Alert-Verhalten und Host-down `:139-145`, angepasste Template-
    „— Standard“-Templates) mit `1m`, 3 Fehlschlägen, `timeout` 3 s — so gemeint?
 6. **Default 2 auch für bestehende Checks mit langem Intervall** (Disk Forecast `1h`: Entwarnung nach 2 h) — so
    lassen?
+
+## Entscheidungen am Gate
+
+Entscheidungen am Gate (Kevin 2026-10-19): `consecutive_oks` Default 2; die mitgelieferten Templates setzen bei Checks mit Intervall ab 1 h (SMART, Prognose) 1, einstellbar je Check. Server-Vertrag `POST /api/internal/events` bekommt `source_ids` (Empfänger je Nutzer, `alert.triggered` je Server; Events ohne das Feld wie heute an die Admins). Host-Ping als sechstes Template (1 min, 3 Fehlschläge, 3 s Timeout); Host-down lösen nur Pings aus diesem Template aus; Host-Ping unterdrückt den Heartbeat, nicht umgekehrt; Host-Ping nicht in der Sammelmeldung; ein einzelner stummer Agent wird bis zu 5 min zurückgehalten. Gebaut wird nach dem Merge von monitoring-hardening (`alerter.py`: deren Logzeilen und der except-Zweig der Regelschleife bleiben dort).
