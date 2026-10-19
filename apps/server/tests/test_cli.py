@@ -8,12 +8,20 @@ its enrollment token, so a fresh deployment can come up with mTLS enforced."""
 from __future__ import annotations
 
 import io
+import time
 
 import pytest
 
 import app.cli as cli
 from app.cli import create_admin, mint_enroll_token, reset_admin
-from app.core.auth import hash_api_key, verify_password
+from app.core.auth import (
+    _get_user_from_token,
+    create_access_token,
+    create_refresh_token,
+    get_user_from_refresh_token,
+    hash_api_key,
+    verify_password,
+)
 from app.core.identity import SCOPE_ACCESS
 from app.modules.audit.models import AuditLog
 from app.modules.enrollment.models import EnrollmentToken
@@ -95,6 +103,24 @@ def test_reset_admin_updates_password(db_session):
     assert user.hashed_password != old_hash
     assert verify_password("brandneu99", user.hashed_password)
     assert not verify_password("supersecret", user.hashed_password)
+
+
+def test_reset_admin_signs_out_existing_sessions(db_session, admin_user):
+    # Same token watermark as a password change over the API (users/router.py).
+    access = create_access_token({"sub": "admin"})
+    refresh = create_refresh_token({"sub": "admin"})
+    assert _get_user_from_token(access, db_session) is not None
+    assert get_user_from_refresh_token(refresh, db_session) is not None
+
+    assert reset_admin(db_session, "admin", "brandneu99") == 0
+
+    assert _get_user_from_token(access, db_session) is None
+    assert get_user_from_refresh_token(refresh, db_session) is None
+    # A JWT iat has whole seconds, and a token from the reset's own second counts
+    # as issued before it (core/auth.py); a second later a new login holds.
+    time.sleep(1)
+    fresh = create_access_token({"sub": "admin"})
+    assert _get_user_from_token(fresh, db_session) is not None
 
 
 def test_reset_admin_refuses_unknown_user(db_session):
