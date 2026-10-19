@@ -130,6 +130,12 @@ def pg_engine():
         try:
             yield engine
         finally:
+            # Event tasks (app.core.events) query this database through the app engine
+            # on threads of their own; one still running after the drop finds no tables
+            # (R-0509). Only once the module is imported, so the teardown never imports it.
+            events = sys.modules.get("app.core.events")
+            if events is not None:
+                events._executor.shutdown(wait=True)
             Base.metadata.drop_all(bind=engine)
             engine.dispose()
         return

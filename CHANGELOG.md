@@ -346,6 +346,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: die Paketbeschreibung nennt kein VNC mehr (R-0523):** Die lange Beschreibung des Desktop-Pakets, die
+  etwa `apt show` zeigt, nannte VNC unter den Verbindungsarten. Der Client oeffnet SSH-, RDP- und Web-Verbindungen;
+  die Beschreibung nennt jetzt nur diese.
 - **Agent: eine Platte, die smartctl nicht oeffnen kann, meldet kein „SMART FAILED“ mehr (R-0493):** Endete die
   Abfrage einer Platte mit Exit-Bit 0 oder 1 von smartctl (Befehlszeile nicht gelesen, Geraet nicht geoeffnet), kam
   sie ohne Modell und SMART-Status in den Report, und der Check `smart_health` meldete sie als „SMART FAILED“,
@@ -936,6 +939,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   englischen Oberflaeche. Gespeicherte Eintraege behalten ihren Text. Ebenso englisch sind die Fehlertexte der
   Monitoring-API, die der Desktop als „HTTP <Code>: …“ anzeigt, etwa „Check not found“, „Invalid API key“ oder
   „Invalid config for agent_resources: …“; die Status-Codes bleiben. Doku: Monitoring-Administration (DE+EN).
+
+- **Monitoring: Check-Meldungen nennen hoechstens zehn Eintraege einer Liste und sind hoechstens 2000 Zeichen lang
+  (R-0517):** Nennt die Meldung eines Checks eine Liste — VMs ohne oder mit altem Backup, Pools, Container, Platten,
+  Dienste oder Mounts —, stehen dort hoechstens zehn Eintraege und hoechstens 1000 Zeichen davon, jeder Eintrag auf
+  500 Zeichen gekuerzt, die uebrigen als „(+N more)“, etwa „Failed: a.service, …, j.service (+3 more)“. Bisher nannte
+  die Meldung alle, bei einem defekten Agent mit 500 langen Namen bis zu mehreren Millionen Zeichen in Dashboard, Mail
+  und Webhook. Zusaetzlich kuerzt der Dienst jede Meldung fuer Dashboard, Mail und Webhook auf hoechstens 2000 Zeichen
+  samt „…“, etwa eine mit zwei vollen Listen oder dem langen Fehlertext „Unexpected error: …“ eines Checks; ein
+  „(failure n/m)“ eines gedaempften Fehlers steht dahinter und bleibt sichtbar. Status und Metriken bleiben gleich,
+  die Details (die Listen im Desktop) bleiben vollstaendig. Doku: Monitoring fuer Entwickler und Administration
+  (DE+EN).
 
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft
