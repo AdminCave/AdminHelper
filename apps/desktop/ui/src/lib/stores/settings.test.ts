@@ -24,6 +24,7 @@ const h = vi.hoisted(() => ({
   refreshTunnel: vi.fn(),
   fetchTunnels: vi.fn(),
   stopTunnel: vi.fn(),
+  reloadWindow: vi.fn(),
 }));
 
 vi.mock('./connections', () => ({
@@ -58,6 +59,7 @@ vi.mock('$lib/bridge', () => ({
   stopTunnel: h.stopTunnel,
 }));
 vi.mock('./tunnel', () => ({ stop: h.tunnelStop, startIfServerMode: h.tunnelStart }));
+vi.mock('$lib/utils/reloadWindow', () => ({ reloadWindow: h.reloadWindow }));
 
 import { syncNow, saveSettings, stopSyncTimer } from './settings';
 
@@ -127,6 +129,32 @@ describe('saveSettings mode-switch orchestration (6.6)', () => {
     expect(h.tunnelStop).toHaveBeenCalled();
   });
 
+  it('a server-URL change with an active session reloads the window after saving (R-0429)', async () => {
+    // The forced logout leaves the old server's data in the stores; the reload empties them all.
+    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
+    expect(result.ok).toBe(true);
+    expect(h.reloadWindow).toHaveBeenCalledOnce();
+    expect(h.saveSettingsBridge.mock.invocationCallOrder[0]).toBeLessThan(
+      h.reloadWindow.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('a server-URL change without a session saves without a reload', async () => {
+    h.sess.session = null;
+    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
+    expect(result.ok).toBe(true);
+    expect(h.saveSettingsBridge).toHaveBeenCalledOnce();
+    expect(h.reloadWindow).not.toHaveBeenCalled();
+  });
+
+  it('a failed save after the forced logout does not reload', async () => {
+    h.saveSettingsBridge.mockRejectedValueOnce(new Error('disk full'));
+    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
+    expect(result.ok).toBe(false);
+    expect(h.dropSession).toHaveBeenCalled();
+    expect(h.reloadWindow).not.toHaveBeenCalled();
+  });
+
   it('saving in server mode leaves a running tunnel alone (R-0245)', async () => {
     // Nothing the tunnel depends on changed (a new server URL logs out above), and a
     // second start next to the running frpc fails with "frpc laeuft bereits".
@@ -163,7 +191,7 @@ describe('saveSettings mode-switch orchestration (6.6)', () => {
   });
 });
 
-describe('signOut: the logout button of the app shell (R-0402)', () => {
+describe('logoutAndReload: the logout buttons of the app shell and the settings (R-0402, R-0429)', () => {
   // The real session and tunnel stores over the mocked bridge, fresh for each test: what
   // counts is that frpc stops before the session goes and that no tick follows.
   const SESSION: AuthSession = {
@@ -185,7 +213,7 @@ describe('signOut: the logout button of the app shell (R-0402)', () => {
     enabled: true,
     name: 'db',
   };
-  let signOut: () => Promise<void>;
+  let logoutAndReload: () => Promise<void>;
   let session: typeof import('./session');
   let tunnel: typeof import('./tunnel');
 
@@ -204,7 +232,7 @@ describe('signOut: the logout button of the app shell (R-0402)', () => {
     vi.resetModules();
     vi.doUnmock('./session');
     vi.doUnmock('./tunnel');
-    ({ signOut } = await import('./settings'));
+    ({ logoutAndReload } = await import('./settings'));
     session = await import('./session');
     tunnel = await import('./tunnel');
     await session.hydrate();
@@ -219,7 +247,7 @@ describe('signOut: the logout button of the app shell (R-0402)', () => {
   });
 
   it('stops the tunnel before it logs out and leaves connections.json alone', async () => {
-    await signOut();
+    await logoutAndReload();
     expect(h.stopTunnel).toHaveBeenCalledOnce();
     expect(h.bridgeLogout).toHaveBeenCalledOnce();
     expect(h.stopTunnel.mock.invocationCallOrder[0]).toBeLessThan(
@@ -231,17 +259,42 @@ describe('signOut: the logout button of the app shell (R-0402)', () => {
 
   it('a failed stop does not keep the user logged in', async () => {
     h.stopTunnel.mockRejectedValueOnce(new Error('frpc not running'));
-    await expect(signOut()).resolves.toBeUndefined();
+    await expect(logoutAndReload()).resolves.toBeUndefined();
     expect(h.bridgeLogout).toHaveBeenCalledOnce();
     expect(get(session.session)).toBeNull();
   });
 
   it('leaves the tunnel store idle without mappings, and no tick follows', async () => {
-    await signOut();
+    await logoutAndReload();
     expect(get(tunnel.tunnelUi)).toBe('idle');
     expect(get(tunnel.tunnelStatus)).toBeNull();
     expect(tunnel.getMappings()).toEqual([]);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(h.refreshTunnel).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads the window after the tunnel stop and the logout', async () => {
+    await logoutAndReload();
+    expect(h.reloadWindow).toHaveBeenCalledOnce();
+    expect(h.stopTunnel.mock.invocationCallOrder[0]).toBeLessThan(
+      h.bridgeLogout.mock.invocationCallOrder[0],
+    );
+    expect(h.bridgeLogout.mock.invocationCallOrder[0]).toBeLessThan(
+      h.reloadWindow.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('a failed tunnel stop does not prevent the reload', async () => {
+    h.stopTunnel.mockRejectedValueOnce(new Error('frpc not running'));
+    await logoutAndReload();
+    expect(h.bridgeLogout).toHaveBeenCalledOnce();
+    expect(h.reloadWindow).toHaveBeenCalledOnce();
+  });
+
+  it('a failed logout does not prevent the reload', async () => {
+    h.bridgeLogout.mockRejectedValueOnce(new Error('keyring locked'));
+    await expect(logoutAndReload()).resolves.toBeUndefined();
+    expect(get(session.session)).toBeNull();
+    expect(h.reloadWindow).toHaveBeenCalledOnce();
   });
 });

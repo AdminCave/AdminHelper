@@ -10,7 +10,7 @@
   },
   "app": {
     "withGlobalTauri": false,
-    "enableGTKAppId": true,
+    "enableGTKAppId": false,
     "windows": [
       {
         "label": "main",

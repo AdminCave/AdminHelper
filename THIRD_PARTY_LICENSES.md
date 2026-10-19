@@ -120,7 +120,8 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 `serde`, `serde_json`, `tauri`, `reqwest`, `futures-util`, `tokio`, `url`,
 `open`, `keyring`, `tauri-plugin-shell`, `tauri-plugin-dialog`,
-`tauri-plugin-notification`, `tauri-plugin-log`, `log`, `chrono`, `regex`,
+`tauri-plugin-notification`, `tauri-plugin-log`,
+`tauri-plugin-single-instance` (nur Desktop-Ziele), `log`, `chrono`, `regex`,
 `rustls`, `sha2`, `ring`, `rcgen`, `rustls-pki-types`, `x509-parser`, `p12`,
 `toml` — überwiegend `Apache-2.0 OR MIT` bzw. `MIT`.
 
