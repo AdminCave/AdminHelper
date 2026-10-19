@@ -50,15 +50,26 @@ _CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
 # through it (R-0437).
 MAX_AGENT_TEXT = 500
 
+# Every control character (Unicode category Cc: C0, DEL, C1) and the line and paragraph
+# separators become a space, one for one: a line break in a container name would otherwise
+# start a forged line of its own in the dashboard, the bell, mail and webhook.
+_AGENT_TEXT_TO_SPACE = str.maketrans(
+    dict.fromkeys([*range(0x20), *range(0x7F, 0xA0), 0x2028, 0x2029], " ")
+)
+
 
 def cap_agent_text(value: object) -> str | None:
-    """A text from the report as it may go into a message: a non-empty string, cut to
-    MAX_AGENT_TEXT characters including the trailing "…"; None for anything else."""
+    """A text from the report as it may go into a message: a non-empty string on one line,
+    every control character a space, cut to MAX_AGENT_TEXT characters including the trailing
+    "…"; None for anything else.
+
+    Cut first, then translate: the table maps one character to one, so the result is the
+    same, and the work stays bounded by MAX_AGENT_TEXT however long the report text is."""
     if not isinstance(value, str) or not value:
         return None
     if len(value) <= MAX_AGENT_TEXT:
-        return value
-    return value[: MAX_AGENT_TEXT - 1] + "…"
+        return value.translate(_AGENT_TEXT_TO_SPACE)
+    return value[: MAX_AGENT_TEXT - 1].translate(_AGENT_TEXT_TO_SPACE) + "…"
 
 
 # A list a checker joins into its message names at most this many entries and characters
@@ -68,10 +79,10 @@ _MAX_LIST_TEXT = 1000
 
 
 def join_capped(entries: list[str], sep: str = ", ") -> str:
-    """entries joined with sep as they may go into a message: each entry cut like
-    cap_agent_text, appended in order as long as the joined text keeps to _MAX_LIST_ENTRIES
+    """entries joined with sep as they may go into a message: each entry on one line and cut
+    by cap_agent_text, appended in order as long as the joined text keeps to _MAX_LIST_ENTRIES
     entries and _MAX_LIST_TEXT characters (the first always fits), the rest counted as
-    " (+N more)". Up to ten short entries give sep.join(entries)."""
+    " (+N more)". Up to ten short one-line entries give sep.join(entries)."""
     named: list[str] = []
     length = 0
     for entry in entries[:_MAX_LIST_ENTRIES]:
