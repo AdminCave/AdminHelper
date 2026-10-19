@@ -31,34 +31,37 @@
         <div class="content-inner">
           <span class="eyebrow">Entwickler-Handbuch</span>
           <h1>Web-Panel</h1>
-          <p class="lead">Das Web-Admin-Panel ist eine eigenständige Svelte-5-SPA mit Hash-Router. Es liegt unter <code>apps/web/</code>, wird via Vite gebaut und im Docker-Image per Multi-Stage in das Python-Runtime-Image kopiert. Seit v0.32.0 deckt es nur noch die <strong>Instanz-Verwaltung</strong> ab (Benutzer, API-Keys, Hooks, FRP-Server-Konfiguration); die operative Server-/Verbindungs-/Tunnel-/Monitoring-/Ansible-Verwaltung ist in den Desktop-Client umgezogen (siehe <a href="./desktop.html">Desktop-Client</a>).</p>
+          <p class="lead">Das Web-Admin-Panel ist eine eigenständige Svelte-5-SPA mit Hash-Router. Es liegt unter <code>apps/web/</code>, wird via Vite gebaut und im Docker-Image per Multi-Stage in das Python-Runtime-Image kopiert. Seit v0.32.0 deckt es nur noch die <strong>Instanz-Verwaltung</strong> ab (Benutzer, API-Keys, Hooks, FRP-Server-Konfiguration, Audit-Log); die operative Server-/Verbindungs-/Tunnel-/Monitoring-/Ansible-Verwaltung ist in den Desktop-Client umgezogen (siehe <a href="./desktop.html">Desktop-Client</a>).</p>
 
           <h2>Projekt-Struktur</h2>
           <div class="code-header"><span>tree</span></div>
 <pre><code>apps/web/
 &#9500;&#9472;&#9472; src/
 &#9474;   &#9500;&#9472;&#9472; lib/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; api/           client.ts + Domain-Wrapper (auth, users, apikeys, hooks, frp, servers) + types.ts
-&#9474;   &#9474;   &#9500;&#9472;&#9472; components/    Button, Modal, TagChip, Tabs, EmptyState, Toast, ...
-&#9474;   &#9474;   &#9500;&#9472;&#9472; stores/        Runes-Stores (auth, users, apikeys, hooks, frp, notifications)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; api/           client.ts + Domain-Wrapper (auth, users, apikeys, hooks, frp, servers, audit) + types.ts
+&#9474;   &#9474;   &#9500;&#9472;&#9472; components/    layout/ (Router, Sidebar), ui/ (Button, ConfirmDialog, EmptyState, Modal, Toast)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; stores/        <code>writable</code>-Stores (auth, users, apikeys, hooks, frp, notifications, theme)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/          DE/EN-Dictionaries (localStorage <code>adminhelper_language</code>)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; router.ts      Hash-Router
+&#9474;   &#9474;   &#9500;&#9472;&#9472; routeGuard.ts  Routen-Aufl&ouml;sung inkl. <code>adminOnly</code>
 &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
-&#9474;   &#9500;&#9472;&#9472; pages/           Users, ApiKeys, Hooks, Frp + Login + Placeholder
-&#9474;   &#9500;&#9472;&#9472; modals/          Modal-Komponenten + <code>configs/</code> Subfolder
+&#9474;   &#9500;&#9472;&#9472; pages/           Users, ApiKeys, Hooks, Frp, Audit + Login + Placeholder
+&#9474;   &#9500;&#9472;&#9472; modals/          Modal-Komponenten
 &#9474;   &#9500;&#9472;&#9472; styles/
 &#9474;   &#9500;&#9472;&#9472; App.svelte
+&#9474;   &#9500;&#9472;&#9472; routes.ts        Routen-Tabelle
 &#9474;   &#9492;&#9472;&#9472; main.ts
-&#9500;&#9472;&#9472; tests/e2e/         Playwright (login.spec.ts, smoke.spec.ts)
-&#9500;&#9472;&#9472; svelte.config.ts
+&#9500;&#9472;&#9472; tests/e2e/         Playwright-Specs gegen eine gemockte API
+&#9500;&#9472;&#9472; tests/live/        Smoke gegen den echten Stack (<code>scripts/tests/web_live.sh</code>)
+&#9500;&#9472;&#9472; svelte.config.js
 &#9492;&#9472;&#9472; vite.config.ts</code></pre>
 
           <h2>Routing</h2>
           <p>Hash-Router (kein SSR, kein Client-Router von SvelteKit): Die Pfade sind <code>#/users</code>, <code>#/apikeys</code> usw. Das funktioniert zuverl&auml;ssig hinter beliebigen Reverse-Proxies, ohne dass der Server SPA-Fallbacks verstehen muss. Implementierung in <code>src/lib/router.ts</code> &ndash; ein <code>writable</code> <code>_path</code> mit <code>hashchange</code>-Listener; exportiert <code>navigate()</code>, <code>replace()</code>, <code>currentPath()</code> und einen <code>segments</code>-Derived-Store.</p>
-          <p>Produktiv-Routen seit v0.32.0: <code>#/users</code> (Standard-Landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP-<em>Server</em>-Konfiguration). Die früheren operativen Routen (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, Tunnel) sind in den Desktop-Client umgezogen.</p>
+          <p>Produktiv-Routen seit v0.32.0: <code>#/users</code> (Standard-Landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP-<em>Server</em>-Konfiguration), seit v0.35.0 dazu <code>#/audit</code> (Audit-Log). Die früheren operativen Routen (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, Tunnel) sind in den Desktop-Client umgezogen.</p>
 
           <h2>Stores</h2>
-          <p>Stores in <code>src/lib/stores/</code>. Jeder Store ist eine TypeScript-Klasse mit <code>$state</code>-Feldern und Methoden, die direkt mit dem passenden API-Wrapper sprechen. Seit v0.32.0 nur noch die Instanz-Verwaltung &ndash; die operativen Stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, Tunnel) leben jetzt im Desktop-Client.</p>
+          <p>Stores in <code>src/lib/stores/</code>. Jeder Store ist ein <code>writable</code> aus <code>svelte/store</code>, nach au&szlig;en nur &uuml;ber ein Objekt mit <code>subscribe</code> sichtbar; bei den Daten-Stores tr&auml;gt es Methoden, die direkt mit dem passenden API-Wrapper sprechen. Seit v0.32.0 nur noch die Instanz-Verwaltung &ndash; die operativen Stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, Tunnel) leben jetzt im Desktop-Client.</p>
           <table>
             <thead><tr><th>Store</th><th>Zweck</th></tr></thead>
             <tbody>
@@ -67,13 +70,14 @@
               <tr><td><code>apikeys</code></td><td>Key-CRUD, einmaliges Anzeigen des Klartext-Keys.</td></tr>
               <tr><td><code>hooks</code></td><td>Hook-CRUD, Trigger-Test, Token-Rotation.</td></tr>
               <tr><td><code>frp</code></td><td>FRP-<em>Server</em>-Konfiguration (frps-Einstellungen), Config-Preview, frps-Status.</td></tr>
-              <tr><td><code>notifications</code></td><td>Globale Toasts und Best&auml;tigungs-Dialoge.</td></tr>
+              <tr><td><code>notifications</code></td><td>Globale Toasts.</td></tr>
+              <tr><td><code>theme</code></td><td>Dark/Light-Umschaltung; die Wahl liegt in <code>localStorage.ah-theme</code> (siehe Theming).</td></tr>
             </tbody>
           </table>
 
           <h2>API-Wrapper</h2>
           <p>Alle HTTP-Calls gehen durch <code>src/lib/api/client.ts</code>. Der Client verwaltet Access-Token, h&auml;lt eine in-flight-deduplizierte <code>tryRefresh()</code>-Promise und triggert automatisch Refresh, wenn ein 401 zur&uuml;ckkommt. Schl&auml;gt das fehl, ruft <code>registerAuthFailureHandler()</code> den <code>auth</code>-Store, der zum Login leitet. Ein 2xx, dessen Body sich nicht lesen l&auml;sst (etwa weil ein Reload die &Uuml;bertragung abbricht, oder weil er kein JSON ist), wirft <code>ApiError(status, 'Invalid response body')</code>, statt still <code>null</code> zu liefern; nur 204 und ein g&uuml;ltiges JSON-<code>null</code> ergeben <code>null</code>.</p>
-          <p>Domain-Wrapper liegen daneben: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (nur für die User&harr;Server-Zuweisung), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP-Server-Konfiguration) &ndash; jeweils typisiert &uuml;ber <code>types.ts</code>.</p>
+          <p>Domain-Wrapper liegen daneben: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (nur für die User&harr;Server-Zuweisung), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP-Server-Konfiguration), <code>audit.ts</code> (Audit-Log lesen, mit Filtern) &ndash; jeweils typisiert &uuml;ber <code>types.ts</code>.</p>
 
           <h2>i18n</h2>
           <p>Sprachen: DE und EN. Aktive Sprache wird in <code>localStorage.adminhelper_language</code> persistiert; Browser-Detect dient nur als initialer Fallback. Die <code>t()</code>-Funktion ist als Store implementiert &ndash; das verhindert i18n-Leaks in reaktiven Komponenten.</p>

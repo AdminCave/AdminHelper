@@ -22,6 +22,19 @@ from app.checkers.agent import cap_agent_text
 _ZFS_ERRORS = frozenset({"timeout", "cli_failed"})
 _DOCKER_ERRORS = frozenset({"daemon_unreachable", "timeout", "cli_failed", "parse_failed"})
 
+# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
+# that router imports app.checkers (R-0459).
+_MAX_REPORT_ENTRIES = 500
+
+
+def capped_objects(value: object) -> list[dict]:
+    """The entries of a report list that a checker rates: the objects among the first
+    _MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
+    flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
+
 
 def _outage_message(label: str, block: dict, codes: frozenset[str]) -> tuple[str, str | None]:
     """(message, code) of a block the agent could not read. The message goes unchanged into
@@ -52,10 +65,10 @@ class ProxmoxBackupChecker:
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         proxmox = report.get("proxmox")
-        if not proxmox:
+        if not isinstance(proxmox, dict) or not proxmox:
             return "unknown", "No Proxmox data in report", None
 
-        vms = proxmox.get("vms", [])
+        vms = capped_objects(proxmox.get("vms"))
         if not vms:
             return "ok", "No VMs/CTs found", None
 
@@ -141,7 +154,7 @@ class ZfsHealthChecker:
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         zfs = report.get("zfs")
-        if not zfs:
+        if not isinstance(zfs, dict) or not zfs:
             # An empty list, not None: the push path keeps the stored details of a
             # result without any, and the desktop would go on showing the old pools.
             return "unknown", "No ZFS data in report", {"_details": {"pools": []}}
@@ -154,7 +167,7 @@ class ZfsHealthChecker:
             details = {"available": False, "error": code, "pools": []}
             return ("warning" if alert else "unknown"), msg, {"_details": details}
 
-        pools = zfs.get("pools", [])
+        pools = capped_objects(zfs.get("pools"))
         if not pools:
             return (
                 "ok",
@@ -203,7 +216,9 @@ class ZfsHealthChecker:
         if problems:
             return status, "; ".join(problems), metrics
 
-        pool_summary = ", ".join(f"{p['name']} {p.get('capacity_percent', 0)}%" for p in pools)
+        pool_summary = ", ".join(
+            f"{p.get('name', '?')} {p.get('capacity_percent', 0)}%" for p in pools
+        )
         return "ok", f"All pools ONLINE: {pool_summary}", metrics
 
 
@@ -215,16 +230,18 @@ _PS_EXITED = re.compile(r"exited \((-?\d+)\)", re.IGNORECASE)
 # 2026-10-17); an OOM kill also ends in 137 and is caught by oom_killed first.
 _STOP_SIGNAL_EXITS = (137, 143)
 
-# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
-# that router imports app.checkers (R-0459).
-_MAX_CONTAINERS = 500
+
+def _ps_status(c: dict) -> str:
+    """The docker ps status text; anything but a string counts as none (R-0507)."""
+    status = c.get("status")
+    return status if isinstance(status, str) else ""
 
 
 def _container_exit_code(c: dict) -> int | None:
     if "exit_code" in c:
         return c["exit_code"]
     # Agents before R-0419 send no exit_code; their ps status text carries it.
-    m = _PS_EXITED.match(c.get("status", ""))
+    m = _PS_EXITED.match(_ps_status(c))
     return int(m.group(1)) if m else None
 
 
@@ -236,7 +253,7 @@ def _rate_container(c: dict, state: str, prev_restart_count: int | None) -> tupl
         if "health" in c:
             unhealthy = c["health"] == "unhealthy"
         else:  # agent before R-0419: only the ps status text carries it
-            unhealthy = "unhealthy" in c.get("status", "").lower()
+            unhealthy = "unhealthy" in _ps_status(c).lower()
         if unhealthy:
             return "warning", "unhealthy"
         # A restart between two pushes raises the count; a manual start resets it to 0.
@@ -305,7 +322,7 @@ class DockerHealthChecker:
         """`prev_details` is this check's previous `_details` blob (state.details): a
         container whose restart_count rose since then restarted between two pushes."""
         docker = report.get("docker")
-        if not docker:
+        if not isinstance(docker, dict) or not docker:
             # An empty list, not None: the push path keeps the stored details of a
             # result without any, and the desktop would go on showing the old list.
             return "unknown", "No Docker data in report", {"_details": {"containers": []}}
@@ -318,8 +335,7 @@ class DockerHealthChecker:
             details = {"available": False, "error": code, "containers": []}
             return ("warning" if alert else "unknown"), msg, {"_details": details}
 
-        raw = docker.get("containers")
-        containers = raw[:_MAX_CONTAINERS] if isinstance(raw, list) else []
+        containers = capped_objects(docker.get("containers"))
         if not containers:
             return (
                 "ok",
@@ -346,19 +362,27 @@ class DockerHealthChecker:
 
         for c in containers:
             cid = c.get("id")
-            name = c.get("name", cid if isinstance(cid, str) else "?")
+            # A name or state that is no string (a broken agent, R-0507) counts as missing.
+            name = c.get("name")
+            if not isinstance(name, str):
+                name = cid if isinstance(cid, str) else "?"
             if name in ignore:
                 continue
 
-            state = c.get("state", "").lower()
+            state = c.get("state")
+            state = state.lower() if isinstance(state, str) else ""
             prev_count = prev_restarts.get(cid) if isinstance(cid, str) else None
             category, reason = _rate_container(c, state, prev_count)
+            # The ignore list and the rating read the full name and state; message and details
+            # only get a capped copy, the message goes unchanged into webhook and mail (R-0508).
+            shown_name = cap_agent_text(name) or ""
+            shown_state = cap_agent_text(state) or ""
             if state == "running":
                 running += 1
             if category == "critical":
-                critical_problems.append(_problem_text(name, reason, state))
+                critical_problems.append(_problem_text(shown_name, reason, shown_state))
             elif category == "warning":
-                warning_problems.append(_problem_text(name, reason, state))
+                warning_problems.append(_problem_text(shown_name, reason, shown_state))
             elif category == "stopped":
                 stopped += 1
             else:
@@ -367,9 +391,9 @@ class DockerHealthChecker:
             container_details.append(
                 {
                     "id": c.get("id"),
-                    "name": name,
+                    "name": shown_name,
                     "image": c.get("image", ""),
-                    "state": state,
+                    "state": shown_state,
                     "category": category,
                     "reason": reason,
                     "exit_code": _container_exit_code(c),

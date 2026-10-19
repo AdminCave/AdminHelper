@@ -1388,8 +1388,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  ├─ app/
 │  │  │  ├─ main.py
 │  │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
-│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
-│  │  │                          #   ansible, monitoring_proxy
+│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys, ansible,
+│  │  │                          #   monitoring_proxy, audit, enrollment, notifications, provisioning
 │  │  ├─ alembic/               # DB-Migrationen
 │  │  └─ requirements.txt
 │  ├─ monitoring/            # eigenständiger FastAPI-Microservice (eigene DB)
@@ -1409,12 +1409,12 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ Makefile                # build-linux, build-windows, deb, rpm
 │  ├─ web/                   # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
 │  │  ├─ src/
-│  │  │  ├─ lib/api/             # 9 Module (client + 7 Domain-Wrapper + types)
-│  │  │  ├─ lib/stores/          # 6 Stores
+│  │  │  ├─ lib/api/             # client + Domain-Wrapper + types
+│  │  │  ├─ lib/stores/          # Svelte-Stores
 │  │  │  ├─ lib/i18n/            # DE/EN-Dictionaries
-│  │  │  ├─ pages/               # 5 Produktiv-Pages + Login + Placeholder
-│  │  │  └─ modals/              # 9 Modal-Komponenten
-│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts, crud.spec.ts)
+│  │  │  ├─ pages/               # Produktiv-Pages + Login + Placeholder
+│  │  │  └─ modals/              # Modal-Komponenten
+│  │  └─ tests/e2e/              # Playwright-E2E-Specs (*.spec.ts)
 │  └─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
 │     ├─ src-tauri/          # Rust/Tauri-Backend
 │     │  ├─ src/

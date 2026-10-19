@@ -24,7 +24,7 @@ def require_internal(request: Request) -> None:
     key = request.headers.get("X-Internal-Key", "")
     if not _key_matches(key, INTERNAL_API_KEY):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Ungültiger interner API-Key"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal API key"
         )
 
 
@@ -34,7 +34,7 @@ def require_agent(request: Request, db: Session = Depends(get_db)) -> str:
 
     key = request.headers.get("X-API-Key", "")
     if not key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API-Key fehlt")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API key")
 
     # Internal key has access to all servers (constant-time, fails closed)
     if _key_matches(key, INTERNAL_API_KEY):
@@ -44,6 +44,6 @@ def require_agent(request: Request, db: Session = Depends(get_db)) -> str:
     hashed = MonitorAgentKey.hash_key(key)
     agent_key = db.query(MonitorAgentKey).filter(MonitorAgentKey.hashed_key == hashed).first()
     if not agent_key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ungültiger API-Key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
     return agent_key.server_id

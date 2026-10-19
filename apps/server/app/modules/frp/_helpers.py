@@ -97,3 +97,28 @@ def get_allow_users(db: Session, server_id: str) -> list[str]:
     # return an empty allow-list (the config_generator then falls back to the
     # admin visitor), NOT ["*"] which would let ANY visitor reach the tunnel.
     return names
+
+
+def frpc_sync_inputs(
+    db: Session, server_id: str
+) -> tuple[FrpServerConfig, list[FrpTunnel], list[str]] | None:
+    """The generate_frpc_toml inputs the agent's frpc.toml is built from: the FRP
+    config, the tunnels scoped to this server AND this config, and the allow-users.
+    Shared by the provision-sync endpoints (config download + config hash) and the
+    provisioning bundle, so the three can't drift: a hash computed over a different
+    tunnel set than the download would trigger endless agent resyncs (2.45), and a
+    bundle unlike the sync text would leave the agent's first sync with work to do.
+    None without an FRP config; the server lookup stays with the callers."""
+    config = get_frp_config(db)
+    if not config:
+        return None
+
+    tunnels = (
+        db.query(FrpTunnel)
+        .filter(
+            FrpTunnel.server_id == server_id,
+            FrpTunnel.frp_config_id == config.id,
+        )
+        .all()
+    )
+    return config, tunnels, get_allow_users(db, server_id)

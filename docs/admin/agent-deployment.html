@@ -31,13 +31,13 @@
         <div class="content-inner">
           <span class="eyebrow">Admin-Handbuch</span>
           <h1>Agent-Deployment</h1>
-          <p class="lead">Der Go-Agent läuft auf jedem überwachten Server. Er übernimmt zwei Aufgaben: Metrik-Collector-Läufe und FRP-Client-Auto-Provisioning. Ausgeliefert wird er als DEB, RPM (Linux) oder MSI/ZIP (Windows).</p>
+          <p class="lead">Der Go-Agent läuft auf jedem überwachten Server. Er übernimmt zwei Aufgaben: Metrik-Collector-Läufe und FRP-Client-Auto-Provisioning. Ausgeliefert wird er als DEB, RPM (Linux) oder als einzelne <code>.exe</code> (Windows).</p>
 
           <h2>Was macht der Agent?</h2>
           <ul>
-            <li><strong>Monitoring</strong>: läuft alle 5 Minuten (systemd.timer mit Jitter), sammelt CPU, RAM, Disk, SMART, Docker-Container-Status, ZFS-Pools, sendet die Metriken tunnelfrei an den AdminHelper-Server (Port 443) unter <code>POST /api/monitoring/agent/{server_id}/report</code>, der sie intern an den Monitoring-Dienst weiterreicht.</li>
+            <li><strong>Monitoring</strong>: läuft alle 5 Minuten (systemd.timer mit Jitter), sammelt CPU, RAM, Disk, SMART, Docker-Container-Status, ZFS-Pools, sendet die Metriken tunnelfrei an den AdminHelper-Server (Port 443) unter <code>POST /api/monitoring/agent/{server_id}/report</code>, mit dem Monitor-Key des Servers im Header <code>X-API-Key</code>; der Server reicht sie intern an den Monitoring-Dienst weiter. Ein eigener Monitoring-Port muss nicht erreichbar sein.</li>
             <li><strong>FRP-Client</strong>: holt beim Provisionieren mit einem Provision-Token im mTLS-Enrollment sein Client-Zertifikat, das auch frpc nutzt, und startet <code>frpc.service</code> nur, wenn der Host einen aktiven FRP-Tunnel hat.</li>
-            <li><strong>Updates</strong>: neues DEB/RPM von der GitHub-Releases-Seite installieren; Konfig und Service werden bei Upgrades nicht überschrieben. <em>Hinweis:</em> Beim Umstieg auf das interne-only-Monitoring (Server-Proxy statt Host-Port <code>8480</code>) müssen bestehende Agents einmal <strong>neu provisioniert</strong> werden, damit ihre gespeicherte <code>MONITOR_URL</code> auf <code>/api/monitoring</code> umgestellt wird.</li>
+            <li><strong>Updates</strong>: siehe Abschnitt <a href="#upgrade">Upgrade</a>. <em>Hinweis:</em> Beim Umstieg auf das interne-only-Monitoring (Server-Proxy statt Host-Port <code>8480</code>) müssen bestehende Agents einmal <strong>neu provisioniert</strong> werden, damit ihre gespeicherte <code>MONITOR_URL</code> auf <code>/api/monitoring</code> umgestellt wird.</li>
           </ul>
 
           <h2 id="schnell-rollout">Schnell-Rollout (ein Befehl, empfohlen)</h2>
@@ -132,6 +132,13 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
             <div><div class="callout-title">CA-Pinning vs. Erst-Install</div><p>Variante&nbsp;A setzt voraus, dass der Host bereits provisioniert/enrollt ist (dann liegt die interne CA unter <code>/etc/adminhelper/identity/ca.crt</code>). F&uuml;r den allerersten Install eines noch nicht enrollten Hosts nimm Variante&nbsp;B oder den lokalen <code>.deb</code>/<code>.rpm</code>-Download oben; nach dem Provisioning kannst du auf CA-Pinning umstellen. Die Paket-Integrit&auml;t ist in beiden F&auml;llen durch die GPG-Signatur gedeckt.</p></div>
           </div>
 
+          <h2>Windows</h2>
+          <p>Jedes <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub-Release</a> enthält den Agent als einzelne Datei <code>adminhelper-agent-windows-x86_64.exe</code>, ohne MSI und ohne Installer; das MSI auf der Release-Seite gehört zum Desktop-Client. In einer PowerShell als Administrator richtet <code>service install</code> den Agent ein:</p>
+          <div class="code-header"><span>powershell</span></div>
+<pre><code># PowerShell als Administrator, im Download-Verzeichnis
+.\adminhelper-agent-windows-x86_64.exe service install</code></pre>
+          <p>Der Befehl kopiert die Binary nach <code>%ProgramFiles%\AdminHelper\adminhelper-agent.exe</code>, registriert den Dienst <code>AdminHelper-Agent</code> (Autostart, Konto LocalSystem, Neustart 60&nbsp;s nach einem Ausfall) und startet ihn. Danach provisionierst du den Host wie im nächsten Abschnitt. Einen frpc-Dienst richtet der Agent unter Windows nicht ein.</p>
+
           <h2>Erst-Provisionierung</h2>
           <p>Nach Installation läuft der Agent noch nicht produktiv – er hat weder einen Server-URL noch ein Client-Zertifikat. Provisionierung in zwei Schritten:</p>
           <ol>
@@ -141,6 +148,12 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
 <pre><code>sudo adminhelper-agent provision \
     --url       https://srm.example.com \
     --token     &lt;provision-token&gt; \
+    --server-id &lt;server-id&gt;</code></pre>
+              <div class="code-header"><span>powershell</span></div>
+<pre><code># Windows (PowerShell als Administrator)
+&amp; 'C:\Program Files\AdminHelper\adminhelper-agent.exe' provision `
+    --url       https://srm.example.com `
+    --token     &lt;provision-token&gt; `
     --server-id &lt;server-id&gt;</code></pre>
             </li>
           </ol>
@@ -174,20 +187,12 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
           <p><strong><code>--ca-fp &lt;sha256&gt;</code> ist der bevorzugte Trust-Anker f&uuml;r den Erstkontakt:</strong> Der Agent akzeptiert die Verbindung nur, wenn die pr&auml;sentierte Zertifikatskette ein Zertifikat mit genau diesem Fingerprint enth&auml;lt <em>und</em> das Server-Leaf kryptografisch daran h&auml;ngt &mdash; gepr&uuml;ft <em>im</em> TLS-Handshake, bevor der Einmal-Token den Host verl&auml;sst. Den Wert zeigt der Desktop im Provisionierungs-Tab an (die dort generierten Befehle enthalten ihn bereits). Nicht mit <code>--cacert</code>/<code>--insecure</code> kombinierbar.</p>
           <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>- oder <code>monitor init</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen. <strong>Trust-on-first-use-Trade-off:</strong> sitzt ein Angreifer bereits waehrend dieses ersten Aufrufs on-path, pinnt <code>--insecure</code> <em>dessen</em> Zertifikat als permanenten Trust-Anchor. Um das zu erkennen, gibt <code>provision</code> den SHA-256-Fingerprint des gepinnten Zertifikats aus &mdash; pruefe ihn out-of-band gegen den im Provisionierungs-Tab angezeigten CA-Fingerprint, oder nutze <code>--ca-fp</code>/<code>--cacert</code>, um das Risiko ganz zu vermeiden.</p>
 
-          <h2>Windows (MSI)</h2>
-          <p>Die Windows-Binary <code>adminhelper-agent.exe</code> wird als signiertes MSI verteilt. Nach Installation:</p>
-          <div class="code-header"><span>powershell</span></div>
-<pre><code>adminhelper-agent.exe provision `
-    --url       https://srm.example.com `
-    --token     &lt;provision-token&gt; `
-    --server-id &lt;server-id&gt;</code></pre>
-          <p>Der Agent registriert sich als Windows-Service (<code>adminhelper-agent</code>) und startet automatisch beim Boot.</p>
-
           <h2>Prüfen, ob der Agent läuft</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code>systemctl status adminhelper-agent.timer   # Linux – nächste Aktivierung
-systemctl status frpc.service              # FRP-Client-Verbindung
-journalctl -u adminhelper-agent.service --since "1 hour ago"</code></pre>
+systemctl status frpc.service              # nur bei aktivem FRP-Tunnel
+journalctl -u adminhelper-agent.service --since "1 hour ago"
+sudo adminhelper-agent run --once          # ein Durchlauf von Hand: Sync + Push</code></pre>
 
           <h3>Logs</h3>
           <p>Der Agent schreibt seine Logs <strong>zusätzlich</strong> in eine rotierende Datei — unabhängig vom Service-Manager, ideal für einen Fehler-Report:</p>
@@ -198,8 +203,13 @@ journalctl -u adminhelper-agent.service --since "1 hour ago"</code></pre>
           <p>Format wie auf stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (Komponente: <code>agent</code>, <code>frpc</code> oder <code>monitor</code>). Rotation bei 10&nbsp;MB, 5 komprimierte Archive. Die Ausführlichkeit steuert <code>LOG_LEVEL</code> (Env) bzw. <code>--log-level debug|info|warn|error</code>.</p>
           <p>Für einen Bug-Report erzeugt <code>adminhelper-agent diagnostics</code> einen <strong>redaktierten</strong> Bericht (Version, OS, Config ohne Secrets, Log-Auszug) unter <code>/tmp/</code> — kurz durchsehen und an ein GitHub-Issue anhängen.</p>
 
-          <h2>Upgrade</h2>
-          <p>Bei gesetztem Apt-Repo reicht <code>apt upgrade adminhelper-agent</code> auf allen Servern. Die systemd-Units und die Konfig (<code>/etc/adminhelper/agent.toml</code>) bleiben erhalten.</p>
+          <h2 id="upgrade">Upgrade</h2>
+          <p>Mit eingerichtetem Paket-Repo reicht auf allen Servern <code>apt upgrade</code> bzw. <code>dnf upgrade</code>. Beim Provisionieren schreibt der Agent <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> und <code>/etc/frp/frpc.toml</code>; das Paket liefert diese Dateien nicht aus, bei einem Upgrade bleiben sie erhalten. Bei jeder Installation und jedem Upgrade aktiviert das Paket <code>adminhelper-agent.timer</code> neu, <code>frpc.service</code> nur, wenn <code>/etc/frp/frpc.toml</code> vorhanden ist.</p>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Umstieg von den Alt-Agents</div><p>Das DEB trägt <code>Replaces</code> und <code>Conflicts</code>, das RPM <code>Obsoletes</code> und <code>Conflicts</code> für <code>srm-frpc-client</code>, <code>srm-monitor-agent</code> und <code>srm-agent</code>. Ein einzelnes <code>apt install adminhelper-agent</code> bzw. <code>dnf install adminhelper-agent</code> ersetzt die drei Alt-Pakete; das Installationsskript des Pakets (<code>postinst</code> bzw. <code>%post</code>) stoppt, deaktiviert und entfernt ihre systemd-Units.</p></div>
+          </div>
 
           <div class="page-nav">
             <a class="prev" href="./benutzer.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Benutzer &amp; Zugriff</span></a>

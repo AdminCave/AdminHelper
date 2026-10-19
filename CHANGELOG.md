@@ -346,6 +346,30 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: die Paketbeschreibung nennt kein VNC mehr (R-0523):** Die lange Beschreibung des Desktop-Pakets, die
+  etwa `apt show` zeigt, nannte VNC unter den Verbindungsarten. Der Client oeffnet SSH-, RDP- und Web-Verbindungen;
+  die Beschreibung nennt jetzt nur diese.
+- **Agent: eine Platte, die smartctl nicht oeffnen kann, meldet kein „SMART FAILED“ mehr (R-0493):** Endete die
+  Abfrage einer Platte mit Exit-Bit 0 oder 1 von smartctl (Befehlszeile nicht gelesen, Geraet nicht geoeffnet), kam
+  sie ohne Modell und SMART-Status in den Report, und der Check `smart_health` meldete sie als „SMART FAILED“,
+  critical. Jetzt faellt sie aus dem Report; liefert keine Platte lesbare Daten, meldet der Agent wie bei einem
+  gescheiterten Scan `scan_failed`. Bei den Bits 2 bis 7 bleibt die Platte wie bisher im Report, `smartctl_status`
+  traegt den vollen Exit-Code. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: Platten hinter einem MegaRAID- oder sssraid-Controller tragen eigene Namen (R-0491):** Der Agent meldete
+  alle Platten eines solchen Controllers unter dessen Geraetenamen, etwa `/dev/bus/0` bzw. `/dev/bsg/sssraid0`: Der
+  Check `smart_health` nannte sie gleich, ihre Werte landeten in derselben Messreihe, und ein Eintrag in
+  `ignore_devices` nahm alle zugleich aus. Jetzt heissen sie wie bei smartctl, etwa `/dev/bus/0 [megaraid_disk_00]`
+  oder `/dev/bsg/sssraid0 [sssraid_disk_00_01]`; andere Platten behalten ihren Namen. Nach dem Update des Agents
+  greift ein `ignore_devices`-Eintrag `/dev/bus/N` nicht mehr, dort gehoeren die neuen Namen hin, und die Metriken
+  dieser Platten bekommen neue Namen, etwa `monitor_smart_temp_dev_bus_0__megaraid_disk_00_value` statt
+  `monitor_smart_temp_dev_bus_0_value`. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: ein nicht lesbarer Backup-Storage meldet unter Proxmox kein „No backup“ mehr (R-0494):** Scheiterte die
+  Liste der Storages oder der Inhaltsaufruf eines Backup-Storages (etwa ein nicht erreichbares NFS-Ziel), fehlten
+  dessen Backups still im Index, und der Check `proxmox_backup` meldete jede betroffene VM als „No backup“,
+  critical. Jetzt fehlt dann der Proxmox-Block, der Check steht auf `unknown`, und der Grund steht als Warnung im
+  Agent-Log; ebenso, wenn ein Backup-Storage nicht aktiv ist. Die Backup-Storages liest der Agent neu aus
+  `/nodes/<node>/storage --content backup` statt aus `/storage`, das auch abgeschaltete und anderen Nodes
+  zugeordnete Storages listet. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
 - **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
   Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
@@ -393,6 +417,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   wie schon bei `alert_on_unavailable`. Keine Migration: Ein gespeicherter Nicht-Bool-Wert gilt als Default, wie ihn
   der Check-Editor zeigt, nur ein echtes `false` schaltet ab; ein altes `verify_ssl: 0` prueft TLS also wieder. Doku:
   Monitoring-Administration (DE+EN).
+- **Monitoring: Zahlenfelder der Check-Konfiguration nehmen nur Zahlen (R-0487):** Schwellwerte, Timeouts, Ports und
+  die uebrigen Zahlenfelder nahmen auch Zahl-Strings wie `"85"` oder `"8.5e1"` und `true` an und speicherten sie so.
+  Der Check-Editor zeigte das Feld dann leer, der Checker las den Wert anders: An einem Zahl-String scheiterten
+  `agent_resources`, `smart_health`, `zfs_health` und `proxmox_backup`, und der Check blieb auf seinem letzten Zustand
+  stehen; ein `true` galt als 1, ein `cpu_warn: true` warnte also schon ab 1 % CPU. Jetzt lehnen `POST /checks`,
+  `PUT /checks/{id}` mit geaenderter Konfiguration und Template-Definitionen solche Werte mit 422 ab; eine ganze Zahl
+  bleibt fuer ein Feld mit Nachkommastellen gueltig, Ganzzahl-Felder wie `port` und `expected_status` nehmen nur ganze
+  Zahlen ohne Nachkommastelle (`22`, nicht `22.0`). Keine Migration: Ein gespeicherter Zahl-String bleibt, bis die
+  Konfiguration mit einer Zahl an seiner Stelle gespeichert wird. Doku: Monitoring-Administration (DE+EN).
 
 - **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
   `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
@@ -878,6 +911,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server-CLI: `reset-admin` meldet die bestehenden Sitzungen ab:** Setzt `python -m app.cli reset-admin` das
+  Passwort eines Benutzers zurueck, gelten danach wie beim Passwortwechsel ueber die API (`PUT /api/users/{id}`) die
+  vor dem Reset ausgestellten Access- und Refresh-Tokens nicht mehr; der Benutzer meldet sich mit dem neuen Passwort
+  neu an. Doku: Troubleshooting (DE+EN).
+
 - **Monitoring: Die Checks melden englisch (R-0422):** Die Push-Checker (`agent_ping`, `agent_resources`,
   `service_process`, `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health`), die Pull-Checker (`http`,
   `ping`, `tcp`) und die Check-Engine meldeten teils deutsch, und diesen Text zeigen Dashboard, Glocke und
@@ -886,9 +924,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   gedaempfter Fehlschlag endet auf „(failure 1/2)“ statt „(Fehler 1/2)“, ein HTTP-Check ohne TLS-Pruefung auf
   „[TLS verification disabled]“. `service_process` spricht von „services“ statt von systemd-Units, weil der
   Windows-Agent seine Dienste im selben Block meldet. Status, `_details` und Metriken bleiben gleich; eine gespeicherte
-  deutsche Meldung ersetzt die naechste Auswertung. Unveraendert bleiben die Fehlertexte der API und der Rahmentext der
-  Alert-Mail. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
+  deutsche Meldung ersetzt die naechste Auswertung. Die Fehlertexte der API und den Rahmentext der Alert-Mail stellt
+  R-0488 um. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
   Entwickler und Administration (DE+EN).
+
+- **Monitoring: Recovery-Mail, Fehler im Alert-Log und API-Fehlertexte englisch (R-0488):** Die
+  Recovery-Benachrichtigung hat jetzt den Betreff `[AdminHelper Monitor] RECOVERY: <Check>` wie die Alarme
+  `[AdminHelper Monitor] <STATUS>: <Check>`, ohne das angehaengte „ist wieder OK“, und endet auf „The check is OK
+  again.“ statt „Der Check ist wieder in Ordnung.“. Betreff und Text gehen gleich in Mail, Webhook (`subject`,
+  `text`), Glocke und persoenliche Benachrichtigungen. Ein Mail- oder Webhook-Filter auf „ist wieder OK“ greift nicht
+  mehr; `RECOVERY:` im Betreff trifft die Entwarnung vorher wie nachher. Englisch sind auch die Fehler, die das
+  Alert-Log zu einem gescheiterten Versand speichert und der Desktop dort zeigt, etwa „No recipients configured“,
+  „Unknown channel: …“ oder „Webhook target is private/reserved (not allowed)“; bisher waren sie deutsch, auch in der
+  englischen Oberflaeche. Gespeicherte Eintraege behalten ihren Text. Ebenso englisch sind die Fehlertexte der
+  Monitoring-API, die der Desktop als „HTTP <Code>: …“ anzeigt, etwa „Check not found“, „Invalid API key“ oder
+  „Invalid config for agent_resources: …“; die Status-Codes bleiben. Doku: Monitoring-Administration (DE+EN).
 
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft

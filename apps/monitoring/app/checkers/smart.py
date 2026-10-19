@@ -13,6 +13,7 @@ Without disks the agent sends smart_absent with the reason instead of a smart ke
 
 from __future__ import annotations
 
+from app.checkers.plugins import capped_objects
 from app.core.victoria import safe_metric_part
 
 # NVMe critical_warning Bit-Feld laut NVMe Base Spec 1.4, Figure 94.
@@ -77,7 +78,7 @@ class SmartHealthChecker:
         return "unknown", "Waiting for agent data", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        smart = report.get("smart")
+        smart = capped_objects(report.get("smart"))
         if not smart:
             # No disk — not an error; smart_absent says why.
             absent = report.get("smart_absent")
