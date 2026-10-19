@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes 2: Agent-Deployment EN, Web-Panel- und Server-Doku, VNC — Task-Ledger
-Status: aktiv · Branch: feature/doc-fixes-2 · Review: pro Task
+Status: bereit · Branch: feature/doc-fixes-2 · Review: pro Task
 Spec: Roadmap R-0521, R-0522, R-0523
 Heavy: none — nur Doku unter `docs/` und der Beschreibungstext `bundle.longDescription` in `tauri.conf.json`; keine API-, Gateway-, PKI-, Agent-, Compose-, Install- oder Desktop-Journey-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -120,8 +120,10 @@ Dedup-Key: bug:docs:desktop.html:vnc-connection-kind
 HEAD: 81764c43
 Semantik: Soll ist der Code: `apps/server/app/modules/connections/schemas.py:45` (`kind: Literal["ssh", "rdp", "web"]`), `apps/desktop/src-tauri/src/connection/mod.rs:24-35` (Ssh, Rdp, Web), `git ls-files apps/desktop/ui/src/lib/api` (mit `notifications.ts` und `request.ts`), `apps/server/app/main.py:450-471`. Doku: `docs/developer/desktop.html:43` — „connection/       RDP/SSH/Web-Launcher“, `docs/examples/webhook_add_connection.py:31` — „connection.kind muss ssh, rdp oder web sein“. Falsche Doku-Stellen: `docs/developer/desktop.html:72` — „(ssh/rdp/vnc/web/custom, server-seitiges CRUD)“, `docs/index.html:213` — „Verbindungsaufbau via RDP, SSH, VNC und HTTP“.
 
-### T5 — R-0523: Paketbeschreibung des Desktop-Clients ohne VNC  [ ]
+### T5 — R-0523: Paketbeschreibung des Desktop-Clients ohne VNC  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/tauri.conf.json, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @49ae4d00 2026-10-19T11:51:23+02:00
+Review: approve (.ah-out/review/doc-fixes-2/T5.verdict.json)
 Änderung: `bundle.longDescription` (`tauri.conf.json:36`) sagt „(RDP, SSH, HTTP)“ statt „(RDP, SSH, VNC, HTTP)“; der Rest des Texts bleibt, auch die Sprache.
 - Der Text landet im Desktop-Paket: Das DEB schreibt ihn als Fortsetzung von `Description:` in `control` (tauri-bundler `crates/tauri-bundler/src/bundle/linux/debian.rs`, gelesen 2026-10-19). Ob RPM und MSI ihn nutzen, ist nicht verifiziert. Das Release baut `--bundles deb,rpm` (`.github/workflows/release.yml:75`).
 - CHANGELOG `[Unreleased]` → `### Fixed` (`:347`) bekommt eine Zeile, umlautfrei: Die Paketbeschreibung des Desktop-Clients nennt kein VNC mehr; der Client oeffnet SSH-, RDP- und Web-Verbindungen (R-0523).
