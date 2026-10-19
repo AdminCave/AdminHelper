@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung: Fehlertexte, Tunnel je Anmeldung, Passwortspeicher je Verbindung — Task-Ledger
-Status: bereit · Branch: feature/desktop-hardening · Review: pro Task
+Status: erledigt · Branch: feature/desktop-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full + windows — Desktop-Tunnel und Anmelden/Abmelden (frpc endet mit der Sitzung, Zuordnungen je Anmeldung) laufen in `tunnel-connect.live.js` und `logout.live.js` im Sammellauf über `main`; T6 ändert die Eingabeprüfung der FRP-API (Server-Tests in der PR-CI); `windows` über die CI-Jobs (der Pool hat keine Windows-Vorlage); kein `scenario`, weil der FRP-Datenpfad unverändert bleibt (Kevin 2026-10-19)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
