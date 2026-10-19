@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"time"
 )
 
 // ServiceEntry is one service record in the all_services inventory (keys:
@@ -34,12 +35,12 @@ func serviceCounts(entries []ServiceEntry) map[string]int {
 	return map[string]int{"active": active, "total": len(entries)}
 }
 
-// commandFailure is the short reason for a failed systemctl or sc call: that the timeout ended it
-// (runWithTimeout), its exit status or signal, or that the command did not start. Never stderr or
-// the error text, which can name paths (fork/exec <path>).
-func commandFailure(name string, err error) string {
+// commandFailure is the short reason for a failed call of the command name: that it ran into
+// timeout, the limit the caller ran it under (runTimed), its exit status or signal, or that the
+// command did not start. Never stderr or the error text, which can name paths (fork/exec <path>).
+func commandFailure(name string, timeout time.Duration, err error) string {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Sprintf("timed out after %s", pluginTimeout)
+		return fmt.Sprintf("timed out after %s", timeout)
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

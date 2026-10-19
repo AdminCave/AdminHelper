@@ -353,6 +353,27 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Benachrichtigungs-Stream nimmt nach einer Erneuerung das neue Token, statt zu verstummen. Laesst sich die Sitzung
   nicht mehr erneuern, meldet der Desktop ab und zeigt den Login-Bildschirm mit dem Hinweis „Sitzung abgelaufen —
   bitte neu anmelden.“ Doku: Desktop fuer Entwickler (DE+EN), README.
+- **Agent: eine Platte, die smartctl nicht oeffnen kann, meldet kein „SMART FAILED“ mehr (R-0493):** Endete die
+  Abfrage einer Platte mit Exit-Bit 0 oder 1 von smartctl (Befehlszeile nicht gelesen, Geraet nicht geoeffnet), kam
+  sie ohne Modell und SMART-Status in den Report, und der Check `smart_health` meldete sie als „SMART FAILED“,
+  critical. Jetzt faellt sie aus dem Report; liefert keine Platte lesbare Daten, meldet der Agent wie bei einem
+  gescheiterten Scan `scan_failed`. Bei den Bits 2 bis 7 bleibt die Platte wie bisher im Report, `smartctl_status`
+  traegt den vollen Exit-Code. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: Platten hinter einem MegaRAID- oder sssraid-Controller tragen eigene Namen (R-0491):** Der Agent meldete
+  alle Platten eines solchen Controllers unter dessen Geraetenamen, etwa `/dev/bus/0` bzw. `/dev/bsg/sssraid0`: Der
+  Check `smart_health` nannte sie gleich, ihre Werte landeten in derselben Messreihe, und ein Eintrag in
+  `ignore_devices` nahm alle zugleich aus. Jetzt heissen sie wie bei smartctl, etwa `/dev/bus/0 [megaraid_disk_00]`
+  oder `/dev/bsg/sssraid0 [sssraid_disk_00_01]`; andere Platten behalten ihren Namen. Nach dem Update des Agents
+  greift ein `ignore_devices`-Eintrag `/dev/bus/N` nicht mehr, dort gehoeren die neuen Namen hin, und die Metriken
+  dieser Platten bekommen neue Namen, etwa `monitor_smart_temp_dev_bus_0__megaraid_disk_00_value` statt
+  `monitor_smart_temp_dev_bus_0_value`. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: ein nicht lesbarer Backup-Storage meldet unter Proxmox kein „No backup“ mehr (R-0494):** Scheiterte die
+  Liste der Storages oder der Inhaltsaufruf eines Backup-Storages (etwa ein nicht erreichbares NFS-Ziel), fehlten
+  dessen Backups still im Index, und der Check `proxmox_backup` meldete jede betroffene VM als „No backup“,
+  critical. Jetzt fehlt dann der Proxmox-Block, der Check steht auf `unknown`, und der Grund steht als Warnung im
+  Agent-Log; ebenso, wenn ein Backup-Storage nicht aktiv ist. Die Backup-Storages liest der Agent neu aus
+  `/nodes/<node>/storage --content backup` statt aus `/storage`, das auch abgeschaltete und anderen Nodes
+  zugeordnete Storages listet. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
 - **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
   Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
@@ -890,6 +911,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
   der Anmeldung stand: Eine Aenderung wirkt ab der naechsten Anmeldung, auch fuer den Export des
   Browser-Zertifikats, der bisher den Haken im offenen Einstellungsdialog nahm.
+- **Server-CLI: `reset-admin` meldet die bestehenden Sitzungen ab:** Setzt `python -m app.cli reset-admin` das
+  Passwort eines Benutzers zurueck, gelten danach wie beim Passwortwechsel ueber die API (`PUT /api/users/{id}`) die
+  vor dem Reset ausgestellten Access- und Refresh-Tokens nicht mehr; der Benutzer meldet sich mit dem neuen Passwort
+  neu an. Doku: Troubleshooting (DE+EN).
 
 - **Monitoring: Die Checks melden englisch (R-0422):** Die Push-Checker (`agent_ping`, `agent_resources`,
   `service_process`, `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health`), die Pull-Checker (`http`,
