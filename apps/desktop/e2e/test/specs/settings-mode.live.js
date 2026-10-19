@@ -21,7 +21,10 @@ describe('Switch the app mode in Settings', () => {
     await $('.sidebar-bottom .sidebar-item').click();
     await $('.sm-panel').waitForExist({ timeout: 10000 });
     await $('.sm-panel input[value="local"]').click();
-    await jsClick(await $('.sm-panel .btn.primary')); // save -> serverLogout + reload(local)
+    // The dialog's own save (session ends, reload in local mode): the notification prefs in
+    // the panel have a primary button too, ahead of it, so `.sm-panel .btn.primary` is
+    // theirs once they have loaded.
+    await jsClick(await $('.sm-panel [data-action="settings-save"]'));
 
     // The mode badge changes and a server-only nav item disappears.
     await browser.waitUntil(

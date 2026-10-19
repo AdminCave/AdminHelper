@@ -601,7 +601,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="panel-actions">
         <div style="flex: 1;"></div>
         <button class="btn" onclick={closeSettings}>{$t('action.cancel')}</button>
-        <button class="btn primary" onclick={onSave}>{$t('action.save')}</button>
+        <button class="btn primary" data-action="settings-save" onclick={onSave}
+          >{$t('action.save')}</button
+        >
       </div>
     </div>
   </div>

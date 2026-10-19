@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Session im Rust-Speicher und eigene lokale Visitor-Ports — Task-Ledger
-Status: aktiv · Branch: feature/desktop-session-ports · Review: pro Task
+Status: bereit · Branch: feature/desktop-session-ports · Review: pro Task
 Spec: docs/features/desktop-session-ports.md (Roadmap R-0430)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Auth und -Tunnel (CLAUDE.md §5): Login, Erneuerung, SSE und die Tunnel-Specs laufen im Sammellauf; `scenario`, weil der Desktop die lokalen Visitor-Ports umschreibt (FRP-Datenpfad); `windows` für Sidecar, Datei-Sperre und Keyring-Aufräumen
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -158,8 +158,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T6
 
-### T17 — Wechsel von Server- zu Lokal-Modus in den Einstellungen klappt wieder  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts
+### T17 — Wechsel von Server- zu Lokal-Modus in den Einstellungen klappt wieder  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.save.test.ts, apps/desktop/e2e/test/specs/settings-mode.live.js
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2c866608 2026-10-19T13:37:25+02:00
+Review: approve (.ah-out/review/desktop-session-ports/T17.verdict.json)
 Änderung: VM-Lauf 2026-10-19 auf dem Branch: `settings-mode.live.js` („switches from server to local and the server-only UI goes away“) scheitert mit „the mode badge never changed“; auf main@378a6f65 ist dieselbe Suite im Sammellauf grün, die Ursache liegt also in R-0430. Ursache am Code und an den Artefakten des Laufs (`.ah-out/screenshots`, `.ah-out/logs` im Worktree, falls vorhanden) finden, mit einem Vitest-Fall zuerst rot reproduzieren und beheben; betrifft die Ursache andere Dateien, per `ledger.sh set-files` nachtragen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (Fehlerbehebung im Branch)
