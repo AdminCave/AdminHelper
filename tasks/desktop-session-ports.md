@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Session im Rust-Speicher und eigene lokale Visitor-Ports — Task-Ledger
-Status: bereit · Branch: feature/desktop-session-ports · Review: pro Task
+Status: aktiv · Branch: feature/desktop-session-ports · Review: pro Task
 Spec: docs/features/desktop-session-ports.md (Roadmap R-0430)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — Desktop-Auth und -Tunnel (CLAUDE.md §5): Login, Erneuerung, SSE und die Tunnel-Specs laufen im Sammellauf; `scenario`, weil der Desktop die lokalen Visitor-Ports umschreibt (FRP-Datenpfad); `windows` für Sidecar, Datei-Sperre und Keyring-Aufräumen
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -139,3 +139,10 @@ Review: approve (.ah-out/review/desktop-session-ports/T13.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- stored_password_key
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (gespeichertes Passwort nur für das in Rust berechnete Ziel)
 Abhängt von: T10
+
+### T15 — Gespeichertes Passwort: die Prüfung läuft auch ohne `credentialConnection`  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/connection/mod.rs, apps/desktop/src-tauri/src/tofu.rs
+Änderung: Fehlt beim Öffnen mit gespeichertem Passwort `credential_connection`, gilt die geöffnete Verbindung selbst als Quelle, und `check_credential_connection` läuft trotzdem (heute nur bei gesetztem Parameter); so gilt die Bindung aus T13 für jede Form des Aufrufs, wie `desktop.html` (~:141) sie beschreibt. Tests `stored_password_key_*` (zuerst rot): ohne Credential und mit dem wörtlichen Ziel eines Visitors, der auf einen Ausweichport verschoben ist → abgewiesen; ohne Credential und ohne laufenden frpc → erlaubt. Dazu (Branch-Review) der Kommentar in `tofu.rs` (~:117), der noch den Keyring der JWTs nennt, und die übrig gebliebenen `token`-Felder in Session-Fixtures der UI-Tests (Liste im Branch-Urteil; per `set-files` nachtragen, nur Fixture-Werte, keine Assertions).
+Verify: bash scripts/dev/verify.sh desktop-rs desktop-ui --strict
+Doku: keine (das Verhalten steht schon in desktop.html)
+Abhängt von: T13
