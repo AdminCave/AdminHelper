@@ -550,6 +550,40 @@ def test_single_restart_stays_damped_crash_loop_alerts(client_db):
     assert (state.status, state.fail_count) == ("warning", 2)
 
 
+def _docker_flood_report() -> dict:
+    """500 containers with names up to the agent text cap of 500 (R-0508). The 20 dead and
+    20 paused ones have names of a length that makes each problem text 499 characters, so
+    both lists in the message are full after join_capped (two entries, 1000 characters)."""
+
+    def container(i: int, state: str, name_len: int) -> dict:
+        return {"id": f"{i:012x}", "name": f"c{i:03d}".ljust(name_len, "x"), "state": state}
+
+    dead = [container(i, "dead", 499 - len(": dead")) for i in range(20)]
+    paused = [container(i, "paused", 499 - len(": paused")) for i in range(20, 40)]
+    running = [container(i, "running", 500) for i in range(40, 500)]
+    return {"docker": {"available": True, "error": None, "containers": dead + paused + running}}
+
+
+def test_report_cuts_a_long_docker_message_to_2000_characters(client_db):
+    # R-0517: the push path stores the message through apply_result, which cuts it to 2000
+    # characters including the "…"; the details keep every container.
+    from app.checkers.plugins import DockerHealthChecker
+
+    client, factory = client_db
+    _add_docker_check(factory, consecutive_fails=1)
+    report = _docker_flood_report()
+    # Guard: what the checker returns for this report is longer than the cut.
+    _, uncut, _ = DockerHealthChecker().evaluate({}, report)
+    assert len(uncut) > 2000
+
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    state, details = _stored_docker(factory)
+    assert state.status == "critical"
+    assert state.message == uncut[:1999] + "…"
+    assert state.message.startswith("Container problems: ")
+    assert len(details["containers"]) == 500
+
+
 # --- host facts (R-0421) ----------------------------------------------------------
 
 

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: deutsche Reste, Feldtypen im Agent-Report, Länge der Check-Meldung — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-ref-2 · Review: pro Task
+Status: bereit · Branch: feature/monitoring-ref-2 · Review: pro Task
 Spec: Roadmap R-0502, R-0517
 Heavy: none — `apps/monitoring` (die reinen `evaluate`-Funktionen unter `app/checkers/`, `get_checker`, `apply_result` in `check_engine.py`) und eine Test-Fixture in `apps/desktop/ui`; keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung, kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP- oder Install-Pfad, keine Desktop-Journey (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Die Monitoring- und die Desktop-UI-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -96,8 +96,10 @@ Metrik: Probe oben: genannte Einträge einer Liste bei 500 Betroffenen 500 → 1
 Dedup-Key: ref:monitoring:plugins.py:numeric-string-entries
 HEAD: 81764c43
 
-### T7 — Rückfallgrenze: Check-Meldung auf 2000 Zeichen gekappt, bevor sie in State, Log und Benachrichtigung geht (R-0517)  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_agent_report.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+### T7 — Rückfallgrenze: Check-Meldung auf 2000 Zeichen gekappt, bevor sie in State, Log und Benachrichtigung geht (R-0517)  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/check_engine.py, apps/monitoring/tests/test_check_engine.py, apps/monitoring/tests/test_agent_report.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md, apps/monitoring/app/checkers/agent.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5d4c74dc 2026-10-19T12:49:08+02:00
+Review: approve (.ah-out/review/monitoring-ref-2/T7.verdict.json)
 Änderung: Entscheidung (3b), die Grenze hinter T6. `apply_result` (`check_engine.py:129`), der einzige Schreiber von `MonitorState.message` für Scheduler- und Push-Pfad, kürzt `message` auf höchstens 2000 Zeichen samt „…“ (Form wie `cap_agent_text`, `checkers/agent.py:52-59`), bevor das Dämpfungs-Suffix dazukommt (`:169-170`) und bevor sie in `MonitorState.message` (`:182`, `:202`), die Übergangs-Logzeile (`:192-199`) und damit in Webhook und Mail geht („Details:“, `alerter.py:357-358`); „(failure n/m)“ bleibt immer sichtbar. Grenze 2000 = vier Agent-Texte zu 500 (`MAX_AGENT_TEXT`): die exakt geprüften Docker-Meldungen der Basis T3 (höchstens 564 Zeichen) bleiben ungekürzt. `_details` bleibt unberührt. Tests zuerst rot (dreimal identisch auf HEAD): in `test_check_engine.py` neben `test_new_check_first_critical_stays_damped` (`:419`) `apply_result` mit 10 000 Zeichen → `state.message` exakt `"x" * 1999 + "…"`; gedämpft (`consecutive_fails=2`) → exakt `"x" * 1999 + "…" + " (failure 1/2)"`; genau 2000 Zeichen → unverändert; `execute_check` mit einem Checker, der `RuntimeError("x" * 10000)` wirft (`check_engine.py:262`) → `state.message` 2000 Zeichen, beginnt mit „Unexpected error: “. In `test_agent_report.py` (Fixture `client_db`, `:24`) ein Push an einen `docker_health`-Check mit 500 Containern, Name je 500 Zeichen, je 20 Container mit `state: "dead"` und `state: "paused"`, Namen so lang, dass jeder Problemtext 499 Zeichen hat (nach T6 zwei volle Listen zu je 1000 Zeichen, die Meldung rund 2 080 Zeichen; nach T6 kommt nur eine Meldung mit zwei vollen Listen über 2000, ebenso Proxmox, SMART und `service_process`) → `MonitorState.message` 2000 Zeichen, beginnt mit „Container problems: “ und endet auf „…“.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine.py tests/test_agent_report.py tests/test_checker_messages.py
 Doku: docs/developer/monitoring.html + docs/en/developer/monitoring.html („Checker im Überblick“ `:142`, nach dem Satz aus T6: die Check-Engine kürzt die ganze Meldung zusätzlich auf 2000 Zeichen samt „…“, danach kommt bei gedämpften Fehlern „(failure n/m)“; `_details` bleibt vollständig) · CHANGELOG.md, der Eintrag aus T6 (`### Changed`) bekommt: eine Meldung ist hoechstens 2000 Zeichen lang, in Dashboard, Mail und Webhook

@@ -44,9 +44,10 @@ _last_report_mono: dict[str, float] = {}
 # constant only decides WHEN to prefer monotonic, never whether to alert.
 _CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
 
-# Longest text from the report a checker copies into its message. The message goes unchanged
-# into MonitorState.message (no length limit) and from there into webhook and mail, so a
-# broken or hijacked agent must not push an unbounded text through it (R-0437).
+# Longest text from the report a checker copies into its message. The message goes into
+# MonitorState.message (cut only at check_engine.MAX_MESSAGE, 2000 characters) and from there
+# into webhook and mail, so a broken or hijacked agent must not push an unbounded text
+# through it (R-0437).
 MAX_AGENT_TEXT = 500
 
 
