@@ -24,9 +24,8 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
-from app.modules.frp._helpers import get_allow_users, get_frp_config
+from app.modules.frp._helpers import frpc_sync_inputs
 from app.modules.frp.config_generator import generate_frpc_toml
-from app.modules.frp.models import FrpTunnel
 
 logger = logging.getLogger("adminhelper.provisioning")
 
@@ -79,24 +78,16 @@ def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
     """Builds frpc.toml + PKI bundle for a server. Optional — if no FRP
     config exists, None is returned.
 
-    The frpc.toml is the text the sync serves, from the same inputs to
-    generate_frpc_toml as provision_router._load_sync_inputs, so bundle, config-hash
-    and download are equal and the agent's next sync has nothing to do. Without an
-    active tunnel it carries no tunnel and no frps token. It is not None then: an
-    agent older than R-0398 writes its sync config, with the new API key, only along
-    with a bundle."""
-    config = get_frp_config(db)
-    if not config:
+    The frpc.toml is the text the sync serves, from the inputs to
+    generate_frpc_toml that frp._helpers.frpc_sync_inputs gives the sync endpoints
+    as well, so bundle, config-hash and download are equal and the agent's next
+    sync has nothing to do. Without an active tunnel it carries no tunnel and no
+    frps token. It is not None then: an agent older than R-0398 writes its sync
+    config, with the new API key, only along with a bundle."""
+    inputs = frpc_sync_inputs(db, server_id)
+    if inputs is None:
         return None
-
-    tunnels = (
-        db.query(FrpTunnel)
-        .filter(
-            FrpTunnel.server_id == server_id,
-            FrpTunnel.frp_config_id == config.id,
-        )
-        .all()
-    )
+    config, tunnels, allow_users = inputs
 
     # Look up the server again in the helper so callers do not have to pass
     # a server instance
@@ -106,7 +97,6 @@ def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
     if not server:
         return None
 
-    allow_users = get_allow_users(db, server_id)
     frpc_toml = generate_frpc_toml(config, tunnels, server.name, allow_users)
 
     # A7: no server-minted frp client cert anymore. The agent presents the

@@ -35,9 +35,9 @@
 
           <h2>Was macht der Agent?</h2>
           <ul>
-            <li><strong>Monitoring</strong>: läuft alle 5 Minuten (systemd.timer mit Jitter), sammelt CPU, RAM, Disk, SMART, Docker-Container-Status, ZFS-Pools, sendet die Metriken tunnelfrei an den AdminHelper-Server (Port 443) unter <code>POST /api/monitoring/agent/{server_id}/report</code>, der sie intern an den Monitoring-Dienst weiterreicht.</li>
+            <li><strong>Monitoring</strong>: läuft alle 5 Minuten (systemd.timer mit Jitter), sammelt CPU, RAM, Disk, SMART, Docker-Container-Status, ZFS-Pools, sendet die Metriken tunnelfrei an den AdminHelper-Server (Port 443) unter <code>POST /api/monitoring/agent/{server_id}/report</code>, mit dem Monitor-Key des Servers im Header <code>X-API-Key</code>; der Server reicht sie intern an den Monitoring-Dienst weiter. Ein eigener Monitoring-Port muss nicht erreichbar sein.</li>
             <li><strong>FRP-Client</strong>: holt beim Provisionieren mit einem Provision-Token im mTLS-Enrollment sein Client-Zertifikat, das auch frpc nutzt, und startet <code>frpc.service</code> nur, wenn der Host einen aktiven FRP-Tunnel hat.</li>
-            <li><strong>Updates</strong>: neues DEB/RPM von der GitHub-Releases-Seite installieren; Konfig und Service werden bei Upgrades nicht überschrieben. <em>Hinweis:</em> Beim Umstieg auf das interne-only-Monitoring (Server-Proxy statt Host-Port <code>8480</code>) müssen bestehende Agents einmal <strong>neu provisioniert</strong> werden, damit ihre gespeicherte <code>MONITOR_URL</code> auf <code>/api/monitoring</code> umgestellt wird.</li>
+            <li><strong>Updates</strong>: siehe Abschnitt <a href="#upgrade">Upgrade</a>. <em>Hinweis:</em> Beim Umstieg auf das interne-only-Monitoring (Server-Proxy statt Host-Port <code>8480</code>) müssen bestehende Agents einmal <strong>neu provisioniert</strong> werden, damit ihre gespeicherte <code>MONITOR_URL</code> auf <code>/api/monitoring</code> umgestellt wird.</li>
           </ul>
 
           <h2 id="schnell-rollout">Schnell-Rollout (ein Befehl, empfohlen)</h2>
@@ -203,7 +203,7 @@ sudo adminhelper-agent run --once          # ein Durchlauf von Hand: Sync + Push
           <p>Format wie auf stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (Komponente: <code>agent</code>, <code>frpc</code> oder <code>monitor</code>). Rotation bei 10&nbsp;MB, 5 komprimierte Archive. Die Ausführlichkeit steuert <code>LOG_LEVEL</code> (Env) bzw. <code>--log-level debug|info|warn|error</code>.</p>
           <p>Für einen Bug-Report erzeugt <code>adminhelper-agent diagnostics</code> einen <strong>redaktierten</strong> Bericht (Version, OS, Config ohne Secrets, Log-Auszug) unter <code>/tmp/</code> — kurz durchsehen und an ein GitHub-Issue anhängen.</p>
 
-          <h2>Upgrade</h2>
+          <h2 id="upgrade">Upgrade</h2>
           <p>Mit eingerichtetem Paket-Repo reicht auf allen Servern <code>apt upgrade</code> bzw. <code>dnf upgrade</code>. Beim Provisionieren schreibt der Agent <code>/etc/adminhelper/monitor.conf</code>, <code>/etc/adminhelper/identity/</code>, <code>/etc/frp/adminhelper.conf</code> und <code>/etc/frp/frpc.toml</code>; das Paket liefert diese Dateien nicht aus, bei einem Upgrade bleiben sie erhalten. Bei jeder Installation und jedem Upgrade aktiviert das Paket <code>adminhelper-agent.timer</code> neu, <code>frpc.service</code> nur, wenn <code>/etc/frp/frpc.toml</code> vorhanden ist.</p>
 
           <div class="callout callout-tip" data-reveal>

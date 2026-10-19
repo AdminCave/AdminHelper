@@ -25,6 +25,7 @@ import hashlib
 import itertools
 import secrets
 import tomllib
+from datetime import timedelta
 
 import pytest
 
@@ -156,6 +157,37 @@ class TestConfigHash:
         assert toml.status_code == 200, toml.text
         assert [p["name"] for p in tomllib.loads(toml.text)["proxies"]] == ["on-ssh"]
         assert 'auth.token = "sync-frps-auth-token"' in toml.text.splitlines()
+        res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
+        assert res.status_code == 200, res.text
+        assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
+
+    def test_only_the_tunnels_of_this_server_under_the_chosen_config_are_served(
+        self, test_client, db_session
+    ):
+        _server(db_session)
+        _server(db_session, "srv-other", "other-host")
+        cfg = _frp_config(db_session)
+        # created_at by hand: the server default is the transaction's now(), the
+        # same for both rows, and the id tiebreaker would pick cfg-later.
+        later = FrpServerConfig(
+            id="cfg-later",
+            name="Later",
+            server_addr="frps-later.example.test",
+            bind_port=7000,
+            auth_token="later-frps-auth-token",
+            created_at=cfg.created_at + timedelta(days=1),
+        )
+        db_session.add(later)
+        db_session.commit()
+        _add_tunnel(db_session, cfg, "own-ssh")
+        _add_tunnel(db_session, cfg, "foreign-ssh", server_id="srv-other")
+        _add_tunnel(db_session, later, "own-later-ssh")
+        key = _agent_key(db_session, "srv-sync")
+        toml = test_client.get("/api/frp/provision/srv-sync/config", headers=key)
+        assert toml.status_code == 200, toml.text
+        parsed = tomllib.loads(toml.text)
+        assert parsed["serverAddr"] == "frps.example.test"
+        assert [p["name"] for p in parsed["proxies"]] == ["own-ssh"]
         res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
         assert res.status_code == 200, res.text
         assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
