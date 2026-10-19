@@ -409,3 +409,7 @@ Abschnitt Systemzustand, Konfig-Tabelle `:128-136`, Hysterese `:141`, Alert-Verh
    systemd (`timedatectl`, `apt-get -s` gegen echte Paketlisten, `/proc/vmstat`, Zustandsdatei über mehrere
    `run --once`, Laufzeit unter `TimeoutStartSec`). Paketierung, Install, FRP und PKI ändern sich nicht; ohne den Lauf
    bleiben diese Punkte im PR-Text „nicht verifiziert“.
+
+## Entscheidungen am Gate
+
+Entscheidungen am Gate (Kevin 2026-10-19): Standardwerte wie vorgeschlagen: Swap 80/95 %, Inodes 80/90 %, Load je CPU 1,5/3,0 auf `load_5m` ohne Hysterese; `system_state` mit severity warning und `consecutive_fails` 1, Zeit-Sync erst ab 15 min Uptime, Sicherheits-Updates stündlich; die Freie-GB-Grenze gilt auch unter Windows. `scenario --agents 1` läuft vor dem Merge (Kevins Ja). Aus monitoring-alert-quality: Checks der mitgelieferten Templates mit Intervall ab 1 h (SMART, Prognose) bekommen `consecutive_oks` 1; wer als Zweiter mergt, zieht Hashes und Versionen in `test_seed.py` nach. Gebaut wird nach dem Merge von monitoring-hardening (`origin/main` vor T8 hereinholen).
