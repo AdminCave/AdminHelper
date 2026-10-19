@@ -72,12 +72,12 @@ afterEach(() => {
 describe('SecServices without data', () => {
   it('shows a neutral "Noch keine Daten" pill with the message, not a red one', () => {
     setLanguage('de');
-    const waiting = check({ status: 'unknown', message: 'Wartet auf Agent-Daten' });
+    const waiting = check({ status: 'unknown', message: 'Waiting for agent data' });
     const { container: el } = render(SecServices, { props: { checks: [waiting] } });
     const all = pills(el);
     expect(texts(all)).toEqual(['Noch keine Daten']);
     expect(colored(all)).toEqual([]);
-    expect(all[0].title).toBe('Wartet auf Agent-Daten');
+    expect(all[0].title).toBe('Waiting for agent data');
   });
 
   it('shows the neutral pill for a check that never ran', () => {
@@ -94,7 +94,7 @@ describe('SecServices auto mode', () => {
     setLanguage('de');
     const healthy = check({
       status: 'ok',
-      message: 'Alle systemd-Units OK',
+      message: 'All services OK',
       details: {
         mode: 'auto',
         failed: [],
@@ -166,7 +166,7 @@ describe('SecServices auto mode', () => {
     setLanguage('de');
     const damped = check({
       status: 'ok',
-      message: 'Failed: nginx.service (Fehler 1/2)',
+      message: 'Failed: nginx.service (failure 1/2)',
       details: {
         mode: 'auto',
         failed: ['nginx.service'],
@@ -191,16 +191,14 @@ describe('SecServices auto mode', () => {
     setLanguage('de');
     const err = check({
       status: 'unknown',
-      message: 'Dienste nicht abfragbar: systemctl list-units failed: exit status 1',
+      message: 'Services not queryable: systemctl list-units failed: exit status 1',
       details: { mode: 'auto', failed: [], enabled_inactive: [] },
     });
     const { container: el } = render(SecServices, { props: { checks: [err] } });
     const all = pills(el);
     expect(texts(all)).toEqual(['Keine Daten']);
     expect(colored(all)).toEqual([]);
-    expect(all[0].title).toBe(
-      'Dienste nicht abfragbar: systemctl list-units failed: exit status 1',
-    );
+    expect(all[0].title).toBe('Services not queryable: systemctl list-units failed: exit status 1');
 
     // Neither rows nor the all-clear hint: the empty lists prove nothing.
     expect(await expand(el)).toEqual([]);
@@ -285,14 +283,14 @@ describe('SecServices list mode', () => {
     setLanguage('de');
     const none = check({
       status: 'unknown',
-      message: 'Services ohne Daten: nginx',
+      message: 'Services without data: nginx',
       details: { mode: 'list', watched: [{ name: 'nginx', state: 'nodata', running: false }] },
     });
     const { container: el } = render(SecServices, { props: { checks: [none] } });
     const all = pills(el);
     expect(texts(all)).toEqual(['Keine Daten']);
     expect(colored(all)).toEqual([]);
-    expect(all[0].title).toBe('Services ohne Daten: nginx');
+    expect(all[0].title).toBe('Services without data: nginx');
 
     const rows = await expand(el);
     expect(rows.map(row)).toEqual([{ name: 'nginx', note: 'nicht gefunden' }]);
