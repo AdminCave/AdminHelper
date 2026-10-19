@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     settingsModalOpen,
     closeSettings,
     saveSettings,
-    serverLogout,
+    logoutAndReload,
   } from '$lib/stores/settings';
   import { t, currentLocale } from '$lib/i18n';
   import {
@@ -274,7 +274,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onSave(): Promise<void> {
+    // Rust writes settings.json whole: a field this dialog does not edit (lastUsername)
+    // has to come from the current settings, or saving drops it.
     const next: Settings = {
+      ...$settings,
       mode,
       url: url.trim(),
       intervalMinutes,
@@ -292,7 +295,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onLogout(): Promise<void> {
-    await serverLogout();
+    await logoutAndReload();
   }
 
   async function onToggleOsNotifications(checked: boolean): Promise<void> {

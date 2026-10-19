@@ -5,9 +5,10 @@
 // connectFlow is the core connect journey with a documented RDP race guard: a late rdp-error of an
 // aborted attempt (correlationId) must not mark a newer attempt as failed, and markRdpError(null)
 // clears every running attempt. These tests cover that race guard plus markConnectionUsed's
-// mode-specific branches (6.5).
+// mode-specific branches (6.5), and the keyring key of a stored RDP password behind a tunnel.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Connection, TunnelMapping } from '$lib/bridge/types';
 
 // Shared mock state, hoisted so the vi.mock factories (which run before imports) can close over it.
 const state = vi.hoisted(() => {
@@ -118,5 +119,67 @@ describe('markConnectionUsed mode branches', () => {
     await initiateConnect(conn);
 
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'c3' }));
+  });
+});
+
+// The stored-password path runs only when connectFlow saw __TAURI_INTERNALS__ at import, and what
+// counts is the IPC payload Rust receives. So this case loads a fresh module graph with the real
+// bridge on top of a stubbed invoke; the static imports above keep their own instances.
+describe('stored RDP password behind a tunnel', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.doUnmock('@tauri-apps/api/core');
+  });
+
+  it('opens the resolved connection and loads the password under the listed one', async () => {
+    const listed: Connection = {
+      id: 'r2',
+      name: 'rdp',
+      kind: 'rdp',
+      host: 'rdp.example.com',
+      port: 3389,
+      username: 'admin',
+      tags: [],
+      trustCert: false,
+    };
+    const resolved: Connection = { ...listed, host: '127.0.0.1', port: 6000 };
+    const mapping: TunnelMapping = {
+      id: 't1',
+      serverId: 's1',
+      tunnelType: 'stcp',
+      protocol: 'tcp',
+      localPort: 3389,
+      visitorPort: 6000,
+      customDomains: null,
+      connectionId: 'r2',
+      enabled: true,
+      name: 'rdp',
+    };
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === 'password_state') return { canStore: true, stored: true };
+      if (cmd === 'resolve_connection') return { connection: resolved };
+      return undefined;
+    });
+
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    vi.resetModules();
+    vi.doUnmock('$lib/bridge');
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke }));
+    const tunnel = await import('./tunnel');
+    vi.mocked(tunnel.getMappings).mockReturnValue([mapping]);
+    const flow = await import('./connectFlow');
+    state.setSession({ settings: { mode: 'local', storePasswords: true }, session: null });
+    vi.useFakeTimers();
+
+    await flow.initiateConnect(listed);
+
+    expect(invoke).toHaveBeenCalledWith('password_state', { connection: listed });
+    expect(invoke).toHaveBeenCalledWith('open_connection_stored', {
+      connection: resolved,
+      credentialConnection: listed,
+      client: undefined,
+      correlationId: expect.any(String),
+    });
   });
 });
