@@ -346,6 +346,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: die Paketbeschreibung nennt kein VNC mehr (R-0523):** Die lange Beschreibung des Desktop-Pakets, die
+  etwa `apt show` zeigt, nannte VNC unter den Verbindungsarten. Der Client oeffnet SSH-, RDP- und Web-Verbindungen;
+  die Beschreibung nennt jetzt nur diese.
 - **Agent: eine Platte, die smartctl nicht oeffnen kann, meldet kein „SMART FAILED“ mehr (R-0493):** Endete die
   Abfrage einer Platte mit Exit-Bit 0 oder 1 von smartctl (Befehlszeile nicht gelesen, Geraet nicht geoeffnet), kam
   sie ohne Modell und SMART-Status in den Report, und der Check `smart_health` meldete sie als „SMART FAILED“,

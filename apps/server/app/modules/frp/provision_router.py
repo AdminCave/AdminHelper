@@ -19,9 +19,8 @@ from app.core.auth import ApiKeyOrUser
 from app.core.database import get_db
 from app.core.identity import require_cert_server
 from app.modules.frp import provisioner
-from app.modules.frp._helpers import get_allow_users, get_frp_config
+from app.modules.frp._helpers import frpc_sync_inputs
 from app.modules.frp.config_generator import generate_frpc_toml
-from app.modules.frp.models import FrpTunnel
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
@@ -43,29 +42,19 @@ def _require_server_scope(auth, server_id: str) -> None:
 
 def _load_sync_inputs(db: Session, server_id: str, auth):
     """The inputs both provision-sync endpoints share (config download + config
-    hash): scope check, server + config lookup, the tunnels scoped to this server
-    AND this config, and the allow-users. Extracted so the sync semantics can't
-    drift between the two — a hash computed over a different tunnel set than the
-    download would trigger endless agent resyncs (2.45). None without an FRP
-    config: the two endpoints answer that differently."""
+    hash): scope check, server lookup, and config, tunnels and allow-users from
+    frp._helpers.frpc_sync_inputs, which the provisioning bundle uses as well.
+    None without an FRP config: the two endpoints answer that differently."""
     _require_server_scope(auth, server_id)
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    config = get_frp_config(db)
-    if not config:
+    inputs = frpc_sync_inputs(db, server_id)
+    if inputs is None:
         return None
-
-    tunnels = (
-        db.query(FrpTunnel)
-        .filter(
-            FrpTunnel.server_id == server_id,
-            FrpTunnel.frp_config_id == config.id,
-        )
-        .all()
-    )
-    return config, tunnels, server.name, get_allow_users(db, server_id)
+    config, tunnels, allow_users = inputs
+    return config, tunnels, server.name, allow_users
 
 
 @router.get("/provision/{server_id}/config", dependencies=[Depends(require_cert_server)])
