@@ -46,8 +46,10 @@ Dedup-Key: bug:docs:development.md:module-count-drift
 HEAD: a23a4387
 Semantik: Soll ist der Code. `git ls-files apps/server/app/modules` zeigt zwölf Module: ansible, api_keys, audit, connections, enrollment, frp, hooks, monitoring_proxy, notifications, provisioning, servers, users. `apps/web/src/lib/stores/` hat 7 Stores (mit `theme.ts`), `apps/web/src/modals/` hat 10 Modals, `apps/web/tests/e2e/` hat 5 Specs (`authz`, `crud`, `login`, `smoke`, `theme`). Falsche Doku-Stellen: `DEVELOPMENT.md:1387` „FastAPI-Backend (modularer Monolith, 12 Module)“ mit der Liste `:1391-1392` „users, connections, servers, frp, hooks, api_keys, / ansible, monitoring_proxy“, dazu README `:455` „9 API modules + 6 stores“ und DEVELOPMENT `:1416` „9 Modal-Komponenten“.
 
-### T2 — R-0489: Agent-Deployment DE und EN gleich gegliedert, Windows wie der Code  [ ]
+### T2 — R-0489: Agent-Deployment DE und EN gleich gegliedert, Windows wie der Code  [x]
 Komponente: scripts · Dateien: docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/index.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d5be6559 2026-10-19T09:39:30+02:00
+Review: approve (.ah-out/review/doc-fixes/T2.verdict.json)
 Änderung: Beide Sprachen bekommen dieselbe Abschnittsfolge, außerhalb der doc-drift-Stellen (Kopf): Lead · (DE: Was macht der Agent?) · Schnell-Rollout · Paket installieren (Debian/Ubuntu) · Paket installieren (Rocky/Alma/RHEL) · Paket-Repo · Windows · Erst-Provisionierung mit Callout Ansible/cloud-init · Subcommand-Referenz · Prüfen mit Logs · Upgrade mit Callout Migration. Im Einzelnen:
 (1) Der Lead DE `:34` nennt für Windows die einzelne `.exe` statt „MSI/ZIP“. EN `:34` sagt dasselbe wie DE.
 (2) EN `:47` und `:56` bekommen Überschriften wie DE: „Install the package (Debian/Ubuntu)“ und „Install the package (Rocky/Alma/RHEL)“; Fedora nennt `scripts/agent-install.sh:7` nicht.
