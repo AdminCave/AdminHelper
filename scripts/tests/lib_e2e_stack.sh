@@ -8,6 +8,7 @@
 #   e2e_init <true|false>            # MTLS_ENFORCE; sets up env + EXIT teardown
 #   e2e_up <service...>              # build + start services, wait for the gateway
 #   token=$(e2e_admin_token)         # admin JWT through the gateway
+#   e2e_login [curl-args...]         # one admin login: E2E_JWT, or E2E_LOGIN_ERR + rc 1
 #   e2e_dc <compose-args...>         # raw `docker compose` for this run
 #
 # Everything is hermetic: throwaway secrets, images built from THIS checkout
@@ -45,6 +46,9 @@ E2E_ADMIN_PW=""
 # (127.0.0.1, docker-compose.test.yml), for tests that run outside the containers.
 ITEST_DATABASE_URL=""
 ITEST_REDIS_URL=""
+# Set by e2e_login.
+E2E_JWT=""
+E2E_LOGIN_ERR=""
 
 e2e_rand() { openssl rand -hex 16; }
 
@@ -165,4 +169,41 @@ for _ in range(30):
     except Exception:
         time.sleep(2)
 PY
+}
+
+# e2e_login [curl-args...] — one admin login through the gateway, no retry; the args go
+# to curl (the client cert). Prints nothing: sets E2E_JWT and returns 0, or sets
+# E2E_LOGIN_ERR to one line for the caller's FAIL message and returns 1. That line never
+# carries the request (the password) or a 200 body (the JWT), and nothing that varies
+# with time, so heavy.sh's first_marker sees the same cause as the same FAIL line.
+# E2E_LOGIN_ERR is the caller's to read.
+# shellcheck disable=SC2034
+e2e_login() {
+    local resp code body detail rc=0
+    E2E_JWT=""; E2E_LOGIN_ERR=""
+    resp=$(curl -k -s "$@" --max-time 5 -X POST "$E2E_SERVER_URL/api/auth/login" \
+        -H 'Content-Type: application/json' \
+        -d "{\"username\":\"admin\",\"password\":\"$E2E_ADMIN_PW\"}" \
+        -w '\n%{http_code}' 2>/dev/null) || rc=$?
+    code=${resp##*$'\n'}; body=${resp%$'\n'*}
+    # The class spelled out: under a de_DE locale [0-9] also matches other digits.
+    [[ $code =~ ^[0123456789]{3}$ ]] || code=000
+    if [ "$code" = 200 ]; then
+        E2E_JWT=$(printf '%s' "$body" | python3 -c '
+import json, sys
+t = json.load(sys.stdin.buffer)["access_token"]
+print(t if isinstance(t, str) else "")' 2>/dev/null)
+        [ -z "$E2E_JWT" ] || return 0
+        E2E_LOGIN_ERR="HTTP 200, curl exit $rc, no access_token"
+        return 1
+    fi
+    detail=$(printf '%s' "$body" | python3 -c '
+import json, sys
+d = json.load(sys.stdin.buffer)["detail"]
+if isinstance(d, list):  # FastAPI 422: each "input" echoes the request, password included
+    d = "; ".join(".".join(map(str, e["loc"])) + ": " + str(e["msg"]) for e in d)
+if isinstance(d, str):
+    print("detail: " + "".join(c if c.isprintable() else " " for c in d)[:200])' 2>/dev/null)
+    E2E_LOGIN_ERR="HTTP $code, curl exit $rc, ${detail:-no JSON detail}"
+    return 1
 }
