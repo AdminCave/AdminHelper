@@ -41,8 +41,10 @@ Metrik: Probe oben (Python 3.13.5): Absturzwege der Feldtypen 4 → 0
 Dedup-Key: ref:monitoring:plugins.py:docker-entry-types
 HEAD: a23a4387
 
-### T3 — docker_health: Container-Name und state gekappt in Meldung und Details (R-0508)  [ ]
+### T3 — docker_health: Container-Name und state gekappt in Meldung und Details (R-0508)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py, apps/monitoring/tests/test_service_process_checker.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @8f464f19 2026-10-19T09:55:38+02:00
+Review: approve (.ah-out/review/monitoring-checker-hardening/T3.verdict.json)
 Änderung: `name` und `state` eines Containers gehen nur durch `cap_agent_text` (`checkers/agent.py:52`, 500 Zeichen samt „…“) in `_problem_text` (`plugins.py:359`, `:361`, „unknown state …“ `:285`) und in `_details.containers` (`name`, `state`); `ignore_containers` vergleicht weiter mit dem vollen Namen (`:350`), die Bewertung liest weiter den vollen `state`. Tests zuerst rot: Name aus 10 000 Zeichen bei `state: "dead"` → Meldung exakt verglichen, der Name darin 500 Zeichen und endet auf „…“, `_details` ebenso; `state` aus 10 000 Zeichen → warning `unknown_state`, Meldung exakt verglichen, gekappt; ein Container mit 600 Zeichen langem Namen in `ignore_containers` bleibt ignoriert. Dazu wie in R-0508 verlangt: `test_systemctl_error_text_is_capped` (`test_service_process_checker.py:415-422`) vergleicht die ganze Meldung exakt statt nur `endswith`, für `auto` und `list`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py tests/test_service_process_checker.py
 Doku: docs/developer/monitoring.html + docs/en/developer/monitoring.html (`:158`: Name und state gehen auf 500 Zeichen gekürzt in Meldung und `_details`) · kein CHANGELOG (Docker-Namen regulärer Hosts sind kurz)

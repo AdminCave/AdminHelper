@@ -373,12 +373,16 @@ class DockerHealthChecker:
             state = state.lower() if isinstance(state, str) else ""
             prev_count = prev_restarts.get(cid) if isinstance(cid, str) else None
             category, reason = _rate_container(c, state, prev_count)
+            # The ignore list and the rating read the full name and state; message and details
+            # only get a capped copy, the message goes unchanged into webhook and mail (R-0508).
+            shown_name = cap_agent_text(name) or ""
+            shown_state = cap_agent_text(state) or ""
             if state == "running":
                 running += 1
             if category == "critical":
-                critical_problems.append(_problem_text(name, reason, state))
+                critical_problems.append(_problem_text(shown_name, reason, shown_state))
             elif category == "warning":
-                warning_problems.append(_problem_text(name, reason, state))
+                warning_problems.append(_problem_text(shown_name, reason, shown_state))
             elif category == "stopped":
                 stopped += 1
             else:
@@ -387,9 +391,9 @@ class DockerHealthChecker:
             container_details.append(
                 {
                     "id": c.get("id"),
-                    "name": name,
+                    "name": shown_name,
                     "image": c.get("image", ""),
-                    "state": state,
+                    "state": shown_state,
                     "category": category,
                     "reason": reason,
                     "exit_code": _container_exit_code(c),

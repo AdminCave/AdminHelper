@@ -512,6 +512,35 @@ def test_docker_old_agent_status_text_that_is_no_string_is_not_unhealthy():
     assert (_rows(metrics)[0]["category"], _rows(metrics)[0]["reason"]) == ("ok", None)
 
 
+# Name and state go into MonitorState.message, webhook and mail unchanged: only 500 characters
+# of each, the ellipsis included, reach message and details (R-0508).
+def test_docker_long_name_is_capped_in_message_and_details():
+    status, msg, metrics = DockerHealthChecker().evaluate(
+        {}, _docker(_ctr(name="n" * 10_000, state="dead"))
+    )
+    name = "n" * 499 + "…"
+    assert status == "critical"
+    assert msg == f"Container problems: {name}: dead (0 running, 0 stopped)"
+    assert _rows(metrics)[0]["name"] == name
+
+
+def test_docker_long_state_is_capped_in_message_and_details():
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(state="s" * 10_000)))
+    state = "s" * 499 + "…"
+    assert status == "warning"
+    assert msg == f"Container warnings: web: unknown state {state!r} (0 running, 0 stopped)"
+    assert (_rows(metrics)[0]["state"], _rows(metrics)[0]["reason"]) == (state, "unknown_state")
+
+
+def test_docker_ignore_compares_the_full_long_name():
+    name = "i" * 600
+    status, _, metrics = DockerHealthChecker().evaluate(
+        {"ignore_containers": [name]}, _docker(_ctr(name=name, state="exited", exit_code=1))
+    )
+    assert status == "ok"
+    assert _rows(metrics) == []
+
+
 @pytest.mark.parametrize("code", ["daemon_unreachable", "timeout", "cli_failed", "parse_failed"])
 def test_docker_unavailable_is_warning_without_containers(code):
     report = _docker(
