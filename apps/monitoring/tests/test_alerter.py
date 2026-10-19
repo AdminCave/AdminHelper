@@ -316,10 +316,11 @@ class TestWebhookLogLines:
 
 
 class TestRuleLoopIsolation:
-    def test_a_throwing_dispatch_does_not_abort_the_loop(self, monkeypatch):
+    def test_a_throwing_dispatch_does_not_abort_the_loop(self, monkeypatch, caplog):
         # 4.45: a misconfigured rule whose _dispatch raises (e.g. smtp_port "abc" parsed before
         # _send_email's own try) must not abort the whole loop and roll back every other rule's
-        # alert log — each rule still gets a log entry, the bad one flagged as a failed attempt.
+        # alert log — each rule still gets a log entry, the bad one flagged as a failed attempt
+        # with a fixed reason; the exception text goes to the service log only.
         bad = make_rule(id="rule-bad", name="bad")
         good = make_rule(id="rule-good", name="good")
         db = _CapturingDb([bad, good])
@@ -332,13 +333,18 @@ class TestRuleLoopIsolation:
         monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
 
-        process_alert(db, make_check(), old_status="ok", new_status="critical")
+        with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+            process_alert(db, make_check(), old_status="ok", new_status="critical")
 
         assert len(db.added) == 2, "beide Rules bekommen einen Log-Eintrag trotz Fehler in einer"
         assert db.flushed is True
         by_rule = {e.alert_rule_id: e.success for e in db.added}
         assert by_rule["rule-bad"] is False
         assert by_rule["rule-good"] is True
+        errors = {e.alert_rule_id: e.error for e in db.added}
+        assert errors["rule-bad"] == "Dispatch failed (ValueError)"
+        assert errors["rule-good"] is None
+        assert "smtp_port abc" in caplog.text
 
 
 def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):

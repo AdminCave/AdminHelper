@@ -185,7 +185,7 @@ def process_alert(
             # otherwise abort the whole loop — no db.flush(), and execute_check rolls back every
             # other rule's already-created alert log, silently suppressing all their alerts (4.45).
             logger.exception("Alert-Dispatch fuer Rule %s fehlgeschlagen", rule.id)
-            success, error = False, str(exc)
+            success, error = False, f"Dispatch failed ({type(exc).__name__})"
 
         log_entry = MonitorAlertLog(
             alert_rule_id=rule.id,
@@ -386,6 +386,16 @@ def _log_host(url: str) -> str:
         return "?"
 
 
+def _webhook_failure(exc: Exception) -> str:
+    """The alert-log reason for a failed webhook request: a fixed text per kind of
+    error. The exception text goes to the service log only."""
+    if isinstance(exc, httpx.TimeoutException):
+        return "Webhook request timed out"
+    if isinstance(exc, httpx.ConnectError):
+        return "Webhook connection failed"
+    return f"Webhook request failed ({type(exc).__name__})"
+
+
 def _send_webhook(
     config: dict,
     rule: MonitorAlertRule,
@@ -429,8 +439,34 @@ def _send_webhook(
             return True, None
         return False, f"HTTP {resp.status_code}"
     except Exception as exc:
-        logger.error("Webhook fehlgeschlagen: %s", exc)
-        return False, str(exc)
+        logger.error("Webhook failed: %s -> %s: %s", check.name, _log_host(url), exc)
+        return False, _webhook_failure(exc)
+
+
+def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
+    """The alert-log reason for a failed send: a fixed text per kind of error. The
+    exception text (mail server replies, host names) goes to the service log only."""
+    # Every smtplib error and ssl.SSLError is an OSError as well, so the order matters.
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return f"SMTP authentication failed ({exc.smtp_code})"
+    if isinstance(
+        exc,
+        (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused, smtplib.SMTPDataError),
+    ):
+        return "SMTP server refused the message"
+    # SMTPNotSupportedError means "no STARTTLS" only from starttls(); login() and the
+    # send raise it for a missing AUTH or SMTPUTF8 extension.
+    if isinstance(exc, ssl.SSLError) or (
+        in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError)
+    ):
+        return "SMTP TLS failed"
+    if isinstance(exc, TimeoutError):
+        return "SMTP connection timed out"
+    if isinstance(exc, smtplib.SMTPException):
+        return f"SMTP error ({type(exc).__name__})"
+    if isinstance(exc, OSError):
+        return "SMTP connection failed"
+    return f"SMTP error ({type(exc).__name__})"
 
 
 def _send_email(
@@ -460,6 +496,7 @@ def _send_email(
     message["To"] = ", ".join(recipients)
     message.attach(MIMEText(msg["text"], "plain"))
 
+    in_starttls = False
     try:
         # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from the
         # start (SMTP_SSL). Every other port upgrades via STARTTLS. Both use a
@@ -475,12 +512,14 @@ def _send_email(
                 # STARTTLS on EVERY non-implicit-TLS port (not just 587): fails
                 # closed if the server offers no TLS, so smtp_user/smtp_password
                 # never go over a plaintext/unverified connection (25/2525/...).
+                in_starttls = True
                 server.starttls(context=ctx)
+                in_starttls = False
             if smtp_user and smtp_pass:
                 server.login(smtp_user, smtp_pass)
             server.send_message(message)
         logger.info("E-Mail gesendet: %s -> %s", check.name, recipients)
         return True, None
     except Exception as exc:
-        logger.error("E-Mail fehlgeschlagen: %s", exc)
-        return False, str(exc)
+        logger.error("Email failed: %s: %s", check.name, exc)
+        return False, _email_failure(exc, in_starttls=in_starttls)

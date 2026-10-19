@@ -951,6 +951,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Versandfehler im Alert-Log mit festem Grund:** Scheitert der Versand eines Webhooks oder einer Mail,
+  speichert das Alert-Log statt des Textes der Ausnahme einen festen englischen Grund je Fehlerart, etwa „Webhook
+  request timed out“, „Webhook connection failed“, „SMTP TLS failed“, „SMTP authentication failed (535)“ oder „SMTP
+  server refused the message“; andere Fehler nennen nur ihre Klasse, etwa „SMTP error (SMTPServerDisconnected)“ oder
+  „Dispatch failed (ValueError)“ fuer eine Regel, die sich nicht verarbeiten laesst. Die Einzelheiten, etwa die
+  Antwort des Mail-Servers, stehen weiter im Log des Monitoring-Dienstes; dessen Zeilen zu einem gescheiterten Webhook
+  oder einer gescheiterten Mail sind jetzt englisch und nennen den Check, beim Webhook auch den Host des Ziels.
+  Gespeicherte Eintraege behalten ihren Text. Doku: Monitoring-Administration (DE+EN).
 - **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
