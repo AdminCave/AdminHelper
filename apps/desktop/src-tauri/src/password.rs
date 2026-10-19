@@ -58,6 +58,37 @@ fn rdp_storage_keys(connection: &Connection) -> Option<(String, String)> {
     Some((key, legacy))
 }
 
+/// Whether the connection's target is this machine: `localhost` or a name under
+/// `.localhost`, or a loopback or unspecified address, also with a trailing dot,
+/// in brackets or IPv4-mapped. Short and hex forms such as `127.1` are not
+/// recognized.
+#[cfg(unix)]
+fn targets_this_machine(connection: &Connection) -> bool {
+    let host = normalized(&connection.host).to_lowercase();
+    let host = host.strip_suffix('.').unwrap_or(&host);
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host.parse::<std::net::IpAddr>().is_ok_and(|ip| {
+            let ip = ip.to_canonical();
+            ip.is_loopback() || ip.is_unspecified()
+        })
+}
+
+/// The password under the legacy key, read for no target on this machine:
+/// connections of different servers can name the same one, e.g. 127.0.0.1 and
+/// the same port, so such an entry may belong to any of them.
+#[cfg(unix)]
+fn legacy_password(connection: &Connection, legacy: &str) -> Result<Option<String>, AppError> {
+    if targets_this_machine(connection) {
+        return Ok(None);
+    }
+    crate::keyring_store::try_get(legacy)
+}
+
 #[cfg(unix)]
 pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
     use crate::keyring_store::{delete, set, try_get};
@@ -70,7 +101,7 @@ pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, 
     }
     // The first connection that loads a legacy entry takes it over, so it stops
     // answering for the other connections to the same target.
-    let Some(password) = try_get(&legacy)? else {
+    let Some(password) = legacy_password(connection, &legacy)? else {
         return Ok(None);
     };
     set(&key, &password)?;
@@ -87,7 +118,7 @@ fn password_stored_keyring(connection: &Connection) -> Result<bool, AppError> {
     let Some((key, legacy)) = rdp_storage_keys(connection) else {
         return Ok(false);
     };
-    Ok(try_get(&key)?.is_some() || try_get(&legacy)?.is_some())
+    Ok(try_get(&key)?.is_some() || legacy_password(connection, &legacy)?.is_some())
 }
 
 #[cfg(unix)]
@@ -591,6 +622,107 @@ mod tests {
             assert_eq!(try_get(key).unwrap(), None, "{key}");
         }
         assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
+    }
+
+    /// Hosts that name this machine.
+    #[cfg(unix)]
+    const THIS_MACHINE: &[&str] = &[
+        "127.0.0.1",
+        "localhost",
+        "LocalHost",
+        "::1",
+        "127.0.0.2",
+        "[::1]",
+        "::ffff:127.0.0.1",
+        "[::ffff:127.0.0.1]",
+        "0.0.0.0",
+        "::",
+        "localhost.",
+        "LOCALHOST.",
+        "app.localhost",
+    ];
+
+    /// The connection `a` to `host:3390` as `Admin` in `CORP`, its key and the
+    /// legacy key of its target.
+    #[cfg(unix)]
+    fn rdp_to(host: &str) -> (Connection, String, String) {
+        let connection = Connection {
+            id: "a".into(),
+            ..rdp(Some(host), Some(3390), Some("Admin"), Some("CORP"))
+        };
+        let target = format!("{}|3390|admin|corp", host.to_lowercase());
+        (
+            connection,
+            format!("rdp|a|{target}"),
+            format!("rdp|{target}"),
+        )
+    }
+
+    // Connections of different servers can name the same target on this machine,
+    // e.g. 127.0.0.1 and the same port, so a legacy entry for it may belong to
+    // any of them.
+    #[cfg(unix)]
+    #[test]
+    fn no_connection_takes_over_a_legacy_entry_for_this_machine() {
+        use crate::keyring_store::{delete, set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        for &host in THIS_MACHINE {
+            let (c, key, legacy) = rdp_to(host);
+            set(&legacy, "old").unwrap();
+            assert!(!password_state(&c).unwrap().stored, "{host}");
+            assert_eq!(load_password_keyring(&c).unwrap(), None, "{host}");
+            assert_eq!(try_get(&key).unwrap(), None, "{host}");
+            assert_eq!(try_get(&legacy).unwrap().as_deref(), Some("old"), "{host}");
+
+            // The connection's own key still works for such a target.
+            save_password(&c, "new").unwrap();
+            assert!(password_state(&c).unwrap().stored, "{host}");
+            assert_eq!(
+                load_password_keyring(&c).unwrap().as_deref(),
+                Some("new"),
+                "{host}"
+            );
+            assert_eq!(try_get(&legacy).unwrap().as_deref(), Some("old"), "{host}");
+            delete(&key).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_legacy_entry_for_another_host_is_still_taken_over() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        for host in [
+            "192.0.2.10",
+            "2001:db8::1",
+            "localhost.example.com",
+            "127.example.com",
+            "notlocalhost",
+        ] {
+            let (c, key, legacy) = rdp_to(host);
+            set(&legacy, "old").unwrap();
+            assert!(password_state(&c).unwrap().stored, "{host}");
+            assert_eq!(
+                load_password_keyring(&c).unwrap().as_deref(),
+                Some("old"),
+                "{host}"
+            );
+            assert_eq!(try_get(&key).unwrap().as_deref(), Some("old"), "{host}");
+            assert_eq!(try_get(&legacy).unwrap(), None, "{host}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deleting_removes_a_legacy_entry_for_this_machine() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        for &host in THIS_MACHINE {
+            let (c, _, legacy) = rdp_to(host);
+            set(&legacy, "old").unwrap();
+            delete_password(&c).unwrap();
+            assert_eq!(try_get(&legacy).unwrap(), None, "{host}");
+        }
     }
 
     // Windows-only credential/target formatting. These execute now that the CI

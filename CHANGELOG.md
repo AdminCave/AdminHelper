@@ -957,8 +957,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   denselben Werten, etwa von zwei Servern, teilten sich ein Passwort. Jetzt traegt der Eintrag auch die `id` der
   Verbindung. Ein bisher gespeichertes Passwort bleibt nutzbar: Es gilt fuer jede Verbindung zu diesem Ziel als
   gespeichert, bis die erste es oeffnet; diese uebernimmt es, fuer die anderen ist es danach nicht mehr gespeichert.
-  Loeschen entfernt auch einen solchen bisherigen Eintrag. Unter Windows bleibt das Passwort im Credential Manager je
-  Adresse (`TERMSRV/<Adresse>`), wo mstsc es liest. Doku: Desktop fuer Entwickler (DE+EN).
+  Das gilt nicht fuer Ziele auf dem eigenen Rechner (`localhost` und Namen unter `.localhost`, Loopback- und
+  unspezifizierte Adressen) wie die automatischen Verbindungen des Servers ueber `127.0.0.1`: Verbindungen
+  verschiedener Server koennen dasselbe solche Ziel nennen, deshalb gilt ein bisheriger Eintrag dafuer fuer keine
+  Verbindung als gespeichert, und das Passwort wird je Verbindung einmal neu eingegeben. Loeschen entfernt auch einen
+  solchen bisherigen Eintrag. Unter Windows bleibt das Passwort im Credential Manager je Adresse
+  (`TERMSRV/<Adresse>`), wo mstsc es liest. Doku: Desktop fuer Entwickler (DE+EN).
 - **Server: `{{` in Feldern der FRP-Configs wird abgewiesen:** frp liest seine Config-Dateien als Go-Template, bevor
   es die TOML liest; `{{` beginnt dort eine Template-Anweisung. Die API antwortet jetzt mit `422` auf `{{` im
   Servernamen (`/api/servers`), in `name` und `server_addr` der FRP-Server-Config und in `name`, `local_ip`,

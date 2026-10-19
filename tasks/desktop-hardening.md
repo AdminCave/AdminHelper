@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop-Härtung: Fehlertexte, Tunnel je Anmeldung, Passwortspeicher je Verbindung — Task-Ledger
-Status: aktiv · Branch: feature/desktop-hardening · Review: pro Task
+Status: bereit · Branch: feature/desktop-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full + windows — Desktop-Tunnel und Anmelden/Abmelden (frpc endet mit der Sitzung, Zuordnungen je Anmeldung) laufen in `tunnel-connect.live.js` und `logout.live.js` im Sammellauf über `main`; T6 ändert die Eingabeprüfung der FRP-API (Server-Tests in der PR-CI); `windows` über die CI-Jobs (der Pool hat keine Windows-Vorlage); kein `scenario`, weil der FRP-Datenpfad unverändert bleibt (Kevin 2026-10-19)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -84,8 +84,10 @@ Beweis: Code-Lesung main@d9950198 — `_reject_toml_breakers` weist Anführungsz
 Semantik: docs/developer/api-reference.html:141 und `:100` nennen die `422`-Regeln dieser Felder (einzelnes Surrogat), `{{` fehlt; `:134` schließt geschweifte Klammern für die frps-Felder schon aus; `docs/developer/desktop.html:132` begründet die Ablehnung von `{{` im Desktop
 HEAD: d9950198
 
-### T7 — Bisherige Einträge für Ziele auf dem eigenen Rechner übernimmt keine Verbindung  [ ]
+### T7 — Bisherige Einträge für Ziele auf dem eigenen Rechner übernimmt keine Verbindung  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/password.rs, docs/developer/desktop.html, docs/en/developer/desktop.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @32d75321 2026-10-19T16:40:27+02:00
+Review: approve (.ah-out/review/desktop-hardening/T7.verdict.json)
 Änderung: Der Übergang aus T5 gilt nicht für einen bisherigen Eintrag, dessen Host ein Ziel auf dem eigenen Rechner ist: `localhost` (ohne Rücksicht auf Groß- und Kleinschreibung) oder eine IP-Adresse mit `is_loopback()` (127.0.0.0/8, `::1`). `load_password_keyring` liest einen solchen Eintrag nicht und übernimmt ihn nicht, `password_state` meldet ihn nicht als gespeichert. Löschen entfernt weiter neuen und bisherigen Schlüssel, so verschwindet ein solcher Eintrag beim Löschen. Andere Ziele wechseln weiter wie in T5. Tests in `password.rs` (zuerst rot, `keyring_store::memory()`): ein bisheriger Eintrag unter `127.0.0.1`, `localhost`, `LocalHost`, `::1` und `127.0.0.2` → Status nicht gespeichert, Laden ohne Passwort, kein Eintrag unter dem neuen Schlüssel angelegt, der bisherige bleibt unverändert; ein bisheriger Eintrag unter einem anderen Host wird weiter übernommen (Gegenprobe); Löschen entfernt auch einen solchen bisherigen Eintrag.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- password::
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (`:107`, Satz zum Übergang: gilt nicht für Ziele auf dem eigenen Rechner wie die automatischen Verbindungen über 127.0.0.1; deren Passwort wird je Verbindung einmal neu eingegeben) · CHANGELOG.md (den Eintrag aus T5 ergänzen, kein neuer)
