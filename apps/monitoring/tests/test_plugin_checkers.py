@@ -109,6 +109,39 @@ def test_zfs_zero_pools_is_ok_with_empty_list():
     assert metrics == {"_details": {"available": True, "error": None, "pools": []}}
 
 
+def test_zfs_caps_the_pool_list():
+    # Like the containers, only the first 500 pools are rated, so a broken agent cannot
+    # flood the details and the message (R-0486).
+    names = [f"p{i}" for i in range(2000)]
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs(*(_pool(name=n) for n in names)))
+    assert status == "ok"
+    assert msg == "All pools ONLINE: " + ", ".join(f"{n} 20%" for n in names[:500])
+    assert [p["name"] for p in metrics["_details"]["pools"]] == names[:500]
+    assert sum(k.startswith("zfs_capacity_") for k in metrics) == 500
+
+
+@pytest.mark.parametrize("pools", ["abc", {"name": "tank"}, 42], ids=["str", "dict", "int"])
+def test_zfs_pools_that_are_no_list_count_as_empty(pools):
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs(pools=pools))
+    assert (status, msg) == ("ok", "No ZFS pools found")
+    assert metrics == {"_details": {"available": True, "error": None, "pools": []}}
+
+
+def test_zfs_pool_that_is_no_object_is_skipped():
+    status, msg, metrics = ZfsHealthChecker().evaluate({}, _zfs("x", _pool(health="DEGRADED")))
+    assert (status, msg) == ("critical", "tank: DEGRADED")
+    assert metrics["_details"]["pools"] == [
+        {"name": "tank", "health": "DEGRADED", "capacityPercent": 20}
+    ]
+
+
+def test_zfs_pool_without_name_is_named_by_a_question_mark():
+    pool = _pool()
+    del pool["name"]
+    status, msg, _ = ZfsHealthChecker().evaluate({}, _zfs(pool))
+    assert (status, msg) == ("ok", "All pools ONLINE: ? 20%")
+
+
 # --- ProxmoxBackupChecker ---
 def test_proxmox_missing_backup_is_critical():
     r = {"proxmox": {"vms": [{"vmid": 100, "status": "running", "last_backup_ts": None}]}}
@@ -148,6 +181,28 @@ def test_proxmox_exclude_stopped_off_only_for_real_false(stored, expected):
     r = {"proxmox": {"vms": [{"vmid": 101, "status": "stopped", "last_backup_ts": None}]}}
     status, _, _ = ProxmoxBackupChecker().evaluate({"exclude_stopped": stored}, r)
     assert status == expected
+
+
+def test_proxmox_caps_the_vm_list(monkeypatch):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: 1_000_000.0)
+    vms = [{"vmid": i, "status": "running", "last_backup_ts": 1_000_000.0} for i in range(2000)]
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": vms}})
+    assert (status, msg) == ("ok", "All 500 VMs/CTs have up-to-date backups")
+    assert [vm["vmid"] for vm in metrics["_details"]["vms"]] == list(range(500))
+    assert metrics["proxmox_backup_ok"] == 500
+
+
+@pytest.mark.parametrize("vms", ["abc", {"vmid": 100}, 42], ids=["str", "dict", "int"])
+def test_proxmox_vms_that_are_no_list_count_as_empty(vms):
+    result = ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": vms}})
+    assert result == ("ok", "No VMs/CTs found", None)
+
+
+def test_proxmox_vm_that_is_no_object_is_skipped():
+    r = {"proxmox": {"vms": ["x", {"vmid": 100, "status": "running", "last_backup_ts": None}]}}
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, r)
+    assert (status, msg) == ("critical", "No backup: VM 100 (?)")
+    assert [vm["vmid"] for vm in metrics["_details"]["vms"]] == [100]
 
 
 # --- DockerHealthChecker ---
@@ -422,6 +477,70 @@ def test_docker_container_without_name_falls_back_to_a_string_id_only():
     assert _rows(metrics)[0]["name"] == "?"
 
 
+# A broken or taken-over agent sends name, state and status of any JSON type (R-0507);
+# only a string counts, anything else is treated like a missing or empty field.
+@pytest.mark.parametrize("name", [["web"], {"web": 1}, 42], ids=["list", "dict", "int"])
+def test_docker_name_that_is_no_string_falls_back_to_the_id(name):
+    status, _, metrics = DockerHealthChecker().evaluate(
+        {"ignore_containers": ["db"]}, _docker(_ctr(name=name))
+    )
+    assert status == "ok"
+    assert _rows(metrics)[0]["name"] == "abc123def456"
+
+
+def test_docker_state_that_is_no_string_is_unknown_state():
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(state=5)))
+    assert status == "warning"
+    assert msg == "Container warnings: web: unknown state '' (0 running, 0 stopped)"
+    assert (_rows(metrics)[0]["state"], _rows(metrics)[0]["reason"]) == ("", "unknown_state")
+
+
+def test_docker_old_agent_status_text_that_is_no_string_has_no_exit_code():
+    c = _ctr(state="exited", status=5)
+    del c["exit_code"]
+    status, _, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert status == "ok"
+    row = _rows(metrics)[0]
+    assert (row["category"], row["reason"], row["exit_code"]) == ("stopped", "stopped", None)
+
+
+def test_docker_old_agent_status_text_that_is_no_string_is_not_unhealthy():
+    c = _ctr(status=5)
+    del c["health"]
+    status, _, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert status == "ok"
+    assert (_rows(metrics)[0]["category"], _rows(metrics)[0]["reason"]) == ("ok", None)
+
+
+# Name and state go into MonitorState.message, webhook and mail unchanged: only 500 characters
+# of each, the ellipsis included, reach message and details (R-0508).
+def test_docker_long_name_is_capped_in_message_and_details():
+    status, msg, metrics = DockerHealthChecker().evaluate(
+        {}, _docker(_ctr(name="n" * 10_000, state="dead"))
+    )
+    name = "n" * 499 + "…"
+    assert status == "critical"
+    assert msg == f"Container problems: {name}: dead (0 running, 0 stopped)"
+    assert _rows(metrics)[0]["name"] == name
+
+
+def test_docker_long_state_is_capped_in_message_and_details():
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(state="s" * 10_000)))
+    state = "s" * 499 + "…"
+    assert status == "warning"
+    assert msg == f"Container warnings: web: unknown state {state!r} (0 running, 0 stopped)"
+    assert (_rows(metrics)[0]["state"], _rows(metrics)[0]["reason"]) == (state, "unknown_state")
+
+
+def test_docker_ignore_compares_the_full_long_name():
+    name = "i" * 600
+    status, _, metrics = DockerHealthChecker().evaluate(
+        {"ignore_containers": [name]}, _docker(_ctr(name=name, state="exited", exit_code=1))
+    )
+    assert status == "ok"
+    assert _rows(metrics) == []
+
+
 @pytest.mark.parametrize("code", ["daemon_unreachable", "timeout", "cli_failed", "parse_failed"])
 def test_docker_unavailable_is_warning_without_containers(code):
     report = _docker(
@@ -490,6 +609,12 @@ def test_docker_containers_that_are_no_list_count_as_empty(containers):
     status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(containers=containers))
     assert (status, msg) == ("ok", "No containers found")
     assert metrics["_details"] == {"available": True, "error": None, "containers": []}
+
+
+def test_docker_container_that_is_no_object_is_skipped():
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker("x", _ctr()))
+    assert (status, msg) == ("ok", "All 1 containers running")
+    assert [row["id"] for row in _rows(metrics)] == ["abc123def456"]
 
 
 def test_docker_message_counts_running_stopped_and_problems():
@@ -655,3 +780,27 @@ def test_available_is_down_only_as_a_real_false(kind, available):
     checker, report, _, _ = _outage_case(kind, available=available)
     assert checker.evaluate({}, report) == checker.evaluate({}, healthy)
     assert checker.evaluate({}, report)[0] == "ok"
+
+
+# --- Malformed blocks and lists from a broken agent (R-0486) ---
+_PLUGIN_CHECKERS = {
+    "proxmox": ProxmoxBackupChecker,
+    "zfs": ZfsHealthChecker,
+    "docker": DockerHealthChecker,
+}
+
+
+@pytest.mark.parametrize("block", [[{}], "x", 1], ids=["list", "str", "int"])
+@pytest.mark.parametrize("kind", ["proxmox", "zfs", "docker"])
+def test_plugin_block_that_is_no_object_counts_as_missing(kind, block):
+    checker = _PLUGIN_CHECKERS[kind]()
+    result = checker.evaluate({}, {kind: block})
+    assert result == checker.evaluate({}, {"resources": {}})
+    assert result[0] == "unknown"
+
+
+def test_plugin_list_is_capped_before_entries_that_are_no_object_are_skipped():
+    # The cap bounds the work on a flooded list, so it counts every entry: a valid
+    # container behind 500 junk entries is not rated.
+    report = _docker(*(["x"] * 500), _ctr())
+    assert DockerHealthChecker().evaluate({}, report)[:2] == ("ok", "No containers found")

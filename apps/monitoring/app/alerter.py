@@ -312,14 +312,14 @@ def _dispatch(
     try:
         config = json.loads(rule.channel_config) if rule.channel_config else {}
     except (json.JSONDecodeError, TypeError):
-        return False, "Ungueltige channel_config"
+        return False, "Invalid channel_config"
 
     if rule.channel == "webhook":
         return _send_webhook(config, rule, check, msg)
     elif rule.channel == "email":
         return _send_email(config, rule, check, msg)
     else:
-        return False, f"Unbekannter Kanal: {rule.channel}"
+        return False, f"Unknown channel: {rule.channel}"
 
 
 def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status: str) -> dict:
@@ -334,12 +334,12 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
     is_recovery = new_status == "ok"
 
     if is_recovery:
-        subject = f"[AdminHelper Monitor] RECOVERY: {check.name} ist wieder OK"
+        subject = f"[AdminHelper Monitor] RECOVERY: {check.name}"
         text = (
             f"RECOVERY\n"
             f"Check: {check.name} ({check.check_type})\n"
             f"Status: {old_status} \u2192 OK\n"
-            f"Der Check ist wieder in Ordnung."
+            f"The check is OK again."
         )
     else:
         label = "CRITICAL" if new_status == "critical" else new_status.upper()
@@ -384,7 +384,7 @@ def _send_webhook(
     """Sends the alert to a webhook URL."""
     url = config.get("url")
     if not url:
-        return False, "Keine Webhook-URL konfiguriert"
+        return False, "No webhook URL configured"
 
     # SSRF guard: a webhook URL is user-supplied; reject private/reserved
     # targets so it cannot probe the internal network from the monitor service
@@ -398,7 +398,7 @@ def _send_webhook(
         )
     if verdict is not UrlVerdict.ALLOWED:
         logger.warning("Webhook-Ziel abgelehnt (privat/reserviert): %s", url)
-        return False, "Webhook-Ziel ist privat/reserviert (nicht erlaubt)"
+        return False, "Webhook target is private/reserved (not allowed)"
 
     payload = {
         "alert_rule": rule.name,
@@ -427,7 +427,7 @@ def _send_email(
     if isinstance(recipients, str):
         recipients = [r.strip() for r in recipients.split(",") if r.strip()]
     if not recipients:
-        return False, "Keine Empfaenger konfiguriert"
+        return False, "No recipients configured"
 
     smtp_host = config.get("smtp_host") or SMTP_HOST
     smtp_port = int(config.get("smtp_port") or SMTP_PORT)
@@ -435,7 +435,7 @@ def _send_email(
     smtp_pass = config.get("smtp_password") or SMTP_PASSWORD
 
     if not smtp_host:
-        return False, "SMTP nicht konfiguriert (SMTP_HOST fehlt)"
+        return False, "SMTP not configured (SMTP_HOST missing)"
 
     message = MIMEMultipart("alternative")
     message["Subject"] = msg["subject"]

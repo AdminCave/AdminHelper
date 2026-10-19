@@ -403,7 +403,11 @@ def test_cap_agent_text(value, expected):
     assert cap_agent_text(value) == expected
 
 
-@pytest.mark.parametrize("mode", ["auto", "list"])
+@pytest.mark.parametrize(
+    "mode, prefix",
+    [("auto", ""), ("list", "Services without data: nginx, sshd; ")],
+    ids=["auto", "list"],
+)
 @pytest.mark.parametrize(
     "error, expected",
     [
@@ -412,14 +416,15 @@ def test_cap_agent_text(value, expected):
     ],
     ids=["10000-chars", "500-chars"],
 )
-def test_systemctl_error_text_is_capped(mode, error, expected):
+def test_systemctl_error_text_is_capped(mode, prefix, error, expected):
     # The message goes unchanged into MonitorState.message and from there into webhook and mail:
-    # a broken or hijacked agent must not push an unbounded text through it (R-0437).
+    # a broken or hijacked agent must not push an unbounded text through it (R-0437). Compared
+    # whole, so no uncapped copy of the text can hide in front of the capped one (R-0508).
     status, message, _ = ServiceProcessChecker().evaluate(
         {"mode": mode, "services": ["nginx", "sshd"]}, _inventory_report(error=error)
     )
     assert status == "unknown"
-    assert message.endswith(f"Services not queryable: {expected}")
+    assert message == f"{prefix}Services not queryable: {expected}"
 
 
 @pytest.mark.parametrize(
