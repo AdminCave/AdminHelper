@@ -63,8 +63,8 @@ fn login_failure(status: reqwest::StatusCode, body: &str) -> AppError {
 
 /// Signs in and keeps the session in `session`, together with `allow_self_signed`: every
 /// request and renewal of the session builds its client with that choice, so a change of
-/// the setting takes effect at the next sign-in. The answer still carries the token pair:
-/// the webview sends it along until those paths take it from the session too (R-0430).
+/// the setting takes effect at the next sign-in. The answer names who signed in where; the
+/// tokens stay in the session.
 pub async fn login(
     session: &SessionState,
     server_url: &str,
@@ -93,16 +93,14 @@ pub async fn login(
 
     let user = AuthSession {
         server_url: server_url.trim_end_matches('/').to_string(),
-        token: login_resp.access_token,
-        refresh_token: login_resp.refresh_token,
         username: me.username,
         is_admin: me.is_admin,
     };
     session
         .set(
             user.server_url.clone(),
-            user.token.clone(),
-            user.refresh_token.clone(),
+            login_resp.access_token,
+            login_resp.refresh_token,
             user.username.clone(),
             allow_self_signed,
         )
@@ -447,6 +445,37 @@ mod tests {
         for key in [KEYRING_JWT_KEY, KEYRING_REFRESH_KEY, KEYRING_SERVER_URL_KEY] {
             assert_eq!(keyring_store::get(key), None, "{key}");
         }
+    }
+
+    #[tokio::test]
+    async fn login_hands_the_webview_no_token() {
+        let _keyring = keyring_store::memory();
+        let (server, _log) = serve(|request| {
+            if request.starts_with("POST /api/auth/login ") {
+                reply(
+                    "200 OK",
+                    r#"{"access_token":"access-1","refresh_token":"refresh-1"}"#,
+                )
+            } else {
+                reply("200 OK", ME)
+            }
+        })
+        .await;
+        let session = SessionState::default();
+
+        let user = login(&session, &server, "ops-admin", "pw", false)
+            .await
+            .unwrap();
+
+        // The answer as it crosses IPC: who signed in where, and nothing more.
+        assert_eq!(
+            serde_json::to_value(&user).unwrap(),
+            serde_json::json!({
+                "serverUrl": server,
+                "username": "ops-admin",
+                "isAdmin": true,
+            })
+        );
     }
 
     #[tokio::test]

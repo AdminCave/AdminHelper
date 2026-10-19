@@ -227,8 +227,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onExportBrowserCert(): Promise<void> {
-    const sess = $session;
-    if (!sess) return;
+    if (!$session) return;
     // Characters as Rust counts them (chars(), code points), not UTF-16 units:
     // check_export_password rejects anything shorter than 12, and that rejection
     // would only reach the user as the generic export error below.
@@ -244,13 +243,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     browserCertBusy = true;
     browserCertMsg = $t('settings.browserCert.working');
     try {
-      const path = await exportBrowserP12(
-        sess.serverUrl,
-        sess.token,
-        browserCertPassword,
-        destPath,
-        allowSelfSignedCerts,
-      );
+      const path = await exportBrowserP12(browserCertPassword, destPath);
       browserCertMsg = `${$t('settings.browserCert.done')} ${path}`;
       browserCertPassword = '';
     } catch (err) {

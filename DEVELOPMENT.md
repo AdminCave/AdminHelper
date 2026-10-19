@@ -1420,7 +1420,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │     │  ├─ src/
 │     │  │  ├─ main.rs            # invoke_handler mit allen Tauri-Commands
 │     │  │  ├─ commands.rs        # IPC-Schnittstelle
-│     │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
+│     │  │  ├─ auth.rs            # JWT-Login und -Abmeldung
+│     │  │  ├─ session.rs         # Session im Speicher, ein Erneuerungsweg
 │     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
 │     │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
 │     │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik

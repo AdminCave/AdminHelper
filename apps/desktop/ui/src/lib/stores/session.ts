@@ -9,11 +9,10 @@
 //   - 'sync':   JSON sync via URL only, no auth needed
 //   - 'server': AdminHelper server with login required
 //
-// Auth token + refresh token are stored exclusively in the Rust keyring
-// (no localStorage copy in the frontend). For security the session is NOT
-// restored from the keyring on startup: server mode always requires a fresh
-// password login each time the app is opened (see hydrate). The keyring tokens
-// are only used for mid-session refresh and are overwritten by the next login.
+// The session itself (server URL, access and refresh token, certificate choice)
+// lives only in the Rust process; this store holds who signed in where
+// (AuthSession), never a token. Nothing survives the app: server mode requires
+// a fresh password login each time the app is opened (see hydrate).
 
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
@@ -72,12 +71,10 @@ export async function hydrate(): Promise<void> {
   try {
     const s = await bridge.loadSettings();
     setLanguage(s.language);
-    // Security: never silently restore a server session from the keyring on
-    // startup. Server mode requires a fresh password login every time the app is
-    // opened (the login screen pre-fills server URL + username). The enrolled
-    // mTLS device cert stays in the keyring and the stale session tokens are
-    // overwritten by the next successful login; mid-session token refresh
-    // (authenticated_get) is unaffected.
+    // Security: never silently restore a server session on startup. Server mode
+    // requires a fresh password login every time the app is opened (the login
+    // screen pre-fills server URL + username). The enrolled mTLS device cert
+    // stays in the keyring; the session is renewed in Rust while the app runs.
     _state.set({ settings: s, session: null, ready: true });
   } catch (err) {
     console.error('hydrate failed', err);
@@ -126,8 +123,8 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** Drops the current server session: clears the keyring tokens (keeping the
- * enrolled mTLS device cert) and the in-memory session. Used when leaving
+/** Drops the current server session: ends it in Rust (keeping the enrolled
+ * mTLS device cert) and clears the in-memory one. Used when leaving
  * server mode so a later switch back forces a fresh login instead of reusing a
  * stale session still bound to the previous server URL. Connections are NOT
  * cleared here — the caller reloads them for the new mode. */

@@ -33,8 +33,6 @@ vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   const session = {
     serverUrl: 'https://srv',
-    token: 'tok',
-    refreshToken: 'r',
     username: 'admin',
     isAdmin: true,
   };
@@ -151,7 +149,7 @@ describe('notifications store', () => {
     h.fetchFeed.mockResolvedValue([]);
 
     await activateNotifications();
-    expect(h.startStream).toHaveBeenCalledWith('https://srv', 'tok');
+    expect(h.startStream).toHaveBeenCalledWith();
     expect(h.listen).toHaveBeenCalledWith('notification', expect.any(Function));
 
     // A pushed event must reload the feed (single source of truth).

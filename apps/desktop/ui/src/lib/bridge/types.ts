@@ -56,10 +56,9 @@ export interface Settings {
   osNotifications: boolean;
 }
 
+// Who signed in where. The tokens stay in the Rust process (session.rs), never here.
 export interface AuthSession {
   serverUrl: string;
-  token: string;
-  refreshToken: string;
   username: string;
   isAdmin: boolean;
 }

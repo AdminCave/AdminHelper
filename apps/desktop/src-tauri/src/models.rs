@@ -140,12 +140,12 @@ impl Default for Settings {
     }
 }
 
+/// What the webview learns of a sign-in. No token: the session stays in the process
+/// (`session.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthSession {
     pub server_url: String,
-    pub token: String,
-    pub refresh_token: String,
     pub username: String,
     pub is_admin: bool,
 }

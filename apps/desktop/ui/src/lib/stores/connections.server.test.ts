@@ -34,8 +34,6 @@ vi.mock('$lib/stores/session', async () => {
       settings: { mode: 'server', allowSelfSignedCerts: false },
       session: {
         serverUrl: 'https://srv',
-        token: 'tok',
-        refreshToken: 'r',
         username: 'admin',
         isAdmin: true,
       },
@@ -81,7 +79,7 @@ describe('connections store — server mode', () => {
     const payload = h.create.mock.calls[0][1] as Record<string, unknown>;
     expect(payload).not.toHaveProperty('id');
     expect(payload.serverId).toBe('s1');
-    expect(h.fetchJwt).toHaveBeenCalled(); // re-pulled from server
+    expect(h.fetchJwt).toHaveBeenCalledWith(); // re-pulled from server
   });
 
   it('updates an existing connection server-side by id', async () => {

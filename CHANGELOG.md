@@ -346,6 +346,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Desktop: die Sitzung haelt laenger als acht Stunden, und eine abgelaufene fuehrt zum Login (R-0430):** Nach
+  Ablauf des Access-Tokens (acht Stunden) scheiterten Infrastruktur, Monitoring, Ansible und die Glocke, weil nur ein
+  Teil der Anfragen die Sitzung erneuerte. Jetzt erneuert der Desktop sie fuer alle Anfragen an einer Stelle und nur
+  einmal zur Zeit; trafen bisher mehrere Erneuerungen zusammen, meldete der Server den Benutzer ueberall ab. Der
+  Benachrichtigungs-Stream nimmt nach einer Erneuerung das neue Token, statt zu verstummen. Laesst sich die Sitzung
+  nicht mehr erneuern, meldet der Desktop ab und zeigt den Login-Bildschirm mit dem Hinweis „Sitzung abgelaufen —
+  bitte neu anmelden.“ Doku: Desktop fuer Entwickler (DE+EN), README.
 - **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
   Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
@@ -877,6 +884,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
 
 ### Changed
+
+- **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
+  nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
+  loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
+  der Anmeldung stand: Eine Aenderung wirkt ab der naechsten Anmeldung, auch fuer den Export des
+  Browser-Zertifikats, der bisher den Haken im offenen Einstellungsdialog nahm.
 
 - **Monitoring: Die Checks melden englisch (R-0422):** Die Push-Checker (`agent_ping`, `agent_resources`,
   `service_process`, `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health`), die Pull-Checker (`http`,
