@@ -30,8 +30,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_config.py t
 Doku: docs/admin/frp-tunnel.html + docs/en/admin/frp-tunnel.html (`:83`: die API weist ihn mit `422` ab; eine schon gespeicherte Zeile meldet die Startprüfung) · CHANGELOG
 Abhängt von: T1
 
-### T3 — Hook-Fehler aus der Datenbank nur mit Typ  [ ]
+### T3 — Hook-Fehler aus der Datenbank nur mit Typ  [x]
 Komponente: server · Dateien: apps/server/app/modules/hooks/script_worker.py, apps/server/tests/test_hook_isolation.py, docs/developer/hooks.html, docs/en/developer/hooks.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @cb2084b0 2026-10-19T16:35:01+02:00
+Review: approve (.ah-out/review/server-frp-hook-checks/T3.verdict.json)
 Änderung: Der Fehlerzweig des Workers (`script_worker.py:171-178`) schreibt für einen Fehler der Datenbankanbindung (`sqlalchemy.exc.SQLAlchemyError`, `psycopg.Error`) nur `type(exc).__name__` in `error` und in die Log-Zeile `Fehler: …`; andere Fehler eines Hooks behalten ihren Text. Tests über `run_hook_script` (der echte Worker-Prozess): ein Hook, der `load_connections()` gegen eine nicht erreichbare Datenbank-URL mit einem Merkwort in der URL ruft, liefert `success: false`, und weder `error` noch `logs` enthalten das Merkwort, wohl aber den Fehlertyp; ein Hook mit `raise ValueError("…")` behält seinen Text. Nur Adressen nach RFC 5737 oder Loopback mit geschlossenem Port.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_hook_isolation.py
 Doku: docs/developer/hooks.html + docs/en/developer/hooks.html (`:97` „Fehlerverhalten“: ein Datenbankfehler erscheint nur mit seinem Typ) · CHANGELOG

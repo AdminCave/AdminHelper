@@ -951,6 +951,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Server: Datenbankfehler eines Hooks nur mit ihrem Typ:** Bricht ein Hook mit einem Fehler der
+  Datenbankanbindung ab (`sqlalchemy.exc.SQLAlchemyError` oder `psycopg.Error`), nennen `error` und die Log-Zeile
+  `Fehler: …` in `logs` nur den Typ des Fehlers, etwa `OperationalError`, nicht mehr den Text des Treibers. Jeder
+  andere Fehler eines Hooks erscheint weiter mit seinem Text. Doku: Entwickler-Doku Hooks (DE+EN).
 - **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
   nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
   loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
