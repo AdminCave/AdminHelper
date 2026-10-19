@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: fünf Fehler vor den Workspaces — Task-Ledger
-Status: aktiv · Branch: feature/desktop-pre-workspaces · Review: pro Task
+Status: bereit · Branch: feature/desktop-pre-workspaces · Review: pro Task
 Spec: docs/features/desktop-pre-workspaces.md (Roadmap R-0429)
 Heavy: linux-full + windows — Desktop-Journey Abmelden mit laufendem Tunnel (`tunnel-start.live.js` im Sammellauf über `desktop_e2e_tunnel.sh`) und zweiter Start (`smoke.e2e.js`, Schritt `desktop-e2e-smoke` von `run.sh e2e`); `windows` für die Rust-Änderungen an `open_connection_stored` und am Sync-Client; kein `scenario`, weil FRP-Datenpfad, Visitor-TOML und die mTLS-Pfade von Login und Tunnel unberührt bleiben
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -80,8 +80,10 @@ Dedup-Key: bug:desktop:sync.rs:sync-uses-device-identity
 HEAD: af4498a7
 Semantik: README.md:18 — „Sync mode: load connections from a remote HTTPS JSON“; docs/admin/benutzer.html:126 — „Der Fallback <code>?api_key=…</code> (für Sync-URLs)“ (Sync gegen den eigenen Server bleibt gewollt); docs/developer/desktop.html:130 beschreibt das heutige Verhalten und ändert sich auf Kevins Entscheidung (2026-10-16)
 
-### T6 — Live-E2E: Abmelden im Header beendet den Tunnel, erneutes Anmelden verbindet wieder  [ ]
+### T6 — Live-E2E: Abmelden im Header beendet den Tunnel, erneutes Anmelden verbindet wieder  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/tunnel-start.live.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @50cd5d38 2026-10-19T06:06:41+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T6.verdict.json)
 Änderung: Nach dem Schritt „logs in and the seeded tunnel auto-connects“ ein weiterer: Abmelde-Knopf im Header (`.content-header-right .btn.ghost.small`, wie `logout.live.js`) → `.login-card` erscheint → `invoke('tunnel_status')` liefert `running: false` → erneut `login()` → die Tunnel-Anzeige erreicht wieder `connected`. Auf dem Stand nach R-0402 (dessen T9 ändert dieselbe Spec); `scripts/` bleibt unberührt. Das Verify hier ist der Lint der E2E-Specs; der echte Beweis (Neuladen unter WebDriver, frpc wirklich beendet) kommt aus dem Sammellauf (`Heavy: linux-full`).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
