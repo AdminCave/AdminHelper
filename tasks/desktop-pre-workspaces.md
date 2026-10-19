@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: fünf Fehler vor den Workspaces — Task-Ledger
-Status: aktiv · Branch: feature/desktop-pre-workspaces · Review: pro Task
+Status: bereit · Branch: feature/desktop-pre-workspaces · Review: pro Task
 Spec: docs/features/desktop-pre-workspaces.md (Roadmap R-0429)
 Heavy: linux-full + windows — Desktop-Journey Abmelden mit laufendem Tunnel (`tunnel-start.live.js` im Sammellauf über `desktop_e2e_tunnel.sh`) und zweiter Start (`smoke.e2e.js`, Schritt `desktop-e2e-smoke` von `run.sh e2e`); `windows` für die Rust-Änderungen an `open_connection_stored` und am Sync-Client; kein `scenario`, weil FRP-Datenpfad, Visitor-TOML und die mTLS-Pfade von Login und Tunnel unberührt bleiben
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -112,8 +112,10 @@ Abhängt von: T7
 Dedup-Key: bug:desktop:tauri.conf.json:second-start-crash
 HEAD: af4498a7
 
-### T9 — Die Passwort-Quelle gilt nur für dieselbe Verbindung in Tunnel-Form  [ ]
+### T9 — Die Passwort-Quelle gilt nur für dieselbe Verbindung in Tunnel-Form  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/connection/mod.rs, apps/desktop/src-tauri/src/sync.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @65b472a7 2026-10-19T06:28:08+02:00
+Review: approve (.ah-out/review/desktop-pre-workspaces/T9.verdict.json)
 Änderung: `connection::open_connection_stored` (`connection/mod.rs:39`) nimmt `credential_connection` nur an, wenn sie dieselbe Verbindung ist wie `connection`: gleiche `id`, `kind`, `username` und `domain`; weichen `host` oder `port` ab, muss `connection.host` Loopback sein (`127.0.0.1`, `::1` oder `localhost`; `tunnel::resolve_connection` setzt `127.0.0.1`, `tunnel.rs:70`). Sonst `AppError::Validation`, bevor ein Passwort geladen wird. Die Prüfung ist eine reine Funktion neben `stored_password_source` (`:79`) und läuft auf allen Plattformen. Neue cargo-Tests `stored_password_key_*` (zuerst rot): Tunnel-Form derselben Verbindung → erlaubt, Schlüssel der Credential-Verbindung; gleiche Verbindung ohne Auflösung → erlaubt; abweichender Host ohne Loopback, abweichende `id`, abweichender `username` → Validation-Fehler. Dazu den Kommentar `sync.rs:17` richtigstellen: Der Client mit Geräte-Identität pinnt auf einem eingeschriebenen Gerät die Enrollment-CA, TOFU gilt nur für den Client ohne Identität bei erlaubten selbstsignierten Zertifikaten (vorher in `http_client.rs` nachlesen).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- stored_password_key
 Doku: keine (intern)

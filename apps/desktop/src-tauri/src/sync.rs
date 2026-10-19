@@ -14,9 +14,12 @@ pub async fn sync_connections(
     server_url: Option<String>,
 ) -> Result<Vec<Connection>, AppError> {
     validate_https_url(&url)?;
-    // https-only is enforced above; both clients pin on the self-signed path (TOFU).
-    // The device identity is for the user's own server only: with it, any other
-    // host fails the enrollment CA pin (ERR_CA_PIN_MISMATCH).
+    // https-only is enforced above. On an enrolled device the client with the
+    // identity pins the enrollment CA; a client without it (or on a device that
+    // isn't enrolled) pins on first use (TOFU) when self-signed certificates are
+    // allowed and checks the public CA otherwise. The device identity is for the
+    // user's own server only: with it, any other host fails the enrollment CA pin
+    // (ERR_CA_PIN_MISMATCH).
     let client = if sync_uses_identity(&url, server_url.as_deref()) {
         crate::http_client::build_client(&url, allow_self_signed)?
     } else {
