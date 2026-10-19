@@ -899,6 +899,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Alert-Mail. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
   Entwickler und Administration (DE+EN).
 
+- **Monitoring: Recovery-Mail und Fehler im Alert-Log englisch (R-0488):** Die Recovery-Benachrichtigung hat jetzt
+  den Betreff `[AdminHelper Monitor] RECOVERY: <Check>` wie die Alarme `[AdminHelper Monitor] <STATUS>: <Check>`,
+  ohne das angehaengte „ist wieder OK“, und endet auf „The check is OK again.“ statt „Der Check ist wieder in
+  Ordnung.“. Betreff und Text gehen gleich in Mail, Webhook (`subject`, `text`), Glocke und persoenliche
+  Benachrichtigungen. Ein Mail- oder Webhook-Filter auf „ist wieder OK“ greift nicht mehr; `RECOVERY:` im Betreff
+  trifft die Entwarnung vorher wie nachher. Englisch sind auch die Fehler, die das Alert-Log zu einem gescheiterten
+  Versand speichert und der Desktop dort zeigt, etwa „No recipients configured“, „Unknown channel: …“ oder „Webhook
+  target is private/reserved (not allowed)“; bisher waren sie deutsch, auch in der englischen Oberflaeche.
+  Gespeicherte Eintraege behalten ihren Text. Doku: Monitoring-Administration (DE+EN).
+
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft
   `frps.toml` und das TLS-Material vor jedem Start (Regeln und Gruende: Betrieb → frps-Supervisor) und startet frps aus

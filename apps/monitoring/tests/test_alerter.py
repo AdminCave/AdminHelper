@@ -325,8 +325,11 @@ def test_build_message_recovery_escalation_and_details():
 
     rec = _build_message(_Db(None), check, old_status="critical", new_status="ok")
     assert rec["is_recovery"] is True
-    assert "RECOVERY" in rec["subject"] and "wieder OK" in rec["subject"]
-    assert rec["text"].startswith("RECOVERY")
+    # R-0488: the recovery frame is English and follows the alert pattern "<LABEL>: <check>".
+    assert rec["subject"] == "[AdminHelper Monitor] RECOVERY: web"
+    assert rec["text"] == (
+        "RECOVERY\nCheck: web (http)\nStatus: critical → OK\nThe check is OK again."
+    )
 
     state = SimpleNamespace(message="Port 22: refused")
     esc = _build_message(_Db(state), check, old_status="warning", new_status="critical")

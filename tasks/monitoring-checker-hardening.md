@@ -69,8 +69,10 @@ Dedup-Key: bug:monitoring:check_configs.py:lax_numeric_fields
 HEAD: a23a4387
 Semantik: docs/admin/monitoring.html:123 — „Die Konfiguration wird strikt validiert: unbekannte Schlüssel und Werte außerhalb der erlaubten Grenzen werden beim Speichern abgelehnt (statt still zu unknown zu führen).“
 
-### T5 — Alert-Mail und Fehler im Alert-Log englisch (R-0488)  [ ]
+### T5 — Alert-Mail und Fehler im Alert-Log englisch (R-0488)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter.py, apps/monitoring/tests/test_alerter_dispatch.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d7ddbe08 2026-10-19T10:21:20+02:00
+Review: approve (.ah-out/review/monitoring-checker-hardening/T5.verdict.json)
 Änderung: Der Rahmentext der Recovery-Mail wird englisch und folgt dem Muster der Alarm-Mail (`alerter.py:346`): Betreff `[AdminHelper Monitor] RECOVERY: {check.name}` statt „… ist wieder OK“ (`:337`), letzte Textzeile „The check is OK again.“ statt „Der Check ist wieder in Ordnung.“ (`:342`); die übrigen Zeilen (`RECOVERY`, `Check:`, `Status:`, `Details:`) bleiben. Englisch werden auch die Fehlertexte, die `_dispatch`, `_send_webhook` und `_send_email` ins Alert-Log schreiben und der Desktop dort zeigt (`apps/desktop/ui/src/components/monitoring/MonitoringLog.svelte:28`): `:315`, `:322`, `:387`, `:401`, `:430`, `:438`. Log-Zeilen bleiben, wie bei R-0422. Tests zuerst rot: `test_build_message_recovery_escalation_and_details` (`test_alerter.py:304`) vergleicht Betreff und Text der Recovery exakt; ein tabellengetriebener Test je Fehlerpfad (kaputte `channel_config`, unbekannter Kanal, Webhook ohne URL, privates Webhook-Ziel, E-Mail ohne Empfänger, ohne `SMTP_HOST`) vergleicht den Text exakt; `test_alerter_dispatch.py:34` („Unbekannter Kanal“) zieht mit.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter.py tests/test_alerter_dispatch.py
 Doku: docs/admin/monitoring.html + docs/en/admin/monitoring.html (`:289`, „Recovery“: Betreff `[AdminHelper Monitor] RECOVERY: <Check>` wie bei den Alarmen `[AdminHelper Monitor] <STATUS>: <Check>`) · CHANGELOG.md `### Changed` unter `[Unreleased]` (`:857`), mit dem Hinweis, dass ein Mail-Filter auf „ist wieder OK“ nicht mehr greift
