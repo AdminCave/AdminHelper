@@ -31,34 +31,37 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Web Panel</h1>
-          <p class="lead">The Web Admin Panel is a standalone Svelte 5 SPA with a hash router. It lives under <code>apps/web/</code>, is built via Vite, and is multi-stage-copied into the Python runtime image at Docker build time. Since v0.32.0 it only covers <strong>instance management</strong> (users, API keys, hooks, FRP server configuration); the operational server/connection/tunnel/monitoring/Ansible management has moved into the desktop client (see <a href="./desktop.html">Desktop Client</a>).</p>
+          <p class="lead">The Web Admin Panel is a standalone Svelte 5 SPA with a hash router. It lives under <code>apps/web/</code>, is built via Vite, and is multi-stage-copied into the Python runtime image at Docker build time. Since v0.32.0 it only covers <strong>instance management</strong> (users, API keys, hooks, FRP server configuration, audit log); the operational server/connection/tunnel/monitoring/Ansible management has moved into the desktop client (see <a href="./desktop.html">Desktop Client</a>).</p>
 
           <h2>Project Structure</h2>
           <div class="code-header"><span>tree</span></div>
 <pre><code>apps/web/
 &#9500;&#9472;&#9472; src/
 &#9474;   &#9500;&#9472;&#9472; lib/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; api/           client.ts + domain wrappers (auth, users, apikeys, hooks, frp, servers) + types.ts
-&#9474;   &#9474;   &#9500;&#9472;&#9472; components/    Button, Modal, TagChip, Tabs, EmptyState, Toast, ...
-&#9474;   &#9474;   &#9500;&#9472;&#9472; stores/        runes-based stores (auth, users, apikeys, hooks, frp, notifications)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; api/           client.ts + domain wrappers (auth, users, apikeys, hooks, frp, servers, audit) + types.ts
+&#9474;   &#9474;   &#9500;&#9472;&#9472; components/    layout/ (Router, Sidebar), ui/ (Button, ConfirmDialog, EmptyState, Modal, Toast)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; stores/        <code>writable</code> stores (auth, users, apikeys, hooks, frp, notifications, theme)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/          DE/EN dictionaries (localStorage <code>adminhelper_language</code>)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; router.ts      hash router
+&#9474;   &#9474;   &#9500;&#9472;&#9472; routeGuard.ts  route resolution incl. <code>adminOnly</code>
 &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
-&#9474;   &#9500;&#9472;&#9472; pages/           Users, ApiKeys, Hooks, Frp + Login + Placeholder
-&#9474;   &#9500;&#9472;&#9472; modals/          modal components + <code>configs/</code> subfolder
+&#9474;   &#9500;&#9472;&#9472; pages/           Users, ApiKeys, Hooks, Frp, Audit + Login + Placeholder
+&#9474;   &#9500;&#9472;&#9472; modals/          modal components
 &#9474;   &#9500;&#9472;&#9472; styles/
 &#9474;   &#9500;&#9472;&#9472; App.svelte
+&#9474;   &#9500;&#9472;&#9472; routes.ts        route table
 &#9474;   &#9492;&#9472;&#9472; main.ts
-&#9500;&#9472;&#9472; tests/e2e/         Playwright (login.spec.ts, smoke.spec.ts)
-&#9500;&#9472;&#9472; svelte.config.ts
+&#9500;&#9472;&#9472; tests/e2e/         Playwright specs against a mocked API
+&#9500;&#9472;&#9472; tests/live/        smoke test against the real stack (<code>scripts/tests/web_live.sh</code>)
+&#9500;&#9472;&#9472; svelte.config.js
 &#9492;&#9472;&#9472; vite.config.ts</code></pre>
 
           <h2>Routing</h2>
           <p>Hash router (no SSR, no SvelteKit client router): paths are <code>#/users</code>, <code>#/apikeys</code>, etc. This works reliably behind any reverse proxy without SPA fallback support on the server side. Implementation in <code>src/lib/router.ts</code> &ndash; a <code>writable</code> <code>_path</code> with a <code>hashchange</code> listener; exports <code>navigate()</code>, <code>replace()</code>, <code>currentPath()</code> and a <code>segments</code> derived store.</p>
-          <p>Production routes since v0.32.0: <code>#/users</code> (default landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP <em>server</em> configuration). The former operational routes (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, tunnels) have moved to the desktop client.</p>
+          <p>Production routes since v0.32.0: <code>#/users</code> (default landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP <em>server</em> configuration), since v0.35.0 also <code>#/audit</code> (audit log). The former operational routes (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, tunnels) have moved to the desktop client.</p>
 
           <h2>Stores</h2>
-          <p>Stores in <code>src/lib/stores/</code>. Each is a TypeScript class with <code>$state</code> fields and methods that talk to the matching API wrapper. Since v0.32.0 only instance management remains &ndash; the operational stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, tunnels) now live in the desktop client.</p>
+          <p>Stores in <code>src/lib/stores/</code>. Each is a <code>writable</code> from <code>svelte/store</code>, exposed only through an object with <code>subscribe</code>; for the data stores that object carries methods that talk to the matching API wrapper. Since v0.32.0 only instance management remains &ndash; the operational stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, tunnels) now live in the desktop client.</p>
           <table>
             <thead><tr><th>Store</th><th>Purpose</th></tr></thead>
             <tbody>
@@ -67,13 +70,14 @@
               <tr><td><code>apikeys</code></td><td>Key CRUD, one-time clear-text reveal.</td></tr>
               <tr><td><code>hooks</code></td><td>Hook CRUD, trigger test, token rotation.</td></tr>
               <tr><td><code>frp</code></td><td>FRP <em>server</em> configuration (frps settings), config preview, frps status.</td></tr>
-              <tr><td><code>notifications</code></td><td>Global toasts and confirmation dialogs.</td></tr>
+              <tr><td><code>notifications</code></td><td>Global toasts.</td></tr>
+              <tr><td><code>theme</code></td><td>Dark/light switch; the choice is persisted in <code>localStorage.ah-theme</code> (see Theming).</td></tr>
             </tbody>
           </table>
 
           <h2>API Wrapper</h2>
           <p>All HTTP calls go through <code>src/lib/api/client.ts</code>. The client owns the access token, holds an in-flight-deduplicated <code>tryRefresh()</code> promise and automatically refreshes on 401. If that fails, <code>registerAuthFailureHandler()</code> calls into the <code>auth</code> store, which navigates to login. A 2xx whose body cannot be read (cut off by a reload mid-transfer, or not JSON) throws <code>ApiError(status, 'Invalid response body')</code> instead of quietly returning <code>null</code>; only a 204 and a valid JSON <code>null</code> yield <code>null</code>.</p>
-          <p>Domain wrappers sit alongside: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (only for the user&harr;server assignment), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP server configuration) &ndash; all typed via <code>types.ts</code>.</p>
+          <p>Domain wrappers sit alongside: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (only for the user&harr;server assignment), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP server configuration), <code>audit.ts</code> (reads the audit log, with filters) &ndash; all typed via <code>types.ts</code>.</p>
 
           <h2>i18n</h2>
           <p>Languages: DE and EN. Active language is persisted in <code>localStorage.adminhelper_language</code>; browser detection only supplies the initial fallback. The <code>t()</code> function is a store &ndash; this avoids i18n leaks in reactive components.</p>

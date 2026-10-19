@@ -49,7 +49,7 @@
           </table>
 
           <h2>Router Overview</h2>
-          <p>Twelve top-level routers under <code>apps/server/app/modules/</code>; each module bundles models, schemas and routes.</p>
+          <p>The modules under <code>apps/server/app/modules/</code> bundle their routers, models and schemas, where they have them; <code>apps/server/app/main.py</code> includes the routers.</p>
           <table>
             <thead><tr><th>Prefix</th><th>Module</th><th>Purpose</th></tr></thead>
             <tbody>
@@ -59,18 +59,20 @@
               <tr><td><code>/api/servers</code></td><td><code>modules/servers/</code></td><td>Server inventory with user assignments; cleanup hook to monitoring on delete.</td></tr>
               <tr><td><code>/api/api-keys</code></td><td><code>modules/api_keys/</code></td><td>API keys with <code>read</code> or <code>read_write</code> permission, SHA-256 hashed.</td></tr>
               <tr><td><code>/api/audit</code></td><td><code>modules/audit/</code></td><td>Append-only audit trail (admin, read-only): recorded actions, paginated + filterable. Written by <code>audit.service.record()</code>, actor via <code>core/request_context</code>.</td></tr>
-              <tr><td><code>/api/hooks</code></td><td><code>modules/hooks/</code></td><td>Hook CRUD, public <code>/trigger/{token}</code>, <code>/run</code> for manual test, <code>/rotate</code> for webhook token.</td></tr>
+              <tr><td><code>/api/hooks</code></td><td><code>modules/hooks/</code></td><td>Hook CRUD, public trigger via <code>POST /trigger</code> with header <code>X-Hook-Token</code> (preferred) or <code>/trigger/{token}</code>, <code>/run</code> for manual test, <code>/rotate</code> for webhook token.</td></tr>
               <tr><td><code>/api/ansible/playbooks</code></td><td><code>modules/ansible/</code></td><td>Playbook CRUD with YAML validation, disk storage under <code>/data/ansible/playbooks/{id}/</code>.</td></tr>
               <tr><td><code>/api/servers/{id}/provision</code></td><td><code>modules/provisioning/</code></td><td>Server-centric provisioning: token lifecycle and activate (FRP-independent). Returns server API key, optional monitor key, optional FRP bundle.</td></tr>
               <tr><td><code>/api/enrollment</code></td><td><code>modules/enrollment/router.py</code></td><td>One-time enrollment tokens: <code>POST /token</code> for the logged-in user (self-service), <code>POST /token/for</code> issued by an admin for another user (ADR 0003). <code>POST /self/revoke</code>: a device revokes itself, identified by its client certificate, without a JWT.</td></tr>
-              <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Four sub-routers: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> for the running FRPC sync.</td></tr>
+              <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Sub-routers <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> for the running FRPC sync.</td></tr>
               <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy/router.py</code></td><td>Reverse proxy to the monitoring microservice; public agent push endpoint <code>/agent/{id}/report</code>.</td></tr>
+              <tr><td><code>/api/notifications</code></td><td><code>modules/notifications/</code></td><td>Bell feed of the logged-in user (paginated), <code>/unread-count</code>, <code>/read</code>, SSE push via <code>/stream</code>; plus <code>/api/users/me/notification-prefs</code> for personal settings. See Notification hub.</td></tr>
+              <tr><td><code>/api/internal</code></td><td><code>modules/servers/router.py</code>, <code>modules/notifications/router.py</code></td><td>Service-to-service with <code>X-Internal-Key</code> instead of a JWT: <code>GET /servers</code> gives the monitoring service the inventory for its tag sync, <code>POST /events</code> accepts events for the notification hub.</td></tr>
             </tbody>
           </table>
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">No dedicated <code>alerts</code>/<code>audit</code>/<code>settings</code> router</div><p>Alerts and check status live in the monitoring service and are exposed via <code>monitoring_proxy</code>. There is no dedicated audit-log router as of v0.23.2; logging happens through Python logging and hook events.</p></div>
+            <div><div class="callout-title">No dedicated <code>alerts</code>/<code>settings</code> router</div><p>Alerts and check status live in the monitoring service and are exposed via <code>monitoring_proxy</code>.</p></div>
           </div>
 
           <h2>Auth Architecture</h2>
