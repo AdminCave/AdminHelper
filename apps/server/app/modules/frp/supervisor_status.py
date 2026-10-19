@@ -124,9 +124,15 @@ def _read_bounded(path: Path) -> bytes:
     # The file comes from another container: a symlink would be resolved in this one, and
     # opening a FIFO without O_NONBLOCK would block until a writer shows up.
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-    with open(fd, "rb") as f:
-        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+    # Checked on the bare fd: open() on that of a directory raises without closing it.
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise _Invalid("not a regular file")
+        f = open(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+    with f:
         data = f.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
         raise _Invalid(f"larger than {MAX_BYTES} bytes")
