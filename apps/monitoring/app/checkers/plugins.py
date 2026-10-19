@@ -231,11 +231,17 @@ _PS_EXITED = re.compile(r"exited \((-?\d+)\)", re.IGNORECASE)
 _STOP_SIGNAL_EXITS = (137, 143)
 
 
+def _ps_status(c: dict) -> str:
+    """The docker ps status text; anything but a string counts as none (R-0507)."""
+    status = c.get("status")
+    return status if isinstance(status, str) else ""
+
+
 def _container_exit_code(c: dict) -> int | None:
     if "exit_code" in c:
         return c["exit_code"]
     # Agents before R-0419 send no exit_code; their ps status text carries it.
-    m = _PS_EXITED.match(c.get("status", ""))
+    m = _PS_EXITED.match(_ps_status(c))
     return int(m.group(1)) if m else None
 
 
@@ -247,7 +253,7 @@ def _rate_container(c: dict, state: str, prev_restart_count: int | None) -> tupl
         if "health" in c:
             unhealthy = c["health"] == "unhealthy"
         else:  # agent before R-0419: only the ps status text carries it
-            unhealthy = "unhealthy" in c.get("status", "").lower()
+            unhealthy = "unhealthy" in _ps_status(c).lower()
         if unhealthy:
             return "warning", "unhealthy"
         # A restart between two pushes raises the count; a manual start resets it to 0.
@@ -356,11 +362,15 @@ class DockerHealthChecker:
 
         for c in containers:
             cid = c.get("id")
-            name = c.get("name", cid if isinstance(cid, str) else "?")
+            # A name or state that is no string (a broken agent, R-0507) counts as missing.
+            name = c.get("name")
+            if not isinstance(name, str):
+                name = cid if isinstance(cid, str) else "?"
             if name in ignore:
                 continue
 
-            state = c.get("state", "").lower()
+            state = c.get("state")
+            state = state.lower() if isinstance(state, str) else ""
             prev_count = prev_restarts.get(cid) if isinstance(cid, str) else None
             category, reason = _rate_container(c, state, prev_count)
             if state == "running":

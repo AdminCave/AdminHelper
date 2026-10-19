@@ -477,6 +477,41 @@ def test_docker_container_without_name_falls_back_to_a_string_id_only():
     assert _rows(metrics)[0]["name"] == "?"
 
 
+# A broken or taken-over agent sends name, state and status of any JSON type (R-0507);
+# only a string counts, anything else is treated like a missing or empty field.
+@pytest.mark.parametrize("name", [["web"], {"web": 1}, 42], ids=["list", "dict", "int"])
+def test_docker_name_that_is_no_string_falls_back_to_the_id(name):
+    status, _, metrics = DockerHealthChecker().evaluate(
+        {"ignore_containers": ["db"]}, _docker(_ctr(name=name))
+    )
+    assert status == "ok"
+    assert _rows(metrics)[0]["name"] == "abc123def456"
+
+
+def test_docker_state_that_is_no_string_is_unknown_state():
+    status, msg, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(state=5)))
+    assert status == "warning"
+    assert msg == "Container warnings: web: unknown state '' (0 running, 0 stopped)"
+    assert (_rows(metrics)[0]["state"], _rows(metrics)[0]["reason"]) == ("", "unknown_state")
+
+
+def test_docker_old_agent_status_text_that_is_no_string_has_no_exit_code():
+    c = _ctr(state="exited", status=5)
+    del c["exit_code"]
+    status, _, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert status == "ok"
+    row = _rows(metrics)[0]
+    assert (row["category"], row["reason"], row["exit_code"]) == ("stopped", "stopped", None)
+
+
+def test_docker_old_agent_status_text_that_is_no_string_is_not_unhealthy():
+    c = _ctr(status=5)
+    del c["health"]
+    status, _, metrics = DockerHealthChecker().evaluate({}, _docker(c))
+    assert status == "ok"
+    assert (_rows(metrics)[0]["category"], _rows(metrics)[0]["reason"]) == ("ok", None)
+
+
 @pytest.mark.parametrize("code", ["daemon_unreachable", "timeout", "cli_failed", "parse_failed"])
 def test_docker_unavailable_is_warning_without_containers(code):
     report = _docker(

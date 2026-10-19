@@ -27,8 +27,10 @@ Metrik: Probe oben (Python 3.13.5): Einträge in `_details` bei 2000 gemeldeten 
 Dedup-Key: ref:monitoring:plugins.py:uncapped-lists
 HEAD: a23a4387
 
-### T2 — docker_health: name, state und status nur als String lesen (R-0507)  [ ]
+### T2 — docker_health: name, state und status nur als String lesen (R-0507)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/plugins.py, apps/monitoring/tests/test_plugin_checkers.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @41d0baf1 2026-10-19T09:46:01+02:00
+Review: approve (.ah-out/review/monitoring-checker-hardening/T2.verdict.json)
 Änderung: Die restlichen Absturzwege aus R-0507 (Eintrag kein Objekt und `pools` als Nicht-Liste deckt T1): `name` gilt nur als String, sonst der Fallback wie heute ohne Namen (String-ID, sonst „?“, `plugins.py:349`), damit `name in ignore` (`:350`) keinen `TypeError` wirft; ein `state`, der kein String ist, gilt als leer (`:353`) und damit als `unknown_state` (warning); der `status`-Text von `docker ps` zählt nur als String, beim Exit-Code (`_container_exit_code`, `:227`) wie beim Erkennen von unhealthy (`:239`), sonst gibt es keinen Exit-Code bzw. kein unhealthy. Tests zuerst rot: `name` als Liste und als Objekt → kein Fehler, der Container heißt nach seiner String-ID; `state` als Zahl → warning `unknown_state`; `state: "exited"` mit `status` als Zahl ohne `exit_code` → kein Fehler, `stopped`; laufender Container ohne `health` mit `status` als Zahl → kein Fehler, `ok`. Die bestehenden Fälle (`test_docker_container_without_name_falls_back_to_a_string_id_only`, `test_docker_old_agent_exit_code_from_status_text`, `test_docker_unknown_state_is_warning`) bleiben grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_checkers.py
 Doku: docs/developer/monitoring.html + docs/en/developer/monitoring.html (`:158`, nach „Ohne name heißt der Container nach dieser ID“: `name`, `state` und der Statustext zählen nur als String) · kein CHANGELOG (ein regulärer Agent schickt Strings)
