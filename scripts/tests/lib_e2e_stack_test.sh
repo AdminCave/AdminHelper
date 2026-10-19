@@ -172,6 +172,132 @@ done
   && ok "all 8 desktop suites call e2e_npm_ready after the tauri-cli check, none by [ -d node_modules ]" \
   || bad "desktop suites ($SUITES of 8 expected):$WRONG"
 
+# ── e2e_login ────────────────────────────────────────────────────────────────
+# A red login in the stack suite said only that it failed, not why (R-0515). curl is
+# a stub that logs its args, prints STUB_BODY and then the -w format with STUB_CODE
+# as the status, and exits with STUB_RC; an empty STUB_CODE writes no status at all.
+cat > "$SHIM/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STUB_LOG/curl.args"
+w=""; prev=""
+for a in "$@"; do [ "$prev" = -w ] && w=$a; prev=$a; done
+printf '%s' "${STUB_BODY-}"
+[ -z "${STUB_CODE-}" ] || printf '%b' "${w//'%{http_code}'/$STUB_CODE}"
+exit "${STUB_RC:-0}"
+EOF
+chmod +x "$SHIM/curl"
+PW="e2e-pw-5f1c0ffee0ddba11"
+TOK="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.access-sig"
+RTOK="eyJhbGciOiJIUzI1NiJ9.eyJ0eXAiOiJyZWZyZXNoIn0.refresh-sig"
+URL="https://localhost:21443"
+
+# login <case> <body> <code> <curl-rc> — e2e_login in a shell of its own against the
+# stub, a client cert as its args; sets RC, JWT_OUT and ERR. Checks what holds in every
+# case: no output of its own, neither password nor a token in E2E_LOGIN_ERR, exactly
+# one curl call with the cert args, --max-time 5 and the admin's credentials.
+login() {
+  : > "$STUB_LOG/curl.args"
+  STUB_BODY=$2 STUB_CODE=$3 STUB_RC=$4 PATH="$SHIM:$PATH" bash -c '
+    . "$1/scripts/tests/lib_e2e_stack.sh"
+    E2E_SERVER_URL=$2; E2E_ADMIN_PW=$3; w=$4
+    e2e_login --cert "$w/c.pem" --key "$w/c.key" > "$w/login.out" 2>&1
+    echo "$?" > "$w/login.rc"
+    printf "%s|" "$E2E_JWT" > "$w/login.jwt"
+    printf "%s|" "$E2E_LOGIN_ERR" > "$w/login.err"
+  ' _ "$REPO_ROOT" "$URL" "$PW" "$WORK"
+  # The trailing | keeps a trailing newline in E2E_LOGIN_ERR visible.
+  RC=$(cat "$WORK/login.rc"); JWT_OUT=$(cat "$WORK/login.jwt"); JWT_OUT=${JWT_OUT%|}
+  ERR=$(cat "$WORK/login.err"); ERR=${ERR%|}
+  local calls; calls=$(wc -l < "$STUB_LOG/curl.args")
+  if [ ! -s "$WORK/login.out" ] && [[ $ERR != *"$PW"* && $ERR != *"$TOK"* && $ERR != *"$RTOK"* ]] \
+    && [ "$calls" = 1 ] \
+    && grep -qF -- "-k -s --cert $WORK/c.pem --key $WORK/c.key --max-time 5 -X POST $URL/api/auth/login " "$STUB_LOG/curl.args" \
+    && grep -qF -- "-d {\"username\":\"admin\",\"password\":\"$PW\"}" "$STUB_LOG/curl.args"; then
+    ok "$1: no output of its own, no secret in E2E_LOGIN_ERR, one curl call with the cert and --max-time 5"
+  else
+    bad "$1: output '$(cat "$WORK/login.out")', ERR '$ERR', $calls curl call(s): $(cat "$STUB_LOG/curl.args")"
+  fi
+}
+# failed <case> <expected E2E_LOGIN_ERR> — rc 1, no JWT, exactly this line.
+failed() {
+  [ "$RC" = 1 ] && [ -z "$JWT_OUT" ] && [ "$ERR" = "$2" ] \
+    && ok "$1: rc 1, E2E_JWT empty, E2E_LOGIN_ERR '$2'" || bad "$1: rc=$RC JWT='$JWT_OUT' ERR='$ERR'"
+}
+
+login "200 with access_token" \
+  '{"access_token":"'"$TOK"'","refresh_token":"'"$RTOK"'","token_type":"bearer"}' 200 0
+[ "$RC" = 0 ] && [ "$JWT_OUT" = "$TOK" ] && [ -z "$ERR" ] \
+  && ok "200 with access_token: E2E_JWT is the token, E2E_LOGIN_ERR empty, rc 0" \
+  || bad "200 with access_token: rc=$RC JWT='$JWT_OUT' ERR='$ERR'"
+
+login "401" '{"detail":"Ungültige Zugangsdaten"}' 401 0
+failed "401" "HTTP 401, curl exit 0, detail: Ungültige Zugangsdaten"
+
+# A newline in the detail would start a line of its own in the suite's log, where
+# heavy.sh's first_marker takes any line that begins with FAIL.
+X300=$(printf 'x%.0s' {1..300}); D="one FAIL two $X300"
+login "401 with control characters" '{"detail":"one\nFAIL two\t'"$X300"'"}' 401 0
+failed "401 with control characters" "HTTP 401, curl exit 0, detail: ${D:0:200}"
+
+# FastAPI's 422 echoes the request in "input": the password must not get through.
+login "422" '{"detail":[{"type":"missing","loc":["body","username"],"msg":"Field required","input":{"password":"'"$PW"'"}},{"type":"string_too_long","loc":["body","password"],"msg":"String should have at most 128 characters","input":"'"$PW"'","ctx":{"max_length":128}}]}' 422 0
+failed "422" "HTTP 422, curl exit 0, detail: body.username: Field required; body.password: String should have at most 128 characters"
+
+login "curl timeout" '' 000 28
+failed "curl timeout" "HTTP 000, curl exit 28, no JSON detail"
+
+login "no status from curl" '' '' 7
+failed "no status from curl" "HTTP 000, curl exit 7, no JSON detail"
+
+login "502 page from the gateway" '<html><body>502 Bad Gateway</body></html>' 502 0
+failed "502 page from the gateway" "HTTP 502, curl exit 0, no JSON detail"
+
+login "200 without access_token" '{"refresh_token":"'"$RTOK"'","detail":"'"$TOK"'"}' 200 0
+failed "200 without access_token" "HTTP 200, curl exit 0, no access_token"
+
+# null is no token: the suite only checks that E2E_JWT is non-empty, and "None" is.
+login "200 with access_token null" '{"access_token":null,"refresh_token":"'"$RTOK"'","token_type":"bearer"}' 200 0
+failed "200 with access_token null" "HTTP 200, curl exit 0, no access_token"
+
+# login_twice <case> <body1> <code1> <body2> <code2> — two e2e_login calls in one shell,
+# as integration_stack_test.sh makes them: the second must not keep what the first set.
+# Sets RC, JWT_OUT and ERR after the second call, JWT1 and ERR1 after the first (so a
+# case can show the first call did leave something behind) and CALLS.
+login_twice() {
+  : > "$STUB_LOG/curl.args"
+  PATH="$SHIM:$PATH" bash -c '
+    . "$1/scripts/tests/lib_e2e_stack.sh"
+    E2E_SERVER_URL=$2; E2E_ADMIN_PW=$3; w=$4
+    STUB_BODY=$5 STUB_CODE=$6 e2e_login --cert "$w/c.pem" --key "$w/c.key" > /dev/null 2>&1
+    printf "%s|" "$E2E_JWT" > "$w/login1.jwt"
+    printf "%s|" "$E2E_LOGIN_ERR" > "$w/login1.err"
+    STUB_BODY=$7 STUB_CODE=$8 e2e_login --cert "$w/c.pem" --key "$w/c.key" > /dev/null 2>&1
+    echo "$?" > "$w/login.rc"
+    printf "%s|" "$E2E_JWT" > "$w/login.jwt"
+    printf "%s|" "$E2E_LOGIN_ERR" > "$w/login.err"
+  ' _ "$REPO_ROOT" "$URL" "$PW" "$WORK" "$2" "$3" "$4" "$5"
+  RC=$(cat "$WORK/login.rc"); JWT_OUT=$(cat "$WORK/login.jwt"); JWT_OUT=${JWT_OUT%|}
+  ERR=$(cat "$WORK/login.err"); ERR=${ERR%|}
+  JWT1=$(cat "$WORK/login1.jwt"); JWT1=${JWT1%|}
+  ERR1=$(cat "$WORK/login1.err"); ERR1=${ERR1%|}
+  CALLS=$(wc -l < "$STUB_LOG/curl.args")
+}
+E401="HTTP 401, curl exit 0, detail: Ungültige Zugangsdaten"
+
+login_twice "200, then 401" '{"access_token":"'"$TOK"'"}' 200 '{"detail":"Ungültige Zugangsdaten"}' 401
+[ "$CALLS" = 2 ] && [ "$JWT1" = "$TOK" ] \
+  && ok "200, then 401: two curl calls, the first set E2E_JWT" \
+  || bad "200, then 401: $CALLS curl call(s), first E2E_JWT '$JWT1'"
+failed "200, then 401" "$E401"
+
+login_twice "401, then 200" '{"detail":"Ungültige Zugangsdaten"}' 401 '{"access_token":"'"$TOK"'"}' 200
+[ "$CALLS" = 2 ] && [ "$ERR1" = "$E401" ] \
+  && ok "401, then 200: two curl calls, the first set E2E_LOGIN_ERR" \
+  || bad "401, then 200: $CALLS curl call(s), first E2E_LOGIN_ERR '$ERR1'"
+[ "$RC" = 0 ] && [ "$JWT_OUT" = "$TOK" ] && [ -z "$ERR" ] \
+  && ok "401, then 200: E2E_JWT is the token, E2E_LOGIN_ERR empty, rc 0" \
+  || bad "401, then 200: rc=$RC JWT='$JWT_OUT' ERR='$ERR'"
+
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
