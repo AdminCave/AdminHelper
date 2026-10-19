@@ -118,11 +118,8 @@ code=$(curl -k -s "${CERT[@]}" -o /dev/null -w '%{http_code}' --max-time 5 "$E2E
 [ "$code" = "401" ] && ok "cert without JWT -> 401" || bad "cert-only expected 401, got '$code'"
 
 # ── 5. Cert + login -> JWT ───────────────────────────────────────────────────
-JWT=$(curl -k -s "${CERT[@]}" --max-time 5 -X POST "$E2E_SERVER_URL/api/auth/login" \
-    -H 'Content-Type: application/json' \
-    -d "{\"username\":\"admin\",\"password\":\"$E2E_ADMIN_PW\"}" 2>/dev/null \
-    | python3 -c 'import sys, json; print(json.load(sys.stdin).get("access_token", ""))' 2>/dev/null)
-[ -n "$JWT" ] && ok "login through the gateway returned a JWT" || bad "login did not yield a JWT"
+e2e_login "${CERT[@]}"; JWT=$E2E_JWT
+[ -n "$JWT" ] && ok "login through the gateway returned a JWT" || bad "login did not yield a JWT ($E2E_LOGIN_ERR)"
 
 # ── 6. Cert + JWT -> 200 on a protected, admin-only route ────────────────────
 code=$(curl -k -s "${CERT[@]}" -H "Authorization: Bearer $JWT" \
@@ -467,10 +464,8 @@ frps_takeover() {
     if [ -z "$token" ] || ! enroll "$token" client3; then
         bad "frps: could not enroll a device for the API calls"; return
     fi
-    JWT3=$(curl -k -s "${CERT3[@]}" --max-time 5 -X POST "$E2E_SERVER_URL/api/auth/login" \
-        -H 'Content-Type: application/json' \
-        -d "{\"username\":\"admin\",\"password\":\"$E2E_ADMIN_PW\"}" 2>/dev/null | json_get access_token)
-    [ -n "$JWT3" ] || { bad "frps: login with the new device failed"; return; }
+    e2e_login "${CERT3[@]}"; JWT3=$E2E_JWT
+    [ -n "$JWT3" ] || { bad "frps: login with the new device failed ($E2E_LOGIN_ERR)"; return; }
 
     # frps as built from apps/frps, and the scheduler, whose job turns supervisor events into
     # notifications. --no-deps: without it compose rebuilds server and ca-issuer and may recreate
