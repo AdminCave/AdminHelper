@@ -8,9 +8,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -348,6 +351,84 @@ func TestCollectSmartSomeDisksReadable(t *testing.T) {
 	}
 }
 
+// What smartctl 7.4 prints for a disk it cannot open (here: run without root), with exit status 2:
+// no smart_status, the reason only in the messages.
+const smartOpenFailedFixture = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"pre_release":false,` +
+	`"svn_revision":"5530","platform_info":"x86_64-linux-6.12.107+deb13-amd64","build_info":"(local build)",` +
+	`"argv":["smartctl","--all","--json=c","/dev/sda"],"messages":[{"string":"Smartctl open device: /dev/sda ` +
+	`failed: Permission denied","severity":"error"}],"exit_status":2},` +
+	`"local_time":{"time_t":1792394492,"asctime":"Mon Oct 19 09:21:32 2026 CEST"}}`
+
+// smartctlHelperEnv tells TestHelperSmartctlProcess, run as a child process, which exit status to end with.
+const smartctlHelperEnv = "AH_SMARTCTL_HELPER_EXIT"
+
+// TestHelperSmartctlProcess is no test of its own: smartctlExit starts the test binary as its child
+// process, which then ends with the exit status smartctlHelperEnv names. Without it, it returns at once.
+func TestHelperSmartctlProcess(t *testing.T) {
+	if code, err := strconv.Atoi(os.Getenv(smartctlHelperEnv)); err == nil {
+		os.Exit(code)
+	}
+}
+
+// smartctlExit returns what runTimed reports for a smartctl that ends with code: the real
+// *exec.ExitError of a child process, which querySmartDevice asserts on, on every platform.
+func smartctlExit(t *testing.T, code int) error {
+	t.Helper()
+	t.Setenv(smartctlHelperEnv, strconv.Itoa(code))
+	_, err := runTimed(time.Minute, os.Args[0], "-test.run=^TestHelperSmartctlProcess$")
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != code {
+		t.Fatalf("helper process: err = %v, want an ExitError with status %d", err, code)
+	}
+	return err
+}
+
+func TestCollectSmartOpenFailed(t *testing.T) {
+	// smartctl(8), EXIT STATUS: bit 0 is a command line that did not parse, bit 1 a device that did
+	// not open, so smartctl read nothing, and its JSON without smart_status would pass for a failed
+	// SMART check: the disk drops out. The other bits come with what it read: the disk stays, with the
+	// full exit status.
+	cases := []struct {
+		name string
+		sda  string
+		code int
+		want []string
+	}{
+		{"bit 0", smartOpenFailedFixture, 1, []string{"/dev/nvme0 0"}},
+		{"bit 1", smartOpenFailedFixture, 2, []string{"/dev/nvme0 0"}},
+		{"bit 2", ataFixture, 4, []string{"/dev/nvme0 0", "/dev/sda 4"}},
+		{"bit 6", ataFixture, 64, []string{"/dev/nvme0 0", "/dev/sda 64"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stubSmartctl(t, dockerReply{out: smartScanFixture}, map[string]dockerReply{
+				"/dev/sda":   {out: c.sda, err: smartctlExit(t, c.code)},
+				"/dev/nvme0": {out: nvmeFixture},
+			})
+			disks, reason := collectSmart()
+			var got []string
+			for _, d := range disks {
+				got = append(got, fmt.Sprintf("%s %d", d.Device, d.SmartctlStatus))
+			}
+			sort.Strings(got)
+			if reason != "" || !reflect.DeepEqual(got, c.want) {
+				t.Errorf("collectSmart() = %v, %q; want %v and no reason", got, reason, c.want)
+			}
+		})
+	}
+
+	t.Run("no other disk", func(t *testing.T) {
+		// The disk smartctl could not open is the only one: no disk gave readable SMART data.
+		const scan = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"exit_status":0},` +
+			`"devices":[{"name":"/dev/sda","info_name":"/dev/sda [SAT]","type":"sat","protocol":"ATA"}]}`
+		stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
+			"/dev/sda": {out: smartOpenFailedFixture, err: smartctlExit(t, 2)},
+		})
+		disks, reason := collectSmart()
+		assertSmartAbsent(t, disks, reason, "scan_failed")
+	})
+}
+
 func TestCollectSmartPassesScanType(t *testing.T) {
 	// Two disks behind a MegaRAID controller share /dev/bus/0, and only the type from the scan
 	// (megaraid,N) tells smartctl which one to read: without -d it cannot detect the device type.
@@ -383,4 +464,70 @@ func TestCollectSmartPassesScanType(t *testing.T) {
 	if !reflect.DeepEqual(queries, want) {
 		t.Errorf("queries = %q, want %q", queries, want)
 	}
+}
+
+func TestCollectSmartControllerDiskIDs(t *testing.T) {
+	// The disks behind a MegaRAID or sssraid controller share the scan name, so the report names them
+	// by the scan's info_name (smartmontools os_linux.cpp), which the service keys metrics and
+	// ignore_devices on. Not by the info_name of the query: ataFixture answers every query with
+	// "/dev/sda [SAT]". Every other disk keeps its name, without a suffix such as [SAT].
+	const scan = `{"json_format_version":[1,0],"smartctl":{"version":[7,4],"exit_status":0},"devices":[` +
+		`{"name":"/dev/bus/0","info_name":"/dev/bus/0 [megaraid_disk_00]","type":"megaraid,0","protocol":"SCSI"},` +
+		`{"name":"/dev/bus/0","info_name":"/dev/bus/0 [megaraid_disk_01]","type":"megaraid,1","protocol":"SCSI"},` +
+		`{"name":"/dev/bsg/sssraid0","info_name":"/dev/bsg/sssraid0 [sssraid_disk_00_01]","type":"sssraid,0,1",` +
+		`"protocol":"SCSI"},` +
+		`{"name":"/dev/sda","info_name":"/dev/sda [SAT]","type":"sat","protocol":"ATA"},` +
+		`{"name":"/dev/nvme0","info_name":"/dev/nvme0","type":"nvme","protocol":"NVMe"}]}`
+	calls := stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{
+		"/dev/bus/0":        {out: ataFixture},
+		"/dev/bsg/sssraid0": {out: ataFixture},
+		"/dev/sda":          {out: ataFixture},
+		"/dev/nvme0":        {out: nvmeFixture},
+	})
+	disks, reason := collectSmart()
+	var devices []string
+	for _, d := range disks {
+		devices = append(devices, d.Device)
+	}
+	sort.Strings(devices)
+	wantDevices := []string{
+		"/dev/bsg/sssraid0 [sssraid_disk_00_01]",
+		"/dev/bus/0 [megaraid_disk_00]",
+		"/dev/bus/0 [megaraid_disk_01]",
+		"/dev/nvme0",
+		"/dev/sda",
+	}
+	if reason != "" || !reflect.DeepEqual(devices, wantDevices) {
+		t.Errorf("collectSmart() = %q, %q; want %q and no reason", devices, reason, wantDevices)
+	}
+
+	// The queries still go to the device name, the type picks the disk behind the controller.
+	var queries []string
+	for _, c := range *calls {
+		if c.args[0] != "--scan" {
+			queries = append(queries, strings.Join(c.args, " "))
+		}
+	}
+	sort.Strings(queries)
+	wantQueries := []string{
+		"--all --json=c -d megaraid,0 /dev/bus/0",
+		"--all --json=c -d megaraid,1 /dev/bus/0",
+		"--all --json=c -d nvme /dev/nvme0",
+		"--all --json=c -d sat /dev/sda",
+		"--all --json=c -d sssraid,0,1 /dev/bsg/sssraid0",
+	}
+	if !reflect.DeepEqual(queries, wantQueries) {
+		t.Errorf("queries = %q, want %q", queries, wantQueries)
+	}
+
+	t.Run("no info_name", func(t *testing.T) {
+		// A scan line without info_name leaves the device name.
+		const scan = `{"json_format_version":[1,0],"devices":[` +
+			`{"name":"/dev/bus/0","type":"megaraid,0","protocol":"SCSI"}]}`
+		stubSmartctl(t, dockerReply{out: scan}, map[string]dockerReply{"/dev/bus/0": {out: ataFixture}})
+		disks, reason := collectSmart()
+		if reason != "" || len(disks) != 1 || disks[0].Device != "/dev/bus/0" {
+			t.Errorf("collectSmart() = %v, %q; want only /dev/bus/0 and no reason", disks, reason)
+		}
+	})
 }
