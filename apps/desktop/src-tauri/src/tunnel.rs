@@ -33,10 +33,20 @@ pub struct ResolvedConnection {
     pub tunnel_type: Option<String>,
 }
 
-/// Fetch all tunnels from the server.
+/// Fetch all tunnels from the server. The session keeps them for the check of a stored
+/// password ([`SessionState::keep_tunnels`]). A refusal (401, 403) drops the last ones; a fetch
+/// that fails otherwise (network, server error) leaves them.
 pub async fn fetch_tunnels(session: &SessionState) -> Result<Vec<TunnelMapping>, AppError> {
-    let (response, _) = auth::authenticated_get(session, "/api/frp/tunnels").await?;
+    let (response, who) = auth::authenticated_get(session, "/api/frp/tunnels").await?;
 
+    if matches!(
+        response.status(),
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+    ) {
+        // The user may not read the mappings (any more), so none of the last ones count. A
+        // session gone meanwhile has none left to drop.
+        let _ = session.keep_tunnels(&who, Vec::new()).await;
+    }
     if !response.status().is_success() {
         return Err(AppError::Validation(
             "Tunnel-Liste konnte nicht geladen werden".to_string(),
@@ -44,6 +54,7 @@ pub async fn fetch_tunnels(session: &SessionState) -> Result<Vec<TunnelMapping>,
     }
 
     let tunnels: Vec<TunnelMapping> = response.json().await?;
+    session.keep_tunnels(&who, tunnels.clone()).await?;
     Ok(tunnels)
 }
 
@@ -60,12 +71,7 @@ pub fn resolve_connection(
     tunnels: &[TunnelMapping],
     bindings: &[VisitorBinding],
 ) -> ResolvedConnection {
-    // Find matching tunnel by connectionId
-    let tunnel = tunnels
-        .iter()
-        .find(|t| t.enabled && t.connection_id.as_deref() == Some(&connection.id));
-
-    match tunnel {
+    match mapping_of(connection, tunnels) {
         Some(t) => {
             let mut resolved = connection.clone();
             match t.tunnel_type.as_str() {
@@ -115,6 +121,16 @@ pub fn resolve_connection(
     }
 }
 
+/// The enabled mapping of `connection`, found by its id.
+pub fn mapping_of<'a>(
+    connection: &Connection,
+    tunnels: &'a [TunnelMapping],
+) -> Option<&'a TunnelMapping> {
+    tunnels
+        .iter()
+        .find(|t| t.enabled && t.connection_id.as_deref() == Some(&connection.id))
+}
+
 /// The visitor of the running frpc at `server_port`.
 fn visitor_at(bindings: &[VisitorBinding], server_port: u16) -> Option<&VisitorBinding> {
     bindings
@@ -148,6 +164,7 @@ fn to_visitor(connection: &mut Connection, local_port: u16, web: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     fn connection(id: &str) -> Connection {
         Connection {
@@ -290,6 +307,25 @@ mod tests {
         // Host/port are not rewritten on the https path.
         assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
         assert_eq!(resolved.connection.port, Some(3389));
+    }
+
+    #[test]
+    fn https_resolves_without_a_running_frpc() {
+        // An HTTPS tunnel needs no visitor: the desktop reaches it at its domain.
+        let conn = connection("c1");
+        let mut mapping = tunnel("c1", "https", "web");
+        mapping.custom_domains = Some("a.example.com".to_string());
+        let resolved = resolve_connection(&conn, &[mapping], &[]);
+        assert!(resolved.via_tunnel);
+        assert_eq!(resolved.tunnel_name.as_deref(), Some("tunnel-1"));
+        assert_eq!(resolved.tunnel_type.as_deref(), Some("https"));
+        assert_eq!(
+            json(&resolved.connection),
+            json(&Connection {
+                url: Some("https://a.example.com".to_string()),
+                ..conn.clone()
+            })
+        );
     }
 
     #[test]
@@ -451,6 +487,131 @@ mod tests {
         ] {
             let resolved = resolve_connection(conn, &tunnels, bindings);
             assert_eq!(json(&resolved.connection), json(conn), "{case}");
+        }
+    }
+
+    /// Serve HTTP on a fresh loopback port, one request per connection: the n-th request gets
+    /// the n-th of `replies` (status line and body); `None`, like any request after them, sees
+    /// its connection closed unanswered. The request line of every request lands in the log.
+    async fn serve(
+        replies: Vec<Option<(&'static str, String)>>,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&log);
+        tokio::spawn(async move {
+            let mut replies = replies.into_iter();
+            loop {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = tcp.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                }
+                let head = String::from_utf8_lossy(&head);
+                seen.lock()
+                    .unwrap()
+                    .push(head.lines().next().unwrap_or_default().to_string());
+                if let Some((status, body)) = replies.next().flatten() {
+                    let reply = format!(
+                        "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    tcp.write_all(reply.as_bytes()).await.unwrap();
+                }
+                let _ = tcp.shutdown().await;
+            }
+        });
+        (url, log)
+    }
+
+    /// A session of `ops-admin` on `server`.
+    async fn signed_in(server: String) -> SessionState {
+        let session = SessionState::default();
+        session
+            .set(
+                server,
+                "access".to_string(),
+                "refresh".to_string(),
+                "ops-admin".to_string(),
+                false,
+            )
+            .await;
+        session
+    }
+
+    /// The mappings the session holds, as JSON.
+    async fn held(session: &SessionState) -> serde_json::Value {
+        serde_json::to_value(&*session.tunnels().await).unwrap()
+    }
+
+    /// The mappings the server lists first in the tests below.
+    fn listed() -> serde_json::Value {
+        serde_json::to_value([tunnel("c1", "stcp", "rdp")]).unwrap()
+    }
+
+    const FETCH: &str = "GET /api/frp/tunnels HTTP/1.1";
+
+    #[tokio::test]
+    async fn fetch_tunnels_failing_on_the_server_or_the_network_keeps_the_last_mappings() {
+        for (case, failure) in [
+            ("500", Some(("500 Internal Server Error", String::new()))),
+            ("503", Some(("503 Service Unavailable", String::new()))),
+            ("connection closed unanswered", None),
+        ] {
+            let (server, log) = serve(vec![Some(("200 OK", listed().to_string())), failure]).await;
+            let session = signed_in(server).await;
+
+            let fetched = fetch_tunnels(&session).await.unwrap();
+            assert_eq!(serde_json::to_value(&fetched).unwrap(), listed(), "{case}");
+            assert_eq!(held(&session).await, listed(), "{case}");
+
+            // A fetch that fails on the way leaves the mappings of the last one.
+            assert!(fetch_tunnels(&session).await.is_err(), "{case}");
+            assert_eq!(held(&session).await, listed(), "{case}");
+            assert_eq!(*log.lock().unwrap(), [FETCH, FETCH], "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_tunnels_refused_drops_the_mappings_in_the_session() {
+        let renewed = r#"{"access_token":"renewed","refresh_token":"refresh-2"}"#;
+        for (case, refusal, requests) in [
+            (
+                "403",
+                vec![Some(("403 Forbidden", String::new()))],
+                vec![FETCH, FETCH],
+            ),
+            (
+                "401 after a renewal",
+                vec![
+                    Some(("401 Unauthorized", String::new())),
+                    Some(("200 OK", renewed.to_string())),
+                    Some(("401 Unauthorized", String::new())),
+                ],
+                vec![FETCH, FETCH, "POST /api/auth/refresh HTTP/1.1", FETCH],
+            ),
+        ] {
+            let mut replies = vec![Some(("200 OK", listed().to_string()))];
+            replies.extend(refusal);
+            let (server, log) = serve(replies).await;
+            let session = signed_in(server).await;
+
+            fetch_tunnels(&session).await.unwrap();
+            assert_eq!(held(&session).await, listed(), "{case}");
+
+            assert!(fetch_tunnels(&session).await.is_err(), "{case}");
+            assert_eq!(held(&session).await, serde_json::json!([]), "{case}");
+            assert_eq!(*log.lock().unwrap(), requests, "{case}");
+            // The refusal drops the mappings, not the session.
+            assert!(session.current().await.is_some(), "{case}");
         }
     }
 }

@@ -2,18 +2,20 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The server session of this process, in memory only: server URL, user, tokens and the
-//! certificate choice of the sign-in. Authenticated requests go through [`authed_send`], the
-//! one place that renews them.
+//! The server session of this process, in memory only: server URL, user, tokens, the
+//! certificate choice of the sign-in and the tunnel mappings and connections it fetched last.
+//! Authenticated requests go through [`authed_send`], the one place that renews them.
 
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use tokio::sync::Mutex;
 
 use crate::error::AppError;
+use crate::models::Connection;
+use crate::tunnel::TunnelMapping;
 use crate::validation::same_server_destination;
 
 /// The longest a renewal may take. It holds the session meanwhile, so every request, sign-in
@@ -34,6 +36,14 @@ pub struct Session {
     /// enrolled device uses its pinned CA either way (`http_client::build_client`).
     pub allow_self_signed: bool,
     pub generation: u64,
+    /// The tunnel mappings the session fetched last ([`SessionState::keep_tunnels`]), empty
+    /// before. Only these resolve the target of a stored password, never mappings the webview
+    /// passes.
+    pub tunnels: Arc<[TunnelMapping]>,
+    /// The server's connections the session fetched last ([`SessionState::keep_connections`]),
+    /// empty before: a mapping takes a stored password only for the connection the server
+    /// lists under its id.
+    pub connections: Arc<[Connection]>,
 }
 
 impl Session {
@@ -92,6 +102,8 @@ impl SessionState {
             username,
             allow_self_signed,
             generation: self.next_generation(),
+            tunnels: Arc::default(),
+            connections: Arc::default(),
         });
     }
 
@@ -110,8 +122,66 @@ impl SessionState {
     /// user on the same server keeps it. A caller that takes an answer over (a tunnel config,
     /// a sync) checks this first.
     pub async fn ensure_signed_in(&self, who: &SignedIn) -> Result<(), AppError> {
-        match self.session.lock().await.as_ref() {
-            Some(now) if now.server_url == who.server_url && now.username == who.username => Ok(()),
+        self.change_signed_in(who, |_| ()).await
+    }
+
+    /// Keeps the tunnel mappings fetched for `who` (`tunnel::fetch_tunnels`) in the session,
+    /// if `who` is still signed in (as [`SessionState::ensure_signed_in`]). They last as long
+    /// as the session: a sign-out, a new sign-in and a failed renewal drop them.
+    pub async fn keep_tunnels(
+        &self,
+        who: &SignedIn,
+        tunnels: Vec<TunnelMapping>,
+    ) -> Result<(), AppError> {
+        self.change_signed_in(who, |now| now.tunnels = tunnels.into())
+            .await
+    }
+
+    /// The tunnel mappings the session fetched last; none without a session, before the first
+    /// fetch that succeeded, and for a user who may not read them.
+    pub async fn tunnels(&self) -> Arc<[TunnelMapping]> {
+        self.session
+            .lock()
+            .await
+            .as_ref()
+            .map(|now| Arc::clone(&now.tunnels))
+            .unwrap_or_default()
+    }
+
+    /// Keeps the server's connections fetched for `who` (`sync::fetch_connections_jwt`) in
+    /// the session, like [`SessionState::keep_tunnels`].
+    pub async fn keep_connections(
+        &self,
+        who: &SignedIn,
+        connections: Vec<Connection>,
+    ) -> Result<(), AppError> {
+        self.change_signed_in(who, |now| now.connections = connections.into())
+            .await
+    }
+
+    /// The server's connections the session fetched last; none without a session and before
+    /// the first fetch that succeeded.
+    pub async fn connections(&self) -> Arc<[Connection]> {
+        self.session
+            .lock()
+            .await
+            .as_ref()
+            .map(|now| Arc::clone(&now.connections))
+            .unwrap_or_default()
+    }
+
+    /// Applies `change` to the session if `who` is still signed in, under one lock; see
+    /// [`SessionState::ensure_signed_in`].
+    async fn change_signed_in(
+        &self,
+        who: &SignedIn,
+        change: impl FnOnce(&mut Session),
+    ) -> Result<(), AppError> {
+        match self.session.lock().await.as_mut() {
+            Some(now) if now.server_url == who.server_url && now.username == who.username => {
+                change(now);
+                Ok(())
+            }
             _ => Err(AppError::Validation(
                 "The session changed while the request was under way — answer dropped".to_string(),
             )),
@@ -730,6 +800,162 @@ mod tests {
             assert_eq!(answered_for.allow_self_signed, choice);
             assert_eq!(state.current().await.unwrap().allow_self_signed, choice);
         }
+    }
+
+    /// A tunnel mapping as `/api/frp/tunnels` lists it, told apart by `id`.
+    fn mapping(id: &str) -> TunnelMapping {
+        TunnelMapping {
+            id: id.to_string(),
+            server_id: "s1".to_string(),
+            tunnel_type: "stcp".to_string(),
+            protocol: "rdp".to_string(),
+            local_port: 3389,
+            visitor_port: Some(13389),
+            custom_domains: None,
+            connection_id: Some("c1".to_string()),
+            enabled: true,
+            name: "rdp-tunnel".to_string(),
+        }
+    }
+
+    /// A connection as `/api/connections` lists it, told apart by `id`.
+    fn connection(id: &str) -> Connection {
+        Connection {
+            id: id.to_string(),
+            name: "T".to_string(),
+            kind: crate::models::ConnectionKind::Rdp,
+            host: Some("rdp.example.com".to_string()),
+            port: Some(3389),
+            username: None,
+            domain: None,
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: Vec::new(),
+            trust_cert: false,
+            last_used: None,
+            server_id: None,
+        }
+    }
+
+    /// The ids of the tunnel mappings and of the connections the session holds.
+    async fn held_ids(state: &SessionState) -> (Vec<String>, Vec<String>) {
+        let tunnels = state.tunnels().await;
+        let connections = state.connections().await;
+        (
+            tunnels.iter().map(|mapping| mapping.id.clone()).collect(),
+            connections.iter().map(|c| c.id.clone()).collect(),
+        )
+    }
+
+    fn nothing_held() -> (Vec<String>, Vec<String>) {
+        (Vec::new(), Vec::new())
+    }
+
+    /// Signs `state` in to `server` as `username`, with the tokens of [`signed_in`].
+    async fn sign_in(state: &SessionState, server: &str, username: &str) {
+        state
+            .set(
+                server.to_string(),
+                "expired".to_string(),
+                "refresh".to_string(),
+                username.to_string(),
+                false,
+            )
+            .await;
+    }
+
+    /// Signs `state` in to `server` and has the session keep the mapping and the connection
+    /// `id`.
+    async fn signed_in_with_fetched(state: &SessionState, server: &str, id: &str) {
+        sign_in(state, server, "ops-admin").await;
+        let who = state.current().await.unwrap().signed_in();
+        state.keep_tunnels(&who, vec![mapping(id)]).await.unwrap();
+        state
+            .keep_connections(&who, vec![connection(id)])
+            .await
+            .unwrap();
+        assert_eq!(
+            held_ids(state).await,
+            (vec![id.to_string()], vec![id.to_string()])
+        );
+    }
+
+    #[tokio::test]
+    async fn the_fetched_mappings_and_connections_last_as_long_as_the_session() {
+        let (server, _log) = serve(|token| async move {
+            if token == "Bearer renewed" {
+                "200 OK"
+            } else {
+                "401 Unauthorized"
+            }
+        })
+        .await;
+        let state = SessionState::default();
+        let renewals = Renewals::default();
+
+        // A sign-in starts without them.
+        sign_in(&state, &server, "ops-admin").await;
+        assert_eq!(held_ids(&state).await, nothing_held());
+
+        // A renewal changes the tokens, not what the session fetched.
+        signed_in_with_fetched(&state, &server, "t1").await;
+        let (response, _) = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| granted(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            held_ids(&state).await,
+            (vec!["t1".to_string()], vec!["t1".to_string()])
+        );
+
+        // A new sign-in, even of the same user on the same server, starts over.
+        sign_in(&state, &server, "ops-admin").await;
+        assert_eq!(held_ids(&state).await, nothing_held());
+
+        // A sign-out ends them.
+        signed_in_with_fetched(&state, &server, "t2").await;
+        state.take().await;
+        assert_eq!(held_ids(&state).await, nothing_held());
+
+        // So does a renewal that fails.
+        signed_in_with_fetched(&state, &server, "t3").await;
+        let result = send_renewing(
+            &state,
+            get,
+            |url, refresh, _| refused(Arc::clone(&renewals), url, refresh),
+            RENEWAL_DEADLINE,
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::SessionExpired)));
+        assert_eq!(held_ids(&state).await, nothing_held());
+    }
+
+    #[tokio::test]
+    async fn what_was_fetched_for_a_session_gone_meanwhile_is_not_kept() {
+        let server = "https://adminhelper.example:8443";
+        let state = SessionState::default();
+        sign_in(&state, server, "ops-admin").await;
+        let who = state.current().await.unwrap().signed_in();
+
+        sign_in(&state, server, "someone-else").await;
+        let kept = state.keep_tunnels(&who, vec![mapping("t1")]).await;
+        assert!(kept.is_err(), "mappings kept for another user");
+        let kept = state.keep_connections(&who, vec![connection("c1")]).await;
+        assert!(kept.is_err(), "connections kept for another user");
+        assert_eq!(held_ids(&state).await, nothing_held());
+
+        state.take().await;
+        let kept = state.keep_tunnels(&who, vec![mapping("t1")]).await;
+        assert!(kept.is_err(), "mappings kept without a session");
+        let kept = state.keep_connections(&who, vec![connection("c1")]).await;
+        assert!(kept.is_err(), "connections kept without a session");
+        assert_eq!(held_ids(&state).await, nothing_held());
     }
 
     const RENEWED: &str = r#"{"access_token":"renewed","refresh_token":"refresh-2"}"#;
