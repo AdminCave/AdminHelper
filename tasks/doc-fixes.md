@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Doku-Fixes: Projektbäume, Agent-Deployment, Hook-Helfer — Task-Ledger
-Status: geplant · Branch: feature/doc-fixes · Review: pro Task
+Status: aktiv · Branch: feature/doc-fixes · Review: pro Task
 Spec: Roadmap R-0489, R-0490
 Heavy: none — nur Doku und ein hermetischer Server-Test über `docs/examples`; keine API-, Gateway-, PKI-, Agent-, Compose- oder Install-Änderung
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
