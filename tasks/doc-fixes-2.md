@@ -82,8 +82,10 @@ Semantik: Soll ist der Code:
 - `apps/web/src/routes.ts:18` (`'/audit'`), `apps/web/src/lib/stores/users.ts:5`, `:9`, `:16-17` (`writable` und ein Objekt mit `subscribe` und Methoden).
 Doku: `docs/developer/webui.html:82` — „kippt &uuml;ber den <code>theme</code>-Store zwischen Dark und Light“; `docs/developer/server.html:61` (`/api/audit`). Falsche Doku-Stellen: `:42` — „Button, Modal, TagChip, Tabs, EmptyState, Toast, ...“, `:48` — „Modal-Komponenten + <code>configs/</code> Subfolder“, `:61` — „Jeder Store ist eine TypeScript-Klasse mit <code>$state</code>-Feldern und Methoden“.
 
-### T3 — R-0522: server.html, Router-Übersicht ohne Zählwert und vollständig  [ ]
+### T3 — R-0522: server.html, Router-Übersicht ohne Zählwert und vollständig  [x]
 Komponente: scripts · Dateien: docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @a921f9cb 2026-10-19T11:37:51+02:00
+Review: approve (.ah-out/review/doc-fixes-2/T3.verdict.json)
 Änderung: DE und EN, gleiche Zeilen. Geprüft auf main@81764c43: `apps/server/app/main.py:450-471` bindet 18 Router ein, `apps/server/app/modules/` hat 12 Module, die Tabelle 12 Zeilen.
 (1) `:52` wird zahlenlos: „12 Top-Level-Router“ bzw. „Twelve top-level routers“ fällt weg. Der Satz sagt, dass die Module unter `apps/server/app/modules/` ihre Router mitbringen und `apps/server/app/main.py` sie einbindet.
 (2) Beifang, derselbe Fund: Die Tabelle `:53-69` bekommt die Zeilen, die heute fehlen:
