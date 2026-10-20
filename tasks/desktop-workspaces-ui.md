@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces, Teil Oberfläche — Task-Ledger
-Status: aktiv · Branch: feature/desktop-workspaces-ui · Review: pro Task
+Status: bereit · Branch: feature/desktop-workspaces-ui · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: none — Teil-Ledger von `tasks/desktop-workspaces.md`; die schweren Läufe fährt das Vorhaben dort
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -105,8 +105,10 @@ Doku: keine (intern; Doku mit T33)
 Abhängt von: T18
 Test-Löschung: apps/desktop/ui/src/lib/stores/settings.test.ts::a server-URL change with an active session logs out before saving — im Workspace ist die URL fest, ein URL-Wechsel ist ein neuer Workspace; apps/desktop/ui/src/lib/stores/settings.test.ts::a server-URL change with an active session reloads the window after saving (R-0429) — wie oben; apps/desktop/ui/src/lib/stores/settings.test.ts::a server-URL change without a session saves without a reload — wie oben; apps/desktop/ui/src/lib/stores/settings.test.ts::a failed save after the forced logout does not reload — es gibt kein erzwungenes Abmelden mehr; apps/desktop/ui/src/lib/stores/settings.test.ts::saving in server mode still starts the tunnel when the status call fails — Speichern startet keinen Tunnel mehr, das tut der Start des Workspace-Fensters; apps/desktop/ui/src/lib/stores/settings.test.ts::saving in server mode starts the tunnel when none runs — wie oben; apps/desktop/ui/src/lib/stores/settings.test.ts::switching server->local stops the tunnel and drops the session — der Moduswechsel entfällt, die Art ist je Workspace fest; apps/desktop/ui/src/lib/stores/settings.test.ts::switching server->sync stops the tunnel and drops the session — wie oben; apps/desktop/ui/src/lib/stores/session.test.ts::ends the session in Rust and clears the in-memory one — `dropSession` hat keinen Aufrufer mehr; apps/desktop/ui/src/lib/stores/session.test.ts::still clears the local session when the server logout call fails — wie oben
 
-### T24 — OS-Benachrichtigung mit Workspace-Präfix  [ ]
+### T24 — OS-Benachrichtigung mit Workspace-Präfix  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/osNotify.ts, apps/desktop/ui/src/lib/osNotify.test.ts, apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.workspace.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @ca258118 2026-10-20T20:03:04+02:00
+Review: approve (.ah-out/review/desktop-workspaces-ui/T24.verdict.json)
 Änderung: `notifyOs` (`osNotify.ts:33-47`) stellt Einzel- und Sammelmeldung „[<Name>] “ voran, Name aus dem Workspace-Store; im Launcher ohne Präfix. Tests (neue Datei, SPDX-Header, Plugin gemockt): Präfix in beiden Wegen; ohne Workspace kein Präfix. Nachtrag (T23-Review, Nit): Der Hinweis `settings.workspace.fixed` in „Dieser Workspace“ nennt auch im lokalen Workspace die URL; für `mode === 'local'` ein eigener Text ohne URL (DE+EN, `SettingsModal.svelte`, `dictionaries.ts`, Test in `SettingsModal.workspace.test.ts`).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/osNotify.test.ts src/components/SettingsModal.workspace.test.ts
 Doku: keine (intern; Doku mit T33)

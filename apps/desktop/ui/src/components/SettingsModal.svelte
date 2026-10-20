@@ -367,7 +367,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
               >
             </div>
           {/if}
-          <span class="field-label">{$t('settings.workspace.fixed')}</span>
+          <span class="field-label"
+            >{$t(
+              mode === 'local' ? 'settings.workspace.fixedLocal' : 'settings.workspace.fixed',
+            )}</span
+          >
         {/if}
 
         {#if mode === 'sync'}

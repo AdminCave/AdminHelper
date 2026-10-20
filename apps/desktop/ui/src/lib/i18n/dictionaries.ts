@@ -201,6 +201,8 @@ export const translations: Translations = {
     'settings.workspace.noUrl': 'Noch keine URL',
     'settings.workspace.fixed':
       'Name, Farbe und URL änderst du in der Workspace-Liste („Workspaces…“), solange dieser Workspace geschlossen ist.',
+    'settings.workspace.fixedLocal':
+      'Name und Farbe änderst du in der Workspace-Liste („Workspaces…“), solange dieser Workspace geschlossen ist.',
     'settings.section.language': 'Sprache',
     'settings.section.passwords': 'Passwoerter',
     'settings.section.rdp': 'RDP',
@@ -940,6 +942,8 @@ export const translations: Translations = {
     'settings.workspace.noUrl': 'No URL yet',
     'settings.workspace.fixed':
       'You change the name, colour and URL in the workspace list (“Workspaces…”) while this workspace is closed.',
+    'settings.workspace.fixedLocal':
+      'You change the name and colour in the workspace list (“Workspaces…”) while this workspace is closed.',
     'settings.section.language': 'Language',
     'settings.section.passwords': 'Passwords',
     'settings.section.rdp': 'RDP',

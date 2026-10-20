@@ -411,7 +411,6 @@ describe('SettingsModal in a local workspace', () => {
     await waitFor(() => expect(h.isDeviceEnrolled).toHaveBeenCalled());
     expect(el(workspace, '[data-testid="settings-workspace-name"]')?.textContent).toBe('Kunde A');
     expect(el(workspace, '[data-testid="settings-workspace-url"]')).toBeNull();
-    expect(workspace.textContent).toContain(tNow('settings.workspace.fixed'));
     expect(workspace.textContent).not.toContain(tNow('settings.allowSelfSigned'));
     expect(button(workspace, tNow('settings.resetCertPin'))).toBeUndefined();
     expect(el(container, 'input[type="number"]')).toBeNull();
@@ -419,5 +418,17 @@ describe('SettingsModal in a local workspace', () => {
     expect(el(container, '[data-action="enroll-token"]')).toBeNull();
     expect(workspace.textContent).not.toContain(tNow('settings.section.notificationRules'));
     expectDeviceGroup(container);
+  });
+
+  it('says where name and colour change, without a URL it does not have', () => {
+    for (const language of ['de', 'en']) {
+      setLanguage(language);
+      const workspace = group(open(), 'workspace');
+
+      expect(workspace.textContent).toContain(tNow('settings.workspace.fixedLocal'));
+      expect(workspace.textContent).not.toContain(tNow('settings.workspace.fixed'));
+      expect(workspace.textContent).not.toContain('URL');
+      cleanup();
+    }
   });
 });
