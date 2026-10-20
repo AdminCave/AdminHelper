@@ -28,7 +28,14 @@ export const WORKSPACE_NAME_MAX = 40;
 // Rust's char::is_control: the general category Cc.
 const CONTROL = /\p{Cc}/u;
 
-export function validateDraft(draft: WorkspaceDraft): SettingsValidation {
+/**
+ * Checks the name and the URL of `draft`. With `urlRequired: false` a blank URL passes (an edit
+ * of a workspace without one keeps none, launcher.rs edit); a URL typed is checked all the same.
+ */
+export function validateDraft(
+  draft: WorkspaceDraft,
+  { urlRequired = true }: { urlRequired?: boolean } = {},
+): SettingsValidation {
   if (CONTROL.test(draft.name)) {
     return { ok: false, error: tNow('validation.workspaceName.control') };
   }
@@ -45,6 +52,7 @@ export function validateDraft(draft: WorkspaceDraft): SettingsValidation {
   // for both: a server or sync workspace needs one, https:// only, http:// for a server on
   // loopback; a local workspace has none to check.
   const url = draft.url ?? '';
+  if (!urlRequired && !url.trim()) return { ok: true };
   return validateSettings({ ...getSettingsDefaults(), mode: draft.kind, url, serverUrl: url });
 }
 

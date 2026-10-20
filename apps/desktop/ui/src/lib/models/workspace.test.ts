@@ -22,8 +22,8 @@ const draft = (kind: SyncMode, name: string, url?: string | null): WorkspaceDraf
   url,
 });
 
-const errorOf = (d: WorkspaceDraft): string | undefined => {
-  const result = validateDraft(d);
+const errorOf = (d: WorkspaceDraft, opts?: { urlRequired?: boolean }): string | undefined => {
+  const result = validateDraft(d, opts);
   expect(result.ok).toBe(result.error === undefined);
   return result.error;
 };
@@ -109,6 +109,25 @@ describe('validateDraft: URL by kind (the rules of validateSettings)', () => {
   it('checks the name before the URL', () => {
     expect(errorOf(draft('server', ' ', 'http://ah.example.com'))).toBe(
       tNow('validation.name.empty'),
+    );
+  });
+
+  it('without urlRequired a blank URL passes, a typed one is still checked', () => {
+    // The edit of a migrated server workspace without a URL: it keeps none.
+    const optional = { urlRequired: false };
+    expect(errorOf(draft('server', 'A', null), optional)).toBeUndefined();
+    expect(errorOf(draft('server', 'A', '   '), optional)).toBeUndefined();
+    expect(errorOf(draft('sync', 'A', undefined), optional)).toBeUndefined();
+    expect(errorOf(draft('server', 'A', 'http://ah.example.com'), optional)).toBe(
+      tNow('validation.serverUrl.https'),
+    );
+    expect(errorOf(draft('sync', 'A', 'http://ah.example.com/c.json'), optional)).toBe(
+      tNow('validation.syncUrl.https'),
+    );
+    expect(errorOf(draft('server', ' ', null), optional)).toBe(tNow('validation.name.empty'));
+    // The default stays: a URL is required.
+    expect(errorOf(draft('server', 'A', null), { urlRequired: true })).toBe(
+      tNow('validation.serverUrl.required'),
     );
   });
 });

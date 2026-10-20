@@ -293,6 +293,16 @@ export const translations: Translations = {
     'editor.status.saved': 'Gespeichert',
     'editor.status.deleted': 'Geloescht',
 
+    // ── Desktop: WorkspaceEditor ──────────────────────────────────────
+    'workspace.editor.title.new': 'Neuer Workspace',
+    'workspace.editor.title.edit': 'Workspace bearbeiten',
+    'workspace.editor.kind': 'Art',
+    'workspace.editor.color': 'Farbe',
+    'workspace.editor.urlChanged':
+      'Anmeldung und Geräte-Identität gehören zur bisherigen Installation. Eine andere Installation ist ein neuer Workspace.',
+    'workspace.editor.maskedValues':
+      'Die mit *** verborgenen Werte der bisherigen URL werden so gespeichert, wie sie hier stehen: bitte neu eintragen.',
+
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP-Anmeldung',
     'passwordPrompt.hint.default': 'Bitte Benutzername und Passwort eingeben.',
@@ -986,6 +996,16 @@ export const translations: Translations = {
     'editor.validation.failed': 'Validation failed',
     'editor.status.saved': 'Saved',
     'editor.status.deleted': 'Deleted',
+
+    // ── Desktop: WorkspaceEditor ──────────────────────────────────────
+    'workspace.editor.title.new': 'New workspace',
+    'workspace.editor.title.edit': 'Edit workspace',
+    'workspace.editor.kind': 'Type',
+    'workspace.editor.color': 'Colour',
+    'workspace.editor.urlChanged':
+      'The sign-in and the device identity belong to the previous installation. Another installation is a new workspace.',
+    'workspace.editor.maskedValues':
+      'The values of the previous URL hidden as *** are saved as they stand here: enter them again.',
 
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP sign-in',
