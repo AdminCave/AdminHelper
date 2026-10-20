@@ -7,6 +7,7 @@ import type { MonitorCheck } from '$lib/api/types';
 import {
   emptyCheckForm,
   checkToForm,
+  failsAfterTypeChange,
   formToInput,
   validateCheckForm,
   CHECK_TYPES,
@@ -137,8 +138,31 @@ describe('validateCheckForm', () => {
 describe('constants', () => {
   it('expose every check type, interval and severity', () => {
     expect(CHECK_TYPES).toContain('smart_health');
-    expect(CHECK_TYPES).toHaveLength(11); // + disk_forecast (T29)
+    expect(CHECK_TYPES).toContain('system_state');
+    expect(CHECK_TYPES).toHaveLength(12); // + disk_forecast (T29), + system_state (R-0423)
     expect(INTERVALS).toEqual(['1m', '5m', '15m', '30m', '1h', '6h', '12h', '24h']);
     expect(SEVERITIES).toEqual(['critical', 'warning', 'info']);
+  });
+});
+
+// monitoring-linux-base-v2 T20 (R-0423): an OOM kill is in one report only, so
+// a system_state check needs one fail in a row to report it.
+describe('failsAfterTypeChange', () => {
+  it('suggests 1 for system_state over the default and over a value entered', () => {
+    expect(failsAfterTypeChange('ping', 'system_state', 3)).toBe(1);
+    expect(failsAfterTypeChange('agent_resources', 'system_state', 5)).toBe(1);
+  });
+
+  it('goes back to 3 when system_state is left with its 1 untouched', () => {
+    expect(failsAfterTypeChange('system_state', 'ping', 1)).toBe(3);
+  });
+
+  it('keeps a value changed under system_state', () => {
+    expect(failsAfterTypeChange('system_state', 'ping', 2)).toBe(2);
+  });
+
+  it('keeps the value between other types, a 1 included', () => {
+    expect(failsAfterTypeChange('ping', 'tcp', 5)).toBe(5);
+    expect(failsAfterTypeChange('ping', 'tcp', 1)).toBe(1);
   });
 });

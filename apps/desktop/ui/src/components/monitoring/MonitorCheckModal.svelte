@@ -18,6 +18,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     SEVERITIES,
     emptyCheckForm,
     checkToForm,
+    failsAfterTypeChange,
     formToInput,
     validateCheckForm,
     type CheckForm,
@@ -116,7 +117,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <select
         value={form.checkType}
         onchange={(e) => {
-          form.checkType = e.currentTarget.value as MonitorCheckType;
+          const next = e.currentTarget.value as MonitorCheckType;
+          form.consecutiveFails = failsAfterTypeChange(form.checkType, next, form.consecutiveFails);
+          form.checkType = next;
           form.config = {};
         }}
       >

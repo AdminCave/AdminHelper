@@ -19,8 +19,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `check_security_updates`, `check_oom`, je Default `true`, nur `true` oder `false`) die Bewertung ab. Ohne den Block
   (aeltere Agents, Windows) oder ohne einen einzigen brauchbaren Punkt darin bleibt der Check `ok` mit „Not evaluated:
   no system state in report“. Ein OOM-Kill steht nur in einem Report und meldet deshalb nur mit `consecutive_fails` 1.
-  Nicht verifiziert: ob Debian und Proxmox VE `/var/run/reboot-required` bei einem Kernel-Update anlegen, und der Weg
-  der RPM-Distributionen. Doku: Monitoring-Administration (DE+EN).
+  Im Check-Formular des Desktops stehen die vier Schalter als Kontrollkaestchen, und die Wahl des Typs schlaegt
+  `consecutive_fails` 1 vor (aenderbar). Nicht verifiziert: ob Debian und Proxmox VE `/var/run/reboot-required` bei
+  einem Kernel-Update anlegen, und der Weg der RPM-Distributionen. Doku: Monitoring-Administration (DE+EN).
 - **Monitoring: `agent_resources` bewertet Swap, Inodes und Load je CPU (R-0423):** Neben CPU, RAM, Platten und
   Temperaturen bewertet der Check die Swap-Belegung (`swap_warn`/`swap_crit`, Default 80/95 %, nur mit Swap-Geraet),
   die Inode-Belegung je Platte (`inode_warn`/`inode_crit`, 80/90 %) und die Load je CPU, `load_5m` geteilt durch die

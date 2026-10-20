@@ -337,3 +337,71 @@ describe('CheckConfigFields agent_resources v2 (R-0423)', () => {
     }
   });
 });
+
+// monitoring-linux-base-v2 T20 (R-0423): system_state rates four points, each
+// on unless switched off (SystemStateConfig). As with the outage switch, back
+// at on the key goes, so a template's check keeps the template's config.
+describe('CheckConfigFields system_state (R-0423)', () => {
+  const SWITCHES = [
+    ['Neustart nötig melden', 'check_reboot'],
+    ['Nicht synchronisierte Uhr melden', 'check_time_sync'],
+    ['Offene Sicherheits-Updates melden', 'check_security_updates'],
+    ['OOM-Kills melden', 'check_oom'],
+  ] as const;
+
+  async function renderSystemState(config: MonitorCheckConfig) {
+    const r = render(CheckConfigFields, { props: { checkType: 'system_state', config } });
+    await tick();
+    return r;
+  }
+
+  it('shows the four switches, on by default, without writing them', async () => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = await renderSystemState(config);
+    const boxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(boxes).toHaveLength(4);
+    for (const [label] of SWITCHES) {
+      const box = inputFor(container, label);
+      expect(box.type).toBe('checkbox');
+      expect(box.checked).toBe(true);
+    }
+    expect(config).toEqual({});
+  });
+
+  it.each(SWITCHES)('%s writes %s false when switched off', async (label, key) => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = await renderSystemState(config);
+    await fireEvent.click(inputFor(container, label));
+    expect(config).toEqual({ [key]: false });
+  });
+
+  it.each(SWITCHES)(
+    '%s shows a stored false as off and drops it when switched on',
+    async (label, key) => {
+      const config = { [key]: false } as MonitorCheckConfig;
+      const { container } = await renderSystemState(config);
+      const box = inputFor(container, label);
+      expect(box.checked).toBe(false);
+      await fireEvent.click(box);
+      expect(box.checked).toBe(true);
+      expect(config).toEqual({});
+    },
+  );
+
+  it('labels the switches in English', async () => {
+    setLanguage('en');
+    try {
+      const { container } = await renderSystemState({} as MonitorCheckConfig);
+      for (const label of [
+        'Report reboot required',
+        'Report unsynchronized clock',
+        'Report pending security updates',
+        'Report OOM kills',
+      ]) {
+        expect(inputFor(container, label).checked).toBe(true);
+      }
+    } finally {
+      setLanguage('de');
+    }
+  });
+});

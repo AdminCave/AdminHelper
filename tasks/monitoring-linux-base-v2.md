@@ -204,8 +204,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: docs/admin/monitoring.html + EN (Absatz aus T9: im Check-Editor ignorierte Mounts als Liste, Schwellen je Mount als Tabelle)
 Abhängt von: T18
 
-### T20 — Desktop: Check-Typ `system_state` im Formular  [ ]
+### T20 — Desktop: Check-Typ `system_state` im Formular  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/models/monitorCheck.ts, apps/desktop/ui/src/lib/models/monitoring.test.ts, apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/lib/models/monitorCheck.test.ts, apps/desktop/ui/src/components/monitoring/MonitorCheckModal.svelte, apps/desktop/ui/src/components/monitoring/MonitorCheckModal.test.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @4019ca5c 2026-10-20T12:53:31+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T20.verdict.json)
 Änderung: `MonitorCheckType` (`types.ts:173`) um `'system_state'`, `MonitorCheckConfig` um `check_reboot`, `check_time_sync`, `check_security_updates`, `check_oom`; `CHECK_TYPES` (`monitorCheck.ts:22-34`) um `'system_state'`; neuer Zweig in `CheckConfigFields.svelte` mit vier Kontrollkästchen (Default an, zurück auf an entfernt den Schlüssel: `setBoolDefault`, Muster `outageField` `:167-176`); die Push-only-Liste im Modell-Test (`monitoring.test.ts:184-197`) um `system_state`. Tests: vier Schalter, gespeichertes `false` wird als aus gezeigt und beim Einschalten entfernt, der Typ steht in der Typ-Auswahl, `isPushOnlyCheck('system_state')`, Labels englisch. Nachtrag (Kevin 2026-10-20): Wählt man im Formular den Typ `system_state`, schlägt es „Fehlschläge in Folge“ = 1 vor (wie das Template), sonst fällt ein OOM-Kill still durch; änderbar; Test dazu.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/CheckConfigFields.test.ts src/lib/models/monitoring.test.ts src/lib/models/monitorCheck.test.ts src/components/monitoring/MonitorCheckModal.test.ts
 Doku: keine (Doku in T12, Anzeige in T21)

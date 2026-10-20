@@ -139,6 +139,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     { key: 'min_history_hours', labelKey: 'monitoring.checkCfg.minHistoryHours', min: 1, max: 48 },
   ];
 
+  // Each point is rated unless switched off (app/check_configs.py
+  // SystemStateConfig); back at on, setBoolDefault drops the key.
+  const SYSTEM_STATE_SWITCHES: Pick<NumField, 'key' | 'labelKey'>[] = [
+    { key: 'check_reboot', labelKey: 'monitoring.checkCfg.checkReboot' },
+    { key: 'check_time_sync', labelKey: 'monitoring.checkCfg.checkTimeSync' },
+    { key: 'check_security_updates', labelKey: 'monitoring.checkCfg.checkSecurityUpdates' },
+    { key: 'check_oom', labelKey: 'monitoring.checkCfg.checkOom' },
+  ];
+
   // warn >= crit sanity hint. nvme_spare is excluded on purpose: lower is
   // worse there, warn > crit is the CORRECT configuration.
   const WARN_CRIT_PAIRS: { warn: string; crit: string; label: string }[] = [
@@ -428,6 +437,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setCsvStr('ignore_devices', e.currentTarget.value)}
     />
   </label>
+{:else if checkType === 'system_state'}
+  {#each SYSTEM_STATE_SWITCHES as sw (sw.key)}
+    <label class="field checkbox">
+      <input
+        type="checkbox"
+        checked={boolVal(sw.key, true)}
+        onchange={(e) => setBoolDefault(sw.key, e.currentTarget.checked, true)}
+      />
+      <span>{$t(sw.labelKey)}</span>
+    </label>
+  {/each}
 {/if}
 
 {#if thresholdWarnings.length > 0}

@@ -181,7 +181,8 @@ export type MonitorCheckType =
   | 'zfs_health'
   | 'docker_health'
   | 'smart_health'
-  | 'disk_forecast';
+  | 'disk_forecast'
+  | 'system_state';
 
 export type MonitorSeverity = 'critical' | 'warning' | 'info';
 export type MonitorInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '6h' | '12h' | '24h';
@@ -269,6 +270,12 @@ export interface MonitorCheckConfig {
   temp_nvme_warn?: number;
   temp_nvme_crit?: number;
   ignore_devices?: string[];
+
+  // system_state; absent means true.
+  check_reboot?: boolean;
+  check_time_sync?: boolean;
+  check_security_updates?: boolean;
+  check_oom?: boolean;
 
   [key: string]: unknown;
 }

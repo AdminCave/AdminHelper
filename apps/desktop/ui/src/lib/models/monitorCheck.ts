@@ -31,6 +31,7 @@ export const CHECK_TYPES: MonitorCheckType[] = [
   'docker_health',
   'smart_health',
   'disk_forecast',
+  'system_state',
 ];
 
 export const INTERVALS: MonitorInterval[] = ['1m', '5m', '15m', '30m', '1h', '6h', '12h', '24h'];
@@ -75,6 +76,25 @@ export function checkToForm(c: MonitorCheck): CheckForm {
     description: c.description ?? '',
     config: { ...(c.config ?? {}) },
   };
+}
+
+// An OOM kill is in the one report after it only (the agent sends the growth
+// since its last report), so a system_state check reports it only with one
+// fail in a row; the built-in template uses 1 for the same reason.
+const SYSTEM_STATE_FAILS = 1;
+
+/** Fails in a row once the form's type changes from `from` to `to`: picking
+ * system_state suggests 1, and leaving it with that 1 untouched goes back to
+ * the form's default 3, so passing through the type leaves no 1 on another
+ * check. Otherwise the value entered stays. */
+export function failsAfterTypeChange(
+  from: MonitorCheckType,
+  to: MonitorCheckType,
+  current: number,
+): number {
+  if (to === 'system_state') return SYSTEM_STATE_FAILS;
+  if (from === 'system_state' && current === SYSTEM_STATE_FAILS) return 3;
+  return current;
 }
 
 export function formToInput(form: CheckForm): MonitorCheckInput {
