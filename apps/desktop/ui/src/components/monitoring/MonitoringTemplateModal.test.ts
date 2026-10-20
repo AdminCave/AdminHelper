@@ -138,3 +138,120 @@ describe('MonitoringTemplateModal assignments', () => {
     await waitFor(() => expect(mocks.deleteTemplate).toHaveBeenCalledWith('tpl-1'));
   });
 });
+
+// monitoring-linux-base-v2 T28 (R-0423): picking system_state for a check
+// definition suggests one fail in a row, as the check form does; leaving the type
+// with that 1 untouched brings back the definition's value from before the pick,
+// a value entered under system_state stays.
+describe('MonitoringTemplateModal system_state fails (monitoring-linux-base-v2 T28)', () => {
+  type TemplateCheckDef = NonNullable<MonitoringTemplateFull['checkDefinitions']>[number];
+  const FAILS = 'Fehlversuche bis Alarm';
+
+  function card(container: HTMLElement, idx: number): Element {
+    return container.querySelectorAll('.def-card')[idx];
+  }
+
+  function fieldIn(root: Element, label: string): HTMLInputElement | HTMLSelectElement {
+    const match = Array.from(root.querySelectorAll('label.field')).find(
+      (f) => f.querySelector('.field-label')?.textContent?.trim() === label,
+    );
+    if (!match) throw new Error(`no field labelled ${label}`);
+    return match.querySelector('input, select') as HTMLInputElement | HTMLSelectElement;
+  }
+
+  async function pickType(container: HTMLElement, idx: number, type: string): Promise<void> {
+    await fireEvent.change(fieldIn(card(container, idx), 'Typ'), { target: { value: type } });
+    await tick();
+  }
+
+  function fails(container: HTMLElement, idx: number): string {
+    return fieldIn(card(container, idx), FAILS).value;
+  }
+
+  function check(over: Partial<TemplateCheckDef>): TemplateCheckDef {
+    return {
+      name: 'Check',
+      check_type: 'ping',
+      config: { target: 'host.example' },
+      interval: '5m',
+      severity: 'critical',
+      ...over,
+    };
+  }
+
+  async function mountWith(defs: TemplateCheckDef[]) {
+    const editing = {
+      ...mocks.template,
+      checkDefinitions: defs,
+    } as unknown as MonitoringTemplateFull;
+    const r = render(MonitoringTemplateModal, { props: { open: true, editing, onClose: vi.fn() } });
+    await tick();
+    return r;
+  }
+
+  it('suggests 1 and goes back to the value from before the pick', async () => {
+    const { container } = await mountWith([
+      check({ def_id: 'a', consecutive_fails: 5 }),
+      check({ def_id: 'b', check_type: 'http', consecutive_fails: 2 }),
+    ]);
+    await pickType(container, 0, 'system_state');
+    expect(fails(container, 0)).toBe('1');
+    expect(fails(container, 1)).toBe('2');
+    // The config fields below follow the type: the four switches of system_state.
+    expect(card(container, 0).querySelectorAll('input[type="checkbox"]')).toHaveLength(4);
+
+    await pickType(container, 0, 'ping');
+    expect(fails(container, 0)).toBe('5');
+  });
+
+  it('keeps a value entered under system_state', async () => {
+    const { container } = await mountWith([check({ consecutive_fails: 5 })]);
+    await pickType(container, 0, 'system_state');
+    await fireEvent.input(fieldIn(card(container, 0), FAILS), { target: { value: '2' } });
+    await pickType(container, 0, 'ping');
+    expect(fails(container, 0)).toBe('2');
+  });
+
+  it('goes back to 3 for a definition stored as system_state', async () => {
+    const { container } = await mountWith([
+      check({ check_type: 'system_state', config: {}, consecutive_fails: 1 }),
+    ]);
+    await pickType(container, 0, 'ping');
+    expect(fails(container, 0)).toBe('3');
+  });
+
+  it("keeps each definition's value from before apart when a card above is removed", async () => {
+    const { container } = await mountWith([
+      check({ def_id: 'a', consecutive_fails: 5 }),
+      check({ def_id: 'b', check_type: 'http', consecutive_fails: 4 }),
+    ]);
+    await pickType(container, 1, 'system_state');
+    await fireEvent.click(card(container, 0).querySelector('button.danger') as HTMLButtonElement);
+    await tick();
+    expect(container.querySelectorAll('.def-card')).toHaveLength(1);
+    expect(fails(container, 0)).toBe('1');
+
+    await pickType(container, 0, 'http');
+    expect(fails(container, 0)).toBe('4');
+  });
+
+  it('saves the suggested 1 with the definition', async () => {
+    const { container, getByText } = await mountWith([
+      check({ def_id: 'a', consecutive_fails: 5 }),
+      check({ def_id: 'b', check_type: 'http', consecutive_fails: 2 }),
+    ]);
+    await pickType(container, 0, 'system_state');
+    await fireEvent.click(getByText('Speichern'));
+
+    const { saveTemplate } = await import('$lib/stores/monitoring');
+    await waitFor(() => expect(saveTemplate).toHaveBeenCalledTimes(1));
+    const [input, id] = vi.mocked(saveTemplate).mock.calls[0];
+    expect(id).toBe('tpl-1');
+    expect(
+      input.check_definitions.map((d) => [d.def_id, d.check_type, d.consecutive_fails, d.config]),
+    ).toEqual([
+      ['a', 'system_state', 1, {}],
+      ['b', 'http', 2, { target: 'host.example' }],
+    ]);
+  });
+});

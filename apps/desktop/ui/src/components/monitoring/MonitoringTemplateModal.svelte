@@ -14,7 +14,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     TemplateAlertDef,
     TemplateCheckDef,
   } from '$lib/api/types';
-  import { CHECK_TYPES, INTERVALS, SEVERITIES } from '$lib/models/monitorCheck';
+  import {
+    CHECK_TYPES,
+    INTERVALS,
+    SEVERITIES,
+    failsAfterTypeChange,
+  } from '$lib/models/monitorCheck';
   import {
     emptyTemplateForm,
     emptyCheckDef,
@@ -52,6 +57,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // can mutate def.config in place (Svelte 5 fine-grained reactivity).
   let checkDefs = $state<TemplateCheckDef[]>([]);
   let alertDefs = $state<TemplateAlertDef[]>([]);
+  // Per check definition: fails in a row from before system_state was picked;
+  // leaving the type with its suggested 1 gives it back (failsAfterTypeChange).
+  // Keyed by the def, not its index, so removing a card above keeps it apart.
+  const failsBefore = new WeakMap<TemplateCheckDef, number>();
   let saving = $state(false);
   let selectedServerIds = $state<string[]>([]);
   let newTag = $state('');
@@ -209,7 +218,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <select
               value={def.check_type}
               onchange={(e) => {
-                def.check_type = e.currentTarget.value as MonitorCheckType;
+                const next = e.currentTarget.value as MonitorCheckType;
+                const fails = def.consecutive_fails ?? 3;
+                if (next === 'system_state') failsBefore.set(def, fails);
+                def.consecutive_fails = failsAfterTypeChange(
+                  def.check_type,
+                  next,
+                  fails,
+                  failsBefore.get(def),
+                );
+                def.check_type = next;
                 def.config = {};
               }}
             >

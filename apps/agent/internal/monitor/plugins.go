@@ -5,6 +5,7 @@
 package monitor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -216,73 +217,83 @@ type dockerInspect struct {
 	}
 }
 
-// pveshCLI indirects collectProxmox's pvesh lookup and calls so tests can drive every path without
-// pvesh (same reason as dockerCLI).
+// pveshCLI indirects collectProxmox's pvesh lookup and calls, and the hostname its node name comes
+// from, so tests can drive every path without pvesh (same reason as dockerCLI).
 var pveshCLI = struct {
 	lookPath func(file string) (string, error)
 	run      func(args ...string) ([]byte, error)
-}{exec.LookPath, runPvesh}
+	hostname func() (string, error)
+}{exec.LookPath, runPvesh, os.Hostname}
 
 // runPvesh runs one pvesh call under pluginTimeout (runWithTimeout).
 func runPvesh(args ...string) ([]byte, error) {
 	return runWithTimeout("pvesh", args...)
 }
 
-// collectProxmox collects Proxmox metrics (Linux with pvesh only).
+// pveshGet runs `pvesh get <path> <args> --output-format json` and decodes the answer into out, a
+// pointer to a map or a slice. On failure it returns the outage code and its text for
+// proxmoxUnavailable, "" on success: a call the timeout ended is timeout, an exit status or a pvesh
+// that did not start cli_failed, an answer that is no JSON of out's form parse_failed. null decodes
+// without error, to a nil map or slice, so it is checked for on its own.
+func pveshGet(out any, path string, args ...string) (code, text string) {
+	call := "pvesh get " + path
+	raw, err := pveshCLI.run(append(append([]string{"get", path}, args...), "--output-format", "json")...)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout", fmt.Sprintf("%s timed out after %s", call, pluginTimeout)
+	case err != nil:
+		return "cli_failed", call + " failed: " + commandFailure("pvesh", pluginTimeout, err)
+	case json.Unmarshal(raw, out) != nil || string(bytes.TrimSpace(raw)) == "null":
+		return "parse_failed", call + " output unreadable"
+	}
+	return "", ""
+}
+
+// collectProxmox collects Proxmox metrics (Linux with pvesh only). No pvesh binary means Proxmox is
+// not installed and stays silent (nil). With the CLI present the block is always sent: an unreadable
+// hostname, or a node status, backup index or VM list that could not be read, is available=false
+// with an error code (proxmoxUnavailable), so the monitoring service can raise it instead of seeing
+// no data.
 func collectProxmox() map[string]any {
 	if _, err := pveshCLI.lookPath("pvesh"); err != nil {
 		return nil
 	}
 
-	result := map[string]any{"node": nil, "vms": []any{}}
-
-	// Node status
-	host, err := os.Hostname()
+	host, err := pveshCLI.hostname()
 	if err != nil {
-		return nil
+		return proxmoxUnavailable("cli_failed", "local hostname unreadable")
 	}
 	nodeName, _, _ := strings.Cut(host, ".") // FQDN -> short name (pvesh nodes are short)
-	nodeOut, err := pveshCLI.run("get", "/nodes/"+nodeName+"/status", "--output-format", "json")
-	if err == nil {
-		var nd map[string]any
-		if json.Unmarshal(nodeOut, &nd) == nil {
-			memData, _ := nd["memory"].(map[string]any)
-			total := getFloat(memData, "total", 1)
-			if total == 0 {
-				total = 1
-			}
-			result["node"] = map[string]any{
-				"name":           nodeName,
-				"cpu":            round1(getFloat(nd, "cpu", 0) * 100),
-				"memory_percent": round1(getFloat(memData, "used", 0) / total * 100),
-			}
-		}
+	var nd map[string]any
+	if code, text := pveshGet(&nd, "/nodes/"+nodeName+"/status"); code != "" {
+		return proxmoxUnavailable(code, text)
+	}
+	memData, _ := nd["memory"].(map[string]any)
+	total := getFloat(memData, "total", 1)
+	if total == 0 {
+		total = 1
+	}
+	node := map[string]any{
+		"name":           nodeName,
+		"cpu":            round1(getFloat(nd, "cpu", 0) * 100),
+		"memory_percent": round1(getFloat(memData, "used", 0) / total * 100),
 	}
 
 	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages)). Without
 	// every backup storage read, each VM whose backups sit on a missing one would go out without
-	// last_backup_ts, which the server reads as "No backup" (critical): the block stays out instead.
-	backupIndex, err := buildBackupIndex(nodeName)
-	if err != nil {
-		logger.Warnf("%s, proxmox left out of the report", err)
-		return nil
+	// last_backup_ts, which the server reads as "No backup" (critical): an outage instead.
+	backupIndex, code, text := buildBackupIndex(nodeName)
+	if code != "" {
+		return proxmoxUnavailable(code, text)
 	}
 
-	// VMs + LXC containers. Only an array is a VM list (null decodes without error, to a nil slice):
-	// without one the block stays out, since the server reads a block without VMs as "no VMs" (ok).
-	// Logged, so `diagnose` shows the reason.
-	vmsOut, err := pveshCLI.run("get", "/cluster/resources", "--type", "vm", "--output-format", "json")
-	if err != nil {
-		logger.Warnf("pvesh get /cluster/resources failed: %s, proxmox left out of the report",
-			commandFailure("pvesh", pluginTimeout, err))
-		return nil
-	}
+	// VMs + LXC containers. A VM list that could not be read is an outage, not an empty list: the
+	// server reads a block without VMs as "no VMs" (ok).
 	var vms []map[string]any
-	if json.Unmarshal(vmsOut, &vms) != nil || vms == nil {
-		logger.Warnf("pvesh get /cluster/resources output unreadable, proxmox left out of the report")
-		return nil
+	if code, text = pveshGet(&vms, "/cluster/resources", "--type", "vm"); code != "" {
+		return proxmoxUnavailable(code, text)
 	}
-	var vmList []map[string]any
+	vmList := make([]map[string]any, 0, len(vms))
 	for _, vm := range vms {
 		vmid := int(getFloat(vm, "vmid", 0))
 		if vmid == 0 {
@@ -300,12 +311,22 @@ func collectProxmox() map[string]any {
 			"last_backup_ts": lastBackup,
 		})
 	}
-	result["vms"] = vmList
+	return map[string]any{"available": true, "error": nil, "node": node, "vms": vmList}
+}
 
-	if result["node"] == nil && len(vmList) == 0 {
-		return nil
+// proxmoxUnavailable is the block for an installed pvesh whose node could not be read. code is what
+// the monitoring service evaluates (timeout | cli_failed | parse_failed | backup_index_incomplete),
+// text names the call and its exit status or the inactive storage — never stderr or a file path (as
+// dockerUnavailable).
+func proxmoxUnavailable(code, text string) map[string]any {
+	logger.Warnf("%s, proxmox reported as unavailable (%s)", text, code)
+	return map[string]any{
+		"available":     false,
+		"error":         code,
+		"error_message": text,
+		"node":          nil,
+		"vms":           []map[string]any{},
 	}
-	return result
 }
 
 // buildBackupIndex fetches all backups of the local node's backup storages and builds a lookup map
@@ -314,21 +335,16 @@ func collectProxmox() map[string]any {
 // pvesh's implicit mapping is undocumented and could silently break).
 // The storages come from /nodes/<node>/storage, which with --content backup lists only the enabled
 // backup storages of this node (/storage also lists disabled and other nodes' ones, whose content
-// call fails here). The error is the reason the index is incomplete: the list or a content call
-// failed, hung or printed no JSON array, or a backup storage is not active.
-func buildBackupIndex(nodeName string) (map[int]int64, error) {
-	index := make(map[int]int64)
+// call fails here). An incomplete index returns nil with the outage code and its text for
+// proxmoxUnavailable, a complete one code "": the list or a content call could not be read
+// (pveshGet), or a backup storage is not active (backup_index_incomplete).
+func buildBackupIndex(nodeName string) (index map[int]int64, code, text string) {
+	index = make(map[int]int64)
 
 	storagesPath := "/nodes/" + nodeName + "/storage"
-	storagesOut, err := pveshCLI.run("get", storagesPath, "--content", "backup", "--output-format", "json")
-	if err != nil {
-		return nil, fmt.Errorf("pvesh get %s failed: %s", storagesPath,
-			commandFailure("pvesh", pluginTimeout, err))
-	}
-	// null decodes without error, to a nil slice; only an array is a storage list.
 	var storages []map[string]any
-	if json.Unmarshal(storagesOut, &storages) != nil || storages == nil {
-		return nil, fmt.Errorf("pvesh get %s output unreadable", storagesPath)
+	if code, text = pveshGet(&storages, storagesPath, "--content", "backup"); code != "" {
+		return nil, code, text
 	}
 
 	for _, storage := range storages {
@@ -336,19 +352,13 @@ func buildBackupIndex(nodeName string) (map[int]int64, error) {
 		// The API schema calls active a boolean, pve-storage sets it to 0 or 1: both readings count.
 		// An inactive storage gets no content call, which would only fail with "storage ... is not online".
 		if active, _ := storage["active"].(bool); !active && getFloat(storage, "active", 0) == 0 {
-			return nil, fmt.Errorf("backup storage %s not active", sid)
+			return nil, "backup_index_incomplete", "backup storage " + sid + " not active"
 		}
 
 		// Fetch all backups of this storage at once (without the --vmid filter)
-		contentPath := storagesPath + "/" + sid + "/content"
-		backupsOut, err := pveshCLI.run("get", contentPath, "--content", "backup", "--output-format", "json")
-		if err != nil {
-			return nil, fmt.Errorf("pvesh get %s failed: %s", contentPath,
-				commandFailure("pvesh", pluginTimeout, err))
-		}
 		var items []map[string]any
-		if json.Unmarshal(backupsOut, &items) != nil || items == nil {
-			return nil, fmt.Errorf("pvesh get %s output unreadable", contentPath)
+		if code, text = pveshGet(&items, storagesPath+"/"+sid+"/content", "--content", "backup"); code != "" {
+			return nil, code, text
 		}
 		for _, item := range items {
 			vmid := int(getFloat(item, "vmid", 0))
@@ -361,7 +371,7 @@ func buildBackupIndex(nodeName string) (map[int]int64, error) {
 			}
 		}
 	}
-	return index, nil
+	return index, "", ""
 }
 
 // zpoolCLI indirects collectZFS's zpool lookup and calls so tests can drive every path without zpool

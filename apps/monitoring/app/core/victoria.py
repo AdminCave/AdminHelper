@@ -141,12 +141,13 @@ class VictoriaClient:
         server_id: str | None,
         name: str,
         status: str,
-        duration_ms: int,
+        duration_ms: int | None,
         extra_metrics: dict | None = None,
     ) -> list[str]:
         """Builds the line-protocol lines for a check result without writing them, so a caller with
         many checks (the agent report) can collect and flush them in one write instead of one POST
-        per check (5.20)."""
+        per check (5.20). duration_ms None writes no duration line (a push check without measured
+        values)."""
         status_map = {"ok": 0, "warning": 1, "critical": 2, "unknown": 3}
         status_val = status_map.get(status, 3)
         ts = int(time.time())
@@ -155,10 +156,9 @@ class VictoriaClient:
         if server_id:
             tags["server_id"] = server_id
 
-        lines = [
-            format_line("monitor_check_status", tags, status_val, ts),
-            format_line("monitor_check_duration_ms", tags, duration_ms, ts),
-        ]
+        lines = [format_line("monitor_check_status", tags, status_val, ts)]
+        if duration_ms is not None:
+            lines.append(format_line("monitor_check_duration_ms", tags, duration_ms, ts))
 
         if extra_metrics:
             for key, value in extra_metrics.items():

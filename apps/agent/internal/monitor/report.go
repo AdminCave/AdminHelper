@@ -18,10 +18,19 @@ import (
 	"adminhelper-agent/internal/httpclient"
 )
 
-// BuildReport collects all metrics and builds the report.
+// BuildReport collects all metrics and builds the report. Without a report state it measures the CPU
+// with the 1s sample; monitor init's test push neither reads nor writes the state.
 func BuildReport(serviceNames []string) map[string]any {
+	report, _ := buildReportWithState(serviceNames, reportState{}, time.Now())
+	return report
+}
+
+// buildReportWithState is BuildReport measured against prev, the state the last successful push
+// saved. It also returns the state to save once this report has been pushed.
+func buildReportWithState(serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
+	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
 	resources := map[string]any{
-		"cpu_percent": collectCPU(),
+		"cpu_percent": cpuPercent,
 	}
 	if m := collectMemory(); m != nil {
 		for k, v := range m {
@@ -33,6 +42,11 @@ func BuildReport(serviceNames []string) map[string]any {
 			resources[k] = v
 		}
 	}
+	if s := collectSwapAndCPUCount(); s != nil {
+		for k, v := range s {
+			resources[k] = v
+		}
+	}
 	if disks := collectDisks(); len(disks) > 0 {
 		resources["disks"] = disks
 	}
@@ -41,11 +55,19 @@ func BuildReport(serviceNames []string) map[string]any {
 	}
 
 	report := map[string]any{
-		"report_version": 2,
+		"report_version": 3,
 		"timestamp":      time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		"resources":      resources,
 		"uptime_seconds": collectUptime(),
 		"host":           collectHostFacts(),
+	}
+
+	// The collector hands prev on with what it measured replaced, so a value it could not read this
+	// time stays the base for the next report.
+	systemState, next := systemStateCollector(prev)
+	next.CPU = cpuNow
+	if len(systemState) > 0 {
+		report["system_state"] = systemState
 	}
 
 	// Service health (platform-specific)
@@ -76,7 +98,7 @@ func BuildReport(serviceNames []string) map[string]any {
 		report["smart_absent"] = map[string]string{"reason": absent}
 	}
 
-	return report
+	return report, next
 }
 
 // pushRetryDelay is a variable so tests can shorten the backoff.
@@ -93,6 +115,9 @@ var pluginCollectors = struct {
 
 // serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).
 var serviceHealthCollector = collectServiceHealth
+
+// systemStateCollector indirects the system state probe for the same reason (6.18).
+var systemStateCollector = collectSystemState
 
 // PushReportParams groups monitor.PushReport's arguments (7 positionals before).
 type PushReportParams struct {
