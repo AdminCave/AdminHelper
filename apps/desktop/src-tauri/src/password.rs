@@ -567,10 +567,19 @@ fn termsrv_hold_millis() -> u64 {
 /// The names of a start with `steps` to `host:port`: every one its mstsc may look up, and those it
 /// writes. Which name mstsc looks up at a port other than 3389 is not verified (spike, point 4),
 /// so the name of the host without the port counts with that of the address, and so does every
-/// name the start deletes.
+/// name the start deletes. Nor is it verified which of the two ports mstsc takes from a host with
+/// a port (`host:port`, `[IPv6 address]:port`, T8), so the names of the host part at either port
+/// and without one count as well, for another target as for this machine.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn termsrv_names(host: &str, port: u16, steps: &[TermsrvStep]) -> (Vec<String>, Vec<String>) {
     let mut lookup = vec![termsrv_name(host, port), format!("TERMSRV/{host}")];
+    if let Some((inner, in_host)) = crate::tunnel::rdp_host_port(host) {
+        lookup.extend([
+            format!("TERMSRV/{inner}:{in_host}"),
+            format!("TERMSRV/{inner}:{port}"),
+            format!("TERMSRV/{inner}"),
+        ]);
+    }
     let mut write = Vec::new();
     for step in steps {
         match step {
@@ -869,6 +878,51 @@ fn readable_legacy_termsrv(workspace: &Workspace, connection: &Connection) -> Op
         .filter(|_| !termsrv_this_machine(&normalized(&connection.host)))
 }
 
+/// What a start of mstsc does with the entry [`readable_legacy_termsrv`] names, by
+/// [`legacy_termsrv_takeover`].
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LegacyTakeover {
+    /// Move its password into the app namespace of the workspace, then delete it.
+    Take,
+    /// Leave it: the connection goes through a tunnel; the log says so.
+    Tunnel,
+    /// Leave it: it holds the password of another user; the log says so.
+    OtherUser,
+    /// Leave it.
+    Leave,
+}
+
+/// Whether a start of mstsc moves the password of a version before R-0431 from the entry
+/// [`readable_legacy_termsrv`] names into the app namespace of its workspace, and deletes that
+/// entry then (T40, Kevin 2026-10-20): only in a migrated workspace (`legacy_keys`), only while
+/// the app namespace holds no password for the connection (`stored`), only from an entry without
+/// the marker (`entry`), one with it being the password of a start, maybe of another connection,
+/// only for a connection without a tunnel (`via_tunnel`), and only if the entry holds the user of
+/// the connection (`entry_user` is `user`, both as a start writes them: `DOMAIN\user`, or `user`
+/// without a domain). Versions before R-0431 kept one entry for an address, so it may hold the
+/// password of another connection to it, and they never sent it through a tunnel: once in the
+/// app namespace, a start would hand it to the endpoint the server of the workspace sets up.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn legacy_termsrv_takeover(
+    legacy_keys: bool,
+    stored: bool,
+    entry: TermsrvEntry,
+    via_tunnel: bool,
+    entry_user: &str,
+    user: &str,
+) -> LegacyTakeover {
+    if !legacy_keys || stored || entry != TermsrvEntry::Foreign {
+        LegacyTakeover::Leave
+    } else if via_tunnel {
+        LegacyTakeover::Tunnel
+    } else if entry_user != user {
+        LegacyTakeover::OtherUser
+    } else {
+        LegacyTakeover::Take
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn rdp_windows_username(connection: &Connection) -> Result<String, AppError> {
     let username = required(&connection.username, "Benutzer")?;
@@ -901,8 +955,48 @@ pub fn utf16_bytes(value: &str) -> Vec<u8> {
 /// value that is no valid UTF-16 reads as empty, so it is never the marker.
 #[cfg(target_os = "windows")]
 fn windows_generic_entry(target: &str) -> Result<Option<(String, String)>, AppError> {
+    windows_generic_read(target, |credential| {
+        (
+            windows_text(credential.Comment),
+            windows_text(credential.UserName),
+        )
+    })
+}
+
+/// A text field of a credential; none, or one that is no valid UTF-16, reads as empty.
+#[cfg(target_os = "windows")]
+fn windows_text(value: windows::core::PWSTR) -> String {
+    if value.is_null() {
+        String::new()
+    } else {
+        unsafe { value.to_string() }.unwrap_or_default()
+    }
+}
+
+/// The secret of a credential, decoded as [`utf16_bytes`] encodes it.
+#[cfg(target_os = "windows")]
+fn windows_secret(credential: &windows::Win32::Security::Credentials::CREDENTIALW) -> String {
+    let size = credential.CredentialBlobSize as usize;
+    if size == 0 || credential.CredentialBlob.is_null() {
+        return String::new();
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(credential.CredentialBlob, size) };
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+/// What `read` takes from the generic credential `target`, all from one `CredReadW`; `None` if
+/// there is none.
+#[cfg(target_os = "windows")]
+fn windows_generic_read<T>(
+    target: &str,
+    read: impl FnOnce(&windows::Win32::Security::Credentials::CREDENTIALW) -> T,
+) -> Result<Option<T>, AppError> {
     use std::ptr::null_mut;
-    use windows::core::{PCWSTR, PWSTR};
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
     use windows::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
@@ -929,15 +1023,7 @@ fn windows_generic_entry(target: &str) -> Result<Option<(String, String)>, AppEr
             err.0
         )));
     }
-    let text = |value: PWSTR| {
-        if value.is_null() {
-            String::new()
-        } else {
-            unsafe { value.to_string() }.unwrap_or_default()
-        }
-    };
-    let credential = unsafe { &*credential_ptr };
-    let found = (text(credential.Comment), text(credential.UserName));
+    let found = read(unsafe { &*credential_ptr });
     unsafe { CredFree(credential_ptr as *const _) };
     Ok(Some(found))
 }
@@ -945,11 +1031,10 @@ fn windows_generic_entry(target: &str) -> Result<Option<(String, String)>, AppEr
 /// Reads the secret stored under `target` by `windows_store_credential`. The
 /// blob is the value encoded as UTF-16LE bytes (see `utf16_bytes`), so decode it
 /// back the same way. Mirrors the `CredReadW`/`CredFree` pattern of
-/// `windows_generic_entry`.
+/// `windows_generic_read`.
 #[cfg(target_os = "windows")]
 pub fn windows_read_credential(target: &str) -> Result<String, AppError> {
     use std::ptr::null_mut;
-    use std::slice;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::GetLastError;
     use windows::Win32::Security::Credentials::{
@@ -976,18 +1061,7 @@ pub fn windows_read_credential(target: &str) -> Result<String, AppError> {
     }
 
     // Copy the blob out before freeing the credential.
-    let cred = unsafe { &*credential_ptr };
-    let size = cred.CredentialBlobSize as usize;
-    let value = if size == 0 || cred.CredentialBlob.is_null() {
-        String::new()
-    } else {
-        let bytes = unsafe { slice::from_raw_parts(cred.CredentialBlob, size) };
-        let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
-        String::from_utf16_lossy(&units)
-    };
+    let value = windows_secret(unsafe { &*credential_ptr });
     unsafe { CredFree(credential_ptr as *const _) };
     Ok(value)
 }
@@ -1240,6 +1314,77 @@ fn legacy_termsrv_stored(connection: &Connection) -> Result<bool, AppError> {
         Some(target) => Ok(windows_termsrv_entry(&target)? == TermsrvEntry::Foreign),
         None => Ok(false),
     }
+}
+
+/// The stored RDP password of `connection` (the connection as listed) for a start of mstsc;
+/// `base` is the app data dir, `via_tunnel` whether the start goes through a tunnel of the
+/// connection. While the app namespace holds none, a migrated workspace takes over the password of
+/// a version before R-0431 for the user of the connection, and not for a connection with a tunnel
+/// ([`legacy_termsrv_takeover`]): stored under the key and in the index as
+/// [`save_password_keyring`] stores it, then the entry from before goes if it still holds no
+/// marker and that user, and the start writes its own for the start only (T40). If storing fails,
+/// the start fails and the entry from before stays; if only deleting it fails, the start goes on.
+#[cfg(target_os = "windows")]
+pub fn load_password_for_mstsc(
+    base: &Path,
+    connection: &Connection,
+    via_tunnel: bool,
+) -> Result<Option<String>, AppError> {
+    let workspace = workspace::current()?;
+    let stored = load_password_keyring(connection)?;
+    let Some(target) = readable_legacy_termsrv(&workspace, connection) else {
+        return Ok(stored);
+    };
+    let user = rdp_windows_username(connection)?;
+    // Comment, user and password from one read: an entry a start wrote in between holds the
+    // password of that start, maybe of another connection.
+    let found = windows_generic_read(&target, |credential| {
+        let comment = windows_text(credential.Comment);
+        let takeover = legacy_termsrv_takeover(
+            workspace.legacy_keys,
+            stored.is_some(),
+            TermsrvEntry::of(Some(comment.as_str())),
+            via_tunnel,
+            &windows_text(credential.UserName),
+            &user,
+        );
+        let password = (takeover == LegacyTakeover::Take).then(|| windows_secret(credential));
+        (takeover, password)
+    })?;
+    let password = match found {
+        Some((LegacyTakeover::Take, Some(password))) => password,
+        Some((LegacyTakeover::Tunnel, _)) => {
+            log::info!(
+                "{target} holds a password from before R-0431; it stays, as this connection goes \
+                 through a tunnel"
+            );
+            return Ok(stored);
+        }
+        Some((LegacyTakeover::OtherUser, _)) => {
+            log::info!("{target} holds a password from before R-0431 for another user; it stays");
+            return Ok(stored);
+        }
+        _ => return Ok(stored),
+    };
+    save_password_keyring(base, connection, &password)?;
+    // The password is the app's now; an entry that stays serves the start just the same.
+    if let Err(e) = windows_remove_legacy_termsrv(&target, &user) {
+        log::warn!("{target} from before R-0431 stays: {e}");
+    }
+    log::info!("{target}: the RDP password from before R-0431 moved to the app keyring");
+    Ok(Some(password))
+}
+
+/// Deletes the entry from before R-0431 under `target` once its password is in the app namespace,
+/// if it still holds no marker and `user`; any other entry stays.
+#[cfg(target_os = "windows")]
+fn windows_remove_legacy_termsrv(target: &str, user: &str) -> Result<(), AppError> {
+    if let Some((comment, entry_user)) = windows_generic_entry(target)? {
+        if TermsrvEntry::of(Some(comment.as_str())) == TermsrvEntry::Foreign && entry_user == user {
+            windows_delete_credential(target)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn password_state(connection: &Connection) -> Result<PasswordState, AppError> {
@@ -2465,6 +2610,66 @@ mod tests {
         }
     }
 
+    // T40: a start takes over the password from before R-0431 only in a migrated workspace,
+    // only while the app namespace holds none for the connection, only from an entry without
+    // the marker, only for a connection without a tunnel, and only for the user of the
+    // connection, as a start writes it (Kevin 2026-10-20). Any other entry stays.
+    #[test]
+    fn termsrv_legacy_entry_is_taken_over_only_by_a_direct_connection_of_its_user() {
+        const USER: &str = "CORP\\probe";
+        const OTHER: &str = "CORP\\other";
+        const DIRECT: bool = false;
+        const TUNNEL: bool = true;
+        assert_eq!(
+            legacy_termsrv_takeover(true, false, Foreign, DIRECT, USER, USER),
+            LegacyTakeover::Take
+        );
+        assert_eq!(
+            legacy_termsrv_takeover(true, false, Foreign, DIRECT, "probe", "probe"),
+            LegacyTakeover::Take,
+            "without a domain"
+        );
+        // Through a tunnel a start would hand the password to an endpoint the server of the
+        // workspace sets up, the one of the same user as well.
+        for entry_user in [USER, OTHER] {
+            assert_eq!(
+                legacy_termsrv_takeover(true, false, Foreign, TUNNEL, entry_user, USER),
+                LegacyTakeover::Tunnel,
+                "{entry_user}"
+            );
+        }
+        for (entry_user, case) in [
+            (OTHER, "another user"),
+            ("OTHER\\probe", "another domain"),
+            ("probe", "the user without the domain"),
+            ("corp\\Probe", "another spelling"),
+            ("", "no user"),
+        ] {
+            assert_eq!(
+                legacy_termsrv_takeover(true, false, Foreign, DIRECT, entry_user, USER),
+                LegacyTakeover::OtherUser,
+                "{case}"
+            );
+        }
+        for (legacy_keys, stored, entry, via_tunnel, entry_user, case) in [
+            (false, false, Foreign, DIRECT, USER, "a new workspace"),
+            (false, false, Foreign, TUNNEL, USER, "a new one, a tunnel"),
+            (false, false, Foreign, DIRECT, OTHER, "new, another user"),
+            (true, true, Foreign, DIRECT, USER, "a password in the app"),
+            (true, true, Foreign, TUNNEL, USER, "a password, a tunnel"),
+            (true, true, Foreign, DIRECT, OTHER, "password, another user"),
+            (true, false, Own, DIRECT, USER, "a start wrote the entry"),
+            (true, false, Own, TUNNEL, OTHER, "a start, a tunnel"),
+            (true, false, Missing, DIRECT, "", "no entry"),
+        ] {
+            assert_eq!(
+                legacy_termsrv_takeover(legacy_keys, stored, entry, via_tunnel, entry_user, USER),
+                LegacyTakeover::Leave,
+                "{case}"
+            );
+        }
+    }
+
     // ── T39: every start holds the names of its mstsc for its time, across the processes ──
 
     /// A moment in milliseconds since the Unix epoch, where the holds below begin.
@@ -2935,6 +3140,53 @@ mod tests {
             take(&base.0, (HERE, 3390), &here(3390, false), &b, T0).unwrap(),
             None
         );
+    }
+
+    // Away from this machine as well (security T39, round 3): mstsc gets
+    // `full address:s:192.0.2.10:6000:3390` and may look up the names of the host part at either
+    // port or without one, which a start of another connection to 192.0.2.10 at 3390, 6000 or
+    // 3389 writes. The first start holds them with a password and without one.
+    #[test]
+    fn termsrv_hold_a_host_with_a_port_elsewhere_counts_the_names_of_its_host_part() {
+        const WITH_PORT: &str = "192.0.2.10:6000";
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c2"));
+        let first = |password: bool| termsrv_plan(WITH_PORT, 3390, false, Missing, password);
+        let other =
+            |port: u16, password: bool| termsrv_plan(ELSEWHERE, port, false, Missing, password);
+        assert_eq!(
+            names_of((WITH_PORT, 3390), &first(true)),
+            (
+                set(&[
+                    "TERMSRV/192.0.2.10:6000:3390",
+                    "TERMSRV/192.0.2.10:6000",
+                    "TERMSRV/192.0.2.10:3390",
+                    "TERMSRV/192.0.2.10",
+                ]),
+                set(&["TERMSRV/192.0.2.10:6000:3390"])
+            )
+        );
+
+        for password in [true, false] {
+            for port in [3390, 6000, 3389] {
+                let base = Scratch::new(&format!(
+                    "termsrv-hold-host-port-elsewhere-{password}-{port}"
+                ));
+                take(&base.0, (WITH_PORT, 3390), &first(password), &a, T0).unwrap();
+
+                let name = termsrv_name(ELSEWHERE, port);
+                let message =
+                    turned_away(take(&base.0, (ELSEWHERE, port), &other(port, true), &b, T0));
+                assert!(
+                    message.contains(&format!("{name} ")),
+                    "{password} {port}: {message}"
+                );
+                assert_eq!(
+                    take(&base.0, (ELSEWHERE, port), &other(port, false), &b, T0).unwrap(),
+                    None,
+                    "{password} {port}"
+                );
+            }
+        }
     }
 
     // Host names compare without case, and so do the names of the holds.
@@ -3462,6 +3714,130 @@ mod tests {
         delete_password(&base.0, &a).unwrap();
         assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
         assert!(!password_state(&a).unwrap().stored);
+    }
+
+    // T40: a start in a migrated workspace moves the password of a version before R-0431 from
+    // `TERMSRV/<address as listed>` into the app namespace, deletes that entry and then starts
+    // with an entry of its own for the start only. A new workspace takes over nothing, nor does a
+    // migrated one once the app namespace holds a password.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn termsrv_probe_a_migrated_workspace_takes_over_the_entry_from_before_and_deletes_it() {
+        use crate::keyring_store::try_get;
+        use windows::Win32::Security::Credentials::CRED_PERSIST_SESSION;
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("termsrv-probe-take-over");
+        let host = probe_host();
+        let target = termsrv_name(&host, 3390);
+        let _entry = ProbeEntry(target.clone());
+        let a = probe_connection(&host);
+        let key = format!("rdp|a|{host}|3390|probe|corp");
+        let before = |password: &str| {
+            windows_write_credential(&target, "CORP\\probe", password, CRED_PERSIST_SESSION, None)
+                .unwrap()
+        };
+        before("old");
+
+        {
+            let _created = workspace::enter(created("w-0a1b2c3d"));
+            assert_eq!(load_password_for_mstsc(&base.0, &a, false).unwrap(), None);
+            assert_eq!(windows_termsrv_entry(&target).unwrap(), Foreign);
+            assert_eq!(windows_read_credential(&target).unwrap(), "old");
+        }
+
+        let _standard = workspace::enter(standard());
+        let taken = load_password_for_mstsc(&base.0, &a, false).unwrap();
+        assert_eq!(taken.as_deref(), Some("old"));
+        assert_eq!(try_get(&key).unwrap().as_deref(), Some("old"));
+        assert_eq!(
+            index_of(&index_path(&base.0, &standard())),
+            serde_json::json!({ "keys": [key] })
+        );
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+        assert!(password_state(&a).unwrap().stored);
+
+        // The plan of T17 runs with it and writes the entry of the start. The start fails here, so
+        // that entry goes at once and no removal stays pending.
+        let failed = start_mstsc(&base.0, &host, 3390, &a, taken.as_deref(), || {
+            assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
+            assert_eq!(windows_read_credential(&target).unwrap(), "old");
+            Err(AppError::Connection("mstsc does not start".to_string()))
+        });
+        assert!(matches!(failed, Err(AppError::Connection(_))), "{failed:?}");
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+
+        // Once the app namespace holds the password, an entry without the marker stays.
+        before("own");
+        assert_eq!(
+            load_password_for_mstsc(&base.0, &a, false)
+                .unwrap()
+                .as_deref(),
+            Some("old")
+        );
+        assert_eq!(windows_read_credential(&target).unwrap(), "own");
+    }
+
+    // An entry with the marker holds the password of a start, not one from before; an entry from
+    // before of another user stays, and so does one for a connection with a tunnel. And an entry
+    // from before stays while its password does not reach the app namespace (fail safe).
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn termsrv_probe_an_entry_from_before_stays_unless_the_app_namespace_takes_its_password() {
+        use windows::Win32::Security::Credentials::CRED_PERSIST_SESSION;
+        let base = Scratch::new("termsrv-probe-take-over-fails");
+        let host = probe_host();
+        let target = termsrv_name(&host, 3390);
+        let _entry = ProbeEntry(target.clone());
+        let a = probe_connection(&host);
+        let migrated = standard();
+        let index = index_path(&base.0, &migrated);
+        let _standard = workspace::enter(migrated);
+
+        windows_write_credential(
+            &target,
+            "CORP\\probe",
+            "jit",
+            CRED_PERSIST_SESSION,
+            Some(TERMSRV_MARKER),
+        )
+        .unwrap();
+        {
+            let _keyring = crate::keyring_store::memory();
+            assert_eq!(load_password_for_mstsc(&base.0, &a, false).unwrap(), None);
+            assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
+            assert_eq!(windows_read_credential(&target).unwrap(), "jit");
+        }
+
+        windows_delete_credential(&target).unwrap();
+        windows_write_credential(&target, "CORP\\other", "other", CRED_PERSIST_SESSION, None)
+            .unwrap();
+        {
+            let _keyring = crate::keyring_store::memory();
+            assert_eq!(load_password_for_mstsc(&base.0, &a, false).unwrap(), None);
+            assert_eq!(
+                windows_generic_entry(&target).unwrap(),
+                Some((String::new(), "CORP\\other".to_string()))
+            );
+            assert_eq!(windows_read_credential(&target).unwrap(), "other");
+            assert!(!index.exists(), "nothing stored");
+        }
+
+        // Through a tunnel nothing is taken over, the entry of the same user neither.
+        windows_delete_credential(&target).unwrap();
+        windows_write_credential(&target, "CORP\\probe", "old", CRED_PERSIST_SESSION, None)
+            .unwrap();
+        {
+            let _keyring = crate::keyring_store::memory();
+            assert_eq!(load_password_for_mstsc(&base.0, &a, true).unwrap(), None);
+            assert_eq!(windows_termsrv_entry(&target).unwrap(), Foreign);
+            assert_eq!(windows_read_credential(&target).unwrap(), "old");
+            assert!(!index.exists(), "nothing stored");
+        }
+
+        // Without a keyring guard every write fails, as a locked keyring would.
+        assert!(load_password_for_mstsc(&base.0, &a, false).is_err());
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Foreign);
+        assert_eq!(windows_read_credential(&target).unwrap(), "old");
     }
 
     #[cfg(target_os = "windows")]
