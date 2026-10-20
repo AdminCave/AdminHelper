@@ -4,7 +4,7 @@
 
 """alert quality: recovery hold and bell cooldown state
 
-Revision ID: c3e5a7b9d1f2
+Revision ID: 3c66308d11a7
 Revises: b9d1f3a5c7e9
 Create Date: 2026-10-20
 
@@ -32,7 +32,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "c3e5a7b9d1f2"
+revision: str = "3c66308d11a7"
 down_revision: Union[str, Sequence[str], None] = "b9d1f3a5c7e9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

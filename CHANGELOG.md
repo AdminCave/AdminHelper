@@ -999,7 +999,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   oder abwechselnd `ok` und `unknown` liefert, entwarnt erst nach `consecutive_oks` `ok` in Folge. Ein gemeldetes
   Problem, das ueber `unknown` zurueckkommt, wird ebenso gehalten; ein nie gemeldetes, etwa waehrend Wartung oder
   Host-down stumm gebliebenes, entwarnt beim ersten `ok` still wie bisher. Bestehende Checks bekommen mit der
-  Migration `c3e5a7b9d1f2` den Default 2: Ihre Entwarnung kommt ein Check-Intervall spaeter als bisher, bei einem
+  Migration `3c66308d11a7` den Default 2: Ihre Entwarnung kommt ein Check-Intervall spaeter als bisher, bei einem
   Check mit Intervall `1h` eine Stunde; 1 ist das bisherige Verhalten. Die Host-down-Unterdrueckung faellt
   entsprechend erst nach der Haltezeit des Heartbeats. `consecutive_oks` (1–100) laesst sich je Check und je
   Template-Definition setzen, eine Definition ohne das Feld gilt als 2; an einem Template-Check geaendert gilt es als

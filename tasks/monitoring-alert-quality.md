@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Alert-Qualität — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-alert-quality · Review: pro Task
+Status: bereit · Branch: feature/monitoring-alert-quality · Review: pro Task
 Spec: docs/features/monitoring-alert-quality.md (Roadmap R-0424)
 Heavy: linux-full — der Monitoring-Dienst bekommt eine Alembic-Migration (Stack-Start, `upgrade-path` vom letzten Release), der Server-Vertrag `POST /api/internal/events` ändert sich (`source_ids`, `alert.triggered` je Server; `sse-push` und `desktop_e2e_sse_push` injizieren Events ohne das Feld und müssen grün bleiben), `agent-monitoring` fährt den Push-Pfad mit Haltezeit, und `monitoring-check.live.js` nutzt den Check-Editor mit dem neuen Feld. Kein `scenario --moncheck`: die geschlossene Mail-Schleife (`scripts/tests/box_serverbox.sh:457-463`) legt zwei `ping`-Checks ohne Server mit `severity critical` und `consecutive_fails 1` an — `pending → ok` hält nicht, der Deckel ändert bei `critical` nichts, ohne `server_id` greifen Host-down und Sammelmeldung nicht, `_send_email` bleibt unverändert; der Capstone im Wochenlauf fährt sie ohnehin. Kein `windows`: kein Rust-, Agent- oder Plattform-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -193,8 +193,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alert_bundl
 Doku: docs/admin/monitoring.html + EN; docs/developer/hooks.html + EN; CHANGELOG.md
 Abhängt von: T13, T18
 
-### T20 — Monitoring-Revision bekommt eine eigene Id  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/alembic/versions/c3e5a7b9d1f2_alert_quality.py, apps/monitoring/alembic/versions/3c66308d11a7_alert_quality.py, apps/monitoring/tests/test_migrations_smoke.py, apps/monitoring/app/schemas.py, CHANGELOG.md
+### T20 — Monitoring-Revision bekommt eine eigene Id  [x]
+Komponente: monitoring · Dateien: apps/monitoring/alembic/versions/c3e5a7b9d1f2_alert_quality.py, apps/monitoring/alembic/versions/3c66308d11a7_alert_quality.py, apps/monitoring/tests/test_migrations_smoke.py, apps/monitoring/app/schemas.py, CHANGELOG.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @932ad8d3 2026-10-20T19:21:59+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T20.verdict.json)
 Änderung: Aus der zweiten Branch-Prüfung (Reviewer, Nit, von der Session aufgenommen, weil noch kein Release die Revision enthält): Die Monitoring-Revision `c3e5a7b9d1f2_alert_quality.py` trägt dieselbe Id wie die Server-Revision `c3e5a7b9d1f2_expire_stale_outbox.py` (seit 2026-10-17 auf main); der CHANGELOG nennt `c3e5a7b9d1f2` damit für zwei Migrationen. Die Monitoring-Revision wird zu `3c66308d11a7_alert_quality.py` (`git mv`; Docstring `Revision ID`, `revision`), `down_revision` bleibt; der Smoke-Test (`command.upgrade(cfg, …)`), der Kommentar in `schemas.py` und der CHANGELOG-Eintrag der Haltezeit nennen die neue Id. Die Server-Revision bleibt unverändert. Danach hat die Monitoring-Kette genau einen Head (Test oder `alembic heads` im Commit-Body).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_migrations_smoke.py tests/test_checks_crud.py
 Doku: CHANGELOG.md

@@ -237,7 +237,7 @@ def test_alert_quality_backfill_and_downgrade(monkeypatch):
                     ),
                     {"id": cid, "status": status, "notified": notified},
                 )
-        command.upgrade(cfg, "c3e5a7b9d1f2")
+        command.upgrade(cfg, "3c66308d11a7")
         with engine.connect() as conn:
             checks = dict(
                 conn.execute(text("SELECT id, consecutive_oks FROM monitor_checks")).fetchall()

@@ -17,7 +17,7 @@ from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
 
 # The recovery hold where nobody sets one: the default of the schemas below and,
 # for a stored template definition without the key, of template_sync. Has to match
-# the column default (models.MonitorCheck, migration c3e5a7b9d1f2).
+# the column default (models.MonitorCheck, migration 3c66308d11a7).
 DEFAULT_CONSECUTIVE_OKS = 2
 
 
