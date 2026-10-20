@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Härtung: Agent-Texte und Zahlen, Check-Config, Line-Protocol, Alert-Versand — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-hardening · Review: pro Task
+Status: bereit · Branch: feature/monitoring-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full — T13 ändert den 422-Handler des Servers (`apps/server/app/main.py`, Fehlerpfad jeder Route), T11 seine Log-Konfiguration; der Rest liegt in `apps/monitoring` (Checker, `check_configs.py`, `to_dict` in `models.py`, `core/victoria.py`, `_num` in `routers/agent.py`, 422-Handler in `main.py`, `alerter.py`). Keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung, kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad. Kein Lauf vor dem Merge: das Vorhaben geht in den Sammellauf (CLAUDE.md §5); Monitoring- und Server-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -189,8 +189,10 @@ Semantik: `apps/server/app/main.py:393` Docstring — „The input it echoes may
 Abhängt von: T6
 HEAD: cca3d668
 
-### T15 — Update-Vergleich: die Ergänzung aus T12 als Kommentar, OpenAPI unverändert  [ ]
+### T15 — Update-Vergleich: die Ergänzung aus T12 als Kommentar, OpenAPI unverändert  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/templates.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @4cd50e9d 2026-10-20T08:13:45+02:00
+Review: approve (.ah-out/review/monitoring-hardening/T15.verdict.json)
 Änderung: T12 hat den Docstring von `get_builtin_update` (`routers/templates.py:282-289`) um zwei Sätze ergänzt (die gespeicherte Seite wird wie `to_dict` gelesen; `builtin_edited` liest weiter roh, damit ein gespeicherter Hash gültig bleibt). FastAPI übernimmt den Docstring als `description` ins OpenAPI-Schema, und `tests/test_openapi_snapshot.py` ist rot. Die Ergänzung wird ein `#`-Kommentar an der Lesestelle; der Docstring ist wieder der von origin/main, das Schema gleich dem Snapshot. Kein neuer Test: der Snapshot-Test ist der rote Test (auf HEAD rot, danach grün).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py tests/test_stored_json_numbers.py
 Doku: keine
