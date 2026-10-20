@@ -61,6 +61,12 @@ class _TempOverride(_StrictConfig):
     crit: float | None = Field(None, ge=0, le=200, strict=True)
 
 
+class _DiskOverride(_StrictConfig):
+    warn: float | None = Field(None, ge=0, le=100, strict=True)
+    crit: float | None = Field(None, ge=0, le=100, strict=True)
+    min_free_gb: float | None = Field(None, ge=0, le=1_000_000, strict=True)
+
+
 class AgentResourcesConfig(_StrictConfig):
     cpu_warn: float = Field(80, ge=0, le=100, strict=True)
     cpu_crit: float = Field(95, ge=0, le=100, strict=True)
@@ -68,6 +74,11 @@ class AgentResourcesConfig(_StrictConfig):
     memory_crit: float = Field(95, ge=0, le=100, strict=True)
     disk_warn: float = Field(85, ge=0, le=100, strict=True)
     disk_crit: float = Field(95, ge=0, le=100, strict=True)
+    # A disk's percentage alarm counts only below this many GB free (free_gb, agent v3);
+    # 0 turns the gate off. ignore_mounts and disk_overrides name exact mount paths.
+    disk_min_free_gb: float = Field(20, ge=0, le=1_000_000, strict=True)
+    ignore_mounts: list[str] = []
+    disk_overrides: dict[str, _DiskOverride] = {}
     swap_warn: float = Field(80, ge=0, le=100, strict=True)
     swap_crit: float = Field(95, ge=0, le=100, strict=True)
     inode_warn: float = Field(80, ge=0, le=100, strict=True)

@@ -277,7 +277,10 @@ class AgentResourcesChecker:
         "inode_warn": 80,
         "inode_crit": 90,
         "load_warn": 1.5,
-        "load_crit": 3.0
+        "load_crit": 3.0,
+        "disk_min_free_gb": 20,
+        "ignore_mounts": ["/boot/efi"],
+        "disk_overrides": {"/data": {"warn": 90, "crit": 95, "min_free_gb": 100}}
     }
     """
 
@@ -354,8 +357,8 @@ class AgentResourcesChecker:
             grade("swap", swap, swap_warn, swap_crit, f"Swap {swap}%", "%")
 
         # Load per CPU (agent v3, Linux): older agents send load_5m without cpu_count.
-        # No hysteresis: hysteresis_pp is in percentage points, and load_5m already
-        # averages over the push interval.
+        # No hysteresis: hysteresis_pp is in percentage points, and load_5m is the
+        # kernel's own 5-minute average, already smoothed whatever the push interval.
         cpu_count = agent_number(resources.get("cpu_count"))
         if not isinstance(cpu_count, int) or cpu_count < 1:
             cpu_count = None
@@ -383,15 +386,32 @@ class AgentResourcesChecker:
 
         disk_crit = config.get("disk_crit", 95)
         disk_warn = config.get("disk_warn", 85)
+        disk_min_free_gb = config.get("disk_min_free_gb", 20)
+        ignore_mounts = set(config.get("ignore_mounts", []))
+        disk_overrides = config.get("disk_overrides", {})
         inode_crit = config.get("inode_crit", 90)
         inode_warn = config.get("inode_warn", 80)
         for disk in disks:
             pct = entry_number(disk, "percent", 0)
             mount = entry_text(disk, "mount", "?")
-            # No per-mount metric: the agent router already writes monitor_agent_disk_percent
-            # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
-            # duplicate series in a second schema (1.18); the value is still graded below.
-            grade(f"disk:{mount}", pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%")
+            if mount in ignore_mounts:
+                continue
+            # The schema takes null for an override key; it counts as unset, like a missing one.
+            ov = {k: v for k, v in disk_overrides.get(mount, {}).items() if v is not None}
+            d_warn = ov.get("warn", disk_warn)
+            d_crit = ov.get("crit", disk_crit)
+            min_free_gb = ov.get("min_free_gb", disk_min_free_gb)
+            # Agent v3 sends free_gb: the percentage counts only below min_free_gb free, 0
+            # turns the gate off. Without free_gb (older agent) it counts as before.
+            free_gb = agent_number(disk.get("free_gb"))
+            if free_gb is None or min_free_gb == 0 or free_gb < min_free_gb:
+                label = f"Disk {mount} {pct}%"
+                if free_gb is not None:
+                    label += f", {free_gb} GB free"
+                # No per-mount metric: the agent router already writes monitor_agent_disk_percent
+                # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
+                # duplicate series in a second schema (1.18); the value is still graded below.
+                grade(f"disk:{mount}", pct, d_warn, d_crit, label, "%")
             # Agent v3 on Linux, and only for a filesystem that reports inodes.
             inodes = agent_number(disk.get("inodes_percent"))
             if inodes is not None:
@@ -455,7 +475,10 @@ class AgentResourcesChecker:
                     "percent": entry_number(d, "percent", 0),
                     "total_gb": agent_number(d.get("total_gb")),
                     "used_gb": agent_number(d.get("used_gb")),
+                    "free_gb": agent_number(d.get("free_gb")),
                     "inodes_percent": agent_number(d.get("inodes_percent")),
+                    # Still listed, so the desktop shows the usage without a rating.
+                    "ignored": entry_text(d, "mount", "?") in ignore_mounts,
                 }
                 for d in disks
             ],

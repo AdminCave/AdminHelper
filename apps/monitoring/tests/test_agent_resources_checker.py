@@ -5,7 +5,8 @@
 """AgentResourcesChecker.evaluate — the threshold logic run against every agent
 push (CPU/RAM/swap/load/disk/inodes/temperature). It decides the alert status, so the escalation
 (ok → warning → critical, critical never downgraded), the >= boundary, the
-pseudo-filesystem filter, and per-sensor temperature overrides are worth pinning."""
+pseudo-filesystem filter, the free-GB gate and per-mount settings of the disks, and per-sensor
+temperature overrides are worth pinning."""
 
 import math
 
@@ -175,6 +176,10 @@ def _load(load_5m, cpu_count=8):
         # 11.9 / 8 = 1.4875, rounded to 1.49.
         pytest.param(_load(11.9), "ok", "OK", id="load-below-warn"),
         pytest.param(_load(12), "warning", "Load 1.5/CPU (>=1.5/CPU)", id="load-at-warn"),
+        # 11.97 / 8 = 1.49625: rounded to 1.5 before grading, so it is graded as shown.
+        pytest.param(
+            _load(11.97), "warning", "Load 1.5/CPU (>=1.5/CPU)", id="load-rounded-up-to-warn"
+        ),
         pytest.param(_load(20), "warning", "Load 2.5/CPU (>=1.5/CPU)", id="load-above-warn"),
         pytest.param(_load(24), "critical", "Load 3.0/CPU (>=3.0/CPU)", id="load-at-crit"),
         pytest.param(_load(32), "critical", "Load 4.0/CPU (>=3.0/CPU)", id="load-above-crit"),
@@ -211,6 +216,8 @@ _AT_THE_DEFAULTS = [
     *({**_SWAP, "swap_percent": v} for v in (79.9, 80, 94.9, 95)),
     *(_inodes(v) for v in (79.9, 80, 89.9, 90)),
     *(_load(v) for v in (11.9, 12, 23.9, 24)),
+    # The free-GB gate of a disk at the percentage warning threshold.
+    *({"disks": [{"mount": "/", "percent": 85, "free_gb": v}]} for v in (19.9, 20)),
 ]
 
 
@@ -255,9 +262,9 @@ def test_load_without_load_5m_is_not_rated():
 
 
 def test_a_report_without_the_new_fields_is_rated_as_before():
-    # An agent before report v3: load without cpu_count, no swap, no inodes. Status,
-    # message and metrics are those the checker gave before swap, inodes and load were
-    # rated; _details only gains the new keys, empty.
+    # An agent before report v3: load without cpu_count, no swap, no inodes, no free GB.
+    # Status, message and metrics are those the checker gave before swap, inodes, load and
+    # the free-GB gate; _details only gains the new keys, empty (no disk ignored).
     report = _report(
         cpu_percent=12.5,
         memory_percent=83,
@@ -291,7 +298,9 @@ def test_a_report_without_the_new_fields_is_rated_as_before():
                     "percent": 91,
                     "total_gb": 100,
                     "used_gb": 91,
+                    "free_gb": None,
                     "inodes_percent": None,
+                    "ignored": False,
                 }
             ],
             "temperatures": [{"sensor": "cpu", "temp_c": 50, "high": 80, "critical": 95}],
@@ -357,6 +366,203 @@ class TestNewMetricHysteresis:
         }
 
 
+# --- Disks: free-GB gate, thresholds per mount and ignored mounts (agent report v3) ---
+def _disk(percent, free_gb=None, mount="/", **extra):
+    disk = {"mount": mount, "fstype": "ext4", "percent": percent, **extra}
+    if free_gb is not None:
+        disk["free_gb"] = free_gb
+    return disk
+
+
+def _disks(*disks):
+    return {"resources": {"disks": list(disks)}}
+
+
+@pytest.mark.parametrize(
+    ("config", "disk", "status", "message"),
+    [
+        pytest.param({}, _disk(85, 600), "ok", "OK", id="600-gb-free"),
+        pytest.param(
+            {}, _disk(85, 15), "warning", "Disk / 85%, 15 GB free (>=85%)", id="15-gb-free"
+        ),
+        pytest.param(
+            {}, _disk(95, 15), "critical", "Disk / 95%, 15 GB free (>=95%)", id="15-gb-free-crit"
+        ),
+        pytest.param(
+            {}, _disk(85, 19.9), "warning", "Disk / 85%, 19.9 GB free (>=85%)", id="below-the-gate"
+        ),
+        pytest.param({}, _disk(85, 20), "ok", "OK", id="at-the-gate"),
+        pytest.param({}, _disk(84.9, 5), "ok", "OK", id="below-the-gate-and-below-warn"),
+        pytest.param(
+            {}, _disk(85), "warning", "Disk / 85% (>=85%)", id="older-agent-without-free-gb"
+        ),
+        pytest.param(
+            {"disk_min_free_gb": 0},
+            _disk(85, 600),
+            "warning",
+            "Disk / 85%, 600 GB free (>=85%)",
+            id="gate-off",
+        ),
+        pytest.param(
+            {"disk_min_free_gb": 1000},
+            _disk(85, 600),
+            "warning",
+            "Disk / 85%, 600 GB free (>=85%)",
+            id="higher-gate",
+        ),
+    ],
+)
+def test_the_percentage_alarm_counts_only_below_the_minimum_free_gb(config, disk, status, message):
+    assert CHECKER.evaluate(config, _disks(disk))[:2] == (status, message)
+
+
+def test_the_gate_leaves_the_inodes_rated():
+    status, message, _ = CHECKER.evaluate({}, _disks(_disk(85, 600, inodes_percent=95)))
+    assert (status, message) == ("critical", "Inodes / 95% (>=90%)")
+
+
+_OVERRIDES = {"/data": {"warn": 90, "crit": 98, "min_free_gb": 1000}}
+
+
+@pytest.mark.parametrize(
+    ("disk", "status", "message"),
+    [
+        pytest.param(_disk(89.9, 600, "/data"), "ok", "OK", id="below-the-mount-warn"),
+        pytest.param(
+            _disk(90, 600, "/data"),
+            "warning",
+            "Disk /data 90%, 600 GB free (>=90%)",
+            id="at-the-mount-warn",
+        ),
+        pytest.param(
+            _disk(97.9, 600, "/data"),
+            "warning",
+            "Disk /data 97.9%, 600 GB free (>=90%)",
+            id="below-the-mount-crit",
+        ),
+        pytest.param(
+            _disk(98, 600, "/data"),
+            "critical",
+            "Disk /data 98%, 600 GB free (>=98%)",
+            id="at-the-mount-crit",
+        ),
+        pytest.param(_disk(98, 1000, "/data"), "ok", "OK", id="at-the-mount-gate"),
+        # Every other mount keeps the global settings.
+        pytest.param(_disk(90, 600, "/"), "ok", "OK", id="other-mount-global-gate"),
+        pytest.param(
+            _disk(85, 15, "/"),
+            "warning",
+            "Disk / 85%, 15 GB free (>=85%)",
+            id="other-mount-global-warn",
+        ),
+    ],
+)
+def test_thresholds_and_minimum_free_gb_per_mount(disk, status, message):
+    config = {"disk_overrides": _OVERRIDES}
+    assert CHECKER.evaluate(config, _disks(disk))[:2] == (status, message)
+
+
+@pytest.mark.parametrize(
+    ("override", "disk", "status", "message"),
+    [
+        pytest.param(
+            {"min_free_gb": 0},
+            _disk(85, 600, "/data"),
+            "warning",
+            "Disk /data 85%, 600 GB free (>=85%)",
+            id="only-the-gate-off",
+        ),
+        pytest.param({"warn": 70}, _disk(75, 600, "/data"), "ok", "OK", id="only-warn-gated"),
+        pytest.param(
+            {"warn": 70},
+            _disk(75, 15, "/data"),
+            "warning",
+            "Disk /data 75%, 15 GB free (>=70%)",
+            id="only-warn",
+        ),
+    ],
+)
+def test_an_override_without_a_key_takes_the_global_setting(override, disk, status, message):
+    config = {"disk_overrides": {"/data": override}}
+    assert CHECKER.evaluate(config, _disks(disk))[:2] == (status, message)
+
+
+@pytest.mark.parametrize(
+    "disk", [_disk(85, 15), _disk(85, 600), _disk(95, 15)], ids=["warn", "gated", "crit"]
+)
+def test_an_override_key_stored_as_null_counts_as_unset(disk):
+    # The config schema takes null for each key of an override.
+    config = {"disk_overrides": {"/": {"warn": None, "crit": None, "min_free_gb": None}}}
+    assert CHECKER.evaluate(config, _disks(disk)) == CHECKER.evaluate({}, _disks(disk))
+
+
+def test_an_ignored_mount_is_rated_neither_on_usage_nor_on_inodes():
+    report = _disks(
+        _disk(99, 0.1, "/boot/efi", inodes_percent=99, total_gb=0.5, used_gb=0.4),
+        _disk(10, 50, "/", inodes_percent=10),
+    )
+    # Without ignore_mounts the same report is critical on both.
+    assert CHECKER.evaluate({}, report)[:2] == (
+        "critical",
+        "Disk /boot/efi 99%, 0.1 GB free (>=95%); Inodes /boot/efi 99% (>=90%)",
+    )
+    # Last round's levels of the mount do not count either.
+    prev = {"problems": {"disk:/boot/efi": "critical", "inode:/boot/efi": "critical"}}
+    status, message, metrics = CHECKER.evaluate({"ignore_mounts": ["/boot/efi"]}, report, prev)
+    assert (status, message, metrics["_details"]["problems"]) == ("ok", "OK", {})
+    # Still listed in _details, marked.
+    assert metrics["_details"]["disks"] == [
+        {
+            "mount": "/boot/efi",
+            "percent": 99,
+            "total_gb": 0.5,
+            "used_gb": 0.4,
+            "free_gb": 0.1,
+            "inodes_percent": 99,
+            "ignored": True,
+        },
+        {
+            "mount": "/",
+            "percent": 10,
+            "total_gb": None,
+            "used_gb": None,
+            "free_gb": 50,
+            "inodes_percent": 10,
+            "ignored": False,
+        },
+    ]
+
+
+@pytest.mark.parametrize("ignored", ["/boot", "/boot/", "/boot/*", "/BOOT/EFI", "/boot/efi "])
+def test_ignore_mounts_takes_exact_paths_only(ignored):
+    report = _disks(_disk(99, 0.1, "/boot/efi"))
+    status, _msg, metrics = CHECKER.evaluate({"ignore_mounts": [ignored]}, report)
+    assert status == "critical"
+    assert metrics["_details"]["disks"][0]["ignored"] is False
+
+
+class TestDiskGateHysteresis:
+    """The gate decides whether a disk's percentage is graded at all; its release band
+    applies only while it is graded."""
+
+    def test_warning_disk_whose_free_gb_rise_above_the_gate_is_ok(self):
+        prev = {"problems": {"disk:/": "warning"}}
+        status, message, metrics = CHECKER.evaluate({}, _disks(_disk(86, 25)), prev)
+        assert (status, message, metrics["_details"]["problems"]) == ("ok", "OK", {})
+
+    def test_warning_disk_below_the_gate_keeps_its_release_band(self):
+        # 80 % is below the entry threshold 85, in the release band down to 75.
+        prev = {"problems": {"disk:/": "warning"}}
+        status, message, _ = CHECKER.evaluate({}, _disks(_disk(80, 15)), prev)
+        assert (status, message) == ("warning", "Disk / 80%, 15 GB free (>=85%)")
+
+    def test_back_below_the_gate_the_entry_threshold_applies(self):
+        # The gated round remembered no level for the disk, so 80 % no longer holds it.
+        prev = {"problems": {"disk:/": "warning"}}
+        _status, _msg, metrics = CHECKER.evaluate({}, _disks(_disk(86, 25)), prev)
+        assert CHECKER.evaluate({}, _disks(_disk(80, 15)), metrics["_details"])[0] == "ok"
+
+
 # --- R-0517: a field of the wrong JSON type counts as missing ---
 # What a broken or hijacked agent can put where a number belongs. A regular agent sends
 # numbers; before R-0517 each of these raised in evaluate (the check froze on its old
@@ -406,6 +612,7 @@ def _resources() -> dict:
                 "percent": 90,
                 "total_gb": 100,
                 "used_gb": 90,
+                "free_gb": 10,
                 "inodes_percent": 85,
             }
         ],
@@ -442,6 +649,7 @@ def _without(path: tuple) -> dict:
         ("cpu_count",),
         ("load_5m",),
         ("disks", 0, "percent"),
+        ("disks", 0, "free_gb"),
         ("disks", 0, "inodes_percent"),
         ("temperatures", 0, "temp_c"),
     ],
@@ -453,6 +661,7 @@ def _without(path: tuple) -> dict:
         "cpu_count",
         "load_5m",
         "disk-percent",
+        "free_gb",
         "inodes_percent",
         "temp_c",
     ],
@@ -561,7 +770,15 @@ def test_detail_numbers_of_a_regular_report():
     assert (details["swap"], details["swap_total_mb"], details["swap_used_mb"]) == (85, 2048, 1741)
     assert (details["cpu_count"], details["load_per_cpu"]) == (8, 2.0)
     assert details["disks"] == [
-        {"mount": "/", "percent": 90, "total_gb": 100, "used_gb": 90, "inodes_percent": 85}
+        {
+            "mount": "/",
+            "percent": 90,
+            "total_gb": 100,
+            "used_gb": 90,
+            "free_gb": 10,
+            "inodes_percent": 85,
+            "ignored": False,
+        }
     ]
     assert details["temperatures"] == [{"sensor": "cpu", "temp_c": 85, "high": 80, "critical": 95}]
     assert_every_reader_reads(details)

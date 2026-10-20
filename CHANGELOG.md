@@ -966,6 +966,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Platten-Alarm nur unter Mindest-GB frei, je Mount einstellbar (R-0423):** Der Prozent-Alarm einer
+  Platte (`disk_warn`/`disk_crit`) in `agent_resources` zaehlt nur noch, wenn zusaetzlich weniger als
+  `disk_min_free_gb` frei sind (Default 20 GB, auch fuer bestehende Checks ohne den Schluessel; `0` schaltet den
+  Riegel ab); die Meldung nennt dann die freien GB, etwa „Disk / 85%, 15 GB free (>=85%)“. Steigen die freien GB
+  ueber den Riegel, ist die Platte frei, auch aus der Hysterese heraus. Die freien GB meldet der Agent ab
+  Report-Version 3, unter Linux und Windows; fuer aeltere Agents zaehlt wie bisher nur der Prozentwert. Je Mount setzt
+  `disk_overrides` eigene `warn`, `crit` und `min_free_gb`; ein Mount aus `ignore_mounts` wird weder auf Belegung noch
+  auf Inodes bewertet und steht in den Check-Details mit `ignored: true`. Beide nehmen exakte Mount-Pfade. Die
+  Check-Details tragen je Platte dazu `free_gb`. Doku: Monitoring-Administration (DE+EN).
 - **Agent: CPU als Mittel seit dem letzten Report (R-0423):** `cpu_percent` ist jetzt der Anteil belegter CPU-Zeit
   seit dem letzten erfolgreich gesendeten Report statt einer 1-s-Stichprobe zu Beginn des Laufs; unter Linux mittelt
   der Agent damit ueber die 5 Minuten zwischen zwei Laeufen. Den Zaehlerstand dafuer legt er in `.report-state.json`

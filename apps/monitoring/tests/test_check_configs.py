@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 
 from app.builtin_templates import seed_builtin_templates
-from app.check_configs import CONFIG_MODELS, _TempOverride, validate_check_config
+from app.check_configs import CONFIG_MODELS, _DiskOverride, _TempOverride, validate_check_config
 from app.models import MonitorCheck, MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
 from app.template_sync import record_override_baseline
@@ -225,6 +225,7 @@ def _number_fields() -> list[tuple[str, tuple[str, ...], FieldInfo]]:
     derived from the models so that a new field without strict=True turns red."""
     owners = [(t, (), m) for t, m in CONFIG_MODELS.items()]
     owners.append(("agent_resources", ("temp_overrides", "nvme"), _TempOverride))
+    owners.append(("agent_resources", ("disk_overrides", "/data"), _DiskOverride))
     return [
         (t, (*path, key), field)
         for t, path, model in owners
@@ -281,6 +282,7 @@ class TestStrictNumberFields:
             "agent_ping",
             "agent_resources",
             "agent_resources.temp_overrides",
+            "agent_resources.disk_overrides",
             "smart_health",
             "proxmox_backup",
             "zfs_health",
@@ -289,6 +291,7 @@ class TestStrictNumberFields:
         int_fields = {(t, path) for t, path, _ in _INT_FIELDS}
         assert {("tcp", ("port",)), ("http", ("expected_status",))} <= int_fields <= found
         assert ("agent_resources", ("temp_overrides", "nvme", "warn")) in found
+        assert ("agent_resources", ("disk_overrides", "/data", "min_free_gb")) in found
 
     @pytest.mark.parametrize("value", ["85", "8.5e1", True], ids=repr)
     @pytest.mark.parametrize(("check_type", "path", "field"), _NUMBER_FIELDS, ids=_NUMBER_FIELD_IDS)
@@ -542,6 +545,81 @@ class TestAgentResourcesV3Thresholds:
     def test_string_and_bool_are_rejected(self, key, value):
         with pytest.raises(ValueError, match=rf"\s{key}: Input should be a valid number"):
             validate_check_config("agent_resources", {key: value})
+
+
+def _override(**keys) -> dict:
+    return {"disk_overrides": {"/data": keys}}
+
+
+class TestAgentResourcesDiskSettings:
+    """The free-GB gate and the settings per mount: disk_min_free_gb from 0 to 1 000 000,
+    ignore_mounts a list of paths, disk_overrides {mount: {warn, crit, min_free_gb}} with
+    every key optional and nothing else. Strings, bools and non-finite numbers in the
+    number keys are covered with every number field in TestStrictNumberFields."""
+
+    def test_defaults(self):
+        config = CONFIG_MODELS["agent_resources"]()
+        assert config.disk_min_free_gb == 20
+        assert (config.ignore_mounts, config.disk_overrides) == ([], {})
+
+    @pytest.mark.parametrize("value", [0, 0.5, 20, 1_000_000])
+    def test_min_free_gb_bounds_are_accepted(self, value):
+        validate_check_config("agent_resources", {"disk_min_free_gb": value})
+        validate_check_config("agent_resources", _override(min_free_gb=value))
+
+    @pytest.mark.parametrize("value", [-0.1, 1_000_000.1])
+    def test_min_free_gb_outside_the_bounds_is_rejected(self, value):
+        pattern = r"Input should be (greater|less) than or equal to"
+        with pytest.raises(ValueError, match=rf"\sdisk_min_free_gb: {pattern}"):
+            validate_check_config("agent_resources", {"disk_min_free_gb": value})
+        with pytest.raises(ValueError, match=rf"\sdisk_overrides\./data\.min_free_gb: {pattern}"):
+            validate_check_config("agent_resources", _override(min_free_gb=value))
+
+    @pytest.mark.parametrize("value", [0, 50.5, 100])
+    @pytest.mark.parametrize("key", ["warn", "crit"])
+    def test_override_thresholds_within_the_bounds_are_accepted(self, key, value):
+        validate_check_config("agent_resources", _override(**{key: value}))
+
+    @pytest.mark.parametrize("value", [-0.1, 100.1])
+    @pytest.mark.parametrize("key", ["warn", "crit"])
+    def test_override_thresholds_outside_the_bounds_are_rejected(self, key, value):
+        with pytest.raises(
+            ValueError,
+            match=rf"\sdisk_overrides\./data\.{key}: Input should be (greater|less) than or equal",
+        ):
+            validate_check_config("agent_resources", _override(**{key: value}))
+
+    @pytest.mark.parametrize(
+        "override",
+        [{}, {"warn": 90}, {"warn": 90, "crit": 95, "min_free_gb": 100}, {"warn": None}],
+        ids=["empty", "warn", "all", "null"],
+    )
+    def test_every_override_key_is_optional(self, override):
+        validate_check_config("agent_resources", {"disk_overrides": {"/data": override}})
+
+    def test_unknown_key_in_an_override_is_rejected_with_the_key_named(self):
+        with pytest.raises(ValueError, match=r"\sdisk_overrides\./data\.wran: Extra inputs"):
+            validate_check_config("agent_resources", _override(warn=90, wran=95))
+
+    @pytest.mark.parametrize(
+        "value", [[], "x", {"/data": 90}, {"/data": [90]}], ids=["list", "str", "number", "list-in"]
+    )
+    def test_disk_overrides_that_are_no_objects_are_rejected(self, value):
+        with pytest.raises(ValueError, match=r"\sdisk_overrides"):
+            validate_check_config("agent_resources", {"disk_overrides": value})
+
+    def test_ignore_mounts_takes_a_list_of_paths(self):
+        validate_check_config("agent_resources", {"ignore_mounts": []})
+        validate_check_config("agent_resources", {"ignore_mounts": ["/boot/efi", "/mnt/backup"]})
+
+    @pytest.mark.parametrize(
+        "value",
+        ["/boot/efi", ["/", 5], ["/", None], {"/": True}],
+        ids=["str", "int", "null", "dict"],
+    )
+    def test_ignore_mounts_that_is_no_list_of_strings_is_rejected(self, value):
+        with pytest.raises(ValueError, match=r"\signore_mounts"):
+            validate_check_config("agent_resources", {"ignore_mounts": value})
 
 
 class TestAlertOnUnavailableTemplates:
