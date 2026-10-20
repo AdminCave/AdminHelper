@@ -104,8 +104,10 @@ Beweis: main@5481b316 · Probe, dreimal identisch: `format_line("m", {"a": "b"},
 Semantik: docs/developer/monitoring.html:227 — „Der Service schreibt im InfluxDB-Line-Protocol über `core/victoria.py`“, zu Ganzzahl-Grenzen keine Stelle; die VictoriaMetrics-Doku (docs.victoriametrics.com/victoriametrics/integrations/influxdb/) nennt sie auch nicht, sie sagt zu ungültigen Zeilen nur für den Stream-Modus „Invalid lines are skipped and logged.“, den der Dienst nicht nutzt; das Verhalten im Batch-Modus belegen die Probe oben und der Quelltext v1.144.0 (`lib/protoparser/influx/parser.go` `parseFieldValue`: ein Wert mit `i` geht durch `fastfloat.ParseInt64`; `lib/protoparser/influx/stream/streamparser.go`: im Batch-Modus ist `skipInvalidLines` false, ein Fehler beendet den Request, bevor die Zeilen des Bodys übergeben werden)
 HEAD: 5481b316
 
-### T8 — Push-Metriken: ein Wert außerhalb des float-Bereichs fällt allein weg  [ ]
+### T8 — Push-Metriken: ein Wert außerhalb des float-Bereichs fällt allein weg  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @cde47d8f 2026-10-20T07:15:58+02:00
+Review: approve (.ah-out/review/monitoring-hardening/T8.verdict.json)
 Änderung: `_num` (`routers/agent.py:35-54`) gibt für eine Ganzzahl außerhalb des float-Bereichs `None` zurück wie für `inf` (heute `OverflowError` aus `math.isfinite`, `:47`). Heute fängt das `except` der Metrik-Extraktion (`:173-178`) den Fehler und verwirft alle Zeilen des Reports, auch die gültigen. Tests zuerst rot (dreimal identisch auf HEAD): `test_num_coerces_and_drops_non_metric_values` (`:224-247`) bekommt `10**400` → `None` und `2**63` → `2**63`; neu neben `test_report_writes_only_filtered_and_sanitized_lines` (`:250`): ein Report mit `cpu_percent` gleich `10**400`, `memory_percent` gleich 50 und `uptime_seconds` gleich `2**63` → `victoria.write` bekommt die Zeilen für RAM und Uptime, die Uptime als Gleitkommazahl ohne `i` (T7), keine für CPU; die Antwort ist 200 mit `metricsWritten` 2.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py
 Doku: keine (die Regel steht nach T7 im Abschnitt VictoriaMetrics `:227`)
