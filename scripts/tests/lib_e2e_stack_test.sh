@@ -82,6 +82,21 @@ HTTPS_PORT="$(envv ITEST_HTTPS_PORT)"; PG_PW="$(envv POSTGRES_PASSWORD)"
   && ok "both URLs reach a child process" \
   || bad "child sees DB='$(val CHILD_DB)' REDIS='$(val CHILD_REDIS)'"
 
+# ── the workspace the desktop suites open ────────────────────────────────────
+# The suites seed the settings.json from before workspaces, which the app moves into
+# the workspace "standard"; wdio.conf.js opens the one AH_E2E_WORKSPACE names. Exported
+# on source, as wdio runs in a child under dbus-run-session, and over a value left in
+# the caller's shell: no other workspace is there to open.
+for outside in "" other-ws; do
+  WS=$(env -u AH_E2E_WORKSPACE ${outside:+"AH_E2E_WORKSPACE=$outside"} bash -c '
+    . "$1/scripts/tests/lib_e2e_stack.sh"
+    bash -c "printf %s \"\${AH_E2E_WORKSPACE-unset}\""
+  ' _ "$REPO_ROOT" 2>&1)
+  [ "$WS" = standard ] \
+    && ok "outside ${outside:-unset}: a child of a shell that sourced the lib gets AH_E2E_WORKSPACE=standard" \
+    || bad "outside ${outside:-unset}: the child sees AH_E2E_WORKSPACE '$WS'"
+done
+
 # ── the ports ────────────────────────────────────────────────────────────────
 # Disjoint ranges: the data plane is 21000-38999, so no PID can make one run's
 # Postgres port another run's gateway port. Both new ranges stay below Linux's
@@ -297,6 +312,57 @@ login_twice "401, then 200" '{"detail":"Ungültige Zugangsdaten"}' 401 '{"access
 [ "$RC" = 0 ] && [ "$JWT_OUT" = "$TOK" ] && [ -z "$ERR" ] \
   && ok "401, then 200: E2E_JWT is the token, E2E_LOGIN_ERR empty, rc 0" \
   || bad "401, then 200: rc=$RC JWT='$JWT_OUT' ERR='$ERR'"
+
+# ── box_desktopbox.sh: the workspace and its seed ────────────────────────────
+# The box script sources no lib and exports AH_E2E_WORKSPACE itself. iter.sh calls it
+# again on the same box, where $ROOT/.dt-xdg keeps what the run before left, and the app
+# moves the seeded settings.json only while workspaces.json is missing. It runs here in
+# a copy of its tree: bootstrap, npm and dbus-run-session are stubs. The dbus stub logs
+# what the spec would find, then leaves what the app's migration leaves.
+BOX="$WORK/box"; BOX_DATA="$BOX/.dt-xdg/com.admincave.adminhelper"
+mkdir -p "$BOX/scripts/tests" "$BOX/scripts/vm" "$BOX/apps/desktop/ui" "$BOX/apps/desktop/e2e" \
+  "$WORK/home" "$WORK/rm-fails"
+cp "$REPO_ROOT/scripts/tests/box_desktopbox.sh" "$BOX/scripts/tests/"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$BOX/scripts/vm/bootstrap_linux.sh"
+cat > "$SHIM/dbus-run-session" <<'EOF'
+#!/usr/bin/env bash
+d="$XDG_DATA_HOME/com.admincave.adminhelper"; left=""
+for f in workspaces.json workspaces prefs.json; do [ -e "$d/$f" ] && left+=" $f"; done
+printf 'ws=%s left=%s settings=%s\n' "${AH_E2E_WORKSPACE-unset}" "${left# }" \
+  "$(cat "$d/settings.json" 2>/dev/null)" >> "$STUB_LOG/dbus.log"
+mkdir -p "$d/workspaces/standard"
+for f in workspaces.json workspaces/standard/workspace.json prefs.json; do echo '{}' > "$d/$f"; done
+EOF
+printf '#!/usr/bin/env bash\nexit 1\n' > "$WORK/rm-fails/rm"
+chmod +x "$SHIM/dbus-run-session" "$WORK/rm-fails/rm"
+: > "$STUB_LOG/dbus.log"
+box() {  # box <extra PATH dir> — one call as iter.sh makes it; sets RC
+  env -u AH_E2E_WORKSPACE -u AH_DESKTOP_ENROLL_TOKENS HOME="$WORK/home" PATH="$1$SHIM:$PATH" \
+    bash "$BOX/scripts/tests/box_desktopbox.sh" 192.0.2.10 pw key one.live.js > "$WORK/box.out" 2>&1
+  RC=$?
+}
+SEED='{"mode": "server", "allowSelfSignedCerts": true}'
+SPEC_SAW="ws=standard left= settings=$SEED"
+
+box ""
+[ "$RC" = 0 ] && grep -q '^DESKTOP_ALL_OK' "$WORK/box.out" \
+  && [ "$(sed -n 1p "$STUB_LOG/dbus.log")" = "$SPEC_SAW" ] \
+  && ok "box, first call: the spec opens standard on the seeded settings.json alone" \
+  || bad "box, first call: rc=$RC, spec saw '$(sed -n 1p "$STUB_LOG/dbus.log")': $(cat "$WORK/box.out")"
+
+echo '{}' > "$BOX_DATA/port-registry.json"
+box ""
+[ "$RC" = 0 ] && [ "$(sed -n 2p "$STUB_LOG/dbus.log")" = "$SPEC_SAW" ] \
+  && ok "box, second call on the same box: no workspaces.json, workspaces or prefs.json before the spec" \
+  || bad "box, second call: rc=$RC, spec saw '$(sed -n 2p "$STUB_LOG/dbus.log")': $(cat "$WORK/box.out")"
+[ -f "$BOX_DATA/port-registry.json" ] \
+  && ok "box: the other files of the app data dir stay" || bad "box: port-registry.json is gone"
+
+box "$WORK/rm-fails:"
+[ "$RC" = 1 ] && grep -q 'could not remove the workspaces of an earlier run' "$WORK/box.out" \
+  && [ "$(wc -l < "$STUB_LOG/dbus.log")" = 2 ] \
+  && ok "box: a failing rm ends the script before any spec (rc 1)" \
+  || bad "box, failing rm: rc=$RC, $(wc -l < "$STUB_LOG/dbus.log") spec call(s): $(cat "$WORK/box.out")"
 
 echo ""
 echo "lib_e2e_stack_test: $PASS passed, $FAIL failed"

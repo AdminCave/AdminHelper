@@ -32,6 +32,11 @@ e2e_api() { python3 "$_E2E_API" "$E2E_SERVER_URL" "$@"; }
 # dbus/keyring/xvfb wrapper dedup is a separate, riskier refactor (2.40).
 export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
 
+# The workspace wdio.conf.js opens (test/lib/app-args.js; empty opens the launcher). The
+# desktop suites seed the settings.json of a version before workspaces, which the app moves
+# into the workspace "standard" at its first start (R-0431); no other id is there to open.
+export AH_E2E_WORKSPACE=standard
+
 # Populated by e2e_init.
 E2E_WORK=""
 E2E_PROJECT=""

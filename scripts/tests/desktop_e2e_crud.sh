@@ -43,8 +43,12 @@ e2e_api "$TOKEN" config e2e-frps localhost 7000 >/dev/null || { bad "seed FRP co
 ok "seeded a server + FRP config"
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
-SETTINGS_JSON="$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
-mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
+APP_DATA="$XDG_DATA_HOME/com.admincave.adminhelper"
+SETTINGS_JSON="$APP_DATA/settings.json"
+# Where the app keeps the settings of the workspace the specs open (AH_E2E_WORKSPACE,
+# lib_e2e_stack.sh) once it has moved settings.json there at its first start (R-0431).
+STANDARD_JSON="$APP_DATA/workspaces/standard/workspace.json"
+mkdir -p "$APP_DATA"
 
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
 
@@ -60,11 +64,15 @@ dbus-run-session -- bash -c '
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/enroll-trust-dialog.live.js
 ' && ok "trust-dialog spec passed" || bad "trust-dialog spec failed"
-grep -Eq '"allowSelfSignedCerts": ?true' "$SETTINGS_JSON" \
+grep -Eq '"allowSelfSignedCerts": ?true' "$STANDARD_JSON" \
     && ok "accepting the dialog persisted allowSelfSignedCerts=true" \
-    || bad "settings.json does not carry the persisted opt-in"
+    || bad "workspaces/standard/workspace.json does not carry the persisted opt-in"
 
-# Known-good seed for the remaining specs, independent of the outcome above.
+# Known-good seed for the remaining specs, independent of the outcome above. The app
+# moves settings.json only while workspaces.json is missing; without these the specs
+# would open what the trust-dialog spec left.
+rm -rf -- "$APP_DATA/workspaces.json" "$APP_DATA/workspaces" "$APP_DATA/prefs.json" \
+    || { bad "could not remove the workspaces of the trust-dialog spec"; exit 1; }
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$SETTINGS_JSON"
 
 echo "[e2e-crud] running the CRUD specs under xvfb..."

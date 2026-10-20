@@ -25,8 +25,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T10
 
-### T27 — Orchestratoren starten den Standard-Workspace  [ ]
+### T27 — Orchestratoren starten den Standard-Workspace  [x]
 Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/tests/box_desktopbox.sh, scripts/tests/desktop_e2e_crud.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @dc0319f4 2026-10-20T13:21:56+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T27.verdict.json)
 Änderung: `lib_e2e_stack.sh` exportiert neben den WebKit-Variablen (`:33`) `AH_E2E_WORKSPACE=standard` (alle `desktop_e2e_*.sh` sourcen sie), `box_desktopbox.sh` (`:41-43`) ebenso; das Seeden der alten `settings.json` bleibt und testet damit die Migration. `desktop_e2e_crud.sh` (`:45-84`): der Nachweis der Vertrauens-Zustimmung liest `workspaces/standard/workspace.json` statt `settings.json`; vor dem erneuten Seeden löscht das Skript `workspaces.json`, `workspaces/` und `prefs.json` unter `$XDG_DATA_HOME/com.admincave.adminhelper` mit vollem Pfad, damit die Migration erneut läuft. `lib_e2e_stack_test.sh` prüft den Export.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Test)

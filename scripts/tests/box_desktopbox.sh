@@ -39,8 +39,16 @@ echo "[desktopbox] npm ci (ui + e2e)"
 
 echo "[desktopbox] point the app at the REMOTE server https://$SRV_IP (server mode)"
 XDG_DATA_HOME="$ROOT/.dt-xdg"; export XDG_DATA_HOME
-mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
-echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
+APP_DATA="$XDG_DATA_HOME/com.admincave.adminhelper"
+mkdir -p "$APP_DATA"
+# The app moves settings.json into the workspace "standard" only while workspaces.json is
+# missing (R-0431). iter.sh calls this script again on the same box: without these, the
+# seed would change nothing and the specs would open what the run before left.
+rm -rf -- "$APP_DATA/workspaces.json" "$APP_DATA/workspaces" "$APP_DATA/prefs.json" \
+  || { echo "[desktopbox] could not remove the workspaces of an earlier run"; exit 1; }
+echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$APP_DATA/settings.json"
+# wdio.conf.js opens the workspace named here, as lib_e2e_stack.sh does it.
+export AH_E2E_WORKSPACE=standard
 
 export AH_SERVER_URL="https://$SRV_IP" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$ADMIN_PW" \
        MONITOR_API_KEY="$MONITOR_KEY" E2E_DIR
