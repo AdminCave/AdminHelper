@@ -24,6 +24,8 @@ from app.core.auth import require_agent
 from app.core.database import get_db
 from app.models import Base, MonitorCheck, MonitorState
 
+from ._helpers import assert_every_reader_reads
+
 
 def _full_report() -> dict:
     """Report with the full inventory (hash changed / hourly full send)."""
@@ -130,6 +132,54 @@ def test_auto_mode_counts_land_in_details():
     assert status == "ok"
     assert metrics["_details"]["active_count"] == 41
     assert metrics["_details"]["total"] == 63
+
+
+# _details goes as it is into the answers of GET /status and GET /checks, which the desktop reads
+# as a whole: a 400-digit integer there is no number every JSON reader takes, a 9000-character
+# unit name no text it should have to carry.
+@pytest.mark.parametrize(
+    "counts",
+    [{"active": 41, "total": 10**400}, {"active": 10**400, "total": 10**400}],
+    ids=["total-400-digits", "both-400-digits"],
+)
+def test_auto_mode_counts_beyond_float_range_are_ignored(counts):
+    systemd = {"failed": [], "enabled_inactive": [], "counts": counts}
+    status, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, {"systemd": systemd})
+    assert status == "ok"
+    assert "active_count" not in metrics["_details"]
+    assert "total" not in metrics["_details"]
+    assert_every_reader_reads(metrics["_details"])
+
+
+_LONG_UNIT = "unit\n" * 1800  # 9000 characters
+_LONG_UNIT_SHOWN = ("unit " * 1800)[:499] + "\u2026"
+
+
+@pytest.mark.parametrize(
+    "key, status, prefix",
+    [("failed", "critical", "Failed"), ("enabled_inactive", "warning", "Inactive (autostart)")],
+)
+def test_auto_mode_a_long_unit_name_goes_into_details_on_one_line_of_500_characters(
+    key, status, prefix
+):
+    systemd = {"failed": [], "enabled_inactive": [], key: [_LONG_UNIT, "cron.service"]}
+    result = ServiceProcessChecker().evaluate({"mode": "auto"}, {"systemd": systemd})
+    assert result[:2] == (status, f"{prefix}: {_LONG_UNIT_SHOWN}, cron.service")
+    assert result[2]["_details"][key] == [_LONG_UNIT_SHOWN, "cron.service"]
+    assert result[2][f"services_{key}"] == 2
+    assert_every_reader_reads(result[2]["_details"])
+
+
+def test_auto_mode_the_ignore_list_compares_the_full_unit_name():
+    name = _LONG_UNIT.strip()  # _parse_ignore strips the pattern
+    systemd = {"failed": [name], "enabled_inactive": [name]}
+    checker = ServiceProcessChecker()
+    ignored = checker.evaluate({"mode": "auto", "ignore": [name]}, {"systemd": systemd})
+    assert ignored[:2] == ("ok", "All services OK")
+    shown = cap_agent_text(name)
+    status, _, metrics = checker.evaluate({"mode": "auto", "ignore": [shown]}, {"systemd": systemd})
+    assert status == "critical"
+    assert metrics["_details"]["failed"] == [shown]
 
 
 @pytest.mark.parametrize(

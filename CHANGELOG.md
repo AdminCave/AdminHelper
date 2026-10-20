@@ -355,6 +355,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: die Listen bleiben lesbar, wenn ein gespeicherter Wert keine endliche Zahl ist:** Stand in einer
+  Check-Konfiguration, in den Details eines Check-Zustands, in der Kanal-Konfiguration einer Alert-Regel oder in einer
+  Definition eines Templates `NaN`, `Infinity` oder eine Zahl ausserhalb des Gleitkomma-Bereichs, scheiterte die ganze
+  Antwort von `GET /status`, `GET /checks`, `GET /alerts`, `GET /templates` bzw. des Update-Vergleichs eines
+  Standard-Templates (`GET /templates/{id}/builtin-update`) mit einem Serverfehler, oder der Desktop konnte sie nicht
+  lesen. Jetzt erscheint ein solcher Wert dort als `null`; gespeichert bleibt er, wie er ist.
+  Doku: Entwickler-Doku Monitoring (DE+EN).
 - **Desktop: die Sitzung haelt laenger als acht Stunden, und eine abgelaufene fuehrt zum Login (R-0430):** Nach
   Ablauf des Access-Tokens (acht Stunden) scheiterten Infrastruktur, Monitoring, Ansible und die Glocke, weil nur ein
   Teil der Anfragen die Sitzung erneuerte. Jetzt erneuert der Desktop sie fuer alle Anfragen an einer Stelle und nur
@@ -956,6 +963,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   folgen dem neuesten Tag, auch einem Beta. Wer nur Stable will, pinnt die Version (`:X.Y.Z`); `install.sh` ohne
   lokalen Checkout und `update.sh` tun das bereits mit der Version aus `releases/latest`, die nie ein Pre-release
   ist. Doku: Entwickler-Doku CI/CD (DE+EN).
+- **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
+  Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
+  Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und
+  999999999 liegen. Das gilt fuer Checks und fuer die Check-Definitionen eines Templates; gespeicherte Konfigurationen
+  bleiben, wie sie sind. Scheitert eine Anfrage an den Monitoring-Dienst an der Pruefung und traegt ihr Body
+  `Infinity` oder `NaN`, antwortet der Dienst jetzt mit einem 422, in dem der Wert als `null` steht, statt mit einem
+  Serverfehler. Doku: Monitoring-Administration (DE+EN).
+- **Monitoring: Versandfehler im Alert-Log mit festem Grund:** Scheitert der Versand eines Webhooks oder einer Mail,
+  speichert das Alert-Log statt des Textes der Ausnahme einen festen englischen Grund je Fehlerart, etwa „Webhook
+  request timed out“, „Webhook connection failed“, „SMTP TLS failed“, „SMTP authentication failed (535)“ oder „SMTP
+  server refused the message“; andere Fehler nennen nur ihre Klasse, etwa „SMTP error (SMTPServerDisconnected)“ oder
+  „Dispatch failed (ValueError)“ fuer eine Regel, die sich nicht verarbeiten laesst. Die Einzelheiten, etwa die
+  Antwort des Mail-Servers, stehen weiter im Log des Monitoring-Dienstes; dessen Zeilen zu einem gescheiterten Webhook
+  oder einer gescheiterten Mail sind jetzt englisch und nennen den Check, beim Webhook auch den Host des Ziels.
+  Gespeicherte Eintraege behalten ihren Text. Doku: Monitoring-Administration (DE+EN).
 - **Server: Datenbankfehler eines Hooks nur mit ihrem Typ:** Bricht ein Hook mit einem Fehler der
   Datenbankanbindung ab (`sqlalchemy.exc.SQLAlchemyError` oder `psycopg.Error`), nennen `error` und die Log-Zeile
   `Fehler: …` in `logs` nur den Typ des Fehlers, etwa `OperationalError`, nicht mehr den Text des Treibers. Jeder

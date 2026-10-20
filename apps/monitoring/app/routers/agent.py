@@ -23,7 +23,7 @@ from app.core.auth import require_agent
 from app.core.bounds import _find_nul
 from app.core.database import get_db
 from app.core.time import utcnow_naive
-from app.core.victoria import format_line, safe_metric_part, victoria
+from app.core.victoria import _finite, format_line, safe_metric_part, victoria
 from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
 from app.template_suggestions import store_host_facts
 
@@ -40,11 +40,12 @@ def _num(v):
     app/core/victoria.py — and would otherwise raise/500). Numeric strings are
     accepted for leniency; anything else (incl. bool) is dropped. inf/nan are
     dropped too: written verbatim they poison the whole VictoriaMetrics batch.
+    So is an int beyond the float range, which format_line rejects as well.
     """
     if isinstance(v, bool):
         return None
     if isinstance(v, (int, float)):
-        return v if math.isfinite(v) else None
+        return v if _finite(v) else None
     if isinstance(v, str):
         try:
             num = float(v)

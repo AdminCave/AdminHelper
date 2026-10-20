@@ -14,6 +14,8 @@ import pytest
 from app.checkers import agent
 from app.checkers.agent import AgentResourcesChecker
 
+from ._helpers import assert_every_reader_reads
+
 CHECKER = AgentResourcesChecker()
 T = {
     "cpu_warn": 80,
@@ -166,10 +168,13 @@ def test_agent_number_is_none_for_anything_else(value):
 
 
 def _resources() -> dict:
-    """Every rated field set, so dropping one still leaves resources to rate."""
+    """Every rated field and every number of _details set, so dropping one still leaves
+    resources to rate."""
     return {
         "cpu_percent": 90,
         "memory_percent": 85,
+        "memory_total_mb": 16000,
+        "memory_used_mb": 13600,
         "disks": [{"mount": "/", "fstype": "ext4", "percent": 90, "total_gb": 100, "used_gb": 90}],
         "temperatures": [{"sensor": "cpu", "temp_c": 85, "high": 80, "critical": 95}],
     }
@@ -253,3 +258,52 @@ def test_at_most_500_disks_and_sensors_are_rated():
     assert status == "ok"
     assert len(metrics["_details"]["disks"]) == 500
     assert len(metrics["_details"]["temperatures"]) == 500
+
+
+# --- Numbers that only go into _details ---
+# _details goes as it is into the answers of GET /status and GET /checks, which the desktop reads
+# as a whole: NaN there fails the answer (JSONResponse writes with allow_nan=False), and a 400-digit
+# integer is no number every JSON reader takes. The RAM sums, disk sizes and sensor limits count
+# only as a JSON number, like the rated fields; anything else shows as without the field, null for
+# the RAM sums and disk sizes, 0 for the sensor limits.
+_DETAIL_NUMBERS = [
+    pytest.param(("memory_total_mb",), None, id="memory_total_mb"),
+    pytest.param(("memory_used_mb",), None, id="memory_used_mb"),
+    pytest.param(("disks", 0, "total_gb"), None, id="total_gb"),
+    pytest.param(("disks", 0, "used_gb"), None, id="used_gb"),
+    pytest.param(("temperatures", 0, "high"), 0, id="high"),
+    pytest.param(("temperatures", 0, "critical"), 0, id="critical"),
+]
+
+
+def _detail(details: dict, path: tuple):
+    """The value at path in _details, which nests these fields as resources does."""
+    for key in path:
+        details = details[key]
+    return details
+
+
+def _without_details(metrics: dict) -> dict:
+    return {key: value for key, value in metrics.items() if key != "_details"}
+
+
+@pytest.mark.parametrize("value", _NOT_NUMBERS)
+@pytest.mark.parametrize(("path", "shown"), _DETAIL_NUMBERS)
+def test_a_detail_number_that_is_no_json_number_shows_as_without_the_field(path, shown, value):
+    status, msg, metrics = CHECKER.evaluate(T, {"resources": _with(path, value)})
+    assert (status, msg, metrics) == CHECKER.evaluate(T, {"resources": _without(path)})
+    assert _detail(metrics["_details"], path) == shown
+    # Only _details changes: status, message and metrics are those of the regular report.
+    regular_status, regular_msg, regular = CHECKER.evaluate(T, {"resources": _resources()})
+    assert (status, msg) == (regular_status, regular_msg)
+    assert _without_details(metrics) == _without_details(regular)
+    assert_every_reader_reads(metrics["_details"])
+
+
+def test_detail_numbers_of_a_regular_report():
+    _status, _msg, metrics = CHECKER.evaluate(T, {"resources": _resources()})
+    details = metrics["_details"]
+    assert (details["memory_total_mb"], details["memory_used_mb"]) == (16000, 13600)
+    assert details["disks"] == [{"mount": "/", "percent": 90, "total_gb": 100, "used_gb": 90}]
+    assert details["temperatures"] == [{"sensor": "cpu", "temp_c": 85, "high": 80, "critical": 95}]
+    assert_every_reader_reads(details)
