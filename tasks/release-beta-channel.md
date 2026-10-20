@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Release: Beta ohne Suffix-Tag — Task-Ledger
-Status: bereit · Branch: feature/release-beta-channel · Review: am Ende
+Status: erledigt · Branch: feature/release-beta-channel · Review: am Ende
 Spec: Roadmap R-0014
 Heavy: none — Regeltext, Doku und die Release-Workflows (`docker.yml`, `release.yml`, T3); ein Stack- oder Install-Lauf beweist nichts davon, der erste echte Beweis ist der erste Beta-Tag und sein Wechsel auf Stable
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
