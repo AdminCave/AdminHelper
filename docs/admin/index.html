@@ -83,7 +83,7 @@
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
               <h3>Desktop-Client</h3>
-              <p>Tauri-App für Linux, Windows und macOS. Öffnet RDP-, SSH- oder HTTP-Sessions inklusive FRP-Tunnel und ist im Server-Modus zugleich das operative Cockpit: Server-Inventar, Verbindungen, Tunnel, Monitoring und Ansible werden hier verwaltet.</p>
+              <p>Tauri-App für Linux, Windows und macOS. Öffnet RDP-, SSH- oder HTTP-Sessions inklusive FRP-Tunnel und ist in einem Server-Workspace zugleich das operative Cockpit: Server-Inventar, Verbindungen, Tunnel, Monitoring und Ansible werden hier verwaltet.</p>
             </div>
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg></div>
@@ -97,7 +97,7 @@
             <li><a href="./installation.html">Server per Docker-Compose installieren und erstmalig initialisieren</a></li>
             <li><a href="./benutzer.html">Admin-Benutzer erstellen, API-Keys verteilen, Server-Zuweisung pflegen</a> (Web-Admin-Panel)</li>
             <li><a href="./agent-deployment.html">Agent auf neuen Servern via apt/dnf oder <code>.exe</code> ausrollen</a></li>
-            <li><a href="./monitoring.html">Monitoring-Checks definieren und Alerts prüfen</a> (Desktop-Client, Server-Modus)</li>
+            <li><a href="./monitoring.html">Monitoring-Checks definieren und Alerts prüfen</a> (Desktop-Client, Server-Workspace)</li>
             <li><a href="./frp-tunnel.html">FRP-Tunnel für einen Server einrichten</a> (Desktop-Client; frps-Server-Config im Web-Panel)</li>
             <li><a href="./troubleshooting.html">Probleme diagnostizieren und Logs lesen</a></li>
           </ul>
@@ -107,10 +107,21 @@
             <div>
               <div class="callout-title">Web-Admin-Panel vs. Desktop-Client (seit v0.32.0)</div>
               <p>
-                Die operative Verwaltung ist in den <strong>Desktop-Client</strong> umgezogen: Server-Inventar, Verbindungen, FRP-Tunnel, Monitoring-Checks und Ansible-Playbooks werden im server-zentrischen <em>„Infrastruktur"</em>-Hub (nur im Server-Modus) gepflegt. Das <strong>Web-Admin-Panel</strong> ist jetzt reine Instanz-Verwaltung: Benutzer (Standard-Seite nach Login), API-Keys, Hooks, FRP-<em>Server</em>-Konfiguration und Login. Die User&harr;Server-Zuweisung bleibt im Web (im Benutzer-Dialog).
+                Die operative Verwaltung ist in den <strong>Desktop-Client</strong> umgezogen: Server-Inventar, Verbindungen, FRP-Tunnel, Monitoring-Checks und Ansible-Playbooks werden im server-zentrischen <em>„Infrastruktur"</em>-Hub (nur in einem Server-Workspace) gepflegt. Das <strong>Web-Admin-Panel</strong> ist jetzt reine Instanz-Verwaltung: Benutzer (Standard-Seite nach Login), API-Keys, Hooks, FRP-<em>Server</em>-Konfiguration und Login. Die User&harr;Server-Zuweisung bleibt im Web (im Benutzer-Dialog).
               </p>
             </div>
           </div>
+
+          <h2>Desktop-Client: Workspaces</h2>
+          <p>Der Desktop-Client arbeitet in <strong>Workspaces</strong>. Ein Workspace hat eine feste Art – <em>Server</em> (Anmeldung an einer AdminHelper-Installation), <em>Sync</em> (Verbindungsliste von einer HTTPS-URL) oder <em>Lokal</em> (Verbindungen nur auf diesem Gerät) –, einen Namen, eine Farbe und bei Server und Sync eine URL; mehrere je Art sind erlaubt. Wer mehrere Installationen betreut, etwa die zweier Kunden, legt je Installation einen Server-Workspace an und hat sie nebeneinander offen, ohne sich abzumelden oder das Gerät neu zu registrieren. Jeder Workspace läuft in einem eigenen Fenster und Prozess, mit eigener Anmeldung, eigenem Tunnel, eigener Geräte-Identität, eigenen gespeicherten RDP-Passwörtern, eigenen Verbindungen und eigener Logdatei (die aus der Vorversion übernommenen Workspaces teilen sich die bisherigen Schlüsselbund-Einträge, siehe unten).</p>
+          <ul>
+            <li><strong>Picker:</strong> <code>adminhelper</code> öffnet den Launcher mit der Liste aller Workspaces (Farbe, Name, Art, Host, „geöffnet“); der zuletzt genutzte ist vorausgewählt, Enter öffnet ihn. Dort legst du Workspaces an (<em>Neuer Workspace</em>) und bearbeitest oder löschst geschlossene; Name, Farbe und URL ändert nur der Picker. Sobald der geöffnete Workspace läuft, schließt sich der Launcher, und <em>Workspaces…</em> im Fenster holt ihn zurück. Derselbe Workspace läuft nie zweimal.</li>
+            <li><strong>Kenntlich:</strong> Fenstertitel „&lt;Name&gt; — AdminHelper“, ein Chip mit Farbpunkt und Namen oben in der Sidebar und ein Farbstreifen am Fensterrand; Rückfragen, OS-Benachrichtigungen („[&lt;Name&gt;] …“) und unter Linux der Titel des RDP-Fensters nennen den Workspace.</li>
+            <li><strong>Login je Workspace:</strong> Ein Server-Workspace verlangt bei jedem Öffnen ein Login. Die Server-URL ist die des Workspace und steht fest; ein URL-Feld zeigt der Login-Bildschirm nur, solange der Workspace keine hat. Ein Benutzer einer Installation meldet sich nur in einem Workspace an: Hat sich ein anderer Workspace schon als dieser Benutzer an derselben Installation angemeldet, lehnt der Login ab und nennt diesen Workspace. Sync- und Lokal-Workspaces öffnen ohne Anmeldung und registrieren kein Gerät; für die eigene Installation unter erzwungenem mTLS braucht es deshalb einen Server-Workspace (siehe <a href="./benutzer.html">Benutzer &amp; Zugriff → API-Keys</a>).</li>
+            <li><strong>Einstellungen:</strong> Der Dialog trennt <em>Dieser Workspace</em> (Abmelden, Zertifikate, Geräte-Identität und Token, Browser-Zertifikat, Benachrichtigungsregeln, Sync-Intervall) und <em>Alle Workspaces auf diesem Gerät</em> (Sprache, Passwörter, RDP, OS-Benachrichtigungen, Diagnose).</li>
+            <li><strong>Löschen</strong> geht nur im Picker und nur, solange der Workspace geschlossen ist; die Bestätigung nennt den Namen. Hat ein Server-Workspace eine Geräte-Identität, widerruft der Desktop sie zuerst am Server; dann löscht er die Daten des Workspace auf diesem Gerät samt RDP-Passwörtern. Widerruft der Server nicht, etwa weil er nicht erreichbar ist, meldet der Picker „Nur auf diesem Gerät“, und das Gerät bleibt am Server gültig, bis ein Admin es widerruft (siehe <a href="./benutzer.html">Benutzer &amp; Zugriff → Geräte und Widerruf</a>). Die Verbindungen eines Lokal-Workspace gehen beim Löschen unwiderruflich verloren.</li>
+          </ul>
+          <p>Der erste Start nach dem Update legt aus den bisherigen Daten den Workspace „Standard“ im bisherigen Modus an; lokale Verbindungen, eine Sync-URL oder eine Server-URL, die der bisherige Modus nicht nutzte, werden daneben zu „Lokal“, „Sync“ und „Server“. Diese übernommenen Workspaces teilen sich die bisherigen Einträge im Schlüsselbund des Systems, gespeicherte RDP-Passwörter und eine Geräte-Identität bleiben also nutzbar. Ohne bisherige Daten gibt es zu Beginn nur „Standard“ (Lokal). Technische Details stehen im <a href="../developer/desktop.html">Entwickler-Handbuch → Desktop-Client</a>.</p>
 
           <h2>Architektur in einem Absatz</h2>
           <div class="callout callout-note" data-reveal>

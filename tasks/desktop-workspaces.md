@@ -246,8 +246,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/bridge/ipc.inv
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html · README.md · CHANGELOG.md
 Abhängt von: T14, T16, T24
 
-### T34 — Admin-Doku DE+EN, Teil 1: Einstieg, Benutzer, Betrieb, Fehlersuche  [ ]
+### T34 — Admin-Doku DE+EN, Teil 1: Einstieg, Benutzer, Betrieb, Fehlersuche  [x]
 Komponente: scripts · Dateien: docs/index.html, docs/en/index.html, docs/admin/index.html, docs/en/admin/index.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/installation.html, docs/en/admin/installation.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @0e8ebc1c 2026-10-20T21:28:10+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T34.verdict.json)
 Änderung: „Server-Modus“/„server mode“ → „Server-Workspace“/„server workspace“, Einstellungspfade („Einstellungen (Modus Server)“ → „Einstellungen des Workspaces“); auf `docs/admin/index.html` + EN ein Absatz Workspaces (mehrere Installationen nebeneinander, Picker, Login je Workspace, Löschen mit Widerruf). Stellen beim Bau neu greppen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/index.html + docs/en/index.html · docs/admin/{index,benutzer,betrieb,troubleshooting}.html + EN
