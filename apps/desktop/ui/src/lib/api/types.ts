@@ -349,6 +349,10 @@ export interface MonitorContainerDetails {
 }
 
 export interface MonitorBackupDetails {
+  // Details written before R-0492 carry neither. available false: the agent could
+  // not read Proxmox (error is the code), and vms is empty.
+  available?: boolean;
+  error?: string | null;
   vms?: {
     vmid: number;
     name: string;

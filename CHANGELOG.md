@@ -1013,7 +1013,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `unknown` ohne Benachrichtigung stehen; im Check-Formular des Desktops ist das wie bei Docker und ZFS die Checkbox
   „Ausfall melden“. Fehlt der Block (`pvesh` deinstalliert, oder ein aelterer Agent kann
   Proxmox nicht lesen), bleibt der Check `unknown`, leert aber die zuletzt gezeigte VM-Liste; ein lesbares Proxmox
-  ohne VMs leert sie ebenso. Die Check-Details tragen dazu `available` und `error`. Das Standard-Template
+  ohne VMs leert sie ebenso. Die Check-Details tragen dazu `available` und `error`. Die Backup-Zeile im
+  Server-Dashboard des Desktops zeigt im Ausfall den Fehler statt der VM-Liste, etwa „Backup-Storage nicht aktiv“,
+  gelb bei `warning` und grau bei abgeschaltetem Ausfall; bisher stand dort „—“. Das Standard-Template
   „Proxmox Host“ steht dafuer in Version 2 auf `consecutive_fails` 2 wie Docker und ZFS: ein einzelner Lesefehler
   von `pvesh` meldet nicht. Ein unveraendertes Template folgt der neuen Version beim Start automatisch, auch eines von
   vor den Template-Versionen; ein angepasstes bietet sie als Update an. Doku: Monitoring-Administration (DE+EN).

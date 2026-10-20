@@ -251,8 +251,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (Doku mit T24)
 Abhängt von: T13
 
-### T24 — Desktop: Proxmox-Ausfall in der Backup-Sektion  [ ]
+### T24 — Desktop: Proxmox-Ausfall in der Backup-Sektion  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecBackups.svelte, apps/desktop/ui/src/components/monitoring/section/SecBackups.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @529cc262 2026-10-20T16:01:26+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T24.verdict.json)
 Änderung: `MonitorBackupDetails` (`types.ts:317`) um `available` und `error`. `SecBackups.svelte` nach dem Muster `SecZfs.svelte:21-42` und `:78-85`: bei `available === false` statt „—“ eine Pille mit dem übersetzten Fehler (`timeout`, `cli_failed`, `parse_failed`, `backup_index_incomplete`, sonst allgemein „Proxmox nicht verfügbar“), gefärbt nach dem Status (`unknown` grau), keine VM-Liste. Neue Testdatei (SPDX) nach `SecZfs.test.ts:57-135`: Pille je Code und unbekannter Code, grau bei abgeschaltetem Ausfall, alte Details ohne `available` wie bisher, leere Liste nach fehlendem Block zeigt „—“, Texte englisch. Nachtrag (T14): Die Admin-Doku (DE+EN, Abschnitt Ausfall von Docker, ZFS und Proxmox) trennt heute den Desktop-Stand: keine Checkbox „Ausfall melden“ für Proxmox, „—“ statt VM-Liste; diese Einschränkungen mit dieser Task entfernen bzw. angleichen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecBackups.test.ts
 Doku: docs/admin/monitoring.html + EN `:111` (der Desktop zeigt auch den Proxmox-Fehler statt der VM-Liste); CHANGELOG.md (Satz im Eintrag aus T14)

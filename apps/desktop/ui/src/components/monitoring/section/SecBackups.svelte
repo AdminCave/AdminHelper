@@ -18,8 +18,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
+  // Spelled out: the i18n "no unused keys" guard only sees quoted keys.
+  const ERROR_KEY = new Map<string, string>([
+    ['timeout', 'monitoring.proxmox.error.timeout'],
+    ['cli_failed', 'monitoring.proxmox.error.cli_failed'],
+    ['parse_failed', 'monitoring.proxmox.error.parse_failed'],
+    ['backup_index_incomplete', 'monitoring.proxmox.error.backup_index_incomplete'],
+  ]);
+  // The colour comes from the status the line's dot shows: an outage is a
+  // warning, and with the outage alert off (unknown) the pill stays grey.
+  const OUTAGE_PILL = new Map<string, string>([
+    ['critical', 'pill-crit'],
+    ['warning', 'pill-warn'],
+  ]);
+
   type Vm = NonNullable<MonitorBackupDetails['vms']>[number];
   interface Info {
+    // The error's text key when the agent could not read Proxmox; no VMs then.
+    unavailable: string | null;
     vms: Vm[];
     total: number;
     ok: number;
@@ -28,8 +44,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
     allOk: boolean;
   }
 
+  // Read loosely: only the types the checker writes count. A check switched to
+  // this type keeps the details of its old type until the next push.
+  type LooseDetails = { [K in keyof MonitorBackupDetails]?: unknown };
+
+  function unavailableOf(d: LooseDetails): string | null {
+    // Only a JSON false is an outage, as for the checker.
+    if (d.available !== false) return null;
+    // A code this UI does not know yet (a newer agent) still says something.
+    const key = typeof d.error === 'string' ? ERROR_KEY.get(d.error) : undefined;
+    return key ?? 'monitoring.proxmox.error.unknown';
+  }
+
+  function vmsOf(d: LooseDetails): Vm[] {
+    const raw: unknown[] = Array.isArray(d.vms) ? d.vms : [];
+    const vms = raw.filter((v): v is Vm => typeof v === 'object' && v !== null);
+    // The VM rows are keyed by the VMID: each VM once, the first entry winning.
+    return vms.filter((v, n) => vms.findIndex((w) => w.vmid === v.vmid) === n);
+  }
+
   function info(check: MonitorCheck): Info {
-    const list = (check.state?.details as MonitorBackupDetails | undefined)?.vms ?? [];
+    const d = (check.state?.details ?? {}) as LooseDetails;
+    const unavailable = unavailableOf(d);
+    const list = unavailable ? [] : vmsOf(d);
     let ok = 0,
       outdated = 0,
       missing = 0;
@@ -39,6 +76,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       else ok++;
     }
     return {
+      unavailable,
       vms: list,
       total: list.length,
       ok,
@@ -65,7 +103,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="mon-line-name">{check.name}</span>
         {/snippet}
         {#snippet value()}
-          {#if i.total === 0}
+          {#if i.unavailable}
+            <span
+              class="mon-line-pill {OUTAGE_PILL.get(check.state?.status ?? '') ?? ''}"
+              title={check.state?.message}>{$t(i.unavailable)}</span
+            >
+          {:else if i.total === 0}
             <span class="mon-line-pill">—</span>
           {:else if i.allOk}
             <span class="mon-line-pill pill-ok"
