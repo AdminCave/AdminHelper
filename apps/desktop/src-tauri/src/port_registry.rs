@@ -17,13 +17,6 @@ use crate::error::AppError;
 
 /// The owner of every entry from before workspaces (R-0431); the migration hands its entries to
 /// the migrated server workspace. Every other owner is a workspace id.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "only the migration (R-0431 T4) takes it up, and nothing runs that before T10"
-    )
-)]
 pub const DEFAULT_OWNER: &str = "default";
 
 /// Where a visitor goes whose server port is taken: below the ephemeral ports of Linux
@@ -167,13 +160,6 @@ impl PortRegistry {
     /// owner. `to` ends with no more than [`MAX_VISITORS`] entries and [`MAX_FALLBACK_PORTS`]
     /// ports of [`FALLBACK_PORTS`]; the entries of `from` past either go, in the order of the
     /// map, so a map from before the caps cannot keep the fallback ports from the other owners.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "only the migration (R-0431 T4) takes it up, and nothing runs that before T10"
-        )
-    )]
     pub fn rename_owner(&self, from: &str, to: &str) -> Result<(), AppError> {
         if from == to {
             return Ok(());
@@ -215,34 +201,16 @@ impl PortRegistry {
     }
 
     /// Drops every entry of `owner`.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the migration (R-0431 T4) and the purge (T13) take it up"
-        )
-    )]
     pub fn release(&self, owner: &str) -> Result<(), AppError> {
         self.update(|entries| entries.retain(|entry| entry.owner != owner))
     }
 
     /// Drops the entries of every owner not in `owners`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the launcher (R-0431 T11) takes it up")
-    )]
     pub fn retain_owners(&self, owners: &[&str]) -> Result<(), AppError> {
         self.update(|entries| entries.retain(|entry| owners.contains(&entry.owner.as_str())))
     }
 
     /// Applies `change` to the entries under the lock and writes the map if that changed it.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "only the methods above call it, none of them called yet"
-        )
-    )]
     fn update(&self, change: impl FnOnce(&mut Vec<Entry>)) -> Result<(), AppError> {
         let _lock = self.lock()?;
         let loaded = self.load()?;

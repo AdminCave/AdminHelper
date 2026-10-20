@@ -39,13 +39,6 @@ pub fn data_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
     workspace_file(app, "connections.json")
 }
 
-/// connections.local.json in the workspace dir — the persistent store of a local workspace,
-/// kept separate from the server/sync cache so a server/sync fetch can never overwrite the
-/// user's locally managed connections.
-pub fn local_data_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
-    workspace_file(app, connections_file_name(&SyncMode::Local))
-}
-
 /// The connections file backing a given mode: local mode has its own store,
 /// server and sync share the cache file.
 pub(crate) fn connections_file_name(mode: &SyncMode) -> &'static str {
@@ -108,11 +101,12 @@ pub(crate) fn write_json_pretty<T: Serialize + ?Sized>(
 }
 
 /// Replaces the file at `path` at once on every platform: a reader sees the old file or the new
-/// one, never part of either, and a crash leaves one of the two. For the files other processes
-/// read while this one writes them (`prefs.json`, a `workspace.json` the launcher lists). Unlike
-/// [`write_json_pretty`] it hardens the temp on Windows as well, an icacls run per call: for
-/// files written on a user's action, not on every sync (2.87). The pid in the temp name keeps
-/// two processes off each other's temp.
+/// one, never part of either, and a crash leaves one of the two. The new one is on the disk
+/// before it takes the name, so a power cut leaves no empty file either. For the files other
+/// processes read while this one writes them (`prefs.json`, `workspaces.json`, a
+/// `workspace.json` the launcher lists). Unlike [`write_json_pretty`] it hardens the temp on
+/// Windows as well, an icacls run per call: for files written on a user's action, not on every
+/// sync (2.87). The pid in the temp name keeps two processes off each other's temp.
 pub(crate) fn write_json_atomic<T: Serialize + ?Sized>(
     path: &Path,
     value: &T,
@@ -132,13 +126,16 @@ pub(crate) fn write_json_atomic<T: Serialize + ?Sized>(
     replaced.map_err(AppError::from)
 }
 
-/// Writes `bytes` to a new or emptied file at `path`, created 0600 on Unix.
+/// Writes `bytes` to a new or emptied file at `path`, created 0600 on Unix, and waits until they
+/// are on the disk.
 fn fill_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    options.open(path)?.write_all(bytes)
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 fn read_json_or_default<T: DeserializeOwned + Default>(path: &Path) -> Result<T, AppError> {
@@ -182,21 +179,6 @@ pub fn save_connections(
 
 fn save_connections_in(base: &Path, connections: &[Connection]) -> Result<(), AppError> {
     write_json_pretty(&connections_path(base)?, connections)
-}
-
-/// One-time migration of the pre-split local store. Before connections.local.json
-/// existed, local mode kept its connections in connections.json (shared with the
-/// server/sync cache). Run once at startup and guarded by the boot-time mode:
-/// only in local mode does connections.json hold the user's local data (in
-/// server/sync mode it is a cache). Running at startup — before any server fetch
-/// can overwrite connections.json — guarantees the real local data is adopted.
-pub fn migrate_legacy_local_store(app: &tauri::AppHandle) -> Result<(), AppError> {
-    if !matches!(current_mode(&app_data_dir(app)?)?, SyncMode::Local) {
-        return Ok(());
-    }
-    // The data-loss-critical copy lives in migrate_between (path-based) so its guards are
-    // unit-tested; the AppHandle here only resolves the two paths (6.34).
-    migrate_between(&data_path(app)?, &local_data_path(app)?, &SyncMode::Local)
 }
 
 // Copies the legacy store to the local store ONLY when: mode is Local, the local target does not yet

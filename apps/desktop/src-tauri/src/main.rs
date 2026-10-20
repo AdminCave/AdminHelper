@@ -40,7 +40,36 @@ use commands::{
     start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
     sync_connections, tunnel_status,
 };
-use tauri::{Emitter, Manager};
+use tauri::plugin::TauriPlugin;
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
+use tauri_plugin_log::{Target, TargetKind};
+use workspace::{Mode, Plan};
+
+/// The window of a workspace: as large as the one window before workspaces.
+const WORKSPACE_WINDOW: (f64, f64) = (1440.0, 900.0);
+/// The window of the launcher: the picker needs less room.
+const LAUNCHER_WINDOW: (f64, f64) = (720.0, 560.0);
+
+/// The log of this process: with `file`, stdout and a size-rotated `<file>.log` in the OS
+/// app-log dir, which the diagnostics report of the process reads back; without, stderr alone.
+/// The targets replace the plugin's own: its default file, named after the app, is the
+/// launcher's log.
+fn log_plugin(file: Option<String>) -> TauriPlugin<Wry> {
+    let targets = match file {
+        Some(file) => vec![
+            Target::new(TargetKind::Stdout),
+            Target::new(TargetKind::LogDir {
+                file_name: Some(file),
+            }),
+        ],
+        None => vec![Target::new(TargetKind::Stderr)],
+    };
+    tauri_plugin_log::Builder::new()
+        .targets(targets)
+        .level(log::LevelFilter::Info)
+        .max_file_size(10_000_000)
+        .build()
+}
 
 fn main() {
     // Route panics through the log sink (file + stdout) so a crash leaves a
@@ -51,42 +80,46 @@ fn main() {
         default_panic(info);
     }));
 
+    let mode = match Mode::from_args(std::env::args_os().skip(1)) {
+        Ok(mode) => mode,
+        Err(e) => {
+            // No log yet: arguments that name no workspace name no log either.
+            eprintln!("{e}");
+            std::process::exit(workspace::EXIT_UNKNOWN);
+        }
+    };
+    let launcher = mode == Mode::Launcher;
+
     let frpc_state = frpc::new_frpc_state();
     let frpc_state_exit = frpc_state.clone();
     let stream_state = notifications::new_stream_state();
     let stream_state_exit = stream_state.clone();
 
-    let builder = tauri::Builder::default();
-    // Registered first so a second launch hands over and exits before any other
-    // plugin or the setup runs. On Linux this needs `enableGTKAppId: false`:
-    // with a GTK app id, GApplication forwards the launch itself and makes this
-    // instance re-run its setup, which aborts on the existing `main` window.
-    #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
+    let mut builder = tauri::Builder::default();
+    if launcher {
+        // Registered first so a second launch hands over and exits before any other
+        // plugin or the setup runs. On Linux this needs `enableGTKAppId: false`:
+        // with a GTK app id, GApplication forwards the launch itself and makes this
+        // instance re-run its setup, which aborts on the existing `main` window.
+        // Only in the launcher: a workspace runs in a process of its own beside the
+        // others, and its lock keeps it in one.
+        #[cfg(desktop)]
+        {
+            builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }));
         }
-    }));
+        // A log file has one writer. The plugin above lets one launcher run, so its log is
+        // its own from the start; a workspace process opens its log in `setup`, once it holds
+        // the workspace.
+        builder = builder.plugin(log_plugin(Some(mode.log_name())));
+    }
 
     builder
-        .plugin(
-            // stdout + a size-rotated file (adminhelper.log) in the OS app-log
-            // dir — the diagnostics report reads it back.
-            tauri_plugin_log::Builder::new()
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::Stdout,
-                ))
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::LogDir {
-                        file_name: Some("adminhelper".into()),
-                    },
-                ))
-                .level(log::LevelFilter::Info)
-                .max_file_size(10_000_000)
-                .build(),
-        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -94,18 +127,43 @@ fn main() {
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
         .manage(session::SessionState::default())
-        .setup(|app| {
-            // Ensure a concrete runtime window icon in dev and production.
-            let icon_bytes = include_bytes!("../icons/icon.png");
-            if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
-                for (_, window) in app.webview_windows() {
-                    let _ = window.set_icon(icon.clone());
-                }
+        .setup(move |app| {
+            let base = storage::app_data_dir(app.handle()).map_err(|e| e.to_string())?;
+            // The migration, the workspace's lock, then the workspace: nothing before this
+            // touches a workspace (`workspace::current` fails until `set_current`).
+            let plan = workspace::startup(mode, &base, workspace::acquire);
+            if !launcher {
+                // A workspace process that did not get its workspace writes stderr alone: the
+                // log of that workspace may be another process's.
+                app.handle().plugin(log_plugin(plan.log_name()))?;
             }
-            // Migrate the pre-split local connection store (connections.json ->
-            // connections.local.json) once, before any server fetch can
-            // overwrite the legacy file. Best-effort: must not block startup.
-            let _ = storage::migrate_legacy_local_store(app.handle());
+            let (title, (width, height)) = match plan {
+                Plan::Exit { code, line } => {
+                    log::error!("{line}");
+                    log::logger().flush();
+                    std::process::exit(code);
+                }
+                Plan::Purge(_held) => {
+                    log::error!("this build does not purge workspaces");
+                    log::logger().flush();
+                    std::process::exit(workspace::EXIT_FAILED);
+                }
+                Plan::Launcher => {
+                    // After the migration, which hands the entries from before workspaces on.
+                    if let Err(e) = launcher::drop_orphan_ports(&base) {
+                        log::warn!(
+                            "the port map keeps the entries of removed workspaces: {}",
+                            workspace::failure(&e)
+                        );
+                    }
+                    (workspace::LAUNCHER_TITLE.to_string(), LAUNCHER_WINDOW)
+                }
+                Plan::Workspace(held) => {
+                    let title = held.workspace.window_title();
+                    workspace::set_current(held).map_err(|e| e.to_string())?;
+                    (title, WORKSPACE_WINDOW)
+                }
+            };
             // The session lives in the process now; drop what earlier versions left in the
             // keyring. Off the main thread: a keyring that hangs must not hold the window.
             tauri::async_runtime::spawn_blocking(auth::forget_keyring_session);
@@ -122,6 +180,17 @@ fn main() {
                 .on_sign_in_change(move || {
                     let _ = frpc::stop_frpc(&frpc_state);
                 });
+            // The window last, so its title is right from the first frame and a process that
+            // does not start never shows one.
+            let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .title(title)
+                .inner_size(width, height)
+                .resizable(true);
+            // Ensure a concrete runtime window icon in dev and production.
+            if let Ok(icon) = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png")) {
+                window = window.icon(icon)?;
+            }
+            window.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

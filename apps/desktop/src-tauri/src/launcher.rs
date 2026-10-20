@@ -25,7 +25,8 @@ use crate::models::{Settings, SyncMode};
 use crate::port_registry::PortRegistry;
 use crate::validation::{validate_https_url, validate_server_url_secure};
 use crate::workspace::{
-    acquire, is_open, Meta, Registry, RegistryEntry, Workspace, WorkspaceId, PALETTE, REGISTRY_FILE,
+    acquire, failure, is_open, Meta, Registry, RegistryEntry, Workspace, WorkspaceId, PALETTE,
+    REGISTRY_FILE,
 };
 
 /// The longest name of a workspace, in characters.
@@ -195,10 +196,6 @@ pub fn save(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError
 /// one whose delete did not reach the map, or what an older version wrote after a downgrade.
 /// For the start of the launcher, after the migration handed over the entries from before
 /// workspaces; without a registry it is an error and drops nothing.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the start of the launcher (R-0431 T10) calls it")
-)]
 pub fn drop_orphan_ports(base: &Path) -> Result<(), AppError> {
     // Held throughout, so no workspace this launcher makes meanwhile loses its entries.
     let _guard = registry_guard();
@@ -440,21 +437,6 @@ fn partial(dir: &Path) -> PathBuf {
     let mut partial = dir.as_os_str().to_owned();
     partial.push(".partial");
     PathBuf::from(partial)
-}
-
-/// What went wrong with a file, and where, but nothing from inside it: serde quotes the values
-/// it rejects.
-fn failure(e: &AppError) -> String {
-    match e {
-        AppError::Json(e) => format!(
-            "{:?} error at line {}, column {}",
-            e.classify(),
-            e.line(),
-            e.column()
-        ),
-        AppError::Io(e) => format!("{:?}", e.kind()),
-        _ => "error".to_string(),
-    }
 }
 
 fn host_of(url: &str) -> Option<String> {

@@ -31,10 +31,11 @@ pub fn generate(app: &AppHandle) -> Result<String, AppError> {
         &app.package_info().version.to_string(),
         workspace.as_ref(),
     );
-    let out = log_dir.join(format!(
-        "adminhelper-diagnostics-{}.txt",
-        Utc::now().format("%Y%m%dT%H%M%SZ")
-    ));
+    let out = report_path(
+        &log_dir,
+        workspace.as_ref(),
+        &Utc::now().format("%Y%m%dT%H%M%SZ").to_string(),
+    );
     std::fs::write(&out, redacted)?;
     Ok(out.display().to_string())
 }
@@ -69,11 +70,22 @@ fn report(log_dir: &Path, version: &str, workspace: Option<&Workspace>) -> Strin
     redact(&report)
 }
 
-/// The log file of the process serving `workspace`: every process writes a log of its own, under
-/// the name its start gives the log plugin ([`Mode::log_name`]); the launcher's without one.
+/// The name of the log of the process serving `workspace`: every process writes a log of its
+/// own, under the name its start gives the log plugin ([`Mode::log_name`]); the launcher's
+/// without one.
+fn log_name(workspace: Option<&Workspace>) -> String {
+    workspace.map_or_else(|| Mode::Launcher.log_name(), Workspace::log_name)
+}
+
+/// The log file of the process serving `workspace`.
 fn log_path(log_dir: &Path, workspace: Option<&Workspace>) -> PathBuf {
-    let name = workspace.map_or_else(|| Mode::Launcher.log_name(), Workspace::log_name);
-    log_dir.join(format!("{name}.log"))
+    log_dir.join(format!("{}.log", log_name(workspace)))
+}
+
+/// Where the report of the process serving `workspace` goes, written at `stamp`: named after its
+/// log, so two processes that report in the same second do not overwrite each other.
+fn report_path(log_dir: &Path, workspace: Option<&Workspace>, stamp: &str) -> PathBuf {
+    log_dir.join(format!("{}-diagnostics-{stamp}.txt", log_name(workspace)))
 }
 
 fn tail(content: &str, n: usize) -> String {
@@ -199,6 +211,21 @@ mod tests {
         assert_eq!(workspace_log, "adminhelper-kunde-a.log");
         assert_eq!(log_path(dir, None), dir.join(&launcher_log));
         assert_eq!(launcher_log, "adminhelper.log", "the log before workspaces");
+    }
+
+    #[test]
+    fn per_process_report_file_is_named_after_the_log_of_the_process() {
+        let dir = Path::new("logs");
+        let stamp = "20261020T081500Z";
+        assert_eq!(
+            report_path(dir, Some(&kunde_a()), stamp),
+            dir.join("adminhelper-kunde-a-diagnostics-20261020T081500Z.txt")
+        );
+        assert_eq!(
+            report_path(dir, None, stamp),
+            dir.join("adminhelper-diagnostics-20261020T081500Z.txt"),
+            "the name before workspaces"
+        );
     }
 
     #[test]

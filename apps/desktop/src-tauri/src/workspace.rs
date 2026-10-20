@@ -7,16 +7,7 @@
 //! keyring prefix, log and window names. A process serves one workspace for its whole life;
 //! the launcher serves none. Also the lock that keeps a workspace in one process and the two
 //! files that say which workspaces exist (`workspaces.json`) and what each one is
-//! (`workspace.json`).
-
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "no callers yet: the migration (R-0431 T4), the start of the workspace process \
-                  (T10) and the launcher (T11) take it up"
-    )
-)]
+//! (`workspace.json`), and what the start of a process comes to ([`startup`]).
 
 use std::ffi::OsString;
 use std::fmt;
@@ -32,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 use crate::models::SyncMode;
-use crate::storage::{write_json_atomic, write_json_pretty};
+use crate::storage::write_json_atomic;
 
 /// Every character an id may hold (`^[a-z0-9-]{1,32}$`), spelled out rather than as ranges, so
 /// no reader has to wonder whether a locale widens them.
@@ -40,6 +31,14 @@ const ID_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789-";
 const ID_MAX_LEN: usize = 32;
 
 const USAGE: &str = "usage: adminhelper [--workspace <id> [--purge]]";
+
+/// Exit code of a process whose start failed: the migration, or a file or the lock of its
+/// workspace.
+pub const EXIT_FAILED: i32 = 1;
+/// Exit code of a start for a workspace there is none of, or with arguments that name none.
+pub const EXIT_UNKNOWN: i32 = 2;
+/// Exit code of a start for a workspace another process holds.
+pub const EXIT_TAKEN: i32 = 3;
 
 /// Title of the launcher window; a workspace window puts its name in front.
 pub const LAUNCHER_TITLE: &str = "AdminHelper";
@@ -181,10 +180,15 @@ pub struct Workspace {
     pub legacy_keys: bool,
 }
 
+/// `<base>/workspaces`, `base` being the app data dir: the data dirs of all workspaces.
+pub(crate) fn workspaces_dir(base: &Path) -> PathBuf {
+    base.join("workspaces")
+}
+
 impl Workspace {
     /// `<base>/workspaces/<id>`, `base` being the app data dir.
     pub fn data_dir(&self, base: &Path) -> PathBuf {
-        base.join("workspaces").join(&self.id.0)
+        workspaces_dir(base).join(&self.id.0)
     }
 
     /// Runtime files of the tunnel, present only while it runs.
@@ -225,7 +229,15 @@ impl Workspace {
 /// other handle, the holder's own included, from the locked bytes.
 #[derive(Debug)]
 pub struct InstanceLock {
-    _file: File,
+    file: File,
+}
+
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        // Windows frees the lock of a closed handle when it gets round to it; the picker's next
+        // probe and the next start need not wait for that.
+        let _ = self.file.unlock();
+    }
 }
 
 /// Takes the lock at `path` ([`Workspace::lock_path`]), trying for up to [`ACQUIRE_TIMEOUT`];
@@ -240,7 +252,7 @@ fn acquire_within(path: &Path, timeout: Duration) -> Result<Option<InstanceLock>
     let deadline = Instant::now() + timeout;
     loop {
         match file.try_lock() {
-            Ok(()) => return Ok(Some(InstanceLock { _file: file })),
+            Ok(()) => return Ok(Some(InstanceLock { file })),
             Err(fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
                 thread::sleep(ACQUIRE_RETRY)
             }
@@ -259,7 +271,12 @@ pub fn is_open(path: &Path) -> Result<bool, AppError> {
         Err(e) => return Err(e.into()),
     };
     match file.try_lock() {
-        Ok(()) => Ok(false),
+        Ok(()) => {
+            // Given back at once, not when Windows gets round to the closed handle: a start
+            // right after the probe must find the lock free.
+            let _ = file.unlock();
+            Ok(false)
+        }
         Err(fs::TryLockError::WouldBlock) => Ok(true),
         Err(fs::TryLockError::Error(e)) => Err(e.into()),
     }
@@ -312,8 +329,10 @@ impl Registry {
         read_json(&base.join(REGISTRY_FILE))
     }
 
+    /// At once on every platform: launchers and starting workspace processes read it while
+    /// another process writes it, and a torn one would not load.
     pub fn store(&self, base: &Path) -> Result<(), AppError> {
-        write_json_pretty(&base.join(REGISTRY_FILE), self)
+        write_json_atomic(&base.join(REGISTRY_FILE), self)
     }
 }
 
@@ -355,13 +374,166 @@ impl Meta {
     }
 }
 
-/// The workspace of this process, set once at start; the launcher never sets it.
-static CURRENT: OnceLock<Workspace> = OnceLock::new();
+/// What went wrong with a file, and where, but nothing from inside it: serde quotes the values
+/// it rejects.
+pub(crate) fn failure(e: &AppError) -> String {
+    match e {
+        AppError::Json(e) => format!(
+            "{:?} error at line {}, column {}",
+            e.classify(),
+            e.line(),
+            e.column()
+        ),
+        AppError::Io(e) => format!("{:?}", e.kind()),
+        _ => "error".to_string(),
+    }
+}
 
-/// Make `workspace` the one of this process. Only once: a process never changes its workspace,
-/// so nothing it keyed by one prefix or path reaches another workspace.
-pub fn set_current(workspace: Workspace) -> Result<(), AppError> {
-    CURRENT.set(workspace).map_err(|_| {
+/// A workspace whose lock this process holds, for as long as this lives. Only [`startup`] makes
+/// one, after the lock: no process takes a workspace ([`set_current`]) it does not hold.
+#[derive(Debug)]
+pub struct Held {
+    pub workspace: Workspace,
+    _lock: InstanceLock,
+}
+
+/// What the start of a process comes to ([`startup`]).
+#[derive(Debug)]
+pub enum Plan {
+    /// The picker.
+    Launcher,
+    /// The window of the workspace held.
+    Workspace(Held),
+    /// The purge of the workspace held, without a window.
+    Purge(Held),
+    /// No start: the process says `line` and ends with `code`.
+    Exit { code: i32, line: String },
+}
+
+impl Plan {
+    /// The log file (without extension) the process of this plan writes; none for a process
+    /// that does not start, whose line goes to stderr alone. Until it holds a workspace, the log
+    /// of that workspace may be another process's, and the log plugin rotates the file it opens.
+    /// The launcher's log is its own whatever its plan: the single-instance plugin lets one
+    /// launcher run, so it opens that log before its start.
+    pub fn log_name(&self) -> Option<String> {
+        match self {
+            Plan::Launcher => Some(Mode::Launcher.log_name()),
+            Plan::Workspace(held) | Plan::Purge(held) => Some(held.workspace.log_name()),
+            Plan::Exit { .. } => None,
+        }
+    }
+}
+
+/// What the start of a process in `mode` comes to, in the app data dir `base`. First the data
+/// from before workspaces moves into them ([`crate::migration::migrate`]); if that fails, no
+/// process starts, as a launcher would later make a registry that keeps the old data out for
+/// good. A workspace process then needs its workspace in the registry, with its directory, and
+/// its lock, which `lock` takes ([`acquire`] at a real start); only once it holds the lock does
+/// it read the workspace.
+pub fn startup(
+    mode: Mode,
+    base: &Path,
+    lock: impl FnOnce(&Path) -> Result<Option<InstanceLock>, AppError>,
+) -> Plan {
+    let exit = |code, line| Plan::Exit { code, line };
+    if let Err(e) = crate::migration::migrate(base) {
+        // Its errors name the file and where it breaks, never a value from it.
+        return exit(
+            EXIT_FAILED,
+            format!("the data was not moved into workspaces: {e}"),
+        );
+    }
+    let (id, purge) = match mode {
+        Mode::Launcher => return Plan::Launcher,
+        Mode::Workspace(id) => (id, false),
+        Mode::Purge(id) => (id, true),
+    };
+    let registry = match Registry::load(base) {
+        Ok(registry) => registry,
+        Err(e) => {
+            return exit(
+                EXIT_FAILED,
+                format!("{REGISTRY_FILE} does not load ({})", failure(&e)),
+            )
+        }
+    };
+    // Its paths hang on the id alone.
+    let paths = Workspace {
+        id: id.clone(),
+        name: String::new(),
+        legacy_keys: false,
+    };
+    let dir = paths.data_dir(base);
+    let listed = registry.is_some_and(|registry| registry.workspaces.iter().any(|e| e.id == id));
+    match dir.try_exists() {
+        Ok(true) if listed => {}
+        Ok(_) => return exit(EXIT_UNKNOWN, format!("there is no workspace {id}")),
+        Err(e) => {
+            return exit(
+                EXIT_FAILED,
+                format!(
+                    "the directory of the workspace {id} is out of reach ({:?})",
+                    e.kind()
+                ),
+            )
+        }
+    }
+    let lock = match lock(&paths.lock_path(base)) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            return exit(
+                EXIT_TAKEN,
+                format!("the workspace {id} is open in another process"),
+            )
+        }
+        Err(e) => {
+            return exit(
+                EXIT_FAILED,
+                format!(
+                    "the lock of the workspace {id} was not taken ({})",
+                    failure(&e)
+                ),
+            )
+        }
+    };
+    let meta = match Meta::load(&dir) {
+        Ok(meta) => meta,
+        Err(e) => {
+            return exit(
+                EXIT_FAILED,
+                format!(
+                    "the {META_FILE} of the workspace {id} does not load ({})",
+                    failure(&e)
+                ),
+            )
+        }
+    };
+    let held = Held {
+        workspace: Workspace {
+            id,
+            name: meta.name,
+            legacy_keys: meta.legacy_keys,
+        },
+        _lock: lock,
+    };
+    if purge {
+        Plan::Purge(held)
+    } else {
+        Plan::Workspace(held)
+    }
+}
+
+/// The workspace of this process with its lock, set once at start; the launcher never sets it.
+static CURRENT: OnceLock<Held> = OnceLock::new();
+
+/// Make the workspace `held` the one of this process; its lock stays held as long as the process
+/// runs. Only once: a process never changes its workspace, so nothing it keyed by one prefix or
+/// path reaches another workspace. Only a workspace held gets here: what this process does in
+/// its data dir assumes it is the only one there (the first reconciliation of the tunnel empties
+/// `run/`, `frpc::reconcile`).
+pub fn set_current(held: Held) -> Result<(), AppError> {
+    CURRENT.set(held).map_err(|_| {
         AppError::Validation("the workspace of this process is already set".to_string())
     })
 }
@@ -375,7 +547,7 @@ pub fn current() -> Result<Workspace, AppError> {
     #[cfg(test)]
     let workspace = test_context::get();
     #[cfg(not(test))]
-    let workspace = CURRENT.get().cloned();
+    let workspace = CURRENT.get().map(|held| held.workspace.clone());
     workspace
         .ok_or_else(|| AppError::Validation("no workspace in this process (launcher)".to_string()))
 }
@@ -431,9 +603,10 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        acquire, acquire_within, current, enter, is_open, set_current, AppError, Meta, Mode,
-        Registry, RegistryEntry, Workspace, WorkspaceId, ACQUIRE_TIMEOUT, LAUNCHER_TITLE,
-        META_FILE, PALETTE, REGISTRY_FILE, USAGE,
+        acquire, acquire_within, current, enter, is_open, set_current, startup, AppError, Held,
+        InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Workspace, WorkspaceId,
+        ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE,
+        REGISTRY_FILE, USAGE,
     };
     use crate::models::SyncMode;
 
@@ -492,6 +665,16 @@ mod tests {
             id: id(id_),
             name: name.to_string(),
             legacy_keys,
+        }
+    }
+
+    /// `workspace` as a start holds it: with the lock in its data dir in `base`.
+    fn held(base: &Path, workspace: Workspace) -> Held {
+        let lock = workspace.lock_path(base);
+        fs::create_dir_all(lock.parent().unwrap()).unwrap();
+        Held {
+            _lock: acquire(&lock).unwrap().expect("a fresh lock is free"),
+            workspace,
         }
     }
 
@@ -669,8 +852,9 @@ mod tests {
     #[test]
     fn a_process_takes_its_workspace_once() {
         // The only test that touches the process-wide workspace; the others read their guard.
-        set_current(workspace("a", "A", false)).unwrap();
-        assert!(set_current(workspace("b", "B", false)).is_err());
+        let scratch = Scratch::new("set-current");
+        set_current(held(&scratch.0, workspace("a", "A", false))).unwrap();
+        assert!(set_current(held(&scratch.0, workspace("b", "B", false))).is_err());
         assert!(
             current().is_err(),
             "a test build never reads the process-wide workspace"
@@ -694,7 +878,8 @@ mod tests {
         );
 
         drop(first);
-        assert!(acquire_within(&path, BRIEF).unwrap().is_some());
+        // At once, not when Windows gets round to the closed handle.
+        assert!(acquire_within(&path, Duration::ZERO).unwrap().is_some());
     }
 
     #[test]
@@ -723,8 +908,9 @@ mod tests {
 
         drop(held);
         assert!(!is_open(&path).unwrap());
-        // ... and holds nothing once it answered.
-        assert!(acquire_within(&path, BRIEF).unwrap().is_some());
+        // ... and holds nothing once it answered, not even until Windows gets round to its
+        // closed handle.
+        assert!(acquire_within(&path, Duration::ZERO).unwrap().is_some());
     }
 
     #[test]
@@ -885,5 +1071,177 @@ mod tests {
             );
             assert!(!PALETTE[..i].contains(colour), "{colour} twice");
         }
+    }
+
+    /// A `lock` for [`startup`] that must not be called: the start ends before the lock.
+    fn no_lock(path: &Path) -> Result<Option<InstanceLock>, AppError> {
+        panic!("took the lock at {}", path.display())
+    }
+
+    fn standard() -> Workspace {
+        workspace("standard", "Standard", true)
+    }
+
+    /// The code and line of a start that ends; a panic for one that does not.
+    fn exit_of(plan: Plan) -> (i32, String) {
+        match plan {
+            Plan::Exit { code, line } => (code, line),
+            other => panic!("expected an exit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn startup_of_the_launcher_moves_the_data_and_opens_the_picker() {
+        let scratch = Scratch::new("startup-launcher");
+
+        let plan = startup(Mode::Launcher, &scratch.0, no_lock);
+
+        assert!(matches!(plan, Plan::Launcher), "{plan:?}");
+        assert_eq!(plan.log_name().as_deref(), Some("adminhelper"));
+        let registry = Registry::load(&scratch.0)
+            .unwrap()
+            .expect("the migration ran");
+        assert_eq!(registry.workspaces, [RegistryEntry { id: id("standard") }]);
+    }
+
+    #[test]
+    fn startup_of_a_known_workspace_holds_its_lock_before_it_names_it() {
+        let scratch = Scratch::new("startup-known");
+        let base = &scratch.0;
+        let lock_path = standard().lock_path(base);
+        let dir = standard().data_dir(base);
+
+        // A first start straight into the workspace: the migration makes it.
+        let mut asked = None;
+        let plan = startup(Mode::Workspace(id("standard")), base, |path| {
+            asked = Some(path.to_path_buf());
+            let lock = acquire(path);
+            // The picker renamed the workspace under its lock until just now: the start reads
+            // the workspace once it holds the lock, so it finds the new name.
+            let renamed = Meta {
+                name: "Kunde A".to_string(),
+                ..Meta::load(&dir).unwrap()
+            };
+            renamed.store(&dir).unwrap();
+            lock
+        });
+
+        assert_eq!(asked.as_deref(), Some(lock_path.as_path()));
+        let Plan::Workspace(held) = &plan else {
+            panic!("expected the workspace, got {plan:?}");
+        };
+        assert_eq!(held.workspace, workspace("standard", "Kunde A", true));
+        assert_eq!(held.workspace.window_title(), "Kunde A — AdminHelper");
+        assert_eq!(plan.log_name().as_deref(), Some("adminhelper-standard"));
+        assert!(is_open(&lock_path).unwrap(), "the plan holds the lock");
+        drop(plan);
+        assert!(!is_open(&lock_path).unwrap(), "gone with the plan");
+    }
+
+    #[test]
+    fn startup_of_a_purge_holds_its_workspace_too() {
+        let scratch = Scratch::new("startup-purge");
+        let base = &scratch.0;
+
+        let plan = startup(Mode::Purge(id("standard")), base, acquire);
+
+        let Plan::Purge(held) = &plan else {
+            panic!("expected the purge, got {plan:?}");
+        };
+        assert_eq!(held.workspace, standard());
+        assert!(is_open(&standard().lock_path(base)).unwrap());
+        assert_eq!(plan.log_name().as_deref(), Some("adminhelper-standard"));
+    }
+
+    #[test]
+    fn startup_of_an_unknown_workspace_ends_with_2_before_its_lock() {
+        let scratch = Scratch::new("startup-unknown");
+        let base = &scratch.0;
+        startup(Mode::Launcher, base, no_lock);
+        // Named by the registry without a directory, a directory the registry does not name.
+        let mut registry = Registry::load(base).unwrap().unwrap();
+        registry.workspaces.push(RegistryEntry {
+            id: id("w-dir-gone"),
+        });
+        registry.store(base).unwrap();
+        let unlisted = workspace("w-unlisted", "Unlisted", false).data_dir(base);
+        meta().store(&unlisted).unwrap();
+
+        for unknown in ["w-0a1b2c3d", "w-dir-gone", "w-unlisted"] {
+            for mode in [Mode::Workspace(id(unknown)), Mode::Purge(id(unknown))] {
+                let case = format!("{mode:?}");
+                let plan = startup(mode, base, no_lock);
+                assert_eq!(plan.log_name(), None, "{case}");
+                let (code, line) = exit_of(plan);
+                assert_eq!(code, EXIT_UNKNOWN, "{case}");
+                assert_eq!(line, format!("there is no workspace {unknown}"), "{case}");
+            }
+        }
+        // A start never brings back the directory of a workspace.
+        assert!(!workspace("w-dir-gone", "", false).data_dir(base).exists());
+        assert!(!workspace("w-0a1b2c3d", "", false).data_dir(base).exists());
+    }
+
+    #[test]
+    fn startup_with_a_taken_lock_ends_with_3_and_writes_no_log_file() {
+        let scratch = Scratch::new("startup-taken");
+        let base = &scratch.0;
+        let holder = startup(Mode::Workspace(id("standard")), base, acquire);
+        assert!(matches!(holder, Plan::Workspace(_)), "{holder:?}");
+
+        for mode in [Mode::Workspace(id("standard")), Mode::Purge(id("standard"))] {
+            let case = format!("{mode:?}");
+            let second = startup(mode, base, |path| acquire_within(path, BRIEF));
+            // Not the holder's log, which the log plugin would open and may rotate: the line of
+            // a process that does not start goes to stderr alone.
+            assert_eq!(second.log_name(), None, "{case}");
+            // No workspace held, so none to set (`set_current` takes a `Held`): what this
+            // process would do in the data dir, emptying `run/` first of all, stays with the
+            // holder.
+            let (code, line) = exit_of(second);
+            assert_eq!(code, EXIT_TAKEN, "{case}");
+            assert_eq!(line, "the workspace standard is open in another process");
+        }
+        assert!(is_open(&standard().lock_path(base)).unwrap(), "still held");
+        drop(holder);
+    }
+
+    #[test]
+    fn startup_after_a_failed_migration_starts_no_process() {
+        let scratch = Scratch::new("startup-migration");
+        let base = &scratch.0;
+        fs::write(base.join("settings.json"), r#"{"mode": "geheim"}"#).unwrap();
+
+        for mode in [Mode::Launcher, Mode::Workspace(id("standard"))] {
+            let case = format!("{mode:?}");
+            let (code, line) = exit_of(startup(mode, base, no_lock));
+            assert_eq!(code, EXIT_FAILED, "{case}");
+            // The file and where it breaks, nothing from inside it.
+            assert!(
+                line.contains("settings.json") && line.contains("line 1"),
+                "{line}"
+            );
+            assert!(!line.contains("geheim"), "{line}");
+            assert_eq!(Registry::load(base).unwrap(), None, "{case}");
+        }
+    }
+
+    #[test]
+    fn startup_with_a_workspace_json_that_does_not_load_ends_with_1() {
+        let scratch = Scratch::new("startup-meta");
+        let base = &scratch.0;
+        startup(Mode::Launcher, base, no_lock);
+        let dir = standard().data_dir(base);
+        fs::write(dir.join(META_FILE), r#"{"kind": "geheim"}"#).unwrap();
+
+        let (code, line) = exit_of(startup(Mode::Workspace(id("standard")), base, acquire));
+
+        assert_eq!(code, EXIT_FAILED);
+        assert!(
+            line.starts_with("the workspace.json of the workspace standard"),
+            "{line}"
+        );
+        assert!(!line.contains("geheim"), "{line}");
+        assert!(!is_open(&standard().lock_path(base)).unwrap(), "given back");
     }
 }

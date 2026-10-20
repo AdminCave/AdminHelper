@@ -11,15 +11,7 @@
   "app": {
     "withGlobalTauri": false,
     "enableGTKAppId": false,
-    "windows": [
-      {
-        "label": "main",
-        "title": "AdminHelper",
-        "width": 1440,
-        "height": 900,
-        "resizable": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
     }

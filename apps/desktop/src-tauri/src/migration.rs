@@ -13,14 +13,6 @@
 //! `prefs.json`, hands over the port map and writes `workspaces.json` last, at once. Until that
 //! file is there, the next run builds everything anew from the old files.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "no caller yet: the start of every process (R-0431 T10) runs the migration"
-    )
-)]
-
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -33,7 +25,7 @@ use crate::storage::{
     PREFS_FILE,
 };
 use crate::workspace::{
-    Meta, Registry, RegistryEntry, Workspace, WorkspaceId, PALETTE, REGISTRY_FILE,
+    workspaces_dir, Meta, Registry, RegistryEntry, Workspace, WorkspaceId, PALETTE, REGISTRY_FILE,
 };
 
 /// In the app data dir: the lock every migration takes.
@@ -141,14 +133,15 @@ fn migrate_with(
     let planned = plan(base, &settings)?;
 
     // What an aborted run left. No process opens a workspace the registry does not name.
+    refuse_link(&workspaces_dir(base))?;
     for template in TEMPLATES {
         let dir = data_dir(base, &WorkspaceId::parse(template.id)?);
         remove_dir(&partial(&dir))?;
         remove_dir(&dir)?;
     }
-    // Temps with a fixed name an aborted run may have left (that of `commit`, and that of
-    // `prefs.json` before it was written at once). `write_json_atomic` names its temp after the
-    // pid and would leave them lying.
+    // Temps with a fixed name an aborted run may have left (those of `workspaces.json` and
+    // `prefs.json` before they were written at once). `write_json_atomic` names its temp after
+    // the pid and would leave them lying.
     for name in [PREFS_FILE, REGISTRY_FILE] {
         remove_file(&base.join(format!("{name}.tmp")))?;
     }
@@ -169,17 +162,17 @@ fn migrate_with(
         None => ports.release(DEFAULT_OWNER)?,
     }
     step("ports")?;
-    commit(
-        base,
-        &Registry {
-            workspaces: planned
-                .iter()
-                .map(|ws| RegistryEntry { id: ws.id.clone() })
-                .collect(),
-            last_used: Some(WorkspaceId::parse(STANDARD.id)?),
-            migrated_notice: true,
-        },
-    )?;
+    // Last, at once on every platform: a crash leaves no registry or the whole one. A torn one
+    // would neither load nor let the next run start over.
+    Registry {
+        workspaces: planned
+            .iter()
+            .map(|ws| RegistryEntry { id: ws.id.clone() })
+            .collect(),
+        last_used: Some(WorkspaceId::parse(STANDARD.id)?),
+        migrated_notice: true,
+    }
+    .store(base)?;
     let ids: Vec<String> = planned.iter().map(|ws| ws.id.to_string()).collect();
     log::info!("moved the data into the workspaces {}", ids.join(", "));
     Ok(())
@@ -273,6 +266,20 @@ fn remove_dir(dir: &Path) -> Result<(), AppError> {
     }
 }
 
+/// An error if `dir` is there but no directory of its own: a symlink or a junction, whose
+/// cleanup would remove what it points to, or a file.
+fn refuse_link(dir: &Path) -> Result<(), AppError> {
+    match fs::symlink_metadata(dir) {
+        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(_) => Err(AppError::Io(io::Error::other(format!(
+            "{} is a symlink, a junction or a file, not a directory; nothing was moved",
+            dir.display()
+        )))),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn remove_file(path: &Path) -> Result<(), AppError> {
     match fs::remove_file(path) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
@@ -283,7 +290,7 @@ fn remove_file(path: &Path) -> Result<(), AppError> {
 /// Fills `dir`, the data dir of `ws` before it gets its name. `mode` is the mode the old files
 /// were written in.
 fn build(base: &Path, dir: &Path, ws: &Planned, mode: &SyncMode) -> Result<(), AppError> {
-    fs::create_dir_all(dir)?;
+    make_private_dirs(dir)?;
     ws.meta.store(dir)?;
     if ws.connections {
         let name = connections_file_name(&ws.meta.kind);
@@ -300,6 +307,15 @@ fn build(base: &Path, dir: &Path, ws: &Planned, mode: &SyncMode) -> Result<(), A
     Ok(())
 }
 
+/// Makes `dir` and any parent it lacks, 0700 on Unix: nothing in a workspace is for other users.
+fn make_private_dirs(dir: &Path) -> io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(dir)
+}
+
 fn copy_if_present(from: &Path, to: &Path) -> Result<(), AppError> {
     match fs::copy(from, to) {
         Ok(_) => {
@@ -309,17 +325,6 @@ fn copy_if_present(from: &Path, to: &Path) -> Result<(), AppError> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e.into()),
     }
-}
-
-/// Writes the registry, which ends the migration, at once on every platform: a crash leaves no
-/// file or the whole one. (`Registry::store` writes in place on Windows; a torn registry would
-/// neither parse nor let the next run start over.)
-fn commit(base: &Path, registry: &Registry) -> Result<(), AppError> {
-    let tmp = base.join(format!("{REGISTRY_FILE}.tmp"));
-    fs::write(&tmp, serde_json::to_vec_pretty(registry)?)?;
-    harden_permissions(&tmp);
-    fs::rename(&tmp, base.join(REGISTRY_FILE))?;
-    Ok(())
 }
 
 /// Keeps every other migration of the app data dir waiting until it drops. The lock sits on a
@@ -861,9 +866,9 @@ mod tests {
 
     #[test]
     fn a_registry_that_does_not_parse_still_counts_as_migrated() {
-        // Registry::store writes in place on Windows: a crash there leaves it empty or torn. A
-        // run that took that for "not migrated" would build the workspaces anew from the old
-        // files, over what was done in them since.
+        // Earlier builds wrote the registry in place on Windows, where a crash left it empty or
+        // torn. A run that took that for "not migrated" would build the workspaces anew from
+        // the old files, over what was done in them since.
         let scratch = Scratch::new("registry-torn");
         let base = &scratch.0;
         server_install(base);
@@ -1115,5 +1120,49 @@ mod tests {
         );
         assert!(ports.contains(&port("other", "ssh", 23999)));
         assert!(ports.iter().all(|(owner, _, _)| owner != DEFAULT_OWNER));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_data_dirs_of_the_workspaces_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = Scratch::new("private-dirs");
+        let base = &scratch.0;
+        server_install(base);
+
+        migrate(base).unwrap();
+
+        for dir in [
+            base.join("workspaces"),
+            dir_of(base, "standard"),
+            dir_of(base, "lokal"),
+            dir_of(base, "sync"),
+        ] {
+            let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{}", dir.display());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_workspaces_dir_that_is_a_symlink_stops_the_migration_before_the_cleanup() {
+        let scratch = Scratch::new("workspaces-link");
+        let base = &scratch.0;
+        server_install(base);
+        // What the cleanup would take through the link: a dir of a migration id, and its temp.
+        let elsewhere = base.join("elsewhere");
+        for dir in ["standard", "standard.partial"] {
+            fs::create_dir_all(elsewhere.join(dir)).unwrap();
+            fs::write(elsewhere.join(dir).join("keep"), "mine").unwrap();
+        }
+        std::os::unix::fs::symlink(&elsewhere, base.join("workspaces")).unwrap();
+        let before = snapshot(&elsewhere);
+
+        let error = migrate(base).unwrap_err().to_string();
+
+        assert!(error.contains("symlink"), "{error}");
+        assert_eq!(snapshot(&elsewhere), before);
+        assert_eq!(Registry::load(base).unwrap(), None);
+        assert!(!base.join("prefs.json").exists());
     }
 }
