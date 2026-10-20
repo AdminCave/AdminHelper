@@ -9,8 +9,9 @@ PKI directory, webServer.port off the published bind port; the three files there
 certificate files intact, the leaf not expired and matching its key; frps verify green. Input
 files are read only as regular files of at most 1 MiB and within a time limit; a symlink,
 anything else or a larger file is unreadable. A valid input is copied into current/ of the
-working directory (the directory 0711, current/ 0755, files 0644: frps reads the copy under a
-user of its own and writes none of it) with its TLS paths pointed there, and frps runs from
+working directory (the directory 0711, current/ 0750 and files 0640, root's and in the group of
+frps: frps reads the copy under a user of its own and writes none of it, no other user reads
+it) with its TLS paths pointed there, and frps runs from
 current/, each time only while the copy is still the one the supervisor took over (one that
 changed goes, with the event copy_changed) and has passed the check again. An invalid input
 starts nothing, or frps from the last valid current/ (degraded); a missing frps.toml removes
@@ -20,13 +21,20 @@ After the start it polls the input: a change that stayed the same for two polls 
 like at the start, restarting frps only for a new valid input, and one that keeps changing shows
 as unstable; frps exiting on its own is restarted after a growing delay, three exits in a row
 make a crash loop; TERM and INT stop frps and leave no process behind; `health` judges the
-state.
+state. While frps runs from a copy with a webServer.port, every poll puts the proxy lists of
+its dashboard, fetched over loopback under a user of their own (neither root nor that of frps)
+with the credentials kept off every command line, into the state directory (proxy-<type>.json,
+0644), each answer as it came; a failed request or an answer over 1 MiB leaves no file of its
+type, and without frps or a webServer.port none is left.
 
 The script runs under sh with a stub frps on PATH, without root and so with su-exec switched
-off (FRPS_USER empty; one test puts a stub su-exec in its place). Some tests run the frps image
-built from apps/frps, with the capabilities and security options compose gives it and the real
-frps under its own user; they skip when Docker or the pinned base image is not at hand."""
+off (FRPS_USER and FRPS_FETCH_USER empty; some tests put a stub su-exec in its place); a local
+HTTP server stands in for the dashboard. Some tests run the frps image built from apps/frps,
+with the capabilities and security options compose gives it, the real frps under its own user
+and the requests to its dashboard under another; they skip when Docker or the pinned base image
+is not at hand."""
 
+import base64
 import contextlib
 import hashlib
 import itertools
@@ -42,6 +50,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -186,8 +195,10 @@ class Box:
             # One poll an hour, so a test of the start sees the start alone; the tests of
             # the loop poll every second (see _polling).
             "FRPS_POLL_SECONDS": "3600",
-            # su-exec off: without root, frps runs as the test's user.
+            # su-exec off: without root, frps and the requests to its dashboard run as the
+            # test's user.
             "FRPS_USER": "",
+            "FRPS_FETCH_USER": "",
             # Where the supervisor looks for processes of the user of frps: never the real
             # /proc, whose processes of the test's user it would KILL.
             "FRPS_PROC_ROOT": str(self.proc),
@@ -334,7 +345,8 @@ def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
     for name in PEMS:
         (box.pki / name).chmod(0o755)
     # Modes the supervisor has to correct: the server reads the status under another UID, frps
-    # the copy under one of its own, and no one but frps lists the working directory.
+    # the copy under one of its own through its group, and no one but frps lists the working
+    # directory.
     box.state.mkdir(mode=0o700)
     box.state.chmod(0o700)
     box.active.mkdir()
@@ -357,9 +369,9 @@ def test_a_valid_input_is_copied_into_current_and_frps_runs_from_there(box):
         assert (box.current / name).read_bytes() == box.pems[name]
     assert [p.name for p in box.active.iterdir()] == ["current"]
     assert _mode(box.active) == 0o711
-    assert _mode(box.current) == 0o755
+    assert _mode(box.current) == 0o750
     assert {p.name: _mode(p) for p in box.current.iterdir()} == {
-        name: 0o644 for name in (*PEMS, "frps.toml", "applied.sha256")
+        name: 0o640 for name in (*PEMS, "frps.toml", "applied.sha256")
     }
     assert _mode(box.state) == 0o755
     assert _mode(box.status_file) == 0o644
@@ -1250,11 +1262,285 @@ def test_frps_that_ignores_term_is_killed(box):
     assert "killing it" in box._log()
 
 
+PROXY_TYPES = ("stcp", "https", "tcp", "udp")
+DASHBOARD_USER = "admin-\u00fc"
+# What a shell or curl's config would make something else of, were it not passed on as it is.
+DASHBOARD_PASSWORD = f"pw:$HOME `id` # {uuid.uuid4().hex}"
+
+
+def _answer(proxy_type: str) -> bytes:
+    return f'{{"proxies": [{{"name": "srv1.{proxy_type}", "status": "online"}}]}}\n'.encode()
+
+
+class Dashboard:
+    """Stands in for the dashboard of frps on 127.0.0.1: answers GET /api/proxy/<type> with
+    answers[type] (status, body, whether with a Content-Length), or, while hang is set, holds
+    the request until the test ends. Notes every request with its Authorization header and,
+    while it is open, every process with the password on its command line (leaks), next to
+    the number of times a process asking the dashboard was seen at all (clients)."""
+
+    def __init__(self):
+        self.answers = {t: (200, _answer(t), True) for t in PROXY_TYPES}
+        self.hang = False
+        self.held = 0
+        self.requests: list[tuple[str, str | None]] = []
+        self.leaks: list[str] = []
+        self.clients = 0
+        self.release = threading.Event()
+        dashboard = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                dashboard._serve(self)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def _serve(self, request: BaseHTTPRequestHandler):
+        self._scan()
+        self.requests.append((request.path, request.headers.get("Authorization")))
+        if self.hang:
+            self.held += 1
+            self.release.wait()
+            return
+        status, body, length = self.answers.get(request.path.rsplit("/", 1)[-1], (404, b"", True))
+        request.send_response(status)
+        if length:
+            request.send_header("Content-Length", str(len(body)))
+        request.end_headers()
+        # Without a length, the end of the connection ends the body (HTTP/1.0).
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            request.wfile.write(body)
+
+    def _scan(self):
+        password, asking = DASHBOARD_PASSWORD.encode(), f":{self.port}/api/proxy/".encode()
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                line = (entry / "cmdline").read_bytes()
+            except OSError:
+                continue
+            if password in line:
+                self.leaks.append(line.replace(b"\0", b" ").decode(errors="replace"))
+            if asking in line:
+                self.clients += 1
+
+    def close(self):
+        self.release.set()
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture()
+def dashboard():
+    dashboard = Dashboard()
+    yield dashboard
+    dashboard.close()
+
+
+def _dashboard_toml(box: Box, dashboard: Dashboard) -> str:
+    return _toml(
+        box.pki,
+        dashboard_port=dashboard.port,
+        dashboard_user=DASHBOARD_USER,
+        dashboard_password=DASHBOARD_PASSWORD,
+    )
+
+
+def _with_dashboard(box: Box, dashboard: Dashboard, **env: str):
+    """A supervisor that polls every second, frps running with webServer on the dashboard;
+    returns once the four proxy lists are there."""
+    box.write_input(_dashboard_toml(box, dashboard))
+    box.env.update({"FRPS_POLL_SECONDS": "1", **env})
+    box.run(frps=True)
+    box.wait_until(lambda: len(_proxy_files(box)) == len(PROXY_TYPES), "the proxy lists")
+
+
+def _proxy_files(box: Box) -> dict[str, bytes]:
+    """The proxy lists in the state directory, by type."""
+    found = {}
+    for proxy_type in PROXY_TYPES:
+        with contextlib.suppress(FileNotFoundError):
+            found[proxy_type] = (box.state / f"proxy-{proxy_type}.json").read_bytes()
+    return found
+
+
+def _state(box: Box, *, in_flight: bool = False) -> list[str]:
+    """The files in the state directory; with in_flight, but for the temp files of requests
+    under way, which a poll swaps in or removes once they are done."""
+    names = sorted(p.name for p in box.state.iterdir())
+    return [n for n in names if not (in_flight and n.startswith(".proxy-"))]
+
+
+ALL_LISTS = sorted(["status.json", *(f"proxy-{t}.json" for t in PROXY_TYPES)])
+
+
+def test_while_frps_runs_every_poll_puts_the_answers_of_its_dashboard_into_the_state(
+    box, dashboard
+):
+    # As frps gave it, unparsed: this one is no JSON at all.
+    dashboard.answers["udp"] = (200, b"no json \xff\n", True)
+
+    _with_dashboard(box, dashboard)
+
+    assert _proxy_files(box) == {t: dashboard.answers[t][1] for t in PROXY_TYPES}
+    assert _state(box, in_flight=True) == ALL_LISTS
+    assert {_mode(box.state / f"proxy-{t}.json") for t in PROXY_TYPES} == {0o644}
+    credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
+    assert {path for path, _ in dashboard.requests} == {f"/api/proxy/{t}" for t in PROXY_TYPES}
+    assert {auth for _, auth in dashboard.requests} == {f"Basic {credentials}"}
+
+    # Every poll writes them anew, and a new answer shows.
+    mtimes = {t: (box.state / f"proxy-{t}.json").stat().st_mtime_ns for t in PROXY_TYPES}
+    dashboard.answers["stcp"] = (200, _answer("another"), True)
+    box.wait_polls(2)
+    box.wait_until(lambda: _proxy_files(box).get("stcp") == _answer("another"), "the new answer")
+    for proxy_type in PROXY_TYPES:
+        assert (box.state / f"proxy-{proxy_type}.json").stat().st_mtime_ns > mtimes[proxy_type]
+    assert _state(box, in_flight=True) == ALL_LISTS
+
+
+# Stands in for curl: records the arguments of each call, one line a call, then becomes the
+# real curl, stdin and all. curl blanks the value of -u in its argv once it runs; the record is
+# taken before that.
+CURL = """#!/bin/sh
+printf '%s\\n' "$*" >> "$STUB_DIR/curl"
+exec {real} "$@"
+"""
+
+
+def test_no_process_carries_the_password_of_the_dashboard_on_its_command_line(box, dashboard):
+    real = shutil.which("curl")
+    assert real, "curl"
+    (box.root / "bin" / "curl").write_text(CURL.format(real=real))
+    (box.root / "bin" / "curl").chmod(0o755)
+
+    _with_dashboard(box, dashboard)
+    box.wait_until(lambda: len(dashboard.requests) >= 3 * len(PROXY_TYPES), "three polls")
+
+    # Neither as it is nor as an Authorization header would carry it.
+    credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
+    calls = (box.stub / "curl").read_text(encoding="utf-8").splitlines()
+    assert len(calls) >= len(PROXY_TYPES)
+    assert all(f"127.0.0.1:{dashboard.port}/api/proxy/" in call for call in calls), calls
+    assert [c for c in calls if DASHBOARD_PASSWORD in c or credentials in c] == []
+    # The credentials reached the dashboard all the same.
+    assert {auth for _, auth in dashboard.requests} == {f"Basic {credentials}"}
+    # Nor any other process while a request was open; looked for while curl waited for the
+    # answer, and found curl then.
+    assert dashboard.clients >= len(dashboard.requests) > 0
+    assert dashboard.leaks == []
+
+
+def test_without_webserver_port_no_proxy_list_is_left_not_even_one_of_an_earlier_run(box):
+    box.state.mkdir()
+    for proxy_type in PROXY_TYPES:
+        (box.state / f"proxy-{proxy_type}.json").write_bytes(_answer(proxy_type))
+    (box.state / ".proxy-tcp.json.tmp").write_bytes(b"cut short")
+
+    _polling(box)
+    assert _state(box) == ["status.json"]
+    box.wait_polls(2)
+
+    assert box.read().state == "running"
+    assert _state(box) == ["status.json"]
+
+
+def test_without_frps_its_dashboard_is_not_asked(box, dashboard):
+    box.write_input(_dashboard_toml(box, dashboard), pems={"frps.crt": box.pems["expired.crt"]})
+    box.env["FRPS_POLL_SECONDS"] = "1"
+
+    box.run(frps=False)
+    box.wait_polls(2)
+
+    assert (box.read().state, box.read().reason) == ("waiting", "cert_expired")
+    assert dashboard.requests == []
+    assert _state(box) == ["status.json"]
+
+
+def test_once_frps_stops_its_proxy_lists_go(box, dashboard):
+    _with_dashboard(box, dashboard)
+
+    box.config.unlink()
+    box.wait_state("stopped")
+    box.wait_until(lambda: not _proxy_files(box), "no proxy list")
+    asked = len(dashboard.requests)
+    box.wait_polls(2)
+
+    assert len(dashboard.requests) == asked
+    assert _state(box) == ["status.json"]
+
+
+# An answer for stcp, and whether it is kept; without a length, the end of the connection
+# ends the answer, so curl learns the size only as it reads it.
+ANSWERS = {
+    "1 MiB": ((200, b"x" * INPUT_MAX, True), True),
+    "1 MiB without a length": ((200, b"x" * INPUT_MAX, False), True),
+    "a byte more": ((200, b"x" * (INPUT_MAX + 1), True), False),
+    "a byte more without a length": ((200, b"x" * (INPUT_MAX + 1), False), False),
+    "HTTP 401": ((401, _answer("stcp"), True), False),
+}
+
+
+@pytest.mark.parametrize("case", list(ANSWERS))
+def test_an_answer_over_1_mib_or_a_failed_request_leaves_no_file_of_its_type(box, dashboard, case):
+    answer, kept = ANSWERS[case]
+    _with_dashboard(box, dashboard)
+
+    dashboard.answers["stcp"] = answer
+    if kept:
+        box.wait_until(lambda: _proxy_files(box).get("stcp") == answer[1], "the answer")
+    else:
+        box.wait_until(lambda: "stcp" not in _proxy_files(box), "no stcp list")
+    box.wait_polls(2)
+
+    files = _proxy_files(box)
+    assert files.pop("stcp", None) == (answer[1] if kept else None)
+    assert files == {t: _answer(t) for t in PROXY_TYPES if t != "stcp"}
+    lists = ALL_LISTS if kept else [f for f in ALL_LISTS if "stcp" not in f]
+    assert _state(box, in_flight=True) == lists
+
+
+def test_a_dashboard_that_does_not_answer_leaves_no_file_and_the_polls_go_on(box, dashboard):
+    _with_dashboard(box, dashboard, FRPS_READ_SECONDS="1")
+
+    dashboard.hang = True
+    box.wait_until(lambda: not _proxy_files(box), "no proxy list")
+    # A poll a second, each held up for FRPS_READ_SECONDS at the most by its requests.
+    held = dashboard.held
+    box.wait_polls(3)
+
+    assert dashboard.held >= held + len(PROXY_TYPES)
+    assert box.read().state == "running"
+    assert _state(box, in_flight=True) == ["status.json"]
+
+
+def test_term_cuts_short_a_request_the_dashboard_does_not_answer(box, dashboard):
+    # Requests far longer than frps gets to stop: only cut short do they let TERM end the
+    # supervisor in time.
+    _with_dashboard(box, dashboard, FRPS_READ_SECONDS="60", FRPS_STOP_SECONDS="5")
+    dashboard.hang = True
+    box.wait_until(lambda: dashboard.held >= len(PROXY_TYPES), "the requests of a poll held")
+
+    box.supervisor.send_signal(signal.SIGTERM)
+
+    assert box.supervisor.wait(timeout=5) == 0
+    _wait_gone(box.supervisor.pid)
+    assert _state(box) == ["status.json"]
+
+
 SU_EXEC = """#!/bin/sh
-# Stands in for su-exec: records the user and the command, and runs frps as it is, nothing
-# else.
+# Stands in for su-exec: records the user and the command, and runs frps or curl as it is,
+# nothing else, the user in SU_EXEC_USER.
 printf '%s\\n' "$*" >> "$STUB_DIR/su-exec"
-[ "$2" = frps ] || exit 0
+case $2 in frps | curl) ;; *) exit 0 ;; esac
+SU_EXEC_USER=$1
+export SU_EXEC_USER
 shift
 exec "$@"
 """
@@ -1299,6 +1585,42 @@ def test_frps_runs_as_its_user_through_su_exec_and_verify_does_not(box):
     # su-exec runs frps alone; no KILL is sent as the user of frps.
     run = f"{user} frps -c {box.current}/frps.toml"
     assert (box.stub / "su-exec").read_text().splitlines() == [run, run]
+
+
+# Stands in for curl: records the user su-exec ran it as (none without su-exec), then becomes
+# the real curl, stdin and all.
+CURL_AS = """#!/bin/sh
+printf '%s\\n' "${{SU_EXEC_USER:-none}}" >> "$STUB_DIR/curl"
+exec {real} "$@"
+"""
+
+
+def test_every_request_to_the_dashboard_runs_as_its_user_through_su_exec(box, dashboard):
+    su_exec = box.root / "bin" / "su-exec"
+    su_exec.write_text(SU_EXEC)
+    su_exec.chmod(0o755)
+    real = shutil.which("curl")
+    assert real, "curl"
+    (box.root / "bin" / "curl").write_text(CURL_AS.format(real=real))
+    (box.root / "bin" / "curl").chmod(0o755)
+    user = pwd.getpwuid(os.getuid()).pw_name
+    box.env["FRPS_FETCH_USER"] = user
+
+    _with_dashboard(box, dashboard)
+    box.wait_until(lambda: len(dashboard.requests) >= 2 * len(PROXY_TYPES), "two polls")
+
+    # The four lists arrive as without su-exec, the credentials on stdin.
+    assert _proxy_files(box) == {t: _answer(t) for t in PROXY_TYPES}
+    credentials = base64.b64encode(f"{DASHBOARD_USER}:{DASHBOARD_PASSWORD}".encode()).decode()
+    assert {auth for _, auth in dashboard.requests} == {f"Basic {credentials}"}
+    # Each request through su-exec as the user, none around it, and no call with the password.
+    calls = (box.stub / "su-exec").read_text(encoding="utf-8").splitlines()
+    url = f" http://127.0.0.1:{dashboard.port}/api/proxy/"
+    assert calls and all(c.startswith(f"{user} curl -q --config - ") for c in calls), calls
+    assert all(url in c for c in calls), calls
+    assert {c.rsplit(url, 1)[1] for c in calls} == set(PROXY_TYPES), calls
+    assert [c for c in calls if DASHBOARD_PASSWORD in c or credentials in c] == []
+    assert set((box.stub / "curl").read_text().split()) == {user}
 
 
 def test_processes_of_the_frps_user_are_killed_before_frps_starts_and_after_it_ended(box):
@@ -1438,6 +1760,20 @@ def test_a_frps_user_that_is_root_or_no_user_stops_the_supervisor(box, user):
     assert box.calls() == [] and not box.status_file.exists()
 
 
+@pytest.mark.parametrize("user", ["root", "no-such-user-for-the-dashboard", "the user of frps"])
+def test_a_fetch_user_that_is_root_no_user_or_the_user_of_frps_stops_the_supervisor(box, user):
+    box.write_input()
+    if user == "the user of frps":
+        _as_user(box)
+        user = box.env["FRPS_USER"]
+    box.env["FRPS_FETCH_USER"] = user
+
+    result = box.once()
+
+    assert result.returncode == 1 and "FRPS_FETCH_USER" in result.stderr
+    assert box.calls() == [] and not box.status_file.exists()
+
+
 def _status_doc(state: str) -> str:
     """A status file as the supervisor writes it: compact, one line."""
     stamp = "2026-10-16T12:00:00Z"
@@ -1495,6 +1831,26 @@ def test_the_supervisor_runs_frps_as_the_user_the_image_creates_for_it():
     name, uid = _frps_user()
     assert uid != 0
     assert f'FRPS_USER="${{FRPS_USER-{name}}}"' in SCRIPT.read_text()
+
+
+def _fetch_user() -> tuple[str, int]:
+    """Name and UID of the user the requests to the dashboard run as by default, as the image
+    creates it."""
+    default = re.search(
+        r'^FRPS_FETCH_USER="\$\{FRPS_FETCH_USER-(\S+)\}"$', SCRIPT.read_text(), re.M
+    )
+    assert default, "no default for FRPS_FETCH_USER"
+    dockerfile = (FRPS_DIR / "Dockerfile").read_text()
+    name = re.escape(default[1])
+    found = re.search(rf"\badduser\b.* -u (\d+) -G {name} {name}(?: |$)", dockerfile, re.M)
+    assert found, dockerfile
+    return default[1], int(found[1])
+
+
+def test_the_supervisor_asks_the_dashboard_as_a_user_of_its_own_the_image_creates():
+    # _fetch_user finds it in a group of its own, too.
+    _, uid = _fetch_user()
+    assert uid not in (0, _frps_user()[1])
 
 
 def _image() -> tuple[str, str, list[str]]:
@@ -1936,3 +2292,103 @@ def test_in_the_frps_image_the_supervisor_does_not_run_frps_as_root(frps_image):
         subprocess.run([docker, "rm", "-f", name], capture_output=True)
 
     assert result.returncode == 1 and "FRPS_USER" in result.stderr, result.stderr
+
+
+def test_in_the_frps_image_the_supervisor_does_not_ask_the_dashboard_as_root(frps_image):
+    docker, tag = frps_image
+    name = f"frps-supervisor-test-{uuid.uuid4().hex[:12]}"
+    run = [docker, "run", "--name", name, "--network", "none", *_security_args(_compose_frps())]
+    run += ["-e", "FRPS_FETCH_USER=", tag]
+    try:
+        result = subprocess.run(run, capture_output=True, text=True, timeout=WAIT * 3)
+    finally:
+        subprocess.run([docker, "rm", "-f", name], capture_output=True)
+
+    assert result.returncode == 1 and "FRPS_FETCH_USER" in result.stderr, result.stderr
+
+
+# Stands in for frps: verify goes to frps as it is; a run takes the connections to the port of
+# its dashboard (7500, as in the test below), answers none of them and drops what it reads.
+SILENT = """#!/bin/sh
+if [ "$1" = verify ]; then exec frps "$@"; fi
+exec nc -dlk 127.0.0.1 7500 > /dev/null
+"""
+
+
+def test_in_the_frps_image_the_supervisor_asks_the_dashboard_as_its_user(
+    tmp_path, pems, frps_image
+):
+    _, uid = _fetch_user()
+    config = _cfg(
+        dashboard_port=7500, dashboard_user=DASHBOARD_USER, dashboard_password=DASHBOARD_PASSWORD
+    )
+    # Requests held open longer than the grace period compose gives frps.
+    env = {"FRPS_POLL_SECONDS": "1", "FRPS_READ_SECONDS": "60"}
+    toml = generate_frps_toml(config)
+    with _container(frps_image, tmp_path, pems, toml, frps_bin=SILENT, **env) as box:
+        # The requests of a poll, all of them under way: curl as the user of the requests, none
+        # as root.
+        box.wait_until(
+            lambda: [p[0] for p in box.processes(uid)] == ["curl"] * len(PROXY_TYPES),
+            "the requests of a poll as their user",
+        )
+
+        assert [process for process in box.processes(0) if process[0] == "curl"] == []
+        # TERM ends them as before, and with them the supervisor within the grace period.
+        assert box.stop() == "0", box.logs()
+
+
+def test_in_the_frps_image_the_copy_is_open_to_frps_alone_not_to_the_user_of_the_requests(
+    tmp_path, pems, frps_image
+):
+    frps, _ = _frps_user()
+    fetch, fetch_uid = _fetch_user()
+    with _container(frps_image, tmp_path, pems, generate_frps_toml(_cfg())) as box:
+        box.wait_until(
+            lambda: STARTED_SUCCESSFULLY in box.logs() and box.read().state == "running",
+            "frps up",
+        )
+
+        current = f"{ACTIVE_DIR}/current"
+        files = [f"{current}/{name}" for name in ("frps.toml", *PEMS, "applied.sha256")]
+        # root's and in the group of frps; nothing for anyone else.
+        group = box.exec("id", "-gn", frps).stdout.strip()
+        modes = box.exec("stat", "-c", "%a %U %G %n", current, *files)
+        assert modes.stdout.splitlines() == [
+            f"750 root {group} {current}",
+            *(f"640 root {group} {file}" for file in files),
+        ], modes.stderr
+
+        def reads(user: str) -> dict[str, bool]:
+            """What user reads of the copy, switched to by su-exec as the supervisor does."""
+            tries = {current: ["ls", current], **{file: ["cat", file] for file in files}}
+            return {
+                path: box.exec("su-exec", user, *args).returncode == 0
+                for path, args in tries.items()
+            }
+
+        assert reads(frps) == dict.fromkeys([current, *files], True)
+        # The switch itself works: what fails is the reading.
+        assert box.exec("su-exec", fetch, "id", "-u").stdout.strip() == str(fetch_uid)
+        assert reads(fetch) == dict.fromkeys([current, *files], False)
+
+
+def test_in_the_frps_image_the_supervisor_puts_the_proxy_lists_of_frps_into_the_state(
+    tmp_path, pems, frps_image
+):
+    config = _cfg(
+        dashboard_port=7500, dashboard_user=DASHBOARD_USER, dashboard_password=DASHBOARD_PASSWORD
+    )
+    lists = [f"{STATE_DIR}/proxy-{t}.json" for t in PROXY_TYPES]
+    with _container(
+        frps_image, tmp_path, pems, generate_frps_toml(config), FRPS_POLL_SECONDS="1"
+    ) as box:
+        box.wait_until(lambda: box.exec("cat", *lists).returncode == 0, "the proxy lists")
+
+        # curl of the image, the dashboard of the real frps over loopback, its credentials.
+        for path in lists:
+            result = box.exec("cat", path)
+            assert json.loads(result.stdout) == {"proxies": []}, result.stdout
+        modes = box.exec("stat", "-c", "%a %u", *lists).stdout.split("\n")
+        assert modes[: len(lists)] == ["644 0"] * len(lists)
+        assert DASHBOARD_PASSWORD not in box.logs()

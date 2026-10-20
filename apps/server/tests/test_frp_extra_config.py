@@ -234,7 +234,8 @@ def test_the_schema_rejects_every_key_the_generator_writes(model, key):
         _build(model, extra_config={key: "x"})
 
 
-@pytest.mark.parametrize("value", ["{{print}}", "a}", math.nan, math.inf, -math.inf])
+# `{{` is refused earlier, by the guard of every TOML string (test_frp_input_hardening.py).
+@pytest.mark.parametrize("value", ["{print}", "a}", math.nan, math.inf, -math.inf])
 @pytest.mark.parametrize("model", MODELS)
 def test_the_schema_rejects_a_value_check_config_rejects(model, value):
     with pytest.raises(ValidationError, match="extra_config value"):
@@ -559,6 +560,8 @@ def test_startup_tells_the_admins_once_about_a_token_frps_is_not_started_with(
     db_session.add_all(
         [
             _config(id="cfg-short", auth_token=short),
+            # frps is not started with an empty token either; the row keeps it.
+            _config(id="cfg-empty", auth_token=""),
             _config(id="cfg-16", auth_token="t" * 16),
             # check_config counts bytes (LC_ALL=C): eight two-byte characters are 16.
             _config(id="cfg-bytes", auth_token="é" * 8),
@@ -568,18 +571,24 @@ def test_startup_tells_the_admins_once_about_a_token_frps_is_not_started_with(
 
     log = _clean(db_session, caplog)
 
-    notices = _notices(db_session)
+    # The start reads the configs in no set order.
+    notices = sorted(_notices(db_session), key=lambda n: n.source_id)
     assert [(n.user_id, n.source_id, n.severity) for n in notices] == [
-        (admin_user.id, "cfg-short:auth_token", "warning")
+        (admin_user.id, "cfg-empty:auth_token", "warning"),
+        (admin_user.id, "cfg-short:auth_token", "warning"),
     ]
-    assert notices[0].body.endswith(f"Bitte neu setzen: Auth Token ({TOKEN}).")
+    for notice in notices:
+        assert notice.body.endswith(f"Bitte neu setzen: Auth Token ({TOKEN}).")
+        assert short not in notice.body + notice.title
     assert "auth_token" in log
-    assert short not in notices[0].body + notices[0].title + log
+    assert "cfg-empty" in log
+    assert short not in log
     assert db_session.get(FrpServerConfig, "cfg-short").auth_token == short
+    assert db_session.get(FrpServerConfig, "cfg-empty").auth_token == ""
 
     _clean(db_session, caplog)
 
-    assert len(_notices(db_session)) == 1
+    assert len(_notices(db_session)) == 2
 
 
 @pytest.mark.parametrize("dashboard_port", [443, 7100, 7200], ids=["443", "bind", "published"])

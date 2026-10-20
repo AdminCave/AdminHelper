@@ -907,7 +907,7 @@ Vollstaendige Integration mit dem AdminHelper-Server:
 - Im Server-Web-Interface: Server + Tunnel + Visitor anlegen
 - Der Desktop-Client holt die Visitor-Config automatisch und startet frpc
 - Verbindungen mit Tunnel zeigen ein gruenes "via Tunnel"-Badge
-- SSH/RDP-Verbindungen werden automatisch ueber `127.0.0.1:<visitor_port>` aufgeloest
+- SSH/RDP-Verbindungen werden automatisch ueber `127.0.0.1:<lokaler Port>` aufgeloest (der Visitor-Port oder, ist er belegt, ein freier aus 23000–23999)
 
 ### Automatisierte Integrations-/E2E-Tests (Docker)
 
@@ -1388,14 +1388,14 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  ├─ app/
 │  │  │  ├─ main.py
 │  │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
-│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
-│  │  │                          #   ansible, monitoring_proxy
+│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys, ansible,
+│  │  │                          #   monitoring_proxy, audit, enrollment, notifications, provisioning
 │  │  ├─ alembic/               # DB-Migrationen
 │  │  └─ requirements.txt
 │  ├─ monitoring/            # eigenständiger FastAPI-Microservice (eigene DB)
 │  │  ├─ app/
-│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
-│  │  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast
+│  │  │  ├─ routers/             # admin, agent, alerts, checks, maintenance, templates
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks
 │  │  └─ Dockerfile
@@ -1409,18 +1409,19 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ Makefile                # build-linux, build-windows, deb, rpm
 │  ├─ web/                   # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
 │  │  ├─ src/
-│  │  │  ├─ lib/api/             # 9 Module (client + 7 Domain-Wrapper + types)
-│  │  │  ├─ lib/stores/          # 6 Stores
+│  │  │  ├─ lib/api/             # client + Domain-Wrapper + types
+│  │  │  ├─ lib/stores/          # Svelte-Stores
 │  │  │  ├─ lib/i18n/            # DE/EN-Dictionaries
-│  │  │  ├─ pages/               # 5 Produktiv-Pages + Login + Placeholder
-│  │  │  └─ modals/              # 9 Modal-Komponenten
-│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts, crud.spec.ts)
+│  │  │  ├─ pages/               # Produktiv-Pages + Login + Placeholder
+│  │  │  └─ modals/              # Modal-Komponenten
+│  │  └─ tests/e2e/              # Playwright-E2E-Specs (*.spec.ts)
 │  └─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
 │     ├─ src-tauri/          # Rust/Tauri-Backend
 │     │  ├─ src/
-│     │  │  ├─ main.rs            # invoke_handler mit 32 Tauri-Commands
+│     │  │  ├─ main.rs            # invoke_handler mit allen Tauri-Commands
 │     │  │  ├─ commands.rs        # IPC-Schnittstelle
-│     │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
+│     │  │  ├─ auth.rs            # JWT-Login und -Abmeldung
+│     │  │  ├─ session.rs         # Session im Speicher, ein Erneuerungsweg
 │     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
 │     │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
 │     │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
@@ -1431,12 +1432,12 @@ curl -sk https://localhost/api/frp/tunnels \
 │     │  └─ capabilities/        # Tauri v2 Security Permissions
 │     └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
 │        ├─ src/
-│        │  ├─ lib/bridge/       # 31 typisierte invoke()-Wrapper
-│        │  ├─ lib/stores/       # 12 Stores
+│        │  ├─ lib/bridge/       # typisierte Tauri-IPC-Wrapper
+│        │  ├─ lib/stores/       # Svelte-Stores
 │        │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
-│        │  ├─ components/       # ~46 Components
+│        │  ├─ components/       # Svelte-Components
 │        │  └─ pages/            # 5 Pages (Dashboard, Connections, Infrastructure, Ansible, Monitoring)
-│        └─ vitest.setup.ts      # ~250 Vitest-Unit-Tests
+│        └─ vitest.setup.ts      # Vitest-Setup; die Unit-Tests liegen neben dem Code (src/**/*.test.ts)
 ├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ scripts/                  # Ops-/DB-Skripte (+ tests/: integration_stack_test, desktop_e2e_live, lib_e2e_stack)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)

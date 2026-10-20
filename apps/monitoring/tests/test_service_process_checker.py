@@ -19,10 +19,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.checkers.agent import ServiceProcessChecker
+from app.checkers.agent import MAX_AGENT_TEXT, ServiceProcessChecker, cap_agent_text
 from app.core.auth import require_agent
 from app.core.database import get_db
 from app.models import Base, MonitorCheck, MonitorState
+
+from ._helpers import assert_every_reader_reads
 
 
 def _full_report() -> dict:
@@ -130,6 +132,54 @@ def test_auto_mode_counts_land_in_details():
     assert status == "ok"
     assert metrics["_details"]["active_count"] == 41
     assert metrics["_details"]["total"] == 63
+
+
+# _details goes as it is into the answers of GET /status and GET /checks, which the desktop reads
+# as a whole: a 400-digit integer there is no number every JSON reader takes, a 9000-character
+# unit name no text it should have to carry.
+@pytest.mark.parametrize(
+    "counts",
+    [{"active": 41, "total": 10**400}, {"active": 10**400, "total": 10**400}],
+    ids=["total-400-digits", "both-400-digits"],
+)
+def test_auto_mode_counts_beyond_float_range_are_ignored(counts):
+    systemd = {"failed": [], "enabled_inactive": [], "counts": counts}
+    status, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, {"systemd": systemd})
+    assert status == "ok"
+    assert "active_count" not in metrics["_details"]
+    assert "total" not in metrics["_details"]
+    assert_every_reader_reads(metrics["_details"])
+
+
+_LONG_UNIT = "unit\n" * 1800  # 9000 characters
+_LONG_UNIT_SHOWN = ("unit " * 1800)[:499] + "\u2026"
+
+
+@pytest.mark.parametrize(
+    "key, status, prefix",
+    [("failed", "critical", "Failed"), ("enabled_inactive", "warning", "Inactive (autostart)")],
+)
+def test_auto_mode_a_long_unit_name_goes_into_details_on_one_line_of_500_characters(
+    key, status, prefix
+):
+    systemd = {"failed": [], "enabled_inactive": [], key: [_LONG_UNIT, "cron.service"]}
+    result = ServiceProcessChecker().evaluate({"mode": "auto"}, {"systemd": systemd})
+    assert result[:2] == (status, f"{prefix}: {_LONG_UNIT_SHOWN}, cron.service")
+    assert result[2]["_details"][key] == [_LONG_UNIT_SHOWN, "cron.service"]
+    assert result[2][f"services_{key}"] == 2
+    assert_every_reader_reads(result[2]["_details"])
+
+
+def test_auto_mode_the_ignore_list_compares_the_full_unit_name():
+    name = _LONG_UNIT.strip()  # _parse_ignore strips the pattern
+    systemd = {"failed": [name], "enabled_inactive": [name]}
+    checker = ServiceProcessChecker()
+    ignored = checker.evaluate({"mode": "auto", "ignore": [name]}, {"systemd": systemd})
+    assert ignored[:2] == ("ok", "All services OK")
+    shown = cap_agent_text(name)
+    status, _, metrics = checker.evaluate({"mode": "auto", "ignore": [shown]}, {"systemd": systemd})
+    assert status == "critical"
+    assert metrics["_details"]["failed"] == [shown]
 
 
 @pytest.mark.parametrize(
@@ -384,6 +434,69 @@ def test_list_mode_systemctl_error_is_no_data():
     assert status == "unknown"
     assert _watched(metrics) == {"nginx": "nodata", "sshd": "nodata"}
     assert error in message
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("exit status 1", "exit status 1"),
+        ("x" * 500, "x" * 500),
+        ("x" * 501, "x" * 499 + "…"),
+        ("", None),
+        (None, None),
+        (["a"], None),
+        (42, None),
+    ],
+    ids=["short", "500-chars", "501-chars", "empty", "none", "list", "int"],
+)
+def test_cap_agent_text(value, expected):
+    assert cap_agent_text(value) == expected
+
+
+@pytest.mark.parametrize(
+    "mode, prefix",
+    [("auto", ""), ("list", "Services without data: nginx, sshd; ")],
+    ids=["auto", "list"],
+)
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        ("x" * 10_000, "x" * (MAX_AGENT_TEXT - 1) + "…"),
+        ("y" * MAX_AGENT_TEXT, "y" * MAX_AGENT_TEXT),
+    ],
+    ids=["10000-chars", "500-chars"],
+)
+def test_systemctl_error_text_is_capped(mode, prefix, error, expected):
+    # The message goes unchanged into MonitorState.message and from there into webhook and mail:
+    # a broken or hijacked agent must not push an unbounded text through it (R-0437). Compared
+    # whole, so no uncapped copy of the text can hide in front of the capped one (R-0508).
+    status, message, _ = ServiceProcessChecker().evaluate(
+        {"mode": mode, "services": ["nginx", "sshd"]}, _inventory_report(error=error)
+    )
+    assert status == "unknown"
+    assert message == f"{prefix}Services not queryable: {expected}"
+
+
+@pytest.mark.parametrize(
+    "mode, expected",
+    [
+        ("auto", "Services not queryable"),
+        ("list", "Services without data: nginx, sshd; Services not queryable"),
+    ],
+    ids=["auto", "list"],
+)
+@pytest.mark.parametrize(
+    "error", [["systemctl", "failed"], {"code": 1}, 42], ids=["list", "dict", "int"]
+)
+def test_systemctl_error_without_text_is_unknown_without_reason(mode, expected, error):
+    # The raw value still decides that listing failed; only a string goes into the message.
+    report = _inventory_report(error="x")
+    report["systemd"]["error"] = error
+    status, message, _ = ServiceProcessChecker().evaluate(
+        {"mode": mode, "services": ["nginx", "sshd"]}, report
+    )
+    assert status == "unknown"
+    assert message == expected
 
 
 def test_list_mode_name_without_data_is_not_down():

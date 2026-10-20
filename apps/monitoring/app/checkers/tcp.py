@@ -17,7 +17,7 @@ class TcpChecker:
         timeout = config.get("timeout", 5)
 
         if not target or not port:
-            return "unknown", "Ziel oder Port fehlt", None
+            return "unknown", "Target or port missing", None
 
         # NO private/reserved block here (unlike the http checker): checking an
         # internal service port (postgres, redis, an app on 10.x) is exactly
@@ -33,12 +33,12 @@ class TcpChecker:
             sock.close()
             return (
                 "ok",
-                f"Port {port} offen ({duration:.1f} ms)",
+                f"Port {port} open ({duration:.1f} ms)",
                 {"tcp_connect_ms": round(duration, 2)},
             )
         except socket.timeout:
-            return "critical", f"Port {port}: Timeout nach {timeout}s", None
+            return "critical", f"Port {port}: timeout after {timeout}s", None
         except ConnectionRefusedError:
-            return "critical", f"Port {port}: Verbindung abgelehnt", None
+            return "critical", f"Port {port}: connection refused", None
         except OSError as exc:
             return "critical", f"Port {port}: {exc}", None

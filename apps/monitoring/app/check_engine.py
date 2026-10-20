@@ -33,6 +33,13 @@ logger = logging.getLogger("monitor.engine")
 # the one _dispatch_alert_bg below, each scheduling it its own way (5.3).
 _alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
 
+# Longest message apply_result stores, the "…" included. The checkers cap what they copy
+# from a report (MAX_AGENT_TEXT, join_capped), but a message with two full lists or a
+# scheduler check's "Unexpected error: {exc}" can still be longer, and the message goes
+# from MonitorState.message into the transition log, webhook and mail. Four agent texts
+# of 500 (R-0517).
+MAX_MESSAGE = 2000
+
 
 def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
     """Dispatch one alert (webhook/SMTP) with its own session.
@@ -166,8 +173,11 @@ def apply_result(
     eff_status = effective_status(
         result_status, new_fail_count, check.consecutive_fails, old_status
     )
+    # Cut before the damping suffix, so "(failure n/m)" always stays visible.
+    if len(message) > MAX_MESSAGE:
+        message = message[: MAX_MESSAGE - 1] + "…"
     if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
-        message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
+        message = f"{message} (failure {new_fail_count}/{check.consecutive_fails})"
 
     has_details = (details is not None) if keep_previous_details_when_absent else bool(details)
     details_json = json.dumps(details) if has_details else None
@@ -251,15 +261,15 @@ def execute_check(check_id: str) -> None:
         # looks healthy, with no alert and no dashboard hint) (4.109).
         start = time.monotonic()
         if config is None:
-            result_status, message, metrics = "unknown", "Ungueltige Check-Konfiguration", None
+            result_status, message, metrics = "unknown", "Invalid check configuration", None
         elif checker is None:
-            result_status, message, metrics = "unknown", "Unbekannter Check-Typ", None
+            result_status, message, metrics = "unknown", "Unknown check type", None
         else:
             try:
                 result_status, message, metrics = checker.run(config)
             except Exception as exc:
                 result_status = "unknown"
-                message = f"Unerwarteter Fehler: {exc}"
+                message = f"Unexpected error: {exc}"
                 metrics = None
                 logger.exception("Check %s fehlgeschlagen", check.name)
         duration_ms = int((time.monotonic() - start) * 1000)

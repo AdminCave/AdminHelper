@@ -30,8 +30,6 @@ vi.mock('$lib/stores/session', async () => {
   return {
     session: readable({
       serverUrl: 'https://t',
-      token: 't',
-      refreshToken: 'r',
       username: 'a',
       isAdmin: true,
     }),

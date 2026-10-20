@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     settingsModalOpen,
     closeSettings,
     saveSettings,
-    serverLogout,
+    logoutAndReload,
   } from '$lib/stores/settings';
   import { t, currentLocale } from '$lib/i18n';
   import {
@@ -227,8 +227,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onExportBrowserCert(): Promise<void> {
-    const sess = $session;
-    if (!sess) return;
+    if (!$session) return;
     // Characters as Rust counts them (chars(), code points), not UTF-16 units:
     // check_export_password rejects anything shorter than 12, and that rejection
     // would only reach the user as the generic export error below.
@@ -244,13 +243,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     browserCertBusy = true;
     browserCertMsg = $t('settings.browserCert.working');
     try {
-      const path = await exportBrowserP12(
-        sess.serverUrl,
-        sess.token,
-        browserCertPassword,
-        destPath,
-        allowSelfSignedCerts,
-      );
+      const path = await exportBrowserP12(browserCertPassword, destPath);
       browserCertMsg = `${$t('settings.browserCert.done')} ${path}`;
       browserCertPassword = '';
     } catch (err) {
@@ -274,7 +267,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onSave(): Promise<void> {
+    // Rust writes settings.json whole: a field this dialog does not edit (lastUsername)
+    // has to come from the current settings, or saving drops it.
     const next: Settings = {
+      ...$settings,
       mode,
       url: url.trim(),
       intervalMinutes,
@@ -292,7 +288,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function onLogout(): Promise<void> {
-    await serverLogout();
+    await logoutAndReload();
   }
 
   async function onToggleOsNotifications(checked: boolean): Promise<void> {
@@ -605,7 +601,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="panel-actions">
         <div style="flex: 1;"></div>
         <button class="btn" onclick={closeSettings}>{$t('action.cancel')}</button>
-        <button class="btn primary" onclick={onSave}>{$t('action.save')}</button>
+        <button class="btn primary" data-action="settings-save" onclick={onSave}
+          >{$t('action.save')}</button
+        >
       </div>
     </div>
   </div>

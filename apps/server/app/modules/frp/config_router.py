@@ -8,6 +8,7 @@ import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
@@ -15,6 +16,7 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
+from app.modules.frp.config_generator import frps_bind_port
 from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
 from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.schemas import (
@@ -22,6 +24,7 @@ from app.modules.frp.schemas import (
     FrpServerConfigDetail,
     FrpServerConfigOut,
     FrpServerConfigUpdate,
+    check_dashboard_port,
 )
 
 logger = logging.getLogger("adminhelper.frp")
@@ -129,6 +132,27 @@ def update_server_config(
     ]:
         if field in sent:
             setattr(config, field, getattr(data, field))
+
+    # Only when one of the two ports is sent: a row stored before this check stays editable,
+    # and the startup check names its port. Against the bind port frps gets, which for a row
+    # from before the port bounds is not the stored one.
+    if sent & {"dashboard_port", "bind_port"}:
+        try:
+            check_dashboard_port(config.dashboard_port, frps_bind_port(config))
+        except ValueError as exc:
+            db.rollback()
+            field = "dashboard_port" if "dashboard_port" in sent else "bind_port"
+            # The 422 the schema declares (HTTPValidationError), as for the create.
+            raise RequestValidationError(
+                [
+                    {
+                        "type": "value_error",
+                        "loc": ("body", field),
+                        "msg": str(exc),
+                        "input": getattr(data, field),
+                    }
+                ]
+            )
 
     # The GET paths mask the token, so a blank or null auth_token from a client means
     # "keep the stored one"; a new value has already passed the schema's length floor.

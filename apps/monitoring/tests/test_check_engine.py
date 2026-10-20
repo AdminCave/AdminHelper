@@ -10,6 +10,7 @@ damping, without DB, scheduler or VictoriaMetrics.
 """
 
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -427,7 +428,94 @@ def test_new_check_first_critical_stays_damped():
     )
     assert (eff, decision) == ("ok", "silent_ack")
     assert (state.status, state.fail_count) == ("ok", 1)
-    assert "(Fehler 1/2)" in state.message
+    assert "(failure 1/2)" in state.message
+
+
+@pytest.mark.parametrize("row", [True, False], ids=["update", "create"])
+@pytest.mark.parametrize(
+    ("message", "consecutive_fails", "stored"),
+    [
+        pytest.param("x" * 10_000, 1, "x" * 1999 + "…", id="long"),
+        pytest.param("x" * 10_000, 2, "x" * 1999 + "… (failure 1/2)", id="long-damped"),
+        pytest.param("x" * 2001, 1, "x" * 1999 + "…", id="2001"),
+        pytest.param("x" * 2000, 1, "x" * 2000, id="2000"),
+        pytest.param("x" * 2000, 2, "x" * 2000 + " (failure 1/2)", id="2000-damped"),
+    ],
+)
+def test_message_is_cut_to_2000_characters_before_the_damping_suffix(
+    row, message, consecutive_fails, stored
+):
+    # R-0517: apply_result is the one writer of MonitorState.message, for both paths and
+    # both of its writes (create, update). It cuts the message to 2000 characters including
+    # the "…" before the damping suffix, so "(failure n/m)" always stays visible.
+    from app.check_engine import apply_result
+    from app.models import MonitorCheck, MonitorState
+
+    check = MonitorCheck(
+        id="c1", name="c1", check_type="ping", config="{}", consecutive_fails=consecutive_fails
+    )
+    db = _DummyDb()
+    state = MonitorState(check_id="c1", status="ok", fail_count=0) if row else None
+    apply_result(db, check, state, "critical", message, None, utcnow_naive())
+    assert (state or db.added[0]).message == stored
+
+
+def test_execute_check_cuts_a_long_checker_error(monkeypatch, caplog):
+    # R-0517, scheduler path: "Unexpected error: {exc}" carries the whole exception text.
+    # The state and the transition log line (and from the state webhook and mail) get it
+    # cut to 2000 characters.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    import app.core.database as database_mod
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                name="c1",
+                check_type="ping",
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.add(MonitorState(check_id="c1", status="ok"))
+        db.commit()
+
+    class _Raises:
+        def run(self, config):
+            raise RuntimeError("x" * 10_000)
+
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(ce, "get_checker", lambda _ct: _Raises())
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
+        ce.execute_check("c1")
+
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="c1").one()
+    assert state.status == "unknown"
+    prefix = "Unexpected error: "
+    assert state.message == prefix + "x" * (1999 - len(prefix)) + "…"
+    assert len(state.message) == 2000
+    transitions = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "monitor.engine" and "->" in r.getMessage()
+    ]
+    assert transitions == [f"Check 'c1': ok -> unknown ({state.message})"]
 
 
 def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
@@ -463,7 +551,7 @@ def test_execute_check_new_check_first_unknown_without_dispatch(monkeypatch):
 
     class _Waiting:
         def run(self, config):
-            return "unknown", "Wartet auf Agent-Daten", None
+            return "unknown", "Waiting for agent data", None
 
     submitted = []
     monkeypatch.setattr(database_mod, "SessionLocal", factory)

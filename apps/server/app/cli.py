@@ -24,21 +24,13 @@ import argparse
 import datetime
 import sys
 
-# Import every model module so SQLAlchemy can resolve cross-module relationships
-# (mapper configuration) before we touch the ORM — same set the test bootstrap
-# imports; missing one raises "failed to locate a name" at query time.
-import app.modules.ansible.models  # noqa: F401
-import app.modules.api_keys.models  # noqa: F401
-import app.modules.connections.models  # noqa: F401
-import app.modules.enrollment.models  # noqa: F401
-import app.modules.frp.models  # noqa: F401
-import app.modules.hooks.models  # noqa: F401
-import app.modules.servers.models  # noqa: F401
-import app.modules.users.models  # noqa: F401
+# Every ORM model before the first query, see app/model_registry.py.
+from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import Actor
+from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.notifications.service import default_admin_subscription
@@ -90,6 +82,9 @@ def reset_admin(db, username: str, password: str) -> int:
         print(f"Fehler: Benutzer '{username}' existiert nicht.", file=sys.stderr)
         return 1
     user.hashed_password = hash_password(password)
+    # Like a password change over the API: tokens issued before the reset no
+    # longer authenticate (core/auth.py).
+    user.tokens_valid_after = utcnow_naive()
     db.commit()
     audit.record(
         db,

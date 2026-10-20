@@ -12,6 +12,7 @@ The data comes from the adminhelper-agent via POST /agent/{server_id}/report.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from datetime import datetime, timedelta
 from fnmatch import fnmatchcase
@@ -42,6 +43,97 @@ _last_report_mono: dict[str, float] = {}
 # all — 60 s is far above either. Correcting is safe in both directions, so the
 # constant only decides WHEN to prefer monotonic, never whether to alert.
 _CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
+
+# Longest text from the report a checker copies into its message. The message goes into
+# MonitorState.message (cut only at check_engine.MAX_MESSAGE, 2000 characters) and from there
+# into webhook and mail, so a broken or hijacked agent must not push an unbounded text
+# through it (R-0437).
+MAX_AGENT_TEXT = 500
+
+# Every control character (Unicode category Cc: C0, DEL, C1) and the line and paragraph
+# separators become a space, one for one: a line break in a container name would otherwise
+# start a forged line of its own in the dashboard, the bell, mail and webhook.
+_AGENT_TEXT_TO_SPACE = str.maketrans(
+    dict.fromkeys([*range(0x20), *range(0x7F, 0xA0), 0x2028, 0x2029], " ")
+)
+
+
+def cap_agent_text(value: object) -> str | None:
+    """A text from the report as it may go into a message: a non-empty string on one line,
+    every control character a space, cut to MAX_AGENT_TEXT characters including the trailing
+    "…"; None for anything else.
+
+    Cut first, then translate: the table maps one character to one, so the result is the
+    same, and the work stays bounded by MAX_AGENT_TEXT however long the report text is."""
+    if not isinstance(value, str) or not value:
+        return None
+    if len(value) <= MAX_AGENT_TEXT:
+        return value.translate(_AGENT_TEXT_TO_SPACE)
+    return value[: MAX_AGENT_TEXT - 1].translate(_AGENT_TEXT_TO_SPACE) + "…"
+
+
+# A list a checker joins into its message names at most this many entries and characters
+# (entries and separators); the full list is in _details (R-0517).
+_MAX_LIST_ENTRIES = 10
+_MAX_LIST_TEXT = 1000
+
+
+def join_capped(entries: list[str], sep: str = ", ") -> str:
+    """entries joined with sep as they may go into a message: each entry on one line and cut
+    by cap_agent_text, appended in order as long as the joined text keeps to _MAX_LIST_ENTRIES
+    entries and _MAX_LIST_TEXT characters (the first always fits), the rest counted as
+    " (+N more)". Up to ten short one-line entries give sep.join(entries)."""
+    named: list[str] = []
+    length = 0
+    for entry in entries[:_MAX_LIST_ENTRIES]:
+        text = cap_agent_text(entry) or ""  # None for an empty entry
+        added = len(text) + (len(sep) if named else 0)
+        if length + added > _MAX_LIST_TEXT:
+            break
+        named.append(text)
+        length += added
+    joined = sep.join(named)
+    rest = len(entries) - len(named)
+    return f"{joined} (+{rest} more)" if rest else joined
+
+
+def agent_number(value: object) -> int | float | None:
+    """A number from the report as a checker may rate it: an int or float (no bool) that
+    converts to a finite float, unchanged; None for anything else, a numeric string too.
+    None means the field counts as missing (R-0517)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:  # an int beyond float range, e.g. 400 digits
+        return None
+    return value if finite else None
+
+
+# Same cap as _MAX_REPORT_ITEMS in routers/agent.py, which cannot be imported here:
+# that router imports app.checkers (R-0459).
+_MAX_REPORT_ENTRIES = 500
+
+
+def capped_objects(value: object) -> list[dict]:
+    """The entries of a report list that a checker rates: the objects among the first
+    _MAX_REPORT_ENTRIES, [] for anything but a list. Capping first bounds the work on a
+    flooded list; any other entry is skipped instead of failing the evaluation (R-0486)."""
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value[:_MAX_REPORT_ENTRIES] if isinstance(entry, dict)]
+
+
+def entry_text(entry: dict, key: str, default: str) -> str:
+    """A text field of a report entry; anything but a string counts as missing (R-0517)."""
+    value = entry.get(key)
+    return value if isinstance(value, str) else default
+
+
+def entry_number(entry: dict, key: str, default: float) -> float:
+    """A number field of a report entry; anything but a JSON number counts as missing."""
+    value = agent_number(entry.get(key))
+    return default if value is None else value
 
 
 def record_agent_report(server_id: str) -> None:
@@ -81,11 +173,11 @@ class AgentPingChecker:
         stale_minutes = config.get("stale_minutes", 15)
 
         if not server_id:
-            return "unknown", "Keine server_id konfiguriert", None
+            return "unknown", "No server_id configured", None
 
         last = _last_report.get(server_id)
         if last is None:
-            return "unknown", "Noch kein Agent-Report empfangen", None
+            return "unknown", "No agent report received yet", None
 
         now = utcnow_naive()
         age_seconds = (now - last).total_seconds()
@@ -128,13 +220,13 @@ class AgentPingChecker:
         if age_minutes > stale_minutes:
             return (
                 "critical",
-                f"Agent seit {age_minutes:.0f} Min. nicht erreichbar (Limit: {stale_minutes} Min.)",
+                f"Agent unreachable for {age_minutes:.0f} min (limit: {stale_minutes} min)",
                 {"agent_last_seen_seconds": round(age_seconds)},
             )
 
         return (
             "ok",
-            f"Agent aktiv (letzter Report vor {age_seconds:.0f}s)",
+            f"Agent active (last report {age_seconds:.0f}s ago)",
             {"agent_last_seen_seconds": round(age_seconds)},
         )
 
@@ -185,7 +277,7 @@ class AgentResourcesChecker:
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         # Not called by the scheduler, but directly on agent push
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(
         self, config: dict, report: dict, prev_details: dict | None = None
@@ -194,9 +286,10 @@ class AgentResourcesChecker:
 
         `prev_details` is this check's previous `_details` blob (state.details);
         its "problems" map {metric_key: level} drives the per-metric hysteresis."""
-        resources = report.get("resources", {})
-        if not resources:
-            return "unknown", "Keine Ressourcen-Daten", None
+        resources = report.get("resources")
+        # Anything but an object (a broken agent) counts as missing, as do the fields below.
+        if not isinstance(resources, dict) or not resources:
+            return "unknown", "No resource data", None
 
         problems = []
         status = "ok"
@@ -223,7 +316,7 @@ class AgentResourcesChecker:
                 problem_levels[key] = level
 
         # CPU
-        cpu = resources.get("cpu_percent")
+        cpu = agent_number(resources.get("cpu_percent"))
         if cpu is not None:
             metrics["agent_cpu_percent"] = cpu
             cpu_crit = config.get("cpu_crit", 95)
@@ -231,7 +324,7 @@ class AgentResourcesChecker:
             grade("cpu", cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%")
 
         # Memory
-        mem = resources.get("memory_percent")
+        mem = agent_number(resources.get("memory_percent"))
         if mem is not None:
             metrics["agent_memory_percent"] = mem
             mem_crit = config.get("memory_crit", 95)
@@ -239,29 +332,29 @@ class AgentResourcesChecker:
             grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
 
         # Disks — filter pseudo filesystems server-side
-        # Old agents send no fstype → default "_real_" passes the filter
-        raw_disks = resources.get("disks", [])
-        disks = [d for d in raw_disks if d.get("fstype", "_real_") not in EXCLUDED_FSTYPES]
+        # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
+        raw_disks = capped_objects(resources.get("disks"))
+        disks = [d for d in raw_disks if entry_text(d, "fstype", "_real_") not in EXCLUDED_FSTYPES]
 
         disk_crit = config.get("disk_crit", 95)
         disk_warn = config.get("disk_warn", 85)
         for disk in disks:
-            pct = disk.get("percent", 0)
-            mount = disk.get("mount", "?")
+            pct = entry_number(disk, "percent", 0)
+            mount = entry_text(disk, "mount", "?")
             # No per-mount metric: the agent router already writes monitor_agent_disk_percent
             # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
             # duplicate series in a second schema (1.18); the value is still graded below.
             grade(f"disk:{mount}", pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%")
 
         # Temperatures (optional — VMs provide no sensor data)
-        temperatures = resources.get("temperatures", [])
+        temperatures = capped_objects(resources.get("temperatures"))
         if temperatures:
             temp_crit = config.get("temp_crit", 95)
             temp_warn = config.get("temp_warn", 80)
             temp_overrides = config.get("temp_overrides", {})
             for sensor in temperatures:
-                temp_c = sensor.get("temp_c", 0)
-                sensor_name = sensor.get("sensor", "?")
+                temp_c = entry_number(sensor, "temp_c", 0)
+                sensor_name = entry_text(sensor, "sensor", "?")
                 # Same as disks: the router writes monitor_agent_temp dimensionally (sensor
                 # tag); the name-encoded copy here was the duplicate (1.18). Still graded below.
                 ov = temp_overrides.get(sensor_name, {})
@@ -277,7 +370,7 @@ class AgentResourcesChecker:
                 )
 
         if problems:
-            message = "; ".join(problems)
+            message = join_capped(problems, "; ")
         else:
             parts = []
             if cpu is not None:
@@ -291,23 +384,23 @@ class AgentResourcesChecker:
             "memory": mem,
             # Next round's hysteresis memory (see grade() above).
             "problems": problem_levels,
-            "memory_total_mb": resources.get("memory_total_mb"),
-            "memory_used_mb": resources.get("memory_used_mb"),
+            "memory_total_mb": agent_number(resources.get("memory_total_mb")),
+            "memory_used_mb": agent_number(resources.get("memory_used_mb")),
             "disks": [
                 {
-                    "mount": d.get("mount", "/"),
-                    "percent": d.get("percent", 0),
-                    "total_gb": d.get("total_gb"),
-                    "used_gb": d.get("used_gb"),
+                    "mount": entry_text(d, "mount", "/"),
+                    "percent": entry_number(d, "percent", 0),
+                    "total_gb": agent_number(d.get("total_gb")),
+                    "used_gb": agent_number(d.get("used_gb")),
                 }
                 for d in disks
             ],
             "temperatures": [
                 {
-                    "sensor": s.get("sensor", "?"),
-                    "temp_c": s.get("temp_c", 0),
-                    "high": s.get("high", 0),
-                    "critical": s.get("critical", 0),
+                    "sensor": entry_text(s, "sensor", "?"),
+                    "temp_c": entry_number(s, "temp_c", 0),
+                    "high": entry_number(s, "high", 0),
+                    "critical": entry_number(s, "critical", 0),
                 }
                 for s in temperatures
             ],
@@ -337,7 +430,7 @@ class ServiceProcessChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        return "unknown", "Wartet auf Agent-Daten", None
+        return "unknown", "Waiting for agent data", None
 
     def evaluate(
         self, config: dict, report: dict, prev_details: dict | None = None
@@ -411,15 +504,23 @@ class ServiceProcessChecker:
 
     @staticmethod
     def _parse_counts(raw) -> tuple[int, int] | None:
-        """The agent's (active, total) service counts, or None unless both are integers with
-        0 <= active <= total. Old agents send none; a failed list-units/sc query leaves them out."""
+        """The agent's (active, total) service counts, or None unless both are integers that
+        agent_number takes, with 0 <= active <= total. Old agents send none; a failed
+        list-units/sc query leaves them out."""
         if not isinstance(raw, dict):
             return None
-        active, total = raw.get("active"), raw.get("total")
-        # bool is an int subclass: JSON true is no count.
-        if not all(isinstance(n, int) and not isinstance(n, bool) for n in (active, total)):
+        # agent_number drops a bool (JSON true is no count) and an int beyond float range.
+        active, total = agent_number(raw.get("active")), agent_number(raw.get("total"))
+        if not all(isinstance(n, int) for n in (active, total)):
             return None
         return (active, total) if 0 <= active <= total else None
+
+    @staticmethod
+    def _not_queryable(error) -> str:
+        """Message part for a failed list-units/sc query. The raw error already decided that
+        listing failed; the agent's reason goes in only as a capped string."""
+        reason = cap_agent_text(error)
+        return f"Services not queryable: {reason}" if reason else "Services not queryable"
 
     def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         """Auto mode: checks systemd health from the report.
@@ -437,7 +538,7 @@ class ServiceProcessChecker:
         """
         systemd = report.get("systemd")
         if not systemd:
-            return "unknown", "Keine systemd-Daten im Report", None
+            return "unknown", "No service data in report", None
 
         ignore = self._parse_ignore(config.get("ignore", []))
 
@@ -455,25 +556,27 @@ class ServiceProcessChecker:
             "services_enabled_inactive": len(enabled_inactive),
         }
 
+        # Every name on one line and cut, as in the message; the ignore list above compared the
+        # full name. An empty name stays "" (cap_agent_text gives None for it).
         metrics["_details"] = {
             "mode": "auto",
-            "failed": failed,
-            "enabled_inactive": enabled_inactive,
+            "failed": [cap_agent_text(u) or "" for u in failed],
+            "enabled_inactive": [cap_agent_text(u) or "" for u in enabled_inactive],
         }
         counts = self._parse_counts(systemd.get("counts"))
         if counts is not None:
             metrics["_details"]["active_count"], metrics["_details"]["total"] = counts
 
         if failed:
-            msg = f"Failed: {', '.join(failed)}"
+            msg = f"Failed: {join_capped(failed)}"
             if enabled_inactive:
-                msg += f"; Inaktiv (autostart): {', '.join(enabled_inactive)}"
+                msg += f"; Inactive (autostart): {join_capped(enabled_inactive)}"
             return "critical", msg, metrics
 
         if enabled_inactive:
             return (
                 "warning",
-                f"Inaktiv (autostart): {', '.join(enabled_inactive)}",
+                f"Inactive (autostart): {join_capped(enabled_inactive)}",
                 metrics,
             )
 
@@ -482,9 +585,9 @@ class ServiceProcessChecker:
         # --state=failed), so a failed unit still makes the check critical above.
         error = systemd.get("error")
         if error:
-            return "unknown", f"Dienste nicht abfragbar: {error}", metrics
+            return "unknown", self._not_queryable(error), metrics
 
-        return "ok", "Alle systemd-Units OK", metrics
+        return "ok", "All services OK", metrics
 
     @staticmethod
     def _inventory_state(entry: dict, inventory: dict, error) -> str | None:
@@ -524,7 +627,7 @@ class ServiceProcessChecker:
         """
         expected = config.get("services", [])
         if not expected:
-            return "ok", "Keine Services konfiguriert", None
+            return "ok", "No services configured", None
 
         systemd = report.get("systemd")
         if not isinstance(systemd, dict):
@@ -568,26 +671,26 @@ class ServiceProcessChecker:
 
         metrics = {"services_down": len(down), "services_up": len(up)}
         metrics["_details"] = {"mode": "list", "watched": watched}
-        no_data = f"; ohne Daten: {', '.join(nodata)}" if nodata else ""
+        no_data = f"; no data: {join_capped(nodata)}" if nodata else ""
 
         if down:
             return (
                 "critical",
-                f"Services nicht aktiv: {', '.join(down)}{no_data}",
+                f"Services not active: {join_capped(down)}{no_data}",
                 metrics,
             )
 
         if not up:
-            message = f"Services ohne Daten: {', '.join(nodata)}"
+            message = f"Services without data: {join_capped(nodata)}"
             if error:
-                message += f"; Dienste nicht abfragbar: {error}"
+                message += f"; {self._not_queryable(error)}"
             return "unknown", message, metrics
 
         if nodata:
-            return "ok", f"{len(up)} Services aktiv{no_data}", metrics
+            return "ok", f"{len(up)} services active{no_data}", metrics
 
         return (
             "ok",
-            f"Alle {len(up)} Services aktiv",
+            f"All {len(up)} services active",
             metrics,
         )

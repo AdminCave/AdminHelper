@@ -359,6 +359,19 @@ def test_a_fifo_is_unreadable_without_blocking(tmp_path):
         signal.signal(signal.SIGALRM, previous)
 
 
+@pytest.mark.parametrize("kind", ["a directory", "a FIFO"])
+def test_reading_a_status_that_is_no_regular_file_leaves_no_fd_open(tmp_path, kind):
+    # open() on the fd of a directory raises without closing that fd.
+    path = tmp_path / "status.json"
+    path.mkdir() if kind == "a directory" else os.mkfifo(path)
+    before = len(os.listdir("/proc/self/fd"))
+
+    for _ in range(20):
+        assert read_supervisor_status(path, now=NOW) == UNREADABLE
+
+    assert len(os.listdir("/proc/self/fd")) == before
+
+
 @pytest.mark.parametrize(
     ("age", "stale"),
     [(timedelta(seconds=0), False), (timedelta(seconds=60), False), (timedelta(seconds=61), True)],

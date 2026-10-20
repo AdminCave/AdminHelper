@@ -96,17 +96,17 @@ Notes:
 In **Server mode**, the client connects to an AdminHelper server with JWT authentication:
 
 1. Set mode to **Server** in settings, enter the server URL
-2. Login with username/password — JWT is stored in the OS keyring
+2. Login with username/password — the session stays in the client's memory; no token in the OS keyring or in the UI
 3. Connections are loaded from the server API
 4. **frpc** starts automatically as a visitor to establish STCP/HTTPS tunnels
 5. Connections with matching tunnels are resolved transparently:
-   - SSH/RDP (STCP): `host` → `127.0.0.1`, `port` → visitor port
+   - SSH/RDP (STCP): `host` → `127.0.0.1`, `port` → the visitor's local port (the visitor port, or a free one from 23000–23999 if that is taken)
    - Web (HTTPS): URL → custom domain
-   - Web (STCP): URL → `http://127.0.0.1:<visitor_port>`
-6. A tunnel indicator in the header shows connection status
+   - Web (STCP): URL → `http://127.0.0.1:<local port>`
+6. A tunnel indicator in the sidebar shows connection status
 7. Cards show a green **"via Tunnel"** badge for tunneled connections
 
-Session is persisted — no re-login needed on restart. Local and Sync modes remain fully functional.
+In Server mode you sign in with your password on every start; server URL and username are pre-filled. While the app runs, the client renews the session by itself; if that fails, it returns to the login screen with the notice "Session expired". Local and Sync modes remain fully functional.
 
 ---
 
@@ -437,8 +437,8 @@ cargo tauri build
 │  │  ├─ app/
 │  │  │  ├─ main.py
 │  │  │  ├─ models.py            # Checks, States, Templates, AlertRules, AgentKeys
-│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
-│  │  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins, forecast
+│  │  │  ├─ routers/             # admin, agent, alerts, checks, maintenance, templates
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler for pull checks
 │  │  └─ Dockerfile             # built by docker.yml (own context)
@@ -452,17 +452,18 @@ cargo tauri build
 │  │  └─ Makefile                # build-linux, build-windows, deb, rpm
 │  ├─ web/                   # PRODUCTION: Svelte 5 + TS web admin panel
 │  │  ├─ src/
-│  │  │  ├─ lib/                 # 9 API modules + 6 stores + i18n + hash router
-│  │  │  ├─ pages/               # 5 production pages + Login + placeholder
-│  │  │  ├─ modals/              # 9 modal components
+│  │  │  ├─ lib/                 # API modules + stores + i18n + hash router + UI components + utils
+│  │  │  ├─ pages/               # production pages + Login + placeholder
+│  │  │  ├─ modals/              # modal components
 │  │  │  └─ App.svelte, main.ts
-│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+│  │  └─ tests/e2e/              # Playwright E2E specs (*.spec.ts)
 │  └─ desktop/               # Tauri desktop client (backend + UI together)
 │     ├─ src-tauri/          # Rust/Tauri backend
 │     │  ├─ src/
-│     │  │  ├─ main.rs            # invoke_handler with 32 Tauri commands
+│     │  │  ├─ main.rs            # invoke_handler with all Tauri commands
 │     │  │  ├─ commands.rs        # IPC interface
-│     │  │  ├─ auth.rs            # JWT login, keyring persistence
+│     │  │  ├─ auth.rs            # JWT login and logout
+│     │  │  ├─ session.rs         # in-memory session, one renewal path
 │     │  │  ├─ frpc.rs            # frpc sidecar process
 │     │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
 │     │  │  ├─ connection/        # SSH/RDP/Web connection logic
@@ -473,11 +474,11 @@ cargo tauri build
 │     │  └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
 │     └─ ui/                 # PRODUCTION: Svelte 5 + TS desktop frontend
 │        ├─ src/
-│        │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # 31 typed invoke() wrappers, 12 stores, …
-│        │  ├─ components/       # ~46 components (AppShell, Login, …)
+│        │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # typed Tauri IPC wrappers, stores, …
+│        │  ├─ components/       # Svelte components (AppShell, Login, …)
 │        │  ├─ pages/            # 5 pages (Dashboard, Connections, Infrastructure, Monitoring, Ansible)
 │        │  └─ main.ts
-│        └─ vitest.setup.ts      # ~250 Vitest unit tests
+│        └─ vitest.setup.ts      # Vitest setup; the unit tests sit next to the code (src/**/*.test.ts)
 ├─ docs/                     # documentation (DE + EN, static HTML)
 ├─ scripts/                  # ops/db helpers (init-secrets, pg-backup)
 ├─ data/                     # server data (gitignored, bind mount)

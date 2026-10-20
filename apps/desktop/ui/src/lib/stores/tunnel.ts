@@ -172,15 +172,14 @@ function reconcile(gen: number): Promise<void> {
 }
 
 async function reconcileOnce(gen: number): Promise<void> {
-  const session = serverSession();
-  if (!session) {
+  if (!serverSession()) {
     // A session that ended without stop() (a logout that bypasses it): end the polling here.
     if (gen === activationGen) stopPolling();
     return;
   }
   let refresh: TunnelRefresh;
   try {
-    refresh = await bridge.refreshTunnel(session.serverUrl, session.token, session.username);
+    refresh = await bridge.refreshTunnel();
   } catch (err) {
     if (gen !== activationGen) return;
     // The backend leaves a running frpc untouched; only a first start that failed
@@ -218,7 +217,7 @@ async function reconcileOnce(gen: number): Promise<void> {
   if (stopped) endRestarts(); // no STCP tunnel wants frpc: nothing left to restart
   let mappings: TunnelMapping[];
   try {
-    mappings = await bridge.fetchTunnels(session.serverUrl, session.token);
+    mappings = await bridge.fetchTunnels();
   } catch {
     mappings = get(_state).mappings;
   }

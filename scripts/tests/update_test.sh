@@ -8,9 +8,16 @@
 # guard, --ref force, health-fail rollback, additive .env migration, the
 # self-update re-exec hand-off, a failed image pull (rollback, --redeploy), a
 # health-fail on a floating tag, a failed agent-repo refresh, a failed recreate,
-# what --no-rollback names as the way on, a restore that fails, and a missing .env.
+# what --no-rollback names as the way on, a restore that fails, a missing .env, a
+# .env write error in the migration, what a rollback removes, what the texts name
+# for a floating tag, the temp dir a self-update leaves, the check of .env values
+# before the first compose call, held against the real `docker compose`, a failed
+# swap of the runtime files, a failed rm or tar in the snapshot restore, and a
+# migration that cannot append to .env or read the new .env.example.
 #
-# Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign)
+# Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign,
+#      docker compose; no daemon; a user that file rights bind: as root test 38
+#      cannot run, and the test ends with 75)
 
 # ok()/bad() never fail, so the `cond && ok || bad` assertions are deliberate
 # (not if-then-else); the │-prefix sed is a readability nicety.
@@ -38,6 +45,11 @@ command -v minisign >/dev/null 2>&1 \
   && minisign -G -W -p "$WORK/test.pub" -s "$WORK/test.key" >/dev/null 2>&1 \
   || { echo "SKIP: minisign missing or unusable — the signature path cannot be verified"; exit 75; }
 TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
+# The .env check is held against the real `docker compose config` (test 32), so
+# compose is a precondition too; its path is taken before the stub below takes
+# the name. It needs no daemon.
+AH_TEST_REAL_DOCKER=$(command -v docker) && "$AH_TEST_REAL_DOCKER" compose version >/dev/null 2>&1 \
+  || { echo "SKIP: docker compose missing — the .env check cannot be held against it"; exit 75; }
 
 # --- a docker stub: succeeds at everything; health probe honours AH_TEST_HEALTH,
 # the pull AH_TEST_PULL; AH_TEST_UP_FAIL_ONCE=<marker> fails the first `compose
@@ -73,6 +85,86 @@ esac
 exec "$AH_TEST_REAL_CURL" "$@"
 EOF
 chmod +x "$BIN/curl"
+# --- a grep wrapper: real grep for everything, except that AH_TEST_GREP_ENOSPC=1
+# sends upsert_env's filter of the SERVER_IMAGE line to /dev/full (a real ENOSPC),
+# and AH_TEST_GREP_KEY_FAIL=1 fails the migration's check for NEW_FEATURE_FLAG
+# with exit 2, grep's "error" ---
+AH_TEST_REAL_GREP=$(command -v grep); export AH_TEST_REAL_GREP
+cat > "$BIN/grep" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"-vE ^#?[[:space:]]*SERVER_IMAGE="*)
+    [ "${AH_TEST_GREP_ENOSPC:-}" != 1 ] || exec "$AH_TEST_REAL_GREP" "$@" > /dev/full ;;
+  *"-qE ^#?[[:space:]]*NEW_FEATURE_FLAG="*)
+    [ "${AH_TEST_GREP_KEY_FAIL:-}" != 1 ] || { echo "stub: grep failed" >&2; exit 2; } ;;
+esac
+exec "$AH_TEST_REAL_GREP" "$@"
+EOF
+chmod +x "$BIN/grep"
+# --- a find wrapper: real find for everything, except that AH_TEST_FIND_FAIL=1
+# fails the `find repo -mindepth 1 -delete` that empties ./repo ---
+AH_TEST_REAL_FIND=$(command -v find); export AH_TEST_REAL_FIND
+cat > "$BIN/find" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  "repo -mindepth 1 -delete")
+    [ "${AH_TEST_FIND_FAIL:-}" != 1 ] || { echo "stub: find failed" >&2; exit 1; } ;;
+esac
+exec "$AH_TEST_REAL_FIND" "$@"
+EOF
+chmod +x "$BIN/find"
+# --- a cp wrapper: real cp for everything, except that AH_TEST_CP_FAIL=<path> fails
+# the copy to <path>.ah-new as a full disk does half way: the copy is there but
+# empty, and cp exits 1 ---
+AH_TEST_REAL_CP=$(command -v cp); export AH_TEST_REAL_CP
+cat > "$BIN/cp" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${AH_TEST_CP_FAIL:-}" ] && [ "${!#}" = "${AH_TEST_CP_FAIL}.ah-new" ]; then
+  : > "${!#}"; echo "stub: cp failed" >&2; exit 1
+fi
+exec "$AH_TEST_REAL_CP" "$@"
+EOF
+chmod +x "$BIN/cp"
+# --- an rm wrapper: real rm for everything, except that AH_TEST_RM_FAIL=<path>
+# fails `rm -f <path>` and leaves the file where it is ---
+AH_TEST_REAL_RM=$(command -v rm); export AH_TEST_REAL_RM
+cat > "$BIN/rm" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${AH_TEST_RM_FAIL:-}" ] && [ "$*" = "-f $AH_TEST_RM_FAIL" ]; then
+  echo "stub: rm failed" >&2; exit 1
+fi
+exec "$AH_TEST_REAL_RM" "$@"
+EOF
+chmod +x "$BIN/rm"
+# --- a tar wrapper: real tar for everything, except that AH_TEST_TAR_FAIL=1 fails
+# the restore's unpack of the runtime snapshot (`xzf backups/runtime-prev-…`)
+# before it unpacks anything; writing the snapshot and unpacking the bundle or the
+# agent repo go through ---
+AH_TEST_REAL_TAR=$(command -v tar); export AH_TEST_REAL_TAR
+cat > "$BIN/tar" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  "xzf backups/runtime-prev-"*)
+    [ "${AH_TEST_TAR_FAIL:-}" != 1 ] || { echo "stub: tar failed" >&2; exit 1; } ;;
+esac
+exec "$AH_TEST_REAL_TAR" "$@"
+EOF
+chmod +x "$BIN/tar"
+# --- an mv wrapper: real mv for everything; once the swap has put the new
+# .env.example in place, AH_TEST_MV_LOCK=env takes the write right of .env and
+# AH_TEST_MV_LOCK=example the read right of .env.example. The migration appends and
+# reads with the shell's own redirections, which no wrapper reaches ---
+AH_TEST_REAL_MV=$(command -v mv); export AH_TEST_REAL_MV
+cat > "$BIN/mv" <<'EOF'
+#!/usr/bin/env bash
+"$AH_TEST_REAL_MV" "$@" || exit
+[ "$*" = "-T .env.example.ah-new .env.example" ] || exit 0
+case "${AH_TEST_MV_LOCK:-}" in
+  env) chmod a-w .env ;;
+  example) chmod a-r .env.example ;;
+esac
+EOF
+chmod +x "$BIN/mv"
 export PATH="$BIN:$PATH"
 # keep the health-fail path fast (default would wait 240s)
 export AH_HEALTH_RETRIES=3 AH_HEALTH_INTERVAL=1
@@ -183,6 +275,31 @@ INST="$WORK/inst2"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(run_update "$INST" --check 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'Update verfuegbar' <<<"$out"; } && ok "--check reports update" || bad "--check output: $out"
 grep -q 'server:0.33.0' "$INST/.env" && ok "--check left .env untouched" || bad "--check mutated .env"
+# A floating tag has no version: the texts name the tag (":main"; without a
+# SERVER_IMAGE line ":latest", the compose default), never "unknown".
+INST="$WORK/inst2b"; make_install main "$SRC_OLD" "$INST"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Installiert: :main ' <<<"$out" && ! grep -q unknown <<<"$out"; } \
+  && ok "--check on :main names :main" || bad "--check on :main: rc=$rc $out"
+out=$(run_update "$INST" --redeploy --skip-backup 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Version unveraendert: :main)' <<<"$out" && ! grep -q unknown <<<"$out"; } \
+  && ok "--redeploy on :main names :main" || bad "--redeploy on :main: rc=$rc $out"
+sed -i '/^SERVER_IMAGE=/d' "$INST/.env"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Installiert: :latest ' <<<"$out" && ! grep -q unknown <<<"$out"; } \
+  && ok "--check without a SERVER_IMAGE line names :latest" || bad "--check without SERVER_IMAGE: rc=$rc $out"
+# An image without a tag is :latest as well; one pinned by digest is named by the
+# digest, not by the hex after its last ':'.
+printf 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server\n' >> "$INST/.env"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'Installiert: :latest ' <<<"$out"; } \
+  && ok "--check with an untagged SERVER_IMAGE names :latest" || bad "--check untagged: rc=$rc $out"
+sed -i '/^SERVER_IMAGE=/d' "$INST/.env"
+DIGEST="sha256:$(printf '0123456789abcdef%.0s' 1 2 3 4)"
+printf 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server@%s\n' "$DIGEST" >> "$INST/.env"
+out=$(run_update "$INST" --check 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q "Installiert: @$DIGEST " <<<"$out"; } \
+  && ok "--check with a digest-pinned SERVER_IMAGE names the digest" || bad "--check digest: rc=$rc $out"
 
 # ── 3. already up to date → no-op ────────────────────────────────────────────
 INST="$WORK/inst3"; make_install 0.34.0 "$SRC_NEW" "$INST"
@@ -221,10 +338,24 @@ out=$(run_update "$INST" 2>&1); rc=$?
 # ── 8. self-update: on-disk update.sh differs → re-exec into the release's one ─
 INST="$WORK/inst8"; make_install 0.33.0 "$SRC_OLD" "$INST"
 printf '\n# stale local marker — forces a self-update hand-off\n' >> "$INST/scripts/update.sh"
-out=$(run_update "$INST" 2>&1); rc=$?
+# Its own TMPDIR, so the temp dirs of both runs are where the test can see them.
+mkdir -p "$WORK/tmp8"
+out=$(TMPDIR="$WORK/tmp8" run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'uebergebe an die neue Version' <<<"$out"; } && ok "self-update re-exec triggered" || bad "no re-exec: rc=$rc"
 { grep -q 'server:0.34.0' "$INST/.env" && ! grep -q 'stale local marker' "$INST/scripts/update.sh"; } \
   && ok "re-exec completed + canonical update.sh placed" || bad "re-exec did not complete cleanly"
+# The exec skips the first run's EXIT trap: its TMP (the new update.sh, the bundle)
+# stayed behind. The new updater removes it with its own.
+[ -z "$(find "$WORK/tmp8" -mindepth 1)" ] \
+  && ok "the self-update left nothing in TMPDIR" \
+  || bad "the self-update left in TMPDIR: $(find "$WORK/tmp8" -mindepth 1 -maxdepth 2 -printf '%P ')"
+# Gegenprobe: the variable alone removes nothing. A normal run from
+# ./scripts/update.sh leaves the directory it names, update-new.sh and all.
+INST="$WORK/inst8b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+mkdir -p "$WORK/foreign8"; : > "$WORK/foreign8/update-new.sh"
+out=$(AH_UPDATE_PARENT_TMP="$WORK/foreign8" run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && ! grep -q 'uebergebe an die neue Version' <<<"$out" && [ -e "$WORK/foreign8/update-new.sh" ]; } \
+  && ok "AH_UPDATE_PARENT_TMP without the re-exec removes nothing" || bad "foreign dir: rc=$rc, left: $(ls -A "$WORK/foreign8" 2>&1)"
 
 # ── 9. tampered bundle → checksum mismatch → fail-closed abort, install intact ─
 # The supply-chain defence CLAUDE.md calls out as fail-closed must actually abort;
@@ -341,6 +472,8 @@ cp "$INST/.env" "$WORK/inst16.env"
 out=$(AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
 { [ $rc -ne 0 ] && cmp -s "$WORK/inst16.env" "$INST/.env"; } \
   && ok "pull failure on :main restored the floating pins" || bad "floating pins not restored: rc=$rc"
+{ ! grep -q unknown <<<"$out" && grep -q 'FEHLER: .*zurueckgerollt auf :main,' <<<"$out"; } \
+  && ok "pull failure on :main names :main, not unknown" || bad "pull failure on :main: $out"
 
 # ── 17. --no-rollback: a pull failure leaves the new files for inspection ────
 INST="$WORK/inst17"; make_install 0.33.0 "$SRC_OLD" "$INST"
@@ -378,6 +511,9 @@ grep -E '_IMAGE=' "$INST/.env" | sort > "$WORK/inst19.pins"
 out=$(AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
 echo "$out" | sed 's/^/    │ /'
 [ $rc -ne 0 ] && ok "health-fail on :main exits non-zero" || bad "health-fail on :main exit $rc"
+{ ! grep -q unknown <<<"$out" && grep -q 'Update :main -> 0.34.0' <<<"$out" \
+    && grep -q 'Image-Pins auf :main zurueck' <<<"$out" && grep -q 'FEHLER: .*zurueckgerollt auf :main\.' <<<"$out"; } \
+  && ok "health-fail on :main names :main, not unknown" || bad "health-fail on :main: $out"
 grep -E '_IMAGE=' "$INST/.env" | sort | cmp -s - "$WORK/inst19.pins" \
   && ok "health-fail on :main restored the floating pins (none added)" \
   || bad "floating pins after health-fail: $(grep -E '_IMAGE=' "$INST/.env" | tr '\n' ';')"
@@ -492,6 +628,10 @@ out=$(AH_TEST_UP_FAIL_ONCE="$WORK/inst24.upfail" run_update "$INST" --no-rollbac
     && grep -q 'FEHLER: Stack-Neustart fehlgeschlagen.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
   && ok "--no-rollback after a failed recreate keeps the state, names --redeploy and --ref v0.33.0" \
   || bad "--no-rollback failed recreate: rc=$rc $out"
+# The containers ran, so Alembic may have migrated the database already.
+msg=$(grep 'FEHLER: ' <<<"$out")
+grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$msg" \
+  && ok "--no-rollback after a failed recreate names Alembic and restore.sh" || bad "--no-rollback failed recreate: $msg"
 
 # ── 25. --no-rollback after a failed health check names the way on ──────────
 INST="$WORK/inst25"; make_install 0.33.0 "$SRC_OLD" "$INST"
@@ -499,12 +639,17 @@ out=$(AH_TEST_HEALTH=1 run_update "$INST" --no-rollback 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'server:0.34.0' "$INST/.env" \
     && grep -q 'FEHLER: Server nicht rechtzeitig bereit.*--no-rollback.*--redeploy.*--ref v0\.33\.0' <<<"$out"; } \
   && ok "--no-rollback health-fail names --redeploy and --ref v0.33.0" || bad "--no-rollback health-fail: rc=$rc $out"
+msg=$(grep 'FEHLER: ' <<<"$out")
+grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$msg" \
+  && ok "--no-rollback health-fail names Alembic and restore.sh" || bad "--no-rollback health-fail: $msg"
 # A floating tag has no release to name: --ref would pin a version, not :main.
 INST="$WORK/inst25b"; make_install main "$SRC_OLD" "$INST"
 out=$(AH_TEST_HEALTH=1 run_update "$INST" --no-rollback 2>&1); rc=$?
 msg=$(grep 'FEHLER: ' <<<"$out")
 { [ $rc -ne 0 ] && grep -q -- '--no-rollback.*--redeploy.*von Hand' <<<"$msg" && ! grep -q -- '--ref' <<<"$msg"; } \
   && ok "--no-rollback health-fail on :main names --redeploy and no --ref" || bad "--no-rollback health-fail on :main: $msg"
+grep -q 'Alembic.*\./scripts/restore\.sh \./backups/<neuestes>\.tar\.gz' <<<"$msg" \
+  && ok "--no-rollback health-fail on :main names Alembic and restore.sh" || bad "--no-rollback health-fail on :main: $msg"
 
 # ── 26. a restore that fails is not reported as a rollback ──────────────────
 # A directory in the way of the .env copy makes the restore fail; the closing
@@ -523,6 +668,10 @@ for how in pull health; do
       && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
     && ok "failed .env restore ($how): the closing message says incomplete" \
     || bad "failed .env restore ($how): rc=$rc $msg"
+  # The directory takes no copy of the old .env (a plain cp -p put env.prev into it).
+  { [ -d "$INST/.env.ah-new" ] && [ -z "$(find "$INST/.env.ah-new" -mindepth 1)" ]; } \
+    && ok "failed .env restore ($how): nothing landed in the directory in the way" \
+    || bad "failed .env restore ($how): .env.ah-new holds $(find "$INST/.env.ah-new" -mindepth 1 -printf '%f ' 2>&1)"
 done
 
 # ── 27. the installed state does not start again: the rollback is incomplete ─
@@ -542,7 +691,363 @@ msg=$(grep 'FEHLER: ' <<<"$out")
 [ "$(grep -c 'stub: up failed' <<<"$out")" = 2 ] \
   && ok "both failed starts show docker's reason" || bad "docker's reason swallowed: $out"
 
+# ── 28. a .env write error in the migration → rolled back, .env as it was ────
+# upsert_env filtered .env into a temp file with `|| true` and moved the result
+# over .env: a grep that hit a full disk left a .env with nothing but the pins,
+# and the update went on to "Fertig". Nothing has run yet, so the whole .env
+# comes back and no container is touched.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst28"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp "$INST/.env" "$WORK/inst28.env"
+DLOG="$WORK/inst28.docker"; : > "$DLOG"
+out=$(AH_TEST_GREP_ENOSPC=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+{ [ $rc -ne 0 ] && grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+  && ok "a .env write error exits with the rollback message" || bad ".env write error: rc=$rc"
+cmp -s "$WORK/inst28.env" "$INST/.env" \
+  && ok "a .env write error restored .env byte for byte" || bad ".env write error left .env changed"
+left=$(find "$INST" -maxdepth 1 -name '.env*' ! -name .env ! -name .env.example -printf '%f ')
+[ -z "$left" ] && ok "a .env write error left no copy of .env behind" || bad ".env write error left: $left"
+grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+  && ok "a .env write error rolled back the runtime files" || bad ".env write error: compose not rolled back"
+{ grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+  && ok "a .env write error touched no container" || bad ".env write error: docker calls $(tr '\n' ';' < "$DLOG")"
+# --no-rollback: .env may be half migrated, so only --ref re-applies the release.
+INST="$WORK/inst28b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_GREP_ENOSPC=1 run_update "$INST" --no-rollback 2>&1); rc=$?
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q -- '\.env-Migration fehlgeschlagen.*--no-rollback.*--ref v0\.34\.0' <<<"$msg" \
+    && ! grep -q -- '--redeploy' <<<"$msg"; } \
+  && ok "--no-rollback .env write error names only --ref v0.34.0" || bad "--no-rollback .env write error: $msg"
+
+# ── 29. a rollback removes what only the new release brought ────────────────
+# tar only adds and overwrites: after a rollback from 0.36.0 a script only 0.36.0
+# ships was still there, and so was an agent-repo file the installed ./repo never
+# had. ./repo goes back in place, its inode (the gateway's bind mount) unchanged.
+SRC_X="$WORK/src-0.36.0"; make_src 0.36.0 "$SRC_X"
+printf '#!/usr/bin/env bash\necho new\n' > "$SRC_X/scripts/added-in-036.sh"
+make_release 0.36.0 "$SRC_X" "$DL" "$API"
+mkdir -p "$WORK/repo036/dists"
+printf 'repo-marker-0.36.0\n' > "$WORK/repo036/dists/Release"; printf 'new\n' > "$WORK/repo036/dists/InRelease"
+tar czf "$WORK/repo036.tar.gz" -C "$WORK/repo036" .
+publish_agent_repo 0.36.0 "$WORK/repo036.tar.gz"
+for how in health pull; do
+  INST="$WORK/inst29-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  mkdir -p "$INST/repo/dists"; printf 'repo-marker-0.33.0\n' > "$INST/repo/dists/Release"
+  files=$(cd "$INST" && find repo -type f | sort); inode=$(stat -c %i "$INST/repo")
+  if [ "$how" = pull ]; then
+    out=$(AH_TEST_PULL=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+  else
+    out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+  fi
+  echo "$out" | sed 's/^/    │ /'
+  # The repo refresh in the output: the swap and the new ./repo did happen.
+  { [ $rc -ne 0 ] && grep -q 'Aktualisiere Paket-Repo' <<<"$out" \
+      && grep -q 'FEHLER: .*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+    && ok "$how failure after the swap to 0.36.0 exits with the rollback message" || bad "$how failure on 0.36.0: rc=$rc"
+  [ ! -e "$INST/scripts/added-in-036.sh" ] \
+    && ok "$how rollback removed the script only 0.36.0 ships" || bad "$how rollback left scripts/added-in-036.sh"
+  { [ "$(cd "$INST" && find repo -type f | sort)" = "$files" ] \
+      && grep -qx 'repo-marker-0.33.0' "$INST/repo/dists/Release"; } \
+    && ok "$how rollback put ./repo back as it was" \
+    || bad "$how rollback: ./repo holds $(cd "$INST" && find repo -type f | sort | tr '\n' ' ')"
+  [ "$(stat -c %i "$INST/repo")" = "$inode" ] \
+    && ok "$how rollback kept the inode of ./repo" || bad "$how rollback replaced ./repo"
+done
+# Without a ./repo before the update, the one the update created stays empty.
+INST="$WORK/inst29-norepo"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(AH_TEST_HEALTH=1 run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'Aktualisiere Paket-Repo' <<<"$out" \
+    && [ -d "$INST/repo" ] && [ -z "$(find "$INST/repo" -mindepth 1)" ]; } \
+  && ok "a rollback leaves the ./repo the update created empty" \
+  || bad "rollback without a prior ./repo: rc=$rc, ./repo holds $(find "$INST/repo" -mindepth 1 -printf '%P ' 2>&1)"
+
+# ── 30. a '${' compose cannot read stops update.sh before anything changes ───
+# compose ends every call that reads .env with "Invalid template" when a value
+# holds a '${' that starts no valid placeholder. update.sh ran on through backup,
+# swap and re-pin and failed only at the pull; now it stops before the first
+# compose call, names the key and keeps the value (it may be a secret) out.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+# The '${' is the point: literal .env lines, not expansions.
+# shellcheck disable=SC2016
+ENV_BAD=('SMTP_PASSWORD=zz9probe${q' 'SMTP_PASSWORD=zz9probe${}cd' 'SMTP_PASSWORD=zz9probe${1x}cd'
+  'SMTP_PASSWORD=zz9probe${cd}${' 'SMTP_PASSWORD=zz9probe#${' 'export X=zz9probe${' 'X: zz9probe${')
+# The line goes at the end of a fresh 0.33.0 install, the update runs in $2 mode;
+# leaves out=, rc=, msg= (the FEHLER line) and DLOG= for the assertions.
+run_env_case() {
+  local line="$1" dir="$2"; shift 2
+  INST="$dir"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  printf '%s\n' "$line" >> "$INST/.env"; cp "$INST/.env" "$INST.env"
+  DLOG="$INST.docker"; : > "$DLOG"
+  out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" "$@" 2>&1); rc=$?
+  msg=$(grep 'FEHLER: ' <<<"$out")
+}
+# Exit, message, nothing of the value, nothing changed, no backup or snapshot,
+# no compose call that reads .env.
+assert_env_stop() {
+  local line="$1" key="$2" what="$3"
+  { [ $rc -ne 0 ] && grep -q "FEHLER: \.env: der Wert von $key enthaelt ein '\\\${' ohne gueltigen Platzhalter" <<<"$msg" \
+      && grep -q "Invalid template" <<<"$msg"; } \
+    && ok "$what [$line] stops with the key in the message" || bad "$what [$line]: rc=$rc $out"
+  ! grep -q zz9probe <<<"$out" \
+    && ok "$what [$line] keeps the value out of the output" || bad "$what [$line] printed the value: $out"
+  { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+      && ! ls "$INST"/backups/*.tar.gz >/dev/null 2>&1 && ! grep -qE '^compose (pull|up|exec)' "$DLOG"; } \
+    && ok "$what [$line] changed nothing: no backup, no snapshot, no compose call" \
+    || bad "$what [$line]: backups/ holds $(find "$INST/backups" -mindepth 1 -printf '%f ') docker calls $(tr '\n' ';' < "$DLOG")"
+}
+n=0
+for line in "${ENV_BAD[@]}"; do
+  n=$((n + 1)); key=${line#export }; key=${key%%[=:]*}
+  run_env_case "$line" "$WORK/inst30-$n"
+  assert_env_stop "$line" "$key" "update"
+done
+for mode in --redeploy --check; do
+  run_env_case "${ENV_BAD[0]}" "$WORK/inst30${mode#-}" "$mode"
+  assert_env_stop "${ENV_BAD[0]}" SMTP_PASSWORD "$mode"
+done
+
+# ── 31. a '$' compose can read does not stop the update ─────────────────────
+# shellcheck disable=SC2016
+ENV_GOOD=('SMTP_PASSWORD=ab$$cd' "SMTP_PASSWORD='ab\${cd'" 'SMTP_PASSWORD="ab$$"' 'SMTP_PASSWORD=ab${DOMAIN}x'
+  'SMTP_PASSWORD=ab${ZZ:-${DOMAIN}}' 'SMTP_PASSWORD=ab #${' '# X=${')
+n=0
+for line in "${ENV_GOOD[@]}"; do
+  n=$((n + 1))
+  run_env_case "$line" "$WORK/inst31-$n"
+  # The pull and the recreate in the docker log: the log the stops above are
+  # checked against does record compose calls.
+  { [ $rc -eq 0 ] && grep -q 'server:0.34.0' "$INST/.env" && grep -q '^compose pull' "$DLOG" \
+      && grep -q '^compose up' "$DLOG"; } \
+    && ok "update with [$line] runs through" || bad "update with [$line]: rc=$rc $out"
+done
+
+# ── 32. the check says no exactly where the real `docker compose` says no ────
+# Differential: for every line, update.sh --check fails iff `docker compose config
+# -q` fails in the same install dir. The extra lines are forms compose was probed
+# with: a space or '/' in the name, an open default, a double-quoted '${', a key
+# with blanks, a backslash (escapes in double quotes only), more '$$' runs, text
+# after a closing quote (compose reads it as the next assignment). The
+# DOCKER_HOST is a dead socket: compose judges the .env without a daemon.
+# shellcheck disable=SC2016
+ENV_MORE=('X=ab${a b}cd' 'X=ab${x/y/z}cd' 'X=ab${cd:-${ef}' 'X="ab${cd"' '  X = ab${ '
+  'X=ab\${' 'X="ab\\${"' 'X= #${' 'X="ab${cd" # c'
+  'X=ab$${cd' 'X=ab$$$${' 'X=ab${ZZ:-$DOMAIN}' 'X=ab$1cd' 'X=ab$' 'X="ab\${cd"' 'X="ab\"\${"'
+  'X=ab${ZZ:-$${}' "X='ab\${cd' # c" 'X="ab" #${'
+  'X="ab" Y=${' "X='ab' Y=\${" 'X="ab"Y=${' 'X="ab" Y=${DOMAIN}' 'X="ab" Y="a" Z=${')
+# A quoted value runs over several lines up to its closing quote. Its next lines
+# are part of it, not keys of their own: `zz9frag: ab${q` is literal text in single
+# quotes, a '${' of P in double quotes. A placeholder ends at the line end.
+ENV_MULTI=($'P=\'line1\nzz9frag: ab${q\n\'' $'P="line1\nzz9frag=ab${q\n"' $'P="line1\nzz9frag=${DOMAIN}\n"'
+  $'P=\'a\\\'b\nzz9frag: ab${q\n\'' $'P="a ${ZZ:-\nb}"' $'P=\'a\n  b\'\nQ=ab${q'
+  $'P=\'a\nb\' Q=ab${q' $'P="a\nb" Q=${DOMAIN}')
+n=0
+for line in "${ENV_BAD[@]}" "${ENV_GOOD[@]}" "${ENV_MORE[@]}" "${ENV_MULTI[@]}"; do
+  n=$((n + 1)); shown=${line//$'\n'/\\n}
+  INST="$WORK/inst32-$n"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  printf '%s\n' "$line" >> "$INST/.env"
+  out=$(run_update "$INST" --check 2>&1); ours=$?
+  ( cd "$INST" && DOCKER_HOST="unix://$WORK/no-docker.sock" "$AH_TEST_REAL_DOCKER" compose config -q ) \
+    >/dev/null 2>"$INST.compose"; theirs=$?
+  # A refusal has to be the check's own, not --check failing for another reason.
+  { [ "$((ours != 0))" = "$((theirs != 0))" ] \
+      && { [ "$ours" -eq 0 ] || grep -q 'FEHLER: \.env: der Wert von' <<<"$out"; }; } \
+    && ok "[$shown]: --check and docker compose agree ($([ "$theirs" -eq 0 ] && echo accepted || echo rejected))" \
+    || bad "[$shown]: --check rc=$ours, docker compose config rc=$theirs ($(head -c 200 "$INST.compose")) $out"
+  # A refusal names the key of the value's first line, and nothing of the lines
+  # after it shows up in the output.
+  case $line in
+    *zz9frag*)
+      { ! grep -q zz9frag <<<"$out" && { [ "$ours" -eq 0 ] || grep -q 'der Wert von P enthaelt' <<<"$out"; }; } \
+        && ok "[$shown]: the output holds nothing of the value's next lines" || bad "[$shown]: $out" ;;
+  esac
+done
+
+# ── 33. a failing part of the .env migration rolls back like the re-pin (28) ──
+# Only the re-pin had a test: an init-secrets.sh that fails, or a key check whose
+# grep fails (exit 2), went unchecked, so dropping the `|| return 1` or the
+# `*) return 1` behind them left the suite green.
+SRC_IS="$WORK/src-0.37.0"; make_src 0.37.0 "$SRC_IS"
+printf '#!/usr/bin/env bash\necho "stub: init-secrets failed" >&2; exit 1\n' > "$SRC_IS/scripts/init-secrets.sh"
+make_release 0.37.0 "$SRC_IS" "$DL" "$API"
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+for how in init-secrets key-check; do
+  INST="$WORK/inst33-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  cp "$INST/.env" "$INST.env"; DLOG="$INST.docker"; : > "$DLOG"
+  if [ "$how" = init-secrets ]; then
+    out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.37.0 2>&1); rc=$?
+  else
+    out=$(AH_TEST_GREP_KEY_FAIL=1 AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1); rc=$?
+  fi
+  echo "$out" | sed 's/^/    │ /'
+  { [ $rc -ne 0 ] && grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+    && ok "a failing $how exits with the rollback message" || bad "failing $how: rc=$rc"
+  { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml"; } \
+    && ok "a failing $how restored .env and the runtime files" || bad "failing $how: not rolled back"
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+    && ok "a failing $how touched no container" || bad "failing $how: docker calls $(tr '\n' ';' < "$DLOG")"
+done
+
+# ── 34. a failed step of the snapshot restore makes the rollback incomplete ──
+# restore_snapshot counts each failed step (rm, find -delete, tar). Nothing tested
+# that count, so a dropped `|| rc=1` would report a rollback that left the new
+# ./repo in place. The release has no agent-repo asset, so the only `find -delete`
+# is the restore's.
+for how in pull health; do
+  INST="$WORK/inst34-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  mkdir -p "$INST/repo/dists"; printf 'repo-marker-0.33.0\n' > "$INST/repo/dists/Release"
+  if [ "$how" = pull ]; then
+    out=$(AH_TEST_FIND_FAIL=1 AH_TEST_PULL=1 run_update "$INST" 2>&1); rc=$?
+  else
+    out=$(AH_TEST_FIND_FAIL=1 AH_TEST_HEALTH=1 run_update "$INST" 2>&1); rc=$?
+  fi
+  echo "$out" | sed 's/^/    │ /'
+  msg=$(grep 'FEHLER: ' <<<"$out")
+  { [ $rc -ne 0 ] && grep -q 'stub: find failed' <<<"$out" \
+      && grep -q 'WARN: Snapshot-Restore fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$out" \
+      && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+    && ok "a failed find -delete in the $how rollback: the closing message says incomplete" \
+    || bad "failed find -delete ($how): rc=$rc $msg"
+done
+
+# ── 35. a failed swap of the runtime files rolls back like a failed migration ─
+# The swap ran unchecked under set -e: a copy that hit a full disk, a directory in
+# the way of a copy or an rm that failed ended update.sh with the tool's message,
+# half the files swapped and nothing rolled back. 0.38.0 has its own .env.example
+# and a script only it ships; it no longer ships install.sh and uninstall.sh, which
+# the swap removes in that order once every file is placed. The copy of
+# scripts/restore.sh comes after .env.example, the compose and added-in-038.sh.
+SRC_SW="$WORK/src-0.38.0"; make_src 0.38.0 "$SRC_SW"
+printf 'ADDED_IN_038=on\n' >> "$SRC_SW/.env.example"
+printf '#!/usr/bin/env bash\necho new\n' > "$SRC_SW/scripts/added-in-038.sh"
+rm "$SRC_SW/scripts/install.sh" "$SRC_SW/scripts/uninstall.sh"
+make_release 0.38.0 "$SRC_SW" "$DL" "$API"
+for how in cp dir rm; do
+  INST="$WORK/inst35-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  cp "$INST/.env" "$INST.env"; DLOG="$INST.docker"; : > "$DLOG"
+  case $how in
+    cp)  stub='stub: cp failed'
+         out=$(AH_TEST_CP_FAIL=scripts/restore.sh AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+    dir) stub=''; mkdir "$INST/scripts/restore.sh.ah-new"
+         out=$(AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+    rm)  stub='stub: rm failed'
+         out=$(AH_TEST_RM_FAIL=scripts/uninstall.sh AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.38.0 2>&1); rc=$? ;;
+  esac
+  echo "$out" | sed 's/^/    │ /'
+  { [ $rc -ne 0 ] && { [ -z "$stub" ] || grep -q "$stub" <<<"$out"; } \
+      && grep -q 'FEHLER: Tausch der Laufzeit-Dateien fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+    && ok "a failed swap ($how) exits with the rollback message" || bad "failed swap ($how): rc=$rc"
+  cmp -s "$INST.env" "$INST/.env" \
+    && ok "a failed swap ($how) left .env byte for byte" || bad "failed swap ($how) changed .env"
+  { grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" && cmp -s "$SRC_OLD/.env.example" "$INST/.env.example" \
+      && [ ! -e "$INST/scripts/added-in-038.sh" ]; } \
+    && ok "a failed swap ($how) rolled back the runtime files, the script only 0.38.0 ships is gone" \
+    || bad "failed swap ($how): runtime files not rolled back"
+  { cmp -s "$SRC_OLD/scripts/install.sh" "$INST/scripts/install.sh" \
+      && cmp -s "$SRC_OLD/scripts/uninstall.sh" "$INST/scripts/uninstall.sh"; } \
+    && ok "a failed swap ($how) kept the scripts 0.38.0 no longer ships" \
+    || bad "failed swap ($how): scripts/ holds $(find "$INST/scripts" -mindepth 1 -printf '%f ')"
+  # Neither the copy cp left half written nor anything in the directory in the way.
+  left=$(cd "$INST" && find . \( -name '*.ah-new' ! -type d \) -o -path './scripts/restore.sh.ah-new/*' | tr '\n' ' ')
+  [ -z "$left" ] && ok "a failed swap ($how) left no copy behind" || bad "failed swap ($how) left: $left"
+  { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+    && ok "a failed swap ($how) touched no container" || bad "failed swap ($how): docker calls $(tr '\n' ';' < "$DLOG")"
+done
+
+# ── 36. --no-rollback: a failed swap leaves the files, .env was never touched ─
+# The swap comes before the migration, so .env still holds the old pins: the text
+# names no new ones, and only --ref brings the release back (--redeploy would start
+# the old images on the half new compose).
+INST="$WORK/inst36"; make_install 0.33.0 "$SRC_OLD" "$INST"
+cp "$INST/.env" "$INST.env"
+out=$(AH_TEST_CP_FAIL=scripts/restore.sh run_update "$INST" --ref v0.38.0 --no-rollback 2>&1); rc=$?
+echo "$out" | sed 's/^/    │ /'
+msg=$(grep 'FEHLER: ' <<<"$out")
+{ [ $rc -ne 0 ] && grep -q 'stub: cp failed' <<<"$out" && grep -q 'marker: 0.38.0' "$INST/docker-compose.yml" \
+    && [ -e "$INST/scripts/added-in-038.sh" ] && [ ! -e "$INST/scripts/restore.sh.ah-new" ] \
+    && cmp -s "$INST.env" "$INST/.env"; } \
+  && ok "--no-rollback keeps the files of a failed swap and the old .env" \
+  || bad "--no-rollback failed swap: rc=$rc, compose $(head -1 "$INST/docker-compose.yml")"
+{ grep -q -- 'Tausch der Laufzeit-Dateien fehlgeschlagen.*--no-rollback.*--ref v0\.38\.0' <<<"$msg" \
+    && ! grep -q 'Image-Pins' <<<"$msg" && ! grep -q -- '--redeploy' <<<"$msg"; } \
+  && ok "--no-rollback failed swap names --ref v0.38.0 and no new pins" || bad "--no-rollback failed swap: $msg"
+
+# ── 37. a failed rm or tar in the snapshot restore: the rollback is incomplete ─
+# Test 34 holds the count to the find -delete only, so dropping the `|| rc=1`
+# behind the rm of a path the update added, or behind the tar that unpacks the
+# snapshot, still reported a rollback. The rm fails for the script only 0.36.0
+# ships (29), which then stays; the tar unpacks nothing, so 0.36.0's files stay.
+for step in rm tar; do
+  for how in pull health; do
+    INST="$WORK/inst37-$step-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+    rmfail=""; tarfail=""; pull=0; health=0
+    case $step in
+      rm)  rmfail=scripts/added-in-036.sh ;;
+      tar) tarfail=1 ;;
+    esac
+    case $how in
+      pull)   pull=1 ;;
+      health) health=1 ;;
+    esac
+    out=$(AH_TEST_RM_FAIL="$rmfail" AH_TEST_TAR_FAIL="$tarfail" AH_TEST_PULL=$pull AH_TEST_HEALTH=$health \
+      run_update "$INST" --ref v0.36.0 2>&1); rc=$?
+    echo "$out" | sed 's/^/    │ /'
+    msg=$(grep 'FEHLER: ' <<<"$out")
+    { [ $rc -ne 0 ] && grep -q "stub: $step failed" <<<"$out" \
+        && grep -q 'WARN: Snapshot-Restore fehlgeschlagen.*UNVOLLSTAENDIG' <<<"$out" \
+        && grep -q 'UNVOLLSTAENDIG' <<<"$msg" && ! grep -q 'zurueckgerollt' <<<"$msg"; } \
+      && ok "a failed $step in the $how rollback: the closing message says incomplete" \
+      || bad "failed $step ($how): rc=$rc $msg"
+    case $step in
+      rm)  [ -e "$INST/scripts/added-in-036.sh" ] ;;
+      tar) grep -q 'marker: 0.36.0' "$INST/docker-compose.yml" ;;
+    esac \
+      && ok "a failed $step in the $how rollback: files of 0.36.0 are still in place, as the message says" \
+      || bad "failed $step ($how): compose $(head -1 "$INST/docker-compose.yml"), scripts/ holds $(find "$INST/scripts" -mindepth 1 -printf '%f ')"
+  done
+done
+
+# ── 38. a migration that cannot append to .env or read .env.example ─────────
+# Only the key check and init-secrets.sh (33) and the re-pin (28) had a test:
+# without the `|| return 1` behind the append of a new key or behind the read of
+# the new .env.example, the migration went on, re-pinned the images and the update
+# ended in "Fertig" without NEW_FEATURE_FLAG. Both are the shell's own redirections,
+# so the mv wrapper takes the right away once the swap has placed .env.example.
+# File rights do not bind root (CAP_DAC_OVERRIDE): there the cases cannot run, and
+# not run is not green, so the test then ends with 75.
+RIGHTS_SKIP=""
+probe="$WORK/rights-probe"; : > "$probe"; chmod 000 "$probe"
+if ( : >> "$probe" ) 2>/dev/null || ( : < "$probe" ) 2>/dev/null; then
+  RIGHTS_SKIP="test 38 (the migration cannot append to .env or read .env.example) needs a user that file rights bind, $(id -un) is not one"
+  echo "  SKIP $RIGHTS_SKIP"
+else
+  for how in append read; do
+    INST="$WORK/inst38-$how"; make_install 0.33.0 "$SRC_OLD" "$INST"
+    cp "$INST/.env" "$INST.env"; DLOG="$INST.docker"; : > "$DLOG"
+    case $how in
+      append) lock="env";     file=.env;         what="append to .env" ;;
+      read)   lock="example"; file=.env.example; what="read .env.example" ;;
+    esac
+    # LC_ALL=C: the shell's "Permission denied" untranslated. </dev/null: mv without
+    # -f asks before it replaces a read-only .env when stdin is a terminal, and with
+    # the question captured in $out it would wait for an answer forever.
+    out=$(LC_ALL=C AH_TEST_MV_LOCK=$lock AH_TEST_DOCKER_LOG="$DLOG" run_update "$INST" --ref v0.34.0 2>&1 </dev/null); rc=$?
+    echo "$out" | sed 's/^/    │ /'
+    { [ $rc -ne 0 ] && grep -qF ": $file: Permission denied" <<<"$out" \
+        && grep -q 'FEHLER: \.env-Migration fehlgeschlagen.*zurueckgerollt auf 0\.33\.0' <<<"$out"; } \
+      && ok "a migration that cannot $what exits with the rollback message" || bad "cannot $what: rc=$rc"
+    { cmp -s "$INST.env" "$INST/.env" && grep -q 'marker: 0.33.0' "$INST/docker-compose.yml" \
+        && cmp -s "$SRC_OLD/.env.example" "$INST/.env.example"; } \
+      && ok "a migration that cannot $what restored .env and the runtime files" \
+      || bad "cannot $what: not rolled back"
+    { grep -q '^compose version' "$DLOG" && ! grep -qE '^compose (pull|up)' "$DLOG"; } \
+      && ok "a migration that cannot $what touched no container" \
+      || bad "cannot $what: docker calls $(tr '\n' ';' < "$DLOG")"
+  done
+fi
+
 echo
 echo "──────────────────────────────────────────"
 echo "  update_test: ${PASS} passed, ${FAIL} failed"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+[ -z "$RIGHTS_SKIP" ] || { echo "SKIP: $RIGHTS_SKIP"; exit 75; }

@@ -1,0 +1,168 @@
+// SPDX-FileCopyrightText: 2026 Kevin Stenzel
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Saving the settings keeps every field the dialog does not edit (R-0429). Rust
+// writes settings.json whole, so a field missing from the object is gone: every
+// save dropped lastUsername, and the login screen no longer pre-filled the name.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { get } from 'svelte/store';
+import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { setLanguage, tNow } from '$lib/i18n';
+import { settingsModalOpen } from '$lib/stores/settings';
+import type { Settings } from '$lib/bridge/types';
+
+// Values the dialog loads and writes back unchanged, so the saved object is the
+// stored one with only the edited field different.
+const h = vi.hoisted(() => ({
+  stored: {
+    mode: 'server',
+    url: '',
+    intervalMinutes: 5,
+    language: 'de',
+    storePasswords: false,
+    rdpScalingMode: 'auto',
+    rdpWindowMode: 'fit',
+    rdpCustomSize: '1920x1080',
+    rdpPerformanceProfile: 'auto',
+    allowSelfSignedCerts: false,
+    serverUrl: 'https://srv.example',
+    lastUsername: 'kevin',
+    osNotifications: false,
+  } satisfies Settings,
+  saveSettings: vi.fn(async (_settings: Settings) => undefined),
+  // The notification prefs inside the dialog load through the proxy and render their own
+  // save button once they have.
+  apiProxy: vi.fn(async (method: string, path: string) => {
+    if (method === 'GET' && path === '/api/users/me/notification-prefs') {
+      return { email: null, subscriptions: [] };
+    }
+    if (method === 'GET' && path === '/api/servers') return [];
+    return null;
+  }),
+}));
+
+// Everything but the calls under test fails loudly, as in SettingsModal.enroll.test.ts.
+vi.mock('$lib/bridge', () => {
+  const known: Record<string, unknown> = {
+    isDeviceEnrolled: async () => false,
+    deviceIdentity: async () => null,
+    saveSettings: h.saveSettings,
+    // What saving in server mode with a session does next: reload the list, ask the tunnel.
+    fetchConnectionsJwt: async () => [],
+    tunnelStatus: async () => ({ running: true }),
+    apiProxy: h.apiProxy,
+    // Saving in local mode reloads the list from connections.json.
+    loadConnections: async () => [],
+  };
+  const passthrough = new Set(['then', '__esModule', 'default']);
+  return new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        if (typeof prop === 'symbol' || passthrough.has(String(prop))) return undefined;
+        return (
+          known[String(prop)] ??
+          (() => {
+            throw new Error(`bridge.${String(prop)}() is not part of this test`);
+          })
+        );
+      },
+      has: (_target, prop) => !passthrough.has(String(prop)),
+    },
+  );
+});
+
+vi.mock('$lib/stores/session', async () => {
+  const { readable } = await import('svelte/store');
+  const session = { username: 'kevin', serverUrl: 'https://srv.example' };
+  return {
+    sessionStore: readable({ settings: h.stored, session, ready: true }),
+    settings: readable(h.stored),
+    session: readable(session),
+    currentSession: () => session,
+    refreshSettings: vi.fn(async () => undefined),
+    // Leaving server mode ends the session.
+    dropSession: vi.fn(async () => undefined),
+  };
+});
+
+vi.mock('$lib/stores/tunnel', () => ({
+  startIfServerMode: vi.fn(async () => undefined),
+  stop: vi.fn(async () => undefined),
+}));
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn(async () => null) }));
+vi.mock('./ui/ConfirmDialog.svelte', () => ({ confirmDialog: vi.fn(async () => true) }));
+
+import SettingsModal from './SettingsModal.svelte';
+
+beforeEach(() => {
+  // Saving applies the chosen language app-wide.
+  setLanguage('de');
+});
+
+afterEach(() => {
+  cleanup();
+  settingsModalOpen.set(false);
+  vi.clearAllMocks();
+});
+
+function languageSelect(container: HTMLElement): HTMLSelectElement {
+  const found = [...container.querySelectorAll('select')].find((s) =>
+    [...s.options].some((o) => o.value === 'en'),
+  );
+  expect(found).toBeDefined();
+  return found!;
+}
+
+function saveButton(container: HTMLElement): HTMLButtonElement {
+  const found = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+    (b) => b.textContent?.trim() === tNow('action.save'),
+  );
+  expect(found).toBeDefined();
+  return found!;
+}
+
+describe('SettingsModal — saving keeps the fields it does not edit (R-0429)', () => {
+  it('keeps the remembered username when the language changes', async () => {
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+
+    await fireEvent.change(languageSelect(container), { target: { value: 'en' } });
+    await fireEvent.click(saveButton(container));
+
+    // The save went all the way through: the dialog closes on success only.
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenCalledTimes(1);
+    expect(h.saveSettings).toHaveBeenCalledWith({ ...h.stored, language: 'en' });
+  });
+});
+
+// The live spec settings-mode.live.js saved through the first `.sm-panel .btn.primary`.
+// With a session the notification prefs in the dialog have a primary button of their own,
+// ahead of the dialog's in the DOM; once they had loaded before the spec looked, the spec
+// saved the notification prefs, and the mode switch it waited for never happened.
+describe('SettingsModal — the dialog save has a hook of its own', () => {
+  it('switches to local through data-action="settings-save" next to the notification prefs', async () => {
+    settingsModalOpen.set(true);
+    const { container } = render(SettingsModal);
+    await waitFor(() =>
+      expect(
+        [...container.querySelectorAll('.sm-panel .btn.primary')].map((b) => b.textContent?.trim()),
+      ).toContain(tNow('notifPrefs.save')),
+    );
+
+    await fireEvent.click(container.querySelector('.sm-panel input[value="local"]')!);
+    const save = container.querySelector<HTMLButtonElement>(
+      '.sm-panel [data-action="settings-save"]',
+    );
+    expect(save?.textContent?.trim()).toBe(tNow('action.save'));
+    await fireEvent.click(save!);
+
+    await waitFor(() => expect(get(settingsModalOpen)).toBe(false));
+    expect(h.saveSettings).toHaveBeenCalledWith({ ...h.stored, mode: 'local' });
+    expect(h.apiProxy).not.toHaveBeenCalledWith('PUT', expect.anything(), expect.anything());
+  });
+});

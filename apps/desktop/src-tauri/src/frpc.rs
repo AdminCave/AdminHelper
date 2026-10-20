@@ -33,7 +33,9 @@ fn write_secret(path: &Path, content: &[u8]) -> std::io::Result<()> {
 
 use crate::auth;
 use crate::error::AppError;
-use crate::models::{RefreshOutcome, TunnelRefresh, TunnelStatus};
+use crate::models::{RefreshOutcome, TunnelRefresh, TunnelStatus, VisitorBinding};
+use crate::port_registry::{PortRegistry, DEFAULT_OWNER};
+use crate::session::{SessionState, SignedIn};
 
 pub type FrpcState = Arc<Mutex<FrpcProcess>>;
 
@@ -57,11 +59,22 @@ pub struct FrpcProcess {
     applied: Option<Applied>,
 }
 
-/// The config a running frpc applied: the server TOML, parsed for the next comparison, and the
-/// local head it runs with — a reload keeps the head, frp reads `webServer` only at start.
+/// The config a running frpc applied: the server TOML with its visitors at their local ports,
+/// parsed for the next comparison, where each visitor listens, the local head it runs with —
+/// a reload keeps the head, frp reads `webServer` only at start — and the sign-in its bundle was
+/// fetched for. A bundle of another sign-in never joins it by a reload (see [`reconcile`]).
 struct Applied {
     server: toml::Value,
+    bindings: Vec<VisitorBinding>,
     head: LocalHead,
+    who: SignedIn,
+}
+
+/// A server TOML the allow-list admitted, its visitors rewritten to their local ports (see
+/// [`remap_visitors`]), and where each went.
+struct Remapped {
+    server: toml::Value,
+    bindings: Vec<VisitorBinding>,
 }
 
 /// The desktop's own part of frpc's config: the loopback port of frpc's admin API and its
@@ -149,6 +162,14 @@ impl FrpcProcess {
             .map(|applied| visitor_names(&applied.server))
             .unwrap_or_default()
     }
+
+    /// Where the visitors of the running frpc listen.
+    fn bindings(&self) -> Vec<VisitorBinding> {
+        self.applied
+            .as_ref()
+            .map(|applied| applied.bindings.clone())
+            .unwrap_or_default()
+    }
 }
 
 /// The `name` of every visitor in a server TOML.
@@ -162,6 +183,56 @@ fn visitor_names(config: &toml::Value) -> Vec<String> {
         .collect()
 }
 
+/// A visitor's name and the port the server TOML asked for. The allow-list admits a visitor only
+/// with a name and a bindPort from 1 to 65535.
+fn visitor_port(visitor: &toml::Table) -> Option<(String, u16)> {
+    let name = visitor.get("name")?.as_str()?.to_string();
+    let server_port = u16::try_from(visitor.get("bindPort")?.as_integer()?).ok()?;
+    Some((name, server_port))
+}
+
+/// The name and server port of every visitor [`remap_visitors`] rewrites, in its order.
+fn visitor_ports(config: &toml::Value) -> Vec<(String, u16)> {
+    config
+        .get("visitors")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_table)
+        .filter_map(visitor_port)
+        .collect()
+}
+
+/// Rewrite every visitor of `config`, a server TOML [`validate_visitor_toml`] admitted, to listen
+/// on `127.0.0.1` at the local port `ports` gives for its name and server port. Every other key
+/// stays as the server sent it. Returns where each visitor went.
+fn remap_visitors(
+    config: &mut toml::Value,
+    ports: &dyn Fn(&str, u16) -> u16,
+) -> Vec<VisitorBinding> {
+    let Some(visitors) = config
+        .get_mut("visitors")
+        .and_then(toml::Value::as_array_mut)
+    else {
+        return Vec::new();
+    };
+    visitors
+        .iter_mut()
+        .filter_map(toml::Value::as_table_mut)
+        .filter_map(|visitor| {
+            let (name, server_port) = visitor_port(visitor)?;
+            let local_port = ports(&name, server_port);
+            visitor.insert("bindAddr".to_string(), "127.0.0.1".into());
+            visitor.insert("bindPort".to_string(), i64::from(local_port).into());
+            Some(VisitorBinding {
+                name,
+                server_port,
+                local_port,
+            })
+        })
+        .collect()
+}
+
 #[derive(Deserialize)]
 struct VisitorBundle {
     toml: String,
@@ -172,15 +243,17 @@ struct VisitorBundle {
 
 /// Fetch the visitor bundle from the server. TOML only — the server no longer
 /// ships PKI (D6); the identity comes from enrollment. `None` means the user has
-/// no tunnels (see [`carries_bundle`]).
+/// no tunnels (see [`carries_bundle`]). Comes with the sign-in it was fetched for; a bundle
+/// that arrives after that user signed out, or after someone else signed in, is refused,
+/// so frpc never takes over the tunnels of a session that is gone.
 async fn fetch_visitor_bundle(
-    server_url: &str,
-    token: &str,
-    allow_self_signed: bool,
-) -> Result<Option<VisitorBundle>, AppError> {
+    session: &SessionState,
+) -> Result<(Option<VisitorBundle>, SignedIn), AppError> {
     let path = "/api/frp/generate/visitor-bundle";
-    let response = auth::authenticated_get(server_url, token, path, allow_self_signed).await?;
-    bundle_from(response).await
+    let (response, who) = auth::authenticated_get(session, path).await?;
+    let bundle = bundle_from(response).await?;
+    session.ensure_signed_in(&who).await?;
+    Ok((bundle, who))
 }
 
 /// The bundle a visitor-bundle reply carries; `None` means no tunnels (see [`carries_bundle`]).
@@ -189,7 +262,7 @@ async fn bundle_from(response: reqwest::Response) -> Result<Option<VisitorBundle
         return Ok(None);
     }
 
-    let bundle: VisitorBundle = response.json().await.map_err(AppError::Network)?;
+    let bundle: VisitorBundle = response.json().await.map_err(AppError::from)?;
     Ok(Some(bundle))
 }
 
@@ -220,27 +293,26 @@ const IDENTITY_DIR_PLACEHOLDER: &str = "{{IDENTITY_DIR}}";
 const NO_IDENTITY_HINT: &str = "No mTLS certificate on this device — enroll it with a one-time \
      enrollment token from your administrator first, then start the tunnel.";
 
-/// Replace the server's `{{IDENTITY_DIR}}` placeholder in a visitor TOML with the
-/// absolute identity dir the desktop exported its mTLS material into.
+/// Replace the server's `{{IDENTITY_DIR}}` placeholder in the three file paths of
+/// `transport.tls` of a parsed visitor TOML with the absolute identity dir the desktop exported
+/// its mTLS material into. Every other value stays as it is, a placeholder in it included.
 ///
-/// The server writes `_VISITOR_IDENTITY_DIR` only inside basic strings (`"…"`), so the dir goes
-/// in escaped for one (TOML v1.0.0, String): unescaped, the backslashes of a Windows path start
-/// escapes that are invalid (`\U` of `C:\Users`) or reserved (`\A` of `\AppData`). A literal
-/// string (`'…'`) needs no escape but cannot hold the `'` a Windows user name may contain.
-fn rewrite_identity_paths(toml: &str, abs_identity_dir: &str) -> String {
-    let mut escaped = String::with_capacity(abs_identity_dir.len());
-    for c in abs_identity_dir.chars() {
-        match c {
-            '\\' => escaped.push_str("\\\\"),
-            '"' => escaped.push_str("\\\""),
-            '\t' => escaped.push(c),
-            c if c <= '\u{1f}' || c == '\u{7f}' => {
-                escaped.push_str(&format!("\\u{:04X}", u32::from(c)));
-            }
-            c => escaped.push(c),
+/// In the value, not the text: the serializer then writes the dir as a valid TOML string, the
+/// backslashes of a Windows path (`\U` of `C:\Users`, `\A` of `\AppData`) and a `'` of a Windows
+/// user name included.
+fn rewrite_identity_paths(config: &mut toml::Value, abs_identity_dir: &str) {
+    let Some(tls) = config
+        .get_mut("transport")
+        .and_then(|transport| transport.get_mut("tls"))
+        .and_then(toml::Value::as_table_mut)
+    else {
+        return;
+    };
+    for key in ["trustedCaFile", "certFile", "keyFile"] {
+        if let Some(toml::Value::String(path)) = tls.get_mut(key) {
+            *path = path.replace(IDENTITY_DIR_PLACEHOLDER, abs_identity_dir);
         }
     }
-    toml.replace(IDENTITY_DIR_PLACEHOLDER, &escaped)
 }
 
 /// Export the enrolled identity (key 0600 + cert + CA) into `identity_dir` so the
@@ -266,8 +338,9 @@ fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
 /// `generate_visitor_toml` and `_tls_client_block`
 /// (apps/server/app/modules/frp/config_generator.py): adding a server-side key without
 /// listing it here would reject real tunnels. Under `auth` and `transport` too, only the keys
-/// those two emit are allowed, `auth.method` only as `token`, and a visitor's `bindAddr` only as
-/// `127.0.0.1`.
+/// those two emit are allowed, `auth.method` only as `token`. A visitor needs a `name` no other
+/// visitor has, its `bindAddr` may only be `127.0.0.1`, and its `bindPort` must be a port from 1
+/// to 65535 that no other visitor has.
 fn validate_visitor_toml(toml_str: &str) -> Result<toml::Value, AppError> {
     let value: toml::Value =
         toml::from_str(toml_str).map_err(|e| parse_error("visitor.toml", toml_str, &e))?;
@@ -331,6 +404,8 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
         let arr = visitors.as_array().ok_or_else(|| {
             AppError::Validation("visitor.toml: [[visitors]] ist kein Array".to_string())
         })?;
+        let mut names = std::collections::HashSet::new();
+        let mut ports = std::collections::HashSet::new();
         for v in arr {
             let vt = v.as_table().ok_or_else(|| {
                 AppError::Validation("visitor.toml: ein [[visitors]]-Eintrag ist kein Table".into())
@@ -347,12 +422,38 @@ fn validate_visitor_table(table: &toml::Table) -> Result<(), AppError> {
                     )));
                 }
             }
+            let Some(name) = vt.get("name").and_then(toml::Value::as_str) else {
+                return Err(AppError::Validation(
+                    "visitor.toml: a visitor needs a name".to_string(),
+                ));
+            };
+            // The name is the visitor's key in the port map.
+            if !names.insert(name) {
+                return Err(AppError::Validation(
+                    "visitor.toml: two visitors have the same name".to_string(),
+                ));
+            }
             if vt
                 .get("bindAddr")
                 .is_some_and(|addr| addr.as_str() != Some("127.0.0.1"))
             {
                 return Err(AppError::Validation(
                     "visitor.toml: a visitor's bindAddr must be \"127.0.0.1\"".to_string(),
+                ));
+            }
+            let Some(port) = vt
+                .get("bindPort")
+                .and_then(toml::Value::as_integer)
+                .filter(|port| (1..=65535).contains(port))
+            else {
+                return Err(AppError::Validation(
+                    "visitor.toml: a visitor's bindPort must be a port from 1 to 65535".to_string(),
+                ));
+            };
+            // A target on loopback at the port resolves to its visitor (tunnel.rs).
+            if !ports.insert(port) {
+                return Err(AppError::Validation(
+                    "visitor.toml: two visitors have the same bindPort".to_string(),
                 ));
             }
         }
@@ -464,19 +565,24 @@ fn no_template_delimiter(text: &str) -> Result<(), AppError> {
 }
 
 /// The text frpc runs: the server TOML with `identity_dir` filled in and `head` in its root, as
-/// [`with_local_head`] generates it. The identity dir goes in after the allow-list, so the
+/// [`with_local_head`] generates it. The identity dir goes into the checked value, so the
 /// filled-in TOML is checked again, and so is the generated text: its root holds the head exactly
 /// as set and otherwise only what the allow-list admits. frp renders the config file as a Go
 /// template before it reads the TOML (`pkg/config/load.go`, `RenderWithTemplate`), so neither the
-/// server TOML with the identity dir filled in nor the generated text holds `{{` — an escape in
-/// the server TOML can spell it in a value.
+/// server TOML nor the generated text, the identity dir in it, holds `{{` — an escape in the
+/// server TOML can spell it in a value.
 fn frpc_config(
     server_toml: &str,
     identity_dir: &str,
     head: &LocalHead,
 ) -> Result<String, AppError> {
-    let server_toml = rewrite_identity_paths(server_toml, identity_dir);
-    no_template_delimiter(&server_toml)?;
+    // The placeholder is the one `{{` the server TOML may hold; filled in, it is gone from the TLS
+    // paths, and one anywhere else fails the check of the generated text below.
+    no_template_delimiter(&server_toml.replace(IDENTITY_DIR_PLACEHOLDER, ""))?;
+    let mut server = validate_visitor_toml(server_toml)?;
+    rewrite_identity_paths(&mut server, identity_dir);
+    let server_toml = toml::to_string(&server)
+        .map_err(|e| AppError::Validation(format!("visitor.toml does not serialize: {e}")))?;
     let config = with_local_head(&server_toml, head.port, &head.password)?;
     no_template_delimiter(&config)?;
     let parsed: toml::Value =
@@ -558,7 +664,15 @@ fn write_visitor_config(
     // and executing it (3.59).
     let identity_dir = data_dir.join("identity");
     let config = frpc_config(server_toml, &identity_dir.to_string_lossy(), head)?;
-    if server_toml.contains("[transport.tls]") {
+    // The checked table decides, not the text: TOML may write the TLS table as a header, in
+    // dotted keys or inline.
+    let checked: toml::Value =
+        toml::from_str(&config).map_err(|e| parse_error("frpc config", &config, &e))?;
+    if checked
+        .get("transport")
+        .and_then(|transport| transport.get("tls"))
+        .is_some()
+    {
         export_identity(&identity_dir)?;
     }
 
@@ -570,7 +684,8 @@ fn write_visitor_config(
 /// What a reconciliation does to the disk and the sidecar, kept apart from its course so the
 /// course is testable without either.
 trait Sidecar {
-    /// Write the config frpc reads: `server_toml` behind `head`.
+    /// Write the config frpc reads: `server_toml`, the server TOML with its visitors at their local
+    /// ports as the serializer writes it, behind `head`.
     fn write(&self, server_toml: &str, head: &LocalHead) -> Result<(), AppError>;
     /// Spawn frpc on the written config into `process`, which is `state` locked by the caller.
     fn spawn(
@@ -585,7 +700,6 @@ trait Sidecar {
 struct AppSidecar<'a> {
     app: &'a tauri::AppHandle,
     data_dir: PathBuf,
-    username: &'a str,
 }
 
 impl Sidecar for AppSidecar<'_> {
@@ -600,14 +714,7 @@ impl Sidecar for AppSidecar<'_> {
         applied: Applied,
     ) -> Result<(), AppError> {
         let config_path = self.data_dir.join(VISITOR_CONFIG);
-        start_frpc(
-            self.app,
-            &config_path,
-            state,
-            process,
-            self.username.to_string(),
-            applied,
-        )
+        start_frpc(self.app, &config_path, state, process, applied)
     }
 }
 
@@ -618,7 +725,6 @@ fn start_frpc(
     config_path: &std::path::Path,
     state: &FrpcState,
     guard: &mut FrpcProcess,
-    visitor_name: String,
     applied: Applied,
 ) -> Result<(), AppError> {
     if guard.child.is_some() {
@@ -695,7 +801,7 @@ fn start_frpc(
     });
 
     guard.child = Some(child);
-    guard.visitor_name = Some(visitor_name);
+    guard.visitor_name = Some(applied.who.username.clone());
     guard.connected_since = Some(chrono::Utc::now().to_rfc3339());
     guard.applied = Some(applied);
 
@@ -719,7 +825,27 @@ pub fn tunnel_status(state: &FrpcState) -> TunnelStatus {
         visitor_name: guard.visitor_name.clone(),
         connected_since: guard.connected_since.clone(),
         visitors: guard.visitors(),
+        bindings: guard.bindings(),
     }
+}
+
+/// Where the visitors of the running frpc listen, if it runs for `who`: the bindings a stored
+/// password and the tunnel resolution may use. Empty while none runs and while it runs for
+/// another sign-in.
+pub fn bindings_for(state: &FrpcState, who: &SignedIn) -> Vec<VisitorBinding> {
+    let guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
+    guard
+        .applied
+        .as_ref()
+        .filter(|applied| same_sign_in(&applied.who, who))
+        .map(|applied| applied.bindings.clone())
+        .unwrap_or_default()
+}
+
+/// Whether `a` and `b` are the same user on the same server, as
+/// [`SessionState::ensure_signed_in`] compares them.
+fn same_sign_in(a: &SignedIn, b: &SignedIn) -> bool {
+    a.server_url == b.server_url && a.username == b.username
 }
 
 /// Ask the running frpc to reload its config file through its admin API on loopback.
@@ -744,75 +870,134 @@ async fn request_reload(head: &LocalHead) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Give every visitor of `config` its local port from `ports` and rewrite it to listen there (see
+/// [`remap_visitors`]). The port map's file lock and bind tests run on a blocking thread;
+/// `recheck` as [`PortRegistry::assign`] takes it.
+async fn assign_ports(
+    ports: &PortRegistry,
+    config: &mut toml::Value,
+    recheck: bool,
+) -> Result<Vec<VisitorBinding>, AppError> {
+    let wanted = visitor_ports(config);
+    let registry = ports.clone();
+    let assigned = tauri::async_runtime::spawn_blocking(move || {
+        registry.assign(DEFAULT_OWNER, &wanted, recheck)
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::other(format!("port map: {e}"))))??;
+    // assign answers for every visitor visitor_ports lists, and remap_visitors asks for exactly
+    // those, so the server port below never stands in for a local one.
+    Ok(remap_visitors(config, &|name, server_port| {
+        assigned
+            .iter()
+            .find(|(assigned, _)| assigned == name)
+            .map_or(server_port, |&(_, local_port)| local_port)
+    }))
+}
+
 /// Bring frpc in line with `server_toml`, the user's visitor TOML as fetched; `None` means no
 /// tunnels and stops frpc. `since` is the generation before the fetch: a stop since then wins and
-/// nothing starts. A TOML the allow-list rejects leaves the running frpc alone.
+/// nothing starts. A TOML the allow-list rejects leaves the running frpc alone. frpc gets the
+/// visitors at their local ports from `ports`, and the comparison with the running frpc is on
+/// that rewritten TOML. `who` is the sign-in the TOML was fetched for: a frpc that runs for
+/// another one restarts, whatever the TOML.
 async fn reconcile(
     state: &FrpcState,
     sidecar: &impl Sidecar,
+    ports: &PortRegistry,
     server_toml: Option<&str>,
+    who: SignedIn,
     since: u64,
 ) -> Result<RefreshOutcome, AppError> {
     let Some(server_toml) = server_toml else {
         stop_frpc(state)?;
         return Ok(RefreshOutcome::Stopped);
     };
-    let next = validate_visitor_toml(server_toml)?;
+    let mut server = validate_visitor_toml(server_toml)?;
 
-    let (plan, head) = {
+    let frpc_runs = {
         let guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
         if guard.generation != since {
             return Ok(RefreshOutcome::Stopped);
         }
-        let running = guard.applied.as_ref();
+        guard.applied.is_some()
+    };
+    // While no frpc of ours runs, nothing of ours holds the visitors' ports: one that does not
+    // bind now went to someone else and moves.
+    let bindings = assign_ports(ports, &mut server, !frpc_runs).await?;
+    let config = toml::to_string(&server)
+        .map_err(|e| AppError::Validation(format!("visitor.toml does not serialize: {e}")))?;
+    let next = Remapped { server, bindings };
+
+    let (plan, head) = {
+        let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
+        if guard.generation != since {
+            return Ok(RefreshOutcome::Stopped);
+        }
+        let plan = match guard.applied.as_ref() {
+            // A frpc of another sign-in neither reloads nor stays as it is: `Applied` would then
+            // hold the visitors of `who` under that other sign-in.
+            Some(applied) if !same_sign_in(&applied.who, &who) => RefreshPlan::Restart,
+            applied => plan_refresh(applied.map(|applied| &applied.server), &next.server),
+        };
+        if let (RefreshPlan::Unchanged, Some(applied)) = (&plan, guard.applied.as_mut()) {
+            // frpc keeps its ports; a server port may have moved behind one.
+            applied.bindings = next.bindings;
+            return Ok(RefreshOutcome::Unchanged);
+        }
         (
-            plan_refresh(running.map(|applied| &applied.server), &next),
-            running.map(|applied| applied.head.clone()),
+            plan,
+            guard.applied.as_ref().map(|applied| applied.head.clone()),
         )
     };
 
     match (plan, head) {
         (RefreshPlan::Unchanged, _) => Ok(RefreshOutcome::Unchanged),
         (RefreshPlan::Reload, Some(head)) => {
-            reload(state, sidecar, server_toml, next, head, since).await
+            reload(state, sidecar, &config, next, who, head, since).await
         }
         (RefreshPlan::Start, _) => start_fresh(
             state,
             sidecar,
-            server_toml,
+            &config,
             next,
+            who,
             since,
             RefreshOutcome::Started,
         ),
         (RefreshPlan::Restart | RefreshPlan::Reload, _) => start_fresh(
             state,
             sidecar,
-            server_toml,
+            &config,
             next,
+            who,
             since,
             RefreshOutcome::Restarted,
         ),
     }
 }
 
-/// Write `server_toml` behind the running frpc's own head and have it reload; it takes the
-/// visitors from the file. A failed reload restarts frpc with a new head.
+/// Write `config`, the rewritten server TOML, behind the running frpc's own head and have it
+/// reload; it takes the visitors from the file. A failed reload restarts frpc with a new head.
+/// The running frpc runs for `who` already ([`reconcile`]).
 async fn reload(
     state: &FrpcState,
     sidecar: &impl Sidecar,
-    server_toml: &str,
-    next: toml::Value,
+    config: &str,
+    next: Remapped,
+    who: SignedIn,
     head: LocalHead,
     since: u64,
 ) -> Result<RefreshOutcome, AppError> {
-    sidecar.write(server_toml, &head)?;
+    sidecar.write(config, &head)?;
     if let Err(e) = request_reload(&head).await {
         log::warn!("[frpc] reload failed, restarting: {e}");
         return start_fresh(
             state,
             sidecar,
-            server_toml,
+            config,
             next,
+            who,
             since,
             RefreshOutcome::Restarted,
         );
@@ -823,23 +1008,25 @@ async fn reload(
         return Ok(RefreshOutcome::Stopped);
     }
     if let Some(applied) = guard.applied.as_mut() {
-        applied.server = next;
+        applied.server = next.server;
+        applied.bindings = next.bindings;
     }
     Ok(RefreshOutcome::Reloaded)
 }
 
-/// Stop whatever frpc runs and start one on `server_toml` with a new head, reporting `outcome` —
-/// unless a stop came in since `since`, then nothing starts.
+/// Stop whatever frpc runs and start one for `who` on `config`, the rewritten server TOML, with a
+/// new head, reporting `outcome` — unless a stop came in since `since`, then nothing starts.
 fn start_fresh(
     state: &FrpcState,
     sidecar: &impl Sidecar,
-    server_toml: &str,
-    next: toml::Value,
+    config: &str,
+    next: Remapped,
+    who: SignedIn,
     since: u64,
     outcome: RefreshOutcome,
 ) -> Result<RefreshOutcome, AppError> {
     let head = LocalHead::fresh()?;
-    sidecar.write(server_toml, &head)?;
+    sidecar.write(config, &head)?;
 
     let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
     if guard.generation != since {
@@ -848,36 +1035,38 @@ fn start_fresh(
     if let Some(child) = guard.retire() {
         let _ = child.kill();
     }
-    sidecar.spawn(state, &mut guard, Applied { server: next, head })?;
+    let applied = Applied {
+        server: next.server,
+        bindings: next.bindings,
+        head,
+        who,
+    };
+    sidecar.spawn(state, &mut guard, applied)?;
     Ok(outcome)
 }
 
 /// One reconciliation: fetch the visitor bundle and bring frpc in line with it — start, restart,
 /// reload or leave it; no tunnels stop it. A failure before that (network, 5xx, a 401 the refresh
-/// could not cure) leaves the running frpc alone. `token` is not sent: the fetch sends the
-/// session's current access token from the keyring (see [`auth::authenticated_get`]).
+/// could not cure, a session that changed meanwhile) leaves the running frpc alone. The fetch
+/// goes to the signed-in server with the session's current access token (see
+/// [`auth::authenticated_get`]).
 pub async fn refresh_tunnel(
     app: tauri::AppHandle,
     state: FrpcState,
     lock: &RefreshLock,
-    server_url: &str,
-    token: &str,
-    username: &str,
-    allow_self_signed: bool,
+    session: &SessionState,
 ) -> Result<TunnelRefresh, AppError> {
     let _serial = lock.0.lock().await;
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
-    // Fetched under the lock: authenticated_get reads the keyring token only now, so a
-    // reconciliation queued behind one that renewed it sends the renewed one and does not
-    // refresh again.
-    let bundle = fetch_visitor_bundle(server_url, token, allow_self_signed).await?;
+    let (bundle, who) = fetch_visitor_bundle(session).await?;
+    let data_dir = app_data_dir(&app)?;
+    let ports = PortRegistry::new(&data_dir);
     let sidecar = AppSidecar {
         app: &app,
-        data_dir: app_data_dir(&app)?,
-        username,
+        data_dir,
     };
     let server_toml = bundle.as_ref().map(|bundle| bundle.toml.as_str());
-    let outcome = reconcile(&state, &sidecar, server_toml, since).await?;
+    let outcome = reconcile(&state, &sidecar, &ports, server_toml, who, since).await?;
     Ok(TunnelRefresh {
         status: tunnel_status(&state),
         outcome,
@@ -887,16 +1076,22 @@ pub async fn refresh_tunnel(
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
+    use std::net::{Ipv4Addr, TcpListener};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
 
     use super::{
-        bundle_from, carries_bundle, frpc_config, plan_refresh, reconcile, request_reload,
-        rewrite_identity_paths, tunnel_status, validate_visitor_toml, visitor_names,
-        with_local_head, Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar,
-        NO_IDENTITY_HINT,
+        bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
+        reconcile, remap_visitors, request_reload, rewrite_identity_paths, tunnel_status,
+        validate_visitor_toml, visitor_names, with_local_head, write_visitor_config, Applied,
+        FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding, NO_IDENTITY_HINT,
+        VISITOR_CONFIG,
     };
     use crate::error::AppError;
+    use crate::keyring_store;
     use crate::models::RefreshOutcome;
+    use crate::port_registry::{PortRegistry, DEFAULT_OWNER, FALLBACK_PORTS};
+    use crate::session::{SessionState, SignedIn};
 
     const LEGIT_VISITOR: &str = r#"
 serverAddr = "frps.example.net"
@@ -1105,18 +1300,47 @@ bindPort = 6000
 
     #[test]
     fn rewrites_identity_placeholder_to_absolute() {
-        let toml = "[transport.tls]\n\
+        let mut config = parse(
+            "[transport.tls]\n\
              certFile = \"{{IDENTITY_DIR}}/cert.pem\"\n\
              keyFile = \"{{IDENTITY_DIR}}/key.pem\"\n\
-             trustedCaFile = \"{{IDENTITY_DIR}}/ca.crt\"\n";
-        let out = rewrite_identity_paths(toml, "/data/app/identity");
-        assert!(out.contains("certFile = \"/data/app/identity/cert.pem\""));
-        assert!(out.contains("keyFile = \"/data/app/identity/key.pem\""));
-        assert!(out.contains("trustedCaFile = \"/data/app/identity/ca.crt\""));
-        assert!(
-            !out.contains("{{IDENTITY_DIR}}"),
-            "no placeholder may remain"
+             trustedCaFile = \"{{IDENTITY_DIR}}/ca.crt\"\n\
+             [[visitors]]\n\
+             serverName = \"{{IDENTITY_DIR}}/in-an-array\"\n",
         );
+        rewrite_identity_paths(&mut config, "/data/app/identity");
+        assert_eq!(
+            tls_paths(&config),
+            [
+                Some("/data/app/identity/cert.pem"),
+                Some("/data/app/identity/key.pem"),
+                Some("/data/app/identity/ca.crt"),
+            ]
+        );
+        // Only the three TLS paths take the identity dir; anywhere else the placeholder stays.
+        assert_eq!(
+            config["visitors"][0]["serverName"].as_str(),
+            Some("{{IDENTITY_DIR}}/in-an-array")
+        );
+
+        // A placeholder that stays is a `{{` frp would render as a template: frpc never runs it.
+        for (from, to) in [
+            (
+                "serverName = \"db\"",
+                "serverName = \"{{IDENTITY_DIR}}/db\"",
+            ),
+            (
+                "auth.token = \"sekret\"",
+                "auth.token = \"{{IDENTITY_DIR}}\"",
+            ),
+        ] {
+            let elsewhere = server_toml_with(from, to);
+            assert!(validate_visitor_toml(&elsewhere).is_ok(), "{to}");
+            assert!(
+                frpc_config(&elsewhere, "/data/app/identity", &head(7400, "c0ffee")).is_err(),
+                "frpc_config accepted {to}"
+            );
+        }
     }
 
     /// The three TLS paths of `config` as frpc reads them.
@@ -1132,7 +1356,9 @@ bindPort = 6000
             ["cert.pem", "key.pem", "ca.crt"].map(|file| format!("{identity_dir}/{file}"));
         let expected = expected.each_ref().map(|path| Some(path.as_str()));
 
-        let rewritten = rewrite_identity_paths(SERVER_TOML, identity_dir);
+        let mut rewritten = parse(SERVER_TOML);
+        rewrite_identity_paths(&mut rewritten, identity_dir);
+        let rewritten = toml::to_string(&rewritten).unwrap();
         let rewritten = toml::from_str::<toml::Value>(&rewritten)
             .unwrap_or_else(|e| panic!("{identity_dir:?}: server TOML does not parse: {e}"));
         assert_eq!(
@@ -1167,6 +1393,202 @@ bindPort = 6000
         ] {
             assert_identity_path_round_trips(identity_dir);
         }
+    }
+
+    #[test]
+    fn remap_visitors_binds_every_visitor_on_loopback_at_the_local_port() {
+        // The second visitor without bindAddr: frp binds it on 127.0.0.1 too, the rewrite says so.
+        let loopback = "bindAddr = \"127.0.0.1\"\n";
+        let last = SERVER_TOML.rfind(loopback).unwrap();
+        let mut server = SERVER_TOML.to_string();
+        server.replace_range(last..last + loopback.len(), "");
+        let mut config = validate_visitor_toml(&server).unwrap();
+        let asked = RefCell::new(Vec::new());
+
+        let bindings = remap_visitors(&mut config, &|name, server_port| {
+            asked.borrow_mut().push((name.to_string(), server_port));
+            if name == "db-visitor" {
+                23005
+            } else {
+                23000
+            }
+        });
+
+        assert_eq!(
+            *asked.borrow(),
+            [
+                ("db-visitor".to_string(), 6000),
+                ("web-visitor".to_string(), 6001)
+            ]
+        );
+        assert_eq!(
+            bindings,
+            [
+                VisitorBinding {
+                    name: "db-visitor".to_string(),
+                    server_port: 6000,
+                    local_port: 23005,
+                },
+                VisitorBinding {
+                    name: "web-visitor".to_string(),
+                    server_port: 6001,
+                    local_port: 23000,
+                },
+            ]
+        );
+        // Names and every other key as the server sent them; only the ports moved.
+        let expected = SERVER_TOML
+            .replacen("bindPort = 6000", "bindPort = 23005", 1)
+            .replacen("bindPort = 6001", "bindPort = 23000", 1);
+        assert_eq!(config, parse(&expected));
+
+        let no_visitors = &SERVER_TOML[..SERVER_TOML.find("\n[[visitors]]").unwrap()];
+        let mut config = validate_visitor_toml(no_visitors).unwrap();
+        assert!(remap_visitors(&mut config, &|_, _| 23000).is_empty());
+        assert_eq!(config, parse(no_visitors));
+    }
+
+    #[test]
+    fn remap_visitors_gets_only_visitors_with_a_name_and_a_port_from_1_to_65535() {
+        for port in ["1", "65535"] {
+            let edge = server_toml_with("bindPort = 6000", &format!("bindPort = {port}"));
+            assert!(validate_visitor_toml(&edge).is_ok(), "rejected {port}");
+        }
+
+        let mut evil = Vec::new();
+        for other in [
+            "bindPort = 0",
+            "bindPort = -1",
+            "bindPort = 65536",
+            "bindPort = \"6000\"",
+            "bindPort = 6000.0",
+            "",
+        ] {
+            for (visitor, port) in [("first", "bindPort = 6000"), ("second", "bindPort = 6001")] {
+                evil.push((
+                    format!("{other:?} in the {visitor} visitor"),
+                    server_toml_with(port, other),
+                ));
+            }
+        }
+        for (case, other) in [("no name", ""), ("a name that is no string", "name = 1\n")] {
+            evil.push((
+                case.to_string(),
+                server_toml_with("name = \"db-visitor\"\n", other),
+            ));
+        }
+        for (case, evil) in evil {
+            // The TOML itself is valid: only the allow-list may refuse it.
+            parse(&evil);
+            assert!(validate_visitor_toml(&evil).is_err(), "accepted {case}");
+            assert!(
+                frpc_config(&evil, "/data/app/identity", &head(7400, "c0ffee")).is_err(),
+                "frpc_config accepted {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn remap_visitors_config_with_a_windows_identity_path_is_valid_toml() {
+        // The rewritten value goes to frpc as text: serialized, then the identity dir filled in.
+        let identity_dir =
+            r"C:\Users\O'Brien Test\AppData\Roaming\com.admincave.adminhelper\identity";
+        let mut config = validate_visitor_toml(SERVER_TOML).unwrap();
+        remap_visitors(&mut config, &|_, server_port| server_port + 17000);
+        let rewritten = toml::to_string(&config).unwrap();
+
+        let frpc = frpc_config(&rewritten, identity_dir, &head(7400, "c0ffee"))
+            .unwrap_or_else(|e| panic!("frpc_config refused: {e}"));
+
+        let frpc = parse(&frpc);
+        let expected =
+            ["cert.pem", "key.pem", "ca.crt"].map(|file| format!("{identity_dir}/{file}"));
+        assert_eq!(
+            tls_paths(&frpc),
+            expected.each_ref().map(|path| Some(path.as_str()))
+        );
+        let ports: Vec<_> = frpc["visitors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|visitor| visitor["bindPort"].as_integer())
+            .collect();
+        assert_eq!(ports, [Some(23000), Some(23001)]);
+    }
+
+    /// A fresh directory for one test case under the system temp dir.
+    fn scratch_dir(case: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ah-frpc-{case}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn remap_visitors_config_exports_the_identity_whenever_the_checked_table_has_tls() {
+        let dotted = server_toml_with(
+            TLS_BLOCK,
+            "transport.tls.enable = true\n\
+             transport.tls.trustedCaFile = \"{{IDENTITY_DIR}}/ca.crt\"\n\
+             transport.tls.certFile = \"{{IDENTITY_DIR}}/cert.pem\"\n\
+             transport.tls.keyFile = \"{{IDENTITY_DIR}}/key.pem\"\n",
+        );
+        let inline = server_toml_with(
+            TLS_BLOCK,
+            "transport = { tls = { enable = true, certFile = \"{{IDENTITY_DIR}}/cert.pem\" } }\n",
+        );
+        let without_tls = server_toml_with(TLS_BLOCK, "");
+        // A value that spells the header does not make a TLS table.
+        let header_in_a_value = without_tls.replacen(
+            "secretKey = \"s3cr3t\"",
+            "secretKey = \"[transport.tls]\"",
+            1,
+        );
+        assert_ne!(
+            header_in_a_value, without_tls,
+            "fixture lacks the secretKey"
+        );
+        assert_eq!(
+            parse(&dotted)["transport"],
+            parse(SERVER_TOML)["transport"],
+            "the dotted keys are the same table"
+        );
+
+        let _keyring = keyring_store::memory();
+        for (key, value) in [
+            ("enroll|key", "the key"),
+            ("enroll|cert", "the cert"),
+            ("enroll|ca", "the ca"),
+        ] {
+            keyring_store::set(key, value).unwrap();
+        }
+        for (case, server, exports) in [
+            ("header", SERVER_TOML, true),
+            ("dotted", dotted.as_str(), true),
+            ("inline", inline.as_str(), true),
+            ("without-tls", without_tls.as_str(), false),
+            ("header-in-a-value", header_in_a_value.as_str(), false),
+        ] {
+            let dir = scratch_dir(&format!("identity-{case}"));
+
+            write_visitor_config(&dir, server, &head(7400, "c0ffee"))
+                .unwrap_or_else(|e| panic!("{case}: {e}"));
+
+            assert!(dir.join(VISITOR_CONFIG).is_file(), "{case}");
+            let key = std::fs::read_to_string(dir.join("identity").join("key.pem")).ok();
+            assert_eq!(key.as_deref(), exports.then_some("the key"), "{case}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        // Without an enrolled identity a TLS table in dotted keys stops the start with the hint.
+        keyring_store::delete("enroll|key").unwrap();
+        let dir = scratch_dir("identity-missing");
+        let error = write_visitor_config(&dir, &dotted, &head(7400, "c0ffee")).unwrap_err();
+        assert!(
+            matches!(&error, AppError::Validation(hint) if hint == NO_IDENTITY_HINT),
+            "{error}"
+        );
+        assert!(!dir.join(VISITOR_CONFIG).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1551,25 +1973,134 @@ method = "token"
         }
     }
 
-    /// A state whose frpc, generation 1, applied `server` behind `head`.
-    fn running(server: &str, head: LocalHead) -> FrpcState {
+    /// A port map in a fresh directory of its own, removed again on drop.
+    struct TempPorts {
+        dir: std::path::PathBuf,
+        registry: PortRegistry,
+    }
+
+    impl TempPorts {
+        fn new() -> Self {
+            static NEXT: AtomicU32 = AtomicU32::new(0);
+            let dir = scratch_dir(&format!("ports-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+            let registry = PortRegistry::new(&dir);
+            Self { dir, registry }
+        }
+    }
+
+    impl Drop for TempPorts {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// A port someone else listens on while the listener lives.
+    fn taken_port() -> (TcpListener, u16) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        (listener, port)
+    }
+
+    /// `server`, SERVER_TOML or a variant, with db-visitor at `db` and web-visitor at `web`
+    /// instead of 6000 and 6001.
+    fn at_ports(server: &str, [db, web]: [u16; 2]) -> String {
+        for port in ["bindPort = 6000\n", "bindPort = 6001\n"] {
+            assert!(server.contains(port), "fixture lacks {port:?}");
+        }
+        server
+            .replacen("bindPort = 6000\n", &format!("bindPort = {db}\n"), 1)
+            .replacen("bindPort = 6001\n", &format!("bindPort = {web}\n"), 1)
+    }
+
+    /// What frpc gets for `server`, SERVER_TOML or a variant, with its visitors at `locals`: the
+    /// text the serializer writes.
+    fn written_at(server: &str, locals: [u16; 2]) -> String {
+        toml::to_string(&parse(&at_ports(server, locals))).unwrap()
+    }
+
+    fn binding(name: &str, server_port: u16, local_port: u16) -> VisitorBinding {
+        VisitorBinding {
+            name: name.to_string(),
+            server_port,
+            local_port,
+        }
+    }
+
+    /// The bindings of SERVER_TOML's visitors at `locals`.
+    fn bindings_at([db, web]: [u16; 2]) -> Vec<VisitorBinding> {
+        vec![
+            binding("db-visitor", 6000, db),
+            binding("web-visitor", 6001, web),
+        ]
+    }
+
+    const SERVER_URL: &str = "https://ah.example.net";
+
+    fn signed_in(server_url: &str, username: &str) -> SignedIn {
+        SignedIn {
+            server_url: server_url.to_string(),
+            username: username.to_string(),
+            allow_self_signed: false,
+        }
+    }
+
+    /// The sign-in the bundles of the tests are fetched for, unless one says otherwise.
+    fn ops_admin() -> SignedIn {
+        signed_in(SERVER_URL, "ops-admin")
+    }
+
+    /// A frpc of the tests that runs: the state, the port map that gave its visitors their local
+    /// ports, and the listeners it holds on them, as a real frpc would.
+    struct Running {
+        state: FrpcState,
+        ports: TempPorts,
+        /// The local ports of db-visitor and web-visitor, never their server ports.
+        locals: [u16; 2],
+        _listeners: [TcpListener; 2],
+    }
+
+    /// A state whose frpc, generation 1, applied `server`, SERVER_TOML or a variant, behind `head`,
+    /// with its visitors at local ports of their own, for [`ops_admin`].
+    fn running(server: &str, head: LocalHead) -> Running {
+        let listeners = [taken_port(), taken_port()];
+        let locals = [listeners[0].1, listeners[1].1];
+        let ports = TempPorts::new();
+        ports.registry.seed(
+            DEFAULT_OWNER,
+            &[
+                ("db-visitor", 6000, locals[0]),
+                ("web-visitor", 6001, locals[1]),
+            ],
+        );
         let mut process = FrpcProcess::new();
         process.generation = 1;
         process.connected_since = Some("spawn 1".to_string());
         process.applied = Some(Applied {
-            server: parse(server),
+            server: parse(&at_ports(server, locals)),
+            bindings: bindings_at(locals),
             head,
+            who: ops_admin(),
         });
-        Arc::new(Mutex::new(process))
+        Running {
+            state: Arc::new(Mutex::new(process)),
+            ports,
+            locals,
+            _listeners: listeners.map(|(listener, _)| listener),
+        }
+    }
+
+    fn idle() -> FrpcState {
+        Arc::new(Mutex::new(FrpcProcess::new()))
     }
 
     fn lock(state: &FrpcState) -> MutexGuard<'_, FrpcProcess> {
         state.lock().unwrap()
     }
 
-    /// SERVER_TOML with one visitor's port changed: a reload.
-    fn moved_visitor() -> String {
-        SERVER_TOML.replacen("bindPort = 6000", "bindPort = 6100", 1)
+    /// SERVER_TOML with one visitor's secret changed: a reload. A moved server port is none: the
+    /// visitor keeps its local port.
+    fn changed_visitor() -> String {
+        server_toml_with("secretKey = \"s3cr3t\"", "secretKey = \"n3w\"")
     }
 
     #[tokio::test]
@@ -1608,37 +2139,60 @@ method = "token"
     #[tokio::test]
     async fn refresh_reloads_behind_the_running_head_and_keeps_the_process() {
         let (port, request) = serve_one(reply("200 OK", "")).await;
-        let state = running(SERVER_TOML, head(port, "c0ffee"));
+        let running = running(SERVER_TOML, head(port, "c0ffee"));
+        let state = &running.state;
         let sidecar = FakeSidecar::default();
-        let next = moved_visitor();
+        let next = changed_visitor();
 
-        let outcome = reconcile(&state, &sidecar, Some(&next), 1).await.unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&next),
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Reloaded);
         assert!(request.await.unwrap().starts_with("GET /api/reload "));
         let writes = sidecar.writes.borrow();
         assert_eq!(writes.len(), 1);
-        assert_eq!(writes[0].0, next);
+        // frpc reads the server TOML with the visitors at their local ports.
+        assert_eq!(writes[0].0, written_at(&next, running.locals));
         assert_eq!(
             (writes[0].1.port, writes[0].1.password.as_str()),
             (port, "c0ffee")
         );
         assert_eq!(sidecar.spawns.get(), 0);
-        let process = lock(&state);
+        let process = lock(state);
         assert_eq!(process.generation, 1);
         assert_eq!(process.connected_since.as_deref(), Some("spawn 1"));
-        assert_eq!(process.applied.as_ref().unwrap().server, parse(&next));
+        let applied = process.applied.as_ref().unwrap();
+        assert_eq!(applied.server, parse(&at_ports(&next, running.locals)));
+        assert_eq!(applied.bindings, bindings_at(running.locals));
     }
 
     #[tokio::test]
     async fn refresh_reload_failure_restarts_with_a_new_head() {
         // Nothing answers on the admin API port the running frpc was given.
         let (_reserved, port) = crate::test_tls::refused_port();
-        let state = running(SERVER_TOML, head(port, "c0ffee"));
+        let running = running(SERVER_TOML, head(port, "c0ffee"));
+        let state = &running.state;
         let sidecar = FakeSidecar::default();
-        let next = moved_visitor();
+        let next = changed_visitor();
 
-        let outcome = reconcile(&state, &sidecar, Some(&next), 1).await.unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&next),
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Restarted);
         let writes = sidecar.writes.borrow();
@@ -1647,67 +2201,353 @@ method = "token"
         assert_eq!((old.port, old.password.as_str()), (port, "c0ffee"));
         assert_ne!(new.port, port, "a restart takes a new port");
         assert_ne!(new.password, old.password, "a restart takes a new password");
-        assert_eq!(writes[1].0, next);
+        assert_eq!(writes[1].0, written_at(&next, running.locals));
         assert_eq!(sidecar.spawns.get(), 1);
-        let process = lock(&state);
+        let process = lock(state);
         assert_eq!(process.generation, 3, "retired to 2, spawned as 3");
-        assert_eq!(process.applied.as_ref().unwrap().server, parse(&next));
+        let applied = process.applied.as_ref().unwrap();
+        assert_eq!(applied.server, parse(&at_ports(&next, running.locals)));
+        assert_eq!(applied.bindings, bindings_at(running.locals));
     }
 
     #[tokio::test]
     async fn refresh_starts_and_restarts_behind_a_new_head_each() {
-        let state: FrpcState = Arc::new(Mutex::new(FrpcProcess::new()));
+        let state = idle();
+        let ports = TempPorts::new();
+        // The port map of an earlier run; nothing listens on its ports now.
+        let locals = {
+            let free = [taken_port(), taken_port()];
+            [free[0].1, free[1].1]
+        };
+        ports.registry.seed(
+            DEFAULT_OWNER,
+            &[
+                ("db-visitor", 6000, locals[0]),
+                ("web-visitor", 6001, locals[1]),
+            ],
+        );
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(&state, &sidecar, Some(SERVER_TOML), 0)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
         assert_eq!(outcome, RefreshOutcome::Started);
 
         let rotated =
             SERVER_TOML.replacen("auth.token = \"sekret\"", "auth.token = \"rotated\"", 1);
         let since = lock(&state).generation;
-        let outcome = reconcile(&state, &sidecar, Some(&rotated), since)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&rotated),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
         assert_eq!(outcome, RefreshOutcome::Restarted);
 
         assert_eq!(sidecar.spawns.get(), 2);
         let writes = sidecar.writes.borrow();
         assert_eq!(writes.len(), 2);
         assert_ne!(writes[0].1.password, writes[1].1.password);
+        assert_eq!(writes[0].0, written_at(SERVER_TOML, locals));
+        assert_eq!(writes[1].0, written_at(&rotated, locals));
         assert_eq!(
             lock(&state).applied.as_ref().unwrap().server,
-            parse(&rotated)
+            parse(&at_ports(&rotated, locals))
         );
     }
 
     #[tokio::test]
     async fn refresh_leaves_an_unchanged_config_alone() {
-        let state = running(SERVER_TOML, head(1, "c0ffee"));
+        // The running frpc holds its visitors' ports: they must not read as taken.
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(&state, &sidecar, Some(SERVER_TOML), 1)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Unchanged);
         assert!(sidecar.writes.borrow().is_empty());
         assert_eq!(sidecar.spawns.get(), 0);
-        assert_eq!(lock(&state).generation, 1);
+        assert_eq!(lock(state).generation, 1);
+        assert_eq!(tunnel_status(state).bindings, bindings_at(running.locals));
+    }
+
+    #[tokio::test]
+    async fn refresh_gives_frpc_a_fallback_port_for_a_taken_server_port_and_keeps_it() {
+        let state = idle();
+        let ports = TempPorts::new();
+        let sidecar = FakeSidecar::default();
+        // Someone else listens on both server ports.
+        let (db_holder, db) = taken_port();
+        let (web_holder, web) = taken_port();
+        let server = at_ports(SERVER_TOML, [db, web]);
+
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&server),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, RefreshOutcome::Started);
+        let bindings = tunnel_status(&state).bindings;
+        assert_eq!(bindings.len(), 2, "{bindings:?}");
+        let locals = [bindings[0].local_port, bindings[1].local_port];
+        for local in locals {
+            assert!(FALLBACK_PORTS.contains(&local), "{bindings:?}");
+        }
+        assert_ne!(locals[0], locals[1]);
+        assert_eq!(
+            bindings,
+            [
+                binding("db-visitor", db, locals[0]),
+                binding("web-visitor", web, locals[1]),
+            ]
+        );
+        assert_eq!(
+            sidecar.writes.borrow()[0].0,
+            written_at(SERVER_TOML, locals)
+        );
+
+        // The server ports are free again; the visitors keep their ports all the same, so the
+        // same server TOML changes nothing.
+        drop((db_holder, web_holder));
+        let since = lock(&state).generation;
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&server),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, RefreshOutcome::Unchanged);
+        assert_eq!(sidecar.writes.borrow().len(), 1);
+        assert_eq!(sidecar.spawns.get(), 1);
+        assert_eq!(tunnel_status(&state).bindings, bindings);
+    }
+
+    #[tokio::test]
+    async fn refresh_moves_an_own_port_someone_took_while_no_frpc_ran() {
+        // An earlier run gave db-visitor its server port; then someone else took it.
+        let (_holder, port) = taken_port();
+        let second = SERVER_TOML
+            .find("[[visitors]]\nname = \"web-visitor\"")
+            .unwrap();
+        let server =
+            SERVER_TOML[..second].replacen("bindPort = 6000\n", &format!("bindPort = {port}\n"), 1);
+        let ports = TempPorts::new();
+        ports
+            .registry
+            .seed(DEFAULT_OWNER, &[("db-visitor", port, port)]);
+        let state = idle();
+        let sidecar = FakeSidecar::default();
+
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(&server),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, RefreshOutcome::Started);
+        let bindings = tunnel_status(&state).bindings;
+        assert_eq!(bindings.len(), 1, "{bindings:?}");
+        let local = bindings[0].local_port;
+        assert_ne!(local, port);
+        assert!(FALLBACK_PORTS.contains(&local), "{bindings:?}");
+        let written = parse(&sidecar.writes.borrow()[0].0);
+        assert_eq!(
+            written["visitors"][0]["bindPort"].as_integer(),
+            Some(i64::from(local))
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_keeps_the_local_port_when_the_server_port_moves() {
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
+        let sidecar = FakeSidecar::default();
+        let moved = server_toml_with("bindPort = 6000", "bindPort = 6100");
+
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&moved),
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
+
+        // frpc's config stays as it is; only the binding learns the new server port.
+        assert_eq!(outcome, RefreshOutcome::Unchanged);
+        assert!(sidecar.writes.borrow().is_empty());
+        assert_eq!(sidecar.spawns.get(), 0);
+        let [db, web] = running.locals;
+        assert_eq!(
+            tunnel_status(state).bindings,
+            [
+                binding("db-visitor", 6100, db),
+                binding("web-visitor", 6001, web)
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_rejects_two_visitors_with_one_name() {
+        // The name is the visitor's key in the port map.
+        let twins = server_toml_with("name = \"web-visitor\"", "name = \"db-visitor\"");
+        parse(&twins);
+        let message = validate_visitor_toml(&twins).unwrap_err().to_string();
+        assert!(!message.contains("db-visitor"), "{message}");
+        assert!(frpc_config(&twins, "/data/app/identity", &head(7400, "c0ffee")).is_err());
+
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
+        let sidecar = FakeSidecar::default();
+        assert!(reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&twins),
+            ops_admin(),
+            1
+        )
+        .await
+        .is_err());
+        assert!(sidecar.writes.borrow().is_empty());
+        let process = lock(state);
+        assert_eq!(
+            process.applied.as_ref().unwrap().server,
+            parse(&at_ports(SERVER_TOML, running.locals))
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_rejects_two_visitors_with_one_server_port() {
+        // A target on loopback at that port would name two visitors at once.
+        let twins = server_toml_with("bindPort = 6001", "bindPort = 6000");
+        parse(&twins);
+        let message = validate_visitor_toml(&twins).unwrap_err().to_string();
+        assert!(!message.contains("6000"), "{message}");
+        assert!(frpc_config(&twins, "/data/app/identity", &head(7400, "c0ffee")).is_err());
+
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
+        let sidecar = FakeSidecar::default();
+        assert!(reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&twins),
+            ops_admin(),
+            1
+        )
+        .await
+        .is_err());
+        assert!(sidecar.writes.borrow().is_empty());
+        let process = lock(state);
+        assert_eq!(
+            process.applied.as_ref().unwrap().server,
+            parse(&at_ports(SERVER_TOML, running.locals))
+        );
+        assert_eq!(process.bindings(), bindings_at(running.locals));
+    }
+
+    #[test]
+    fn refresh_writes_a_windows_identity_path_through_the_serializer() {
+        // `\U` and `\A` are an invalid and a reserved escape in a basic string; the `'` rules out
+        // a literal string. On Windows the backslashes separate directories, elsewhere they are
+        // part of a name: the identity path holds them either way.
+        let root = scratch_dir("windows-path");
+        let data_dir = root.join(r"x\Users\O'Brien Test\AppData\Roaming\com.admincave.adminhelper");
+        let _keyring = keyring_store::memory();
+        for (key, value) in [
+            ("enroll|key", "the key"),
+            ("enroll|cert", "the cert"),
+            ("enroll|ca", "the ca"),
+        ] {
+            keyring_store::set(key, value).unwrap();
+        }
+
+        write_visitor_config(
+            &data_dir,
+            &written_at(SERVER_TOML, [23000, 23001]),
+            &head(7400, "c0ffee"),
+        )
+        .unwrap();
+
+        let written = std::fs::read_to_string(data_dir.join(VISITOR_CONFIG)).unwrap();
+        let written = parse(&written);
+        let identity_dir = data_dir.join("identity").to_string_lossy().into_owned();
+        assert!(
+            identity_dir.contains(r"\Users\O'Brien Test\AppData"),
+            "{identity_dir}"
+        );
+        let expected =
+            ["cert.pem", "key.pem", "ca.crt"].map(|file| format!("{identity_dir}/{file}"));
+        assert_eq!(
+            tls_paths(&written),
+            expected.each_ref().map(|path| Some(path.as_str()))
+        );
+        assert_eq!(written["visitors"][1]["bindPort"].as_integer(), Some(23001));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]
     async fn refresh_without_tunnels_stops_and_makes_the_old_process_stale() {
-        let state = running(SERVER_TOML, head(1, "c0ffee"));
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(&state, &sidecar, None, 1).await.unwrap();
+        let outcome = reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            None,
+            ops_admin(),
+            1,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Stopped);
         assert!(sidecar.writes.borrow().is_empty());
         assert_eq!(sidecar.spawns.get(), 0);
-        let mut process = lock(&state);
+        let mut process = lock(state);
         assert!(process.applied.is_none());
         assert!(
             !process.reconcile_terminated(1),
@@ -1717,32 +2557,51 @@ method = "token"
 
     #[tokio::test]
     async fn refresh_rejected_toml_leaves_the_running_frpc_alone() {
-        let state = running(SERVER_TOML, head(1, "c0ffee"));
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
         let sidecar = FakeSidecar::default();
         let rejected = format!("{SERVER_TOML}\n[[proxies]]\nname = \"x\"\ntype = \"tcp\"\n");
 
-        assert!(reconcile(&state, &sidecar, Some(&rejected), 1)
-            .await
-            .is_err());
+        assert!(reconcile(
+            state,
+            &sidecar,
+            &running.ports.registry,
+            Some(&rejected),
+            ops_admin(),
+            1
+        )
+        .await
+        .is_err());
 
         assert!(sidecar.writes.borrow().is_empty());
         assert_eq!(sidecar.spawns.get(), 0);
-        let process = lock(&state);
+        let process = lock(state);
         assert_eq!(process.generation, 1);
-        assert_eq!(process.applied.as_ref().unwrap().server, parse(SERVER_TOML));
+        assert_eq!(
+            process.applied.as_ref().unwrap().server,
+            parse(&at_ports(SERVER_TOML, running.locals))
+        );
     }
 
     #[tokio::test]
     async fn refresh_starts_nothing_after_a_stop_during_the_fetch() {
-        let state: FrpcState = Arc::new(Mutex::new(FrpcProcess::new()));
+        let state = idle();
         let since = lock(&state).generation;
         // The user stops the tunnel while the bundle is on its way.
         lock(&state).retire();
+        let ports = TempPorts::new();
         let sidecar = FakeSidecar::default();
 
-        let outcome = reconcile(&state, &sidecar, Some(SERVER_TOML), since)
-            .await
-            .unwrap();
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(outcome, RefreshOutcome::Stopped);
         assert_eq!(sidecar.spawns.get(), 0);
@@ -1780,19 +2639,106 @@ method = "token"
         // The reload got through just before the stop: it must not count as reloaded.
         let (answered, _request) = serve_one(reply("200 OK", "")).await;
         for port in [gone, answered] {
-            let state = running(SERVER_TOML, head(port, "c0ffee"));
+            let running = running(SERVER_TOML, head(port, "c0ffee"));
+            let state = &running.state;
             let sidecar = StopOnWrite {
                 state: state.clone(),
                 inner: FakeSidecar::default(),
             };
 
-            let outcome = reconcile(&state, &sidecar, Some(&moved_visitor()), 1)
-                .await
-                .unwrap();
+            let outcome = reconcile(
+                state,
+                &sidecar,
+                &running.ports.registry,
+                Some(&changed_visitor()),
+                ops_admin(),
+                1,
+            )
+            .await
+            .unwrap();
 
             assert_eq!(outcome, RefreshOutcome::Stopped, "admin API port {port}");
             assert_eq!(sidecar.inner.spawns.get(), 0);
-            assert!(lock(&state).applied.is_none());
+            assert!(lock(state).applied.is_none());
+        }
+    }
+
+    /// Sign-ins other than [`ops_admin`]: the case, the server URL and the user.
+    const OTHER_SIGN_INS: [(&str, &str, &str); 2] = [
+        ("another user", SERVER_URL, "someone-else"),
+        ("another server", "https://other.example.net", "ops-admin"),
+    ];
+
+    #[test]
+    fn bindings_for_only_the_sign_in_frpc_runs_for() {
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let state = &running.state;
+
+        assert_eq!(
+            bindings_for(state, &ops_admin()),
+            bindings_at(running.locals)
+        );
+        // The certificate choice is no part of who is signed in where.
+        let self_signed = SignedIn {
+            allow_self_signed: true,
+            ..ops_admin()
+        };
+        assert_eq!(
+            bindings_for(state, &self_signed),
+            bindings_at(running.locals)
+        );
+        for (case, server_url, username) in OTHER_SIGN_INS {
+            let other = signed_in(server_url, username);
+            assert!(bindings_for(state, &other).is_empty(), "{case}");
+        }
+        // The status shows the running frpc all the same.
+        assert_eq!(tunnel_status(state).bindings, bindings_at(running.locals));
+
+        assert!(bindings_for(&idle(), &ops_admin()).is_empty());
+        lock(state).retire();
+        assert!(bindings_for(state, &ops_admin()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn refresh_restarts_for_a_bundle_of_another_sign_in() {
+        for (case, server_url, username) in OTHER_SIGN_INS {
+            // For the sign-in frpc runs for, the first reloads and the second changes nothing.
+            for next in [changed_visitor(), SERVER_TOML.to_string()] {
+                // A reload would get through: only the other sign-in makes it a restart.
+                let (port, _request) = serve_one(reply("200 OK", "")).await;
+                let running = running(SERVER_TOML, head(port, "c0ffee"));
+                let state = &running.state;
+                let sidecar = FakeSidecar::default();
+
+                let outcome = reconcile(
+                    state,
+                    &sidecar,
+                    &running.ports.registry,
+                    Some(&next),
+                    signed_in(server_url, username),
+                    1,
+                )
+                .await
+                .unwrap();
+
+                assert_eq!(outcome, RefreshOutcome::Restarted, "{case}");
+                let writes = sidecar.writes.borrow();
+                assert_eq!(writes.len(), 1, "{case}: the restart's write, no reload's");
+                assert_ne!(writes[0].1.password, "c0ffee", "{case}: a new head");
+                assert_eq!(writes[0].0, written_at(&next, running.locals), "{case}");
+                assert_eq!(sidecar.spawns.get(), 1, "{case}");
+                assert_eq!(
+                    lock(state).generation,
+                    3,
+                    "{case}: retired to 2, spawned as 3"
+                );
+                assert!(bindings_for(state, &ops_admin()).is_empty(), "{case}");
+                assert_eq!(
+                    bindings_for(state, &signed_in(server_url, username)),
+                    bindings_at(running.locals),
+                    "{case}"
+                );
+            }
         }
     }
 
@@ -1804,13 +2750,13 @@ method = "token"
         );
         assert!(visitor_names(&parse("serverAddr = \"f\"\n")).is_empty());
 
-        let state = running(SERVER_TOML, head(1, "c0ffee"));
-        assert_eq!(
-            tunnel_status(&state).visitors,
-            ["db-visitor", "web-visitor"]
-        );
-        let idle: FrpcState = Arc::new(Mutex::new(FrpcProcess::new()));
+        let running = running(SERVER_TOML, head(1, "c0ffee"));
+        let status = tunnel_status(&running.state);
+        assert_eq!(status.visitors, ["db-visitor", "web-visitor"]);
+        assert_eq!(status.bindings, bindings_at(running.locals));
+        let idle = idle();
         assert!(tunnel_status(&idle).visitors.is_empty());
+        assert!(tunnel_status(&idle).bindings.is_empty());
     }
 
     #[test]
@@ -2013,7 +2959,11 @@ method = "token"
             );
             assert_eq!(
                 toml::Value::Table(root),
-                parse(&rewrite_identity_paths(values, identity_dir)),
+                {
+                    let mut values = parse(values);
+                    rewrite_identity_paths(&mut values, identity_dir);
+                    values
+                },
                 "{case}"
             );
         }
@@ -2077,5 +3027,72 @@ method = "token"
 
         let (port, _request) = serve_one(reply("500 Internal Server Error", "")).await;
         assert!(bundle_from(get(port).await.unwrap()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn refresh_bundle_of_a_session_gone_meanwhile_is_refused() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Who signs in while the bundle is on its way; `None` signs out.
+        for next in [Some("ops-admin"), Some("someone-else"), None] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let server = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+            let session = SessionState::default();
+            session
+                .set(
+                    server.clone(),
+                    "access".to_string(),
+                    "refresh".to_string(),
+                    "ops-admin".to_string(),
+                    false,
+                )
+                .await;
+
+            let serve = async {
+                let (mut tcp, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = tcp.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                }
+                match next {
+                    Some(user) => {
+                        session
+                            .set(
+                                server.clone(),
+                                "next".to_string(),
+                                "next-refresh".to_string(),
+                                user.to_string(),
+                                false,
+                            )
+                            .await
+                    }
+                    None => drop(session.take().await),
+                }
+                let body = r#"{"toml":"serverAddr = \"f\""}"#;
+                tcp.write_all(reply("200 OK", body).as_bytes())
+                    .await
+                    .unwrap();
+                let _ = tcp.shutdown().await;
+            };
+            let (fetched, ()) = tokio::join!(fetch_visitor_bundle(&session), serve);
+
+            match next {
+                // The same user signed in again: the tunnels are still theirs.
+                Some("ops-admin") => {
+                    let (bundle, who) = fetched.expect("the bundle");
+                    assert_eq!(bundle.expect("a bundle").toml, "serverAddr = \"f\"");
+                    assert_eq!(
+                        (who.server_url.as_str(), who.username.as_str()),
+                        (server.as_str(), "ops-admin")
+                    );
+                }
+                _ => assert!(fetched.is_err(), "{next:?}"),
+            }
+        }
     }
 }

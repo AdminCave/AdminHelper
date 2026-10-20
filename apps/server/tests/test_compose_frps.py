@@ -10,14 +10,15 @@ the server and the scheduler mount read-only to read the status file, and frps-a
 holds the checked copy with token and key and which no other service mounts.
 
 The supervisor runs as root and starts frps under a user of the image's own, whose UID no other
-service uses. It keeps four capabilities, frps none: DAC_OVERRIDE to read frps.toml and
-frps.key, which the server and the ca-issuer write 0600 under their own UID; SETUID and SETGID
-to switch to the user of frps; KILL to stop frps across the UID. No process in the container
-gains privileges on exec (no-new-privileges). Port 443 inside needs no capability, since compose
-opens every port of the container's own network namespace to unprivileged processes
-(net.ipv4.ip_unprivileged_port_start=0), whatever the engine defaults to. The server and the
-scheduler run as the app user of their image, so they read the status through the bits the
-supervisor grants everyone.
+service uses, and the requests to the dashboard of frps under another such user. It keeps four
+capabilities, frps none: DAC_OVERRIDE to read frps.toml and frps.key, which the server and the
+ca-issuer write 0600 under their own UID; SETUID and SETGID to switch to the user of frps and to
+the user of the requests; KILL to stop frps and to end the requests under way across their UIDs.
+No process in the container gains privileges on exec (no-new-privileges). Port 443 inside needs
+no capability, since compose opens every port of the container's own network namespace to
+unprivileged processes (net.ipv4.ip_unprivileged_port_start=0), whatever the engine defaults
+to. The server and the scheduler run as the app user of their image, so they read the status
+through the bits the supervisor grants everyone.
 
 A TERM while the supervisor stops frps waits for frps a second time, so the grace period
 outlasts two stops. The health check runs the supervisor's health subcommand, nothing else.
@@ -237,6 +238,7 @@ def test_everyone_may_read_the_status_file_the_supervisor_writes(tmp_path):
         "FRPS_POLL_SECONDS": "3600",
         # Without root, no user to switch to, and no process of one to look for.
         "FRPS_USER": "",
+        "FRPS_FETCH_USER": "",
         "FRPS_PROC_ROOT": str(tmp_path / "proc"),
     }
     supervisor = subprocess.Popen(
@@ -268,6 +270,23 @@ def test_the_test_overlay_builds_frps_from_this_checkout():
     assert frps["image"] == "adminhelper-test/frps:latest"
     assert frps["build"] == {"context": "apps/frps"}
     assert (_ROOT / frps["build"]["context"] / "Dockerfile").is_file()
+
+
+def test_the_test_overlay_keeps_the_data_dir_out_of_the_checkout():
+    # A bind of ./data leaves container-UID-owned files in the checkout on every stack run. In
+    # the overlay the services that bind it share the named volume test-data instead, as they
+    # share ./data in production (the scheduler needs the server's SECRET_KEY).
+    bound = sorted(
+        name
+        for name, service in _services().items()
+        if _mounts(service).get("/app/data", (None,))[0] == "./data"
+    )
+    assert bound, "docker-compose.yml binds ./data to /app/data in no service"
+    overlay = yaml.load(_COMPOSE_TEST.read_text(encoding="utf-8"), Loader=_TestLoader)
+    assert {
+        name: _mounts(overlay["services"].get(name, {})).get("/app/data") for name in bound
+    } == {name: ("test-data", False, False) for name in bound}
+    assert "test-data" in overlay["volumes"]
 
 
 def test_env_example_names_the_frps_image():

@@ -161,16 +161,16 @@ describe('SecDocker pill', () => {
   });
 
   it('shows "keine Daten" with the check message when docker data is missing', () => {
-    const noData = check({ status: 'unknown', message: 'Keine Docker-Daten im Report' });
+    const noData = check({ status: 'unknown', message: 'No Docker data in report' });
     const { container: el } = render(SecDocker, { props: { checks: [noData] } });
     const [pill, ...rest] = pills(el);
     expect(rest).toEqual([]);
     expect(pill.textContent?.trim()).toBe('keine Daten');
-    expect(pill.title).toBe('Keine Docker-Daten im Report');
+    expect(pill.title).toBe('No Docker data in report');
   });
 
   it('keeps the dash for an empty list that is not unknown', () => {
-    const empty = check({ status: 'ok', message: 'Keine Container gefunden' });
+    const empty = check({ status: 'ok', message: 'No containers found' });
     const { container: el } = render(SecDocker, { props: { checks: [empty] } });
     const [pill, ...rest] = pills(el);
     expect(rest).toEqual([]);

@@ -15,7 +15,9 @@ mod keyring_store;
 mod models;
 mod notifications;
 mod password;
+mod port_registry;
 mod proxy;
+mod session;
 mod storage;
 mod sync;
 mod terminal;
@@ -35,7 +37,7 @@ use commands::{
     start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
     sync_connections, tunnel_status,
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn main() {
     // Route panics through the log sink (file + stdout) so a crash leaves a
@@ -51,7 +53,21 @@ fn main() {
     let stream_state = notifications::new_stream_state();
     let stream_state_exit = stream_state.clone();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Registered first so a second launch hands over and exits before any other
+    // plugin or the setup runs. On Linux this needs `enableGTKAppId: false`:
+    // with a GTK app id, GApplication forwards the launch itself and makes this
+    // instance re-run its setup, which aborts on the existing `main` window.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .plugin(
             // stdout + a size-rotated file (adminhelper.log) in the OS app-log
             // dir — the diagnostics report reads it back.
@@ -74,6 +90,7 @@ fn main() {
         .manage(frpc_state)
         .manage(frpc::RefreshLock::default())
         .manage(stream_state)
+        .manage(session::SessionState::default())
         .setup(|app| {
             // Ensure a concrete runtime window icon in dev and production.
             let icon_bytes = include_bytes!("../icons/icon.png");
@@ -86,6 +103,22 @@ fn main() {
             // connections.local.json) once, before any server fetch can
             // overwrite the legacy file. Best-effort: must not block startup.
             let _ = storage::migrate_legacy_local_store(app.handle());
+            // The session lives in the process now; drop what earlier versions left in the
+            // keyring. Off the main thread: a keyring that hangs must not hold the window.
+            tauri::async_runtime::spawn_blocking(auth::forget_keyring_session);
+            // A renewal that fails ends the session; the webview hears of it through this event.
+            let handle = app.handle().clone();
+            app.state::<session::SessionState>().on_expiry(move || {
+                let _ = handle.emit("session-expired", ());
+            });
+            // A sign-in, a sign-out and a failed renewal end the frpc of the sign-in before, here
+            // and not only through the UI. The stop retires its generation, so a reconciliation
+            // under way for that sign-in starts nothing (`frpc::reconcile`).
+            let frpc_state = app.state::<frpc::FrpcState>().inner().clone();
+            app.state::<session::SessionState>()
+                .on_sign_in_change(move || {
+                    let _ = frpc::stop_frpc(&frpc_state);
+                });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

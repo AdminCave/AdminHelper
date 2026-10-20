@@ -84,6 +84,40 @@ def test_toml_strings_take_the_neighbours_of_the_surrogates():
         assert ServerCreate(name=value, hostname="h").name == value
 
 
+# frp renders a config file as a Go template before it reads the TOML, so `{{` in a
+# value the generator writes verbatim would open a template action.
+@pytest.mark.parametrize("value", ["{{", "a{{b", "{{ x }}", "{{{"], ids=repr)
+def test_toml_strings_reject_a_template_opener(value):
+    with pytest.raises(ValidationError, match="template"):
+        _tunnel(name=value)
+    with pytest.raises(ValidationError, match="template"):
+        FrpTunnelUpdate(name=value)
+    with pytest.raises(ValidationError, match="template"):
+        FrpTunnelUpdate(custom_domains=value)
+    with pytest.raises(ValidationError, match="template"):
+        _tunnel(secret_key=value + "x" * 16)
+    with pytest.raises(ValidationError, match="template"):
+        _tunnel(extra_config={"k": value})
+    with pytest.raises(ValidationError, match="template"):
+        FrpServerConfigCreate(name="n", server_addr=value)
+    with pytest.raises(ValidationError, match="template"):
+        FrpServerConfigUpdate(server_addr=value)
+    with pytest.raises(ValidationError, match="template"):
+        FrpServerConfigCreate(name="n", server_addr="a.example", extra_config={"log.level": value})
+    with pytest.raises(ValidationError, match="template"):
+        ServerCreate(name=value, hostname="h")
+    with pytest.raises(ValidationError, match="template"):
+        ServerUpdate(name=value)
+
+
+@pytest.mark.parametrize("value", ["{", "a{b", "{ {", "}}", "a}}b", "}}{"], ids=repr)
+def test_toml_strings_take_a_single_brace_and_a_closing_pair(value):
+    assert _tunnel(name=value).name == value
+    assert _tunnel(secret_key=value + "x" * 16).secret_key == value + "x" * 16
+    assert FrpServerConfigCreate(name="n", server_addr=value).server_addr == value
+    assert ServerCreate(name=value, hostname="h").name == value
+
+
 def test_custom_domains_rejects_newline():
     with pytest.raises(ValidationError):
         _tunnel(custom_domains="ok.example\nvhostHTTPSPort = 1")
@@ -140,6 +174,16 @@ def test_extra_config_rejects_non_bare_keys():
         _tunnel(extra_config={"k = 1 #": "v"})
     with pytest.raises(ValidationError):
         _tunnel(extra_config={'k"': "v"})
+
+
+@pytest.mark.parametrize("model", [FrpTunnelCreate, FrpTunnelUpdate])
+def test_extra_config_rejects_key_with_trailing_newline(model):
+    # In Python `$` also matches before a trailing "\n", so an anchored .match let
+    # "abc\n" through; the generator writes it unquoted and frpc.toml no longer parses.
+    build = _tunnel if model is FrpTunnelCreate else model
+    with pytest.raises(ValidationError) as exc:
+        build(extra_config={"abc\n": 1})
+    assert "'abc\n'" in exc.value.errors()[0]["msg"]
 
 
 def test_extra_config_accepts_clean_scalars():

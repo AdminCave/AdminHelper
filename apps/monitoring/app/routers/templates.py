@@ -25,6 +25,7 @@ from app.models import (
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
+    loads_readable,
 )
 from app.scheduler import remove_check
 from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
@@ -166,7 +167,7 @@ def get_template(template_id: str, db: Session = Depends(get_db)):
     """Returns a single template with its assignments."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
-        raise HTTPException(404, "Template nicht gefunden")
+        raise HTTPException(404, "Template not found")
     assignments = (
         db.query(MonitorTemplateAssignment)
         .filter(MonitorTemplateAssignment.template_id == template_id)
@@ -185,7 +186,7 @@ def update_template(template_id: str, data: TemplateUpdate, db: Session = Depend
     """Updates a template — triggers a live sync to all assigned servers."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
-        raise HTTPException(404, "Template nicht gefunden")
+        raise HTTPException(404, "Template not found")
 
     # Compared with the template as it is, before this change reaches it.
     record_override_baseline(db)
@@ -230,7 +231,7 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
     """Deletes a template — removes all generated checks/alerts on all servers."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
-        raise HTTPException(404, "Template nicht gefunden")
+        raise HTTPException(404, "Template not found")
 
     checks = db.query(MonitorCheck).filter(MonitorCheck.template_id == template_id).all()
     for check in checks:
@@ -287,9 +288,12 @@ def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
     shipped = shipped_builtin(template.builtin_slug) if template else None
     if shipped is None:
         raise HTTPException(404, "Standard template not found")
+    # The stored side is read like to_dict (NaN, Infinity or a number beyond float
+    # range shows as null); the hash in builtin_edited keeps reading the raw
+    # values, so a stored hash stays valid.
     current_checks, current_alerts = canonical_definitions(
-        json.loads(template.check_definitions or "[]"),
-        json.loads(template.alert_definitions or "[]"),
+        loads_readable(template.check_definitions or "[]"),
+        loads_readable(template.alert_definitions or "[]"),
     )
     shipped_checks, shipped_alerts = canonical_definitions(
         shipped["check_definitions"], shipped["alert_definitions"]
@@ -329,7 +333,7 @@ def assign_template(template_id: str, data: TemplateAssign, db: Session = Depend
     """Assigns a template to a server — creates all checks/alerts."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
-        raise HTTPException(404, "Template nicht gefunden")
+        raise HTTPException(404, "Template not found")
 
     existing = (
         db.query(MonitorTemplateAssignment)
@@ -340,7 +344,7 @@ def assign_template(template_id: str, data: TemplateAssign, db: Session = Depend
         .first()
     )
     if existing:
-        raise HTTPException(409, "Template bereits diesem Server zugewiesen")
+        raise HTTPException(409, "Template already assigned to this server")
 
     try:
         result = apply_template(db, template, data.server_id, data.hostname, data.server_name)
@@ -349,7 +353,7 @@ def assign_template(template_id: str, data: TemplateAssign, db: Session = Depend
         # server): the unique constraint rejected the duplicate. Map it to the
         # same 409 the read-then-insert check returns.
         db.rollback()
-        raise HTTPException(409, "Template bereits diesem Server zugewiesen")
+        raise HTTPException(409, "Template already assigned to this server")
     return result
 
 
@@ -369,7 +373,7 @@ def unassign_template(template_id: str, server_id: str, db: Session = Depends(ge
         .first()
     )
     if not assignment:
-        raise HTTPException(404, "Zuweisung nicht gefunden")
+        raise HTTPException(404, "Assignment not found")
 
     remove_template(db, template_id, server_id)
 
@@ -410,7 +414,7 @@ def assign_template_tag(template_id: str, data: TemplateTagAssign, db: Session =
     assignments happens in tag_sync (triggered separately)."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
-        raise HTTPException(404, "Template nicht gefunden")
+        raise HTTPException(404, "Template not found")
 
     row = MonitorTemplateTagAssignment(id=str(uuid.uuid4()), template_id=template_id, tag=data.tag)
     db.add(row)

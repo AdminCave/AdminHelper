@@ -51,6 +51,19 @@ def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict
     return [c.to_dict(state=states.get(c.id)) for c in checks]
 
 
+def _same_config(a, b) -> bool:
+    """== on parsed JSON, except that a bool never equals a number: 0 == False would
+    let a 0 sent for a stored false count as unchanged and skip the strict boundary.
+    Numbers still compare by value (26 == 26.0)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same_config(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same_config(x, y) for x, y in zip(a, b))
+    return a == b
+
+
 router = APIRouter()
 
 # Type-specific metrics written to VictoriaMetrics.
@@ -131,15 +144,13 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
     """Creates a new check and registers it in the scheduler."""
     if data.check_type not in VALID_CHECK_TYPES:
         raise HTTPException(
-            400, f"Ungueltiger check_type. Erlaubt: {', '.join(sorted(VALID_CHECK_TYPES))}"
+            400, f"Invalid check_type. Allowed: {', '.join(sorted(VALID_CHECK_TYPES))}"
         )
     if data.interval not in VALID_INTERVALS:
-        raise HTTPException(
-            400, f"Ungueltiges Intervall. Erlaubt: {', '.join(sorted(VALID_INTERVALS))}"
-        )
+        raise HTTPException(400, f"Invalid interval. Allowed: {', '.join(sorted(VALID_INTERVALS))}")
     if data.severity not in VALID_SEVERITIES:
         raise HTTPException(
-            400, f"Ungueltige Severity. Erlaubt: {', '.join(sorted(VALID_SEVERITIES))}"
+            400, f"Invalid severity. Allowed: {', '.join(sorted(VALID_SEVERITIES))}"
         )
 
     check = MonitorCheck(
@@ -173,7 +184,7 @@ def get_check(check_id: str, db: Session = Depends(get_db)):
     """Returns a single check with its state."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
-        raise HTTPException(404, "Check nicht gefunden")
+        raise HTTPException(404, "Check not found")
     state = db.query(MonitorState).filter(MonitorState.check_id == check_id).first()
     return check.to_dict(state=state)
 
@@ -183,15 +194,15 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     """Updates a check."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
-        raise HTTPException(404, "Check nicht gefunden")
+        raise HTTPException(404, "Check not found")
 
     sent = data.model_fields_set
     if "check_type" in sent and data.check_type not in VALID_CHECK_TYPES:
-        raise HTTPException(400, "Ungueltiger check_type")
+        raise HTTPException(400, "Invalid check_type")
     if "interval" in sent and data.interval not in VALID_INTERVALS:
-        raise HTTPException(400, "Ungueltiges Intervall")
+        raise HTTPException(400, "Invalid interval")
     if "severity" in sent and data.severity not in VALID_SEVERITIES:
-        raise HTTPException(400, "Ungueltige Severity")
+        raise HTTPException(400, "Invalid severity")
 
     # Validate the effective (type, config) pair whenever either changes — a
     # type switch that keeps the old config must fail here, not surface as a
@@ -218,7 +229,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         unchanged = (
             effective_type == check.check_type
             and stored_config is not None
-            and effective_config == stored_config
+            and _same_config(effective_config, stored_config)
         )
         if not unchanged:
             try:
@@ -263,7 +274,7 @@ def delete_check(check_id: str, db: Session = Depends(get_db)):
     """Deletes a check. A template check stays deleted on the next template sync."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
-        raise HTTPException(404, "Check nicht gefunden")
+        raise HTTPException(404, "Check not found")
 
     remove_check(check.id)
     tombstone_check(db, check)
@@ -276,7 +287,7 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
     """Enables/disables a check."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
-        raise HTTPException(404, "Check nicht gefunden")
+        raise HTTPException(404, "Check not found")
 
     check.enabled = not check.enabled
     mark_overrides(db, check, {"enabled": check.enabled})
@@ -326,7 +337,7 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
     """Runs a check immediately (manual trigger)."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
-        raise HTTPException(404, "Check nicht gefunden")
+        raise HTTPException(404, "Check not found")
 
     # execute_check bails out silently for both cases (the enabled filter and the
     # push-only return). Without this guard the endpoint still answered 200 with an
@@ -416,7 +427,7 @@ def get_check_metrics(
     """Type-specific time-series metrics + status timeline from VictoriaMetrics."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
-        raise HTTPException(404, "Check nicht gefunden")
+        raise HTTPException(404, "Check not found")
 
     period_map = {"1h": ("1h", "1m"), "6h": ("6h", "5m"), "24h": ("24h", "15m"), "7d": ("7d", "1h")}
     duration, step = period_map[period]

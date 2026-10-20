@@ -28,6 +28,7 @@ use url::Url;
 use crate::error::AppError;
 use crate::keyring_store;
 use crate::models::DeviceIdentity;
+use crate::session::{SessionState, SignedIn};
 
 // Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
 // is the only secret; cert/ca are public but kept in the same secure store so
@@ -467,31 +468,23 @@ pub async fn enroll_with_token(
     stored
 }
 
-/// Mint the long-lived browser grant (`?browser=true`, D5) with the session JWT —
+/// Mint the long-lived browser grant (`?browser=true`, D5) with the session's token —
 /// the only token the desktop mints itself; its own identity comes from a
-/// one-time token an admin handed over (`enroll_with_token`, ADR 0003).
-async fn mint_token(
-    server_url: &str,
-    jwt: &str,
-    allow_self_signed: bool,
-) -> Result<EnrollGrant, AppError> {
-    // Same token-destination pin as api_proxy: refuse to send the session JWT if
-    // server_url (frontend-controlled) drifts off the logged-in server, so an XSS'd
-    // frontend cannot exfiltrate the bearer token to a foreign host (3.18). Before
-    // the first enrollment build_client uses the TOFU/public-CA path, which would
-    // otherwise pin an attacker cert on first use.
-    crate::validation::require_pinned_destination(
-        server_url,
-        "/api/enrollment/token",
-        crate::auth::stored_server_url().as_deref(),
-    )?;
-    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
-    let base = server_url.trim_end_matches('/');
-    let url = format!("{base}/api/enrollment/token?browser=true");
-    let resp = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {jwt}"))
-        .send()
+/// one-time token an admin handed over (`enroll_with_token`, ADR 0003). The grant
+/// comes with the session it was minted for: its server, where the certificate is
+/// enrolled, and the certificate choice of that sign-in.
+async fn mint_token(session: &SessionState) -> Result<(EnrollGrant, SignedIn), AppError> {
+    // Through authed_send: the session's server, token and certificate choice, never a
+    // URL or a trust setting from the webview, so no frontend can carry the bearer token
+    // to a foreign host (3.18) — nor have build_client pin a foreign cert on first use
+    // (TOFU) before the first enrollment. A 401 renews the session once, like every other
+    // request.
+    let (resp, minted_for) =
+        crate::session::authed_send(session, |server_url, allow_self_signed| {
+            let client = crate::http_client::build_client(server_url, allow_self_signed)?;
+            let base = server_url.trim_end_matches('/');
+            Ok(client.post(format!("{base}/api/enrollment/token?browser=true")))
+        })
         .await?;
     if !resp.status().is_success() {
         let status = resp.status();
@@ -500,7 +493,7 @@ async fn mint_token(
             "Enrollment-Token anfordern fehlgeschlagen ({status}): {text}"
         )));
     }
-    Ok(resp.json().await?)
+    Ok((resp.json().await?, minted_for))
 }
 
 async fn redeem(
@@ -792,18 +785,17 @@ fn package_pkcs12(
     Ok(pfx.to_der())
 }
 
-/// Enroll a long-lived browser cert (D5: the browser cannot auto-renew) and
-/// return it as a PKCS12 blob for the user to import. Does NOT touch the
-/// desktop's own keyring identity — this is a cert FOR the browser.
+/// Enroll a long-lived browser cert (D5: the browser cannot auto-renew) at the
+/// signed-in server and return it as a PKCS12 blob for the user to import. Does
+/// NOT touch the desktop's own keyring identity — this is a cert FOR the browser.
+/// The enrollment reaches the server with the certificate choice of the sign-in.
 pub async fn export_browser_p12(
-    server_url: &str,
-    jwt: &str,
+    session: &SessionState,
     password: &str,
-    allow_self_signed: bool,
 ) -> Result<Vec<u8>, AppError> {
     // Fail fast before minting + enrolling a throwaway long-lived cert (3.58).
     check_export_password(password)?;
-    let grant = mint_token(server_url, jwt, allow_self_signed).await?;
+    let (grant, minted_for) = mint_token(session).await?;
     if grant.scope != "access" {
         return Err(AppError::Validation(format!(
             "Unerwarteter Enrollment-Scope '{}' (erwartet 'access')",
@@ -811,15 +803,15 @@ pub async fn export_browser_p12(
         )));
     }
     let key_and_csr = generate_key_and_csr(&grant.subject_id)?;
-    let endpoint = enroll_endpoint(server_url, grant.enroll_port)?;
+    let endpoint = enroll_endpoint(&minted_for.server_url, grant.enroll_port)?;
     let replaces = pending_replaces(EnrollmentKind::Browser);
     let issued = redeem(
         &endpoint,
         &grant.token,
         &key_and_csr.csr_pem,
         replaces.as_deref(),
-        server_url,
-        allow_self_signed,
+        &minted_for.server_url,
+        minted_for.allow_self_signed,
     )
     .await?;
     package_pkcs12(
@@ -1210,6 +1202,81 @@ mod tests {
         assert_eq!(grant.subject_id, "admin");
         assert_eq!(grant.scope, "access");
         assert_eq!(grant.enroll_port, 8444);
+    }
+
+    /// Answer one request on a fresh loopback port with `response`; the handle yields the
+    /// request head.
+    async fn answer_once(response: String) -> (String, tokio::task::JoinHandle<String>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let request = tokio::spawn(async move {
+            let (mut tcp, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = tcp.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                head.extend_from_slice(&buf[..n]);
+            }
+            tcp.write_all(response.as_bytes()).await.unwrap();
+            let _ = tcp.shutdown().await;
+            String::from_utf8_lossy(&head).into_owned()
+        });
+        (url, request)
+    }
+
+    #[tokio::test]
+    async fn the_browser_grant_is_minted_on_the_session_server_with_its_token() {
+        let grant = r#"{"token":"t","subjectId":"ops-admin","scope":"access","enrollPort":8444}"#;
+        let (server, request) = answer_once(format!(
+            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{grant}",
+            grant.len()
+        ))
+        .await;
+        let session = SessionState::default();
+        session
+            .set(
+                server.clone(),
+                "access-1".to_string(),
+                "refresh-1".to_string(),
+                "ops-admin".to_string(),
+                true,
+            )
+            .await;
+
+        let (minted, minted_for) = mint_token(&session).await.unwrap();
+
+        let request = request.await.unwrap();
+        assert!(
+            request.starts_with("POST /api/enrollment/token?browser=true HTTP/1.1\r\n"),
+            "{request}"
+        );
+        assert!(
+            request
+                .lines()
+                .any(|line| line.eq_ignore_ascii_case("authorization: Bearer access-1")),
+            "{request}"
+        );
+        assert_eq!(minted.subject_id, "ops-admin");
+        // The certificate is enrolled where the grant was minted, with the certificate
+        // choice of that sign-in.
+        assert_eq!(minted_for.server_url, server);
+        assert!(minted_for.allow_self_signed);
+    }
+
+    #[tokio::test]
+    async fn minting_without_a_session_is_refused_with_the_known_error() {
+        let result = mint_token(&SessionState::default()).await;
+
+        let message = result.err().map(|e| e.to_string());
+        assert_eq!(
+            message.as_deref(),
+            Some("Keine aktive Sitzung — Anfrage abgelehnt")
+        );
     }
 
     #[test]

@@ -4,8 +4,12 @@
 
 """Shared alerter-test helpers (6.132). Extracted from test_alerter so test_alerter_hub can reuse them
 without importing another test module — a rename or cleanup of test_alerter would otherwise break the
-hub suite with an ImportError."""
+hub suite with an ImportError.
 
+assert_every_reader_reads is the one check of a checker's _details that the checker tests share."""
+
+import json
+import math
 from types import SimpleNamespace
 
 
@@ -138,3 +142,23 @@ class _CapturingDb:
         # process_alert commits the sent-state claim itself (claim-then-
         # dispatch); the fake only records that it happened.
         self.committed = True
+
+
+def assert_every_reader_reads(details):
+    """No NaN or Infinity token, and every number converts to a finite float (a strict reader
+    such as serde_json rejects a larger integer as out of range). _details goes as it is into the
+    answers of GET /status and GET /checks, which the desktop reads as a whole."""
+    json.dumps(details, allow_nan=False)
+    stack = [details]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                finite = math.isfinite(float(value))
+            except OverflowError:
+                finite = False
+            assert finite, f"number not representable as a finite float: {str(value)[:20]}"

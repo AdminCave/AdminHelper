@@ -60,6 +60,10 @@ def configure_logging() -> None:
                 "uvicorn": {"handlers": ["console"], "level": level, "propagate": False},
                 "uvicorn.access": {"handlers": ["console"], "level": level, "propagate": False},
                 "uvicorn.error": {"handlers": ["console"], "level": level, "propagate": False},
+                # httpx logs every request with its full URL on INFO, httpcore traces it on
+                # DEBUG; a URL a hook script calls can carry a credential in its path or query.
+                "httpx": {"level": "WARNING"},
+                "httpcore": {"level": "WARNING"},
             },
         }
     )

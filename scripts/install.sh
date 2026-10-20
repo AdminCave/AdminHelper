@@ -185,11 +185,17 @@ upsert_env() {
     esac
     # Delete any existing (possibly commented) line for the key, then append the
     # literal value. No sed replacement, so |, & or \1 in the value aren't
-    # interpreted (3.79). grep -v exits 1 when it filters every line — tolerate it.
-    local tmp; tmp=$(mktemp)
-    grep -vE "^#?[[:space:]]*${key}=" .env > "$tmp" 2>/dev/null || true
-    mv "$tmp" .env
-    printf '%s=%s\n' "$key" "$value" >> .env
+    # interpreted (3.79). grep -v exits 1 when it filters every line, which is
+    # fine; 2 is an error (a write error too). The copy sits next to .env (mktemp:
+    # 0600, same file system, so mv is a rename) and replaces it only once both
+    # steps worked: a full disk must not leave a cut-down .env in its place, which
+    # the stack would then start on without its secrets. Matches update.sh.
+    local tmp failed="FEHLER: ${key} konnte nicht in die .env geschrieben werden — Abbruch. Die .env bleibt beim letzten vollstaendigen Stand; Stack, Admin und Enroll-Token werden nicht angelegt."
+    tmp=$(mktemp .env.ah-XXXXXX) || { echo "$failed" >&2; exit 1; }
+    { { grep -vE "^#?[[:space:]]*${key}=" .env || [ $? -eq 1 ]; } > "$tmp" \
+        && printf '%s=%s\n' "$key" "$value" >> "$tmp" \
+        && mv "$tmp" .env; } \
+        || { rm -f "$tmp"; echo "$failed" >&2; exit 1; }
 }
 
 # --- Secrets + .env ---------------------------------------------------------

@@ -22,13 +22,16 @@ key and keeps every common key ahead of the first proxy table.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import secrets
 import tomllib
+from datetime import timedelta
 
 import pytest
 
 from app.core.auth import hash_api_key
 from app.modules.api_keys.models import ApiKey
+from app.modules.connections.models import Connection
 from app.modules.frp.config_generator import active_tunnels, generate_frpc_toml
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.servers.models import Server
@@ -157,6 +160,61 @@ class TestConfigHash:
         res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
         assert res.status_code == 200, res.text
         assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
+
+    def test_only_the_tunnels_of_this_server_under_the_chosen_config_are_served(
+        self, test_client, db_session
+    ):
+        _server(db_session)
+        _server(db_session, "srv-other", "other-host")
+        cfg = _frp_config(db_session)
+        # created_at by hand: the server default is the transaction's now(), the
+        # same for both rows, and the id tiebreaker would pick cfg-later.
+        later = FrpServerConfig(
+            id="cfg-later",
+            name="Later",
+            server_addr="frps-later.example.test",
+            bind_port=7000,
+            auth_token="later-frps-auth-token",
+            created_at=cfg.created_at + timedelta(days=1),
+        )
+        db_session.add(later)
+        db_session.commit()
+        _add_tunnel(db_session, cfg, "own-ssh")
+        _add_tunnel(db_session, cfg, "foreign-ssh", server_id="srv-other")
+        _add_tunnel(db_session, later, "own-later-ssh")
+        key = _agent_key(db_session, "srv-sync")
+        toml = test_client.get("/api/frp/provision/srv-sync/config", headers=key)
+        assert toml.status_code == 200, toml.text
+        parsed = tomllib.loads(toml.text)
+        assert parsed["serverAddr"] == "frps.example.test"
+        assert [p["name"] for p in parsed["proxies"]] == ["own-ssh"]
+        res = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
+        assert res.status_code == 200, res.text
+        assert res.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
+
+    def test_the_hash_stays_when_a_tunnel_row_moves_in_the_table(self, test_client, db_session):
+        # connection_id is indexed but not part of the frpc config: updating it is
+        # no HOT update, so the new row version lands behind b-rdp and Postgres
+        # returns the tunnels in a different order (R-0452).
+        _server(db_session)
+        cfg = _frp_config(db_session)
+        _add_tunnel(db_session, cfg, "a-ssh")
+        _add_tunnel(db_session, cfg, "b-rdp", protocol="rdp", local_port=3389)
+        key = _agent_key(db_session, "srv-sync")
+        before = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
+        assert before.status_code == 200, before.text
+
+        db_session.add(Connection(id="conn-a", name="a-ssh", kind="ssh", server_id="srv-sync"))
+        db_session.commit()
+        db_session.get(FrpTunnel, "t-a-ssh").connection_id = "conn-a"
+        db_session.commit()
+
+        after = test_client.get("/api/frp/provision/srv-sync/config-hash", headers=key)
+        assert after.status_code == 200, after.text
+        assert after.json() == before.json()
+        toml = test_client.get("/api/frp/provision/srv-sync/config", headers=key)
+        assert toml.status_code == 200, toml.text
+        assert after.json() == {"hash": hashlib.sha256(toml.content).hexdigest()}
 
     def test_a_config_with_a_tunnel_hashes_the_served_toml(self, test_client, db_session):
         _server(db_session)
@@ -298,6 +356,16 @@ def test_active_tunnels_are_the_proxies_the_generator_writes(make_tunnels):
     text = generate_frpc_toml(_config(), tunnels, "host", allow_users=["admin"])
     proxies = tomllib.loads(text).get("proxies", [])
     assert [t.name for t in active_tunnels(tunnels)] == [p["name"] for p in proxies]
+
+
+def test_frpc_toml_is_the_same_in_every_order_of_the_tunnels():
+    # The order the database returns the rows in must not reach the text the
+    # config hash covers (R-0452).
+    text = generate_frpc_toml(_config(), _three_tunnels(), "host", allow_users=["admin"])
+    for order in itertools.permutations(_three_tunnels()):
+        assert generate_frpc_toml(_config(), list(order), "host", allow_users=["admin"]) == text
+    names = [p["name"] for p in tomllib.loads(text)["proxies"]]
+    assert names == sorted(names)
 
 
 @pytest.mark.parametrize(

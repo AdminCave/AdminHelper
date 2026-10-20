@@ -23,12 +23,18 @@ import sys
 from typing import Any
 
 import httpx
+import psycopg
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.ssrf import UrlVerdict, classify_url
 
 # Cap the reflected body so a large internal response can't flood the worker's
 # memory (the hook may echo it back through the result dict).
 _MAX_BODY = 1_000_000
+
+# An error of the database layer reports its type only: its text comes from the driver
+# (SQLAlchemy, psycopg), not from the hook.
+_DATABASE_ERRORS = (SQLAlchemyError, psycopg.Error)
 
 
 def _read_capped_body(resp: httpx.Response) -> tuple[str, Any]:
@@ -93,7 +99,13 @@ def _safe_http_post(
 def main() -> None:
     import uuid as _uuid
 
-    # Lazy imports — only when the script needs connections
+    # Every ORM model before the hook's first query, see app/model_registry.py: this worker
+    # runs as its own script and would load only the connections model, whose
+    # ForeignKey("servers.id") then fails the flush of save_connections (R-0469).
+    from app import model_registry  # noqa: F401
+
+    # Imported for every hook, not only one that uses connections: both helpers go into every
+    # hook's namespace below and open a DB session only when called (connections/storage.py).
     from app.modules.connections.storage import load_connections, save_connections
 
     raw = sys.stdin.read()
@@ -163,12 +175,13 @@ def main() -> None:
         # (success=True, result={}). Same for logs (4.71).
         output = {"success": True, "result": namespace["result"], "logs": namespace["logs"]}
     except Exception as exc:
-        namespace["logs"].append(f"Fehler: {exc}")
+        message = type(exc).__name__ if isinstance(exc, _DATABASE_ERRORS) else str(exc)
+        namespace["logs"].append(f"Fehler: {message}")
         output = {
             "success": False,
             "result": namespace["result"],
             "logs": namespace["logs"],
-            "error": str(exc),
+            "error": message,
         }
 
     # Result as JSON to stdout

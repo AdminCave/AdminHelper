@@ -24,17 +24,16 @@ const dockerTimeout = 10 * time.Second
 // tools really do hang: `zpool list` blocks indefinitely on a suspended pool and
 // `pvesh` on quorum loss — exactly when monitoring matters most. Without a cap the
 // whole report cycle stalls and systemd kills the oneshot at its TimeoutStartSec
-// (no push, no FRPC sync for that run).
-const pluginTimeout = 15 * time.Second
+// (no push, no FRPC sync for that run). A var only so tests can shorten it.
+var pluginTimeout = 15 * time.Second
 
 // runWithTimeout runs a plugin command under pluginTimeout, mirroring the docker
-// path, so a hung external tool can never block the report cycle. Unlike runTimed, a
-// killed call stays exec's ExitError: the systemctl and sc reasons (commandFailure) name
-// its status ("signal: killed"), where context.DeadlineExceeded would read "did not start".
+// path, so a hung external tool can never block the report cycle. Through runTimed, a
+// call the timeout ended returns context.DeadlineExceeded, which the systemctl and sc
+// reasons (commandFailure) name as a timeout instead of the ExitError exec reports
+// ("signal: killed" on Linux, "exit status 1" on Windows).
 func runWithTimeout(name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), pluginTimeout)
-	defer cancel()
-	return exec.CommandContext(ctx, name, args...).Output()
+	return runTimed(pluginTimeout, name, args...)
 }
 
 // dockerCLI indirects collectDocker's docker lookup and calls so tests can drive every path without
@@ -153,7 +152,7 @@ func dockerUnavailable(call, code string, err error) map[string]any {
 		code = "timeout"
 		text = fmt.Sprintf("docker %s timed out after %s", call, dockerTimeout)
 	case err != nil:
-		text = "docker " + call + " failed: " + commandFailure("docker", err)
+		text = "docker " + call + " failed: " + commandFailure("docker", dockerTimeout, err)
 	}
 	logger.Warnf("%s, docker reported as unavailable (%s)", text, code)
 	return map[string]any{
@@ -217,9 +216,21 @@ type dockerInspect struct {
 	}
 }
 
+// pveshCLI indirects collectProxmox's pvesh lookup and calls so tests can drive every path without
+// pvesh (same reason as dockerCLI).
+var pveshCLI = struct {
+	lookPath func(file string) (string, error)
+	run      func(args ...string) ([]byte, error)
+}{exec.LookPath, runPvesh}
+
+// runPvesh runs one pvesh call under pluginTimeout (runWithTimeout).
+func runPvesh(args ...string) ([]byte, error) {
+	return runWithTimeout("pvesh", args...)
+}
+
 // collectProxmox collects Proxmox metrics (Linux with pvesh only).
 func collectProxmox() map[string]any {
-	if _, err := exec.LookPath("pvesh"); err != nil {
+	if _, err := pveshCLI.lookPath("pvesh"); err != nil {
 		return nil
 	}
 
@@ -231,8 +242,7 @@ func collectProxmox() map[string]any {
 		return nil
 	}
 	nodeName, _, _ := strings.Cut(host, ".") // FQDN -> short name (pvesh nodes are short)
-	nodeOut, err := runWithTimeout("pvesh", "get", "/nodes/"+nodeName+"/status",
-		"--output-format", "json")
+	nodeOut, err := pveshCLI.run("get", "/nodes/"+nodeName+"/status", "--output-format", "json")
 	if err == nil {
 		var nd map[string]any
 		if json.Unmarshal(nodeOut, &nd) == nil {
@@ -249,34 +259,46 @@ func collectProxmox() map[string]any {
 		}
 	}
 
-	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages))
-	backupIndex := buildBackupIndex(nodeName)
+	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages)). Without
+	// every backup storage read, each VM whose backups sit on a missing one would go out without
+	// last_backup_ts, which the server reads as "No backup" (critical): the block stays out instead.
+	backupIndex, err := buildBackupIndex(nodeName)
+	if err != nil {
+		logger.Warnf("%s, proxmox left out of the report", err)
+		return nil
+	}
 
-	// VMs + LXC containers
+	// VMs + LXC containers. Only an array is a VM list (null decodes without error, to a nil slice):
+	// without one the block stays out, since the server reads a block without VMs as "no VMs" (ok).
+	// Logged, so `diagnose` shows the reason.
+	vmsOut, err := pveshCLI.run("get", "/cluster/resources", "--type", "vm", "--output-format", "json")
+	if err != nil {
+		logger.Warnf("pvesh get /cluster/resources failed: %s, proxmox left out of the report",
+			commandFailure("pvesh", pluginTimeout, err))
+		return nil
+	}
+	var vms []map[string]any
+	if json.Unmarshal(vmsOut, &vms) != nil || vms == nil {
+		logger.Warnf("pvesh get /cluster/resources output unreadable, proxmox left out of the report")
+		return nil
+	}
 	var vmList []map[string]any
-	vmsOut, err := runWithTimeout("pvesh", "get", "/cluster/resources", "--type", "vm",
-		"--output-format", "json")
-	if err == nil {
-		var vms []map[string]any
-		if json.Unmarshal(vmsOut, &vms) == nil {
-			for _, vm := range vms {
-				vmid := int(getFloat(vm, "vmid", 0))
-				if vmid == 0 {
-					continue
-				}
-				var lastBackup any
-				if ts, ok := backupIndex[vmid]; ok {
-					lastBackup = ts
-				}
-				vmList = append(vmList, map[string]any{
-					"vmid":           vmid,
-					"name":           vm["name"],
-					"status":         vm["status"],
-					"type":           vm["type"],
-					"last_backup_ts": lastBackup,
-				})
-			}
+	for _, vm := range vms {
+		vmid := int(getFloat(vm, "vmid", 0))
+		if vmid == 0 {
+			continue
 		}
+		var lastBackup any
+		if ts, ok := backupIndex[vmid]; ok {
+			lastBackup = ts
+		}
+		vmList = append(vmList, map[string]any{
+			"vmid":           vmid,
+			"name":           vm["name"],
+			"status":         vm["status"],
+			"type":           vm["type"],
+			"last_backup_ts": lastBackup,
+		})
 	}
 	result["vms"] = vmList
 
@@ -286,40 +308,47 @@ func collectProxmox() map[string]any {
 	return result
 }
 
-// buildBackupIndex fetches all backups of all storages and builds a lookup map
+// buildBackupIndex fetches all backups of the local node's backup storages and builds a lookup map
 // vmid -> newest ctime timestamp. Only O(Storages) API calls instead of O(VMs × Storages).
 // nodeName is the resolved local node (not the literal "localhost", on which
 // pvesh's implicit mapping is undocumented and could silently break).
-func buildBackupIndex(nodeName string) map[int]int64 {
+// The storages come from /nodes/<node>/storage, which with --content backup lists only the enabled
+// backup storages of this node (/storage also lists disabled and other nodes' ones, whose content
+// call fails here). The error is the reason the index is incomplete: the list or a content call
+// failed, hung or printed no JSON array, or a backup storage is not active.
+func buildBackupIndex(nodeName string) (map[int]int64, error) {
 	index := make(map[int]int64)
 
-	storagesOut, err := runWithTimeout("pvesh", "get", "/storage",
-		"--output-format", "json")
+	storagesPath := "/nodes/" + nodeName + "/storage"
+	storagesOut, err := pveshCLI.run("get", storagesPath, "--content", "backup", "--output-format", "json")
 	if err != nil {
-		return index
+		return nil, fmt.Errorf("pvesh get %s failed: %s", storagesPath,
+			commandFailure("pvesh", pluginTimeout, err))
 	}
+	// null decodes without error, to a nil slice; only an array is a storage list.
 	var storages []map[string]any
-	if json.Unmarshal(storagesOut, &storages) != nil {
-		return index
+	if json.Unmarshal(storagesOut, &storages) != nil || storages == nil {
+		return nil, fmt.Errorf("pvesh get %s output unreadable", storagesPath)
 	}
 
 	for _, storage := range storages {
-		content, _ := storage["content"].(string)
-		if !strings.Contains(content, "backup") {
-			continue
-		}
 		sid, _ := storage["storage"].(string)
+		// The API schema calls active a boolean, pve-storage sets it to 0 or 1: both readings count.
+		// An inactive storage gets no content call, which would only fail with "storage ... is not online".
+		if active, _ := storage["active"].(bool); !active && getFloat(storage, "active", 0) == 0 {
+			return nil, fmt.Errorf("backup storage %s not active", sid)
+		}
 
 		// Fetch all backups of this storage at once (without the --vmid filter)
-		backupsOut, err := runWithTimeout("pvesh", "get",
-			"/nodes/"+nodeName+"/storage/"+sid+"/content",
-			"--content", "backup", "--output-format", "json")
+		contentPath := storagesPath + "/" + sid + "/content"
+		backupsOut, err := pveshCLI.run("get", contentPath, "--content", "backup", "--output-format", "json")
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("pvesh get %s failed: %s", contentPath,
+				commandFailure("pvesh", pluginTimeout, err))
 		}
 		var items []map[string]any
-		if json.Unmarshal(backupsOut, &items) != nil {
-			continue
+		if json.Unmarshal(backupsOut, &items) != nil || items == nil {
+			return nil, fmt.Errorf("pvesh get %s output unreadable", contentPath)
 		}
 		for _, item := range items {
 			vmid := int(getFloat(item, "vmid", 0))
@@ -332,7 +361,7 @@ func buildBackupIndex(nodeName string) map[int]int64 {
 			}
 		}
 	}
-	return index
+	return index, nil
 }
 
 // zpoolCLI indirects collectZFS's zpool lookup and calls so tests can drive every path without zpool
@@ -382,7 +411,7 @@ func collectZFS() map[string]any {
 // a call the timeout killed, cli_failed otherwise; error_message names the exit status, never stderr
 // or a path (as dockerUnavailable).
 func zfsUnavailable(err error) map[string]any {
-	code, text := "cli_failed", "zpool list failed: "+commandFailure("zpool", err)
+	code, text := "cli_failed", "zpool list failed: "+commandFailure("zpool", pluginTimeout, err)
 	if errors.Is(err, context.DeadlineExceeded) {
 		code, text = "timeout", fmt.Sprintf("zpool list timed out after %s", pluginTimeout)
 	}

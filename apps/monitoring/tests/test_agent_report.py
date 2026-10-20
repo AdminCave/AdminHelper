@@ -4,7 +4,7 @@
 
 """Agent push path (audit gap): the report endpoint must apply the same
 consecutive-fails damping as the scheduler path — including the
-"(Fehler n/m)" suppression suffix that the inline copy used to lack."""
+"(failure n/m)" suppression suffix that the inline copy used to lack."""
 
 import json
 import logging
@@ -89,7 +89,7 @@ def test_report_applies_consecutive_fails_damping(client_db):
         state = db.query(MonitorState).filter_by(check_id="chk-1").one()
         assert state.status == "ok"
         assert state.fail_count == 1
-        assert "(Fehler 1/2)" in state.message
+        assert "(failure 1/2)" in state.message
 
     # 2nd failing push: threshold reached -> critical.
     client.post("/agent/srv-1/report", json=_report(cpu=99))
@@ -236,6 +236,9 @@ def test_report_batches_check_metrics_into_one_write(client_db, monkeypatch):
         (float("nan"), None),
         ("inf", None),  # inf/nan as strings dropped too
         ("nan", None),
+        # An int beyond the float range: format_line rejects it like inf (id: 401 digits otherwise).
+        pytest.param(10**400, None, id="int-beyond-float-range"),
+        (2**63, 2**63),  # beyond int64 but a float: format_line writes it as a float
     ],
 )
 def test_num_coerces_and_drops_non_metric_values(raw, want):
@@ -287,6 +290,32 @@ def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch)
 
     # metricsWritten reflects the actual lines written (no checks in this payload).
     assert r.json()["metricsWritten"] == len(captured)
+
+
+def test_report_drops_only_the_value_beyond_the_float_range(client_db, monkeypatch):
+    # An int beyond the float range used to raise in _num, and the extraction's except dropped
+    # every line of the report, the valid ones too. Now only that value is missing.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post(
+        "/agent/srv-1/report",
+        json={
+            "resources": {"cpu_percent": 10**400, "memory_percent": 50},
+            "uptime_seconds": 2**63,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["metricsWritten"] == 2
+    assert len(writes) == 1, writes
+    # Without the timestamp; the uptime beyond int64 goes as a float, without "i".
+    assert [line.rsplit(" ", 1)[0] for line in writes[0]] == [
+        "monitor_agent_memory_percent,server_id=srv-1 value=50i",
+        "monitor_agent_uptime_seconds,server_id=srv-1 value=9.223372036854776e+18",
+    ]
 
 
 def test_report_persists_agent_liveness(client_db, monkeypatch):
@@ -548,6 +577,40 @@ def test_single_restart_stays_damped_crash_loop_alerts(client_db):
     state, details = _stored_docker(factory)
     assert details["containers"][0]["reason"] == "restarted"
     assert (state.status, state.fail_count) == ("warning", 2)
+
+
+def _docker_flood_report() -> dict:
+    """500 containers with names up to the agent text cap of 500 (R-0508). The 20 dead and
+    20 paused ones have names of a length that makes each problem text 499 characters, so
+    both lists in the message are full after join_capped (two entries, 1000 characters)."""
+
+    def container(i: int, state: str, name_len: int) -> dict:
+        return {"id": f"{i:012x}", "name": f"c{i:03d}".ljust(name_len, "x"), "state": state}
+
+    dead = [container(i, "dead", 499 - len(": dead")) for i in range(20)]
+    paused = [container(i, "paused", 499 - len(": paused")) for i in range(20, 40)]
+    running = [container(i, "running", 500) for i in range(40, 500)]
+    return {"docker": {"available": True, "error": None, "containers": dead + paused + running}}
+
+
+def test_report_cuts_a_long_docker_message_to_2000_characters(client_db):
+    # R-0517: the push path stores the message through apply_result, which cuts it to 2000
+    # characters including the "…"; the details keep every container.
+    from app.checkers.plugins import DockerHealthChecker
+
+    client, factory = client_db
+    _add_docker_check(factory, consecutive_fails=1)
+    report = _docker_flood_report()
+    # Guard: what the checker returns for this report is longer than the cut.
+    _, uncut, _ = DockerHealthChecker().evaluate({}, report)
+    assert len(uncut) > 2000
+
+    assert client.post("/agent/srv-1/report", json=report).status_code == 200
+    state, details = _stored_docker(factory)
+    assert state.status == "critical"
+    assert state.message == uncut[:1999] + "…"
+    assert state.message.startswith("Container problems: ")
+    assert len(details["containers"]) == 500
 
 
 # --- host facts (R-0421) ----------------------------------------------------------

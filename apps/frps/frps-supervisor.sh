@@ -9,11 +9,12 @@
 #   frps-supervisor.sh          supervise frps (the image's entrypoint)
 #   frps-supervisor.sh health   exit 0 while the state is waiting, running or stopped
 #
-# The supervisor runs as root, frps as FRPS_USER through su-exec (empty: as the supervisor,
-# for tests without root; root refuses that). frps then holds no capability and owns no file
-# it runs from. After every end of frps, before a new copy is swapped in and before every
-# start, the supervisor KILLs every process of FRPS_USER, so that nothing frps forked outlives
-# it; should one be left, frps does not start and no copy is left (waiting, processes_left).
+# The supervisor runs as root, frps as FRPS_USER and the requests to its dashboard (see below)
+# as FRPS_FETCH_USER, each through su-exec (empty: as the supervisor, for tests without root;
+# root refuses that). frps then holds no capability and owns no file it runs from. After every
+# end of frps, before a new copy is swapped in and before every start, the supervisor KILLs
+# every process of FRPS_USER, so that nothing frps forked outlives it; should one be left,
+# frps does not start and no copy is left (waiting, processes_left).
 #
 # The input, frps.toml from the server and the TLS material from the ca-issuer, lives in
 # volumes other containers write. Only regular files of at most 1 MiB are read from there,
@@ -21,11 +22,12 @@
 # (input_unreadable), as is one that cannot be read. A candidate is copied into next/ of the
 # supervisor's own working directory (FRPS_ACTIVE_DIR, mounted by frps alone), checked there
 # while only the supervisor may read it, its TLS paths pointed at current/, and swapped in as
-# current/, which frps reads and cannot write (FRPS_ACTIVE_DIR 0711, current/ 0755, its files
-# 0644, all the supervisor's). frps always runs from current/, so a half-written or invalid
-# input never reaches it. At the start, and after that whenever the input has changed and
-# then stayed the same for two polls in a row (FRPS_POLL_SECONDS apart, one second while a
-# start of frps is due; a file still being written is not taken for a new one):
+# current/, which frps reads and cannot write and no other user reads (FRPS_ACTIVE_DIR 0711,
+# current/ 0750, its files 0640, all the supervisor's and in the group of FRPS_USER, which root
+# is in). frps always runs from current/, so a half-written or invalid input never reaches it.
+# At the start, and after that whenever the input has changed and then stayed the same for two
+# polls in a row (FRPS_POLL_SECONDS apart, one second while a start of frps is due; a file
+# still being written is not taken for a new one):
 #
 #   valid                        frps (re)starts from the new current/      running
 #   invalid, current/ exists     frps runs on from the last valid current/  degraded
@@ -59,6 +61,17 @@
 # The state goes to $FRPS_STATE_DIR/status.json, rewritten at every poll as a heartbeat; its
 # format is the contract the server reads, apps/server/app/modules/frp/supervisor_status.py.
 # Log lines carry codes and paths, never the token.
+#
+# The server's tunnel status view (GET /api/frp/status) cannot reach the dashboard of frps,
+# which sits in a network of its own. So, after the status, every poll fetches the proxy lists
+# of the dashboard over loopback while frps runs from a current/ with a webServer.port, and
+# puts each answer as frps gave it into $FRPS_STATE_DIR/proxy-<type>.json (fetch_proxies);
+# a failed request or an answer over 1 MiB removes the file of its type, frps not running or
+# no webServer.port all of them. curl runs as FRPS_FETCH_USER (default frps-fetch, a user the
+# image creates for it alone), whose UID is neither root nor that of FRPS_USER: it holds no
+# capability, reads nothing of current/, and kill_left, which KILLs the processes of
+# FRPS_USER, never hits a request under way. The supervisor opens the file each answer goes
+# to, so FRPS_FETCH_USER writes nothing in $FRPS_STATE_DIR.
 
 set -u
 export LC_ALL=C
@@ -71,6 +84,9 @@ FRPS_STATE_DIR="${FRPS_STATE_DIR:-/var/lib/frps-state}"
 FRPS_BIN="${FRPS_BIN:-frps}"
 # Set but empty switches su-exec off.
 FRPS_USER="${FRPS_USER-frps}"
+# The user the requests to the dashboard run as (fetch_proxies); set but empty switches su-exec
+# off for them.
+FRPS_FETCH_USER="${FRPS_FETCH_USER-frps-fetch}"
 # Whole seconds, as POSIX sleep takes them.
 FRPS_POLL_SECONDS="${FRPS_POLL_SECONDS:-5}"
 FRPS_BACKOFF_MAX="${FRPS_BACKOFF_MAX:-60}"
@@ -91,8 +107,11 @@ CURRENT="$FRPS_ACTIVE_DIR/current"
 PREV="$FRPS_ACTIVE_DIR/prev"
 STATUS="$FRPS_STATE_DIR/status.json"
 PEMS="frps.crt frps.key ca.crt"
-# Bytes; the server's frps.toml and the PEM files are a few KiB.
+# Bytes, the most of an input file and of an answer of the dashboard; the server's frps.toml
+# and the PEM files are a few KiB.
 INPUT_MAX=1048576
+# The proxy types the server's status view lists (status_router.py).
+PROXY_TYPES="stcp https tcp udp"
 # The only top-level keys frps gets: those config_generator.py writes, then a few for
 # extra_config (frps 0.69.1 field names, none of them a listener).
 TOP_KEYS="bindPort vhostHTTPSPort subDomainHost maxPortsPerClient detailedErrorsToClient
@@ -322,9 +341,9 @@ stage() {
 # recover renames back on the next start.
 activate() {
     for file in frps.toml applied.sha256 $PEMS; do
-        chmod 0644 "$NEXT/$file" || return 1
+        open_to_frps "$NEXT/$file" 0640 || return 1
     done
-    chmod 0755 "$NEXT" || return 1
+    open_to_frps "$NEXT" 0750 || return 1
     rm -rf "$PREV"
     if [ -d "$CURRENT" ]; then
         mv "$CURRENT" "$PREV" || return 1
@@ -335,6 +354,14 @@ activate() {
     fi
     rm -rf "$PREV"
     COPY_HASH=$(copy_hash)
+}
+
+# open_to_frps <path> <mode> — gives a path of the copy to the group of FRPS_USER, then the
+# mode: root and frps read it, no other user does. root changes the group without CAP_CHOWN,
+# as a member of it (Dockerfile). With FRPS_USER empty, frps runs as the owner.
+open_to_frps() {
+    if [ -n "$FRPS_GID" ]; then chgrp "$FRPS_GID" "$1" || return 1; fi
+    chmod "$2" "$1"
 }
 
 # copy_hash — the sha256 over the copy in current/, as content_hash makes it.
@@ -656,6 +683,86 @@ report() {
     write_status
 }
 
+# top_value <toml> <key> — the value of a top-level key of a checked copy, a string without
+# its quotes; empty without the key.
+top_value() {
+    KEY="$2" awk '
+        /^\[/ { exit }
+        index($0, ENVIRON["KEY"] " = ") == 1 {
+            value = substr($0, length(ENVIRON["KEY"]) + 4)
+            if (value ~ /^"/) value = substr(value, 2, length(value) - 2)
+            print value
+            exit
+        }
+    ' "$1" 2>/dev/null
+}
+
+# dashboard_port — the port of the dashboard of the frps that runs, as frps reads the number
+# (+7500.0 is 7500); empty while frps does not run or current/ has no webServer.port.
+dashboard_port() {
+    [ -n "$FRPS_PID" ] || return 0
+    top_value "$CURRENT/frps.toml" webServer.port | awk '
+        { port = $0 + 0 }
+        port == int(port) && port >= 1 && port <= 65535 { printf "%d\n", port }
+    '
+}
+
+# fetch_proxies — the proxy lists of the dashboard, http://127.0.0.1:<port>/api/proxy/<type>
+# for each of PROXY_TYPES, with webServer.user and webServer.password of current/frps.toml,
+# which go to curl on stdin, never on a command line; curl runs as FRPS_FETCH_USER, and the
+# supervisor opens the file it writes to. The requests run side by side, each for
+# FRPS_READ_SECONDS at the most, and TERM or INT ends them at once (on_signal), so that a
+# dashboard that does not answer holds up a poll no longer than that. The answers are not
+# parsed: the name and the mtime of a file are the supervisor's (keep_proxy).
+fetch_proxies() {
+    port=$(dashboard_port)
+    if [ -z "$port" ]; then
+        drop_proxies
+        return
+    fi
+    user=$(top_value "$CURRENT/frps.toml" webServer.user)
+    password=$(top_value "$CURRENT/frps.toml" webServer.password)
+    for type in $PROXY_TYPES; do
+        # -q first: no curlrc is read. No proxy from the environment gets the credentials.
+        # su-exec execs curl: $! is the pid of curl, which on_signal ends.
+        ${FRPS_FETCH_USER:+su-exec "$FRPS_FETCH_USER"} curl -q --config - --silent --fail \
+            --noproxy '*' --max-time "$FRPS_READ_SECONDS" --max-filesize "$INPUT_MAX" \
+            "http://127.0.0.1:$port/api/proxy/$type" \
+            > "$FRPS_STATE_DIR/.proxy-$type.json.tmp" <<EOF &
+user = "$user:$password"
+EOF
+        FETCH_PIDS="$FETCH_PIDS $!"
+    done
+    # shellcheck disable=SC2086 # one pid a word
+    set -- $FETCH_PIDS
+    for type in $PROXY_TYPES; do
+        rc=0
+        wait "$1" || rc=$?
+        FETCH_PIDS=${FETCH_PIDS#" $1"}
+        shift
+        keep_proxy "$type" "$rc"
+    done
+}
+
+# keep_proxy <type> <rc> — swaps the answer in as proxy-<type>.json, as write_status does
+# (0644, the server reads it under another UID); after a failed request or with an answer
+# larger than INPUT_MAX the file of the type goes instead.
+keep_proxy() {
+    tmp="$FRPS_STATE_DIR/.proxy-$1.json.tmp"
+    if [ "$2" -eq 0 ] && [ "$(wc -c < "$tmp")" -le "$INPUT_MAX" ] \
+        && chmod 0644 "$tmp" && mv -f "$tmp" "$FRPS_STATE_DIR/proxy-$1.json"; then
+        return
+    fi
+    rm -f "$tmp" "$FRPS_STATE_DIR/proxy-$1.json"
+}
+
+# drop_proxies — removes the proxy lists, and what a request cut short left.
+drop_proxies() {
+    for type in $PROXY_TYPES; do
+        rm -f "$FRPS_STATE_DIR/proxy-$type.json" "$FRPS_STATE_DIR/.proxy-$type.json.tmp"
+    done
+}
+
 # poll — one round of the loop. An input that differs from the one the last poll saw is only
 # noted; the next poll that finds it unchanged takes it over. CHANGING_SINCE: when the polls
 # began to see the input change, logged once; after FRPS_UNSTABLE_SECONDS of that the input
@@ -682,6 +789,7 @@ poll() {
     fi
     restart_due
     report
+    fetch_proxies
 }
 
 # pause <seconds> — a sleep that TERM and INT cut short: a trapped signal ends wait at once.
@@ -698,7 +806,14 @@ on_signal() {
         kill "$PAUSE_PID" 2>/dev/null
         wait "$PAUSE_PID" 2>/dev/null
     fi
+    if [ -n "$FETCH_PIDS" ]; then
+        # shellcheck disable=SC2086 # one pid a word
+        kill $FETCH_PIDS 2>/dev/null
+        # shellcheck disable=SC2086
+        wait $FETCH_PIDS 2>/dev/null
+    fi
     stop_frps
+    drop_proxies
     exit 0
 }
 
@@ -737,12 +852,23 @@ case $FRP_BIND_PORT in
 *) [ "$FRP_BIND_PORT" -le 65535 ] || die "FRP_BIND_PORT must be a port number" ;;
 esac
 FRPS_UID=""
+FRPS_GID=""
 if [ -n "$FRPS_USER" ]; then
     FRPS_UID=$(id -u "$FRPS_USER" 2>/dev/null) || die "FRPS_USER $FRPS_USER is no user"
     # kill_left would hit root's processes, the health check's among them.
     [ "$FRPS_UID" != 0 ] || die "FRPS_USER must not be root"
+    FRPS_GID=$(id -g "$FRPS_USER" 2>/dev/null) || die "FRPS_USER $FRPS_USER has no group"
 elif [ "$(id -u)" -eq 0 ]; then
     die "FRPS_USER must name the user frps runs as, not be empty under root"
+fi
+if [ -n "$FRPS_FETCH_USER" ]; then
+    fetch_uid=$(id -u "$FRPS_FETCH_USER" 2>/dev/null) \
+        || die "FRPS_FETCH_USER $FRPS_FETCH_USER is no user"
+    [ "$fetch_uid" != 0 ] || die "FRPS_FETCH_USER must not be root"
+    # kill_left would hit the requests under way.
+    [ "$fetch_uid" != "$FRPS_UID" ] || die "FRPS_FETCH_USER must not share the UID of FRPS_USER"
+elif [ "$(id -u)" -eq 0 ]; then
+    die "FRPS_FETCH_USER must name the user the dashboard is asked as, not be empty under root"
 fi
 
 # frps passes through to current/ and lists nothing.
@@ -754,6 +880,8 @@ if ! { mkdir -p "$FRPS_STATE_DIR" && chmod 0755 "$FRPS_STATE_DIR"; }; then
     log "cannot set up $FRPS_STATE_DIR" >&2
 fi
 recover
+# No frps runs yet: proxy lists of an earlier run go.
+drop_proxies
 
 BOOT=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 SEQ=0
@@ -771,6 +899,7 @@ REJECTED_HASH=""
 FRPS_PID=""
 STARTED_AT=0
 PAUSE_PID=""
+FETCH_PIDS=""
 CHANGING_SINCE=""
 UNSTABLE=0
 end_series

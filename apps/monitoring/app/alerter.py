@@ -19,6 +19,7 @@ import ssl
 from datetime import timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -184,7 +185,7 @@ def process_alert(
             # otherwise abort the whole loop — no db.flush(), and execute_check rolls back every
             # other rule's already-created alert log, silently suppressing all their alerts (4.45).
             logger.exception("Alert-Dispatch fuer Rule %s fehlgeschlagen", rule.id)
-            success, error = False, str(exc)
+            success, error = False, f"Dispatch failed ({type(exc).__name__})"
 
         log_entry = MonitorAlertLog(
             alert_rule_id=rule.id,
@@ -312,14 +313,14 @@ def _dispatch(
     try:
         config = json.loads(rule.channel_config) if rule.channel_config else {}
     except (json.JSONDecodeError, TypeError):
-        return False, "Ungueltige channel_config"
+        return False, "Invalid channel_config"
 
     if rule.channel == "webhook":
         return _send_webhook(config, rule, check, msg)
     elif rule.channel == "email":
         return _send_email(config, rule, check, msg)
     else:
-        return False, f"Unbekannter Kanal: {rule.channel}"
+        return False, f"Unknown channel: {rule.channel}"
 
 
 def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status: str) -> dict:
@@ -334,12 +335,12 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
     is_recovery = new_status == "ok"
 
     if is_recovery:
-        subject = f"[AdminHelper Monitor] RECOVERY: {check.name} ist wieder OK"
+        subject = f"[AdminHelper Monitor] RECOVERY: {check.name}"
         text = (
             f"RECOVERY\n"
             f"Check: {check.name} ({check.check_type})\n"
             f"Status: {old_status} \u2192 OK\n"
-            f"Der Check ist wieder in Ordnung."
+            f"The check is OK again."
         )
     else:
         label = "CRITICAL" if new_status == "critical" else new_status.upper()
@@ -375,6 +376,26 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
     }
 
 
+def _log_host(url: str) -> str:
+    """The host of a webhook URL for the service log. Many webhook services carry
+    the credential in the path or the query, so nothing else of the URL is logged."""
+    try:
+        return urlparse(url).hostname or "?"
+    except ValueError:
+        # urlparse raises on a malformed IPv6 literal ("http://[::1").
+        return "?"
+
+
+def _webhook_failure(exc: Exception) -> str:
+    """The alert-log reason for a failed webhook request: a fixed text per kind of
+    error. The exception text goes to the service log only."""
+    if isinstance(exc, httpx.TimeoutException):
+        return "Webhook request timed out"
+    if isinstance(exc, httpx.ConnectError):
+        return "Webhook connection failed"
+    return f"Webhook request failed ({type(exc).__name__})"
+
+
 def _send_webhook(
     config: dict,
     rule: MonitorAlertRule,
@@ -384,21 +405,27 @@ def _send_webhook(
     """Sends the alert to a webhook URL."""
     url = config.get("url")
     if not url:
-        return False, "Keine Webhook-URL konfiguriert"
+        return False, "No webhook URL configured"
 
     # SSRF guard: a webhook URL is user-supplied; reject private/reserved
     # targets so it cannot probe the internal network from the monitor service
     # (same protection the HTTP checker already applies to its targets).
     verdict = classify_url(url)
     if verdict is UrlVerdict.UNRESOLVED:
-        logger.warning("Webhook target rejected (could not be resolved): %s", url)
+        logger.warning(
+            "Webhook target rejected (could not be resolved): %s -> %s",
+            check.name,
+            _log_host(url),
+        )
         return (
             False,
             "Webhook target could not be resolved (DNS error or timeout), rejected by the SSRF guard",
         )
     if verdict is not UrlVerdict.ALLOWED:
-        logger.warning("Webhook-Ziel abgelehnt (privat/reserviert): %s", url)
-        return False, "Webhook-Ziel ist privat/reserviert (nicht erlaubt)"
+        logger.warning(
+            "Webhook target rejected (private/reserved): %s -> %s", check.name, _log_host(url)
+        )
+        return False, "Webhook target is private/reserved (not allowed)"
 
     payload = {
         "alert_rule": rule.name,
@@ -408,12 +435,38 @@ def _send_webhook(
     try:
         resp = httpx.post(url, json=payload, timeout=10, follow_redirects=False)
         if resp.status_code < 300:
-            logger.info("Webhook gesendet: %s -> %s", check.name, url)
+            logger.info("Webhook sent: %s -> %s", check.name, _log_host(url))
             return True, None
         return False, f"HTTP {resp.status_code}"
     except Exception as exc:
-        logger.error("Webhook fehlgeschlagen: %s", exc)
-        return False, str(exc)
+        logger.error("Webhook failed: %s -> %s: %s", check.name, _log_host(url), exc)
+        return False, _webhook_failure(exc)
+
+
+def _email_failure(exc: Exception, *, in_starttls: bool) -> str:
+    """The alert-log reason for a failed send: a fixed text per kind of error. The
+    exception text (mail server replies, host names) goes to the service log only."""
+    # Every smtplib error and ssl.SSLError is an OSError as well, so the order matters.
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return f"SMTP authentication failed ({exc.smtp_code})"
+    if isinstance(
+        exc,
+        (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused, smtplib.SMTPDataError),
+    ):
+        return "SMTP server refused the message"
+    # SMTPNotSupportedError means "no STARTTLS" only from starttls(); login() and the
+    # send raise it for a missing AUTH or SMTPUTF8 extension.
+    if isinstance(exc, ssl.SSLError) or (
+        in_starttls and isinstance(exc, smtplib.SMTPNotSupportedError)
+    ):
+        return "SMTP TLS failed"
+    if isinstance(exc, TimeoutError):
+        return "SMTP connection timed out"
+    if isinstance(exc, smtplib.SMTPException):
+        return f"SMTP error ({type(exc).__name__})"
+    if isinstance(exc, OSError):
+        return "SMTP connection failed"
+    return f"SMTP error ({type(exc).__name__})"
 
 
 def _send_email(
@@ -427,7 +480,7 @@ def _send_email(
     if isinstance(recipients, str):
         recipients = [r.strip() for r in recipients.split(",") if r.strip()]
     if not recipients:
-        return False, "Keine Empfaenger konfiguriert"
+        return False, "No recipients configured"
 
     smtp_host = config.get("smtp_host") or SMTP_HOST
     smtp_port = int(config.get("smtp_port") or SMTP_PORT)
@@ -435,7 +488,7 @@ def _send_email(
     smtp_pass = config.get("smtp_password") or SMTP_PASSWORD
 
     if not smtp_host:
-        return False, "SMTP nicht konfiguriert (SMTP_HOST fehlt)"
+        return False, "SMTP not configured (SMTP_HOST missing)"
 
     message = MIMEMultipart("alternative")
     message["Subject"] = msg["subject"]
@@ -443,6 +496,7 @@ def _send_email(
     message["To"] = ", ".join(recipients)
     message.attach(MIMEText(msg["text"], "plain"))
 
+    in_starttls = False
     try:
         # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from the
         # start (SMTP_SSL). Every other port upgrades via STARTTLS. Both use a
@@ -458,12 +512,14 @@ def _send_email(
                 # STARTTLS on EVERY non-implicit-TLS port (not just 587): fails
                 # closed if the server offers no TLS, so smtp_user/smtp_password
                 # never go over a plaintext/unverified connection (25/2525/...).
+                in_starttls = True
                 server.starttls(context=ctx)
+                in_starttls = False
             if smtp_user and smtp_pass:
                 server.login(smtp_user, smtp_pass)
             server.send_message(message)
         logger.info("E-Mail gesendet: %s -> %s", check.name, recipients)
         return True, None
     except Exception as exc:
-        logger.error("E-Mail fehlgeschlagen: %s", exc)
-        return False, str(exc)
+        logger.error("Email failed: %s: %s", check.name, exc)
+        return False, _email_failure(exc, in_starttls=in_starttls)

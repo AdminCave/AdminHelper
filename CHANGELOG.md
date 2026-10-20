@@ -293,6 +293,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zusaetzlich fuenf `windows-sys`-Kanten (errno, os_pipe, rustix, tempfile, winapi-util)
   auf bereits gelockte Versionen um — Windows-only, vom CI-Job `rust-windows` gebaut.
 
+- **Desktop-Backend: `rustls` 0.23.45 → 0.23.46 (R-0547):** schliesst RUSTSEC-2026-0346 (die `Debug`-Ausgabe
+  der Client-Session-Werte enthielt das TLS-1.2-Master-Secret bzw. den TLS-1.3-Resumption-PSK; medium),
+  -0347 (nach abgelehntem ECH gingen gepufferte Anwendungsdaten an den aeusseren Server; low), -0348 (die
+  Brotli-Dekompression von Zertifikaten konnte vor der Authentisierung bis zu 1 GiB allokieren; low) und -0349
+  (ein nicht authentisierter ServerHello konnte spaetere Verbindungen auf klassischen Schluesselaustausch
+  herabstufen; low) — nur der Lockfile-Stand, `Cargo.toml` und alle anderen Pakete bleiben. Das Desktop-Backend
+  schaltet das `rustls`-Feature `brotli` nicht ein und nutzt weder ECH noch einen eigenen `ClientSessionStore`.
+  Gefunden vom woechentlichen Dependency-Audit; `cargo audit` meldet jetzt nur noch die erlaubten Warnungen.
+
 - **Desktop-Backend:** `quinn-proto` 0.11.15 → 0.11.18 (RUSTSEC-2026-0338, -0339, -0340, -0341,
   -0342: ein QUIC-Peer konnte quinn-proto in einen Panic treiben oder Speicher unbegrenzt wachsen
   lassen; zwei davon high) — nur der Lockfile-Stand, keine Verhaltensaenderung. Das Paket haengt
@@ -346,6 +355,129 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: die Listen bleiben lesbar, wenn ein gespeicherter Wert keine endliche Zahl ist:** Stand in einer
+  Check-Konfiguration, in den Details eines Check-Zustands, in der Kanal-Konfiguration einer Alert-Regel oder in einer
+  Definition eines Templates `NaN`, `Infinity` oder eine Zahl ausserhalb des Gleitkomma-Bereichs, scheiterte die ganze
+  Antwort von `GET /status`, `GET /checks`, `GET /alerts`, `GET /templates` bzw. des Update-Vergleichs eines
+  Standard-Templates (`GET /templates/{id}/builtin-update`) mit einem Serverfehler, oder der Desktop konnte sie nicht
+  lesen. Jetzt erscheint ein solcher Wert dort als `null`; gespeichert bleibt er, wie er ist.
+  Doku: Entwickler-Doku Monitoring (DE+EN).
+- **Desktop: die Sitzung haelt laenger als acht Stunden, und eine abgelaufene fuehrt zum Login (R-0430):** Nach
+  Ablauf des Access-Tokens (acht Stunden) scheiterten Infrastruktur, Monitoring, Ansible und die Glocke, weil nur ein
+  Teil der Anfragen die Sitzung erneuerte. Jetzt erneuert der Desktop sie fuer alle Anfragen an einer Stelle und nur
+  einmal zur Zeit; trafen bisher mehrere Erneuerungen zusammen, meldete der Server den Benutzer ueberall ab. Der
+  Benachrichtigungs-Stream nimmt nach einer Erneuerung das neue Token, statt zu verstummen. Laesst sich die Sitzung
+  nicht mehr erneuern, meldet der Desktop ab und zeigt den Login-Bildschirm mit dem Hinweis „Sitzung abgelaufen —
+  bitte neu anmelden.“ Doku: Desktop fuer Entwickler (DE+EN), README.
+- **Desktop: die automatische Web-Verbindung eines STCP-Tunnels oeffnet sich (R-0430):** Der Server legt sie ohne
+  URL an, und der Desktop pruefte die Verbindung vor der Tunnel-Aufloesung: Sie brach fuer alle Benutzer mit „URL
+  darf nicht leer sein“ ab. Jetzt prueft er die aufgeloeste Verbindung; solange der Tunnel laeuft, oeffnet sie
+  `http://127.0.0.1:<lokaler Port>`. Ohne laufenden Tunnel meldet sie weiter die fehlende URL. Doku: Desktop fuer
+  Entwickler (DE+EN).
+- **Desktop: die Paketbeschreibung nennt kein VNC mehr (R-0523):** Die lange Beschreibung des Desktop-Pakets, die
+  etwa `apt show` zeigt, nannte VNC unter den Verbindungsarten. Der Client oeffnet SSH-, RDP- und Web-Verbindungen;
+  die Beschreibung nennt jetzt nur diese.
+- **Agent: eine Platte, die smartctl nicht oeffnen kann, meldet kein „SMART FAILED“ mehr (R-0493):** Endete die
+  Abfrage einer Platte mit Exit-Bit 0 oder 1 von smartctl (Befehlszeile nicht gelesen, Geraet nicht geoeffnet), kam
+  sie ohne Modell und SMART-Status in den Report, und der Check `smart_health` meldete sie als „SMART FAILED“,
+  critical. Jetzt faellt sie aus dem Report; liefert keine Platte lesbare Daten, meldet der Agent wie bei einem
+  gescheiterten Scan `scan_failed`. Bei den Bits 2 bis 7 bleibt die Platte wie bisher im Report, `smartctl_status`
+  traegt den vollen Exit-Code. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: Platten hinter einem MegaRAID- oder sssraid-Controller tragen eigene Namen (R-0491):** Der Agent meldete
+  alle Platten eines solchen Controllers unter dessen Geraetenamen, etwa `/dev/bus/0` bzw. `/dev/bsg/sssraid0`: Der
+  Check `smart_health` nannte sie gleich, ihre Werte landeten in derselben Messreihe, und ein Eintrag in
+  `ignore_devices` nahm alle zugleich aus. Jetzt heissen sie wie bei smartctl, etwa `/dev/bus/0 [megaraid_disk_00]`
+  oder `/dev/bsg/sssraid0 [sssraid_disk_00_01]`; andere Platten behalten ihren Namen. Nach dem Update des Agents
+  greift ein `ignore_devices`-Eintrag `/dev/bus/N` nicht mehr, dort gehoeren die neuen Namen hin, und die Metriken
+  dieser Platten bekommen neue Namen, etwa `monitor_smart_temp_dev_bus_0__megaraid_disk_00_value` statt
+  `monitor_smart_temp_dev_bus_0_value`. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Agent: ein nicht lesbarer Backup-Storage meldet unter Proxmox kein „No backup“ mehr (R-0494):** Scheiterte die
+  Liste der Storages oder der Inhaltsaufruf eines Backup-Storages (etwa ein nicht erreichbares NFS-Ziel), fehlten
+  dessen Backups still im Index, und der Check `proxmox_backup` meldete jede betroffene VM als „No backup“,
+  critical. Jetzt fehlt dann der Proxmox-Block, der Check steht auf `unknown`, und der Grund steht als Warnung im
+  Agent-Log; ebenso, wenn ein Backup-Storage nicht aktiv ist. Die Backup-Storages liest der Agent neu aus
+  `/nodes/<node>/storage --content backup` statt aus `/storage`, das auch abgeschaltete und anderen Nodes
+  zugeordnete Storages listet. Doku: Agent-Entwicklerseite, Monitoring-Administration (DE+EN).
+- **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
+  Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
+  zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
+  einem Login unter anderem Benutzer. Ebenso laedt der Desktop neu, wenn eine geaenderte Server-URL bei laufender
+  Sitzung gespeichert wird; danach steht der Login-Bildschirm mit der neuen Adresse da.
+- **Desktop: Speichern der Einstellungen vergisst den Benutzernamen nicht mehr (R-0429):** Bisher loeschte jedes
+  Speichern im Einstellungsdialog den gemerkten Benutzernamen, und der Login-Bildschirm fuellte beim naechsten
+  Start nur noch die Server-URL vor. Felder, die der Dialog nicht bearbeitet, bleiben jetzt erhalten.
+- **Desktop: gespeichertes RDP-Passwort auch bei Tunnelzielen (Linux/macOS, R-0429):** Bisher startete der
+  RDP-Client bei einer Verbindung hinter einem FRP-Tunnel ohne das gespeicherte Passwort, weil der Desktop es unter
+  der lokalen Tunnel-Adresse (`127.0.0.1:<Port>`) suchte statt unter der Verbindung aus der Liste, unter der es
+  gespeichert ist. Unter Windows fragt mstsc bei Tunnelzielen vorerst weiter selbst nach dem Passwort.
+- **Desktop: Sync von einer fremden URL auch auf einem registrierten Geraet (R-0429):** Bisher scheiterte auf einem
+  registrierten Geraet jeder Sync von einer URL ausserhalb des eigenen Servers mit `ERR_CA_PIN_MISMATCH`, weil der
+  Desktop auch dort die Geraete-Identitaet nahm und das Server-Zertifikat gegen die bei der Registrierung gepinnte CA
+  pruefte. Die Geraete-Identitaet nimmt er jetzt nur, wenn die Sync-URL dieselbe Origin (Schema, Host, Port) hat wie
+  die gespeicherte Server-URL; jede andere Sync-URL laedt er wie ein nicht registriertes Geraet. Ein zweiter
+  Hostname des eigenen Servers zaehlt dabei als andere Origin.
+- **Desktop: ein zweiter Start laesst die laufende App nicht mehr abstuerzen (Linux, R-0429):** Bisher beendete ein
+  zweiter Start unter Linux die laufende App samt Sitzung und Tunnel, und auch der zweite Start blieb nicht offen.
+  Jetzt holt ein zweiter Start nur das Fenster der laufenden App nach vorn und beendet sich. Das gilt auch unter
+  Windows und macOS: Es laeuft immer nur eine Instanz der App.
+- **Server: Die Tunnel-Statusansicht zeigt wieder die Proxies von frps (R-0408):** Seit v0.40.0 haengt frps in
+  Compose allein im Netz `frpedge`, das der Server nicht erreicht; `GET /api/frp/status` fragte weiter
+  `http://frps:<Port>` und meldete deshalb immer „frps-Dashboard: nicht erreichbar“. Jetzt fragt der frps-Supervisor
+  das Dashboard im frps-Container ueber Loopback ab, alle 5 s, solange frps laeuft, und legt die Proxy-Listen je Typ
+  im Volume `frps-state` ab (`proxy-<typ>.json`, hoechstens 1 MiB). Der Server liest sie dort und nimmt nur aktuelle
+  (hoechstens 60 s alte), gueltige Listen; ohne eine solche antwortet die Route mit dem `error` „frps dashboard: no
+  current data from the frps supervisor“. Die Adressen `http://frps:<Port>` und `http://127.0.0.1:<Port>` entfallen.
+  Mit `FRPS_DASHBOARD_URL` fragt der Server das Dashboard weiter selbst; die Variable wirkt nur in der Umgebung des
+  Dienstes `server` (etwa ueber eine `docker-compose.override.yml`), nicht ueber die `.env`. Doku: Admin-Doku
+  FRP-Tunnel (DE+EN).
+- **Server: Hook-Skripte speichern Verbindungen mit `save_connections` (R-0469):** Jeder Hook, der
+  `save_connections` aufrief, endete mit `success: false` und dem Fehler „Foreign key associated with column
+  'connections.server_id' could not find table 'servers' …“ und schrieb nichts, etwa die Beispiele
+  `webhook_add_connection.py`, `webhook_http_import.py` und `schedule_hook_cleanup.py` unter `docs/examples/`. Der
+  Worker-Prozess der Hooks lud nur das Modell der Verbindungen; jetzt laedt er wie Web- und Scheduler-Prozess alle
+  Modelle aus `apps/server/app/model_registry.py`. Nach dem Update schreiben solche Hooks bei ihrem naechsten Lauf;
+  einen, der das nicht mehr soll, vorher deaktivieren oder loeschen.
+- **Monitoring: Schalter der Check-Konfiguration nehmen nur `true` oder `false` (R-0456):** `verify_ssl` (`http`),
+  `exclude_stopped` (`proxmox_backup`) und `check_restarts` (`docker_health`) nahmen auch `"false"`, `"no"`, `0` oder
+  `1` an und speicherten sie so. Der Check-Editor zeigte dann den Default, der Checker las den Wert anders: Ein
+  `verify_ssl: 0` schaltete die TLS-Pruefung ab, ein `exclude_stopped: 0` nahm gestoppte VMs mit. Jetzt lehnen
+  `POST /checks`, `PUT /checks/{id}` mit geaenderter Konfiguration und Template-Definitionen solche Werte mit 422 ab,
+  wie schon bei `alert_on_unavailable`. Keine Migration: Ein gespeicherter Nicht-Bool-Wert gilt als Default, wie ihn
+  der Check-Editor zeigt, nur ein echtes `false` schaltet ab; ein altes `verify_ssl: 0` prueft TLS also wieder. Doku:
+  Monitoring-Administration (DE+EN).
+- **Monitoring: Zahlenfelder der Check-Konfiguration nehmen nur Zahlen (R-0487):** Schwellwerte, Timeouts, Ports und
+  die uebrigen Zahlenfelder nahmen auch Zahl-Strings wie `"85"` oder `"8.5e1"` und `true` an und speicherten sie so.
+  Der Check-Editor zeigte das Feld dann leer, der Checker las den Wert anders: An einem Zahl-String scheiterten
+  `agent_resources`, `smart_health`, `zfs_health` und `proxmox_backup`, und der Check blieb auf seinem letzten Zustand
+  stehen; ein `true` galt als 1, ein `cpu_warn: true` warnte also schon ab 1 % CPU. Jetzt lehnen `POST /checks`,
+  `PUT /checks/{id}` mit geaenderter Konfiguration und Template-Definitionen solche Werte mit 422 ab; eine ganze Zahl
+  bleibt fuer ein Feld mit Nachkommastellen gueltig, Ganzzahl-Felder wie `port` und `expected_status` nehmen nur ganze
+  Zahlen ohne Nachkommastelle (`22`, nicht `22.0`). Keine Migration: Ein gespeicherter Zahl-String bleibt, bis die
+  Konfiguration mit einer Zahl an seiner Stelle gespeichert wird. Doku: Monitoring-Administration (DE+EN).
+
+- **Agent: scheitert der VM-Aufruf von `pvesh`, fehlt der Proxmox-Block (R-0471):** Scheiterte
+  `pvesh get /cluster/resources`, hing es oder lieferte es kein JSON-Array, schickte der Agent den Proxmox-Block mit
+  dem Node und ohne VMs, und der Check `proxmox_backup` las ihn als „Keine VMs/CTs gefunden“ = ok. Jetzt fehlt der Block,
+  `proxmox_backup` bleibt ohne Daten, und das Log nennt den Grund (etwa
+  `pvesh get /cluster/resources failed: timed out after 15s`, nie stderr). Eine leere VM-Liste bleibt „keine VMs“.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Agent: SMART liest Platten hinter einem MegaRAID-Controller (R-0455):** Der Agent fragte jede Platte aus
+  `smartctl --scan` ohne ihren Geraetetyp ab. Eine Platte hinter einem MegaRAID-Controller (Scan: `/dev/bus/N` mit
+  Typ `megaraid,N`) kann smartctl so nicht erkennen: Sie kam ohne Modell und SMART-Status in den Report, und der
+  Check `smart_health` meldete sie als „SMART FAILED“. Jetzt gibt der Agent den Typ aus dem Scan als `-d` weiter,
+  ausser `scsi`, damit eine SATA-Platte an `/dev/sdX` ihre ATA-Attribute behaelt. Doku: Agent-Entwicklerseite
+  (DE+EN).
+- **Agent: ein Timeout von `systemctl` und `sc` heisst „timed out after 15s“ (R-0454):** Beendete das 15-s-Timeout
+  einen haengenden Aufruf, las sich der Grund im Dienste-Block wie ein gescheiterter Aufruf: unter Linux
+  `systemctl list-units failed: signal: killed`, unter Windows `sc query failed: exit status 1`. Jetzt lautet er
+  `systemctl list-units failed: timed out after 15s` bzw. `sc query failed: timed out after 15s`; ein von aussen
+  beendeter Aufruf behaelt sein Signal. Auch ein `pvesh`-Aufruf, den das Timeout beendet, gilt intern als Timeout.
+  Doku: Agent-Entwicklerseite (DE+EN).
+- **Server: FRP-Tunnel lehnen einen `extra_config`-Schluessel mit Zeilenumbruch am Ende ab (R-0468):**
+  `POST /api/frp/tunnels` und `PUT /api/frp/tunnels/{id}` nahmen einen `extra_config`-Schluessel wie `"abc\n"` an,
+  weil die Pruefung einen abschliessenden Zeilenumbruch uebersah. Der Generator schreibt die Schluessel ungequotet in
+  die frpc-Config, die danach kein gueltiges TOML mehr war. Jetzt muss der ganze Schluessel aus `A-Z a-z 0-9 _ . -`
+  bestehen, sonst `422`. Doku: API-Referenz (DE+EN).
 - **Server: Scheduler-Jobs mit Datenbankzugriff laufen wieder (R-0411):** Der `scheduler`-Dienst (seit v0.38.0 der
   eigene Prozess fuer die periodischen Jobs) lud nur die Module seiner Jobs, nicht alle Datenbank-Modelle. Damit
   scheiterte seit v0.38.0 jeder seiner Jobs mit Datenbankzugriff, und APScheduler schrieb das nur ins Log:
@@ -365,6 +497,43 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Container bleiben unveraendert. `--no-rollback` nennt den Weg zurueck (`--redeploy` bzw. `--ref`). Fehlt die `.env`,
   bricht `update.sh` vor Backup und Snapshot ab; scheitert das Ziehen bei `--redeploy`, endet es mit eigener Meldung,
   und die Container bleiben unveraendert. Doku: Installation (DE+EN).
+- **Update: Rollback stellt den installierten Stand vollstaendig her, die `.env` wird vorab geprueft (R-0470):**
+  Scheiterte beim Neu-Pinnen der Images das Schreiben der `.env` (etwa bei voller Platte), ersetzte `update.sh` die
+  `.env` durch eine gekuerzte Datei mit nur den Image-Pins und meldete das Update als fertig. Jetzt schreibt es die
+  neue `.env` in eine Kopie daneben und tauscht sie erst, wenn alles geschrieben ist. Scheitert ein Teil der
+  `.env`-Migration (neue Keys, neue Secrets, Image-Pins), rollt `update.sh` wie bei einem Pull-Fehler zurueck:
+  Laufzeit-Dateien und die ganze alte `.env` kommen zurueck, die Container bleiben unveraendert; mit `--no-rollback`
+  nennt die Meldung `--ref` als Weg weiter. Ein Rollback entfernt jetzt auch die Dateien, die erst das neue Release
+  mitgebracht hat, und stellt `./repo` genau auf den Stand vor dem Update; ein Verzeichnis `.env.ah-new` im Weg nimmt
+  keine Kopie der alten `.env` mehr auf. Bei einem Floating-Tag nennen `--check`, `--redeploy`, die Update-Meldung und
+  die Rollbacks den Tag (etwa `:main`, ohne `SERVER_IMAGE` `:latest`) statt `unknown`. Scheitert mit `--no-rollback`
+  der Neustart oder der Healthcheck, sagt die Meldung jetzt auch, dass Alembic die Datenbank beim Start schon migriert
+  haben kann, und nennt `restore.sh`. Nach einem Selbst-Update entfernt die neue `update.sh` auch das temporaere
+  Verzeichnis des abgebenden Laufs; ist dieser noch eine `update.sh` vor diesem Stand, bleibt es beim ersten Update
+  noch liegen. Vor dem ersten `docker compose`-Aufruf prueft `update.sh` jetzt die `.env`: Enthaelt ein unquotierter
+  oder doppelt gequoteter Wert ein `${` ohne gueltigen Platzhalter, an dem Compose jeden Aufruf mit „Invalid template“
+  abbricht, endet `update.sh` mit dem Namen des Schluessels (ohne den Wert), bevor es etwas aendert, auch bei
+  `--check` und `--redeploy`. Bisher scheiterte das Update daran erst nach Backup, Tausch und Neu-Pinnen. Doku:
+  Installation und Betrieb (DE+EN) beschreiben, wie ein `$` in einem `.env`-Wert zu schreiben ist.
+- **Update: Rollback auch bei einem gescheiterten Tausch der Laufzeit-Dateien (R-0495):** Scheiterte beim Tausch
+  ein Schritt (etwa eine Kopie bei voller Platte, ein Verzeichnis `<datei>.ah-new` im Weg oder das Entfernen eines
+  nicht mehr ausgelieferten Skripts), endete `update.sh` mit der rohen Meldung des Werkzeugs und liess halb
+  getauschte Dateien neben der alten `.env` stehen. Jetzt meldet es „Tausch der Laufzeit-Dateien fehlgeschlagen“
+  und rollt wie bei einer gescheiterten `.env`-Migration zurueck: Die Laufzeit-Dateien kommen aus dem Snapshot,
+  Dateien, die erst das neue Release mitgebracht hat, verschwinden, keine halbe Kopie bleibt liegen, `.env` und
+  Container bleiben unveraendert. Mit `--no-rollback` bleiben die Dateien stehen, und die Meldung nennt
+  `--ref <Ziel>` als Weg weiter. Doku: Installation (DE+EN).
+- **Install: Die `.env` wird nur durch eine vollstaendig geschriebene ersetzt (R-0496, R-0516):** Scheiterte beim
+  Setzen von `DOMAIN`, `MTLS_ENFORCE` oder den Image-Pins das Schreiben der `.env` (etwa bei voller Platte), ersetzte
+  `install.sh` die `.env` durch eine gekuerzte Datei ohne die Secrets, startete den Stack trotzdem und meldete die
+  Installation als fertig. Jetzt schreibt es wie `update.sh` in eine Kopie neben der `.env` und tauscht sie erst,
+  wenn alles geschrieben ist. Scheitert ein Schritt, bricht `install.sh` mit dem Namen des Schluessels (ohne den
+  Wert) ab, die Kopie verschwindet, die `.env` bleibt beim letzten vollstaendigen Stand, und Stack, Admin und
+  Enroll-Token werden nicht angelegt. Dasselbe galt fuer `init-secrets.sh`, das `install.sh` und `update.sh`
+  aufrufen: Nach einem solchen Schreibfehler hielt es die verlorenen Secrets fuer leer, erzeugte sie still neu und
+  endete erfolgreich, sodass Postgres-Passwort und CA-Passphrase nicht mehr zu den Volumes passten. Es schreibt
+  jetzt ebenso ueber eine Kopie und endet bei einem Fehler mit dem Namen des Schluessels; `install.sh` bricht dann
+  ab, `update.sh` rollt wie bei einer gescheiterten `.env`-Migration zurueck.
 - **Monitoring: Ausfaelle von Docker, ZFS und SMART werden sichtbar, Container nach ihrem Ende bewertet (R-0419):**
   Ein gestoppter Docker-Daemon und ein haengendes oder scheiterndes `zpool list` blieben stumm: Der Agent liess den
   Block weg, der Check stand auf `unknown`, das nie benachrichtigt, und die Anzeige behielt die alte Container- bzw.
@@ -438,6 +607,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   etwas geaendert hatte, und der Agent schrieb die frpc-Config neu und startete frpc neu. Jetzt steht `allowUsers`
   aufsteigend sortiert in der Config. Nach dem Update aendert sich der Config-Hash von Hosts mit mehreren
   berechtigten Nutzern einmal, und der Agent holt die Config einmal neu.
+- **FRP: die Tunnel stehen in der frpc-Config in fester Reihenfolge (R-0452):** Die `[[proxies]]` standen in der
+  Reihenfolge, in der die Datenbank die Tunnel lieferte. Wurde einem Tunnel eine Verbindung zugeordnet oder seine
+  Verbindung geloescht, konnte er darin hinter die uebrigen Tunnel rutschen; damit aenderte sich der Config-Hash, ohne
+  dass sich die Config geaendert hatte, und der Agent holte die Config neu. Jetzt stehen die `[[proxies]]` ueberall,
+  wo der Server eine frpc-Config erzeugt (Sync, Provisionierungs-Paket, Downloads), nach Tunnel-Name sortiert. Nach
+  dem Update aendert sich der Config-Hash von Hosts mit mehreren Tunneln einmal, sofern ihre Tunnel bisher anders
+  standen, und der Agent laedt frpc einmal neu. Doku: Entwickler-Doku Server (DE+EN).
 - **Monitoring: Linux-Dienste werden richtig gezaehlt und gemeldet (R-0418):** Der Check `service_process` im Modus
   `auto` (Standard-Template „Linux Server — Standard“) stand auf einem frisch installierten Host dauerhaft auf
   `warning`, weil er auch regulaer beendete oneshot-Dienste, per Condition uebersprungene und per Timer oder Socket
@@ -781,6 +957,127 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   UI-Aufrufer mehr. `docs/developer` (DE+EN) nennt fuer den Desktop jetzt den Einmal-Token statt „nach Login".
 
 ### Changed
+
+- **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
+  Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
+  Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und
+  999999999 liegen. Das gilt fuer Checks und fuer die Check-Definitionen eines Templates; gespeicherte Konfigurationen
+  bleiben, wie sie sind. Scheitert eine Anfrage an den Monitoring-Dienst an der Pruefung und traegt ihr Body
+  `Infinity` oder `NaN`, antwortet der Dienst jetzt mit einem 422, in dem der Wert als `null` steht, statt mit einem
+  Serverfehler. Doku: Monitoring-Administration (DE+EN).
+- **Monitoring: Versandfehler im Alert-Log mit festem Grund:** Scheitert der Versand eines Webhooks oder einer Mail,
+  speichert das Alert-Log statt des Textes der Ausnahme einen festen englischen Grund je Fehlerart, etwa „Webhook
+  request timed out“, „Webhook connection failed“, „SMTP TLS failed“, „SMTP authentication failed (535)“ oder „SMTP
+  server refused the message“; andere Fehler nennen nur ihre Klasse, etwa „SMTP error (SMTPServerDisconnected)“ oder
+  „Dispatch failed (ValueError)“ fuer eine Regel, die sich nicht verarbeiten laesst. Die Einzelheiten, etwa die
+  Antwort des Mail-Servers, stehen weiter im Log des Monitoring-Dienstes; dessen Zeilen zu einem gescheiterten Webhook
+  oder einer gescheiterten Mail sind jetzt englisch und nennen den Check, beim Webhook auch den Host des Ziels.
+  Gespeicherte Eintraege behalten ihren Text. Doku: Monitoring-Administration (DE+EN).
+- **Server: Datenbankfehler eines Hooks nur mit ihrem Typ:** Bricht ein Hook mit einem Fehler der
+  Datenbankanbindung ab (`sqlalchemy.exc.SQLAlchemyError` oder `psycopg.Error`), nennen `error` und die Log-Zeile
+  `Fehler: …` in `logs` nur den Typ des Fehlers, etwa `OperationalError`, nicht mehr den Text des Treibers. Jeder
+  andere Fehler eines Hooks erscheint weiter mit seinem Text. Doku: Entwickler-Doku Hooks (DE+EN).
+- **Server: Geheimnisse der FRP-Konfiguration zaehlen ohne Leerzeichen am Rand:** Ein neues `auth_token` oder
+  `dashboard_password` der FRP-Server-Konfiguration und ein neuer `secret_key` eines STCP-Tunnels brauchen mindestens
+  16 Zeichen ohne Leerzeichen am Anfang und Ende, sonst antwortet der Server mit `422` („must have at least 16
+  characters besides leading and trailing whitespace“). Ein Wert nur aus Leerzeichen gilt damit nicht mehr als
+  Geheimnis. Gespeichert wird der Wert so, wie er gesendet wurde; leer oder `null` wirkt wie bisher. Schon
+  gespeicherte Werte bleiben unveraendert. Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
+- **Server: die API lehnt einen Dashboard-Port ab, den frps nicht uebernimmt:** Ein `dashboard_port` der
+  FRP-Server-Konfiguration gleich 443, gleich dem Bind Port oder gleich `FRP_BIND_PORT` ist beim Anlegen und beim
+  Aendern ein `422` („the dashboard port must be neither 443 nor the bind port nor FRP_BIND_PORT (…)“), statt dass
+  frps die Konfiguration erst beim Uebernehmen verwirft. `POST` prueft gegen den gesendeten Bind Port (ohne ihn
+  7000); `PUT` prueft, sobald `dashboard_port` oder `bind_port` gesendet wird, den Stand nach dem Update mit dem Bind
+  Port, den frps bekommt (ein gespeicherter `bind_port` `null` oder ausserhalb 1 bis 65535: 7000), meldet den
+  Fehler auf dem gesendeten Feld und speichert nichts davon. Eine schon gespeicherte Konfiguration mit solchem Port
+  bleibt unveraendert, ein `PUT` ohne beide Felder geht weiter durch, und die Pruefung beim Start meldet sie wie
+  bisher. Die Web-Maske sendet beide Ports immer mit; dort ist ein solcher Port also vor dem Speichern zu aendern.
+  Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
+- **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
+  der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
+  Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
+  etwa „Connection refused“ oder der Status „500 Internal Server Error“. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: frpc laeuft nur fuer die aktuelle Anmeldung:** Abmelden, eine neue Anmeldung und eine abgelaufene
+  Sitzung (gescheiterte Erneuerung) beenden frpc jetzt im Desktop-Prozess selbst, nicht nur ueber die Oberflaeche;
+  ein Abgleich, der dabei laeuft, startet keinen neuen. Kommt ein Visitor-Bundle fuer eine andere Anmeldung
+  (Server-URL oder Benutzer) als die, fuer die frpc laeuft, startet frpc neu, statt die Visitors per Reload zu
+  uebernehmen. Gespeicherte Passwoerter und die Tunnel-Aufloesung nutzen nur die Visitors des frpc der aktuellen
+  Anmeldung. Doku: Desktop fuer Entwickler (DE+EN).
+- **Desktop: ein gespeichertes RDP-Passwort gehoert zu genau einer Verbindung:** Ausser unter Windows lag ein
+  gespeichertes RDP-Passwort im Schluesselbund unter Adresse, Port, Benutzer und Domaene; zwei Verbindungen mit
+  denselben Werten, etwa von zwei Servern, teilten sich ein Passwort. Jetzt traegt der Eintrag auch die `id` der
+  Verbindung. Ein bisher gespeichertes Passwort bleibt nutzbar: Es gilt fuer jede Verbindung zu diesem Ziel als
+  gespeichert, bis die erste es oeffnet; diese uebernimmt es, fuer die anderen ist es danach nicht mehr gespeichert.
+  Das gilt nicht fuer Ziele auf dem eigenen Rechner (`localhost` und Namen unter `.localhost`, Loopback- und
+  unspezifizierte Adressen) wie die automatischen Verbindungen des Servers ueber `127.0.0.1`: Verbindungen
+  verschiedener Server koennen dasselbe solche Ziel nennen, deshalb gilt ein bisheriger Eintrag dafuer fuer keine
+  Verbindung als gespeichert, und das Passwort wird je Verbindung einmal neu eingegeben. Loeschen entfernt auch einen
+  solchen bisherigen Eintrag. Unter Windows bleibt das Passwort im Credential Manager je Adresse
+  (`TERMSRV/<Adresse>`), wo mstsc es liest. Doku: Desktop fuer Entwickler (DE+EN).
+- **Server: `{{` in Feldern der FRP-Configs wird abgewiesen:** frp liest seine Config-Dateien als Go-Template, bevor
+  es die TOML liest; `{{` beginnt dort eine Template-Anweisung. Die API antwortet jetzt mit `422` auf `{{` im
+  Servernamen (`/api/servers`), in `name` und `server_addr` der FRP-Server-Config und in `name`, `local_ip`,
+  `secret_key`, `custom_domains`, `auto_connection_username` und den `extra_config`-Werten eines Tunnels, je beim
+  Anlegen und Aendern. Ein einzelnes `{` und `}}` bleiben erlaubt; bereits gespeicherte Werte bleiben unveraendert.
+  Doku: API-Referenz (DE+EN).
+- **Desktop: die Sitzung liegt nur im Speicher des Desktop-Prozesses (R-0430):** Access- und Refresh-Token liegen
+  nicht mehr im System-Schluesselbund und gehen nicht mehr an die Oberflaeche; die Eintraege frueherer Versionen
+  loescht der Start einmal. Die Wahl „Selbstsignierte Zertifikate erlauben“ gilt fuer eine Sitzung so, wie sie bei
+  der Anmeldung stand: Eine Aenderung wirkt ab der naechsten Anmeldung, auch fuer den Export des
+  Browser-Zertifikats, der bisher den Haken im offenen Einstellungsdialog nahm.
+- **Desktop: eigene lokale Ports fuer die Tunnel-Visitors (R-0430):** Der Desktop lauschte fuer jeden STCP-Tunnel
+  auf dem Visitor-Port des Servers (Standard 6000–6999). War der Port auf dem Rechner belegt, etwa durch ein anderes
+  Programm oder den Tunnel einer zweiten AdminHelper-Installation, erreichten die Verbindungen dieses Tunnels ihr Ziel
+  nicht. Jetzt ist der Visitor-Port der Wunschport: Ist er belegt oder liegt er unter 1024, nimmt der Desktop einen
+  freien Port aus 23000–23999 und behaelt ihn, solange der Tunnel besteht; nur ein beim Start des Tunnels fremd
+  belegter Port wechselt. Die Zuordnung liegt in `port-registry.json` im App-Data-Verzeichnis, gilt fuer alle
+  AdminHelper-Prozesse des Benutzers und steht in `tunnel_status` als `bindings`. Verbindungen auf einen Tunnel loest
+  der Desktop auf den tatsaechlichen Port auf: eine mit dem Tunnel verknuepfte ueber die Tunnel-Zuordnungen, die nur
+  Admins lesen, und ohne Zuordnung jede Verbindung auf `127.0.0.1` oder `localhost` mit dem Visitor-Port eines
+  laufenden Tunnels. So legt der Server seine automatischen Verbindungen an; sie erreichen damit auch fuer Nicht-Admins
+  den tatsaechlichen Port. Eine von Hand mit einem Tunnel verknuepfte Verbindung loest der Desktop weiter nur fuer
+  Admins auf. Solange ein Tunnel laeuft, geht auch eine selbst angelegte Verbindung auf `127.0.0.1` oder `localhost`
+  mit seinem Visitor-Port durch ihn. Doku: FRP-Tunnel (Administration), Desktop fuer Entwickler (DE+EN), README,
+  DEVELOPMENT.
+- **Server-CLI: `reset-admin` meldet die bestehenden Sitzungen ab:** Setzt `python -m app.cli reset-admin` das
+  Passwort eines Benutzers zurueck, gelten danach wie beim Passwortwechsel ueber die API (`PUT /api/users/{id}`) die
+  vor dem Reset ausgestellten Access- und Refresh-Tokens nicht mehr; der Benutzer meldet sich mit dem neuen Passwort
+  neu an. Doku: Troubleshooting (DE+EN).
+
+- **Monitoring: Die Checks melden englisch (R-0422):** Die Push-Checker (`agent_ping`, `agent_resources`,
+  `service_process`, `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health`), die Pull-Checker (`http`,
+  `ping`, `tcp`) und die Check-Engine meldeten teils deutsch, und diesen Text zeigen Dashboard, Glocke und
+  Benachrichtigungen unveraendert, auch in der englischen Oberflaeche. Jetzt sind die Meldungen englisch, mit denselben
+  Werten wie vorher, etwa „Waiting for agent data“, „All services OK“, „No backup: …“ oder „Timeout after 10s“. Ein
+  gedaempfter Fehlschlag endet auf „(failure 1/2)“ statt „(Fehler 1/2)“, ein HTTP-Check ohne TLS-Pruefung auf
+  „[TLS verification disabled]“. `service_process` spricht von „services“ statt von systemd-Units, weil der
+  Windows-Agent seine Dienste im selben Block meldet. Status, `_details` und Metriken bleiben gleich; eine gespeicherte
+  deutsche Meldung ersetzt die naechste Auswertung. Die Fehlertexte der API und den Rahmentext der Alert-Mail stellt
+  R-0488 um. Wer externe Filter (etwa Mail-Regeln) auf den Meldungstext setzt, passt sie an. Doku: Monitoring fuer
+  Entwickler und Administration (DE+EN).
+
+- **Monitoring: Recovery-Mail, Fehler im Alert-Log und API-Fehlertexte englisch (R-0488):** Die
+  Recovery-Benachrichtigung hat jetzt den Betreff `[AdminHelper Monitor] RECOVERY: <Check>` wie die Alarme
+  `[AdminHelper Monitor] <STATUS>: <Check>`, ohne das angehaengte „ist wieder OK“, und endet auf „The check is OK
+  again.“ statt „Der Check ist wieder in Ordnung.“. Betreff und Text gehen gleich in Mail, Webhook (`subject`,
+  `text`), Glocke und persoenliche Benachrichtigungen. Ein Mail- oder Webhook-Filter auf „ist wieder OK“ greift nicht
+  mehr; `RECOVERY:` im Betreff trifft die Entwarnung vorher wie nachher. Englisch sind auch die Fehler, die das
+  Alert-Log zu einem gescheiterten Versand speichert und der Desktop dort zeigt, etwa „No recipients configured“,
+  „Unknown channel: …“ oder „Webhook target is private/reserved (not allowed)“; bisher waren sie deutsch, auch in der
+  englischen Oberflaeche. Gespeicherte Eintraege behalten ihren Text. Ebenso englisch sind die Fehlertexte der
+  Monitoring-API, die der Desktop als „HTTP <Code>: …“ anzeigt, etwa „Check not found“, „Invalid API key“ oder
+  „Invalid config for agent_resources: …“; die Status-Codes bleiben. Doku: Monitoring-Administration (DE+EN).
+
+- **Monitoring: Check-Meldungen nennen hoechstens zehn Eintraege einer Liste und sind hoechstens 2000 Zeichen lang
+  (R-0517):** Nennt die Meldung eines Checks eine Liste — VMs ohne oder mit altem Backup, Pools, Container, Platten,
+  Dienste oder Mounts —, stehen dort hoechstens zehn Eintraege und hoechstens 1000 Zeichen davon, jeder Eintrag auf
+  500 Zeichen gekuerzt, die uebrigen als „(+N more)“, etwa „Failed: a.service, …, j.service (+3 more)“. Bisher nannte
+  die Meldung alle, bei einem defekten Agent mit 500 langen Namen bis zu mehreren Millionen Zeichen in Dashboard, Mail
+  und Webhook. Zusaetzlich kuerzt der Dienst jede Meldung fuer Dashboard, Mail und Webhook auf hoechstens 2000 Zeichen
+  samt „…“, etwa eine mit zwei vollen Listen oder dem langen Fehlertext „Unexpected error: …“ eines Checks; ein
+  „(failure n/m)“ eines gedaempften Fehlers steht dahinter und bleibt sichtbar. Status und Metriken bleiben gleich,
+  die Details (die Listen im Desktop) bleiben vollstaendig. Doku: Monitoring fuer Entwickler und Administration
+  (DE+EN).
 
 - **FRP: frps uebernimmt Konfigurations- und Zertifikatsaenderungen selbst (R-0411):** frps laeuft aus einem eigenen
   Image (`ghcr.io/admincave/adminhelper/frps`, Quelle `apps/frps/`, frps 0.69.1) unter einem Supervisor. Er prueft

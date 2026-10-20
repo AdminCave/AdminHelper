@@ -56,7 +56,8 @@ func collectServiceHealth() map[string]any {
 	// Without list-units every active state is unknown and no unit is a candidate: counts would
 	// claim zero active units, and without the error the server would report "all OK".
 	if unitsErr != nil {
-		health["error"] = "systemctl list-units failed: " + commandFailure("systemctl", unitsErr)
+		health["error"] = "systemctl list-units failed: " +
+			commandFailure("systemctl", pluginTimeout, unitsErr)
 	} else {
 		// list-units --all also lists units without a unit file (not-found) and masked units that
 		// something still references; neither is a loaded service.
@@ -202,7 +203,8 @@ func filterEnabledInactive(candidates []string) []string {
 }
 
 // answered reports whether a failed systemctl call still answered, i.e. exited non-zero on its own,
-// rather than being killed by the timeout (exit code -1) or never started.
+// rather than being ended by the timeout (context.DeadlineExceeded from runWithTimeout), killed by a
+// signal (exit code -1) or never started.
 func answered(err error) bool {
 	var exitErr *exec.ExitError
 	return errors.As(err, &exitErr) && exitErr.ExitCode() > 0

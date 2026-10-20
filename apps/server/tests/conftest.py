@@ -7,6 +7,7 @@ SAVEPOINT-based transaction-rollback pattern for test isolation."""
 
 import os
 import sys
+from concurrent.futures import Future
 from datetime import timedelta
 
 # Set test defaults BEFORE app modules are imported.
@@ -23,18 +24,9 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-import app.modules.ansible.models  # noqa: F401
-import app.modules.api_keys.models  # noqa: F401
-import app.modules.audit.models  # noqa: F401
-import app.modules.connections.models  # noqa: F401
-import app.modules.enrollment.models  # noqa: F401
-import app.modules.frp.models  # noqa: F401
-import app.modules.hooks.models  # noqa: F401
-import app.modules.notifications.models  # noqa: F401
-import app.modules.provisioning.models  # noqa: F401
-
-# Explicitly import all models — otherwise Base.metadata does not know about them.
-import app.modules.servers.models  # noqa: F401
+# Every ORM model, otherwise Base.metadata does not know their tables and create_all
+# skips them (app/model_registry.py, tests/test_conftest_models.py).
+from app import model_registry  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import Base, _session_utc, get_db
 from app.core.time import utcnow_naive
@@ -99,6 +91,34 @@ def _idle_tag_sync_notify_pool():
     barrier()
 
 
+class _DiscardingExecutor:
+    def submit(self, fn, /, *args, **kwargs):
+        future = Future()
+        future.set_result(None)
+        return future
+
+
+@pytest.fixture(autouse=True)
+def _no_event_threads(request):
+    # fire_event hands its task to a thread pool, and the task opens sessions of its
+    # own on the app engine: outside the rollback of db_session it sees none of the
+    # test's data and commits what it writes, and with DATABASE_URL unset
+    # (testcontainers) that engine points at the dev default (R-0520). Here the pool
+    # runs nothing; tests of the dispatch call _run_event directly on the test
+    # connection, and a test that needs the real pool is marked event_threads.
+    # A context of its own, so that a test's monkeypatch.undo() keeps the stand-in.
+    if request.node.get_closest_marker("event_threads") is not None:
+        yield
+        return
+    # Imported, not looked up in sys.modules: a module first loaded during the test
+    # would otherwise reach the real pool.
+    from app.core import events
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(events, "_executor", _DiscardingExecutor())
+        yield
+
+
 def _seed_register_state(engine) -> None:
     """The state row the migration writes (R-0224), here a month ahead: the suite's
     ad-hoc client certificates then count as issued before the register, during the
@@ -139,6 +159,12 @@ def pg_engine():
         try:
             yield engine
         finally:
+            # Event tasks (app.core.events) query this database through the app engine
+            # on threads of their own; one still running after the drop finds no tables
+            # (R-0509). Only once the module is imported, so the teardown never imports it.
+            events = sys.modules.get("app.core.events")
+            if events is not None:
+                events._executor.shutdown(wait=True)
             Base.metadata.drop_all(bind=engine)
             engine.dispose()
         return
@@ -240,6 +266,9 @@ def pytest_configure(config):
     # through this marker alone (harness 8b).
     config.addinivalue_line(
         "markers", "schemathesis: schema-driven API fuzzing, run as its own run.sh step"
+    )
+    config.addinivalue_line(
+        "markers", "event_threads: fire_event keeps its real thread pool (see _no_event_threads)"
     )
 
 

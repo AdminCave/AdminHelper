@@ -26,7 +26,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import StatusBar from './StatusBar.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
-  import { openSettings, signOut, startSyncTimer, stopSyncTimer } from '$lib/stores/settings';
+  import {
+    openSettings,
+    logoutAndReload,
+    listenForSessionExpiry,
+    startSyncTimer,
+    stopSyncTimer,
+  } from '$lib/stores/settings';
   import {
     activateNotifications,
     deactivateNotifications,
@@ -148,6 +154,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             markRdpError(payload.correlationId ?? null, payload.message ?? tNow('error.rdpAuth'));
           }
         }),
+        listenForSessionExpiry(),
       ]);
       // Destroyed while awaiting? Unregister immediately instead of leaking the handlers (4.100).
       if (destroyed) {
@@ -273,7 +280,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <span style="color: var(--text-muted); margin: 0 var(--sp-3);">
           {$session.username}
         </span>
-        <button class="btn ghost small" onclick={() => signOut()}>{$t('nav.logout')}</button>
+        <button class="btn ghost small" onclick={() => logoutAndReload()}>{$t('nav.logout')}</button
+        >
       {/if}
     </div>
   </header>

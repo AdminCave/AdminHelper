@@ -42,25 +42,47 @@ pub fn build_client(
     server_url: &str,
     allow_self_signed: bool,
 ) -> Result<reqwest::Client, AppError> {
+    client_for(server_url, allow_self_signed, true)
+}
+
+/// Like [`build_client`], but never with the device identity: no mTLS client
+/// certificate and no enrollment CA pin, the client of a device that isn't
+/// enrolled (TOFU on the self-signed path, public CA otherwise). For a host that
+/// isn't the user's own server, such as a sync URL on another origin.
+pub fn build_client_without_identity(
+    server_url: &str,
+    allow_self_signed: bool,
+) -> Result<reqwest::Client, AppError> {
+    client_for(server_url, allow_self_signed, false)
+}
+
+fn client_for(
+    server_url: &str,
+    allow_self_signed: bool,
+    with_identity: bool,
+) -> Result<reqwest::Client, AppError> {
     // Choke point for every authenticated request (login, refresh, me, get,
     // logout) plus api_proxy and the tunnel/connection JWT paths: refuse to send
     // credentials to a non-TLS server. The scheme is never relaxed.
     crate::validation::validate_server_url_secure(server_url)?;
 
     // One is_enrolled() read, reused for both the cache key and the trust-anchor choice below.
-    let enrolled = crate::enrollment::is_enrolled();
-    let key = format!("{server_url}|{allow_self_signed}|{enrolled}");
+    // The key carries the choice, so a client built without the identity never answers a call
+    // that wants it (and the other way round).
+    let mtls = with_identity && crate::enrollment::is_enrolled();
+    let key = format!("{server_url}|{allow_self_signed}|{mtls}");
     if let Some((cached_key, client)) = CLIENT_CACHE.lock().unwrap().as_ref() {
         if *cached_key == key {
             return Ok(client.clone());
         }
     }
 
-    // Once this device is enrolled (A5), present the mTLS client cert and verify
-    // the server against the pinned CA chain. This supersedes the self-signed /
+    // Once this device is enrolled (A5) and the call wants its identity, present
+    // the mTLS client cert and verify the server against the pinned CA chain.
+    // This supersedes the self-signed /
     // public-CA paths below — the pinned CA is a stronger trust anchor than a
     // single leaf pin and survives gateway leaf rotation (D2).
-    let client = if enrolled {
+    let client = if mtls {
         crate::enrollment::enrolled_client()?
     } else if allow_self_signed {
         // NOT danger_accept_invalid_certs(true) — that would disable chain AND
@@ -87,12 +109,33 @@ pub fn invalidate_client_cache() {
 
 #[cfg(test)]
 mod tests {
-    use super::with_timeouts;
+    use super::{build_client, build_client_without_identity, with_timeouts};
+    use crate::keyring_store;
 
     #[test]
     fn with_timeouts_builds_a_valid_client() {
         // 4.2: the shared connect/read timeouts must produce a buildable client — a guard
         // that the read_timeout/connect_timeout config stays valid across reqwest bumps.
         assert!(with_timeouts(reqwest::Client::builder()).build().is_ok());
+    }
+
+    #[test]
+    fn sync_identity_choice_is_part_of_the_client_cache_key() {
+        // An enrolled identity that can't build an mTLS client: the identity path fails and the
+        // path without it doesn't, so each result shows which client came back, cached or not.
+        let _keyring = keyring_store::memory();
+        for key in ["enroll|key", "enroll|cert", "enroll|ca"] {
+            keyring_store::set(key, "not a pem").unwrap();
+        }
+        assert!(crate::enrollment::is_enrolled());
+        // A URL no other test uses, so no other test's cached client can match these keys.
+        let url = "https://cache-choice.example/connections.json";
+
+        assert!(build_client(url, false).is_err());
+        assert!(build_client_without_identity(url, false).is_ok());
+        assert!(
+            build_client(url, false).is_err(),
+            "the cached client without identity must not answer a call that wants the identity"
+        );
     }
 }

@@ -72,6 +72,7 @@ func collectSmart() ([]SmartDisk, string) {
 		Devices []struct {
 			Name     string `json:"name"`
 			InfoName string `json:"info_name"`
+			Type     string `json:"type"`
 			Protocol string `json:"protocol"`
 		} `json:"devices"`
 	}
@@ -92,40 +93,68 @@ func collectSmart() ([]SmartDisk, string) {
 	)
 	for _, dev := range scanResult.Devices {
 		wg.Add(1)
-		go func(name, proto string) {
+		go func(name, id, devType, proto string) {
 			defer wg.Done()
-			if d := querySmartDevice(smartctl, name, proto); d != nil {
+			if d := querySmartDevice(smartctl, name, devType, proto); d != nil {
+				d.Device = id
 				mu.Lock()
 				disks = append(disks, *d)
 				mu.Unlock()
 			}
-		}(dev.Name, dev.Protocol)
+		}(dev.Name, smartDiskID(dev.Name, dev.InfoName, dev.Type), dev.Type, dev.Protocol)
 	}
 	wg.Wait()
 
 	if len(disks) == 0 {
 		// querySmartDevice drops only a query without usable JSON (did not start, hung, no or
-		// unreadable output), so no disk at all is a failed read, not a host without devices.
+		// unreadable output, or exit bit 0 or 1: smartctl did not parse its command line or could not
+		// open the device), so no disk at all is a failed read, not a host without devices.
 		return nil, "scan_failed"
 	}
 	return disks, ""
 }
 
-func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
-	out, err := smartctlCLI.run(30*time.Second, smartctl, "--all", "--json=c", device)
+// smartDiskID names a disk in the report. The scan names all disks behind a MegaRAID or sssraid
+// controller like the controller (/dev/bus/N, /dev/bsg/sssraidN), and only its info_name tells them
+// apart (smartmontools os_linux.cpp: "/dev/bus/0 [megaraid_disk_00]"); the service names the disk's
+// metrics after it and matches ignore_devices against it. The scan's, not the query's: opening the
+// device appends " [SAT]" when smartctl finds a SATA disk behind the controller. Every other disk
+// keeps its name, without a suffix such as [SAT].
+func smartDiskID(name, infoName, devType string) string {
+	if infoName != "" && (strings.HasPrefix(devType, "megaraid,") || strings.HasPrefix(devType, "sssraid,")) {
+		return infoName
+	}
+	return name
+}
+
+func querySmartDevice(smartctl, device, devType, protocol string) *SmartDisk {
+	// The scan type goes along as -d: some types only the scan knows (megaraid,N on /dev/bus/N, which
+	// a query without -d cannot detect), the others it detects from the name as the query would. Not
+	// scsi: the scan names every /dev/sdX without a USB bridge scsi without opening it, a SATA disk
+	// too, and -d scsi switches off the SAT detection on open (smartmontools os_linux.cpp,
+	// linux_scsi_device::autodetect_open), so the disk would come without its ATA attributes.
+	args := []string{"--all", "--json=c"}
+	if devType != "" && devType != "scsi" {
+		args = append(args, "-d", devType)
+	}
+	out, err := smartctlCLI.run(30*time.Second, smartctl, append(args, device)...)
 
 	// smartctl uses bit flags in the exit code. We keep the full code
 	// so the server can evaluate bit 0x10 (prefail) as critical.
 	exitCode := 0
 	if err != nil {
-		// Bits 0-2 (1,2,4) = real errors (CLI/device/command)
-		// Bits 3-7 (8+)    = warnings, JSON is still usable -> keep the full
-		// exit code so the server can weigh bit 0x10 (prefail).
 		exitErr, ok := err.(*exec.ExitError)
 		if !ok || len(out) == 0 {
 			return nil // no usable JSON
 		}
 		exitCode = exitErr.ExitCode()
+		// smartctl(8), EXIT STATUS: bit 0 (1) = command line did not parse, bit 1 (2) = device open
+		// failed. smartctl read nothing then, and its JSON without smart_status would pass for a
+		// failed SMART check, so the disk drops out. Bits 2-7 come with the data it read: the disk
+		// stays with the full exit code.
+		if exitCode&0x03 != 0 {
+			return nil
+		}
 	}
 
 	var raw smartctlJSON
