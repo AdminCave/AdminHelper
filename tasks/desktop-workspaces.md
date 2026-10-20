@@ -247,7 +247,7 @@ Doku: docs/developer/desktop.html + docs/en/developer/desktop.html · README.md 
 Abhängt von: T14, T16, T24
 
 ### T34 — Admin-Doku DE+EN, Teil 1: Einstieg, Benutzer, Betrieb, Fehlersuche  [ ]
-Komponente: scripts · Dateien: docs/index.html, docs/en/index.html, docs/admin/index.html, docs/en/admin/index.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html
+Komponente: scripts · Dateien: docs/index.html, docs/en/index.html, docs/admin/index.html, docs/en/admin/index.html, docs/admin/benutzer.html, docs/en/admin/users.html, docs/admin/betrieb.html, docs/en/admin/operations.html, docs/admin/troubleshooting.html, docs/en/admin/troubleshooting.html, docs/admin/installation.html, docs/en/admin/installation.html
 Änderung: „Server-Modus“/„server mode“ → „Server-Workspace“/„server workspace“, Einstellungspfade („Einstellungen (Modus Server)“ → „Einstellungen des Workspaces“); auf `docs/admin/index.html` + EN ein Absatz Workspaces (mehrere Installationen nebeneinander, Picker, Login je Workspace, Löschen mit Widerruf). Stellen beim Bau neu greppen.
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/index.html + docs/en/index.html · docs/admin/{index,benutzer,betrieb,troubleshooting}.html + EN
@@ -255,7 +255,14 @@ Abhängt von: T33
 
 ### T35 — Admin-Doku DE+EN, Teil 2: Monitoring, Ansible, FRP, Agent-Rollout  [ ]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/admin/ansible.html, docs/en/admin/ansible.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
-Änderung: Wie T34 für die übrigen Seiten; `frp-tunnel.html`: der lokale Port gehört dem Workspace (Portkarte je Workspace), ein zweiter Workspace mit demselben Visitor-Port bekommt einen Ausweichport. Stellen beim Bau neu greppen.
+Änderung: Wie T34 für die übrigen Seiten; `frp-tunnel.html`: der lokale Port gehört dem Workspace (Portkarte je Workspace), ein zweiter Workspace mit demselben Visitor-Port bekommt einen Ausweichport. Stellen beim Bau neu greppen. Nachtrag (Bauer T34): `docs/admin/frp-tunnel.html` + EN nennen die Meldung `port … belongs to the tunnel of another workspace` (wörtlich aus `tunnel.rs`), was sie bedeutet und die Abhilfe (Tunnel dieses Workspace starten).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/{monitoring,ansible,frp-tunnel,agent-deployment}.html + EN
 Abhängt von: T33
+### T47 — Picker: Text nach einem Löschen ohne Widerruf stimmt  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Picker.test.ts
+Änderung: Aus dem Bau von T34: `workspace.picker.deleted.localOnly` (DE ~:331, EN ~:1070) sagt nach einem Löschen, bei dem der Server nicht widerruft, „Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.“ Der Purge löscht aber `enroll|replaces` mit (Test in `launcher.rs`), und der ca-issuer widerruft nur die Zeile, die `replaces` nennt; nach dem Löschen bleibt das Gerät am Server gültig, bis ein Admin es widerruft. Der Text sagt das (DE+EN, ohne Ablöse-Versprechen; Admin widerruft über die Geräteverwaltung), wie die Admin-Doku aus T34. Prüfen, ob derselbe Schlüssel auch an anderer Stelle (Einstellungen, Identitäts-Reset) benutzt wird, wo das Ablösen stimmt — dann einen eigenen Schlüssel für den Löschfall. Test: der Picker zeigt nach `deleted-local-only` den neuen Text.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts src/lib/i18n/i18n.test.ts
+Doku: keine (Admin-Doku mit T34)
+Abhängt von: T34
+
