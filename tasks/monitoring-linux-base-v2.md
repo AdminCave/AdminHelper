@@ -43,8 +43,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run SystemState|BuildRepor
 Doku: keine (intern; bewertet erst T11, Entwickler-Doku in T25)
 Abhängt von: T1
 
-### T4 — Agent: Neustart nötig und Zeit-Sync  [ ]
+### T4 — Agent: Neustart nötig und Zeit-Sync  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_linux_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @f401be6e 2026-10-20T06:55:33+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T4.verdict.json)
 Änderung: `reboot_required`: liegt `apt-get` im Suchpfad, entscheidet `/var/run/reboot-required` (vorhanden → true, sonst false; Pfad über eine Indirektion); sonst, liegt `needs-restarting` im Suchpfad, `needs-restarting -r` unter `pluginTimeout` über `runTimed` (`plugins.go:54-62`): Exit 0 → false, Exit 1 → true, jedes andere Ergebnis (anderer Exit, Timeout, startet nicht) → kein Feld und eine Warnung mit `commandFailure` (`services.go:41-50`). Weder noch → kein Feld. `time_synchronized`: `timedatectl show` unter `pluginTimeout`, reine Funktion sucht die Zeile `NTPSynchronized=yes|no` (ohne `-p`, das die Manpage nur für `show-timesync` beschreibt); fehlt das Programm, scheitert der Aufruf, fehlt die Zeile oder steht ein anderer Wert da → kein Feld und eine Warnung. Lookup und Aufruf über eine Indirektion (Muster `pveshCLI`, `plugins.go:221-224`). Tests (`TestSystemState…`): Debian-Familie mit und ohne Datei; RPM-Familie mit Exit 0, Exit 1, Exit 2 und Timeout; keine der beiden → kein Feld; `timedatectl` mit `yes`, `no`, ohne Zeile, scheiternd, fehlend; die Warnungen nennen den Grund ohne stderr (Muster `captureWarnings`, `plugins_test.go`).
 Verify: bash scripts/dev/verify.sh agent --strict -- -run SystemState
 Doku: keine (intern; Doku mit T12 und T25)
