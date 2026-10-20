@@ -280,8 +280,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html + docs/en/developer/agent.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html
 Abhängt von: T6, T16
 
-### T30 — Agent: OOM-Kills im Container aus dem eigenen cgroup  [ ]
-Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, CHANGELOG.md
+### T30 — Agent: OOM-Kills im Container aus dem eigenen cgroup  [x]
+Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, CHANGELOG.md, apps/agent/internal/config/paths.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8776eb71 2026-10-20T19:14:21+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T30.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-20 (Branch-Review, wichtig): `/proc/vmstat` `oom_kill` zählt im Container die OOM-Kills des ganzen Hosts (in Docker belegt: vmstat 2 = Host, `/sys/fs/cgroup/memory.events` 0). Läuft der Agent in einem Container (dieselbe Erkennung wie die Host-Fakten, `host.Virtualization`: Rolle `guest` und ein Container-System wie `lxc`, `docker`, `podman`, `openvz`; die Liste aus der gopsutil-Quelle belegen), liest er `oom_kill` aus `/sys/fs/cgroup/memory.events` (cgroup v2, hierarchisch); fehlt die Datei (cgroup v1) oder ist sie nicht lesbar, fehlt `oom_kills` mit Log-Grund. Host und VM lesen weiter `/proc/vmstat`. Die Zustandsdatei merkt sich die Quelle des Zählers; wechselt die Quelle (Agent-Update, Erkennung ändert sich), zählt der Lauf neu an, ohne zu melden. Tests mit Fixtures (Pfad als Variable wie `vmstatPath`): Container + memory.events → Wert daraus; Container ohne memory.events → kein Feld; Host → vmstat; Quellenwechsel → kein Feld, neuer Zähler gespeichert; alte Zustandsdatei ohne Quelle gilt als vmstat.
 Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: docs/admin/monitoring.html + EN (Quelle der OOM-Kills im Container); docs/developer/agent.html + EN (`system_state`, Zustandsdatei); CHANGELOG.md

@@ -190,6 +190,34 @@ func TestReportStateRoundtrip(t *testing.T) {
 	}
 }
 
+func TestReportStateOOMKillSource(t *testing.T) {
+	// The state keeps where the OOM counter came from; a file from before the source was saved holds a
+	// /proc/vmstat counter.
+	path := filepath.Join(t.TempDir(), ".report-state.json")
+	count := uint64(3)
+	if err := saveReportState(path, reportState{OOMKill: &count, OOMKillSource: oomSourceCgroup}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != `{"oom_kill":3,"oom_kill_source":"cgroup"}` {
+		t.Errorf("file = %s, want the documented form", got)
+	}
+	if st := loadReportState(path); st.OOMKill == nil || *st.OOMKill != 3 || st.oomKillSource() != oomSourceCgroup {
+		t.Errorf("roundtrip: oom_kill %v from %q, want 3 from %q", st.OOMKill, st.oomKillSource(), oomSourceCgroup)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"oom_kill":5}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if st := loadReportState(path); st.OOMKill == nil || *st.OOMKill != 5 || st.oomKillSource() != oomSourceVMStat {
+		t.Errorf("file without a source: oom_kill %v from %q, want 5 from %q", st.OOMKill, st.oomKillSource(),
+			oomSourceVMStat)
+	}
+}
+
 func TestReportStateNotUsedByBuildReport(t *testing.T) {
 	// monitor init's test push builds its report with BuildReport: the 1s sample, even with a usable
 	// state on disk, and the state stays as it was.

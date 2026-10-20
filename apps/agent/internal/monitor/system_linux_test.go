@@ -20,9 +20,11 @@ import (
 	"time"
 )
 
-// stubVMStat points vmstatPath at a file holding content for the duration of the test.
+// stubVMStat points vmstatPath at a file holding content for the duration of the test, on a host
+// outside a container, where the agent reads its OOM counter from /proc/vmstat.
 func stubVMStat(t *testing.T, content string) {
 	t.Helper()
+	stubVirtualization(t, "kvm", "host")
 	path := filepath.Join(t.TempDir(), "vmstat")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -35,6 +37,39 @@ func stubVMStat(t *testing.T, content string) {
 // vmstatWithOOMKill is /proc/vmstat cut down to the counter and two neighbours.
 func vmstatWithOOMKill(n uint64) string {
 	return fmt.Sprintf("pgmajfault 1042\noom_kill %d\nnuma_hit 77\n", n)
+}
+
+// stubVirtualization makes the host facts report system and role as the virtualization, which tells
+// the agent whether it runs in a container.
+func stubVirtualization(t *testing.T, system, role string) {
+	t.Helper()
+	old := hostFactsCalls.virtualization
+	hostFactsCalls.virtualization = func() (string, string, error) { return system, role, nil }
+	t.Cleanup(func() { hostFactsCalls.virtualization = old })
+}
+
+// stubMemoryEventsPath points memoryEventsPath at path for the duration of the test.
+func stubMemoryEventsPath(t *testing.T, path string) {
+	t.Helper()
+	old := memoryEventsPath
+	memoryEventsPath = path
+	t.Cleanup(func() { memoryEventsPath = old })
+}
+
+// stubMemoryEvents points memoryEventsPath at a file holding content.
+func stubMemoryEvents(t *testing.T, content string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "memory.events")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stubMemoryEventsPath(t, path)
+}
+
+// memoryEventsWithOOMKill is /sys/fs/cgroup/memory.events in a Docker container (cgroup v2) with the
+// counter n.
+func memoryEventsWithOOMKill(n uint64) string {
+	return fmt.Sprintf("low 0\nhigh 0\nmax 12\noom 2\noom_kill %d\noom_group_kill 0\n", n)
 }
 
 // stubSystemCLI swaps systemCLI for fake system state tools: on the path are only the tools in
@@ -227,6 +262,7 @@ func TestSystemStateOOMUnreadable(t *testing.T) {
 		log  string
 	}{
 		{"no /proc/vmstat", func(t *testing.T) {
+			stubVirtualization(t, "kvm", "host")
 			old := vmstatPath
 			vmstatPath = filepath.Join(t.TempDir(), "missing")
 			t.Cleanup(func() { vmstatPath = old })
@@ -253,6 +289,177 @@ func TestSystemStateOOMUnreadable(t *testing.T) {
 				t.Errorf("log = %q, want it to name %q", logs.String(), c.log)
 			}
 		})
+	}
+}
+
+// assertOOMState checks the counter and its source that collectSystemState hands on.
+func assertOOMState(t *testing.T, next reportState, count uint64, source string) {
+	t.Helper()
+	if next.OOMKill == nil || *next.OOMKill != count || next.OOMKillSource != source {
+		t.Errorf("state oom_kill = %v from %q, want %d from %q", next.OOMKill, next.OOMKillSource, count, source)
+	}
+}
+
+func TestSystemStateOOMContainer(t *testing.T) {
+	// In a container /proc/vmstat counts the OOM kills of the whole host (here 89 since the saved
+	// counter); the agent counts those of the container's own cgroup instead, from memory.events.
+	for _, system := range []string{"lxc", "docker", "openvz", "rkt"} {
+		t.Run(system, func(t *testing.T) {
+			stubSystemCLI(t, nil)
+			stubVMStat(t, vmstatWithOOMKill(90))
+			stubVirtualization(t, system, "guest")
+			stubMemoryEvents(t, memoryEventsWithOOMKill(3))
+			logs := captureWarnings(t)
+			saved := uint64(1)
+			block, next := collectSystemState(reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
+			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
+				t.Errorf("block = %v, want %v", block, want)
+			}
+			assertOOMState(t, next, 3, oomSourceCgroup)
+			if strings.Contains(logs.String(), "oom_kills") {
+				t.Errorf("log = %q, want no warning about oom_kills", logs.String())
+			}
+		})
+	}
+}
+
+func TestSystemStateOOMNotContainer(t *testing.T) {
+	// A VM, a host and a host that runs containers itself read /proc/vmstat, also where a
+	// memory.events lies about, and so does an agent that cannot tell what it runs in.
+	cases := []struct {
+		name string
+		virt func() (string, string, error)
+	}{
+		{"KVM guest", func() (string, string, error) { return "kvm", "guest", nil }},
+		{"Hyper-V guest", func() (string, string, error) { return "hyperv", "guest", nil }},
+		{"KVM host", func() (string, string, error) { return "kvm", "host", nil }},
+		{"LXC host", func() (string, string, error) { return "lxc", "host", nil }},
+		{"nothing detected", func() (string, string, error) { return "", "", nil }},
+		// The values beside the error name a container, so only the error makes it none.
+		{"detection failed", func() (string, string, error) { return "lxc", "guest", errors.New("open /proc/cpuinfo") }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stubSystemCLI(t, nil)
+			stubVMStat(t, vmstatWithOOMKill(7))
+			hostFactsCalls.virtualization = c.virt // stubVMStat restores it
+			stubMemoryEvents(t, memoryEventsWithOOMKill(100))
+			saved := uint64(5)
+			block, next := collectSystemState(reportState{OOMKill: &saved, OOMKillSource: oomSourceVMStat})
+			if want := map[string]any{"oom_kills": uint64(2)}; !reflect.DeepEqual(block, want) {
+				t.Errorf("block = %v, want %v", block, want)
+			}
+			assertOOMState(t, next, 7, oomSourceVMStat)
+		})
+	}
+}
+
+func TestSystemStateOOMContainerUnreadable(t *testing.T) {
+	// A container without its own counter (cgroup v1 has no memory.events) has no field rather than
+	// the host's kills from /proc/vmstat; the saved counter stays with its source, and the log names
+	// why.
+	cases := []struct {
+		name string
+		stub func(t *testing.T)
+		log  string
+	}{
+		{"cgroup v1", func(t *testing.T) { stubMemoryEventsPath(t, filepath.Join(t.TempDir(), "missing")) },
+			"container without cgroup v2 memory.events, oom_kills left out"},
+		{"unreadable", func(t *testing.T) { stubMemoryEventsPath(t, t.TempDir()) },
+			"is a directory, oom_kills left out"},
+		{"no oom_kill line", func(t *testing.T) { stubMemoryEvents(t, "low 0\nhigh 0\nmax 0\noom 0\n") },
+			"no readable oom_kill counter in memory.events, oom_kills left out"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stubSystemCLI(t, nil)
+			stubVMStat(t, vmstatWithOOMKill(90))
+			stubVirtualization(t, "lxc", "guest")
+			c.stub(t)
+			logs := captureWarnings(t)
+			saved := uint64(4)
+			block, next := collectSystemState(reportState{OOMKill: &saved, OOMKillSource: oomSourceCgroup})
+			if len(block) != 0 {
+				t.Errorf("block = %v, want no field", block)
+			}
+			assertOOMState(t, next, 4, oomSourceCgroup)
+			assertSystemStateLog(t, logs.String(), c.log)
+		})
+	}
+}
+
+func TestSystemStateOOMSourceChange(t *testing.T) {
+	// The counters of /proc/vmstat and of a cgroup cannot be subtracted from each other: a run that
+	// reads another source than the saved counter came from (an agent update, a container detected
+	// anew) has no field and saves its own counter, from which the next run counts. A state file from
+	// before the source was saved holds a /proc/vmstat counter.
+	cases := []struct {
+		name      string
+		file      string
+		container bool
+		count     uint64
+		source    string
+	}{
+		{"host becomes a container", `{"oom_kill":40,"oom_kill_source":"vmstat"}`, true, 3, oomSourceCgroup},
+		{"container becomes a host", `{"oom_kill":3,"oom_kill_source":"cgroup"}`, false, 40, oomSourceVMStat},
+		{"state file without a source, in a container", `{"oom_kill":40}`, true, 3, oomSourceCgroup},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stubSystemCLI(t, nil)
+			stubVMStat(t, vmstatWithOOMKill(40))
+			stubMemoryEvents(t, memoryEventsWithOOMKill(3))
+			if c.container {
+				stubVirtualization(t, "lxc", "guest")
+			}
+			path := filepath.Join(t.TempDir(), ".report-state.json")
+			if err := os.WriteFile(path, []byte(c.file), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			block, next := collectSystemState(loadReportState(path))
+			if len(block) != 0 {
+				t.Errorf("first run on the new source: block = %v, want no field", block)
+			}
+			assertOOMState(t, next, c.count, c.source)
+
+			if err := saveReportState(path, next); err != nil {
+				t.Fatal(err)
+			}
+			stubVMStat(t, vmstatWithOOMKill(42))
+			stubMemoryEvents(t, memoryEventsWithOOMKill(5))
+			if c.container {
+				stubVirtualization(t, "lxc", "guest")
+			}
+			block, _ = collectSystemState(loadReportState(path))
+			if got, want := dockerWire(t, block), map[string]any{"oom_kills": 2.0}; !reflect.DeepEqual(got, want) {
+				t.Errorf("next run: block = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestSystemStateOOMStateWithoutSource(t *testing.T) {
+	// A state file from before the source was saved holds a /proc/vmstat counter: on a host the next
+	// report counts from it as before, and the state then names the source.
+	stubSystemCLI(t, nil)
+	stubVMStat(t, vmstatWithOOMKill(7))
+	path := filepath.Join(t.TempDir(), ".report-state.json")
+	if err := os.WriteFile(path, []byte(`{"oom_kill":5}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	block, next := collectSystemState(loadReportState(path))
+	if got, want := dockerWire(t, block), map[string]any{"oom_kills": 2.0}; !reflect.DeepEqual(got, want) {
+		t.Errorf("block = %v, want %v", got, want)
+	}
+	if err := saveReportState(path, next); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `"oom_kill":7,"oom_kill_source":"vmstat"`; !strings.Contains(string(raw), want) {
+		t.Errorf("state file = %s, want it to hold %s", raw, want)
 	}
 }
 

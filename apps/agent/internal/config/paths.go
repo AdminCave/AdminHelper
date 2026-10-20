@@ -39,8 +39,9 @@ func MonitorInventoryStateFile() string {
 
 // MonitorReportStateFile persists what the next report is measured against, as
 // of the last successful push: {cpu: {unix, total, busy}} (the CPU times),
-// oom_kill (the /proc/vmstat counter) and updates: {checked_unix, security} (the
-// hourly security update count); the last two on Linux only. It lives next to
+// oom_kill and oom_kill_source (the OOM kill counter, from /proc/vmstat or a
+// container's own cgroup) and updates: {checked_unix, security} (the hourly
+// security update count); all but cpu on Linux only. It lives next to
 // monitor.conf for the same reason: the agent runs as a oneshot (systemd timer /
 // scheduled task) — in-memory state does not survive between pushes.
 func MonitorReportStateFile() string {

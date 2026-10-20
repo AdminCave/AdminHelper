@@ -18,6 +18,15 @@ import (
 // vmstatPath is a variable so tests can point the OOM counter at a fixture.
 var vmstatPath = "/proc/vmstat"
 
+// memoryEventsPath is a variable so tests can point a container's OOM counter at a fixture. With
+// cgroup v2 a container sees its own cgroup there, whose oom_kill counts the kills inside the
+// container (hierarchical); the root cgroup of a host has no memory.events.
+var memoryEventsPath = "/sys/fs/cgroup/memory.events"
+
+// containerSystems are the virtualization systems gopsutil reports with the role guest for a
+// container (v4.26.5, internal/common/common_linux.go, VirtualizationWithContext). It knows no Podman.
+var containerSystems = map[string]bool{"openvz": true, "lxc": true, "docker": true, "rkt": true}
+
 // rebootRequiredPath is a variable so tests can point the Debian reboot flag at a fixture.
 var rebootRequiredPath = "/var/run/reboot-required"
 
@@ -36,12 +45,15 @@ var systemCLI = struct {
 // OOM kills since the last counter it could read.
 func collectSystemState(st reportState) (map[string]any, reportState) {
 	block := map[string]any{}
-	if count, ok := readOOMKill(); ok {
-		// The first run has no counter to count from: no field, only the counter for the next one.
-		if st.OOMKill != nil {
+	if count, source, ok := readOOMKill(); ok {
+		// The first run has no counter to count from, nor has a run that reads another source than the
+		// saved counter came from (an agent update, a container detected anew): no field, only the
+		// counter for the next one.
+		if st.OOMKill != nil && st.oomKillSource() == source {
 			block["oom_kills"] = oomKillsSince(*st.OOMKill, count)
 		}
 		st.OOMKill = &count
+		st.OOMKillSource = source
 	}
 	if required, ok := rebootRequired(); ok {
 		block["reboot_required"] = required
@@ -56,23 +68,42 @@ func collectSystemState(st reportState) (map[string]any, reportState) {
 	return block, st
 }
 
-// readOOMKill reads the oom_kill counter from /proc/vmstat and logs why when it cannot.
-func readOOMKill() (uint64, bool) {
-	data, err := os.ReadFile(vmstatPath)
+// readOOMKill reads the oom_kill counter and names its source; it logs why when it cannot. In a
+// container /proc/vmstat counts the OOM kills of the whole host, so there it reads the counter of the
+// container's own cgroup, and without cgroup v2 there is none.
+func readOOMKill() (uint64, string, bool) {
+	path, name, source := vmstatPath, "/proc/vmstat", oomSourceVMStat
+	if inContainer() {
+		path, name, source = memoryEventsPath, "memory.events", oomSourceCgroup
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
-		logger.Warnf("system state: %v, oom_kills left out", err)
-		return 0, false
+		if source == oomSourceCgroup && errors.Is(err, fs.ErrNotExist) {
+			logger.Warnf("system state: container without cgroup v2 memory.events, oom_kills left out")
+		} else {
+			logger.Warnf("system state: %v, oom_kills left out", err)
+		}
+		return 0, source, false
 	}
 	count, ok := parseOOMKill(data)
 	if !ok {
-		logger.Warnf("system state: no readable oom_kill counter in /proc/vmstat, oom_kills left out")
+		logger.Warnf("system state: no readable oom_kill counter in %s, oom_kills left out", name)
 	}
-	return count, ok
+	return count, source, ok
 }
 
-// parseOOMKill finds the line "oom_kill <n>". proc_vmstat(5) documents the "name value" lines but not
-// this counter (Linux 4.13 and later by the kernel source): a missing line or a value that is no
-// counter is no counter.
+// inContainer tells a container from a host or a VM by the virtualization of the host facts, through
+// the same call (hostFactsCalls). gopsutil detects it once per process and keeps the answer
+// (internal/common/common_linux.go), so asking again in the same report reads no file. Without an
+// answer it is no container, as for the monitoring service, whose report then has no virtualization.
+func inContainer() bool {
+	system, role, err := hostFactsCalls.virtualization()
+	return err == nil && role == "guest" && containerSystems[system]
+}
+
+// parseOOMKill finds the line "oom_kill <n>" of /proc/vmstat or memory.events, both "name value"
+// lines. proc_vmstat(5) documents those lines but not this counter (Linux 4.13 and later by the
+// kernel source): a missing line or a value that is no counter is no counter.
 func parseOOMKill(data []byte) (uint64, bool) {
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)

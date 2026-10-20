@@ -15,11 +15,30 @@ import (
 // kills count again in the next report.
 type reportState struct {
 	CPU *cpuSample `json:"cpu,omitempty"`
-	// OOMKill is the oom_kill counter of /proc/vmstat at the last report (Linux only). A pointer, so a
-	// host that never killed a process keeps its 0 and the next report counts from it.
+	// OOMKill is the oom_kill counter at the last report (Linux only), read from OOMKillSource. A
+	// pointer, so a host that never killed a process keeps its 0 and the next report counts from it.
 	OOMKill *uint64 `json:"oom_kill,omitempty"`
+	// OOMKillSource names where OOMKill was read (oomSourceVMStat or oomSourceCgroup): the counters of
+	// two sources cannot be subtracted from each other.
+	OOMKillSource string `json:"oom_kill_source,omitempty"`
 	// Updates is the last hourly count of pending security updates (Linux only).
 	Updates *updatesCheck `json:"updates,omitempty"`
+}
+
+// The sources of the OOM kill counter: /proc/vmstat counts the kills of the whole kernel, the
+// memory.events of a container's own cgroup only those inside the container.
+const (
+	oomSourceVMStat = "vmstat"
+	oomSourceCgroup = "cgroup"
+)
+
+// oomKillSource is the source of OOMKill. A state saved before the source was recorded has none: its
+// counter came from /proc/vmstat, the only source then.
+func (st reportState) oomKillSource() string {
+	if st.OOMKillSource == "" {
+		return oomSourceVMStat
+	}
+	return st.OOMKillSource
 }
 
 // updatesCheck is one count of pending security updates, taken at CheckedUnix. Security is nil when the
