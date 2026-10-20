@@ -11,9 +11,13 @@ import (
 
 // reportState is what the next report is measured against, persisted in config.MonitorReportStateFile
 // between two runs of the oneshot. Push saves it only after a successful push, like the inventory
-// state: a lost push then widens the next CPU window instead of dropping a part of it.
+// state: a lost push then widens the next CPU window instead of dropping a part of it, and its OOM
+// kills count again in the next report.
 type reportState struct {
 	CPU *cpuSample `json:"cpu,omitempty"`
+	// OOMKill is the oom_kill counter of /proc/vmstat at the last report (Linux only). A pointer, so a
+	// host that never killed a process keeps its 0 and the next report counts from it.
+	OOMKill *uint64 `json:"oom_kill,omitempty"`
 }
 
 // cpuSample is the CPU time counted up to Unix, summed as cpuBusyTimes does.

@@ -34,8 +34,10 @@ Review: approve (.ah-out/review/monitoring-linux-base-v2/T2.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Resources
 Doku: keine (intern; bewertet erst T8/T9, Entwickler-Doku in T25)
 
-### T3 — Agent: Block `system_state` mit OOM-Zuwachs, `report_version` 3  [ ]
+### T3 — Agent: Block `system_state` mit OOM-Zuwachs, `report_version` 3  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_other.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/report_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @1dbf51ab 2026-10-20T06:46:20+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T3.verdict.json)
 Änderung: Neue Dateien (SPDX) `system_linux.go` (`//go:build linux`) und `system_other.go` (`//go:build !linux`, gibt keinen Block und den Zustand unverändert zurück); Aufteilung wie `services_linux.go`/`services_windows.go`. Linux: `/proc/vmstat` über eine Pfad-Indirektion lesen, reine Funktion für die Zeile `oom_kill <n>` (Format laut `proc_vmstat(5)`: `name value` je Zeile; der Zähler selbst ist dort nicht dokumentiert, fehlt die Zeile, fehlt das Feld). `oom_kills` = Zuwachs gegen den Zähler im Zustand (`reportstate.go` bekommt `oom_kill`); ohne Vorwert kein Feld, kleinerer Zähler (Neustart) → der Zähler selbst; der neue Zähler geht in den Zustand. `report.go`: `report_version` 3 (`:44`), Key `system_state` nur mit mindestens einem Feld, gesammelt über eine Indirektion wie `serviceHealthCollector` (`:94-95`) und im Push-Pfad mit Zustand aus T1. `stubReportHost` (`report_test.go:22-43`) stubbt den neuen Sammler. Tests (`TestSystemState…`): Parser mit und ohne `oom_kill`-Zeile und mit kaputter Zahl; erster Lauf ohne Feld, aber mit gespeichertem Zähler; normaler Zuwachs; Zähler nach Neustart kleiner; `TestBuildReportBasics` (`report_test.go:45`) erwartet `report_version` 3; ein Report mit gestubbtem Block trägt `system_state`, einer mit leerem Block nicht.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run SystemState|BuildReport
 Doku: keine (intern; bewertet erst T11, Entwickler-Doku in T25)

@@ -29,7 +29,6 @@ func BuildReport(serviceNames []string) map[string]any {
 // saved. It also returns the state to save once this report has been pushed.
 func buildReportWithState(serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
 	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
-	next := reportState{CPU: cpuNow}
 	resources := map[string]any{
 		"cpu_percent": cpuPercent,
 	}
@@ -56,11 +55,19 @@ func buildReportWithState(serviceNames []string, prev reportState, now time.Time
 	}
 
 	report := map[string]any{
-		"report_version": 2,
+		"report_version": 3,
 		"timestamp":      time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		"resources":      resources,
 		"uptime_seconds": collectUptime(),
 		"host":           collectHostFacts(),
+	}
+
+	// The collector hands prev on with what it measured replaced, so a value it could not read this
+	// time stays the base for the next report.
+	systemState, next := systemStateCollector(prev)
+	next.CPU = cpuNow
+	if len(systemState) > 0 {
+		report["system_state"] = systemState
 	}
 
 	// Service health (platform-specific)
@@ -108,6 +115,9 @@ var pluginCollectors = struct {
 
 // serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).
 var serviceHealthCollector = collectServiceHealth
+
+// systemStateCollector indirects the system state probe for the same reason (6.18).
+var systemStateCollector = collectSystemState
 
 // PushReportParams groups monitor.PushReport's arguments (7 positionals before).
 type PushReportParams struct {
