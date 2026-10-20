@@ -16,6 +16,8 @@ Kevin 2026-10-19: R-0424 als eigenes Vorhaben, getrennt von Linux-Basis v2 und P
 
 ## Block A — Haltezeit
 
+Korrektur Kevin 2026-10-20: `consecutive_oks` 1 bekommt in den mitgelieferten Templates nur Disk Forecast (Intervall 1 h); SMART läuft alle 5 min und bleibt beim Default 2. Umgesetzt in T17.
+
 ### T1 — Migration und Modell: `consecutive_oks`, `ok_count`, `hub_status`, `hub_sent_at`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/alembic/versions/c3e5a7b9d1f2_alert_quality.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_migrations_smoke.py, apps/monitoring/tests/test_checks_crud.py
 Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e3310531 2026-10-20T06:43:18+02:00
@@ -33,7 +35,7 @@ Abhängt von: T1
 
 ### T3 — API-Feld `consecutive_oks` für Checks und Template-Definitionen  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/openapi.snapshot.json, apps/monitoring/tests/test_checks_crud.py, apps/monitoring/tests/test_schemas.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html
-Änderung: `consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = 2` in `CheckCreate` (`schemas.py:19-36`) und `TemplateCheckDef` (`:71-112`), `… | None = None` in `CheckUpdate` (`:39-48`); der Default 2 als eine Konstante, die auch `template_sync` (T4) nutzt. `create_check` setzt das Feld (`routers/checks.py:156-167`), die Feldliste des Updates nimmt es auf (`:240-249`). Snapshot neu schreiben (`pytest tests/test_openapi_snapshot.py --update-openapi-snapshot`). Tests: Anlegen ohne Feld → 2, mit 3 → 3, 0 und 101 → 422; Update setzt es; `TemplateCheckDef` ohne Feld → 2, 0 → Fehler; das OpenAPI-Schema aller drei Modelle trägt `minimum` 1 und `maximum` 100 je Feld (die Grenze geht sonst still verloren); `test_openapi_integer_bounds.py` bleibt grün.
+Änderung: `consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = 2` in `CheckCreate` (`schemas.py:19-36`) und `TemplateCheckDef` (`:71-112`), `… | None = None` in `CheckUpdate` (`:39-48`); der Default 2 als eine Konstante, die auch `template_sync` (T4) nutzt. `create_check` setzt das Feld (`routers/checks.py:156-167`), die Feldliste des Updates nimmt es auf (`:240-249`). Snapshot neu schreiben (`pytest tests/test_openapi_snapshot.py --update-openapi-snapshot`). Tests: Anlegen ohne Feld → 2, mit 3 → 3, 0 und 101 → 422; Update setzt es; `TemplateCheckDef` ohne Feld → 2, 0 → Fehler; das OpenAPI-Schema aller drei Modelle trägt `minimum` 1 und `maximum` 100 je Feld (die Grenze geht sonst still verloren); `test_openapi_integer_bounds.py` bleibt grün. Nachtrag (security T1): Die Grenzen 1–100 je Schema-Klasse einzeln prüfen (bei `Annotated` + `Field` ging eine Grenze schon einmal still verloren): Tests, dass 0 und 101 in `CheckCreate`, `CheckUpdate` und `TemplateCheckDef` mit 422 abgelehnt werden, und ein Blick ins JSON-Schema je Feld (`minimum`/`maximum`).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud.py tests/test_schemas.py tests/test_openapi_snapshot.py tests/test_openapi_integer_bounds.py
 Doku: docs/admin/monitoring.html + EN (Check anlegen `:119`: `consecutive_oks` neben `consecutive_fails`)
 Abhängt von: T1
@@ -76,6 +78,13 @@ Doku: docs/admin/monitoring.html + EN (Host-down `:144-145`: Host-Ping, Rangfolg
 Abhängt von: T7
 
 ## Block D — Sammelmeldung
+
+### T17 — Disk Forecast: Entwarnung nach einem ok in den mitgelieferten Templates  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, apps/monitoring/tests/test_template_sync.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Änderung: `_DISK_FORECAST` (`builtin_templates.py`, Intervall 1 h) bekommt `"consecutive_oks": 1` (Kevin 2026-10-20: nur Checks ab 1 h; SMART bleibt bei 2). Damit ändern sich `linux-base` und `windows-base`: beide steigen um eine Version, die gepinnten Hashes in `tests/test_seed.py` werden neu gesetzt; unangepasste Installationen bekommen das Update nach der bestehenden Regel. Tests: der Sync setzt bei Disk-Forecast-Checks 1, alle anderen Checks der Templates behalten 2; die neuen Versionen und Hashes. Koordination: `monitoring-linux-base-v2` hebt `linux-base` (T16) und friert die v1-Hashes ein (T7); wer als Zweiter auf `main` kommt, zieht Versionen und Hashes nach (Gate-Notiz). Ohne die eingefrorenen v1-Hashes gilt für `windows-base` derselbe Hinweis wie in R-0423 (Installationen von vor R-0420); vor dem Merge prüfen, dass `monitoring-linux-base-v2` T7 auf `main` ist.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_seed.py tests/test_template_sync.py
+Doku: docs/admin/monitoring.html + EN (Dämpfung: Disk Forecast meldet die Entwarnung nach einem ok) · CHANGELOG
+Abhängt von: T4, T7
 
 ### T9 — Server: Sammel-Event `source_ids`, Empfänger je Nutzer  [ ]
 Komponente: server · Dateien: apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/notifications/service.py, apps/server/tests/test_notifications.py, apps/server/tests/test_text_bounds.py, apps/server/tests/openapi.snapshot.json, docs/developer/server.html, docs/en/developer/server.html
