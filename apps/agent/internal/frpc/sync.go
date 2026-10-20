@@ -155,7 +155,7 @@ func applyConfig(serverToml []byte, mayReload bool) error {
 		if err := stopFrpc(); err != nil {
 			return err
 		}
-		if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
+		if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 			return fmt.Errorf("write the config hash: %w", err)
 		}
 		logger.Infof("No tunnel for this host, frpc stopped and disabled.")
@@ -176,7 +176,7 @@ func applyConfig(serverToml []byte, mayReload bool) error {
 	// that frpc.service crash-loops on (Restart=on-failure) until the next sync ~5 min later. Stage
 	// to a temp file + rename, like enroll.stageIdentity (4.82).
 	tmp := config.FrpConfigFile() + ".tmp"
-	if err := os.WriteFile(tmp, frpcToml, 0600); err != nil {
+	if err := config.WriteFile(tmp, frpcToml, 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
 	}
 	if err := os.Rename(tmp, config.FrpConfigFile()); err != nil {
@@ -194,7 +194,7 @@ func applyConfig(serverToml []byte, mayReload bool) error {
 	// Persist the hash only AFTER frpc started on the new file (4.11): a failed start then leaves
 	// the hash mismatch standing, so the next run retries the sync instead of freezing the old
 	// config on disk until the next server-side change.
-	if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
+	if err := config.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
 		return fmt.Errorf("Hash schreiben: %w", err)
 	}
 	logger.Infof("frpc.toml updated, frpc %s.", started)
@@ -244,7 +244,7 @@ func startedOn(common string, start func() error, what string) error {
 	if err := start(); err != nil {
 		return fmt.Errorf("%w: %s: %w", errFrpcService, what, err)
 	}
-	if err := os.WriteFile(startedHashFile(), []byte(common), 0600); err != nil {
+	if err := config.WriteFile(startedHashFile(), []byte(common), 0600); err != nil {
 		return fmt.Errorf("write %s: %w", startedHashFile(), err)
 	}
 	return nil

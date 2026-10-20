@@ -76,7 +76,17 @@ func WriteKeyValue(path string, entries []KeyValue) error {
 		}
 		fmt.Fprintf(&b, "%s=\"%s\"\n", e.Key, e.Value)
 	}
-	return os.WriteFile(path, []byte(b.String()), 0600)
+	return WriteFile(path, []byte(b.String()), 0600)
+}
+
+// WriteFile is os.WriteFile for a file of the agent's data: afterwards the
+// Administrators own it (OwnByAdministrators, without effect on Linux), whoever
+// wrote it.
+func WriteFile(path string, data []byte, perm os.FileMode) error {
+	if err := os.WriteFile(path, data, perm); err != nil {
+		return err
+	}
+	return OwnByAdministrators(path)
 }
 
 // KeyValue is a single config entry.

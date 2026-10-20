@@ -717,3 +717,67 @@ func TestOwnByAdministratorsDoesNotFollowAJunction(t *testing.T) {
 	}
 	requireOwner(t, target, user.String())
 }
+
+// WriteFile hands the file it wrote to the Administrators, also an existing one the
+// test account owns.
+func TestWriteFileHandsTheFileToTheAdministrators(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.conf")
+	writeFile(t, path, "x")
+	user := currentUser(t)
+	setOwner(t, path, user)
+	requireOwner(t, path, user.String())
+
+	if err := WriteFile(path, []byte("y"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	requireOwner(t, path, administratorsSID)
+	if got, err := os.ReadFile(path); err != nil || string(got) != "y" {
+		t.Fatalf("the content of %s: %q, %v", path, got, err)
+	}
+}
+
+// EnsureDataDir and EnsureLogDir secure the data root before the directory below it:
+// a junction at the root is replaced, and the directory of the same name behind it
+// keeps its descriptor and its file. Securing only the directory would open the root
+// by path, follow the junction and lock or remove the directory behind it.
+func TestEnsureDataDirSecuresTheRootFirst(t *testing.T) {
+	cases := []struct {
+		name   string
+		sub    string
+		secure func(dir string) error
+	}{
+		{"EnsureDataDir", "frp", EnsureDataDir},
+		{"EnsureLogDir", "logs", func(string) error { return EnsureLogDir() }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			base := t.TempDir()
+			target := filepath.Join(base, "target")
+			behind := filepath.Join(target, c.sub)
+			outside := filepath.Join(behind, "outside.txt")
+			writeFile(t, outside, "outside")
+			behindSD := readDescriptor(t, behind).String()
+			outsideSD := readDescriptor(t, outside).String()
+			root := filepath.Join(base, "root")
+			junction(t, root, target)
+			dir := filepath.Join(root, c.sub)
+			t.Setenv("ADMINHELPER_MONITOR_DIR", root)
+			t.Setenv("ADMINHELPER_LOG_DIR", dir)
+
+			if err := c.secure(dir); err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			requireRealDir(t, root)
+			requireProtected(t, root)
+			requireRealDir(t, dir)
+			requireProtected(t, dir)
+			if got := readDescriptor(t, behind).String(); got != behindSD {
+				t.Fatalf("the descriptor of %s behind the junction changed: %s, was %s", behind, got, behindSD)
+			}
+			requireUnchanged(t, outside, outsideSD, "outside")
+			if entries, err := os.ReadDir(behind); err != nil || len(entries) != 1 {
+				t.Fatalf("%s behind the junction holds %d entries (%v), want only outside.txt", behind, len(entries), err)
+			}
+		})
+	}
+}

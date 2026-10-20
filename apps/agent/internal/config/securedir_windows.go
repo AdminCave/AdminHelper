@@ -113,9 +113,31 @@ type fileBasicInfo struct {
 // step fails, EnsureSecureDir returns the error (fail closed).
 //
 // The directories above dir are not checked: a caller secures the data root before a
-// directory in it.
+// directory in it (EnsureDataDir).
 func EnsureSecureDir(dir string) error {
 	return ensureSecureDir(dir, handleOwner)
+}
+
+// EnsureDataDir is EnsureSecureDir for a directory of the agent's data. EnsureSecureDir
+// opens the directory above dir by path, so a dir below the data root (MonitorDir,
+// which holds frp, frp\pki, logs and identity) is secured only after the root, in the
+// same run: the root's tree is clean then, and only SYSTEM and the Administrators can
+// add to it. A dir outside the root (an ADMINHELPER_*_DIR override) is secured alone.
+func EnsureDataDir(dir string) error {
+	root := MonitorDir()
+	if rel, err := filepath.Rel(root, dir); err == nil && rel != "." && filepath.IsLocal(rel) {
+		if err := EnsureSecureDir(root); err != nil {
+			return err
+		}
+	}
+	return EnsureSecureDir(dir)
+}
+
+// EnsureLogDir creates the log directory with EnsureDataDir before the logger opens
+// it: the logger would create it, and the data root above it, with the inherited
+// %ProgramData% ACL.
+func EnsureLogDir() error {
+	return EnsureDataDir(LogDir())
 }
 
 // ensureSecureDir is EnsureSecureDir with the owner lookup as a parameter, so that a
@@ -721,8 +743,15 @@ func mkdirWithDescriptor(dir string, sd *windows.SECURITY_DESCRIPTOR) error {
 // file an elevated administrator writes can belong to that user, and EnsureSecureDir
 // removes a child with such an owner. It does not follow a reparse point: it works on
 // a handle opened with FILE_FLAG_OPEN_REPARSE_POINT and returns an error if path is
-// one.
+// one. It runs with the thread privileges EnsureSecureDir uses (withPrivileges): the
+// restore privilege lets it set the owner whatever the attributes of the
+// Administrators group in the token.
 func OwnByAdministrators(path string) error {
+	return withPrivileges(func() error { return ownByAdministrators(path) })
+}
+
+// ownByAdministrators is OwnByAdministrators without the privileges.
+func ownByAdministrators(path string) error {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err

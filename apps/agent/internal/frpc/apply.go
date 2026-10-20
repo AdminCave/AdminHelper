@@ -52,13 +52,13 @@ func WriteSyncConfig(p SyncConfigParams) error {
 	frpDir := config.FrpDir()
 	pkiDir := config.FrpPkiDir()
 	// Secret-bearing dirs (CA cert, client keys, the auth token in the conf) ->
-	// 0700, also for raw-binary provisioning where no postinst tightens them.
-	if err := os.MkdirAll(pkiDir, 0700); err != nil {
-		return fmt.Errorf("Verzeichnis anlegen: %w", err)
+	// 0700, also for raw-binary provisioning where no postinst tightens them; a
+	// protected ACL on Windows, after the data root above them.
+	for _, dir := range []string{frpDir, pkiDir} {
+		if err := config.EnsureDataDir(dir); err != nil {
+			return fmt.Errorf("Verzeichnis anlegen: %w", err)
+		}
 	}
-	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
-	_ = config.SecureDir(frpDir)
-	_ = config.SecureDir(pkiDir)
 
 	// Copy the CA cert if provided
 	if cacert != "" {
@@ -66,7 +66,7 @@ func WriteSyncConfig(p SyncConfigParams) error {
 		if err != nil {
 			return fmt.Errorf("CA-Zertifikat lesen: %w", err)
 		}
-		if err := os.WriteFile(config.FrpCACert(), data, 0644); err != nil {
+		if err := config.WriteFile(config.FrpCACert(), data, 0644); err != nil {
 			return fmt.Errorf("CA-Zertifikat schreiben: %w", err)
 		}
 	}
@@ -237,6 +237,9 @@ func extractPkiBundle(b64 string, destDir string) error {
 			}
 			if err := f.Close(); err != nil {
 				os.Remove(target)
+				return err
+			}
+			if err := config.OwnByAdministrators(target); err != nil {
 				return err
 			}
 			if strings.HasSuffix(hdr.Name, ".crt") {

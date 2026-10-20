@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"adminhelper-agent/internal/config"
 )
 
 // The all_services inventory (100-300 units, mostly static) does not need to
@@ -62,7 +64,7 @@ func saveInventoryState(path string, st inventoryState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return config.WriteFile(path, data, 0600)
 }
 
 // shouldSendFullInventory decides whether all_services goes into this push:

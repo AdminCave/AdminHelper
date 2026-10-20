@@ -29,13 +29,20 @@ import (
 
 // Init installs the default slog logger. Call once at startup, before any
 // command runs. level is one of debug/info/warn/error (default info).
+//
+// The log directory is secured first (config.EnsureLogDir, Windows only), since
+// the file logger would create it with inherited rights. If that fails, the agent
+// logs to stdout only, silently, as with a non-writable log directory.
 func Init(level string) {
-	writer := io.MultiWriter(os.Stdout, &lumberjack.Logger{
-		Filename:   config.LogFile(),
-		MaxSize:    10, // megabytes per file
-		MaxBackups: 5,  // keep 5 rotated files
-		Compress:   true,
-	})
+	var writer io.Writer = os.Stdout
+	if config.EnsureLogDir() == nil {
+		writer = io.MultiWriter(os.Stdout, &lumberjack.Logger{
+			Filename:   config.LogFile(),
+			MaxSize:    10, // megabytes per file
+			MaxBackups: 5,  // keep 5 rotated files
+			Compress:   true,
+		})
+	}
 	handler := slog.NewTextHandler(writer, &slog.HandlerOptions{Level: parseLevel(level)})
 	slog.SetDefault(slog.New(handler))
 }

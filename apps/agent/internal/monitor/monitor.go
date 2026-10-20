@@ -54,12 +54,11 @@ func Init(p InitParams) error {
 	}
 
 	monitorDir := config.MonitorDir()
-	// Holds the agent API key + pinned CA cert -> 0700.
-	if err := os.MkdirAll(monitorDir, 0700); err != nil {
+	// Holds the agent API key + pinned CA cert: 0700 on Linux, a protected ACL on
+	// Windows, where it is the data root.
+	if err := config.EnsureDataDir(monitorDir); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
-	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
-	_ = config.SecureDir(monitorDir)
 
 	// Copy the CA cert if provided
 	storedCACert := ""
@@ -72,7 +71,7 @@ func Init(p InitParams) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(dest, data, 0644); err != nil {
+		if err := config.WriteFile(dest, data, 0644); err != nil {
 			return err
 		}
 		storedCACert = dest
@@ -89,7 +88,7 @@ func Init(p InitParams) error {
 			logger.Warnf("Server-Zertifikat fuer TOFU-Pinning nicht abrufbar: %v", err)
 		} else if len(pemBytes) > 0 {
 			dest := config.MonitorCACert()
-			if werr := os.WriteFile(dest, pemBytes, 0644); werr != nil {
+			if werr := config.WriteFile(dest, pemBytes, 0644); werr != nil {
 				logger.Warnf("Server-Zertifikat pinnen fehlgeschlagen: %v", werr)
 			} else {
 				storedCACert, insecure = dest, false
