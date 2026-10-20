@@ -6,12 +6,13 @@
 alarms or swallowed alarms if they drift — e.g. a regression dropping DEGRADED from the critical set
 would never be noticed without a test (6.53)."""
 
-import json
 import math
 
 import pytest
 
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
+
+from ._helpers import assert_every_reader_reads
 
 
 # --- ZfsHealthChecker ---
@@ -1018,25 +1019,6 @@ def _detail_row(kind, metrics):
     return row
 
 
-def _assert_every_reader_reads(details):
-    """No NaN or Infinity token, and every number converts to a finite float (a strict reader
-    such as serde_json rejects a larger integer as out of range)."""
-    json.dumps(details, allow_nan=False)
-    stack = [details]
-    while stack:
-        value = stack.pop()
-        if isinstance(value, dict):
-            stack.extend(value.values())
-        elif isinstance(value, list):
-            stack.extend(value)
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            try:
-                finite = math.isfinite(float(value))
-            except OverflowError:
-                finite = False
-            assert finite, f"number not representable as a finite float: {str(value)[:20]}"
-
-
 @pytest.mark.parametrize("value", _NOT_TEXTS)
 @pytest.mark.parametrize(_TEXT_ARGS, _TEXT_FIELDS)
 def test_a_text_field_that_is_no_string_counts_as_missing(
@@ -1048,7 +1030,7 @@ def test_a_text_field_that_is_no_string_counts_as_missing(
     # The ZFS metric name still reads the raw name, so only message and _details are compared.
     assert (status, msg, metrics["_details"]) == (without[0], without[1], without[2]["_details"])
     assert _detail_row(kind, metrics)[field] == default
-    _assert_every_reader_reads(metrics["_details"])
+    assert_every_reader_reads(metrics["_details"])
 
 
 @pytest.mark.parametrize(_TEXT_ARGS, _TEXT_FIELDS)
@@ -1060,7 +1042,7 @@ def test_a_long_text_field_goes_into_details_on_one_line_of_500_characters(
     assert _detail_row(kind, metrics)[field] == _LONG_SHOWN
     assert status == _rate(kind, entry)[0]
     assert msg.isprintable()  # no control character, no line or paragraph separator
-    _assert_every_reader_reads(metrics["_details"])
+    assert_every_reader_reads(metrics["_details"])
 
 
 def test_proxmox_detail_rows_of_a_regular_report(monkeypatch):
@@ -1074,14 +1056,14 @@ def test_proxmox_detail_rows_of_a_regular_report(monkeypatch):
             {"vmid": 101, "name": "ct", "type": "lxc", "backupStatus": "outdated", "ageHours": 30},
         ]
     }
-    _assert_every_reader_reads(metrics["_details"])
+    assert_every_reader_reads(metrics["_details"])
 
 
 def test_regular_docker_and_zfs_details_are_read_by_every_reader():
     _, _, docker = DockerHealthChecker().evaluate({}, _docker(_ctr(state="exited", exit_code=3)))
     _, _, zfs = ZfsHealthChecker().evaluate({}, _zfs(_pool(), _pool("backup", "DEGRADED", 55.5)))
-    _assert_every_reader_reads(docker["_details"])
-    _assert_every_reader_reads(zfs["_details"])
+    assert_every_reader_reads(docker["_details"])
+    assert_every_reader_reads(zfs["_details"])
 
 
 @pytest.mark.parametrize(

@@ -384,14 +384,14 @@ class AgentResourcesChecker:
             "memory": mem,
             # Next round's hysteresis memory (see grade() above).
             "problems": problem_levels,
-            "memory_total_mb": resources.get("memory_total_mb"),
-            "memory_used_mb": resources.get("memory_used_mb"),
+            "memory_total_mb": agent_number(resources.get("memory_total_mb")),
+            "memory_used_mb": agent_number(resources.get("memory_used_mb")),
             "disks": [
                 {
                     "mount": entry_text(d, "mount", "/"),
                     "percent": entry_number(d, "percent", 0),
-                    "total_gb": d.get("total_gb"),
-                    "used_gb": d.get("used_gb"),
+                    "total_gb": agent_number(d.get("total_gb")),
+                    "used_gb": agent_number(d.get("used_gb")),
                 }
                 for d in disks
             ],
@@ -399,8 +399,8 @@ class AgentResourcesChecker:
                 {
                     "sensor": entry_text(s, "sensor", "?"),
                     "temp_c": entry_number(s, "temp_c", 0),
-                    "high": s.get("high", 0),
-                    "critical": s.get("critical", 0),
+                    "high": entry_number(s, "high", 0),
+                    "critical": entry_number(s, "critical", 0),
                 }
                 for s in temperatures
             ],
@@ -504,13 +504,14 @@ class ServiceProcessChecker:
 
     @staticmethod
     def _parse_counts(raw) -> tuple[int, int] | None:
-        """The agent's (active, total) service counts, or None unless both are integers with
-        0 <= active <= total. Old agents send none; a failed list-units/sc query leaves them out."""
+        """The agent's (active, total) service counts, or None unless both are integers that
+        agent_number takes, with 0 <= active <= total. Old agents send none; a failed
+        list-units/sc query leaves them out."""
         if not isinstance(raw, dict):
             return None
-        active, total = raw.get("active"), raw.get("total")
-        # bool is an int subclass: JSON true is no count.
-        if not all(isinstance(n, int) and not isinstance(n, bool) for n in (active, total)):
+        # agent_number drops a bool (JSON true is no count) and an int beyond float range.
+        active, total = agent_number(raw.get("active")), agent_number(raw.get("total"))
+        if not all(isinstance(n, int) for n in (active, total)):
             return None
         return (active, total) if 0 <= active <= total else None
 
@@ -555,10 +556,12 @@ class ServiceProcessChecker:
             "services_enabled_inactive": len(enabled_inactive),
         }
 
+        # Every name on one line and cut, as in the message; the ignore list above compared the
+        # full name. An empty name stays "" (cap_agent_text gives None for it).
         metrics["_details"] = {
             "mode": "auto",
-            "failed": failed,
-            "enabled_inactive": enabled_inactive,
+            "failed": [cap_agent_text(u) or "" for u in failed],
+            "enabled_inactive": [cap_agent_text(u) or "" for u in enabled_inactive],
         }
         counts = self._parse_counts(systemd.get("counts"))
         if counts is not None:

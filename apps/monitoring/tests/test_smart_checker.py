@@ -8,12 +8,13 @@ critical, the smartctl exit-code bit flags map to the right severity, the
 temperature threshold depends on the disk kind, and an ignored device is
 skipped. (ATA/SATA disks only, to stay clear of the NVMe-spare specifics.)"""
 
-import json
 import math
 
 import pytest
 
 from app.checkers.smart import SmartHealthChecker
+
+from ._helpers import assert_every_reader_reads
 
 CHECKER = SmartHealthChecker()
 
@@ -325,25 +326,6 @@ def _row(metrics):
     return row
 
 
-def _assert_every_reader_reads(details):
-    """No NaN or Infinity token, and every number converts to a finite float (a strict reader
-    such as serde_json rejects a larger integer as out of range)."""
-    json.dumps(details, allow_nan=False)
-    stack = [details]
-    while stack:
-        value = stack.pop()
-        if isinstance(value, dict):
-            stack.extend(value.values())
-        elif isinstance(value, list):
-            stack.extend(value)
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            try:
-                finite = math.isfinite(float(value))
-            except OverflowError:
-                finite = False
-            assert finite, f"number not representable as a finite float: {str(value)[:20]}"
-
-
 @pytest.mark.parametrize("value", _NOT_STRINGS)
 @pytest.mark.parametrize(("make_disk", "field", "default"), _TEXT_FIELDS)
 def test_a_text_field_that_is_no_string_shows_the_default_in_details(
@@ -353,7 +335,7 @@ def test_a_text_field_that_is_no_string_shows_the_default_in_details(
     result = _rate_with(disk, field, value)
     assert result == CHECKER.evaluate({}, _report(disk))
     assert _row(result[2])[field] == default
-    _assert_every_reader_reads(result[2]["_details"])
+    assert_every_reader_reads(result[2]["_details"])
 
 
 @pytest.mark.parametrize("field", ["device", "model", "kind", "protocol"])
@@ -363,7 +345,7 @@ def test_a_long_text_field_goes_into_details_on_one_line_of_500_characters(make_
     assert _row(metrics)[field] == _LONG_SHOWN
     assert status == CHECKER.evaluate({}, _report(make_disk()))[0]
     assert msg.isprintable()  # no control character, no line or paragraph separator
-    _assert_every_reader_reads(metrics["_details"])
+    assert_every_reader_reads(metrics["_details"])
 
 
 @pytest.mark.parametrize(
@@ -416,7 +398,7 @@ def test_smart_passed_in_details_is_the_bool_the_rating_reads(make_disk, value, 
     else:
         assert result[0] == "critical" and result[1].endswith(": SMART FAILED")
     assert _row(result[2])["smart_passed"] is passed
-    _assert_every_reader_reads(result[2]["_details"])
+    assert_every_reader_reads(result[2]["_details"])
 
 
 def test_text_fields_of_a_regular_report():
@@ -442,4 +424,4 @@ def test_text_fields_of_a_regular_report():
             "smart_passed": False,
         },
     ]
-    _assert_every_reader_reads(metrics["_details"])
+    assert_every_reader_reads(metrics["_details"])
