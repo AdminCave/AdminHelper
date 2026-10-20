@@ -23,8 +23,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/workspa
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T14
 
-### T42 — `WorkspaceInfo` trägt die URL des Workspace  [ ]
+### T42 — `WorkspaceInfo` trägt die URL des Workspace  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/models.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @502e6880 2026-10-20T13:47:18+02:00
+Review: approve (.ah-out/review/desktop-workspaces-ui/T42.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-20 (Frage des Bauers zu T19): `WorkspaceInfo` (`models.rs`) bekommt `url: Option<String>`, gefüllt in `Meta::info` (`workspace.rs`) aus der gespeicherten Workspace-URL ohne Benutzerteil (userinfo entfernt, sonst unverändert); ein Workspace ohne URL liefert `null`. `types.ts` zieht das Feld nach (camelCase wie die übrigen Felder). Der Vertrag von `save_workspace` bleibt: eine fehlende oder leere URL entfernt sie beim Bearbeiten. Tests: Rust-Test von `info` mit URL, ohne URL und mit userinfo (wird entfernt); ein bestehender Paritätstest zwischen Rust-Modell und `types.ts` (falls vorhanden) bleibt grün.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace
 Doku: keine (intern; Doku mit T33)

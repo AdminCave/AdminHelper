@@ -237,6 +237,9 @@ pub struct WorkspaceInfo {
     /// One of the palette (`workspace::PALETTE`).
     pub color: String,
     pub kind: SyncMode,
+    /// Its URL without a user and a password, otherwise as it keeps it; none without a URL or
+    /// for one that does not parse.
+    pub url: Option<String>,
     /// The host of its URL; none without a URL.
     pub host: Option<String>,
     /// A process holds its lock.

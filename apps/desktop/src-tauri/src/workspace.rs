@@ -380,6 +380,7 @@ impl Meta {
     /// `open` whether a process holds its lock.
     pub fn info(self, id: WorkspaceId, open: bool) -> WorkspaceInfo {
         WorkspaceInfo {
+            url: self.url.as_deref().and_then(shown_url),
             host: self.url.as_deref().and_then(host_of),
             id,
             name: self.name,
@@ -392,6 +393,19 @@ impl Meta {
 
 fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(String::from)
+}
+
+/// `url` as the webview gets it: without a user and a password, otherwise as kept. None for a
+/// URL that does not parse: where the parser finds no URL, it finds no user and password to
+/// drop either, and the webview would get them.
+fn shown_url(url: &str) -> Option<String> {
+    let mut parsed = Url::parse(url).ok()?;
+    if parsed.username().is_empty() && parsed.password().is_none() {
+        return Some(url.to_string());
+    }
+    parsed.set_username("").ok()?;
+    parsed.set_password(None).ok()?;
+    Some(parsed.into())
 }
 
 /// The origin of the server of a server workspace: scheme, host and port, the default port
@@ -1315,13 +1329,14 @@ mod tests {
                     "name": "Kunde A",
                     "color": PALETTE[1],
                     "kind": "server",
+                    "url": "https://ah.example.com",
                     "host": "ah.example.com",
                     "open": true,
                 },
             })
         );
 
-        // A workspace without a URL has no host.
+        // A workspace without a URL has neither a URL nor a host.
         let local = Meta {
             kind: SyncMode::Local,
             url: None,
@@ -1329,8 +1344,63 @@ mod tests {
         };
         local.store(&ws.data_dir(&scratch.0)).unwrap();
         let own = context(&scratch.0).unwrap().workspace.expect("a workspace");
+        assert_eq!(own.url, None);
         assert_eq!(own.host, None);
         assert_eq!(own.kind, SyncMode::Local);
+    }
+
+    #[test]
+    fn the_info_names_the_url_without_a_user_and_a_password_and_otherwise_as_kept() {
+        let info = |url: Option<&str>| {
+            Meta {
+                url: url.map(String::from),
+                ..meta()
+            }
+            .info(id("w-0a1b2c3d"), false)
+        };
+
+        // Without a user, the URL as kept, however it is spelled.
+        for kept in [
+            "https://ah.example.com",
+            "https://AH.example.com:8443/base/?x=1",
+            "https://sync.example.com/connections.json",
+        ] {
+            assert_eq!(info(Some(kept)).url.as_deref(), Some(kept));
+        }
+
+        // A user, a password or both go, the parser spells the rest; the host stays.
+        for (kept, shown, host) in [
+            (
+                "https://admin:secret@ah.example.com",
+                "https://ah.example.com/",
+                "ah.example.com",
+            ),
+            (
+                "https://admin@ah.example.com:8443/base",
+                "https://ah.example.com:8443/base",
+                "ah.example.com",
+            ),
+            (
+                "https://:secret@ah.example.com/x",
+                "https://ah.example.com/x",
+                "ah.example.com",
+            ),
+            (
+                "https://user:pw@sync.example.com/connections.json?a=b",
+                "https://sync.example.com/connections.json?a=b",
+                "sync.example.com",
+            ),
+        ] {
+            let info = info(Some(kept));
+            assert_eq!(info.url.as_deref(), Some(shown), "{kept}");
+            assert_eq!(info.host.as_deref(), Some(host), "{kept}");
+        }
+
+        // No URL is none, and so is one that does not parse: nothing of it reaches the webview.
+        assert_eq!(info(None).url, None);
+        let unparsed = info(Some("https://admin:secret@ah example.com"));
+        assert_eq!(unparsed.url, None);
+        assert_eq!(unparsed.host, None);
     }
 
     #[test]

@@ -147,6 +147,8 @@ export interface WorkspaceInfo {
   /** One of the palette (workspace.rs PALETTE). */
   color: string;
   kind: SyncMode;
+  /** Its URL without user and password, otherwise as kept; null without a URL. */
+  url?: string | null;
   /** The host of its URL; null without a URL. */
   host?: string | null;
   /** A process holds the workspace. */
