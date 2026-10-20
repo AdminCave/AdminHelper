@@ -994,8 +994,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (neu in der Konfiguration von `proxmox_backup`, Default `true`, nur `true` oder `false`) laesst einen Ausfall auf
   `unknown` ohne Benachrichtigung stehen. Fehlt der Block (`pvesh` deinstalliert, oder ein aelterer Agent kann
   Proxmox nicht lesen), bleibt der Check `unknown`, leert aber die zuletzt gezeigte VM-Liste; ein lesbares Proxmox
-  ohne VMs leert sie ebenso. Die Check-Details tragen dazu `available` und `error`. Doku:
-  Monitoring-Administration (DE+EN).
+  ohne VMs leert sie ebenso. Die Check-Details tragen dazu `available` und `error`. Das Standard-Template
+  „Proxmox Host“ steht dafuer in Version 2 auf `consecutive_fails` 2 wie Docker und ZFS: ein einzelner Lesefehler
+  von `pvesh` meldet nicht. Ein unveraendertes Template folgt der neuen Version beim Start automatisch, auch eines von
+  vor den Template-Versionen; ein angepasstes bietet sie als Update an. Doku: Monitoring-Administration (DE+EN).
 - **Monitoring: nur fehlgeschlagene Dienste sind critical (R-0423):** Im Modus `auto` von `service_process` ist eine
   fehlgeschlagene Unit nur noch `critical`, wenn sie ein Dienst ist (`.service` oder ein Windows-Dienst ohne
   Unit-Endung); eine andere fehlgeschlagene Unit wie Mount, Timer oder Socket ist `warning`, wie eine enabled, aber

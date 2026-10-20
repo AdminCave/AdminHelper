@@ -256,7 +256,7 @@
             <tbody>
               <tr><td><strong>Linux Server — Standard</strong></td><td>Agent Heartbeat (stale after 15 min ≈ 3 missed pushes), System Resources (CPU 90/95, RAM 90/98, disk 80/90 – with <code>consecutive_fails</code> 3 ≈ 15 min anti-flap), Service Health (systemd, <code>auto</code> mode: failed as well as enabled but inactive units, see <a href="#service-process">Service check</a>), SMART Health, Disk Forecast</td></tr>
               <tr><td><strong>Windows Server — Standard</strong></td><td>like Linux, without Service Health</td></tr>
-              <tr><td><strong>Proxmox Host</strong></td><td>Proxmox Backups (backup age &lt; 26 h)</td></tr>
+              <tr><td><strong>Proxmox Host</strong></td><td>Proxmox Backups (backup age &lt; 26 h; from version 2 with <code>consecutive_fails</code> 2 like Docker and ZFS: the check alerts only after two failed runs in a row, so a single read error of <code>pvesh</code> does not, see <a href="#plugin-outage">Docker, ZFS and Proxmox outages</a>)</td></tr>
               <tr><td><strong>Docker Host</strong></td><td>Docker Health (containers by how they ended and daemon outages, see <a href="#docker-health">Docker check</a>)</td></tr>
               <tr><td><strong>ZFS Storage</strong></td><td>ZFS Health (pool state + capacity 80/90, <code>zpool</code> outages)</td></tr>
             </tbody>

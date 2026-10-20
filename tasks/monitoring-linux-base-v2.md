@@ -148,8 +148,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_plugin_chec
 Doku: docs/admin/monitoring.html + EN: Typ-Tabelle `:47`, Plugin-Hinweis `:64` (Proxmox wie Docker und ZFS), Abschnitt `:100-112` heißt „Ausfall von Docker, ZFS und Proxmox“ (Anker `plugin-ausfall`/`plugin-outage` bleibt), Code-Tabelle mit den Proxmox-Fällen und `backup_index_incomplete`, Konfig-Zeile `proxmox_backup` `:133`, Alert-Verhalten `:143`; CHANGELOG.md (`### Changed`: ein nicht lesbares Proxmox ist warning mit Benachrichtigung, abschaltbar)
 Abhängt von: T13
 
-### T15 — Monitoring: Standard-Template `proxmox-host` Version 2  [ ]
+### T15 — Monitoring: Standard-Template `proxmox-host` Version 2  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @14d5236a 2026-10-20T10:41:38+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T15.verdict.json)
 Änderung: `proxmox-host` (`builtin_templates.py:137-155`) auf `version` 2 und `consecutive_fails` 2 (Kommentar: wie Docker und ZFS, ein einzelner Lesefehler meldet nicht). Tests: gepinnter Hash und Version (`test_seed.py:215-221`) für `proxmox-host` (2, neuer Hash), die übrigen unverändert; `test_seed_records_version_and_hash` (`:228`) liest die Version aus dem ausgelieferten Template statt 1 (angepasst); eine unveränderte Zeile der Version 1 mit zugewiesenem Server folgt Version 2, der Check hat danach `consecutive_fails` 2; eine Zeile von vor R-0420 folgt ebenfalls (eingefrorener Hash aus T7). Nachtrag (T7): Mit den eingefrorenen v1-Hashes (`BUILTIN_V1_HASHES`) folgt eine unveränderte Altzeile ohne Hash der neuen Version; `test_builtin_seeded_before_versions_gets_a_baseline` (`test_seed.py`) prüft dann den eingefrorenen Hash statt des ausgelieferten und die Zahl der Rollouts (T16 zusätzlich `builtinEdited`); nur der Pin-Test ändert sich je Version, `test_frozen_version_1_hashes_never_change` nie.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_seed.py
 Doku: docs/admin/monitoring.html + EN `:238` (Proxmox Backups, Ausfall meldet nach zwei Fehlmessungen); CHANGELOG.md (Satz im Eintrag aus T14)

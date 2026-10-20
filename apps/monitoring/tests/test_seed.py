@@ -155,16 +155,64 @@ def _shipped(slug):
 
 
 def _ship_version_2(monkeypatch, slug="linux-base", def_id="system-resources"):
-    """Ship version 2 of one built-in: its check def_id warns every minute."""
+    """Ship a new version of one built-in (the shipped one + 1): its check def_id
+    warns every minute."""
     shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
     tpl = next(t for t in shipped if t["slug"] == slug)
-    tpl["version"] = 2
+    tpl["version"] += 1
     tpl["check_definitions"] = [
         {**d, "severity": "warning", "interval": "1m"} if d["def_id"] == def_id else d
         for d in tpl["check_definitions"]
     ]
     monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
     return tpl
+
+
+# What the built-ins past version 1 shipped as version 1; the others still ship
+# it. Rows seeded before the versions hold these definitions. Like the frozen
+# hashes they never change.
+_VERSION_1_CHECK_DEFINITIONS = {
+    "proxmox-host": [
+        {
+            "def_id": "proxmox-backup",
+            "name": "Proxmox Backups",
+            "description": "Alerts when a guest has no recent backup.",
+            "check_type": "proxmox_backup",
+            "config": {"max_backup_age_hours": 26},
+            "interval": "5m",
+            "severity": "warning",
+            "consecutive_fails": 1,
+        }
+    ],
+}
+
+
+def _version_1(slug):
+    """The check definitions version 1 of a built-in shipped, checked against its
+    frozen hash."""
+    defs = (
+        _VERSION_1_CHECK_DEFINITIONS.get(slug)
+        or next(t for t in BUILTIN_TEMPLATES if t["slug"] == slug)["check_definitions"]
+    )
+    assert definitions_hash(defs, []) == BUILTIN_V1_HASHES[slug], slug
+    return copy.deepcopy(defs)
+
+
+def _seed_version_1(db):
+    """The built-ins as version 1 rolled them out: its definitions, version 1 and
+    the frozen hash."""
+    seed_builtin_templates(db)
+    for slug, frozen in BUILTIN_V1_HASHES.items():
+        row = _row(db, slug)
+        row.check_definitions = json.dumps(_version_1(slug))
+        row.builtin_version = 1
+        row.builtin_hash = frozen
+    db.commit()
+
+
+def _past_version_1():
+    """The slugs of the built-ins that ship a version after 1."""
+    return {t["slug"] for t in BUILTIN_TEMPLATES if t["version"] > 1}
 
 
 def _resources_check(db, server_id):
@@ -216,7 +264,7 @@ def test_shipped_definitions_change_only_with_a_new_version():
     pinned = {
         "linux-base": (1, "fda790008184ed153f4734a916746a1ed971edb57570b99dbc49d4195a8ecf13"),
         "windows-base": (1, "4be77f8ba5a16bc1857dfcf0b2c5ae634967e7d35b97d837a70769ca36b98e70"),
-        "proxmox-host": (1, "e76eb40daf8b1dffac8dce22b6d174fd25e7eaa44c515810b4aad092260c8b98"),
+        "proxmox-host": (2, "e894ce48c723a76a29591dbfdc2a19367fb372a2a63458d3a3695fd70f015cbb"),
         "docker-host": (1, "a54b94104244cb22a229e2c67501f546300e40886c552189466c1f3f89cf0d19"),
         "zfs-storage": (1, "2cb8243af6f0e31ac72ae4c526b601a4dd7480408f624d390e83ebc24d0d6932"),
     }
@@ -251,13 +299,13 @@ def test_seed_records_version_and_hash(db):
 
     for tpl in BUILTIN_TEMPLATES:
         row = _row(db, tpl["slug"])
-        assert row.builtin_version == 1
+        assert row.builtin_version == tpl["version"]
         assert row.builtin_hash == definitions_hash(
             tpl["check_definitions"], tpl["alert_definitions"]
         )
         d = row.to_dict()
         assert (d["builtinVersion"], d["builtinEdited"], d["builtinUpdateAvailable"]) == (
-            1,
+            tpl["version"],
             False,
             False,
         )
@@ -373,9 +421,9 @@ def test_a_new_optional_schema_field_leaves_the_builtins_unedited(db, monkeypatc
 
 
 def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
-    seed_builtin_templates(db)
-    # Rows seeded before the versions existed: no version, no hash; one of them
-    # edited by hand back then.
+    # Rows seeded before the versions existed: the definitions of version 1, no
+    # version, no hash; one of them edited by hand back then.
+    _seed_version_1(db)
     windows = _row(db, "windows-base")
     windows.check_definitions = json.dumps(json.loads(windows.check_definitions)[:1])
     for row in db.query(MonitorTemplate).all():
@@ -383,18 +431,29 @@ def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
         row.builtin_hash = None
     db.commit()
 
-    assert reconcile_builtin_templates(db) == 0
+    # Version 1 with its frozen hash; the unedited ones a later version ships for
+    # follow it, once.
+    followed = _past_version_1() - {"windows-base"}
+    assert reconcile_builtin_templates(db) == len(followed)
     assert reconcile_builtin_templates(db) == 0
 
     for tpl in BUILTIN_TEMPLATES:
         row = _row(db, tpl["slug"])
-        assert row.builtin_version == 1
-        assert row.builtin_hash == definitions_hash(
-            tpl["check_definitions"], tpl["alert_definitions"]
-        )
-    assert _row(db, "linux-base").to_dict()["builtinEdited"] is False
+        if tpl["slug"] in followed:
+            expected = (
+                tpl["version"],
+                definitions_hash(tpl["check_definitions"], tpl["alert_definitions"]),
+            )
+        else:
+            expected = (1, BUILTIN_V1_HASHES[tpl["slug"]])
+        assert (row.builtin_version, row.builtin_hash) == expected, tpl["slug"]
+        if tpl["slug"] != "windows-base":
+            assert row.to_dict()["builtinEdited"] is False, tpl["slug"]
     d = _row(db, "windows-base").to_dict()
-    assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (True, False)
+    assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (
+        True,
+        "windows-base" in _past_version_1(),
+    )
     assert scheduled == []
 
 
@@ -420,20 +479,20 @@ def test_unchanged_builtin_seeded_before_versions_follows_a_new_version(
     db, monkeypatch, scheduled, slug, def_id
 ):
     # Such a row holds the definitions of version 1. Compared with the frozen hash
-    # of version 1, not with what ships now, it follows version 2 like any other
-    # unchanged built-in instead of counting as edited.
-    seed_builtin_templates(db)
+    # of version 1, not with what ships now, it follows a newer version like any
+    # other unchanged built-in instead of counting as edited.
+    _seed_version_1(db)
     apply_template(db, _row(db, slug), "srv-1", "host01.example", "Host 01")
     _forget_versions(db)
     scheduled.clear()
     v2 = _ship_version_2(monkeypatch, slug, def_id)
 
-    assert reconcile_builtin_templates(db) == 1
+    assert reconcile_builtin_templates(db) == len(_past_version_1() | {slug})
 
     row = _row(db, slug)
     assert json.loads(row.check_definitions) == v2["check_definitions"]
     assert (row.builtin_version, row.builtin_hash) == (
-        2,
+        v2["version"],
         definitions_hash(v2["check_definitions"], []),
     )
     d = row.to_dict()
@@ -445,15 +504,58 @@ def test_unchanged_builtin_seeded_before_versions_follows_a_new_version(
     )
     assert (check.severity, check.interval) == ("warning", "1m")
     assert check.id in scheduled
-    # The others ship no new version: version 1 with its frozen hash, unedited.
+    # The others, unedited: those still at version 1 keep it with its frozen hash,
+    # those past it followed their shipped version.
     for tpl in BUILTIN_TEMPLATES:
         if tpl["slug"] != slug:
             other = _row(db, tpl["slug"])
-            assert (other.builtin_version, other.builtin_hash) == (
-                1,
-                BUILTIN_V1_HASHES[tpl["slug"]],
-            )
+            if tpl["version"] == 1:
+                expected = (1, BUILTIN_V1_HASHES[tpl["slug"]])
+            else:
+                expected = (
+                    tpl["version"],
+                    definitions_hash(tpl["check_definitions"], tpl["alert_definitions"]),
+                )
+            assert (other.builtin_version, other.builtin_hash) == expected, tpl["slug"]
             assert other.to_dict()["builtinEdited"] is False, tpl["slug"]
+
+
+def _proxmox_check(db):
+    return (
+        db.query(MonitorCheck)
+        .filter(MonitorCheck.server_id == "srv-1", MonitorCheck.template_def_id == "proxmox-backup")
+        .one()
+    )
+
+
+@pytest.mark.parametrize("before_versions", [False, True])
+def test_unchanged_proxmox_host_of_version_1_takes_two_consecutive_fails(
+    db, scheduled, before_versions
+):
+    # Since an unreadable pvesh is an outage, version 2 waits for a second failed
+    # run in a row before it alerts, as Docker and ZFS do. A row of version 1 takes
+    # it on startup, one seeded before the versions as well (frozen hash).
+    _seed_version_1(db)
+    apply_template(db, _row(db, "proxmox-host"), "srv-1", "pve01.example", "PVE 01")
+    assert _proxmox_check(db).consecutive_fails == 1
+    if before_versions:
+        _forget_versions(db)
+    scheduled.clear()
+
+    assert reconcile_builtin_templates(db) == len(_past_version_1())
+
+    shipped = _shipped("proxmox-host")
+    row = _row(db, "proxmox-host")
+    assert json.loads(row.check_definitions) == shipped["check_definitions"]
+    assert (row.builtin_version, row.builtin_hash) == (
+        shipped["version"],
+        definitions_hash(shipped["check_definitions"], []),
+    )
+    d = row.to_dict()
+    assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (False, False)
+    check = _proxmox_check(db)
+    assert check.consecutive_fails == 2
+    assert check.id in scheduled
 
 
 def test_edited_builtin_seeded_before_versions_stays_edited_and_offers_the_update(

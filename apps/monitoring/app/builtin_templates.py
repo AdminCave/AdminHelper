@@ -136,7 +136,7 @@ BUILTIN_TEMPLATES: list[dict] = [
     },
     {
         "slug": "proxmox-host",
-        "version": 1,
+        "version": 2,
         "name": "Proxmox Host",
         "description": "Backup freshness for Proxmox VMs and containers.",
         "check_definitions": [
@@ -148,7 +148,9 @@ BUILTIN_TEMPLATES: list[dict] = [
                 "config": {"max_backup_age_hours": 26},
                 "interval": "5m",
                 "severity": "warning",
-                "consecutive_fails": 1,
+                # 2 as for Docker and ZFS: an unreadable pvesh is an outage, and
+                # a single read error must not alert.
+                "consecutive_fails": 2,
             }
         ],
         "alert_definitions": [],
