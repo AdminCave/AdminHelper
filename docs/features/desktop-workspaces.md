@@ -370,11 +370,15 @@ bei Port ≠ 3389 nachschlägt (`TERMSRV/<host>:<port>` oder `TERMSRV/<host>`), 
 gilt, wenn ein generischer und ein Domänen-Eintrag gleichen Namens bestehen; (6) Wiederverbindung nach Ablauf der
 Frist ohne Rückfrage.
 
-**Fund für T17 (Entscheidung Kevin):** `CredWriteW` ersetzt einen generischen Eintrag gleichen Namens, das Löschen
-nach dem Start nimmt ihn dann mit: einen eigenen des Nutzers (`cmdkey /generic`) oder den Alt-Eintrag eines
-migrierten Workspace (vor R-0431 lag das Passwort unter Windows nur in `TERMSRV/<gelistete Adresse>`), wenn ein
-anderer Workspace dasselbe Ziel mit eigenem Passwort öffnet. Optionen: so lassen, oder einen vorhandenen Eintrag
-vor dem Schreiben sichern und nach der Frist zurückschreiben.
+**Entscheidung Kevin 2026-10-20 (Fund aus dem Spike):** `CredWriteW` ersetzt einen generischen Eintrag gleichen
+Namens. Deshalb tragen eigene Einträge einen festen Marker im Feld `Comment`, und `Remove` löscht nur einen
+eigenen. Besteht für ein Ziel ohne Loopback schon ein generischer Eintrag ohne Marker (eigener `cmdkey`-Eintrag
+oder Alt-Eintrag von vor R-0431), schreibt und löscht die App nichts; mstsc nimmt den vorhandenen, die Tabelle
+oben gilt dann als „Starten“ (T17). Bei Loopback-Zielen löscht die App vor jedem Start beide Typen in beiden
+Namensformen (`TERMSRV/<host>:<port>` und `TERMSRV/<host>`), bis Punkt (4) unten belegt ist. Ein zweiter Start
+einer anderen Verbindung auf dasselbe Ziel, solange ein Eintrag in seiner Frist liegt, wird abgelehnt (T39).
+Alt-Einträge `TERMSRV/<gelistete Adresse>` übernimmt der migrierte Workspace beim ersten Start in seinen
+App-Namensraum und löscht sie danach (T40).
 
 Quellen (abgerufen 2026-10-20):
 
