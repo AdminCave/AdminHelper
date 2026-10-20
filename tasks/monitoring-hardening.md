@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Härtung: Agent-Texte und Zahlen, Check-Config, Line-Protocol, Alert-Versand — Task-Ledger
-Status: bereit · Branch: feature/monitoring-hardening · Review: pro Task
+Status: erledigt · Branch: feature/monitoring-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full — T13 ändert den 422-Handler des Servers (`apps/server/app/main.py`, Fehlerpfad jeder Route), T11 seine Log-Konfiguration; der Rest liegt in `apps/monitoring` (Checker, `check_configs.py`, `to_dict` in `models.py`, `core/victoria.py`, `_num` in `routers/agent.py`, 422-Handler in `main.py`, `alerter.py`). Keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung, kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad. Kein Lauf vor dem Merge: das Vorhaben geht in den Sammellauf (CLAUDE.md §5); Monitoring- und Server-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
