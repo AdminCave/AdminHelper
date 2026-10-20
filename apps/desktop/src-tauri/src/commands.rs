@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::path::Path;
 use std::time::Duration;
 
 use tauri::State;
@@ -14,9 +15,10 @@ use crate::error::AppError;
 use crate::frpc;
 use crate::models::{
     AuthSession, ClientInfo, Connection, DeviceIdentity, PasswordState, RdpOptions, Settings,
-    TunnelRefresh, TunnelStatus,
+    TunnelRefresh, TunnelStatus, VisitorBinding,
 };
 use crate::password;
+use crate::port_registry::PortRegistry;
 use crate::proxy;
 use crate::session::SessionState;
 use crate::storage;
@@ -208,15 +210,38 @@ where
     }
 }
 
+/// Rejects `connection` if it goes to a loopback port of another workspace's tunnel
+/// ([`tunnel::reject_foreign_port`]), by the port map in the app data dir `base` and the
+/// workspace of this process; the launcher has none and opens nothing. The map's file lock may
+/// wait: on a blocking thread only.
+fn reject_foreign_port(
+    base: &Path,
+    connection: &Connection,
+    bindings: &[VisitorBinding],
+) -> Result<(), AppError> {
+    let owner = crate::workspace::current()?.id.to_string();
+    let others = PortRegistry::new(base).local_ports_of_others(&owner)?;
+    tunnel::reject_foreign_port(connection, &others, bindings)
+}
+
+/// Opens nothing at a loopback port of another workspace's tunnel; one a visitor of the frpc that
+/// runs for the current sign-in listens on is this workspace's own.
 #[tauri::command]
 pub async fn open_connection(
     app: tauri::AppHandle,
+    state: State<'_, frpc::FrpcState>,
+    session: State<'_, SessionState>,
     connection: Connection,
     password: Option<String>,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
+    let bindings = match session.current().await {
+        Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
+        None => Vec::new(),
+    };
     run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
         let rdp = rdp_options(&settings);
@@ -236,7 +261,8 @@ pub async fn open_connection(
 /// A stored password opens only the target Rust resolves the credential connection (without one,
 /// the opened connection) to, with the tunnel mappings and server connections the session fetched
 /// (not ones the webview sends) and the bindings of the frpc that runs for that sign-in, all read
-/// at one moment as the connection opens. Without a session there are none of them.
+/// at one moment as the connection opens. Without a session there are none of them. A target at
+/// a loopback port of another workspace's tunnel is refused before the password loads.
 #[tauri::command]
 pub async fn open_connection_stored(
     app: tauri::AppHandle,
@@ -255,6 +281,7 @@ pub async fn open_connection_stored(
         None => Default::default(),
     };
     run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &connection, &bindings)?;
         let settings = storage::load_settings(&app)?;
         let cid = correlation_id.unwrap_or_default();
         let rdp = rdp_options(&settings);
@@ -385,9 +412,11 @@ pub async fn fetch_tunnels(
 }
 
 /// Resolves against where the visitors of the frpc that runs for the current sign-in listen;
-/// while none runs for it, and without a session, a tunnel target stays as it is.
+/// while none runs for it, and without a session, a tunnel target stays as it is. A target that
+/// ends at a loopback port of another workspace's tunnel is an error.
 #[tauri::command]
 pub async fn resolve_connection(
+    app: tauri::AppHandle,
     state: State<'_, frpc::FrpcState>,
     session: State<'_, SessionState>,
     connection: Connection,
@@ -397,7 +426,13 @@ pub async fn resolve_connection(
         Some(now) => frpc::bindings_for(state.inner(), &now.signed_in()),
         None => Vec::new(),
     };
-    Ok(tunnel::resolve_connection(&connection, &tunnels, &bindings))
+    let resolved = tunnel::resolve_connection(&connection, &tunnels, &bindings);
+    let target = resolved.connection.clone();
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        reject_foreign_port(&storage::app_data_dir(&app)?, &target, &bindings)
+    })
+    .await?;
+    Ok(resolved)
 }
 
 #[tauri::command]
@@ -419,8 +454,11 @@ pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::run_with_deadline;
+    use super::{reject_foreign_port, run_with_deadline};
     use crate::error::AppError;
+    use crate::models::{Connection, ConnectionKind};
+    use crate::port_registry::PortRegistry;
+    use crate::workspace;
     use std::time::Duration;
 
     #[tokio::test]
@@ -449,5 +487,63 @@ mod tests {
         })
         .await;
         assert!(matches!(r, Err(AppError::Connection(_))));
+    }
+
+    /// `127.0.0.1`:`port` over SSH.
+    fn loopback(port: u16) -> Connection {
+        Connection {
+            id: "c1".to_string(),
+            name: "Test".to_string(),
+            kind: ConnectionKind::Ssh,
+            host: Some("127.0.0.1".to_string()),
+            port: Some(port),
+            username: None,
+            domain: None,
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: Vec::new(),
+            trust_cert: false,
+            last_used: None,
+            server_id: None,
+        }
+    }
+
+    /// The workspace `id` on this thread while the guard lives.
+    fn entered(id: &str) -> workspace::EnteredWorkspace {
+        workspace::enter(workspace::Workspace {
+            id: workspace::WorkspaceId::parse(id).unwrap(),
+            name: id.to_string(),
+            legacy_keys: false,
+        })
+    }
+
+    #[test]
+    fn foreign_port_check_reads_the_port_map_as_the_workspace_of_this_process() {
+        let dir =
+            std::env::temp_dir().join(format!("ah-commands-foreign-port-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        PortRegistry::new(&dir).seed("w-0000000b", &[("db-visitor", 6000, 23005)]);
+
+        // The launcher has no workspace and so opens nothing.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = reject_foreign_port(&dir, &loopback(23005), &[]);
+        assert_eq!(refused.unwrap_err().to_string(), no_workspace);
+        {
+            let _other = entered("w-0000000a");
+            let refused = reject_foreign_port(&dir, &loopback(23005), &[]).unwrap_err();
+            assert!(
+                refused
+                    .to_string()
+                    .starts_with("port 23005 on this machine"),
+                "{refused}"
+            );
+            assert!(reject_foreign_port(&dir, &loopback(23006), &[]).is_ok());
+        }
+        {
+            let _owner = entered("w-0000000b");
+            assert!(reject_foreign_port(&dir, &loopback(23005), &[]).is_ok());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

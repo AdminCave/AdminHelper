@@ -86,8 +86,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc::
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T1, T3
 
-### T8 — Keine Verbindung auf Ports fremder Workspaces  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/commands.rs
+### T8 — Keine Verbindung auf Ports fremder Workspaces  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/tunnel.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/port_registry.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @45789270 2026-10-20T08:17:20+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T8.verdict.json)
 Änderung: Die Bindings kommen schon je Prozess (`FrpcState`, R-0430 T13), also vom eigenen frpc. Für den Fall ohne eigenen Tunnel eine reine Funktion in `tunnel.rs`: ein Ziel (Host bzw. Host der Web-URL) auf `127.0.0.0/8`, `::1` oder `localhost`, dessen Port in `local_ports_of_others(owner)` (T3) steht und den kein eigenes Binding hält, ist ein Fehler (englischer Text mit dem Hinweis, den Tunnel dieses Workspace zu starten). `resolve_connection` (`commands.rs:385`), `open_connection` (`:212`) und `open_connection_stored` (`:240`) prüfen die aufgelöste bzw. geöffnete Verbindung damit, bevor etwas startet oder ein Passwort geladen wird. Tests (`foreign_port_*`): Loopback auf fremdem Port ohne eigenes Binding → Fehler; derselbe Port mit eigenem Binding → erlaubt; fremder Port auf Nicht-Loopback-Host → erlaubt; Web-URL `http://127.0.0.1:<fremd>` → Fehler; kein Eintrag → erlaubt. Restrisiko benennen (Prüfer zu T3): über `local_ports_of_others` kann ein Server über die Einträge seines Workspace auch lokale Loopback-Ports eines anderen Workspace sperren; das scheitert sicher (Ablehnung statt Umleitung) und steht in der Doku.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- foreign_port
 Doku: keine (intern; Doku mit T33)

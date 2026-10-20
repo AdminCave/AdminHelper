@@ -151,13 +151,6 @@ impl PortRegistry {
 
     /// The local ports of every owner but `owner`: they lead to the visitors of another
     /// workspace.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the check of loopback targets (R-0431 T8) takes it up"
-        )
-    )]
     pub fn local_ports_of_others(&self, owner: &str) -> Result<Vec<u16>, AppError> {
         let _lock = self.lock()?;
         Ok(self
