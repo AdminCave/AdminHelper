@@ -101,25 +101,57 @@ _SMART_HEALTH = {
     "consecutive_fails": 2,
 }
 
+# Linux from version 2: swap, inodes and the load per CPU as well, and a disk's
+# percentage counts only below 20 GB free. The checker defaults are the same
+# values, so a check with a config of its own rates them alike. Whole numbers stay
+# int: the desktop editor saves JSON numbers back, 3.0 would return as 3 and
+# change the hash.
+_LINUX_RESOURCES = {
+    **_AGENT_RESOURCES,
+    "config": {
+        **_AGENT_RESOURCES["config"],
+        "disk_min_free_gb": 20,
+        "swap_warn": 80,
+        "swap_crit": 95,
+        "inode_warn": 80,
+        "inode_crit": 90,
+        "load_warn": 1.5,
+        "load_crit": 3,
+    },
+}
+
 BUILTIN_TEMPLATES: list[dict] = [
     {
         "slug": "linux-base",
-        "version": 1,
+        "version": 2,
         "name": "Linux Server — Standard",
         "description": "Baseline monitoring for Linux servers: heartbeat, resources, "
         "systemd service health and SMART.",
         "check_definitions": [
             _AGENT_HEARTBEAT,
-            _AGENT_RESOURCES,
+            _LINUX_RESOURCES,
             {
                 "def_id": "service-health",
                 "name": "Service Health",
-                "description": "Failed and enabled-but-inactive systemd units.",
+                "description": "Failed services (critical), other failed units and "
+                "enabled-but-inactive units (warning).",
                 "check_type": "service_process",
                 "config": {"mode": "auto"},
                 "interval": "5m",
                 "severity": "critical",
                 "consecutive_fails": 2,
+            },
+            {
+                "def_id": "system-state",
+                "name": "System State",
+                "description": "Pending reboot, clock sync, security updates and OOM kills.",
+                "check_type": "system_state",
+                "config": {},
+                "interval": "5m",
+                "severity": "warning",
+                # 1: an OOM kill shows in exactly one report, a second failing
+                # run in a row would never come.
+                "consecutive_fails": 1,
             },
             _SMART_HEALTH,
             _DISK_FORECAST,

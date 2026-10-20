@@ -514,15 +514,17 @@ def start(client, monkeypatch):
     return run
 
 
-def _ship_linux_base_v2(monkeypatch):
-    """Ship version 2 of linux-base: system-resources warns every minute."""
+def _ship_linux_base_v2(monkeypatch) -> int:
+    """Ship a new version of linux-base (the shipped one + 1): system-resources
+    warns every minute. Returns the new version."""
     shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
     linux = next(t for t in shipped if t["slug"] == "linux-base")
-    linux["version"] = 2
+    linux["version"] += 1
     for check_def in linux["check_definitions"]:
         if check_def["def_id"] == "system-resources":
             check_def.update(severity="warning", interval="1m")
     monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
+    return linux["version"]
 
 
 def test_start_marks_earlier_changes_before_it_updates_the_builtins(client, start, monkeypatch):
@@ -537,7 +539,7 @@ def test_start_marks_earlier_changes_before_it_updates_the_builtins(client, star
         check.interval = "1h"
         db.commit()
         cid = check.id
-    _ship_linux_base_v2(monkeypatch)
+    new_version = _ship_linux_base_v2(monkeypatch)
 
     assert start()
 
@@ -546,7 +548,7 @@ def test_start_marks_earlier_changes_before_it_updates_the_builtins(client, star
         assert (check.interval, check.severity) == ("1h", "warning")
         assert json.loads(check.overridden_fields) == ["interval"]
         linux = db.query(MonitorTemplate).filter_by(builtin_slug="linux-base").one()
-        assert linux.builtin_version == 2
+        assert linux.builtin_version == new_version
 
 
 def test_a_failed_first_start_keeps_nothing_and_the_next_start_marks(client, start, monkeypatch):
@@ -610,7 +612,7 @@ def test_a_built_in_update_waits_for_a_failed_first_start(client, start, monkeyp
     # marks the change and rolls out.
     _c, factory = client
     cid = _linux_base_on_srv_1_with_interval_1h(factory)
-    _ship_linux_base_v2(monkeypatch)
+    new_version = _ship_linux_base_v2(monkeypatch)
     real = template_sync.mark_overrides
 
     def connection_lost(*_args):
@@ -621,14 +623,14 @@ def test_a_built_in_update_waits_for_a_failed_first_start(client, start, monkeyp
     assert _interval_severity_overrides(factory, cid) == ("1h", "critical", [])
     with factory() as db:
         linux = db.query(MonitorTemplate).filter_by(builtin_slug="linux-base").one()
-        assert linux.builtin_version == 1
+        assert linux.builtin_version == new_version - 1
 
     monkeypatch.setattr(template_sync, "mark_overrides", real)
     assert start()
     assert _interval_severity_overrides(factory, cid) == ("1h", "warning", ["interval"])
     with factory() as db:
         linux = db.query(MonitorTemplate).filter_by(builtin_slug="linux-base").one()
-        assert linux.builtin_version == 2
+        assert linux.builtin_version == new_version
 
 
 def test_tag_sync_before_the_baseline_marks_first_with_the_names_from_before(client):

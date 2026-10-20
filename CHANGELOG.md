@@ -29,6 +29,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   meldet der Agent ab Report-Version 3 und nur unter Linux; fuer aeltere Agents und Windows-Hosts bleiben die drei
   unbewertet, ohne `unknown`. Die Check-Details tragen dazu `swap`, `swap_total_mb`, `swap_used_mb`, `cpu_count`,
   `load_per_cpu` und je Platte `inodes_percent`. Doku: Monitoring-Administration (DE+EN).
+- **Monitoring: Standard-Template „Linux Server — Standard“ in Version 2 (R-0423):** Der Check System Resources
+  bewertet darin zusaetzlich Swap (80/95 %), Inodes (80/90 %) und die Load je CPU (1.5/3) und die Belegung einer
+  Platte erst unter 20 GB frei (`disk_min_free_gb`); neu ist der Check System State (`system_state`, `warning`,
+  `consecutive_fails` 1, weil ein OOM-Kill nur in einem Report steht); Service Health beschreibt die neue Aufteilung
+  (fehlgeschlagene Dienste `critical`, andere fehlgeschlagene sowie enabled, aber inaktive Units `warning`). Ein
+  unveraendertes Template folgt der neuen Version beim Start automatisch, auch eines von vor den Template-Versionen:
+  Jeder zugewiesene Server bekommt den Check System State und sein Check System Resources die neuen Schwellen,
+  angepasste Felder einzelner Checks bleiben. Eine angepasste Konfiguration von System Resources bekommt die neuen
+  Schluessel nicht; fehlen sie, nimmt der Check dieselben Werte. Ein angepasstes Template bietet die Version als
+  Update an. „Windows Server — Standard“ bleibt in Version 1. Doku: Monitoring-Administration (DE+EN), README.
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter
@@ -48,9 +58,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   wiederherstellen“ und legt sie auf Klick neu an (`POST /templates/{id}/assign/{server_id}/restore`, Zaehler
   `removedChecks` in `GET /templates/assignments/{server_id}`). Bringt ein Release eine neuere Version eines
   Standard-Templates mit, dessen Definitionen angepasst sind, zeigt die Template-Liste dort „Update verfuegbar“
-  (heute tragen alle Version 1, das Badge erscheint also noch nirgends); das oeffnet einen Vergleich der aktuellen
-  mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des Templates,
-  auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
+  (in diesem Release fuer „Linux Server — Standard“ und „Proxmox Host“ in Version 2); das oeffnet einen Vergleich
+  der aktuellen mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des
+  Templates, auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
   `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable`). Doku:
   Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
@@ -1239,8 +1249,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Release eine neuere Version, hebt der Monitoring-Dienst beim Start jedes Standard-Template mit unveraenderten
   Definitionen darauf und synchronisiert dessen Server; angepasste Check-Felder sowie Name und Beschreibung des
   Templates bleiben. Ein Template mit angepassten Definitionen bleibt, wie es ist, und bietet das Update an (siehe
-  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Heute tragen alle Version 1;
-  ein bestehendes, dessen Definitionen davon abweichen, gilt als angepasst.
+  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Ein bestehendes von vor den
+  Versionen gilt als Version 1; weichen seine Definitionen davon ab, gilt es als angepasst.
 - **Monitoring: neuer Hostname oder Servername erreicht bestehende Zuweisungen (R-0420):** Der Tag-Sync gleicht jetzt
   fuer jede Zuweisung, auch fuer manuelle, Hostname und Servername mit dem Server-Inventar ab und synchronisiert bei
   einer Abweichung genau dieses Paar neu, sodass `{{hostname}}` und `{{server_name}}` einer Umbenennung folgen;
