@@ -961,7 +961,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Release: ein Beta ist ein Tag ohne Suffix (R-0014):** Ein Beta ist jetzt der Tag `vX.Y.Z` ohne Suffix,
   veroeffentlicht als GitHub-Pre-release; schon der Draft entsteht als Pre-release. Stable wird dasselbe Release
   spaeter ohne neuen Tag. Die Images `:latest` setzt `docker.yml` nicht mehr beim Tag-Push, sondern erst, wenn das
-  Release von Pre-release auf Release wechselt: Es taggt das schon gebaute und signierte `:X.Y.Z` um und signiert es.
+  Release von Pre-release auf Release wechselt: Es taggt das schon gebaute `:X.Y.Z` um, ohne neu zu signieren, und
+  nur, wenn das Release `releases/latest` ist und jedes Image die Signatur seines Tag-Pushs traegt (`cosign verify`).
   `:latest` zeigt damit wie `releases/latest`, das `install.sh` ohne lokalen Checkout und `update.sh` lesen, nie auf
   ein Beta; wer ein Beta testen will, pinnt dessen Version (`:X.Y.Z`). Doku: Entwickler-Doku CI/CD (DE+EN).
 - **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**

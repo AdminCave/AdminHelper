@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Release: Beta ohne Suffix-Tag — Task-Ledger
-Status: aktiv · Branch: feature/release-beta-channel · Review: am Ende
+Status: bereit · Branch: feature/release-beta-channel · Review: am Ende
 Spec: Roadmap R-0014
 Heavy: none — Regeltext, Doku und die Release-Workflows (`docker.yml`, `release.yml`, T3); ein Stack- oder Install-Lauf beweist nichts davon, der erste echte Beweis ist der erste Beta-Tag und sein Wechsel auf Stable
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -43,8 +43,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: .claude/rules/release.md · docs/developer/cicd.html + EN · CHANGELOG
 
-### T4 — `:latest`-Job prüft die Signatur des Tag-Pushs statt neu zu signieren  [ ]
-Komponente: server · Dateien: .github/workflows/docker.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html
+### T4 — `:latest`-Job prüft die Signatur des Tag-Pushs statt neu zu signieren  [x]
+Komponente: server · Dateien: .github/workflows/docker.yml, apps/server/tests/test_release_images.py, docs/developer/cicd.html, docs/en/developer/cicd.html, .claude/rules/release.md, CHANGELOG.md
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @1f4910e0 2026-10-20T09:40:01+02:00
+Review: am Ende (Branch-Review)
 Änderung: Funde aus dem Branch-Review (security blocker, Härtungen; Kevin 2026-10-20: Workflows fixen). Job `latest` in `docker.yml`: (1) Vor jedem Umtaggen, schon in der Schleife, die alle Digests auflöst, prüft `cosign verify` jeden Digest gegen die Identität des Tag-Pushs (`https://github.com/<owner>/<repo>/.github/workflows/docker.yml@refs/tags/<tag>`, Issuer `https://token.actions.githubusercontent.com`; Owner/Repo aus `GITHUB_REPOSITORY`, nicht hart kodiert); fehlt eine gültige Signatur, bewegt sich nichts. Das neue `cosign sign` entfällt (die Signatur hängt am Digest), ebenso `id-token: write`. (2) Erst alle `imagetools create`, dann alle Digest-Prüfungen; scheitert ein Schritt mittendrin, sagt die Fehlermeldung „rerun the job“ und die Doku nennt das. (3) Am Anfang: nur weiter, wenn `releases/latest` (`gh api repos/${GITHUB_REPOSITORY}/releases/latest --jq .tag_name`) gleich dem Tag ist, sonst ohne Fehler beenden (ein älteres Release, das später auf Stable gestellt wird, zieht `:latest` nicht zurück). (4) `VER` gegen `^[0-9]+\.[0-9]+\.[0-9]+$` prüfen. Tests (`test_release_images.py`): cosign-Stub beantwortet `verify` je Image auch mit Exit 1 → kein `create`, kein `:latest` (parametrisiert je Image); im ganzen Lauf kein `cosign sign`; `releases/latest` ≠ Tag → nichts bewegt, Exit 0; ungültige Version → Exit ≠ 0, nichts bewegt; der `permissions`-Block des Jobs ist genau `contents: read, packages: write` (Nit tester). Doku `cicd.html` DE+EN: Signaturprüfung vor dem Umtaggen, Abbruch-Hinweis, nur das aktuelle „Latest“-Release bewegt `:latest`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: docs/developer/cicd.html + EN

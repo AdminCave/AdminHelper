@@ -9,7 +9,8 @@ ci.yml builds each image on every pull request (job docker-build), docker.yml pu
 matrix, and release.yml offers a draft release only once every published image of the tag is on
 ghcr, since install.sh and update.sh pin them by version. docker-compose.yml pulls exactly those
 images from ghcr. The draft is a pre-release, and "latest" of every image moves only when the
-release turns stable: then docker.yml points it at the image the tag push built and signed.
+release turns stable and is the latest release: then docker.yml points it at the image the tag
+push built, once the signature that push made checks out.
 
 The frps image builds on the frps image of the FRP release that ci.yml and release.yml pin as
 FRP_VERSION; the lockstep job frp-consistency compares that base with the other pins. The server
@@ -17,7 +18,7 @@ job of ci.yml pulls that base, so the tests that run the frps image run there in
 skipping. The ops-scripts job shellchecks the supervisor as the POSIX sh the image runs it with.
 
 The steps are run, where they can be, as Actions runs a step without a shell of its own
-(`bash -e`), on copies of the files they read or with stubs for docker and cosign.
+(`bash -e`), on copies of the files they read or with stubs for docker, cosign and gh.
 """
 
 import hashlib
@@ -46,11 +47,16 @@ _PINNED = (
     "scripts/vm/bootstrap_linux.sh",
 )
 _PULL_STEP = "Pull the base of the frps image"
-_LATEST_STEP = "Point latest at the release and sign it (keyless)"
+_LATEST_STEP = "Point latest at the signed images of the release"
 _REPO = "ghcr.io/admincave/adminhelper"
+_ISSUER = "https://token.actions.githubusercontent.com"
+_GH_LATEST = "gh api repos/AdminCave/AdminHelper/releases/latest --jq .tag_name"
 # docker answers `buildx imagetools inspect` from a registry of files, one per reference holding
 # its digest; `buildx imagetools create` gives the new reference the digest of its source (a
-# carbon copy) or, with STUB_REWRAP set, another one. docker and cosign log every call.
+# carbon copy) or, with STUB_REWRAP set, another one, and fails for the image STUB_CREATE_FAIL.
+# cosign verifies a signature only for the identity STUB_SIGNER and the issuer of GitHub
+# Actions, and finds none on the image STUB_UNSIGNED. gh answers that STUB_LATEST is the latest
+# release. Every stub logs every call.
 _DOCKER_STUB = """#!/bin/sh
 echo "docker $*" >> "$STUB_LOG"
 ref_file() { echo "$STUB_REGISTRY/$(echo "$1" | tr /:@ ___)"; }
@@ -61,13 +67,31 @@ case "$3" in
     printf '{"digest": "%s"}\\n' "$(cat "$(ref_file "$4")")" ;;
   create)
     [ "$4" = --tag ] || exit 2
+    [ "${6%@*}" != "${STUB_CREATE_FAIL:-}" ] || { echo "ERROR: $5: push failed" >&2; exit 1; }
     digest="${6#*@}"
     [ -z "${STUB_REWRAP:-}" ] || digest="sha256:rewrapped"
     echo "$digest" > "$(ref_file "$5")" ;;
   *) exit 2 ;;
 esac
 """
-_COSIGN_STUB = '#!/bin/sh\necho "cosign $*" >> "$STUB_LOG"\n'
+_COSIGN_STUB = """#!/bin/sh
+echo "cosign $*" >> "$STUB_LOG"
+[ "$1" = verify ] || exit 2
+shift
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --certificate-identity) identity="$2"; shift 2 ;;
+    --certificate-oidc-issuer) issuer="$2"; shift 2 ;;
+    -*) exit 2 ;;
+    *) ref="$1"; shift ;;
+  esac
+done
+[ "${identity:-}" = "$STUB_SIGNER" ] && [ "${issuer:-}" = "$STUB_ISSUER" ] \\
+  && [ "${ref%@*}" != "${STUB_UNSIGNED:-}" ] \\
+  || { echo "Error: no matching signatures" >&2; exit 1; }
+echo '[{"critical": {}}]'
+"""
+_GH_STUB = '#!/bin/sh\necho "gh $*" >> "$STUB_LOG"\necho "$STUB_LATEST"\n'
 
 
 def _workflow(name: str) -> dict:
@@ -144,27 +168,39 @@ def _digest(image: str) -> str:
     return "sha256:" + hashlib.sha256(image.encode()).hexdigest()
 
 
+def _signer(tag: str) -> str:
+    """The identity job build of docker.yml signs with on the push of tag: Fulcio puts the
+    job_workflow_ref of the GitHub token into the certificate."""
+    return f"https://github.com/AdminCave/AdminHelper/.github/workflows/docker.yml@refs/tags/{tag}"
+
+
 def _latest(
-    tmp_path: Path, present: set[str], **env: str
+    tmp_path: Path, present: set[str], tag: str = "v1.2.3", **env: str
 ) -> tuple[subprocess.CompletedProcess, Path, list[str]]:
-    """The latest step of docker.yml for the release of tag v1.2.3, with the images present of
-    1.2.3 on the stub registry; the run, the registry and the logged calls."""
+    """The latest step of docker.yml for the release of tag, the latest release, with the
+    images present of its version on the stub registry, signed by the push of tag; the run,
+    the registry and the logged calls."""
     stubs = tmp_path / "bin"
     stubs.mkdir()
-    for name, body in (("docker", _DOCKER_STUB), ("cosign", _COSIGN_STUB)):
+    for name, body in (("docker", _DOCKER_STUB), ("cosign", _COSIGN_STUB), ("gh", _GH_STUB)):
         (stubs / name).write_text(body, encoding="utf-8")
         (stubs / name).chmod(0o755)
     registry = tmp_path / "registry"
     registry.mkdir()
     for image in present:
-        _ref_file(registry, f"{_REPO}/{image}:1.2.3").write_text(_digest(image) + "\n")
+        ref = f"{_REPO}/{image}:{tag.removeprefix('v')}"
+        _ref_file(registry, ref).write_text(_digest(image) + "\n")
     log = tmp_path / "calls.log"
     log.touch()
     context = {
-        "GITHUB_REF_NAME": "v1.2.3",
+        "GITHUB_REF_NAME": tag,
+        "GITHUB_REPOSITORY": "AdminCave/AdminHelper",
         "OWNER": "AdminCave",
+        "STUB_ISSUER": _ISSUER,
+        "STUB_LATEST": tag,
         "STUB_LOG": str(log),
         "STUB_REGISTRY": str(registry),
+        "STUB_SIGNER": _signer(tag),
     }
     step = _step("docker.yml", "latest", _LATEST_STEP)
     path = f"{stubs}:{os.environ['PATH']}"
@@ -172,17 +208,41 @@ def _latest(
     return result, registry, log.read_text(encoding="utf-8").splitlines()
 
 
+def _creates(calls: list[str]) -> list[str]:
+    return [call for call in calls if call.startswith("docker buildx imagetools create ")]
+
+
+def _moved(registry: Path) -> list[str]:
+    return sorted(file.name for file in registry.iterdir() if file.name.endswith("_latest"))
+
+
 def test_latest_points_every_published_image_at_the_signed_image_of_the_release(tmp_path):
     result, registry, calls = _latest(tmp_path, _published())
     assert result.returncode == 0, result.stdout + result.stderr
+    assert calls[0] == _GH_LATEST, calls
 
+    verify = f"cosign verify --certificate-identity {_signer('v1.2.3')} --certificate-oidc-issuer"
     for image in _published():
         latest, source = f"{_REPO}/{image}:latest", f"{_REPO}/{image}@{_digest(image)}"
         assert _ref_file(registry, latest).read_text().strip() == _digest(image)
+        assert f"{verify} {_ISSUER} {source}" in calls, calls
         assert f"docker buildx imagetools create --tag {latest} {source}" in calls, calls
-        assert f"cosign sign --yes {source}" in calls, calls
-    moved = sorted(file.name for file in registry.iterdir() if file.name.endswith("_latest"))
-    assert len(moved) == len(_published()), moved
+    assert len(_moved(registry)) == len(_published()), _moved(registry)
+    # The signature of the tag push hangs on the digest; this run signs nothing.
+    assert [call for call in calls if call.startswith("cosign ")] == [
+        call for call in calls if call.startswith("cosign verify ")
+    ], calls
+
+    # Every signature checked before the first create, every create before the first look at
+    # where latest points.
+    def at(found: list[str]) -> list[int]:
+        return [calls.index(call) for call in found]
+
+    verified = at([call for call in calls if call.startswith("cosign verify ")])
+    rechecked = at([call for call in calls if " inspect " in call and ":latest " in call])
+    assert len(rechecked) == len(_published()), calls
+    assert max(verified) < min(at(_creates(calls))), calls
+    assert max(at(_creates(calls))) < min(rechecked), calls
 
 
 # Each image in turn: the last one the step resolves proves that it resolves all before it
@@ -193,15 +253,67 @@ def test_latest_moves_nothing_while_an_image_of_the_release_is_missing(tmp_path,
     assert result.returncode != 0, result.stdout + result.stderr
     assert f"{missing}:1.2.3 not found on ghcr" in result.stdout, result.stdout
 
-    assert not [call for call in calls if " create " in call or call.startswith("cosign")], calls
-    assert not [file for file in registry.iterdir() if file.name.endswith("_latest")]
+    assert not _creates(calls), calls
+    assert not _moved(registry)
 
 
-def test_latest_signs_nothing_when_the_retag_changes_the_digest(tmp_path):
+@pytest.mark.parametrize("unsigned", sorted(_published()))
+def test_latest_moves_nothing_while_an_image_lacks_the_signature_of_the_tag_push(
+    tmp_path, unsigned
+):
+    result, registry, calls = _latest(tmp_path, _published(), STUB_UNSIGNED=f"{_REPO}/{unsigned}")
+    assert result.returncode != 0, result.stdout + result.stderr
+    expected = f"{unsigned}:1.2.3 ({_digest(unsigned)}) has no valid signature of"
+    assert expected in result.stdout, result.stdout
+
+    assert not _creates(calls), calls
+    assert not _moved(registry)
+
+
+def test_latest_stays_when_an_older_release_turns_stable(tmp_path):
+    result, registry, calls = _latest(tmp_path, _published(), STUB_LATEST="v1.2.4")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "the latest release is v1.2.4, not v1.2.3" in result.stdout, result.stdout
+
+    assert calls == [_GH_LATEST], calls
+    assert not _moved(registry)
+
+
+# Present, signed by the push of the tag and the latest release: only the version stops it.
+@pytest.mark.parametrize("tag", ["v1.2.3-beta.1", "v1.2", "v1.2.3.4"])
+def test_latest_moves_nothing_for_a_tag_that_is_not_a_plain_version(tmp_path, tag):
+    result, registry, calls = _latest(tmp_path, _published(), tag=tag)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert f"tag {tag} is not vX.Y.Z" in result.stdout, result.stdout
+
+    assert not _creates(calls), calls
+    assert not _moved(registry)
+
+
+def test_latest_says_rerun_when_a_retag_fails_midway(tmp_path):
+    result, _, _ = _latest(tmp_path, _published(), STUB_CREATE_FAIL=f"{_REPO}/gateway")
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "gateway:latest not moved" in result.stdout, result.stdout
+    assert "rerun the job" in result.stdout, result.stdout
+
+
+def test_latest_says_rerun_when_the_retag_changes_the_digest(tmp_path):
     result, _, calls = _latest(tmp_path, _published(), STUB_REWRAP="1")
     assert result.returncode != 0, result.stdout + result.stderr
     assert "latest is sha256:rewrapped" in result.stdout, result.stdout
-    assert not [call for call in calls if call.startswith("cosign")], calls
+    assert "rerun the job" in result.stdout, result.stdout
+    assert len(_creates(calls)) == len(_published()), calls
+
+
+def test_the_latest_job_verifies_with_no_oidc_token():
+    docker = _workflow("docker.yml")
+    assert docker["jobs"]["latest"]["permissions"] == {"contents": "read", "packages": "write"}
+    step = _step("docker.yml", "latest", _LATEST_STEP)
+    assert step["env"]["GH_TOKEN"] == "${{ github.token }}", step["env"]
+    # Where the identity of _signer comes from: job build signs on the push of a tag v*.
+    assert docker[True]["push"]["tags"] == ["v*"]
+    build = docker["jobs"]["build"]["steps"]
+    assert [signs for signs in build if "cosign sign" in signs.get("run", "")], build
 
 
 def test_compose_pulls_from_ghcr_exactly_the_published_images():
