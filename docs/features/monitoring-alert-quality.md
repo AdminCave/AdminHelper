@@ -136,7 +136,7 @@ kommt nur dorthin.
 
 ### Severity-Deckel
 
-- Stufen: `info` 0, `warning` 1, `critical` 2 (vorhandene Tabelle `_STATUS_LEVEL`, `alerter.py:54`).
+- Stufen: `info` 0, `warning` 1, `critical` 2 (vorhandene Tabelle `_SEVERITY_LEVEL`, `alerter.py:54`).
 - Hub: `_hub_severity(old, new, severity) = min(max(Stufe old, Stufe new), Stufe severity)`; Stufe 0 → kein Emit
   (`:249-250`), also nie für `severity: info`.
 - Betreff (Mail und Webhook, `msg["subject"]`, auch Titel in der Glocke): Etikett `INFO`/`WARNING`/`CRITICAL` aus
@@ -158,10 +158,14 @@ Konstante `HUB_COOLDOWN = 30 min`:
 - Eskalation (gedeckelt `hub_status == warning` → `critical`): `emit`;
 - sonst: `skip`, wenn `hub_sent_at` jünger als 30 Minuten ist, sonst `emit`.
 
-Nach einem erfolgreichen POST (HTTP < 300): `hub_status = new_status`; bei einer Problem-Meldung zusätzlich
-`hub_sent_at = now`. Ein gescheiterter POST ändert nichts. Geschluckt heißt verworfen: `notified_status` ist mit dem
-Claim schon gesetzt (`alerter.py:162-164`), es gibt keine Nachmeldung. Der POST wird als
-`_post_hub_event(payload, label) -> bool` aus `_emit_to_hub` gelöst, damit Einzel- und Sammelmeldung ihn teilen.
+Endstand nach den Reviews von T5/T6: `process_alert` reserviert den Glocken-Platz schon im Claim (`hub_decision`
+unter dem Lock, `hub_status` gedeckelt auf die Severity, bei einer Problem-Meldung `hub_sent_at = now`); scheitert
+der POST, gibt `_release_hub_slot` die Reservierung bedingt zurück. Eine Entwarnung geht mit der Stufe aus
+`hub_status` in die Glocke. Die Sammelmeldung (`send_bundle`) reserviert nicht, sie setzt `hub_status`/`hub_sent_at`
+erst nach Erfolg und läuft im Job mit `max_instances=1`. Geschluckt heißt verworfen: `notified_status` ist mit dem
+Claim schon gesetzt, es gibt keine Nachmeldung. Der Admin-Hook `alert.triggered` folgt der Glocke (Kevin
+2026-10-20): der Cooldown bündelt auch ihn. Der POST ist `_post_hub_event(payload, label) -> bool`, Einzel- und
+Sammelmeldung teilen ihn.
 
 ### Host-Ping und Host-down
 
@@ -249,7 +253,8 @@ verlieren, denen nur einzelne der Server zugeordnet sind. Deshalb **ändert sich
   sammelt je Nutzer die Server, die er sehen darf und auf die eines seiner Abos passt (Sichtbarkeit, Scope,
   `min_severity`, Kategorie wie bisher; unbekannte IDs nur für Admins). Ein Nutzer mit mindestens einem Treffer
   bekommt **eine** Zeile: Titel `<title> (<n>)`, Text = `body` plus eine Zeile je sichtbarem Server (Name, sonst
-  ID); `source_id` NULL; Outbox wie bisher. Kein Nutzer sieht Namen oder Anzahl fremder Server.
+  ID); `source_id` NULL; die Outbox-Zeilen für E-Mail und Telegram tragen einen eigenen Text nur mit den Treffern der
+  Abos dieses Kanals (T18, Kevin 2026-10-20). Kein Nutzer und kein Kanal sieht Namen oder Anzahl fremder Server.
 - `alert.triggered`: bei `severity == critical` und `new_status == critical` einmal **je ID** aus `source_ids`
   (`server_id` = ID, sonst gleiche Payload). Hook-Verbraucher sehen weiter einen Server je Aufruf.
 - OpenAPI-Snapshot des Servers (`apps/server/tests/openapi.snapshot.json`) ändert sich mit. Web und Desktop lesen
