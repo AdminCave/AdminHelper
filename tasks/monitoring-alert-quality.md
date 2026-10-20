@@ -157,8 +157,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitor
 Doku: keine (intern)
 Abhängt von: T3
 
-### T15 — Desktop: Feld „OKs bis Entwarnung“ im Check-Editor  [ ]
+### T15 — Desktop: Feld „OKs bis Entwarnung“ im Check-Editor  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitorCheckModal.svelte, apps/desktop/ui/src/components/monitoring/section/MonCheckLine.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/monitoring/MonitorCheckModal.oks.test.ts, apps/desktop/ui/src/components/monitoring/MonCheckLine.template.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @a9c26eef 2026-10-20T14:15:36+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T15.verdict.json)
 Änderung: Zahlenfeld neben „Fehlversuche bis Alarm“ (`MonitorCheckModal.svelte:153-161`), `min="1"`, `max="100"`, gebunden an `form.consecutiveOks`; Text `monitoring.checkEdit.consecutiveOks` DE „OKs bis Entwarnung“, EN „Consecutive OKs before recovery“ (`dictionaries.ts` neben `:546`/`:1238`); `FIELD_LABELS` in `MonCheckLine.svelte` (`:31-40`) kennt `consecutive_oks`. Neue Testdatei `MonitorCheckModal.oks.test.ts` (SPDX-Header): das Feld zeigt den Wert des Checks (und 2 beim Anlegen), eine Eingabe landet im gespeicherten `consecutive_oks`; in `MonCheckLine.template.test.ts` nennt das Badge „angepasst“ das Feld übersetzt. Nachtrag (2026-10-20): Die Testdatei heißt `MonitorCheckModal.oks.test.ts`, weil monitoring-linux-base-v2 (T20) schon `MonitorCheckModal.test.ts` anlegt; so entsteht beim Hereinholen von main kein add/add-Konflikt.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitorCheckModal.oks.test.ts src/components/monitoring/MonCheckLine.template.test.ts
 Doku: keine (Feld und Text stehen seit T3/T4 in der Admin-Doku)

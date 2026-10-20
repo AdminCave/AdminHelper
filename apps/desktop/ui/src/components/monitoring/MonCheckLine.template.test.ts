@@ -153,6 +153,19 @@ describe('MonCheckLine — badge on a changed template check (T9)', () => {
     expect(badge(container)?.title).toBe('Weicht vom Template ab: Schweregrad, retry_after');
   });
 
+  // monitoring-alert-quality T15: consecutive_oks is a template field like consecutive_fails.
+  it('names a changed consecutive_oks in its translation', () => {
+    const { container } = render(MonCheckLine, {
+      props: {
+        check: check({ overriddenFields: ['consecutive_fails', 'consecutive_oks'] }),
+        label,
+      },
+    });
+    expect(badge(container)?.title).toBe(
+      'Weicht vom Template ab: Fehlversuche bis Alarm, OKs bis Entwarnung',
+    );
+  });
+
   it.each([
     ['an unchanged template check', { overriddenFields: [] }],
     ['a template check from a server without the field', { overriddenFields: undefined }],
