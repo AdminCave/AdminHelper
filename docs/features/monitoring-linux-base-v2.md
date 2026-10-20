@@ -190,9 +190,13 @@ Paketierung (`build-deb.sh`, `build-rpm.sh`, systemd-Units), Install- und Update
     Stunde; dazwischen schickt der Agent den Wert aus dem Zustand. Scheitert der Aufruf (etwa `dnf -C` ohne Cache),
     fehlt das Feld bis zum nächsten stündlichen Versuch. Liegen `apt-get` und `dnf` vor, gilt `apt-get`.
   - `oom_kills`: Zuwachs von `oom_kill` in `/proc/vmstat` seit dem letzten erfolgreich gesendeten Report; im ersten
-    Lauf (kein Vorwert) kein Feld; ist der Zähler kleiner als gespeichert (Neustart), gilt der Zähler selbst.
+    Lauf (kein Vorwert) kein Feld; ist der Zähler kleiner als gespeichert (Neustart), gilt der Zähler selbst. Im
+    Container (Rolle `guest`, System `lxc`, `docker`, `openvz` oder `rkt` aus `host.Virtualization`) zählt
+    `/proc/vmstat` den ganzen Host; dort gilt `oom_kill` aus `/sys/fs/cgroup/memory.events` (cgroup v2, hierarchisch),
+    ohne die Datei kein Feld (T30, Kevin 2026-10-20).
 - **`.report-state.json`** (0600, neben `.inventory-state.json`): `{"cpu": {"unix", "total", "busy"}, "oom_kill": n,
-  "updates": {"checked_unix", "security": n|null}}`. Geschrieben nur nach erfolgreichem Push, damit ein verlorener
+  "oom_kill_source": "vmstat"|"cgroup", "updates": {"checked_unix", "security": n|null}}` (ohne Quelle gilt
+  `vmstat`; wechselt die Quelle, zählt der Lauf neu an, ohne zu melden). Geschrieben nur nach erfolgreichem Push, damit ein verlorener
   Push keinen OOM-Kill verliert; `monitor init` (Test-Push) liest und schreibt ihn nicht.
 - **Timeouts:** `timedatectl` und `needs-restarting` unter `pluginTimeout` (15 s, `plugins.go:23-28`), `apt-get` und
   `dnf` unter einem eigenen `updatesTimeout` von 30 s (stündlich). Der Oneshot hat weiter 270 s
@@ -220,7 +224,11 @@ Paketierung (`build-deb.sh`, `build-rpm.sh`, systemd-Units), Install- und Update
 
 - Swap nur bei `swap_total_mb > 0`; Load nur mit ganzzahligem `cpu_count ≥ 1` und `load_5m`; Inodes je Platte, wenn
   `inodes_percent` da ist. Swap und Inodes mit Hysterese wie die Platten (Schlüssel `swap`, `inode:<mount>`), Load
-  ohne (kein Prozentwert; `load_5m` mittelt schon, `consecutive_fails` 3 dämpft; Schlüssel `load`).
+  ohne (kein Prozentwert; `load_5m` mittelt schon, `consecutive_fails` 3 dämpft; Schlüssel `load`). Meldet der
+  Report einen Container (`host.virtualization`, dieselbe Liste wie beim OOM-Zähler), bleibt Load unbewertet:
+  `load_per_cpu` steht in `_details`, dazu `load_rated: false`, kein Schlüssel `load`; der Desktop zeigt den Wert
+  grau (T31, T32, Kevin 2026-10-20: im LXC passen Host-Load und auf den Container gekürzte `cpu_count` nicht
+  zusammen).
 - Eine Platte aus `ignore_mounts` wird weder auf Belegung noch auf Inodes bewertet und steht in `_details` mit
   `ignored: true`. Je Platte gelten `warn`, `crit`, `min_free_gb` aus `disk_overrides[mount]`, sonst die globalen.
   Der Prozent-Alarm zählt, wenn `free_gb` fehlt (alter Agent: wie heute), `min_free_gb` 0 ist oder
