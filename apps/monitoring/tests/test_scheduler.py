@@ -2,18 +2,20 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Scheduler logic (audit gap): trigger parsing, push-only skip behavior and
-the alert-log retention cleanup."""
+"""Scheduler logic (audit gap): trigger parsing, push-only skip behavior, the
+alert-log retention cleanup and the agent alert bundle job."""
 
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import scheduler as sched
+from app.alert_bundle import flush_agent_alerts
 from app.models import Base, MonitorAlertLog
 
 # --- _parse_trigger -----------------------------------------------------------
@@ -158,3 +160,39 @@ def test_job_defaults_pinned_as_audit_decision():
     assert defaults["coalesce"] is True
     assert defaults["max_instances"] == 1
     assert defaults["misfire_grace_time"] == 30
+
+
+# --- agent alert bundle ---------------------------------------------------------
+
+
+@pytest.fixture()
+def paused_scheduler(monkeypatch):
+    """A started but paused scheduler in place of the module's: its job store
+    holds the jobs as they will run (a stopped scheduler only queues them, before
+    replacement and defaults), and nothing fires. Its default of 3 instances
+    shows whether a job pins its own."""
+    paused = BackgroundScheduler(timezone="UTC", job_defaults={"max_instances": 3})
+    paused.start(paused=True)
+    monkeypatch.setattr(sched, "scheduler", paused)
+    yield paused
+    paused.shutdown(wait=False)
+
+
+def test_agent_alert_bundle_runs_every_30_seconds_never_twice_at_once(paused_scheduler):
+    # R-0424: the job reports the heartbeats execute_check leaves open. A bundle's
+    # claim does not reserve the bell, so two runs must never overlap, whatever
+    # the scheduler's defaults say.
+    sched.schedule_agent_alert_bundle()
+
+    job = paused_scheduler.get_job("system:agent-alert-bundle")
+    assert job.func is flush_agent_alerts
+    assert job.trigger.interval == timedelta(seconds=30)
+    assert job.max_instances == 1
+
+
+def test_agent_alert_bundle_registered_again_replaces_itself(paused_scheduler):
+    sched.schedule_agent_alert_bundle()
+    sched.schedule_agent_alert_bundle(seconds=60)
+
+    jobs = [j for j in paused_scheduler.get_jobs() if j.id == "system:agent-alert-bundle"]
+    assert [j.trigger.interval for j in jobs] == [timedelta(seconds=60)]

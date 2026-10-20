@@ -24,6 +24,17 @@ logger = logging.getLogger("monitor.agent")
 # Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
+# Name of a disk reported without a mount. Grading (disk:<mount>), ignore_mounts and
+# _details must share it, or the desktop rates the disk under another key; no path,
+# so it never collides with "/".
+_NO_MOUNT = "?"
+
+# The virtualization systems the host facts report with the role guest for a container:
+# the agent's containerSystems (system_linux.go, gopsutil v4.26.5, no Podman), kept equal
+# by test_agent_resources_checker.py. A tuple, because `in` on it compares instead of
+# hashing, so a system that is a list or an object cannot raise.
+_CONTAINER_SYSTEMS = ("lxc", "docker", "openvz", "rkt")
+
 # In-memory map: server_id -> last report time (naive UTC wall clock). Process-
 # local (single-worker invariant, see main.py lifespan); hydrated at startup
 # from monitor_agent_liveness so a restart no longer makes agent_ping fall back
@@ -50,15 +61,26 @@ _CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
 # through it (R-0437).
 MAX_AGENT_TEXT = 500
 
+# Every control character (Unicode category Cc: C0, DEL, C1) and the line and paragraph
+# separators become a space, one for one: a line break in a container name would otherwise
+# start a forged line of its own in the dashboard, the bell, mail and webhook.
+_AGENT_TEXT_TO_SPACE = str.maketrans(
+    dict.fromkeys([*range(0x20), *range(0x7F, 0xA0), 0x2028, 0x2029], " ")
+)
+
 
 def cap_agent_text(value: object) -> str | None:
-    """A text from the report as it may go into a message: a non-empty string, cut to
-    MAX_AGENT_TEXT characters including the trailing "…"; None for anything else."""
+    """A text from the report as it may go into a message: a non-empty string on one line,
+    every control character a space, cut to MAX_AGENT_TEXT characters including the trailing
+    "…"; None for anything else.
+
+    Cut first, then translate: the table maps one character to one, so the result is the
+    same, and the work stays bounded by MAX_AGENT_TEXT however long the report text is."""
     if not isinstance(value, str) or not value:
         return None
     if len(value) <= MAX_AGENT_TEXT:
-        return value
-    return value[: MAX_AGENT_TEXT - 1] + "…"
+        return value.translate(_AGENT_TEXT_TO_SPACE)
+    return value[: MAX_AGENT_TEXT - 1].translate(_AGENT_TEXT_TO_SPACE) + "…"
 
 
 # A list a checker joins into its message names at most this many entries and characters
@@ -68,10 +90,10 @@ _MAX_LIST_TEXT = 1000
 
 
 def join_capped(entries: list[str], sep: str = ", ") -> str:
-    """entries joined with sep as they may go into a message: each entry cut like
-    cap_agent_text, appended in order as long as the joined text keeps to _MAX_LIST_ENTRIES
+    """entries joined with sep as they may go into a message: each entry on one line and cut
+    by cap_agent_text, appended in order as long as the joined text keeps to _MAX_LIST_ENTRIES
     entries and _MAX_LIST_TEXT characters (the first always fits), the rest counted as
-    " (+N more)". Up to ten short entries give sep.join(entries)."""
+    " (+N more)". Up to ten short one-line entries give sep.join(entries)."""
     named: list[str] = []
     length = 0
     for entry in entries[:_MAX_LIST_ENTRIES]:
@@ -233,8 +255,8 @@ def _grade(
 ) -> tuple[str, str | None]:
     """Escalate `status` for one threshold measurement: >= crit -> critical, >= warn
     -> warning (never downgrading an already-critical status). Appends the breached
-    `label` plus the crossed threshold to `problems`. Shared by the CPU/RAM/disk/
-    temperature checks so the escalation rule lives in one place (2.31).
+    `label` plus the crossed threshold to `problems`. Shared by every metric of
+    agent_resources so the escalation rule lives in one place (2.31).
 
     Hysteresis (T6): `warn_release`/`crit_release` lower the respective threshold
     for a metric that already sat at that level last round — a value hovering at
@@ -250,6 +272,18 @@ def _grade(
     return status, None
 
 
+def _in_container(report: dict) -> bool:
+    """Whether the host facts of this push report a container. Without them (no host
+    block, or a virtualization the agent could not read) it is none."""
+    host = report.get("host")
+    virt = host.get("virtualization") if isinstance(host, dict) else None
+    return (
+        isinstance(virt, dict)
+        and virt.get("role") == "guest"
+        and virt.get("system") in _CONTAINER_SYSTEMS
+    )
+
+
 class AgentResourcesChecker:
     """Evaluates agent resource metrics against thresholds.
 
@@ -260,7 +294,16 @@ class AgentResourcesChecker:
         "memory_warn": 80,
         "memory_crit": 95,
         "disk_warn": 85,
-        "disk_crit": 95
+        "disk_crit": 95,
+        "swap_warn": 80,
+        "swap_crit": 95,
+        "inode_warn": 80,
+        "inode_crit": 90,
+        "load_warn": 1.5,
+        "load_crit": 3.0,
+        "disk_min_free_gb": 20,
+        "ignore_mounts": ["/boot/efi"],
+        "disk_overrides": {"/data": {"warn": 90, "crit": 95, "min_free_gb": 100}}
     }
     """
 
@@ -293,9 +336,17 @@ class AgentResourcesChecker:
             prev_problems = {}
         problem_levels: dict[str, str] = {}
 
-        def grade(key: str, value: float, warn: float, crit: float, label: str, unit: str):
+        def grade(
+            key: str,
+            value: float,
+            warn: float,
+            crit: float,
+            label: str,
+            unit: str,
+            hysteresis: bool = True,
+        ):
             nonlocal status
-            prev_level = prev_problems.get(key)
+            prev_level = prev_problems.get(key) if hysteresis else None
             warn_rel = hysteresis_pp if prev_level in ("warning", "critical") else 0.0
             crit_rel = hysteresis_pp if prev_level == "critical" else 0.0
             status, level = _grade(
@@ -320,6 +371,42 @@ class AgentResourcesChecker:
             mem_warn = config.get("memory_warn", 80)
             grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
 
+        # Swap (agent v3, Linux): a host without a swap device sends swap_total_mb 0.
+        swap = agent_number(resources.get("swap_percent"))
+        swap_total = agent_number(resources.get("swap_total_mb"))
+        if swap is not None and swap_total is not None and swap_total > 0:
+            swap_crit = config.get("swap_crit", 95)
+            swap_warn = config.get("swap_warn", 80)
+            grade("swap", swap, swap_warn, swap_crit, f"Swap {swap}%", "%")
+
+        # Load per CPU (agent v3, Linux): older agents send load_5m without cpu_count.
+        # No hysteresis: hysteresis_pp is in percentage points, and load_5m is the
+        # kernel's own 5-minute average, already smoothed whatever the push interval.
+        # Not rated in a container, only shown: load_5m is the host's there (unless
+        # lxcfs virtualizes /proc/loadavg), while cpu_count may be cut to the
+        # container's cores, so the quotient says nothing about the container.
+        load_rated = not _in_container(report)
+        cpu_count = agent_number(resources.get("cpu_count"))
+        if not isinstance(cpu_count, int) or cpu_count < 1:
+            cpu_count = None
+        load_5m = agent_number(resources.get("load_5m"))
+        load_per_cpu = None
+        if cpu_count is not None and load_5m is not None:
+            # Rounded before grading, so the label shows the value that was graded.
+            load_per_cpu = round(load_5m / cpu_count, 2)
+            if load_rated:
+                load_crit = config.get("load_crit", 3.0)
+                load_warn = config.get("load_warn", 1.5)
+                grade(
+                    "load",
+                    load_per_cpu,
+                    load_warn,
+                    load_crit,
+                    f"Load {load_per_cpu}/CPU",
+                    "/CPU",
+                    hysteresis=False,
+                )
+
         # Disks — filter pseudo filesystems server-side
         # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
         raw_disks = capped_objects(resources.get("disks"))
@@ -327,13 +414,43 @@ class AgentResourcesChecker:
 
         disk_crit = config.get("disk_crit", 95)
         disk_warn = config.get("disk_warn", 85)
+        disk_min_free_gb = config.get("disk_min_free_gb", 20)
+        ignore_mounts = set(config.get("ignore_mounts", []))
+        disk_overrides = config.get("disk_overrides", {})
+        inode_crit = config.get("inode_crit", 90)
+        inode_warn = config.get("inode_warn", 80)
         for disk in disks:
             pct = entry_number(disk, "percent", 0)
-            mount = entry_text(disk, "mount", "?")
-            # No per-mount metric: the agent router already writes monitor_agent_disk_percent
-            # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
-            # duplicate series in a second schema (1.18); the value is still graded below.
-            grade(f"disk:{mount}", pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%")
+            mount = entry_text(disk, "mount", _NO_MOUNT)
+            if mount in ignore_mounts:
+                continue
+            # The schema takes null for an override key; it counts as unset, like a missing one.
+            ov = {k: v for k, v in disk_overrides.get(mount, {}).items() if v is not None}
+            d_warn = ov.get("warn", disk_warn)
+            d_crit = ov.get("crit", disk_crit)
+            min_free_gb = ov.get("min_free_gb", disk_min_free_gb)
+            # Agent v3 sends free_gb: the percentage counts only below min_free_gb free, 0
+            # turns the gate off. Without free_gb (older agent) it counts as before.
+            free_gb = agent_number(disk.get("free_gb"))
+            if free_gb is None or min_free_gb == 0 or free_gb < min_free_gb:
+                label = f"Disk {mount} {pct}%"
+                if free_gb is not None:
+                    label += f", {free_gb} GB free"
+                # No per-mount metric: the agent router already writes monitor_agent_disk_percent
+                # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
+                # duplicate series in a second schema (1.18); the value is still graded below.
+                grade(f"disk:{mount}", pct, d_warn, d_crit, label, "%")
+            # Agent v3 on Linux, and only for a filesystem that reports inodes.
+            inodes = agent_number(disk.get("inodes_percent"))
+            if inodes is not None:
+                grade(
+                    f"inode:{mount}",
+                    inodes,
+                    inode_warn,
+                    inode_crit,
+                    f"Inodes {mount} {inodes}%",
+                    "%",
+                )
 
         # Temperatures (optional — VMs provide no sensor data)
         temperatures = capped_objects(resources.get("temperatures"))
@@ -373,14 +490,23 @@ class AgentResourcesChecker:
             "memory": mem,
             # Next round's hysteresis memory (see grade() above).
             "problems": problem_levels,
-            "memory_total_mb": resources.get("memory_total_mb"),
-            "memory_used_mb": resources.get("memory_used_mb"),
+            "memory_total_mb": agent_number(resources.get("memory_total_mb")),
+            "memory_used_mb": agent_number(resources.get("memory_used_mb")),
+            "swap": swap,
+            "swap_total_mb": swap_total,
+            "swap_used_mb": agent_number(resources.get("swap_used_mb")),
+            "cpu_count": cpu_count,
+            "load_per_cpu": load_per_cpu,
             "disks": [
                 {
-                    "mount": entry_text(d, "mount", "/"),
+                    "mount": entry_text(d, "mount", _NO_MOUNT),
                     "percent": entry_number(d, "percent", 0),
-                    "total_gb": d.get("total_gb"),
-                    "used_gb": d.get("used_gb"),
+                    "total_gb": agent_number(d.get("total_gb")),
+                    "used_gb": agent_number(d.get("used_gb")),
+                    "free_gb": agent_number(d.get("free_gb")),
+                    "inodes_percent": agent_number(d.get("inodes_percent")),
+                    # Still listed, so the desktop shows the usage without a rating.
+                    "ignored": entry_text(d, "mount", _NO_MOUNT) in ignore_mounts,
                 }
                 for d in disks
             ],
@@ -388,12 +514,16 @@ class AgentResourcesChecker:
                 {
                     "sensor": entry_text(s, "sensor", "?"),
                     "temp_c": entry_number(s, "temp_c", 0),
-                    "high": s.get("high", 0),
-                    "critical": s.get("critical", 0),
+                    "high": entry_number(s, "high", 0),
+                    "critical": entry_number(s, "critical", 0),
                 }
                 for s in temperatures
             ],
         }
+        # Only in a container, so the details of a host or VM stay as they were; the
+        # desktop shows the load then without a rating.
+        if not load_rated:
+            metrics["_details"]["load_rated"] = False
 
         return status, message, metrics
 
@@ -478,6 +608,11 @@ class ServiceProcessChecker:
         return any(fnmatchcase(n, p) for n in names for p in ignore)
 
     @staticmethod
+    def _is_service(unit: str) -> bool:
+        """A .service unit, or a name without a unit suffix (a Windows service)."""
+        return unit.endswith(".service") or not unit.endswith(ServiceProcessChecker._UNIT_TYPES)
+
+    @staticmethod
     def _unit_name(name: str) -> str:
         """The unit a name stands for: a bare "nginx" is "nginx.service". Applied to both sides
         of a lookup, so a Windows service (no suffix) still finds itself."""
@@ -493,13 +628,14 @@ class ServiceProcessChecker:
 
     @staticmethod
     def _parse_counts(raw) -> tuple[int, int] | None:
-        """The agent's (active, total) service counts, or None unless both are integers with
-        0 <= active <= total. Old agents send none; a failed list-units/sc query leaves them out."""
+        """The agent's (active, total) service counts, or None unless both are integers that
+        agent_number takes, with 0 <= active <= total. Old agents send none; a failed
+        list-units/sc query leaves them out."""
         if not isinstance(raw, dict):
             return None
-        active, total = raw.get("active"), raw.get("total")
-        # bool is an int subclass: JSON true is no count.
-        if not all(isinstance(n, int) and not isinstance(n, bool) for n in (active, total)):
+        # agent_number drops a bool (JSON true is no count) and an int beyond float range.
+        active, total = agent_number(raw.get("active")), agent_number(raw.get("total"))
+        if not all(isinstance(n, int) for n in (active, total)):
             return None
         return (active, total) if 0 <= active <= total else None
 
@@ -544,31 +680,38 @@ class ServiceProcessChecker:
             "services_enabled_inactive": len(enabled_inactive),
         }
 
+        # Every name on one line and cut, as in the message; the ignore list above compared the
+        # full name. An empty name stays "" (cap_agent_text gives None for it).
         metrics["_details"] = {
             "mode": "auto",
-            "failed": failed,
-            "enabled_inactive": enabled_inactive,
+            "failed": [cap_agent_text(u) or "" for u in failed],
+            "enabled_inactive": [cap_agent_text(u) or "" for u in enabled_inactive],
         }
         counts = self._parse_counts(systemd.get("counts"))
         if counts is not None:
             metrics["_details"]["active_count"], metrics["_details"]["total"] = counts
 
-        if failed:
-            msg = f"Failed: {join_capped(failed)}"
-            if enabled_inactive:
-                msg += f"; Inactive (autostart): {join_capped(enabled_inactive)}"
-            return "critical", msg, metrics
-
+        # Only a failed service is critical; a failed mount, timer, socket or other unit is
+        # warning, like an enabled but inactive unit (Kevin 2026-10-19).
+        failed_services = [u for u in failed if self._is_service(u)]
+        failed_units = [u for u in failed if not self._is_service(u)]
+        parts = []
+        if failed_services:
+            parts.append(f"Failed: {join_capped(failed_services)}")
+        if failed_units:
+            parts.append(f"Failed units: {join_capped(failed_units)}")
         if enabled_inactive:
-            return (
-                "warning",
-                f"Inactive (autostart): {join_capped(enabled_inactive)}",
-                metrics,
-            )
+            parts.append(f"Inactive (autostart): {join_capped(enabled_inactive)}")
+
+        if failed_services:
+            return "critical", "; ".join(parts), metrics
+
+        if parts:
+            return "warning", "; ".join(parts), metrics
 
         # The agent could not list the services (systemctl list-units / sc query failed): its
         # empty lists prove nothing. On Linux failed comes from a call of its own (list-units
-        # --state=failed), so a failed unit still makes the check critical above.
+        # --state=failed), so a failed unit still rates the check above.
         error = systemd.get("error")
         if error:
             return "unknown", self._not_queryable(error), metrics

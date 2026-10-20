@@ -4,8 +4,9 @@
 
 """template_sync (audit gap: most complex monitoring logic, previously
 untested): variable substitution, the create/update/delete diffing across
-servers, assignment removal and full server cleanup, and the user's changes and
-deleted template checks the sync keeps (R-0420)."""
+servers, assignment removal and full server cleanup, the user's changes and
+deleted template checks the sync keeps (R-0420), the check the shipped Host Ping
+template creates and the consecutive_oks the shipped templates set (R-0424)."""
 
 import json
 import uuid
@@ -16,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import template_sync
+from app.builtin_templates import BUILTIN_TEMPLATES, seed_builtin_templates
 from app.models import (
     Base,
     MonitorAgentKey,
@@ -536,3 +538,86 @@ def test_cleanup_server_removes_the_servers_tombstones(db):
     assert [(t.template_id, t.server_id) for t in db.query(MonitorCheckTombstone)] == [
         (tpl_a.id, "srv-2")
     ]
+
+
+# --- consecutive_oks is a template field (R-0424) -------------------------------
+
+
+def test_sync_writes_the_definitions_consecutive_oks_and_2_without_the_key(db):
+    # A definition without the key holds the default, not the check's last value:
+    # dropping the key from the template takes the check back to 2.
+    tpl = _template(db, [{**PING_DEF, "consecutive_oks": 1}])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    assert db.get(MonitorCheck, cid).consecutive_oks == 1
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "consecutive_oks": 4}])
+    db.commit()
+    sync_template(db, tpl)
+    assert db.get(MonitorCheck, cid).consecutive_oks == 4
+
+    tpl.check_definitions = json.dumps([PING_DEF])
+    db.commit()
+    sync_template(db, tpl)
+    check = db.get(MonitorCheck, cid)
+    assert (check.consecutive_oks, json.loads(check.overridden_fields)) == (2, [])
+
+
+def test_sync_keeps_a_consecutive_oks_the_user_changed(db):
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    checks_router.update_check(cid, CheckUpdate(consecutive_oks=5), db)
+    assert json.loads(db.get(MonitorCheck, cid).overridden_fields) == ["consecutive_oks"]
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "consecutive_oks": 1, "severity": "warning"}])
+    db.commit()
+    sync_template(db, tpl)
+
+    check = db.get(MonitorCheck, cid)
+    assert (check.consecutive_oks, check.severity) == (5, "warning")
+    assert json.loads(check.overridden_fields) == ["consecutive_oks"]
+
+
+# --- the shipped Host Ping template (R-0424) ------------------------------------
+
+
+def test_host_ping_pings_the_assigned_hostname_every_minute(db):
+    seed_builtin_templates(db)
+    tpl = db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "host-ping").one()
+
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+
+    check = db.query(MonitorCheck).one()
+    assert (check.check_type, check.template_def_id, check.name) == (
+        "ping",
+        "host-ping",
+        "Host Ping",
+    )
+    assert json.loads(check.config) == {"target": "web01.example", "timeout": 3}
+    assert (check.interval, check.severity, check.consecutive_fails, check.consecutive_oks) == (
+        "1m",
+        "critical",
+        3,
+        2,
+    )
+    assert db.scheduled_calls == [(check.id, "ping")]
+
+
+def test_only_the_disk_forecast_of_the_shipped_templates_recovers_on_the_first_ok(db):
+    # Disk Forecast runs hourly: with the default 2 its all-clear would come an hour
+    # late. Every other shipped check keeps 2, SMART Health (every 5 minutes) too.
+    seed_builtin_templates(db)
+    for tpl in db.query(MonitorTemplate).all():
+        apply_template(db, tpl, tpl.builtin_slug, "host01.example", "Host 01")
+
+    got = {
+        (check.server_id, check.template_def_id): check.consecutive_oks
+        for check in db.query(MonitorCheck)
+    }
+    assert len(got) == sum(len(t["check_definitions"]) for t in BUILTIN_TEMPLATES)
+    assert {key: oks for key, oks in got.items() if oks != 2} == {
+        ("linux-base", "disk-forecast"): 1,
+        ("windows-base", "disk-forecast"): 1,
+    }
+    assert (got[("linux-base", "smart-health")], got[("windows-base", "smart-health")]) == (2, 2)

@@ -25,6 +25,7 @@ from app.models import (
     MonitorTemplateAssignment,
     MonitorTemplateSuggestionDismissal,
 )
+from app.template_suggestions import SUGGESTED_SLUGS
 from app.template_sync import cleanup_server
 
 
@@ -169,6 +170,20 @@ def test_each_fact_suggests_its_standard_template(client_db, os, subsystems, exp
     r = client.get("/templates/suggestions/srv-1")
 
     assert [(s["slug"], s["reason"]) for s in r.json()] == expected
+
+
+def test_host_ping_is_never_suggested(client_db):
+    # Opt-in: on a host the monitoring service cannot reach by ICMP the ping sits at
+    # critical. Suggestions come only from SUGGESTED_SLUGS, so no fact suggests it,
+    # and there is nothing to dismiss either.
+    client, factory = client_db
+    _seed(factory, subsystems=("docker", "zfs", "proxmox"))
+    assert _template(factory, "host-ping").name == "Host Ping"
+
+    assert _slugs(client) == ["linux-base", "docker-host", "zfs-storage", "proxmox-host"]
+    assert "host-ping" not in SUGGESTED_SLUGS
+    r = client.post("/templates/suggestions/srv-1/dismiss", json={"slug": "host-ping"})
+    assert r.status_code == 422
 
 
 def test_suggestion_names_the_template_as_it_is_now(client_db):

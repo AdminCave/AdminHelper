@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import type { MonitorCheckConfig, MonitorCheckType } from '$lib/api/types';
   import { t } from '$lib/i18n';
+  import DiskOverridesField from './DiskOverridesField.svelte';
 
   interface Props {
     checkType: MonitorCheckType;
@@ -88,17 +89,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
     labelKey: string;
     min?: number;
     max?: number;
+    step?: number;
   };
 
+  // Pairs first, single fields last: the form is a two-column grid, and a pair
+  // starting in the second column would split warn and crit across rows.
   const RESOURCE_NUM_FIELDS: NumField[] = [
     { key: 'cpu_warn', labelKey: 'monitoring.checkCfg.cpuWarn', min: 0, max: 100 },
     { key: 'cpu_crit', labelKey: 'monitoring.checkCfg.cpuCrit', min: 0, max: 100 },
     { key: 'memory_warn', labelKey: 'monitoring.checkCfg.memoryWarn', min: 0, max: 100 },
     { key: 'memory_crit', labelKey: 'monitoring.checkCfg.memoryCrit', min: 0, max: 100 },
+    { key: 'swap_warn', labelKey: 'monitoring.checkCfg.swapWarn', min: 0, max: 100 },
+    { key: 'swap_crit', labelKey: 'monitoring.checkCfg.swapCrit', min: 0, max: 100 },
     { key: 'disk_warn', labelKey: 'monitoring.checkCfg.diskWarn', min: 0, max: 100 },
     { key: 'disk_crit', labelKey: 'monitoring.checkCfg.diskCrit', min: 0, max: 100 },
+    { key: 'inode_warn', labelKey: 'monitoring.checkCfg.inodeWarn', min: 0, max: 100 },
+    { key: 'inode_crit', labelKey: 'monitoring.checkCfg.inodeCrit', min: 0, max: 100 },
+    // Per CPU, not a percentage; with the default step of 1 the default 1.5
+    // would fail the form's own validation.
+    { key: 'load_warn', labelKey: 'monitoring.checkCfg.loadWarn', min: 0, max: 100, step: 0.1 },
+    { key: 'load_crit', labelKey: 'monitoring.checkCfg.loadCrit', min: 0, max: 100, step: 0.1 },
     { key: 'temp_warn', labelKey: 'monitoring.checkCfg.tempWarn', min: 0, max: 200 },
     { key: 'temp_crit', labelKey: 'monitoring.checkCfg.tempCrit', min: 0, max: 200 },
+    { key: 'disk_min_free_gb', labelKey: 'monitoring.checkCfg.diskMinFreeGb', min: 0, max: 1e6 },
     { key: 'hysteresis_pp', labelKey: 'monitoring.checkCfg.hysteresisPp', min: 0, max: 50 },
   ];
 
@@ -126,12 +139,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
     { key: 'min_history_hours', labelKey: 'monitoring.checkCfg.minHistoryHours', min: 1, max: 48 },
   ];
 
+  // Each point is rated unless switched off (app/check_configs.py
+  // SystemStateConfig); back at on, setBoolDefault drops the key.
+  const SYSTEM_STATE_SWITCHES: Pick<NumField, 'key' | 'labelKey'>[] = [
+    { key: 'check_reboot', labelKey: 'monitoring.checkCfg.checkReboot' },
+    { key: 'check_time_sync', labelKey: 'monitoring.checkCfg.checkTimeSync' },
+    { key: 'check_security_updates', labelKey: 'monitoring.checkCfg.checkSecurityUpdates' },
+    { key: 'check_oom', labelKey: 'monitoring.checkCfg.checkOom' },
+  ];
+
   // warn >= crit sanity hint. nvme_spare is excluded on purpose: lower is
   // worse there, warn > crit is the CORRECT configuration.
   const WARN_CRIT_PAIRS: { warn: string; crit: string; label: string }[] = [
     { warn: 'cpu_warn', crit: 'cpu_crit', label: 'CPU' },
     { warn: 'memory_warn', crit: 'memory_crit', label: 'RAM' },
+    { warn: 'swap_warn', crit: 'swap_crit', label: 'Swap' },
     { warn: 'disk_warn', crit: 'disk_crit', label: 'Disk' },
+    { warn: 'inode_warn', crit: 'inode_crit', label: 'Inodes' },
+    { warn: 'load_warn', crit: 'load_crit', label: 'Load' },
     { warn: 'temp_warn', crit: 'temp_crit', label: 'Temp' },
     { warn: 'capacity_warn', crit: 'capacity_crit', label: 'Capacity' },
     { warn: 'reallocated_warn', crit: 'reallocated_crit', label: 'Reallocated' },
@@ -158,6 +183,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       type="number"
       min={f.min}
       max={f.max}
+      step={f.step}
       value={numVal(f.key)}
       oninput={(e) => setNum(f.key, e.currentTarget.value)}
     />
@@ -294,6 +320,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </label>
 {:else if checkType === 'agent_resources'}
   {#each RESOURCE_NUM_FIELDS as f (f.key)}{@render numField(f)}{/each}
+  <label class="field" style="grid-column: span 2;">
+    <span class="field-label">{$t('monitoring.checkCfg.ignoreMounts')}</span>
+    <input
+      type="text"
+      placeholder="/boot/efi, /mnt/backup"
+      value={csvStrVal('ignore_mounts')}
+      oninput={(e) => setCsvStr('ignore_mounts', e.currentTarget.value)}
+    />
+    <span class="field-hint">{$t('monitoring.checkCfg.ignoreMountsHint')}</span>
+  </label>
+  <DiskOverridesField {config} />
 {:else if checkType === 'service_process'}
   <label class="field">
     <span class="field-label">{$t('monitoring.checkCfg.mode')}</span>
@@ -354,6 +391,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     />
     <span>{$t('monitoring.checkCfg.excludeStopped')}</span>
   </label>
+  {@render outageField()}
 {:else if checkType === 'zfs_health'}
   <label class="field">
     <span class="field-label">{$t('monitoring.checkCfg.capacityWarn')}</span>
@@ -400,6 +438,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setCsvStr('ignore_devices', e.currentTarget.value)}
     />
   </label>
+{:else if checkType === 'system_state'}
+  {#each SYSTEM_STATE_SWITCHES as sw (sw.key)}
+    <label class="field checkbox">
+      <input
+        type="checkbox"
+        checked={boolVal(sw.key, true)}
+        onchange={(e) => setBoolDefault(sw.key, e.currentTarget.checked, true)}
+      />
+      <span>{$t(sw.labelKey)}</span>
+    </label>
+  {/each}
 {/if}
 
 {#if thresholdWarnings.length > 0}

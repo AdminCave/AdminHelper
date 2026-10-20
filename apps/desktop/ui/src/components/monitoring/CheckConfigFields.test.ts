@@ -75,8 +75,10 @@ describe('CheckConfigFields guardrails (T20)', () => {
 // switch. At the default the key must go: a template's check whose config
 // carried {"alert_on_unavailable": true} would differ from the template's {}
 // and count as changed by the user (mark_overrides).
+// monitoring-linux-base-v2 T23 (R-0492): proxmox_backup has the same switch on
+// the server since T14, so the form offers it there too.
 describe('CheckConfigFields outage switch (R-0419)', () => {
-  const TYPES = ['zfs_health', 'docker_health'] as const;
+  const TYPES = ['zfs_health', 'docker_health', 'proxmox_backup'] as const;
 
   async function outageBox(
     checkType: (typeof TYPES)[number],
@@ -111,9 +113,9 @@ describe('CheckConfigFields outage switch (R-0419)', () => {
     expect(config).toEqual({});
   });
 
-  it('shows a stored false as off and drops it when switched on', async () => {
+  it.each(TYPES)('%s shows a stored false as off and drops it when switched on', async (type) => {
     const config = { alert_on_unavailable: false } as MonitorCheckConfig;
-    const box = await outageBox('zfs_health', config);
+    const box = await outageBox(type, config);
     expect(box.checked).toBe(false);
     await fireEvent.click(box);
     expect(config).toEqual({});
@@ -216,5 +218,192 @@ describe('CheckConfigFields service_process (R-0418)', () => {
     expect(config.services).toEqual(['nginx', 'nginx']);
     await fireEvent.change(input);
     expect(config.services).toEqual(['nginx']);
+  });
+});
+
+// monitoring-linux-base-v2 T18 (R-0423): agent_resources gained swap, inode
+// and load thresholds, a minimum of free GB for the disk alarm and a list of
+// ignored mounts (app/check_configs.py AgentResourcesConfig).
+describe('CheckConfigFields agent_resources v2 (R-0423)', () => {
+  function renderResources(config: MonitorCheckConfig) {
+    return render(CheckConfigFields, { props: { checkType: 'agent_resources', config } });
+  }
+
+  it('renders the new thresholds with the backend bounds', async () => {
+    const { container } = renderResources({} as MonitorCheckConfig);
+    await tick();
+    for (const label of ['Swap Warnung', 'Swap Kritisch', 'Inodes Warnung', 'Inodes Kritisch']) {
+      const input = inputFor(container, label);
+      expect([input.min, input.max, input.getAttribute('step')]).toEqual(['0', '100', null]);
+    }
+    for (const label of ['Last je CPU Warnung', 'Last je CPU Kritisch']) {
+      const input = inputFor(container, label);
+      expect([input.min, input.max, input.step]).toEqual(['0', '100', '0.1']);
+    }
+    const minFree = inputFor(container, 'Festplatte Alarm nur unter');
+    expect([minFree.min, minFree.max, minFree.getAttribute('step')]).toEqual([
+      '0',
+      '1000000',
+      null,
+    ]);
+    // The optional step leaves the existing fields at the browser default.
+    expect(inputFor(container, 'CPU Warnung').getAttribute('step')).toBeNull();
+  });
+
+  it('stores a decimal load and 0 GB as numbers, an emptied field drops its key', async () => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = renderResources(config);
+    await tick();
+    await fireEvent.input(inputFor(container, 'Last je CPU Warnung'), { target: { value: '1.5' } });
+    // 0 turns the free-GB gate off; it is a value, not an empty field.
+    await fireEvent.input(inputFor(container, 'Festplatte Alarm nur unter'), {
+      target: { value: '0' },
+    });
+    await fireEvent.input(inputFor(container, 'Swap Warnung'), { target: { value: '70' } });
+    expect(config).toEqual({ load_warn: 1.5, disk_min_free_gb: 0, swap_warn: 70 });
+    await fireEvent.input(inputFor(container, 'Swap Warnung'), { target: { value: '' } });
+    expect(config).toEqual({ load_warn: 1.5, disk_min_free_gb: 0 });
+  });
+
+  it('shows the warn>=crit hint for swap, inodes and load', async () => {
+    const bad = {
+      swap_warn: 95,
+      swap_crit: 90,
+      inode_warn: 90,
+      inode_crit: 90,
+      load_warn: 3,
+      load_crit: 1.5,
+    } as MonitorCheckConfig;
+    const { getByRole } = renderResources(bad);
+    await tick();
+    const note = getByRole('note').textContent ?? '';
+    for (const label of ['Swap', 'Inodes', 'Load']) expect(note).toContain(label);
+  });
+
+  it('shows no hint for the new pairs at sane values', async () => {
+    const good = {
+      swap_warn: 80,
+      swap_crit: 95,
+      inode_warn: 80,
+      inode_crit: 90,
+      load_warn: 1.5,
+      load_crit: 3,
+    } as MonitorCheckConfig;
+    const { queryByRole } = renderResources(good);
+    await tick();
+    expect(queryByRole('note')).toBeNull();
+  });
+
+  it('stores ignore_mounts as a list and drops the key when emptied', async () => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = renderResources(config);
+    await tick();
+    const input = inputFor(container, 'Mounts ignorieren');
+    await fireEvent.input(input, { target: { value: '/boot/efi, /mnt/backup ,' } });
+    expect(config.ignore_mounts).toEqual(['/boot/efi', '/mnt/backup']);
+    await fireEvent.input(input, { target: { value: ' ' } });
+    expect('ignore_mounts' in config).toBe(false);
+  });
+
+  it('shows stored ignore_mounts and the exact-path hint', async () => {
+    const { container } = renderResources({
+      ignore_mounts: ['/boot/efi', '/mnt/backup'],
+    } as MonitorCheckConfig);
+    await tick();
+    expect(inputFor(container, 'Mounts ignorieren').value).toBe('/boot/efi, /mnt/backup');
+    const hints = Array.from(container.querySelectorAll('.field-hint')).map((h) => h.textContent);
+    expect(hints).toEqual([expect.stringContaining('Exakte Mount-Pfade')]);
+  });
+
+  it('labels the new fields in English', async () => {
+    setLanguage('en');
+    try {
+      const { container } = renderResources({} as MonitorCheckConfig);
+      await tick();
+      for (const label of [
+        'Swap warning (%)',
+        'Swap critical (%)',
+        'Inodes warning (%)',
+        'Inodes critical (%)',
+        'Load per CPU warning',
+        'Load per CPU critical',
+        'Disk alert only below (GB free, 0 = always)',
+        'Ignore mounts',
+      ]) {
+        expect(inputFor(container, label)).toBeTruthy();
+      }
+      const hint = container.querySelector('.field-hint')?.textContent ?? '';
+      expect(hint).toContain('Exact mount paths');
+    } finally {
+      setLanguage('de');
+    }
+  });
+});
+
+// monitoring-linux-base-v2 T20 (R-0423): system_state rates four points, each
+// on unless switched off (SystemStateConfig). As with the outage switch, back
+// at on the key goes, so a template's check keeps the template's config.
+describe('CheckConfigFields system_state (R-0423)', () => {
+  const SWITCHES = [
+    ['Neustart nötig melden', 'check_reboot'],
+    ['Nicht synchronisierte Uhr melden', 'check_time_sync'],
+    ['Offene Sicherheits-Updates melden', 'check_security_updates'],
+    ['OOM-Kills melden', 'check_oom'],
+  ] as const;
+
+  async function renderSystemState(config: MonitorCheckConfig) {
+    const r = render(CheckConfigFields, { props: { checkType: 'system_state', config } });
+    await tick();
+    return r;
+  }
+
+  it('shows the four switches, on by default, without writing them', async () => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = await renderSystemState(config);
+    const boxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(boxes).toHaveLength(4);
+    for (const [label] of SWITCHES) {
+      const box = inputFor(container, label);
+      expect(box.type).toBe('checkbox');
+      expect(box.checked).toBe(true);
+    }
+    expect(config).toEqual({});
+  });
+
+  it.each(SWITCHES)('%s writes %s false when switched off', async (label, key) => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = await renderSystemState(config);
+    await fireEvent.click(inputFor(container, label));
+    expect(config).toEqual({ [key]: false });
+  });
+
+  it.each(SWITCHES)(
+    '%s shows a stored false as off and drops it when switched on',
+    async (label, key) => {
+      const config = { [key]: false } as MonitorCheckConfig;
+      const { container } = await renderSystemState(config);
+      const box = inputFor(container, label);
+      expect(box.checked).toBe(false);
+      await fireEvent.click(box);
+      expect(box.checked).toBe(true);
+      expect(config).toEqual({});
+    },
+  );
+
+  it('labels the switches in English', async () => {
+    setLanguage('en');
+    try {
+      const { container } = await renderSystemState({} as MonitorCheckConfig);
+      for (const label of [
+        'Report reboot required',
+        'Report unsynchronized clock',
+        'Report pending security updates',
+        'Report OOM kills',
+      ]) {
+        expect(inputFor(container, label).checked).toBe(true);
+      }
+    } finally {
+      setLanguage('de');
+    }
   });
 });

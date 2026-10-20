@@ -22,6 +22,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import SecNetwork from './section/SecNetwork.svelte';
   import SecHeartbeat from './section/SecHeartbeat.svelte';
   import SecServices from './section/SecServices.svelte';
+  import SecSystem from './section/SecSystem.svelte';
   import SecDocker from './section/SecDocker.svelte';
   import SecBackups from './section/SecBackups.svelte';
   import SecZfs from './section/SecZfs.svelte';
@@ -62,6 +63,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let networkChecks = $derived(pick(['ping', 'tcp', 'http']));
   let heartbeatChecks = $derived(pick('agent_ping'));
   let serviceChecks = $derived(pick('service_process'));
+  let systemChecks = $derived(pick('system_state'));
   let dockerChecks = $derived(pick('docker_health'));
   let backupChecks = $derived(pick('proxmox_backup'));
   let zfsChecks = $derived(pick('zfs_health'));
@@ -138,6 +140,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
       {#if serviceChecks.length > 0}
         <SecServices checks={serviceChecks} />
+      {/if}
+      {#if systemChecks.length > 0}
+        <SecSystem checks={systemChecks} />
       {/if}
       {#if dockerChecks.length > 0}
         <SecDocker checks={dockerChecks} />

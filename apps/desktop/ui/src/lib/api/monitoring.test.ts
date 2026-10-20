@@ -25,6 +25,7 @@ const checkInput: MonitorCheckInput = {
   interval: '5m',
   severity: 'warning',
   consecutive_fails: 2,
+  consecutive_oks: 2,
   description: null,
   config: { target: '10.0.0.1' },
 };

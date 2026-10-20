@@ -4,8 +4,15 @@
 
 """Shared alerter-test helpers (6.132). Extracted from test_alerter so test_alerter_hub can reuse them
 without importing another test module — a rename or cleanup of test_alerter would otherwise break the
-hub suite with an ImportError."""
+hub suite with an ImportError.
 
+seed_bell_check, bell_record and overlap_first_hub_post drive two dispatches of one check through
+real sessions; test_alerter_hub runs them on SQLite, test_check_engine_concurrency on Postgres.
+
+assert_every_reader_reads is the one check of a checker's _details that the checker tests share."""
+
+import json
+import math
 from types import SimpleNamespace
 
 
@@ -33,6 +40,7 @@ def make_check(**kw):
         check_type="ping",
         server_id="srv-1",
         severity="critical",
+        template_def_id=None,
     )
     defaults.update(kw)
     return SimpleNamespace(**defaults)
@@ -85,6 +93,17 @@ class _FirstQuery:
     def first(self):
         return self._row
 
+    def update(self, values, synchronize_session=None):
+        # The alerter's bulk UPDATE (handing back a bell slot after a failed hub
+        # POST). A stub cannot evaluate the WHERE, so the values go onto the row
+        # as they are; the condition itself is pinned against real databases
+        # (test_alerter_hub, test_check_engine_concurrency).
+        if self._row is None:
+            return 0
+        for key, value in values.items():
+            setattr(self._row, key, value)
+        return 1
+
 
 class _CapturingDb:
     """Fake DB for process_alert: provides the rules list, collects add()
@@ -98,8 +117,9 @@ class _CapturingDb:
         self._maintenance = maintenance or []
         # The sent-state load queries the MonitorState ENTITY; None = no row
         # (process_alert then falls back to the caller's old_status). NOTE:
-        # _host_is_down queries the MonitorState.status COLUMN and is not
-        # answered here — subclasses override first() for that.
+        # _host_is_down queries the MonitorState.status COLUMN and gets None
+        # from first() here (nothing stands critical); a subclass answers it
+        # otherwise (test_alerter's _HostDownDb).
         self._state = state
         self.added = []
         self.flushed = False
@@ -138,3 +158,93 @@ class _CapturingDb:
         # process_alert commits the sent-state claim itself (claim-then-
         # dispatch); the fake only records that it happened.
         self.committed = True
+
+
+def seed_bell_check(factory, *, status, notified_status, hub_status=None, hub_sent_at=None):
+    """One enabled critical ping check with its state row, committed; returns its id."""
+    from app.models import MonitorCheck, MonitorState
+
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-bell",
+                server_id="srv-1",
+                name="bell",
+                check_type="ping",
+                config="{}",
+                enabled=True,
+                severity="critical",
+            )
+        )
+        db.add(
+            MonitorState(
+                check_id="chk-bell",
+                status=status,
+                notified_status=notified_status,
+                hub_status=hub_status,
+                hub_sent_at=hub_sent_at,
+            )
+        )
+        db.commit()
+    return "chk-bell"
+
+
+def bell_record(factory, check_id):
+    """(hub_status, hub_sent_at) as committed."""
+    from app.models import MonitorState
+
+    with factory() as db:
+        row = db.query(MonitorState).filter_by(check_id=check_id).one()
+        return row.hub_status, row.hub_sent_at
+
+
+def overlap_first_hub_post(monkeypatch, factory, check_id, second_status, first_code=202):
+    """Arm a hub whose FIRST POST runs a second dispatch of the check to its end
+    before it answers with first_code: the check moves to second_status and
+    _dispatch_alert_bg runs again — the second dispatch of one check while the
+    first is still in its hub POST (R-0424 T6 review). A tuple of statuses moves
+    the check to each in turn, with one dispatch per move. Every later POST
+    answers 202. Returns the list that gets the new_status of every POST."""
+    from app import alerter
+    from app.check_engine import _dispatch_alert_bg
+    from app.models import MonitorState
+
+    monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
+    monkeypatch.setattr(alerter, "INTERNAL_API_KEY", "secret")
+    posted = []
+    statuses = (second_status,) if isinstance(second_status, str) else second_status
+
+    def fake_post(url, **kwargs):
+        posted.append(kwargs["json"]["new_status"])
+        if len(posted) > 1:
+            return SimpleNamespace(status_code=202)
+        for status in statuses:
+            with factory() as db:
+                row = db.query(MonitorState).filter_by(check_id=check_id).one()
+                old_status, row.status = row.status, status
+                db.commit()
+            _dispatch_alert_bg(check_id, old_status, status)
+        return SimpleNamespace(status_code=first_code)
+
+    monkeypatch.setattr(alerter.httpx, "post", fake_post)
+    return posted
+
+
+def assert_every_reader_reads(details):
+    """No NaN or Infinity token, and every number converts to a finite float (a strict reader
+    such as serde_json rejects a larger integer as out of range). _details goes as it is into the
+    answers of GET /status and GET /checks, which the desktop reads as a whole."""
+    json.dumps(details, allow_nan=False)
+    stack = [details]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                finite = math.isfinite(float(value))
+            except OverflowError:
+                finite = False
+            assert finite, f"number not representable as a finite float: {str(value)[:20]}"

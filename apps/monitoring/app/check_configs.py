@@ -18,13 +18,15 @@ read true as 1."""
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 
 
 class _StrictConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # Finite only: the config is stored as sent, and json.dumps writes inf back as
+    # the token Infinity, which is no JSON number (RFC 8259 section 6).
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class PingConfig(_StrictConfig):
@@ -59,6 +61,12 @@ class _TempOverride(_StrictConfig):
     crit: float | None = Field(None, ge=0, le=200, strict=True)
 
 
+class _DiskOverride(_StrictConfig):
+    warn: float | None = Field(None, ge=0, le=100, strict=True)
+    crit: float | None = Field(None, ge=0, le=100, strict=True)
+    min_free_gb: float | None = Field(None, ge=0, le=1_000_000, strict=True)
+
+
 class AgentResourcesConfig(_StrictConfig):
     cpu_warn: float = Field(80, ge=0, le=100, strict=True)
     cpu_crit: float = Field(95, ge=0, le=100, strict=True)
@@ -66,11 +74,24 @@ class AgentResourcesConfig(_StrictConfig):
     memory_crit: float = Field(95, ge=0, le=100, strict=True)
     disk_warn: float = Field(85, ge=0, le=100, strict=True)
     disk_crit: float = Field(95, ge=0, le=100, strict=True)
+    # A disk's percentage alarm counts only below this many GB free (free_gb, agent v3);
+    # 0 turns the gate off. ignore_mounts and disk_overrides name exact mount paths.
+    disk_min_free_gb: float = Field(20, ge=0, le=1_000_000, strict=True)
+    ignore_mounts: list[str] = []
+    disk_overrides: dict[str, _DiskOverride] = {}
+    swap_warn: float = Field(80, ge=0, le=100, strict=True)
+    swap_crit: float = Field(95, ge=0, le=100, strict=True)
+    inode_warn: float = Field(80, ge=0, le=100, strict=True)
+    inode_crit: float = Field(90, ge=0, le=100, strict=True)
+    # Per CPU: load_5m / cpu_count, not a percentage.
+    load_warn: float = Field(1.5, ge=0, le=100, strict=True)
+    load_crit: float = Field(3.0, ge=0, le=100, strict=True)
     temp_warn: float = Field(80, ge=0, le=200, strict=True)
     temp_crit: float = Field(95, ge=0, le=200, strict=True)
     temp_overrides: dict[str, _TempOverride] = {}
     # Entry/release hysteresis in percentage points (T6): once a metric is
-    # warning/critical, its thresholds drop by this much until it clears.
+    # warning/critical, its thresholds drop by this much until it clears. Not for
+    # the load, which is no percentage.
     hysteresis_pp: float = Field(10, ge=0, le=50, strict=True)
 
 
@@ -100,8 +121,12 @@ class SmartHealthConfig(_StrictConfig):
 
 class ProxmoxBackupConfig(_StrictConfig):
     max_backup_age_hours: float = Field(26, ge=1, le=8760, strict=True)
-    exclude_vmids: list[int | str] = []
+    # A number is a Proxmox VE VMID: qm(1) gives 100 - 999999999.
+    exclude_vmids: list[Annotated[int, Field(ge=100, le=999_999_999)] | str] = []
     exclude_stopped: StrictBool = True
+    # Strict: configs are stored as sent, and a lax "false" or 0 would reach the
+    # checker and the desktop checkbox as values each reads differently.
+    alert_on_unavailable: StrictBool = True
 
 
 class ZfsHealthConfig(_StrictConfig):
@@ -131,6 +156,15 @@ class DiskForecastConfig(_StrictConfig):
     crit_hours: float = Field(8, ge=1, le=8760, strict=True)
 
 
+class SystemStateConfig(_StrictConfig):
+    # Strict: configs are stored as sent, and the checker switches a point off only on
+    # a real false; a lax "false" or 0 would be stored and keep the point on.
+    check_reboot: StrictBool = True
+    check_time_sync: StrictBool = True
+    check_security_updates: StrictBool = True
+    check_oom: StrictBool = True
+
+
 CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "ping": PingConfig,
     "tcp": TcpConfig,
@@ -143,6 +177,7 @@ CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "zfs_health": ZfsHealthConfig,
     "docker_health": DockerHealthConfig,
     "disk_forecast": DiskForecastConfig,
+    "system_state": SystemStateConfig,
 }
 
 

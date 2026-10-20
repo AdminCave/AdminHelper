@@ -58,8 +58,13 @@ def drain_outbox(db: Session, *, batch_size: int = 50) -> tuple[int, int]:
     notifs = {n.id: n for n in db.query(Notification).filter(Notification.id.in_(notif_ids)).all()}
     for entry in due:
         notif = notifs.get(entry.notification_id)
-        subject = notif.title if notif else "AdminHelper"
-        body = (notif.body or notif.title) if notif else ""
+        if entry.title is not None:
+            # A bundle's text for this channel (service.ingest_event): it names
+            # fewer servers than the bell row may.
+            subject, body = entry.title, entry.body or entry.title
+        else:
+            subject = notif.title if notif else "AdminHelper"
+            body = (notif.body or notif.title) if notif else ""
 
         entry.attempts += 1
         try:

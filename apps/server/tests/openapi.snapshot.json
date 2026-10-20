@@ -2298,6 +2298,24 @@
             ],
             "title": "Source Id"
           },
+          "source_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ids"
+          },
           "source_type": {
             "anyOf": [
               {

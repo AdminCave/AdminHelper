@@ -6,7 +6,8 @@
 
 Tests the pure functions extracted from execute_check
 next_fail_count / effective_status / is_suppressed — the consecutive_fails
-damping, without DB, scheduler or VictoriaMetrics.
+damping — and next_ok_count / holds_recovery — the consecutive_oks recovery
+hold, without DB, scheduler or VictoriaMetrics.
 """
 
 import json
@@ -17,8 +18,10 @@ import pytest
 
 from app.check_engine import (
     effective_status,
+    holds_recovery,
     is_suppressed,
     next_fail_count,
+    next_ok_count,
     resolve_config_server_id,
 )
 from app.core.time import utcnow_naive
@@ -37,6 +40,60 @@ class TestNextFailCount:
 
     def test_unknown_also_increments(self):
         assert next_fail_count("unknown", 0) == 1
+
+
+class TestNextOkCount:
+    def test_ok_increments(self):
+        assert next_ok_count("ok", 0) == 1
+        assert next_ok_count("ok", 1) == 2
+
+    @pytest.mark.parametrize("status", ["warning", "critical", "unknown"])
+    def test_non_ok_resets_to_zero(self, status):
+        assert next_ok_count(status, 3) == 0
+
+
+class TestHoldsRecovery:
+    """R-0424: a check carrying a reported problem returns to ok only after
+    consecutive_oks ok results in a row."""
+
+    @pytest.mark.parametrize("old", ["warning", "critical"])
+    def test_first_ok_on_a_reported_problem_holds(self, old):
+        assert holds_recovery("ok", 1, 2, old, old) is True
+
+    @pytest.mark.parametrize("old", ["warning", "critical"])
+    @pytest.mark.parametrize("notified", [None, "ok"])
+    def test_a_problem_never_reported_never_holds(self, old, notified):
+        # Kevin 2026-10-20: muted by maintenance or host-down, never reported —
+        # the first ok recovers silently, as before the hold.
+        assert holds_recovery("ok", 1, 2, old, notified) is False
+
+    def test_a_worse_status_than_the_reported_one_holds(self):
+        # Reported warning, then critical while muted: still a reported problem.
+        assert holds_recovery("ok", 1, 2, "critical", "warning") is True
+
+    def test_holds_until_consecutive_oks_is_reached(self):
+        assert holds_recovery("ok", 2, 3, "critical", "critical") is True
+        assert holds_recovery("ok", 3, 3, "critical", "critical") is False
+
+    def test_consecutive_oks_one_never_holds(self):
+        # 1 is the behaviour from before the hold: the first ok recovers.
+        assert holds_recovery("ok", 1, 1, "critical", "critical") is False
+
+    @pytest.mark.parametrize("old", ["pending", "ok"])
+    @pytest.mark.parametrize("notified", [None, "ok", "critical"])
+    def test_ok_without_a_problem_never_holds(self, old, notified):
+        assert holds_recovery("ok", 1, 2, old, notified) is False
+
+    @pytest.mark.parametrize(
+        ("notified", "held"),
+        [("critical", True), ("warning", True), ("ok", False), (None, False)],
+    )
+    def test_unknown_holds_only_a_reported_problem(self, notified, held):
+        assert holds_recovery("ok", 1, 2, "unknown", notified) is held
+
+    @pytest.mark.parametrize("result", ["warning", "critical", "unknown"])
+    def test_a_non_ok_result_never_holds(self, result):
+        assert holds_recovery(result, 0, 2, "critical", "critical") is False
 
 
 class TestIsSuppressed:
@@ -227,6 +284,59 @@ def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
     assert args == ("c1", "ok", "critical")
 
 
+@pytest.mark.parametrize(("check_type", "dispatched"), [("agent_ping", 0), ("ping", 1)])
+def test_execute_check_leaves_a_heartbeat_to_the_agent_alert_bundle(
+    monkeypatch, check_type, dispatched
+):
+    # R-0424: a heartbeat that goes critical is not handed to the alert pool; the
+    # discrepancy stays open in monitor_states for flush_agent_alerts, which
+    # bundles agents that go silent together. Every other check type goes on as
+    # before.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    import app.core.database as database_mod
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(
+        ce, "get_checker", lambda _ct: SimpleNamespace(run=lambda cfg: ("critical", "down", None))
+    )
+    submitted = []
+    monkeypatch.setattr(ce._alert_pool, "submit", lambda fn, *a: submitted.append((fn, a)))
+
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                server_id="srv-1",
+                name="c1",
+                check_type=check_type,
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.add(MonitorState(check_id="c1", status="ok", notified_status="ok"))
+        db.commit()
+
+    ce.execute_check("c1")
+
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="c1").one()
+        assert (state.status, state.notified_status) == ("critical", "ok")
+    assert submitted == [(ce._dispatch_alert_bg, ("c1", "ok", "critical"))] * dispatched
+
+
 class TestResolveConfigServerId:
     """T37: hand-created agent_ping/disk_forecast checks carry server_id only
     as a column — the fallback keeps them from sitting at 'unknown' forever."""
@@ -348,7 +458,9 @@ def _details_case(details, *, keep=None):
     from app.models import MonitorCheck, MonitorState
 
     check = MonitorCheck(id="c1", name="c1", check_type="ping", config="{}", consecutive_fails=1)
-    state = MonitorState(check_id="c1", status="ok", fail_count=0, details='{"problems": ["cpu"]}')
+    state = MonitorState(
+        check_id="c1", status="ok", fail_count=0, ok_count=0, details='{"problems": ["cpu"]}'
+    )
     args = (_DummyDb(), check, state, "ok", "fine", details, utcnow_naive())
     # keep=None reproduces the scheduler's call exactly: it passes no flag at
     # all, so flipping the default would change its behaviour silently.
@@ -458,6 +570,122 @@ def test_message_is_cut_to_2000_characters_before_the_damping_suffix(
     state = MonitorState(check_id="c1", status="ok", fail_count=0) if row else None
     apply_result(db, check, state, "critical", message, None, utcnow_naive())
     assert (state or db.added[0]).message == stored
+
+
+def _held_case(*, consecutive_fails=1, consecutive_oks=2, status="critical", notified="critical"):
+    """A check whose problem the alerter has reported (by default), and a runner that
+    feeds one result at a time through apply_result."""
+    from app.check_engine import apply_result
+    from app.models import MonitorCheck, MonitorState
+
+    check = MonitorCheck(
+        id="c1",
+        name="c1",
+        check_type="ping",
+        config="{}",
+        consecutive_fails=consecutive_fails,
+        consecutive_oks=consecutive_oks,
+    )
+    state = MonitorState(
+        check_id="c1",
+        status=status,
+        fail_count=consecutive_fails,
+        ok_count=0,
+        notified_status=notified,
+    )
+
+    def run(result, message="fine"):
+        return apply_result(_DummyDb(), check, state, result, message, None, utcnow_naive())
+
+    return state, run
+
+
+def test_recovery_is_held_until_consecutive_oks():
+    # R-0424: critical -> ok stays critical on the first ok, with the hold in the
+    # message; the second ok recovers and notifies.
+    state, run = _held_case()
+
+    assert run("ok") == ("critical", "critical", "skip")
+    assert (state.status, state.ok_count, state.fail_count) == ("critical", 1, 0)
+    assert state.message == "fine (recovery 1/2)"
+
+    assert run("ok") == ("critical", "ok", "notify")
+    assert (state.status, state.ok_count) == ("ok", 2)
+    assert state.message == "fine"
+
+
+def test_consecutive_oks_one_recovers_on_the_first_ok():
+    state, run = _held_case(consecutive_oks=1)
+    assert run("ok") == ("critical", "ok", "notify")
+    assert (state.status, state.ok_count, state.message) == ("ok", 1, "fine")
+
+
+@pytest.mark.parametrize("consecutive_fails", [1, 3])
+def test_a_failure_during_the_hold_restarts_it(consecutive_fails):
+    # The failure resets ok_count; the check stays critical — with 1 by the raw
+    # result, with 3 through the fail damping (fail_count was reset by the ok).
+    state, run = _held_case(consecutive_fails=consecutive_fails)
+
+    run("ok")
+    assert (state.status, state.ok_count) == ("critical", 1)
+
+    assert run("critical", "down") == ("critical", "critical", "skip")
+    assert (state.status, state.ok_count, state.fail_count) == ("critical", 0, 1)
+
+    assert run("ok") == ("critical", "critical", "skip")
+    assert state.message == "fine (recovery 1/2)"
+    assert run("ok") == ("critical", "ok", "notify")
+
+
+def test_a_reported_problem_coming_back_via_unknown_is_held():
+    # A reported critical that went unknown (agent data missing) must not skip the
+    # hold on its way back. The hold keeps the reported status (Kevin 2026-10-20).
+    state, run = _held_case()
+
+    assert run("unknown", "no data") == ("critical", "unknown", "skip")
+    assert run("ok") == ("unknown", "critical", "skip")
+    assert (state.status, state.message) == ("critical", "fine (recovery 1/2)")
+    assert run("ok") == ("critical", "ok", "notify")
+
+
+def test_the_hold_keeps_the_reported_status_not_a_worse_one():
+    # Kevin 2026-10-20: reported warning, then critical while muted (never
+    # reported). The hold shows warning — no "warning -> critical" escalation for
+    # a problem that is going away — and the second ok recovers from warning.
+    state, run = _held_case(notified="warning")
+
+    assert run("ok") == ("critical", "warning", "skip")
+    assert (state.status, state.message) == ("warning", "fine (recovery 1/2)")
+    assert run("ok") == ("warning", "ok", "notify")
+
+
+@pytest.mark.parametrize(("notified", "decision"), [(None, "silent_ack"), ("ok", "skip")])
+def test_a_problem_never_reported_recovers_on_the_first_ok(notified, decision):
+    # Kevin 2026-10-20: a critical muted by maintenance or host-down was never
+    # reported; its first ok recovers at once and silently, as before the hold.
+    state, run = _held_case(notified=notified)
+
+    assert run("ok") == ("critical", "ok", decision)
+    assert (state.status, state.ok_count, state.message) == ("ok", 1, "fine")
+
+
+def test_a_long_message_keeps_the_recovery_suffix():
+    state, run = _held_case()
+    run("ok", "x" * 10_000)
+    assert state.message == "x" * 1999 + "… (recovery 1/2)"
+
+
+@pytest.mark.parametrize(("result", "ok_count"), [("ok", 1), ("critical", 0)])
+def test_a_created_state_carries_its_ok_count(result, ok_count):
+    from app.check_engine import apply_result
+    from app.models import MonitorCheck
+
+    check = MonitorCheck(
+        id="c1", name="c1", check_type="ping", config="{}", consecutive_fails=1, consecutive_oks=2
+    )
+    db = _DummyDb()
+    apply_result(db, check, None, result, "msg", None, utcnow_naive())
+    assert db.added[0].ok_count == ok_count
 
 
 def test_execute_check_cuts_a_long_checker_error(monkeypatch, caplog):

@@ -181,6 +181,7 @@ const PUSH_ONLY_CHECK_TYPES = [
   'zfs_health',
   'docker_health',
   'smart_health',
+  'system_state',
 ];
 
 export function isPushOnlyCheck(checkType: MonitorCheckType | string): boolean {

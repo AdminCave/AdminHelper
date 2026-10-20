@@ -172,6 +172,66 @@ def test_semaphore_busy_returns_server_busy(monkeypatch):
     assert "ausgelastet" in res["error"]
 
 
+def test_database_error_of_a_hook_reports_its_type_only(monkeypatch):
+    # A hook stopped by an error of the database layer reports the error's type in `error` and
+    # in its log, not the driver's text. The database is a loopback port that is bound but not
+    # listening, so the connection is refused at once. libpq names only the address it tried;
+    # with two hosts psycopg lists every attempt by its host name, which puts the word into the
+    # driver's text (hostaddr skips the name lookup). The hook records that before it re-raises:
+    # without it the test would also pass on a driver whose text names nothing.
+    import socket
+
+    word = "hookcheckword"
+    with socket.socket() as closed:
+        closed.bind(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            f"postgresql+psycopg://hookcheck@/hookcheck?host={word}a:{port}&host={word}b:{port}"
+            "&hostaddr=127.0.0.1,127.0.0.1&connect_timeout=2",
+        )
+        res = run_hook_script(
+            "try:\n"
+            "    load_connections()\n"
+            "except Exception as exc:\n"
+            f"    result['driver_text_has_word'] = {word!r} in str(exc)\n"
+            "    raise\n",
+            "webhook",
+            {},
+        )
+    assert res["success"] is False, res
+    assert res["result"] == {"driver_text_has_word": True}, res
+    assert res["error"] == "OperationalError", res
+    assert res["logs"] == ["Fehler: OperationalError"], res
+
+
+def test_psycopg_error_of_a_hook_reports_its_type_only():
+    # The same for psycopg used directly, whose errors are not SQLAlchemy's. A connection string
+    # the driver cannot parse fails before any connection, and its text quotes the string.
+    word = "hookcheckword"
+    res = run_hook_script(
+        "import psycopg\n"
+        "try:\n"
+        f"    psycopg.connect({word!r})\n"
+        "except Exception as exc:\n"
+        f"    result['driver_text_has_word'] = {word!r} in str(exc)\n"
+        "    raise\n",
+        "webhook",
+        {},
+    )
+    assert res["success"] is False, res
+    assert res["result"] == {"driver_text_has_word": True}, res
+    assert res["error"] == "ProgrammingError", res
+    assert res["logs"] == ["Fehler: ProgrammingError"], res
+
+
+def test_other_error_of_a_hook_keeps_its_text():
+    res = run_hook_script("raise ValueError('payload has no field id')", "webhook", {})
+    assert res["success"] is False, res
+    assert res["error"] == "payload has no field id", res
+    assert res["logs"] == ["Fehler: payload has no field id"], res
+
+
 def test_worker_nonzero_exit_maps_to_error(monkeypatch):
     # 6.82(d): if the worker process dies with a non-zero code and no JSON on stdout, the runner
     # reports an error instead of crashing on the missing/undecodable output.

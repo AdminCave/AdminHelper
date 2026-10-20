@@ -24,6 +24,8 @@ from app.core.auth import require_agent
 from app.core.database import get_db
 from app.models import Base, MonitorCheck, MonitorState
 
+from ._helpers import assert_every_reader_reads
+
 
 def _full_report() -> dict:
     """Report with the full inventory (hash changed / hourly full send)."""
@@ -132,6 +134,54 @@ def test_auto_mode_counts_land_in_details():
     assert metrics["_details"]["total"] == 63
 
 
+# _details goes as it is into the answers of GET /status and GET /checks, which the desktop reads
+# as a whole: a 400-digit integer there is no number every JSON reader takes, a 9000-character
+# unit name no text it should have to carry.
+@pytest.mark.parametrize(
+    "counts",
+    [{"active": 41, "total": 10**400}, {"active": 10**400, "total": 10**400}],
+    ids=["total-400-digits", "both-400-digits"],
+)
+def test_auto_mode_counts_beyond_float_range_are_ignored(counts):
+    systemd = {"failed": [], "enabled_inactive": [], "counts": counts}
+    status, _, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, {"systemd": systemd})
+    assert status == "ok"
+    assert "active_count" not in metrics["_details"]
+    assert "total" not in metrics["_details"]
+    assert_every_reader_reads(metrics["_details"])
+
+
+_LONG_UNIT = "unit\n" * 1800  # 9000 characters
+_LONG_UNIT_SHOWN = ("unit " * 1800)[:499] + "\u2026"
+
+
+@pytest.mark.parametrize(
+    "key, status, prefix",
+    [("failed", "critical", "Failed"), ("enabled_inactive", "warning", "Inactive (autostart)")],
+)
+def test_auto_mode_a_long_unit_name_goes_into_details_on_one_line_of_500_characters(
+    key, status, prefix
+):
+    systemd = {"failed": [], "enabled_inactive": [], key: [_LONG_UNIT, "cron.service"]}
+    result = ServiceProcessChecker().evaluate({"mode": "auto"}, {"systemd": systemd})
+    assert result[:2] == (status, f"{prefix}: {_LONG_UNIT_SHOWN}, cron.service")
+    assert result[2]["_details"][key] == [_LONG_UNIT_SHOWN, "cron.service"]
+    assert result[2][f"services_{key}"] == 2
+    assert_every_reader_reads(result[2]["_details"])
+
+
+def test_auto_mode_the_ignore_list_compares_the_full_unit_name():
+    name = _LONG_UNIT.strip()  # _parse_ignore strips the pattern
+    systemd = {"failed": [name], "enabled_inactive": [name]}
+    checker = ServiceProcessChecker()
+    ignored = checker.evaluate({"mode": "auto", "ignore": [name]}, {"systemd": systemd})
+    assert ignored[:2] == ("ok", "All services OK")
+    shown = cap_agent_text(name)
+    status, _, metrics = checker.evaluate({"mode": "auto", "ignore": [shown]}, {"systemd": systemd})
+    assert status == "critical"
+    assert metrics["_details"]["failed"] == [shown]
+
+
 @pytest.mark.parametrize(
     "counts",
     [
@@ -172,19 +222,102 @@ def test_auto_mode_systemctl_error_is_unknown(error):
     assert metrics["_details"]["failed"] == []
 
 
-def test_auto_mode_failed_units_outrank_a_systemctl_error():
+@pytest.mark.parametrize(
+    "unit, expected", [("nginx.service", "critical"), ("data.mount", "warning")]
+)
+def test_auto_mode_failed_units_outrank_a_systemctl_error(unit, expected):
     # list-units --state=failed is a call of its own: its result stays real when the inventory
-    # call failed, so a failed unit still makes the check critical.
+    # call failed, so a failed unit still rates the check.
     report = {
         "systemd": {
-            "failed": ["nginx.service"],
+            "failed": [unit],
             "enabled_inactive": [],
             "error": "systemctl list-units failed: exit status 1",
         }
     }
     status, message, _ = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
-    assert status == "critical"
-    assert "nginx.service" in message
+    assert status == expected
+    assert unit in message
+
+
+def test_auto_mode_a_failed_unit_other_than_a_service_is_warning():
+    report = {"systemd": {"failed": ["data.mount"], "enabled_inactive": []}}
+    status, message, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == ("warning", "Failed units: data.mount")
+    assert metrics["services_failed"] == 1
+    assert metrics["_details"]["failed"] == ["data.mount"]
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        ".socket",
+        ".device",
+        ".mount",
+        ".automount",
+        ".swap",
+        ".target",
+        ".path",
+        ".timer",
+        ".slice",
+        ".scope",
+    ],
+)
+def test_auto_mode_every_unit_type_but_service_is_warning(suffix):
+    report = {"systemd": {"failed": [f"x{suffix}"], "enabled_inactive": []}}
+    status, message, _ = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == ("warning", f"Failed units: x{suffix}")
+
+
+def test_auto_mode_a_failed_service_beside_other_units_is_critical():
+    # _details keeps every failed unit in the agent's order; only the message splits them.
+    report = {"systemd": {"failed": ["data.mount", "nginx.service"], "enabled_inactive": []}}
+    status, message, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == ("critical", "Failed: nginx.service; Failed units: data.mount")
+    assert metrics["services_failed"] == 2
+    assert metrics["_details"]["failed"] == ["data.mount", "nginx.service"]
+
+
+def test_auto_mode_a_failed_name_without_suffix_is_a_service():
+    # A Windows agent sends its services without a suffix.
+    report = {"systemd": {"failed": ["Spooler"], "enabled_inactive": []}}
+    status, message, _ = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == ("critical", "Failed: Spooler")
+
+
+def test_auto_mode_a_failed_timer_and_inactive_services_are_warning():
+    report = {"systemd": {"failed": ["backup.timer"], "enabled_inactive": ["cron.service", "atd"]}}
+    status, message, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == (
+        "warning",
+        "Failed units: backup.timer; Inactive (autostart): cron.service, atd",
+    )
+    assert metrics["_details"]["failed"] == ["backup.timer"]
+    assert metrics["_details"]["enabled_inactive"] == ["cron.service", "atd"]
+
+
+def test_auto_mode_a_failed_service_only_in_the_inventory_counts_as_a_service():
+    report = {
+        "systemd": {
+            "failed": ["data.mount"],
+            "enabled_inactive": [],
+            "all_services": [
+                {"unit": "zabbix.service", "active_state": "failed", "enabled_state": "enabled"},
+            ],
+        }
+    }
+    status, message, metrics = ServiceProcessChecker().evaluate({"mode": "auto"}, report)
+    assert (status, message) == ("critical", "Failed: zabbix.service; Failed units: data.mount")
+    assert metrics["_details"]["failed"] == ["data.mount", "zabbix.service"]
+
+
+def test_auto_mode_ignore_hides_a_failed_unit_before_the_split():
+    report = {"systemd": {"failed": ["data.mount", "nginx.service"], "enabled_inactive": []}}
+    status, message, metrics = ServiceProcessChecker().evaluate(
+        {"mode": "auto", "ignore": ["nginx"]}, report
+    )
+    assert (status, message) == ("warning", "Failed units: data.mount")
+    assert metrics["_details"]["failed"] == ["data.mount"]
 
 
 _GLOB_FAILED = [
@@ -231,12 +364,13 @@ def test_auto_mode_ignore_glob_matches_a_unit_without_suffix():
     ],
 )
 def test_auto_mode_service_glob_keeps_units_of_other_types(ignore, unit):
-    # Only a bare name is read as <name>.service: a failed socket, mount or timer stays reported.
+    # Only a bare name is read as <name>.service: a failed socket, mount or timer stays reported,
+    # as warning (only a failed service is critical).
     report = {"systemd": {"failed": [unit], "enabled_inactive": []}}
     status, _, metrics = ServiceProcessChecker().evaluate(
         {"mode": "auto", "ignore": ignore}, report
     )
-    assert status == "critical"
+    assert status == "warning"
     assert metrics["_details"]["failed"] == [unit]
 
 

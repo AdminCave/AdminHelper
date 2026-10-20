@@ -105,6 +105,9 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
         "monitor_check_duration_ms_value",
         "monitor_disk_forecast_min_hours_value",
     ],
+    # No measured values, only the status timeline; without the entry the fallback would
+    # ask for monitor_check_duration_ms, which the push path does not write for it.
+    "system_state": [],
 }
 
 # Check types with dynamic metric names (regex query)
@@ -164,6 +167,7 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
         interval=data.interval,
         severity=data.severity,
         consecutive_fails=data.consecutive_fails,
+        consecutive_oks=data.consecutive_oks,
     )
     db.add(check)
 
@@ -246,6 +250,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         "interval",
         "severity",
         "consecutive_fails",
+        "consecutive_oks",
     ]:
         if field in sent:
             setattr(check, field, getattr(data, field))

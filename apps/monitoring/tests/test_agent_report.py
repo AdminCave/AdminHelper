@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.auth import require_agent
+from app.core.auth import require_agent, require_internal
 from app.core.database import get_db
 from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorHostFacts, MonitorState
 
@@ -55,7 +55,7 @@ def client_db(monkeypatch):
     app.dependency_overrides.clear()
 
 
-def _add_resources_check(factory, consecutive_fails: int) -> str:
+def _add_resources_check(factory, consecutive_fails: int, consecutive_oks: int = 2) -> str:
     with factory() as db:
         db.add(
             MonitorCheck(
@@ -66,6 +66,7 @@ def _add_resources_check(factory, consecutive_fails: int) -> str:
                 config=json.dumps({"cpu_warn": 80, "cpu_crit": 95}),
                 enabled=True,
                 consecutive_fails=consecutive_fails,
+                consecutive_oks=consecutive_oks,
             )
         )
         db.commit()
@@ -78,7 +79,9 @@ def _report(cpu: float) -> dict:
 
 def test_report_applies_consecutive_fails_damping(client_db):
     client, factory = client_db
-    _add_resources_check(factory, consecutive_fails=2)
+    # consecutive_oks 1: recover on the first ok, as before the hold — this test is
+    # about the fail damping; the hold has its own test below.
+    _add_resources_check(factory, consecutive_fails=2, consecutive_oks=1)
 
     # 1st failing push: below the damping threshold -> stays ok (suppressed),
     # message carries the scheduler-path suffix.
@@ -104,6 +107,53 @@ def test_report_applies_consecutive_fails_damping(client_db):
         state = db.query(MonitorState).filter_by(check_id="chk-1").one()
         assert state.status == "ok"
         assert state.fail_count == 0
+
+
+def test_report_holds_the_recovery_for_consecutive_oks(client_db, monkeypatch):
+    # R-0424, push path: the same hold as the scheduler. A reported critical stays
+    # critical on the first ok push; the recovery goes out with the second (column
+    # default consecutive_oks 2). cooldown 0 as in the catch-up test below.
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    with factory() as db:
+        db.add(
+            MonitorAlertRule(
+                id="r1",
+                name="rule",
+                channel="webhook",
+                channel_config=json.dumps({"url": "https://hooks.example/x"}),
+                cooldown_minutes=0,
+            )
+        )
+        db.commit()
+
+    from app import alerter
+
+    dispatched: list[tuple] = []
+    monkeypatch.setattr(
+        alerter,
+        "_dispatch",
+        lambda rule, check, msg: (
+            dispatched.append((check.id, msg["old_status"], msg["new_status"])) or (True, None)
+        ),
+    )
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=99)).status_code == 200
+    assert dispatched == [("chk-1", "ok", "critical")]
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=5)).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert (state.status, state.ok_count) == ("critical", 1)
+        assert state.message.endswith(" (recovery 1/2)"), state.message
+    assert len(dispatched) == 1
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=5)).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert (state.status, state.ok_count) == ("ok", 2)
+        assert "recovery" not in state.message
+    assert dispatched == [("chk-1", "ok", "critical"), ("chk-1", "critical", "ok")]
 
 
 def test_report_rejects_foreign_server_key(client_db):
@@ -221,6 +271,123 @@ def test_report_batches_check_metrics_into_one_write(client_db, monkeypatch):
     assert len(status_lines) == 2, check_batches[0]
 
 
+def _add_push_check(factory, check_id: str, check_type: str) -> None:
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id=check_id,
+                server_id="srv-1",
+                name="Check",
+                check_type=check_type,
+                config=json.dumps({}),
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.commit()
+
+
+def _lines_of(writes: list[list[str]], check_id: str) -> list[str]:
+    """Every written line of one check, without the timestamp."""
+    return [
+        line.rsplit(" ", 1)[0]
+        for batch in writes
+        for line in batch
+        if f",check_id={check_id}," in line
+    ]
+
+
+@pytest.mark.parametrize(
+    ("check_type", "report", "status"),
+    [
+        pytest.param(
+            "system_state",
+            {"uptime_seconds": 3600, "system_state": {"reboot_required": True}},
+            1,
+            id="system-state-warning",
+        ),
+        pytest.param("system_state", {}, 0, id="system-state-not-evaluated"),
+        pytest.param(
+            "docker_health",
+            {"docker": {"available": False, "error": "daemon_unreachable"}},
+            1,
+            id="docker-outage",
+        ),
+        # A result without even _details (metrics None): agent_resources without its block.
+        pytest.param("agent_resources", {}, 3, id="resources-without-data"),
+    ],
+)
+def test_push_check_without_measured_values_writes_its_status(
+    client_db, monkeypatch, check_type, report, status
+):
+    # The status timeline of the desktop reads only monitor_check_status. A check whose result
+    # carries no measured values wrote nothing, and its timeline stayed empty. Now it writes the
+    # status point, and no duration: the push path has none, a flat 0 ms series says nothing.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-x", check_type)
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    tags = f"check_id=chk-x,check_type={check_type},name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-x") == [f"monitor_check_status,{tags} value={status}i"]
+
+
+def test_push_check_with_measured_values_writes_one_status_as_before(client_db, monkeypatch):
+    # Next to a check without measured values: no second status line for either, and the
+    # check with values keeps its duration and value lines.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    _add_push_check(factory, "chk-x", "system_state")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {"cpu_percent": 50, "memory_percent": 40},
+        "system_state": {"oom_kills": 0},
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 2
+    tags = "check_id=chk-1,check_type=agent_resources,name=Resources,server_id=srv-1"
+    assert _lines_of(writes, "chk-1") == [
+        f"monitor_check_status,{tags} value=0i",
+        f"monitor_check_duration_ms,{tags} value=0i",
+        f"monitor_agent_cpu_percent,{tags} value=50i",
+        f"monitor_agent_memory_percent,{tags} value=40i",
+    ]
+    tags = "check_id=chk-x,check_type=system_state,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-x") == [f"monitor_check_status,{tags} value=0i"]
+
+
+def test_system_state_metrics_read_only_the_status_timeline(client_db, monkeypatch):
+    # The push path writes no duration for system_state. Without its own entry in
+    # CHECK_TYPE_METRICS the metrics endpoint would fall back to monitor_check_duration_ms.
+    from app.core import victoria as vm
+    from app.main import app
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-x", "system_state")
+    app.dependency_overrides[require_internal] = lambda: None
+    queries: list[str] = []
+
+    def fake_query_range(query, start, end, step):
+        queries.append(query)
+        return {"data": {"result": []}}
+
+    monkeypatch.setattr(vm.victoria, "query_range", fake_query_range)
+
+    r = client.get("/checks/chk-x/metrics")
+    assert r.status_code == 200, r.text
+    assert queries == ['monitor_check_status_value{check_id="chk-x"}']
+
+
 @pytest.mark.parametrize(
     "raw,want",
     [
@@ -236,6 +403,9 @@ def test_report_batches_check_metrics_into_one_write(client_db, monkeypatch):
         (float("nan"), None),
         ("inf", None),  # inf/nan as strings dropped too
         ("nan", None),
+        # An int beyond the float range: format_line rejects it like inf (id: 401 digits otherwise).
+        pytest.param(10**400, None, id="int-beyond-float-range"),
+        (2**63, 2**63),  # beyond int64 but a float: format_line writes it as a float
     ],
 )
 def test_num_coerces_and_drops_non_metric_values(raw, want):
@@ -289,6 +459,32 @@ def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch)
     assert r.json()["metricsWritten"] == len(captured)
 
 
+def test_report_drops_only_the_value_beyond_the_float_range(client_db, monkeypatch):
+    # An int beyond the float range used to raise in _num, and the extraction's except dropped
+    # every line of the report, the valid ones too. Now only that value is missing.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post(
+        "/agent/srv-1/report",
+        json={
+            "resources": {"cpu_percent": 10**400, "memory_percent": 50},
+            "uptime_seconds": 2**63,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["metricsWritten"] == 2
+    assert len(writes) == 1, writes
+    # Without the timestamp; the uptime beyond int64 goes as a float, without "i".
+    assert [line.rsplit(" ", 1)[0] for line in writes[0]] == [
+        "monitor_agent_memory_percent,server_id=srv-1 value=50i",
+        "monitor_agent_uptime_seconds,server_id=srv-1 value=9.223372036854776e+18",
+    ]
+
+
 def test_report_persists_agent_liveness(client_db, monkeypatch):
     # T2: every push upserts monitor_agent_liveness so agent_ping survives
     # service restarts (main.py rehydrates the in-memory map from it).
@@ -318,9 +514,9 @@ def test_report_round_trips_hysteresis_memory(client_db):
     # the row lock, feed them into evaluate() and store the new problems map —
     # otherwise the per-metric hysteresis silently dies while unit tests stay
     # green. cpu_warn is 80 here: 92 -> warning; 75 sits in the release band
-    # (80-10=70) and must STAY warning; 65 clears it.
+    # (80-10=70) and must STAY warning; 65 clears it (consecutive_oks 1: at once).
     client, factory = client_db
-    _add_resources_check(factory, consecutive_fails=1)
+    _add_resources_check(factory, consecutive_fails=1, consecutive_oks=1)
 
     assert client.post("/agent/srv-1/report", json=_report(cpu=92)).status_code == 200
     with factory() as db:

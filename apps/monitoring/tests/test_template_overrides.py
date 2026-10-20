@@ -340,6 +340,38 @@ def test_only_known_field_names_are_stored_as_a_json_list(client):
     assert json.loads(raw) == ["interval"]
 
 
+# --- consecutive_oks is a template field (R-0424) ----------------------------------
+
+
+def test_consecutive_oks_back_at_the_template_value_lifts_the_customization(client):
+    # The stored definition leaves the key out, like the built-ins: its value is 2.
+    c, factory = client
+    with factory() as db:
+        db.add(MonitorTemplate(id="tpl-1", name="T", check_definitions=json.dumps([_PING_DEF])))
+        db.commit()
+    assert c.post("/templates/tpl-1/assign", json=_ASSIGN).status_code == 200
+    (check,) = c.get("/checks", params={"server_id": "srv-1"}).json()
+
+    r = c.put(f"/checks/{check['id']}", json={"consecutive_oks": 4})
+    assert r.status_code == 200, r.text
+    assert (r.json()["consecutiveOks"], r.json()["overriddenFields"]) == (4, ["consecutive_oks"])
+    r = c.put(f"/checks/{check['id']}", json={"consecutive_oks": 2})
+    assert r.status_code == 200, r.text
+    assert (r.json()["consecutiveOks"], r.json()["overriddenFields"]) == (2, [])
+
+
+def test_reset_puts_the_templates_consecutive_oks_back(client):
+    c, _factory = client
+    cid = _template_check(c, {**_PING_DEF, "consecutive_oks": 1})
+    r = c.put(f"/checks/{cid}", json={"consecutive_oks": 5, "interval": "15m"})
+    assert r.json()["overriddenFields"] == ["interval", "consecutive_oks"]
+
+    r = c.post(f"/checks/{cid}/reset")
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert (got["consecutiveOks"], got["interval"], got["overriddenFields"]) == (1, "5m", [])
+
+
 # --- changes from before the update: marked once at the first start ---------------
 
 _RENAMED = [{"id": "srv-1", "hostname": "web02.example", "name": "web02", "tags": []}]
@@ -487,17 +519,18 @@ def test_a_change_marked_at_the_first_start_survives_template_sync_and_rename(cl
 def start(client, monkeypatch):
     """The service's startup against the test database, without the scheduler and
     the agent liveness: start() runs it once and says whether it got as far as
-    scheduling the checks."""
+    scheduling the checks; start.jobs names the system jobs it registered."""
     from app import scheduler as scheduler_mod
     from app.main import app
 
     _c, factory = client
     loaded: list[bool] = []
+    jobs: list[str] = []
     monkeypatch.setattr("app.core.database.SessionLocal", factory)
     monkeypatch.setattr("app.checkers.agent.hydrate_agent_liveness", lambda entries: None)
     monkeypatch.setattr(scheduler_mod, "load_all_checks", lambda: loaded.append(True))
-    monkeypatch.setattr(scheduler_mod, "schedule_alert_log_cleanup", lambda: None)
-    monkeypatch.setattr(scheduler_mod, "schedule_tag_sync", lambda: None)
+    for job in ("alert_log_cleanup", "tag_sync", "agent_alert_bundle"):
+        monkeypatch.setattr(scheduler_mod, f"schedule_{job}", lambda job=job: jobs.append(job))
     monkeypatch.setattr(
         scheduler_mod,
         "scheduler",
@@ -507,22 +540,33 @@ def start(client, monkeypatch):
 
     def run() -> bool:
         loaded.clear()
+        jobs.clear()
         with TestClient(app):
             pass
         return loaded == [True]
 
+    run.jobs = jobs
     return run
 
 
-def _ship_linux_base_v2(monkeypatch):
-    """Ship version 2 of linux-base: system-resources warns every minute."""
+def test_start_registers_the_system_jobs(start):
+    # execute_check leaves every heartbeat alert to the agent alert bundle: a
+    # start that did not register it would lose them all without a sound.
+    assert start()
+    assert start.jobs == ["alert_log_cleanup", "tag_sync", "agent_alert_bundle"]
+
+
+def _ship_linux_base_v2(monkeypatch) -> int:
+    """Ship a new version of linux-base (the shipped one + 1): system-resources
+    warns every minute. Returns the new version."""
     shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
     linux = next(t for t in shipped if t["slug"] == "linux-base")
-    linux["version"] = 2
+    linux["version"] += 1
     for check_def in linux["check_definitions"]:
         if check_def["def_id"] == "system-resources":
             check_def.update(severity="warning", interval="1m")
     monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
+    return linux["version"]
 
 
 def test_start_marks_earlier_changes_before_it_updates_the_builtins(client, start, monkeypatch):
@@ -537,7 +581,7 @@ def test_start_marks_earlier_changes_before_it_updates_the_builtins(client, star
         check.interval = "1h"
         db.commit()
         cid = check.id
-    _ship_linux_base_v2(monkeypatch)
+    new_version = _ship_linux_base_v2(monkeypatch)
 
     assert start()
 
@@ -546,7 +590,7 @@ def test_start_marks_earlier_changes_before_it_updates_the_builtins(client, star
         assert (check.interval, check.severity) == ("1h", "warning")
         assert json.loads(check.overridden_fields) == ["interval"]
         linux = db.query(MonitorTemplate).filter_by(builtin_slug="linux-base").one()
-        assert linux.builtin_version == 2
+        assert linux.builtin_version == new_version
 
 
 def test_a_failed_first_start_keeps_nothing_and_the_next_start_marks(client, start, monkeypatch):
@@ -610,7 +654,7 @@ def test_a_built_in_update_waits_for_a_failed_first_start(client, start, monkeyp
     # marks the change and rolls out.
     _c, factory = client
     cid = _linux_base_on_srv_1_with_interval_1h(factory)
-    _ship_linux_base_v2(monkeypatch)
+    new_version = _ship_linux_base_v2(monkeypatch)
     real = template_sync.mark_overrides
 
     def connection_lost(*_args):
@@ -621,14 +665,14 @@ def test_a_built_in_update_waits_for_a_failed_first_start(client, start, monkeyp
     assert _interval_severity_overrides(factory, cid) == ("1h", "critical", [])
     with factory() as db:
         linux = db.query(MonitorTemplate).filter_by(builtin_slug="linux-base").one()
-        assert linux.builtin_version == 1
+        assert linux.builtin_version == new_version - 1
 
     monkeypatch.setattr(template_sync, "mark_overrides", real)
     assert start()
     assert _interval_severity_overrides(factory, cid) == ("1h", "warning", ["interval"])
     with factory() as db:
         linux = db.query(MonitorTemplate).filter_by(builtin_slug="linux-base").one()
-        assert linux.builtin_version == 2
+        assert linux.builtin_version == new_version
 
 
 def test_tag_sync_before_the_baseline_marks_first_with_the_names_from_before(client):

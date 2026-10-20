@@ -55,7 +55,7 @@
               <tr><td><code>frp.config.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
               <tr><td><code>frp.tunnel.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (<code>created</code> also <code>serverId</code>)</td></tr>
               <tr><td><code>playbook.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
-              <tr><td><code>alert.triggered</code></td><td><code>server_id</code>, <code>severity</code>, <code>title</code>, <code>message</code> — fires on a transition <em>into</em> <code>critical</code> (<code>monitoring.check.transition</code>); recoveries (<code>critical → ok</code>) do not fire</td></tr>
+              <tr><td><code>alert.triggered</code></td><td><code>server_id</code>, <code>severity</code>, <code>title</code>, <code>message</code> — fires on a transition <em>into</em> <code>critical</code> (<code>monitoring.check.transition</code>) of a check with <code>severity</code> <code>critical</code>; checks with <code>severity</code> <code>warning</code> or <code>info</code> and recoveries (<code>critical → ok</code>) do not fire. A bundled alert covering several servers (e.g. several silent agents) fires it once per server, each time with that server's <code>server_id</code>; <code>title</code> and <code>message</code> are then the same for every call and name no server. The hook follows the bell and with it the bell's cooldown of 30 minutes per check (admin guide Monitoring, Cooldown): when a check goes into <code>critical</code> again within 30 minutes, e.g. <code>critical → ok → critical</code>, it fires only the first time, and a server whose heartbeat is in the bell's cooldown at a bundled alert gets no call; the escalation <code>warning → critical</code> fires it in the cooldown too</td></tr>
             </tbody>
           </table>
 
@@ -95,6 +95,7 @@
 
           <h2>Failure behaviour</h2>
           <p>If a hook fails (<code>exit_code != 0</code> or timeout), the error is logged: event and schedule hooks via <code>logger.exception</code> in the server log, the webhook trigger additionally in the response body (<code>success: false</code>, <code>error</code>). There is currently no automatic retry and no <code>hook.failed</code> meta-event; a failed hook blocks neither other hooks nor the triggering request.</p>
+          <p>If a hook stops with an error of the database layer (<code>sqlalchemy.exc.SQLAlchemyError</code> or <code>psycopg.Error</code>), <code>error</code> and the log line <code>Fehler: …</code> in <code>logs</code> name only the error's type, such as <code>OperationalError</code>, not the driver's text. Any other error of a hook appears there with its text.</p>
 
           <h2>Script Runner Implementation</h2>
           <div class="code-header"><span>python</span></div>

@@ -53,6 +53,18 @@ def _esc_measurement(m: str) -> str:
     return m.replace(" ", r"\ ").replace(",", r"\,")
 
 
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
+
+
+def _finite(value: int | float) -> bool:
+    """math.isfinite, but False for an int beyond the float range instead of OverflowError."""
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
     """Formats a single InfluxDB line protocol line.
 
@@ -61,20 +73,23 @@ def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
     ``value`` MUST be a real, finite number (int or float, not bool). A
     non-numeric value is rejected: it would otherwise be written verbatim into
     the field position, allowing line-protocol injection. inf/nan are rejected
-    too — written verbatim they poison the whole batch. Every metric write in
-    this codebase passes a numeric value.
+    too — written verbatim they poison the whole batch — and so is an int beyond
+    the float range. Every metric write in this codebase passes a numeric value.
     """
     tag_str = ",".join(f"{_esc_tag(k)}={_esc_tag(v)}" for k, v in tags.items() if v)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(
             f"format_line value must be a real number, got {type(value).__name__}: {value!r}"
         )
-    if not math.isfinite(value):
-        raise ValueError(f"format_line value must be finite, got {value!r}")
-    if isinstance(value, int):
+    if not _finite(value):
+        shown = repr(value) if isinstance(value, float) else "an int beyond the float range"
+        raise ValueError(f"format_line value must be finite, got {shown}")
+    if isinstance(value, int) and _INT64_MIN <= value <= _INT64_MAX:
         field = f"value={value}i"
     else:
-        field = f"value={value}"
+        # VictoriaMetrics parses an "i" value as int64 and answers an overflow with HTTP 400
+        # for the whole write, its valid lines too; it stores float64 anyway.
+        field = f"value={float(value)!r}"
     # Only prefix the comma when there is a tag set — an all-empty tag dict would otherwise yield
     # "measurement, value=X ts" (comma before the space), invalid LP that VictoriaMetrics rejects
     # (potentially the whole batch). Callers set check_id/server_id today, but this is the central
@@ -126,12 +141,13 @@ class VictoriaClient:
         server_id: str | None,
         name: str,
         status: str,
-        duration_ms: int,
+        duration_ms: int | None,
         extra_metrics: dict | None = None,
     ) -> list[str]:
         """Builds the line-protocol lines for a check result without writing them, so a caller with
         many checks (the agent report) can collect and flush them in one write instead of one POST
-        per check (5.20)."""
+        per check (5.20). duration_ms None writes no duration line (a push check without measured
+        values)."""
         status_map = {"ok": 0, "warning": 1, "critical": 2, "unknown": 3}
         status_val = status_map.get(status, 3)
         ts = int(time.time())
@@ -140,19 +156,19 @@ class VictoriaClient:
         if server_id:
             tags["server_id"] = server_id
 
-        lines = [
-            format_line("monitor_check_status", tags, status_val, ts),
-            format_line("monitor_check_duration_ms", tags, duration_ms, ts),
-        ]
+        lines = [format_line("monitor_check_status", tags, status_val, ts)]
+        if duration_ms is not None:
+            lines.append(format_line("monitor_check_duration_ms", tags, duration_ms, ts))
 
         if extra_metrics:
             for key, value in extra_metrics.items():
                 # bool is an int subclass; exclude it (format_line rejects bools).
-                # Drop non-finite values too (format_line would raise on inf/nan).
+                # Drop non-finite values too (format_line would raise on inf/nan and on
+                # an int beyond the float range).
                 if (
                     isinstance(value, (int, float))
                     and not isinstance(value, bool)
-                    and math.isfinite(value)
+                    and _finite(value)
                 ):
                     lines.append(format_line(f"monitor_{key}", tags, value, ts))
 

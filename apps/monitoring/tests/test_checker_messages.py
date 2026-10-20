@@ -11,6 +11,7 @@ on the wrong path."""
 import socket
 import subprocess
 import time
+import unicodedata
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -30,6 +31,7 @@ from app.checkers import tcp as tcp_mod
 from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
 from app.checkers.smart import SmartHealthChecker
+from app.checkers.system import SystemStateChecker
 from app.core.ssrf import UrlVerdict
 from app.core.time import utcnow_naive
 from app.models import Base, MonitorCheck, MonitorState
@@ -110,6 +112,12 @@ def _smart(smartctl_status=0):
     return SmartHealthChecker().evaluate({}, {"smart": [disk]})
 
 
+def _system(**fields):
+    """A system_state block 30 min after boot: the clock is rated."""
+    report = {"uptime_seconds": 1800, "system_state": fields}
+    return SystemStateChecker().evaluate({}, report)
+
+
 _SDA = "/dev/sda (X)"
 _LIST_ERROR = "sc query failed: sc did not start"
 _AUTO_ERROR = "systemctl list-units failed: exit status 1"
@@ -161,6 +169,18 @@ CASES = [
         "critical",
         "Failed: a.service; Inactive (autostart): b.service",
         id="auto-failed-and-inactive",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["a.service", "data.mount"], "enabled_inactive": ["b.service"]}),
+        "critical",
+        "Failed: a.service; Failed units: data.mount; Inactive (autostart): b.service",
+        id="auto-failed-service-unit-and-inactive",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["data.mount"], "enabled_inactive": ["b.service"]}),
+        "warning",
+        "Failed units: data.mount; Inactive (autostart): b.service",
+        id="auto-failed-unit-and-inactive",
     ),
     pytest.param(
         lambda: _auto({"failed": [], "enabled_inactive": ["b.service"]}),
@@ -229,6 +249,21 @@ CASES = [
         "unknown",
         "No Proxmox data in report",
         id="proxmox-no-data",
+    ),
+    pytest.param(
+        lambda: ProxmoxBackupChecker().evaluate(
+            {},
+            {
+                "proxmox": {
+                    "available": False,
+                    "error": "backup_index_incomplete",
+                    "error_message": "backup storage nas not active",
+                }
+            },
+        ),
+        "warning",
+        "Proxmox unavailable (backup_index_incomplete): backup storage nas not active",
+        id="proxmox-unavailable",
     ),
     pytest.param(lambda: _proxmox(), "ok", "No VMs/CTs found", id="proxmox-no-vms"),
     pytest.param(
@@ -327,6 +362,57 @@ CASES = [
         id="smart-problems-and-warnings",
     ),
     pytest.param(lambda: _smart(), "ok", "All 1 disks SMART OK", id="smart-ok"),
+    # system_state
+    pytest.param(
+        lambda: SystemStateChecker().run({}),
+        "unknown",
+        "Waiting for agent data",
+        id="system-waiting",
+    ),
+    pytest.param(
+        lambda: SystemStateChecker().evaluate({}, {}),
+        "ok",
+        "Not evaluated: no system state in report",
+        id="system-no-data",
+    ),
+    pytest.param(
+        lambda: _system(reboot_required=True), "warning", "Reboot required", id="system-reboot"
+    ),
+    pytest.param(
+        lambda: _system(time_synchronized=False),
+        "warning",
+        "Clock not synchronized",
+        id="system-time-sync",
+    ),
+    pytest.param(
+        lambda: _system(security_updates=3),
+        "warning",
+        "3 security updates pending",
+        id="system-security-updates",
+    ),
+    pytest.param(
+        lambda: _system(oom_kills=2),
+        "warning",
+        "2 OOM kills since last report",
+        id="system-oom",
+    ),
+    pytest.param(
+        lambda: _system(
+            reboot_required=True, time_synchronized=False, security_updates=3, oom_kills=2
+        ),
+        "warning",
+        "Reboot required; Clock not synchronized; 3 security updates pending; "
+        "2 OOM kills since last report",
+        id="system-all",
+    ),
+    pytest.param(
+        lambda: _system(
+            reboot_required=False, time_synchronized=True, security_updates=0, oom_kills=0
+        ),
+        "ok",
+        "System state OK",
+        id="system-ok",
+    ),
 ]
 
 
@@ -615,6 +701,7 @@ _PREFAIL = [f"/dev/d{i} (X): prefail attribute below threshold (smartctl 0x10)" 
 _PAST = [f"/dev/d{i} (X): threshold exceeded in the past (smartctl 0x20)" for i in range(12)]
 _DISKS_FULL = [f"Disk /m{i} 95% (>=95%)" for i in range(12)]
 _FAILED = [f"f{i}.service" for i in range(12)]
+_FAILED_UNITS = [f"m{i}.mount" for i in range(12)]
 _INACTIVE = [f"i{i}.service" for i in range(12)]
 _DOWN = [f"d{i}" for i in range(12)]
 _NODATA = [f"n{i}" for i in range(12)]
@@ -732,6 +819,13 @@ LIST_CASES = [
         "Failed: " + ", ".join(_FAILED[:10]),
         id="auto-10-failed",
     ),
+    pytest.param(
+        lambda mp: _auto({"failed": _FAILED + _FAILED_UNITS, "enabled_inactive": _INACTIVE}),
+        "critical",
+        f"Failed: {_first_ten(_FAILED)}; Failed units: {_first_ten(_FAILED_UNITS)}; "
+        f"Inactive (autostart): {_first_ten(_INACTIVE)}",
+        id="auto-12-failed-12-failed-units-and-inactive",
+    ),
     # service_process, list mode
     pytest.param(
         lambda mp: _listed(_DOWN + _NODATA, _watch(**dict.fromkeys(_DOWN, False))),
@@ -771,6 +865,172 @@ LIST_CASES = [
 def test_list_in_message_names_at_most_ten_entries(monkeypatch, call, status, message):
     got_status, got_message, _ = call(monkeypatch)
     assert (got_status, got_message) == (status, message)
+
+
+# --- text from the report in a message: one line, every control character a space ---
+# The message goes unchanged into the dashboard, the bell, mail and webhook; a line break in
+# a container name would put a forged line of its own into each of them.
+
+
+def _one_line(text):
+    """No character of Unicode category Cc and no line or paragraph separator."""
+    return not any(unicodedata.category(c) == "Cc" or c in "\u2028\u2029" for c in text)
+
+
+@pytest.mark.parametrize(
+    "char",
+    ["\n", "\r", "\t", "\x1b", "\x7f", "\x85", "\u2028", "\u2029"],
+    ids=["lf", "cr", "tab", "esc", "del", "nel", "line-separator", "paragraph-separator"],
+)
+def test_cap_agent_text_turns_a_control_character_into_a_space(char):
+    assert agent.cap_agent_text(f"a{char}b") == "a b"
+
+
+def test_cap_agent_text_turns_every_control_character_into_a_space():
+    controls = [chr(c) for c in range(0x110000) if unicodedata.category(chr(c)) == "Cc"]
+    assert len(controls) == 65  # U+0000-U+001F and U+007F-U+009F
+    text = "".join(controls) + "\u2028\u2029"
+    assert agent.cap_agent_text(text) == " " * 67
+
+
+def test_cap_agent_text_cuts_a_multiline_text_to_one_line_of_500_characters():
+    text = "line\n" * 120  # 600 characters
+    capped = agent.cap_agent_text(text)
+    assert capped == ("line " * 120)[:499] + "…"
+    assert len(capped) == 500
+    assert _one_line(capped)
+
+
+def test_cap_agent_text_keeps_a_text_without_control_characters():
+    # U+00A0 is the first character after the C1 controls.
+    assert agent.cap_agent_text("nginx-ä ß\u00a0x") == "nginx-ä ß\u00a0x"
+
+
+class _RecordingText(str):
+    """A report text that records the length of each translate call made on it."""
+
+    def translate(self, table):
+        self.translated.append(len(self))
+        return super().translate(table)
+
+
+def test_cap_agent_text_translates_at_most_500_characters():
+    # Cutting first gives the same text (one character for one) and bounds the work however
+    # long the report text is: what lies behind the cut is dropped, never translated.
+    short, long = _RecordingText("a\n" * 250), _RecordingText("a\n" * 5000)
+    short.translated, long.translated = [], []
+    assert agent.cap_agent_text(short) == "a " * 250
+    assert agent.cap_agent_text(long) == ("a " * 5000)[:499] + "…"
+    assert short.translated == [500]  # the recorder sees a call on the text itself
+    assert all(n <= 500 for n in long.translated)
+
+
+def _docker(container):
+    return DockerHealthChecker().evaluate({}, {"docker": {"containers": [container]}})
+
+
+def _outage(key, error, error_message):
+    block = {"available": False, "error": error, "error_message": error_message}
+    checker = ZfsHealthChecker() if key == "zfs" else DockerHealthChecker()
+    return checker.evaluate({}, {key: block})
+
+
+def _smart_model(model):
+    disk = {
+        "device": "/dev/sda",
+        "model": model,
+        "protocol": "ATA",
+        "kind": "HDD",
+        "temp_c": 30,
+        "smartctl_status": 0x10,
+    }
+    return SmartHealthChecker().evaluate({}, {"smart": [disk]})
+
+
+def _pool(name, health):
+    pool = {"name": name, "health": health, "capacity_percent": 10}
+    return ZfsHealthChecker().evaluate({}, {"zfs": {"pools": [pool]}})
+
+
+# Each place that copies a text from the report into a message, with a line break in it: each
+# control character becomes one space, so "\r\n" makes two; status and the rest stay.
+MULTILINE_CASES = [
+    pytest.param(
+        lambda: _docker({"id": "c1", "name": "web\nStatus: ok -> ok", "state": "dead"}),
+        "critical",
+        "Container problems: web Status: ok -> ok: dead (0 running, 0 stopped)",
+        id="docker-name",
+    ),
+    pytest.param(
+        lambda: _pool("p\r\nq", "DEGRADED"),
+        "critical",
+        "p  q: DEGRADED",
+        id="zfs-pool-name",
+    ),
+    pytest.param(
+        lambda: _smart_model("X\u2028Y"),
+        "critical",
+        "SMART problems: /dev/sda (X Y): prefail attribute below threshold (smartctl 0x10)",
+        id="smart-model",
+    ),
+    pytest.param(
+        lambda: _proxmox(_vm(101, "qemu", "a\x85b", None)),
+        "critical",
+        "No backup: QEMU 101 (a b)",
+        id="proxmox-vm-name",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["a\nb.service"], "enabled_inactive": ["c\u2029d.service"]}),
+        "critical",
+        "Failed: a b.service; Inactive (autostart): c d.service",
+        id="service-process-failed",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["a\nb.mount"], "enabled_inactive": []}),
+        "warning",
+        "Failed units: a b.mount",
+        id="service-process-failed-unit",
+    ),
+    pytest.param(
+        lambda: _outage("zfs", "timeout", "zpool\nlist timed out"),
+        "warning",
+        "ZFS unavailable (timeout): zpool list timed out",
+        id="zfs-error-message",
+    ),
+    pytest.param(
+        lambda: _outage("docker", "daemon_unreachable", "docker info\r\nfailed"),
+        "warning",
+        "Docker unavailable (daemon_unreachable): docker info  failed",
+        id="docker-error-message",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": [], "enabled_inactive": [], "error": "list-units\nfailed"}),
+        "unknown",
+        "Services not queryable: list-units failed",
+        id="systemd-error",
+    ),
+    pytest.param(
+        lambda: _resources({"resources": {"disks": [{"mount": "/m\x1b[2J", "percent": 95}]}}),
+        "critical",
+        "Disk /m [2J 95% (>=95%)",
+        id="resources-mount",
+    ),
+]
+
+
+@pytest.mark.parametrize(("call", "status", "message"), MULTILINE_CASES)
+def test_report_text_in_message_is_one_line(call, status, message):
+    got_status, got_message, _ = call()
+    assert (got_status, got_message) == (status, message)
+    assert _one_line(got_message)
+
+
+def test_docker_name_and_state_in_details_are_one_line():
+    # The rating reads the full state: "dead\n" is no known state.
+    _, _, metrics = _docker({"id": "c1", "name": "web\nStatus: ok", "state": "Dead\n"})
+    container = metrics["_details"]["containers"][0]
+    assert (container["name"], container["state"]) == ("web Status: ok", "dead ")
+    assert container["reason"] == "unknown_state"
 
 
 # --- check engine: what it writes into MonitorState.message itself ---

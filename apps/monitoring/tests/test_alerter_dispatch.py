@@ -9,13 +9,18 @@ the email channel parses recipients (list or CSV) and refuses to send without an
 SMTP host instead of silently dropping the alert."""
 
 import json
+import logging
+import smtplib
+import socket
 import ssl
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 import app.alerter as alerter
 from app.alerter import _dispatch, _send_email
+from app.core.ssrf import UrlVerdict
 
 CHECK = SimpleNamespace(id="c1", name="c", check_type="ping", severity="critical", server_id="s1")
 MSG = {"subject": "S", "text": "T"}
@@ -70,6 +75,135 @@ def test_refused_dispatch_writes_english_error(monkeypatch, rule, error):
     monkeypatch.setattr(alerter.smtplib, "SMTP", _no_request)
     monkeypatch.setattr(alerter.smtplib, "SMTP_SSL", _no_request)
     assert _dispatch(rule, CHECK, MSG) == (False, error)
+
+
+# A failed send stores a fixed reason in the alert log; the exception text, which can name
+# hosts, mail server replies or channel config values, goes to the service log only.
+_MARK = "exc-marke"
+
+
+def _alerter_lines(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "monitor.alerter"]
+
+
+def _raising(exc):
+    def post(*a, **k):
+        raise exc
+
+    return post
+
+
+@pytest.mark.parametrize(
+    ("exc", "reason"),
+    [
+        (httpx.ReadTimeout(_MARK), "Webhook request timed out"),
+        (httpx.ConnectTimeout(_MARK), "Webhook request timed out"),
+        (httpx.ConnectError(_MARK), "Webhook connection failed"),
+        (httpx.RemoteProtocolError(_MARK), "Webhook request failed (RemoteProtocolError)"),
+        (ValueError(_MARK), "Webhook request failed (ValueError)"),
+    ],
+    ids=["read-timeout", "connect-timeout", "connect-error", "protocol-error", "other"],
+)
+def test_failed_webhook_stores_a_fixed_reason(monkeypatch, caplog, exc, reason):
+    monkeypatch.setattr(alerter, "classify_url", lambda url: UrlVerdict.ALLOWED)
+    monkeypatch.setattr(alerter.httpx, "post", _raising(exc))
+    rule = _rule(config={"url": "https://hooks.example.com/x"})
+
+    with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+        assert _dispatch(rule, CHECK, MSG) == (False, reason)
+
+    assert _alerter_lines(caplog) == [f"Webhook failed: c -> hooks.example.com: {exc}"]
+    assert _MARK in _alerter_lines(caplog)[0]
+
+
+class _FailingSMTP:
+    """Raises `exc` where smtplib would: on connect (the constructor), starttls, login or send."""
+
+    stage = "connect"
+    exc: Exception = OSError()
+
+    def __init__(self, host, port, timeout, context=None):
+        self._fail("connect")
+
+    def _fail(self, stage):
+        if stage == self.stage:
+            raise self.exc
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self, context=None):
+        self._fail("starttls")
+
+    def login(self, user, pw):
+        self._fail("login")
+
+    def send_message(self, m):
+        self._fail("send")
+
+
+_REFUSED = "SMTP server refused the message"
+_MARK_BYTES = _MARK.encode()
+
+
+@pytest.mark.parametrize(
+    ("port", "stage", "exc", "reason"),
+    [
+        (
+            587,
+            "login",
+            smtplib.SMTPAuthenticationError(535, b"5.7.8 " + _MARK_BYTES),
+            "SMTP authentication failed (535)",
+        ),
+        (587, "send", smtplib.SMTPRecipientsRefused({"a@x": (550, _MARK_BYTES)}), _REFUSED),
+        (587, "send", smtplib.SMTPSenderRefused(553, _MARK_BYTES, "from@x"), _REFUSED),
+        (587, "send", smtplib.SMTPDataError(554, _MARK_BYTES), _REFUSED),
+        (587, "starttls", smtplib.SMTPNotSupportedError(_MARK), "SMTP TLS failed"),
+        # The same class from login() (no AUTH) or the send (no SMTPUTF8) is no TLS failure.
+        (587, "login", smtplib.SMTPNotSupportedError(_MARK), "SMTP error (SMTPNotSupportedError)"),
+        (587, "send", smtplib.SMTPNotSupportedError(_MARK), "SMTP error (SMTPNotSupportedError)"),
+        (587, "starttls", ssl.SSLError(_MARK), "SMTP TLS failed"),
+        (465, "connect", ssl.SSLCertVerificationError(_MARK), "SMTP TLS failed"),
+        (587, "connect", TimeoutError(_MARK), "SMTP connection timed out"),
+        (465, "connect", TimeoutError(_MARK), "SMTP connection timed out"),
+        (587, "send", smtplib.SMTPServerDisconnected(_MARK), "SMTP error (SMTPServerDisconnected)"),
+        (587, "connect", ConnectionRefusedError(111, _MARK), "SMTP connection failed"),
+        (587, "connect", socket.gaierror(-2, _MARK), "SMTP connection failed"),
+        (587, "send", ValueError(_MARK), "SMTP error (ValueError)"),
+    ],
+    ids=[
+        "auth",
+        "recipients-refused",
+        "sender-refused",
+        "data-error",
+        "starttls-not-supported",
+        "auth-not-supported",
+        "smtputf8-not-supported",
+        "starttls-ssl-error",
+        "smtps-cert-error",
+        "timeout",
+        "smtps-timeout",
+        "other-smtp-error",
+        "connection-refused",
+        "dns-error",
+        "other",
+    ],
+)
+def test_failed_email_stores_a_fixed_reason(monkeypatch, caplog, port, stage, exc, reason):
+    smtp = type("SMTP", (_FailingSMTP,), {"stage": stage, "exc": exc})
+    used, unused = ("SMTP_SSL", "SMTP") if port == 465 else ("SMTP", "SMTP_SSL")
+    monkeypatch.setattr(alerter.smtplib, used, smtp)
+    monkeypatch.setattr(alerter.smtplib, unused, _forbidden)
+    rule = _rule("email", config=_mail_cfg(port, smtp_user="u", smtp_password="p"))
+
+    with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+        assert _dispatch(rule, CHECK, MSG) == (False, reason)
+
+    assert _alerter_lines(caplog) == [f"Email failed: c: {exc}"]
+    assert _MARK in _alerter_lines(caplog)[0]
 
 
 class TestEmailChannel:

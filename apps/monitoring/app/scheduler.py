@@ -18,6 +18,7 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.alert_bundle import FLUSH_SECONDS, flush_agent_alerts
 from app.check_engine import execute_check
 from app.check_types import PUSH_ONLY_TYPES
 from app.core.config import ALERT_LOG_RETENTION_DAYS
@@ -60,6 +61,13 @@ def _parse_trigger(interval: str):
     if interval in _INTERVAL_MAP:
         return IntervalTrigger(**_INTERVAL_MAP[interval])
     raise ValueError(f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)}")
+
+
+def interval_timedelta(interval: str) -> timedelta | None:
+    """The period a check of this interval runs at ("5m" -> 5 minutes); None for
+    a string the scheduler does not take, whose check is never scheduled."""
+    kwargs = _INTERVAL_MAP.get(interval)
+    return timedelta(**kwargs) if kwargs else None
 
 
 def add_check(check_id: str, interval: str, check_type: str | None) -> None:
@@ -205,4 +213,25 @@ def schedule_tag_sync(minutes: int = 15) -> None:
         trigger=IntervalTrigger(minutes=minutes),
         id=_TAG_SYNC_JOB_ID,
         replace_existing=True,
+    )
+
+
+_AGENT_ALERT_BUNDLE_JOB_ID = "system:agent-alert-bundle"
+
+
+def schedule_agent_alert_bundle(seconds: int = FLUSH_SECONDS) -> None:
+    """Register the agent alert bundle (idempotent): it reports the agent
+    heartbeats execute_check leaves open. First run after one interval; the open
+    heartbeats wait in monitor_states, so a restart loses none.
+
+    max_instances=1 on the job itself, not only as the scheduler default: the
+    claim of a bundle does not reserve the bell (send_bundle records it after
+    the POSTs), so a second run at the same time would decide on the bell from
+    the record before the first one's events."""
+    scheduler.add_job(
+        flush_agent_alerts,
+        trigger=IntervalTrigger(seconds=seconds),
+        id=_AGENT_ALERT_BUNDLE_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
     )

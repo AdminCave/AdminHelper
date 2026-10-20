@@ -6,20 +6,27 @@
 out-of-range values must fail at create/update/template time instead of
 surfacing as a permanently-unknown or mis-thresholded check at runtime."""
 
+import asyncio
 import json
+import math
 import re
 import types
 import typing
 
 import pytest
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 
 from app.builtin_templates import seed_builtin_templates
-from app.check_configs import CONFIG_MODELS, _TempOverride, validate_check_config
+from app.check_configs import CONFIG_MODELS, _DiskOverride, _TempOverride, validate_check_config
+from app.checkers.system import SystemStateChecker
 from app.models import MonitorCheck, MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
 from app.template_sync import record_override_baseline
+
+from ._helpers import assert_every_reader_reads
 
 
 class TestValidateCheckConfig:
@@ -78,12 +85,13 @@ class TestValidateCheckConfig:
         validate_check_config("docker_health", {"check_restarts": True})
 
 
-_UNAVAILABLE_TYPES = ("docker_health", "zfs_health")
+_UNAVAILABLE_TYPES = ("docker_health", "zfs_health", "proxmox_backup")
 
 
 class TestAlertOnUnavailable:
     """R-0419: an unreachable Docker daemon or a failing zpool alerts as warning
-    unless the check opts out with alert_on_unavailable (default on)."""
+    unless the check opts out with alert_on_unavailable (default on); R-0492: an
+    unreadable Proxmox likewise."""
 
     @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
     def test_defaults_to_on(self, check_type):
@@ -98,6 +106,10 @@ class TestAlertOnUnavailable:
         [
             ("docker_health", {"ignore_containers": ["watchtower"], "check_restarts": True}),
             ("zfs_health", {"capacity_warn": 80, "capacity_crit": 90}),
+            (
+                "proxmox_backup",
+                {"max_backup_age_hours": 26, "exclude_vmids": [101], "exclude_stopped": False},
+            ),
         ],
     )
     def test_config_from_before_the_key_validates_and_alerts(self, check_type, stored):
@@ -120,6 +132,59 @@ class TestAlertOnUnavailable:
         )
         assert r.status_code == 422
         assert "valid boolean" in r.text
+
+
+_SYSTEM_STATE_SWITCHES = ("check_reboot", "check_time_sync", "check_security_updates", "check_oom")
+_SYSTEM_STATE_ALL_BAD = {
+    "uptime_seconds": 3600,
+    "system_state": {
+        "reboot_required": True,
+        "time_synchronized": False,
+        "security_updates": 3,
+        "oom_kills": 2,
+    },
+}
+
+
+class TestSystemStateConfig:
+    """system_state (R-0423): one switch per point, each on by default; the checker
+    switches a point off only on a real false, so the boundary takes nothing else."""
+
+    def test_empty_config_is_valid_and_every_point_is_on(self):
+        validate_check_config("system_state", {})
+        config = CONFIG_MODELS["system_state"]()
+        assert config.model_dump() == dict.fromkeys(_SYSTEM_STATE_SWITCHES, True)
+
+    @pytest.mark.parametrize("key", _SYSTEM_STATE_SWITCHES)
+    def test_off_is_accepted_and_switches_off_the_point_the_checker_reads(self, key):
+        # The model's keys must be the checker's: a key the checker does not read
+        # would pass the boundary and switch nothing off.
+        validate_check_config("system_state", {key: False})
+        _, _, on = SystemStateChecker().evaluate({}, _SYSTEM_STATE_ALL_BAD)
+        _, _, off = SystemStateChecker().evaluate({key: False}, _SYSTEM_STATE_ALL_BAD)
+        assert len(on["_details"]["problems"]) == 4
+        assert len(off["_details"]["problems"]) == 3
+
+    def test_unknown_key_is_rejected_with_the_key_named(self):
+        with pytest.raises(ValueError, match=r"\scheck_reboto: Extra inputs"):
+            validate_check_config("system_state", {"check_reboto": False})
+
+    # A lax bool would take "false", 0 and 1 and store them as sent.
+    @pytest.mark.parametrize("value", ["false", 0, 1], ids=repr)
+    @pytest.mark.parametrize("key", _SYSTEM_STATE_SWITCHES)
+    def test_non_bool_is_422(self, client_db, monkeypatch, key, value):
+        # Should the boundary let it through, keep the check's job out of the
+        # process-wide scheduler.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        r = client.post(
+            "/checks",
+            json={"name": "c", "check_type": "system_state", "config": {key: value}},
+        )
+        assert r.status_code == 422
+        assert "valid boolean" in r.text
+        r = client.get("/checks")
+        assert (r.status_code, r.json()) == (200, [])
 
 
 _BOOL_SWITCHES = [
@@ -219,6 +284,7 @@ def _number_fields() -> list[tuple[str, tuple[str, ...], FieldInfo]]:
     derived from the models so that a new field without strict=True turns red."""
     owners = [(t, (), m) for t, m in CONFIG_MODELS.items()]
     owners.append(("agent_resources", ("temp_overrides", "nvme"), _TempOverride))
+    owners.append(("agent_resources", ("disk_overrides", "/data"), _DiskOverride))
     return [
         (t, (*path, key), field)
         for t, path, model in owners
@@ -254,6 +320,11 @@ def _a_number(field: FieldInfo) -> float:
     return next(m.ge for m in field.metadata if hasattr(m, "ge"))
 
 
+# Sent as raw tokens, as a client may write them: json= refuses to write inf or nan.
+_NON_FINITE_TOKENS = ["Infinity", "-Infinity", "NaN"]
+_JSON = {"content-type": "application/json"}
+
+
 class TestStrictNumberFields:
     """R-0487: a lax number field took "85" or true, stored it as sent, and the
     checker then failed on the string; the check editor reads only real numbers."""
@@ -270,6 +341,7 @@ class TestStrictNumberFields:
             "agent_ping",
             "agent_resources",
             "agent_resources.temp_overrides",
+            "agent_resources.disk_overrides",
             "smart_health",
             "proxmox_backup",
             "zfs_health",
@@ -278,12 +350,23 @@ class TestStrictNumberFields:
         int_fields = {(t, path) for t, path, _ in _INT_FIELDS}
         assert {("tcp", ("port",)), ("http", ("expected_status",))} <= int_fields <= found
         assert ("agent_resources", ("temp_overrides", "nvme", "warn")) in found
+        assert ("agent_resources", ("disk_overrides", "/data", "min_free_gb")) in found
 
     @pytest.mark.parametrize("value", ["85", "8.5e1", True], ids=repr)
     @pytest.mark.parametrize(("check_type", "path", "field"), _NUMBER_FIELDS, ids=_NUMBER_FIELD_IDS)
     def test_non_number_is_rejected_with_the_field_named(self, check_type, path, field, value):
         loc = re.escape(".".join(path))
         with pytest.raises(ValueError, match=rf"\s{loc}: Input should be a valid (number|integer)"):
+            validate_check_config(check_type, _config_with(check_type, path, value))
+
+    @pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan], ids=repr)
+    @pytest.mark.parametrize(("check_type", "path", "field"), _NUMBER_FIELDS, ids=_NUMBER_FIELD_IDS)
+    def test_non_finite_is_rejected_with_the_field_named(self, check_type, path, field, value):
+        # json.loads reads the tokens Infinity and NaN, and json.dumps stores them
+        # again: a float field without an upper bound took inf.
+        loc = re.escape(".".join(path))
+        reason = "valid integer" if field.annotation is int else "finite number"
+        with pytest.raises(ValueError, match=rf"\s{loc}: Input should be a {reason}"):
             validate_check_config(check_type, _config_with(check_type, path, value))
 
     @pytest.mark.parametrize(("check_type", "path", "field"), _INT_FIELDS, ids=_INT_FIELD_IDS)
@@ -314,6 +397,20 @@ class TestStrictNumberFields:
         )
         assert r.status_code == 422
         assert "valid number" in r.text
+
+    @pytest.mark.parametrize("token", _NON_FINITE_TOKENS)
+    def test_post_non_finite_token_is_422(self, client_db, monkeypatch, token):
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        body = f'{{"name": "c", "check_type": "smart_health", "config": {{"reallocated_warn": {token}}}}}'
+        r = client.post("/checks", content=body, headers=_JSON)
+        assert r.status_code == 422
+        assert_every_reader_reads(r.json())
+        [error] = r.json()["detail"]
+        assert "reallocated_warn: Input should be a finite number" in error["msg"]
+        assert error["input"]["config"] == {"reallocated_warn": None}
+        r = client.get("/checks")
+        assert (r.status_code, r.json()) == (200, [])
 
     def test_put_changed_number_string_is_422(self, client_db, monkeypatch):
         client, factory = client_db
@@ -346,9 +443,246 @@ class TestStrictNumberFields:
         assert r.status_code == 422
         assert "valid number" in r.text
 
+    @pytest.mark.parametrize("token", _NON_FINITE_TOKENS)
+    def test_template_definition_with_non_finite_token_is_422(self, client_db, token):
+        client, _ = client_db
+        body = (
+            '{"name": "T", "check_definitions": [{"name": "c", "check_type": "smart_health",'
+            f' "config": {{"reallocated_warn": {token}}}}}]}}'
+        )
+        r = client.post("/templates", content=body, headers=_JSON)
+        assert r.status_code == 422
+        assert_every_reader_reads(r.json())
+        [error] = r.json()["detail"]
+        assert "reallocated_warn: Input should be a finite number" in error["msg"]
+        assert error["input"]["config"] == {"reallocated_warn": None}
+        r = client.get("/templates")
+        assert (r.status_code, r.json()) == (200, [])
+
+
+class TestValidationErrorAnswer:
+    """The service's 422 is FastAPI's own, except that a non-finite number in the input it
+    echoes is null (Kevin 2026-10-20) and a lone surrogate there is escaped: FastAPI's handler
+    echoed the body, and JSONResponse refused to write Infinity or NaN and could not encode a
+    lone surrogate as UTF-8, so the client got a 500 instead."""
+
+    @staticmethod
+    def _answer(handler, errors):
+        response = asyncio.run(handler(None, RequestValidationError(errors)))
+        return response.status_code, bytes(response.body)
+
+    @staticmethod
+    def _handlers():
+        from app.main import _validation_error
+
+        return _validation_error, request_validation_exception_handler
+
+    def test_without_a_non_finite_number_or_a_lone_surrogate_it_is_fastapis_own(self):
+        # Other non-ASCII text stays as FastAPI writes it, unescaped UTF-8.
+        errors = [
+            {
+                "type": "value_error",
+                "loc": ("body", "config"),
+                "msg": "Value error, m",
+                "input": {
+                    "a": 1.5,
+                    "b": [2, "x", None, True, {"c": -0.0}],
+                    "d": 10**30,
+                    "e": "\u00e4\U0001f600",
+                },
+            },
+            {"type": "missing", "loc": ("body", "name"), "msg": "Field required", "input": {}},
+        ]
+        ours, fastapis = self._handlers()
+        assert self._answer(ours, errors) == self._answer(fastapis, errors)
+
+    def test_a_non_finite_number_in_the_input_is_null(self):
+        errors = [
+            {
+                "type": "value_error",
+                "loc": ("body",),
+                "msg": "Value error, m",
+                "input": {"a": math.inf, "b": [-math.inf, {"c": math.nan}], "d": 1.5, "e": "x"},
+            },
+            {
+                "type": "finite_number",
+                "loc": ("body", "f"),
+                "msg": "Input should be a finite number",
+                "input": math.nan,
+            },
+        ]
+        ours, _ = self._handlers()
+        status, body = self._answer(ours, errors)
+        assert status == 422
+        assert_every_reader_reads(json.loads(body))
+        detail = json.loads(body)["detail"]
+        assert [e["input"] for e in detail] == [
+            {"a": None, "b": [None, {"c": None}], "d": 1.5, "e": "x"},
+            None,
+        ]
+        assert [(e["loc"], e["msg"]) for e in detail] == [
+            (["body"], "Value error, m"),
+            (["body", "f"], "Input should be a finite number"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("config", "echoed"),
+        [
+            ('{"target": 5}', {"target": 5}),
+            ('{"target": 5, "timeout": NaN}', {"target": 5, "timeout": None}),
+        ],
+        ids=["surrogate", "surrogate-and-NaN"],
+    )
+    def test_a_lone_surrogate_in_the_input_is_escaped(self, client_db, monkeypatch, config, echoed):
+        # JSON spells a lone surrogate as \ud800 and json.loads reads it, but UTF-8 has no
+        # form for it: JSONResponse could not encode the echoed body, a 500.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        body = f'{{"name": "\\ud800", "check_type": "ping", "config": {config}}}'
+        r = client.post("/checks", content=body, headers=_JSON)
+        assert (r.status_code, r.headers["content-type"]) == (422, "application/json")
+        # Strict UTF-8, as any client reads it.
+        answer = json.loads(r.content.decode("utf-8"))
+        assert_every_reader_reads(answer)
+        [error] = answer["detail"]
+        assert "target: Input should be a valid string" in error["msg"]
+        assert error["input"] == {"name": "\ud800", "check_type": "ping", "config": echoed}
+        r = client.get("/checks")
+        assert (r.status_code, r.json()) == (200, [])
+
+
+class TestExcludeVmids:
+    """A number in exclude_vmids is a Proxmox VE VMID, 100 to 999999999 (qm(1));
+    unbounded, an integer of any length was stored as sent."""
+
+    @pytest.mark.parametrize("vmid", [99, 1_000_000_000, 10**400], ids=["99", "1e9", "10**400"])
+    def test_number_outside_the_vmid_range_is_rejected(self, vmid):
+        with pytest.raises(
+            ValueError,
+            match=r"\sexclude_vmids\.0\.constrained-int: Input should be (greater|less) than or equal to",
+        ):
+            validate_check_config("proxmox_backup", {"exclude_vmids": [vmid]})
+
+    @pytest.mark.parametrize("vmid", [100, 999_999_999, "101"], ids=repr)
+    def test_vmid_or_string_is_accepted(self, vmid):
+        validate_check_config("proxmox_backup", {"exclude_vmids": [vmid]})
+
+
+_V3_THRESHOLDS = {
+    "swap_warn": 80,
+    "swap_crit": 95,
+    "inode_warn": 80,
+    "inode_crit": 90,
+    "load_warn": 1.5,
+    "load_crit": 3.0,
+}
+
+
+class TestAgentResourcesV3Thresholds:
+    """Swap, inodes and load per CPU (agent report v3): thresholds with the defaults
+    the checker uses, from 0 to 100, numbers only."""
+
+    def test_defaults(self):
+        config = CONFIG_MODELS["agent_resources"]()
+        assert {key: getattr(config, key) for key in _V3_THRESHOLDS} == _V3_THRESHOLDS
+
+    @pytest.mark.parametrize("value", [0, 0.5, 99.5, 100])
+    @pytest.mark.parametrize("key", _V3_THRESHOLDS)
+    def test_bounds_are_accepted(self, key, value):
+        validate_check_config("agent_resources", {key: value})
+
+    @pytest.mark.parametrize("value", [-0.1, 100.1])
+    @pytest.mark.parametrize("key", _V3_THRESHOLDS)
+    def test_outside_the_bounds_is_rejected(self, key, value):
+        with pytest.raises(
+            ValueError, match=rf"\s{key}: Input should be (greater|less) than or equal to"
+        ):
+            validate_check_config("agent_resources", {key: value})
+
+    @pytest.mark.parametrize("value", ["1.5", "80", True, False], ids=repr)
+    @pytest.mark.parametrize("key", _V3_THRESHOLDS)
+    def test_string_and_bool_are_rejected(self, key, value):
+        with pytest.raises(ValueError, match=rf"\s{key}: Input should be a valid number"):
+            validate_check_config("agent_resources", {key: value})
+
+
+def _override(**keys) -> dict:
+    return {"disk_overrides": {"/data": keys}}
+
+
+class TestAgentResourcesDiskSettings:
+    """The free-GB gate and the settings per mount: disk_min_free_gb from 0 to 1 000 000,
+    ignore_mounts a list of paths, disk_overrides {mount: {warn, crit, min_free_gb}} with
+    every key optional and nothing else. Strings, bools and non-finite numbers in the
+    number keys are covered with every number field in TestStrictNumberFields."""
+
+    def test_defaults(self):
+        config = CONFIG_MODELS["agent_resources"]()
+        assert config.disk_min_free_gb == 20
+        assert (config.ignore_mounts, config.disk_overrides) == ([], {})
+
+    @pytest.mark.parametrize("value", [0, 0.5, 20, 1_000_000])
+    def test_min_free_gb_bounds_are_accepted(self, value):
+        validate_check_config("agent_resources", {"disk_min_free_gb": value})
+        validate_check_config("agent_resources", _override(min_free_gb=value))
+
+    @pytest.mark.parametrize("value", [-0.1, 1_000_000.1])
+    def test_min_free_gb_outside_the_bounds_is_rejected(self, value):
+        pattern = r"Input should be (greater|less) than or equal to"
+        with pytest.raises(ValueError, match=rf"\sdisk_min_free_gb: {pattern}"):
+            validate_check_config("agent_resources", {"disk_min_free_gb": value})
+        with pytest.raises(ValueError, match=rf"\sdisk_overrides\./data\.min_free_gb: {pattern}"):
+            validate_check_config("agent_resources", _override(min_free_gb=value))
+
+    @pytest.mark.parametrize("value", [0, 50.5, 100])
+    @pytest.mark.parametrize("key", ["warn", "crit"])
+    def test_override_thresholds_within_the_bounds_are_accepted(self, key, value):
+        validate_check_config("agent_resources", _override(**{key: value}))
+
+    @pytest.mark.parametrize("value", [-0.1, 100.1])
+    @pytest.mark.parametrize("key", ["warn", "crit"])
+    def test_override_thresholds_outside_the_bounds_are_rejected(self, key, value):
+        with pytest.raises(
+            ValueError,
+            match=rf"\sdisk_overrides\./data\.{key}: Input should be (greater|less) than or equal",
+        ):
+            validate_check_config("agent_resources", _override(**{key: value}))
+
+    @pytest.mark.parametrize(
+        "override",
+        [{}, {"warn": 90}, {"warn": 90, "crit": 95, "min_free_gb": 100}, {"warn": None}],
+        ids=["empty", "warn", "all", "null"],
+    )
+    def test_every_override_key_is_optional(self, override):
+        validate_check_config("agent_resources", {"disk_overrides": {"/data": override}})
+
+    def test_unknown_key_in_an_override_is_rejected_with_the_key_named(self):
+        with pytest.raises(ValueError, match=r"\sdisk_overrides\./data\.wran: Extra inputs"):
+            validate_check_config("agent_resources", _override(warn=90, wran=95))
+
+    @pytest.mark.parametrize(
+        "value", [[], "x", {"/data": 90}, {"/data": [90]}], ids=["list", "str", "number", "list-in"]
+    )
+    def test_disk_overrides_that_are_no_objects_are_rejected(self, value):
+        with pytest.raises(ValueError, match=r"\sdisk_overrides"):
+            validate_check_config("agent_resources", {"disk_overrides": value})
+
+    def test_ignore_mounts_takes_a_list_of_paths(self):
+        validate_check_config("agent_resources", {"ignore_mounts": []})
+        validate_check_config("agent_resources", {"ignore_mounts": ["/boot/efi", "/mnt/backup"]})
+
+    @pytest.mark.parametrize(
+        "value",
+        ["/boot/efi", ["/", 5], ["/", None], {"/": True}],
+        ids=["str", "int", "null", "dict"],
+    )
+    def test_ignore_mounts_that_is_no_list_of_strings_is_rejected(self, value):
+        with pytest.raises(ValueError, match=r"\signore_mounts"):
+            validate_check_config("agent_resources", {"ignore_mounts": value})
+
 
 class TestAlertOnUnavailableTemplates:
-    """The key must not make a docker/zfs template check or a built-in look changed
+    """The key must not make a docker/zfs/proxmox template check or a built-in look changed
     (R-0420): configs are stored as sent, never filled with the schema defaults, so
     a check without the key still equals its definition and an unedited built-in
     keeps its hash (pinned in test_seed)."""
@@ -356,12 +690,13 @@ class TestAlertOnUnavailableTemplates:
     _SHIPPED = {
         "docker_health": {},
         "zfs_health": {"capacity_warn": 80, "capacity_crit": 90},
+        "proxmox_backup": {"max_backup_age_hours": 26},
     }
 
     @pytest.fixture()
     def builtins(self, client_db, monkeypatch):
-        """docker-host and zfs-storage seeded and assigned to srv-1: the client, the
-        factory, the template ids by slug and the created checks by type."""
+        """docker-host, zfs-storage and proxmox-host seeded and assigned to srv-1: the
+        client, the factory, the template ids by slug and the created checks by type."""
         # The scheduler is not under test; keep jobs out of the process-wide one.
         monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
         monkeypatch.setattr("app.template_sync.add_check", lambda *a, **k: None)
@@ -370,7 +705,7 @@ class TestAlertOnUnavailableTemplates:
             seed_builtin_templates(db)
             ids = {t.builtin_slug: t.id for t in db.query(MonitorTemplate)}
         assign = {"server_id": "srv-1", "hostname": "h", "server_name": "n"}
-        for slug in ("docker-host", "zfs-storage"):
+        for slug in ("docker-host", "zfs-storage", "proxmox-host"):
             r = client.post(f"/templates/{ids[slug]}/assign", json=assign)
             assert r.status_code == 200, r.text
         checks = {c["checkType"]: c for c in client.get("/checks").json()}
@@ -389,6 +724,7 @@ class TestAlertOnUnavailableTemplates:
         assert {t: after[t]["overriddenFields"] for t in _UNAVAILABLE_TYPES} == {
             "docker_health": [],
             "zfs_health": [],
+            "proxmox_backup": [],
         }
 
     @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
@@ -405,7 +741,7 @@ class TestAlertOnUnavailableTemplates:
         assert r.status_code == 200, r.text
         assert r.json()["overriddenFields"] == []
 
-    @pytest.mark.parametrize("slug", ["docker-host", "zfs-storage"])
+    @pytest.mark.parametrize("slug", ["docker-host", "zfs-storage", "proxmox-host"])
     def test_builtin_saved_unchanged_in_the_editor_stays_unedited(self, builtins, slug):
         # The editor sends every definition back; each config passes the schema
         # but must be stored as sent, or the hash would move.

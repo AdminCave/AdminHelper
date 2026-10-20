@@ -323,3 +323,46 @@ describe('BuiltinUpdateModal — taking the update (T11)', () => {
     expect(h.fetchTemplates).toHaveBeenCalledTimes(1);
   });
 });
+
+// monitoring-alert-quality T16 (R-0424): consecutive_oks is a check definition field
+// with the schema default 2, which the server leaves out of a side at that default.
+describe('BuiltinUpdateModal — consecutive_oks (monitoring-alert-quality T16)', () => {
+  it('names a changed consecutive_oks by its label, a side without the key as 2', async () => {
+    const root = await mountList([tpl()]);
+    const data = update({
+      current: {
+        checkDefinitions: [
+          {
+            def_id: 'cpu',
+            name: 'CPU',
+            check_type: 'agent_resources',
+            consecutive_fails: 5,
+            consecutive_oks: 4,
+          },
+          // the old version of a check whose new one recovers after one ok
+          { def_id: 'disk', name: 'Disk Forecast', check_type: 'disk_forecast' },
+        ],
+        alertDefinitions: [],
+      },
+      shipped: {
+        checkDefinitions: [
+          { def_id: 'cpu', name: 'CPU', check_type: 'agent_resources' },
+          {
+            def_id: 'disk',
+            name: 'Disk Forecast',
+            check_type: 'disk_forecast',
+            consecutive_oks: 1,
+          },
+        ],
+        alertDefinitions: [],
+      },
+    });
+    const dlg = await openUpdate(root, data);
+
+    expect(fieldRows(row(dlg, 'cpu')!)).toEqual([
+      ['Fehlversuche bis Alarm', '5', '3'],
+      ['OKs bis Entwarnung', '4', '2'],
+    ]);
+    expect(fieldRows(row(dlg, 'disk')!)).toEqual([['OKs bis Entwarnung', '2', '1']]);
+  });
+});

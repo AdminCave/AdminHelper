@@ -17,10 +17,11 @@ import time
 
 from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
 
-# The codes the agent sends for a block it could not read (dockerUnavailable and
-# zfsUnavailable in apps/agent/internal/monitor/plugins.go).
+# The codes the agent sends for a block it could not read (dockerUnavailable,
+# zfsUnavailable and proxmoxUnavailable in apps/agent/internal/monitor/plugins.go).
 _ZFS_ERRORS = frozenset({"timeout", "cli_failed"})
 _DOCKER_ERRORS = frozenset({"daemon_unreachable", "timeout", "cli_failed", "parse_failed"})
+_PROXMOX_ERRORS = frozenset({"timeout", "cli_failed", "parse_failed", "backup_index_incomplete"})
 
 
 def _whole_number(value: object) -> int | None:
@@ -50,7 +51,8 @@ class ProxmoxBackupChecker:
     {
         "max_backup_age_hours": 26,
         "exclude_vmids": [999],
-        "exclude_stopped": true
+        "exclude_stopped": true,
+        "alert_on_unavailable": true
     }
     """
 
@@ -60,11 +62,25 @@ class ProxmoxBackupChecker:
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         proxmox = report.get("proxmox")
         if not isinstance(proxmox, dict) or not proxmox:
-            return "unknown", "No Proxmox data in report", None
+            # An empty list, not None: the push path keeps the stored details of a
+            # result without any, and the desktop would go on showing the old VMs.
+            return "unknown", "No Proxmox data in report", {"_details": {"vms": []}}
+
+        # Only a JSON false is an outage: null, 0 or "false" let the VMs decide.
+        if proxmox.get("available", True) is False or proxmox.get("error"):
+            msg, code = _outage_message("Proxmox", proxmox, _PROXMOX_ERRORS)
+            # Only a real False switches the alert off; anything else keeps the default.
+            alert = config.get("alert_on_unavailable", True) is not False
+            details = {"available": False, "error": code, "vms": []}
+            return ("warning" if alert else "unknown"), msg, {"_details": details}
 
         vms = capped_objects(proxmox.get("vms"))
         if not vms:
-            return "ok", "No VMs/CTs found", None
+            return (
+                "ok",
+                "No VMs/CTs found",
+                {"_details": {"available": True, "error": None, "vms": []}},
+            )
 
         max_age_hours = config.get("max_backup_age_hours", 26)
         exclude_vmids = set(config.get("exclude_vmids", []))
@@ -90,10 +106,11 @@ class ProxmoxBackupChecker:
             if exclude_stopped and vm.get("status") != "running":
                 continue
 
-            vm_type = vm.get("type")
-            if not isinstance(vm_type, str):
-                vm_type = "vm"
-            label = f"{vm_type.upper()} {vmid} ({vm.get('name', '?')})"
+            # Type and name go into the message and into _details, which the desktop reads with
+            # every other check in one answer: only a string, capped and on one line.
+            vm_type = cap_agent_text(vm.get("type")) or "vm"
+            name = cap_agent_text(vm.get("name")) or "?"
+            label = f"{vm_type.upper()} {vmid} ({name})"
             last_ts = agent_number(vm.get("last_backup_ts"))
             vm_status = "ok"
             age_hours = None
@@ -111,7 +128,7 @@ class ProxmoxBackupChecker:
             vm_details.append(
                 {
                     "vmid": vmid,
-                    "name": vm.get("name", "?"),
+                    "name": name,
                     "type": vm_type,
                     "backupStatus": vm_status,
                     "ageHours": age_hours,
@@ -122,7 +139,7 @@ class ProxmoxBackupChecker:
             "proxmox_backup_ok": ok_count,
             "proxmox_backup_missing": len(no_backup),
             "proxmox_backup_outdated": len(outdated),
-            "_details": {"vms": vm_details},
+            "_details": {"available": True, "error": None, "vms": vm_details},
         }
 
         if no_backup:
@@ -142,6 +159,12 @@ def _pool_capacity(pool: dict) -> int | float:
     (R-0517). The health still counts."""
     cap = agent_number(pool.get("capacity_percent"))
     return 0 if cap is None else cap
+
+
+def _pool_name(pool: dict) -> str:
+    """name of a pool as message and _details show it: only a string, capped and on one line
+    by cap_agent_text, else "?". The metric name still reads the raw value."""
+    return cap_agent_text(pool.get("name")) or "?"
 
 
 class ZfsHealthChecker:
@@ -190,19 +213,20 @@ class ZfsHealthChecker:
 
         for pool in pools:
             name = pool.get("name", "?")
+            shown_name = _pool_name(pool)
             health = pool.get("health", "UNKNOWN")
             cap = _pool_capacity(pool)
             metrics[f"zfs_capacity_{name}"] = cap
 
             if health in ("FAULTED", "OFFLINE", "UNAVAIL", "DEGRADED"):
-                problems.append(f"{name}: {health}")
+                problems.append(f"{shown_name}: {health}")
                 status = "critical"
 
             if cap >= cap_crit:
-                problems.append(f"{name}: {cap}% full (>={cap_crit}%)")
+                problems.append(f"{shown_name}: {cap}% full (>={cap_crit}%)")
                 status = "critical"
             elif cap >= cap_warn:
-                problems.append(f"{name}: {cap}% full (>={cap_warn}%)")
+                problems.append(f"{shown_name}: {cap}% full (>={cap_warn}%)")
                 if status != "critical":
                     status = "warning"
 
@@ -211,8 +235,9 @@ class ZfsHealthChecker:
             "error": None,
             "pools": [
                 {
-                    "name": p.get("name", "?"),
-                    "health": p.get("health", "UNKNOWN"),
+                    "name": _pool_name(p),
+                    # The rating above reads the raw health; _details only gets a capped string.
+                    "health": cap_agent_text(p.get("health")) or "UNKNOWN",
                     "capacityPercent": _pool_capacity(p),
                 }
                 for p in pools
@@ -222,7 +247,7 @@ class ZfsHealthChecker:
         if problems:
             return status, join_capped(problems, "; "), metrics
 
-        pool_summary = join_capped([f"{p.get('name', '?')} {_pool_capacity(p)}%" for p in pools])
+        pool_summary = join_capped([f"{_pool_name(p)} {_pool_capacity(p)}%" for p in pools])
         return "ok", f"All pools ONLINE: {pool_summary}", metrics
 
 
@@ -375,7 +400,11 @@ class DockerHealthChecker:
 
             state = c.get("state")
             state = state.lower() if isinstance(state, str) else ""
-            prev_count = prev_restarts.get(cid) if isinstance(cid, str) else None
+            # _details stores the ID capped like the name, and the previous details are the
+            # stored ones: the lookup goes by the capped ID, so an ID the cap changes keeps its
+            # previous value.
+            shown_id = cap_agent_text(cid)
+            prev_count = prev_restarts.get(shown_id) if shown_id else None
             category, reason = _rate_container(c, state, prev_count)
             # The ignore list and the rating read the full name and state; message and details
             # only get a capped copy, the message goes unchanged into webhook and mail (R-0508).
@@ -394,9 +423,9 @@ class DockerHealthChecker:
 
             container_details.append(
                 {
-                    "id": c.get("id"),
+                    "id": shown_id,
                     "name": shown_name,
-                    "image": c.get("image", ""),
+                    "image": cap_agent_text(c.get("image")) or "",
                     "state": shown_state,
                     "category": category,
                     "reason": reason,

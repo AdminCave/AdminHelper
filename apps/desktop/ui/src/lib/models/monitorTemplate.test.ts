@@ -37,6 +37,7 @@ describe('emptyCheckDef', () => {
     expect(a.interval).toBe('5m');
     expect(a.severity).toBe('critical');
     expect(a.consecutive_fails).toBe(3);
+    expect(a.consecutive_oks).toBe(2);
     expect(a.config).toEqual({});
     const b = emptyCheckDef();
     expect(a.config).not.toBe(b.config);
@@ -71,6 +72,7 @@ describe('templateToForm', () => {
           interval: '1m',
           severity: 'warning',
           consecutive_fails: 2,
+          consecutive_oks: 1,
         },
       ],
       alertDefinitions: [
@@ -91,6 +93,7 @@ describe('templateToForm', () => {
     expect(f.description).toBe('desc');
     expect(f.checkDefs).toHaveLength(1);
     expect(f.checkDefs[0].config).toEqual({ target: 'host.lan' });
+    expect(f.checkDefs[0].consecutive_oks).toBe(1);
     // config copied, not aliased
     expect(f.checkDefs[0].config).not.toBe(tpl.checkDefinitions![0].config);
     expect(f.alertDefs[0].channel_config).toEqual({ recipients: ['ops@example.com'] });
@@ -121,6 +124,7 @@ describe('formToInput', () => {
     expect(input.check_definitions).toHaveLength(1);
     expect(input.check_definitions[0].name).toBe('ping');
     expect(input.check_definitions[0].config).toEqual({ target: 'a' });
+    expect(input.check_definitions[0].consecutive_oks).toBe(2);
     expect(input.alert_definitions[0].name).toBe('ops');
     expect(input.alert_definitions[0].channel_config).toEqual({ url: 'https://x' });
   });

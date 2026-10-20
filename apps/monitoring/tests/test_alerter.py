@@ -10,14 +10,38 @@ Tested without a real DB: rule filter (_rule_matches), cooldown time window
 unknown-policy (transitions into 'unknown' never notify).
 """
 
+import logging
+from datetime import datetime, timedelta
 from types import SimpleNamespace
+
+import httpx
+import pytest
 
 from app import alerter
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 from app.core import ssrf as ssrf_mod
+from app.core.logging_config import configure_logging
 from app.core.ssrf import UrlVerdict
+from app.models import MonitorAlertRule, MonitorCheck, MonitorMaintenance, MonitorState
 
 from ._helpers import _CapturingDb, make_check, make_msg, make_rule
+
+_NOW = datetime(2026, 10, 20, 12, 0)
+
+
+def _sqlite_session():
+    """A session on a fresh in-memory SQLite with the model schema."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.models import Base
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)()
 
 
 class TestRuleMatches:
@@ -230,11 +254,92 @@ class TestWebhookSsrf:
         assert posted["n"] == 0
 
 
+# Many webhook services carry the credential in the path or the query, so user info,
+# path, query and fragment of the target must not reach the service log.
+_MARKED_URL = (
+    "https://user:pw-marke@hooks.example.com/services/T0/B0/pfad-marke?token=query-marke#frag-marke"
+)
+_MARKS = ("user:", "pw-marke", "/services/", "pfad-marke", "query-marke", "frag-marke")
+_CONFIGURED_LOGGERS = ("", "httpx", "httpcore", "uvicorn", "uvicorn.access", "uvicorn.error")
+
+
+@pytest.fixture
+def service_logging(monkeypatch, caplog):
+    """The service's own logging configuration with caplog's handler kept on root, so
+    the test sees every record the service would write, from any logger."""
+    loggers = [logging.getLogger(name) for name in _CONFIGURED_LOGGERS]
+    saved = [(lg, lg.level, lg.handlers[:], lg.propagate) for lg in loggers]
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    configure_logging()
+    logging.getLogger().addHandler(caplog.handler)
+    yield
+    for lg, level, handlers, propagate in saved:
+        lg.handlers[:] = handlers
+        lg.propagate = propagate
+        lg.setLevel(level)
+
+
+def _alerter_lines(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "monitor.alerter"]
+
+
+class TestWebhookLogLines:
+    @pytest.mark.parametrize(
+        ("verdict", "line"),
+        [
+            (
+                UrlVerdict.PRIVATE,
+                "Webhook target rejected (private/reserved): c -> hooks.example.com",
+            ),
+            (
+                UrlVerdict.UNRESOLVED,
+                "Webhook target rejected (could not be resolved): c -> hooks.example.com",
+            ),
+            (UrlVerdict.ALLOWED, "Webhook sent: c -> hooks.example.com"),
+        ],
+    )
+    def test_log_line_names_only_the_host(
+        self, monkeypatch, caplog, service_logging, verdict, line
+    ):
+        monkeypatch.setattr(alerter, "classify_url", lambda url: verdict)
+        # Stubbed below the client, so httpx itself runs and logs as in the service.
+        monkeypatch.setattr(
+            httpx.HTTPTransport,
+            "handle_request",
+            lambda self, request: httpx.Response(200, request=request),
+        )
+
+        alerter._send_webhook({"url": _MARKED_URL}, make_rule(), make_check(), make_msg())
+
+        for message in caplog.messages:
+            for mark in _MARKS:
+                assert mark not in message, message
+        assert _alerter_lines(caplog) == [line]
+
+    def test_unparsable_url_is_logged_as_placeholder(self, monkeypatch, caplog):
+        # urlparse raises on a malformed IPv6 literal; the real classify_url rejects it
+        # as private, and the log line must not raise on it either.
+        posted = {"n": 0}
+        monkeypatch.setattr(
+            alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="monitor.alerter"):
+            success, _error = alerter._send_webhook(
+                {"url": "http://[::1"}, make_rule(), make_check(), make_msg()
+            )
+
+        assert success is False
+        assert posted["n"] == 0
+        assert _alerter_lines(caplog) == ["Webhook target rejected (private/reserved): c -> ?"]
+
+
 class TestRuleLoopIsolation:
-    def test_a_throwing_dispatch_does_not_abort_the_loop(self, monkeypatch):
+    def test_a_throwing_dispatch_does_not_abort_the_loop(self, monkeypatch, caplog):
         # 4.45: a misconfigured rule whose _dispatch raises (e.g. smtp_port "abc" parsed before
         # _send_email's own try) must not abort the whole loop and roll back every other rule's
-        # alert log — each rule still gets a log entry, the bad one flagged as a failed attempt.
+        # alert log — each rule still gets a log entry, the bad one flagged as a failed attempt
+        # with a fixed reason; the exception text goes to the service log only.
         bad = make_rule(id="rule-bad", name="bad")
         good = make_rule(id="rule-good", name="good")
         db = _CapturingDb([bad, good])
@@ -247,13 +352,18 @@ class TestRuleLoopIsolation:
         monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
 
-        process_alert(db, make_check(), old_status="ok", new_status="critical")
+        with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+            process_alert(db, make_check(), old_status="ok", new_status="critical")
 
         assert len(db.added) == 2, "beide Rules bekommen einen Log-Eintrag trotz Fehler in einer"
         assert db.flushed is True
         by_rule = {e.alert_rule_id: e.success for e in db.added}
         assert by_rule["rule-bad"] is False
         assert by_rule["rule-good"] is True
+        errors = {e.alert_rule_id: e.error for e in db.added}
+        assert errors["rule-bad"] == "Dispatch failed (ValueError)"
+        assert errors["rule-good"] is None
+        assert "smtp_port abc" in caplog.text
 
 
 def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):
@@ -339,6 +449,39 @@ def test_build_message_recovery_escalation_and_details():
     assert "Details: Port 22: refused" in esc["text"]
 
 
+@pytest.mark.parametrize(
+    ("severity", "new_status", "label"),
+    [
+        ("critical", "critical", "CRITICAL"),
+        ("critical", "warning", "WARNING"),
+        ("warning", "critical", "WARNING"),
+        ("warning", "warning", "WARNING"),
+        ("info", "critical", "INFO"),
+        ("info", "warning", "INFO"),
+    ],
+)
+def test_build_message_subject_is_capped_at_the_check_severity(severity, new_status, label):
+    # R-0424: the subject label is the lower of status and check severity. The
+    # text keeps the real transition, its label and the severity line.
+    check = make_check(name="web", check_type="http", severity=severity)
+
+    msg = alerter._build_message(_CapturingDb([]), check, old_status="ok", new_status=new_status)
+
+    assert msg["subject"] == f"[AdminHelper Monitor] {label}: web"
+    assert msg["text"] == (
+        f"{new_status.upper()}\nCheck: web (http)\nStatus: ok → {new_status}\nSeverity: {severity}"
+    )
+
+
+@pytest.mark.parametrize("severity", ["info", "warning", "critical"])
+def test_build_message_recovery_subject_ignores_the_severity(severity):
+    check = make_check(name="web", check_type="http", severity=severity)
+
+    msg = alerter._build_message(_CapturingDb([]), check, old_status="critical", new_status="ok")
+
+    assert msg["subject"] == "[AdminHelper Monitor] RECOVERY: web"
+
+
 class TestUnknownNeverNotifies:
     """unknown-Policy (Spec monitoring-overhaul + alert-sent-state): transitions
     INTO 'unknown' dispatch nothing — no rules, no hub emit, no alert log.
@@ -394,7 +537,15 @@ class TestUnknownNeverNotifies:
         # critical was REPORTED, then the check went unknown (silent), then ok:
         # the previously lost recovery is delivered now (sent-state catch-up).
         dispatched, emitted = self._spies(monkeypatch)
-        state = SimpleNamespace(status="ok", notified_status="critical", message=None)
+        # The bell showed the reported critical (hub_status, R-0424), so it gets the
+        # recovery too.
+        state = SimpleNamespace(
+            status="ok",
+            notified_status="critical",
+            message=None,
+            hub_status="critical",
+            hub_sent_at=None,
+        )
         db = _CapturingDb([make_rule()], state=state)
         process_alert(db, make_check(), old_status="unknown", new_status="ok")
         assert dispatched["n"] == 1
@@ -425,7 +576,13 @@ class TestUnknownNeverNotifies:
             "_build_message",
             lambda db, check, old, new: captured.update(old=old, new=new) or make_msg(),
         )
-        state = SimpleNamespace(status="critical", notified_status="ok", message=None)
+        state = SimpleNamespace(
+            status="critical",
+            notified_status="ok",
+            message=None,
+            hub_status=None,
+            hub_sent_at=None,
+        )
         db = _CapturingDb([make_rule()], state=state)
         # The dispatch spy records whether the claim was committed BEFORE the
         # channel I/O ran — the core of claim-then-dispatch (F1/F5).
@@ -470,10 +627,31 @@ class TestHostDownSuppression:
     notification (the agent_ping alert itself)."""
 
     class _HostDownDb(_CapturingDb):
-        # _host_is_down's state query hits first(); a ("critical",) row means
-        # the server's agent_ping stands critical.
-        def first(self):
-            return ("critical",)
+        # The server's agent_ping stands critical, and nothing else. Since R-0424
+        # the answer depends on which kind of check stands critical (a heartbeat
+        # mutes the other checks, but no heartbeat), so _host_is_down's query on
+        # the MonitorState.status column runs against a real SQLite holding just
+        # that heartbeat; everything else stays fake.
+        def __init__(self, rules):
+            super().__init__(rules)
+            self._real = _sqlite_session()
+            self._real.add(
+                MonitorCheck(
+                    id="hb-1",
+                    server_id="srv-1",
+                    name="Heartbeat",
+                    check_type="agent_ping",
+                    config="{}",
+                    enabled=True,
+                )
+            )
+            self._real.add(MonitorState(check_id="hb-1", status="critical"))
+            self._real.commit()
+
+        def query(self, *args, **kwargs):
+            if args and args[0] is MonitorState.status:
+                return self._real.query(*args, **kwargs)
+            return super().query(*args, **kwargs)
 
     def _spies(self, monkeypatch):
         dispatched = {"n": 0}
@@ -576,6 +754,135 @@ def test_host_is_down_query_semantics():
         assert alerter._host_is_down(db, make_check(server_id="srv-9")) is False
     finally:
         db.close()
+
+
+class TestHostPingRankOrder:
+    """R-0424: which critical check mutes which on one server. The Host Ping (the
+    ping check of the template "Host Ping") mutes every other check, the heartbeat
+    included; a critical heartbeat mutes the others but never the Host Ping, so the
+    two never silence each other when the host is gone. Real SQLite: the rank lives
+    in the query."""
+
+    @pytest.fixture()
+    def db(self):
+        db = _sqlite_session()
+        yield db
+        db.close()
+
+    @staticmethod
+    def _add(db, cid, check_type, status, *, template_def_id=None, enabled=True, server="srv-1"):
+        check = MonitorCheck(
+            id=cid,
+            server_id=server,
+            name=cid,
+            check_type=check_type,
+            config="{}",
+            enabled=enabled,
+            template_def_id=template_def_id,
+        )
+        db.add(check)
+        db.add(MonitorState(check_id=cid, status=status, notified_status="ok"))
+        db.commit()
+        return check
+
+    def _server(self, db, *, host_ping, heartbeat):
+        """srv-1 with a Host Ping, a heartbeat and a critical resources check."""
+        return (
+            self._add(db, "hp", "ping", host_ping, template_def_id="host-ping"),
+            self._add(db, "hb", "agent_ping", heartbeat),
+            self._add(db, "res", "agent_resources", "critical"),
+        )
+
+    def test_a_critical_host_ping_mutes_the_others_and_the_heartbeat(self, db):
+        host_ping, heartbeat, resources = self._server(db, host_ping="critical", heartbeat="ok")
+
+        assert alerter.muted_reason(db, resources, _NOW) == "host down"
+        assert alerter.muted_reason(db, heartbeat, _NOW) == "host down"
+        assert alerter.muted_reason(db, host_ping, _NOW) is None
+
+    def test_a_critical_heartbeat_never_mutes_the_host_ping(self, db):
+        host_ping, heartbeat, resources = self._server(db, host_ping="ok", heartbeat="critical")
+
+        assert alerter.muted_reason(db, host_ping, _NOW) is None
+        assert alerter.muted_reason(db, heartbeat, _NOW) is None
+        assert alerter.muted_reason(db, resources, _NOW) == "host down"
+
+    def test_both_critical_only_the_host_ping_reports(self, db, monkeypatch):
+        checks = self._server(db, host_ping="critical", heartbeat="critical")
+        db.add(
+            MonitorAlertRule(
+                id="r1", name="r", channel="webhook", channel_config="{}", cooldown_minutes=30
+            )
+        )
+        db.commit()
+        dispatched, emitted = [], []
+        monkeypatch.setattr(
+            alerter,
+            "_dispatch",
+            lambda rule, check, msg: dispatched.append(check.id) or (True, None),
+        )
+        monkeypatch.setattr(
+            alerter, "_emit_to_hub", lambda check, *a, **k: emitted.append(check.id) or True
+        )
+
+        for check in checks:
+            process_alert(db, check, "ok", "critical")
+
+        assert dispatched == ["hp"]
+        assert emitted == ["hp"]
+        # Muted, not dropped: the heartbeat's outage waits for its catch-up.
+        assert db.get(MonitorState, "hb").notified_status == "ok"
+
+    @pytest.mark.parametrize(
+        ("check_type", "template_def_id"),
+        [("ping", None), ("http", "host-ping")],
+        ids=["ping-by-hand", "not-a-ping"],
+    )
+    def test_only_the_ping_of_the_template_signals_host_down(self, db, check_type, template_def_id):
+        # A ping set up by hand may aim at another target (a gateway, say); at
+        # critical it must not mute the whole server.
+        self._add(db, "other", check_type, "critical", template_def_id=template_def_id)
+        heartbeat = self._add(db, "hb", "agent_ping", "ok")
+        resources = self._add(db, "res", "agent_resources", "critical")
+
+        assert alerter.muted_reason(db, heartbeat, _NOW) is None
+        assert alerter.muted_reason(db, resources, _NOW) is None
+
+    @pytest.mark.parametrize(
+        ("enabled", "server"), [(False, "srv-1"), (True, "srv-9")], ids=["disabled", "other-server"]
+    )
+    def test_a_disabled_or_foreign_host_ping_mutes_nothing(self, db, enabled, server):
+        self._add(
+            db,
+            "hp",
+            "ping",
+            "critical",
+            template_def_id="host-ping",
+            enabled=enabled,
+            server=server,
+        )
+        heartbeat = self._add(db, "hb", "agent_ping", "ok")
+        resources = self._add(db, "res", "agent_resources", "critical")
+
+        assert alerter.muted_reason(db, heartbeat, _NOW) is None
+        assert alerter.muted_reason(db, resources, _NOW) is None
+
+    def test_a_maintenance_window_mutes_the_host_ping_too(self, db):
+        host_ping = self._add(db, "hp", "ping", "critical", template_def_id="host-ping")
+        db.add(
+            MonitorMaintenance(
+                id="mw-1",
+                server_id="srv-1",
+                kind="once",
+                starts_at=_NOW - timedelta(hours=1),
+                ends_at=_NOW + timedelta(hours=1),
+                enabled=True,
+            )
+        )
+        db.commit()
+
+        assert alerter.muted_reason(db, host_ping, _NOW) == "maintenance window"
+        assert alerter.muted_reason(db, host_ping, _NOW + timedelta(hours=2)) is None
 
 
 class TestMaintenanceSuppression:
