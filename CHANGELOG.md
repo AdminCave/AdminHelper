@@ -978,6 +978,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `warning` meldet. Ein Check mit `severity` `info` erreicht die Glocke nicht mehr, sein Betreff traegt `INFO`. Der
   Text der Meldung nennt weiter den echten Uebergang und die `severity`; `RECOVERY` im Betreff bleibt. Checks mit
   `severity` `critical` melden wie bisher. Doku: Admin-Doku Monitoring (DE+EN).
+- **Monitoring: Glocken-Cooldown von 30 Minuten je Check (R-0424):** Die Glocke (Notification-Hub, auch seine
+  persoenlichen E-Mails) erhaelt je Check hoechstens eine Problem-Meldung in 30 Minuten; bisher erhielt sie jede.
+  Was in diese Zeit faellt, wird verworfen und nicht nachgeholt, und die Entwarnung eines Problems, das die Glocke so
+  nie gezeigt hat, erhaelt sie auch nicht. Die Eskalation von `warning` auf `critical` und die Entwarnung eines
+  gezeigten Problems gehen immer durch; die Entwarnung traegt die Stufe, mit der die Glocke das Problem gezeigt hat,
+  auch wenn die `severity` des Checks inzwischen geaendert wurde. Webhook und Mail der Alert-Regeln behalten ihren
+  eigenen `cooldown_minutes`. Ein vor dem Update gemeldetes Problem bekommt seine Entwarnung in der Glocke. Doku:
+  Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
   Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
   Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und

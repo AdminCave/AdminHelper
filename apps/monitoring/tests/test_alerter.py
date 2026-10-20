@@ -518,7 +518,15 @@ class TestUnknownNeverNotifies:
         # critical was REPORTED, then the check went unknown (silent), then ok:
         # the previously lost recovery is delivered now (sent-state catch-up).
         dispatched, emitted = self._spies(monkeypatch)
-        state = SimpleNamespace(status="ok", notified_status="critical", message=None)
+        # The bell showed the reported critical (hub_status, R-0424), so it gets the
+        # recovery too.
+        state = SimpleNamespace(
+            status="ok",
+            notified_status="critical",
+            message=None,
+            hub_status="critical",
+            hub_sent_at=None,
+        )
         db = _CapturingDb([make_rule()], state=state)
         process_alert(db, make_check(), old_status="unknown", new_status="ok")
         assert dispatched["n"] == 1
@@ -549,7 +557,13 @@ class TestUnknownNeverNotifies:
             "_build_message",
             lambda db, check, old, new: captured.update(old=old, new=new) or make_msg(),
         )
-        state = SimpleNamespace(status="critical", notified_status="ok", message=None)
+        state = SimpleNamespace(
+            status="critical",
+            notified_status="ok",
+            message=None,
+            hub_status=None,
+            hub_sent_at=None,
+        )
         db = _CapturingDb([make_rule()], state=state)
         # The dispatch spy records whether the claim was committed BEFORE the
         # channel I/O ran — the core of claim-then-dispatch (F1/F5).

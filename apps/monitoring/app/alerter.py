@@ -16,7 +16,7 @@ import json
 import logging
 import smtplib
 import ssl
-from datetime import timedelta
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from urllib.parse import urlparse
@@ -56,6 +56,11 @@ logger = logging.getLogger("monitor.alerter")
 # _emit_to_hub). The same table caps the label in the message subject.
 _STATUS_LEVEL = {"ok": 0, "info": 0, "pending": 0, "unknown": 1, "warning": 1, "critical": 2}
 _LEVEL_SEVERITY = {0: "info", 1: "warning", 2: "critical"}
+_SEVERITY_LEVEL = {"info": 0, "warning": 1, "critical": 2}
+
+# Bell cooldown (docs/features/monitoring-alert-quality.md): at most one problem
+# per check in this window reaches the notification hub; see hub_decision.
+HUB_COOLDOWN = timedelta(minutes=30)
 
 
 def resolve_notification(notified_status: str | None, new_status: str) -> str:
@@ -102,7 +107,9 @@ def process_alert(
     THIS function BEFORE any channel I/O, so the row lock never spans
     webhook/SMTP timeouts and a later commit failure cannot re-fire an
     already-sent alert (at-most-once). The alert-log rows written afterwards
-    are only flushed — the caller's commit persists them.
+    are only flushed — the caller's commit persists them. The claim also
+    reserves the bell's slot (hub_status, hub_sent_at); handing it back after a
+    failed hub POST likewise comes with the caller's commit.
     """
     # Claim phase — a short FOR UPDATE window with no I/O inside. The lock
     # serializes concurrent BG dispatches for the same check: the second one
@@ -157,6 +164,26 @@ def process_alert(
     # and read as ok.
     reported_old = notified if notified not in (None, "pending", "unknown") else "ok"
 
+    # The bell (notification hub) has its own cooldown (hub_decision). It
+    # decides under the same lock and its slot is reserved with the claim, so a
+    # dispatch of this check that starts while this one is still in its hub POST
+    # reads what this one is about to show, not the record from before. What the
+    # bell skips is dropped: the claim records the transition as reported,
+    # nothing is caught up. Without a state row (the notified fallback above)
+    # the bell is taken to have shown what the rules reported, and nothing is
+    # recorded.
+    now = utcnow_naive()
+    if state is not None:
+        hub_before = (state.hub_status, state.hub_sent_at)
+    else:
+        hub_before = (_capped_status(notified, check.severity), None)
+    hub_emit = hub_decision(*hub_before, new_status, check.severity, now) == "emit"
+    # A problem starts the cooldown, a recovery leaves hub_sent_at as it was.
+    hub_reserved = (
+        _capped_status(new_status, check.severity),
+        hub_before[1] if is_recovery else now,
+    )
+
     # Claim BEFORE the channel I/O and commit it: the row lock is released, so
     # scheduler workers and push threads never wait on webhook/SMTP timeouts
     # (the 5.3 isolation stays intact), and a commit failure after the send can
@@ -164,6 +191,8 @@ def process_alert(
     # ("reported" = the claim persisted).
     if state is not None:
         state.notified_status = new_status
+        if hub_emit:
+            state.hub_status, state.hub_sent_at = hub_reserved
         db.commit()
 
     # Build the alert message once per transition on the caller's session, then
@@ -204,9 +233,33 @@ def process_alert(
     # remain for the caller's commit.
     db.flush()
 
-    # Independently of the rule-based webhook/email dispatch above, push every
-    # status transition to the server's notification hub for per-user routing.
-    _emit_to_hub(check, reported_old, new_status, msg)
+    # Independently of the rule-based webhook/email dispatch above, push the
+    # transition to the server's notification hub for per-user routing.
+    if not hub_emit:
+        return
+    # A recovery reaches the bell at the level its alarm reached it with, not at
+    # the check's severity as it is now: lowered in between, a subscriber with
+    # min_severity critical would see the alarm but never the all-clear.
+    severity = hub_before[0] if is_recovery else None
+    if _emit_to_hub(check, reported_old, new_status, msg, severity=severity) or state is None:
+        return
+    _release_hub_slot(db, check.id, hub_reserved, hub_before)
+
+
+def _release_hub_slot(
+    db: Session,
+    check_id: str,
+    reserved: tuple[str | None, datetime | None],
+    before: tuple[str | None, datetime | None],
+) -> None:
+    """Give back the bell slot of a hub POST that failed — only while the row
+    still carries this reservation: a dispatch that reserved after this one keeps
+    its own. Comes with the caller's commit, like the alert-log rows."""
+    db.query(MonitorState).filter(
+        MonitorState.check_id == check_id,
+        MonitorState.hub_status == reserved[0],
+        MonitorState.hub_sent_at.is_not_distinct_from(reserved[1]),
+    ).update({"hub_status": before[0], "hub_sent_at": before[1]}, synchronize_session=False)
 
 
 def _host_is_down(db: Session, check: MonitorCheck) -> bool:
@@ -233,7 +286,7 @@ def _host_is_down(db: Session, check: MonitorCheck) -> bool:
 def _severity_level(severity: str) -> int:
     """Level of a check's severity. A value outside VALID_SEVERITIES (the routers
     reject it) caps nothing rather than silence an alert."""
-    return _STATUS_LEVEL.get(severity, 2)
+    return _SEVERITY_LEVEL.get(severity, 2)
 
 
 def _hub_severity(old_status: str, new_status: str, severity: str) -> str:
@@ -243,21 +296,70 @@ def _hub_severity(old_status: str, new_status: str, severity: str) -> str:
     return _LEVEL_SEVERITY[min(level, _severity_level(severity))]
 
 
-def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dict) -> None:
+def _capped_status(status: str | None, severity: str) -> str | None:
+    """What hub_status records of a status: a problem at most at the check's
+    severity, the level its event reached the bell with (warning/critical, info
+    for a check with severity info); any other status as it is."""
+    if status in ("warning", "critical"):
+        return _LEVEL_SEVERITY[min(_STATUS_LEVEL[status], _severity_level(severity))]
+    return status
+
+
+def hub_decision(
+    hub_status: str | None,
+    hub_sent_at: datetime | None,
+    new_status: str,
+    severity: str,
+    now: datetime,
+) -> str:
+    """Bell decision for a transition the alerter reports
+    (docs/features/monitoring-alert-quality.md, "Glocken-Cooldown").
+
+    ``hub_status`` is what the bell last showed of the check (_capped_status),
+    ``hub_sent_at`` when it last got a problem of it.
+
+    Returns:
+        "emit" — a recovery of a problem the bell showed; a shown warning that
+                 escalates to critical (capped at the severity); any other
+                 problem when no problem went to the bell in HUB_COOLDOWN.
+        "skip" — a recovery of a problem the bell never showed; a problem at
+                 capped level info; any other problem inside the cooldown.
+    """
+    if new_status == "ok":
+        # The bell clears only what it showed, at the level it showed it.
+        return "emit" if hub_status in ("warning", "critical") else "skip"
+    level = min(_STATUS_LEVEL.get(new_status, 1), _severity_level(severity))
+    if level == 0:
+        return "skip"
+    if hub_status == "warning" and level == 2:
+        return "emit"
+    if hub_sent_at is not None and now - hub_sent_at < HUB_COOLDOWN:
+        return "skip"
+    return "emit"
+
+
+def _emit_to_hub(
+    check: MonitorCheck,
+    old_status: str,
+    new_status: str,
+    msg: dict,
+    severity: str | None = None,
+) -> bool:
     """Push the status transition to the server's notification hub (best-effort).
 
     The server owns the user<->server mapping and decides who gets notified;
     monitoring stays a pure event source. A failed push must never break the
-    alert path, so errors are logged, not raised."""
-    if not SERVER_HUB_URL or not INTERNAL_API_KEY:
-        return
-    severity = _hub_severity(old_status, new_status, check.severity)
+    alert path, so errors are logged, not raised. ``severity`` replaces the one
+    computed from the transition (process_alert: a recovery at the level of its
+    alarm). Returns whether the hub accepted the event."""
+    if severity is None:
+        severity = _hub_severity(old_status, new_status, check.severity)
     # An info-level transition only involves ok/pending — not notification-worthy
     # (e.g. a check first coming up clean, or flapping at the bottom) — or belongs
     # to a check with severity info. Skip it so it never spams the hub; real
     # recoveries (warning/critical -> ok) keep their severity and are pushed.
     if severity == "info":
-        return
+        return False
     payload = {
         "event_type": "monitoring.check.transition",
         "severity": severity,
@@ -273,6 +375,14 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dic
         # not fire on the critical -> ok leg).
         "new_status": new_status,
     }
+    return _post_hub_event(payload, check.name)
+
+
+def _post_hub_event(payload: dict, label: str) -> bool:
+    """POST one event to the server's notification hub; True when the hub
+    accepted it. Never raises: errors are logged under ``label``."""
+    if not SERVER_HUB_URL or not INTERNAL_API_KEY:
+        return False
     try:
         resp = httpx.post(
             f"{SERVER_HUB_URL}/api/internal/events",
@@ -284,9 +394,12 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dic
         # httpx does not raise on 4xx/5xx — a rejected push (e.g. 403 from a
         # MONITOR_API_KEY mismatch) would otherwise be silently lost.
         if resp.status_code >= 300:
-            logger.warning("Hub-Emit abgelehnt (%s): HTTP %s", check.name, resp.status_code)
+            logger.warning("Hub-Emit abgelehnt (%s): HTTP %s", label, resp.status_code)
+            return False
     except Exception as exc:
-        logger.warning("Hub-Emit fehlgeschlagen (%s): %s", check.name, exc)
+        logger.warning("Hub-Emit fehlgeschlagen (%s): %s", label, exc)
+        return False
+    return True
 
 
 def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:

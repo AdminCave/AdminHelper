@@ -6,14 +6,40 @@
 notification hub, independently of the rule-based webhook/email dispatch.
 
 Pure-logic tests (no DB): severity mapping, the outbound call shape, best-effort
-error handling, and that process_alert fires the emit on a transition only."""
+error handling, and that process_alert fires the emit on a transition only.
+R-0424 adds the bell cooldown (hub_decision) and real-session tests of the bell's
+slot across two dispatches of one check (SQLite here, Postgres in
+test_check_engine_concurrency)."""
 
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from app import alerter
-from app.alerter import _emit_to_hub, _hub_severity, process_alert
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from ._helpers import _CapturingDb, make_check, make_msg, make_rule
+from app import alerter
+from app.alerter import (
+    HUB_COOLDOWN,
+    _emit_to_hub,
+    _hub_severity,
+    _severity_level,
+    hub_decision,
+    process_alert,
+)
+from app.check_engine import _dispatch_alert_bg
+
+from ._helpers import (
+    _CapturingDb,
+    bell_record,
+    make_check,
+    make_msg,
+    make_rule,
+    overlap_first_hub_post,
+    seed_bell_check,
+)
+
+_NOW = datetime(2026, 10, 20, 12, 0)
 
 
 class TestHubSeverity:
@@ -50,6 +76,66 @@ class TestHubSeverity:
         assert _hub_severity("ok", "warning", "critical") == "warning"
         assert _hub_severity("warning", "ok", "warning") == "warning"
         assert _hub_severity("pending", "ok", "warning") == "info"
+
+
+class TestSeverityLevel:
+    def test_the_three_severities(self):
+        assert [_severity_level(s) for s in ("info", "warning", "critical")] == [0, 1, 2]
+
+    @pytest.mark.parametrize("value", ["ok", "pending", "unknown", "bogus", ""])
+    def test_anything_else_caps_nothing(self, value):
+        # T5 review: the severity table is its own — a status word is no severity
+        # and, like any value the routers reject, must not lower an alert.
+        assert _severity_level(value) == 2
+
+
+_RECENT = _NOW - timedelta(minutes=10)
+_JUST_INSIDE = _NOW - HUB_COOLDOWN + timedelta(seconds=1)
+_EXPIRED = _NOW - HUB_COOLDOWN  # exactly 30 min ago: no longer "younger than"
+
+# (hub_status, hub_sent_at, new_status, severity) -> decision. hub_status is what
+# the bell last showed of the check (a problem capped at the check's severity),
+# hub_sent_at when it last got a problem.
+_HUB_MATRIX = [
+    # a problem, nothing shown in the cooldown
+    (None, None, "critical", "critical", "emit"),
+    (None, None, "warning", "critical", "emit"),
+    ("ok", None, "critical", "critical", "emit"),
+    ("ok", _EXPIRED, "critical", "critical", "emit"),
+    ("critical", _EXPIRED, "warning", "critical", "emit"),
+    # a problem inside the cooldown: dropped
+    ("ok", _RECENT, "critical", "critical", "skip"),
+    ("ok", _JUST_INSIDE, "warning", "critical", "skip"),
+    ("critical", _RECENT, "warning", "critical", "skip"),
+    ("warning", _RECENT, "warning", "critical", "skip"),
+    # escalation of a shown warning: at once
+    ("warning", _RECENT, "critical", "critical", "emit"),
+    # ... measured capped: a warning check never escalates
+    ("warning", _RECENT, "critical", "warning", "skip"),
+    # capped level 0: never
+    (None, None, "critical", "info", "skip"),
+    (None, None, "warning", "info", "skip"),
+    ("ok", None, "pending", "critical", "skip"),
+    # recovery: of a problem the bell showed, cooldown or not ...
+    ("critical", _RECENT, "ok", "critical", "emit"),
+    ("warning", _RECENT, "ok", "critical", "emit"),
+    ("critical", None, "ok", "warning", "emit"),
+    # ... at the level the alarm reached it with, whatever the severity is now
+    ("critical", _RECENT, "ok", "info", "emit"),
+    # ... never of a problem it did not show
+    ("ok", _RECENT, "ok", "critical", "skip"),
+    (None, None, "ok", "critical", "skip"),
+    ("pending", None, "ok", "critical", "skip"),
+]
+
+
+class TestHubDecision:
+    @pytest.mark.parametrize(("hub_status", "sent_at", "new", "severity", "expected"), _HUB_MATRIX)
+    def test_matrix(self, hub_status, sent_at, new, severity, expected):
+        assert hub_decision(hub_status, sent_at, new, severity, _NOW) == expected
+
+    def test_cooldown_is_thirty_minutes(self):
+        assert HUB_COOLDOWN == timedelta(minutes=30)
 
 
 class TestEmitToHub:
@@ -169,6 +255,34 @@ class TestEmitToHub:
 
         assert posted == []
 
+    def test_reports_whether_the_hub_accepted_the_event(self, monkeypatch):
+        # R-0424: the bell's record (hub_status, hub_sent_at) follows only an
+        # accepted event.
+        self._capture_posts(monkeypatch)
+        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is True
+        # info-level: nothing sent
+        assert _emit_to_hub(make_check(), "pending", "ok", make_msg()) is False
+
+        monkeypatch.setattr(alerter.httpx, "post", lambda *a, **k: SimpleNamespace(status_code=403))
+        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+
+        def boom(*a, **k):
+            raise RuntimeError("network down")
+
+        monkeypatch.setattr(alerter.httpx, "post", boom)
+        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+
+        monkeypatch.setattr(alerter, "SERVER_HUB_URL", "")
+        assert _emit_to_hub(make_check(), "ok", "critical", make_msg()) is False
+
+    def test_severity_given_replaces_the_computed_one(self, monkeypatch):
+        posted = self._capture_posts(monkeypatch)
+        check = make_check(severity="warning")
+
+        assert _emit_to_hub(check, "warning", "ok", make_msg(), severity="critical") is True
+
+        assert [(p["severity"], p["new_status"]) for p in posted] == [("critical", "ok")]
+
 
 class TestSeverityCapThroughProcessAlert:
     """R-0424: one transition through process_alert with the real _build_message
@@ -240,7 +354,7 @@ class TestProcessAlertEmits:
         monkeypatch.setattr(
             alerter,
             "_emit_to_hub",
-            lambda check, old, new, msg: seen.update(old=old, new=new),
+            lambda check, old, new, msg, severity=None: seen.update(old=old, new=new),
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "critical")
         assert seen == {"old": "ok", "new": "critical"}
@@ -261,3 +375,251 @@ class TestProcessAlertEmits:
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "warning", "unknown")
         assert calls["n"] == 0
+
+
+class _Clock:
+    def __init__(self, now):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+class TestBellCooldownThroughProcessAlert:
+    """R-0424: the bell gets at most one problem per check in HUB_COOLDOWN; a
+    recovery only of a problem it showed, an escalation at once. The rules see
+    every transition. The state stub carries the bell's record like the row."""
+
+    def _setup(self, monkeypatch, status_code=202):
+        monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
+        monkeypatch.setattr(alerter, "INTERNAL_API_KEY", "secret")
+        clock = _Clock(_NOW)
+        monkeypatch.setattr(alerter, "utcnow_naive", clock)
+        sent, posted = [], []
+
+        def fake_dispatch(rule, check, msg):
+            sent.append(msg["new_status"])
+            return True, None
+
+        def fake_post(url, **kwargs):
+            posted.append((kwargs["json"]["severity"], kwargs["json"]["new_status"]))
+            return SimpleNamespace(status_code=status_code)
+
+        monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+        monkeypatch.setattr(alerter.httpx, "post", fake_post)
+        state = SimpleNamespace(
+            status="ok", notified_status="ok", message=None, hub_status=None, hub_sent_at=None
+        )
+        return clock, state, sent, posted
+
+    @staticmethod
+    def _transition(state, check, status):
+        old, state.status = state.status, status
+        process_alert(_CapturingDb([make_rule()], state=state), check, old, status)
+
+    def test_one_problem_per_cooldown(self, monkeypatch):
+        clock, state, sent, posted = self._setup(monkeypatch)
+        check = make_check()
+
+        self._transition(state, check, "critical")
+        assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW)
+        clock.now = _NOW + timedelta(minutes=1)
+        self._transition(state, check, "ok")
+        # A recovery does not start a cooldown.
+        assert (state.hub_status, state.hub_sent_at) == ("ok", _NOW)
+        clock.now = _NOW + timedelta(minutes=10)
+        self._transition(state, check, "critical")  # inside the cooldown: dropped
+        clock.now = _NOW + timedelta(minutes=11)
+        self._transition(state, check, "ok")  # the bell never showed it: no recovery
+        assert (state.hub_status, state.hub_sent_at) == ("ok", _NOW)
+        clock.now = _NOW + timedelta(minutes=31)
+        self._transition(state, check, "critical")
+
+        assert posted == [("critical", "critical"), ("critical", "ok"), ("critical", "critical")]
+        assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW + timedelta(minutes=31))
+        # The bell cooldown is the bell's alone: the rules got every transition,
+        # and the claim recorded each as reported — nothing is caught up.
+        assert sent == ["critical", "ok", "critical", "ok", "critical"]
+        assert state.notified_status == "critical"
+
+    def test_escalation_inside_the_cooldown_goes_through(self, monkeypatch):
+        clock, state, _sent, posted = self._setup(monkeypatch)
+        check = make_check()
+
+        self._transition(state, check, "warning")
+        clock.now = _NOW + timedelta(minutes=5)
+        self._transition(state, check, "critical")
+
+        assert posted == [("warning", "warning"), ("critical", "critical")]
+        assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW + timedelta(minutes=5))
+
+    def test_improvement_inside_the_cooldown_is_dropped(self, monkeypatch):
+        clock, state, _sent, posted = self._setup(monkeypatch)
+        check = make_check()
+
+        self._transition(state, check, "critical")
+        clock.now = _NOW + timedelta(minutes=5)
+        self._transition(state, check, "warning")
+        assert posted == [("critical", "critical")]
+        assert (state.hub_status, state.hub_sent_at) == ("critical", _NOW)
+
+        # The recovery clears what the bell showed: critical.
+        clock.now = _NOW + timedelta(minutes=6)
+        self._transition(state, check, "ok")
+        assert posted == [("critical", "critical"), ("critical", "ok")]
+
+    def test_recovery_keeps_the_level_its_alarm_reached_the_bell_with(self, monkeypatch):
+        # T5 review: the severity lowered from critical to warning between alarm and
+        # recovery. A subscriber with min_severity critical saw the alarm and has to
+        # see the all-clear; capped at the new severity it would not.
+        _clock, state, _sent, posted = self._setup(monkeypatch)
+        check = make_check(severity="critical")
+
+        self._transition(state, check, "critical")
+        check.severity = "warning"
+        self._transition(state, check, "ok")
+
+        assert posted == [("critical", "critical"), ("critical", "ok")]
+
+    def test_recovery_of_a_capped_alarm_stays_capped(self, monkeypatch):
+        # The other way round: the alarm reached the bell as warning; a severity
+        # raised afterwards does not lift its recovery to critical.
+        _clock, state, _sent, posted = self._setup(monkeypatch)
+        check = make_check(severity="warning")
+
+        self._transition(state, check, "critical")
+        assert state.hub_status == "warning"
+        check.severity = "critical"
+        self._transition(state, check, "ok")
+
+        assert posted == [("warning", "critical"), ("warning", "ok")]
+
+    def test_rejected_post_records_nothing(self, monkeypatch):
+        _clock, state, sent, posted = self._setup(monkeypatch, status_code=403)
+        check = make_check()
+
+        self._transition(state, check, "critical")
+
+        assert posted == [("critical", "critical")]
+        assert (state.hub_status, state.hub_sent_at) == (None, None)
+        assert sent == ["critical"]
+
+    def test_failed_post_records_nothing(self, monkeypatch):
+        _clock, state, sent, _posted = self._setup(monkeypatch)
+
+        def boom(*a, **k):
+            raise RuntimeError("network down")
+
+        monkeypatch.setattr(alerter.httpx, "post", boom)
+        self._transition(state, make_check(), "critical")
+
+        assert (state.hub_status, state.hub_sent_at) == (None, None)
+        assert sent == ["critical"]
+
+    def test_without_hub_url_nothing_changes(self, monkeypatch):
+        clock, state, sent, posted = self._setup(monkeypatch)
+        monkeypatch.setattr(alerter, "SERVER_HUB_URL", "")
+        check = make_check()
+
+        self._transition(state, check, "critical")
+        clock.now = _NOW + timedelta(minutes=1)
+        self._transition(state, check, "ok")
+
+        assert posted == []
+        assert (state.hub_status, state.hub_sent_at) == (None, None)
+        assert sent == ["critical", "ok"]
+        assert state.notified_status == "ok"
+
+
+@pytest.fixture()
+def bell_db(tmp_path, monkeypatch):
+    """A file SQLite with the model schema, wired into _dispatch_alert_bg: each
+    dispatch runs in a session and on a connection of its own, as in production."""
+    import app.core.database as database_mod
+    from app.models import Base
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'bell.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(alerter, "utcnow_naive", lambda: _NOW)
+    yield factory
+    engine.dispose()
+
+
+class TestBellSlotAcrossDispatches:
+    """R-0424 T6 review: the bell decides under the claim lock and reserves its
+    slot with the claim commit, so a dispatch of the same check that starts while
+    an earlier one is still in its hub POST reads the reservation. A failed POST
+    hands the slot back only while the row still carries it. Real sessions on
+    SQLite; test_check_engine_concurrency runs the same scenarios on Postgres."""
+
+    def test_the_record_is_committed(self, bell_db, monkeypatch):
+        cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
+        posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "critical")
+
+        _dispatch_alert_bg(cid, "ok", "critical")
+
+        # second_status critical: no transition, so the nested dispatch skips.
+        assert posted == ["critical"]
+        assert bell_record(bell_db, cid) == ("critical", _NOW)
+
+    def test_recovery_during_the_alarm_post_reaches_the_bell(self, bell_db, monkeypatch):
+        # The race the review proved: read after the claim commit, the recovery saw
+        # the record from before the alarm and was dropped; the bell kept critical.
+        cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
+        posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "ok")
+
+        _dispatch_alert_bg(cid, "ok", "critical")
+
+        assert posted == ["critical", "ok"]
+        assert bell_record(bell_db, cid) == ("ok", _NOW)
+
+    @pytest.mark.parametrize("first_code", [202, 403])
+    def test_a_newer_reservation_outlives_the_first_post(self, bell_db, monkeypatch, first_code):
+        # The first dispatch is an all-clear; during its POST a new alarm comes,
+        # outside the cooldown. Whether the all-clear's POST then succeeds or
+        # fails, the record is the newer reservation.
+        shown_at = _NOW - HUB_COOLDOWN - timedelta(minutes=10)
+        cid = seed_bell_check(
+            bell_db,
+            status="ok",
+            notified_status="critical",
+            hub_status="critical",
+            hub_sent_at=shown_at,
+        )
+        posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "critical", first_code)
+
+        _dispatch_alert_bg(cid, "critical", "ok")
+
+        assert posted == ["ok", "critical"]
+        assert bell_record(bell_db, cid) == ("critical", _NOW)
+
+    @pytest.mark.parametrize(
+        ("status", "notified", "hub_before"),
+        [
+            ("critical", "ok", (None, None)),
+            ("critical", "ok", ("ok", _NOW - timedelta(hours=1))),
+            ("ok", "critical", ("critical", _NOW - timedelta(minutes=5))),
+            # hub_sent_at NULL, as the migration backfills it: the release has to
+            # match a NULL (IS NOT DISTINCT FROM), not compare it with =.
+            ("ok", "critical", ("critical", None)),
+        ],
+        ids=["alarm-first", "alarm-after-cooldown", "recovery", "recovery-after-backfill"],
+    )
+    def test_failed_post_without_a_newer_dispatch_changes_nothing(
+        self, bell_db, monkeypatch, status, notified, hub_before
+    ):
+        cid = seed_bell_check(
+            bell_db,
+            status=status,
+            notified_status=notified,
+            hub_status=hub_before[0],
+            hub_sent_at=hub_before[1],
+        )
+        posted = overlap_first_hub_post(monkeypatch, bell_db, cid, status, first_code=403)
+
+        _dispatch_alert_bg(cid, notified, status)
+
+        assert posted == [status]
+        assert bell_record(bell_db, cid) == hub_before
