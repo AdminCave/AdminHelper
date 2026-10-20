@@ -140,21 +140,29 @@ grep -q -- 'down -v --remove-orphans' "$STUB_LOG/docker.args" 2>/dev/null \
 # ── two stacks side by side ──────────────────────────────────────────────────
 # e2e_init <mtls> a and b in one shell, as the two-installations suite runs them. Their
 # work dirs land in a dir of their own: whatever the teardown leaves, or a rejected key
-# creates, shows there. show <S> prints every global a stack owns as <S>.<name>.
+# creates, shows there. show <S> prints every global a stack owns as <S>.<name>; exported,
+# so the shells below have it.
+show() {
+  local v
+  for v in E2E_PROJECT E2E_WORK E2E_HTTPS_PORT E2E_ENROLL_PORT E2E_REPO_PORT E2E_PG_PORT \
+    E2E_REDIS_PORT E2E_BIND_IP E2E_FRP_BIND_PORT E2E_FRP_HTTPS_PORT E2E_SERVER_URL \
+    E2E_ADMIN_PW ITEST_DATABASE_URL ITEST_REDIS_URL; do echo "$1.$v=${!v}"; done
+}
+export -f show
 TWO="$WORK/two"; mkdir -p "$TWO"
 : > "$STUB_LOG/docker.args"; : > "$STUB_LOG/pkill.args"
 OUT2=$(PATH="$SHIM:$PATH" TMPDIR="$TWO" bash -c '
   . "$1/scripts/tests/lib_e2e_stack.sh"
-  show() {
-    local v
-    for v in E2E_PROJECT E2E_WORK E2E_HTTPS_PORT E2E_ENROLL_PORT E2E_REPO_PORT E2E_PG_PORT \
-      E2E_REDIS_PORT E2E_BIND_IP E2E_FRP_BIND_PORT E2E_FRP_HTTPS_PORT E2E_SERVER_URL \
-      E2E_ADMIN_PW ITEST_DATABASE_URL ITEST_REDIS_URL; do echo "$1.$v=${!v}"; done
-  }
   echo "PID=$$"
   e2e_init false c 2>/dev/null; echo "INIT_C=$?"
   e2e_init false a; echo "INIT_A=$?"; show A; cp "$E2E_WORK/.env" "$STUB_LOG/env.a"
+  e2e_init false x 2>/dev/null; echo "INIT_X=$?"; show AX
   e2e_init false b; echo "INIT_B=$?"; show B; cp "$E2E_WORK/.env" "$STUB_LOG/env.b"
+  echo "DIRS=$(ls -A "$TMPDIR" | tr "\n" " ")"
+  e2e_init false a 2>/dev/null; echo "INIT_A2=$?"; show DUPA
+  e2e_init false b 2>/dev/null; echo "INIT_B2=$?"; show DUPB
+  e2e_init false 2>/dev/null; echo "INIT_NOKEY=$?"; show NOKEY
+  echo "DIRS_AFTER=$(ls -A "$TMPDIR" | tr "\n" " ")"
   e2e_stack_use a; echo "USE_A=$?"; show UA
   bash -c "echo CHILD_A_DB=\$ITEST_DATABASE_URL"
   e2e_dc up -d gateway
@@ -238,6 +246,22 @@ env_is a A && env_is b B \
   || bad "e2e_stack_use c: rc '$(v2 USE_C)', '': rc '$(v2 USE_EMPTY)', globals '$(blk KEPT | tr '\n' ' ')'"
 [ "$(v2 INIT_C)" != 0 ] && ok "e2e_init with key c: non-zero (rc $(v2 INIT_C))" || bad "e2e_init with key c returned '$(v2 INIT_C)'"
 
+# A rejected e2e_init sets no global and makes no work dir: the stack before it stays
+# whole, and the teardown knows every dir there is.
+[ "$(v2 INIT_X)" = 1 ] && [ -n "$(blk A)" ] && [ "$(blk AX)" = "$(blk A)" ] \
+  && ok "e2e_init with key x after a: rc 1, every global still stack a's" \
+  || bad "e2e_init x after a: rc '$(v2 INIT_X)', globals '$(blk AX | tr '\n' ' ')'"
+[ -n "$(blk B)" ] && [ "$(v2 INIT_A2)" = 1 ] && [ "$(blk DUPA)" = "$(blk B)" ] \
+  && [ "$(v2 INIT_B2)" = 1 ] && [ "$(blk DUPB)" = "$(blk B)" ] \
+  && ok "e2e_init a or b a second time: rc 1, every global still stack b's" \
+  || bad "second e2e_init: a rc '$(v2 INIT_A2)', globals '$(blk DUPA | tr '\n' ' ')'; b rc '$(v2 INIT_B2)', globals '$(blk DUPB | tr '\n' ' ')'"
+[ "$(v2 INIT_NOKEY)" = 1 ] && [ -n "$(blk B)" ] && [ "$(blk NOKEY)" = "$(blk B)" ] \
+  && ok "e2e_init without a key beside a and b: rc 1, every global still stack b's" \
+  || bad "e2e_init without a key after a and b: rc '$(v2 INIT_NOKEY)', globals '$(blk NOKEY | tr '\n' ' ')'"
+[ "$(wc -w <<<"$(v2 DIRS)")" = 2 ] && [ "$(v2 DIRS_AFTER)" = "$(v2 DIRS)" ] \
+  && ok "the rejected calls made no work dir (two before, the same two after)" \
+  || bad "work dirs before the rejected calls '$(v2 DIRS)', after '$(v2 DIRS_AFTER)'"
+
 DC_A="-p ah-e2e-$PID2-a -f $REPO_ROOT/docker-compose.yml -f $REPO_ROOT/docker-compose.test.yml --env-file $A_WORK/.env"
 DC_B="-p ah-e2e-$PID2-b -f $REPO_ROOT/docker-compose.yml -f $REPO_ROOT/docker-compose.test.yml --env-file $B_WORK/.env"
 grep -qxF -- "compose $DC_A up -d gateway" "$STUB_LOG/docker.args" 2>/dev/null \
@@ -248,8 +272,43 @@ grep -qxF -- "compose $DC_A down -v --remove-orphans" "$STUB_LOG/docker.args" 2>
   && ok "the EXIT teardown takes both stacks down" \
   || bad "two stacks, teardown: $(cat "$STUB_LOG/docker.args" 2>/dev/null)"
 [ -s "$STUB_LOG/pkill.args" ] && [ -d "$TWO" ] && [ -z "$(ls -A "$TWO")" ] \
-  && ok "the teardown removes both work dirs; key c made none" \
+  && ok "the teardown removes both work dirs; the rejected calls made none" \
   || bad "two stacks: pkill $(wc -l < "$STUB_LOG/pkill.args") call(s), left in $TWO: $(ls -A "$TWO" 2>&1)"
+
+# ── a stack without a key stands alone ───────────────────────────────────────
+# Every suite but the two-installations one runs e2e_init once without a key. A keyed or a
+# second call after it is rc 1 and keeps its globals; the teardown then takes down that one
+# project and removes its work dir, the only one there is.
+ONE="$WORK/one"; mkdir -p "$ONE"
+: > "$STUB_LOG/docker.args"
+OUT3=$(PATH="$SHIM:$PATH" TMPDIR="$ONE" bash -c '
+  . "$1/scripts/tests/lib_e2e_stack.sh"
+  echo "PID=$$"
+  e2e_init false; echo "INIT=$?"; show K
+  echo "DIRS=$(ls -A "$TMPDIR" | tr "\n" " ")"
+  e2e_init false a 2>/dev/null; echo "INIT_A=$?"; show KA
+  e2e_init false 2>/dev/null; echo "INIT_AGAIN=$?"; show KK
+  echo "DIRS_AFTER=$(ls -A "$TMPDIR" | tr "\n" " ")"
+' _ "$REPO_ROOT" 2>&1); rc=$?
+v3()  { sed -n "s/^$1=//p" <<<"$OUT3" | head -1; }
+blk3() { sed -n "s/^$1\.//p" <<<"$OUT3"; }
+PID3="$(v3 PID)"; K_WORK="$(v3 K.E2E_WORK)"
+
+[ "$rc" = 0 ] && [ "$(v3 INIT)" = 0 ] && [ -n "$PID3" ] && [ "$(v3 K.E2E_PROJECT)" = "ah-e2e-$PID3" ] \
+  && ok "without a key: e2e_init returns 0, project ah-e2e-<pid>" || bad "without a key: rc=$rc, $OUT3"
+[ "$(v3 INIT_A)" = 1 ] && [ -n "$(blk3 K)" ] && [ "$(blk3 KA)" = "$(blk3 K)" ] \
+  && ok "e2e_init a after a stack without a key: rc 1, every global still that stack's" \
+  || bad "e2e_init a after no key: rc '$(v3 INIT_A)', globals '$(blk3 KA | tr '\n' ' ')'"
+[ "$(v3 INIT_AGAIN)" = 1 ] && [ -n "$(blk3 K)" ] && [ "$(blk3 KK)" = "$(blk3 K)" ] \
+  && ok "e2e_init without a key a second time: rc 1, every global still the first one's" \
+  || bad "second e2e_init without a key: rc '$(v3 INIT_AGAIN)', globals '$(blk3 KK | tr '\n' ' ')'"
+[ "$(v3 DIRS)" = "${K_WORK##*/} " ] && [ "$(v3 DIRS_AFTER)" = "$(v3 DIRS)" ] \
+  && ok "without a key: the rejected calls made no work dir" \
+  || bad "without a key: work dirs before '$(v3 DIRS)', after '$(v3 DIRS_AFTER)'"
+DC_K="-p ah-e2e-$PID3 -f $REPO_ROOT/docker-compose.yml -f $REPO_ROOT/docker-compose.test.yml --env-file $K_WORK/.env"
+[ "$(cat "$STUB_LOG/docker.args")" = "compose $DC_K down -v --remove-orphans" ] && [ -z "$(ls -A "$ONE")" ] \
+  && ok "without a key: the teardown takes down that one project and leaves no work dir" \
+  || bad "without a key, teardown: $(cat "$STUB_LOG/docker.args"), left in $ONE: $(ls -A "$ONE" 2>&1)"
 
 # ── the compose files ────────────────────────────────────────────────────────
 # ports_of <file> <service> — the entries under one service's `ports:` key.

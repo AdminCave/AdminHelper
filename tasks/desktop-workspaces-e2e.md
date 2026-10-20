@@ -52,8 +52,10 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T25
 
-### T44 — E2E-Stack: Schlüssel zuerst prüfen, gemischte Nutzung ablehnen  [ ]
+### T44 — E2E-Stack: Schlüssel zuerst prüfen, gemischte Nutzung ablehnen  [x]
 Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, docker-compose.test.yml
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @c31695eb 2026-10-20T17:27:30+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T44.verdict.json)
 Änderung: Aus den Reviews von T29: `e2e_init` prüft den Stack-Schlüssel, bevor es irgendeine globale Variable setzt (heute setzt es `E2E_BIND_IP` und die FRP-Ports vor der Ablehnung, die Globals eines bestehenden Stacks passen danach nicht mehr zusammen); es lehnt einen zweiten `e2e_init` mit demselben Schlüssel und das Mischen eines Stacks ohne Schlüssel mit einem mit Schlüssel ab (sonst bleiben Projekt und Arbeitsverzeichnis beim Teardown liegen). Der Kopfkommentar in `docker-compose.test.yml` nennt die frps-Ports 7001/7444 von Stack b. Tests: unbekannter Schlüssel nach `e2e_init a` lässt die Globals von a unverändert; doppeltes `a` und gemischte Nutzung ergeben rc 1 ohne neues Verzeichnis.
 Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Test)

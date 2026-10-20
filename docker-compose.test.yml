@@ -20,7 +20,9 @@
 # frps keeps the fixed host ports 7000/7443 of the base, as the gateway keeps
 # its enroll and repo ports below: the desktop E2E connects to localhost:7000
 # and the multibox server box serves the tunnel boxes on :7000 (only the stack
-# test asks compose for the published port).
+# test asks compose for the published port). Only stack b of two side by side
+# moves them: its .env sets the base's FRP_BIND_PORT/FRP_HTTPS_PORT to 7001/7444
+# (lib_e2e_stack.sh, e2e_init <mtls> b).
 services:
   # Loopback only: Redis has no auth at all, and nothing but tests on the same
   # host needs either. The base defines no ports for them, so a plain list adds these.

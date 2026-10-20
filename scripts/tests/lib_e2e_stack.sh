@@ -19,6 +19,7 @@
 # Two installations side by side: `e2e_init <mtls> a` and `e2e_init <mtls> b` set up two
 # stacks with their own project, work dir, secrets, ports and loopback address. The one
 # initialised last is current; e2e_stack_use switches, the teardown takes both down.
+# Each key once, and a stack without a key stands alone.
 
 _E2E_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 E2E_REPO_ROOT=$(cd "$_E2E_LIB_DIR/../.." && pwd)
@@ -66,6 +67,8 @@ _E2E_STACK_VARS=(E2E_WORK E2E_PROJECT E2E_HTTPS_PORT E2E_ENROLL_PORT E2E_REPO_PO
     E2E_PG_PORT E2E_REDIS_PORT E2E_SERVER_URL E2E_ADMIN_PW E2E_BIND_IP
     E2E_FRP_BIND_PORT E2E_FRP_HTTPS_PORT ITEST_DATABASE_URL ITEST_REDIS_URL)
 _E2E_STACKS=()
+# Set by e2e_init without a key.
+_E2E_KEYLESS=""
 # Set by e2e_login.
 E2E_JWT=""
 E2E_LOGIN_ERR=""
@@ -136,17 +139,28 @@ e2e_stack_use() {
 # e2e_init <MTLS_ENFORCE> [a|b] — without a key the one stack of a run; with one, stack a
 # or b of two side by side, which then becomes the current one.
 e2e_init() {
-    local key=${2-} off=0
-    E2E_BIND_IP=""; E2E_FRP_BIND_PORT=7000; E2E_FRP_HTTPS_PORT=7443
+    local key=${2-} off=0 bind="" frp_bind=7000 frp_https=7443 k
     # Each stack gets a loopback address of its own, so both gateways hold the fixed
     # 8444/8445 below. frps publishes on every interface, so stack b moves its ports;
     # Postgres and Redis stay on 127.0.0.1, so stack b takes the next port of each range.
     case "$key" in
         "") ;;
-        a) E2E_BIND_IP=127.0.0.1 ;;
-        b) E2E_BIND_IP=127.0.0.2; off=1; E2E_FRP_BIND_PORT=7001; E2E_FRP_HTTPS_PORT=7444 ;;
+        a) bind=127.0.0.1 ;;
+        b) bind=127.0.0.2; off=1; frp_bind=7001; frp_https=7444 ;;
         *) echo "e2e_init: stack key '$key' is neither a nor b" >&2; return 1 ;;
     esac
+    # The teardown takes down either the one stack without a key or the keyed ones, from the
+    # globals each left: a second call for a key would leave the first work dir behind, a mix
+    # of both kinds the project and work dir of the stack without a key. Checked before any
+    # global changes, so a rejected call keeps the current stack.
+    if [ -n "$_E2E_KEYLESS" ] || { [ -z "$key" ] && [ "${#_E2E_STACKS[@]}" != 0 ]; }; then
+        echo "e2e_init: a stack without a key cannot run beside another one" >&2
+        return 1
+    fi
+    for k in "${_E2E_STACKS[@]}"; do
+        [ "$k" != "$key" ] || { echo "e2e_init: stack '$key' is set up already" >&2; return 1; }
+    done
+    E2E_BIND_IP=$bind; E2E_FRP_BIND_PORT=$frp_bind; E2E_FRP_HTTPS_PORT=$frp_https
     E2E_PROJECT="ah-e2e-$$${key:+-$key}"
     E2E_WORK=$(mktemp -d)
     # High, per-run host ports so the test never collides with a real stack on
@@ -197,6 +211,8 @@ EOF
         local v
         for v in "${_E2E_STACK_VARS[@]}"; do printf -v "_E2E_${key}_$v" '%s' "${!v}"; done
         _E2E_STACKS+=("$key")
+    else
+        _E2E_KEYLESS=1
     fi
 }
 
