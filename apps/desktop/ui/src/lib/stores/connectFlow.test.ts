@@ -6,8 +6,9 @@
 // aborted attempt (correlationId) must not mark a newer attempt as failed, and markRdpError(null)
 // clears every running attempt. These tests cover that race guard plus markConnectionUsed's
 // mode-specific branches (6.5), the tunnel resolution without mappings, the keyring key of a
-// stored RDP password behind a tunnel, the user and domain from the password prompt, and which
-// password a start takes after the prompt's "remember password".
+// stored RDP password behind a tunnel, the user and domain from the password prompt, which
+// password a start takes after the prompt's "remember password", and that a refused resolution
+// ends the start.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -67,6 +68,11 @@ import { openConnection, resolveConnection } from '$lib/bridge';
 import { patchInMemory, upsert } from './connections';
 
 const rdpConn = { id: 'r1', name: 'rdp', kind: 'rdp', host: 'h' } as never;
+
+// What resolve_connection rejects with for a loopback port of another workspace's tunnel.
+const FOREIGN_PORT =
+  'port 6001 on this machine belongs to the tunnel of another workspace; start the tunnel of ' +
+  'this workspace to connect';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -175,6 +181,20 @@ describe('tunnel resolution without mappings', () => {
 
     expect(reportError).toHaveBeenCalledWith('validation.url.empty');
     expect(openConnection).not.toHaveBeenCalled();
+  });
+
+  // Rust refuses a loopback port that another workspace's tunnel holds (open_connection would
+  // refuse it too): its reason shows, not the URL check of the unresolved connection.
+  it('reports why Rust refused to resolve and opens nothing', async () => {
+    vi.mocked(resolveConnection).mockRejectedValueOnce(FOREIGN_PORT);
+
+    await initiateConnect(autoConnection('web'));
+
+    expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect(validateConnection).not.toHaveBeenCalled();
+    expect(openConnection).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
   });
 });
 
@@ -382,6 +402,84 @@ describe('RDP start after the prompt remembers the password', () => {
       client: undefined,
       correlationId: expect.any(String),
     });
+    expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
+  });
+});
+
+// Same fresh module graph: a refusal of resolve_connection ends an RDP start before the keyring
+// and the prompt, and after the prompt before the start.
+describe('RDP start Rust refuses to resolve', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.doUnmock('@tauri-apps/api/core');
+  });
+
+  const listed: Connection = {
+    id: 'r5',
+    name: 'rdp',
+    kind: 'rdp',
+    host: '127.0.0.1',
+    port: 6001,
+    username: 'admin',
+    tags: [],
+    trustCert: false,
+  };
+
+  // Rust refuses from the `refuseFrom`-th call of resolve_connection on (1-based).
+  async function connectRefused(refuseFrom: number) {
+    let resolves = 0;
+    const invoke = vi.fn(async (cmd: string, args?: { connection?: Connection }) => {
+      if (cmd === 'password_state') return { canStore: true, stored: false };
+      if (cmd === 'resolve_connection') {
+        resolves += 1;
+        if (resolves >= refuseFrom) throw FOREIGN_PORT;
+        return { connection: args?.connection, viaTunnel: false };
+      }
+      return undefined;
+    });
+
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    vi.resetModules();
+    vi.doUnmock('$lib/bridge');
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke }));
+    const prompt = await import('./passwordPrompt');
+    vi.mocked(prompt.requestPassword).mockResolvedValue({
+      cancelled: false,
+      updated: listed,
+      password: 'pw',
+      remember: false,
+    });
+    const status = await import('./statusBar');
+    const flow = await import('./connectFlow');
+    state.setSession({ settings: { mode: 'local', storePasswords: true }, session: null });
+    vi.useFakeTimers();
+
+    await flow.initiateConnect(listed);
+    return {
+      invoke,
+      requestPassword: vi.mocked(prompt.requestPassword),
+      reportError: vi.mocked(status.reportError),
+    };
+  }
+
+  it('asks for no password when Rust refuses the listed target', async () => {
+    const { invoke, requestPassword, reportError } = await connectRefused(1);
+
+    expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect(invoke).not.toHaveBeenCalledWith('password_state', expect.anything());
+    expect(requestPassword).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith('open_connection', expect.anything());
+  });
+
+  it('starts nothing when Rust refuses the target after the prompt', async () => {
+    const { invoke, requestPassword, reportError } = await connectRefused(2);
+
+    expect(requestPassword).toHaveBeenCalledTimes(1);
+    expect(reportError).toHaveBeenCalledWith(FOREIGN_PORT);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect(invoke).not.toHaveBeenCalledWith('open_connection', expect.anything());
     expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
   });
 });

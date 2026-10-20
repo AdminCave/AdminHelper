@@ -143,6 +143,8 @@ workspaces/<id>/workspace.json   {kind, name, color, url, intervalMinutes, allow
                                   legacyKeys}; Schreiber: der Lock-Halter (Workspace-Prozess oder Launcher)
 workspaces/<id>/connections.json | connections.local.json   je nach Art
 workspaces/<id>/secrets.json     Namen der RDP-Schlüssel im Keyring (keine Geheimnisse)
+legacy-secrets.json        Namen der RDP-Schlüssel ohne Präfix, die der Purge eines migrierten Workspace an den
+                           letzten migrierten übergibt; Schreiber: nur der Purge (einer zur Zeit)
 workspaces/<id>/instance.lock    Lock je Workspace
 workspaces/<id>/run/             visitor.toml, identity/ (Unix 0700), nur solange der Tunnel läuft
 ```
@@ -154,8 +156,15 @@ Altdateien (`settings.json`, `connections*.json`) bleiben unverändert liegen.
 **Keyring:** `legacyKeys: true` (alle migrierten Workspaces) → Schlüssel ohne Präfix wie heute; sonst
 `ws:<id>|<schlüssel>`, unter Windows `com.admincave.adminhelper/ws:<id>|<schlüssel>` als TargetName. Betroffen sind
 `enroll|*` und `rdp|*` (unter Windows neu auch die RDP-Passwörter, siehe unten); `tofu|cert|*` bleibt global,
-`auth|*` gibt es seit R-0430 nicht mehr. Löschen nimmt bei `legacyKeys` keine RDP-Schlüssel mit (sie können einem
-anderen migrierten Workspace gehören).
+`auth|*` gibt es seit R-0430 nicht mehr. Die migrierten Workspaces teilen sich die Schlüssel ohne Präfix. Der Purge
+eines migrierten Workspace gibt seine RDP-Schlüssel (die aus `secrets.json` und die aus seinen Verbindungen
+abgeleiteten Altschlüssel `rdp|<conn-id>|…` und `rdp|<target>`) an `legacy-secrets.json` weiter, solange ein anderer
+migrierter Workspace besteht; der Purge des letzten migrierten Workspace löscht die übergebenen mit seinen eigenen.
+Die Identität ohne Präfix gilt nur als geteilt, wenn ein anderer migrierter Server-Workspace dieselbe Origin hat
+(im Zweifel geteilt: auch, wenn die eigene Origin unbekannt ist und ein anderer migrierter Server-Workspace besteht,
+oder ein anderes migriertes `workspace.json` nicht lädt); dann widerruft und löscht der Purge sie nicht, und das
+Löschen meldet `NotEnrolled` (keine eigene Identität). Lädt `secrets.json`, `legacy-secrets.json` oder bei einem
+migrierten Workspace eine Verbindungsdatei nicht, stoppt der Purge vor dem Widerruf.
 
 **Portkarte je Workspace** (`port_registry.rs`): der Besitzer ist die Workspace-Id statt `DEFAULT_OWNER`; das muss
 gelten, bevor das Single-Instance-Plugin auf den Launcher beschränkt wird (sonst teilen zwei Prozesse mit gleichem
@@ -210,7 +219,8 @@ Adresse>` mit Benutzer und Passwort, startet mstsc und löscht den Eintrag wiede
 Persistenz legt der Spike fest). Vor einem Start auf ein Loopback-Ziel löscht Rust ein vorhandenes
 `TERMSRV/<loopback-adresse>` immer, auch ohne gespeichertes Passwort; Einträge für andere Ziele lässt es stehen (sie
 können vom Nutzer selbst stammen). In migrierten Workspaces meldet `password_state` zusätzlich ein vorhandenes
-`TERMSRV/<gelistete Adresse>` als gespeichert (Stand vor R-0431), Löschen entfernt beides.
+generisches `TERMSRV/<gelistete Adresse>` als gespeichert (Stand vor R-0431), aber nur ohne den Marker der App und
+nicht für eine Adresse auf dieser Maschine; Löschen entfernt beides.
 
 ## Externe Integrationen
 
@@ -310,6 +320,12 @@ migrierte Zusatz-Workspaces nutzen die Schlüssel ohne Präfix · zusätzlicher 
 Server-URL · doppelte Anmeldung (gleiche Origin, gleicher Benutzer) abgelehnt · Windows-RDP über TERMSRV
 just-in-time mit Spike vorab · Sync nie mit Geräte-Zertifikat · Live-Beweis mit zwei Installationen jetzt · die
 YAGNI-Punkte bleiben draußen · Löschbestätigung nennt den Namen.
+
+Kevin 2026-10-20 (Review T33), hingenommenes Restrisiko: In migrierten Workspaces tragen die RDP-Schlüssel unter
+Windows kein App-Präfix. Ihr TargetName `rdp|…` liegt als generischer Eintrag im gemeinsamen Namensraum aller
+Programme des Benutzers, den Windows ohne Groß-/Kleinschreibung vergleicht. Speichern kann deshalb einen
+gleichnamigen Eintrag überschreiben, der nicht von der App stammt, und der Purge des letzten migrierten Workspace,
+der Altschlüssel aus den vom Server gelieferten Verbindungen ableitet, einen solchen löschen.
 
 ## Windows-RDP: Ergebnis des Spikes
 

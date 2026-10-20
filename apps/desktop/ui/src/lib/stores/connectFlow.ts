@@ -136,13 +136,16 @@ async function markConnectionUsed(connection: Connection): Promise<void> {
 /**
  * Where `connection` is reached: Rust resolves it through a tunnel mapping (admins only) or, at
  * 127.0.0.1/localhost and the server port of a visitor, to the local port that visitor got.
- * Unchanged if resolving fails.
+ * `null` once the status bar shows why Rust refused it (a loopback port of another workspace's
+ * tunnel, say): open_connection would refuse the same target, so nothing may ask for a password
+ * or check the URL first.
  */
-async function resolveTarget(connection: Connection): Promise<Connection> {
+async function resolveTarget(connection: Connection): Promise<Connection | null> {
   try {
     return (await bridge.resolveConnection(connection, getMappings())).connection;
-  } catch {
-    return connection;
+  } catch (err) {
+    reportError(errMsg(err));
+    return null;
   }
 }
 
@@ -181,12 +184,15 @@ async function handleRdpAuth(
       // visitors may have moved while the prompt waited. A saved password starts the stored way:
       // on Windows only that way hands it to mstsc (TERMSRV for the start); Rust drops a typed one
       // there and mstsc would ask a second time.
-      await performConnect(
-        updated,
-        await resolveTarget(updated),
-        keepEditorOpen,
-        saved ? { useStoredPassword: true } : { password: outcome.password },
-      );
+      const target = await resolveTarget(updated);
+      if (target) {
+        await performConnect(
+          updated,
+          target,
+          keepEditorOpen,
+          saved ? { useStoredPassword: true } : { password: outcome.password },
+        );
+      }
       return true;
     } catch (err) {
       reportError(`Password-Store: ${errMsg(err)}`);
@@ -197,9 +203,10 @@ async function handleRdpAuth(
     const outcome = await requestPassword(connection, keepEditorOpen, false);
     if (outcome.cancelled) return true;
     const updated = outcome.updated ?? connection;
-    await performConnect(updated, await resolveTarget(updated), keepEditorOpen, {
-      password: outcome.password,
-    });
+    const target = await resolveTarget(updated);
+    if (target) {
+      await performConnect(updated, target, keepEditorOpen, { password: outcome.password });
+    }
     return true;
   }
 
@@ -213,6 +220,7 @@ export async function initiateConnect(
   // Resolve before validating: the server's automatic web connections have no URL until a
   // visitor gives them one.
   const resolved = await resolveTarget(connection);
+  if (!resolved) return;
   const validation = validateConnection(resolved);
   if (!validation.ok) {
     reportError(validation.message ?? tNow('error.invalidConnection'));

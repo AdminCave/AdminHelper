@@ -9,6 +9,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Workspaces — mehrere Server, Sync-Quellen und lokale Verbindungen nebeneinander (R-0431):** Ein Workspace
+  hat eine feste Art (Server, Sync oder Lokal), einen Namen, eine Farbe und bei Server und Sync eine URL; mehrere je
+  Art sind erlaubt. Jeder laeuft in einem eigenen Fenster und Prozess mit eigener Anmeldung, eigenem Tunnel, eigener
+  Geraete-Identitaet, eigenen gespeicherten RDP-Passwoertern, eigenen Verbindungen und eigener Logdatei (die
+  migrierten Workspaces teilen sich die Eintraege im System-Schluesselbund von vorher); derselbe Workspace laeuft nie
+  zweimal. `adminhelper` startet den Launcher: Der Picker listet die Workspaces mit Farbe, Art, Host und „geoeffnet“,
+  waehlt den zuletzt genutzten vor (Enter oeffnet ihn), legt Workspaces an und bearbeitet oder loescht geschlossene;
+  sobald der geoeffnete laeuft, schliesst er sich, und „Workspaces…“ im Fenster holt ihn zurueck. Loeschen widerruft
+  bei einem Server-Workspace zuerst das Geraet am Server und nimmt dann die Daten, RDP-Passwoerter und
+  Portkarten-Eintraege des Workspace mit; bei Lokal nennt die Bestaetigung den Datenverlust. Kenntlich ist ein
+  Workspace am Fenstertitel „<Name> — AdminHelper“, am Chip oben in der Sidebar, an einem Farbstreifen am Fensterrand,
+  an Rueckfragen, an OS-Benachrichtigungen („[<Name>] …“) und unter Linux am Titel des RDP-Fensters. Eine Verbindung
+  an eine Loopback-Adresse (`127.0.0.1`, `localhost`, …), deren Port die Portkarte dem Tunnel eines anderen Workspace
+  gibt, lehnt der Desktop ab; die Meldung kommt vor jeder Passwortabfrage und sagt, den Tunnel dieses Workspace zu
+  starten. Die Grenzen dieser Pruefung nennt die Entwickler-Doku. Neue Tauri-Commands `workspace_context`,
+  `list_workspaces`, `save_workspace`, `delete_workspace`, `open_workspace` und `open_launcher`. Doku: Desktop fuer
+  Entwickler (DE+EN), README, DEVELOPMENT.
+- **Desktop: gespeicherte RDP-Passwoerter unter Windows auch fuer Tunnelziele (R-0431):** Unter Windows liegt ein
+  gespeichertes RDP-Passwort jetzt im Credential Manager im Namensraum der App, je Workspace und Verbindung, statt
+  dauerhaft unter `TERMSRV/<Adresse>`. Fuer einen Start schreibt der Desktop `TERMSRV/<Adresse>` fuer die Adresse, die
+  mstsc oeffnet, bei einem Tunnel also `127.0.0.1:<lokaler Port>`, nur fuer diese Anmeldesitzung, und loescht den
+  Eintrag 60 s nach dem Start wieder. Einen eigenen Eintrag ohne Kennzeichen der App (etwa per `cmdkey`) laesst er
+  stehen, und mstsc nimmt ihn; vor einem Start auf diesen Rechner loescht er die Eintraege dieser Adresse. Ein zweiter
+  Start einer anderen Verbindung, der denselben Eintrag braeuchte, wird in dieser Zeit mit der Restzeit abgelehnt. Ein
+  migrierter Workspace uebernimmt das Passwort einer frueheren Version aus `TERMSRV/<Adresse>` beim ersten Start einer
+  Verbindung ohne Tunnel und loescht den alten Eintrag; ein mstsc-Start von Hand auf diese Adresse fragt danach nach
+  dem Passwort. „Passwort merken“ im Passwort-Dialog startet ueber das gespeicherte Passwort, ein nur getipptes fragt
+  mstsc wie bisher selbst ab. Mit mstsc unter Windows noch nicht verifiziert; die Entwickler-Doku hat dafuer eine
+  Pruefanleitung. Doku: Desktop fuer Entwickler (DE+EN), README.
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter
@@ -394,15 +423,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: nach dem Abmelden bleiben keine Daten des vorigen Benutzers stehen (R-0429):** Abmelden ueber die
   Kopfzeile und ueber die Einstellungen beendet jetzt den Tunnel, meldet ab und laedt das Fenster neu. Bisher
   zeigten Infrastruktur, Monitoring und Ansible bis zum naechsten Laden die Daten des vorigen Benutzers, auch nach
-  einem Login unter anderem Benutzer. Ebenso laedt der Desktop neu, wenn eine geaenderte Server-URL bei laufender
-  Sitzung gespeichert wird; danach steht der Login-Bildschirm mit der neuen Adresse da.
+  einem Login unter anderem Benutzer. Die Server-URL aendert seit den Workspaces nur der Picker, solange der
+  Workspace geschlossen ist (siehe Changed).
 - **Desktop: Speichern der Einstellungen vergisst den Benutzernamen nicht mehr (R-0429):** Bisher loeschte jedes
   Speichern im Einstellungsdialog den gemerkten Benutzernamen, und der Login-Bildschirm fuellte beim naechsten
   Start nur noch die Server-URL vor. Felder, die der Dialog nicht bearbeitet, bleiben jetzt erhalten.
 - **Desktop: gespeichertes RDP-Passwort auch bei Tunnelzielen (Linux/macOS, R-0429):** Bisher startete der
   RDP-Client bei einer Verbindung hinter einem FRP-Tunnel ohne das gespeicherte Passwort, weil der Desktop es unter
   der lokalen Tunnel-Adresse (`127.0.0.1:<Port>`) suchte statt unter der Verbindung aus der Liste, unter der es
-  gespeichert ist. Unter Windows fragt mstsc bei Tunnelzielen vorerst weiter selbst nach dem Passwort.
+  gespeichert ist. Unter Windows gilt das seit den Workspaces ebenfalls (siehe Added).
 - **Desktop: Sync von einer fremden URL auch auf einem registrierten Geraet (R-0429):** Bisher scheiterte auf einem
   registrierten Geraet jeder Sync von einer URL ausserhalb des eigenen Servers mit `ERR_CA_PIN_MISMATCH`, weil der
   Desktop auch dort die Geraete-Identitaet nahm und das Server-Zertifikat gegen die bei der Registrierung gepinnte CA
@@ -411,8 +440,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Hostname des eigenen Servers zaehlt dabei als andere Origin.
 - **Desktop: ein zweiter Start laesst die laufende App nicht mehr abstuerzen (Linux, R-0429):** Bisher beendete ein
   zweiter Start unter Linux die laufende App samt Sitzung und Tunnel, und auch der zweite Start blieb nicht offen.
-  Jetzt holt ein zweiter Start nur das Fenster der laufenden App nach vorn und beendet sich. Das gilt auch unter
-  Windows und macOS: Es laeuft immer nur eine Instanz der App.
+  Jetzt laesst ein zweiter Start die laufende App in Ruhe; seit den Workspaces holt er den Launcher nach vorn oder
+  oeffnet ihn (siehe Changed).
 - **Server: Die Tunnel-Statusansicht zeigt wieder die Proxies von frps (R-0408):** Seit v0.40.0 haengt frps in
   Compose allein im Netz `frpedge`, das der Server nicht erreicht; `GET /api/frp/status` fragte weiter
   `http://frps:<Port>` und meldete deshalb immer „frps-Dashboard: nicht erreichbar“. Jetzt fragt der frps-Supervisor
@@ -558,7 +587,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: HTTPS-Tunnel greifen auch ohne STCP-Tunnel (R-0432):** Wer keinen STCP-Tunnel sieht, fuer den stoppt
   der Desktop frpc, und dabei verwarf er auch die Tunnel-Zuordnungen. Verbindungen mit einem HTTPS-Tunnel oeffneten
   dann ihre eigene Adresse statt `https://<Custom-Domain>`. Jetzt laedt der Desktop die Zuordnungen auch ohne
-  STCP-Tunnel; scheitert das Laden, bleiben die bisherigen, und nur Abmelden oder ein Moduswechsel leert sie. Doku:
+  STCP-Tunnel; scheitert das Laden, bleiben die bisherigen, und nur Abmelden leert sie. Doku:
   Entwickler-Doku Desktop (DE+EN).
 - **Desktop: der Tunnel uebernimmt Aenderungen selbst (R-0402, R-0389, R-0390):** Der Desktop lud das
   Tunnel-Bundle nur beim Anmelden. Ein spaeter angelegter, geaenderter oder geloeschter Tunnel und eine Rotation
@@ -569,7 +598,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   startet frpc neu, offene Sitzungen brechen dann ab. Ist frps nicht erreichbar, versucht frpc es weiter; endet
   frpc unerwartet, verbindet sich der Desktop selbst wieder (nach 5 s, dann mit wachsender Pause bis 60 s); der
   Knopf „Neu verbinden“ an der Tunnel-Anzeige stoesst das sofort an. Wer keinen STCP-Tunnel sieht, bekommt beim
-  Anmelden keine Fehlermeldung mehr. Ein gestoppter Tunnel (etwa nach einem Moduswechsel) meldet sich nicht mehr
+  Anmelden keine Fehlermeldung mehr. Ein gestoppter Tunnel (etwa nach dem Abmelden) meldet sich nicht mehr
   nachtraeglich als „Tunnel getrennt“, und Abmelden ueber die Kopfzeile beendet jetzt auch den Tunnel.
 - **Agent: ein spaeter angelegter Tunnel greift ohne Neu-Provisionieren (R-0398):** Ein Agent-Host, der ohne
   FRP-Tunnel provisioniert wurde, bekam einen spaeter angelegten Tunnel nie: Die Provisionierung schrieb die
@@ -951,6 +980,30 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Desktop: Workspaces statt Moduswechsel (R-0431):** Der Modus in den Einstellungen entfaellt: Die Art legt ein
+  Workspace beim Anlegen fest, Name, Farbe und URL aendert der Picker, solange der Workspace geschlossen ist; im
+  Fenster stehen sie als Anzeige. Die Einstellungen trennen „Dieser Workspace“ (Abmelden, Zertifikate,
+  Geraete-Identitaet, Token, Browser-Zertifikat, Benachrichtigungsregeln, Sync-Intervall) und „Alle Workspaces auf
+  diesem Geraet“ (Sprache, Passwoerter, RDP, OS-Benachrichtigungen, Diagnose); Speichern beendet weder Sitzung noch
+  Tunnel. Der Login nimmt nur die URL des Workspace (ein URL-Feld gibt es nur, solange er keine hat), „Workspaces…“
+  ersetzt „Ohne Server fortfahren“, und ein Benutzer einer Installation meldet sich nur in einem Workspace an.
+  Sync-Workspaces laden nie mit dem Geraete-Zertifikat und registrieren kein Geraet; wer gegen die eigene Installation
+  unter mTLS synchronisiert, nimmt einen Server-Workspace. Doku: Desktop fuer Entwickler (DE+EN), README, DEVELOPMENT.
+- **Desktop: die bisherigen Daten gehen in den Workspace „Standard“ (R-0431):** Der erste Start legt „Standard“ im
+  bisherigen Modus mit dessen URL, Einstellungen und Verbindungen an. Nicht leere lokale Verbindungen ausserhalb des
+  lokalen Modus ergeben zusaetzlich „Lokal“, eine Sync-URL ausserhalb des Sync-Modus „Sync“, eine Server-URL
+  ausserhalb des Server-Modus „Server“. Die Einstellungen fuer alle Workspaces (Sprache, Passwoerter, RDP,
+  OS-Benachrichtigungen) gehen nach `prefs.json`, die Portkarten-Eintraege an den migrierten Server-Workspace
+  („Standard“ oder „Server“). Die migrierten Workspaces teilen sich die Eintraege im System-Schluesselbund von
+  vorher, gespeicherte RDP-Passwoerter und eine Geraete-Identitaet bleiben nutzbar. Die Altdateien (`settings.json`,
+  `connections*.json`) bleiben unveraendert liegen; eine aeltere Version liest sie nach einem Downgrade wieder,
+  Aenderungen aus der Workspace-Zeit sieht sie nicht. Der Picker nennt die Migration einmal. Doku: Desktop fuer
+  Entwickler (DE+EN), README.
+- **Desktop: ein zweiter Start oeffnet den Launcher (R-0431):** Ein zweiter Programmstart holt den laufenden Launcher
+  nach vorn oder oeffnet ihn, statt das Fenster der laufenden App zu zeigen; Workspaces laufen nebeneinander in
+  eigenen Prozessen. Logdatei und Diagnose-Bericht gehoeren je einem Prozess (`adminhelper.log` fuer den Launcher,
+  `adminhelper-<id>.log` je Workspace). Die Laufzeitdateien des Tunnels (`visitor.toml`, exportierte Identitaet) liegen
+  je Workspace und nur, solange der Tunnel laeuft. Doku: Desktop fuer Entwickler (DE+EN), README.
 - **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
@@ -970,8 +1023,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   unspezifizierte Adressen) wie die automatischen Verbindungen des Servers ueber `127.0.0.1`: Verbindungen
   verschiedener Server koennen dasselbe solche Ziel nennen, deshalb gilt ein bisheriger Eintrag dafuer fuer keine
   Verbindung als gespeichert, und das Passwort wird je Verbindung einmal neu eingegeben. Loeschen entfernt auch einen
-  solchen bisherigen Eintrag. Unter Windows bleibt das Passwort im Credential Manager je Adresse
-  (`TERMSRV/<Adresse>`), wo mstsc es liest. Doku: Desktop fuer Entwickler (DE+EN).
+  solchen bisherigen Eintrag. Unter Windows liegt es seit den Workspaces ebenfalls je Verbindung im Namensraum der
+  App (siehe Added). Doku: Desktop fuer Entwickler (DE+EN).
 - **Server: `{{` in Feldern der FRP-Configs wird abgewiesen:** frp liest seine Config-Dateien als Go-Template, bevor
   es die TOML liest; `{{` beginnt dort eine Template-Anweisung. Die API antwortet jetzt mit `422` auf `{{` im
   Servernamen (`/api/servers`), in `name` und `server_addr` der FRP-Server-Config und in `name`, `local_ip`,
