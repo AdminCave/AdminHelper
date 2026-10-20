@@ -218,8 +218,11 @@ nichts, eine eigene Tabelle oder ein Speicher-Puffer ist unnötig.
     bleiben) und **je Mitglied eine Zeile im Alert-Log** (der Regel-Cooldown je Check bleibt stimmig); 1–2 → je
     Mitglied die normale Einzelnachricht. Eine Regel mit `match_server_id` trifft höchstens die Agents eines Servers
     und meldet deshalb einzeln.
-  - **Glocke:** Mitglieder = die Kandidaten, für die `hub_decision` `emit` sagt. ≥ 3 → **ein** Event mit
-    `source_ids` (Server-Vertrag unten); 1–2 → je Mitglied `_emit_to_hub`. `hub_status`/`hub_sent_at` je Mitglied.
+  - **Glocke:** Mitglieder = die Kandidaten, für die `hub_decision` `emit` sagt, getrennt nach ihrer gedeckelten
+    Severity (bei der Rückkehr nach `hub_status`; Kevin 2026-10-20). Je Stufe: ≥ 3 → **ein** Event mit `source_ids`
+    (Server-Vertrag unten) und dieser Severity; 1–2 → je Mitglied `_emit_to_hub`. So feuert `alert.triggered` nur
+    für Server, deren Check selbst critical ist, und `min_severity` greift je Server; bei gemischten Stufen kommen
+    bis zu zwei Glocken-Einträge. `hub_status`/`hub_sent_at` je Mitglied.
 - Nachricht (englisch wie alle Alarmtexte):
   - Betreff `[AdminHelper Monitor] CRITICAL: <n> agents not reporting` bzw.
     `[AdminHelper Monitor] RECOVERY: <n> agents reporting again`; Etikett = gedeckelte Stufe, das höchste der
