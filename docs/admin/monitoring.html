@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Admin-Handbuch</span>
           <h1>Monitoring</h1>
-          <p class="lead">Das Monitoring-System besteht aus drei Komponenten: <strong>Checks</strong> (Konfigurationen, was wie oft geprüft wird), <strong>Collectors</strong> im Agent (führen Messungen durch) und <strong>VictoriaMetrics</strong> (speichert die Zeitreihen). Checks, Alert-Regeln und Templates werden seit v0.32.0 im <strong>Desktop-Client</strong> (Server-Modus) gepflegt – auf der fleet-weiten <em>Monitoring</em>-Seite und pro Server im <em>Monitoring</em>-Tab unter <em>Infrastruktur</em>. Die Charts lesen direkt von VictoriaMetrics via uPlot.</p>
+          <p class="lead">Das Monitoring-System besteht aus drei Komponenten: <strong>Checks</strong> (Konfigurationen, was wie oft geprüft wird), <strong>Collectors</strong> im Agent (führen Messungen durch) und <strong>VictoriaMetrics</strong> (speichert die Zeitreihen). Checks, Alert-Regeln und Templates werden seit v0.32.0 im <strong>Desktop-Client</strong> (in einem Server-Workspace) gepflegt – auf der fleet-weiten <em>Monitoring</em>-Seite und pro Server im <em>Monitoring</em>-Tab unter <em>Infrastruktur</em>. Die Charts lesen direkt von VictoriaMetrics via uPlot.</p>
 
           <h2>Check-Typen</h2>
           <p>Der Typ-Bezeichner (<code>check_type</code>) ist exakt der Wert, den der Desktop-Client im Dropdown anzeigt. Server-seitige Probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) laufen direkt im Monitoring-Container, alle <code>agent_*</code>- und Plugin-Checks werten Push-Daten des Agents aus; <code>disk_forecast</code> liest die Metrik-Historie aus VictoriaMetrics.</p>
@@ -133,7 +133,7 @@
 
           <h2>Check anlegen</h2>
           <ol>
-            <li>Desktop-Client (Server-Modus) → <em>Monitoring → Neuer Check</em> (oder pro Server: <em>Infrastruktur → Server → Tab Monitoring</em>)</li>
+            <li>Desktop-Client (Server-Workspace) → <em>Monitoring → Neuer Check</em> (oder pro Server: <em>Infrastruktur → Server → Tab Monitoring</em>)</li>
             <li>Typ wählen, Ziel (Server oder URL) auswählen</li>
             <li>Parameter ausfüllen – typabhängig, z. B. bei <code>http</code>: URL, erwarteter Status-Code, Timeout</li>
             <li>Intervall, Schweregrad (<code>severity</code>), <code>consecutive_fails</code> und <code>consecutive_oks</code> (1–100, Default 2) setzen – die Schwellwerte selbst stehen in der typspezifischen Konfiguration (nächster Abschnitt)</li>
@@ -349,13 +349,13 @@
 
           <h3>Was wird zugestellt</h3>
           <ul>
-            <li><strong>Glocke</strong> im Desktop-Client (Kopfzeile): ein persönlicher Feed mit Ungelesen-Zähler, der sich <strong>in Echtzeit</strong> aktualisiert (Server-Push, solange eine Server-Sitzung aktiv ist) — eine neue Benachrichtigung erscheint sofort, ohne auf den nächsten Abruf zu warten. Das Öffnen markiert die Einträge als gelesen.</li>
-            <li><strong>Desktop-Benachrichtigungen</strong> (native OS-Hinweise): optional, unter <em>Einstellungen → Benachrichtigungen</em> zu aktivieren (fragt einmalig die System-Berechtigung an).</li>
+            <li><strong>Glocke</strong> im Desktop-Client (Kopfzeile): ein persönlicher Feed mit Ungelesen-Zähler, der sich <strong>in Echtzeit</strong> aktualisiert (Server-Push, solange eine Server-Sitzung aktiv ist) — eine neue Benachrichtigung erscheint sofort, ohne auf den nächsten Abruf zu warten. Das Öffnen markiert die Einträge als gelesen. Jeder angemeldete Server-Workspace hat seine eigene Glocke mit dem Feed seiner Anmeldung.</li>
+            <li><strong>Desktop-Benachrichtigungen</strong> (native OS-Hinweise): optional, unter <em>Einstellungen → Alle Workspaces auf diesem Gerät → Benachrichtigungen</em> zu aktivieren (fragt einmalig die System-Berechtigung an); der Schalter gilt für alle Workspaces des Geräts, und der Titel jedes Hinweises nennt den Workspace („[&lt;Name&gt;] …“).</li>
             <li><strong>E-Mail</strong>: zusätzlich, wenn in einer Regel aktiviert und eine Kontakt-E-Mail hinterlegt ist.</li>
           </ul>
 
           <h3>Eigene Regeln einstellen</h3>
-          <p>Unter <em>Einstellungen → Benachrichtigungen</em> im Desktop-Client legt jeder Nutzer eine Kontakt-E-Mail und beliebig viele Regeln an. Jede Regel besteht aus:</p>
+          <p>Unter <em>Einstellungen → Dieser Workspace → Benachrichtigungsregeln</em> im Desktop-Client (angemeldet in einem Server-Workspace; die Regeln liegen am Server dieses Workspace) legt jeder Nutzer eine Kontakt-E-Mail und beliebig viele Regeln an. Jede Regel besteht aus:</p>
           <table>
             <thead><tr><th>Feld</th><th>Bedeutung</th></tr></thead>
             <tbody>

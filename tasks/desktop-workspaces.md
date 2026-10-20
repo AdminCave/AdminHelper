@@ -255,8 +255,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/index.html + docs/en/index.html · docs/admin/{index,benutzer,betrieb,troubleshooting}.html + EN
 Abhängt von: T33
 
-### T35 — Admin-Doku DE+EN, Teil 2: Monitoring, Ansible, FRP, Agent-Rollout  [ ]
-Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/admin/ansible.html, docs/en/admin/ansible.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
+### T35 — Admin-Doku DE+EN, Teil 2: Monitoring, Ansible, FRP, Agent-Rollout  [x]
+Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/admin/ansible.html, docs/en/admin/ansible.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html, docs/admin/index.html, docs/en/admin/index.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f61583ae 2026-10-20T21:49:52+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T35.verdict.json)
 Änderung: Wie T34 für die übrigen Seiten; `frp-tunnel.html`: der lokale Port gehört dem Workspace (Portkarte je Workspace), ein zweiter Workspace mit demselben Visitor-Port bekommt einen Ausweichport. Stellen beim Bau neu greppen. Nachtrag (Bauer T34): `docs/admin/frp-tunnel.html` + EN nennen die Meldung `port … belongs to the tunnel of another workspace` (wörtlich aus `tunnel.rs`), was sie bedeutet und die Abhilfe (Tunnel dieses Workspace starten). Nachtrag (T34-Review, Nit): `docs/admin/index.html` (~:122) + EN (~:75): „löscht … samt RDP-Passwörtern“ um „bei übernommenen Workspaces erst mit dem letzten von ihnen“ ergänzen (Dateien per set-files).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/{monitoring,ansible,frp-tunnel,agent-deployment}.html + EN
