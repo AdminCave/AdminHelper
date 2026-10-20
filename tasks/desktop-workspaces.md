@@ -218,114 +218,11 @@ Abhängt von: T13, T17
 
 ## Block D — Oberfläche
 
-### T18 — Workspace-Store, Modell und Start der Oberfläche  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/workspace.ts, apps/desktop/ui/src/lib/stores/workspace.test.ts, apps/desktop/ui/src/lib/models/workspace.ts, apps/desktop/ui/src/lib/models/workspace.test.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/lib/stores/session.test.ts
-Änderung: Neuer Store `stores/workspace.ts` (SPDX-Header): `context` aus `workspaceContext()`, `list`, Aktionen `refresh`, `save`, `remove`, `open`, `openLauncher`. Neues Modell `models/workspace.ts` (SPDX-Header): Palette (gleich der Rust-Konstante), `validateDraft` (Name; URL je Art mit den Regeln aus `validateSettings`), `hostOf(url)` für die Namensvorbelegung. `hydrate` (`session.ts:70`) lädt den Kontext mit; `needsLogin` gilt nur im Workspace-Prozess. Tests (beide neuen Testdateien mit SPDX-Header): Store mit gemockter Bridge; `validateDraft` und `hostOf`; `hydrate` im Launcher → kein Login, Server-Workspace ohne Sitzung → Login.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/workspace.test.ts src/lib/models/workspace.test.ts src/lib/stores/session.test.ts
-Doku: keine (intern; Doku mit T33)
-Abhängt von: T14
-
-### T19 — Workspace-Editor: anlegen und bearbeiten  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/WorkspaceEditor.svelte, apps/desktop/ui/src/components/WorkspaceEditor.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Neue Komponente (SPDX-Header): Art (Server/Sync/Lokal; beim Bearbeiten fest), Name (bei Server und Sync mit dem Host vorbelegt, bis der Nutzer ihn selbst ändert), Farbe aus der Palette, URL je Art; beim Ändern einer URL die Warnung, dass Anmeldung und Geräte-Identität zur alten Installation gehören und eine andere Installation ein neuer Workspace ist. Kein Netzkontakt. Texte DE+EN. Tests (SPDX-Header): Name folgt dem Host bis zur eigenen Eingabe; ungültige URL sperrt Speichern; URL-Änderung zeigt die Warnung; Speichern ruft `save` mit dem Entwurf.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/WorkspaceEditor.test.ts
-Doku: keine (intern; Doku mit T33)
-Abhängt von: T18
-
-### T20 — Picker im Launcher  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/ui/src/App.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Neue Komponente (SPDX-Header): Liste mit Farbpunkt, Name, Art-Icon, Host bzw. „Lokal“ und „geöffnet“; Vorauswahl `lastUsed`, Pfeiltasten und Enter öffnen; ein geöffneter Workspace lässt sich nicht öffnen (Hinweis); einmaliger Hinweis nach der Migration; „Neuer Workspace“ und „Bearbeiten“ (nur geschlossen) öffnen den Editor (T19); „Löschen“ nur geschlossen, die Bestätigung nennt den Namen, bei Lokal mit Datenverlust-Hinweis, nach `localOnly` der bekannte Hinweis „nur auf diesem Gerät“. `App.svelte` (`:20-28`) zeigt im Launcher den Picker. Texte DE+EN. Tests (SPDX-Header): Vorauswahl und Enter rufen `open(lastUsed)`; geöffneter → kein Aufruf; Löschen fragt mit Namen, `localOnly` → Hinweis; Migrationshinweis genau einmal. Nachtrag (T12): Der Picker sperrt den Öffnen-Knopf, solange `open_workspace` läuft (zwei gleichzeitige Aufrufe derselben Id liefern sonst beide Ok, das zweite Kind endet mit Exit 3).
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts
-Doku: keine (intern; Doku mit T33)
-Abhängt von: T19
-
-### T21 — Workspace im Fenster kenntlich: Chip, Farbstreifen, „Workspaces…“  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/ui/ConfirmDialog.svelte, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/components/AppShell.workspace.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Ein Chip oben in der Sidebar (Farbpunkt + Name) ersetzt das Modus-Badge (`AppShell.svelte:101`, `:228`); Klick oder „Workspaces…“ ruft `openLauncher`. 4-px-Farbstreifen am Fensterrand in der Workspace-Farbe. Seiten mit `serverOnly` rendern nur bei `isServerMode` (`:87`), sonst das Dashboard (`currentId :91`). `ConfirmDialog` nennt im Workspace-Prozess Farbpunkt und Namen über der Frage. Texte DE+EN. Tests (neue Datei, SPDX-Header): Chip zeigt Name und Farbe, Klick ruft `openLauncher`; `/infrastructure` in einem lokalen Workspace zeigt das Dashboard; `ConfirmDialog` zeigt den Namen, im Launcher nicht.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/AppShell.workspace.test.ts src/components/ui/primitives.test.ts
-Doku: keine (intern; Doku mit T33)
-Abhängt von: T18
-
-### T22 — Login: „Anmelden bei ● Name“, feste URL, „Workspaces…“  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Login.svelte, apps/desktop/ui/src/components/Login.workspace.test.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Überschrift „Anmelden bei ● <Name>“; die URL ist Anzeige, ein Eingabefeld gibt es im Login (`Login.svelte:264`) und in der Token-Registrierung (`:354`) nur, solange der Workspace keine URL hat. „Ohne Server fortfahren“ (`useLocal :138`, Knopf `:348`) wird „Workspaces…“ (`openLauncher`); `setMode` (`session.ts:152`) entfällt. Texte DE+EN. Die bestehenden `Login.*.test.ts` bleiben gültig (sie setzen keine URL). Tests (neue Datei, SPDX-Header): mit URL kein URL-Feld, Login nimmt die Workspace-URL; ohne URL das Feld wie heute; „Workspaces…“ ruft `openLauncher`. Nachtrag (T38-Reviews): `session.ts` (~:97) verschluckt Fehler beim Speichern nach dem Login (etwa `IDENTITY_WITHOUT_URL`); den Fehler anzeigen, mit dem Hinweis, die Geräte-Identität zurückzusetzen. Nach `URL_TAKEN` bei der Registrierung den Ausgang (`Revoked`/`LocalOnly`) nennen, sobald die UI ihn bekommt.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Login
-Doku: keine (intern; Doku mit T33)
-Abhängt von: T18
-
-### T23 — Einstellungen: „Dieser Workspace“ und „Alle Workspaces auf diesem Gerät“  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/SettingsModal.svelte, apps/desktop/ui/src/components/SettingsModal.workspace.test.ts, apps/desktop/ui/src/lib/stores/settings.ts, apps/desktop/ui/src/lib/stores/settings.test.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/lib/stores/session.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
-Änderung: Das Modus-Radio (`SettingsModal.svelte:349-383`) entfällt. Abschnitt „Dieser Workspace“: Name, Farbe, URL als Anzeige mit dem Hinweis, dass sie im Picker bei geschlossenem Workspace änderbar sind, Abmelden, self-signed, Pin, Identität, Token, Browser-Zertifikat, Benachrichtigungsregeln, bei Sync das Intervall. Abschnitt „Alle Workspaces auf diesem Gerät“: Sprache, Passwörter, RDP, OS-Benachrichtigungen, Diagnose. `saveSettings` (`settings.ts:79-156`) ohne Moduswechsel und ohne erzwungenes Abmelden: prüfen, speichern, neu laden, Sprache setzen, bei Sync den Takt neu starten; Tunnel und Sitzung bleiben unberührt. `serverLogout` (`:158`) und `dropSession` (`session.ts:131`) verlieren ihre Aufrufer und gehen. Der Test `saving in server mode leaves a running tunnel alone (R-0245)` prüft künftig, dass Speichern weder Tunnel noch Abmelden anfasst. Brauchen bestehende `SettingsModal.*.test.ts` Mocks des Workspace-Stores, erweitert die Task `Dateien:` per `ledger.sh set-files`. Texte DE+EN. Tests (neue Datei, SPDX-Header): Abschnitte und Felder je Art; Speichern ruft weder `stopTunnel` noch `logout`; ein geändertes Sync-Intervall startet den Takt neu. Nachtrag (security T38): In Sync-Workspaces lehnt `reset_device_identity` jetzt ab; `SettingsModal.svelte` (`onResetDeviceIdentity`, `mode === 'sync'`) blendet die Aktion dort aus statt einen Fehler zu zeigen; Test dazu.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/settings.test.ts src/lib/stores/session.test.ts src/components/SettingsModal
-Doku: keine (intern; Doku mit T33)
-Abhängt von: T18
-Test-Löschung: apps/desktop/ui/src/lib/stores/settings.test.ts::a server-URL change with an active session logs out before saving — im Workspace ist die URL fest, ein URL-Wechsel ist ein neuer Workspace; apps/desktop/ui/src/lib/stores/settings.test.ts::a server-URL change with an active session reloads the window after saving (R-0429) — wie oben; apps/desktop/ui/src/lib/stores/settings.test.ts::a server-URL change without a session saves without a reload — wie oben; apps/desktop/ui/src/lib/stores/settings.test.ts::a failed save after the forced logout does not reload — es gibt kein erzwungenes Abmelden mehr; apps/desktop/ui/src/lib/stores/settings.test.ts::saving in server mode still starts the tunnel when the status call fails — Speichern startet keinen Tunnel mehr, das tut der Start des Workspace-Fensters; apps/desktop/ui/src/lib/stores/settings.test.ts::saving in server mode starts the tunnel when none runs — wie oben; apps/desktop/ui/src/lib/stores/settings.test.ts::switching server->local stops the tunnel and drops the session — der Moduswechsel entfällt, die Art ist je Workspace fest; apps/desktop/ui/src/lib/stores/settings.test.ts::switching server->sync stops the tunnel and drops the session — wie oben; apps/desktop/ui/src/lib/stores/session.test.ts::ends the session in Rust and clears the in-memory one — `dropSession` hat keinen Aufrufer mehr; apps/desktop/ui/src/lib/stores/session.test.ts::still clears the local session when the server logout call fails — wie oben
-
-### T24 — OS-Benachrichtigung mit Workspace-Präfix  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/osNotify.ts, apps/desktop/ui/src/lib/osNotify.test.ts
-Änderung: `notifyOs` (`osNotify.ts:33-47`) stellt Einzel- und Sammelmeldung „[<Name>] “ voran, Name aus dem Workspace-Store; im Launcher ohne Präfix. Tests (neue Datei, SPDX-Header, Plugin gemockt): Präfix in beiden Wegen; ohne Workspace kein Präfix.
-Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/osNotify.test.ts
-Doku: keine (intern; Doku mit T33)
-Abhängt von: T18
+Kevin 2026-10-20: T18–T24 bauen im Teil-Ledger `tasks/desktop-workspaces-ui.md` (Branch `feature/desktop-workspaces-ui`, eigener Worktree), parallel zu Block C; der Teil-Branch wird hierher gemergt.
 
 ## Block E — Live-E2E
 
-### T25 — WebDriver startet Launcher oder Workspace nach AH_E2E_WORKSPACE  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/wdio.conf.js, apps/desktop/e2e/test/lib/app-args.js, apps/desktop/e2e/test/unit/app-args.test.js
-Änderung: `tauri:options.args` (`wdio.conf.js:62-66`) kommt aus einer reinen Funktion in `test/lib/app-args.js` (SPDX-Header): `AH_E2E_WORKSPACE` gesetzt und nicht leer → `['--workspace', <id>]` (Id gegen dieselbe Regel wie in Rust geprüft, sonst Fehler beim Laden der Config), sonst `[]` (Launcher; der smoke-Spec läuft damit unverändert gegen den Launcher und prüft die Übergabe beim zweiten Start). Unit-Test unter `node --test` (SPDX-Header): gesetzt, leer, ungesetzt, ungültig. Das Verify ist Lint plus Unit-Tests; der echte Beweis kommt aus dem Sammellauf.
-Verify: bash scripts/dev/verify.sh desktop-e2e --strict
-Doku: keine (Test)
-Abhängt von: T10
-
-### T26 — Live-Helfer und Specs mit fester Workspace-URL  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/login-error.live.js, apps/desktop/e2e/test/specs/enroll-form.live.js, apps/desktop/e2e/test/specs/enroll-trust-dialog.live.js
-Änderung: `login()` (`live.js:65-89`) füllt die URL nur, wenn das Feld da ist (nach dem ersten erfolgreichen Login ist sie fest), Benutzer und Passwort über den Feldtyp statt über die Position; ein Helfer `fillServerUrlIfAsked()` für die Specs mit URL-Feld (`login-error.live.js:14-16`, `enroll-form.live.js:27-35`, `enroll-trust-dialog.live.js:25-26`). Die Specs prüfen, dass die angezeigte URL die erwartete ist, wenn kein Feld da ist. Verify ist der Lint; Beweis im Sammellauf.
-Verify: bash scripts/dev/verify.sh desktop-e2e --strict
-Doku: keine (Test)
-Abhängt von: T22
-
-### T27 — Orchestratoren starten den Standard-Workspace  [ ]
-Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/tests/box_desktopbox.sh, scripts/tests/desktop_e2e_crud.sh
-Änderung: `lib_e2e_stack.sh` exportiert neben den WebKit-Variablen (`:33`) `AH_E2E_WORKSPACE=standard` (alle `desktop_e2e_*.sh` sourcen sie), `box_desktopbox.sh` (`:41-43`) ebenso; das Seeden der alten `settings.json` bleibt und testet damit die Migration. `desktop_e2e_crud.sh` (`:45-84`): der Nachweis der Vertrauens-Zustimmung liest `workspaces/standard/workspace.json` statt `settings.json`; vor dem erneuten Seeden löscht das Skript `workspaces.json`, `workspaces/` und `prefs.json` unter `$XDG_DATA_HOME/com.admincave.adminhelper` mit vollem Pfad, damit die Migration erneut läuft. `lib_e2e_stack_test.sh` prüft den Export.
-Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
-Doku: keine (Test)
-Abhängt von: T25
-
-### T28 — Live-E2E: Picker ersetzt den Moduswechsel  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-picker.live.js, apps/desktop/e2e/test/specs/settings-mode.live.js, scripts/tests/desktop_e2e_crud.sh
-Änderung: Neuer Spec (SPDX-Header), läuft im Launcher (`AH_E2E_WORKSPACE` leer): der Picker zeigt „Standard“ als Server-Workspace und einmal den Migrationshinweis; „Neuer Workspace“ Lokal „E2E Lokal“ mit Farbe anlegen, umbenennen, löschen (die Bestätigung nennt den Namen; Datenverlust-Hinweis). `desktop_e2e_crud.sh` ruft ihn statt `settings-mode.live.js` (`:84`) als eigenen wdio-Lauf mit leerem `AH_E2E_WORKSPACE` am Ende. Öffnen aus dem Picker (abgekoppelter Prozess außerhalb von WebDriver) beweisen T12 und T32.
-Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
-Doku: keine (Test)
-Abhängt von: T20, T27
-Test-Löschung: apps/desktop/e2e/test/specs/settings-mode.live.js::* — der Moduswechsel in den Einstellungen entfällt, ersetzt durch workspace-picker.live.js
-
-### T29 — E2E-Stack: zwei Installationen nebeneinander  [ ]
-Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, docker-compose.test.yml
-Änderung: `e2e_init` (`lib_e2e_stack.sh:93`) bekommt einen optionalen Stack-Schlüssel (`a`/`b`) mit eigenem Projekt, Arbeitsverzeichnis, Ports (Daten-, Postgres-, Redis-Port mit Versatz), Bind-Adresse (`a` = `127.0.0.1`, `b` = `127.0.0.2`; ohne Schlüssel wie heute), `FRP_BIND_PORT`/`FRP_HTTPS_PORT` (`b`: 7001/7444) und `E2E_SERVER_URL`; `e2e_stack_use <a|b>` schaltet die globalen Variablen um, der Teardown räumt beide Stacks ab. `docker-compose.test.yml` (Gateway-Ports `:55-60`) veröffentlicht unter `${ITEST_BIND_IP:-0.0.0.0}`, damit beide Stacks die feste Enrollment-Ebene :8444 auf ihrer eigenen Loopback-Adresse halten. Bestehende Orchestratoren bleiben unverändert. `lib_e2e_stack_test.sh` (ohne Docker): zwei Stacks haben disjunkte Ports, Projekte, Arbeitsverzeichnisse und URLs; ohne Schlüssel bleibt alles wie bisher. Nicht gefahren: Veröffentlichung auf `127.0.0.2`.
-Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
-Doku: keine (Test)
-Abhängt von: T27
-
-### T30 — WebDriver mit zwei Workspace-Prozessen gleichzeitig  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/wdio.workspaces.conf.js, apps/desktop/e2e/test/lib/app-args.js, apps/desktop/e2e/test/unit/app-args.test.js, apps/desktop/e2e/eslint.config.js
-Änderung: Neue Config `wdio.workspaces.conf.js` (SPDX-Header, Build und Hooks wie `wdio.conf.js`) für WebdriverIO-Multiremote: zwei Sitzungen `wsA`/`wsB` mit Args aus `AH_E2E_WORKSPACE_A`/`_B` (über `app-args.js`), zwei tauri-driver auf 4444/4445 und 4446/4447, beide beim Ende beendet. `app-args.js` liefert dazu die Port-Paare; Unit-Tests dafür. Spec-Glob nur `*.workspaces.js`, damit `npm test` (smoke) ihn nicht greift; ESLint kennt die Multiremote-Namen. Nicht verifiziert: zwei WebKitWebDriver-Sitzungen unter einem Xvfb gleichzeitig; scheitert das im Sammellauf, `[?]` an Kevin (Rückfall: nacheinander, der Port des ersten hält ein Listener).
-Verify: bash scripts/dev/verify.sh desktop-e2e --strict
-Doku: keine (Test)
-Abhängt von: T25
-
-### T31 — Live-Specs: zwei Installationen, derselbe Visitor-Port  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-add-server.live.js, apps/desktop/e2e/test/specs/two-installations.workspaces.js
-Änderung: `workspace-add-server.live.js` (SPDX-Header, Launcher): legt den Server-Workspace „Kunde B“ mit `AH_E2E_SERVER_URL_B` an und schreibt seine Id in die Datei aus `AH_E2E_WS_B_FILE`. `two-installations.workspaces.js` (SPDX-Header, Multiremote): `wsA` (Standard, Stack A) und `wsB` (Kunde B, Stack B) registrieren sich je mit ihrem Token (`AH_ENROLL_TOKEN_A`/`_B`), melden sich an und starten den Tunnel; `tunnel_status` beider zeigt denselben Server-Port und verschiedene lokale Ports; jeder öffnet seine SSH-Verbindung; `wsB` findet vor der Registrierung keine Identität (`is_device_enrolled` false), obwohl `wsA` registriert ist; ein zweiter Start `--workspace standard` aus Node endet mit Exit 3, während `wsA` läuft. Verify ist der Lint; Beweis im Sammellauf (T32).
-Verify: bash scripts/dev/verify.sh desktop-e2e --strict
-Doku: keine (Test)
-Abhängt von: T30
-
-### T32 — Suite desktop_e2e_workspaces: zwei Stacks, zwei PKIs  [ ]
-Komponente: scripts · Dateien: scripts/tests/desktop_e2e_workspaces.sh
-Änderung: Neuer Orchestrator (SPDX-Header) nach dem Muster von `desktop_e2e_connect_tunnel.sh`: `e2e_require` wie dort, SKIP mit Exit 75 ohne tauri-cli (`desktop_e2e_skip_test.sh` prüft das per Glob mit); zwei Stacks (T29) je mit Gateway, frps, geseedetem Server, FRP-Konfiguration, SSH-Ziel (Host-Port 2222 bzw. 2223), verknüpfter Verbindung und STCP-Tunnel, vom Agent provisioniertem frpc und Enrollment-Token; prüft über die API, dass beide Installationen dem Tunnel denselben Visitor-Port gegeben haben. Seedet `settings.json` mit der URL von Stack A (Standard), führt `workspace-add-server.live.js` im Launcher und dann `two-installations.workspaces.js` mit `wdio.workspaces.conf.js` aus; danach: das SSH-Ziel A sah genau die Verbindung von `wsA`, Ziel B die von `wsB`; `workspaces/standard/` und `workspaces/<id B>/` enthalten nur die Verbindungen ihres Servers. `run.sh` und `heavy.sh` bleiben unberührt (Glob).
-Verify: bash scripts/dev/verify.sh scripts --strict -- desktop_e2e_skip_test
-Doku: keine (Test)
-Abhängt von: T29, T31
+Kevin 2026-10-20: T25–T32 bauen im Teil-Ledger `tasks/desktop-workspaces-e2e.md` (Branch `feature/desktop-workspaces-e2e`, eigener Worktree), parallel zu Block C und D; der Teil-Branch wird hierher gemergt.
 
 ## Block F — Doku
 
