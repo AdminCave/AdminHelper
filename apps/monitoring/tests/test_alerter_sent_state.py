@@ -205,6 +205,70 @@ def test_hold_after_host_down_never_reports_a_muted_problem(scenario):
     assert dispatched == []
 
 
+def _set_host_ping(factory, status):
+    """The server's Host Ping (template "Host Ping") at status, as reported."""
+    with factory() as db:
+        if not db.query(MonitorCheck).filter_by(id="hp-1").first():
+            db.add(
+                MonitorCheck(
+                    id="hp-1",
+                    server_id="srv-1",
+                    name="Host Ping",
+                    check_type="ping",
+                    config="{}",
+                    enabled=True,
+                    template_def_id="host-ping",
+                )
+            )
+            db.add(MonitorState(check_id="hp-1", status=status, notified_status=status))
+        db.query(MonitorState).filter_by(check_id="hp-1").update(
+            {"status": status, "notified_status": status}
+        )
+        db.commit()
+
+
+def _heartbeat(factory, status):
+    """One evaluation of the server's heartbeat at status: the state is written,
+    then the alerter gets it through _dispatch_alert_bg, the dispatcher of every
+    path. Its first evaluation finds nothing reported yet."""
+    from app.check_engine import _dispatch_alert_bg
+
+    with factory() as db:
+        if not db.query(MonitorCheck).filter_by(id="hb-1").first():
+            db.add(
+                MonitorCheck(
+                    id="hb-1",
+                    server_id="srv-1",
+                    name="Heartbeat",
+                    check_type="agent_ping",
+                    config="{}",
+                    enabled=True,
+                )
+            )
+            db.add(MonitorState(check_id="hb-1", status="ok", notified_status="ok"))
+            db.flush()
+        row = db.query(MonitorState).filter_by(check_id="hb-1").one()
+        old, row.status = row.status, status
+        db.commit()
+    _dispatch_alert_bg("hb-1", old, status)
+
+
+def test_heartbeat_muted_by_the_host_ping_is_caught_up_once_the_ping_is_back(scenario):
+    # R-0424: a critical Host Ping mutes the heartbeat (the heartbeat never mutes
+    # the Host Ping). Is the ping back while the agent stays silent, the next
+    # evaluation of the heartbeat reports its outage, once.
+    _client, factory, dispatched = scenario
+    _set_host_ping(factory, "critical")
+    _heartbeat(factory, "critical")
+    assert dispatched == []
+
+    _set_host_ping(factory, "ok")
+    _heartbeat(factory, "critical")  # no transition: the catch-up
+    assert dispatched == [("hb-1", "ok", "critical")]
+    _heartbeat(factory, "critical")
+    assert dispatched == [("hb-1", "ok", "critical")]
+
+
 @_OKS_1_AND_2
 def test_f1_problem_resolved_during_host_down_never_reports(scenario):
     client, factory, dispatched = scenario

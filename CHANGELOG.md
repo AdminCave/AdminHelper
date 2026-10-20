@@ -14,7 +14,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und meldet den Ausfall eines Hosts damit auch ohne Agent. Es gehoert zu keinem der beiden „— Standard“-Templates,
   wird nie vorgeschlagen und nur von Hand zugewiesen; bestehende Installationen bekommen es beim naechsten Start des
   Monitoring-Dienstes. Gedacht ist es fuer Hosts, die der Monitoring-Dienst per ICMP erreicht, nicht nur ueber FRP;
-  ein IPv6-Literal als Hostname nimmt der `ping`-Check nicht an. Doku: Admin-Doku Monitoring (DE+EN).
+  ein IPv6-Literal als Hostname nimmt der `ping`-Check nicht an. Steht der Host Ping auf `critical`, bleiben alle
+  uebrigen Alarme des Servers stumm, auch der Heartbeat (`agent_ping`); ein `critical` Heartbeat schaltet den Host
+  Ping dagegen nicht stumm. Faellt der Host aus, meldet also nur der Host Ping; ist er zurueck und der Agent weiter
+  stumm, meldet der Heartbeat danach seinen Ausfall. Als Host Ping zaehlt nur der Check aus diesem Template: Ein von
+  Hand angelegter `ping`-Check, etwa auf ein Gateway, schaltet nichts stumm. Doku: Admin- und Entwickler-Doku
+  Monitoring (DE+EN).
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter

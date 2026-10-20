@@ -602,7 +602,8 @@ class TestBellSlotAcrossDispatches:
             ("critical", "ok", ("ok", _NOW - timedelta(hours=1))),
             ("ok", "critical", ("critical", _NOW - timedelta(minutes=5))),
             # hub_sent_at NULL, as the migration backfills it: the release has to
-            # match a NULL (IS NOT DISTINCT FROM), not compare it with =.
+            # match a NULL. A comparison with None renders as IS NULL already
+            # (SQLAlchemy); is_not_distinct_from says it explicitly.
             ("ok", "critical", ("critical", None)),
         ],
         ids=["alarm-first", "alarm-after-cooldown", "recovery", "recovery-after-backfill"],
@@ -623,3 +624,39 @@ class TestBellSlotAcrossDispatches:
 
         assert posted == [status]
         assert bell_record(bell_db, cid) == hub_before
+
+    # T6 review: one test per half of the release condition (_release_hub_slot), a
+    # row that matches the failed reservation in the other half only.
+
+    def test_a_failed_recovery_keeps_a_newer_one_with_the_same_status(self, bell_db, monkeypatch):
+        # hub_sent_at: recovery A reserves (ok, t0); during its POST alarm B
+        # reserves (critical, now) and recovery C (ok, now). A fails, the row
+        # carries A's hub_status but a newer hub_sent_at: nothing is handed back.
+        shown_at = _NOW - HUB_COOLDOWN - timedelta(minutes=10)
+        cid = seed_bell_check(
+            bell_db,
+            status="ok",
+            notified_status="critical",
+            hub_status="critical",
+            hub_sent_at=shown_at,
+        )
+        posted = overlap_first_hub_post(
+            monkeypatch, bell_db, cid, ("critical", "ok"), first_code=403
+        )
+
+        _dispatch_alert_bg(cid, "critical", "ok")
+
+        assert posted == ["ok", "critical", "ok"]
+        assert bell_record(bell_db, cid) == ("ok", _NOW)
+
+    def test_a_failed_alarm_keeps_a_newer_recovery_from_the_same_time(self, bell_db, monkeypatch):
+        # hub_status: alarm A reserves (critical, now); during its POST recovery B
+        # reserves (ok, now), a recovery keeps hub_sent_at. A fails, the row
+        # carries A's hub_sent_at but another hub_status: nothing is handed back.
+        cid = seed_bell_check(bell_db, status="critical", notified_status="ok")
+        posted = overlap_first_hub_post(monkeypatch, bell_db, cid, "ok", first_code=403)
+
+        _dispatch_alert_bg(cid, "ok", "critical")
+
+        assert posted == ["critical", "ok"]
+        assert bell_record(bell_db, cid) == ("ok", _NOW)

@@ -22,6 +22,7 @@ from email.mime.text import MIMEText
 from urllib.parse import urlparse
 
 import httpx
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import (
@@ -136,22 +137,13 @@ def process_alert(
         return
     new_status = current
 
-    # Maintenance windows (collect-but-mute, T25): the state transition has
-    # already been persisted by the caller — only notifications are muted.
-    # No alert-log entry either: the log records SENT notifications.
-    windows = (
-        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
-    )
-    if windows and is_in_maintenance(windows, check.server_id, utcnow_naive()):
-        logger.debug("Alert for check %s suppressed (maintenance window)", check.id)
-        return
-
-    # Host-down suppression (Alertmanager inhibition pattern, T7): while this
-    # server's agent_ping stands critical, every OTHER check of the server
-    # stays silent — one incident, one notification (the agent_ping alert).
-    # agent_ping itself always alerts; checks without a server are unaffected.
-    if check.check_type != "agent_ping" and check.server_id and _host_is_down(db, check):
-        logger.debug("Alert for check %s suppressed (host down)", check.id)
+    # Maintenance windows and host-down (muted_reason): the state transition has
+    # already been persisted by the caller — only notifications are muted, and
+    # notified_status stays untouched for the catch-up. No alert-log entry
+    # either: the log records SENT notifications.
+    reason = muted_reason(db, check, utcnow_naive())
+    if reason is not None:
+        logger.debug("Alert for check %s suppressed (%s)", check.id, reason)
         return
 
     rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
@@ -262,19 +254,64 @@ def _release_hub_slot(
     ).update({"hub_status": before[0], "hub_sent_at": before[1]}, synchronize_session=False)
 
 
-def _host_is_down(db: Session, check: MonitorCheck) -> bool:
-    """True when ANY enabled agent_ping check of the same server stands critical.
+def muted_reason(db: Session, check: MonitorCheck, now: datetime) -> str | None:
+    """Why the notifications of the check are muted at ``now``; None when they
+    are not.
 
-    ANY-semantics on purpose: with several agent_ping checks per server (manual
+    "maintenance window" — a window of the check's server or of all servers is
+    active (collect-but-mute, T25); it mutes every check, the heartbeat and the
+    Host Ping included.
+    "host down" — the server's heartbeat or Host Ping stands critical
+    (_host_is_down): one incident, one notification."""
+    windows = (
+        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
+    )
+    if windows and is_in_maintenance(windows, check.server_id, now):
+        return "maintenance window"
+    if _host_is_down(db, check):
+        return "host down"
+    return None
+
+
+# def_id of the check in the built-in template "Host Ping" (builtin_templates.py).
+# Only its ping signals host-down: a ping set up by hand may aim at another target
+# (a gateway, say) and must not mute the whole server.
+HOST_PING_DEF_ID = "host-ping"
+
+
+def _host_is_down(db: Session, check: MonitorCheck) -> bool:
+    """True when an enabled check of the same server that signals host-down
+    stands critical (Alertmanager inhibition pattern), by rank:
+
+    - the Host Ping (ping check with template_def_id HOST_PING_DEF_ID): never;
+    - agent_ping: a Host Ping;
+    - every other check: an agent_ping or a Host Ping.
+
+    So a critical heartbeat never mutes the Host Ping, and the two do not
+    silence each other when the host is gone. No check mutes itself; checks
+    without a server are never muted.
+
+    ANY-semantics on purpose: with several signal checks per server (manual
     plus template is possible — no unique constraint), picking an arbitrary row
     would make suppression depend on row order; filtering on critical makes it
     deterministic."""
+    if not check.server_id:
+        return False
+    if check.check_type == "ping" and check.template_def_id == HOST_PING_DEF_ID:
+        return False
+    host_ping = and_(
+        MonitorCheck.check_type == "ping", MonitorCheck.template_def_id == HOST_PING_DEF_ID
+    )
+    if check.check_type == "agent_ping":
+        signal = host_ping
+    else:
+        signal = or_(MonitorCheck.check_type == "agent_ping", host_ping)
     row = (
         db.query(MonitorState.status)
         .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
         .filter(
             MonitorCheck.server_id == check.server_id,
-            MonitorCheck.check_type == "agent_ping",
+            signal,
             MonitorCheck.enabled == True,  # noqa: E712
             MonitorState.status == "critical",
         )

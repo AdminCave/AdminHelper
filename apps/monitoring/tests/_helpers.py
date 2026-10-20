@@ -40,6 +40,7 @@ def make_check(**kw):
         check_type="ping",
         server_id="srv-1",
         severity="critical",
+        template_def_id=None,
     )
     defaults.update(kw)
     return SimpleNamespace(**defaults)
@@ -116,8 +117,9 @@ class _CapturingDb:
         self._maintenance = maintenance or []
         # The sent-state load queries the MonitorState ENTITY; None = no row
         # (process_alert then falls back to the caller's old_status). NOTE:
-        # _host_is_down queries the MonitorState.status COLUMN and is not
-        # answered here — subclasses override first() for that.
+        # _host_is_down queries the MonitorState.status COLUMN and gets None
+        # from first() here (nothing stands critical); a subclass answers it
+        # otherwise (test_alerter's _HostDownDb).
         self._state = state
         self.added = []
         self.flushed = False
@@ -200,8 +202,9 @@ def overlap_first_hub_post(monkeypatch, factory, check_id, second_status, first_
     """Arm a hub whose FIRST POST runs a second dispatch of the check to its end
     before it answers with first_code: the check moves to second_status and
     _dispatch_alert_bg runs again — the second dispatch of one check while the
-    first is still in its hub POST (R-0424 T6 review). Every later POST answers
-    202. Returns the list that gets the new_status of every POST."""
+    first is still in its hub POST (R-0424 T6 review). A tuple of statuses moves
+    the check to each in turn, with one dispatch per move. Every later POST
+    answers 202. Returns the list that gets the new_status of every POST."""
     from app import alerter
     from app.check_engine import _dispatch_alert_bg
     from app.models import MonitorState
@@ -209,16 +212,18 @@ def overlap_first_hub_post(monkeypatch, factory, check_id, second_status, first_
     monkeypatch.setattr(alerter, "SERVER_HUB_URL", "http://hub:8080")
     monkeypatch.setattr(alerter, "INTERNAL_API_KEY", "secret")
     posted = []
+    statuses = (second_status,) if isinstance(second_status, str) else second_status
 
     def fake_post(url, **kwargs):
         posted.append(kwargs["json"]["new_status"])
         if len(posted) > 1:
             return SimpleNamespace(status_code=202)
-        with factory() as db:
-            row = db.query(MonitorState).filter_by(check_id=check_id).one()
-            old_status, row.status = row.status, second_status
-            db.commit()
-        _dispatch_alert_bg(check_id, old_status, second_status)
+        for status in statuses:
+            with factory() as db:
+                row = db.query(MonitorState).filter_by(check_id=check_id).one()
+                old_status, row.status = row.status, status
+                db.commit()
+            _dispatch_alert_bg(check_id, old_status, status)
         return SimpleNamespace(status_code=first_code)
 
     monkeypatch.setattr(alerter.httpx, "post", fake_post)
