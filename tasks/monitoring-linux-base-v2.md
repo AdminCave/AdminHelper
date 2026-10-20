@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring Linux-Basis v2 und Proxmox-Ausfall — Task-Ledger
-Status: geplant · Branch: feature/monitoring-linux-base-v2 · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-linux-base-v2 · Review: pro Task
 Spec: docs/features/monitoring-linux-base-v2.md (Roadmap R-0423, R-0492)
 Heavy: linux-full + scenario --agents 1 + windows — Agent (`internal/monitor`) und die Push-Auswertung des Monitoring ändern sich: Sammellauf über `main` (`agent_monitoring_test.sh` fährt den echten Agent v3 in `debian:bookworm-slim` gegen den Stack, `desktop_e2e_monitoring.sh` den Check-Editor des Desktops); `scenario --agents 1` nicht wegen der Paketierung (deb/rpm, systemd-Units, install/update, FRP, PKI bleiben unverändert), sondern als Plattform-Beweis auf einem echten Debian-Host mit systemd: `timedatectl`, `apt-get -s` gegen echte Paketlisten, `/proc/vmstat`, die Zustandsdatei über die mehrfachen `run --once` von `box_agentbox.sh` und das Laufzeitbudget unter `TimeoutStartSec=270` (ask-first; ohne Kevins Ja stehen diese Punkte im PR-Text als „nicht verifiziert“); `windows` = CI-Job `agent-windows` (CPU-Delta und Zustandsdatei laufen auch im Windows-Dienst, `system_other.go` hält den Block dort leer)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
