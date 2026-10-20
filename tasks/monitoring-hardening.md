@@ -175,8 +175,10 @@ Semantik: `apps/server/app/main.py:393` Docstring — „FastAPI's 422“: der H
 Abhängt von: T6, T14
 HEAD: 4b10960a
 
-### T14 — Monitoring: ein 422 mit einzelnem Surrogate im Body bleibt ein 422  [ ]
+### T14 — Monitoring: ein 422 mit einzelnem Surrogate im Body bleibt ein 422  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/main.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @b8c2773c 2026-10-20T07:30:18+02:00
+Review: approve (.ah-out/review/monitoring-hardening/T14.verdict.json)
 Änderung: Der 422-Handler aus T6 (`_validation_error`, `apps/monitoring/app/main.py:131`) schreibt seine Ersatzantwort mit `json.dumps(..., allow_nan=False)` und dem Default `ensure_ascii=True` als `Response` (`media_type="application/json"`), wie der Server (`apps/server/app/main.py:393-403`): ein einzelnes Surrogate im zurückgegebenen `input` (JSON schreibt es als `\ud800`, Python liest es, UTF-8 kennt es nicht) steht dann als Escape im Body, statt dass `JSONResponse` mit `UnicodeEncodeError` scheitert (500). Nicht endliche Zahlen stehen weiter als `null`; ein 422 ohne beides bleibt FastAPIs eigener. Tests zuerst rot (dreimal identisch auf HEAD), neben `TestValidationErrorAnswer` in `test_check_configs.py`: `POST /checks` mit rohem Body `{"name": "\ud800", "check_type": "ping", "config": {"target": 5}}` → 422, Body mit `json.loads` lesbar, das Surrogate im `input` erhalten; dasselbe zusammen mit `NaN` an anderer Stelle → 422 mit `null` und Surrogate; nichts gespeichert.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_configs.py
 Doku: keine (Fehlerpfad)

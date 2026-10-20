@@ -8,6 +8,7 @@ AdminHelper — Monitoring Service
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -17,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 
 from app.core.middleware import NulByteMiddleware
 from app.models import (  # noqa: F401
@@ -128,15 +129,18 @@ def _non_finite_as_null(detail: list) -> list:
     return detail
 
 
-async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def _validation_error(request: Request, exc: RequestValidationError) -> Response:
     """FastAPI's 422. The input it echoes may hold a non-finite number: json.loads reads the
-    tokens Infinity and NaN, and JSONResponse refuses to write them back, which was a 500.
-    That answer gives such a number as null; every other 422 is FastAPI's own."""
+    tokens Infinity and NaN, and JSONResponse refuses to write them back, which was a 500. It
+    may also hold a lone surrogate (JSON spells one as \\ud800), which has no UTF-8 form; that
+    is a UnicodeEncodeError, a ValueError too. That answer gives such a number as null and
+    escapes every non-ASCII character, as JSON allows; every other 422 is FastAPI's own."""
     try:
         return await request_validation_exception_handler(request, exc)
     except ValueError:
         detail = _non_finite_as_null(jsonable_encoder(exc.errors()))
-        return JSONResponse(status_code=422, content={"detail": detail})
+        content = json.dumps({"detail": detail}, allow_nan=False, separators=(",", ":"))
+        return Response(content, status_code=422, media_type="application/json")
 
 
 app.add_exception_handler(RequestValidationError, _validation_error)

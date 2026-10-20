@@ -400,8 +400,9 @@ class TestStrictNumberFields:
 
 class TestValidationErrorAnswer:
     """The service's 422 is FastAPI's own, except that a non-finite number in the input it
-    echoes is null (Kevin 2026-10-20): FastAPI's handler echoed the body, and JSONResponse
-    refused to write Infinity or NaN, so the client got a 500 instead."""
+    echoes is null (Kevin 2026-10-20) and a lone surrogate there is escaped: FastAPI's handler
+    echoed the body, and JSONResponse refused to write Infinity or NaN and could not encode a
+    lone surrogate as UTF-8, so the client got a 500 instead."""
 
     @staticmethod
     def _answer(handler, errors):
@@ -414,13 +415,19 @@ class TestValidationErrorAnswer:
 
         return _validation_error, request_validation_exception_handler
 
-    def test_without_a_non_finite_number_it_is_fastapis_own(self):
+    def test_without_a_non_finite_number_or_a_lone_surrogate_it_is_fastapis_own(self):
+        # Other non-ASCII text stays as FastAPI writes it, unescaped UTF-8.
         errors = [
             {
                 "type": "value_error",
                 "loc": ("body", "config"),
                 "msg": "Value error, m",
-                "input": {"a": 1.5, "b": [2, "x", None, True, {"c": -0.0}], "d": 10**30},
+                "input": {
+                    "a": 1.5,
+                    "b": [2, "x", None, True, {"c": -0.0}],
+                    "d": 10**30,
+                    "e": "\u00e4\U0001f600",
+                },
             },
             {"type": "missing", "loc": ("body", "name"), "msg": "Field required", "input": {}},
         ]
@@ -455,6 +462,31 @@ class TestValidationErrorAnswer:
             (["body"], "Value error, m"),
             (["body", "f"], "Input should be a finite number"),
         ]
+
+    @pytest.mark.parametrize(
+        ("config", "echoed"),
+        [
+            ('{"target": 5}', {"target": 5}),
+            ('{"target": 5, "timeout": NaN}', {"target": 5, "timeout": None}),
+        ],
+        ids=["surrogate", "surrogate-and-NaN"],
+    )
+    def test_a_lone_surrogate_in_the_input_is_escaped(self, client_db, monkeypatch, config, echoed):
+        # JSON spells a lone surrogate as \ud800 and json.loads reads it, but UTF-8 has no
+        # form for it: JSONResponse could not encode the echoed body, a 500.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        body = f'{{"name": "\\ud800", "check_type": "ping", "config": {config}}}'
+        r = client.post("/checks", content=body, headers=_JSON)
+        assert (r.status_code, r.headers["content-type"]) == (422, "application/json")
+        # Strict UTF-8, as any client reads it.
+        answer = json.loads(r.content.decode("utf-8"))
+        assert_every_reader_reads(answer)
+        [error] = answer["detail"]
+        assert "target: Input should be a valid string" in error["msg"]
+        assert error["input"] == {"name": "\ud800", "check_type": "ping", "config": echoed}
+        r = client.get("/checks")
+        assert (r.status_code, r.json()) == (200, [])
 
 
 class TestExcludeVmids:
