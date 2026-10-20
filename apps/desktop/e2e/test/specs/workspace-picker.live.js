@@ -10,8 +10,8 @@
 // Run last by scripts/tests/desktop_e2e_crud.sh, in a wdio run of its own: the specs before it
 // open "Standard" and list nothing, so the note is still due; the orchestrator checks afterwards
 // that only the directory of "Standard" is left. Opening a workspace from the picker starts a
-// process outside WebDriver and ends the launcher, and with it this session: the launcher tests
-// in Rust and desktop_e2e_workspaces.sh prove that.
+// process outside WebDriver and ends the launcher, and with it this session: only the launcher
+// tests in Rust prove that; desktop_e2e_workspaces.sh starts its workspaces with --workspace.
 
 import fs from 'node:fs';
 import { MODAL, clickItemByName, jsClick, texts } from '../lib/live.js';
@@ -49,18 +49,45 @@ async function listed(id) {
 
 // The text of the UI string `key` in each language of the UI, `{var}` filled from `vars`. The
 // specs select by structure, but which question the picker asks only its text tells, and the
-// language of the app follows the one of the box.
+// language of the app follows the one of the box. One text for each language the type Language
+// names: a text missing in one would only fail on a box in that language.
 function translations(key, vars = {}) {
   const source = fs.readFileSync(
     new URL('../../../ui/src/lib/i18n/dictionaries.ts', import.meta.url),
     'utf8',
   );
-  const pattern = new RegExp(`'${key.replaceAll('.', '\\.')}':\\s*'((?:[^'\\\\]|\\\\.)*)'`, 'g');
-  const found = [...source.matchAll(pattern)].map(([, text]) =>
-    text.replace(/\\(.)/g, '$1').replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? '')),
+  const languages = [
+    ...(source.match(/^export type Language = (.+);$/m)?.[1] ?? '').matchAll(/'(\w+)'/g),
+  ].map(([, language]) => language);
+  if (languages.length === 0) throw new Error('the dictionaries of the UI name no language');
+  // The block of each language, from its `  <language>: {` to the next one.
+  const parts = source.split(/^ {2}(\w+): \{$/m);
+  const blocks = new Map();
+  for (let i = 1; i < parts.length; i += 2) blocks.set(parts[i], parts[i + 1]);
+  // In single quotes, or in double ones, where Prettier puts a text with an apostrophe.
+  const pattern = new RegExp(
+    `'${key.replaceAll('.', '\\.')}':\\s*(?:'((?:[^'\\\\]|\\\\.)*)'|"((?:[^"\\\\]|\\\\.)*)")`,
   );
-  if (found.length === 0) throw new Error(`the dictionaries of the UI have no text for ${key}`);
-  return found;
+  return languages.map((language) => {
+    const match = blocks.get(language)?.match(pattern);
+    if (!match) {
+      throw new Error(`the dictionaries of the UI have no text for ${key} in ${language}`);
+    }
+    return unescapeJs(match[1] ?? match[2]).replace(/\{(\w+)\}/g, (_, name) =>
+      String(vars[name] ?? ''),
+    );
+  });
+}
+
+// The text of a JS string literal's body: \n, \r, \t and the code point escapes as JS reads
+// them, any other escaped character as itself (\' and \" among them).
+const ESCAPES = { n: '\n', r: '\r', t: '\t' };
+function unescapeJs(body) {
+  return body.replace(/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g, (_, escape) =>
+    escape.length > 1
+      ? String.fromCodePoint(parseInt(escape.replace(/[ux{}]/g, ''), 16))
+      : (ESCAPES[escape] ?? escape),
+  );
 }
 
 // The id of the workspace the picker lists under `name`.
@@ -107,10 +134,11 @@ describe('Launcher: the picker replaces the switch of the app mode', () => {
   let made = null;
 
   it('lists the migrated Standard as a server workspace, with the note on the migration once', async () => {
-    await $('.picker-list').waitForExist({ timeout: 20000 });
-    // A session that opened a workspace shows its login, never the picker; named here, so a
-    // set AH_E2E_WORKSPACE reads as that and not as a missing list.
+    // A session that opened a workspace shows its login, never the picker. Waiting for either
+    // and then asking for the context names a set AH_E2E_WORKSPACE as that, not as a missing list.
+    await $('.picker-list, .login-card').waitForExist({ timeout: 20000 });
     expect(await invoke('workspace_context')).toMatchObject({ launcher: true });
+    await $('.picker-list').waitForExist({ timeout: 10000 });
     const standard = await $('.picker-item[data-id="standard"]');
     await standard.waitForExist({ timeout: 15000 });
     expect(await standard.$('.picker-name').getText()).toBe('Standard');

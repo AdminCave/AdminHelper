@@ -51,10 +51,11 @@ describe('Launcher: a server workspace for the second installation', () => {
   });
 
   it('opens the picker, which lists the migrated Standard', async () => {
-    await $('.picker-list').waitForExist({ timeout: 20000 });
-    // A session that opened a workspace shows its login, never the picker; named here, so a
-    // set AH_E2E_WORKSPACE reads as that and not as a missing list.
+    // A session that opened a workspace shows its login, never the picker. Waiting for either
+    // and then asking for the context names a set AH_E2E_WORKSPACE as that, not as a missing list.
+    await $('.picker-list, .login-card').waitForExist({ timeout: 20000 });
     expect(await invoke('workspace_context')).toMatchObject({ launcher: true });
+    await $('.picker-list').waitForExist({ timeout: 10000 });
     await $('.picker-item[data-id="standard"]').waitForExist({ timeout: 15000 });
   });
 

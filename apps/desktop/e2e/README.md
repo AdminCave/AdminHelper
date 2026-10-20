@@ -92,6 +92,24 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   (one agent, three STCP proxies) → sshd / nginx / xrdp. Orchestrated by
   **`../../../scripts/tests/desktop_e2e_connect_tunnel.sh`** (provisions a real
   agent for the server side, runs its frpc.toml under `snowdreamtech/frpc`).
+- **`test/specs/workspace-add-server.live.js`** — in the launcher (no
+  `AH_E2E_WORKSPACE`): makes the server workspace "Kunde B" of a second
+  installation through the picker and its editor and writes its id into a file
+  for the spec below. Orchestrated by
+  **`../../../scripts/tests/desktop_e2e_workspaces.sh`**.
+- **`test/specs/two-installations.workspaces.js`** — two workspace processes at
+  once, through `wdio.workspaces.conf.js` (WebdriverIO multiremote, the sessions
+  `wsA` and `wsB`, a tauri-driver each; `npm test` does not run it): "Standard" at
+  stack a and "Kunde B" at stack b, two stacks with two PKIs. A second start of
+  "Standard" ends with exit 3; `wsB` holds no device identity while `wsA`
+  registers; then each window registers at its stack, signs in and starts its
+  tunnel, both visitors at the same server port on different local ports, and
+  opens its SSH connection through its own tunnel. Orchestrated by the same
+  `desktop_e2e_workspaces.sh` run (stack b on `127.0.0.2`, a fresh app data dir and
+  keyring), which then checks from the targets that each SSH target saw exactly one
+  SSH client, and that each workspace dir holds the connection of its own server
+  only. Both workspaces start with `--workspace`: opening one from the picker is
+  proven by the Rust tests alone.
 
 ## Prerequisites (Linux)
 

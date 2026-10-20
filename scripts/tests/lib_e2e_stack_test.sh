@@ -217,6 +217,7 @@ done
 env_is() {
   [ -n "$(envf "$1" ITEST_BIND_IP)" ] && [ -n "$(envf "$1" FRP_BIND_PORT)" ] && [ -n "$(envf "$1" FRP_HTTPS_PORT)" ] \
     && [ "$(envf "$1" ITEST_BIND_IP)" = "$(v2 "$2.E2E_BIND_IP")" ] \
+    && [ "$(envf "$1" EXTRA_SANS)" = "$(v2 "$2.E2E_BIND_IP")" ] \
     && [ "$(envf "$1" FRP_BIND_PORT)" = "$(v2 "$2.E2E_FRP_BIND_PORT")" ] \
     && [ "$(envf "$1" FRP_HTTPS_PORT)" = "$(v2 "$2.E2E_FRP_HTTPS_PORT")" ] \
     && [ "$(envf "$1" ITEST_HTTPS_PORT)" = "$(v2 "$2.E2E_HTTPS_PORT")" ] \
@@ -226,7 +227,7 @@ env_is() {
     && [ "$(v2 "$2.ITEST_DATABASE_URL")" = "postgresql+psycopg://adminhelper:$(envf "$1" POSTGRES_PASSWORD)@127.0.0.1:$(v2 "$2.E2E_PG_PORT")/adminhelper" ]
 }
 env_is a A && env_is b B \
-  && ok "two stacks: each .env names its stack's bind address, FRP ports, ports and admin password" \
+  && ok "two stacks: each .env names its stack's bind address (as a SAN of its gateway too), FRP ports, ports and admin password" \
   || bad "two stacks: .env a: $(tr '\n' ' ' < "$STUB_LOG/env.a" 2>/dev/null) .env b: $(tr '\n' ' ' < "$STUB_LOG/env.b" 2>/dev/null)"
 [ -n "$(envf a POSTGRES_PASSWORD)" ] && [ "$(envf a POSTGRES_PASSWORD)" != "$(envf b POSTGRES_PASSWORD)" ] \
   && [ -n "$(envf a SECRET_KEY)" ] && [ "$(envf a SECRET_KEY)" != "$(envf b SECRET_KEY)" ] \
@@ -382,9 +383,9 @@ for f in "$REPO_ROOT"/scripts/tests/desktop_e2e_*.sh; do
     || WRONG+=" ${f##*/}(call ${call:-?}, tauri ${tauri:-?})"
   ! grep -q '\[ -d node_modules \]' "$f" || WRONG+=" ${f##*/}([ -d node_modules ])"
 done
-[ "$SUITES" = 8 ] && [ -z "$WRONG" ] \
-  && ok "all 8 desktop suites call e2e_npm_ready after the tauri-cli check, none by [ -d node_modules ]" \
-  || bad "desktop suites ($SUITES of 8 expected):$WRONG"
+[ "$SUITES" = 9 ] && [ -z "$WRONG" ] \
+  && ok "all 9 desktop suites call e2e_npm_ready after the tauri-cli check, none by [ -d node_modules ]" \
+  || bad "desktop suites ($SUITES of 9 expected):$WRONG"
 
 # ── e2e_login ────────────────────────────────────────────────────────────────
 # A red login in the stack suite said only that it failed, not why (R-0515). curl is

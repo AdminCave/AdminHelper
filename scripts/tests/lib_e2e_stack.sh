@@ -28,7 +28,8 @@ _E2E_API="$_E2E_LIB_DIR/e2e_api.py"
 
 # e2e_api <token> <op> [args...] — admin-API seed/query over the test gateway.
 # Ops: server | config | tunnel | count-tunnels | count-connections | tunnel-conn |
-#      provision-token | connection | web-connection — see e2e_api.py for the args (2.122).
+#      visitor-port | provision-token | connection | web-connection — see e2e_api.py for the
+#      args (2.122).
 e2e_api() { python3 "$_E2E_API" "$E2E_SERVER_URL" "$@"; }
 
 # Headless WebKit: disable GPU paths xvfb can't provide (else the webview may fail to
@@ -195,9 +196,13 @@ ITEST_REPO_PORT=$E2E_REPO_PORT
 ITEST_PG_PORT=$E2E_PG_PORT
 ITEST_REDIS_PORT=$E2E_REDIS_PORT
 EOF
+    # EXTRA_SANS puts the stack's address into the gateway certificate: the ca-issuer adds only
+    # localhost and 127.0.0.1, and a client that checks the name (the agent after its pin, the
+    # desktop once registered) refuses stack b on 127.0.0.2 without it.
     if [ -n "$key" ]; then
         cat >> "$E2E_WORK/.env" <<EOF
 ITEST_BIND_IP=$E2E_BIND_IP
+EXTRA_SANS=$E2E_BIND_IP
 FRP_BIND_PORT=$E2E_FRP_BIND_PORT
 FRP_HTTPS_PORT=$E2E_FRP_HTTPS_PORT
 EOF

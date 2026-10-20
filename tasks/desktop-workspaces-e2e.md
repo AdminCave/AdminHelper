@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces, Teil Live-E2E — Task-Ledger
-Status: aktiv · Branch: feature/desktop-workspaces-e2e · Review: pro Task
+Status: bereit · Branch: feature/desktop-workspaces-e2e · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: none — Teil-Ledger von `tasks/desktop-workspaces.md`; die schweren Läufe fährt das Vorhaben dort
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -89,8 +89,10 @@ Doku: keine (Test)
 Abhängt von: T20, T27
 Test-Löschung: apps/desktop/e2e/test/specs/settings-mode.live.js::* — der Moduswechsel in den Einstellungen entfällt, ersetzt durch workspace-picker.live.js
 
-### T32 — Suite desktop_e2e_workspaces: zwei Stacks, zwei PKIs  [ ]
-Komponente: scripts · Dateien: scripts/tests/desktop_e2e_workspaces.sh
+### T32 — Suite desktop_e2e_workspaces: zwei Stacks, zwei PKIs  [x]
+Komponente: scripts · Dateien: scripts/tests/desktop_e2e_workspaces.sh, apps/desktop/e2e/test/specs/workspace-picker.live.js, apps/desktop/e2e/test/specs/workspace-add-server.live.js, scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/tests/e2e_api.py, apps/desktop/e2e/README.md, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts desktop-e2e: 7 passed, 0 failed, 11 skipped @8db9e863 2026-10-20T22:06:07+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T32.verdict.json)
 Änderung: Neuer Orchestrator (SPDX-Header) nach dem Muster von `desktop_e2e_connect_tunnel.sh`: `e2e_require` wie dort, SKIP mit Exit 75 ohne tauri-cli (`desktop_e2e_skip_test.sh` prüft das per Glob mit); zwei Stacks (T29) je mit Gateway, frps, geseedetem Server, FRP-Konfiguration, SSH-Ziel (Host-Port 2222 bzw. 2223), verknüpfter Verbindung und STCP-Tunnel, vom Agent provisioniertem frpc und Enrollment-Token; prüft über die API, dass beide Installationen dem Tunnel denselben Visitor-Port gegeben haben. Seedet `settings.json` mit der URL von Stack A (Standard), führt `workspace-add-server.live.js` im Launcher und dann `two-installations.workspaces.js` mit `wdio.workspaces.conf.js` aus; danach: das SSH-Ziel A sah genau die Verbindung von `wsA`, Ziel B die von `wsB`; `workspaces/standard/` und `workspaces/<id B>/` enthalten nur die Verbindungen ihres Servers. `run.sh` und `heavy.sh` bleiben unberührt (Glob). Nachtrag (Bauer T31, Vertrag der Specs): Der Orchestrator seedet `settings.json` mit Modus server und der URL von Stack A (so entsteht `standard` als Server-Workspace); in beiden Stacks heißen Tunnel `e2e-ssh-tun` und Verbindung `ssh-tunnel` (wie `desktop_e2e_connect_tunnel.sh`); `workspace-add-server.live.js` läuft mit leerem `AH_E2E_WORKSPACE`; der Multiremote-Lauf bekommt `AH_E2E_WORKSPACE_A=standard`, `AH_E2E_WORKSPACE_B=<Id aus AH_E2E_WS_B_FILE>`, `AH_E2E_SERVER_URL_A/_B`, `AH_ENROLL_TOKEN_A/_B`, `AH_ADMIN_USER`, `AH_ADMIN_PASS_A/_B` (Passwörter je Stack verschieden). Nachtrag (Review T31): Pro Lauf ein frisches `XDG_DATA_HOME` und ein eigener Keyring (`dbus-run-session`), weil der Spec `is_device_enrolled` für A zu Beginn als false voraussetzt; das Gateway-Zertifikat von Stack B trägt 127.0.0.2 als SAN (sonst scheitern Registrierung und Anmeldung bei B; gehört zu T29/T32, nicht verifiziert); die Prüfung am SSH-Ziel zählt nur die Öffnung durch die Oberfläche (keine nackte TCP-Verbindung als Öffnung werten). Nachtrag (T28-Review, Nits): `workspace-picker.live.js` (~:110) und `workspace-add-server.live.js` (~:54) warten auf `'.picker-list, .login-card'` und prüfen dann `workspace_context`, damit ein gesetztes `AH_E2E_WORKSPACE` mit der benannten Meldung scheitert; `translations()` in `workspace-picker.live.js` findet auch Werte in doppelten Anführungszeichen und prüft, dass je Sprache ein Text gefunden wurde; der Kopfkommentar von `workspace-picker.live.js` sagt nicht, dass der Lauf das Öffnen aus dem Picker live beweist (Multiremote startet per `--workspace`; das Öffnen aus dem Picker ist nur in Rust getestet) — im PR-Text als nicht live bewiesen nennen. Dateien per set-files.
 Verify: bash scripts/dev/verify.sh scripts desktop-e2e --strict
 Doku: keine (Test)
