@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 
 from app.core.auth import hash_password
+from app.modules.notifications import outbox as outbox_mod
 from app.modules.notifications import stream_hub
 from app.modules.notifications.models import (
     Notification,
@@ -46,12 +47,21 @@ def _server(db, sid="srv-1", name="web01", tags=None):
     return s
 
 
-def _user(db, username, password="passpass123", is_admin=False, servers=None, email=None):
+def _user(
+    db,
+    username,
+    password="passpass123",
+    is_admin=False,
+    servers=None,
+    email=None,
+    telegram_chat_id=None,
+):
     u = User(
         username=username,
         hashed_password=hash_password(password),
         is_admin=is_admin,
         email=email,
+        telegram_chat_id=telegram_chat_id,
     )
     if servers:
         u.servers = servers
@@ -398,6 +408,113 @@ class TestBundleResolver:
         [row] = _rows(db_session, admin)
         assert row.title == "Agents not reporting (2)"
         assert row.body == "Heartbeat lost\n- web01\n- db01"
+
+
+def _outbox_rows(db, user):
+    rows = (
+        db.query(NotificationOutbox)
+        .filter(NotificationOutbox.user_id == user.id)
+        .order_by(NotificationOutbox.channel)
+        .all()
+    )
+    return [(r.channel, r.address, r.title, r.body) for r in rows]
+
+
+class TestBundleChannels:
+    """monitoring-alert-quality T18: an external channel of a bundled event names
+    only the servers of the subscriptions that asked for that channel. A rule
+    that sends one server to a customer's Telegram chat must not carry the names
+    of the servers another rule only wanted in the bell."""
+
+    def _three(self, db):
+        return (
+            _server(db, "srv-1", name="web01", tags=["prod"]),
+            _server(db, "srv-2", name="db01", tags=["prod"]),
+            _server(db, "srv-3", name="mail01", tags=["dev"]),
+        )
+
+    def test_telegram_names_only_the_server_of_its_subscription(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True, telegram_chat_id="4711")
+        _sub(db_session, admin, scope_type="all")
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-2", telegram=True)
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (3)"
+        assert row.body == "Heartbeat lost\n- web01\n- db01\n- mail01"
+        assert _outbox_rows(db_session, admin) == [
+            ("telegram", "4711", "Agents not reporting (1)", "Heartbeat lost\n- db01")
+        ]
+
+    def test_email_names_only_the_server_of_its_subscription(self, db_session, monkeypatch):
+        sent = []
+        monkeypatch.setattr(
+            outbox_mod, "send_email", lambda to, subj, body: sent.append((to, subj, body))
+        )
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True, email="a@b.de")
+        _sub(db_session, admin, scope_type="all")
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-2", email=True)
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (3)"
+        assert _outbox_rows(db_session, admin) == [
+            ("email", "a@b.de", "Agents not reporting (1)", "Heartbeat lost\n- db01")
+        ]
+        # The drain sends the entry's own text, not the bell row's three servers.
+        assert outbox_mod.drain_outbox(db_session) == (1, 0)
+        assert sent == [("a@b.de", "Agents not reporting (1)", "Heartbeat lost\n- db01")]
+
+    def test_each_channel_names_the_servers_of_its_own_subscriptions(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True, email="a@b.de", telegram_chat_id="4711")
+        _sub(db_session, admin, scope_type="tag", scope_ref="prod", email=True)
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-3", telegram=True)
+        assert ingest_event(db_session, _bundle(["srv-1", "srv-2", "srv-3"])) == 1
+        [row] = _rows(db_session, admin)
+        assert row.title == "Agents not reporting (3)"
+        assert _outbox_rows(db_session, admin) == [
+            ("email", "a@b.de", "Agents not reporting (2)", "Heartbeat lost\n- web01\n- db01"),
+            ("telegram", "4711", "Agents not reporting (1)", "Heartbeat lost\n- mail01"),
+        ]
+
+    def test_a_channel_without_a_server_gets_no_entry(self, db_session):
+        srv1, srv2, _ = self._three(db_session)
+        member = _user(
+            db_session, "member", servers=[srv1, srv2], email="m@x.de", telegram_chat_id="4711"
+        )
+        _sub(db_session, member, scope_type="all")
+        # Not in the bundle, a server the member may not see, a level the bundle
+        # does not reach: none of these routes a server to its channel.
+        _sub(db_session, member, scope_type="server", scope_ref="srv-9", email=True)
+        _sub(db_session, member, scope_type="server", scope_ref="srv-3", telegram=True)
+        _sub(db_session, member, scope_type="all", min_severity="critical", telegram=True)
+        bundle = _bundle(["srv-1", "srv-2", "srv-3"], severity="warning")
+        assert ingest_event(db_session, bundle) == 1
+        [row] = _rows(db_session, member)
+        assert row.title == "Agents not reporting (2)"
+        assert _outbox_rows(db_session, member) == []
+
+    def test_without_body_the_channel_lines_are_the_text(self, db_session):
+        self._three(db_session)
+        admin = _user(db_session, "boss", is_admin=True, telegram_chat_id="4711")
+        _sub(db_session, admin, scope_type="all")
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-1", telegram=True)
+        ingest_event(db_session, _bundle(["srv-1", "srv-2"], body=None))
+        assert _outbox_rows(db_session, admin) == [
+            ("telegram", "4711", "Agents not reporting (1)", "- web01")
+        ]
+
+    def test_a_single_event_queues_entries_without_text_of_their_own(self, db_session):
+        _server(db_session, "srv-1")
+        admin = _user(db_session, "boss", is_admin=True, email="a@b.de", telegram_chat_id="4711")
+        _sub(db_session, admin, scope_type="all")
+        _sub(db_session, admin, scope_type="server", scope_ref="srv-1", email=True, telegram=True)
+        assert ingest_event(db_session, _event()) == 1
+        assert _outbox_rows(db_session, admin) == [
+            ("email", "a@b.de", None, None),
+            ("telegram", "4711", None, None),
+        ]
 
 
 # --- direct delivery to chosen users ---------------------------------------

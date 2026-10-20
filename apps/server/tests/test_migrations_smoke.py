@@ -326,3 +326,90 @@ def test_certificate_register_installs_its_time_and_goes_on_downgrade(pg_engine,
         engine.dispose()
         _drop_database(admin_engine, dbname)
         admin_engine.dispose()
+
+
+def test_outbox_text_columns_come_and_go(pg_engine, monkeypatch):
+    # monitoring-alert-quality T18: the revision gives outbox entries a title and body of their
+    # own, nullable, so an entry queued before keeps NULL and with it the notification's text.
+    # Its downgrade drops both columns and keeps every entry, but a pending one with a text of
+    # its own ends failed: sent later with the notification's text it would name servers its
+    # channel was never meant to carry.
+    admin_url = pg_engine.url
+    dbname = f"alembic_outboxtext_{uuid.uuid4().hex[:8]}"
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(SERVER_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(SERVER_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    columns_sql = text(
+        "SELECT column_name FROM information_schema.columns"
+        " WHERE table_name = 'notification_outbox' AND column_name IN ('title', 'body')"
+    )
+    try:
+        command.upgrade(cfg, "c3e5a7b9d1f2")  # the down_revision
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO users (id, username, hashed_password, is_admin)"
+                    " VALUES (1, 'alice', 'x', false)"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO notification (id, user_id, severity, category, event_type, title)"
+                    " VALUES (1, 1, 'critical', 'monitoring', 'monitoring.check.transition',"
+                    " 'Agents not reporting (3)')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO notification_outbox (id, notification_id, user_id, channel,"
+                    " address, status, attempts)"
+                    " VALUES (1, 1, 1, 'email', 'alice@example.test', 'pending', 0)"
+                )
+            )
+
+        command.upgrade(cfg, "a7c9e1b3d5f2")
+        with engine.begin() as conn:
+            old = conn.execute(text("SELECT title, body FROM notification_outbox")).all()
+            # id: (channel, status, last_error, sent_at), each with a text of its own
+            for oid, channel, status, error, sent in (
+                (2, "telegram", "pending", None, None),
+                (3, "email", "sent", None, "2026-10-20 12:00:00"),
+                (4, "email", "failed", "connection refused", None),
+            ):
+                conn.execute(
+                    text(
+                        "INSERT INTO notification_outbox (id, notification_id, user_id, channel,"
+                        " address, status, attempts, last_error, sent_at, title, body)"
+                        " VALUES (:id, 1, 1, :channel, 'alice@example.test', :status, 1,"
+                        " :error, :sent, 'Agents not reporting (1)', '- db01')"
+                    ),
+                    {"id": oid, "channel": channel, "status": status, "error": error, "sent": sent},
+                )
+        assert [tuple(row) for row in old] == [(None, None)], "an older entry keeps no text"
+        rows_sql = text(
+            "SELECT id, status, last_error, attempts, sent_at FROM notification_outbox ORDER BY id"
+        )
+        with engine.connect() as conn:
+            before = {row[0]: tuple(row) for row in conn.execute(rows_sql)}
+
+        command.downgrade(cfg, "c3e5a7b9d1f2")
+        with engine.connect() as conn:
+            left = conn.execute(columns_sql).all()
+            after = {row[0]: tuple(row) for row in conn.execute(rows_sql)}
+        assert left == []
+        assert sorted(after) == [1, 2, 3, 4], "the downgrade keeps every entry"
+        assert after[2][1:3] == ("failed", "own text dropped by downgrade")
+        assert after[2][3:] == before[2][3:], "attempts and sent_at stay"
+        # Without a text of its own, already sent or already failed: untouched.
+        assert after[1] == before[1] and after[1][1] == "pending"
+        assert after[3] == before[3] and after[3][1] == "sent"
+        assert after[4] == before[4] and after[4][2] == "connection refused"
+    finally:
+        engine.dispose()
+        _drop_database(admin_engine, dbname)
+        admin_engine.dispose()

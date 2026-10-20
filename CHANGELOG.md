@@ -34,9 +34,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Feld `members`. Die Glocke bekommt je Stufe einen Eintrag „Agents not reporting (n)“ bzw. „Agents reporting again
   (n)“ mit einer Zeile je Server, die der Nutzer sehen darf und die eine seiner Regeln erfasst. Der Server nimmt dafuer
   in `POST /api/internal/events` das Feld `source_ids` (bis 500 Server-IDs, nicht zusammen mit `source_id`) und feuert
-  `alert.triggered` bei einer solchen Meldung einmal je Server. Wartungsfenster und Host-down-Unterdrueckung gelten
-  weiter. Monitoring und Server kommen im selben Release; ein aelterer Server stellt die Sammel-Eintraege der Glocke nur
-  Admins zu. Doku: Admin- und Entwickler-Doku Monitoring, Entwickler-Doku Server, Hooks und API-Referenz (DE+EN).
+  `alert.triggered` bei einer solchen Meldung einmal je Server. Die E-Mail einer persoenlichen Regel nennt nur die
+  Server, die eine Regel mit E-Mail erfasst, und zaehlt nur diese (Telegram ebenso); erfasst keine solche Regel einen
+  der Server, geht keine Mail (neue Spalten `title`/`body` in `notification_outbox`, Migration `a7c9e1b3d5f2`).
+  Wartungsfenster und Host-down-Unterdrueckung gelten weiter. Monitoring und Server kommen im selben Release; ein
+  aelterer Server stellt die Sammel-Eintraege der Glocke nur Admins zu. Doku: Admin- und Entwickler-Doku Monitoring,
+  Entwickler-Doku Server, Hooks und API-Referenz (DE+EN).
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter

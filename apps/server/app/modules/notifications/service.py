@@ -95,14 +95,6 @@ def _category_matches(sub: NotificationSubscription, category: str) -> bool:
     return not isinstance(allowed, list) or category in allowed
 
 
-class _Channels:
-    __slots__ = ("email", "telegram")
-
-    def __init__(self) -> None:
-        self.email = False
-        self.telegram = False
-
-
 def default_admin_subscription(user_id: int) -> NotificationSubscription:
     """Baseline rule for a freshly created admin: everything at warning+ lands
     in the bell feed; external channels stay opt-in. Without it a fresh install
@@ -124,9 +116,11 @@ def _server_label(server: Server | None, server_id: str) -> str:
 
 def resolve_recipients(
     db: Session, event: IncomingEvent
-) -> list[tuple[User, _Channels, list[str]]]:
-    """Return (user, channels, servers) for every user a subscription routes this
-    event to.
+) -> list[tuple[User, dict[str, list[str]]]]:
+    """Return (user, channels) for every user a subscription routes this event
+    to. `channels` maps each channel the user gets to the servers it names:
+    "bell" always, "email" and "telegram" when a matching subscription asks for
+    them.
 
     A user with several matching subscriptions is collapsed into one entry whose
     external channels are the union (so one bell row, e-mail if any matching rule
@@ -134,8 +128,10 @@ def resolve_recipients(
 
     A bundled event (source_ids) is resolved server by server under the same
     rules as a single one: a user is a recipient if one of their subscriptions
-    covers at least one server they may see, and `servers` lists exactly those
-    (name, else id) in event order. For a single event `servers` is empty."""
+    covers at least one server they may see. The bell lists exactly those (name,
+    else id) in event order, an external channel only the ones covered by a
+    subscription with that channel: a Telegram rule on one server must not carry
+    the names of the others to its chat. For a single event the lists are empty."""
     targets: list[tuple[Server | None, str]]
     if event.source_ids is not None:
         ids = list(dict.fromkeys(event.source_ids))
@@ -152,9 +148,8 @@ def resolve_recipients(
         db.query(NotificationSubscription).filter(NotificationSubscription.enabled.is_(True)).all()
     )
 
-    per_user_channels: dict[int, _Channels] = {}
     per_user: dict[int, User] = {}
-    per_user_hits: dict[int, set[int]] = {}
+    per_user_hits: dict[int, dict[str, set[int]]] = {}  # user → channel → target indices
     user_cache: dict[int, User | None] = {}  # a user with several subs loads once
     # Server ids assigned to each user, built once rather than scanned per
     # server: a bundle checks up to 500 servers against it. Admins see all.
@@ -179,22 +174,32 @@ def resolve_recipients(
         ]
         if not hits:
             continue
-        ch = per_user_channels.setdefault(user.id, _Channels())
-        ch.email = ch.email or sub.channel_email
-        ch.telegram = ch.telegram or sub.channel_telegram
         per_user[user.id] = user
-        per_user_hits.setdefault(user.id, set()).update(hits)
+        channels = per_user_hits.setdefault(user.id, {})
+        channels.setdefault("bell", set()).update(hits)
+        if sub.channel_email:
+            channels.setdefault("email", set()).update(hits)
+        if sub.channel_telegram:
+            channels.setdefault("telegram", set()).update(hits)
 
-    if event.source_ids is None:
-        return [(per_user[uid], ch, []) for uid, ch in per_user_channels.items()]
+    def labels(hits: set[int]) -> list[str]:
+        if event.source_ids is None:
+            return []
+        return [_server_label(*targets[i]) for i in sorted(hits)]
+
     return [
-        (
-            per_user[uid],
-            ch,
-            [_server_label(*targets[i]) for i in sorted(per_user_hits[uid])],
-        )
-        for uid, ch in per_user_channels.items()
+        (per_user[uid], {channel: labels(hits) for channel, hits in channels.items()})
+        for uid, channels in per_user_hits.items()
     ]
+
+
+def _bundle_text(event: IncomingEvent, servers: list[str]) -> tuple[str, str]:
+    """Title and body of a bundled event for one recipient and channel. Count and
+    lines are the recipient's own: nobody learns of a server they may not see,
+    not even that there was one."""
+    lines = "\n".join(f"- {name}" for name in servers)
+    body = f"{event.body}\n{lines}" if event.body else lines
+    return f"{event.title} ({len(servers)})", body
 
 
 def ingest_event(db: Session, event: IncomingEvent) -> int:
@@ -204,14 +209,10 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
     notified = 0
     notified_user_ids: list[int] = []
     max_id = 0
-    for user, channels, servers in recipients:
+    for user, channels in recipients:
         title, body = event.title, event.body
         if event.source_ids is not None:
-            # Count and lines are the user's own: nobody learns of a server they
-            # may not see, not even that there was one.
-            title = f"{event.title} ({len(servers)})"
-            lines = "\n".join(f"- {name}" for name in servers)
-            body = f"{event.body}\n{lines}" if event.body else lines
+            title, body = _bundle_text(event, channels["bell"])
         notif = Notification(
             user_id=user.id,
             severity=event.severity,
@@ -228,22 +229,24 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
         notified_user_ids.append(user.id)
         # External channels are queued only when the user actually has an
         # address for them — the outbox drain (Phase D) never sees a dead row.
-        if channels.email and user.email:
-            db.add(
-                NotificationOutbox(
-                    notification_id=notif.id,
-                    user_id=user.id,
-                    channel="email",
-                    address=user.email,
-                )
+        for channel, address in (("email", user.email), ("telegram", user.telegram_chat_id)):
+            if channel not in channels or not address:
+                continue
+            # A bundle gets the channel's own text: the bell row may list servers
+            # that only a subscription without this channel covers.
+            own_title, own_body = (
+                _bundle_text(event, channels[channel])
+                if event.source_ids is not None
+                else (None, None)
             )
-        if channels.telegram and user.telegram_chat_id:
             db.add(
                 NotificationOutbox(
                     notification_id=notif.id,
                     user_id=user.id,
-                    channel="telegram",
-                    address=user.telegram_chat_id,
+                    channel=channel,
+                    address=address,
+                    title=own_title,
+                    body=own_body,
                 )
             )
         notified += 1
