@@ -43,8 +43,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Test)
 Abhängt von: T27
 
-### T30 — WebDriver mit zwei Workspace-Prozessen gleichzeitig  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/wdio.workspaces.conf.js, apps/desktop/e2e/test/lib/app-args.js, apps/desktop/e2e/test/unit/app-args.test.js, apps/desktop/e2e/eslint.config.js
+### T30 — WebDriver mit zwei Workspace-Prozessen gleichzeitig  [x]
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/wdio.workspaces.conf.js, apps/desktop/e2e/test/lib/app-args.js, apps/desktop/e2e/test/unit/app-args.test.js, apps/desktop/e2e/eslint.config.js, apps/desktop/e2e/wdio.conf.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @bbda5dfa 2026-10-20T16:00:29+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T30.verdict.json)
 Änderung: Neue Config `wdio.workspaces.conf.js` (SPDX-Header, Build und Hooks wie `wdio.conf.js`) für WebdriverIO-Multiremote: zwei Sitzungen `wsA`/`wsB` mit Args aus `AH_E2E_WORKSPACE_A`/`_B` (über `app-args.js`), zwei tauri-driver auf 4444/4445 und 4446/4447, beide beim Ende beendet. `app-args.js` liefert dazu die Port-Paare; Unit-Tests dafür. Spec-Glob nur `*.workspaces.js`, damit `npm test` (smoke) ihn nicht greift; ESLint kennt die Multiremote-Namen. Nicht verifiziert: zwei WebKitWebDriver-Sitzungen unter einem Xvfb gleichzeitig; scheitert das im Sammellauf, `[?]` an Kevin (Rückfall: nacheinander, der Port des ersten hält ein Listener).
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
