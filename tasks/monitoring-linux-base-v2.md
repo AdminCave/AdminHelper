@@ -233,6 +233,13 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: docs/admin/monitoring.html + EN `:73` (fehlgeschlagene Dienste rot, andere fehlgeschlagene Units gelb)
 Abhängt von: T10
 
+### T29 — Abgleichstest der Unit-Endungen zwischen Checker und Desktop  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_unit_types_ui_sync.py
+Änderung: Aus dem Review von T22: `SecServices.svelte` (`UNIT_TYPES`) kopiert `_UNIT_TYPES` aus `apps/monitoring/app/checkers/agent.py`; ein Kommentar ist kein Gate. Neuer Test (SPDX) nach dem Muster von `tests/test_push_only_ui_sync.py`: liest die Liste aus der Svelte-Datei und vergleicht sie als Menge mit `_UNIT_TYPES`; findet er die Liste nicht, ist er rot.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_unit_types_ui_sync.py
+Doku: keine (Test)
+Abhängt von: T22
+
 ### T23 — Desktop: Schalter „Ausfall melden“ für `proxmox_backup`  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/api/types.ts
 Änderung: `{@render outageField()}` im Zweig `proxmox_backup` (`CheckConfigFields.svelte:329-356`); der Kommentar an `alert_on_unavailable` (`types.ts:231`) nennt `proxmox_backup`. Tests: die `describe` „outage switch (R-0419)“ (`CheckConfigFields.test.ts:78`) läuft auch für `proxmox_backup`. Nachtrag (T14): Die Admin-Doku (DE+EN, Abschnitt Ausfall von Docker, ZFS und Proxmox) trennt heute den Desktop-Stand: keine Checkbox „Ausfall melden“ für Proxmox, „—“ statt VM-Liste; diese Einschränkungen mit dieser Task entfernen bzw. angleichen.
