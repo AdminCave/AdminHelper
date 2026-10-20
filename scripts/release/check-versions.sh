@@ -25,11 +25,10 @@
 # --root <dir> points the whole check at another tree; the hermetic test
 # (scripts/tests/check_versions_test.sh) uses it with a fixture.
 #
-# The version is compared VERBATIM: a prerelease tag (v0.46.0-beta.1) therefore
-# demands that string at all six sites. The old inline step could never pass a
-# prerelease at all (it stripped the suffix from the file but not from the tag),
-# so this loosens nothing — but whether a beta should bump 38 doc footers is an
-# open decision (roadmap R-0014, T6a).
+# The version is compared VERBATIM: a prerelease tag (v0.46.0-beta.1) would
+# demand that string at all six sites. Release tags carry no suffix, though: a
+# beta is a plain vX.Y.Z published as a GitHub pre-release
+# (.claude/rules/release.md), so the verbatim match is all a release needs.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

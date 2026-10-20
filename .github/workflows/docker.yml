@@ -8,6 +8,11 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  # "released": a release was published, or a pre-release was changed to a release
+  # (GitHub docs, webhook events, release). A beta stays a pre-release, so this
+  # fires when Kevin makes it stable, and only then does "latest" move (job latest).
+  release:
+    types: [released]
   workflow_dispatch:
 
 permissions:
@@ -23,6 +28,8 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.image }} image
+    # The release event only moves "latest"; the image of its tag is already built.
+    if: ${{ github.event_name != 'release' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,7 +71,10 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=sha
-          # latest=auto -> tagged "latest" only on a (non-prerelease) semver tag.
+          # No "latest" on a tag push: a tag vX.Y.Z is a beta until its release turns
+          # stable, and job latest moves "latest" then (R-0014).
+          flavor: |
+            latest=false
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -103,3 +113,74 @@ jobs:
         run: |
           IMAGE="ghcr.io/${OWNER,,}/adminhelper/${{ matrix.image }}"
           cosign sign --yes "${IMAGE}@${DIGEST}"
+
+  # A release turned stable: point "latest" of every image at X.Y.Z, the image the
+  # tag push built and signed. Retagged by digest, never rebuilt, and not signed
+  # again: the signature of the tag push hangs on the digest. GitHub runs the
+  # docker.yml of the tagged commit, so this works for tags cut after the job came.
+  latest:
+    name: Tag the stable release as latest
+    if: ${{ github.event_name == 'release' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to ghcr.io
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      - name: Point latest at the signed images of the release
+        env:
+          OWNER: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ github.token }}
+        # Only the release that is "Latest" now moves "latest": an older release made
+        # stable later leaves it alone. Every digest is resolved and the signature job
+        # build made on the push of this tag verified before any "latest" moves: a
+        # missing or unsigned image fails the job while all of them still name the
+        # previous stable release. imagetools create with one source that is an image
+        # index makes a carbon copy, so "latest" keeps the digest the tag push signed;
+        # the check holds it to that. A failure after the first create can leave some
+        # images moved, hence "rerun the job". The digits are spelled out: under
+        # de_DE.UTF-8, bash lets [0-9] match "²" too.
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          [[ "$VER" =~ ^[0123456789]+\.[0123456789]+\.[0123456789]+$ ]] \
+            || { echo "::error::tag ${GITHUB_REF_NAME} is not vX.Y.Z, no latest moved"; exit 1; }
+          LATEST="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          if [ "$LATEST" != "$GITHUB_REF_NAME" ]; then
+            echo "::notice::the latest release is ${LATEST}, not ${GITHUB_REF_NAME}: latest stays where it is"
+            exit 0
+          fi
+          BASE="ghcr.io/${OWNER,,}/adminhelper"
+          SIGNER="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/docker.yml@refs/tags/${GITHUB_REF_NAME}"
+          IMAGES="server monitoring ca-issuer gateway frps"
+          declare -A DIGEST
+          for img in $IMAGES; do
+            DIGEST[$img]="$(docker buildx imagetools inspect "${BASE}/${img}:${VER}" --format "{{json .Manifest}}" | jq -r .digest)" || true
+            [[ "${DIGEST[$img]}" == sha256:* ]] || { echo "::error::${img}:${VER} not found on ghcr, no latest moved"; exit 1; }
+            cosign verify --certificate-identity "$SIGNER" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${BASE}/${img}@${DIGEST[$img]}" > /dev/null \
+              || { echo "::error::${img}:${VER} (${DIGEST[$img]}) has no valid signature of ${SIGNER}, no latest moved"; exit 1; }
+          done
+          for img in $IMAGES; do
+            docker buildx imagetools create --tag "${BASE}/${img}:latest" "${BASE}/${img}@${DIGEST[$img]}" \
+              || { echo "::error::${img}:latest not moved, latest of the images before it may have: rerun the job"; exit 1; }
+          done
+          for img in $IMAGES; do
+            now="$(docker buildx imagetools inspect "${BASE}/${img}:latest" --format "{{json .Manifest}}" | jq -r .digest)" || true
+            [ "$now" = "${DIGEST[$img]}" ] \
+              || { echo "::error::${img}:latest is ${now}, not ${img}:${VER} (${DIGEST[$img]}): rerun the job"; exit 1; }
+            echo "ok: ${img}:latest -> ${VER} (${DIGEST[$img]})"
+          done

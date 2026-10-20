@@ -156,8 +156,9 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
   "Kevin Stenzel" --license GPL-3.0-or-later <datei>`. Drittanbieter stehen in `THIRD_PARTY_LICENSES.md`.
 - **Kommentare nur fürs nicht-offensichtliche Warum** (versteckte Constraints, Invarianten, Workarounds für konkrete Bugs).
 - **Doku im selben Commit** (DE + EN, README, DEVELOPMENT, CHANGELOG; Regeln in `.claude/rules/docs.md`).
-- **Release-Kanäle** (von Hand): `beta` nach jedem grünen Wochenlauf, `rc` schneidet Kevin, `stable` frühestens 7 Tage
-  nach dem RC ohne Fix und ohne Rückmeldung, `hotfix` als einziger Weg daran vorbei. Release-Bump: zuerst
+- **Release-Kanäle** (von Hand): `beta` ist der Tag `vX.Y.Z` ohne Suffix nach jedem grünen Wochenlauf, veröffentlicht
+  als „Pre-release“; `stable` setzt Kevin dasselbe Release ohne neuen Tag auf „Latest“, frühestens 7 Tage nach dem Beta
+  ohne Fix und ohne Rückmeldung, `hotfix` als einziger Weg daran vorbei. Release-Bump: zuerst
   `.claude/rules/release.md` lesen.
 
 ## 11. Claude tut nie
