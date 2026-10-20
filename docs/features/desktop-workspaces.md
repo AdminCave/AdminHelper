@@ -384,6 +384,10 @@ App-Namensraum und löscht sie danach (T40), nur bei gleichem Benutzer (`DOMAIN\
 bleibt der Eintrag, mstsc nimmt ihn) und nur für Verbindungen ohne Tunnel-Mapping (ein übernommenes Passwort
 ginge sonst an einen Endpunkt, den der Workspace-Server festlegt; Kevin 2026-10-20). Scheitert das Speichern,
 bricht der Start ab und der Alt-Eintrag bleibt.
+Restrisiko, hingenommen (Kevin 2026-10-20): Liegt ein Passwort einmal im App-Namensraum eines Workspace
+(übernommen oder selbst gespeichert), geht es beim nächsten Start durch einen Tunnel, falls der Workspace-Server
+später ein Mapping für diese Verbindung anlegt. Der Server bestimmt die Route seiner Verbindungen; ausnutzen kann
+es nur ein kompromittierter Server, der den Nutzer ebenso über die mstsc-Abfrage tippen lassen kann.
 
 Quellen (abgerufen 2026-10-20):
 
