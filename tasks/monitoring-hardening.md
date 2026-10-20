@@ -93,8 +93,10 @@ HEAD: 5481b316
 
 ## Teil C — Line-Protocol
 
-### T7 — Line-Protocol: eine Ganzzahl außerhalb int64 als Gleitkommazahl  [ ]
+### T7 — Line-Protocol: eine Ganzzahl außerhalb int64 als Gleitkommazahl  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/victoria.py, apps/monitoring/tests/test_victoria.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @91ecb8e8 2026-10-20T07:10:44+02:00
+Review: approve (.ah-out/review/monitoring-hardening/T7.verdict.json)
 Änderung: `format_line` (`core/victoria.py:56-84`) schreibt eine Ganzzahl nur im int64-Bereich (−2⁶³ bis 2⁶³−1) mit `i` (`:74-75`), eine größere als Gleitkommazahl (`repr(float(value))`, etwa `9.223372036854776e+18`); eine Ganzzahl außerhalb des float-Bereichs weist es mit `ValueError` ab wie `inf` (heute `OverflowError` aus `math.isfinite`, `:72`). `build_check_result_lines` (`:148-157`) überspringt eine solche Ganzzahl wie `inf`, statt an `math.isfinite` (`:155`) zu scheitern. Tests zuerst rot (dreimal identisch auf HEAD), in `test_victoria.py` neben `test_int_gets_i_suffix` (`:61`): `2**63 - 1` und `-2**63` → mit `i`; `2**63` → `value=9.223372036854776e+18`; `-2**63 - 1` → Gleitkommazahl; `10**300` → `value=1e+300`; `10**400` → `ValueError`; `build_check_result_lines` mit `{"x": 10**400, "y": 1}` → keine Zeile für `x`, eine für `y`, keine Ausnahme. `test_int_gets_i_suffix`, `test_non_finite_values_rejected` und die Roundtrip-Tests bleiben grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_victoria.py tests/test_victoria_roundtrip.py tests/test_victoria_injection.py
 Doku: docs/developer/monitoring.html + docs/en/developer/monitoring.html (Abschnitt VictoriaMetrics `:227`: Ganzzahlen im int64-Bereich gehen mit `i`, größere als Gleitkommazahl; VictoriaMetrics speichert ohnehin float64) · kein CHANGELOG (ein regulärer Agent schickt Werte im int64-Bereich)
