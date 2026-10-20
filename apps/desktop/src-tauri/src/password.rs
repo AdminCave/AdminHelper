@@ -3,9 +3,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::fs::{self, File};
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -337,6 +339,10 @@ pub enum TermsrvStep {
     /// Delete the entry under this name, the generic one and the domain password mstsc
     /// saves itself, with or without the marker.
     Clear(String),
+    /// Delete the generic entry under this name if it carries the marker, whichever user it
+    /// holds: the rest of an earlier start, which mstsc would take for a start without a stored
+    /// password (T39).
+    Discard(String),
     /// A generic entry without the marker stays under this name, and mstsc takes it instead of
     /// the stored password; the log says so.
     Keep(String),
@@ -345,8 +351,8 @@ pub enum TermsrvStep {
     Write(String),
     /// Start mstsc.
     Launch,
-    /// Delete the written entry once `after` has passed since the start; at once if mstsc did
-    /// not start.
+    /// Delete the written entry once `after` has passed since the start, and give up the hold of
+    /// the start; at once if the start fails.
     Remove { target: String, after: Duration },
 }
 
@@ -405,17 +411,16 @@ pub fn termsrv_this_machine(host: &str) -> bool {
 
 /// What a start of mstsc does in the Credential Manager for the address `host:port` it connects
 /// to, `loopback` if that may be this machine ([`termsrv_this_machine`]), `entry` being what the
-/// generic entry under its name holds (it counts only for another target with a stored
-/// password).
+/// generic entry under its name holds (it counts only for another target).
 ///
 /// An entry for this machine goes first, in both types, under every name mstsc may look up and
 /// whoever wrote it: a port here may lead to another server by now, and mstsc would send it the
 /// password. Those names are both forms of the address in the `.rdp` file and, for a host that
-/// carries a port (`host:port`, `[IPv6 address]:port`), those of the host part at either port.
-/// An entry for another target stays, it may be the user's own: while one without the
-/// marker is there, the start writes nothing and mstsc takes that one; one with the marker is
-/// the rest of an earlier start and is written over. A stored password is there only for the
-/// start.
+/// carries a port (`host:port`, `[IPv6 address]:port`), those of the host part at either port and
+/// without one. An entry for another target stays, it may be the user's own: while one without
+/// the marker is there, the start writes nothing and mstsc takes that one; one with the marker is
+/// the rest of an earlier start, written over by a start with a stored password and deleted
+/// before one without. A stored password is there only for the start.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub fn termsrv_plan(
     host: &str,
@@ -428,12 +433,13 @@ pub fn termsrv_plan(
     let mut steps = Vec::new();
     if loopback {
         // Which name mstsc looks up is not verified (spike, point 4), nor which of the two ports
-        // it takes from `full address:s:<host>:<port>:<port>` (T8).
+        // it takes from `full address:s:<host>:<port>:<port>` (T8), so the names of the host part
+        // carry either port, 3389 as well.
         let mut names = vec![format!("TERMSRV/{host}:{port}"), format!("TERMSRV/{host}")];
         if let Some((inner, in_host)) = crate::tunnel::rdp_host_port(host) {
             names.extend([
-                termsrv_name(inner, in_host),
-                termsrv_name(inner, port),
+                format!("TERMSRV/{inner}:{in_host}"),
+                format!("TERMSRV/{inner}:{port}"),
                 format!("TERMSRV/{inner}"),
             ]);
         }
@@ -443,6 +449,8 @@ pub fn termsrv_plan(
                 steps.push(clear);
             }
         }
+    } else if !stored_password && entry == TermsrvEntry::Own {
+        steps.push(TermsrvStep::Discard(target.clone()));
     }
     let write = stored_password && (loopback || entry != TermsrvEntry::Foreign);
     if stored_password && !write {
@@ -466,17 +474,21 @@ pub fn termsrv_plan(
 pub trait TermsrvStore {
     /// Delete the generic entry and the domain password under `target`, whoever wrote them.
     fn clear(&mut self, target: &str) -> Result<(), AppError>;
+    /// Delete the generic entry under `target` if it carries the marker, for whichever user.
+    fn discard(&mut self, target: &str) -> Result<(), AppError>;
     /// Write the stored password under `target`: generic, with the marker, for this logon
     /// session only.
     fn write(&mut self, target: &str) -> Result<(), AppError>;
-    /// Delete the entry under `target` if it is still the one this start wrote.
+    /// Delete the entry under `target` if it is still the one this start wrote, and give up the
+    /// hold of the start ([`hold_termsrv`]).
     fn remove(&mut self, target: &str) -> Result<(), AppError>;
     /// [`Self::remove`] once `after` has passed, or when the process ends before.
     fn remove_after(&mut self, target: &str, after: Duration);
 }
 
-/// Runs `steps` against `store`, `launch` starting mstsc. A step that fails ends the start
-/// before mstsc runs; if mstsc does not start, the `Remove` steps run at once.
+/// Runs `steps` against `store`, `launch` starting mstsc. A step that fails, the start of mstsc
+/// included, ends the start, and its `Remove` steps run at once: the entry and the hold of a start
+/// that did not run go with it, unless the removal fails too.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub fn run_termsrv_plan(
     steps: &[TermsrvStep],
@@ -485,37 +497,295 @@ pub fn run_termsrv_plan(
 ) -> Result<(), AppError> {
     let mut launch = Some(launch);
     for step in steps {
-        match step {
-            TermsrvStep::Clear(target) => store.clear(target)?,
-            TermsrvStep::Keep(target) => log::info!(
-                "{target} holds an entry this app did not write; mstsc takes it, the stored \
-                 password stays unused"
-            ),
-            TermsrvStep::Write(target) => store.write(target)?,
-            TermsrvStep::Launch => {
-                if let Err(e) = launch.take().map_or(Ok(()), |launch| launch()) {
-                    for step in steps {
-                        if let TermsrvStep::Remove { target, .. } = step {
-                            if let Err(e) = store.remove(target) {
-                                log::warn!("{target} stays until the logon session ends: {e}");
-                            }
-                        }
+        let done = match step {
+            TermsrvStep::Clear(target) => store.clear(target),
+            TermsrvStep::Discard(target) => store.discard(target),
+            TermsrvStep::Keep(target) => {
+                log::info!(
+                    "{target} holds an entry this app did not write; mstsc takes it, the stored \
+                     password stays unused"
+                );
+                Ok(())
+            }
+            TermsrvStep::Write(target) => store.write(target),
+            TermsrvStep::Launch => launch.take().map_or(Ok(()), |launch| launch()),
+            TermsrvStep::Remove { target, after } => {
+                store.remove_after(target, *after);
+                Ok(())
+            }
+        };
+        if let Err(e) = done {
+            for step in steps {
+                if let TermsrvStep::Remove { target, .. } = step {
+                    if let Err(e) = store.remove(target) {
+                        log::warn!("{target} stays until the logon session ends: {e}");
                     }
-                    return Err(e);
                 }
             }
-            TermsrvStep::Remove { target, after } => store.remove_after(target, *after),
+            return Err(e);
         }
     }
     Ok(())
 }
 
-/// An entry a start wrote: its name and the user it holds, which a `Remove` checks first.
+/// Who holds `TERMSRV/…` names for the time of a start (T39): the connection of a workspace.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct TermsrvHolder {
+    workspace: String,
+    connection: String,
+}
+
+/// The hold of a start of mstsc on `TERMSRV/…` names, as [`TERMSRV_HOLDS_FILE`] keeps it: for
+/// `holder` until `until`, in milliseconds since the Unix epoch, the clock every process of the
+/// user reads. The names are in lower case, as host names compare.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct TermsrvHold {
+    #[serde(flatten)]
+    holder: TermsrvHolder,
+    /// Every name mstsc of the start may look up ([`termsrv_names`]).
+    lookup: BTreeSet<String>,
+    /// The names the start writes.
+    write: BTreeSet<String>,
+    until: u64,
+}
+
+/// How much longer than [`TERMSRV_HOLD`] a hold lasts. It begins before the start deletes and
+/// writes the entries and spawns mstsc, the timer of its `Remove` only after that, and the spawn
+/// can take seconds (a virus scan of mstsc, a busy machine); the timer may wake late as well. Ten
+/// seconds outlast that by far; another connection waits that much longer at most.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const TERMSRV_HOLD_MARGIN: Duration = Duration::from_secs(10);
+
+/// The longest a hold lasts, in milliseconds: [`TERMSRV_HOLD`] and [`TERMSRV_HOLD_MARGIN`].
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn termsrv_hold_millis() -> u64 {
+    (TERMSRV_HOLD + TERMSRV_HOLD_MARGIN).as_millis() as u64
+}
+
+/// The names of a start with `steps` to `host:port`: every one its mstsc may look up, and those it
+/// writes. Which name mstsc looks up at a port other than 3389 is not verified (spike, point 4),
+/// so the name of the host without the port counts with that of the address, and so does every
+/// name the start deletes.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn termsrv_names(host: &str, port: u16, steps: &[TermsrvStep]) -> (Vec<String>, Vec<String>) {
+    let mut lookup = vec![termsrv_name(host, port), format!("TERMSRV/{host}")];
+    let mut write = Vec::new();
+    for step in steps {
+        match step {
+            TermsrvStep::Clear(name) | TermsrvStep::Discard(name) | TermsrvStep::Keep(name) => {
+                lookup.push(name.clone())
+            }
+            TermsrvStep::Write(name) => {
+                lookup.push(name.clone());
+                write.push(name.clone());
+            }
+            TermsrvStep::Launch | TermsrvStep::Remove { .. } => {}
+        }
+    }
+    (lookup, write)
+}
+
+/// Whether the hold `held` still stands at `now`: its time is not up, else a start that crashed
+/// left it, and no more of it is left than a fresh hold has, with [`TERMSRV_HOLD_MARGIN`] once
+/// more for a clock that went back a little since; more, and the clock went back further.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn termsrv_hold_stands(held: &TermsrvHold, now: u64) -> bool {
+    let slack = TERMSRV_HOLD_MARGIN.as_millis() as u64;
+    held.until > now && held.until - now <= termsrv_hold_millis() + slack
+}
+
+/// What of the hold `held` at `now` stands in the way of a start of `holder` whose mstsc may look
+/// up the names `lookup` and which writes `write`: the first name of the start it takes and the
+/// time left, or `None`. A hold of `holder` itself never does, the start extends it, nor one that
+/// no longer stands ([`termsrv_hold_stands`]). Two starts conflict where one writes a name the
+/// mstsc of the other may look up: that mstsc would take the password of the other, or the
+/// start would delete the entry of the other. Two starts that only look up a name, two tunnels
+/// to this machine at different ports or two starts without a password, do not.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn termsrv_hold_left<'a, S: AsRef<str>>(
+    held: &TermsrvHold,
+    now: u64,
+    holder: &TermsrvHolder,
+    lookup: &'a [S],
+    write: &'a [S],
+) -> Option<(&'a str, Duration)> {
+    if held.holder == *holder || !termsrv_hold_stands(held, now) {
+        return None;
+    }
+    let held_in =
+        |names: &BTreeSet<String>, name: &S| names.contains(&name.as_ref().to_lowercase());
+    let name = write
+        .iter()
+        .find(|name| held_in(&held.lookup, name))
+        .or_else(|| lookup.iter().find(|name| held_in(&held.write, name)))?;
+    Some((name.as_ref(), Duration::from_millis(held.until - now)))
+}
+
+/// The error of a start that finds `name` in the hold of another connection for `left`.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn termsrv_held(name: &str, left: Duration) -> AppError {
+    let seconds = left.as_millis().div_ceil(1000);
+    AppError::Connection(format!(
+        "another RDP connection holds the Windows credential {name} for its start; try again in \
+         {seconds} s"
+    ))
+}
+
+/// In the app data dir, not in a workspace: the holds of every workspace process of the user on
+/// `TERMSRV/…` names, read and written under [`TERMSRV_HOLDS_LOCK`].
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const TERMSRV_HOLDS_FILE: &str = "termsrv-holds.json";
+
+/// In the app data dir: the lock around every check and change of [`TERMSRV_HOLDS_FILE`].
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const TERMSRV_HOLDS_LOCK: &str = "termsrv-holds.lock";
+
+/// What [`TERMSRV_HOLDS_FILE`] holds.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct TermsrvHolds {
+    holds: Vec<TermsrvHold>,
+}
+
+/// Holds the lock of the holds in an app data dir until it drops. A file of its own: on Windows a
+/// lock can bar every other handle from the bytes it covers.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+struct TermsrvHoldsLock(File);
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl TermsrvHoldsLock {
+    /// Opened to read and write (`LockFileEx` wants a handle with either), created 0600 on Unix.
+    fn take(base: &Path) -> Result<Self, AppError> {
+        fs::create_dir_all(base)?;
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let file = options.open(base.join(TERMSRV_HOLDS_LOCK))?;
+        file.lock()?;
+        Ok(Self(file))
+    }
+}
+
+impl Drop for TermsrvHoldsLock {
+    fn drop(&mut self) {
+        // Windows frees the lock of a closed handle when it gets round to it; the next start
+        // need not wait for that.
+        let _ = self.0.unlock();
+    }
+}
+
+/// The holds in the app data dir `base`, under the lock only; none if there is no file, or it
+/// does not parse: only processes of the same user write it, and a file no start can read must
+/// not bar a name for good. The log names where it breaks, never a value from it.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn read_termsrv_holds(base: &Path) -> Result<TermsrvHolds, AppError> {
+    let path = base.join(TERMSRV_HOLDS_FILE);
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(TermsrvHolds::default()),
+        Err(e) => return Err(e.into()),
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(holds) => Ok(holds),
+        Err(e) => {
+            log::warn!(
+                "{TERMSRV_HOLDS_FILE} does not parse (line {}, column {}) and holds nothing",
+                e.line(),
+                e.column()
+            );
+            Ok(TermsrvHolds::default())
+        }
+    }
+}
+
+/// Replaces the holds in the app data dir `base` at once, under the lock only.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn store_termsrv_holds(base: &Path, holds: &TermsrvHolds) -> Result<(), AppError> {
+    crate::storage::write_json_atomic(&base.join(TERMSRV_HOLDS_FILE), holds)
+}
+
+/// A hold a start took ([`hold_termsrv`]) in the app data dir `base`.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TakenHold {
+    base: PathBuf,
+    hold: TermsrvHold,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl TakenHold {
+    /// Gives up this hold; every other stays, a later one of the same connection as well.
+    fn release(&self) -> Result<(), AppError> {
+        let _lock = TermsrvHoldsLock::take(&self.base)?;
+        let mut holds = read_termsrv_holds(&self.base)?;
+        if let Some(at) = holds.holds.iter().position(|held| *held == self.hold) {
+            holds.holds.remove(at);
+            store_termsrv_holds(&self.base, &holds)?;
+        }
+        Ok(())
+    }
+}
+
+/// Checks a start of `holder` with `steps` to `host:port` against the holds in the app data dir
+/// `base` at `now` (milliseconds since the Unix epoch) and takes a hold on its names until `now`
+/// plus [`termsrv_hold_millis`]: both under one lock, so of two processes only one gets a name.
+/// The start is turned away, with the time left, while a hold of another connection stands in its
+/// way ([`termsrv_hold_left`]). Every start holds the names its mstsc may look up, so no other
+/// start writes one of them while that mstsc may still read it; one without a password writes
+/// nothing, and its hold ends with its time. The hold of a start that writes goes with its
+/// `Remove` and is returned for that. A start of the same connection again adds a later hold.
+/// Holds that no longer stand go (T39).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn hold_termsrv(
+    base: &Path,
+    (host, port): (&str, u16),
+    steps: &[TermsrvStep],
+    holder: &TermsrvHolder,
+    now: u64,
+) -> Result<Option<TakenHold>, AppError> {
+    let (lookup, write) = termsrv_names(host, port, steps);
+    let _lock = TermsrvHoldsLock::take(base)?;
+    let mut holds = read_termsrv_holds(base)?;
+    holds.holds.retain(|held| termsrv_hold_stands(held, now));
+    for held in &holds.holds {
+        if let Some((name, left)) = termsrv_hold_left(held, now, holder, &lookup, &write) {
+            return Err(termsrv_held(name, left));
+        }
+    }
+    let lowered = |names: &[String]| names.iter().map(|name| name.to_lowercase()).collect();
+    let hold = TermsrvHold {
+        holder: holder.clone(),
+        lookup: lowered(&lookup),
+        write: lowered(&write),
+        until: now.saturating_add(termsrv_hold_millis()),
+    };
+    holds.holds.push(hold.clone());
+    store_termsrv_holds(base, &holds)?;
+    Ok((!write.is_empty()).then(|| TakenHold {
+        base: base.to_path_buf(),
+        hold,
+    }))
+}
+
+/// Now in milliseconds since the Unix epoch, the clock of the holds.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn unix_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as u64)
+}
+
+/// An entry a start wrote: its name and the user it holds, which a `Remove` checks first, and the
+/// hold the start took ([`hold_termsrv`]).
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WrittenTermsrv {
     target: String,
     username: String,
+    hold: Option<TakenHold>,
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
@@ -525,6 +795,20 @@ impl WrittenTermsrv {
     /// delete.
     fn is(&self, comment: &str, username: &str) -> bool {
         TermsrvEntry::of(Some(comment)) == TermsrvEntry::Own && username == self.username
+    }
+
+    /// Gives up the hold of the start, once the entry is gone. If that fails, the hold lasts until
+    /// its time is up, and only the log says so: the entry is gone all the same.
+    fn release(&self) {
+        let Some(hold) = &self.hold else {
+            return;
+        };
+        if let Err(e) = hold.release() {
+            log::warn!(
+                "the hold on {} lasts until its time is up: {e}",
+                self.target
+            );
+        }
     }
 }
 
@@ -545,10 +829,13 @@ impl PendingRemoves {
         }
     }
 
-    /// Holds `written` until [`Self::take`] with the id this returns, or [`Self::take_all`].
+    /// Holds `written` until [`Self::take`] with the id this returns, or [`Self::take_all`]. One
+    /// open for the same name goes: the start wrote over its entry, and a start of the same
+    /// connection extends the time of the entry, which an earlier timer would cut short (T39).
     fn add(&mut self, written: WrittenTermsrv) -> u64 {
         let id = self.next;
         self.next += 1;
+        self.open.retain(|(_, open)| open.target != written.target);
         self.open.push((id, written));
         id
     }
@@ -803,15 +1090,17 @@ fn windows_termsrv_entry(target: &str) -> Result<TermsrvEntry, AppError> {
 }
 
 /// Deletes the entry a start wrote, if the generic entry under its name is still that one
-/// ([`WrittenTermsrv::is`]); another one, or none, stays as it is.
+/// ([`WrittenTermsrv::is`]); another one, or none, stays as it is. Then the hold of the start
+/// goes; an error is the entry's alone.
 #[cfg(target_os = "windows")]
 fn windows_remove_termsrv(written: &WrittenTermsrv) -> Result<(), AppError> {
-    match windows_generic_entry(&written.target)? {
-        Some((comment, username)) if written.is(&comment, &username) => {
-            windows_delete_credential(&written.target)
+    if let Some((comment, username)) = windows_generic_entry(&written.target)? {
+        if written.is(&comment, &username) {
+            windows_delete_credential(&written.target)?;
         }
-        _ => Ok(()),
     }
+    written.release();
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -833,11 +1122,12 @@ pub fn remove_pending_termsrv() {
 }
 
 /// The Credential Manager of this logon session for a start of mstsc as `username`, with the
-/// stored `password`.
+/// stored `password` and the `hold` the start took on the name it writes.
 #[cfg(target_os = "windows")]
 struct WindowsTermsrv<'a> {
     username: String,
     password: &'a str,
+    hold: Option<TakenHold>,
 }
 
 #[cfg(target_os = "windows")]
@@ -846,6 +1136,7 @@ impl WindowsTermsrv<'_> {
         WrittenTermsrv {
             target: target.to_string(),
             username: self.username.clone(),
+            hold: self.hold.clone(),
         }
     }
 }
@@ -857,6 +1148,13 @@ impl TermsrvStore for WindowsTermsrv<'_> {
 
         windows_delete_credential_of(target, CRED_TYPE_GENERIC)?;
         windows_delete_credential_of(target, CRED_TYPE_DOMAIN_PASSWORD)
+    }
+
+    fn discard(&mut self, target: &str) -> Result<(), AppError> {
+        if windows_termsrv_entry(target)? == TermsrvEntry::Own {
+            windows_delete_credential(target)?;
+        }
+        Ok(())
     }
 
     fn write(&mut self, target: &str) -> Result<(), AppError> {
@@ -896,10 +1194,12 @@ impl TermsrvStore for WindowsTermsrv<'_> {
 }
 
 /// Starts mstsc through `launch` for the address `host:port` that the `.rdp` file of
-/// `connection` names, as [`termsrv_plan`] says; `password` is the one stored for the
+/// `connection` names, as [`termsrv_plan`] says, unless another connection holds a name the start
+/// needs ([`hold_termsrv`] in the app data dir `base`); `password` is the one stored for the
 /// connection (R-0431).
 #[cfg(target_os = "windows")]
 pub fn start_mstsc(
+    base: &Path,
     host: &str,
     port: u16,
     connection: &Connection,
@@ -912,14 +1212,22 @@ pub fn start_mstsc(
         Some(_) => rdp_windows_username(connection)?,
         None => String::new(),
     };
-    let entry = match password {
-        Some(_) if !loopback => windows_termsrv_entry(&termsrv_name(host, port))?,
-        _ => TermsrvEntry::Missing,
+    let target = termsrv_name(host, port);
+    let entry = if loopback {
+        TermsrvEntry::Missing
+    } else {
+        windows_termsrv_entry(&target)?
     };
     let steps = termsrv_plan(host, port, loopback, entry, password.is_some());
+    let holder = TermsrvHolder {
+        workspace: workspace::current()?.id.to_string(),
+        connection: connection.id.clone(),
+    };
+    let hold = hold_termsrv(base, (host, port), &steps, &holder, unix_millis())?;
     let mut store = WindowsTermsrv {
         username,
         password: password.unwrap_or_default(),
+        hold,
     };
     run_termsrv_plan(&steps, &mut store, launch)
 }
@@ -1638,6 +1946,7 @@ mod tests {
                     TermsrvStep::Clear(target.clone()),
                     TermsrvStep::Clear(format!("TERMSRV/{host}")),
                 ],
+                "discard" => vec![TermsrvStep::Discard(target.clone())],
                 "keep" => vec![TermsrvStep::Keep(target.clone())],
                 "write" => vec![TermsrvStep::Write(target.clone())],
                 "launch" => vec![TermsrvStep::Launch],
@@ -1661,13 +1970,24 @@ mod tests {
     // An entry for another target may be the user's own; mstsc uses it as before.
     #[test]
     fn termsrv_plan_without_a_password_leaves_the_entry_of_another_target() {
-        for entry in [Missing, Own, Foreign] {
+        for entry in [Missing, Foreign] {
             assert_eq!(
                 termsrv_plan(ELSEWHERE, 3390, false, entry, false),
                 termsrv_steps(ELSEWHERE, &["launch"]),
                 "{entry:?}"
             );
         }
+    }
+
+    // The rest of an earlier start, perhaps of another connection, after a crash or past its
+    // time: mstsc would take its password for this start, which has none (T39). At worst mstsc
+    // asks for the password.
+    #[test]
+    fn termsrv_plan_without_a_password_discards_the_rest_of_an_earlier_start() {
+        assert_eq!(
+            termsrv_plan(ELSEWHERE, 3390, false, Own, false),
+            termsrv_steps(ELSEWHERE, &["discard", "launch"])
+        );
     }
 
     // A port on this machine may lead to another server than when its entry was written,
@@ -1730,10 +2050,10 @@ mod tests {
         );
     }
 
-    /// The plans for the RDP host `127.0.0.1:6000` at `port`, with and without a stored
-    /// password, against the names `clear` of the entries they delete first.
-    fn assert_plans_of_a_host_with_a_port(port: u16, clear: &[&str]) {
-        let target = termsrv_name("127.0.0.1:6000", port);
+    /// The plans for the RDP host `host`, which carries a port, at `port`, with and without a
+    /// stored password, against the names `clear` of the entries they delete first.
+    fn assert_plans_of_a_host_with_a_port(host: &str, port: u16, clear: &[&str]) {
+        let target = termsrv_name(host, port);
         let cleared = || {
             clear
                 .iter()
@@ -1751,12 +2071,14 @@ mod tests {
             .collect();
         let without: Vec<_> = cleared().chain([TermsrvStep::Launch]).collect();
         assert_eq!(
-            termsrv_plan("127.0.0.1:6000", port, true, Missing, true),
-            with_password
+            termsrv_plan(host, port, true, Missing, true),
+            with_password,
+            "{host} at {port}"
         );
         assert_eq!(
-            termsrv_plan("127.0.0.1:6000", port, true, Missing, false),
-            without
+            termsrv_plan(host, port, true, Missing, false),
+            without,
+            "{host} at {port}"
         );
     }
 
@@ -1766,6 +2088,7 @@ mod tests {
     #[test]
     fn termsrv_plan_clears_the_names_of_a_host_with_a_port_at_either_port() {
         assert_plans_of_a_host_with_a_port(
+            "127.0.0.1:6000",
             3390,
             &[
                 "TERMSRV/127.0.0.1:6000:3390",
@@ -1776,15 +2099,40 @@ mod tests {
         );
     }
 
-    // At 3389 the name of the host part goes without the port, as `termsrv_name` has it.
+    // The names of the host part carry the port at 3389 too, as both names of a plain host do
+    // (`termsrv_plan_at_the_default_port_writes_the_name_without_it_and_clears_both`): mstsc may
+    // take 3389 from `full address:s:127.0.0.1:6000:3389` and look up the name with it.
     #[test]
     fn termsrv_plan_clears_the_names_of_a_host_with_a_port_at_the_default_port() {
         assert_plans_of_a_host_with_a_port(
+            "127.0.0.1:6000",
             3389,
             &[
                 "TERMSRV/127.0.0.1:6000:3389",
                 "TERMSRV/127.0.0.1:6000",
+                "TERMSRV/127.0.0.1:3389",
                 "TERMSRV/127.0.0.1",
+            ],
+        );
+        assert_plans_of_a_host_with_a_port(
+            "127.0.0.1:3389",
+            3390,
+            &[
+                "TERMSRV/127.0.0.1:3389:3390",
+                "TERMSRV/127.0.0.1:3389",
+                "TERMSRV/127.0.0.1:3390",
+                "TERMSRV/127.0.0.1",
+            ],
+        );
+        assert_plans_of_a_host_with_a_port(
+            "[::1]:6000",
+            3389,
+            &[
+                "TERMSRV/[::1]:6000:3389",
+                "TERMSRV/[::1]:6000",
+                "TERMSRV/::1:6000",
+                "TERMSRV/::1:3389",
+                "TERMSRV/::1",
             ],
         );
     }
@@ -1849,6 +2197,7 @@ mod tests {
         let written = WrittenTermsrv {
             target: "TERMSRV/192.0.2.10:3390".to_string(),
             username: "CORP\\admin".to_string(),
+            hold: None,
         };
         assert!(written.is(TERMSRV_MARKER, "CORP\\admin"));
         // Written over by a start for another user.
@@ -1858,12 +2207,17 @@ mod tests {
         assert!(!written.is("my server", "CORP\\admin"));
     }
 
-    #[test]
-    fn termsrv_pending_removes_go_once_by_their_timer_or_at_the_exit() {
-        let written = |target: &str| WrittenTermsrv {
+    /// An entry written under `target` for the user `u`, without a hold.
+    fn written(target: &str) -> WrittenTermsrv {
+        WrittenTermsrv {
             target: target.to_string(),
             username: "u".to_string(),
-        };
+            hold: None,
+        }
+    }
+
+    #[test]
+    fn termsrv_pending_removes_go_once_by_their_timer_or_at_the_exit() {
         let mut pending = PendingRemoves::new();
         let first = pending.add(written("TERMSRV/a"));
         let second = pending.add(written("TERMSRV/b"));
@@ -1882,6 +2236,21 @@ mod tests {
         assert_eq!(pending.take(first), None);
         assert_eq!(pending.take(third), None);
         assert_eq!(pending.take_all(), [written("TERMSRV/a")]);
+    }
+
+    // A second start of the same connection extends the time of its entry (T39): the timer of
+    // the first must not delete it before, nor would its user tell them apart.
+    #[test]
+    fn termsrv_pending_removes_a_later_start_takes_over_the_remove_of_its_name() {
+        let mut pending = PendingRemoves::new();
+        let first = pending.add(written("TERMSRV/a"));
+        let other = pending.add(written("TERMSRV/b"));
+        let again = pending.add(written("TERMSRV/a"));
+
+        assert_eq!(pending.take(first), None, "the later start's remove counts");
+        assert_eq!(pending.take(again), Some(written("TERMSRV/a")));
+        assert_eq!(pending.take(other), Some(written("TERMSRV/b")));
+        assert_eq!(pending.take_all(), []);
     }
 
     /// The Credential Manager of a start as a log of what it was told, failing at `failing`.
@@ -1904,6 +2273,10 @@ mod tests {
     impl TermsrvStore for Recorded<'_> {
         fn clear(&mut self, target: &str) -> Result<(), AppError> {
             self.call("clear", target)
+        }
+
+        fn discard(&mut self, target: &str) -> Result<(), AppError> {
+            self.call("discard", target)
         }
 
         fn write(&mut self, target: &str) -> Result<(), AppError> {
@@ -1988,13 +2361,20 @@ mod tests {
     }
 
     // mstsc never runs while an entry for this machine may still be there, nor without the
-    // one the start meant to write.
+    // one the start meant to write. The removal runs at once, so the hold of the start goes
+    // with it (T39).
     #[test]
     fn termsrv_run_starts_no_mstsc_after_a_step_fails() {
         let steps = termsrv_plan(HERE, 3390, true, Missing, true);
         let (calls, outcome) = run(&steps, Some("clear"), true);
         assert!(matches!(outcome, Err(AppError::Keyring(_))), "{outcome:?}");
-        assert_eq!(calls, ["clear TERMSRV/127.0.0.1:3390"]);
+        assert_eq!(
+            calls,
+            [
+                "clear TERMSRV/127.0.0.1:3390",
+                "remove TERMSRV/127.0.0.1:3390"
+            ]
+        );
 
         let (calls, outcome) = run(&steps, Some("write"), true);
         assert!(matches!(outcome, Err(AppError::Keyring(_))), "{outcome:?}");
@@ -2003,9 +2383,27 @@ mod tests {
             [
                 "clear TERMSRV/127.0.0.1:3390",
                 "clear TERMSRV/127.0.0.1",
-                "write TERMSRV/127.0.0.1:3390"
+                "write TERMSRV/127.0.0.1:3390",
+                "remove TERMSRV/127.0.0.1:3390"
             ]
         );
+
+        // Without a password nothing is written, and nothing removed.
+        let steps = termsrv_plan(ELSEWHERE, 3390, false, Own, false);
+        let (calls, outcome) = run(&steps, Some("discard"), true);
+        assert!(matches!(outcome, Err(AppError::Keyring(_))), "{outcome:?}");
+        assert_eq!(calls, ["discard TERMSRV/192.0.2.10:3390"]);
+    }
+
+    #[test]
+    fn termsrv_run_discards_the_rest_of_an_earlier_start_before_mstsc() {
+        let (calls, outcome) = run(
+            &termsrv_plan(ELSEWHERE, 3390, false, Own, false),
+            None,
+            true,
+        );
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(calls, ["discard TERMSRV/192.0.2.10:3390", "launch"]);
     }
 
     #[test]
@@ -2065,6 +2463,639 @@ mod tests {
             );
             assert_eq!(readable_legacy_termsrv(&standard(), &c), None, "{host}");
         }
+    }
+
+    // ── T39: every start holds the names of its mstsc for its time, across the processes ──
+
+    /// A moment in milliseconds since the Unix epoch, where the holds below begin.
+    const T0: u64 = 1_800_000_000_000;
+
+    /// How long a hold lasts: the 60 s of the entry and a margin of 10 s.
+    const HELD: u64 = 70_000;
+
+    /// How far the clock may go back before a hold counts as one from a clock that went back.
+    const SLACK: u64 = 10_000;
+
+    fn holder(workspace: &str, connection: &str) -> TermsrvHolder {
+        TermsrvHolder {
+            workspace: workspace.to_string(),
+            connection: connection.to_string(),
+        }
+    }
+
+    /// A hold of `holder` until `until` on the names `lookup` and `write`, in lower case.
+    fn hold_of(holder: &TermsrvHolder, lookup: &[&str], write: &[&str], until: u64) -> TermsrvHold {
+        let lowered = |names: &[&str]| names.iter().map(|name| name.to_lowercase()).collect();
+        TermsrvHold {
+            holder: holder.clone(),
+            lookup: lowered(lookup),
+            write: lowered(write),
+            until,
+        }
+    }
+
+    /// The names a start with the plan for `host:port` may look up and writes, each once.
+    fn names_of(
+        (host, port): (&str, u16),
+        steps: &[TermsrvStep],
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        let (lookup, write) = termsrv_names(host, port, steps);
+        (lookup.into_iter().collect(), write.into_iter().collect())
+    }
+
+    fn set(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
+    // mstsc may look up the address with its port or without (spike, point 4).
+    #[test]
+    fn termsrv_names_are_the_address_what_the_start_deletes_and_what_it_writes() {
+        let (target, bare) = ("TERMSRV/192.0.2.10:3390", "TERMSRV/192.0.2.10");
+        assert_eq!(
+            names_of(
+                (ELSEWHERE, 3390),
+                &termsrv_plan(ELSEWHERE, 3390, false, Missing, true)
+            ),
+            (set(&[target, bare]), set(&[target]))
+        );
+        for entry in [Missing, Own, Foreign] {
+            assert_eq!(
+                names_of(
+                    (ELSEWHERE, 3390),
+                    &termsrv_plan(ELSEWHERE, 3390, false, entry, false)
+                ),
+                (set(&[target, bare]), set(&[])),
+                "{entry:?}"
+            );
+        }
+        assert_eq!(
+            names_of(
+                (ELSEWHERE, 3389),
+                &termsrv_plan(ELSEWHERE, 3389, false, Missing, true)
+            ),
+            (set(&[bare]), set(&[bare]))
+        );
+        assert_eq!(
+            names_of(
+                (HERE, 13389),
+                &termsrv_plan(HERE, 13389, true, Missing, true)
+            ),
+            (
+                set(&["TERMSRV/127.0.0.1:13389", "TERMSRV/127.0.0.1"]),
+                set(&["TERMSRV/127.0.0.1:13389"])
+            )
+        );
+        assert_eq!(
+            names_of(
+                (HERE, 3389),
+                &termsrv_plan(HERE, 3389, true, Missing, false)
+            ),
+            (
+                set(&["TERMSRV/127.0.0.1:3389", "TERMSRV/127.0.0.1"]),
+                set(&[])
+            )
+        );
+    }
+
+    // One start writes a name the mstsc of the other may look up: that mstsc would take the
+    // password of the other, or the start would delete the entry of the other.
+    #[test]
+    fn termsrv_hold_of_another_connection_turns_a_start_away_for_the_time_left() {
+        let (x, y) = ("TERMSRV/127.0.0.1:13389", "TERMSRV/127.0.0.1");
+        let held = hold_of(&holder("w-a", "c1"), &[x, y], &[x], T0 + HELD);
+        // Another connection of the workspace, or the same id in another workspace.
+        for other in [holder("w-a", "c2"), holder("w-b", "c1")] {
+            assert_eq!(
+                termsrv_hold_left(&held, T0, &other, &[y], &[y]),
+                Some((y, Duration::from_millis(HELD))),
+                "it writes a name the hold may look up: {other:?}"
+            );
+            assert_eq!(
+                termsrv_hold_left(&held, T0 + HELD - 1, &other, &[x], &[]),
+                Some((x, Duration::from_millis(1))),
+                "it may look up the name the hold wrote: {other:?}"
+            );
+            assert_eq!(
+                termsrv_hold_left(&held, T0, &other, &["TERMSRV/127.0.0.1:13390", y], &[]),
+                None,
+                "both only look up {y}: {other:?}"
+            );
+        }
+        // Names compare without case, as host names do.
+        let upper = "TERMSRV/Host.COM:3390";
+        let held = hold_of(&holder("w-a", "c1"), &[upper], &[upper], T0 + HELD);
+        let lower = "TERMSRV/host.com:3390";
+        assert_eq!(
+            termsrv_hold_left(&held, T0, &holder("w-b", "c2"), &[lower], &[]),
+            Some((lower, Duration::from_millis(HELD)))
+        );
+    }
+
+    #[test]
+    fn termsrv_hold_lets_the_same_connection_start_again() {
+        let own = holder("w-a", "c1");
+        let name = "TERMSRV/192.0.2.10:3390";
+        let held = hold_of(&own, &[name], &[name], T0 + HELD);
+        assert_eq!(termsrv_hold_left(&held, T0, &own, &[name], &[name]), None);
+    }
+
+    // A hold whose time is up is the rest of a start that crashed. One with a little more time
+    // left than a fresh hold has comes from a clock that went back a little since and stands;
+    // with more than the slack on top, the clock went back further.
+    #[test]
+    fn termsrv_hold_ends_with_its_time_or_when_the_clock_went_back() {
+        assert_eq!(termsrv_hold_millis(), HELD);
+        let name = "TERMSRV/192.0.2.10:3390";
+        let other = holder("w-b", "c2");
+        let left = |until: u64, now: u64| {
+            let held = hold_of(&holder("w-a", "c1"), &[name], &[name], until);
+            termsrv_hold_left(&held, now, &other, &[name], &[name]).map(|(_, left)| left)
+        };
+        assert_eq!(left(T0 + HELD, T0), Some(Duration::from_millis(HELD)));
+        assert_eq!(left(T0 + HELD, T0 + HELD), None);
+        assert_eq!(left(T0 + HELD, T0 + 3_600_000), None);
+        assert_eq!(
+            left(T0 + HELD + 5, T0),
+            Some(Duration::from_millis(HELD + 5)),
+            "the clock went back 5 ms"
+        );
+        assert_eq!(
+            left(T0 + HELD + SLACK, T0),
+            Some(Duration::from_millis(HELD + SLACK))
+        );
+        assert_eq!(left(T0 + HELD + SLACK + 1, T0), None, "the clock went back");
+        assert_eq!(
+            left(T0 + 3_600_000, T0),
+            None,
+            "the clock went back an hour"
+        );
+    }
+
+    /// [`hold_termsrv`] in `base` for a start of `who` at `now` with `steps` to `host:port`.
+    fn take(
+        base: &Path,
+        (host, port): (&str, u16),
+        steps: &[TermsrvStep],
+        who: &TermsrvHolder,
+        now: u64,
+    ) -> Result<Option<TakenHold>, AppError> {
+        hold_termsrv(base, (host, port), steps, who, now)
+    }
+
+    /// What a start was told when it was turned away.
+    fn turned_away(outcome: Result<Option<TakenHold>, AppError>) -> String {
+        match outcome {
+            Err(AppError::Connection(message)) => message,
+            other => panic!("the start was not turned away: {other:?}"),
+        }
+    }
+
+    /// The holds in the file in `base`, as the next start reads them.
+    fn holds_in(base: &Path) -> Vec<TermsrvHold> {
+        read_termsrv_holds(base).unwrap().holds
+    }
+
+    const ELSEWHERE_3390: (&str, u16) = (ELSEWHERE, 3390);
+
+    #[test]
+    fn termsrv_hold_a_start_with_a_password_holds_its_names_in_the_app_data_dir() {
+        let base = Scratch::new("termsrv-hold");
+        let writes = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c1"));
+        let (name, bare) = ("TERMSRV/192.0.2.10:3390", "TERMSRV/192.0.2.10");
+
+        let taken = take(&base.0, ELSEWHERE_3390, &writes, &a, T0)
+            .unwrap()
+            .expect("a start that writes holds its names");
+        assert_eq!(
+            taken,
+            TakenHold {
+                base: base.0.clone(),
+                hold: hold_of(&a, &[name, bare], &[name], T0 + HELD),
+            }
+        );
+        // Not in a workspace: every workspace process reads the same file.
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(
+                &fs::read(base.0.join("termsrv-holds.json")).unwrap()
+            )
+            .unwrap(),
+            serde_json::json!({ "holds": [{
+                "workspace": "w-a",
+                "connection": "c1",
+                "lookup": ["termsrv/192.0.2.10", "termsrv/192.0.2.10:3390"],
+                "write": ["termsrv/192.0.2.10:3390"],
+                "until": T0 + HELD,
+            }] })
+        );
+
+        let message = turned_away(take(&base.0, ELSEWHERE_3390, &writes, &b, T0 + 17_500));
+        assert!(
+            message.contains(name) && message.ends_with("try again in 53 s"),
+            "{message}"
+        );
+
+        // The same connection again adds a later hold.
+        let again = take(&base.0, ELSEWHERE_3390, &writes, &a, T0 + 30_000)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            again.hold,
+            hold_of(&a, &[name, bare], &[name], T0 + 30_000 + HELD)
+        );
+        let message = turned_away(take(&base.0, ELSEWHERE_3390, &writes, &b, T0 + HELD));
+        assert!(message.ends_with("try again in 30 s"), "{message}");
+
+        // Past their time the holds go, as after a crash.
+        let taken = take(&base.0, ELSEWHERE_3390, &writes, &b, T0 + 30_000 + HELD)
+            .unwrap()
+            .unwrap();
+        assert_eq!(holds_in(&base.0), [taken.hold]);
+    }
+
+    // Before `a` writes or while its entry is there, mstsc of another start to the same address
+    // could take the password of `a`; with its own password it would write over it.
+    #[test]
+    fn termsrv_hold_turns_away_every_start_of_another_connection_to_the_address() {
+        let base = Scratch::new("termsrv-hold-any");
+        let (a, b, c) = (
+            holder("w-a", "c1"),
+            holder("w-b", "c2"),
+            holder("w-c", "c3"),
+        );
+        let writes = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        take(&base.0, ELSEWHERE_3390, &writes, &a, T0).unwrap();
+
+        for (entry, password) in [
+            (Missing, false),
+            (Own, false),
+            (Foreign, false),
+            (Own, true),
+            (Foreign, true),
+        ] {
+            let steps = termsrv_plan(ELSEWHERE, 3390, false, entry, password);
+            turned_away(take(&base.0, ELSEWHERE_3390, &steps, &b, T0 + 1_000));
+        }
+
+        // A start that writes nothing holds what its mstsc may look up, until its time is up: a
+        // third connection may not write it before.
+        let discards = termsrv_plan(ELSEWHERE, 3390, false, Own, false);
+        assert_eq!(
+            take(&base.0, ELSEWHERE_3390, &discards, &b, T0 + HELD).unwrap(),
+            None,
+            "a hold without a removal is not handed back"
+        );
+        let looks_up = "TERMSRV/192.0.2.10:3390";
+        assert_eq!(
+            holds_in(&base.0),
+            [hold_of(
+                &b,
+                &[looks_up, "TERMSRV/192.0.2.10"],
+                &[],
+                T0 + 2 * HELD
+            )]
+        );
+        turned_away(take(&base.0, ELSEWHERE_3390, &writes, &c, T0 + HELD + 1));
+        assert!(take(&base.0, ELSEWHERE_3390, &writes, &c, T0 + 2 * HELD)
+            .unwrap()
+            .is_some());
+    }
+
+    // At a port other than 3389, mstsc may look up the name without the port, which a start at
+    // 3389 writes; another port of the same host shares no name it writes.
+    #[test]
+    fn termsrv_hold_another_target_counts_the_name_without_the_port() {
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c2"));
+        let writes = |port: u16| termsrv_plan(ELSEWHERE, port, false, Missing, true);
+
+        let base = Scratch::new("termsrv-hold-bare");
+        take(&base.0, (ELSEWHERE, 3389), &writes(3389), &a, T0)
+            .unwrap()
+            .unwrap();
+        let message = turned_away(take(&base.0, ELSEWHERE_3390, &writes(3390), &b, T0));
+        assert!(message.contains("TERMSRV/192.0.2.10 "), "{message}");
+
+        let base = Scratch::new("termsrv-hold-bare-back");
+        take(&base.0, ELSEWHERE_3390, &writes(3390), &a, T0)
+            .unwrap()
+            .unwrap();
+        let message = turned_away(take(&base.0, (ELSEWHERE, 3389), &writes(3389), &b, T0));
+        assert!(message.contains("TERMSRV/192.0.2.10 "), "{message}");
+        assert!(take(&base.0, (ELSEWHERE, 3391), &writes(3391), &b, T0)
+            .unwrap()
+            .is_some());
+    }
+
+    /// The plan for this machine at `port`, with a stored password if `password`.
+    fn here(port: u16, password: bool) -> Vec<TermsrvStep> {
+        termsrv_plan(HERE, port, true, Missing, password)
+    }
+
+    // mstsc of `a` at 13389 may look up `TERMSRV/127.0.0.1` (spike, point 4). A start at 3389
+    // writes that name: mstsc of `a` would send its password to the server of `a`. Without a
+    // password it writes nothing and deletes no name `a` wrote, and its mstsc looks up neither,
+    // so it may.
+    #[test]
+    fn termsrv_hold_for_this_machine_turns_away_a_start_that_writes_a_name_the_first_may_look_up() {
+        let base = Scratch::new("termsrv-hold-here");
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c2"));
+        let first = take(&base.0, (HERE, 13389), &here(13389, true), &a, T0)
+            .unwrap()
+            .unwrap();
+
+        let message = turned_away(take(&base.0, (HERE, 3389), &here(3389, true), &b, T0));
+        assert!(message.contains("TERMSRV/127.0.0.1 "), "{message}");
+        assert_eq!(
+            take(&base.0, (HERE, 3389), &here(3389, false), &b, T0).unwrap(),
+            None
+        );
+
+        first.release().unwrap();
+        assert!(take(&base.0, (HERE, 3389), &here(3389, true), &b, T0)
+            .unwrap()
+            .is_some());
+    }
+
+    // The other way round: `b` at 3389 wrote `TERMSRV/127.0.0.1`, which mstsc of a start at 13389
+    // may look up, and which that start deletes, with or without a password.
+    #[test]
+    fn termsrv_hold_for_this_machine_turns_away_a_start_that_may_look_up_the_entry_of_the_first() {
+        let base = Scratch::new("termsrv-hold-here-back");
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c2"));
+        take(&base.0, (HERE, 3389), &here(3389, true), &b, T0)
+            .unwrap()
+            .unwrap();
+
+        for password in [true, false] {
+            let message = turned_away(take(&base.0, (HERE, 13389), &here(13389, password), &a, T0));
+            assert!(message.contains("TERMSRV/127.0.0.1 "), "{message}");
+        }
+    }
+
+    // Two tunnels at different local ports only share a name both may look up, which neither
+    // writes: they do not hold each other up, with or without a password. Nor do two starts
+    // without a password, at the same port as well.
+    #[test]
+    fn termsrv_hold_two_tunnels_at_different_ports_of_this_machine_do_not_conflict() {
+        let base = Scratch::new("termsrv-hold-tunnels");
+        let who = |i: u8| holder(&format!("w-{i}"), &format!("c{i}"));
+        assert!(
+            take(&base.0, (HERE, 13389), &here(13389, true), &who(1), T0)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            take(&base.0, (HERE, 13390), &here(13390, true), &who(2), T0)
+                .unwrap()
+                .is_some()
+        );
+        for (i, port) in [(3, 13391), (4, 13392), (5, 13392)] {
+            assert_eq!(
+                take(&base.0, (HERE, port), &here(port, false), &who(i), T0).unwrap(),
+                None,
+                "{port}"
+            );
+        }
+        assert!(
+            take(&base.0, (HERE, 13393), &here(13393, true), &who(6), T0)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(holds_in(&base.0).len(), 6);
+    }
+
+    // The finding of security, round 2: `t` starts at 13389 without a password and deletes
+    // `TERMSRV/127.0.0.1`, which its mstsc may look up. A start at 3389 that wrote that name now
+    // would send its password to the server behind 13389.
+    #[test]
+    fn termsrv_hold_a_start_without_a_password_holds_what_its_mstsc_may_look_up() {
+        let base = Scratch::new("termsrv-hold-nopw");
+        let (t, s) = (holder("w-x", "c1"), holder("w-y", "c2"));
+        assert_eq!(
+            take(&base.0, (HERE, 13389), &here(13389, false), &t, T0).unwrap(),
+            None
+        );
+        assert_eq!(
+            holds_in(&base.0),
+            [hold_of(
+                &t,
+                &["TERMSRV/127.0.0.1:13389", "TERMSRV/127.0.0.1"],
+                &[],
+                T0 + HELD
+            )]
+        );
+
+        let message = turned_away(take(&base.0, (HERE, 3389), &here(3389, true), &s, T0 + 1));
+        assert!(message.contains("TERMSRV/127.0.0.1 "), "{message}");
+        assert_eq!(
+            take(&base.0, (HERE, 3389), &here(3389, false), &s, T0 + 1).unwrap(),
+            None,
+            "it writes nothing"
+        );
+        // The hold has no removal: it ends with its time.
+        assert!(
+            take(&base.0, (HERE, 3389), &here(3389, true), &s, T0 + HELD)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    // A restart of the same connection stays allowed: its hold without a password holds up no
+    // later start of its own with one.
+    #[test]
+    fn termsrv_hold_a_start_without_a_password_holds_up_no_start_of_its_own_connection() {
+        let base = Scratch::new("termsrv-hold-nopw-own");
+        let t = holder("w-x", "c1");
+        assert_eq!(
+            take(&base.0, (HERE, 13389), &here(13389, false), &t, T0).unwrap(),
+            None
+        );
+        assert!(take(&base.0, (HERE, 13389), &here(13389, true), &t, T0 + 1)
+            .unwrap()
+            .is_some());
+        assert!(take(&base.0, (HERE, 3389), &here(3389, true), &t, T0 + 2)
+            .unwrap()
+            .is_some());
+    }
+
+    // mstsc gets `full address:s:127.0.0.1:6000:3390` and may look up `TERMSRV/127.0.0.1:3390`;
+    // a start of another connection to 127.0.0.1 at 3390 writes that name.
+    #[test]
+    fn termsrv_hold_a_host_with_a_port_counts_the_names_of_its_host_part() {
+        let base = Scratch::new("termsrv-hold-host-port");
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c2"));
+        let with_port = termsrv_plan("127.0.0.1:6000", 3390, true, Missing, true);
+        take(&base.0, ("127.0.0.1:6000", 3390), &with_port, &a, T0)
+            .unwrap()
+            .unwrap();
+
+        let message = turned_away(take(&base.0, (HERE, 3390), &here(3390, true), &b, T0));
+        assert!(message.contains("TERMSRV/127.0.0.1:3390"), "{message}");
+        assert_eq!(
+            take(&base.0, (HERE, 3390), &here(3390, false), &b, T0).unwrap(),
+            None
+        );
+    }
+
+    // Host names compare without case, and so do the names of the holds.
+    #[test]
+    fn termsrv_hold_names_compare_without_case() {
+        let base = Scratch::new("termsrv-hold-case");
+        let upper = termsrv_plan("Host.COM", 3390, false, Missing, true);
+        let lower = termsrv_plan("host.com", 3390, false, Missing, true);
+        take(
+            &base.0,
+            ("Host.COM", 3390),
+            &upper,
+            &holder("w-a", "c1"),
+            T0,
+        )
+        .unwrap();
+        turned_away(take(
+            &base.0,
+            ("host.com", 3390),
+            &lower,
+            &holder("w-b", "c2"),
+            T0,
+        ));
+    }
+
+    #[test]
+    fn termsrv_hold_goes_with_the_remove_of_its_start_only() {
+        let base = Scratch::new("termsrv-hold-release");
+        let writes = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c2"));
+        let entry = |taken: &TakenHold| WrittenTermsrv {
+            hold: Some(taken.clone()),
+            ..written("TERMSRV/192.0.2.10:3390")
+        };
+
+        let first = take(&base.0, ELSEWHERE_3390, &writes, &a, T0)
+            .unwrap()
+            .unwrap();
+        let again = take(&base.0, ELSEWHERE_3390, &writes, &a, T0 + 30_000)
+            .unwrap()
+            .unwrap();
+        // The removal of the first start leaves the hold of the second one.
+        entry(&first).release();
+        assert_eq!(holds_in(&base.0), std::slice::from_ref(&again.hold));
+        turned_away(take(&base.0, ELSEWHERE_3390, &writes, &b, T0 + 31_000));
+        // An entry without a hold gives up none.
+        written("TERMSRV/192.0.2.10:3390").release();
+        turned_away(take(&base.0, ELSEWHERE_3390, &writes, &b, T0 + 31_000));
+
+        entry(&again).release();
+        assert_eq!(holds_in(&base.0), []);
+        let taken = take(&base.0, ELSEWHERE_3390, &writes, &b, T0 + 31_000)
+            .unwrap()
+            .unwrap();
+        // A removal of `a` that comes late leaves the hold `b` took since.
+        entry(&again).release();
+        assert_eq!(holds_in(&base.0), [taken.hold]);
+    }
+
+    // The rest of a crash and a hold from before the clock went back go with the next start; a
+    // hold that stands stays.
+    #[test]
+    fn termsrv_hold_a_hold_that_no_longer_stands_goes() {
+        let base = Scratch::new("termsrv-hold-prune");
+        let name = "TERMSRV/192.0.2.10:3390";
+        let elsewhere = "TERMSRV/198.51.100.7";
+        let standing = hold_of(&holder("w-c", "c3"), &[elsewhere], &[elsewhere], T0 + 1_000);
+        store_termsrv_holds(
+            &base.0,
+            &TermsrvHolds {
+                holds: vec![
+                    hold_of(&holder("w-a", "c1"), &[name], &[name], T0),
+                    hold_of(
+                        &holder("w-b", "c2"),
+                        &[name],
+                        &[name],
+                        T0 + HELD + SLACK + 1,
+                    ),
+                    standing.clone(),
+                ],
+            },
+        )
+        .unwrap();
+        let writes = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        let taken = take(&base.0, ELSEWHERE_3390, &writes, &holder("w-d", "c4"), T0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(holds_in(&base.0), [standing, taken.hold]);
+    }
+
+    // A clock that went back a few milliseconds, or up to the slack, leaves the holds standing.
+    #[test]
+    fn termsrv_hold_lasts_through_a_clock_that_went_back_a_little() {
+        let base = Scratch::new("termsrv-hold-clock");
+        let writes = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        let (a, b) = (holder("w-a", "c1"), holder("w-b", "c2"));
+        take(&base.0, ELSEWHERE_3390, &writes, &a, T0)
+            .unwrap()
+            .unwrap();
+        for back in [5, SLACK] {
+            turned_away(take(&base.0, ELSEWHERE_3390, &writes, &b, T0 - back));
+        }
+        assert!(take(&base.0, ELSEWHERE_3390, &writes, &b, T0 - SLACK - 1)
+            .unwrap()
+            .is_some());
+    }
+
+    // Only processes of the same user write there; a file no start can read must not bar the
+    // address for good.
+    #[test]
+    fn termsrv_hold_a_file_that_does_not_parse_holds_nothing() {
+        let base = Scratch::new("termsrv-hold-broken");
+        fs::write(base.0.join("termsrv-holds.json"), b"{ \"holds\": [").unwrap();
+        let writes = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        let taken = take(&base.0, ELSEWHERE_3390, &writes, &holder("w-a", "c1"), T0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(holds_in(&base.0), [taken.hold]);
+    }
+
+    // Checking and taking happen under one lock: of starts at the same moment, one gets the
+    // name. The lock is a file lock, which two handles of one process contend for as two
+    // processes do.
+    #[test]
+    fn termsrv_hold_starts_at_once_take_a_name_once() {
+        let base = Scratch::new("termsrv-hold-race");
+        let writes = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        let starts = 8;
+        let barrier = std::sync::Barrier::new(starts);
+        let taken = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..starts)
+                .map(|i| {
+                    let (base, writes, barrier) = (&base.0, &writes, &barrier);
+                    scope.spawn(move || {
+                        let who = holder("w-a", &format!("c{i}"));
+                        barrier.wait();
+                        take(base, ELSEWHERE_3390, writes, &who, T0)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            taken
+                .iter()
+                .filter(|outcome| matches!(outcome, Ok(Some(_))))
+                .count(),
+            1,
+            "{taken:?}"
+        );
+        assert_eq!(
+            taken
+                .iter()
+                .filter(|outcome| matches!(outcome, Err(AppError::Connection(_))))
+                .count(),
+            starts - 1,
+            "{taken:?}"
+        );
     }
 
     /// A host no one has (`.invalid`, RFC 2606), of this run and this call only.
@@ -2187,6 +3218,7 @@ mod tests {
         let mut start = WindowsTermsrv {
             username: "CORP\\probe".to_string(),
             password: "pässwort ✓",
+            hold: None,
         };
 
         start.write(&target).unwrap();
@@ -2209,6 +3241,7 @@ mod tests {
         WindowsTermsrv {
             username: "CORP\\other".to_string(),
             password: "",
+            hold: None,
         }
         .remove(&target)
         .unwrap();
@@ -2240,23 +3273,31 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn termsrv_probe_a_failed_start_removes_its_entry_at_once_a_running_one_at_the_exit() {
+        let base = Scratch::new("termsrv-probe-exit");
+        let _workspace = workspace::enter(created("w-0a1b2c3d"));
         let host = probe_host();
         let target = termsrv_name(&host, 3390);
         let _entry = ProbeEntry(target.clone());
         let connection = probe_connection(&host);
 
-        let failed = start_mstsc(&host, 3390, &connection, Some("pässwort"), || {
+        let failed = start_mstsc(&base.0, &host, 3390, &connection, Some("pässwort"), || {
             assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
+            assert_eq!(holds_in(&base.0).len(), 1);
             Err(AppError::Connection("mstsc does not start".to_string()))
         });
         assert!(matches!(failed, Err(AppError::Connection(_))), "{failed:?}");
         assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+        assert_eq!(holds_in(&base.0), []);
 
-        start_mstsc(&host, 3390, &connection, Some("pässwort"), || Ok(())).unwrap();
+        start_mstsc(&base.0, &host, 3390, &connection, Some("pässwort"), || {
+            Ok(())
+        })
+        .unwrap();
         assert_eq!(windows_read_credential(&target).unwrap(), "pässwort");
         assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
         remove_pending_termsrv();
         assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+        assert_eq!(holds_in(&base.0), []);
     }
 
     #[cfg(target_os = "windows")]
@@ -2264,6 +3305,8 @@ mod tests {
     fn termsrv_probe_a_start_writes_over_no_entry_without_the_marker() {
         use windows::Win32::Security::Credentials::CRED_PERSIST_SESSION;
 
+        let base = Scratch::new("termsrv-probe-foreign");
+        let _workspace = workspace::enter(created("w-0a1b2c3d"));
         let host = probe_host();
         let target = termsrv_name(&host, 3390);
         let _entry = ProbeEntry(target.clone());
@@ -2271,6 +3314,7 @@ mod tests {
             .unwrap();
 
         start_mstsc(
+            &base.0,
             &host,
             3390,
             &probe_connection(&host),
@@ -2281,6 +3325,73 @@ mod tests {
 
         assert_eq!(windows_read_credential(&target).unwrap(), "own");
         assert_eq!(windows_termsrv_entry(&target).unwrap(), Foreign);
+    }
+
+    // While a start holds its entry, a start of another connection to the address is turned
+    // away, with or without a password, from another workspace as well; the entry stays the
+    // first one's. The checks run inside the first start, before its removal is pending: a
+    // test beside this one may run the pending removals of the process at any time.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn termsrv_probe_a_second_start_of_another_connection_is_turned_away_while_the_first_holds() {
+        use windows::Win32::Security::Credentials::CRED_PERSIST_SESSION;
+
+        let base = Scratch::new("termsrv-probe-hold");
+        let _workspace = workspace::enter(created("w-0a1b2c3d"));
+        let host = probe_host();
+        let target = termsrv_name(&host, 3390);
+        let _entry = ProbeEntry(target.clone());
+        let first = probe_connection(&host);
+        let second = Connection {
+            id: "b".into(),
+            ..probe_connection(&host)
+        };
+        let refused = |outcome: Result<(), AppError>| match outcome {
+            Err(AppError::Connection(message)) => {
+                assert!(message.contains("try again"), "{message}")
+            }
+            other => panic!("the second start was not turned away: {other:?}"),
+        };
+        let never = || -> Result<(), AppError> {
+            Err(AppError::Validation(
+                "mstsc of the second start ran".to_string(),
+            ))
+        };
+
+        let failed = start_mstsc(&base.0, &host, 3390, &first, Some("first"), || {
+            refused(start_mstsc(
+                &base.0,
+                &host,
+                3390,
+                &second,
+                Some("second"),
+                never,
+            ));
+            refused(start_mstsc(&base.0, &host, 3390, &second, None, never));
+            {
+                let _other = workspace::enter(created("w-0a1b2c3e"));
+                refused(start_mstsc(&base.0, &host, 3390, &first, None, never));
+            }
+            assert_eq!(windows_read_credential(&target).unwrap(), "first");
+            Err(AppError::Connection("mstsc does not start".to_string()))
+        });
+        assert!(matches!(failed, Err(AppError::Connection(_))), "{failed:?}");
+
+        // The failed start gave up its hold with its entry. A crashed one leaves an entry with the
+        // marker and no hold: a start without a password deletes it before mstsc runs.
+        windows_write_credential(
+            &target,
+            "CORP\\probe",
+            "left",
+            CRED_PERSIST_SESSION,
+            Some(TERMSRV_MARKER),
+        )
+        .unwrap();
+        start_mstsc(&base.0, &host, 3390, &second, None, || {
+            assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[cfg(target_os = "windows")]

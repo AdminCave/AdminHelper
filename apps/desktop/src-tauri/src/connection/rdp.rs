@@ -89,7 +89,7 @@ pub fn open_rdp(
 
     #[cfg(not(any(unix, target_os = "windows")))]
     let _ = password;
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, target_os = "windows")))]
     let _ = app;
     #[cfg(not(unix))]
     let _ = client;
@@ -102,7 +102,7 @@ pub fn open_rdp(
 
     #[cfg(target_os = "windows")]
     {
-        return open_rdp_windows(connection, host, port, username, domain, rdp, password);
+        return open_rdp_windows(app, connection, host, port, username, domain, rdp, password);
     }
 
     #[cfg(unix)]
@@ -146,9 +146,12 @@ pub fn open_rdp(
 }
 
 /// Starts mstsc with a `.rdp` file for `host:port`; a stored `password` holds a `TERMSRV/…`
-/// entry for that address only for the start (`password::start_mstsc`, R-0431).
+/// entry for that address only for the start (`password::start_mstsc`, R-0431). The app data dir
+/// of `app` keeps the holds of all workspaces on such entries.
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
 fn open_rdp_windows(
+    app: &tauri::AppHandle,
     connection: &Connection,
     host: &str,
     port: u16,
@@ -162,6 +165,7 @@ fn open_rdp_windows(
     // The `TERMSRV/…` names of the start are those of the address in the file, so both take
     // the same host, without spaces around it.
     let host = host.trim();
+    let base = crate::storage::app_data_dir(app)?;
     let rdp_path = write_rdp_file(
         host,
         port,
@@ -172,7 +176,7 @@ fn open_rdp_windows(
         rdp.custom_size,
         rdp.performance_profile,
     )?;
-    crate::password::start_mstsc(host, port, connection, password, || {
+    crate::password::start_mstsc(&base, host, port, connection, password, || {
         Command::new("mstsc").arg(&rdp_path).spawn()?;
         Ok(())
     })
