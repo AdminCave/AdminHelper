@@ -31,6 +31,7 @@ from app.checkers import tcp as tcp_mod
 from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
 from app.checkers.smart import SmartHealthChecker
+from app.checkers.system import SystemStateChecker
 from app.core.ssrf import UrlVerdict
 from app.core.time import utcnow_naive
 from app.models import Base, MonitorCheck, MonitorState
@@ -109,6 +110,12 @@ def _smart(smartctl_status=0):
         "smartctl_status": smartctl_status,
     }
     return SmartHealthChecker().evaluate({}, {"smart": [disk]})
+
+
+def _system(**fields):
+    """A system_state block 30 min after boot: the clock is rated."""
+    report = {"uptime_seconds": 1800, "system_state": fields}
+    return SystemStateChecker().evaluate({}, report)
 
 
 _SDA = "/dev/sda (X)"
@@ -340,6 +347,57 @@ CASES = [
         id="smart-problems-and-warnings",
     ),
     pytest.param(lambda: _smart(), "ok", "All 1 disks SMART OK", id="smart-ok"),
+    # system_state
+    pytest.param(
+        lambda: SystemStateChecker().run({}),
+        "unknown",
+        "Waiting for agent data",
+        id="system-waiting",
+    ),
+    pytest.param(
+        lambda: SystemStateChecker().evaluate({}, {}),
+        "ok",
+        "Not evaluated: no system state in report",
+        id="system-no-data",
+    ),
+    pytest.param(
+        lambda: _system(reboot_required=True), "warning", "Reboot required", id="system-reboot"
+    ),
+    pytest.param(
+        lambda: _system(time_synchronized=False),
+        "warning",
+        "Clock not synchronized",
+        id="system-time-sync",
+    ),
+    pytest.param(
+        lambda: _system(security_updates=3),
+        "warning",
+        "3 security updates pending",
+        id="system-security-updates",
+    ),
+    pytest.param(
+        lambda: _system(oom_kills=2),
+        "warning",
+        "2 OOM kills since last report",
+        id="system-oom",
+    ),
+    pytest.param(
+        lambda: _system(
+            reboot_required=True, time_synchronized=False, security_updates=3, oom_kills=2
+        ),
+        "warning",
+        "Reboot required; Clock not synchronized; 3 security updates pending; "
+        "2 OOM kills since last report",
+        id="system-all",
+    ),
+    pytest.param(
+        lambda: _system(
+            reboot_required=False, time_synchronized=True, security_updates=0, oom_kills=0
+        ),
+        "ok",
+        "System state OK",
+        id="system-ok",
+    ),
 ]
 
 
