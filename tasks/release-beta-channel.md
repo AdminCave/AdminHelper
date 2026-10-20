@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Release: Beta ohne Suffix-Tag — Task-Ledger
-Status: bereit · Branch: feature/release-beta-channel · Review: am Ende
+Status: aktiv · Branch: feature/release-beta-channel · Review: am Ende
 Spec: Roadmap R-0014
 Heavy: none — nur Regeltext und ein Kommentar; kein Build-, Release- oder Install-Pfad ändert sich
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -34,3 +34,9 @@ Review: am Ende (Branch-Review)
 Änderung: Kevin 2026-10-20 (Harness-Datei auf sein Wort): `CLAUDE.md` §10, Zeile „Release-Kanäle“: Beta ist der Tag `vX.Y.Z` ohne Suffix, veröffentlicht als Pre-release; Stable entsteht per Flag auf „Latest“ ohne neuen Tag, frühestens 7 Tage nach dem Beta ohne Fix und ohne Rückmeldung; `hotfix` bleibt der einzige Weg daran vorbei; Verweis auf `.claude/rules/release.md` bleibt. `docs/developer/cicd.html` + EN, Abschnitt Container-Images: ein Satz, dass `:latest` dem neuesten Tag folgt, auch einem Beta (Pre-release), und wer nur Stable will, die Version pinnt (`install.sh`/`update.sh` tun das bereits über `releases/latest`); das Code-Beispiel „letzter Semver-Release“ entsprechend.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CLAUDE.md · docs/developer/cicd.html + EN
+
+### T3 — `:latest` erst mit Stable, Draft als Pre-release  [ ]
+Komponente: scripts · Dateien: .github/workflows/docker.yml, .github/workflows/release.yml, .claude/rules/release.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Änderung: Kevin 2026-10-20 (Workflow-Dateien; den PR mergt Kevin): `release.yml`, Draft-Schritt (softprops, `:520-528`): der Draft entsteht mit `prerelease: true`, damit „Publish“ in der Web-Oberfläche ein Beta nie zu „Latest“ macht. `docker.yml`: beim Tag-Push kein `:latest` mehr (`flavor: latest=false`, `X.Y.Z` und `sha` bleiben); ein neuer Job auf dem Release-Event, das beim Umschalten eines Releases von Pre-release auf Release feuert (vorher in der GitHub-Doku zu `release`-Events nachlesen, Quelle im Commit nennen, Unbelegtes als „nicht verifiziert“), setzt `:latest` auf das schon gebaute und signierte Image `X.Y.Z` (Manifest umtaggen, nicht neu bauen) und signiert den Tag wie den Bestand (cosign keyless); Rechte des Jobs minimal (`packages: write`, `id-token: write`, `contents: read`), Actions per SHA gepinnt wie im Bestand. Doku: `release.md` „Ablauf und Kanäle“ und `cicd.html` DE+EN sagen, dass `:latest` erst mit Stable kommt; `release.md` schränkt `install.sh` wie `cicd.html` ein (liest `releases/latest` nur ohne lokalen Checkout); Nit aus dem Branch-Review: EN `cicd.html` (~:517) „when that happens is set out in“. Die CHANGELOG-Zeile aus T2 entsprechend anpassen. Ein Beweis am echten Tag ist erst beim Beta möglich; das nennt der Commit-Body.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: .claude/rules/release.md · docs/developer/cicd.html + EN · CHANGELOG
