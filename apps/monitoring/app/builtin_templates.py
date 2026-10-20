@@ -191,6 +191,28 @@ BUILTIN_TEMPLATES: list[dict] = [
         ],
         "alert_definitions": [],
     },
+    # Opt-in and never suggested (template_suggestions): on a host the monitoring
+    # service cannot reach by ICMP the ping sits at critical. 1-minute interval so
+    # 3 failures are ~3 minutes; the 3 s timeout keeps the worker pool free when
+    # many hosts go down at once.
+    {
+        "slug": "host-ping",
+        "version": 1,
+        "name": "Host Ping",
+        "description": "Alerts when the host stops answering ping, also without an agent.",
+        "check_definitions": [
+            {
+                "def_id": "host-ping",
+                "name": "Host Ping",
+                "check_type": "ping",
+                "config": {"target": "{{hostname}}", "timeout": 3},
+                "interval": "1m",
+                "severity": "critical",
+                "consecutive_fails": 3,
+            }
+        ],
+        "alert_definitions": [],
+    },
 ]
 
 

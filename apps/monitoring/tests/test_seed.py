@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Built-in template seeding (T5): a fresh DB gets the five standard templates
+"""Built-in template seeding (T5): a fresh DB gets the six standard templates
 exactly once; the tombstone in monitor_seed_state guarantees that user
 deletions and edits are never overridden by a later startup. The definitions
 themselves must pass the same schema boundary as user-created templates.
@@ -48,7 +48,7 @@ def db():
 
 def test_fresh_seed_creates_all_builtins(db):
     created = seed_builtin_templates(db)
-    assert created == len(BUILTIN_TEMPLATES) == 5
+    assert created == len(BUILTIN_TEMPLATES) == 6
 
     templates = db.query(MonitorTemplate).all()
     assert {t.builtin_slug for t in templates} == {t["slug"] for t in BUILTIN_TEMPLATES}
@@ -71,9 +71,9 @@ def test_fresh_seed_creates_all_builtins(db):
 
 
 def test_second_run_is_idempotent(db):
-    assert seed_builtin_templates(db) == 5
+    assert seed_builtin_templates(db) == 6
     assert seed_builtin_templates(db) == 0
-    assert db.query(MonitorTemplate).count() == 5
+    assert db.query(MonitorTemplate).count() == 6
 
 
 def test_deleted_builtin_stays_deleted(db):
@@ -87,6 +87,28 @@ def test_deleted_builtin_stays_deleted(db):
         db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "linux-base").first()
         is None
     )
+
+
+def test_install_from_before_host_ping_gets_it_on_the_next_start(db, monkeypatch):
+    monkeypatch.setattr(
+        builtin_templates,
+        "BUILTIN_TEMPLATES",
+        [t for t in BUILTIN_TEMPLATES if t["slug"] != "host-ping"],
+    )
+    assert seed_builtin_templates(db) == 5
+    docker = db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "docker-host").one()
+    db.delete(docker)
+    db.commit()
+    monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", BUILTIN_TEMPLATES)
+
+    # Only the new one; the one the user deleted stays deleted.
+    assert seed_builtin_templates(db) == 1
+    host_ping = db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "host-ping").one()
+    assert (host_ping.name, host_ping.builtin_version) == ("Host Ping", 1)
+    assert [d["def_id"] for d in json.loads(host_ping.check_definitions)] == ["host-ping"]
+    assert {t.builtin_slug for t in db.query(MonitorTemplate)} == {
+        t["slug"] for t in BUILTIN_TEMPLATES
+    } - {"docker-host"}
 
 
 def test_user_edit_is_preserved(db):
@@ -218,6 +240,7 @@ def test_shipped_definitions_change_only_with_a_new_version():
         "proxmox-host": (1, "e76eb40daf8b1dffac8dce22b6d174fd25e7eaa44c515810b4aad092260c8b98"),
         "docker-host": (1, "a54b94104244cb22a229e2c67501f546300e40886c552189466c1f3f89cf0d19"),
         "zfs-storage": (1, "2cb8243af6f0e31ac72ae4c526b601a4dd7480408f624d390e83ebc24d0d6932"),
+        "host-ping": (1, "394189d1372ffe17265dfa60b8ed25909f858b0259fbc5b30fb9b572eb17c185"),
     }
     assert {
         t["slug"]: (t["version"], definitions_hash(t["check_definitions"], t["alert_definitions"]))

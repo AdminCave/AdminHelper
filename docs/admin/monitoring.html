@@ -230,7 +230,7 @@
           </div>
 
           <h3>Standard-Templates</h3>
-          <p>Beim ersten Start seedet der Monitoring-Dienst fünf englischsprachige Standard-Templates. Die Schwellwerte folgen dem Konsens gängiger Werkzeuge (Zabbix, Netdata, Checkmk) plus Backblaze-SMART-Statistiken:</p>
+          <p>Beim ersten Start seedet der Monitoring-Dienst sechs englischsprachige Standard-Templates. Die Schwellwerte folgen dem Konsens gängiger Werkzeuge (Zabbix, Netdata, Checkmk) plus Backblaze-SMART-Statistiken:</p>
           <table>
             <thead><tr><th>Template</th><th>Inhalt</th></tr></thead>
             <tbody>
@@ -239,9 +239,14 @@
               <tr><td><strong>Proxmox Host</strong></td><td>Proxmox Backups (Backup-Alter &lt; 26 h)</td></tr>
               <tr><td><strong>Docker Host</strong></td><td>Docker Health (Container nach ihrem Ende und Ausfall des Daemons, siehe <a href="#docker-health">Docker-Check</a>)</td></tr>
               <tr><td><strong>ZFS Storage</strong></td><td>ZFS Health (Pool-State + Kapazität 80/90, Ausfall von <code>zpool</code>)</td></tr>
+              <tr><td><strong>Host Ping</strong></td><td>Host Ping (<code>ping</code> auf den Hostnamen des Servers jede Minute, Timeout 3 s, <code>critical</code> nach 3 Fehlschlägen in Folge ≈ 3 min): meldet den Ausfall eines Hosts auch ohne Agent</td></tr>
             </tbody>
           </table>
-          <p>Das Seeding ist <strong>einmalig</strong> pro Template: Ein gelöschtes Standard-Template legt ein späterer Neustart nicht wieder an. Die Plugin-Templates (Proxmox/Docker/ZFS) sind bewusst getrennt: auf einem Host ohne das Subsystem stünde der Check dauerhaft auf <code>unknown</code>.</p>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Host Ping nur Hosts zuweisen, die der Monitoring-Dienst per ICMP erreicht</div><p>Ein <code>critical</code> Host Ping unterdrückt alle übrigen Alarme seines Servers (Host-down-Unterdrückung, siehe <a href="#alert-verhalten">Alert-Verhalten</a>). Erreicht der Monitoring-Dienst den Host nicht per ICMP, etwa weil er nur über FRP erreichbar ist oder eine Firewall ICMP filtert, steht der Ping dauerhaft auf <code>critical</code>: Dann meldet nur er, jeder andere Alarm des Servers bleibt stumm. Ein IPv6-Literal als Hostname nimmt der <code>ping</code>-Check nicht an (erlaubt sind Buchstaben, Ziffern, <code>.</code>, <code>_</code> und <code>-</code>); der Check bleibt dann auf <code>unknown</code> und meldet keinen Ausfall.</p></div>
+          </div>
+          <p>Das Seeding ist <strong>einmalig</strong> pro Template: Ein gelöschtes Standard-Template legt ein späterer Neustart nicht wieder an. Ein Standard-Template, das ein Update neu mitbringt (wie Host Ping), legt der nächste Start auch in einer bestehenden Installation an. Die Plugin-Templates (Proxmox/Docker/ZFS) sind bewusst getrennt: auf einem Host ohne das Subsystem stünde der Check dauerhaft auf <code>unknown</code>. Auch Host Ping gehört zu keinem der beiden „— Standard“-Templates und wird nie vorgeschlagen (siehe unten): Man weist es gezielt zu.</p>
           <p>Jedes Standard-Template trägt eine <strong>Version</strong>. Bringt ein Update von AdminHelper eine neuere Version mit, gilt beim Start des Monitoring-Dienstes:</p>
           <ul>
             <li><strong>Unverändert</strong> (Check- und Alert-Definitionen wie zuletzt ausgeliefert): Der Dienst übernimmt die neuen Definitionen und synchronisiert alle zugewiesenen Server; angepasste Felder einzelner Checks bleiben. Name und Beschreibung des Templates zählen dabei nicht: Ein nur umbenanntes Standard-Template wird aktualisiert und behält seinen Namen.</li>

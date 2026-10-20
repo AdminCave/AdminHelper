@@ -230,7 +230,7 @@
           </div>
 
           <h3>Standard templates</h3>
-          <p>On first startup the monitoring service seeds five standard templates (English names). The thresholds distill the consensus of common tools (Zabbix, Netdata, Checkmk) plus Backblaze SMART statistics:</p>
+          <p>On first startup the monitoring service seeds six standard templates (English names). The thresholds distill the consensus of common tools (Zabbix, Netdata, Checkmk) plus Backblaze SMART statistics:</p>
           <table>
             <thead><tr><th>Template</th><th>Contents</th></tr></thead>
             <tbody>
@@ -239,9 +239,14 @@
               <tr><td><strong>Proxmox Host</strong></td><td>Proxmox Backups (backup age &lt; 26 h)</td></tr>
               <tr><td><strong>Docker Host</strong></td><td>Docker Health (containers by how they ended and daemon outages, see <a href="#docker-health">Docker check</a>)</td></tr>
               <tr><td><strong>ZFS Storage</strong></td><td>ZFS Health (pool state + capacity 80/90, <code>zpool</code> outages)</td></tr>
+              <tr><td><strong>Host Ping</strong></td><td>Host Ping (<code>ping</code> to the server's hostname every minute, timeout 3 s, <code>critical</code> after 3 failures in a row ≈ 3 min): reports a host outage also without an agent</td></tr>
             </tbody>
           </table>
-          <p>Seeding is <strong>one-time</strong> per template: a later restart does not create a deleted standard template again. The plugin templates (Proxmox/Docker/ZFS) are deliberately separate: on a host without the subsystem the check would sit at <code>unknown</code> forever.</p>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Assign Host Ping only to hosts the monitoring service reaches by ICMP</div><p>A <code>critical</code> Host Ping suppresses all other alerts of its server (host-down suppression, see <a href="#alert-behavior">Alert behavior</a>). If the monitoring service cannot reach the host by ICMP, for instance because it is reachable only through FRP or a firewall filters ICMP, the ping sits at <code>critical</code> for good: then only it reports, and every other alert of the server stays silent. The <code>ping</code> check does not take an IPv6 literal as hostname (letters, digits, <code>.</code>, <code>_</code> and <code>-</code> are allowed); the check then stays at <code>unknown</code> and reports no outage.</p></div>
+          </div>
+          <p>Seeding is <strong>one-time</strong> per template: a later restart does not create a deleted standard template again. A standard template that an update newly ships (like Host Ping) is created by the next start in an existing installation as well. The plugin templates (Proxmox/Docker/ZFS) are deliberately separate: on a host without the subsystem the check would sit at <code>unknown</code> forever. Host Ping, too, belongs to neither &ldquo;— Standard&rdquo; template and is never suggested (see below): you assign it on purpose.</p>
           <p>Every standard template carries a <strong>version</strong>. When an AdminHelper update ships a newer version, the monitoring service does this at startup:</p>
           <ul>
             <li><strong>Unedited</strong> (check and alert definitions as last shipped): the service takes the new definitions and syncs all assigned servers; customized fields of single checks stay. The template's name and description do not count: a standard template that was only renamed is updated and keeps its name.</li>

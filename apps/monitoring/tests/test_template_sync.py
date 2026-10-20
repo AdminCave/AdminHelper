@@ -4,8 +4,9 @@
 
 """template_sync (audit gap: most complex monitoring logic, previously
 untested): variable substitution, the create/update/delete diffing across
-servers, assignment removal and full server cleanup, and the user's changes and
-deleted template checks the sync keeps (R-0420)."""
+servers, assignment removal and full server cleanup, the user's changes and
+deleted template checks the sync keeps (R-0420), and the check the shipped Host
+Ping template creates (R-0424)."""
 
 import json
 import uuid
@@ -16,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import template_sync
+from app.builtin_templates import seed_builtin_templates
 from app.models import (
     Base,
     MonitorAgentKey,
@@ -575,3 +577,28 @@ def test_sync_keeps_a_consecutive_oks_the_user_changed(db):
     check = db.get(MonitorCheck, cid)
     assert (check.consecutive_oks, check.severity) == (5, "warning")
     assert json.loads(check.overridden_fields) == ["consecutive_oks"]
+
+
+# --- the shipped Host Ping template (R-0424) ------------------------------------
+
+
+def test_host_ping_pings_the_assigned_hostname_every_minute(db):
+    seed_builtin_templates(db)
+    tpl = db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "host-ping").one()
+
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+
+    check = db.query(MonitorCheck).one()
+    assert (check.check_type, check.template_def_id, check.name) == (
+        "ping",
+        "host-ping",
+        "Host Ping",
+    )
+    assert json.loads(check.config) == {"target": "web01.example", "timeout": 3}
+    assert (check.interval, check.severity, check.consecutive_fails, check.consecutive_oks) == (
+        "1m",
+        "critical",
+        3,
+        2,
+    )
+    assert db.scheduled_calls == [(check.id, "ping")]

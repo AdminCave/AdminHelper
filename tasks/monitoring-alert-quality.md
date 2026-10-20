@@ -74,8 +74,10 @@ Abhängt von: T1, T5
 
 ## Block C — Host-Ping
 
-### T7 — Mitgeliefertes Template „Host Ping“  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_template_suggestions.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+### T7 — Mitgeliefertes Template „Host Ping“  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_template_suggestions.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html, README.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @cecde8a5 2026-10-20T10:11:19+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T7.verdict.json)
 Änderung: Sechster Eintrag am Ende von `BUILTIN_TEMPLATES` (`builtin_templates.py:104-194`) wie in der Spec („Host-Ping und Host-down“): Slug `host-ping`, Version 1, ein `ping`-Check `def_id` `host-ping`, `target` `{{hostname}}`, `timeout` 3, Intervall `1m`, `critical`, `consecutive_fails` 3. Tests: Seed legt sechs Templates an (`test_seed.py:51`, `:74`, `:76`), der gepinnte Hash von `host-ping` (Version 1) kommt in die Tabelle `:215-221`, die fünf anderen bleiben; Zuweisen an einen Server erzeugt einen `ping`-Check mit `target` = Hostname der Zuweisung und `interval` `1m`; `host-ping` erscheint nie in den Vorschlägen.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_seed.py tests/test_template_sync.py tests/test_template_suggestions.py
 Doku: docs/admin/monitoring.html + EN (Standard-Templates `:231-243`: „sechs“, Zeile „Host Ping“ mit Warnung: nur Hosts zuweisen, die der Monitoring-Dienst per ICMP erreicht — nicht nur über FRP, ohne ICMP-Filter, Hostname kein IPv6-Literal —, sonst unterdrückt der `critical` Ping alle übrigen Alarme des Servers), CHANGELOG.md (Added: Template „Host Ping“)
