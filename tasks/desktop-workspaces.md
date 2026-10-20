@@ -153,11 +153,18 @@ Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Command-Tabe
 Abhängt von: T10, T13
 
 ### T15 — Login und Registrierung an die Workspace-URL gebunden; dieselbe Anmeldung nur einmal  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/launcher.rs
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/enrollment.rs
 Änderung: `login` (`commands.rs:295`) und `enroll_with_token` (`:120`) nehmen nur die URL des Workspaces an; hat er noch keine, gilt die übergebene (gespeichert wird sie nach dem Login über `save_settings`, T5). `login` lehnt außerdem ab, wenn ein anderer Workspace derselben normierten Origin (Schema, Host ohne Groß/Klein, Port mit Standardport) denselben `lastUsername` (ohne Groß/Klein) trägt; der Fehlertext nennt den anderen Workspace. Beides als reine Funktionen in `workspace.rs`. Tests (`login_binding_*`): andere URL → abgewiesen; ohne Workspace-URL → angenommen; gleiche Origin und Benutzer in anderem Workspace → abgewiesen; anderer Benutzer → erlaubt; `https://H` und `https://h:443/` gleich. Nachtrag (security T14): Der Launcher darf heute die URL eines schon eingeschriebenen, geschlossenen Workspace ändern; ein späterer Purge schickt den Widerruf dann an die neue URL und meldet bei Erfolg eines fremden Servers `Revoked`, obwohl der ausstellende Server nie widerrufen hat. Mit der Bindung an die Workspace-URL: Ändert sich die Origin eines Workspace mit Geräte-Identität, wird die Identität vorher zurückgesetzt (Widerruf gegen die alte URL) oder die Änderung abgelehnt; Test dazu. Dazu (Nit): `workspace::context` und `launcher::edit` reichen Fehler von `Meta::load` roh weiter; wie `mark_opening` über `workspace::failure` (Datei und Position, kein Wert).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- login_binding
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T14
+
+### T38 — Widerruf der Geräte-Identität nur über HTTPS und an die Workspace-URL gebunden  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/workspace.rs
+Änderung: Kevin 2026-10-20 (Härtung zur Bindung an die Workspace-URL, aus dem security-Review zu T15): Der Widerruf der Geräte-Identität geht nur über HTTPS (`validate_https_url` statt der Prüfung, die Loopback-HTTP zulässt). `reset_device_identity` nimmt die URL nicht mehr aus der Webview, sondern die des Workspace (wie `sign_in_target` in T15); dasselbe für `reset_server_cert_pin` und `check_server_cert`, soweit sie eine Server-URL des Workspace betreffen. Das Speichern der ersten oder einer geänderten Server-URL über die Einstellungen (`storage::meta_with`) wird bei vorhandener Geräte-Identität wie in `launcher::edit` abgelehnt und die URL dort validiert. Fehlertexte nennen höchstens die Origin, nie die ganze gespeicherte URL. Tests: Widerruf gegen eine HTTP-URL wird nicht versucht (kein Revoked); `reset_device_identity` mit fremder URL wirkt auf die Workspace-URL bzw. wird abgelehnt; `meta_with` lehnt einen Origin-Wechsel bei Identität ab; Fehlertext ohne Userinfo.
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- login_binding
+Doku: keine (intern; Doku mit T33)
+Abhängt von: T15
 
 ## Block C — Windows-RDP-Passwörter
 
