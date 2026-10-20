@@ -536,3 +536,42 @@ def test_cleanup_server_removes_the_servers_tombstones(db):
     assert [(t.template_id, t.server_id) for t in db.query(MonitorCheckTombstone)] == [
         (tpl_a.id, "srv-2")
     ]
+
+
+# --- consecutive_oks is a template field (R-0424) -------------------------------
+
+
+def test_sync_writes_the_definitions_consecutive_oks_and_2_without_the_key(db):
+    # A definition without the key holds the default, not the check's last value:
+    # dropping the key from the template takes the check back to 2.
+    tpl = _template(db, [{**PING_DEF, "consecutive_oks": 1}])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    assert db.get(MonitorCheck, cid).consecutive_oks == 1
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "consecutive_oks": 4}])
+    db.commit()
+    sync_template(db, tpl)
+    assert db.get(MonitorCheck, cid).consecutive_oks == 4
+
+    tpl.check_definitions = json.dumps([PING_DEF])
+    db.commit()
+    sync_template(db, tpl)
+    check = db.get(MonitorCheck, cid)
+    assert (check.consecutive_oks, json.loads(check.overridden_fields)) == (2, [])
+
+
+def test_sync_keeps_a_consecutive_oks_the_user_changed(db):
+    tpl = _template(db, [PING_DEF])
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    cid = db.query(MonitorCheck).one().id
+    checks_router.update_check(cid, CheckUpdate(consecutive_oks=5), db)
+    assert json.loads(db.get(MonitorCheck, cid).overridden_fields) == ["consecutive_oks"]
+
+    tpl.check_definitions = json.dumps([{**PING_DEF, "consecutive_oks": 1, "severity": "warning"}])
+    db.commit()
+    sync_template(db, tpl)
+
+    check = db.get(MonitorCheck, cid)
+    assert (check.consecutive_oks, check.severity) == (5, "warning")
+    assert json.loads(check.overridden_fields) == ["consecutive_oks"]

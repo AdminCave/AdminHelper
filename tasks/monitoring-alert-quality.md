@@ -44,8 +44,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_checks_crud
 Doku: docs/admin/monitoring.html + EN (Check anlegen `:119`: `consecutive_oks` neben `consecutive_fails`)
 Abhängt von: T1
 
-### T4 — `consecutive_oks` als Template-Feld: Sync, Anpassung, Zurücksetzen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_template_overrides.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+### T4 — `consecutive_oks` als Template-Feld: Sync, Anpassung, Zurücksetzen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/template_sync.py, apps/monitoring/tests/test_template_sync.py, apps/monitoring/tests/test_template_overrides.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @6addc833 2026-10-20T08:38:34+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T4.verdict.json)
 Änderung: `consecutive_oks` ans Ende von `TEMPLATE_CHECK_FIELDS` (`template_sync.py:101-110`), in `_template_check_values` mit der Konstante aus T3 als Default (`:113-126`) und in die Sync-Werte (`:449-458`); `reset_check` (`routers/checks.py:305-332`) folgt daraus. Tests: Sync schreibt den Wert der Definition, eine Definition ohne Schlüssel ergibt 2; ein am Check geänderter Wert ist „angepasst“ und übersteht den Sync; Zurücksetzen auf den Template-Wert hebt die Anpassung auf; `POST /checks/{id}/reset` setzt das Feld zurück. Die gepinnten Hashes der fünf Standard-Templates (`tests/test_seed.py:209-225`) bleiben unverändert grün — das belegt, dass der Schema-Default den Hash nicht ändert.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_template_sync.py tests/test_template_overrides.py tests/test_seed.py
 Doku: docs/admin/monitoring.html + EN (angepasste Felder `:217`: „OKs bis Entwarnung“), docs/developer/monitoring.html + EN (`TEMPLATE_CHECK_FIELDS`, `:184`)

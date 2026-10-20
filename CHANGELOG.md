@@ -960,7 +960,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Host-down stumm gebliebenes, entwarnt beim ersten `ok` still wie bisher. Bestehende Checks bekommen mit der
   Migration `c3e5a7b9d1f2` den Default 2: Ihre Entwarnung kommt ein Check-Intervall spaeter als bisher, bei einem
   Check mit Intervall `1h` eine Stunde; 1 ist das bisherige Verhalten. Die Host-down-Unterdrueckung faellt
-  entsprechend erst nach der Haltezeit des Heartbeats. Doku: Admin- und Entwickler-Doku Monitoring (DE+EN).
+  entsprechend erst nach der Haltezeit des Heartbeats. `consecutive_oks` (1–100) laesst sich je Check und je
+  Template-Definition setzen, eine Definition ohne das Feld gilt als 2; an einem Template-Check geaendert gilt es als
+  angepasst, der Sync laesst es stehen, und „Auf Template zuruecksetzen“ nimmt den Wert des Templates zurueck. Doku:
+  Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
