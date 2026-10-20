@@ -506,6 +506,44 @@ class TestExcludeVmids:
         validate_check_config("proxmox_backup", {"exclude_vmids": [vmid]})
 
 
+_V3_THRESHOLDS = {
+    "swap_warn": 80,
+    "swap_crit": 95,
+    "inode_warn": 80,
+    "inode_crit": 90,
+    "load_warn": 1.5,
+    "load_crit": 3.0,
+}
+
+
+class TestAgentResourcesV3Thresholds:
+    """Swap, inodes and load per CPU (agent report v3): thresholds with the defaults
+    the checker uses, from 0 to 100, numbers only."""
+
+    def test_defaults(self):
+        config = CONFIG_MODELS["agent_resources"]()
+        assert {key: getattr(config, key) for key in _V3_THRESHOLDS} == _V3_THRESHOLDS
+
+    @pytest.mark.parametrize("value", [0, 0.5, 99.5, 100])
+    @pytest.mark.parametrize("key", _V3_THRESHOLDS)
+    def test_bounds_are_accepted(self, key, value):
+        validate_check_config("agent_resources", {key: value})
+
+    @pytest.mark.parametrize("value", [-0.1, 100.1])
+    @pytest.mark.parametrize("key", _V3_THRESHOLDS)
+    def test_outside_the_bounds_is_rejected(self, key, value):
+        with pytest.raises(
+            ValueError, match=rf"\s{key}: Input should be (greater|less) than or equal to"
+        ):
+            validate_check_config("agent_resources", {key: value})
+
+    @pytest.mark.parametrize("value", ["1.5", "80", True, False], ids=repr)
+    @pytest.mark.parametrize("key", _V3_THRESHOLDS)
+    def test_string_and_bool_are_rejected(self, key, value):
+        with pytest.raises(ValueError, match=rf"\s{key}: Input should be a valid number"):
+            validate_check_config("agent_resources", {key: value})
+
+
 class TestAlertOnUnavailableTemplates:
     """The key must not make a docker/zfs template check or a built-in look changed
     (R-0420): configs are stored as sent, never filled with the schema defaults, so

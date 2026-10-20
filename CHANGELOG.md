@@ -9,6 +9,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Monitoring: `agent_resources` bewertet Swap, Inodes und Load je CPU (R-0423):** Neben CPU, RAM, Platten und
+  Temperaturen bewertet der Check die Swap-Belegung (`swap_warn`/`swap_crit`, Default 80/95 %, nur mit Swap-Geraet),
+  die Inode-Belegung je Platte (`inode_warn`/`inode_crit`, 80/90 %) und die Load je CPU, `load_5m` geteilt durch die
+  Zahl der logischen CPUs (`load_warn`/`load_crit`, 1.5/3.0). Swap und Inodes haben die Hysterese der uebrigen
+  Prozentwerte, die Load hat keine. Die Defaults gelten auch fuer bestehende Checks ohne diese Schluessel. Die Werte
+  meldet der Agent ab Report-Version 3 und nur unter Linux; fuer aeltere Agents und Windows-Hosts bleiben die drei
+  unbewertet, ohne `unknown`. Die Check-Details tragen dazu `swap`, `swap_total_mb`, `swap_used_mb`, `cpu_count`,
+  `load_per_cpu` und je Platte `inodes_percent`. Doku: Monitoring-Administration (DE+EN).
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter

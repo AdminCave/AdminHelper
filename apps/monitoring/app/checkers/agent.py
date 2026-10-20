@@ -244,8 +244,8 @@ def _grade(
 ) -> tuple[str, str | None]:
     """Escalate `status` for one threshold measurement: >= crit -> critical, >= warn
     -> warning (never downgrading an already-critical status). Appends the breached
-    `label` plus the crossed threshold to `problems`. Shared by the CPU/RAM/disk/
-    temperature checks so the escalation rule lives in one place (2.31).
+    `label` plus the crossed threshold to `problems`. Shared by every metric of
+    agent_resources so the escalation rule lives in one place (2.31).
 
     Hysteresis (T6): `warn_release`/`crit_release` lower the respective threshold
     for a metric that already sat at that level last round — a value hovering at
@@ -271,7 +271,13 @@ class AgentResourcesChecker:
         "memory_warn": 80,
         "memory_crit": 95,
         "disk_warn": 85,
-        "disk_crit": 95
+        "disk_crit": 95,
+        "swap_warn": 80,
+        "swap_crit": 95,
+        "inode_warn": 80,
+        "inode_crit": 90,
+        "load_warn": 1.5,
+        "load_crit": 3.0
     }
     """
 
@@ -304,9 +310,17 @@ class AgentResourcesChecker:
             prev_problems = {}
         problem_levels: dict[str, str] = {}
 
-        def grade(key: str, value: float, warn: float, crit: float, label: str, unit: str):
+        def grade(
+            key: str,
+            value: float,
+            warn: float,
+            crit: float,
+            label: str,
+            unit: str,
+            hysteresis: bool = True,
+        ):
             nonlocal status
-            prev_level = prev_problems.get(key)
+            prev_level = prev_problems.get(key) if hysteresis else None
             warn_rel = hysteresis_pp if prev_level in ("warning", "critical") else 0.0
             crit_rel = hysteresis_pp if prev_level == "critical" else 0.0
             status, level = _grade(
@@ -331,6 +345,37 @@ class AgentResourcesChecker:
             mem_warn = config.get("memory_warn", 80)
             grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
 
+        # Swap (agent v3, Linux): a host without a swap device sends swap_total_mb 0.
+        swap = agent_number(resources.get("swap_percent"))
+        swap_total = agent_number(resources.get("swap_total_mb"))
+        if swap is not None and swap_total is not None and swap_total > 0:
+            swap_crit = config.get("swap_crit", 95)
+            swap_warn = config.get("swap_warn", 80)
+            grade("swap", swap, swap_warn, swap_crit, f"Swap {swap}%", "%")
+
+        # Load per CPU (agent v3, Linux): older agents send load_5m without cpu_count.
+        # No hysteresis: hysteresis_pp is in percentage points, and load_5m already
+        # averages over the push interval.
+        cpu_count = agent_number(resources.get("cpu_count"))
+        if not isinstance(cpu_count, int) or cpu_count < 1:
+            cpu_count = None
+        load_5m = agent_number(resources.get("load_5m"))
+        load_per_cpu = None
+        if cpu_count is not None and load_5m is not None:
+            # Rounded before grading, so the label shows the value that was graded.
+            load_per_cpu = round(load_5m / cpu_count, 2)
+            load_crit = config.get("load_crit", 3.0)
+            load_warn = config.get("load_warn", 1.5)
+            grade(
+                "load",
+                load_per_cpu,
+                load_warn,
+                load_crit,
+                f"Load {load_per_cpu}/CPU",
+                "/CPU",
+                hysteresis=False,
+            )
+
         # Disks — filter pseudo filesystems server-side
         # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
         raw_disks = capped_objects(resources.get("disks"))
@@ -338,6 +383,8 @@ class AgentResourcesChecker:
 
         disk_crit = config.get("disk_crit", 95)
         disk_warn = config.get("disk_warn", 85)
+        inode_crit = config.get("inode_crit", 90)
+        inode_warn = config.get("inode_warn", 80)
         for disk in disks:
             pct = entry_number(disk, "percent", 0)
             mount = entry_text(disk, "mount", "?")
@@ -345,6 +392,17 @@ class AgentResourcesChecker:
             # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
             # duplicate series in a second schema (1.18); the value is still graded below.
             grade(f"disk:{mount}", pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%")
+            # Agent v3 on Linux, and only for a filesystem that reports inodes.
+            inodes = agent_number(disk.get("inodes_percent"))
+            if inodes is not None:
+                grade(
+                    f"inode:{mount}",
+                    inodes,
+                    inode_warn,
+                    inode_crit,
+                    f"Inodes {mount} {inodes}%",
+                    "%",
+                )
 
         # Temperatures (optional — VMs provide no sensor data)
         temperatures = capped_objects(resources.get("temperatures"))
@@ -386,12 +444,18 @@ class AgentResourcesChecker:
             "problems": problem_levels,
             "memory_total_mb": agent_number(resources.get("memory_total_mb")),
             "memory_used_mb": agent_number(resources.get("memory_used_mb")),
+            "swap": swap,
+            "swap_total_mb": swap_total,
+            "swap_used_mb": agent_number(resources.get("swap_used_mb")),
+            "cpu_count": cpu_count,
+            "load_per_cpu": load_per_cpu,
             "disks": [
                 {
                     "mount": entry_text(d, "mount", "/"),
                     "percent": entry_number(d, "percent", 0),
                     "total_gb": agent_number(d.get("total_gb")),
                     "used_gb": agent_number(d.get("used_gb")),
+                    "inodes_percent": agent_number(d.get("inodes_percent")),
                 }
                 for d in disks
             ],

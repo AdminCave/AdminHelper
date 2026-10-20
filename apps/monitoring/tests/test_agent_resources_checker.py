@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """AgentResourcesChecker.evaluate — the threshold logic run against every agent
-push (CPU/RAM/disk/temperature). It decides the alert status, so the escalation
+push (CPU/RAM/swap/load/disk/inodes/temperature). It decides the alert status, so the escalation
 (ok → warning → critical, critical never downgraded), the >= boundary, the
 pseudo-filesystem filter, and per-sensor temperature overrides are worth pinning."""
 
@@ -11,6 +11,7 @@ import math
 
 import pytest
 
+from app.check_configs import AgentResourcesConfig
 from app.checkers import agent
 from app.checkers.agent import AgentResourcesChecker
 
@@ -138,6 +139,224 @@ class TestHysteresis:
         assert m["_details"]["problems"] == {}
 
 
+# --- Swap, inodes and load per CPU (agent report v3) ---
+_SWAP = {"swap_total_mb": 2048}
+
+
+def _inodes(value, mount="/"):
+    return {"disks": [{"mount": mount, "fstype": "ext4", "percent": 10, "inodes_percent": value}]}
+
+
+def _load(load_5m, cpu_count=8):
+    return {"load_5m": load_5m, "cpu_count": cpu_count}
+
+
+@pytest.mark.parametrize(
+    ("resources", "status", "message"),
+    [
+        pytest.param({**_SWAP, "swap_percent": 79.9}, "ok", "OK", id="swap-below-warn"),
+        pytest.param(
+            {**_SWAP, "swap_percent": 80}, "warning", "Swap 80% (>=80%)", id="swap-at-warn"
+        ),
+        pytest.param(
+            {**_SWAP, "swap_percent": 94.9}, "warning", "Swap 94.9% (>=80%)", id="swap-above-warn"
+        ),
+        pytest.param(
+            {**_SWAP, "swap_percent": 95}, "critical", "Swap 95% (>=95%)", id="swap-at-crit"
+        ),
+        pytest.param(
+            {**_SWAP, "swap_percent": 99}, "critical", "Swap 99% (>=95%)", id="swap-above-crit"
+        ),
+        pytest.param(_inodes(79.9), "ok", "OK", id="inodes-below-warn"),
+        pytest.param(_inodes(80), "warning", "Inodes / 80% (>=80%)", id="inodes-at-warn"),
+        pytest.param(_inodes(89.9), "warning", "Inodes / 89.9% (>=80%)", id="inodes-above-warn"),
+        pytest.param(_inodes(90), "critical", "Inodes / 90% (>=90%)", id="inodes-at-crit"),
+        pytest.param(_inodes(99), "critical", "Inodes / 99% (>=90%)", id="inodes-above-crit"),
+        # 11.9 / 8 = 1.4875, rounded to 1.49.
+        pytest.param(_load(11.9), "ok", "OK", id="load-below-warn"),
+        pytest.param(_load(12), "warning", "Load 1.5/CPU (>=1.5/CPU)", id="load-at-warn"),
+        pytest.param(_load(20), "warning", "Load 2.5/CPU (>=1.5/CPU)", id="load-above-warn"),
+        pytest.param(_load(24), "critical", "Load 3.0/CPU (>=3.0/CPU)", id="load-at-crit"),
+        pytest.param(_load(32), "critical", "Load 4.0/CPU (>=3.0/CPU)", id="load-above-crit"),
+    ],
+)
+def test_new_metric_against_the_default_thresholds(resources, status, message):
+    got_status, got_message, _metrics = CHECKER.evaluate({}, {"resources": resources})
+    assert (got_status, got_message) == (status, message)
+
+
+@pytest.mark.parametrize(
+    ("config", "resources", "message"),
+    [
+        pytest.param(
+            {"swap_warn": 50, "swap_crit": 60},
+            {**_SWAP, "swap_percent": 55},
+            "Swap 55% (>=50%)",
+            id="swap",
+        ),
+        pytest.param(
+            {"inode_warn": 50, "inode_crit": 60}, _inodes(55), "Inodes / 55% (>=50%)", id="inodes"
+        ),
+        pytest.param(
+            {"load_warn": 0.5, "load_crit": 1}, _load(6), "Load 0.75/CPU (>=0.5/CPU)", id="load"
+        ),
+    ],
+)
+def test_new_metric_follows_its_configured_thresholds(config, resources, message):
+    assert CHECKER.evaluate(config, {"resources": resources})[:2] == ("warning", message)
+
+
+# One report per new metric at each default threshold and just below it.
+_AT_THE_DEFAULTS = [
+    *({**_SWAP, "swap_percent": v} for v in (79.9, 80, 94.9, 95)),
+    *(_inodes(v) for v in (79.9, 80, 89.9, 90)),
+    *(_load(v) for v in (11.9, 12, 23.9, 24)),
+]
+
+
+def test_checker_defaults_are_the_config_defaults():
+    # A check stored without the keys is rated as the config schema documents them.
+    defaults = AgentResourcesConfig().model_dump()
+    for resources in _AT_THE_DEFAULTS:
+        report = {"resources": resources}
+        assert CHECKER.evaluate({}, report) == CHECKER.evaluate(defaults, report)
+
+
+@pytest.mark.parametrize(
+    "resources",
+    [
+        pytest.param({"swap_percent": 99, "swap_total_mb": 0}, id="swap-total-0"),
+        pytest.param({"swap_percent": 99}, id="swap-total-missing"),
+        pytest.param({"swap_percent": 99, "swap_total_mb": "2048"}, id="swap-total-str"),
+    ],
+)
+def test_swap_without_a_swap_device_is_not_rated(resources):
+    status, message, metrics = CHECKER.evaluate({}, {"resources": resources})
+    assert (status, message, metrics["_details"]["problems"]) == ("ok", "OK", {})
+
+
+@pytest.mark.parametrize(
+    "cpu_count",
+    [0, -1, True, "8", 8.5, 8.0, None, [8]],
+    ids=["0", "-1", "true", "str", "8.5", "8.0", "null", "list"],
+)
+def test_load_without_a_whole_cpu_count_of_at_least_one_is_not_rated(cpu_count):
+    status, message, metrics = CHECKER.evaluate({}, {"resources": _load(100, cpu_count)})
+    assert (status, message, metrics["_details"]["problems"]) == ("ok", "OK", {})
+    assert (metrics["_details"]["cpu_count"], metrics["_details"]["load_per_cpu"]) == (None, None)
+
+
+def test_load_without_load_5m_is_not_rated():
+    # load_1m and load_15m never count: the load per CPU is load_5m / cpu_count.
+    resources = {"cpu_count": 1, "load_1m": 100, "load_15m": 100}
+    status, message, metrics = CHECKER.evaluate({}, {"resources": resources})
+    assert (status, message, metrics["_details"]["problems"]) == ("ok", "OK", {})
+    assert (metrics["_details"]["cpu_count"], metrics["_details"]["load_per_cpu"]) == (1, None)
+
+
+def test_a_report_without_the_new_fields_is_rated_as_before():
+    # An agent before report v3: load without cpu_count, no swap, no inodes. Status,
+    # message and metrics are those the checker gave before swap, inodes and load were
+    # rated; _details only gains the new keys, empty.
+    report = _report(
+        cpu_percent=12.5,
+        memory_percent=83,
+        memory_total_mb=16000,
+        memory_used_mb=13280,
+        load_1m=40.0,
+        load_5m=40.0,
+        load_15m=40.0,
+        disks=[{"mount": "/", "fstype": "ext4", "percent": 91, "total_gb": 100, "used_gb": 91}],
+        temperatures=[{"sensor": "cpu", "temp_c": 50, "high": 80, "critical": 95}],
+    )
+    status, message, metrics = CHECKER.evaluate({}, report, {"problems": {"memory": "warning"}})
+    assert (status, message) == ("warning", "RAM 83% (>=80%); Disk / 91% (>=85%)")
+    assert metrics == {
+        "agent_cpu_percent": 12.5,
+        "agent_memory_percent": 83,
+        "_details": {
+            "cpu": 12.5,
+            "memory": 83,
+            "problems": {"memory": "warning", "disk:/": "warning"},
+            "memory_total_mb": 16000,
+            "memory_used_mb": 13280,
+            "swap": None,
+            "swap_total_mb": None,
+            "swap_used_mb": None,
+            "cpu_count": None,
+            "load_per_cpu": None,
+            "disks": [
+                {
+                    "mount": "/",
+                    "percent": 91,
+                    "total_gb": 100,
+                    "used_gb": 91,
+                    "inodes_percent": None,
+                }
+            ],
+            "temperatures": [{"sensor": "cpu", "temp_c": 50, "high": 80, "critical": 95}],
+        },
+    }
+
+
+class TestNewMetricHysteresis:
+    """Swap and inodes keep the release band of the other percentages; the load has
+    none (hysteresis_pp is in percentage points, the load per CPU is no percentage)."""
+
+    def test_swap_release_band_keeps_warning(self):
+        prev = {"problems": {"swap": "warning"}}
+        report = {"resources": {**_SWAP, "swap_percent": 75}}
+        assert CHECKER.evaluate({}, report, prev)[0] == "warning"
+
+    def test_swap_below_release_band_recovers(self):
+        prev = {"problems": {"swap": "warning"}}
+        report = {"resources": {**_SWAP, "swap_percent": 69}}
+        assert CHECKER.evaluate({}, report, prev)[0] == "ok"
+
+    def test_swap_critical_keeps_critical_in_release_band(self):
+        prev = {"problems": {"swap": "critical"}}
+        report = {"resources": {**_SWAP, "swap_percent": 90}}
+        assert CHECKER.evaluate({}, report, prev)[0] == "critical"
+
+    def test_inodes_release_band_keeps_warning(self):
+        prev = {"problems": {"inode:/": "warning"}}
+        assert CHECKER.evaluate({}, {"resources": _inodes(75)}, prev)[0] == "warning"
+
+    def test_inodes_below_release_band_recovers(self):
+        prev = {"problems": {"inode:/": "warning"}}
+        assert CHECKER.evaluate({}, {"resources": _inodes(69)}, prev)[0] == "ok"
+
+    def test_inodes_hysteresis_is_per_mount_and_apart_from_the_disk(self):
+        # Neither another mount's inodes nor the same mount's usage lower the
+        # thresholds of the inodes of /.
+        prev = {"problems": {"inode:/data": "warning", "disk:/": "warning"}}
+        assert CHECKER.evaluate({}, {"resources": _inodes(75)}, prev)[0] == "ok"
+
+    @pytest.mark.parametrize("prev_level", ["warning", "critical"])
+    def test_load_has_no_release_band(self, prev_level):
+        # 1.49/CPU is below the warning threshold of 1.5, whatever the last round said.
+        prev = {"problems": {"load": prev_level}}
+        assert CHECKER.evaluate({}, {"resources": _load(11.9)}, prev)[0] == "ok"
+
+    def test_critical_load_is_warning_below_the_critical_threshold(self):
+        prev = {"problems": {"load": "critical"}}
+        assert CHECKER.evaluate({}, {"resources": _load(23.9)}, prev)[0] == "warning"
+
+    def test_new_metrics_are_written_to_the_problems_map(self):
+        resources = {
+            **_SWAP,
+            "swap_percent": 85,
+            **_load(24),
+            **_inodes(95, mount="/var"),
+        }
+        _status, _msg, m = CHECKER.evaluate({}, {"resources": resources})
+        assert m["_details"]["problems"] == {
+            "swap": "warning",
+            "load": "critical",
+            "inode:/var": "critical",
+        }
+
+
 # --- R-0517: a field of the wrong JSON type counts as missing ---
 # What a broken or hijacked agent can put where a number belongs. A regular agent sends
 # numbers; before R-0517 each of these raised in evaluate (the check froze on its old
@@ -175,7 +394,21 @@ def _resources() -> dict:
         "memory_percent": 85,
         "memory_total_mb": 16000,
         "memory_used_mb": 13600,
-        "disks": [{"mount": "/", "fstype": "ext4", "percent": 90, "total_gb": 100, "used_gb": 90}],
+        "swap_percent": 85,
+        "swap_total_mb": 2048,
+        "swap_used_mb": 1741,
+        "cpu_count": 8,
+        "load_5m": 16,
+        "disks": [
+            {
+                "mount": "/",
+                "fstype": "ext4",
+                "percent": 90,
+                "total_gb": 100,
+                "used_gb": 90,
+                "inodes_percent": 85,
+            }
+        ],
         "temperatures": [{"sensor": "cpu", "temp_c": 85, "high": 80, "critical": 95}],
     }
 
@@ -201,8 +434,28 @@ def _without(path: tuple) -> dict:
 @pytest.mark.parametrize("value", _NOT_NUMBERS)
 @pytest.mark.parametrize(
     "path",
-    [("cpu_percent",), ("memory_percent",), ("disks", 0, "percent"), ("temperatures", 0, "temp_c")],
-    ids=["cpu_percent", "memory_percent", "disk-percent", "temp_c"],
+    [
+        ("cpu_percent",),
+        ("memory_percent",),
+        ("swap_percent",),
+        ("swap_total_mb",),
+        ("cpu_count",),
+        ("load_5m",),
+        ("disks", 0, "percent"),
+        ("disks", 0, "inodes_percent"),
+        ("temperatures", 0, "temp_c"),
+    ],
+    ids=[
+        "cpu_percent",
+        "memory_percent",
+        "swap_percent",
+        "swap_total_mb",
+        "cpu_count",
+        "load_5m",
+        "disk-percent",
+        "inodes_percent",
+        "temp_c",
+    ],
 )
 def test_a_number_field_that_is_no_json_number_counts_as_missing(path, value):
     broken = CHECKER.evaluate(T, {"resources": _with(path, value)})
@@ -269,6 +522,7 @@ def test_at_most_500_disks_and_sensors_are_rated():
 _DETAIL_NUMBERS = [
     pytest.param(("memory_total_mb",), None, id="memory_total_mb"),
     pytest.param(("memory_used_mb",), None, id="memory_used_mb"),
+    pytest.param(("swap_used_mb",), None, id="swap_used_mb"),
     pytest.param(("disks", 0, "total_gb"), None, id="total_gb"),
     pytest.param(("disks", 0, "used_gb"), None, id="used_gb"),
     pytest.param(("temperatures", 0, "high"), 0, id="high"),
@@ -304,6 +558,10 @@ def test_detail_numbers_of_a_regular_report():
     _status, _msg, metrics = CHECKER.evaluate(T, {"resources": _resources()})
     details = metrics["_details"]
     assert (details["memory_total_mb"], details["memory_used_mb"]) == (16000, 13600)
-    assert details["disks"] == [{"mount": "/", "percent": 90, "total_gb": 100, "used_gb": 90}]
+    assert (details["swap"], details["swap_total_mb"], details["swap_used_mb"]) == (85, 2048, 1741)
+    assert (details["cpu_count"], details["load_per_cpu"]) == (8, 2.0)
+    assert details["disks"] == [
+        {"mount": "/", "percent": 90, "total_gb": 100, "used_gb": 90, "inodes_percent": 85}
+    ]
     assert details["temperatures"] == [{"sensor": "cpu", "temp_c": 85, "high": 80, "critical": 95}]
     assert_every_reader_reads(details)

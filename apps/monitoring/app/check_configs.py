@@ -68,11 +68,19 @@ class AgentResourcesConfig(_StrictConfig):
     memory_crit: float = Field(95, ge=0, le=100, strict=True)
     disk_warn: float = Field(85, ge=0, le=100, strict=True)
     disk_crit: float = Field(95, ge=0, le=100, strict=True)
+    swap_warn: float = Field(80, ge=0, le=100, strict=True)
+    swap_crit: float = Field(95, ge=0, le=100, strict=True)
+    inode_warn: float = Field(80, ge=0, le=100, strict=True)
+    inode_crit: float = Field(90, ge=0, le=100, strict=True)
+    # Per CPU: load_5m / cpu_count, not a percentage.
+    load_warn: float = Field(1.5, ge=0, le=100, strict=True)
+    load_crit: float = Field(3.0, ge=0, le=100, strict=True)
     temp_warn: float = Field(80, ge=0, le=200, strict=True)
     temp_crit: float = Field(95, ge=0, le=200, strict=True)
     temp_overrides: dict[str, _TempOverride] = {}
     # Entry/release hysteresis in percentage points (T6): once a metric is
-    # warning/critical, its thresholds drop by this much until it clears.
+    # warning/critical, its thresholds drop by this much until it clears. Not for
+    # the load, which is no percentage.
     hysteresis_pp: float = Field(10, ge=0, le=50, strict=True)
 
 
