@@ -284,6 +284,59 @@ def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
     assert args == ("c1", "ok", "critical")
 
 
+@pytest.mark.parametrize(("check_type", "dispatched"), [("agent_ping", 0), ("ping", 1)])
+def test_execute_check_leaves_a_heartbeat_to_the_agent_alert_bundle(
+    monkeypatch, check_type, dispatched
+):
+    # R-0424: a heartbeat that goes critical is not handed to the alert pool; the
+    # discrepancy stays open in monitor_states for flush_agent_alerts, which
+    # bundles agents that go silent together. Every other check type goes on as
+    # before.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    import app.core.database as database_mod
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(
+        ce, "get_checker", lambda _ct: SimpleNamespace(run=lambda cfg: ("critical", "down", None))
+    )
+    submitted = []
+    monkeypatch.setattr(ce._alert_pool, "submit", lambda fn, *a: submitted.append((fn, a)))
+
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                server_id="srv-1",
+                name="c1",
+                check_type=check_type,
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.add(MonitorState(check_id="c1", status="ok", notified_status="ok"))
+        db.commit()
+
+    ce.execute_check("c1")
+
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="c1").one()
+        assert (state.status, state.notified_status) == ("critical", "ok")
+    assert submitted == [(ce._dispatch_alert_bg, ("c1", "ok", "critical"))] * dispatched
+
+
 class TestResolveConfigServerId:
     """T37: hand-created agent_ping/disk_forecast checks carry server_id only
     as a column — the fallback keeps them from sitting at 'unknown' forever."""

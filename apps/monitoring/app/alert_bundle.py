@@ -8,10 +8,13 @@ Bundled alert for agents that stop or resume reporting together
 
 flush_agent_alerts collects the agent heartbeats not reported yet: BUNDLE_MIN or
 more of one kind are claimed and bundled at once, fewer go out one by one once
-they are BUNDLE_WINDOW old. send_bundle reports claimed heartbeats on each
-channel on its own: an alert rule, or the bell per severity level, that would get
-BUNDLE_MIN or more of them gets one message, below that each member gets the
-single message process_alert would send. Not scheduled yet.
+they are BUNDLE_WINDOW old, or sooner when their next check is due before
+(_alone_wait). send_bundle reports claimed heartbeats on each channel on its
+own: an alert rule, or the bell per severity level, that would get BUNDLE_MIN or
+more of them gets one message, below that each member gets the single message
+process_alert would send. The scheduler runs flush_agent_alerts
+every FLUSH_SECONDS as system:agent-alert-bundle; execute_check leaves a
+heartbeat's notification to it.
 """
 
 from __future__ import annotations
@@ -38,8 +41,11 @@ logger = logging.getLogger("monitor.alert_bundle")
 
 # From this many members on, a channel gets one message instead of single ones.
 BUNDLE_MIN = 3
-# Fewer heartbeats of a kind wait this long for more before each goes out alone.
+# Fewer heartbeats of a kind wait this long for more before each goes out alone,
+# at most until a minute before the heartbeat's next check (_alone_wait).
 BUNDLE_WINDOW = timedelta(minutes=5)
+# The job's period: a heartbeat alone goes out at most this long after its wait.
+FLUSH_SECONDS = 30
 # Member lines in the message text; the webhook's members list carries them all.
 MAX_TEXT_LINES = 50
 # Most server ids the hub takes in one event (IncomingEvent.source_ids, server).
@@ -102,6 +108,7 @@ class _Open(NamedTuple):
     status: str
     notified_status: str | None
     since: datetime
+    interval: str
 
 
 def flush_agent_alerts(now: datetime | None = None) -> None:
@@ -112,7 +119,7 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
     monitor_states until it is reported, so every run starts afresh in a session
     of its own and a restart loses nothing. Per kind, BUNDLE_MIN or more open
     heartbeats are claimed and bundled, whatever their age; fewer wait until they
-    are BUNDLE_WINDOW old and then go out one by one on the single path
+    are _alone_wait old and then go out one by one on the single path
     (_dispatch_alert_bg, which claims each itself). A heartbeat muted by a
     maintenance window or a Host Ping does not count and stays open, as in
     process_alert.
@@ -129,13 +136,13 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
         db.rollback()
         for kind, found in candidates.items():
             if len(found) >= BUNDLE_MIN:
-                entries = _claim(db, kind, [c.check_id for c in found], now)
+                entries = _claim(db, kind, [c.check_id for c in found])
                 if entries:
                     send_bundle(db, kind, entries, now)
                     db.commit()
                 continue
             for c in found:
-                if c.since <= now - BUNDLE_WINDOW:
+                if c.since <= now - _alone_wait(c.interval):
                     check_engine._dispatch_alert_bg(c.check_id, c.notified_status, c.status)
     except Exception:
         db.rollback()
@@ -167,21 +174,42 @@ def _candidates(db: Session, now: datetime) -> dict[str, list[_Open]]:
         if alerter.muted_reason(db, check, now) is not None:
             continue
         found[_KIND_OF_STATUS[state.status]].append(
-            _Open(check.id, state.status, state.notified_status, state.since)
+            _Open(check.id, state.status, state.notified_status, state.since, check.interval)
         )
     return found
 
 
-def _claim(db: Session, kind: str, check_ids: list[str], now: datetime) -> list[Entry]:
+def _alone_wait(interval: str) -> timedelta:
+    """How long a heartbeat of this interval waits for others before it goes out
+    alone: BUNDLE_WINDOW, but at most until a minute before its next check, and
+    never below zero (Kevin 2026-10-20). The next check may find the agent back,
+    and a problem never reported then ends in silence: a heartbeat critical for
+    one check of five minutes would never be reported. A string the scheduler
+    does not take keeps BUNDLE_WINDOW."""
+    # Function-local: the scheduler imports this module for the job.
+    from app.scheduler import interval_timedelta
+
+    period = interval_timedelta(interval)
+    if period is None:
+        return BUNDLE_WINDOW
+    return max(min(BUNDLE_WINDOW, period - timedelta(minutes=1)), timedelta(0))
+
+
+def _claim(db: Session, kind: str, check_ids: list[str]) -> list[Entry]:
     """Claim the open heartbeats of a bundle as process_alert claims one (step 4):
     lock the state rows in check_id order, re-read them and decide again, the
     muting included; a heartbeat that moved on or got muted since the selection
     drops out and stays open. The rest is marked reported and committed before
     any channel I/O, so no row lock is held across it.
 
+    The muting is decided at the time of the claim, not at the start of the run:
+    a maintenance window started while the run sent the other kind (each rule up
+    to its timeout) mutes this claim.
+
     Fewer than BUNDLE_MIN left claim nothing: they are as few as any other, and
     the next run lets them wait for the window instead of sending them early."""
     status = _KINDS[kind].status
+    now = utcnow_naive()
     rows = (
         db.query(MonitorCheck, MonitorState)
         .join(MonitorState, MonitorState.check_id == MonitorCheck.id)

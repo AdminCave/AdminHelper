@@ -5,7 +5,8 @@
 """Bundled alert (R-0424 T11, T12): send_bundle reports claimed agent heartbeats
 on each channel on its own, one message from BUNDLE_MIN members on, single
 messages below; flush_agent_alerts collects the open heartbeats, bundles BUNDLE_MIN
-or more and lets fewer wait BUNDLE_WINDOW before they go out on their own. Real
+or more and lets fewer wait BUNDLE_WINDOW, at most until a minute before their next
+check, before they go out on their own. Real
 SQLite session; mail is captured at _send_email, the webhook and the hub at
 httpx.post."""
 
@@ -18,7 +19,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import alert_bundle, alerter
+from app import alert_bundle, alerter, check_engine, scheduler
 from app.alert_bundle import (
     BACK,
     BUNDLE_MIN,
@@ -611,13 +612,21 @@ def at(minutes):
 
 
 @pytest.fixture()
-def run_job(db, channels, monkeypatch):
-    """flush_agent_alerts against the test database, with sessions of its own as
-    in production, at a fixed clock the test sets per run: process_alert on the
-    single path reads the same clock."""
-    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=db.get_bind()))
+def clock(db, monkeypatch):
+    """The wall clock the job's claim and process_alert on the single path read;
+    run_job sets it to the time of each run, a test may move it during one.
+    After db, whose fixed clock it replaces."""
     clock = SimpleNamespace(now=_NOW)
     monkeypatch.setattr(alerter, "utcnow_naive", lambda: clock.now)
+    monkeypatch.setattr(alert_bundle, "utcnow_naive", lambda: clock.now)
+    return clock
+
+
+@pytest.fixture()
+def run_job(db, channels, clock, monkeypatch):
+    """flush_agent_alerts against the test database, with sessions of its own as
+    in production, at a fixed clock the test sets per run."""
+    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=db.get_bind()))
 
     def run(now):
         clock.now = now
@@ -626,10 +635,11 @@ def run_job(db, channels, monkeypatch):
     return run
 
 
-def open_heartbeat(db, i, since, kind=SILENT):
+def open_heartbeat(db, i, since, kind=SILENT, interval="5m"):
     """Agent heartbeat chk-NN on server srv-NN that went silent (BACK: came back)
     at since and is not reported yet: the discrepancy the job collects. A BACK
-    heartbeat's alarm reached the bell an hour before it came back."""
+    heartbeat's alarm reached the bell an hour before it came back. Checked every
+    interval, by default as in the standard templates."""
     silent = kind == SILENT
     check_id = f"chk-{i:02d}"
     db.add(
@@ -641,6 +651,7 @@ def open_heartbeat(db, i, since, kind=SILENT):
             config="{}",
             enabled=True,
             severity="critical",
+            interval=interval,
         )
     )
     db.add(
@@ -731,6 +742,25 @@ def test_window_is_five_minutes():
     assert BUNDLE_WINDOW == timedelta(minutes=5)
 
 
+@pytest.mark.parametrize(
+    ("interval", "wait"),
+    [
+        ("1m", timedelta(0)),
+        ("5m", timedelta(minutes=4)),
+        ("15m", BUNDLE_WINDOW),
+        ("24h", BUNDLE_WINDOW),
+        ("30s", timedelta(0)),
+        ("*/5 * * * *", BUNDLE_WINDOW),
+    ],
+)
+def test_a_heartbeat_alone_waits_until_a_minute_before_its_next_check(monkeypatch, interval, wait):
+    # Kevin 2026-10-20: never past the next check, which may find the agent back
+    # and end a problem never reported in silence; never below zero (30s is no
+    # interval today); a string the scheduler does not take keeps the window.
+    monkeypatch.setitem(scheduler._INTERVAL_MAP, "30s", {"seconds": 30})
+    assert alert_bundle._alone_wait(interval) == wait
+
+
 class TestFlush:
     @pytest.mark.parametrize("kind", [SILENT, BACK])
     @pytest.mark.parametrize("third", [2, 4])
@@ -758,26 +788,80 @@ class TestFlush:
         assert logged(db) == [(f"chk-0{i}", _REPORTED[kind]) for i in (1, 2, 3)]
 
     @pytest.mark.parametrize("kind", [SILENT, BACK])
-    def test_two_wait_five_minutes_then_go_out_on_their_own(self, db, channels, run_job, kind):
+    @pytest.mark.parametrize(("interval", "wait"), [("5m", 4), ("15m", 5)])
+    def test_two_wait_then_go_out_on_their_own(self, db, channels, run_job, kind, interval, wait):
+        # Alone, a heartbeat waits BUNDLE_WINDOW for others, but at most until a
+        # minute before its next check: the standard heartbeat (5m) 4 minutes.
         add_rule(db)
-        open_heartbeat(db, 1, at(0), kind)
-        open_heartbeat(db, 2, at(1), kind)
+        open_heartbeat(db, 1, at(0), kind, interval)
+        open_heartbeat(db, 2, at(1), kind, interval)
 
-        run_job(at(5) - timedelta(seconds=1))
+        run_job(at(wait) - timedelta(seconds=1))
         assert (channels.mails, channels.events) == ([], [])
 
-        run_job(at(5))
+        run_job(at(wait))
         assert mails(channels) == [("chk-01", _SINGLE_SUBJECT[kind])]
         assert bell(channels) == ["srv-01"]
         assert notified(db) == {"chk-01": _REPORTED[kind], "chk-02": _OPEN[kind]}
 
-        run_job(at(6))
+        run_job(at(wait + 1))
         assert mails(channels) == [
             ("chk-01", _SINGLE_SUBJECT[kind]),
             ("chk-02", _SINGLE_SUBJECT[kind]),
         ]
         assert bell(channels) == ["srv-01", "srv-02"]
         assert notified(db) == dict.fromkeys(("chk-01", "chk-02"), _REPORTED[kind])
+
+    def test_a_heartbeat_critical_for_one_check_is_reported_before_the_next(
+        self, db, channels, run_job, clock, monkeypatch
+    ):
+        # The finding behind the shorter wait: the standard heartbeat runs every
+        # 5 minutes. Critical at one check and ok at the next, it ended in silence
+        # before a wait of 5 minutes was over, since only a reported problem is
+        # held, and an outage of 15 to 20 minutes went unreported. Reported before
+        # the next check, its return is held and reported as well.
+        add_rule(db)
+        db.add_all(
+            [
+                MonitorCheck(
+                    id="chk-01",
+                    server_id="srv-01",
+                    name="Agent Heartbeat",
+                    check_type="agent_ping",
+                    config="{}",
+                    enabled=True,
+                    severity="critical",
+                    interval="5m",
+                    consecutive_fails=1,
+                ),
+                MonitorState(check_id="chk-01", status="ok", notified_status="ok"),
+            ]
+        )
+        db.commit()
+        agent = SimpleNamespace(result=None)
+        monkeypatch.setattr(
+            check_engine, "get_checker", lambda _t: SimpleNamespace(run=lambda cfg: agent.result)
+        )
+        monkeypatch.setattr(check_engine.victoria, "write_check_result", lambda **kw: None)
+        monkeypatch.setattr(check_engine, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+        monkeypatch.setattr(check_engine, "utcnow_naive", lambda: clock.now)
+
+        def check(now, result):
+            clock.now = now
+            agent.result = result
+            check_engine.execute_check("chk-01")
+
+        check(at(0), ("critical", _DOWN, None))
+        for step in range(10):
+            run_job(at(step / 2))
+        check(at(5), ("ok", _UP, None))
+        run_job(at(5))
+
+        assert mails(channels) == [("chk-01", _SINGLE_DOWN)]
+        db.expire_all()
+        state = db.query(MonitorState).one()
+        assert (state.status, state.notified_status) == ("critical", "critical")
+        assert state.message == f"{_UP} (recovery 1/2)"
 
     @pytest.mark.parametrize("mute", ["maintenance window", "host ping"])
     def test_a_muted_heartbeat_does_not_count_and_stays_open(self, db, channels, run_job, mute):
@@ -904,6 +988,40 @@ class TestFlush:
             "chk-02": _REPORTED[kind],
             "chk-03": _REPORTED[kind],
             "chk-04": _OPEN[kind],
+        }
+
+    def test_a_maintenance_window_started_during_the_silent_bundle_mutes_the_return(
+        self, db, channels, run_job, clock, monkeypatch
+    ):
+        # The claim decides on the muting at the time it claims, not at the start
+        # of the run: sending the silent ones can take a while (up to 10 s per
+        # rule), and a window someone starts meanwhile mutes the returns claimed
+        # after it.
+        add_rule(db)
+        for i in (1, 2, 3):
+            open_heartbeat(db, i, at(0))
+        for i in (4, 5, 6):
+            open_heartbeat(db, i, at(0), BACK)
+        send = alert_bundle.send_bundle
+
+        def slow_send(session, kind, entries, now):
+            send(session, kind, entries, now)
+            if kind == SILENT:
+                clock.now = at(1)
+                other = sessionmaker(bind=db.get_bind())()
+                other.add(MonitorMaintenance(id="mw", kind="once", starts_at=at(1), ends_at=at(60)))
+                other.commit()
+                other.close()
+
+        monkeypatch.setattr(alert_bundle, "send_bundle", slow_send)
+
+        run_job(at(0))
+
+        assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[SILENT].format(n=3))]
+        assert bell(channels) == [["srv-01", "srv-02", "srv-03"]]
+        assert notified(db) == {
+            **dict.fromkeys(("chk-01", "chk-02", "chk-03"), _REPORTED[SILENT]),
+            **dict.fromkeys(("chk-04", "chk-05", "chk-06"), _OPEN[BACK]),
         }
 
     def test_fewer_than_three_left_at_the_claim_wait_for_the_window(

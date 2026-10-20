@@ -519,17 +519,18 @@ def test_a_change_marked_at_the_first_start_survives_template_sync_and_rename(cl
 def start(client, monkeypatch):
     """The service's startup against the test database, without the scheduler and
     the agent liveness: start() runs it once and says whether it got as far as
-    scheduling the checks."""
+    scheduling the checks; start.jobs names the system jobs it registered."""
     from app import scheduler as scheduler_mod
     from app.main import app
 
     _c, factory = client
     loaded: list[bool] = []
+    jobs: list[str] = []
     monkeypatch.setattr("app.core.database.SessionLocal", factory)
     monkeypatch.setattr("app.checkers.agent.hydrate_agent_liveness", lambda entries: None)
     monkeypatch.setattr(scheduler_mod, "load_all_checks", lambda: loaded.append(True))
-    monkeypatch.setattr(scheduler_mod, "schedule_alert_log_cleanup", lambda: None)
-    monkeypatch.setattr(scheduler_mod, "schedule_tag_sync", lambda: None)
+    for job in ("alert_log_cleanup", "tag_sync", "agent_alert_bundle"):
+        monkeypatch.setattr(scheduler_mod, f"schedule_{job}", lambda job=job: jobs.append(job))
     monkeypatch.setattr(
         scheduler_mod,
         "scheduler",
@@ -539,11 +540,20 @@ def start(client, monkeypatch):
 
     def run() -> bool:
         loaded.clear()
+        jobs.clear()
         with TestClient(app):
             pass
         return loaded == [True]
 
+    run.jobs = jobs
     return run
+
+
+def test_start_registers_the_system_jobs(start):
+    # execute_check leaves every heartbeat alert to the agent alert bundle: a
+    # start that did not register it would lose them all without a sound.
+    assert start()
+    assert start.jobs == ["alert_log_cleanup", "tag_sync", "agent_alert_bundle"]
 
 
 def _ship_linux_base_v2(monkeypatch) -> int:

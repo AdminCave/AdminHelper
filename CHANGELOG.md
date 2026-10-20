@@ -20,6 +20,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   stumm, meldet der Heartbeat danach seinen Ausfall. Als Host Ping zaehlt nur der Check aus diesem Template: Ein von
   Hand angelegter `ping`-Check, etwa auf ein Gateway, schaltet nichts stumm. Doku: Admin- und Entwickler-Doku
   Monitoring (DE+EN).
+- **Monitoring: Sammelmeldung, wenn mehrere Agents zugleich stumm werden (R-0424):** Werden 3 oder mehr Agents stumm
+  (`agent_ping` auf `critical`), bekommt jeder Kanal eine Meldung statt einer je Server, sobald der dritte stumm ist;
+  ihre Rueckkehr wird ebenso gesammelt. Weniger als drei werden wie bisher einzeln gemeldet, aber erst, wenn ihr
+  Statuswechsel 5 Minuten zurueckliegt, hoechstens bis eine Minute vor der naechsten Pruefung: beim Standard-Heartbeat
+  (Intervall 5 Minuten) nach 4 Minuten, bei einem Intervall von 1 Minute sofort, dazu bis zu 30 s Takt. So ist ein
+  Ausfall gemeldet, bevor die naechste Pruefung den Agent wieder auf `ok` setzen kann. Die Heartbeats meldet dafuer ein
+  Hintergrund-Job (`system:agent-alert-bundle`, alle 30 s), nicht mehr der `agent_ping` selbst. Gesammelt wird je
+  Kanal: Eine Alert-Regel, die drei oder mehr der Agents trifft, sendet eine Nachricht
+  (`[AdminHelper Monitor] CRITICAL: <n> agents not reporting` bzw.
+  `[AdminHelper Monitor] RECOVERY: <n> agents reporting again`, eine Zeile je Agent, hoechstens 50) und schreibt je
+  Agent eine Zeile ins Alert-Log; im Webhook sind `check_name` und `server_id` dann `null`, die Agents stehen im neuen
+  Feld `members`. Die Glocke bekommt je Stufe einen Eintrag „Agents not reporting (n)“ bzw. „Agents reporting again
+  (n)“ mit einer Zeile je Server, die der Nutzer sehen darf und die eine seiner Regeln erfasst. Der Server nimmt dafuer
+  in `POST /api/internal/events` das Feld `source_ids` (bis 500 Server-IDs, nicht zusammen mit `source_id`) und feuert
+  `alert.triggered` bei einer solchen Meldung einmal je Server. Wartungsfenster und Host-down-Unterdrueckung gelten
+  weiter. Monitoring und Server kommen im selben Release; ein aelterer Server stellt die Sammel-Eintraege der Glocke nur
+  Admins zu. Doku: Admin- und Entwickler-Doku Monitoring, Entwickler-Doku Server, Hooks und API-Referenz (DE+EN).
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter

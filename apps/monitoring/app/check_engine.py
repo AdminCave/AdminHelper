@@ -357,7 +357,10 @@ def execute_check(check_id: str) -> None:
         # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the
         # scheduler pool and misfire following checks. Pass the id, not the
         # session-bound check — the pool thread reloads it in its own session (5.3).
-        if decision == "notify":
+        # A heartbeat's discrepancy stays open for the agent alert bundle
+        # (alert_bundle.flush_agent_alerts), which reports agents that go silent
+        # or come back together in one message.
+        if decision == "notify" and check.check_type != "agent_ping":
             _alert_pool.submit(_dispatch_alert_bg, check.id, old_status, eff_status)
 
     except Exception:
