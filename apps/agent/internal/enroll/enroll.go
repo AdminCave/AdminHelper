@@ -142,11 +142,10 @@ var createTemp = os.CreateTemp
 // interleave leave the key of one with the cert of the other. Store does not lock
 // itself, because a second lock in the same process would wait for the caller's.
 func Store(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) error {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	// 0700 on Linux, a protected ACL on Windows, after the data root above it.
+	if err := config.EnsureDataDir(dir); err != nil {
 		return fmt.Errorf("Identity-Verzeichnis anlegen: %w", err)
 	}
-	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
-	_ = config.SecureDir(dir)
 	commit, err := stageIdentity(dir, key, resp)
 	if err != nil {
 		return err
@@ -167,10 +166,9 @@ var storableProbe = bytes.Repeat([]byte("x"), 4096)
 // is a file of its own, so a renewal the service stages meanwhile keeps its files
 // (R-0308); the check removes exactly its probes.
 func CheckStorable(dir string) error {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := config.EnsureDataDir(dir); err != nil {
 		return fmt.Errorf("create the identity directory: %w", err)
 	}
-	_ = config.SecureDir(dir)
 	var probes []string
 	defer func() {
 		for _, p := range probes {
@@ -212,6 +210,13 @@ func stageIdentity(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) (func
 	contents := [][]byte{keyPEM, []byte(resp.Fullchain), []byte(resp.Chain)}
 	for i := range items {
 		tmp, err := writeTemp(dir, filepath.Base(items[i].final), contents[i], items[i].perm)
+		// On Windows a new file can belong to the account that writes it (local
+		// policy); EnsureSecureDir expects the agent's files to be the Administrators'.
+		if err == nil {
+			if err = config.OwnByAdministrators(tmp); err != nil {
+				_ = os.Remove(tmp)
+			}
+		}
 		if err != nil {
 			for _, done := range items[:i] { // best-effort cleanup of staged temps
 				_ = os.Remove(done.tmp)

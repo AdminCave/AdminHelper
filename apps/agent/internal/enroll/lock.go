@@ -41,10 +41,9 @@ const (
 // LockIdentity in the same process waits as well. It waits at most identityLockWait
 // and then returns an error that names the lock file.
 func LockIdentity(dir string) (unlock func(), err error) {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := config.EnsureDataDir(dir); err != nil {
 		return nil, fmt.Errorf("create the identity directory: %w", err)
 	}
-	_ = config.SecureDir(dir)
 	path := filepath.Join(dir, LockFileName)
 	f, err := openLockFile(path)
 	if err != nil {
