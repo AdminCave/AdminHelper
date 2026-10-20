@@ -64,7 +64,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   interface LoadPill {
     perCpu: number;
-    level: Level;
+    // unrated: the load of a container (load_rated false), shown grey without a rating.
+    level: Level | 'unrated';
   }
   interface DiskBar {
     mount: string;
@@ -118,6 +119,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const cfg = (check.config ?? {}) as Record<string, unknown>;
     if (d?.load_per_cpu == null) return null;
     const perCpu = num(d.load_per_cpu);
+    if (d.load_rated === false) return { perCpu, level: 'unrated' };
     return {
       perCpu,
       level: rate(d, 'load', level(perCpu, num(cfg.load_warn, 1.5), num(cfg.load_crit, 3))),
@@ -187,7 +189,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
               <span class="mon-live-pill level-{r.level}">{r.label} {r.pct.toFixed(0)}%</span>
             {/each}
             {#if ld}
-              <span class="mon-live-pill level-{ld.level}">Load {ld.perCpu.toFixed(2)}/CPU</span>
+              <span
+                class="mon-live-pill level-{ld.level}"
+                title={ld.level === 'unrated' ? $t('monitoring.live.loadUnrated') : undefined}
+                >Load {ld.perCpu.toFixed(2)}/CPU</span
+              >
             {/if}
             {#if ds.length > 0}
               <span class="mon-live-pill">{ds.length} Disk{ds.length === 1 ? '' : 's'}</span>
@@ -256,5 +262,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <style>
   .mon-hero-bar-fill.level-ignored {
     background: var(--text-faint);
+  }
+  .mon-live-pill.level-unrated {
+    color: var(--text-muted);
   }
 </style>

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring Linux-Basis v2 und Proxmox-Ausfall — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-linux-base-v2 · Review: pro Task
+Status: bereit · Branch: feature/monitoring-linux-base-v2 · Review: pro Task
 Spec: docs/features/monitoring-linux-base-v2.md (Roadmap R-0423, R-0492)
 Heavy: linux-full + scenario --agents 1 + windows — Agent (`internal/monitor`) und die Push-Auswertung des Monitoring ändern sich: Sammellauf über `main` (`agent_monitoring_test.sh` fährt den echten Agent v3 in `debian:bookworm-slim` gegen den Stack, `desktop_e2e_monitoring.sh` den Check-Editor des Desktops); `scenario --agents 1` nicht wegen der Paketierung (deb/rpm, systemd-Units, install/update, FRP, PKI bleiben unverändert), sondern als Plattform-Beweis auf einem echten Debian-Host mit systemd: `timedatectl`, `apt-get -s` gegen echte Paketlisten, `/proc/vmstat`, die Zustandsdatei über die mehrfachen `run --once` von `box_agentbox.sh` und das Laufzeitbudget unter `TimeoutStartSec=270` (ask-first; ohne Kevins Ja stehen diese Punkte im PR-Text als „nicht verifiziert“); `windows` = CI-Job `agent-windows` (CPU-Delta und Zustandsdatei laufen auch im Windows-Dienst, `system_other.go` hält den Block dort leer)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -297,8 +297,10 @@ Review: approve (.ah-out/review/monitoring-linux-base-v2/T31.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py tests/test_seed.py
 Doku: docs/admin/monitoring.html + EN (Load im Container nicht bewertet); docs/developer/monitoring.html + EN (Checker-Tabelle, `load_rated`); CHANGELOG.md
 
-### T32 — Desktop: Load ohne Bewertung grau  [ ]
+### T32 — Desktop: Load ohne Bewertung grau  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @84c56836 2026-10-20T19:33:06+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T32.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-20: Tragen die Details `load_rated: false` (T31), zeigt die Live-Ansicht die Load-Pille mit Wert, aber grau und ohne Ampel, mit einem Hinweis (Tooltip/Untertitel) „im Container nicht bewertet“ / „not rated in a container“; sonst unverändert. `MonitorResourceDetails` bekommt `load_rated?: boolean`. Tests: `load_rated: false` → graue Pille mit Hinweis, auch wenn der Wert über der Schwelle liegt; ohne Feld → bewertet wie bisher.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecLive.test.ts
 Doku: keine (Admin-Doku mit T31)

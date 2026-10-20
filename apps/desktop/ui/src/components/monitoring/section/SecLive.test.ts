@@ -245,6 +245,47 @@ describe('SecLive colours', () => {
   });
 });
 
+describe('SecLive load in a container', () => {
+  // T32: in a container load_5m is the host's and cpu_count may be the
+  // container's, so the checker leaves the load unrated (load_rated false). The
+  // pill keeps the value but goes grey with a hint, above any threshold too.
+  function loadPill(el: HTMLElement): HTMLElement {
+    return pills(el).find((p) => text(p).startsWith('Load'))!;
+  }
+
+  it('shows an unrated load grey with the hint, also above the thresholds', () => {
+    setLanguage('de');
+    // With the checker's problems and, rated from the config, without them.
+    const variants: MonitorResourceDetails['problems'][] = [{}, undefined];
+    for (const problems of variants) {
+      const details = v3({ load_per_cpu: 4, load_rated: false, problems });
+      const { container: el } = render(SecLive, { props: { checks: [check(details)] } });
+      const p = loadPill(el);
+      expect([text(p), levelOf(p), p.getAttribute('title')]).toEqual([
+        'Load 4.00/CPU',
+        'unrated',
+        'im Container nicht bewertet',
+      ]);
+      cleanup();
+    }
+  });
+
+  it('rates a load without load_rated as before, without the hint', () => {
+    setLanguage('de');
+    const details = v3({ load_per_cpu: 4, problems: undefined });
+    const { container: el } = render(SecLive, { props: { checks: [check(details)] } });
+    const p = loadPill(el);
+    expect([text(p), levelOf(p), p.getAttribute('title')]).toEqual(['Load 4.00/CPU', 'crit', null]);
+  });
+
+  it('names the hint in English', () => {
+    setLanguage('en');
+    const details = v3({ load_rated: false });
+    const { container: el } = render(SecLive, { props: { checks: [check(details)] } });
+    expect(loadPill(el).getAttribute('title')).toBe('not rated in a container');
+  });
+});
+
 describe('SecLive duplicate mounts', () => {
   // The bars were keyed by the mount alone: a report listing a mount twice made
   // Svelte throw and the disk list did not render.
