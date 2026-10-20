@@ -380,6 +380,7 @@ impl Meta {
     /// `open` whether a process holds its lock.
     pub fn info(self, id: WorkspaceId, open: bool) -> WorkspaceInfo {
         WorkspaceInfo {
+            url: self.url.as_deref().and_then(shown_url),
             host: self.url.as_deref().and_then(host_of),
             id,
             name: self.name,
@@ -392,6 +393,44 @@ impl Meta {
 
 fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(String::from)
+}
+
+/// `url` as the webview gets it: a user and a password masked as one (`***@`), each value of its
+/// query and its fragment masked (`?token=***`, `#***`; the keys of the query stay), in the
+/// parser's spelling; a URL with nothing to mask as kept. A part of the query without a value
+/// may be a token itself and is masked whole (`?***`). None for a URL that does not parse: where
+/// the parser finds no URL, it finds nothing to mask either, and the webview would get it all.
+/// What it gives comes out of it again unchanged, so `launcher::edit` can tell a URL the webview
+/// sends back as it got it.
+pub(crate) fn shown_url(url: &str) -> Option<String> {
+    let mut parsed = Url::parse(url).ok()?;
+    let user = !parsed.username().is_empty() || parsed.password().is_some();
+    let pairs: Vec<(String, String)> = parsed.query_pairs().into_owned().collect();
+    let fragment = parsed
+        .fragment()
+        .is_some_and(|fragment| !fragment.is_empty());
+    if !user && pairs.is_empty() && !fragment {
+        return Some(url.to_string());
+    }
+    if user {
+        parsed.set_username("***").ok()?;
+        parsed.set_password(None).ok()?;
+    }
+    if !pairs.is_empty() {
+        let mut query = parsed.query_pairs_mut();
+        query.clear();
+        for (key, value) in &pairs {
+            if value.is_empty() {
+                query.append_key_only("***");
+            } else {
+                query.append_pair(key, "***");
+            }
+        }
+    }
+    if fragment {
+        parsed.set_fragment(Some("***"));
+    }
+    Some(parsed.into())
 }
 
 /// The origin of the server of a server workspace: scheme, host and port, the default port
@@ -820,9 +859,11 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use url::Url;
+
     use super::{
         acquire, acquire_within, check_side, check_sign_in_once, context, current, enter, is_open,
-        metas, own_url, same_server, set_current, sign_in_url, startup, AppError, Held,
+        metas, own_url, same_server, set_current, shown_url, sign_in_url, startup, AppError, Held,
         InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Side, Workspace, WorkspaceId,
         ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE,
         REGISTRY_FILE, USAGE,
@@ -1315,13 +1356,14 @@ mod tests {
                     "name": "Kunde A",
                     "color": PALETTE[1],
                     "kind": "server",
+                    "url": "https://ah.example.com",
                     "host": "ah.example.com",
                     "open": true,
                 },
             })
         );
 
-        // A workspace without a URL has no host.
+        // A workspace without a URL has neither a URL nor a host.
         let local = Meta {
             kind: SyncMode::Local,
             url: None,
@@ -1329,8 +1371,165 @@ mod tests {
         };
         local.store(&ws.data_dir(&scratch.0)).unwrap();
         let own = context(&scratch.0).unwrap().workspace.expect("a workspace");
+        assert_eq!(own.url, None);
         assert_eq!(own.host, None);
         assert_eq!(own.kind, SyncMode::Local);
+    }
+
+    #[test]
+    fn the_info_names_the_workspace_url_with_the_user_masked_and_otherwise_as_kept() {
+        let info = |url: Option<&str>| {
+            Meta {
+                url: url.map(String::from),
+                ..meta()
+            }
+            .info(id("w-0a1b2c3d"), false)
+        };
+
+        // Without a user, a query and a fragment, the URL as kept, however it is spelled.
+        for kept in [
+            "https://ah.example.com",
+            "https://AH.example.com:8443/base/",
+            "https://sync.example.com/connections.json",
+        ] {
+            assert_eq!(info(Some(kept)).url.as_deref(), Some(kept));
+        }
+
+        // A user, a password or both are one `***@`, the parser spells the rest; the host stays.
+        for (kept, shown, host) in [
+            (
+                "https://admin:secret@ah.example.com",
+                "https://***@ah.example.com/",
+                "ah.example.com",
+            ),
+            (
+                "https://admin@ah.example.com:8443/base",
+                "https://***@ah.example.com:8443/base",
+                "ah.example.com",
+            ),
+            (
+                "https://:secret@ah.example.com/x",
+                "https://***@ah.example.com/x",
+                "ah.example.com",
+            ),
+            (
+                "https://user:pw@sync.example.com/connections.json?a=b",
+                "https://***@sync.example.com/connections.json?a=***",
+                "sync.example.com",
+            ),
+        ] {
+            let info = info(Some(kept));
+            assert_eq!(info.url.as_deref(), Some(shown), "{kept}");
+            assert_eq!(info.host.as_deref(), Some(host), "{kept}");
+        }
+
+        // No URL is none, and so is one that does not parse: nothing of it reaches the webview.
+        assert_eq!(info(None).url, None);
+        let unparsed = info(Some("https://admin:secret@ah example.com"));
+        assert_eq!(unparsed.url, None);
+        assert_eq!(unparsed.host, None);
+    }
+
+    #[test]
+    fn the_shown_workspace_url_masks_the_query_values_and_the_fragment_and_stays_so() {
+        for (kept, shown) in [
+            // Each value of the query, a key twice as well; the keys stay, in the parser's
+            // spelling.
+            (
+                "https://sync.example.com/c.json?token=abc&user=me&token=def&a%20b=x%26y",
+                "https://sync.example.com/c.json?token=***&user=***&token=***&a+b=***",
+            ),
+            // A part without a value may be the token itself; one with an empty value goes too.
+            (
+                "https://sync.example.com/c.json?s3cr3t&token=&a=1",
+                "https://sync.example.com/c.json?***&***&a=***",
+            ),
+            // The fragment, whatever it holds.
+            (
+                "https://ah.example.com/#access_token=abc",
+                "https://ah.example.com/#***",
+            ),
+            (
+                "https://ah.example.com/app#/route?x=1",
+                "https://ah.example.com/app#***",
+            ),
+            // A user and a password, the query and the fragment at once.
+            (
+                "https://admin:secret@sync.example.com:8443/c.json?token=abc#frag",
+                "https://***@sync.example.com:8443/c.json?token=***#***",
+            ),
+            (
+                "https://admin@AH.example.com/?k=v",
+                "https://***@ah.example.com/?k=***",
+            ),
+            // An empty query and an empty fragment hide nothing: as kept.
+            ("https://ah.example.com/?#", "https://ah.example.com/?#"),
+        ] {
+            assert_eq!(shown_url(kept).as_deref(), Some(shown), "{kept}");
+            // Masking what it shows changes nothing: the launcher tells an unchanged URL by it.
+            assert_eq!(shown_url(shown).as_deref(), Some(shown), "{shown}");
+        }
+
+        assert_eq!(shown_url("https://ah example.com/?token=abc"), None);
+    }
+
+    #[test]
+    fn the_shown_workspace_url_masks_the_user_and_the_password_as_one_and_stays_so() {
+        for (kept, shown, gone) in [
+            // A user and a password, a user alone, a password alone: one `***@`.
+            (
+                "https://admin:secret@ah.example.com/base",
+                "https://***@ah.example.com/base",
+                &["admin", "secret"][..],
+            ),
+            (
+                "https://admin@ah.example.com/base",
+                "https://***@ah.example.com/base",
+                &["admin"][..],
+            ),
+            (
+                "https://:secret@ah.example.com/base",
+                "https://***@ah.example.com/base",
+                &["secret"][..],
+            ),
+            // Percent-encoded as kept, or by the parser: neither spelling is left.
+            (
+                "https://ad%40min:se%3Acr%C3%A9t@ah.example.com",
+                "https://***@ah.example.com/",
+                &["ad%40min", "ad@min", "se%3Acr%C3%A9t", "se:crét", "%"][..],
+            ),
+            (
+                "https://ad min:sé@ah.example.com",
+                "https://***@ah.example.com/",
+                &["ad min", "ad%20min", "sé", "s%C3%A9", "%"][..],
+            ),
+            // An `@` in the user: the last one ends the user info, all of it goes.
+            (
+                "https://admin@corp:secret@ah.example.com/",
+                "https://***@ah.example.com/",
+                &["admin", "corp", "secret", "%40"][..],
+            ),
+            // A user masked before keeps the mask, a password goes; the port and the host stay.
+            (
+                "https://***:secret@[::1]:8443/",
+                "https://***@[::1]:8443/",
+                &["secret"][..],
+            ),
+        ] {
+            let masked = shown_url(kept).unwrap_or_else(|| panic!("{kept} does not parse"));
+            assert_eq!(masked, shown, "{kept}");
+            for part in gone {
+                assert!(!masked.contains(part), "{part} of {kept} in {masked}");
+            }
+            let parsed = Url::parse(&masked).unwrap();
+            assert_eq!(
+                (parsed.username(), parsed.password()),
+                ("***", None),
+                "{masked}"
+            );
+            // Masking what it shows changes nothing: the launcher tells an unchanged URL by it.
+            assert_eq!(shown_url(shown).as_deref(), Some(shown), "{shown}");
+        }
     }
 
     #[test]

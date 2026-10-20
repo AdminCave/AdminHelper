@@ -26,9 +26,10 @@ use crate::enrollment::{self, ResetOutcome};
 use crate::error::AppError;
 use crate::keyring_store;
 use crate::migration;
-use crate::models::{Settings, SyncMode, WorkspaceDraft, WorkspaceList};
+use crate::models::{Connection, Settings, SyncMode, WorkspaceDraft, WorkspaceList};
 use crate::password;
 use crate::port_registry::PortRegistry;
+use crate::storage;
 use crate::validation::{validate_https_url, validate_server_url_secure};
 use crate::workspace::{
     self, acquire, failure, is_open, server_origin, Meta, Registry, RegistryEntry, Workspace,
@@ -352,8 +353,8 @@ fn purge_outcome(code: i32) -> Option<ResetOutcome> {
 /// dir, `meta` its `workspace.json`, none if that does not load or the directory is gone. A
 /// server workspace with a URL revokes its device first: `revoke` gets the URL and gives how
 /// that went (`enrollment::reset_identity` at a real purge); without a server to ask, an
-/// identity goes here only (`LocalOnly`). Then its identity, the RDP keys its index names, the
-/// index, its port map entries and its directory go. The index goes on its own, once its keys
+/// identity goes here only (`LocalOnly`). Then its identity, its RDP keys, the index, its port
+/// map entries and its directory go. The index goes on its own, once its keys
 /// are deleted or handed over, and the directory last: a purge that stopped on the way runs
 /// again. What names keys to delete or hand over is read before anything changes: a name that is
 /// no RDP key of this workspace, or a file of names that does not load, stops the purge before it
@@ -364,6 +365,9 @@ fn purge_outcome(code: i32) -> Option<ResetOutcome> {
 /// it, and then the purge revokes nothing and leaves it be (`NotEnrolled`: no identity of its
 /// own). Its RDP keys may be any migrated workspace's: while another one is there, the purge
 /// hands them over, and the purge of the last migrated workspace deletes them with its own.
+/// Its keys are those its index names and those from before workspaces that no index names
+/// but its connections do (`password::unindexed_keys`); a connections file that does not load
+/// stops the purge, too.
 pub fn purge(
     base: &Path,
     meta: Option<&Meta>,
@@ -371,7 +375,10 @@ pub fn purge(
 ) -> Result<ResetOutcome, AppError> {
     let ws = workspace::current()?;
     let dir = ws.data_dir(base);
-    let rdp_keys = password::indexed_keys(&dir, &ws.keyring_prefix())?;
+    let mut rdp_keys = password::indexed_keys(&dir, &ws.keyring_prefix())?;
+    if ws.legacy_keys {
+        rdp_keys.extend(password::unindexed_keys(&ws, &connections_in(&dir, meta)?));
+    }
     let (identity_shared, keys_shared) = if ws.legacy_keys {
         let others = other_migrated(base, &ws.id)?;
         let own = meta.and_then(server_origin);
@@ -456,6 +463,31 @@ fn shares_identity(own: Option<&Origin>, other: Option<&Meta>) -> bool {
         return true;
     };
     server_origin(other).is_some_and(|theirs| own.is_none_or(|own| *own == theirs))
+}
+
+/// The connections in `dir`, the data dir of the workspace purged, whose `workspace.json` is
+/// `meta`: those in the file of its kind, as the workspace reads them, or in either file while
+/// its kind is not known; none without the file. A file that does not load is an error.
+fn connections_in(dir: &Path, meta: Option<&Meta>) -> Result<Vec<Connection>, AppError> {
+    let files = match meta {
+        Some(meta) => vec![storage::connections_file_name(&meta.kind)],
+        None => vec![
+            storage::connections_file_name(&SyncMode::Local),
+            storage::connections_file_name(&SyncMode::Server),
+        ],
+    };
+    let mut connections = Vec::new();
+    for file in files {
+        match fs::read(dir.join(file)) {
+            Ok(bytes) => connections.extend(
+                serde_json::from_slice::<Vec<Connection>>(&bytes)
+                    .map_err(|e| unreadable(file, e.into()))?,
+            ),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(connections)
 }
 
 /// `e` from loading `file`, as a log line may say it: the file and where it breaks, never a
@@ -660,8 +692,10 @@ fn create(base: &Path, registry: &mut Registry, meta: &Meta) -> Result<Workspace
     Ok(id)
 }
 
-/// Gives the workspace `id` the `name` and `url` checked from `draft`, and its colour. Its lock
-/// is held until the edit is written: no process opens the workspace in between.
+/// Gives the workspace `id` the `name` and `url` checked from `draft`, and its colour. A `url`
+/// that is the URL of the workspace as the webview got it (`workspace::shown_url`, none for a
+/// URL that does not parse) keeps the URL it has. Its lock is held until the edit is written: no
+/// process opens the workspace in between.
 fn edit(
     base: &Path,
     registry: &Registry,
@@ -686,6 +720,13 @@ fn edit(
             "the kind of a workspace stays as it was made".to_string(),
         ));
     }
+    // The editor sends the URL back as it got it when the user left it alone; taken as it is,
+    // the user, the query and the fragment the webview never saw would be lost.
+    let url = if url == meta.url.as_deref().and_then(workspace::shown_url) {
+        meta.url.clone()
+    } else {
+        url
+    };
     let edited = Meta {
         name,
         color: draft.color.clone(),
@@ -781,7 +822,8 @@ mod tests {
     use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
     use crate::keyring_store;
-    use crate::models::{Settings, SyncMode};
+    use crate::models::{Connection, ConnectionKind, Settings, SyncMode};
+    use crate::password::load_password_keyring;
     use crate::workspace::{
         self, acquire, is_open, startup, InstanceLock, Meta, Registry, RegistryEntry, EXIT_FAILED,
         EXIT_TAKEN, EXIT_UNKNOWN, PALETTE, REGISTRY_FILE,
@@ -1520,6 +1562,236 @@ mod tests {
         );
         assert!(!refused.contains("geheim"), "{refused}");
         assert_eq!(fs::read_to_string(&path).unwrap(), r#"{"kind": "geheim"}"#);
+    }
+
+    #[test]
+    fn save_keeps_the_workspace_url_the_editor_sends_back_as_shown() {
+        let scratch = Scratch::new("edit-shown");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        let sync = created(
+            SyncMode::Sync,
+            "Sync",
+            Some("https://reader:pw@sync.example.com/c.json?token=abc&v=2#frag"),
+        );
+        let server = meta(
+            SyncMode::Server,
+            "Standard",
+            Some("https://admin@ah.example.com/base?tenant=t1"),
+        );
+        // What a migration may have taken over: a URL the parser does not read.
+        let unparsed = created(
+            SyncMode::Server,
+            "Alt",
+            Some("https://admin:secret@ah example.com"),
+        );
+        let plain = created(SyncMode::Server, "Plain", Some("https://AH.example.com"));
+        let password = created(
+            SyncMode::Server,
+            "Kennwort",
+            Some("https://:secret@ah2.example.com/"),
+        );
+        let workspaces = [
+            ("w-0000000a", sync),
+            ("standard", server),
+            ("w-0000000b", unparsed.clone()),
+            ("w-0000000c", plain),
+            ("w-0000000d", password),
+        ];
+        install(base, &workspaces, false);
+
+        // What the editor gets.
+        let shown: Vec<Option<String>> = list(base)
+            .unwrap()
+            .workspaces
+            .into_iter()
+            .map(|ws| ws.url)
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                Some("https://***@sync.example.com/c.json?token=***&v=***#***".to_string()),
+                Some("https://***@ah.example.com/base?tenant=***".to_string()),
+                None,
+                Some("https://AH.example.com".to_string()),
+                Some("https://***@ah2.example.com/".to_string()),
+            ]
+        );
+
+        // Sent back as it came, with another name and colour: the URL stays as kept, the user
+        // and the password, the token and the fragment with it, and the one that does not parse
+        // as well.
+        for ((ws, before), url) in workspaces.iter().zip(shown) {
+            save(
+                base,
+                &WorkspaceDraft {
+                    id: Some(id(ws)),
+                    kind: before.kind.clone(),
+                    name: "Neu".to_string(),
+                    color: PALETTE[5].to_string(),
+                    url,
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                Meta::load(&dir_of(base, ws)).unwrap(),
+                Meta {
+                    name: "Neu".to_string(),
+                    color: PALETTE[5].to_string(),
+                    ..before.clone()
+                },
+                "{ws}"
+            );
+        }
+        // A blank URL is none, too.
+        save(
+            base,
+            &WorkspaceDraft {
+                id: Some(id("w-0000000b")),
+                kind: SyncMode::Server,
+                name: "Alt".to_string(),
+                color: PALETTE[0].to_string(),
+                url: Some("  ".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000b")).unwrap(), unparsed);
+    }
+
+    #[test]
+    fn save_replaces_a_changed_workspace_url_and_drops_a_blank_one() {
+        let scratch = Scratch::new("edit-changed");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        let before = created(
+            SyncMode::Sync,
+            "Sync",
+            Some("https://reader:pw@sync.example.com/c.json?token=abc"),
+        );
+        install(base, &[("w-0000000a", before.clone())], false);
+        let edit = |url: Option<&str>| {
+            before.store(&dir_of(base, "w-0000000a")).unwrap();
+            save(
+                base,
+                &WorkspaceDraft {
+                    id: Some(id("w-0000000a")),
+                    kind: SyncMode::Sync,
+                    name: "Sync".to_string(),
+                    color: PALETTE[0].to_string(),
+                    url: url.map(String::from),
+                },
+            )
+            .unwrap();
+            Meta::load(&dir_of(base, "w-0000000a")).unwrap().url
+        };
+
+        assert_eq!(
+            edit(Some("https://sync.example.com/c.json?token=def")).as_deref(),
+            Some("https://sync.example.com/c.json?token=def")
+        );
+        // A masked value in another URL is taken as sent: nothing of the old URL is carried over.
+        assert_eq!(
+            edit(Some("https://sync.example.com/d.json?token=***")).as_deref(),
+            Some("https://sync.example.com/d.json?token=***")
+        );
+        assert_eq!(edit(None), None);
+        assert_eq!(edit(Some("  ")), None);
+    }
+
+    #[test]
+    fn save_checks_the_identity_for_a_changed_workspace_url_as_before() {
+        let scratch = Scratch::new("edit-shown-identity");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        let enrolled = created(
+            SyncMode::Server,
+            "Kunde A",
+            Some("https://admin@ah.example.com/?k=v"),
+        );
+        let unparsed = created(
+            SyncMode::Server,
+            "Alt",
+            Some("https://admin:secret@ah example.com"),
+        );
+        install(
+            base,
+            &[
+                ("w-0000000a", enrolled.clone()),
+                ("w-0000000b", unparsed.clone()),
+            ],
+            false,
+        );
+        for ws in ["w-0000000a", "w-0000000b"] {
+            store(&behind(&prefix_of(ws), &IDENTITY[..3]));
+        }
+        let edit = |ws: &str, url: Option<&str>| {
+            save(
+                base,
+                &WorkspaceDraft {
+                    id: Some(id(ws)),
+                    kind: SyncMode::Server,
+                    name: "Neu".to_string(),
+                    color: PALETTE[0].to_string(),
+                    url: url.map(String::from),
+                },
+            )
+        };
+        let refused = |result: Result<WorkspaceId, AppError>, ws: &str, case: &str| {
+            assert!(
+                matches!(&result, Err(AppError::Validation(msg))
+                    if msg.contains(&format!("the workspace {ws} has a device identity"))),
+                "{ws} {case}: {result:?}"
+            );
+        };
+
+        // Another server, or none, with the masked query or without: refused, nothing written.
+        for other in [
+            Some("https://other.example.com/?k=***"),
+            Some("https://ah.example.com:8443/?k=***"),
+            None,
+        ] {
+            refused(
+                edit("w-0000000a", other),
+                "w-0000000a",
+                &format!("{other:?}"),
+            );
+        }
+        // A URL the parser reads names a server the one it does not read may not be.
+        refused(
+            edit("w-0000000b", Some("https://ah.example.com")),
+            "w-0000000b",
+            "parsed",
+        );
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000a")).unwrap(), enrolled);
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000b")).unwrap(), unparsed);
+
+        // Sent back as shown: the URL stays as kept.
+        edit("w-0000000a", Some("https://***@ah.example.com/?k=***")).unwrap();
+        edit("w-0000000b", None).unwrap();
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000a")).unwrap(),
+            Meta {
+                name: "Neu".to_string(),
+                ..enrolled
+            }
+        );
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000b")).unwrap(),
+            Meta {
+                name: "Neu".to_string(),
+                ..unparsed
+            }
+        );
+
+        // The same server under another URL: taken, the user and the query go with the old one.
+        edit("w-0000000a", Some("https://ah.example.com/x")).unwrap();
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000a"))
+                .unwrap()
+                .url
+                .as_deref(),
+            Some("https://ah.example.com/x")
+        );
     }
 
     #[test]
@@ -3167,6 +3439,296 @@ mod tests {
             ["standard"],
             "a purge made a directory"
         );
+    }
+
+    // ── T37: the keys from before workspaces go with the last migrated workspace ──
+
+    /// The connection `id` to `host:port` as `Admin` in `CORP`, as a connections file holds it.
+    fn rdp_connection(id: &str, host: &str, port: u16) -> Connection {
+        Connection {
+            id: id.to_string(),
+            name: id.to_string(),
+            kind: ConnectionKind::Rdp,
+            host: Some(host.to_string()),
+            port: Some(port),
+            username: Some("Admin".to_string()),
+            domain: Some("CORP".to_string()),
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: Vec::new(),
+            trust_cert: false,
+            last_used: None,
+            server_id: None,
+        }
+    }
+
+    /// Makes `file` in the data dir of the workspace `ws` in `base` hold `connections`.
+    fn write_connections(base: &Path, ws: &str, file: &str, connections: &[Connection]) {
+        fs::write(
+            dir_of(base, ws).join(file),
+            serde_json::to_vec(connections).unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// The migrated workspace `ws`, as its process holds it.
+    fn migrated(ws: &str) -> workspace::Workspace {
+        workspace::Workspace {
+            id: id(ws),
+            name: ws.to_string(),
+            legacy_keys: true,
+        }
+    }
+
+    #[test]
+    fn workspace_keys_a_key_a_migrated_workspace_takes_over_goes_with_the_last_one() {
+        let scratch = Scratch::new("purge-taken-over");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "standard",
+                    meta(SyncMode::Server, "Standard", Some("https://ah.example.com")),
+                ),
+                ("lokal", meta(SyncMode::Local, "Lokal", None)),
+                ("w-0a1b2c3d", created(SyncMode::Local, "Kunde A", None)),
+            ],
+            false,
+        );
+        // Stored before connection ids; no connections file names the connection.
+        let legacy = "rdp|192.0.2.10|3390|admin|corp".to_string();
+        let taken = "rdp|c1|192.0.2.10|3390|admin|corp".to_string();
+        let of_created = behind(&prefix_of("w-0a1b2c3d"), &RDP);
+        store(std::slice::from_ref(&legacy));
+        store(&of_created);
+        {
+            let _standard = workspace::enter(migrated("standard"));
+            let loaded = load_password_keyring(base, &rdp_connection("c1", "192.0.2.10", 3390));
+            assert_eq!(loaded.unwrap().as_deref(), Some("secret"));
+        }
+        assert_eq!(
+            held_keys(&[legacy.clone(), taken.clone()]),
+            std::slice::from_ref(&taken)
+        );
+        let index: serde_json::Value = serde_json::from_slice(
+            &fs::read(dir_of(base, "standard").join("secrets.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(index, serde_json::json!({ "keys": [taken] }));
+
+        // `lokal` may load it as well: the purge of `standard` hands it over.
+        purge_child(base, "standard", |_| ResetOutcome::Revoked).unwrap();
+        assert_eq!(
+            held_keys(std::slice::from_ref(&taken)),
+            std::slice::from_ref(&taken)
+        );
+        assert_eq!(handed_over(base), std::slice::from_ref(&taken));
+
+        purge_child(base, "lokal", no_revoke).unwrap();
+        assert_eq!(held_keys(&[taken]), Vec::<String>::new());
+        assert_eq!(held_keys(&of_created), of_created);
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
+    }
+
+    #[test]
+    fn workspace_keys_the_last_migrated_workspace_deletes_the_keys_its_connections_name() {
+        for meta_loads in [true, false] {
+            let case = format!("workspace.json loads: {meta_loads}");
+            let scratch = Scratch::new("purge-unindexed");
+            let base = &scratch.0;
+            let _keyring = keyring_store::memory();
+            install(
+                base,
+                &[
+                    (
+                        "server",
+                        meta(SyncMode::Server, "Server", Some("https://ah.example.com")),
+                    ),
+                    ("w-0a1b2c3d", created(SyncMode::Local, "Kunde A", None)),
+                ],
+                false,
+            );
+            let to_elsewhere = rdp_connection("c1", "192.0.2.10", 3390);
+            let to_here = rdp_connection("c2", "127.0.0.1", 3389);
+            let ssh = Connection {
+                kind: ConnectionKind::Ssh,
+                ..rdp_connection("c3", "192.0.2.30", 22)
+            };
+            if meta_loads {
+                write_connections(
+                    base,
+                    "server",
+                    "connections.json",
+                    &[to_elsewhere, to_here, ssh],
+                );
+            } else {
+                // Its kind is not known: the connections in either file are its own.
+                fs::write(dir_of(base, "server").join("workspace.json"), "{not json").unwrap();
+                write_connections(base, "server", "connections.local.json", &[to_elsewhere]);
+                write_connections(base, "server", "connections.json", &[to_here, ssh]);
+            }
+            // Stored before workspaces and never loaded since: no index names them.
+            let unindexed = [
+                "rdp|c1|192.0.2.10|3390|admin|corp",
+                "rdp|192.0.2.10|3390|admin|corp",
+                "rdp|c2|127.0.0.1|3389|admin|corp",
+                // No load takes it over, as it may be any connection's to this machine; with
+                // no migrated workspace left, it goes all the same.
+                "rdp|127.0.0.1|3389|admin|corp",
+            ]
+            .map(String::from);
+            let others = [
+                // No RDP connection names them: another id, another target, an SSH one.
+                "rdp|c9|192.0.2.10|3390|admin|corp".to_string(),
+                "rdp|192.0.2.99|3389|admin|corp".to_string(),
+                "rdp|c3|192.0.2.30|22|admin|corp".to_string(),
+                "rdp|192.0.2.30|22|admin|corp".to_string(),
+                // The same connection in a workspace made after the migration.
+                format!(
+                    "{}rdp|c1|192.0.2.10|3390|admin|corp",
+                    prefix_of("w-0a1b2c3d")
+                ),
+                "tofu|cert|ah.example.com:443".to_string(),
+            ];
+            store(&unindexed);
+            store(&others);
+
+            purge_child(base, "server", |_| ResetOutcome::Revoked).unwrap();
+
+            assert_eq!(held_keys(&unindexed), Vec::<String>::new(), "{case}");
+            assert_eq!(held_keys(&others), others, "{case}");
+            assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"], "{case}");
+        }
+    }
+
+    #[test]
+    fn workspace_keys_a_migrated_workspace_beside_another_hands_over_the_keys_its_connections_name()
+    {
+        let scratch = Scratch::new("purge-unindexed-shared");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "standard",
+                    meta(SyncMode::Server, "Standard", Some("https://ah.example.com")),
+                ),
+                ("lokal", meta(SyncMode::Local, "Lokal", None)),
+            ],
+            false,
+        );
+        let of_standard = rdp_connection("c1", "192.0.2.10", 3390);
+        let of_lokal = rdp_connection("c5", "192.0.2.50", 3389);
+        write_connections(
+            base,
+            "standard",
+            "connections.json",
+            std::slice::from_ref(&of_standard),
+        );
+        write_connections(
+            base,
+            "lokal",
+            "connections.local.json",
+            std::slice::from_ref(&of_lokal),
+        );
+        // Stored before workspaces and never loaded since: no index names them.
+        let keys = [
+            "rdp|192.0.2.10|3390|admin|corp",
+            "rdp|c1|192.0.2.10|3390|admin|corp",
+        ]
+        .map(String::from);
+        let own_of_lokal = "rdp|c5|192.0.2.50|3389|admin|corp".to_string();
+        // No connection names it.
+        let other = "rdp|192.0.2.99|3389|admin|corp".to_string();
+        store(&keys);
+        store(&[own_of_lokal.clone(), other.clone()]);
+
+        purge_child(base, "standard", |_| ResetOutcome::Revoked).unwrap();
+
+        assert_eq!(held_keys(&keys), keys);
+        assert_eq!(handed_over(base), keys);
+        {
+            // They may be `lokal`'s: a connection there with the same id loads them.
+            let _lokal = workspace::enter(migrated("lokal"));
+            assert_eq!(
+                load_password_keyring(base, &of_standard)
+                    .unwrap()
+                    .as_deref(),
+                Some("secret")
+            );
+            assert_eq!(
+                load_password_keyring(base, &of_lokal).unwrap().as_deref(),
+                Some("secret")
+            );
+        }
+
+        // The last migrated workspace deletes them with its own.
+        purge_child(base, "lokal", no_revoke).unwrap();
+        assert_eq!(
+            held_keys(&[keys.as_slice(), &[own_of_lokal, other.clone()]].concat()),
+            [other]
+        );
+        assert!(!base.join(HANDED_OVER).exists());
+        assert_eq!(workspace_dirs(base), Vec::<String>::new());
+    }
+
+    #[test]
+    fn workspace_keys_a_connections_file_that_does_not_load_stops_every_migrated_purge() {
+        // (the content, whether another migrated workspace is there)
+        let cases = [
+            ("{not json", false),
+            (
+                r#"[{"id": "c1", "name": "geheim", "kind": "geheim"}]"#,
+                false,
+            ),
+            ("{not json", true),
+        ];
+        for (content, beside) in cases {
+            let case = format!("{content} beside another: {beside}");
+            let scratch = Scratch::new("purge-connections-unreadable");
+            let base = &scratch.0;
+            let _keyring = keyring_store::memory();
+            let mut workspaces = vec![(
+                "server",
+                meta(SyncMode::Server, "Server", Some("https://ah.example.com")),
+            )];
+            if beside {
+                workspaces.push(("lokal", meta(SyncMode::Local, "Lokal", None)));
+            }
+            install(base, &workspaces, false);
+            let mut dirs: Vec<&str> = workspaces.iter().map(|(ws, _)| *ws).collect();
+            dirs.sort_unstable();
+            let path = dir_of(base, "server").join("connections.json");
+            fs::write(&path, content).unwrap();
+            let all = [behind("", &IDENTITY), behind("", &RDP)].concat();
+            index(base, "server", &behind("", &RDP));
+            store(&all);
+            write_port_map(base, &[("server", "ssh", 6000)]);
+            let registry = registry_bytes(base);
+            let mut asked = Vec::new();
+
+            let error = purge_child(base, "server", |url| {
+                asked.push(url.to_string());
+                ResetOutcome::Revoked
+            })
+            .unwrap_err()
+            .to_string();
+
+            // The file and where it breaks, never a value from it; nothing changed.
+            assert!(error.contains("connections.json"), "{case}: {error}");
+            assert!(!error.contains("geheim"), "{case}: {error}");
+            assert_eq!(asked, Vec::<String>::new(), "{case}");
+            assert_eq!(held_keys(&all), all, "{case}");
+            assert!(!base.join(HANDED_OVER).exists(), "{case}");
+            assert_eq!(port_owners(base), ["server"], "{case}");
+            assert_eq!(workspace_dirs(base), dirs, "{case}");
+            assert_eq!(fs::read_to_string(&path).unwrap(), content, "{case}");
+            assert_eq!(registry_bytes(base), registry, "{case}");
+        }
     }
 
     /// (cert_pem, key_pem) of a self-signed leaf.

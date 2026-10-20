@@ -265,6 +265,10 @@ fn main() {
             if let tauri::RunEvent::Exit = event {
                 let _ = frpc::stop_frpc(&frpc_state_exit);
                 notifications::stop(&stream_state_exit);
+                // A `TERMSRV/…` entry whose time has not come goes now, not with the logon
+                // session: its timer ends with the process.
+                #[cfg(windows)]
+                password::remove_pending_termsrv();
             }
         });
 }

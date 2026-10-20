@@ -6,7 +6,8 @@
 // aborted attempt (correlationId) must not mark a newer attempt as failed, and markRdpError(null)
 // clears every running attempt. These tests cover that race guard plus markConnectionUsed's
 // mode-specific branches (6.5), the tunnel resolution without mappings, the keyring key of a
-// stored RDP password behind a tunnel, and the user and domain from the password prompt.
+// stored RDP password behind a tunnel, the user and domain from the password prompt, and which
+// password a start takes after the prompt's "remember password".
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Connection, TunnelMapping } from '$lib/bridge/types';
@@ -290,5 +291,97 @@ describe('RDP password prompt behind a tunnel', () => {
       client: undefined,
       correlationId: expect.any(String),
     });
+  });
+});
+
+// Same fresh module graph: what counts is which IPC command starts the session. On Windows only
+// open_connection_stored hands a password to mstsc; Rust drops one given to open_connection.
+describe('RDP start after the prompt remembers the password', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.doUnmock('@tauri-apps/api/core');
+  });
+
+  const listed: Connection = {
+    id: 'r4',
+    name: 'rdp',
+    kind: 'rdp',
+    host: '127.0.0.1',
+    port: 6004,
+    username: 'admin',
+    tags: [],
+    trustCert: false,
+  };
+  const typed: Connection = { ...listed, username: 'alice', domain: 'CORP' };
+
+  async function connectAfterPrompt(remember: boolean, saveFails = false) {
+    const invoke = vi.fn(async (cmd: string, args?: { connection?: Connection }) => {
+      if (cmd === 'password_state') return { canStore: true, stored: false };
+      if (cmd === 'save_password' && saveFails) throw new Error('keyring locked');
+      if (cmd === 'resolve_connection') {
+        return { connection: { ...args?.connection, port: 23004 }, viaTunnel: true };
+      }
+      return undefined;
+    });
+
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    vi.resetModules();
+    vi.doUnmock('$lib/bridge');
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke }));
+    const prompt = await import('./passwordPrompt');
+    vi.mocked(prompt.requestPassword).mockResolvedValue({
+      cancelled: false,
+      updated: typed,
+      password: 'pw',
+      remember,
+    });
+    const status = await import('./statusBar');
+    const flow = await import('./connectFlow');
+    state.setSession({ settings: { mode: 'local', storePasswords: true }, session: null });
+    vi.useFakeTimers();
+
+    await flow.initiateConnect(listed);
+    return { invoke, reportError: vi.mocked(status.reportError) };
+  }
+
+  it('starts with the stored password once the remembered one is saved', async () => {
+    const { invoke, reportError } = await connectAfterPrompt(true);
+
+    expect(invoke).toHaveBeenCalledWith('save_password', { connection: typed, password: 'pw' });
+    expect(invoke).toHaveBeenCalledWith('open_connection_stored', {
+      connection: { ...typed, port: 23004 },
+      credentialConnection: typed,
+      client: undefined,
+      correlationId: expect.any(String),
+    });
+    expect(invoke).not.toHaveBeenCalledWith('open_connection', expect.anything());
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('starts with the typed password and reports the error when saving fails', async () => {
+    const { invoke, reportError } = await connectAfterPrompt(true, true);
+
+    expect(reportError).toHaveBeenCalledWith('error.passwordStore');
+    expect(invoke).toHaveBeenCalledWith('open_connection', {
+      connection: { ...typed, port: 23004 },
+      password: 'pw',
+      client: undefined,
+      correlationId: expect.any(String),
+    });
+    expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
+  });
+
+  it('starts with the typed password when it is not remembered', async () => {
+    const { invoke } = await connectAfterPrompt(false);
+
+    expect(invoke).not.toHaveBeenCalledWith('save_password', expect.anything());
+    expect(invoke).toHaveBeenCalledWith('open_connection', {
+      connection: { ...typed, port: 23004 },
+      password: 'pw',
+      client: undefined,
+      correlationId: expect.any(String),
+    });
+    expect(invoke).not.toHaveBeenCalledWith('open_connection_stored', expect.anything());
   });
 });

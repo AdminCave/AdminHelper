@@ -187,7 +187,7 @@ Altdateien die Quelle bleiben.
 - Neu: `workspace_context` → `{launcher, workspace?: WorkspaceInfo}`; Launcher-only `list_workspaces` →
   `WorkspaceList{workspaces: WorkspaceInfo[], lastUsed, migratedNotice}`, `save_workspace(draft: WorkspaceDraft)`,
   `delete_workspace(id)` → `ResetOutcome`, `open_workspace(id)`; Workspace-only `open_launcher`.
-  `WorkspaceInfo{id, name, color, kind, host, open}`, `WorkspaceDraft{id?, kind, name, color, url?}`; `kind` ist
+  `WorkspaceInfo{id, name, color, kind, host, url?, open}` (`url` mit Benutzerteil als `***@`, Query-Werte und Fragment maskiert; T42/T43/T45), `WorkspaceDraft{id?, kind, name, color, url?}`; `kind` ist
   `SyncMode`. Launcher-Commands lehnen im Workspace-Prozess ab und umgekehrt; ohne Workspace-Kontext liefern
   Datenpfade und Keyring-Präfixe einen Fehler (fail closed).
 - `login` und `enroll_with_token` nehmen nur die URL des Workspaces an (oder die übergebene, solange er keine hat);
@@ -354,10 +354,12 @@ Plan (`termsrv_plan` in `password.rs`, Tests `termsrv_plan_*`; T17 führt ihn au
 
 | Ziel | gespeichertes Passwort | Schritte |
 |---|---|---|
-| anderes | nein | Starten |
+| anderes | nein | eigenen Rest mit Marker entfernen (T39), Starten |
 | anderes | ja | Schreiben, Starten, nach 60 s Löschen |
 | diese Maschine | nein | Löschen (beide Typen), Starten |
 | diese Maschine | ja | Löschen (beide Typen), Schreiben, Starten, nach 60 s Löschen |
+
+Belegung (T39, Kevin 2026-10-20): Jeder Start kennt die Namen, die sein mstsc nachschlagen könnte (Ziel und Clear-Namen, außerhalb von Loopback bei Port ≠ 3389 auch `TERMSRV/<host>`, bei einem Port im Host-Feld auch die Namen des Host-Teils, L), und die er schreibt (W). Ein schreibender Start belegt L und W bis zu seinem `Remove` über alle Workspace-Prozesse, ein Start ohne Passwort belegt L bis zum Ablauf (Kevin 2026-10-20); ein Start einer anderen Verbindung wird abgelehnt, wenn er schreibt, was eine fremde Belegung nachschlagen kann, oder nachschlägt bzw. löscht, was sie geschrieben hat. Zwei Tunnel-Starts auf verschiedenen Ports sperren sich nicht.
 
 Probe (`termsrv_probe_*`, nur im CI-Job `rust-windows`): schreibt `TERMSRV/adminhelper-probe-<pid>-<ns>.invalid:3390`
 generisch mit `CRED_PERSIST_SESSION`, liest Typ, Persistenz, Benutzer und Passwort zurück und löscht den Eintrag.
@@ -378,7 +380,14 @@ oben gilt dann als „Starten“ (T17). Bei Loopback-Zielen löscht die App vor 
 Namensformen (`TERMSRV/<host>:<port>` und `TERMSRV/<host>`), bis Punkt (4) unten belegt ist. Ein zweiter Start
 einer anderen Verbindung auf dasselbe Ziel, solange ein Eintrag in seiner Frist liegt, wird abgelehnt (T39).
 Alt-Einträge `TERMSRV/<gelistete Adresse>` übernimmt der migrierte Workspace beim ersten Start in seinen
-App-Namensraum und löscht sie danach (T40).
+App-Namensraum und löscht sie danach (T40), nur bei gleichem Benutzer (`DOMAIN\user` wie T17 schreibt; sonst
+bleibt der Eintrag, mstsc nimmt ihn) und nur für Verbindungen ohne Tunnel-Mapping (ein übernommenes Passwort
+ginge sonst an einen Endpunkt, den der Workspace-Server festlegt; Kevin 2026-10-20). Scheitert das Speichern,
+bricht der Start ab und der Alt-Eintrag bleibt.
+Restrisiko, hingenommen (Kevin 2026-10-20): Liegt ein Passwort einmal im App-Namensraum eines Workspace
+(übernommen oder selbst gespeichert), geht es beim nächsten Start durch einen Tunnel, falls der Workspace-Server
+später ein Mapping für diese Verbindung anlegt. Der Server bestimmt die Route seiner Verbindungen; ausnutzen kann
+es nur ein kompromittierter Server, der den Nutzer ebenso über die mstsc-Abfrage tippen lassen kann.
 
 Quellen (abgerufen 2026-10-20):
 

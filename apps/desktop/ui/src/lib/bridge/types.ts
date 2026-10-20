@@ -147,6 +147,13 @@ export interface WorkspaceInfo {
   /** One of the palette (workspace.rs PALETTE). */
   color: string;
   kind: SyncMode;
+  /**
+   * Its URL with user and password masked as one (`***@`), the query values and the fragment
+   * masked (`?token=***`, `#***`), in the spelling of the Rust URL parser; a URL with nothing
+   * to mask as kept (workspace.rs shown_url). Null without a URL or for one that does not
+   * parse.
+   */
+  url?: string | null;
   /** The host of its URL; null without a URL. */
   host?: string | null;
   /** A process holds the workspace. */
@@ -161,7 +168,9 @@ export interface WorkspaceList {
 }
 
 // Makes a workspace (no id) or edits the closed one `id` names. The kind of a workspace
-// never changes; in an edit, a missing or blank url takes away the URL it has.
+// never changes. In an edit, the `url` of its WorkspaceInfo sent back as it came keeps the
+// URL it has (user, query and fragment with it); another url replaces it, and a missing or
+// blank url takes it away, unless the WorkspaceInfo had none.
 export interface WorkspaceDraft {
   id?: string | null;
   kind: SyncMode;

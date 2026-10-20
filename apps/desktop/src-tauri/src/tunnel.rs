@@ -278,7 +278,7 @@ fn host_targets(connection: &Connection) -> Vec<Loopback> {
 
 /// Host and port of an RDP host `host:port` or `[IPv6 address]:port`; an IPv6 address carries a
 /// port only in brackets.
-fn rdp_host_port(host: &str) -> Option<(&str, u16)> {
+pub(crate) fn rdp_host_port(host: &str) -> Option<(&str, u16)> {
     let (host, port) = match host.strip_prefix('[') {
         Some(bracketed) => {
             let (address, rest) = bracketed.split_once(']')?;
@@ -318,7 +318,7 @@ fn ssh_uri(destination: &str) -> Option<(&str, Option<u16>)> {
 /// machine; `None` if the check cannot read it. The URL host parser reads IPv4 in the forms the
 /// system resolver takes as well (`127.1`, `0x7f.0.0.1`, `2130706433`). It reads no IPv6 zone
 /// (`fe80::1%eth0`), nor a user or a port in the host.
-fn host_is_loopback(host: &str) -> Option<bool> {
+pub(crate) fn host_is_loopback(host: &str) -> Option<bool> {
     if let Ok(ip) = host.parse::<Ipv6Addr>() {
         return Some(is_loopback(&Host::<&str>::Ipv6(ip)));
     }

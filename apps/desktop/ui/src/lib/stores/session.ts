@@ -12,12 +12,16 @@
 // The session itself (server URL, access and refresh token, certificate choice)
 // lives only in the Rust process; this store holds who signed in where
 // (AuthSession), never a token. Nothing survives the app: server mode requires
-// a fresh password login each time the app is opened (see hydrate).
+// a fresh password login each time the app is opened (see hydrate). The mode is
+// the kind of the workspace this window serves; the launcher never signs in.
 
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import { setLanguage } from '$lib/i18n';
-import type { AuthSession, Settings, SyncMode } from '$lib/bridge/types';
+import { setLanguage, tNow } from '$lib/i18n';
+import { errMsg } from '$lib/utils/errors';
+import type { AuthSession, Settings } from '$lib/bridge/types';
+import { reportError } from './statusBar';
+import { context, loadContext, reloadContextForUrl } from './workspace';
 
 interface SessionState {
   settings: Settings | null;
@@ -61,13 +65,22 @@ export const isAuthenticated = derived(_state, ($s) => {
   return $s.session !== null;
 });
 
-/** Returns true if the current mode requires auth but no session exists. */
-export const needsLogin = derived(_state, ($s) => {
-  return $s.ready && $s.settings?.mode === 'server' && $s.session === null;
+/** Returns true in a workspace whose mode requires auth while no session exists. A window
+ * without a context (it failed to load) counts as a workspace: it still asks for the login. */
+export const needsLogin = derived([_state, context], ([$s, $ctx]) => {
+  return (
+    $s.ready && $ctx?.launcher !== true && $s.settings?.mode === 'server' && $s.session === null
+  );
 });
 
-/** Loads settings at app start. */
+/** Loads the workspace context and the settings at app start. */
 export async function hydrate(): Promise<void> {
+  try {
+    // Before `ready`: the launcher must never show the login, not even for a frame.
+    await loadContext();
+  } catch (err) {
+    console.error('workspace context failed', err);
+  }
   try {
     const s = await bridge.loadSettings();
     setLanguage(s.language);
@@ -87,16 +100,21 @@ export async function login(serverUrl: string, username: string, password: strin
   const allowSelfSigned = current.settings?.allowSelfSignedCerts ?? false;
   const sess = await bridge.login(serverUrl, username, password, allowSelfSigned);
 
-  // Persist server URL + username (never the password) so the next start can
-  // pre-fill the login screen and only ask for the password. Best-effort: a
-  // failed save must not block an otherwise successful login.
+  // Persist the server Rust signed in at and the username (never the password): the
+  // workspace takes that server as its URL if it has none yet, the next start pre-fills the
+  // username, and no other workspace signs in to this server as this user. The URL sent may be
+  // the one the window shows, masked; the session names the one the workspace keeps. A failed
+  // save must not block an otherwise successful login, but the user learns of it.
   let next = current.settings;
   if (current.settings) {
-    next = { ...current.settings, serverUrl: serverUrl.trim(), lastUsername: username.trim() };
+    next = { ...current.settings, serverUrl: sess.serverUrl, lastUsername: username.trim() };
     try {
       await bridge.saveSettings(next);
-    } catch {
+      // A workspace without a URL took the one of this sign-in with the save.
+      await reloadContextForUrl();
+    } catch (err) {
       next = current.settings;
+      reportError(tNow('login.notSaved', { message: errMsg(err) }));
     }
   }
 
@@ -123,20 +141,6 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** Drops the current server session: ends it in Rust (keeping the enrolled
- * mTLS device cert) and clears the in-memory one. Used when leaving
- * server mode so a later switch back forces a fresh login instead of reusing a
- * stale session still bound to the previous server URL. Connections are NOT
- * cleared here — the caller reloads them for the new mode. */
-export async function dropSession(): Promise<void> {
-  try {
-    await bridge.logout();
-  } catch {
-    /* clearing local session state must not depend on the server being reachable */
-  }
-  _state.update((s) => ({ ...s, session: null }));
-}
-
 /** Persist "allow self-signed certificates". Used by the login screen's trust
  * dialog (ERR_TLS_UNKNOWN_ISSUER): before the first login/enrollment the
  * settings modal is unreachable, so the dialog is the only way to opt in to
@@ -145,14 +149,6 @@ export async function setAllowSelfSignedCerts(allow: boolean): Promise<void> {
   const current = get(_state);
   if (!current.settings) return;
   const next = { ...current.settings, allowSelfSignedCerts: allow };
-  await bridge.saveSettings(next);
-  _state.update((s) => ({ ...s, settings: next }));
-}
-
-export async function setMode(mode: SyncMode): Promise<void> {
-  const current = get(_state);
-  if (!current.settings) return;
-  const next = { ...current.settings, mode };
   await bridge.saveSettings(next);
   _state.update((s) => ({ ...s, settings: next }));
 }

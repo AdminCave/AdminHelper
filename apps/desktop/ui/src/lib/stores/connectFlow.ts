@@ -164,9 +164,11 @@ async function handleRdpAuth(
       const outcome = await requestPassword(connection, keepEditorOpen, true);
       if (outcome.cancelled) return true;
       const updated = outcome.updated ?? connection;
+      let saved = false;
       if (outcome.remember && outcome.password) {
         try {
           await bridge.savePassword(updated, outcome.password);
+          saved = true;
         } catch (err) {
           reportError(
             tNow('error.passwordStore', {
@@ -176,10 +178,15 @@ async function handleRdpAuth(
         }
       }
       // Resolve what the prompt returns: it carries the user and domain typed there, and the
-      // visitors may have moved while the prompt waited.
-      await performConnect(updated, await resolveTarget(updated), keepEditorOpen, {
-        password: outcome.password,
-      });
+      // visitors may have moved while the prompt waited. A saved password starts the stored way:
+      // on Windows only that way hands it to mstsc (TERMSRV for the start); Rust drops a typed one
+      // there and mstsc would ask a second time.
+      await performConnect(
+        updated,
+        await resolveTarget(updated),
+        keepEditorOpen,
+        saved ? { useStoredPassword: true } : { password: outcome.password },
+      );
       return true;
     } catch (err) {
       reportError(`Password-Store: ${errMsg(err)}`);

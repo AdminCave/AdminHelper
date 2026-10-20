@@ -237,6 +237,11 @@ pub struct WorkspaceInfo {
     /// One of the palette (`workspace::PALETTE`).
     pub color: String,
     pub kind: SyncMode,
+    /// Its URL as `workspace::shown_url` gives it: a user and a password masked as one (`***@`),
+    /// the values of its query and its fragment masked (`?token=***`, `#***`), in the parser's
+    /// spelling; a URL with nothing to mask as it keeps it. None without a URL or for one that
+    /// does not parse.
+    pub url: Option<String>,
     /// The host of its URL; none without a URL.
     pub host: Option<String>,
     /// A process holds its lock.
@@ -262,8 +267,9 @@ pub struct WorkspaceDraft {
     pub kind: SyncMode,
     pub name: String,
     pub color: String,
-    /// The URL the workspace keeps; in an edit, none (or a blank one) takes away the URL it has.
-    /// The editor therefore always sends the whole URL.
+    /// The URL the workspace keeps. In an edit, the `url` of its [`WorkspaceInfo`] sent back as
+    /// it came keeps the URL it has, user, query and fragment with it; another URL replaces it,
+    /// and none (or a blank one) takes it away, unless the info had none.
     pub url: Option<String>,
 }
 
