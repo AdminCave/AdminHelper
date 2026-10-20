@@ -242,8 +242,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_unit_types_
 Doku: keine (Test)
 Abhängt von: T22
 
-### T23 — Desktop: Schalter „Ausfall melden“ für `proxmox_backup`  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/api/types.ts
+### T23 — Desktop: Schalter „Ausfall melden“ für `proxmox_backup`  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/api/types.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @7fe41a04 2026-10-20T14:08:43+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T23.verdict.json)
 Änderung: `{@render outageField()}` im Zweig `proxmox_backup` (`CheckConfigFields.svelte:329-356`); der Kommentar an `alert_on_unavailable` (`types.ts:231`) nennt `proxmox_backup`. Tests: die `describe` „outage switch (R-0419)“ (`CheckConfigFields.test.ts:78`) läuft auch für `proxmox_backup`. Nachtrag (T14): Die Admin-Doku (DE+EN, Abschnitt Ausfall von Docker, ZFS und Proxmox) trennt heute den Desktop-Stand: keine Checkbox „Ausfall melden“ für Proxmox, „—“ statt VM-Liste; diese Einschränkungen mit dieser Task entfernen bzw. angleichen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/CheckConfigFields.test.ts
 Doku: keine (Doku mit T24)

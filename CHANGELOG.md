@@ -1010,7 +1010,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Ausfall wie Docker und ZFS als `warning` mit Benachrichtigung, etwa
   „Proxmox unavailable (timeout): pvesh get /cluster/resources timed out after 15s“. `alert_on_unavailable: false`
   (neu in der Konfiguration von `proxmox_backup`, Default `true`, nur `true` oder `false`) laesst einen Ausfall auf
-  `unknown` ohne Benachrichtigung stehen. Fehlt der Block (`pvesh` deinstalliert, oder ein aelterer Agent kann
+  `unknown` ohne Benachrichtigung stehen; im Check-Formular des Desktops ist das wie bei Docker und ZFS die Checkbox
+  „Ausfall melden“. Fehlt der Block (`pvesh` deinstalliert, oder ein aelterer Agent kann
   Proxmox nicht lesen), bleibt der Check `unknown`, leert aber die zuletzt gezeigte VM-Liste; ein lesbares Proxmox
   ohne VMs leert sie ebenso. Die Check-Details tragen dazu `available` und `error`. Das Standard-Template
   „Proxmox Host“ steht dafuer in Version 2 auf `consecutive_fails` 2 wie Docker und ZFS: ein einzelner Lesefehler

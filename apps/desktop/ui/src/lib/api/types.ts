@@ -241,7 +241,7 @@ export interface MonitorCheckConfig {
   capacity_warn?: number;
   capacity_crit?: number;
 
-  // zfs_health and docker_health; absent means true.
+  // zfs_health, docker_health and proxmox_backup; absent means true.
   alert_on_unavailable?: boolean;
 
   // docker_health

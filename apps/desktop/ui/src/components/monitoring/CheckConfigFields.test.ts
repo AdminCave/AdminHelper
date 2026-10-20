@@ -75,8 +75,10 @@ describe('CheckConfigFields guardrails (T20)', () => {
 // switch. At the default the key must go: a template's check whose config
 // carried {"alert_on_unavailable": true} would differ from the template's {}
 // and count as changed by the user (mark_overrides).
+// monitoring-linux-base-v2 T23 (R-0492): proxmox_backup has the same switch on
+// the server since T14, so the form offers it there too.
 describe('CheckConfigFields outage switch (R-0419)', () => {
-  const TYPES = ['zfs_health', 'docker_health'] as const;
+  const TYPES = ['zfs_health', 'docker_health', 'proxmox_backup'] as const;
 
   async function outageBox(
     checkType: (typeof TYPES)[number],
@@ -111,9 +113,9 @@ describe('CheckConfigFields outage switch (R-0419)', () => {
     expect(config).toEqual({});
   });
 
-  it('shows a stored false as off and drops it when switched on', async () => {
+  it.each(TYPES)('%s shows a stored false as off and drops it when switched on', async (type) => {
     const config = { alert_on_unavailable: false } as MonitorCheckConfig;
-    const box = await outageBox('zfs_health', config);
+    const box = await outageBox(type, config);
     expect(box.checked).toBe(false);
     await fireEvent.click(box);
     expect(config).toEqual({});

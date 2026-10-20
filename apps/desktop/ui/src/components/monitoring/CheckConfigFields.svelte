@@ -391,6 +391,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     />
     <span>{$t('monitoring.checkCfg.excludeStopped')}</span>
   </label>
+  {@render outageField()}
 {:else if checkType === 'zfs_health'}
   <label class="field">
     <span class="field-label">{$t('monitoring.checkCfg.capacityWarn')}</span>
