@@ -205,7 +205,10 @@ nichts, eine eigene Tabelle oder ein Speicher-Puffer ist unnötig.
      Stummgeschaltete (`muted_reason`: Wartung, Host-Ping) bleiben offen wie heute.
   2. Getrennt nach Art: **stumm** (`status == critical`) und **zurück** (`status == ok`).
   3. Je Art: **≥ 3 Kandidaten → Sammelmeldung** über alle; sonst wird jeder Kandidat, dessen `since` mindestens
-     5 Minuten zurückliegt, einzeln über den bestehenden Weg gemeldet (`_dispatch_alert_bg` → `process_alert`).
+     min(5 Minuten, Prüfintervall des Checks − 1 Minute) zurückliegt (nie negativ), einzeln über den bestehenden
+     Weg gemeldet (`_dispatch_alert_bg` → `process_alert`). Das Fenster ist kürzer als der Prüftakt (Kevin
+     2026-10-20 nach dem security-Review von T13): sonst wäre ein Agent, der eine Prüfung lang stumm war, beim
+     nächsten Lauf wieder ok, bevor er gemeldet ist, und ein Ausfall von bis zu ~20 Minuten bliebe ungemeldet.
      Jüngere warten auf den nächsten Lauf. Damit gilt: drei Agents binnen 5 Minuten → eine Meldung, sobald der
      dritte da ist; einer oder zwei → je eine Meldung nach 5 Minuten. Nachmeldungen nach einem Wartungsfenster sind
      „alt“ und gehen sofort (ab drei gesammelt).
