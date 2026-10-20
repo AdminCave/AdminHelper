@@ -10,11 +10,16 @@ Tested without a real DB: rule filter (_rule_matches), cooldown time window
 unknown-policy (transitions into 'unknown' never notify).
 """
 
+import logging
 from types import SimpleNamespace
+
+import httpx
+import pytest
 
 from app import alerter
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 from app.core import ssrf as ssrf_mod
+from app.core.logging_config import configure_logging
 from app.core.ssrf import UrlVerdict
 
 from ._helpers import _CapturingDb, make_check, make_msg, make_rule
@@ -230,11 +235,92 @@ class TestWebhookSsrf:
         assert posted["n"] == 0
 
 
+# Many webhook services carry the credential in the path or the query, so user info,
+# path, query and fragment of the target must not reach the service log.
+_MARKED_URL = (
+    "https://user:pw-marke@hooks.example.com/services/T0/B0/pfad-marke?token=query-marke#frag-marke"
+)
+_MARKS = ("user:", "pw-marke", "/services/", "pfad-marke", "query-marke", "frag-marke")
+_CONFIGURED_LOGGERS = ("", "httpx", "httpcore", "uvicorn", "uvicorn.access", "uvicorn.error")
+
+
+@pytest.fixture
+def service_logging(monkeypatch, caplog):
+    """The service's own logging configuration with caplog's handler kept on root, so
+    the test sees every record the service would write, from any logger."""
+    loggers = [logging.getLogger(name) for name in _CONFIGURED_LOGGERS]
+    saved = [(lg, lg.level, lg.handlers[:], lg.propagate) for lg in loggers]
+    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    configure_logging()
+    logging.getLogger().addHandler(caplog.handler)
+    yield
+    for lg, level, handlers, propagate in saved:
+        lg.handlers[:] = handlers
+        lg.propagate = propagate
+        lg.setLevel(level)
+
+
+def _alerter_lines(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "monitor.alerter"]
+
+
+class TestWebhookLogLines:
+    @pytest.mark.parametrize(
+        ("verdict", "line"),
+        [
+            (
+                UrlVerdict.PRIVATE,
+                "Webhook target rejected (private/reserved): c -> hooks.example.com",
+            ),
+            (
+                UrlVerdict.UNRESOLVED,
+                "Webhook target rejected (could not be resolved): c -> hooks.example.com",
+            ),
+            (UrlVerdict.ALLOWED, "Webhook sent: c -> hooks.example.com"),
+        ],
+    )
+    def test_log_line_names_only_the_host(
+        self, monkeypatch, caplog, service_logging, verdict, line
+    ):
+        monkeypatch.setattr(alerter, "classify_url", lambda url: verdict)
+        # Stubbed below the client, so httpx itself runs and logs as in the service.
+        monkeypatch.setattr(
+            httpx.HTTPTransport,
+            "handle_request",
+            lambda self, request: httpx.Response(200, request=request),
+        )
+
+        alerter._send_webhook({"url": _MARKED_URL}, make_rule(), make_check(), make_msg())
+
+        for message in caplog.messages:
+            for mark in _MARKS:
+                assert mark not in message, message
+        assert _alerter_lines(caplog) == [line]
+
+    def test_unparsable_url_is_logged_as_placeholder(self, monkeypatch, caplog):
+        # urlparse raises on a malformed IPv6 literal; the real classify_url rejects it
+        # as private, and the log line must not raise on it either.
+        posted = {"n": 0}
+        monkeypatch.setattr(
+            alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="monitor.alerter"):
+            success, _error = alerter._send_webhook(
+                {"url": "http://[::1"}, make_rule(), make_check(), make_msg()
+            )
+
+        assert success is False
+        assert posted["n"] == 0
+        assert _alerter_lines(caplog) == ["Webhook target rejected (private/reserved): c -> ?"]
+
+
 class TestRuleLoopIsolation:
-    def test_a_throwing_dispatch_does_not_abort_the_loop(self, monkeypatch):
+    def test_a_throwing_dispatch_does_not_abort_the_loop(self, monkeypatch, caplog):
         # 4.45: a misconfigured rule whose _dispatch raises (e.g. smtp_port "abc" parsed before
         # _send_email's own try) must not abort the whole loop and roll back every other rule's
-        # alert log — each rule still gets a log entry, the bad one flagged as a failed attempt.
+        # alert log — each rule still gets a log entry, the bad one flagged as a failed attempt
+        # with a fixed reason; the exception text goes to the service log only.
         bad = make_rule(id="rule-bad", name="bad")
         good = make_rule(id="rule-good", name="good")
         db = _CapturingDb([bad, good])
@@ -247,13 +333,18 @@ class TestRuleLoopIsolation:
         monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
         monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
 
-        process_alert(db, make_check(), old_status="ok", new_status="critical")
+        with caplog.at_level(logging.INFO, logger="monitor.alerter"):
+            process_alert(db, make_check(), old_status="ok", new_status="critical")
 
         assert len(db.added) == 2, "beide Rules bekommen einen Log-Eintrag trotz Fehler in einer"
         assert db.flushed is True
         by_rule = {e.alert_rule_id: e.success for e in db.added}
         assert by_rule["rule-bad"] is False
         assert by_rule["rule-good"] is True
+        errors = {e.alert_rule_id: e.error for e in db.added}
+        assert errors["rule-bad"] == "Dispatch failed (ValueError)"
+        assert errors["rule-good"] is None
+        assert "smtp_port abc" in caplog.text
 
 
 def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):

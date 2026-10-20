@@ -62,6 +62,38 @@ class TestFormatLine:
         # Integer fields get the 'i' suffix in the line protocol.
         assert format_line("m", {"host": "srv"}, 5, 100) == "m,host=srv value=5i 100"
 
+    @pytest.mark.parametrize("edge", [2**63 - 1, -(2**63)])
+    def test_int64_edges_keep_i_suffix(self, edge):
+        assert format_line("m", {"host": "srv"}, edge, 100) == f"m,host=srv value={edge}i 100"
+
+    @pytest.mark.parametrize(
+        ("big", "field"),
+        [
+            (2**63, "value=9.223372036854776e+18"),
+            (-(2**63) - 1, "value=-9.223372036854776e+18"),
+            (10**300, "value=1e+300"),
+        ],
+    )
+    def test_int_beyond_int64_is_written_as_float(self, big, field):
+        # VictoriaMetrics parses an "i" value as int64 and rejects the whole batch on
+        # overflow (HTTP 400), the valid lines of that write too; it stores float64 anyway.
+        assert format_line("m", {"host": "srv"}, big, 100) == f"m,host=srv {field} 100"
+
+    @pytest.mark.parametrize("huge", [10**400, -(10**400)])
+    def test_int_beyond_float_range_rejected(self, huge):
+        # Not even float64 holds it: rejected like inf, not an OverflowError.
+        with pytest.raises(ValueError):
+            format_line("m", {"host": "srv"}, huge, 100)
+
+    def test_check_lines_skip_an_int_beyond_float_range(self):
+        from app.core.victoria import VictoriaClient
+
+        lines = VictoriaClient().build_check_result_lines(
+            "c1", "agent_resources", "s1", "chk", "ok", 0, {"x": 10**400, "y": 1}
+        )
+        assert not [line for line in lines if line.startswith("monitor_x,")]
+        assert len([line for line in lines if line.startswith("monitor_y,")]) == 1
+
     def test_float_no_i_suffix(self):
         assert format_line("m", {"host": "srv"}, 1.5, 100) == "m,host=srv value=1.5 100"
 

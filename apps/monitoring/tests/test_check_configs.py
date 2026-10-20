@@ -6,12 +6,16 @@
 out-of-range values must fail at create/update/template time instead of
 surfacing as a permanently-unknown or mis-thresholded check at runtime."""
 
+import asyncio
 import json
+import math
 import re
 import types
 import typing
 
 import pytest
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 
@@ -20,6 +24,8 @@ from app.check_configs import CONFIG_MODELS, _TempOverride, validate_check_confi
 from app.models import MonitorCheck, MonitorTemplate
 from app.schemas import CheckCreate, TemplateAlertDef, TemplateCheckDef
 from app.template_sync import record_override_baseline
+
+from ._helpers import assert_every_reader_reads
 
 
 class TestValidateCheckConfig:
@@ -254,6 +260,11 @@ def _a_number(field: FieldInfo) -> float:
     return next(m.ge for m in field.metadata if hasattr(m, "ge"))
 
 
+# Sent as raw tokens, as a client may write them: json= refuses to write inf or nan.
+_NON_FINITE_TOKENS = ["Infinity", "-Infinity", "NaN"]
+_JSON = {"content-type": "application/json"}
+
+
 class TestStrictNumberFields:
     """R-0487: a lax number field took "85" or true, stored it as sent, and the
     checker then failed on the string; the check editor reads only real numbers."""
@@ -286,6 +297,16 @@ class TestStrictNumberFields:
         with pytest.raises(ValueError, match=rf"\s{loc}: Input should be a valid (number|integer)"):
             validate_check_config(check_type, _config_with(check_type, path, value))
 
+    @pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan], ids=repr)
+    @pytest.mark.parametrize(("check_type", "path", "field"), _NUMBER_FIELDS, ids=_NUMBER_FIELD_IDS)
+    def test_non_finite_is_rejected_with_the_field_named(self, check_type, path, field, value):
+        # json.loads reads the tokens Infinity and NaN, and json.dumps stores them
+        # again: a float field without an upper bound took inf.
+        loc = re.escape(".".join(path))
+        reason = "valid integer" if field.annotation is int else "finite number"
+        with pytest.raises(ValueError, match=rf"\s{loc}: Input should be a {reason}"):
+            validate_check_config(check_type, _config_with(check_type, path, value))
+
     @pytest.mark.parametrize(("check_type", "path", "field"), _INT_FIELDS, ids=_INT_FIELD_IDS)
     def test_int_field_rejects_a_number_with_a_decimal_point(self, check_type, path, field):
         # 22.0 is a JSON number, but not a whole one for an int field. The field's
@@ -314,6 +335,20 @@ class TestStrictNumberFields:
         )
         assert r.status_code == 422
         assert "valid number" in r.text
+
+    @pytest.mark.parametrize("token", _NON_FINITE_TOKENS)
+    def test_post_non_finite_token_is_422(self, client_db, monkeypatch, token):
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        body = f'{{"name": "c", "check_type": "smart_health", "config": {{"reallocated_warn": {token}}}}}'
+        r = client.post("/checks", content=body, headers=_JSON)
+        assert r.status_code == 422
+        assert_every_reader_reads(r.json())
+        [error] = r.json()["detail"]
+        assert "reallocated_warn: Input should be a finite number" in error["msg"]
+        assert error["input"]["config"] == {"reallocated_warn": None}
+        r = client.get("/checks")
+        assert (r.status_code, r.json()) == (200, [])
 
     def test_put_changed_number_string_is_422(self, client_db, monkeypatch):
         client, factory = client_db
@@ -345,6 +380,130 @@ class TestStrictNumberFields:
         r = client.post("/templates", json={"name": "T", "check_definitions": [check_def]})
         assert r.status_code == 422
         assert "valid number" in r.text
+
+    @pytest.mark.parametrize("token", _NON_FINITE_TOKENS)
+    def test_template_definition_with_non_finite_token_is_422(self, client_db, token):
+        client, _ = client_db
+        body = (
+            '{"name": "T", "check_definitions": [{"name": "c", "check_type": "smart_health",'
+            f' "config": {{"reallocated_warn": {token}}}}}]}}'
+        )
+        r = client.post("/templates", content=body, headers=_JSON)
+        assert r.status_code == 422
+        assert_every_reader_reads(r.json())
+        [error] = r.json()["detail"]
+        assert "reallocated_warn: Input should be a finite number" in error["msg"]
+        assert error["input"]["config"] == {"reallocated_warn": None}
+        r = client.get("/templates")
+        assert (r.status_code, r.json()) == (200, [])
+
+
+class TestValidationErrorAnswer:
+    """The service's 422 is FastAPI's own, except that a non-finite number in the input it
+    echoes is null (Kevin 2026-10-20) and a lone surrogate there is escaped: FastAPI's handler
+    echoed the body, and JSONResponse refused to write Infinity or NaN and could not encode a
+    lone surrogate as UTF-8, so the client got a 500 instead."""
+
+    @staticmethod
+    def _answer(handler, errors):
+        response = asyncio.run(handler(None, RequestValidationError(errors)))
+        return response.status_code, bytes(response.body)
+
+    @staticmethod
+    def _handlers():
+        from app.main import _validation_error
+
+        return _validation_error, request_validation_exception_handler
+
+    def test_without_a_non_finite_number_or_a_lone_surrogate_it_is_fastapis_own(self):
+        # Other non-ASCII text stays as FastAPI writes it, unescaped UTF-8.
+        errors = [
+            {
+                "type": "value_error",
+                "loc": ("body", "config"),
+                "msg": "Value error, m",
+                "input": {
+                    "a": 1.5,
+                    "b": [2, "x", None, True, {"c": -0.0}],
+                    "d": 10**30,
+                    "e": "\u00e4\U0001f600",
+                },
+            },
+            {"type": "missing", "loc": ("body", "name"), "msg": "Field required", "input": {}},
+        ]
+        ours, fastapis = self._handlers()
+        assert self._answer(ours, errors) == self._answer(fastapis, errors)
+
+    def test_a_non_finite_number_in_the_input_is_null(self):
+        errors = [
+            {
+                "type": "value_error",
+                "loc": ("body",),
+                "msg": "Value error, m",
+                "input": {"a": math.inf, "b": [-math.inf, {"c": math.nan}], "d": 1.5, "e": "x"},
+            },
+            {
+                "type": "finite_number",
+                "loc": ("body", "f"),
+                "msg": "Input should be a finite number",
+                "input": math.nan,
+            },
+        ]
+        ours, _ = self._handlers()
+        status, body = self._answer(ours, errors)
+        assert status == 422
+        assert_every_reader_reads(json.loads(body))
+        detail = json.loads(body)["detail"]
+        assert [e["input"] for e in detail] == [
+            {"a": None, "b": [None, {"c": None}], "d": 1.5, "e": "x"},
+            None,
+        ]
+        assert [(e["loc"], e["msg"]) for e in detail] == [
+            (["body"], "Value error, m"),
+            (["body", "f"], "Input should be a finite number"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("config", "echoed"),
+        [
+            ('{"target": 5}', {"target": 5}),
+            ('{"target": 5, "timeout": NaN}', {"target": 5, "timeout": None}),
+        ],
+        ids=["surrogate", "surrogate-and-NaN"],
+    )
+    def test_a_lone_surrogate_in_the_input_is_escaped(self, client_db, monkeypatch, config, echoed):
+        # JSON spells a lone surrogate as \ud800 and json.loads reads it, but UTF-8 has no
+        # form for it: JSONResponse could not encode the echoed body, a 500.
+        monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
+        client, _ = client_db
+        body = f'{{"name": "\\ud800", "check_type": "ping", "config": {config}}}'
+        r = client.post("/checks", content=body, headers=_JSON)
+        assert (r.status_code, r.headers["content-type"]) == (422, "application/json")
+        # Strict UTF-8, as any client reads it.
+        answer = json.loads(r.content.decode("utf-8"))
+        assert_every_reader_reads(answer)
+        [error] = answer["detail"]
+        assert "target: Input should be a valid string" in error["msg"]
+        assert error["input"] == {"name": "\ud800", "check_type": "ping", "config": echoed}
+        r = client.get("/checks")
+        assert (r.status_code, r.json()) == (200, [])
+
+
+class TestExcludeVmids:
+    """A number in exclude_vmids is a Proxmox VE VMID, 100 to 999999999 (qm(1));
+    unbounded, an integer of any length was stored as sent."""
+
+    @pytest.mark.parametrize("vmid", [99, 1_000_000_000, 10**400], ids=["99", "1e9", "10**400"])
+    def test_number_outside_the_vmid_range_is_rejected(self, vmid):
+        with pytest.raises(
+            ValueError,
+            match=r"\sexclude_vmids\.0\.constrained-int: Input should be (greater|less) than or equal to",
+        ):
+            validate_check_config("proxmox_backup", {"exclude_vmids": [vmid]})
+
+    @pytest.mark.parametrize("vmid", [100, 999_999_999, "101"], ids=repr)
+    def test_vmid_or_string_is_accepted(self, vmid):
+        validate_check_config("proxmox_backup", {"exclude_vmids": [vmid]})
 
 
 class TestAlertOnUnavailableTemplates:

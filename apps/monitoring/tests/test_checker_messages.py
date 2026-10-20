@@ -11,6 +11,7 @@ on the wrong path."""
 import socket
 import subprocess
 import time
+import unicodedata
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -771,6 +772,166 @@ LIST_CASES = [
 def test_list_in_message_names_at_most_ten_entries(monkeypatch, call, status, message):
     got_status, got_message, _ = call(monkeypatch)
     assert (got_status, got_message) == (status, message)
+
+
+# --- text from the report in a message: one line, every control character a space ---
+# The message goes unchanged into the dashboard, the bell, mail and webhook; a line break in
+# a container name would put a forged line of its own into each of them.
+
+
+def _one_line(text):
+    """No character of Unicode category Cc and no line or paragraph separator."""
+    return not any(unicodedata.category(c) == "Cc" or c in "\u2028\u2029" for c in text)
+
+
+@pytest.mark.parametrize(
+    "char",
+    ["\n", "\r", "\t", "\x1b", "\x7f", "\x85", "\u2028", "\u2029"],
+    ids=["lf", "cr", "tab", "esc", "del", "nel", "line-separator", "paragraph-separator"],
+)
+def test_cap_agent_text_turns_a_control_character_into_a_space(char):
+    assert agent.cap_agent_text(f"a{char}b") == "a b"
+
+
+def test_cap_agent_text_turns_every_control_character_into_a_space():
+    controls = [chr(c) for c in range(0x110000) if unicodedata.category(chr(c)) == "Cc"]
+    assert len(controls) == 65  # U+0000-U+001F and U+007F-U+009F
+    text = "".join(controls) + "\u2028\u2029"
+    assert agent.cap_agent_text(text) == " " * 67
+
+
+def test_cap_agent_text_cuts_a_multiline_text_to_one_line_of_500_characters():
+    text = "line\n" * 120  # 600 characters
+    capped = agent.cap_agent_text(text)
+    assert capped == ("line " * 120)[:499] + "…"
+    assert len(capped) == 500
+    assert _one_line(capped)
+
+
+def test_cap_agent_text_keeps_a_text_without_control_characters():
+    # U+00A0 is the first character after the C1 controls.
+    assert agent.cap_agent_text("nginx-ä ß\u00a0x") == "nginx-ä ß\u00a0x"
+
+
+class _RecordingText(str):
+    """A report text that records the length of each translate call made on it."""
+
+    def translate(self, table):
+        self.translated.append(len(self))
+        return super().translate(table)
+
+
+def test_cap_agent_text_translates_at_most_500_characters():
+    # Cutting first gives the same text (one character for one) and bounds the work however
+    # long the report text is: what lies behind the cut is dropped, never translated.
+    short, long = _RecordingText("a\n" * 250), _RecordingText("a\n" * 5000)
+    short.translated, long.translated = [], []
+    assert agent.cap_agent_text(short) == "a " * 250
+    assert agent.cap_agent_text(long) == ("a " * 5000)[:499] + "…"
+    assert short.translated == [500]  # the recorder sees a call on the text itself
+    assert all(n <= 500 for n in long.translated)
+
+
+def _docker(container):
+    return DockerHealthChecker().evaluate({}, {"docker": {"containers": [container]}})
+
+
+def _outage(key, error, error_message):
+    block = {"available": False, "error": error, "error_message": error_message}
+    checker = ZfsHealthChecker() if key == "zfs" else DockerHealthChecker()
+    return checker.evaluate({}, {key: block})
+
+
+def _smart_model(model):
+    disk = {
+        "device": "/dev/sda",
+        "model": model,
+        "protocol": "ATA",
+        "kind": "HDD",
+        "temp_c": 30,
+        "smartctl_status": 0x10,
+    }
+    return SmartHealthChecker().evaluate({}, {"smart": [disk]})
+
+
+def _pool(name, health):
+    pool = {"name": name, "health": health, "capacity_percent": 10}
+    return ZfsHealthChecker().evaluate({}, {"zfs": {"pools": [pool]}})
+
+
+# Each place that copies a text from the report into a message, with a line break in it: each
+# control character becomes one space, so "\r\n" makes two; status and the rest stay.
+MULTILINE_CASES = [
+    pytest.param(
+        lambda: _docker({"id": "c1", "name": "web\nStatus: ok -> ok", "state": "dead"}),
+        "critical",
+        "Container problems: web Status: ok -> ok: dead (0 running, 0 stopped)",
+        id="docker-name",
+    ),
+    pytest.param(
+        lambda: _pool("p\r\nq", "DEGRADED"),
+        "critical",
+        "p  q: DEGRADED",
+        id="zfs-pool-name",
+    ),
+    pytest.param(
+        lambda: _smart_model("X\u2028Y"),
+        "critical",
+        "SMART problems: /dev/sda (X Y): prefail attribute below threshold (smartctl 0x10)",
+        id="smart-model",
+    ),
+    pytest.param(
+        lambda: _proxmox(_vm(101, "qemu", "a\x85b", None)),
+        "critical",
+        "No backup: QEMU 101 (a b)",
+        id="proxmox-vm-name",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["a\nb.service"], "enabled_inactive": ["c\u2029d.service"]}),
+        "critical",
+        "Failed: a b.service; Inactive (autostart): c d.service",
+        id="service-process-failed",
+    ),
+    pytest.param(
+        lambda: _outage("zfs", "timeout", "zpool\nlist timed out"),
+        "warning",
+        "ZFS unavailable (timeout): zpool list timed out",
+        id="zfs-error-message",
+    ),
+    pytest.param(
+        lambda: _outage("docker", "daemon_unreachable", "docker info\r\nfailed"),
+        "warning",
+        "Docker unavailable (daemon_unreachable): docker info  failed",
+        id="docker-error-message",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": [], "enabled_inactive": [], "error": "list-units\nfailed"}),
+        "unknown",
+        "Services not queryable: list-units failed",
+        id="systemd-error",
+    ),
+    pytest.param(
+        lambda: _resources({"resources": {"disks": [{"mount": "/m\x1b[2J", "percent": 95}]}}),
+        "critical",
+        "Disk /m [2J 95% (>=95%)",
+        id="resources-mount",
+    ),
+]
+
+
+@pytest.mark.parametrize(("call", "status", "message"), MULTILINE_CASES)
+def test_report_text_in_message_is_one_line(call, status, message):
+    got_status, got_message, _ = call()
+    assert (got_status, got_message) == (status, message)
+    assert _one_line(got_message)
+
+
+def test_docker_name_and_state_in_details_are_one_line():
+    # The rating reads the full state: "dead\n" is no known state.
+    _, _, metrics = _docker({"id": "c1", "name": "web\nStatus: ok", "state": "Dead\n"})
+    container = metrics["_details"]["containers"][0]
+    assert (container["name"], container["state"]) == ("web Status: ok", "dead ")
+    assert container["reason"] == "unknown_state"
 
 
 # --- check engine: what it writes into MonitorState.message itself ---

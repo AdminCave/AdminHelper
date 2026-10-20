@@ -5,9 +5,10 @@
 import re
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from app.core.bounds import IntColumn, RequestModel
+from app.core.config import FRP_BIND_PORT
 from app.core.time import UtcDatetime
 from app.modules.frp.extra_config import ALLOWED_KEYS, value_allowed
 
@@ -41,8 +42,9 @@ def _check_secret(v: Optional[str]) -> Optional[str]:
     if v is None or v == "":
         return v
     v = _reject_toml_breakers(v)
-    if len(v) < 16:
-        raise ValueError("muss mindestens 16 Zeichen lang sein")
+    # Whitespace at either end adds nothing to guess; the value itself is kept as sent.
+    if len(v.strip()) < 16:
+        raise ValueError("must have at least 16 characters besides leading and trailing whitespace")
     return v
 
 
@@ -143,6 +145,32 @@ Port = Annotated[int, Field(ge=PORT_MIN, le=PORT_MAX)]
 PortCount = Annotated[IntColumn, Field(ge=0)]
 
 
+def dashboard_port_refused(dashboard_port: int, bind_port: Optional[int], published: int) -> bool:
+    """Whether frps is not started with this webServer.port: check_config of
+    apps/frps/frps-supervisor.sh refuses 443, the bindPort and FRP_BIND_PORT (published), the
+    host port compose publishes for frps. A bind port of None matches nothing."""
+    return dashboard_port in (443, bind_port, published)
+
+
+def check_dashboard_port(dashboard_port: Optional[int], bind_port: Optional[int]) -> None:
+    """dashboard_port_refused for the API (create schema, update route) with this server's
+    FRP_BIND_PORT: a 422 before the frps supervisor refuses the config."""
+    if dashboard_port is not None and dashboard_port_refused(
+        dashboard_port, bind_port, FRP_BIND_PORT
+    ):
+        raise ValueError(
+            "the dashboard port must be neither 443 nor the bind port nor FRP_BIND_PORT "
+            f"({FRP_BIND_PORT})"
+        )
+
+
+def _check_create_dashboard_port(v: Optional[int], info: ValidationInfo) -> Optional[int]:
+    # bind_port comes first, so info.data holds it as sent or as its default; it is
+    # missing only when it failed its own check, which is a 422 already.
+    check_dashboard_port(v, info.data.get("bind_port"))
+    return v
+
+
 class FrpServerConfigCreate(RequestModel):
     name: str
     server_addr: str  # e.g. "frps.example.net"
@@ -167,9 +195,12 @@ class FrpServerConfigCreate(RequestModel):
     _v_frps = field_validator(
         "subdomain_host", "dashboard_user", "dashboard_password", "auth_token"
     )(_check_frps_string)
+    _v_dashboard_port = field_validator("dashboard_port")(_check_create_dashboard_port)
 
 
 class FrpServerConfigUpdate(RequestModel):
+    # The route checks the dashboard port (check_dashboard_port): it needs the bind port
+    # the row has after the update.
     name: Optional[str] = None
     server_addr: Optional[str] = None
     # Not Optional: an explicit null is a 422, else the row stores NULL and frps
