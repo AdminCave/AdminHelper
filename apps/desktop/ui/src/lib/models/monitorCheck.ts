@@ -45,6 +45,7 @@ export interface CheckForm {
   interval: MonitorInterval;
   severity: MonitorSeverity;
   consecutiveFails: number;
+  consecutiveOks: number;
   description: string;
   config: MonitorCheckConfig;
 }
@@ -58,6 +59,7 @@ export function emptyCheckForm(serverId: string): CheckForm {
     interval: '5m',
     severity: 'critical',
     consecutiveFails: 3,
+    consecutiveOks: 2,
     description: '',
     config: {},
   };
@@ -72,6 +74,7 @@ export function checkToForm(c: MonitorCheck): CheckForm {
     interval: c.interval,
     severity: c.severity,
     consecutiveFails: c.consecutiveFails ?? 3,
+    consecutiveOks: c.consecutiveOks ?? 2,
     description: c.description ?? '',
     config: { ...(c.config ?? {}) },
   };
@@ -85,6 +88,7 @@ export function formToInput(form: CheckForm): MonitorCheckInput {
     interval: form.interval,
     severity: form.severity,
     consecutive_fails: form.consecutiveFails || 3,
+    consecutive_oks: form.consecutiveOks || 2,
     description: form.description.trim() || null,
     config: { ...form.config },
   };

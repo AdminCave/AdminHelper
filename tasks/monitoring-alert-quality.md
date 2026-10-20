@@ -148,8 +148,10 @@ Abhängt von: T10, T12
 
 ## Block E — Desktop
 
-### T14 — Desktop-Typen und Formulare: `consecutive_oks`  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/models/monitorCheck.ts, apps/desktop/ui/src/lib/models/monitorTemplate.ts, apps/desktop/ui/src/lib/models/monitorCheck.test.ts, apps/desktop/ui/src/lib/models/monitorTemplate.test.ts
+### T14 — Desktop-Typen und Formulare: `consecutive_oks`  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/models/monitorCheck.ts, apps/desktop/ui/src/lib/models/monitorTemplate.ts, apps/desktop/ui/src/lib/models/monitorCheck.test.ts, apps/desktop/ui/src/lib/models/monitorTemplate.test.ts, apps/desktop/ui/src/lib/api/monitoring.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @50944060 2026-10-20T14:03:29+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T14.verdict.json)
 Änderung: `MonitorCheck.consecutiveOks?: number`, `MonitorCheckInput.consecutive_oks: number`, `TemplateCheckDef.consecutive_oks?: number` (`types.ts:386-414`, `:550-558`); `CheckForm.consecutiveOks` mit Default 2 in `emptyCheckForm`, `?? 2` in `checkToForm`, `|| 2` in `formToInput` (`monitorCheck.ts:40-91`); `emptyCheckDef` mit `consecutive_oks: 2` (`monitorTemplate.ts:28-37`). Tests wie die bestehenden zu `consecutiveFails` (Default, Übernahme, Abbildung auf snake_case, Rückfall bei 0).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/models/monitorCheck.test.ts src/lib/models/monitorTemplate.test.ts
 Doku: keine (intern)
