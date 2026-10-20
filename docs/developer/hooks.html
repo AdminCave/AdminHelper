@@ -95,6 +95,7 @@
 
           <h2>Fehlerverhalten</h2>
           <p>Schlägt ein Hook fehl (<code>exit_code != 0</code> oder Timeout), wird der Fehler protokolliert: Event- und Schedule-Hooks per <code>logger.exception</code> im Server-Log, der Webhook-Trigger zusätzlich im Response-Body (<code>success: false</code>, <code>error</code>). Einen automatischen Retry oder ein <code>hook.failed</code>-Meta-Event gibt es aktuell nicht; ein fehlgeschlagener Hook blockiert weder andere Hooks noch den auslösenden Request.</p>
+          <p>Bricht ein Hook mit einem Fehler der Datenbankanbindung ab (<code>sqlalchemy.exc.SQLAlchemyError</code> oder <code>psycopg.Error</code>), nennen <code>error</code> und die Log-Zeile <code>Fehler: …</code> in <code>logs</code> nur den Typ des Fehlers, etwa <code>OperationalError</code>, nicht den Text des Treibers. Jeder andere Fehler eines Hooks erscheint dort mit seinem Text.</p>
 
           <h2>Script-Runner-Implementierung</h2>
           <div class="code-header"><span>python</span></div>

@@ -355,6 +355,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: die Listen bleiben lesbar, wenn ein gespeicherter Wert keine endliche Zahl ist:** Stand in einer
+  Check-Konfiguration, in den Details eines Check-Zustands, in der Kanal-Konfiguration einer Alert-Regel oder in einer
+  Definition eines Templates `NaN`, `Infinity` oder eine Zahl ausserhalb des Gleitkomma-Bereichs, scheiterte die ganze
+  Antwort von `GET /status`, `GET /checks`, `GET /alerts`, `GET /templates` bzw. des Update-Vergleichs eines
+  Standard-Templates (`GET /templates/{id}/builtin-update`) mit einem Serverfehler, oder der Desktop konnte sie nicht
+  lesen. Jetzt erscheint ein solcher Wert dort als `null`; gespeichert bleibt er, wie er ist.
+  Doku: Entwickler-Doku Monitoring (DE+EN).
 - **Desktop: die Sitzung haelt laenger als acht Stunden, und eine abgelaufene fuehrt zum Login (R-0430):** Nach
   Ablauf des Access-Tokens (acht Stunden) scheiterten Infrastruktur, Monitoring, Ansible und die Glocke, weil nur ein
   Teil der Anfragen die Sitzung erneuerte. Jetzt erneuert der Desktop sie fuer alle Anfragen an einer Stelle und nur
@@ -958,6 +965,41 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   naechste Fenster. Im ersten Lauf, wenn der letzte erfolgreiche Report mehr als 15 Minuten zurueckliegt, nach einem
   Neustart, bei einem Zeitstempel in der Zukunft und beim Test-Push von `monitor init` misst er weiter die
   1-s-Stichprobe.
+- **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
+  Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
+  Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und
+  999999999 liegen. Das gilt fuer Checks und fuer die Check-Definitionen eines Templates; gespeicherte Konfigurationen
+  bleiben, wie sie sind. Scheitert eine Anfrage an den Monitoring-Dienst an der Pruefung und traegt ihr Body
+  `Infinity` oder `NaN`, antwortet der Dienst jetzt mit einem 422, in dem der Wert als `null` steht, statt mit einem
+  Serverfehler. Doku: Monitoring-Administration (DE+EN).
+- **Monitoring: Versandfehler im Alert-Log mit festem Grund:** Scheitert der Versand eines Webhooks oder einer Mail,
+  speichert das Alert-Log statt des Textes der Ausnahme einen festen englischen Grund je Fehlerart, etwa „Webhook
+  request timed out“, „Webhook connection failed“, „SMTP TLS failed“, „SMTP authentication failed (535)“ oder „SMTP
+  server refused the message“; andere Fehler nennen nur ihre Klasse, etwa „SMTP error (SMTPServerDisconnected)“ oder
+  „Dispatch failed (ValueError)“ fuer eine Regel, die sich nicht verarbeiten laesst. Die Einzelheiten, etwa die
+  Antwort des Mail-Servers, stehen weiter im Log des Monitoring-Dienstes; dessen Zeilen zu einem gescheiterten Webhook
+  oder einer gescheiterten Mail sind jetzt englisch und nennen den Check, beim Webhook auch den Host des Ziels.
+  Gespeicherte Eintraege behalten ihren Text. Doku: Monitoring-Administration (DE+EN).
+- **Server: Datenbankfehler eines Hooks nur mit ihrem Typ:** Bricht ein Hook mit einem Fehler der
+  Datenbankanbindung ab (`sqlalchemy.exc.SQLAlchemyError` oder `psycopg.Error`), nennen `error` und die Log-Zeile
+  `Fehler: …` in `logs` nur den Typ des Fehlers, etwa `OperationalError`, nicht mehr den Text des Treibers. Jeder
+  andere Fehler eines Hooks erscheint weiter mit seinem Text. Doku: Entwickler-Doku Hooks (DE+EN).
+- **Server: Geheimnisse der FRP-Konfiguration zaehlen ohne Leerzeichen am Rand:** Ein neues `auth_token` oder
+  `dashboard_password` der FRP-Server-Konfiguration und ein neuer `secret_key` eines STCP-Tunnels brauchen mindestens
+  16 Zeichen ohne Leerzeichen am Anfang und Ende, sonst antwortet der Server mit `422` („must have at least 16
+  characters besides leading and trailing whitespace“). Ein Wert nur aus Leerzeichen gilt damit nicht mehr als
+  Geheimnis. Gespeichert wird der Wert so, wie er gesendet wurde; leer oder `null` wirkt wie bisher. Schon
+  gespeicherte Werte bleiben unveraendert. Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
+- **Server: die API lehnt einen Dashboard-Port ab, den frps nicht uebernimmt:** Ein `dashboard_port` der
+  FRP-Server-Konfiguration gleich 443, gleich dem Bind Port oder gleich `FRP_BIND_PORT` ist beim Anlegen und beim
+  Aendern ein `422` („the dashboard port must be neither 443 nor the bind port nor FRP_BIND_PORT (…)“), statt dass
+  frps die Konfiguration erst beim Uebernehmen verwirft. `POST` prueft gegen den gesendeten Bind Port (ohne ihn
+  7000); `PUT` prueft, sobald `dashboard_port` oder `bind_port` gesendet wird, den Stand nach dem Update mit dem Bind
+  Port, den frps bekommt (ein gespeicherter `bind_port` `null` oder ausserhalb 1 bis 65535: 7000), meldet den
+  Fehler auf dem gesendeten Feld und speichert nichts davon. Eine schon gespeicherte Konfiguration mit solchem Port
+  bleibt unveraendert, ein `PUT` ohne beide Felder geht weiter durch, und die Pruefung beim Start meldet sie wie
+  bisher. Die Web-Maske sendet beide Ports immer mit; dort ist ein solcher Port also vor dem Speichern zu aendern.
+  Doku: Admin-Doku FRP-Tunnel und API-Referenz (DE+EN).
 - **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,

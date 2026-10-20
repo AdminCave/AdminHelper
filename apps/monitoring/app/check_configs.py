@@ -18,13 +18,15 @@ read true as 1."""
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 
 
 class _StrictConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # Finite only: the config is stored as sent, and json.dumps writes inf back as
+    # the token Infinity, which is no JSON number (RFC 8259 section 6).
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class PingConfig(_StrictConfig):
@@ -100,7 +102,8 @@ class SmartHealthConfig(_StrictConfig):
 
 class ProxmoxBackupConfig(_StrictConfig):
     max_backup_age_hours: float = Field(26, ge=1, le=8760, strict=True)
-    exclude_vmids: list[int | str] = []
+    # A number is a Proxmox VE VMID: qm(1) gives 100 - 999999999.
+    exclude_vmids: list[Annotated[int, Field(ge=100, le=999_999_999)] | str] = []
     exclude_stopped: StrictBool = True
 
 

@@ -14,6 +14,8 @@ import pytest
 
 from app.checkers.smart import SmartHealthChecker
 
+from ._helpers import assert_every_reader_reads
+
 CHECKER = SmartHealthChecker()
 
 
@@ -296,3 +298,130 @@ def test_kind_that_is_no_string_follows_the_protocol():
     status, msg, metrics = CHECKER.evaluate({}, _report(_nvme(kind=["HDD"], temp_c=70)))
     assert (status, msg) == ("warning", "SMART warnings: /dev/nvme0 (N): 70°C (>=65°C)")
     assert metrics["_details"]["disks"][0]["kind"] == "NVMe"
+
+
+# --- Text fields and smart_passed in _details ---
+# _details goes as it is into the answers of GET /status and GET /checks, which the desktop reads
+# as a whole: a 400-digit integer there is no number every JSON reader takes. device, model, kind
+# and protocol go into _details (device and model also into the label of the message) only as a
+# string, on one line and cut to 500 characters by cap_agent_text; anything else counts as
+# missing, with the default. smart_passed goes into _details as the bool the rating reads.
+_LONG_TEXT = "line\n" * 2000  # 10 000 characters
+_LONG_SHOWN = ("line " * 2000)[:499] + "\u2026"
+_NOT_STRINGS = [
+    pytest.param(_BIG_INT, id="int-400-digits"),
+    pytest.param([1], id="list"),
+    pytest.param({"a": 1}, id="dict"),
+]
+# (disk, field, the field's value in _details without it)
+_TEXT_FIELDS = [
+    pytest.param(make_disk, field, default, id=f"{name}-{field}")
+    for name, make_disk, kind in (("ata", _disk, "HDD"), ("nvme", _nvme, "NVMe"))
+    for field, default in (("device", "?"), ("model", "?"), ("kind", kind), ("protocol", "ATA"))
+]
+
+
+def _row(metrics):
+    [row] = metrics["_details"]["disks"]
+    return row
+
+
+@pytest.mark.parametrize("value", _NOT_STRINGS)
+@pytest.mark.parametrize(("make_disk", "field", "default"), _TEXT_FIELDS)
+def test_a_text_field_that_is_no_string_shows_the_default_in_details(
+    make_disk, field, default, value
+):
+    disk = _without(make_disk(), field)
+    result = _rate_with(disk, field, value)
+    assert result == CHECKER.evaluate({}, _report(disk))
+    assert _row(result[2])[field] == default
+    assert_every_reader_reads(result[2]["_details"])
+
+
+@pytest.mark.parametrize("field", ["device", "model", "kind", "protocol"])
+@pytest.mark.parametrize("make_disk", _DISKS)
+def test_a_long_text_field_goes_into_details_on_one_line_of_500_characters(make_disk, field):
+    status, msg, metrics = _rate_with(make_disk(), field, _LONG_TEXT)
+    assert _row(metrics)[field] == _LONG_SHOWN
+    assert status == CHECKER.evaluate({}, _report(make_disk()))[0]
+    assert msg.isprintable()  # no control character, no line or paragraph separator
+    assert_every_reader_reads(metrics["_details"])
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("device", "SMART problems: " + _LONG_SHOWN),
+        ("model", "SMART problems: " + ("/dev/sda (" + "line " * 2000)[:499] + "\u2026"),
+    ],
+)
+def test_a_long_device_or_model_goes_into_the_message_on_one_line(field, message):
+    assert _rate_with(_disk(smart_passed=False), field, _LONG_TEXT)[:2] == ("critical", message)
+
+
+def test_the_ignore_list_compares_the_full_device():
+    cfg = {"ignore_devices": [_LONG_TEXT]}
+    disk = _disk(device=_LONG_TEXT, smart_passed=False)
+    assert CHECKER.evaluate(cfg, _report(disk)) == (
+        "ok",
+        "All 0 disks SMART OK",
+        {
+            "smart_disks_ok": 0,
+            "smart_disks_warning": 0,
+            "smart_disks_critical": 0,
+            "_details": {"disks": []},
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "passed"),
+    [
+        pytest.param(True, True, id="true"),
+        pytest.param(False, False, id="false"),
+        pytest.param(None, False, id="null"),
+        pytest.param(0, False, id="zero"),
+        pytest.param("", False, id="empty-str"),
+        pytest.param([], False, id="empty-list"),
+        pytest.param({}, False, id="empty-dict"),
+        pytest.param(_BIG_INT, True, id="int-400-digits"),
+        pytest.param([1], True, id="list"),
+        pytest.param({"a": 1}, True, id="dict"),
+    ],
+)
+@pytest.mark.parametrize("make_disk", _DISKS)
+def test_smart_passed_in_details_is_the_bool_the_rating_reads(make_disk, value, passed):
+    # The rating stays: a false value is "SMART FAILED", a true one rates like a missing field.
+    result = _rate_with(make_disk(), "smart_passed", value)
+    if passed:
+        assert result == CHECKER.evaluate({}, _report(make_disk()))
+    else:
+        assert result[0] == "critical" and result[1].endswith(": SMART FAILED")
+    assert _row(result[2])["smart_passed"] is passed
+    assert_every_reader_reads(result[2]["_details"])
+
+
+def test_text_fields_of_a_regular_report():
+    status, msg, metrics = CHECKER.evaluate({}, _report(_disk(), _nvme(smart_passed=False)))
+    assert (status, msg) == ("critical", "SMART problems: /dev/nvme0 (N): SMART FAILED")
+    shown = [
+        {key: disk[key] for key in ("device", "model", "protocol", "kind", "smart_passed")}
+        for disk in metrics["_details"]["disks"]
+    ]
+    assert shown == [
+        {
+            "device": "/dev/sda",
+            "model": "X",
+            "protocol": "ATA",
+            "kind": "HDD",
+            "smart_passed": True,
+        },
+        {
+            "device": "/dev/nvme0",
+            "model": "N",
+            "protocol": "NVMe",
+            "kind": "NVMe",
+            "smart_passed": False,
+        },
+    ]
+    assert_every_reader_reads(metrics["_details"])
