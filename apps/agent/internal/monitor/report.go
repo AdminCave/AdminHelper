@@ -43,6 +43,11 @@ func buildReportWithState(serviceNames []string, prev reportState, now time.Time
 			resources[k] = v
 		}
 	}
+	if s := collectSwapAndCPUCount(); s != nil {
+		for k, v := range s {
+			resources[k] = v
+		}
+	}
 	if disks := collectDisks(); len(disks) > 0 {
 		resources["disks"] = disks
 	}

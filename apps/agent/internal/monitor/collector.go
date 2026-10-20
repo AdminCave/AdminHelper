@@ -120,6 +120,36 @@ func collectLoad() map[string]any {
 	}
 }
 
+// resourceCalls indirects the swap and CPU count reads and the OS so tests can drive every path, the
+// Windows branch included, without depending on the host (same reason as hostFactsCalls, 6.18).
+var resourceCalls = struct {
+	goos   string
+	swap   func() (*mem.SwapMemoryStat, error)
+	counts func(logical bool) (int, error)
+}{runtime.GOOS, mem.SwapMemory, cpu.Counts}
+
+// collectSwapAndCPUCount reports the logical CPUs and the swap on Linux only, like the load they put
+// into proportion (nil elsewhere). A failed part drops only its own fields. Without a swap device
+// there is no swap_percent: gopsutil's 0 there is no measurement.
+func collectSwapAndCPUCount() map[string]any {
+	if resourceCalls.goos != "linux" {
+		return nil
+	}
+	res := map[string]any{}
+	// A count of 0 is a failed read; the service divides the load by it.
+	if n, err := resourceCalls.counts(true); err == nil && n > 0 {
+		res["cpu_count"] = n
+	}
+	if s, err := resourceCalls.swap(); err == nil {
+		res["swap_total_mb"] = int(s.Total / 1024 / 1024)
+		res["swap_used_mb"] = int(s.Used / 1024 / 1024)
+		if s.Total > 0 {
+			res["swap_percent"] = round1(s.UsedPercent)
+		}
+	}
+	return res
+}
+
 // DiskInfo holds the metrics of a partition.
 type DiskInfo struct {
 	Mount   string  `json:"mount"`
@@ -127,6 +157,27 @@ type DiskInfo struct {
 	Percent float64 `json:"percent"`
 	TotalGB float64 `json:"total_gb"`
 	UsedGB  float64 `json:"used_gb"`
+	FreeGB  float64 `json:"free_gb"`
+	// InodesPercent is nil off Linux and on filesystems without inode counts (btrfs, vfat).
+	InodesPercent *float64 `json:"inodes_percent,omitempty"`
+}
+
+// diskInfo maps a partition's usage to its report entry. free_gb is gopsutil's Free, the space left
+// to non-root users (Bavail), so it can be less than total minus used.
+func diskInfo(p disk.PartitionStat, usage *disk.UsageStat, goos string) DiskInfo {
+	d := DiskInfo{
+		Mount:   p.Mountpoint,
+		FSType:  p.Fstype,
+		Percent: round1(usage.UsedPercent),
+		TotalGB: round1(float64(usage.Total) / (1024 * 1024 * 1024)),
+		UsedGB:  round1(float64(usage.Used) / (1024 * 1024 * 1024)),
+		FreeGB:  round1(float64(usage.Free) / (1024 * 1024 * 1024)),
+	}
+	if goos == "linux" && usage.InodesTotal > 0 {
+		inodes := round1(usage.InodesUsedPercent)
+		d.InodesPercent = &inodes
+	}
+	return d
 }
 
 func collectDisks() []DiskInfo {
@@ -146,13 +197,7 @@ func collectDisks() []DiskInfo {
 		if err != nil || usage.Total == 0 {
 			continue
 		}
-		disks = append(disks, DiskInfo{
-			Mount:   p.Mountpoint,
-			FSType:  p.Fstype,
-			Percent: round1(usage.UsedPercent),
-			TotalGB: round1(float64(usage.Total) / (1024 * 1024 * 1024)),
-			UsedGB:  round1(float64(usage.Used) / (1024 * 1024 * 1024)),
-		})
+		disks = append(disks, diskInfo(p, usage, resourceCalls.goos))
 	}
 	return disks
 }

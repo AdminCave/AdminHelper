@@ -24,8 +24,10 @@ Review: approve (.ah-out/review/monitoring-linux-base-v2/T1.verdict.json)
 Verify: bash scripts/dev/verify.sh agent --strict -- -run ReportState|BuildReport
 Doku: CHANGELOG.md (`### Changed`: der Agent misst die CPU als Mittel seit dem letzten Report statt einer Sekunde, erster Lauf und nach Ausfall weiter die Stichprobe); Entwickler-Doku in T25
 
-### T2 — Agent: Swap, CPU-Anzahl, freie GB und Inodes je Platte  [ ]
+### T2 — Agent: Swap, CPU-Anzahl, freie GB und Inodes je Platte  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/collector_test.go, apps/agent/internal/monitor/report.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @3e988872 2026-10-20T06:36:33+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T2.verdict.json)
 Änderung: Unter Linux bekommt `resources` `cpu_count` (`cpu.Counts(true)`), `swap_total_mb`, `swap_used_mb` und bei `Total > 0` `swap_percent` (`mem.SwapMemory()`, gerundet wie `collectMemory` `collector.go:44-54`); unter Windows nichts davon (wie `collectLoad` `:56-69`). Eingehängt in `BuildReport` neben `collectMemory`/`collectLoad` (`report.go:26-35`). `DiskInfo` (`collector.go:71-78`) bekommt `free_gb` (`usage.Free`, beide Plattformen, gerundet wie `total_gb`) und `inodes_percent` (Zeiger mit `omitempty`; nur Linux und nur bei `InodesTotal > 0`). Die Abbildung `disk.UsageStat` → `DiskInfo` als reine Funktion; `SwapMemory`, `Counts` und das Betriebssystem über eine Indirektion (Muster `hostFactsCalls`). Scheitert ein Teil, fehlen nur seine Felder. Tests (`TestResources…`): Abbildung mit und ohne Inodes und für ein Windows-Ergebnis ohne Inodes; Swap mit und ohne Swap-Gerät (`swap_total_mb` 0, kein `swap_percent`); ein Fehler von `SwapMemory` oder `Counts` lässt die übrigen Felder stehen; unter dem Windows-Zweig fehlen `cpu_count` und `swap_*`.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run Resources
 Doku: keine (intern; bewertet erst T8/T9, Entwickler-Doku in T25)
