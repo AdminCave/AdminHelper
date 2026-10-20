@@ -87,7 +87,7 @@ pub fn open_rdp(
         .map(|value| value.trim())
         .unwrap_or("");
 
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, target_os = "windows")))]
     let _ = password;
     #[cfg(not(unix))]
     let _ = app;
@@ -102,16 +102,7 @@ pub fn open_rdp(
 
     #[cfg(target_os = "windows")]
     {
-        return open_rdp_windows(
-            host,
-            port,
-            username,
-            domain,
-            connection,
-            rdp.window_mode,
-            rdp.custom_size,
-            rdp.performance_profile,
-        );
+        return open_rdp_windows(connection, host, port, username, domain, rdp, password);
     }
 
     #[cfg(unix)]
@@ -154,31 +145,37 @@ pub fn open_rdp(
     }
 }
 
+/// Starts mstsc with a `.rdp` file for `host:port`; a stored `password` holds a `TERMSRV/…`
+/// entry for that address only for the start (`password::start_mstsc`, R-0431).
 #[cfg(target_os = "windows")]
 fn open_rdp_windows(
+    connection: &Connection,
     host: &str,
     port: u16,
     username: &str,
     domain: &str,
-    connection: &Connection,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
+    password: Option<&str>,
 ) -> Result<(), AppError> {
     use std::process::Command;
 
+    // The `TERMSRV/…` names of the start are those of the address in the file, so both take
+    // the same host, without spaces around it.
+    let host = host.trim();
     let rdp_path = write_rdp_file(
         host,
         port,
         username,
         domain,
         connection.trust_cert,
-        rdp_window_mode,
-        rdp_custom_size,
-        rdp_performance_profile,
+        rdp.window_mode,
+        rdp.custom_size,
+        rdp.performance_profile,
     )?;
-    Command::new("mstsc").arg(rdp_path).spawn()?;
-    Ok(())
+    crate::password::start_mstsc(host, port, connection, password, || {
+        Command::new("mstsc").arg(&rdp_path).spawn()?;
+        Ok(())
+    })
 }
 
 #[cfg(unix)]
@@ -273,12 +270,21 @@ fn build_rdp_args(
 /// The connection's name, in a workspace process after `[<workspace name>] `, so the windows of
 /// one host in two workspaces tell apart. Each name is sanitized on its own and the brackets come
 /// after: the sanitizer drops `[` and `]`, so neither name can forge another workspace's prefix.
-/// Without a workspace (the launcher, or before the start sets one) the name stands alone.
+/// A workspace name of which the sanitizer leaves nothing (only emoji or symbols) gives way to
+/// the workspace id, which is safe as it is. Without a workspace (the launcher, or before the
+/// start sets one) the name stands alone.
 #[cfg(unix)]
 fn window_title(connection_name: &str) -> String {
     let name = crate::validation::sanitize_window_title(connection_name);
     let workspace = crate::workspace::current()
-        .map(|workspace| crate::validation::sanitize_window_title(&workspace.name))
+        .map(|workspace| {
+            let name = crate::validation::sanitize_window_title(&workspace.name);
+            if name.is_empty() {
+                workspace.id.to_string()
+            } else {
+                name
+            }
+        })
         .unwrap_or_default();
     if workspace.is_empty() {
         name
@@ -886,10 +892,13 @@ mod args_tests {
         );
     }
 
+    // A name of only emoji or symbols leaves nothing after sanitizing; the windows of two such
+    // workspaces still tell apart by the id.
     #[test]
-    fn per_process_rdp_title_without_a_sanitized_workspace_name_has_no_prefix() {
-        let _workspace = enter_workspace(";$");
-        assert_eq!(title_of("Web 01").as_deref(), Some("Web 01"));
+    fn per_process_rdp_title_without_a_sanitized_workspace_name_takes_the_workspace_id() {
+        let _workspace = enter_workspace("🚀 ;$");
+        assert_eq!(title_of("Web 01").as_deref(), Some("[kunde-a] Web 01"));
+        assert_eq!(title_of(";$").as_deref(), Some("[kunde-a]"));
     }
 
     #[test]

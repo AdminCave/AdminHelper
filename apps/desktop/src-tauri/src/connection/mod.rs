@@ -22,6 +22,13 @@ pub fn open_connection(
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
+    // On Windows a typed password goes to no store, not even for the start, and mstsc asks for
+    // it as before R-0431: only a stored one holds a `TERMSRV/…` entry for the start.
+    #[cfg(target_os = "windows")]
+    let password: Option<&str> = {
+        let _ = password;
+        None
+    };
     match connection.kind {
         ConnectionKind::Ssh => ssh::open_ssh(connection),
         ConnectionKind::Rdp => rdp::open_rdp(
@@ -166,16 +173,10 @@ fn open_rdp_with_stored_password(
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
-    // Only the unix launcher passes a password through to xfreerdp's stdin; the
-    // Windows (.rdp file) and unsupported-OS paths pass none. Both connections
-    // are already validated and matched by the sole caller, open_connection_stored.
-    #[cfg(unix)]
+    // Both connections are already validated and matched by the sole caller,
+    // open_connection_stored. xfreerdp reads the password from its stdin; mstsc finds it in a
+    // `TERMSRV/…` entry that holds it only for the start (R-0431).
     let password = crate::password::load_password_keyring(source)?;
-    #[cfg(not(unix))]
-    let password: Option<String> = {
-        let _ = source;
-        None
-    };
     rdp::open_rdp(
         connection,
         password.as_deref(),

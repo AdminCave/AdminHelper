@@ -4,7 +4,6 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
-#[cfg(unix)]
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -13,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 use crate::models::{Connection, ConnectionKind, PasswordState};
 use crate::validation::required;
-#[cfg(unix)]
 use crate::workspace::{self, Workspace};
 
 fn normalized(value: &Option<String>) -> String {
@@ -67,7 +65,6 @@ pub fn rdp_storage_key_required(connection: &Connection) -> Result<String, AppEr
 /// it, as it belongs to the migrated ones. Callers take `workspace` from
 /// `workspace::current()`, which fails in the launcher: no RDP key there, never
 /// one without a prefix.
-#[cfg(unix)]
 fn rdp_storage_keys(
     workspace: &Workspace,
     connection: &Connection,
@@ -89,7 +86,6 @@ fn rdp_storage_keys(
 /// `.localhost`, or a loopback or unspecified address, also with a trailing dot,
 /// in brackets or IPv4-mapped. Short and hex forms such as `127.1` are not
 /// recognized.
-#[cfg(unix)]
 fn targets_this_machine(connection: &Connection) -> bool {
     let host = normalized(&connection.host).to_lowercase();
     let host = host.strip_suffix('.').unwrap_or(&host);
@@ -108,7 +104,6 @@ fn targets_this_machine(connection: &Connection) -> bool {
 /// The password under the legacy key, read for no target on this machine:
 /// connections of different servers can name the same one, e.g. 127.0.0.1 and
 /// the same port, so such an entry may belong to any of them.
-#[cfg(unix)]
 fn legacy_password(connection: &Connection, legacy: &str) -> Result<Option<String>, AppError> {
     if targets_this_machine(connection) {
         return Ok(None);
@@ -116,7 +111,6 @@ fn legacy_password(connection: &Connection, legacy: &str) -> Result<Option<Strin
     crate::keyring_store::try_get(legacy)
 }
 
-#[cfg(unix)]
 pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
     use crate::keyring_store::{delete, set, try_get};
 
@@ -141,7 +135,6 @@ pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, 
 
 /// Whether a password is stored for the connection, under its key or the legacy
 /// one. Reads only: the legacy entry moves when it is loaded.
-#[cfg(unix)]
 fn password_stored_keyring(connection: &Connection) -> Result<bool, AppError> {
     use crate::keyring_store::try_get;
 
@@ -273,12 +266,10 @@ fn remove_file_if_there(path: &Path) -> Result<(), AppError> {
 
 /// Held while an index changes, so two saves in one process keep each other's name;
 /// the workspace lock keeps every other process off the file.
-#[cfg(unix)]
 static INDEX_LOCK: Mutex<()> = Mutex::new(());
 
 /// Apply `change` to the index in `dir`, the data dir of a workspace, and write it
 /// back if `change` says it changed.
-#[cfg(unix)]
 fn update_index(
     dir: &Path,
     change: impl FnOnce(&mut BTreeSet<String>) -> bool,
@@ -294,7 +285,6 @@ fn update_index(
 
 /// Store the password under the connection's key in the workspace of this process;
 /// `base` is the app data dir.
-#[cfg(unix)]
 pub fn save_password_keyring(
     base: &Path,
     connection: &Connection,
@@ -311,7 +301,6 @@ pub fn save_password_keyring(
     crate::keyring_store::set(&key, password)
 }
 
-#[cfg(unix)]
 pub fn delete_password_keyring(base: &Path, connection: &Connection) -> Result<(), AppError> {
     use crate::keyring_store::delete;
 
@@ -335,54 +324,262 @@ pub fn delete_password_keyring(base: &Path, connection: &Connection) -> Result<(
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub const TERMSRV_HOLD: Duration = Duration::from_secs(60);
 
+/// In the comment of every `TERMSRV/…` entry a start writes: `CredWriteW` replaces a generic
+/// entry of the same name, so a start writes over no entry without it, and a `Remove` deletes
+/// none (Kevin 2026-10-20).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub const TERMSRV_MARKER: &str = "com.admincave.adminhelper: for one start of mstsc";
+
 /// A step of a start of mstsc on Windows, by [`termsrv_plan`].
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum TermsrvStep {
     /// Delete the entry under this name, the generic one and the domain password mstsc
-    /// saves itself.
+    /// saves itself, with or without the marker.
     Clear(String),
-    /// Write the stored password under this name: generic, for this logon session only.
+    /// A generic entry without the marker stays under this name, and mstsc takes it instead of
+    /// the stored password; the log says so.
+    Keep(String),
+    /// Write the stored password under this name: generic, with the marker, for this logon
+    /// session only.
     Write(String),
     /// Start mstsc.
     Launch,
-    /// Delete the written entry once `after` has passed since the start.
+    /// Delete the written entry once `after` has passed since the start; at once if mstsc did
+    /// not start.
     Remove { target: String, after: Duration },
 }
 
-/// What a start of mstsc does in the Credential Manager, `target` being the `TERMSRV/…`
-/// name of the address it connects to. An entry for this machine (`loopback`) goes first,
-/// whoever wrote it: a port here may lead to another server by now, and mstsc would send
-/// it the password. An entry for another target stays, it may be the user's own. A stored
-/// password is there only for the start.
+/// What the generic entry under the `TERMSRV/…` name of a start holds before it starts.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub fn termsrv_plan(target: &str, loopback: bool, stored_password: bool) -> Vec<TermsrvStep> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TermsrvEntry {
+    /// No entry.
+    Missing,
+    /// One with the marker, left by a start that could not remove it, e.g. after a crash.
+    Own,
+    /// One without the marker: the user's own (`cmdkey`), or the stored password of a version
+    /// before R-0431.
+    Foreign,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl TermsrvEntry {
+    /// The entry whose comment is `comment`; `None` is no entry.
+    fn of(comment: Option<&str>) -> Self {
+        match comment {
+            None => Self::Missing,
+            Some(TERMSRV_MARKER) => Self::Own,
+            Some(_) => Self::Foreign,
+        }
+    }
+}
+
+/// The `TERMSRV/…` name of the address `host:port`, as this app has always named it: without
+/// the port for 3389.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn termsrv_name(host: &str, port: u16) -> String {
+    if port == 3389 {
+        format!("TERMSRV/{host}")
+    } else {
+        format!("TERMSRV/{host}:{port}")
+    }
+}
+
+/// Whether `host`, as the `.rdp` file of a start names it, may be this machine: a loopback or
+/// unspecified address or `localhost` ([`crate::tunnel::host_is_loopback`]), also with a port in
+/// the host (`host:port`, `[IPv6 address]:port`). A host the check cannot read counts as this
+/// machine: deleting its entries costs a password prompt at most, keeping them may hand a
+/// password to whatever listens here now.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn termsrv_this_machine(host: &str) -> bool {
+    use crate::tunnel::{host_is_loopback, rdp_host_port};
+
+    match host_is_loopback(host) {
+        Some(this_machine) => this_machine,
+        None => rdp_host_port(host)
+            .and_then(|(host, _port)| host_is_loopback(host))
+            .unwrap_or(true),
+    }
+}
+
+/// What a start of mstsc does in the Credential Manager for the address `host:port` it connects
+/// to, `loopback` if that may be this machine ([`termsrv_this_machine`]), `entry` being what the
+/// generic entry under its name holds (it counts only for another target with a stored
+/// password).
+///
+/// An entry for this machine goes first, in both types, under every name mstsc may look up and
+/// whoever wrote it: a port here may lead to another server by now, and mstsc would send it the
+/// password. Those names are both forms of the address in the `.rdp` file and, for a host that
+/// carries a port (`host:port`, `[IPv6 address]:port`), those of the host part at either port.
+/// An entry for another target stays, it may be the user's own: while one without the
+/// marker is there, the start writes nothing and mstsc takes that one; one with the marker is
+/// the rest of an earlier start and is written over. A stored password is there only for the
+/// start.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn termsrv_plan(
+    host: &str,
+    port: u16,
+    loopback: bool,
+    entry: TermsrvEntry,
+    stored_password: bool,
+) -> Vec<TermsrvStep> {
+    let target = termsrv_name(host, port);
     let mut steps = Vec::new();
     if loopback {
-        steps.push(TermsrvStep::Clear(target.to_string()));
+        // Which name mstsc looks up is not verified (spike, point 4), nor which of the two ports
+        // it takes from `full address:s:<host>:<port>:<port>` (T8).
+        let mut names = vec![format!("TERMSRV/{host}:{port}"), format!("TERMSRV/{host}")];
+        if let Some((inner, in_host)) = crate::tunnel::rdp_host_port(host) {
+            names.extend([
+                termsrv_name(inner, in_host),
+                termsrv_name(inner, port),
+                format!("TERMSRV/{inner}"),
+            ]);
+        }
+        for name in names {
+            let clear = TermsrvStep::Clear(name);
+            if !steps.contains(&clear) {
+                steps.push(clear);
+            }
+        }
     }
-    if stored_password {
-        steps.push(TermsrvStep::Write(target.to_string()));
+    let write = stored_password && (loopback || entry != TermsrvEntry::Foreign);
+    if stored_password && !write {
+        steps.push(TermsrvStep::Keep(target.clone()));
+    }
+    if write {
+        steps.push(TermsrvStep::Write(target.clone()));
     }
     steps.push(TermsrvStep::Launch);
-    if stored_password {
+    if write {
         steps.push(TermsrvStep::Remove {
-            target: target.to_string(),
+            target,
             after: TERMSRV_HOLD,
         });
     }
     steps
 }
 
-#[cfg(target_os = "windows")]
-pub fn rdp_windows_target(connection: &Connection) -> Result<String, AppError> {
-    let host = required(&connection.host, "Host")?;
-    let port = rdp_port(connection);
-    if port == 3389 {
-        Ok(format!("TERMSRV/{host}"))
-    } else {
-        Ok(format!("TERMSRV/{host}:{port}"))
+/// The Credential Manager as a start of mstsc changes it ([`run_termsrv_plan`]).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub trait TermsrvStore {
+    /// Delete the generic entry and the domain password under `target`, whoever wrote them.
+    fn clear(&mut self, target: &str) -> Result<(), AppError>;
+    /// Write the stored password under `target`: generic, with the marker, for this logon
+    /// session only.
+    fn write(&mut self, target: &str) -> Result<(), AppError>;
+    /// Delete the entry under `target` if it is still the one this start wrote.
+    fn remove(&mut self, target: &str) -> Result<(), AppError>;
+    /// [`Self::remove`] once `after` has passed, or when the process ends before.
+    fn remove_after(&mut self, target: &str, after: Duration);
+}
+
+/// Runs `steps` against `store`, `launch` starting mstsc. A step that fails ends the start
+/// before mstsc runs; if mstsc does not start, the `Remove` steps run at once.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn run_termsrv_plan(
+    steps: &[TermsrvStep],
+    store: &mut impl TermsrvStore,
+    launch: impl FnOnce() -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    let mut launch = Some(launch);
+    for step in steps {
+        match step {
+            TermsrvStep::Clear(target) => store.clear(target)?,
+            TermsrvStep::Keep(target) => log::info!(
+                "{target} holds an entry this app did not write; mstsc takes it, the stored \
+                 password stays unused"
+            ),
+            TermsrvStep::Write(target) => store.write(target)?,
+            TermsrvStep::Launch => {
+                if let Err(e) = launch.take().map_or(Ok(()), |launch| launch()) {
+                    for step in steps {
+                        if let TermsrvStep::Remove { target, .. } = step {
+                            if let Err(e) = store.remove(target) {
+                                log::warn!("{target} stays until the logon session ends: {e}");
+                            }
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+            TermsrvStep::Remove { target, after } => store.remove_after(target, *after),
+        }
     }
+    Ok(())
+}
+
+/// An entry a start wrote: its name and the user it holds, which a `Remove` checks first.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WrittenTermsrv {
+    target: String,
+    username: String,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl WrittenTermsrv {
+    /// Whether the generic entry under its name, with `comment` and `username`, may still be
+    /// the one written: with the marker and for the same user. Any other is not this app's to
+    /// delete.
+    fn is(&self, comment: &str, username: &str) -> bool {
+        TermsrvEntry::of(Some(comment)) == TermsrvEntry::Own && username == self.username
+    }
+}
+
+/// The `Remove` steps of this process that are not due yet: the timer of a start takes its own,
+/// the end of the process those left.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+struct PendingRemoves {
+    next: u64,
+    open: Vec<(u64, WrittenTermsrv)>,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl PendingRemoves {
+    const fn new() -> Self {
+        Self {
+            next: 0,
+            open: Vec::new(),
+        }
+    }
+
+    /// Holds `written` until [`Self::take`] with the id this returns, or [`Self::take_all`].
+    fn add(&mut self, written: WrittenTermsrv) -> u64 {
+        let id = self.next;
+        self.next += 1;
+        self.open.push((id, written));
+        id
+    }
+
+    /// The entry held under `id`, unless it was taken before.
+    fn take(&mut self, id: u64) -> Option<WrittenTermsrv> {
+        let at = self.open.iter().position(|(open, _)| *open == id)?;
+        Some(self.open.remove(at).1)
+    }
+
+    fn take_all(&mut self) -> Vec<WrittenTermsrv> {
+        self.open.drain(..).map(|(_, written)| written).collect()
+    }
+}
+
+/// The generic `TERMSRV/<address>` of the connection as listed, under which versions before
+/// R-0431 stored its RDP password on Windows. As with the key without the id
+/// ([`rdp_storage_keys`]), only a migrated workspace has such an entry, and only a connection
+/// with a key reads or deletes it.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn legacy_termsrv(workspace: &Workspace, connection: &Connection) -> Option<String> {
+    let (_, legacy) = rdp_storage_keys(workspace, connection)?;
+    legacy.map(|_| termsrv_name(&normalized(&connection.host), rdp_port(connection)))
+}
+
+/// [`legacy_termsrv`] where it counts as a stored password: not for an address on this machine,
+/// whose entries a start deletes before mstsc runs.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn readable_legacy_termsrv(workspace: &Workspace, connection: &Connection) -> Option<String> {
+    legacy_termsrv(workspace, connection)
+        .filter(|_| !termsrv_this_machine(&normalized(&connection.host)))
 }
 
 #[cfg(target_os = "windows")]
@@ -413,10 +610,12 @@ pub fn utf16_bytes(value: &str) -> Vec<u8> {
     bytes
 }
 
+/// The comment and the user of the generic credential `target`, `None` if there is none. A
+/// value that is no valid UTF-16 reads as empty, so it is never the marker.
 #[cfg(target_os = "windows")]
-pub fn windows_credential_exists(target: &str) -> Result<bool, AppError> {
+fn windows_generic_entry(target: &str) -> Result<Option<(String, String)>, AppError> {
     use std::ptr::null_mut;
-    use windows::core::PCWSTR;
+    use windows::core::{PCWSTR, PWSTR};
     use windows::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
     use windows::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
@@ -433,24 +632,33 @@ pub fn windows_credential_exists(target: &str) -> Result<bool, AppError> {
         )
     }
     .is_ok();
-    if ok {
-        unsafe { CredFree(credential_ptr as *const _) };
-        return Ok(true);
+    if !ok {
+        let err = unsafe { GetLastError() };
+        if err == ERROR_NOT_FOUND {
+            return Ok(None);
+        }
+        return Err(AppError::Keyring(format!(
+            "Credential Manager error: {}",
+            err.0
+        )));
     }
-    let err = unsafe { GetLastError() };
-    if err == ERROR_NOT_FOUND {
-        return Ok(false);
-    }
-    Err(AppError::Keyring(format!(
-        "Credential Manager Fehler: {}",
-        err.0
-    )))
+    let text = |value: PWSTR| {
+        if value.is_null() {
+            String::new()
+        } else {
+            unsafe { value.to_string() }.unwrap_or_default()
+        }
+    };
+    let credential = unsafe { &*credential_ptr };
+    let found = (text(credential.Comment), text(credential.UserName));
+    unsafe { CredFree(credential_ptr as *const _) };
+    Ok(Some(found))
 }
 
 /// Reads the secret stored under `target` by `windows_store_credential`. The
 /// blob is the value encoded as UTF-16LE bytes (see `utf16_bytes`), so decode it
 /// back the same way. Mirrors the `CredReadW`/`CredFree` pattern of
-/// `windows_credential_exists`.
+/// `windows_generic_entry`.
 #[cfg(target_os = "windows")]
 pub fn windows_read_credential(target: &str) -> Result<String, AppError> {
     use std::ptr::null_mut;
@@ -505,17 +713,18 @@ pub fn windows_store_credential(
 ) -> Result<(), AppError> {
     use windows::Win32::Security::Credentials::CRED_PERSIST_LOCAL_MACHINE;
 
-    windows_write_credential(target, username, password, CRED_PERSIST_LOCAL_MACHINE)
+    windows_write_credential(target, username, password, CRED_PERSIST_LOCAL_MACHINE, None)
 }
 
 /// Writes `password` as the generic credential `target` of `username`, kept as long as
-/// `persist` says.
+/// `persist` says, with `comment` if there is one.
 #[cfg(target_os = "windows")]
 fn windows_write_credential(
     target: &str,
     username: &str,
     password: &str,
     persist: windows::Win32::Security::Credentials::CRED_PERSIST,
+    comment: Option<&str>,
 ) -> Result<(), AppError> {
     use windows::core::PWSTR;
     use windows::Win32::Foundation::GetLastError;
@@ -523,12 +732,16 @@ fn windows_write_credential(
 
     let target_w = to_utf16_null(target);
     let username_w = to_utf16_null(username);
+    let comment_w = comment.map(to_utf16_null);
     let mut secret_bytes = utf16_bytes(password);
 
     let mut credential = CREDENTIALW::default();
     credential.Type = CRED_TYPE_GENERIC;
     credential.TargetName = PWSTR(target_w.as_ptr() as *mut _);
     credential.UserName = PWSTR(username_w.as_ptr() as *mut _);
+    if let Some(comment_w) = &comment_w {
+        credential.Comment = PWSTR(comment_w.as_ptr() as *mut _);
+    }
     credential.CredentialBlobSize = secret_bytes.len() as u32;
     credential.CredentialBlob = secret_bytes.as_mut_ptr();
     credential.Persist = persist;
@@ -550,12 +763,23 @@ fn windows_write_credential(
 
 #[cfg(target_os = "windows")]
 pub fn windows_delete_credential(target: &str) -> Result<(), AppError> {
+    use windows::Win32::Security::Credentials::CRED_TYPE_GENERIC;
+
+    windows_delete_credential_of(target, CRED_TYPE_GENERIC)
+}
+
+/// Deletes the credential `target` of the type `kind`; a missing one is no error.
+#[cfg(target_os = "windows")]
+fn windows_delete_credential_of(
+    target: &str,
+    kind: windows::Win32::Security::Credentials::CRED_TYPE,
+) -> Result<(), AppError> {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
-    use windows::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
+    use windows::Win32::Security::Credentials::CredDeleteW;
 
     let target_w = to_utf16_null(target);
-    let ok = unsafe { CredDeleteW(PCWSTR(target_w.as_ptr()), CRED_TYPE_GENERIC, Some(0)) }.is_ok();
+    let ok = unsafe { CredDeleteW(PCWSTR(target_w.as_ptr()), kind, Some(0)) }.is_ok();
     if ok {
         return Ok(());
     }
@@ -569,6 +793,147 @@ pub fn windows_delete_credential(target: &str) -> Result<(), AppError> {
     )))
 }
 
+/// What the generic entry under the `TERMSRV/…` name `target` is to a start.
+#[cfg(target_os = "windows")]
+fn windows_termsrv_entry(target: &str) -> Result<TermsrvEntry, AppError> {
+    let found = windows_generic_entry(target)?;
+    Ok(TermsrvEntry::of(
+        found.as_ref().map(|(comment, _)| comment.as_str()),
+    ))
+}
+
+/// Deletes the entry a start wrote, if the generic entry under its name is still that one
+/// ([`WrittenTermsrv::is`]); another one, or none, stays as it is.
+#[cfg(target_os = "windows")]
+fn windows_remove_termsrv(written: &WrittenTermsrv) -> Result<(), AppError> {
+    match windows_generic_entry(&written.target)? {
+        Some((comment, username)) if written.is(&comment, &username) => {
+            windows_delete_credential(&written.target)
+        }
+        _ => Ok(()),
+    }
+}
+
+#[cfg(target_os = "windows")]
+static PENDING_REMOVES: Mutex<PendingRemoves> = Mutex::new(PendingRemoves::new());
+
+/// Runs the `Remove` steps that are not due yet at once, as the process ends
+/// (`RunEvent::Exit`) and their timers with it.
+#[cfg(target_os = "windows")]
+pub fn remove_pending_termsrv() {
+    let open = PENDING_REMOVES
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take_all();
+    for written in open {
+        if let Err(e) = windows_remove_termsrv(&written) {
+            log::warn!("{} stays until the logon session ends: {e}", written.target);
+        }
+    }
+}
+
+/// The Credential Manager of this logon session for a start of mstsc as `username`, with the
+/// stored `password`.
+#[cfg(target_os = "windows")]
+struct WindowsTermsrv<'a> {
+    username: String,
+    password: &'a str,
+}
+
+#[cfg(target_os = "windows")]
+impl WindowsTermsrv<'_> {
+    fn written(&self, target: &str) -> WrittenTermsrv {
+        WrittenTermsrv {
+            target: target.to_string(),
+            username: self.username.clone(),
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl TermsrvStore for WindowsTermsrv<'_> {
+    fn clear(&mut self, target: &str) -> Result<(), AppError> {
+        use windows::Win32::Security::Credentials::{CRED_TYPE_DOMAIN_PASSWORD, CRED_TYPE_GENERIC};
+
+        windows_delete_credential_of(target, CRED_TYPE_GENERIC)?;
+        windows_delete_credential_of(target, CRED_TYPE_DOMAIN_PASSWORD)
+    }
+
+    fn write(&mut self, target: &str) -> Result<(), AppError> {
+        use windows::Win32::Security::Credentials::CRED_PERSIST_SESSION;
+
+        windows_write_credential(
+            target,
+            &self.username,
+            self.password,
+            CRED_PERSIST_SESSION,
+            Some(TERMSRV_MARKER),
+        )
+    }
+
+    fn remove(&mut self, target: &str) -> Result<(), AppError> {
+        windows_remove_termsrv(&self.written(target))
+    }
+
+    fn remove_after(&mut self, target: &str, after: Duration) {
+        let id = PENDING_REMOVES
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .add(self.written(target));
+        std::thread::spawn(move || {
+            std::thread::sleep(after);
+            let due = PENDING_REMOVES
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take(id);
+            if let Some(written) = due {
+                if let Err(e) = windows_remove_termsrv(&written) {
+                    log::warn!("{} stays until the logon session ends: {e}", written.target);
+                }
+            }
+        });
+    }
+}
+
+/// Starts mstsc through `launch` for the address `host:port` that the `.rdp` file of
+/// `connection` names, as [`termsrv_plan`] says; `password` is the one stored for the
+/// connection (R-0431).
+#[cfg(target_os = "windows")]
+pub fn start_mstsc(
+    host: &str,
+    port: u16,
+    connection: &Connection,
+    password: Option<&str>,
+    launch: impl FnOnce() -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    let password = password.filter(|password| !password.is_empty());
+    let loopback = termsrv_this_machine(host);
+    let username = match password {
+        Some(_) => rdp_windows_username(connection)?,
+        None => String::new(),
+    };
+    let entry = match password {
+        Some(_) if !loopback => windows_termsrv_entry(&termsrv_name(host, port))?,
+        _ => TermsrvEntry::Missing,
+    };
+    let steps = termsrv_plan(host, port, loopback, entry, password.is_some());
+    let mut store = WindowsTermsrv {
+        username,
+        password: password.unwrap_or_default(),
+    };
+    run_termsrv_plan(&steps, &mut store, launch)
+}
+
+/// Whether a migrated workspace holds the password of a version before R-0431 for the
+/// connection as listed: a generic entry without the marker ([`readable_legacy_termsrv`]).
+#[cfg(target_os = "windows")]
+fn legacy_termsrv_stored(connection: &Connection) -> Result<bool, AppError> {
+    match readable_legacy_termsrv(&workspace::current()?, connection) {
+        Some(target) => Ok(windows_termsrv_entry(&target)? == TermsrvEntry::Foreign),
+        None => Ok(false),
+    }
+}
+
 pub fn password_state(connection: &Connection) -> Result<PasswordState, AppError> {
     if connection.kind != ConnectionKind::Rdp {
         return Ok(PasswordState {
@@ -579,10 +944,8 @@ pub fn password_state(connection: &Connection) -> Result<PasswordState, AppError
 
     #[cfg(target_os = "windows")]
     {
-        let target = rdp_windows_target(connection)?;
-        let stored = windows_credential_exists(&target)?;
         return Ok(PasswordState {
-            stored,
+            stored: password_stored_keyring(connection)? || legacy_termsrv_stored(connection)?,
             can_store: true,
         });
     }
@@ -605,21 +968,14 @@ pub fn password_state(connection: &Connection) -> Result<PasswordState, AppError
 }
 
 /// Store the RDP password of `connection`; `base` is the app data dir, where the
-/// index of the workspace's keys lies.
+/// index of the workspace's keys lies. On Windows, too, it goes to the keyring of the
+/// app, never to a `TERMSRV/…` entry, which only a start writes (R-0431).
 pub fn save_password(base: &Path, connection: &Connection, password: &str) -> Result<(), AppError> {
     if connection.kind != ConnectionKind::Rdp {
         return Ok(());
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        let _ = base;
-        let target = rdp_windows_target(connection)?;
-        let username = rdp_windows_username(connection)?;
-        return windows_store_credential(&target, &username, password);
-    }
-
-    #[cfg(unix)]
+    #[cfg(any(target_os = "windows", unix))]
     {
         save_password_keyring(base, connection, password)
     }
@@ -639,9 +995,11 @@ pub fn delete_password(base: &Path, connection: &Connection) -> Result<(), AppEr
 
     #[cfg(target_os = "windows")]
     {
-        let _ = base;
-        let target = rdp_windows_target(connection)?;
-        return windows_delete_credential(&target);
+        delete_password_keyring(base, connection)?;
+        return match legacy_termsrv(&workspace::current()?, connection) {
+            Some(target) => windows_delete_credential(&target),
+            None => Ok(()),
+        };
     }
 
     #[cfg(unix)]
@@ -658,17 +1016,17 @@ pub fn delete_password(base: &Path, connection: &Connection) -> Result<(), AppEr
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use super::TermsrvEntry::{Foreign, Missing, Own};
     use super::*;
     use crate::models::ConnectionKind;
-    #[cfg(unix)]
     use crate::workspace::{self, Workspace, WorkspaceId};
 
     /// An app data dir of its own for one test case under the system temp dir, gone with the
     /// guard.
-    #[cfg(unix)]
     struct Scratch(std::path::PathBuf);
 
-    #[cfg(unix)]
     impl Scratch {
         fn new(case: &str) -> Self {
             let dir =
@@ -679,7 +1037,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     impl Drop for Scratch {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
@@ -1029,7 +1386,6 @@ mod tests {
     // ── R-0431: RDP passwords per workspace ────────────────────────────────
 
     /// A migrated workspace: its keys carry no prefix, as before workspaces.
-    #[cfg(unix)]
     fn standard() -> Workspace {
         Workspace {
             id: WorkspaceId::parse("standard").unwrap(),
@@ -1039,7 +1395,6 @@ mod tests {
     }
 
     /// A workspace created after the migration: its keys carry its id.
-    #[cfg(unix)]
     fn created(id: &str) -> Workspace {
         Workspace {
             id: WorkspaceId::parse(id).unwrap(),
@@ -1143,12 +1498,10 @@ mod tests {
     }
 
     /// The index of the RDP keys in the data dir of `workspace` under the app data dir `base`.
-    #[cfg(unix)]
     fn index_path(base: &std::path::Path, workspace: &Workspace) -> std::path::PathBuf {
         workspace.data_dir(base).join("secrets.json")
     }
 
-    #[cfg(unix)]
     fn index_of(path: &std::path::Path) -> serde_json::Value {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     }
@@ -1271,19 +1624,27 @@ mod tests {
 
     // ── R-0431: TERMSRV just in time for mstsc ─────────────────────────────
 
-    const TERMSRV: &str = "TERMSRV/192.0.2.10:3390";
+    /// Another target and this machine, both at port 3390 in the plans below.
+    const ELSEWHERE: &str = "192.0.2.10";
+    const HERE: &str = "127.0.0.1";
 
-    fn termsrv_steps(steps: &[&str]) -> Vec<TermsrvStep> {
+    /// The steps named in `steps` for `host` at port 3390; `clear` stands for both names.
+    fn termsrv_steps(host: &str, steps: &[&str]) -> Vec<TermsrvStep> {
+        let target = format!("TERMSRV/{host}:3390");
         steps
             .iter()
-            .map(|&step| match step {
-                "clear" => TermsrvStep::Clear(TERMSRV.to_string()),
-                "write" => TermsrvStep::Write(TERMSRV.to_string()),
-                "launch" => TermsrvStep::Launch,
-                "remove" => TermsrvStep::Remove {
-                    target: TERMSRV.to_string(),
+            .flat_map(|&step| match step {
+                "clear" => vec![
+                    TermsrvStep::Clear(target.clone()),
+                    TermsrvStep::Clear(format!("TERMSRV/{host}")),
+                ],
+                "keep" => vec![TermsrvStep::Keep(target.clone())],
+                "write" => vec![TermsrvStep::Write(target.clone())],
+                "launch" => vec![TermsrvStep::Launch],
+                "remove" => vec![TermsrvStep::Remove {
+                    target: target.clone(),
                     after: TERMSRV_HOLD,
-                },
+                }],
                 other => panic!("no step {other}"),
             })
             .collect()
@@ -1292,18 +1653,21 @@ mod tests {
     #[test]
     fn termsrv_plan_holds_a_stored_password_only_for_the_start() {
         assert_eq!(
-            termsrv_plan(TERMSRV, false, true),
-            termsrv_steps(&["write", "launch", "remove"])
+            termsrv_plan(ELSEWHERE, 3390, false, Missing, true),
+            termsrv_steps(ELSEWHERE, &["write", "launch", "remove"])
         );
     }
 
     // An entry for another target may be the user's own; mstsc uses it as before.
     #[test]
     fn termsrv_plan_without_a_password_leaves_the_entry_of_another_target() {
-        assert_eq!(
-            termsrv_plan(TERMSRV, false, false),
-            termsrv_steps(&["launch"])
-        );
+        for entry in [Missing, Own, Foreign] {
+            assert_eq!(
+                termsrv_plan(ELSEWHERE, 3390, false, entry, false),
+                termsrv_steps(ELSEWHERE, &["launch"]),
+                "{entry:?}"
+            );
+        }
     }
 
     // A port on this machine may lead to another server than when its entry was written,
@@ -1311,30 +1675,417 @@ mod tests {
     #[test]
     fn termsrv_plan_clears_the_entry_for_this_machine_even_without_a_password() {
         assert_eq!(
-            termsrv_plan(TERMSRV, true, false),
-            termsrv_steps(&["clear", "launch"])
+            termsrv_plan(HERE, 3390, true, Missing, false),
+            termsrv_steps(HERE, &["clear", "launch"])
+        );
+    }
+
+    // Whatever the entry under its name holds, with or without the marker, it goes first.
+    #[test]
+    fn termsrv_plan_clears_the_entry_for_this_machine_before_it_writes_the_password() {
+        for entry in [Missing, Own, Foreign] {
+            assert_eq!(
+                termsrv_plan(HERE, 3390, true, entry, true),
+                termsrv_steps(HERE, &["clear", "write", "launch", "remove"]),
+                "{entry:?}"
+            );
+        }
+    }
+
+    // `CredWriteW` would replace it: the user's own entry (`cmdkey`) or the password of a
+    // version before R-0431. mstsc takes that one.
+    #[test]
+    fn termsrv_plan_writes_over_no_entry_of_another_target_without_the_marker() {
+        assert_eq!(
+            termsrv_plan(ELSEWHERE, 3390, false, Foreign, true),
+            termsrv_steps(ELSEWHERE, &["keep", "launch"])
+        );
+    }
+
+    // The rest of a start that could not remove it, e.g. after a crash.
+    #[test]
+    fn termsrv_plan_writes_over_the_rest_of_an_earlier_start() {
+        assert_eq!(
+            termsrv_plan(ELSEWHERE, 3390, false, Own, true),
+            termsrv_steps(ELSEWHERE, &["write", "launch", "remove"])
+        );
+    }
+
+    // Which of the two names mstsc looks up for this machine is not verified, so both go, at
+    // 3389 as well; the one written is the name this app has always used.
+    #[test]
+    fn termsrv_plan_at_the_default_port_writes_the_name_without_it_and_clears_both() {
+        assert_eq!(
+            termsrv_plan("localhost", 3389, true, Missing, true),
+            vec![
+                TermsrvStep::Clear("TERMSRV/localhost:3389".to_string()),
+                TermsrvStep::Clear("TERMSRV/localhost".to_string()),
+                TermsrvStep::Write("TERMSRV/localhost".to_string()),
+                TermsrvStep::Launch,
+                TermsrvStep::Remove {
+                    target: "TERMSRV/localhost".to_string(),
+                    after: TERMSRV_HOLD,
+                },
+            ]
+        );
+    }
+
+    /// The plans for the RDP host `127.0.0.1:6000` at `port`, with and without a stored
+    /// password, against the names `clear` of the entries they delete first.
+    fn assert_plans_of_a_host_with_a_port(port: u16, clear: &[&str]) {
+        let target = termsrv_name("127.0.0.1:6000", port);
+        let cleared = || {
+            clear
+                .iter()
+                .map(|name| TermsrvStep::Clear(name.to_string()))
+        };
+        let with_password: Vec<_> = cleared()
+            .chain([
+                TermsrvStep::Write(target.clone()),
+                TermsrvStep::Launch,
+                TermsrvStep::Remove {
+                    target: target.clone(),
+                    after: TERMSRV_HOLD,
+                },
+            ])
+            .collect();
+        let without: Vec<_> = cleared().chain([TermsrvStep::Launch]).collect();
+        assert_eq!(
+            termsrv_plan("127.0.0.1:6000", port, true, Missing, true),
+            with_password
+        );
+        assert_eq!(
+            termsrv_plan("127.0.0.1:6000", port, true, Missing, false),
+            without
+        );
+    }
+
+    // mstsc gets `full address:s:127.0.0.1:6000:3390`: which of the two ports it takes is not
+    // verified (T8), nor under which name it looks up (spike, point 4), so the names of the host
+    // part at either port go as well.
+    #[test]
+    fn termsrv_plan_clears_the_names_of_a_host_with_a_port_at_either_port() {
+        assert_plans_of_a_host_with_a_port(
+            3390,
+            &[
+                "TERMSRV/127.0.0.1:6000:3390",
+                "TERMSRV/127.0.0.1:6000",
+                "TERMSRV/127.0.0.1:3390",
+                "TERMSRV/127.0.0.1",
+            ],
+        );
+    }
+
+    // At 3389 the name of the host part goes without the port, as `termsrv_name` has it.
+    #[test]
+    fn termsrv_plan_clears_the_names_of_a_host_with_a_port_at_the_default_port() {
+        assert_plans_of_a_host_with_a_port(
+            3389,
+            &[
+                "TERMSRV/127.0.0.1:6000:3389",
+                "TERMSRV/127.0.0.1:6000",
+                "TERMSRV/127.0.0.1",
+            ],
         );
     }
 
     #[test]
-    fn termsrv_plan_clears_the_entry_for_this_machine_before_it_writes_the_password() {
+    fn termsrv_name_omits_the_default_port() {
+        assert_eq!(termsrv_name("srv", 3389), "TERMSRV/srv");
+        assert_eq!(termsrv_name("srv", 3390), "TERMSRV/srv:3390");
+    }
+
+    // The host as it stands in the `.rdp` file: with a port in it, both ports may be the one
+    // mstsc takes (as in `tunnel.rs`), and what the check cannot read may be this machine.
+    #[test]
+    fn termsrv_this_machine_reads_a_port_in_the_host_and_takes_what_it_cannot_read() {
+        for host in [
+            "127.0.0.1",
+            "127.0.0.2",
+            "127.1",
+            "localhost",
+            "LocalHost",
+            "localhost.",
+            "app.localhost",
+            "::1",
+            "[::1]",
+            "::ffff:127.0.0.1",
+            "0.0.0.0",
+            "::",
+            "127.0.0.1:6000",
+            "localhost:6000",
+            "[::1]:6000",
+            "fe80::1%eth0",
+            "user@192.0.2.10",
+            "rdp.example.com:port",
+        ] {
+            assert!(termsrv_this_machine(host), "{host}");
+        }
+        for host in [
+            "192.0.2.10",
+            "rdp.example.com",
+            "2001:db8::1",
+            "[2001:db8::1]",
+            "192.0.2.10:6000",
+            "rdp.example.com:6000",
+            "[2001:db8::1]:6000",
+            "127.example.com",
+            "notlocalhost",
+        ] {
+            assert!(!termsrv_this_machine(host), "{host}");
+        }
+    }
+
+    #[test]
+    fn termsrv_entry_is_own_only_with_the_marker() {
+        assert_eq!(TermsrvEntry::of(None), Missing);
+        assert_eq!(TermsrvEntry::of(Some(TERMSRV_MARKER)), Own);
+        assert_eq!(TermsrvEntry::of(Some("")), Foreign);
+        assert_eq!(TermsrvEntry::of(Some("com.admincave.adminhelper")), Foreign);
+    }
+
+    #[test]
+    fn termsrv_remove_takes_only_the_entry_a_start_wrote_for_its_user() {
+        let written = WrittenTermsrv {
+            target: "TERMSRV/192.0.2.10:3390".to_string(),
+            username: "CORP\\admin".to_string(),
+        };
+        assert!(written.is(TERMSRV_MARKER, "CORP\\admin"));
+        // Written over by a start for another user.
+        assert!(!written.is(TERMSRV_MARKER, "CORP\\other"));
+        // The user's own, or one from before R-0431, even for the same user.
+        assert!(!written.is("", "CORP\\admin"));
+        assert!(!written.is("my server", "CORP\\admin"));
+    }
+
+    #[test]
+    fn termsrv_pending_removes_go_once_by_their_timer_or_at_the_exit() {
+        let written = |target: &str| WrittenTermsrv {
+            target: target.to_string(),
+            username: "u".to_string(),
+        };
+        let mut pending = PendingRemoves::new();
+        let first = pending.add(written("TERMSRV/a"));
+        let second = pending.add(written("TERMSRV/b"));
+        let third = pending.add(written("TERMSRV/c"));
+
+        assert_eq!(pending.take(second), Some(written("TERMSRV/b")));
+        assert_eq!(pending.take(second), None, "a timer takes its own once");
         assert_eq!(
-            termsrv_plan(TERMSRV, true, true),
-            termsrv_steps(&["clear", "write", "launch", "remove"])
+            pending.take_all(),
+            [written("TERMSRV/a"), written("TERMSRV/c")]
+        );
+        // A timer that wakes after the exit finds nothing, not even a later start's entry
+        // under the same name.
+        let later = pending.add(written("TERMSRV/a"));
+        assert_ne!(later, first);
+        assert_eq!(pending.take(first), None);
+        assert_eq!(pending.take(third), None);
+        assert_eq!(pending.take_all(), [written("TERMSRV/a")]);
+    }
+
+    /// The Credential Manager of a start as a log of what it was told, failing at `failing`.
+    struct Recorded<'a> {
+        calls: &'a RefCell<Vec<String>>,
+        failing: Option<&'static str>,
+    }
+
+    impl Recorded<'_> {
+        fn call(&mut self, step: &'static str, target: &str) -> Result<(), AppError> {
+            self.calls.borrow_mut().push(format!("{step} {target}"));
+            if self.failing == Some(step) {
+                Err(AppError::Keyring(format!("{step} fails")))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl TermsrvStore for Recorded<'_> {
+        fn clear(&mut self, target: &str) -> Result<(), AppError> {
+            self.call("clear", target)
+        }
+
+        fn write(&mut self, target: &str) -> Result<(), AppError> {
+            self.call("write", target)
+        }
+
+        fn remove(&mut self, target: &str) -> Result<(), AppError> {
+            self.call("remove", target)
+        }
+
+        fn remove_after(&mut self, target: &str, after: Duration) {
+            self.calls
+                .borrow_mut()
+                .push(format!("remove {target} after {}s", after.as_secs()));
+        }
+    }
+
+    /// Runs `steps` against a store failing at `failing`, mstsc starting if `starts`: what the
+    /// store was told, the start of mstsc in between, and the outcome.
+    fn run(
+        steps: &[TermsrvStep],
+        failing: Option<&'static str>,
+        starts: bool,
+    ) -> (Vec<String>, Result<(), AppError>) {
+        let calls = RefCell::new(Vec::new());
+        let mut store = Recorded {
+            calls: &calls,
+            failing,
+        };
+        let outcome = run_termsrv_plan(steps, &mut store, || {
+            calls.borrow_mut().push("launch".to_string());
+            if starts {
+                Ok(())
+            } else {
+                Err(AppError::Connection("mstsc does not start".to_string()))
+            }
+        });
+        (calls.into_inner(), outcome)
+    }
+
+    #[test]
+    fn termsrv_run_holds_the_written_entry_until_its_time() {
+        let (calls, outcome) = run(&termsrv_plan(HERE, 3390, true, Missing, true), None, true);
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(
+            calls,
+            [
+                "clear TERMSRV/127.0.0.1:3390",
+                "clear TERMSRV/127.0.0.1",
+                "write TERMSRV/127.0.0.1:3390",
+                "launch",
+                "remove TERMSRV/127.0.0.1:3390 after 60s",
+            ]
         );
     }
 
-    /// A `TERMSRV/…` name no host has (`.invalid`, RFC 2606), of this run only.
+    #[test]
+    fn termsrv_run_removes_the_entry_at_once_if_mstsc_does_not_start() {
+        let steps = termsrv_plan(ELSEWHERE, 3390, false, Missing, true);
+        let (calls, outcome) = run(&steps, None, false);
+        assert!(
+            matches!(outcome, Err(AppError::Connection(_))),
+            "{outcome:?}"
+        );
+        assert_eq!(
+            calls,
+            [
+                "write TERMSRV/192.0.2.10:3390",
+                "launch",
+                "remove TERMSRV/192.0.2.10:3390"
+            ]
+        );
+
+        // A removal that fails leaves the entry to the end of the logon session; the start
+        // still reports why mstsc did not start.
+        let (calls, outcome) = run(&steps, Some("remove"), false);
+        assert!(
+            matches!(outcome, Err(AppError::Connection(_))),
+            "{outcome:?}"
+        );
+        assert_eq!(calls.last().unwrap(), "remove TERMSRV/192.0.2.10:3390");
+    }
+
+    // mstsc never runs while an entry for this machine may still be there, nor without the
+    // one the start meant to write.
+    #[test]
+    fn termsrv_run_starts_no_mstsc_after_a_step_fails() {
+        let steps = termsrv_plan(HERE, 3390, true, Missing, true);
+        let (calls, outcome) = run(&steps, Some("clear"), true);
+        assert!(matches!(outcome, Err(AppError::Keyring(_))), "{outcome:?}");
+        assert_eq!(calls, ["clear TERMSRV/127.0.0.1:3390"]);
+
+        let (calls, outcome) = run(&steps, Some("write"), true);
+        assert!(matches!(outcome, Err(AppError::Keyring(_))), "{outcome:?}");
+        assert_eq!(
+            calls,
+            [
+                "clear TERMSRV/127.0.0.1:3390",
+                "clear TERMSRV/127.0.0.1",
+                "write TERMSRV/127.0.0.1:3390"
+            ]
+        );
+    }
+
+    #[test]
+    fn termsrv_run_leaves_an_entry_without_the_marker_alone() {
+        let (calls, outcome) = run(
+            &termsrv_plan(ELSEWHERE, 3390, false, Foreign, true),
+            None,
+            true,
+        );
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(calls, ["launch"]);
+    }
+
+    #[test]
+    fn termsrv_legacy_entry_only_in_a_migrated_workspace_and_for_a_connection_with_a_key() {
+        let a = rdp_with_id("a");
+        assert_eq!(
+            legacy_termsrv(&standard(), &a).as_deref(),
+            Some("TERMSRV/Host.COM:3390")
+        );
+        assert_eq!(
+            readable_legacy_termsrv(&standard(), &a).as_deref(),
+            Some("TERMSRV/Host.COM:3390")
+        );
+        let at_default_port = Connection {
+            id: "a".into(),
+            ..rdp(Some(" srv "), None, Some("u"), None)
+        };
+        assert_eq!(
+            legacy_termsrv(&standard(), &at_default_port).as_deref(),
+            Some("TERMSRV/srv")
+        );
+
+        assert_eq!(legacy_termsrv(&created("w-0a1b2c3d"), &a), None);
+        for id in ["", "a|b"] {
+            assert_eq!(
+                legacy_termsrv(&standard(), &rdp_with_id(id)),
+                None,
+                "{id:?}"
+            );
+        }
+    }
+
+    // A start deletes the entries for this machine before mstsc runs, so such an entry is no
+    // stored password; deleting the password still takes it.
+    #[test]
+    fn termsrv_legacy_entry_for_this_machine_is_no_stored_password() {
+        for host in ["127.0.0.1", "localhost", "127.0.0.1:6000", "[::1]"] {
+            let c = Connection {
+                id: "a".into(),
+                ..rdp(Some(host), Some(3390), Some("u"), None)
+            };
+            assert_eq!(
+                legacy_termsrv(&standard(), &c),
+                Some(format!("TERMSRV/{host}:3390")),
+                "{host}"
+            );
+            assert_eq!(readable_legacy_termsrv(&standard(), &c), None, "{host}");
+        }
+    }
+
+    /// A host no one has (`.invalid`, RFC 2606), of this run and this call only.
     #[cfg(target_os = "windows")]
-    fn probe_target() -> String {
+    fn probe_host() -> String {
+        static CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|elapsed| elapsed.as_nanos())
             .unwrap_or(0);
         format!(
-            "TERMSRV/adminhelper-probe-{}-{nanos}.invalid:3390",
+            "adminhelper-probe-{}-{nanos}-{call}.invalid",
             std::process::id()
         )
+    }
+
+    /// A `TERMSRV/…` name no host has, of this run only.
+    #[cfg(target_os = "windows")]
+    fn probe_target() -> String {
+        termsrv_name(&probe_host(), 3390)
     }
 
     /// Deletes the probe entry, also after a failed assertion.
@@ -1394,13 +2145,22 @@ mod tests {
         use windows::Win32::Security::Credentials::{CRED_PERSIST_SESSION, CRED_TYPE_GENERIC};
 
         let target = probe_target();
-        assert!(!windows_credential_exists(&target).unwrap());
+        assert_eq!(windows_generic_entry(&target).unwrap(), None);
         let _entry = ProbeEntry(target.clone());
 
-        windows_write_credential(&target, "CORP\\probe", "pässwort ✓", CRED_PERSIST_SESSION)
-            .unwrap();
+        windows_write_credential(
+            &target,
+            "CORP\\probe",
+            "pässwort ✓",
+            CRED_PERSIST_SESSION,
+            None,
+        )
+        .unwrap();
 
-        assert!(windows_credential_exists(&target).unwrap());
+        assert_eq!(
+            windows_generic_entry(&target).unwrap(),
+            Some((String::new(), "CORP\\probe".to_string()))
+        );
         assert_eq!(
             probe_read(&target),
             (
@@ -1412,25 +2172,185 @@ mod tests {
         assert_eq!(windows_read_credential(&target).unwrap(), "pässwort ✓");
 
         windows_delete_credential(&target).unwrap();
-        assert!(!windows_credential_exists(&target).unwrap());
+        assert_eq!(windows_generic_entry(&target).unwrap(), None);
         // A removal finds nothing once the entry is gone, and that is no error.
         windows_delete_credential(&target).unwrap();
     }
 
-    // Windows-only credential/target formatting. These execute now that the CI
-    // Windows job runs `cargo test` instead of only `cargo check` (6.33).
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_target_uses_termsrv_and_omits_default_port() {
+    fn termsrv_probe_a_start_removes_only_the_entry_it_wrote() {
+        use windows::Win32::Security::Credentials::{CRED_PERSIST_SESSION, CRED_TYPE_GENERIC};
+
+        let target = probe_target();
+        let _entry = ProbeEntry(target.clone());
+        let mut start = WindowsTermsrv {
+            username: "CORP\\probe".to_string(),
+            password: "pässwort ✓",
+        };
+
+        start.write(&target).unwrap();
         assert_eq!(
-            rdp_windows_target(&rdp(Some("srv"), None, Some("u"), None)).unwrap(),
-            "TERMSRV/srv"
+            windows_generic_entry(&target).unwrap(),
+            Some((TERMSRV_MARKER.to_string(), "CORP\\probe".to_string()))
         );
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
         assert_eq!(
-            rdp_windows_target(&rdp(Some("srv"), Some(3390), Some("u"), None)).unwrap(),
-            "TERMSRV/srv:3390"
+            probe_read(&target),
+            (
+                CRED_TYPE_GENERIC,
+                CRED_PERSIST_SESSION,
+                "CORP\\probe".to_string()
+            )
         );
-        assert!(rdp_windows_target(&rdp(None, None, Some("u"), None)).is_err());
+        assert_eq!(windows_read_credential(&target).unwrap(), "pässwort ✓");
+
+        // The removal of a start for another user leaves it.
+        WindowsTermsrv {
+            username: "CORP\\other".to_string(),
+            password: "",
+        }
+        .remove(&target)
+        .unwrap();
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
+        start.remove(&target).unwrap();
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+
+        // An entry without the marker, as `cmdkey` writes it, stays even for the same user.
+        windows_write_credential(&target, "CORP\\probe", "own", CRED_PERSIST_SESSION, None)
+            .unwrap();
+        start.remove(&target).unwrap();
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Foreign);
+
+        // A clear takes it whoever wrote it, and finds nothing of either type afterwards.
+        start.clear(&target).unwrap();
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+        start.clear(&target).unwrap();
+    }
+
+    /// The connection `a` to `host:3390` as `probe` in `CORP`.
+    #[cfg(target_os = "windows")]
+    fn probe_connection(host: &str) -> Connection {
+        Connection {
+            id: "a".into(),
+            ..rdp(Some(host), Some(3390), Some("probe"), Some("CORP"))
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn termsrv_probe_a_failed_start_removes_its_entry_at_once_a_running_one_at_the_exit() {
+        let host = probe_host();
+        let target = termsrv_name(&host, 3390);
+        let _entry = ProbeEntry(target.clone());
+        let connection = probe_connection(&host);
+
+        let failed = start_mstsc(&host, 3390, &connection, Some("pässwort"), || {
+            assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
+            Err(AppError::Connection("mstsc does not start".to_string()))
+        });
+        assert!(matches!(failed, Err(AppError::Connection(_))), "{failed:?}");
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+
+        start_mstsc(&host, 3390, &connection, Some("pässwort"), || Ok(())).unwrap();
+        assert_eq!(windows_read_credential(&target).unwrap(), "pässwort");
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Own);
+        remove_pending_termsrv();
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn termsrv_probe_a_start_writes_over_no_entry_without_the_marker() {
+        use windows::Win32::Security::Credentials::CRED_PERSIST_SESSION;
+
+        let host = probe_host();
+        let target = termsrv_name(&host, 3390);
+        let _entry = ProbeEntry(target.clone());
+        windows_write_credential(&target, "CORP\\probe", "own", CRED_PERSIST_SESSION, None)
+            .unwrap();
+
+        start_mstsc(
+            &host,
+            3390,
+            &probe_connection(&host),
+            Some("stored"),
+            || Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(windows_read_credential(&target).unwrap(), "own");
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Foreign);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn workspace_keys_windows_the_password_lives_in_the_app_namespace() {
+        use crate::keyring_store::try_get;
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("windows-app-namespace");
+        let workspace = created("w-0a1b2c3d");
+        let index = index_path(&base.0, &workspace);
+        let _entered = workspace::enter(workspace);
+        let a = rdp_with_id("a");
+        let key = "com.admincave.adminhelper/ws:w-0a1b2c3d|rdp|a|host.com|3390|admin|corp";
+
+        assert!(!password_state(&a).unwrap().stored);
+        save_password(&base.0, &a, "secret").unwrap();
+        assert_eq!(try_get(key).unwrap().as_deref(), Some("secret"));
+        assert_eq!(index_of(&index), serde_json::json!({ "keys": [key] }));
+        assert!(password_state(&a).unwrap().stored);
+        assert_eq!(
+            load_password_keyring(&a).unwrap().as_deref(),
+            Some("secret")
+        );
+
+        delete_password(&base.0, &a).unwrap();
+        assert_eq!(try_get(key).unwrap(), None);
+        assert_eq!(index_of(&index), serde_json::json!({ "keys": [] }));
+        assert!(!password_state(&a).unwrap().stored);
+    }
+
+    // Before R-0431 the password stood in `TERMSRV/<address as listed>`; only a migrated
+    // workspace counts it as stored, and deleting the password there takes it.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn workspace_keys_windows_a_migrated_workspace_finds_and_deletes_the_entry_from_before() {
+        use windows::Win32::Security::Credentials::CRED_PERSIST_SESSION;
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("windows-legacy-termsrv");
+        let host = probe_host();
+        let target = termsrv_name(&host, 3390);
+        let _entry = ProbeEntry(target.clone());
+        let a = probe_connection(&host);
+        let before = |password: &str, comment: Option<&str>| {
+            windows_write_credential(
+                &target,
+                "CORP\\probe",
+                password,
+                CRED_PERSIST_SESSION,
+                comment,
+            )
+            .unwrap()
+        };
+        before("old", None);
+
+        {
+            let _created = workspace::enter(created("w-0a1b2c3d"));
+            assert!(!password_state(&a).unwrap().stored);
+            delete_password(&base.0, &a).unwrap();
+            assert_eq!(windows_termsrv_entry(&target).unwrap(), Foreign);
+        }
+
+        let _standard = workspace::enter(standard());
+        assert!(password_state(&a).unwrap().stored);
+        // An entry a start wrote is no password from before.
+        before("jit", Some(TERMSRV_MARKER));
+        assert!(!password_state(&a).unwrap().stored);
+        before("old", None);
+        delete_password(&base.0, &a).unwrap();
+        assert_eq!(windows_termsrv_entry(&target).unwrap(), Missing);
+        assert!(!password_state(&a).unwrap().stored);
     }
 
     #[cfg(target_os = "windows")]
