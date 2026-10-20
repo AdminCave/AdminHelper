@@ -6,6 +6,7 @@
 alarms or swallowed alarms if they drift — e.g. a regression dropping DEGRADED from the critical set
 would never be noticed without a test (6.53)."""
 
+import json
 import math
 
 import pytest
@@ -983,3 +984,118 @@ def test_docker_long_exit_code_string_stays_out_of_the_message():
     assert status == "critical"
     assert msg == "Container problems: web: exited with code 1 (0 running, 0 stopped)"
     assert _rows(metrics)[0]["exit_code"] == 1
+
+
+# --- Text fields of an entry in message and _details ---
+# _details goes as it is into the answers of GET /status and GET /checks, which the desktop
+# reads as a whole: a 400-digit integer there is no number every JSON reader takes. A text from
+# the report goes into message and _details only as a string, on one line and cut to 500
+# characters by cap_agent_text; anything else counts as missing, with the default.
+_LONG_TEXT = "line\n" * 2000  # 10 000 characters
+_LONG_SHOWN = ("line " * 2000)[:499] + "\u2026"
+_NOT_TEXTS = [
+    pytest.param(_BIG_INT, id="int-400-digits"),
+    pytest.param([1], id="list"),
+    pytest.param({"a": 1}, id="dict"),
+]
+_MISSING_BACKUP = {**_VM, "last_backup_ts": None}  # the label goes into the message
+# (kind, entry with a regular value, field, the field's value in _details without it)
+_TEXT_FIELDS = [
+    pytest.param("docker", _ctr(), "id", None, id="docker-id"),
+    pytest.param("docker", _ctr(), "image", "", id="docker-image"),
+    pytest.param("proxmox", _MISSING_BACKUP, "name", "?", id="proxmox-name"),
+    pytest.param("proxmox", _MISSING_BACKUP, "type", "vm", id="proxmox-type"),
+    pytest.param("zfs", _pool(), "name", "?", id="zfs-name"),
+    pytest.param("zfs", _pool(health="DEGRADED"), "name", "?", id="zfs-name-degraded"),
+    pytest.param("zfs", _pool(), "health", "UNKNOWN", id="zfs-health"),
+]
+_TEXT_ARGS = ("kind", "entry", "field", "default")
+_DETAIL_LISTS = {"proxmox": "vms", "zfs": "pools", "docker": "containers"}
+
+
+def _detail_row(kind, metrics):
+    [row] = metrics["_details"][_DETAIL_LISTS[kind]]
+    return row
+
+
+def _assert_every_reader_reads(details):
+    """No NaN or Infinity token, and every number converts to a finite float (a strict reader
+    such as serde_json rejects a larger integer as out of range)."""
+    json.dumps(details, allow_nan=False)
+    stack = [details]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                finite = math.isfinite(float(value))
+            except OverflowError:
+                finite = False
+            assert finite, f"number not representable as a finite float: {str(value)[:20]}"
+
+
+@pytest.mark.parametrize("value", _NOT_TEXTS)
+@pytest.mark.parametrize(_TEXT_ARGS, _TEXT_FIELDS)
+def test_a_text_field_that_is_no_string_counts_as_missing(
+    monkeypatch, kind, entry, field, default, value
+):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
+    status, msg, metrics = _rate(kind, {**entry, field: value})
+    without = _rate(kind, _without(entry, field))
+    # The ZFS metric name still reads the raw name, so only message and _details are compared.
+    assert (status, msg, metrics["_details"]) == (without[0], without[1], without[2]["_details"])
+    assert _detail_row(kind, metrics)[field] == default
+    _assert_every_reader_reads(metrics["_details"])
+
+
+@pytest.mark.parametrize(_TEXT_ARGS, _TEXT_FIELDS)
+def test_a_long_text_field_goes_into_details_on_one_line_of_500_characters(
+    monkeypatch, kind, entry, field, default
+):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
+    status, msg, metrics = _rate(kind, {**entry, field: _LONG_TEXT})
+    assert _detail_row(kind, metrics)[field] == _LONG_SHOWN
+    assert status == _rate(kind, entry)[0]
+    assert msg.isprintable()  # no control character, no line or paragraph separator
+    _assert_every_reader_reads(metrics["_details"])
+
+
+def test_proxmox_detail_rows_of_a_regular_report(monkeypatch):
+    monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
+    ct = {**_VM, "vmid": 101, "name": "ct", "type": "lxc", "last_backup_ts": _NOW - 30 * 3600}
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": [_VM, ct]}})
+    assert (status, msg) == ("warning", "Outdated backups: LXC 101 (ct): 30h old")
+    assert metrics["_details"] == {
+        "vms": [
+            {"vmid": 100, "name": "web", "type": "qemu", "backupStatus": "ok", "ageHours": None},
+            {"vmid": 101, "name": "ct", "type": "lxc", "backupStatus": "outdated", "ageHours": 30},
+        ]
+    }
+    _assert_every_reader_reads(metrics["_details"])
+
+
+def test_regular_docker_and_zfs_details_are_read_by_every_reader():
+    _, _, docker = DockerHealthChecker().evaluate({}, _docker(_ctr(state="exited", exit_code=3)))
+    _, _, zfs = ZfsHealthChecker().evaluate({}, _zfs(_pool(), _pool("backup", "DEGRADED", 55.5)))
+    _assert_every_reader_reads(docker["_details"])
+    _assert_every_reader_reads(zfs["_details"])
+
+
+@pytest.mark.parametrize(
+    "cid", ["c" * 500, "c" * 600, "a\nb"], ids=["500-chars", "600-chars", "line-break"]
+)
+def test_docker_restart_count_finds_the_previous_value_of_the_id_as_stored(cid):
+    # The previous details carry the ID as _details shows it, so the lookup goes by that too.
+    _, _, first = DockerHealthChecker().evaluate({}, _docker(_ctr(id=cid, restart_count=1)))
+    status, msg, _ = DockerHealthChecker().evaluate(
+        {}, _docker(_ctr(id=cid, restart_count=2)), first["_details"]
+    )
+    assert status == "warning" and "restarted" in msg
+
+
+def test_docker_id_of_up_to_500_characters_stays_as_it_is():
+    _, _, metrics = DockerHealthChecker().evaluate({}, _docker(_ctr(id="c" * 500)))
+    assert _rows(metrics)[0]["id"] == "c" * 500

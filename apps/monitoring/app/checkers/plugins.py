@@ -90,10 +90,11 @@ class ProxmoxBackupChecker:
             if exclude_stopped and vm.get("status") != "running":
                 continue
 
-            vm_type = vm.get("type")
-            if not isinstance(vm_type, str):
-                vm_type = "vm"
-            label = f"{vm_type.upper()} {vmid} ({vm.get('name', '?')})"
+            # Type and name go into the message and into _details, which the desktop reads with
+            # every other check in one answer: only a string, capped and on one line.
+            vm_type = cap_agent_text(vm.get("type")) or "vm"
+            name = cap_agent_text(vm.get("name")) or "?"
+            label = f"{vm_type.upper()} {vmid} ({name})"
             last_ts = agent_number(vm.get("last_backup_ts"))
             vm_status = "ok"
             age_hours = None
@@ -111,7 +112,7 @@ class ProxmoxBackupChecker:
             vm_details.append(
                 {
                     "vmid": vmid,
-                    "name": vm.get("name", "?"),
+                    "name": name,
                     "type": vm_type,
                     "backupStatus": vm_status,
                     "ageHours": age_hours,
@@ -142,6 +143,12 @@ def _pool_capacity(pool: dict) -> int | float:
     (R-0517). The health still counts."""
     cap = agent_number(pool.get("capacity_percent"))
     return 0 if cap is None else cap
+
+
+def _pool_name(pool: dict) -> str:
+    """name of a pool as message and _details show it: only a string, capped and on one line
+    by cap_agent_text, else "?". The metric name still reads the raw value."""
+    return cap_agent_text(pool.get("name")) or "?"
 
 
 class ZfsHealthChecker:
@@ -190,19 +197,20 @@ class ZfsHealthChecker:
 
         for pool in pools:
             name = pool.get("name", "?")
+            shown_name = _pool_name(pool)
             health = pool.get("health", "UNKNOWN")
             cap = _pool_capacity(pool)
             metrics[f"zfs_capacity_{name}"] = cap
 
             if health in ("FAULTED", "OFFLINE", "UNAVAIL", "DEGRADED"):
-                problems.append(f"{name}: {health}")
+                problems.append(f"{shown_name}: {health}")
                 status = "critical"
 
             if cap >= cap_crit:
-                problems.append(f"{name}: {cap}% full (>={cap_crit}%)")
+                problems.append(f"{shown_name}: {cap}% full (>={cap_crit}%)")
                 status = "critical"
             elif cap >= cap_warn:
-                problems.append(f"{name}: {cap}% full (>={cap_warn}%)")
+                problems.append(f"{shown_name}: {cap}% full (>={cap_warn}%)")
                 if status != "critical":
                     status = "warning"
 
@@ -211,8 +219,9 @@ class ZfsHealthChecker:
             "error": None,
             "pools": [
                 {
-                    "name": p.get("name", "?"),
-                    "health": p.get("health", "UNKNOWN"),
+                    "name": _pool_name(p),
+                    # The rating above reads the raw health; _details only gets a capped string.
+                    "health": cap_agent_text(p.get("health")) or "UNKNOWN",
                     "capacityPercent": _pool_capacity(p),
                 }
                 for p in pools
@@ -222,7 +231,7 @@ class ZfsHealthChecker:
         if problems:
             return status, join_capped(problems, "; "), metrics
 
-        pool_summary = join_capped([f"{p.get('name', '?')} {_pool_capacity(p)}%" for p in pools])
+        pool_summary = join_capped([f"{_pool_name(p)} {_pool_capacity(p)}%" for p in pools])
         return "ok", f"All pools ONLINE: {pool_summary}", metrics
 
 
@@ -375,7 +384,11 @@ class DockerHealthChecker:
 
             state = c.get("state")
             state = state.lower() if isinstance(state, str) else ""
-            prev_count = prev_restarts.get(cid) if isinstance(cid, str) else None
+            # _details stores the ID capped like the name, and the previous details are the
+            # stored ones: the lookup goes by the capped ID, so an ID the cap changes keeps its
+            # previous value.
+            shown_id = cap_agent_text(cid)
+            prev_count = prev_restarts.get(shown_id) if shown_id else None
             category, reason = _rate_container(c, state, prev_count)
             # The ignore list and the rating read the full name and state; message and details
             # only get a capped copy, the message goes unchanged into webhook and mail (R-0508).
@@ -394,9 +407,9 @@ class DockerHealthChecker:
 
             container_details.append(
                 {
-                    "id": c.get("id"),
+                    "id": shown_id,
                     "name": shown_name,
-                    "image": c.get("image", ""),
+                    "image": cap_agent_text(c.get("image")) or "",
                     "state": shown_state,
                     "category": category,
                     "reason": reason,
