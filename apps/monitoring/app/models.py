@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 from sqlalchemy import (
     Boolean,
@@ -20,6 +21,34 @@ from sqlalchemy import (
 
 from app.core.database import Base
 from app.core.time import iso_utc, utc_now_sql
+
+
+def _finite_float(text: str) -> float | None:
+    value = float(text)
+    return value if math.isfinite(value) else None
+
+
+def _float_range_int(text: str) -> int | None:
+    value = int(text)
+    try:
+        float(value)
+    except OverflowError:
+        return None
+    return value
+
+
+def _loads_readable(text: str):
+    """json.loads for a stored column that goes into an API response: NaN, Infinity,
+    -Infinity, a float beyond range (1e400) and an integer beyond float range come back as
+    None. Python wrote such values in older rows; JSONResponse refuses a non-finite float, and
+    a strict reader such as serde_json in the desktop also rejects the integer, either way the
+    whole listing with it. The stored text stays as it is."""
+    return json.loads(
+        text,
+        parse_constant=lambda _token: None,
+        parse_float=_finite_float,
+        parse_int=_float_range_int,
+    )
 
 
 class MonitorCheck(Base):
@@ -51,7 +80,7 @@ class MonitorCheck(Base):
             "name": self.name,
             "description": self.description,
             "checkType": self.check_type,
-            "config": json.loads(self.config) if self.config else {},
+            "config": _loads_readable(self.config) if self.config else {},
             "enabled": self.enabled,
             "interval": self.interval,
             "severity": self.severity,
@@ -92,7 +121,7 @@ class MonitorState(Base):
             "lastCheck": iso_utc(self.last_check),
             "failCount": self.fail_count,
             "message": self.message,
-            "details": json.loads(self.details) if self.details else None,
+            "details": _loads_readable(self.details) if self.details else None,
             "notifiedStatus": self.notified_status,
         }
 
@@ -114,7 +143,7 @@ class MonitorAlertRule(Base):
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self) -> dict:
-        cfg = json.loads(self.channel_config) if self.channel_config else {}
+        cfg = _loads_readable(self.channel_config) if self.channel_config else {}
         # Never reflect the SMTP password in an API response — mask a set secret so
         # it does not leak into GET /alerts and the admin frontend (3.27). The
         # update handler treats the mask as "unchanged".
@@ -203,10 +232,10 @@ class MonitorTemplate(Base):
             "builtinVersion": self.builtin_version,
             "builtinEdited": builtin_edited(self),
             "builtinUpdateAvailable": builtin_update_available(self),
-            "checkDefinitions": json.loads(self.check_definitions)
+            "checkDefinitions": _loads_readable(self.check_definitions)
             if self.check_definitions
             else [],
-            "alertDefinitions": json.loads(self.alert_definitions)
+            "alertDefinitions": _loads_readable(self.alert_definitions)
             if self.alert_definitions
             else [],
             "createdAt": iso_utc(self.created_at),
