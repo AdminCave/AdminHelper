@@ -9,6 +9,7 @@
 
 import { writable } from 'svelte/store';
 import * as bridge from '$lib/bridge';
+import { errMsg } from '$lib/utils/errors';
 import type {
   ResetOutcome,
   WorkspaceContext,
@@ -18,30 +19,48 @@ import type {
 
 const _context = writable<WorkspaceContext | null>(null);
 const _list = writable<WorkspaceList | null>(null);
+const _listError = writable<string | null>(null);
 
 /** The launcher, or the workspace of this window; null until loadContext succeeds. */
 export const context = { subscribe: _context.subscribe };
 /** Launcher only: the workspaces as the last refresh listed them; null before the first. */
 export const list = { subscribe: _list.subscribe };
+/** Launcher only: why the last refresh failed, as the user reads it; null once one succeeds. */
+export const listError = { subscribe: _listError.subscribe };
 
 /** Asks Rust which process this window talks to; hydrate (session.ts) calls it at start. */
 export async function loadContext(): Promise<void> {
   _context.set(await bridge.workspaceContext());
 }
 
-/** Launcher only: lists the workspaces anew. */
+/**
+ * Launcher only: lists the workspaces anew. Never rejects: a failure goes to listError and the
+ * list stays as it was, so a save or a delete that went through does not read as failed when
+ * only the listing after it does (a second click would make the workspace twice).
+ */
 export async function refresh(): Promise<void> {
-  _list.set(await bridge.listWorkspaces());
+  try {
+    _list.set(await bridge.listWorkspaces());
+    _listError.set(null);
+  } catch (err) {
+    _listError.set(errMsg(err));
+  }
 }
 
-/** Launcher only: makes the workspace (no id) or edits the closed one; resolves to its id. */
+/**
+ * Launcher only: makes the workspace (no id) or edits the closed one; resolves to its id. Rejects
+ * only when Rust does not save it; the listing after it reports to listError.
+ */
 export async function save(draft: WorkspaceDraft): Promise<string> {
   const id = await bridge.saveWorkspace(draft);
   await refresh();
   return id;
 }
 
-/** Launcher only: deletes the closed workspace; resolves to how revoking its device went. */
+/**
+ * Launcher only: deletes the closed workspace; resolves to how revoking its device went. Rejects
+ * only when Rust does not delete it; the listing after it reports to listError.
+ */
 export async function remove(id: string): Promise<ResetOutcome> {
   const outcome = await bridge.deleteWorkspace(id);
   await refresh();

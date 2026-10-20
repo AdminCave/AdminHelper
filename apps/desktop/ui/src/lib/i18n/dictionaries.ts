@@ -303,6 +303,30 @@ export const translations: Translations = {
     'workspace.editor.maskedValues':
       'Die mit *** verborgenen Werte der bisherigen URL werden so gespeichert, wie sie hier stehen: bitte neu eintragen.',
 
+    // ── Desktop: Picker ───────────────────────────────────────────────
+    'workspace.picker.title': 'Workspace öffnen',
+    'workspace.picker.list': 'Workspaces',
+    'workspace.picker.new': 'Neuer Workspace',
+    'workspace.picker.open': 'Öffnen',
+    'workspace.picker.opening': 'Wird geöffnet…',
+    'workspace.picker.isOpen': 'geöffnet',
+    'workspace.picker.openHint':
+      '„{name}“ ist schon in einem eigenen Fenster geöffnet. Öffnen, Bearbeiten und Löschen gehen erst, wenn dieses Fenster geschlossen ist.',
+    'workspace.picker.migrated':
+      'Neu: Workspaces. Deine bisherigen Einstellungen und Verbindungen liegen jetzt im Workspace „Standard“; was zu einem anderen Modus gehörte, liegt in einem eigenen Workspace. Jeder Workspace öffnet in einem eigenen Fenster.',
+    'workspace.picker.empty': 'Noch kein Workspace. Lege mit „Neuer Workspace“ einen an.',
+    'workspace.picker.listFailed': 'Die Workspaces ließen sich nicht laden: {error}',
+    'workspace.picker.delete.confirm.server':
+      'Workspace „{name}“ löschen? Eine Geräte-Identität wird zuerst beim Server widerrufen, dann werden die Daten des Workspace auf diesem Gerät gelöscht.',
+    'workspace.picker.delete.confirm.sync':
+      'Workspace „{name}“ löschen? Die Daten des Workspace auf diesem Gerät werden gelöscht, die Sync-Quelle bleibt unberührt.',
+    'workspace.picker.delete.confirm.local':
+      'Workspace „{name}“ löschen? Achtung: Seine Verbindungen gibt es nur auf diesem Gerät, sie gehen unwiderruflich verloren.',
+    'workspace.picker.deleting': '„{name}“ wird gelöscht…',
+    'workspace.picker.deleted': 'Workspace „{name}“ gelöscht.',
+    'workspace.picker.deleted.localOnly':
+      'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.',
+
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP-Anmeldung',
     'passwordPrompt.hint.default': 'Bitte Benutzername und Passwort eingeben.',
@@ -1006,6 +1030,30 @@ export const translations: Translations = {
       'The sign-in and the device identity belong to the previous installation. Another installation is a new workspace.',
     'workspace.editor.maskedValues':
       'The values of the previous URL hidden as *** are saved as they stand here: enter them again.',
+
+    // ── Desktop: Picker ───────────────────────────────────────────────
+    'workspace.picker.title': 'Open a workspace',
+    'workspace.picker.list': 'Workspaces',
+    'workspace.picker.new': 'New workspace',
+    'workspace.picker.open': 'Open',
+    'workspace.picker.opening': 'Opening…',
+    'workspace.picker.isOpen': 'open',
+    'workspace.picker.openHint':
+      '"{name}" is already open in a window of its own. It can be opened, edited and deleted once that window is closed.',
+    'workspace.picker.migrated':
+      'New: workspaces. Your settings and connections so far are now in the workspace "Standard"; what belonged to another mode is in a workspace of its own. Each workspace opens in a window of its own.',
+    'workspace.picker.empty': 'No workspace yet. Make one with "New workspace".',
+    'workspace.picker.listFailed': 'The workspaces did not load: {error}',
+    'workspace.picker.delete.confirm.server':
+      'Delete the workspace "{name}"? A device identity is revoked at the server first, then the data of the workspace on this device is deleted.',
+    'workspace.picker.delete.confirm.sync':
+      'Delete the workspace "{name}"? The data of the workspace on this device is deleted, the sync source is left as it is.',
+    'workspace.picker.delete.confirm.local':
+      'Delete the workspace "{name}"? Warning: its connections exist on this device only and are lost for good.',
+    'workspace.picker.deleting': 'Deleting "{name}"…',
+    'workspace.picker.deleted': 'Workspace "{name}" deleted.',
+    'workspace.picker.deleted.localOnly':
+      'On this device only: the server did not revoke the old certificate. Registering the device again for the same user replaces it.',
 
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP sign-in',

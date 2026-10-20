@@ -16,7 +16,17 @@ vi.mock('$lib/bridge', () => ({
 }));
 
 import * as bridge from '$lib/bridge';
-import { context, list, loadContext, refresh, save, remove, open, openLauncher } from './workspace';
+import {
+  context,
+  list,
+  listError,
+  loadContext,
+  refresh,
+  save,
+  remove,
+  open,
+  openLauncher,
+} from './workspace';
 
 const info = (over: Partial<WorkspaceInfo> = {}): WorkspaceInfo => ({
   id: 'standard',
@@ -65,6 +75,22 @@ describe('workspace store', () => {
       vi.mocked(bridge.listWorkspaces).mockResolvedValue(given);
       await refresh();
       expect(get(list)).toEqual(given);
+      expect(get(listError)).toBeNull();
+    });
+
+    it('a failed listing keeps the list, says why, and the next one clears it', async () => {
+      vi.mocked(bridge.listWorkspaces).mockResolvedValue(listing([info()]));
+      await refresh();
+      vi.mocked(bridge.listWorkspaces).mockRejectedValue(new Error('registry unreadable'));
+
+      await expect(refresh()).resolves.toBeUndefined();
+      expect(get(list)?.workspaces).toEqual([info()]);
+      expect(get(listError)).toBe('registry unreadable');
+
+      vi.mocked(bridge.listWorkspaces).mockResolvedValue(listing([]));
+      await refresh();
+      expect(get(list)?.workspaces).toEqual([]);
+      expect(get(listError)).toBeNull();
     });
   });
 
@@ -88,6 +114,20 @@ describe('workspace store', () => {
         vi.mocked(bridge.listWorkspaces).mock.invocationCallOrder[0],
       );
       expect(get(list)?.workspaces).toEqual([info(), added]);
+    });
+
+    it('a save that went through resolves even when the listing after it fails', async () => {
+      vi.mocked(bridge.listWorkspaces).mockResolvedValue(listing([info()]));
+      await refresh();
+      vi.mocked(bridge.saveWorkspace).mockResolvedValue('w-0a1b2c3d');
+      vi.mocked(bridge.listWorkspaces).mockRejectedValue(new Error('registry unreadable'));
+
+      // A rejection here would leave the editor open, and a second click make the workspace twice.
+      await expect(save(draft)).resolves.toBe('w-0a1b2c3d');
+
+      expect(bridge.saveWorkspace).toHaveBeenCalledOnce();
+      expect(get(listError)).toBe('registry unreadable');
+      expect(get(list)?.workspaces).toEqual([info()]);
     });
 
     it('a rejected save keeps the list and does not list anew', async () => {
@@ -115,6 +155,18 @@ describe('workspace store', () => {
         vi.mocked(bridge.listWorkspaces).mock.invocationCallOrder[0],
       );
       expect(get(list)?.workspaces).toEqual([]);
+    });
+
+    it('a delete that went through keeps its outcome when the listing after it fails', async () => {
+      vi.mocked(bridge.listWorkspaces).mockResolvedValue(listing([info()]));
+      await refresh();
+      vi.mocked(bridge.deleteWorkspace).mockResolvedValue('localOnly');
+      vi.mocked(bridge.listWorkspaces).mockRejectedValue(new Error('registry unreadable'));
+
+      await expect(remove('standard')).resolves.toBe('localOnly');
+
+      expect(get(listError)).toBe('registry unreadable');
+      expect(get(list)?.workspaces).toEqual([info()]);
     });
 
     it('a rejected delete keeps the list and does not list anew', async () => {
