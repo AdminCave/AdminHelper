@@ -113,13 +113,27 @@ fn legacy_password(connection: &Connection, legacy: &str) -> Result<Option<Strin
     crate::keyring_store::try_get(legacy)
 }
 
-pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
+/// The stored RDP password of `connection` in the workspace of this process; `base` is
+/// the app data dir. A migrated workspace may find a key from before workspaces, which
+/// no index names, or take over the legacy entry: either way the key goes in its index
+/// ([`SECRETS_FILE`]), so the purge of the last migrated workspace deletes it. An index
+/// that does not load is an error, as on a save, and nothing is taken over then.
+pub fn load_password_keyring(
+    base: &Path,
+    connection: &Connection,
+) -> Result<Option<String>, AppError> {
     use crate::keyring_store::{delete, set, try_get};
 
-    let Some((key, legacy)) = rdp_storage_keys(&workspace::current()?, connection) else {
+    let workspace = workspace::current()?;
+    let Some((key, legacy)) = rdp_storage_keys(&workspace, connection) else {
         return Ok(None);
     };
+    let name_key = || update_index(&workspace.data_dir(base), |keys| keys.insert(key.clone()));
     if let Some(password) = try_get(&key)? {
+        // A workspace made after the migration names each of its keys on the save.
+        if workspace.legacy_keys {
+            name_key()?;
+        }
         return Ok(Some(password));
     }
     let Some(legacy) = legacy else {
@@ -130,6 +144,8 @@ pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, 
     let Some(password) = legacy_password(connection, &legacy)? else {
         return Ok(None);
     };
+    // The name goes in first, as on a save.
+    name_key()?;
     set(&key, &password)?;
     delete(&legacy)?;
     Ok(Some(password))
@@ -154,8 +170,10 @@ fn password_stored_keyring(connection: &Connection) -> Result<bool, AppError> {
 
 /// In the data dir of a workspace: the names of its RDP keys in the keyring, never
 /// a secret (R-0431). The keyring cannot list its entries, so deleting a workspace
-/// deletes the keys named here ([`indexed_keys`]). A key that a migrated workspace
-/// takes over on load is not named. The names of a migrated workspace carry no
+/// deletes the keys named here ([`indexed_keys`]). A migrated workspace names a key
+/// from before workspaces once it loads it ([`load_password_keyring`]); those it never
+/// loads, its purge finds through its connections ([`unindexed_keys`]). The names of a
+/// migrated workspace carry no
 /// prefix, as the keys of every migrated workspace: while another migrated workspace
 /// is there that may use them too, its purge hands them over ([`HANDED_OVER_FILE`]),
 /// and the purge of the last migrated workspace deletes them.
@@ -223,6 +241,28 @@ pub(crate) fn indexed_keys(dir: &Path, prefix: &str) -> Result<BTreeSet<String>,
 /// with its own.
 pub(crate) fn handed_over_keys(base: &Path) -> Result<BTreeSet<String>, AppError> {
     purge_keys(base, HANDED_OVER_FILE, "")
+}
+
+/// The keys from before workspaces that the RDP passwords of `connections`, those of the
+/// migrated workspace `workspace`, may stand under with no index naming them: the key with
+/// the connection id that versions before R-0431 stored, and the legacy key without it,
+/// derived as a load derives them ([`rdp_storage_keys`]). For the purge of the workspace,
+/// which hands them over with its indexed keys while another migrated workspace is there;
+/// the purge of the last one deletes them. No workspace is left then to read a key without
+/// a prefix, so this names the legacy key of a target on this machine too, which no load
+/// takes over. A key no connection names stays. None for a workspace made after the
+/// migration: its index names each of its keys.
+pub(crate) fn unindexed_keys(
+    workspace: &Workspace,
+    connections: &[Connection],
+) -> BTreeSet<String> {
+    connections
+        .iter()
+        .filter(|connection| connection.kind == ConnectionKind::Rdp)
+        .filter_map(|connection| rdp_storage_keys(workspace, connection))
+        .filter_map(|(key, legacy)| legacy.map(|legacy| [key, legacy]))
+        .flatten()
+        .collect()
 }
 
 /// Hands `keys`, RDP keys without a prefix, over to the purge of the last migrated
@@ -1331,7 +1371,7 @@ pub fn load_password_for_mstsc(
     via_tunnel: bool,
 ) -> Result<Option<String>, AppError> {
     let workspace = workspace::current()?;
-    let stored = load_password_keyring(connection)?;
+    let stored = load_password_keyring(base, connection)?;
     let Some(target) = readable_legacy_termsrv(&workspace, connection) else {
         return Ok(stored);
     };
@@ -1618,10 +1658,10 @@ mod tests {
         assert!(password_state(&a).unwrap().stored);
         assert!(!password_state(&b).unwrap().stored);
         assert_eq!(
-            load_password_keyring(&a).unwrap().as_deref(),
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
             Some("secret-a")
         );
-        assert_eq!(load_password_keyring(&b).unwrap(), None);
+        assert_eq!(load_password_keyring(&base.0, &b).unwrap(), None);
     }
 
     #[cfg(unix)]
@@ -1629,6 +1669,7 @@ mod tests {
     fn a_legacy_password_goes_to_the_first_connection_that_loads_it() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("first-load");
         let _standard = workspace::enter(standard());
         set(LEGACY_KEY, "old").unwrap();
         let a = rdp_with_id("a");
@@ -1639,7 +1680,10 @@ mod tests {
         assert!(password_state(&b).unwrap().stored);
         assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
 
-        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("old"));
+        assert_eq!(
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
+            Some("old")
+        );
         assert_eq!(
             try_get("rdp|a|host.com|3390|admin|corp")
                 .unwrap()
@@ -1647,10 +1691,13 @@ mod tests {
             Some("old")
         );
         assert_eq!(try_get(LEGACY_KEY).unwrap(), None);
-        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("old"));
+        assert_eq!(
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
+            Some("old")
+        );
 
         assert!(!password_state(&b).unwrap().stored);
-        assert_eq!(load_password_keyring(&b).unwrap(), None);
+        assert_eq!(load_password_keyring(&base.0, &b).unwrap(), None);
     }
 
     #[cfg(unix)]
@@ -1663,7 +1710,10 @@ mod tests {
         let a = rdp_with_id("a");
         save_password(&base.0, &a, "new").unwrap();
         set(LEGACY_KEY, "old").unwrap();
-        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("new"));
+        assert_eq!(
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
+            Some("new")
+        );
         assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
     }
 
@@ -1711,7 +1761,7 @@ mod tests {
         for id in ["", "a|b"] {
             let c = rdp_with_id(id);
             assert!(!password_state(&c).unwrap().stored, "{id:?}");
-            assert_eq!(load_password_keyring(&c).unwrap(), None, "{id:?}");
+            assert_eq!(load_password_keyring(&base.0, &c).unwrap(), None, "{id:?}");
             assert!(
                 matches!(
                     save_password(&base.0, &c, "x"),
@@ -1778,7 +1828,7 @@ mod tests {
             let (c, key, legacy) = rdp_to(host);
             set(&legacy, "old").unwrap();
             assert!(!password_state(&c).unwrap().stored, "{host}");
-            assert_eq!(load_password_keyring(&c).unwrap(), None, "{host}");
+            assert_eq!(load_password_keyring(&base.0, &c).unwrap(), None, "{host}");
             assert_eq!(try_get(&key).unwrap(), None, "{host}");
             assert_eq!(try_get(&legacy).unwrap().as_deref(), Some("old"), "{host}");
 
@@ -1786,7 +1836,7 @@ mod tests {
             save_password(&base.0, &c, "new").unwrap();
             assert!(password_state(&c).unwrap().stored, "{host}");
             assert_eq!(
-                load_password_keyring(&c).unwrap().as_deref(),
+                load_password_keyring(&base.0, &c).unwrap().as_deref(),
                 Some("new"),
                 "{host}"
             );
@@ -1800,6 +1850,7 @@ mod tests {
     fn a_legacy_entry_for_another_host_is_still_taken_over() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("other-host");
         let _standard = workspace::enter(standard());
         for host in [
             "192.0.2.10",
@@ -1812,7 +1863,7 @@ mod tests {
             set(&legacy, "old").unwrap();
             assert!(password_state(&c).unwrap().stored, "{host}");
             assert_eq!(
-                load_password_keyring(&c).unwrap().as_deref(),
+                load_password_keyring(&base.0, &c).unwrap().as_deref(),
                 Some("old"),
                 "{host}"
             );
@@ -1871,7 +1922,10 @@ mod tests {
 
         set(LEGACY_KEY, "old").unwrap();
         assert!(password_state(&a).unwrap().stored);
-        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("old"));
+        assert_eq!(
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
+            Some("old")
+        );
         assert_eq!(try_get(STANDARD_KEY).unwrap().as_deref(), Some("old"));
         assert_eq!(try_get(LEGACY_KEY).unwrap(), None);
 
@@ -1899,10 +1953,10 @@ mod tests {
         // The same connection id in another workspace, e.g. the same server twice.
         let _second = workspace::enter(created("w-4e5f6a7b"));
         assert!(!password_state(&a).unwrap().stored);
-        assert_eq!(load_password_keyring(&a).unwrap(), None);
+        assert_eq!(load_password_keyring(&base.0, &a).unwrap(), None);
         save_password(&base.0, &a, "second").unwrap();
         assert_eq!(
-            load_password_keyring(&a).unwrap().as_deref(),
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
             Some("second")
         );
         delete_password(&base.0, &a).unwrap();
@@ -1923,7 +1977,7 @@ mod tests {
         let a = rdp_with_id("a");
 
         assert!(!password_state(&a).unwrap().stored);
-        assert_eq!(load_password_keyring(&a).unwrap(), None);
+        assert_eq!(load_password_keyring(&base.0, &a).unwrap(), None);
         delete_password(&base.0, &a).unwrap();
 
         assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
@@ -1941,7 +1995,7 @@ mod tests {
         let a = rdp_with_id("a");
 
         assert!(password_state(&a).is_err());
-        assert!(load_password_keyring(&a).is_err());
+        assert!(load_password_keyring(&base.0, &a).is_err());
         assert!(save_password(&base.0, &a, "new").is_err());
         assert!(delete_password(&base.0, &a).is_err());
 
@@ -2073,6 +2127,74 @@ mod tests {
         delete_password(&base.0, &a).unwrap();
 
         assert_eq!(std::fs::read_dir(&base.0).unwrap().count(), 0);
+    }
+
+    // A key from before workspaces stands in no index: a migrated workspace names it once it
+    // loads it, so the purge of the last migrated workspace deletes it (T37).
+    #[test]
+    fn workspace_keys_a_migrated_workspace_names_each_key_from_before_workspaces_it_loads() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-index-load");
+        let index = index_path(&base.0, &standard());
+        let _standard = workspace::enter(standard());
+        let (a, b, c) = (rdp_with_id("a"), rdp_with_id("b"), rdp_with_id("c"));
+        let key_a = "rdp|a|host.com|3390|admin|corp";
+        let key_b = "rdp|b|host.com|3390|admin|corp";
+        // Stored before connection ids, and with them before workspaces.
+        set("rdp|host.com|3390|admin|corp", "old").unwrap();
+        set(key_b, "b").unwrap();
+
+        assert_eq!(
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
+            Some("old")
+        );
+        assert_eq!(index_of(&index), serde_json::json!({ "keys": [key_a] }));
+        assert_eq!(
+            load_password_keyring(&base.0, &b).unwrap().as_deref(),
+            Some("b")
+        );
+        assert_eq!(
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
+            Some("old")
+        );
+        assert_eq!(load_password_keyring(&base.0, &c).unwrap(), None);
+        assert_eq!(
+            index_of(&index),
+            serde_json::json!({ "keys": [key_a, key_b] })
+        );
+        assert_eq!(try_get(key_a).unwrap().as_deref(), Some("old"));
+
+        // A workspace made after the migration names its keys on the save, not on a load.
+        let created = created("w-0a1b2c3d");
+        let created_index = index_path(&base.0, &created);
+        set(&format!("{}{key_a}", created.keyring_prefix()), "created").unwrap();
+        let _created = workspace::enter(created);
+        assert_eq!(
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
+            Some("created")
+        );
+        assert!(!created_index.exists());
+    }
+
+    // Taken over, the key would stand in no index: the entry from before stays where it is.
+    #[test]
+    fn workspace_keys_a_broken_index_takes_over_no_key_from_before_workspaces() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-index-load-broken");
+        let index = index_path(&base.0, &standard());
+        std::fs::create_dir_all(index.parent().unwrap()).unwrap();
+        std::fs::write(&index, "{not json").unwrap();
+        let _standard = workspace::enter(standard());
+        let legacy = "rdp|host.com|3390|admin|corp";
+        set(legacy, "old").unwrap();
+
+        assert!(load_password_keyring(&base.0, &rdp_with_id("a")).is_err());
+
+        assert_eq!(try_get(legacy).unwrap().as_deref(), Some("old"));
+        assert_eq!(try_get("rdp|a|host.com|3390|admin|corp").unwrap(), None);
+        assert_eq!(std::fs::read_to_string(&index).unwrap(), "{not json");
     }
 
     // ── R-0431: TERMSRV just in time for mstsc ─────────────────────────────
@@ -3664,7 +3786,7 @@ mod tests {
         assert_eq!(index_of(&index), serde_json::json!({ "keys": [key] }));
         assert!(password_state(&a).unwrap().stored);
         assert_eq!(
-            load_password_keyring(&a).unwrap().as_deref(),
+            load_password_keyring(&base.0, &a).unwrap().as_deref(),
             Some("secret")
         );
 

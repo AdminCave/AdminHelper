@@ -193,7 +193,7 @@ fn open_rdp_with_stored_password(
     #[cfg(not(target_os = "windows"))]
     let password = {
         let _ = via_tunnel;
-        crate::password::load_password_keyring(source)?
+        crate::password::load_password_keyring(&crate::storage::app_data_dir(app)?, source)?
     };
     rdp::open_rdp(
         connection,
