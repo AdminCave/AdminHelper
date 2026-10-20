@@ -157,6 +157,13 @@ describe('failsAfterTypeChange', () => {
     expect(failsAfterTypeChange('system_state', 'ping', 1)).toBe(3);
   });
 
+  // monitoring-linux-base-v2 T28: the value from before the pick comes back.
+  it('goes back to the remembered value when system_state is left with its 1 untouched', () => {
+    expect(failsAfterTypeChange('system_state', 'ping', 1, 5)).toBe(5);
+    expect(failsAfterTypeChange('system_state', 'ping', 2, 5)).toBe(2);
+    expect(failsAfterTypeChange('ping', 'tcp', 1, 5)).toBe(1);
+  });
+
   it('keeps a value changed under system_state', () => {
     expect(failsAfterTypeChange('system_state', 'ping', 2)).toBe(2);
   });

@@ -44,12 +44,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // value must not capture the reactive `serverId` prop (svelte warning).
   let form = $state<CheckForm>(emptyCheckForm(''));
   let saving = $state(false);
+  // Fails in a row from before system_state was picked in this form; leaving the
+  // type with its suggested 1 gives it back (failsAfterTypeChange).
+  let failsBefore: number | undefined;
 
   let isNew = $derived(target === null);
 
   $effect(() => {
     if (!open) return;
     form = target ? checkToForm(target) : emptyCheckForm(serverId);
+    failsBefore = undefined;
   });
 
   async function onSave(): Promise<void> {
@@ -118,7 +122,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
         value={form.checkType}
         onchange={(e) => {
           const next = e.currentTarget.value as MonitorCheckType;
-          form.consecutiveFails = failsAfterTypeChange(form.checkType, next, form.consecutiveFails);
+          if (next === 'system_state') failsBefore = form.consecutiveFails;
+          form.consecutiveFails = failsAfterTypeChange(
+            form.checkType,
+            next,
+            form.consecutiveFails,
+            failsBefore,
+          );
           form.checkType = next;
           form.config = {};
         }}

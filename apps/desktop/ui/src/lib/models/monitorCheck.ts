@@ -85,15 +85,18 @@ const SYSTEM_STATE_FAILS = 1;
 
 /** Fails in a row once the form's type changes from `from` to `to`: picking
  * system_state suggests 1, and leaving it with that 1 untouched goes back to
- * the form's default 3, so passing through the type leaves no 1 on another
- * check. Otherwise the value entered stays. */
+ * `before`, the value the caller remembered when system_state was picked (the
+ * form's default 3 without one, e.g. for a check stored as system_state), so
+ * passing through the type leaves no 1 on another check. Otherwise the value
+ * entered stays. */
 export function failsAfterTypeChange(
   from: MonitorCheckType,
   to: MonitorCheckType,
   current: number,
+  before = 3,
 ): number {
   if (to === 'system_state') return SYSTEM_STATE_FAILS;
-  if (from === 'system_state' && current === SYSTEM_STATE_FAILS) return 3;
+  if (from === 'system_state' && current === SYSTEM_STATE_FAILS) return before;
   return current;
 }
 

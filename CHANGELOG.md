@@ -19,8 +19,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `check_security_updates`, `check_oom`, je Default `true`, nur `true` oder `false`) die Bewertung ab. Ohne den Block
   (aeltere Agents, Windows) oder ohne einen einzigen brauchbaren Punkt darin bleibt der Check `ok` mit „Not evaluated:
   no system state in report“. Ein OOM-Kill steht nur in einem Report und meldet deshalb nur mit `consecutive_fails` 1.
-  Im Check-Formular des Desktops stehen die vier Schalter als Kontrollkaestchen, und die Wahl des Typs schlaegt
-  `consecutive_fails` 1 vor (aenderbar). Das Server-Dashboard des Desktops zeigt den Check in der neuen Sektion
+  Im Check-Formular und im Template-Editor des Desktops stehen die vier Schalter als Kontrollkaestchen, und die Wahl
+  des Typs schlaegt `consecutive_fails` 1 vor (aenderbar; verlaesst man den Typ mit der 1, kehrt der Wert von vorher
+  zurueck). Das Server-Dashboard des Desktops zeigt den Check in der neuen Sektion
   „Systemzustand“: je Problem eine Pille, ausgeklappt die vier Punkte mit Wert oder „nicht ermittelt“, ohne den Block
   „Nicht bewertet“. Nicht verifiziert: ob Debian und Proxmox VE `/var/run/reboot-required` bei
   einem Kernel-Update anlegen, und der Weg der RPM-Distributionen. Doku: Monitoring-Administration (DE+EN).

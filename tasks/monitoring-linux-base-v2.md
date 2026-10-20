@@ -262,8 +262,10 @@ Abhängt von: T14, T23
 
 ## Block D — Entwickler-Doku
 
-### T28 — Template-Editor: `system_state` schlägt „Fehlschläge in Folge“ = 1 vor  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitoringTemplateModal.svelte, apps/desktop/ui/src/components/monitoring/MonitoringTemplateModal.test.ts, apps/desktop/ui/src/lib/models/monitorCheck.ts, apps/desktop/ui/src/lib/models/monitorCheck.test.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+### T28 — Template-Editor: `system_state` schlägt „Fehlschläge in Folge“ = 1 vor  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitoringTemplateModal.svelte, apps/desktop/ui/src/components/monitoring/MonitoringTemplateModal.test.ts, apps/desktop/ui/src/lib/models/monitorCheck.ts, apps/desktop/ui/src/lib/models/monitorCheck.test.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html, apps/desktop/ui/src/components/monitoring/MonitorCheckModal.svelte, apps/desktop/ui/src/components/monitoring/MonitorCheckModal.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @6563c7c2 2026-10-20T17:29:34+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T28.verdict.json)
 Änderung: Kevin 2026-10-20 (aus T20): Wählt man im Template-Editor bei einer Check-Definition den Typ `system_state`, schlägt er wie das Check-Formular „Fehlschläge in Folge“ = 1 vor (`failsAfterTypeChange` aus T20). Nachtrag (Review T20, nit): Verlässt man `system_state` mit der unveränderten 1, kehrt das Feld in beiden Formularen zum Wert von vor der Wahl zurück statt fest auf 3 (der Vorgänger wird gemerkt); ein bewusst eingetippter Wert bleibt. Tests: Template-Editor schlägt 1 vor und kehrt zurück; Check-Formular kehrt zum gemerkten Wert (etwa 5) zurück. Die Admin-Doku DE+EN streicht „im Template-Editor bleibt es bei 3“.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringTemplateModal.test.ts src/lib/models/monitorCheck.test.ts src/components/monitoring/MonitorCheckModal.test.ts
 Doku: docs/admin/monitoring.html + EN (Satz zum Vorschlag im Template-Editor)

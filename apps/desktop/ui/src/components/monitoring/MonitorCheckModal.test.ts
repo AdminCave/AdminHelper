@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import type { MonitorCheck } from '$lib/api/types';
 
 const mocks = vi.hoisted(() => ({
   createCheck: vi.fn().mockResolvedValue({}),
@@ -92,5 +93,54 @@ describe('MonitorCheckModal system_state (R-0423)', () => {
     await fireEvent.input(field(container, 'Fehlversuche bis Alarm'), { target: { value: '2' } });
     await pickType(container, 'ping');
     expect(field(container, 'Fehlversuche bis Alarm').value).toBe('2');
+  });
+});
+
+// monitoring-linux-base-v2 T28: leaving system_state with the suggested 1
+// untouched brings back the value from before the pick, not a fixed 3; the form
+// forgets it when it opens again.
+describe('MonitorCheckModal fails from before system_state (T28)', () => {
+  const FAILS = 'Fehlversuche bis Alarm';
+
+  it('goes back to the value from before the pick', async () => {
+    const { container } = await mount();
+    await fireEvent.input(field(container, FAILS), { target: { value: '5' } });
+    await pickType(container, 'system_state');
+    expect(field(container, FAILS).value).toBe('1');
+
+    await pickType(container, 'ping');
+    expect(field(container, FAILS).value).toBe('5');
+  });
+
+  it('forgets the value from before when the form opens again', async () => {
+    const props = {
+      open: true,
+      target: null,
+      serverId: 'srv-1',
+      onClose: vi.fn(),
+      onSaved: vi.fn(),
+    };
+    const { container, rerender } = await mount();
+    await fireEvent.input(field(container, FAILS), { target: { value: '5' } });
+    await pickType(container, 'system_state');
+
+    const stored: MonitorCheck = {
+      id: 'm1',
+      name: 'System',
+      serverId: 'srv-1',
+      checkType: 'system_state',
+      interval: '5m',
+      severity: 'warning',
+      consecutiveFails: 1,
+      enabled: true,
+      config: {},
+    };
+    await rerender({ ...props, open: false });
+    await rerender({ ...props, target: stored });
+    await tick();
+    expect(field(container, FAILS).value).toBe('1');
+
+    await pickType(container, 'ping');
+    expect(field(container, FAILS).value).toBe('3');
   });
 });
