@@ -59,14 +59,15 @@ def _server_tags(server: Server | None) -> list[str]:
         return []
 
 
-def _user_can_see(user: User, server: Server | None) -> bool:
+def _user_can_see(user: User, assigned: set[str], server: Server | None) -> bool:
     """A server-scoped event is visible to admins and to users assigned to that
-    server. A non-server event (no source_id / unknown server) is admin-only."""
+    server (`assigned`: the ids of user.servers). A non-server event (no
+    source_id / unknown server) is admin-only."""
     if server is None:
         return bool(user.is_admin)
     if user.is_admin:
         return True
-    return any(s.id == server.id for s in user.servers)
+    return server.id in assigned
 
 
 def _scope_matches(
@@ -155,6 +156,9 @@ def resolve_recipients(
     per_user: dict[int, User] = {}
     per_user_hits: dict[int, set[int]] = {}
     user_cache: dict[int, User | None] = {}  # a user with several subs loads once
+    # Server ids assigned to each user, built once rather than scanned per
+    # server: a bundle checks up to 500 servers against it. Admins see all.
+    assigned: dict[int, set[str]] = {}
     for sub in subs:
         if sub.user_id not in user_cache:
             user_cache[sub.user_id] = db.query(User).filter(User.id == sub.user_id).first()
@@ -165,10 +169,13 @@ def resolve_recipients(
             continue
         if not _category_matches(sub, event.category):
             continue
+        if user.id not in assigned:
+            assigned[user.id] = set() if user.is_admin else {s.id for s in user.servers}
         hits = [
             i
             for i, (server, _) in enumerate(targets)
-            if _user_can_see(user, server) and _scope_matches(sub, server, tags[i])
+            if _user_can_see(user, assigned[user.id], server)
+            and _scope_matches(sub, server, tags[i])
         ]
         if not hits:
             continue

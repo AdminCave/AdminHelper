@@ -716,6 +716,8 @@ class TestIngress:
             (self._bundle_payload([f"srv-{i}" for i in range(501)]), "too_long"),
             (self._bundle_payload([]), "too_short"),
             (self._bundle_payload(["srv-1", "x" * 257]), "string_too_long"),
+            (self._bundle_payload([""]), "string_too_short"),
+            (self._bundle_payload(["srv-1", ""]), "string_too_short"),
         ):
             res = test_client.post(self._PATH, headers={"X-Internal-Key": "secret"}, json=payload)
             assert res.status_code == 422, f"{error}: {res.status_code} {res.text}"
@@ -783,6 +785,62 @@ class TestAlertTriggeredHook:
         fired: list = []
         res = self._post(test_client, monkeypatch, fired, event_type="pki.cert.expiring")
         assert res.status_code == 202
+        assert fired == []
+
+    # monitoring-alert-quality T10: a bundled event (several silent agents)
+    # fires the hook once per server — a hook keeps seeing one server per call.
+
+    def _post_bundle(self, test_client, monkeypatch, fired, source_ids, **overrides):
+        bundle = {
+            "title": "Agents not reporting",
+            "body": "Heartbeat lost",
+            "source_id": None,
+            "source_ids": source_ids,
+            "new_status": "critical",
+        }
+        return self._post(test_client, monkeypatch, fired, **{**bundle, **overrides})
+
+    def _server_ids(self, fired):
+        assert {event_type for event_type, _ in fired} <= {"alert.triggered"}
+        return [data["server_id"] for _, data in fired]
+
+    def test_bundle_fires_once_per_server(self, test_client, monkeypatch):
+        fired: list = []
+        res = self._post_bundle(test_client, monkeypatch, fired, ["srv-1", "srv-2", "srv-3"])
+        assert res.status_code == 202, res.text
+        assert fired == [
+            (
+                "alert.triggered",
+                {
+                    "server_id": server_id,
+                    "severity": "critical",
+                    "title": "Agents not reporting",
+                    "message": "Heartbeat lost",
+                },
+            )
+            for server_id in ("srv-1", "srv-2", "srv-3")
+        ]
+
+    def test_bundle_repeated_id_fires_once(self, test_client, monkeypatch):
+        fired: list = []
+        res = self._post_bundle(test_client, monkeypatch, fired, ["srv-2", "srv-1", "srv-2"])
+        assert res.status_code == 202, res.text
+        assert self._server_ids(fired) == ["srv-2", "srv-1"]
+
+    def test_bundle_recovery_does_not_fire(self, test_client, monkeypatch):
+        fired: list = []
+        res = self._post_bundle(
+            test_client, monkeypatch, fired, ["srv-1", "srv-2", "srv-3"], new_status="ok"
+        )
+        assert res.status_code == 202, res.text
+        assert fired == []
+
+    def test_bundle_with_warning_severity_does_not_fire(self, test_client, monkeypatch):
+        fired: list = []
+        res = self._post_bundle(
+            test_client, monkeypatch, fired, ["srv-1", "srv-2", "srv-3"], severity="warning"
+        )
+        assert res.status_code == 202, res.text
         assert fired == []
 
 

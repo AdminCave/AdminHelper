@@ -31,7 +31,7 @@ class IncomingEvent(RequestModel):
     # A bundled monitoring alert (several agents at once) names its servers
     # here instead of in source_id; the hub routes it per user, to the servers
     # each one may see (service.resolve_recipients).
-    source_ids: Optional[list[Annotated[str, Field(max_length=256)]]] = Field(
+    source_ids: Optional[list[Annotated[str, Field(min_length=1, max_length=256)]]] = Field(
         default=None, min_length=1, max_length=500
     )
     # Monitoring transitions only: the status the check moved TO. severity is
