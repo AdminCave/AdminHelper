@@ -60,7 +60,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   let isNew = $derived(original === null);
-  // The URL as WorkspaceInfo gave it: no user, the query values and the fragment masked.
+  // The URL as WorkspaceInfo gave it: a user and a password masked as one `***@`, the query
+  // values and the fragment masked.
   // Sent back as it came, Rust keeps the stored one (launcher.rs edit).
   let originalUrl = $derived(original?.url?.trim() || null);
   let typedUrl = $derived(kind === 'local' ? null : url.trim() || null);

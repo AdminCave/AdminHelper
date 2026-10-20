@@ -125,6 +125,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       deleted = { name: ws.name, localOnly: outcome === 'localOnly' };
     } catch (err) {
       actionError = errMsg(err);
+      // A focus meanwhile listed nothing anew; remove lists only after a delete that went through.
+      void refresh();
     } finally {
       deleting = null;
     }
@@ -141,8 +143,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 </script>
 
-<!-- A workspace window closed meanwhile is no longer open: list anew when the launcher comes back. -->
-<svelte:window onfocus={() => void refresh()} />
+<!-- A workspace window closed meanwhile is no longer open: list anew when the launcher comes back.
+     Not while an action runs: the purge of a delete holds the lock of its workspace, which would
+     list it as open; the action lists anew once it ends. -->
+<svelte:window
+  onfocus={() => {
+    if (!busy) void refresh();
+  }}
+/>
 
 <div class="picker">
   <h1 class="picker-title">{$t('workspace.picker.title')}</h1>

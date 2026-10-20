@@ -343,6 +343,54 @@ describe('Picker: delete', () => {
     expect(p.option('Kunde A')).not.toBeNull();
     expect(p.deleteButton().disabled).toBe(false);
   });
+
+  it('a focus during a delete lists nothing anew: its purge holds the lock, it would read as open', async () => {
+    let done: (outcome: ResetOutcome) => void = () => {};
+    h.deleteWorkspace.mockReturnValue(new Promise((resolve) => (done = resolve)));
+    const p = await mount(listing([kundeA, sync], 'w-0a1b2c3d'));
+
+    await fireEvent.click(p.deleteButton());
+    await waitFor(() => expect(h.deleteWorkspace).toHaveBeenCalledOnce());
+    // What Rust lists while the purge runs.
+    h.listWorkspaces.mockResolvedValue(listing([{ ...kundeA, open: true }, sync], 'w-0a1b2c3d'));
+    const listed = h.listWorkspaces.mock.calls.length;
+    await fireEvent.focus(window);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.listWorkspaces).toHaveBeenCalledTimes(listed);
+    expect(within(p.option('Kunde A')).queryByText(tNow('workspace.picker.isOpen'))).toBeNull();
+    expect(p.msg('is-open')).toBeNull();
+
+    h.listWorkspaces.mockResolvedValue(listing([sync]));
+    done('revoked');
+    await waitFor(() => expect(p.queryByRole('option', { name: /Kunde A/ })).toBeNull());
+    expect(p.msg('deleted')).not.toBeNull();
+    expect(p.msg('is-open')).toBeNull();
+
+    // Once the delete has ended, a focus lists anew again.
+    h.listWorkspaces.mockResolvedValue(listing([{ ...sync, name: 'Sync 2' }]));
+    await fireEvent.focus(window);
+    await p.findByRole('option', { name: /Sync 2/ });
+  });
+
+  it('a delete Rust refuses lists anew: a focus during it listed nothing', async () => {
+    let refuse: (err: Error) => void = () => {};
+    h.deleteWorkspace.mockReturnValue(new Promise((_resolve, reject) => (refuse = reject)));
+    const p = await mount(listing([kundeA, { ...sync, open: true }], 'w-0a1b2c3d'));
+
+    await fireEvent.click(p.deleteButton());
+    await waitFor(() => expect(h.deleteWorkspace).toHaveBeenCalledOnce());
+    // The window of Sync closes meanwhile.
+    h.listWorkspaces.mockResolvedValue(listing([kundeA, sync], 'w-0a1b2c3d'));
+    await fireEvent.focus(window);
+    expect(within(p.option('Sync')).queryByText(tNow('workspace.picker.isOpen'))).not.toBeNull();
+
+    refuse(new Error('the workspace w-0a1b2c3d was not deleted'));
+    expect((await p.findByRole('alert')).textContent).toContain('was not deleted');
+    await waitFor(() =>
+      expect(within(p.option('Sync')).queryByText(tNow('workspace.picker.isOpen'))).toBeNull(),
+    );
+    expect(p.option('Kunde A')).not.toBeNull();
+  });
 });
 
 describe('Picker: the editor', () => {

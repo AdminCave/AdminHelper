@@ -68,8 +68,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace_url
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T43
 
-### T46 — Picker: Löschen ohne „geöffnet“-Anzeige, Widerruf im Text bedingt  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+### T46 — Picker: Löschen ohne „geöffnet“-Anzeige, Widerruf im Text bedingt  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/WorkspaceEditor.svelte
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @9c8871cc 2026-10-20T18:52:10+02:00
+Review: approve (.ah-out/review/desktop-workspaces-ui/T46.verdict.json)
 Änderung: Aus dem Review von T20: (1) Während eines Löschvorgangs hält das Purge-Kind den Lock, ein Fokus-Refresh zeigt den Workspace dann als „geöffnet“ samt Hinweis; der Picker lässt das Neuladen beim Fokus aus, solange eine Aktion läuft, oder blendet Badge und Hinweis für den gerade gelöschten Workspace aus; Test dazu. (2) `workspace.picker.delete.confirm.server` DE+EN formuliert den Widerruf bedingt („Hat er eine Geräte-Identität, wird sie zuerst beim Server widerrufen …“ / „If it has a device identity, that is revoked at the server first …“). Nachtrag (security T45, nit): Der Kommentar in `WorkspaceEditor.svelte` (~:63, „no user“) nennt jetzt die Maske `***@`; die Datei per `set-files` aufnehmen.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts
 Doku: keine (intern; Doku mit T33)

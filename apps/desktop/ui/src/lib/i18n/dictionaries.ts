@@ -317,7 +317,7 @@ export const translations: Translations = {
     'workspace.picker.empty': 'Noch kein Workspace. Lege mit „Neuer Workspace“ einen an.',
     'workspace.picker.listFailed': 'Die Workspaces ließen sich nicht laden: {error}',
     'workspace.picker.delete.confirm.server':
-      'Workspace „{name}“ löschen? Eine Geräte-Identität wird zuerst beim Server widerrufen, dann werden die Daten des Workspace auf diesem Gerät gelöscht.',
+      'Workspace „{name}“ löschen? Hat er eine Geräte-Identität, wird sie zuerst beim Server widerrufen; die Daten des Workspace auf diesem Gerät werden in jedem Fall gelöscht.',
     'workspace.picker.delete.confirm.sync':
       'Workspace „{name}“ löschen? Die Daten des Workspace auf diesem Gerät werden gelöscht, die Sync-Quelle bleibt unberührt.',
     'workspace.picker.delete.confirm.local':
@@ -1045,7 +1045,7 @@ export const translations: Translations = {
     'workspace.picker.empty': 'No workspace yet. Make one with "New workspace".',
     'workspace.picker.listFailed': 'The workspaces did not load: {error}',
     'workspace.picker.delete.confirm.server':
-      'Delete the workspace "{name}"? A device identity is revoked at the server first, then the data of the workspace on this device is deleted.',
+      'Delete the workspace "{name}"? If it has a device identity, that is revoked at the server first; the data of the workspace on this device is deleted either way.',
     'workspace.picker.delete.confirm.sync':
       'Delete the workspace "{name}"? The data of the workspace on this device is deleted, the sync source is left as it is.',
     'workspace.picker.delete.confirm.local':
