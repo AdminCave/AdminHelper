@@ -177,6 +177,13 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine Admin-Doku (die Live-Anzeige ist dort nicht beschrieben); CHANGELOG.md (Satz im Eintrag aus T8)
 Abhängt von: T9
 
+### T27 — Platten ohne Mount und doppelte Mounts einheitlich  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.test.ts
+Änderung: Aus dem security-Review zu T17: `checkers/agent.py` nimmt für eine Platte ohne `mount` beim Bewerten, beim Abgleich mit `ignore_mounts` und in `_details` denselben Ersatznamen (heute `"?"` gegenüber `"/"`), damit Bewertung (`disk:<mount>`) und Anzeige zusammenpassen; Test dazu. `SecLive.svelte` keyt die Plattenliste so, dass zwei Einträge mit demselben `mount` die Ansicht nicht brechen (Schlüssel aus Index und Mount); Test mit doppeltem Mount.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py
+Doku: keine (intern)
+Abhängt von: T9, T17
+
 ### T18 — Desktop: Check-Formular `agent_resources` — neue Schwellen, Mindest-GB, ignorierte Mounts  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
 Änderung: `MonitorCheckConfig` (`types.ts:205-215`) um `swap_warn`, `swap_crit`, `inode_warn`, `inode_crit`, `load_warn`, `load_crit`, `disk_min_free_gb`, `ignore_mounts`, `disk_overrides`. `RESOURCE_NUM_FIELDS` (`CheckConfigFields.svelte:93-103`) um Swap und Inodes (0–100), Load (0–100, Schritt 0,1: `NumField` bekommt ein optionales `step`) und `disk_min_free_gb` (≥ 0); `WARN_CRIT_PAIRS` (`:131-143`) um Swap, Inodes, Load; Textfeld `ignore_mounts` als Komma-Liste wie `ignore_devices` (`:394-402`) mit Hinweis „exakte Mount-Pfade“. Labels DE und EN. Tests (neue `describe` in `CheckConfigFields.test.ts`): Felder mit min/max/step, Hinweis warn ≥ crit für die neuen Paare, `ignore_mounts` gespeichert und bei leerem Feld entfernt, Labels englisch.
