@@ -15,6 +15,11 @@ from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
 
+# The recovery hold where nobody sets one: the default of the schemas below and,
+# for a stored template definition without the key, of template_sync. Has to match
+# the column default (models.MonitorCheck, migration c3e5a7b9d1f2).
+DEFAULT_CONSECUTIVE_OKS = 2
+
 
 class CheckCreate(RequestModel):
     server_id: str | None = None
@@ -26,6 +31,7 @@ class CheckCreate(RequestModel):
     interval: str = "5m"
     severity: str = "critical"
     consecutive_fails: IntColumn = 3
+    consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = DEFAULT_CONSECUTIVE_OKS
 
     # Per-type config validation (T4): a typo'd key or out-of-range threshold
     # must fail here, not surface as a permanently-unknown check at runtime.
@@ -46,6 +52,16 @@ class CheckUpdate(RequestModel):
     interval: str | None = None
     severity: str | None = None
     consecutive_fails: IntColumn | None = None
+    consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] | None = None
+
+    # Leaving the key out leaves the value unchanged; an explicit null would reach
+    # the NOT NULL column and fail there as a 500.
+    @field_validator("consecutive_oks")
+    @classmethod
+    def _consecutive_oks_not_null(cls, v: int | None) -> int:
+        if v is None:
+            raise ValueError("consecutive_oks must not be null")
+        return v
 
 
 class AlertRuleCreate(RequestModel):
@@ -77,6 +93,7 @@ class TemplateCheckDef(RequestModel):
     interval: str = "5m"
     severity: str = "critical"
     consecutive_fails: IntColumn = 3
+    consecutive_oks: Annotated[IntColumn, Field(ge=1, le=100)] = DEFAULT_CONSECUTIVE_OKS
     description: str | None = None
 
     # Same boundary the /checks router enforces for CheckCreate — so a template

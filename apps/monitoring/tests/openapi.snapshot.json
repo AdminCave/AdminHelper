@@ -164,6 +164,13 @@
             "title": "Consecutive Fails",
             "type": "integer"
           },
+          "consecutive_oks": {
+            "default": 2,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Consecutive Oks",
+            "type": "integer"
+          },
           "description": {
             "anyOf": [
               {
@@ -250,6 +257,19 @@
               }
             ],
             "title": "Consecutive Fails"
+          },
+          "consecutive_oks": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutive Oks"
           },
           "description": {
             "anyOf": [
@@ -549,6 +569,13 @@
             "maximum": 2147483647.0,
             "minimum": -2147483648.0,
             "title": "Consecutive Fails",
+            "type": "integer"
+          },
+          "consecutive_oks": {
+            "default": 2,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Consecutive Oks",
             "type": "integer"
           },
           "def_id": {

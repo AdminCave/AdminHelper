@@ -164,6 +164,7 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
         interval=data.interval,
         severity=data.severity,
         consecutive_fails=data.consecutive_fails,
+        consecutive_oks=data.consecutive_oks,
     )
     db.add(check)
 
@@ -246,6 +247,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         "interval",
         "severity",
         "consecutive_fails",
+        "consecutive_oks",
     ]:
         if field in sent:
             setattr(check, field, getattr(data, field))
