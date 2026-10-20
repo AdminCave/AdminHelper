@@ -18,10 +18,20 @@ import (
 	"adminhelper-agent/internal/httpclient"
 )
 
-// BuildReport collects all metrics and builds the report.
+// BuildReport collects all metrics and builds the report. Without a report state it measures the CPU
+// with the 1s sample; monitor init's test push neither reads nor writes the state.
 func BuildReport(serviceNames []string) map[string]any {
+	report, _ := buildReportWithState(serviceNames, reportState{}, time.Now())
+	return report
+}
+
+// buildReportWithState is BuildReport measured against prev, the state the last successful push
+// saved. It also returns the state to save once this report has been pushed.
+func buildReportWithState(serviceNames []string, prev reportState, now time.Time) (map[string]any, reportState) {
+	cpuPercent, cpuNow := collectCPUSince(prev.CPU, now)
+	next := reportState{CPU: cpuNow}
 	resources := map[string]any{
-		"cpu_percent": collectCPU(),
+		"cpu_percent": cpuPercent,
 	}
 	if m := collectMemory(); m != nil {
 		for k, v := range m {
@@ -76,7 +86,7 @@ func BuildReport(serviceNames []string) map[string]any {
 		report["smart_absent"] = map[string]string{"reason": absent}
 	}
 
-	return report
+	return report, next
 }
 
 // pushRetryDelay is a variable so tests can shorten the backoff.

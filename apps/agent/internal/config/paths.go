@@ -36,3 +36,12 @@ func AgentPkiDir() string { return filepath.Join(MonitorDir(), "identity") }
 func MonitorInventoryStateFile() string {
 	return filepath.Join(MonitorDir(), ".inventory-state.json")
 }
+
+// MonitorReportStateFile persists what the next report is measured against
+// ({cpu: {unix, total, busy}}, the CPU times of the last successful push). It
+// lives next to monitor.conf for the same reason: the agent runs as a oneshot
+// (systemd timer / scheduled task) — in-memory state does not survive between
+// pushes.
+func MonitorReportStateFile() string {
+	return filepath.Join(MonitorDir(), ".report-state.json")
+}

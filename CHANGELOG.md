@@ -951,6 +951,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Agent: CPU als Mittel seit dem letzten Report (R-0423):** `cpu_percent` ist jetzt der Anteil belegter CPU-Zeit
+  seit dem letzten erfolgreich gesendeten Report statt einer 1-s-Stichprobe zu Beginn des Laufs; unter Linux mittelt
+  der Agent damit ueber die 5 Minuten zwischen zwei Laeufen. Den Zaehlerstand dafuer legt er in `.report-state.json`
+  neben `monitor.conf` ab (0600), geschrieben nur nach erfolgreichem Push; ein verlorener Push verlaengert das
+  naechste Fenster. Im ersten Lauf, wenn der letzte erfolgreiche Report mehr als 15 Minuten zurueckliegt, nach einem
+  Neustart, bei einem Zeitstempel in der Zukunft und beim Test-Push von `monitor init` misst er weiter die
+  1-s-Stichprobe.
 - **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
