@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Release: Beta ohne Suffix-Tag — Task-Ledger
-Status: aktiv · Branch: feature/release-beta-channel · Review: am Ende
+Status: bereit · Branch: feature/release-beta-channel · Review: am Ende
 Spec: Roadmap R-0014
 Heavy: none — Regeltext, Doku und die Release-Workflows (`docker.yml`, `release.yml`, T3); ein Stack- oder Install-Lauf beweist nichts davon, der erste echte Beweis ist der erste Beta-Tag und sein Wechsel auf Stable
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -35,8 +35,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CLAUDE.md · docs/developer/cicd.html + EN
 
-### T3 — `:latest` erst mit Stable, Draft als Pre-release  [ ]
+### T3 — `:latest` erst mit Stable, Draft als Pre-release  [x]
 Komponente: server · Dateien: .github/workflows/docker.yml, .github/workflows/release.yml, .claude/rules/release.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md, apps/server/tests/test_release_images.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @4e859413 2026-10-20T09:20:39+02:00
+Review: am Ende (Branch-Review)
 Änderung: Kevin 2026-10-20 (Workflow-Dateien; den PR mergt Kevin): `release.yml`, Draft-Schritt (softprops, `:520-528`): der Draft entsteht mit `prerelease: true`, damit „Publish“ in der Web-Oberfläche ein Beta nie zu „Latest“ macht. `docker.yml`: beim Tag-Push kein `:latest` mehr (`flavor: latest=false`, `X.Y.Z` und `sha` bleiben); ein neuer Job auf dem Release-Event, das beim Umschalten eines Releases von Pre-release auf Release feuert (vorher in der GitHub-Doku zu `release`-Events nachlesen, Quelle im Commit nennen, Unbelegtes als „nicht verifiziert“), setzt `:latest` auf das schon gebaute und signierte Image `X.Y.Z` (Manifest umtaggen, nicht neu bauen) und signiert den Tag wie den Bestand (cosign keyless); Rechte des Jobs minimal (`packages: write`, `id-token: write`, `contents: read`), Actions per SHA gepinnt wie im Bestand. Doku: `release.md` „Ablauf und Kanäle“ und `cicd.html` DE+EN sagen, dass `:latest` erst mit Stable kommt; `release.md` schränkt `install.sh` wie `cicd.html` ein (liest `releases/latest` nur ohne lokalen Checkout); Nit aus dem Branch-Review: EN `cicd.html` (~:517) „when that happens is set out in“. Die CHANGELOG-Zeile aus T2 entsprechend anpassen. Ein Beweis am echten Tag ist erst beim Beta möglich; das nennt der Commit-Body.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_release_images.py
 Doku: .claude/rules/release.md · docs/developer/cicd.html + EN · CHANGELOG

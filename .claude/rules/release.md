@@ -75,7 +75,11 @@ mehr, sondern dasselbe Release auf „Latest“ (`gh release edit vX.Y.Z --prere
 Wechsel entscheidet Kevin, frühestens 7 Tage nach der Veröffentlichung als Pre-release ohne Fix und ohne Rückmeldung;
 ein Fix ist ein neues Patch-Release, `hotfix` der einzige Bypass. Tags tragen kein Suffix (`-beta.N`, `-rc.N`), weil die
 Pipeline solche Tags heute nicht richtig baut: tauri lehnt fürs MSI eine nicht numerische Prerelease-Kennung ab, eine
-RPM-Version darf kein `-` tragen, und `dpkg` sortiert `0.46.0-beta.1` über `0.46.0`. Folge: `docker.yml` setzt `:latest`
-nach der Semver-Version des Tags, schon beim Tag-Push, die Images `:latest` zeigen also auch auf ein Beta;
-`install.sh`/`update.sh` lesen `releases/latest` und damit nie ein Pre-release. Ein halb geschnittenes Release (Bump
-ohne Tag, Tag ohne Publish, `main` vor `origin`) ist ein Warn-Trigger, kein Normalzustand.
+RPM-Version darf kein `-` tragen, und `dpkg` sortiert `0.46.0-beta.1` über `0.46.0`. `release.yml` legt den Draft als
+Pre-release an, „Publish“ in der Web-Oberfläche macht ein Beta also nie zu „Latest“. `docker.yml` taggt beim Tag-Push
+`:X.Y.Z` und `:sha-…`, aber kein `:latest`: das kommt erst mit Stable, wenn das Release von Pre-release auf Release
+wechselt oder direkt als Release erscheint (Event `release`, Typ `released`). Dann taggt der Job `latest` das schon
+gebaute und signierte `:X.Y.Z` um, ohne neu zu bauen, und signiert es; er läuft aus dem `docker.yml` des getaggten
+Commits. `:latest` ist damit Stable, wie `releases/latest`, das `install.sh` ohne lokalen Checkout und `update.sh`
+lesen. Ein halb geschnittenes Release (Bump ohne Tag, Tag ohne Publish, `main` vor `origin`) ist ein Warn-Trigger, kein
+Normalzustand.

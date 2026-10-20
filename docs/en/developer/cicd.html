@@ -57,7 +57,8 @@
             <tbody>
               <tr><td>Pull request</td><td><code>ci.yml</code> (must pass)</td></tr>
               <tr><td>Push to <code>main</code></td><td><code>ci.yml</code> + <code>docker.yml</code> (image tags <code>:main</code> + <code>:sha-&hellip;</code>)</td></tr>
-              <tr><td>Tag <code>v*</code></td><td><code>docker.yml</code> (tags <code>:0.26.0</code> + <code>:latest</code> + <code>:sha-&hellip;</code>) + <code>release.yml</code> (draft release with artifacts)</td></tr>
+              <tr><td>Tag <code>v*</code></td><td><code>docker.yml</code> (tags <code>:0.26.0</code> + <code>:sha-&hellip;</code>) + <code>release.yml</code> (draft release, marked as a pre-release, with artifacts)</td></tr>
+              <tr><td>Release turns stable (event <code>release</code>, type <code>released</code>)</td><td><code>docker.yml</code>, job <code>latest</code> (<code>:latest</code> onto the signed <code>:0.26.0</code>, no rebuild)</td></tr>
               <tr><td>Schedule (weekly)</td><td><code>audit.yml</code> (dependency audit)</td></tr>
             </tbody>
           </table>
@@ -382,14 +383,14 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           going missing is a failure rather than a smaller green set.</p>
 
           <h2>Container Images (ghcr.io)</h2>
-          <p>Tagging is driven by <code>docker/metadata-action</code>. <code>:latest</code> is produced only on a semver tag without a suffix &ndash; not on every <code>main</code> push:</p>
+          <p>Tagging is driven by <code>docker/metadata-action</code>. <code>:latest</code> is produced neither on a tag push nor on a <code>main</code> push, only once a release is stable:</p>
           <div class="code-header"><span>text</span></div>
 <pre><code>ghcr.io/admincave/adminhelper/server:0.24.0      # release tag
-ghcr.io/admincave/adminhelper/server:latest      # newest release tag, a beta included
+ghcr.io/admincave/adminhelper/server:latest      # stable, never a beta
 ghcr.io/admincave/adminhelper/server:main        # latest main build
 ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
 # likewise: ghcr.io/admincave/adminhelper/monitoring:&hellip;</code></pre>
-          <p>A beta is a plain tag <code>vX.Y.Z</code>, merely published on GitHub as a &ldquo;Pre-release&rdquo;, and <code>docker.yml</code> runs as soon as the tag is pushed: <code>:latest</code> therefore follows the newest tag, a beta included. If you want stable only, pin the version (<code>:X.Y.Z</code>); <code>install.sh</code> (without a local checkout) and <code>update.sh</code> already do, with the version from <code>releases/latest</code>, which is never a pre-release.</p>
+          <p>A beta is a plain tag <code>vX.Y.Z</code>, published on GitHub as a &ldquo;Pre-release&rdquo;. On the tag push, <code>docker.yml</code> builds <code>:X.Y.Z</code> and <code>:sha-&hellip;</code> but no <code>:latest</code>. That is set by the job <code>latest</code> once the release changes from &ldquo;Pre-release&rdquo; to a release or is published as a release right away (event <code>release</code>, type <code>released</code>): it retags the <code>:X.Y.Z</code> that is already built and signed, without a rebuild, and signs it. <code>:latest</code> is therefore stable, like <code>releases/latest</code>, from which <code>install.sh</code> (without a local checkout) and <code>update.sh</code> take the version they pin. To try a beta, pin its version (<code>:X.Y.Z</code>).</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
@@ -397,7 +398,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           </div>
 
           <h2>Release Artifacts</h2>
-          <p><code>release.yml</code> runs on a <code>v*</code> tag and attaches the built artifacts to a <strong>draft</strong> release (not published until a human clicks &ldquo;Publish&rdquo;):</p>
+          <p><code>release.yml</code> runs on a <code>v*</code> tag and attaches the built artifacts to a <strong>draft</strong> release (not published until a human clicks &ldquo;Publish&rdquo;). The draft is marked as a &ldquo;Pre-release&rdquo;, so &ldquo;Publish&rdquo; turns it into a beta, never into &ldquo;Latest&rdquo;:</p>
           <ul>
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
             <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code> binaries</li>
@@ -514,7 +515,7 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
             <li>Commit &amp; tag: <code>git commit -am "release: v0.24.0" &amp;&amp; git tag v0.24.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>
             <li>Watch <code>docker.yml</code> + <code>release.yml</code>; after the first image push, switch the ghcr packages to public (once).</li>
-            <li>In the GitHub draft release, review the notes, verify the mandatory assets, and publish it as a beta: <code>gh release edit vX.Y.Z --draft=false --prerelease</code>. The same release becomes stable later, without a new tag (<code>gh release edit vX.Y.Z --prerelease=false --latest</code>); when is set out in <code>.claude/rules/release.md</code>.</li>
+            <li>In the GitHub draft release, review the notes, verify the mandatory assets, and publish it as a beta: <code>gh release edit vX.Y.Z --draft=false --prerelease</code>. The same release becomes stable later, without a new tag (<code>gh release edit vX.Y.Z --prerelease=false --latest</code>), and only that sets <code>:latest</code> of the images; when that happens is set out in <code>.claude/rules/release.md</code>.</li>
           </ol>
 
           <div class="callout callout-tip" data-reveal>
