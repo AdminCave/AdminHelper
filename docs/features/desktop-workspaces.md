@@ -187,7 +187,7 @@ Altdateien die Quelle bleiben.
 - Neu: `workspace_context` → `{launcher, workspace?: WorkspaceInfo}`; Launcher-only `list_workspaces` →
   `WorkspaceList{workspaces: WorkspaceInfo[], lastUsed, migratedNotice}`, `save_workspace(draft: WorkspaceDraft)`,
   `delete_workspace(id)` → `ResetOutcome`, `open_workspace(id)`; Workspace-only `open_launcher`.
-  `WorkspaceInfo{id, name, color, kind, host, url?, open}` (`url` ohne Benutzerteil, Query-Werte maskiert; T42/T43), `WorkspaceDraft{id?, kind, name, color, url?}`; `kind` ist
+  `WorkspaceInfo{id, name, color, kind, host, url?, open}` (`url` mit Benutzerteil als `***@`, Query-Werte und Fragment maskiert; T42/T43/T45), `WorkspaceDraft{id?, kind, name, color, url?}`; `kind` ist
   `SyncMode`. Launcher-Commands lehnen im Workspace-Prozess ab und umgekehrt; ohne Workspace-Kontext liefern
   Datenpfade und Keyring-Präfixe einen Fehler (fail closed).
 - `login` und `enroll_with_token` nehmen nur die URL des Workspaces an (oder die übergebene, solange er keine hat);
