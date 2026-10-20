@@ -359,7 +359,7 @@ Plan (`termsrv_plan` in `password.rs`, Tests `termsrv_plan_*`; T17 führt ihn au
 | diese Maschine | nein | Löschen (beide Typen), Starten |
 | diese Maschine | ja | Löschen (beide Typen), Schreiben, Starten, nach 60 s Löschen |
 
-Belegung (T39, Kevin 2026-10-20): Jeder Start kennt die Namen, die sein mstsc nachschlagen könnte (Ziel und Clear-Namen, außerhalb von Loopback bei Port ≠ 3389 auch `TERMSRV/<host>`, L), und die er schreibt (W). Ein schreibender Start belegt L und W bis zu seinem `Remove` über alle Workspace-Prozesse, ein Start ohne Passwort belegt L bis zum Ablauf (Kevin 2026-10-20); ein Start einer anderen Verbindung wird abgelehnt, wenn er schreibt, was eine fremde Belegung nachschlagen kann, oder nachschlägt bzw. löscht, was sie geschrieben hat. Zwei Tunnel-Starts auf verschiedenen Ports sperren sich nicht.
+Belegung (T39, Kevin 2026-10-20): Jeder Start kennt die Namen, die sein mstsc nachschlagen könnte (Ziel und Clear-Namen, außerhalb von Loopback bei Port ≠ 3389 auch `TERMSRV/<host>`, bei einem Port im Host-Feld auch die Namen des Host-Teils, L), und die er schreibt (W). Ein schreibender Start belegt L und W bis zu seinem `Remove` über alle Workspace-Prozesse, ein Start ohne Passwort belegt L bis zum Ablauf (Kevin 2026-10-20); ein Start einer anderen Verbindung wird abgelehnt, wenn er schreibt, was eine fremde Belegung nachschlagen kann, oder nachschlägt bzw. löscht, was sie geschrieben hat. Zwei Tunnel-Starts auf verschiedenen Ports sperren sich nicht.
 
 Probe (`termsrv_probe_*`, nur im CI-Job `rust-windows`): schreibt `TERMSRV/adminhelper-probe-<pid>-<ns>.invalid:3390`
 generisch mit `CRED_PERSIST_SESSION`, liest Typ, Persistenz, Benutzer und Passwort zurück und löscht den Eintrag.
@@ -380,7 +380,10 @@ oben gilt dann als „Starten“ (T17). Bei Loopback-Zielen löscht die App vor 
 Namensformen (`TERMSRV/<host>:<port>` und `TERMSRV/<host>`), bis Punkt (4) unten belegt ist. Ein zweiter Start
 einer anderen Verbindung auf dasselbe Ziel, solange ein Eintrag in seiner Frist liegt, wird abgelehnt (T39).
 Alt-Einträge `TERMSRV/<gelistete Adresse>` übernimmt der migrierte Workspace beim ersten Start in seinen
-App-Namensraum und löscht sie danach (T40).
+App-Namensraum und löscht sie danach (T40), nur bei gleichem Benutzer (`DOMAIN\user` wie T17 schreibt; sonst
+bleibt der Eintrag, mstsc nimmt ihn) und nur für Verbindungen ohne Tunnel-Mapping (ein übernommenes Passwort
+ginge sonst an einen Endpunkt, den der Workspace-Server festlegt; Kevin 2026-10-20). Scheitert das Speichern,
+bricht der Start ab und der Alt-Eintrag bleibt.
 
 Quellen (abgerufen 2026-10-20):
 
