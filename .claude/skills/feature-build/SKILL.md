@@ -32,9 +32,16 @@ gilt jeder Roadmap-Schritt dieses Skills für jede von ihnen:
 - Kopf `bereit` → weiter mit 4; `erledigt` oder `blockiert` → melden.
 
 Ist eine zweite Zeile freigegeben und erfüllt sie beim Start die Kriterien aus `/feature-plan` §4 (neu geprüft, auch
-`df -h /`), startet die Session sie gleich mit: zweiter Worktree, eigener `builder`, derselbe Ablauf. Höchstens zwei
-Ledger `aktiv` (Deckel in `roadmap.py`); die Tasks eines Ledgers bauen nacheinander, nie zwei Bauer auf demselben
-Ledger.
+`df -h /`), startet die Session sie gleich mit: zweiter Worktree, eigener `builder`, derselbe Ablauf. Weitere
+freigegebene Zeilen startet sie ebenso, solange Dateien und Ressourcen es zulassen (CLAUDE.md §2, „Parallel, wo es
+geht“); die Tasks eines Ledgers bauen nacheinander, nie zwei Bauer auf demselben Ledger. Ein großes Vorhaben mit
+disjunkten Blöcken teilt die Session auf Kevins Wort in Teil-Ledger: je Block ein Teil-Branch mit eigenem Worktree,
+gemergt in den Vorhabens-Branch. Ein Teil-Ledger hängt an der Roadmap-Zeile des Vorhabens und trägt nur Tasks aus
+dessen freigegebenem Plan; seinen Kopf setzt die Session beim Aufteilen auf `aktiv`, den Roadmap-Status führt nur
+das Vorhabens-Ledger. Ein Teil-Branch bekommt keinen eigenen PR: ist sein Ledger fertig, merged die Session ihn in
+den Vorhabens-Branch (dort neu prüfen, was die Spuren gemeinsam berühren), §4 läuft einmal über den
+Vorhabens-Branch, und der PR-Text nimmt die Belege aller Teil-Ledger auf. Ein Lauf aus §4.3, der vor dem Ende
+startet, gilt nur, solange spätere Tasks nichts ändern, was er prüft.
 
 ## 3. Je offener Task, in Ledger-Reihenfolge
 

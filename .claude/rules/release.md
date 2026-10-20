@@ -68,8 +68,20 @@ Docker-Images schlüssellos via cosign (GitHub-OIDC). `SHA256SUMS` via minisign:
 ## Ablauf und Kanäle
 
 Bump-Commit → Kevin: `git push origin main` → annotierter Tag `vX.Y.Z` → Tag pushen → alle Workflows per `gh run watch`
-bis grün begleiten → Draft prüfen → Kevin publiziert (`gh release edit vX.Y.Z --draft=false`). Drafts sind Konvention.
-Kanäle: `beta` (`vX.Y.Z-beta.N`, fortlaufend nach grünem Wochenlauf) → `rc` (`vX.Y.Z-rc.N`, Kevin entscheidet) →
-`stable` (frühestens 7 Tage nach dem RC ohne Fix und ohne Rückmeldung); `hotfix` ist der einzige Bypass. Prerelease-Tags
-landen nie auf `latest` (`docker.yml`) und nie in `releases/latest` (`install.sh`/`update.sh`). Ein halb geschnittenes
-Release (Bump ohne Tag, Tag ohne Publish, `main` vor `origin`) ist ein Warn-Trigger, kein Normalzustand.
+bis grün begleiten → Draft prüfen → Kevin publiziert als Beta. Drafts sind Konvention.
+Kanäle (Kevin 2026-10-20): `beta` ist der Tag `vX.Y.Z` ohne Suffix, fortlaufend nach grünem Wochenlauf, veröffentlicht
+als „Pre-release“ (`gh release edit vX.Y.Z --draft=false --prerelease`). `stable` ist kein eigener Schnitt und kein RC
+mehr, sondern dasselbe Release auf „Latest“ (`gh release edit vX.Y.Z --prerelease=false --latest`), ohne neuen Tag. Den
+Wechsel entscheidet Kevin, frühestens 7 Tage nach der Veröffentlichung als Pre-release ohne Fix und ohne Rückmeldung;
+ein Fix ist ein neues Patch-Release, `hotfix` der einzige Bypass. Tags tragen kein Suffix (`-beta.N`, `-rc.N`), weil die
+Pipeline solche Tags heute nicht richtig baut: tauri lehnt fürs MSI eine nicht numerische Prerelease-Kennung ab, eine
+RPM-Version darf kein `-` tragen, und `dpkg` sortiert `0.46.0-beta.1` über `0.46.0`. `release.yml` legt den Draft als
+Pre-release an, „Publish“ in der Web-Oberfläche macht ein Beta also nie zu „Latest“. `docker.yml` taggt beim Tag-Push
+`:X.Y.Z` und `:sha-…`, aber kein `:latest`: das kommt erst mit Stable, wenn das Release von Pre-release auf Release
+wechselt oder direkt als Release erscheint (Event `release`, Typ `released`). Dann taggt der Job `latest` das schon
+gebaute `:X.Y.Z` um, ohne neu zu bauen und ohne neu zu signieren (die Signatur des Tag-Pushs hängt am Digest), aber
+nur, wenn dieses Release `releases/latest` ist und `cosign verify` an jedem Image die Signatur seines Tag-Pushs
+findet; scheitert er nach dem ersten Umtaggen, den Job erneut ausführen. Er läuft aus dem `docker.yml` des getaggten
+Commits. `:latest` ist damit Stable, wie `releases/latest`, das `install.sh` ohne lokalen Checkout und `update.sh`
+lesen. Ein halb geschnittenes Release (Bump ohne Tag, Tag ohne Publish, `main` vor `origin`) ist ein Warn-Trigger, kein
+Normalzustand.

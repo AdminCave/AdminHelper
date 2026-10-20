@@ -31,9 +31,9 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
 1. `python3 scripts/dev/roadmap.py show` (liest nur, keine Sperre).
 2. Knapp rendern, in dieser Reihenfolge:
    - **Als Nächstes**: die Punkte, je die erste Zeile, wörtlich.
-   - **In Arbeit** mit den Deckeln: die `WIP:`-Zeile. `show` druckt nur die Zähler; ist
-     ein Deckel erreicht (Zähler >= `aktiv` 2 · `bereit` 2 · `pr` 3 · `neu` 20), nenn
-     den Deckel dahinter (`add` verweigert ab `neu` 20). Die Zeilen
+   - **In Arbeit**: die `WIP:`-Zeile. `show` druckt nur Zähler; `aktiv`, `bereit` und `pr` sind
+     Anzeige, kein Deckel (CLAUDE.md §2, „Parallel, wo es geht“). Durchgesetzt ist nur `neu` 20:
+     ist er erreicht, nenn ihn dahinter (`add` verweigert dann). Die Zeilen
      von „In Arbeit" mit ID, Klasse, Status.
    - **Neu**: nur die Anzahl gegen den Deckel und `ALT` (abgelaufene Zeilen), keine Liste.
    - Geplant, Zurückgestellt, Blockiert als Anzahl; Abgeschlossen und Archiv weglassen.

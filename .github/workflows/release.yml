@@ -521,6 +521,9 @@ jobs:
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           draft: true
+          # Every release starts as a beta: "Publish" on the draft yields a pre-release,
+          # which is never "Latest". Stable is the later switch to a release (R-0014).
+          prerelease: true
           name: AdminHelper ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true

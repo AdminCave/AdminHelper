@@ -1054,6 +1054,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   naechste Fenster. Im ersten Lauf, wenn der letzte erfolgreiche Report mehr als 15 Minuten zurueckliegt, nach einem
   Neustart, bei einem Zeitstempel in der Zukunft und beim Test-Push von `monitor init` misst er weiter die
   1-s-Stichprobe. Doku: Entwickler-Doku Agent und Monitoring (DE+EN).
+- **Release: ein Beta ist ein Tag ohne Suffix (R-0014):** Ein Beta ist jetzt der Tag `vX.Y.Z` ohne Suffix,
+  veroeffentlicht als GitHub-Pre-release; schon der Draft entsteht als Pre-release. Stable wird dasselbe Release
+  spaeter ohne neuen Tag. Die Images `:latest` setzt `docker.yml` nicht mehr beim Tag-Push, sondern erst, wenn das
+  Release von Pre-release auf Release wechselt: Es taggt das schon gebaute `:X.Y.Z` um, ohne neu zu signieren, und
+  nur, wenn das Release `releases/latest` ist und jedes Image die Signatur seines Tag-Pushs traegt (`cosign verify`).
+  `:latest` zeigt damit wie `releases/latest`, das `install.sh` ohne lokalen Checkout und `update.sh` lesen, nie auf
+  ein Beta; wer ein Beta testen will, pinnt dessen Version (`:X.Y.Z`). Doku: Entwickler-Doku CI/CD (DE+EN).
 - **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
   Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
   Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und
