@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Release: Beta ohne Suffix-Tag — Task-Ledger
-Status: aktiv · Branch: feature/release-beta-channel · Review: am Ende
+Status: bereit · Branch: feature/release-beta-channel · Review: am Ende
 Spec: Roadmap R-0014
 Heavy: none — nur Regeltext und ein Kommentar; kein Build-, Release- oder Install-Pfad ändert sich
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -27,8 +27,10 @@ Review: am Ende (Branch-Review)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: .claude/rules/release.md (Regeltext); sonst keine (intern)
 
-### T2 — CLAUDE.md §10 und cicd.html an den Beta-Kanal angleichen  [ ]
-Komponente: scripts · Dateien: CLAUDE.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+### T2 — CLAUDE.md §10 und cicd.html an den Beta-Kanal angleichen  [x]
+Komponente: scripts · Dateien: CLAUDE.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @05e0bc7f 2026-10-20T08:52:09+02:00
+Review: am Ende (Branch-Review)
 Änderung: Kevin 2026-10-20 (Harness-Datei auf sein Wort): `CLAUDE.md` §10, Zeile „Release-Kanäle“: Beta ist der Tag `vX.Y.Z` ohne Suffix, veröffentlicht als Pre-release; Stable entsteht per Flag auf „Latest“ ohne neuen Tag, frühestens 7 Tage nach dem Beta ohne Fix und ohne Rückmeldung; `hotfix` bleibt der einzige Weg daran vorbei; Verweis auf `.claude/rules/release.md` bleibt. `docs/developer/cicd.html` + EN, Abschnitt Container-Images: ein Satz, dass `:latest` dem neuesten Tag folgt, auch einem Beta (Pre-release), und wer nur Stable will, die Version pinnt (`install.sh`/`update.sh` tun das bereits über `releases/latest`); das Code-Beispiel „letzter Semver-Release“ entsprechend.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CLAUDE.md · docs/developer/cicd.html + EN

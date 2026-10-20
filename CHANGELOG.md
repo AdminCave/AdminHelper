@@ -951,6 +951,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Release: ein Beta ist ein Tag ohne Suffix (R-0014):** Ein Beta ist jetzt der Tag `vX.Y.Z` ohne Suffix,
+  veroeffentlicht als GitHub-Pre-release; Stable wird dasselbe Release spaeter ohne neuen Tag. Die Images `:latest`
+  folgen dem neuesten Tag, auch einem Beta. Wer nur Stable will, pinnt die Version (`:X.Y.Z`); `install.sh` ohne
+  lokalen Checkout und `update.sh` tun das bereits mit der Version aus `releases/latest`, die nie ein Pre-release
+  ist. Doku: Entwickler-Doku CI/CD (DE+EN).
 - **Server: Datenbankfehler eines Hooks nur mit ihrem Typ:** Bricht ein Hook mit einem Fehler der
   Datenbankanbindung ab (`sqlalchemy.exc.SQLAlchemyError` oder `psycopg.Error`), nennen `error` und die Log-Zeile
   `Fehler: …` in `logs` nur den Typ des Fehlers, etwa `OperationalError`, nicht mehr den Text des Treibers. Jeder

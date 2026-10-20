@@ -390,13 +390,14 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           namentlich im Skript, damit ein einzelnes Verschwinden auff&auml;llt.</p>
 
           <h2>Container-Images (ghcr.io)</h2>
-          <p>Getaggt wird über <code>docker/metadata-action</code>. <code>:latest</code> entsteht nur auf einem (Nicht-Prerelease-)Semver-Tag &ndash; nicht bei jedem <code>main</code>-Push:</p>
+          <p>Getaggt wird über <code>docker/metadata-action</code>. <code>:latest</code> entsteht nur auf einem Semver-Tag ohne Suffix &ndash; nicht bei jedem <code>main</code>-Push:</p>
           <div class="code-header"><span>text</span></div>
 <pre><code>ghcr.io/admincave/adminhelper/server:0.24.0      # Release-Tag
-ghcr.io/admincave/adminhelper/server:latest      # letzter Semver-Release
+ghcr.io/admincave/adminhelper/server:latest      # neuester Release-Tag, auch ein Beta
 ghcr.io/admincave/adminhelper/server:main        # letzter main-Build
 ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
 # analog: ghcr.io/admincave/adminhelper/monitoring:&hellip;</code></pre>
+          <p>Ein Beta ist ein gew&ouml;hnlicher Tag <code>vX.Y.Z</code>, auf GitHub nur als &bdquo;Pre-release&ldquo; ver&ouml;ffentlicht, und <code>docker.yml</code> l&auml;uft schon beim Tag-Push: <code>:latest</code> folgt also dem neuesten Tag, auch einem Beta. Wer nur Stable will, pinnt die Version (<code>:X.Y.Z</code>); <code>install.sh</code> (ohne lokalen Checkout) und <code>update.sh</code> tun das bereits mit der Version aus <code>releases/latest</code>, die nie ein Pre-release ist.</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
@@ -521,7 +522,7 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
             <li>Commit &amp; Tag: <code>git commit -am "release: v0.24.0" &amp;&amp; git tag v0.24.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>
             <li><code>docker.yml</code> + <code>release.yml</code> beobachten; nach dem ersten Image-Push die ghcr-Pakete (einmalig) auf public stellen.</li>
-            <li>Im GitHub-Draft-Release die Notes prüfen, Pflicht-Assets gegenchecken und „Publish" drücken.</li>
+            <li>Im GitHub-Draft-Release die Notes prüfen, Pflicht-Assets gegenchecken und als Beta veröffentlichen: <code>gh release edit vX.Y.Z --draft=false --prerelease</code>. Stable wird dasselbe Release später ohne neuen Tag (<code>gh release edit vX.Y.Z --prerelease=false --latest</code>); wann, regelt <code>.claude/rules/release.md</code>.</li>
           </ol>
 
           <div class="callout callout-tip" data-reveal>
