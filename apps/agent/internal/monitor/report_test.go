@@ -17,8 +17,8 @@ import (
 
 // stubReportHost stubs the collectors that do real, slow, host-dependent I/O so a test exercises the
 // report assembly, not the host (6.18): the 1s CPU sample, the docker/pvesh/zpool/smartctl
-// subprocess calls and the host facts lookups. Without this the "unit" test sleeps >=1s and its
-// result/duration depend on the host.
+// subprocess calls, the system state and the host facts lookups. Without this the "unit" test sleeps
+// >=1s and its result/duration depend on the host.
 func stubReportHost(t *testing.T) {
 	t.Helper()
 	oldInterval := cpuSampleInterval
@@ -30,6 +30,8 @@ func stubReportHost(t *testing.T) {
 	pluginCollectors.smart = func() ([]SmartDisk, string) { return nil, "not_installed" }
 	oldSvc := serviceHealthCollector
 	serviceHealthCollector = func() map[string]any { return map[string]any{} }
+	oldSystemState := systemStateCollector
+	systemStateCollector = func(st reportState) (map[string]any, reportState) { return nil, st }
 	oldHostFacts := hostFactsCalls
 	hostFactsCalls.platform = func() (string, string, string, error) { return "", "", "", nil }
 	hostFactsCalls.virtualization = func() (string, string, error) { return "", "", nil }
@@ -38,6 +40,7 @@ func stubReportHost(t *testing.T) {
 		cpuSampleInterval = oldInterval
 		pluginCollectors = oldPlugins
 		serviceHealthCollector = oldSvc
+		systemStateCollector = oldSystemState
 		hostFactsCalls = oldHostFacts
 	})
 }
@@ -47,8 +50,8 @@ func TestBuildReportBasics(t *testing.T) {
 
 	report := BuildReport(nil)
 
-	if got := report["report_version"]; got != 2 {
-		t.Errorf("report_version = %v, erwartet 2", got)
+	if got := report["report_version"]; got != 3 {
+		t.Errorf("report_version = %v, erwartet 3", got)
 	}
 
 	ts, ok := report["timestamp"].(string)
@@ -133,6 +136,65 @@ func TestBuildReportSmartDisks(t *testing.T) {
 	}
 	if absent, ok := got["smart_absent"]; ok {
 		t.Errorf("smart_absent = %v, want none with disks", absent)
+	}
+}
+
+func TestBuildReportSystemState(t *testing.T) {
+	// The key comes only with a field: a block without one (nothing measured) is no block.
+	for name, tc := range map[string]struct {
+		block map[string]any
+		want  bool
+	}{
+		"with a field": {map[string]any{"oom_kills": uint64(2)}, true},
+		"empty block":  {map[string]any{}, false},
+		"no block":     {nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubReportHost(t)
+			systemStateCollector = func(st reportState) (map[string]any, reportState) { return tc.block, st }
+			got, ok := BuildReport(nil)["system_state"]
+			if ok != tc.want || (ok && !reflect.DeepEqual(got, tc.block)) {
+				t.Errorf("system_state = %v (present %v), want %v (present %v)", got, ok, tc.block, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildReportSystemStateCarriesState(t *testing.T) {
+	// The push path hands the collector the saved state and saves what it hands back, with the new CPU
+	// sample in place of the saved one. monitor init's BuildReport hands it the empty state.
+	stubReportHost(t)
+	s := stubCPU(t)
+	s.times = cpuTimes(300, 1100)
+	now := time.Unix(1_700_000_000, 0)
+	saved, measured := uint64(5), uint64(7)
+	var handed []reportState
+	systemStateCollector = func(st reportState) (map[string]any, reportState) {
+		handed = append(handed, st)
+		st.OOMKill = &measured
+		return map[string]any{"oom_kills": measured - saved}, st
+	}
+
+	prevCPU := &cpuSample{Unix: now.Add(-5 * time.Minute).Unix(), Total: 1000, Busy: 200}
+	report, next := buildReportWithState(nil, reportState{CPU: prevCPU, OOMKill: &saved}, now)
+	if len(handed) != 1 || handed[0].OOMKill == nil || *handed[0].OOMKill != saved {
+		t.Fatalf("collector got %+v, want the saved counter %d", handed, saved)
+	}
+	if next.OOMKill == nil || *next.OOMKill != measured {
+		t.Errorf("next oom_kill = %v, want %d from the collector", next.OOMKill, measured)
+	}
+	if want := (cpuSample{Unix: now.Unix(), Total: 1400, Busy: 300}); next.CPU == nil || *next.CPU != want {
+		t.Errorf("next cpu = %+v, want the new sample %+v", next.CPU, want)
+	}
+	wire := dockerWire(t, map[string]any{"system_state": report["system_state"]})
+	if want := map[string]any{"system_state": map[string]any{"oom_kills": 2.0}}; !reflect.DeepEqual(wire, want) {
+		t.Errorf("report = %v, want %v", wire, want)
+	}
+
+	handed = nil
+	BuildReport(nil)
+	if len(handed) != 1 || handed[0].OOMKill != nil || handed[0].CPU != nil {
+		t.Errorf("BuildReport handed the collector %+v, want the empty state", handed)
 	}
 }
 

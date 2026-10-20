@@ -31,6 +31,7 @@ from app.checkers import tcp as tcp_mod
 from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
 from app.checkers.smart import SmartHealthChecker
+from app.checkers.system import SystemStateChecker
 from app.core.ssrf import UrlVerdict
 from app.core.time import utcnow_naive
 from app.models import Base, MonitorCheck, MonitorState
@@ -111,6 +112,12 @@ def _smart(smartctl_status=0):
     return SmartHealthChecker().evaluate({}, {"smart": [disk]})
 
 
+def _system(**fields):
+    """A system_state block 30 min after boot: the clock is rated."""
+    report = {"uptime_seconds": 1800, "system_state": fields}
+    return SystemStateChecker().evaluate({}, report)
+
+
 _SDA = "/dev/sda (X)"
 _LIST_ERROR = "sc query failed: sc did not start"
 _AUTO_ERROR = "systemctl list-units failed: exit status 1"
@@ -162,6 +169,18 @@ CASES = [
         "critical",
         "Failed: a.service; Inactive (autostart): b.service",
         id="auto-failed-and-inactive",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["a.service", "data.mount"], "enabled_inactive": ["b.service"]}),
+        "critical",
+        "Failed: a.service; Failed units: data.mount; Inactive (autostart): b.service",
+        id="auto-failed-service-unit-and-inactive",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["data.mount"], "enabled_inactive": ["b.service"]}),
+        "warning",
+        "Failed units: data.mount; Inactive (autostart): b.service",
+        id="auto-failed-unit-and-inactive",
     ),
     pytest.param(
         lambda: _auto({"failed": [], "enabled_inactive": ["b.service"]}),
@@ -230,6 +249,21 @@ CASES = [
         "unknown",
         "No Proxmox data in report",
         id="proxmox-no-data",
+    ),
+    pytest.param(
+        lambda: ProxmoxBackupChecker().evaluate(
+            {},
+            {
+                "proxmox": {
+                    "available": False,
+                    "error": "backup_index_incomplete",
+                    "error_message": "backup storage nas not active",
+                }
+            },
+        ),
+        "warning",
+        "Proxmox unavailable (backup_index_incomplete): backup storage nas not active",
+        id="proxmox-unavailable",
     ),
     pytest.param(lambda: _proxmox(), "ok", "No VMs/CTs found", id="proxmox-no-vms"),
     pytest.param(
@@ -328,6 +362,57 @@ CASES = [
         id="smart-problems-and-warnings",
     ),
     pytest.param(lambda: _smart(), "ok", "All 1 disks SMART OK", id="smart-ok"),
+    # system_state
+    pytest.param(
+        lambda: SystemStateChecker().run({}),
+        "unknown",
+        "Waiting for agent data",
+        id="system-waiting",
+    ),
+    pytest.param(
+        lambda: SystemStateChecker().evaluate({}, {}),
+        "ok",
+        "Not evaluated: no system state in report",
+        id="system-no-data",
+    ),
+    pytest.param(
+        lambda: _system(reboot_required=True), "warning", "Reboot required", id="system-reboot"
+    ),
+    pytest.param(
+        lambda: _system(time_synchronized=False),
+        "warning",
+        "Clock not synchronized",
+        id="system-time-sync",
+    ),
+    pytest.param(
+        lambda: _system(security_updates=3),
+        "warning",
+        "3 security updates pending",
+        id="system-security-updates",
+    ),
+    pytest.param(
+        lambda: _system(oom_kills=2),
+        "warning",
+        "2 OOM kills since last report",
+        id="system-oom",
+    ),
+    pytest.param(
+        lambda: _system(
+            reboot_required=True, time_synchronized=False, security_updates=3, oom_kills=2
+        ),
+        "warning",
+        "Reboot required; Clock not synchronized; 3 security updates pending; "
+        "2 OOM kills since last report",
+        id="system-all",
+    ),
+    pytest.param(
+        lambda: _system(
+            reboot_required=False, time_synchronized=True, security_updates=0, oom_kills=0
+        ),
+        "ok",
+        "System state OK",
+        id="system-ok",
+    ),
 ]
 
 
@@ -616,6 +701,7 @@ _PREFAIL = [f"/dev/d{i} (X): prefail attribute below threshold (smartctl 0x10)" 
 _PAST = [f"/dev/d{i} (X): threshold exceeded in the past (smartctl 0x20)" for i in range(12)]
 _DISKS_FULL = [f"Disk /m{i} 95% (>=95%)" for i in range(12)]
 _FAILED = [f"f{i}.service" for i in range(12)]
+_FAILED_UNITS = [f"m{i}.mount" for i in range(12)]
 _INACTIVE = [f"i{i}.service" for i in range(12)]
 _DOWN = [f"d{i}" for i in range(12)]
 _NODATA = [f"n{i}" for i in range(12)]
@@ -732,6 +818,13 @@ LIST_CASES = [
         "critical",
         "Failed: " + ", ".join(_FAILED[:10]),
         id="auto-10-failed",
+    ),
+    pytest.param(
+        lambda mp: _auto({"failed": _FAILED + _FAILED_UNITS, "enabled_inactive": _INACTIVE}),
+        "critical",
+        f"Failed: {_first_ten(_FAILED)}; Failed units: {_first_ten(_FAILED_UNITS)}; "
+        f"Inactive (autostart): {_first_ten(_INACTIVE)}",
+        id="auto-12-failed-12-failed-units-and-inactive",
     ),
     # service_process, list mode
     pytest.param(
@@ -891,6 +984,12 @@ MULTILINE_CASES = [
         "critical",
         "Failed: a b.service; Inactive (autostart): c d.service",
         id="service-process-failed",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["a\nb.mount"], "enabled_inactive": []}),
+        "warning",
+        "Failed units: a b.mount",
+        id="service-process-failed-unit",
     ),
     pytest.param(
         lambda: _outage("zfs", "timeout", "zpool\nlist timed out"),

@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.auth import require_agent
+from app.core.auth import require_agent, require_internal
 from app.core.database import get_db
 from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorHostFacts, MonitorState
 
@@ -269,6 +269,123 @@ def test_report_batches_check_metrics_into_one_write(client_db, monkeypatch):
     assert len(check_batches) == 1, writes
     status_lines = [line for line in check_batches[0] if "monitor_check_status" in line]
     assert len(status_lines) == 2, check_batches[0]
+
+
+def _add_push_check(factory, check_id: str, check_type: str) -> None:
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id=check_id,
+                server_id="srv-1",
+                name="Check",
+                check_type=check_type,
+                config=json.dumps({}),
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.commit()
+
+
+def _lines_of(writes: list[list[str]], check_id: str) -> list[str]:
+    """Every written line of one check, without the timestamp."""
+    return [
+        line.rsplit(" ", 1)[0]
+        for batch in writes
+        for line in batch
+        if f",check_id={check_id}," in line
+    ]
+
+
+@pytest.mark.parametrize(
+    ("check_type", "report", "status"),
+    [
+        pytest.param(
+            "system_state",
+            {"uptime_seconds": 3600, "system_state": {"reboot_required": True}},
+            1,
+            id="system-state-warning",
+        ),
+        pytest.param("system_state", {}, 0, id="system-state-not-evaluated"),
+        pytest.param(
+            "docker_health",
+            {"docker": {"available": False, "error": "daemon_unreachable"}},
+            1,
+            id="docker-outage",
+        ),
+        # A result without even _details (metrics None): agent_resources without its block.
+        pytest.param("agent_resources", {}, 3, id="resources-without-data"),
+    ],
+)
+def test_push_check_without_measured_values_writes_its_status(
+    client_db, monkeypatch, check_type, report, status
+):
+    # The status timeline of the desktop reads only monitor_check_status. A check whose result
+    # carries no measured values wrote nothing, and its timeline stayed empty. Now it writes the
+    # status point, and no duration: the push path has none, a flat 0 ms series says nothing.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-x", check_type)
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 1
+    tags = f"check_id=chk-x,check_type={check_type},name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-x") == [f"monitor_check_status,{tags} value={status}i"]
+
+
+def test_push_check_with_measured_values_writes_one_status_as_before(client_db, monkeypatch):
+    # Next to a check without measured values: no second status line for either, and the
+    # check with values keeps its duration and value lines.
+    from app.core import victoria as vm
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    _add_push_check(factory, "chk-x", "system_state")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    report = {
+        "resources": {"cpu_percent": 50, "memory_percent": 40},
+        "system_state": {"oom_kills": 0},
+    }
+    r = client.post("/agent/srv-1/report", json=report)
+    assert r.status_code == 200, r.text
+    assert r.json()["checksUpdated"] == 2
+    tags = "check_id=chk-1,check_type=agent_resources,name=Resources,server_id=srv-1"
+    assert _lines_of(writes, "chk-1") == [
+        f"monitor_check_status,{tags} value=0i",
+        f"monitor_check_duration_ms,{tags} value=0i",
+        f"monitor_agent_cpu_percent,{tags} value=50i",
+        f"monitor_agent_memory_percent,{tags} value=40i",
+    ]
+    tags = "check_id=chk-x,check_type=system_state,name=Check,server_id=srv-1"
+    assert _lines_of(writes, "chk-x") == [f"monitor_check_status,{tags} value=0i"]
+
+
+def test_system_state_metrics_read_only_the_status_timeline(client_db, monkeypatch):
+    # The push path writes no duration for system_state. Without its own entry in
+    # CHECK_TYPE_METRICS the metrics endpoint would fall back to monitor_check_duration_ms.
+    from app.core import victoria as vm
+    from app.main import app
+
+    client, factory = client_db
+    _add_push_check(factory, "chk-x", "system_state")
+    app.dependency_overrides[require_internal] = lambda: None
+    queries: list[str] = []
+
+    def fake_query_range(query, start, end, step):
+        queries.append(query)
+        return {"data": {"result": []}}
+
+    monkeypatch.setattr(vm.victoria, "query_range", fake_query_range)
+
+    r = client.get("/checks/chk-x/metrics")
+    assert r.status_code == 200, r.text
+    assert queries == ['monitor_check_status_value{check_id="chk-x"}']
 
 
 @pytest.mark.parametrize(

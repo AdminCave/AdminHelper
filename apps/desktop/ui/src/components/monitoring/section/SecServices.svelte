@@ -51,6 +51,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return list.filter((x, i) => list.findIndex((y) => y.name === x.name) === i);
   }
 
+  // The unit type suffixes of _UNIT_TYPES in the checker (checkers/agent.py,
+  // systemd.unit(5)). As there, only a failed .service or a name without one of
+  // them (a Windows service) is critical, any other failed unit warning.
+  const UNIT_TYPES = [
+    '.service',
+    '.socket',
+    '.device',
+    '.mount',
+    '.automount',
+    '.swap',
+    '.target',
+    '.path',
+    '.timer',
+    '.slice',
+    '.scope',
+  ];
+
+  function failedLevel(name: string): Svc['level'] {
+    const service = name.endsWith('.service') || !UNIT_TYPES.some((s) => name.endsWith(s));
+    return service ? 'crit' : 'warn';
+  }
+
   function info(check: MonitorCheck): Info {
     const d = (check.state?.details ?? null) as MonitorServiceDetails | null;
     if (!d) return { neutral: 'monitoring.services.noData', rows: [], problems: 0, count: null };
@@ -60,7 +82,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
     if (d.mode === 'auto') {
       const rows = uniqueByName<Svc>([
-        ...(d.failed ?? []).map<Svc>((n) => ({ name: n, level: 'crit', note: 'failed' })),
+        ...(d.failed ?? []).map<Svc>((n) => ({ name: n, level: failedLevel(n), note: 'failed' })),
         ...(d.enabled_inactive ?? []).map<Svc>((n) => ({
           name: n,
           level: 'warn',

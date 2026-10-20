@@ -105,6 +105,9 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
         "monitor_check_duration_ms_value",
         "monitor_disk_forecast_min_hours_value",
     ],
+    # No measured values, only the status timeline; without the entry the fallback would
+    # ask for monitor_check_duration_ms, which the push path does not write for it.
+    "system_state": [],
 }
 
 # Check types with dynamic metric names (regex query)

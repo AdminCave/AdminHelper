@@ -181,7 +181,8 @@ export type MonitorCheckType =
   | 'zfs_health'
   | 'docker_health'
   | 'smart_health'
-  | 'disk_forecast';
+  | 'disk_forecast'
+  | 'system_state';
 
 export type MonitorSeverity = 'critical' | 'warning' | 'info';
 export type MonitorInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '6h' | '12h' | '24h';
@@ -209,6 +210,18 @@ export interface MonitorCheckConfig {
   memory_crit?: number;
   disk_warn?: number;
   disk_crit?: number;
+  // A disk's percentage alarm counts only below this many GB free; 0 turns it off.
+  disk_min_free_gb?: number;
+  // ignore_mounts and disk_overrides name exact mount paths.
+  ignore_mounts?: string[];
+  disk_overrides?: Record<string, { warn?: number; crit?: number; min_free_gb?: number }>;
+  swap_warn?: number;
+  swap_crit?: number;
+  inode_warn?: number;
+  inode_crit?: number;
+  // Per CPU (load_5m / cpu_count), not a percentage.
+  load_warn?: number;
+  load_crit?: number;
   temp_warn?: number;
   temp_crit?: number;
   hysteresis_pp?: number;
@@ -228,7 +241,7 @@ export interface MonitorCheckConfig {
   capacity_warn?: number;
   capacity_crit?: number;
 
-  // zfs_health and docker_health; absent means true.
+  // zfs_health, docker_health and proxmox_backup; absent means true.
   alert_on_unavailable?: boolean;
 
   // docker_health
@@ -258,6 +271,12 @@ export interface MonitorCheckConfig {
   temp_nvme_crit?: number;
   ignore_devices?: string[];
 
+  // system_state; absent means true.
+  check_reboot?: boolean;
+  check_time_sync?: boolean;
+  check_security_updates?: boolean;
+  check_oom?: boolean;
+
   [key: string]: unknown;
 }
 
@@ -266,6 +285,11 @@ export interface MonitorResourceDisk {
   percent: number;
   used_gb?: number;
   total_gb?: number;
+  // From agent v3 (R-0423) on; inodes_percent only on Linux for a filesystem with inodes.
+  free_gb?: number | null;
+  inodes_percent?: number | null;
+  // A mount from ignore_mounts: listed with its usage, but not rated.
+  ignored?: boolean;
 }
 
 export interface MonitorResourceTemp {
@@ -280,6 +304,19 @@ export interface MonitorResourceDetails {
   memory?: number | null;
   memory_used_mb?: number;
   memory_total_mb?: number;
+  // From agent v3 (R-0423) on, Linux only; swap_total_mb 0 is a host without a swap device.
+  swap?: number | null;
+  swap_total_mb?: number | null;
+  swap_used_mb?: number | null;
+  cpu_count?: number | null;
+  load_per_cpu?: number | null;
+  // false in a container, whose load_5m is the host's: the checker leaves the
+  // load unrated. Missing on a host or a VM.
+  load_rated?: boolean;
+  // The checker's rating per metric (cpu, memory, swap, load, disk:<mount>,
+  // inode:<mount>, temp:<sensor>); a metric it does not name is ok. Details
+  // written before the per-metric hysteresis carry none.
+  problems?: Record<string, 'warning' | 'critical'>;
   disks?: MonitorResourceDisk[];
   temperatures?: MonitorResourceTemp[];
 }
@@ -315,6 +352,10 @@ export interface MonitorContainerDetails {
 }
 
 export interface MonitorBackupDetails {
+  // Details written before R-0492 carry neither. available false: the agent could
+  // not read Proxmox (error is the code), and vms is empty.
+  available?: boolean;
+  error?: string | null;
   vms?: {
     vmid: number;
     name: string;
@@ -366,6 +407,20 @@ export interface MonitorForecastDetails {
   }[];
 }
 
+export interface MonitorSystemStateDetails {
+  // Field names match the system_state checker's _details verbatim. null: the
+  // agent could not determine the point; all null without the block (agent
+  // before report version 3, Windows).
+  reboot_required?: boolean | null;
+  time_synchronized?: boolean | null;
+  security_updates?: number | null;
+  oom_kills?: number | null;
+  // The checker's rating (reboot, time_sync, security_updates, oom): a point it
+  // does not name is no problem, even with a bad value (switched off, or the
+  // clock in the first 15 minutes of uptime).
+  problems?: string[];
+}
+
 export type MonitorCheckDetails =
   | MonitorResourceDetails
   | MonitorServiceDetails
@@ -374,6 +429,7 @@ export type MonitorCheckDetails =
   | MonitorZfsDetails
   | MonitorSmartDetails
   | MonitorForecastDetails
+  | MonitorSystemStateDetails
   | Record<string, unknown>;
 
 export interface MonitorCheckState {

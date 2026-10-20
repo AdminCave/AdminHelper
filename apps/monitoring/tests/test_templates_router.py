@@ -437,7 +437,7 @@ def _builtin(factory, slug="linux-base") -> str:
 
 
 def _ship_version_2(monkeypatch, slug="linux-base") -> dict:
-    """Ship the next version of one standard template (the shipped one + 1):
+    """Ship a new version of one standard template (the shipped one + 1):
     system-resources warns every minute."""
     shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
     tpl = next(t for t in shipped if t["slug"] == slug)
@@ -494,7 +494,13 @@ def test_builtin_update_compares_current_and_shipped_definitions(client, monkeyp
     assert (got["current"]["alertDefinitions"], got["shipped"]["alertDefinitions"]) == ([], [])
     current = got["current"]["checkDefinitions"]
     shipped = got["shipped"]["checkDefinitions"]
-    common = ["agent-heartbeat", "disk-forecast", "service-health", "system-resources"]
+    common = [
+        "agent-heartbeat",
+        "disk-forecast",
+        "service-health",
+        "system-resources",
+        "system-state",
+    ]
     assert sorted(d["def_id"] for d in current) == sorted([*common, "def-ping"])
     assert sorted(d["def_id"] for d in shipped) == sorted([*common, "smart-health"])
     # Only version 2 differs; the definitions the editor saved unchanged do not
@@ -579,8 +585,8 @@ def test_taking_the_update_replaces_the_definitions_and_keeps_check_overrides(cl
         False,
     )
     assert got["builtinUpdateAvailable"] is False
-    # SMART comes back, the ping the user added goes, the other four follow v2
-    assert got["syncResult"] == {"created": 1, "updated": 4, "deleted": 1, "servers": 1}
+    # SMART comes back, the ping the user added goes, the other five follow v2
+    assert got["syncResult"] == {"created": 1, "updated": 5, "deleted": 1, "servers": 1}
     # The answer is the stored template, as PUT /templates returns it
     stored = c.get(f"/templates/{tid}").json()
     assert {k: v for k, v in got.items() if k != "syncResult"} == {
@@ -606,8 +612,8 @@ def test_taking_without_a_newer_version_is_409_and_changes_nothing(client):
 
     assert c.post(f"/templates/{tid}/builtin-update").status_code == 409
     got = c.get(f"/templates/{tid}").json()
-    shipped = builtin_templates.shipped_builtin("linux-base")
-    assert (got["checkDefinitions"], got["builtinVersion"]) == (current, shipped["version"])
+    shipped_version = builtin_templates.shipped_builtin("linux-base")["version"]
+    assert (got["checkDefinitions"], got["builtinVersion"]) == (current, shipped_version)
 
 
 def test_taking_the_update_decides_on_the_row_a_startup_reconcile_committed(client, monkeypatch):
