@@ -424,10 +424,10 @@ where
 /// `POST /api/enrollment/self/revoke` with the enrolled mTLS client: the
 /// certificate is the proof, no JWT. The CA pin keeps the call on our server.
 async fn revoke_on_server(server_url: &str) -> Result<bool, AppError> {
-    // As build_client demands for every server call: no plain http off loopback,
-    // where anyone on the path could answer "revoked" and the leaf would not be
-    // remembered.
-    crate::validation::validate_server_url_secure(server_url)?;
+    // Only over https, on loopback too: over plain http anyone on the path, or any
+    // program of this machine on that port, could answer "revoked" without the CA
+    // pin, and the leaf would not be remembered. The reset is then LocalOnly.
+    crate::validation::validate_https_url(server_url)?;
     let client = enrolled_client()?;
     let url = format!(
         "{}/api/enrollment/self/revoke",
@@ -1645,7 +1645,7 @@ mod tests {
         // server can be handed it.
         let (_reserved, port) = crate::test_tls::refused_port();
 
-        let outcome = reset_identity(&format!("http://127.0.0.1:{port}")).await;
+        let outcome = reset_identity(&format!("https://127.0.0.1:{port}")).await;
 
         assert_eq!(outcome, ResetOutcome::LocalOnly);
         assert_eq!(keyring_store::get(KEYRING_REPLACES), Some(fingerprint));
@@ -1863,6 +1863,36 @@ mod tests {
         assert!(!holds_identity(&a).unwrap());
         assert!(!holds_identity(&created("w-0000000b").keyring_prefix()).unwrap());
         assert!(holds_identity(&standard().keyring_prefix()).unwrap());
+    }
+
+    #[tokio::test]
+    async fn login_binding_a_reset_asks_no_server_over_plain_http() {
+        let _keyring = keyring_store::memory();
+        let workspace = created("w-0000000a");
+        let prefix = workspace.keyring_prefix();
+        let _entered = workspace::enter(workspace);
+        let (cert, key, fingerprint) = leaf();
+        store_identity(&key, &issued(&cert)).unwrap();
+        // On loopback too: any program of this machine may listen there and say "revoked".
+        let (url, request) =
+            answer_once("HTTP/1.1 204 No Content\r\nconnection: close\r\n\r\n".to_string()).await;
+
+        let outcome = reset_identity(&url).await;
+
+        assert_eq!(outcome, ResetOutcome::LocalOnly);
+        request.abort();
+        assert!(
+            request.await.is_err_and(|e| e.is_cancelled()),
+            "the reset asked {url}"
+        );
+        // Gone here, and remembered for the next enrollment to name as replaced.
+        for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+            assert_eq!(keyring_store::get(&format!("{prefix}{entry}")), None);
+        }
+        assert_eq!(
+            keyring_store::get(&format!("{prefix}{KEYRING_REPLACES}")),
+            Some(fingerprint)
+        );
     }
 
     #[tokio::test]

@@ -11,10 +11,12 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+use crate::enrollment;
 use crate::error::AppError;
 use crate::models::{
     Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode, Settings, SyncMode,
 };
+use crate::validation::{validate_https_url, validate_server_url_secure};
 use crate::workspace::{self, Meta};
 
 pub(crate) fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
@@ -246,9 +248,12 @@ pub fn save_settings(app: &tauri::AppHandle, settings: &Settings) -> Result<(), 
 
 fn save_settings_in(base: &Path, seen: &SeenPrefs, settings: &Settings) -> Result<(), AppError> {
     if let Ok(ws) = workspace::current() {
+        let _meta = meta_lock();
         let dir = ws.data_dir(base);
         let meta = Meta::load(&dir)?;
-        let updated = meta_with(&meta, settings)?;
+        let updated = meta_with(&meta, settings, || {
+            enrollment::holds_identity(&ws.keyring_prefix())
+        })?;
         if updated != meta {
             updated.store(&dir)?;
         }
@@ -266,6 +271,49 @@ fn save_settings_in(base: &Path, seen: &SeenPrefs, settings: &Settings) -> Resul
     }
     *seen = Some(mine);
     Ok(())
+}
+
+/// [`save_settings_in`] in the app data dir `base`, for the tests of other modules.
+#[cfg(test)]
+pub(crate) fn save_settings_at(base: &Path, settings: &Settings) -> Result<(), AppError> {
+    save_settings_in(base, &SeenPrefs::new(), settings)
+}
+
+/// Held while this process reads and rewrites the `workspace.json` of its workspace
+/// ([`save_settings`], [`keep_enrolled_url`]): a save then either gives the workspace its first
+/// URL before a registration keeps one, which the registration sees, or finds the URL kept.
+static META_LOCK: Mutex<()> = Mutex::new(());
+
+fn meta_lock() -> MutexGuard<'static, ()> {
+    // Nothing lives under the guard; the file it guards is written whole (`write_json_atomic`).
+    META_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Why [`keep_enrolled_url`] fails for a workspace that took another server meanwhile.
+const URL_TAKEN: &str = "this workspace took the URL of another server while this device \
+     registered; the new device identity is reset, register again";
+
+/// Makes `url`, where a registration of this device just succeeded, the URL of the workspace of
+/// this process in the app data dir `base`, if it has none yet: the identity is that server's,
+/// and the purge revokes it there. The sign-in that follows finds it kept ([`meta_with`] takes
+/// no first URL beside an identity). The registration checked the URL as every call to a server
+/// does (`http_client`). A workspace with a URL of that server keeps it: the registration went
+/// there ([`workspace::sign_in_url`]). One that took another server meanwhile (a save of the
+/// settings while the registration waited for the server) is an error: the identity would be
+/// revoked at the wrong server, and the caller resets it.
+pub(crate) fn keep_enrolled_url(base: &Path, url: &str) -> Result<(), AppError> {
+    let _meta = meta_lock();
+    let dir = workspace_dir(base)?;
+    let meta = Meta::load(&dir)?;
+    match &meta.url {
+        None => Meta {
+            url: Some(url.to_string()),
+            ..meta
+        }
+        .store(&dir),
+        Some(kept) if workspace::same_server(kept, url) => Ok(()),
+        Some(_) => Err(AppError::Validation(URL_TAKEN.to_string())),
+    }
 }
 
 /// The [`Settings`] of `prefs` and, in a workspace, of its `meta`; the launcher has the
@@ -309,11 +357,28 @@ fn settings_of(prefs: Prefs, meta: Option<&Meta>) -> Settings {
 const URL_KEPT: &str =
     "this workspace keeps its URL; change it in the workspace list while the workspace is closed";
 
+/// Why [`save_settings`] refuses the first URL of a server workspace that holds a device
+/// identity.
+const IDENTITY_WITHOUT_URL: &str = "this workspace holds a device identity but no URL of its \
+     server; reset the device identity before it takes one";
+
 /// `meta` with the fields of the workspace `settings` holds. The kind stays (`mode` is never
 /// written), and so does a URL the workspace has: another one would be another installation
-/// under the sign-in and device identity of this one. Until it has one, it takes the first; the
-/// URL field of the other kind has no place in it.
-fn meta_with(meta: &Meta, settings: &Settings) -> Result<Meta, AppError> {
+/// under the sign-in and device identity of this one. A server URL is the same one when it names
+/// the same server ([`workspace::same_server`]), as the sign-in takes it, so the save after a
+/// sign-in under another spelling goes through; a sync source is the same one only as it is
+/// spelled, another path being another source. Until it has one, it takes the first, checked as
+/// the workspace list checks it; the URL field of the other kind has no place in it.
+///
+/// A server workspace whose keyring holds a device identity (`holds_identity`, asked only then)
+/// takes no first URL: the purge revokes the identity at the URL the workspace has, and only
+/// the server that issued it may be that one. A registration gives a workspace without a URL
+/// the one it went to at once ([`keep_enrolled_url`]).
+fn meta_with(
+    meta: &Meta,
+    settings: &Settings,
+    holds_identity: impl FnOnce() -> Result<bool, AppError>,
+) -> Result<Meta, AppError> {
     let sent = match meta.kind {
         SyncMode::Server => settings.server_url.as_deref(),
         SyncMode::Sync => settings.sync_url.as_deref(),
@@ -321,10 +386,23 @@ fn meta_with(meta: &Meta, settings: &Settings) -> Result<Meta, AppError> {
     }
     .map(str::trim)
     .filter(|url| !url.is_empty());
+    let same = |kept: &str, url: &str| match meta.kind {
+        SyncMode::Server => workspace::same_server(kept, url),
+        SyncMode::Sync | SyncMode::Local => kept.trim() == url,
+    };
     let url = match (&meta.url, sent) {
         (kept, None) => kept.clone(),
-        (None, Some(first)) => Some(first.to_string()),
-        (Some(kept), Some(url)) if kept.trim() == url => Some(kept.clone()),
+        (None, Some(first)) => {
+            match meta.kind {
+                SyncMode::Server => validate_server_url_secure(first)?,
+                SyncMode::Sync | SyncMode::Local => validate_https_url(first)?,
+            }
+            if meta.kind == SyncMode::Server && holds_identity()? {
+                return Err(AppError::Validation(IDENTITY_WITHOUT_URL.to_string()));
+            }
+            Some(first.to_string())
+        }
+        (Some(kept), Some(url)) if same(kept, url) => Some(kept.clone()),
         (Some(_), Some(_)) => return Err(AppError::Validation(URL_KEPT.to_string())),
     };
     Ok(Meta {
@@ -716,10 +794,12 @@ mod settings_tests {
     use serde_json::{json, Value};
 
     use super::{
-        load_connections_in, load_settings_in, save_connections_in, save_settings_in,
-        write_json_atomic, write_json_pretty, Prefs, PrefsLock, SeenPrefs, PREFS_FILE, SEEN_PREFS,
+        keep_enrolled_url, load_connections_in, load_settings_in, save_connections_in,
+        save_settings_in, write_json_atomic, write_json_pretty, Prefs, PrefsLock, SeenPrefs,
+        IDENTITY_WITHOUT_URL, PREFS_FILE, SEEN_PREFS, URL_KEPT, URL_TAKEN,
     };
     use crate::error::AppError;
+    use crate::keyring_store;
     use crate::models::{Connection, RdpScalingMode, Settings, SyncMode};
     use crate::workspace::{self, EnteredWorkspace, Meta, Workspace, WorkspaceId, PALETTE};
 
@@ -1075,6 +1155,216 @@ mod settings_tests {
             Err(AppError::Validation(_))
         ));
         assert_eq!(meta_in(base, "s").url.as_deref(), Some(SYNC_URL));
+    }
+
+    #[test]
+    fn login_binding_the_save_after_a_sign_in_keeps_the_server_url_however_it_is_spelled() {
+        let scratch = Scratch::new("settings-spelling");
+        let base = &scratch.0;
+        let kept = "https://ops:geheim@ah.example.com/base";
+        make(base, "a", &meta(SyncMode::Server, Some(kept)));
+        make(base, "s", &meta(SyncMode::Sync, Some(SYNC_URL)));
+        let process = SeenPrefs::new();
+        {
+            let _a = enter("a");
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            // What the session saves after a sign-in at the same server, spelled otherwise.
+            settings.server_url = Some(" https://AH.example.com:443/ ".to_string());
+            settings.last_username = Some("admin".to_string());
+            save_settings_in(base, &process, &settings).unwrap();
+            assert_eq!(
+                meta_in(base, "a"),
+                Meta {
+                    url: Some(kept.to_string()),
+                    last_username: Some("admin".to_string()),
+                    ..meta(SyncMode::Server, None)
+                }
+            );
+
+            // Another server stays refused, and the error names no part of the URL kept.
+            for other in [
+                "https://ah.example.com:8443",
+                "http://ah.example.com",
+                "https://other.example.com/base",
+            ] {
+                settings.server_url = Some(other.to_string());
+                settings.last_username = Some("ops".to_string());
+                let refused = save_settings_in(base, &process, &settings).unwrap_err();
+                assert!(
+                    matches!(&refused, AppError::Validation(msg) if msg.as_str() == URL_KEPT),
+                    "{other}: {refused:?}"
+                );
+                assert_eq!(meta_in(base, "a").url.as_deref(), Some(kept), "{other}");
+                assert_eq!(
+                    meta_in(base, "a").last_username.as_deref(),
+                    Some("admin"),
+                    "{other}"
+                );
+            }
+        }
+        // A sync source is the same one only as it is spelled: another path is another source.
+        let _s = enter("s");
+        let mut settings = load_settings_in(base, Some(&process)).unwrap();
+        settings.sync_url = Some("https://sync.example.com/other.json".to_string());
+        assert!(matches!(
+            save_settings_in(base, &process, &settings),
+            Err(AppError::Validation(_))
+        ));
+        assert_eq!(meta_in(base, "s").url.as_deref(), Some(SYNC_URL));
+    }
+
+    #[test]
+    fn login_binding_a_workspace_takes_only_a_valid_first_url() {
+        let scratch = Scratch::new("settings-first-url");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Server, None));
+        make(base, "s", &meta(SyncMode::Sync, None));
+        let process = SeenPrefs::new();
+        {
+            let _a = enter("a");
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            for bad in [
+                "http://ah.example.com",
+                "ftp://ah.example.com",
+                "ah.example.com",
+            ] {
+                settings.server_url = Some(bad.to_string());
+                assert!(
+                    matches!(
+                        save_settings_in(base, &process, &settings),
+                        Err(AppError::Validation(_))
+                    ),
+                    "{bad}"
+                );
+                assert_eq!(meta_in(base, "a").url, None, "{bad}");
+            }
+            // As the workspace list and the sign-in take it: http only on loopback.
+            settings.server_url = Some("http://127.0.0.1:8000".to_string());
+            save_settings_in(base, &process, &settings).unwrap();
+            assert_eq!(
+                meta_in(base, "a").url.as_deref(),
+                Some("http://127.0.0.1:8000")
+            );
+        }
+        let _s = enter("s");
+        let mut settings = load_settings_in(base, Some(&process)).unwrap();
+        for bad in [
+            "http://sync.example.com/connections.json",
+            "http://127.0.0.1/connections.json",
+        ] {
+            settings.sync_url = Some(bad.to_string());
+            assert!(
+                save_settings_in(base, &process, &settings).is_err(),
+                "{bad}"
+            );
+            assert_eq!(meta_in(base, "s").url, None, "{bad}");
+        }
+        settings.sync_url = Some(SYNC_URL.to_string());
+        save_settings_in(base, &process, &settings).unwrap();
+        assert_eq!(meta_in(base, "s").url.as_deref(), Some(SYNC_URL));
+    }
+
+    /// A device identity behind the keyring prefix of the workspace `id`, as far as
+    /// `enrollment::holds_identity` looks: one entry of it is one.
+    fn hold_identity(id: &str) {
+        let key = format!("{}enroll|cert", workspace(id).keyring_prefix());
+        keyring_store::set(&key, "pem").unwrap();
+    }
+
+    #[test]
+    fn login_binding_a_server_workspace_with_a_device_identity_takes_no_first_url() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("settings-identity");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Server, None));
+        make(base, "b", &meta(SyncMode::Server, Some(SERVER_URL)));
+        make(base, "s", &meta(SyncMode::Sync, None));
+        for id in ["a", "b", "s"] {
+            hold_identity(id);
+        }
+        let process = SeenPrefs::new();
+        {
+            // No first URL beside an identity: the purge would revoke it there.
+            let _a = enter("a");
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            settings.server_url = Some(SERVER_URL.to_string());
+            settings.last_username = Some("admin".to_string());
+            let refused = save_settings_in(base, &process, &settings).unwrap_err();
+            assert!(
+                matches!(&refused, AppError::Validation(msg) if msg.as_str() == IDENTITY_WITHOUT_URL),
+                "{refused:?}"
+            );
+            assert_eq!(meta_in(base, "a"), meta(SyncMode::Server, None));
+        }
+        {
+            // Nor another server for one that has a URL; its own, however spelled, goes.
+            let _b = enter("b");
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            settings.server_url = Some("https://other.example.com".to_string());
+            let refused = save_settings_in(base, &process, &settings).unwrap_err();
+            assert!(
+                matches!(&refused, AppError::Validation(msg) if msg.as_str() == URL_KEPT),
+                "{refused:?}"
+            );
+            assert_eq!(meta_in(base, "b").url.as_deref(), Some(SERVER_URL));
+            settings.server_url = Some("https://AH.example.com/".to_string());
+            settings.last_username = Some("admin".to_string());
+            save_settings_in(base, &process, &settings).unwrap();
+            assert_eq!(meta_in(base, "b").url.as_deref(), Some(SERVER_URL));
+            assert_eq!(meta_in(base, "b").last_username.as_deref(), Some("admin"));
+        }
+        // A sync workspace has no identity of its own (a migrated one sees the one of the
+        // server workspace): its first source goes.
+        let _s = enter("s");
+        let mut settings = load_settings_in(base, Some(&process)).unwrap();
+        settings.sync_url = Some(SYNC_URL.to_string());
+        save_settings_in(base, &process, &settings).unwrap();
+        assert_eq!(meta_in(base, "s").url.as_deref(), Some(SYNC_URL));
+    }
+
+    #[test]
+    fn login_binding_a_registration_keeps_its_url_for_the_sign_in_that_follows() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("settings-enrolled-url");
+        let base = &scratch.0;
+        make(base, "a", &meta(SyncMode::Server, None));
+        make(base, "b", &meta(SyncMode::Server, Some(SERVER_URL)));
+
+        // The launcher keeps no URL.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = keep_enrolled_url(base, SERVER_URL).unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        {
+            // The registration of a workspace without a URL makes its URL the workspace's.
+            let _a = enter("a");
+            keep_enrolled_url(base, SERVER_URL).unwrap();
+            hold_identity("a");
+            assert_eq!(
+                meta_in(base, "a"),
+                Meta {
+                    url: Some(SERVER_URL.to_string()),
+                    ..meta(SyncMode::Server, None)
+                }
+            );
+            // The sign-in after it saves as ever, under another spelling of that server too.
+            let process = SeenPrefs::new();
+            let mut settings = load_settings_in(base, Some(&process)).unwrap();
+            settings.server_url = Some("https://AH.example.com:443/".to_string());
+            settings.last_username = Some("admin".to_string());
+            save_settings_in(base, &process, &settings).unwrap();
+            assert_eq!(meta_in(base, "a").url.as_deref(), Some(SERVER_URL));
+            assert_eq!(meta_in(base, "a").last_username.as_deref(), Some("admin"));
+        }
+        // A workspace with a URL keeps it: as it is for a registration at that server, as an
+        // error for one at another (the caller resets that identity).
+        let _b = enter("b");
+        keep_enrolled_url(base, "https://AH.example.com:443/").unwrap();
+        let refused = keep_enrolled_url(base, "https://other.example.com").unwrap_err();
+        assert!(
+            matches!(&refused, AppError::Validation(msg) if msg.as_str() == URL_TAKEN),
+            "{refused:?}"
+        );
+        assert_eq!(meta_in(base, "b"), meta(SyncMode::Server, Some(SERVER_URL)));
     }
 
     #[test]

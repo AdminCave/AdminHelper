@@ -181,7 +181,9 @@ Altdateien die Quelle bleiben.
 **Tauri-IPC (intern, UI ↔ Rust):**
 - `Settings` behält Form und Feldnamen (`types.ts`, Parität unverändert): `load_settings` setzt sie aus
   `prefs.json` und `workspace.json` zusammen, `mode` ist die Art. `save_settings` schreibt `mode` nie, `serverUrl`
-  bzw. `url` nur, solange der Workspace keine hat; eine andere URL ist ein Fehler.
+  bzw. `url` nur, solange der Workspace keine hat; eine andere URL ist ein Fehler (Server-URL: eine andere
+  Origin; Sync-Quelle: jede andere Schreibweise), ebenso eine erste Server-URL, solange der Workspace eine
+  Geräte-Identität hält.
 - Neu: `workspace_context` → `{launcher, workspace?: WorkspaceInfo}`; Launcher-only `list_workspaces` →
   `WorkspaceList{workspaces: WorkspaceInfo[], lastUsed, migratedNotice}`, `save_workspace(draft: WorkspaceDraft)`,
   `delete_workspace(id)` → `ResetOutcome`, `open_workspace(id)`; Workspace-only `open_launcher`.
@@ -189,6 +191,11 @@ Altdateien die Quelle bleiben.
   `SyncMode`. Launcher-Commands lehnen im Workspace-Prozess ab und umgekehrt; ohne Workspace-Kontext liefern
   Datenpfade und Keyring-Präfixe einen Fehler (fail closed).
 - `login` und `enroll_with_token` nehmen nur die URL des Workspaces an (oder die übergebene, solange er keine hat);
+  eine erfolgreiche Registrierung macht die übergebene sofort zur URL des Workspace (kann er sie nicht behalten,
+  etwa weil er währenddessen einen anderen Server bekam, wird die neue Identität sofort beim ausstellenden Server
+  widerrufen und die Registrierung schlägt fehl). Ebenso binden
+  `reset_device_identity`, `check_server_cert` und `reset_server_cert_pin` (dieser auch an die Sync-Quelle) an die
+  URL des Workspace; der Widerruf der Geräte-Identität geht nur über HTTPS, sonst bleibt es bei `localOnly`.
   `login` lehnt dieselbe normierte Origin mit demselben Benutzernamen eines anderen Workspace ab.
 - Neue Fehlertexte aus Rust sind englisch (bestehende deutsche bleiben).
 

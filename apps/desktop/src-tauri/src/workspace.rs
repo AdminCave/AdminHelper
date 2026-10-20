@@ -8,8 +8,8 @@
 //! the launcher serves none. Also the lock that keeps a workspace in one process and the two
 //! files that say which workspaces exist (`workspaces.json`) and what each one is
 //! (`workspace.json`), what the start of a process comes to ([`startup`]), which process a
-//! command is for ([`check_side`]), and where a workspace signs in ([`sign_in_url`],
-//! [`check_sign_in_once`]).
+//! command is for ([`check_side`]), which server its window means ([`own_url`]), and where a
+//! workspace signs in ([`sign_in_url`], [`check_sign_in_once`]).
 
 use std::ffi::OsString;
 use std::fmt;
@@ -661,30 +661,60 @@ pub fn check_side(side: Side, current: Option<&Workspace>) -> Result<(), AppErro
     }
 }
 
-/// The URL a sign-in or an enrollment of the workspace `meta` goes to, `sent` being the one the
-/// webview names: the workspace's own, of which `sent` must name the server (the same origin,
-/// [`server_origin`]); until the workspace has one, `sent`, which the save after the sign-in
-/// makes its own (`storage::save_settings`). Another server would be another installation under
-/// the sign-in and device identity of this workspace. Only a server workspace signs in or
-/// registers the device: a sync or local one has no server, and no purge would revoke an
-/// identity it took.
-pub fn sign_in_url(meta: &Meta, sent: &str) -> Result<String, AppError> {
-    if meta.kind != SyncMode::Server {
+/// Whether the URLs `a` and `b` name one server: the same origin (scheme, host regardless of
+/// case, port with the default filled in, so `https://H` and `https://h:443/` are one). A URL
+/// that does not parse names none.
+pub(crate) fn same_server(a: &str, b: &str) -> bool {
+    match (Url::parse(a), Url::parse(b)) {
+        (Ok(a), Ok(b)) => a.origin() == b.origin(),
+        _ => false,
+    }
+}
+
+/// The server of `url` as an error names it: its origin, never the URL, which may carry a user
+/// and a password.
+fn named_server(url: &str) -> String {
+    match Url::parse(url).map(|url| url.origin()) {
+        Ok(origin) if origin.is_tuple() => origin.ascii_serialization(),
+        _ => "its URL names".to_string(),
+    }
+}
+
+/// The URL of the workspace `meta` that `sent`, the URL its window names, stands for: the one it
+/// keeps, trimmed, of which `sent` must name the server ([`same_server`]); until it has one,
+/// `sent`. Another server would be another installation under the sign-in, the device identity
+/// or the pins of this workspace. A local workspace has no server.
+pub fn own_url(meta: &Meta, sent: &str) -> Result<String, AppError> {
+    if meta.kind == SyncMode::Local {
         return Err(AppError::Validation(
-            "only a server workspace signs in or registers this device".to_string(),
+            "a local workspace has no server".to_string(),
         ));
     }
     let sent = sent.trim();
-    let Some(kept) = &meta.url else {
-        return Ok(sent.to_string());
-    };
-    if Url::parse(sent).is_ok_and(|sent| server_origin(meta) == Some(sent.origin())) {
-        Ok(kept.clone())
-    } else {
-        Err(AppError::Validation(format!(
-            "this workspace belongs to the server {kept}; another server is another workspace"
-        )))
+    match meta.url.as_deref().map(str::trim) {
+        None => Ok(sent.to_string()),
+        Some(kept) if same_server(kept, sent) => Ok(kept.to_string()),
+        Some(kept) => Err(AppError::Validation(format!(
+            "this workspace belongs to the server {}; another server is another workspace",
+            named_server(kept)
+        ))),
     }
+}
+
+/// The URL a sign-in, an enrollment or a reset of the device identity of the workspace `meta`
+/// goes to, `sent` being the one the webview names ([`own_url`]); until the workspace has one,
+/// `sent`, which a registration that succeeds there (`storage::keep_enrolled_url`), or else the
+/// save after the sign-in (`storage::save_settings`), makes its own. Only a server workspace
+/// signs in or has a device identity: a sync or local one has no server, and no purge would
+/// revoke an identity it took.
+pub fn sign_in_url(meta: &Meta, sent: &str) -> Result<String, AppError> {
+    if meta.kind != SyncMode::Server {
+        return Err(AppError::Validation(
+            "only a server workspace signs in, registers this device or resets its identity"
+                .to_string(),
+        ));
+    }
+    own_url(meta, sent)
 }
 
 /// Refuses the sign-in of `username` at `url` in the workspace `own` while another of
@@ -792,9 +822,10 @@ mod tests {
 
     use super::{
         acquire, acquire_within, check_side, check_sign_in_once, context, current, enter, is_open,
-        metas, set_current, sign_in_url, startup, AppError, Held, InstanceLock, Meta, Mode, Plan,
-        Registry, RegistryEntry, Side, Workspace, WorkspaceId, ACQUIRE_TIMEOUT, EXIT_FAILED,
-        EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE, REGISTRY_FILE, USAGE,
+        metas, own_url, same_server, set_current, sign_in_url, startup, AppError, Held,
+        InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Side, Workspace, WorkspaceId,
+        ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE,
+        REGISTRY_FILE, USAGE,
     };
     use crate::models::SyncMode;
 
@@ -1443,6 +1474,80 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn login_binding_the_url_of_the_workspace_comes_trimmed_and_an_error_names_its_origin_only() {
+        let kept = server(Some(
+            " https://ops:geheim@AH.example.com:443/base?token=t1 ",
+        ));
+        assert_eq!(
+            sign_in_url(&kept, "https://ah.example.com").unwrap(),
+            "https://ops:geheim@AH.example.com:443/base?token=t1"
+        );
+        assert_eq!(
+            sign_in_url(&kept, "https://other.example.com")
+                .unwrap_err()
+                .to_string(),
+            "this workspace belongs to the server https://ah.example.com; another server is \
+             another workspace"
+        );
+        // A URL of the workspace that does not parse, or names no server, names no server
+        // either, nor itself.
+        for broken in ["ops:geheim@not a url", "https://ops:geheim@", "geheim"] {
+            let refused = sign_in_url(&server(Some(broken)), "https://ah.example.com")
+                .unwrap_err()
+                .to_string();
+            assert!(
+                refused.starts_with("this workspace belongs to the server its URL names;"),
+                "{broken}: {refused}"
+            );
+            assert!(!refused.contains("geheim"), "{broken}: {refused}");
+        }
+    }
+
+    #[test]
+    fn login_binding_the_window_of_a_workspace_means_the_server_it_keeps() {
+        // A sync workspace keeps the server of its source.
+        let sync = Meta {
+            kind: SyncMode::Sync,
+            url: Some("https://sync.example.com/connections.json".to_string()),
+            ..meta()
+        };
+        assert_eq!(
+            own_url(&sync, " https://SYNC.example.com:443/ ").unwrap(),
+            "https://sync.example.com/connections.json"
+        );
+        assert_refused(
+            own_url(&sync, "https://ah.example.com"),
+            "this workspace belongs to the server https://sync.example.com;",
+            "sync",
+        );
+        // Until it has one, the one sent.
+        let fresh = Meta { url: None, ..sync };
+        assert_eq!(
+            own_url(&fresh, " https://ah.example.com ").unwrap(),
+            "https://ah.example.com"
+        );
+        // A local workspace has no server to mean.
+        for url in [Some("https://ah.example.com"), None] {
+            let local = Meta {
+                kind: SyncMode::Local,
+                url: url.map(String::from),
+                ..meta()
+            };
+            assert_refused(
+                own_url(&local, "https://ah.example.com"),
+                "a local workspace has no server",
+                &format!("{url:?}"),
+            );
+        }
+        // One server however a URL spells it; none for a URL that does not parse.
+        assert!(same_server("https://H", "https://h:443/path?q"));
+        assert!(same_server("http://127.0.0.1", "http://127.0.0.1:80/"));
+        assert!(!same_server("https://h", "http://h"));
+        assert!(!same_server("https://h", "https://h:8443"));
+        assert!(!same_server("not a url", "not a url"));
     }
 
     #[test]

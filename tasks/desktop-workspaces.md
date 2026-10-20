@@ -161,8 +161,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- login_binding
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T14
 
-### T38 — Widerruf der Geräte-Identität nur über HTTPS und an die Workspace-URL gebunden  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/workspace.rs
+### T38 — Widerruf der Geräte-Identität nur über HTTPS und an die Workspace-URL gebunden  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/workspace.rs, docs/features/desktop-workspaces.md
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @ea07bf39 2026-10-20T11:07:25+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T38.verdict.json)
 Änderung: Kevin 2026-10-20 (Härtung zur Bindung an die Workspace-URL, aus dem security-Review zu T15): Der Widerruf der Geräte-Identität geht nur über HTTPS (`validate_https_url` statt der Prüfung, die Loopback-HTTP zulässt). `reset_device_identity` nimmt die URL nicht mehr aus der Webview, sondern die des Workspace (wie `sign_in_target` in T15); dasselbe für `reset_server_cert_pin` und `check_server_cert`, soweit sie eine Server-URL des Workspace betreffen. Das Speichern der ersten oder einer geänderten Server-URL über die Einstellungen (`storage::meta_with`) wird bei vorhandener Geräte-Identität wie in `launcher::edit` abgelehnt und die URL dort validiert. Fehlertexte nennen höchstens die Origin, nie die ganze gespeicherte URL. Tests: Widerruf gegen eine HTTP-URL wird nicht versucht (kein Revoked); `reset_device_identity` mit fremder URL wirkt auf die Workspace-URL bzw. wird abgelehnt; `meta_with` lehnt einen Origin-Wechsel bei Identität ab; Fehlertext ohne Userinfo. Nachtrag (T15-Review): `sign_in_url` gibt die gespeicherte URL getrimmt zurück (`kept.trim()`); `meta_with` vergleicht die Server-URL per Origin wie `sign_in_url` (heute exakt, dann scheitert das Speichern nach einem Login mit anders geschriebener URL still und `lastUsername` fehlt), Test dazu.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- login_binding
 Doku: keine (intern; Doku mit T33)

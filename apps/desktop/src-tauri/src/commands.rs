@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
 
@@ -26,7 +27,7 @@ use crate::storage;
 use crate::sync;
 use crate::tofu;
 use crate::tunnel;
-use crate::workspace::{self, Side, WorkspaceId};
+use crate::workspace::{self, Meta, Side, WorkspaceId};
 
 /// Resolve the "allow self-signed certs" flag: an explicit per-call override, else
 /// the persisted setting (default false on a missing/corrupt settings.json). The
@@ -55,9 +56,18 @@ fn rdp_options(settings: &Settings) -> RdpOptions<'_> {
 /// Checks whether the server certificate is valid. Returns true only if the
 /// server is reachable with a publicly-trusted cert; any error (self-signed/
 /// invalid cert, but also DNS/timeout/connection failures) returns false.
+/// Only the server of this workspace ([`sign_in_target`]).
 #[tauri::command]
-pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
-    proxy::check_server_cert(&server_url).await
+pub async fn check_server_cert(
+    app: tauri::AppHandle,
+    server_url: String,
+) -> Result<bool, AppError> {
+    check_server_cert_in(&storage::app_data_dir(&app)?, &server_url).await
+}
+
+/// [`check_server_cert`] in the app data dir `base`.
+async fn check_server_cert_in(base: &Path, sent: &str) -> Result<bool, AppError> {
+    proxy::check_server_cert(&sign_in_target(base, sent, None)?).await
 }
 
 /// Build a redacted diagnostics report (version, OS, recent log tail) for a bug
@@ -69,10 +79,18 @@ pub fn generate_diagnostics(app: tauri::AppHandle) -> Result<String, AppError> {
 
 /// Forget the pinned (TOFU) certificate for a server, so the next connection
 /// re-pins on first use. For recovering from a legitimate certificate rotation
-/// after the pin-mismatch error.
+/// after the pin-mismatch error. The pins belong to the device, not to a
+/// workspace: only the server or sync source of this workspace
+/// ([`workspace::own_url`]), never that of another one.
 #[tauri::command]
-pub fn reset_server_cert_pin(server_url: String) -> Result<(), AppError> {
-    tofu::forget_pin(&server_url);
+pub fn reset_server_cert_pin(app: tauri::AppHandle, server_url: String) -> Result<(), AppError> {
+    reset_server_cert_pin_in(&storage::app_data_dir(&app)?, &server_url)
+}
+
+/// [`reset_server_cert_pin`] in the app data dir `base`.
+fn reset_server_cert_pin_in(base: &Path, sent: &str) -> Result<(), AppError> {
+    let (_, meta) = own_meta(base)?;
+    tofu::forget_pin(&workspace::own_url(&meta, sent)?);
     Ok(())
 }
 
@@ -107,26 +125,45 @@ pub fn is_device_enrolled() -> bool {
 /// pin in the same step lets that fallback re-pin instead of being rejected by
 /// the old pin. The user must log in / re-enroll afterwards. The identity is
 /// revoked at the server first, where it can be (R-0224); the outcome tells the
-/// UI whether that happened.
+/// UI whether that happened. Only at the server of this workspace
+/// ([`sign_in_target`]), where its purge would revoke it too.
 #[tauri::command]
 pub async fn reset_device_identity(
+    app: tauri::AppHandle,
     server_url: String,
 ) -> Result<enrollment::ResetOutcome, AppError> {
+    reset_device_identity_in(&storage::app_data_dir(&app)?, &server_url).await
+}
+
+/// [`reset_device_identity`] in the app data dir `base`.
+async fn reset_device_identity_in(
+    base: &Path,
+    sent: &str,
+) -> Result<enrollment::ResetOutcome, AppError> {
+    let server_url = sign_in_target(base, sent, None)?;
     let outcome = enrollment::reset_identity(&server_url).await;
     tofu::forget_pin(&server_url);
     Ok(outcome)
 }
 
-/// The URL a sign-in or an enrollment of the workspace of this process goes to, in the app data
-/// dir `base`, `sent` being the one the webview names ([`workspace::sign_in_url`]); for a
-/// sign-in as `username`, only while no other workspace signs in to that server as that user
-/// ([`workspace::check_sign_in_once`]). The launcher signs in nowhere.
-fn sign_in_target(base: &Path, sent: &str, username: Option<&str>) -> Result<String, AppError> {
+/// The workspace of this process and its `workspace.json`, in the app data dir `base`. The
+/// launcher has none.
+fn own_meta(base: &Path) -> Result<(WorkspaceId, Meta), AppError> {
     let ws = workspace::current()?;
     let meta = workspace::load_meta(&ws.id, &ws.data_dir(base))?;
+    Ok((ws.id, meta))
+}
+
+/// The URL a sign-in, an enrollment or a reset of the device identity of the workspace of this
+/// process goes to, in the app data dir `base`, `sent` being the one the webview names
+/// ([`workspace::sign_in_url`]); for a sign-in as `username`, only while no other workspace
+/// signs in to that server as that user ([`workspace::check_sign_in_once`]). The launcher signs
+/// in nowhere.
+fn sign_in_target(base: &Path, sent: &str, username: Option<&str>) -> Result<String, AppError> {
+    let (id, meta) = own_meta(base)?;
     let url = workspace::sign_in_url(&meta, sent)?;
     if let Some(username) = username {
-        workspace::check_sign_in_once(&ws.id, &url, username, &workspace::metas(base)?)?;
+        workspace::check_sign_in_once(&id, &url, username, &workspace::metas(base)?)?;
     }
     Ok(url)
 }
@@ -142,9 +179,43 @@ pub async fn enroll_with_token(
     token: String,
     allow_self_signed: Option<bool>,
 ) -> Result<(), AppError> {
-    let server_url = sign_in_target(&storage::app_data_dir(&app)?, &server_url, None)?;
+    let base = storage::app_data_dir(&app)?;
     let self_signed = self_signed_setting(&app, allow_self_signed);
-    enrollment::enroll_with_token(&server_url, &token, self_signed).await
+    enroll_with_token_in(
+        &base,
+        &server_url,
+        |url| async move { enrollment::enroll_with_token(&url, &token, self_signed).await },
+        |url| async move { enrollment::reset_identity(&url).await },
+    )
+    .await
+}
+
+/// [`enroll_with_token`] in the app data dir `base`, `enroll` registering this device at the URL
+/// it gets: the server of this workspace ([`sign_in_target`]). A workspace without a URL takes
+/// the one of a registration that succeeded at once ([`storage::keep_enrolled_url`]): the
+/// identity is that server's, and the purge revokes it there. A workspace that does not keep it
+/// (it took another server while the registration waited, or its file does not write) would
+/// hold an identity its purge cannot revoke where it was issued: `reset` revokes it there at
+/// once (`enrollment::reset_identity`), and the registration fails.
+async fn enroll_with_token_in<E, EnrollFut, R, ResetFut>(
+    base: &Path,
+    sent: &str,
+    enroll: E,
+    reset: R,
+) -> Result<(), AppError>
+where
+    E: FnOnce(String) -> EnrollFut,
+    EnrollFut: Future<Output = Result<(), AppError>>,
+    R: FnOnce(String) -> ResetFut,
+    ResetFut: Future<Output = enrollment::ResetOutcome>,
+{
+    let server_url = sign_in_target(base, sent, None)?;
+    enroll(server_url.clone()).await?;
+    if let Err(e) = storage::keep_enrolled_url(base, &server_url) {
+        reset(server_url).await;
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Enroll a long-lived browser cert (A5c) at the signed-in server, write it as a
@@ -582,13 +653,17 @@ pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_workspace_in, list_workspaces_in, open_launcher_with, open_workspace_in,
-        reject_foreign_port, run_with_deadline, save_workspace_in, sign_in_target,
+        check_server_cert_in, delete_workspace_in, enroll_with_token_in, list_workspaces_in,
+        open_launcher_with, open_workspace_in, reject_foreign_port, reset_device_identity_in,
+        reset_server_cert_pin_in, run_with_deadline, save_workspace_in, sign_in_target,
     };
+    use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
+    use crate::keyring_store;
     use crate::launcher::{Spawned, Spawner};
-    use crate::models::{Connection, ConnectionKind, SyncMode, WorkspaceDraft};
+    use crate::models::{Connection, ConnectionKind, Settings, SyncMode, WorkspaceDraft};
     use crate::port_registry::PortRegistry;
+    use crate::storage;
     use crate::workspace::{self, Meta, Registry, RegistryEntry, PALETTE};
     use std::cell::RefCell;
     use std::path::{Path, PathBuf};
@@ -969,7 +1044,7 @@ mod tests {
             for username in [Some("ops"), None] {
                 assert_refused(
                     sign_in_target(base, "https://other.example.com", username),
-                    "this workspace belongs to the server https://ah.example.com/",
+                    "this workspace belongs to the server https://ah.example.com;",
                     &format!("{username:?}"),
                 );
             }
@@ -999,6 +1074,306 @@ mod tests {
                 "\"Kunde A\"",
                 "first URL",
             );
+        }
+    }
+
+    /// The URL in the `workspace.json` of `id` in `base`.
+    fn url_of(base: &Path, id: &str) -> Option<String> {
+        Meta::load(&base.join("workspaces").join(id)).unwrap().url
+    }
+
+    /// The reset of a registration the workspace does not keep: none comes in these cases.
+    fn no_reset(url: String) -> std::future::Ready<ResetOutcome> {
+        panic!("the registration at {url} was reset")
+    }
+
+    #[tokio::test]
+    async fn login_binding_a_registration_gives_a_workspace_without_a_url_the_one_it_went_to() {
+        let scratch = Scratch::new("enroll-url");
+        let base = &scratch.0;
+        server_workspaces(
+            base,
+            &[
+                (
+                    "w-0000000a",
+                    "Kunde A",
+                    Some("https://ah.example.com"),
+                    None,
+                ),
+                ("w-0000000c", "Neu", None, None),
+                ("w-0000000d", "Neu 2", None, None),
+            ],
+        );
+        let asked = RefCell::new(Vec::new());
+        let succeeds = |url: String| {
+            asked.borrow_mut().push(url);
+            async { Ok::<(), AppError>(()) }
+        };
+
+        // The launcher registers nowhere.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = enroll_with_token_in(base, "https://ah.example.com", succeeds, no_reset)
+            .await
+            .unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        {
+            // Without a URL: registered at the one sent, which the workspace keeps from then on.
+            let _c = entered("w-0000000c");
+            enroll_with_token_in(base, " https://other.example.com/ ", succeeds, no_reset)
+                .await
+                .unwrap();
+            assert_eq!(
+                url_of(base, "w-0000000c").as_deref(),
+                Some("https://other.example.com/")
+            );
+        }
+        {
+            // A registration that fails gives no URL.
+            let _d = entered("w-0000000d");
+            let failed = enroll_with_token_in(
+                base,
+                "https://other.example.com",
+                |url| {
+                    asked.borrow_mut().push(url);
+                    async { Err(AppError::Connection("unreachable".to_string())) }
+                },
+                no_reset,
+            )
+            .await;
+            assert!(matches!(failed, Err(AppError::Connection(_))), "{failed:?}");
+            assert_eq!(url_of(base, "w-0000000d"), None);
+        }
+        {
+            // With a URL: registered there, and the URL stays as it is; another server is refused
+            // before the token leaves.
+            let _a = entered("w-0000000a");
+            enroll_with_token_in(base, "https://AH.example.com:443/", succeeds, no_reset)
+                .await
+                .unwrap();
+            assert_refused(
+                enroll_with_token_in(base, "https://other.example.com", succeeds, no_reset).await,
+                "this workspace belongs to the server https://ah.example.com;",
+                "other server",
+            );
+            assert_eq!(
+                url_of(base, "w-0000000a").as_deref(),
+                Some("https://ah.example.com")
+            );
+        }
+        assert_eq!(
+            *asked.borrow(),
+            [
+                "https://other.example.com/",
+                "https://other.example.com",
+                "https://ah.example.com"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn login_binding_a_registration_the_workspace_does_not_keep_is_revoked_at_once() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("enroll-taken");
+        let base = &scratch.0;
+        server_workspaces(base, &[("w-0000000c", "Neu", None, None)]);
+        // Held, not freed: nobody answers at the server the device registers at.
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let registered_at = format!("https://127.0.0.1:{port}");
+        let other = "https://other.example.com";
+        let _c = entered("w-0000000c");
+        let prefix = workspace::current().unwrap().keyring_prefix();
+        let reset_at = RefCell::new(Vec::new());
+
+        let result = enroll_with_token_in(
+            base,
+            &registered_at,
+            |_| async {
+                // While the registration waits for its server, a save of the settings gives the
+                // workspace another first URL; then the identity arrives.
+                let settings = Settings {
+                    server_url: Some(other.to_string()),
+                    ..Settings::default()
+                };
+                storage::save_settings_at(base, &settings)?;
+                enrolled(&prefix);
+                Ok(())
+            },
+            |url| {
+                reset_at.borrow_mut().push(url.clone());
+                async move { enrollment::reset_identity(&url).await }
+            },
+        )
+        .await;
+
+        assert_refused(
+            result,
+            "this workspace took the URL of another server while this device registered",
+            "taken",
+        );
+        // Revoked where it was issued, and gone here; the workspace keeps the URL it took.
+        assert_eq!(*reset_at.borrow(), [registered_at.clone()]);
+        assert!(!enrollment::is_enrolled());
+        assert!(!enrollment::holds_identity(&prefix).unwrap());
+        assert_eq!(url_of(base, "w-0000000c").as_deref(), Some(other));
+    }
+
+    // ── Reset, pins and the cert check at the server of the workspace ──
+
+    /// An identity behind the keyring prefix `prefix`, as an enrollment leaves it.
+    fn enrolled(prefix: &str) {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let cert = CertificateParams::new(vec![])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap()
+            .pem();
+        for (entry, pem) in [
+            ("enroll|key", key.serialize_pem()),
+            ("enroll|cert", cert.clone()),
+            ("enroll|ca", cert),
+        ] {
+            keyring_store::set(&format!("{prefix}{entry}"), &pem).unwrap();
+        }
+    }
+
+    /// The keyring key of the pin of `host_port` (`tofu|cert|<host:port>`, one for the device).
+    fn pin(host_port: &str) -> String {
+        format!("tofu|cert|{host_port}")
+    }
+
+    #[tokio::test]
+    async fn login_binding_a_reset_of_the_identity_goes_to_the_server_of_the_workspace() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("reset-identity");
+        let base = &scratch.0;
+        // Held, not freed: nobody answers at the server of the workspace.
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let kept = format!("https://127.0.0.1:{port}");
+        server_workspaces(
+            base,
+            &[("w-0000000a", "Kunde A", Some(kept.as_str()), None)],
+        );
+        let own_pin = pin(&format!("127.0.0.1:{port}"));
+        let other_pin = pin("other.example.com:443");
+        for key in [&own_pin, &other_pin] {
+            keyring_store::set(key, "pinned").unwrap();
+        }
+
+        // The launcher has no identity to reset.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = reset_device_identity_in(base, &kept).await.unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+
+        let _a = entered("w-0000000a");
+        enrolled(&workspace::current().unwrap().keyring_prefix());
+        // Another server: refused before a thing is revoked, deleted or forgotten.
+        for other in [
+            "https://other.example.com".to_string(),
+            format!("http://127.0.0.1:{port}"),
+        ] {
+            assert_refused(
+                reset_device_identity_in(base, &other).await,
+                &format!("this workspace belongs to the server {kept};"),
+                &other,
+            );
+            assert!(enrollment::is_enrolled(), "{other}");
+            for key in [&own_pin, &other_pin] {
+                assert!(keyring_store::get(key).is_some(), "{other}: {key}");
+            }
+        }
+        // Its own server, however the webview spells it.
+        let outcome = reset_device_identity_in(base, &format!("https://127.0.0.1:{port}/x"))
+            .await
+            .unwrap();
+        assert_eq!(outcome, ResetOutcome::LocalOnly);
+        assert!(!enrollment::is_enrolled());
+        assert_eq!(keyring_store::get(&own_pin), None);
+        assert!(keyring_store::get(&other_pin).is_some());
+    }
+
+    #[tokio::test]
+    async fn login_binding_the_pin_reset_and_the_cert_check_name_the_server_of_the_workspace() {
+        let _keyring = keyring_store::memory();
+        let scratch = Scratch::new("reset-pin");
+        let base = &scratch.0;
+        server_workspaces(
+            base,
+            &[
+                (
+                    "w-0000000a",
+                    "Kunde A",
+                    Some("https://ah.example.com"),
+                    None,
+                ),
+                ("w-0000000c", "Neu", None, None),
+            ],
+        );
+        Meta {
+            kind: SyncMode::Sync,
+            name: "Sync".to_string(),
+            color: PALETTE[0].to_string(),
+            url: Some("https://sync.example.com/connections.json".to_string()),
+            interval_minutes: 1,
+            allow_self_signed_certs: false,
+            last_username: None,
+            legacy_keys: false,
+        }
+        .store(&base.join("workspaces").join("w-0000000d"))
+        .unwrap();
+        let [own, sync, other] = [
+            "ah.example.com:443",
+            "sync.example.com:443",
+            "other.example.com:443",
+        ]
+        .map(pin);
+        for key in [&own, &sync, &other] {
+            keyring_store::set(key, "pinned").unwrap();
+        }
+        let pinned = || [&own, &sync, &other].map(|key| keyring_store::get(key).is_some());
+
+        // The launcher forgets no pin and checks no server.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        let refused = reset_server_cert_pin_in(base, "https://ah.example.com").unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        let refused = check_server_cert_in(base, "https://ah.example.com")
+            .await
+            .unwrap_err();
+        assert_eq!(refused.to_string(), no_workspace);
+        assert_eq!(pinned(), [true, true, true]);
+        {
+            let _a = entered("w-0000000a");
+            let says = "this workspace belongs to the server https://ah.example.com;";
+            assert_refused(
+                reset_server_cert_pin_in(base, "https://other.example.com"),
+                says,
+                "pin",
+            );
+            assert_refused(
+                check_server_cert_in(base, "https://other.example.com").await,
+                says,
+                "cert check",
+            );
+            assert_eq!(pinned(), [true, true, true]);
+            reset_server_cert_pin_in(base, "https://AH.example.com/").unwrap();
+            assert_eq!(pinned(), [false, true, true]);
+        }
+        {
+            // A sync workspace: the server of its source.
+            let _d = entered("w-0000000d");
+            assert_refused(
+                reset_server_cert_pin_in(base, "https://other.example.com"),
+                "this workspace belongs to the server https://sync.example.com;",
+                "sync",
+            );
+            reset_server_cert_pin_in(base, "https://sync.example.com").unwrap();
+            assert_eq!(pinned(), [false, false, true]);
+        }
+        {
+            // Without a URL of its own, the one sent: the login screen before the first sign-in.
+            let _c = entered("w-0000000c");
+            reset_server_cert_pin_in(base, "https://other.example.com").unwrap();
+            assert_eq!(pinned(), [false, false, false]);
         }
     }
 }
