@@ -387,17 +387,39 @@ func TestSystemStateTimeSync(t *testing.T) {
 }
 
 func TestSystemStateBlock(t *testing.T) {
-	// The answers land in the block next to oom_kills, as JSON booleans on the wire; with no answer at
-	// all the block is empty and stays out of the report.
+	// The answers land in the block next to oom_kills, as JSON booleans and numbers on the wire, and
+	// the security update count goes into the state for the hour; with no answer at all the block is
+	// empty and stays out of the report.
 	t.Run("all measured", func(t *testing.T) {
 		stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "timedatectl": {out: timedatectlShow}})
 		stubRebootFlag(t, true)
 		stubVMStat(t, vmstatWithOOMKill(5))
+		stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
 		saved := uint64(3)
-		block, _ := collectSystemState(reportState{OOMKill: &saved})
-		want := map[string]any{"oom_kills": 2.0, "reboot_required": true, "time_synchronized": true}
+		block, next := collectSystemState(reportState{OOMKill: &saved})
+		want := map[string]any{"oom_kills": 2.0, "reboot_required": true, "time_synchronized": true,
+			"security_updates": 2.0}
 		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) {
 			t.Errorf("block = %v, want %v", got, want)
+		}
+		if next.Updates == nil || next.Updates.Security == nil || *next.Updates.Security != 2 {
+			t.Errorf("state updates = %+v, want the count 2", next.Updates)
+		}
+	})
+	t.Run("security updates from the saved count", func(t *testing.T) {
+		stubSystemCLI(t, map[string]dockerReply{"apt-get": {}, "timedatectl": {out: timedatectlShow}})
+		stubRebootFlag(t, false)
+		stubVMStat(t, "pgmajfault 1042\n")
+		calls := stubUpdates(t, updatesNow, dockerReply{out: aptUbuntuFixture})
+		five := 5
+		saved := &updatesCheck{CheckedUnix: updatesNow.Add(-10 * time.Minute).Unix(), Security: &five}
+		block, next := collectSystemState(reportState{Updates: saved})
+		want := map[string]any{"reboot_required": false, "time_synchronized": true, "security_updates": 5.0}
+		if got := dockerWire(t, block); !reflect.DeepEqual(got, want) || len(*calls) != 0 {
+			t.Errorf("block = %v after %d call(s), want %v without one", got, len(*calls), want)
+		}
+		if next.Updates != saved {
+			t.Errorf("state updates = %+v, want the saved count handed on", next.Updates)
 		}
 	})
 	t.Run("nothing measured", func(t *testing.T) {

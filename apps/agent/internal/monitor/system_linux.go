@@ -23,7 +23,8 @@ var rebootRequiredPath = "/var/run/reboot-required"
 
 // systemCLI indirects the lookups and calls of the system state tools (needs-restarting,
 // timedatectl) so tests can drive every path without them (same reason as dockerCLI). run runs one
-// call under pluginTimeout.
+// call under pluginTimeout. apt-get and dnf are looked up here as well, so the package family is told
+// apart in one place; their update counts run through updatesCalls.
 var systemCLI = struct {
 	lookPath func(file string) (string, error)
 	run      func(name string, args ...string) ([]byte, error)
@@ -47,6 +48,10 @@ func collectSystemState(st reportState) (map[string]any, reportState) {
 	}
 	if synced, ok := timeSynchronized(); ok {
 		block["time_synchronized"] = synced
+	}
+	st.Updates = securityUpdates(st.Updates)
+	if st.Updates != nil && st.Updates.Security != nil {
+		block["security_updates"] = *st.Updates.Security
 	}
 	return block, st
 }

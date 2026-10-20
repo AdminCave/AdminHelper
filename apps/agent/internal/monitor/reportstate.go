@@ -18,6 +18,15 @@ type reportState struct {
 	// OOMKill is the oom_kill counter of /proc/vmstat at the last report (Linux only). A pointer, so a
 	// host that never killed a process keeps its 0 and the next report counts from it.
 	OOMKill *uint64 `json:"oom_kill,omitempty"`
+	// Updates is the last hourly count of pending security updates (Linux only).
+	Updates *updatesCheck `json:"updates,omitempty"`
+}
+
+// updatesCheck is one count of pending security updates, taken at CheckedUnix. Security is nil when the
+// count failed: a failed count is the hour's attempt as well.
+type updatesCheck struct {
+	CheckedUnix int64 `json:"checked_unix"`
+	Security    *int  `json:"security"`
 }
 
 // cpuSample is the CPU time counted up to Unix, summed as cpuBusyTimes does.
