@@ -176,16 +176,36 @@ def _shipped(slug):
 
 
 def _ship_version_2(monkeypatch, slug="linux-base"):
-    """Ship version 2 of one built-in: system-resources warns every minute."""
+    """Ship the next version of one built-in (the shipped one + 1):
+    system-resources warns every minute."""
     shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
     tpl = next(t for t in shipped if t["slug"] == slug)
-    tpl["version"] = 2
+    tpl["version"] += 1
     tpl["check_definitions"] = [
         {**d, "severity": "warning", "interval": "1m"} if d["def_id"] == "system-resources" else d
         for d in tpl["check_definitions"]
     ]
     monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
     return tpl
+
+
+# The pins of the built-ins that left version 1 (R-0424): what version 1 shipped.
+VERSION_1_HASHES = {
+    "linux-base": "fda790008184ed153f4734a916746a1ed971edb57570b99dbc49d4195a8ecf13",
+    "windows-base": "4be77f8ba5a16bc1857dfcf0b2c5ae634967e7d35b97d837a70769ca36b98e70",
+}
+
+
+def _version_1(tpl):
+    """A shipped built-in as its version 1 shipped it: before Disk Forecast set
+    consecutive_oks 1, no definition carried the key."""
+    return {
+        **tpl,
+        "version": 1,
+        "check_definitions": [
+            {k: v for k, v in d.items() if k != "consecutive_oks"} for d in tpl["check_definitions"]
+        ],
+    }
 
 
 def _resources_check(db, server_id):
@@ -235,8 +255,8 @@ def test_shipped_definitions_change_only_with_a_new_version():
     # install. Any other cause (canonical form, schema) marks the built-in as
     # edited in every install and stops its updates; fix that cause instead.
     pinned = {
-        "linux-base": (1, "fda790008184ed153f4734a916746a1ed971edb57570b99dbc49d4195a8ecf13"),
-        "windows-base": (1, "4be77f8ba5a16bc1857dfcf0b2c5ae634967e7d35b97d837a70769ca36b98e70"),
+        "linux-base": (2, "a1711f2266ec577c6e74c50b6c3aec2b69f75d7394ce2f2711eef19f2da37f65"),
+        "windows-base": (2, "476b982b2831e947babdbbe0fcde9136e0155a300408a97da333d729d3ec08a0"),
         "proxmox-host": (1, "e76eb40daf8b1dffac8dce22b6d174fd25e7eaa44c515810b4aad092260c8b98"),
         "docker-host": (1, "a54b94104244cb22a229e2c67501f546300e40886c552189466c1f3f89cf0d19"),
         "zfs-storage": (1, "2cb8243af6f0e31ac72ae4c526b601a4dd7480408f624d390e83ebc24d0d6932"),
@@ -255,13 +275,13 @@ def test_seed_records_version_and_hash(db):
 
     for tpl in BUILTIN_TEMPLATES:
         row = _row(db, tpl["slug"])
-        assert row.builtin_version == 1
+        assert row.builtin_version == tpl["version"]
         assert row.builtin_hash == definitions_hash(
             tpl["check_definitions"], tpl["alert_definitions"]
         )
         d = row.to_dict()
         assert (d["builtinVersion"], d["builtinEdited"], d["builtinUpdateAvailable"]) == (
-            1,
+            tpl["version"],
             False,
             False,
         )
@@ -293,11 +313,11 @@ def test_unchanged_builtin_follows_a_new_version_and_keeps_check_overrides(
     linux = _row(db, "linux-base")
     assert json.loads(linux.check_definitions) == v2["check_definitions"]
     assert linux.name == "Our Linux"
-    assert linux.builtin_version == 2
+    assert linux.builtin_version == v2["version"]
     assert linux.builtin_hash == definitions_hash(v2["check_definitions"], [])
     d = linux.to_dict()
     assert (d["builtinVersion"], d["builtinEdited"], d["builtinUpdateAvailable"]) == (
-        2,
+        v2["version"],
         False,
         False,
     )
@@ -306,7 +326,7 @@ def test_unchanged_builtin_follows_a_new_version_and_keeps_check_overrides(
     assert (check.severity, check.interval) == ("warning", "15m")
     assert check.id in scheduled
     # The other built-ins ship no new version and stay as they were.
-    assert _row(db, "windows-base").builtin_version == 1
+    assert _row(db, "windows-base").builtin_version == _shipped("windows-base")["version"]
 
 
 def test_edited_builtin_stays_as_it_is_and_offers_the_update(db, monkeypatch, scheduled):
@@ -315,13 +335,13 @@ def test_edited_builtin_stays_as_it_is_and_offers_the_update(db, monkeypatch, sc
     edited = json.loads(linux.check_definitions)[:2]
     linux.check_definitions = json.dumps(edited)
     db.commit()
-    _ship_version_2(monkeypatch)
+    v2 = _ship_version_2(monkeypatch)
 
     assert reconcile_builtin_templates(db) == 0
 
     linux = _row(db, "linux-base")
     assert json.loads(linux.check_definitions) == edited
-    assert linux.builtin_version == 1
+    assert linux.builtin_version == v2["version"] - 1
     d = linux.to_dict()
     assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (True, True)
     assert scheduled == []
@@ -346,11 +366,11 @@ def test_builtin_saved_unchanged_in_the_editor_still_follows_a_new_version(
     )
     assert json.loads(_row(db, "linux-base").check_definitions) != shipped["check_definitions"]
     assert _row(db, "linux-base").to_dict()["builtinEdited"] is False
-    _ship_version_2(monkeypatch)
+    v2 = _ship_version_2(monkeypatch)
 
     assert reconcile_builtin_templates(db) == 1
     assert (_row(db, "linux-base").builtin_version, _row(db, "linux-base").name) == (
-        2,
+        v2["version"],
         "Our Linux",
     )
 
@@ -378,13 +398,16 @@ def test_a_new_optional_schema_field_leaves_the_builtins_unedited(db, monkeypatc
 
 def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
     seed_builtin_templates(db)
-    # Rows seeded before the versions existed: no version, no hash; one of them
-    # edited by hand back then.
-    windows = _row(db, "windows-base")
-    windows.check_definitions = json.dumps(json.loads(windows.check_definitions)[:1])
+    # Rows seeded before the versions existed: no version, no hash, the definitions
+    # of version 1; one of them edited by hand back then.
     for row in db.query(MonitorTemplate).all():
+        row.check_definitions = json.dumps(
+            _version_1(_shipped(row.builtin_slug))["check_definitions"]
+        )
         row.builtin_version = None
         row.builtin_hash = None
+    windows = _row(db, "windows-base")
+    windows.check_definitions = json.dumps(json.loads(windows.check_definitions)[:1])
     db.commit()
 
     assert reconcile_builtin_templates(db) == 0
@@ -396,10 +419,68 @@ def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
         assert row.builtin_hash == definitions_hash(
             tpl["check_definitions"], tpl["alert_definitions"]
         )
-    assert _row(db, "linux-base").to_dict()["builtinEdited"] is False
-    d = _row(db, "windows-base").to_dict()
-    assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (True, False)
+    # Compared with the shipped definitions, which left version 1 for linux-base
+    # and windows-base (R-0424), the unedited linux-base row counts as edited as
+    # well and offers the update; the others still ship version 1.
+    assert {
+        tpl["slug"]: (
+            _row(db, tpl["slug"]).to_dict()["builtinEdited"],
+            _row(db, tpl["slug"]).to_dict()["builtinUpdateAvailable"],
+        )
+        for tpl in BUILTIN_TEMPLATES
+    } == {
+        "linux-base": (True, True),
+        "windows-base": (True, True),
+        "proxmox-host": (False, False),
+        "docker-host": (False, False),
+        "zfs-storage": (False, False),
+        "host-ping": (False, False),
+    }
     assert scheduled == []
+
+
+def test_unchanged_install_of_version_1_gives_disk_forecast_consecutive_oks_1(
+    db, monkeypatch, scheduled
+):
+    # An install that rolled out version 1 of linux-base and windows-base and
+    # assigned them; then version 2 ships.
+    monkeypatch.setattr(
+        builtin_templates, "BUILTIN_TEMPLATES", [_version_1(t) for t in BUILTIN_TEMPLATES]
+    )
+    seed_builtin_templates(db)
+    assert {slug: _row(db, slug).builtin_hash for slug in VERSION_1_HASHES} == VERSION_1_HASHES
+    apply_template(db, _row(db, "linux-base"), "srv-1", "web01.example", "Web 01")
+    apply_template(db, _row(db, "windows-base"), "srv-2", "win01.example", "Win 01")
+    assert {check.consecutive_oks for check in db.query(MonitorCheck)} == {2}
+    # On one server the user set the Disk Forecast's consecutive_oks by hand.
+    customized = (
+        db.query(MonitorCheck)
+        .filter(MonitorCheck.server_id == "srv-2", MonitorCheck.template_def_id == "disk-forecast")
+        .one()
+    )
+    customized.consecutive_oks = 3
+    customized.overridden_fields = json.dumps(["consecutive_oks"])
+    db.commit()
+    monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", BUILTIN_TEMPLATES)
+    scheduled.clear()
+
+    assert reconcile_builtin_templates(db) == 2
+
+    assert {slug: _row(db, slug).builtin_version for slug in VERSION_1_HASHES} == {
+        "linux-base": 2,
+        "windows-base": 2,
+    }
+    got = {
+        (check.server_id, check.template_def_id): check.consecutive_oks
+        for check in db.query(MonitorCheck)
+    }
+    # SMART Health runs every 5 minutes and keeps the default, as does every
+    # other check; only the hourly Disk Forecast recovers on the first ok.
+    assert {key: oks for key, oks in got.items() if oks != 2} == {
+        ("srv-1", "disk-forecast"): 1,
+        ("srv-2", "disk-forecast"): 3,
+    }
+    assert (got[("srv-1", "smart-health")], got[("srv-2", "smart-health")]) == (2, 2)
 
 
 def test_deleted_builtin_stays_deleted_on_a_new_version(db, monkeypatch, scheduled):

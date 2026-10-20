@@ -79,6 +79,8 @@ _AGENT_RESOURCES = {
 # Prediction pairs with the static disk thresholds: warns ~a day before a
 # disk runs full instead of only at 80/90 % (severity 'warning' — a forecast
 # has lead time by definition and must not page the critical chain).
+# consecutive_oks 1: on the hourly interval the default 2 would hold the
+# all-clear back for an hour.
 _DISK_FORECAST = {
     "def_id": "disk-forecast",
     "name": "Disk Forecast",
@@ -88,6 +90,7 @@ _DISK_FORECAST = {
     "interval": "1h",
     "severity": "warning",
     "consecutive_fails": 1,
+    "consecutive_oks": 1,
 }
 
 _SMART_HEALTH = {
@@ -104,7 +107,7 @@ _SMART_HEALTH = {
 BUILTIN_TEMPLATES: list[dict] = [
     {
         "slug": "linux-base",
-        "version": 1,
+        "version": 2,
         "name": "Linux Server — Standard",
         "description": "Baseline monitoring for Linux servers: heartbeat, resources, "
         "systemd service health and SMART.",
@@ -128,7 +131,7 @@ BUILTIN_TEMPLATES: list[dict] = [
     },
     {
         "slug": "windows-base",
-        "version": 1,
+        "version": 2,
         "name": "Windows Server — Standard",
         "description": "Baseline monitoring for Windows servers: heartbeat, resources and SMART.",
         "check_definitions": [_AGENT_HEARTBEAT, _AGENT_RESOURCES, _SMART_HEALTH, _DISK_FORECAST],

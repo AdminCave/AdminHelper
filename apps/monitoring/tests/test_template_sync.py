@@ -5,8 +5,8 @@
 """template_sync (audit gap: most complex monitoring logic, previously
 untested): variable substitution, the create/update/delete diffing across
 servers, assignment removal and full server cleanup, the user's changes and
-deleted template checks the sync keeps (R-0420), and the check the shipped Host
-Ping template creates (R-0424)."""
+deleted template checks the sync keeps (R-0420), the check the shipped Host Ping
+template creates and the consecutive_oks the shipped templates set (R-0424)."""
 
 import json
 import uuid
@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import template_sync
-from app.builtin_templates import seed_builtin_templates
+from app.builtin_templates import BUILTIN_TEMPLATES, seed_builtin_templates
 from app.models import (
     Base,
     MonitorAgentKey,
@@ -602,3 +602,22 @@ def test_host_ping_pings_the_assigned_hostname_every_minute(db):
         2,
     )
     assert db.scheduled_calls == [(check.id, "ping")]
+
+
+def test_only_the_disk_forecast_of_the_shipped_templates_recovers_on_the_first_ok(db):
+    # Disk Forecast runs hourly: with the default 2 its all-clear would come an hour
+    # late. Every other shipped check keeps 2, SMART Health (every 5 minutes) too.
+    seed_builtin_templates(db)
+    for tpl in db.query(MonitorTemplate).all():
+        apply_template(db, tpl, tpl.builtin_slug, "host01.example", "Host 01")
+
+    got = {
+        (check.server_id, check.template_def_id): check.consecutive_oks
+        for check in db.query(MonitorCheck)
+    }
+    assert len(got) == sum(len(t["check_definitions"]) for t in BUILTIN_TEMPLATES)
+    assert {key: oks for key, oks in got.items() if oks != 2} == {
+        ("linux-base", "disk-forecast"): 1,
+        ("windows-base", "disk-forecast"): 1,
+    }
+    assert (got[("linux-base", "smart-health")], got[("windows-base", "smart-health")]) == (2, 2)

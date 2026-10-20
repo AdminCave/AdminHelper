@@ -39,11 +39,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   wiederherstellen“ und legt sie auf Klick neu an (`POST /templates/{id}/assign/{server_id}/restore`, Zaehler
   `removedChecks` in `GET /templates/assignments/{server_id}`). Bringt ein Release eine neuere Version eines
   Standard-Templates mit, dessen Definitionen angepasst sind, zeigt die Template-Liste dort „Update verfuegbar“
-  (heute tragen alle Version 1, das Badge erscheint also noch nirgends); das oeffnet einen Vergleich der aktuellen
-  mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des Templates,
-  auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
-  `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable`). Doku:
-  Admin- und Entwickler-Doku Monitoring (DE+EN).
+  (etwa fuer Version 2 von „Linux Server — Standard“ und „Windows Server — Standard“, siehe Changed); das oeffnet
+  einen Vergleich der aktuellen mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle
+  Definitionen des Templates, auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben
+  (`GET`/`POST` auf `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`,
+  `builtinUpdateAvailable`). Doku: Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
   „Registrierungs-Token“ ein Einmal-Token aus: Gueltigkeit waehlen (10 Minuten, 1 Stunde oder 24 Stunden;
   voreingestellt 10 Minuten), dann zeigt der Dialog das Token genau einmal mit Kopieren, seinem Ablauf in
@@ -982,6 +982,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Template-Definition setzen, eine Definition ohne das Feld gilt als 2; an einem Template-Check geaendert gilt es als
   angepasst, der Sync laesst es stehen, und „Auf Template zuruecksetzen“ nimmt den Wert des Templates zurueck. Doku:
   Admin- und Entwickler-Doku Monitoring (DE+EN).
+- **Monitoring: Disk Forecast der Standard-Templates entwarnt beim ersten `ok` (R-0424):** „Linux Server — Standard“
+  und „Windows Server — Standard“ setzen fuer Disk Forecast (Intervall `1h`) `consecutive_oks` 1, er entwarnt also
+  beim ersten `ok` statt eine Stunde spaeter. Alle anderen Checks der Standard-Templates, auch SMART Health
+  (Intervall `5m`), behalten den Default 2. Beide Templates steigen dafuer auf Version 2: Ein unveraendertes
+  uebernimmt sie beim Start des Monitoring-Dienstes und synchronisiert seine Server, ein am Check angepasstes
+  `consecutive_oks` bleibt; ein Template mit angepassten Definitionen zeigt „Update verfuegbar“. Ein Standard-Template,
+  das vor der Einfuehrung der Versionen angelegt wurde, gilt dabei als angepasst und zeigt das Update ebenfalls. Doku:
+  Admin-Doku Monitoring (DE+EN).
 - **Monitoring: die `severity` eines Checks deckelt Glocke, Betreff und Event-Hook (R-0424):** Ein Check meldet
   hoechstens mit seiner `severity`: Ein Check mit `severity` `warning` meldet ein `critical` des Checkers im Betreff
   von Mail und Webhook als `WARNING`, an die Glocke als `warning`, auch die Entwarnung, und loest den Event-Hook
@@ -1215,8 +1223,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Release eine neuere Version, hebt der Monitoring-Dienst beim Start jedes Standard-Template mit unveraenderten
   Definitionen darauf und synchronisiert dessen Server; angepasste Check-Felder sowie Name und Beschreibung des
   Templates bleiben. Ein Template mit angepassten Definitionen bleibt, wie es ist, und bietet das Update an (siehe
-  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Heute tragen alle Version 1;
-  ein bestehendes, dessen Definitionen davon abweichen, gilt als angepasst.
+  Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Ein bestehendes gilt als
+  Version 1; weichen seine Definitionen von den mitgelieferten ab, gilt es als angepasst.
 - **Monitoring: neuer Hostname oder Servername erreicht bestehende Zuweisungen (R-0420):** Der Tag-Sync gleicht jetzt
   fuer jede Zuweisung, auch fuer manuelle, Hostname und Servername mit dem Server-Inventar ab und synchronisiert bei
   einer Abweichung genau dieses Paar neu, sodass `{{hostname}}` und `{{server_name}}` einer Umbenennung folgen;
