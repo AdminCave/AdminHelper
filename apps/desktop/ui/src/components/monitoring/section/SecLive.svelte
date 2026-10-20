@@ -18,14 +18,34 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
+  type Level = 'ok' | 'warn' | 'crit';
+
   function num(v: unknown, fb = 0): number {
     const n = Number(v);
     return Number.isNaN(n) ? fb : n;
   }
-  function level(pct: number, warn: number, crit: number): 'ok' | 'warn' | 'crit' {
+  function level(pct: number, warn: number, crit: number): Level {
     if (pct >= crit) return 'crit';
     if (pct >= warn) return 'warn';
     return 'ok';
+  }
+
+  const PROBLEM_LEVEL = new Map<string, Level>([
+    ['warning', 'warn'],
+    ['critical', 'crit'],
+  ]);
+  const ORDER: Record<Level, number> = { ok: 0, warn: 1, crit: 2 };
+
+  // The checker's own rating: only it knows the free-GB gate, the thresholds per
+  // mount and the hysteresis, so a metric missing from problems is ok. Details
+  // without problems (written before the per-metric hysteresis) keep the rating
+  // from the config.
+  function rate(d: MonitorResourceDetails, key: string, fromConfig: Level): Level {
+    if (!d.problems) return fromConfig;
+    return PROBLEM_LEVEL.get(d.problems[key] ?? '') ?? 'ok';
+  }
+  function worse(a: Level, b: Level): Level {
+    return ORDER[b] > ORDER[a] ? b : a;
   }
 
   const R = 26;
@@ -39,13 +59,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   interface Ring {
     label: string;
     pct: number;
-    level: 'ok' | 'warn' | 'crit';
+    level: Level;
     sub: string | null;
+  }
+  interface LoadPill {
+    perCpu: number;
+    level: Level;
   }
   interface DiskBar {
     mount: string;
     pct: number;
-    level: 'ok' | 'warn' | 'crit';
+    // ignored: a mount from ignore_mounts, shown grey without a rating.
+    level: Level | 'ignored';
     sub: string | null;
   }
 
@@ -59,7 +84,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       out.push({
         label: 'CPU',
         pct,
-        level: level(pct, num(cfg.cpu_warn, 80), num(cfg.cpu_crit, 95)),
+        level: rate(d, 'cpu', level(pct, num(cfg.cpu_warn, 80), num(cfg.cpu_crit, 95))),
         sub: null,
       });
     }
@@ -72,11 +97,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
       out.push({
         label: 'RAM',
         pct,
-        level: level(pct, num(cfg.memory_warn, 80), num(cfg.memory_crit, 95)),
+        level: rate(d, 'memory', level(pct, num(cfg.memory_warn, 80), num(cfg.memory_crit, 95))),
         sub,
       });
     }
+    // A host without a swap device sends swap_total_mb 0.
+    if (d.swap != null && num(d.swap_total_mb) > 0) {
+      const pct = num(d.swap);
+      out.push({
+        label: 'Swap',
+        pct,
+        level: rate(d, 'swap', level(pct, num(cfg.swap_warn, 80), num(cfg.swap_crit, 95))),
+        sub: `${num(d.swap_used_mb)} / ${num(d.swap_total_mb)} MB`,
+      });
+    }
     return out;
+  }
+  function load(check: MonitorCheck): LoadPill | null {
+    const d = check.state?.details as MonitorResourceDetails | undefined;
+    const cfg = (check.config ?? {}) as Record<string, unknown>;
+    if (d?.load_per_cpu == null) return null;
+    const perCpu = num(d.load_per_cpu);
+    return {
+      perCpu,
+      level: rate(d, 'load', level(perCpu, num(cfg.load_warn, 1.5), num(cfg.load_crit, 3))),
+    };
   }
   function disks(check: MonitorCheck): DiskBar[] {
     const d = check.state?.details as MonitorResourceDetails | undefined;
@@ -85,14 +130,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const list = d.disks ?? [];
     return list.map((x) => {
       const pct = num(x.percent);
+      const mount = String(x.mount ?? '?');
+      const sub: string[] = [];
+      if (x.ignored) sub.push($t('monitoring.live.ignored'));
+      if (x.total_gb != null) {
+        sub.push(`${num(x.used_gb).toFixed(1)} / ${num(x.total_gb).toFixed(1)} GB`);
+      }
+      if (x.free_gb != null) {
+        sub.push($t('monitoring.live.free', { gb: num(x.free_gb).toFixed(1) }));
+      }
+      if (x.inodes_percent != null) sub.push(`Inodes ${num(x.inodes_percent).toFixed(0)}%`);
+      // Full inodes stop writes like a full disk, so they raise the disk's bar.
+      const usage = rate(
+        d,
+        `disk:${mount}`,
+        level(pct, num(cfg.disk_warn, 85), num(cfg.disk_crit, 95)),
+      );
+      const inodes =
+        x.inodes_percent == null
+          ? 'ok'
+          : rate(
+              d,
+              `inode:${mount}`,
+              level(num(x.inodes_percent), num(cfg.inode_warn, 80), num(cfg.inode_crit, 90)),
+            );
       return {
-        mount: String(x.mount ?? '?'),
+        mount,
         pct,
-        level: level(pct, num(cfg.disk_warn, 85), num(cfg.disk_crit, 95)),
-        sub:
-          x.total_gb != null
-            ? `${num(x.used_gb).toFixed(1)} / ${num(x.total_gb).toFixed(1)} GB`
-            : null,
+        level: x.ignored ? 'ignored' : worse(usage, inodes),
+        sub: sub.length > 0 ? sub.join(' · ') : null,
       };
     });
   }
@@ -109,6 +175,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <div class="mon-section-body">
     {#each checks as check (check.id)}
       {@const rs = rings(check)}
+      {@const ld = load(check)}
       {@const ds = disks(check)}
       <MonCheckLine {check}>
         {#snippet label()}
@@ -119,6 +186,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {#each rs as r (r.label)}
               <span class="mon-live-pill level-{r.level}">{r.label} {r.pct.toFixed(0)}%</span>
             {/each}
+            {#if ld}
+              <span class="mon-live-pill level-{ld.level}">Load {ld.perCpu.toFixed(2)}/CPU</span>
+            {/if}
             {#if ds.length > 0}
               <span class="mon-live-pill">{ds.length} Disk{ds.length === 1 ? '' : 's'}</span>
             {/if}
@@ -181,3 +251,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {/each}
   </div>
 </section>
+
+<style>
+  .mon-hero-bar-fill.level-ignored {
+    background: var(--text-faint);
+  }
+</style>

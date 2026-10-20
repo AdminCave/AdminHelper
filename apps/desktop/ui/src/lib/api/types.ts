@@ -266,6 +266,11 @@ export interface MonitorResourceDisk {
   percent: number;
   used_gb?: number;
   total_gb?: number;
+  // From agent v3 (R-0423) on; inodes_percent only on Linux for a filesystem with inodes.
+  free_gb?: number | null;
+  inodes_percent?: number | null;
+  // A mount from ignore_mounts: listed with its usage, but not rated.
+  ignored?: boolean;
 }
 
 export interface MonitorResourceTemp {
@@ -280,6 +285,16 @@ export interface MonitorResourceDetails {
   memory?: number | null;
   memory_used_mb?: number;
   memory_total_mb?: number;
+  // From agent v3 (R-0423) on, Linux only; swap_total_mb 0 is a host without a swap device.
+  swap?: number | null;
+  swap_total_mb?: number | null;
+  swap_used_mb?: number | null;
+  cpu_count?: number | null;
+  load_per_cpu?: number | null;
+  // The checker's rating per metric (cpu, memory, swap, load, disk:<mount>,
+  // inode:<mount>, temp:<sensor>); a metric it does not name is ok. Details
+  // written before the per-metric hysteresis carry none.
+  problems?: Record<string, 'warning' | 'critical'>;
   disks?: MonitorResourceDisk[];
   temperatures?: MonitorResourceTemp[];
 }

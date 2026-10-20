@@ -168,8 +168,10 @@ Abhängt von: T7, T9, T12, T15
 
 ## Block C — Desktop
 
-### T17 — Desktop: Live-Sektion zeigt Swap, Load je CPU, freie GB und Inodes, Ampel vom Server  [ ]
+### T17 — Desktop: Live-Sektion zeigt Swap, Load je CPU, freie GB und Inodes, Ampel vom Server  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @fb30158c 2026-10-20T11:12:22+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T17.verdict.json)
 Änderung: `MonitorResourceDetails` (`types.ts:278`) um `swap`, `swap_total_mb`, `swap_used_mb`, `cpu_count`, `load_per_cpu`, `problems` (`Record<string, 'warning' | 'critical'>`); `MonitorResourceDisk` (`:264`) um `free_gb`, `inodes_percent`, `ignored`. `SecLive.svelte` (`:52-98`): Swap-Ring nur mit `swap_total_mb > 0`; Pille „Load <x>/CPU“ mit `load_per_cpu`; Untertitel einer Platte mit freien GB und Inode-Belegung, wenn da; eine ignorierte Platte grau mit „ignoriert“; Ampel aus `details.problems` (`cpu`, `memory`, `swap`, `load`, `disk:<mount>`, `inode:<mount>` hebt die Platte mit an), ohne `problems` (ältere Details) die bisherige Rechnung aus der Konfiguration. Neue Testdatei (SPDX): Ringe und Balken aus Fixture-Details, Ampel aus `problems` (auch gegen die Konfiguration), Rückfall ohne `problems`, ignorierte Platte, Details ohne die neuen Felder wie bisher, Texte englisch.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecLive.test.ts
 Doku: keine Admin-Doku (die Live-Anzeige ist dort nicht beschrieben); CHANGELOG.md (Satz im Eintrag aus T8)
