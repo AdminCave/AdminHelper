@@ -283,13 +283,17 @@ pub fn password_state(connection: Connection) -> Result<PasswordState, AppError>
 }
 
 #[tauri::command]
-pub fn save_password(connection: Connection, password: String) -> Result<(), AppError> {
-    password::save_password(&connection, &password)
+pub fn save_password(
+    app: tauri::AppHandle,
+    connection: Connection,
+    password: String,
+) -> Result<(), AppError> {
+    password::save_password(&storage::app_data_dir(&app)?, &connection, &password)
 }
 
 #[tauri::command]
-pub fn delete_password(connection: Connection) -> Result<(), AppError> {
-    password::delete_password(&connection)
+pub fn delete_password(app: tauri::AppHandle, connection: Connection) -> Result<(), AppError> {
+    password::delete_password(&storage::app_data_dir(&app)?, &connection)
 }
 
 #[tauri::command]

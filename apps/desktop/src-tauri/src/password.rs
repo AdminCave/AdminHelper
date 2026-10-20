@@ -2,9 +2,20 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#[cfg(unix)]
+use std::collections::BTreeSet;
+use std::path::Path;
+#[cfg(unix)]
+use std::sync::{Mutex, PoisonError};
+
+#[cfg(unix)]
+use serde::{Deserialize, Serialize};
+
 use crate::error::AppError;
 use crate::models::{Connection, ConnectionKind, PasswordState};
 use crate::validation::required;
+#[cfg(unix)]
+use crate::workspace::{self, Workspace};
 
 fn normalized(value: &Option<String>) -> String {
     value.as_deref().unwrap_or("").trim().to_string()
@@ -32,8 +43,9 @@ fn rdp_target(connection: &Connection) -> Option<String> {
     ))
 }
 
-/// The key of the connection's RDP password, `rdp|<id>|<host>|<port>|<user>|<domain>`.
-/// An empty id, or one with the separator, names no single connection and gets none.
+/// The key of the connection's RDP password, `rdp|<id>|<host>|<port>|<user>|<domain>`,
+/// in the keyring behind the prefix of the workspace. An empty id, or one with the
+/// separator, names no single connection and gets none.
 pub fn rdp_storage_key(connection: &Connection) -> Option<String> {
     let id = &connection.id;
     if id.is_empty() || id.contains('|') {
@@ -49,12 +61,28 @@ pub fn rdp_storage_key_required(connection: &Connection) -> Result<String, AppEr
         .ok_or_else(|| AppError::Validation("connection id is empty or contains '|'".to_string()))
 }
 
-/// The connection's key, and the key without the id that RDP passwords were stored
-/// under before, shared by all connections to the same target, user and domain.
+/// The connection's key in the keyring of `workspace`, behind its prefix (R-0431),
+/// and the key without the id that RDP passwords were stored under before, shared
+/// by all connections to the same target, user and domain. Only a migrated
+/// workspace (`legacy_keys`) has such an entry; a new one never reads or deletes
+/// it, as it belongs to the migrated ones. Callers take `workspace` from
+/// `workspace::current()`, which fails in the launcher: no RDP key there, never
+/// one without a prefix.
 #[cfg(unix)]
-fn rdp_storage_keys(connection: &Connection) -> Option<(String, String)> {
-    let key = rdp_storage_key(connection)?;
-    let legacy = format!("rdp|{}", rdp_target(connection)?);
+fn rdp_storage_keys(
+    workspace: &Workspace,
+    connection: &Connection,
+) -> Option<(String, Option<String>)> {
+    let key = format!(
+        "{}{}",
+        workspace.keyring_prefix(),
+        rdp_storage_key(connection)?
+    );
+    let legacy = if workspace.legacy_keys {
+        Some(format!("rdp|{}", rdp_target(connection)?))
+    } else {
+        None
+    };
     Some((key, legacy))
 }
 
@@ -93,12 +121,15 @@ fn legacy_password(connection: &Connection, legacy: &str) -> Result<Option<Strin
 pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
     use crate::keyring_store::{delete, set, try_get};
 
-    let Some((key, legacy)) = rdp_storage_keys(connection) else {
+    let Some((key, legacy)) = rdp_storage_keys(&workspace::current()?, connection) else {
         return Ok(None);
     };
     if let Some(password) = try_get(&key)? {
         return Ok(Some(password));
     }
+    let Some(legacy) = legacy else {
+        return Ok(None);
+    };
     // The first connection that loads a legacy entry takes it over, so it stops
     // answering for the other connections to the same target.
     let Some(password) = legacy_password(connection, &legacy)? else {
@@ -115,27 +146,91 @@ pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, 
 fn password_stored_keyring(connection: &Connection) -> Result<bool, AppError> {
     use crate::keyring_store::try_get;
 
-    let Some((key, legacy)) = rdp_storage_keys(connection) else {
+    let Some((key, legacy)) = rdp_storage_keys(&workspace::current()?, connection) else {
         return Ok(false);
     };
-    Ok(try_get(&key)?.is_some() || legacy_password(connection, &legacy)?.is_some())
+    if try_get(&key)?.is_some() {
+        return Ok(true);
+    }
+    match legacy {
+        Some(legacy) => Ok(legacy_password(connection, &legacy)?.is_some()),
+        None => Ok(false),
+    }
 }
 
+/// In the data dir of a workspace: the names of its RDP keys in the keyring, never
+/// a secret (R-0431). The keyring cannot list its entries, so deleting a workspace
+/// deletes the keys named here. A key that a migrated workspace takes over on load
+/// is not named: nothing deletes the RDP keys of a migrated workspace.
 #[cfg(unix)]
-pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<(), AppError> {
-    let key = rdp_storage_key_required(connection)?;
+const SECRETS_FILE: &str = "secrets.json";
+
+/// What [`SECRETS_FILE`] holds.
+#[cfg(unix)]
+#[derive(Default, Serialize, Deserialize)]
+struct SecretIndex {
+    keys: BTreeSet<String>,
+}
+
+/// Held while an index changes, so two saves in one process keep each other's name;
+/// the workspace lock keeps every other process off the file.
+#[cfg(unix)]
+static INDEX_LOCK: Mutex<()> = Mutex::new(());
+
+/// Apply `change` to the index in `dir`, the data dir of a workspace, and write it
+/// back if `change` says it changed. A file that does not parse is an error: written
+/// over, it would lose the names in it.
+#[cfg(unix)]
+fn update_index(
+    dir: &Path,
+    change: impl FnOnce(&mut BTreeSet<String>) -> bool,
+) -> Result<(), AppError> {
+    let _held = INDEX_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    let path = dir.join(SECRETS_FILE);
+    let mut index: SecretIndex = match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => SecretIndex::default(),
+        Err(e) => return Err(e.into()),
+    };
+    if change(&mut index.keys) {
+        crate::storage::write_json_atomic(&path, &index)?;
+    }
+    Ok(())
+}
+
+/// Store the password under the connection's key in the workspace of this process;
+/// `base` is the app data dir.
+#[cfg(unix)]
+pub fn save_password_keyring(
+    base: &Path,
+    connection: &Connection,
+    password: &str,
+) -> Result<(), AppError> {
+    let workspace = workspace::current()?;
+    let key = format!(
+        "{}{}",
+        workspace.keyring_prefix(),
+        rdp_storage_key_required(connection)?
+    );
+    // The name goes in first: a key the index does not name would outlive its workspace.
+    update_index(&workspace.data_dir(base), |keys| keys.insert(key.clone()))?;
     crate::keyring_store::set(&key, password)
 }
 
 #[cfg(unix)]
-pub fn delete_password_keyring(connection: &Connection) -> Result<(), AppError> {
+pub fn delete_password_keyring(base: &Path, connection: &Connection) -> Result<(), AppError> {
     use crate::keyring_store::delete;
 
-    let Some((key, legacy)) = rdp_storage_keys(connection) else {
+    let workspace = workspace::current()?;
+    let Some((key, legacy)) = rdp_storage_keys(&workspace, connection) else {
         return Ok(());
     };
     delete(&key)?;
-    delete(&legacy)
+    if let Some(legacy) = legacy {
+        delete(&legacy)?;
+    }
+    // The name goes last: while the key may still be there, the index names it.
+    update_index(&workspace.data_dir(base), |keys| keys.remove(&key))
 }
 
 #[cfg(target_os = "windows")]
@@ -356,13 +451,16 @@ pub fn password_state(connection: &Connection) -> Result<PasswordState, AppError
     }
 }
 
-pub fn save_password(connection: &Connection, password: &str) -> Result<(), AppError> {
+/// Store the RDP password of `connection`; `base` is the app data dir, where the
+/// index of the workspace's keys lies.
+pub fn save_password(base: &Path, connection: &Connection, password: &str) -> Result<(), AppError> {
     if connection.kind != ConnectionKind::Rdp {
         return Ok(());
     }
 
     #[cfg(target_os = "windows")]
     {
+        let _ = base;
         let target = rdp_windows_target(connection)?;
         let username = rdp_windows_username(connection)?;
         return windows_store_credential(&target, &username, password);
@@ -370,34 +468,37 @@ pub fn save_password(connection: &Connection, password: &str) -> Result<(), AppE
 
     #[cfg(unix)]
     {
-        save_password_keyring(connection, password)
+        save_password_keyring(base, connection, password)
     }
 
     #[cfg(not(any(target_os = "windows", unix)))]
     {
-        let _ = password;
+        let _ = (base, password);
         return Ok(());
     }
 }
 
-pub fn delete_password(connection: &Connection) -> Result<(), AppError> {
+/// Delete the RDP password of `connection`; `base` as for [`save_password`].
+pub fn delete_password(base: &Path, connection: &Connection) -> Result<(), AppError> {
     if connection.kind != ConnectionKind::Rdp {
         return Ok(());
     }
 
     #[cfg(target_os = "windows")]
     {
+        let _ = base;
         let target = rdp_windows_target(connection)?;
         return windows_delete_credential(&target);
     }
 
     #[cfg(unix)]
     {
-        delete_password_keyring(connection)
+        delete_password_keyring(base, connection)
     }
 
     #[cfg(not(any(target_os = "windows", unix)))]
     {
+        let _ = base;
         return Ok(());
     }
 }
@@ -406,6 +507,31 @@ pub fn delete_password(connection: &Connection) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::models::ConnectionKind;
+    #[cfg(unix)]
+    use crate::workspace::{self, Workspace, WorkspaceId};
+
+    /// An app data dir of its own for one test case under the system temp dir, gone with the
+    /// guard.
+    #[cfg(unix)]
+    struct Scratch(std::path::PathBuf);
+
+    #[cfg(unix)]
+    impl Scratch {
+        fn new(case: &str) -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("ah-password-{case}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     fn rdp(
         host: Option<&str>,
@@ -514,13 +640,18 @@ mod tests {
         );
     }
 
+    // The keyring tests up to R-0431 run in the migrated workspace, whose keys carry
+    // no prefix: the key names in them are its keys.
+
     #[cfg(unix)]
     #[test]
     fn a_stored_password_belongs_to_one_connection() {
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("one-connection");
+        let _standard = workspace::enter(standard());
         let a = rdp_with_id("a");
         let b = rdp_with_id("b");
-        save_password(&a, "secret-a").unwrap();
+        save_password(&base.0, &a, "secret-a").unwrap();
         assert!(password_state(&a).unwrap().stored);
         assert!(!password_state(&b).unwrap().stored);
         assert_eq!(
@@ -535,6 +666,7 @@ mod tests {
     fn a_legacy_password_goes_to_the_first_connection_that_loads_it() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let _standard = workspace::enter(standard());
         set(LEGACY_KEY, "old").unwrap();
         let a = rdp_with_id("a");
         let b = rdp_with_id("b");
@@ -563,8 +695,10 @@ mod tests {
     fn the_connection_key_wins_over_a_legacy_entry() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("key-wins");
+        let _standard = workspace::enter(standard());
         let a = rdp_with_id("a");
-        save_password(&a, "new").unwrap();
+        save_password(&base.0, &a, "new").unwrap();
         set(LEGACY_KEY, "old").unwrap();
         assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("new"));
         assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
@@ -575,7 +709,9 @@ mod tests {
     fn saving_writes_only_the_connection_key() {
         use crate::keyring_store::try_get;
         let _keyring = crate::keyring_store::memory();
-        save_password(&rdp_with_id("a"), "secret").unwrap();
+        let base = Scratch::new("save-key-only");
+        let _standard = workspace::enter(standard());
+        save_password(&base.0, &rdp_with_id("a"), "secret").unwrap();
         assert_eq!(
             try_get("rdp|a|host.com|3390|admin|corp")
                 .unwrap()
@@ -590,10 +726,12 @@ mod tests {
     fn deleting_removes_the_connection_key_and_the_legacy_entry() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("delete-both");
+        let _standard = workspace::enter(standard());
         let a = rdp_with_id("a");
-        save_password(&a, "new").unwrap();
+        save_password(&base.0, &a, "new").unwrap();
         set(LEGACY_KEY, "old").unwrap();
-        delete_password(&a).unwrap();
+        delete_password(&base.0, &a).unwrap();
         assert_eq!(try_get("rdp|a|host.com|3390|admin|corp").unwrap(), None);
         assert_eq!(try_get(LEGACY_KEY).unwrap(), None);
         assert!(!password_state(&a).unwrap().stored);
@@ -604,16 +742,21 @@ mod tests {
     fn a_connection_without_a_key_stores_and_takes_over_nothing() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("no-key");
+        let _standard = workspace::enter(standard());
         set(LEGACY_KEY, "old").unwrap();
         for id in ["", "a|b"] {
             let c = rdp_with_id(id);
             assert!(!password_state(&c).unwrap().stored, "{id:?}");
             assert_eq!(load_password_keyring(&c).unwrap(), None, "{id:?}");
             assert!(
-                matches!(save_password(&c, "x"), Err(AppError::Validation(_))),
+                matches!(
+                    save_password(&base.0, &c, "x"),
+                    Err(AppError::Validation(_))
+                ),
                 "{id:?}"
             );
-            delete_password(&c).unwrap();
+            delete_password(&base.0, &c).unwrap();
         }
         for key in [
             "rdp||host.com|3390|admin|corp",
@@ -666,6 +809,8 @@ mod tests {
     fn no_connection_takes_over_a_legacy_entry_for_this_machine() {
         use crate::keyring_store::{delete, set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("this-machine");
+        let _standard = workspace::enter(standard());
         for &host in THIS_MACHINE {
             let (c, key, legacy) = rdp_to(host);
             set(&legacy, "old").unwrap();
@@ -675,7 +820,7 @@ mod tests {
             assert_eq!(try_get(&legacy).unwrap().as_deref(), Some("old"), "{host}");
 
             // The connection's own key still works for such a target.
-            save_password(&c, "new").unwrap();
+            save_password(&base.0, &c, "new").unwrap();
             assert!(password_state(&c).unwrap().stored, "{host}");
             assert_eq!(
                 load_password_keyring(&c).unwrap().as_deref(),
@@ -692,6 +837,7 @@ mod tests {
     fn a_legacy_entry_for_another_host_is_still_taken_over() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let _standard = workspace::enter(standard());
         for host in [
             "192.0.2.10",
             "2001:db8::1",
@@ -717,12 +863,257 @@ mod tests {
     fn deleting_removes_a_legacy_entry_for_this_machine() {
         use crate::keyring_store::{set, try_get};
         let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("delete-this-machine");
+        let _standard = workspace::enter(standard());
         for &host in THIS_MACHINE {
             let (c, _, legacy) = rdp_to(host);
             set(&legacy, "old").unwrap();
-            delete_password(&c).unwrap();
+            delete_password(&base.0, &c).unwrap();
             assert_eq!(try_get(&legacy).unwrap(), None, "{host}");
         }
+    }
+
+    // ── R-0431: RDP passwords per workspace ────────────────────────────────
+
+    /// A migrated workspace: its keys carry no prefix, as before workspaces.
+    #[cfg(unix)]
+    fn standard() -> Workspace {
+        Workspace {
+            id: WorkspaceId::parse("standard").unwrap(),
+            name: "Standard".to_string(),
+            legacy_keys: true,
+        }
+    }
+
+    /// A workspace created after the migration: its keys carry its id.
+    #[cfg(unix)]
+    fn created(id: &str) -> Workspace {
+        Workspace {
+            id: WorkspaceId::parse(id).unwrap(),
+            name: id.to_string(),
+            legacy_keys: false,
+        }
+    }
+
+    /// The key of the connection `a` in the migrated workspace, as desktop-hardening stored it.
+    #[cfg(unix)]
+    const STANDARD_KEY: &str = "rdp|a|host.com|3390|admin|corp";
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_standard_keeps_its_keys_and_takes_over_a_legacy_entry() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-standard");
+        let _standard = workspace::enter(standard());
+        let a = rdp_with_id("a");
+
+        set(LEGACY_KEY, "old").unwrap();
+        assert!(password_state(&a).unwrap().stored);
+        assert_eq!(load_password_keyring(&a).unwrap().as_deref(), Some("old"));
+        assert_eq!(try_get(STANDARD_KEY).unwrap().as_deref(), Some("old"));
+        assert_eq!(try_get(LEGACY_KEY).unwrap(), None);
+
+        save_password(&base.0, &a, "new").unwrap();
+        assert_eq!(try_get(STANDARD_KEY).unwrap().as_deref(), Some("new"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_two_new_workspaces_keep_their_rdp_passwords_apart() {
+        use crate::keyring_store::try_get;
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-two");
+        let a = rdp_with_id("a");
+        let first = created("w-0a1b2c3d");
+        let first_key = format!("{}{STANDARD_KEY}", first.keyring_prefix());
+        {
+            let _first = workspace::enter(first);
+            save_password(&base.0, &a, "first").unwrap();
+            assert!(password_state(&a).unwrap().stored);
+        }
+        assert_eq!(try_get(&first_key).unwrap().as_deref(), Some("first"));
+        assert_eq!(try_get(STANDARD_KEY).unwrap(), None);
+
+        // The same connection id in another workspace, e.g. the same server twice.
+        let _second = workspace::enter(created("w-4e5f6a7b"));
+        assert!(!password_state(&a).unwrap().stored);
+        assert_eq!(load_password_keyring(&a).unwrap(), None);
+        save_password(&base.0, &a, "second").unwrap();
+        assert_eq!(
+            load_password_keyring(&a).unwrap().as_deref(),
+            Some("second")
+        );
+        delete_password(&base.0, &a).unwrap();
+        assert_eq!(try_get(&first_key).unwrap().as_deref(), Some("first"));
+    }
+
+    // A new workspace has no entries from before workspaces: those of the migrated workspaces
+    // stay theirs, whether under the old key or under the key with the connection id.
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_a_new_workspace_reads_and_deletes_no_key_of_the_migrated_ones() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-no-legacy");
+        set(LEGACY_KEY, "old").unwrap();
+        set(STANDARD_KEY, "standard").unwrap();
+        let _entered = workspace::enter(created("w-0a1b2c3d"));
+        let a = rdp_with_id("a");
+
+        assert!(!password_state(&a).unwrap().stored);
+        assert_eq!(load_password_keyring(&a).unwrap(), None);
+        delete_password(&base.0, &a).unwrap();
+
+        assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
+        assert_eq!(try_get(STANDARD_KEY).unwrap().as_deref(), Some("standard"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_the_launcher_reads_and_writes_no_rdp_password() {
+        use crate::keyring_store::{set, try_get};
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-launcher");
+        set(LEGACY_KEY, "old").unwrap();
+        set(STANDARD_KEY, "standard").unwrap();
+        let a = rdp_with_id("a");
+
+        assert!(password_state(&a).is_err());
+        assert!(load_password_keyring(&a).is_err());
+        assert!(save_password(&base.0, &a, "new").is_err());
+        assert!(delete_password(&base.0, &a).is_err());
+
+        // Nothing fell back to the keys without a prefix.
+        assert_eq!(try_get(LEGACY_KEY).unwrap().as_deref(), Some("old"));
+        assert_eq!(try_get(STANDARD_KEY).unwrap().as_deref(), Some("standard"));
+    }
+
+    /// The index of the RDP keys in the data dir of `workspace` under the app data dir `base`.
+    #[cfg(unix)]
+    fn index_path(base: &std::path::Path, workspace: &Workspace) -> std::path::PathBuf {
+        workspace.data_dir(base).join("secrets.json")
+    }
+
+    #[cfg(unix)]
+    fn index_of(path: &std::path::Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_the_index_lists_each_saved_key_until_it_is_deleted() {
+        use std::os::unix::fs::PermissionsExt;
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-index");
+        let workspace = created("w-0a1b2c3d");
+        let prefix = workspace.keyring_prefix();
+        let index = index_path(&base.0, &workspace);
+        let _entered = workspace::enter(workspace);
+        let (a, b) = (rdp_with_id("a"), rdp_with_id("b"));
+        let key_a = format!("{prefix}{STANDARD_KEY}");
+        let key_b = format!("{prefix}rdp|b|host.com|3390|admin|corp");
+
+        save_password(&base.0, &b, "secret-b").unwrap();
+        save_password(&base.0, &a, "secret-a").unwrap();
+        save_password(&base.0, &a, "secret-a again").unwrap();
+
+        assert_eq!(
+            index_of(&index),
+            serde_json::json!({ "keys": [key_a, key_b] })
+        );
+        assert!(!std::fs::read_to_string(&index).unwrap().contains("secret"));
+        let mode = std::fs::metadata(&index).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let names: Vec<_> = std::fs::read_dir(index.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["secrets.json"], "no temp file left");
+
+        delete_password(&base.0, &a).unwrap();
+        assert_eq!(index_of(&index), serde_json::json!({ "keys": [key_b] }));
+        delete_password(&base.0, &a).unwrap();
+        delete_password(&base.0, &b).unwrap();
+        assert_eq!(index_of(&index), serde_json::json!({ "keys": [] }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_each_workspace_keeps_its_own_index() {
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-index-own");
+        let a = rdp_with_id("a");
+        let created = created("w-0a1b2c3d");
+        let created_key = format!("{}{STANDARD_KEY}", created.keyring_prefix());
+        let created_index = index_path(&base.0, &created);
+        let standard_index = index_path(&base.0, &standard());
+        {
+            let _standard = workspace::enter(standard());
+            save_password(&base.0, &a, "standard").unwrap();
+        }
+        let _created = workspace::enter(created);
+        save_password(&base.0, &a, "created").unwrap();
+
+        assert_eq!(
+            index_of(&standard_index),
+            serde_json::json!({ "keys": [STANDARD_KEY] })
+        );
+        assert_eq!(
+            index_of(&created_index),
+            serde_json::json!({ "keys": [created_key] })
+        );
+    }
+
+    // A key in the keyring that the index does not name would outlive the deletion of its
+    // workspace, so the name goes first.
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_the_index_names_the_key_before_the_password_is_written() {
+        let base = Scratch::new("ws-index-first");
+        let workspace = created("w-0a1b2c3d");
+        let key = format!("{}{STANDARD_KEY}", workspace.keyring_prefix());
+        let index = index_path(&base.0, &workspace);
+        let _entered = workspace::enter(workspace);
+
+        // Without a keyring guard every write fails, as a locked keyring would.
+        assert!(save_password(&base.0, &rdp_with_id("a"), "secret").is_err());
+
+        assert_eq!(index_of(&index), serde_json::json!({ "keys": [key] }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_a_broken_index_stores_no_password() {
+        use crate::keyring_store::try_get;
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-index-broken");
+        let workspace = created("w-0a1b2c3d");
+        let key = format!("{}{STANDARD_KEY}", workspace.keyring_prefix());
+        let index = index_path(&base.0, &workspace);
+        std::fs::create_dir_all(index.parent().unwrap()).unwrap();
+        std::fs::write(&index, "{not json").unwrap();
+        let _entered = workspace::enter(workspace);
+
+        assert!(save_password(&base.0, &rdp_with_id("a"), "secret").is_err());
+
+        assert_eq!(try_get(&key).unwrap(), None);
+        assert_eq!(std::fs::read_to_string(&index).unwrap(), "{not json");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_keys_neither_the_launcher_nor_a_delete_without_a_key_writes_an_index() {
+        let _keyring = crate::keyring_store::memory();
+        let base = Scratch::new("ws-index-none");
+        let a = rdp_with_id("a");
+
+        assert!(save_password(&base.0, &a, "secret").is_err());
+        assert!(delete_password(&base.0, &a).is_err());
+        let _entered = workspace::enter(created("w-0a1b2c3d"));
+        delete_password(&base.0, &a).unwrap();
+
+        assert_eq!(std::fs::read_dir(&base.0).unwrap().count(), 0);
     }
 
     // Windows-only credential/target formatting. These execute now that the CI

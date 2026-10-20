@@ -32,7 +32,8 @@ use crate::session::{SessionState, SignedIn};
 
 // Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
 // is the only secret; cert/ca are public but kept in the same secure store so
-// `build_client` can load the identity without an AppHandle.
+// `build_client` can load the identity without an AppHandle. Each workspace has
+// its own identity: the entries lie behind its keyring prefix (`keyring_key`).
 const KEYRING_KEY: &str = "enroll|key"; // the EC private key (PKCS#8 PEM)
 const KEYRING_CERT: &str = "enroll|cert"; // fullchain: leaf + access intermediate
 const KEYRING_CA: &str = "enroll|ca"; // chain: access intermediate + root
@@ -159,15 +160,40 @@ pub fn enroll_endpoint(server_url: &str, port: u16) -> Result<String, AppError> 
 
 // ── Identity storage (keyring) ────────────────────────────────────────────
 
+/// The keyring prefix of the workspace of this process (R-0431). The launcher
+/// has no workspace and so no identity: an error, never a key without a prefix.
+fn keyring_prefix() -> Result<String, AppError> {
+    Ok(crate::workspace::current()?.keyring_prefix())
+}
+
+/// The keyring key of the identity entry `entry` in the workspace of this process.
+fn keyring_key(entry: &str) -> Result<String, AppError> {
+    Ok(format!("{}{entry}", keyring_prefix()?))
+}
+
+/// The identity entry `entry` of the workspace of this process; none in the launcher.
+fn read(entry: &str) -> Option<String> {
+    keyring_store::get(&keyring_key(entry).ok()?)
+}
+
+/// Delete the identity entry `entry` of the workspace of this process, best effort;
+/// the launcher has none to delete.
+fn forget(entry: &str) {
+    if let Ok(key) = keyring_key(entry) {
+        let _ = keyring_store::delete(&key);
+    }
+}
+
 /// Persist a renewed identity: key + fullchain + pinned CA chain. On renew the
 /// key is unchanged (the cert is re-issued for the same key, see `renew`), so a
 /// partial write can never produce a key/cert mismatch — the keyring's lack of
 /// an atomic multi-entry swap is thereby moot. A new enrollment brings a new key
 /// and goes through `replace_identity` instead.
 fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError> {
-    keyring_store::set(KEYRING_KEY, key_pem)?;
-    keyring_store::set(KEYRING_CERT, &issued.fullchain)?;
-    keyring_store::set(KEYRING_CA, &issued.chain)?;
+    let prefix = keyring_prefix()?;
+    keyring_store::set(&format!("{prefix}{KEYRING_KEY}"), key_pem)?;
+    keyring_store::set(&format!("{prefix}{KEYRING_CERT}"), &issued.fullchain)?;
+    keyring_store::set(&format!("{prefix}{KEYRING_CA}"), &issued.chain)?;
     // The cached http client bakes in the previous trust anchor — drop it so the next build_client
     // picks up the newly enrolled identity (5.1).
     crate::http_client::invalidate_client_cache();
@@ -183,7 +209,8 @@ fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError
 /// stops before anything is written. The new cert goes last, so the device counts
 /// as enrolled only once key, CA chain and cert are all in place. Every state a
 /// crash can leave is the old identity untouched, no identity, or the new one.
-/// The keyring calls come in as parameters, so a test can fail any one of them.
+/// The keyring calls come in as parameters, so a test can fail any one of them;
+/// they get the entry names, the caller puts the workspace's prefix in front.
 fn replace_identity(
     key_pem: &str,
     issued: &IssuedIdentity,
@@ -198,20 +225,18 @@ fn replace_identity(
     set(KEYRING_CERT, &issued.fullchain)
 }
 
-/// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled. Used
+/// The stored identity of the workspace of this process as `(key_pem,
+/// fullchain_pem, ca_pem)`, if enrolled; none in the launcher. Used
 /// internally and by the frpc visitor (F2) to present the desktop's access cert
 /// on the frp plane (frps trusts the access intermediate).
 pub(crate) fn load_identity() -> Option<(String, String, String)> {
-    Some((
-        keyring_store::get(KEYRING_KEY)?,
-        keyring_store::get(KEYRING_CERT)?,
-        keyring_store::get(KEYRING_CA)?,
-    ))
+    Some((read(KEYRING_KEY)?, read(KEYRING_CERT)?, read(KEYRING_CA)?))
 }
 
-/// Whether this device has an enrolled mTLS identity (key + cert present).
+/// Whether the workspace of this process has an enrolled mTLS identity (key +
+/// cert present); the launcher never has one.
 pub fn is_enrolled() -> bool {
-    keyring_store::get(KEYRING_KEY).is_some() && keyring_store::get(KEYRING_CERT).is_some()
+    read(KEYRING_KEY).is_some() && read(KEYRING_CERT).is_some()
 }
 
 /// SHA-256 (lowercase hex) of the pinned access-intermediate CA — the FIRST
@@ -221,7 +246,7 @@ pub fn is_enrolled() -> bool {
 /// presents exactly this intermediate in its TLS chain (fullchain = leaf +
 /// intermediate), so the value survives leaf rotation. `None` until enrolled.
 pub fn pinned_ca_fingerprint() -> Option<String> {
-    ca_fingerprint_of_chain(&keyring_store::get(KEYRING_CA)?)
+    ca_fingerprint_of_chain(&read(KEYRING_CA)?)
 }
 
 /// The fingerprint of the first PEM certificate in `chain_pem`. Split out so it
@@ -235,7 +260,7 @@ fn ca_fingerprint_of_chain(chain_pem: &str) -> Option<String> {
 
 /// SHA-256 (lowercase hex) of the stored leaf: the fullchain begins with it.
 fn leaf_fingerprint() -> Option<String> {
-    ca_fingerprint_of_chain(&keyring_store::get(KEYRING_CERT)?)
+    ca_fingerprint_of_chain(&read(KEYRING_CERT)?)
 }
 
 /// What the settings and the renewal read from a leaf: its common name, if it
@@ -284,10 +309,7 @@ fn identity_of(cert_pem: &str) -> Result<DeviceIdentity, AppError> {
 /// `None` without key or cert (the rule of `is_enrolled`); an error when the
 /// stored cert does not parse or has no CN.
 pub fn device_identity() -> Result<Option<DeviceIdentity>, AppError> {
-    let (Some(_), Some(cert_pem)) = (
-        keyring_store::get(KEYRING_KEY),
-        keyring_store::get(KEYRING_CERT),
-    ) else {
+    let (Some(_), Some(cert_pem)) = (read(KEYRING_KEY), read(KEYRING_CERT)) else {
         return Ok(None);
     };
     identity_of(&cert_pem).map(Some)
@@ -318,18 +340,14 @@ fn replaces_for(
 
 /// What an enrollment of `kind` names as replaced, read from the keyring.
 fn pending_replaces(kind: EnrollmentKind) -> Option<String> {
-    replaces_for(
-        kind,
-        leaf_fingerprint(),
-        keyring_store::get(KEYRING_REPLACES),
-    )
+    replaces_for(kind, leaf_fingerprint(), read(KEYRING_REPLACES))
 }
 
 /// Once the new identity is stored, the remembered leaf has been named and is done
 /// with; after a failed store it stays for the next enrollment.
 fn settle_replaces(stored: &Result<(), AppError>) {
     if stored.is_ok() {
-        let _ = keyring_store::delete(KEYRING_REPLACES);
+        forget(KEYRING_REPLACES);
     }
 }
 
@@ -355,7 +373,9 @@ pub async fn reset_identity(server_url: &str) -> ResetOutcome {
         || revoke_on_server(server_url),
         clear_identity,
         |fingerprint| {
-            let _ = keyring_store::set(KEYRING_REPLACES, fingerprint);
+            if let Ok(key) = keyring_key(KEYRING_REPLACES) {
+                let _ = keyring_store::set(&key, fingerprint);
+            }
         },
     )
     .await
@@ -416,9 +436,9 @@ fn revoked_by(status: u16, body: &str) -> bool {
 /// by the explicit "reset device identity" settings action (`reset_device_identity`)
 /// — the recovery path after a server reinstall / PKI re-creation.
 pub fn clear_identity() {
-    let _ = keyring_store::delete(KEYRING_KEY);
-    let _ = keyring_store::delete(KEYRING_CERT);
-    let _ = keyring_store::delete(KEYRING_CA);
+    forget(KEYRING_KEY);
+    forget(KEYRING_CERT);
+    forget(KEYRING_CA);
     // Drop the cached mTLS client so the next build_client falls back to the non-enrolled path (5.1).
     crate::http_client::invalidate_client_cache();
 }
@@ -443,6 +463,9 @@ pub async fn enroll_with_token(
     token: &str,
     allow_self_signed: bool,
 ) -> Result<(), AppError> {
+    // Before the token reaches the server: the launcher has nowhere to keep an
+    // identity, and a redeemed one-time token is spent.
+    let prefix = keyring_prefix()?;
     let key_and_csr = generate_key_and_csr("adminhelper-enrollment")?;
     let endpoint = enroll_endpoint(server_url, DEFAULT_ENROLL_PORT)?;
     let replaces = pending_replaces(EnrollmentKind::Device);
@@ -458,8 +481,8 @@ pub async fn enroll_with_token(
     let stored = replace_identity(
         &key_and_csr.key_pem,
         &issued,
-        keyring_store::delete,
-        keyring_store::set,
+        |entry| keyring_store::delete(&format!("{prefix}{entry}")),
+        |entry, value| keyring_store::set(&format!("{prefix}{entry}"), value),
     );
     // Even a failed replace may have deleted the old entries: drop the cached
     // client either way, so the next build_client sees what is there (5.1).
@@ -825,6 +848,7 @@ pub async fn export_browser_p12(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::{self, Workspace, WorkspaceId};
 
     #[test]
     fn generate_key_and_csr_yields_ec_key_and_csr_pem() {
@@ -1517,7 +1541,8 @@ mod tests {
     }
 
     // The steps of the enroll flows that touch only the keyring, against the
-    // in-memory keyring (R-0294).
+    // in-memory keyring (R-0294), in the migrated workspace: its entries carry no
+    // prefix, so the constants are its keys.
 
     /// (cert_pem, key_pem, fingerprint) of a self-signed leaf.
     fn leaf() -> (String, String, String) {
@@ -1537,6 +1562,7 @@ mod tests {
     #[test]
     fn a_device_enrollment_names_the_held_leaf_before_a_remembered_one() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         let (cert, _, fingerprint) = leaf();
         keyring_store::set(KEYRING_CERT, &cert).unwrap();
         keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
@@ -1546,6 +1572,7 @@ mod tests {
     #[test]
     fn a_device_enrollment_without_an_identity_names_the_remembered_leaf() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
         assert_eq!(
             pending_replaces(EnrollmentKind::Device).as_deref(),
@@ -1556,6 +1583,7 @@ mod tests {
     #[test]
     fn a_browser_export_names_nothing_from_the_keyring() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         let (cert, _, _) = leaf();
         keyring_store::set(KEYRING_CERT, &cert).unwrap();
         keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
@@ -1565,6 +1593,7 @@ mod tests {
     #[test]
     fn only_a_stored_enrollment_drops_the_remembered_leaf() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
         settle_replaces(&Err(AppError::Keyring("write failed".to_string())));
         assert_eq!(
@@ -1578,6 +1607,7 @@ mod tests {
     #[tokio::test]
     async fn a_reset_with_the_server_out_of_reach_remembers_the_leaf_and_deletes_the_identity() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         let (cert, key, fingerprint) = leaf();
         keyring_store::set(KEYRING_KEY, &key).unwrap();
         keyring_store::set(KEYRING_CERT, &cert).unwrap();
@@ -1633,6 +1663,7 @@ mod tests {
     #[test]
     fn the_identity_is_the_name_and_expiry_of_the_leaf_not_the_intermediate() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         enrolled_with(&fullchain(Some("admin")));
 
         let identity = device_identity().unwrap().expect("enrolled");
@@ -1644,6 +1675,7 @@ mod tests {
     #[test]
     fn a_leaf_without_a_common_name_is_an_error() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         enrolled_with(&fullchain(None));
         assert!(matches!(device_identity(), Err(AppError::Validation(_))));
     }
@@ -1651,6 +1683,7 @@ mod tests {
     #[test]
     fn a_stored_cert_that_does_not_parse_is_an_error() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         enrolled_with("-----BEGIN CERTIFICATE-----\nZ2FyYmFnZQ==\n-----END CERTIFICATE-----\n");
         assert!(matches!(device_identity(), Err(AppError::Validation(_))));
         enrolled_with("kein pem");
@@ -1660,6 +1693,7 @@ mod tests {
     #[test]
     fn without_a_key_there_is_no_identity() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         keyring_store::set(KEYRING_CERT, &fullchain(Some("admin"))).unwrap();
         assert!(matches!(device_identity(), Ok(None)));
     }
@@ -1667,9 +1701,170 @@ mod tests {
     #[test]
     fn without_a_cert_there_is_no_identity() {
         let _keyring = keyring_store::memory();
+        let _standard = workspace::enter(standard());
         let (_, key, _) = leaf();
         keyring_store::set(KEYRING_KEY, &key).unwrap();
         assert!(matches!(device_identity(), Ok(None)));
+    }
+
+    // ── R-0431: one identity per workspace ─────────────────────────────────
+
+    /// A migrated workspace: its keys carry no prefix, as before workspaces.
+    fn standard() -> Workspace {
+        Workspace {
+            id: WorkspaceId::parse("standard").unwrap(),
+            name: "Standard".to_string(),
+            legacy_keys: true,
+        }
+    }
+
+    /// A workspace created after the migration: its keys carry its id.
+    fn created(id: &str) -> Workspace {
+        Workspace {
+            id: WorkspaceId::parse(id).unwrap(),
+            name: id.to_string(),
+            legacy_keys: false,
+        }
+    }
+
+    const ENTRIES: [&str; 4] = [KEYRING_KEY, KEYRING_CERT, KEYRING_CA, KEYRING_REPLACES];
+
+    /// The identity as an enrollment before workspaces left it: entries without a prefix.
+    fn enrolled_before_workspaces() -> (String, String) {
+        let (cert, key, _) = leaf();
+        keyring_store::set(KEYRING_KEY, &key).unwrap();
+        keyring_store::set(KEYRING_CERT, &cert).unwrap();
+        keyring_store::set(KEYRING_CA, &cert).unwrap();
+        (key, cert)
+    }
+
+    fn issued(cert: &str) -> IssuedIdentity {
+        IssuedIdentity {
+            fullchain: cert.to_string(),
+            chain: cert.to_string(),
+        }
+    }
+
+    #[test]
+    fn workspace_keys_standard_reads_the_identity_from_before_workspaces() {
+        let _keyring = keyring_store::memory();
+        let (key, cert) = enrolled_before_workspaces();
+        let _standard = workspace::enter(standard());
+
+        assert!(is_enrolled());
+        assert_eq!(load_identity(), Some((key, cert.clone(), cert)));
+        assert!(pinned_ca_fingerprint().is_some());
+    }
+
+    #[test]
+    fn workspace_keys_a_new_workspace_stores_its_identity_behind_its_prefix() {
+        let _keyring = keyring_store::memory();
+        let workspace = created("w-0a1b2c3d");
+        let prefix = workspace.keyring_prefix();
+        let _entered = workspace::enter(workspace);
+        let (cert, key, _) = leaf();
+
+        store_identity(&key, &issued(&cert)).unwrap();
+
+        assert!(is_enrolled());
+        for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+            assert!(
+                keyring_store::get(&format!("{prefix}{entry}")).is_some(),
+                "{entry}"
+            );
+            assert_eq!(keyring_store::get(entry), None, "{entry} without a prefix");
+        }
+    }
+
+    #[test]
+    fn workspace_keys_two_new_workspaces_never_see_each_others_identity() {
+        let _keyring = keyring_store::memory();
+        let (cert, key, _) = leaf();
+        {
+            let a = created("a");
+            let replaces = format!("{}{KEYRING_REPLACES}", a.keyring_prefix());
+            let _a = workspace::enter(a);
+            store_identity(&key, &issued(&cert)).unwrap();
+            keyring_store::set(&replaces, "remembered-a").unwrap();
+            assert!(is_enrolled());
+        }
+
+        let _b = workspace::enter(created("b"));
+        assert!(!is_enrolled());
+        assert_eq!(load_identity(), None);
+        assert!(matches!(device_identity(), Ok(None)));
+        assert_eq!(pinned_ca_fingerprint(), None);
+        assert_eq!(pending_replaces(EnrollmentKind::Device), None);
+        assert!(enrolled_client().is_err());
+        // Nor does the migrated workspace see it.
+        let _standard = workspace::enter(standard());
+        assert!(!is_enrolled());
+    }
+
+    #[test]
+    fn workspace_keys_a_new_workspace_never_reads_the_identity_from_before_workspaces() {
+        let _keyring = keyring_store::memory();
+        enrolled_before_workspaces();
+        keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
+        let _entered = workspace::enter(created("w-0a1b2c3d"));
+
+        assert!(!is_enrolled());
+        assert_eq!(load_identity(), None);
+        assert!(matches!(device_identity(), Ok(None)));
+        assert_eq!(pending_replaces(EnrollmentKind::Device), None);
+    }
+
+    #[tokio::test]
+    async fn workspace_keys_a_reset_in_a_new_workspace_leaves_the_others_alone() {
+        let _keyring = keyring_store::memory();
+        let (key, cert) = enrolled_before_workspaces();
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let workspace = created("a");
+        let prefix = workspace.keyring_prefix();
+        let _a = workspace::enter(workspace);
+        store_identity(&key, &issued(&cert)).unwrap();
+
+        let outcome = reset_identity(&format!("http://127.0.0.1:{port}")).await;
+
+        assert_eq!(outcome, ResetOutcome::LocalOnly);
+        for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+            assert_eq!(keyring_store::get(&format!("{prefix}{entry}")), None);
+        }
+        assert!(keyring_store::get(&format!("{prefix}{KEYRING_REPLACES}")).is_some());
+        // The identity from before workspaces belongs to the migrated workspace.
+        assert_eq!(keyring_store::get(KEYRING_KEY), Some(key));
+        assert_eq!(keyring_store::get(KEYRING_CERT), Some(cert));
+        assert_eq!(keyring_store::get(KEYRING_REPLACES), None);
+    }
+
+    #[tokio::test]
+    async fn workspace_keys_the_launcher_has_no_identity_and_stores_none() {
+        let _keyring = keyring_store::memory();
+        let (key, cert) = enrolled_before_workspaces();
+        keyring_store::set(KEYRING_REPLACES, "remembered").unwrap();
+        let before: Vec<_> = ENTRIES.map(keyring_store::get).into();
+
+        assert!(!is_enrolled());
+        assert_eq!(load_identity(), None);
+        assert!(matches!(device_identity(), Ok(None)));
+        assert_eq!(pinned_ca_fingerprint(), None);
+        assert_eq!(pending_replaces(EnrollmentKind::Device), None);
+        assert!(enrolled_client().is_err());
+        assert!(store_identity(&key, &issued(&cert)).is_err());
+        settle_replaces(&Ok(()));
+        clear_identity();
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let url = format!("http://127.0.0.1:{port}");
+        assert_eq!(reset_identity(&url).await, ResetOutcome::NotEnrolled);
+        // Refused before the token reaches a server: a one-time token stays unspent.
+        let no_workspace = crate::workspace::current().unwrap_err().to_string();
+        match enroll_with_token(&url, "one-time", false).await {
+            Err(e) => assert_eq!(e.to_string(), no_workspace),
+            Ok(()) => panic!("the launcher enrolled"),
+        }
+
+        // Nothing fell back to the entries without a prefix.
+        assert_eq!(Vec::from(ENTRIES.map(keyring_store::get)), before);
     }
 
     #[test]

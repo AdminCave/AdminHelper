@@ -58,8 +58,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- storage::
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T4
 
-### T6 — Keyring-Präfix für Geräte-Identität und RDP-Passwörter  [ ]
-Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/password.rs
+### T6 — Keyring-Präfix für Geräte-Identität und RDP-Passwörter  [x]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/enrollment.rs, apps/desktop/src-tauri/src/password.rs, apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/storage.rs, apps/desktop/src-tauri/src/frpc.rs, apps/desktop/src-tauri/src/http_client.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @ec74f658 2026-10-20T06:12:11+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T6.verdict.json)
 Änderung: Die Schlüssel `enroll|key|cert|ca|replaces` (`enrollment.rs:36-42`) und `rdp|…` (`password.rs:17`, `:34`) bekommen `workspace::current()?.keyring_prefix()` vorangestellt; ohne Kontext (Launcher) gibt es keine Identität (`is_enrolled` false, `load_identity` None) und Schreiben ist ein Fehler. `tofu|cert|*` und das Aufräumen alter `auth|*` bleiben ohne Präfix. Index der RDP-Schlüssel je Workspace in `workspaces/<id>/secrets.json` (nur Namen), gepflegt von `save_password` (`:315`) und `delete_password` (`:339`). Der Windows-Weg für RDP-Passwörter folgt in T16/T17. Tests (`workspace_keys_*`, mit `keyring_store::memory()` und Workspace-Guard): Standard (`legacyKeys`) liest die Altschlüssel; zwei neue Workspaces sehen die Identität des anderen nicht; RDP-Schlüssel getrennt; Index nach Speichern und Löschen; Launcher: `is_enrolled` false, Speichern Fehler. Hinweis (T1): der Test-Guard `workspace::enter` gilt nur im eigenen Thread; Code, der in Tests auf anderen Threads läuft (`spawn_blocking`, tokio-Worker), sieht keinen Workspace.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace_keys
 Doku: keine (intern; Doku mit T33)

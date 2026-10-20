@@ -1557,6 +1557,11 @@ bindPort = 6000
         );
 
         let _keyring = keyring_store::memory();
+        let _standard = crate::workspace::enter(crate::workspace::Workspace {
+            id: crate::workspace::WorkspaceId::parse("standard").unwrap(),
+            name: "Standard".to_string(),
+            legacy_keys: true,
+        });
         for (key, value) in [
             ("enroll|key", "the key"),
             ("enroll|cert", "the cert"),
@@ -2584,6 +2589,11 @@ method = "token"
         let root = scratch_dir("windows-path");
         let data_dir = root.join(r"x\Users\O'Brien Test\AppData\Roaming\com.admincave.adminhelper");
         let _keyring = keyring_store::memory();
+        let _standard = crate::workspace::enter(crate::workspace::Workspace {
+            id: crate::workspace::WorkspaceId::parse("standard").unwrap(),
+            name: "Standard".to_string(),
+            legacy_keys: true,
+        });
         for (key, value) in [
             ("enroll|key", "the key"),
             ("enroll|cert", "the cert"),

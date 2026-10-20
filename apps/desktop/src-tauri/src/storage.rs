@@ -17,7 +17,7 @@ use crate::models::{
 };
 use crate::workspace::{self, Meta};
 
-fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
+pub(crate) fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
     app.path()
         .app_data_dir()
         .map_err(|err: tauri::Error| AppError::Io(std::io::Error::other(err.to_string())))
