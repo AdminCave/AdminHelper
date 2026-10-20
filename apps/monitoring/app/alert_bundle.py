@@ -29,10 +29,12 @@ from sqlalchemy.orm import Session
 from app import alerter, check_engine
 from app.core import database
 from app.core.time import utcnow_naive
+from app.maintenance import is_in_maintenance
 from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorMaintenance,
     MonitorState,
     MonitorTemplateAssignment,
 )
@@ -122,7 +124,8 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
     are _alone_wait old and then go out one by one on the single path
     (_dispatch_alert_bg, which claims each itself). A heartbeat muted by a
     maintenance window or a Host Ping does not count and stays open, as in
-    process_alert.
+    process_alert, and once the muting is over only after its next evaluation
+    (_awaits_check).
 
     The session is reached as ``database.SessionLocal``, the one patch point it
     shares with _dispatch_alert_bg. Errors are logged and rolled back; a claim
@@ -154,7 +157,7 @@ def flush_agent_alerts(now: datetime | None = None) -> None:
 def _candidates(db: Session, now: datetime) -> dict[str, list[_Open]]:
     """The open heartbeats per kind (steps 1-2): enabled agent_ping checks whose
     status the alerter would report (resolve_notification "notify") and that are
-    not muted at now."""
+    _reportable at now."""
     rows = (
         db.query(MonitorCheck, MonitorState)
         .join(MonitorState, MonitorState.check_id == MonitorCheck.id)
@@ -171,12 +174,58 @@ def _candidates(db: Session, now: datetime) -> dict[str, list[_Open]]:
     for check, state in rows:
         if alerter.resolve_notification(state.notified_status, state.status) != "notify":
             continue
-        if alerter.muted_reason(db, check, now) is not None:
+        if not _reportable(db, check, state, now):
             continue
         found[_KIND_OF_STATUS[state.status]].append(
             _Open(check.id, state.status, state.notified_status, state.since, check.interval)
         )
     return found
+
+
+def _reportable(db: Session, check: MonitorCheck, state: MonitorState, now: datetime) -> bool:
+    """Whether the heartbeat's open status may be reported at now: not muted
+    (muted_reason, as in process_alert) and not one that awaits its next
+    evaluation after a muting (_awaits_check)."""
+    return alerter.muted_reason(db, check, now) is None and not _awaits_check(db, check, state)
+
+
+def _awaits_check(db: Session, check: MonitorCheck, state: MonitorState) -> bool:
+    """True while the status of a heartbeat not muted now may still be the one it
+    was checked with under a muting that is over: its last evaluation fell into a
+    maintenance window of its server, or a Host Ping of its server changed its
+    status after it (T19, branch review). Reported from it, a host back after an
+    outage, or an agent back at the end of a window, got a CRITICAL, and the
+    all-clear only after the hold. The next evaluation decides instead: still
+    silent, the heartbeat is reported; back, a problem never reported ends in
+    silence, as anywhere else.
+
+    A Host Ping's since is the time of its last change, back to ok after its hold
+    when it muted the heartbeat. What it changed from is not stored, so any change
+    after the heartbeat's last check holds it back, for one evaluation at most. A
+    window deleted or disabled is not seen."""
+    # last_check is empty only on a row no evaluation wrote. since is never later
+    # than it, so counting from since holds back at least as much.
+    checked = state.last_check or state.since
+    windows = (
+        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
+    )
+    if windows and is_in_maintenance(windows, check.server_id, checked):
+        return True
+    if not check.server_id:
+        return False
+    changed = (
+        db.query(MonitorState.check_id)
+        .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
+        .filter(
+            MonitorCheck.server_id == check.server_id,
+            MonitorCheck.check_type == "ping",
+            MonitorCheck.template_def_id == alerter.HOST_PING_DEF_ID,
+            MonitorCheck.enabled == True,  # noqa: E712
+            MonitorState.since > checked,
+        )
+        .first()
+    )
+    return changed is not None
 
 
 def _alone_wait(interval: str) -> timedelta:
@@ -198,9 +247,10 @@ def _alone_wait(interval: str) -> timedelta:
 def _claim(db: Session, kind: str, check_ids: list[str]) -> list[Entry]:
     """Claim the open heartbeats of a bundle as process_alert claims one (step 4):
     lock the state rows in check_id order, re-read them and decide again, the
-    muting included; a heartbeat that moved on or got muted since the selection
-    drops out and stays open. The rest is marked reported and committed before
-    any channel I/O, so no row lock is held across it.
+    muting and the evaluation after one included (_reportable); a heartbeat that
+    moved on or got muted since the selection drops out and stays open. The rest
+    is marked reported and committed before any channel I/O, so no row lock is
+    held across it.
 
     The muting is decided at the time of the claim, not at the start of the run:
     a maintenance window started while the run sent the other kind (each rule up
@@ -226,7 +276,7 @@ def _claim(db: Session, kind: str, check_ids: list[str]) -> list[Entry]:
         for check, state in rows
         if state.status == status
         and alerter.resolve_notification(state.notified_status, state.status) == "notify"
-        and alerter.muted_reason(db, check, now) is None
+        and _reportable(db, check, state, now)
     ]
     if len(entries) < BUNDLE_MIN:
         db.rollback()

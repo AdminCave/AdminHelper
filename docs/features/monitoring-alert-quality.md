@@ -206,7 +206,10 @@ nichts, eine eigene Tabelle oder ein Speicher-Puffer ist unnötig.
 - System-Job `system:agent-alert-bundle` alle 30 s (`flush_agent_alerts`, eigene Session über
   `database.SessionLocal`):
   1. Kandidaten: eingeschaltete `agent_ping`-Checks mit `resolve_notification(notified_status, status) == "notify"`.
-     Stummgeschaltete (`muted_reason`: Wartung, Host-Ping) bleiben offen wie heute.
+     Stummgeschaltete (`muted_reason`: Wartung, Host-Ping) bleiben offen wie heute. Nach dem Ende der
+     Stummschaltung zählt ein Kandidat erst nach einer frischen Auswertung (T19, Branch-Review): Liegt `last_check`
+     in einem Wartungsfenster des Servers oder hat ein Host-Ping des Servers sein `since` danach, stammt der Status
+     noch aus der stummen Zeit; die nächste Auswertung meldet (weiter `critical`) oder entwarnt still (`ok`).
   2. Getrennt nach Art: **stumm** (`status == critical`) und **zurück** (`status == ok`).
   3. Je Art: **≥ 3 Kandidaten → Sammelmeldung** über alle; sonst wird jeder Kandidat, dessen `since` mindestens
      min(5 Minuten, Prüfintervall des Checks − 1 Minute) zurückliegt (nie negativ), einzeln über den bestehenden
@@ -216,9 +219,10 @@ nichts, eine eigene Tabelle oder ein Speicher-Puffer ist unnötig.
      Jüngere warten auf den nächsten Lauf. Damit gilt: drei Agents, solange die ersten noch warten → eine Meldung,
      sobald der dritte da ist; einer oder zwei → je eine Meldung nach ihrer Wartezeit (4 Minuten beim
      Standard-Heartbeat mit Intervall 5m, sofort bei 1m). Nachmeldungen nach einem Wartungsfenster, das länger als
-     die Wartezeit dauerte, gehen sofort (ab drei gesammelt).
-  4. Sammelmeldung: Claim wie `process_alert` (je State `FOR UPDATE` in `check_id`-Reihenfolge, Entscheidung neu
-     prüfen, `notified_status = status`, Commit vor jeder Kanal-I/O; was sich inzwischen geändert hat, fällt heraus).
+     die Wartezeit dauerte, gehen nach der frischen Auswertung sofort (ab drei in einem Lauf gesammelt).
+  4. Sammelmeldung: Claim wie `process_alert` (je State `FOR UPDATE` in `check_id`-Reihenfolge, Entscheidung samt
+     Stummschaltung und frischer Auswertung neu prüfen, `notified_status = status`, Commit vor jeder Kanal-I/O; was
+     sich inzwischen geändert hat, fällt heraus).
 - Versand **je Kanal** (`send_bundle` in `alert_bundle.py`):
   - **Regel** (Webhook/Mail): Mitglieder = die Kandidaten, auf die `_rule_matches` passt, ohne die im
     Regel-Cooldown (nur bei „stumm“; die Rückkehr umgeht den Cooldown wie heute). ≥ 3 → eine Nachricht über

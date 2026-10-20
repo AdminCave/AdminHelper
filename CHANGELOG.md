@@ -17,9 +17,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ein IPv6-Literal als Hostname nimmt der `ping`-Check nicht an. Steht der Host Ping auf `critical`, bleiben alle
   uebrigen Alarme des Servers stumm, auch der Heartbeat (`agent_ping`); ein `critical` Heartbeat schaltet den Host
   Ping dagegen nicht stumm. Faellt der Host aus, meldet also nur der Host Ping; ist er zurueck und der Agent weiter
-  stumm, meldet der Heartbeat danach seinen Ausfall. Als Host Ping zaehlt nur der Check aus diesem Template: Ein von
-  Hand angelegter `ping`-Check, etwa auf ein Gateway, schaltet nichts stumm. Doku: Admin- und Entwickler-Doku
-  Monitoring (DE+EN).
+  stumm, meldet der Heartbeat seinen Ausfall nach seiner naechsten Pruefung. Meldet sich der Agent bis zu dieser
+  Pruefung wieder, entwarnt der nie gemeldete Ausfall still; der Status aus der Zeit des Ausfalls wird nicht gemeldet.
+  Als Host Ping zaehlt nur der Check aus diesem Template: Ein von Hand angelegter `ping`-Check, etwa auf ein Gateway,
+  schaltet nichts stumm. Doku: Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Monitoring: Sammelmeldung, wenn mehrere Agents zugleich stumm werden (R-0424):** Werden 3 oder mehr Agents stumm
   (`agent_ping` auf `critical`), bekommt jeder Kanal eine Meldung statt einer je Server, sobald der dritte stumm ist;
   ihre Rueckkehr wird ebenso gesammelt. Weniger als drei werden wie bisher einzeln gemeldet, aber erst, wenn ihr
@@ -37,9 +38,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `alert.triggered` bei einer solchen Meldung einmal je Server. Die E-Mail einer persoenlichen Regel nennt nur die
   Server, die eine Regel mit E-Mail erfasst, und zaehlt nur diese (Telegram ebenso); erfasst keine solche Regel einen
   der Server, geht keine Mail (neue Spalten `title`/`body` in `notification_outbox`, Migration `a7c9e1b3d5f2`).
-  Wartungsfenster und Host-down-Unterdrueckung gelten weiter. Monitoring und Server kommen im selben Release; ein
-  aelterer Server stellt die Sammel-Eintraege der Glocke nur Admins zu. Doku: Admin- und Entwickler-Doku Monitoring,
-  Entwickler-Doku Server, Hooks und API-Referenz (DE+EN).
+  Wartungsfenster und Host-down-Unterdrueckung gelten weiter; nach ihrem Ende zaehlt ein Heartbeat erst nach seiner
+  naechsten Pruefung wieder mit, sein Status aus der Zeit davor wird nicht gemeldet. Weil die Heartbeats nicht alle
+  zugleich geprueft werden, koennen danach mehrere Meldungen kommen statt einer. Monitoring und Server kommen im
+  selben Release; ein aelterer Server stellt die Sammel-Eintraege der Glocke nur Admins zu. Doku: Admin- und
+  Entwickler-Doku Monitoring, Entwickler-Doku Server, Hooks und API-Referenz (DE+EN).
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter
@@ -1022,9 +1025,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Was in diese Zeit faellt, wird verworfen und nicht nachgeholt, und die Entwarnung eines Problems, das die Glocke so
   nie gezeigt hat, erhaelt sie auch nicht. Die Eskalation von `warning` auf `critical` und die Entwarnung eines
   gezeigten Problems gehen immer durch; die Entwarnung traegt die Stufe, mit der die Glocke das Problem gezeigt hat,
-  auch wenn die `severity` des Checks inzwischen geaendert wurde. Webhook und Mail der Alert-Regeln behalten ihren
-  eigenen `cooldown_minutes`. Ein vor dem Update gemeldetes Problem bekommt seine Entwarnung in der Glocke. Doku:
-  Admin- und Entwickler-Doku Monitoring (DE+EN).
+  auch wenn die `severity` des Checks inzwischen geaendert wurde. Der Event-Hook `alert.triggered` folgt der Glocke
+  und damit diesem Cooldown: Geht ein Check binnen 30 Minuten erneut auf `critical`, etwa `critical`, `ok`, wieder
+  `critical`, feuert der Hook nur beim ersten Mal; ein Agent einer Sammelmeldung, fuer den die Glocke im Cooldown ist,
+  loest keinen Aufruf aus. Webhook und Mail der Alert-Regeln behalten ihren eigenen `cooldown_minutes`. Ein vor dem
+  Update gemeldetes Problem bekommt seine Entwarnung in der Glocke. Doku: Admin- und Entwickler-Doku Monitoring,
+  Entwickler-Doku Hooks (DE+EN).
 - **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
   Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
   Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und

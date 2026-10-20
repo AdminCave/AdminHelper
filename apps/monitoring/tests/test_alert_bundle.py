@@ -635,6 +635,28 @@ def run_job(db, channels, clock, monkeypatch):
     return run
 
 
+@pytest.fixture()
+def evaluate(run_job, clock, monkeypatch):
+    """The scheduler's evaluation of a heartbeat (execute_check) at a fixed time,
+    with the agent's result as given: (status, message, metrics). It hands
+    nothing to the alert pool, as for every heartbeat (T13). After run_job, whose
+    sessions it uses."""
+    agent = SimpleNamespace(result=None)
+    monkeypatch.setattr(
+        check_engine, "get_checker", lambda _t: SimpleNamespace(run=lambda cfg: agent.result)
+    )
+    monkeypatch.setattr(check_engine.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(check_engine, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+    monkeypatch.setattr(check_engine, "utcnow_naive", lambda: clock.now)
+
+    def run(check_id, now, result):
+        clock.now = now
+        agent.result = result
+        check_engine.execute_check(check_id)
+
+    return run
+
+
 def open_heartbeat(db, i, since, kind=SILENT, interval="5m"):
     """Agent heartbeat chk-NN on server srv-NN that went silent (BACK: came back)
     at since and is not reported yet: the discrepancy the job collects. A BACK
@@ -736,6 +758,65 @@ def maintenance_starts(server_id):
         )
 
     return change
+
+
+def host_ping(db, i, status, since):
+    """The Host Ping ping-NN of server srv-NN, at status since since."""
+    db.add_all(
+        [
+            MonitorCheck(
+                id=f"ping-{i:02d}",
+                server_id=f"srv-{i:02d}",
+                name="Host Ping",
+                check_type="ping",
+                config="{}",
+                enabled=True,
+                template_def_id=alerter.HOST_PING_DEF_ID,
+            ),
+            MonitorState(
+                check_id=f"ping-{i:02d}", status=status, notified_status=status, since=since
+            ),
+        ]
+    )
+    db.commit()
+
+
+# The ways a heartbeat is muted (muted_reason): its server's Host Ping or a
+# maintenance window of its server, one-off or weekly.
+_MUTINGS = ["host ping", "once window", "weekly window"]
+
+
+def muted_until_now(db, how, i):
+    """Mute the heartbeat of server srv-NN from an hour before _NOW until _NOW:
+    its Host Ping stands critical (muting_ends sets it back to ok), or a window
+    ends at _NOW, a weekly one as the last of its occurrences."""
+    server_id = f"srv-{i:02d}"
+    if how == "host ping":
+        host_ping(db, i, "critical", at(-60))
+        return
+    window = {"id": f"mw-{i:02d}", "server_id": server_id}
+    if how == "once window":
+        window.update(kind="once", starts_at=at(-60), ends_at=at(0))
+    else:
+        window.update(
+            kind="weekly",
+            weekdays=json.dumps([_NOW.weekday()]),
+            start_time=f"{_NOW.hour - 1:02d}:00",
+            duration_minutes=60,
+            timezone="UTC",
+        )
+    db.add(MonitorMaintenance(**window))
+    db.commit()
+
+
+def muting_ends(db, how, i):
+    """At _NOW the muting of muted_until_now is over: the Host Ping changes back to
+    ok, after its hold; a window has ended by itself."""
+    if how == "host ping":
+        db.query(MonitorState).filter_by(check_id=f"ping-{i:02d}").update(
+            {"status": "ok", "since": at(0)}
+        )
+        db.commit()
 
 
 def test_window_is_five_minutes():
@@ -933,7 +1014,7 @@ class TestFlush:
         assert (notified(db)["chk-03"], notified(db)["res-01"]) == ("ok", "ok")
 
     def test_old_discrepancies_after_a_maintenance_window_go_out_bundled_at_once(
-        self, db, channels, run_job
+        self, db, channels, run_job, evaluate
     ):
         add_rule(db)
         for i in (1, 2, 3, 4):
@@ -942,14 +1023,19 @@ class TestFlush:
         db.commit()
 
         run_job(at(9.5))
+        # Over, but their status is still the one checked in the window: it counts
+        # once they are checked again (TestAfterMuting).
+        run_job(at(10))
         assert (channels.mails, channels.events) == ([], [])
 
-        run_job(at(10))
+        for i in (1, 2, 3, 4):
+            evaluate(f"chk-0{i}", at(10.5), ("critical", _DOWN, None))
+        run_job(at(10.5))
         assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[SILENT].format(n=4))]
         assert bell(channels) == [["srv-01", "srv-02", "srv-03", "srv-04"]]
         assert set(notified(db).values()) == {"critical"}
         # The bell's record of each member is committed with the run.
-        assert bell_records(db) == [("critical", at(10))] * 4
+        assert bell_records(db) == [("critical", at(10.5))] * 4
 
     def test_a_heartbeat_back_before_the_claim_drops_out(self, db, channels, run_job, monkeypatch):
         add_rule(db)
@@ -1095,3 +1181,150 @@ class TestFlush:
         monkeypatch.setattr(alert_bundle, "send_bundle", send_bundle)
         run_job(at(0.5))
         assert (channels.mails, channels.events) == ([], [])
+
+
+def checked_while_muted(db, evaluate, how, count):
+    """count standard heartbeats (5m) on servers srv-01.., silent for 40 minutes,
+    muted as how says until _NOW and last checked two minutes before it, still
+    silent: never reported."""
+    for i in range(1, count + 1):
+        open_heartbeat(db, i, at(-40))
+        muted_until_now(db, how, i)
+        evaluate(f"chk-{i:02d}", at(-2), ("critical", _DOWN, None))
+
+
+def heartbeats(db):
+    """(status, notified_status) per heartbeat, as committed."""
+    db.expire_all()
+    rows = db.query(MonitorState).filter(MonitorState.check_id.like("chk-%")).all()
+    return {s.check_id: (s.status, s.notified_status) for s in rows}
+
+
+class TestAfterMuting:
+    """T19 (branch review): once its muting is over, a heartbeat counts only after
+    its next evaluation. Until then its status is the one checked under the
+    muting: reported from it, a host back after an outage or an agent back at the
+    end of a window got a CRITICAL, three or more a bundle, and the all-clear came
+    only after the hold. The next evaluation decides: still silent, the heartbeat
+    is reported; back, the problem never reported ends in silence."""
+
+    @pytest.mark.parametrize("how", _MUTINGS)
+    @pytest.mark.parametrize("count", [1, BUNDLE_MIN])
+    def test_nothing_until_it_is_checked_again(self, db, channels, run_job, evaluate, how, count):
+        add_rule(db)
+        checked_while_muted(db, evaluate, how, count)
+        run_job(at(-1))
+        for i in range(1, count + 1):
+            muting_ends(db, how, i)
+
+        # Well past the wait of a heartbeat alone (4 minutes), but not checked.
+        for step in range(10):
+            run_job(at(step / 2))
+
+        assert (channels.mails, channels.events) == ([], [])
+        assert set(heartbeats(db).values()) == {("critical", "ok")}
+
+    @pytest.mark.parametrize("how", _MUTINGS)
+    @pytest.mark.parametrize("count", [1, BUNDLE_MIN])
+    def test_still_silent_when_checked_again_it_is_reported(
+        self, db, channels, run_job, evaluate, how, count
+    ):
+        add_rule(db)
+        checked_while_muted(db, evaluate, how, count)
+        for i in range(1, count + 1):
+            muting_ends(db, how, i)
+        run_job(at(0))
+        assert (channels.mails, channels.events) == ([], [])
+
+        for i in range(1, count + 1):
+            evaluate(f"chk-{i:02d}", at(3), ("critical", _DOWN, None))
+        run_job(at(3))
+
+        # Silent for 40 minutes, it waits no more: at once, from three bundled.
+        if count == 1:
+            assert mails(channels) == [("chk-01", _SINGLE_DOWN)]
+            assert bell(channels) == ["srv-01"]
+        else:
+            assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[SILENT].format(n=3))]
+            assert bell(channels) == [["srv-01", "srv-02", "srv-03"]]
+        assert set(heartbeats(db).values()) == {("critical", "critical")}
+
+    @pytest.mark.parametrize("how", _MUTINGS)
+    def test_back_when_checked_again_it_ends_in_silence(self, db, channels, run_job, evaluate, how):
+        add_rule(db)
+        checked_while_muted(db, evaluate, how, 1)
+        muting_ends(db, how, 1)
+        run_job(at(0))
+
+        evaluate("chk-01", at(3), ("ok", _UP, None))
+        run_job(at(3))
+        run_job(at(10))
+
+        assert (channels.mails, channels.events) == ([], [])
+        # Never reported, so not held: ok at once, recorded as reported.
+        assert heartbeats(db) == {"chk-01": ("ok", "ok")}
+
+    @pytest.mark.parametrize("how", _MUTINGS)
+    def test_a_muting_over_before_its_last_check_holds_nothing(
+        self, db, channels, run_job, evaluate, how
+    ):
+        # Silent only after the muting, it waits as any other heartbeat does. Its
+        # end counts as after it: a window ends where it no longer mutes, a Host
+        # Ping is ok from its change on.
+        add_rule(db)
+        muted_until_now(db, how, 1)
+        muting_ends(db, how, 1)
+        open_heartbeat(db, 1, at(0))
+        evaluate("chk-01", at(0), ("critical", _DOWN, None))
+
+        run_job(at(4) - timedelta(seconds=1))
+        assert (channels.mails, channels.events) == ([], [])
+
+        run_job(at(4))
+        assert mails(channels) == [("chk-01", _SINGLE_DOWN)]
+        assert bell(channels) == ["srv-01"]
+
+    @pytest.mark.parametrize(
+        "ping",
+        [{"template_def_id": None}, {"enabled": False}],
+        ids=["ping set up by hand", "host ping disabled"],
+    )
+    def test_only_an_enabled_host_ping_holds_it_back(self, db, channels, run_job, evaluate, ping):
+        # As in muted_reason: a ping set up by hand, on a gateway for instance, and
+        # a Host Ping switched off mute nothing, so a change of theirs after the
+        # heartbeat's last check holds nothing back.
+        add_rule(db)
+        open_heartbeat(db, 1, at(-5))
+        evaluate("chk-01", at(-5), ("critical", _DOWN, None))
+        host_ping(db, 1, "ok", at(-1))
+        db.query(MonitorCheck).filter_by(id="ping-01").update(ping)
+        db.commit()
+
+        run_job(at(0))
+
+        assert mails(channels) == [("chk-01", _SINGLE_DOWN)]
+        assert bell(channels) == ["srv-01"]
+
+    def test_a_heartbeat_whose_host_ping_changed_before_the_claim_drops_out(
+        self, db, channels, run_job, monkeypatch
+    ):
+        # The claim decides again, the check after a muting included. What a Host
+        # Ping changed from is not stored: any change after the heartbeat's last
+        # check holds it back for one evaluation.
+        add_rule(db)
+        for i in (1, 2, 3, 4):
+            open_heartbeat(db, i, at(-1))
+        host_ping(db, 4, "ok", at(-60))
+
+        def host_ping_changes(session, now):
+            session.query(MonitorState).filter_by(check_id="ping-04").update(
+                {"status": "unknown", "since": now}
+            )
+
+        before_the_claim(monkeypatch, db, host_ping_changes)
+
+        run_job(at(0))
+
+        assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[SILENT].format(n=3))]
+        assert bell(channels) == [["srv-01", "srv-02", "srv-03"]]
+        assert heartbeats(db)["chk-04"] == ("critical", "ok")

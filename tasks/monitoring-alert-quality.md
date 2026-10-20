@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Alert-Qualität — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-alert-quality · Review: pro Task
+Status: bereit · Branch: feature/monitoring-alert-quality · Review: pro Task
 Spec: docs/features/monitoring-alert-quality.md (Roadmap R-0424)
 Heavy: linux-full — der Monitoring-Dienst bekommt eine Alembic-Migration (Stack-Start, `upgrade-path` vom letzten Release), der Server-Vertrag `POST /api/internal/events` ändert sich (`source_ids`, `alert.triggered` je Server; `sse-push` und `desktop_e2e_sse_push` injizieren Events ohne das Feld und müssen grün bleiben), `agent-monitoring` fährt den Push-Pfad mit Haltezeit, und `monitoring-check.live.js` nutzt den Check-Editor mit dem neuen Feld. Kein `scenario --moncheck`: die geschlossene Mail-Schleife (`scripts/tests/box_serverbox.sh:457-463`) legt zwei `ping`-Checks ohne Server mit `severity critical` und `consecutive_fails 1` an — `pending → ok` hält nicht, der Deckel ändert bei `critical` nichts, ohne `server_id` greifen Host-down und Sammelmeldung nicht, `_send_email` bleibt unverändert; der Capstone im Wochenlauf fährt sie ohnehin. Kein `windows`: kein Rust-, Agent- oder Plattform-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -184,8 +184,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notifications.p
 Doku: docs/admin/monitoring.html + EN; CHANGELOG.md
 Abhängt von: T10, T13
 
-### T19 — Nachmeldung nach Host-Ping oder Wartung erst nach frischer Heartbeat-Auswertung; Hook folgt der Glocke  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/alert_bundle.py, apps/monitoring/tests/test_alert_bundle.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/hooks.html, docs/en/developer/hooks.html, CHANGELOG.md
+### T19 — Nachmeldung nach Host-Ping oder Wartung erst nach frischer Heartbeat-Auswertung; Hook folgt der Glocke  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/alert_bundle.py, apps/monitoring/tests/test_alert_bundle.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/hooks.html, docs/en/developer/hooks.html, CHANGELOG.md, docs/developer/monitoring.html, docs/en/developer/monitoring.html, docs/features/monitoring-alert-quality.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @d7c3077c 2026-10-20T19:03:44+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T19.verdict.json)
 Änderung: Aus der Branch-Prüfung (Reviewer, wichtig): Endet eine Unterdrückung (Host Ping wieder ok, Wartungsfenster vorbei), meldet der Sammel-Job einen stummgeschalteten Heartbeat heute aus dem gespeicherten Status nach, ohne dass der Heartbeat seitdem neu ausgewertet wurde — kommt der Host zurück, geht ein falscher CRITICAL raus (ab drei Servern als Sammelmeldung), die Entwarnung erst 10–14 min später. Kandidaten, deren letzte Auswertung (`state.last_check`) vor dem Ende ihrer Unterdrückung liegt, zählen erst nach einer frischen Auswertung (Ende = `since` des Host-Ping-Wechsels auf ok bzw. Ende des Wartungsfensters); so gilt die Admin-Doku „Ist der Host Ping zurück und der Agent weiter stumm“ und der Grundsatz „ein nie gemeldetes Problem entwarnt beim ersten ok still“. Tests (feste Uhr): Host Ping wieder ok, Heartbeat noch nicht neu gelaufen → nichts; nach einer Auswertung weiter critical → Meldung; nach einer Auswertung ok → nichts, still entwarnt; Wartungsfenster analog; ein Heartbeat ohne Unterdrückung unverändert. Dazu Entscheidung Kevin 2026-10-20: Der Admin-Hook `alert.triggered` folgt der Glocke — der Glocken-Cooldown (30 min je Check) bündelt auch den Hook (critical → ok → critical binnen 30 min = ein Hook-Aufruf; ein Mitglied einer Sammelmeldung im Cooldown löst keinen aus); `docs/developer/hooks.html` + EN und die Admin-Doku (Hook, Notification-Hub) sagen das ausdrücklich, der CHANGELOG-Eintrag zum Glocken-Cooldown nennt den Hook (umlautfrei).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alert_bundle.py tests/test_check_engine.py
 Doku: docs/admin/monitoring.html + EN; docs/developer/hooks.html + EN; CHANGELOG.md
