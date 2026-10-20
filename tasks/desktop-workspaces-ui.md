@@ -59,6 +59,20 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T19
 
+### T45 — Benutzerteil der Workspace-URL als `***@` statt entfernt  [ ]
+Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/types.ts
+Änderung: Entscheidung Kevin 2026-10-20 (Review T19): `shown_url` (`workspace.rs`, T42/T43) ersetzt einen Benutzerteil durch `***@` statt ihn zu entfernen (Benutzer und Passwort zusammen, eine einzige Maske; stabil bei zweimal maskieren). Dann greift der `***`-Hinweis des Editors (T19) auch hier, und `launcher::edit` bleibt beim Vergleich gegen `shown_url`. Doc-Kommentare an `WorkspaceInfo.url` (`models.rs`, `types.ts`) nachziehen. Tests (Namen enthalten `workspace_url`): URL mit Benutzer und Passwort, nur Benutzer, nur Passwort ergibt `https://***@host/…`; unverändert zurückgeschickt behält `edit` die gespeicherte URL samt Zugangsdaten; der T42-/T43-Test erwartet die neue Form (gewollte Verhaltensänderung).
+Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace_url
+Doku: keine (intern; Doku mit T33)
+Abhängt von: T43
+
+### T46 — Picker: Löschen ohne „geöffnet“-Anzeige, Widerruf im Text bedingt  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Aus dem Review von T20: (1) Während eines Löschvorgangs hält das Purge-Kind den Lock, ein Fokus-Refresh zeigt den Workspace dann als „geöffnet“ samt Hinweis; der Picker lässt das Neuladen beim Fokus aus, solange eine Aktion läuft, oder blendet Badge und Hinweis für den gerade gelöschten Workspace aus; Test dazu. (2) `workspace.picker.delete.confirm.server` DE+EN formuliert den Widerruf bedingt („Hat er eine Geräte-Identität, wird sie zuerst beim Server widerrufen …“ / „If it has a device identity, that is revoked at the server first …“).
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts
+Doku: keine (intern; Doku mit T33)
+Abhängt von: T20
+
 ### T21 — Workspace im Fenster kenntlich: Chip, Farbstreifen, „Workspaces…“  [ ]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/AppShell.svelte, apps/desktop/ui/src/components/ui/ConfirmDialog.svelte, apps/desktop/ui/src/styles/app.css, apps/desktop/ui/src/components/AppShell.workspace.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
 Änderung: Ein Chip oben in der Sidebar (Farbpunkt + Name) ersetzt das Modus-Badge (`AppShell.svelte:101`, `:228`); Klick oder „Workspaces…“ ruft `openLauncher`. 4-px-Farbstreifen am Fensterrand in der Workspace-Farbe. Seiten mit `serverOnly` rendern nur bei `isServerMode` (`:87`), sonst das Dashboard (`currentId :91`). `ConfirmDialog` nennt im Workspace-Prozess Farbpunkt und Namen über der Frage. Texte DE+EN. Tests (neue Datei, SPDX-Header): Chip zeigt Name und Farbe, Klick ruft `openLauncher`; `/infrastructure` in einem lokalen Workspace zeigt das Dashboard; `ConfirmDialog` zeigt den Namen, im Launcher nicht.
