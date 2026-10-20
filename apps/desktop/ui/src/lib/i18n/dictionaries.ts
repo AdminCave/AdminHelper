@@ -329,6 +329,7 @@ export const translations: Translations = {
 
     // ── Desktop: Workspace-Fenster ────────────────────────────────────
     'workspace.openLauncher': 'Workspaces…',
+    'workspace.chip.title': '{name} — Workspaces…',
 
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP-Anmeldung',
@@ -343,6 +344,7 @@ export const translations: Translations = {
     // ── Desktop: Login ────────────────────────────────────────────────
     'login.title': 'AdminHelper',
     'login.subtitle': 'Mit Server verbinden',
+    'login.signInTo': 'Anmelden bei',
     'login.serverUrl': 'Server URL',
     'login.serverUrl.placeholder': 'https://adminhelper.example.com',
     'login.signingIn': 'Anmelden…',
@@ -371,7 +373,8 @@ export const translations: Translations = {
     'login.enroll.back': 'Zurück zur Anmeldung',
     'login.enroll.done': 'Gerät registriert — jetzt anmelden.',
     'login.sessionExpired': 'Sitzung abgelaufen — bitte neu anmelden.',
-    'login.useLocal': 'Ohne Server fortfahren (nur lokale Verbindungen)',
+    'login.notSaved':
+      'Angemeldet, aber dieser Workspace konnte Server und Benutzer nicht speichern ({message}). Hält er eine Geräte-Identität ohne Server-URL, setze sie in den Einstellungen zurück und melde dich neu an.',
     'login.resetPin': 'Gepinntes Server-Zertifikat zurücksetzen',
     'login.resetDeviceId': 'Geräte-Identität zurücksetzen',
     'login.resetPin.done':
@@ -1060,6 +1063,7 @@ export const translations: Translations = {
 
     // ── Desktop: Workspace window ─────────────────────────────────────
     'workspace.openLauncher': 'Workspaces…',
+    'workspace.chip.title': '{name} — Workspaces…',
 
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP sign-in',
@@ -1074,6 +1078,7 @@ export const translations: Translations = {
     // ── Desktop: Login ────────────────────────────────────────────────
     'login.title': 'AdminHelper',
     'login.subtitle': 'Connect to server',
+    'login.signInTo': 'Sign in to',
     'login.serverUrl': 'Server URL',
     'login.serverUrl.placeholder': 'https://adminhelper.example.com',
     'login.signingIn': 'Signing in…',
@@ -1102,7 +1107,8 @@ export const translations: Translations = {
     'login.enroll.back': 'Back to sign in',
     'login.enroll.done': 'Device enrolled — sign in now.',
     'login.sessionExpired': 'Session expired — please sign in again.',
-    'login.useLocal': 'Continue without a server (local connections only)',
+    'login.notSaved':
+      'Signed in, but this workspace could not keep its server and user ({message}). If it holds a device identity without a server URL, reset it in the settings and sign in again.',
     'login.resetPin': 'Reset pinned server certificate',
     'login.resetDeviceId': 'Reset device identity',
     'login.resetPin.done':

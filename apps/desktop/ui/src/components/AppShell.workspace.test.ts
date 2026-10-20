@@ -136,6 +136,17 @@ describe('AppShell: the workspace of the window', () => {
     expect(h.openLauncher).toHaveBeenCalledOnce();
   });
 
+  it('the title of the chip names the workspace, which the collapsed sidebar hides', async () => {
+    const view = render(AppShell);
+    const chip = view.getByRole('button', { name: 'Kunde A' });
+    expect(chip.title).toBe('Kunde A — Workspaces…');
+
+    await fireEvent.click(view.getByRole('button', { name: tNow('sidebar.collapse') }));
+    const shell = view.container.querySelector<HTMLElement>('.app-shell')!;
+    expect(shell.classList.contains('sidebar-collapsed')).toBe(true);
+    expect(chip.title).toBe('Kunde A — Workspaces…');
+  });
+
   it('the chip takes the place of the mode badge on the settings button', () => {
     const view = render(AppShell);
     const button = view.getByRole('button', { name: tNow('settings.label') });

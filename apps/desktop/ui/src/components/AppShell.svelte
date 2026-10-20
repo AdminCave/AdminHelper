@@ -215,7 +215,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     </div>
 
     {#if workspace}
-      <button class="workspace-chip" onclick={toLauncher} title={$t('workspace.openLauncher')}>
+      <!-- The title names the workspace too: the collapsed sidebar shows only the dot. -->
+      <button
+        class="workspace-chip"
+        onclick={toLauncher}
+        title={$t('workspace.chip.title', { name: workspace.name })}
+      >
         <span class="workspace-dot" style:background={workspace.color}></span>
         <span class="workspace-chip-name">{workspace.name}</span>
       </button>

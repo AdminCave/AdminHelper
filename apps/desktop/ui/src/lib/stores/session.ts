@@ -17,8 +17,10 @@
 
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import { setLanguage } from '$lib/i18n';
-import type { AuthSession, Settings, SyncMode } from '$lib/bridge/types';
+import { setLanguage, tNow } from '$lib/i18n';
+import { errMsg } from '$lib/utils/errors';
+import type { AuthSession, Settings } from '$lib/bridge/types';
+import { reportError } from './statusBar';
 import { context, loadContext } from './workspace';
 
 interface SessionState {
@@ -98,16 +100,19 @@ export async function login(serverUrl: string, username: string, password: strin
   const allowSelfSigned = current.settings?.allowSelfSignedCerts ?? false;
   const sess = await bridge.login(serverUrl, username, password, allowSelfSigned);
 
-  // Persist server URL + username (never the password) so the next start can
-  // pre-fill the login screen and only ask for the password. Best-effort: a
-  // failed save must not block an otherwise successful login.
+  // Persist the server Rust signed in at and the username (never the password): the
+  // workspace takes that server as its URL if it has none yet, the next start pre-fills the
+  // username, and no other workspace signs in to this server as this user. The URL sent may be
+  // the one the window shows, masked; the session names the one the workspace keeps. A failed
+  // save must not block an otherwise successful login, but the user learns of it.
   let next = current.settings;
   if (current.settings) {
-    next = { ...current.settings, serverUrl: serverUrl.trim(), lastUsername: username.trim() };
+    next = { ...current.settings, serverUrl: sess.serverUrl, lastUsername: username.trim() };
     try {
       await bridge.saveSettings(next);
-    } catch {
+    } catch (err) {
       next = current.settings;
+      reportError(tNow('login.notSaved', { message: errMsg(err) }));
     }
   }
 
@@ -156,14 +161,6 @@ export async function setAllowSelfSignedCerts(allow: boolean): Promise<void> {
   const current = get(_state);
   if (!current.settings) return;
   const next = { ...current.settings, allowSelfSignedCerts: allow };
-  await bridge.saveSettings(next);
-  _state.update((s) => ({ ...s, settings: next }));
-}
-
-export async function setMode(mode: SyncMode): Promise<void> {
-  const current = get(_state);
-  if (!current.settings) return;
-  const next = { ...current.settings, mode };
   await bridge.saveSettings(next);
   _state.update((s) => ({ ...s, settings: next }));
 }
