@@ -395,13 +395,13 @@ fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(String::from)
 }
 
-/// `url` as the webview gets it: without a user and a password, each value of its query and its
-/// fragment masked (`?token=***`, `#***`; the keys of the query stay), in the parser's spelling;
-/// a URL with nothing to drop or mask as kept. A part of the query without a value may be a
-/// token itself and is masked whole (`?***`). None for a URL that does not parse: where the
-/// parser finds no URL, it finds nothing to drop or mask either, and the webview would get it
-/// all. What it gives comes out of it again unchanged, so `launcher::edit` can tell a URL the
-/// webview sends back as it got it.
+/// `url` as the webview gets it: a user and a password masked as one (`***@`), each value of its
+/// query and its fragment masked (`?token=***`, `#***`; the keys of the query stay), in the
+/// parser's spelling; a URL with nothing to mask as kept. A part of the query without a value
+/// may be a token itself and is masked whole (`?***`). None for a URL that does not parse: where
+/// the parser finds no URL, it finds nothing to mask either, and the webview would get it all.
+/// What it gives comes out of it again unchanged, so `launcher::edit` can tell a URL the webview
+/// sends back as it got it.
 pub(crate) fn shown_url(url: &str) -> Option<String> {
     let mut parsed = Url::parse(url).ok()?;
     let user = !parsed.username().is_empty() || parsed.password().is_some();
@@ -413,7 +413,7 @@ pub(crate) fn shown_url(url: &str) -> Option<String> {
         return Some(url.to_string());
     }
     if user {
-        parsed.set_username("").ok()?;
+        parsed.set_username("***").ok()?;
         parsed.set_password(None).ok()?;
     }
     if !pairs.is_empty() {
@@ -858,6 +858,8 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    use url::Url;
 
     use super::{
         acquire, acquire_within, check_side, check_sign_in_once, context, current, enter, is_open,
@@ -1375,7 +1377,7 @@ mod tests {
     }
 
     #[test]
-    fn the_info_names_the_url_without_a_user_and_a_password_and_otherwise_as_kept() {
+    fn the_info_names_the_workspace_url_with_the_user_masked_and_otherwise_as_kept() {
         let info = |url: Option<&str>| {
             Meta {
                 url: url.map(String::from),
@@ -1393,26 +1395,26 @@ mod tests {
             assert_eq!(info(Some(kept)).url.as_deref(), Some(kept));
         }
 
-        // A user, a password or both go, the parser spells the rest; the host stays.
+        // A user, a password or both are one `***@`, the parser spells the rest; the host stays.
         for (kept, shown, host) in [
             (
                 "https://admin:secret@ah.example.com",
-                "https://ah.example.com/",
+                "https://***@ah.example.com/",
                 "ah.example.com",
             ),
             (
                 "https://admin@ah.example.com:8443/base",
-                "https://ah.example.com:8443/base",
+                "https://***@ah.example.com:8443/base",
                 "ah.example.com",
             ),
             (
                 "https://:secret@ah.example.com/x",
-                "https://ah.example.com/x",
+                "https://***@ah.example.com/x",
                 "ah.example.com",
             ),
             (
                 "https://user:pw@sync.example.com/connections.json?a=b",
-                "https://sync.example.com/connections.json?a=***",
+                "https://***@sync.example.com/connections.json?a=***",
                 "sync.example.com",
             ),
         ] {
@@ -1454,11 +1456,11 @@ mod tests {
             // A user and a password, the query and the fragment at once.
             (
                 "https://admin:secret@sync.example.com:8443/c.json?token=abc#frag",
-                "https://sync.example.com:8443/c.json?token=***#***",
+                "https://***@sync.example.com:8443/c.json?token=***#***",
             ),
             (
                 "https://admin@AH.example.com/?k=v",
-                "https://ah.example.com/?k=***",
+                "https://***@ah.example.com/?k=***",
             ),
             // An empty query and an empty fragment hide nothing: as kept.
             ("https://ah.example.com/?#", "https://ah.example.com/?#"),
@@ -1469,6 +1471,65 @@ mod tests {
         }
 
         assert_eq!(shown_url("https://ah example.com/?token=abc"), None);
+    }
+
+    #[test]
+    fn the_shown_workspace_url_masks_the_user_and_the_password_as_one_and_stays_so() {
+        for (kept, shown, gone) in [
+            // A user and a password, a user alone, a password alone: one `***@`.
+            (
+                "https://admin:secret@ah.example.com/base",
+                "https://***@ah.example.com/base",
+                &["admin", "secret"][..],
+            ),
+            (
+                "https://admin@ah.example.com/base",
+                "https://***@ah.example.com/base",
+                &["admin"][..],
+            ),
+            (
+                "https://:secret@ah.example.com/base",
+                "https://***@ah.example.com/base",
+                &["secret"][..],
+            ),
+            // Percent-encoded as kept, or by the parser: neither spelling is left.
+            (
+                "https://ad%40min:se%3Acr%C3%A9t@ah.example.com",
+                "https://***@ah.example.com/",
+                &["ad%40min", "ad@min", "se%3Acr%C3%A9t", "se:crét", "%"][..],
+            ),
+            (
+                "https://ad min:sé@ah.example.com",
+                "https://***@ah.example.com/",
+                &["ad min", "ad%20min", "sé", "s%C3%A9", "%"][..],
+            ),
+            // An `@` in the user: the last one ends the user info, all of it goes.
+            (
+                "https://admin@corp:secret@ah.example.com/",
+                "https://***@ah.example.com/",
+                &["admin", "corp", "secret", "%40"][..],
+            ),
+            // A user masked before keeps the mask, a password goes; the port and the host stay.
+            (
+                "https://***:secret@[::1]:8443/",
+                "https://***@[::1]:8443/",
+                &["secret"][..],
+            ),
+        ] {
+            let masked = shown_url(kept).unwrap_or_else(|| panic!("{kept} does not parse"));
+            assert_eq!(masked, shown, "{kept}");
+            for part in gone {
+                assert!(!masked.contains(part), "{part} of {kept} in {masked}");
+            }
+            let parsed = Url::parse(&masked).unwrap();
+            assert_eq!(
+                (parsed.username(), parsed.password()),
+                ("***", None),
+                "{masked}"
+            );
+            // Masking what it shows changes nothing: the launcher tells an unchanged URL by it.
+            assert_eq!(shown_url(shown).as_deref(), Some(shown), "{shown}");
+        }
     }
 
     #[test]

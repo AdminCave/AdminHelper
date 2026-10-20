@@ -148,10 +148,10 @@ export interface WorkspaceInfo {
   color: string;
   kind: SyncMode;
   /**
-   * Its URL without user and password, the query values and the fragment masked
-   * (`?token=***`, `#***`), in the spelling of the Rust URL parser; a URL with nothing to
-   * drop or mask as kept (workspace.rs shown_url). Null without a URL or for one that does
-   * not parse.
+   * Its URL with user and password masked as one (`***@`), the query values and the fragment
+   * masked (`?token=***`, `#***`), in the spelling of the Rust URL parser; a URL with nothing
+   * to mask as kept (workspace.rs shown_url). Null without a URL or for one that does not
+   * parse.
    */
   url?: string | null;
   /** The host of its URL; null without a URL. */

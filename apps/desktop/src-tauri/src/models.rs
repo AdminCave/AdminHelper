@@ -237,10 +237,10 @@ pub struct WorkspaceInfo {
     /// One of the palette (`workspace::PALETTE`).
     pub color: String,
     pub kind: SyncMode,
-    /// Its URL as `workspace::shown_url` gives it: without a user and a password, the values of
-    /// its query and its fragment masked (`?token=***`, `#***`), in the parser's spelling; a URL
-    /// with nothing to drop or mask as it keeps it. None without a URL or for one that does not
-    /// parse.
+    /// Its URL as `workspace::shown_url` gives it: a user and a password masked as one (`***@`),
+    /// the values of its query and its fragment masked (`?token=***`, `#***`), in the parser's
+    /// spelling; a URL with nothing to mask as it keeps it. None without a URL or for one that
+    /// does not parse.
     pub url: Option<String>,
     /// The host of its URL; none without a URL.
     pub host: Option<String>,

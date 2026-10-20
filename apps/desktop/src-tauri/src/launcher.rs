@@ -1553,11 +1553,17 @@ mod tests {
             Some("https://admin:secret@ah example.com"),
         );
         let plain = created(SyncMode::Server, "Plain", Some("https://AH.example.com"));
+        let password = created(
+            SyncMode::Server,
+            "Kennwort",
+            Some("https://:secret@ah2.example.com/"),
+        );
         let workspaces = [
             ("w-0000000a", sync),
             ("standard", server),
             ("w-0000000b", unparsed.clone()),
             ("w-0000000c", plain),
+            ("w-0000000d", password),
         ];
         install(base, &workspaces, false);
 
@@ -1571,15 +1577,17 @@ mod tests {
         assert_eq!(
             shown,
             [
-                Some("https://sync.example.com/c.json?token=***&v=***#***".to_string()),
-                Some("https://ah.example.com/base?tenant=***".to_string()),
+                Some("https://***@sync.example.com/c.json?token=***&v=***#***".to_string()),
+                Some("https://***@ah.example.com/base?tenant=***".to_string()),
                 None,
                 Some("https://AH.example.com".to_string()),
+                Some("https://***@ah2.example.com/".to_string()),
             ]
         );
 
-        // Sent back as it came, with another name and colour: the URL stays as kept, the user,
-        // the token and the fragment with it, and the one that does not parse as well.
+        // Sent back as it came, with another name and colour: the URL stays as kept, the user
+        // and the password, the token and the fragment with it, and the one that does not parse
+        // as well.
         for ((ws, before), url) in workspaces.iter().zip(shown) {
             save(
                 base,
@@ -1725,7 +1733,7 @@ mod tests {
         assert_eq!(Meta::load(&dir_of(base, "w-0000000b")).unwrap(), unparsed);
 
         // Sent back as shown: the URL stays as kept.
-        edit("w-0000000a", Some("https://ah.example.com/?k=***")).unwrap();
+        edit("w-0000000a", Some("https://***@ah.example.com/?k=***")).unwrap();
         edit("w-0000000b", None).unwrap();
         assert_eq!(
             Meta::load(&dir_of(base, "w-0000000a")).unwrap(),

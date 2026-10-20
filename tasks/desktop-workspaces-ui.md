@@ -59,8 +59,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T19
 
-### T45 — Benutzerteil der Workspace-URL als `***@` statt entfernt  [ ]
+### T45 — Benutzerteil der Workspace-URL als `***@` statt entfernt  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @93367782 2026-10-20T18:39:39+02:00
+Review: approve (.ah-out/review/desktop-workspaces-ui/T45.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-20 (Review T19): `shown_url` (`workspace.rs`, T42/T43) ersetzt einen Benutzerteil durch `***@` statt ihn zu entfernen (Benutzer und Passwort zusammen, eine einzige Maske; stabil bei zweimal maskieren). Dann greift der `***`-Hinweis des Editors (T19) auch hier, und `launcher::edit` bleibt beim Vergleich gegen `shown_url`. Doc-Kommentare an `WorkspaceInfo.url` (`models.rs`, `types.ts`) nachziehen. Tests (Namen enthalten `workspace_url`): URL mit Benutzer und Passwort, nur Benutzer, nur Passwort ergibt `https://***@host/…`; unverändert zurückgeschickt behält `edit` die gespeicherte URL samt Zugangsdaten; der T42-/T43-Test erwartet die neue Form (gewollte Verhaltensänderung).
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace_url
 Doku: keine (intern; Doku mit T33)
