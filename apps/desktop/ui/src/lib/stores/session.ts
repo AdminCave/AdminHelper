@@ -12,12 +12,14 @@
 // The session itself (server URL, access and refresh token, certificate choice)
 // lives only in the Rust process; this store holds who signed in where
 // (AuthSession), never a token. Nothing survives the app: server mode requires
-// a fresh password login each time the app is opened (see hydrate).
+// a fresh password login each time the app is opened (see hydrate). The mode is
+// the kind of the workspace this window serves; the launcher never signs in.
 
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { setLanguage } from '$lib/i18n';
 import type { AuthSession, Settings, SyncMode } from '$lib/bridge/types';
+import { context, loadContext } from './workspace';
 
 interface SessionState {
   settings: Settings | null;
@@ -61,13 +63,22 @@ export const isAuthenticated = derived(_state, ($s) => {
   return $s.session !== null;
 });
 
-/** Returns true if the current mode requires auth but no session exists. */
-export const needsLogin = derived(_state, ($s) => {
-  return $s.ready && $s.settings?.mode === 'server' && $s.session === null;
+/** Returns true in a workspace whose mode requires auth while no session exists. A window
+ * without a context (it failed to load) counts as a workspace: it still asks for the login. */
+export const needsLogin = derived([_state, context], ([$s, $ctx]) => {
+  return (
+    $s.ready && $ctx?.launcher !== true && $s.settings?.mode === 'server' && $s.session === null
+  );
 });
 
-/** Loads settings at app start. */
+/** Loads the workspace context and the settings at app start. */
 export async function hydrate(): Promise<void> {
+  try {
+    // Before `ready`: the launcher must never show the login, not even for a frame.
+    await loadContext();
+  } catch (err) {
+    console.error('workspace context failed', err);
+  }
   try {
     const s = await bridge.loadSettings();
     setLanguage(s.language);

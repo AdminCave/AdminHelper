@@ -4,13 +4,14 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import type { AuthSession, Settings } from '$lib/bridge/types';
+import type { AuthSession, Settings, WorkspaceContext } from '$lib/bridge/types';
 
 // Mock the bridge + collaborators: the session lifecycle (hydrate/login/
 // dropSession) is what we test; persistence and i18n are side channels. The
 // connections store is no longer imported here — it is wired in via
 // registerConnectionsSync (see the "connections sync hooks" block below).
 vi.mock('$lib/bridge', () => ({
+  workspaceContext: vi.fn(),
   loadSettings: vi.fn(),
   saveSettings: vi.fn(async () => {}),
   login: vi.fn(),
@@ -56,9 +57,31 @@ const aSession: AuthSession = {
   isAdmin: true,
 };
 
+const launcher: WorkspaceContext = { launcher: true, workspace: null };
+const serverWorkspace: WorkspaceContext = {
+  launcher: false,
+  workspace: {
+    id: 'standard',
+    name: 'Standard',
+    color: '#3b82f6',
+    kind: 'server',
+    host: 'srv.example.com',
+    open: true,
+  },
+};
+
+/** The session module as the app starts it: not ready, no workspace context. */
+async function freshStart() {
+  vi.resetModules();
+  const freshBridge = await import('$lib/bridge');
+  const freshSession = await import('./session');
+  return { bridge: freshBridge, session: freshSession };
+}
+
 describe('session store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(bridge.workspaceContext).mockResolvedValue(serverWorkspace);
   });
 
   describe('hydrate (no silent restore)', () => {
@@ -79,6 +102,58 @@ describe('session store', () => {
       await hydrate();
       expect(get(needsLogin)).toBe(false);
       expect(get(isAuthenticated)).toBe(true);
+    });
+
+    it('the launcher never asks for a login, not even while it hydrates', async () => {
+      const fresh = await freshStart();
+      // The launcher's settings come without a workspace (mode local); `server` here proves
+      // that the context, not the mode, keeps the login away.
+      vi.mocked(fresh.bridge.workspaceContext).mockResolvedValue(launcher);
+      vi.mocked(fresh.bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
+      );
+      const seen: boolean[] = [];
+      const stop = fresh.session.needsLogin.subscribe((value) => seen.push(value));
+      try {
+        await fresh.session.hydrate();
+      } finally {
+        stop();
+      }
+      expect(get(fresh.session.ready)).toBe(true);
+      expect(get(fresh.session.needsLogin)).toBe(false);
+      expect(seen).not.toContain(true);
+    });
+
+    it('the context decides: the launcher no login, a server workspace without a session the login', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
+      );
+      vi.mocked(bridge.workspaceContext).mockResolvedValue(launcher);
+      await hydrate();
+      expect(get(needsLogin)).toBe(false);
+
+      vi.mocked(bridge.workspaceContext).mockResolvedValue(serverWorkspace);
+      await hydrate();
+      expect(get(session)).toBeNull();
+      expect(get(needsLogin)).toBe(true);
+    });
+
+    it('without a context a server workspace still asks for the login (fail closed)', async () => {
+      const fresh = await freshStart();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        vi.mocked(fresh.bridge.workspaceContext).mockRejectedValue(new Error('no data dir'));
+        vi.mocked(fresh.bridge.loadSettings).mockResolvedValue(
+          baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
+        );
+        await fresh.session.hydrate();
+        expect(get(fresh.session.ready)).toBe(true);
+        expect(get(fresh.session.settings)?.mode).toBe('server');
+        expect(get(fresh.session.needsLogin)).toBe(true);
+        expect(error).toHaveBeenCalledWith('workspace context failed', expect.any(Error));
+      } finally {
+        error.mockRestore();
+      }
     });
 
     it('the real bridge module exports no keyring session-restore call', async () => {

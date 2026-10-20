@@ -14,8 +14,10 @@ Kevin 2026-10-20: R-0431 baut in drei Spuren mit je eigenem Teil-Ledger, Branch 
 
 ## Block D — Oberfläche
 
-### T18 — Workspace-Store, Modell und Start der Oberfläche  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/workspace.ts, apps/desktop/ui/src/lib/stores/workspace.test.ts, apps/desktop/ui/src/lib/models/workspace.ts, apps/desktop/ui/src/lib/models/workspace.test.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/lib/stores/session.test.ts
+### T18 — Workspace-Store, Modell und Start der Oberfläche  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/stores/workspace.ts, apps/desktop/ui/src/lib/stores/workspace.test.ts, apps/desktop/ui/src/lib/models/workspace.ts, apps/desktop/ui/src/lib/models/workspace.test.ts, apps/desktop/ui/src/lib/stores/session.ts, apps/desktop/ui/src/lib/stores/session.test.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @cfb61271 2026-10-20T13:10:40+02:00
+Review: approve (.ah-out/review/desktop-workspaces-ui/T18.verdict.json)
 Änderung: Neuer Store `stores/workspace.ts` (SPDX-Header): `context` aus `workspaceContext()`, `list`, Aktionen `refresh`, `save`, `remove`, `open`, `openLauncher`. Neues Modell `models/workspace.ts` (SPDX-Header): Palette (gleich der Rust-Konstante), `validateDraft` (Name; URL je Art mit den Regeln aus `validateSettings`), `hostOf(url)` für die Namensvorbelegung. `hydrate` (`session.ts:70`) lädt den Kontext mit; `needsLogin` gilt nur im Workspace-Prozess. Tests (beide neuen Testdateien mit SPDX-Header): Store mit gemockter Bridge; `validateDraft` und `hostOf`; `hydrate` im Launcher → kein Login, Server-Workspace ohne Sitzung → Login.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/lib/stores/workspace.test.ts src/lib/models/workspace.test.ts src/lib/stores/session.test.ts
 Doku: keine (intern; Doku mit T33)
