@@ -118,6 +118,13 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_confi
 Doku: docs/admin/monitoring.html + EN: Zeile `system_state` in der Typ-Tabelle (`:41-51`), Push-Hinweis `:60` um `system_state`, Konfig-Tabelle (`:128-136`), neuer Abschnitt „Systemzustand“ (`id="system-state"`, vor `#plugin-ausfall` bzw. `#plugin-outage`): die vier Punkte, Quellen (`reboot-required`/`needs-restarting`, `timedatectl`, `apt-get -s`/`dnf -C`, `/proc/vmstat`), kein Netz, Updates stündlich, Zeit-Sync erst ab 15 min Uptime, OOM je Report, nur Linux ab Agent v3 (sonst „Not evaluated“), Lücke „Neustart nötig“ auf Debian/Proxmox, RPM-Weg nicht verifiziert; CHANGELOG.md (`### Added`: Check-Typ system_state)
 Abhängt von: T4, T5, T11
 
+### T26 — Push-Pfad schreibt den Check-Status immer, auch ohne Messwerte  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_agent_report.py, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Änderung: Kevin 2026-10-20: Der Push-Pfad (`routers/agent.py`) schreibt `monitor_check_status` für jeden ausgewerteten Push-Check, auch wenn nach `_details` keine Messwerte übrig bleiben; heute fehlt er dann (`system_state` immer, Docker und ZFS im Ausfall), und die Status-Zeitleiste im Desktop bleibt leer. Es entsteht keine neue Messreihe, nur die Statusreihe je Check. Tests: ein Push-Check ohne Messwerte (`system_state`, Docker-Ausfall) schreibt genau eine Statuszeile mit dem Status; ein Check mit Messwerten wie bisher (keine doppelte Statuszeile). Entwickler-Doku (DE+EN) und CHANGELOG nennen es.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_report.py
+Doku: docs/developer/monitoring.html + EN · CHANGELOG
+Abhängt von: T11
+
 ### T13 — Monitoring: `alert_on_unavailable` für `proxmox_backup`  [ ]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_check_configs.py
 Änderung: `ProxmoxBackupConfig` (`check_configs.py:101-104`) bekommt `alert_on_unavailable: StrictBool = True` (Kommentar wie `:110-111`). Tests: `_UNAVAILABLE_TYPES` (`test_check_configs.py:81`) um `proxmox_backup`; `_SHIPPED` (`:355-358`) um `{"max_backup_age_hours": 26}`, die Fixture `builtins` (`:361-377`) weist auch `proxmox-host` zu; `test_config_from_before_the_key_validates_and_alerts` (`:103`) mit einer Proxmox-Konfiguration ohne den Schlüssel; die Slug-Parametrisierung `:408` um `proxmox-host`.
