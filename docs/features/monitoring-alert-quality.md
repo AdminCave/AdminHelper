@@ -101,16 +101,23 @@ kommt nur dorthin.
 
 - `next_ok_count(result, prev)`: `ok` → `prev + 1`, sonst 0 (Gegenstück zu `next_fail_count`).
 - `holds_recovery(result, new_ok_count, consecutive_oks, old_status, notified_status)`: wahr, wenn `result == "ok"`,
-  `new_ok_count < consecutive_oks` und der Check ein Problem trägt: `old_status ∈ {warning, critical}` oder
-  `old_status == "unknown"` mit `notified_status ∈ {warning, critical}` (ein gemeldetes Problem, das über `unknown`
-  zurückkommt, soll nicht am Hold vorbei entwarnen). `pending → ok` und `ok → ok` halten nie.
-- Hält die Recovery, bleibt `eff_status = old_status`, die Meldung bekommt den Zusatz `(recovery n/m)` (wie
-  `(failure n/m)`, `:179-180`); `state.ok_count` wird gespeichert. Ein Fehlschlag während des Holds setzt `ok_count`
-  auf 0; `fail_count` war beim ersten `ok` schon 0, ein erneuter Fehlschlag bleibt über die bestehende Dämpfung auf
-  dem alten Status — der Check bleibt also `critical`.
+  `new_ok_count < consecutive_oks` und der Check ein **gemeldetes** Problem trägt (Kevin 2026-10-20):
+  `notified_status ∈ {warning, critical}` und `old_status ∈ {warning, critical, unknown}` (ein gemeldetes Problem, das
+  über `unknown` zurückkommt, soll nicht am Hold vorbei entwarnen). Ein nie gemeldetes Problem (`notified_status`
+  `ok`/NULL, etwa während Wartung oder Host-down stumm) hält nicht: Der erste `ok` entwarnt sofort und still wie vor
+  der Haltezeit; gehalten würde es nach dem Ende der Stummschaltung als neuer Alarm nachgemeldet. `pending → ok` und
+  `ok → ok` halten nie.
+- Hält die Recovery, gilt `eff_status = notified_status` (Kevin 2026-10-20): der zuletzt gemeldete Status, nicht ein
+  schlimmerer, der nie gemeldet wurde — gemeldet `warning`, stumm `critical`, dann `ok` hält `warning` statt eine
+  Eskalation `warning → critical` nachzumelden. Damit meldet der Hold nie etwas (`resolve_notification` → `skip`).
+  Die Meldung bekommt den Zusatz `(recovery n/m)` (wie `(failure n/m)`, `:179-180`); `state.ok_count` wird
+  gespeichert. Ein Fehlschlag während des Holds setzt `ok_count` auf 0; `fail_count` war beim ersten `ok` schon 0, ein
+  erneuter Fehlschlag bleibt über die bestehende Dämpfung auf dem gehaltenen Status — der Check bleibt also beim
+  Problem. Ein Check, der flattert oder abwechselnd `ok` und `unknown` liefert, entwarnt erst nach
+  `consecutive_oks` `ok` in Folge.
 - `consecutive_oks = 1` ist das heutige Verhalten.
-- Folgen: Die Host-down-Unterdrückung (`_host_is_down`, Status `critical`) bleibt während des Holds bestehen; das
-  Dashboard zeigt den alten Status mit der `ok`-Meldung plus Zusatz.
+- Folgen: Die Host-down-Unterdrückung (`_host_is_down`, Status `critical`) bleibt während des Holds eines gemeldeten
+  Heartbeat-Ausfalls bestehen; das Dashboard zeigt den gemeldeten Status mit der `ok`-Meldung plus Zusatz.
 
 ### API (Monitoring, OpenAPI-Snapshot `apps/monitoring/tests/openapi.snapshot.json`)
 

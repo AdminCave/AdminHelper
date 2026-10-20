@@ -951,6 +951,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Entwarnung erst nach `consecutive_oks` ok in Folge (R-0424):** Ein Check mit gemeldetem Problem
+  (`warning`/`critical`) geht erst nach `consecutive_oks` `ok`-Messungen in Folge zurueck auf `ok`, im Scheduler- wie
+  im Push-Pfad und auch beim Agent-Heartbeat; bis dahin steht er auf dem gemeldeten Status und zeigt die Meldung mit
+  dem Zusatz „(recovery n/m)“. Jede andere Messung dazwischen beginnt die Zaehlung von vorn: Ein Check, der flattert
+  oder abwechselnd `ok` und `unknown` liefert, entwarnt erst nach `consecutive_oks` `ok` in Folge. Ein gemeldetes
+  Problem, das ueber `unknown` zurueckkommt, wird ebenso gehalten; ein nie gemeldetes, etwa waehrend Wartung oder
+  Host-down stumm gebliebenes, entwarnt beim ersten `ok` still wie bisher. Bestehende Checks bekommen mit der
+  Migration `c3e5a7b9d1f2` den Default 2: Ihre Entwarnung kommt ein Check-Intervall spaeter als bisher, bei einem
+  Check mit Intervall `1h` eine Stunde; 1 ist das bisherige Verhalten. Die Host-down-Unterdrueckung faellt
+  entsprechend erst nach der Haltezeit des Heartbeats. Doku: Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Desktop: Netzwerkfehler nennen die URL der Anfrage nicht mehr:** Scheiterte eine Anfrage des Desktops, etwa weil
   der Server nicht erreichbar war oder mit einem Fehlerstatus antwortete, nannte die Meldung in der Oberflaeche und im
   Log die vollstaendige URL der Anfrage samt Pfad und Query. Jetzt fehlt die URL; die Ursache bleibt in der Meldung,
