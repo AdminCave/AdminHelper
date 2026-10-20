@@ -29,7 +29,7 @@ use crate::error::AppError;
 use crate::models::{Settings, SyncMode};
 use crate::port_registry::{PortRegistry, DEFAULT_OWNER};
 use crate::storage::{
-    connections_file_name, harden_permissions, migrate_between, write_json_pretty, Prefs,
+    connections_file_name, harden_permissions, migrate_between, write_json_atomic, Prefs,
     PREFS_FILE,
 };
 use crate::workspace::{
@@ -146,6 +146,12 @@ fn migrate_with(
         remove_dir(&partial(&dir))?;
         remove_dir(&dir)?;
     }
+    // Temps with a fixed name an aborted run may have left (that of `commit`, and that of
+    // `prefs.json` before it was written at once). `write_json_atomic` names its temp after the
+    // pid and would leave them lying.
+    for name in [PREFS_FILE, REGISTRY_FILE] {
+        remove_file(&base.join(format!("{name}.tmp")))?;
+    }
     step("cleared")?;
     for ws in &planned {
         let dir = data_dir(base, &ws.id);
@@ -155,7 +161,7 @@ fn migrate_with(
         fs::rename(&partial, &dir)?;
         step(&format!("placed {}", ws.id))?;
     }
-    write_json_pretty(&base.join(PREFS_FILE), &Prefs::from(&settings))?;
+    write_json_atomic(&base.join(PREFS_FILE), &Prefs::from(&settings))?;
     step("prefs")?;
     let ports = PortRegistry::new(base);
     match planned.iter().find(|ws| ws.meta.kind == SyncMode::Server) {
@@ -262,6 +268,13 @@ fn partial(dir: &Path) -> PathBuf {
 
 fn remove_dir(dir: &Path) -> Result<(), AppError> {
     match fs::remove_dir_all(dir) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
+}
+
+fn remove_file(path: &Path) -> Result<(), AppError> {
+    match fs::remove_file(path) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
         _ => Ok(()),
     }
@@ -960,6 +973,28 @@ mod tests {
         migrate(base).unwrap();
 
         assert_eq!(snapshot(base), expected);
+    }
+
+    #[test]
+    fn the_temps_an_aborted_run_left_are_gone_after_the_next() {
+        let scratch = Scratch::new("temps");
+        let base = &scratch.0;
+        server_install(base);
+        for name in ["prefs.json.tmp", "workspaces.json.tmp"] {
+            fs::write(base.join(name), "torn").unwrap();
+        }
+
+        migrate(base).unwrap();
+
+        let temps: Vec<String> = names_in(base)
+            .into_iter()
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(temps.is_empty(), "{temps:?}");
+        assert_eq!(
+            Registry::load(base).unwrap(),
+            Some(registry(&["standard", "lokal", "sync"]))
+        );
     }
 
     #[test]

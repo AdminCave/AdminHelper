@@ -67,8 +67,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace_keys
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T2
 
-### T36 — Migration unter Windows: keine Temp-Reste eines abgebrochenen Laufs  [ ]
+### T36 — Migration unter Windows: keine Temp-Reste eines abgebrochenen Laufs  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/migration.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @cf0aa589 2026-10-20T06:24:34+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T36.verdict.json)
 Änderung: Unter Windows bleibt nach `migrate` ein `prefs.json.tmp` aus einem abgebrochenen Lauf liegen: `write_json_pretty` schreibt dort an Ort und Stelle, nur unter Unix überschreibt der Rename den Rest (CI `rust-windows`, `migration::tests::leftovers_of_an_aborted_run_are_built_anew_and_other_workspaces_stay`). `migrate` schreibt `prefs.json` über `write_json_atomic` (`storage.rs:116`) und entfernt vor dem Schreiben die Reste mit festem Namen (`prefs.json.tmp`, `workspaces.json.tmp`) im App-Datenordner; fehlt einer, ist das kein Fehler. Der bestehende Test bleibt unverändert und muss unter Windows grün werden; dazu ein Test, der nur die Temp-Reste pflanzt und nach `migrate` keinen davon mehr findet. Beweis unter Windows: CI-Job `rust-windows` per `workflow_dispatch` auf dem Branch; die Session hält das Ergebnis im Ledger fest.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- migration::
 Doku: keine (intern)
