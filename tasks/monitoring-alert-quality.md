@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Alert-Qualität — Task-Ledger
-Status: erledigt · Branch: feature/monitoring-alert-quality · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-alert-quality · Review: pro Task
 Spec: docs/features/monitoring-alert-quality.md (Roadmap R-0424)
 Heavy: linux-full — der Monitoring-Dienst bekommt eine Alembic-Migration (Stack-Start, `upgrade-path` vom letzten Release), der Server-Vertrag `POST /api/internal/events` ändert sich (`source_ids`, `alert.triggered` je Server; `sse-push` und `desktop_e2e_sse_push` injizieren Events ohne das Feld und müssen grün bleiben), `agent-monitoring` fährt den Push-Pfad mit Haltezeit, und `monitoring-check.live.js` nutzt den Check-Editor mit dem neuen Feld. Kein `scenario --moncheck`: die geschlossene Mail-Schleife (`scripts/tests/box_serverbox.sh:457-463`) legt zwei `ping`-Checks ohne Server mit `severity critical` und `consecutive_fails 1` an — `pending → ok` hält nicht, der Deckel ändert bei `critical` nichts, ohne `server_id` greifen Host-down und Sammelmeldung nicht, `_send_email` bleibt unverändert; der Capstone im Wochenlauf fährt sie ohnehin. Kein `windows`: kein Rust-, Agent- oder Plattform-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -201,3 +201,10 @@ Review: approve (.ah-out/review/monitoring-alert-quality/T20.verdict.json)
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_migrations_smoke.py tests/test_checks_crud.py
 Doku: CHANGELOG.md
 Abhängt von: T1
+
+### T21 — Test aus linux-base v2 mit der Haltezeit zusammenführen  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/tests/test_system_state_checker.py
+Änderung: PR-CI #238 (Lauf 39474067557, Jobs „Monitoring (pytest)“ und „image lock“) rot nach dem Merge von main: `test_system_state_checker.py::test_report_rates_a_system_state_check` (aus monitoring-linux-base-v2) erwartet nach einem `warning` und einem Report ohne `system_state`-Block sofort `ok`; mit der Haltezeit dieses Vorhabens (`consecutive_oks` Default 2) steht dort gewollt `warning` mit „Not evaluated: no system state in report (recovery 1/2)“. Der Test behält seine Absicht (ein Report ohne Block überschreibt die Werte, Details `_NOTHING`) und hält das Zusammenspiel ausdrücklich fest: nach dem ersten Report ohne Block `warning` mit „(recovery 1/2)“ und `_NOTHING`, nach dem zweiten `ok` mit „Not evaluated: no system state in report“. Kein Produktcode ändert sich. Den ganzen Monitoring-Testordner einmal fahren (Zusammenspiel beider Vorhaben).
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_system_state_checker.py
+Doku: keine (Test)
+Abhängt von: T20
