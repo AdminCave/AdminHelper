@@ -359,7 +359,7 @@ Plan (`termsrv_plan` in `password.rs`, Tests `termsrv_plan_*`; T17 führt ihn au
 | diese Maschine | nein | Löschen (beide Typen), Starten |
 | diese Maschine | ja | Löschen (beide Typen), Schreiben, Starten, nach 60 s Löschen |
 
-Belegung (T39, Kevin 2026-10-20): Jeder Start kennt die Namen, die sein mstsc nachschlagen könnte (Ziel und Clear-Namen, L), und die er schreibt (W). Ein schreibender Start belegt L und W bis zu seinem `Remove` über alle Workspace-Prozesse; ein Start einer anderen Verbindung wird abgelehnt, wenn er schreibt, was eine fremde Belegung nachschlagen kann, oder nachschlägt bzw. löscht, was sie geschrieben hat. Zwei Tunnel-Starts auf verschiedenen Ports sperren sich nicht.
+Belegung (T39, Kevin 2026-10-20): Jeder Start kennt die Namen, die sein mstsc nachschlagen könnte (Ziel und Clear-Namen, außerhalb von Loopback bei Port ≠ 3389 auch `TERMSRV/<host>`, L), und die er schreibt (W). Ein schreibender Start belegt L und W bis zu seinem `Remove` über alle Workspace-Prozesse, ein Start ohne Passwort belegt L bis zum Ablauf (Kevin 2026-10-20); ein Start einer anderen Verbindung wird abgelehnt, wenn er schreibt, was eine fremde Belegung nachschlagen kann, oder nachschlägt bzw. löscht, was sie geschrieben hat. Zwei Tunnel-Starts auf verschiedenen Ports sperren sich nicht.
 
 Probe (`termsrv_probe_*`, nur im CI-Job `rust-windows`): schreibt `TERMSRV/adminhelper-probe-<pid>-<ns>.invalid:3390`
 generisch mit `CRED_PERSIST_SESSION`, liest Typ, Persistenz, Benutzer und Passwort zurück und löscht den Eintrag.
