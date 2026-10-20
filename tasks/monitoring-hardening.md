@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Härtung: Agent-Texte und Zahlen, Check-Config, Line-Protocol, Alert-Versand — Task-Ledger
-Status: erledigt · Branch: feature/monitoring-hardening · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: linux-full — T13 ändert den 422-Handler des Servers (`apps/server/app/main.py`, Fehlerpfad jeder Route), T11 seine Log-Konfiguration; der Rest liegt in `apps/monitoring` (Checker, `check_configs.py`, `to_dict` in `models.py`, `core/victoria.py`, `_num` in `routers/agent.py`, 422-Handler in `main.py`, `alerter.py`). Keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung, kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad. Kein Lauf vor dem Merge: das Vorhaben geht in den Sammellauf (CLAUDE.md §5); Monitoring- und Server-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -188,3 +188,13 @@ Beweis: cca3d668 · Probe des T6-Reviewers: `POST /checks` mit `{"name": "\ud800
 Semantik: `apps/server/app/main.py:393` Docstring — „The input it echoes may hold a lone surrogate (JSON spells one as \ud800), which has no UTF-8 form; that answer escapes every non-ASCII character, as JSON allows.“; Kevin 2026-10-20: in T13 mitnehmen (als eigene Monitoring-Task, T13 ist eine Server-Task)
 Abhängt von: T6
 HEAD: cca3d668
+
+### T15 — Update-Vergleich: die Ergänzung aus T12 als Kommentar, OpenAPI unverändert  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/templates.py
+Änderung: T12 hat den Docstring von `get_builtin_update` (`routers/templates.py:282-289`) um zwei Sätze ergänzt (die gespeicherte Seite wird wie `to_dict` gelesen; `builtin_edited` liest weiter roh, damit ein gespeicherter Hash gültig bleibt). FastAPI übernimmt den Docstring als `description` ins OpenAPI-Schema, und `tests/test_openapi_snapshot.py` ist rot. Die Ergänzung wird ein `#`-Kommentar an der Lesestelle; der Docstring ist wieder der von origin/main, das Schema gleich dem Snapshot. Kein neuer Test: der Snapshot-Test ist der rote Test (auf HEAD rot, danach grün).
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py tests/test_stored_json_numbers.py
+Doku: keine
+Beweis: a9c72454 · PR-CI #234, Lauf 39376744828, Job „Monitoring (pytest, image lock)“: `1 failed, 2073 passed`, `test_openapi_matches_snapshot` (description von `GET /templates/{template_id}/builtin-update`); ebenso im Dispatch-Lauf 39376781303 auf dem Branch
+Semantik: Ledger-Kopf „keine OpenAPI-Änderung“; `tests/test_openapi_snapshot.py` („If that is intended, re-record it IN THE SAME COMMIT“); Kevin 2026-10-20: die Ergänzung als Kommentar
+Abhängt von: T12
+HEAD: a9c72454
