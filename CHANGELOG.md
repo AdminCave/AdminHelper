@@ -984,6 +984,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: ein nicht lesbares Proxmox ist `warning` mit Benachrichtigung (R-0492):** Liegt `pvesh` auf dem Host,
+  schickt der Agent ab Report-Version 3 den Proxmox-Block bei jedem Push, auch wenn er Node-Status, Backup-Storages,
+  deren Backups oder die VM-Liste nicht lesen kann: dann mit `available: false` und einem Fehler-Code statt der VMs
+  (`timeout`, `cli_failed`, `parse_failed`, `backup_index_incomplete` fuer einen nicht aktiven Backup-Storage).
+  Bisher fehlte der Block, und `proxmox_backup` stand ohne Benachrichtigung auf `unknown`. Jetzt meldet der Check den
+  Ausfall wie Docker und ZFS als `warning` mit Benachrichtigung, etwa
+  „Proxmox unavailable (timeout): pvesh get /cluster/resources timed out after 15s“. `alert_on_unavailable: false`
+  (neu in der Konfiguration von `proxmox_backup`, Default `true`, nur `true` oder `false`) laesst einen Ausfall auf
+  `unknown` ohne Benachrichtigung stehen. Fehlt der Block (`pvesh` deinstalliert, oder ein aelterer Agent kann
+  Proxmox nicht lesen), bleibt der Check `unknown`, leert aber die zuletzt gezeigte VM-Liste; ein lesbares Proxmox
+  ohne VMs leert sie ebenso. Die Check-Details tragen dazu `available` und `error`. Doku:
+  Monitoring-Administration (DE+EN).
 - **Monitoring: nur fehlgeschlagene Dienste sind critical (R-0423):** Im Modus `auto` von `service_process` ist eine
   fehlgeschlagene Unit nur noch `critical`, wenn sie ein Dienst ist (`.service` oder ein Windows-Dienst ohne
   Unit-Endung); eine andere fehlgeschlagene Unit wie Mount, Timer oder Socket ist `warning`, wie eine enabled, aber

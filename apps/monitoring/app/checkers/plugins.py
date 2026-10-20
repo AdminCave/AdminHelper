@@ -17,10 +17,11 @@ import time
 
 from app.checkers.agent import agent_number, cap_agent_text, capped_objects, join_capped
 
-# The codes the agent sends for a block it could not read (dockerUnavailable and
-# zfsUnavailable in apps/agent/internal/monitor/plugins.go).
+# The codes the agent sends for a block it could not read (dockerUnavailable,
+# zfsUnavailable and proxmoxUnavailable in apps/agent/internal/monitor/plugins.go).
 _ZFS_ERRORS = frozenset({"timeout", "cli_failed"})
 _DOCKER_ERRORS = frozenset({"daemon_unreachable", "timeout", "cli_failed", "parse_failed"})
+_PROXMOX_ERRORS = frozenset({"timeout", "cli_failed", "parse_failed", "backup_index_incomplete"})
 
 
 def _whole_number(value: object) -> int | None:
@@ -50,7 +51,8 @@ class ProxmoxBackupChecker:
     {
         "max_backup_age_hours": 26,
         "exclude_vmids": [999],
-        "exclude_stopped": true
+        "exclude_stopped": true,
+        "alert_on_unavailable": true
     }
     """
 
@@ -60,11 +62,25 @@ class ProxmoxBackupChecker:
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         proxmox = report.get("proxmox")
         if not isinstance(proxmox, dict) or not proxmox:
-            return "unknown", "No Proxmox data in report", None
+            # An empty list, not None: the push path keeps the stored details of a
+            # result without any, and the desktop would go on showing the old VMs.
+            return "unknown", "No Proxmox data in report", {"_details": {"vms": []}}
+
+        # Only a JSON false is an outage: null, 0 or "false" let the VMs decide.
+        if proxmox.get("available", True) is False or proxmox.get("error"):
+            msg, code = _outage_message("Proxmox", proxmox, _PROXMOX_ERRORS)
+            # Only a real False switches the alert off; anything else keeps the default.
+            alert = config.get("alert_on_unavailable", True) is not False
+            details = {"available": False, "error": code, "vms": []}
+            return ("warning" if alert else "unknown"), msg, {"_details": details}
 
         vms = capped_objects(proxmox.get("vms"))
         if not vms:
-            return "ok", "No VMs/CTs found", None
+            return (
+                "ok",
+                "No VMs/CTs found",
+                {"_details": {"available": True, "error": None, "vms": []}},
+            )
 
         max_age_hours = config.get("max_backup_age_hours", 26)
         exclude_vmids = set(config.get("exclude_vmids", []))
@@ -123,7 +139,7 @@ class ProxmoxBackupChecker:
             "proxmox_backup_ok": ok_count,
             "proxmox_backup_missing": len(no_backup),
             "proxmox_backup_outdated": len(outdated),
-            "_details": {"vms": vm_details},
+            "_details": {"available": True, "error": None, "vms": vm_details},
         }
 
         if no_backup:

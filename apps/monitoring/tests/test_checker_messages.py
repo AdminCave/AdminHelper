@@ -250,6 +250,21 @@ CASES = [
         "No Proxmox data in report",
         id="proxmox-no-data",
     ),
+    pytest.param(
+        lambda: ProxmoxBackupChecker().evaluate(
+            {},
+            {
+                "proxmox": {
+                    "available": False,
+                    "error": "backup_index_incomplete",
+                    "error_message": "backup storage nas not active",
+                }
+            },
+        ),
+        "warning",
+        "Proxmox unavailable (backup_index_incomplete): backup storage nas not active",
+        id="proxmox-unavailable",
+    ),
     pytest.param(lambda: _proxmox(), "ok", "No VMs/CTs found", id="proxmox-no-vms"),
     pytest.param(
         lambda: _proxmox(_vm(101, "qemu", "a", None), _vm(102, "lxc", "b", _hours_ago(30))),

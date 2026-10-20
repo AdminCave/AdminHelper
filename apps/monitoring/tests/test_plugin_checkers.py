@@ -7,6 +7,7 @@ alarms or swallowed alarms if they drift — e.g. a regression dropping DEGRADED
 would never be noticed without a test (6.53)."""
 
 import math
+import time
 
 import pytest
 
@@ -148,6 +149,11 @@ def test_zfs_pool_without_name_is_named_by_a_question_mark():
 
 
 # --- ProxmoxBackupChecker ---
+def _proxmox(*vms, **block):
+    """The proxmox block as the agent reports it since R-0492 (available/error always set)."""
+    return {"proxmox": {"available": True, "error": None, "vms": list(vms), **block}}
+
+
 def test_proxmox_missing_backup_is_critical():
     r = {"proxmox": {"vms": [{"vmid": 100, "status": "running", "last_backup_ts": None}]}}
     status, _, _ = ProxmoxBackupChecker().evaluate({}, r)
@@ -200,7 +206,11 @@ def test_proxmox_caps_the_vm_list(monkeypatch):
 @pytest.mark.parametrize("vms", ["abc", {"vmid": 100}, 42], ids=["str", "dict", "int"])
 def test_proxmox_vms_that_are_no_list_count_as_empty(vms):
     result = ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": vms}})
-    assert result == ("ok", "No VMs/CTs found", None)
+    assert result == (
+        "ok",
+        "No VMs/CTs found",
+        {"_details": {"available": True, "error": None, "vms": []}},
+    )
 
 
 def test_proxmox_vm_that_is_no_object_is_skipped():
@@ -208,6 +218,66 @@ def test_proxmox_vm_that_is_no_object_is_skipped():
     status, msg, metrics = ProxmoxBackupChecker().evaluate({}, r)
     assert (status, msg) == ("critical", "No backup: VM 100 (?)")
     assert [vm["vmid"] for vm in metrics["_details"]["vms"]] == [100]
+
+
+def test_proxmox_old_agent_block_without_available_is_rated_as_before():
+    # Agents before R-0492 send the block only after a good pvesh read, without available.
+    report = {"proxmox": {"vms": [{"vmid": 100, "status": "running", "last_backup_ts": None}]}}
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, report)
+    assert (status, msg) == ("critical", "No backup: VM 100 (?)")
+    assert metrics["_details"]["available"] is True and metrics["_details"]["error"] is None
+
+
+@pytest.mark.parametrize(
+    "code", ["timeout", "cli_failed", "parse_failed", "backup_index_incomplete"]
+)
+def test_proxmox_unavailable_is_warning_without_vms(code):
+    # A VM without a backup would be critical: the outage decides, and the list is dropped.
+    stale = {"vmid": 100, "status": "running", "last_backup_ts": None}
+    report = _proxmox(stale, available=False, error=code, error_message="pvesh get failed")
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, report)
+    assert status == "warning"
+    assert msg == f"Proxmox unavailable ({code}): pvesh get failed"
+    assert metrics == {"_details": {"available": False, "error": code, "vms": []}}
+
+
+def test_proxmox_error_with_available_true_is_still_unavailable():
+    status, _, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox(error="parse_failed"))
+    assert status == "warning"
+    assert metrics["_details"] == {"available": False, "error": "parse_failed", "vms": []}
+
+
+def test_proxmox_unavailable_with_alert_off_is_unknown_with_same_message():
+    report = _proxmox(
+        available=False,
+        error="backup_index_incomplete",
+        error_message="backup storage nas not active",
+    )
+    _, warn_msg, warn_metrics = ProxmoxBackupChecker().evaluate({}, report)
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({"alert_on_unavailable": False}, report)
+    assert status == "unknown"
+    assert msg == warn_msg
+    assert metrics == warn_metrics
+
+
+def test_proxmox_unavailable_alert_is_only_off_for_a_real_false():
+    report = _proxmox(available=False, error="timeout")
+    status, _, _ = ProxmoxBackupChecker().evaluate({"alert_on_unavailable": "false"}, report)
+    assert status == "warning"
+
+
+def test_proxmox_block_missing_is_unknown_and_clears_vms():
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, {"resources": {}})
+    assert (status, msg) == ("unknown", "No Proxmox data in report")
+    # Details, not None: the push path keeps stored details when a result has none,
+    # and the desktop would go on showing the last VM list.
+    assert metrics == {"_details": {"vms": []}}
+
+
+def test_proxmox_zero_vms_is_ok_with_empty_list():
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox())
+    assert (status, msg) == ("ok", "No VMs/CTs found")
+    assert metrics == {"_details": {"available": True, "error": None, "vms": []}}
 
 
 # --- DockerHealthChecker ---
@@ -741,13 +811,17 @@ def test_docker_ignored_container_is_skipped():
     assert _rows(metrics) == []
 
 
-# --- Outage branch of ZfsHealthChecker and DockerHealthChecker (R-0472) ---
+# --- Outage branch of the ZFS and Docker (R-0472) and the Proxmox checker (R-0492) ---
 # Only the agent's codes and a capped error_message reach the message, which goes unchanged
 # into MonitorState.message, webhook and mail; available is down only as a JSON false.
 def _outage_case(kind, **block):
-    """(checker, report with one healthy pool or container, message prefix, list key)."""
+    """(checker, report with one healthy pool, container or VM, message prefix, list key)."""
     if kind == "zfs":
         return ZfsHealthChecker(), _zfs(_pool(), **block), "ZFS unavailable", "pools"
+    if kind == "proxmox":
+        # Backed up an hour ago: ok at the default of 26 hours.
+        vm = {"vmid": 100, "status": "running", "last_backup_ts": time.time() - 3600}
+        return ProxmoxBackupChecker(), _proxmox(vm, **block), "Proxmox unavailable", "vms"
     return DockerHealthChecker(), _docker(_ctr(), **block), "Docker unavailable", "containers"
 
 
@@ -761,6 +835,10 @@ def _outage_case(kind, **block):
         ("docker", "disk_full"),
         ("docker", "x" * 300),
         ("docker", ["timeout"]),
+        ("proxmox", "disk_full"),
+        ("proxmox", "x" * 300),
+        ("proxmox", "daemon_unreachable"),
+        ("proxmox", ["timeout"]),
     ],
     ids=[
         "zfs-disk_full",
@@ -770,6 +848,10 @@ def _outage_case(kind, **block):
         "docker-disk_full",
         "docker-300-chars",
         "docker-list",
+        "proxmox-disk_full",
+        "proxmox-300-chars",
+        "proxmox-docker-code",
+        "proxmox-list",
     ],
 )
 def test_unknown_error_code_is_an_outage_without_code(kind, error):
@@ -780,7 +862,7 @@ def test_unknown_error_code_is_an_outage_without_code(kind, error):
     assert metrics == {"_details": {"available": False, "error": None, key: []}}
 
 
-@pytest.mark.parametrize("kind", ["zfs", "docker"])
+@pytest.mark.parametrize("kind", ["zfs", "docker", "proxmox"])
 def test_error_message_is_capped(kind):
     checker, report, prefix, _ = _outage_case(
         kind, available=False, error="timeout", error_message="y" * 10_000
@@ -790,7 +872,7 @@ def test_error_message_is_capped(kind):
     assert msg == f"{prefix} (timeout): " + "y" * 499 + "…"
 
 
-@pytest.mark.parametrize("kind", ["zfs", "docker"])
+@pytest.mark.parametrize("kind", ["zfs", "docker", "proxmox"])
 @pytest.mark.parametrize("error_message", [42, ["zpool list failed"]], ids=["int", "list"])
 def test_error_message_that_is_no_string_is_left_out(kind, error_message):
     checker, report, prefix, _ = _outage_case(
@@ -801,7 +883,7 @@ def test_error_message_that_is_no_string_is_left_out(kind, error_message):
     assert msg == f"{prefix} (timeout)"
 
 
-@pytest.mark.parametrize("kind", ["zfs", "docker"])
+@pytest.mark.parametrize("kind", ["zfs", "docker", "proxmox"])
 @pytest.mark.parametrize("available", ["false", 0, None], ids=["str-false", "zero", "null"])
 def test_available_is_down_only_as_a_real_false(kind, available):
     checker, healthy, _, _ = _outage_case(kind, available=True)
@@ -1048,13 +1130,15 @@ def test_a_long_text_field_goes_into_details_on_one_line_of_500_characters(
 def test_proxmox_detail_rows_of_a_regular_report(monkeypatch):
     monkeypatch.setattr("app.checkers.plugins.time.time", lambda: _NOW)
     ct = {**_VM, "vmid": 101, "name": "ct", "type": "lxc", "last_backup_ts": _NOW - 30 * 3600}
-    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, {"proxmox": {"vms": [_VM, ct]}})
+    status, msg, metrics = ProxmoxBackupChecker().evaluate({}, _proxmox(_VM, ct))
     assert (status, msg) == ("warning", "Outdated backups: LXC 101 (ct): 30h old")
     assert metrics["_details"] == {
+        "available": True,
+        "error": None,
         "vms": [
             {"vmid": 100, "name": "web", "type": "qemu", "backupStatus": "ok", "ageHours": None},
             {"vmid": 101, "name": "ct", "type": "lxc", "backupStatus": "outdated", "ageHours": 30},
-        ]
+        ],
     }
     assert_every_reader_reads(metrics["_details"])
 

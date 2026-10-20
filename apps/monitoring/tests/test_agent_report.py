@@ -263,8 +263,8 @@ def _lines_of(writes: list[list[str]], check_id: str) -> list[str]:
             1,
             id="docker-outage",
         ),
-        # A result without even _details (metrics None).
-        pytest.param("proxmox_backup", {}, 3, id="proxmox-without-data"),
+        # A result without even _details (metrics None): agent_resources without its block.
+        pytest.param("agent_resources", {}, 3, id="resources-without-data"),
     ],
 )
 def test_push_check_without_measured_values_writes_its_status(
