@@ -117,9 +117,24 @@ pub async fn reset_device_identity(
     Ok(outcome)
 }
 
+/// The URL a sign-in or an enrollment of the workspace of this process goes to, in the app data
+/// dir `base`, `sent` being the one the webview names ([`workspace::sign_in_url`]); for a
+/// sign-in as `username`, only while no other workspace signs in to that server as that user
+/// ([`workspace::check_sign_in_once`]). The launcher signs in nowhere.
+fn sign_in_target(base: &Path, sent: &str, username: Option<&str>) -> Result<String, AppError> {
+    let ws = workspace::current()?;
+    let meta = workspace::load_meta(&ws.id, &ws.data_dir(base))?;
+    let url = workspace::sign_in_url(&meta, sent)?;
+    if let Some(username) = username {
+        workspace::check_sign_in_once(&ws.id, &url, username, &workspace::metas(base)?)?;
+    }
+    Ok(url)
+}
+
 /// Decoupled enrollment (ADR 0003): enroll using a one-time token an admin minted
 /// out-of-band and handed over, WITHOUT a prior login. Lets a brand-new client
 /// obtain its cert under enforced mTLS, where it cannot reach the login on :443.
+/// Only at the server of this workspace ([`sign_in_target`]).
 #[tauri::command]
 pub async fn enroll_with_token(
     app: tauri::AppHandle,
@@ -127,6 +142,7 @@ pub async fn enroll_with_token(
     token: String,
     allow_self_signed: Option<bool>,
 ) -> Result<(), AppError> {
+    let server_url = sign_in_target(&storage::app_data_dir(&app)?, &server_url, None)?;
     let self_signed = self_signed_setting(&app, allow_self_signed);
     enrollment::enroll_with_token(&server_url, &token, self_signed).await
 }
@@ -326,6 +342,8 @@ pub fn delete_password(app: tauri::AppHandle, connection: Connection) -> Result<
     password::delete_password(&storage::app_data_dir(&app)?, &connection)
 }
 
+/// Signs in at the server of this workspace, as a user no other workspace signs in to it as
+/// ([`sign_in_target`]); both are checked before the password leaves.
 #[tauri::command]
 pub async fn login(
     app: tauri::AppHandle,
@@ -335,6 +353,7 @@ pub async fn login(
     password: String,
     allow_self_signed: Option<bool>,
 ) -> Result<AuthSession, AppError> {
+    let server_url = sign_in_target(&storage::app_data_dir(&app)?, &server_url, Some(&username))?;
     let self_signed = self_signed_setting(&app, allow_self_signed);
     auth::login(
         session.inner(),
@@ -564,7 +583,7 @@ pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(
 mod tests {
     use super::{
         delete_workspace_in, list_workspaces_in, open_launcher_with, open_workspace_in,
-        reject_foreign_port, run_with_deadline, save_workspace_in,
+        reject_foreign_port, run_with_deadline, save_workspace_in, sign_in_target,
     };
     use crate::error::AppError;
     use crate::launcher::{Spawned, Spawner};
@@ -873,5 +892,113 @@ mod tests {
             "color": PALETTE[2],
         }));
         assert!(bad.is_err(), "{bad:?}");
+    }
+
+    // ── Where the workspace of this process signs in ──
+
+    /// Lays out `base` with the server workspaces `workspaces`: id, name, URL and the user it
+    /// last signed in as.
+    fn server_workspaces(base: &Path, workspaces: &[(&str, &str, Option<&str>, Option<&str>)]) {
+        for (id, name, url, user) in workspaces {
+            Meta {
+                kind: SyncMode::Server,
+                name: name.to_string(),
+                color: PALETTE[0].to_string(),
+                url: url.map(String::from),
+                interval_minutes: 1,
+                allow_self_signed_certs: false,
+                last_username: user.map(String::from),
+                legacy_keys: false,
+            }
+            .store(&base.join("workspaces").join(id))
+            .unwrap();
+        }
+        Registry {
+            workspaces: workspaces
+                .iter()
+                .map(|(id, ..)| RegistryEntry {
+                    id: workspace::WorkspaceId::parse(id).unwrap(),
+                })
+                .collect(),
+            last_used: None,
+            migrated_notice: false,
+        }
+        .store(base)
+        .unwrap();
+    }
+
+    #[test]
+    fn login_binding_signs_in_at_the_server_of_the_workspace_once_per_user() {
+        let scratch = Scratch::new("sign-in");
+        let base = &scratch.0;
+        server_workspaces(
+            base,
+            &[
+                (
+                    "w-0000000a",
+                    "Kunde A",
+                    Some("https://ah.example.com"),
+                    Some("admin"),
+                ),
+                (
+                    "w-0000000b",
+                    "Kunde B",
+                    Some("https://ah.example.com/"),
+                    None,
+                ),
+                ("w-0000000c", "Neu", None, None),
+            ],
+        );
+
+        // The launcher signs in nowhere.
+        let no_workspace = workspace::current().unwrap_err().to_string();
+        for username in [Some("ops"), None] {
+            let refused = sign_in_target(base, "https://ah.example.com", username).unwrap_err();
+            assert_eq!(refused.to_string(), no_workspace);
+        }
+        {
+            let _b = entered("w-0000000b");
+            // Its own server, at the URL it keeps.
+            for username in [Some("ops"), None] {
+                assert_eq!(
+                    sign_in_target(base, "https://AH.example.com:443", username).unwrap(),
+                    "https://ah.example.com/"
+                );
+            }
+            // Another server, for a sign-in and an enrollment alike.
+            for username in [Some("ops"), None] {
+                assert_refused(
+                    sign_in_target(base, "https://other.example.com", username),
+                    "this workspace belongs to the server https://ah.example.com/",
+                    &format!("{username:?}"),
+                );
+            }
+            // The user another workspace signs in to that server as: refused for a sign-in.
+            assert_refused(
+                sign_in_target(base, "https://ah.example.com", Some("Admin")),
+                "the workspace \"Kunde A\" signs in to this server as this user",
+                "same user",
+            );
+        }
+        {
+            let _a = entered("w-0000000a");
+            assert_eq!(
+                sign_in_target(base, "https://ah.example.com", Some("admin")).unwrap(),
+                "https://ah.example.com"
+            );
+        }
+        {
+            // Without a URL of its own, the one sent; but not as that user at that server.
+            let _c = entered("w-0000000c");
+            assert_eq!(
+                sign_in_target(base, " https://other.example.com ", Some("admin")).unwrap(),
+                "https://other.example.com"
+            );
+            assert_refused(
+                sign_in_target(base, "https://ah.example.com:443/", Some("admin")),
+                "\"Kunde A\"",
+                "first URL",
+            );
+        }
     }
 }

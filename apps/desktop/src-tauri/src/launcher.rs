@@ -20,7 +20,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
-use url::{Origin, Url};
+use url::Origin;
 
 use crate::enrollment::{self, ResetOutcome};
 use crate::error::AppError;
@@ -31,8 +31,8 @@ use crate::password;
 use crate::port_registry::PortRegistry;
 use crate::validation::{validate_https_url, validate_server_url_secure};
 use crate::workspace::{
-    self, acquire, failure, is_open, Meta, Registry, RegistryEntry, Workspace, WorkspaceId,
-    PALETTE, REGISTRY_FILE,
+    self, acquire, failure, is_open, server_origin, Meta, Registry, RegistryEntry, Workspace,
+    WorkspaceId, PALETTE, REGISTRY_FILE,
 };
 
 /// The longest name of a workspace, in characters.
@@ -124,8 +124,8 @@ pub fn list(base: &Path) -> Result<WorkspaceList, AppError> {
 
 /// Makes the workspace `draft` describes, or edits the one it names, and gives its id. A new
 /// workspace has keyring keys of its own (`legacyKeys: false`). An edit takes the name, colour
-/// and URL, only while the workspace is closed, and never another kind. The draft is checked
-/// here, without a network call.
+/// and URL, only while the workspace is closed, never another kind, and no URL of another server
+/// while the workspace has a device identity. The draft is checked here, without a network call.
 pub fn save(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError> {
     let (name, url) = checked(draft)?;
     let _guard = registry_guard();
@@ -447,16 +447,6 @@ fn other_migrated(base: &Path, id: &WorkspaceId) -> Result<Vec<Option<Meta>>, Ap
     Ok(others)
 }
 
-/// The origin of the server of a server workspace: scheme, host and port, the default port
-/// filled in, so two URLs of one installation compare equal. None for a workspace without a
-/// server, which never has an identity.
-fn server_origin(meta: &Meta) -> Option<Origin> {
-    if meta.kind != SyncMode::Server {
-        return None;
-    }
-    Some(Url::parse(meta.url.as_deref()?).ok()?.origin())
-}
-
 /// Whether the identity without a prefix may be that of `other`, a migrated workspace beside
 /// the one purged, whose server origin is `own`: `other` is a server workspace of the same
 /// installation, or of any while `own` is not known, or one whose `workspace.json` does not
@@ -690,7 +680,7 @@ fn edit(
             "the workspace {id} is open; close it to edit it"
         )));
     };
-    let meta = Meta::load(&dir)?;
+    let meta = workspace::load_meta(id, &dir)?;
     if meta.kind != draft.kind {
         return Err(AppError::Validation(
             "the kind of a workspace stays as it was made".to_string(),
@@ -702,6 +692,21 @@ fn edit(
         url,
         ..meta.clone()
     };
+    // A purge revokes the identity at the URL the workspace has then: another server would be
+    // asked to revoke what it never issued, and its yes would read as a revoke.
+    if edited.url != meta.url && server_origin(&edited) != server_origin(&meta) {
+        let ws = Workspace {
+            id: id.clone(),
+            name: meta.name.clone(),
+            legacy_keys: meta.legacy_keys,
+        };
+        if enrollment::holds_identity(&ws.keyring_prefix())? {
+            return Err(AppError::Validation(format!(
+                "the workspace {id} has a device identity of its server; reset the identity in \
+                 the workspace before its URL names another server, or make a new workspace"
+            )));
+        }
+    }
     if edited != meta {
         edited.store(&dir)?;
     }
@@ -1386,6 +1391,135 @@ mod tests {
         assert_eq!(registry_bytes(base), registry);
         assert!(!dir_of(base, "gone").exists());
         assert!(!dir_of(base, "w-11111111").exists());
+    }
+
+    #[test]
+    fn login_binding_the_url_of_a_workspace_with_a_device_identity_keeps_its_server() {
+        let scratch = Scratch::new("edit-identity");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        let url = "https://ah.example.com";
+        let enrolled = created(SyncMode::Server, "Kunde A", Some(url));
+        let fresh = created(SyncMode::Server, "Kunde B", Some(url));
+        let first = created(SyncMode::Server, "Kunde C", None);
+        let migrated = meta(SyncMode::Server, "Standard", Some(url));
+        install(
+            base,
+            &[
+                ("w-0000000a", enrolled.clone()),
+                ("w-0000000b", fresh),
+                ("w-0000000c", first.clone()),
+                ("standard", migrated.clone()),
+            ],
+            false,
+        );
+        store(&behind(&prefix_of("w-0000000a"), &IDENTITY[..3]));
+        // What a crash between the writes of an enrollment left: an identity all the same.
+        store(&behind(&prefix_of("w-0000000c"), &["enroll|ca"]));
+        // The identity from before workspaces, which the migrated workspace keeps.
+        store(&behind("", &["enroll|key", "enroll|cert"]));
+        // The leaf a reset remembers is none.
+        store(&behind(&prefix_of("w-0000000b"), &["enroll|replaces"]));
+        let edit = |ws: &str, name: &str, url: Option<&str>| {
+            save(
+                base,
+                &WorkspaceDraft {
+                    id: Some(id(ws)),
+                    kind: SyncMode::Server,
+                    name: name.to_string(),
+                    color: PALETTE[0].to_string(),
+                    url: url.map(String::from),
+                },
+            )
+        };
+        let refused = |result: Result<WorkspaceId, AppError>, ws: &str, case: &str| {
+            assert!(
+                matches!(&result, Err(AppError::Validation(msg))
+                    if msg.contains(&format!("the workspace {ws} has a device identity"))),
+                "{ws} {case}: {result:?}"
+            );
+        };
+
+        // Another server, or none, would take the revoke of its purge: refused, nothing written.
+        for other in [
+            Some("https://other.example.com"),
+            Some("https://ah.example.com:8443"),
+            Some("http://localhost"),
+            None,
+        ] {
+            refused(
+                edit("w-0000000a", "Kunde A", other),
+                "w-0000000a",
+                &format!("{other:?}"),
+            );
+            refused(
+                edit("standard", "Standard", other),
+                "standard",
+                &format!("{other:?}"),
+            );
+        }
+        // The first URL names a server as well: the identity may be another one's.
+        refused(
+            edit("w-0000000c", "Kunde C", Some(url)),
+            "w-0000000c",
+            "first",
+        );
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000a")).unwrap(), enrolled);
+        assert_eq!(Meta::load(&dir_of(base, "standard")).unwrap(), migrated);
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000c")).unwrap(), first);
+
+        // The same server, however the URL names it, and a new name: taken.
+        edit(
+            "w-0000000a",
+            "Kunde A2",
+            Some("https://AH.example.com:443/x"),
+        )
+        .unwrap();
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000a")).unwrap(),
+            Meta {
+                name: "Kunde A2".to_string(),
+                url: Some("https://AH.example.com:443/x".to_string()),
+                ..enrolled
+            }
+        );
+        // Without an identity, another server is taken.
+        edit("w-0000000b", "Kunde B", Some("https://other.example.com")).unwrap();
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000b"))
+                .unwrap()
+                .url
+                .as_deref(),
+            Some("https://other.example.com")
+        );
+        for ws in ["w-0000000a", "w-0000000b", "w-0000000c", "standard"] {
+            assert!(!is_open(&lock_of(base, ws)).unwrap(), "{ws}");
+        }
+    }
+
+    #[test]
+    fn login_binding_an_edit_of_a_workspace_json_that_does_not_load_names_no_value() {
+        let scratch = Scratch::new("edit-broken");
+        let base = &scratch.0;
+        install(
+            base,
+            &[("standard", meta(SyncMode::Server, "Standard", None))],
+            false,
+        );
+        let path = dir_of(base, "standard").join("workspace.json");
+        fs::write(&path, r#"{"kind": "geheim"}"#).unwrap();
+        let mut edit = draft(SyncMode::Server, "Kunde A", None);
+        edit.id = Some(id("standard"));
+
+        let refused = save(base, &edit).unwrap_err().to_string();
+
+        assert!(
+            refused.starts_with("the workspace.json of the workspace standard does not load")
+                && refused.contains("line 1"),
+            "{refused}"
+        );
+        assert!(!refused.contains("geheim"), "{refused}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), r#"{"kind": "geheim"}"#);
     }
 
     #[test]

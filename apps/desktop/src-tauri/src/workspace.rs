@@ -7,8 +7,9 @@
 //! keyring prefix, log and window names. A process serves one workspace for its whole life;
 //! the launcher serves none. Also the lock that keeps a workspace in one process and the two
 //! files that say which workspaces exist (`workspaces.json`) and what each one is
-//! (`workspace.json`), what the start of a process comes to ([`startup`]), and which process a
-//! command is for ([`check_side`]).
+//! (`workspace.json`), what the start of a process comes to ([`startup`]), which process a
+//! command is for ([`check_side`]), and where a workspace signs in ([`sign_in_url`],
+//! [`check_sign_in_once`]).
 
 use std::ffi::OsString;
 use std::fmt;
@@ -21,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use url::Url;
+use url::{Origin, Url};
 
 use crate::error::AppError;
 use crate::models::{SyncMode, WorkspaceContext, WorkspaceInfo};
@@ -393,6 +394,16 @@ fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(String::from)
 }
 
+/// The origin of the server of a server workspace: scheme, host and port, the default port
+/// filled in, so two URLs of one installation compare equal. None for a workspace without a
+/// server, which never has an identity.
+pub(crate) fn server_origin(meta: &Meta) -> Option<Origin> {
+    if meta.kind != SyncMode::Server {
+        return None;
+    }
+    Some(Url::parse(meta.url.as_deref()?).ok()?.origin())
+}
+
 /// What went wrong with a file, and where, but nothing from inside it: serde quotes the values
 /// it rejects.
 pub(crate) fn failure(e: &AppError) -> String {
@@ -406,6 +417,17 @@ pub(crate) fn failure(e: &AppError) -> String {
         AppError::Io(e) => format!("{:?}", e.kind()),
         _ => "error".to_string(),
     }
+}
+
+/// [`Meta::load`] of the workspace `id` from its data dir `dir`, with an error the webview may
+/// show: the file and where it breaks, never a value from it ([`failure`]).
+pub(crate) fn load_meta(id: &WorkspaceId, dir: &Path) -> Result<Meta, AppError> {
+    Meta::load(dir).map_err(|e| {
+        AppError::Validation(format!(
+            "the {META_FILE} of the workspace {id} does not load ({})",
+            failure(&e)
+        ))
+    })
 }
 
 /// A workspace whose lock this process holds, for as long as this lives. Only [`startup`] makes
@@ -607,7 +629,7 @@ pub fn context(base: &Path) -> Result<WorkspaceContext, AppError> {
             workspace: None,
         });
     };
-    let meta = Meta::load(&ws.data_dir(base))?;
+    let meta = load_meta(&ws.id, &ws.data_dir(base))?;
     Ok(WorkspaceContext {
         launcher: false,
         workspace: Some(meta.info(ws.id, true)),
@@ -637,6 +659,85 @@ pub fn check_side(side: Side, current: Option<&Workspace>) -> Result<(), AppErro
             "only the process of a workspace does this, not the launcher".to_string(),
         )),
     }
+}
+
+/// The URL a sign-in or an enrollment of the workspace `meta` goes to, `sent` being the one the
+/// webview names: the workspace's own, of which `sent` must name the server (the same origin,
+/// [`server_origin`]); until the workspace has one, `sent`, which the save after the sign-in
+/// makes its own (`storage::save_settings`). Another server would be another installation under
+/// the sign-in and device identity of this workspace. Only a server workspace signs in or
+/// registers the device: a sync or local one has no server, and no purge would revoke an
+/// identity it took.
+pub fn sign_in_url(meta: &Meta, sent: &str) -> Result<String, AppError> {
+    if meta.kind != SyncMode::Server {
+        return Err(AppError::Validation(
+            "only a server workspace signs in or registers this device".to_string(),
+        ));
+    }
+    let sent = sent.trim();
+    let Some(kept) = &meta.url else {
+        return Ok(sent.to_string());
+    };
+    if Url::parse(sent).is_ok_and(|sent| server_origin(meta) == Some(sent.origin())) {
+        Ok(kept.clone())
+    } else {
+        Err(AppError::Validation(format!(
+            "this workspace belongs to the server {kept}; another server is another workspace"
+        )))
+    }
+}
+
+/// Refuses the sign-in of `username` at `url` in the workspace `own` while another of
+/// `workspaces` (each with its `workspace.json`) signs in to the same server ([`server_origin`])
+/// as the same user (its `lastUsername`, case aside): a user of an installation signs in in one
+/// workspace. The error names that workspace.
+pub fn check_sign_in_once(
+    own: &WorkspaceId,
+    url: &str,
+    username: &str,
+    workspaces: &[(WorkspaceId, Meta)],
+) -> Result<(), AppError> {
+    let origin = Url::parse(url)?.origin();
+    let user = username.trim().to_lowercase();
+    let taken = workspaces.iter().find(|(id, meta)| {
+        id != own
+            && meta
+                .last_username
+                .as_deref()
+                .is_some_and(|theirs| theirs.trim().to_lowercase() == user)
+            && server_origin(meta).is_some_and(|theirs| theirs == origin)
+    });
+    match taken {
+        Some((_, meta)) => Err(AppError::Validation(format!(
+            "the workspace \"{}\" signs in to this server as this user; one workspace per server and user",
+            meta.name
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// Every workspace in the app data dir `base` with its `workspace.json`, for
+/// [`check_sign_in_once`]. One whose directory is gone or whose `workspace.json` does not load is
+/// left out: no process opens it ([`startup`]), so it signs in nowhere. A registry that is not
+/// there or does not load is an error.
+pub fn metas(base: &Path) -> Result<Vec<(WorkspaceId, Meta)>, AppError> {
+    let registry = Registry::load(base)
+        .map_err(|e| {
+            AppError::Validation(format!("{REGISTRY_FILE} does not load ({})", failure(&e)))
+        })?
+        .ok_or_else(|| AppError::Validation(format!("there is no {REGISTRY_FILE}")))?;
+    let mut metas = Vec::with_capacity(registry.workspaces.len());
+    for entry in registry.workspaces {
+        let ws = Workspace {
+            id: entry.id,
+            name: String::new(),
+            legacy_keys: false,
+        };
+        if let Ok(meta) = Meta::load(&ws.data_dir(base)) {
+            metas.push((ws.id, meta));
+        }
+    }
+    Ok(metas)
 }
 
 /// While the guard lives, [`current`] on this thread answers `workspace`; dropping the guard
@@ -690,10 +791,10 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        acquire, acquire_within, check_side, context, current, enter, is_open, set_current,
-        startup, AppError, Held, InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Side,
-        Workspace, WorkspaceId, ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN,
-        LAUNCHER_TITLE, META_FILE, PALETTE, REGISTRY_FILE, USAGE,
+        acquire, acquire_within, check_side, check_sign_in_once, context, current, enter, is_open,
+        metas, set_current, sign_in_url, startup, AppError, Held, InstanceLock, Meta, Mode, Plan,
+        Registry, RegistryEntry, Side, Workspace, WorkspaceId, ACQUIRE_TIMEOUT, EXIT_FAILED,
+        EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE, REGISTRY_FILE, USAGE,
     };
     use crate::models::SyncMode;
 
@@ -1230,6 +1331,218 @@ mod tests {
                 if msg.contains("only the process of a workspace")),
             "{in_the_launcher:?}"
         );
+    }
+
+    // ── Where a workspace signs in, and that a user of a server signs in in one workspace ──
+
+    /// [`meta`] as a server workspace with `url`.
+    fn server(url: Option<&str>) -> Meta {
+        Meta {
+            kind: SyncMode::Server,
+            url: url.map(String::from),
+            ..meta()
+        }
+    }
+
+    /// The workspace `id_` named `name` at the server `url`, last signed in as `user`.
+    fn signed_in(id_: &str, name: &str, url: &str, user: &str) -> (WorkspaceId, Meta) {
+        let meta = Meta {
+            name: name.to_string(),
+            last_username: Some(user.to_string()),
+            ..server(Some(url))
+        };
+        (id(id_), meta)
+    }
+
+    fn assert_refused<T: std::fmt::Debug>(result: Result<T, AppError>, says: &str, case: &str) {
+        assert!(
+            matches!(&result, Err(AppError::Validation(msg)) if msg.contains(says)),
+            "{case}: {result:?}"
+        );
+    }
+
+    #[test]
+    fn login_binding_takes_the_url_of_the_workspace_and_refuses_another_server() {
+        let kept = server(Some("https://ah.example.com"));
+        // The server of the workspace, however the URL names it: the sign-in goes to the URL of
+        // the workspace.
+        for same in [
+            "https://ah.example.com",
+            " https://ah.example.com/ ",
+            "https://AH.example.com:443",
+            "https://ah.example.com/somewhere",
+        ] {
+            assert_eq!(
+                sign_in_url(&kept, same).unwrap(),
+                "https://ah.example.com",
+                "{same:?}"
+            );
+        }
+        for other in [
+            "https://other.example.com",
+            "https://ah.example.com:8443",
+            "http://ah.example.com",
+            "https://ah.example.com.other.example",
+            "https://user@other.example.com",
+            "ah.example.com",
+            "",
+        ] {
+            assert_refused(
+                sign_in_url(&kept, other),
+                "this workspace belongs to the server https://ah.example.com",
+                other,
+            );
+        }
+        // A URL of the workspace that does not parse names no server to match.
+        assert_refused(
+            sign_in_url(&server(Some("not a url")), "not a url"),
+            "this workspace belongs to the server",
+            "unparsed",
+        );
+    }
+
+    #[test]
+    fn login_binding_without_a_url_of_the_workspace_takes_the_one_sent() {
+        assert_eq!(
+            sign_in_url(&server(None), " https://ah.example.com/ ").unwrap(),
+            "https://ah.example.com/"
+        );
+    }
+
+    #[test]
+    fn login_binding_https_h_and_https_h_443_are_one_server() {
+        assert_eq!(
+            sign_in_url(&server(Some("https://H")), "https://h:443/").unwrap(),
+            "https://H"
+        );
+        assert_eq!(
+            sign_in_url(&server(Some("https://h:443/")), "https://H").unwrap(),
+            "https://h:443/"
+        );
+        let other = signed_in("w-0000000a", "Kunde A", "https://H", "admin");
+        assert_refused(
+            check_sign_in_once(&id("w-0000000b"), "https://h:443/", "admin", &[other]),
+            "\"Kunde A\"",
+            "one server",
+        );
+    }
+
+    #[test]
+    fn login_binding_only_a_server_workspace_signs_in_or_registers() {
+        for kind in [SyncMode::Sync, SyncMode::Local] {
+            for url in [Some("https://ah.example.com"), None] {
+                let meta = Meta {
+                    kind: kind.clone(),
+                    url: url.map(String::from),
+                    ..meta()
+                };
+                assert_refused(
+                    sign_in_url(&meta, "https://ah.example.com"),
+                    "only a server workspace",
+                    &format!("{kind:?} {url:?}"),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn login_binding_refuses_the_same_user_at_the_same_server_in_another_workspace() {
+        let own = id("w-0000000b");
+        let url = "https://ah.example.com";
+        let workspaces = [
+            signed_in("w-0000000a", "Kunde A", "https://ah.example.com", "Admin"),
+            signed_in("w-0000000b", "Kunde B", url, "ops-admin"),
+        ];
+
+        for user in ["admin", " ADMIN "] {
+            assert_refused(
+                check_sign_in_once(&own, url, user, &workspaces),
+                "the workspace \"Kunde A\" signs in to this server as this user",
+                user,
+            );
+        }
+        // Another user of the same server, the one the workspace itself last signed in as too.
+        check_sign_in_once(&own, url, "ops-admin", &workspaces).unwrap();
+        check_sign_in_once(&own, url, "ops", &workspaces).unwrap();
+        // The same user of another server.
+        for other in [
+            "https://other.example.com",
+            "https://ah.example.com:8443",
+            "http://localhost",
+        ] {
+            check_sign_in_once(&own, other, "admin", &workspaces).unwrap();
+        }
+        // The workspace that last signed in as that user signs in again.
+        check_sign_in_once(&id("w-0000000a"), url, "admin", &workspaces).unwrap();
+        // Nor does a workspace without a server count, nor one that never signed in.
+        let sync = Meta {
+            kind: SyncMode::Sync,
+            ..signed_in("w-0000000c", "Sync", url, "admin").1
+        };
+        let never = Meta {
+            last_username: None,
+            ..server(Some(url))
+        };
+        let others = [(id("w-0000000c"), sync), (id("w-0000000d"), never)];
+        check_sign_in_once(&own, url, "admin", &others).unwrap();
+        // A URL that does not parse names no server to sign in to.
+        assert!(check_sign_in_once(&own, "not a url", "admin", &others).is_err());
+    }
+
+    #[test]
+    fn login_binding_reads_every_workspace_that_opens() {
+        let scratch = Scratch::new("metas");
+        let base = &scratch.0;
+        assert_refused(metas(base), "there is no workspaces.json", "no registry");
+
+        let kept = signed_in("w-0000000a", "Kunde A", "https://ah.example.com", "admin");
+        kept.1
+            .store(&workspace("w-0000000a", "", false).data_dir(base))
+            .unwrap();
+        let broken = workspace("w-0000000b", "", false).data_dir(base);
+        fs::create_dir_all(&broken).unwrap();
+        fs::write(broken.join(META_FILE), r#"{"kind": "geheim"}"#).unwrap();
+        Registry {
+            workspaces: ["w-0000000a", "w-0000000b", "w-dir-gone"]
+                .map(|ws| RegistryEntry { id: id(ws) })
+                .into(),
+            last_used: None,
+            migrated_notice: false,
+        }
+        .store(base)
+        .unwrap();
+
+        assert_eq!(metas(base).unwrap(), [kept]);
+
+        fs::write(
+            base.join(REGISTRY_FILE),
+            r#"{"workspaces": [{"id": "../geheim"}]}"#,
+        )
+        .unwrap();
+        let refused = metas(base).unwrap_err().to_string();
+        assert!(
+            refused.starts_with("workspaces.json does not load"),
+            "{refused}"
+        );
+        assert!(!refused.contains("geheim"), "{refused}");
+    }
+
+    #[test]
+    fn login_binding_a_workspace_json_that_does_not_load_names_the_file_and_no_value() {
+        let scratch = Scratch::new("context-value");
+        let ws = workspace("w-0a1b2c3d", "Kunde A", false);
+        let dir = ws.data_dir(&scratch.0);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(META_FILE), r#"{"kind": "geheim"}"#).unwrap();
+        let _entered = enter(ws);
+
+        let refused = context(&scratch.0).unwrap_err().to_string();
+        assert!(
+            refused.starts_with("the workspace.json of the workspace w-0a1b2c3d does not load")
+                && refused.contains("line 1"),
+            "{refused}"
+        );
+        assert!(!refused.contains("geheim"), "{refused}");
     }
 
     /// A `lock` for [`startup`] that must not be called: the start ends before the lock.

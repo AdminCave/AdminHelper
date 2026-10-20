@@ -239,6 +239,20 @@ pub fn is_enrolled() -> bool {
     read(KEYRING_KEY).is_some() && read(KEYRING_CERT).is_some()
 }
 
+/// Whether the keyring holds an entry of the identity behind `prefix`, the keyring
+/// prefix of a workspace this process does not serve: for the launcher, before the
+/// URL of a workspace names another server. Not the leaf a reset remembers
+/// (`enroll|replaces`): without an identity, a purge asks no server. A keyring
+/// that does not answer is an error, as then no one can tell.
+pub fn holds_identity(prefix: &str) -> Result<bool, AppError> {
+    for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+        if keyring_store::try_get(&format!("{prefix}{entry}"))?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// SHA-256 (lowercase hex) of the pinned access-intermediate CA — the FIRST
 /// certificate of the enrolled chain (`enroll|ca` = intermediate + root). The
 /// provisioning tab embeds it as the agent's `--ca-fp`, turning the agent's
@@ -1825,6 +1839,30 @@ mod tests {
         assert_eq!(load_identity(), None);
         assert!(matches!(device_identity(), Ok(None)));
         assert_eq!(pending_replaces(EnrollmentKind::Device), None);
+    }
+
+    #[test]
+    fn login_binding_the_launcher_sees_whether_a_workspace_holds_an_identity() {
+        let _keyring = keyring_store::memory();
+        let a = created("w-0000000a").keyring_prefix();
+        assert!(!holds_identity(&a).unwrap());
+
+        // The leaf a reset remembers is no identity.
+        keyring_store::set(&format!("{a}{KEYRING_REPLACES}"), "remembered").unwrap();
+        assert!(!holds_identity(&a).unwrap());
+        // Any entry of one is, even one a crash between the writes left alone.
+        for entry in [KEYRING_KEY, KEYRING_CERT, KEYRING_CA] {
+            let key = format!("{a}{entry}");
+            keyring_store::set(&key, "pem").unwrap();
+            assert!(holds_identity(&a).unwrap(), "{entry}");
+            keyring_store::delete(&key).unwrap();
+        }
+
+        // Behind its own prefix only: the identity from before workspaces is the migrated ones'.
+        enrolled_before_workspaces();
+        assert!(!holds_identity(&a).unwrap());
+        assert!(!holds_identity(&created("w-0000000b").keyring_prefix()).unwrap());
+        assert!(holds_identity(&standard().keyring_prefix()).unwrap());
     }
 
     #[tokio::test]
