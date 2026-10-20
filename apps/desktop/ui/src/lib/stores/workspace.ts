@@ -7,7 +7,7 @@
 // in a process of its own; the launcher makes, edits, deletes and opens them, and a
 // workspace window brings the launcher back ("Workspaces…").
 
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { errMsg } from '$lib/utils/errors';
 import type {
@@ -31,6 +31,22 @@ export const listError = { subscribe: _listError.subscribe };
 /** Asks Rust which process this window talks to; hydrate (session.ts) calls it at start. */
 export async function loadContext(): Promise<void> {
   _context.set(await bridge.workspaceContext());
+}
+
+/**
+ * Workspace only: loads the context anew while its workspace has no URL. A sign-in saved or a
+ * registration of this device may just have given it its first, and the context names it only
+ * once loaded anew. Never rejects: what fails here is a URL the window shows from the next
+ * start on.
+ */
+export async function reloadContextForUrl(): Promise<void> {
+  const workspace = get(_context)?.workspace;
+  if (!workspace || workspace.url) return;
+  try {
+    await loadContext();
+  } catch (err) {
+    console.error('workspace context failed', err);
+  }
 }
 
 /**

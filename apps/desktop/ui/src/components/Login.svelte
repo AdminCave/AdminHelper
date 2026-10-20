@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { errRaw, withoutErrorCodes } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setAllowSelfSignedCerts, settings } from '$lib/stores/session';
-  import { context, openLauncher } from '$lib/stores/workspace';
+  import { context, openLauncher, reloadContextForUrl } from '$lib/stores/workspace';
   import {
     enrollWithToken,
     resetServerCertPin,
@@ -173,6 +173,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       enrollToken.trim(),
       get(settings)?.allowSelfSignedCerts ?? false,
     );
+    // A workspace without a URL took the one it registered at: the login shows it from now on.
+    await reloadContextForUrl();
     enrollToken = '';
     info = $t('login.enroll.done');
     mode = 'login';

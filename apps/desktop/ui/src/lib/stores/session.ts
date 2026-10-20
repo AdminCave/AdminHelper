@@ -21,7 +21,7 @@ import { setLanguage, tNow } from '$lib/i18n';
 import { errMsg } from '$lib/utils/errors';
 import type { AuthSession, Settings } from '$lib/bridge/types';
 import { reportError } from './statusBar';
-import { context, loadContext } from './workspace';
+import { context, loadContext, reloadContextForUrl } from './workspace';
 
 interface SessionState {
   settings: Settings | null;
@@ -110,6 +110,8 @@ export async function login(serverUrl: string, username: string, password: strin
     next = { ...current.settings, serverUrl: sess.serverUrl, lastUsername: username.trim() };
     try {
       await bridge.saveSettings(next);
+      // A workspace without a URL took the one of this sign-in with the save.
+      await reloadContextForUrl();
     } catch (err) {
       next = current.settings;
       reportError(tNow('login.notSaved', { message: errMsg(err) }));
@@ -137,20 +139,6 @@ export async function logout(): Promise<void> {
     connectionsSync.clear();
     _state.update((s) => ({ ...s, session: null }));
   }
-}
-
-/** Drops the current server session: ends it in Rust (keeping the enrolled
- * mTLS device cert) and clears the in-memory one. Used when leaving
- * server mode so a later switch back forces a fresh login instead of reusing a
- * stale session still bound to the previous server URL. Connections are NOT
- * cleared here — the caller reloads them for the new mode. */
-export async function dropSession(): Promise<void> {
-  try {
-    await bridge.logout();
-  } catch {
-    /* clearing local session state must not depend on the server being reachable */
-  }
-  _state.update((s) => ({ ...s, session: null }));
 }
 
 /** Persist "allow self-signed certificates". Used by the login screen's trust

@@ -197,6 +197,28 @@ describe('Login in a workspace without a URL', () => {
     await fireEvent.click(again.container.querySelector('[data-action="enroll-switch"]')!);
     expect(again.container.querySelector('input[type="url"]')).not.toBeNull();
   });
+
+  it('after a registration shows the URL the workspace took there, and no field', async () => {
+    h.enrollWithToken.mockResolvedValue(undefined);
+    const { container } = render(Login);
+    await fireEvent.click(container.querySelector('[data-action="enroll-switch"]')!);
+    const url = container.querySelector<HTMLInputElement>('input[type="url"]')!;
+    await fireEvent.input(url, { target: { value: 'https://ah.example.com:8443' } });
+    const token = container.querySelector<HTMLInputElement>('input[type="text"]')!;
+    await fireEvent.input(token, { target: { value: 'tok-1' } });
+    // Rust made the URL of the registration the workspace's (storage.rs keep_enrolled_url).
+    h.workspaceContext.mockResolvedValue({ launcher: false, workspace: kundeA });
+    await fireEvent.submit(container.querySelector('form')!);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="workspace-url"]')?.textContent).toBe(SHOWN),
+    );
+    expect(h.enrollWithToken).toHaveBeenCalledWith('https://ah.example.com:8443', 'tok-1', false);
+    expect(h.workspaceContext).toHaveBeenCalledTimes(2);
+    // Back at the sign-in, which takes the URL of the workspace now.
+    expect(container.querySelector('input[type="url"]')).toBeNull();
+    expect(container.querySelector('input[type="password"]')).not.toBeNull();
+  });
 });
 
 describe('Login: "Workspaces…"', () => {

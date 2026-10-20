@@ -145,9 +145,8 @@ export const translations: Translations = {
     'notifications.close': 'Schließen',
     'notifications.osSummary': '{count} neue Benachrichtigungen',
     'settings.section.notifications': 'Benachrichtigungen',
+    'settings.section.notificationRules': 'Benachrichtigungsregeln',
     'settings.osNotifications': 'Desktop-Benachrichtigungen anzeigen',
-    'settings.notifications.serverOnly':
-      'Im Server-Modus anmelden, um Benachrichtigungs-Regeln zu verwalten.',
     'notifPrefs.loading': 'Lädt …',
     'notifPrefs.email': 'E-Mail-Adresse für Benachrichtigungen',
     'notifPrefs.emailPlaceholder': 'name@beispiel.de',
@@ -197,11 +196,14 @@ export const translations: Translations = {
 
     // ── Desktop: SettingsModal ────────────────────────────────────────
     'settings.title': 'Einstellungen',
-    'settings.section.mode': 'Modus',
+    'settings.group.workspace': 'Dieser Workspace',
+    'settings.group.device': 'Alle Workspaces auf diesem Gerät',
+    'settings.workspace.noUrl': 'Noch keine URL',
+    'settings.workspace.fixed':
+      'Name, Farbe und URL änderst du in der Workspace-Liste („Workspaces…“), solange dieser Workspace geschlossen ist.',
     'settings.section.language': 'Sprache',
     'settings.section.passwords': 'Passwoerter',
     'settings.section.rdp': 'RDP',
-    'settings.mode.syncLabel': 'Sync (JSON)',
     'settings.syncUrl': 'Sync-URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Intervall (Minuten)',
@@ -882,8 +884,8 @@ export const translations: Translations = {
     'notifications.close': 'Close',
     'notifications.osSummary': '{count} new notifications',
     'settings.section.notifications': 'Notifications',
+    'settings.section.notificationRules': 'Notification rules',
     'settings.osNotifications': 'Show desktop notifications',
-    'settings.notifications.serverOnly': 'Sign in to a server to manage notification rules.',
     'notifPrefs.loading': 'Loading …',
     'notifPrefs.email': 'E-mail address for notifications',
     'notifPrefs.emailPlaceholder': 'name@example.com',
@@ -933,11 +935,14 @@ export const translations: Translations = {
 
     // ── Desktop: SettingsModal ────────────────────────────────────────
     'settings.title': 'Settings',
-    'settings.section.mode': 'Mode',
+    'settings.group.workspace': 'This workspace',
+    'settings.group.device': 'All workspaces on this device',
+    'settings.workspace.noUrl': 'No URL yet',
+    'settings.workspace.fixed':
+      'You change the name, colour and URL in the workspace list (“Workspaces…”) while this workspace is closed.',
     'settings.section.language': 'Language',
     'settings.section.passwords': 'Passwords',
     'settings.section.rdp': 'RDP',
-    'settings.mode.syncLabel': 'Sync (JSON)',
     'settings.syncUrl': 'Sync URL (HTTPS)',
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Interval (minutes)',

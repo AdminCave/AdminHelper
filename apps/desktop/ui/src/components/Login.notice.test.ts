@@ -14,7 +14,6 @@ vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return {
     login: vi.fn(),
-    setMode: vi.fn(async () => {}),
     setAllowSelfSignedCerts: vi.fn(async () => {}),
     settings: writable({
       mode: 'server',

@@ -198,8 +198,8 @@ describe('SettingsModal — enroll from the settings (R-0212)', () => {
   });
 
   it('shows neither field nor reset without a session (R-0244)', async () => {
-    // The radio in the dialog says "server", but nobody is signed in: there is no
-    // session URL to enroll against, and no tunnel to start afterwards.
+    // A server workspace, but nobody is signed in: there is no session URL to enroll
+    // against, and no tunnel to start afterwards.
     for (const enrolled of [false, true]) {
       h.setSession(null);
       h.isDeviceEnrolled.mockImplementation(async () => enrolled);
