@@ -2,10 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Bundled alert (R-0424 T11): send_bundle reports claimed agent heartbeats on
-each channel on its own, one message from BUNDLE_MIN members on, single messages
-below. Real SQLite session; mail is captured at _send_email, the webhook and the
-hub at httpx.post."""
+"""Bundled alert (R-0424 T11, T12): send_bundle reports claimed agent heartbeats
+on each channel on its own, one message from BUNDLE_MIN members on, single
+messages below; flush_agent_alerts collects the open heartbeats, bundles BUNDLE_MIN
+or more and lets fewer wait BUNDLE_WINDOW before they go out on their own. Real
+SQLite session; mail is captured at _send_email, the webhook and the hub at
+httpx.post."""
 
 import json
 from datetime import datetime, timedelta
@@ -16,14 +18,24 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import alerter
-from app.alert_bundle import BACK, BUNDLE_MIN, HUB_MAX_IDS, SILENT, send_bundle
+from app import alert_bundle, alerter
+from app.alert_bundle import (
+    BACK,
+    BUNDLE_MIN,
+    BUNDLE_WINDOW,
+    HUB_MAX_IDS,
+    SILENT,
+    flush_agent_alerts,
+    send_bundle,
+)
+from app.core import database
 from app.core.ssrf import UrlVerdict
 from app.models import (
     Base,
     MonitorAlertLog,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorMaintenance,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
@@ -580,3 +592,388 @@ class TestBell:
 
         assert [e.get("source_id") for e in channels.events] == ["srv-01", "srv-02", None]
         assert all("source_ids" not in e for e in channels.events)
+
+
+# flush_agent_alerts (T12). The job runs every 30 s; the tests run it at the
+# minutes after _NOW they pass to at().
+_BUNDLE_SUBJECT = {
+    SILENT: "[AdminHelper Monitor] CRITICAL: {n} agents not reporting",
+    BACK: "[AdminHelper Monitor] RECOVERY: {n} agents reporting again",
+}
+_SINGLE_SUBJECT = {SILENT: _SINGLE_DOWN, BACK: "[AdminHelper Monitor] RECOVERY: Agent Heartbeat"}
+# notified_status of a heartbeat before and after it is reported.
+_OPEN = {SILENT: "ok", BACK: "critical"}
+_REPORTED = {SILENT: "critical", BACK: "ok"}
+
+
+def at(minutes):
+    return _NOW + timedelta(minutes=minutes)
+
+
+@pytest.fixture()
+def run_job(db, channels, monkeypatch):
+    """flush_agent_alerts against the test database, with sessions of its own as
+    in production, at a fixed clock the test sets per run: process_alert on the
+    single path reads the same clock."""
+    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=db.get_bind()))
+    clock = SimpleNamespace(now=_NOW)
+    monkeypatch.setattr(alerter, "utcnow_naive", lambda: clock.now)
+
+    def run(now):
+        clock.now = now
+        flush_agent_alerts(now)
+
+    return run
+
+
+def open_heartbeat(db, i, since, kind=SILENT):
+    """Agent heartbeat chk-NN on server srv-NN that went silent (BACK: came back)
+    at since and is not reported yet: the discrepancy the job collects. A BACK
+    heartbeat's alarm reached the bell an hour before it came back."""
+    silent = kind == SILENT
+    check_id = f"chk-{i:02d}"
+    db.add(
+        MonitorCheck(
+            id=check_id,
+            server_id=f"srv-{i:02d}",
+            name="Agent Heartbeat",
+            check_type="agent_ping",
+            config="{}",
+            enabled=True,
+            severity="critical",
+        )
+    )
+    db.add(
+        MonitorState(
+            check_id=check_id,
+            status="critical" if silent else "ok",
+            notified_status=_OPEN[kind],
+            since=since,
+            message=_DOWN if silent else _UP,
+            hub_status=None if silent else "critical",
+            hub_sent_at=None if silent else since - timedelta(hours=1),
+        )
+    )
+    db.commit()
+
+
+def notified(db):
+    """notified_status per check, as committed."""
+    db.expire_all()
+    return {s.check_id: s.notified_status for s in db.query(MonitorState).all()}
+
+
+def logged(db):
+    """(check_id, new_status) of every alert-log row, as committed."""
+    db.expire_all()
+    rows = db.query(MonitorAlertLog).order_by(MonitorAlertLog.check_id).all()
+    return [(r.check_id, r.new_status) for r in rows]
+
+
+def mails(channels):
+    return [(check_id, msg["subject"]) for check_id, msg in channels.mails]
+
+
+def bell(channels):
+    """Per hub event the servers it names: a bundle's list, a single's id."""
+    return [e["source_ids"] if "source_ids" in e else e["source_id"] for e in channels.events]
+
+
+def before_the_claim(monkeypatch, db, change):
+    """Between the job's selection and its claim, another session applies
+    change(session, now) and commits, as an evaluation of the scheduler or an
+    API request would. Only in the first run."""
+    select = alert_bundle._candidates
+    raced = []
+
+    def racing(session, now):
+        found = select(session, now)
+        if not raced:
+            raced.append(now)
+            other = sessionmaker(bind=db.get_bind())()
+            change(other, now)
+            other.commit()
+            other.close()
+        return found
+
+    monkeypatch.setattr(alert_bundle, "_candidates", racing)
+
+
+def back_to_ok(check_id):
+    """The heartbeat check_id comes back to ok."""
+
+    def change(session, now):
+        session.query(MonitorState).filter_by(check_id=check_id).update(
+            {"status": "ok", "since": now}
+        )
+
+    return change
+
+
+def maintenance_starts(server_id):
+    """A maintenance window of server_id starts."""
+
+    def change(session, now):
+        session.add(
+            MonitorMaintenance(
+                id="mw",
+                server_id=server_id,
+                kind="once",
+                starts_at=now,
+                ends_at=now + timedelta(hours=1),
+            )
+        )
+
+    return change
+
+
+def test_window_is_five_minutes():
+    assert BUNDLE_WINDOW == timedelta(minutes=5)
+
+
+class TestFlush:
+    @pytest.mark.parametrize("kind", [SILENT, BACK])
+    @pytest.mark.parametrize("third", [2, 4])
+    def test_three_within_five_minutes_one_bundle_once_the_third_is_there(
+        self, db, channels, run_job, kind, third
+    ):
+        add_rule(db)
+        open_heartbeat(db, 1, at(0), kind)
+        open_heartbeat(db, 2, at(1), kind)
+        for step in range(2, 2 * third):
+            run_job(at(step / 2))
+        assert (channels.mails, channels.events) == ([], [])
+        assert notified(db) == dict.fromkeys(("chk-01", "chk-02"), _OPEN[kind])
+
+        open_heartbeat(db, 3, at(third), kind)
+        run_job(at(third))
+
+        assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[kind].format(n=3))]
+        assert member_lines(channels.mails[0][1]["text"]) == [
+            f"- srv-0{i}: {_DOWN if kind == SILENT else _UP}" for i in (1, 2, 3)
+        ]
+        assert bell(channels) == [["srv-01", "srv-02", "srv-03"]]
+        assert notified(db) == dict.fromkeys(("chk-01", "chk-02", "chk-03"), _REPORTED[kind])
+        # The run commits what send_bundle wrote: an alert-log row per member.
+        assert logged(db) == [(f"chk-0{i}", _REPORTED[kind]) for i in (1, 2, 3)]
+
+    @pytest.mark.parametrize("kind", [SILENT, BACK])
+    def test_two_wait_five_minutes_then_go_out_on_their_own(self, db, channels, run_job, kind):
+        add_rule(db)
+        open_heartbeat(db, 1, at(0), kind)
+        open_heartbeat(db, 2, at(1), kind)
+
+        run_job(at(5) - timedelta(seconds=1))
+        assert (channels.mails, channels.events) == ([], [])
+
+        run_job(at(5))
+        assert mails(channels) == [("chk-01", _SINGLE_SUBJECT[kind])]
+        assert bell(channels) == ["srv-01"]
+        assert notified(db) == {"chk-01": _REPORTED[kind], "chk-02": _OPEN[kind]}
+
+        run_job(at(6))
+        assert mails(channels) == [
+            ("chk-01", _SINGLE_SUBJECT[kind]),
+            ("chk-02", _SINGLE_SUBJECT[kind]),
+        ]
+        assert bell(channels) == ["srv-01", "srv-02"]
+        assert notified(db) == dict.fromkeys(("chk-01", "chk-02"), _REPORTED[kind])
+
+    @pytest.mark.parametrize("mute", ["maintenance window", "host ping"])
+    def test_a_muted_heartbeat_does_not_count_and_stays_open(self, db, channels, run_job, mute):
+        add_rule(db)
+        for i in (1, 2, 3):
+            open_heartbeat(db, i, at(0))
+        if mute == "maintenance window":
+            db.add(
+                MonitorMaintenance(
+                    id="mw", server_id="srv-03", kind="once", starts_at=at(-60), ends_at=at(60)
+                )
+            )
+        else:
+            db.add_all(
+                [
+                    MonitorCheck(
+                        id="ping-03",
+                        server_id="srv-03",
+                        name="Host Ping",
+                        check_type="ping",
+                        config="{}",
+                        enabled=True,
+                        template_def_id=alerter.HOST_PING_DEF_ID,
+                    ),
+                    MonitorState(check_id="ping-03", status="critical", notified_status="critical"),
+                ]
+            )
+        db.commit()
+
+        # Two count: below the threshold and young, they wait.
+        run_job(at(0))
+        assert (channels.mails, channels.events) == ([], [])
+
+        run_job(at(5))
+        assert mails(channels) == [("chk-01", _SINGLE_DOWN), ("chk-02", _SINGLE_DOWN)]
+        assert bell(channels) == ["srv-01", "srv-02"]
+        assert notified(db)["chk-03"] == "ok"
+
+    def test_only_enabled_heartbeats_count(self, db, channels, run_job):
+        add_rule(db)
+        for i in (1, 2, 3):
+            open_heartbeat(db, i, at(0))
+        db.query(MonitorCheck).filter_by(id="chk-03").update({"enabled": False})
+        # An open alarm of another check type is not the job's. On a server
+        # without a heartbeat nothing mutes it: only its type keeps it out of a
+        # bundle with chk-01 and chk-02.
+        db.add_all(
+            [
+                MonitorCheck(
+                    id="res-01",
+                    server_id="srv-09",
+                    name="Resources",
+                    check_type="agent_resources",
+                    config="{}",
+                    enabled=True,
+                ),
+                MonitorState(
+                    check_id="res-01", status="critical", notified_status="ok", since=at(-60)
+                ),
+            ]
+        )
+        db.commit()
+
+        run_job(at(0))
+        assert (channels.mails, channels.events) == ([], [])
+
+        run_job(at(5))
+        assert mails(channels) == [("chk-01", _SINGLE_DOWN), ("chk-02", _SINGLE_DOWN)]
+        assert (notified(db)["chk-03"], notified(db)["res-01"]) == ("ok", "ok")
+
+    def test_old_discrepancies_after_a_maintenance_window_go_out_bundled_at_once(
+        self, db, channels, run_job
+    ):
+        add_rule(db)
+        for i in (1, 2, 3, 4):
+            open_heartbeat(db, i, at(-60))
+        db.add(MonitorMaintenance(id="mw", kind="once", starts_at=at(-90), ends_at=at(10)))
+        db.commit()
+
+        run_job(at(9.5))
+        assert (channels.mails, channels.events) == ([], [])
+
+        run_job(at(10))
+        assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[SILENT].format(n=4))]
+        assert bell(channels) == [["srv-01", "srv-02", "srv-03", "srv-04"]]
+        assert set(notified(db).values()) == {"critical"}
+        # The bell's record of each member is committed with the run.
+        assert bell_records(db) == [("critical", at(10))] * 4
+
+    def test_a_heartbeat_back_before_the_claim_drops_out(self, db, channels, run_job, monkeypatch):
+        add_rule(db)
+        for i in (1, 2, 3, 4):
+            open_heartbeat(db, i, at(0))
+        before_the_claim(monkeypatch, db, back_to_ok("chk-04"))
+
+        run_job(at(0))
+
+        assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[SILENT].format(n=3))]
+        assert bell(channels) == [["srv-01", "srv-02", "srv-03"]]
+        assert notified(db) == {
+            "chk-01": "critical",
+            "chk-02": "critical",
+            "chk-03": "critical",
+            "chk-04": "ok",
+        }
+
+    @pytest.mark.parametrize("kind", [SILENT, BACK])
+    def test_a_heartbeat_muted_before_the_claim_drops_out_and_stays_open(
+        self, db, channels, run_job, monkeypatch, kind
+    ):
+        # The claim decides on the muting again, as process_alert does under its
+        # lock: a maintenance window that starts after the selection counts.
+        add_rule(db)
+        for i in (1, 2, 3, 4):
+            open_heartbeat(db, i, at(0), kind)
+        before_the_claim(monkeypatch, db, maintenance_starts("srv-04"))
+
+        run_job(at(0))
+
+        assert mails(channels) == [("chk-01", _BUNDLE_SUBJECT[kind].format(n=3))]
+        assert bell(channels) == [["srv-01", "srv-02", "srv-03"]]
+        assert notified(db) == {
+            "chk-01": _REPORTED[kind],
+            "chk-02": _REPORTED[kind],
+            "chk-03": _REPORTED[kind],
+            "chk-04": _OPEN[kind],
+        }
+
+    def test_fewer_than_three_left_at_the_claim_wait_for_the_window(
+        self, db, channels, run_job, monkeypatch
+    ):
+        # Two left are two like any other: no bundle, no claim, the window.
+        add_rule(db)
+        for i in (1, 2, 3):
+            open_heartbeat(db, i, at(0))
+        before_the_claim(monkeypatch, db, back_to_ok("chk-03"))
+
+        run_job(at(0))
+        assert (channels.mails, channels.events) == ([], [])
+        assert notified(db) == dict.fromkeys(("chk-01", "chk-02", "chk-03"), "ok")
+
+        run_job(at(5))
+        assert mails(channels) == [("chk-01", _SINGLE_DOWN), ("chk-02", _SINGLE_DOWN)]
+
+    def test_bundle_and_singles_in_one_run_reach_the_bell_once_each(self, db, channels, run_job):
+        # Three gone silent are bundled, two old returns go out on their own, in
+        # the same run; a second run right after sends nothing: the sent-state is
+        # the buffer, also for a run in a new session.
+        add_rule(db)
+        for i in (1, 2, 3):
+            open_heartbeat(db, i, at(0))
+        for i in (4, 5):
+            open_heartbeat(db, i, at(-10), BACK)
+
+        run_job(at(0))
+        run_job(at(0.5))
+
+        assert mails(channels) == [
+            ("chk-01", _BUNDLE_SUBJECT[SILENT].format(n=3)),
+            ("chk-04", _SINGLE_SUBJECT[BACK]),
+            ("chk-05", _SINGLE_SUBJECT[BACK]),
+        ]
+        assert bell(channels) == [["srv-01", "srv-02", "srv-03"], "srv-04", "srv-05"]
+        assert [(e["severity"], e["new_status"]) for e in channels.events] == [
+            ("critical", "critical"),
+            ("critical", "ok"),
+            ("critical", "ok"),
+        ]
+        shown = at(-10) - timedelta(hours=1)
+        assert bell_records(db) == [("critical", at(0))] * 3 + [("ok", shown)] * 2
+        assert notified(db) == {
+            "chk-01": "critical",
+            "chk-02": "critical",
+            "chk-03": "critical",
+            "chk-04": "ok",
+            "chk-05": "ok",
+        }
+
+    def test_a_failing_run_is_logged_and_its_claim_stands(
+        self, db, channels, run_job, monkeypatch, caplog
+    ):
+        def boom(*args):
+            raise RuntimeError("bundle broke")
+
+        monkeypatch.setattr(alert_bundle, "send_bundle", boom)
+        add_rule(db)
+        for i in (1, 2, 3):
+            open_heartbeat(db, i, at(0))
+
+        run_job(at(0))
+
+        assert [r.getMessage() for r in caplog.records if r.name == "monitor.alert_bundle"] == [
+            "Agent alert bundle failed"
+        ]
+        # Claimed before any I/O, as process_alert: at most once, never twice.
+        assert notified(db) == dict.fromkeys(("chk-01", "chk-02", "chk-03"), "critical")
+        monkeypatch.setattr(alert_bundle, "send_bundle", send_bundle)
+        run_job(at(0.5))
+        assert (channels.mails, channels.events) == ([], [])

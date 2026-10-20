@@ -128,8 +128,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alert_bundl
 Doku: keine (intern; Doku mit T13)
 Abhängt von: T5, T6, T9
 
-### T12 — Monitoring: stumme Agents sammeln (5-Minuten-Fenster, Claim)  [ ]
+### T12 — Monitoring: stumme Agents sammeln (5-Minuten-Fenster, Claim)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/alert_bundle.py, apps/monitoring/tests/test_alert_bundle.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @be06a1bc 2026-10-20T13:02:29+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T12.verdict.json)
 Änderung: `flush_agent_alerts(now=None)` mit eigener Session über `database.SessionLocal` (Modul-Attribut, einziger Patch-Punkt wie `_dispatch_alert_bg`, `check_engine.py:44-70`), Fehler werden geloggt und zurückgerollt: Kandidaten (eingeschaltete `agent_ping` mit `resolve_notification == "notify"`, ohne `muted_reason`), Arten „stumm“/„zurück“, je Art ≥ `BUNDLE_MIN` (3) → Claim (je State `FOR UPDATE` in `check_id`-Reihenfolge, Entscheidung neu prüfen, `notified_status` setzen, Commit vor jeder I/O) und `send_bundle`; sonst Kandidaten mit `since` ≤ `now - BUNDLE_WINDOW` (5 min) einzeln über `_dispatch_alert_bg`, jüngere warten. Tests zuerst (rot), mit fester Uhr: drei stumme Agents binnen 5 min → eine Sammelmeldung, sobald der dritte da ist; zwei → vor 5 min nichts, danach zwei Einzelmeldungen; der dritte nach 4 min → Sammelmeldung über alle drei; Rückkehr ebenso; ein Kandidat im Wartungsfenster oder hinter einem `critical` Host-Ping zählt nicht und bleibt offen; vier alte Abweichungen nach einem Wartungsfenster → sofort gesammelt; ein State, der sich zwischen Auswahl und Claim auf `ok` ändert, fällt heraus; ein zweiter Lauf direkt danach sendet nichts (Sent-State ist der Puffer, auch über eine neue Session).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alert_bundle.py tests/test_alerter.py
 Doku: keine (intern; Doku mit T13)

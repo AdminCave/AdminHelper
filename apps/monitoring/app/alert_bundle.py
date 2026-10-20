@@ -6,22 +6,26 @@
 Bundled alert for agents that stop or resume reporting together
 (docs/features/monitoring-alert-quality.md, "Sammelmeldung").
 
-send_bundle reports agent heartbeats the caller has already claimed, on each
+flush_agent_alerts collects the agent heartbeats not reported yet: BUNDLE_MIN or
+more of one kind are claimed and bundled at once, fewer go out one by one once
+they are BUNDLE_WINDOW old. send_bundle reports claimed heartbeats on each
 channel on its own: an alert rule, or the bell per severity level, that would get
 BUNDLE_MIN or more of them gets one message, below that each member gets the
-single message process_alert would send. Not wired up yet.
+single message process_alert would send. Not scheduled yet.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import NamedTuple
 
 from sqlalchemy.orm import Session
 
-from app import alerter
+from app import alerter, check_engine
+from app.core import database
+from app.core.time import utcnow_naive
 from app.models import (
     MonitorAlertLog,
     MonitorAlertRule,
@@ -34,6 +38,8 @@ logger = logging.getLogger("monitor.alert_bundle")
 
 # From this many members on, a channel gets one message instead of single ones.
 BUNDLE_MIN = 3
+# Fewer heartbeats of a kind wait this long for more before each goes out alone.
+BUNDLE_WINDOW = timedelta(minutes=5)
 # Member lines in the message text; the webhook's members list carries them all.
 MAX_TEXT_LINES = 50
 # Most server ids the hub takes in one event (IncomingEvent.source_ids, server).
@@ -83,6 +89,124 @@ _KINDS = {
         "The agents of these servers are reporting again:",
     ),
 }
+
+# The kind of an open heartbeat by its status. agent_ping knows only ok,
+# critical and unknown, and unknown is never reported.
+_KIND_OF_STATUS = {spec.status: kind for kind, spec in _KINDS.items()}
+
+
+class _Open(NamedTuple):
+    """A heartbeat not reported yet, as the selection of a run saw it."""
+
+    check_id: str
+    status: str
+    notified_status: str | None
+    since: datetime
+
+
+def flush_agent_alerts(now: datetime | None = None) -> None:
+    """The job system:agent-alert-bundle: report the agent heartbeats whose status
+    differs from the one last reported ("Sammelmeldung", steps 1-4).
+
+    The sent-state is the buffer: such a discrepancy stays open in
+    monitor_states until it is reported, so every run starts afresh in a session
+    of its own and a restart loses nothing. Per kind, BUNDLE_MIN or more open
+    heartbeats are claimed and bundled, whatever their age; fewer wait until they
+    are BUNDLE_WINDOW old and then go out one by one on the single path
+    (_dispatch_alert_bg, which claims each itself). A heartbeat muted by a
+    maintenance window or a Host Ping does not count and stays open, as in
+    process_alert.
+
+    The session is reached as ``database.SessionLocal``, the one patch point it
+    shares with _dispatch_alert_bg. Errors are logged and rolled back; a claim
+    committed before them stands (at most once, as in process_alert)."""
+    now = now if now is not None else utcnow_naive()
+    db = database.SessionLocal()
+    try:
+        candidates = _candidates(db, now)
+        # The selection only read: end its transaction, so none stays open across
+        # the channel I/O below.
+        db.rollback()
+        for kind, found in candidates.items():
+            if len(found) >= BUNDLE_MIN:
+                entries = _claim(db, kind, [c.check_id for c in found], now)
+                if entries:
+                    send_bundle(db, kind, entries, now)
+                    db.commit()
+                continue
+            for c in found:
+                if c.since <= now - BUNDLE_WINDOW:
+                    check_engine._dispatch_alert_bg(c.check_id, c.notified_status, c.status)
+    except Exception:
+        db.rollback()
+        logger.exception("Agent alert bundle failed")
+    finally:
+        db.close()
+
+
+def _candidates(db: Session, now: datetime) -> dict[str, list[_Open]]:
+    """The open heartbeats per kind (steps 1-2): enabled agent_ping checks whose
+    status the alerter would report (resolve_notification "notify") and that are
+    not muted at now."""
+    rows = (
+        db.query(MonitorCheck, MonitorState)
+        .join(MonitorState, MonitorState.check_id == MonitorCheck.id)
+        .filter(
+            MonitorCheck.check_type == "agent_ping",
+            MonitorCheck.enabled == True,  # noqa: E712
+            MonitorState.status.in_(list(_KIND_OF_STATUS)),
+            MonitorState.status.is_distinct_from(MonitorState.notified_status),
+        )
+        .order_by(MonitorCheck.id)
+        .all()
+    )
+    found: dict[str, list[_Open]] = {kind: [] for kind in _KINDS}
+    for check, state in rows:
+        if alerter.resolve_notification(state.notified_status, state.status) != "notify":
+            continue
+        if alerter.muted_reason(db, check, now) is not None:
+            continue
+        found[_KIND_OF_STATUS[state.status]].append(
+            _Open(check.id, state.status, state.notified_status, state.since)
+        )
+    return found
+
+
+def _claim(db: Session, kind: str, check_ids: list[str], now: datetime) -> list[Entry]:
+    """Claim the open heartbeats of a bundle as process_alert claims one (step 4):
+    lock the state rows in check_id order, re-read them and decide again, the
+    muting included; a heartbeat that moved on or got muted since the selection
+    drops out and stays open. The rest is marked reported and committed before
+    any channel I/O, so no row lock is held across it.
+
+    Fewer than BUNDLE_MIN left claim nothing: they are as few as any other, and
+    the next run lets them wait for the window instead of sending them early."""
+    status = _KINDS[kind].status
+    rows = (
+        db.query(MonitorCheck, MonitorState)
+        .join(MonitorState, MonitorState.check_id == MonitorCheck.id)
+        .filter(MonitorState.check_id.in_(check_ids))
+        # One lock order for every claim of several rows (4.46).
+        .order_by(MonitorState.check_id)
+        .with_for_update(of=MonitorState)
+        # What the rows hold under the lock, not what this session read before.
+        .populate_existing()
+        .all()
+    )
+    entries = [
+        Entry(check, state, state.notified_status)
+        for check, state in rows
+        if state.status == status
+        and alerter.resolve_notification(state.notified_status, state.status) == "notify"
+        and alerter.muted_reason(db, check, now) is None
+    ]
+    if len(entries) < BUNDLE_MIN:
+        db.rollback()
+        return []
+    for entry in entries:
+        entry.state.notified_status = status
+    db.commit()
+    return entries
 
 
 def send_bundle(db: Session, kind: str, entries: list[Entry], now: datetime) -> None:
