@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Alert-Qualität — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-alert-quality · Review: pro Task
+Status: bereit · Branch: feature/monitoring-alert-quality · Review: pro Task
 Spec: docs/features/monitoring-alert-quality.md (Roadmap R-0424)
 Heavy: linux-full — der Monitoring-Dienst bekommt eine Alembic-Migration (Stack-Start, `upgrade-path` vom letzten Release), der Server-Vertrag `POST /api/internal/events` ändert sich (`source_ids`, `alert.triggered` je Server; `sse-push` und `desktop_e2e_sse_push` injizieren Events ohne das Feld und müssen grün bleiben), `agent-monitoring` fährt den Push-Pfad mit Haltezeit, und `monitoring-check.live.js` nutzt den Check-Editor mit dem neuen Feld. Kein `scenario --moncheck`: die geschlossene Mail-Schleife (`scripts/tests/box_serverbox.sh:457-463`) legt zwei `ping`-Checks ohne Server mit `severity critical` und `consecutive_fails 1` an — `pending → ok` hält nicht, der Deckel ändert bei `critical` nichts, ohne `server_id` greifen Host-down und Sammelmeldung nicht, `_send_email` bleibt unverändert; der Capstone im Wochenlauf fährt sie ohnehin. Kein `windows`: kein Rust-, Agent- oder Plattform-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -166,8 +166,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (Feld und Text stehen seit T3/T4 in der Admin-Doku)
 Abhängt von: T14
 
-### T16 — Desktop: Feld im Template-Editor und im Update-Vergleich  [ ]
+### T16 — Desktop: Feld im Template-Editor und im Update-Vergleich  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/MonitoringTemplateModal.svelte, apps/desktop/ui/src/components/monitoring/BuiltinUpdateModal.svelte, apps/desktop/ui/src/components/monitoring/MonitoringTemplateModal.test.ts, apps/desktop/ui/src/components/monitoring/BuiltinUpdateModal.test.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @9fe06712 2026-10-20T16:00:00+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T16.verdict.json)
 Änderung: Zahlenfeld je Check-Definition neben `consecutive_fails` (`MonitoringTemplateModal.svelte:243-251`), Wert `def.consecutive_oks ?? 2`, `min="1"`, `max="100"`; `BuiltinUpdateModal.svelte`: `CHECK_DEFAULTS.consecutive_oks = 2` (`:43-50`) und Feldname in `FIELD_LABELS` (`:60-73`). Tests: eine Eingabe im Template-Editor landet in der gespeicherten Definition; der Update-Vergleich nennt eine geänderte `consecutive_oks` mit übersetztem Feldnamen und zeigt für eine Seite ohne Schlüssel 2.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringTemplateModal.test.ts src/components/monitoring/BuiltinUpdateModal.test.ts
 Doku: keine (intern)
