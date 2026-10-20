@@ -42,8 +42,10 @@ Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern)
 Abhängt von: T1
 
-### T6 — Windows: ein behaltener Ordner wird in der Form gesperrt, die seiner Dichte entspricht  [ ]
+### T6 — Windows: ein behaltener Ordner wird in der Form gesperrt, die seiner Dichte entspricht  [x]
 Komponente: agent · Dateien: apps/agent/internal/config/securedir_windows.go, apps/agent/internal/config/securedir_windows_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @8ebb3a5a 2026-10-20T13:58:37+02:00
+Review: approve (.ah-out/review/agent-windows-datadir/T6.verdict.json)
 Änderung: Heute sperrt `EnsureSecureDir` einen behaltenen Ordner (die Wurzel in `secureExisting`, einen Unterordner in `cleanChild`) vor dem Prüfen seiner Kinder immer in der vererbbaren, geschützten Form. Endet ein Lauf danach mit einem Fehler, gilt ein vorher offener Ordner beim nächsten Lauf als dicht. Neu folgt die Form der Sperre der vorher bestimmten Dichte: War der Ordner dicht, sperrt er wie heute in der vererbbaren Form; war er offen, sperrt er mit der nicht vererbbaren Form wie beim Entfernen (`D:P(A;;FA;;;SY)(A;;FA;;;BA)`). Das Ende bleibt unverändert (Unterordner nach dem Aufräumen in vererbter Form, die Wurzel zuletzt per `SetSecurityInfo` mit Weitergabe). Ein Lauf, der abbricht, hinterlässt so jeden behaltenen Ordner in der Form seiner ursprünglichen Dichte. Tests windows-getaggt, zuerst rot: ein offener Ordner mit einem fremden, offen gehaltenen Kind: der erste Lauf liefert einen Fehler; Handle geschlossen, der zweite Lauf entfernt das Kind (nicht übernommen); ein dichter Ordner mit einem fremden Kind (Bestand aus der Provisionierung), der erste Lauf bricht nach der Sperre an einem Geschwister ab (Naht): der zweite Lauf übernimmt das Kind und behält es; dasselbe für einen offenen Unterordner in einer dichten Wurzel.
 Verify: bash scripts/dev/verify.sh agent --strict
 Doku: keine (intern)

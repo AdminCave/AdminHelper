@@ -18,14 +18,16 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// protectedSDDL is the descriptor of a directory EnsureSecureDir creates or locks:
-// owned by the Administrators, full control for SYSTEM and the Administrators, passed
-// on to everything below, and protected (P), so that nothing is inherited.
+// protectedSDDL is the descriptor of a directory EnsureSecureDir creates, or locks if
+// it was closed: owned by the Administrators, full control for SYSTEM and the
+// Administrators, passed on to everything below, and protected (P), so that nothing is
+// inherited.
 const protectedSDDL = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
-// removalSDDL is the descriptor a directory or file gets while the agent removes it:
-// owned by the Administrators, full control for SYSTEM and the Administrators, not
-// passed on (no OICI). If the removal stops halfway, what is left does not carry the
+// removalSDDL is the descriptor a directory or file gets while the agent removes it,
+// and a kept directory that was open while the agent cleans it: owned by the
+// Administrators, full control for SYSTEM and the Administrators, not passed on (no
+// OICI). If the removal or the cleaning stops halfway, what is left does not carry the
 // inheritable form, so the next run does not take it for a closed directory.
 const removalSDDL = "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)"
 
@@ -98,12 +100,13 @@ type fileBasicInfo struct {
 // and each of its entries are opened, as often as a step needs, relative to a handle
 // of their parent, never by path. If dir is gone by then, it is created anew; if it
 // is back when that is tried, EnsureSecureDir fails. It is kept if it is a directory that SYSTEM or the Administrators own and not a reparse
-// point. It is locked first (owner Administrators, protected DACL, no propagation),
-// then its tree is cleaned: a reparse point, a file with a second name and, unless the
-// directory was closed, an entry that neither SYSTEM nor the Administrators own are
-// removed; a kept directory that another account owns is taken over (owner
-// Administrators) and, because its former owner could set its DACL, cleaned as an open
-// directory. A kept entry is unlocked into the inherited form of the protected DACL at
+// point. It is locked first (owner Administrators, protected DACL, no propagation; the
+// DACL is in the inheritable form only if dir was closed, so that a run cut short
+// leaves an open directory open), then its tree is cleaned: a reparse point, a file
+// with a second name and, unless the directory was closed, an entry that neither
+// SYSTEM nor the Administrators own are removed; a kept directory that another account
+// owns is taken over (owner Administrators) and, because its former owner could set
+// its DACL, cleaned as an open directory. A kept entry is unlocked into the inherited form of the protected DACL at
 // once. Last, dir's DACL is set once more, with propagation. Any other existing dir is
 // removed and created anew; every level to be removed is taken over first (owner
 // Administrators, a DACL for SYSTEM and the Administrators that is not passed on, no
@@ -213,7 +216,7 @@ func secureExisting(dir string, d descriptors, ownerOf ownerLookup) (bool, error
 	}
 	// Lock before opening with keepAccess, so that the open does not depend on the
 	// DACL the directory had; the density was read from that DACL before the lock.
-	if err := lockEntry(parent, name, dir, windows.FILE_DIRECTORY_FILE, d.protected); err != nil {
+	if err := lockEntry(parent, name, dir, windows.FILE_DIRECTORY_FILE, d.lockFor(e.closed)); err != nil {
 		return false, err
 	}
 	h, err := openAt(parent, name, dir, keepAccess, windows.FILE_DIRECTORY_FILE)
@@ -289,7 +292,10 @@ func cleanChild(parent windows.Handle, name, path string, parentClosed bool, d d
 	if !e.isDir {
 		return resetDACL(parent, name, path, windows.FILE_NON_DIRECTORY_FILE, d.inheritedFile)
 	}
-	if err := lockEntry(parent, name, path, windows.FILE_DIRECTORY_FILE, d.protected); err != nil {
+	// A directory only just taken over is treated as open: its former owner could
+	// have set a DACL that looks closed.
+	closed := e.trusted && e.closed
+	if err := lockEntry(parent, name, path, windows.FILE_DIRECTORY_FILE, d.lockFor(closed)); err != nil {
 		return err
 	}
 	dh, err := openAt(parent, name, path, keepAccess, windows.FILE_DIRECTORY_FILE)
@@ -297,9 +303,7 @@ func cleanChild(parent windows.Handle, name, path string, parentClosed bool, d d
 		return err
 	}
 	defer windows.CloseHandle(dh)
-	// A directory only just taken over is treated as open: its former owner could
-	// have set a DACL that looks closed.
-	if err := cleanChildren(dh, path, e.trusted && e.closed, d, ownerOf); err != nil {
+	if err := cleanChildren(dh, path, closed, d, ownerOf); err != nil {
 		return err
 	}
 	// Unlock into the inherited form at once; parent's final propagation then makes
@@ -340,10 +344,20 @@ func resetDACL(parent windows.Handle, name, path string, options uint32, sd *win
 	return nil
 }
 
+// lockFor returns the descriptor a kept directory is locked with while its entries are
+// cleaned: the protected one if it was closed, the removal one if it was open. A run
+// cut short after the lock so leaves the directory as closed or as open as it was.
+func (d descriptors) lockFor(closed bool) *windows.SECURITY_DESCRIPTOR {
+	if closed {
+		return d.protected
+	}
+	return d.removal
+}
+
 // lockEntry makes the Administrators the owner of the entry name of parent and gives
 // it sd's DACL, protected, each through its own handle, without propagation. sd is the
-// protected descriptor for a directory the agent keeps and the removal descriptor for
-// one it removes.
+// descriptor from lockFor for a directory the agent keeps and the removal descriptor
+// for one it removes.
 func lockEntry(parent windows.Handle, name, path string, options uint32, sd *windows.SECURITY_DESCRIPTOR) error {
 	if err := takeOwner(parent, name, path, options, sd); err != nil {
 		return err

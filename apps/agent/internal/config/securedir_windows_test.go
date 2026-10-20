@@ -303,6 +303,35 @@ func ownerByName(_ windows.Handle, path string) (string, error) {
 	return administratorsSID, nil
 }
 
+// stopAt runs ensureSecureDir on dir with an owner lookup that answers like
+// ownerByName but cuts the run short, by a panic, when it is asked about the entry
+// stop, as if the agent had ended there. It fails unless the run got that far.
+func stopAt(t *testing.T, dir, stop string) {
+	t.Helper()
+	type stopped struct{}
+	var err error
+	reached := func() (reached bool) {
+		defer func() {
+			if r := recover(); r != nil {
+				if _, ok := r.(stopped); !ok {
+					panic(r)
+				}
+				reached = true
+			}
+		}()
+		err = ensureSecureDir(dir, func(h windows.Handle, path string) (string, error) {
+			if path == stop {
+				panic(stopped{})
+			}
+			return ownerByName(h, path)
+		})
+		return false
+	}()
+	if !reached {
+		t.Fatalf("the run on %s ended without reaching %s: %v", dir, stop, err)
+	}
+}
+
 // EnsureSecureDir creates a missing dir, and its missing parent, with the protected
 // descriptor: nothing is inherited from the temp dir above.
 func TestEnsureSecureDirCreatesProtectedDir(t *testing.T) {
@@ -683,6 +712,66 @@ func TestEnsureSecureDirLeavesCleanedEntriesUsableWhenItStops(t *testing.T) {
 		t.Fatal("ensureSecureDir returned no error for a foreign child it could not remove")
 	}
 	requireInheritedOnly(t, sub)
+}
+
+// A run that stops at a foreign entry it cannot remove leaves the open dir it was
+// cleaning open, a kept root as well as a kept subdir of a closed root: the next run,
+// with the entry no longer held, removes it instead of taking it over.
+func TestEnsureSecureDirLeavesAnOpenDirOpenWhenItStops(t *testing.T) {
+	cases := []struct {
+		name string
+		dirs func(t *testing.T, base string) (root, open string)
+	}{
+		{"root", func(t *testing.T, base string) (string, string) {
+			root := keptOpenDir(t, base, "secret")
+			return root, root
+		}},
+		{"subdir", func(t *testing.T, base string) (string, string) {
+			root := keptClosedDir(t, base, "secret")
+			return root, keptOpenDir(t, root, "sub")
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root, open := c.dirs(t, t.TempDir())
+			held := filepath.Join(open, "foreign.conf")
+			writeFile(t, held, "x")
+			release := holdOpen(t, held)
+
+			if err := ensureSecureDir(root, ownerByName); err == nil {
+				t.Fatal("first run: no error for a foreign child held open")
+			}
+			release()
+			if err := ensureSecureDir(root, ownerByName); err != nil {
+				t.Fatalf("second run: %v", err)
+			}
+			requireGone(t, held)
+			requireProtected(t, root)
+		})
+	}
+}
+
+// A run cut short after it locked a closed dir leaves it closed: the next run takes a
+// child that another account owns (provisioned before) over and keeps it. The run
+// stops at a sibling listed before the child, so the child is still foreign then.
+func TestEnsureSecureDirLeavesAClosedDirClosedWhenItStops(t *testing.T) {
+	dir := keptClosedDir(t, t.TempDir(), "secret")
+	child := filepath.Join(dir, "foreign.conf")
+	writeFile(t, child, "provisioned")
+	setOwner(t, child, currentUser(t))
+	stop := filepath.Join(dir, "a-stop.conf")
+	writeFile(t, stop, "x")
+
+	stopAt(t, dir, stop)
+	requireOwner(t, child, currentUser(t).String())
+	if err := ensureSecureDir(dir, ownerByName); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	requireOwner(t, child, administratorsSID)
+	requireInheritedOnly(t, child)
+	if got, err := os.ReadFile(child); err != nil || string(got) != "provisioned" {
+		t.Fatalf("the kept child: %q, %v", got, err)
+	}
 }
 
 // OwnByAdministrators hands a file the agent wrote, here one the test account owns,
