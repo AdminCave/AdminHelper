@@ -23,12 +23,13 @@ describe('AdminHelper desktop — decoupled enrollment form', () => {
     // By stable action id, not a positional index: the three secondary buttons
     // (enroll / open-launcher / back) are otherwise indistinguishable structurally.
     await $('[data-action="enroll-switch"]').click();
-    // The enroll form replaces the login form: a token field, and the server URL as a field
-    // while the workspace has none, else shown (fillServerUrlIfAsked takes either below).
-    await $('.login-card input[type="text"]').waitForExist({ timeout: 10000 });
     // A text field also exists in login mode (username), so the switch is only
     // proven by the password field being gone.
     await $('.login-card input[type="password"]').waitForExist({ reverse: true, timeout: 10000 });
+    // The enroll form replaces the login form: a token field, its only text field, and the
+    // server URL as a field while the workspace has none, else shown (fillServerUrlIfAsked
+    // takes either below).
+    await $('.login-card input[type="text"]').waitForExist({ timeout: 10000 });
   });
 
   it('surfaces the server rejection for an invalid token', async () => {

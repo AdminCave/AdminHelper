@@ -59,11 +59,9 @@ describe('Launcher: a server workspace for the second installation', () => {
   });
 
   it('makes "Kunde B" in the editor and writes its id for the orchestrator', async () => {
-    // "New workspace" is the first button of the action row; the picker has no other marker
-    // for it. An enabled kind below tells it from "Edit", whose editor keeps the kind of the
-    // selected Standard and would move Standard to stack B.
-    const [newButton] = await $$('.picker-actions .btn');
-    await newButton.click();
+    // An enabled kind below proves the editor is that of a new workspace: the one of "Edit"
+    // keeps the kind of the selected Standard and would move Standard to stack B.
+    await $('[data-action="workspace-new"]').click();
     const kind = await $(`${MODAL} select`);
     await kind.waitForExist({ timeout: 10000 });
     expect(await kind.isEnabled()).toBe(true);

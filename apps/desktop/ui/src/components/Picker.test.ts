@@ -440,6 +440,22 @@ describe('Picker: the editor', () => {
   });
 });
 
+describe('Picker: the hooks of the live specs', () => {
+  it('each action has a data-action of its own, on its button', async () => {
+    const p = await mount(listing([kundeA], 'w-0a1b2c3d'));
+    const hook = (action: string) => {
+      const found = p.container.querySelectorAll(`[data-action="${action}"]`);
+      expect(found).toHaveLength(1);
+      return found[0];
+    };
+
+    expect(hook('workspace-new')).toBe(p.newButton());
+    expect(hook('workspace-edit')).toBe(p.editButton());
+    expect(hook('workspace-delete')).toBe(p.deleteButton());
+    expect(hook('workspace-open')).toBe(p.openButton());
+  });
+});
+
 describe('App in the launcher', () => {
   it('shows the picker, not the login or a workspace', async () => {
     h.workspaceContext.mockResolvedValue({ launcher: true, workspace: null });

@@ -2,7 +2,8 @@
 #
 # desktop_e2e_crud.sh — live desktop E2E for CRUD journeys through the GUI:
 # create/rename/delete a connection, a tunnel, and create/delete a server. Each
-# spec verifies itself via the reloaded list (GUI → gateway → server → DB).
+# spec verifies itself via the reloaded list (GUI → gateway → server → DB). Last,
+# in the launcher, the picker makes, renames and deletes a local workspace.
 #
 # Boots the stack permissive, seeds an admin + a server + an FRP config (context
 # for the connection/tunnel tabs), then drives the real app under xvfb + a fresh
@@ -88,9 +89,23 @@ dbus-run-session -- bash -c '
         --spec test/specs/connection-crud.live.js \
         --spec test/specs/tunnel-crud.live.js \
         --spec test/specs/provisioning.live.js \
-        --spec test/specs/server-crud.live.js \
-        --spec test/specs/settings-mode.live.js
-' && ok "GUI specs (enroll / connection / tunnel / provisioning / server / settings) passed" || bad "GUI specs failed"
+        --spec test/specs/server-crud.live.js
+' && ok "GUI specs (enroll / connection / tunnel / provisioning / server) passed" || bad "GUI specs failed"
+
+# The picker replaces the switch of the app mode (R-0431). A run of its own: an empty
+# AH_E2E_WORKSPACE opens the launcher (test/lib/app-args.js). Last: the runs above opened
+# "standard" and listed nothing, so the note on the migration is still due.
+echo "[e2e-crud] running the picker spec in the launcher under xvfb..."
+AH_E2E_WORKSPACE='' dbus-run-session -- bash -c '
+    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
+    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/workspace-picker.live.js
+' && ok "picker spec passed" || bad "picker spec failed"
+# The spec deletes the workspace it made, and its directory goes with it.
+LEFT=$(find "$APP_DATA/workspaces" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | sort)
+[ "$LEFT" = "standard" ] && ok "only workspaces/standard is left after the picker spec" \
+    || bad "workspaces/ holds: ${LEFT//$'\n'/ }"
 
 echo ""
 echo "desktop_e2e_crud: $PASS passed, $FAIL failed"

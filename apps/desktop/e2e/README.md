@@ -43,9 +43,12 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
 - **`test/specs/provisioning.live.js`** — mint an agent-enrollment token through
   the GUI; the server issues it and the GUI lists it (round-trip). Runs in the
   same `desktop_e2e_crud.sh` boot.
-- **`test/specs/settings-mode.live.js`** — switch the app mode (server → local) in
-  Settings; the server session ends and the server-only UI (mode badge, the
-  Infrastructure nav) changes. Runs last in the `desktop_e2e_crud.sh` boot.
+- **`test/specs/workspace-picker.live.js`** — the picker of the launcher (no
+  `AH_E2E_WORKSPACE`): it lists the migrated "Standard" as a server workspace with
+  the note on the migration once, then a local workspace is made with a colour,
+  renamed and deleted (the question names it and warns of the data lost). Its own
+  `wdio` run at the end of `desktop_e2e_crud.sh`, which then checks that only
+  `workspaces/standard/` is left.
 - **`test/specs/login-error.live.js`** — the negative auth path: a wrong password
   surfaces the inline error and never reaches the app shell. Orchestrated by
   **`../../../scripts/tests/desktop_e2e_misc.sh`**.
