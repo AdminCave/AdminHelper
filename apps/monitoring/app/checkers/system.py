@@ -55,8 +55,17 @@ class SystemStateChecker:
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         block = report.get("system_state")
-        if not isinstance(block, dict) or not block:
-            # Details with every value null, not None: the push path keeps the stored
+        if not isinstance(block, dict):
+            block = {}
+
+        reboot = _flag(block.get("reboot_required"))
+        synced = _flag(block.get("time_synchronized"))
+        updates = _count(block.get("security_updates"))
+        ooms = _count(block.get("oom_kills"))
+        if reboot is None and synced is None and updates is None and ooms is None:
+            # No block, or one without a single usable field (empty, only wrong types or
+            # unknown keys): there is nothing to rate, so "System state OK" would claim too
+            # much. Details with every value null, not None: the push path keeps the stored
             # details of a result without any, and the desktop would go on showing the
             # values of an older report.
             details = {
@@ -68,10 +77,6 @@ class SystemStateChecker:
             }
             return "ok", "Not evaluated: no system state in report", {"_details": details}
 
-        reboot = _flag(block.get("reboot_required"))
-        synced = _flag(block.get("time_synchronized"))
-        updates = _count(block.get("security_updates"))
-        ooms = _count(block.get("oom_kills"))
         uptime = agent_number(report.get("uptime_seconds"))
 
         problems: list[str] = []

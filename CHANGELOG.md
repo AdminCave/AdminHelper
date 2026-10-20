@@ -17,10 +17,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   neue Push-Check `system_state` ist `warning`, sobald ein Punkt ein Problem zeigt, nie `critical`; die Uhr bewertet
   er erst ab 15 Minuten Uptime. Je Punkt schaltet ein Schalter (`check_reboot`, `check_time_sync`,
   `check_security_updates`, `check_oom`, je Default `true`, nur `true` oder `false`) die Bewertung ab. Ohne den Block
-  (aeltere Agents, Windows) bleibt der Check `ok` mit „Not evaluated: no system state in report“. Ein OOM-Kill steht
-  nur in einem Report und meldet deshalb nur mit `consecutive_fails` 1. Nicht verifiziert: ob Debian und Proxmox VE
-  `/var/run/reboot-required` bei einem Kernel-Update anlegen, und der Weg der RPM-Distributionen. Doku:
-  Monitoring-Administration (DE+EN).
+  (aeltere Agents, Windows) oder ohne einen einzigen brauchbaren Punkt darin bleibt der Check `ok` mit „Not evaluated:
+  no system state in report“. Ein OOM-Kill steht nur in einem Report und meldet deshalb nur mit `consecutive_fails` 1.
+  Nicht verifiziert: ob Debian und Proxmox VE `/var/run/reboot-required` bei einem Kernel-Update anlegen, und der Weg
+  der RPM-Distributionen. Doku: Monitoring-Administration (DE+EN).
 - **Monitoring: `agent_resources` bewertet Swap, Inodes und Load je CPU (R-0423):** Neben CPU, RAM, Platten und
   Temperaturen bewertet der Check die Swap-Belegung (`swap_warn`/`swap_crit`, Default 80/95 %, nur mit Swap-Geraet),
   die Inode-Belegung je Platte (`inode_warn`/`inode_crit`, 80/90 %) und die Load je CPU, `load_5m` geteilt durch die
@@ -375,6 +375,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
+  ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
+  Status-Zeitleiste im Desktop blieb leer: Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder keinen
+  Block schickte, und der neue Check `system_state` immer. Jetzt schreibt der Push-Pfad fuer jeden ausgewerteten Check
+  den Status (`monitor_check_status`); eine neue Messreihe entsteht nicht, und ohne Messwerte auch keine Dauer.
+  Doku: Entwickler-Doku Monitoring (DE+EN).
 - **Monitoring: die Listen bleiben lesbar, wenn ein gespeicherter Wert keine endliche Zahl ist:** Stand in einer
   Check-Konfiguration, in den Details eines Check-Zustands, in der Kanal-Konfiguration einer Alert-Regel oder in einer
   Definition eines Templates `NaN`, `Infinity` oder eine Zahl ausserhalb des Gleitkomma-Bereichs, scheiterte die ganze

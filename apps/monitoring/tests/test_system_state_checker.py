@@ -216,6 +216,37 @@ def test_a_report_without_a_block_is_not_evaluated(report):
     assert metrics == {"_details": _NOTHING}
 
 
+@pytest.mark.parametrize(
+    "block",
+    [
+        pytest.param({"kernel": "6.12"}, id="unknown-key"),
+        pytest.param(dict.fromkeys(_HEALTHY), id="all-null"),
+        pytest.param(
+            {
+                "reboot_required": "true",
+                "time_synchronized": 1,
+                "security_updates": "3",
+                "oom_kills": 2.5,
+            },
+            id="all-wrong-types",
+        ),
+    ],
+)
+def test_a_block_without_a_usable_field_counts_as_no_block(block):
+    # Rated, such a block would read "System state OK" although nothing was determined.
+    report = {"uptime_seconds": 3600, "system_state": block}
+    status, msg, metrics = SystemStateChecker().evaluate({}, report)
+    assert (status, msg) == ("ok", "Not evaluated: no system state in report")
+    assert metrics == {"_details": _NOTHING}
+
+
+def test_one_usable_field_is_enough_to_evaluate():
+    report = {"system_state": {"reboot_required": "yes", "security_updates": 0}}
+    status, msg, metrics = SystemStateChecker().evaluate({}, report)
+    assert (status, msg) == ("ok", "System state OK")
+    assert metrics == {"_details": {**_NOTHING, "security_updates": 0}}
+
+
 # --- push path ---
 
 
