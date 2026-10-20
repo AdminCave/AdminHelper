@@ -70,7 +70,7 @@ Abhängt von: T30
 
 ### T26 — Live-Helfer und Specs mit fester Workspace-URL  [ ]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/login-error.live.js, apps/desktop/e2e/test/specs/enroll-form.live.js, apps/desktop/e2e/test/specs/enroll-trust-dialog.live.js
-Änderung: `login()` (`live.js:65-89`) füllt die URL nur, wenn das Feld da ist (nach dem ersten erfolgreichen Login ist sie fest), Benutzer und Passwort über den Feldtyp statt über die Position; ein Helfer `fillServerUrlIfAsked()` für die Specs mit URL-Feld (`login-error.live.js:14-16`, `enroll-form.live.js:27-35`, `enroll-trust-dialog.live.js:25-26`). Die Specs prüfen, dass die angezeigte URL die erwartete ist, wenn kein Feld da ist. Verify ist der Lint; Beweis im Sammellauf.
+Änderung: `login()` (`live.js:65-89`) füllt die URL nur, wenn das Feld da ist (nach dem ersten erfolgreichen Login ist sie fest), Benutzer und Passwort über den Feldtyp statt über die Position; ein Helfer `fillServerUrlIfAsked()` für die Specs mit URL-Feld (`login-error.live.js:14-16`, `enroll-form.live.js:27-35`, `enroll-trust-dialog.live.js:25-26`). Die Specs prüfen, dass die angezeigte URL die erwartete ist, wenn kein Feld da ist. Verify ist der Lint; Beweis im Sammellauf. Nachtrag (Bauer T22): Die feste URL steht als `[data-testid="workspace-url"]`; „Ohne Server fortfahren“ gibt es nicht mehr, an seiner Stelle `[data-action="open-launcher"]` („Workspaces…“). `login-error.live.js` liest die Felder heute nach Position (`[0]` = URL) und muss bei fester URL über Feldtyp bzw. die Testid gehen.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T22
