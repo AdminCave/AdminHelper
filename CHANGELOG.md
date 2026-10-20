@@ -358,8 +358,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Monitoring: die Listen bleiben lesbar, wenn ein gespeicherter Wert keine endliche Zahl ist:** Stand in einer
   Check-Konfiguration, in den Details eines Check-Zustands, in der Kanal-Konfiguration einer Alert-Regel oder in einer
   Definition eines Templates `NaN`, `Infinity` oder eine Zahl ausserhalb des Gleitkomma-Bereichs, scheiterte die ganze
-  Antwort von `GET /status`, `GET /checks`, `GET /alerts` bzw. `GET /templates` mit einem Serverfehler, oder der
-  Desktop konnte sie nicht lesen. Jetzt erscheint ein solcher Wert dort als `null`; gespeichert bleibt er, wie er ist.
+  Antwort von `GET /status`, `GET /checks`, `GET /alerts`, `GET /templates` bzw. des Update-Vergleichs eines
+  Standard-Templates (`GET /templates/{id}/builtin-update`) mit einem Serverfehler, oder der Desktop konnte sie nicht
+  lesen. Jetzt erscheint ein solcher Wert dort als `null`; gespeichert bleibt er, wie er ist.
   Doku: Entwickler-Doku Monitoring (DE+EN).
 - **Desktop: die Sitzung haelt laenger als acht Stunden, und eine abgelaufene fuehrt zum Login (R-0430):** Nach
   Ablauf des Access-Tokens (acht Stunden) scheiterten Infrastruktur, Monitoring, Ansible und die Glocke, weil nur ein

@@ -37,7 +37,7 @@ def _float_range_int(text: str) -> int | None:
     return value
 
 
-def _loads_readable(text: str):
+def loads_readable(text: str):
     """json.loads for a stored column that goes into an API response: NaN, Infinity,
     -Infinity, a float beyond range (1e400) and an integer beyond float range come back as
     None. Python wrote such values in older rows; JSONResponse refuses a non-finite float, and
@@ -80,7 +80,7 @@ class MonitorCheck(Base):
             "name": self.name,
             "description": self.description,
             "checkType": self.check_type,
-            "config": _loads_readable(self.config) if self.config else {},
+            "config": loads_readable(self.config) if self.config else {},
             "enabled": self.enabled,
             "interval": self.interval,
             "severity": self.severity,
@@ -121,7 +121,7 @@ class MonitorState(Base):
             "lastCheck": iso_utc(self.last_check),
             "failCount": self.fail_count,
             "message": self.message,
-            "details": _loads_readable(self.details) if self.details else None,
+            "details": loads_readable(self.details) if self.details else None,
             "notifiedStatus": self.notified_status,
         }
 
@@ -143,7 +143,7 @@ class MonitorAlertRule(Base):
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self) -> dict:
-        cfg = _loads_readable(self.channel_config) if self.channel_config else {}
+        cfg = loads_readable(self.channel_config) if self.channel_config else {}
         # Never reflect the SMTP password in an API response — mask a set secret so
         # it does not leak into GET /alerts and the admin frontend (3.27). The
         # update handler treats the mask as "unchanged".
@@ -232,10 +232,10 @@ class MonitorTemplate(Base):
             "builtinVersion": self.builtin_version,
             "builtinEdited": builtin_edited(self),
             "builtinUpdateAvailable": builtin_update_available(self),
-            "checkDefinitions": _loads_readable(self.check_definitions)
+            "checkDefinitions": loads_readable(self.check_definitions)
             if self.check_definitions
             else [],
-            "alertDefinitions": _loads_readable(self.alert_definitions)
+            "alertDefinitions": loads_readable(self.alert_definitions)
             if self.alert_definitions
             else [],
             "createdAt": iso_utc(self.created_at),

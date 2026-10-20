@@ -25,6 +25,7 @@ from app.models import (
     MonitorTemplate,
     MonitorTemplateAssignment,
     MonitorTemplateTagAssignment,
+    loads_readable,
 )
 from app.scheduler import remove_check
 from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
@@ -282,14 +283,17 @@ def get_builtin_update(template_id: str, db: Session = Depends(get_db)):
 
     Both sides leave out the keys at their schema default, as the hash does: the
     editor stores every key, the shipped definitions only those they set, and a
-    definition saved unchanged has to look like the shipped one."""
+    definition saved unchanged has to look like the shipped one. The stored side
+    is read like to_dict (NaN, Infinity or a number beyond float range shows as
+    null); the hash in builtin_edited keeps reading the raw values, so a stored
+    hash stays valid."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     shipped = shipped_builtin(template.builtin_slug) if template else None
     if shipped is None:
         raise HTTPException(404, "Standard template not found")
     current_checks, current_alerts = canonical_definitions(
-        json.loads(template.check_definitions or "[]"),
-        json.loads(template.alert_definitions or "[]"),
+        loads_readable(template.check_definitions or "[]"),
+        loads_readable(template.alert_definitions or "[]"),
     )
     shipped_checks, shipped_alerts = canonical_definitions(
         shipped["check_definitions"], shipped["alert_definitions"]

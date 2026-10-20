@@ -14,12 +14,13 @@ import math
 
 import pytest
 
+from app.builtin_templates import canonical_definitions, definitions_hash, shipped_builtin
 from app.models import (
     MonitorAlertRule,
     MonitorCheck,
     MonitorState,
     MonitorTemplate,
-    _loads_readable,
+    loads_readable,
 )
 
 _BIG_INT = "1" + "0" * 399  # an integer with 400 digits, beyond float range
@@ -153,10 +154,49 @@ def test_template_definition_shows_null(client_db):
     assert template["checkDefinitions"][0]["config"] == {"reallocated_warn": None}
 
 
+@pytest.mark.parametrize("token", ["Infinity", "-Infinity", "NaN", "1e400", _BIG_INT])
+def test_builtin_update_comparison_shows_null(client_db, token):
+    """The update comparison of a standard template reads its stored definitions like to_dict;
+    the shipped side comes from the code and stays as it is."""
+    client, factory = client_db
+    shipped = shipped_builtin("zfs-storage")
+    stored = json.dumps(shipped["check_definitions"]).replace(
+        '"capacity_warn": 80', '"capacity_warn": ' + token
+    )
+    assert '"capacity_warn": ' + token in stored
+    with factory() as db:
+        db.add(
+            MonitorTemplate(
+                id="tpl-zfs",
+                name=shipped["name"],
+                builtin_slug="zfs-storage",
+                builtin_version=shipped["version"],
+                builtin_hash=definitions_hash(
+                    shipped["check_definitions"], shipped["alert_definitions"]
+                ),
+                check_definitions=stored,
+                alert_definitions="[]",
+            )
+        )
+        db.commit()
+
+    resp = client.get("/templates/tpl-zfs/builtin-update")
+
+    assert resp.status_code == 200
+    body = _strict_loads(resp.text)
+    [current] = body["current"]["checkDefinitions"]
+    assert current["config"] == {"capacity_warn": None, "capacity_crit": 90}
+    shipped_checks, shipped_alerts = canonical_definitions(
+        shipped["check_definitions"], shipped["alert_definitions"]
+    )
+    assert body["shipped"] == {"checkDefinitions": shipped_checks, "alertDefinitions": []}
+    assert shipped_checks[0]["config"] == {"capacity_warn": 80, "capacity_crit": 90}
+
+
 def test_numbers_at_the_float_limit_stay():
     text = '{"in": [1e308, ' + str(10**308) + ', -1.5e-320], "out": [-1e400, -' + _BIG_INT + "]}"
 
-    assert _loads_readable(text) == {"in": [1e308, 10**308, -1.5e-320], "out": [None, None]}
+    assert loads_readable(text) == {"in": [1e308, 10**308, -1.5e-320], "out": [None, None]}
 
 
 def test_stored_rows_stay_unchanged(client_db):
