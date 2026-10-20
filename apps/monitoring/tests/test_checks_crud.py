@@ -38,6 +38,16 @@ def test_create_check_rejects_invalid_severity(client_db):
     assert client.post("/checks", json=_payload(severity="apocalyptic")).status_code == 400
 
 
+def test_new_check_holds_recovery_for_two_oks_by_default(client_db):
+    # alert-quality T1: a check created without the field gets the model default and
+    # reports it, on create and when read back.
+    client, _ = client_db
+    r = client.post("/checks", json=_payload())
+    assert r.status_code == 201, r.text
+    assert r.json()["consecutiveOks"] == 2
+    assert client.get(f"/checks/{r.json()['id']}").json()["consecutiveOks"] == 2
+
+
 def test_update_check_rejects_invalid_interval(client_db):
     client, factory = client_db
     with factory() as db:

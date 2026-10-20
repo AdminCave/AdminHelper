@@ -16,8 +16,10 @@ Kevin 2026-10-19: R-0424 als eigenes Vorhaben, getrennt von Linux-Basis v2 und P
 
 ## Block A — Haltezeit
 
-### T1 — Migration und Modell: `consecutive_oks`, `ok_count`, `hub_status`, `hub_sent_at`  [ ]
+### T1 — Migration und Modell: `consecutive_oks`, `ok_count`, `hub_status`, `hub_sent_at`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/alembic/versions/c3e5a7b9d1f2_alert_quality.py, apps/monitoring/app/models.py, apps/monitoring/tests/test_migrations_smoke.py, apps/monitoring/tests/test_checks_crud.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @e3310531 2026-10-20T06:43:18+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T1.verdict.json)
 Änderung: Neue Revision `c3e5a7b9d1f2_alert_quality.py` (SPDX-Header, Docstring mit Zweck und Backfill wie `c1d3e5f7a9b1_notified_status.py`), `down_revision` = aktueller Head (Plan: `b9d1f3a5c7e9`; vorher `alembic heads` prüfen): `monitor_checks.consecutive_oks` Integer NOT NULL `server_default '2'`; `monitor_states.ok_count` Integer NOT NULL `server_default '0'`, `hub_status` String NULL, `hub_sent_at` DateTime NULL; Backfill `UPDATE monitor_states SET hub_status = notified_status WHERE notified_status IN ('warning','critical')`; Downgrade entfernt die vier Spalten. Modell (`models.py:37`, `:79`, `:85`) mit passenden `default=`/`server_default=`, `MonitorCheck.to_dict` liefert `consecutiveOks` (`:58`); `MonitorState.to_dict` unverändert. Tests: in `test_migrations_smoke.py` ein Upgrade von `b9d1f3a5c7e9` mit vorhandenen Zeilen (ein Check, States `critical`/`ok`/`unknown`) → `consecutive_oks` 2, `ok_count` 0, `hub_status` nur bei `critical` gesetzt, `hub_sent_at` NULL; Downgrade entfernt die Spalten (läuft in der PR-CI); in `test_checks_crud.py` ein neuer Check antwortet mit `consecutiveOks: 2` (lokal).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_migrations_smoke.py tests/test_checks_crud.py
 Doku: keine (intern; sichtbar ab T2/T3)

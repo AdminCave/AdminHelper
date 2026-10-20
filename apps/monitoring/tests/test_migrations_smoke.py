@@ -202,3 +202,67 @@ def test_notified_status_backfill_marks_existing_states_as_reported(monkeypatch)
                 ).fetchall()
             )
         assert rows == {"c1": "critical", "c2": "critical", "c3": "unknown"}
+
+
+def test_alert_quality_backfill_and_downgrade(monkeypatch):
+    # alert-quality T1: every existing check gets consecutive_oks 2 and every state
+    # ok_count 0. hub_status follows a REPORTED warning/critical (notified_status, not
+    # status: c4 recovered, its recovery is not reported yet), else the bell would
+    # never clear a problem it showed before the deploy; hub_sent_at starts empty, so
+    # no bell cooldown runs. The downgrade must take all four columns away again.
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    with scratch_db(monkeypatch, "alertquality") as (cfg, engine):
+        command.upgrade(cfg, "b9d1f3a5c7e9")  # just before the alert-quality migration
+        with engine.begin() as conn:
+            for cid, status, notified in (
+                ("c1", "critical", "critical"),
+                ("c2", "ok", "ok"),
+                ("c3", "unknown", "unknown"),
+                ("c4", "ok", "warning"),
+            ):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_checks"
+                        " (id, name, check_type, config, interval, severity)"
+                        " VALUES (:id, 'C', 'ping', '{}', '5m', 'critical')"
+                    ),
+                    {"id": cid},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_states (check_id, status, notified_status)"
+                        " VALUES (:id, :status, :notified)"
+                    ),
+                    {"id": cid, "status": status, "notified": notified},
+                )
+        command.upgrade(cfg, "c3e5a7b9d1f2")
+        with engine.connect() as conn:
+            checks = dict(
+                conn.execute(text("SELECT id, consecutive_oks FROM monitor_checks")).fetchall()
+            )
+            states = {
+                row[0]: tuple(row[1:])
+                for row in conn.execute(
+                    text("SELECT check_id, ok_count, hub_status, hub_sent_at FROM monitor_states")
+                ).fetchall()
+            }
+        assert checks == {"c1": 2, "c2": 2, "c3": 2, "c4": 2}
+        assert states == {
+            "c1": (0, "critical", None),
+            "c2": (0, None, None),
+            "c3": (0, None, None),
+            "c4": (0, "warning", None),
+        }
+
+        command.downgrade(cfg, "b9d1f3a5c7e9")
+        insp = inspect(engine)
+        check_cols = {c["name"] for c in insp.get_columns("monitor_checks")}
+        state_cols = {c["name"] for c in insp.get_columns("monitor_states")}
+        assert "consecutive_oks" not in check_cols
+        assert {"ok_count", "hub_status", "hub_sent_at"}.isdisjoint(state_cols)
+        # Paired with the two negatives: the inspector does read both tables, and the
+        # downgrade dropped only its own columns.
+        assert {"consecutive_fails"} <= check_cols
+        assert {"fail_count", "notified_status"} <= state_cols
