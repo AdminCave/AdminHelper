@@ -125,7 +125,7 @@ kommt nur dorthin.
   `… | None = None` in `CheckUpdate` (Muster `cooldown_minutes`, `schemas.py:57`; die Grenzen je Feld im Schema
   prüfen: ein `IntColumn = Field(…)` verliert die Grenze still). Antwort `consecutiveOks` in `MonitorCheck.to_dict`.
 - Template-Definitionen: Der Default 2 ist Schema-Default, `_without_defaults` (`builtin_templates.py:197-207`)
-  lässt ihn aus dem Hash: **die Hashes der fünf mitgelieferten Templates bleiben gleich** — der bestehende Test
+  lässt ihn aus dem Hash: **die Hashes der fünf mitgelieferten Templates bleiben gleich** (bis T17; T17 ändert Disk Forecast und hebt `linux-base`/`windows-base` auf Version 2) — der bestehende Test
   `test_shipped_definitions_change_only_with_a_new_version` (`tests/test_seed.py:209-225`) ist der Beweis und bleibt
   unverändert. Eine Definition ohne Schlüssel gilt als 2 (`_template_check_values`).
 - `consecutive_oks` wird Template-Feld (`TEMPLATE_CHECK_FIELDS`, ans Ende): eine Änderung am Check gilt als
@@ -349,4 +349,4 @@ Dämpfung `:124`, Alert-Verhalten und Host-down `:139-145`, angepasste Template-
 
 ## Entscheidungen am Gate
 
-Entscheidungen am Gate (Kevin 2026-10-19): `consecutive_oks` Default 2; die mitgelieferten Templates setzen bei Checks mit Intervall ab 1 h (SMART, Prognose) 1, einstellbar je Check. Server-Vertrag `POST /api/internal/events` bekommt `source_ids` (Empfänger je Nutzer, `alert.triggered` je Server; Events ohne das Feld wie heute an die Admins). Host-Ping als sechstes Template (1 min, 3 Fehlschläge, 3 s Timeout); Host-down lösen nur Pings aus diesem Template aus; Host-Ping unterdrückt den Heartbeat, nicht umgekehrt; Host-Ping nicht in der Sammelmeldung; ein einzelner stummer Agent wird bis zu 5 min zurückgehalten. Gebaut wird nach dem Merge von monitoring-hardening (`alerter.py`: deren Logzeilen und der except-Zweig der Regelschleife bleiben dort).
+Entscheidungen am Gate (Kevin 2026-10-19): `consecutive_oks` Default 2; die mitgelieferten Templates setzen bei Checks mit Intervall ab 1 h (SMART, Prognose) 1, einstellbar je Check. Server-Vertrag `POST /api/internal/events` bekommt `source_ids` (Empfänger je Nutzer, `alert.triggered` je Server; Events ohne das Feld wie heute an die Admins). Host-Ping als sechstes Template (1 min, 3 Fehlschläge, 3 s Timeout); Host-down lösen nur Pings aus diesem Template aus; Host-Ping unterdrückt den Heartbeat, nicht umgekehrt; Host-Ping nicht in der Sammelmeldung; ein einzelner stummer Agent wird bis zu 5 min zurückgehalten. Gebaut wird nach dem Merge von monitoring-hardening (`alerter.py`: deren Logzeilen und der except-Zweig der Regelschleife bleiben dort). Korrektur Kevin 2026-10-20: nur Disk Forecast (Intervall 1 h) bekommt 1, SMART (5 min) bleibt bei 2; umgesetzt in T17, das `linux-base` und `windows-base` auf Version 2 hebt.
