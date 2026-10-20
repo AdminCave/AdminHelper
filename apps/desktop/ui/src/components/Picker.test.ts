@@ -329,6 +329,12 @@ describe('Picker: delete', () => {
         tNow('workspace.picker.deleted.localOnly'),
       ),
     );
+    // The purge drops the fingerprint a later enrollment would name as replaced, so unlike
+    // after an identity reset no registration retires the device; an administrator has to.
+    const hint = p.msg('deleted-local-only')?.textContent ?? '';
+    expect(hint).not.toBe(tNow('settings.resetDeviceId.localOnly'));
+    expect(hint).toContain('until an administrator revokes the device');
+    expect(hint).toContain('no later registration replaces it');
     expect(p.msg('list-failed')?.textContent).toContain('registry unreadable');
     expect(p.msg('action-failed')).toBeNull();
   });

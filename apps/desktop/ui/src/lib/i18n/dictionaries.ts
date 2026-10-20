@@ -329,7 +329,7 @@ export const translations: Translations = {
     'workspace.picker.deleting': '„{name}“ wird gelöscht…',
     'workspace.picker.deleted': 'Workspace „{name}“ gelöscht.',
     'workspace.picker.deleted.localOnly':
-      'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.',
+      'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Es bleibt am Server gültig, bis ein Admin das Gerät widerruft; keine spätere Registrierung löst es ab.',
 
     // ── Desktop: Workspace-Fenster ────────────────────────────────────
     'workspace.openLauncher': 'Workspaces…',
@@ -1115,7 +1115,7 @@ export const translations: Translations = {
     'workspace.picker.deleting': 'Deleting "{name}"…',
     'workspace.picker.deleted': 'Workspace "{name}" deleted.',
     'workspace.picker.deleted.localOnly':
-      'On this device only: the server did not revoke the old certificate. Registering the device again for the same user replaces it.',
+      'On this device only: the server did not revoke the old certificate. It stays valid at the server until an administrator revokes the device; no later registration replaces it.',
 
     // ── Desktop: Workspace window ─────────────────────────────────────
     'workspace.openLauncher': 'Workspaces…',

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces — Task-Ledger
-Status: aktiv · Branch: feature/desktop-workspaces · Review: pro Task
+Status: bereit · Branch: feature/desktop-workspaces · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: linux-full + scenario --agents 1 --tunnel --desktop + windows — der Desktop startet anders (Launcher, Workspace-Prozess, Migration), alle Live-Specs ziehen mit und die neue Suite `desktop_e2e_workspaces` (zwei Stacks) läuft im e2e-Layer, `docker-compose.test.yml` ändert sich: Sammellauf; `scenario`, weil `box_desktopbox.sh` (Capstone `--desktop`) den Standard-Workspace startet und Tunnel-Laufzeitdateien und Portkarten-Besitzer je Workspace wechseln (FRP-Datenpfad); `windows` = CI-Job `rust-windows` (abgekoppelter Prozessstart, Datei-Locks, Keyring-TargetName, TERMSRV); mstsc selbst ist ohne Windows-Vorlage im Pool nicht verifiziert, dafür die Prüfanleitung aus T33 für Kevin
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -263,8 +263,10 @@ Review: approve (.ah-out/review/desktop-workspaces/T35.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/{monitoring,ansible,frp-tunnel,agent-deployment}.html + EN
 Abhängt von: T33
-### T47 — Picker: Text nach einem Löschen ohne Widerruf stimmt  [ ]
-Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Picker.test.ts
+### T47 — Picker: Text nach einem Löschen ohne Widerruf stimmt  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/Picker.test.ts, docs/admin/index.html, docs/en/admin/index.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @26e51abb 2026-10-20T21:58:15+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T47.verdict.json)
 Änderung: Aus dem Bau von T34: `workspace.picker.deleted.localOnly` (DE ~:331, EN ~:1070) sagt nach einem Löschen, bei dem der Server nicht widerruft, „Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.“ Der Purge löscht aber `enroll|replaces` mit (Test in `launcher.rs`), und der ca-issuer widerruft nur die Zeile, die `replaces` nennt; nach dem Löschen bleibt das Gerät am Server gültig, bis ein Admin es widerruft. Der Text sagt das (DE+EN, ohne Ablöse-Versprechen; Admin widerruft über die Geräteverwaltung), wie die Admin-Doku aus T34. Prüfen, ob derselbe Schlüssel auch an anderer Stelle (Einstellungen, Identitäts-Reset) benutzt wird, wo das Ablösen stimmt — dann einen eigenen Schlüssel für den Löschfall. Test: der Picker zeigt nach `deleted-local-only` den neuen Text. Nachtrag (T35-Review, Nit): In `docs/admin/index.html` (~:122) + EN (~:75) steht „übernommene Workspaces“ vor dem Migrationsabsatz, der den Begriff einführt; einen Verweis „(siehe unten)“/„(see below)“ ergänzen (Dateien per set-files; Doc-Smoke zusätzlich fahren).
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/Picker.test.ts src/lib/i18n/i18n.test.ts
 Doku: keine (Admin-Doku mit T34)
