@@ -15,6 +15,7 @@ import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import net from 'net';
 import { SevereServiceError } from 'webdriverio';
+import { appArgs } from './test/lib/app-args.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const desktopDir = path.resolve(__dirname, '..');
@@ -62,7 +63,8 @@ export const config = {
   capabilities: [
     {
       maxInstances: 1,
-      'tauri:options': { application },
+      // AH_E2E_WORKSPACE opens that workspace, else the launcher; a bad id stops here.
+      'tauri:options': { application, args: appArgs(process.env) },
     },
   ],
   // JUnit next to the screenshots (webdriver.io/docs/junit-reporter). heavy.sh collects

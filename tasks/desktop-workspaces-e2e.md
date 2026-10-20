@@ -16,8 +16,10 @@ Reihenfolge in dieser Spur: zuerst T25, T27, T29, T30, T31 (hängen nur an Block
 
 ## Block E — Live-E2E
 
-### T25 — WebDriver startet Launcher oder Workspace nach AH_E2E_WORKSPACE  [ ]
+### T25 — WebDriver startet Launcher oder Workspace nach AH_E2E_WORKSPACE  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/wdio.conf.js, apps/desktop/e2e/test/lib/app-args.js, apps/desktop/e2e/test/unit/app-args.test.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @cfb61271 2026-10-20T12:59:23+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T25.verdict.json)
 Änderung: `tauri:options.args` (`wdio.conf.js:62-66`) kommt aus einer reinen Funktion in `test/lib/app-args.js` (SPDX-Header): `AH_E2E_WORKSPACE` gesetzt und nicht leer → `['--workspace', <id>]` (Id gegen dieselbe Regel wie in Rust geprüft, sonst Fehler beim Laden der Config), sonst `[]` (Launcher; der smoke-Spec läuft damit unverändert gegen den Launcher und prüft die Übergabe beim zweiten Start). Unit-Test unter `node --test` (SPDX-Header): gesetzt, leer, ungesetzt, ungültig. Das Verify ist Lint plus Unit-Tests; der echte Beweis kommt aus dem Sammellauf.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
