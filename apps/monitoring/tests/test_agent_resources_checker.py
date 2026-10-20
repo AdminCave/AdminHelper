@@ -541,6 +541,22 @@ def test_ignore_mounts_takes_exact_paths_only(ignored):
     assert metrics["_details"]["disks"][0]["ignored"] is False
 
 
+def test_a_disk_without_mount_is_graded_listed_and_ignored_under_one_name():
+    # The desktop rates a listed disk by problems["disk:<mount>"], so _details must carry
+    # the name it was graded under, not the root's rating of a real "/" next to it.
+    report = _disks({"fstype": "ext4", "percent": 99, "inodes_percent": 95}, _disk(10))
+    status, message, metrics = CHECKER.evaluate({}, report)
+    assert (status, message) == ("critical", "Disk ? 99% (>=95%); Inodes ? 95% (>=90%)")
+    details = metrics["_details"]
+    assert details["problems"] == {"disk:?": "critical", "inode:?": "critical"}
+    assert [(d["mount"], d["ignored"]) for d in details["disks"]] == [("?", False), ("/", False)]
+
+    status, message, metrics = CHECKER.evaluate({"ignore_mounts": ["?"]}, report)
+    details = metrics["_details"]
+    assert (status, message, details["problems"]) == ("ok", "OK", {})
+    assert [(d["mount"], d["ignored"]) for d in details["disks"]] == [("?", True), ("/", False)]
+
+
 class TestDiskGateHysteresis:
     """The gate decides whether a disk's percentage is graded at all; its release band
     applies only while it is graded."""

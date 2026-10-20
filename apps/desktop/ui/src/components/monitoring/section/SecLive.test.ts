@@ -245,6 +245,30 @@ describe('SecLive colours', () => {
   });
 });
 
+describe('SecLive duplicate mounts', () => {
+  // The bars were keyed by the mount alone: a report listing a mount twice made
+  // Svelte throw and the disk list did not render.
+  it('shows a mount listed twice as two bars, each rated', async () => {
+    setLanguage('de');
+    const details = v3({
+      problems: { 'disk:/': 'warning' },
+      disks: [
+        disk('/', 88, { free_gb: 6 }),
+        disk('/data', 10, { free_gb: 45 }),
+        disk('/', 88, { free_gb: 6 }),
+      ],
+    });
+    const { container: el } = render(SecLive, { props: { checks: [check(details)] } });
+    expect(pills(el).map(text)).toContain('3 Disks');
+    const { bars } = await expand(el);
+    expect(bars).toEqual([
+      { mount: '/', sub: '12.3 / 50.0 GB · 6.0 GB frei', level: 'warn' },
+      { mount: '/data', sub: '12.3 / 50.0 GB · 45.0 GB frei', level: 'ok' },
+      { mount: '/', sub: '12.3 / 50.0 GB · 6.0 GB frei', level: 'warn' },
+    ]);
+  });
+});
+
 describe('SecLive in English', () => {
   it('names free GB and an ignored disk in English', async () => {
     setLanguage('en');

@@ -177,8 +177,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine Admin-Doku (die Live-Anzeige ist dort nicht beschrieben); CHANGELOG.md (Satz im Eintrag aus T8)
 Abhängt von: T9
 
-### T27 — Platten ohne Mount und doppelte Mounts einheitlich  [ ]
+### T27 — Platten ohne Mount und doppelte Mounts einheitlich  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.test.ts
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @529f82c1 2026-10-20T11:20:45+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T27.verdict.json)
 Änderung: Aus dem security-Review zu T17: `checkers/agent.py` nimmt für eine Platte ohne `mount` beim Bewerten, beim Abgleich mit `ignore_mounts` und in `_details` denselben Ersatznamen (heute `"?"` gegenüber `"/"`), damit Bewertung (`disk:<mount>`) und Anzeige zusammenpassen; Test dazu. `SecLive.svelte` keyt die Plattenliste so, dass zwei Einträge mit demselben `mount` die Ansicht nicht brechen (Schlüssel aus Index und Mount); Test mit doppeltem Mount.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py
 Doku: keine (intern)

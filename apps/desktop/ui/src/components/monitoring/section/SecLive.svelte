@@ -230,7 +230,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {/if}
             {#if ds.length > 0}
               <div class="mon-hero-bars">
-                {#each ds as d (d.mount)}
+                <!-- A report can list a mount twice; a duplicate key makes Svelte throw. -->
+                {#each ds as d, i (`${i}:${d.mount}`)}
                   <div class="mon-hero-bar-row">
                     <span class="mon-hero-bar-label">{d.mount}</span>
                     <div class="mon-hero-bar">

@@ -24,6 +24,11 @@ logger = logging.getLogger("monitor.agent")
 # Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
+# Name of a disk reported without a mount. Grading (disk:<mount>), ignore_mounts and
+# _details must share it, or the desktop rates the disk under another key; no path,
+# so it never collides with "/".
+_NO_MOUNT = "?"
+
 # In-memory map: server_id -> last report time (naive UTC wall clock). Process-
 # local (single-worker invariant, see main.py lifespan); hydrated at startup
 # from monitor_agent_liveness so a restart no longer makes agent_ping fall back
@@ -393,7 +398,7 @@ class AgentResourcesChecker:
         inode_warn = config.get("inode_warn", 80)
         for disk in disks:
             pct = entry_number(disk, "percent", 0)
-            mount = entry_text(disk, "mount", "?")
+            mount = entry_text(disk, "mount", _NO_MOUNT)
             if mount in ignore_mounts:
                 continue
             # The schema takes null for an override key; it counts as unset, like a missing one.
@@ -471,14 +476,14 @@ class AgentResourcesChecker:
             "load_per_cpu": load_per_cpu,
             "disks": [
                 {
-                    "mount": entry_text(d, "mount", "/"),
+                    "mount": entry_text(d, "mount", _NO_MOUNT),
                     "percent": entry_number(d, "percent", 0),
                     "total_gb": agent_number(d.get("total_gb")),
                     "used_gb": agent_number(d.get("used_gb")),
                     "free_gb": agent_number(d.get("free_gb")),
                     "inodes_percent": agent_number(d.get("inodes_percent")),
                     # Still listed, so the desktop shows the usage without a rating.
-                    "ignored": entry_text(d, "mount", "?") in ignore_mounts,
+                    "ignored": entry_text(d, "mount", _NO_MOUNT) in ignore_mounts,
                 }
                 for d in disks
             ],
