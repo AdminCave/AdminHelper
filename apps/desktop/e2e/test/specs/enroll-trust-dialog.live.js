@@ -16,14 +16,16 @@
 // Only this spec sees whether the dialog is on top of the login screen: jsdom in
 // the Vitest tests has no stacking.
 
-import { SERVER_URL, jsClick } from '../lib/live.js';
+import { fillServerUrlIfAsked, jsClick } from '../lib/live.js';
 
 describe('AdminHelper desktop — first-contact trust dialog', () => {
   it('opens the trust dialog instead of a dead-end TLS error', async () => {
     await $('.login-card').waitForExist({ timeout: 20000 });
     await $('[data-action="enroll-switch"]').click();
-    await $('.login-card input[type="url"]').waitForExist({ timeout: 10000 });
-    await $('.login-card input[type="url"]').setValue(SERVER_URL);
+    // The enroll form is in place once the password field is gone; its only text field is
+    // then the token, not the username.
+    await $('.login-card input[type="password"]').waitForExist({ reverse: true, timeout: 10000 });
+    await fillServerUrlIfAsked();
     await $('.login-card input[type="text"]').setValue('adminhelper_prov_not-a-real-token');
     await $('.login-card button[type="submit"]').click();
 

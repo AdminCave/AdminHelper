@@ -15,24 +15,24 @@
 // belongs to the full enrollment suite. Run by scripts/tests/desktop_e2e_crud.sh
 // (and reachable ad hoc via scripts/tests/box_desktopbox.sh <spec>).
 
-import { SERVER_URL } from '../lib/live.js';
+import { fillServerUrlIfAsked } from '../lib/live.js';
 
 describe('AdminHelper desktop — decoupled enrollment form', () => {
   it('switches from the login form to the enroll-token form', async () => {
     await $('.login-card').waitForExist({ timeout: 20000 });
     // By stable action id, not a positional index: the three secondary buttons
-    // (enroll / use-local / back) are otherwise indistinguishable structurally.
+    // (enroll / open-launcher / back) are otherwise indistinguishable structurally.
     await $('[data-action="enroll-switch"]').click();
-    // The enroll form replaces the login form: a server-URL field + a token field.
-    await $('.login-card input[type="url"]').waitForExist({ timeout: 10000 });
+    // The enroll form replaces the login form: a token field, and the server URL as a field
+    // while the workspace has none, else shown (fillServerUrlIfAsked takes either below).
     await $('.login-card input[type="text"]').waitForExist({ timeout: 10000 });
-    // A url+text pair also exists in login mode (serverUrl + username), so the
-    // switch is only proven by the password field being gone.
+    // A text field also exists in login mode (username), so the switch is only
+    // proven by the password field being gone.
     await $('.login-card input[type="password"]').waitForExist({ reverse: true, timeout: 10000 });
   });
 
   it('surfaces the server rejection for an invalid token', async () => {
-    await $('.login-card input[type="url"]').setValue(SERVER_URL);
+    await fillServerUrlIfAsked();
     await $('.login-card input[type="text"]').setValue('adminhelper_prov_not-a-real-token');
     await $('.login-card button[type="submit"]').click();
     // The rejection is rendered in the login-error box and is non-empty.
