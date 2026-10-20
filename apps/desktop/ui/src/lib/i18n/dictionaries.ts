@@ -327,6 +327,9 @@ export const translations: Translations = {
     'workspace.picker.deleted.localOnly':
       'Nur auf diesem Gerät: Der Server hat das alte Zertifikat nicht widerrufen. Registrierst du das Gerät wieder für denselben Benutzer, löst das es ab.',
 
+    // ── Desktop: Workspace-Fenster ────────────────────────────────────
+    'workspace.openLauncher': 'Workspaces…',
+
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP-Anmeldung',
     'passwordPrompt.hint.default': 'Bitte Benutzername und Passwort eingeben.',
@@ -1054,6 +1057,9 @@ export const translations: Translations = {
     'workspace.picker.deleted': 'Workspace "{name}" deleted.',
     'workspace.picker.deleted.localOnly':
       'On this device only: the server did not revoke the old certificate. Registering the device again for the same user replaces it.',
+
+    // ── Desktop: Workspace window ─────────────────────────────────────
+    'workspace.openLauncher': 'Workspaces…',
 
     // ── Desktop: PasswordPrompt ───────────────────────────────────────
     'passwordPrompt.title': 'RDP sign-in',
