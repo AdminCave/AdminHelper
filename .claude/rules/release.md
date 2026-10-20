@@ -68,8 +68,14 @@ Docker-Images schlüssellos via cosign (GitHub-OIDC). `SHA256SUMS` via minisign:
 ## Ablauf und Kanäle
 
 Bump-Commit → Kevin: `git push origin main` → annotierter Tag `vX.Y.Z` → Tag pushen → alle Workflows per `gh run watch`
-bis grün begleiten → Draft prüfen → Kevin publiziert (`gh release edit vX.Y.Z --draft=false`). Drafts sind Konvention.
-Kanäle: `beta` (`vX.Y.Z-beta.N`, fortlaufend nach grünem Wochenlauf) → `rc` (`vX.Y.Z-rc.N`, Kevin entscheidet) →
-`stable` (frühestens 7 Tage nach dem RC ohne Fix und ohne Rückmeldung); `hotfix` ist der einzige Bypass. Prerelease-Tags
-landen nie auf `latest` (`docker.yml`) und nie in `releases/latest` (`install.sh`/`update.sh`). Ein halb geschnittenes
-Release (Bump ohne Tag, Tag ohne Publish, `main` vor `origin`) ist ein Warn-Trigger, kein Normalzustand.
+bis grün begleiten → Draft prüfen → Kevin publiziert als Beta. Drafts sind Konvention.
+Kanäle (Kevin 2026-10-20): `beta` ist der Tag `vX.Y.Z` ohne Suffix, fortlaufend nach grünem Wochenlauf, veröffentlicht
+als „Pre-release“ (`gh release edit vX.Y.Z --draft=false --prerelease`). `stable` ist kein eigener Schnitt und kein RC
+mehr, sondern dasselbe Release auf „Latest“ (`gh release edit vX.Y.Z --prerelease=false --latest`), ohne neuen Tag. Den
+Wechsel entscheidet Kevin, frühestens 7 Tage nach der Veröffentlichung als Pre-release ohne Fix und ohne Rückmeldung;
+ein Fix ist ein neues Patch-Release, `hotfix` der einzige Bypass. Tags tragen kein Suffix (`-beta.N`, `-rc.N`), weil die
+Pipeline solche Tags heute nicht richtig baut: tauri lehnt fürs MSI eine nicht numerische Prerelease-Kennung ab, eine
+RPM-Version darf kein `-` tragen, und `dpkg` sortiert `0.46.0-beta.1` über `0.46.0`. Folge: `docker.yml` setzt `:latest`
+nach der Semver-Version des Tags, schon beim Tag-Push, die Images `:latest` zeigen also auch auf ein Beta;
+`install.sh`/`update.sh` lesen `releases/latest` und damit nie ein Pre-release. Ein halb geschnittenes Release (Bump
+ohne Tag, Tag ohne Publish, `main` vor `origin`) ist ein Warn-Trigger, kein Normalzustand.
