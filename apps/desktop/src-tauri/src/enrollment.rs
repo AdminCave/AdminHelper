@@ -443,6 +443,19 @@ pub fn clear_identity() {
     crate::http_client::invalidate_client_cache();
 }
 
+/// Forget every identity entry of the workspace of this process, the leaf it
+/// remembers for its next enrollment (`enroll|replaces`) too: for the purge of
+/// the workspace (R-0431), after which no enrollment of it follows. Unlike
+/// `clear_identity`, a delete that fails is an error, so the purge stops while
+/// the workspace is still there to delete again; the launcher has no entries.
+pub fn purge_identity() -> Result<(), AppError> {
+    for entry in [KEYRING_CERT, KEYRING_KEY, KEYRING_CA, KEYRING_REPLACES] {
+        keyring_store::delete(&keyring_key(entry)?)?;
+    }
+    crate::http_client::invalidate_client_cache();
+    Ok(())
+}
+
 // ── Enrollment orchestration ──────────────────────────────────────────────
 
 /// Decoupled enrollment (ADR 0003): enroll with a one-time token an admin minted

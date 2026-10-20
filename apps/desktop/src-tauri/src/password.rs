@@ -2,13 +2,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#[cfg(unix)]
 use std::collections::BTreeSet;
 use std::path::Path;
 #[cfg(unix)]
 use std::sync::{Mutex, PoisonError};
 
-#[cfg(unix)]
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
@@ -160,16 +158,112 @@ fn password_stored_keyring(connection: &Connection) -> Result<bool, AppError> {
 
 /// In the data dir of a workspace: the names of its RDP keys in the keyring, never
 /// a secret (R-0431). The keyring cannot list its entries, so deleting a workspace
-/// deletes the keys named here. A key that a migrated workspace takes over on load
-/// is not named: nothing deletes the RDP keys of a migrated workspace.
-#[cfg(unix)]
+/// deletes the keys named here ([`indexed_keys`]). A key that a migrated workspace
+/// takes over on load is not named. The names of a migrated workspace carry no
+/// prefix, as the keys of every migrated workspace: while another migrated workspace
+/// is there that may use them too, its purge hands them over ([`HANDED_OVER_FILE`]),
+/// and the purge of the last migrated workspace deletes them.
 const SECRETS_FILE: &str = "secrets.json";
 
-/// What [`SECRETS_FILE`] holds.
-#[cfg(unix)]
+/// In the app data dir: the names of RDP keys without a prefix whose migrated
+/// workspace was deleted while another migrated workspace was there; the purge of the
+/// last migrated workspace deletes these keys with its own, then this file. Only the
+/// purge writes it, and one purge runs at a time (`launcher::delete`).
+const HANDED_OVER_FILE: &str = "legacy-secrets.json";
+
+/// How every RDP key begins behind the keyring prefix of its workspace
+/// ([`rdp_storage_key`]).
+const RDP_KEY_HEAD: &str = "rdp|";
+
+/// What [`SECRETS_FILE`] and [`HANDED_OVER_FILE`] hold.
 #[derive(Default, Serialize, Deserialize)]
 struct SecretIndex {
     keys: BTreeSet<String>,
+}
+
+/// The index at `path`; empty if there is none. A file that does not parse is an
+/// error: written over, it would lose the names in it, and a purge would leave the
+/// keys it names behind.
+fn read_index(path: &Path) -> Result<SecretIndex, AppError> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SecretIndex::default()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The names in the index `file` in `dir` for a purge, each an RDP key behind
+/// `prefix`. Any other name is an error, so the purge stops before it deletes a key of
+/// another workspace, the identity or a pin. So is a file that does not parse; its
+/// error names the file and where it breaks, never a value from it.
+fn purge_keys(dir: &Path, file: &str, prefix: &str) -> Result<BTreeSet<String>, AppError> {
+    let keys = match read_index(&dir.join(file)) {
+        Ok(index) => index.keys,
+        Err(e @ AppError::Json(_)) => {
+            return Err(AppError::Validation(format!(
+                "{file} does not load ({})",
+                crate::workspace::failure(&e)
+            )))
+        }
+        Err(e) => return Err(e),
+    };
+    let own = format!("{prefix}{RDP_KEY_HEAD}");
+    if keys.iter().any(|key| !key.starts_with(&own)) {
+        return Err(AppError::Validation(format!(
+            "{file} names a key that is no RDP password of this workspace"
+        )));
+    }
+    Ok(keys)
+}
+
+/// The RDP keys the index in `dir` names, `dir` being the data dir of the workspace
+/// whose keyring prefix is `prefix`: what the purge of that workspace deletes.
+pub(crate) fn indexed_keys(dir: &Path, prefix: &str) -> Result<BTreeSet<String>, AppError> {
+    purge_keys(dir, SECRETS_FILE, prefix)
+}
+
+/// The RDP keys without a prefix that purges of migrated workspaces handed over in
+/// `base`, the app data dir: what the purge of the last migrated workspace deletes
+/// with its own.
+pub(crate) fn handed_over_keys(base: &Path) -> Result<BTreeSet<String>, AppError> {
+    purge_keys(base, HANDED_OVER_FILE, "")
+}
+
+/// Hands `keys`, RDP keys without a prefix, over to the purge of the last migrated
+/// workspace in `base`, the app data dir.
+pub(crate) fn hand_over_keys(base: &Path, keys: &BTreeSet<String>) -> Result<(), AppError> {
+    if keys.iter().any(|key| !key.starts_with(RDP_KEY_HEAD)) {
+        return Err(AppError::Validation(
+            "only RDP keys without a prefix are handed over".to_string(),
+        ));
+    }
+    let mut handed_over = handed_over_keys(base)?;
+    if !keys.is_subset(&handed_over) {
+        handed_over.extend(keys.iter().cloned());
+        crate::storage::write_json_atomic(
+            &base.join(HANDED_OVER_FILE),
+            &SecretIndex { keys: handed_over },
+        )?;
+    }
+    Ok(())
+}
+
+/// Removes the file of the handed over keys in `base`, once they are deleted.
+pub(crate) fn forget_handed_over_keys(base: &Path) -> Result<(), AppError> {
+    remove_file_if_there(&base.join(HANDED_OVER_FILE))
+}
+
+/// Removes the index in `dir`, the data dir of a workspace, once the keys it names
+/// are deleted or handed over.
+pub(crate) fn remove_index(dir: &Path) -> Result<(), AppError> {
+    remove_file_if_there(&dir.join(SECRETS_FILE))
+}
+
+fn remove_file_if_there(path: &Path) -> Result<(), AppError> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
 }
 
 /// Held while an index changes, so two saves in one process keep each other's name;
@@ -178,8 +272,7 @@ struct SecretIndex {
 static INDEX_LOCK: Mutex<()> = Mutex::new(());
 
 /// Apply `change` to the index in `dir`, the data dir of a workspace, and write it
-/// back if `change` says it changed. A file that does not parse is an error: written
-/// over, it would lose the names in it.
+/// back if `change` says it changed.
 #[cfg(unix)]
 fn update_index(
     dir: &Path,
@@ -187,11 +280,7 @@ fn update_index(
 ) -> Result<(), AppError> {
     let _held = INDEX_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let path = dir.join(SECRETS_FILE);
-    let mut index: SecretIndex = match std::fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => SecretIndex::default(),
-        Err(e) => return Err(e.into()),
-    };
+    let mut index = read_index(&path)?;
     if change(&mut index.keys) {
         crate::storage::write_json_atomic(&path, &index)?;
     }

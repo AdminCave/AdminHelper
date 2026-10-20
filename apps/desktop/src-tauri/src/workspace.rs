@@ -390,11 +390,14 @@ pub(crate) fn failure(e: &AppError) -> String {
 }
 
 /// A workspace whose lock this process holds, for as long as this lives. Only [`startup`] makes
-/// one, after the lock: no process takes a workspace ([`set_current`]) it does not hold.
+/// one, after the lock: no process takes a workspace ([`set_current`]) it does not hold. The one
+/// exception has no lock to take: the purge of a workspace whose directory is gone.
 #[derive(Debug)]
 pub struct Held {
     pub workspace: Workspace,
-    _lock: InstanceLock,
+    /// None only for that purge: no process starts a workspace without its directory, and there
+    /// is no data dir to keep to oneself.
+    lock: Option<InstanceLock>,
 }
 
 /// What the start of a process comes to ([`startup`]).
@@ -404,8 +407,9 @@ pub enum Plan {
     Launcher,
     /// The window of the workspace held.
     Workspace(Held),
-    /// The purge of the workspace held, without a window.
-    Purge(Held),
+    /// The purge of the workspace held, without a window, with its `workspace.json`; none if
+    /// that does not load or the directory is gone, and the purge goes by the id alone.
+    Purge(Held, Option<Meta>),
     /// No start: the process says `line` and ends with `code`.
     Exit { code: i32, line: String },
 }
@@ -413,13 +417,16 @@ pub enum Plan {
 impl Plan {
     /// The log file (without extension) the process of this plan writes; none for a process
     /// that does not start, whose line goes to stderr alone. Until it holds a workspace, the log
-    /// of that workspace may be another process's, and the log plugin rotates the file it opens.
+    /// of that workspace may be another process's, and the log plugin rotates the file it opens;
+    /// so the purge of a workspace without a directory, which holds no lock, writes none either.
     /// The launcher's log is its own whatever its plan: the single-instance plugin lets one
     /// launcher run, so it opens that log before its start.
     pub fn log_name(&self) -> Option<String> {
         match self {
             Plan::Launcher => Some(Mode::Launcher.log_name()),
-            Plan::Workspace(held) | Plan::Purge(held) => Some(held.workspace.log_name()),
+            Plan::Workspace(held) | Plan::Purge(held, _) => {
+                held.lock.is_some().then(|| held.workspace.log_name())
+            }
             Plan::Exit { .. } => None,
         }
     }
@@ -430,7 +437,9 @@ impl Plan {
 /// process starts, as a launcher would later make a registry that keeps the old data out for
 /// good. A workspace process then needs its workspace in the registry, with its directory, and
 /// its lock, which `lock` takes ([`acquire`] at a real start); only once it holds the lock does
-/// it read the workspace.
+/// it read the workspace. A purge needs the workspace in the registry alone: it goes by the id
+/// when the directory is gone or the `workspace.json` does not load, so a broken workspace can
+/// still be deleted.
 pub fn startup(
     mode: Mode,
     base: &Path,
@@ -458,16 +467,26 @@ pub fn startup(
             )
         }
     };
-    // Its paths hang on the id alone.
+    // Its paths hang on the id alone, and so does what a purge knows of it without its
+    // workspace.json: the workspaces the migration made keep their keys without a prefix.
     let paths = Workspace {
         id: id.clone(),
         name: String::new(),
-        legacy_keys: false,
+        legacy_keys: crate::migration::is_migration_id(&id),
     };
     let dir = paths.data_dir(base);
     let listed = registry.is_some_and(|registry| registry.workspaces.iter().any(|e| e.id == id));
     match dir.try_exists() {
         Ok(true) if listed => {}
+        // A purge that removed the directory and did not reach the registry. Nothing to lock:
+        // a start never brings back the directory of a workspace.
+        Ok(false) if listed && purge => {
+            let held = Held {
+                workspace: paths,
+                lock: None,
+            };
+            return Plan::Purge(held, None);
+        }
         Ok(_) => return exit(EXIT_UNKNOWN, format!("there is no workspace {id}")),
         Err(e) => {
             return exit(
@@ -499,6 +518,14 @@ pub fn startup(
     };
     let meta = match Meta::load(&dir) {
         Ok(meta) => meta,
+        // The purge goes by the id, its keyring prefix too ([`Workspace::keyring_prefix`]).
+        Err(_) if purge => {
+            let held = Held {
+                workspace: paths,
+                lock: Some(lock),
+            };
+            return Plan::Purge(held, None);
+        }
         Err(e) => {
             return exit(
                 EXIT_FAILED,
@@ -512,13 +539,13 @@ pub fn startup(
     let held = Held {
         workspace: Workspace {
             id,
-            name: meta.name,
+            name: meta.name.clone(),
             legacy_keys: meta.legacy_keys,
         },
-        _lock: lock,
+        lock: Some(lock),
     };
     if purge {
-        Plan::Purge(held)
+        Plan::Purge(held, Some(meta))
     } else {
         Plan::Workspace(held)
     }
@@ -673,7 +700,7 @@ mod tests {
         let lock = workspace.lock_path(base);
         fs::create_dir_all(lock.parent().unwrap()).unwrap();
         Held {
-            _lock: acquire(&lock).unwrap().expect("a fresh lock is free"),
+            lock: Some(acquire(&lock).unwrap().expect("a fresh lock is free")),
             workspace,
         }
     }
@@ -1145,12 +1172,84 @@ mod tests {
 
         let plan = startup(Mode::Purge(id("standard")), base, acquire);
 
-        let Plan::Purge(held) = &plan else {
+        let Plan::Purge(held, meta) = &plan else {
             panic!("expected the purge, got {plan:?}");
         };
         assert_eq!(held.workspace, standard());
+        assert_eq!(
+            meta.as_ref(),
+            Some(&Meta::load(&standard().data_dir(base)).unwrap())
+        );
         assert!(is_open(&standard().lock_path(base)).unwrap());
         assert_eq!(plan.log_name().as_deref(), Some("adminhelper-standard"));
+    }
+
+    #[test]
+    fn startup_of_a_purge_goes_by_the_id_when_the_workspace_json_does_not_load() {
+        let scratch = Scratch::new("startup-purge-meta");
+        let base = &scratch.0;
+        startup(Mode::Launcher, base, no_lock);
+        let made = workspace("w-0a1b2c3d", "", false);
+        meta().store(&made.data_dir(base)).unwrap();
+        let mut registry = Registry::load(base).unwrap().unwrap();
+        registry.workspaces.push(RegistryEntry {
+            id: made.id.clone(),
+        });
+        registry.store(base).unwrap();
+
+        // Whether it keeps its keys without a prefix follows from its id: the migration made
+        // `standard`, the launcher the other one.
+        for expected in [workspace("standard", "", true), made] {
+            let meta_path = expected.data_dir(base).join(META_FILE);
+            let lock_path = expected.lock_path(base);
+            for broken in [Some(r#"{"kind": "geheim"}"#), None] {
+                let case = format!("{} {broken:?}", expected.id);
+                match broken {
+                    Some(broken) => fs::write(&meta_path, broken).unwrap(),
+                    None => fs::remove_file(&meta_path).unwrap(),
+                }
+
+                let plan = startup(Mode::Purge(expected.id.clone()), base, acquire);
+
+                let Plan::Purge(held, meta) = &plan else {
+                    panic!("{case}: expected the purge, got {plan:?}");
+                };
+                assert_eq!(meta, &None, "{case}");
+                assert_eq!(held.workspace, expected, "{case}");
+                assert!(is_open(&lock_path).unwrap(), "{case}");
+                assert_eq!(plan.log_name(), Some(expected.log_name()), "{case}");
+                drop(plan);
+                assert!(!is_open(&lock_path).unwrap(), "{case}");
+            }
+        }
+    }
+
+    #[test]
+    fn startup_of_a_purge_goes_by_the_id_when_the_directory_is_gone() {
+        let scratch = Scratch::new("startup-purge-nodir");
+        let base = &scratch.0;
+        startup(Mode::Launcher, base, no_lock);
+        let mut registry = Registry::load(base).unwrap().unwrap();
+        for gone in ["w-dir-gone", "server"] {
+            registry.workspaces.push(RegistryEntry { id: id(gone) });
+        }
+        registry.store(base).unwrap();
+
+        for expected in [
+            workspace("w-dir-gone", "", false),
+            workspace("server", "", true),
+        ] {
+            let plan = startup(Mode::Purge(expected.id.clone()), base, no_lock);
+
+            let Plan::Purge(held, meta) = &plan else {
+                panic!("expected the purge, got {plan:?}");
+            };
+            assert_eq!(meta, &None);
+            assert_eq!(held.workspace, expected);
+            // It holds no lock, so the log of the workspace is not its own.
+            assert_eq!(plan.log_name(), None);
+            assert!(!expected.data_dir(base).exists());
+        }
     }
 
     #[test]
@@ -1169,6 +1268,11 @@ mod tests {
 
         for unknown in ["w-0a1b2c3d", "w-dir-gone", "w-unlisted"] {
             for mode in [Mode::Workspace(id(unknown)), Mode::Purge(id(unknown))] {
+                if unknown == "w-dir-gone" && matches!(mode, Mode::Purge(_)) {
+                    // A purge needs no more than the registry entry
+                    // (`startup_of_a_purge_goes_by_the_id_when_the_directory_is_gone`).
+                    continue;
+                }
                 let case = format!("{mode:?}");
                 let plan = startup(mode, base, no_lock);
                 assert_eq!(plan.log_name(), None, "{case}");

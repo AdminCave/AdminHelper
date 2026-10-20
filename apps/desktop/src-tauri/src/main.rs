@@ -143,10 +143,33 @@ fn main() {
                     log::logger().flush();
                     std::process::exit(code);
                 }
-                Plan::Purge(_held) => {
-                    log::error!("this build does not purge workspaces");
+                Plan::Purge(held, meta) => {
+                    // The workspace of this process, as for its window: its keyring prefix is
+                    // the one the purge deletes behind. Its exit code tells the launcher how
+                    // the device identity went.
+                    let id = held.workspace.id.clone();
+                    workspace::set_current(held).map_err(|e| e.to_string())?;
+                    let code = match launcher::purge(&base, meta.as_ref(), |url| {
+                        tauri::async_runtime::block_on(enrollment::reset_identity(url))
+                    }) {
+                        Ok(outcome) => {
+                            log::info!("the workspace {id} is deleted ({outcome:?})");
+                            launcher::purge_exit_code(outcome)
+                        }
+                        Err(e) => {
+                            // The purge names a file that does not load and where it breaks;
+                            // serde would quote the value it rejects, and no value from a file
+                            // goes to the log.
+                            let reason = match &e {
+                                error::AppError::Json(_) => workspace::failure(&e),
+                                _ => e.to_string(),
+                            };
+                            log::error!("the workspace {id} was not deleted: {reason}");
+                            workspace::EXIT_FAILED
+                        }
+                    };
                     log::logger().flush();
-                    std::process::exit(workspace::EXIT_FAILED);
+                    std::process::exit(code);
                 }
                 Plan::Launcher => {
                     // After the migration, which hands the entries from before workspaces on.

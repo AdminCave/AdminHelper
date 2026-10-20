@@ -68,6 +68,14 @@ const SERVER: Template = Template {
 /// Every workspace a run may have left; nothing but the migration makes these ids.
 const TEMPLATES: [Template; 4] = [STANDARD, LOCAL, SYNC, SERVER];
 
+/// Whether `id` is one the migration makes. Nothing else makes these ids, and every workspace
+/// the migration makes keeps its keyring keys without a prefix (`legacyKeys`): for a workspace
+/// whose `workspace.json` does not say so any more.
+pub(crate) fn is_migration_id(id: &WorkspaceId) -> bool {
+    let id = id.to_string();
+    TEMPLATES.iter().any(|template| template.id == id)
+}
+
 /// A workspace this run makes.
 struct Planned {
     id: WorkspaceId,

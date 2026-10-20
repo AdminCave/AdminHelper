@@ -2,12 +2,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The launcher (R-0431): the workspaces the picker lists, the making, editing and opening of a
-//! workspace, the start of the launcher from a workspace, and the port map entries no workspace
-//! owns any more. Once the migration made `workspaces.json`, only the launcher writes it, and it
-//! never makes one: without it the migration has not run, and a registry made here would keep
-//! the old data out of the workspaces for good.
+//! The launcher (R-0431): the workspaces the picker lists, the making, editing, opening and
+//! deleting of a workspace, the purge a delete starts, the start of the launcher from a
+//! workspace, and the port map entries no workspace owns any more. Once the migration made
+//! `workspaces.json`, only the launcher writes it, and it never makes one: without it the
+//! migration has not run, and a registry made here would keep the old data out of the
+//! workspaces for good.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -18,15 +20,19 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
-use url::Url;
+use url::{Origin, Url};
 
+use crate::enrollment::{self, ResetOutcome};
 use crate::error::AppError;
+use crate::keyring_store;
+use crate::migration;
 use crate::models::{Settings, SyncMode};
+use crate::password;
 use crate::port_registry::PortRegistry;
 use crate::validation::{validate_https_url, validate_server_url_secure};
 use crate::workspace::{
-    acquire, failure, is_open, Meta, Registry, RegistryEntry, Workspace, WorkspaceId, PALETTE,
-    REGISTRY_FILE,
+    self, acquire, failure, is_open, Meta, Registry, RegistryEntry, Workspace, WorkspaceId,
+    PALETTE, REGISTRY_FILE,
 };
 
 /// The longest name of a workspace, in characters.
@@ -35,6 +41,17 @@ const NAME_MAX_CHARS: usize = 40;
 /// How long [`open`] waits for the workspace it started to hold its lock, and how often it looks.
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const OPEN_PROBE: Duration = Duration::from_millis(200);
+
+/// How long [`delete`] waits for the purge it started: the purge asks the server (connect and
+/// read time out after 10 and 45 s) and the keyring, which can hang on a D-Bus that does.
+const PURGE_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The exit codes of a purge that deleted its workspace, one for each outcome of its revoke.
+/// None of them is a code of a start that fails (`workspace::EXIT_*`), 0 (an app that ended as
+/// apps do) or 101 (a panic): no other end of the purge reads as a delete.
+const EXIT_REVOKED: i32 = 10;
+const EXIT_LOCAL_ONLY: i32 = 11;
+const EXIT_NOT_ENROLLED: i32 = 12;
 
 /// A workspace as the picker lists it.
 #[cfg_attr(
@@ -97,6 +114,13 @@ fn registry_guard() -> MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
 }
+
+/// Held for every [`delete`], so the deletes of one launcher run one after the other. The purge
+/// of a migrated workspace leaves the keys without a prefix to another migrated workspace while
+/// there is one; two such purges side by side would each see the other, and the keys, the
+/// device identity among them, would stay with no workspace and never be revoked. The file of
+/// the RDP keys handed over has one writer this way, too.
+static DELETE_GUARD: Mutex<()> = Mutex::new(());
 
 /// The workspaces in the app data dir `base` with whether each is open, which one was used last,
 /// and whether the note on the migration is due; that note comes once, and the listing clears
@@ -295,6 +319,243 @@ fn mark_opening(base: &Path, id: &WorkspaceId) -> Result<PathBuf, AppError> {
         registry.store(base)?;
     }
     Ok(lock)
+}
+
+/// Deletes the workspace `id` of the app data dir `base` and gives how its device identity
+/// went. `spawner` starts the purge (`--workspace <id> --purge`, [`purge`]), a process of the
+/// workspace's own: the keys and the identity hang on its keyring prefix, which the launcher
+/// never takes. Blocks until the purge ends, for up to [`PURGE_TIMEOUT`]. Only the registry
+/// entry is required: a workspace without its directory or with a `workspace.json` that does
+/// not load is deleted all the same. An error, with nothing started, for a workspace that is
+/// open or that the registry does not name; an error, too, for a purge that ends with no
+/// outcome or not in time. The registry drops the workspace only after its purge: a purge that
+/// fails leaves it there to delete again.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the commands of the launcher (R-0431 T14) call it"
+    )
+)]
+pub fn delete(
+    base: &Path,
+    id: &WorkspaceId,
+    spawner: &impl Spawner,
+) -> Result<ResetOutcome, AppError> {
+    delete_within(base, id, spawner, PURGE_TIMEOUT, OPEN_PROBE)
+}
+
+/// [`delete`], waiting up to `timeout` and looking every `probe`.
+fn delete_within(
+    base: &Path,
+    id: &WorkspaceId,
+    spawner: &impl Spawner,
+    timeout: Duration,
+    probe: Duration,
+) -> Result<ResetOutcome, AppError> {
+    let _deleting = DELETE_GUARD.lock().unwrap_or_else(PoisonError::into_inner);
+    check_deletable(base, id)?;
+    let mut child = spawner
+        .spawn(&["--workspace", &id.to_string(), "--purge"])
+        .map_err(|e| {
+            AppError::Io(io::Error::new(
+                e.kind(),
+                format!("the workspace {id} was not deleted: its purge did not start: {e}"),
+            ))
+        })?;
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(AppError::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("the workspace {id} was not deleted within {timeout:?}"),
+            )));
+        }
+        thread::sleep(probe.min(left));
+    };
+    let outcome = status.code().and_then(purge_outcome).ok_or_else(|| {
+        AppError::Io(io::Error::other(format!(
+            "the workspace {id} was not deleted ({status})"
+        )))
+    })?;
+    unregister(base, id)?;
+    Ok(outcome)
+}
+
+/// Checks that the registry in `base` names the workspace `id` and that it is closed.
+fn check_deletable(base: &Path, id: &WorkspaceId) -> Result<(), AppError> {
+    let _guard = registry_guard();
+    let registry = load_registry(base)?;
+    if !registry.workspaces.iter().any(|entry| entry.id == *id) {
+        return Err(AppError::Validation(format!("there is no workspace {id}")));
+    }
+    if is_open(&paths_of(id).lock_path(base))? {
+        return Err(AppError::Validation(format!(
+            "the workspace {id} is open; close it to delete it"
+        )));
+    }
+    Ok(())
+}
+
+/// Takes the workspace `id` out of the registry in `base`, and out of last used.
+fn unregister(base: &Path, id: &WorkspaceId) -> Result<(), AppError> {
+    let _guard = registry_guard();
+    let mut registry = load_registry(base)?;
+    registry.workspaces.retain(|entry| entry.id != *id);
+    if registry.last_used.as_ref() == Some(id) {
+        registry.last_used = None;
+    }
+    registry.store(base)
+}
+
+/// The exit code of a purge that deleted its workspace with `outcome`.
+pub fn purge_exit_code(outcome: ResetOutcome) -> i32 {
+    match outcome {
+        ResetOutcome::Revoked => EXIT_REVOKED,
+        ResetOutcome::LocalOnly => EXIT_LOCAL_ONLY,
+        ResetOutcome::NotEnrolled => EXIT_NOT_ENROLLED,
+    }
+}
+
+/// The outcome a purge that ended with `code` deleted its workspace with; none if it did not.
+fn purge_outcome(code: i32) -> Option<ResetOutcome> {
+    match code {
+        EXIT_REVOKED => Some(ResetOutcome::Revoked),
+        EXIT_LOCAL_ONLY => Some(ResetOutcome::LocalOnly),
+        EXIT_NOT_ENROLLED => Some(ResetOutcome::NotEnrolled),
+        _ => None,
+    }
+}
+
+/// Deletes the workspace of this process, the purge child ([`delete`]); `base` is the app data
+/// dir, `meta` its `workspace.json`, none if that does not load or the directory is gone. A
+/// server workspace with a URL revokes its device first: `revoke` gets the URL and gives how
+/// that went (`enrollment::reset_identity` at a real purge); without a server to ask, an
+/// identity goes here only (`LocalOnly`). Then its identity, the RDP keys its index names, the
+/// index, its port map entries and its directory go. The index goes on its own, once its keys
+/// are deleted or handed over, and the directory last: a purge that stopped on the way runs
+/// again. What names keys to delete is read before anything changes: a name that is no RDP key
+/// of this workspace stops the purge before it revokes or deletes a thing.
+///
+/// A migrated workspace keeps its keys without a prefix, as every migrated one does. Its
+/// identity is that of a server: another migrated workspace of the same installation shares
+/// it, and then the purge revokes nothing and leaves it be (`NotEnrolled`: no identity of its
+/// own). Its RDP keys may be any migrated workspace's: while another one is there, the purge
+/// hands them over, and the purge of the last migrated workspace deletes them with its own.
+pub fn purge(
+    base: &Path,
+    meta: Option<&Meta>,
+    revoke: impl FnOnce(&str) -> ResetOutcome,
+) -> Result<ResetOutcome, AppError> {
+    let ws = workspace::current()?;
+    let dir = ws.data_dir(base);
+    let rdp_keys = password::indexed_keys(&dir, &ws.keyring_prefix())?;
+    let (identity_shared, keys_shared) = if ws.legacy_keys {
+        let others = other_migrated(base, &ws.id)?;
+        let own = meta.and_then(server_origin);
+        let identity_shared = others
+            .iter()
+            .any(|other| shares_identity(own.as_ref(), other.as_ref()));
+        (identity_shared, !others.is_empty())
+    } else {
+        (false, false)
+    };
+    let handed_over = if ws.legacy_keys && !keys_shared {
+        password::handed_over_keys(base)?
+    } else {
+        BTreeSet::new()
+    };
+
+    let outcome = if identity_shared {
+        ResetOutcome::NotEnrolled
+    } else {
+        let outcome = match meta {
+            Some(Meta {
+                kind: SyncMode::Server,
+                url: Some(url),
+                ..
+            }) => revoke(url),
+            _ if enrollment::is_enrolled() => ResetOutcome::LocalOnly,
+            _ => ResetOutcome::NotEnrolled,
+        };
+        // After the revoke, which remembers a leaf it could not revoke for an enrollment
+        // that does not come now.
+        enrollment::purge_identity()?;
+        outcome
+    };
+    if keys_shared {
+        password::hand_over_keys(base, &rdp_keys)?;
+    } else {
+        for key in rdp_keys.iter().chain(&handed_over) {
+            keyring_store::delete(key)?;
+        }
+        if ws.legacy_keys {
+            password::forget_handed_over_keys(base)?;
+        }
+    }
+    password::remove_index(&dir)?;
+    PortRegistry::new(base).release(&ws.id.to_string())?;
+    match fs::remove_dir_all(&dir) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(outcome),
+    }
+}
+
+/// The migrated workspaces in `base` other than `id`, each with its `workspace.json`; none for
+/// one whose `workspace.json` does not load, which counts as migrated by its id. A workspace
+/// whose directory is gone counts no more: its purge has run.
+fn other_migrated(base: &Path, id: &WorkspaceId) -> Result<Vec<Option<Meta>>, AppError> {
+    let registry = load_registry(base).map_err(|e| unreadable(REGISTRY_FILE, e))?;
+    let mut others = Vec::new();
+    for entry in registry.workspaces.iter().filter(|entry| entry.id != *id) {
+        let dir = paths_of(&entry.id).data_dir(base);
+        if !dir.try_exists()? {
+            continue;
+        }
+        match Meta::load(&dir) {
+            Ok(meta) if meta.legacy_keys => others.push(Some(meta)),
+            Ok(_) => {}
+            Err(_) if migration::is_migration_id(&entry.id) => others.push(None),
+            Err(_) => {}
+        }
+    }
+    Ok(others)
+}
+
+/// The origin of the server of a server workspace: scheme, host and port, the default port
+/// filled in, so two URLs of one installation compare equal. None for a workspace without a
+/// server, which never has an identity.
+fn server_origin(meta: &Meta) -> Option<Origin> {
+    if meta.kind != SyncMode::Server {
+        return None;
+    }
+    Some(Url::parse(meta.url.as_deref()?).ok()?.origin())
+}
+
+/// Whether the identity without a prefix may be that of `other`, a migrated workspace beside
+/// the one purged, whose server origin is `own`: `other` is a server workspace of the same
+/// installation, or of any while `own` is not known, or one whose `workspace.json` does not
+/// load.
+fn shares_identity(own: Option<&Origin>, other: Option<&Meta>) -> bool {
+    let Some(other) = other else {
+        return true;
+    };
+    server_origin(other).is_some_and(|theirs| own.is_none_or(|own| *own == theirs))
+}
+
+/// `e` from loading `file`, as a log line may say it: the file and where it breaks, never a
+/// value from it (serde quotes the values it rejects).
+fn unreadable(file: &str, e: AppError) -> AppError {
+    match e {
+        AppError::Json(_) => {
+            AppError::Validation(format!("{file} does not load ({})", failure(&e)))
+        }
+        e => e,
+    }
 }
 
 /// Starts the launcher, for "Workspaces…" in a workspace process: `spawner` starts this program
@@ -602,13 +863,17 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        drop_orphan_ports, is_taken, list, new_id, open, open_launcher, open_within, save, Spawned,
-        Spawner, WorkspaceDraft, WorkspaceId, WorkspaceList,
+        delete, delete_within, drop_orphan_ports, is_taken, list, new_id, open, open_launcher,
+        open_within, purge, purge_exit_code, purge_outcome, save, server_origin, shares_identity,
+        Spawned, Spawner, WorkspaceDraft, WorkspaceId, WorkspaceList,
     };
+    use crate::enrollment::{self, ResetOutcome};
     use crate::error::AppError;
+    use crate::keyring_store;
     use crate::models::{Settings, SyncMode};
     use crate::workspace::{
-        acquire, is_open, InstanceLock, Meta, Registry, RegistryEntry, PALETTE, REGISTRY_FILE,
+        self, acquire, is_open, startup, InstanceLock, Meta, Registry, RegistryEntry, EXIT_FAILED,
+        EXIT_TAKEN, EXIT_UNKNOWN, PALETTE, REGISTRY_FILE,
     };
 
     /// A directory of its own for one test case under the system temp dir, gone with the guard.
@@ -1440,6 +1705,8 @@ mod tests {
         TakesLockAt(u32),
         /// Ends at this look, the lock never held.
         EndsAt(u32),
+        /// Ends at the first look with this exit code, as a purge does.
+        ExitsWith(i32),
         /// Neither ends nor takes the lock.
         Hangs,
     }
@@ -1512,10 +1779,22 @@ mod tests {
                     self.held = Some(acquire(lock).unwrap().expect("the lock is free"));
                 }
                 Course::EndsAt(at) if look >= at => return Ok(Some(ExitStatus::default())),
+                Course::ExitsWith(code) => return Ok(Some(exit_status(code))),
                 _ => {}
             }
             Ok(None)
         }
+    }
+
+    /// How a program reads that ended with `code`.
+    #[cfg(unix)]
+    fn exit_status(code: i32) -> ExitStatus {
+        std::os::unix::process::ExitStatusExt::from_raw(code << 8)
+    }
+
+    #[cfg(windows)]
+    fn exit_status(code: i32) -> ExitStatus {
+        std::os::windows::process::ExitStatusExt::from_raw(code as u32)
     }
 
     /// Short enough for a test, long enough to see each look.
@@ -1704,6 +1983,1167 @@ mod tests {
             spawner.starts(),
             [vec!["--workspace", "w-0a1b2c3d"], Vec::<&str>::new()]
         );
+    }
+
+    // ── Delete: the launcher starts the purge and waits for its exit code ──
+
+    const OUTCOMES: [ResetOutcome; 3] = [
+        ResetOutcome::Revoked,
+        ResetOutcome::LocalOnly,
+        ResetOutcome::NotEnrolled,
+    ];
+
+    fn purge_args(ws: &str) -> Vec<String> {
+        ["--workspace", ws, "--purge"].map(String::from).into()
+    }
+
+    #[test]
+    fn purge_exit_codes_stand_apart_from_every_other_end_of_a_process() {
+        let codes = OUTCOMES.map(purge_exit_code);
+        for (i, outcome) in OUTCOMES.into_iter().enumerate() {
+            assert_eq!(purge_outcome(codes[i]), Some(outcome));
+            assert!(!codes[..i].contains(&codes[i]), "{outcome:?}");
+        }
+        // A start that fails, an app that ended as apps do, a panic.
+        for code in [EXIT_FAILED, EXIT_UNKNOWN, EXIT_TAKEN, 0, 101, -1] {
+            assert_eq!(purge_outcome(code), None, "{code}");
+        }
+    }
+
+    #[test]
+    fn delete_takes_the_workspace_out_of_the_registry_once_its_purge_says_how_it_went() {
+        for outcome in OUTCOMES {
+            let scratch = Scratch::new("delete");
+            let base = &scratch.0;
+            install_two(base);
+            let before = registry_of(base);
+            let spawner = FakeSpawner::new(base, Some(Course::ExitsWith(purge_exit_code(outcome))));
+
+            assert_eq!(delete(base, &id("w-0a1b2c3d"), &spawner).unwrap(), outcome);
+
+            assert_eq!(spawner.starts(), [purge_args("w-0a1b2c3d")]);
+            assert_eq!(
+                registry_of(base),
+                Registry {
+                    workspaces: vec![RegistryEntry { id: id("standard") }],
+                    ..before.clone()
+                },
+                "{outcome:?}"
+            );
+
+            // The one used last: the picker selects none after it.
+            assert_eq!(delete(base, &id("standard"), &spawner).unwrap(), outcome);
+            assert_eq!(
+                registry_of(base),
+                Registry {
+                    workspaces: Vec::new(),
+                    last_used: None,
+                    ..before
+                },
+                "{outcome:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn delete_keeps_the_workspace_when_its_purge_ends_without_an_outcome() {
+        let scratch = Scratch::new("delete-fails");
+        let base = &scratch.0;
+        install_two(base);
+        let registry = registry_bytes(base);
+
+        for code in [EXIT_FAILED, EXIT_UNKNOWN, EXIT_TAKEN, 0, 101] {
+            let spawner = FakeSpawner::new(base, Some(Course::ExitsWith(code)));
+
+            let result = delete(base, &id("w-0a1b2c3d"), &spawner);
+
+            assert!(matches!(result, Err(AppError::Io(_))), "{code}: {result:?}");
+            assert_eq!(spawner.starts(), [purge_args("w-0a1b2c3d")], "{code}");
+            assert_eq!(registry_bytes(base), registry, "{code}");
+        }
+        // Nor does a purge that does not start.
+        let spawner = FakeSpawner::new(base, None);
+        assert!(matches!(
+            delete(base, &id("w-0a1b2c3d"), &spawner),
+            Err(AppError::Io(_))
+        ));
+        assert_eq!(spawner.starts(), [purge_args("w-0a1b2c3d")]);
+        assert_eq!(registry_bytes(base), registry);
+    }
+
+    #[test]
+    fn delete_refuses_an_open_workspace_and_one_it_does_not_know_and_starts_nothing() {
+        let scratch = Scratch::new("delete-refused");
+        let base = &scratch.0;
+        install_two(base);
+        // A directory the registry does not name.
+        meta(SyncMode::Local, "Stray", None)
+            .store(&dir_of(base, "w-00000000"))
+            .unwrap();
+        let registry = registry_bytes(base);
+        let held = acquire(&lock_of(base, "w-0a1b2c3d")).unwrap().unwrap();
+        let spawner = FakeSpawner::new(
+            base,
+            Some(Course::ExitsWith(purge_exit_code(
+                ResetOutcome::NotEnrolled,
+            ))),
+        );
+
+        for ws in ["w-0a1b2c3d", "w-00000000", "w-11111111"] {
+            assert_validation_error(delete(base, &id(ws), &spawner), ws);
+        }
+
+        assert!(spawner.starts().is_empty(), "{:?}", spawner.starts());
+        assert_eq!(registry_bytes(base), registry);
+        assert!(dir_of(base, "w-0a1b2c3d").exists());
+        assert!(dir_of(base, "w-00000000").exists());
+        assert!(is_open(&lock_of(base, "w-0a1b2c3d")).unwrap());
+        drop(held);
+
+        // Without a registry the data has not been moved into workspaces yet.
+        let unmigrated = Scratch::new("delete-unmigrated");
+        assert!(delete(&unmigrated.0, &id("standard"), &spawner).is_err());
+        assert!(spawner.starts().is_empty(), "{:?}", spawner.starts());
+        assert!(!unmigrated.0.join(REGISTRY_FILE).exists());
+    }
+
+    #[test]
+    fn delete_goes_by_the_id_of_a_workspace_without_its_directory_or_workspace_json() {
+        let scratch = Scratch::new("delete-broken");
+        let base = &scratch.0;
+        install(
+            base,
+            &[
+                ("standard", meta(SyncMode::Local, "Standard", None)),
+                ("broken", meta(SyncMode::Server, "Broken", None)),
+                ("bare", meta(SyncMode::Local, "Bare", None)),
+            ],
+            false,
+        );
+        fs::write(dir_of(base, "broken").join("workspace.json"), "{not json").unwrap();
+        fs::remove_file(dir_of(base, "bare").join("workspace.json")).unwrap();
+        // Named by the registry, its directory gone.
+        let mut registry = registry_of(base);
+        registry.workspaces.push(RegistryEntry { id: id("gone") });
+        registry.store(base).unwrap();
+
+        for ws in ["broken", "bare", "gone"] {
+            let spawner = FakeSpawner::new(
+                base,
+                Some(Course::ExitsWith(purge_exit_code(
+                    ResetOutcome::NotEnrolled,
+                ))),
+            );
+            assert_eq!(
+                delete(base, &id(ws), &spawner).unwrap(),
+                ResetOutcome::NotEnrolled,
+                "{ws}"
+            );
+            assert_eq!(spawner.starts(), [purge_args(ws)], "{ws}");
+        }
+
+        assert_eq!(
+            registry_of(base).workspaces,
+            [RegistryEntry { id: id("standard") }]
+        );
+    }
+
+    #[test]
+    fn delete_gives_up_on_a_purge_that_does_not_end_in_time() {
+        let scratch = Scratch::new("delete-hangs");
+        let base = &scratch.0;
+        install_two(base);
+        let registry = registry_bytes(base);
+        let spawner = FakeSpawner::new(base, Some(Course::Hangs));
+        let timeout = Duration::from_millis(100);
+        let started = Instant::now();
+
+        let result = delete_within(
+            base,
+            &id("w-0a1b2c3d"),
+            &spawner,
+            timeout,
+            Duration::from_millis(20),
+        );
+
+        let waited = started.elapsed();
+        assert!(
+            matches!(&result, Err(AppError::Io(e)) if e.kind() == io::ErrorKind::TimedOut),
+            "{result:?}"
+        );
+        assert!(waited >= timeout, "gave up after {waited:?}");
+        assert!(
+            waited < Duration::from_millis(900),
+            "gave up after {waited:?}"
+        );
+        assert!(spawner.looks.get() >= 2, "{} looks", spawner.looks.get());
+        assert_eq!(registry_bytes(base), registry);
+    }
+
+    // ── Purge: what the child of a delete does, against the in-memory keyring ──
+
+    /// The keyring prefix of the workspace `id` made after the migration, spelled out rather
+    /// than taken from the code under test.
+    fn prefix_of(id: &str) -> String {
+        if cfg!(windows) {
+            format!("com.admincave.adminhelper/ws:{id}|")
+        } else {
+            format!("ws:{id}|")
+        }
+    }
+
+    const IDENTITY: [&str; 4] = ["enroll|key", "enroll|cert", "enroll|ca", "enroll|replaces"];
+    const RDP: [&str; 2] = [
+        "rdp|c1|host.example.com|3389|admin|",
+        "rdp|c2|192.0.2.10|3390|admin|corp",
+    ];
+
+    /// Each of `entries` behind `prefix`.
+    fn behind(prefix: &str, entries: &[&str]) -> Vec<String> {
+        entries
+            .iter()
+            .map(|entry| format!("{prefix}{entry}"))
+            .collect()
+    }
+
+    /// Stores a value under each of `keys`.
+    fn store(keys: &[String]) {
+        for key in keys {
+            keyring_store::set(key, "secret").unwrap();
+        }
+    }
+
+    /// Those of `keys` the keyring holds.
+    fn held_keys(keys: &[String]) -> Vec<String> {
+        keys.iter()
+            .filter(|key| keyring_store::get(key).is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// Makes the index of the RDP keys of the workspace `ws` in `base` name `keys`.
+    fn index(base: &Path, ws: &str, keys: &[String]) {
+        fs::write(
+            dir_of(base, ws).join("secrets.json"),
+            serde_json::to_vec(&serde_json::json!({ "keys": keys })).unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// In the app data dir: the RDP keys without a prefix handed over to the last migrated
+    /// workspace, spelled out.
+    const HANDED_OVER: &str = "legacy-secrets.json";
+
+    /// The names handed over in `base`; none without the file.
+    fn handed_over(base: &Path) -> Vec<String> {
+        let Ok(bytes) = fs::read(base.join(HANDED_OVER)) else {
+            return Vec::new();
+        };
+        let index: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        index["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|key| key.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// Makes the names handed over in `base` `keys`, as an earlier purge left them.
+    fn hand_over(base: &Path, keys: &[String]) {
+        fs::write(
+            base.join(HANDED_OVER),
+            serde_json::to_vec(&serde_json::json!({ "keys": keys })).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[cfg(unix)]
+    fn assert_private_file(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "{}", path.display());
+    }
+
+    #[cfg(not(unix))]
+    fn assert_private_file(_path: &Path) {}
+
+    /// A workspace made after the migration: its keys carry its id.
+    fn created(kind: SyncMode, name: &str, url: Option<&str>) -> Meta {
+        Meta {
+            legacy_keys: false,
+            ..meta(kind, name, url)
+        }
+    }
+
+    /// What the purge child of a delete does (`main.rs`): its start, then the purge in its
+    /// workspace, with the lock held throughout.
+    fn purge_child(
+        base: &Path,
+        ws: &str,
+        revoke: impl FnOnce(&str) -> ResetOutcome,
+    ) -> Result<ResetOutcome, AppError> {
+        let (held, meta) = match startup(workspace::Mode::Purge(id(ws)), base, acquire) {
+            workspace::Plan::Purge(held, meta) => (held, meta),
+            other => panic!("expected the purge of {ws}, got {other:?}"),
+        };
+        let _entered = workspace::enter(held.workspace.clone());
+        purge(base, meta.as_ref(), revoke)
+    }
+
+    /// A `revoke` for a purge that must not ask a server.
+    fn no_revoke(url: &str) -> ResetOutcome {
+        panic!("asked the server at {url}")
+    }
+
+    #[test]
+    fn purge_of_a_server_workspace_revokes_its_device_then_leaves_nothing_of_it() {
+        let scratch = Scratch::new("purge-server");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "standard",
+                    meta(
+                        SyncMode::Server,
+                        "Standard",
+                        Some("https://old.example.com"),
+                    ),
+                ),
+                (
+                    "w-0a1b2c3d",
+                    created(SyncMode::Server, "Kunde A", Some("https://ah.example.com")),
+                ),
+                (
+                    "w-4e5f6a7b",
+                    created(SyncMode::Server, "Kunde B", Some("https://b.example.com")),
+                ),
+            ],
+            false,
+        );
+        let prefix = prefix_of("w-0a1b2c3d");
+        let own = [behind(&prefix, &IDENTITY), behind(&prefix, &RDP)].concat();
+        index(base, "w-0a1b2c3d", &behind(&prefix, &RDP));
+        // The keys of the migrated workspace and of another one, and a pin, which is global.
+        let others = [
+            behind("", &IDENTITY),
+            behind("", &RDP),
+            behind(&prefix_of("w-4e5f6a7b"), &IDENTITY),
+            behind(&prefix_of("w-4e5f6a7b"), &RDP),
+            vec!["tofu|cert|ah.example.com:443".to_string()],
+        ]
+        .concat();
+        store(&own);
+        store(&others);
+        write_port_map(
+            base,
+            &[
+                ("standard", "ssh", 6000),
+                ("w-0a1b2c3d", "ssh", 23000),
+                ("w-4e5f6a7b", "ssh", 23001),
+                ("w-0a1b2c3d", "rdp", 23002),
+            ],
+        );
+        let registry = registry_bytes(base);
+        let mut asked = Vec::new();
+
+        let outcome = purge_child(base, "w-0a1b2c3d", |url| {
+            // The certificate proves which device to revoke: it is still there, and no
+            // process can open the workspace meanwhile.
+            assert!(
+                enrollment::is_enrolled(),
+                "the identity went before the revoke"
+            );
+            assert!(is_open(&lock_of(base, "w-0a1b2c3d")).unwrap());
+            asked.push(url.to_string());
+            ResetOutcome::Revoked
+        })
+        .unwrap();
+
+        assert_eq!(outcome, ResetOutcome::Revoked);
+        assert_eq!(asked, ["https://ah.example.com"]);
+        assert_eq!(held_keys(&own), Vec::<String>::new());
+        assert_eq!(held_keys(&others), others);
+        assert_eq!(port_owners(base), ["standard", "w-4e5f6a7b"]);
+        assert_eq!(workspace_dirs(base), ["standard", "w-4e5f6a7b"]);
+        // The launcher takes it out of the registry once the purge said how it went.
+        assert_eq!(registry_bytes(base), registry);
+    }
+
+    #[test]
+    fn purge_without_a_server_to_ask_deletes_an_identity_here_only() {
+        for (case, made, enrolled, expected) in [
+            (
+                "local",
+                created(SyncMode::Local, "Lokal", None),
+                false,
+                ResetOutcome::NotEnrolled,
+            ),
+            (
+                "sync",
+                created(
+                    SyncMode::Sync,
+                    "Sync",
+                    Some("https://sync.example.com/c.json"),
+                ),
+                false,
+                ResetOutcome::NotEnrolled,
+            ),
+            (
+                "server without a URL",
+                created(SyncMode::Server, "Kunde A", None),
+                true,
+                ResetOutcome::LocalOnly,
+            ),
+            (
+                "local with an identity",
+                created(SyncMode::Local, "Lokal", None),
+                true,
+                ResetOutcome::LocalOnly,
+            ),
+        ] {
+            let scratch = Scratch::new("purge-no-server");
+            let base = &scratch.0;
+            let _keyring = keyring_store::memory();
+            install(
+                base,
+                &[
+                    (
+                        "standard",
+                        meta(
+                            SyncMode::Server,
+                            "Standard",
+                            Some("https://old.example.com"),
+                        ),
+                    ),
+                    ("w-0a1b2c3d", made),
+                ],
+                false,
+            );
+            let prefix = prefix_of("w-0a1b2c3d");
+            let mut own = behind(&prefix, &RDP);
+            index(base, "w-0a1b2c3d", &own);
+            if enrolled {
+                own.extend(behind(&prefix, &IDENTITY));
+            }
+            let others = [behind("", &IDENTITY), behind("", &RDP)].concat();
+            store(&own);
+            store(&others);
+            write_port_map(
+                base,
+                &[("w-0a1b2c3d", "ssh", 23000), ("standard", "ssh", 6000)],
+            );
+
+            assert_eq!(
+                purge_child(base, "w-0a1b2c3d", no_revoke).unwrap(),
+                expected,
+                "{case}"
+            );
+
+            assert_eq!(held_keys(&own), Vec::<String>::new(), "{case}");
+            assert_eq!(held_keys(&others), others, "{case}");
+            assert_eq!(port_owners(base), ["standard"], "{case}");
+            assert_eq!(workspace_dirs(base), ["standard"], "{case}");
+        }
+    }
+
+    #[test]
+    fn purge_of_a_migrated_server_workspace_revokes_and_hands_its_rdp_keys_to_the_last_one() {
+        let scratch = Scratch::new("purge-migrated");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "standard",
+                    meta(SyncMode::Server, "Standard", Some("https://ah.example.com")),
+                ),
+                ("lokal", meta(SyncMode::Local, "Lokal", None)),
+                (
+                    "w-0a1b2c3d",
+                    created(SyncMode::Server, "Kunde A", Some("https://b.example.com")),
+                ),
+            ],
+            false,
+        );
+        // Without a prefix: the identity from before workspaces, and an RDP password each of
+        // the two migrated workspaces saved.
+        let identity = behind("", &IDENTITY);
+        let [of_standard, of_lokal] = RDP.map(String::from);
+        index(base, "standard", std::slice::from_ref(&of_standard));
+        index(base, "lokal", std::slice::from_ref(&of_lokal));
+        let prefix = prefix_of("w-0a1b2c3d");
+        let of_created = [behind(&prefix, &IDENTITY), behind(&prefix, &RDP)].concat();
+        store(&identity);
+        store(&[of_standard.clone(), of_lokal.clone()]);
+        store(&of_created);
+        write_port_map(
+            base,
+            &[
+                ("standard", "ssh", 6000),
+                ("lokal", "ssh", 23000),
+                ("w-0a1b2c3d", "ssh", 23001),
+            ],
+        );
+        let mut asked = Vec::new();
+
+        // `lokal` has no server, so the identity is the server workspace's alone; its RDP
+        // password may be `lokal`'s too.
+        let outcome = purge_child(base, "standard", |url| {
+            asked.push(url.to_string());
+            ResetOutcome::Revoked
+        })
+        .unwrap();
+
+        assert_eq!(outcome, ResetOutcome::Revoked);
+        assert_eq!(asked, ["https://ah.example.com"]);
+        assert_eq!(held_keys(&identity), Vec::<String>::new());
+        assert_eq!(
+            held_keys(&[of_standard.clone(), of_lokal.clone()]),
+            [of_standard.clone(), of_lokal.clone()]
+        );
+        assert_eq!(handed_over(base), std::slice::from_ref(&of_standard));
+        assert_private_file(&base.join(HANDED_OVER));
+        assert_eq!(held_keys(&of_created), of_created);
+        assert_eq!(port_owners(base), ["lokal", "w-0a1b2c3d"]);
+        assert_eq!(workspace_dirs(base), ["lokal", "w-0a1b2c3d"]);
+
+        // The last migrated workspace deletes its RDP keys and those handed over to it.
+        assert_eq!(
+            purge_child(base, "lokal", no_revoke).unwrap(),
+            ResetOutcome::NotEnrolled
+        );
+        assert_eq!(held_keys(&[of_standard, of_lokal]), Vec::<String>::new());
+        assert!(!base.join(HANDED_OVER).exists());
+        assert_eq!(held_keys(&of_created), of_created);
+        assert_eq!(port_owners(base), ["w-0a1b2c3d"]);
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
+    }
+
+    #[test]
+    fn purge_of_a_migrated_workspace_leaves_the_identity_to_another_one_of_its_installation() {
+        let scratch = Scratch::new("purge-same-origin");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "standard",
+                    meta(SyncMode::Server, "Standard", Some("https://ah.example.com")),
+                ),
+                (
+                    "server",
+                    meta(
+                        SyncMode::Server,
+                        "Server",
+                        Some("https://AH.example.com:443/"),
+                    ),
+                ),
+            ],
+            false,
+        );
+        let identity = behind("", &IDENTITY);
+        let rdp = behind("", &RDP);
+        index(base, "standard", &rdp);
+        store(&identity);
+        store(&rdp);
+
+        assert_eq!(
+            purge_child(base, "standard", no_revoke).unwrap(),
+            ResetOutcome::NotEnrolled
+        );
+        assert_eq!(held_keys(&identity), identity);
+        assert_eq!(held_keys(&rdp), rdp);
+        assert_eq!(handed_over(base), rdp);
+
+        // The last one of the installation revokes the device.
+        let mut asked = Vec::new();
+        let outcome = purge_child(base, "server", |url| {
+            asked.push(url.to_string());
+            ResetOutcome::Revoked
+        })
+        .unwrap();
+
+        assert_eq!(outcome, ResetOutcome::Revoked);
+        assert_eq!(asked, ["https://AH.example.com:443/"]);
+        assert_eq!(held_keys(&identity), Vec::<String>::new());
+        assert_eq!(held_keys(&rdp), Vec::<String>::new());
+        assert!(!base.join(HANDED_OVER).exists());
+        assert_eq!(workspace_dirs(base), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_identity_is_shared_by_a_migrated_server_workspace_of_the_same_installation() {
+        let server = |url: &str| meta(SyncMode::Server, "Server", Some(url));
+        let own = server_origin(&server("https://ah.example.com"));
+        assert!(own.is_some());
+        for (other, shared) in [
+            (Some(server("https://AH.example.com:443/x")), true),
+            (Some(server("https://ah.example.com:8443")), false),
+            (Some(server("http://ah.example.com")), false),
+            (Some(meta(SyncMode::Server, "Server", None)), false),
+            (Some(meta(SyncMode::Local, "Lokal", None)), false),
+            (
+                Some(meta(
+                    SyncMode::Sync,
+                    "Sync",
+                    Some("https://ah.example.com/c.json"),
+                )),
+                false,
+            ),
+            // Its workspace.json does not load: it may be the server workspace.
+            (None, true),
+        ] {
+            assert_eq!(
+                shares_identity(own.as_ref(), other.as_ref()),
+                shared,
+                "{other:?}"
+            );
+        }
+        // Without a known server of its own, any migrated server workspace may hold it.
+        assert!(shares_identity(
+            None,
+            Some(&server("https://other.example.com"))
+        ));
+        assert!(!shares_identity(
+            None,
+            Some(&meta(SyncMode::Local, "Lokal", None))
+        ));
+        assert_eq!(server_origin(&meta(SyncMode::Local, "Lokal", None)), None);
+    }
+
+    #[test]
+    fn purge_of_the_last_migrated_workspace_revokes_and_deletes_the_keys_without_a_prefix() {
+        let scratch = Scratch::new("purge-last-migrated");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "server",
+                    meta(SyncMode::Server, "Server", Some("https://ah.example.com")),
+                ),
+                ("w-0a1b2c3d", created(SyncMode::Local, "Kunde A", None)),
+            ],
+            false,
+        );
+        // A migrated workspace whose purge removed its directory and did not reach the
+        // registry: it shares nothing any more, and handed over an RDP key.
+        let mut registry = registry_of(base);
+        registry
+            .workspaces
+            .push(RegistryEntry { id: id("standard") });
+        registry.store(base).unwrap();
+        let of_standard = "rdp|c9|192.0.2.20|3389|admin|".to_string();
+        hand_over(base, std::slice::from_ref(&of_standard));
+        let own = [behind("", &IDENTITY), behind("", &RDP), vec![of_standard]].concat();
+        index(base, "server", &behind("", &RDP));
+        let prefix = prefix_of("w-0a1b2c3d");
+        let others = [
+            behind(&prefix, &IDENTITY),
+            behind(&prefix, &RDP),
+            vec!["tofu|cert|ah.example.com:443".to_string()],
+        ]
+        .concat();
+        store(&own);
+        store(&others);
+        let mut asked = Vec::new();
+
+        let outcome = purge_child(base, "server", |url| {
+            asked.push(url.to_string());
+            ResetOutcome::Revoked
+        })
+        .unwrap();
+
+        assert_eq!(outcome, ResetOutcome::Revoked);
+        assert_eq!(asked, ["https://ah.example.com"]);
+        assert_eq!(held_keys(&own), Vec::<String>::new());
+        assert!(!base.join(HANDED_OVER).exists());
+        assert_eq!(held_keys(&others), others);
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
+    }
+
+    #[test]
+    fn purge_counts_a_workspace_whose_workspace_json_does_not_load_as_migrated_by_its_id() {
+        // `lokal`, made by the migration, may be the server workspace: it shares everything.
+        let scratch = Scratch::new("purge-shared-broken");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "server",
+                    meta(SyncMode::Server, "Server", Some("https://ah.example.com")),
+                ),
+                ("lokal", meta(SyncMode::Local, "Lokal", None)),
+            ],
+            false,
+        );
+        fs::write(dir_of(base, "lokal").join("workspace.json"), "{not json").unwrap();
+        let identity = behind("", &IDENTITY);
+        let rdp = behind("", &RDP);
+        index(base, "server", &rdp);
+        store(&identity);
+        store(&rdp);
+
+        assert_eq!(
+            purge_child(base, "server", no_revoke).unwrap(),
+            ResetOutcome::NotEnrolled
+        );
+
+        assert_eq!(held_keys(&identity), identity);
+        assert_eq!(handed_over(base), rdp);
+        assert_eq!(held_keys(&rdp), rdp);
+        assert_eq!(workspace_dirs(base), ["lokal"]);
+
+        // A workspace the launcher made shares nothing, whatever its workspace.json says.
+        let scratch = Scratch::new("purge-unshared-broken");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "server",
+                    meta(SyncMode::Server, "Server", Some("https://ah.example.com")),
+                ),
+                ("w-0a1b2c3d", meta(SyncMode::Server, "Kunde A", None)),
+            ],
+            false,
+        );
+        fs::write(
+            dir_of(base, "w-0a1b2c3d").join("workspace.json"),
+            "{not json",
+        )
+        .unwrap();
+        index(base, "server", &rdp);
+        store(&identity);
+        store(&rdp);
+        let mut asked = Vec::new();
+
+        let outcome = purge_child(base, "server", |url| {
+            asked.push(url.to_string());
+            ResetOutcome::Revoked
+        })
+        .unwrap();
+
+        assert_eq!(outcome, ResetOutcome::Revoked);
+        assert_eq!(asked, ["https://ah.example.com"]);
+        assert_eq!(held_keys(&identity), Vec::<String>::new());
+        assert_eq!(held_keys(&rdp), Vec::<String>::new());
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
+    }
+
+    #[test]
+    fn purge_of_a_migrated_workspace_whose_workspace_json_does_not_load_goes_by_its_id() {
+        let identity = behind("", &IDENTITY);
+        let rdp = behind("", &RDP);
+
+        // `standard`, beside `lokal`: its RDP keys without a prefix are taken and handed over;
+        // `lokal` has no server, so the identity goes, with no server known to ask.
+        let scratch = Scratch::new("purge-migrated-broken");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "standard",
+                    meta(SyncMode::Server, "Standard", Some("https://ah.example.com")),
+                ),
+                ("lokal", meta(SyncMode::Local, "Lokal", None)),
+            ],
+            false,
+        );
+        fs::write(dir_of(base, "standard").join("workspace.json"), "{not json").unwrap();
+        index(base, "standard", &rdp);
+        store(&identity);
+        store(&rdp);
+
+        assert_eq!(
+            purge_child(base, "standard", no_revoke).unwrap(),
+            ResetOutcome::LocalOnly
+        );
+
+        assert_eq!(held_keys(&identity), Vec::<String>::new());
+        assert_eq!(handed_over(base), rdp);
+        assert_eq!(workspace_dirs(base), ["lokal"]);
+
+        // The last migrated workspace, its index empty: the identity is not left behind.
+        let scratch = Scratch::new("purge-last-migrated-broken");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[
+                (
+                    "server",
+                    meta(SyncMode::Server, "Server", Some("https://ah.example.com")),
+                ),
+                ("w-0a1b2c3d", created(SyncMode::Local, "Kunde A", None)),
+            ],
+            false,
+        );
+        fs::remove_file(dir_of(base, "server").join("workspace.json")).unwrap();
+        store(&identity);
+
+        assert_eq!(
+            purge_child(base, "server", no_revoke).unwrap(),
+            ResetOutcome::LocalOnly
+        );
+
+        assert_eq!(held_keys(&identity), Vec::<String>::new());
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
+    }
+
+    #[test]
+    fn purge_stops_before_it_changes_a_thing_on_a_name_that_is_no_rdp_key_of_its_own() {
+        let created_rdp = format!("{}{}", prefix_of("w-0a1b2c3d"), RDP[0]);
+        let created_key = format!("{}enroll|key", prefix_of("w-0a1b2c3d"));
+        let other_rdp = format!("{}{}", prefix_of("w-4e5f6a7b"), RDP[0]);
+        let keys = |names: &[&str]| serde_json::json!({ "keys": names }).to_string();
+        // (workspace purged, the file in its data dir or the one in the app data dir, content)
+        let cases = [
+            (
+                "w-0a1b2c3d",
+                "secrets.json",
+                keys(&[created_rdp.as_str(), other_rdp.as_str()]),
+            ),
+            (
+                "w-0a1b2c3d",
+                "secrets.json",
+                keys(&[created_rdp.as_str(), RDP[1]]),
+            ),
+            (
+                "w-0a1b2c3d",
+                "secrets.json",
+                keys(&[created_rdp.as_str(), created_key.as_str()]),
+            ),
+            (
+                "w-0a1b2c3d",
+                "secrets.json",
+                keys(&["tofu|cert|ah.example.com:443"]),
+            ),
+            ("w-0a1b2c3d", "secrets.json", "{not json".to_string()),
+            (
+                "w-0a1b2c3d",
+                "secrets.json",
+                r#"{"keys": "geheim"}"#.to_string(),
+            ),
+            // The last migrated workspace: no prefix, but RDP keys only.
+            (
+                "server",
+                "secrets.json",
+                keys(&[RDP[0], other_rdp.as_str()]),
+            ),
+            ("server", "secrets.json", keys(&[RDP[0], "enroll|key"])),
+            (
+                "server",
+                "secrets.json",
+                keys(&["tofu|cert|ah.example.com:443"]),
+            ),
+            (
+                "server",
+                "secrets.json",
+                r#"{"keys": "geheim"}"#.to_string(),
+            ),
+            // ... and so are those handed over to it.
+            ("server", HANDED_OVER, keys(&[RDP[0], other_rdp.as_str()])),
+            ("server", HANDED_OVER, keys(&["enroll|key"])),
+            ("server", HANDED_OVER, "{not json".to_string()),
+            (
+                "server",
+                HANDED_OVER,
+                r#"{"keys": ["geheim", 7]}"#.to_string(),
+            ),
+        ];
+        for (ws, file, content) in cases {
+            let case = format!("{ws} {file} {content}");
+            let scratch = Scratch::new("purge-foreign");
+            let base = &scratch.0;
+            let _keyring = keyring_store::memory();
+            install(
+                base,
+                &[
+                    (
+                        "server",
+                        meta(SyncMode::Server, "Server", Some("https://old.example.com")),
+                    ),
+                    (
+                        "w-0a1b2c3d",
+                        created(SyncMode::Server, "Kunde A", Some("https://ah.example.com")),
+                    ),
+                    (
+                        "w-4e5f6a7b",
+                        created(SyncMode::Server, "Kunde B", Some("https://b.example.com")),
+                    ),
+                ],
+                false,
+            );
+            let path = if file == HANDED_OVER {
+                base.join(file)
+            } else {
+                dir_of(base, ws).join(file)
+            };
+            fs::write(&path, &content).unwrap();
+            let all = [
+                behind("", &IDENTITY),
+                behind("", &RDP),
+                behind(&prefix_of("w-0a1b2c3d"), &IDENTITY),
+                behind(&prefix_of("w-0a1b2c3d"), &RDP),
+                behind(&prefix_of("w-4e5f6a7b"), &IDENTITY),
+                behind(&prefix_of("w-4e5f6a7b"), &RDP),
+                vec!["tofu|cert|ah.example.com:443".to_string()],
+            ]
+            .concat();
+            store(&all);
+            write_port_map(
+                base,
+                &[
+                    ("server", "ssh", 6000),
+                    ("w-0a1b2c3d", "ssh", 23000),
+                    ("w-4e5f6a7b", "ssh", 23001),
+                ],
+            );
+            let registry = registry_bytes(base);
+
+            let error = purge_child(base, ws, no_revoke).unwrap_err().to_string();
+
+            // The file and what is wrong with it, never a value from it.
+            assert!(error.contains(file), "{case}: {error}");
+            assert!(!error.contains("geheim"), "{case}: {error}");
+            assert_eq!(held_keys(&all), all, "{case}");
+            assert_eq!(
+                port_owners(base),
+                ["server", "w-0a1b2c3d", "w-4e5f6a7b"],
+                "{case}"
+            );
+            assert_eq!(
+                workspace_dirs(base),
+                ["server", "w-0a1b2c3d", "w-4e5f6a7b"],
+                "{case}"
+            );
+            assert_eq!(fs::read_to_string(&path).unwrap(), content, "{case}");
+            assert_eq!(registry_bytes(base), registry, "{case}");
+        }
+    }
+
+    #[test]
+    fn purge_goes_by_the_id_when_the_workspace_json_does_not_load() {
+        for broken in [Some("{not json"), None] {
+            let scratch = Scratch::new("purge-broken-meta");
+            let base = &scratch.0;
+            let _keyring = keyring_store::memory();
+            install(
+                base,
+                &[
+                    (
+                        "standard",
+                        meta(SyncMode::Server, "Standard", Some("https://ah.example.com")),
+                    ),
+                    (
+                        "w-0a1b2c3d",
+                        created(SyncMode::Server, "Kunde A", Some("https://ah.example.com")),
+                    ),
+                ],
+                false,
+            );
+            let meta_path = dir_of(base, "w-0a1b2c3d").join("workspace.json");
+            match broken {
+                Some(broken) => fs::write(&meta_path, broken).unwrap(),
+                None => fs::remove_file(&meta_path).unwrap(),
+            }
+            let prefix = prefix_of("w-0a1b2c3d");
+            let own = [behind(&prefix, &IDENTITY), behind(&prefix, &RDP)].concat();
+            index(base, "w-0a1b2c3d", &behind(&prefix, &RDP));
+            // The launcher made it: keys without a prefix are never its own.
+            let others = [behind("", &IDENTITY), behind("", &RDP)].concat();
+            store(&own);
+            store(&others);
+            write_port_map(
+                base,
+                &[("standard", "ssh", 6000), ("w-0a1b2c3d", "ssh", 23000)],
+            );
+
+            // Its server is not known: the identity goes here only.
+            assert_eq!(
+                purge_child(base, "w-0a1b2c3d", no_revoke).unwrap(),
+                ResetOutcome::LocalOnly,
+                "{broken:?}"
+            );
+
+            assert_eq!(held_keys(&own), Vec::<String>::new(), "{broken:?}");
+            assert_eq!(held_keys(&others), others, "{broken:?}");
+            assert_eq!(port_owners(base), ["standard"], "{broken:?}");
+            assert_eq!(workspace_dirs(base), ["standard"], "{broken:?}");
+        }
+    }
+
+    #[test]
+    fn a_purge_that_stops_on_the_way_runs_again() {
+        let scratch = Scratch::new("purge-again");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[(
+                "w-0a1b2c3d",
+                created(SyncMode::Server, "Kunde A", Some("https://ah.example.com")),
+            )],
+            false,
+        );
+        let prefix = prefix_of("w-0a1b2c3d");
+        let own = [behind(&prefix, &IDENTITY), behind(&prefix, &RDP)].concat();
+        index(base, "w-0a1b2c3d", &behind(&prefix, &RDP));
+        store(&own);
+        write_port_map(base, &[("w-0a1b2c3d", "ssh", 23000)]);
+        // The port map cannot be locked: the purge stops after the keys.
+        let blocker = base.join("port-registry.lock");
+        fs::create_dir(&blocker).unwrap();
+
+        let first = purge_child(base, "w-0a1b2c3d", |_| ResetOutcome::Revoked);
+
+        assert!(first.is_err(), "{first:?}");
+        assert_eq!(held_keys(&own), Vec::<String>::new());
+        assert!(!dir_of(base, "w-0a1b2c3d").join("secrets.json").exists());
+        assert!(dir_of(base, "w-0a1b2c3d").exists());
+
+        fs::remove_dir(&blocker).unwrap();
+        // Nothing is left to revoke now, as the real reset finds.
+        let again = purge_child(base, "w-0a1b2c3d", |_| ResetOutcome::NotEnrolled);
+
+        assert_eq!(again.unwrap(), ResetOutcome::NotEnrolled);
+        assert_eq!(port_owners(base), Vec::<String>::new());
+        assert_eq!(workspace_dirs(base), Vec::<String>::new());
+    }
+
+    #[test]
+    fn purge_goes_by_the_id_when_the_directory_is_gone() {
+        let scratch = Scratch::new("purge-no-dir");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[("standard", meta(SyncMode::Local, "Standard", None))],
+            false,
+        );
+        let mut registry = registry_of(base);
+        registry.workspaces.push(RegistryEntry {
+            id: id("w-0a1b2c3d"),
+        });
+        registry.store(base).unwrap();
+        let own = behind(&prefix_of("w-0a1b2c3d"), &IDENTITY);
+        let others = [behind("", &IDENTITY), behind("", &RDP)].concat();
+        store(&own);
+        store(&others);
+        write_port_map(
+            base,
+            &[("standard", "ssh", 6000), ("w-0a1b2c3d", "ssh", 23000)],
+        );
+
+        assert_eq!(
+            purge_child(base, "w-0a1b2c3d", no_revoke).unwrap(),
+            ResetOutcome::LocalOnly
+        );
+
+        assert_eq!(held_keys(&own), Vec::<String>::new());
+        assert_eq!(held_keys(&others), others);
+        assert_eq!(port_owners(base), ["standard"]);
+        assert_eq!(
+            workspace_dirs(base),
+            ["standard"],
+            "a purge made a directory"
+        );
+    }
+
+    /// (cert_pem, key_pem) of a self-signed leaf.
+    fn leaf() -> (String, String) {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let cert = CertificateParams::new(vec![])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        (cert.pem(), key.serialize_pem())
+    }
+
+    #[test]
+    fn purge_leaves_no_leaf_the_reset_remembers_for_an_enrollment_that_does_not_come() {
+        let scratch = Scratch::new("purge-reset");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        // Held, not freed: nobody listens on the port, and no parallel test's server can be
+        // handed it.
+        let (_reserved, port) = crate::test_tls::refused_port();
+        let url = format!("http://127.0.0.1:{port}");
+        install(
+            base,
+            &[(
+                "w-0a1b2c3d",
+                created(SyncMode::Server, "Kunde A", Some(&url)),
+            )],
+            false,
+        );
+        let prefix = prefix_of("w-0a1b2c3d");
+        let (cert, key) = leaf();
+        keyring_store::set(&format!("{prefix}enroll|key"), &key).unwrap();
+        keyring_store::set(&format!("{prefix}enroll|cert"), &cert).unwrap();
+        keyring_store::set(&format!("{prefix}enroll|ca"), &cert).unwrap();
+        let replaces = format!("{prefix}enroll|replaces");
+
+        // The real reset, on this thread: the keyring and the workspace are this thread's.
+        let outcome = purge_child(base, "w-0a1b2c3d", |url| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let outcome = runtime.block_on(enrollment::reset_identity(url));
+            assert!(
+                keyring_store::get(&replaces).is_some(),
+                "the server was out of reach, yet the reset remembered no leaf"
+            );
+            outcome
+        })
+        .unwrap();
+
+        assert_eq!(outcome, ResetOutcome::LocalOnly);
+        assert_eq!(held_keys(&behind(&prefix, &IDENTITY)), Vec::<String>::new());
+        assert_eq!(workspace_dirs(base), Vec::<String>::new());
+    }
+
+    #[test]
+    fn purge_in_the_launcher_deletes_nothing() {
+        let scratch = Scratch::new("purge-launcher");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        install(
+            base,
+            &[(
+                "w-0a1b2c3d",
+                created(SyncMode::Server, "Kunde A", Some("https://ah.example.com")),
+            )],
+            false,
+        );
+        let keys = [
+            behind("", &IDENTITY),
+            behind(&prefix_of("w-0a1b2c3d"), &IDENTITY),
+        ]
+        .concat();
+        store(&keys);
+        write_port_map(base, &[("w-0a1b2c3d", "ssh", 23000)]);
+        let meta = Meta::load(&dir_of(base, "w-0a1b2c3d")).unwrap();
+
+        let result = purge(base, Some(&meta), no_revoke);
+
+        assert!(matches!(result, Err(AppError::Validation(_))), "{result:?}");
+        assert_eq!(held_keys(&keys), keys);
+        assert_eq!(port_owners(base), ["w-0a1b2c3d"]);
+        assert_eq!(workspace_dirs(base), ["w-0a1b2c3d"]);
     }
 
     /// Waits for `child` to end, as long as a loaded runner may need, and gives how it ended;
