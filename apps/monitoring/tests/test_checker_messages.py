@@ -164,6 +164,18 @@ CASES = [
         id="auto-failed-and-inactive",
     ),
     pytest.param(
+        lambda: _auto({"failed": ["a.service", "data.mount"], "enabled_inactive": ["b.service"]}),
+        "critical",
+        "Failed: a.service; Failed units: data.mount; Inactive (autostart): b.service",
+        id="auto-failed-service-unit-and-inactive",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["data.mount"], "enabled_inactive": ["b.service"]}),
+        "warning",
+        "Failed units: data.mount; Inactive (autostart): b.service",
+        id="auto-failed-unit-and-inactive",
+    ),
+    pytest.param(
         lambda: _auto({"failed": [], "enabled_inactive": ["b.service"]}),
         "warning",
         "Inactive (autostart): b.service",
@@ -616,6 +628,7 @@ _PREFAIL = [f"/dev/d{i} (X): prefail attribute below threshold (smartctl 0x10)" 
 _PAST = [f"/dev/d{i} (X): threshold exceeded in the past (smartctl 0x20)" for i in range(12)]
 _DISKS_FULL = [f"Disk /m{i} 95% (>=95%)" for i in range(12)]
 _FAILED = [f"f{i}.service" for i in range(12)]
+_FAILED_UNITS = [f"m{i}.mount" for i in range(12)]
 _INACTIVE = [f"i{i}.service" for i in range(12)]
 _DOWN = [f"d{i}" for i in range(12)]
 _NODATA = [f"n{i}" for i in range(12)]
@@ -732,6 +745,13 @@ LIST_CASES = [
         "critical",
         "Failed: " + ", ".join(_FAILED[:10]),
         id="auto-10-failed",
+    ),
+    pytest.param(
+        lambda mp: _auto({"failed": _FAILED + _FAILED_UNITS, "enabled_inactive": _INACTIVE}),
+        "critical",
+        f"Failed: {_first_ten(_FAILED)}; Failed units: {_first_ten(_FAILED_UNITS)}; "
+        f"Inactive (autostart): {_first_ten(_INACTIVE)}",
+        id="auto-12-failed-12-failed-units-and-inactive",
     ),
     # service_process, list mode
     pytest.param(
@@ -891,6 +911,12 @@ MULTILINE_CASES = [
         "critical",
         "Failed: a b.service; Inactive (autostart): c d.service",
         id="service-process-failed",
+    ),
+    pytest.param(
+        lambda: _auto({"failed": ["a\nb.mount"], "enabled_inactive": []}),
+        "warning",
+        "Failed units: a b.mount",
+        id="service-process-failed-unit",
     ),
     pytest.param(
         lambda: _outage("zfs", "timeout", "zpool\nlist timed out"),

@@ -96,8 +96,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resou
 Doku: docs/admin/monitoring.html + EN: Typ-Tabelle `:45`, Konfig-Tabelle `:130` (`disk_min_free_gb`, `ignore_mounts`, `disk_overrides`), ein Absatz nach `:141` zum GB-Riegel (gilt ab Agent v3, auch unter Windows, je nach Antwort auf Offene Frage 5) und zu den Mounts; CHANGELOG.md (`### Changed`: Platten-Alarm nur unter Mindest-GB frei, Default 20; je Mount einstellbar)
 Abhängt von: T8
 
-### T10 — Monitoring: nur fehlgeschlagene Dienste critical, andere fehlgeschlagene Units warning  [ ]
+### T10 — Monitoring: nur fehlgeschlagene Dienste critical, andere fehlgeschlagene Units warning  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_service_process_checker.py, apps/monitoring/tests/test_checker_messages.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @5d25f16e 2026-10-20T09:15:36+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T10.verdict.json)
 Änderung: `ServiceProcessChecker._evaluate_auto` (`checkers/agent.py:513-576`): Die fehlgeschlagenen Units (nach `ignore`, wie heute) teilen sich nach der Endung: `.service` oder ohne Endung aus `_UNIT_TYPES` (`:454-466`, Windows-Dienste) → critical; jede andere Endung → warning. Meldung `Failed: …; Failed units: …; Inactive (autostart): …` (jeder Teil nur, wenn er Einträge hat, je mit `join_capped`); `_details` unverändert. Der Modus `list` bleibt. Tests: nur `data.mount` → warning `Failed units: data.mount`; mit `nginx.service` → critical; ein Name ohne Endung (`Spooler`) → critical; `backup.timer` plus inaktive Dienste → warning; ein fehlgeschlagener Dienst nur aus `all_services` zählt als Dienst; Meldungen in `test_checker_messages.py` (`:160-163`, `:718-734`, dazu je ein Fall mit anderen Units).
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_service_process_checker.py tests/test_checker_messages.py
 Doku: docs/admin/monitoring.html + EN `:46` und `:70` (fehlgeschlagene Dienste critical, andere fehlgeschlagene Units wie Mount, Timer, Socket warning); CHANGELOG.md (`### Changed`)

@@ -966,6 +966,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: nur fehlgeschlagene Dienste sind critical (R-0423):** Im Modus `auto` von `service_process` ist eine
+  fehlgeschlagene Unit nur noch `critical`, wenn sie ein Dienst ist (`.service` oder ein Windows-Dienst ohne
+  Unit-Endung); eine andere fehlgeschlagene Unit wie Mount, Timer oder Socket ist `warning`, wie eine enabled, aber
+  inaktive Unit. Die Meldung nennt beide getrennt, etwa
+  `Failed: nginx.service; Failed units: data.mount; Inactive (autostart): cron.service`; `ignore` greift wie bisher
+  vorher, die Check-Details listen unter `failed` weiter alle fehlgeschlagenen Units. Doku:
+  Monitoring-Administration (DE+EN).
 - **Monitoring: Platten-Alarm nur unter Mindest-GB frei, je Mount einstellbar (R-0423):** Der Prozent-Alarm einer
   Platte (`disk_warn`/`disk_crit`) in `agent_resources` zaehlt nur noch, wenn zusaetzlich weniger als
   `disk_min_free_gb` frei sind (Default 20 GB, auch fuer bestehende Checks ohne den Schluessel; `0` schaltet den

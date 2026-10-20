@@ -576,6 +576,11 @@ class ServiceProcessChecker:
         return any(fnmatchcase(n, p) for n in names for p in ignore)
 
     @staticmethod
+    def _is_service(unit: str) -> bool:
+        """A .service unit, or a name without a unit suffix (a Windows service)."""
+        return unit.endswith(".service") or not unit.endswith(ServiceProcessChecker._UNIT_TYPES)
+
+    @staticmethod
     def _unit_name(name: str) -> str:
         """The unit a name stands for: a bare "nginx" is "nginx.service". Applied to both sides
         of a lookup, so a Windows service (no suffix) still finds itself."""
@@ -654,22 +659,27 @@ class ServiceProcessChecker:
         if counts is not None:
             metrics["_details"]["active_count"], metrics["_details"]["total"] = counts
 
-        if failed:
-            msg = f"Failed: {join_capped(failed)}"
-            if enabled_inactive:
-                msg += f"; Inactive (autostart): {join_capped(enabled_inactive)}"
-            return "critical", msg, metrics
-
+        # Only a failed service is critical; a failed mount, timer, socket or other unit is
+        # warning, like an enabled but inactive unit (Kevin 2026-10-19).
+        failed_services = [u for u in failed if self._is_service(u)]
+        failed_units = [u for u in failed if not self._is_service(u)]
+        parts = []
+        if failed_services:
+            parts.append(f"Failed: {join_capped(failed_services)}")
+        if failed_units:
+            parts.append(f"Failed units: {join_capped(failed_units)}")
         if enabled_inactive:
-            return (
-                "warning",
-                f"Inactive (autostart): {join_capped(enabled_inactive)}",
-                metrics,
-            )
+            parts.append(f"Inactive (autostart): {join_capped(enabled_inactive)}")
+
+        if failed_services:
+            return "critical", "; ".join(parts), metrics
+
+        if parts:
+            return "warning", "; ".join(parts), metrics
 
         # The agent could not list the services (systemctl list-units / sc query failed): its
         # empty lists prove nothing. On Linux failed comes from a call of its own (list-units
-        # --state=failed), so a failed unit still makes the check critical above.
+        # --state=failed), so a failed unit still rates the check above.
         error = systemd.get("error")
         if error:
             return "unknown", self._not_queryable(error), metrics
