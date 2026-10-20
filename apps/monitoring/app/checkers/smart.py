@@ -13,7 +13,14 @@ Without disks the agent sends smart_absent with the reason instead of a smart ke
 
 from __future__ import annotations
 
-from app.checkers.agent import agent_number, capped_objects, entry_number, entry_text, join_capped
+from app.checkers.agent import (
+    agent_number,
+    cap_agent_text,
+    capped_objects,
+    entry_number,
+    entry_text,
+    join_capped,
+)
 from app.core.victoria import safe_metric_part
 
 # NVMe critical_warning Bit-Feld laut NVMe Base Spec 1.4, Figure 94.
@@ -118,14 +125,19 @@ class SmartHealthChecker:
             if device in ignore:
                 continue
 
-            model = disk.get("model", "?")
-            label = f"{device} ({model})"
+            # The ignore list, the rating and the metric names read the full values; label and
+            # _details, which the desktop reads with every other check in one answer, only get a
+            # capped string on one line.
+            shown_device = cap_agent_text(device) or "?"
+            model = cap_agent_text(disk.get("model")) or "?"
+            label = f"{shown_device} ({model})"
             protocol = disk.get("protocol", "ATA")
             kind = entry_text(disk, "kind", "") or ("NVMe" if protocol == "NVMe" else "HDD")
+            passed = bool(disk.get("smart_passed", True))
             category = "ok"
 
             # Universal checks (ATA + NVMe)
-            if not disk.get("smart_passed", True):
+            if not passed:
                 critical_problems.append(f"{label}: SMART FAILED")
                 category = "critical"
 
@@ -191,12 +203,12 @@ class SmartHealthChecker:
             cw_bits = _decode_nvme_critical_warning(int(critical_warning))
             disk_details.append(
                 {
-                    "device": device,
+                    "device": shown_device,
                     "model": model,
-                    "protocol": protocol,
-                    "kind": kind,
+                    "protocol": cap_agent_text(protocol) or "ATA",
+                    "kind": cap_agent_text(kind),
                     "category": category,
-                    "smart_passed": disk.get("smart_passed", True),
+                    "smart_passed": passed,
                     "temp_c": temp_c,
                     "temp_warn": temp_warn,
                     "temp_crit": temp_crit,

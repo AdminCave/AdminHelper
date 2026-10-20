@@ -236,6 +236,9 @@ def test_report_batches_check_metrics_into_one_write(client_db, monkeypatch):
         (float("nan"), None),
         ("inf", None),  # inf/nan as strings dropped too
         ("nan", None),
+        # An int beyond the float range: format_line rejects it like inf (id: 401 digits otherwise).
+        pytest.param(10**400, None, id="int-beyond-float-range"),
+        (2**63, 2**63),  # beyond int64 but a float: format_line writes it as a float
     ],
 )
 def test_num_coerces_and_drops_non_metric_values(raw, want):
@@ -287,6 +290,32 @@ def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch)
 
     # metricsWritten reflects the actual lines written (no checks in this payload).
     assert r.json()["metricsWritten"] == len(captured)
+
+
+def test_report_drops_only_the_value_beyond_the_float_range(client_db, monkeypatch):
+    # An int beyond the float range used to raise in _num, and the extraction's except dropped
+    # every line of the report, the valid ones too. Now only that value is missing.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    writes: list[list[str]] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: writes.append(lines))
+
+    r = client.post(
+        "/agent/srv-1/report",
+        json={
+            "resources": {"cpu_percent": 10**400, "memory_percent": 50},
+            "uptime_seconds": 2**63,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["metricsWritten"] == 2
+    assert len(writes) == 1, writes
+    # Without the timestamp; the uptime beyond int64 goes as a float, without "i".
+    assert [line.rsplit(" ", 1)[0] for line in writes[0]] == [
+        "monitor_agent_memory_percent,server_id=srv-1 value=50i",
+        "monitor_agent_uptime_seconds,server_id=srv-1 value=9.223372036854776e+18",
+    ]
 
 
 def test_report_persists_agent_liveness(client_db, monkeypatch):
