@@ -172,8 +172,10 @@ Abhängt von: T15
 
 ## Block C — Windows-RDP-Passwörter
 
-### T16 — Spike: TERMSRV just-in-time für mstsc  [ ]
+### T16 — Spike: TERMSRV just-in-time für mstsc  [x]
 Komponente: desktop-rs · Dateien: docs/features/desktop-workspaces.md, apps/desktop/src-tauri/src/password.rs, apps/desktop/src-tauri/src/commands.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @60d853f7 2026-10-20T11:28:30+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T16.verdict.json)
 Änderung: Microsoft-Doku nachlesen (`CredWriteW`/`CredDeleteW`, Typ `CRED_TYPE_GENERIC` vs. `CRED_TYPE_DOMAIN_PASSWORD` für `TERMSRV/…`, `CRED_PERSIST_SESSION` vs. `CRED_PERSIST_LOCAL_MACHINE`, wann mstsc den Eintrag liest, Wiederverbindung) und das Ergebnis mit Quellen in den Spec-Abschnitt „Windows-RDP: Ergebnis des Spikes“ schreiben: Typ, Persistenz, Löschzeitpunkt (nach Ende von mstsc oder nach fester Frist), was unverifiziert bleibt. Dazu eine reine Plan-Funktion `termsrv_plan(target, loopback, stored_password) -> Vec<Schritt>` (Schreiben, Starten, Löschen; Loopback ohne Passwort: vorhandenes `TERMSRV` löschen) mit Tests auf allen Plattformen (`termsrv_plan_*`) und ein `cfg(windows)`-Probetest (`termsrv_probe_*`), der einen eindeutigen `TERMSRV/…`-Testeintrag mit Typ und Persistenz aus dem Spike schreibt, liest und löscht. Der Probetest läuft nur im CI-Job `rust-windows` (Lauf per `workflow_dispatch`, siehe Kopfnotiz); die Session hält das Ergebnis im Ledger fest. Unter Windows nicht verifiziert (mstsc). Nachtrag (T38-Review): `cargo clippy --all-targets -- -D warnings` meldet in `commands.rs` (~:1214, Test `login_binding_a_registration_the_workspace_does_not_keep_is_revoked_at_once`) `clippy::cloned_ref_to_slice_refs`; `[registered_at]` ohne `clone` oder `std::slice::from_ref`.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- termsrv
 Doku: docs/features/desktop-workspaces.md (Ergebnis des Spikes)

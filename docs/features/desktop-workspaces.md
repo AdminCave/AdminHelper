@@ -313,9 +313,89 @@ YAGNI-Punkte bleiben draußen · Löschbestätigung nennt den Namen.
 
 ## Windows-RDP: Ergebnis des Spikes
 
-Wird vom Spike (Ledger T16) ausgefüllt: Credential-Typ und Persistenz für `TERMSRV/…`, Zeitpunkt des Löschens
-(nach Ende von mstsc oder nach fester Frist), Verhalten bei Wiederverbindung, Quellen. Unter Windows nicht
-verifiziert (mstsc).
+Spike T16 (2026-10-20), aus der Microsoft-Doku (Quellen unten). Die Credential-Aufrufe prüft `termsrv_probe_*` im
+CI-Job `rust-windows`. **Unter Windows nicht verifiziert (mstsc):** dass mstsc einen solchen Eintrag liest, belegt
+keine Microsoft-Quelle.
+
+- **Typ `CRED_TYPE_GENERIC`** (wie bisher): Einen generischen Eintrag nutzt kein Authentifizierungspaket, alle
+  Prozesse des Nutzers lesen und schreiben ihn [2][6], also auch mstsc. `CRED_TYPE_DOMAIN_PASSWORD` nutzen NTLM,
+  Kerberos und Negotiate selbst, das Passwort lesen nur sie [2][6]. Dagegen sprechen zwei dokumentierte Sperren: Mit
+  Credential Guard (ab Windows 11 22H2 auf Domänengeräten Standard [8]) scheitern vom Remotedesktop-Client
+  gespeicherte Windows-Anmeldeinformationen mit „Logon attempt failed“, CredSSP nimmt dann nur noch übergebene
+  Anmeldeinformationen; generische schützt Credential Guard nicht [7]. Und gespeicherte Anmeldeinformationen
+  delegiert CredSSP an ein Ziel, das sich nur per NTLM ausweist (IP-Adresse, Loopback-Port), auf einem Domänengerät
+  standardmäßig nicht [9]. Lesbar für andere Prozesse des Nutzers ist das Passwort ohnehin: auch der App-Namensraum
+  liegt unter Windows in generischen Einträgen (`keyring_store`). Just-in-time schützt davor, dass mstsc
+  `TERMSRV/<adresse>` für jede Verbindung zu dieser Adresse nimmt, auch aus einem anderen Workspace oder von Hand.
+- **Persistenz `CRED_PERSIST_SESSION`** statt `CRED_PERSIST_LOCAL_MACHINE`: Der Eintrag gilt nur in der
+  Anmeldesitzung, andere Sitzungen desselben Nutzers sehen ihn nicht, nach Ab- und Anmelden ist er weg [2]. Ein
+  Eintrag, den die App nicht mehr löschen konnte (beendet oder abgestürzt), endet so spätestens mit der Abmeldung. Es
+  ist die geringste Persistenz, die überhaupt speichert; beschränkt eine Richtlinie einen Typ auf Sitzungs-Einträge,
+  gelingt sie noch [5]. mstsc läuft als Kind der App in derselben Anmeldesitzung, `CredReadW` liest deren
+  Credential-Set [3].
+- **Name** wie bisher `rdp_windows_target`: `TERMSRV/<host>`, bei Port ≠ 3389 `TERMSRV/<host>:<port>`, hier für die
+  aufgelöste Adresse. Name und Typ bestimmen den Eintrag, `CredWriteW` ersetzt einen gleichen Namens und Typs
+  [1][2], `CredDeleteW` löscht je Typ [4].
+- **Löschen nach fester Frist** (`TERMSRV_HOLD`, 60 s nach dem Start von mstsc; scheitert der Start, sofort), nicht
+  am Ende von mstsc: `TERMSRV` trägt das Geheimnis nur für den Start (Kevin 2026-10-19), das Ende von mstsc hielte es
+  die ganze Sitzung im globalen Namensraum, und ob der gestartete Prozess so lange lebt, ist nicht dokumentiert [10].
+  Die Frist ist doppelt so lang wie die der `.rdp`-Datei (30 s), weil mstsc vor dem Verbinden nach Herausgeber oder
+  Zertifikat fragen kann und nicht belegt ist, ob es den Eintrag vorher oder danach liest. Zu früh gelöscht heißt:
+  mstsc fragt nach dem Passwort, kein Leck.
+- **Loopback-Ziele:** Vor jedem Start auf diese Maschine löscht Rust `TERMSRV/<adresse>` in beiden Typen, auch ohne
+  gespeichertes Passwort. Der Remotedesktop-Client speichert selbst Windows-Anmeldeinformationen [7], also
+  Domänen-Einträge; einer für `127.0.0.1:<port>` ginge sonst an den Server, der jetzt hinter dem Port liegt.
+  Einträge anderer Ziele bleiben in beiden Typen stehen.
+- **Wiederverbindung:** Nach einem Netzabbruch verbindet der Client mit dem Auto-Reconnect-Cookie aus seinem
+  Speicher, ohne die Anmeldeinformationen erneut zu senden; scheitert das, holt er sie neu [11][12]. Woher mstsc sie
+  dann nimmt, ist nicht dokumentiert: findet es den Eintrag nach der Frist nicht mehr, fragt es nach dem Passwort.
+
+Plan (`termsrv_plan` in `password.rs`, Tests `termsrv_plan_*`; T17 führt ihn aus):
+
+| Ziel | gespeichertes Passwort | Schritte |
+|---|---|---|
+| anderes | nein | Starten |
+| anderes | ja | Schreiben, Starten, nach 60 s Löschen |
+| diese Maschine | nein | Löschen (beide Typen), Starten |
+| diese Maschine | ja | Löschen (beide Typen), Schreiben, Starten, nach 60 s Löschen |
+
+Probe (`termsrv_probe_*`, nur im CI-Job `rust-windows`): schreibt `TERMSRV/adminhelper-probe-<pid>-<ns>.invalid:3390`
+generisch mit `CRED_PERSIST_SESSION`, liest Typ, Persistenz, Benutzer und Passwort zurück und löscht den Eintrag.
+
+**Unverifiziert, für die Prüfanleitung (T33):** (1) dass mstsc einen generischen `TERMSRV/…`-Eintrag liest und
+nutzt: Microsoft dokumentiert es weder bei `mstsc` [10] noch bei `cmdkey` [13], `cmdkey /generic:TERMSRV/<ziel>`
+steht nur in Forenantworten; auch mit Credential Guard und auf einem Domänengerät gegen ein NTLM-Ziel; (2) dass es
+Einträge mit `CRED_PERSIST_SESSION` findet; (3) wann es den Eintrag liest und ob 60 s reichen; (4) welchen Namen es
+bei Port ≠ 3389 nachschlägt (`TERMSRV/<host>:<port>` oder `TERMSRV/<host>`), auch bei IPv6; (5) welcher Eintrag
+gilt, wenn ein generischer und ein Domänen-Eintrag gleichen Namens bestehen; (6) Wiederverbindung nach Ablauf der
+Frist ohne Rückfrage.
+
+**Fund für T17 (Entscheidung Kevin):** `CredWriteW` ersetzt einen generischen Eintrag gleichen Namens, das Löschen
+nach dem Start nimmt ihn dann mit: einen eigenen des Nutzers (`cmdkey /generic`) oder den Alt-Eintrag eines
+migrierten Workspace (vor R-0431 lag das Passwort unter Windows nur in `TERMSRV/<gelistete Adresse>`), wenn ein
+anderer Workspace dasselbe Ziel mit eigenem Passwort öffnet. Optionen: so lassen, oder einen vorhandenen Eintrag
+vor dem Schreiben sichern und nach der Frist zurückschreiben.
+
+Quellen (abgerufen 2026-10-20):
+
+- [1] CredWriteW, <https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credwritew>
+- [2] CREDENTIALW, <https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw>
+- [3] CredReadW, <https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credreadw>
+- [4] CredDeleteW, <https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-creddeletew>
+- [5] CredGetSessionTypes,
+  <https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credgetsessiontypes>
+- [6] Kinds of Credentials, <https://learn.microsoft.com/en-us/windows/win32/secauthn/kinds-of-credentials>
+- [7] Credential Guard, Considerations and known issues,
+  <https://learn.microsoft.com/en-us/windows/security/identity-protection/credential-guard/considerations-known-issues>
+- [8] Credential Guard overview, <https://learn.microsoft.com/en-us/windows/security/identity-protection/credential-guard/>
+- [9] Policy CSP ADMX_CredSsp (AllowSavedCredentials, AllowSavedCredentialsWhenNTLMOnly),
+  <https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-credssp>
+- [10] mstsc, <https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/mstsc>
+- [11] MS-RDPBCGR 1.3.1.5 Automatic Reconnection,
+  <https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/15b0d1c9-2891-4adb-a45e-deb4aeeeab7c>
+- [12] MS-RDPBCGR 5.5 Automatic Reconnection,
+  <https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e729948a-3f4e-4568-9aef-d355e30b5389>
+- [13] cmdkey, <https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/cmdkey>
 
 ## Offene Fragen
 

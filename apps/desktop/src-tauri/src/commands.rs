@@ -1211,7 +1211,7 @@ mod tests {
             "taken",
         );
         // Revoked where it was issued, and gone here; the workspace keeps the URL it took.
-        assert_eq!(*reset_at.borrow(), [registered_at.clone()]);
+        assert_eq!(*reset_at.borrow(), [registered_at]);
         assert!(!enrollment::is_enrolled());
         assert!(!enrollment::holds_identity(&prefix).unwrap());
         assert_eq!(url_of(base, "w-0000000c").as_deref(), Some(other));

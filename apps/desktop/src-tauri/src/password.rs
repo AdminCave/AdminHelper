@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 #[cfg(unix)]
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -326,6 +327,53 @@ pub fn delete_password_keyring(base: &Path, connection: &Connection) -> Result<(
     update_index(&workspace.data_dir(base), |keys| keys.remove(&key))
 }
 
+/// How long the `TERMSRV/…` entry of a start of mstsc holds the stored password (R-0431).
+/// A fixed time, not the end of mstsc: the global name serves only the start, and mstsc
+/// may ask about the publisher or the certificate before it reads the entry. Deleted too
+/// early, mstsc asks for the password. See "Windows-RDP: Ergebnis des Spikes" in
+/// `docs/features/desktop-workspaces.md`.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub const TERMSRV_HOLD: Duration = Duration::from_secs(60);
+
+/// A step of a start of mstsc on Windows, by [`termsrv_plan`].
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, PartialEq, Eq)]
+pub enum TermsrvStep {
+    /// Delete the entry under this name, the generic one and the domain password mstsc
+    /// saves itself.
+    Clear(String),
+    /// Write the stored password under this name: generic, for this logon session only.
+    Write(String),
+    /// Start mstsc.
+    Launch,
+    /// Delete the written entry once `after` has passed since the start.
+    Remove { target: String, after: Duration },
+}
+
+/// What a start of mstsc does in the Credential Manager, `target` being the `TERMSRV/…`
+/// name of the address it connects to. An entry for this machine (`loopback`) goes first,
+/// whoever wrote it: a port here may lead to another server by now, and mstsc would send
+/// it the password. An entry for another target stays, it may be the user's own. A stored
+/// password is there only for the start.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn termsrv_plan(target: &str, loopback: bool, stored_password: bool) -> Vec<TermsrvStep> {
+    let mut steps = Vec::new();
+    if loopback {
+        steps.push(TermsrvStep::Clear(target.to_string()));
+    }
+    if stored_password {
+        steps.push(TermsrvStep::Write(target.to_string()));
+    }
+    steps.push(TermsrvStep::Launch);
+    if stored_password {
+        steps.push(TermsrvStep::Remove {
+            target: target.to_string(),
+            after: TERMSRV_HOLD,
+        });
+    }
+    steps
+}
+
 #[cfg(target_os = "windows")]
 pub fn rdp_windows_target(connection: &Connection) -> Result<String, AppError> {
     let host = required(&connection.host, "Host")?;
@@ -455,11 +503,23 @@ pub fn windows_store_credential(
     username: &str,
     password: &str,
 ) -> Result<(), AppError> {
+    use windows::Win32::Security::Credentials::CRED_PERSIST_LOCAL_MACHINE;
+
+    windows_write_credential(target, username, password, CRED_PERSIST_LOCAL_MACHINE)
+}
+
+/// Writes `password` as the generic credential `target` of `username`, kept as long as
+/// `persist` says.
+#[cfg(target_os = "windows")]
+fn windows_write_credential(
+    target: &str,
+    username: &str,
+    password: &str,
+    persist: windows::Win32::Security::Credentials::CRED_PERSIST,
+) -> Result<(), AppError> {
     use windows::core::PWSTR;
     use windows::Win32::Foundation::GetLastError;
-    use windows::Win32::Security::Credentials::{
-        CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
-    };
+    use windows::Win32::Security::Credentials::{CredWriteW, CREDENTIALW, CRED_TYPE_GENERIC};
 
     let target_w = to_utf16_null(target);
     let username_w = to_utf16_null(username);
@@ -471,7 +531,7 @@ pub fn windows_store_credential(
     credential.UserName = PWSTR(username_w.as_ptr() as *mut _);
     credential.CredentialBlobSize = secret_bytes.len() as u32;
     credential.CredentialBlob = secret_bytes.as_mut_ptr();
-    credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    credential.Persist = persist;
 
     let ok = unsafe { CredWriteW(&credential, 0) }.is_ok();
     for byte in &mut secret_bytes {
@@ -1207,6 +1267,154 @@ mod tests {
         delete_password(&base.0, &a).unwrap();
 
         assert_eq!(std::fs::read_dir(&base.0).unwrap().count(), 0);
+    }
+
+    // ── R-0431: TERMSRV just in time for mstsc ─────────────────────────────
+
+    const TERMSRV: &str = "TERMSRV/192.0.2.10:3390";
+
+    fn termsrv_steps(steps: &[&str]) -> Vec<TermsrvStep> {
+        steps
+            .iter()
+            .map(|&step| match step {
+                "clear" => TermsrvStep::Clear(TERMSRV.to_string()),
+                "write" => TermsrvStep::Write(TERMSRV.to_string()),
+                "launch" => TermsrvStep::Launch,
+                "remove" => TermsrvStep::Remove {
+                    target: TERMSRV.to_string(),
+                    after: TERMSRV_HOLD,
+                },
+                other => panic!("no step {other}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn termsrv_plan_holds_a_stored_password_only_for_the_start() {
+        assert_eq!(
+            termsrv_plan(TERMSRV, false, true),
+            termsrv_steps(&["write", "launch", "remove"])
+        );
+    }
+
+    // An entry for another target may be the user's own; mstsc uses it as before.
+    #[test]
+    fn termsrv_plan_without_a_password_leaves_the_entry_of_another_target() {
+        assert_eq!(
+            termsrv_plan(TERMSRV, false, false),
+            termsrv_steps(&["launch"])
+        );
+    }
+
+    // A port on this machine may lead to another server than when its entry was written,
+    // and mstsc would send that server the password.
+    #[test]
+    fn termsrv_plan_clears_the_entry_for_this_machine_even_without_a_password() {
+        assert_eq!(
+            termsrv_plan(TERMSRV, true, false),
+            termsrv_steps(&["clear", "launch"])
+        );
+    }
+
+    #[test]
+    fn termsrv_plan_clears_the_entry_for_this_machine_before_it_writes_the_password() {
+        assert_eq!(
+            termsrv_plan(TERMSRV, true, true),
+            termsrv_steps(&["clear", "write", "launch", "remove"])
+        );
+    }
+
+    /// A `TERMSRV/…` name no host has (`.invalid`, RFC 2606), of this run only.
+    #[cfg(target_os = "windows")]
+    fn probe_target() -> String {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        format!(
+            "TERMSRV/adminhelper-probe-{}-{nanos}.invalid:3390",
+            std::process::id()
+        )
+    }
+
+    /// Deletes the probe entry, also after a failed assertion.
+    #[cfg(target_os = "windows")]
+    struct ProbeEntry(String);
+
+    #[cfg(target_os = "windows")]
+    impl Drop for ProbeEntry {
+        fn drop(&mut self) {
+            let _ = windows_delete_credential(&self.0);
+        }
+    }
+
+    /// Type, persistence and user of the generic credential `target`, as `CredReadW` reads them.
+    #[cfg(target_os = "windows")]
+    fn probe_read(
+        target: &str,
+    ) -> (
+        windows::Win32::Security::Credentials::CRED_TYPE,
+        windows::Win32::Security::Credentials::CRED_PERSIST,
+        String,
+    ) {
+        use std::ptr::null_mut;
+        use windows::core::PCWSTR;
+        use windows::Win32::Security::Credentials::{
+            CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
+        };
+
+        let target_w = to_utf16_null(target);
+        let mut credential_ptr: *mut CREDENTIALW = null_mut();
+        unsafe {
+            CredReadW(
+                PCWSTR(target_w.as_ptr()),
+                CRED_TYPE_GENERIC,
+                Some(0),
+                &mut credential_ptr,
+            )
+        }
+        .unwrap();
+        let credential = unsafe { &*credential_ptr };
+        let user = if credential.UserName.is_null() {
+            String::new()
+        } else {
+            unsafe { credential.UserName.to_string() }.unwrap()
+        };
+        let read = (credential.Type, credential.Persist, user);
+        unsafe { CredFree(credential_ptr as *const _) };
+        read
+    }
+
+    // The type and persistence of the spike under a `TERMSRV/<host>:<port>` name: the
+    // Credential Manager takes, returns and deletes such an entry. Whether mstsc reads it
+    // is not verified here.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn termsrv_probe_a_generic_entry_of_this_logon_session_is_written_read_and_deleted() {
+        use windows::Win32::Security::Credentials::{CRED_PERSIST_SESSION, CRED_TYPE_GENERIC};
+
+        let target = probe_target();
+        assert!(!windows_credential_exists(&target).unwrap());
+        let _entry = ProbeEntry(target.clone());
+
+        windows_write_credential(&target, "CORP\\probe", "pässwort ✓", CRED_PERSIST_SESSION)
+            .unwrap();
+
+        assert!(windows_credential_exists(&target).unwrap());
+        assert_eq!(
+            probe_read(&target),
+            (
+                CRED_TYPE_GENERIC,
+                CRED_PERSIST_SESSION,
+                "CORP\\probe".to_string()
+            )
+        );
+        assert_eq!(windows_read_credential(&target).unwrap(), "pässwort ✓");
+
+        windows_delete_credential(&target).unwrap();
+        assert!(!windows_credential_exists(&target).unwrap());
+        // A removal finds nothing once the entry is gone, and that is no error.
+        windows_delete_credential(&target).unwrap();
     }
 
     // Windows-only credential/target formatting. These execute now that the CI
