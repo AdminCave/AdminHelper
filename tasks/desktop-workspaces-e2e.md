@@ -61,8 +61,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
 Doku: keine (Test)
 Abhängt von: T29
 
-### T31 — Live-Specs: zwei Installationen, derselbe Visitor-Port  [ ]
+### T31 — Live-Specs: zwei Installationen, derselbe Visitor-Port  [x]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-add-server.live.js, apps/desktop/e2e/test/specs/two-installations.workspaces.js
+Evidenz: run.sh[quick] desktop-e2e: 1 passed, 0 failed, 17 skipped @b57924d3 2026-10-20T20:29:45+02:00
+Review: approve (.ah-out/review/desktop-workspaces-e2e/T31.verdict.json)
 Änderung: `workspace-add-server.live.js` (SPDX-Header, Launcher): legt den Server-Workspace „Kunde B“ mit `AH_E2E_SERVER_URL_B` an und schreibt seine Id in die Datei aus `AH_E2E_WS_B_FILE`. `two-installations.workspaces.js` (SPDX-Header, Multiremote): `wsA` (Standard, Stack A) und `wsB` (Kunde B, Stack B) registrieren sich je mit ihrem Token (`AH_ENROLL_TOKEN_A`/`_B`), melden sich an und starten den Tunnel; `tunnel_status` beider zeigt denselben Server-Port und verschiedene lokale Ports; jeder öffnet seine SSH-Verbindung; `wsB` findet vor der Registrierung keine Identität (`is_device_enrolled` false), obwohl `wsA` registriert ist; ein zweiter Start `--workspace standard` aus Node endet mit Exit 3, während `wsA` läuft. Verify ist der Lint; Beweis im Sammellauf (T32). Nachtrag (2026-10-20): Der Spec `workspace-add-server.live.js` legt den Workspace über den Picker und den Editor der Oberfläche an (T19, T20 in `tasks/desktop-workspaces-ui.md`); T31 baut deshalb erst, wenn die Oberfläche in `feature/desktop-workspaces` gemergt und hierher geholt ist, und steht hinter T44.
 Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
