@@ -62,6 +62,14 @@ Doku: keine (intern)
 Abhängt von: T1
 Test-Löschung: apps/agent/internal/config/securedir_linux_test.go::TestSecureDirRestrictsToOwner — `config.SecureDir` entfällt mit T4; gleichwertig prüft `TestEnsureSecureDirRestrictsToOwner` (Fall „existing and open“: ein Verzeichnis mit 0777 wird 0700) dasselbe über `EnsureSecureDir`
 
+### T7 — Windows: ein Eintrag, der beim Aufräumen verschwindet, gilt als weg  [ ]
+Komponente: agent · Dateien: apps/agent/internal/config/securedir_windows.go, apps/agent/internal/config/securedir_windows_test.go
+Änderung: `cleanChild` (`securedir_windows.go`) wertet heute nur einen Eintrag als weg, der schon beim Einordnen (`classifyAt`) fehlt. Verschwindet er danach, etwa eine Temp-Datei, die der laufende Dienst gerade umbenennt (`frpc.toml.tmp`), scheitert der ganze Lauf; aus `Store` heraus geschieht das nach der Enrollment-Anfrage, die das alte Zertifikat schon ersetzt. Neu gilt ein Kind, dessen Folgeschritte (Übernehmen, DACL zurücksetzen, Sperren, Öffnen, Entfernen) mit „nicht gefunden“ (Name oder Pfad) oder „Löschen ausstehend“ scheitern, als weg, und der Lauf geht weiter. Für `dir` selbst bleibt es bei T2 (neu anlegen oder Fehler). Tests windows-getaggt, zuerst rot: ein Kind, das zwischen Einordnen und Folgeschritt verschwindet (Naht), lässt den Lauf gelingen, als Datei und als Ordner; ein Kind mit ausstehendem Löschen ebenso; ein Kind, das sich nicht öffnen lässt, weil es offen gehalten wird, führt weiter zum Fehler.
+Verify: bash scripts/dev/verify.sh agent --strict
+Doku: keine (intern)
+Abhängt von: T6
+Beweis: reviewer T4 2026-10-20 an 0a53e340, Code-Lesung `cleanChild` (`securedir_windows.go:287-300`): `gone` nur aus `classifyAt`, Folgeschritte geben „nicht gefunden“ als Fehler zurück; auf Windows nicht nachgestellt, der erste Test der Task zeigt es
+
 ### T5 — Doku und CHANGELOG  [ ]
 Komponente: agent · Dateien: CHANGELOG.md, docs/developer/agent.html, docs/en/developer/agent.html
 Änderung: CHANGELOG unter `## [Unreleased]`, `### Changed`: Der Agent legt unter Windows sein Datenverzeichnis vor der ersten Nutzung mit festen Rechten an (nur SYSTEM und Administratoren) und übernimmt kein vorhandenes Verzeichnis mit anderem Eigentümer. `docs/developer/agent.html:78` und `docs/en/developer/agent.html:78`: den Absatz zur Härtung des Datenverzeichnisses entsprechend ergänzen (DE und EN im selben Commit).
