@@ -16,6 +16,8 @@ Kevin 2026-10-19: R-0423 und R-0492 als ein Vorhaben, alle Empfehlungen der Best
 
 ## Block A — Agent (Report v3)
 
+Korrektur Kevin 2026-10-20: In den mitgelieferten Templates bekommt nur Disk Forecast (Intervall 1 h) `consecutive_oks` 1, SMART (5 min) bleibt bei 2; umgesetzt in monitoring-alert-quality T17 (hebt `linux-base` und `windows-base` um eine Version).
+
 ### T1 — Agent: Zustandsdatei und CPU als Mittel seit dem letzten Report  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, apps/agent/internal/monitor/collector.go, apps/agent/internal/monitor/report.go, apps/agent/internal/monitor/monitor.go, apps/agent/internal/config/paths.go, CHANGELOG.md
 Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @ac157e85 2026-10-20T06:27:34+02:00
