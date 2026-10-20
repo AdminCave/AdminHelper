@@ -322,6 +322,8 @@ VictoriaMetrics bleiben unverändert.
 - **Rollback:** Code zurück und `alembic downgrade` um eine Revision (entfernt die vier Spalten; `consecutive_oks`
   ist dann wieder implizit 1). Der Server-Vertrag ist additiv.
 
+Hingenommenes Restrisiko (Kevin 2026-10-20): Laufen zwei Meldungen desselben Checks binnen Sekunden und scheitert nur der Hub-Versand der ersten, kann die Glocke die zweite Alarmmeldung auslassen (sie fiel in den Cooldown der reservierten ersten); E-Mail und Webhook der Regeln melden weiter.
+
 ## Doku-Impact
 
 Sichtbares Verhalten, DE + EN im selben Commit wie der Code: `docs/admin/monitoring.html` (Check anlegen `:119`,
