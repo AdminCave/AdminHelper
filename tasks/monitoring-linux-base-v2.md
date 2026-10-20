@@ -233,8 +233,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: docs/admin/monitoring.html + EN `:73` (fehlgeschlagene Dienste rot, andere fehlgeschlagene Units gelb)
 Abhängt von: T10
 
-### T29 — Abgleichstest der Unit-Endungen zwischen Checker und Desktop  [ ]
+### T29 — Abgleichstest der Unit-Endungen zwischen Checker und Desktop  [x]
 Komponente: monitoring · Dateien: apps/monitoring/tests/test_unit_types_ui_sync.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @bdbb945c 2026-10-20T13:59:29+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T29.verdict.json)
 Änderung: Aus dem Review von T22: `SecServices.svelte` (`UNIT_TYPES`) kopiert `_UNIT_TYPES` aus `apps/monitoring/app/checkers/agent.py`; ein Kommentar ist kein Gate. Neuer Test (SPDX) nach dem Muster von `tests/test_push_only_ui_sync.py`: liest die Liste aus der Svelte-Datei und vergleicht sie als Menge mit `_UNIT_TYPES`; findet er die Liste nicht, ist er rot.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_unit_types_ui_sync.py
 Doku: keine (Test)
