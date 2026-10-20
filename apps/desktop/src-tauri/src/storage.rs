@@ -215,11 +215,6 @@ pub fn load_settings(app: &tauri::AppHandle) -> Result<Settings, AppError> {
 
 /// [`load_settings`] for the webview: what it returns is the base against which
 /// [`save_settings`] tells what the webview changed.
-#[expect(
-    dead_code,
-    reason = "the load_settings command takes it up in R-0431 T14; until then the webview's \
-              reads set no base, and a save may take prefs it did not change, as before T5"
-)]
 pub fn load_settings_for_webview(app: &tauri::AppHandle) -> Result<Settings, AppError> {
     load_settings_in(&app_data_dir(app)?, Some(&SEEN_PREFS))
 }

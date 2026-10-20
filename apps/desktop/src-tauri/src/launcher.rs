@@ -26,7 +26,7 @@ use crate::enrollment::{self, ResetOutcome};
 use crate::error::AppError;
 use crate::keyring_store;
 use crate::migration;
-use crate::models::{Settings, SyncMode};
+use crate::models::{Settings, SyncMode, WorkspaceDraft, WorkspaceList};
 use crate::password;
 use crate::port_registry::PortRegistry;
 use crate::validation::{validate_https_url, validate_server_url_secure};
@@ -52,55 +52,6 @@ const PURGE_TIMEOUT: Duration = Duration::from_secs(120);
 const EXIT_REVOKED: i32 = 10;
 const EXIT_LOCAL_ONLY: i32 = 11;
 const EXIT_NOT_ENROLLED: i32 = 12;
-
-/// A workspace as the picker lists it.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) read it"
-    )
-)]
-#[derive(Debug, Clone)]
-pub struct WorkspaceInfo {
-    pub id: WorkspaceId,
-    pub name: String,
-    pub color: String,
-    pub kind: SyncMode,
-    /// The host of its URL; none without a URL.
-    pub host: Option<String>,
-    /// A process holds its lock.
-    pub open: bool,
-}
-
-/// What the picker shows.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) read it"
-    )
-)]
-#[derive(Debug, Clone)]
-pub struct WorkspaceList {
-    pub workspaces: Vec<WorkspaceInfo>,
-    /// The workspace the picker selects first, if it is listed.
-    pub last_used: Option<WorkspaceId>,
-    /// The note on the migration is due: [`list`] says so once.
-    pub migrated_notice: bool,
-}
-
-/// What the picker sends to make a workspace (`id` none) or to edit the one `id` names.
-#[derive(Debug, Clone)]
-pub struct WorkspaceDraft {
-    pub id: Option<WorkspaceId>,
-    pub kind: SyncMode,
-    pub name: String,
-    pub color: String,
-    /// The URL the workspace keeps; in an edit, none (or a blank one) takes away the URL it has.
-    /// The editor therefore always sends the whole URL.
-    pub url: Option<String>,
-}
 
 /// Held for every read, change and write of `workspaces.json`. One launcher runs per device (the
 /// single-instance plugin), but its commands run side by side: without the guard, a listing that
@@ -128,13 +79,6 @@ static DELETE_GUARD: Mutex<()> = Mutex::new(());
 /// whose `workspace.json` does not load, is left out with a log line: one broken workspace must
 /// not leave the picker empty. The latter stays a workspace all the same (its id stays taken,
 /// its ports stay).
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) call it"
-    )
-)]
 pub fn list(base: &Path) -> Result<WorkspaceList, AppError> {
     let _guard = registry_guard();
     let mut registry = load_registry(base)?;
@@ -160,14 +104,8 @@ pub fn list(base: &Path) -> Result<WorkspaceList, AppError> {
                 continue;
             }
         };
-        workspaces.push(WorkspaceInfo {
-            id: entry.id.clone(),
-            host: meta.url.as_deref().and_then(host_of),
-            open: is_open(&ws.lock_path(base))?,
-            name: meta.name,
-            color: meta.color,
-            kind: meta.kind,
-        });
+        let open = is_open(&ws.lock_path(base))?;
+        workspaces.push(meta.info(entry.id.clone(), open));
     }
     let migrated_notice = registry.migrated_notice;
     if migrated_notice {
@@ -188,13 +126,6 @@ pub fn list(base: &Path) -> Result<WorkspaceList, AppError> {
 /// workspace has keyring keys of its own (`legacyKeys: false`). An edit takes the name, colour
 /// and URL, only while the workspace is closed, and never another kind. The draft is checked
 /// here, without a network call.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) call it"
-    )
-)]
 pub fn save(base: &Path, draft: &WorkspaceDraft) -> Result<WorkspaceId, AppError> {
     let (name, url) = checked(draft)?;
     let _guard = registry_guard();
@@ -242,13 +173,6 @@ pub fn drop_orphan_ports(base: &Path) -> Result<(), AppError> {
 /// registry names it as last used, so the picker selects it again whether it opens or not. An
 /// error, too, if the process ends before it holds the lock or still holds none at the
 /// deadline; such a process is left to run.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) call it"
-    )
-)]
 pub fn open(base: &Path, id: &WorkspaceId, spawner: &impl Spawner) -> Result<(), AppError> {
     open_within(base, id, spawner, OPEN_TIMEOUT, OPEN_PROBE)
 }
@@ -330,13 +254,6 @@ fn mark_opening(base: &Path, id: &WorkspaceId) -> Result<PathBuf, AppError> {
 /// open or that the registry does not name; an error, too, for a purge that ends with no
 /// outcome or not in time. The registry drops the workspace only after its purge: a purge that
 /// fails leaves it there to delete again.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) call it"
-    )
-)]
 pub fn delete(
     base: &Path,
     id: &WorkspaceId,
@@ -438,8 +355,9 @@ fn purge_outcome(code: i32) -> Option<ResetOutcome> {
 /// identity goes here only (`LocalOnly`). Then its identity, the RDP keys its index names, the
 /// index, its port map entries and its directory go. The index goes on its own, once its keys
 /// are deleted or handed over, and the directory last: a purge that stopped on the way runs
-/// again. What names keys to delete is read before anything changes: a name that is no RDP key
-/// of this workspace stops the purge before it revokes or deletes a thing.
+/// again. What names keys to delete or hand over is read before anything changes: a name that is
+/// no RDP key of this workspace, or a file of names that does not load, stops the purge before it
+/// revokes or deletes a thing.
 ///
 /// A migrated workspace keeps its keys without a prefix, as every migrated one does. Its
 /// identity is that of a server: another migrated workspace of the same installation shares
@@ -464,7 +382,10 @@ pub fn purge(
     } else {
         (false, false)
     };
-    let handed_over = if ws.legacy_keys && !keys_shared {
+    // The keys handed over before: the last migrated workspace deletes them, any other adds its
+    // own. Read here with the rest, so a file that does not load stops the purge before the
+    // revoke; a purge that hands over no key leaves the file unread.
+    let handed_over = if ws.legacy_keys && !(keys_shared && rdp_keys.is_empty()) {
         password::handed_over_keys(base)?
     } else {
         BTreeSet::new()
@@ -488,7 +409,7 @@ pub fn purge(
         outcome
     };
     if keys_shared {
-        password::hand_over_keys(base, &rdp_keys)?;
+        password::hand_over_keys(base, handed_over, &rdp_keys)?;
     } else {
         for key in rdp_keys.iter().chain(&handed_over) {
             keyring_store::delete(key)?;
@@ -561,13 +482,6 @@ fn unreadable(file: &str, e: AppError) -> AppError {
 /// Starts the launcher, for "Workspaces…" in a workspace process: `spawner` starts this program
 /// without arguments. If a launcher runs already, the new one hands over to it and ends (the
 /// single-instance plugin), so nothing here waits for it.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) call it"
-    )
-)]
 pub fn open_launcher(spawner: &impl Spawner) -> Result<(), AppError> {
     spawner.spawn(&[]).map_err(|e| {
         AppError::Io(io::Error::new(
@@ -599,10 +513,6 @@ pub struct AppSpawner {
 
 impl AppSpawner {
     /// The spawner of this program ([`std::env::current_exe`]).
-    #[expect(
-        dead_code,
-        reason = "the commands of the launcher (R-0431 T14) start the workspaces and the launcher with it"
-    )]
     pub fn new() -> io::Result<Self> {
         Ok(Self {
             program: std::env::current_exe()?,
@@ -698,10 +608,6 @@ fn partial(dir: &Path) -> PathBuf {
     let mut partial = dir.as_os_str().to_owned();
     partial.push(".partial");
     PathBuf::from(partial)
-}
-
-fn host_of(url: &str) -> Option<String> {
-    Url::parse(url).ok()?.host_str().map(String::from)
 }
 
 /// The name and URL of `draft` as a workspace keeps them: trimmed, a blank URL none. An error
@@ -2929,6 +2835,74 @@ mod tests {
                 "{case}"
             );
             assert_eq!(fs::read_to_string(&path).unwrap(), content, "{case}");
+            assert_eq!(registry_bytes(base), registry, "{case}");
+        }
+    }
+
+    #[test]
+    fn purge_reads_the_keys_handed_over_before_it_revokes_and_only_with_keys_to_hand_over() {
+        // `standard` revokes the identity alone (`lokal` has no server) and hands its RDP keys
+        // to `lokal`; the file it hands them over to does not load.
+        for with_keys in [true, false] {
+            let case = format!("with keys to hand over: {with_keys}");
+            let scratch = Scratch::new("purge-hand-over-unreadable");
+            let base = &scratch.0;
+            let _keyring = keyring_store::memory();
+            install(
+                base,
+                &[
+                    (
+                        "standard",
+                        meta(SyncMode::Server, "Standard", Some("https://ah.example.com")),
+                    ),
+                    ("lokal", meta(SyncMode::Local, "Lokal", None)),
+                ],
+                false,
+            );
+            let identity = behind("", &IDENTITY);
+            let rdp = behind("", &RDP[..1]);
+            if with_keys {
+                index(base, "standard", &rdp);
+            }
+            store(&identity);
+            store(&rdp);
+            let broken = "{not json";
+            fs::write(base.join(HANDED_OVER), broken).unwrap();
+            write_port_map(base, &[("standard", "ssh", 6000), ("lokal", "ssh", 23000)]);
+            let registry = registry_bytes(base);
+            let mut asked = Vec::new();
+
+            let purged = purge_child(base, "standard", |url| {
+                asked.push(url.to_string());
+                ResetOutcome::Revoked
+            });
+
+            if with_keys {
+                let error = purged.unwrap_err().to_string();
+                assert!(error.contains(HANDED_OVER), "{case}: {error}");
+                assert_eq!(asked, Vec::<String>::new(), "{case}: revoked");
+                assert_eq!(held_keys(&identity), identity, "{case}");
+                assert!(
+                    dir_of(base, "standard").join("secrets.json").exists(),
+                    "{case}"
+                );
+                assert_eq!(port_owners(base), ["standard", "lokal"], "{case}");
+                assert_eq!(workspace_dirs(base), ["lokal", "standard"], "{case}");
+            } else {
+                // Nothing to hand over: the file is not read, and the purge goes through.
+                assert_eq!(purged.unwrap(), ResetOutcome::Revoked, "{case}");
+                assert_eq!(asked, ["https://ah.example.com"], "{case}");
+                assert_eq!(held_keys(&identity), Vec::<String>::new(), "{case}");
+                assert_eq!(port_owners(base), ["lokal"], "{case}");
+                assert_eq!(workspace_dirs(base), ["lokal"], "{case}");
+            }
+            // Never a key of another workspace: the RDP key may be `lokal`'s.
+            assert_eq!(held_keys(&rdp), rdp, "{case}");
+            assert_eq!(
+                fs::read_to_string(base.join(HANDED_OVER)).unwrap(),
+                broken,
+                "{case}"
+            );
             assert_eq!(registry_bytes(base), registry, "{case}");
         }
     }

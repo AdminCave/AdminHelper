@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::workspace::WorkspaceId;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionKind {
@@ -224,4 +226,52 @@ pub struct DeviceIdentity {
 pub struct RdpErrorPayload {
     pub correlation_id: String,
     pub message: String,
+}
+
+/// A workspace as the picker lists it and as its window knows itself (R-0431).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceInfo {
+    pub id: WorkspaceId,
+    pub name: String,
+    /// One of the palette (`workspace::PALETTE`).
+    pub color: String,
+    pub kind: SyncMode,
+    /// The host of its URL; none without a URL.
+    pub host: Option<String>,
+    /// A process holds its lock.
+    pub open: bool,
+}
+
+/// What the picker shows.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceList {
+    pub workspaces: Vec<WorkspaceInfo>,
+    /// The workspace the picker selects first, if it is listed.
+    pub last_used: Option<WorkspaceId>,
+    /// The note on the migration is due: `launcher::list` says so once.
+    pub migrated_notice: bool,
+}
+
+/// What the picker sends to make a workspace (`id` none) or to edit the one `id` names.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDraft {
+    pub id: Option<WorkspaceId>,
+    pub kind: SyncMode,
+    pub name: String,
+    pub color: String,
+    /// The URL the workspace keeps; in an edit, none (or a blank one) takes away the URL it has.
+    /// The editor therefore always sends the whole URL.
+    pub url: Option<String>,
+}
+
+/// Which process the webview talks to: the launcher, or the process of `workspace`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceContext {
+    pub launcher: bool,
+    /// The workspace of this process, open as this process holds it; none in the launcher.
+    pub workspace: Option<WorkspaceInfo>,
 }

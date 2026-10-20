@@ -230,14 +230,18 @@ pub(crate) fn handed_over_keys(base: &Path) -> Result<BTreeSet<String>, AppError
 }
 
 /// Hands `keys`, RDP keys without a prefix, over to the purge of the last migrated
-/// workspace in `base`, the app data dir.
-pub(crate) fn hand_over_keys(base: &Path, keys: &BTreeSet<String>) -> Result<(), AppError> {
+/// workspace in `base`, the app data dir, which `handed_over` were handed over to
+/// before ([`handed_over_keys`], read before the purge changed a thing).
+pub(crate) fn hand_over_keys(
+    base: &Path,
+    mut handed_over: BTreeSet<String>,
+    keys: &BTreeSet<String>,
+) -> Result<(), AppError> {
     if keys.iter().any(|key| !key.starts_with(RDP_KEY_HEAD)) {
         return Err(AppError::Validation(
             "only RDP keys without a prefix are handed over".to_string(),
         ));
     }
-    let mut handed_over = handed_over_keys(base)?;
     if !keys.is_subset(&handed_over) {
         handed_over.extend(keys.iter().cloned());
         crate::storage::write_json_atomic(

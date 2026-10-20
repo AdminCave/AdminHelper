@@ -32,13 +32,14 @@ mod workspace;
 
 use commands::{
     ansible_generate_inventory, ansible_launch, ansible_write_playbook, api_proxy,
-    check_server_cert, delete_password, device_identity, enroll_with_token, export_browser_p12,
-    fetch_connections_jwt, fetch_tunnels, generate_diagnostics, is_device_enrolled,
-    load_connections, load_settings, login, logout, open_connection, open_connection_stored,
-    password_state, pinned_ca_fingerprint, refresh_tunnel, reset_device_identity,
-    reset_server_cert_pin, resolve_connection, save_connections, save_password, save_settings,
+    check_server_cert, delete_password, delete_workspace, device_identity, enroll_with_token,
+    export_browser_p12, fetch_connections_jwt, fetch_tunnels, generate_diagnostics,
+    is_device_enrolled, list_workspaces, load_connections, load_settings, login, logout,
+    open_connection, open_connection_stored, open_launcher, open_workspace, password_state,
+    pinned_ca_fingerprint, refresh_tunnel, reset_device_identity, reset_server_cert_pin,
+    resolve_connection, save_connections, save_password, save_settings, save_workspace,
     start_notification_stream, start_tunnel, stop_notification_stream, stop_tunnel,
-    sync_connections, tunnel_status,
+    sync_connections, tunnel_status, workspace_context,
 };
 use tauri::plugin::TauriPlugin;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -250,7 +251,13 @@ fn main() {
             ansible_write_playbook,
             ansible_launch,
             start_notification_stream,
-            stop_notification_stream
+            stop_notification_stream,
+            workspace_context,
+            list_workspaces,
+            save_workspace,
+            delete_workspace,
+            open_workspace,
+            open_launcher
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

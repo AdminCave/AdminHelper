@@ -137,3 +137,41 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 // at the server, deleted only here because the server did not revoke it (not reachable,
 // or it declined), or there was no identity at all.
 export type ResetOutcome = 'revoked' | 'localOnly' | 'notEnrolled';
+
+// ─────────────────────────── Workspaces (R-0431) ───────────────────────────
+
+// A workspace as the picker lists it and as its window knows itself (models.rs WorkspaceInfo).
+export interface WorkspaceInfo {
+  id: string;
+  name: string;
+  /** One of the palette (workspace.rs PALETTE). */
+  color: string;
+  kind: SyncMode;
+  /** The host of its URL; null without a URL. */
+  host?: string | null;
+  /** A process holds the workspace. */
+  open: boolean;
+}
+
+// What the picker shows: `lastUsed` is selected first; `migratedNotice` comes true once.
+export interface WorkspaceList {
+  workspaces: WorkspaceInfo[];
+  lastUsed?: string | null;
+  migratedNotice: boolean;
+}
+
+// Makes a workspace (no id) or edits the closed one `id` names. The kind of a workspace
+// never changes; in an edit, a missing or blank url takes away the URL it has.
+export interface WorkspaceDraft {
+  id?: string | null;
+  kind: SyncMode;
+  name: string;
+  color: string;
+  url?: string | null;
+}
+
+// Which process the webview talks to: the launcher, or the process of `workspace`.
+export interface WorkspaceContext {
+  launcher: boolean;
+  workspace?: WorkspaceInfo | null;
+}

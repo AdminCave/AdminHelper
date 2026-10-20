@@ -7,7 +7,8 @@
 //! keyring prefix, log and window names. A process serves one workspace for its whole life;
 //! the launcher serves none. Also the lock that keeps a workspace in one process and the two
 //! files that say which workspaces exist (`workspaces.json`) and what each one is
-//! (`workspace.json`), and what the start of a process comes to ([`startup`]).
+//! (`workspace.json`), what the start of a process comes to ([`startup`]), and which process a
+//! command is for ([`check_side`]).
 
 use std::ffi::OsString;
 use std::fmt;
@@ -20,9 +21,10 @@ use std::time::{Duration, Instant};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::error::AppError;
-use crate::models::SyncMode;
+use crate::models::{SyncMode, WorkspaceContext, WorkspaceInfo};
 use crate::storage::write_json_atomic;
 
 /// Every character an id may hold (`^[a-z0-9-]{1,32}$`), spelled out rather than as ranges, so
@@ -372,6 +374,23 @@ impl Meta {
     pub fn store(&self, dir: &Path) -> Result<(), AppError> {
         write_json_atomic(&dir.join(META_FILE), self)
     }
+
+    /// The workspace `id` this describes, as the picker lists it and its window knows itself;
+    /// `open` whether a process holds its lock.
+    pub fn info(self, id: WorkspaceId, open: bool) -> WorkspaceInfo {
+        WorkspaceInfo {
+            host: self.url.as_deref().and_then(host_of),
+            id,
+            name: self.name,
+            color: self.color,
+            kind: self.kind,
+            open,
+        }
+    }
+}
+
+fn host_of(url: &str) -> Option<String> {
+    Url::parse(url).ok()?.host_str().map(String::from)
 }
 
 /// What went wrong with a file, and where, but nothing from inside it: serde quotes the values
@@ -579,6 +598,47 @@ pub fn current() -> Result<Workspace, AppError> {
         .ok_or_else(|| AppError::Validation("no workspace in this process (launcher)".to_string()))
 }
 
+/// What the webview learns of its process, `base` being the app data dir: the launcher, or the
+/// workspace this process serves, open as this process holds it.
+pub fn context(base: &Path) -> Result<WorkspaceContext, AppError> {
+    let Ok(ws) = current() else {
+        return Ok(WorkspaceContext {
+            launcher: true,
+            workspace: None,
+        });
+    };
+    let meta = Meta::load(&ws.data_dir(base))?;
+    Ok(WorkspaceContext {
+        launcher: false,
+        workspace: Some(meta.info(ws.id, true)),
+    })
+}
+
+/// The process a command is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// The picker: it lists, makes, edits, opens and deletes workspaces.
+    Launcher,
+    /// The window of one workspace.
+    Workspace,
+}
+
+/// Whether a command for `side` runs in a process whose workspace is `current`, none in the
+/// launcher. Every process has every command; this keeps the launcher out of a workspace, and
+/// a workspace from managing the others.
+pub fn check_side(side: Side, current: Option<&Workspace>) -> Result<(), AppError> {
+    match (side, current) {
+        (Side::Launcher, None) | (Side::Workspace, Some(_)) => Ok(()),
+        (Side::Launcher, Some(ws)) => Err(AppError::Validation(format!(
+            "only the launcher does this, not the process of the workspace {}",
+            ws.id
+        ))),
+        (Side::Workspace, None) => Err(AppError::Validation(
+            "only the process of a workspace does this, not the launcher".to_string(),
+        )),
+    }
+}
+
 /// While the guard lives, [`current`] on this thread answers `workspace`; dropping the guard
 /// brings back what this thread had before.
 #[cfg(test)]
@@ -630,10 +690,10 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        acquire, acquire_within, current, enter, is_open, set_current, startup, AppError, Held,
-        InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Workspace, WorkspaceId,
-        ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE,
-        REGISTRY_FILE, USAGE,
+        acquire, acquire_within, check_side, context, current, enter, is_open, set_current,
+        startup, AppError, Held, InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Side,
+        Workspace, WorkspaceId, ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN,
+        LAUNCHER_TITLE, META_FILE, PALETTE, REGISTRY_FILE, USAGE,
     };
     use crate::models::SyncMode;
 
@@ -1098,6 +1158,78 @@ mod tests {
             );
             assert!(!PALETTE[..i].contains(colour), "{colour} twice");
         }
+    }
+
+    #[test]
+    fn the_context_is_the_launcher_or_the_workspace_of_this_process_under_its_wire_names() {
+        let scratch = Scratch::new("context");
+        let ws = workspace("w-0a1b2c3d", "Kunde A", false);
+        meta().store(&ws.data_dir(&scratch.0)).unwrap();
+
+        let launcher = context(&scratch.0).unwrap();
+        assert_eq!(
+            serde_json::to_value(launcher).unwrap(),
+            serde_json::json!({ "launcher": true, "workspace": null })
+        );
+
+        let _entered = enter(ws.clone());
+        let own = context(&scratch.0).unwrap();
+        assert_eq!(
+            serde_json::to_value(own).unwrap(),
+            serde_json::json!({
+                "launcher": false,
+                "workspace": {
+                    "id": "w-0a1b2c3d",
+                    "name": "Kunde A",
+                    "color": PALETTE[1],
+                    "kind": "server",
+                    "host": "ah.example.com",
+                    "open": true,
+                },
+            })
+        );
+
+        // A workspace without a URL has no host.
+        let local = Meta {
+            kind: SyncMode::Local,
+            url: None,
+            ..meta()
+        };
+        local.store(&ws.data_dir(&scratch.0)).unwrap();
+        let own = context(&scratch.0).unwrap().workspace.expect("a workspace");
+        assert_eq!(own.host, None);
+        assert_eq!(own.kind, SyncMode::Local);
+    }
+
+    #[test]
+    fn the_context_of_a_workspace_whose_workspace_json_does_not_load_is_an_error() {
+        let scratch = Scratch::new("context-broken");
+        let ws = workspace("w-0a1b2c3d", "Kunde A", false);
+        let dir = ws.data_dir(&scratch.0);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(META_FILE), "{not json").unwrap();
+        let _entered = enter(ws);
+        assert!(context(&scratch.0).is_err());
+    }
+
+    #[test]
+    fn a_command_runs_only_in_the_process_it_is_for() {
+        let ws = workspace("w-0a1b2c3d", "Kunde A", false);
+        assert!(check_side(Side::Launcher, None).is_ok());
+        assert!(check_side(Side::Workspace, Some(&ws)).is_ok());
+
+        let in_a_workspace = check_side(Side::Launcher, Some(&ws)).unwrap_err();
+        assert!(
+            matches!(&in_a_workspace, AppError::Validation(msg)
+                if msg.contains("only the launcher") && msg.contains("w-0a1b2c3d")),
+            "{in_a_workspace:?}"
+        );
+        let in_the_launcher = check_side(Side::Workspace, None).unwrap_err();
+        assert!(
+            matches!(&in_the_launcher, AppError::Validation(msg)
+                if msg.contains("only the process of a workspace")),
+            "{in_the_launcher:?}"
+        );
     }
 
     /// A `lock` for [`startup`] that must not be called: the start ends before the lock.
