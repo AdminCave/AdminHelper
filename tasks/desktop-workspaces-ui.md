@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Desktop: Workspaces, Teil Oberfläche — Task-Ledger
-Status: bereit · Branch: feature/desktop-workspaces-ui · Review: pro Task
+Status: erledigt · Branch: feature/desktop-workspaces-ui · Review: pro Task
 Spec: docs/features/desktop-workspaces.md (Roadmap R-0431, R-0524)
 Heavy: none — Teil-Ledger von `tasks/desktop-workspaces.md`; die schweren Läufe fährt das Vorhaben dort
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
