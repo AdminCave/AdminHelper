@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Härtung: Agent-Texte und Zahlen, Check-Config, Line-Protocol, Alert-Versand — Task-Ledger
-Status: aktiv · Branch: feature/monitoring-hardening · Review: pro Task
+Status: bereit · Branch: feature/monitoring-hardening · Review: pro Task
 Spec: keine eigene Datei (kleines Härtungs-Paket, Reihenfolge Kevin 2026-10-19)
 Heavy: none — `apps/monitoring` und im Server nur die Log-Konfiguration (`apps/server/app/core/logging_config.py`, T11; keine API) (die `evaluate`-Funktionen unter `app/checkers/`, `check_configs.py`, die `to_dict`-Methoden in `models.py`, `core/victoria.py`, `_num` in `routers/agent.py`, Logzeilen und Fehlertexte in `alerter.py`); keine Route, kein Request- oder Response-Schema, keine OpenAPI-Änderung (die Config-Modelle stehen nicht im Snapshot), kein Alembic, kein Agent-, Gateway-, Compose-, PKI-, FRP-, Install- oder Desktop-Pfad (die `linux-full`-Liste in `/feature-plan` §3 und CLAUDE.md §5 nennt `apps/monitoring` nicht). Monitoring- und Server-Suite fährt die PR-CI
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -165,8 +165,10 @@ Semantik: docs/developer/monitoring.html:94 (Stand T5) — die `to_dict`-Methode
 Abhängt von: T5
 HEAD: c6ee6cb2
 
-### T13 — Server: ein 422 mit nicht endlicher Zahl im Body bleibt ein 422  [ ]
+### T13 — Server: ein 422 mit nicht endlicher Zahl im Body bleibt ein 422  [x]
 Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_validation_response.py
+Evidenz: run.sh[quick] server: 3 passed, 0 failed, 15 skipped @3e0ac74c 2026-10-20T07:37:32+02:00
+Review: approve (.ah-out/review/monitoring-hardening/T13.verdict.json)
 Änderung: `_validation_error` (`apps/server/app/main.py:393`) fängt heute nur `UnicodeEncodeError`; steht im Body, den FastAPIs 422 als `input` zurückgibt, `NaN`, `Infinity` oder `-Infinity`, wirft `JSONResponse` `ValueError`, und die Antwort ist 500. Der Handler schreibt eine nicht endliche Zahl im zurückgegebenen `input` als `null`, gleich aufgebaut wie der Handler des Monitorings aus T6 und T14 (beide Dienste bleiben getrennte Kopien); jeder andere 422 bleibt unverändert, auch der Weg für einzelne Surrogates. Neue Testdatei mit SPDX-Kopf (`reuse annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later`, sonst im Format der übrigen Testdateien). Tests zuerst rot (dreimal identisch auf HEAD): `POST /api/auth/login` mit rohem Body (`content=`) `{"username": Infinity}`, `{"username": NaN}` und `{"username": -Infinity}` → 422, JSON-Body mit `json.loads` und einem `parse_constant`, das wirft, lesbar, `input` mit `null` an der Stelle der Zahl; `{"username": "x"}` → 422 wie heute; ein 422 mit Nicht-ASCII-Text ohne nicht endliche Zahl und ohne Surrogate bleibt FastAPIs eigene Antwort, Bytes gleich, unescaptes UTF-8, wie der Test aus T14 im Monitoring; der bestehende Surrogate-Test (`tests/test_frp_extra_config.py`) bleibt grün.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_validation_response.py tests/test_frp_extra_config.py
 Doku: keine (Fehlerpfad; der 422 entspricht dem dokumentierten Verhalten)
