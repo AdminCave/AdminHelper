@@ -246,7 +246,7 @@
             <li><strong>Unedited</strong> (check and alert definitions as last shipped): the service takes the new definitions and syncs all assigned servers; customized fields of single checks stay. The template's name and description do not count: a standard template that was only renamed is updated and keeps its name.</li>
             <li><strong>Edited</strong> (definitions changed): the template stays as it is. <em>Monitoring → Templates</em> shows "Update available" next to its name. The click opens a comparison of the current with the shipped check and alert definitions: "new", "removed" or "changed" per definition, for changed ones the fields in the columns "Current" and "Shipped". "Apply" replaces all definitions of the template, the alert definitions included, with the shipped ones and syncs the servers. Your own changes to the definitions are lost; customized fields of single checks stay, checks of removed definitions are deleted, alert rules get the shipped values.</li>
           </ul>
-          <p>A standard template created before versions were introduced counts as version 1; if its definitions differ from the shipped ones, it counts as edited.</p>
+          <p>A standard template created before versions were introduced counts as version 1; if its definitions differ from those of version 1, it counts as edited. Otherwise it follows a newer version like any unedited standard template.</p>
 
           <h3>Assigning templates</h3>
           <p>There are four ways to assign:</p>

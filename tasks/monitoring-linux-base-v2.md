@@ -71,8 +71,10 @@ Doku: keine (intern; Doku mit T14 und T25)
 
 ## Block B — Monitoring
 
-### T7 — Monitoring: v1-Hashes der Standard-Templates einfrieren  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+### T7 — Monitoring: v1-Hashes der Standard-Templates einfrieren  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @09d0c409 2026-10-20T08:28:24+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T7.verdict.json)
 Änderung: Konstante je Slug mit dem Hash der Version 1 (Werte aus `tests/test_seed.py:215-221`, Kommentar: wofür sie da ist und dass sie nie geändert wird). `reconcile_builtin_templates` (`builtin_templates.py:358-363`) gibt einer Zeile ohne `builtin_hash` Version 1 und diesen Hash (für einen Slug ohne Eintrag weiter den Hash der ausgelieferten Definitionen); Kommentar `:359-361` nachziehen. Tests: Zeilen ohne Version und Hash mit den Definitionen der Version 1, dann eine ausgelieferte Version 2 (`_ship_version_2`, `test_seed.py:156`) → `reconcile` rollt Version 2 aus und die Zeile gilt nicht als angepasst; eine damals angepasste Zeile bleibt angepasst und bekommt das Angebot; die Konstante gleicht den gepinnten v1-Hashes (`test_shipped_definitions_change_only_with_a_new_version`, `:209`); `test_builtin_seeded_before_versions_gets_a_baseline` (`:356`) bleibt grün.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_seed.py
 Doku: docs/admin/monitoring.html:249 + docs/en/admin/monitoring.html:249 (ein Standard-Template von vor den Versionen gilt als Version 1; angepasst ist es, wenn seine Definitionen von denen der Version 1 abweichen; bei einer neueren Version folgt es dem Update). CHANGELOG keiner (R-0420 ist unveröffentlicht)

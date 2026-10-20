@@ -22,6 +22,7 @@ from sqlalchemy.pool import StaticPool
 from app import builtin_templates, template_sync
 from app.builtin_templates import (
     BUILTIN_TEMPLATES,
+    BUILTIN_V1_HASHES,
     definitions_hash,
     reconcile_builtin_templates,
     seed_builtin_templates,
@@ -153,13 +154,13 @@ def _shipped(slug):
     return next(t for t in builtin_templates.BUILTIN_TEMPLATES if t["slug"] == slug)
 
 
-def _ship_version_2(monkeypatch, slug="linux-base"):
-    """Ship version 2 of one built-in: system-resources warns every minute."""
+def _ship_version_2(monkeypatch, slug="linux-base", def_id="system-resources"):
+    """Ship version 2 of one built-in: its check def_id warns every minute."""
     shipped = copy.deepcopy(builtin_templates.BUILTIN_TEMPLATES)
     tpl = next(t for t in shipped if t["slug"] == slug)
     tpl["version"] = 2
     tpl["check_definitions"] = [
-        {**d, "severity": "warning", "interval": "1m"} if d["def_id"] == "system-resources" else d
+        {**d, "severity": "warning", "interval": "1m"} if d["def_id"] == def_id else d
         for d in tpl["check_definitions"]
     ]
     monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", shipped)
@@ -223,6 +224,24 @@ def test_shipped_definitions_change_only_with_a_new_version():
         t["slug"]: (t["version"], definitions_hash(t["check_definitions"], t["alert_definitions"]))
         for t in BUILTIN_TEMPLATES
     } == pinned
+
+
+def test_frozen_version_1_hashes_never_change():
+    # Rows seeded before the versions compare with these for good. Unlike the pins
+    # above they do not move with a new version: they stand for what version 1
+    # shipped, and as long as a built-in still ships version 1 they are its hash.
+    assert BUILTIN_V1_HASHES == {
+        "linux-base": "fda790008184ed153f4734a916746a1ed971edb57570b99dbc49d4195a8ecf13",
+        "windows-base": "4be77f8ba5a16bc1857dfcf0b2c5ae634967e7d35b97d837a70769ca36b98e70",
+        "proxmox-host": "e76eb40daf8b1dffac8dce22b6d174fd25e7eaa44c515810b4aad092260c8b98",
+        "docker-host": "a54b94104244cb22a229e2c67501f546300e40886c552189466c1f3f89cf0d19",
+        "zfs-storage": "2cb8243af6f0e31ac72ae4c526b601a4dd7480408f624d390e83ebc24d0d6932",
+    }
+    for tpl in BUILTIN_TEMPLATES:
+        if tpl["version"] == 1 and tpl["slug"] in BUILTIN_V1_HASHES:
+            assert BUILTIN_V1_HASHES[tpl["slug"]] == definitions_hash(
+                tpl["check_definitions"], tpl["alert_definitions"]
+            ), tpl["slug"]
 
 
 def test_seed_records_version_and_hash(db):
@@ -377,6 +396,103 @@ def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
     d = _row(db, "windows-base").to_dict()
     assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (True, False)
     assert scheduled == []
+
+
+def _forget_versions(db):
+    """The rows as seeded before the versions existed: no version, no hash."""
+    for row in db.query(MonitorTemplate).all():
+        row.builtin_version = None
+        row.builtin_hash = None
+    db.commit()
+
+
+@pytest.mark.parametrize(
+    ("slug", "def_id"),
+    [
+        ("linux-base", "system-resources"),
+        ("windows-base", "system-resources"),
+        ("proxmox-host", "proxmox-backup"),
+        ("docker-host", "docker-health"),
+        ("zfs-storage", "zfs-health"),
+    ],
+)
+def test_unchanged_builtin_seeded_before_versions_follows_a_new_version(
+    db, monkeypatch, scheduled, slug, def_id
+):
+    # Such a row holds the definitions of version 1. Compared with the frozen hash
+    # of version 1, not with what ships now, it follows version 2 like any other
+    # unchanged built-in instead of counting as edited.
+    seed_builtin_templates(db)
+    apply_template(db, _row(db, slug), "srv-1", "host01.example", "Host 01")
+    _forget_versions(db)
+    scheduled.clear()
+    v2 = _ship_version_2(monkeypatch, slug, def_id)
+
+    assert reconcile_builtin_templates(db) == 1
+
+    row = _row(db, slug)
+    assert json.loads(row.check_definitions) == v2["check_definitions"]
+    assert (row.builtin_version, row.builtin_hash) == (
+        2,
+        definitions_hash(v2["check_definitions"], []),
+    )
+    d = row.to_dict()
+    assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (False, False)
+    check = (
+        db.query(MonitorCheck)
+        .filter(MonitorCheck.server_id == "srv-1", MonitorCheck.template_def_id == def_id)
+        .one()
+    )
+    assert (check.severity, check.interval) == ("warning", "1m")
+    assert check.id in scheduled
+    # The others ship no new version: version 1 with its frozen hash, unedited.
+    for tpl in BUILTIN_TEMPLATES:
+        if tpl["slug"] != slug:
+            other = _row(db, tpl["slug"])
+            assert (other.builtin_version, other.builtin_hash) == (
+                1,
+                BUILTIN_V1_HASHES[tpl["slug"]],
+            )
+            assert other.to_dict()["builtinEdited"] is False, tpl["slug"]
+
+
+def test_edited_builtin_seeded_before_versions_stays_edited_and_offers_the_update(
+    db, monkeypatch, scheduled
+):
+    seed_builtin_templates(db)
+    linux = _row(db, "linux-base")
+    edited = json.loads(linux.check_definitions)[:2]
+    linux.check_definitions = json.dumps(edited)
+    _forget_versions(db)
+    _ship_version_2(monkeypatch)
+
+    assert reconcile_builtin_templates(db) == 0
+
+    linux = _row(db, "linux-base")
+    assert json.loads(linux.check_definitions) == edited
+    assert (linux.builtin_version, linux.builtin_hash) == (1, BUILTIN_V1_HASHES["linux-base"])
+    d = linux.to_dict()
+    assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (True, True)
+    assert scheduled == []
+
+
+def test_builtin_without_a_frozen_hash_gets_the_shipped_one(db, monkeypatch, scheduled):
+    # A built-in that shipped only after the versions has no frozen hash; a row of
+    # it without a hash compares with the shipped definitions.
+    seed_builtin_templates(db)
+    _forget_versions(db)
+    frozen = {k: v for k, v in BUILTIN_V1_HASHES.items() if k != "zfs-storage"}
+    monkeypatch.setattr(builtin_templates, "BUILTIN_V1_HASHES", frozen)
+    zfs = _shipped("zfs-storage")
+
+    assert reconcile_builtin_templates(db) == 0
+
+    row = _row(db, "zfs-storage")
+    assert (row.builtin_version, row.builtin_hash) == (
+        1,
+        definitions_hash(zfs["check_definitions"], zfs["alert_definitions"]),
+    )
+    assert row.to_dict()["builtinEdited"] is False
 
 
 def test_deleted_builtin_stays_deleted_on_a_new_version(db, monkeypatch, scheduled):

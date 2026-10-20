@@ -246,7 +246,7 @@
             <li><strong>Unverändert</strong> (Check- und Alert-Definitionen wie zuletzt ausgeliefert): Der Dienst übernimmt die neuen Definitionen und synchronisiert alle zugewiesenen Server; angepasste Felder einzelner Checks bleiben. Name und Beschreibung des Templates zählen dabei nicht: Ein nur umbenanntes Standard-Template wird aktualisiert und behält seinen Namen.</li>
             <li><strong>Angepasst</strong> (Definitionen geändert): Das Template bleibt, wie es ist. In <em>Monitoring → Templates</em> steht neben seinem Namen „Update verfügbar“. Der Klick öffnet einen Vergleich der aktuellen mit den mitgelieferten Check- und Alert-Definitionen: je Definition „neu“, „entfernt“ oder „geändert“, bei geänderten die Felder mit den Spalten „Aktuell“ und „Mitgeliefert“. „Übernehmen“ ersetzt alle Definitionen des Templates, auch die Alert-Definitionen, durch die mitgelieferten und synchronisiert die Server. Eigene Änderungen an den Definitionen gehen dabei verloren; angepasste Felder einzelner Checks bleiben, Checks entfernter Definitionen werden gelöscht, Alert-Regeln bekommen die mitgelieferten Werte.</li>
           </ul>
-          <p>Ein Standard-Template, das vor der Einführung der Versionen angelegt wurde, gilt als Version 1; weichen seine Definitionen von den mitgelieferten ab, gilt es als angepasst.</p>
+          <p>Ein Standard-Template, das vor der Einführung der Versionen angelegt wurde, gilt als Version 1; weichen seine Definitionen von denen der Version 1 ab, gilt es als angepasst. Sonst folgt es einer neueren Version wie jedes unveränderte Standard-Template.</p>
 
           <h3>Templates zuweisen</h3>
           <p>Vier Wege führen zur Zuweisung:</p>

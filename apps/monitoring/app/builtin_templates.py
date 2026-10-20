@@ -193,6 +193,19 @@ BUILTIN_TEMPLATES: list[dict] = [
     },
 ]
 
+# The definitions hash of version 1 of each built-in, frozen. A row seeded before
+# built-ins had versions carries no hash; it got the definitions of version 1, and
+# reconcile compares it with these, not with whatever ships now, so an unedited
+# row still follows a later version. They stand for what version 1 shipped: never
+# change them, not even when a built-in gets a new version.
+BUILTIN_V1_HASHES = {
+    "linux-base": "fda790008184ed153f4734a916746a1ed971edb57570b99dbc49d4195a8ecf13",
+    "windows-base": "4be77f8ba5a16bc1857dfcf0b2c5ae634967e7d35b97d837a70769ca36b98e70",
+    "proxmox-host": "e76eb40daf8b1dffac8dce22b6d174fd25e7eaa44c515810b4aad092260c8b98",
+    "docker-host": "a54b94104244cb22a229e2c67501f546300e40886c552189466c1f3f89cf0d19",
+    "zfs-storage": "2cb8243af6f0e31ac72ae4c526b601a4dd7480408f624d390e83ebc24d0d6932",
+}
+
 
 def _without_defaults(schema: type[BaseModel], definition: dict) -> dict:
     """A definition without the keys that hold their schema default. The template
@@ -336,8 +349,8 @@ def reconcile_builtin_templates(db: Session) -> int:
     servers; the fields a user changed on a check stay (template_sync). Name and
     description stay as well. Returns the number of templates updated.
 
-    A row seeded before built-ins had versions gets version 1 and the hash of the
-    shipped definitions first; where its definitions differ, it counts as edited.
+    A row seeded before built-ins had versions gets version 1 and the frozen hash
+    of version 1 first; where its definitions differ, it counts as edited.
     Without the override baseline nothing is rolled out (it raises)."""
     # Before the row lock: the baseline commits, and it has to compare with the
     # definitions from before the rollout.
@@ -356,11 +369,12 @@ def reconcile_builtin_templates(db: Session) -> int:
             db.rollback()
             continue
         if template.builtin_hash is None:
-            # Rows seeded before versions got their definitions from version 1. The
-            # shipped hash stands for those only while version 1 ships; once a later
-            # one does, such a row shows as edited and is offered the update instead.
+            # Rows seeded before versions got their definitions from version 1, so
+            # they compare with its frozen hash: unedited, such a row follows a later
+            # version as well. A slug without one shipped only after the versions;
+            # the shipped hash stands for it.
             template.builtin_version = 1
-            template.builtin_hash = _shipped_hash(tpl)
+            template.builtin_hash = BUILTIN_V1_HASHES.get(tpl["slug"], _shipped_hash(tpl))
         if not builtin_update_available(template) or builtin_edited(template):
             db.commit()
             continue
