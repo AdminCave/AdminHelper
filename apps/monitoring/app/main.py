@@ -9,10 +9,15 @@ AdminHelper — Monitoring Service
 from __future__ import annotations
 
 import logging
+import math
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from app.core.middleware import NulByteMiddleware
 from app.models import (  # noqa: F401
@@ -105,6 +110,36 @@ app = FastAPI(
     openapi_url="/openapi.json" if _DOCS_ENABLED else None,
     lifespan=lifespan,
 )
+
+
+def _non_finite_as_null(detail: list) -> list:
+    """`detail` with every non-finite float set to None, in place: it is the output of
+    jsonable_encoder, so fresh dicts, lists and scalars only. Walks with an explicit
+    stack, since the input it echoes is whatever the client nested."""
+    stack: list = [detail]
+    while stack:
+        node = stack.pop()
+        for key in list(node.keys() if isinstance(node, dict) else range(len(node))):
+            value = node[key]
+            if isinstance(value, float) and not math.isfinite(value):
+                node[key] = None
+            elif isinstance(value, (dict, list)):
+                stack.append(value)
+    return detail
+
+
+async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's 422. The input it echoes may hold a non-finite number: json.loads reads the
+    tokens Infinity and NaN, and JSONResponse refuses to write them back, which was a 500.
+    That answer gives such a number as null; every other 422 is FastAPI's own."""
+    try:
+        return await request_validation_exception_handler(request, exc)
+    except ValueError:
+        detail = _non_finite_as_null(jsonable_encoder(exc.errors()))
+        return JSONResponse(status_code=422, content={"detail": detail})
+
+
+app.add_exception_handler(RequestValidationError, _validation_error)
 app.add_middleware(NulByteMiddleware)
 
 from app.routers import all_routers  # noqa: E402

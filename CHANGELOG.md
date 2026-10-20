@@ -957,6 +957,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
+  Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
+  Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und
+  999999999 liegen. Das gilt fuer Checks und fuer die Check-Definitionen eines Templates; gespeicherte Konfigurationen
+  bleiben, wie sie sind. Scheitert eine Anfrage an den Monitoring-Dienst an der Pruefung und traegt ihr Body
+  `Infinity` oder `NaN`, antwortet der Dienst jetzt mit einem 422, in dem der Wert als `null` steht, statt mit einem
+  Serverfehler. Doku: Monitoring-Administration (DE+EN).
 - **Monitoring: Versandfehler im Alert-Log mit festem Grund:** Scheitert der Versand eines Webhooks oder einer Mail,
   speichert das Alert-Log statt des Textes der Ausnahme einen festen englischen Grund je Fehlerart, etwa „Webhook
   request timed out“, „Webhook connection failed“, „SMTP TLS failed“, „SMTP authentication failed (535)“ oder „SMTP
