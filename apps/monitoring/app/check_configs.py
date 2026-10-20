@@ -124,6 +124,9 @@ class ProxmoxBackupConfig(_StrictConfig):
     # A number is a Proxmox VE VMID: qm(1) gives 100 - 999999999.
     exclude_vmids: list[Annotated[int, Field(ge=100, le=999_999_999)] | str] = []
     exclude_stopped: StrictBool = True
+    # Strict: configs are stored as sent, and a lax "false" or 0 would reach the
+    # checker and the desktop checkbox as values each reads differently.
+    alert_on_unavailable: StrictBool = True
 
 
 class ZfsHealthConfig(_StrictConfig):

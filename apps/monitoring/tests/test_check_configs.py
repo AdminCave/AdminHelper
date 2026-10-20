@@ -85,12 +85,13 @@ class TestValidateCheckConfig:
         validate_check_config("docker_health", {"check_restarts": True})
 
 
-_UNAVAILABLE_TYPES = ("docker_health", "zfs_health")
+_UNAVAILABLE_TYPES = ("docker_health", "zfs_health", "proxmox_backup")
 
 
 class TestAlertOnUnavailable:
     """R-0419: an unreachable Docker daemon or a failing zpool alerts as warning
-    unless the check opts out with alert_on_unavailable (default on)."""
+    unless the check opts out with alert_on_unavailable (default on); R-0492: an
+    unreadable Proxmox likewise."""
 
     @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
     def test_defaults_to_on(self, check_type):
@@ -105,6 +106,10 @@ class TestAlertOnUnavailable:
         [
             ("docker_health", {"ignore_containers": ["watchtower"], "check_restarts": True}),
             ("zfs_health", {"capacity_warn": 80, "capacity_crit": 90}),
+            (
+                "proxmox_backup",
+                {"max_backup_age_hours": 26, "exclude_vmids": [101], "exclude_stopped": False},
+            ),
         ],
     )
     def test_config_from_before_the_key_validates_and_alerts(self, check_type, stored):
@@ -677,7 +682,7 @@ class TestAgentResourcesDiskSettings:
 
 
 class TestAlertOnUnavailableTemplates:
-    """The key must not make a docker/zfs template check or a built-in look changed
+    """The key must not make a docker/zfs/proxmox template check or a built-in look changed
     (R-0420): configs are stored as sent, never filled with the schema defaults, so
     a check without the key still equals its definition and an unedited built-in
     keeps its hash (pinned in test_seed)."""
@@ -685,12 +690,13 @@ class TestAlertOnUnavailableTemplates:
     _SHIPPED = {
         "docker_health": {},
         "zfs_health": {"capacity_warn": 80, "capacity_crit": 90},
+        "proxmox_backup": {"max_backup_age_hours": 26},
     }
 
     @pytest.fixture()
     def builtins(self, client_db, monkeypatch):
-        """docker-host and zfs-storage seeded and assigned to srv-1: the client, the
-        factory, the template ids by slug and the created checks by type."""
+        """docker-host, zfs-storage and proxmox-host seeded and assigned to srv-1: the
+        client, the factory, the template ids by slug and the created checks by type."""
         # The scheduler is not under test; keep jobs out of the process-wide one.
         monkeypatch.setattr("app.routers.checks.add_check", lambda *a, **k: None)
         monkeypatch.setattr("app.template_sync.add_check", lambda *a, **k: None)
@@ -699,7 +705,7 @@ class TestAlertOnUnavailableTemplates:
             seed_builtin_templates(db)
             ids = {t.builtin_slug: t.id for t in db.query(MonitorTemplate)}
         assign = {"server_id": "srv-1", "hostname": "h", "server_name": "n"}
-        for slug in ("docker-host", "zfs-storage"):
+        for slug in ("docker-host", "zfs-storage", "proxmox-host"):
             r = client.post(f"/templates/{ids[slug]}/assign", json=assign)
             assert r.status_code == 200, r.text
         checks = {c["checkType"]: c for c in client.get("/checks").json()}
@@ -718,6 +724,7 @@ class TestAlertOnUnavailableTemplates:
         assert {t: after[t]["overriddenFields"] for t in _UNAVAILABLE_TYPES} == {
             "docker_health": [],
             "zfs_health": [],
+            "proxmox_backup": [],
         }
 
     @pytest.mark.parametrize("check_type", _UNAVAILABLE_TYPES)
@@ -734,7 +741,7 @@ class TestAlertOnUnavailableTemplates:
         assert r.status_code == 200, r.text
         assert r.json()["overriddenFields"] == []
 
-    @pytest.mark.parametrize("slug", ["docker-host", "zfs-storage"])
+    @pytest.mark.parametrize("slug", ["docker-host", "zfs-storage", "proxmox-host"])
     def test_builtin_saved_unchanged_in_the_editor_stays_unedited(self, builtins, slug):
         # The editor sends every definition back; each config passes the schema
         # but must be stored as sent, or the hash would move.

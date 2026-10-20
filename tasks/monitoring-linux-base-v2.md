@@ -131,8 +131,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_repor
 Doku: docs/developer/monitoring.html + EN · CHANGELOG
 Abhängt von: T11
 
-### T13 — Monitoring: `alert_on_unavailable` für `proxmox_backup`  [ ]
+### T13 — Monitoring: `alert_on_unavailable` für `proxmox_backup`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/check_configs.py, apps/monitoring/tests/test_check_configs.py
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @09fc3e77 2026-10-20T10:14:25+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T13.verdict.json)
 Änderung: `ProxmoxBackupConfig` (`check_configs.py:101-104`) bekommt `alert_on_unavailable: StrictBool = True` (Kommentar wie `:110-111`). Tests: `_UNAVAILABLE_TYPES` (`test_check_configs.py:81`) um `proxmox_backup`; `_SHIPPED` (`:355-358`) um `{"max_backup_age_hours": 26}`, die Fixture `builtins` (`:361-377`) weist auch `proxmox-host` zu; `test_config_from_before_the_key_validates_and_alerts` (`:103`) mit einer Proxmox-Konfiguration ohne den Schlüssel; die Slug-Parametrisierung `:408` um `proxmox-host`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_configs.py
 Doku: keine (Doku mit T14)
