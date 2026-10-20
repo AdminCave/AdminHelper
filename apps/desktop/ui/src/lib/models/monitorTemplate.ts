@@ -33,6 +33,7 @@ export function emptyCheckDef(): TemplateCheckDef {
     interval: '5m',
     severity: 'critical',
     consecutive_fails: 3,
+    consecutive_oks: 2,
   };
 }
 

@@ -139,6 +139,95 @@ describe('MonitoringTemplateModal assignments', () => {
   });
 });
 
+// monitoring-alert-quality T16 (R-0424): each check definition of a template carries
+// consecutive_oks next to consecutive_fails. The field shows the definition's value
+// (2 when the key is missing, as the server default), and what the user enters is
+// what gets saved with the template.
+describe('MonitoringTemplateModal consecutive_oks (monitoring-alert-quality T16)', () => {
+  type TemplateCheckDef = NonNullable<MonitoringTemplateFull['checkDefinitions']>[number];
+  const OKS = 'OKs bis Entwarnung';
+
+  function oksInputs(container: HTMLElement): HTMLInputElement[] {
+    return Array.from(container.querySelectorAll('label.field'))
+      .filter((f) => f.querySelector('.field-label')?.textContent?.trim() === OKS)
+      .map((f) => f.querySelector('input') as HTMLInputElement);
+  }
+
+  function withChecks(defs: TemplateCheckDef[]): MonitoringTemplateFull {
+    return { ...mocks.template, checkDefinitions: defs } as unknown as MonitoringTemplateFull;
+  }
+
+  function check(over: Partial<TemplateCheckDef> = {}): TemplateCheckDef {
+    return {
+      def_id: 'ping',
+      name: 'Ping',
+      check_type: 'ping',
+      config: { target: 'host.example' },
+      interval: '1m',
+      severity: 'critical',
+      consecutive_fails: 3,
+      ...over,
+    };
+  }
+
+  async function mountWith(editing: MonitoringTemplateFull | null) {
+    const r = render(MonitoringTemplateModal, { props: { open: true, editing, onClose: vi.fn() } });
+    await tick();
+    return r;
+  }
+
+  // The one saveTemplate call as [input, template id or null for a new one].
+  async function saved() {
+    const { saveTemplate } = await import('$lib/stores/monitoring');
+    await waitFor(() => expect(saveTemplate).toHaveBeenCalledTimes(1));
+    return vi.mocked(saveTemplate).mock.calls[0];
+  }
+
+  it("shows each definition's value, 2 without the key, within 1 to 100", async () => {
+    const { container } = await mountWith(
+      withChecks([check({ consecutive_oks: 4 }), check({ def_id: 'http', name: 'HTTP' })]),
+    );
+    const inputs = oksInputs(container);
+    expect(inputs.map((i) => i.value)).toEqual(['4', '2']);
+    expect(inputs[0].type).toBe('number');
+    expect(inputs[0].min).toBe('1');
+    expect(inputs[0].max).toBe('100');
+  });
+
+  it('saves the entered value in the edited definition', async () => {
+    const { container, getByText } = await mountWith(
+      withChecks([check({ consecutive_oks: 4 }), check({ def_id: 'http', name: 'HTTP' })]),
+    );
+    await fireEvent.input(oksInputs(container)[1], { target: { value: '5' } });
+    await fireEvent.click(getByText('Speichern'));
+
+    const [input, id] = await saved();
+    expect(id).toBe('tpl-1');
+    expect(input.check_definitions.map((d) => [d.def_id, d.consecutive_oks])).toEqual([
+      ['ping', 4],
+      ['http', 5],
+    ]);
+  });
+
+  it('starts a new definition at 2 and saves the entered value', async () => {
+    const { container, getByText } = await mountWith(null);
+    const name = container.querySelector('input[type="text"]') as HTMLInputElement;
+    await fireEvent.input(name, { target: { value: 'Eigenes' } });
+    await fireEvent.click(getByText('+ Check hinzufügen'));
+    await tick();
+    expect(oksInputs(container).map((i) => i.value)).toEqual(['2']);
+
+    await fireEvent.input(oksInputs(container)[0], { target: { value: '1' } });
+    await fireEvent.click(getByText('Speichern'));
+
+    const [input, id] = await saved();
+    expect(id).toBeNull();
+    expect(input.name).toBe('Eigenes');
+    expect(input.check_definitions).toHaveLength(1);
+    expect(input.check_definitions[0]).toMatchObject({ consecutive_fails: 3, consecutive_oks: 1 });
+  });
+});
+
 // monitoring-linux-base-v2 T28 (R-0423): picking system_state for a check
 // definition suggests one fail in a row, as the check form does; leaving the type
 // with that 1 untouched brings back the definition's value from before the pick,

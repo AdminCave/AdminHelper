@@ -173,6 +173,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
       />
     </label>
 
+    <label class="field">
+      <span class="field-label">{$t('monitoring.checkEdit.consecutiveOks')}</span>
+      <input
+        type="number"
+        min="1"
+        max="100"
+        value={form.consecutiveOks}
+        oninput={(e) => (form.consecutiveOks = Number(e.currentTarget.value) || 1)}
+      />
+    </label>
+
     <label class="field" style="grid-column: span 2;">
       <span class="field-label">{$t('monitoring.checkEdit.description')}</span>
       <textarea rows="2" bind:value={form.description}></textarea>

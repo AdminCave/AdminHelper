@@ -283,7 +283,7 @@ The **monitoring service** runs as a separate container alongside the server and
 
 - **Check types**: Ping, TCP, HTTP, agent-based resource checks, disk-full forecast
 - **Agent plugins**: CPU, RAM, Swap, Load, Disk (incl. inodes), Systemd Health, system state (pending reboot, clock sync, security updates, OOM kills; Linux), Docker, ZFS, Proxmox (auto-detected)
-- **Templates**: define monitoring configurations as templates and assign them to servers — five built-in standard templates (Linux/Windows/Proxmox/Docker/ZFS) are seeded at startup; assignment via template modal, server dialog (opt-in), server tab, tag binding or the overview's bulk CTA
+- **Templates**: define monitoring configurations as templates and assign them to servers — six built-in standard templates (Linux/Windows/Proxmox/Docker/ZFS/Host Ping) are seeded at startup; assignment via template modal, server dialog (opt-in), server tab, tag binding or the overview's bulk CTA
 - **Alerting**: webhook and email notifications with a configurable cooldown, plus damping — `unknown` never notifies, per-metric hysteresis, host-down suppression, and maintenance windows per server or global (one-off/weekly, IANA time zone)
 - **Recovery alerts**: automatic notification when a check is OK again
 - **Overview**: list and tile-grid views with worst-state coloring and a 24 h heartbeat bar per server

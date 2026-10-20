@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """execute_check orchestration (the scheduler main path for ping/tcp/http): state create vs. update,
-since-reset only on a status change, the suppression suffix, and the H7 transaction contract — state
-is committed BEFORE the alert is dispatched off-thread, so a failing alert dispatch must not roll the
-state back (6.50). Only the extracted pure functions were tested before."""
+since-reset only on a status change, the suppression suffix, the recovery hold (R-0424), and the H7
+transaction contract — state is committed BEFORE the alert is dispatched off-thread, so a failing
+alert dispatch must not roll the state back (6.50). Only the extracted pure functions were tested
+before."""
 
 import datetime
 from types import SimpleNamespace
@@ -27,14 +28,22 @@ def _factory():
     return sessionmaker(bind=engine)
 
 
-def _seed(factory, *, consecutive_fails=1, initial_status=None, since=None):
+def _seed(
+    factory,
+    *,
+    consecutive_fails=1,
+    initial_status=None,
+    since=None,
+    check_type="ping",
+    notified_status=None,
+):
     with factory() as db:
         db.add(
             MonitorCheck(
                 id="c1",
                 server_id="s",
                 name="n",
-                check_type="ping",
+                check_type=check_type,
                 config="{}",
                 enabled=True,
                 consecutive_fails=consecutive_fails,
@@ -48,6 +57,7 @@ def _seed(factory, *, consecutive_fails=1, initial_status=None, since=None):
                     fail_count=0,
                     since=since,
                     last_check=since,
+                    notified_status=notified_status,
                 )
             )
         db.commit()
@@ -128,3 +138,43 @@ def test_since_resets_only_on_status_change(monkeypatch):
 
     with factory() as db:
         assert db.query(MonitorState).one().since == old_since  # unchanged: no status change
+
+
+def _state(factory):
+    with factory() as db:
+        st = db.query(MonitorState).one()
+        return st.status, st.ok_count, st.message
+
+
+def test_recovery_is_dispatched_only_after_consecutive_oks(monkeypatch):
+    # R-0424: a reported critical ping stays critical on its first ok; the recovery
+    # goes to the alert pool with the second (column default consecutive_oks 2).
+    factory = _factory()
+    _seed(factory, initial_status="critical", notified_status="critical")
+    _wire(monkeypatch, factory, "ok")
+    submits = []
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: submits.append(a)))
+
+    ce.execute_check("c1")
+    assert _state(factory) == ("critical", 1, "msg (recovery 1/2)")
+    assert submits == []
+
+    ce.execute_check("c1")
+    assert _state(factory) == ("ok", 2, "msg")
+    assert [s[1:] for s in submits] == [("c1", "critical", "ok")]
+
+
+def test_heartbeat_recovery_is_held_too(monkeypatch):
+    # The heartbeat runs the same pipeline: a reported "agent gone" stays critical
+    # on the first fresh push. Only status and message here — where execute_check
+    # sends the heartbeat's dispatch is the agent alert bundle's business.
+    factory = _factory()
+    _seed(factory, check_type="agent_ping", initial_status="critical", notified_status="critical")
+    _wire(monkeypatch, factory, "ok")
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
+
+    ce.execute_check("c1")
+    assert _state(factory) == ("critical", 1, "msg (recovery 1/2)")
+
+    ce.execute_check("c1")
+    assert _state(factory) == ("ok", 2, "msg")

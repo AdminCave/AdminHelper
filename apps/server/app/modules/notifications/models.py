@@ -134,6 +134,11 @@ class NotificationOutbox(Base):
     )
     channel = Column(String, nullable=False)  # email | telegram
     address = Column(String, nullable=False)  # e-mail address or telegram chat id
+    # A bundled event's text for this channel alone (service.ingest_event): it
+    # names only the servers of the subscriptions that asked for this channel,
+    # which may be fewer than the bell row lists. NULL = the notification's text.
+    title = Column(String, nullable=True)
+    body = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="pending", index=True)  # pending|sent|failed
     attempts = Column(Integer, nullable=False, default=0)
     next_attempt_at = Column(DateTime(timezone=True), nullable=True)

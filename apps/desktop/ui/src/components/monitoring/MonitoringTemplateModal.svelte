@@ -267,6 +267,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
               oninput={(e) => (def.consecutive_fails = Number(e.currentTarget.value) || 1)}
             />
           </label>
+          <label class="field">
+            <span class="field-label">{$t('monitoring.checkEdit.consecutiveOks')}</span>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={def.consecutive_oks ?? 2}
+              oninput={(e) => (def.consecutive_oks = Number(e.currentTarget.value) || 1)}
+            />
+          </label>
           <CheckConfigFields checkType={def.check_type} config={def.config} />
         </div>
         <div class="def-card-actions">

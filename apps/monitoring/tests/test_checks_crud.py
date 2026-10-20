@@ -7,6 +7,8 @@ interval and severity against the VALID_* sets by hand (400); before this only t
 tested. A regression (e.g. dropping the interval check on update) would let an invalid interval into the
 DB that throws an unhandled ValueError at the next add_check. Uses the shared client_db fixture."""
 
+import pytest
+
 from app.models import MonitorCheck
 
 
@@ -36,6 +38,16 @@ def test_create_check_rejects_invalid_interval(client_db):
 def test_create_check_rejects_invalid_severity(client_db):
     client, _ = client_db
     assert client.post("/checks", json=_payload(severity="apocalyptic")).status_code == 400
+
+
+def test_new_check_holds_recovery_for_two_oks_by_default(client_db):
+    # alert-quality T1: a check created without the field gets the model default and
+    # reports it, on create and when read back.
+    client, _ = client_db
+    r = client.post("/checks", json=_payload())
+    assert r.status_code == 201, r.text
+    assert r.json()["consecutiveOks"] == 2
+    assert client.get(f"/checks/{r.json()['id']}").json()["consecutiveOks"] == 2
 
 
 def test_update_check_rejects_invalid_interval(client_db):
@@ -175,3 +187,54 @@ def test_run_now_executes_enabled_pull_check(client_db, monkeypatch):
     r = client.post(f"/checks/{cid}/run")
     assert r.status_code == 200
     assert called == [cid]
+
+
+# --- consecutive_oks (alert-quality T3) -------------------------------------
+# 1..100 per field: the bound sits in the field's own Annotated metadata on top of
+# IntColumn, and such a bound has been lost silently before, so every model that
+# carries the field is probed at its route (TemplateCheckDef in test_schemas.py).
+
+
+def _error_locs(r):
+    return [{"type": e["type"], "loc": e["loc"]} for e in r.json()["detail"]]
+
+
+def test_create_check_takes_consecutive_oks(client_db):
+    client, _ = client_db
+    cid = _make_check(client, consecutive_oks=3)
+    assert client.get(f"/checks/{cid}").json()["consecutiveOks"] == 3
+
+
+@pytest.mark.parametrize("value,error", [(0, "greater_than_equal"), (101, "less_than_equal")])
+def test_create_check_rejects_consecutive_oks_out_of_range(client_db, value, error):
+    client, _ = client_db
+    r = client.post("/checks", json=_payload(consecutive_oks=value))
+    assert r.status_code == 422, r.text
+    assert {"type": error, "loc": ["body", "consecutive_oks"]} in _error_locs(r), r.text
+
+
+def test_update_check_sets_consecutive_oks(client_db):
+    client, _ = client_db
+    cid = _make_check(client)
+    r = client.put(f"/checks/{cid}", json={"consecutive_oks": 5})
+    assert r.status_code == 200, r.text
+    assert r.json()["consecutiveOks"] == 5
+    # An update without the key leaves the value alone.
+    r = client.put(f"/checks/{cid}", json={"interval": "15m"})
+    assert r.status_code == 200, r.text
+    assert client.get(f"/checks/{cid}").json()["consecutiveOks"] == 5
+
+
+@pytest.mark.parametrize(
+    "value,error",
+    [(0, "greater_than_equal"), (101, "less_than_equal"), (None, "value_error")],
+)
+def test_update_check_rejects_consecutive_oks_out_of_range(client_db, value, error):
+    # null as well: the column is NOT NULL, so null would otherwise fail in the
+    # database as a 500 instead of at the boundary.
+    client, _ = client_db
+    cid = _make_check(client, consecutive_oks=3)
+    r = client.put(f"/checks/{cid}", json={"consecutive_oks": value})
+    assert r.status_code == 422, r.text
+    assert {"type": error, "loc": ["body", "consecutive_oks"]} in _error_locs(r), r.text
+    assert client.get(f"/checks/{cid}").json()["consecutiveOks"] == 3

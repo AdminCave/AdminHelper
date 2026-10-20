@@ -9,6 +9,40 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Monitoring: Standard-Template „Host Ping“ (R-0424):** Ein sechstes mitgeliefertes Standard-Template pingt den
+  Hostnamen des Servers jede Minute (`ping`, Timeout 3 s, `critical` nach 3 Fehlschlaegen in Folge, etwa 3 Minuten)
+  und meldet den Ausfall eines Hosts damit auch ohne Agent. Es gehoert zu keinem der beiden „— Standard“-Templates,
+  wird nie vorgeschlagen und nur von Hand zugewiesen; bestehende Installationen bekommen es beim naechsten Start des
+  Monitoring-Dienstes. Gedacht ist es fuer Hosts, die der Monitoring-Dienst per ICMP erreicht, nicht nur ueber FRP;
+  ein IPv6-Literal als Hostname nimmt der `ping`-Check nicht an. Steht der Host Ping auf `critical`, bleiben alle
+  uebrigen Alarme des Servers stumm, auch der Heartbeat (`agent_ping`); ein `critical` Heartbeat schaltet den Host
+  Ping dagegen nicht stumm. Faellt der Host aus, meldet also nur der Host Ping; ist er zurueck und der Agent weiter
+  stumm, meldet der Heartbeat seinen Ausfall nach seiner naechsten Pruefung. Meldet sich der Agent bis zu dieser
+  Pruefung wieder, entwarnt der nie gemeldete Ausfall still; der Status aus der Zeit des Ausfalls wird nicht gemeldet.
+  Als Host Ping zaehlt nur der Check aus diesem Template: Ein von Hand angelegter `ping`-Check, etwa auf ein Gateway,
+  schaltet nichts stumm. Doku: Admin- und Entwickler-Doku Monitoring (DE+EN).
+- **Monitoring: Sammelmeldung, wenn mehrere Agents zugleich stumm werden (R-0424):** Werden 3 oder mehr Agents stumm
+  (`agent_ping` auf `critical`), bekommt jeder Kanal eine Meldung statt einer je Server, sobald der dritte stumm ist;
+  ihre Rueckkehr wird ebenso gesammelt. Weniger als drei werden wie bisher einzeln gemeldet, aber erst, wenn ihr
+  Statuswechsel 5 Minuten zurueckliegt, hoechstens bis eine Minute vor der naechsten Pruefung: beim Standard-Heartbeat
+  (Intervall 5 Minuten) nach 4 Minuten, bei einem Intervall von 1 Minute sofort, dazu bis zu 30 s Takt. So ist ein
+  Ausfall gemeldet, bevor die naechste Pruefung den Agent wieder auf `ok` setzen kann. Die Heartbeats meldet dafuer ein
+  Hintergrund-Job (`system:agent-alert-bundle`, alle 30 s), nicht mehr der `agent_ping` selbst. Gesammelt wird je
+  Kanal: Eine Alert-Regel, die drei oder mehr der Agents trifft, sendet eine Nachricht
+  (`[AdminHelper Monitor] CRITICAL: <n> agents not reporting` bzw.
+  `[AdminHelper Monitor] RECOVERY: <n> agents reporting again`, eine Zeile je Agent, hoechstens 50) und schreibt je
+  Agent eine Zeile ins Alert-Log; im Webhook sind `check_name` und `server_id` dann `null`, die Agents stehen im neuen
+  Feld `members`. Die Glocke bekommt je Stufe einen Eintrag „Agents not reporting (n)“ bzw. „Agents reporting again
+  (n)“ mit einer Zeile je Server, die der Nutzer sehen darf und die eine seiner Regeln erfasst. Der Server nimmt dafuer
+  in `POST /api/internal/events` das Feld `source_ids` (bis 500 Server-IDs, nicht zusammen mit `source_id`) und feuert
+  `alert.triggered` bei einer solchen Meldung einmal je Server. Die E-Mail einer persoenlichen Regel nennt nur die
+  Server, die eine Regel mit E-Mail erfasst, und zaehlt nur diese (Telegram ebenso); erfasst keine solche Regel einen
+  der Server, geht keine Mail (neue Spalten `title`/`body` in `notification_outbox`, Migration `a7c9e1b3d5f2`).
+  Wartungsfenster und Host-down-Unterdrueckung gelten weiter; nach ihrem Ende zaehlt ein Heartbeat erst nach seiner
+  naechsten Pruefung wieder mit, sein Status aus der Zeit davor wird nicht gemeldet. Weil die Heartbeats nicht alle
+  zugleich geprueft werden, koennen danach mehrere Meldungen kommen statt einer. Monitoring und Server kommen im
+  selben Release; ein aelterer Server stellt die Sammel-Eintraege der Glocke nur Admins zu. Doku: Admin- und
+  Entwickler-Doku Monitoring, Entwickler-Doku Server, Hooks und API-Referenz (DE+EN).
 - **Monitoring: Check-Typ `system_state` fuer den Systemzustand eines Linux-Hosts (R-0423):** Der Agent schickt ab
   Report-Version 3 unter Linux den Block `system_state`: Neustart noetig (`/var/run/reboot-required` bzw.
   `needs-restarting -r`), Uhr synchronisiert (`timedatectl show`), offene Sicherheits-Updates
@@ -45,7 +79,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Hysterese; volle Inodes faerben die Platte mit), nicht mehr aus den Schwellen der Konfiguration; nur Details ohne
   `problems` rechnet er wie bisher aus der Konfiguration. Doku: Monitoring-Administration, Entwickler-Doku Agent und
   Monitoring (DE+EN).
-- **Monitoring: Standard-Template „Linux Server — Standard“ in Version 2 (R-0423):** Der Check System Resources
+- **Monitoring: Standard-Template „Linux Server — Standard“ in Version 3 (R-0423):** Der Check System Resources
   bewertet darin zusaetzlich Swap (80/95 %), Inodes (80/90 %) und die Load je CPU (1.5/3) und die Belegung einer
   Platte erst unter 20 GB frei (`disk_min_free_gb`); neu ist der Check System State (`system_state`, `warning`,
   `consecutive_fails` 1, weil ein OOM-Kill nur in einem Report steht); Service Health beschreibt die neue Aufteilung
@@ -54,7 +88,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Jeder zugewiesene Server bekommt den Check System State und sein Check System Resources die neuen Schwellen,
   angepasste Felder einzelner Checks bleiben. Eine angepasste Konfiguration von System Resources bekommt die neuen
   Schluessel nicht; fehlen sie, nimmt der Check dieselben Werte. Ein angepasstes Template bietet die Version als
-  Update an. „Windows Server — Standard“ bleibt in Version 1. Doku: Monitoring-Administration (DE+EN), README.
+  Update an. „Windows Server — Standard“ bekommt diese Aenderungen nicht. Doku: Monitoring-Administration (DE+EN),
+  README.
 - **Monitoring: Vorschlag passender Standard-Templates im Monitoring-Tab (R-0421):** Der Agent meldet im Report den
   Block `host`: Betriebssystem, Plattform, Virtualisierung und die Subsysteme Docker, ZFS und Proxmox, deren Programm
   `docker`, `zpool` bzw. `pvesh` im Suchpfad liegt. Daraus zeigt der Monitoring-Tab eines Servers unter
@@ -74,11 +109,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   wiederherstellen“ und legt sie auf Klick neu an (`POST /templates/{id}/assign/{server_id}/restore`, Zaehler
   `removedChecks` in `GET /templates/assignments/{server_id}`). Bringt ein Release eine neuere Version eines
   Standard-Templates mit, dessen Definitionen angepasst sind, zeigt die Template-Liste dort „Update verfuegbar“
-  (in diesem Release fuer „Linux Server — Standard“ und „Proxmox Host“ in Version 2); das oeffnet einen Vergleich
-  der aktuellen mit den mitgelieferten Check- und Alert-Definitionen, und „Uebernehmen“ ersetzt alle Definitionen des
-  Templates, auch die Alert-Definitionen, waehrend angepasste Felder einzelner Checks bleiben (`GET`/`POST` auf
-  `/templates/{id}/builtin-update`, Felder `builtinVersion`, `builtinEdited`, `builtinUpdateAvailable`). Doku:
-  Admin- und Entwickler-Doku Monitoring (DE+EN).
+  (in diesem Release fuer „Linux Server — Standard“ in Version 3, „Windows Server — Standard“ und „Proxmox Host“ in
+  Version 2); das oeffnet einen Vergleich der aktuellen mit den mitgelieferten Check- und Alert-Definitionen, und
+  „Uebernehmen“ ersetzt alle Definitionen des Templates, auch die Alert-Definitionen, waehrend angepasste Felder
+  einzelner Checks bleiben (`GET`/`POST` auf `/templates/{id}/builtin-update`, Felder `builtinVersion`,
+  `builtinEdited`, `builtinUpdateAvailable`). Doku: Admin- und Entwickler-Doku Monitoring (DE+EN).
 - **Web: Registrierungs-Token in der Benutzerliste (R-0396):** Je Benutzer stellt ein Admin mit
   „Registrierungs-Token“ ein Einmal-Token aus: Gueltigkeit waehlen (10 Minuten, 1 Stunde oder 24 Stunden;
   voreingestellt 10 Minuten), dann zeigt der Dialog das Token genau einmal mit Kopieren, seinem Ablauf in
@@ -1016,6 +1051,44 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Monitoring: Entwarnung erst nach `consecutive_oks` ok in Folge (R-0424):** Ein Check mit gemeldetem Problem
+  (`warning`/`critical`) geht erst nach `consecutive_oks` `ok`-Messungen in Folge zurueck auf `ok`, im Scheduler- wie
+  im Push-Pfad und auch beim Agent-Heartbeat; bis dahin steht er auf dem gemeldeten Status und zeigt die Meldung mit
+  dem Zusatz „(recovery n/m)“. Jede andere Messung dazwischen beginnt die Zaehlung von vorn: Ein Check, der flattert
+  oder abwechselnd `ok` und `unknown` liefert, entwarnt erst nach `consecutive_oks` `ok` in Folge. Ein gemeldetes
+  Problem, das ueber `unknown` zurueckkommt, wird ebenso gehalten; ein nie gemeldetes, etwa waehrend Wartung oder
+  Host-down stumm gebliebenes, entwarnt beim ersten `ok` still wie bisher. Bestehende Checks bekommen mit der
+  Migration `3c66308d11a7` den Default 2: Ihre Entwarnung kommt ein Check-Intervall spaeter als bisher, bei einem
+  Check mit Intervall `1h` eine Stunde; 1 ist das bisherige Verhalten. Die Host-down-Unterdrueckung faellt
+  entsprechend erst nach der Haltezeit des Heartbeats. `consecutive_oks` (1–100) laesst sich je Check und je
+  Template-Definition setzen, eine Definition ohne das Feld gilt als 2; an einem Template-Check geaendert gilt es als
+  angepasst, der Sync laesst es stehen, und „Auf Template zuruecksetzen“ nimmt den Wert des Templates zurueck. Doku:
+  Admin- und Entwickler-Doku Monitoring (DE+EN).
+- **Monitoring: Disk Forecast der Standard-Templates entwarnt beim ersten `ok` (R-0424):** „Linux Server — Standard“
+  und „Windows Server — Standard“ setzen fuer Disk Forecast (Intervall `1h`) `consecutive_oks` 1, er entwarnt also
+  beim ersten `ok` statt eine Stunde spaeter. Alle anderen Checks der Standard-Templates, auch SMART Health
+  (Intervall `5m`), behalten den Default 2. „Linux Server — Standard“ steigt dafuer auf Version 3, „Windows Server —
+  Standard“ auf Version 2: Ein unveraendertes Template uebernimmt sie beim Start des Monitoring-Dienstes und
+  synchronisiert seine Server, ein am Check angepasstes `consecutive_oks` bleibt; ein Template mit angepassten
+  Definitionen zeigt „Update verfuegbar“. Doku: Admin-Doku Monitoring (DE+EN).
+- **Monitoring: die `severity` eines Checks deckelt Glocke, Betreff und Event-Hook (R-0424):** Ein Check meldet
+  hoechstens mit seiner `severity`: Ein Check mit `severity` `warning` meldet ein `critical` des Checkers im Betreff
+  von Mail und Webhook als `WARNING`, an die Glocke als `warning`, auch die Entwarnung, und loest den Event-Hook
+  `alert.triggered` nicht mehr aus. Das betrifft etwa Disk Forecast aus den Standard-Templates, der damit hoechstens
+  `warning` meldet. Ein Check mit `severity` `info` erreicht die Glocke nicht mehr, sein Betreff traegt `INFO`. Der
+  Text der Meldung nennt weiter den echten Uebergang und die `severity`; `RECOVERY` im Betreff bleibt. Checks mit
+  `severity` `critical` melden wie bisher. Doku: Admin-Doku Monitoring (DE+EN).
+- **Monitoring: Glocken-Cooldown von 30 Minuten je Check (R-0424):** Die Glocke (Notification-Hub, auch seine
+  persoenlichen E-Mails) erhaelt je Check hoechstens eine Problem-Meldung in 30 Minuten; bisher erhielt sie jede.
+  Was in diese Zeit faellt, wird verworfen und nicht nachgeholt, und die Entwarnung eines Problems, das die Glocke so
+  nie gezeigt hat, erhaelt sie auch nicht. Die Eskalation von `warning` auf `critical` und die Entwarnung eines
+  gezeigten Problems gehen immer durch; die Entwarnung traegt die Stufe, mit der die Glocke das Problem gezeigt hat,
+  auch wenn die `severity` des Checks inzwischen geaendert wurde. Der Event-Hook `alert.triggered` folgt der Glocke
+  und damit diesem Cooldown: Geht ein Check binnen 30 Minuten erneut auf `critical`, etwa `critical`, `ok`, wieder
+  `critical`, feuert der Hook nur beim ersten Mal; ein Agent einer Sammelmeldung, fuer den die Glocke im Cooldown ist,
+  loest keinen Aufruf aus. Webhook und Mail der Alert-Regeln behalten ihren eigenen `cooldown_minutes`. Ein vor dem
+  Update gemeldetes Problem bekommt seine Entwarnung in der Glocke. Doku: Admin- und Entwickler-Doku Monitoring,
+  Entwickler-Doku Hooks (DE+EN).
 - **Monitoring: ein nicht lesbares Proxmox ist `warning` mit Benachrichtigung (R-0492):** Liegt `pvesh` auf dem Host,
   schickt der Agent ab Report-Version 3 den Proxmox-Block bei jedem Push, auch wenn er Node-Status, Backup-Storages,
   deren Backups oder die VM-Liste nicht lesen kann: dann mit `available: false` und einem Fehler-Code statt der VMs
@@ -1286,7 +1359,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Definitionen darauf und synchronisiert dessen Server; angepasste Check-Felder sowie Name und Beschreibung des
   Templates bleiben. Ein Template mit angepassten Definitionen bleibt, wie es ist, und bietet das Update an (siehe
   Added). Bisher wurde jedes Standard-Template genau einmal geseedet und nie aktualisiert. Ein bestehendes von vor den
-  Versionen gilt als Version 1; weichen seine Definitionen davon ab, gilt es als angepasst.
+  Versionen gilt als Version 1; weichen seine Definitionen von denen der Version 1 ab, gilt es als angepasst.
 - **Monitoring: neuer Hostname oder Servername erreicht bestehende Zuweisungen (R-0420):** Der Tag-Sync gleicht jetzt
   fuer jede Zuweisung, auch fuer manuelle, Hostname und Servername mit dem Server-Inventar ab und synchronisiert bei
   einer Abweichung genau dieses Paar neu, sodass `{{hostname}}` und `{{server_name}}` einer Umbenennung folgen;

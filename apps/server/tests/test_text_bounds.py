@@ -126,6 +126,19 @@ def test_internal_event_fields_reject_a_nul_byte(test_client, db_session, admin_
         assert r.status_code == 422, f"{field}: {r.status_code} {r.text}"
         assert r.json()["detail"][0]["loc"][-1] == field
 
+    # A bundled event's ids go into Server.id.in_() just like source_id.
+    bundle = {key: value for key, value in payload.items() if key != "source_id"}
+    ok = test_client.post(
+        "/api/internal/events", json={**bundle, "source_ids": ["srv-1", "srv-2"]}, headers=headers
+    )
+    assert ok.status_code == 202, ok.text
+
+    nul = test_client.post(
+        "/api/internal/events", json={**bundle, "source_ids": ["srv-1", "b" + NUL]}, headers=headers
+    )
+    assert nul.status_code == 422, nul.text
+    assert nul.json()["detail"][0]["loc"][-2:] == ["source_ids", 1]
+
 
 def test_api_key_name_rejects_a_nul_byte(test_client, db_session, admin_user):
     """Found by the fuzzer while verifying an unrelated task (2026-09-23):

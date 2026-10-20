@@ -55,7 +55,7 @@ def client_db(monkeypatch):
     app.dependency_overrides.clear()
 
 
-def _add_resources_check(factory, consecutive_fails: int) -> str:
+def _add_resources_check(factory, consecutive_fails: int, consecutive_oks: int = 2) -> str:
     with factory() as db:
         db.add(
             MonitorCheck(
@@ -66,6 +66,7 @@ def _add_resources_check(factory, consecutive_fails: int) -> str:
                 config=json.dumps({"cpu_warn": 80, "cpu_crit": 95}),
                 enabled=True,
                 consecutive_fails=consecutive_fails,
+                consecutive_oks=consecutive_oks,
             )
         )
         db.commit()
@@ -78,7 +79,9 @@ def _report(cpu: float) -> dict:
 
 def test_report_applies_consecutive_fails_damping(client_db):
     client, factory = client_db
-    _add_resources_check(factory, consecutive_fails=2)
+    # consecutive_oks 1: recover on the first ok, as before the hold — this test is
+    # about the fail damping; the hold has its own test below.
+    _add_resources_check(factory, consecutive_fails=2, consecutive_oks=1)
 
     # 1st failing push: below the damping threshold -> stays ok (suppressed),
     # message carries the scheduler-path suffix.
@@ -104,6 +107,53 @@ def test_report_applies_consecutive_fails_damping(client_db):
         state = db.query(MonitorState).filter_by(check_id="chk-1").one()
         assert state.status == "ok"
         assert state.fail_count == 0
+
+
+def test_report_holds_the_recovery_for_consecutive_oks(client_db, monkeypatch):
+    # R-0424, push path: the same hold as the scheduler. A reported critical stays
+    # critical on the first ok push; the recovery goes out with the second (column
+    # default consecutive_oks 2). cooldown 0 as in the catch-up test below.
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    with factory() as db:
+        db.add(
+            MonitorAlertRule(
+                id="r1",
+                name="rule",
+                channel="webhook",
+                channel_config=json.dumps({"url": "https://hooks.example/x"}),
+                cooldown_minutes=0,
+            )
+        )
+        db.commit()
+
+    from app import alerter
+
+    dispatched: list[tuple] = []
+    monkeypatch.setattr(
+        alerter,
+        "_dispatch",
+        lambda rule, check, msg: (
+            dispatched.append((check.id, msg["old_status"], msg["new_status"])) or (True, None)
+        ),
+    )
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=99)).status_code == 200
+    assert dispatched == [("chk-1", "ok", "critical")]
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=5)).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert (state.status, state.ok_count) == ("critical", 1)
+        assert state.message.endswith(" (recovery 1/2)"), state.message
+    assert len(dispatched) == 1
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=5)).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert (state.status, state.ok_count) == ("ok", 2)
+        assert "recovery" not in state.message
+    assert dispatched == [("chk-1", "ok", "critical"), ("chk-1", "critical", "ok")]
 
 
 def test_report_rejects_foreign_server_key(client_db):
@@ -464,9 +514,9 @@ def test_report_round_trips_hysteresis_memory(client_db):
     # the row lock, feed them into evaluate() and store the new problems map —
     # otherwise the per-metric hysteresis silently dies while unit tests stay
     # green. cpu_warn is 80 here: 92 -> warning; 75 sits in the release band
-    # (80-10=70) and must STAY warning; 65 clears it.
+    # (80-10=70) and must STAY warning; 65 clears it (consecutive_oks 1: at once).
     client, factory = client_db
-    _add_resources_check(factory, consecutive_fails=1)
+    _add_resources_check(factory, consecutive_fails=1, consecutive_oks=1)
 
     assert client.post("/agent/srv-1/report", json=_report(cpu=92)).status_code == 200
     with factory() as db:

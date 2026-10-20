@@ -40,6 +40,7 @@ from app.models import (
     MonitorTemplateSuggestionDismissal,
 )
 from app.scheduler import add_check, remove_check
+from app.schemas import DEFAULT_CONSECUTIVE_OKS
 
 logger = logging.getLogger("monitor.template_sync")
 
@@ -107,6 +108,7 @@ TEMPLATE_CHECK_FIELDS = (
     "interval",
     "severity",
     "consecutive_fails",
+    "consecutive_oks",
 )
 
 
@@ -123,6 +125,7 @@ def _template_check_values(resolved: dict) -> dict:
         "interval": resolved.get("interval", "5m"),
         "severity": resolved.get("severity", "critical"),
         "consecutive_fails": resolved.get("consecutive_fails", 3),
+        "consecutive_oks": resolved.get("consecutive_oks", DEFAULT_CONSECUTIVE_OKS),
     }
 
 
@@ -455,6 +458,7 @@ def _sync_checks_for_server(
                 "interval": resolved.get("interval", check.interval),
                 "severity": resolved.get("severity", check.severity),
                 "consecutive_fails": resolved.get("consecutive_fails", check.consecutive_fails),
+                "consecutive_oks": resolved.get("consecutive_oks", DEFAULT_CONSECUTIVE_OKS),
             }
             overridden = _read_overrides(check)
             # The counterpart of mark_overrides tying a user's type to its config:

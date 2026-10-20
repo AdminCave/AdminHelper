@@ -79,6 +79,8 @@ _AGENT_RESOURCES = {
 # Prediction pairs with the static disk thresholds: warns ~a day before a
 # disk runs full instead of only at 80/90 % (severity 'warning' — a forecast
 # has lead time by definition and must not page the critical chain).
+# consecutive_oks 1: on the hourly interval the default 2 would hold the
+# all-clear back for an hour.
 _DISK_FORECAST = {
     "def_id": "disk-forecast",
     "name": "Disk Forecast",
@@ -88,6 +90,7 @@ _DISK_FORECAST = {
     "interval": "1h",
     "severity": "warning",
     "consecutive_fails": 1,
+    "consecutive_oks": 1,
 }
 
 _SMART_HEALTH = {
@@ -101,7 +104,7 @@ _SMART_HEALTH = {
     "consecutive_fails": 2,
 }
 
-# Linux from version 2: swap, inodes and the load per CPU as well, and a disk's
+# Linux from version 3: swap, inodes and the load per CPU as well, and a disk's
 # percentage counts only below 20 GB free. The checker defaults are the same
 # values, so a check with a config of its own rates them alike. Whole numbers stay
 # int: the desktop editor saves JSON numbers back, 3.0 would return as 3 and
@@ -125,7 +128,7 @@ _LINUX_RESOURCES = {
 BUILTIN_TEMPLATES: list[dict] = [
     {
         "slug": "linux-base",
-        "version": 2,
+        "version": 3,
         "name": "Linux Server — Standard",
         "description": "Baseline monitoring for Linux servers: heartbeat, resources, "
         "systemd service health and SMART.",
@@ -162,7 +165,7 @@ BUILTIN_TEMPLATES: list[dict] = [
     },
     {
         "slug": "windows-base",
-        "version": 1,
+        "version": 2,
         "name": "Windows Server — Standard",
         "description": "Baseline monitoring for Windows servers: heartbeat, resources and SMART.",
         "check_definitions": [_AGENT_HEARTBEAT, _AGENT_RESOURCES, _SMART_HEALTH, _DISK_FORECAST],
@@ -223,6 +226,28 @@ BUILTIN_TEMPLATES: list[dict] = [
                 "interval": "5m",
                 "severity": "critical",
                 "consecutive_fails": 2,
+            }
+        ],
+        "alert_definitions": [],
+    },
+    # Opt-in and never suggested (template_suggestions): on a host the monitoring
+    # service cannot reach by ICMP the ping sits at critical. 1-minute interval so
+    # 3 failures are ~3 minutes; the 3 s timeout keeps the worker pool free when
+    # many hosts go down at once.
+    {
+        "slug": "host-ping",
+        "version": 1,
+        "name": "Host Ping",
+        "description": "Alerts when the host stops answering ping, also without an agent.",
+        "check_definitions": [
+            {
+                "def_id": "host-ping",
+                "name": "Host Ping",
+                "check_type": "ping",
+                "config": {"target": "{{hostname}}", "timeout": 3},
+                "interval": "1m",
+                "severity": "critical",
+                "consecutive_fails": 3,
             }
         ],
         "alert_definitions": [],

@@ -287,6 +287,13 @@ def test_report_rates_a_system_state_check(client_db):
     )
 
     # A report without the block (an older agent) overwrites the values instead of
-    # keeping the ones of the last report.
+    # keeping the ones of the last report, already while the recovery hold
+    # (consecutive_oks, default 2) keeps the reported warning standing.
+    assert client.post("/agent/srv-1/report", json={"uptime_seconds": 3600}).status_code == 200
+    assert _stored(factory) == (
+        "warning",
+        "Not evaluated: no system state in report (recovery 1/2)",
+        _NOTHING,
+    )
     assert client.post("/agent/srv-1/report", json={"uptime_seconds": 3600}).status_code == 200
     assert _stored(factory) == ("ok", "Not evaluated: no system state in report", _NOTHING)

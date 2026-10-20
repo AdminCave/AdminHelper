@@ -24,6 +24,7 @@ describe('emptyCheckForm', () => {
     expect(f.interval).toBe('5m');
     expect(f.severity).toBe('critical');
     expect(f.consecutiveFails).toBe(3);
+    expect(f.consecutiveOks).toBe(2);
     expect(f.config).toEqual({});
   });
 
@@ -45,6 +46,7 @@ describe('checkToForm', () => {
       interval: '1m',
       severity: 'warning',
       consecutiveFails: 2,
+      consecutiveOks: 4,
       description: null,
       enabled: true,
       config,
@@ -58,6 +60,7 @@ describe('checkToForm', () => {
       interval: '1m',
       severity: 'warning',
       consecutiveFails: 2,
+      consecutiveOks: 4,
       description: '',
       config: { target: 'host.lan', timeout: 5 },
     });
@@ -65,7 +68,7 @@ describe('checkToForm', () => {
     expect(f.config).not.toBe(config);
   });
 
-  it('defaults missing serverId/consecutiveFails/config', () => {
+  it('defaults missing serverId/consecutiveFails/consecutiveOks/config', () => {
     const c: MonitorCheck = {
       id: 'm2',
       name: 'x',
@@ -77,6 +80,7 @@ describe('checkToForm', () => {
     const f = checkToForm(c);
     expect(f.serverId).toBe('');
     expect(f.consecutiveFails).toBe(3);
+    expect(f.consecutiveOks).toBe(2);
     expect(f.config).toEqual({});
   });
 });
@@ -90,6 +94,7 @@ describe('formToInput', () => {
       interval: '15m',
       severity: 'info',
       consecutiveFails: 5,
+      consecutiveOks: 4,
       description: '  notes  ',
       config: { url: 'https://x', method: 'GET' },
     });
@@ -100,6 +105,7 @@ describe('formToInput', () => {
       interval: '15m',
       severity: 'info',
       consecutive_fails: 5,
+      consecutive_oks: 4,
       description: 'notes',
       config: { url: 'https://x', method: 'GET' },
     });
@@ -114,6 +120,11 @@ describe('formToInput', () => {
   it('falls back consecutive_fails to 3 when zero/falsy', () => {
     const input = formToInput({ ...emptyCheckForm('srv-1'), name: 'x', consecutiveFails: 0 });
     expect(input.consecutive_fails).toBe(3);
+  });
+
+  it('falls back consecutive_oks to 2 when zero/falsy', () => {
+    const input = formToInput({ ...emptyCheckForm('srv-1'), name: 'x', consecutiveOks: 0 });
+    expect(input.consecutive_oks).toBe(2);
   });
 
   it('copies config rather than aliasing the form config', () => {

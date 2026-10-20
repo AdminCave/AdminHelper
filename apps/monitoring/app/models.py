@@ -64,6 +64,7 @@ class MonitorCheck(Base):
     interval = Column(String, nullable=False, default="5m")
     severity = Column(String, nullable=False, default="critical")
     consecutive_fails = Column(Integer, default=3)
+    consecutive_oks = Column(Integer, nullable=False, default=2, server_default="2")
     template_id = Column(String, nullable=True, index=True)
     template_def_id = Column(String, nullable=True)  # stable def_id from the template
     # JSON list of the fields a user changed on a template check, which the template
@@ -85,6 +86,7 @@ class MonitorCheck(Base):
             "interval": self.interval,
             "severity": self.severity,
             "consecutiveFails": self.consecutive_fails,
+            "consecutiveOks": self.consecutive_oks,
             "templateId": self.template_id,
             "templateDefId": self.template_def_id,
             "overriddenFields": json.loads(self.overridden_fields)
@@ -106,12 +108,19 @@ class MonitorState(Base):
     since = Column(DateTime, nullable=False, server_default=utc_now_sql())
     last_check = Column(DateTime, nullable=True)
     fail_count = Column(Integer, default=0)
+    ok_count = Column(Integer, nullable=False, default=0, server_default="0")
     message = Column(String, nullable=True)
     details = Column(String, nullable=True)
     # Sent-state (docs/features/alert-sent-state.md): the status the alerter
     # last actually reported. NULL = never reported. A discrepancy to `status`
     # means a suppressed transition awaits catch-up notification.
     notified_status = Column(String, nullable=True)
+    # Bell cooldown (docs/features/monitoring-alert-quality.md): the status the
+    # notification hub last accepted and when it last got a problem. Kept apart
+    # from notified_status because the bell can skip a problem the alert rules
+    # did report, and must then not send its recovery either.
+    hub_status = Column(String, nullable=True)
+    hub_sent_at = Column(DateTime, nullable=True)
 
     def to_dict(self) -> dict:
         return {

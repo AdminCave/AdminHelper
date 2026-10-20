@@ -196,14 +196,22 @@ def ingest(
         and (event.new_status or "critical") == "critical"
     ):
         # The documented alert.triggered hook: a critical check transition also
-        # reaches registered event hooks (docs/developer/hooks.html).
-        fire_event(
-            "alert.triggered",
-            {
-                "server_id": event.source_id,
-                "severity": event.severity,
-                "title": event.title,
-                "message": event.body,
-            },
+        # reaches registered event hooks (docs/developer/hooks.html). A bundled
+        # event fires it once per server, so a hook still sees one server per
+        # call; a repeated id counts once, as in the resolver.
+        server_ids = (
+            list(dict.fromkeys(event.source_ids))
+            if event.source_ids is not None
+            else [event.source_id]
         )
+        for server_id in server_ids:
+            fire_event(
+                "alert.triggered",
+                {
+                    "server_id": server_id,
+                    "severity": event.severity,
+                    "title": event.title,
+                    "message": event.body,
+                },
+            )
     return {"notified": notified}

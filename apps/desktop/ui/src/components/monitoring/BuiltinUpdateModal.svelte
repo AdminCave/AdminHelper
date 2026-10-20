@@ -47,6 +47,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     interval: '5m',
     severity: 'critical',
     consecutive_fails: 3,
+    consecutive_oks: 2,
   };
   const ALERT_DEFAULTS: Def = {
     channel_config: {},
@@ -69,6 +70,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ['severity', 'monitoring.checkEdit.severity'],
     ['match_severity', 'monitoring.alerts.severity'],
     ['consecutive_fails', 'monitoring.checkEdit.consecutiveFails'],
+    ['consecutive_oks', 'monitoring.checkEdit.consecutiveOks'],
     ['cooldown_minutes', 'monitoring.alerts.cooldown'],
   ]);
   const FIELD_ORDER = [...FIELD_LABELS.keys()];

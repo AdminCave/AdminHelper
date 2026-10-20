@@ -447,6 +447,7 @@ export interface MonitorCheck {
   interval: MonitorInterval;
   severity: MonitorSeverity;
   consecutiveFails?: number;
+  consecutiveOks?: number;
   description?: string | null;
   enabled: boolean;
   config?: MonitorCheckConfig;
@@ -465,6 +466,7 @@ export interface MonitorCheckInput {
   interval: MonitorInterval;
   severity: MonitorSeverity;
   consecutive_fails: number;
+  consecutive_oks: number;
   description: string | null;
   config: MonitorCheckConfig;
 }
@@ -611,6 +613,7 @@ export interface TemplateCheckDef {
   interval: MonitorInterval;
   severity: MonitorSeverity;
   consecutive_fails?: number;
+  consecutive_oks?: number;
 }
 
 export interface TemplateAlertDef {

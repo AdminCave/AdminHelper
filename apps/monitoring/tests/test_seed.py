@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Built-in template seeding (T5): a fresh DB gets the five standard templates
+"""Built-in template seeding (T5): a fresh DB gets the six standard templates
 exactly once; the tombstone in monitor_seed_state guarantees that user
 deletions and edits are never overridden by a later startup. The definitions
 themselves must pass the same schema boundary as user-created templates.
@@ -49,7 +49,7 @@ def db():
 
 def test_fresh_seed_creates_all_builtins(db):
     created = seed_builtin_templates(db)
-    assert created == len(BUILTIN_TEMPLATES) == 5
+    assert created == len(BUILTIN_TEMPLATES) == 6
 
     templates = db.query(MonitorTemplate).all()
     assert {t.builtin_slug for t in templates} == {t["slug"] for t in BUILTIN_TEMPLATES}
@@ -75,9 +75,9 @@ def test_fresh_seed_creates_all_builtins(db):
 
 
 def test_second_run_is_idempotent(db):
-    assert seed_builtin_templates(db) == 5
+    assert seed_builtin_templates(db) == 6
     assert seed_builtin_templates(db) == 0
-    assert db.query(MonitorTemplate).count() == 5
+    assert db.query(MonitorTemplate).count() == 6
 
 
 def test_deleted_builtin_stays_deleted(db):
@@ -91,6 +91,28 @@ def test_deleted_builtin_stays_deleted(db):
         db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "linux-base").first()
         is None
     )
+
+
+def test_install_from_before_host_ping_gets_it_on_the_next_start(db, monkeypatch):
+    monkeypatch.setattr(
+        builtin_templates,
+        "BUILTIN_TEMPLATES",
+        [t for t in BUILTIN_TEMPLATES if t["slug"] != "host-ping"],
+    )
+    assert seed_builtin_templates(db) == 5
+    docker = db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "docker-host").one()
+    db.delete(docker)
+    db.commit()
+    monkeypatch.setattr(builtin_templates, "BUILTIN_TEMPLATES", BUILTIN_TEMPLATES)
+
+    # Only the new one; the one the user deleted stays deleted.
+    assert seed_builtin_templates(db) == 1
+    host_ping = db.query(MonitorTemplate).filter(MonitorTemplate.builtin_slug == "host-ping").one()
+    assert (host_ping.name, host_ping.builtin_version) == ("Host Ping", 1)
+    assert [d["def_id"] for d in json.loads(host_ping.check_definitions)] == ["host-ping"]
+    assert {t.builtin_slug for t in db.query(MonitorTemplate)} == {
+        t["slug"] for t in BUILTIN_TEMPLATES
+    } - {"docker-host"}
 
 
 def test_user_edit_is_preserved(db):
@@ -250,6 +272,57 @@ _VERSION_1_CHECK_DEFINITIONS = {
             "consecutive_fails": 1,
         },
     ],
+    "windows-base": [
+        {
+            "def_id": "agent-heartbeat",
+            "name": "Agent Heartbeat",
+            "description": "Alerts when the agent has stopped reporting.",
+            "check_type": "agent_ping",
+            "config": {"server_id": "{{server_id}}", "stale_minutes": 15},
+            "interval": "5m",
+            "severity": "critical",
+            "consecutive_fails": 1,
+        },
+        {
+            "def_id": "system-resources",
+            "name": "System Resources",
+            "description": "CPU, memory, disk and temperature thresholds.",
+            "check_type": "agent_resources",
+            "config": {
+                "cpu_warn": 90,
+                "cpu_crit": 95,
+                "memory_warn": 90,
+                "memory_crit": 98,
+                "disk_warn": 80,
+                "disk_crit": 90,
+                "temp_warn": 80,
+                "temp_crit": 95,
+            },
+            "interval": "5m",
+            "severity": "critical",
+            "consecutive_fails": 3,
+        },
+        {
+            "def_id": "smart-health",
+            "name": "SMART Health",
+            "description": "Disk SMART attributes (checker defaults, Backblaze-validated).",
+            "check_type": "smart_health",
+            "config": {},
+            "interval": "5m",
+            "severity": "critical",
+            "consecutive_fails": 2,
+        },
+        {
+            "def_id": "disk-forecast",
+            "name": "Disk Forecast",
+            "description": "Predicts time-until-full from the recent fill rate.",
+            "check_type": "disk_forecast",
+            "config": {"server_id": "{{server_id}}"},
+            "interval": "1h",
+            "severity": "warning",
+            "consecutive_fails": 1,
+        },
+    ],
     "proxmox-host": [
         {
             "def_id": "proxmox-backup",
@@ -340,11 +413,12 @@ def test_shipped_definitions_change_only_with_a_new_version():
     # install. Any other cause (canonical form, schema) marks the built-in as
     # edited in every install and stops its updates; fix that cause instead.
     pinned = {
-        "linux-base": (2, "f4f3f8962208b112bc6fbe3da96f6f758602ed1bc62c56299a4ecdfc66cca66b"),
-        "windows-base": (1, "4be77f8ba5a16bc1857dfcf0b2c5ae634967e7d35b97d837a70769ca36b98e70"),
+        "linux-base": (3, "ead06c5bf0577b4d3c62dc42015ac5b8629ee3605cde311db22b443710eb7c1d"),
+        "windows-base": (2, "476b982b2831e947babdbbe0fcde9136e0155a300408a97da333d729d3ec08a0"),
         "proxmox-host": (2, "e894ce48c723a76a29591dbfdc2a19367fb372a2a63458d3a3695fd70f015cbb"),
         "docker-host": (1, "a54b94104244cb22a229e2c67501f546300e40886c552189466c1f3f89cf0d19"),
         "zfs-storage": (1, "2cb8243af6f0e31ac72ae4c526b601a4dd7480408f624d390e83ebc24d0d6932"),
+        "host-ping": (1, "394189d1372ffe17265dfa60b8ed25909f858b0259fbc5b30fb9b572eb17c185"),
     }
     assert {
         t["slug"]: (t["version"], definitions_hash(t["check_definitions"], t["alert_definitions"]))
@@ -428,7 +502,7 @@ def test_unchanged_builtin_follows_a_new_version_and_keeps_check_overrides(
     assert (check.severity, check.interval) == ("warning", "15m")
     assert check.id in scheduled
     # The other built-ins ship no new version and stay as they were.
-    assert _row(db, "windows-base").builtin_version == 1
+    assert _row(db, "windows-base").builtin_version == _shipped("windows-base")["version"]
 
 
 def test_edited_builtin_stays_as_it_is_and_offers_the_update(db, monkeypatch, scheduled):
@@ -500,10 +574,15 @@ def test_a_new_optional_schema_field_leaves_the_builtins_unedited(db, monkeypatc
 
 def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
     # Rows seeded before the versions existed: the definitions of version 1, no
-    # version, no hash; one of them edited by hand back then.
+    # version, no hash; two of them edited by hand back then, windows-base (a later
+    # version ships for it) and docker-host (still at version 1).
     _seed_version_1(db)
     windows = _row(db, "windows-base")
     windows.check_definitions = json.dumps(json.loads(windows.check_definitions)[:1])
+    docker = _row(db, "docker-host")
+    docker.check_definitions = json.dumps(
+        [{**d, "interval": "1m"} for d in json.loads(docker.check_definitions)]
+    )
     for row in db.query(MonitorTemplate).all():
         row.builtin_version = None
         row.builtin_hash = None
@@ -517,22 +596,66 @@ def test_builtin_seeded_before_versions_gets_a_baseline(db, scheduled):
 
     for tpl in BUILTIN_TEMPLATES:
         row = _row(db, tpl["slug"])
+        shipped_hash = definitions_hash(tpl["check_definitions"], tpl["alert_definitions"])
         if tpl["slug"] in followed:
-            expected = (
-                tpl["version"],
-                definitions_hash(tpl["check_definitions"], tpl["alert_definitions"]),
-            )
+            expected = (tpl["version"], shipped_hash)
         else:
-            expected = (1, BUILTIN_V1_HASHES[tpl["slug"]])
+            # host-ping shipped only after the versions: no frozen hash, the shipped one.
+            expected = (1, BUILTIN_V1_HASHES.get(tpl["slug"], shipped_hash))
         assert (row.builtin_version, row.builtin_hash) == expected, tpl["slug"]
-        if tpl["slug"] != "windows-base":
-            assert row.to_dict()["builtinEdited"] is False, tpl["slug"]
-    d = _row(db, "windows-base").to_dict()
-    assert (d["builtinEdited"], d["builtinUpdateAvailable"]) == (
-        True,
-        "windows-base" in _past_version_1(),
-    )
+    # Edited by hand: windows-base offers its newer version, docker-host ships none.
+    assert {
+        tpl["slug"]: (
+            _row(db, tpl["slug"]).to_dict()["builtinEdited"],
+            _row(db, tpl["slug"]).to_dict()["builtinUpdateAvailable"],
+        )
+        for tpl in BUILTIN_TEMPLATES
+    } == {
+        "linux-base": (False, False),
+        "windows-base": (True, True),
+        "proxmox-host": (False, False),
+        "docker-host": (True, False),
+        "zfs-storage": (False, False),
+        "host-ping": (False, False),
+    }
     assert scheduled == []
+
+
+def test_unchanged_install_of_version_1_gives_disk_forecast_consecutive_oks_1(db, scheduled):
+    # An install that rolled out version 1 of linux-base and windows-base and
+    # assigned them; then the versions with Disk Forecast's consecutive_oks 1 ship.
+    _seed_version_1(db)
+    apply_template(db, _row(db, "linux-base"), "srv-1", "web01.example", "Web 01")
+    apply_template(db, _row(db, "windows-base"), "srv-2", "win01.example", "Win 01")
+    assert {check.consecutive_oks for check in db.query(MonitorCheck)} == {2}
+    # On one server the user set the Disk Forecast's consecutive_oks by hand.
+    customized = (
+        db.query(MonitorCheck)
+        .filter(MonitorCheck.server_id == "srv-2", MonitorCheck.template_def_id == "disk-forecast")
+        .one()
+    )
+    customized.consecutive_oks = 3
+    customized.overridden_fields = json.dumps(["consecutive_oks"])
+    db.commit()
+    scheduled.clear()
+
+    assert reconcile_builtin_templates(db) == len(_past_version_1())
+
+    assert {slug: _row(db, slug).builtin_version for slug in ("linux-base", "windows-base")} == {
+        "linux-base": 3,
+        "windows-base": 2,
+    }
+    got = {
+        (check.server_id, check.template_def_id): check.consecutive_oks
+        for check in db.query(MonitorCheck)
+    }
+    # SMART Health runs every 5 minutes and keeps the default, as does every
+    # other check; only the hourly Disk Forecast recovers on the first ok.
+    assert {key: oks for key, oks in got.items() if oks != 2} == {
+        ("srv-1", "disk-forecast"): 1,
+        ("srv-2", "disk-forecast"): 3,
+    }
+    assert (got[("srv-1", "smart-health")], got[("srv-2", "smart-health")]) == (2, 2)
 
 
 def _forget_versions(db):
@@ -587,13 +710,12 @@ def test_unchanged_builtin_seeded_before_versions_follows_a_new_version(
     for tpl in BUILTIN_TEMPLATES:
         if tpl["slug"] != slug:
             other = _row(db, tpl["slug"])
+            shipped_hash = definitions_hash(tpl["check_definitions"], tpl["alert_definitions"])
             if tpl["version"] == 1:
-                expected = (1, BUILTIN_V1_HASHES[tpl["slug"]])
+                # host-ping shipped only after the versions: no frozen hash.
+                expected = (1, BUILTIN_V1_HASHES.get(tpl["slug"], shipped_hash))
             else:
-                expected = (
-                    tpl["version"],
-                    definitions_hash(tpl["check_definitions"], tpl["alert_definitions"]),
-                )
+                expected = (tpl["version"], shipped_hash)
             assert (other.builtin_version, other.builtin_hash) == expected, tpl["slug"]
             assert other.to_dict()["builtinEdited"] is False, tpl["slug"]
 
@@ -647,7 +769,7 @@ def _checks_by_def_id(db, server_id):
 def test_unchanged_linux_base_of_version_1_takes_the_system_state_and_the_new_thresholds(
     db, scheduled, before_versions
 ):
-    # Version 2 rates swap, inodes and the load per CPU, a disk's percentage only
+    # Version 3 rates swap, inodes and the load per CPU, a disk's percentage only
     # below 20 GB free, and adds the system state. A row of version 1 takes it on
     # startup, one seeded before the versions as well (frozen hash); the fields a
     # user changed on a check stay.
@@ -693,7 +815,7 @@ def test_unchanged_linux_base_of_version_1_takes_the_system_state_and_the_new_th
             state.consecutive_fails,
         ) == ("System State", "system_state", {}, "5m", "warning", 1)
         assert state.id in scheduled
-    # The values of version 1 plus the new keys of version 2; the interval the
+    # The values of version 1 plus the new keys of version 3; the interval the
     # user changed stays.
     check = _resources_check(db, "srv-1")
     assert json.loads(check.config) == shipped_defs["system-resources"]["config"]
