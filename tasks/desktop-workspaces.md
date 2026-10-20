@@ -257,7 +257,7 @@ Abhängt von: T33
 
 ### T35 — Admin-Doku DE+EN, Teil 2: Monitoring, Ansible, FRP, Agent-Rollout  [ ]
 Komponente: scripts · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/admin/ansible.html, docs/en/admin/ansible.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, docs/admin/agent-deployment.html, docs/en/admin/agent-deployment.html
-Änderung: Wie T34 für die übrigen Seiten; `frp-tunnel.html`: der lokale Port gehört dem Workspace (Portkarte je Workspace), ein zweiter Workspace mit demselben Visitor-Port bekommt einen Ausweichport. Stellen beim Bau neu greppen. Nachtrag (Bauer T34): `docs/admin/frp-tunnel.html` + EN nennen die Meldung `port … belongs to the tunnel of another workspace` (wörtlich aus `tunnel.rs`), was sie bedeutet und die Abhilfe (Tunnel dieses Workspace starten).
+Änderung: Wie T34 für die übrigen Seiten; `frp-tunnel.html`: der lokale Port gehört dem Workspace (Portkarte je Workspace), ein zweiter Workspace mit demselben Visitor-Port bekommt einen Ausweichport. Stellen beim Bau neu greppen. Nachtrag (Bauer T34): `docs/admin/frp-tunnel.html` + EN nennen die Meldung `port … belongs to the tunnel of another workspace` (wörtlich aus `tunnel.rs`), was sie bedeutet und die Abhilfe (Tunnel dieses Workspace starten). Nachtrag (T34-Review, Nit): `docs/admin/index.html` (~:122) + EN (~:75): „löscht … samt RDP-Passwörtern“ um „bei übernommenen Workspaces erst mit dem letzten von ihnen“ ergänzen (Dateien per set-files).
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/admin/{monitoring,ansible,frp-tunnel,agent-deployment}.html + EN
 Abhängt von: T33
