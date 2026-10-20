@@ -32,8 +32,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace
 Doku: keine (intern; Doku mit T33)
 Abhängt von: T14
 
-### T43 — URL im Launcher maskiert, beim Speichern unverändert behalten  [ ]
+### T43 — URL im Launcher maskiert, beim Speichern unverändert behalten  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/workspace.rs, apps/desktop/src-tauri/src/launcher.rs, apps/desktop/src-tauri/src/models.rs, apps/desktop/ui/src/lib/bridge/types.ts
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @8a13aee9 2026-10-20T14:06:50+02:00
+Review: approve (.ah-out/review/desktop-workspaces-ui/T43.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-20 (Reviews T42): (1) `shown_url` (`workspace.rs`, T42) maskiert zusätzlich die Werte der Query (`?token=***`, Schlüssel bleiben sichtbar) und ein Fragment (`#***`); Benutzerteil weiter entfernt; nicht parsbar → `null`. (2) `launcher::edit` behält die gespeicherte URL samt Benutzerteil, Query und Fragment, wenn die gesendete URL gleich `shown_url(gespeicherte)` ist (auch wenn beide `null` sind, eine gespeicherte, aber nicht parsbare URL geht beim Bearbeiten also nicht verloren); eine wirklich geänderte URL ersetzt sie wie bisher, eine leere entfernt sie nur, wenn `shown_url` der gespeicherten nicht `null` ist. (3) Die Doc-Kommentare an `WorkspaceInfo.url` (`models.rs`, `types.ts`, `shown_url`) nennen Parser-Schreibweise, Maskierung und `null` bei nicht parsbarer URL (Nits T42). Tests (Namen enthalten `workspace_url`): Maskierung je Fall (Query mit mehreren Werten, Fragment, Benutzerteil plus Query); Bearbeiten mit unveränderter maskierter URL behält Benutzerteil und Token; geänderte URL ersetzt; leere URL entfernt; nicht parsbare gespeicherte URL bleibt beim Umbenennen erhalten; Identitäts-Prüfung bei Origin-Wechsel unverändert.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- workspace_url
 Doku: keine (intern; Doku mit T33)

@@ -395,16 +395,41 @@ fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(String::from)
 }
 
-/// `url` as the webview gets it: without a user and a password, otherwise as kept. None for a
-/// URL that does not parse: where the parser finds no URL, it finds no user and password to
-/// drop either, and the webview would get them.
-fn shown_url(url: &str) -> Option<String> {
+/// `url` as the webview gets it: without a user and a password, each value of its query and its
+/// fragment masked (`?token=***`, `#***`; the keys of the query stay), in the parser's spelling;
+/// a URL with nothing to drop or mask as kept. A part of the query without a value may be a
+/// token itself and is masked whole (`?***`). None for a URL that does not parse: where the
+/// parser finds no URL, it finds nothing to drop or mask either, and the webview would get it
+/// all. What it gives comes out of it again unchanged, so `launcher::edit` can tell a URL the
+/// webview sends back as it got it.
+pub(crate) fn shown_url(url: &str) -> Option<String> {
     let mut parsed = Url::parse(url).ok()?;
-    if parsed.username().is_empty() && parsed.password().is_none() {
+    let user = !parsed.username().is_empty() || parsed.password().is_some();
+    let pairs: Vec<(String, String)> = parsed.query_pairs().into_owned().collect();
+    let fragment = parsed
+        .fragment()
+        .is_some_and(|fragment| !fragment.is_empty());
+    if !user && pairs.is_empty() && !fragment {
         return Some(url.to_string());
     }
-    parsed.set_username("").ok()?;
-    parsed.set_password(None).ok()?;
+    if user {
+        parsed.set_username("").ok()?;
+        parsed.set_password(None).ok()?;
+    }
+    if !pairs.is_empty() {
+        let mut query = parsed.query_pairs_mut();
+        query.clear();
+        for (key, value) in &pairs {
+            if value.is_empty() {
+                query.append_key_only("***");
+            } else {
+                query.append_pair(key, "***");
+            }
+        }
+    }
+    if fragment {
+        parsed.set_fragment(Some("***"));
+    }
     Some(parsed.into())
 }
 
@@ -836,7 +861,7 @@ mod tests {
 
     use super::{
         acquire, acquire_within, check_side, check_sign_in_once, context, current, enter, is_open,
-        metas, own_url, same_server, set_current, sign_in_url, startup, AppError, Held,
+        metas, own_url, same_server, set_current, shown_url, sign_in_url, startup, AppError, Held,
         InstanceLock, Meta, Mode, Plan, Registry, RegistryEntry, Side, Workspace, WorkspaceId,
         ACQUIRE_TIMEOUT, EXIT_FAILED, EXIT_TAKEN, EXIT_UNKNOWN, LAUNCHER_TITLE, META_FILE, PALETTE,
         REGISTRY_FILE, USAGE,
@@ -1359,10 +1384,10 @@ mod tests {
             .info(id("w-0a1b2c3d"), false)
         };
 
-        // Without a user, the URL as kept, however it is spelled.
+        // Without a user, a query and a fragment, the URL as kept, however it is spelled.
         for kept in [
             "https://ah.example.com",
-            "https://AH.example.com:8443/base/?x=1",
+            "https://AH.example.com:8443/base/",
             "https://sync.example.com/connections.json",
         ] {
             assert_eq!(info(Some(kept)).url.as_deref(), Some(kept));
@@ -1387,7 +1412,7 @@ mod tests {
             ),
             (
                 "https://user:pw@sync.example.com/connections.json?a=b",
-                "https://sync.example.com/connections.json?a=b",
+                "https://sync.example.com/connections.json?a=***",
                 "sync.example.com",
             ),
         ] {
@@ -1401,6 +1426,49 @@ mod tests {
         let unparsed = info(Some("https://admin:secret@ah example.com"));
         assert_eq!(unparsed.url, None);
         assert_eq!(unparsed.host, None);
+    }
+
+    #[test]
+    fn the_shown_workspace_url_masks_the_query_values_and_the_fragment_and_stays_so() {
+        for (kept, shown) in [
+            // Each value of the query, a key twice as well; the keys stay, in the parser's
+            // spelling.
+            (
+                "https://sync.example.com/c.json?token=abc&user=me&token=def&a%20b=x%26y",
+                "https://sync.example.com/c.json?token=***&user=***&token=***&a+b=***",
+            ),
+            // A part without a value may be the token itself; one with an empty value goes too.
+            (
+                "https://sync.example.com/c.json?s3cr3t&token=&a=1",
+                "https://sync.example.com/c.json?***&***&a=***",
+            ),
+            // The fragment, whatever it holds.
+            (
+                "https://ah.example.com/#access_token=abc",
+                "https://ah.example.com/#***",
+            ),
+            (
+                "https://ah.example.com/app#/route?x=1",
+                "https://ah.example.com/app#***",
+            ),
+            // A user and a password, the query and the fragment at once.
+            (
+                "https://admin:secret@sync.example.com:8443/c.json?token=abc#frag",
+                "https://sync.example.com:8443/c.json?token=***#***",
+            ),
+            (
+                "https://admin@AH.example.com/?k=v",
+                "https://ah.example.com/?k=***",
+            ),
+            // An empty query and an empty fragment hide nothing: as kept.
+            ("https://ah.example.com/?#", "https://ah.example.com/?#"),
+        ] {
+            assert_eq!(shown_url(kept).as_deref(), Some(shown), "{kept}");
+            // Masking what it shows changes nothing: the launcher tells an unchanged URL by it.
+            assert_eq!(shown_url(shown).as_deref(), Some(shown), "{shown}");
+        }
+
+        assert_eq!(shown_url("https://ah example.com/?token=abc"), None);
     }
 
     #[test]

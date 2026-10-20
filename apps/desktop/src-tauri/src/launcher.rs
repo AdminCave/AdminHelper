@@ -660,8 +660,10 @@ fn create(base: &Path, registry: &mut Registry, meta: &Meta) -> Result<Workspace
     Ok(id)
 }
 
-/// Gives the workspace `id` the `name` and `url` checked from `draft`, and its colour. Its lock
-/// is held until the edit is written: no process opens the workspace in between.
+/// Gives the workspace `id` the `name` and `url` checked from `draft`, and its colour. A `url`
+/// that is the URL of the workspace as the webview got it (`workspace::shown_url`, none for a
+/// URL that does not parse) keeps the URL it has. Its lock is held until the edit is written: no
+/// process opens the workspace in between.
 fn edit(
     base: &Path,
     registry: &Registry,
@@ -686,6 +688,13 @@ fn edit(
             "the kind of a workspace stays as it was made".to_string(),
         ));
     }
+    // The editor sends the URL back as it got it when the user left it alone; taken as it is,
+    // the user, the query and the fragment the webview never saw would be lost.
+    let url = if url == meta.url.as_deref().and_then(workspace::shown_url) {
+        meta.url.clone()
+    } else {
+        url
+    };
     let edited = Meta {
         name,
         color: draft.color.clone(),
@@ -1520,6 +1529,228 @@ mod tests {
         );
         assert!(!refused.contains("geheim"), "{refused}");
         assert_eq!(fs::read_to_string(&path).unwrap(), r#"{"kind": "geheim"}"#);
+    }
+
+    #[test]
+    fn save_keeps_the_workspace_url_the_editor_sends_back_as_shown() {
+        let scratch = Scratch::new("edit-shown");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        let sync = created(
+            SyncMode::Sync,
+            "Sync",
+            Some("https://reader:pw@sync.example.com/c.json?token=abc&v=2#frag"),
+        );
+        let server = meta(
+            SyncMode::Server,
+            "Standard",
+            Some("https://admin@ah.example.com/base?tenant=t1"),
+        );
+        // What a migration may have taken over: a URL the parser does not read.
+        let unparsed = created(
+            SyncMode::Server,
+            "Alt",
+            Some("https://admin:secret@ah example.com"),
+        );
+        let plain = created(SyncMode::Server, "Plain", Some("https://AH.example.com"));
+        let workspaces = [
+            ("w-0000000a", sync),
+            ("standard", server),
+            ("w-0000000b", unparsed.clone()),
+            ("w-0000000c", plain),
+        ];
+        install(base, &workspaces, false);
+
+        // What the editor gets.
+        let shown: Vec<Option<String>> = list(base)
+            .unwrap()
+            .workspaces
+            .into_iter()
+            .map(|ws| ws.url)
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                Some("https://sync.example.com/c.json?token=***&v=***#***".to_string()),
+                Some("https://ah.example.com/base?tenant=***".to_string()),
+                None,
+                Some("https://AH.example.com".to_string()),
+            ]
+        );
+
+        // Sent back as it came, with another name and colour: the URL stays as kept, the user,
+        // the token and the fragment with it, and the one that does not parse as well.
+        for ((ws, before), url) in workspaces.iter().zip(shown) {
+            save(
+                base,
+                &WorkspaceDraft {
+                    id: Some(id(ws)),
+                    kind: before.kind.clone(),
+                    name: "Neu".to_string(),
+                    color: PALETTE[5].to_string(),
+                    url,
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                Meta::load(&dir_of(base, ws)).unwrap(),
+                Meta {
+                    name: "Neu".to_string(),
+                    color: PALETTE[5].to_string(),
+                    ..before.clone()
+                },
+                "{ws}"
+            );
+        }
+        // A blank URL is none, too.
+        save(
+            base,
+            &WorkspaceDraft {
+                id: Some(id("w-0000000b")),
+                kind: SyncMode::Server,
+                name: "Alt".to_string(),
+                color: PALETTE[0].to_string(),
+                url: Some("  ".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000b")).unwrap(), unparsed);
+    }
+
+    #[test]
+    fn save_replaces_a_changed_workspace_url_and_drops_a_blank_one() {
+        let scratch = Scratch::new("edit-changed");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        let before = created(
+            SyncMode::Sync,
+            "Sync",
+            Some("https://reader:pw@sync.example.com/c.json?token=abc"),
+        );
+        install(base, &[("w-0000000a", before.clone())], false);
+        let edit = |url: Option<&str>| {
+            before.store(&dir_of(base, "w-0000000a")).unwrap();
+            save(
+                base,
+                &WorkspaceDraft {
+                    id: Some(id("w-0000000a")),
+                    kind: SyncMode::Sync,
+                    name: "Sync".to_string(),
+                    color: PALETTE[0].to_string(),
+                    url: url.map(String::from),
+                },
+            )
+            .unwrap();
+            Meta::load(&dir_of(base, "w-0000000a")).unwrap().url
+        };
+
+        assert_eq!(
+            edit(Some("https://sync.example.com/c.json?token=def")).as_deref(),
+            Some("https://sync.example.com/c.json?token=def")
+        );
+        // A masked value in another URL is taken as sent: nothing of the old URL is carried over.
+        assert_eq!(
+            edit(Some("https://sync.example.com/d.json?token=***")).as_deref(),
+            Some("https://sync.example.com/d.json?token=***")
+        );
+        assert_eq!(edit(None), None);
+        assert_eq!(edit(Some("  ")), None);
+    }
+
+    #[test]
+    fn save_checks_the_identity_for_a_changed_workspace_url_as_before() {
+        let scratch = Scratch::new("edit-shown-identity");
+        let base = &scratch.0;
+        let _keyring = keyring_store::memory();
+        let enrolled = created(
+            SyncMode::Server,
+            "Kunde A",
+            Some("https://admin@ah.example.com/?k=v"),
+        );
+        let unparsed = created(
+            SyncMode::Server,
+            "Alt",
+            Some("https://admin:secret@ah example.com"),
+        );
+        install(
+            base,
+            &[
+                ("w-0000000a", enrolled.clone()),
+                ("w-0000000b", unparsed.clone()),
+            ],
+            false,
+        );
+        for ws in ["w-0000000a", "w-0000000b"] {
+            store(&behind(&prefix_of(ws), &IDENTITY[..3]));
+        }
+        let edit = |ws: &str, url: Option<&str>| {
+            save(
+                base,
+                &WorkspaceDraft {
+                    id: Some(id(ws)),
+                    kind: SyncMode::Server,
+                    name: "Neu".to_string(),
+                    color: PALETTE[0].to_string(),
+                    url: url.map(String::from),
+                },
+            )
+        };
+        let refused = |result: Result<WorkspaceId, AppError>, ws: &str, case: &str| {
+            assert!(
+                matches!(&result, Err(AppError::Validation(msg))
+                    if msg.contains(&format!("the workspace {ws} has a device identity"))),
+                "{ws} {case}: {result:?}"
+            );
+        };
+
+        // Another server, or none, with the masked query or without: refused, nothing written.
+        for other in [
+            Some("https://other.example.com/?k=***"),
+            Some("https://ah.example.com:8443/?k=***"),
+            None,
+        ] {
+            refused(
+                edit("w-0000000a", other),
+                "w-0000000a",
+                &format!("{other:?}"),
+            );
+        }
+        // A URL the parser reads names a server the one it does not read may not be.
+        refused(
+            edit("w-0000000b", Some("https://ah.example.com")),
+            "w-0000000b",
+            "parsed",
+        );
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000a")).unwrap(), enrolled);
+        assert_eq!(Meta::load(&dir_of(base, "w-0000000b")).unwrap(), unparsed);
+
+        // Sent back as shown: the URL stays as kept.
+        edit("w-0000000a", Some("https://ah.example.com/?k=***")).unwrap();
+        edit("w-0000000b", None).unwrap();
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000a")).unwrap(),
+            Meta {
+                name: "Neu".to_string(),
+                ..enrolled
+            }
+        );
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000b")).unwrap(),
+            Meta {
+                name: "Neu".to_string(),
+                ..unparsed
+            }
+        );
+
+        // The same server under another URL: taken, the user and the query go with the old one.
+        edit("w-0000000a", Some("https://ah.example.com/x")).unwrap();
+        assert_eq!(
+            Meta::load(&dir_of(base, "w-0000000a"))
+                .unwrap()
+                .url
+                .as_deref(),
+            Some("https://ah.example.com/x")
+        );
     }
 
     #[test]
