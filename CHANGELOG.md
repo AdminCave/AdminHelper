@@ -24,7 +24,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zurueck). Das Server-Dashboard des Desktops zeigt den Check in der neuen Sektion
   „Systemzustand“: je Problem eine Pille, ausgeklappt die vier Punkte mit Wert oder „nicht ermittelt“, ohne den Block
   „Nicht bewertet“. Nicht verifiziert: ob Debian und Proxmox VE `/var/run/reboot-required` bei
-  einem Kernel-Update anlegen, und der Weg der RPM-Distributionen. Doku: Monitoring-Administration (DE+EN).
+  einem Kernel-Update anlegen, und der Weg der RPM-Distributionen. Doku: Monitoring-Administration, Entwickler-Doku
+  Agent und Monitoring (DE+EN).
 - **Monitoring: `agent_resources` bewertet Swap, Inodes und Load je CPU (R-0423):** Neben CPU, RAM, Platten und
   Temperaturen bewertet der Check die Swap-Belegung (`swap_warn`/`swap_crit`, Default 80/95 %, nur mit Swap-Geraet),
   die Inode-Belegung je Platte (`inode_warn`/`inode_crit`, 80/90 %) und die Load je CPU, `load_5m` geteilt durch die
@@ -37,7 +38,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Platte aus `ignore_mounts` grau mit „ignoriert“. Die Farben von Ringen, Pillen und Balken kommen jetzt aus der
   Bewertung des Checks (`problems` in den Details, also mit Mindest-GB, Schwellen je Mount und Hysterese; volle Inodes
   faerben die Platte mit), nicht mehr aus den Schwellen der Konfiguration; nur Details ohne `problems` rechnet er wie
-  bisher aus der Konfiguration. Doku: Monitoring-Administration (DE+EN).
+  bisher aus der Konfiguration. Doku: Monitoring-Administration, Entwickler-Doku Agent und Monitoring (DE+EN).
 - **Monitoring: Standard-Template „Linux Server — Standard“ in Version 2 (R-0423):** Der Check System Resources
   bewertet darin zusaetzlich Swap (80/95 %), Inodes (80/90 %) und die Load je CPU (1.5/3) und die Belegung einer
   Platte erst unter 20 GB frei (`disk_min_free_gb`); neu ist der Check System State (`system_state`, `warning`,
@@ -396,10 +397,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 - **Monitoring: die Status-Zeitleiste eines Push-Checks bleibt ohne Messwerte nicht leer:** Ein vom Agent-Report
   ausgewerteter Check, dessen Ergebnis keine Messwerte traegt, schrieb nichts nach VictoriaMetrics, und seine
-  Status-Zeitleiste im Desktop blieb leer: Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder keinen
-  Block schickte, und der neue Check `system_state` immer. Jetzt schreibt der Push-Pfad fuer jeden ausgewerteten Check
-  den Status (`monitor_check_status`); eine neue Messreihe entsteht nicht, und ohne Messwerte auch keine Dauer.
+  Status-Zeitleiste im Desktop blieb leer, etwa bei Docker, ZFS und Proxmox, wenn der Agent sie nicht lesen konnte oder
+  keinen Block schickte, bei Proxmox ohne VMs, bei `smart_health` ohne SMART-Daten, bei `agent_resources` ohne
+  Ressourcen-Block und beim neuen Check `system_state` immer. Jetzt schreibt der Push-Pfad fuer jeden ausgewerteten
+  Check den Status (`monitor_check_status`); eine neue Messreihe entsteht nicht, und ohne Messwerte auch keine Dauer.
   Doku: Entwickler-Doku Monitoring (DE+EN).
+- **Monitoring: doppelte Mounts und Platten ohne Mount in der Live-Ansicht:** Meldete ein Agent zwei Dateisysteme am
+  selben Mount-Pfad, brach die Live-Ansicht des Servers im Desktop ab; jetzt zeigt sie beide Eintraege. Eine Platte, die
+  der Agent ohne Mount meldet, heisst in Bewertung, `ignore_mounts` und Anzeige einheitlich „?“; bisher bewertete der
+  Check sie als „?“, die Check-Details nannten sie aber „/“, und neben der echten Platte „/“ brach damit die
+  Live-Ansicht ab. Doku: Entwickler-Doku Monitoring (DE+EN).
 - **Monitoring: die Listen bleiben lesbar, wenn ein gespeicherter Wert keine endliche Zahl ist:** Stand in einer
   Check-Konfiguration, in den Details eines Check-Zustands, in der Kanal-Konfiguration einer Alert-Regel oder in einer
   Definition eines Templates `NaN`, `Infinity` oder eine Zahl ausserhalb des Gleitkomma-Bereichs, scheiterte die ganze
@@ -1016,17 +1023,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Proxmox nicht lesen), bleibt der Check `unknown`, leert aber die zuletzt gezeigte VM-Liste; ein lesbares Proxmox
   ohne VMs leert sie ebenso. Die Check-Details tragen dazu `available` und `error`. Die Backup-Zeile im
   Server-Dashboard des Desktops zeigt im Ausfall den Fehler statt der VM-Liste, etwa „Backup-Storage nicht aktiv“,
-  gelb bei `warning` und grau bei abgeschaltetem Ausfall; bisher stand dort „—“. Das Standard-Template
-  „Proxmox Host“ steht dafuer in Version 2 auf `consecutive_fails` 2 wie Docker und ZFS: ein einzelner Lesefehler
-  von `pvesh` meldet nicht. Ein unveraendertes Template folgt der neuen Version beim Start automatisch, auch eines von
-  vor den Template-Versionen; ein angepasstes bietet sie als Update an. Doku: Monitoring-Administration (DE+EN).
+  gelb bei `warning` und grau bei abgeschaltetem Ausfall; bisher blieb dort die zuletzt gelesene VM-Liste stehen, weil
+  der Agent den Block wegliess. Das Standard-Template „Proxmox Host“ steht dafuer in Version 2 auf
+  `consecutive_fails` 2 wie Docker und ZFS: ein einzelner Lesefehler von `pvesh` meldet nicht. Ein unveraendertes
+  Template folgt der neuen Version beim Start automatisch, auch eines von vor den Template-Versionen; ein angepasstes
+  bietet sie als Update an. Doku: Monitoring-Administration, Entwickler-Doku Agent und Monitoring (DE+EN).
 - **Monitoring: nur fehlgeschlagene Dienste sind critical (R-0423):** Im Modus `auto` von `service_process` ist eine
   fehlgeschlagene Unit nur noch `critical`, wenn sie ein Dienst ist (`.service` oder ein Windows-Dienst ohne
   Unit-Endung); eine andere fehlgeschlagene Unit wie Mount, Timer oder Socket ist `warning`, wie eine enabled, aber
   inaktive Unit. Die Meldung nennt beide getrennt, etwa
   `Failed: nginx.service; Failed units: data.mount; Inactive (autostart): cron.service`; `ignore` greift wie bisher
   vorher, die Check-Details listen unter `failed` weiter alle fehlgeschlagenen Units. Doku:
-  Monitoring-Administration (DE+EN).
+  Monitoring-Administration, Entwickler-Doku Monitoring (DE+EN).
 - **Monitoring: Platten-Alarm nur unter Mindest-GB frei, je Mount einstellbar (R-0423):** Der Prozent-Alarm einer
   Platte (`disk_warn`/`disk_crit`) in `agent_resources` zaehlt nur noch, wenn zusaetzlich weniger als
   `disk_min_free_gb` frei sind (Default 20 GB, auch fuer bestehende Checks ohne den Schluessel; `0` schaltet den
@@ -1035,14 +1043,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Report-Version 3, unter Linux und Windows; fuer aeltere Agents zaehlt wie bisher nur der Prozentwert. Je Mount setzt
   `disk_overrides` eigene `warn`, `crit` und `min_free_gb`; ein Mount aus `ignore_mounts` wird weder auf Belegung noch
   auf Inodes bewertet und steht in den Check-Details mit `ignored: true`. Beide nehmen exakte Mount-Pfade. Die
-  Check-Details tragen je Platte dazu `free_gb`. Doku: Monitoring-Administration (DE+EN).
+  Check-Details tragen je Platte dazu `free_gb`. Im Check-Formular des Desktops lassen sich `disk_min_free_gb`,
+  `ignore_mounts` (Feld „Mounts ignorieren“, kommagetrennt) und `disk_overrides` (Tabelle „Schwellen je Mount“: je
+  Zeile Mount, Warnung, Kritisch und Mindest-GB frei) bearbeiten, ebenso die Schwellen fuer Swap, Inodes und Load je
+  CPU. Doku: Monitoring-Administration, Entwickler-Doku Agent und Monitoring (DE+EN).
 - **Agent: CPU als Mittel seit dem letzten Report (R-0423):** `cpu_percent` ist jetzt der Anteil belegter CPU-Zeit
   seit dem letzten erfolgreich gesendeten Report statt einer 1-s-Stichprobe zu Beginn des Laufs; unter Linux mittelt
   der Agent damit ueber die 5 Minuten zwischen zwei Laeufen. Den Zaehlerstand dafuer legt er in `.report-state.json`
   neben `monitor.conf` ab (0600), geschrieben nur nach erfolgreichem Push; ein verlorener Push verlaengert das
   naechste Fenster. Im ersten Lauf, wenn der letzte erfolgreiche Report mehr als 15 Minuten zurueckliegt, nach einem
   Neustart, bei einem Zeitstempel in der Zukunft und beim Test-Push von `monitor init` misst er weiter die
-  1-s-Stichprobe.
+  1-s-Stichprobe. Doku: Entwickler-Doku Agent und Monitoring (DE+EN).
 - **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
   Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
   Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und
