@@ -40,6 +40,7 @@ from app.modules.frp.config_generator import generate_frps_toml
 from app.modules.frp.extra_config import STRING_FIELDS, rejected_keys, value_allowed
 from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.router import router as frp_router
+from app.modules.frp.schemas import dashboard_port_refused
 from app.modules.hooks.router import router as hooks_router
 from app.modules.hooks.router import trigger_router as hooks_trigger_router
 from app.modules.monitoring_proxy.router import router as monitoring_proxy_router
@@ -241,10 +242,8 @@ def _report_rejected_fields(db, config):
     # check_config runs under LC_ALL=C, so it counts the token in bytes.
     if "auth_token" not in rules and len(config.auth_token.encode()) < 16:
         rules["auth_token"] = _FRPS_RULE_TOKEN
-    if "webServer.port" in written and int(written["webServer.port"]) in (
-        443,
-        int(written["bindPort"]),
-        FRP_BIND_PORT,
+    if "webServer.port" in written and dashboard_port_refused(
+        int(written["webServer.port"]), int(written["bindPort"]), FRP_BIND_PORT
     ):
         rules["dashboard_port"] = _FRPS_RULE_DASHBOARD_PORT
     fields = list(rules)
