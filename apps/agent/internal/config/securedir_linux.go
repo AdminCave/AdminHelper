@@ -18,6 +18,13 @@ func EnsureSecureDir(dir string) error {
 	return os.Chmod(dir, 0o700)
 }
 
+// OwnByAdministrators does nothing on Linux: a new file belongs to the account that
+// writes it, whatever the local policy, and EnsureSecureDir does not check owners
+// there. The Windows build sets the owner explicitly.
+func OwnByAdministrators(path string) error {
+	return nil
+}
+
 // SecureDir restricts a secret-bearing directory to its owner. On Linux the Unix
 // mode bits do the job (0700); the Windows build resets the ACL instead, because
 // mode bits are ignored there (3.1).
