@@ -29,6 +29,12 @@ EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 # so it never collides with "/".
 _NO_MOUNT = "?"
 
+# The virtualization systems the host facts report with the role guest for a container:
+# the agent's containerSystems (system_linux.go, gopsutil v4.26.5, no Podman), kept equal
+# by test_agent_resources_checker.py. A tuple, because `in` on it compares instead of
+# hashing, so a system that is a list or an object cannot raise.
+_CONTAINER_SYSTEMS = ("lxc", "docker", "openvz", "rkt")
+
 # In-memory map: server_id -> last report time (naive UTC wall clock). Process-
 # local (single-worker invariant, see main.py lifespan); hydrated at startup
 # from monitor_agent_liveness so a restart no longer makes agent_ping fall back
@@ -266,6 +272,18 @@ def _grade(
     return status, None
 
 
+def _in_container(report: dict) -> bool:
+    """Whether the host facts of this push report a container. Without them (no host
+    block, or a virtualization the agent could not read) it is none."""
+    host = report.get("host")
+    virt = host.get("virtualization") if isinstance(host, dict) else None
+    return (
+        isinstance(virt, dict)
+        and virt.get("role") == "guest"
+        and virt.get("system") in _CONTAINER_SYSTEMS
+    )
+
+
 class AgentResourcesChecker:
     """Evaluates agent resource metrics against thresholds.
 
@@ -364,6 +382,10 @@ class AgentResourcesChecker:
         # Load per CPU (agent v3, Linux): older agents send load_5m without cpu_count.
         # No hysteresis: hysteresis_pp is in percentage points, and load_5m is the
         # kernel's own 5-minute average, already smoothed whatever the push interval.
+        # Not rated in a container, only shown: load_5m is the host's there (unless
+        # lxcfs virtualizes /proc/loadavg), while cpu_count may be cut to the
+        # container's cores, so the quotient says nothing about the container.
+        load_rated = not _in_container(report)
         cpu_count = agent_number(resources.get("cpu_count"))
         if not isinstance(cpu_count, int) or cpu_count < 1:
             cpu_count = None
@@ -372,17 +394,18 @@ class AgentResourcesChecker:
         if cpu_count is not None and load_5m is not None:
             # Rounded before grading, so the label shows the value that was graded.
             load_per_cpu = round(load_5m / cpu_count, 2)
-            load_crit = config.get("load_crit", 3.0)
-            load_warn = config.get("load_warn", 1.5)
-            grade(
-                "load",
-                load_per_cpu,
-                load_warn,
-                load_crit,
-                f"Load {load_per_cpu}/CPU",
-                "/CPU",
-                hysteresis=False,
-            )
+            if load_rated:
+                load_crit = config.get("load_crit", 3.0)
+                load_warn = config.get("load_warn", 1.5)
+                grade(
+                    "load",
+                    load_per_cpu,
+                    load_warn,
+                    load_crit,
+                    f"Load {load_per_cpu}/CPU",
+                    "/CPU",
+                    hysteresis=False,
+                )
 
         # Disks — filter pseudo filesystems server-side
         # Old agents send no fstype → default "_real_" passes the filter, as does a non-string
@@ -497,6 +520,10 @@ class AgentResourcesChecker:
                 for s in temperatures
             ],
         }
+        # Only in a container, so the details of a host or VM stay as they were; the
+        # desktop shows the load then without a rating.
+        if not load_rated:
+            metrics["_details"]["load_rated"] = False
 
         return status, message, metrics
 

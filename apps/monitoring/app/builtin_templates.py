@@ -108,6 +108,8 @@ _SMART_HEALTH = {
 # change the hash.
 _LINUX_RESOURCES = {
     **_AGENT_RESOURCES,
+    "description": "CPU, memory, swap, load per CPU, disk, inode and temperature thresholds; "
+    "a disk's usage counts only below 20 GB free.",
     "config": {
         **_AGENT_RESOURCES["config"],
         "disk_min_free_gb": 20,

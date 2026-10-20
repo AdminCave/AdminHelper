@@ -9,6 +9,8 @@ pseudo-filesystem filter, the free-GB gate and per-mount settings of the disks, 
 temperature overrides are worth pinning."""
 
 import math
+import re
+from pathlib import Path
 
 import pytest
 
@@ -364,6 +366,87 @@ class TestNewMetricHysteresis:
             "load": "critical",
             "inode:/var": "critical",
         }
+
+
+# --- Load per CPU in a container (T31) ---
+# 32 / 8 = 4.0/CPU, above the critical threshold of 3.0.
+_HIGH_LOAD = _load(32)
+_RATED_HIGH_LOAD = ("critical", "Load 4.0/CPU (>=3.0/CPU)")
+
+
+def _host(system, role="guest"):
+    return {"os": "linux", "virtualization": {"system": system, "role": role}}
+
+
+@pytest.mark.parametrize("system", ["lxc", "docker", "openvz", "rkt"])
+def test_the_load_of_a_container_is_shown_but_not_rated(system):
+    report = {"host": _host(system), "resources": _HIGH_LOAD}
+    # Last round's load problem does not count either.
+    status, message, metrics = CHECKER.evaluate({}, report, {"problems": {"load": "critical"}})
+    assert (status, message) == ("ok", "OK")
+    details = metrics["_details"]
+    assert details["problems"] == {}
+    assert (details["cpu_count"], details["load_per_cpu"], details["load_rated"]) == (8, 4.0, False)
+    assert_every_reader_reads(details)
+
+
+def test_a_container_still_rates_everything_but_the_load():
+    resources = {**_HIGH_LOAD, **_SWAP, "swap_percent": 85, "cpu_percent": 99}
+    status, message, metrics = CHECKER.evaluate({}, {"host": _host("lxc"), "resources": resources})
+    assert (status, message) == ("critical", "CPU 99% (>=95%); Swap 85% (>=80%)")
+    assert metrics["_details"]["problems"] == {"cpu": "critical", "swap": "warning"}
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        pytest.param(_host("kvm"), id="kvm-guest"),
+        pytest.param(_host("xen"), id="xen-guest"),
+        pytest.param(_host("hyperv"), id="hyperv-guest"),
+        pytest.param(_host("kvm", "host"), id="kvm-host"),
+        pytest.param(_host("lxc", "host"), id="lxc-host"),
+        pytest.param(_host("linux-vserver"), id="system-not-in-the-list"),
+        pytest.param(_host("", ""), id="bare-metal"),
+        pytest.param({"os": "linux"}, id="without-virtualization"),
+        # What a broken agent can send: rated as without the host facts, nothing raises.
+        pytest.param({"virtualization": ["lxc", "guest"]}, id="virtualization-list"),
+        pytest.param(_host(["lxc"]), id="system-list"),
+        pytest.param(_host({"lxc": 1}), id="system-object"),
+        pytest.param(_host("lxc", ["guest"]), id="role-list"),
+        pytest.param(["lxc"], id="host-list"),
+        pytest.param("lxc", id="host-str"),
+    ],
+)
+def test_the_load_of_a_host_or_vm_is_rated_as_before(host):
+    report = {"host": host, "resources": _HIGH_LOAD}
+    assert CHECKER.evaluate({}, report) == CHECKER.evaluate({}, {"resources": _HIGH_LOAD})
+    status, message, metrics = CHECKER.evaluate({}, report)
+    assert (status, message) == _RATED_HIGH_LOAD
+    assert metrics["_details"]["problems"] == {"load": "critical"}
+    assert "load_rated" not in metrics["_details"]
+
+
+def test_a_report_without_host_facts_rates_the_load_as_before():
+    status, message, metrics = CHECKER.evaluate({}, {"resources": _HIGH_LOAD})
+    assert (status, message) == _RATED_HIGH_LOAD
+    assert metrics["_details"]["problems"] == {"load": "critical"}
+    assert "load_rated" not in metrics["_details"]
+
+
+_AGENT_SYSTEM = Path(__file__).resolve().parents[3] / "apps/agent/internal/monitor/system_linux.go"
+_GO_CONTAINER_SYSTEMS = re.compile(r"var containerSystems = map\[string\]bool\{(.*?)\}", re.S)
+
+
+def test_container_systems_match_the_agent():
+    # The agent counts the OOM kills of a container from its cgroup with the same list
+    # (T30). If a system is added on one side only, the agent and the checker disagree
+    # on what a container is, and nothing else turns red.
+    m = _GO_CONTAINER_SYSTEMS.search(_AGENT_SYSTEM.read_text(encoding="utf-8"))
+    assert m, f"containerSystems not found in {_AGENT_SYSTEM}"
+    agent_systems = re.findall(r'"([a-z-]+)": true', m.group(1))
+    # Sanity: the scan parsed entries instead of matching empty.
+    assert "lxc" in agent_systems
+    assert sorted(agent_systems) == sorted(agent._CONTAINER_SYSTEMS)
 
 
 # --- Disks: free-GB gate, thresholds per mount and ignored mounts (agent report v3) ---

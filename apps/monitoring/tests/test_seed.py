@@ -340,7 +340,7 @@ def test_shipped_definitions_change_only_with_a_new_version():
     # install. Any other cause (canonical form, schema) marks the built-in as
     # edited in every install and stops its updates; fix that cause instead.
     pinned = {
-        "linux-base": (2, "0f9734374c3eabdd396d1b4734d9e8b12469e6cfe02109b5d985e778f9df1b0c"),
+        "linux-base": (2, "f4f3f8962208b112bc6fbe3da96f6f758602ed1bc62c56299a4ecdfc66cca66b"),
         "windows-base": (1, "4be77f8ba5a16bc1857dfcf0b2c5ae634967e7d35b97d837a70769ca36b98e70"),
         "proxmox-host": (2, "e894ce48c723a76a29591dbfdc2a19367fb372a2a63458d3a3695fd70f015cbb"),
         "docker-host": (1, "a54b94104244cb22a229e2c67501f546300e40886c552189466c1f3f89cf0d19"),

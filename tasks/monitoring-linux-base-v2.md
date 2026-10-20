@@ -289,8 +289,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
 Doku: docs/admin/monitoring.html + EN (Quelle der OOM-Kills im Container); docs/developer/agent.html + EN (`system_state`, Zustandsdatei); CHANGELOG.md
 Abhängt von: T6
 
-### T31 — Monitoring: Load je CPU im Container nicht bewerten  [ ]
+### T31 — Monitoring: Load je CPU im Container nicht bewerten  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3e5bb2c9 2026-10-20T19:25:47+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T31.verdict.json)
 Änderung: Entscheidung Kevin 2026-10-20 (Branch-Review, wichtig): Im LXC passen `load_5m` (Host-Load, solange lxcfs `/proc/loadavg` nicht virtualisiert) und `cpu_count` (auf die Cores des Containers gekürzt) nicht zusammen. Meldet der Report einen Container (`host.virtualization`: Rolle `guest` und ein Container-System, dieselbe Liste wie T30), bewertet `agent_resources` Load je CPU nicht: kein Problem-Schlüssel `load`, `load_per_cpu` bleibt in den Details, dazu `load_rated: false`. Ohne `host`-Block oder bei Host/VM unverändert. Dazu der Nit aus dem Review: `_LINUX_RESOURCES` bekommt eine eigene Beschreibung, die Swap, Inodes, Load und die Freie-GB-Grenze nennt (Hash-Pin in `test_seed.py` nachziehen; v2 ist unveröffentlicht). Tests: LXC- und Docker-Report mit Load 4.0/CPU → kein Problem `load`, Status ok, `load_rated` false; KVM-Gast und Host → wie bisher bewertet; Report ohne `host` → wie bisher.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py tests/test_seed.py
 Doku: docs/admin/monitoring.html + EN (Load im Container nicht bewertet); docs/developer/monitoring.html + EN (Checker-Tabelle, `load_rated`); CHANGELOG.md

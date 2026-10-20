@@ -33,13 +33,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Zahl der logischen CPUs (`load_warn`/`load_crit`, 1.5/3.0). Swap und Inodes haben die Hysterese der uebrigen
   Prozentwerte, die Load hat keine. Die Defaults gelten auch fuer bestehende Checks ohne diese Schluessel. Die Werte
   meldet der Agent ab Report-Version 3 und nur unter Linux; fuer aeltere Agents und Windows-Hosts bleiben die drei
-  unbewertet, ohne `unknown`. Die Check-Details tragen dazu `swap`, `swap_total_mb`, `swap_used_mb`, `cpu_count`,
-  `load_per_cpu` und je Platte `inodes_percent`. Der Desktop zeigt die Werte in der Live-Sektion: Swap als Ring (nur
-  mit Swap-Geraet), die Load je CPU als Pille „Load 0.42/CPU“, je Platte die freien GB und die Inode-Belegung, eine
-  Platte aus `ignore_mounts` grau mit „ignoriert“. Die Farben von Ringen, Pillen und Balken kommen jetzt aus der
-  Bewertung des Checks (`problems` in den Details, also mit Mindest-GB, Schwellen je Mount und Hysterese; volle Inodes
-  faerben die Platte mit), nicht mehr aus den Schwellen der Konfiguration; nur Details ohne `problems` rechnet er wie
-  bisher aus der Konfiguration. Doku: Monitoring-Administration, Entwickler-Doku Agent und Monitoring (DE+EN).
+  unbewertet, ohne `unknown`. In einem Container (`host.virtualization` mit der Rolle `guest` und `lxc`, `docker`,
+  `openvz` oder `rkt`, dieselbe Erkennung wie beim OOM-Zaehler) bleibt die Load je CPU unbewertet: `load_5m` ist
+  dort die Load des Hosts, die Zahl der CPUs kann die des Containers sein; die Check-Details tragen dann
+  `load_rated: false`. Ein Host, eine VM und ein Report ohne `host` werden wie bisher bewertet. Die Check-Details
+  tragen dazu `swap`, `swap_total_mb`, `swap_used_mb`, `cpu_count`, `load_per_cpu` und je Platte `inodes_percent`.
+  Der Desktop zeigt die Werte in der Live-Sektion: Swap als Ring (nur mit Swap-Geraet), die Load je CPU als Pille
+  „Load 0.42/CPU“ (im Container grau mit „im Container nicht bewertet“), je Platte die freien GB und die
+  Inode-Belegung, eine Platte aus `ignore_mounts` grau mit „ignoriert“. Die Farben von Ringen, Pillen und Balken
+  kommen jetzt aus der Bewertung des Checks (`problems` in den Details, also mit Mindest-GB, Schwellen je Mount und
+  Hysterese; volle Inodes faerben die Platte mit), nicht mehr aus den Schwellen der Konfiguration; nur Details ohne
+  `problems` rechnet er wie bisher aus der Konfiguration. Doku: Monitoring-Administration, Entwickler-Doku Agent und
+  Monitoring (DE+EN).
 - **Monitoring: Standard-Template „Linux Server — Standard“ in Version 2 (R-0423):** Der Check System Resources
   bewertet darin zusaetzlich Swap (80/95 %), Inodes (80/90 %) und die Load je CPU (1.5/3) und die Belegung einer
   Platte erst unter 20 GB frei (`disk_min_free_gb`); neu ist der Check System State (`system_state`, `warning`,
