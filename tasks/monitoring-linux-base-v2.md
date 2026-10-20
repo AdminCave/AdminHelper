@@ -195,8 +195,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (Doku zum Formular mit T19)
 Abhängt von: T9
 
-### T19 — Desktop: Schwellen je Mount im Check-Formular  [ ]
+### T19 — Desktop: Schwellen je Mount im Check-Formular  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/DiskOverridesField.svelte, apps/desktop/ui/src/components/monitoring/DiskOverridesField.test.ts, apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2ff978c8 2026-10-20T11:47:24+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T19.verdict.json)
 Änderung: Neue Komponente (SPDX) für `config.disk_overrides`: Zeilen mit Mount, Warnung %, Kritisch %, Mindest-GB frei; Zeile hinzufügen und entfernen. Ein leeres Zahlenfeld fehlt im Eintrag, eine Zeile ohne Mount wird nicht gespeichert, ein doppelter Mount zeigt einen Hinweis und nur der erste zählt; ohne Einträge geht der Schlüssel `disk_overrides` (wie `setBoolDefault`, `CheckConfigFields.svelte:46-52`: ein Template-Check bliebe sonst „angepasst“). Eingebunden im Zweig `agent_resources` (`:295-296`). Tests: Zeile anlegen → `{"/data": {"warn": 90}}`, Felder leeren und Zeile entfernen → Schlüssel weg, gespeicherte Overrides werden angezeigt, doppelter Mount, Labels englisch.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/DiskOverridesField.test.ts
 Doku: docs/admin/monitoring.html + EN (Absatz aus T9: im Check-Editor ignorierte Mounts als Liste, Schwellen je Mount als Tabelle)

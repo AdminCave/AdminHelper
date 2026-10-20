@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import type { MonitorCheckConfig, MonitorCheckType } from '$lib/api/types';
   import { t } from '$lib/i18n';
+  import DiskOverridesField from './DiskOverridesField.svelte';
 
   interface Props {
     checkType: MonitorCheckType;
@@ -320,6 +321,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     />
     <span class="field-hint">{$t('monitoring.checkCfg.ignoreMountsHint')}</span>
   </label>
+  <DiskOverridesField {config} />
 {:else if checkType === 'service_process'}
   <label class="field">
     <span class="field-label">{$t('monitoring.checkCfg.mode')}</span>
