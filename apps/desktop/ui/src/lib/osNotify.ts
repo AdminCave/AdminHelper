@@ -12,7 +12,9 @@ import {
   requestPermission,
   sendNotification,
 } from '@tauri-apps/plugin-notification';
+import { get } from 'svelte/store';
 import { tNow } from '$lib/i18n';
+import { context } from '$lib/stores/workspace';
 import type { NotificationItem } from '$lib/api/types';
 
 // Burst guard: above this many fresh entries at once, send one summary instead
@@ -29,20 +31,28 @@ export async function ensureNotificationPermission(): Promise<boolean> {
   }
 }
 
+// Several workspaces may run at once and their toasts look alike: "[<name>] " says whose it is
+// (R-0431). The launcher has no workspace and no prefix.
+function workspacePrefix(): string {
+  const name = get(context)?.workspace?.name;
+  return name ? `[${name}] ` : '';
+}
+
 /** Fire OS notifications for freshly-arrived feed entries (best-effort). */
 export async function notifyOs(items: NotificationItem[]): Promise<void> {
   if (!items.length) return;
   if (!(await ensureNotificationPermission())) return;
+  const prefix = workspacePrefix();
   try {
     if (items.length > SUMMARY_THRESHOLD) {
       sendNotification({
-        title: tNow('notifications.title'),
+        title: prefix + tNow('notifications.title'),
         body: tNow('notifications.osSummary', { count: items.length }),
       });
       return;
     }
     for (const n of items) {
-      sendNotification({ title: n.title, body: n.body ?? '' });
+      sendNotification({ title: prefix + n.title, body: n.body ?? '' });
     }
   } catch {
     /* best-effort: a failed OS toast must not affect the in-app feed */

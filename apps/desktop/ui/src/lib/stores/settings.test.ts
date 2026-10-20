@@ -11,7 +11,6 @@ const h = vi.hoisted(() => ({
   sess: { settings: { mode: 'sync', url: 'https://srv' } as unknown, session: null as unknown },
   reportError: vi.fn(),
   showStatus: vi.fn(),
-  dropSession: vi.fn(async () => {}),
   refreshSettings: vi.fn(async () => {}),
   reloadForMode: vi.fn(async () => {}),
   tunnelStop: vi.fn(async () => {}),
@@ -45,7 +44,6 @@ vi.mock('./session', () => ({
     },
   },
   refreshSettings: h.refreshSettings,
-  dropSession: h.dropSession,
 }));
 vi.mock('./statusBar', () => ({ reportError: h.reportError, showStatus: h.showStatus }));
 vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k, setLanguage: vi.fn() }));
@@ -63,7 +61,13 @@ vi.mock('./tunnel', () => ({ stop: h.tunnelStop, startIfServerMode: h.tunnelStar
 vi.mock('$lib/utils/reloadWindow', () => ({ reloadWindow: h.reloadWindow }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: h.listen }));
 
-import { syncNow, saveSettings, stopSyncTimer } from './settings';
+import {
+  syncNow,
+  saveSettings,
+  settingsModalOpen,
+  startSyncTimer,
+  stopSyncTimer,
+} from './settings';
 import { takeLoginNotice } from '$lib/utils/loginNotice';
 
 const base = (over: Partial<Settings> = {}): Settings =>
@@ -112,85 +116,71 @@ describe('syncNow', () => {
   });
 });
 
-describe('saveSettings mode-switch orchestration (6.6)', () => {
+// A window never changes the kind or the URL of its workspace (R-0431): saving writes the
+// settings and leaves the session, the tunnel and the connections as they are.
+describe('saveSettings in a workspace (R-0431)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     h.conn.error = null;
-    // Start from an active server session so each switch exercises the logout/teardown paths.
     h.sess.session = {};
     h.sess.settings = { mode: 'server', serverUrl: 'https://alt' };
   });
 
   afterEach(() => {
-    stopSyncTimer(); // the sync branch starts an interval; don't leak it across tests
-  });
-
-  it('a server-URL change with an active session logs out before saving', async () => {
-    // The old JWT belongs to the old server; without a logout its data would linger.
-    await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
-    expect(h.dropSession).toHaveBeenCalled();
-    expect(h.tunnelStop).toHaveBeenCalled();
-  });
-
-  it('a server-URL change with an active session reloads the window after saving (R-0429)', async () => {
-    // The forced logout leaves the old server's data in the stores; the reload empties them all.
-    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
-    expect(result.ok).toBe(true);
-    expect(h.reloadWindow).toHaveBeenCalledOnce();
-    expect(h.saveSettingsBridge.mock.invocationCallOrder[0]).toBeLessThan(
-      h.reloadWindow.mock.invocationCallOrder[0],
-    );
-  });
-
-  it('a server-URL change without a session saves without a reload', async () => {
-    h.sess.session = null;
-    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
-    expect(result.ok).toBe(true);
-    expect(h.saveSettingsBridge).toHaveBeenCalledOnce();
-    expect(h.reloadWindow).not.toHaveBeenCalled();
-  });
-
-  it('a failed save after the forced logout does not reload', async () => {
-    h.saveSettingsBridge.mockRejectedValueOnce(new Error('disk full'));
-    const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://neu' }));
-    expect(result.ok).toBe(false);
-    expect(h.dropSession).toHaveBeenCalled();
-    expect(h.reloadWindow).not.toHaveBeenCalled();
+    stopSyncTimer(); // a sync save starts an interval; don't leak it across tests
+    vi.useRealTimers();
+    settingsModalOpen.set(false);
   });
 
   it('saving in server mode leaves a running tunnel alone (R-0245)', async () => {
-    // Nothing the tunnel depends on changed (a new server URL logs out above), and a
-    // second start next to the running frpc fails with "frpc laeuft bereits".
-    h.tunnelStatus.mockResolvedValueOnce({ running: true });
-    await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));
-    expect(h.reloadForMode).toHaveBeenCalled();
+    // Nothing the tunnel or the session depend on changes, and a second start next to the
+    // running frpc fails with "frpc laeuft bereits": the save neither signs out nor asks
+    // the tunnel, it only writes and reads back the settings.
+    settingsModalOpen.set(true);
+    const next = base({ mode: 'server', serverUrl: 'https://alt', language: 'de' });
+    const result = await saveSettings(next);
+
+    expect(result.ok).toBe(true);
+    expect(h.saveSettingsBridge).toHaveBeenCalledExactlyOnceWith(next);
+    expect(h.refreshSettings).toHaveBeenCalledOnce();
+    expect(get(settingsModalOpen)).toBe(false);
+    expect(h.tunnelStatus).not.toHaveBeenCalled();
     expect(h.tunnelStart).not.toHaveBeenCalled();
     expect(h.tunnelStop).not.toHaveBeenCalled();
+    expect(h.bridgeLogout).not.toHaveBeenCalled();
+    expect(h.reloadWindow).not.toHaveBeenCalled();
+    expect(h.reloadForMode).not.toHaveBeenCalled();
   });
 
-  it('saving in server mode still starts the tunnel when the status call fails', async () => {
-    h.tunnelStatus.mockRejectedValueOnce(new Error('status unavailable'));
+  it('a changed sync interval restarts the timer at the new interval', async () => {
+    vi.useFakeTimers();
+    h.sess.session = null;
+    h.sess.settings = { mode: 'sync', url: 'https://sync', intervalMinutes: 5 };
+    // As the window of a sync workspace runs it (AppShell).
+    startSyncTimer();
+    const next = base({ mode: 'sync', url: 'https://sync', intervalMinutes: 1 });
+    h.refreshSettings.mockImplementationOnce(async () => {
+      h.sess.settings = next;
+    });
+
+    expect((await saveSettings(next)).ok).toBe(true);
+    expect(h.reloadForMode).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.reloadForMode).toHaveBeenCalledOnce();
+    expect(h.reloadForMode).toHaveBeenCalledWith(next, null);
+  });
+
+  it('a failed save says why, keeps the dialog open and reads nothing back', async () => {
+    settingsModalOpen.set(true);
+    h.saveSettingsBridge.mockRejectedValueOnce(new Error('disk full'));
+
     const result = await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));
-    expect(h.tunnelStart).toHaveBeenCalledTimes(1);
-    expect(result.ok).toBe(true);
-  });
 
-  it('saving in server mode starts the tunnel when none runs', async () => {
-    h.tunnelStatus.mockResolvedValueOnce({ running: false });
-    await saveSettings(base({ mode: 'server', serverUrl: 'https://alt' }));
-    expect(h.tunnelStart).toHaveBeenCalledTimes(1);
-  });
-
-  it('switching server->local stops the tunnel and drops the session', async () => {
-    await saveSettings(base({ mode: 'local' }));
-    expect(h.tunnelStop).toHaveBeenCalled();
-    expect(h.dropSession).toHaveBeenCalled();
-  });
-
-  it('switching server->sync stops the tunnel and drops the session', async () => {
-    await saveSettings(base({ mode: 'sync', url: 'https://sync' }));
-    expect(h.tunnelStop).toHaveBeenCalled();
-    expect(h.dropSession).toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    expect(h.reportError).toHaveBeenCalledWith('disk full');
+    expect(h.refreshSettings).not.toHaveBeenCalled();
+    expect(get(settingsModalOpen)).toBe(true);
   });
 });
 

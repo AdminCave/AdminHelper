@@ -13,6 +13,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { searchTerm } from '$lib/stores/connections';
   import { markRdpError } from '$lib/stores/connectFlow';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
+  import { context, openLauncher } from '$lib/stores/workspace';
+  import { reportError } from '$lib/stores/statusBar';
+  import { errMsg } from '$lib/utils/errors';
   import { t, tNow } from '$lib/i18n';
   import { theme, toggleTheme } from '$lib/stores/theme';
   import Dashboard from '../pages/Dashboard.svelte';
@@ -88,7 +91,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let visibleNav = $derived(navItems.filter((n) => !n.serverOnly || isServerMode));
   let collapsed = $state(false);
 
-  let currentId = $derived.by<NavItem['id']>(() => {
+  let routeId = $derived.by<NavItem['id']>(() => {
     const p = $routePath;
     if (p.startsWith('/connections')) return 'connections';
     if (p.startsWith('/infrastructure')) return 'infrastructure';
@@ -96,9 +99,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (p.startsWith('/ansible')) return 'ansible';
     return 'dashboard';
   });
+  // A server-only page has nothing to show without a server session, in a local or a sync
+  // workspace: its route shows the dashboard instead.
+  let currentId = $derived(visibleNav.some((n) => n.id === routeId) ? routeId : 'dashboard');
 
   let title = $derived($t(navItems.find((n) => n.id === currentId)?.labelKey ?? 'nav.dashboard'));
-  let modeBadge = $derived($t(`settings.mode.${$settings?.mode ?? 'local'}`));
+  // The workspace this window serves (R-0431); null only when its context did not load.
+  let workspace = $derived($context?.workspace ?? null);
+
+  function toLauncher(): void {
+    openLauncher().catch((err) => reportError(errMsg(err)));
+  }
 
   // Poll the notification feed app-wide while a server session is active. The
   // effect re-runs on login/logout; cleanup stops the timer and resets state.
@@ -180,7 +191,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 </script>
 
-<div class="app-shell" class:sidebar-collapsed={collapsed}>
+<div
+  class="app-shell"
+  class:sidebar-collapsed={collapsed}
+  class:workspace-stripe={workspace !== null}
+  style:--workspace-color={workspace?.color}
+>
   <aside class="sidebar">
     <div class="sidebar-brand">
       <div class="sidebar-logo">
@@ -197,6 +213,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <div class="sidebar-subtitle" style="font-weight:300">Helper</div>
       </div>
     </div>
+
+    {#if workspace}
+      <!-- The title names the workspace too: the collapsed sidebar shows only the dot. -->
+      <button
+        class="workspace-chip"
+        onclick={toLauncher}
+        title={$t('workspace.chip.title', { name: workspace.name })}
+      >
+        <span class="workspace-dot" style:background={workspace.color}></span>
+        <span class="workspace-chip-name">{workspace.name}</span>
+      </button>
+    {/if}
 
     <nav class="sidebar-nav">
       {#each visibleNav as item (item.id)}
@@ -225,7 +253,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
           />
         </svg>
         <span class="sidebar-label">{$t('settings.label')}</span>
-        <span class="sidebar-badge">{modeBadge}</span>
+      </button>
+      <!-- After the settings and without an aria-label: the live specs take the first item here
+           for the settings and the one with an aria-label for the theme toggle. -->
+      <button class="sidebar-item" onclick={toLauncher} title={$t('workspace.openLauncher')}>
+        <svg class="sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z" />
+        </svg>
+        <span class="sidebar-label">{$t('workspace.openLauncher')}</span>
       </button>
       <button
         class="sidebar-item"

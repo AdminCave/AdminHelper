@@ -38,9 +38,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import Modal from './Modal.svelte';
   import { t } from '$lib/i18n';
+  import { context } from '$lib/stores/workspace';
 
   // Auto-subscribed derived value — unsubscribes automatically on destroy.
   const request = $derived($_pending);
+  // In the window of a workspace a question names it (R-0431): with several windows open, it
+  // says which workspace it acts on. The launcher has none.
+  const workspace = $derived($context?.workspace ?? null);
 
   function settle(ok: boolean) {
     request?.resolve(ok);
@@ -54,6 +58,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   width="420px"
   onClose={() => settle(false)}
 >
+  {#if workspace}
+    <p class="confirm-workspace">
+      <span class="confirm-workspace-dot" style:background={workspace.color}></span>
+      <span>{workspace.name}</span>
+    </p>
+  {/if}
   <p class="confirm-message">{request?.message ?? ''}</p>
   {#snippet footer()}
     <button class="btn" onclick={() => settle(false)}>
@@ -66,6 +76,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </Modal>
 
 <style>
+  .confirm-workspace {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: 0 0 var(--sp-3);
+    font-weight: 600;
+  }
+  .confirm-workspace-dot {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
   .confirm-message {
     margin: 0;
   }

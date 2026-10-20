@@ -7,7 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { errRaw, withoutErrorCodes } from '$lib/utils/errors';
   import { get } from 'svelte/store';
-  import { login, setAllowSelfSignedCerts, setMode, settings } from '$lib/stores/session';
+  import { login, setAllowSelfSignedCerts, settings } from '$lib/stores/session';
+  import { context, openLauncher, reloadContextForUrl } from '$lib/stores/workspace';
   import {
     enrollWithToken,
     resetServerCertPin,
@@ -22,6 +23,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // the password has to be entered on each start (a password is required every
   // time the app is opened).
   const remembered = get(settings);
+
+  // The workspace this window serves (R-0431); null only when its context did not load.
+  let workspace = $derived($context?.workspace ?? null);
+  // Its URL as the window shows it (user, query values and fragment masked). Rust takes it for
+  // the URL the workspace keeps, so a sign-in, a registration and a reset send it as shown; the
+  // user enters one only while the workspace has none.
+  let fixedUrl = $derived(workspace?.url ?? null);
+
+  function targetUrl(): string {
+    return fixedUrl ?? serverUrl.trim();
+  }
 
   let mode = $state<'login' | 'enroll'>('login');
   let serverUrl = $state(remembered?.serverUrl ?? '');
@@ -72,7 +84,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let displayError = $derived(withoutErrorCodes(error));
 
   async function resetCertTrust(): Promise<void> {
-    const target = serverUrl.trim();
+    const target = targetUrl();
     if (!target) {
       error = $t('login.resetPin.missingUrl');
       return;
@@ -113,7 +125,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // in (another user's certificate) or after the server stopped admitting it. No MITM
   // warning as for a pin mismatch: the server is the one the user trusts.
   async function resetIdentity(confirmKey: string, doneKey: string): Promise<void> {
-    const target = serverUrl.trim();
+    const target = targetUrl();
     if (!target) {
       error = $t('login.resetPin.missingUrl');
       return;
@@ -132,24 +144,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  // Escape hatch: use the client purely locally (connections only, no server,
-  // no auth). Without this the login screen is a dead end once the app is in
-  // server mode — the mode switch otherwise lives only inside the app shell.
-  async function useLocal(): Promise<void> {
+  // The way out of the login screen: the kind of a workspace is fixed, another server or no
+  // server at all is another workspace, which the launcher opens.
+  function toLauncher(): void {
     error = '';
     info = '';
-    busy = true;
-    try {
-      await setMode('local');
-    } catch (err) {
+    openLauncher().catch((err) => {
       error = errRaw(err);
-    } finally {
-      busy = false;
-    }
+    });
   }
 
   async function doLogin(): Promise<void> {
-    await login(serverUrl.trim(), username.trim(), password);
+    await login(targetUrl(), username.trim(), password);
     serverUrl = '';
     username = '';
     password = '';
@@ -163,10 +169,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // though the user opted in (4.101).
   async function doEnroll(): Promise<void> {
     await enrollWithToken(
-      serverUrl.trim(),
+      targetUrl(),
       enrollToken.trim(),
       get(settings)?.allowSelfSignedCerts ?? false,
     );
+    // A workspace without a URL took the one it registered at: the login shows it from now on.
+    await reloadContextForUrl();
     enrollToken = '';
     info = $t('login.enroll.done');
     mode = 'login';
@@ -240,6 +248,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 </script>
 
+{#snippet serverUrlField()}
+  {#if fixedUrl === null}
+    <label class="field">
+      <span>{$t('login.serverUrl')}</span>
+      <input
+        type="url"
+        placeholder={$t('login.serverUrl.placeholder')}
+        bind:value={serverUrl}
+        required
+        disabled={busy}
+      />
+    </label>
+  {:else}
+    <div class="field">
+      <span>{$t('login.serverUrl')}</span>
+      <p class="login-url" data-testid="workspace-url">{fixedUrl}</p>
+    </div>
+  {/if}
+{/snippet}
+
 <div class="login-screen">
   <div class="login-card">
     <div class="login-logo" aria-label="AdminHelper Logo">
@@ -251,8 +279,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
         />
       </svg>
     </div>
-    <h2>{$t('login.title')}</h2>
-    <p class="login-subtitle">{$t('login.subtitle')}</p>
+    {#if workspace}
+      <h2 class="login-workspace">
+        {$t('login.signInTo')}
+        <span class="workspace-dot" style:background={workspace.color} aria-hidden="true"></span>
+        <span class="login-workspace-name">{workspace.name}</span>
+      </h2>
+    {:else}
+      <h2>{$t('login.title')}</h2>
+      <p class="login-subtitle">{$t('login.subtitle')}</p>
+    {/if}
 
     {#if info}
       <div class="login-info">{info}</div>
@@ -260,16 +296,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
     {#if mode === 'login'}
       <form autocomplete="off" onsubmit={handleSubmit}>
-        <label class="field">
-          <span>{$t('login.serverUrl')}</span>
-          <input
-            type="url"
-            placeholder={$t('login.serverUrl.placeholder')}
-            bind:value={serverUrl}
-            required
-            disabled={busy}
-          />
-        </label>
+        {@render serverUrlField()}
         <label class="field">
           <span>{$t('login.username')}</span>
           <input type="text" bind:value={username} required disabled={busy} />
@@ -345,21 +372,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {$t('login.enroll.switch')}
         </button>
       {/if}
-      <button type="button" class="btn ghost login-secondary" onclick={useLocal} disabled={busy}>
-        {$t('login.useLocal')}
+      <button
+        type="button"
+        class="btn ghost login-secondary"
+        data-action="open-launcher"
+        onclick={toLauncher}
+        disabled={busy}
+      >
+        {$t('workspace.openLauncher')}
       </button>
     {:else}
       <form autocomplete="off" onsubmit={handleEnroll}>
-        <label class="field">
-          <span>{$t('login.serverUrl')}</span>
-          <input
-            type="url"
-            placeholder={$t('login.serverUrl.placeholder')}
-            bind:value={serverUrl}
-            required
-            disabled={busy}
-          />
-        </label>
+        {@render serverUrlField()}
         <label class="field">
           <span>{$t('login.enroll.token')}</span>
           <input
@@ -442,6 +466,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </div>
 
 <style>
+  .login-workspace {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-5);
+  }
+  .login-workspace-name {
+    overflow-wrap: anywhere;
+  }
+  .login-url {
+    margin: 0;
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
   .trust-overlay {
     position: fixed;
     inset: 0;
