@@ -209,9 +209,10 @@ nichts, eine eigene Tabelle oder ein Speicher-Puffer ist unnötig.
      Weg gemeldet (`_dispatch_alert_bg` → `process_alert`). Das Fenster ist kürzer als der Prüftakt (Kevin
      2026-10-20 nach dem security-Review von T13): sonst wäre ein Agent, der eine Prüfung lang stumm war, beim
      nächsten Lauf wieder ok, bevor er gemeldet ist, und ein Ausfall von bis zu ~20 Minuten bliebe ungemeldet.
-     Jüngere warten auf den nächsten Lauf. Damit gilt: drei Agents binnen 5 Minuten → eine Meldung, sobald der
-     dritte da ist; einer oder zwei → je eine Meldung nach 5 Minuten. Nachmeldungen nach einem Wartungsfenster sind
-     „alt“ und gehen sofort (ab drei gesammelt).
+     Jüngere warten auf den nächsten Lauf. Damit gilt: drei Agents, solange die ersten noch warten → eine Meldung,
+     sobald der dritte da ist; einer oder zwei → je eine Meldung nach ihrer Wartezeit (4 Minuten beim
+     Standard-Heartbeat mit Intervall 5m, sofort bei 1m). Nachmeldungen nach einem Wartungsfenster, das länger als
+     die Wartezeit dauerte, gehen sofort (ab drei gesammelt).
   4. Sammelmeldung: Claim wie `process_alert` (je State `FOR UPDATE` in `check_id`-Reihenfolge, Entscheidung neu
      prüfen, `notified_status = status`, Commit vor jeder Kanal-I/O; was sich inzwischen geändert hat, fällt heraus).
 - Versand **je Kanal** (`send_bundle` in `alert_bundle.py`):
@@ -285,8 +286,9 @@ VictoriaMetrics bleiben unverändert.
 4. **Einzelmeldung unter der Schwelle.** (a) bis zu 5 Minuten warten, ob es mehr werden, oder (b) sofort senden und
    erst ab dem dritten bündeln (dann bis zu zwei Einzelmeldungen plus eine Sammelmeldung). **Empfehlung (a)**, weil
    Kevins Entscheidung „statt Einzelmeldungen“ sagt und der Heartbeat ohnehin erst nach 15 Minuten Stille anschlägt;
-   Kosten: ein einzelner stummer Agent meldet bis zu 5½ Minuten später, ein kurzer Aussetzer, der vorher endet, gar
-   nicht. → Offene Frage 1.
+   Kosten: ein einzelner stummer Agent meldet bis zu 4½ Minuten später (Standard-Heartbeat; die Wartezeit liegt seit
+   Kevin 2026-10-20 unter dem Prüftakt, sodass jeder Ausfall, den eine Prüfung als critical sieht, gemeldet wird).
+   → Offene Frage 1.
 5. **Sammelmeldung in der Glocke.** Ein Admin-Event (verliert zugeordnete Nicht-Admins), die Glocke nicht bündeln
    (verfehlt das Ziel) oder Empfänger je Nutzer im Server. **Empfehlung: Server-Vertrag `source_ids`** — die
    Zuordnung Nutzer ↔ Server kennt nur der Server.
@@ -305,7 +307,7 @@ VictoriaMetrics bleiben unverändert.
   **unterdrückt alle übrigen Alarme dieses Servers**. Gemildert: Template ist opt-in, der Host-Ping selbst meldet,
   Doku warnt. Ein IPv6-Literal als Hostname lehnt der `ping`-Check ab (`[a-zA-Z0-9._-]`, `checkers/ping.py:10`):
   Der Host-Ping steht dann `unknown`, meldet keinen Ausfall und unterdrückt nichts (korrigiert nach T7).
-- **Sammelmeldung verzögert Einzelalarme** der Heartbeats um bis zu 5½ Minuten (Trade-off 4).
+- **Sammelmeldung verzögert Einzelalarme** der Heartbeats um bis zu 4½ Minuten beim Standard-Heartbeat (Trade-off 4).
 - **Server und Monitoring müssen zusammen ausgerollt werden** (Vertrag `source_ids`); Sammelmeldungen gingen sonst
   nur an Admins.
 - **Zwei Alembic-Heads**, falls ein Parallel-Vorhaben ebenfalls eine Monitoring-Revision auf `b9d1f3a5c7e9` setzt:
