@@ -57,6 +57,13 @@ Verify: bash scripts/dev/verify.sh desktop-e2e --strict
 Doku: keine (Test)
 Abhängt von: T30
 
+### T44 — E2E-Stack: Schlüssel zuerst prüfen, gemischte Nutzung ablehnen  [ ]
+Komponente: scripts · Dateien: scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, docker-compose.test.yml
+Änderung: Aus den Reviews von T29: `e2e_init` prüft den Stack-Schlüssel, bevor es irgendeine globale Variable setzt (heute setzt es `E2E_BIND_IP` und die FRP-Ports vor der Ablehnung, die Globals eines bestehenden Stacks passen danach nicht mehr zusammen); es lehnt einen zweiten `e2e_init` mit demselben Schlüssel und das Mischen eines Stacks ohne Schlüssel mit einem mit Schlüssel ab (sonst bleiben Projekt und Arbeitsverzeichnis beim Teardown liegen). Der Kopfkommentar in `docker-compose.test.yml` nennt die frps-Ports 7001/7444 von Stack b. Tests: unbekannter Schlüssel nach `e2e_init a` lässt die Globals von a unverändert; doppeltes `a` und gemischte Nutzung ergeben rc 1 ohne neues Verzeichnis.
+Verify: bash scripts/dev/verify.sh scripts --strict -- lib_e2e_stack_test
+Doku: keine (Test)
+Abhängt von: T29
+
 ### T26 — Live-Helfer und Specs mit fester Workspace-URL  [ ]
 Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/lib/live.js, apps/desktop/e2e/test/specs/login-error.live.js, apps/desktop/e2e/test/specs/enroll-form.live.js, apps/desktop/e2e/test/specs/enroll-trust-dialog.live.js
 Änderung: `login()` (`live.js:65-89`) füllt die URL nur, wenn das Feld da ist (nach dem ersten erfolgreichen Login ist sie fest), Benutzer und Passwort über den Feldtyp statt über die Position; ein Helfer `fillServerUrlIfAsked()` für die Specs mit URL-Feld (`login-error.live.js:14-16`, `enroll-form.live.js:27-35`, `enroll-trust-dialog.live.js:25-26`). Die Specs prüfen, dass die angezeigte URL die erwartete ist, wenn kein Feld da ist. Verify ist der Lint; Beweis im Sammellauf.
