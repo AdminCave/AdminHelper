@@ -224,8 +224,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: docs/admin/monitoring.html + EN (Abschnitt „Systemzustand“ aus T12: was der Desktop zeigt)
 Abhängt von: T20
 
-### T22 — Desktop: Dienste-Zeile färbt andere fehlgeschlagene Units gelb  [ ]
+### T22 — Desktop: Dienste-Zeile färbt andere fehlgeschlagene Units gelb  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecServices.svelte, apps/desktop/ui/src/components/monitoring/section/SecServices.test.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @2e31ead0 2026-10-20T13:54:37+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T22.verdict.json)
 Änderung: Im Modus `auto` (`SecServices.svelte:61-69`) bekommt ein fehlgeschlagener Name mit einer Unit-Endung außer `.service` (Liste wie `_UNIT_TYPES`, `apps/monitoring/app/checkers/agent.py:454-466`) die Stufe `warn`, `.service` und Namen ohne Endung bleiben `crit`; die Notiz bleibt „fehlgeschlagen“. Tests: `data.mount` gelb, `nginx.service` rot, `Spooler` rot, Reihenfolge und Zählung unverändert.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecServices.test.ts
 Doku: docs/admin/monitoring.html + EN `:73` (fehlgeschlagene Dienste rot, andere fehlgeschlagene Units gelb)

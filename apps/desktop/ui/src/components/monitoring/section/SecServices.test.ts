@@ -344,6 +344,82 @@ describe('SecServices auto mode duplicates', () => {
   });
 });
 
+// monitoring-linux-base-v2 T22: the checker rates only a failed .service (or a
+// Windows service, a name without a unit suffix) critical, any other failed
+// unit warning. Every failed row was red, so a failed data.mount looked as bad
+// as a failed nginx.service.
+describe('SecServices auto mode failed units', () => {
+  function levels(rows: HTMLElement[]): (string | undefined)[] {
+    return rows.map((r) => /\blevel-(\w+)\b/.exec(r.className)?.[1]);
+  }
+
+  function dots(rows: HTMLElement[]): (string | undefined)[] {
+    return rows.map((r) => r.querySelector('.mon-dot')?.className);
+  }
+
+  it('colours a failed mount yellow, a failed service and a Windows service red', async () => {
+    setLanguage('de');
+    const mixed = check({
+      status: 'critical',
+      details: {
+        mode: 'auto',
+        failed: ['nginx.service', 'data.mount', 'Spooler'],
+        enabled_inactive: ['foo.service'],
+        active_count: 40,
+        total: 63,
+      },
+    });
+    const { container: el } = render(SecServices, { props: { checks: [mixed] } });
+    // Order and count as before: failed in the agent's order, then inactive.
+    expect(texts(pills(el))).toEqual(['4 Probleme', '40/63 aktiv']);
+
+    const rows = await expand(el);
+    expect(rows.map(row)).toEqual([
+      { name: 'nginx.service', note: 'fehlgeschlagen' },
+      { name: 'data.mount', note: 'fehlgeschlagen' },
+      { name: 'Spooler', note: 'fehlgeschlagen' },
+      { name: 'foo.service', note: 'inaktiv (Autostart)' },
+    ]);
+    expect(levels(rows)).toEqual(['crit', 'warn', 'crit', 'warn']);
+    expect(dots(rows)).toEqual([
+      'mon-dot mon-critical',
+      'mon-dot mon-warning',
+      'mon-dot mon-critical',
+      'mon-dot mon-warning',
+    ]);
+  });
+
+  it('colours every unit type of the checker other than .service yellow', async () => {
+    setLanguage('de');
+    // _UNIT_TYPES in apps/monitoring/app/checkers/agent.py without .service.
+    const others = [
+      'a.socket',
+      'b.device',
+      'c.mount',
+      'd.automount',
+      'e.swap',
+      'f.target',
+      'g.path',
+      'h.timer',
+      'i.slice',
+      'j.scope',
+    ];
+    const units = check({
+      status: 'warning',
+      details: { mode: 'auto', failed: others, enabled_inactive: [] },
+    });
+    const { container: el } = render(SecServices, { props: { checks: [units] } });
+    const all = pills(el);
+    expect(texts(all)).toEqual(['10 Probleme']);
+    expect(all[0].classList.contains('pill-warn')).toBe(true);
+
+    const rows = await expand(el);
+    expect(rows.map((r) => row(r).name)).toEqual(others);
+    expect(levels(rows)).toEqual(others.map(() => 'warn'));
+    expect(rows.map((r) => row(r).note)).toEqual(others.map(() => 'fehlgeschlagen'));
+  });
+});
+
 describe('SecServices translations', () => {
   it('renders every note in English', async () => {
     setLanguage('en');
