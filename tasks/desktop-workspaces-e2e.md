@@ -80,9 +80,9 @@ Doku: keine (Test)
 Abhängt von: T22
 
 ### T28 — Live-E2E: Picker ersetzt den Moduswechsel  [ ]
-Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-picker.live.js, apps/desktop/e2e/test/specs/settings-mode.live.js, scripts/tests/desktop_e2e_crud.sh
+Komponente: desktop-e2e · Dateien: apps/desktop/e2e/test/specs/workspace-picker.live.js, apps/desktop/e2e/test/specs/settings-mode.live.js, scripts/tests/desktop_e2e_crud.sh, apps/desktop/ui/src/components/Picker.svelte, apps/desktop/ui/src/components/Picker.test.ts, apps/desktop/e2e/test/specs/workspace-add-server.live.js, apps/desktop/e2e/test/specs/enroll-form.live.js, apps/desktop/e2e/test/specs/enroll-trust-dialog.live.js, apps/desktop/e2e/README.md, apps/desktop/e2e/test/specs/settings-enroll.live.js
 Änderung: Neuer Spec (SPDX-Header), läuft im Launcher (`AH_E2E_WORKSPACE` leer): der Picker zeigt „Standard“ als Server-Workspace und einmal den Migrationshinweis; „Neuer Workspace“ Lokal „E2E Lokal“ mit Farbe anlegen, umbenennen, löschen (die Bestätigung nennt den Namen; Datenverlust-Hinweis). `desktop_e2e_crud.sh` ruft ihn statt `settings-mode.live.js` (`:84`) als eigenen wdio-Lauf mit leerem `AH_E2E_WORKSPACE` am Ende. Öffnen aus dem Picker (abgekoppelter Prozess außerhalb von WebDriver) beweisen T12 und T32. Nachtrag (Bauer T31): „Neuer Workspace“ und die übrigen Picker-Aktionen bekommen `data-action`-Hooks (`Picker.svelte`, Dateien per set-files), und `workspace-add-server.live.js` (T31) wechselt vom ersten Button in `.picker-actions` auf den Hook. Nachtrag (T26-Review, Nits): `enroll-form.live.js` (~:28) wartet auf `input[type="text"]` erst nach dem Verschwinden des Passwortfelds (sonst erfüllt das Benutzerfeld die Bedingung), wie `enroll-trust-dialog.live.js`; dessen Kopfkommentar nennt `workspaces/standard/workspace.json` statt `settings.json` (Dateien per set-files).
-Verify: bash scripts/dev/verify.sh desktop-e2e scripts --strict
+Verify: bash scripts/dev/verify.sh desktop-e2e scripts desktop-ui --strict
 Doku: keine (Test)
 Abhängt von: T20, T27
 Test-Löschung: apps/desktop/e2e/test/specs/settings-mode.live.js::* — der Moduswechsel in den Einstellungen entfällt, ersetzt durch workspace-picker.live.js
