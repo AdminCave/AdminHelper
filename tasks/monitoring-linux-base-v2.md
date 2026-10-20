@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring Linux-Basis v2 und Proxmox-Ausfall — Task-Ledger
-Status: bereit · Branch: feature/monitoring-linux-base-v2 · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-linux-base-v2 · Review: pro Task
 Spec: docs/features/monitoring-linux-base-v2.md (Roadmap R-0423, R-0492)
 Heavy: linux-full + scenario --agents 1 + windows — Agent (`internal/monitor`) und die Push-Auswertung des Monitoring ändern sich: Sammellauf über `main` (`agent_monitoring_test.sh` fährt den echten Agent v3 in `debian:bookworm-slim` gegen den Stack, `desktop_e2e_monitoring.sh` den Check-Editor des Desktops); `scenario --agents 1` nicht wegen der Paketierung (deb/rpm, systemd-Units, install/update, FRP, PKI bleiben unverändert), sondern als Plattform-Beweis auf einem echten Debian-Host mit systemd: `timedatectl`, `apt-get -s` gegen echte Paketlisten, `/proc/vmstat`, die Zustandsdatei über die mehrfachen `run --once` von `box_agentbox.sh` und das Laufzeitbudget unter `TimeoutStartSec=270` (ask-first; ohne Kevins Ja stehen diese Punkte im PR-Text als „nicht verifiziert“); `windows` = CI-Job `agent-windows` (CPU-Delta und Zustandsdatei laufen auch im Windows-Dienst, `system_other.go` hält den Block dort leer)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -279,3 +279,23 @@ Review: approve (.ah-out/review/monitoring-linux-base-v2/T25.verdict.json)
 Verify: bash scripts/dev/verify.sh scripts --strict -- doc_smoke_test
 Doku: docs/developer/agent.html + docs/en/developer/agent.html · docs/developer/monitoring.html + docs/en/developer/monitoring.html
 Abhängt von: T6, T16
+
+### T30 — Agent: OOM-Kills im Container aus dem eigenen cgroup  [ ]
+Komponente: agent · Dateien: apps/agent/internal/monitor/system_linux.go, apps/agent/internal/monitor/system_linux_test.go, apps/agent/internal/monitor/reportstate.go, apps/agent/internal/monitor/reportstate_test.go, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/agent.html, docs/en/developer/agent.html, CHANGELOG.md
+Änderung: Entscheidung Kevin 2026-10-20 (Branch-Review, wichtig): `/proc/vmstat` `oom_kill` zählt im Container die OOM-Kills des ganzen Hosts (in Docker belegt: vmstat 2 = Host, `/sys/fs/cgroup/memory.events` 0). Läuft der Agent in einem Container (dieselbe Erkennung wie die Host-Fakten, `host.Virtualization`: Rolle `guest` und ein Container-System wie `lxc`, `docker`, `podman`, `openvz`; die Liste aus der gopsutil-Quelle belegen), liest er `oom_kill` aus `/sys/fs/cgroup/memory.events` (cgroup v2, hierarchisch); fehlt die Datei (cgroup v1) oder ist sie nicht lesbar, fehlt `oom_kills` mit Log-Grund. Host und VM lesen weiter `/proc/vmstat`. Die Zustandsdatei merkt sich die Quelle des Zählers; wechselt die Quelle (Agent-Update, Erkennung ändert sich), zählt der Lauf neu an, ohne zu melden. Tests mit Fixtures (Pfad als Variable wie `vmstatPath`): Container + memory.events → Wert daraus; Container ohne memory.events → kein Feld; Host → vmstat; Quellenwechsel → kein Feld, neuer Zähler gespeichert; alte Zustandsdatei ohne Quelle gilt als vmstat.
+Verify: bash scripts/dev/verify.sh agent --strict -- ./internal/monitor/
+Doku: docs/admin/monitoring.html + EN (Quelle der OOM-Kills im Container); docs/developer/agent.html + EN (`system_state`, Zustandsdatei); CHANGELOG.md
+Abhängt von: T6
+
+### T31 — Monitoring: Load je CPU im Container nicht bewerten  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/checkers/agent.py, apps/monitoring/tests/test_agent_resources_checker.py, apps/monitoring/app/builtin_templates.py, apps/monitoring/tests/test_seed.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, docs/developer/monitoring.html, docs/en/developer/monitoring.html, CHANGELOG.md
+Änderung: Entscheidung Kevin 2026-10-20 (Branch-Review, wichtig): Im LXC passen `load_5m` (Host-Load, solange lxcfs `/proc/loadavg` nicht virtualisiert) und `cpu_count` (auf die Cores des Containers gekürzt) nicht zusammen. Meldet der Report einen Container (`host.virtualization`: Rolle `guest` und ein Container-System, dieselbe Liste wie T30), bewertet `agent_resources` Load je CPU nicht: kein Problem-Schlüssel `load`, `load_per_cpu` bleibt in den Details, dazu `load_rated: false`. Ohne `host`-Block oder bei Host/VM unverändert. Dazu der Nit aus dem Review: `_LINUX_RESOURCES` bekommt eine eigene Beschreibung, die Swap, Inodes, Load und die Freie-GB-Grenze nennt (Hash-Pin in `test_seed.py` nachziehen; v2 ist unveröffentlicht). Tests: LXC- und Docker-Report mit Load 4.0/CPU → kein Problem `load`, Status ok, `load_rated` false; KVM-Gast und Host → wie bisher bewertet; Report ohne `host` → wie bisher.
+Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resources_checker.py tests/test_seed.py
+Doku: docs/admin/monitoring.html + EN (Load im Container nicht bewertet); docs/developer/monitoring.html + EN (Checker-Tabelle, `load_rated`); CHANGELOG.md
+
+### T32 — Desktop: Load ohne Bewertung grau  [ ]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecLive.svelte, apps/desktop/ui/src/components/monitoring/section/SecLive.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Änderung: Entscheidung Kevin 2026-10-20: Tragen die Details `load_rated: false` (T31), zeigt die Live-Ansicht die Load-Pille mit Wert, aber grau und ohne Ampel, mit einem Hinweis (Tooltip/Untertitel) „im Container nicht bewertet“ / „not rated in a container“; sonst unverändert. `MonitorResourceDetails` bekommt `load_rated?: boolean`. Tests: `load_rated: false` → graue Pille mit Hinweis, auch wenn der Wert über der Schwelle liegt; ohne Feld → bewertet wie bisher.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecLive.test.ts
+Doku: keine (Admin-Doku mit T31)
+Abhängt von: T31
