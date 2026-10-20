@@ -156,3 +156,13 @@ Beweis: c6ee6cb2 · Probe des T5-Reviewers gegen den Worktree: ein Standard-Temp
 Semantik: docs/developer/monitoring.html:94 (Stand T5) — die `to_dict`-Methoden geben gespeicherte nicht endliche oder zu große Zahlen als `null` aus; Kevin 2026-10-20: als T12 in dieses Paket
 Abhängt von: T5
 HEAD: c6ee6cb2
+
+### T13 — Server: ein 422 mit nicht endlicher Zahl im Body bleibt ein 422  [ ]
+Komponente: server · Dateien: apps/server/app/main.py, apps/server/tests/test_validation_response.py
+Änderung: `_validation_error` (`apps/server/app/main.py:393`) fängt heute nur `UnicodeEncodeError`; steht im Body, den FastAPIs 422 als `input` zurückgibt, `NaN`, `Infinity` oder `-Infinity`, wirft `JSONResponse` `ValueError`, und die Antwort ist 500. Der Handler schreibt eine nicht endliche Zahl im zurückgegebenen `input` als `null`, gleich aufgebaut wie der Handler des Monitorings aus T6 (beide Dienste bleiben getrennte Kopien); jeder andere 422 bleibt unverändert, auch der Weg für einzelne Surrogates. Neue Testdatei mit SPDX-Kopf (`reuse annotate --copyright "Kevin Stenzel" --license GPL-3.0-or-later`, sonst im Format der übrigen Testdateien). Tests zuerst rot (dreimal identisch auf HEAD): `POST /api/auth/login` mit rohem Body (`content=`) `{"username": Infinity}`, `{"username": NaN}` und `{"username": -Infinity}` → 422, JSON-Body mit `json.loads` und einem `parse_constant`, das wirft, lesbar, `input` mit `null` an der Stelle der Zahl; `{"username": "x"}` → 422 wie heute.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_validation_response.py tests/test_frp_extra_config.py
+Doku: keine (Fehlerpfad; der 422 entspricht dem dokumentierten Verhalten)
+Beweis: 4b10960a · Probe gegen `apps/server` im Worktree, dreimal identisch: `POST /api/auth/login` mit `{"username": Infinity}` bzw. `NaN` → 500 `text/plain`, mit `raise_server_exceptions=True` `ValueError`; `{"username": "x"}` → 422 `application/json`
+Semantik: `apps/server/app/main.py:393` Docstring — „FastAPI's 422“: der Handler soll den 422 schreiben können; RFC 8259 §6 („Infinity and NaN … are not permitted“); Kevin 2026-10-20: erst proben, dann als T13 in dieses Paket
+Abhängt von: T6
+HEAD: 4b10960a
