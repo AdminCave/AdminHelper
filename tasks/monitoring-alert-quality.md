@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring: Alert-Qualität — Task-Ledger
-Status: bereit · Branch: feature/monitoring-alert-quality · Review: pro Task
+Status: aktiv · Branch: feature/monitoring-alert-quality · Review: pro Task
 Spec: docs/features/monitoring-alert-quality.md (Roadmap R-0424)
 Heavy: linux-full — der Monitoring-Dienst bekommt eine Alembic-Migration (Stack-Start, `upgrade-path` vom letzten Release), der Server-Vertrag `POST /api/internal/events` ändert sich (`source_ids`, `alert.triggered` je Server; `sse-push` und `desktop_e2e_sse_push` injizieren Events ohne das Feld und müssen grün bleiben), `agent-monitoring` fährt den Push-Pfad mit Haltezeit, und `monitoring-check.live.js` nutzt den Check-Editor mit dem neuen Feld. Kein `scenario --moncheck`: die geschlossene Mail-Schleife (`scripts/tests/box_serverbox.sh:457-463`) legt zwei `ping`-Checks ohne Server mit `severity critical` und `consecutive_fails 1` an — `pending → ok` hält nicht, der Deckel ändert bei `critical` nichts, ohne `server_id` greifen Host-down und Sammelmeldung nicht, `_send_email` bleibt unverändert; der Capstone im Wochenlauf fährt sie ohnehin. Kein `windows`: kein Rust-, Agent- oder Plattform-Code
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -174,3 +174,11 @@ Review: approve (.ah-out/review/monitoring-alert-quality/T16.verdict.json)
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/MonitoringTemplateModal.test.ts src/components/monitoring/BuiltinUpdateModal.test.ts
 Doku: keine (intern)
 Abhängt von: T15
+
+### T18 — Server: Sammelmeldung je Kanal nur mit den Servern der Abos dieses Kanals  [ ]
+Komponente: server · Dateien: apps/server/app/modules/notifications/service.py, apps/server/app/modules/notifications/models.py, apps/server/app/modules/notifications/outbox.py, apps/server/alembic/versions/a7c9e1b3d5f2_outbox_text.py (Revisions-Id frei wählbar, per set-files anpassen), apps/server/tests/test_notifications.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Änderung: Entscheidung Kevin 2026-10-20 (Branch-Prüfung security, Blocker): `resolve_recipients` führt bei einem Sammel-Event (`source_ids`) die Treffer je Kanal: die Glocke bekommt alle für den Nutzer sichtbaren Treffer seiner Abos, E-Mail nur die Treffer der Abos mit `channel_email`, Telegram nur die der Abos mit `channel_telegram`. `notification_outbox` bekommt nullable `title`/`body` (neue Alembic-Revision auf dem aktuellen Server-Head, additiv, Downgrade entfernt die Spalten); `ingest_event` schreibt für Mail und Telegram den Text mit Anzahl und Namen nur aus den Treffern dieses Kanals; `outbox.py` nimmt den eigenen Text, sonst wie bisher den der Notification-Zeile. Ein Kanal ohne Treffer bekommt keine Zeile. Einzel-Events (ohne `source_ids`) unverändert. Tests: Abo A (alle, nur Glocke) und Abo B (ein Server, Telegram) → Bundle `[srv-1, srv-2, srv-3]` erzeugt eine Glocken-Zeile mit drei Servern und eine Telegram-Outbox-Zeile, deren Text nur srv-2 nennt; E-Mail analog; Migration hoch und runter; ein Event ohne `source_ids` schreibt Outbox-Zeilen ohne eigenen Text wie bisher. Doku DE+EN (Abschnitt Sammelmeldung: externe Kanäle nennen nur die Server der Abos dieses Kanals), CHANGELOG-Satz im Eintrag Sammelmeldung (umlautfrei). Prüfung mit security (Alembic, Notifications).
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_notifications.py tests/test_migrations_smoke.py
+Doku: docs/admin/monitoring.html + EN; CHANGELOG.md
+Abhängt von: T10, T13
+
