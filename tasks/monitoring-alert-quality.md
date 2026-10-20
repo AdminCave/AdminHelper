@@ -55,8 +55,10 @@ Abhängt von: T3
 
 ## Block B — Severity-Deckel und Glocke
 
-### T5 — Severity deckelt Glocke, Betreff und `alert.triggered`  [ ]
+### T5 — Severity deckelt Glocke, Betreff und `alert.triggered`  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/alerter.py, apps/monitoring/tests/test_alerter_hub.py, apps/monitoring/tests/test_alerter.py, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring: 3 passed, 0 failed, 15 skipped @3d28dd87 2026-10-20T08:52:31+02:00
+Review: approve (.ah-out/review/monitoring-alert-quality/T5.verdict.json)
 Änderung: `_hub_severity(old, new, severity)` = `min(max(Stufe old, Stufe new), Stufe severity)` (`alerter.py:230-233`, Stufen `_STATUS_LEVEL :54`), `_emit_to_hub` reicht `check.severity` durch (`:244`); das Etikett im Betreff von `_build_message` (`:345-346`) aus `min(Stufe new, Stufe severity)` (`INFO`/`WARNING`/`CRITICAL`, `RECOVERY` bleibt), Text und `Severity:`-Zeile unverändert. Der Server bleibt unverändert (Spec „Severity-Deckel“). Tests zuerst (rot): Check mit `severity warning`, `ok → critical` → Hub-POST mit `severity` `warning`, Betreff `[AdminHelper Monitor] WARNING: …`, Text `Status: ok → critical`; dessen Recovery → `warning`; `severity info` → kein Hub-POST, auch nicht für die Recovery, Betreff `INFO`; `severity critical` wie bisher. `TestHubSeverity` (`test_alerter_hub.py:19-40`) bekommt das dritte Argument, Fälle unverändert mit `critical`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_alerter_hub.py tests/test_alerter.py
 Doku: docs/admin/monitoring.html + EN (Alert-Regeln `:281`, Recovery/Betreff `:290`, Hook `:291`: gedeckelt; Notification-Hub `:318`: Schweregrad höchstens die `severity` des Checks), CHANGELOG.md (Changed: Severity deckelt Glocke, Betreff und Hook; Disk Forecast meldet höchstens `warning`)

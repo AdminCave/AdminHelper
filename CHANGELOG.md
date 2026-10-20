@@ -971,6 +971,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Template-Definition setzen, eine Definition ohne das Feld gilt als 2; an einem Template-Check geaendert gilt es als
   angepasst, der Sync laesst es stehen, und „Auf Template zuruecksetzen“ nimmt den Wert des Templates zurueck. Doku:
   Admin- und Entwickler-Doku Monitoring (DE+EN).
+- **Monitoring: die `severity` eines Checks deckelt Glocke, Betreff und Event-Hook (R-0424):** Ein Check meldet
+  hoechstens mit seiner `severity`: Ein Check mit `severity` `warning` meldet ein `critical` des Checkers im Betreff
+  von Mail und Webhook als `WARNING`, an die Glocke als `warning`, auch die Entwarnung, und loest den Event-Hook
+  `alert.triggered` nicht mehr aus. Das betrifft etwa Disk Forecast aus den Standard-Templates, der damit hoechstens
+  `warning` meldet. Ein Check mit `severity` `info` erreicht die Glocke nicht mehr, sein Betreff traegt `INFO`. Der
+  Text der Meldung nennt weiter den echten Uebergang und die `severity`; `RECOVERY` im Betreff bleibt. Checks mit
+  `severity` `critical` melden wie bisher. Doku: Admin-Doku Monitoring (DE+EN).
 - **Monitoring: die Check-Konfiguration nimmt nur endliche Zahlen und VMIDs aus dem Bereich von Proxmox VE:**
   Zahlenfelder wie `cpu_warn` oder `reallocated_warn` lehnen `Infinity`, `-Infinity` und `NaN` ab; bisher nahmen
   Felder ohne obere Grenze `Infinity` an und speicherten es. Eine Zahl in `exclude_vmids` muss zwischen 100 und

@@ -47,11 +47,13 @@ from app.models import (
 logger = logging.getLogger("monitor.alerter")
 
 # Hub severity of a transition = the worse of the two states (info<warning<
-# critical). A recovery (warning->ok) therefore keeps the "warning" level so it
-# still reaches subscribers with a warning threshold; an escalation
-# (ok->critical) is "critical". unknown is treated as warning-level. ok and
+# critical), capped at the check's severity. A recovery (warning->ok) therefore
+# keeps the "warning" level so it still reaches subscribers with a warning
+# threshold; an escalation (ok->critical) is "critical", for a check with
+# severity warning "warning". unknown is treated as warning-level. ok and
 # pending are level 0 ("nothing wrong"), so a check first coming up clean
-# (pending->ok) is NOT pushed (see _emit_to_hub).
+# (pending->ok) and every transition of an info check are NOT pushed (see
+# _emit_to_hub). The same table caps the label in the message subject.
 _STATUS_LEVEL = {"ok": 0, "info": 0, "pending": 0, "unknown": 1, "warning": 1, "critical": 2}
 _LEVEL_SEVERITY = {0: "info", 1: "warning", 2: "critical"}
 
@@ -228,10 +230,17 @@ def _host_is_down(db: Session, check: MonitorCheck) -> bool:
     return row is not None
 
 
-def _hub_severity(old_status: str, new_status: str) -> str:
-    """Severity of a transition for the hub = the worse of the two states."""
+def _severity_level(severity: str) -> int:
+    """Level of a check's severity. A value outside VALID_SEVERITIES (the routers
+    reject it) caps nothing rather than silence an alert."""
+    return _STATUS_LEVEL.get(severity, 2)
+
+
+def _hub_severity(old_status: str, new_status: str, severity: str) -> str:
+    """Severity of a transition for the hub = the worse of the two states, at most
+    the check's severity."""
     level = max(_STATUS_LEVEL.get(old_status, 1), _STATUS_LEVEL.get(new_status, 1))
-    return _LEVEL_SEVERITY[level]
+    return _LEVEL_SEVERITY[min(level, _severity_level(severity))]
 
 
 def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dict) -> None:
@@ -242,11 +251,11 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dic
     alert path, so errors are logged, not raised."""
     if not SERVER_HUB_URL or not INTERNAL_API_KEY:
         return
-    severity = _hub_severity(old_status, new_status)
+    severity = _hub_severity(old_status, new_status, check.severity)
     # An info-level transition only involves ok/pending — not notification-worthy
-    # (e.g. a check first coming up clean, or flapping at the bottom). Skip it so
-    # it never spams the hub; real recoveries (warning/critical -> ok) keep their
-    # severity and are pushed.
+    # (e.g. a check first coming up clean, or flapping at the bottom) — or belongs
+    # to a check with severity info. Skip it so it never spams the hub; real
+    # recoveries (warning/critical -> ok) keep their severity and are pushed.
     if severity == "info":
         return
     payload = {
@@ -258,9 +267,10 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dic
         "source_type": "server",
         "source_id": check.server_id,
         # severity is worse-of-both so recoveries reach warning-level
-        # subscribers; new_status lets the server distinguish a real alert
-        # from a recovery (the alert.triggered hook must not fire on the
-        # critical -> ok leg).
+        # subscribers, capped at the check's severity so a warning check
+        # never fires the critical-only alert.triggered hook; new_status lets
+        # the server distinguish a real alert from a recovery (the hook must
+        # not fire on the critical -> ok leg).
         "new_status": new_status,
     }
     try:
@@ -344,7 +354,10 @@ def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status
         )
     else:
         label = "CRITICAL" if new_status == "critical" else new_status.upper()
-        subject = f"[AdminHelper Monitor] {label}: {check.name}"
+        # The subject (and with it the bell title) is capped at the check's
+        # severity; the text keeps the real status.
+        subject_level = min(_STATUS_LEVEL.get(new_status, 1), _severity_level(check.severity))
+        subject = f"[AdminHelper Monitor] {_LEVEL_SEVERITY[subject_level].upper()}: {check.name}"
         text = (
             f"{label}\n"
             f"Check: {check.name} ({check.check_type})\n"

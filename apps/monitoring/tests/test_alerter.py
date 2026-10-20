@@ -430,6 +430,39 @@ def test_build_message_recovery_escalation_and_details():
     assert "Details: Port 22: refused" in esc["text"]
 
 
+@pytest.mark.parametrize(
+    ("severity", "new_status", "label"),
+    [
+        ("critical", "critical", "CRITICAL"),
+        ("critical", "warning", "WARNING"),
+        ("warning", "critical", "WARNING"),
+        ("warning", "warning", "WARNING"),
+        ("info", "critical", "INFO"),
+        ("info", "warning", "INFO"),
+    ],
+)
+def test_build_message_subject_is_capped_at_the_check_severity(severity, new_status, label):
+    # R-0424: the subject label is the lower of status and check severity. The
+    # text keeps the real transition, its label and the severity line.
+    check = make_check(name="web", check_type="http", severity=severity)
+
+    msg = alerter._build_message(_CapturingDb([]), check, old_status="ok", new_status=new_status)
+
+    assert msg["subject"] == f"[AdminHelper Monitor] {label}: web"
+    assert msg["text"] == (
+        f"{new_status.upper()}\nCheck: web (http)\nStatus: ok → {new_status}\nSeverity: {severity}"
+    )
+
+
+@pytest.mark.parametrize("severity", ["info", "warning", "critical"])
+def test_build_message_recovery_subject_ignores_the_severity(severity):
+    check = make_check(name="web", check_type="http", severity=severity)
+
+    msg = alerter._build_message(_CapturingDb([]), check, old_status="critical", new_status="ok")
+
+    assert msg["subject"] == "[AdminHelper Monitor] RECOVERY: web"
+
+
 class TestUnknownNeverNotifies:
     """unknown-Policy (Spec monitoring-overhaul + alert-sent-state): transitions
     INTO 'unknown' dispatch nothing — no rules, no hub emit, no alert log.
