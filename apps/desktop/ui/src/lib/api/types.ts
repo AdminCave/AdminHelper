@@ -400,6 +400,20 @@ export interface MonitorForecastDetails {
   }[];
 }
 
+export interface MonitorSystemStateDetails {
+  // Field names match the system_state checker's _details verbatim. null: the
+  // agent could not determine the point; all null without the block (agent
+  // before report version 3, Windows).
+  reboot_required?: boolean | null;
+  time_synchronized?: boolean | null;
+  security_updates?: number | null;
+  oom_kills?: number | null;
+  // The checker's rating (reboot, time_sync, security_updates, oom): a point it
+  // does not name is no problem, even with a bad value (switched off, or the
+  // clock in the first 15 minutes of uptime).
+  problems?: string[];
+}
+
 export type MonitorCheckDetails =
   | MonitorResourceDetails
   | MonitorServiceDetails
@@ -408,6 +422,7 @@ export type MonitorCheckDetails =
   | MonitorZfsDetails
   | MonitorSmartDetails
   | MonitorForecastDetails
+  | MonitorSystemStateDetails
   | Record<string, unknown>;
 
 export interface MonitorCheckState {

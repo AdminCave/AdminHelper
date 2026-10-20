@@ -215,8 +215,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitor
 Doku: keine (Doku in T12, Anzeige in T21)
 Abhängt von: T11, T12
 
-### T21 — Desktop: Sektion „Systemzustand“ im Server-Dashboard  [ ]
+### T21 — Desktop: Sektion „Systemzustand“ im Server-Dashboard  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/section/SecSystem.svelte, apps/desktop/ui/src/components/monitoring/section/SecSystem.test.ts, apps/desktop/ui/src/components/monitoring/MonServerDashboard.svelte, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts, docs/admin/monitoring.html, docs/en/admin/monitoring.html, CHANGELOG.md
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @062b9838 2026-10-20T13:26:45+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T21.verdict.json)
 Änderung: `MonitorSystemStateDetails` in `types.ts` (`reboot_required`, `time_synchronized`, `security_updates`, `oom_kills`, `problems`). Neue Sektion (SPDX, Aufbau wie `SecZfs.svelte`, Icon `power` aus `MonSectionIcon.svelte`): je Check eine Zeile mit Pillen für die Probleme, ausgeklappt die vier Punkte mit Wert oder „nicht ermittelt“; „Nicht bewertet“ bei Details ohne Werte. `MonServerDashboard.svelte` (`:56-69`, `:130-156`) zeigt sie für `system_state`-Checks. Tests: jeder Punkt mit Problem, ohne Problem, nicht ermittelt; Farbe der Pille nach dem Status (gedämpft grau wie `SecZfs`); Details eines alten Agents („Not evaluated“); Texte englisch.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/section/SecSystem.test.ts
 Doku: docs/admin/monitoring.html + EN (Abschnitt „Systemzustand“ aus T12: was der Desktop zeigt)
