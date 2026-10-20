@@ -57,6 +57,9 @@ pub struct FrpcProcess {
     generation: u64,
     /// What the running frpc applied; `None` while none runs.
     applied: Option<Applied>,
+    /// Where the runtime files of the tunnel lie (`run/` of the workspace), from the first
+    /// reconciliation of this process on; `None` before it, while nothing of ours lies there.
+    run_dir: Option<PathBuf>,
 }
 
 /// The config a running frpc applied: the server TOML with its visitors at their local ports,
@@ -114,6 +117,7 @@ impl FrpcProcess {
             connected_since: None,
             generation: 0,
             applied: None,
+            run_dir: None,
         }
     }
 
@@ -638,7 +642,7 @@ fn common_part(config: &toml::Value) -> Option<toml::Table> {
     Some(root)
 }
 
-/// The file frpc reads its config from, in the app data dir.
+/// The file frpc reads its config from, in the run dir of the workspace.
 const VISITOR_CONFIG: &str = "visitor.toml";
 
 fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
@@ -650,19 +654,97 @@ fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
     })
 }
 
-/// Write the config frpc runs to the app data dir and export the enrolled identity it
+/// Where the runtime files of the tunnel lie in the app data dir `base`: `run/` of the workspace
+/// of this process. The launcher has none and starts no tunnel.
+fn runtime_dir(base: &Path) -> Result<PathBuf, AppError> {
+    Ok(crate::workspace::current()?.run_dir(base))
+}
+
+/// Makes `run_dir` and any parent it lacks, 0700 on Unix: what goes into it is the frp token,
+/// the admin API password and the private key.
+fn make_run_dir(run_dir: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.recursive(true).create(run_dir)
+}
+
+/// Removes everything in `run_dir` and keeps the dir; a missing one holds nothing. A `run_dir`
+/// that is no directory itself, a symlink or a junction, is an error: emptying it would empty
+/// whatever it points to.
+fn empty_run_dir(run_dir: &Path) -> Result<(), AppError> {
+    let not_removed = |e: std::io::Error| {
+        AppError::Io(std::io::Error::new(
+            e.kind(),
+            format!(
+                "the runtime files of the tunnel in {} were not removed: {e}",
+                run_dir.display()
+            ),
+        ))
+    };
+    match std::fs::symlink_metadata(run_dir) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => {
+            return Err(not_removed(std::io::Error::other(
+                "it is a symlink, a junction or a file, not a directory",
+            )))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(not_removed(e)),
+    }
+    for entry in std::fs::read_dir(run_dir).map_err(not_removed)? {
+        let entry = entry.map_err(not_removed)?;
+        let removed = if entry.file_type().map_err(not_removed)?.is_dir() {
+            std::fs::remove_dir_all(entry.path())
+        } else {
+            std::fs::remove_file(entry.path())
+        };
+        removed.map_err(not_removed)?;
+    }
+    Ok(())
+}
+
+/// Removes the runtime files versions before workspaces kept in the app data dir `data_dir`
+/// (`visitor.toml`, `identity/`): nothing writes or removes them there any more. One that is
+/// gone already is fine, also when another workspace process removed it first; one that cannot
+/// go is logged, and the tunnel starts all the same. Such a version writes both again at its
+/// next tunnel start, the identity coming from the keyring.
+fn remove_legacy_runtime_files(data_dir: &Path) {
+    let config = data_dir.join(VISITOR_CONFIG);
+    log_unless_gone(&config, std::fs::remove_file(&config));
+    // A symlink here goes itself; remove_dir_all does not follow it.
+    let identity = data_dir.join("identity");
+    log_unless_gone(&identity, std::fs::remove_dir_all(&identity));
+}
+
+/// Logs the failed removal of `path` unless `path` is gone all the same.
+fn log_unless_gone(path: &Path, removed: std::io::Result<()>) {
+    let Err(e) = removed else {
+        return;
+    };
+    let gone = std::fs::symlink_metadata(path)
+        .is_err_and(|missing| missing.kind() == std::io::ErrorKind::NotFound);
+    if !gone {
+        log::warn!(
+            "[frpc] runtime files of an earlier version at {} were not removed: {e}",
+            path.display()
+        );
+    }
+}
+
+/// Write the config frpc runs to `run_dir` and export the enrolled identity it
 /// references (F2). The server ships only the TOML; the desktop supplies its own
 /// mTLS identity for the visitor.
 fn write_visitor_config(
-    data_dir: &Path,
+    run_dir: &Path,
     server_toml: &str,
     head: &LocalHead,
 ) -> Result<(), AppError> {
-    std::fs::create_dir_all(data_dir)?;
+    make_run_dir(run_dir)?;
 
     // Reject a server-supplied config that isn't a plain STCP visitor before writing
     // and executing it (3.59).
-    let identity_dir = data_dir.join("identity");
+    let identity_dir = run_dir.join("identity");
     let config = frpc_config(server_toml, &identity_dir.to_string_lossy(), head)?;
     // The checked table decides, not the text: TOML may write the TLS table as a header, in
     // dotted keys or inline.
@@ -677,13 +759,20 @@ fn write_visitor_config(
     }
 
     // visitor.toml contains the frp auth token and the admin API password -> 0600 on Unix.
-    write_secret(&data_dir.join(VISITOR_CONFIG), config.as_bytes())?;
+    write_secret(&run_dir.join(VISITOR_CONFIG), config.as_bytes())?;
     Ok(())
 }
 
 /// What a reconciliation does to the disk and the sidecar, kept apart from its course so the
 /// course is testable without either.
 trait Sidecar {
+    /// The dir [`Sidecar::write`] writes into. Its files lie only while a frpc runs: the first
+    /// reconciliation of a process empties it before anything is written, every one that leaves
+    /// no frpc running empties it after, and so does every stop ([`stop_frpc`]).
+    fn run_dir(&self) -> &Path;
+    /// The app data dir: versions before workspaces kept the runtime files there, and the first
+    /// reconciliation of a process removes them ([`remove_legacy_runtime_files`]).
+    fn data_dir(&self) -> &Path;
     /// Write the config frpc reads: `server_toml`, the server TOML with its visitors at their local
     /// ports as the serializer writes it, behind `head`.
     fn write(&self, server_toml: &str, head: &LocalHead) -> Result<(), AppError>;
@@ -696,15 +785,24 @@ trait Sidecar {
     ) -> Result<(), AppError>;
 }
 
-/// The real one: `visitor.toml` in the app data dir, frpc through the shell plugin.
+/// The real one: `visitor.toml` in `run/` of the workspace, frpc through the shell plugin.
 struct AppSidecar<'a> {
     app: &'a tauri::AppHandle,
+    run_dir: PathBuf,
     data_dir: PathBuf,
 }
 
 impl Sidecar for AppSidecar<'_> {
+    fn run_dir(&self) -> &Path {
+        &self.run_dir
+    }
+
+    fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
     fn write(&self, server_toml: &str, head: &LocalHead) -> Result<(), AppError> {
-        write_visitor_config(&self.data_dir, server_toml, head)
+        write_visitor_config(&self.run_dir, server_toml, head)
     }
 
     fn spawn(
@@ -713,7 +811,7 @@ impl Sidecar for AppSidecar<'_> {
         process: &mut FrpcProcess,
         applied: Applied,
     ) -> Result<(), AppError> {
-        let config_path = self.data_dir.join(VISITOR_CONFIG);
+        let config_path = self.run_dir.join(VISITOR_CONFIG);
         start_frpc(self.app, &config_path, state, process, applied)
     }
 }
@@ -808,13 +906,18 @@ fn start_frpc(
     Ok(())
 }
 
-/// Stop the running frpc process.
+/// Stop the running frpc process and remove its runtime files: they lie only while it runs. The
+/// process stops even if they cannot go; the error then says so, and the log too, as the stops on
+/// a sign-in change and at exit drop the error.
 pub fn stop_frpc(state: &FrpcState) -> Result<(), AppError> {
     let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
     if let Some(child) = guard.retire() {
         let _ = child.kill();
     }
-    Ok(())
+    match &guard.run_dir {
+        Some(run_dir) => empty_run_dir(run_dir).inspect_err(|e| log::warn!("[frpc] {e}")),
+        None => Ok(()),
+    }
 }
 
 /// Get current tunnel status.
@@ -903,8 +1006,41 @@ async fn assign_ports(
 /// nothing starts. A TOML the allow-list rejects leaves the running frpc alone. frpc gets the
 /// visitors at their local ports from `ports`, and the comparison with the running frpc is on
 /// that rewritten TOML. `who` is the sign-in the TOML was fetched for: a frpc that runs for
-/// another one restarts, whatever the TOML.
+/// another one restarts, whatever the TOML. The runtime files in the sidecar's run dir lie only
+/// while a frpc runs (see [`Sidecar::run_dir`]).
 async fn reconcile(
+    state: &FrpcState,
+    sidecar: &impl Sidecar,
+    ports: &PortRegistry,
+    server_toml: Option<&str>,
+    who: SignedIn,
+    since: u64,
+) -> Result<RefreshOutcome, AppError> {
+    {
+        let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
+        if guard.run_dir.is_none() {
+            // No frpc of this process ran yet, so what lies there is left from one that ended
+            // without a stop (a crash, a kill).
+            empty_run_dir(sidecar.run_dir())?;
+            remove_legacy_runtime_files(sidecar.data_dir());
+            guard.run_dir = Some(sidecar.run_dir().to_path_buf());
+        }
+    }
+    let outcome = bring_in_line(state, sidecar, ports, server_toml, who, since).await;
+    // A stop meanwhile, a failed write or spawn: the files of a frpc that does not run go. Not
+    // while one runs: a reload has it read its config again.
+    let guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
+    let emptied = match (&guard.applied, &guard.run_dir) {
+        (None, Some(run_dir)) => empty_run_dir(run_dir),
+        _ => Ok(()),
+    };
+    let outcome = outcome?;
+    emptied?;
+    Ok(outcome)
+}
+
+/// [`reconcile`] without the runtime files.
+async fn bring_in_line(
     state: &FrpcState,
     sidecar: &impl Sidecar,
     ports: &PortRegistry,
@@ -1061,11 +1197,13 @@ pub async fn refresh_tunnel(
 ) -> Result<TunnelRefresh, AppError> {
     let _serial = lock.0.lock().await;
     let since = state.lock().unwrap_or_else(|e| e.into_inner()).generation;
-    let (bundle, who) = fetch_visitor_bundle(session).await?;
     let data_dir = app_data_dir(&app)?;
+    let run_dir = runtime_dir(&data_dir)?;
+    let (bundle, who) = fetch_visitor_bundle(session).await?;
     let ports = PortRegistry::new(&data_dir);
     let sidecar = AppSidecar {
         app: &app,
+        run_dir,
         data_dir,
     };
     let server_toml = bundle.as_ref().map(|bundle| bundle.toml.as_str());
@@ -1080,15 +1218,16 @@ pub async fn refresh_tunnel(
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::net::{Ipv4Addr, TcpListener};
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
 
     use super::{
         bindings_for, bundle_from, carries_bundle, fetch_visitor_bundle, frpc_config, plan_refresh,
-        reconcile, remap_visitors, request_reload, rewrite_identity_paths, tunnel_status,
-        validate_visitor_toml, visitor_names, with_local_head, write_visitor_config, Applied,
-        FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding, NO_IDENTITY_HINT,
-        VISITOR_CONFIG,
+        reconcile, remap_visitors, request_reload, rewrite_identity_paths, runtime_dir, stop_frpc,
+        tunnel_status, validate_visitor_toml, visitor_names, with_local_head, write_visitor_config,
+        Applied, FrpcProcess, FrpcState, LocalHead, RefreshPlan, Sidecar, VisitorBinding,
+        NO_IDENTITY_HINT, VISITOR_CONFIG,
     };
     use crate::error::AppError;
     use crate::keyring_store;
@@ -1951,14 +2090,37 @@ method = "token"
     }
 
     /// Records what a reconciliation writes and spawns.
-    #[derive(Default)]
     struct FakeSidecar {
         /// Every write: the server TOML and the head it went behind.
         writes: RefCell<Vec<(String, LocalHead)>>,
         spawns: Cell<u32>,
+        /// Dirs of its own that nobody makes: the fake writes nothing to disk.
+        run_dir: PathBuf,
+        data_dir: PathBuf,
+    }
+
+    impl Default for FakeSidecar {
+        fn default() -> Self {
+            static NEXT: AtomicU32 = AtomicU32::new(0);
+            let n = NEXT.fetch_add(1, Ordering::Relaxed);
+            Self {
+                writes: RefCell::default(),
+                spawns: Cell::default(),
+                run_dir: scratch_dir(&format!("run-{n}")),
+                data_dir: scratch_dir(&format!("data-{n}")),
+            }
+        }
     }
 
     impl Sidecar for FakeSidecar {
+        fn run_dir(&self) -> &Path {
+            &self.run_dir
+        }
+
+        fn data_dir(&self) -> &Path {
+            &self.data_dir
+        }
+
         fn write(&self, server_toml: &str, head: &LocalHead) -> Result<(), AppError> {
             self.writes
                 .borrow_mut()
@@ -2714,6 +2876,14 @@ method = "token"
     }
 
     impl Sidecar for StopOnWrite {
+        fn run_dir(&self) -> &Path {
+            self.inner.run_dir()
+        }
+
+        fn data_dir(&self) -> &Path {
+            self.inner.data_dir()
+        }
+
         fn write(&self, server_toml: &str, head: &LocalHead) -> Result<(), AppError> {
             if self.inner.writes.borrow().is_empty() {
                 lock(&self.state).retire();
@@ -2760,6 +2930,344 @@ method = "token"
             assert_eq!(sidecar.inner.spawns.get(), 0);
             assert!(lock(state).applied.is_none());
         }
+    }
+
+    /// The in-memory keyring on this thread with an identity enrolled for the workspace on it.
+    fn enrolled() -> keyring_store::MemoryKeyring {
+        let keyring = keyring_store::memory();
+        let prefix = crate::workspace::current().unwrap().keyring_prefix();
+        for (key, value) in [
+            ("enroll|key", "the key"),
+            ("enroll|cert", "the cert"),
+            ("enroll|ca", "the ca"),
+        ] {
+            keyring_store::set(&format!("{prefix}{key}"), value).unwrap();
+        }
+        keyring
+    }
+
+    /// The names in `dir`, sorted; none in a dir that is not there.
+    fn names_in(dir: &Path) -> Vec<String> {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+            Err(e) => panic!("{}: {e}", dir.display()),
+        };
+        let mut names: Vec<String> = entries
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Writes what frpc reads into `run/` of the workspace on this thread as the real sidecar
+    /// does ([`write_visitor_config`]) and spawns as [`FakeSidecar`] does. With `stop` it stops
+    /// the tunnel as its first write begins, with `fail_spawn` no frpc starts.
+    struct DiskSidecar {
+        inner: FakeSidecar,
+        stop: Option<FrpcState>,
+        fail_spawn: bool,
+        /// What lay in the run dir as each write began.
+        found: RefCell<Vec<Vec<String>>>,
+    }
+
+    impl DiskSidecar {
+        /// Writes into `run/` of the workspace on this thread in the app data dir `base`.
+        fn new(base: &Path) -> Self {
+            Self {
+                inner: FakeSidecar {
+                    run_dir: runtime_dir(base).unwrap(),
+                    data_dir: base.to_path_buf(),
+                    ..FakeSidecar::default()
+                },
+                stop: None,
+                fail_spawn: false,
+                found: RefCell::default(),
+            }
+        }
+    }
+
+    impl Sidecar for DiskSidecar {
+        fn run_dir(&self) -> &Path {
+            self.inner.run_dir()
+        }
+
+        fn data_dir(&self) -> &Path {
+            self.inner.data_dir()
+        }
+
+        fn write(&self, server_toml: &str, head: &LocalHead) -> Result<(), AppError> {
+            let first = self.inner.writes.borrow().is_empty();
+            if let Some(state) = self.stop.as_ref().filter(|_| first) {
+                lock(state).retire();
+            }
+            self.found.borrow_mut().push(names_in(self.run_dir()));
+            write_visitor_config(self.run_dir(), server_toml, head)?;
+            self.inner.write(server_toml, head)
+        }
+
+        fn spawn(
+            &self,
+            state: &FrpcState,
+            process: &mut FrpcProcess,
+            applied: Applied,
+        ) -> Result<(), AppError> {
+            if self.fail_spawn {
+                return Err(AppError::Connection("frpc did not start".to_string()));
+            }
+            self.inner.spawn(state, process, applied)
+        }
+    }
+
+    #[test]
+    fn runtime_files_lie_in_the_run_dir_of_the_workspace() {
+        let base = scratch_dir("run-of-the-workspace");
+        // The launcher has no workspace, so no run dir and no tunnel.
+        let no_workspace = crate::workspace::current().unwrap_err().to_string();
+        assert_eq!(runtime_dir(&base).unwrap_err().to_string(), no_workspace);
+
+        let _workspace = entered("w-0000000c");
+        let _keyring = enrolled();
+        let run = runtime_dir(&base).unwrap();
+        assert_eq!(run, base.join("workspaces").join("w-0000000c").join("run"));
+
+        write_visitor_config(
+            &run,
+            &written_at(SERVER_TOML, [23000, 23001]),
+            &head(7400, "c0ffee"),
+        )
+        .unwrap();
+
+        assert_eq!(names_in(&run), ["identity", VISITOR_CONFIG]);
+        let key = std::fs::read_to_string(run.join("identity").join("key.pem")).unwrap();
+        assert_eq!(key, "the key");
+        // Nothing of the tunnel lies in the app data dir itself.
+        assert_eq!(names_in(&base), ["workspaces"]);
+        let written = parse(&std::fs::read_to_string(run.join(VISITOR_CONFIG)).unwrap());
+        let identity_dir = run.join("identity").to_string_lossy().into_owned();
+        let expected =
+            ["cert.pem", "key.pem", "ca.crt"].map(|file| format!("{identity_dir}/{file}"));
+        assert_eq!(
+            tls_paths(&written),
+            expected.each_ref().map(|path| Some(path.as_str()))
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&run).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{}", run.display());
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_stop_empties_the_run_dir() {
+        // The stop button, a sign-in change and the end of the app stop through stop_frpc; a
+        // bundle without tunnels stops through the reconciliation.
+        for case in ["stop", "no tunnels"] {
+            let ports = TempPorts::new();
+            let _keyring = enrolled();
+            let state = idle();
+            let sidecar = DiskSidecar::new(&ports.dir);
+            let started = reconcile(
+                &state,
+                &sidecar,
+                &ports.registry,
+                Some(SERVER_TOML),
+                ops_admin(),
+                0,
+            )
+            .await
+            .unwrap();
+            assert_eq!(started, RefreshOutcome::Started, "{case}");
+            let run = sidecar.run_dir();
+            assert_eq!(names_in(run), ["identity", VISITOR_CONFIG], "{case}");
+
+            if case == "stop" {
+                stop_frpc(&state).unwrap();
+            } else {
+                let since = lock(&state).generation;
+                let outcome =
+                    reconcile(&state, &sidecar, &ports.registry, None, ops_admin(), since)
+                        .await
+                        .unwrap();
+                assert_eq!(outcome, RefreshOutcome::Stopped, "{case}");
+            }
+
+            assert!(lock(&state).applied.is_none(), "{case}");
+            assert!(run.is_dir(), "{case}");
+            assert!(names_in(run).is_empty(), "{case}: {:?}", names_in(run));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reconciliation_that_leaves_no_frpc_running_leaves_no_runtime_files() {
+        for case in ["a stop during the start", "a failed spawn"] {
+            let ports = TempPorts::new();
+            let _keyring = enrolled();
+            let state = idle();
+            let mut sidecar = DiskSidecar::new(&ports.dir);
+            if case == "a stop during the start" {
+                sidecar.stop = Some(state.clone());
+            } else {
+                sidecar.fail_spawn = true;
+            }
+
+            let outcome = reconcile(
+                &state,
+                &sidecar,
+                &ports.registry,
+                Some(SERVER_TOML),
+                ops_admin(),
+                0,
+            )
+            .await;
+
+            if case == "a stop during the start" {
+                assert_eq!(outcome.unwrap(), RefreshOutcome::Stopped, "{case}");
+            } else {
+                assert!(outcome.is_err(), "{case}");
+            }
+            assert_eq!(sidecar.inner.writes.borrow().len(), 1, "{case}");
+            assert!(lock(&state).applied.is_none(), "{case}");
+            let left = names_in(sidecar.run_dir());
+            assert!(left.is_empty(), "{case}: {left:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn leftovers_of_a_run_that_ended_without_a_stop_are_gone_before_the_first_write() {
+        let ports = TempPorts::new();
+        let _keyring = enrolled();
+        let state = idle();
+        let sidecar = DiskSidecar::new(&ports.dir);
+        let run = sidecar.run_dir();
+        // What a process that crashed while its frpc ran leaves behind.
+        std::fs::create_dir_all(run.join("identity")).unwrap();
+        std::fs::write(run.join(VISITOR_CONFIG), "the old config").unwrap();
+        std::fs::write(run.join("identity").join("key.pem"), "the old key").unwrap();
+        std::fs::write(run.join("visitor.toml.old"), "an old copy").unwrap();
+
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            0,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, RefreshOutcome::Started);
+        assert_eq!(*sidecar.found.borrow(), [Vec::<String>::new()]);
+        assert_eq!(names_in(run), ["identity", VISITOR_CONFIG]);
+        let config = std::fs::read_to_string(run.join(VISITOR_CONFIG)).unwrap();
+        assert_ne!(config, "the old config");
+
+        // Only the first reconciliation of a process clears: from then on what lies there is of
+        // its own frpc.
+        std::fs::write(run.join("kept"), "").unwrap();
+        let since = lock(&state).generation;
+        let outcome = reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            since,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, RefreshOutcome::Unchanged);
+        assert_eq!(names_in(run), ["identity", "kept", VISITOR_CONFIG]);
+    }
+
+    #[tokio::test]
+    async fn the_first_reconciliation_removes_the_runtime_files_of_versions_before_workspaces() {
+        for case in ["removable", "visitor.toml that cannot go"] {
+            let ports = TempPorts::new();
+            let _keyring = enrolled();
+            let base = &ports.dir;
+            let sidecar = DiskSidecar::new(base);
+            // What a version before workspaces left in the app data dir.
+            let identity = base.join("identity");
+            std::fs::create_dir_all(&identity).unwrap();
+            for file in ["key.pem", "cert.pem", "ca.crt"] {
+                std::fs::write(identity.join(file), "of an earlier version").unwrap();
+            }
+            if case == "removable" {
+                std::fs::write(base.join(VISITOR_CONFIG), "of an earlier version").unwrap();
+            } else {
+                // No file to remove under that name: the removal fails on every platform.
+                std::fs::create_dir_all(base.join(VISITOR_CONFIG).join("inside")).unwrap();
+            }
+
+            let outcome = reconcile(
+                &idle(),
+                &sidecar,
+                &ports.registry,
+                Some(SERVER_TOML),
+                ops_admin(),
+                0,
+            )
+            .await
+            .unwrap();
+
+            // The tunnel starts either way, from its own run dir.
+            assert_eq!(outcome, RefreshOutcome::Started, "{case}");
+            assert_eq!(
+                names_in(sidecar.run_dir()),
+                ["identity", VISITOR_CONFIG],
+                "{case}"
+            );
+            let left = names_in(base);
+            assert!(
+                !left.iter().any(|name| name == "identity"),
+                "{case}: {left:?}"
+            );
+            assert_eq!(
+                left.iter().any(|name| name == VISITOR_CONFIG),
+                case != "removable",
+                "{case}: {left:?}"
+            );
+            assert!(left.iter().any(|name| name == "workspaces"), "{case}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_run_dir_that_is_a_symlink_is_never_emptied() {
+        let ports = TempPorts::new();
+        let _keyring = enrolled();
+        let sidecar = DiskSidecar::new(&ports.dir);
+        let run = sidecar.run_dir();
+        let elsewhere = ports.dir.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("precious"), "").unwrap();
+        std::fs::create_dir_all(run.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, run).unwrap();
+
+        let error = super::empty_run_dir(run).unwrap_err().to_string();
+        assert!(error.contains(&run.display().to_string()), "{error}");
+        // The first reconciliation does not start on it, and a stop leaves it be.
+        let state = idle();
+        assert!(reconcile(
+            &state,
+            &sidecar,
+            &ports.registry,
+            Some(SERVER_TOML),
+            ops_admin(),
+            0
+        )
+        .await
+        .is_err());
+        assert!(sidecar.inner.writes.borrow().is_empty());
+        lock(&state).run_dir = Some(run.to_path_buf());
+        assert!(stop_frpc(&state).is_err());
+
+        assert_eq!(names_in(&elsewhere), ["precious"]);
     }
 
     /// Sign-ins other than [`ops_admin`]: the case, the server URL and the user.

@@ -77,8 +77,10 @@ Verify: bash scripts/dev/verify.sh desktop-rs --strict -- migration::
 Doku: keine (intern)
 Abhängt von: T4
 
-### T7 — Tunnel-Laufzeitdateien je Workspace, nur solange der Tunnel läuft  [ ]
+### T7 — Tunnel-Laufzeitdateien je Workspace, nur solange der Tunnel läuft  [x]
 Komponente: desktop-rs · Dateien: apps/desktop/src-tauri/src/frpc.rs
+Evidenz: run.sh[quick] desktop-rs: 1 passed, 0 failed, 17 skipped @424ab77c 2026-10-20T06:50:21+02:00
+Review: approve (.ah-out/review/desktop-workspaces/T7.verdict.json)
 Änderung: `visitor.toml` und `identity/` liegen in `workspaces/<id>/run/` statt im App-Datenordner (`VISITOR_CONFIG :640`, `app_data_dir :642`, `write_visitor_config :654`, `AppSidecar :698`); `run/` entsteht unter Unix mit 0700. Die Laufzeitdateien liegen nur, solange der Tunnel läuft: `stop_frpc` (`:819`, auch der Weg über `RunEvent::Exit` und das Abmelden) leert `run/`, und vor dem ersten Schreiben eines Prozesses räumt der Abgleich Reste eines abgebrochenen Laufs ab. Die Portkarte bleibt im App-Datenordner. Tests: der Sidecar schreibt unter `run/` des Kontexts; nach `stop_frpc` ist `run/` leer; eine liegengebliebene Datei aus einem früheren Lauf ist vor dem ersten Start weg; ohne Kontext startet kein Tunnel. Hinweis (T1): der Test-Guard `workspace::enter` gilt nur im eigenen Thread; frpc-Watcher und `spawn_blocking` sehen in Tests keinen Workspace.
 Verify: bash scripts/dev/verify.sh desktop-rs --strict -- frpc::
 Doku: keine (intern; Doku mit T33)
