@@ -61,8 +61,10 @@ Verify: bash scripts/dev/verify.sh agent --strict -- -run SystemState
 Doku: keine (intern; Doku mit T12 und T25)
 Abhängt von: T3
 
-### T6 — Agent: Proxmox-Ausfall als Block mit `available`/`error`  [ ]
+### T6 — Agent: Proxmox-Ausfall als Block mit `available`/`error`  [x]
 Komponente: agent · Dateien: apps/agent/internal/monitor/plugins.go, apps/agent/internal/monitor/plugins_test.go
+Evidenz: run.sh[quick] agent: 2 passed, 0 failed, 16 skipped @144bf3c7 2026-10-20T08:14:18+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T6.verdict.json)
 Änderung: Neu `proxmoxUnavailable(code, text)` nach dem Muster `dockerUnavailable`/`zfsUnavailable` (`plugins.go:144-164`, `:410-425`): `{"available": false, "error": code, "error_message": text, "node": nil, "vms": []}` und die Warnung `<text>, proxmox reported as unavailable (<code>)`. `collectProxmox` (`:231-309`) gibt mit `pvesh` im Suchpfad immer einen Block: Hostname unlesbar (`:240-243`, `os.Hostname` über eine Indirektion) → `cli_failed`; Node-Status (`:245-260`), Storage-Liste und -Inhalt (`buildBackupIndex` `:311-365`, liefert dafür Code und Text statt nur eines Fehlers) und VM-Liste (`:271-284`): ein Aufruf, den das Timeout beendet hat → `timeout`, Exit-Status oder kein Start → `cli_failed` (Text mit `commandFailure`), keine JSON-Antwort der erwarteten Form (auch `null`) → `parse_failed`, inaktiver Backup-Storage (`:334-340`) → `backup_index_incomplete` mit `backup storage <id> not active`. Im Erfolg `available: true`, `error: nil`, `node`, `vms` immer als Liste (auch leer, nie `null`). Die Regel „Node leer und keine VMs → kein Block“ (`:305-307`) entfällt, weil ein gescheiterter Node-Status jetzt ein Ausfall ist. Tests: `TestCollectProxmoxVMCallFails` (`plugins_test.go:611`) und `TestCollectProxmoxBackupIndexIncomplete` (`:679`) erwarten statt `nil` den Ausfall-Block mit Code und Text (angepasst, nicht gelöscht); neu Node-Status scheitert, hängt, ist kein JSON → Ausfall; Hostname unlesbar → `cli_failed`; Gegenprobe `TestCollectProxmoxNoVMs` (`:643`) mit `available` true und `vms` `[]`; `TestCollectProxmoxBackupIndex` (`:755`) trägt `available` true.
 Verify: bash scripts/dev/verify.sh agent --strict -- -run CollectProxmox
 Doku: keine (intern; Doku mit T14 und T25)
