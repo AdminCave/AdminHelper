@@ -218,3 +218,122 @@ describe('CheckConfigFields service_process (R-0418)', () => {
     expect(config.services).toEqual(['nginx']);
   });
 });
+
+// monitoring-linux-base-v2 T18 (R-0423): agent_resources gained swap, inode
+// and load thresholds, a minimum of free GB for the disk alarm and a list of
+// ignored mounts (app/check_configs.py AgentResourcesConfig).
+describe('CheckConfigFields agent_resources v2 (R-0423)', () => {
+  function renderResources(config: MonitorCheckConfig) {
+    return render(CheckConfigFields, { props: { checkType: 'agent_resources', config } });
+  }
+
+  it('renders the new thresholds with the backend bounds', async () => {
+    const { container } = renderResources({} as MonitorCheckConfig);
+    await tick();
+    for (const label of ['Swap Warnung', 'Swap Kritisch', 'Inodes Warnung', 'Inodes Kritisch']) {
+      const input = inputFor(container, label);
+      expect([input.min, input.max, input.getAttribute('step')]).toEqual(['0', '100', null]);
+    }
+    for (const label of ['Last je CPU Warnung', 'Last je CPU Kritisch']) {
+      const input = inputFor(container, label);
+      expect([input.min, input.max, input.step]).toEqual(['0', '100', '0.1']);
+    }
+    const minFree = inputFor(container, 'Festplatte Alarm nur unter');
+    expect([minFree.min, minFree.max, minFree.getAttribute('step')]).toEqual([
+      '0',
+      '1000000',
+      null,
+    ]);
+    // The optional step leaves the existing fields at the browser default.
+    expect(inputFor(container, 'CPU Warnung').getAttribute('step')).toBeNull();
+  });
+
+  it('stores a decimal load and 0 GB as numbers, an emptied field drops its key', async () => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = renderResources(config);
+    await tick();
+    await fireEvent.input(inputFor(container, 'Last je CPU Warnung'), { target: { value: '1.5' } });
+    // 0 turns the free-GB gate off; it is a value, not an empty field.
+    await fireEvent.input(inputFor(container, 'Festplatte Alarm nur unter'), {
+      target: { value: '0' },
+    });
+    await fireEvent.input(inputFor(container, 'Swap Warnung'), { target: { value: '70' } });
+    expect(config).toEqual({ load_warn: 1.5, disk_min_free_gb: 0, swap_warn: 70 });
+    await fireEvent.input(inputFor(container, 'Swap Warnung'), { target: { value: '' } });
+    expect(config).toEqual({ load_warn: 1.5, disk_min_free_gb: 0 });
+  });
+
+  it('shows the warn>=crit hint for swap, inodes and load', async () => {
+    const bad = {
+      swap_warn: 95,
+      swap_crit: 90,
+      inode_warn: 90,
+      inode_crit: 90,
+      load_warn: 3,
+      load_crit: 1.5,
+    } as MonitorCheckConfig;
+    const { getByRole } = renderResources(bad);
+    await tick();
+    const note = getByRole('note').textContent ?? '';
+    for (const label of ['Swap', 'Inodes', 'Load']) expect(note).toContain(label);
+  });
+
+  it('shows no hint for the new pairs at sane values', async () => {
+    const good = {
+      swap_warn: 80,
+      swap_crit: 95,
+      inode_warn: 80,
+      inode_crit: 90,
+      load_warn: 1.5,
+      load_crit: 3,
+    } as MonitorCheckConfig;
+    const { queryByRole } = renderResources(good);
+    await tick();
+    expect(queryByRole('note')).toBeNull();
+  });
+
+  it('stores ignore_mounts as a list and drops the key when emptied', async () => {
+    const config = {} as MonitorCheckConfig;
+    const { container } = renderResources(config);
+    await tick();
+    const input = inputFor(container, 'Mounts ignorieren');
+    await fireEvent.input(input, { target: { value: '/boot/efi, /mnt/backup ,' } });
+    expect(config.ignore_mounts).toEqual(['/boot/efi', '/mnt/backup']);
+    await fireEvent.input(input, { target: { value: ' ' } });
+    expect('ignore_mounts' in config).toBe(false);
+  });
+
+  it('shows stored ignore_mounts and the exact-path hint', async () => {
+    const { container } = renderResources({
+      ignore_mounts: ['/boot/efi', '/mnt/backup'],
+    } as MonitorCheckConfig);
+    await tick();
+    expect(inputFor(container, 'Mounts ignorieren').value).toBe('/boot/efi, /mnt/backup');
+    const hints = Array.from(container.querySelectorAll('.field-hint')).map((h) => h.textContent);
+    expect(hints).toEqual([expect.stringContaining('Exakte Mount-Pfade')]);
+  });
+
+  it('labels the new fields in English', async () => {
+    setLanguage('en');
+    try {
+      const { container } = renderResources({} as MonitorCheckConfig);
+      await tick();
+      for (const label of [
+        'Swap warning (%)',
+        'Swap critical (%)',
+        'Inodes warning (%)',
+        'Inodes critical (%)',
+        'Load per CPU warning',
+        'Load per CPU critical',
+        'Disk alert only below (GB free, 0 = always)',
+        'Ignore mounts',
+      ]) {
+        expect(inputFor(container, label)).toBeTruthy();
+      }
+      const hint = container.querySelector('.field-hint')?.textContent ?? '';
+      expect(hint).toContain('Exact mount paths');
+    } finally {
+      setLanguage('de');
+    }
+  });
+});

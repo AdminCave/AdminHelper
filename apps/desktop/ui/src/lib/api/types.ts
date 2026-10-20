@@ -209,6 +209,18 @@ export interface MonitorCheckConfig {
   memory_crit?: number;
   disk_warn?: number;
   disk_crit?: number;
+  // A disk's percentage alarm counts only below this many GB free; 0 turns it off.
+  disk_min_free_gb?: number;
+  // ignore_mounts and disk_overrides name exact mount paths.
+  ignore_mounts?: string[];
+  disk_overrides?: Record<string, { warn?: number; crit?: number; min_free_gb?: number }>;
+  swap_warn?: number;
+  swap_crit?: number;
+  inode_warn?: number;
+  inode_crit?: number;
+  // Per CPU (load_5m / cpu_count), not a percentage.
+  load_warn?: number;
+  load_crit?: number;
   temp_warn?: number;
   temp_crit?: number;
   hysteresis_pp?: number;

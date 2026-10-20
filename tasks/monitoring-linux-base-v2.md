@@ -186,8 +186,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_agent_resou
 Doku: keine (intern)
 Abhängt von: T9, T17
 
-### T18 — Desktop: Check-Formular `agent_resources` — neue Schwellen, Mindest-GB, ignorierte Mounts  [ ]
+### T18 — Desktop: Check-Formular `agent_resources` — neue Schwellen, Mindest-GB, ignorierte Mounts  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/monitoring/CheckConfigFields.svelte, apps/desktop/ui/src/components/monitoring/CheckConfigFields.test.ts, apps/desktop/ui/src/lib/api/types.ts, apps/desktop/ui/src/lib/i18n/dictionaries.ts
+Evidenz: run.sh[quick] desktop-ui: 1 passed, 0 failed, 17 skipped @16c4a102 2026-10-20T11:30:33+02:00
+Review: approve (.ah-out/review/monitoring-linux-base-v2/T18.verdict.json)
 Änderung: `MonitorCheckConfig` (`types.ts:205-215`) um `swap_warn`, `swap_crit`, `inode_warn`, `inode_crit`, `load_warn`, `load_crit`, `disk_min_free_gb`, `ignore_mounts`, `disk_overrides`. `RESOURCE_NUM_FIELDS` (`CheckConfigFields.svelte:93-103`) um Swap und Inodes (0–100), Load (0–100, Schritt 0,1: `NumField` bekommt ein optionales `step`) und `disk_min_free_gb` (≥ 0); `WARN_CRIT_PAIRS` (`:131-143`) um Swap, Inodes, Load; Textfeld `ignore_mounts` als Komma-Liste wie `ignore_devices` (`:394-402`) mit Hinweis „exakte Mount-Pfade“. Labels DE und EN. Tests (neue `describe` in `CheckConfigFields.test.ts`): Felder mit min/max/step, Hinweis warn ≥ crit für die neuen Paare, `ignore_mounts` gespeichert und bei leerem Feld entfernt, Labels englisch.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict -- src/components/monitoring/CheckConfigFields.test.ts
 Doku: keine (Doku zum Formular mit T19)
